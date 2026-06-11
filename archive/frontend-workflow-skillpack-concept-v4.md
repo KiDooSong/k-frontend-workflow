@@ -2,16 +2,7 @@
 
 > 목적: [Core 워크플로우](frontend-llm-workflow.md)와 [산출물 카탈로그](frontend-llm-workflow-expanded.md)를
 > 재사용 가능한 스킬팩(스타터킷)으로 패키징하는 설계.
-> 버전: v5 (2026-06-12) — 이전 버전: `archive/` (v1 원본명, `*-v2`~`*-v4`)
-> 이 문서는 **개념/운영 모델**을 다룬다. 스크립트·훅·스키마의 입출력 계약과 MVP 구현 계획은
-> [킷 구현 명세](frontend-workflow-kit-implementation.md)로 분리했다.
->
-> v5 변경점 (v4 대비, 외부 리뷰 반영):
-> - 구현 명세(frontend-workflow-kit-implementation.md) 분리 — readiness 입출력 계약,
->   artifact-manifest.yaml, implementation-mode-policy.yaml, package scripts, generated block convention
-> - 방어선 3층 정의: Claude hooks(1차) → npm scripts(2차) → CI(3차). 훅은 npm scripts의 얇은 wrapper
-> - frontmatter에서 tbd_count 제거 (스크립트가 본문 파싱으로 계산), 승인 메타데이터 추가
-> - MVP를 A~D로 재분할 (중간에 멈춰도 사용 가능하게)
+> 버전: v4 (2026-06-12) — 이전 버전: `archive/` (v1 원본명, `*-v2`, `*-v3`)
 >
 > v4 변경점 (v3 대비):
 > - 프로젝트 생성 구조를 도메인 우선 배치로 재편 (작성은 domains/, 전역은 navigation-map 뼈대만)
@@ -116,8 +107,8 @@ frontend-workflow-kit/
     review/        llm-semantic-review.template.md
 
   catalog/
-    artifact-manifest.yaml          # 산출물 레지스트리: 경로/템플릿/생성 여부/필수 frontmatter
-    README.md                       # (스킬이 디렉토리 구조를 추론하지 않게 하는 핵심 파일)
+    artifact-manifest.yaml
+    README.md
 
   tags/
     tag-matrix.yaml
@@ -158,15 +149,12 @@ frontend-workflow-kit/
     update-policy.md
     conflict-policy.md
     promotion-policy.md
-    implementation-mode-policy.yaml # ★ v5 신규 — 모드별 허용/금지 경로 (기계가독)
-
-  package-scripts.template.json     # ★ v5 신규 — 스킬/훅/CI가 부르는 npm 명령 고정
 
   schemas/
     frontmatter.schema.json
     screen-spec.schema.json
     tag-matrix.schema.json
-    lint-policy.schema.json
+    lint-policy.schema.json         # ★ v3 신규
 
   examples/
     coupon-feature/                 # golden example — 전체 사이클 완주 1건
@@ -400,19 +388,14 @@ status: draft              # 문서 라이프사이클 (missing|draft|review|con
 sources:
   - { type: planning, ref: figma-planning/coupon-slide-12 }
   - { type: wireframe, ref: docs/raw/wireframes/coupon-list.png }
-depends_on: [navigation-map]
+depends_on: [screen-inventory, navigation-map]
 last_reviewed: 2026-06-12
-# status: confirmed 승격 시 추가 (사람만):
-# approved_by, approved_at, decision_id
+tbd_count: 3
 ---
 ```
 
 > 내용 확신도(unknown/candidate/confirmed)는 문서 본문의 개별 항목에 붙는다.
 > status와 confidence를 한 enum에 섞지 않는다. (확장판 1장 참고)
->
-> tbd/unknown/candidate **개수는 frontmatter에 두지 않는다** — 수동 카운트는 반드시
-> 드리프트한다. workflow-state.mjs가 본문(Unknowns 표, Copy Keys의 TBD, API Candidates의
-> confidence)을 파싱해 계산하고 대시보드에 기록한다.
 
 ### 생성되는 대시보드 (`workflow-state.yaml` — 발췌)
 
@@ -488,12 +471,6 @@ readiness_gates:
 조건이 전부 frontmatter/파일 존재/CI 결과여서 **스크립트로 결정적으로 계산 가능**하다.
 LLM은 결과를 읽기만 한다.
 
-단, `state-matrix.complete` 같은 조건값은 frontmatter에 중복 기재하지 않는다 —
-workflow-state.mjs가 본문을 파싱해 산출한다 (State Matrix 표에 필수 상태 5종이 있으면
-complete, fake hook 파일이 실재하면 exists). 파싱 규칙과 readiness의 입출력 계약
-(allowed_paths / forbidden_paths / blocking / next_actions)은
-[킷 구현 명세](frontend-workflow-kit-implementation.md)에 정의한다.
-
 ---
 
 ## 7. 정책: 가능한 부분은 훅으로 강제
@@ -566,20 +543,6 @@ description: 지정된 Screen ID를 readiness gate가 허용하는 모드 범위
 
 `adapt-lint-pack` 스킬은 3-4장의 절차를 수행한다 (scan → map → diff → rollout → propose).
 출력은 lint-policy.yaml 초안 + conflict report이며, **사람 승인 전에는 lint-gen을 실행하지 않는다.**
-
-### 방어선 3층: 훅은 1차일 뿐이다
-
-Claude Code 훅에만 의존하면 Cursor, Codex, 일반 CLI, 사람 개발자 환경에서 강제가 사라진다.
-**최종 방어선은 npm scripts와 CI다.** 훅은 같은 검사를 더 일찍 보여주는 UX 계층이다.
-
-```txt
-1차 방어: Claude hooks        — 편집 시점에 즉시 차단/경고 (Claude Code에서만)
-2차 방어: npm run workflow:*  — 도구 무관, 로컬에서 누구나/어떤 LLM이나 실행
-3차 방어: CI                  — 머지 전 최종 게이트 (회피 불가)
-```
-
-훅은 검사 로직을 직접 들고 있지 않고, npm scripts를 부르는 **얇은 wrapper**로 만든다.
-(스크립트 명세: [킷 구현 명세](frontend-workflow-kit-implementation.md))
 
 ### 훅 (hooks)
 
@@ -666,32 +629,44 @@ API 확정됨       → /update-from-api     openapi 이관 또는 manifest conf
 
 ## 10. MVP 로드맵
 
-**중간에 멈춰도 사용 가능**하도록 4단계로 나눈다. 각 단계는 이전 단계만으로도 운영된다.
-도구 개발이 워크플로우 설계보다 커지지 않게, 스크립트는 A에서 3개만 만든다.
-(상세 범위: [킷 구현 명세](frontend-workflow-kit-implementation.md))
+### MVP 1차 — 신뢰도의 뼈대
 
 ```txt
-MVP-A: 문서 생성과 readiness만 — 가장 먼저 운영 테스트 가능한 최소 단위
-  templates(screen-spec, navigation-map, llm-rules, domain-rules)
-  workflow-state.mjs / readiness.mjs / validate.mjs
-  implement-screen 스킬
-  coupon-feature golden example
-  (이 단계에서 Entry Points는 수동 작성 임시 허용)
+lint-pack: policies 4종 + presets/eslint-flat + lint-policy.template.yaml
+           + adoption/rollout-ratchet.md
+scripts:   lint-gen.mjs, lint-baseline.mjs, workflow-state.mjs(인벤토리 생성 포함),
+           readiness.mjs, validate.mjs
+templates: llm-rules, screen-spec(통합형, stub 모드 포함), navigation-map(뼈대),
+           domain-rules, api-manifest(zod), component-guidelines
+skills:    init-workflow, adapt-lint-pack, generate-artifacts, check-readiness, implement-screen
+schemas:   frontmatter.schema.json, lint-policy.schema.json
+examples:  coupon-feature (golden example 1건 — 가장 공들일 것)
+```
 
-MVP-B: lint-policy 적응
-  lint-policy.template.yaml + lint-gen.mjs + lint-baseline.mjs
-  policies 4종 + presets/eslint-flat + adapt-lint-pack 스킬
+> v2 MVP와의 차이: adapt-lint-pack과 lint-gen이 1차에 포함된다.
+> **드롭인만 되는 린트 팩은 그린필드 전용이 되어 실사용 범위가 절반으로 줄기 때문이다.**
 
-MVP-C: generated views
-  catalog-gen.mjs / nav-graph.mjs / route-tree.mjs
-  update-from-figma / update-from-api / scan-context / classify-tags 스킬
-  screen-patterns: list, form, detail
+### MVP 2차 — 운영 자동화
 
-MVP-D: Claude Code 통합 + 완성
-  hooks (confirmed 보호, 생성물 보호, 모드 가드, lint-policy 자동 재생성)
-  semantic-reviewer 에이전트 + review-screen 스킬
-  staleness.mjs, presets/eslint-legacy·biome, 나머지 카탈로그/템플릿
-  Claude Code 플러그인 배포 (marketplace)
+```txt
+hooks (confirmed 문서 보호, 생성물 보호, 모드 가드, lint-policy 자동 재생성)
+catalog-gen.mjs
+nav-graph.mjs + route-tree.mjs (도입 전에는 Entry Points 수동 작성을 임시 허용)
+update-from-figma / update-from-api / scan-context / classify-tags 스킬
+presets/eslint-legacy, presets/biome
+screen-patterns: list, form, detail
+semantic-reviewer 에이전트 + review-screen 스킬
+staleness.mjs
+```
+
+### MVP 3차 — 완성
+
+```txt
+전체 artifact catalog + 나머지 템플릿
+tag-matrix 정교화 + 워크드 예제 확충
+domain-rules 확충 (auth, payment)
+Claude Code 플러그인으로 배포 (marketplace)
+promotion-policy 운영 정착
 ```
 
 ---

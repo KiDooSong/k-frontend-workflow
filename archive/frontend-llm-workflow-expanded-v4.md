@@ -2,11 +2,7 @@
 
 > 목적: [Core 워크플로우](frontend-llm-workflow.md)의 산출물을 전체 카탈로그로 정의하고,
 > 자료 준비 상태에 따라 무엇을 먼저 할지 판단하는 체계를 제공한다.
-> 버전: v5 (2026-06-12) — 이전 버전: `archive/` (v1 원본명, `*-v2`~`*-v4`)
->
-> v5 변경점(외부 리뷰 반영): confirmed 승격 시 승인 메타데이터(approved_by/approved_at/decision_id) 필수화,
-> zod 스키마는 코드 파일이 출처(manifest는 링크), State Coverage 구현 수단을 프로젝트별 선택으로,
-> 산출물 경로·생성 여부의 기계가독 레지스트리(artifact-manifest.yaml) 연결.
+> 버전: v4 (2026-06-12) — 이전 버전: `archive/` (v1 원본명, `*-v2`, `*-v3`)
 >
 > v4 변경점: 문서 배치를 도메인 우선으로 재편 — P1을 stub ScreenSpec + 생성 뷰 모델로 교체.
 > Screen Inventory / Route Tree / Nav Graph(Entry Points 역색인)는 자동 생성물로 전환,
@@ -64,21 +60,10 @@ missing → draft → review → confirmed → implemented → verified
 | missing | 아직 없음 | - |
 | draft | 작성 중, 미검토 | 누구나 생성 가능 |
 | review | 검토 요청됨 | 작성 완료 시 |
-| confirmed | 담당자 승인됨 | **사람의 승인 필요. LLM이 승격 금지.** 승인 메타데이터 필수 (아래) |
+| confirmed | 담당자 승인됨 | **사람의 승인 필요. LLM이 승격 금지** |
 | implemented | 코드에 반영됨 | 구현 PR 머지 시 |
 | verified | 테스트/QA 통과 | CI + 리뷰 통과 시 |
 | deprecated | 폐기 | 사람의 결정 |
-
-confirmed 승격 시 frontmatter에 승인 메타데이터를 남긴다.
-"이 confirmed가 진짜 최신인가?" 문제를 막는 유일한 방법이다.
-
-```yaml
-status: confirmed
-approved_by: 김PM
-approved_at: 2026-06-12
-approval_source: { type: slack, ref: "#app-planning/12345" }
-decision_id: D-014        # decision-log.md와 연결
-```
 
 ### 내용 확신도 (confidence) — 문서 안의 개별 항목 단위
 
@@ -100,10 +85,6 @@ unknown → candidate → confirmed
 ## 2. 산출물 카탈로그
 
 **기본 세트 ~15개 + 선택 세트**로 나눈다. 모든 프로젝트에 전부 만들지 않는다.
-
-각 산출물의 경로·템플릿·생성 여부·필수 frontmatter는 `artifact-manifest.yaml`에
-기계가독 형식으로 등록된다 — 스킬이 디렉토리 구조를 문서에서 추론하지 않게 하기 위해서다.
-([킷 구현 명세](frontend-workflow-kit-implementation.md) 참고)
 
 ### P0. 기계 검증 + 전역 규칙 (모든 상황에서 최우선)
 
@@ -166,7 +147,7 @@ Unknowns              ← v1 #15 (화면 단위)
 | # | 산출물 | 생성 방식 | 비고 |
 |---|---|---|---|
 | 20 | OpenAPI / codegen client | **자동 생성** | 있으면 confirmed API의 단일 출처 |
-| 21 | API Manifest | 수동 | **미확정분 전용.** 확정 즉시 #20으로 이관. zod 코드는 넣지 않고 #22 파일을 링크 |
+| 21 | API Manifest | 수동 | **미확정분 전용.** 확정 즉시 #20으로 이관 |
 | 22 | zod 스키마 (DTO) | 코드 | 타입·fixture·런타임 검증의 단일 출처 |
 | 23 | Domain Model Map | 코드+주석 | DTO→프론트 모델 매핑 함수가 곧 문서 |
 | 24 | API-to-Screen Mapping | 수동 | ScreenSpec의 API Candidates를 집계해 생성 가능 |
@@ -191,7 +172,7 @@ Unknowns              ← v1 #15 (화면 단위)
 |---|---|---|---|
 | 34 | 컴포넌트/스타일 위반 검출 | **ESLint (CI)** | v1 #43의 자동화 |
 | 35 | DTO/fixture 정합성 | **zod + 테스트** | v1 #40의 자동화 |
-| 36 | State Coverage | 스토리(기본값) / 컴포넌트 테스트 / MSW 시나리오 | v1 #41의 자동화. 수단은 프로젝트별 선택 |
+| 36 | State Coverage | **스토리 + 컴포넌트 테스트** | v1 #41의 자동화 |
 | 37 | E2E (Acceptance) | **Maestro** | 가능한 항목만 |
 | 38 | LLM 의미 리뷰 | LLM (별도 컨텍스트) | 기획 누락/과해석/문구 날조/Unknowns 임의 확정 |
 | 39 | Navigation Review | LLM 또는 스크립트 | Navigation Map ↔ route tree 비교 |
