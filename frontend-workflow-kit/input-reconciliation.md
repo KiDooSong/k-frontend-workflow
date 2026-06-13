@@ -60,31 +60,62 @@ user-note-input skill
 
 ## Input Result Contract
 
-입력 결과물은 최소한 다음 정보를 가져야 한다.
+입력 결과물의 frontmatter 는 다음 **canonical schema** 를 따른다. 정본의 단일 출처는 [templates/input/input-artifact.template.md](templates/input/input-artifact.template.md) 와 [examples/input-reconciliation/inputs/*.md](examples/input-reconciliation/inputs/) 이고, 아래 표가 그 계약이다.
 
-```yaml
-input_id: IN-20260613-figma-001   # required (MVP-A 포함). 전역 유일, 불변.
-source_type: figma | planning-doc | api-doc | meeting | qa | user-note
-source_ref: 원본 링크 또는 파일 경로
-captured_at: 2026-06-13
-summary: 입력 요약
-raw_artifacts:
-  - path-or-url
-supersedes: IN-20260601-figma-001  # optional. 같은 원천의 이전 입력을 대체할 때만.
-suggested_scope:
-  domains: [coupons]
-  screens: [COUPON-001]
+```md
+---
+# --- required ---
+input_id: "IN-20260613-figma-001"            # 전역 유일·불변. 멱등성·역추적·supersede·미처리 감지의 키
+input_type: "figma"                          # normalized category: planning | figma | api | meeting | qa | user-note
+source_type: "figma"                         # concrete source adapter/type: planning-doc | figma | api-doc | meeting | qa | user-note
+source_ref: "figma-planning/coupon-list-12-v2"   # 원본 링크 또는 파일 경로
+captured_at: "2026-06-13T00:00:00+09:00"     # 수집 시점
+captured_by: "sample-figma-input-skill"      # 저장한 입력 스킬
+status: "captured"                           # 입력 자체의 상태 (≠ Reconcile Status — 아래 참조)
+affected_domains: ["coupons"]                # 관련 도메인 (canonical scope 필드)
+affected_screens: ["COUPON-001"]             # 관련 화면 (canonical scope 필드)
+# --- optional ---
+confidence: "candidate"                      # optional(recommended): unknown | candidate | confirmed
+supersedes: null                             # optional: 같은 원천의 이전 input_id (입력↔입력 축)
+raw_artifacts: []                            # optional: 원본 첨부(스크린샷·export 등) 경로/URL 목록
+---
+
+## Summary
+입력 요약은 frontmatter 가 아니라 여기 body 의 `## Summary` 섹션에 둔다.
 ```
 
-입력 결과물의 저장 위치 예시:
+| Field | 위상 | 설명 |
+|---|---|---|
+| `input_id` | **required** | 전역 유일·불변. 멱등성·역추적·supersede·미처리 감지가 이 키에 걸린다 |
+| `input_type` | **required** | normalized category(사람이 읽는 분류 라벨): `planning`/`figma`/`api`/`meeting`/`qa`/`user-note` |
+| `source_type` | **required** | concrete source adapter/type: `planning-doc`/`figma`/`api-doc`/`meeting`/`qa`/`user-note` |
+| `source_ref` | **required** | 원본 링크 또는 파일 경로 |
+| `captured_at` | **required** | 입력을 수집한 시점 |
+| `captured_by` | **required** | 어떤 입력 스킬이 저장했는지 |
+| `status` | **required** | **입력 자체의 상태**(예: `captured`). register 의 `Reconcile Status` 와 다르다 — 아래 참조 |
+| `affected_domains` / `affected_screens` | **required** | **canonical scope 필드**(관련 도메인/화면) |
+| `confidence` | optional(recommended) | `unknown`/`candidate`/`confirmed`. 기본 `candidate`. confirmed 라도 LLM 이 문서를 confirmed 로 올리진 않는다 |
+| `supersedes` | optional | 같은 원천의 이전 `input_id`(입력↔입력 축. 결정값 번복 아님) |
+| `raw_artifacts` | optional | 원본 첨부(스크린샷·export 등) 경로/URL 목록 |
+
+**deprecated alias (읽기 호환만 — 새로 쓰지 말 것):**
 
 ```txt
-docs/frontend-workflow/inputs/2026-06-13-figma-coupon.md
-docs/frontend-workflow/inputs/2026-06-13-api-coupons.md
-docs/frontend-workflow/inputs/2026-06-13-meeting-coupon-policy.md
+suggested_scope.domains / suggested_scope.screens   → affected_domains / affected_screens 로 대체.
+frontmatter summary                                 → body 의 ## Summary 섹션이 정본.
 ```
 
-`input_id` 는 **MVP-A 에서도 required** 다. 나머지 메타(`source_type`·`source_ref`·`summary`·`suggested_scope`)는 가능하면 유지하되 느슨해도 되지만, `input_id` 하나만은 강제한다 — 멱등성·역추적·supersede·미처리 감지가 모두 이 키에 걸린다.
+이전 입력은 중첩 `suggested_scope` 와 frontmatter `summary` 를 썼다. 둘은 deprecated alias 다 — parser 는 한동안 읽어 호환만 유지하고(발견 시 경고), 새 입력·템플릿·생성기는 canonical 필드만 출력한다.
+
+입력 결과물의 저장 위치 (파일명 = `input_id`):
+
+```txt
+docs/frontend-workflow/inputs/{input_id}.md
+예: docs/frontend-workflow/inputs/IN-20260613-figma-001.md
+    docs/frontend-workflow/inputs/IN-20260613-api-001.md
+```
+
+required 중 `input_id` 가 특히 핵심이다 — 멱등성·역추적·supersede·미처리 감지가 모두 이 키에 걸린다. optional(`confidence`·`supersedes`·`raw_artifacts`)은 없어도 되지만, required 필드가 비면 입력 결과물로서 불완전하다.
 
 `input_id` 불변 계약:
 
@@ -95,6 +126,22 @@ input_id 는 한 번 발급하면 불변이다.
 ```
 
 이 규칙이 없으면 같은 id 에 다른 내용이 실려 "이미 처리한 입력"으로 잘못 스킵된다. id 형식은 충돌을 줄이려 `IN-{날짜}-{source}-{seq}` 처럼 source 를 끼우는 것을 권장한다.
+
+### `status` vs `Reconcile Status` — 세 가지 다른 축
+
+"status" 라는 단어가 세 곳에 나오지만 **출처도 의미도 라이프사이클도 다르다.** 한 칸에 섞으면 결정 대기 입력이 "미처리"로 오탐된다.
+
+```txt
+입력 artifact 의 status   (입력 frontmatter)                       입력을 수집/적재했는가.   값: captured (등 입력 수집 상태)
+Reconcile Status          (Reconciliation Register)                그 입력을 reconcile 했는가. 값: not-started → in-progress → reconciled / failed
+자식 항목 open|resolved    (Open Decisions·Conflicts·Unknowns·Gap)  그 입력이 만든 결정/충돌이 닫혔는가.
+```
+
+- **입력 `status`** 는 입력 결과물 *자체*의 상태다. reconcile 행위와 무관하다 — 입력 스킬이 적재를 끝냈으면 `captured` 다. 입력 스킬이 쓰며, reconcile-input 은 이 값을 바꾸지 않는다.
+- **`Reconcile Status`** 는 reconcile **행위**의 상태다(register 가 단일 출처). 그 입력을 reconcile 했는지만 본다.
+- **자식 항목 상태** 는 그 입력이 만든 `D-`/`C-`/`U-`/`G-` 가 닫혔는지다. 각 레지스터가 단일 출처다.
+
+세 축은 독립이다. 예: 입력 `status=captured` + `Reconcile Status=reconciled` + 자식 `D-001=open` 은 "입력 적재 완료 / reconcile 완료 / 사람 결정만 대기"라는 **정상** 상태다. 이 조합을 "미처리"로 보면 안 된다 — 미처리 감지는 오직 `Reconcile Status` 만 본다(아래 "Code Change Gate").
 
 ## Reconciliation Register
 
@@ -122,7 +169,7 @@ docs/frontend-workflow/_meta/reconciliation-register.md
 | Input ID | 입력 결과물의 `input_id`. 레지스터의 키. 입력당 canonical 행 1개 |
 | Source | `source_type` 요약 |
 | Classification | 이 입력이 만든 분류 **목록**(입력 1개가 여럿일 수 있다. 예: `conflict + new-decision`) |
-| Reconcile Status | **reconcile 행위의 라이프사이클**: `not-started` → `in-progress` → `reconciled` / `failed`. 자식 항목 상태의 rollup 이 아니다 |
+| Reconcile Status | **reconcile 행위의 라이프사이클**: `not-started` → `in-progress` → `reconciled` / `failed`. 자식 항목 상태의 rollup 이 아니며, 입력 frontmatter 의 `status` 와도 별개다(위 "status vs Reconcile Status") |
 | Result | 처리 결과/대기 어휘: `accepted` / `rejected` / `delegated` / `pending user decision` / `conflict-created` 등. reject-input 의 사유도 여기 적는다 |
 | Touched Artifacts | 이 입력이 수정한 문서(ScreenSpec 등) |
 | Created Items | 이 입력이 만든/재오픈한 레지스터 항목(`C-…`, `D-…`, `U-…`, `G-…`, `INV-…`, `VER-…`). 링크만 남긴다 |
@@ -143,7 +190,7 @@ docs/frontend-workflow/_meta/reconciliation-register.md
 2.  Register 에 같은 input_id 행이 `reconciled` 면 멈춘다 (이미 처리됨 — 멱등성).
       `in-progress`(이전 실행이 중단됨)면 새 행을 추가하지 말고 그 행을 이어서 처리한다.
 3.  Register 에 행을 먼저 쓴다 (Reconcile Status: `in-progress`).   ← 어떤 문서 수정보다 먼저.
-4.  입력 요약과 suggested_scope 를 읽는다.
+4.  입력 요약(body `## Summary`)과 범위(`affected_domains`/`affected_screens`, 구 `suggested_scope`)를 읽는다.
 5.  관련 기존 산출물을 찾는다.
 6.  기존 confirmed/resolved 결정과 충돌하는지 대조한다.
 7.  변경 유형을 분류한다 (입력 1개가 여러 분류일 수 있다).
@@ -382,7 +429,7 @@ reconcile-input
 1.  입력 결과물을 읽고 input_id 를 확인한다.
 2.  Register 에 같은 input_id 가 `reconciled` 면 멈춘다 (이미 처리 — 멱등성). `in-progress` 면 새 행 없이 이어서 처리.
 3.  Register 에 행을 먼저 쓴다 (Reconcile Status: `in-progress`).   ← 어떤 문서 수정보다 먼저.
-4.  suggested_scope 를 기준으로 관련 산출물을 연다.
+4.  `affected_domains`/`affected_screens`(구 `suggested_scope`) 를 기준으로 관련 산출물을 연다.
 5.  기존 confirmed/resolved 결정과 충돌 여부를 확인한다.
 6.  classification 을 만든다 (입력 1개 → item N개 가능).
 7.  자동 반영 가능한 simple-update 만 문서에 반영한다.
