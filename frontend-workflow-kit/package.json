@@ -20,7 +20,8 @@
     "example:state": "node scripts/workflow-state.mjs --docs examples/coupon-feature/docs/frontend-workflow --src examples/coupon-feature/src --date 2026-06-13",
     "example:readiness": "node scripts/readiness.mjs --docs examples/coupon-feature/docs/frontend-workflow",
     "example:validate": "node scripts/validate.mjs --docs examples/coupon-feature/docs/frontend-workflow --src examples/coupon-feature/src",
-    "example:test": "node scripts/test-fixtures.mjs"
+    "example:test": "node scripts/test-fixtures.mjs",
+    "test": "node scripts/test-fixtures.mjs"
   },
   "dependencies": {
     "yaml": "^2.5.0"

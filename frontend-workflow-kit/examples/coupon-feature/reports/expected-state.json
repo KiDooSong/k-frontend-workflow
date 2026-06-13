@@ -1,0 +1,89 @@
+{
+  "inventory": {
+    "checks": {
+      "duplicate_ids": [],
+      "duplicate_routes": []
+    },
+    "screens": [
+      {
+        "domain": "coupons",
+        "id": "COUPON-001",
+        "route": "/(tabs)/coupons",
+        "status": "confirmed"
+      },
+      {
+        "domain": "coupons",
+        "id": "COUPON-002",
+        "route": "/coupons/[id]",
+        "status": "draft"
+      }
+    ]
+  },
+  "state": {
+    "generated_at": "<normalized>",
+    "global": {
+      "component_catalog_generated": true,
+      "navigation_map_status": "draft",
+      "stub_screen_specs_count": 2
+    },
+    "screens": {
+      "COUPON-001": {
+        "derived": {
+          "api_confidence_min": "candidate",
+          "blocking_decisions": [
+            {
+              "blocking_mode": "final-fixture-ui",
+              "decision_needed": "만료 쿠폰을 목록에 노출할 것인가?",
+              "id": "D-001",
+              "owner": "PM"
+            },
+            {
+              "blocking_mode": "final-fixture-ui",
+              "decision_needed": "쿠폰 목록 정렬 기준은 무엇인가?",
+              "id": "D-002",
+              "owner": "PM"
+            },
+            {
+              "blocking_mode": "api-integrated-ui",
+              "decision_needed": "쿠폰 목록 페이지네이션 방식은?",
+              "id": "D-003",
+              "owner": "BE"
+            }
+          ],
+          "copy_keys_has_tbd": true,
+          "fake_hook_exists": true,
+          "figma_mapping_status": "missing",
+          "interaction_matrix_complete": true,
+          "malformed_decisions": [],
+          "open_decisions_count": 3,
+          "state_matrix_complete": true,
+          "tbd_count": 1,
+          "unknown_count": 1
+        },
+        "domain": "coupons",
+        "route": "/(tabs)/coupons",
+        "status": "confirmed",
+        "stub": false
+      },
+      "COUPON-002": {
+        "derived": {
+          "api_confidence_min": null,
+          "blocking_decisions": [],
+          "copy_keys_has_tbd": false,
+          "fake_hook_exists": true,
+          "figma_mapping_status": "missing",
+          "interaction_matrix_complete": false,
+          "malformed_decisions": [],
+          "open_decisions_count": 0,
+          "state_matrix_complete": false,
+          "tbd_count": 0,
+          "unknown_count": 0
+        },
+        "domain": "coupons",
+        "route": "/coupons/[id]",
+        "status": "draft",
+        "stub": true
+      }
+    }
+  }
+}

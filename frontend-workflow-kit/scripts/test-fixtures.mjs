@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// test-fixtures.mjs — golden fixture 비교 하니스 (MVP-B Phase 0).
+// test-fixtures.mjs — golden fixture 비교 하니스 (MVP-B Phase 0 + L2).
 // 기존 예제/드라이런 출력물을 반복 가능한 회귀 검사로 굳힌다. 손으로 하던 hash+grep 대조를 코드화한다.
 //
 // 검사 대상 (manifest 기반):
@@ -9,32 +9,41 @@
 //      - reconcile-input-002       post-fix canonical run                           → PASS 요구
 //   [integrity] 문서 생성 예제/구현 run 의 파싱 무결성 + 선언 산출물 존재
 //      - coupon-feature · multi-screen-dry-run · implement-screen-001
+//   [pipeline] (L2) 예제 트리에 state/readiness/validate 를 돌린 출력 ↔ 커밋된 기계가독 기대값
+//      - coupon-feature · multi-screen-dry-run (reports/expected-{state,readiness,validate}.json)
 //
 // 불변식:
 //  - reconcile 비교 대상은 항상 expected-llm-after. human-final(expected-after)을 LLM 출력처럼
 //    비교하지 않는다 (요구사항 #1·#2 — GOLDEN_IR 로 고정 + run-metadata compare_against 검증).
-//  - reconcile-input-001 의 실패는 "의도된 증거"다 (요구사항 #3). 기대 판정은 run-metadata.json 의
-//    expect 필드로 데이터화(expect=xfail → 실패=비치명). strict witness:
-//      · 통과(xpass) → 치명. · 선언된 expected_failures 와 정확히 일치하게 실패 → xfail(비치명).
-//      · 다른 이유로 실패(추가/누락=xdrift) → 치명. 즉 "올바른 이유로 실패"할 때만 증거로 인정한다.
-//  - reconcile-input-002 는 통과 필수 (요구사항 #4 — expect=pass, 실패 시 치명).
+//  - reconcile-input-001 의 실패는 "의도된 증거"(xfail, expected_failures 로 사유 고정). 002 는 통과 필수.
 //  - 경로 경계(forbidden_paths) 검사는 하지 않는다 — Lane B 소관 (요구사항 #6).
-//  - readiness/validate 판정을 재구현하지 않는다(게이트 단일 출처 보존).
+//  - 판정 단일 출처 보존: L2 는 readiness/validate 를 재구현하지 않는다 — buildState/computeReadiness 를
+//    import 소비하고 validate 는 서브프로세스(--json)로 돌린 "실제 출력"을 스냅샷·대조만 한다.
+//  - 정규화(요구사항 #5): generated_at(휘발성)·경로 구분자(OS) 를 정규화. 비교는 구조화(파싱) 기준이라 CRLF 무관.
 //
-// 사용: node scripts/test-fixtures.mjs [--json]
-// exit: 0 = 모든 fixture 가 기대대로(pass 통과 + xfail 가 선언된 이유로 실패)
-//       · 1 = 치명(pass 실패 / xfail 이 통과=xpass / xfail 이 다른 이유로 실패=xdrift)
-//       · 2 = 설정/IO 오류(깨진 run-metadata.json 등).
+// 사용:
+//   node scripts/test-fixtures.mjs [--json]      전 fixture 실행(기본; fixture 에 read-only)
+//   node scripts/test-fixtures.mjs --update       L2 스냅샷(reports/expected-*.json) 갱신(유지보수 전용)
+// exit: 0 = 모든 fixture 가 기대대로 · 1 = 치명(pass 실패 / xpass / xdrift) · 2 = 설정/IO 오류.
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { parseArgs, KIT_ROOT, readFileSafe } from './lib/util.mjs';
-import { runReconcileChecks, runIntegrityChecks } from './lib/test-fixture.mjs';
+import { execFileSync } from 'node:child_process';
+import { parseArgs, KIT_ROOT, DEFAULTS, loadYaml, readFileSafe } from './lib/util.mjs';
+import {
+  runReconcileChecks,
+  runIntegrityChecks,
+  runPipelineChecks,
+  writePipelineExpected,
+} from './lib/test-fixture.mjs';
+import { buildState } from './workflow-state.mjs';
+import { computeReadiness } from './readiness.mjs';
 
 const DF = 'docs/frontend-workflow';                 // expected/actual 공통 하위 경로
 const REPO_ROOT = path.resolve(KIT_ROOT, '..');       // temp/runs 는 킷 밖(레포 루트)에 있다
 const EXAMPLES = path.join(KIT_ROOT, 'examples');
 const RUNS = path.join(REPO_ROOT, 'temp', 'runs');
 const GOLDEN_IR = path.join(EXAMPLES, 'input-reconciliation', 'expected-llm-after');
+const VALIDATE_SCRIPT = path.join(KIT_ROOT, 'scripts', 'validate.mjs');
 
 // input-reconciliation golden(expected-llm-after) 의 stage=llm-after manifest.
 // 검사 대상 ID·기대 상태(올리기만 불변식). golden 의 실제 파일에서 확인한 값:
@@ -61,6 +70,13 @@ const RECON_MANIFEST = {
   unknownsMustStayOpen: ['U-001'],                     // open 아니면 FAIL (Unknown 닫기는 사람)
   unknownsMustNotExist: ['U-002'],                     // 신설되면 FAIL (-001 회귀)
 };
+
+// L2 pipeline 코퍼스: 예제별 src 하위 경로. src='__no_src__' = 의도적으로 없는 경로(md-only fixture)
+// → fake_hook_exists=false (golden 규약, multi-screen README). date 는 generated_at 고정용(정규화로 무관).
+const L2_CORPUS = [
+  { id: 'coupon-feature', src: 'src' },
+  { id: 'multi-screen-dry-run', src: '__no_src__' },
+];
 
 // run-metadata.json 읽기 (expect: pass|xfail, reason, expected_failures). 파일이 없으면 기본 {}(=pass).
 // 깨진 JSON / 잘못된 expect / 비정상 compare_against·actual / 잘못된 expected_failures 형식은
@@ -99,7 +115,7 @@ function readRunMeta(runId, runDir) {
   return meta;
 }
 
-// fixture 목록 구성 — kind: reconcile | integrity.
+// fixture 목록 구성 — kind: reconcile | integrity | pipeline.
 function buildFixtures() {
   const fixtures = [];
 
@@ -130,7 +146,7 @@ function buildFixtures() {
     });
   }
 
-  // integrity fixtures (문서 생성 예제 + 구현 run)
+  // integrity fixtures (문서 생성 예제 + 구현 run) — 파싱 무결성 + 선언 리포트 존재.
   fixtures.push({
     id: 'coupon-feature',
     kind: 'integrity',
@@ -154,24 +170,74 @@ function buildFixtures() {
     ],
   });
 
+  // pipeline fixtures (L2) — state/readiness/validate 출력 재현 회귀.
+  for (const ex of L2_CORPUS) {
+    const dir = path.join(EXAMPLES, ex.id);
+    fixtures.push({
+      id: `${ex.id}:pipeline`,
+      kind: 'pipeline',
+      expectVerdict: 'pass',
+      reason: 'L2 state/readiness/validate 출력 재현',
+      docsDir: path.join(dir, DF),
+      srcDir: path.join(dir, ex.src),
+      date: '2026-06-13',
+      expectedDir: path.join(dir, 'reports'),
+    });
+  }
+
   return fixtures;
 }
 
-function runFixture(fx) {
-  const res = fx.kind === 'reconcile'
-    ? runReconcileChecks(fx.expectedDir, fx.actualDir, fx.manifest)
-    : runIntegrityChecks(fx);
+// validate.mjs 는 CLI 전용(export 없음) → 서브프로세스로 --json 출력을 받는다.
+// 위반이 있으면 exit 1 이라 execFileSync 가 throw 하지만 stdout 에 JSON 은 그대로 있다.
+function runValidateJson(docsDir, srcDir) {
+  let stdout;
+  try {
+    stdout = execFileSync(
+      process.execPath,
+      [VALIDATE_SCRIPT, '--docs', docsDir, '--src', srcDir, '--json'],
+      { encoding: 'utf8' },
+    );
+  } catch (e) {
+    stdout = (e && e.stdout) || '';
+  }
+  return JSON.parse(stdout);
+}
+
+// 예제 파이프라인 실제 출력 — buildState(소스에서 재계산) → computeReadiness → validate(서브프로세스).
+// 판정 로직 재구현 0: 생산 함수의 실제 출력을 그대로 모은다.
+function computePipelineActual(fx) {
+  const { state, inventory } = buildState({ docsDir: fx.docsDir, srcDir: fx.srcDir, date: fx.date });
+  const policy = loadYaml(DEFAULTS.policy) || {};
+  const manifest = loadYaml(DEFAULTS.manifest) || {};
+  const readiness = computeReadiness({ state, policy, ci: {}, manifest });
+  const validate = runValidateJson(fx.docsDir, fx.srcDir);
+  return { state: { state, inventory }, readiness, validate };
+}
+
+function runFixture(fx, update) {
+  let res;
+  if (fx.kind === 'reconcile') {
+    res = runReconcileChecks(fx.expectedDir, fx.actualDir, fx.manifest);
+  } else if (fx.kind === 'integrity') {
+    res = runIntegrityChecks(fx);
+  } else if (fx.kind === 'pipeline') {
+    const actual = computePipelineActual(fx);
+    if (update) {
+      const written = writePipelineExpected({ expectedDir: fx.expectedDir, actual });
+      res = { checks: written.map((f) => ({ check: 'L2:update', ok: true, message: `wrote ${f}` })), failed: 0 };
+    } else {
+      res = runPipelineChecks({ expectedDir: fx.expectedDir, actual });
+    }
+  } else {
+    res = { checks: [{ check: 'kind', ok: false, message: `unknown fixture kind: ${fx.kind}` }], failed: 1 };
+  }
   const checks = res.checks.slice();
   const failedChecks = checks.filter((c) => !c.ok);
   const checksFailed = failedChecks.length > 0;
 
-  // verdict 판정.
-  //  expect=pass : 통과 필수 — 실패=fail(치명).
-  //  expect=xfail: strict 증거 witness —
-  //    · 통과(xpass)                          → 치명(회귀를 더는 증명 못 함).
-  //    · expected_failures 와 정확히 일치 실패 → xfail(비치명; 의도된 증거).
-  //    · 그 외 실패(추가/누락=xdrift)          → 치명(witness 가 다른 회귀를 가릴 수 있음).
-  //    · expected_failures 미선언 시 어떤 실패든 xfail(하위호환).
+  // verdict: expect=pass 는 통과 필수(실패=fatal). expect=xfail 은 strict witness —
+  //  통과=xpass(치명), expected_failures 와 정확히 일치 실패=xfail(비치명), 그 외=xdrift(치명).
   let verdict;
   let fatal;
   if (fx.expectVerdict !== 'xfail') {
@@ -216,6 +282,7 @@ function render(results) {
 
 function main() {
   const { flags } = parseArgs(process.argv.slice(2));
+  const update = !!flags.update;
 
   let fixtures;
   try {
@@ -225,7 +292,14 @@ function main() {
     process.exit(2);
   }
 
-  const results = fixtures.map(runFixture);
+  let results;
+  try {
+    results = fixtures.map((fx) => runFixture(fx, update));
+  } catch (e) {
+    process.stderr.write(`test-fixtures: 실행 오류 — ${e.message}\n`);
+    process.exit(2);
+  }
+
   const { summary, body, fatal } = render(results);
 
   if (flags.json) {
@@ -233,6 +307,7 @@ function main() {
       JSON.stringify(
         {
           ok: fatal === 0,
+          update,
           summary,
           fixtures: results.map((r) => ({
             id: r.id,
@@ -249,7 +324,7 @@ function main() {
       ) + '\n',
     );
   } else {
-    process.stdout.write(summary + '\n' + body + '\n');
+    process.stdout.write((update ? '(--update: L2 스냅샷 갱신)\n' : '') + summary + '\n' + body + '\n');
   }
 
   process.exit(fatal === 0 ? 0 : 1);
