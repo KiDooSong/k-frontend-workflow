@@ -210,13 +210,16 @@ export function deriveMetrics(spec, opts = {}) {
     blockingDecisions.sort((a, b) => String(a.id).localeCompare(String(b.id)));
     malformedDecisions.sort((a, b) => String(a.id).localeCompare(String(b.id)));
   } else if (odSection) {
-    // 표를 쓰려 한 흔적(| 라인)이 있는데 parseTable 이 실패 → 표 구문 깨짐(separator 불량 등).
-    // 조용히 무시하면 게이트가 통째로 풀리므로(fail-open) malformed 로 surface 한다.
-    const hasTableRow = stripComments(odSection)
+    // 표가 파싱되지 않았다. 섹션에 실질 내용(불릿/문장/깨진 표)이 있는데 결정이 0개면
+    // fail-open 이므로 malformed 로 surface 한다. 빈 섹션이나 "없음" 명시는 예외.
+    const lines = stripComments(odSection)
       .split(/\r?\n/)
-      .some((l) => l.trim().startsWith('|'));
-    if (hasTableRow) {
-      malformedDecisions.push({ id: '(unparsable-table)', blocking_mode: '(none)', status: '(none)' });
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+    const isEmptyOrNone =
+      lines.length === 0 || (lines.length === 1 && /^(없음|none|n\/a|-)$/i.test(lines[0]));
+    if (!isEmptyOrNone) {
+      malformedDecisions.push({ id: '(unparsable-decisions)', blocking_mode: '(none)', status: '(none)' });
     }
   }
 

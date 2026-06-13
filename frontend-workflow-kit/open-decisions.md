@@ -187,7 +187,7 @@ readiness_mode = min(fact_mode, decision_cap)
 
 즉 사실상 final-fixture-ui 가 가능해도(fact_mode) open decision 이 final-fixture-ui 를 막으면 readiness_mode 는 rough-fixture-ui 로 **내려간다** — "ready for final + blocker 동시 표기" 같은 모순이 생기지 않는다. 그 뒤 다음 모드 이상을 막는 decision 을 `blocking` 과 `next_actions` 에 포함한다.
 
-**malformed Open Decision 은 fail-closed 다.** 다음은 모두 **조용히 무시하지 않고** surface 해 readiness 가 `invalid_open_decision` blocker 로 표시하고 화면을 **`docs-only` 로 고정**한다: ① `Blocking Mode` 가 정책에 없는 값(오타, 예: `final_fixture_ui`), ② `ID`/`Status` 누락 또는 `open|resolved` 아닌 Status, ③ `Blocking Mode = docs-only`(floor 는 막을 수 없음·무의미), ④ `## Open Decisions` 표 자체가 파싱 불가(separator 불량 등). validate 형식검사가 후속이라 live gate 인 readiness 가 보수적으로 막는 것 — 이게 없으면 오타 한 글자나 깨진 표로 게이트 전체가 풀리는 fail-open 이 된다.
+**malformed Open Decision 은 fail-closed 다.** 다음은 모두 **조용히 무시하지 않고** surface 해 readiness 가 `invalid_open_decision` blocker 로 표시하고 화면을 **`docs-only` 로 고정**한다: ① `Blocking Mode` 가 정책에 없는 값(오타, 예: `final_fixture_ui`), ② `ID`/`Status` 누락 또는 `open|resolved` 아닌 Status, ③ `Blocking Mode = docs-only`(floor 는 막을 수 없음·무의미), ④ `## Open Decisions` 섹션에 실질 내용이 있는데 파싱 가능한 표가 없음(불릿·문장으로 작성, separator 불량 등 — 단 빈 섹션이나 `없음` 명시는 예외). validate 형식검사가 후속이라 live gate 인 readiness 가 보수적으로 막는 것 — 이게 없으면 오타 한 글자나 깨진 표로 게이트 전체가 풀리는 fail-open 이 된다.
 
 예상 출력:
 
