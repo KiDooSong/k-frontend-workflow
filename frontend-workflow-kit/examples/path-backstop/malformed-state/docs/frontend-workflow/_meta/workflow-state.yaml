@@ -1,0 +1,5 @@
+# 의도적으로 손상된 YAML — Codex round-2 finding #1 검증용.
+# 파일은 존재하지만 yamlParse 가 throw → forbidden-paths 는 exit 2(입력 오류)로 surface 해야 한다
+# (부재와 동일 범주; stack trace+exit 1 로 새면 안 됨).
+global: [ unclosed-flow-sequence
+screens:

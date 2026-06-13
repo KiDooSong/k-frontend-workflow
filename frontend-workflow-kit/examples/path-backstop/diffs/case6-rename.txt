@@ -1,0 +1,3 @@
+R100	src/lib/oldClient.ts	src/api/newClient.ts
+R100	src/api/legacy.ts	src/features/coupons/utils/legacy.ts
+D	src/api/deprecated.ts
