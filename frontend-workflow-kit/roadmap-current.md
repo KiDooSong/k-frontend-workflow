@@ -37,8 +37,8 @@ MVP-A 에서 결정적으로 강제되는 구간은 **Documents → State → Re
 
 ## MVP-A 설계만 됨 (문서 계약, 미강제)
 
-- **Input Reconciliation** — register · Reconcile Status 라이프사이클 · conflict 수동 로그 · `resolved→open` 재오픈 계약. 실제 게이트는 여전히 Open Decision/Unknown 이고 readiness 가 막는다.
-- **Investigation / Verification** — 조사/검증 문서는 evidence 핸드오프 아티팩트. readiness 가 `blocks_mode` 를 직접 파싱하지 않는다. 막는 조사는 연결된 Open Decision/Unknown 을 만들어야 하고, 그 연결 항목이 MVP-A 의 blocker 다.
+- **Input Reconciliation** — register · Reconcile Status 라이프사이클 · conflict 수동 로그 · `resolved→open` 재오픈 계약. 실제 게이트는 여전히 Open Decision 이고 readiness 가 막는다(Unknown 은 fact-finding 큐, 자동 게이트 아님).
+- **Investigation / Verification** — 조사/검증 문서는 evidence 핸드오프 아티팩트. readiness 가 `blocks_mode` 를 직접 파싱하지 않는다. 막는 조사는 연결된 Open Decision 을 만들어야 하고, 그 Open Decision 이 MVP-A 의 blocker 다(Unknown 은 게이트 아님).
 - **Review Gates** — `temp/review-gates-notes.md` 스크래치 메모만 존재. 구현 없음.
 
 ## 후속 / Later (아직 구현하지 않음)

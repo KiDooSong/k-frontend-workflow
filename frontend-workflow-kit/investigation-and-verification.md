@@ -278,7 +278,7 @@ input result
 → reconcile input
 → investigation-needed 로 분류
 → investigation / verification 생성 (Register Created Items 에 INV-/VER- 기록)
-→ 막을 화면에 Open Decision/Unknown 을 함께 올린다   ← MVP-A 의 실제 게이트
+→ 막을 화면에 Open Decision 을 올린다   ← MVP-A 의 실제 게이트 (Unknown 은 fact-finding 큐, 자동 게이트 아님)
    (investigation 의 blocks_mode 를 readiness 가 직접 읽는 것은 후속)
 ```
 
@@ -288,15 +288,15 @@ input result
 새 입력: "카카오 로그인은 앱 전환 후 callback으로 돌아온다"
 분류: investigation-needed
 생성: auth/investigations/app-switching-callback.md
-링크: 막을 화면에 Open Decision/Unknown 추가   # 이게 MVP-A 의 blocker
+링크: 막을 화면에 Open Decision 추가   # 이게 MVP-A 의 blocker (단순 사실은 Unknown, 게이트는 Open Decision)
 blocks_mode: api-integrated-ui                # 후속에 readiness 가 직접 게이트할 때 사용
 ```
 
 ## Readiness와의 관계
 
-MVP-A에서는 Investigation/Verification을 readiness에 직접 연결하지 않는다. 대신 관련 ScreenSpec의 `Unknowns` 또는 `Open Decisions`가 blocker 역할을 한다.
+MVP-A에서는 Investigation/Verification을 readiness에 직접 연결하지 않는다. 대신 관련 ScreenSpec의 `Open Decisions`가 blocker 역할을 한다 — open decision 이 `decision_cap` 으로 모드를 다운그레이드한다.
 
-**그래서 막는 investigation 은 반드시 대응하는 Open Decision 또는 Unknown 행을 가진다 — 그게 실제 blocker 다.** investigation 문서 자체는 MVP-A 에서 게이트하지 않으므로, 링크된 blocker 가 없으면 아무것도 안 막힌다(silent fail-open 주의). 위 readiness 문단의 `blocks_mode → 게이트` 는 후속에서 자동화한다.
+**그래서 막는 investigation 은 반드시 대응하는 `Open Decision` 을 가진다 — 그게 실제 blocker 다.** `Unknowns` 는 fact-finding 큐일 뿐 MVP-A 자동 게이트가 아니다(open-decisions.md "Unknown 은 자동 게이트가 아니다"); "막아야 하는데 아직 모른다"는 Unknown 으로만 두지 말고 Open Decision 으로 승격한다. investigation 문서 자체도 MVP-A 에서 게이트하지 않으므로, 링크된 Open Decision 이 없으면 아무것도 안 막힌다(silent fail-open 주의). 위 readiness 문단의 `blocks_mode → 게이트` 는 후속에서 자동화한다.
 
 후속 확장에서는 다음을 파싱할 수 있다.
 
