@@ -232,7 +232,7 @@ COUPON-001:
 - `Status` 는 `open`, `resolved` 중 하나여야 한다.
 - `Blocking Mode` 는 정책 파일에 존재하는 모드여야 한다(open 행은 docs-only floor 위여야 함).
 - `ID` 는 **프로젝트 전역**에서 중복되면 안 된다 (전 screen-spec 집계로 검사).
-- `Status=resolved` 인 항목은 `Options` 에 선택값 표시가 있어야 한다(**경고**로 시작 → 후속에 `Decision Result` 컬럼).
+- `Status=resolved` 인 항목은 `Options` 에 선택값을 표시한다(예: `→ hide`). validate 는 **약하게** 시작 — `Options` 가 **비어 있을 때만 경고**(exit 무영향)하고, "선택값인지"의 엄밀 검사는 후속 `Decision Result` 컬럼으로 한다.
 
 경로 backstop (hook 없는 환경용 — 1차 방어는 다운그레이드):
 

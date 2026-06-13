@@ -234,6 +234,11 @@ function main() {
     (policy.order && policy.order.length ? policy.order : Object.keys(policy.modes || {})) || [];
   const REQUIRED_OD_COLS = ['ID', 'Decision Needed', 'Options', 'Blocking Mode', 'Owner', 'Status'];
   const odIdGlobal = new Map(); // 전역 ID 집계 (화면 간 중복 검사)
+  // 정책을 못 읽으면(policyModes 비어있음) Blocking Mode 정책-모드 검사를 건너뛴다 — 전부 무효로 오탐 방지.
+  // 단 Open Decisions 가 실제로 있으면 조용히 넘기지 않고 경고로 surface 한다(설정 오류 신호).
+  if (policyModes.length === 0 && specs.some((s) => s.sections['open decisions'] !== undefined)) {
+    warn(9, path.join(docsDir, 'domains'), '정책을 로드하지 못해 Open Decisions 의 Blocking Mode 정책-모드 검사를 건너뜀 — policy 경로를 확인하세요');
+  }
   for (const spec of specs) {
     const section = spec.sections['open decisions'];
     if (section === undefined) continue;
@@ -262,13 +267,15 @@ function main() {
         add(9, spec.path, `Open Decision ${label}: Status 는 open|resolved 여야 함 (현재: ${r.status || '(빈값)'})`);
       }
       if (r.blockingMode) {
-        if (!policyModes.includes(r.blockingMode)) {
+        if (policyModes.length && !policyModes.includes(r.blockingMode)) {
           add(9, spec.path, `Open Decision ${label}: Blocking Mode '${r.blockingMode}' 가 정책 모드가 아님 → 해소: ${policyModes.join(' / ')} 중 하나`);
-        } else if (status === 'open' && policyModes.indexOf(r.blockingMode) === 0) {
+        } else if (status === 'open' && policyModes.length && policyModes.indexOf(r.blockingMode) === 0) {
           add(9, spec.path, `Open Decision ${label}: Blocking Mode '${r.blockingMode}' 는 floor(docs-only)라 막을 수 없음 → 해소: 그 위 모드 지정`);
         }
-      } else if (status === 'open') {
-        add(9, spec.path, `Open Decision ${label}: open 행에 Blocking Mode 누락 → 해소: 막을 최소 모드 지정`);
+      } else {
+        // Blocking Mode 는 전 행 필수 (open-decisions.md 필드표). resolved 도 canonical 행에 유지하며,
+        // 재오픈 시 게이트가 즉시 동작하도록 한다.
+        add(9, spec.path, `Open Decision ${label}: Blocking Mode 누락 (필수) → 해소: 막을 최소 모드 지정`);
       }
       if (status === 'resolved' && !r.options) {
         warn(9, spec.path, `Open Decision ${label}: resolved 인데 Options 에 선택값 표시 없음 (권장: '→ 선택값')`);
