@@ -12,7 +12,7 @@
 ## 정본 입력 스키마 (요약)
 
 - **required 9개**: `input_id`, `input_type`, `source_type`, `source_ref`, `captured_at`, `captured_by`, `status`, `affected_domains`, `affected_screens`
-- **optional**: `confidence`(`unknown|candidate|confirmed`), `supersedes`(이전 `input_id` 또는 `null`), `raw_artifacts`(목록)
+- **optional**: `confidence`(`unknown|candidate|confirmed`), `supersedes`(이전 `input_id` 또는 `null`; **자기 자신 금지**), `raw_artifacts`(목록)
 - **deprecated alias (읽기 호환 — 쓰면 경고)**: `suggested_scope.domains/screens` → `affected_domains/affected_screens`, frontmatter `summary` → body `## Summary`
 - **input_id 패턴**: `IN-{YYYYMMDD}-{source}-{NNN}` (정규식 `^IN-\d{8}-[a-z0-9]+(?:-[a-z0-9]+)*-\d{3,}$`)
 
@@ -74,8 +74,9 @@ node scripts/validate.mjs --docs examples/input-validation/fail/docs/frontend-wo
 | `no-input-id.md` | frontmatter 는 있으나 `input_id` 가 통째로 누락 | **에러**: `필수 frontmatter 누락: input_id (정본 입력 스키마)`. (`input_id` 가 없으므로 패턴/중복/파일명 검사는 적용되지 않는다) |
 | `draft-coupon.md` | `input_id` 가 `draft-coupon` 으로 패턴 위반 | **에러**: `input_id 형식 위반: 'draft-coupon' (기대 IN-{YYYYMMDD}-{source}-{NNN})` |
 | `IN-20260614-meeting-002.md` | `supersedes` 가 `IN-20260614-meeting-999`(존재하지 않음)를 가리킴 | **에러**: `supersedes 대상 'IN-20260614-meeting-999' 가 존재하지 않음` |
+| `IN-20260614-figma-003.md` | `supersedes` 가 자기 자신(`IN-20260614-figma-003`)을 가리킴 (self-reference) | **에러**: `supersedes 가 자기 자신을 가리킴: 'IN-20260614-figma-003' (이전 input_id 여야 함)` |
 
-`fail/` 합계: **에러 7건**(중복 2 + 누락 2 + input_id 누락 1 + 패턴 1 + dangling supersedes 1), 경고 1건(파일명≠input_id) → exit 1.
+`fail/` 합계: **에러 8건**(중복 2 + 누락 2 + input_id 누락 1 + 패턴 1 + dangling supersedes 1 + self-supersede 1), 경고 1건(파일명≠input_id) → exit 1.
 
 > 메시지 문자열은 `lib/input-artifact.mjs` 의 정본을 따른다. 위 표는 그 의도와 한 줄 요지를 적은 것이며,
 > 실제 출력 접두는 `[검사 11] <상대경로>: …` 형식이다.

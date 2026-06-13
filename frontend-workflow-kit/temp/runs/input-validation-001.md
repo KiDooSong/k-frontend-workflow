@@ -66,6 +66,8 @@
 | 3 | `input-validation/fail` | 1 | 1 | ✅ |
 | 4 | `reconciliation-validation/pass` | 0 | 0 | ✅ |
 | 5 | `reconciliation-validation/fail` | 1 | 1 | ✅ |
+| 5a | `reconciliation-validation/malformed-register` (Codex R1) | 1 | 1 | ✅ (필수 컬럼 누락 1건) |
+| 5b | `reconciliation-validation/no-register` (Codex R1) | 0 | 0 | ✅ (register 부재 NO-OP) |
 | 6 | `coupon-feature` baseline (정규 호출, `--root` 없음) | 0 | 0 | ✅ (검사 12종 통과, 회귀 없음) |
 | 6b | `coupon-feature` baseline (**`--root` 부가 시**) | 1 | 0 | ⚠️ 검사 11/12 무관 사전결함(검사 3 × `--root`) — §5 |
 
@@ -90,8 +92,9 @@ workflow:validate — OK (검사 12종 통과)
 ### 4.3 RUN 3 — input-validation/fail (exit 1, 검사 11 에러 7건 + 경고 1건)
 
 ```
-workflow:validate — 7 건 위반
+workflow:validate — 8 건 위반
   [검사 11] ...\inputs\IN-20260614-api-001.md: input_id 중복: 'IN-20260614-api-001' (2건) — input_id 는 전역 유일
+  [검사 11] ...\inputs\IN-20260614-figma-003.md: supersedes 가 자기 자신을 가리킴: 'IN-20260614-figma-003' (이전 input_id 여야 함)
   [검사 11] ...\inputs\IN-20260614-meeting-002.md: supersedes 대상 'IN-20260614-meeting-999' 가 존재하지 않음
   [검사 11] ...\inputs\IN-20260614-qa-001.md: 필수 frontmatter 누락: source_type (정본 입력 스키마)
   [검사 11] ...\inputs\IN-20260614-qa-001.md: 필수 frontmatter 누락: captured_by (정본 입력 스키마)
@@ -101,7 +104,7 @@ workflow:validate — 7 건 위반
   [경고 11] ...\inputs\api-001-dup.md: 파일명이 input_id 와 다름: 'api-001-dup' ≠ 'IN-20260614-api-001' (규약 {input_id}.md)
 ```
 
-> 모든 검사 11 에러 경로 커버: `input_id` 중복(중복 **양쪽 파일** 모두에 발화), `supersedes` dangling, required 누락(source_type·captured_by), `input_id` 형식 위반, `input_id` 자체 누락. 추가로 파일명≠input_id 경고.
+> 모든 검사 11 에러 경로 커버: `input_id` 중복(중복 **양쪽 파일** 모두에 발화), `supersedes` dangling·self-reference, required 누락(source_type·captured_by), `input_id` 형식 위반, `input_id` 자체 누락. 추가로 파일명≠input_id 경고. (self-reference 행은 Codex R1 반영 — §8.)
 
 ### 4.4 RUN 4 — reconciliation-validation/pass (exit 0, **비공허**)
 
@@ -180,3 +183,34 @@ node "C:/Users/thdrl/source/repos/k-frontend-workflow-wt-biv/frontend-workflow-k
 - **어떤 decision 도 닫지 않음** — register 검사는 읽기 전용, 자식 상태를 건드리지 않는다.
 - **입력 픽스처 semantics 무수정** — verify-only, 코드/픽스처 비변경.
 - **금지 파일 무변경** — package.json / readiness / workflow-state / forbidden-paths / frontmatter.schema.json / expected-after 트리.
+
+---
+
+## 8. Codex 리뷰 1차 반영 (2026-06-14)
+
+Codex 리뷰(HEAD 4a32b59)에서 나온 지적을 해소했다.
+
+| Codex 지적 | 심각도 | 조치 |
+|---|---|---|
+| 검사 12 가 register 8컬럼 스키마를 검증하지 않음(컬럼 누락 시 조용히 통과) | MAJOR | **해소** — `reconciliation-register.mjs` 에 필수 8컬럼 존재 검사 추가(검사 9 Open Decisions 와 같은 `hasHeader` 방식). 표 자체가 파싱 안 되면 `파싱 가능한 register 표 없음` 에러. Input ID/Reconcile Status 컬럼이 없으면 그 컬럼 의존 검사는 건너뛰어 빈값 에러 폭주 방지. |
+| `supersedes` self-reference(자기 `input_id` 가리킴) 통과 | MINOR | **해소** — `input-artifact.mjs` 에 self-supersede 에러 추가. |
+| 제안서 경로 부재 | NIT | **오해** — 리뷰 프롬프트가 잘못된 경로(`frontend-workflow-kit/temp/proposals/…`)를 줬다. 실제는 repo-root `temp/proposals/mvp-b-validation-candidates.md` 로 워크트리에 존재. 코드 무관. |
+
+추가 픽스처(Codex 커버리지 갭 반영):
+
+- `examples/reconciliation-validation/malformed-register/` — register 가 8컬럼 중 6개 누락 → 컬럼 누락 에러 1건(exit 1).
+- `examples/reconciliation-validation/no-register/` — inputs 있고 register 없음 → 검사 12 NO-OP(exit 0).
+- `examples/input-validation/fail/inputs/IN-20260614-figma-003.md` — supersedes self-reference → 검사 11 에러(fail 트리 에러 7→8).
+- 검사 11 의 inputs-부재 NO-OP 은 `coupon-feature`(inputs 없음) + baseline 회귀가 입증(README 명시).
+
+재검증(직접 실행, 모두 기대치 일치):
+
+| tree | exit | expected |
+|---|---|---|
+| input-validation/pass · warn · fail | 0 · 0 · 1 | ✅ (fail 에러 8건) |
+| reconciliation-validation/pass · fail | 0 · 1 | ✅ |
+| reconciliation-validation/malformed-register | 1 | ✅ (필수 컬럼 누락 1건) |
+| reconciliation-validation/no-register | 0 | ✅ (NO-OP) |
+| coupon-feature baseline (`--root` 없음) | 0 | ✅ 회귀 없음 |
+
+`node --check` 3개 파일 통과. HARD RULE(reconciled+자식-open=PASS, Created Items 미파싱)·번호(11/12)·금지 파일 무변경 불변.

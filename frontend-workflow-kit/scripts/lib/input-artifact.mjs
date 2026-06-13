@@ -138,9 +138,12 @@ export function validateInputArtifacts(artifacts) {
     }
 
     // --- supersedes 해소 ---
-    // null/빈값이면 검사하지 않는다(대체 안 함이 정상). 값이 있으면 inputs/ 의 실제 input_id 여야 한다.
+    // null/빈값이면 검사하지 않는다(대체 안 함이 정상). 값이 있으면 inputs/ 의 실제 input_id 여야 하고,
+    // 자기 자신을 가리킬 수 없다 — supersedes 는 '이전' 입력↔입력 축이다(self-supersede 무의미).
     if (!isEmptyValue(fm.supersedes)) {
-      if (!knownIds.has(fm.supersedes)) {
+      if (typeof id === 'string' && fm.supersedes === id) {
+        add(file, `supersedes 가 자기 자신을 가리킴: '${fm.supersedes}' (이전 input_id 여야 함)`);
+      } else if (!knownIds.has(fm.supersedes)) {
         add(file, `supersedes 대상 '${fm.supersedes}' 가 존재하지 않음`);
       }
     }
