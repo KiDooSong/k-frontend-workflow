@@ -2,6 +2,27 @@
 
 킷 자체의 버전 관리 (템플릿/스크립트 계약 추적용).
 
+## 0.2.0-mvp-b-phase0 — 2026-06-14
+
+MVP-B Phase 0: 회귀 하니스 + 경로 backstop + 입력/register 검증 (lanes A/B/C 통합). 대부분 warning-first — 기본 CI exit code 불변.
+
+### Added
+- scripts: `test-fixtures.mjs` (+ `lib/test-fixture.mjs`) — golden fixture 비교 하니스(MVP-B Phase 0). `reconcile`(raise-only 불변식) + integrity 검사. exit `0`/`1`/`2`, xfail witness(올바른 이유로 실패할 때만 증거 인정). (Lane A)
+- scripts: `forbidden-paths.mjs` (+ `lib/path-backstop.mjs`) — diff 기반 `forbidden_paths` backstop(2차 방어선). warning-first(기본 exit `0`, `--enforce` 시 위반은 exit `1`). `examples/path-backstop/` 픽스처 동반. (Lane B)
+- validate: 검사 11(입력 결과물 `inputs/*.md` frontmatter)·검사 12(Reconciliation Register) 추가 (+ `lib/input-artifact.mjs`, `lib/reconciliation-register.mjs`). 구조 검사=하드(exit `1`), 미처리(Reconcile Status `in-progress`/`failed`) 감지=warning-first(`--enforce` 로 하드). (Lane C)
+- templates: `work-packet/{work-packet,run-report,review-artifact}.template.md` — 설계/문서 템플릿(코드 강제 0, 여전히 Future Candidate).
+- docs: `docs/workflows/mvp-b.md` — MVP-B Phase 0 통합 노트.
+- ci/wiring: kit `example:test` alias + golden fixture CI step(`continue-on-error` = **warning-only**, 비차단); `workflow:forbidden-paths` alias(kit `package.json` + 소비 템플릿). (lane 배선분)
+
+### Changed
+- validate 총 검사 수: 검사 9종 → 12종. README·roadmap·open-decisions 의 live 카운트 갱신.
+- README/roadmap/open-decisions/input-reconciliation: `forbidden_paths` backstop·Reconciliation Register CI 강제의 "후속" 표현을 구현 상태(warning-first)로 정정.
+- `package-scripts.template.json`: 구현된 `forbidden-paths` 를 active `scripts` 로 추가(warning-first; CI 에서 `git diff` 컨텍스트로 호출).
+
+### Notes
+- `test-fixtures`: kit `example:test` alias + CI golden fixture step 배선됨(`continue-on-error: true` = **warning-only**, 비차단). 하드 gating 승격은 후속(FP율 확인 후). forbidden-paths 전용 CI step 도 후속(현재 alias 만).
+- 대부분 warning-first: 기본 exit code 불변, `--enforce` 로 하드 전환.
+
 ## 0.1.0-mvp-a — 2026-06-13
 
 MVP-A: 문서 생성 + readiness 판정 + 검사. (구현 명세 §11 MVP-A)
