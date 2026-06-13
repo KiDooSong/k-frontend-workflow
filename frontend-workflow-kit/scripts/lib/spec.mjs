@@ -150,7 +150,7 @@ export const COPY_KEYS_STATUS_VALUES = ['confirmed', 'draft', 'tbd'];
 // 같은 파서를 공유한다 (파싱 단일 출처). status 는 소문자 정규화한다.
 //   table    parseTable 결과 (없으면 null)
 //   headers  표 헤더 배열 (없으면 null)
-//   rows     [{ key, copy, status }] (key·status 모두 빈 행은 제외)
+//   rows     [{ key, copy, status }] (세 칸 모두 빈 행만 제외 — Status 만 빠진 행은 남겨 validate 가 잡게 한다)
 export function parseCopyKeys(sectionText) {
   const table = parseTable(sectionText);
   const rows = [];
@@ -159,7 +159,7 @@ export function parseCopyKeys(sectionText) {
       const key = (col(r, 'Key') || '').trim();
       const copy = (col(r, '문구') || '').trim();
       const status = (col(r, 'Status') || '').trim().toLowerCase();
-      if (!key && !status) continue; // 빈 행
+      if (!key && !copy && !status) continue; // 모든 칸이 빈 행만 제외
       rows.push({ key, copy, status });
     }
   }

@@ -297,7 +297,8 @@ function main() {
 
   // 10. Copy Keys Status enum (screen-spec.template.md 의 3-state 계약).
   //     confirmed=승인 확정(사람만 승격) · draft=입력제공·미확정(또는 존재가 open decision 에 달림) · tbd=문구 자체 미정.
-  //     draft 는 tbd 가 아니므로 copy_keys_has_tbd·tbd_count 에 집계되지 않는다(spec.mjs deriveMetrics).
+  //     draft·confirmed 는 copy_keys_has_tbd 를 켜지 않는다 — 오직 tbd 만(spec.mjs deriveMetrics).
+  //     (tbd_count 는 Copy Keys 와 무관하게 Unknowns 의 open 행에서 나온다.)
   //     stub(본문 없음)·템플릿 placeholder({…} 키) 행은 검사하지 않는다.
   for (const spec of specs) {
     if (isStub(spec)) continue;

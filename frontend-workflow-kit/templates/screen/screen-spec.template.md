@@ -78,7 +78,8 @@ last_reviewed: "{YYYY-MM-DD}"
        confirmed = 승인된 확정 문구. LLM 승격 금지 — 사람만 confirmed 로 올린다.
        draft     = 입력(기획·figma 등)이 제공한 문구지만 미확정/미승인, 또는 그 키의 존재가 open decision 에 달림.
                    값은 채우되 미확정 상태로 둔다. 입력이 라벨을 줬으면 LLM 은 draft 로 두고, confirmed 승격은 사람이 한다.
-       tbd       = 문구 자체가 미정. 값은 "TBD". copy_keys_has_tbd / tbd_count 신호의 집계 대상.
+       tbd       = 문구 자체가 미정. 값은 "TBD". 이 행만 copy_keys_has_tbd 신호를 켠다
+                   (tbd_count 는 Copy Keys 가 아니라 Unknowns 의 open 행에서 나온다 — 별개 지표).
      draft 는 값이 있으므로 tbd 가 아니다 → copy_keys_has_tbd 에 집계되지 않는다 (confirmed 도 미집계). -->
 | Key | 문구 | Status |
 |---|---|---|
