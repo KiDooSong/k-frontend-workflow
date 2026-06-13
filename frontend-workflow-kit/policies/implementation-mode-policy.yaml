@@ -1,0 +1,101 @@
+# 모드별 허용/금지 경로와 진입 조건 (기계가독).
+# readiness.mjs 가 이 파일 + workflow-state.yaml 을 읽어 화면별 readiness_mode 를 계산한다.
+# implement-screen 스킬과 pre-edit-mode-guard 훅은 readiness 출력을 소비만 한다 (판정 중복 금지).
+#
+# 조건 표현식 문법 (readiness.mjs 가 해석):
+#   <fact> >= <value>   상태/확신도 순서 비교 (missing<draft<...; unknown<candidate<confirmed)
+#   <fact> == <value>   동등 비교 (true/false/문자열)
+#   <fact> > <number>   수치 비교
+# 사용 가능한 fact 키:
+#   전역:  stub_screen_specs_count, navigation_map_status, component_catalog_generated
+#   화면:  screen_spec_status, screen_spec_authored, fake_hook_exists, figma_mapping_status,
+#          api_confidence_min, state_matrix_complete, interaction_matrix_complete
+#          (screen_spec_authored: stub=false 일 때 true. 본문이 작성됐는지)
+#   CI:    ci_lint, ci_schema_validation, state_coverage_complete, llm_semantic_review
+#          (로컬에 CI 결과가 없으면 미충족으로 본다)
+# 참고: frontend-workflow-kit-implementation.md §7
+
+version: 1
+
+# 낮은 모드 → 높은 모드. readiness 는 requires 가 모두 충족되는 가장 높은 모드를 고른다.
+order:
+  - docs-only
+  - route-skeleton
+  - screen-skeleton
+  - rough-fixture-ui
+  - final-fixture-ui
+  - api-integrated-ui
+  - production-ready
+
+modes:
+  # 항상 충족되는 기본 모드 (문서 작성만 허용)
+  docs-only:
+    requires: []
+    allowed_paths:
+      - docs/frontend-workflow/**
+    forbidden_paths:
+      - src/**
+
+  route-skeleton:
+    requires:
+      - stub_screen_specs_count > 0
+      - navigation_map_status >= draft
+    allowed_paths:
+      - src/app/**
+    forbidden_paths:
+      - src/features/**
+      - src/api/**
+
+  # 화면 골격(스크린 컴포넌트 자리)만. fixture/hook 이전 단계.
+  screen-skeleton:
+    requires:
+      - screen_spec_status >= draft
+    allowed_paths:
+      - src/features/{domain}/screens/**
+    forbidden_paths:
+      - src/api/**
+      - openapi.yaml
+
+  rough-fixture-ui:
+    requires:
+      - screen_spec_status >= draft
+      - screen_spec_authored == true # stub(frontmatter만)에는 full UI 금지 — "ScreenSpec 먼저" 강제
+      - component_catalog_generated == true
+      - fake_hook_exists == true
+    allowed_paths:
+      - src/features/{domain}/screens/**
+      - src/features/{domain}/components/**
+      - src/features/{domain}/hooks/**
+    forbidden_paths:
+      - src/api/**
+      - openapi.yaml
+
+  final-fixture-ui:
+    requires:
+      - screen_spec_status >= confirmed
+      - figma_mapping_status >= draft
+    allowed_paths:
+      - src/features/{domain}/screens/**
+      - src/features/{domain}/components/**
+    forbidden_paths:
+      - src/api/**
+
+  api-integrated-ui:
+    requires:
+      - api_confidence_min == confirmed
+      - state_matrix_complete == true
+    allowed_paths:
+      - src/features/{domain}/hooks/** # hook 내부 교체
+      - src/api/**
+    forbidden_paths:
+      - src/features/{domain}/screens/** # 화면은 건드리지 않는다 (fake hook 계약)
+
+  production-ready:
+    requires:
+      - ci_lint == pass
+      - ci_schema_validation == pass
+      - state_coverage_complete == true
+      - llm_semantic_review == pass
+    allowed_paths:
+      - src/**
+    forbidden_paths: []

@@ -1,0 +1,37 @@
+# GENERATED FILE — DO NOT EDIT
+# Source:  docs/frontend-workflow/domains/**/screen-spec.md (frontmatter + 본문)
+# Command: npm run workflow:state
+generated_at: 2026-06-13
+global:
+  navigation_map_status: draft
+  component_catalog_generated: true
+  stub_screen_specs_count: 2
+screens:
+  COUPON-001:
+    status: confirmed
+    domain: coupons
+    route: /(tabs)/coupons
+    stub: false
+    derived:
+      state_matrix_complete: true
+      interaction_matrix_complete: true
+      copy_keys_has_tbd: true
+      tbd_count: 3
+      unknown_count: 3
+      api_confidence_min: candidate
+      fake_hook_exists: true
+      figma_mapping_status: missing
+  COUPON-002:
+    status: draft
+    domain: coupons
+    route: /coupons/[id]
+    stub: true
+    derived:
+      state_matrix_complete: false
+      interaction_matrix_complete: false
+      copy_keys_has_tbd: false
+      tbd_count: 0
+      unknown_count: 0
+      api_confidence_min: null
+      fake_hook_exists: true
+      figma_mapping_status: missing

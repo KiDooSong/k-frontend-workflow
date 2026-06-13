@@ -1,0 +1,14 @@
+{
+  "//": "소비 프로젝트의 package.json scripts 에 병합한다. 킷은 tools/frontend-workflow/ 에 복사된다. 스킬/훅/CI 는 항상 이 이름으로 호출한다. MVP-A 는 state/readiness/validate 3개만 동작하고, 나머지는 B~D 단계에서 추가된다.",
+  "scripts": {
+    "workflow:state": "node tools/frontend-workflow/scripts/workflow-state.mjs",
+    "workflow:readiness": "node tools/frontend-workflow/scripts/readiness.mjs",
+    "workflow:validate": "node tools/frontend-workflow/scripts/validate.mjs",
+    "workflow:lint-gen": "node tools/frontend-workflow/scripts/lint-gen.mjs",
+    "workflow:lint-baseline": "node tools/frontend-workflow/scripts/lint-baseline.mjs",
+    "workflow:catalog": "node tools/frontend-workflow/scripts/catalog-gen.mjs",
+    "workflow:nav": "node tools/frontend-workflow/scripts/nav-graph.mjs",
+    "workflow:route-tree": "node tools/frontend-workflow/scripts/route-tree.mjs",
+    "workflow:check-generated": "node tools/frontend-workflow/scripts/check-generated-files.mjs"
+  }
+}

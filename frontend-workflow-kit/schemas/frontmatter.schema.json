@@ -1,0 +1,79 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "frontmatter.schema.json",
+  "title": "Frontend Workflow — 공통 frontmatter",
+  "description": "모든 authoring 문서가 공유하는 frontmatter 베이스라인. 타입별 추가 필수 필드는 artifact-manifest.yaml 의 required_frontmatter 가 강제한다 (validate 검사 2). 상태 모델은 frontend-llm-workflow-expanded.md §1.",
+  "type": "object",
+  "required": ["artifact_id", "artifact_type", "status"],
+  "additionalProperties": true,
+  "properties": {
+    "artifact_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "artifact_type": {
+      "type": "string",
+      "enum": [
+        "screen-spec",
+        "navigation-map",
+        "llm-rules",
+        "domain-rules",
+        "figma-component-mapping",
+        "component-guidelines",
+        "api-manifest"
+      ]
+    },
+    "domain": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$"
+    },
+    "screen_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "route": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "missing",
+        "draft",
+        "review",
+        "confirmed",
+        "implemented",
+        "verified",
+        "deprecated"
+      ]
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "ref"],
+        "properties": {
+          "type": { "type": "string" },
+          "ref": { "type": "string" }
+        }
+      }
+    },
+    "depends_on": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "last_reviewed": {
+      "type": "string",
+      "format": "date"
+    },
+    "approved_by": { "type": "string" },
+    "approved_at": { "type": "string", "format": "date" },
+    "decision_id": { "type": "string" },
+    "approval_source": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string" },
+        "ref": { "type": "string" }
+      }
+    }
+  }
+}

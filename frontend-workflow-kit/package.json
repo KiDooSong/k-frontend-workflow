@@ -1,0 +1,26 @@
+{
+  "name": "frontend-workflow-kit",
+  "version": "0.1.0-mvp-a",
+  "description": "LLM이 프론트 프로젝트를 환각 없이 진행하게 만드는 워크플로우 킷 (MVP-A: 문서 생성 + readiness 판정)",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "workflow-state": "scripts/workflow-state.mjs",
+    "workflow-readiness": "scripts/readiness.mjs",
+    "workflow-validate": "scripts/validate.mjs"
+  },
+  "scripts": {
+    "workflow:state": "node scripts/workflow-state.mjs",
+    "workflow:readiness": "node scripts/readiness.mjs",
+    "workflow:validate": "node scripts/validate.mjs",
+    "example:state": "node scripts/workflow-state.mjs --docs examples/coupon-feature/docs/frontend-workflow --src examples/coupon-feature/src --date 2026-06-13",
+    "example:readiness": "node scripts/readiness.mjs --docs examples/coupon-feature/docs/frontend-workflow",
+    "example:validate": "node scripts/validate.mjs --docs examples/coupon-feature/docs/frontend-workflow --src examples/coupon-feature/src"
+  },
+  "dependencies": {
+    "yaml": "^2.5.0"
+  }
+}
