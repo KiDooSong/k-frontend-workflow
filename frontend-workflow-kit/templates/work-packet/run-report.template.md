@@ -23,7 +23,7 @@ date: "{YYYY-MM-DD}"
 리드 문단(목적 1~2문장): {이 실행이 무엇을 했는지 — 예: "WP-... 를 fixture 복사본에서 실행하고 게이트 준수·멱등을 채점".}
 - 작업 디렉토리: `{temp/runs/{run_id}/...}` (examples 원본 무수정 — 복사본에서만 작업)
 - 게이트 단일 출처: `{readiness_source}` (`readiness.mjs` 출력)
-- 채점 기준: `{work-packet-rubric 경로}` (A~F)
+- 채점 기준: `temp/evaluations/work-packet-rubric.md` (필수 10 checks; Review Checklist 가 A~F 로 그룹 롤업)
 
 ## Summary
 <!-- 종합 판정 표. 컬럼·✅+근거구 관례는 implement-run-report.md 의 '종합 판정' 표를 따른다. -->
