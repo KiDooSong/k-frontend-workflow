@@ -196,7 +196,7 @@ temp/examples/work-packet-dry-run/
 **`review-artifact.template.md` — 검증 판정.** 한 packet+run-report 가 게이트·천장·불변식을 지켰는지 채점한다. frontmatter: `title`·`status`·`kind`(=review-artifact)·`packet_id`·`run_id`·`verdict`(approve/changes-requested/blocked)·`readiness_source`·`reviewer`·`date`. Checklist 는 Work Packet 의 `## Review Checklist` 를 그룹 롤업으로 미러 (10 checks → 7행).
 섹션: `## Verdict` → `## Reviewed Inputs` → `## Checklist`(A/B1/B2/B3/B4/E/F 행) → `## Violations` → `## Human-only Decisions Needed` → `## Recommended Fixes` → `## Do Not Auto-Fix`.
 
-> **주 — rubric.** 독립 rubric 은 `temp/evaluations/work-packet-rubric.md` 에 작성돼 있다 — `| Check | Pass Criteria | Failure Signal | Notes |` 표 + 필수 10 checks, hard`[H]`/soft`[S]` 2층 채점(`implement-screen-dry-run-checklist.md` 의 advisory-vs-hard 구분 계열). Work Packet 의 `## Review Checklist` 와 review-artifact 의 `## Checklist` 는 이 rubric 에 매핑된다. 다만 예제 run-report 들이 적은 "채점 기준 (A~F)" 표기는 `implement-screen` 채점표의 흔적이라 rubric 의 실제 구조(10 checks)와 라벨이 다르다 — 정합은 §12 open question. rubric 을 어느 디렉토리에 둘지·skill 채점 하니스로 승격할지도 §12.
+> **주 — rubric.** 독립 rubric 은 `temp/evaluations/work-packet-rubric.md` 에 작성돼 있다 — `| Check | Pass Criteria | Failure Signal | Notes |` 표 + 필수 10 checks, hard`[H]`/soft`[S]` 2층 채점(`implement-screen-dry-run-checklist.md` 의 advisory-vs-hard 구분 계열). Work Packet 의 `## Review Checklist` 와 review-artifact 의 `## Checklist` 는 이 rubric 에 매핑된다. 예제 run-report·review 는 이 rubric 을 채점 기준으로 참조하고, Review Checklist 의 A~F 행은 rubric 의 10 checks 를 그룹 롤업한 것이다(review-artifact.template.md 주석에 행→check 매핑). rubric 을 어느 디렉토리에 둘지·skill 채점 하니스로 승격할지는 §12 open question.
 
 ---
 
@@ -310,10 +310,10 @@ graduate 전에 명시적으로 결정해야 할 항목들:
    단일-화면 packet N개 vs 멀티-화면 packet 1개 중 무엇을 기본으로 할지, 도메인 경계(§7 옵션 C)와
    어떻게 맞물리는지 미결.
 
-6. rubric 정합 (§8 주)
-   work-packet-rubric.md 는 독립 파일로 작성됨(필수 10 checks, [H]/[S] 2층 채점). 남은 질문:
-   예제 run-report 의 "채점 기준 (A~F)" 라벨을 rubric 의 실제 10-check 라벨에 맞출지,
-   graduate 시 implement-screen-dry-run-checklist 식 입력별 PASS/PARTIAL/FAIL 집계 하니스로 승격할지.
+6. rubric 위치·승격 (§8 주)
+   work-packet-rubric.md 는 독립 파일로 작성됨(필수 10 checks, [H]/[S] 2층 채점); 예제의 A~F 행은
+   그 10 checks 의 그룹 롤업으로 매핑돼 있다. 남은 질문: rubric 을 어느 디렉토리에 둘지(temp/evaluations
+   vs 킷 내부) + graduate 시 implement-screen-dry-run-checklist 식 입력별 PASS/PARTIAL/FAIL 집계 하니스로 승격할지.
 
 7. 어떤 review status 가 readiness 를 내릴까 (장기)
    기존 초안 L433 의 질문 계승. 현재 답: 아무것도 안 내린다(게이트는 Open Decision+fact 뿐, roadmap L102).
