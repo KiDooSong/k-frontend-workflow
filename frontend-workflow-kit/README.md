@@ -52,6 +52,11 @@ examples/    coupon-feature (golden example, end-to-end 1회 완주)
 4. 문서는 `docs/frontend-workflow/` 에 템플릿을 복사해 만든다.
    **최소 부트스트랩**: `app/navigation-map.md`(템플릿) + 화면 하나의 `domains/{domain}/screens/{screen}/screen-spec.md`(stub=frontmatter만).
    screen-spec 의 `depends_on: [navigation-map]` 때문에 navigation-map 이 없으면 `workflow:validate` 검사 3 이 실패한다.
+5. (fixture-ui 모드로 진행할 때만) AsyncState 계약을 `src/lib/asyncState.ts` 에 둔다 —
+   `examples/coupon-feature/src/lib/asyncState.ts` 를 복사. fake hook(`useXxx`)이 이 계약을 반환해야
+   `rough-fixture-ui` 의 `fake_hook` 조건이 충족된다. (state/readiness/validate 만 쓰는 단계에서는 불필요.)
+
+> 경로 가정: 정책의 `src/app/**`·`src/features/{domain}/**`·`src/components/ui/**` 는 최신 Expo 기본 템플릿(`src/` 기반)과 정합한다 (실제 `create-expo-app` dry-run 으로 확인).
 
 스크립트는 설정 파일(manifest/policy/schema)을 **킷 위치 기준**으로 자동 해석하고,
 문서는 `--docs docs/frontend-workflow` (기본값)에서 읽는다.

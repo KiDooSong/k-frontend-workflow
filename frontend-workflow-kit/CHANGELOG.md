@@ -57,3 +57,5 @@ MVP-A: 문서 생성 + readiness 판정 + 검사. (구현 명세 §11 MVP-A)
 - **validate 검사 3 메시지에 해소 힌트 추가**: `depends_on 대상 부재`·`sources 링크 파일 부재` 에 "무엇이 틀렸나"뿐 아니라 "어떻게 고치나"(manifest 의 `template`→`path` 복사 안내)를 붙였다. readiness `next_actions` 와 동등한 actionability 확보.
 - **README 설치 절차 보강** (dry-run 반영): step 1 에 런타임 필수 디렉토리 vs 개발 전용(`examples/`·`*.html`·설계 `*.md`) 구분, step 4 에 **최소 부트스트랩**(navigation-map + screen-spec stub)과 `depends_on: [navigation-map]` 의존성 명시 — 신선한 소비 프로젝트에서 "문서 하나 만들자마자 검사 3 실패"하던 막힘 해소.
 - **implement-screen SKILL**: `workflow:readiness --json` 출력이 `{ "<screen_id>": {...} }` 형태임을 명시 — 스킬을 따르는 LLM 이 `readiness_mode` 를 최상위에서 찾다 못 찾는 혼동 차단.
+- **실제 Expo 프로젝트 dry-run 1회 완료** (`npx create-expo-app@latest --template default`): 정책 경로(`src/app/**`·`src/components/ui/**`)가 최신 Expo 기본 템플릿(`src/` 기반)과 정합함을 확인. 최소 부트스트랩 절차로 state→validate 가 첫 시도에 통과, 멱등성도 실제 프로젝트에서 성립. README 에 경로 정합 노트 추가.
+- **README: AsyncState 부트스트랩 안내**: fixture-ui 모드 진입 시 `src/lib/asyncState.ts`(= `fake_hook` 계약)를 `examples/coupon-feature/src/lib/asyncState.ts` 에서 복사하도록 step 5 추가. 이 계약이 예제에만 있어 소비자가 fixture-ui 로 넘어갈 때 빈손이던 갭 해소(state/readiness/validate 루프 자체는 영향 없음).
