@@ -19,15 +19,20 @@
 input-reconciliation/
   project-before/                 # 입력이 닿기 전의 baseline 문서 트리
     docs/frontend-workflow/        # 6개 화면 + global/_meta (트리 설명은 하위 README)
-  inputs/                          # 외부 입력 5건 (reconcile-input 의 입력)
+  inputs/                          # 외부 입력 5건 (reconcile-input 의 입력) — 파일명 = input_id
     IN-20260613-planning-001.md
     IN-20260613-figma-001.md
     IN-20260613-api-001.md
     IN-20260613-meeting-001.md
     IN-20260613-qa-001.md
-  expected-after/                  # 5건을 reconcile 한 뒤의 이상적 결과 (정답)
+  expected-llm-after/             # reconcile-input(LLM) 단독 출력 정답 (사람 닫기 전 — open/reopened/conflict/gap/simple-update)
+  expected-after/                  # 위에 사람 단계까지 끝낸 이상적 최종 상태 (human-final)
   reports/                         # reconciliation 요약 등 산출 리포트
 ```
+
+> **파일명 규약**: `inputs/` 의 각 파일명은 그 파일 frontmatter 의 `input_id` 와 **글자 그대로 같다**
+> (`IN-YYYYMMDD-{source}-NNN.md`). reconcile-input·register·리포트가 모두 `input_id` 로 입력을 참조하므로,
+> 파일명을 id 와 일치시키면 "어느 입력 파일이 어느 register 행인지"를 grep 한 번으로 추적할 수 있다.
 
 ## 5개 입력과 각자 테스트하는 것
 
@@ -56,8 +61,9 @@ fake hook·생성 카탈로그·figma 매핑·사람 승인을 더했을 때 도
 
 1. baseline 으로 `project-before/` 를 연다.
 2. `inputs/` 의 5건을 reconcile-input 에 입력한다.
-3. reconcile-input(LLM) 이 만든 결과를 `expected-after/` 와 대조한다.
-4. 단, reconcile-input 은 blocker 를 **올리기만** 한다 — 결정을 닫거나(resolved), 충돌을 닫거나, status 를 confirmed 로
-   승격하는 전이는 사람만 한다. `expected-after/` 는 사람이 닫는 결정까지 마친 **이상적 최종 상태**이므로,
-   LLM 단독 출력과 1:1 로 같지 않다. 어디까지가 LLM 몫이고 어디부터가 사람 몫인지는
-   `expected-after/README.md` 와 reconciliation 요약 리포트에 명시된다 (LLM-vs-human boundary).
+3. reconcile-input(LLM) 이 만든 결과를 **`expected-llm-after/` 와 1:1 로 대조한다.** 이것이 LLM 단독 출력의 정답지다
+   (decision/conflict 는 `open`·재오픈까지만, simple-update·gap 제안 반영, 닫기·승격·accept 는 없음).
+4. 그 다음 사람이 결정을 닫은 **이상적 최종 상태**는 `expected-after/` 다. reconcile-input 은 blocker 를 **올리기만** 하고
+   (결정 resolve·충돌 close·status confirmed 승격·gap accept 는 사람-전용), `expected-after/` 는 그 사람 단계까지 마친 트리다.
+   따라서 `expected-llm-after/` → (사람 결정) → `expected-after/` 순서이고, LLM 출력은 전자와 같아야 후자와는 다른 게 정상이다.
+   어디까지가 LLM 몫이고 어디부터가 사람 몫인지는 `expected-llm-after/README.md` 의 diff 표와 reconciliation 요약 리포트가 명시한다.

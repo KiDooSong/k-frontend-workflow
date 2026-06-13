@@ -9,7 +9,7 @@
 ```bash
 node scripts/workflow-state.mjs \
   --docs examples/input-reconciliation/project-before/docs/frontend-workflow \
-  --src  examples/input-reconciliation/project-before/__nosrc__ \
+  --src  examples/input-reconciliation/project-before/__no_src__ \
   --date 2026-06-13
 ```
 

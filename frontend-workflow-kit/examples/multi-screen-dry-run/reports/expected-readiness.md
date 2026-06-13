@@ -8,7 +8,9 @@
 
 ## 1) 실측 — md-only 게이트 출력 (검증됨)
 
-`node scripts/workflow-state.mjs --docs examples/multi-screen-dry-run/docs/frontend-workflow --src <nosrc> --date 2026-06-13` → `readiness`:
+`node scripts/workflow-state.mjs --docs examples/multi-screen-dry-run/docs/frontend-workflow --src examples/multi-screen-dry-run/__no_src__ --date 2026-06-13` → `readiness`:
+
+> `__no_src__` 는 **의도적으로 존재하지 않는** md-only src placeholder 다 (copy-paste 해 그대로 실행 가능). 디렉토리가 없으니 `fake_hook_exists=false` → fact 천장이 screen-skeleton 에 걸린다. 자세한 규약은 README "md-only src placeholder" 참고.
 
 | Screen ID | readiness_mode | next_mode | 게이트 근거 |
 |---|---|---|---|

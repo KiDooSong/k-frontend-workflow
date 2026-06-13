@@ -7,7 +7,7 @@
 ```bash
 node scripts/validate.mjs \
   --docs examples/multi-screen-dry-run/docs/frontend-workflow \
-  --src  examples/multi-screen-dry-run/__nosrc__
+  --src  examples/multi-screen-dry-run/__no_src__
 ```
 
 ## 예상 결과

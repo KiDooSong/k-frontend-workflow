@@ -9,7 +9,7 @@
 ```bash
 node scripts/workflow-state.mjs \
   --docs examples/multi-screen-dry-run/docs/frontend-workflow \
-  --src  examples/multi-screen-dry-run/__nosrc__ \
+  --src  examples/multi-screen-dry-run/__no_src__ \
   --date 2026-06-13
 ```
 

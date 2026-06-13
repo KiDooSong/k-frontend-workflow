@@ -57,3 +57,13 @@ fake hook·생성 카탈로그·figma 매핑·사람 승인을 더했을 때 도
 
 정확한 게이트 출력값과 blocking 사유는 `reports/expected-readiness.md` 를 단일 출처로 본다.
 target(design intent) 과 게이트 출력(actual)은 항상 라벨을 붙여 구분한다.
+
+## md-only src placeholder (`__no_src__`)
+
+이 fixture 의 `reports/*` 와 `_meta/*.snapshot.md` 에 적힌 실행 예시는 `--src` 인자로
+`examples/multi-screen-dry-run/__no_src__` 를 넘긴다.
+
+- **이 경로는 일부러 존재하지 않는다.** md-only fixture 라 `src/` 트리가 없고, 앞으로도 만들지 않는다(코드 미생성 원칙).
+- `<...>` 같은 꺾쇠 placeholder 대신 **실제 경로 모양의 placeholder** 를 쓰는 이유는, 명령을 그대로 **copy-paste 해서 실행**할 수 있게 하기 위해서다. 꺾쇠는 셸에서 리다이렉션으로 해석되거나 그대로 복사하면 깨진다.
+- `workflow-state.mjs` 는 이 경로가 없으면 단순히 `fake_hook_exists = false` 로 본다(에러 아님). 그래서 md-only fact 천장이 `screen-skeleton` 에 걸리고, 이 fixture 가 검증하려는 값이 그대로 재현된다.
+- 즉 `__no_src__` 는 "여기엔 src 가 없음을 명시하는, 실행 가능한 빈 자리표"다. 다른 이름으로 바꿔도 (존재하지 않기만 하면) 결과는 같지만, kit 전체가 이 한 가지 철자로 통일돼 있다.
