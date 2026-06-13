@@ -5,8 +5,11 @@
 > 처리 이력·결과·멱등성은 `Reconciliation Register` 가 담당하고, 결과 어휘(accepted/rejected/…)는
 > register 의 `Result` 에 둔다(`conflicts.template.md` 의 A/B 스키마는 손대지 않는다).
 > **2차 반영:** register 의 `Status` 를 `Reconcile Status`(reconcile 행위 라이프사이클)로 바꾸고
-> 자식 항목(C/D/U/INV/VER)의 open/closed 와 분리한다 — open decision 을 남기고 끝난 입력이
+> 자식 항목(C/D/U/G/INV/VER)의 open/closed 와 분리한다 — open decision 을 남기고 끝난 입력이
 > "미처리"로 오탐되어 코드 게이트가 계속 막던 문제를 차단한다.
+> **3차 반영:** `component-gap` 분류 추가 — 카탈로그에 없는 공통 컴포넌트가 필요한 입력(figma 등)은
+> 기존 `Component Gap Register`(Tier 1 아티팩트)에 `G-xxx` 를 `open` 으로 제안한다(제안만, accept 는 사람).
+> 새 산출물 축이 아니라 기존 레지스터에 reconcile 을 잇는 것이다. (골든 테스트 finding 반영)
 
 외부 입력 스킬이 저장한 새 입력 결과물을 기존 frontend-workflow 문서와 맞춰보고, 단순 반영인지, 결정 필요인지, 충돌인지 분류하는 단계다.
 
@@ -95,7 +98,7 @@ input_id 는 한 번 발급하면 불변이다.
 
 ## Reconciliation Register
 
-입력의 처리 이력과 결과를 한곳에 남기는 **살아있는 레지스터**다. `Unknowns`·`Open Decisions`·`Conflicts` 와 같은 mutable-status 표 가족이다(행은 지우지 않고 Status·Result 만 갱신한다). 엄밀한 append-only 불변 기록은 후속 `decision-log`/ADR 의 몫이고, 이 레지스터는 그보다 가볍다.
+입력의 처리 이력과 결과를 한곳에 남기는 **살아있는 레지스터**다. `Unknowns`·`Open Decisions`·`Conflicts` 와 같은 mutable-status 표 가족이다(행은 지우지 않고 Reconcile Status·Result 만 갱신한다). 엄밀한 append-only 불변 기록은 후속 `decision-log`/ADR 의 몫이고, 이 레지스터는 그보다 가볍다.
 
 저장 위치(예):
 
@@ -122,7 +125,7 @@ docs/frontend-workflow/inputs/reconciliation-register.md
 | Reconcile Status | **reconcile 행위의 라이프사이클**: `not-started` → `in-progress` → `reconciled` / `failed`. 자식 항목 상태의 rollup 이 아니다 |
 | Result | 처리 결과/대기 어휘: `accepted` / `rejected` / `delegated` / `pending user decision` / `conflict-created` 등. reject-input 의 사유도 여기 적는다 |
 | Touched Artifacts | 이 입력이 수정한 문서(ScreenSpec 등) |
-| Created Items | 이 입력이 만든/재오픈한 레지스터 항목(`C-…`, `D-…`, `U-…`, `INV-…`, `VER-…`). 링크만 남긴다 |
+| Created Items | 이 입력이 만든/재오픈한 레지스터 항목(`C-…`, `D-…`, `U-…`, `G-…`, `INV-…`, `VER-…`). 링크만 남긴다 |
 | Supersedes | 이 입력이 대체하는 **이전 입력**의 id (입력↔입력 축) |
 
 세 가지를 명확히 한다.
@@ -149,6 +152,7 @@ docs/frontend-workflow/inputs/reconciliation-register.md
       - 입력 vs 입력 충돌이면 Conflicts 에 기록한다 (그 자체로는 gate 아님 — 구현 형태를 가르면 Open Decision 도 함께 올린다).
       - resolved 결정에 도전하는 입력이면 Conflicts 에 이전 값을 남기고 해당 Open Decision 을 재오픈한다.
       - 검증 없이는 결정 불가면 Investigation/Verification 을 만들고(INV-/VER-), 막을 화면에 Open Decision 을 올린다 (investigation·Unknown 단독은 게이트가 아니다 — 게이트는 Open Decision).
+      - 카탈로그에 없는 공통 컴포넌트가 필요하면 Component Gap Register 에 `G-xxx` 를 `open` 으로 제안한다 (제안만 — accept 는 사람, 직접 생성 금지).
 10. Register 행을 `reconciled` 로 바꾸고 Result·Touched Artifacts·Created Items 를 채운다.
       자식 decision 이 열려 있어도 reconcile 자체는 끝난 것이다 (그 차단은 readiness 가 담당).
 11. workflow:state → workflow:readiness → workflow:validate 를 실행한다.
@@ -178,6 +182,7 @@ API schema / OpenAPI / API manifest
 | resolves-unknown | `Unknowns`의 사실 확인을 해결 | Unknown을 `resolved` 처리 |
 | resolves-decision | 열린 `Open Decision`에 대한 선택을 제공 | 사용자 확인 후 `resolved` 처리 |
 | new-decision | 새 선택이 필요함 | `Open Decisions`에 `open` 행 추가 |
+| component-gap | 카탈로그에 없는 새 공통 컴포넌트가 필요(주로 figma·디자인 입력) | `Component Gap Register`(`global/component-gap-register.md`)에 `G-xxx` 를 `open` 으로 **제안만**. accept(카탈로그 반영)·구현은 사람 (게이트 내림 계열). 새 공통 컴포넌트 직접 생성은 llm-rules 금지 |
 | investigation-needed | 검증·실험·플랫폼 확인 없이는 결정 불가 | Investigation/Verification 생성(INV-/VER-) + 막을 화면에 Open Decision 을 올림 (investigation·Unknown 단독은 게이트 아님 — 게이트는 Open Decision). 상세: `investigation-and-verification.md` |
 | conflict | 기존 입력/문서와 충돌 | `Conflicts`에 기록(resolved 결정과 충돌이면 decision 재오픈) |
 | scope-unclear | 영향 범위가 불명확 | 막아야 하면 `Open Decisions`(게이트), 단순 확인이면 `Unknowns`(fact-finding)로 남김 |
@@ -384,6 +389,7 @@ reconcile-input
 8.  decision/conflict 는 사용자에게 선택지를 제시한다.
       - resolved 결정과 충돌하면 Conflict 에 이전 값을 남기고 해당 decision 을 open 으로 재오픈한다.
       - 검증 없이는 결정 불가면 Investigation/Verification 을 만들고 막을 화면에 Open Decision 을 올린다 (Unknown 단독은 게이트 아님).
+      - 카탈로그에 없는 공통 컴포넌트가 필요하면 Component Gap Register 에 `G-xxx` 를 `open` 으로 제안한다 (accept 는 사람).
 9.  사용자 결정 후 문서를 업데이트한다.
 10. Register 행을 `reconciled` 로 바꾸고 Result·Touched Artifacts·Created Items 를 채운다 (자식 decision 이 open 이어도 reconcile 은 끝).
 11. workflow:state/readiness/validate 결과를 보고한다.
@@ -398,6 +404,7 @@ reconcile-input
 - 이전 결정 값을 조용히 덮어쓰기
 - Conflict 기록 없이 decision 만 바꾸기
 - confirmed 문서 임의 강등/승격
+- Gap 을 직접 accept 하거나 새 공통 컴포넌트를 직접 만들기   (제안=`open` 만, accept 는 사람)
 - 충돌을 조용히 덮어쓰기
 - Owner만 보고 사용자 판단 가능성을 배제하기
 - 입력을 수정하려고 같은 input_id 를 덮어쓰기   (새 id + supersedes)
