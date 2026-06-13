@@ -119,7 +119,12 @@ function main() {
     if (Array.isArray(fm.depends_on)) {
       for (const dep of fm.depends_on) {
         if (!dependencyResolves(dep, { knownArtifactIds, manifest, docsDir })) {
-          add(3, file, `depends_on 대상 부재: ${dep}`);
+          // 다음 행동 힌트: manifest 에 등록된 산출물이면 어디서 만들지 알려준다.
+          const entry = (manifest.artifacts || {})[dep];
+          const hint = entry?.template
+            ? ` → 해소: ${entry.template} 를 복사해 ${entry.path} 에 생성하세요`
+            : ` → 해소: depends_on 에서 '${dep}' 를 제거하거나 해당 문서를 생성하세요`;
+          add(3, file, `depends_on 대상 부재: ${dep}${hint}`);
         }
       }
     }
@@ -128,7 +133,7 @@ function main() {
       for (const s of fm.sources) {
         const ref = s?.ref;
         if (isLocalRef(ref) && !exists(path.resolve(projectRoot, ref))) {
-          add(3, file, `sources 링크 파일 부재: ${ref}`);
+          add(3, file, `sources 링크 파일 부재: ${ref} → 해소: 파일을 생성하거나 ref 를 올바른 경로로 고치세요 (외부 링크면 http(s):// 로)`);
         }
       }
     }

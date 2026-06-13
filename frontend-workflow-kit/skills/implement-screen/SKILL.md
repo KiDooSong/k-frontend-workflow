@@ -16,7 +16,8 @@ description: 지정된 Screen ID를 readiness gate가 허용하는 모드 범위
 1. **상태 집계**: `npm run workflow:state` 를 실행한다.
    (`_meta/workflow-state.yaml` / `screen-inventory.yaml` 갱신)
 
-2. **readiness 확인**: `npm run workflow:readiness -- --screen <ID> --json` 을 실행해 다음을 읽는다.
+2. **readiness 확인**: `npm run workflow:readiness -- --screen <ID> --json` 을 실행한다.
+   출력은 **screen_id 로 키가 감싸진 객체**다 (`{ "<ID>": { ... } }`) — `result["<ID>"]` 아래에서 읽는다:
    - `readiness_mode` — 현재 허용되는 최고 모드
    - `allowed_paths` / `forbidden_paths` — 수정 가능/금지 경로
    - `blocking` / `next_actions` — 진행을 막는 조건과 해소 액션

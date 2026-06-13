@@ -44,10 +44,14 @@ examples/    coupon-feature (golden example, end-to-end 1회 완주)
 
 ## 설치 (소비 프로젝트)
 
-1. 이 디렉토리 전체를 프로젝트의 `tools/frontend-workflow/` 로 복사한다.
+1. 이 디렉토리를 프로젝트의 `tools/frontend-workflow/` 로 복사한다.
+   런타임에 필요한 것은 `scripts/` `catalog/` `policies/` `schemas/` `templates/` `skills/` `package*.json` 뿐이다 —
+   `examples/` · `*.html` · 설계 `*.md`(open-decisions/roadmap 등)는 개발용이라 복사하지 않아도 된다.
 2. `tools/frontend-workflow/` 에서 `npm install` (의존성은 `yaml` 하나).
 3. `package-scripts.template.json` 의 `scripts` 를 프로젝트 `package.json` 에 병합한다.
-4. 문서는 `docs/frontend-workflow/` 에 생성한다 (템플릿을 복사해 채운다).
+4. 문서는 `docs/frontend-workflow/` 에 템플릿을 복사해 만든다.
+   **최소 부트스트랩**: `app/navigation-map.md`(템플릿) + 화면 하나의 `domains/{domain}/screens/{screen}/screen-spec.md`(stub=frontmatter만).
+   screen-spec 의 `depends_on: [navigation-map]` 때문에 navigation-map 이 없으면 `workflow:validate` 검사 3 이 실패한다.
 
 스크립트는 설정 파일(manifest/policy/schema)을 **킷 위치 기준**으로 자동 해석하고,
 문서는 `--docs docs/frontend-workflow` (기본값)에서 읽는다.

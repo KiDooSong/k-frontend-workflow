@@ -50,3 +50,10 @@ MVP-A: 문서 생성 + readiness 판정 + 검사. (구현 명세 §11 MVP-A)
 - **README "Readiness 정책" 절** 추가 — `implementation-mode-policy.yaml` 이 모드 사다리 단일 출처임을 명시 + 게이트 인벤토리 링크.
 - roadmap Tier 1 강화 후보에 **API↔스키마 1:1 매칭 검사**·**Interaction Matrix Result 컬럼 구조화** 추가(둘 다 MVP-B+, 지금 구현 안 함).
 - 반려(타당하지 않거나 의도된 결정): Entry Points generated marker 추가 제안 — 템플릿에 **이미 존재**(GitHub 가 HTML 주석을 렌더링 안 해 오판). component-gap-register 를 design/ 로 이동 — manifest·SKILL·llm-rules 가 **전부 global/ 로 일관**된 의도적 결정이라 유지.
+
+### MVP-A 닫기 (CI 고정 + dry-run 반영)
+- **GitHub Actions CI 추가** (`.github/workflows/frontend-workflow-kit.yml`): push/PR 에서 golden example 을 자동 검증한다. `example:state`/`readiness` 실행 후 **`git diff --exit-code` 멱등성 게이트**로 "생성기가 커밋된 `_meta` 산출물을 재현하는가"를 강제하고, 마지막에 `example:validate`(검사 8종). diff 게이트가 없으면 exit code 만으로는 "스크립트가 돈다"만 증명할 뿐 재현성은 증명하지 못한다(불변식 #7).
+- **`.gitattributes` 추가** (`eol=lf`): `core.autocrlf=true` 환경에서 CI 멱등성 diff 가 OS 간 줄바꿈 차이(Windows CRLF ↔ Linux LF)로 헛실패하지 않도록 줄바꿈을 결정적으로 고정.
+- **validate 검사 3 메시지에 해소 힌트 추가**: `depends_on 대상 부재`·`sources 링크 파일 부재` 에 "무엇이 틀렸나"뿐 아니라 "어떻게 고치나"(manifest 의 `template`→`path` 복사 안내)를 붙였다. readiness `next_actions` 와 동등한 actionability 확보.
+- **README 설치 절차 보강** (dry-run 반영): step 1 에 런타임 필수 디렉토리 vs 개발 전용(`examples/`·`*.html`·설계 `*.md`) 구분, step 4 에 **최소 부트스트랩**(navigation-map + screen-spec stub)과 `depends_on: [navigation-map]` 의존성 명시 — 신선한 소비 프로젝트에서 "문서 하나 만들자마자 검사 3 실패"하던 막힘 해소.
+- **implement-screen SKILL**: `workflow:readiness --json` 출력이 `{ "<screen_id>": {...} }` 형태임을 명시 — 스킬을 따르는 LLM 이 `readiness_mode` 를 최상위에서 찾다 못 찾는 혼동 차단.
