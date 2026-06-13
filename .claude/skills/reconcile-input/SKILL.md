@@ -43,7 +43,7 @@ description: 외부 입력 스킬이 저장한 새 입력 결과물(input_id 보
 | Type | Action |
 |---|---|
 | simple-update | 관련 문서 보강 |
-| resolves-unknown | Unknown을 `resolved` 처리 |
+| resolves-unknown | 답/근거를 Unknown 행에 연결하고 resolvable로 표시, Status는 `open` 유지. `resolved` 닫기는 사람 |
 | resolves-decision | 사용자 확인 후 Open Decision `resolved` (사람) |
 | new-decision | Open Decisions에 `open` 행 추가 |
 | component-gap | 카탈로그에 없는 공통 컴포넌트 필요 → Gap Register에 `G-xxx` `open` 제안 (accept는 사람) |
@@ -66,6 +66,7 @@ description: 외부 입력 스킬이 저장한 새 입력 결과물(input_id 보
 
 ## 금지
 - `resolved` 결정 재-resolve / 임의 변경 (재오픈=`open`으로 올리기는 가능, 재-resolve는 사람만).
+- Unknown을 `resolved`로 닫기 (답/근거 연결은 가능, 닫기는 사람만).
 - 이전 결정 값을 조용히 덮어쓰기 / Conflict 기록 없이 decision만 변경.
 - `confirmed` 문서 임의 강등·승격.
 - Gap을 직접 accept / 새 공통 컴포넌트 직접 생성 (제안=`open`만, accept는 사람).

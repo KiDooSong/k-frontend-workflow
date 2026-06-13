@@ -198,6 +198,7 @@ docs/frontend-workflow/_meta/reconciliation-register.md
 9.  결정 결과에 따라 문서를 업데이트한다.
       - 입력 vs 입력 충돌이면 Conflicts 에 기록한다 (그 자체로는 gate 아님 — 구현 형태를 가르면 Open Decision 도 함께 올린다).
       - resolved 결정에 도전하는 입력이면 Conflicts 에 이전 값을 남기고 해당 Open Decision 을 재오픈한다.
+      - Unknown 의 답을 제공하는 입력이면 출처와 근거를 기존 Unknown 에 연결하되 Status 는 `open` 으로 둔다 (`resolved` 는 사람 전용).
       - 검증 없이는 결정 불가면 Investigation/Verification 을 만들고(INV-/VER-), 막을 화면에 Open Decision 을 올린다 (investigation·Unknown 단독은 게이트가 아니다 — 게이트는 Open Decision).
       - 카탈로그에 없는 공통 컴포넌트가 필요하면 Component Gap Register 에 `G-xxx` 를 `open` 으로 제안한다 (제안만 — accept 는 사람, 직접 생성 금지).
 10. Register 행을 `reconciled` 로 바꾸고 Result·Touched Artifacts·Created Items 를 채운다.
@@ -226,7 +227,7 @@ API schema / OpenAPI / API manifest
 | Type | Meaning | Action |
 |---|---|---|
 | simple-update | 기존 방향과 충돌하지 않는 보강 | 관련 문서 업데이트 |
-| resolves-unknown | `Unknowns`의 사실 확인을 해결 | Unknown을 `resolved` 처리 |
+| resolves-unknown | `Unknowns`의 사실 확인에 답/근거를 제공 | 답/근거를 Unknown 행에 연결하고 resolvable 로 표시하되 Status 는 `open` 유지. `resolved` 닫기는 사람 전용 |
 | resolves-decision | 열린 `Open Decision`에 대한 선택을 제공 | 사용자 확인 후 `resolved` 처리 |
 | new-decision | 새 선택이 필요함 | `Open Decisions`에 `open` 행 추가 |
 | component-gap | 카탈로그에 없는 새 공통 컴포넌트가 필요(주로 figma·디자인 입력) | `Component Gap Register`(`global/component-gap-register.md`)에 `G-xxx` 를 `open` 으로 **제안만**. accept(카탈로그 반영)·구현은 사람 (게이트 내림 계열). 새 공통 컴포넌트 직접 생성은 llm-rules 금지 |
@@ -435,6 +436,7 @@ reconcile-input
 7.  자동 반영 가능한 simple-update 만 문서에 반영한다.
 8.  decision/conflict 는 사용자에게 선택지를 제시한다.
       - resolved 결정과 충돌하면 Conflict 에 이전 값을 남기고 해당 decision 을 open 으로 재오픈한다.
+      - Unknown 의 답을 제공하면 출처와 근거를 기존 Unknown 에 연결하되 Status 는 `open` 으로 둔다 (`resolved` 는 사람 전용).
       - 검증 없이는 결정 불가면 Investigation/Verification 을 만들고 막을 화면에 Open Decision 을 올린다 (Unknown 단독은 게이트 아님).
       - 카탈로그에 없는 공통 컴포넌트가 필요하면 Component Gap Register 에 `G-xxx` 를 `open` 으로 제안한다 (accept 는 사람).
 9.  사용자 결정 후 문서를 업데이트한다.
@@ -448,6 +450,7 @@ reconcile-input
 
 ```txt
 - resolved 결정 재-resolve / 임의 변경      (재오픈=open 으로 올리기는 가능, 재-resolve 는 사람만)
+- Unknown 을 `resolved` 로 닫기             (답/근거 연결은 가능, 닫기는 사람만)
 - 이전 결정 값을 조용히 덮어쓰기
 - Conflict 기록 없이 decision 만 바꾸기
 - confirmed 문서 임의 강등/승격

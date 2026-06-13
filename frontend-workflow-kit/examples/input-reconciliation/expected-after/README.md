@@ -11,11 +11,11 @@
 ## LLM-vs-human 경계 (중요)
 
 reconcile-input(LLM)은 blocker 를 **올리기만** 한다 — `open` 행 추가, resolved 결정을 `resolved → open` 으로 재오픈,
-충돌 기록, 갭 제안(`open`). simple-update(문서 형태가 바뀌지 않는 갱신)도 적용한다.
-그러나 결정을 `resolved` 로 닫거나, 충돌을 `resolved` 로 닫거나, status 를 `confirmed` 로 승격하거나, 갭을 `accepted` 로 받는 것은 **사람만** 한다.
+Unknown 답/근거 연결, 충돌 기록, 갭 제안(`open`). simple-update(문서 형태가 바뀌지 않는 갱신)도 적용한다.
+그러나 결정을 `resolved` 로 닫거나, 충돌을 `resolved` 로 닫거나, Unknown 을 `resolved` 로 닫거나, status 를 `confirmed` 로 승격하거나, 갭을 `accepted` 로 받는 것은 **사람만** 한다.
 
 이 `expected-after/` 는 사람이 닫는 결정까지 마친 **이상적 end state** 다.
-따라서 D-001 / D-003 / D-204 가 resolved 로, C-001 이 resolved 로 보이는 것은 **사람 단계의 결과**이지 LLM 단독 출력이 아니다.
+따라서 D-001 / D-003 / D-204 가 resolved 로, C-001 과 U-001 이 resolved 로 보이는 것은 **사람 단계의 결과**이지 LLM 단독 출력이 아니다.
 어느 단계가 LLM 몫이고 어느 단계가 사람 몫인지는 reports 의 reconciliation 요약이 단계별로 명시한다.
 나중 세션이 reconcile-input 만 돌린 출력과 이 트리를 비교할 때는, 그 차이가 "사람 단계"임을 감안해야 한다.
 
