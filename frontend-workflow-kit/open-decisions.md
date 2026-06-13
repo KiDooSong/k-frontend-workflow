@@ -311,7 +311,7 @@ MVP-A 안에 넣을 것 (✅ = 구현 완료):
 
 후속(B~D) 확장:
 
-- ✅ **validate Open Decisions 형식 검사**(검사 9) 구현됨 — 표 형식·`Status` enum·`Blocking Mode` 유효성·전역 ID 중복(resolved→Options 는 경고). 남은 것: `forbidden_paths` 경계 backstop 은 **diff 기반(CI)** 후속(트리 스캔은 공유 `src/api` 에 오탐).
+- ✅ **validate Open Decisions 형식 검사**(검사 9) 구현됨 — 표 형식·`Status` enum·`Blocking Mode` 유효성·전역 ID 중복(resolved→Options 는 경고). ✅ `forbidden_paths` 경계 backstop 구현(MVP-B Phase 0, diff 기반, warning-first — `scripts/forbidden-paths.mjs`).
 - **deferred + Reversible + Assumptions** — 셋은 상호의존(deferred 의 가정이 갈 곳이 Assumptions, 허용 여부를 가르는 게 Reversible)이라 **한 묶음으로 함께** 출시한다. `deferred` 역시 사람-전용 전이로 도입한다.
 - **decision-log.md** — resolved 결과를 전역 append-only 로 이관 + ADR 식 `superseded` 체인 + ScreenSpec frontmatter `decision_id` 연결 + `resolved↔log` 대응 검사.
 - **교차-화면 참조** — 한 결정이 여러 화면에 영향을 줄 때 전역 register 의 canonical 행 + 각 화면의 Refs 모델.

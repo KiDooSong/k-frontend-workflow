@@ -3,7 +3,7 @@
 LLM이 프론트 프로젝트를 **환각 없이** 진행하게 만드는 워크플로우 킷.
 "LLM이 추론하던 것을 파일로 고정한다" — 상태/판정/검사를 결정적 스크립트로 옮긴다.
 
-> 현재 단계: **MVP-A** (문서 생성 + readiness 판정 + 검사). lint-pack·Figma·생성뷰·훅은 이후 B~D.
+> 현재 단계: **MVP-A** 강제 코어 + **MVP-B Phase 0** 착수분(golden fixture 회귀 하니스 · forbidden_paths backstop[warning-first] · 입력/register 검증 검사 11·12). lint-pack·Figma·생성뷰·훅은 이후 B~D 잔여. ([docs/workflows/mvp-b.md](docs/workflows/mvp-b.md))
 > 설계 문서: [Core](../frontend-llm-workflow.md) · [확장판](../frontend-llm-workflow-expanded.md) ·
 > [스킬팩 개념](../frontend-workflow-skillpack-concept.md) · [구현 명세](../frontend-workflow-kit-implementation.md)
 > 입력 중 결정 대기 항목 분리: [Open Decisions](open-decisions.md)
@@ -16,7 +16,7 @@ LLM이 프론트 프로젝트를 **환각 없이** 진행하게 만드는 워크
 templates/   screen-spec(통합형+stub), navigation-map(뼈대), llm-rules, domain-rules,
              component-gap-register, conflicts (막힘 기록용 전역 레지스터),
              figma-component-mapping (화면별 figma 시각 매핑; reconcile-input 산출물)
-scripts/     workflow-state.mjs · readiness.mjs · validate.mjs   (이 3개뿐)
+scripts/     workflow-state.mjs · readiness.mjs · validate.mjs   (MVP-A 코어 3개)
 skills/      implement-screen
 schemas/     frontmatter.schema.json
 catalog/     artifact-manifest.yaml (등록분만)
@@ -24,15 +24,18 @@ policies/    implementation-mode-policy.yaml
 examples/    coupon-feature (golden example, end-to-end 1회 완주)
 ```
 
+> MVP-B Phase 0 추가분(warning-first/회귀): `scripts/forbidden-paths.mjs`(경로 backstop) · `scripts/test-fixtures.mjs`(golden fixture 회귀). 상세는 [docs/workflows/mvp-b.md](docs/workflows/mvp-b.md).
+
 ## 문서 지도
 
 각 문서가 **무엇을 정의하고, 그게 코드로 강제되는지**를 구분한다. "문서 계약만"인 항목은 아직 스크립트가 강제하지 않는다 — 설계 합의일 뿐 live 게이트가 아니다.
 
 | 문서 | 역할 | 티어 | 구현 상태 |
 |---|---|---|---|
-| [open-decisions.md](open-decisions.md) | 결정 대기 분리 + readiness cap | **Tier 1 (MVP-A 코어)** | ✅ 템플릿·파서·readiness 다운그레이드·validate 형식검사(검사 9) / forbidden_paths backstop 은 후속 |
+| [open-decisions.md](open-decisions.md) | 결정 대기 분리 + readiness cap | **Tier 1 (MVP-A 코어)** | ✅ 템플릿·파서·readiness 다운그레이드·validate 형식검사(검사 9) / forbidden_paths backstop ✅ 구현(warning-first, diff/CI) |
 | [input-reconciliation.md](input-reconciliation.md) | 새 입력 반영·충돌·`resolved→open` 재오픈 계약 | **Tier 2 (설계 계약)** | 📄 계약 동결 + reconcile-input 스킬 작성(리포-로컬 `.claude/skills/`, 절차 가이드일 뿐 코드 강제 0) — 킷 `skills/` vendor·hook·CI 후속 |
 | [investigation-and-verification.md](investigation-and-verification.md) | 장기 조사·플랫폼 검증·evidence 핸드오프 | **Tier 2 (설계 계약)** | 📄 문서 계약만 — 템플릿·manifest·readiness 파싱 후속 |
+| [docs/workflows/mvp-b.md](docs/workflows/mvp-b.md) | MVP-B Phase 0 통합 노트(lanes A/B/C) | **MVP-B Phase 0** | 🆕 회귀 하니스(하드)·경로 backstop/register 미처리(warning-first) |
 | `temp/work-packet-review-artifacts-proposal.md` (킷 외부) | Work Packet & Review Artifacts (리뷰 관문 흡수) | **Future Candidate** | 📝 설계 제안 초안(리포에 추적됨, 킷 미포함) |
 
 **Tier 1 — MVP-A 구현·강제됨:** 템플릿 · `scripts/`(workflow-state·readiness·validate) · schemas·catalog·policies · skills/implement-screen · Open Decisions readiness cap · golden example.
@@ -69,7 +72,11 @@ examples/    coupon-feature (golden example, end-to-end 1회 완주)
 ```bash
 npm run workflow:state       # frontmatter+본문 → _meta/workflow-state.yaml + screen-inventory.yaml
 npm run workflow:readiness   # 화면별 readiness_mode / allowed·forbidden paths / blocking
-npm run workflow:validate    # 검사 9종, exit 0/1 (CI 게이트)
+npm run workflow:validate    # 검사 12종, exit 0/1 (CI 게이트)
+
+# MVP-B Phase 0 추가 명령:
+npm run workflow:forbidden-paths -- --diff <file> --docs <dir>   # 경로 backstop (warning-first; --enforce 로 하드)
+npm run example:test                                             # golden fixture 회귀 하니스 (킷 내부; CI 는 warning-only)
 ```
 
 각 스크립트는 `--json` (스킬 파싱용), `--docs`, `--src` 플래그를 지원한다.
@@ -105,7 +112,7 @@ docs-only → route-skeleton → screen-skeleton → rough-fixture-ui
 ```bash
 npm run example:state       # examples/coupon-feature 에 _meta/*.yaml 생성
 npm run example:readiness   # COUPON-001=rough-fixture-ui, COUPON-002(stub)=screen-skeleton
-npm run example:validate    # 검사 9종 통과
+npm run example:validate    # 검사 12종 통과
 ```
 
 자세한 흐름은 [examples/coupon-feature/README.md](examples/coupon-feature/README.md).
