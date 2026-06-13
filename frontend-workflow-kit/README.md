@@ -29,7 +29,7 @@ examples/    coupon-feature (golden example, end-to-end 1회 완주)
 
 | 문서 | 역할 | 티어 | 구현 상태 |
 |---|---|---|---|
-| [open-decisions.md](open-decisions.md) | 결정 대기 분리 + readiness cap | **Tier 1 (MVP-A 코어)** | ✅ 템플릿·파서·readiness 다운그레이드 / validate 스키마 검사는 후속 |
+| [open-decisions.md](open-decisions.md) | 결정 대기 분리 + readiness cap | **Tier 1 (MVP-A 코어)** | ✅ 템플릿·파서·readiness 다운그레이드·validate 형식검사(검사 9) / forbidden_paths backstop 은 후속 |
 | [input-reconciliation.md](input-reconciliation.md) | 새 입력 반영·충돌·`resolved→open` 재오픈 계약 | **Tier 2 (설계 계약)** | 📄 문서 계약만 — reconcile-input 스킬·hook·CI 후속 |
 | [investigation-and-verification.md](investigation-and-verification.md) | 장기 조사·플랫폼 검증·evidence 핸드오프 | **Tier 2 (설계 계약)** | 📄 문서 계약만 — 템플릿·manifest·readiness 파싱 후속 |
 | `temp/work-packet-review-artifacts-proposal.md` (킷 외부) | Work Packet & Review Artifacts (리뷰 관문 흡수) | **Future Candidate** | 📝 설계 제안 초안(리포에 추적됨, 킷 미포함) |
@@ -68,7 +68,7 @@ examples/    coupon-feature (golden example, end-to-end 1회 완주)
 ```bash
 npm run workflow:state       # frontmatter+본문 → _meta/workflow-state.yaml + screen-inventory.yaml
 npm run workflow:readiness   # 화면별 readiness_mode / allowed·forbidden paths / blocking
-npm run workflow:validate    # 검사 8종, exit 0/1 (CI 게이트)
+npm run workflow:validate    # 검사 9종, exit 0/1 (CI 게이트)
 ```
 
 각 스크립트는 `--json` (스킬 파싱용), `--docs`, `--src` 플래그를 지원한다.
@@ -104,7 +104,7 @@ docs-only → route-skeleton → screen-skeleton → rough-fixture-ui
 ```bash
 npm run example:state       # examples/coupon-feature 에 _meta/*.yaml 생성
 npm run example:readiness   # COUPON-001=rough-fixture-ui, COUPON-002(stub)=screen-skeleton
-npm run example:validate    # 검사 8종 통과
+npm run example:validate    # 검사 9종 통과
 ```
 
 자세한 흐름은 [examples/coupon-feature/README.md](examples/coupon-feature/README.md).

@@ -224,15 +224,15 @@ COUPON-001:
 
 ## Validate 통합
 
-> **구현 상태**: MVP-A 의 실제 게이트는 위 Readiness 다운그레이드가 담당한다(✅ 구현됨). 아래 검사(형식 + 경로 backstop)는 **후속** — 현재 `validate.mjs` 는 Open Decisions 를 검사하지 않는다. 여기서는 "무엇을 검사할지" 계약만 고정한다.
+> **구현 상태**: 실제 게이트는 위 Readiness 다운그레이드가 담당한다(✅). **형식 검사는 `validate.mjs` 검사 9 로 구현됨(✅)**. **경로 backstop 은 diff 기반 후속** — 트리 스캔은 공유 `src/api` 같은 전역 forbidden 경로에 오탐(골든 예제에서 즉시 false-positive)이라 CI diff 와 결합해 도입한다.
 
-`validate.mjs` 가 수행할 형식 검사(후속):
+`validate.mjs` 형식 검사 (✅ 검사 9 구현):
 
-- `Open Decisions` 표가 있으면 필수 컬럼을 확인한다.
+- `Open Decisions` 표가 있으면(섹션에 내용이 있는데 표가 아니면 실패) 필수 컬럼을 확인한다.
 - `Status` 는 `open`, `resolved` 중 하나여야 한다.
-- `Blocking Mode` 는 정책 파일에 존재하는 모드여야 한다.
-- `ID` 는 **프로젝트 전역**에서 중복되면 안 된다 (screen-inventory 집계로 검사).
-- `Status=resolved` 인 항목은 `Options` 에 선택값 표시가 있어야 한다(약하게 시작 → 후속에 `Decision Result` 컬럼).
+- `Blocking Mode` 는 정책 파일에 존재하는 모드여야 한다(open 행은 docs-only floor 위여야 함).
+- `ID` 는 **프로젝트 전역**에서 중복되면 안 된다 (전 screen-spec 집계로 검사).
+- `Status=resolved` 인 항목은 `Options` 에 선택값 표시가 있어야 한다(**경고**로 시작 → 후속에 `Decision Result` 컬럼).
 
 경로 backstop (hook 없는 환경용 — 1차 방어는 다운그레이드):
 
@@ -311,7 +311,7 @@ MVP-A 안에 넣을 것 (✅ = 구현 완료):
 
 후속(B~D) 확장:
 
-- **validate Open Decisions 검사** — 표 형식·`Status` enum·`Blocking Mode` 유효성·전역 ID 중복, 그리고 `forbidden_paths` 경계 backstop(CI). MVP-A 의 실제 게이트는 readiness 다운그레이드(5번)이고, validate 는 아직 Open Decisions 를 검사하지 않는다(계약만 아래 Validate 절에 고정).
+- ✅ **validate Open Decisions 형식 검사**(검사 9) 구현됨 — 표 형식·`Status` enum·`Blocking Mode` 유효성·전역 ID 중복(resolved→Options 는 경고). 남은 것: `forbidden_paths` 경계 backstop 은 **diff 기반(CI)** 후속(트리 스캔은 공유 `src/api` 에 오탐).
 - **deferred + Reversible + Assumptions** — 셋은 상호의존(deferred 의 가정이 갈 곳이 Assumptions, 허용 여부를 가르는 게 Reversible)이라 **한 묶음으로 함께** 출시한다. `deferred` 역시 사람-전용 전이로 도입한다.
 - **decision-log.md** — resolved 결과를 전역 append-only 로 이관 + ADR 식 `superseded` 체인 + ScreenSpec frontmatter `decision_id` 연결 + `resolved↔log` 대응 검사.
 - **교차-화면 참조** — 한 결정이 여러 화면에 영향을 줄 때 전역 register 의 canonical 행 + 각 화면의 Refs 모델.

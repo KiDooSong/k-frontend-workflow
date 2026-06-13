@@ -41,7 +41,7 @@ fact_mode      정책 fact 로만 도달 가능한 최고 모드.
                (interaction_matrix_complete 는 fact 로 정의돼 있으나 어떤 requires 에도 안 쓰여 게이트가 아니다)
 decision_cap   열린 Open Decision 의 최저 Blocking Mode 바로 아래.
                (malformed Open Decision 은 fail-closed → docs-only 로 고정)
-validate       검사 8종, CI exit 0/1
+validate       검사 9종, CI exit 0/1
 ```
 
 게이트하지 **않는** 것 (= MVP-A 자동 차단 없음):
@@ -60,6 +60,7 @@ Review          MVP-A 에 없음 (Future Candidate).
 - `schemas/frontmatter.schema.json` · `catalog/artifact-manifest.yaml` · `policies/implementation-mode-policy.yaml`
 - `skills/implement-screen`
 - Open Decisions readiness cap — 저작 규칙 + **게이트 해제는 사람-전용** 불변식 (LLM 은 open 추가/재오픈만)
+- Open Decisions **validate 형식 검사**(검사 9) — 표 컬럼·`Status` enum·`Blocking Mode` 정책 모드·전역 ID 중복 (resolved→Options 는 경고)
 - golden example: `coupon-feature` (end-to-end 1회 완주)
 
 ## Tier 2 — 설계 계약 작성됨 / 코드 강제 후속
@@ -72,7 +73,7 @@ Review          MVP-A 에 없음 (Future Candidate).
 ## Tier 3 — 후속 / Later (구현 안 함)
 
 **Tier 1 강화:**
-- Open Decisions **validate 스키마 검사** (표 형식·`Status` enum·`Blocking Mode` 유효성·전역 ID 중복·`forbidden_paths` backstop)
+- ✅ Open Decisions validate **형식 검사** 구현됨(검사 9: 표·`Status`·`Blocking Mode`·전역 ID 중복). 남은 것: `forbidden_paths` 경계 backstop — **diff 기반(CI)** 후속(트리 스캔은 공유 `src/api` 에 오탐이라 부적합)
 - API Candidate ↔ zod/OpenAPI 스키마 **1:1 매칭 검사** (현재 validate 검사 8 은 스키마 *소스 존재*만 확인 — confirmed API → linked_schema → 실제 export → fixture 검증까지 강화. MVP-B)
 - Interaction Matrix **`Result` 컬럼 구조화** (Result Type/Target/Params 분리 → `Result Type=route` 행만 route 존재 검사. 현재는 단일 Result 컬럼에 자연어·route 혼재)
 - decision-log.md 전역 이관 · deferred+Reversible+Assumptions 묶음 · 교차-화면 참조 (open-decisions.md 후속 절)
@@ -87,9 +88,9 @@ Review          MVP-A 에 없음 (Future Candidate).
 
 ## 다음 구현 후보 (하나를 명시적으로 고를 때만 착수)
 
-1. Open Decisions validate 스키마 검사 — Tier 1 강화
-2. reconcile-input 스킬 — Tier 2 구현 첫발
-3. Work Packet & Review Artifacts 최소 도입 — Future Candidate
+1. reconcile-input 스킬 — Tier 2 구현 첫발
+2. Work Packet & Review Artifacts 최소 도입 — Future Candidate
+3. Open Decisions `forbidden_paths` 경계 backstop (diff/CI 기반) — Tier 1 강화 잔여
 
 *이번 세션 완료: 템플릿 재오픈 정렬 · README 문서 지도 · roadmap 신설 · Unknown 게이트 정합화 · 범위 3티어 재정리.*
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// validate.mjs — 검사 8종 (impl §8). exit code 0/1 로 CI 게이트가 된다.
+// validate.mjs — 검사 9종 (impl §8). exit code 0/1 로 CI 게이트가 된다.
 //   1. frontmatter ↔ frontmatter.schema.json
 //   2. artifact-manifest 기준 필수 frontmatter 누락
 //   3. 끊어진 참조 (depends_on 대상 부재, sources 로컬 파일 부재)
@@ -8,6 +8,8 @@
 //   6. do_not_edit 산출물의 GENERATED 헤더/마커 훼손
 //   7. confirmed 문서의 승인 메타데이터(approved_by/approved_at) 누락
 //   8. API Candidates 가 confirmed 인데 zod 스키마/OpenAPI 부재
+//   9. Open Decisions 형식 (표 컬럼·Status enum·Blocking Mode 정책 모드·전역 ID 중복; resolved→Options 는 경고)
+//      ※ forbidden_paths 경계 backstop 은 diff 기반(후속) — 트리 스캔은 공유 src/api 에 오탐. open-decisions.md "Validate 통합" 참조.
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
@@ -26,6 +28,8 @@ import {
   loadScreenSpec,
   parseApiCandidates,
   interactionResultRoutes,
+  parseOpenDecisions,
+  hasHeader,
   isStub,
 } from './lib/spec.mjs';
 
@@ -75,10 +79,16 @@ function main() {
   const projectRoot = flags.root ? path.resolve(flags.root) : path.dirname(srcDir);
   const manifest = loadYaml(path.resolve(flags.manifest || DEFAULTS.manifest)) || {};
   const schema = JSON.parse(readFileSafe(path.resolve(flags.schema || DEFAULTS.schema)) || '{}');
+  // 정책: 검사 9 의 Blocking Mode 유효성(정책 모드명인지)에 쓴다. 게이트 판정은 readiness 단일 출처.
+  const policy = loadYaml(path.resolve(flags.policy || DEFAULTS.policy)) || {};
 
   const errors = [];
   const add = (check, file, message) =>
     errors.push({ check, file: path.relative(projectRoot, file), message });
+  // 경고: exit code 에 영향 없는 약한 권장(현재 resolved→Options 선택값). open-decisions.md 의 "약하게 시작".
+  const warnings = [];
+  const warn = (check, file, message) =>
+    warnings.push({ check, file: path.relative(projectRoot, file), message });
 
   // --- authoring 문서 수집 (docs/ 하위, _meta 제외) ---
   const mdFiles = walkFiles(docsDir, ['.md']).filter(
@@ -217,6 +227,61 @@ function main() {
     }
   }
 
+  // 9. Open Decisions 형식 검사 (open-decisions.md "Validate 통합")
+  //    표 필수 컬럼 · Status enum(open|resolved) · Blocking Mode 정책 모드 · 전역 ID 중복.
+  //    resolved→Options 선택값은 약한 권장이라 경고. (forbidden_paths backstop 은 diff 기반 후속)
+  const policyModes =
+    (policy.order && policy.order.length ? policy.order : Object.keys(policy.modes || {})) || [];
+  const REQUIRED_OD_COLS = ['ID', 'Decision Needed', 'Options', 'Blocking Mode', 'Owner', 'Status'];
+  const odIdGlobal = new Map(); // 전역 ID 집계 (화면 간 중복 검사)
+  for (const spec of specs) {
+    const section = spec.sections['open decisions'];
+    if (section === undefined) continue;
+    const od = parseOpenDecisions(section);
+    if (!od.table) {
+      if (od.sectionHasContent) {
+        add(
+          9,
+          spec.path,
+          'Open Decisions 섹션에 내용이 있으나 파싱 가능한 표가 없음 → 해소: 템플릿의 6컬럼 표(| ID | Decision Needed | Options | Blocking Mode | Owner | Status |) 형식을 사용하세요',
+        );
+      }
+      continue;
+    }
+    const missingCols = REQUIRED_OD_COLS.filter((c) => !hasHeader(od.headers, c));
+    if (missingCols.length) {
+      add(9, spec.path, `Open Decisions 표 필수 컬럼 누락: ${missingCols.join(', ')}`);
+    }
+    for (const r of od.rows) {
+      const label = r.id || '(no-id)';
+      const status = r.status.toLowerCase();
+      if (!r.id) {
+        add(9, spec.path, `Open Decision 행에 ID 누락 (Decision: ${r.decisionNeeded || '?'}) → 해소: 전역 유일한 D-xxx ID 부여`);
+      }
+      if (status !== 'open' && status !== 'resolved') {
+        add(9, spec.path, `Open Decision ${label}: Status 는 open|resolved 여야 함 (현재: ${r.status || '(빈값)'})`);
+      }
+      if (r.blockingMode) {
+        if (!policyModes.includes(r.blockingMode)) {
+          add(9, spec.path, `Open Decision ${label}: Blocking Mode '${r.blockingMode}' 가 정책 모드가 아님 → 해소: ${policyModes.join(' / ')} 중 하나`);
+        } else if (status === 'open' && policyModes.indexOf(r.blockingMode) === 0) {
+          add(9, spec.path, `Open Decision ${label}: Blocking Mode '${r.blockingMode}' 는 floor(docs-only)라 막을 수 없음 → 해소: 그 위 모드 지정`);
+        }
+      } else if (status === 'open') {
+        add(9, spec.path, `Open Decision ${label}: open 행에 Blocking Mode 누락 → 해소: 막을 최소 모드 지정`);
+      }
+      if (status === 'resolved' && !r.options) {
+        warn(9, spec.path, `Open Decision ${label}: resolved 인데 Options 에 선택값 표시 없음 (권장: '→ 선택값')`);
+      }
+      if (r.id) odIdGlobal.set(r.id, (odIdGlobal.get(r.id) || 0) + 1);
+    }
+  }
+  for (const [id, n] of odIdGlobal) {
+    if (n > 1) {
+      add(9, path.join(docsDir, 'domains'), `Open Decision ID 전역 중복: ${id} (${n}건) → 결정당 canonical 행 1개`);
+    }
+  }
+
   // --- 6. do_not_edit 생성물 헤더/마커 무결성 ---
   for (const [name, entry] of Object.entries(manifest.artifacts || {})) {
     if (entry.kind !== 'generated' || entry.do_not_edit !== true) continue;
@@ -233,14 +298,20 @@ function main() {
   // --- 결과 출력 ---
   if (flags.json) {
     process.stdout.write(
-      JSON.stringify({ ok: errors.length === 0, count: errors.length, errors }, null, 2) + '\n',
+      JSON.stringify({ ok: errors.length === 0, count: errors.length, errors, warnings }, null, 2) +
+        '\n',
     );
-  } else if (errors.length === 0) {
-    process.stdout.write('workflow:validate — OK (검사 8종 통과)\n');
   } else {
-    process.stdout.write(`workflow:validate — ${errors.length} 건 위반\n`);
-    for (const e of errors) {
-      process.stdout.write(`  [검사 ${e.check}] ${e.file}: ${e.message}\n`);
+    if (errors.length === 0) {
+      process.stdout.write('workflow:validate — OK (검사 9종 통과)\n');
+    } else {
+      process.stdout.write(`workflow:validate — ${errors.length} 건 위반\n`);
+      for (const e of errors) {
+        process.stdout.write(`  [검사 ${e.check}] ${e.file}: ${e.message}\n`);
+      }
+    }
+    for (const w of warnings) {
+      process.stdout.write(`  [경고 ${w.check}] ${w.file}: ${w.message}\n`);
     }
   }
   process.exit(errors.length === 0 ? 0 : 1);

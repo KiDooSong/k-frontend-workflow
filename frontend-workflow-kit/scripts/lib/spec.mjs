@@ -102,6 +102,45 @@ function col(row, name) {
   return undefined;
 }
 
+// 헤더 존재 여부 (느슨한 매칭). validate 의 필수 컬럼 검사용.
+export function hasHeader(headers, name) {
+  const want = name.toLowerCase().replace(/\s+/g, '');
+  return (headers || []).some((h) => h.toLowerCase().replace(/\s+/g, '') === want);
+}
+
+// Open Decisions 섹션을 구조화해 반환한다 — deriveMetrics(readiness 분류)와
+// validate(형식 검사)가 같은 파서를 공유한다 (파싱 단일 출처).
+//   table            parseTable 결과 (없으면 null)
+//   headers          표 헤더 배열 (없으면 null)
+//   rows             [{ id, status, blockingMode, decisionNeeded, options, owner }] (빈 행 제외)
+//   sectionHasContent 섹션에 실질 내용이 있는데 파싱 가능한 표가 없는가 (불릿/문장/깨진 표)
+export function parseOpenDecisions(sectionText) {
+  const table = parseTable(sectionText);
+  const rows = [];
+  if (table) {
+    for (const r of table.rows) {
+      const id = (col(r, 'ID') || '').trim();
+      const status = (col(r, 'Status') || '').trim();
+      const blockingMode = (col(r, 'Blocking Mode') || '').trim();
+      const decisionNeeded = (col(r, 'Decision Needed') || '').trim();
+      const options = (col(r, 'Options') || '').trim();
+      const owner = (col(r, 'Owner') || '').trim();
+      if (!id && !status && !blockingMode && !decisionNeeded) continue; // 빈 행
+      rows.push({ id, status, blockingMode, decisionNeeded, options, owner });
+    }
+  }
+  let sectionHasContent = false;
+  if (sectionText && !table) {
+    const lines = stripComments(sectionText)
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+    sectionHasContent =
+      !(lines.length === 0 || (lines.length === 1 && /^(없음|none|n\/a|-)$/i.test(lines[0])));
+  }
+  return { table, headers: table?.headers || null, rows, sectionHasContent };
+}
+
 export function loadScreenSpec(specPath) {
   const raw = readFileSafe(specPath);
   const { data, body, hasFrontmatter, parseError } = splitFrontmatter(raw);
@@ -180,48 +219,34 @@ export function deriveMetrics(spec, opts = {}) {
   // validate 형식검사가 후속이라, 구조적 결함(누락 ID/Status, open|resolved 아닌 Status,
   // open 인데 Blocking Mode 누락)을 조용히 버리지 않고 surface 한다 —
   // readiness 가 fail-closed 로 막을 수 있게 (오타 하나로 게이트가 풀리는 fail-open 방지).
-  const odSection = sections['open decisions'];
-  const odTable = parseTable(odSection);
+  const od = parseOpenDecisions(sections['open decisions']);
   const blockingDecisions = [];
   const malformedDecisions = [];
-  if (odTable) {
-    for (const r of odTable.rows) {
-      const id = (col(r, 'ID') || '').trim();
-      const status = (col(r, 'Status') || '').trim().toLowerCase();
-      const bm = (col(r, 'Blocking Mode') || '').trim();
-      const dn = (col(r, 'Decision Needed') || '').trim();
-      if (!id && !status && !bm && !dn) continue; // 빈 행
-      if (status === 'resolved') continue; // 닫힌 결정은 blocker 가 아니다
-      if (status === 'open' && id && bm) {
-        blockingDecisions.push({
-          id,
-          decision_needed: dn,
-          blocking_mode: bm,
-          owner: (col(r, 'Owner') || '').trim(),
-        });
-      } else {
-        malformedDecisions.push({
-          id: id || '(no-id)',
-          blocking_mode: bm || '(none)',
-          status: status || '(none)',
-        });
-      }
-    }
-    blockingDecisions.sort((a, b) => String(a.id).localeCompare(String(b.id)));
-    malformedDecisions.sort((a, b) => String(a.id).localeCompare(String(b.id)));
-  } else if (odSection) {
-    // 표가 파싱되지 않았다. 섹션에 실질 내용(불릿/문장/깨진 표)이 있는데 결정이 0개면
-    // fail-open 이므로 malformed 로 surface 한다. 빈 섹션이나 "없음" 명시는 예외.
-    const lines = stripComments(odSection)
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0);
-    const isEmptyOrNone =
-      lines.length === 0 || (lines.length === 1 && /^(없음|none|n\/a|-)$/i.test(lines[0]));
-    if (!isEmptyOrNone) {
-      malformedDecisions.push({ id: '(unparsable-decisions)', blocking_mode: '(none)', status: '(none)' });
+  for (const r of od.rows) {
+    const status = r.status.toLowerCase();
+    if (status === 'resolved') continue; // 닫힌 결정은 blocker 가 아니다
+    if (status === 'open' && r.id && r.blockingMode) {
+      blockingDecisions.push({
+        id: r.id,
+        decision_needed: r.decisionNeeded,
+        blocking_mode: r.blockingMode,
+        owner: r.owner,
+      });
+    } else {
+      malformedDecisions.push({
+        id: r.id || '(no-id)',
+        blocking_mode: r.blockingMode || '(none)',
+        status: status || '(none)',
+      });
     }
   }
+  // 표가 파싱되지 않았는데 섹션에 실질 내용(불릿/문장/깨진 표)이 있으면 fail-open 이므로
+  // malformed 로 surface 한다 (빈 섹션이나 "없음" 명시는 예외 — parseOpenDecisions 가 판정).
+  if (od.sectionHasContent) {
+    malformedDecisions.push({ id: '(unparsable-decisions)', blocking_mode: '(none)', status: '(none)' });
+  }
+  blockingDecisions.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  malformedDecisions.sort((a, b) => String(a.id).localeCompare(String(b.id)));
 
   // API Candidates: 항목 중 가장 낮은 confidence
   const apiConfidenceMin = minApiConfidence(sections['api candidates']);
