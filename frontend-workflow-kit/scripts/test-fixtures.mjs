@@ -34,6 +34,7 @@ import {
   runIntegrityChecks,
   runPipelineChecks,
   writePipelineExpected,
+  runPathBackstopCase,
 } from './lib/test-fixture.mjs';
 import { buildState } from './workflow-state.mjs';
 import { computeReadiness } from './readiness.mjs';
@@ -44,6 +45,8 @@ const EXAMPLES = path.join(KIT_ROOT, 'examples');
 const RUNS = path.join(REPO_ROOT, 'temp', 'runs');
 const GOLDEN_IR = path.join(EXAMPLES, 'input-reconciliation', 'expected-llm-after');
 const VALIDATE_SCRIPT = path.join(KIT_ROOT, 'scripts', 'validate.mjs');
+const PB_ROOT = path.join(EXAMPLES, 'path-backstop');           // forbidden-paths 픽스처 루트
+const FORBIDDEN_PATHS = path.join(KIT_ROOT, 'scripts', 'forbidden-paths.mjs'); // Lane B CLI(서브프로세스 실행 대상)
 
 // input-reconciliation golden(expected-llm-after) 의 stage=llm-after manifest.
 // 검사 대상 ID·기대 상태(올리기만 불변식). golden 의 실제 파일에서 확인한 값:
@@ -115,7 +118,42 @@ function readRunMeta(runId, runDir) {
   return meta;
 }
 
-// fixture 목록 구성 — kind: reconcile | integrity | pipeline.
+// path-backstop fixture 선언 읽기 (examples/path-backstop/cases.json). 부재면 [](하위호환 — 이 종류 생략).
+// 깨진 JSON / 필수 필드(diff·state·expect.exit) 누락은 조용히 넘기지 않고 설정 오류로 던진다(main 이 exit 2).
+// 경로(diff·state)는 PB_ROOT 기준 상대 → 절대경로로 해석(서브프로세스 cwd 무관).
+function readPathBackstopCases() {
+  const raw = readFileSafe(path.join(PB_ROOT, 'cases.json'));
+  if (raw == null) return [];
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    throw new Error(`path-backstop/cases.json JSON 파싱 실패: ${e.message}`);
+  }
+  const cases = Array.isArray(parsed) ? parsed : parsed && parsed.cases;
+  if (!Array.isArray(cases)) {
+    throw new Error('path-backstop/cases.json 에 cases 배열이 없음');
+  }
+  return cases.map((c, i) => {
+    if (!c || typeof c.diff !== 'string' || typeof c.state !== 'string' ||
+        !c.expect || typeof c.expect.exit !== 'number') {
+      throw new Error(`path-backstop/cases.json[${i}] 형식 오류 (diff·state·expect.exit 필수): ${JSON.stringify(c)}`);
+    }
+    return {
+      id: c.id || `path-backstop-${i}`,
+      kind: 'path-backstop',
+      expectVerdict: 'pass',
+      reason: c.note || '',
+      scriptPath: FORBIDDEN_PATHS,
+      diff: path.join(PB_ROOT, c.diff),
+      docs: path.join(PB_ROOT, c.state),
+      enforce: c.enforce === true,
+      expect: { exit: c.expect.exit, violations: c.expect.violations },
+    };
+  });
+}
+
+// fixture 목록 구성 — kind: reconcile | integrity | pipeline | path-backstop.
 function buildFixtures() {
   const fixtures = [];
 
@@ -185,6 +223,9 @@ function buildFixtures() {
     });
   }
 
+  // path-backstop fixtures (forbidden-paths CLI 회귀 — cases.json 선언, 부재면 생략)
+  for (const pb of readPathBackstopCases()) fixtures.push(pb);
+
   return fixtures;
 }
 
@@ -238,6 +279,8 @@ function runFixture(fx, update) {
     } else {
       res = runPipelineChecks({ expectedDir: fx.expectedDir, actual });
     }
+  } else if (fx.kind === 'path-backstop') {
+    res = runPathBackstopCase(fx);
   } else {
     res = { checks: [{ check: 'kind', ok: false, message: `unknown fixture kind: ${fx.kind}` }], failed: 1 };
   }

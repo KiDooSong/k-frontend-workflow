@@ -1,0 +1,18 @@
+{
+  "//": "forbidden-paths.mjs 회귀 픽스처의 기대판정(머신리더블 단일 출처). test-fixtures.mjs(kind:path-backstop)가 각 케이스를 서브프로세스로 실행해 exit code 와 위반 수를 대조한다. 근거: README.md 표 + lib/path-backstop.mjs 도출, 2026-06-14 실측. diff·state 경로는 이 디렉터리(examples/path-backstop) 기준. expect.violations 는 exit 0/1 에서만(=fail-closed exit 2 는 생략).",
+  "cases": [
+    { "id": "case1-api-write/uncleared", "diff": "diffs/case1-api-write.txt", "state": "docs/frontend-workflow", "expect": { "exit": 0, "violations": 2 }, "note": "src/api 쓰기 2건 · 프로젝트 미cleared → 경고 2 (warning-first)" },
+    { "id": "case1-api-write/enforce", "diff": "diffs/case1-api-write.txt", "state": "docs/frontend-workflow", "enforce": true, "expect": { "exit": 1, "violations": 2 }, "note": "동일 + --enforce → 차단(exit 1)" },
+    { "id": "case1-api-write/cleared", "diff": "diffs/case1-api-write.txt", "state": "cleared/docs/frontend-workflow", "expect": { "exit": 0, "violations": 0 }, "note": "프로젝트가 api-integrated-ui 도달 → 침묵 (프로젝트 단위 clearance)" },
+    { "id": "case2-screen-allowed", "diff": "diffs/case2-screen-allowed.txt", "state": "docs/frontend-workflow", "expect": { "exit": 0, "violations": 0 }, "note": "feature 화면 경로는 비guarded" },
+    { "id": "case3-generated-docs", "diff": "diffs/case3-generated-docs.txt", "state": "docs/frontend-workflow", "expect": { "exit": 0, "violations": 0 }, "note": "docs/_meta 는 비guarded" },
+    { "id": "case4-rough-to-final-samepath", "diff": "diffs/case4-rough-to-final-samepath.txt", "state": "docs/frontend-workflow", "expect": { "exit": 0, "violations": 0 }, "note": "같은-경로 품질 승격 — forward 게이트 담당, backstop 침묵" },
+    { "id": "case6-rename", "diff": "diffs/case6-rename.txt", "state": "docs/frontend-workflow", "expect": { "exit": 0, "violations": 1 }, "note": "rename-IN(src/api 새 경로)만 위반 · 옛 경로·삭제는 침묵(writes-only)" },
+    { "id": "case7-openapi", "diff": "diffs/case7-openapi.txt", "state": "docs/frontend-workflow", "expect": { "exit": 0, "violations": 1 }, "note": "openapi.yaml 을 allow 하는 모드 없음 → 변경 시 항상 플래그" },
+    { "id": "case8-malformed", "diff": "diffs/case8-malformed.txt", "state": "docs/frontend-workflow", "expect": { "exit": 2 }, "note": "rename 행 필드 손상(R100 + 2필드) → DiffParseError → exit 2 (fail-closed)" },
+    { "id": "case9-typechange", "diff": "diffs/case9-typechange.txt", "state": "docs/frontend-workflow", "expect": { "exit": 0, "violations": 1 }, "note": "T(typechange) 도 쓰기로 취급 → src/api 미cleared 위반 1" },
+    { "id": "case9-typechange/enforce", "diff": "diffs/case9-typechange.txt", "state": "docs/frontend-workflow", "enforce": true, "expect": { "exit": 1, "violations": 1 }, "note": "동일 + --enforce → 차단(exit 1)" },
+    { "id": "case10-bad-status", "diff": "diffs/case10-bad-status.txt", "state": "docs/frontend-workflow", "expect": { "exit": 2 }, "note": "손상 토큰 D123 → DiffParseError → exit 2 (D 로 오분류·무음 drop 금지 witness)" },
+    { "id": "malformed-state", "diff": "diffs/case1-api-write.txt", "state": "malformed-state/docs/frontend-workflow", "expect": { "exit": 2 }, "note": "손상 state YAML → exit 2 (부재와 동일 입력오류 범주; stack trace+exit 1 로 새면 안 됨)" }
+  ]
+}
