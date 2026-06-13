@@ -41,3 +41,5 @@ MVP-A: 문서 생성 + readiness 판정 + 검사. (구현 명세 §11 MVP-A)
 - golden example `llm-rules.md` 동기화 — 이전엔 Open Decisions 저작 규칙·게이트 무결성 불변식 자체가 누락되어 있었음(coupon-list 는 D-001~003 을 쓰는데 정작 그 규칙이 예제 LLM 룰에 없던 불일치).
 - **README 문서 지도** 추가 — 문서별 역할·MVP 상태·구현 상태(코드 강제 vs 문서 계약만)를 표로 분리. "새 문서가 곧 강제됨"이라는 오해 차단.
 - **`roadmap-current.md` 신설** — 구현됨 / 설계만 / 후속 / 다음 후보 / 지금 하지 말 것 을 한 파일로 고정.
+- **Unknown 은 자동 게이트 아님 정합화**: input-reconciliation·investigation·open-decisions·roadmap 의 "Open Decision/Unknown 게이트" 표현을 코드(정책 fact + Open Decision `decision_cap`)에 맞춰 정정. 열린 Unknown 은 어떤 모드도 막지 않으므로 "Unknown 으로 막는다"는 silent fail-open 이었음. Unknown 을 fact-finding 큐 + 승격 사다리(사실→Unknown / 방향막힘→Open Decision / 장기검증→Investigation)로 명문화.
+- **MVP-A 범위 3티어 재정리**: README·roadmap 을 Tier 1(구현·강제) / Tier 2(설계 계약, 코드 후속) / Future Candidate 로 분리하고 **게이트 인벤토리**(정확히 무엇을 막고 무엇을 안 막는가) 추가. Review Gates 를 독립 축에서 "Work Packet & Review Artifacts" Future Candidate 로 흡수.
