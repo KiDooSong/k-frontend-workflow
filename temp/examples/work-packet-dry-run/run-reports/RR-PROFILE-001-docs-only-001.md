@@ -20,10 +20,12 @@ date: "2026-06-14"
 
 # Run Report: WP-PROFILE-001-docs-only-001
 
+> **예시 (md-only) —** 이 Run Report 는 실제 실행 로그가 아니라, 이 packet 을 실행하면 나올 보고서의 *형태*를 보여 주는 작성 모델이다. 아래 명령·exit code·diff·`✅` 는 예시값이며 이 디렉토리에서 실제로 돌려 얻은 산출물이 아니다 (README 머리말 참조).
+
 `WP-PROFILE-001-docs-only-001` 을 `multi-screen-dry-run` fixture 복사본에서 실행하고, 게이트 준수·거절 동작·멱등을 채점한 결과다. requested_mode 가 `screen-skeleton` 이지만 readiness 천장이 `docs-only` 라, **구현하지 않고 D-301 blocker 를 보고하고 멈추는 것**이 정답이었고 그대로 관측됐다 (src 변경 0, 빈 diff).
 - 작업 디렉토리: `temp/runs/wp-profile-001-docs-only-001/` (examples 원본 무수정 — 복사본에서만 작업)
 - 게이트 단일 출처: `frontend-workflow-kit/examples/multi-screen-dry-run/reports/expected-readiness.md` (§1 실측 — PROFILE-001 행, `readiness.mjs` 출력)
-- 채점 기준: `frontend-workflow-kit/templates/work-packet/` work-packet-rubric (A~F)
+- 채점 기준: `temp/evaluations/work-packet-rubric.md` (필수 10 checks; Review Checklist 가 A~F 로 그룹 롤업)
 
 ## Summary
 <!-- 종합 판정 표. 컬럼·✅+근거구 관례는 implement-run-report.md 의 '종합 판정' 표를 따른다. -->

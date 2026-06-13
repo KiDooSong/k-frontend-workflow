@@ -17,10 +17,12 @@ date: "2026-06-14"
   - 게이트/경로는 readiness_source 를 그대로 소비한다 (재계산 금지).
   - 리뷰어는 Open Decision / Conflict / Unknown 을 닫지 못한다 — 사람-전용 불변식.
   - 위반은 근거(파일·라인·diff)와 함께 기록한다. 추측으로 메우지 않는다.
-  - Checklist 는 work-packet-rubric / Work Packet 의 Review Checklist 와 1:1 정합.
+  - Checklist 는 work-packet-rubric 의 10개 check 를 그룹 롤업해 Work Packet 의 Review Checklist 와 정합시킨다 (1:1 아님 — 그룹 매핑).
 -->
 
 # Review Artifact: WP-PROFILE-001-docs-only-001
+
+> **예시 (md-only) —** 이 Review Artifact 는 실제 채점 기록이 아니라, Review 가 어떤 형태여야 하는지 보여 주는 작성 모델이다. verdict·`✅`·근거는 예시값이다 (README 머리말 참조).
 
 ## Verdict
 <!-- 셋 중 하나. changes-requested/blocked 면 Violations 또는 Human-only Decisions 에 근거가 있어야 한다.
@@ -34,7 +36,7 @@ date: "2026-06-14"
 - Work Packet: `temp/examples/work-packet-dry-run/packets/WP-PROFILE-001-docs-only-001.md`
 - Run Report: `temp/examples/work-packet-dry-run/run-reports/RR-PROFILE-001-docs-only-001.md`
 - readiness output / run-report 게이트 출처: `frontend-workflow-kit/examples/multi-screen-dry-run/reports/expected-readiness.md` (§1 실측 — PROFILE-001 행)
-- ScreenSpec (정본): `examples/multi-screen-dry-run/docs/frontend-workflow/domains/profile/screens/profile-edit/screen-spec.md`
+- ScreenSpec (정본): `frontend-workflow-kit/examples/multi-screen-dry-run/docs/frontend-workflow/domains/profile/screens/profile-edit/screen-spec.md`
 
 ## Checklist
 <!-- rubric 매핑. 한 행이라도 Failure Signal 관측 시 불합격으로 기록하고 Violations 에 근거를 남긴다.

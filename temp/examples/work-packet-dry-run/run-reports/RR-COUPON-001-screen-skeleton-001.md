@@ -20,10 +20,12 @@ date: "2026-06-14"
 
 # Run Report: WP-COUPON-001-screen-skeleton-001
 
+> **예시 (md-only) —** 이 Run Report 는 실제 실행 로그가 아니라, 이 packet 을 실행하면 나올 보고서의 *형태*를 보여 주는 작성 모델이다. 아래 명령·exit code·diff·해시·`✅` 는 예시값이며 이 디렉토리에서 실제로 돌려 얻은 산출물이 아니다 (README 머리말 참조).
+
 WP-COUPON-001-screen-skeleton-001 을 fixture 복사본에서 실행하고, screen-skeleton 천장 안에서 COUPON-001 화면 shell 1개를 생성한 뒤 게이트 준수·미닫힘·멱등을 채점한다. requested_mode == readiness_mode == `screen-skeleton` 이라 정상 진행 시나리오다.
 - 작업 디렉토리: `temp/runs/work-packet-coupon-001-001/...` (examples 원본 무수정 — 복사본에서만 작업)
 - 게이트 단일 출처: `frontend-workflow-kit/examples/multi-screen-dry-run/reports/expected-readiness.md` (`readiness.mjs` 출력)
-- 채점 기준: `frontend-workflow-kit/templates/work-packet/` Review Checklist + work-packet-rubric (A~F)
+- 채점 기준: `temp/evaluations/work-packet-rubric.md` (필수 10 checks; Review Checklist 가 A~F 로 그룹 롤업)
 
 ## Summary
 <!-- 종합 판정 표. 컬럼·✅+근거구 관례는 implement-run-report.md 의 '종합 판정' 표를 따른다. -->

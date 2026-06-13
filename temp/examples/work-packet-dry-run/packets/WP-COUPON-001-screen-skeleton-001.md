@@ -19,7 +19,7 @@ owner: "implement-screen-agent"
   - readiness 를 재계산하지 않는다 — readiness output(또는 run-report)을 그대로 소비한다.
   - allowed_paths / forbidden_paths 는 readiness output 에서 그대로 복사한다 (재유도 금지).
   - 이 packet 은 Open Decision / Conflict / Unknown 을 닫지 않는다. 나열만 하고 "닫지 말 것"으로 둔다.
-  - requested_mode 가 readiness_mode 보다 높으면 이 packet 은 무효 — 천장은 readiness_mode 다.
+  - requested_mode 가 readiness_mode 보다 높아도 packet 은 유효하다 — 천장은 readiness_mode 이고, 초과분은 거절+blocker 보고로 처리한다 (예: docs-only 거절). requested_mode 는 권한이 아니라 요청 기록일 뿐 — 무효화는 readiness_source 의 mode/facts 가 바뀔 때만.
   - 판정 단일 출처: readiness.mjs. 이 packet 은 그 출력을 옮기는 인덱스/핸드오프 보드다.
 -->
 
@@ -35,7 +35,7 @@ owner: "implement-screen-agent"
 
 ## Must Read
 <!-- 복사하지 말고 링크만. 구현자는 정본을 직접 읽는다. -->
-- ScreenSpec (정본): `examples/multi-screen-dry-run/docs/frontend-workflow/domains/coupons/screens/coupon-list/screen-spec.md`
+- ScreenSpec (정본): `frontend-workflow-kit/examples/multi-screen-dry-run/docs/frontend-workflow/domains/coupons/screens/coupon-list/screen-spec.md`
 - readiness output / run-report: `frontend-workflow-kit/examples/multi-screen-dry-run/reports/expected-readiness.md`
 - 관련 정책: `frontend-workflow-kit/policies/implementation-mode-policy.yaml`
 - (해당 시) Open Decisions / Conflicts: ScreenSpec `## Open Decisions` 표 (정본) · `global/conflicts.md` (현재 해당 없음)
@@ -81,6 +81,8 @@ src/app/**                             # allowed 밖 — route-skeleton 경로 (
 | component_catalog_generated | missing-fact | `component_catalog_generated == false` (catalog 가 `.snapshot.md`, 미생성) | rough-fixture-ui | agent | 전제 충족 전까지 상위 모드 금지 |
 | fake_hook_exists | missing-fact | `fake_hook_exists == false` (md-only fixture, `src/` 없음) | rough-fixture-ui | agent | 전제 충족 전까지 상위 모드 금지 |
 
+> **Blocking Mode** = 이 항목이 cap 하는(도달을 막는) 모드. decision·missing-fact 는 cap 모드를 갖지만 unknown(U-001)은 모드를 직접 cap 하지 않아 `—` 로 둔다 (close 는 그래도 사람-전용).
+
 <!-- 주: D-001(final-fixture-ui cap)·D-003(api-integrated-ui cap) 은 둘 다 천장(screen-skeleton)보다 상위 모드를
      막는 항목이라 이 세션 진행을 막지 않는다. 그러나 진행을 막지 않는다는 것이 "닫아도 된다"는 뜻은 아니다 — 전부 open 유지. -->
 
@@ -115,7 +117,7 @@ npm run workflow:validate    # 스키마/구조 검사 9종 (exit 0 = 통과)
 - [ ] `npm run workflow:validate` exit 0, 재실행 멱등 (재생성물 외 빈 diff).
 
 ## Review Checklist
-<!-- 리뷰어 확인 항목. work-packet-rubric 과 1:1 정합 (review-artifact.template.md 의 Checklist 가 이를 미러). -->
+<!-- 리뷰어 확인 항목. work-packet-rubric 의 10개 check 를 그룹으로 롤업한 것 (1:1 아님 — 한 줄이 여러 rubric check 를 묶는다). review-artifact.template.md 의 Checklist 가 이를 미러. -->
 - [ ] **게이트 판독** — readiness_mode/allowed/forbidden 이 `expected-readiness.md` (COUPON-001 행)과 글자 일치 (재계산·hand-edit 없음).
 - [ ] **경로 준수** — diff 가 allowed 안에만, forbidden(특히 `src/api/**`) 무접촉.
 - [ ] **천장 미초과** — `screen-skeleton` 가 허용하는 산출물(shell only)만 (과구현 없음).
