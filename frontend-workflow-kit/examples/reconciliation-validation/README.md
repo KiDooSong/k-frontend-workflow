@@ -1,7 +1,7 @@
 # reconciliation-validation — Check 12 (reconciliation-register 검증) 예제
 
 `scripts/validate.mjs` 의 **Check 12**(reconciliation-register 검증)를 시연하는 픽스처다.
-두 트리(`pass/`, `fail/`)는 둘 다 **Check 11**(input frontmatter)도 통과하도록 모든 입력이 정본 스키마에 맞게 작성됐다 — 그래서 출력은 사실상 Check 12 결과만 보인다.
+주요 두 트리(`pass/`, `fail/`)는 둘 다 **Check 11**(input frontmatter)도 통과하도록 모든 입력이 정본 스키마에 맞게 작성됐다 — 그래서 출력은 사실상 Check 12 결과만 보인다. 추가로 `malformed-register/`(8컬럼 스키마 위반)와 `no-register/`(register 부재 NO-OP) 트리가 엣지 케이스를 덮는다.
 
 > **헤드라인 가드 (candidate 6 의 핵심):**
 > `Reconcile Status = reconciled` 인 행은 **자식 항목(C-/D-/U-/G-)이 `open` 이어도 통과한다.**
@@ -23,6 +23,12 @@ node scripts/validate.mjs --docs examples/reconciliation-validation/pass/docs/fr
 
 # FAIL — exit 1 기대 (Check 12 위반 5건 + 경고 1건)
 node scripts/validate.mjs --docs examples/reconciliation-validation/fail/docs/frontend-workflow
+
+# malformed-register — exit 1 기대 (8컬럼 필수 컬럼 누락 1건)
+node scripts/validate.mjs --docs examples/reconciliation-validation/malformed-register/docs/frontend-workflow
+
+# no-register — exit 0 기대 (register 부재 → Check 12 NO-OP)
+node scripts/validate.mjs --docs examples/reconciliation-validation/no-register/docs/frontend-workflow
 ```
 
 JSON 출력이 필요하면 `--json` 을 덧붙인다. 종료 코드 확인:
@@ -65,11 +71,28 @@ node scripts/validate.mjs --docs examples/reconciliation-validation/fail/docs/fr
 
 > 중복(qa-001)은 정수로 1건 메시지에 `(2행)` 으로 집계돼 표시되므로, 화면에는 중복 에러가 1줄로 나타날 수 있다. 핵심은 같은 input_id 가 register 에 2행 존재한다는 점이다.
 
+## malformed-register/ — exit 1 (8컬럼 스키마 위반)
+
+register 표가 필수 컬럼을 빠뜨린 경우. `Input ID | Reconcile Status` 2컬럼만 두고 나머지 6개(Source / Classification / Result / Touched Artifacts / Created Items / Supersedes)를 생략했다.
+
+| 파일 | 기대 결과 |
+|---|---|
+| `_meta/reconciliation-register.md` | **ERROR**: `Reconciliation Register 표 필수 컬럼 누락: Source, Classification, Result, Touched Artifacts, Created Items, Supersedes` |
+
+행 자체(`IN-20260614-planning-001` = reconciled, 대응 input 존재)는 유효하므로 다른 에러/경고는 없다 → **에러 1건, exit 1**. (8컬럼 스키마 단일 출처: `input-reconciliation.md`. 형식 검사 방식은 검사 9 Open Decisions 와 동일.)
+
+## no-register/ — exit 0 (Check 12 NO-OP)
+
+`inputs/` 에 유효한 입력 2건(`IN-20260614-planning-001`, `IN-20260614-figma-001`)이 있으나 `_meta/reconciliation-register.md` 가 **없다**. → Check 11 은 입력을 검증(통과), Check 12 는 register 부재로 **NO-OP** → **exit 0**. register 미도입(초기) 단계가 정상임을 입증하는 가드다.
+
+> Check 11 의 역방향 NO-OP(`inputs/` 자체가 없을 때 Check 11 이 조용히 통과)은 `inputs/` 가 없는 기존 예제(`examples/coupon-feature`)와 baseline 회귀 실행이 입증한다.
+
 ## 어떻게 동작하는가 (Check 12 활성화 조건)
 
 - **ACTIVATION**: `_meta/reconciliation-register.md` 가 **없으면** Check 12 는 NO-OP(에러/경고 없음) — `inputs/` 에 파일이 있어도 그렇다 (초기/선택 채택, `input-reconciliation.md` 의 "초기에는 hard fail 이 아니라").
 - register 가 있으면: frontmatter 분리 → 본문 → `parseTable`(첫 마크다운 표 = 8컬럼 register).
 - 컬럼은 느슨한 헤더 매칭: `Input ID | Source | Classification | Reconcile Status | Result | Touched Artifacts | Created Items | Supersedes`.
+- register 표는 **필수 8컬럼 존재**를 확인한다(누락 시 `필수 컬럼 누락` 에러; 검사 9 Open Decisions 와 같은 방식). 표가 아예 파싱되지 않으면 `파싱 가능한 register 표 없음` 에러.
 - 두 트리의 register 본문에는 register 표 **뒤에** 산문/메모 표가 더 있을 수 있으나, `parseTable` 은 **첫 표만** 읽으므로 register 만 검사된다.
 - MISSING ROW 크로스체크는 Check 11 이 모은 `inputs/*.md`(`input_id` 보유) 와 register 행을 대조하며, 에러는 **input 파일**에 보고된다.
 

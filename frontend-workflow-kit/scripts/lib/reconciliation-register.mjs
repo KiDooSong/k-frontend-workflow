@@ -15,10 +15,22 @@
 // file 은 항상 절대경로다. validate.mjs 가 add()/warn() 으로 상대화한다.
 // 표 파싱은 spec.mjs 의 parseTable 을 재사용한다(register 는 본문의 첫 마크다운 표).
 import { splitFrontmatter, readFileSafe, exists } from './util.mjs';
-import { parseTable } from './spec.mjs';
+import { parseTable, hasHeader } from './spec.mjs';
 
 // reconcile 행위의 라이프사이클. 자식 항목 rollup 도, 입력 frontmatter 의 status 도 아니다.
 export const RECONCILE_STATUS_VALUES = ['not-started', 'in-progress', 'reconciled', 'failed'];
+
+// 계약 스키마의 필수 8컬럼 (input-reconciliation.md "Reconciliation Register" 표).
+export const REQUIRED_REGISTER_COLS = [
+  'Input ID',
+  'Source',
+  'Classification',
+  'Reconcile Status',
+  'Result',
+  'Touched Artifacts',
+  'Created Items',
+  'Supersedes',
+];
 
 // 헤더 이름을 느슨하게 매칭(대소문자/공백 무시) — spec.mjs col() 과 같은 규약.
 // (col 은 spec.mjs 의 module-private 라 여기서 동일 규약의 얇은 헬퍼만 둔다 — parseTable 은 공유.)
@@ -73,6 +85,27 @@ export function validateReconciliationRegister({ register, inputArtifacts = [], 
   const add = (file, message) => errors.push({ file, message });
   const warn = (file, message) => warnings.push({ file, message });
 
+  // register 파일은 있는데 8컬럼 표 자체가 파싱되지 않으면 구조 결함 — 행 검사 불가, 여기서 끝낸다.
+  if (!register.table) {
+    add(
+      registerFile,
+      '파싱 가능한 Reconciliation Register 표 없음 → 해소: 8컬럼 표(| Input ID | Source | Classification | Reconcile Status | Result | Touched Artifacts | Created Items | Supersedes |)를 두세요',
+    );
+    return { errors, warnings };
+  }
+
+  // 필수 8컬럼 존재 검사 (검사 9 Open Decisions 와 같은 방식 — spec.mjs hasHeader 재사용).
+  // 컬럼이 빠지면 register 가 계약 스키마를 벗어난 것이라 조용히 통과시키지 않는다.
+  const headers = register.table.headers;
+  const missingCols = REQUIRED_REGISTER_COLS.filter((c) => !hasHeader(headers, c));
+  if (missingCols.length) {
+    add(registerFile, `Reconciliation Register 표 필수 컬럼 누락: ${missingCols.join(', ')}`);
+  }
+  // Input ID / Reconcile Status 컬럼이 아예 없으면 그 컬럼에 의존하는 행 검사는 의미가 없다
+  // (위 컬럼-누락 에러가 구조 결함을 가리키므로 행마다 빈값 에러를 쏟지 않는다).
+  const hasIdCol = hasHeader(headers, 'Input ID');
+  const hasStatusCol = hasHeader(headers, 'Reconcile Status');
+
   // Input ID 중복 집계 (입력당 canonical 행 1개).
   const idCount = new Map();
   for (const row of register.rows) {
@@ -84,13 +117,15 @@ export function validateReconciliationRegister({ register, inputArtifacts = [], 
   for (const row of register.rows) {
     const id = row.inputId;
 
-    // Input ID 없는 행: 다른 칸이 채워졌으면 malformed 경고, 완전 빈 행은 무시.
+    // Input ID 없는 행: (Input ID 컬럼이 존재할 때만) 다른 칸이 채워졌으면 malformed 경고, 완전 빈 행은 무시.
     if (!id) {
-      const hasOther =
-        row.source || row.classification || row.reconcileStatus || row.result ||
-        row.touched || row.created || row.supersedes;
-      if (hasOther) {
-        warn(registerFile, 'register 행에 Input ID 없음 (malformed row)');
+      if (hasIdCol) {
+        const hasOther =
+          row.source || row.classification || row.reconcileStatus || row.result ||
+          row.touched || row.created || row.supersedes;
+        if (hasOther) {
+          warn(registerFile, 'register 행에 Input ID 없음 (malformed row)');
+        }
       }
       continue;
     }
@@ -102,34 +137,39 @@ export function validateReconciliationRegister({ register, inputArtifacts = [], 
       reportedDup.add(id);
     }
 
-    // Reconcile Status — 검사 12 를 움직이는 유일한 축.
-    const status = row.reconcileStatus;
-    if (!RECONCILE_STATUS_VALUES.includes(status)) {
-      add(
-        registerFile,
-        `Reconcile Status enum 위반: '${status}' (기대 ${RECONCILE_STATUS_VALUES.join('|')}) — Input ${id}`,
-      );
-      continue; // enum 위반이면 이 행의 status 후속 검사 생략
+    // Reconcile Status — 검사 12 를 움직이는 유일한 축. (Status 컬럼이 있을 때만 검사.)
+    if (hasStatusCol) {
+      const status = row.reconcileStatus;
+      if (!RECONCILE_STATUS_VALUES.includes(status)) {
+        add(
+          registerFile,
+          `Reconcile Status enum 위반: '${status}' (기대 ${RECONCILE_STATUS_VALUES.join('|')}) — Input ${id}`,
+        );
+        continue; // enum 위반이면 이 행의 status 후속 검사 생략
+      }
+      if (status === 'in-progress') {
+        add(registerFile, `${id}: Reconcile Status=in-progress (이전 실행 중단) — 이어서 reconcile 하세요`);
+      } else if (status === 'failed') {
+        add(registerFile, `${id}: Reconcile Status=failed (reconcile 실패)`);
+      } else if (status === 'not-started') {
+        warn(registerFile, `${id}: Reconcile Status=not-started (아직 reconcile 시작 전)`);
+      }
+      // status === 'reconciled' 는 PASS — 자식 decision/Created Items 가 open 이어도 무조건 통과(HARD RULE 1·2).
     }
-    if (status === 'in-progress') {
-      add(registerFile, `${id}: Reconcile Status=in-progress (이전 실행 중단) — 이어서 reconcile 하세요`);
-    } else if (status === 'failed') {
-      add(registerFile, `${id}: Reconcile Status=failed (reconcile 실패)`);
-    } else if (status === 'not-started') {
-      warn(registerFile, `${id}: Reconcile Status=not-started (아직 reconcile 시작 전)`);
-    }
-    // status === 'reconciled' 는 PASS — 자식 decision/Created Items 가 open 이어도 무조건 통과(HARD RULE 1·2).
   }
 
   // 미처리 교차검사: inputs/ 에 input_id 가 있으나 register 에 행이 없는 입력.
   // 에러는 register 가 아니라 그 INPUT 파일에 단다(어디를 고칠지 가리키기 위해).
   // parseError 입력은 검사 11 이 다루므로 제외하고, id 없는 입력도 검사 11 이 잡으므로 제외.
-  for (const a of inputArtifacts) {
-    if (a.parseError) continue;
-    const id = a.fm?.input_id;
-    if (typeof id !== 'string' || id.trim() === '') continue;
-    if (!registeredIds.has(id)) {
-      add(a.file, `inputs/ 에 있으나 register 에 행 없음: '${id}' (미처리) — reconcile-input 먼저 실행`);
+  // Input ID 컬럼이 없으면 교차검사가 전부 오탐이 되므로 건너뛴다(위 컬럼-누락 에러가 대신 가리킨다).
+  if (hasIdCol) {
+    for (const a of inputArtifacts) {
+      if (a.parseError) continue;
+      const id = a.fm?.input_id;
+      if (typeof id !== 'string' || id.trim() === '') continue;
+      if (!registeredIds.has(id)) {
+        add(a.file, `inputs/ 에 있으나 register 에 행 없음: '${id}' (미처리) — reconcile-input 먼저 실행`);
+      }
     }
   }
 
