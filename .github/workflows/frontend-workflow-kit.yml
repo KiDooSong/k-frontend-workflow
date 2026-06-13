@@ -39,3 +39,12 @@ jobs:
 
       # 진짜 검사 게이트 (검사 9종, exit 0/1)
       - run: npm run example:validate
+
+      # golden fixture 회귀 하니스 (test-fixtures.mjs) — warning-first(비차단).
+      #   - actions/checkout 가 repo 전체를 받고, KIT_ROOT 는 파일상대(import.meta.url) 라
+      #     working-directory=frontend-workflow-kit 에서도 repo-root temp/runs fixture 를 해석한다.
+      #   - continue-on-error: 결과는 로그에 보이되 job 은 깨지 않는다. 신뢰(FP율) 확인 후
+      #     별도 PR 로 gating(continue-on-error 제거) 승격 — 보드 §0/§7 warning-first 하드룰.
+      - name: golden fixture regression (warning-only)
+        continue-on-error: true
+        run: npm run example:test
