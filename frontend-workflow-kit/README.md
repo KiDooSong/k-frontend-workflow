@@ -6,11 +6,13 @@ LLM이 프론트 프로젝트를 **환각 없이** 진행하게 만드는 워크
 > 현재 단계: **MVP-A** (문서 생성 + readiness 판정 + 검사). lint-pack·Figma·생성뷰·훅은 이후 B~D.
 > 설계 문서: [Core](../frontend-llm-workflow.md) · [확장판](../frontend-llm-workflow-expanded.md) ·
 > [스킬팩 개념](../frontend-workflow-skillpack-concept.md) · [구현 명세](../frontend-workflow-kit-implementation.md)
+> 입력 중 결정 대기 항목 분리: [Open Decisions](open-decisions.md)
 
 ## MVP-A에 들어있는 것
 
 ```txt
-templates/   screen-spec(통합형+stub), navigation-map(뼈대), llm-rules, domain-rules
+templates/   screen-spec(통합형+stub), navigation-map(뼈대), llm-rules, domain-rules,
+             component-gap-register, conflicts (막힘 기록용 전역 레지스터)
 scripts/     workflow-state.mjs · readiness.mjs · validate.mjs   (이 3개뿐)
 skills/      implement-screen
 schemas/     frontmatter.schema.json

@@ -24,7 +24,7 @@ description: 지정된 Screen ID를 readiness gate가 허용하는 모드 범위
 3. **게이트 판정**:
    - `readiness_mode` 가 UI 구현을 허용하지 않으면(`docs-only` / `route-skeleton` 등) **구현하지 말고**
      `blocking` 과 `next_actions` 를 사용자에게 보고하고 멈춘다.
-   - 막힌 항목(미확정 API, figma mapping 부재 등)은 추측해서 메우지 않는다. Unknowns/Conflicts로 남긴다.
+   - 막힌 항목(미확정 API, figma mapping 부재 등)은 추측해서 메우지 않는다. ScreenSpec 의 Unknowns / `global/conflicts.md` 에 남긴다.
 
 4. **컨텍스트 로드** (이 화면 작업에 필요한 것만 — 다른 도메인 문서는 로드하지 않는다):
    - `docs/frontend-workflow/domains/{domain}/screens/{screen}/screen-spec.md`
@@ -36,7 +36,7 @@ description: 지정된 Screen ID를 readiness gate가 허용하는 모드 범위
    - `useXxx` fake hook 만 사용한다 (`AsyncState` 계약). `src/api` 등 forbidden 경로는 건드리지 않는다.
    - State Matrix 의 전 상태(loading/success/empty/error/refreshing)를 구현한다.
    - 문구는 Copy Keys 의 `confirmed` 값만 사용한다. `tbd` 는 키 이름 그대로 둔다.
-   - Component Catalog 의 컴포넌트만 사용한다. 새 공통 컴포넌트는 만들지 말고 Gap Register에 제안만.
+   - Component Catalog 의 컴포넌트만 사용한다. 새 공통 컴포넌트는 만들지 말고 Gap Register(`global/component-gap-register.md`)에 제안만.
    - 모르는 디자인 값은 추측하지 말고 `TODO` 주석으로 남긴다.
 
 6. **검증 보고**: `npm run workflow:validate` 를 실행하고 결과를 보고한다.

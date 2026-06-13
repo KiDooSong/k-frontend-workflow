@@ -46,6 +46,28 @@ artifacts:
       - artifact_type
       - status
 
+  # 막힘 기록용 전역 레지스터 — LLM 이 추측 대신 여기에 남긴다 (llm-rules 가 가리킨다).
+  # "필요할 때 생성"하는 문서라 항상 존재하지는 않는다. validate 는 존재하는 인스턴스만 검사한다.
+  component-gap-register:
+    kind: authoring
+    scope: global
+    path: docs/frontend-workflow/global/component-gap-register.md
+    template: templates/global/component-gap-register.template.md
+    required_frontmatter:
+      - artifact_id
+      - artifact_type
+      - status
+
+  conflicts:
+    kind: authoring
+    scope: global
+    path: docs/frontend-workflow/global/conflicts.md
+    template: templates/global/conflicts.template.md
+    required_frontmatter:
+      - artifact_id
+      - artifact_type
+      - status
+
   domain-rules:
     kind: authoring
     scope: domain

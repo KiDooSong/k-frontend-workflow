@@ -18,6 +18,8 @@
         "navigation-map",
         "llm-rules",
         "domain-rules",
+        "component-gap-register",
+        "conflicts",
         "figma-component-mapping",
         "component-guidelines",
         "api-manifest"
