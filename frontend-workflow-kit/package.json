@@ -16,6 +16,7 @@
     "workflow:state": "node scripts/workflow-state.mjs",
     "workflow:readiness": "node scripts/readiness.mjs",
     "workflow:validate": "node scripts/validate.mjs",
+    "workflow:forbidden-paths": "node scripts/forbidden-paths.mjs",
     "example:state": "node scripts/workflow-state.mjs --docs examples/coupon-feature/docs/frontend-workflow --src examples/coupon-feature/src --date 2026-06-13",
     "example:readiness": "node scripts/readiness.mjs --docs examples/coupon-feature/docs/frontend-workflow",
     "example:validate": "node scripts/validate.mjs --docs examples/coupon-feature/docs/frontend-workflow --src examples/coupon-feature/src",
