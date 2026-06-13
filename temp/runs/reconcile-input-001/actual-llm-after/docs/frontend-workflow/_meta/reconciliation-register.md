@@ -1,0 +1,25 @@
+---
+title: Reconciliation Register
+status: draft
+kind: meta-register
+---
+
+# Reconciliation Register
+
+> 입력 결과물(`input_id` 보유)의 처리 이력·결과를 남기는 살아있는 레지스터.
+> `Reconcile Status` 는 **reconcile 행위**의 라이프사이클이며 자식 항목(C/D/U/G)의 open/closed rollup 이 아니다.
+> 자식 항목의 open/closed 는 각 레지스터(Open Decisions·Conflicts·Unknowns·Component Gap)가 단일 출처다.
+> register-first: 어떤 문서 수정보다 먼저 `in-progress` 행을 쓰고, 처리 후 `reconciled` 로 갱신한다.
+
+## Reconciliation Register
+| Input ID | Source | Classification | Reconcile Status | Result | Touched Artifacts | Created Items | Supersedes |
+|---|---|---|---|---|---|---|---|
+| IN-20260613-planning-001 | planning-doc | simple-update + resolves-decision + scope-unclear | reconciled | pending user decision (D-001 separate-tab 제안 — 사람 확정 대기) | COUPON-001 screen-spec, decision-log | U-002 | - |
+| IN-20260613-figma-001 | figma | simple-update + component-gap | reconciled | accepted (figma-component-mapping 생성); G-001 open 제안 (accept 대기) | COUPON-001 figma-component-mapping (신규), COUPON-001 screen-spec, component-gap-register | G-001 | - |
+| IN-20260613-api-001 | api-doc | simple-update + resolves-unknown + resolves-decision | reconciled | accepted (api-manifest page envelope, U-001 resolved); D-003 pending user decision | api-manifest, COUPON-001 screen-spec, decision-log | U-001 (resolved), D-003 (narrowed) | - |
+| IN-20260613-meeting-001 | meeting | conflict (decision reopen) | reconciled | pending user decision (D-204 재오픈, C-001 open) | AUTH-001 screen-spec, conflicts, decision-log | C-001, D-204 (reopened) | - |
+| IN-20260613-qa-001 | qa | simple-update + policy-update | reconciled | accepted (State Matrix offline 행, Acceptance, api-error-policy) | COUPON-001 screen-spec, api-error-policy | - | - |
+
+<!-- Reconcile Status: not-started → in-progress → reconciled / failed -->
+<!-- Result 어휘: accepted / rejected / delegated / pending user decision / conflict-created -->
+<!-- Created Items 는 링크만. 자식 open/closed 는 각 레지스터가 단일 출처. -->
