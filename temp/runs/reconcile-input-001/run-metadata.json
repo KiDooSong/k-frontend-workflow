@@ -10,5 +10,5 @@
     "U-001 = resolved (golden: open — Unknown 닫기는 사람)",
     "U-002 신설 (golden: 미존재)"
   ],
-  "note": "expect=xfail: test-fixtures 하니스가 이 run 의 raise-only 위반을 잡아 FAIL 하는 것이 정상이며 비치명으로 처리된다(증거 보존). 통과로 바뀌면(xpass) 증거가 stale 이라는 신호."
+  "note": "expect=xfail (strict): 하니스가 이 run 의 raise-only 위반을 잡아 FAIL 하는 것이 정상(비치명). 통과로 바뀌면 xpass=치명(exit 1) — 증거가 회귀를 더는 증명 못 하므로 재분류/갱신 필요."
 }
