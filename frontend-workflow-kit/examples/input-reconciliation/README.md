@@ -19,7 +19,7 @@
 input-reconciliation/
   project-before/                 # 입력이 닿기 전의 baseline 문서 트리
     docs/frontend-workflow/        # 6개 화면 + global/_meta (트리 설명은 하위 README)
-  inputs/                          # 외부 입력 5건 (reconcile-input 의 입력) — 파일명 = input_id
+  inputs/                          # 외부 입력 5건 (reconcile-input 의 입력) — 파일명 = {input_id}.md
     IN-20260613-planning-001.md
     IN-20260613-figma-001.md
     IN-20260613-api-001.md
@@ -30,9 +30,10 @@ input-reconciliation/
   reports/                         # reconciliation 요약 등 산출 리포트
 ```
 
-> **파일명 규약**: `inputs/` 의 각 파일명은 그 파일 frontmatter 의 `input_id` 와 **글자 그대로 같다**
-> (`IN-YYYYMMDD-{source}-NNN.md`). reconcile-input·register·리포트가 모두 `input_id` 로 입력을 참조하므로,
-> 파일명을 id 와 일치시키면 "어느 입력 파일이 어느 register 행인지"를 grep 한 번으로 추적할 수 있다.
+> **파일명 규약**: `inputs/` 의 각 파일명은 `{input_id}.md` 다 — 확장자(`.md`)를 뗀 **stem 이 frontmatter 의 `input_id` 와 정확히 같다**.
+> (예: `input_id: IN-20260613-planning-001` → 파일명 `IN-20260613-planning-001.md`. `input_id` 값 자체에는 `.md` 가 없다.)
+> reconcile-input·register·리포트가 모두 `input_id` 로 입력을 참조하므로, 파일명 stem 을 id 와 일치시키면
+> "어느 입력 파일이 어느 register 행인지"를 grep 한 번으로 추적할 수 있다.
 
 ## 5개 입력과 각자 테스트하는 것
 
@@ -44,7 +45,7 @@ input_id 는 킷의 `IN-YYYYMMDD-{source}-NNN` 형식이고, 모두 `captured_at
 | IN-20260613-planning-001 | planning | Open Decision 해소 입력 → `D-001`(만료 쿠폰 노출) 을 separate tab 으로 해소, COUPON-001 의 UI Sections·Copy Keys simple-update. API status enum 과의 잠재 충돌을 Unknown 으로 올리는지. |
 | IN-20260613-figma-001 | figma | 시각 디자인 입력 → figma-component-mapping 생성(CouponCard 가로형), 카탈로그에 없는 컴포넌트를 Component Gap `G-001`(SegmentedTabs) `open` 으로 **제안만** 하는지. "비즈니스 동작=ScreenSpec, 시각=Figma" 경계 준수. |
 | IN-20260613-api-001 | api | 데이터 계약 입력 → api-manifest 의 `GET /coupons` 응답을 bare array → page envelope 로 simple-update, `U-001` resolves-unknown, `D-003`(페이지네이션) 에 정보 제공. "화면은 API DTO 에 직접 의존하지 않는다" 유지. |
-| IN-20260613-meeting-001 | meeting | resolved 결정과의 **충돌** 입력 → `D-204`(로그인 후 항상 홈)에 returnTo 우선이 부딪힘. `C-001` 생성, `D-204` 를 `resolved → open` 으로 재오픈, navigation-map Route Guard 갱신. 결과는 사람 결정 보류. |
+| IN-20260613-meeting-001 | meeting | resolved 결정과의 **충돌** 입력 → `D-204`(로그인 후 항상 홈)에 returnTo 우선이 부딪힘. LLM 은 `C-001` 생성 + `D-204` 를 `resolved → open` 으로 재오픈까지만 한다(navigation-map Route Guard 의 returnTo 반영은 사람이 D-204 를 재-resolve 한 뒤 — `expected-after` 에만 있고 `expected-llm-after` 엔 없다). 결과는 사람 결정 보류. |
 | IN-20260613-qa-001 | qa | 누락 상태 입력 → COUPON-001 State Matrix 에 `offline`/network-error 행 추가, api-error-policy(네트워크/오프라인 retry) 갱신, Acceptance Criteria 추가. simple-update 범위. |
 
 ## md-only 게이트 천장
