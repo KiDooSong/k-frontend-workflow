@@ -180,7 +180,8 @@ export function deriveMetrics(spec, opts = {}) {
   // validate 형식검사가 후속이라, 구조적 결함(누락 ID/Status, open|resolved 아닌 Status,
   // open 인데 Blocking Mode 누락)을 조용히 버리지 않고 surface 한다 —
   // readiness 가 fail-closed 로 막을 수 있게 (오타 하나로 게이트가 풀리는 fail-open 방지).
-  const odTable = parseTable(sections['open decisions']);
+  const odSection = sections['open decisions'];
+  const odTable = parseTable(odSection);
   const blockingDecisions = [];
   const malformedDecisions = [];
   if (odTable) {
@@ -208,6 +209,15 @@ export function deriveMetrics(spec, opts = {}) {
     }
     blockingDecisions.sort((a, b) => String(a.id).localeCompare(String(b.id)));
     malformedDecisions.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  } else if (odSection) {
+    // 표를 쓰려 한 흔적(| 라인)이 있는데 parseTable 이 실패 → 표 구문 깨짐(separator 불량 등).
+    // 조용히 무시하면 게이트가 통째로 풀리므로(fail-open) malformed 로 surface 한다.
+    const hasTableRow = stripComments(odSection)
+      .split(/\r?\n/)
+      .some((l) => l.trim().startsWith('|'));
+    if (hasTableRow) {
+      malformedDecisions.push({ id: '(unparsable-table)', blocking_mode: '(none)', status: '(none)' });
+    }
   }
 
   // API Candidates: 항목 중 가장 낮은 confidence

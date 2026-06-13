@@ -230,8 +230,9 @@ export function computeReadiness({ state, policy, ci, manifest }) {
     let decisionCapIdx = order.length - 1;
     for (const dec of decisions) {
       const bmIdx = order.indexOf(dec.blocking_mode);
-      if (bmIdx < 0) {
-        // Blocking Mode 가 정책에 없는 값(오타 등) → 해석 불가. 조용히 무시하지 않는다.
+      if (bmIdx <= 0) {
+        // bmIdx<0: 정책에 없는 값(오타). bmIdx==0: docs-only(floor)는 막을 수 없음(무의미).
+        // 둘 다 해석 불가 → 조용히 무시하지 않고 invalid 로 surface 한다.
         invalidDecisions.push({ id: dec.id, blocking_mode: dec.blocking_mode || '(none)' });
         continue;
       }
@@ -260,7 +261,7 @@ export function computeReadiness({ state, policy, ci, manifest }) {
         },
       });
       nextActions.push(
-        `fix Open Decision ${bad.id || '(no-id)'}: Status must be open|resolved and Blocking Mode must be a policy mode`,
+        `fix Open Decision ${bad.id || '(no-id)'}: Status must be open|resolved and Blocking Mode must be a policy mode above docs-only`,
       );
     }
 
