@@ -93,7 +93,7 @@ View 1~3 은 **신규 생성기**(미존재, 제안)다. View 4 는 **기존 생
 | View | Source | Output | Generator | Validation | Risks |
 |---|---|---|---|---|---|
 | **nav-graph** (제안) | 모든 screen-spec 의 Interaction Matrix + navigation-map 의 Cross-Domain Edges | `_meta/nav-graph.yaml` + 각 screen-spec 의 Entry Points `GENERATED:START nav-graph` 블록 | `npm run workflow:nav` → `scripts/nav-graph.mjs` (미존재) | 마커 무결성·라우트 유효성(inventory 존재)·멱등성·중복 Entry Point | 공유 모달 오탐 / route 토큰 부분매칭 / 수동 비고 소실 / 크로스도메인 판정 |
-| **route-tree** (제안) | screen-spec frontmatter.route + Interaction Matrix route + `src/app` 파일 트리(Expo Router) | `_meta/route-tree.txt`(권장) 또는 `.yaml` | `npm run workflow:route-tree` → `scripts/route-tree.mjs` (미존재) | route↔파일 대응·동적 세그먼트·중복(검사5 강화)·고아 route | 그룹 폴더 `(tabs)/` 미이해 오탐 / 확장자 가정 / generate-before-validate 순서 |
+| **route-tree** (제안) | `src/app` 파일 트리(Expo Router, impl §9 정본) · *교차검증*: screen-spec frontmatter.route·Interaction Matrix route | `_meta/route-tree.txt`(권장) 또는 `.yaml` | `npm run workflow:route-tree` → `scripts/route-tree.mjs` (미존재) | route↔파일 대응·동적 세그먼트·중복(검사5 강화)·고아 route | 그룹 폴더 `(tabs)/` 미이해 오탐 / 확장자 가정 / generate-before-validate 순서 |
 | **component-catalog** (제안) | `src/components/ui/**` (export + Props) | `docs/frontend-workflow/design/component-catalog.md` (do_not_edit false→**true**) | `npm run workflow:catalog` → `scripts/catalog-gen.mjs` (미존재) | rough-fixture-ui 게이트(`component_catalog_generated`)·헤더/마커·gap-register 교차참조·멱등성 | 제네릭 Props 오탐 / 삭제 컴포넌트 고아 / 수동본↔생성본 동등성 |
 | **screen-inventory** hardening | (기존) screen-spec frontmatter — `workflow-state.mjs buildState()` | (기존) `docs/frontend-workflow/_meta/screen-inventory.yaml` | `npm run workflow:state` → `scripts/workflow-state.mjs` (**존재**) | 검사5(중복)·검사4(route 대상)·**제안**: route 형식·stub/파생 hint·domain 존재 | 모달 같은 route 오탐 / 파생값 재파싱(DRY 위반) / stub 상태 미기록 stale |
 | **generated file guard** (제안) | (기존) `artifact-manifest.yaml` 의 `kind:generated`·`do_not_edit:true` + `generated_sections` | (산출 파일 없음 — exit code + stdout 위반 목록) | `npm run workflow:check-generated` → `scripts/check-generated-files.mjs` (미존재) | **validate 검사 6 의 확장**: 헤더/마커 무결성 + CI diff 멱등성 일괄 순회 | 비-생성 전역폴더 과검출 / generated_at drift / O(N×M) 비용 / 전체교체 vs granular |
@@ -131,7 +131,7 @@ edges:
 
 **risks.** (a) **오탐**: 공유 모달(에러 다이얼로그 등)을 쓰는 모든 화면이 Entry Point 로 집계되면 노이즈 — 해소안: 크로스도메인 엣지만 포함 / 명시적 필터(설계 미정). (b) **라우트 추출 오류**: Result 에 자연어+route 혼재 시 부분 매칭 위험(예: `https://example.com/path` 에서 `//example.com/path` 가 뽑힐 수 있음) — `interactionResultRoutes` 는 문자열 내 첫 `/` 토큰을 추출하므로(정규식 `/(\/[^\s]+)/`, spec.mjs L344 — start-anchored 아님) URL 혼재 시 부분매칭 위험이 있어 테스트 필수. (c) **blast-radius**: 수동 편집(MVP-A)→생성(MVP-C) 전환 시 기존 수동 비고·주석이 전부 삭제됨 → **마이그레이션 가이드 필요**(현재 문서화 없음). (d) **drift**: Interaction Matrix 편집 후 `workflow:nav` 미실행 시 Entry Points stale(생성기 이전이라 validate 검사 6 은 마커만 보고 정합성은 안 봄). (e) **크로스도메인 정의 애매**: 도메인 경계 판정에 screen-id↔domain 매핑 필요(생성기 미정).
 
-**priority: later.** (1) generated-views 번들의 일부. (2) MVP-A 가 Entry Points 수동 작성을 임시 허용(blocking 아님). (3) 로드맵 순서 B→C 상 B 이후. (4) **nav-graph.yaml 의 구체 구조(그래프 표현·노드/엣지 스키마·크로스도메인 필터 규칙)가 미정 → 설계 추가가 선행**. 단 라우트 추출 로직은 `interactionResultRoutes` 로 이미 존재.
+**priority: later (Phase 2).** (1) generated-views 번들의 일부. (2) MVP-A 가 Entry Points 수동 작성을 임시 허용(blocking 아님). (3) 로드맵 순서 B→C 상 B 이후. (4) **nav-graph.yaml 의 구체 구조(그래프 표현·노드/엣지 스키마·크로스도메인 필터 규칙)가 미정 → 설계 추가가 선행**. 단 라우트 추출 로직은 `interactionResultRoutes` 로 이미 존재.
 
 ---
 
@@ -139,15 +139,15 @@ edges:
 
 **왜.** route-tree 는 screen-spec 의 `route`(frontmatter)·Interaction Matrix route 와 **`src/app` 파일 트리(Expo Router 규칙)**를 대조해, 선언한 route 가 실제 파일에 존재하는지 검증하고 미등록·고아 route 를 찾는 생성 뷰다. `screen_id↔route` 단일 출처(frontmatter) 정책을 src/app 구조 관점에서 투영해 **validate 검사 5(route 중복)를 강화**한다. nav-graph 와 함께 landing 해 수동 작성 단계를 종료한다(implementation §11, line 389).
 
-**source of truth.** frontend-workflow-kit-implementation.md §4(artifact-manifest)·§9(생성기 명세)·§11(MVP-C), line 330. 근거 파일: `screen-spec.template.md:6`(route frontmatter 단일 출처), `policies/implementation-mode-policy.yaml:44`(`src/app/**` Expo Router 구조 명시), `lib/spec.mjs:336-348`(`interactionResultRoutes` — route 추출 재사용), `scripts/workflow-state.mjs`(초기 route 수집/중복 추적).
+**source of truth.** 생성 입력의 정본은 **`src/app` 파일 트리**다 — frontend-workflow-kit-implementation.md §9 생성기 명세(line 330)가 route-tree.mjs 입력을 `src/app 파일 트리`로 못박는다. screen-spec 의 `frontmatter.route`·Interaction Matrix route 는 **생성 입력이 아니라 교차검증 대상**(선언 route ↔ 실제 파일 대조로 고아·미등록 검출)이다. 근거 파일: `frontend-workflow-kit-implementation.md:330`(route-tree 입력=src/app), `screen-spec.template.md:6`(route frontmatter 단일 출처 — 교차검증 대상), `policies/implementation-mode-policy.yaml:44`(`src/app/**` Expo Router 구조), `lib/spec.mjs:336-348`(`interactionResultRoutes` — 교차검증 시 route 추출 재사용).
 
 **output file.** `docs/frontend-workflow/_meta/route-tree.txt`(권장, implementation §9 기술) 또는 `_meta/route-tree.yaml`(제안). 출력 스케치(제안):
 
 ```txt
 # GENERATED FILE — DO NOT EDIT  (← 제안)
-# Source: docs/frontend-workflow/domains/**/screen-spec.md (frontmatter.route) + src/app 파일 트리
+# Source: src/app 파일 트리(Expo Router) — 교차검증: screen-spec frontmatter.route
 # Command: npm run workflow:route-tree
-# Generated at: <date>
+# generated_at: <date>
 /(tabs)/coupons          ← COUPON-001   [src/app/(tabs)/coupons.tsx]
 /coupons/[id]            ← COUPON-002   [src/app/coupons/[id].tsx]
 /(auth)/login            ← (고아: src/app 에 있으나 screen-spec 선언 없음)
@@ -159,17 +159,17 @@ edges:
 
 **fixtures.** `examples/coupon-feature/src/app` 구조 확장 샘플(`(tabs)/coupons.tsx`·`coupons/[id].tsx`·`(auth)/login.tsx`) + expected `_meta/route-tree.txt` 산출 샘플 + negative: `examples/route-tree-mismatch`(route 선언 있으나 파일 없음).
 
-**do-not-edit.** `GENERATED FILE — DO NOT EDIT / Source: …screen-spec.md(frontmatter.route) + src/app 파일 트리 / Command: npm run workflow:route-tree / Update: ScreenSpec 의 route 필드를 수정하고 위 명령 실행.`
+**do-not-edit.** `GENERATED FILE — DO NOT EDIT / Source: src/app 파일 트리(Expo Router) · 교차검증 screen-spec frontmatter.route / Command: npm run workflow:route-tree / Update: src/app 라우트 파일을 바꾸고 위 명령 재실행 (선언 route 자체는 screen-spec 에서 관리).`
 
 **risks.** (a) **오탐**: Expo Router 그룹 폴더 규칙(`(groupname)/` 접두) 미이해 시 유효 라우트를 고아로 오분류. (b) **blast-radius**: 검사 5 가 route 중복만 보므로 route-tree 생성 실패 시 같은 경로의 여러 화면이 덮어써질 수 있음 → **generate-before-validate 순서 강제 필요**. (c) **drift**: route-tree.txt 직접 수정 시 src/app 과 불일치 → do_not_edit 마커 + View 5 guard 강제 필수. (d) **신뢰도**: src/app 이 TS/JSX 확장자만 가정 — CSS/config 섞인 구조 시 파서 강화 필요.
 
-**priority: later.** implementation §11(382-389)의 "생성물 3종 전환" 중 하나로 nav-graph 와 동반 진입(로드맵 예약 단계). 단 `screen_id↔route` 중복 검사는 이미 MVP-A 의 `workflow-state.mjs`·`validate.mjs`(검사 5)에 포함 — route-tree 는 **src/app 구조 동기화**가 본질이라, MVP-B(lint 정책)와 묶어 우선순위를 올릴 여지는 있다.
+**priority: later (Phase 2).** implementation §11(382-389)의 "생성물 3종 전환" 중 하나로 nav-graph 와 동반 진입(로드맵 예약 단계). 단 `screen_id↔route` 중복 검사는 이미 MVP-A 의 `workflow-state.mjs`·`validate.mjs`(검사 5)에 포함 — route-tree 는 **src/app 구조 동기화**가 본질이라, MVP-B(lint 정책)와 묶어 우선순위를 올릴 여지는 있다.
 
 ---
 
 ## View 3 — component-catalog (신규 생성기, 제안)
 
-**왜.** `component-catalog` 는 `artifact-manifest.yaml` 에 `kind=generated` 로 이미 등록돼 있으나(line 120-128), 템플릿·생성기(`catalog-gen.mjs`)가 없고 **`do_not_edit: false`(MVP-A 수동 모드)**다. **MVP-C readiness 게이트가 `component_catalog_generated == true` 를 요구**한다(`implementation-mode-policy.yaml:63`) — 이 fact 가 `false` 인 한 `rough-fixture-ui` 가 안 열린다. drift 위험: 저작(component-gap-register.md)과 생성(component-catalog.md) 사이 가시성 공백 — 화면이 컴포넌트를 참조하고 gap 을 선언하므로, catalog 가 실제 사용 + gap 을 집계해야 툴링·gap 추적이 이어진다.
+**왜.** `component-catalog` 는 `artifact-manifest.yaml` 에 `kind=generated` 로 이미 등록돼 있으나(line 120-128), 템플릿·생성기(`catalog-gen.mjs`)가 없고 **`do_not_edit: false`(MVP-A 수동 모드)**다. **MVP-C readiness 게이트가 `component_catalog_generated == true` 를 요구**한다(`implementation-mode-policy.yaml:63`) — 이 fact 가 `false` 인 한 `rough-fixture-ui` 가 안 열린다. **단 현재 이 fact 는 `design/component-catalog.md` 의 *존재 여부*다**(`workflow-state.mjs:98` `exists(catalogPath)`) — 수동 작성 파일도 fact 를 켠다. 따라서 catalog-gen 은 게이트를 처음 여는 게 아니라 그 수동 존재를 **생성 계약(do_not_edit:true)으로 승격**하는 작업이다. drift 위험: 저작(component-gap-register.md)과 생성(component-catalog.md) 사이 가시성 공백 — 화면이 컴포넌트를 참조하고 gap 을 선언하므로, catalog 가 실제 사용 + gap 을 집계해야 툴링·gap 추적이 이어진다.
 
 **source of truth.** `artifact-manifest.yaml §component-catalog`(line 120-128: 경로/명령/source) + README §MVP-A(line 13-25, 118-129: "component-catalog 은 C 단계 생성기 도입") + `implementation-mode-policy.yaml`(line 63, 97-98, 104). 참조 산출물: coupon-feature 의 **수동 작성** `design/component-catalog.md`(MVP-A) — 생성기가 맞춰야 할 구체 출력 예시.
 
@@ -177,15 +177,15 @@ edges:
 
 **generator.** `npm run workflow:catalog` → `scripts/catalog-gen.mjs` **(미존재, 제안)**. source glob = `src/components/ui/**`(manifest line 125-126).
 
-**validation.** (1) **rough-fixture-ui 진입 전 반드시 존재**(readiness fact `component_catalog_generated == true`). (2) GENERATED 헤더/마커 필수. (3) 출력 경로 = manifest line 123. (4) GENERATED:START/END 사이 불변(LLM 편집 금지). (5) **`do_not_edit=true` 전환**(MVP-A false → MVP-C true). (6) catalog 는 source(`src/components/ui/**`) + evidence(어느 screen-spec 이 어느 컴포넌트를 쓰는지)로 역링크. (7) 엔트리가 실제 `src/components/ui/{Name}.tsx` export + Props 인터페이스와 일치. (8) `component-gap-register.md` gap 과 교차참조(screen→uses→gap status).
+**validation.** (1) **rough-fixture-ui 진입 전 반드시 존재**(readiness fact `component_catalog_generated == true`). (2) GENERATED 헤더/마커 필수. (3) 출력 경로 = manifest line 123. (4) component-catalog 은 **파일 헤더 방식 생성물**이다 — manifest 의 `generated_sections`(START/END 내부 블록)은 screen-spec Entry Points 전용이다(impl §3). 따라서 헤더(`GENERATED FILE — DO NOT EDIT`) 무결성으로 보호하고 파일 전체를 생성기가 교체한다(내부 START/END 블록을 둘 계획이면 별도 제안으로 분리). (5) **`do_not_edit=true` 전환**(MVP-A false → MVP-C true). (6) catalog 는 source(`src/components/ui/**`) + evidence(어느 screen-spec 이 어느 컴포넌트를 쓰는지)로 역링크. (7) 엔트리가 실제 `src/components/ui/{Name}.tsx` export + Props 인터페이스와 일치. (8) `component-gap-register.md` gap 과 교차참조(screen→uses→gap status).
 
 **fixtures.** `examples/catalog-generation/`(coupon-feature 와 평행, catalog-gen 베이스라인) — `before-src/`(`src/components/ui/*.tsx`) + expected catalog 출력. coupon-feature 의 `src/components/ui/*.tsx`(Button·SkeletonList·EmptyState·ErrorState·SegmentedTabs)는 이미 수동 catalog.md 에 반영돼 있어 **멱등성 회귀 코퍼스**로 직접 재사용 가능.
 
 **do-not-edit.** `GENERATED FILE — DO NOT EDIT / Source: src/components/ui/** / Command: npm run workflow:catalog / Update: 소스 컴포넌트 파일을 수정하고 위 명령 재실행. / NOTE(MVP-C): catalog 생성은 MVP-A 수동 작성을 대체. do_not_edit 은 MVP-C 핸드오프에서 false→true.`
 
-**risks.** (a) **blast-radius**: `src/components/ui/**` 에서 추출 — TS 타입 깨짐·import 경로 변경 시 파서가 조용히 실패하거나 오탐(전체 AST 대신 `interface Props` 만 추출 권장). (b) **오탐**: 제네릭 `Props`/`React.ReactNode children` vs 명시 prop 목록(Button.tsx Props vs Wrapper 패턴) 일관성. (c) **drift**: gap 추적 경계 — component-gap-register.md 는 저작 유지, catalog 는 gap 의 proposed/accepted/rejected 를 **표시만**(집계, gap 변형 금지). (d) **coupling**: screen-spec 에 구조화된 "components used" 섹션이 아직 없어 catalog 가 State/Mutation Matrix 텍스트 파싱으로 추론 → screen-spec 섹션 추가 전까지 취약. (e) **고아**: 삭제된 컴포넌트(`src/components/ui/Old.tsx` 제거)를 우아하게 처리 — 엔트리가 실제 export 와 링크되는지 exists 검사. (f) **불일치**: MVP-A 수동 catalog.md(coupon-feature) ↔ MVP-C 생성기가 같은 입력에 동일 출력(멱등성, README line 100).
+**risks.** (a) **blast-radius**: `src/components/ui/**` 에서 추출 — TS 타입 깨짐·import 경로 변경 시 파서가 조용히 실패하거나 오탐(전체 AST 대신 `interface Props` 만 추출 권장). (b) **오탐**: 제네릭 `Props`/`React.ReactNode children` vs 명시 prop 목록(Button.tsx Props vs Wrapper 패턴) 일관성. (c) **drift**: gap 추적 경계 — component-gap-register.md 는 저작 유지, catalog 는 gap 의 proposed/accepted/rejected 를 **표시만**(집계, gap 변형 금지). (d) **coupling**: screen-spec 에 구조화된 "components used" 섹션이 아직 없어 catalog 가 State/Mutation Matrix 텍스트 파싱으로 추론 → screen-spec 섹션 추가 전까지 취약. (e) **고아**: 삭제된 컴포넌트(`src/components/ui/Old.tsx` 제거)를 우아하게 처리 — 엔트리가 실제 export 와 링크되는지 exists 검사. (f) **불일치**: MVP-A 수동 catalog.md(coupon-feature) ↔ MVP-C 생성기가 같은 입력에 동일 출력(멱등성, 불변식 #7).
 
-**priority: first.** (1) manifest 가 MVP-C 로 등록(line 124). (2) **readiness 게이트(`implementation-mode-policy.yaml:63`)가 rough-fixture-ui 를 `component_catalog_generated` 로 막고 있어, catalog-gen 이 가장 먼저 그 게이트를 푼다.** (3) 추출 알고리즘이 가장 단순(JSDoc/TS export 파싱 → import 경로 + 구조화 Props 표), 외부 의존 없음(순수 TS/JS AST). (4) coupon-feature 에 맞출 구체 reference 출력이 이미 있음. → catalog-gen 이 multi-dry-run 6-screen fixture 의 implement-screen 테스트를 가장 일찍 가능케 한다.
+**priority: Phase 1 — 첫 생성기.** (1) manifest 가 MVP-C 로 등록(line 124). (2) **5종 중 유일하게 readiness 게이트와 직접 닿는 생성기다** — `rough-fixture-ui` 의 `component_catalog_generated` fact(현재 `component-catalog.md` 존재 여부, `workflow-state.mjs:98`)를 충족시킨다(엄밀히는 수동 catalog 도 fact 를 켜지만, catalog-gen 은 그 수동 존재를 생성 계약 do_not_edit:true 로 승격한다). (3) 추출 알고리즘이 가장 단순(JSDoc/TS export 파싱 → import 경로 + 구조화 Props 표), 외부 의존 없음(순수 TS/JS AST). (4) coupon-feature 에 맞출 구체 reference 출력이 이미 있음. → catalog-gen 이 multi-dry-run 6-screen fixture 의 implement-screen 테스트를 가장 일찍 가능케 한다.
 
 ---
 
@@ -227,7 +227,7 @@ checks:
 
 **risks.** (a) **오탐(중복 오검출)**: 두 화면이 합법적으로 같은 route 공유(모달 오버레이) 시 검사 5 실패 — 완화: Status enum 에 alias/overlay 추가(향후 설계). [확률 낮음, blast 설계시점만] (b) **route 형식 취약**: Expo Router 문법이 아직 어디에도 regex 안 됨 — nav-graph 가 inventory 를 소비하면 broken route 가 nav-graph 를 깨뜨림. [확률 중·MVP-C, blast 높음] (c) **메타 stale**: 파생값은 line 46 에서 계산되나 inventory 는 4필드만 — 하위 생성뷰가 재파생/재파싱(DRY 위반·drift). hardening 으로 stub/derived hint 추가 권장. [확률 높음·MVP-C, blast 중간] (d) **domain 고아**: inventory 가 domain 의 domain-rules artifact 존재를 검증 안 함 — 신규 검사 권장. [확률 중] (e) **stub 무결성**: `isStub()`(spec.mjs L185-193)은 stub 을 판정하나 inventory 가 stub 상태를 export 안 함(workflow-state.mjs L52 엔 있음) — stub 변경 시 inventory stale. [확률 높음, blast 중간 — readiness/nav-graph 오독]
 
-**priority: first.** inventory hardening 은 **foundational MVP-C 작업**이다 — (1) nav-graph 생성(구조화 입력 필요), (2) route-tree 검증(파일 route 교차), (3) readiness 게이트 강화(stub→mode 효과)를 모두 막는 전제. roadmap line 89-95 의 "다음 구현 후보"에 screen-inventory hardening 이 **명시되지 않았으나**, MVP-C 완료 기준(line 389)이 inventory hardening 을 함의한다. **권장: nav-graph.mjs 구현 전 초기 MVP-C 작업으로 스코프.**
+**priority: Phase 0 — 전제.** inventory hardening 은 **foundational MVP-C 작업**이다 — (1) nav-graph 생성(구조화 입력 필요), (2) route-tree 검증(파일 route 교차), (3) readiness 게이트 강화(stub→mode 효과)를 모두 막는 전제. roadmap line 89-95 의 "다음 구현 후보"에 screen-inventory hardening 이 **명시되지 않았으나**, MVP-C 완료 기준(line 389)이 inventory hardening 을 함의한다. **권장: nav-graph.mjs 구현 전 초기 MVP-C 작업으로 스코프.**
 
 ---
 
@@ -249,7 +249,7 @@ checks:
 
 **generator.** `npm run workflow:check-generated` → `scripts/check-generated-files.mjs` **(미존재, 설계만 존재 — 제안)**.
 
-**validation(이 guard 가 수행하는 규칙).** (1) **생성물 수집**: `artifact-manifest.yaml` 의 `kind=generated` 모든 항목 + `generated_sections`(screen-spec 의 Entry Points). (2) **헤더 검사**: 각 생성 파일 상단 ~400자 내 마커 — Markdown `<!-- GENERATED FILE — DO NOT EDIT -->` 또는 YAML `# GENERATED FILE — DO NOT EDIT`. (3) **섹션 마커 검사**: `GENERATED:START <gen>`/`GENERATED:END <gen>` 쌍 존재 + 순서(START < END) + generator 이름 일치(현행 검사 6 의 정규식 `GENERATED:START\s+{gen}\b` 재사용). (4) **마커 훼손 감지**: 누락·변경(명령행 오타·Source 경로 변경) → error. (5) **재생성 멱등성(CI only)**: 각 생성기 재실행 후 `git diff --exit-code` — 산출물이 이전과 동일(타임스탬프 제외). (6) **경계 전환 감지**: MVP-A 임시 허용(Entry Points·component-catalog 수동)의 `do_not_edit: false→true` 전환.
+**validation(이 guard 가 수행하는 규칙).** (1) **생성물 수집**: `artifact-manifest.yaml` 의 `kind:generated` **이면서 `do_not_edit:true`** 인 항목(현행 검사 6 기준 — `validate.mjs:333` `entry.kind==='generated' && entry.do_not_edit===true`) + `generated_sections`(screen-spec Entry Points). **수집 기준의 전/후를 명시한다**: MVP-A 수동 허용 단계에선 `component-catalog`(do_not_edit:false)가 제외되고, MVP-C 핸드오프에서 `do_not_edit:true` 로 전환돼야 비로소 포함된다 — 그래야 수동 단계에서 과검출이 안 난다. (2) **헤더 검사**: 각 생성 파일 상단 ~400자 내 마커 — Markdown `<!-- GENERATED FILE — DO NOT EDIT -->` 또는 YAML `# GENERATED FILE — DO NOT EDIT`. (3) **섹션 마커 검사**: `GENERATED:START <gen>`/`GENERATED:END <gen>` 쌍 존재 + 순서(START < END) + generator 이름 일치(현행 검사 6 의 정규식 `GENERATED:START\s+{gen}\b` 재사용). (4) **마커 훼손 감지**: 누락·변경(명령행 오타·Source 경로 변경) → error. (5) **재생성 멱등성(CI only)**: 각 생성기 재실행 후 `git diff --exit-code` — 산출물이 이전과 동일(타임스탬프 제외). (6) **경계 전환 감지**: MVP-A 임시 허용(Entry Points·component-catalog 수동)의 `do_not_edit: false→true` 전환.
 
 **fixtures.** `examples/coupon-feature`(`_meta/workflow-state.yaml`·`_meta/screen-inventory.yaml`·`design/component-catalog.md` 각 GENERATED 헤더 + Entry Points 마커 있는 screen-spec — 실제 헤더 예: `# GENERATED FILE — DO NOT EDIT` / `# Source: …` / `# Command: npm run workflow:state`), `examples/multi-screen-dry-run`(동일 생성물), `examples/path-backstop`(경계 검증 케이스).
 
@@ -257,7 +257,7 @@ checks:
 
 **risks.** (a) **오탐**: 공유 `src/api`·`src/components/ui` 등 전역 폴더에 비-생성 파일이 있으면 헤더 검사 과다 적용 → **`do_not_edit:true` 마크된 것만** 필터링 필수. (b) **타임스탬프 drift**: 생성기가 `generated_at` 갱신하면 "멱등하지 않다" false fail → 비교 시 타임스탬프 정규화(기존 `test-fixture.mjs` 의 `normalizeText` 패턴 재사용). (c) **블록 감시 비용**: screen-spec 마다 모든 생성 섹션 검사 → O(N×M), 화면 많으면 캐싱/fail-fast 최적화. (d) **마커 문법 엄격성**: `GENERATED:START nav-graph` 뒤 공백/케이스 민감 → 정규식 정의 명확화 + lint-policy 보강. (e) **부분 변경 vs 전체 교체**: 생성기가 일부만 업데이트하려는 경우 마커 블록이 전체 교체만 허용 → **설계 결정 필요**(전체 교체만? granular update?).
 
-**priority: first.** MVP-C 진입의 **첫 티켓**이어야 한다 — (1) 불변식 #3·#7 을 코드로 강제 안 하면 재현 불가, (2) CI 멱등성 게이트가 diff 기반이라 산출물이 정확히 일치해야 함(CHANGELOG: GitHub Actions `git diff --exit-code` 멱등성 게이트), (3) catalog-gen/nav-graph/route-tree 셋을 도입하는 순간 모두 마커를 가지므로 guard 도 동시에 필요. 현행 검사 6 은 점진 확장하되, check-generated 는 세 생성기와 함께 들어와야 한다.
+**priority: Phase 0 — 방어선(첫 티켓).** MVP-C 진입의 **첫 티켓**이어야 한다 — (1) 불변식 #3·#7 을 코드로 강제 안 하면 재현 불가, (2) CI 멱등성 게이트가 diff 기반이라 산출물이 정확히 일치해야 함(CHANGELOG: GitHub Actions `git diff --exit-code` 멱등성 게이트), (3) catalog-gen/nav-graph/route-tree 셋을 도입하는 순간 모두 마커를 가지므로 guard 도 동시에 필요. 현행 검사 6 은 점진 확장하되, check-generated 는 세 생성기와 함께 들어와야 한다.
 
 ---
 
@@ -266,7 +266,7 @@ checks:
 | View | source of truth(입력 정본) |
 |---|---|
 | nav-graph | 모든 screen-spec `## Interaction Matrix` + navigation-map `Cross-Domain Edges` (impl §9) |
-| route-tree | screen-spec `frontmatter.route` + Interaction Matrix route + `src/app` 파일 트리(Expo Router; policy:44) |
+| route-tree | `src/app` 파일 트리(Expo Router; impl §9 정본) · 교차검증: screen-spec `frontmatter.route`·Interaction Matrix route |
 | component-catalog | `src/components/ui/**` export + Props (manifest:125-126) |
 | screen-inventory | (기존) screen-spec frontmatter — `workflow-state.mjs buildState()` (manifest:105-106) |
 | file guard | (기존) `artifact-manifest.yaml` 의 `kind:generated`·`do_not_edit:true` + `generated_sections` |
@@ -285,7 +285,7 @@ checks:
 
 ## 5. do-not-edit 규칙 (불변식 #3 의 MVP-C 적용)
 
-불변식 #3(README line 96): *생성물엔 GENERATED 헤더/마커. 마커 밖은 생성기가 안 건드린다.* MVP-C 적용:
+불변식 #3(README §"깨면 안 되는 불변식"): *생성물엔 GENERATED 헤더/마커. 마커 밖은 생성기가 안 건드린다.* MVP-C 적용:
 
 ```txt
 (1) 문서 섹션   <!-- GENERATED:START <generator> --> … <!-- GENERATED:END <generator> -->
@@ -346,10 +346,10 @@ View 5 file guard          examples/coupon-feature · examples/multi-screen-dry-
 기존 MVP-A CI(`frontend-workflow-kit.yml`)의 **warning-first → enforce** 패턴 위에 쌓는다(CHANGELOG·path-backstop 선례와 동일).
 
 ```txt
-(1) Baseline      example:readiness 다음에 `workflow:catalog` + `workflow:nav` 추가(state 생성과 병렬)
+(1) Baseline      example:readiness 다음에 `workflow:catalog` + `workflow:nav` + `workflow:route-tree` 추가(state 생성과 병렬)
 (2) 멱등성 게이트  기존 `git diff --exit-code`(_meta/) 를 design/component-catalog.md ·
-                  navigation-map Entry Points 섹션 · _meta/route-tree.txt 로 확장
-(3) route-tree     _meta/route-tree.txt 를 커밋본과 diff (멱등 마커: `# Generated at: <date>` 만 변동 허용)
+                  각 screen-spec 의 Entry Points 생성 블록(navigation-map 아님, impl §3) · _meta/route-tree.txt 로 확장
+(3) route-tree     `workflow:route-tree` 실행 후 _meta/route-tree.txt 를 커밋본과 diff (멱등: `generated_at` 한 줄만 변동 허용)
 (4) check-generated example:validate 직전에 `workflow:check-generated` 를 최종 검증으로(fail-closed: 마커 누락 → exit 1)
 (5) 골든 fixture   test-fixtures.mjs 엔트리는 warning-first(continue-on-error: true)로 시작,
                   FP(오탐) 확인 후 enforce 승격 (보드 §0/§7 룰)
@@ -376,7 +376,7 @@ Work Packet(템플릿 `work-packet.template.md`)은 readiness 출력의 **Index/
 
 ## 12. 무엇을 먼저 구현 (priority)
 
-설계 성숙도·게이트 의존·blast-radius 를 종합한 제안 순서. **MVP-B 초안과 같은 철학 — 인프라/전제를 먼저 깔고, 게이트를 푸는 것부터.**
+설계 성숙도·게이트 의존·blast-radius 를 종합한 제안 순서. **MVP-B 초안과 같은 철학 — 인프라/전제를 먼저 깔고, 게이트를 푸는 것부터.** (각 View 절의 `priority` 라벨은 이 Phase 와 1:1 대응한다 — 단일 'first' 라벨의 과부하를 피해 Phase 번호로 적는다.)
 
 ```txt
 Phase 0  (전제·인프라)  View 4  screen-inventory hardening      ← nav-graph/route-tree 의 구조화 입력 전제
@@ -389,7 +389,7 @@ Phase 2  (전역 뷰)      View 2  route-tree                       ← src/app 
 **근거.**
 - **View 4(hardening) 가 전제.** nav-graph·route-tree 가 구조화된 inventory(stub·파생 hint)를 입력으로 쓰므로, inventory 를 먼저 단단히 해야 위에 쌓을 수 있다. 코드 변경은 기존 `workflow-state.mjs` 강화라 신규 스크립트 위험이 없다.
 - **View 5(guard) 가 첫 티켓.** 세 생성기를 도입하는 순간 모두 마커를 가지므로 guard 가 동시에 와야 한다. 불변식 #3·#7 을 코드로 강제하지 않으면 멱등성 CI 가 성립하지 않는다.
-- **View 3(catalog-gen) 가 첫 생성기.** **유일하게 readiness 게이트(`component_catalog_generated`)를 직접 푼다** — rough-fixture-ui 진입을 막던 fact 를 켠다. 추출 알고리즘이 가장 단순(순수 TS/JS AST, 외부 의존 없음)하고, coupon-feature 에 맞출 reference 출력이 이미 있다.
+- **View 3(catalog-gen) 가 첫 생성기.** **5종 중 유일하게 readiness 게이트와 직접 닿는다** — `rough-fixture-ui` 의 `component_catalog_generated` fact(현재 `component-catalog.md` 존재 여부, `workflow-state.mjs:98`)를 충족시킨다(엄밀히는 수동 catalog 도 그 fact 를 켜지만, catalog-gen 은 수동 존재를 생성 계약으로 승격). 추출 알고리즘이 가장 단순(순수 TS/JS AST, 외부 의존 없음)하고, coupon-feature 에 맞출 reference 출력이 이미 있다.
 - **View 1·2(nav-graph·route-tree) 는 동반·later.** "전역 뷰 3종 전환"의 나머지 둘. nav-graph 는 **nav-graph.yaml 스키마(노드/엣지·크로스도메인 필터)가 미정**이라 설계 선행이 필요해 catalog 보다 뒤. route-tree 는 nav-graph 와 같은 라우트 자산(`interactionResultRoutes`)을 공유해 함께 묶는다.
 
 **대안 분기.** "전역 뷰 전환"을 빨리 보여 주고 싶으면 View 1(nav-graph)을 catalog 와 병행하되, nav-graph.yaml 스키마 결정을 별도 Open Decision 으로 먼저 닫아야 한다. md-only fixture 의 implement-screen 테스트를 빨리 열고 싶으면 View 3 을 최우선으로(현 권장).
