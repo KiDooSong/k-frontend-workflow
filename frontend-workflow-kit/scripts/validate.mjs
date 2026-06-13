@@ -15,7 +15,9 @@
 //       required 9필드·input_id 형식/전역중복·supersedes 해소·enum; suggested_scope·summary 는 경고(deprecated alias).
 //       inputs/ 디렉토리가 없으면 NO-OP.
 //   12. Reconciliation Register(_meta/reconciliation-register.md) — Reconcile Status enum·in-progress/failed·중복 행·
-//       inputs↔register 미처리 교차검사. register 파일이 없으면 NO-OP(초기/선택적 도입).
+//       8컬럼 스키마·inputs↔register 미처리 교차검사. register 파일이 없으면 NO-OP(초기/선택적 도입).
+//       ※ "미처리(reconcile 미완)" = register 행 없음 + Reconcile Status=not-started 는 기본 경고(warning-first),
+//         --enforce 플래그로 에러 승격. in-progress(중단)/failed/enum/중복/컬럼누락 같은 망가짐·중단 상태는 항상 에러.
 //       ★ HARD RULE: 오직 Reconcile Status 만 본다 — 자식 항목(D-/C-/U-/G-) open/closed 와 Created Items 의 (open) 주석은
 //       절대 게이트 신호로 쓰지 않는다(reconciled + 자식 open == 정상 PASS). 세 축은 독립.
 import path from 'node:path';
@@ -354,7 +356,7 @@ function main() {
   //   register 파일이 없으면 NO-OP(초기/선택적 도입). 검사 11 과 같은 inputArtifacts 로 미처리 교차검사.
   const registerFile = path.join(docsDir, '_meta', 'reconciliation-register.md');
   const register = parseReconciliationRegister(registerFile);
-  const registerResult = validateReconciliationRegister({ register, inputArtifacts, registerFile });
+  const registerResult = validateReconciliationRegister({ register, inputArtifacts, registerFile, enforce: !!flags.enforce });
   for (const e of registerResult.errors) add(12, e.file, e.message);
   for (const w of registerResult.warnings) warn(12, w.file, w.message);
 

@@ -68,6 +68,8 @@
 | 5 | `reconciliation-validation/fail` | 1 | 1 | ✅ |
 | 5a | `reconciliation-validation/malformed-register` (Codex R1) | 1 | 1 | ✅ (필수 컬럼 누락 1건) |
 | 5b | `reconciliation-validation/no-register` (Codex R1) | 0 | 0 | ✅ (register 부재 NO-OP) |
+| 5c | `reconciliation-validation/unreconciled` (결정 #1) | 0 | 0 | ✅ (미처리 경고 2건, warning-first) |
+| 5d | `reconciliation-validation/unreconciled --enforce` (결정 #1) | 1 | 1 | ✅ (미처리 에러 2건) |
 | 6 | `coupon-feature` baseline (정규 호출, `--root` 없음) | 0 | 0 | ✅ (검사 12종 통과, 회귀 없음) |
 | 6b | `coupon-feature` baseline (**`--root` 부가 시**) | 1 | 0 | ⚠️ 검사 11/12 무관 사전결함(검사 3 × `--root`) — §5 |
 
@@ -116,19 +118,19 @@ workflow:validate — OK (검사 12종 통과)
 > `Reconcile Status=reconciled` 이면서 `Created Items = "C-001 (open), D-204 (reopened → open)"`,
 > 즉 **자식이 open 인 reconciled 행** 인데 정상 통과했다. HARD RULE(reconciled+자식-open=PASS) 성립.
 
-### 4.5 RUN 5 — reconciliation-validation/fail (exit 1, 검사 12 에러 5건 + 경고 1건)
+### 4.5 RUN 5 — reconciliation-validation/fail (exit 1, 기본: 검사 12 에러 4건 + 경고 2건)
 
 ```
-workflow:validate — 5 건 위반
+workflow:validate — 4 건 위반
   [검사 12] ...\_meta\reconciliation-register.md: IN-20260614-figma-001: Reconcile Status=in-progress (이전 실행 중단) — 이어서 reconcile 하세요
   [검사 12] ...\_meta\reconciliation-register.md: register Input ID 중복: 'IN-20260614-qa-001' (2행) — 입력당 canonical 행 1개
   [검사 12] ...\_meta\reconciliation-register.md: Reconcile Status enum 위반: 'in-review' (기대 not-started|in-progress|reconciled|failed) — Input IN-20260614-meeting-001
   [검사 12] ...\_meta\reconciliation-register.md: IN-20260614-user-note-001: Reconcile Status=failed (reconcile 실패)
-  [검사 12] ...\inputs\IN-20260614-api-001.md: inputs/ 에 있으나 register 에 행 없음: 'IN-20260614-api-001' (미처리) — reconcile-input 먼저 실행
   [경고 12] ...\_meta\reconciliation-register.md: IN-20260614-planning-002: Reconcile Status=not-started (아직 reconcile 시작 전)
+  [경고 12] ...\inputs\IN-20260614-api-001.md: inputs/ 에 있으나 register 에 행 없음: 'IN-20260614-api-001' (미처리) — reconcile-input 먼저 실행
 ```
 
-> 모든 검사 12 에러 경로 커버: `in-progress`·`failed`·enum 위반(`in-review`)·중복 Input ID(`IN-20260614-qa-001` 2행)·미처리(register 에 행 없는 입력 — **에러는 INPUT 파일** `IN-20260614-api-001.md` 에 발화). 추가로 `not-started` 경고.
+> 항상-에러(망가짐·중단) 4건: `in-progress`·`failed`·enum 위반(`in-review`)·중복 Input ID(`IN-20260614-qa-001` 2행). **미처리**(register 행 없는 `api-001`, 보고는 INPUT 파일)·**`not-started`**(`planning-002`)는 warning-first 라 기본 **경고 2건** → `--enforce` 시 에러로 승격(에러 6건). 결정 #1 반영 — §9.
 
 ### 4.6 CRUCIAL GUARD — Created Items/자식 참조 0건
 
@@ -214,3 +216,31 @@ Codex 리뷰(HEAD 4a32b59)에서 나온 지적을 해소했다.
 | coupon-feature baseline (`--root` 없음) | 0 | ✅ 회귀 없음 |
 
 `node --check` 3개 파일 통과. HARD RULE(reconciled+자식-open=PASS, Created Items 미파싱)·번호(11/12)·금지 파일 무변경 불변.
+
+---
+
+## 9. warning-first 결정 (#1) 반영 (2026-06-14)
+
+보드 §0/§1 이 "PR 검토 단계에서 다시 고민"으로 미뤄둔 **#1 warning-first 결정**을 **(b)** 로 확정: **미처리(reconcile 미완)는 기본 경고, `--enforce` 로 에러 승격.**
+
+### 무엇이 바뀌었나
+
+- **미처리 두 갈래를 warning-first 로 통일**: ① register 행 없음(미처리 교차검사) ② `Reconcile Status=not-started`. 둘 다 정상 흐름(입력 추가 → reconcile-input)의 중간 상태라 기본 경고(exit 0). 이전엔 ①=에러 / ②=경고로 **불일치**였는데 이번에 정합됨.
+- **`--enforce` 플래그**(`validate.mjs` → `validateReconciliationRegister({…, enforce})`): 위 두 갈래를 에러로 승격(CI 강제 시점용). 기본값 false.
+- **항상 에러 유지**(enforce 무관): in-progress(중단)·failed·enum 위반·중복 Input ID·8컬럼 누락·표 미파싱, 그리고 검사 11(망가진 입력 frontmatter).
+- 근거: `input-reconciliation.md` "초기에는 hard fail 이 아니라 … 이후 hook/CI 에서 경고하거나 실패", Lane B(forbidden_paths backstop) warning-first 정합, proposal 원안.
+
+### 신규 픽스처
+
+- `examples/reconciliation-validation/unreconciled/` — reconciled(통과) + 미처리(행 없음) + not-started 를 한 트리에. 기본 exit 0(경고 2), `--enforce` exit 1(에러 2).
+
+### 재검증 (직접 실행)
+
+| tree | 기본 | `--enforce` |
+|---|---|---|
+| reconciliation-validation/unreconciled | exit 0 (경고 2) | exit 1 (에러 2) |
+| reconciliation-validation/fail | exit 1 (에러 4 + 경고 2) | exit 1 (에러 6) |
+| reconciliation-validation/pass · no-register | exit 0 | exit 0 (변화 없음) |
+| input-validation/{pass,warn,fail} · recon/malformed-register | 변화 없음 | — |
+
+`node --check` 통과. HARD RULE·번호(11/12)·금지 파일 무변경 불변. (coupon-feature baseline 도 변화 없음 — 검사 11/12 는 inputs·register 없으면 NO-OP.)
