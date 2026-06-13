@@ -76,7 +76,7 @@ export function parseReconciliationRegister(registerFile) {
 //   inputArtifacts collectInputArtifacts 결과 (검사 11 과 동일 객체 공유 — 미처리 교차검사용)
 //   registerFile   register 절대경로 (register 자체에 대한 에러의 file)
 // register 파일이 없으면 ({exists:false}) NO-OP — inputs/ 에 파일이 있어도 검사하지 않는다.
-export function validateReconciliationRegister({ register, inputArtifacts = [], registerFile }) {
+export function validateReconciliationRegister({ register, inputArtifacts = [], registerFile, enforce = false }) {
   const errors = [];
   const warnings = [];
   if (!register || !register.exists) {
@@ -84,6 +84,12 @@ export function validateReconciliationRegister({ register, inputArtifacts = [], 
   }
   const add = (file, message) => errors.push({ file, message });
   const warn = (file, message) => warnings.push({ file, message });
+  // "미처리(reconcile 미완)" 신호의 경중 — 기본 경고(warning-first), --enforce 시 에러로 승격.
+  //   대상: register 행 없음(미생성) + Reconcile Status=not-started(미시작). 둘 다 "아직 reconcile 안 함" 축이라
+  //   정상 흐름(입력 추가 → reconcile-input)의 중간 상태일 뿐이므로 기본은 막지 않는다.
+  //   in-progress(중단)/failed/enum/중복/컬럼누락 같은 '망가지거나 끊긴' 상태는 enforce 와 무관하게 항상 에러.
+  //   (warning-first 결정 #1 — input-reconciliation.md "초기에는 hard fail 이 아니라" + Lane B backstop 정합.)
+  const flagUnprocessed = enforce ? add : warn;
 
   // register 파일은 있는데 8컬럼 표 자체가 파싱되지 않으면 구조 결함 — 행 검사 불가, 여기서 끝낸다.
   if (!register.table) {
@@ -152,7 +158,7 @@ export function validateReconciliationRegister({ register, inputArtifacts = [], 
       } else if (status === 'failed') {
         add(registerFile, `${id}: Reconcile Status=failed (reconcile 실패)`);
       } else if (status === 'not-started') {
-        warn(registerFile, `${id}: Reconcile Status=not-started (아직 reconcile 시작 전)`);
+        flagUnprocessed(registerFile, `${id}: Reconcile Status=not-started (아직 reconcile 시작 전)`);
       }
       // status === 'reconciled' 는 PASS — 자식 decision/Created Items 가 open 이어도 무조건 통과(HARD RULE 1·2).
     }
@@ -168,7 +174,7 @@ export function validateReconciliationRegister({ register, inputArtifacts = [], 
       const id = a.fm?.input_id;
       if (typeof id !== 'string' || id.trim() === '') continue;
       if (!registeredIds.has(id)) {
-        add(a.file, `inputs/ 에 있으나 register 에 행 없음: '${id}' (미처리) — reconcile-input 먼저 실행`);
+        flagUnprocessed(a.file, `inputs/ 에 있으나 register 에 행 없음: '${id}' (미처리) — reconcile-input 먼저 실행`);
       }
     }
   }
