@@ -63,8 +63,8 @@ fake hook·생성 카탈로그·figma 매핑·사람 승인을 더했을 때 도
 1. baseline 으로 `project-before/` 를 연다.
 2. `inputs/` 의 5건을 reconcile-input 에 입력한다.
 3. reconcile-input(LLM) 이 만든 결과를 **`expected-llm-after/` 와 1:1 로 대조한다.** 이것이 LLM 단독 출력의 정답지다
-   (decision/conflict 는 `open`·재오픈까지만, simple-update·gap 제안 반영, 닫기·승격·accept 는 없음).
+   (decision/conflict/unknown 은 `open`·재오픈·근거 연결까지만, simple-update·gap 제안 반영, 닫기·승격·accept 는 없음).
 4. 그 다음 사람이 결정을 닫은 **이상적 최종 상태**는 `expected-after/` 다. reconcile-input 은 blocker 를 **올리기만** 하고
-   (결정 resolve·충돌 close·status confirmed 승격·gap accept 는 사람-전용), `expected-after/` 는 그 사람 단계까지 마친 트리다.
+   (결정 resolve·충돌 close·Unknown resolved·status confirmed 승격·gap accept 는 사람-전용), `expected-after/` 는 그 사람 단계까지 마친 트리다.
    따라서 `expected-llm-after/` → (사람 결정) → `expected-after/` 순서이고, LLM 출력은 전자와 같아야 후자와는 다른 게 정상이다.
    어디까지가 LLM 몫이고 어디부터가 사람 몫인지는 `expected-llm-after/README.md` 의 diff 표와 reconciliation 요약 리포트가 명시한다.
