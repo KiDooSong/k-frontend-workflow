@@ -53,7 +53,7 @@ description: 외부 입력 스킬이 저장한 새 입력 결과물(input_id 보
 | reject-input | Register `Result`에 사유 기록, 문서는 유지 |
 
 ## Reconciliation Register 스키마
-`docs/frontend-workflow/inputs/reconciliation-register.md`
+`docs/frontend-workflow/_meta/reconciliation-register.md` (처리 이력용 meta-register — validate 가 `_meta/` 제외)
 ```md
 ## Reconciliation Register
 | Input ID | Source | Classification | Reconcile Status | Result | Touched Artifacts | Created Items | Supersedes |

@@ -100,10 +100,10 @@ input_id 는 한 번 발급하면 불변이다.
 
 입력의 처리 이력과 결과를 한곳에 남기는 **살아있는 레지스터**다. `Unknowns`·`Open Decisions`·`Conflicts` 와 같은 mutable-status 표 가족이다(행은 지우지 않고 Reconcile Status·Result 만 갱신한다). 엄밀한 append-only 불변 기록은 후속 `decision-log`/ADR 의 몫이고, 이 레지스터는 그보다 가볍다.
 
-저장 위치(예):
+저장 위치 (입력 원문은 `inputs/`, register 는 처리 이력용 **meta-register** 라 `_meta/` 에 둔다 — `validate.mjs` 가 `_meta/` 를 authoring 검사에서 제외하므로 register 가 artifact_type 검사에 걸리지 않는다):
 
 ```txt
-docs/frontend-workflow/inputs/reconciliation-register.md
+docs/frontend-workflow/_meta/reconciliation-register.md
 ```
 
 스키마:
