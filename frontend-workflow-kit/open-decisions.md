@@ -149,7 +149,7 @@ production-ready: 불가
   2. Open Decisions 표에 open 행을 추가한다 (Blocking Mode 를 보수적으로 — 애매하면 한 단계 낮게).
   3. 그 화면을 해당 Blocking Mode 미만까지만 구현하고 멈춘다.
 
-resolved 로 닫는 것은 사람만 한다. LLM 은 open 행을 추가만 하고, 어떤 행도 resolved 로 바꾸지 않는다.
+resolved 로 닫는 것은 사람만 한다. LLM 은 blocker 를 올리기만 한다 — open 행 추가, 그리고 새 입력이 기존 resolved 결정과 충돌하면 그 결정을 resolved → open 으로 재오픈(이전 값은 Conflicts 에 보존). 어떤 행도 스스로 resolved 로 바꾸지 않는다(재-resolve 는 사람만).
 ```
 
 ## Readiness 통합

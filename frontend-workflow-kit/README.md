@@ -23,6 +23,23 @@ policies/    implementation-mode-policy.yaml
 examples/    coupon-feature (golden example, end-to-end 1회 완주)
 ```
 
+## 문서 지도
+
+각 문서가 **무엇을 정의하고, 그게 코드로 강제되는지**를 구분한다. "문서 계약만"인 항목은 아직 스크립트가 강제하지 않는다 — 설계 합의일 뿐 live 게이트가 아니다.
+
+| 문서 | 역할 | MVP 상태 | 구현 상태 |
+|---|---|---|---|
+| [open-decisions.md](open-decisions.md) | 결정 대기 분리 + readiness cap | **MVP-A 코어** | ✅ 템플릿·파서·readiness 다운그레이드 / validate 스키마 검사는 후속 |
+| [input-reconciliation.md](input-reconciliation.md) | 새 입력 반영·충돌·`resolved→open` 재오픈 계약 | MVP-A 설계 확장 | 📄 문서 계약만 — reconcile-input 스킬·hook·CI 후속 |
+| [investigation-and-verification.md](investigation-and-verification.md) | 장기 조사·플랫폼 검증·evidence 핸드오프 | MVP-A 설계 확장 | 📄 문서 계약만 — 템플릿·manifest·readiness 파싱 후속 |
+| `temp/review-gates-notes.md` | 리뷰 관문(review gate) 후보 | future | 🗒 스크래치 메모(미커밋) |
+
+**MVP-A 에 구현·포함됨:** 템플릿(screen-spec·llm-rules 등) · `workflow-state` · `readiness`(Open Decisions 다운그레이드 포함) · `validate`(검사 8종) · golden example. (실제 live 게이트는 `readiness`·`validate` 가 강제)
+
+**아직 강제 안 됨 (문서/설계 계약만):** Open Decisions validate 스키마 검사 · Input Reconciliation register hook/CI · Investigation `blocks_mode` readiness 파싱 · Review Gates 하드 게이트.
+
+전체 진행 상황과 다음 후보는 [roadmap-current.md](roadmap-current.md).
+
 ## 설치 (소비 프로젝트)
 
 1. 이 디렉토리 전체를 프로젝트의 `tools/frontend-workflow/` 로 복사한다.

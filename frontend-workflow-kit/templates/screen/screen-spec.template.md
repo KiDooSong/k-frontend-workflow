@@ -94,7 +94,9 @@ last_reviewed: {YYYY-MM-DD}
 
 ## Open Decisions
 <!-- 입력만으로 정해지지 않고 산출물 형태를 바꾸는 "선택"은 LLM 이 임의로 정하지 말고 여기 open 행으로 남긴다.
-     사실 확인은 Unknowns(여긴 결정 전용). Status 는 open|resolved 이고, resolved 로 닫는 것은 사람만.
+     사실 확인은 Unknowns(여긴 결정 전용). Status 는 open|resolved.
+     LLM 은 open 행 추가, 그리고 새 입력이 기존 resolved 결정과 충돌하면 resolved → open 재오픈까지만 한다.
+     게이트를 내리는 일(재-resolve · status confirmed 승격 · conflict 닫기)은 모두 사람만.
      Blocking Mode 는 implementation-mode-policy.yaml 의 모드명. resolved 면 Options 에 선택값을 표시한다.
      표 헤더는 바꾸지 않는다 (workflow-state.mjs 가 헤더로 표를 파싱한다). -->
 | ID | Decision Needed | Options | Blocking Mode | Owner | Status |
