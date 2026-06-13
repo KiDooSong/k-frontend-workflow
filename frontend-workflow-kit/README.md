@@ -7,6 +7,8 @@ LLM이 프론트 프로젝트를 **환각 없이** 진행하게 만드는 워크
 > 설계 문서: [Core](../frontend-llm-workflow.md) · [확장판](../frontend-llm-workflow-expanded.md) ·
 > [스킬팩 개념](../frontend-workflow-skillpack-concept.md) · [구현 명세](../frontend-workflow-kit-implementation.md)
 > 입력 중 결정 대기 항목 분리: [Open Decisions](open-decisions.md)
+> 새 입력 반영/충돌 검토: [Input Reconciliation](input-reconciliation.md)
+> 장기 조사/플랫폼 검증: [Investigation And Verification](investigation-and-verification.md)
 
 ## MVP-A에 들어있는 것
 
