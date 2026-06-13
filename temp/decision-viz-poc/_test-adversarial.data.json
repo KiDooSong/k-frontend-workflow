@@ -1,0 +1,27 @@
+{
+  "meta": {
+    "id": "TEST-ADV",
+    "title": "적대적 입력 테스트 </script><img src=x onerror=alert(1)>",
+    "screen": "X",
+    "blocking": "x",
+    "owner": "x",
+    "readiness": "x",
+    "status": "open",
+    "question": "브레이크아웃/주입 방어 </script>"
+  },
+  "base": "line1\nline2 </script>\nline3",
+  "options": [
+    { "key": "k1", "name": "A </script>", "code": "a\"x", "tag": "tag </script>", "recommend": true, "stars": 2, "why": "w", "pros": ["p </script>"], "cons": ["c (?)"], "changes": ["ch1", "ch2", "ch3"], "risk": "r", "blk": "b", "branch": "br", "after": "line1\nline2 CHANGED </script>\nline3", "scores": { "s1": 9, "s2": 0, "s3": 7 }, "value": 6, "effort": 2, "preview": { "headline": "h </script>", "bullets": ["bu"], "unknowns": ["un"] } },
+    { "key": "q\"x", "name": "B", "code": "b", "tag": "t", "recommend": false, "stars": 1, "why": "w", "pros": ["p"], "cons": ["c"], "changes": ["ch"], "risk": "r", "blk": "b", "branch": "br", "after": "line1\nline2\nline3 added", "scores": { "s1": 5, "s2": 5, "s3": 5 }, "value": 5, "effort": 5, "preview": { "headline": "h", "bullets": [], "unknowns": [] } },
+    { "key": "k3", "name": "C", "code": "c", "tag": "t", "recommend": false, "stars": 3, "why": "w", "pros": ["p"], "cons": ["c"], "changes": ["ch"], "risk": "r", "blk": "b", "branch": "br", "after": "line1\nX\nline3", "scores": { "s1": 0, "s2": 10, "s3": 3 }, "value": 0, "effort": 10, "preview": { "headline": "h", "bullets": [], "unknowns": [] } },
+    { "key": "k4", "name": "D", "code": "d", "tag": "t", "recommend": false, "stars": 0, "why": "w", "pros": ["p"], "cons": ["c"], "changes": ["ch"], "risk": "r", "blk": "b", "branch": "br", "after": "line1\nline2\nline3", "scores": { "s1": 8, "s2": 2, "s3": 6 }, "value": 8, "effort": 2, "preview": { "headline": "h", "bullets": [], "unknowns": [] } },
+    { "key": "k5", "name": "E", "code": "e", "tag": "t", "recommend": false, "stars": 2, "why": "w", "pros": ["p"], "cons": ["c"], "changes": ["ch"], "risk": "r", "blk": "b", "branch": "br", "after": "line1\nline2\nDELETED", "scores": { "s1": 4, "s2": 7, "s3": 1 }, "value": 4, "effort": 7, "preview": { "headline": "h", "bullets": [], "unknowns": [] } }
+  ],
+  "criteria": [
+    { "k": "기준1 </script>", "t": { "k1": "v1", "q\"x": "v2", "k3": "v3", "k4": "v4", "k5": "v5 (?)" } }
+  ],
+  "scoreAxes": ["s1", "s2", "s3"],
+  "quadrant": { "xLabel": "노력 →", "yLabel": "가치 →", "xKey": "effort", "yKey": "value", "note": "test" },
+  "flow": [["n1", "s", 0], ["n2", "s", 1], ["n3", "s", 0]],
+  "journey": { "title": "t", "steps": ["s1", "s2", "s3"], "sat": { "k1": [5, 1, 3], "q\"x": [3, 3, 3], "k3": [1, 5, 2], "k4": [4, 4, 4], "k5": [2, 2, 5] }, "diverge": 1, "note": "test" }
+}

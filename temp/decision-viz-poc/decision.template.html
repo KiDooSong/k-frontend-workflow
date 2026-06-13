@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>의사결정 시각화 — visualize-decision 갤러리</title>
+<style>
+  :root{
+    --bg:#0e1014; --panel:#171b22; --panel2:#202631; --line:#303847; --editor:#11151b;
+    --ink:#e7ebf2; --muted:#a2acba; --faint:#727c8d;
+    --teal:#2dd4bf; --indigo:#7c8cff; --amber:#f5a623; --green:#34d399;
+    --red:#f87171; --blue:#60a5fa; --violet:#c084fc; --gold:#fbbf24;
+    --mono:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Malgun Gothic","Apple SD Gothic Neo",sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.62;
+       font-size:15px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  .wrap{max-width:1040px;margin:0 auto;padding:34px 22px 72px}
+  .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);border:0}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--c,var(--muted));flex:0 0 auto;display:inline-block}
+
+  header{border-bottom:1px solid var(--line);padding:0 0 22px;margin-bottom:8px}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--teal)}
+  h1{font-size:28px;margin:8px 0 12px;font-weight:760;line-height:1.25;letter-spacing:-.01em}
+  .meta{display:flex;flex-wrap:wrap;gap:8px}
+  .pill{font-family:var(--mono);font-size:12px;border:1px solid var(--line);border-radius:999px;padding:4px 11px;color:var(--muted);background:var(--panel)}
+  .pill strong{color:var(--ink)}
+  .banner{margin-top:16px;background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--teal);
+          border-radius:8px;padding:13px 16px;color:var(--muted);font-size:14px}
+  .banner b{color:var(--ink)} .q{color:var(--amber);font-weight:600}
+
+  /* sticky nav */
+  nav.toc{position:sticky;top:0;z-index:5;display:flex;gap:7px;flex-wrap:wrap;padding:11px 0;margin-top:14px;
+          background:linear-gradient(var(--bg) 70%,rgba(14,16,20,0));backdrop-filter:blur(3px)}
+  nav.toc a{font-size:12.5px;font-family:var(--mono);color:var(--muted);text-decoration:none;border:1px solid var(--line);
+            border-radius:999px;padding:5px 11px;background:var(--panel)}
+  nav.toc a:hover{color:var(--ink);border-color:var(--faint)}
+
+  /* trigger gate + view selection (초안 §3·§4) */
+  .gate{margin-top:14px;border-radius:8px;padding:12px 15px;font-size:13.5px;border:1px solid var(--line)}
+  .gate.go{background:rgba(45,212,191,.08);border-left:3px solid var(--teal)}
+  .gate.skip{background:rgba(245,166,35,.08);border-left:3px solid var(--amber)}
+  .gate-h{font-weight:700;color:var(--ink);margin-bottom:8px}
+  .gate-chips{display:flex;flex-wrap:wrap;gap:7px}
+  .gate-chip{font-size:12px;border-radius:999px;padding:3px 10px;border:1px solid var(--line);display:inline-flex;align-items:center;gap:5px}
+  .gate-chip.on{color:var(--green);border-color:rgba(52,211,153,.4)}
+  .gate-chip.off{color:var(--faint)}
+  .gate-reason{margin-top:8px;color:var(--muted)}
+  .viewsel{margin-top:12px;font-size:13px;color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:11px 14px}
+  .viewsel b{color:var(--ink)} .vs-omit{color:var(--faint)} .vs-why{margin-top:6px;color:var(--muted)}
+
+  section{margin-top:42px;scroll-margin-top:58px}
+  h2{font-size:20px;margin:0 0 6px;display:flex;gap:11px;align-items:center;font-weight:680}
+  h2 .n{min-width:27px;height:27px;border-radius:8px;background:var(--indigo);color:#0e1014;display:grid;place-items:center;
+        font-family:var(--mono);font-size:13px;font-weight:700;flex:0 0 auto;padding:0 6px}
+  .lead{color:var(--muted);margin:0 0 16px;font-size:14px;max-width:90ch}
+  .sub{font-size:13px;color:var(--faint);font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em;margin:22px 0 9px;
+       border-top:1px dashed var(--line);padding-top:14px}
+  .note{margin-top:13px;font-size:13px;color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:11px 14px}
+  .note b{color:var(--ink)}
+
+  /* option cards */
+  .legend-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:13px}
+  .opt-card{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--c);border-radius:8px;padding:15px 16px;display:flex;flex-direction:column;gap:10px}
+  .opt-card .top{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  .opt-card .nm{display:flex;align-items:center;gap:9px;font-weight:700;font-size:16px;color:var(--c)}
+  .opt-card .nm .code{font-family:var(--mono);font-size:12px;font-weight:400;color:var(--faint)}
+  .opt-card .rec{margin-left:auto;display:flex;align-items:center;gap:9px}
+  .stars{font-size:15px;letter-spacing:1px;color:var(--gold);white-space:nowrap}
+  .stars .off{color:#3a4250}
+  .recbadge{font-size:11.5px;font-weight:700;color:#0e1014;background:var(--green);border-radius:6px;padding:2px 9px;white-space:nowrap}
+  .opt-card .tag{font-size:13px;color:var(--faint)}
+  .opt-card .why{font-size:13px;color:var(--muted);border-left:2px solid var(--cbd);padding-left:10px}
+  .pc{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:560px){.pc{grid-template-columns:1fr}}
+  .pc h4{margin:0 0 6px;font-size:12px;font-weight:600;color:var(--muted);letter-spacing:.02em}
+  .pc ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px}
+  .pc li{font-size:13px;color:var(--ink);padding-left:18px;position:relative;line-height:1.5}
+  .pros li::before{content:"✓";position:absolute;left:0;color:var(--green);font-weight:700}
+  .cons li::before{content:"✕";position:absolute;left:0;color:var(--red);font-weight:700}
+  .rec-rule{margin-top:14px;font-size:13px;color:var(--muted);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:11px 14px}
+  .rec-rule b{color:var(--ink)}
+
+  /* diff */
+  .diff-controls{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:13px}
+  .seg-label{font-size:13.5px;color:var(--muted);margin-right:4px}
+  .seg{display:inline-flex;gap:8px;flex-wrap:wrap;vertical-align:middle}
+  .seg button{font:inherit;font-size:14px;padding:7px 14px;cursor:pointer;border-radius:9px;border:1.5px solid var(--cbd);
+              background:transparent;color:var(--c);display:inline-flex;align-items:center;gap:7px;font-weight:600}
+  .seg button .dot{width:8px;height:8px}
+  .seg button[aria-pressed="true"]{background:var(--c);color:#0e1014;font-weight:700}
+  .seg button[aria-pressed="true"] .dot{background:rgba(14,16,20,.55)}
+  .modetoggle{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+  .modetoggle button{border:0;background:var(--panel);color:var(--muted);font:inherit;font-size:13px;padding:7px 13px;cursor:pointer;border-right:1px solid var(--line)}
+  .modetoggle button:last-child{border-right:0}
+  .modetoggle button[aria-pressed="true"]{background:var(--panel2);color:var(--ink);font-weight:600}
+  .diff{font-family:var(--mono);font-size:13.5px;line-height:1.85;border:1px solid var(--line);border-radius:8px;overflow-x:auto;overflow-y:hidden;background:var(--editor)}
+  .splithead{display:grid;grid-template-columns:minmax(240px,1fr) minmax(240px,1fr);font-family:var(--sans);font-size:12.5px;font-weight:600;color:var(--muted);background:var(--panel2);border-bottom:1px solid var(--line)}
+  .splithead div{padding:8px 12px} .splithead div:first-child{border-right:1px solid var(--line)}
+  .dl{display:flex;padding:1px 12px;white-space:pre-wrap;word-break:break-word}
+  .dl .sgn{flex:0 0 18px;text-align:center;user-select:none;opacity:.95}
+  .dl .tx{flex:1}
+  .dl.eq .tx{color:#8d96a6} .dl.eq .sgn{color:#5b6472}
+  .dl.add{background:rgba(52,211,153,.13)} .dl.add .sgn{color:var(--green);font-weight:700} .dl.add .tx{color:#e7ebf2}
+  .dl.del{background:rgba(248,113,113,.13)} .dl.del .sgn{color:var(--red);font-weight:700}   .dl.del .tx{color:#e7ebf2}
+  mark.w{border-radius:3px;padding:0 3px;font-weight:600}
+  mark.w-add{background:rgba(52,211,153,.34);color:#d7ffe9}
+  mark.w-del{background:rgba(248,113,113,.30);color:#ffe2e2}
+  .srow{display:grid;grid-template-columns:minmax(240px,1fr) minmax(240px,1fr);border-bottom:1px solid rgba(48,56,71,.6)}
+  .srow:last-child{border-bottom:0}
+  .scell{display:flex;padding:2px 12px;border-right:1px solid var(--line);color:#8d96a6}
+  .scell:last-child{border-right:0}
+  .scell .ssgn{flex:0 0 16px;text-align:center;user-select:none;opacity:.95}
+  .scell .stx{flex:1;white-space:pre-wrap;word-break:break-word}
+  .scell.del{background:rgba(248,113,113,.13);color:#e7ebf2} .scell.del .ssgn{color:var(--red);font-weight:700}
+  .scell.add{background:rgba(52,211,153,.13);color:#e7ebf2} .scell.add .ssgn{color:var(--green);font-weight:700}
+  .scell.empty{background:var(--editor)}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:12px;font-size:13px;color:var(--muted)}
+  .legend span{display:inline-flex;align-items:center;gap:7px}
+  .sw{width:13px;height:13px;border-radius:3px;display:inline-block}
+
+  /* tree (cards) */
+  .q-node{display:inline-flex;align-items:center;gap:9px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:11px 16px;font-weight:600;font-size:15.5px}
+  .q-node small{font-weight:400;color:var(--faint);font-family:var(--mono);font-size:12px}
+  .branches{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-top:18px}
+  .branch{background:var(--panel);border:1px solid var(--line);border-left:5px solid var(--c);border-radius:8px;overflow:hidden}
+  .branch-h{background:var(--cbg);color:var(--c);padding:11px 15px;font-weight:700;font-size:15.5px;display:flex;align-items:center;gap:9px}
+  .branch-b{padding:13px 15px}
+  .chips{list-style:none;margin:0 0 11px;padding:0;display:flex;flex-direction:column;gap:7px}
+  .chips li{font-size:13.5px;color:var(--muted);padding-left:16px;position:relative}
+  .chips li::before{content:"›";position:absolute;left:2px;color:var(--c);font-weight:700}
+  .risk{font-size:13px;color:var(--amber);margin-bottom:9px}
+  .blk{font-size:13px;color:var(--faint);border-top:1px dashed var(--line);padding-top:9px}
+
+  /* generic svg figure */
+  .figure{border:1px solid var(--line);border-radius:8px;background:var(--editor);padding:10px;overflow-x:auto}
+  .figure svg{display:block;width:100%;height:auto}
+  text{font-family:var(--sans)}
+  .svg-decision{fill:var(--panel2);stroke:var(--indigo);stroke-width:1.5}
+  .svg-qt{fill:var(--ink);font-size:13px;font-weight:600}
+  .svg-qsub{fill:var(--faint);font-size:10px;font-family:var(--mono)}
+  .svg-edge{fill:none;stroke-width:1.6}
+  .svg-elabel{font-size:11.5px;font-weight:700}
+  .svg-obox{stroke-width:1.5}
+  .svg-ot{font-size:13px;font-weight:700}
+  .svg-osub{fill:var(--muted);font-size:10.5px}
+  .svg-grid{stroke:var(--line);stroke-width:1}
+  .svg-axt{fill:var(--faint);font-size:11px;font-family:var(--mono)}
+  .svg-axlabel{fill:var(--muted);font-size:12px;font-weight:600}
+  .svg-quadlabel{fill:var(--faint);font-size:11px}
+  .svg-marker{stroke:var(--editor);stroke-width:1.5}
+  .svg-mlabel{font-size:12px;font-weight:700}
+
+  /* mermaid source */
+  .codepanel{position:relative;border:1px solid var(--line);border-radius:8px;background:var(--editor);overflow:hidden}
+  .codepanel .cap{font-family:var(--mono);font-size:11px;color:var(--faint);background:var(--panel2);border-bottom:1px solid var(--line);padding:6px 12px;text-transform:uppercase;letter-spacing:.05em}
+  .codepanel pre{margin:0;padding:13px 14px;font-family:var(--mono);font-size:12.5px;line-height:1.7;color:#cfd6e4;white-space:pre;overflow-x:auto}
+  .codepanel .k{color:var(--violet)} .codepanel .e{color:var(--faint)} .codepanel .lbl{color:var(--amber)}
+
+  /* flow */
+  .flow{display:flex;align-items:stretch;flex-wrap:wrap;gap:7px}
+  .fnode{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:11px 14px;font-size:14px;min-width:112px;display:flex;flex-direction:column;justify-content:center}
+  .fnode small{color:var(--faint);font-size:12px;margin-top:2px}
+  .fnode.here{border-color:var(--indigo);background:#1a1f2b}
+  .fnode.here .pin{color:var(--indigo);font-weight:600;font-size:12px;margin-top:3px}
+  .farrow{align-self:center;color:var(--faint);font-size:20px;padding:0 3px}
+  .flow-cap{font-size:13px;color:var(--muted);font-weight:600;margin:16px 0 6px}
+  .branch-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:11px}
+  .boutcome{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--c);border-radius:8px;padding:12px 14px}
+  .boutcome .bh{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px;color:var(--c);margin-bottom:5px}
+  .boutcome .bt{font-size:13.5px;color:var(--muted)}
+
+  /* tradeoff table */
+  .tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+  table.matrix{border-collapse:collapse;width:100%;font-size:14px}
+  table.matrix th,table.matrix td{padding:12px 14px;text-align:left;vertical-align:middle;border-bottom:1px solid var(--line)}
+  table.matrix thead th{background:var(--panel2);color:var(--muted);font-weight:600;font-size:12.5px}
+  table.matrix th.optcol{color:var(--c);background:var(--cbg);border-bottom:2px solid var(--c)}
+  table.matrix th.optcol .nm{display:flex;align-items:center;gap:8px;font-size:14.5px}
+  table.matrix tbody tr:nth-child(even){background:rgba(255,255,255,.018)}
+  table.matrix tbody tr:last-child td,table.matrix tbody tr:last-child th{border-bottom:0}
+  table.matrix td.crit,table.matrix th.crit{color:var(--ink);font-weight:500;background:transparent}
+  table.matrix td.val{color:var(--ink)}
+
+  /* score bars */
+  .score-block{margin-bottom:15px}
+  .score-ax{font-size:13px;font-weight:600;color:var(--ink);margin-bottom:7px}
+  .bar-row{display:flex;align-items:center;gap:10px;margin:5px 0}
+  .bar-name{flex:0 0 92px;font-size:12.5px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
+  .bar-track{flex:1;height:14px;background:var(--panel2);border:1px solid var(--line);border-radius:7px;overflow:hidden}
+  .bar-fill{display:block;height:100%;border-radius:7px 0 0 7px}
+  .bar-val{flex:0 0 24px;text-align:right;font-family:var(--mono);font-size:12px;color:var(--muted)}
+
+  /* what-if cards */
+  .wif-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:13px}
+  .wif{background:var(--panel);border:1px solid var(--line);border-top:4px solid var(--c);border-radius:8px;padding:14px 15px;display:flex;flex-direction:column;gap:9px}
+  .wif-h{display:flex;align-items:center;gap:8px;font-weight:700;color:var(--c);font-size:15px}
+  .wif-h .wif-tag{margin-left:auto;font-size:11px;font-weight:600;color:var(--faint);background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:2px 8px}
+  .wif-head{font-size:13.5px;color:var(--ink)}
+  .wif-b{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px}
+  .wif-b li{font-size:13px;color:var(--muted);padding-left:16px;position:relative}
+  .wif-b li::before{content:"→";position:absolute;left:0;color:var(--c)}
+  .wif-u-h{font-size:12px;font-weight:700;color:var(--amber);margin-top:3px}
+  .wif-u{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+  .wif-u li{font-size:12.5px;color:var(--amber);padding-left:16px;position:relative}
+  .wif-u li::before{content:"?";position:absolute;left:2px;font-weight:700}
+  .wif-foot{margin-top:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-top:9px;border-top:1px dashed var(--line)}
+  .wif-btn{font:inherit;font-size:12.5px;border:1.5px solid var(--cbd);background:transparent;color:var(--c);border-radius:8px;padding:7px 12px;opacity:.85;cursor:not-allowed}
+  .wif-note{font-size:11.5px;color:var(--faint)}
+
+  /* adaptive-style cards */
+  .ac-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:13px}
+  .acard{display:flex;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .acard-bar{flex:0 0 6px}
+  .acard-body{padding:13px 15px;flex:1}
+  .acard-title{font-size:14px;font-weight:600;color:var(--ink);margin-bottom:9px}
+  .acard-facts{width:100%;border-collapse:collapse;font-size:12.5px}
+  .acard-facts td{padding:3px 0;vertical-align:top}
+  .acard-facts .ak{color:var(--faint);white-space:nowrap;padding-right:12px;width:30%}
+  .acard-facts .av{color:var(--ink)}
+  .acard-actions{margin-top:11px;display:flex;gap:8px}
+  .achip{font-size:11.5px;border:1px solid var(--line);border-radius:7px;padding:4px 11px;font-weight:600}
+  .achip.ghost{color:var(--faint);border-style:dashed}
+
+  .foot{margin-top:50px;padding-top:18px;border-top:1px solid var(--line);color:var(--faint);font-size:12.5px;line-height:1.7}
+  .foot b{color:var(--muted)} .foot code{font-family:var(--mono);font-size:11.5px;color:#cfd6e4;background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:1px 5px}
+  .foot ul{margin:8px 0 0;padding-left:18px} .foot li{margin:3px 0}
+
+  @media (prefers-color-scheme: light){
+    :root{--bg:#f7f8fa;--panel:#ffffff;--panel2:#eef1f5;--line:#d6dbe3;--editor:#f1f3f7;
+          --ink:#1a1f29;--muted:#566072;--faint:#8a93a3}
+    mark.w-add{background:rgba(16,150,90,.22);color:#0b5132}
+    mark.w-del{background:rgba(200,40,40,.18);color:#7a1414}
+    .dl.add{background:rgba(52,211,153,.16)} .dl.del{background:rgba(248,113,113,.16)}
+    h2 .n,.recbadge{color:#fff}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h2 class="sr-only" id="a11y-summary"></h2>
+
+  <header>
+    <div class="eyebrow" id="eyebrow"></div>
+    <h1 id="title"></h1>
+    <div class="meta" id="meta"></div>
+    <p class="banner"><b>읽기 전용 · 이해 보조.</b> 이 화면은 결정을 더 쉽게 이해하도록 돕습니다.
+    어떤 문서·게이트도 바꾸지 않으며, 결정을 닫는 것(resolve)은 사람이 합니다.
+    모르는 파급은 <span class="q">(?)</span> 로 표시 — 추측해서 채우지 않습니다.</p>
+    <div id="gate"></div>
+    <nav class="toc" id="toc" aria-label="뷰 목록"></nav>
+    <div id="viewsel"></div>
+  </header>
+
+  <section id="s-opt" aria-label="선택지">
+    <h2><span class="n">∗</span>선택지 · 장단점 · 추천</h2>
+    <p class="lead">각 옵션의 장단점과 추천도(★ 3개 만점)입니다. 옵션 색은 모든 뷰에서 동일 — 인덱스 기반 팔레트로 자동 배정됩니다.</p>
+    <div class="legend-grid" id="legend"></div>
+    <p class="rec-rule" id="rec-rule"></p>
+  </section>
+
+  <section id="s-diff">
+    <h2><span class="n">1</span>전/후 diff</h2>
+    <p class="lead">옵션을 고르면 그 선택의 ScreenSpec 변화를 보여줍니다 — 이 뷰만 선택에 반응합니다. 추가는 초록(+), 삭제는 빨강(−), 기호로도 구분됩니다.</p>
+    <div class="diff-controls">
+      <div><span class="seg-label">선택지</span><span class="seg" id="seg" role="group" aria-label="선택지"></span></div>
+      <span class="modetoggle" role="group" aria-label="diff 보기 방식">
+        <button data-mode="unified" aria-pressed="true">통합(unified)</button>
+        <button data-mode="split" aria-pressed="false">나란히(split)</button>
+      </span>
+    </div>
+    <div id="diff-out" class="diff" role="region" aria-label="선택지 적용 전/후 diff"></div>
+    <p id="diff-status" class="sr-only" aria-live="polite"></p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--green)"></span> 추가 (+, 초록)</span>
+      <span><span class="sw" style="background:var(--red)"></span> 삭제 (−, 빨강)</span>
+      <span><span class="sw" style="background:var(--editor);border:1px solid var(--line)"></span> 변화 없음</span>
+    </div>
+  </section>
+
+  <section id="s-tree">
+    <h2><span class="n">2</span>의사결정 트리</h2>
+    <p class="lead">선택에 따른 경로 분기 — 세 가지로 보여줍니다: 카드형 / SVG 다이어그램 / Mermaid 소스.</p>
+    <div class="sub">2a · 카드형 (정적 HTML/CSS)</div>
+    <div class="q-node" id="qnode"></div>
+    <div class="branches" id="tree"></div>
+    <div class="sub">2b · SVG 노드-엣지 다이어그램 (자기완결·의존성 0)</div>
+    <div class="figure" id="tree-svg"></div>
+    <div class="sub">2c · Mermaid 소스 (토큰 효율적 · 단 렌더엔 mermaid.js 번들 필요)</div>
+    <div class="codepanel"><div class="cap">flowchart — mermaid 구문</div><pre id="mermaid-src"></pre></div>
+    <p class="note"><b>왜 둘 다 보여주나.</b> Mermaid는 LLM이 생성하기엔 토큰 효율적이지만, 그림으로 만들려면 <code style="font-family:var(--mono)">mermaid.min.js</code>를 인라인/번들해야 합니다. CDN 로드는 “자기완결·오프라인·의존성 0” 제약을 깨므로, 스킬 기본값은 위 <b>2b SVG</b>입니다. 2c는 그 대안 스택이 어떤 입력인지 보여주는 참고입니다.</p>
+  </section>
+
+  <section id="s-flow">
+    <h2><span class="n">3</span>사용자 흐름</h2>
+    <p class="lead">전체 흐름 속 이 결정의 위치와, 옵션별 분기 결과.</p>
+    <div id="flow"></div>
+  </section>
+
+  <section id="s-journey">
+    <h2><span class="n">4</span>여정 맵 (단계별 만족도)</h2>
+    <p class="lead">Mermaid <code style="font-family:var(--mono)">journey</code>가 표현하는 “단계별 만족도” 포맷 — 일반 흐름도와 달리 세로축이 만족도입니다. 옵션별로 한 선씩.</p>
+    <div class="figure" id="journey"></div>
+    <p class="note" id="journey-note"></p>
+  </section>
+
+  <section id="s-matrix">
+    <h2><span class="n">5</span>트레이드오프 매트릭스</h2>
+    <p class="lead">옵션 × 기준 — 모든 항목을 항상 표시합니다. 각 칸은 방향을 따로 보지 않아도 되도록 직관적 단어로 적었습니다.</p>
+    <div class="tbl-wrap"><table class="matrix" id="matrix"></table></div>
+    <p class="note">이 표 자체는 <b>승자를 표시하지 않습니다</b> — 추천은 위 <b>선택지</b> 카드의 ★ 와 (추천) 을 보세요.
+    기준 가중치와 최종 선택은 팀(Owner: PM)이 정하며, 더 확인이 필요한 항목은 <span class="q">(?)</span> 입니다.</p>
+  </section>
+
+  <section id="s-quad">
+    <h2><span class="n">6</span>2D 우선순위 사분면</h2>
+    <p class="lead">NN/g prioritization matrix — 가치 vs 노력 두 축에 옵션을 배치. 한눈에 “빠른 성과 / 큰 베팅” 위치를 봅니다.</p>
+    <div class="figure" id="quadrant"></div>
+    <p class="note" id="quad-note"></p>
+  </section>
+
+  <section id="s-scores">
+    <h2><span class="n">7</span>기준별 점수 비교</h2>
+    <p class="lead">Chart.js 같은 차트 라이브러리 대신 <b>순수 SVG/HTML</b>로 같은 정보를 — 막대(권장) + 레이더. 둘 다 의존성 0.</p>
+    <div class="sub">7a · 기준별 막대 (접근성·정밀 비교에 권장)</div>
+    <div id="scores"></div>
+    <div class="sub">7b · 레이더 (전체 형태 한눈 · 정밀 비교엔 막대가 나음)</div>
+    <div class="figure" id="radar"></div>
+    <p class="note" id="scores-note"></p>
+  </section>
+
+  <section id="s-whatif">
+    <h2><span class="n">8</span>What-if · 확정 전 확인</h2>
+    <p class="lead">Nielsen #5(오류 예방) · 중간 확인(CHI 2026) 패턴 — “이 옵션을 고르면 이렇게 됩니다 → 확인”. 확정이 아니라 미리보기입니다.</p>
+    <div class="wif-grid" id="whatif"></div>
+    <p class="note"><b>버튼은 비활성</b>입니다 — 이 스킬은 읽기 전용이라 resolve(결정 닫기)는 사람이 합니다. 미리보기는 “적용됨”이 아닙니다(앵커링·과의존 방지, Buçinca 2021).</p>
+  </section>
+
+  <section id="s-cards">
+    <h2><span class="n">9</span>구조화 미리보기 카드</h2>
+    <p class="lead">Adaptive Cards(참조 모델)의 “fact + action” 카드 패턴 — JSON 런타임 대신 자기완결 정적 HTML로 같은 구조를 구현.</p>
+    <div class="ac-grid" id="adaptive"></div>
+  </section>
+
+  <div class="foot" id="foot"></div>
+</div>
+
+<script>
+(function(){
+  var DATA = __VIZ_DATA__;
+
+  var OPTS=DATA.options, N=OPTS.length;
+  var PAL=["#2dd4bf","#f5a623","#c084fc","#60a5fa","#f472b6","#a3e635"];
+  function col(i){return PAL[i%PAL.length];}
+  function hexA(hex,a){var h=hex.replace('#','');var r=parseInt(h.substr(0,2),16),g=parseInt(h.substr(2,2),16),b=parseInt(h.substr(4,2),16);return 'rgba('+r+','+g+','+b+','+a+')';}
+  function ostyle(i){var c=col(i);return '--c:'+c+';--cbg:'+hexA(c,.12)+';--cbd:'+hexA(c,.5);}
+  function $(id){return document.getElementById(id);}
+  function esc(s){return String(s).replace(/[&<>]/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;"})[c];});}
+  function escAttr(s){return esc(s).replace(/"/g,"&quot;").replace(/'/g,"&#39;");} // 속성 컨텍스트(따옴표 탈출 방지)
+  function clampNum(v,min,max,fb){v=Number(v);return Number.isFinite(v)?Math.max(min,Math.min(max,v)):(fb==null?min:fb);}
+  function qmark(s){var t=String(s),q=/\(\?\)/.test(t),clean=esc(t.replace(/\s*\(\?\)/,""));return clean+(q?' <span class="q">(?)</span>':"");}
+  function trunc(s,n){s=String(s);return s.length>n?s.slice(0,n-1)+"…":s;}
+  function starHTML(n){var sn=Math.round(clampNum(n,0,3,0)),s="";for(var i=0;i<3;i++)s+=(i<sn?"★":'<span class="off">★</span>');return '<span class="stars" aria-label="추천도 '+sn+'/3">'+s+'</span>';}
+
+  /* ---------- view selection (트리거 게이트 + 결정 성격 → 뷰 매핑, 초안 §3·§4) ---------- */
+  var ALL_VIEWS=["opt","diff","tree","flow","journey","matrix","quad","scores","whatif","cards"];
+  var VIEW_SECTION={opt:"s-opt",diff:"s-diff",tree:"s-tree",flow:"s-flow",journey:"s-journey",matrix:"s-matrix",quad:"s-quad",scores:"s-scores",whatif:"s-whatif",cards:"s-cards"};
+  var VIEW_LABEL={opt:"개요",diff:"전/후 diff",tree:"의사결정 트리",flow:"사용자 흐름",journey:"여정 맵",matrix:"트레이드오프",quad:"2D 사분면",scores:"점수 비교",whatif:"What-if",cards:"미리보기 카드"};
+  function resolveViews(){
+    var v=DATA.views;
+    if(Array.isArray(v)){var seen={},f=[];v.forEach(function(k){if(ALL_VIEWS.indexOf(k)>=0&&!seen[k]){seen[k]=1;f.push(k);}});return f.length?f:ALL_VIEWS.slice();}
+    return ALL_VIEWS.slice(); // "all" 또는 미지정 → 전체(카탈로그)
+  }
+  var VIEWS=resolveViews();
+  function viewOn(k){return VIEWS.indexOf(k)>=0;}
+  function renderGate(){
+    var g=DATA.gate,host=$("gate"); if(!g){host.style.display="none";return;}
+    var skip=g.decision==="skip";
+    host.className="gate "+(skip?"skip":"go");
+    var chips=(Array.isArray(g.trigger)?g.trigger:[]).map(function(c){return '<span class="gate-chip '+(c.met?"on":"off")+'">'+(c.met?"✓":"·")+' '+esc(c.label)+'</span>';}).join("");
+    host.innerHTML='<div class="gate-h">'+(skip?"⊘ 텍스트 질문이 더 적합 — 시각화 생략":"◉ 시각화 트리거 충족")+'</div>'+
+      (chips?'<div class="gate-chips">'+chips+'</div>':'')+
+      (g.reason?'<div class="gate-reason">'+esc(g.reason)+'</div>':'');
+  }
+  function renderNav(){$("toc").innerHTML=VIEWS.map(function(k){return '<a href="#'+VIEW_SECTION[k]+'">'+esc(VIEW_LABEL[k])+'</a>';}).join("");}
+  function renderViewSel(){
+    var host=$("viewsel"); if(!DATA.viewRationale){host.style.display="none";return;}
+    var shown=VIEWS.map(function(k){return VIEW_LABEL[k];}).join(" · ");
+    var omitted=ALL_VIEWS.filter(function(k){return !viewOn(k);}).map(function(k){return VIEW_LABEL[k];});
+    host.className="viewsel";
+    host.innerHTML='<b>이 결정에 고른 뷰:</b> '+esc(shown)+
+      (omitted.length?' <span class="vs-omit">· 생략: '+esc(omitted.join(", "))+'</span>':'')+
+      '<div class="vs-why">'+esc(DATA.viewRationale)+'</div>';
+  }
+  function applyViewSelection(){
+    ALL_VIEWS.forEach(function(k){var el=$(VIEW_SECTION[k]); if(el)el.style.display=viewOn(k)?"":"none";});
+    var foot=$("foot"),num=0;
+    VIEWS.forEach(function(k){var sec=$(VIEW_SECTION[k]); if(!sec)return;
+      if(foot&&foot.parentNode)foot.parentNode.insertBefore(sec,foot); // VIEWS 순서대로 DOM 재배치(번호=스크롤 순서)
+      var b=sec.querySelector("h2 .n"); if(!b)return;
+      if(k==="opt")b.textContent="∗"; else {num++;b.textContent=String(num);}});
+  }
+
+  /* ---------- header ---------- */
+  function renderHeader(){
+    var m=DATA.meta;
+    $("eyebrow").textContent=m.eyebrow||"";
+    $("title").textContent=m.title;
+    $("a11y-summary").textContent="Open Decision "+m.id+" “"+m.title+"”의 선택지별 전후 변화·트리·흐름·여정·트레이드오프·사분면·점수·미리보기를 한 페이지에 펼친 읽기 전용 이해 보조 화면.";
+    var pills=[["화면",m.screen],["Blocking",m.blocking],["Owner",m.owner],["현재 readiness",m.readiness],["Status",m.status]];
+    $("meta").innerHTML=pills.map(function(p){return '<span class="pill"><strong>'+esc(p[0])+'</strong> '+esc(p[1])+'</span>';}).join("");
+  }
+
+  /* ---------- diff engine (jsdiff diffWords/diffLines 개념을 의존성 없이 인라인) ---------- */
+  function diffTokens(a,b){var n=a.length,m=b.length,i,j,dp=[];for(i=0;i<=n;i++)dp.push(new Array(m+1).fill(0));
+    for(i=n-1;i>=0;i--)for(j=m-1;j>=0;j--)dp[i][j]=a[i]===b[j]?dp[i+1][j+1]+1:Math.max(dp[i+1][j],dp[i][j+1]);
+    var o=[];i=0;j=0;while(i<n&&j<m){if(a[i]===b[j]){o.push({t:"eq",v:a[i]});i++;j++;}else if(dp[i+1][j]>=dp[i][j+1]){o.push({t:"del",v:a[i]});i++;}else{o.push({t:"ins",v:b[j]});j++;}}
+    while(i<n)o.push({t:"del",v:a[i++]});while(j<m)o.push({t:"ins",v:b[j++]});return o;}
+  var _wseg=(typeof Intl!=="undefined"&&Intl.Segmenter)?new Intl.Segmenter(undefined,{granularity:"word"}):null;
+  function tokenizeWords(s){
+    if(s==="")return[];
+    if(_wseg){var out=[],seg;for(seg of _wseg.segment(s))out.push(seg.segment);return out;}
+    return s.match(/\s+|[0-9]+|[A-Za-z]+|[가-힣]+|[一-鿿]+|[^\sA-Za-z0-9가-힣一-鿿]/g)||[s];
+  }
+  var WORD_PAIR_MIN=0.3;
+  function isWordTok(x){return /[0-9A-Za-z가-힣一-鿿]/.test(x);}
+  function similar(a,b){
+    if(a===b)return 1;
+    var ta=tokenizeWords(a).filter(isWordTok),tb=tokenizeWords(b).filter(isWordTok);
+    if(!ta.length||!tb.length)return 0;
+    var cnt={},i,common=0;
+    for(i=0;i<tb.length;i++)cnt[tb[i]]=(cnt[tb[i]]||0)+1;
+    for(i=0;i<ta.length;i++){if(cnt[ta[i]]>0){common++;cnt[ta[i]]--;}}
+    return (2*common)/(ta.length+tb.length);
+  }
+  function splitLines(t){return t===""?[]:t.split("\n");}
+  function wordHL(o,nw){var ot=tokenizeWords(o),nt=tokenizeWords(nw),ops=diffTokens(ot,nt),oh="",nh="",k,op,e;
+    for(k=0;k<ops.length;k++){op=ops[k];e=esc(op.v);
+      if(op.t==="eq"){oh+=e;nh+=e;}else if(op.t==="del"){oh+=op.v.trim()?'<mark class="w w-del">'+e+'</mark>':e;}else{nh+=op.v.trim()?'<mark class="w w-add">'+e+'</mark>':e;}}
+    return[oh,nh];}
+  function emitHunk(dels,ins,rows){var usedIns={},di,j;
+    for(di=0;di<dels.length;di++){var d=dels[di],best=-1,bestS=WORD_PAIR_MIN;
+      for(j=0;j<ins.length;j++){if(usedIns[j])continue;var s=similar(d,ins[j]);if(s>=bestS){bestS=s;best=j;}}
+      if(best>=0){usedIns[best]=1;var h=wordHL(d,ins[best]);rows.push({type:"mod",oldH:h[0],newH:h[1]});}
+      else rows.push({type:"del",oldH:esc(d),newH:null});}
+    for(j=0;j<ins.length;j++){if(!usedIns[j])rows.push({type:"ins",oldH:null,newH:esc(ins[j])});}}
+  function buildRows(oldT,newT){var ops=diffTokens(splitLines(oldT),splitLines(newT)),rows=[],i=0;
+    while(i<ops.length){if(ops[i].t==="eq"){rows.push({type:"eq",oldH:esc(ops[i].v),newH:esc(ops[i].v)});i++;continue;}
+      var dels=[],ins=[];while(i<ops.length&&ops[i].t!=="eq"){(ops[i].t==="del"?dels:ins).push(ops[i].v);i++;}
+      emitHunk(dels,ins,rows);}
+    return rows;}
+  var dstate={opt:OPTS[0].key,mode:"unified"};
+  function optByKey(k){for(var i=0;i<N;i++)if(OPTS[i].key===k)return OPTS[i];return OPTS[0];}
+  function renderDiff(){var o=optByKey(dstate.opt),rows=buildRows(DATA.base,o.after),out=$("diff-out"),html="",nAdd=0,nDel=0,nMod=0;
+    rows.forEach(function(r){if(r.type==="ins")nAdd++;else if(r.type==="del")nDel++;else if(r.type==="mod")nMod++;});
+    if(dstate.mode==="unified"){function L(s,h,c){return '<div class="dl '+c+'"><span class="sgn">'+s+'</span><span class="tx">'+h+'</span></div>';}
+      rows.forEach(function(r){if(r.type==="eq")html+=L(" ",r.oldH,"eq");else if(r.type==="mod")html+=L("−",r.oldH,"del")+L("+",r.newH,"add");else if(r.type==="del")html+=L("−",r.oldH,"del");else html+=L("+",r.newH,"add");});}
+    else{html+='<div class="splithead"><div>현재 (결정 전)</div><div>'+esc(o.name)+' 적용 후</div></div>';
+      function SC(kind,h){var sign=kind==="del"?"−":kind==="add"?"+":" ";var srw=kind==="del"?'<span class="sr-only">삭제 </span>':kind==="add"?'<span class="sr-only">추가 </span>':"";
+        return '<div class="scell '+kind+'"><span class="ssgn" aria-hidden="true">'+sign+'</span>'+srw+'<span class="stx">'+(h||"")+'</span></div>';}
+      rows.forEach(function(r){var Lc,Rc,Lh,Rh;
+        if(r.type==="eq"){Lc="eq";Rc="eq";Lh=r.oldH;Rh=r.newH;}
+        else if(r.type==="mod"){Lc="del";Rc="add";Lh=r.oldH;Rh=r.newH;}
+        else if(r.type==="del"){Lc="del";Rc="empty";Lh=r.oldH;Rh="";}
+        else{Lc="empty";Rc="add";Lh="";Rh=r.newH;}
+        html+='<div class="srow">'+SC(Lc,Lh)+SC(Rc,Rh)+'</div>';});}
+    out.innerHTML=html;
+    var st=$("diff-status");if(st)st.textContent="‘"+o.name+"’ 적용 후 변경: 추가 "+nAdd+"줄, 삭제 "+nDel+"줄, 수정 "+nMod+"줄.";}
+
+  /* ---------- option cards ---------- */
+  function renderLegend(){
+    var anyRec=OPTS.some(function(o){return o.recommend;});
+    $("legend").innerHTML=OPTS.map(function(d,i){
+      var badge=d.recommend?'<span class="recbadge">★ 추천</span>':'';
+      return '<div class="opt-card" style="'+ostyle(i)+'">'+
+        '<div class="top"><span class="nm"><span class="dot"></span>'+esc(d.name)+' <span class="code">'+esc(d.code)+'</span></span>'+
+          '<span class="rec">'+starHTML(d.stars)+badge+'</span></div>'+
+        '<div class="tag">'+esc(d.tag)+'</div>'+
+        '<div class="why">'+esc(d.why)+'</div>'+
+        '<div class="pc"><div class="pros"><h4>장점</h4><ul>'+d.pros.map(function(p){return "<li>"+qmark(p)+"</li>";}).join("")+'</ul></div>'+
+        '<div class="cons"><h4>단점</h4><ul>'+d.cons.map(function(c){return "<li>"+qmark(c)+"</li>";}).join("")+'</ul></div></div></div>';
+    }).join("");
+    $("rec-rule").innerHTML=anyRec
+      ? '<b>★는 옵션 간 상대 강도일 뿐, 추천이 아닙니다.</b> 조건부 제안은 <b>(추천)</b> 배지로만 표시하며 근거(why)·장단점과 함께 봅니다. 최종 결정(resolve)은 사람(PM)이 합니다.'
+      : '<b>세 옵션이 모두 불확실/애매하여 추천을 보류합니다.</b> ★(상대 강도)만 참고하세요 — (추천) 배지는 표시하지 않습니다.';
+  }
+  function renderSeg(){$("seg").innerHTML=OPTS.map(function(d,i){
+    return '<button data-opt="'+escAttr(d.key)+'" style="'+ostyle(i)+'" aria-pressed="'+(d.key===dstate.opt)+'"><span class="dot"></span>'+esc(d.name)+'</button>';}).join("");
+    document.querySelectorAll("#seg button").forEach(function(b){b.addEventListener("click",function(){dstate.opt=b.getAttribute("data-opt");
+      document.querySelectorAll("#seg button").forEach(function(x){x.setAttribute("aria-pressed",x===b?"true":"false");});renderDiff();});});}
+
+  /* ---------- tree: cards ---------- */
+  function renderTree(){
+    $("qnode").innerHTML=esc(DATA.meta.question)+' <small>'+esc(DATA.meta.id+' · '+DATA.meta.blocking)+'</small>';
+    $("tree").innerHTML=OPTS.map(function(d,i){
+      return '<div class="branch" style="'+ostyle(i)+'"><div class="branch-h"><span class="dot"></span>'+esc(d.name)+'</div><div class="branch-b"><ul class="chips">'+
+        d.changes.map(function(c){return "<li>"+esc(c)+"</li>";}).join("")+'</ul><div class="risk">주의 · '+esc(d.risk)+'</div><div class="blk">'+esc(d.blk)+'</div></div></div>';}).join("");
+  }
+  /* ---------- tree: SVG ---------- */
+  function renderTreeSVG(){
+    var gap=22,minBw=120,W=Math.max(720,40+N*minBw+(N-1)*gap);
+    var bw=Math.min(212,Math.max(minBw,(W-40-(N-1)*gap)/N)),total=N*bw+(N-1)*gap,x0=(W-total)/2;
+    var dY=14,dH=60,dcx=W/2,dcy=dY+dH/2,dw=Math.min(260,total*0.6),by=150,bh=92,midY=(dY+dH+by)/2,H=by+bh+14;
+    var s='<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="의사결정 트리 다이어그램">';
+    s+='<polygon class="svg-decision" points="'+dcx+','+dY+' '+(dcx+dw/2)+','+dcy+' '+dcx+','+(dY+dH)+' '+(dcx-dw/2)+','+dcy+'"/>';
+    s+='<text class="svg-qt" x="'+dcx+'" y="'+(dcy-3)+'" text-anchor="middle">'+esc(trunc(DATA.meta.question,22))+'</text>';
+    s+='<text class="svg-qsub" x="'+dcx+'" y="'+(dcy+13)+'" text-anchor="middle">'+esc(DATA.meta.id)+'</text>';
+    OPTS.forEach(function(o,i){var bx=x0+i*(bw+gap),bcx=bx+bw/2,c=col(i);
+      s+='<path class="svg-edge" style="stroke:'+c+'" d="M'+dcx+','+(dY+dH)+' V'+midY+' H'+bcx+' V'+by+'"/>';
+      s+='<text class="svg-elabel" style="fill:'+c+'" x="'+bcx+'" y="'+(midY-6)+'" text-anchor="middle">'+esc(o.name)+'</text>';
+      s+='<rect class="svg-obox" style="stroke:'+c+';fill:'+hexA(c,.10)+'" x="'+bx+'" y="'+by+'" width="'+bw+'" height="'+bh+'" rx="9"/>';
+      s+='<text class="svg-ot" style="fill:'+c+'" x="'+bcx+'" y="'+(by+24)+'" text-anchor="middle">'+esc(o.name)+'</text>';
+      o.changes.slice(0,3).forEach(function(ln,k){s+='<text class="svg-osub" x="'+bcx+'" y="'+(by+44+k*17)+'" text-anchor="middle">'+esc(trunc(ln,24))+'</text>';});
+    });
+    s+='</svg>';
+    var sum='<p class="sr-only">의사결정 트리 — '+esc(DATA.meta.question)+' 분기: '+OPTS.map(function(o){return esc(o.name)+'('+esc(o.changes.join(", "))+')';}).join("; ")+'</p>';
+    $("tree-svg").innerHTML=s+sum;
+  }
+  /* ---------- tree: mermaid source ---------- */
+  function renderMermaid(){
+    var lines=['<span class="k">flowchart</span> TD'];
+    lines.push('  Q{'+esc(DATA.meta.question)+'}');
+    OPTS.forEach(function(o,i){lines.push('  Q <span class="e">--></span>|<span class="lbl">'+esc(o.name)+'</span>| O'+i+'['+esc(o.branch.replace(/→/g,'').trim())+']');});
+    $("mermaid-src").innerHTML=lines.join("\n");
+  }
+
+  /* ---------- flow ---------- */
+  function renderFlow(){var nodes=DATA.flow||[],html='<div class="flow">';
+    nodes.forEach(function(n,i){var here=n[2]===1;
+      html+='<div class="fnode'+(here?" here":"")+'"><span>'+esc(n[0])+'</span><small>'+esc(n[1])+'</small>'+(here?'<span class="pin">↑ '+esc(DATA.meta.id)+' 여기</span>':"")+'</div>';
+      if(i<nodes.length-1)html+='<span class="farrow" aria-hidden="true">→</span>';});
+    html+='</div><div class="flow-cap">이 지점에서 옵션별 분기</div><div class="branch-row">';
+    html+=OPTS.map(function(d,i){return '<div class="boutcome" style="'+ostyle(i)+'"><div class="bh"><span class="dot"></span>'+esc(d.name)+'</div><div class="bt">'+esc(d.branch)+'</div></div>';}).join("");
+    html+='</div>';$("flow").innerHTML=html;}
+
+  /* ---------- journey (satisfaction line) ---------- */
+  function renderJourney(){
+    var J=DATA.journey; if(!J||!Array.isArray(J.steps)||!J.sat){$("journey").innerHTML="";return;}
+    var steps=J.steps,n=steps.length;
+    var W=720,H=300,padL=44,padR=16,padT=18,padB=70,plotW=W-padL-padR,plotH=H-padT-padB;
+    var xAt=function(i){return padL+(n<=1?0:i/(n-1)*plotW);},yAt=function(v){return padT+(5-v)/4*plotH;};
+    var s='<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="옵션별 단계 만족도 여정 맵">';
+    var v;for(v=1;v<=5;v++){var y=yAt(v);s+='<line class="svg-grid" x1="'+padL+'" y1="'+y+'" x2="'+(W-padR)+'" y2="'+y+'"/>';
+      s+='<text class="svg-axt" x="'+(padL-8)+'" y="'+(y+4)+'" text-anchor="end">'+v+'</text>';}
+    steps.forEach(function(st,i){var x=xAt(i);s+='<text class="svg-axt" x="'+x+'" y="'+(H-padB+20)+'" text-anchor="middle">'+esc(trunc(st,8))+'</text>';});
+    var dx=xAt(clampNum(J.diverge,0,Math.max(0,n-1),0));s+='<line x1="'+dx+'" y1="'+padT+'" x2="'+dx+'" y2="'+(H-padB)+'" stroke="'+'#727c8d'+'" stroke-dasharray="4 4" stroke-width="1"/>';
+    s+='<text class="svg-axt" x="'+dx+'" y="'+(padT-4)+'" text-anchor="middle">분기 ↓</text>';
+    OPTS.forEach(function(o,i){var arr=(J.sat[o.key]||[]).map(function(v){return clampNum(v,1,5,1);}),c=col(i);
+      var pts=arr.map(function(val,k){return xAt(k)+','+yAt(val);}).join(" ");
+      s+='<polyline points="'+pts+'" fill="none" stroke="'+c+'" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" opacity="0.92"/>';
+      arr.forEach(function(val,k){s+='<circle class="svg-marker" cx="'+xAt(k)+'" cy="'+yAt(val)+'" r="4.5" fill="'+c+'"/>';});
+    });
+    var lx=padL,ly=H-22;s+='<g>';OPTS.forEach(function(o,i){s+='<circle cx="'+lx+'" cy="'+ly+'" r="5" fill="'+col(i)+'"/><text class="svg-axt" x="'+(lx+9)+'" y="'+(ly+4)+'">'+esc(o.name)+'</text>';lx+=80+esc(o.name).length*6;});
+    s+='</g></svg>';
+    var sum='<p class="sr-only">여정 만족도(1–5) 단계 '+steps.map(esc).join("→")+': '+OPTS.map(function(o){return esc(o.name)+' '+(J.sat[o.key]||[]).map(function(v){return clampNum(v,1,5,1);}).join("→");}).join("; ")+'</p>';
+    $("journey").innerHTML=s+sum;$("journey-note").textContent=J.note||"";
+  }
+
+  /* ---------- tradeoff matrix ---------- */
+  function valCell(o,row){var txt=(row.t&&row.t[o.key]!=null)?String(row.t[o.key]):"—",q=/\(\?\)/.test(txt),clean=txt.replace(/\s*\(\?\)/,"");
+    return '<td class="val">'+esc(clean)+(q?' <span class="q">(?)</span>':"")+'</td>';}
+  function renderMatrix(){var html='<thead><tr><th scope="col">기준</th>';
+    OPTS.forEach(function(o,i){html+='<th scope="col" class="optcol" style="'+ostyle(i)+'"><span class="nm"><span class="dot"></span>'+esc(o.name)+'</span></th>';});
+    html+='</tr></thead><tbody>';
+    DATA.criteria.forEach(function(row){html+='<tr><th scope="row" class="crit">'+esc(row.k)+'</th>';OPTS.forEach(function(o){html+=valCell(o,row);});html+='</tr>';});
+    html+='</tbody>';$("matrix").innerHTML=html;}
+
+  /* ---------- 2D quadrant ---------- */
+  function renderQuadrant(){
+    var Q=DATA.quadrant; if(!Q||!Q.xKey||!Q.yKey){$("quadrant").innerHTML="";return;}
+    var W=560,H=430,padL=58,padR=22,padT=20,padB=54,plotW=W-padL-padR,plotH=H-padT-padB;
+    var xAt=function(v){return padL+v/10*plotW;},yAt=function(v){return padT+(10-v)/10*plotH;};
+    var s='<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="가치 대 노력 2D 우선순위 사분면">';
+    s+='<rect x="'+padL+'" y="'+padT+'" width="'+plotW+'" height="'+plotH+'" fill="none" class="svg-grid"/>';
+    var mx=xAt(5),my=yAt(5);
+    s+='<line class="svg-grid" x1="'+mx+'" y1="'+padT+'" x2="'+mx+'" y2="'+(padT+plotH)+'" stroke-dasharray="3 3"/>';
+    s+='<line class="svg-grid" x1="'+padL+'" y1="'+my+'" x2="'+(padL+plotW)+'" y2="'+my+'" stroke-dasharray="3 3"/>';
+    var quad=[["빠른 성과",padL+8,padT+16,"start"],["큰 베팅",padL+plotW-8,padT+16,"end"],["여력 될 때",padL+8,padT+plotH-8,"start"],["재검토",padL+plotW-8,padT+plotH-8,"end"]];
+    quad.forEach(function(q){s+='<text class="svg-quadlabel" x="'+q[1]+'" y="'+q[2]+'" text-anchor="'+q[3]+'">'+esc(q[0])+'</text>';});
+    s+='<text class="svg-axlabel" x="'+(padL+plotW/2)+'" y="'+(H-16)+'" text-anchor="middle">'+esc(Q.xLabel)+'</text>';
+    s+='<text class="svg-axlabel" x="'+(16)+'" y="'+(padT+plotH/2)+'" text-anchor="middle" transform="rotate(-90 16 '+(padT+plotH/2)+')">'+esc(Q.yLabel)+'</text>';
+    OPTS.forEach(function(o,i){var x=xAt(clampNum(o[Q.xKey],0,10,0)),y=yAt(clampNum(o[Q.yKey],0,10,0)),c=col(i);
+      s+='<circle class="svg-marker" cx="'+x+'" cy="'+y+'" r="9" fill="'+c+'"/>';
+      s+='<text class="svg-mlabel" style="fill:'+c+'" x="'+(x+13)+'" y="'+(y+4)+'">'+esc(o.name)+'</text>';});
+    s+='</svg>';
+    var sum='<p class="sr-only">사분면('+esc(Q.xLabel)+' × '+esc(Q.yLabel)+'): '+OPTS.map(function(o){return esc(o.name)+' '+esc(Q.yKey)+'='+clampNum(o[Q.yKey],0,10,0)+', '+esc(Q.xKey)+'='+clampNum(o[Q.xKey],0,10,0);}).join("; ")+'</p>';
+    $("quadrant").innerHTML=s+sum;$("quad-note").textContent=Q.note||"";
+  }
+
+  /* ---------- score bars ---------- */
+  function renderScores(){
+    var axes=DATA.scoreAxes||[];
+    $("scores").innerHTML=axes.map(function(ax){
+      var rows=OPTS.map(function(o,i){var v=clampNum(o.scores&&o.scores[ax],0,10,0);
+        return '<div class="bar-row"><span class="bar-name" style="color:'+col(i)+'"><span class="dot" style="background:'+col(i)+'"></span>'+esc(o.name)+'</span>'+
+          '<span class="bar-track"><span class="bar-fill" style="width:'+(v*10)+'%;background:'+col(i)+'"></span></span>'+
+          '<span class="bar-val">'+v+'</span></div>';}).join("");
+      return '<div class="score-block"><div class="score-ax">'+esc(ax)+'</div>'+rows+'</div>';
+    }).join("");
+    $("scores-note").textContent="각 기준은 0~10, 높을수록 좋음(설계 추정치). 점수를 합산해 승자를 정하지 않습니다 — 가중치·결정은 사람(PM).";
+  }
+  /* ---------- radar ---------- */
+  function renderRadar(){
+    var axes=DATA.scoreAxes||[],k=axes.length; if(!k){$("radar").innerHTML="";return;}
+    var W=560,H=440,cx=W/2,cy=H/2-6,R=Math.min(W,H)/2-66;
+    var ang=function(i){return -Math.PI/2+i/k*2*Math.PI;},pt=function(i,r){return [cx+r*Math.cos(ang(i)),cy+r*Math.sin(ang(i))];};
+    var s='<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="기준별 점수 레이더">';
+    var g;for(g=1;g<=5;g++){var rr=R*g/5,poly="";for(var a=0;a<k;a++){var p=pt(a,rr);poly+=(a?" ":"")+p[0].toFixed(1)+","+p[1].toFixed(1);}s+='<polygon points="'+poly+'" fill="none" class="svg-grid"/>';}
+    for(var a2=0;a2<k;a2++){var pe=pt(a2,R);s+='<line class="svg-grid" x1="'+cx+'" y1="'+cy+'" x2="'+pe[0].toFixed(1)+'" y2="'+pe[1].toFixed(1)+'"/>';
+      var pl=pt(a2,R+18);s+='<text class="svg-axt" x="'+pl[0].toFixed(1)+'" y="'+pl[1].toFixed(1)+'" text-anchor="middle">'+esc(trunc(axes[a2],7))+'</text>';}
+    OPTS.forEach(function(o,i){var c=col(i),poly="";for(var a=0;a<k;a++){var val=clampNum(o.scores&&o.scores[axes[a]],0,10,0),p=pt(a,R*val/10);poly+=(a?" ":"")+p[0].toFixed(1)+","+p[1].toFixed(1);}
+      s+='<polygon points="'+poly+'" fill="'+hexA(c,.14)+'" stroke="'+c+'" stroke-width="2"/>';});
+    var lx=20,ly=H-12;OPTS.forEach(function(o,i){s+='<circle cx="'+lx+'" cy="'+ly+'" r="5" fill="'+col(i)+'"/><text class="svg-axt" x="'+(lx+9)+'" y="'+(ly+4)+'">'+esc(o.name)+'</text>';lx+=80+esc(o.name).length*6;});
+    s+='</svg>';
+    var sum='<p class="sr-only">기준별 점수(0–10): '+OPTS.map(function(o){return esc(o.name)+' '+axes.map(function(ax){return esc(ax)+' '+clampNum(o.scores&&o.scores[ax],0,10,0);}).join(", ");}).join("; ")+'</p>';
+    $("radar").innerHTML=s+sum;
+  }
+
+  /* ---------- what-if cards ---------- */
+  function renderWhatif(){
+    $("whatif").innerHTML=OPTS.map(function(o,i){var p=o.preview||{};
+      return '<div class="wif" style="'+ostyle(i)+'">'+
+        '<div class="wif-h"><span class="dot"></span>'+esc(o.name)+'<span class="wif-tag">이 옵션을 고르면</span></div>'+
+        '<div class="wif-head">'+esc(p.headline||o.tag)+'</div>'+
+        ((Array.isArray(p.bullets)&&p.bullets.length)?'<ul class="wif-b">'+p.bullets.map(function(b){return '<li>'+qmark(b)+'</li>';}).join("")+'</ul>':'')+
+        ((Array.isArray(p.unknowns)&&p.unknowns.length)?'<div class="wif-u-h">확인 필요</div><ul class="wif-u">'+p.unknowns.map(function(u){return '<li>'+esc(u)+'</li>';}).join("")+'</ul>':'')+
+        '<div class="wif-foot"><button class="wif-btn" type="button" disabled>이 옵션으로 resolve — 사람이 결정</button><span class="wif-note">미리보기일 뿐, 확정 아님</span></div>'+
+      '</div>';}).join("");
+  }
+
+  /* ---------- adaptive-style cards ---------- */
+  function renderAdaptive(){
+    $("adaptive").innerHTML=OPTS.map(function(o,i){
+      var st=Math.round(clampNum(o.stars,0,3,0)),rec=("★".repeat(st))+("☆".repeat(3-st))+(o.recommend?'  · (추천)':'');
+      var facts=[["옵션",o.name+" ("+o.code+")"],["추천도",rec],["Blocking 영향",o.blk]];
+      return '<div class="acard"><div class="acard-bar" style="background:'+col(i)+'"></div><div class="acard-body">'+
+        '<div class="acard-title">'+esc(o.tag)+'</div>'+
+        '<table class="acard-facts"><tbody>'+facts.map(function(f){return '<tr><td class="ak">'+esc(f[0])+'</td><td class="av">'+qmark(f[1])+'</td></tr>';}).join("")+'</tbody></table>'+
+        '<div class="acard-actions"><span class="achip" style="border-color:'+hexA(col(i),.5)+';color:'+col(i)+'">자세히</span><span class="achip ghost">resolve (사람)</span></div>'+
+      '</div></div>';}).join("");
+  }
+
+  /* ---------- footer ---------- */
+  function renderFoot(){
+    $("foot").innerHTML='<b>이 갤러리에 대해.</b> golden example <code>'+esc(DATA.meta.screen)+'</code> 의 <code>'+esc(DATA.meta.id)+'</code> 을 가능한 모든 뷰로 펼친 자기완결형 단일 HTML(의존성 0, 오프라인). '+
+      '엔진(CSS+JS)은 <code>decision.template.html</code> 에 고정되고, 이 파일은 <code>'+esc(DATA.meta.id)+'.data.json</code> 한 곳만 주입해 만들어집니다.'+
+      '<ul>'+
+      '<li>전/후 diff = jsdiff(<code>diffWords</code>/<code>diffJson</code>) 개념을 의존성 없이 인라인 · 초록(+)/빨강(−) 에 <b>기호 병행</b>(WCAG 1.4.1)</li>'+
+      '<li>트리·흐름·여정·사분면·레이더 = 순수 HTML/SVG/CSS 렌더(오프라인·의존성 0) · Mermaid/Chart.js 는 소스/대체로만 참고</li>'+
+      '<li>비교(매트릭스·사분면·점수)는 <b>중립 표현</b>(승자 미지정) · 추천은 카드의 ★·(추천) 으로만 분리 · 과의존/앵커링 방지(Buçinca 2021)</li>'+
+      '<li>모르는 파급은 <span class="q">(?)</span> — 추측해 채우지 않음</li>'+
+      '</ul>';
+  }
+
+  /* ---------- mode toggle wiring ---------- */
+  document.querySelectorAll(".modetoggle button").forEach(function(b){b.addEventListener("click",function(){dstate.mode=b.getAttribute("data-mode");
+    document.querySelectorAll(".modetoggle button").forEach(function(x){x.setAttribute("aria-pressed",x===b?"true":"false");});renderDiff();});});
+
+  renderHeader();renderGate();renderNav();renderViewSel();applyViewSelection();
+  if(DATA.gate&&DATA.gate.decision==="skip"){
+    $("toc").style.display="none";$("viewsel").style.display="none";
+    ALL_VIEWS.forEach(function(k){var el=$(VIEW_SECTION[k]);if(el)el.style.display="none";});
+  }else{
+    if(viewOn("opt"))renderLegend();
+    if(viewOn("diff")){renderSeg();renderDiff();}
+    if(viewOn("tree")){renderTree();renderTreeSVG();renderMermaid();}
+    if(viewOn("flow"))renderFlow();
+    if(viewOn("journey"))renderJourney();
+    if(viewOn("matrix"))renderMatrix();
+    if(viewOn("quad"))renderQuadrant();
+    if(viewOn("scores")){renderScores();renderRadar();}
+    if(viewOn("whatif"))renderWhatif();
+    if(viewOn("cards"))renderAdaptive();
+  }
+  renderFoot();
+})();
+</script>
+</body>
+</html>

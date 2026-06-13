@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://frontend-workflow-kit/decision-data.schema.json",
+  "title": "visualize-decision 입력 데이터 계약",
+  "description": "엔진(decision.template.html)에 주입되는 결정별 데이터. LLM 은 이 스키마에 맞는 JSON 만 생성하면 되고, 렌더 엔진은 고정·재사용된다.",
+  "type": "object",
+  "required": ["meta", "base", "options", "criteria"],
+  "additionalProperties": false,
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": ["id", "title", "screen", "blocking", "owner", "readiness", "status", "question"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "description": "Open Decision ID, 예: D-001" },
+        "title": { "type": "string", "description": "결정 질문(헤더 H1)" },
+        "eyebrow": { "type": "string", "description": "상단 작은 라벨. 생략 시 빈 값" },
+        "screen": { "type": "string" },
+        "blocking": { "type": "string", "description": "Blocking Mode" },
+        "owner": { "type": "string" },
+        "readiness": { "type": "string", "description": "현재 readiness 단계" },
+        "status": { "type": "string", "description": "open | resolved 등" },
+        "question": { "type": "string", "description": "트리/노드용 짧은 질문" }
+      }
+    },
+    "base": {
+      "type": "string",
+      "description": "결정 전(현재) 상태 텍스트. 옵션별 after 와 줄 단위 diff 의 기준. 줄바꿈은 \\n."
+    },
+    "options": {
+      "type": "array",
+      "minItems": 1,
+      "description": "선택지. 색은 인덱스 순서로 자동 배정(팔레트). 모든 뷰가 이 배열을 순회.",
+      "items": {
+        "type": "object",
+        "required": ["key", "name", "code", "tag", "recommend", "stars", "why", "pros", "cons", "changes", "risk", "blk", "branch", "after"],
+        "additionalProperties": false,
+        "properties": {
+          "key": { "type": "string", "description": "고유 키(criteria.t·journey.sat 의 키와 일치해야 함)" },
+          "name": { "type": "string", "description": "표시 이름" },
+          "code": { "type": "string", "description": "원문 옵션 코드(예: show / separate tab)" },
+          "tag": { "type": "string", "description": "한 줄 설명" },
+          "recommend": { "type": "boolean", "description": "(추천) 배지. 셋 다 불확실하면 모두 false 로 보류" },
+          "stars": { "type": "integer", "minimum": 0, "maximum": 3, "description": "상대 강도 ★ (추천 아님)" },
+          "why": { "type": "string", "description": "추천/강도의 근거" },
+          "pros": { "type": "array", "items": { "type": "string" }, "description": "장점. 불확실 항목 끝에 (?) 표기 가능" },
+          "cons": { "type": "array", "items": { "type": "string" } },
+          "changes": { "type": "array", "items": { "type": "string" }, "description": "트리·SVG 가 보여줄 변경 요약(최대 3줄 노출)" },
+          "risk": { "type": "string" },
+          "blk": { "type": "string", "description": "Blocking 영향 한 줄" },
+          "branch": { "type": "string", "description": "흐름/Mermaid 분기 결과 라벨" },
+          "after": { "type": "string", "description": "이 옵션 적용 후 상태 텍스트(diff 대상). 줄바꿈은 \\n." },
+          "scores": {
+            "type": "object",
+            "description": "기준명 → 0~10 점수. quad/scores/radar 뷰에서 사용. 키는 scoreAxes 와 일치.",
+            "additionalProperties": { "type": "number", "minimum": 0, "maximum": 10 }
+          },
+          "value": { "type": "number", "minimum": 0, "maximum": 10, "description": "사분면 세로축 기본값(quadrant.yKey)" },
+          "effort": { "type": "number", "minimum": 0, "maximum": 10, "description": "사분면 가로축 기본값(quadrant.xKey)" },
+          "preview": {
+            "type": "object",
+            "description": "What-if 카드 내용",
+            "additionalProperties": false,
+            "properties": {
+              "headline": { "type": "string" },
+              "bullets": { "type": "array", "items": { "type": "string" } },
+              "unknowns": { "type": "array", "items": { "type": "string" }, "description": "확인 필요 항목(?). 추측 금지" }
+            }
+          }
+        }
+      }
+    },
+    "criteria": {
+      "type": "array",
+      "description": "트레이드오프 표의 행. 칸은 방향을 따로 안 봐도 되는 직관적 단어로.",
+      "items": {
+        "type": "object",
+        "required": ["k", "t"],
+        "additionalProperties": false,
+        "properties": {
+          "k": { "type": "string", "description": "기준명" },
+          "t": {
+            "type": "object",
+            "description": "옵션 key → 칸 텍스트. 불확실은 (?) 표기.",
+            "additionalProperties": { "type": "string" }
+          }
+        }
+      }
+    },
+    "scoreAxes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "점수 막대·레이더의 기준 축 이름들. options[].scores 의 키와 일치."
+    },
+    "quadrant": {
+      "type": "object",
+      "description": "2D 우선순위 사분면 축 설정.",
+      "required": ["xLabel", "yLabel", "xKey", "yKey"],
+      "additionalProperties": false,
+      "properties": {
+        "xLabel": { "type": "string" },
+        "yLabel": { "type": "string" },
+        "xKey": { "type": "string", "description": "options 의 가로축 필드명(예: effort)" },
+        "yKey": { "type": "string", "description": "options 의 세로축 필드명(예: value)" },
+        "note": { "type": "string" }
+      }
+    },
+    "flow": {
+      "type": "array",
+      "description": "사용자 흐름 노드. [라벨, 서브텍스트, here(1=현재 결정 위치)].",
+      "items": {
+        "type": "array",
+        "minItems": 3,
+        "maxItems": 3,
+        "prefixItems": [{ "type": "string" }, { "type": "string" }, { "type": "integer", "enum": [0, 1] }]
+      }
+    },
+    "journey": {
+      "type": "object",
+      "description": "여정 맵(단계별 만족도). sat 의 키는 옵션 key 와 일치, 배열 길이는 steps 와 동일.",
+      "required": ["steps", "sat"],
+      "additionalProperties": false,
+      "properties": {
+        "title": { "type": "string" },
+        "steps": { "type": "array", "items": { "type": "string" } },
+        "sat": {
+          "type": "object",
+          "additionalProperties": { "type": "array", "items": { "type": "number", "minimum": 1, "maximum": 5 } }
+        },
+        "diverge": { "type": "integer", "minimum": 0, "description": "옵션별로 갈리기 시작하는 step 인덱스(점선)" },
+        "note": { "type": "string" }
+      }
+    },
+    "views": {
+      "description": "렌더할 뷰. 'all' 또는 뷰 키 배열(순서대로). 생략 시 전체(카탈로그). 트리거 게이트를 통과한 뒤, 결정 성격에 맞는 뷰만 고르는 것이 기본(초안 §4).",
+      "oneOf": [
+        { "const": "all" },
+        { "type": "array", "items": { "$ref": "#/$defs/viewKey" }, "minItems": 1, "uniqueItems": true }
+      ]
+    },
+    "viewRationale": {
+      "type": "string",
+      "description": "왜 이 뷰들을 골랐는지 한 줄 근거(뷰 선택 배너에 표시)."
+    },
+    "gate": {
+      "type": "object",
+      "description": "트리거 게이트 판정(초안 §3). decision=skip 이면 뷰를 그리지 않고 '텍스트 질문이 낫다'를 보고.",
+      "required": ["decision"],
+      "additionalProperties": false,
+      "properties": {
+        "decision": { "enum": ["visualize", "skip"] },
+        "trigger": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["label", "met"],
+            "additionalProperties": false,
+            "properties": {
+              "label": { "type": "string" },
+              "met": { "type": "boolean" }
+            }
+          }
+        },
+        "reason": { "type": "string" }
+      }
+    }
+  },
+  "$defs": {
+    "viewKey": {
+      "enum": ["opt", "diff", "tree", "flow", "journey", "matrix", "quad", "scores", "whatif", "cards"],
+      "description": "opt=선택지카드 · diff=전/후 · tree=의사결정 트리(카드+SVG+Mermaid) · flow=사용자 흐름 · journey=여정 맵 · matrix=트레이드오프 표 · quad=2D 사분면 · scores=점수 막대+레이더 · whatif=확정 전 확인 · cards=Adaptive 미리보기 카드"
+    }
+  }
+}

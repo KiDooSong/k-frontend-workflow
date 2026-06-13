@@ -1,0 +1,124 @@
+{
+  "meta": {
+    "id": "D-001",
+    "title": "만료 쿠폰을 목록에 노출할 것인가?",
+    "eyebrow": "frontend-workflow-kit · Open Decision · D-001",
+    "screen": "COUPON-001",
+    "blocking": "final-fixture-ui",
+    "owner": "PM",
+    "readiness": "rough-fixture-ui",
+    "status": "open",
+    "question": "만료 쿠폰을 목록에 노출?"
+  },
+  "gate": {
+    "decision": "visualize",
+    "trigger": [
+      { "label": "옵션 3개 (≥3)", "met": true },
+      { "label": "실재하는 트레이드오프", "met": true },
+      { "label": "산출물 형태가 바뀜", "met": true },
+      { "label": "다중턴 명료화 예상", "met": false }
+    ],
+    "reason": "자명한 yes/no 가 아니고 옵션 간 우열이 갈리지 않아, 시각화가 resolve 직전 이해를 돕는다."
+  },
+  "views": ["opt", "diff", "tree", "flow", "matrix", "whatif"],
+  "viewRationale": "상태가 바뀌어 전/후 diff, 경로가 갈려 트리·흐름, A/B/C 비교라 트레이드오프, resolve 직전 확인이라 What-if 를 골랐다. 점수·사분면·여정·미리보기 카드는 분석 보조라 이 결정에선 생략(카탈로그 빌드 --views all 에서만 표시).",
+  "base": "[상태 탭]\n사용가능\n사용완료\n[쿠폰 리스트]\n사용가능·사용완료 쿠폰을 렌더\n[만료 쿠폰]\n정책 미정 — D-001 open\n[State Matrix · empty]\ndata.length === 0 → EmptyState\n[Interaction · coupon_tab_change]\n값: available | used\n[API · GET /coupons]\nstatus 필터: available | used",
+  "options": [
+    {
+      "key": "show",
+      "name": "노출",
+      "code": "show",
+      "tag": "리스트에 만료 쿠폰을 포함(흐림·비활성)해서 함께 보여준다",
+      "recommend": true,
+      "stars": 2,
+      "why": "추가 결정·BE 변경 없이 final-fixture-ui 를 바로 열 수 있는 실용적 선택",
+      "pros": ["구현 저렴 · 상태 탭 구조 변화 없음", "만료 쿠폰도 사용자가 확인 가능", "API/BE 변경 불필요 — 지금 바로 진행"],
+      "cons": ["사용 불가 쿠폰이 리스트에 섞여 다소 산만"],
+      "changes": ["리스트에 만료 쿠폰 포함 (흐림·비활성)", "상태 탭 구조 변화 없음"],
+      "risk": "사용 불가 쿠폰이 섞여 보임",
+      "blk": "추가 결정 없이 final-fixture-ui 진입 가능",
+      "branch": "리스트에 흐리게 포함",
+      "after": "[상태 탭]\n사용가능\n사용완료\n[쿠폰 리스트]\n사용가능·사용완료 쿠폰을 렌더\n만료 쿠폰도 렌더 (흐림·비활성·사용 불가 배지)\n[만료 쿠폰]\n목록에 노출 (dimmed)\n[State Matrix · empty]\ndata.length === 0 → EmptyState\n[Interaction · coupon_tab_change]\n값: available | used\n[API · GET /coupons]\nstatus 필터: available | used",
+      "scores": { "발견성": 8, "구현 용이성": 9, "혼동 없음": 8, "BE 안전성": 10 },
+      "value": 6,
+      "effort": 2,
+      "preview": {
+        "headline": "만료 쿠폰이 리스트에 흐리게(비활성) 함께 보입니다",
+        "bullets": ["상태 탭 구조는 그대로", "만료 쿠폰엔 '사용 불가' 배지", "API/BE 변경 없음 — 바로 진행 가능"],
+        "unknowns": []
+      }
+    },
+    {
+      "key": "hide",
+      "name": "숨김",
+      "code": "hide",
+      "tag": "만료 쿠폰을 목록에서 빼고 사용 가능한 것만 보여준다",
+      "recommend": false,
+      "stars": 1,
+      "why": "가장 단순하지만 “쿠폰이 사라졌다” 혼동 위험이 가장 큼",
+      "pros": ["구현 저렴 · 리스트가 깔끔"],
+      "cons": ["사용자가 만료 쿠폰을 못 봐 혼동 (?)", "전부 만료 시 empty 처리 추가 결정 필요 (?)"],
+      "changes": ["리스트에서 만료 쿠폰 제외 (필터)", "상태 탭 구조 변화 없음"],
+      "risk": "“쿠폰이 사라졌다” 혼동 (?)",
+      "blk": "전부 만료 시 empty 처리 결정 필요 (?)",
+      "branch": "리스트에서 필터로 제외",
+      "after": "[상태 탭]\n사용가능\n사용완료\n[쿠폰 리스트]\n사용가능·사용완료 쿠폰을 렌더\n만료 쿠폰은 제외 (필터링)\n[만료 쿠폰]\n목록에서 숨김 — “쿠폰이 사라졌다” 혼동 위험 (?)\n[State Matrix · empty]\ndata.length === 0 → EmptyState\n전부 만료면 empty 로 보일 수 있음 (?)\n[Interaction · coupon_tab_change]\n값: available | used\n[API · GET /coupons]\nstatus 필터: available | used",
+      "scores": { "발견성": 2, "구현 용이성": 9, "혼동 없음": 3, "BE 안전성": 10 },
+      "value": 3,
+      "effort": 2,
+      "preview": {
+        "headline": "만료 쿠폰은 목록에서 빠지고 사용 가능한 것만 보입니다",
+        "bullets": ["리스트가 가장 깔끔", "상태 탭 구조 그대로"],
+        "unknowns": ["사용자가 만료 쿠폰을 못 봐 '사라졌다'고 느낄 수 있음", "전부 만료면 빈 화면(empty) 처리 결정 필요"]
+      }
+    },
+    {
+      "key": "tab",
+      "name": "별도 탭",
+      "code": "separate tab",
+      "tag": "“만료” 상태 탭을 추가해 따로 모아 보여준다",
+      "recommend": false,
+      "stars": 2,
+      "why": "UX 명확성은 최선이나 BE 의 status=expired 지원이 불확실(추가 작업·의존)",
+      "pros": ["만료 쿠폰을 따로 모아 가장 명확", "“쿠폰 사라짐” 혼동 위험 낮음"],
+      "cons": ["상태 탭·이벤트·API 변경 필요", "BE status=expired 지원 확인 필요 (?)"],
+      "changes": ["상태 탭에 “만료” 추가", "coupon_tab_change 값에 expired 추가", "API status 필터 expired 필요 (?)"],
+      "risk": "BE 의 status=expired 지원 확인 필요 (?)",
+      "blk": "API 변경 동반 시 api-integrated-ui 영향 (?)",
+      "branch": "“만료” 탭으로 분기 →",
+      "after": "[상태 탭]\n사용가능\n사용완료\n만료\n[쿠폰 리스트]\n선택한 상태 탭별로 필터 렌더\n[만료 쿠폰]\n별도 “만료” 탭에 노출\n[State Matrix · empty]\n탭별 empty 상태 필요 (만료 0건 등)\n[Interaction · coupon_tab_change]\n값: available | used | expired\n[API · GET /coupons]\nstatus 필터: available | used | expired (BE 지원 확인 필요) (?)",
+      "scores": { "발견성": 9, "구현 용이성": 5, "혼동 없음": 8, "BE 안전성": 4 },
+      "value": 8,
+      "effort": 6,
+      "preview": {
+        "headline": "“만료” 탭이 새로 생기고 만료 쿠폰은 거기 모입니다",
+        "bullets": ["만료 쿠폰을 따로 모아 가장 명확", "'쿠폰 사라짐' 혼동 위험 낮음"],
+        "unknowns": ["상태 탭·이벤트·API 변경 필요", "BE의 status=expired 지원 확인 필요"]
+      }
+    }
+  ],
+  "criteria": [
+    { "k": "구현 비용", "t": { "show": "저렴", "hide": "저렴", "tab": "보통" } },
+    { "k": "상태 탭 구조", "t": { "show": "그대로", "hide": "그대로", "tab": "탭 1개 추가" } },
+    { "k": "만료 쿠폰 발견성", "t": { "show": "잘 보임", "hide": "안 보임", "tab": "잘 보임(분리)" } },
+    { "k": "“쿠폰 사라짐” 혼동", "t": { "show": "거의 없음", "hide": "큼", "tab": "보통" } },
+    { "k": "API/Interaction 변경", "t": { "show": "변경 없음", "hide": "변경 없음", "tab": "변경 필요 (?)" } },
+    { "k": "Blocking 해소", "t": { "show": "쉬움", "hide": "보통", "tab": "어려움" } }
+  ],
+  "scoreAxes": ["발견성", "구현 용이성", "혼동 없음", "BE 안전성"],
+  "quadrant": {
+    "xLabel": "노력 (구현 비용) →",
+    "yLabel": "사용자 가치 →",
+    "xKey": "effort",
+    "yKey": "value",
+    "note": "오른쪽 위일수록 가치 높고 노력 큼. 사분면 위치는 입력 점수의 시각화일 뿐 승자 지정이 아니며, 점수·가중치는 주관적입니다(기준 명시). 최종 선택(resolve)은 사람(PM)."
+  },
+  "flow": [["홈", "HOME-001", 0], ["쿠폰 탭", "하단 탭", 0], ["쿠폰 목록", "COUPON-001 · 상태 탭", 1], ["쿠폰 상세", "/coupons/[id]", 0]],
+  "journey": {
+    "title": "쿠폰함에서 만료 쿠폰을 마주치기까지",
+    "steps": ["홈 진입", "쿠폰 탭", "목록 로드", "만료 쿠폰 마주침", "의도한 쿠폰 찾기"],
+    "sat": { "show": [4, 4, 4, 4, 4], "hide": [4, 4, 4, 2, 2], "tab": [4, 4, 4, 5, 5] },
+    "diverge": 3,
+    "note": "세로축 = 추정 만족도(1~5). '만료 쿠폰 마주침'(점선)부터 옵션별로 갈립니다. 앞 단계는 옵션 공통이라 선이 겹칩니다. 점수는 설계 추정치(검증 전)."
+  }
+}

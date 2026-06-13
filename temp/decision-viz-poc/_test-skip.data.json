@@ -1,0 +1,16 @@
+{
+  "meta": { "id": "TEST-SKIP", "title": "자명한 yes/no — 시각화 불필요", "screen": "X", "blocking": "x", "owner": "x", "readiness": "x", "status": "open", "question": "그릴까?" },
+  "base": "before",
+  "options": [
+    { "key": "yes", "name": "예", "code": "yes", "tag": "t", "recommend": false, "stars": 0, "why": "w", "pros": ["p"], "cons": ["c"], "changes": ["ch"], "risk": "r", "blk": "b", "branch": "br", "after": "after" }
+  ],
+  "criteria": [{ "k": "기준", "t": { "yes": "v" } }],
+  "gate": {
+    "decision": "skip",
+    "trigger": [
+      { "label": "옵션 3개 (≥3)", "met": false },
+      { "label": "실재하는 트레이드오프", "met": false }
+    ],
+    "reason": "자명한 단발 yes/no — 텍스트 질문이 더 효율적(옵션 빈약 시 시각화는 역효과)."
+  }
+}

@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>D-001 · 만료 쿠폰을 목록에 노출할 것인가? — 의사결정 시각화</title>
+<style>
+  :root{
+    --bg:#0e1014; --panel:#171b22; --panel2:#202631; --line:#303847; --editor:#11151b;
+    --ink:#e7ebf2; --muted:#a2acba; --faint:#727c8d;
+    --teal:#2dd4bf; --indigo:#7c8cff; --amber:#f5a623; --green:#34d399;
+    --red:#f87171; --blue:#60a5fa; --violet:#c084fc; --gold:#fbbf24;
+    --mono:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Malgun Gothic","Apple SD Gothic Neo",sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.62;
+       font-size:15px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  .wrap{max-width:1040px;margin:0 auto;padding:34px 22px 72px}
+  .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);border:0}
+
+  /* 선택지 고유색: 노출=틸 / 숨김=앰버 / 별도탭=바이올렛 (diff 초록·빨강과 안 겹침) */
+  .o-show{--c:var(--teal);  --cbg:rgba(45,212,191,.12); --cbd:rgba(45,212,191,.5)}
+  .o-hide{--c:var(--amber); --cbg:rgba(245,166,35,.12); --cbd:rgba(245,166,35,.5)}
+  .o-tab {--c:var(--violet);--cbg:rgba(192,132,252,.12);--cbd:rgba(192,132,252,.5)}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--c);flex:0 0 auto;display:inline-block}
+
+  header{border-bottom:1px solid var(--line);padding:0 0 22px;margin-bottom:8px}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--teal)}
+  h1{font-size:28px;margin:8px 0 12px;font-weight:760;line-height:1.25;letter-spacing:-.01em}
+  .meta{display:flex;flex-wrap:wrap;gap:8px}
+  .pill{font-family:var(--mono);font-size:12px;border:1px solid var(--line);border-radius:999px;padding:4px 11px;color:var(--muted);background:var(--panel)}
+  .pill strong{color:var(--ink)}
+  .banner{margin-top:16px;background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--teal);
+          border-radius:8px;padding:13px 16px;color:var(--muted);font-size:14px}
+  .banner b{color:var(--ink)} .q{color:var(--amber);font-weight:600}
+
+  section{margin-top:40px}
+  h2{font-size:20px;margin:0 0 6px;display:flex;gap:11px;align-items:center;font-weight:680}
+  h2 .n{width:27px;height:27px;border-radius:8px;background:var(--indigo);color:#0e1014;display:grid;place-items:center;
+        font-family:var(--mono);font-size:13px;font-weight:700;flex:0 0 auto}
+  .lead{color:var(--muted);margin:0 0 16px;font-size:14px;max-width:88ch}
+
+  .legend-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:13px}
+  .opt-card{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--c);border-radius:8px;padding:15px 16px;display:flex;flex-direction:column;gap:10px}
+  .opt-card .top{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  .opt-card .nm{display:flex;align-items:center;gap:9px;font-weight:700;font-size:16px;color:var(--c)}
+  .opt-card .nm .code{font-family:var(--mono);font-size:12px;font-weight:400;color:var(--faint)}
+  .opt-card .rec{margin-left:auto;display:flex;align-items:center;gap:9px}
+  .stars{font-size:15px;letter-spacing:1px;color:var(--gold);white-space:nowrap}
+  .stars .off{color:#3a4250}
+  .recbadge{font-size:11.5px;font-weight:700;color:#0e1014;background:var(--green);border-radius:6px;padding:2px 9px;white-space:nowrap}
+  .opt-card .tag{font-size:13px;color:var(--faint)}
+  .opt-card .why{font-size:13px;color:var(--muted);border-left:2px solid var(--cbd);padding-left:10px}
+  .pc{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:560px){.pc{grid-template-columns:1fr}}
+  .pc h4{margin:0 0 6px;font-size:12px;font-weight:600;color:var(--muted);letter-spacing:.02em}
+  .pc ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px}
+  .pc li{font-size:13px;color:var(--ink);padding-left:18px;position:relative;line-height:1.5}
+  .pros li::before{content:"✓";position:absolute;left:0;color:var(--green);font-weight:700}
+  .cons li::before{content:"✕";position:absolute;left:0;color:var(--red);font-weight:700}
+  .rec-rule{margin-top:14px;font-size:13px;color:var(--muted);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:11px 14px}
+  .rec-rule b{color:var(--ink)}
+
+  /* diff */
+  .diff-controls{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:13px}
+  .seg-label{font-size:13.5px;color:var(--muted);margin-right:4px}
+  .seg{display:inline-flex;gap:8px;flex-wrap:wrap;vertical-align:middle}
+  .seg button{font:inherit;font-size:14px;padding:7px 14px;cursor:pointer;border-radius:9px;border:1.5px solid var(--cbd);
+              background:transparent;color:var(--c);display:inline-flex;align-items:center;gap:7px;font-weight:600}
+  .seg button .dot{width:8px;height:8px}
+  .seg button[aria-pressed="true"]{background:var(--c);color:#0e1014;font-weight:700}
+  .seg button[aria-pressed="true"] .dot{background:rgba(14,16,20,.55)}
+  .modetoggle{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+  .modetoggle button{border:0;background:var(--panel);color:var(--muted);font:inherit;font-size:13px;padding:7px 13px;cursor:pointer;border-right:1px solid var(--line)}
+  .modetoggle button:last-child{border-right:0}
+  .modetoggle button[aria-pressed="true"]{background:var(--panel2);color:var(--ink);font-weight:600}
+
+  .diff{font-family:var(--mono);font-size:13.5px;line-height:1.85;border:1px solid var(--line);border-radius:8px;overflow-x:auto;overflow-y:hidden;background:var(--editor)}
+  .splithead{display:grid;grid-template-columns:minmax(240px,1fr) minmax(240px,1fr);font-family:var(--sans);font-size:12.5px;font-weight:600;color:var(--muted);background:var(--panel2);border-bottom:1px solid var(--line)}
+  .splithead div{padding:8px 12px} .splithead div:first-child{border-right:1px solid var(--line)}
+  .dl{display:flex;padding:1px 12px;white-space:pre-wrap;word-break:break-word}
+  .dl .sgn{flex:0 0 18px;text-align:center;user-select:none;opacity:.95}
+  .dl .tx{flex:1}
+  .dl.eq .tx{color:#8d96a6} .dl.eq .sgn{color:#5b6472}
+  .dl.add{background:rgba(52,211,153,.13)} .dl.add .sgn{color:var(--green);font-weight:700} .dl.add .tx{color:#e7ebf2}
+  .dl.del{background:rgba(248,113,113,.13)} .dl.del .sgn{color:var(--red);font-weight:700}   .dl.del .tx{color:#e7ebf2}
+  mark.w{border-radius:3px;padding:0 3px;font-weight:600}
+  mark.w-add{background:rgba(52,211,153,.34);color:#d7ffe9}
+  mark.w-del{background:rgba(248,113,113,.30);color:#ffe2e2}
+  .srow{display:grid;grid-template-columns:minmax(240px,1fr) minmax(240px,1fr);border-bottom:1px solid rgba(48,56,71,.6)}
+  .srow:last-child{border-bottom:0}
+  .scell{display:flex;padding:2px 12px;border-right:1px solid var(--line);color:#8d96a6}
+  .scell:last-child{border-right:0}
+  .scell .ssgn{flex:0 0 16px;text-align:center;user-select:none;opacity:.95}
+  .scell .stx{flex:1;white-space:pre-wrap;word-break:break-word}
+  .scell.del{background:rgba(248,113,113,.13);color:#e7ebf2} .scell.del .ssgn{color:var(--red);font-weight:700}
+  .scell.add{background:rgba(52,211,153,.13);color:#e7ebf2} .scell.add .ssgn{color:var(--green);font-weight:700}
+  .scell.empty{background:var(--editor)}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:12px;font-size:13px;color:var(--muted)}
+  .legend span{display:inline-flex;align-items:center;gap:7px}
+  .sw{width:13px;height:13px;border-radius:3px;display:inline-block}
+
+  /* 트리 — 항상 3개 모두, 각자 색 */
+  .q-node{display:inline-flex;align-items:center;gap:9px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:11px 16px;font-weight:600;font-size:15.5px}
+  .q-node small{font-weight:400;color:var(--faint);font-family:var(--mono);font-size:12px}
+  .branches{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-top:18px}
+  .branch{background:var(--panel);border:1px solid var(--line);border-left:5px solid var(--c);border-radius:8px;overflow:hidden}
+  .branch-h{background:var(--cbg);color:var(--c);padding:11px 15px;font-weight:700;font-size:15.5px;display:flex;align-items:center;gap:9px}
+  .branch-b{padding:13px 15px}
+  .chips{list-style:none;margin:0 0 11px;padding:0;display:flex;flex-direction:column;gap:7px}
+  .chips li{font-size:13.5px;color:var(--muted);padding-left:16px;position:relative}
+  .chips li::before{content:"›";position:absolute;left:2px;color:var(--c);font-weight:700}
+  .risk{font-size:13px;color:var(--amber);margin-bottom:9px}
+  .blk{font-size:13px;color:var(--faint);border-top:1px dashed var(--line);padding-top:9px}
+
+  /* 흐름 */
+  .flow{display:flex;align-items:stretch;flex-wrap:wrap;gap:7px}
+  .fnode{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:11px 14px;font-size:14px;min-width:112px;display:flex;flex-direction:column;justify-content:center}
+  .fnode small{color:var(--faint);font-size:12px;margin-top:2px}
+  .fnode.here{border-color:var(--indigo);background:#1a1f2b}
+  .fnode.here .pin{color:var(--indigo);font-weight:600;font-size:12px;margin-top:3px}
+  .farrow{align-self:center;color:var(--faint);font-size:20px;padding:0 3px}
+  .flow-cap{font-size:13px;color:var(--muted);font-weight:600;margin:16px 0 6px}
+  .branch-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:11px}
+  .boutcome{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--c);border-radius:8px;padding:12px 14px}
+  .boutcome .bh{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px;color:var(--c);margin-bottom:5px}
+  .boutcome .bt{font-size:13.5px;color:var(--muted)}
+
+  /* 트레이드오프 — 방향 열 없이, 직관적 단어로 */
+  .tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+  table{border-collapse:collapse;width:100%;font-size:14px}
+  th,td{padding:12px 14px;text-align:left;vertical-align:middle;border-bottom:1px solid var(--line)}
+  thead th{background:var(--panel2);color:var(--muted);font-weight:600;font-size:12.5px}
+  th.optcol{color:var(--c);background:var(--cbg);border-bottom:2px solid var(--c)}
+  th.optcol .nm{display:flex;align-items:center;gap:8px;font-size:14.5px}
+  tbody tr:nth-child(even){background:rgba(255,255,255,.018)}
+  tbody tr:last-child td,tbody tr:last-child th{border-bottom:0}
+  td.crit,th.crit{color:var(--ink);font-weight:500;background:transparent}
+  td.val{color:var(--ink)}
+  .matrix-note{margin-top:14px;font-size:13.5px;color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 15px}
+
+  .foot{margin-top:46px;padding-top:18px;border-top:1px solid var(--line);color:var(--faint);font-size:12.5px;line-height:1.7}
+  .foot b{color:var(--muted)} .foot code{font-family:var(--mono);font-size:11.5px;color:#cfd6e4;background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:1px 5px}
+  .foot ul{margin:8px 0 0;padding-left:18px} .foot li{margin:3px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h2 class="sr-only">Open Decision D-001 “만료 쿠폰을 목록에 노출할 것인가?”의 선택지(노출·숨김·별도 탭)별 전후 변화, 의사결정 트리, 사용자 흐름, 트레이드오프 비교를 한 페이지에 펼친 읽기 전용 이해 보조 화면.</h2>
+
+  <header>
+    <div class="eyebrow">frontend-workflow-kit · Open Decision · D-001</div>
+    <h1>만료 쿠폰을 목록에 노출할 것인가?</h1>
+    <div class="meta">
+      <span class="pill"><strong>화면</strong> COUPON-001</span>
+      <span class="pill"><strong>Blocking</strong> final-fixture-ui</span>
+      <span class="pill"><strong>Owner</strong> PM</span>
+      <span class="pill"><strong>현재 readiness</strong> rough-fixture-ui</span>
+      <span class="pill"><strong>Status</strong> open</span>
+    </div>
+    <p class="banner"><b>읽기 전용 · 이해 보조.</b> 이 화면은 결정을 더 쉽게 이해하도록 돕습니다.
+    어떤 문서·게이트도 바꾸지 않으며, 결정을 닫는 것(resolve)은 사람이 합니다.
+    모르는 파급은 <span class="q">(?)</span> 로 표시 — 추측해서 채우지 않습니다.</p>
+  </header>
+
+  <section aria-label="선택지">
+    <h2><span class="n">∗</span>선택지 · 장단점 · 추천</h2>
+    <p class="lead">각 옵션의 장단점과 추천도(★ 3개 만점)입니다. 옵션 색은 모든 뷰에서 동일 — 노출=틸, 숨김=앰버, 별도 탭=바이올렛.</p>
+    <div class="legend-grid" id="legend"></div>
+    <p class="rec-rule" id="rec-rule"></p>
+  </section>
+
+  <section>
+    <h2><span class="n">1</span>전/후 diff</h2>
+    <p class="lead">옵션을 고르면 그 선택의 ScreenSpec 변화를 보여줍니다 — 이 뷰만 선택에 반응합니다. 추가는 초록(+), 삭제는 빨강(−), 기호로도 구분됩니다.</p>
+    <div class="diff-controls">
+      <div><span class="seg-label">선택지</span><span class="seg" id="seg" role="group" aria-label="선택지"></span></div>
+      <span class="modetoggle" role="group" aria-label="diff 보기 방식">
+        <button data-mode="unified" aria-pressed="true">통합(unified)</button>
+        <button data-mode="split" aria-pressed="false">나란히(split)</button>
+      </span>
+    </div>
+    <div id="diff-out" class="diff" role="region" aria-label="선택지 적용 전/후 diff"></div>
+    <p id="diff-status" class="sr-only" aria-live="polite"></p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--green)"></span> 추가 (+, 초록)</span>
+      <span><span class="sw" style="background:var(--red)"></span> 삭제 (−, 빨강)</span>
+      <span><span class="sw" style="background:var(--editor);border:1px solid var(--line)"></span> 변화 없음</span>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">2</span>의사결정 트리</h2>
+    <p class="lead">선택에 따른 경로 분기 — 세 옵션을 항상 함께 보여줍니다.</p>
+    <div class="q-node">만료 쿠폰을 목록에 노출? <small>D-001 · final-fixture-ui</small></div>
+    <div class="branches" id="tree"></div>
+  </section>
+
+  <section>
+    <h2><span class="n">3</span>사용자 흐름</h2>
+    <p class="lead">전체 흐름 속 이 결정의 위치와, 옵션별 분기 결과.</p>
+    <div id="flow"></div>
+  </section>
+
+  <section>
+    <h2><span class="n">4</span>트레이드오프</h2>
+    <p class="lead">세 옵션 × 기준 — 모든 항목을 항상 표시합니다. 각 칸은 방향을 따로 보지 않아도 되도록 직관적 단어로 적었습니다.</p>
+    <div class="tbl-wrap"><table id="matrix"></table></div>
+    <p class="matrix-note">이 표 자체는 <b>승자를 표시하지 않습니다</b> — 추천은 위 <b>선택지</b> 카드의 ★ 와 (추천) 을 보세요.
+    기준 가중치와 최종 선택은 팀(Owner: PM)이 정하며, 더 확인이 필요한 항목은 <span class="q">(?)</span> 입니다.</p>
+  </section>
+
+  <div class="foot">
+    <b>이 프로토타입에 대해.</b> golden example <code>COUPON-001</code> 의 <code>D-001</code> 을 4가지 뷰로 한 페이지에 펼친 자기완결형 단일 HTML(의존성 0, 오프라인 동작) 데모입니다.
+    실제 스킬은 이 산출물을 <code>docs/frontend-workflow/_viz/</code> 에 만들고, 게이트·문서는 건드리지 않습니다.
+    <ul>
+      <li>전/후 diff = jsdiff(<code>diffWords</code>/<code>diffJson</code>) 개념을 의존성 없이 인라인 구현 · 초록(+)/빨강(−) 에 <b>기호를 함께</b> 써서 색맹·흑백에서도 구분(WCAG 1.4.1)</li>
+      <li>트리·흐름 = 자기완결(오프라인·의존성 0) 위해 순수 HTML/CSS 로 렌더 · Mermaid 를 쓰려면 인라인/번들 필요(CDN 은 오프라인이 깨짐)</li>
+      <li>트레이드오프 = 중립 표현(승자 미지정) · 과의존/앵커링 방지(Buçinca 2021) · 전/후 diff = Nielsen #5 + 중간 확인(CHI 2026)</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+(function(){
+  var BASE=
+"[상태 탭]\n사용가능\n사용완료\n[쿠폰 리스트]\n사용가능·사용완료 쿠폰을 렌더\n[만료 쿠폰]\n정책 미정 — D-001 open\n[State Matrix · empty]\ndata.length === 0 → EmptyState\n[Interaction · coupon_tab_change]\n값: available | used\n[API · GET /coupons]\nstatus 필터: available | used";
+  var AFTER={
+    show:"[상태 탭]\n사용가능\n사용완료\n[쿠폰 리스트]\n사용가능·사용완료 쿠폰을 렌더\n만료 쿠폰도 렌더 (흐림·비활성·사용 불가 배지)\n[만료 쿠폰]\n목록에 노출 (dimmed)\n[State Matrix · empty]\ndata.length === 0 → EmptyState\n[Interaction · coupon_tab_change]\n값: available | used\n[API · GET /coupons]\nstatus 필터: available | used",
+    hide:"[상태 탭]\n사용가능\n사용완료\n[쿠폰 리스트]\n사용가능·사용완료 쿠폰을 렌더\n만료 쿠폰은 제외 (필터링)\n[만료 쿠폰]\n목록에서 숨김 — “쿠폰이 사라졌다” 혼동 위험 (?)\n[State Matrix · empty]\ndata.length === 0 → EmptyState\n전부 만료면 empty 로 보일 수 있음 (?)\n[Interaction · coupon_tab_change]\n값: available | used\n[API · GET /coupons]\nstatus 필터: available | used",
+    tab:"[상태 탭]\n사용가능\n사용완료\n만료\n[쿠폰 리스트]\n선택한 상태 탭별로 필터 렌더\n[만료 쿠폰]\n별도 “만료” 탭에 노출\n[State Matrix · empty]\n탭별 empty 상태 필요 (만료 0건 등)\n[Interaction · coupon_tab_change]\n값: available | used | expired\n[API · GET /coupons]\nstatus 필터: available | used | expired (BE 지원 확인 필요) (?)"
+  };
+  var OPT={
+    show:{name:"노출",code:"show",tag:"리스트에 만료 쿠폰을 포함(흐림·비활성)해서 함께 보여준다",
+      recommend:true,stars:2,why:"추가 결정·BE 변경 없이 final-fixture-ui 를 바로 열 수 있는 실용적 선택",
+      pros:["구현 저렴 · 상태 탭 구조 변화 없음","만료 쿠폰도 사용자가 확인 가능","API/BE 변경 불필요 — 지금 바로 진행"],
+      cons:["사용 불가 쿠폰이 리스트에 섞여 다소 산만"],
+      changes:["리스트에 만료 쿠폰 포함 (흐림·비활성)","상태 탭 구조 변화 없음"],risk:"사용 불가 쿠폰이 섞여 보임",blk:"추가 결정 없이 final-fixture-ui 진입 가능",branch:"리스트에 흐리게 포함"},
+    hide:{name:"숨김",code:"hide",tag:"만료 쿠폰을 목록에서 빼고 사용 가능한 것만 보여준다",
+      recommend:false,stars:1,why:"가장 단순하지만 “쿠폰이 사라졌다” 혼동 위험이 가장 큼",
+      pros:["구현 저렴 · 리스트가 깔끔"],
+      cons:["사용자가 만료 쿠폰을 못 봐 혼동 (?)","전부 만료 시 empty 처리 추가 결정 필요 (?)"],
+      changes:["리스트에서 만료 쿠폰 제외 (필터)","상태 탭 구조 변화 없음"],risk:"“쿠폰이 사라졌다” 혼동 (?)",blk:"전부 만료 시 empty 처리 결정 필요 (?)",branch:"리스트에서 필터로 제외"},
+    tab:{name:"별도 탭",code:"separate tab",tag:"“만료” 상태 탭을 추가해 따로 모아 보여준다",
+      recommend:false,stars:2,why:"UX 명확성은 최선이나 BE 의 status=expired 지원이 불확실(추가 작업·의존)",
+      pros:["만료 쿠폰을 따로 모아 가장 명확","“쿠폰 사라짐” 혼동 위험 낮음"],
+      cons:["상태 탭·이벤트·API 변경 필요","BE status=expired 지원 확인 필요 (?)"],
+      changes:["상태 탭에 “만료” 추가","coupon_tab_change 값에 expired 추가","API status 필터 expired 필요 (?)"],risk:"BE 의 status=expired 지원 확인 필요 (?)",blk:"API 변경 동반 시 api-integrated-ui 영향 (?)",branch:"“만료” 탭으로 분기 →"}
+  };
+  var CRIT=[
+    {k:"구현 비용",t:{show:"저렴",hide:"저렴",tab:"보통"}},
+    {k:"상태 탭 구조",t:{show:"그대로",hide:"그대로",tab:"탭 1개 추가"}},
+    {k:"만료 쿠폰 발견성",t:{show:"잘 보임",hide:"안 보임",tab:"잘 보임(분리)"}},
+    {k:"“쿠폰 사라짐” 혼동",t:{show:"거의 없음",hide:"큼",tab:"보통"}},
+    {k:"API/Interaction 변경",t:{show:"변경 없음",hide:"변경 없음",tab:"변경 필요 (?)"}},
+    {k:"Blocking 해소",t:{show:"쉬움",hide:"보통",tab:"어려움"}}
+  ];
+  var ORDER=["show","hide","tab"],state={opt:"show",mode:"unified"};
+  function esc(s){return s.replace(/[&<>]/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;"})[c];});}
+  function oc(o){return "o-"+o;}
+  function diffTokens(a,b){var n=a.length,m=b.length,i,j,dp=[];for(i=0;i<=n;i++)dp.push(new Array(m+1).fill(0));
+    for(i=n-1;i>=0;i--)for(j=m-1;j>=0;j--)dp[i][j]=a[i]===b[j]?dp[i+1][j+1]+1:Math.max(dp[i+1][j],dp[i][j+1]);
+    var o=[];i=0;j=0;while(i<n&&j<m){if(a[i]===b[j]){o.push({t:"eq",v:a[i]});i++;j++;}else if(dp[i+1][j]>=dp[i][j+1]){o.push({t:"del",v:a[i]});i++;}else{o.push({t:"ins",v:b[j]});j++;}}
+    while(i<n)o.push({t:"del",v:a[i++]});while(j<m)o.push({t:"ins",v:b[j++]});return o;}
+  var _wseg=(typeof Intl!=="undefined"&&Intl.Segmenter)?new Intl.Segmenter(undefined,{granularity:"word"}):null;
+  function tokenizeWords(s){
+    if(s==="")return[];
+    if(_wseg){var out=[],seg;for(seg of _wseg.segment(s))out.push(seg.segment);return out;}
+    return s.match(/\s+|[0-9]+|[A-Za-z]+|[가-힣]+|[一-鿿]+|[^\sA-Za-z0-9가-힣一-鿿]/g)||[s];
+  }
+  var WORD_PAIR_MIN=0.3;
+  function isWordTok(x){return /[0-9A-Za-z가-힣一-鿿]/.test(x);}
+  function similar(a,b){
+    if(a===b)return 1;
+    var ta=tokenizeWords(a).filter(isWordTok),tb=tokenizeWords(b).filter(isWordTok);
+    if(!ta.length||!tb.length)return 0;
+    var cnt={},i,common=0;
+    for(i=0;i<tb.length;i++)cnt[tb[i]]=(cnt[tb[i]]||0)+1;
+    for(i=0;i<ta.length;i++){if(cnt[ta[i]]>0){common++;cnt[ta[i]]--;}}
+    return (2*common)/(ta.length+tb.length);
+  }
+  function splitLines(t){return t===""?[]:t.split("\n");}
+  function wordHL(o,nw){var ot=tokenizeWords(o),nt=tokenizeWords(nw),ops=diffTokens(ot,nt),oh="",nh="",k,op,e;
+    for(k=0;k<ops.length;k++){op=ops[k];e=esc(op.v);
+      if(op.t==="eq"){oh+=e;nh+=e;}else if(op.t==="del"){oh+=op.v.trim()?'<mark class="w w-del">'+e+'</mark>':e;}else{nh+=op.v.trim()?'<mark class="w w-add">'+e+'</mark>':e;}}
+    return[oh,nh];}
+  function emitHunk(dels,ins,rows){var usedIns={},di,j;
+    for(di=0;di<dels.length;di++){var d=dels[di],best=-1,bestS=WORD_PAIR_MIN;
+      for(j=0;j<ins.length;j++){if(usedIns[j])continue;var s=similar(d,ins[j]);if(s>=bestS){bestS=s;best=j;}}
+      if(best>=0){usedIns[best]=1;var h=wordHL(d,ins[best]);rows.push({type:"mod",oldH:h[0],newH:h[1]});}
+      else rows.push({type:"del",oldH:esc(d),newH:null});}
+    for(j=0;j<ins.length;j++){if(!usedIns[j])rows.push({type:"ins",oldH:null,newH:esc(ins[j])});}}
+  function buildRows(oldT,newT){var ops=diffTokens(splitLines(oldT),splitLines(newT)),rows=[],i=0;
+    while(i<ops.length){if(ops[i].t==="eq"){rows.push({type:"eq",oldH:esc(ops[i].v),newH:esc(ops[i].v)});i++;continue;}
+      var dels=[],ins=[];while(i<ops.length&&ops[i].t!=="eq"){(ops[i].t==="del"?dels:ins).push(ops[i].v);i++;}
+      emitHunk(dels,ins,rows);}
+    return rows;}
+  function renderDiff(){var rows=buildRows(BASE,AFTER[state.opt]),out=document.getElementById("diff-out"),html="",nAdd=0,nDel=0,nMod=0;
+    rows.forEach(function(r){if(r.type==="ins")nAdd++;else if(r.type==="del")nDel++;else if(r.type==="mod")nMod++;});
+    if(state.mode==="unified"){function L(s,h,c){return '<div class="dl '+c+'"><span class="sgn">'+s+'</span><span class="tx">'+h+'</span></div>';}
+      rows.forEach(function(r){if(r.type==="eq")html+=L(" ",r.oldH,"eq");else if(r.type==="mod")html+=L("−",r.oldH,"del")+L("+",r.newH,"add");else if(r.type==="del")html+=L("−",r.oldH,"del");else html+=L("+",r.newH,"add");});}
+    else{html+='<div class="splithead"><div>현재 (결정 전)</div><div>'+esc(OPT[state.opt].name)+' 적용 후</div></div>';
+      function SC(kind,h){var sign=kind==="del"?"−":kind==="add"?"+":" ";var srw=kind==="del"?'<span class="sr-only">삭제 </span>':kind==="add"?'<span class="sr-only">추가 </span>':"";
+        return '<div class="scell '+kind+'"><span class="ssgn" aria-hidden="true">'+sign+'</span>'+srw+'<span class="stx">'+(h||"")+'</span></div>';}
+      rows.forEach(function(r){var Lc,Rc,Lh,Rh;
+        if(r.type==="eq"){Lc="eq";Rc="eq";Lh=r.oldH;Rh=r.newH;}
+        else if(r.type==="mod"){Lc="del";Rc="add";Lh=r.oldH;Rh=r.newH;}
+        else if(r.type==="del"){Lc="del";Rc="empty";Lh=r.oldH;Rh="";}
+        else{Lc="empty";Rc="add";Lh="";Rh=r.newH;}
+        html+='<div class="srow">'+SC(Lc,Lh)+SC(Rc,Rh)+'</div>';});}
+    out.innerHTML=html;
+    var st=document.getElementById("diff-status");if(st)st.textContent="‘"+OPT[state.opt].name+"’ 적용 후 변경: 추가 "+nAdd+"줄, 삭제 "+nDel+"줄, 수정 "+nMod+"줄.";}
+  function pcq(s){var q=/\(\?\)/.test(s),clean=esc(s.replace(/\s*\(\?\)/,""));return clean+(q?' <span class="q">(?)</span>':"");}
+  function starHTML(n){var s="";for(var i=0;i<3;i++)s+=(i<n?"★":'<span class="off">★</span>');return '<span class="stars" aria-label="추천도 '+n+'/3">'+s+'</span>';}
+  function renderLegend(){
+    var anyRec=ORDER.some(function(o){return OPT[o].recommend;});
+    document.getElementById("legend").innerHTML=ORDER.map(function(o){var d=OPT[o];
+      var badge=d.recommend?'<span class="recbadge">★ 추천</span>':'';
+      return '<div class="opt-card '+oc(o)+'">'+
+        '<div class="top"><span class="nm"><span class="dot"></span>'+esc(d.name)+' <span class="code">'+esc(d.code)+'</span></span>'+
+          '<span class="rec">'+starHTML(d.stars)+badge+'</span></div>'+
+        '<div class="tag">'+esc(d.tag)+'</div>'+
+        '<div class="why">'+esc(d.why)+'</div>'+
+        '<div class="pc"><div class="pros"><h4>장점</h4><ul>'+d.pros.map(function(p){return "<li>"+pcq(p)+"</li>";}).join("")+'</ul></div>'+
+        '<div class="cons"><h4>단점</h4><ul>'+d.cons.map(function(c){return "<li>"+pcq(c)+"</li>";}).join("")+'</ul></div></div></div>';
+    }).join("");
+    document.getElementById("rec-rule").innerHTML=anyRec
+      ? '<b>★는 옵션 간 상대 강도일 뿐, 추천이 아닙니다.</b> 조건부 제안은 <b>(추천)</b> 배지로만 표시하며 근거(why)·장단점과 함께 봅니다. 별점은 킷 관점(낮은 모드 차단을 먼저 해소 · BE 불확실성은 보수적으로)에서의 강도이고, 최종 결정(resolve)은 사람(PM)이 합니다.'
+      : '<b>세 옵션이 모두 불확실/애매하여 추천을 보류합니다.</b> ★(상대 강도)만 참고하세요 — (추천) 배지는 표시하지 않습니다.';
+  }
+  function renderSeg(){document.getElementById("seg").innerHTML=ORDER.map(function(o){var d=OPT[o];
+    return '<button class="'+oc(o)+'" data-opt="'+o+'" aria-pressed="'+(o===state.opt)+'"><span class="dot"></span>'+esc(d.name)+'</button>';}).join("");
+    document.querySelectorAll("#seg button").forEach(function(b){b.addEventListener("click",function(){state.opt=b.getAttribute("data-opt");
+      document.querySelectorAll("#seg button").forEach(function(x){x.setAttribute("aria-pressed",x===b?"true":"false");});renderDiff();});});}
+  function renderTree(){document.getElementById("tree").innerHTML=ORDER.map(function(o){var d=OPT[o];
+    return '<div class="branch '+oc(o)+'"><div class="branch-h"><span class="dot"></span>'+esc(d.name)+'</div><div class="branch-b"><ul class="chips">'+d.changes.map(function(c){return "<li>"+esc(c)+"</li>";}).join("")+'</ul><div class="risk">주의 · '+esc(d.risk)+'</div><div class="blk">'+esc(d.blk)+'</div></div></div>';}).join("");}
+  function renderFlow(){var nodes=[["홈","HOME-001",0],["쿠폰 탭","하단 탭",0],["쿠폰 목록","COUPON-001 · 상태 탭",1],["쿠폰 상세","/coupons/[id]",0]];
+    var html='<div class="flow">';nodes.forEach(function(n,i){var here=n[2]===1;
+      html+='<div class="fnode'+(here?" here":"")+'"><span>'+esc(n[0])+'</span><small>'+esc(n[1])+'</small>'+(here?'<span class="pin">↑ D-001 여기</span>':"")+'</div>';
+      if(i<nodes.length-1)html+='<span class="farrow" aria-hidden="true">→</span>';});
+    html+='</div><div class="flow-cap">이 지점에서 옵션별 분기</div><div class="branch-row">';
+    html+=ORDER.map(function(o){var d=OPT[o];return '<div class="boutcome '+oc(o)+'"><div class="bh"><span class="dot"></span>'+esc(d.name)+'</div><div class="bt">'+esc(d.branch)+'</div></div>';}).join("");
+    html+='</div>';document.getElementById("flow").innerHTML=html;}
+  function valCell(o,row){var txt=row.t[o],q=/\(\?\)/.test(txt),clean=txt.replace(/\s*\(\?\)/,"");
+    return '<td class="val">'+esc(clean)+(q?' <span class="q">(?)</span>':"")+'</td>';}
+  function renderMatrix(){var html='<thead><tr><th scope="col">기준</th>';
+    ORDER.forEach(function(o){html+='<th scope="col" class="optcol '+oc(o)+'"><span class="nm"><span class="dot"></span>'+esc(OPT[o].name)+'</span></th>';});
+    html+='</tr></thead><tbody>';
+    CRIT.forEach(function(row){html+='<tr><th scope="row" class="crit">'+esc(row.k)+'</th>';ORDER.forEach(function(o){html+=valCell(o,row);});html+='</tr>';});
+    html+='</tbody>';document.getElementById("matrix").innerHTML=html;}
+  document.querySelectorAll(".modetoggle button").forEach(function(b){b.addEventListener("click",function(){state.mode=b.getAttribute("data-mode");
+    document.querySelectorAll(".modetoggle button").forEach(function(x){x.setAttribute("aria-pressed",x===b?"true":"false");});renderDiff();});});
+  renderLegend();renderSeg();renderDiff();renderTree();renderFlow();renderMatrix();
+})();
+</script>
+</body>
+</html>
