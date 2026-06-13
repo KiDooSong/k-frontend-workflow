@@ -4,6 +4,9 @@
 > **Conflict 는 신호(passive log)일 뿐 게이트가 아니다. 게이트는 Open Decision 재오픈이 건다.**
 > 처리 이력·결과·멱등성은 `Reconciliation Register` 가 담당하고, 결과 어휘(accepted/rejected/…)는
 > register 의 `Result` 에 둔다(`conflicts.template.md` 의 A/B 스키마는 손대지 않는다).
+> **2차 반영:** register 의 `Status` 를 `Reconcile Status`(reconcile 행위 라이프사이클)로 바꾸고
+> 자식 항목(C/D/U/INV/VER)의 open/closed 와 분리한다 — open decision 을 남기고 끝난 입력이
+> "미처리"로 오탐되어 코드 게이트가 계속 막던 문제를 차단한다.
 
 외부 입력 스킬이 저장한 새 입력 결과물을 기존 frontend-workflow 문서와 맞춰보고, 단순 반영인지, 결정 필요인지, 충돌인지 분류하는 단계다.
 
@@ -104,9 +107,9 @@ docs/frontend-workflow/inputs/reconciliation-register.md
 
 ```md
 ## Reconciliation Register
-| Input ID | Source | Classification | Result | Touched Artifacts | Created Items | Supersedes | Status |
+| Input ID | Source | Classification | Reconcile Status | Result | Touched Artifacts | Created Items | Supersedes |
 |---|---|---|---|---|---|---|---|
-| IN-20260613-meeting-001 | meeting | conflict + new-decision | pending user decision | COUPON-001 | C-001, D-004 | - | open |
+| IN-20260613-meeting-001 | meeting | conflict + new-decision | reconciled | pending user decision | COUPON-001 | C-001, D-004 | - |
 ```
 
 필드:
@@ -116,15 +119,16 @@ docs/frontend-workflow/inputs/reconciliation-register.md
 | Input ID | 입력 결과물의 `input_id`. 레지스터의 키. 입력당 canonical 행 1개 |
 | Source | `source_type` 요약 |
 | Classification | 이 입력이 만든 분류 **목록**(입력 1개가 여럿일 수 있다. 예: `conflict + new-decision`) |
-| Result | 처리 방식/결과 어휘: `accepted` / `rejected` / `delegated` / `superseded 후보` / `pending user decision` 등. reject-input 의 사유도 여기 적는다 |
+| Reconcile Status | **reconcile 행위의 라이프사이클**: `not-started` → `in-progress` → `reconciled` / `failed`. 자식 항목 상태의 rollup 이 아니다 |
+| Result | 처리 결과/대기 어휘: `accepted` / `rejected` / `delegated` / `pending user decision` / `conflict-created` 등. reject-input 의 사유도 여기 적는다 |
 | Touched Artifacts | 이 입력이 수정한 문서(ScreenSpec 등) |
-| Created Items | 이 입력이 만든/재오픈한 레지스터 항목(`C-…`, `D-…`, `U-…`). 링크만 남긴다 |
+| Created Items | 이 입력이 만든/재오픈한 레지스터 항목(`C-…`, `D-…`, `U-…`, `INV-…`, `VER-…`). 링크만 남긴다 |
 | Supersedes | 이 입력이 대체하는 **이전 입력**의 id (입력↔입력 축) |
-| Status | `open`(처리 중/미완) → `reconciled`(처리 완료). 입력 **단위 집계값** |
 
-두 가지를 명확히 한다.
+세 가지를 명확히 한다.
 
-- **`Status` 는 입력 단위 rollup 이다.** 개별 item(C-001 open, D-004 resolved 등)의 상태는 각 레지스터 행이 단일 출처다. 여기에 item 상태를 다시 적지 않는다(이중 기재 → 로그가 현실과 어긋난다).
+- **`Reconcile Status` 는 reconcile 행위의 상태지 자식 항목의 rollup 이 아니다.** 입력이 만든 C-001/D-001 이 아직 open 이어도 reconcile 자체는 `reconciled` 일 수 있다(정상). "입력을 처리했는가"와 "그 입력이 만든 결정/충돌이 다 닫혔는가"는 **다른 라이프사이클**이다. 이 둘을 한 칸에 섞으면 결정 대기 입력이 "미처리"로 오탐된다.
+- **자식 item 의 open/closed 는 각 레지스터(Open Decisions·Conflicts·Unknowns)가 단일 출처다.** register 에 다시 적지 않는다(이중 기재 → 로그가 현실과 어긋난다). register 는 "이 입력을 reconcile 해서 이런 항목을 만들었다"만 기록한다.
 - **`Supersedes` 는 입력↔입력 축만** 쓴다. 결정값 번복(decision supersede)은 여기 적지 않는다 — 후속 `decision-log` 의 몫이다. 두 축을 한 칼럼에 섞으면 이력 추적이 흐려진다.
 
 ## Reconciliation Flow
@@ -133,17 +137,20 @@ docs/frontend-workflow/inputs/reconciliation-register.md
 
 ```txt
 1.  입력 결과물 경로와 input_id 를 받는다.
-2.  Register 에 같은 input_id 가 reconciled 로 있으면 멈춘다 (이미 처리됨 — 멱등성).
-3.  Register 에 pending 행을 먼저 쓴다 (Status: open).   ← 어떤 문서 수정보다 먼저.
+2.  Register 에 같은 input_id 행이 `reconciled` 면 멈춘다 (이미 처리됨 — 멱등성).
+      `in-progress`(이전 실행이 중단됨)면 새 행을 추가하지 말고 그 행을 이어서 처리한다.
+3.  Register 에 행을 먼저 쓴다 (Reconcile Status: `in-progress`).   ← 어떤 문서 수정보다 먼저.
 4.  입력 요약과 suggested_scope 를 읽는다.
 5.  관련 기존 산출물을 찾는다.
 6.  기존 confirmed/resolved 결정과 충돌하는지 대조한다.
 7.  변경 유형을 분류한다 (입력 1개가 여러 분류일 수 있다).
 8.  사용자 결정이 필요한 경우 멈추고 선택지를 제시한다.
 9.  결정 결과에 따라 문서를 업데이트한다.
-      - 입력 vs 입력 충돌이면 Conflicts 에 기록한다 (그 자체로는 gate 아님).
+      - 입력 vs 입력 충돌이면 Conflicts 에 기록한다 (그 자체로는 gate 아님 — 구현 형태를 가르면 Open Decision 도 함께 올린다).
       - resolved 결정에 도전하는 입력이면 Conflicts 에 이전 값을 남기고 해당 Open Decision 을 재오픈한다.
-10. Register 행을 reconciled 로 바꾸고 Result·Touched Artifacts·Created Items 를 채운다.
+      - 검증 없이는 결정 불가면 Investigation/Verification 을 만들고(INV-/VER-), 막을 화면에 Open Decision/Unknown 을 함께 올린다 (investigation 단독은 게이트가 아니다).
+10. Register 행을 `reconciled` 로 바꾸고 Result·Touched Artifacts·Created Items 를 채운다.
+      자식 decision 이 열려 있어도 reconcile 자체는 끝난 것이다 (그 차단은 readiness 가 담당).
 11. workflow:state → workflow:readiness → workflow:validate 를 실행한다.
 12. readiness 가 허용한 범위에서만 개발한다.
 ```
@@ -171,6 +178,7 @@ API schema / OpenAPI / API manifest
 | resolves-unknown | `Unknowns`의 사실 확인을 해결 | Unknown을 `resolved` 처리 |
 | resolves-decision | 열린 `Open Decision`에 대한 선택을 제공 | 사용자 확인 후 `resolved` 처리 |
 | new-decision | 새 선택이 필요함 | `Open Decisions`에 `open` 행 추가 |
+| investigation-needed | 검증·실험·플랫폼 확인 없이는 결정 불가 | Investigation/Verification 생성(INV-/VER-) + 막을 화면에 Open Decision/Unknown 을 함께 올림 (investigation 단독은 게이트 아님). 상세: `investigation-and-verification.md` |
 | conflict | 기존 입력/문서와 충돌 | `Conflicts`에 기록(resolved 결정과 충돌이면 decision 재오픈) |
 | scope-unclear | 영향 범위가 불명확 | 영향 범위 확인을 `Unknowns` 또는 `Open Decisions`로 남김 |
 | reject-input | 새 입력을 반영하지 않기로 함 | Register `Result` 에 사유 기록, 문서는 유지 |
@@ -205,7 +213,9 @@ User
 ```txt
 입력 vs 입력 / 문서 vs 문서 충돌 (대칭)
 = Conflicts A/B 표에 기록. 그 자체로는 gate 가 아니다.
-= 막아야 하면 관련 화면에 Unknown 또는 Open Decision 을 별도로 올린다.
+= **어느 쪽을 택해야 구현 형태가 정해지는 충돌이면 Open Decision 도 함께 만든다**
+  (Blocking Mode 보수적으로). 그래야 게이트가 걸린다.
+= 구현 형태와 무관한 순수 기록성 충돌만 Conflicts 단독으로 둔다.
 
 입력 vs 이미 resolved 된 결정 (비대칭)
 = 단순 충돌이 아니라 "결정 재오픈" 이다.
@@ -300,10 +310,12 @@ LLM 은 conflict 를 open 으로 올리기만 한다.
 
 ```md
 ## Reconciliation Register
-| Input ID | Source | Classification | Result | Touched Artifacts | Created Items | Supersedes | Status |
+| Input ID | Source | Classification | Reconcile Status | Result | Touched Artifacts | Created Items | Supersedes |
 |---|---|---|---|---|---|---|---|
-| IN-20260613-meeting-001 | meeting | conflict (decision reopen) | pending user decision | COUPON-001 | C-001, D-001(reopened) | - | open |
+| IN-20260613-meeting-001 | meeting | conflict (decision reopen) | reconciled | pending user decision | COUPON-001 | C-001, D-001(reopened) | - |
 ```
+
+reconcile 행위는 끝났으므로 `Reconcile Status=reconciled`. 자식 D-001 이 open 이라 `Result=pending user decision` — 이 조합이 "처리는 됐고 사람 결정만 남았다"를 정확히 표현한다. 이전 모델처럼 `Status=open` 으로 두면 "미처리 입력"으로 오탐돼 코드 게이트가 계속 막혔다.
 
 **4) 사람이 재심 후 결정한다.** 새 입력을 채택하면:
 
@@ -311,7 +323,7 @@ LLM 은 conflict 를 open 으로 올리기만 한다.
 1. D-001 을 사람이 resolved 로 다시 닫는다 (예: Options 를 → show).   ← 게이트 내림, 사람 전용.
 2. C-001 도 함께 resolved 로 닫는다 (재오픈을 부른 decision 이 닫혔으므로).
 3. 관련 ScreenSpec / Copy Keys / Interaction Matrix / API Candidates 를 수정한다.
-4. Register 행의 Result 를 accepted, Status 를 reconciled 로 바꾼다.
+4. Register 행의 Result 를 `accepted` 로 갱신한다 (Reconcile Status 는 이미 `reconciled`). 게이트는 D-001 resolved 가 푼다.
 5. workflow:state / readiness / validate 를 다시 실행한다.
 ```
 
@@ -333,8 +345,13 @@ input result exists (input_id 보유)
 미처리 감지는 **input_id ↔ Reconciliation Register** 대조로 한다.
 
 ```txt
-inputs/ 에 input_id 는 있는데 register 에 그 행이 없거나 Status=open 이면  →  미처리.
-이 상태에서의 코드 변경은 경고/차단 대상.
+inputs/ 에 input_id 는 있는데
+  - register 에 그 행이 없거나
+  - Reconcile Status 가 in-progress(이전 실행 중단) / failed 면
+→ 미처리(reconcile 미완). 이 상태에서의 코드 변경은 경고/차단 대상.
+
+Reconcile Status=reconciled 면 자식 decision 이 open 이어도 "미처리"가 아니다.
+그 open decision 의 차단은 readiness 다운그레이드가 이미 담당한다 (register 가 중복 차단하지 않는다).
 ```
 
 초기에는 hard fail 이 아니라 LLM rule 과 skill 절차로 강제한다. 이후 hook/CI 단계에서 위 미처리 감지를 경고하거나 실패시킨다. (계약은 지금 고정, CI 강제는 후속 — Open Decisions 의 validate 처리와 같은 방식.)
@@ -358,16 +375,17 @@ reconcile-input
 
 ```txt
 1.  입력 결과물을 읽고 input_id 를 확인한다.
-2.  Register 에 같은 input_id 가 reconciled 면 멈춘다 (이미 처리 — 멱등성).
-3.  Register 에 pending 행을 먼저 쓴다 (Status: open).   ← 어떤 문서 수정보다 먼저.
+2.  Register 에 같은 input_id 가 `reconciled` 면 멈춘다 (이미 처리 — 멱등성). `in-progress` 면 새 행 없이 이어서 처리.
+3.  Register 에 행을 먼저 쓴다 (Reconcile Status: `in-progress`).   ← 어떤 문서 수정보다 먼저.
 4.  suggested_scope 를 기준으로 관련 산출물을 연다.
 5.  기존 confirmed/resolved 결정과 충돌 여부를 확인한다.
 6.  classification 을 만든다 (입력 1개 → item N개 가능).
 7.  자동 반영 가능한 simple-update 만 문서에 반영한다.
 8.  decision/conflict 는 사용자에게 선택지를 제시한다.
       - resolved 결정과 충돌하면 Conflict 에 이전 값을 남기고 해당 decision 을 open 으로 재오픈한다.
+      - 검증 없이는 결정 불가면 Investigation/Verification 을 만들고 막을 화면에 Open Decision/Unknown 을 함께 올린다.
 9.  사용자 결정 후 문서를 업데이트한다.
-10. Register 행을 reconciled 로 바꾸고 Result·Touched Artifacts·Created Items 를 채운다.
+10. Register 행을 `reconciled` 로 바꾸고 Result·Touched Artifacts·Created Items 를 채운다 (자식 decision 이 open 이어도 reconcile 은 끝).
 11. workflow:state/readiness/validate 결과를 보고한다.
 ```
 
@@ -416,4 +434,13 @@ Input Skill
 → Validate
 ```
 
-MVP-A 에서 문서 설계·스킬 절차 초안·**Reconciliation Register 계약**(스키마 + register-first + `input_id` 불변·required)을 고정한다. Register 의 hook/CI 강제(미처리 감지)와 conflict↔decision 닫힘 검사는 MVP-D 또는 후속으로 둔다.
+MVP-A 에서 문서 설계·스킬 절차 초안·**Reconciliation Register 계약**(스키마 + register-first + `input_id` 불변·required + `Reconcile Status`/자식 상태 분리)을 고정한다.
+
+후속(MVP-D 또는 이후) validate/hook 후보:
+
+```txt
+- 미처리 감지        input_id 는 있는데 register 행 없음 / Reconcile Status=in-progress·failed
+- stale conflict     open conflict 가 가리키는(B=D-…) decision 이 resolved 면 실패
+- 고위험 대칭 충돌   구현 형태를 가르는 충돌인데 대응 Open Decision/Unknown 이 없음
+- 닫힘 동기화        재오픈으로 생긴 conflict 가 그 decision 닫힐 때 함께 닫혔는지
+```
