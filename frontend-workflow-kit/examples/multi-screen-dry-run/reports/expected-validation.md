@@ -13,11 +13,11 @@ node scripts/validate.mjs \
 ## 예상 결과
 
 ```
-workflow:validate — OK (검사 9종 통과)
+workflow:validate — OK (검사 12종 통과)
 exit 0
 ```
 
-이 fixture 는 의도적으로 **검사 9종을 모두 통과**한다 (깨끗한 입력). implement-screen 테스트가 게이트 위반을 만들면 그때 validate 가 잡아야 한다.
+이 fixture 는 의도적으로 **검사 12종을 모두 통과**한다 (깨끗한 입력). implement-screen 테스트가 게이트 위반을 만들면 그때 validate 가 잡아야 한다.
 
 ## 화면별로 이 fixture 가 만족하는 검사
 

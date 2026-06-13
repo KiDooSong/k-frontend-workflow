@@ -105,7 +105,7 @@ owner: "{agent-or-person}"
 ```bash
 npm run workflow:state       # workflow-state.yaml 재생성 (소스 무수정)
 npm run workflow:readiness   # 화면별 readiness_mode 재산출 (판정 단일 출처)
-npm run workflow:validate    # 스키마/구조 검사 9종 (exit 0 = 통과)
+npm run workflow:validate    # 스키마/구조 검사 12종 (exit 0 = 통과)
 ```
 <!-- 경계(allowed/forbidden) 검증은 validate 가 아니라 diff 로 본다 (validate.mjs:12) — Acceptance Criteria 참조. -->
 
