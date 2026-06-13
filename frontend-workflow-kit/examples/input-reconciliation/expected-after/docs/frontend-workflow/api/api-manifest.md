@@ -1,0 +1,31 @@
+---
+artifact_id: api-manifest
+artifact_type: api-manifest
+status: draft
+last_reviewed: 2026-06-13
+---
+
+# API Manifest — expected-after
+
+> IN-20260613-api-001 반영: `GET /coupons` 응답이 page envelope 으로 변경됨.
+> 화면은 이 DTO 에 직접 의존하지 않는다 (fake hook + AsyncState).
+
+## Endpoints
+| Method | Path | 용도 | Response (요약) | confidence |
+|---|---|---|---|---|
+| POST | /auth/login | 로그인 | { token, user } | candidate |
+| GET | /home/summary | 홈 대시보드 요약 | { coupons, notices, reco } | unknown |
+| GET | /coupons | 보유 쿠폰 목록 | { items: CouponDto[], page, size, hasNext } | candidate |
+| GET | /coupons/{id} | 쿠폰 상세 | CouponDto | candidate |
+| GET | /profile | 프로필 조회 | ProfileDto | unknown |
+| PATCH | /profile | 프로필 수정 | ProfileDto | unknown |
+| GET | /notices | 공지 목록 | NoticeDto[] | candidate |
+
+## Pagination Policy (신규 — D-003)
+- 방식: offset/page (page, size). 기본 size = 20.
+- `hasNext` 로 다음 페이지 존재 여부를 노출한다.
+- 화면 상태(`page`, `hasNext`)는 fake hook 의 AsyncState 로 표현한다 (DTO 직접 의존 금지).
+
+## Notes
+- 쿠폰 상태 enum(사용 가능/사용 완료/만료)은 서버를 단일 출처로 한다. 상태 탭(planning)과 enum 매칭은 U-001 응답 예시로 확인됨.
+- confidence 는 여전히 candidate — `confirmed` 승격은 zod 스키마/OpenAPI 가 생기는 api-integrated 단계에서. (그 전에 screen-spec 의 API Candidate 를 confirmed 로 올리면 validate 검사 8 에 걸린다.)
