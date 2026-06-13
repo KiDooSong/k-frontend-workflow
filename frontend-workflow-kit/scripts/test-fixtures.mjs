@@ -191,7 +191,8 @@ function buildFixtures() {
 // validate.mjs 는 CLI 전용(export 없음) → 서브프로세스로 --json 출력을 받는다.
 // 위반이 있으면 exit 1 이라 execFileSync 가 throw 하지만 stdout 에 JSON 은 그대로 있다.
 function runValidateJson(docsDir, srcDir) {
-  let stdout;
+  let stdout = '';
+  let err = null;
   try {
     stdout = execFileSync(
       process.execPath,
@@ -199,7 +200,15 @@ function runValidateJson(docsDir, srcDir) {
       { encoding: 'utf8' },
     );
   } catch (e) {
+    // validate 는 위반 시 exit 1 → throw 하지만 stdout 에 JSON 은 그대로 있다(정상 경로).
     stdout = (e && e.stdout) || '';
+    err = e;
+  }
+  // 크래시/kill 등으로 JSON 이 아예 없으면 generic parse 오류 대신 exit/stderr 를 붙여 진단을 돕는다(N2).
+  if (!stdout.trim()) {
+    const status = err && err.status != null ? err.status : '?';
+    const stderr = err && err.stderr ? String(err.stderr).trim().slice(0, 500) : '';
+    throw new Error(`validate 서브프로세스가 JSON 을 출력하지 않음 (exit=${status})${stderr ? ': ' + stderr : ''}`);
   }
   return JSON.parse(stdout);
 }
