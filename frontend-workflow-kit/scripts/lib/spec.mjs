@@ -176,23 +176,38 @@ export function deriveMetrics(spec, opts = {}) {
     }).length;
   }
 
-  // Open Decisions: open 상태 행을 blocker 로 수집 (Blocking Mode 별 게이트)
+  // Open Decisions: open 행을 blocker 로, 깨진 행을 malformed 로 분류한다.
+  // validate 형식검사가 후속이라, 구조적 결함(누락 ID/Status, open|resolved 아닌 Status,
+  // open 인데 Blocking Mode 누락)을 조용히 버리지 않고 surface 한다 —
+  // readiness 가 fail-closed 로 막을 수 있게 (오타 하나로 게이트가 풀리는 fail-open 방지).
   const odTable = parseTable(sections['open decisions']);
   const blockingDecisions = [];
+  const malformedDecisions = [];
   if (odTable) {
     for (const r of odTable.rows) {
-      const status = (col(r, 'Status') || '').toLowerCase();
-      if (status !== 'open') continue;
-      const id = col(r, 'ID');
-      if (!id) continue;
-      blockingDecisions.push({
-        id,
-        decision_needed: col(r, 'Decision Needed') || '',
-        blocking_mode: col(r, 'Blocking Mode') || '',
-        owner: col(r, 'Owner') || '',
-      });
+      const id = (col(r, 'ID') || '').trim();
+      const status = (col(r, 'Status') || '').trim().toLowerCase();
+      const bm = (col(r, 'Blocking Mode') || '').trim();
+      const dn = (col(r, 'Decision Needed') || '').trim();
+      if (!id && !status && !bm && !dn) continue; // 빈 행
+      if (status === 'resolved') continue; // 닫힌 결정은 blocker 가 아니다
+      if (status === 'open' && id && bm) {
+        blockingDecisions.push({
+          id,
+          decision_needed: dn,
+          blocking_mode: bm,
+          owner: (col(r, 'Owner') || '').trim(),
+        });
+      } else {
+        malformedDecisions.push({
+          id: id || '(no-id)',
+          blocking_mode: bm || '(none)',
+          status: status || '(none)',
+        });
+      }
     }
     blockingDecisions.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    malformedDecisions.sort((a, b) => String(a.id).localeCompare(String(b.id)));
   }
 
   // API Candidates: 항목 중 가장 낮은 confidence
@@ -221,6 +236,7 @@ export function deriveMetrics(spec, opts = {}) {
     unknown_count: openUnknowns,
     open_decisions_count: blockingDecisions.length,
     blocking_decisions: blockingDecisions,
+    malformed_decisions: malformedDecisions,
     api_confidence_min: apiConfidenceMin,
     fake_hook_exists: fakeHookExists,
     figma_mapping_status: figmaMappingStatus,

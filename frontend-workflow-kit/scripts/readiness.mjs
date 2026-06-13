@@ -226,11 +226,20 @@ export function computeReadiness({ state, policy, ci, manifest }) {
     // decision_cap: 열린 open decision 의 가장 낮은 Blocking Mode 바로 아래 모드.
     // readiness_mode = min(fact_mode, decision_cap) 로 다운그레이드한다 (open-decisions.md).
     const decisions = (screen.derived && screen.derived.blocking_decisions) || [];
+    const invalidDecisions = [...((screen.derived && screen.derived.malformed_decisions) || [])];
     let decisionCapIdx = order.length - 1;
     for (const dec of decisions) {
       const bmIdx = order.indexOf(dec.blocking_mode);
-      if (bmIdx >= 0) decisionCapIdx = Math.min(decisionCapIdx, bmIdx - 1);
+      if (bmIdx < 0) {
+        // Blocking Mode 가 정책에 없는 값(오타 등) → 해석 불가. 조용히 무시하지 않는다.
+        invalidDecisions.push({ id: dec.id, blocking_mode: dec.blocking_mode || '(none)' });
+        continue;
+      }
+      decisionCapIdx = Math.min(decisionCapIdx, bmIdx - 1);
     }
+    // fail-closed: 해석 불가한 Open Decision 이 하나라도 있으면 docs-only 로 고정한다.
+    // (validate 형식검사가 후속이라 live gate 인 readiness 가 보수적으로 막는다)
+    if (invalidDecisions.length > 0) decisionCapIdx = 0;
 
     const chosenIdx = Math.max(0, Math.min(factIdx, decisionCapIdx));
     const chosenName = order[chosenIdx];
@@ -241,6 +250,19 @@ export function computeReadiness({ state, policy, ci, manifest }) {
     const blocking = [];
     const nextActions = [];
     const seen = new Set();
+
+    // (0) invalid open decision: 해석 불가한 행. 고치기 전엔 docs-only 로 막힌다.
+    for (const bad of invalidDecisions) {
+      blocking.push({
+        invalid_open_decision: {
+          id: bad.id || '(no-id)',
+          blocking_mode: bad.blocking_mode || '(none)',
+        },
+      });
+      nextActions.push(
+        `fix Open Decision ${bad.id || '(no-id)'}: Status must be open|resolved and Blocking Mode must be a policy mode`,
+      );
+    }
 
     // (1) open decision blocker: chosen 위를 막는 결정. 사람이 resolve 해야 풀린다.
     for (const dec of decisions) {

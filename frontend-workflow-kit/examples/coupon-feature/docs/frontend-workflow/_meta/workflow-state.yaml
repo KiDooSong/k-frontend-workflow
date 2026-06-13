@@ -32,6 +32,7 @@ screens:
           decision_needed: 쿠폰 목록 페이지네이션 방식은?
           blocking_mode: api-integrated-ui
           owner: BE
+      malformed_decisions: []
       api_confidence_min: candidate
       fake_hook_exists: true
       figma_mapping_status: missing
@@ -48,6 +49,7 @@ screens:
       unknown_count: 0
       open_decisions_count: 0
       blocking_decisions: []
+      malformed_decisions: []
       api_confidence_min: null
       fake_hook_exists: true
       figma_mapping_status: missing
