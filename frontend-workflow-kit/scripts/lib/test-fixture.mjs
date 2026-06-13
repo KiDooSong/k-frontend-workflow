@@ -16,7 +16,7 @@
 //    에서만 fail-closed 다 — register/decision/conflict/gap 검사는 본문 표만 읽으므로(splitFrontmatter
 //    (raw).body → parseTable) frontmatter 와 무관.
 import path from 'node:path';
-import { readFileSafe, splitFrontmatter, exists, walkFiles, isDir } from './util.mjs';
+import { readFileSafe, splitFrontmatter, exists, walkFiles, isDir, writeFile } from './util.mjs';
 import { parseTable, loadScreenSpec } from './spec.mjs';
 
 // 경로 구분자 정규화 — Windows(\) ↔ POSIX(/). 보고/비교를 OS 독립적으로 (요구사항 #5).
@@ -244,4 +244,127 @@ export function runIntegrityChecks(spec) {
     else r.fail('I:reports', `없음: ${toPosix(rep)}`);
   }
   return finalize(r);
+}
+
+// ── L2: state/readiness/validate 출력 재현 회귀 (pipeline fixture) ─────────────────
+// 예제 트리에 buildState/computeReadiness/validate 를 돌린 출력을, 커밋된 기계가독 기대값
+// (reports/expected-*.json)과 대조한다. 판정 로직은 재구현하지 않는다 — 호출부(test-fixtures.mjs)가
+// buildState/computeReadiness 를 import 소비하고 validate 는 서브프로세스로 돌린 "실제 출력"을 넘긴다.
+// 휘발성(generated_at)·경로 구분자(OS)를 정규화해(요구사항 #5) 타임스탬프/플랫폼 차이로 깨지지 않게 한다.
+// 비교는 구조화(파싱된 객체) 기준이라 CRLF 에 영향받지 않는다.
+
+// 결정적 직렬화 — 키를 정렬(중첩 포함)한다. 배열 순서는 보존(생산 코드가 이미 정렬해 출력).
+export function stableStringify(v) {
+  const sort = (x) => {
+    if (Array.isArray(x)) return x.map(sort);
+    if (x && typeof x === 'object') {
+      const o = {};
+      for (const k of Object.keys(x).sort()) o[k] = sort(x[k]);
+      return o;
+    }
+    return x;
+  };
+  return JSON.stringify(sort(v), null, 2);
+}
+
+// 첫 번째 차이 지점을 사람이 읽는 경로로 — 회귀 디버깅용.
+export function firstDiff(exp, act, prefix = '') {
+  const at = prefix || '(root)';
+  const te = typeof exp;
+  const ta = typeof act;
+  if (te !== ta || exp === null || act === null || te !== 'object') {
+    if (stableStringify(exp) === stableStringify(act)) return null;
+    return `${at}: 기대 ${JSON.stringify(exp)} ≠ 실제 ${JSON.stringify(act)}`;
+  }
+  if (Array.isArray(exp) || Array.isArray(act)) {
+    if (!Array.isArray(exp) || !Array.isArray(act)) return `${at}: 배열/비배열 불일치`;
+    if (exp.length !== act.length) return `${at}: 배열 길이 ${exp.length} ≠ ${act.length}`;
+    for (let i = 0; i < exp.length; i++) {
+      const d = firstDiff(exp[i], act[i], `${prefix}[${i}]`);
+      if (d) return d;
+    }
+    return null;
+  }
+  const keys = [...new Set([...Object.keys(exp), ...Object.keys(act)])].sort();
+  for (const k of keys) {
+    const kp = prefix ? `${prefix}.${k}` : k;
+    if (!(k in exp)) return `${kp}: 기대엔 없는 키(실제에만 존재)`;
+    if (!(k in act)) return `${kp}: 실제엔 없는 키(기대에만 존재)`;
+    const d = firstDiff(exp[k], act[k], kp);
+    if (d) return d;
+  }
+  return null;
+}
+
+const VOLATILE = '<normalized>';
+
+// 정규화 — generated_at(휘발성) 한 줄만 placeholder 로. 그 외 state/inventory 는 그대로.
+export function normalizeStateSnapshot(snap) {
+  const s = JSON.parse(JSON.stringify(snap));
+  if (s.state && 'generated_at' in s.state) s.state.generated_at = VOLATILE;
+  return s;
+}
+// readiness 는 타임스탬프가 없다. allowed/forbidden_paths 를 방어적으로 posix 화(OS 독립).
+export function normalizeReadinessSnapshot(readiness) {
+  const r = JSON.parse(JSON.stringify(readiness));
+  for (const id of Object.keys(r)) {
+    for (const key of ['allowed_paths', 'forbidden_paths']) {
+      if (Array.isArray(r[id][key])) r[id][key] = r[id][key].map(toPosix);
+    }
+  }
+  return r;
+}
+// validate --json 의 errors/warnings file 경로를 posix 화(Windows 백슬래시 → /).
+export function normalizeValidateSnapshot(json) {
+  const v = JSON.parse(JSON.stringify(json));
+  for (const bucket of ['errors', 'warnings']) {
+    if (Array.isArray(v[bucket])) v[bucket] = v[bucket].map((e) => ({ ...e, file: toPosix(e.file || '') }));
+  }
+  return v;
+}
+
+// pipeline 스냅샷 3종 정의(키 ↔ 파일 ↔ 정규화기).
+const PIPELINE_SNAPSHOTS = [
+  { key: 'state', file: 'expected-state.json', norm: normalizeStateSnapshot },
+  { key: 'readiness', file: 'expected-readiness.json', norm: normalizeReadinessSnapshot },
+  { key: 'validate', file: 'expected-validate.json', norm: normalizeValidateSnapshot },
+];
+
+// actual = { state:{state,inventory}, readiness, validate }. expectedDir(reports/)에서 expected-*.json 을
+// 읽어 정규화 후 구조 대조. 기대값 부재/깨짐은 fail-closed.
+export function runPipelineChecks({ expectedDir, actual }) {
+  const r = makeResults();
+  for (const { key, file, norm } of PIPELINE_SNAPSHOTS) {
+    const label = `L2:${key}`;
+    const raw = readFileSafe(path.join(expectedDir, file));
+    if (raw == null) {
+      r.fail(label, `기대값 없음: ${toPosix(file)} (먼저 \`--update\` 로 스냅샷 생성)`);
+      continue;
+    }
+    let expected;
+    try {
+      expected = JSON.parse(raw);
+    } catch (e) {
+      r.fail(label, `기대값 JSON 파싱 실패: ${toPosix(file)} — ${e.message}`);
+      continue;
+    }
+    const got = norm(actual[key]);
+    // 동등 판정은 stableStringify 가 authoritative — firstDiff 는 사람이 읽는 메시지 전용(blind-spot 시 false-pass 방지).
+    if (stableStringify(expected) === stableStringify(got)) {
+      r.ok(label, `${file} 일치`);
+    } else {
+      r.fail(label, `${file} 불일치 — ${firstDiff(expected, got) || '(구조 차이 — --json 으로 확인)'}`);
+    }
+  }
+  return finalize(r);
+}
+
+// --update: 정규화한 actual 을 expected-*.json 으로 쓴다(스냅샷 갱신; 유지보수 전용 — 기본 실행은 read-only).
+export function writePipelineExpected({ expectedDir, actual }) {
+  const written = [];
+  for (const { key, file, norm } of PIPELINE_SNAPSHOTS) {
+    writeFile(path.join(expectedDir, file), stableStringify(norm(actual[key])) + '\n');
+    written.push(toPosix(file));
+  }
+  return written;
 }

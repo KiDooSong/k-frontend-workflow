@@ -1,0 +1,86 @@
+{
+  "COUPON-001": {
+    "allowed_paths": [
+      "src/features/coupons/screens/**",
+      "src/features/coupons/components/**",
+      "src/features/coupons/hooks/**"
+    ],
+    "blocking": [
+      {
+        "open_decision": {
+          "blocking_mode": "final-fixture-ui",
+          "id": "D-001",
+          "owner": "PM"
+        }
+      },
+      {
+        "open_decision": {
+          "blocking_mode": "final-fixture-ui",
+          "id": "D-002",
+          "owner": "PM"
+        }
+      },
+      {
+        "open_decision": {
+          "blocking_mode": "api-integrated-ui",
+          "id": "D-003",
+          "owner": "BE"
+        }
+      },
+      {
+        "figma_mapping": "missing"
+      },
+      {
+        "api_confidence": "candidate"
+      }
+    ],
+    "forbidden_paths": [
+      "src/api/**",
+      "openapi.yaml"
+    ],
+    "next_actions": [
+      "resolve decision D-001: 만료 쿠폰을 목록에 노출할 것인가?",
+      "resolve decision D-002: 쿠폰 목록 정렬 기준은 무엇인가?",
+      "resolve decision D-003: 쿠폰 목록 페이지네이션 방식은?",
+      "create figma-component-mapping (status >= draft)",
+      "confirm API (resolve 1 open unknown(s))"
+    ],
+    "next_mode": "final-fixture-ui",
+    "readiness_mode": "rough-fixture-ui"
+  },
+  "COUPON-002": {
+    "allowed_paths": [
+      "src/features/coupons/screens/**"
+    ],
+    "blocking": [
+      {
+        "screen_spec_authored": false
+      },
+      {
+        "screen_spec_status": "draft"
+      },
+      {
+        "figma_mapping": "missing"
+      },
+      {
+        "api_confidence": "missing"
+      },
+      {
+        "state_matrix": false
+      }
+    ],
+    "forbidden_paths": [
+      "src/api/**",
+      "openapi.yaml"
+    ],
+    "next_actions": [
+      "write the ScreenSpec body using templates/screen/screen-spec.template.md (stub has frontmatter only)",
+      "raise screen-spec status (confirmed requires human approval metadata)",
+      "create figma-component-mapping (status >= draft)",
+      "confirm API candidates",
+      "complete State Matrix (loading/success/empty/error/refreshing)"
+    ],
+    "next_mode": "rough-fixture-ui",
+    "readiness_mode": "screen-skeleton"
+  }
+}

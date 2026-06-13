@@ -1,0 +1,255 @@
+{
+  "AUTH-001": {
+    "allowed_paths": [
+      "src/features/auth/screens/**"
+    ],
+    "blocking": [
+      {
+        "component_catalog": false
+      },
+      {
+        "fake_hook": false
+      },
+      {
+        "figma_mapping": "missing"
+      },
+      {
+        "api_confidence": "candidate"
+      }
+    ],
+    "forbidden_paths": [
+      "src/api/**",
+      "openapi.yaml"
+    ],
+    "next_actions": [
+      "create docs/frontend-workflow/design/component-catalog.md manually (catalog-gen is MVP-C)",
+      "add fake hook at src/features/auth/hooks/",
+      "create figma-component-mapping (status >= draft)",
+      "confirm API candidates"
+    ],
+    "next_mode": "rough-fixture-ui",
+    "readiness_mode": "screen-skeleton"
+  },
+  "COUPON-001": {
+    "allowed_paths": [
+      "src/features/coupons/screens/**"
+    ],
+    "blocking": [
+      {
+        "open_decision": {
+          "blocking_mode": "final-fixture-ui",
+          "id": "D-001",
+          "owner": "PM"
+        }
+      },
+      {
+        "open_decision": {
+          "blocking_mode": "api-integrated-ui",
+          "id": "D-003",
+          "owner": "BE"
+        }
+      },
+      {
+        "component_catalog": false
+      },
+      {
+        "fake_hook": false
+      },
+      {
+        "screen_spec_status": "draft"
+      },
+      {
+        "figma_mapping": "missing"
+      },
+      {
+        "api_confidence": "candidate"
+      }
+    ],
+    "forbidden_paths": [
+      "src/api/**",
+      "openapi.yaml"
+    ],
+    "next_actions": [
+      "resolve decision D-001: 만료 쿠폰을 목록에 노출할 것인가?",
+      "resolve decision D-003: 쿠폰 목록 페이지네이션 방식은?",
+      "create docs/frontend-workflow/design/component-catalog.md manually (catalog-gen is MVP-C)",
+      "add fake hook at src/features/coupons/hooks/",
+      "raise screen-spec status (confirmed requires human approval metadata)",
+      "create figma-component-mapping (status >= draft)",
+      "confirm API (resolve 1 open unknown(s))"
+    ],
+    "next_mode": "rough-fixture-ui",
+    "readiness_mode": "screen-skeleton"
+  },
+  "COUPON-002": {
+    "allowed_paths": [
+      "src/features/coupons/screens/**"
+    ],
+    "blocking": [
+      {
+        "screen_spec_authored": false
+      },
+      {
+        "component_catalog": false
+      },
+      {
+        "fake_hook": false
+      },
+      {
+        "screen_spec_status": "draft"
+      },
+      {
+        "figma_mapping": "missing"
+      },
+      {
+        "api_confidence": "missing"
+      },
+      {
+        "state_matrix": false
+      }
+    ],
+    "forbidden_paths": [
+      "src/api/**",
+      "openapi.yaml"
+    ],
+    "next_actions": [
+      "write the ScreenSpec body using templates/screen/screen-spec.template.md (stub has frontmatter only)",
+      "create docs/frontend-workflow/design/component-catalog.md manually (catalog-gen is MVP-C)",
+      "add fake hook at src/features/coupons/hooks/",
+      "raise screen-spec status (confirmed requires human approval metadata)",
+      "create figma-component-mapping (status >= draft)",
+      "confirm API candidates",
+      "complete State Matrix (loading/success/empty/error/refreshing)"
+    ],
+    "next_mode": "rough-fixture-ui",
+    "readiness_mode": "screen-skeleton"
+  },
+  "HOME-001": {
+    "allowed_paths": [
+      "src/features/home/screens/**"
+    ],
+    "blocking": [
+      {
+        "open_decision": {
+          "blocking_mode": "rough-fixture-ui",
+          "id": "D-101",
+          "owner": "PM"
+        }
+      },
+      {
+        "component_catalog": false
+      },
+      {
+        "fake_hook": false
+      },
+      {
+        "screen_spec_status": "draft"
+      },
+      {
+        "figma_mapping": "missing"
+      },
+      {
+        "api_confidence": "unknown"
+      }
+    ],
+    "forbidden_paths": [
+      "src/api/**",
+      "openapi.yaml"
+    ],
+    "next_actions": [
+      "resolve decision D-101: 홈 대시보드 위젯 구성/우선순위(쿠폰 요약·공지·추천)",
+      "create docs/frontend-workflow/design/component-catalog.md manually (catalog-gen is MVP-C)",
+      "add fake hook at src/features/home/hooks/",
+      "raise screen-spec status (confirmed requires human approval metadata)",
+      "create figma-component-mapping (status >= draft)",
+      "confirm API (resolve 1 open unknown(s))"
+    ],
+    "next_mode": "rough-fixture-ui",
+    "readiness_mode": "screen-skeleton"
+  },
+  "NOTICE-001": {
+    "allowed_paths": [
+      "src/app/**"
+    ],
+    "blocking": [
+      {
+        "open_decision": {
+          "blocking_mode": "screen-skeleton",
+          "id": "D-401",
+          "owner": "PM"
+        }
+      },
+      {
+        "component_catalog": false
+      },
+      {
+        "fake_hook": false
+      },
+      {
+        "screen_spec_status": "draft"
+      },
+      {
+        "figma_mapping": "missing"
+      },
+      {
+        "api_confidence": "candidate"
+      }
+    ],
+    "forbidden_paths": [
+      "src/features/**",
+      "src/api/**"
+    ],
+    "next_actions": [
+      "resolve decision D-401: 공지를 독립 화면으로 둘지 홈 섹션으로 흡수할지",
+      "create docs/frontend-workflow/design/component-catalog.md manually (catalog-gen is MVP-C)",
+      "add fake hook at src/features/notices/hooks/",
+      "raise screen-spec status (confirmed requires human approval metadata)",
+      "create figma-component-mapping (status >= draft)",
+      "confirm API (resolve 1 open unknown(s))"
+    ],
+    "next_mode": "screen-skeleton",
+    "readiness_mode": "route-skeleton"
+  },
+  "PROFILE-001": {
+    "allowed_paths": [
+      "docs/frontend-workflow/**"
+    ],
+    "blocking": [
+      {
+        "open_decision": {
+          "blocking_mode": "route-skeleton",
+          "id": "D-301",
+          "owner": "PM"
+        }
+      },
+      {
+        "component_catalog": false
+      },
+      {
+        "fake_hook": false
+      },
+      {
+        "screen_spec_status": "draft"
+      },
+      {
+        "figma_mapping": "missing"
+      },
+      {
+        "api_confidence": "unknown"
+      }
+    ],
+    "forbidden_paths": [
+      "src/**"
+    ],
+    "next_actions": [
+      "resolve decision D-301: 프로필 편집 범위/필드 확정(닉네임·이메일·아바타·비밀번호 변경 포함 여부)",
+      "create docs/frontend-workflow/design/component-catalog.md manually (catalog-gen is MVP-C)",
+      "add fake hook at src/features/profile/hooks/",
+      "raise screen-spec status (confirmed requires human approval metadata)",
+      "create figma-component-mapping (status >= draft)",
+      "confirm API (resolve 1 open unknown(s))"
+    ],
+    "next_mode": "route-skeleton",
+    "readiness_mode": "docs-only"
+  }
+}

@@ -1,0 +1,204 @@
+{
+  "inventory": {
+    "checks": {
+      "duplicate_ids": [],
+      "duplicate_routes": []
+    },
+    "screens": [
+      {
+        "domain": "auth",
+        "id": "AUTH-001",
+        "route": "/(auth)/login",
+        "status": "confirmed"
+      },
+      {
+        "domain": "coupons",
+        "id": "COUPON-001",
+        "route": "/(tabs)/coupons",
+        "status": "draft"
+      },
+      {
+        "domain": "coupons",
+        "id": "COUPON-002",
+        "route": "/coupons/[id]",
+        "status": "draft"
+      },
+      {
+        "domain": "home",
+        "id": "HOME-001",
+        "route": "/(tabs)/home",
+        "status": "draft"
+      },
+      {
+        "domain": "notices",
+        "id": "NOTICE-001",
+        "route": "/notices",
+        "status": "draft"
+      },
+      {
+        "domain": "profile",
+        "id": "PROFILE-001",
+        "route": "/(tabs)/my",
+        "status": "draft"
+      }
+    ]
+  },
+  "state": {
+    "generated_at": "<normalized>",
+    "global": {
+      "component_catalog_generated": false,
+      "navigation_map_status": "draft",
+      "stub_screen_specs_count": 6
+    },
+    "screens": {
+      "AUTH-001": {
+        "derived": {
+          "api_confidence_min": "candidate",
+          "blocking_decisions": [],
+          "copy_keys_has_tbd": false,
+          "fake_hook_exists": false,
+          "figma_mapping_status": "missing",
+          "interaction_matrix_complete": true,
+          "malformed_decisions": [],
+          "open_decisions_count": 0,
+          "state_matrix_complete": true,
+          "tbd_count": 0,
+          "unknown_count": 0
+        },
+        "domain": "auth",
+        "route": "/(auth)/login",
+        "status": "confirmed",
+        "stub": false
+      },
+      "COUPON-001": {
+        "derived": {
+          "api_confidence_min": "candidate",
+          "blocking_decisions": [
+            {
+              "blocking_mode": "final-fixture-ui",
+              "decision_needed": "만료 쿠폰을 목록에 노출할 것인가?",
+              "id": "D-001",
+              "owner": "PM"
+            },
+            {
+              "blocking_mode": "api-integrated-ui",
+              "decision_needed": "쿠폰 목록 페이지네이션 방식은?",
+              "id": "D-003",
+              "owner": "BE"
+            }
+          ],
+          "copy_keys_has_tbd": true,
+          "fake_hook_exists": false,
+          "figma_mapping_status": "missing",
+          "interaction_matrix_complete": true,
+          "malformed_decisions": [],
+          "open_decisions_count": 2,
+          "state_matrix_complete": true,
+          "tbd_count": 1,
+          "unknown_count": 1
+        },
+        "domain": "coupons",
+        "route": "/(tabs)/coupons",
+        "status": "draft",
+        "stub": false
+      },
+      "COUPON-002": {
+        "derived": {
+          "api_confidence_min": null,
+          "blocking_decisions": [],
+          "copy_keys_has_tbd": false,
+          "fake_hook_exists": false,
+          "figma_mapping_status": "missing",
+          "interaction_matrix_complete": false,
+          "malformed_decisions": [],
+          "open_decisions_count": 0,
+          "state_matrix_complete": false,
+          "tbd_count": 0,
+          "unknown_count": 0
+        },
+        "domain": "coupons",
+        "route": "/coupons/[id]",
+        "status": "draft",
+        "stub": true
+      },
+      "HOME-001": {
+        "derived": {
+          "api_confidence_min": "unknown",
+          "blocking_decisions": [
+            {
+              "blocking_mode": "rough-fixture-ui",
+              "decision_needed": "홈 대시보드 위젯 구성/우선순위(쿠폰 요약·공지·추천)",
+              "id": "D-101",
+              "owner": "PM"
+            }
+          ],
+          "copy_keys_has_tbd": true,
+          "fake_hook_exists": false,
+          "figma_mapping_status": "missing",
+          "interaction_matrix_complete": true,
+          "malformed_decisions": [],
+          "open_decisions_count": 1,
+          "state_matrix_complete": true,
+          "tbd_count": 1,
+          "unknown_count": 1
+        },
+        "domain": "home",
+        "route": "/(tabs)/home",
+        "status": "draft",
+        "stub": false
+      },
+      "NOTICE-001": {
+        "derived": {
+          "api_confidence_min": "candidate",
+          "blocking_decisions": [
+            {
+              "blocking_mode": "screen-skeleton",
+              "decision_needed": "공지를 독립 화면으로 둘지 홈 섹션으로 흡수할지",
+              "id": "D-401",
+              "owner": "PM"
+            }
+          ],
+          "copy_keys_has_tbd": false,
+          "fake_hook_exists": false,
+          "figma_mapping_status": "missing",
+          "interaction_matrix_complete": true,
+          "malformed_decisions": [],
+          "open_decisions_count": 1,
+          "state_matrix_complete": true,
+          "tbd_count": 1,
+          "unknown_count": 1
+        },
+        "domain": "notices",
+        "route": "/notices",
+        "status": "draft",
+        "stub": false
+      },
+      "PROFILE-001": {
+        "derived": {
+          "api_confidence_min": "unknown",
+          "blocking_decisions": [
+            {
+              "blocking_mode": "route-skeleton",
+              "decision_needed": "프로필 편집 범위/필드 확정(닉네임·이메일·아바타·비밀번호 변경 포함 여부)",
+              "id": "D-301",
+              "owner": "PM"
+            }
+          ],
+          "copy_keys_has_tbd": false,
+          "fake_hook_exists": false,
+          "figma_mapping_status": "missing",
+          "interaction_matrix_complete": true,
+          "malformed_decisions": [],
+          "open_decisions_count": 1,
+          "state_matrix_complete": true,
+          "tbd_count": 1,
+          "unknown_count": 1
+        },
+        "domain": "profile",
+        "route": "/(tabs)/my",
+        "status": "draft",
+        "stub": false
+      }
+    }
+  }
+}
