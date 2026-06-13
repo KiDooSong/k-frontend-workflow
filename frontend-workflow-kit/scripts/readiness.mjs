@@ -214,13 +214,25 @@ export function computeReadiness({ state, policy, ci, manifest }) {
     // 모드 사다리는 누적이다: 한 모드를 충족하려면 아래 모든 모드도 충족해야 한다.
     // 따라서 바닥(docs-only)부터 올라가며 연속으로 충족되는 가장 높은 모드를 고른다.
     // (높은 모드가 낮은 모드의 전제를 건너뛰지 못하게 — Core §7 사다리)
-    let chosenIdx = 0; // docs-only 가 floor
+    // 이것이 fact_mode: open decision 을 무시하고 사실만으로 도달 가능한 최고 모드.
+    let factIdx = 0; // docs-only 가 floor
     for (let i = 0; i < order.length; i++) {
       const mode = modes[order[i]];
       if (!mode) break;
-      if (evalMode(mode, facts).pass) chosenIdx = i;
+      if (evalMode(mode, facts).pass) factIdx = i;
       else break;
     }
+
+    // decision_cap: 열린 open decision 의 가장 낮은 Blocking Mode 바로 아래 모드.
+    // readiness_mode = min(fact_mode, decision_cap) 로 다운그레이드한다 (open-decisions.md).
+    const decisions = (screen.derived && screen.derived.blocking_decisions) || [];
+    let decisionCapIdx = order.length - 1;
+    for (const dec of decisions) {
+      const bmIdx = order.indexOf(dec.blocking_mode);
+      if (bmIdx >= 0) decisionCapIdx = Math.min(decisionCapIdx, bmIdx - 1);
+    }
+
+    const chosenIdx = Math.max(0, Math.min(factIdx, decisionCapIdx));
     const chosenName = order[chosenIdx];
     const chosen = modes[chosenName] || { allowed_paths: [], forbidden_paths: [] };
 
@@ -229,7 +241,25 @@ export function computeReadiness({ state, policy, ci, manifest }) {
     const blocking = [];
     const nextActions = [];
     const seen = new Set();
-    for (let i = chosenIdx + 1; i < order.length; i++) {
+
+    // (1) open decision blocker: chosen 위를 막는 결정. 사람이 resolve 해야 풀린다.
+    for (const dec of decisions) {
+      const bmIdx = order.indexOf(dec.blocking_mode);
+      if (bmIdx < 0 || bmIdx <= chosenIdx) continue; // 잘못된 모드/이하 차단은 제외
+      blocking.push({
+        open_decision: {
+          id: dec.id,
+          blocking_mode: dec.blocking_mode,
+          owner: dec.owner || null,
+        },
+      });
+      const q = dec.decision_needed ? `: ${dec.decision_needed}` : '';
+      nextActions.push(`resolve decision ${dec.id}${q}`);
+    }
+
+    // (2) fact blocker: fact_mode 위 모드들의 미충족 조건.
+    // (chosen..fact_mode 사이 모드는 사실은 통과하므로 decision 만 막는다)
+    for (let i = factIdx + 1; i < order.length; i++) {
       const mode = modes[order[i]];
       if (!mode) continue;
       const { failed } = evalMode(mode, facts);

@@ -77,6 +77,8 @@ export function buildState({ docsDir, srcDir, date }) {
         copy_keys_has_tbd: s.derived.copy_keys_has_tbd,
         tbd_count: s.derived.tbd_count,
         unknown_count: s.derived.unknown_count,
+        open_decisions_count: s.derived.open_decisions_count,
+        blocking_decisions: s.derived.blocking_decisions,
         api_confidence_min: s.derived.api_confidence_min,
         fake_hook_exists: s.derived.fake_hook_exists,
         figma_mapping_status: s.derived.figma_mapping_status,

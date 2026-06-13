@@ -176,6 +176,25 @@ export function deriveMetrics(spec, opts = {}) {
     }).length;
   }
 
+  // Open Decisions: open 상태 행을 blocker 로 수집 (Blocking Mode 별 게이트)
+  const odTable = parseTable(sections['open decisions']);
+  const blockingDecisions = [];
+  if (odTable) {
+    for (const r of odTable.rows) {
+      const status = (col(r, 'Status') || '').toLowerCase();
+      if (status !== 'open') continue;
+      const id = col(r, 'ID');
+      if (!id) continue;
+      blockingDecisions.push({
+        id,
+        decision_needed: col(r, 'Decision Needed') || '',
+        blocking_mode: col(r, 'Blocking Mode') || '',
+        owner: col(r, 'Owner') || '',
+      });
+    }
+    blockingDecisions.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  }
+
   // API Candidates: 항목 중 가장 낮은 confidence
   const apiConfidenceMin = minApiConfidence(sections['api candidates']);
 
@@ -200,6 +219,8 @@ export function deriveMetrics(spec, opts = {}) {
     copy_keys_has_tbd: copyKeysHasTbd,
     tbd_count: openUnknowns,
     unknown_count: openUnknowns,
+    open_decisions_count: blockingDecisions.length,
+    blocking_decisions: blockingDecisions,
     api_confidence_min: apiConfidenceMin,
     fake_hook_exists: fakeHookExists,
     figma_mapping_status: figmaMappingStatus,

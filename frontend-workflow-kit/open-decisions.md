@@ -190,6 +190,7 @@ readiness_mode = min(fact_mode, decision_cap)
 예상 출력:
 
 ```yaml
+# npm run workflow:readiness --screen COUPON-001 실제 출력 (golden example)
 COUPON-001:
   readiness_mode: rough-fixture-ui
   next_mode: final-fixture-ui
@@ -198,15 +199,29 @@ COUPON-001:
         id: D-001
         blocking_mode: final-fixture-ui
         owner: PM
+    - open_decision:
+        id: D-002
+        blocking_mode: final-fixture-ui
+        owner: PM
+    - open_decision:
+        id: D-003
+        blocking_mode: api-integrated-ui
+        owner: BE
+    - figma_mapping: missing
+    - api_confidence: candidate
   next_actions:
-    - resolve decision D-001: 만료 쿠폰을 목록에 노출할 것인가?
+    - "resolve decision D-001: 만료 쿠폰을 목록에 노출할 것인가?"
+    - "resolve decision D-002: 쿠폰 목록 정렬 기준은 무엇인가?"
+    - "resolve decision D-003: 쿠폰 목록 페이지네이션 방식은?"
+    - create figma-component-mapping (status >= draft)
+    - confirm API (resolve 1 open unknown(s))
 ```
 
 ## Validate 통합
 
-`validate.mjs` 는 형식 검사 + **경로 backstop** 을 수행한다.
+> **구현 상태**: MVP-A 의 실제 게이트는 위 Readiness 다운그레이드가 담당한다(✅ 구현됨). 아래 검사(형식 + 경로 backstop)는 **후속** — 현재 `validate.mjs` 는 Open Decisions 를 검사하지 않는다. 여기서는 "무엇을 검사할지" 계약만 고정한다.
 
-형식 검사:
+`validate.mjs` 가 수행할 형식 검사(후속):
 
 - `Open Decisions` 표가 있으면 필수 컬럼을 확인한다.
 - `Status` 는 `open`, `resolved` 중 하나여야 한다.
@@ -267,17 +282,17 @@ MVP-A 에서는 판단이 애매하면 `Open Decisions` 에 두고 `Blocking Mod
 
 ## 도입 순서
 
-MVP-A 안에 넣을 것 (저비용·고효과):
+MVP-A 안에 넣을 것 (✅ = 구현 완료):
 
-1. `screen-spec.template.md` 에 `Open Decisions` 섹션을 추가한다 (6컬럼, Status `open|resolved`).
-2. `llm-rules.template.md` 에 **저작 규칙 + 게이트 해제는 사람-전용 불변식**을 추가한다 (가장 싸고 효과 큼).
-3. golden example 의 `coupon-list` 에 2~3개 예시를 추가한다.
-4. `workflow-state.mjs` 가 open decision 을 파싱해 `derived.blocking_decisions` 를 만든다.
-5. `readiness.mjs` 가 `fact_mode`(decision 무시)·`decision_cap` 을 계산하고 `readiness_mode = min(…)` 으로 다운그레이드한다.
-6. `validate.mjs` 가 표 형식 + 전역 ID 중복 + **forbidden_paths 경계 backstop**(경고로 시작)을 검사한다. blocker 섹션은 stub/authored 판정에서 제외한다.
+1. ✅ `screen-spec.template.md` 에 `Open Decisions` 섹션 (6컬럼, Status `open|resolved`).
+2. ✅ `llm-rules.template.md` 에 **저작 규칙 + 게이트 해제는 사람-전용 불변식**.
+3. ✅ golden example `coupon-list` 에 예시(D-001~003).
+4. ✅ `workflow-state.mjs` 가 open decision 을 파싱해 `derived.blocking_decisions`·`open_decisions_count` 생성. blocker 섹션은 stub/authored 판정에서 제외(`isStub`).
+5. ✅ `readiness.mjs` 가 `fact_mode`(decision 무시)·`decision_cap` 을 계산해 `readiness_mode = min(…)` 으로 다운그레이드. **← MVP-A 의 실제 게이트.**
 
 후속(B~D) 확장:
 
+- **validate Open Decisions 검사** — 표 형식·`Status` enum·`Blocking Mode` 유효성·전역 ID 중복, 그리고 `forbidden_paths` 경계 backstop(CI). MVP-A 의 실제 게이트는 readiness 다운그레이드(5번)이고, validate 는 아직 Open Decisions 를 검사하지 않는다(계약만 아래 Validate 절에 고정).
 - **deferred + Reversible + Assumptions** — 셋은 상호의존(deferred 의 가정이 갈 곳이 Assumptions, 허용 여부를 가르는 게 Reversible)이라 **한 묶음으로 함께** 출시한다. `deferred` 역시 사람-전용 전이로 도입한다.
 - **decision-log.md** — resolved 결과를 전역 append-only 로 이관 + ADR 식 `superseded` 체인 + ScreenSpec frontmatter `decision_id` 연결 + `resolved↔log` 대응 검사.
 - **교차-화면 참조** — 한 결정이 여러 화면에 영향을 줄 때 전역 register 의 canonical 행 + 각 화면의 Refs 모델.

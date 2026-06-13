@@ -18,6 +18,20 @@ screens:
       copy_keys_has_tbd: true
       tbd_count: 1
       unknown_count: 1
+      open_decisions_count: 3
+      blocking_decisions:
+        - id: D-001
+          decision_needed: 만료 쿠폰을 목록에 노출할 것인가?
+          blocking_mode: final-fixture-ui
+          owner: PM
+        - id: D-002
+          decision_needed: 쿠폰 목록 정렬 기준은 무엇인가?
+          blocking_mode: final-fixture-ui
+          owner: PM
+        - id: D-003
+          decision_needed: 쿠폰 목록 페이지네이션 방식은?
+          blocking_mode: api-integrated-ui
+          owner: BE
       api_confidence_min: candidate
       fake_hook_exists: true
       figma_mapping_status: missing
@@ -32,6 +46,8 @@ screens:
       copy_keys_has_tbd: false
       tbd_count: 0
       unknown_count: 0
+      open_decisions_count: 0
+      blocking_decisions: []
       api_confidence_min: null
       fake_hook_exists: true
       figma_mapping_status: missing
