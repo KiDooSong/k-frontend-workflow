@@ -89,7 +89,7 @@ workflow:validate — OK (검사 12종 통과)
 
 > alias-resolves 규칙 확인: `suggested_scope` 로만 scope 가 충족된 입력이 **required-누락 에러 없이** 통과하고 deprecated 경고만 발화 → exit 0.
 
-### 4.3 RUN 3 — input-validation/fail (exit 1, 검사 11 에러 7건 + 경고 1건)
+### 4.3 RUN 3 — input-validation/fail (exit 1, 검사 11 에러 8건 + 경고 1건)
 
 ```
 workflow:validate — 8 건 위반
