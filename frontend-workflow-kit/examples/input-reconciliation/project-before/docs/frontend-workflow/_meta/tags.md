@@ -38,7 +38,7 @@ LLM(reconcile-input)은 위 항목을 **올리기만** 한다 — `open` 행 추
 - **confidence (API/입력)**: `unknown` → `candidate` → `confirmed`. baseline manifest 는 모두 ≤ candidate.
 - **Unknown status**: `open` | `resolved`.
 - **Decision status**: `open` | `resolved`.
-- **Conflict status**: `open` | `closed`.
+- **Conflict status**: `open` | `resolved`.
 - **Gap status**: `open` | `accepted`.
 
 ## 현재 열린 항목 (baseline)

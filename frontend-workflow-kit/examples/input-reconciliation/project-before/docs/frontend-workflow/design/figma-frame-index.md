@@ -16,4 +16,4 @@ status: draft
 | PROFILE-001 | profile-edit | `figma-planning/profile-edit-7` |
 | NOTICE-001 | notice-list | `figma-planning/notice-list-22` |
 
-> CouponCard 가로형 + SegmentedTabs 디자인 변경은 INPUT-002(`IN-20260613-figma-001`) 로 들어온다. 그 변경의 figma 매핑·gap 은 reconcile-input 세션에서 처리한다.
+> CouponCard 가로형 + SegmentedTabs 디자인 변경은 figma 입력 `IN-20260613-figma-001` 로 들어온다. 그 변경의 figma 매핑·gap 은 reconcile-input 세션에서 처리한다.

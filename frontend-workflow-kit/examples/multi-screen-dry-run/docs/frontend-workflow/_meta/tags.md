@@ -38,7 +38,7 @@ implement-screen 은 위 항목을 스스로 닫지 못한다. open 인 Decision
 - **confidence (API)**: `unknown` → `candidate` → `confirmed`. baseline manifest 는 모두 ≤ candidate.
 - **Unknown status**: `open` | `resolved`.
 - **Decision status**: `open` | `resolved`.
-- **Conflict status**: `open` | `closed`.
+- **Conflict status**: `open` | `resolved`.
 - **Gap status**: `open` | `accepted`.
 
 ## readiness 등급 (낮음→높음)
