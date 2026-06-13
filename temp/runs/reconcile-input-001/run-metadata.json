@@ -1,0 +1,14 @@
+{
+  "run_id": "reconcile-input-001",
+  "fixture": "input-reconciliation",
+  "stage": "llm-after",
+  "compare_against": "frontend-workflow-kit/examples/input-reconciliation/expected-llm-after",
+  "actual": "actual-llm-after",
+  "expect": "xfail",
+  "reason": "pre-fix 계약 블라인드 dry-run — LLM 이 U-001 을 resolved 로 닫고 U-002 를 신설(올리기만 위반). 계약 결함을 노출해 PR #1 로 이어진 증거 run. golden 아님.",
+  "known_divergences": [
+    "U-001 = resolved (golden: open — Unknown 닫기는 사람)",
+    "U-002 신설 (golden: 미존재)"
+  ],
+  "note": "expect=xfail: test-fixtures 하니스가 이 run 의 raise-only 위반을 잡아 FAIL 하는 것이 정상이며 비치명으로 처리된다(증거 보존). 통과로 바뀌면(xpass) 증거가 stale 이라는 신호."
+}

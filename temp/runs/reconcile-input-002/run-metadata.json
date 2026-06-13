@@ -1,0 +1,11 @@
+{
+  "run_id": "reconcile-input-002",
+  "fixture": "input-reconciliation",
+  "stage": "llm-after",
+  "compare_against": "frontend-workflow-kit/examples/input-reconciliation/expected-llm-after",
+  "actual": "actual-llm-after",
+  "expect": "pass",
+  "reason": "post-fix canonical pass — 수정된 계약(resolves-unknown = 답/근거 연결 + Status open 유지, 닫기는 사람)으로 같은 입력 재실행. expected-llm-after 와 실질 정합(S1~S6 해소). 남은 차이는 cosmetic.",
+  "known_divergences": [],
+  "note": "expect=pass: test-fixtures 하니스의 raise-only 불변식을 전부 만족해야 한다. 실패하면 치명(요구사항 #4)."
+}
