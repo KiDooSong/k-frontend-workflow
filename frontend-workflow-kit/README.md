@@ -63,6 +63,19 @@ npm run workflow:validate    # 검사 8종, exit 0/1 (CI 게이트)
 각 스크립트는 `--json` (스킬 파싱용), `--docs`, `--src` 플래그를 지원한다.
 `readiness.mjs` 는 `--screen <ID>`, `--ci <file>`, `--out <file>` 도 받는다.
 
+## Readiness 정책
+
+화면별 구현 가능 모드의 **단일 출처**는 [policies/implementation-mode-policy.yaml](policies/implementation-mode-policy.yaml) 다.
+`readiness.mjs` 가 이 파일을 읽어 각 화면의 최고 허용 모드를 계산한다 (`readiness_mode = min(fact_mode, decision_cap)`). 모드 사다리:
+
+```txt
+docs-only → route-skeleton → screen-skeleton → rough-fixture-ui
+→ final-fixture-ui → api-integrated-ui → production-ready
+```
+
+정확히 무엇이 게이트를 거는지(정책 fact + Open Decision)와 무엇이 안 거는지(Unknown·Conflict·investigation·review)는
+[roadmap 게이트 인벤토리](roadmap-current.md#mvp-a-게이트-인벤토리-정확히-무엇을-막는가) 참조.
+
 ## 깨면 안 되는 불변식 (요약)
 
 ```txt

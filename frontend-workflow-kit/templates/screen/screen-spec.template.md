@@ -1,15 +1,15 @@
 ---
-artifact_id: {SCREEN_ID}-screen-spec
+artifact_id: "{SCREEN_ID}-screen-spec"
 artifact_type: screen-spec
-domain: {domain}
-screen_id: {SCREEN_ID}
-route: {route}            # 라우트의 단일 출처. inventory/stub 가 frontmatter 에서 읽는다 (본문에 중복 금지)
+domain: "{domain}"
+screen_id: "{SCREEN_ID}"
+route: "{route}"          # 라우트의 단일 출처. inventory/stub 가 frontmatter 에서 읽는다 (본문에 중복 금지)
 status: draft             # 문서 라이프사이클: missing|draft|review|confirmed|implemented|verified|deprecated
 sources:
-  - { type: planning, ref: {기획 출처} }
-  - { type: wireframe, ref: {와이어프레임 경로} }
+  - { type: planning, ref: "{기획 출처}" }
+  - { type: wireframe, ref: "{와이어프레임 경로}" }
 depends_on: [navigation-map]
-last_reviewed: {YYYY-MM-DD}
+last_reviewed: "{YYYY-MM-DD}"
 # status: confirmed 로 승격할 때만 사람이 추가 (LLM 승격 금지):
 #   approved_by: {담당자}
 #   approved_at: {YYYY-MM-DD}

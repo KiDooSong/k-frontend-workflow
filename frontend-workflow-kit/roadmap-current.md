@@ -73,6 +73,8 @@ Review          MVP-A 에 없음 (Future Candidate).
 
 **Tier 1 강화:**
 - Open Decisions **validate 스키마 검사** (표 형식·`Status` enum·`Blocking Mode` 유효성·전역 ID 중복·`forbidden_paths` backstop)
+- API Candidate ↔ zod/OpenAPI 스키마 **1:1 매칭 검사** (현재 validate 검사 8 은 스키마 *소스 존재*만 확인 — confirmed API → linked_schema → 실제 export → fixture 검증까지 강화. MVP-B)
+- Interaction Matrix **`Result` 컬럼 구조화** (Result Type/Target/Params 분리 → `Result Type=route` 행만 route 존재 검사. 현재는 단일 Result 컬럼에 자연어·route 혼재)
 - decision-log.md 전역 이관 · deferred+Reversible+Assumptions 묶음 · 교차-화면 참조 (open-decisions.md 후속 절)
 
 **Tier 2 구현:**

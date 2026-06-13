@@ -60,7 +60,7 @@ function actionHint(factKey, screen) {
     case 'fake_hook_exists':
       return `add fake hook at src/features/${screen.domain || '{domain}'}/hooks/`;
     case 'component_catalog_generated':
-      return 'generate component-catalog (npm run workflow:catalog)';
+      return 'create docs/frontend-workflow/design/component-catalog.md manually (catalog-gen is MVP-C)';
     case 'state_matrix_complete':
       return 'complete State Matrix (loading/success/empty/error/refreshing)';
     case 'navigation_map_status':

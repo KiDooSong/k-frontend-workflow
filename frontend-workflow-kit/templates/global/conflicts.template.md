@@ -2,7 +2,7 @@
 artifact_id: conflicts
 artifact_type: conflicts
 status: draft
-last_reviewed: {YYYY-MM-DD}
+last_reviewed: "{YYYY-MM-DD}"
 ---
 
 <!--

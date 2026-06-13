@@ -43,3 +43,10 @@ MVP-A: 문서 생성 + readiness 판정 + 검사. (구현 명세 §11 MVP-A)
 - **`roadmap-current.md` 신설** — 구현됨 / 설계만 / 후속 / 다음 후보 / 지금 하지 말 것 을 한 파일로 고정.
 - **Unknown 은 자동 게이트 아님 정합화**: input-reconciliation·investigation·open-decisions·roadmap 의 "Open Decision/Unknown 게이트" 표현을 코드(정책 fact + Open Decision `decision_cap`)에 맞춰 정정. 열린 Unknown 은 어떤 모드도 막지 않으므로 "Unknown 으로 막는다"는 silent fail-open 이었음. Unknown 을 fact-finding 큐 + 승격 사다리(사실→Unknown / 방향막힘→Open Decision / 장기검증→Investigation)로 명문화.
 - **MVP-A 범위 3티어 재정리**: README·roadmap 을 Tier 1(구현·강제) / Tier 2(설계 계약, 코드 후속) / Future Candidate 로 분리하고 **게이트 인벤토리**(정확히 무엇을 막고 무엇을 안 막는가) 추가. Review Gates 를 독립 축에서 "Work Packet & Review Artifacts" Future Candidate 로 흡수.
+
+### Review fixes (GPT-5.5 외부 리뷰 반영)
+- **템플릿 frontmatter parser-safe 화**: 전 템플릿(screen-spec·navigation-map·domain-rules·llm-rules·component-gap-register·conflicts)의 frontmatter placeholder 를 따옴표 처리. `{SCREEN_ID}-screen-spec`·중첩 `{ ref: {...} }`·`{YYYY-MM-DD}` 가 invalid YAML 이라 GitHub preview·일부 parser 에서 깨지던 것을 해소(`yaml` 라이브러리로 6개 전부 파싱 통과 확인). placeholder 문법(`{X}`)은 유지 — 스크립트는 템플릿을 파싱하지 않아 안전.
+- **readiness next_action 일관성**: `component_catalog_generated` 힌트가 미존재 명령 `npm run workflow:catalog`(MVP-C)를 안내하던 것을 `create ... component-catalog.md manually (catalog-gen is MVP-C)` 로 변경.
+- **README "Readiness 정책" 절** 추가 — `implementation-mode-policy.yaml` 이 모드 사다리 단일 출처임을 명시 + 게이트 인벤토리 링크.
+- roadmap Tier 1 강화 후보에 **API↔스키마 1:1 매칭 검사**·**Interaction Matrix Result 컬럼 구조화** 추가(둘 다 MVP-B+, 지금 구현 안 함).
+- 반려(타당하지 않거나 의도된 결정): Entry Points generated marker 추가 제안 — 템플릿에 **이미 존재**(GitHub 가 HTML 주석을 렌더링 안 해 오판). component-gap-register 를 design/ 로 이동 — manifest·SKILL·llm-rules 가 **전부 global/ 로 일관**된 의도적 결정이라 유지.

@@ -2,7 +2,7 @@
 artifact_id: navigation-map
 artifact_type: navigation-map
 status: draft             # missing|draft|review|confirmed|implemented|verified|deprecated
-last_reviewed: {YYYY-MM-DD}
+last_reviewed: "{YYYY-MM-DD}"
 ---
 
 <!--

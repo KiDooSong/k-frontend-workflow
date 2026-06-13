@@ -2,7 +2,7 @@
 artifact_id: component-gap-register
 artifact_type: component-gap-register
 status: draft
-last_reviewed: {YYYY-MM-DD}
+last_reviewed: "{YYYY-MM-DD}"
 ---
 
 <!--

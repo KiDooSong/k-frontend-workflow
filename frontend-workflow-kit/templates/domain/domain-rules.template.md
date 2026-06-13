@@ -1,9 +1,9 @@
 ---
-artifact_id: {domain}-domain-rules
+artifact_id: "{domain}-domain-rules"
 artifact_type: domain-rules
-domain: {domain}
+domain: "{domain}"
 status: draft
-last_reviewed: {YYYY-MM-DD}
+last_reviewed: "{YYYY-MM-DD}"
 ---
 
 <!--

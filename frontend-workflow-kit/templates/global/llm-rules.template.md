@@ -2,7 +2,7 @@
 artifact_id: llm-rules
 artifact_type: llm-rules
 status: draft
-last_reviewed: {YYYY-MM-DD}
+last_reviewed: "{YYYY-MM-DD}"
 ---
 
 <!--
