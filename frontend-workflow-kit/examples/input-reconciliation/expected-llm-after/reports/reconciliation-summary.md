@@ -4,11 +4,11 @@
 
 | Input ID | Type | Result | Updated Artifacts | Created Unknowns | Created Decisions | Created Conflicts |
 |---|---|---|---|---|---|---|
-| IN-20260613-planning-001 | planning | pending user decision | COUPON-001 (UI Sections, Copy Keys=draft, Acceptance) | - | D-001 `open` (separate-tab 후보) | - |
+| IN-20260613-planning-001 | planning | pending user decision | COUPON-001 (UI Sections, Copy Keys=draft) | - | D-001 `open` (separate-tab 후보) | - |
 | IN-20260613-figma-001 | figma | accepted | COUPON-001 (UI Sections), figma-component-mapping(신규) | - | - | - |
 | IN-20260613-api-001 | api | pending user decision | api-manifest(page envelope), COUPON-001 (Data/API) | U-001 `open` (IN-api-001 가 답 제공, resolvable) | D-003 `open` (offset/page 후보) | - |
 | IN-20260613-meeting-001 | meeting | pending user decision | AUTH-001 (D-204 재오픈) | - | D-204 `open` (resolved→open 재오픈) | C-001 `open` |
-| IN-20260613-qa-001 | qa | accepted | COUPON-001 (State Matrix offline), api-error-policy | - | - | - |
+| IN-20260613-qa-001 | qa | accepted | COUPON-001 (State Matrix offline, Acceptance), api-error-policy | - | - | - |
 
 ## 메모
 
