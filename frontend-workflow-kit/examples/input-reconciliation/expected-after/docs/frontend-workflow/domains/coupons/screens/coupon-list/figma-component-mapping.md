@@ -1,0 +1,24 @@
+---
+artifact_id: COUPON-001-figma-component-mapping
+artifact_type: figma-component-mapping
+domain: coupons
+screen_id: COUPON-001
+status: draft
+sources:
+  - { type: figma, ref: figma-planning/coupon-list-12-v2 }
+last_reviewed: 2026-06-13
+---
+
+# Figma Component Mapping: 쿠폰 목록 (expected-after)
+
+> IN-20260613-figma-001 로 생성. 시각은 Figma 우선, 비즈니스 동작은 ScreenSpec 우선.
+
+| Figma Frame / Node | UI 요소 | 매핑 컴포넌트 | 비고 |
+|---|---|---|---|
+| coupon-list-12-v2 / CouponCard | 쿠폰 카드(가로형) | features/coupons/components/CouponCard | 썸네일 좌, 정보 우 |
+| coupon-list-12-v2 / StatusTabs | 상태 탭 | SegmentedTabs (G-001, 카탈로그 미보유) | 사용 가능/사용 완료/만료 |
+| coupon-list-12-v2 / EmptyState | 빈 상태 | components/ui/EmptyState | |
+
+## Notes
+- SegmentedTabs 는 Component Catalog 에 없다 → G-001(component-gap-register)로 제안됨. accept 전까지 구현 금지.
+- 어떤 쿠폰이 어느 탭에 들어가는지(분류)는 ScreenSpec 의 State/Interaction 이 단일 출처. Figma 는 시각만.
