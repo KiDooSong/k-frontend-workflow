@@ -11,8 +11,10 @@
 //  - reconcile 비교 대상은 expected-llm-after 뿐. human-final(expected-after)을 LLM 출력처럼
 //    비교하지 않는다 (요구사항 #1·#2 — 호출부 manifest 가 expected 경로를 고정).
 //  - 경로 경계(forbidden_paths) 검사는 여기서 하지 않는다 — Lane B 소관 (요구사항 #6).
-//  - fail-closed: 행 부재·표 깨짐·frontmatter 파싱 오류는 조용히 통과시키지 않고 FAIL 로 surface 한다
-//    (오타 하나로 게이트가 풀리는 fail-open 방지).
+//  - fail-closed: 행 부재·표 깨짐은 조용히 통과시키지 않고 FAIL 로 surface 한다(오타 하나로 게이트가
+//    풀리는 fail-open 방지). frontmatter parseError 는 그 값을 실제 검사에 쓰는 screen-spec(status)
+//    에서만 fail-closed 다 — register/decision/conflict/gap 검사는 본문 표만 읽으므로(splitFrontmatter
+//    (raw).body → parseTable) frontmatter 와 무관.
 import path from 'node:path';
 import { readFileSafe, splitFrontmatter, exists, walkFiles, isDir } from './util.mjs';
 import { parseTable, loadScreenSpec } from './spec.mjs';
