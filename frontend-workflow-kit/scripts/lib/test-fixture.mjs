@@ -343,7 +343,7 @@ export function runPipelineChecks({ expectedDir, actual }) {
     }
     let expected;
     try {
-      expected = JSON.parse(raw);
+      expected = norm(JSON.parse(raw)); // 기대값도 동일 정규화 — 수기 편집/legacy 파일도 플랫폼 중립(N1)
     } catch (e) {
       r.fail(label, `기대값 JSON 파싱 실패: ${toPosix(file)} — ${e.message}`);
       continue;
