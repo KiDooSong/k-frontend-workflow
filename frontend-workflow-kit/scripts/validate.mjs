@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// validate.mjs — 검사 10종 (impl §8). exit code 0/1 로 CI 게이트가 된다.
+// validate.mjs — 검사 12종 (impl §8). exit code 0/1 로 CI 게이트가 된다.
 //   1. frontmatter ↔ frontmatter.schema.json
 //   2. artifact-manifest 기준 필수 frontmatter 누락
 //   3. 끊어진 참조 (depends_on 대상 부재, sources 로컬 파일 부재)
@@ -11,6 +11,13 @@
 //   9. Open Decisions 형식 (표 컬럼·Status enum·Blocking Mode 정책 모드·전역 ID 중복; resolved→Options 는 경고)
 //      ※ forbidden_paths 경계 backstop 은 diff 기반(후속) — 트리 스캔은 공유 src/api 에 오탐. open-decisions.md "Validate 통합" 참조.
 //   10. Copy Keys Status enum (confirmed|draft|tbd) — screen-spec.template.md 의 3-state 계약. stub·placeholder 행은 제외.
+//   11. 입력 결과물(inputs/*.md) frontmatter — 정본 입력 스키마(input-reconciliation.md Input Result Contract).
+//       required 9필드·input_id 형식/전역중복·supersedes 해소·enum; suggested_scope·summary 는 경고(deprecated alias).
+//       inputs/ 디렉토리가 없으면 NO-OP.
+//   12. Reconciliation Register(_meta/reconciliation-register.md) — Reconcile Status enum·in-progress/failed·중복 행·
+//       inputs↔register 미처리 교차검사. register 파일이 없으면 NO-OP(초기/선택적 도입).
+//       ★ HARD RULE: 오직 Reconcile Status 만 본다 — 자식 항목(D-/C-/U-/G-) open/closed 와 Created Items 의 (open) 주석은
+//       절대 게이트 신호로 쓰지 않는다(reconciled + 자식 open == 정상 PASS). 세 축은 독립.
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
@@ -35,6 +42,11 @@ import {
   hasHeader,
   isStub,
 } from './lib/spec.mjs';
+import { collectInputArtifacts, validateInputArtifacts } from './lib/input-artifact.mjs';
+import {
+  parseReconciliationRegister,
+  validateReconciliationRegister,
+} from './lib/reconciliation-register.mjs';
 
 function isLocalRef(ref) {
   if (typeof ref !== 'string') return false;
@@ -327,6 +339,25 @@ function main() {
     }
   }
 
+  // --- 11·12. 입력 결과물 + Reconciliation Register (input-reconciliation.md) ---
+  //   입력 결과물은 artifact_type 이 없어 일반 authoring walk 를 안 타므로(검사 1~10 이 통째로 스킵)
+  //   inputs/ 를 명시 경로로 한 번만 수집해 검사 11(입력 frontmatter)과 검사 12(register 교차검사)에 공유한다.
+  //   inputs/ 가 없으면 collectInputArtifacts 가 빈 배열을 줘 두 검사 모두 NO-OP.
+  const inputArtifacts = collectInputArtifacts(path.join(docsDir, 'inputs'));
+
+  // 11. 입력 결과물 frontmatter (정본 입력 스키마). lib 는 절대경로를 주므로 add/warn 으로 상대화한다.
+  const inputResult = validateInputArtifacts(inputArtifacts);
+  for (const e of inputResult.errors) add(11, e.file, e.message);
+  for (const w of inputResult.warnings) warn(11, w.file, w.message);
+
+  // 12. Reconciliation Register. _meta/ 는 일반 walk 에서 제외되므로 이 파일만 콕 집어 읽는다.
+  //   register 파일이 없으면 NO-OP(초기/선택적 도입). 검사 11 과 같은 inputArtifacts 로 미처리 교차검사.
+  const registerFile = path.join(docsDir, '_meta', 'reconciliation-register.md');
+  const register = parseReconciliationRegister(registerFile);
+  const registerResult = validateReconciliationRegister({ register, inputArtifacts, registerFile });
+  for (const e of registerResult.errors) add(12, e.file, e.message);
+  for (const w of registerResult.warnings) warn(12, w.file, w.message);
+
   // --- 결과 출력 ---
   if (flags.json) {
     process.stdout.write(
@@ -335,7 +366,7 @@ function main() {
     );
   } else {
     if (errors.length === 0) {
-      process.stdout.write('workflow:validate — OK (검사 10종 통과)\n');
+      process.stdout.write('workflow:validate — OK (검사 12종 통과)\n');
     } else {
       process.stdout.write(`workflow:validate — ${errors.length} 건 위반\n`);
       for (const e of errors) {
