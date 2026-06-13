@@ -26,7 +26,7 @@ kind: glossary
 - **프로필 / 마이 (profile / my)**: 사용자 개인 정보 조회·수정 화면(PROFILE-001, `/(tabs)/my`). 편집 범위/필드는 D-301(open).
 - **세션 (session)**: 로그인 성공 후 유지되는 사용자 인증 상태. 화면 로컬 state 가 아니라 session layer 가 소유한다.
 - **토큰 (token)**: 로그인 응답의 인증 토큰. session layer 가 단일 출처로 보관하며 로그·analytics·에러 메시지에 남기지 않는다.
-- **returnTo**: protected redirect 로 로그인에 들렀을 때, 인증 성공 후 되돌아갈 원래 목적지. 로그인 후 "항상 홈"(D-204)과 충돌 소지가 있어 C-001 로 추적된다.
+- **returnTo**: protected redirect 로 로그인에 들렀을 때, 인증 성공 후 되돌아갈 원래 목적지. 적용 규칙의 단일 출처는 Navigation Map 의 Route Guard 다. baseline 의 로그인 후 이동은 "항상 홈"(D-204 resolved)이며, returnTo 우선 반영은 이후 회의 입력으로 다뤄진다.
 
 ## 워크플로/fixture 용어
 - **fixture**: 코드 없이 문서로만 구성한 테스트 입력/정답 세트. 이 예제 전체가 fixture 다.

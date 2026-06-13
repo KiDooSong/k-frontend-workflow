@@ -1,12 +1,12 @@
 ---
-artifact_id: conflicts
-artifact_type: conflicts
+title: Conflicts (passive log) — expected-after
 status: draft
-last_reviewed: 2026-06-13
+kind: meta-register
 ---
 
 # Conflicts — expected-after
 
+> _meta passive 로그 (validate 제외) 이므로 manifest 식 `artifact_type: conflicts` 를 붙이지 않는다. 정식 검증 대상 conflicts 의 manifest 경로는 `global/conflicts.md` 다.
 > A = 새 입력, B = 기존 결정/문서 (input-reconciliation.md 의 A/B 규약).
 > C-001 은 IN-20260613-meeting-001 이 resolved 결정 D-204 에 도전하며 생겼다. 게이트를 실제로 건 것은 D-204 재오픈이다(Conflicts 는 신호).
 > 사람이 D-204 를 재-resolve 하며 C-001 도 함께 닫았다(닫힘 동기화).

@@ -23,7 +23,7 @@ exit 0
 
 | 검사 | 내용 | 이 fixture 에서 |
 |---|---|---|
-| 1 | frontmatter ↔ schema | screen-spec/navigation-map/llm-rules?/domain-rules/conflicts/component-gap-register/component-guidelines/api-manifest 만 `artifact_type` 보유 (schema enum). flows/policy/glossary 등은 `artifact_type` 없음 → 검사 제외 |
+| 1 | frontmatter ↔ schema | screen-spec/navigation-map/domain-rules/component-gap-register/component-guidelines/api-manifest 만 `artifact_type` 보유 (schema enum). flows/policy/glossary 및 `_meta/`(conflicts·decision-log·tags) 는 `artifact_type` 없음 → 검사 제외 |
 | 2 | manifest 필수 frontmatter + 경로 | screen-spec/navigation-map/domain-rules/component-gap-register 가 manifest 경로·필수 필드 충족. component-gap-register 는 manifest 규정대로 `global/` 에 둠 |
 | 3 | 끊어진 참조 | `depends_on: [navigation-map]` 만 사용(파일 존재). sources 는 모두 non-local ref → 파일 존재 검사 비대상 |
 | 4 | 이동 대상 route 존재 | 모든 Interaction Matrix route 결과가 6개 화면 route 집합 안에 있음 |
@@ -36,4 +36,4 @@ exit 0
 ## 메모: 구조 정합
 
 - 가이드 트리는 `component-gap-register.md` 를 `design/` 아래로 그렸지만, 킷의 `artifact-manifest.yaml` 은 이 산출물의 경로를 `global/component-gap-register.md` 로 못박는다. `design/` 에 두면 검사 2(잘못된 경로)에 걸리므로 **manifest 경로(`global/`)** 를 따랐다. 그래서 이 트리에는 `component-gap-register.md` 만 담은 최소 `global/` 디렉토리가 있다.
-- `conflicts.md` 와 `decision-log.md` 는 가이드대로 `_meta/` 에 둔다. validate 는 `_meta/` 를 제외하므로 경로 검사 대상이 아니다.
+- `conflicts.md`·`decision-log.md` 는 가이드대로 `_meta/` 에 둔다. validate 가 `_meta/` 를 제외하므로 검사 대상이 아니다. 특히 `conflicts.md` 는 `artifact_type` 없는 passive 로그로 두었다 — 정식 검증 대상 conflicts 산출물의 manifest 경로는 `global/conflicts.md` 다.

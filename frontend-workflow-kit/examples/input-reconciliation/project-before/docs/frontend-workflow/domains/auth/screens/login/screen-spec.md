@@ -42,7 +42,7 @@ last_reviewed: 2026-06-12
 ## Interaction Matrix
 | User Action | Trigger | Result | Analytics Event |
 |---|---|---|---|
-| 로그인 제출 | Submit press | /(tabs)/home 이동 (returnTo 우선 — D-204) | login_submit |
+| 로그인 제출 | Submit press | /(tabs)/home 이동 (D-204) | login_submit |
 | 비밀번호 표시 토글 | Eye icon press | 비밀번호 마스킹 토글 | - |
 
 ## Mutation Matrix
@@ -70,7 +70,7 @@ last_reviewed: 2026-06-12
 
 ## Acceptance Criteria
 - [ ] State Matrix 의 5개 상태가 모두 구현됨 → LoginScreen.test.tsx
-- [ ] 로그인 성공 시 Route Guard 가 returnTo 우선으로 이동 → maestro/login.yaml
+- [ ] 로그인 성공 시 Route Guard 가 /(tabs)/home 으로 이동 → maestro/login.yaml
 - [ ] 잘못된 자격 증명 시 Inline Error 표시
 
 ## Unknowns
