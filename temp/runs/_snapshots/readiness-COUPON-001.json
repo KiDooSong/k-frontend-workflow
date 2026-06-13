@@ -1,0 +1,53 @@
+{
+  "COUPON-001": {
+    "readiness_mode": "screen-skeleton",
+    "next_mode": "rough-fixture-ui",
+    "allowed_paths": [
+      "src/features/coupons/screens/**"
+    ],
+    "forbidden_paths": [
+      "src/api/**",
+      "openapi.yaml"
+    ],
+    "blocking": [
+      {
+        "open_decision": {
+          "id": "D-001",
+          "blocking_mode": "final-fixture-ui",
+          "owner": "PM"
+        }
+      },
+      {
+        "open_decision": {
+          "id": "D-003",
+          "blocking_mode": "api-integrated-ui",
+          "owner": "BE"
+        }
+      },
+      {
+        "component_catalog": false
+      },
+      {
+        "fake_hook": false
+      },
+      {
+        "screen_spec_status": "draft"
+      },
+      {
+        "figma_mapping": "missing"
+      },
+      {
+        "api_confidence": "candidate"
+      }
+    ],
+    "next_actions": [
+      "resolve decision D-001: 만료 쿠폰을 목록에 노출할 것인가?",
+      "resolve decision D-003: 쿠폰 목록 페이지네이션 방식은?",
+      "create docs/frontend-workflow/design/component-catalog.md manually (catalog-gen is MVP-C)",
+      "add fake hook at src/features/coupons/hooks/",
+      "raise screen-spec status (confirmed requires human approval metadata)",
+      "create figma-component-mapping (status >= draft)",
+      "confirm API (resolve 1 open unknown(s))"
+    ]
+  }
+}

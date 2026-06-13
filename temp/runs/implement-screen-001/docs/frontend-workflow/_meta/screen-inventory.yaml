@@ -1,0 +1,31 @@
+# GENERATED FILE — DO NOT EDIT
+# Source:  docs/frontend-workflow/domains/**/screen-spec.md (frontmatter)
+# Command: npm run workflow:state
+screens:
+  - id: AUTH-001
+    domain: auth
+    route: /(auth)/login
+    status: confirmed
+  - id: COUPON-001
+    domain: coupons
+    route: /(tabs)/coupons
+    status: draft
+  - id: COUPON-002
+    domain: coupons
+    route: /coupons/[id]
+    status: draft
+  - id: HOME-001
+    domain: home
+    route: /(tabs)/home
+    status: draft
+  - id: NOTICE-001
+    domain: notices
+    route: /notices
+    status: draft
+  - id: PROFILE-001
+    domain: profile
+    route: /(tabs)/my
+    status: draft
+checks:
+  duplicate_ids: []
+  duplicate_routes: []

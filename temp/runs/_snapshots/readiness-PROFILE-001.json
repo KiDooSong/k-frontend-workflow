@@ -1,0 +1,44 @@
+{
+  "PROFILE-001": {
+    "readiness_mode": "docs-only",
+    "next_mode": "route-skeleton",
+    "allowed_paths": [
+      "docs/frontend-workflow/**"
+    ],
+    "forbidden_paths": [
+      "src/**"
+    ],
+    "blocking": [
+      {
+        "open_decision": {
+          "id": "D-301",
+          "blocking_mode": "route-skeleton",
+          "owner": "PM"
+        }
+      },
+      {
+        "component_catalog": false
+      },
+      {
+        "fake_hook": false
+      },
+      {
+        "screen_spec_status": "draft"
+      },
+      {
+        "figma_mapping": "missing"
+      },
+      {
+        "api_confidence": "unknown"
+      }
+    ],
+    "next_actions": [
+      "resolve decision D-301: 프로필 편집 범위/필드 확정(닉네임·이메일·아바타·비밀번호 변경 포함 여부)",
+      "create docs/frontend-workflow/design/component-catalog.md manually (catalog-gen is MVP-C)",
+      "add fake hook at src/features/profile/hooks/",
+      "raise screen-spec status (confirmed requires human approval metadata)",
+      "create figma-component-mapping (status >= draft)",
+      "confirm API (resolve 1 open unknown(s))"
+    ]
+  }
+}
