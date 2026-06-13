@@ -141,6 +141,31 @@ export function parseOpenDecisions(sectionText) {
   return { table, headers: table?.headers || null, rows, sectionHasContent };
 }
 
+// Copy Keys Status 의 허용 3-state (screen-spec.template.md 의 Copy Keys 주석이 정본):
+//   confirmed = 승인된 확정 문구(사람만 승격) · draft = 입력이 제공한 문구지만 미확정
+//   (또는 그 키의 존재가 open decision 에 달림) · tbd = 문구 자체가 미정(값 "TBD").
+export const COPY_KEYS_STATUS_VALUES = ['confirmed', 'draft', 'tbd'];
+
+// Copy Keys 섹션을 구조화해 반환한다 — deriveMetrics(tbd 집계)와 validate(Status enum 검사)가
+// 같은 파서를 공유한다 (파싱 단일 출처). status 는 소문자 정규화한다.
+//   table    parseTable 결과 (없으면 null)
+//   headers  표 헤더 배열 (없으면 null)
+//   rows     [{ key, copy, status }] (key·status 모두 빈 행은 제외)
+export function parseCopyKeys(sectionText) {
+  const table = parseTable(sectionText);
+  const rows = [];
+  if (table) {
+    for (const r of table.rows) {
+      const key = (col(r, 'Key') || '').trim();
+      const copy = (col(r, '문구') || '').trim();
+      const status = (col(r, 'Status') || '').trim().toLowerCase();
+      if (!key && !status) continue; // 빈 행
+      rows.push({ key, copy, status });
+    }
+  }
+  return { table, headers: table?.headers || null, rows };
+}
+
 export function loadScreenSpec(specPath) {
   const raw = readFileSafe(specPath);
   const { data, body, hasFrontmatter, parseError } = splitFrontmatter(raw);
@@ -195,15 +220,13 @@ export function deriveMetrics(spec, opts = {}) {
     });
   }
 
-  // Copy Keys: Status 컬럼에 tbd 존재 여부
-  const copyTable = parseTable(sections['copy keys']);
-  let copyKeysHasTbd = false;
-  if (copyTable) {
-    copyKeysHasTbd = copyTable.rows.some((r) => {
-      const v = col(r, 'Status');
-      return v && v.toLowerCase() === 'tbd';
-    });
-  }
+  // Copy Keys: Status 3-state(confirmed|draft|tbd) 중 'tbd'(문구 자체 미정, 값 "TBD")만 집계한다.
+  //   draft = "값은 있으나 미확정"(입력이 준 문구 등)이라 tbd 신호가 아니다 → 미집계.
+  //   confirmed = 승인 확정 → 미집계.
+  // 즉 copy_keys_has_tbd 는 오직 tbd 행에만 켜진다. (tbd_count 는 Copy Keys 가 아니라 Unknowns 만 센다 — 아래.)
+  const copyKeysHasTbd = parseCopyKeys(sections['copy keys']).rows.some(
+    (r) => r.status === 'tbd',
+  );
 
   // Unknowns: open 상태 행 수
   const unknownsTable = parseTable(sections['unknowns']);

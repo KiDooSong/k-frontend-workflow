@@ -23,7 +23,7 @@ last_reviewed: "{YYYY-MM-DD}"
   STUB 모드: 화면 발굴 단계에서는 위 frontmatter 만 채우고 본문은 비워 둔다.
   구현 직전에 아래 섹션들을 작성한다. 작성 규칙:
   - API endpoint 는 확정하지 말고 candidate 로만 적는다.
-  - 모르는 내용(사실 확인)은 Unknowns 에, 미확정 문구는 Copy Keys 에 tbd 로 적는다.
+  - 모르는 내용(사실 확인)은 Unknowns 에, 미확정 문구는 Copy Keys 에 적는다(문구 자체가 미정이면 tbd, 입력이 준 문구지만 미확정이면 draft).
   - 결정이 필요한 선택(정책/UX/API 방향)은 추측하지 말고 Open Decisions 에 open 으로 적는다.
   - 디자인을 추측하지 말고 화면 구조와 사용자 행동만 정리한다.
   - 화면 이동은 Interaction Matrix 에만 선언한다 (Entry Points 는 생성됨).
@@ -74,10 +74,17 @@ last_reviewed: "{YYYY-MM-DD}"
 - {METHOD} {/path} (confidence: candidate)
 
 ## Copy Keys
-<!-- 문구를 LLM 이 지어내지 않도록 i18n 키 또는 확정 문구로 관리. 미확정은 Status=tbd. -->
+<!-- 문구를 LLM 이 지어내지 않도록 i18n 키로 관리한다. Status 는 3-state — 표 헤더는 바꾸지 않는다:
+       confirmed = 승인된 확정 문구. LLM 승격 금지 — 사람만 confirmed 로 올린다.
+       draft     = 입력(기획·figma 등)이 제공한 문구지만 미확정/미승인, 또는 그 키의 존재가 open decision 에 달림.
+                   값은 채우되 미확정 상태로 둔다. 입력이 라벨을 줬으면 LLM 은 draft 로 두고, confirmed 승격은 사람이 한다.
+       tbd       = 문구 자체가 미정. 값은 "TBD". copy_keys_has_tbd / tbd_count 신호의 집계 대상.
+     draft 는 값이 있으므로 tbd 가 아니다 → copy_keys_has_tbd 에 집계되지 않는다 (confirmed 도 미집계). -->
 | Key | 문구 | Status |
 |---|---|---|
-| {key} | {문구 또는 TBD} | confirmed |
+| {key.confirmed} | {승인된 확정 문구} | confirmed |
+| {key.draft} | {입력이 제공한 문구} | draft |
+| {key.tbd} | TBD | tbd |
 
 ## Accessibility
 - {a11y 요구사항}

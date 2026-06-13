@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// validate.mjs — 검사 9종 (impl §8). exit code 0/1 로 CI 게이트가 된다.
+// validate.mjs — 검사 10종 (impl §8). exit code 0/1 로 CI 게이트가 된다.
 //   1. frontmatter ↔ frontmatter.schema.json
 //   2. artifact-manifest 기준 필수 frontmatter 누락
 //   3. 끊어진 참조 (depends_on 대상 부재, sources 로컬 파일 부재)
@@ -10,6 +10,7 @@
 //   8. API Candidates 가 confirmed 인데 zod 스키마/OpenAPI 부재
 //   9. Open Decisions 형식 (표 컬럼·Status enum·Blocking Mode 정책 모드·전역 ID 중복; resolved→Options 는 경고)
 //      ※ forbidden_paths 경계 backstop 은 diff 기반(후속) — 트리 스캔은 공유 src/api 에 오탐. open-decisions.md "Validate 통합" 참조.
+//   10. Copy Keys Status enum (confirmed|draft|tbd) — screen-spec.template.md 의 3-state 계약. stub·placeholder 행은 제외.
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
@@ -29,6 +30,8 @@ import {
   parseApiCandidates,
   interactionResultRoutes,
   parseOpenDecisions,
+  parseCopyKeys,
+  COPY_KEYS_STATUS_VALUES,
   hasHeader,
   isStub,
 } from './lib/spec.mjs';
@@ -292,6 +295,24 @@ function main() {
     }
   }
 
+  // 10. Copy Keys Status enum (screen-spec.template.md 의 3-state 계약).
+  //     confirmed=승인 확정(사람만 승격) · draft=입력제공·미확정(또는 존재가 open decision 에 달림) · tbd=문구 자체 미정.
+  //     draft 는 tbd 가 아니므로 copy_keys_has_tbd·tbd_count 에 집계되지 않는다(spec.mjs deriveMetrics).
+  //     stub(본문 없음)·템플릿 placeholder({…} 키) 행은 검사하지 않는다.
+  for (const spec of specs) {
+    if (isStub(spec)) continue;
+    for (const r of parseCopyKeys(spec.sections['copy keys']).rows) {
+      if (r.key.startsWith('{')) continue; // 템플릿 placeholder 행
+      if (!COPY_KEYS_STATUS_VALUES.includes(r.status)) {
+        add(
+          10,
+          spec.path,
+          `Copy Keys '${r.key || '(no-key)'}': Status 는 ${COPY_KEYS_STATUS_VALUES.join('|')} 여야 함 (현재: ${r.status || '(빈값)'})`,
+        );
+      }
+    }
+  }
+
   // --- 6. do_not_edit 생성물 헤더/마커 무결성 ---
   for (const [name, entry] of Object.entries(manifest.artifacts || {})) {
     if (entry.kind !== 'generated' || entry.do_not_edit !== true) continue;
@@ -313,7 +334,7 @@ function main() {
     );
   } else {
     if (errors.length === 0) {
-      process.stdout.write('workflow:validate — OK (검사 9종 통과)\n');
+      process.stdout.write('workflow:validate — OK (검사 10종 통과)\n');
     } else {
       process.stdout.write(`workflow:validate — ${errors.length} 건 위반\n`);
       for (const e of errors) {

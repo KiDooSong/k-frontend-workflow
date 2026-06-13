@@ -238,6 +238,30 @@ API schema / OpenAPI / API manifest
 
 입력 하나가 위 분류 중 **여러 개**를 동시에 만들 수 있다(예: simple-update 3 + conflict 1 + new-decision 1). 각각은 별도 item 으로 처리하고, Reconciliation Register 한 행에 `Classification` 목록과 `Created Items` 로 묶는다.
 
+### 입력이 제공한 문구 (Copy Keys)
+
+입력(기획·figma 등)이 탭 라벨·버튼·안내 문구 같은 **카피를 직접 제공**하면(주로 `simple-update`·`resolves-decision`), LLM 은 그 값을 해당 ScreenSpec 의 `Copy Keys` 에 **`draft`** 로 적는다 — 값은 채우되 미확정 상태다. `confirmed` 승격은 사람만 한다(보통 그 문구를 가르는 Open Decision 을 닫을 때 함께). 이는 "게이트는 올리기만, 닫기·승격은 사람" 불변식의 Copy Keys 판이다.
+
+```txt
+입력이 문구 제공  → Copy Keys 에 draft (LLM)        값 있음 · 미확정
+문구 자체가 미정  → Copy Keys 에 tbd  (값 "TBD")     copy_keys_has_tbd 집계 대상
+사람이 승인       → draft → confirmed (사람 전용)    LLM 승격 금지
+```
+
+예: `IN-planning-001` 이 상태 탭 라벨(사용 가능/사용 완료/만료)을 제공하지만 탭의 존재가 `D-001`(open)에 달려 있으면, 라벨 Copy Keys 는 `draft` 로 둔다. 사람이 `D-001` 을 separate-tab 으로 닫으며 `confirmed` 로 승격한다. (3-state 정의의 단일 출처는 `templates/screen/screen-spec.template.md` 의 Copy Keys 주석.)
+
+### figma·디자인 입력의 두 산출 축
+
+figma·디자인 입력은 **시각 매핑**과 **컴포넌트 갭**이라는 두 축을 만든다 — 섞지 않는다.
+
+```txt
+시각 매핑(프레임/노드 → UI 요소 → 컴포넌트)  → 화면 폴더의 figma-component-mapping.md 에 simple-update (LLM)
+카탈로그에 없는 공통 컴포넌트                  → component-gap 으로 분리, G-xxx 를 open 으로 제안만 (accept 는 사람)
+비즈니스 동작(분류·정렬·노출·탭 소속)          → 적지 않는다. ScreenSpec 단일 출처
+```
+
+시각 매핑은 `domains/{domain}/screens/{screen}/figma-component-mapping.md`(템플릿: [templates/screen/figma-component-mapping.template.md](templates/screen/figma-component-mapping.template.md))에 기록한다 — 산출물 형태를 바꾸지 않는 시각 갱신이라 `simple-update` 다. 프레임 ref 는 frontmatter `sources` 와 본문 Frame 절에 두고 비표준 `figma_frame_ref` 필드는 쓰지 않는다. 어떤 요소의 **존재**가 open decision 에 달려 있으면(예: 탭 분리가 `D-001`) 그 매핑이 후보 시각안임을 비고에 명시한다. `status` 는 readiness 의 `figma_mapping_status` fact 로 쓰여 `final-fixture-ui` 게이트(`figma_mapping_status >= draft`)를 가른다.
+
 ## Conflict Handling
 
 충돌은 LLM이 조용히 해결하지 않는다. LLM의 역할은 충돌을 감지하고, 영향 범위와 선택지를 정리해 사용자에게 올리는 것이다.
@@ -454,6 +478,7 @@ reconcile-input
 - 이전 결정 값을 조용히 덮어쓰기
 - Conflict 기록 없이 decision 만 바꾸기
 - confirmed 문서 임의 강등/승격
+- 입력이 제공한 문구를 Copy Keys 에 confirmed 로 올리기   (draft 로 두고 confirmed 승격은 사람)
 - Gap 을 직접 accept 하거나 새 공통 컴포넌트를 직접 만들기   (제안=`open` 만, accept 는 사람)
 - 충돌을 조용히 덮어쓰기
 - Owner만 보고 사용자 판단 가능성을 배제하기
