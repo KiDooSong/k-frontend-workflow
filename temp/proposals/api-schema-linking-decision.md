@@ -144,7 +144,7 @@ api-manifest `## Endpoints` 표에 `Linked Schema` 컬럼을 신설해 **endpoin
 - **파서 변경:** 3종 — ① ScreenSpec 측 `parseApiCandidates` 확장(method+path 추출, **불릿 유지라 파서만 확장**) ② api-manifest `## Endpoints` 파서(신규지만 **`parseTable` 재사용** — `Method`/`Path`/`Linked Schema` col 추출) ③ path 정규화 유틸(method 대소문자·trailing slash·`{id}` 통일; **화면 route `[id]` 는 제외**). 단계 분리 권장: 1차는 파일 존재 근사(또는 OpenAPI 시 components.schemas 이름 존재) 수준, zod **심볼** 실재 확인은 2차(zod 파일 내용 파싱이라 범위↑).
 - **마이그레이션:** **소비 프로젝트 기준** 문서 변경은 **S** — 그 프로젝트의 api-manifest.md **1개 파일** 에 Linked Schema 컬럼 + 행값. **ScreenSpec 전수수정 불필요**(불릿 유지, method+path 가 이미 들어있음). 단 **킷 자신의 골든 예제를 옮길 때는 트리마다 manifest 가 있어 대상이 복수** 다 — `examples/multi-screen-dry-run` · `examples/input-reconciliation/{project-before,expected-after,expected-llm-after}` 의 api-manifest.md 가 각각 컬럼을 받아야 한다(킷 마이그레이션은 §6 에서 1개 트리로 스코핑 권장). 코드(파서 3종)와 카탈로그 배선을 합치면 실질 **M.** (권장) `artifact-manifest.yaml` 에 api-manifest 등록(현재 미등록 — 검사 2 가 manifest 존재·경로를 보증하지 않음).
 - **N:1:** **가장 자연스럽게 흡수.** manifest 가 엔드포인트 행의 집합이므로 한 스키마가 여러 행에 등장하는 게 정상(`| GET | /coupons | … | CouponDto[] |`, `| GET | /coupons/{id} | … | CouponDto |`). 같은 path 가 method 로 갈리는 케이스(`GET`/`PATCH /profile`)도 (Method,Path) 키가 자연 분해. **공유 엔드포인트는 manifest 행 1개를 N개 ScreenSpec 이 가리키므로 스키마명 중복 선언이 0** — 옵션 A/B 의 교차-화면 drift 를 구조적으로 방어. 단 drift 가 다른 축으로 이동: ScreenSpec path 와 manifest Path 의 표기 동기화 책임, confidence 이원화(ScreenSpec 후보 vs manifest 행 — 게이트 트리거는 **ScreenSpec 후보 confidence**, manifest confidence 는 정보용으로 못박을 것).
-- **FP:** 경로 표기 불일치(`{id}` vs `{couponId}`)로 미등록 오탐; **manifest 부재/미등록 시 정책 필요**(권장: manifest 없으면 검사 8 을 현행 전역 존재검사로 폴백); draft manifest 의 미완성 행이 confirmed 화면을 막는 역설; 화면 route 를 이 축에 섞으면 전량 오탐.
+- **FP:** 경로 표기 불일치로 미등록 오탐 — 단 `{id}`↔`{couponId}` 같은 **파라미터명 차이는 normEndpoint 가 정규화로 흡수**(→ §8 PASS-3)하므로 FP 가 아니다. 실제 위험은 정규화가 못 잡는 **세그먼트 차이(`/coupon` vs `/coupons`)·대소문자·쿼리스트링**; **manifest 부재/미등록 시 정책 필요**(권장: manifest 없으면 검사 8 을 현행 전역 존재검사로 폴백); draft manifest 의 미완성 행이 confirmed 화면을 막는 역설; 화면 route 를 이 축에 섞으면 전량 오탐.
 - **불변식 정합:** **4 — 4개 중 최선.** schema 의 진실은 zod(코드), manifest 의 Linked Schema 는 endpoint→코드 심볼 **포인터** 일 뿐. ScreenSpec 은 참조만 하므로 문서가 코드 사실을 복제·선점하지 않는다. (긴장: manifest 헤더 주석이 스스로를 "미확정 API 의 단일 출처, 확정분은 zod 로 이관"이라 하는데 검사 8 트리거는 confirmed 후보 → "Linked Schema 는 schema **정의** 가 아니라 코드 심볼로의 **참조**"임을 명문화해 봉합.) 1 — 매칭 로직 전부 validate 거주, readiness 무변경. 7 — `parseTable` 의 빈 줄 관대 처리([spec.mjs](../../frontend-workflow-kit/scripts/lib/spec.mjs):64)로 표 재정렬·공백 변화에 안정.
 - **하드룰:** **frontmatter.schema.json 변경이 전혀 필요 없는 유일 계열에 가깝다**(새 frontmatter 키 없음, 매칭 키가 본문 표/불릿에 있음). "매칭 키=(Method,Path), schema 바인딩=manifest Linked Schema" 규약만 적으면 결정으로 완결. (권장) 카탈로그 등록은 schema류 변경이라 **별도 결정 항목** 으로 분리.
 
@@ -190,7 +190,7 @@ frontmatter schema 추가?  불필요★          필수화시 필요     불필
 고유 약점                 전수 L+교차drift 출처 3분할+검증공백 manifest stale 의존    불변식4 역전+무거운전제
 ```
 
-(★ = 추천 기준에서 그 옵션의 우위 지점)
+(★ = 추천 기준에서 그 옵션의 우위 지점. 단 '문서 마이그레이션 규모'의 *1파일/작음* 은 **소비 프로젝트 기준** 이다 — 킷 골든 예제를 옮길 땐 트리별 manifest 가 있어 대상이 복수: §4·§6.)
 
 ---
 
