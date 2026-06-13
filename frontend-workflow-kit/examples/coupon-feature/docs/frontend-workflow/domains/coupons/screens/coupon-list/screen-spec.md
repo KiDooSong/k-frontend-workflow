@@ -81,11 +81,18 @@ last_reviewed: 2026-06-12
 <!-- State Matrix 와 중복 서술 금지. 테스트로 옮길 수 있는 항목은 테스트 ID 를 적는다 -->
 - [ ] State Matrix 의 5개 상태가 모두 구현됨 → CouponListScreen.test.tsx
 - [ ] 쿠폰 클릭 시 상세 이동 → maestro/coupon-list.yaml
-- [ ] 만료 쿠폰 노출 정책 반영 (U-001 확정 후)
+- [ ] 만료 쿠폰 노출 정책 반영 (D-001 확정 후)
 
 ## Unknowns
+<!-- 사실 확인 전용 (어딘가에서 찾아오면 해결되는 것). 선택/결정은 Open Decisions 로. -->
 | ID | Question | Status |
 |---|---|---|
-| U-001 | 만료 쿠폰 노출 여부 | open |
-| U-002 | 정렬 기준 | open |
-| U-003 | API pagination 방식 | open |
+| U-001 | 현재 쿠폰 API 응답 예시(목록/상세)는 어디에 있는가? | open |
+
+## Open Decisions
+<!-- 사실 확인이 아니라 팀이 "선택"해야 하는 것. LLM 은 open 으로만 남기고, resolved 는 사람이 닫는다. -->
+| ID | Decision Needed | Options | Blocking Mode | Owner | Status |
+|---|---|---|---|---|---|
+| D-001 | 만료 쿠폰을 목록에 노출할 것인가? | show / hide / separate tab | final-fixture-ui | PM | open |
+| D-002 | 쿠폰 목록 정렬 기준은 무엇인가? | expiry_date / created_at / manual_priority | final-fixture-ui | PM | open |
+| D-003 | 쿠폰 목록 페이지네이션 방식은? | cursor / offset / none | api-integrated-ui | BE | open |

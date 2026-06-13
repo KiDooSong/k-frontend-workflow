@@ -16,8 +16,8 @@ screens:
       state_matrix_complete: true
       interaction_matrix_complete: true
       copy_keys_has_tbd: true
-      tbd_count: 3
-      unknown_count: 3
+      tbd_count: 1
+      unknown_count: 1
       api_confidence_min: candidate
       fake_hook_exists: true
       figma_mapping_status: missing

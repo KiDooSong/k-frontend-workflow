@@ -118,9 +118,14 @@ export function loadScreenSpec(specPath) {
   };
 }
 
-// stub 판정: 본문에 실질 섹션이 없으면 stub (frontmatter 만).
+// stub 판정에서 제외하는 blocker/register 섹션.
+// 결정·미확정만 남긴 화면은 본문을 쓴 게 아니므로 여전히 stub 이다.
+const NON_CONTENT_SECTIONS = new Set(['open decisions', 'unknowns']);
+
+// stub 판정: 실질 본문 섹션(Purpose·State Matrix 등)이 없으면 stub.
+// frontmatter 만 있거나 blocker 섹션(Open Decisions·Unknowns)만 있는 경우를 포함한다.
 export function isStub(spec) {
-  return Object.keys(spec.sections).length === 0;
+  return Object.keys(spec.sections).every((k) => NON_CONTENT_SECTIONS.has(k));
 }
 
 // --- 파생값 ---------------------------------------------------------------
