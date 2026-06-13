@@ -23,7 +23,8 @@ last_reviewed: {YYYY-MM-DD}
   STUB 모드: 화면 발굴 단계에서는 위 frontmatter 만 채우고 본문은 비워 둔다.
   구현 직전에 아래 섹션들을 작성한다. 작성 규칙:
   - API endpoint 는 확정하지 말고 candidate 로만 적는다.
-  - 모르는 내용은 Unknowns 에, 미확정 문구는 Copy Keys 에 tbd 로 적는다.
+  - 모르는 내용(사실 확인)은 Unknowns 에, 미확정 문구는 Copy Keys 에 tbd 로 적는다.
+  - 결정이 필요한 선택(정책/UX/API 방향)은 추측하지 말고 Open Decisions 에 open 으로 적는다.
   - 디자인을 추측하지 말고 화면 구조와 사용자 행동만 정리한다.
   - 화면 이동은 Interaction Matrix 에만 선언한다 (Entry Points 는 생성됨).
   - 표 헤더는 바꾸지 않는다 (workflow-state.mjs 가 헤더로 표를 파싱한다).
@@ -86,7 +87,16 @@ last_reviewed: {YYYY-MM-DD}
 - [ ] {기준} → {테스트 파일/ID}
 
 ## Unknowns
-<!-- Status 는 open|resolved. open 행 수가 tbd_count 로 집계된다. -->
+<!-- 사실 확인 전용. Status 는 open|resolved. open 행 수가 tbd_count 로 집계된다. -->
 | ID | Question | Status |
 |---|---|---|
 | U-001 | {질문} | open |
+
+## Open Decisions
+<!-- 입력만으로 정해지지 않고 산출물 형태를 바꾸는 "선택"은 LLM 이 임의로 정하지 말고 여기 open 행으로 남긴다.
+     사실 확인은 Unknowns(여긴 결정 전용). Status 는 open|resolved 이고, resolved 로 닫는 것은 사람만.
+     Blocking Mode 는 implementation-mode-policy.yaml 의 모드명. resolved 면 Options 에 선택값을 표시한다.
+     표 헤더는 바꾸지 않는다 (workflow-state.mjs 가 헤더로 표를 파싱한다). -->
+| ID | Decision Needed | Options | Blocking Mode | Owner | Status |
+|---|---|---|---|---|---|
+| D-001 | {결정 질문} | {옵션 또는 TBD} | final-fixture-ui | PM | open |
