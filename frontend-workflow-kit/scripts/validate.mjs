@@ -263,6 +263,9 @@ function main() {
       if (!r.id) {
         add(9, spec.path, `Open Decision 행에 ID 누락 (Decision: ${r.decisionNeeded || '?'}) → 해소: 전역 유일한 D-xxx ID 부여`);
       }
+      if (!r.decisionNeeded) {
+        add(9, spec.path, `Open Decision ${label}: Decision Needed 누락 (필수) → 해소: 결정해야 하는 질문 작성`);
+      }
       if (status !== 'open' && status !== 'resolved') {
         add(9, spec.path, `Open Decision ${label}: Status 는 open|resolved 여야 함 (현재: ${r.status || '(빈값)'})`);
       }
