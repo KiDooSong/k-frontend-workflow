@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>frontend-workflow-kit · MVP-A 개요</title>
+<style>
+  :root{
+    --bg:#0e1014; --panel:#161a22; --panel2:#1d222d; --line:#2a3140;
+    --ink:#e6e9ef; --muted:#9aa4b2; --faint:#6b7280;
+    --indigo:#7c8cff; --teal:#2dd4bf; --amber:#f5a623; --green:#34d399;
+    --red:#f87171; --blue:#60a5fa; --violet:#c084fc;
+    --mono:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Malgun Gothic","Apple SD Gothic Neo",sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.6;
+    background-image:radial-gradient(900px 500px at 80% -10%,rgba(124,140,255,.10),transparent),
+                     radial-gradient(700px 500px at -10% 10%,rgba(45,212,191,.07),transparent);}
+  .wrap{max-width:1080px;margin:0 auto;padding:40px 22px 80px}
+  header.hero{padding:18px 0 26px;border-bottom:1px solid var(--line);margin-bottom:30px}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--teal)}
+  h1{font-size:30px;margin:.25em 0 .15em;letter-spacing:-.01em}
+  .sub{color:var(--muted);max-width:70ch}
+  .sub b{color:var(--ink);font-weight:600}
+  .badges{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+  .badge{font-family:var(--mono);font-size:12px;padding:4px 10px;border:1px solid var(--line);
+    border-radius:999px;color:var(--muted);background:var(--panel)}
+  .badge b{color:var(--ink)}
+
+  h2{font-size:20px;margin:46px 0 4px;display:flex;align-items:center;gap:10px}
+  h2 .n{font-family:var(--mono);font-size:13px;color:var(--bg);background:var(--indigo);
+    width:26px;height:26px;display:inline-grid;place-items:center;border-radius:8px;flex:0 0 auto}
+  h2 + .lead{color:var(--muted);margin:2px 0 18px}
+
+  .grid{display:grid;gap:14px}
+  .cards5{grid-template-columns:repeat(5,1fr)}
+  .cards4{grid-template-columns:repeat(4,1fr)}
+  .cards3{grid-template-columns:repeat(3,1fr)}
+  .cards2{grid-template-columns:repeat(2,1fr)}
+  @media(max-width:880px){.cards5,.cards4,.cards3,.cards2{grid-template-columns:repeat(2,1fr)}}
+
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
+  .stat .v{font-size:30px;font-weight:700;font-family:var(--mono);line-height:1}
+  .stat .l{color:var(--muted);font-size:13px;margin-top:6px}
+  .stat.indigo .v{color:var(--indigo)} .stat.teal .v{color:var(--teal)}
+  .stat.amber .v{color:var(--amber)} .stat.green .v{color:var(--green)} .stat.blue .v{color:var(--blue)}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+  .card h3{margin:0 0 4px;font-size:15px;display:flex;align-items:center;gap:8px}
+  .card .tag{font-family:var(--mono);font-size:10.5px;padding:2px 7px;border-radius:6px;font-weight:600}
+  .tag.auth{background:rgba(245,166,35,.16);color:var(--amber)}
+  .tag.gen{background:rgba(45,212,191,.16);color:var(--teal)}
+  .tag.script{background:rgba(124,140,255,.16);color:var(--indigo)}
+  .tag.cfg{background:rgba(96,165,250,.16);color:var(--blue)}
+  .card p{margin:.4em 0 0;font-size:13px;color:var(--muted)}
+  .card code, code.path{font-family:var(--mono);font-size:12px;color:#cdd5e3;background:var(--panel2);
+    padding:1px 6px;border-radius:5px;border:1px solid var(--line);word-break:break-all}
+
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px}
+  figure{margin:0}
+  figcaption{color:var(--faint);font-size:12px;font-family:var(--mono);margin-top:10px;text-align:center}
+
+  table{width:100%;border-collapse:collapse;font-size:13.5px;overflow:hidden;border-radius:12px}
+  thead th{background:var(--panel2);color:var(--muted);text-align:left;font-weight:600;
+    padding:10px 12px;border-bottom:1px solid var(--line);font-size:12px;letter-spacing:.02em}
+  tbody td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:nth-child(odd){background:rgba(255,255,255,.012)}
+  td code,td .k{font-family:var(--mono);font-size:12px;color:#cdd5e3}
+  .chk{font-family:var(--mono);color:var(--indigo);font-weight:700}
+  .ok{color:var(--green);font-weight:600}.no{color:var(--red);font-weight:600}
+  .pill{font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--line)}
+  .pill.cand{color:var(--amber);border-color:rgba(245,166,35,.4)}
+  .pill.miss{color:var(--red);border-color:rgba(248,113,113,.4)}
+  .pill.true{color:var(--green);border-color:rgba(52,211,153,.4)}
+
+  ul.inv{list-style:none;padding:0;margin:0;display:grid;gap:10px}
+  ul.inv li{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--teal);
+    border-radius:10px;padding:11px 14px;font-size:13.5px}
+  ul.inv li b{color:var(--teal)}
+
+  .legend{display:flex;flex-wrap:wrap;gap:14px;margin:10px 0 0;font-size:12px;color:var(--muted)}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+
+  .foot{margin-top:54px;padding-top:18px;border-top:1px solid var(--line);color:var(--faint);font-size:12px}
+  a{color:var(--indigo);text-decoration:none}
+  .mono{font-family:var(--mono)}
+  .note{font-size:12.5px;color:var(--muted);margin-top:10px}
+  .note b{color:var(--amber)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <div class="eyebrow">frontend-workflow-kit · v0.1.0-mvp-a</div>
+    <h1>MVP-A — 무엇을, 어떻게 만들었나</h1>
+    <p class="sub">LLM이 프론트 프로젝트를 <b>환각 없이</b> 진행하게 만드는 워크플로우 킷.
+    핵심 한 문장: <b>“LLM이 추론하던 것을 파일로 고정한다.”</b>
+    상태·판정·검사를 프롬프트가 아니라 <b>결정적 스크립트</b>로 옮긴다.
+    MVP-A는 그중 <b>문서 생성 → readiness 판정 → 검사</b>까지를 담는다.</p>
+    <div class="badges">
+      <span class="badge"><b>scripts</b> 3</span>
+      <span class="badge"><b>templates</b> 4</span>
+      <span class="badge"><b>validate</b> 검사 8종</span>
+      <span class="badge"><b>readiness</b> 모드 7</span>
+      <span class="badge"><b>dependency</b> yaml ×1</span>
+      <span class="badge"><b>golden</b> coupon-feature</span>
+    </div>
+  </header>
+
+  <!-- 0. 한눈에 -->
+  <section>
+    <div class="grid cards5">
+      <div class="stat indigo"><div class="v">3</div><div class="l">스크립트<br>state · readiness · validate</div></div>
+      <div class="stat amber"><div class="v">4</div><div class="l">템플릿<br>screen-spec · nav-map · llm · domain</div></div>
+      <div class="stat teal"><div class="v">8</div><div class="l">validate 검사<br>CI 게이트 (exit 0/1)</div></div>
+      <div class="stat blue"><div class="v">7</div><div class="l">readiness 모드<br>docs-only → production-ready</div></div>
+      <div class="stat green"><div class="v">1</div><div class="l">외부 의존성<br>(Node 내장 + yaml)</div></div>
+    </div>
+  </section>
+
+  <!-- 1. 무엇을 만들었나 -->
+  <section>
+    <h2><span class="n">1</span>무엇을 만들었나</h2>
+    <p class="lead">작성물(authoring) · 생성물(generated) · 스크립트 · 설정으로 나뉜다. 색이 종류를 가리킨다.</p>
+    <div class="legend">
+      <span><i class="sw" style="background:var(--amber)"></i>작성 (사람/LLM)</span>
+      <span><i class="sw" style="background:var(--teal)"></i>생성 (스크립트)</span>
+      <span><i class="sw" style="background:var(--indigo)"></i>스크립트</span>
+      <span><i class="sw" style="background:var(--blue)"></i>설정/레지스트리</span>
+    </div>
+    <div class="grid cards2" style="margin-top:14px">
+      <div class="card">
+        <h3>templates/ <span class="tag auth">authoring</span></h3>
+        <p><code class="path">screen/screen-spec.template.md</code> — 통합형 1파일(+stub 모드). Entry Points는 빈 GENERATED 블록.</p>
+        <p><code class="path">app/navigation-map.template.md</code> — 전역 뼈대(탭/가드/딥링크/크로스도메인).</p>
+        <p><code class="path">global/llm-rules.template.md</code> · <code class="path">domain/domain-rules.template.md</code></p>
+      </div>
+      <div class="card">
+        <h3>scripts/ <span class="tag script">node .mjs</span></h3>
+        <p><code class="path">workflow-state.mjs</code> — frontmatter+본문 → 대시보드/인벤토리</p>
+        <p><code class="path">readiness.mjs</code> — 화면별 구현 가능 모드 (판정 단일 출처)</p>
+        <p><code class="path">validate.mjs</code> — 검사 8종, exit 0/1</p>
+        <p><code class="path">lib/{util,spec,schema}.mjs</code> — 공유 파서·검증기 (한 곳)</p>
+      </div>
+      <div class="card">
+        <h3>catalog · schemas · policies <span class="tag cfg">config</span></h3>
+        <p><code class="path">catalog/artifact-manifest.yaml</code> — 산출물 레지스트리(경로/필수 frontmatter/생성여부)</p>
+        <p><code class="path">schemas/frontmatter.schema.json</code> — 상태/타입/날짜 검증</p>
+        <p><code class="path">policies/implementation-mode-policy.yaml</code> — 모드별 허용/금지 경로</p>
+      </div>
+      <div class="card">
+        <h3>skills · examples</h3>
+        <p><code class="path">skills/implement-screen/SKILL.md</code> — readiness 출력만 소비, allowed_paths 안에서만 구현</p>
+        <p><code class="path">examples/coupon-feature/</code> <span class="tag gen">golden</span> — stub→spec→구현→validate 완주 1건</p>
+        <p><code class="path">_meta/workflow-state.yaml</code>, <code class="path">screen-inventory.yaml</code> <span class="tag gen">generated</span></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. 어떻게 작동하나 — 데이터 흐름 -->
+  <section>
+    <h2><span class="n">2</span>어떻게 작동하나 — 데이터 흐름</h2>
+    <p class="lead">사람/LLM은 <b>frontmatter + 본문 표</b>만 쓴다. 나머지(카운트·상태·판정)는 스크립트가 결정적으로 만든다.</p>
+    <div class="panel">
+      <figure>
+        <svg viewBox="0 0 1000 430" xmlns="http://www.w3.org/2000/svg" font-family="system-ui" role="img" aria-label="데이터 흐름 다이어그램">
+          <defs>
+            <marker id="arr" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+              <path d="M0,0 L9,4.5 L0,9 z" fill="#6b7280"/>
+            </marker>
+            <marker id="arrI" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+              <path d="M0,0 L9,4.5 L0,9 z" fill="#7c8cff"/>
+            </marker>
+          </defs>
+
+          <!-- 입력 컬럼 -->
+          <text x="120" y="26" fill="#9aa4b2" font-size="12" text-anchor="middle" font-family="monospace">입력 (작성/코드)</text>
+          <g font-size="12.5">
+            <rect x="20" y="40" width="200" height="46" rx="9" fill="#1d222d" stroke="#f5a623" stroke-opacity=".55"/>
+            <text x="120" y="60" fill="#e6e9ef" text-anchor="middle">screen-spec.md</text>
+            <text x="120" y="76" fill="#9aa4b2" text-anchor="middle" font-size="11">frontmatter + 본문 표</text>
+
+            <rect x="20" y="98" width="200" height="40" rx="9" fill="#1d222d" stroke="#f5a623" stroke-opacity=".55"/>
+            <text x="120" y="123" fill="#e6e9ef" text-anchor="middle">navigation-map.md</text>
+
+            <rect x="20" y="150" width="200" height="40" rx="9" fill="#1d222d" stroke="#2dd4bf" stroke-opacity=".5"/>
+            <text x="120" y="175" fill="#e6e9ef" text-anchor="middle">component-catalog.md</text>
+
+            <rect x="20" y="202" width="200" height="52" rx="9" fill="#1d222d" stroke="#2a3140"/>
+            <text x="120" y="222" fill="#e6e9ef" text-anchor="middle">src/ (파일시스템)</text>
+            <text x="120" y="240" fill="#9aa4b2" text-anchor="middle" font-size="11">hooks/ · api/schemas/</text>
+          </g>
+
+          <!-- workflow-state -->
+          <rect x="300" y="70" width="170" height="120" rx="12" fill="#161a22" stroke="#7c8cff"/>
+          <text x="385" y="100" fill="#7c8cff" text-anchor="middle" font-size="13" font-family="monospace">workflow-state</text>
+          <text x="385" y="124" fill="#9aa4b2" text-anchor="middle" font-size="11">frontmatter 수집</text>
+          <text x="385" y="142" fill="#9aa4b2" text-anchor="middle" font-size="11">본문 파싱 →</text>
+          <text x="385" y="160" fill="#9aa4b2" text-anchor="middle" font-size="11">파생값 계산</text>
+          <text x="385" y="178" fill="#9aa4b2" text-anchor="middle" font-size="11">+ 중복 검사</text>
+
+          <!-- 생성물 -->
+          <rect x="300" y="232" width="170" height="40" rx="9" fill="#13201c" stroke="#2dd4bf"/>
+          <text x="385" y="252" fill="#2dd4bf" text-anchor="middle" font-size="11.5" font-family="monospace">workflow-state.yaml</text>
+          <text x="385" y="266" fill="#2dd4bf" text-anchor="middle" font-size="11.5" font-family="monospace">screen-inventory.yaml</text>
+
+          <!-- readiness -->
+          <rect x="560" y="70" width="180" height="120" rx="12" fill="#161a22" stroke="#7c8cff"/>
+          <text x="650" y="98" fill="#7c8cff" text-anchor="middle" font-size="13" font-family="monospace">readiness</text>
+          <text x="650" y="122" fill="#9aa4b2" text-anchor="middle" font-size="11">누적 모드 사다리</text>
+          <text x="650" y="140" fill="#9aa4b2" text-anchor="middle" font-size="11">facts → 조건 평가</text>
+          <text x="650" y="158" fill="#9aa4b2" text-anchor="middle" font-size="11">최고 충족 모드 선택</text>
+          <text x="650" y="176" fill="#9aa4b2" text-anchor="middle" font-size="11">+ blocking 집계</text>
+
+          <!-- 정책/매니페스트 입력 -->
+          <rect x="560" y="232" width="180" height="40" rx="9" fill="#1d222d" stroke="#60a5fa" stroke-opacity=".5"/>
+          <text x="650" y="251" fill="#9aa4b2" text-anchor="middle" font-size="11">mode-policy · manifest</text>
+          <text x="650" y="265" fill="#9aa4b2" text-anchor="middle" font-size="11">(+ CI 결과, 선택)</text>
+
+          <!-- readiness 출력 -->
+          <rect x="800" y="70" width="180" height="120" rx="12" fill="#13201c" stroke="#34d399"/>
+          <text x="890" y="96" fill="#34d399" text-anchor="middle" font-size="12.5" font-family="monospace">readiness 출력</text>
+          <text x="890" y="118" fill="#cdd5e3" text-anchor="middle" font-size="11">readiness_mode</text>
+          <text x="890" y="136" fill="#cdd5e3" text-anchor="middle" font-size="11">allowed / forbidden</text>
+          <text x="890" y="154" fill="#cdd5e3" text-anchor="middle" font-size="11">blocking</text>
+          <text x="890" y="172" fill="#cdd5e3" text-anchor="middle" font-size="11">next_actions</text>
+
+          <!-- validate -->
+          <rect x="560" y="320" width="180" height="74" rx="12" fill="#161a22" stroke="#7c8cff"/>
+          <text x="650" y="346" fill="#7c8cff" text-anchor="middle" font-size="13" font-family="monospace">validate</text>
+          <text x="650" y="368" fill="#9aa4b2" text-anchor="middle" font-size="11">검사 8종</text>
+          <text x="650" y="384" fill="#9aa4b2" text-anchor="middle" font-size="11">+ schema · manifest</text>
+
+          <rect x="800" y="333" width="180" height="48" rx="9" fill="#1d222d" stroke="#34d399"/>
+          <text x="890" y="354" fill="#34d399" text-anchor="middle" font-size="12" font-family="monospace">exit 0 / 1</text>
+          <text x="890" y="370" fill="#9aa4b2" text-anchor="middle" font-size="11">CI 게이트</text>
+
+          <!-- 화살표 -->
+          <g stroke="#6b7280" stroke-width="1.6" fill="none">
+            <path d="M222,63 C260,63 270,110 298,118" marker-end="url(#arr)"/>
+            <path d="M222,118 C255,124 265,128 298,132" marker-end="url(#arr)"/>
+            <path d="M222,170 C255,160 265,150 298,148" marker-end="url(#arr)"/>
+            <path d="M222,228 C255,200 270,170 298,164" marker-end="url(#arr)"/>
+            <path d="M385,190 L385,230" marker-end="url(#arr)"/>
+            <path d="M650,232 L650,192" marker-end="url(#arr)"/>
+            <path d="M222,235 C420,300 470,355 558,358" marker-end="url(#arr)"/>
+          </g>
+          <g stroke="#7c8cff" stroke-width="1.8" fill="none">
+            <path d="M470,140 L558,135" marker-end="url(#arrI)"/>
+            <path d="M740,130 L798,130" marker-end="url(#arrI)"/>
+            <path d="M470,255 C510,255 520,360 558,360" marker-end="url(#arrI)"/>
+            <path d="M740,357 L798,357" marker-end="url(#arrI)"/>
+          </g>
+          <text x="514" y="128" fill="#7c8cff" font-size="10" text-anchor="middle" font-family="monospace">state.yaml</text>
+        </svg>
+        <figcaption>입력(작성/코드) → workflow-state(파생값) → readiness(판정) · validate(게이트)</figcaption>
+      </figure>
+      <p class="note"><b>불변식:</b> 판정 로직은 readiness 한 곳 · 파생값(tbd_count 등)은 frontmatter에 안 쓰고 본문에서 계산 · 생성물엔 GENERATED 마커 · 같은 입력→같은 출력(멱등, 변동은 generated_at 한 줄만).</p>
+    </div>
+  </section>
+
+  <!-- 3. readiness 모드 사다리 -->
+  <section>
+    <h2><span class="n">3</span>readiness 모드 사다리 (누적)</h2>
+    <p class="lead">바닥부터 올라가며 <b>연속으로 충족되는 가장 높은 칸</b>이 그 화면의 모드다. 높은 칸이 낮은 칸의 전제를 건너뛰지 못한다.</p>
+    <div class="panel">
+      <figure>
+        <svg viewBox="0 0 1000 360" xmlns="http://www.w3.org/2000/svg" font-family="system-ui" role="img" aria-label="readiness 모드 사다리">
+          <!-- 사다리 7칸: 왼쪽이 낮고 오른쪽이 높다 -->
+          <!-- 각 칸 -->
+          <g font-size="11.5" font-family="monospace">
+            <!-- step boxes -->
+            <g>
+              <rect x="14"  y="150" width="126" height="44" rx="8" fill="#1d222d" stroke="#2a3140"/>
+              <text x="77"  y="177" fill="#9aa4b2" text-anchor="middle">docs-only</text>
+              <rect x="154" y="150" width="126" height="44" rx="8" fill="#1d222d" stroke="#2a3140"/>
+              <text x="217" y="172" fill="#9aa4b2" text-anchor="middle">route-</text>
+              <text x="217" y="186" fill="#9aa4b2" text-anchor="middle">skeleton</text>
+              <rect x="294" y="150" width="126" height="44" rx="8" fill="#202a26" stroke="#2dd4bf"/>
+              <text x="357" y="172" fill="#2dd4bf" text-anchor="middle">screen-</text>
+              <text x="357" y="186" fill="#2dd4bf" text-anchor="middle">skeleton</text>
+              <rect x="434" y="150" width="126" height="44" rx="8" fill="#202a26" stroke="#34d399"/>
+              <text x="497" y="172" fill="#34d399" text-anchor="middle">rough-</text>
+              <text x="497" y="186" fill="#34d399" text-anchor="middle">fixture-ui</text>
+              <rect x="574" y="150" width="126" height="44" rx="8" fill="#1d222d" stroke="#2a3140"/>
+              <text x="637" y="172" fill="#9aa4b2" text-anchor="middle">final-</text>
+              <text x="637" y="186" fill="#9aa4b2" text-anchor="middle">fixture-ui</text>
+              <rect x="714" y="150" width="126" height="44" rx="8" fill="#1d222d" stroke="#2a3140"/>
+              <text x="777" y="172" fill="#9aa4b2" text-anchor="middle">api-</text>
+              <text x="777" y="186" fill="#9aa4b2" text-anchor="middle">integrated</text>
+              <rect x="854" y="150" width="132" height="44" rx="8" fill="#1d222d" stroke="#2a3140"/>
+              <text x="920" y="172" fill="#9aa4b2" text-anchor="middle">production-</text>
+              <text x="920" y="186" fill="#9aa4b2" text-anchor="middle">ready</text>
+            </g>
+            <!-- connectors -->
+            <g stroke="#3a4253" stroke-width="2">
+              <line x1="140" y1="172" x2="154" y2="172"/>
+              <line x1="280" y1="172" x2="294" y2="172"/>
+              <line x1="420" y1="172" x2="434" y2="172"/>
+              <line x1="560" y1="172" x2="574" y2="172"/>
+              <line x1="700" y1="172" x2="714" y2="172"/>
+              <line x1="840" y1="172" x2="854" y2="172"/>
+            </g>
+          </g>
+
+          <!-- 진입 조건 (칸 아래) -->
+          <g font-size="10" fill="#6b7280" font-family="monospace" text-anchor="middle">
+            <text x="217" y="214">stub&gt;0 · nav≥draft</text>
+            <text x="357" y="214">spec≥draft</text>
+            <text x="497" y="214">+authored ·catalog ·hook</text>
+            <text x="637" y="214">spec≥confirmed ·figma≥draft</text>
+            <text x="777" y="214">api=confirmed ·matrix</text>
+            <text x="920" y="214">CI pass</text>
+          </g>
+
+          <!-- COUPON-001 마커 (rough-fixture-ui) -->
+          <g>
+            <path d="M497,150 L497,96" stroke="#34d399" stroke-width="1.6" stroke-dasharray="3 3"/>
+            <rect x="404" y="58" width="186" height="38" rx="9" fill="#13201c" stroke="#34d399"/>
+            <text x="497" y="74" fill="#34d399" text-anchor="middle" font-size="12" font-family="monospace">COUPON-001</text>
+            <text x="497" y="89" fill="#9aa4b2" text-anchor="middle" font-size="10">spec confirmed · 본문 완성</text>
+          </g>
+          <!-- COUPON-002 stub 마커 (screen-skeleton) -->
+          <g>
+            <path d="M357,150 L357,286" stroke="#f5a623" stroke-width="1.6" stroke-dasharray="3 3"/>
+            <rect x="264" y="286" width="186" height="40" rx="9" fill="#241f12" stroke="#f5a623"/>
+            <text x="357" y="303" fill="#f5a623" text-anchor="middle" font-size="12" font-family="monospace">COUPON-002 (stub)</text>
+            <text x="357" y="318" fill="#9aa4b2" text-anchor="middle" font-size="10">본문 미작성 → full UI 차단</text>
+          </g>
+
+          <!-- 화살표 진행 방향 -->
+          <text x="60" y="40" fill="#6b7280" font-size="11" font-family="monospace">낮음</text>
+          <text x="935" y="40" fill="#6b7280" font-size="11" font-family="monospace">높음 →</text>
+          <line x1="90" y1="36" x2="930" y2="36" stroke="#2a3140" stroke-width="1" marker-end="url(#arr)"/>
+        </svg>
+        <figcaption>골든 예제: 본문이 완성된 COUPON-001은 rough-fixture-ui, frontmatter만 있는 stub COUPON-002는 screen-skeleton에서 멈춘다</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- 4. 파생값 파싱 규칙 -->
+  <section>
+    <h2><span class="n">4</span>파생값: 본문에서 계산 (수동 카운트 금지)</h2>
+    <p class="lead">frontmatter에 <code>tbd_count</code> 같은 값을 적지 않는다 — 반드시 드리프트하기 때문. workflow-state가 본문/파일시스템에서 만든다.</p>
+    <table>
+      <thead><tr><th>파생값</th><th>출처</th><th>규칙</th><th>COUPON-001</th></tr></thead>
+      <tbody>
+        <tr><td><span class="k">state_matrix_complete</span></td><td>State Matrix 표</td><td>loading·success·empty·error·refreshing 5행 모두 존재</td><td><span class="pill true">true</span></td></tr>
+        <tr><td><span class="k">interaction_matrix_complete</span></td><td>Interaction Matrix 표</td><td>표 존재 + 모든 행 Result 비어있지 않음</td><td><span class="pill true">true</span></td></tr>
+        <tr><td><span class="k">copy_keys_has_tbd</span></td><td>Copy Keys 표</td><td>Status 컬럼에 tbd 존재</td><td><span class="pill true">true</span></td></tr>
+        <tr><td><span class="k">tbd_count</span></td><td>Unknowns 표</td><td>Status=open 행 수</td><td><span class="pill cand">3</span></td></tr>
+        <tr><td><span class="k">api_confidence_min</span></td><td>API Candidates</td><td>항목 중 가장 낮은 confidence</td><td><span class="pill cand">candidate</span></td></tr>
+        <tr><td><span class="k">fake_hook_exists</span></td><td>파일시스템</td><td><code>src/features/{domain}/hooks/</code> 에 파일 존재</td><td><span class="pill true">true</span></td></tr>
+        <tr><td><span class="k">figma_mapping_status</span></td><td>파일 + frontmatter</td><td><code>figma-component-mapping.md</code> 존재 및 status</td><td><span class="pill miss">missing</span></td></tr>
+        <tr><td><span class="k">screen_spec_authored</span></td><td>본문 섹션</td><td>stub(frontmatter만)=false. full UI 모드의 전제</td><td><span class="pill true">true</span></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 5. validate 검사 8종 -->
+  <section>
+    <h2><span class="n">5</span>validate — 검사 8종 (CI 게이트)</h2>
+    <p class="lead">exit code 0/1. 모든 검사가 음성 테스트(고의 위반 주입)로 실제 작동을 확인했다.</p>
+    <table>
+      <thead><tr><th style="width:34px">#</th><th>검사</th><th>무엇을 잡나</th></tr></thead>
+      <tbody>
+        <tr><td class="chk">1</td><td>frontmatter ↔ schema</td><td>타입/enum(status·artifact_type)/유효한 날짜(예: 2026-13-99 거부)</td></tr>
+        <tr><td class="chk">2</td><td>manifest 필수 frontmatter + 경로</td><td>required_frontmatter 누락 · manifest path 패턴 위반(잘못된 위치)</td></tr>
+        <tr><td class="chk">3</td><td>끊어진 참조</td><td>depends_on 대상 파일 부재 · sources 로컬 링크 파일 부재</td></tr>
+        <tr><td class="chk">4</td><td>이동 대상 부재</td><td>Interaction Matrix의 Result 라우트가 인벤토리에 없음</td></tr>
+        <tr><td class="chk">5</td><td>중복</td><td>screen_id 중복 · route 중복</td></tr>
+        <tr><td class="chk">6</td><td>생성물 마커 무결성</td><td>do_not_edit 생성물 헤더 + screen-spec의 GENERATED:START/END 섹션 마커(generator 일치·순서)</td></tr>
+        <tr><td class="chk">7</td><td>confirmed 승인 메타</td><td>status=confirmed인데 approved_by · approved_at · decision_id 누락 (사람만 승격)</td></tr>
+        <tr><td class="chk">8</td><td>confirmed API ↔ 스키마</td><td>confirmed API인데 zod 스키마/OpenAPI 부재 <span class="note" style="display:inline">(MVP-A: 존재만, 1:1 매칭은 B)</span></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 6. 골든 예제 결과 -->
+  <section>
+    <h2><span class="n">6</span>골든 예제 실행 결과</h2>
+    <p class="lead"><code>npm run example:state &amp;&amp; example:readiness &amp;&amp; example:validate</code> 의 실제 출력.</p>
+    <div class="grid cards3">
+      <div class="stat indigo"><div class="v">2</div><div class="l">화면<br>COUPON-001 · 002(stub)</div></div>
+      <div class="stat green"><div class="v">0</div><div class="l">중복 ID/route<br>인벤토리 검사 통과</div></div>
+      <div class="stat green"><div class="v">8/8</div><div class="l">validate 통과<br>exit 0</div></div>
+    </div>
+    <div class="panel" style="margin-top:14px">
+      <table>
+        <thead><tr><th>화면</th><th>status</th><th>readiness_mode</th><th>blocking</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="k">COUPON-001</span><br><span class="note">쿠폰 목록 (본문 완성)</span></td>
+            <td><span class="ok">confirmed</span><br><span class="note">+ 승인 메타</span></td>
+            <td><span class="k" style="color:var(--green)">rough-fixture-ui</span><br><span class="note">screens·components·hooks 수정 허용 / src/api 금지</span></td>
+            <td><span class="pill miss">figma_mapping: missing</span> <span class="pill cand">api_confidence: candidate</span></td>
+          </tr>
+          <tr>
+            <td><span class="k">COUPON-002</span><br><span class="note">쿠폰 상세 (stub)</span></td>
+            <td><span class="pill">draft</span></td>
+            <td><span class="k" style="color:var(--amber)">screen-skeleton</span><br><span class="note">placeholder만 — full UI 차단</span></td>
+            <td><span class="pill miss">screen_spec_authored: false</span> → “본문 작성”</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="note">이 COUPON-001 출력은 구현 명세 §6의 예시와 정확히 일치한다(readiness_mode·forbidden_paths·blocking). golden example은 이후 모든 화면 복제의 few-shot 기준이 된다.</p>
+    </div>
+  </section>
+
+  <!-- 7. 데이터 계층 계약 (fake hook) -->
+  <section>
+    <h2><span class="n">7</span>핵심 계약 — fake hook & AsyncState</h2>
+    <p class="lead">“fixture→hook 교체 단계”를 제거한다. 화면은 처음부터 hook 하나에만 의존하고, 내부 구현만 단계에 따라 바뀐다.</p>
+    <div class="panel">
+      <figure>
+        <svg viewBox="0 0 1000 200" xmlns="http://www.w3.org/2000/svg" font-family="system-ui" role="img" aria-label="fake hook 계약">
+          <defs><marker id="a2" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#6b7280"/></marker></defs>
+          <!-- 화면 -->
+          <rect x="30" y="70" width="190" height="60" rx="12" fill="#161a22" stroke="#7c8cff"/>
+          <text x="125" y="96" fill="#e6e9ef" text-anchor="middle" font-size="13">CouponListScreen</text>
+          <text x="125" y="115" fill="#9aa4b2" text-anchor="middle" font-size="11">status로만 분기</text>
+          <!-- 계약 -->
+          <rect x="300" y="60" width="200" height="80" rx="12" fill="#13201c" stroke="#34d399"/>
+          <text x="400" y="86" fill="#34d399" text-anchor="middle" font-size="13" font-family="monospace">AsyncState&lt;Coupon[]&gt;</text>
+          <text x="400" y="106" fill="#9aa4b2" text-anchor="middle" font-size="11">data · status · isLoading</text>
+          <text x="400" y="122" fill="#9aa4b2" text-anchor="middle" font-size="11">isRefreshing · error · refetch</text>
+          <!-- 단계1 fake -->
+          <rect x="580" y="30" width="190" height="56" rx="12" fill="#241f12" stroke="#f5a623"/>
+          <text x="675" y="53" fill="#f5a623" text-anchor="middle" font-size="12" font-family="monospace">단계1: fixture</text>
+          <text x="675" y="71" fill="#9aa4b2" text-anchor="middle" font-size="11">zod로 검증된 fake</text>
+          <!-- 단계2 real -->
+          <rect x="580" y="114" width="190" height="56" rx="12" fill="#1d222d" stroke="#60a5fa"/>
+          <text x="675" y="137" fill="#60a5fa" text-anchor="middle" font-size="12" font-family="monospace">단계2: useQuery</text>
+          <text x="675" y="155" fill="#9aa4b2" text-anchor="middle" font-size="11">내부만 교체 (화면 불변)</text>
+
+          <text x="860" y="96" fill="#6b7280" text-anchor="middle" font-size="11" font-family="monospace">queryKeys</text>
+          <text x="860" y="112" fill="#6b7280" text-anchor="middle" font-size="11" font-family="monospace">factory</text>
+
+          <g stroke="#6b7280" stroke-width="1.6" fill="none">
+            <path d="M220,100 L298,100" marker-end="url(#a2)"/>
+            <path d="M500,90 C540,70 550,60 578,58" marker-end="url(#a2)"/>
+            <path d="M500,110 C540,130 550,140 578,142" marker-end="url(#a2)"/>
+          </g>
+          <text x="255" y="92" fill="#34d399" font-size="10" text-anchor="middle" font-family="monospace">useCoupons()</text>
+        </svg>
+        <figcaption>화면은 useCoupons() → AsyncState만 본다. fixture든 useQuery든 화면 코드는 한 줄도 바뀌지 않는다.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- 8. 불변식 -->
+  <section>
+    <h2><span class="n">8</span>깨면 안 되는 불변식</h2>
+    <ul class="inv">
+      <li><b>판정은 한 곳.</b> readiness 판정은 readiness.mjs에만. 훅·스킬은 출력을 소비만 한다.</li>
+      <li><b>파생값은 frontmatter에 안 쓴다.</b> tbd_count 등은 workflow-state가 본문에서 계산.</li>
+      <li><b>생성물엔 GENERATED 마커.</b> 마커 밖은 생성기가 건드리지 않는다.</li>
+      <li><b>사실의 단일 출처.</b> zod=코드, query key=factory, props=컴포넌트. 문서는 링크/의도만.</li>
+      <li><b>화면은 AsyncState 계약만 의존.</b> TanStack Query 객체를 화면에 노출 금지.</li>
+      <li><b>confirmed 승격은 사람만.</b> 승인 메타(approved_by/at/decision_id) 없으면 validate 실패.</li>
+      <li><b>생성기는 멱등.</b> 같은 입력 → 같은 출력. 변동은 generated_at 한 줄만.</li>
+      <li><b>스크립트는 --json 지원.</b> 의존성 최소(Node 내장 + yaml). 직접 실행 시에만 main().</li>
+    </ul>
+  </section>
+
+  <div class="foot">
+    frontend-workflow-kit · MVP-A · 2026-06-13 · 코덱스 리뷰(HIGH 3 / MEDIUM 4 + LOW 1) 전부 해소 후 종결.<br>
+    이후 단계 — B: lint-policy 적응 · C: 생성 뷰(catalog/nav-graph/route-tree) · D: Claude Code 훅·플러그인.
+  </div>
+
+</div>
+</body>
+</html>
