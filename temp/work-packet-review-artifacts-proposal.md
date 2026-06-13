@@ -20,15 +20,17 @@ The current consolidation priority remains:
 
 Work Packet + Review Artifacts should be treated as a **future-axis candidate** or as the single next candidate to choose after the current consolidation work is stable. It should not compete with the current Open Decisions / Input Reconciliation / Investigation cleanup.
 
-This proposal also overlaps with `temp/review-gates-notes.md`. If adopted, this document should absorb and supersede that rough note rather than creating a parallel review schema.
+> **Status update (post-consolidation, 2026-06-14):** the consolidation this note waited on is **done** — the README document map, `roadmap-current.md`, and the three-tier split have all shipped (see `frontend-workflow-kit/CHANGELOG.md`), and `roadmap-current.md` now lists Work Packet & Review Artifacts as **next implementation candidate #1**. The deferral precondition above is therefore satisfied; this is now a post-consolidation proposal, not a wait-for-consolidation handoff. The "do not expand MVP-A unless one candidate is explicitly chosen" rule still applies.
 
-This is intended as a handoff note for a Claude session that is already consolidating the current workflow documents. It should be reviewed together with:
+This proposal also overlaps with `temp/archive/review-gates-notes.md` (now archived). That rough note has already been **absorbed and superseded** by this proposal rather than kept as a parallel review schema — see Relationship To Review Gates Notes below.
+
+This was written as a handoff note for a Claude session consolidating the current workflow documents — **that consolidation is now complete** (see the Status update above). It should be reviewed together with:
 
 - `frontend-workflow-kit/README.md`
 - `frontend-workflow-kit/open-decisions.md`
 - `frontend-workflow-kit/input-reconciliation.md`
 - `frontend-workflow-kit/investigation-and-verification.md`
-- `temp/review-gates-notes.md`
+- `temp/archive/review-gates-notes.md` (archived — superseded by this proposal)
 - `temp/claude-handoff-workflow-docs-consolidation.md`
 
 ## Problem This Solves
@@ -88,7 +90,7 @@ The exact path can be adjusted to the existing project convention. The important
 - Do not add script enforcement for Work Packets in MVP-A unless explicitly chosen later.
 - Do not add a second readiness or implementation-allowed source of truth.
 - Do not duplicate canonical Open Decision, Input, Investigation, or Review bodies inside the Work Packet.
-- Do not create both this proposal and `review-gates-notes.md` as separate live schemas.
+- Do not create both this proposal and `review-gates-notes.md` as separate live schemas. *(Resolved: that note is now archived under `temp/archive/` and superseded by this proposal.)*
 
 ## Work Packet Responsibilities
 
@@ -213,7 +215,7 @@ They should avoid duplicating the whole Work Packet. They can link back to it.
 
 ## Relationship To Review Gates Notes
 
-`temp/review-gates-notes.md` is an earlier rough note about where review gates may fit. This proposal refines that idea into:
+`temp/archive/review-gates-notes.md` (archived) is an earlier rough note about where review gates may fit. This proposal has **superseded** that note, refining its idea into:
 
 - Work Packet: the index that shows which review gates belong to one work item.
 - Review Artifact: the detailed file for each review event.
@@ -227,7 +229,7 @@ The IDs in this proposal are examples, not final kit contract.
 - Work Packet example IDs use stable slugs: `WP-{domain}-{work-slug}`.
 - Review Artifact example IDs use event-style IDs: `REV-{YYYYMMDD}-{domain}-{review-type}-{seq}`.
 
-The difference is intentional for the draft: a Work Packet is a long-lived work container, while Review Artifacts are timestamped review events that may accumulate. If this future axis graduates into the kit, the ID grammar should be explicitly finalized and aligned with the rest of the artifact families.
+The difference is intentional for the draft: a Work Packet is a long-lived work container, while Review Artifacts are timestamped review events that may accumulate. If this future axis graduates into the kit, the ID grammar should be explicitly finalized and aligned with the rest of the artifact families. (Note: the archived `review-gates-notes.md` used `RV-` for review artifacts; this proposal supersedes that with `REV-`. At graduation, `REV-` must be aligned with the existing `INV-`/`VER-` event-ID family used by Input Reconciliation.)
 
 ## Review Artifact Template Families
 
@@ -335,6 +337,8 @@ Suggested created item ids:
 - `WP-...` for Work Packet
 - `REV-...` for Review Artifact, if a review was requested or created during reconciliation
 
+> **Status note (post-ship):** the `reconcile-input` skill has since shipped as a repo-local skill (`.claude/skills/reconcile-input/`), not yet vendored into the kit's `skills/` (see `roadmap-current.md`). Its `Created Items` vocabulary is currently **frozen** to `C-/D-/U-/G-/INV-/VER-` in both `frontend-workflow-kit/input-reconciliation.md` and the shipped `SKILL.md` — neither lists `WP-`/`REV-`. Wiring Work Packets into reconciliation is therefore a future change to that frozen contract (see the broadened Recommendation step 4), not a free-form addition.
+
 ### Open Decisions
 
 Open Decisions remain the actual readiness gate. A Work Packet can summarize linked decisions, but it should not override decision readiness.
@@ -431,12 +435,12 @@ For low-risk work, some gates can be marked `not-required` by rule or by explici
 
 ## Recommendation
 
-After the current document consolidation is stable, consider adopting Work Packet + Review Artifacts as one future conceptual axis. If adopted, keep the first implementation lightweight:
+The document consolidation is now stable (see the Status update under Positioning), so Work Packet + Review Artifacts can be adopted as the next conceptual axis once explicitly chosen. If adopted, keep the first implementation lightweight:
 
 1. Add a short design document or README section that defines Work Packets.
 2. Add one Work Packet template.
 3. Add a small set of review templates.
-4. Update Input Reconciliation to say new inputs may create or update Work Packets.
+4. Extend the (now shipped) Input Reconciliation contract so new inputs may create or update Work Packets — add `WP-`/`REV-` to the frozen `Created Items` vocabulary in **both** `frontend-workflow-kit/input-reconciliation.md` **and** the repo-local `.claude/skills/reconcile-input/SKILL.md` (plus the register schema column), not just the prose doc. Keep it documentation-only until script enforcement is explicitly chosen.
 5. Update the future MVP/roadmap document to keep script enforcement out of the immediate scope unless already needed.
 
 This gives the workflow a durable place to collect cross-session context without turning every review into a global registry problem too early.
