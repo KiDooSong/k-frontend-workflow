@@ -1,6 +1,6 @@
 # Current Roadmap
 
-> 스냅샷: 2026-06-13 (이번 세션 문서 정합화 + 범위 재정리).
+> 스냅샷: 2026-06-13 (reconcile-input 스킬 착수 — Tier 2 첫발 + 문서 정합).
 > 목적: **MVP-A 구현 범위 / 설계 계약(코드 후속) / Future Candidate** 세 티어의 경계를 한 파일로 고정한다.
 > 문서별 역할·링크는 [README 문서 지도](README.md#문서-지도) 참조.
 
@@ -79,8 +79,8 @@ Review          MVP-A 에 없음 (Future Candidate).
 - decision-log.md 전역 이관 · deferred+Reversible+Assumptions 묶음 · 교차-화면 참조 (open-decisions.md 후속 절)
 
 **Tier 2 구현:**
-- **reconcile-input 스킬** (Input Skill 결과를 register 로 반영)
-- Reconciliation Register **hook/CI 강제**
+- ✅ **reconcile-input 스킬** 작성됨 — `.claude/skills/reconcile-input/`(리포-로컬, 절차 가이드·코드 강제 0). 남은 것: 킷 `skills/` 로 vendor + 아래 hook/CI.
+- Reconciliation Register **hook/CI 강제** (미처리 감지: `input_id` ↔ register 대조, Reconcile Status `in-progress`/`failed`)
 - Investigation / Verification **템플릿 + manifest 등록** · `blocks_mode` **readiness 파싱**
 
 **Future Candidate (새 축 아님 — 흡수형):**
@@ -88,11 +88,11 @@ Review          MVP-A 에 없음 (Future Candidate).
 
 ## 다음 구현 후보 (하나를 명시적으로 고를 때만 착수)
 
-1. reconcile-input 스킬 — Tier 2 구현 첫발
-2. Work Packet & Review Artifacts 최소 도입 — Future Candidate
-3. Open Decisions `forbidden_paths` 경계 backstop (diff/CI 기반) — Tier 1 강화 잔여
+1. Work Packet & Review Artifacts 최소 도입 — Future Candidate
+2. Open Decisions `forbidden_paths` 경계 backstop (diff/CI 기반) — Tier 1 강화 잔여
+3. reconcile-input 후속 — 킷 `skills/` 로 vendor + Reconciliation Register hook/CI 강제
 
-*이번 세션 완료: 템플릿 재오픈 정렬 · README 문서 지도 · roadmap 신설 · Unknown 게이트 정합화 · 범위 3티어 재정리.*
+*이번 세션 완료: reconcile-input 스킬 작성(write-a-skill 방법론 + 코덱스 medium 1건 반영) — 리포-로컬 `.claude/skills/`.*
 
 ## 지금 하지 말 것
 

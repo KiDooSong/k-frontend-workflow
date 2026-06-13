@@ -30,13 +30,13 @@ examples/    coupon-feature (golden example, end-to-end 1회 완주)
 | 문서 | 역할 | 티어 | 구현 상태 |
 |---|---|---|---|
 | [open-decisions.md](open-decisions.md) | 결정 대기 분리 + readiness cap | **Tier 1 (MVP-A 코어)** | ✅ 템플릿·파서·readiness 다운그레이드·validate 형식검사(검사 9) / forbidden_paths backstop 은 후속 |
-| [input-reconciliation.md](input-reconciliation.md) | 새 입력 반영·충돌·`resolved→open` 재오픈 계약 | **Tier 2 (설계 계약)** | 📄 문서 계약만 — reconcile-input 스킬·hook·CI 후속 |
+| [input-reconciliation.md](input-reconciliation.md) | 새 입력 반영·충돌·`resolved→open` 재오픈 계약 | **Tier 2 (설계 계약)** | 📄 계약 동결 + reconcile-input 스킬 작성(리포-로컬 `.claude/skills/`, 절차 가이드일 뿐 코드 강제 0) — 킷 `skills/` vendor·hook·CI 후속 |
 | [investigation-and-verification.md](investigation-and-verification.md) | 장기 조사·플랫폼 검증·evidence 핸드오프 | **Tier 2 (설계 계약)** | 📄 문서 계약만 — 템플릿·manifest·readiness 파싱 후속 |
 | `temp/work-packet-review-artifacts-proposal.md` (킷 외부) | Work Packet & Review Artifacts (리뷰 관문 흡수) | **Future Candidate** | 📝 설계 제안 초안(리포에 추적됨, 킷 미포함) |
 
 **Tier 1 — MVP-A 구현·강제됨:** 템플릿 · `scripts/`(workflow-state·readiness·validate) · schemas·catalog·policies · skills/implement-screen · Open Decisions readiness cap · golden example.
 
-**Tier 2 — 설계 계약만 (코드 강제 0):** Input Reconciliation · Investigation/Verification. MVP-A 코드 게이트에는 들어가지 않는다.
+**Tier 2 — 설계 계약 (코드 강제 0):** Input Reconciliation(reconcile-input 스킬 작성됨 — 절차 가이드일 뿐 코드 게이트 아님) · Investigation/Verification. MVP-A 코드 게이트에는 들어가지 않는다.
 
 **MVP-A 가 게이트하는 것 = 정책 fact + Open Decision `decision_cap` 뿐.** Unknown·Conflict·investigation `blocks_mode`·review 는 자동 차단하지 않는다 (상세: roadmap 의 [게이트 인벤토리](roadmap-current.md#mvp-a-게이트-인벤토리-정확히-무엇을-막는가)).
 
