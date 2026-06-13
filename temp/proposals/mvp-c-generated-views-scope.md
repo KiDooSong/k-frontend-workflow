@@ -71,7 +71,7 @@ MVP-A 게이트는 **동결**됐다(roadmap §MVP-A 게이트 인벤토리). 그
 - **마지막 아키텍처 구멍.** "LLM 추론 → 파일 고정" 파이프라인에서 전역 뷰 3종만 아직 사람 손에 남아 있다. 이걸 닫으면 불변식 #3(생성물엔 GENERATED 헤더/마커)·#7(생성기 멱등)이 전역 뷰까지 일관되게 적용된다.
 - **이미 게이트가 기다리고 있다.** `implementation-mode-policy.yaml` 의 `rough-fixture-ui` 진입은 `component_catalog_generated == true` 를 요구한다(line 63). md-only fixture(`examples/multi-screen-dry-run`)의 readiness 천장이 `screen-skeleton` 인 이유가 바로 `component_catalog_generated == false` 라서다 — MVP-C 실행을 의도적으로 기다리는 상태다.
 
-**범위 경계(중요).** MVP-C 는 **새 축 추가가 아니다.** nav-graph/route-tree/catalog-gen 은 모두 *기존* 저작 문서(screen-spec·navigation-map·src/components·src/app)에서 *파생*하는 뷰다. screen-inventory 는 *기존* 생성물의 hardening, file guard 는 *기존* validate 검사의 확장이다. roadmap line 99("새 산출물 축 추가 금지")를 위반하지 않는다.
+**범위 경계(중요).** MVP-C 는 **새 축 추가가 아니다.** nav-graph/route-tree/catalog-gen 은 모두 *기존* 저작 문서(screen-spec·navigation-map·src/components·src/app)에서 *파생*하는 뷰다. screen-inventory 는 *기존* 생성물의 hardening, file guard 는 *기존* validate 검사의 확장이다. roadmap §"지금 하지 말 것"("새 산출물 축 추가 금지")를 위반하지 않는다.
 
 ---
 
@@ -159,7 +159,7 @@ edges:
 
 **fixtures.** `examples/coupon-feature/src/app` 구조 확장 샘플(`(tabs)/coupons.tsx`·`coupons/[id].tsx`·`(auth)/login.tsx`) + expected `_meta/route-tree.txt` 산출 샘플 + negative: `examples/route-tree-mismatch`(route 선언 있으나 파일 없음).
 
-**do-not-edit.** `GENERATED FILE — DO NOT EDIT / Source: src/app 파일 트리(Expo Router) · 교차검증 screen-spec frontmatter.route / Command: npm run workflow:route-tree / Update: src/app 라우트 파일을 바꾸고 위 명령 재실행 (선언 route 자체는 screen-spec 에서 관리).`
+**do-not-edit.** `GENERATED FILE — DO NOT EDIT / Source: src/app 파일 트리(Expo Router) · 교차검증: screen-spec frontmatter.route / Command: npm run workflow:route-tree / Update: src/app 라우트 파일을 바꾸고 위 명령 재실행 (선언 route 자체는 screen-spec 에서 관리).`
 
 **risks.** (a) **오탐**: Expo Router 그룹 폴더 규칙(`(groupname)/` 접두) 미이해 시 유효 라우트를 고아로 오분류. (b) **blast-radius**: 검사 5 가 route 중복만 보므로 route-tree 생성 실패 시 같은 경로의 여러 화면이 덮어써질 수 있음 → **generate-before-validate 순서 강제 필요**. (c) **drift**: route-tree.txt 직접 수정 시 src/app 과 불일치 → do_not_edit 마커 + View 5 guard 강제 필수. (d) **신뢰도**: src/app 이 TS/JSX 확장자만 가정 — CSS/config 섞인 구조 시 파서 강화 필요.
 
@@ -171,7 +171,7 @@ edges:
 
 **왜.** `component-catalog` 는 `artifact-manifest.yaml` 에 `kind=generated` 로 이미 등록돼 있으나(line 120-128), 템플릿·생성기(`catalog-gen.mjs`)가 없고 **`do_not_edit: false`(MVP-A 수동 모드)**다. **MVP-C readiness 게이트가 `component_catalog_generated == true` 를 요구**한다(`implementation-mode-policy.yaml:63`) — 이 fact 가 `false` 인 한 `rough-fixture-ui` 가 안 열린다. **단 현재 이 fact 는 `design/component-catalog.md` 의 *존재 여부*다**(`workflow-state.mjs:98` `exists(catalogPath)`) — 수동 작성 파일도 fact 를 켠다. 따라서 catalog-gen 은 게이트를 처음 여는 게 아니라 그 수동 존재를 **생성 계약(do_not_edit:true)으로 승격**하는 작업이다. drift 위험: 저작(component-gap-register.md)과 생성(component-catalog.md) 사이 가시성 공백 — 화면이 컴포넌트를 참조하고 gap 을 선언하므로, catalog 가 실제 사용 + gap 을 집계해야 툴링·gap 추적이 이어진다.
 
-**source of truth.** `artifact-manifest.yaml §component-catalog`(line 120-128: 경로/명령/source) + README §MVP-A(line 13-25, 118-129: "component-catalog 은 C 단계 생성기 도입") + `implementation-mode-policy.yaml`(line 63, 97-98, 104). 참조 산출물: coupon-feature 의 **수동 작성** `design/component-catalog.md`(MVP-A) — 생성기가 맞춰야 할 구체 출력 예시.
+**source of truth.** `artifact-manifest.yaml §component-catalog`(line 120-128: 경로/명령/source) + README §"MVP-A에 들어있는 것"(component-catalog 은 C 단계 생성기 도입 취지 — "lint-pack·Figma·생성뷰·훅은 이후 B~D") + `implementation-mode-policy.yaml`(line 63, 97-98, 104). 참조 산출물: coupon-feature 의 **수동 작성** `design/component-catalog.md`(MVP-A) — 생성기가 맞춰야 할 구체 출력 예시.
 
 **output file.** `docs/frontend-workflow/design/component-catalog.md` (GENERATED) — `artifact-manifest.yaml:123` 과 일치해야 함. `do_not_edit` 은 MVP-C 핸드오프에서 **false→true** 전환(line 127).
 
@@ -227,7 +227,7 @@ checks:
 
 **risks.** (a) **오탐(중복 오검출)**: 두 화면이 합법적으로 같은 route 공유(모달 오버레이) 시 검사 5 실패 — 완화: Status enum 에 alias/overlay 추가(향후 설계). [확률 낮음, blast 설계시점만] (b) **route 형식 취약**: Expo Router 문법이 아직 어디에도 regex 안 됨 — nav-graph 가 inventory 를 소비하면 broken route 가 nav-graph 를 깨뜨림. [확률 중·MVP-C, blast 높음] (c) **메타 stale**: 파생값은 line 46 에서 계산되나 inventory 는 4필드만 — 하위 생성뷰가 재파생/재파싱(DRY 위반·drift). hardening 으로 stub/derived hint 추가 권장. [확률 높음·MVP-C, blast 중간] (d) **domain 고아**: inventory 가 domain 의 domain-rules artifact 존재를 검증 안 함 — 신규 검사 권장. [확률 중] (e) **stub 무결성**: `isStub()`(spec.mjs L185-193)은 stub 을 판정하나 inventory 가 stub 상태를 export 안 함(workflow-state.mjs L52 엔 있음) — stub 변경 시 inventory stale. [확률 높음, blast 중간 — readiness/nav-graph 오독]
 
-**priority: Phase 0 — 전제.** inventory hardening 은 **foundational MVP-C 작업**이다 — (1) nav-graph 생성(구조화 입력 필요), (2) route-tree 검증(파일 route 교차), (3) readiness 게이트 강화(stub→mode 효과)를 모두 막는 전제. roadmap line 89-95 의 "다음 구현 후보"에 screen-inventory hardening 이 **명시되지 않았으나**, MVP-C 완료 기준(line 389)이 inventory hardening 을 함의한다. **권장: nav-graph.mjs 구현 전 초기 MVP-C 작업으로 스코프.**
+**priority: Phase 0 — 전제.** inventory hardening 은 **foundational MVP-C 작업**이다 — (1) nav-graph 생성(구조화 입력 필요), (2) route-tree 검증(파일 route 교차), (3) readiness 게이트 강화(stub→mode 효과)를 모두 막는 전제. roadmap §"다음 구현 후보" 목록에는 screen-inventory hardening 이 **별도 항목으로 없지만**, MVP-C 완료 기준(전역 뷰 3종 전환, impl §11)이 이를 **전제로 함의한다**. **권장: nav-graph.mjs 구현 전 초기 MVP-C 작업으로 스코프.**
 
 ---
 
@@ -412,7 +412,7 @@ MVP-C 범위 밖(다른 단계 — 끌어오지 않는다):
     FP 관측 후 승격(MVP-C 와 무관, 건드리지 않는다).
   - Work Packet & Review Artifacts — Future Candidate, 별도 결정 대기.
   - reconcile-input 의 hook/CI 강제 · Investigation/Verification blocks_mode 파싱 — Tier 2 후속.
-  - 새 산출물 축 추가 — 명시적으로 금지(roadmap line 99). 생성뷰는 기존 저작물의 파생일 뿐.
+  - 새 산출물 축 추가 — 명시적으로 금지(roadmap §"지금 하지 말 것"). 생성뷰는 기존 저작물의 파생일 뿐.
 
 MVP-C 안이지만 먼저 결정해야 할 것(Open Decision 감 — 구현 전 명시):
   - nav-graph.yaml 구조: YAML/JSON · 노드/엣지 스키마 · 크로스도메인 필터 규칙(공유 모달 오탐 해소).
