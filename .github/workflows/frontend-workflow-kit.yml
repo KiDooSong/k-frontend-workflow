@@ -1,0 +1,41 @@
+name: frontend-workflow-kit
+
+# MVP-A 게이트: 킷이 자기 golden example(coupon-feature)을 CI 에서 계속 검증한다.
+#   - 생성기(state)가 커밋된 _meta 산출물을 재현하는지 (멱등성 불변식 #7)
+#   - validate 8종이 통과하는지 (exit 0/1 게이트)
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate-example:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend-workflow-kit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend-workflow-kit/package-lock.json
+
+      - run: npm ci
+
+      # 생성기 실행 (파일을 쓴다 → 커밋본과 어긋나면 아래 diff 단계에서 잡힌다)
+      - run: npm run example:state
+      - run: npm run example:readiness
+
+      # 멱등성 게이트: 생성된 _meta 가 커밋된 것과 다르면 실패.
+      # 이게 빠지면 "스크립트가 돈다"만 증명할 뿐 "커밋된 출력을 재현한다"는 증명하지 못한다.
+      - name: assert generated docs match committed (idempotency)
+        run: |
+          if ! git diff --exit-code -- examples/coupon-feature/docs/frontend-workflow/_meta; then
+            echo "::error::생성기 출력이 커밋된 _meta 산출물과 다릅니다. 'npm run example:state' 후 변경분을 커밋하세요."
+            exit 1
+          fi
+
+      # 진짜 검사 게이트 (검사 8종, exit 0/1)
+      - run: npm run example:validate

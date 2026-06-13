@@ -1,0 +1,13 @@
+# 줄바꿈을 LF 로 고정한다.
+# 이유: CI 의 멱등성 검사(`git diff --exit-code` on _meta 생성물)가
+#       OS 간 줄바꿈 차이(Windows CRLF ↔ Linux LF)로 헛실패하지 않도록.
+#       이 저장소는 core.autocrlf=true 환경에서 작성되므로 명시적 eol 고정이 필요하다.
+# 효과: eol=lf 속성은 core.autocrlf 설정보다 우선한다 (결정적 체크아웃/비교).
+* text=auto eol=lf
+
+# 바이너리는 변환 대상에서 제외 (현재 없지만 향후 자산 대비).
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
