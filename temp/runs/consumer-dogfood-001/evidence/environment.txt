@@ -1,0 +1,5 @@
+node v24.15.0
+npm 11.12.1
+expo-template-default@sdk-56
+kit_source_commit 4601347 (origin/main)
+consumer: BASELINE 2ed60d8 / SETUP 107aa39 / IMPL 878fd33

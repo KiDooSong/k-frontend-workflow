@@ -17,6 +17,7 @@ status: done
 - 소비 프로젝트(ephemeral): `C:/Users/thdrl/source/repos/dogfood-expo-001` (킷 레포 **밖** · 자체 git repo).
 - 킷 소스: `origin/main` `4601347` 의 `frontend-workflow-kit/` (vendored copy).
 - 판정 단일 출처: `readiness.mjs` 출력 (소비만).
+- **실측 증거**: [`evidence/`](evidence/) — 생성된 `_meta/*.yaml` · readiness JSON · validate · forbidden-paths(정상/sub-check) 스냅샷 + 환경/diff (Codex 리뷰 P1·P2 해소).
 
 ## Summary
 | Step | 내용 | 결과 |

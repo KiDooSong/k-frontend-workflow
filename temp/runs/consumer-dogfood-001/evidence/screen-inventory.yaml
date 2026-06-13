@@ -1,0 +1,15 @@
+# GENERATED FILE — DO NOT EDIT
+# Source:  docs/frontend-workflow/domains/**/screen-spec.md (frontmatter)
+# Command: npm run workflow:state
+screens:
+  - id: HOME-001
+    domain: home
+    route: /
+    status: draft
+  - id: PROFILE-001
+    domain: profile
+    route: /profile-edit
+    status: draft
+checks:
+  duplicate_ids: []
+  duplicate_routes: []

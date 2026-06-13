@@ -1,0 +1,3 @@
+forbidden-paths — OK (guarded surface 위반 없음)
+  guarded surface: openapi.yaml, openapi.yml, src/api/**
+exit 0
