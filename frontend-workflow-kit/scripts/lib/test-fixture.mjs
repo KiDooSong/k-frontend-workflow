@@ -16,6 +16,7 @@
 //    에서만 fail-closed 다 — register/decision/conflict/gap 검사는 본문 표만 읽으므로(splitFrontmatter
 //    (raw).body → parseTable) frontmatter 와 무관.
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { readFileSafe, splitFrontmatter, exists, walkFiles, isDir, writeFile } from './util.mjs';
 import { parseTable, loadScreenSpec } from './spec.mjs';
 
@@ -367,4 +368,53 @@ export function writePipelineExpected({ expectedDir, actual }) {
     written.push(toPosix(file));
   }
   return written;
+}
+
+// path-backstop fixture 검사 — forbidden-paths.mjs(Lane B CLI)를 알려진 diff/state 에 돌려
+// 기대 판정(exit code + 위반 수)을 대조한다. 도구 동작을 재구현하지 않고(검사 단일 출처 보존)
+// 실제 CLI 를 서브프로세스로 실행해 exit 계약(0 warning-first / 1 --enforce / 2 fail-closed)까지 검증한다.
+//   PB:run        실행 자체 성공 여부(spawn 오류면 fail)
+//   PB:exit       actual exit === expect.exit
+//   PB:violations expect.violations 선언 시(=exit 0/1) --json 의 violations 길이 일치
+//   spec : { id, scriptPath, diff(abs), docs(abs), enforce?, expect:{exit, violations?} }
+// 반환: { checks:[{check,ok,message}], failed:Number }
+export function runPathBackstopCase(spec) {
+  const r = makeResults();
+  const args = [spec.scriptPath, '--diff', spec.diff, '--docs', spec.docs, '--json'];
+  if (spec.enforce) args.push('--enforce');
+
+  const res = spawnSync(process.execPath, args, { encoding: 'utf8' });
+  if (res.error) {
+    r.fail('PB:run', `forbidden-paths 실행 실패: ${res.error.message}`);
+    return finalize(r);
+  }
+  const actualExit = res.status;
+
+  // exit code 계약 검증. 불일치면 stderr/stdout 첫 줄을 단서로 붙인다.
+  if (actualExit === spec.expect.exit) {
+    r.ok('PB:exit', `exit ${actualExit} (기대대로)`);
+  } else {
+    const snip = (res.stderr || '').trim().split('\n')[0] || (res.stdout || '').trim().slice(0, 120);
+    r.fail('PB:exit', `exit ${actualExit} (기대 ${spec.expect.exit})${snip ? ' — ' + snip : ''}`);
+  }
+
+  // 위반 수 — expect.violations 가 선언된 경우만(exit 2 fail-closed 는 --json 출력 전에 종료되므로 생략).
+  if (spec.expect.violations !== undefined) {
+    let viol = null;
+    try {
+      const out = JSON.parse(res.stdout);
+      if (Array.isArray(out.violations)) viol = out.violations.length;
+    } catch {
+      viol = null;
+    }
+    if (viol === null) {
+      r.fail('PB:violations', `--json 위반 파싱 실패 (exit ${actualExit})`);
+    } else if (viol === spec.expect.violations) {
+      r.ok('PB:violations', `위반 ${viol}건 (기대대로)`);
+    } else {
+      r.fail('PB:violations', `위반 ${viol}건 (기대 ${spec.expect.violations})`);
+    }
+  }
+
+  return finalize(r);
 }
