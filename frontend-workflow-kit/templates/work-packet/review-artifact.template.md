@@ -17,7 +17,7 @@ date: "{YYYY-MM-DD}"
   - 게이트/경로는 readiness_source 를 그대로 소비한다 (재계산 금지).
   - 리뷰어는 Open Decision / Conflict / Unknown 을 닫지 못한다 — 사람-전용 불변식.
   - 위반은 근거(파일·라인·diff)와 함께 기록한다. 추측으로 메우지 않는다.
-  - Checklist 는 work-packet-rubric / Work Packet 의 Review Checklist 와 1:1 정합.
+  - Checklist 는 work-packet-rubric 의 10개 check 를 그룹 롤업해 Work Packet 의 Review Checklist 와 정합시킨다 (1:1 아님 — 그룹 매핑, 아래 표 주석의 매핑 참조).
 -->
 
 # Review Artifact: {packet_id}
@@ -37,8 +37,17 @@ date: "{YYYY-MM-DD}"
 - ScreenSpec (정본): `{docs/.../screen-spec.md}`
 
 ## Checklist
-<!-- rubric 매핑. 한 행이라도 Failure Signal 관측 시 불합격으로 기록하고 Violations 에 근거를 남긴다.
-     advisory 휴리스틱(useState/useEffect grep 등)은 자동 불합격이 아니다 — 후보일 뿐, 파일 열어 교차 확인. -->
+<!-- rubric 매핑 (그룹 롤업 — 1:1 아님). 한 행이라도 Failure Signal 관측 시 불합격으로 기록하고 Violations 에 근거를 남긴다.
+     advisory 휴리스틱(useState/useEffect grep 등)은 자동 불합격이 아니다 — 후보일 뿐, 파일 열어 교차 확인.
+     work-packet-rubric(필수 10 checks) → 이 7행 매핑:
+       A  ← readiness 직접계산 안 함 · readiness output 참조 · allowed/forbidden 일치
+       B1 ← allowed/forbidden 일치 (allowed 쪽)
+       B2 ← allowed/forbidden 일치 (forbidden 쪽) · confirmed 문서 미수정 · generated file 미수정
+       B3 ← 현재 mode 보다 높은 구현 요구 안 함
+       B4 ← API endpoint 추측 안 함 (+ copy/design value 미발명)
+       E  ← Open Decision 안 닫음 (+ confirmed/generated 미수정 재확인)
+       F  ← ScreenSpec 링크(복사 안 함) · blocker 보고 · 멱등
+     check 10(Run Report ↔ Review Artifact 분리)는 두 파일이 따로 존재함으로 충족. -->
 | Check | 기준 | 결과 | 근거 (파일·라인·diff) |
 |---|---|---|---|
 | A — 게이트 판독 | readiness_mode/allowed/forbidden 이 `{readiness_source}` 와 글자 일치 | {✅/❌} | {근거} |
