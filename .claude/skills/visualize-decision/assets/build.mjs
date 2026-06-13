@@ -3,25 +3,25 @@
 // LLM 은 데이터 JSON 만 만들면 되고, 엔진(CSS+JS)은 한 번 고정된 채 재사용된다.
 //
 // 사용:  node build.mjs [data.json] [out.html] [--all]
-//   기본:   node build.mjs decision-D-001.data.json decision-D-001.html
-//   카탈로그: node build.mjs decision-D-001.data.json decision-D-001.catalog.html --all
+//   기본(엔진 폴더에서):   node build.mjs examples/decision-D-001.data.json examples/decision-D-001.html
+//   카탈로그:              node build.mjs examples/decision-D-001.data.json examples/decision-D-001.catalog.html --all
 //             (--all = views 를 무시하고 전체 뷰 렌더)
+//   스킬 런타임(저장소 루트에서): node .claude/skills/visualize-decision/assets/build.mjs \
+//             docs/frontend-workflow/_viz/decision-D-001.data.json docs/frontend-workflow/_viz/decision-D-001.html
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { makeGuard } from './path-guard.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-// CLI 인자 경로가 작업 폴더(here) 밖으로 새지 않도록 (../ 이탈·임의 파일 R/W 차단)
-function safeInside(base, p, exts) {
-  const r = path.resolve(base, p);
-  if (r !== path.resolve(base) && !r.startsWith(path.resolve(base) + path.sep)) throw new Error(`경로 이탈 거부: ${p}`);
-  if (exts && !exts.includes(path.extname(r).toLowerCase())) throw new Error(`확장자 거부(${exts.join('/')}): ${p}`);
-  return r;
-}
+const root = process.cwd();
+// 데이터/산출물 경로 가드: examples/ 또는 .../docs/frontend-workflow/_viz 안의 .json/.html 만 허용.
+// realpath 로 symlink 이탈·엔진 소스 덮어쓰기를 차단한다(상세: path-guard.mjs).
+const { safePath, realDirInZone } = makeGuard(root, here);
 const argv = process.argv.slice(2);
 const flags = argv.filter(a => a.startsWith('--'));
 const pos = argv.filter(a => !a.startsWith('--'));
-const dataFile = pos[0] || 'decision-D-001.data.json';
+const dataFile = pos[0] || 'examples/decision-D-001.data.json';
 const outFile  = pos[1] || dataFile.replace(/\.data\.json$/, '.html').replace(/\.json$/, '.html');
 const forceAll = flags.includes('--all') || flags.includes('--catalog');
 
@@ -30,7 +30,7 @@ const SCHEMA = path.join(here, 'decision-data.schema.json');
 const PLACEHOLDER = '__VIZ_DATA__';
 
 const tpl = fs.readFileSync(TPL, 'utf8');
-const dataRaw = fs.readFileSync(safeInside(here, dataFile, ['.json']), 'utf8');
+const dataRaw = fs.readFileSync(safePath(dataFile, ['.json']), 'utf8');
 
 let data;
 try { data = JSON.parse(dataRaw); }
@@ -152,7 +152,16 @@ const compact = JSON.stringify(data)
 const out = tpl.replace(PLACEHOLDER, () => compact);
 if (out.includes(PLACEHOLDER)) { console.error('✗ 치환 실패: 플레이스홀더가 남아있음'); process.exit(1); }
 
-fs.writeFileSync(safeInside(here, outFile, ['.html']), out, 'utf8');
+const outPath = safePath(outFile, ['.html']);
+const outDir = path.dirname(outPath);
+if (!fs.existsSync(outDir)) {                            // _viz 리프만 생성 — docs 트리 전체를 지어내지 않는다
+  const parent = path.dirname(outDir);
+  if (!fs.existsSync(parent)) { console.error(`✗ 출력 상위 폴더 없음(docs 트리를 만들지 않음): ${parent}`); process.exit(1); }
+  fs.mkdirSync(outDir);
+}
+// TOCTOU 방어: 검증 후 생성된 실제 디렉터리를 realpath 로 재확인하고 그 canonical 경로로 쓴다.
+const realOutDir = realDirInZone(outDir);
+fs.writeFileSync(path.join(realOutDir, path.basename(outPath)), out, 'utf8');
 
 // ---- 분량 리포트 (토큰 절감 근거) ----
 const ALL = schema.$defs.viewKey.enum;

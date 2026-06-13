@@ -4,19 +4,19 @@
     {
       "name": "decision-viz",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["temp/decision-viz-poc/serve.mjs", "decision-D-001.html"],
+      "runtimeArgs": [".claude/skills/visualize-decision/assets/serve.mjs", ".claude/skills/visualize-decision/assets/examples/decision-D-001.html"],
       "port": 4178
     },
     {
       "name": "viz-adversarial",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["temp/decision-viz-poc/serve.mjs", "_test-adversarial.html"],
+      "runtimeArgs": [".claude/skills/visualize-decision/assets/serve.mjs", ".claude/skills/visualize-decision/assets/examples/_test-adversarial.html"],
       "port": 4178
     },
     {
       "name": "viz-skip",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["temp/decision-viz-poc/serve.mjs", "_test-skip.html"],
+      "runtimeArgs": [".claude/skills/visualize-decision/assets/serve.mjs", ".claude/skills/visualize-decision/assets/examples/_test-skip.html"],
       "port": 4178
     }
   ]

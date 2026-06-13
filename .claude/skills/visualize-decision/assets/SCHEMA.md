@@ -79,4 +79,4 @@
 
 ## 예시
 
-전체 예시는 [`decision-D-001.data.json`](decision-D-001.data.json) 참고(트리거 통과 + 6개 뷰 선택).
+전체 예시는 [`examples/decision-D-001.data.json`](examples/decision-D-001.data.json) 참고(트리거 통과 + 6개 뷰 선택).

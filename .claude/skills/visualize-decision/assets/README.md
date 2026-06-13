@@ -1,50 +1,58 @@
-# decision-viz PoC — 엔진/데이터 분리 + 전체 뷰 갤러리
+# visualize-decision 엔진 번들
 
-`temp/decision-D-001-prototype.html`(통짜 단일 파일)을 두 가지 목적으로 재구성한 개념 검증:
+`visualize-decision` 스킬이 번들로 참조하는 렌더 엔진·데이터 계약·예시. 스킬 진입점은 [../SKILL.md](../SKILL.md).
+(PoC `temp/decision-viz-poc/` 에서 승격되어 이 위치로 이동.)
+
+설계의 핵심:
 
 1. **엔진/데이터 분리** — 재사용 엔진(CSS+JS) 1벌 + 결정별 데이터(JSON) 1개. 스킬 호출 시 LLM이 새로
    만드는 건 데이터뿐 → 출력 토큰·생성시간 절감, 엔진은 테스트된 채 고정(일관성).
-2. **“못 본” 뷰 전부 노출** — 초안엔 있지만 프로토타입엔 없던 뷰까지 한 페이지 갤러리로.
+2. **뷰 선택 + 트리거 게이트** — 무조건 다 그리지 않고 결정 성격에 맞는 뷰만(전체 10뷰는 `--all` 카탈로그).
 
 ## 파일
 
 | 파일 | 역할 | 누가 만드나 |
 |---|---|---|
-| `decision.template.html` | **엔진** — CSS + diff/렌더 JS + HTML 스켈레톤. `var DATA = __VIZ_DATA__;` 한 곳만 플레이스홀더 | 스킬에 **번들**(1회 고정·재사용) |
-| `decision-D-001.data.json` | **결정 데이터** — 옵션·장단점·전후·점수·여정·미리보기 | **호출마다 LLM 생성** |
-| `build.mjs` | 조립 — 템플릿 + 데이터 → 자기완결 단일 HTML (placeholder 치환 + JSON 검증 + 분량 리포트) | 결정 스크립트(1회 고정) |
-| `decision-D-001.html` | **산출물** — 빌드 결과(의존성 0, 오프라인) | 자동 생성물 |
+| `decision.template.html` | **엔진** — CSS + diff/렌더 JS + HTML 스켈레톤. `var DATA = __VIZ_DATA__;` 한 곳만 플레이스홀더 | 번들(1회 고정·재사용) |
+| `build.mjs` | 조립 — 템플릿 + 데이터 → 자기완결 단일 HTML (placeholder 치환 + JSON 검증 + 경로가드 + 분량 리포트) | 번들(1회 고정) |
 | `decision-data.schema.json` / `SCHEMA.md` | 데이터 계약(정본 JSON Schema + 사람용 문서) | — |
-| `_test-adversarial.data.json` / `_test-skip.data.json` | 회귀 테스트 픽스처(XSS·오버플로·N≠3·skip 게이트) | — |
-| `serve.mjs` / `.claude/launch.json` | 미리보기용 정적 서버 (검증 전용, 스킬 산출물 아님) | — |
+| `serve.mjs` | 미리보기용 정적 서버 (검증 전용, 스킬 산출물 아님). 저장소 `.claude/launch.json` 에 설정 3종 | — |
+| `examples/decision-D-001.data.json` | **결정 데이터 예시** — 옵션·장단점·전후·점수·여정·미리보기 (golden D-001) | 런타임엔 **호출마다 LLM 생성** |
+| `examples/_test-adversarial.data.json` / `_test-skip.data.json` | 회귀 테스트 픽스처(XSS·오버플로·N≠3·skip 게이트) | — |
+| `examples/*.html` | 빌드 산출물(검증용, `.gitignore`) | 자동 생성물 |
 
 ## 재빌드 / 미리보기
 
 ```bash
-node temp/decision-viz-poc/build.mjs
-# → decision-D-001.html 생성 + 분량 리포트 출력
+# 엔진 폴더에서 (cwd = assets):
+node build.mjs examples/decision-D-001.data.json examples/decision-D-001.html       # 선택 6뷰
+node build.mjs examples/decision-D-001.data.json examples/decision-D-001.catalog.html --all  # 전체 10뷰
 
-# 다른 결정도 동일 엔진으로:  node build.mjs my.data.json my.html
+# 스킬 런타임 (cwd = 저장소 루트, _viz 로 산출):
+node .claude/skills/visualize-decision/assets/build.mjs \
+  docs/frontend-workflow/_viz/decision-{ID}.data.json docs/frontend-workflow/_viz/decision-{ID}.html
 ```
 
-미리보기: 산출물 `decision-D-001.html` 을 브라우저로 직접 열거나, `node serve.mjs` 후 http://localhost:4178/.
+미리보기: 산출 `.html` 을 브라우저로 직접 열거나, `node serve.mjs examples/decision-D-001.html` 후 http://127.0.0.1:4178/ (또는 `.claude/launch.json` 의 `decision-viz`).
+> 빌드 산출 `examples/*.html` 은 `.gitignore` 대상이라 **fresh checkout 에선 먼저 위 build 를 돌린 뒤** preview/`launch.json` 을 써야 한다.
 
-## 측정된 절감 (이 PoC 실측)
+## 측정된 절감 (현재 실측 — golden D-001)
 
 ```
-엔진 템플릿  decision.template.html : 45,496 B   (한 번 고정·재사용)
-결정 데이터  decision-D-001.data.json: 7,750 B    (호출마다 생성)
-산출물       decision-D-001.html     : 52,317 B
+엔진 템플릿  decision.template.html      : 51,993 B   (한 번 고정·재사용)
+결정 데이터  examples/decision-D-001.data.json : 8,706 B  (호출마다 생성)
+산출물       examples/decision-D-001.html : 59,555 B
 
-→ 매 호출 LLM 이 새로 만드는 양 = 데이터 ≈ 산출물의 14.8%
-→ 재사용(엔진)으로 안 만드는 양  ≈ 산출물의 86.9%
+→ 매 호출 LLM 이 새로 만드는 양 = 데이터 ≈ 산출물의 14.6%
+→ 재사용(엔진)으로 안 만드는 양  ≈ 산출물의 87.3%
 ```
 
 **핵심: 절감되는 건 보일러플레이트(엔진), 추론(데이터)이 아니다.** 전후 diff 내용·장단점·추천·점수처럼
-결정마다 달라지는 “생각”은 여전히 LLM 몫. 엔진을 안 뱉는 것만으로 출력의 ~85%가 빠진다.
+결정마다 달라지는 “생각”은 여전히 LLM 몫. 엔진을 안 뱉는 것만으로 출력의 ~87%가 빠진다.
 
-> 실현 메커니즘: `Write`로 통째로 다시 쓰면 엔진을 또 출력해서 절감이 안 된다. **(A) 템플릿 복사 후
-> 플레이스홀더만 `Edit` 치환** 또는 **(B) build.mjs 로 조립**(LLM은 JSON만) 이어야 출력에서 엔진이 빠진다.
+> 실현 메커니즘: `Write`로 통째로 다시 쓰면 엔진을 또 출력해서 절감이 안 된다. **build.mjs 로 조립**(LLM은 JSON만)
+> 이 기본 — 스키마 검증 + 이스케이프까지 해준다. (템플릿 복사 후 `__VIZ_DATA__` 만 `Edit` 치환하는 우회는
+> 검증·이스케이프를 건너뛰므로 권장하지 않음.)
 
 ## 뷰 목록 (4 코어 + 6 추가)
 
@@ -90,11 +98,12 @@ node temp/decision-viz-poc/build.mjs
 
 - `build.mjs`: 스키마 검증(required/enum/키 정합/뷰-데이터) 통과, 치환 후 플레이스홀더 잔여 0.
 - 정상 데이터: 콘솔 에러 0, 선택 6뷰만 표시(숨김 4)·동적 번호 ∗·1–5, SVG 좌표 이탈 0.
-- **적대적 픽스처**(`</script>`·`<img onerror>`·키에 `"`·점수 99/-5/50/-3·N=5): XSS 미발화, `data-opt="q&quot;x"` 이스케이프+동작, 4 SVG 좌표 이탈 0, 트리 viewBox 728 로 확장.
+- **적대적 픽스처**(`</script>`·`<img onerror>`·키에 `"`·N=5): build 스키마 검증 통과(값은 0–10/1–5 범위 내), 런타임 XSS 미발화, `data-opt="q&quot;x"` 등 속성 이스케이프+동작, SVG 좌표 이탈 0, 트리 viewBox N에 맞춰 확장. (범위 밖 수치는 이제 build 가 거부 — 엔진의 clamp 는 추가 방어선.)
 - **skip 픽스처**: 게이트 배너만, 전체 섹션·nav 숨김, 콘솔 에러 0.
 
-## 다음 단계 (승격 시)
+## 승격 상태 / 남은 일
 
-- 엔진을 `frontend-workflow-kit/templates/_viz/decision.template.html` 로, build를 결정 스크립트로.
-- 데이터 계약(`decision-data.schema.json`)을 Tier 2 설계 계약(`decision-visualization.md`)에 흡수.
-- 스킬은 트리거 게이트 판단 → 결정 성격에 맞는 `views` 만 생성(카탈로그는 데모/디버그용).
+- ✅ 엔진·계약·예시를 `.claude/skills/visualize-decision/assets/` 로 이동, `build.mjs` 경로가드를 `_viz/` 출력 허용으로 조정.
+- ✅ 스킬 진입점 [../SKILL.md](../SKILL.md) — 트리거 게이트 판단 → 결정 성격에 맞는 `views` 생성 절차(카탈로그는 데모/디버그용).
+- ⬜ (선택) 데이터 계약을 Tier 2 설계 계약 `frontend-workflow-kit/decision-visualization.md` 로 승격(SCHEMA.md 흡수).
+- ⬜ (선택) reconcile-input `resolved→open` 재오픈 시 자동 시각화 통합.
