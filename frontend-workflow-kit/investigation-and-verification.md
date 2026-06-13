@@ -117,7 +117,7 @@ owner: FE
 created_at: 2026-06-13
 last_reviewed: 2026-06-13
 sources:
-  - { type: input, ref: docs/frontend-workflow/inputs/2026-06-13-auth.md }
+  - { type: input, ref: docs/frontend-workflow/inputs/IN-20260613-meeting-001.md }
 related_screens: [AUTH-LOGIN, AUTH-CALLBACK]
 related_decisions: [D-AUTH-001]
 ---

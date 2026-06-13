@@ -10,23 +10,23 @@ description: 외부 입력 스킬이 저장한 새 입력 결과물(input_id 보
 전체 계약: [input-reconciliation.md](../../../frontend-workflow-kit/input-reconciliation.md).
 
 ## 입력
-- 입력 결과물 경로 (예: `docs/frontend-workflow/inputs/2026-06-13-figma-coupon.md`). 없으면 사용자에게 묻는다.
+- 입력 결과물 경로 (예: `docs/frontend-workflow/inputs/IN-20260613-figma-001.md` — 파일명 = `{input_id}.md`). 없으면 사용자에게 묻는다.
 - (선택) 대상 screen/domain.
 
 ## 핵심 불변식
 - **register-first**: 어떤 문서 수정보다 **먼저** register에 `in-progress` 행을 쓴다.
 - LLM은 게이트를 **올리기만** 한다 (open 추가, `resolved→open` 재오픈). **내리는** 전이(resolve/close)는 사람-전용.
 - `input_id`는 불변. 내용이 바뀌면 같은 id를 덮어쓰지 말고 **새 id + supersedes**.
-- `Reconcile Status`(reconcile 행위)와 자식 항목(D-/C-/U-/G-/INV-/VER-)의 open/closed는 **별개 라이프사이클**.
+- 세 status 축은 **별개 라이프사이클**: 입력 frontmatter `status`(입력 수집 상태, 예: `captured`) ≠ register `Reconcile Status`(reconcile 행위) ≠ 자식 항목(D-/C-/U-/G-/INV-/VER-) open/closed. 섞으면 결정 대기 입력이 "미처리"로 오탐된다.
 
 ## 절차 (register-first)
-1. 입력 결과물을 읽고 `input_id`를 확인한다.
+1. 입력 결과물을 읽고 canonical required frontmatter(input_id / input_type / source_type / source_ref / captured_at / captured_by / status / affected_domains / affected_screens)를 확인한다. `input_id`가 멱등성·역추적의 키.
 2. Register에서 같은 `input_id` 행을 확인한다:
    - `reconciled` → **멈춘다** (이미 처리됨, 멱등성).
    - `in-progress` (이전 실행 중단) → 새 행 추가하지 말고 **그 행을 이어서** 처리한다.
    - 없음 → 다음 단계.
 3. Register에 행을 먼저 쓴다 (`Reconcile Status: in-progress`). ← 문서 수정보다 먼저. 파일이 없으면 아래 스키마로 생성.
-4. `suggested_scope` 기준으로 관련 산출물을 연다 (ScreenSpec / Navigation Map / Domain Rules / Component Catalog / Open Decisions / Conflicts / API schema).
+4. `affected_domains`/`affected_screens`(구 `suggested_scope` — deprecated read-compat) 기준으로 관련 산출물을 연다 (ScreenSpec / Navigation Map / Domain Rules / Component Catalog / Open Decisions / Conflicts / API schema).
 5. 기존 `confirmed` 문서·`resolved` 결정과 충돌하는지 대조한다.
 6. classification을 만든다 (입력 1개 → item 여러 개 가능). 아래 분류표 참조.
 7. 자동 반영 가능한 `simple-update`만 문서에 반영한다.
