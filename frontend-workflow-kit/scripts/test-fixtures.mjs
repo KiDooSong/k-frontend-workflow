@@ -12,15 +12,17 @@
 //
 // 불변식:
 //  - reconcile 비교 대상은 항상 expected-llm-after. human-final(expected-after)을 LLM 출력처럼
-//    비교하지 않는다 (요구사항 #1·#2 — GOLDEN_IR 로 고정).
-//  - reconcile-input-001 의 실패는 "의도된 증거"다 (요구사항 #3). 기대 판정은 run-metadata.json
-//    의 expect 필드로 데이터화한다(expect=xfail → 실패해도 비치명).
-//  - reconcile-input-002 는 통과 필수 (요구사항 #4 — expect=pass).
+//    비교하지 않는다 (요구사항 #1·#2 — GOLDEN_IR 로 고정 + run-metadata compare_against 검증).
+//  - reconcile-input-001 의 실패는 "의도된 증거"다 (요구사항 #3). 기대 판정은 run-metadata.json 의
+//    expect 필드로 데이터화(expect=xfail → 실패=비치명). strict: 통과로 바뀌면 xpass=치명(exit 1)
+//    — 증거 fixture 가 회귀를 더는 증명 못 하므로 시끄럽게 깨뜨려 재분류를 강제한다.
+//  - reconcile-input-002 는 통과 필수 (요구사항 #4 — expect=pass, 실패 시 치명).
 //  - 경로 경계(forbidden_paths) 검사는 하지 않는다 — Lane B 소관 (요구사항 #6).
 //  - readiness/validate 판정을 재구현하지 않는다(게이트 단일 출처 보존).
 //
 // 사용: node scripts/test-fixtures.mjs [--json]
-// exit: 0 = PASS 기대 fixture 전부 통과(xfail 은 실패해도 무방) · 1 = 치명 실패 · 2 = 설정/IO 오류.
+// exit: 0 = 모든 fixture 가 기대대로(pass 통과 + xfail 실패) · 1 = 치명(pass 실패 또는 xfail 이 통과=xpass)
+//       · 2 = 설정/IO 오류(깨진 run-metadata.json 등).
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs, KIT_ROOT, readFileSafe } from './lib/util.mjs';
@@ -48,25 +50,40 @@ const RECON_MANIFEST = {
     'IN-20260613-qa-001',
   ],
   decisionsFile: '_meta/decision-log.md',
-  decisionsMustStayOpen: ['D-001', 'D-003', 'D-204'], // resolved 면 FAIL (LLM 은 닫지 않음)
+  decisionsMustStayOpen: ['D-001', 'D-003', 'D-204'], // open 아니면 FAIL (LLM 은 닫지 않음)
   conflictsFile: '_meta/conflicts.md',
-  conflictsMustStayOpen: ['C-001'],                    // resolved 면 FAIL
+  conflictsMustStayOpen: ['C-001'],                    // open 아니면 FAIL
   gapsFile: 'global/component-gap-register.md',
   gapsMustNotBeAccepted: ['G-001'],                    // accepted 면 FAIL (승인은 사람)
   couponSpec: 'domains/coupons/screens/coupon-list/screen-spec.md',
-  unknownsMustStayOpen: ['U-001'],                     // resolved 면 FAIL (Unknown 닫기는 사람)
+  unknownsMustStayOpen: ['U-001'],                     // open 아니면 FAIL (Unknown 닫기는 사람)
   unknownsMustNotExist: ['U-002'],                     // 신설되면 FAIL (-001 회귀)
 };
 
-// run-metadata.json 읽기 (expect: pass|xfail, reason). 없으면 기본 pass.
-function readRunMeta(runDir) {
+// run-metadata.json 읽기 (expect: pass|xfail, reason). 파일이 없으면 기본 {}(=pass).
+// 깨진 JSON / 잘못된 expect / 비정상 compare_against·actual 은 조용히 넘기지 않고 설정 오류로 던진다
+// (main 이 exit 2 로 처리). 메타데이터 드리프트를 일찍, 시끄럽게 드러낸다.
+function readRunMeta(runId, runDir) {
   const raw = readFileSafe(path.join(runDir, 'run-metadata.json'));
   if (raw == null) return {};
+  let meta;
   try {
-    return JSON.parse(raw) || {};
-  } catch {
-    return {};
+    meta = JSON.parse(raw) || {};
+  } catch (e) {
+    throw new Error(`${runId}/run-metadata.json JSON 파싱 실패: ${e.message}`);
   }
+  if (meta.expect !== undefined && meta.expect !== 'pass' && meta.expect !== 'xfail') {
+    throw new Error(`${runId}/run-metadata.json expect 값이 잘못됨: ${JSON.stringify(meta.expect)} (pass|xfail 만 허용)`);
+  }
+  if (meta.actual !== undefined && meta.actual !== 'actual-llm-after') {
+    throw new Error(`${runId}/run-metadata.json actual 값이 잘못됨: ${JSON.stringify(meta.actual)} (actual-llm-after 만 허용)`);
+  }
+  // compare_against 는 항상 LLM 정답지여야 한다 (human-final 비교 금지 — 요구사항 #1·#2).
+  if (meta.compare_against !== undefined &&
+      !String(meta.compare_against).replace(/\\/g, '/').endsWith('expected-llm-after')) {
+    throw new Error(`${runId}/run-metadata.json compare_against 가 expected-llm-after 가 아님: ${JSON.stringify(meta.compare_against)}`);
+  }
+  return meta;
 }
 
 // fixture 목록 구성 — kind: reconcile | integrity.
@@ -87,7 +104,7 @@ function buildFixtures() {
   // reconcile-input runs: actual-llm-after vs golden. 기대 판정은 run-metadata.json 에서.
   for (const runId of ['reconcile-input-001', 'reconcile-input-002']) {
     const runDir = path.join(RUNS, runId);
-    const meta = readRunMeta(runDir);
+    const meta = readRunMeta(runId, runDir);
     fixtures.push({
       id: runId,
       kind: 'reconcile',
@@ -132,12 +149,15 @@ function runFixture(fx) {
     : runIntegrityChecks(fx);
   const checksFailed = res.failed > 0;
 
-  // verdict: expect=xfail 이면 실패해야 의미(증거) — 실패=xfail(비치명), 통과=xpass(증거 stale 경고, 비치명).
-  //          expect=pass 이면 통과 필수 — 실패=fail(치명).
+  // verdict: expect=xfail 은 strict — 실패해야 의미(증거)다. 실패=xfail(비치명), 통과=xpass(치명).
+  //          xpass 를 치명으로 두는 이유: 증거 fixture 가 통과로 바뀌면 더는 회귀를 증명하지 못하므로
+  //          (golden/actual 드리프트 신호) 시끄럽게 깨뜨려 재분류/갱신을 강제한다.
+  //          expect=pass 는 통과 필수 — 실패=fail(치명).
   let verdict;
-  let fatal = false;
+  let fatal;
   if (fx.expectVerdict === 'xfail') {
     verdict = checksFailed ? 'xfail' : 'xpass';
+    fatal = !checksFailed; // xpass = 치명
   } else {
     verdict = checksFailed ? 'fail' : 'pass';
     fatal = checksFailed;
@@ -153,9 +173,10 @@ function render(results) {
     lines.push(`[${r.verdict.toUpperCase()}] ${r.id} (${r.kind})${r.reason ? ' — ' + r.reason : ''}`);
     for (const c of r.checks) lines.push(`    ${c.ok ? 'ok  ' : 'FAIL'} [${c.check}] ${c.message}`);
   }
-  const fatal = tally.fail;
+  // 치명 = fail + xpass (strict xfail). 둘 다 exit 1 을 부른다.
+  const fatal = results.filter((r) => r.fatal).length;
   const summary =
-    `test-fixtures — ${fatal ? fatal + ' FAIL' : 'PASS'} ` +
+    `test-fixtures — ${fatal ? fatal + ' FATAL' : 'PASS'} ` +
     `(${results.length} fixtures: ${tally.pass} pass, ${tally.xfail} xfail, ${tally.xpass} xpass, ${tally.fail} fail)`;
   return { summary, body: lines.join('\n'), fatal };
 }

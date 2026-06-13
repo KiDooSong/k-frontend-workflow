@@ -33,7 +33,7 @@
 - **E:files** — expected 산출물이 actual 에 모두 존재(존재 패리티만 — 경로 경계 X).
 - **E:content** — 정규화(generated_at·date·CRLF) 후 동일/차이 집계. **정보성, 비게이트** (cosmetic 차이 허용).
 - **R:register** — reconciliation-register 입력 5행 + 전부 `reconciled`.
-- **F:decision/conflict/gap/confirmed/unknown** — 사람-전용 전이 부재: D-001/D-003/D-204·C-001 `resolved` 아님, G-001 `accepted` 아님, COUPON-001 `status: confirmed` 아님, U-001 `open` 유지, U-002 미신설.
+- **F:decision/conflict/gap/confirmed/unknown** — 사람-전용 전이 부재: D-001/D-003/D-204·C-001·U-001 = `open` 유지(strict — open 이 아니면 FAIL), G-001 `accepted` 아님, COUPON-001 `status: confirmed` 아님, U-002 미신설. 행 부재·표 깨짐·frontmatter 파싱오류도 fail-closed.
 
 ```
 test-fixtures — PASS (6 fixtures: 5 pass, 1 xfail, 0 xpass, 0 fail)
@@ -71,5 +71,5 @@ node scripts/test-fixtures.mjs → PASS, exit 0
 ## 메모
 - **경로 표기**: 타스크의 allowed-files 는 `frontend-workflow-kit/temp/runs/**` 로 적혀 있으나, 실제 runs 는 **레포 루트** `temp/runs/**` 에 있다(킷 밖). 하니스는 `KIT_ROOT/../temp/runs` 로 해석하며, 리포트도 루트 `temp/runs/` 에 둔다.
 - **npm 스크립트**: 타스크가 "꼭 필요할 때만" 으로 제한했고 검증은 `node scripts/test-fixtures.mjs` 직접 호출이라 `package.json` 은 **건드리지 않았다**. 후속(후보 ③ hook/CI)에서 `example:test` 같은 스크립트를 붙일 수 있다.
-- **xfail/xpass**: `expect: xfail` fixture 가 통과하면 `xpass`(비치명 경고) — "증거가 stale" 신호. 현재 001 은 정상 xfail.
+- **xfail/xpass (strict)**: `expect: xfail` fixture 가 통과하면 `xpass` = **치명(exit 1)** — 증거가 회귀를 더는 증명 못 한다는 신호라 재분류/갱신을 강제한다. 현재 001 은 정상 xfail. (잘못된 `expect`·깨진 `run-metadata.json`·비정상 `compare_against`/`actual` 은 설정 오류로 exit 2.)
 - **stage**: 이번 하니스는 `stage=llm-after` 만. `after`(human-final) 단언·manifest 외부화(YAML)는 후속.

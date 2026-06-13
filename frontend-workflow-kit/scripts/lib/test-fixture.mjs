@@ -11,6 +11,8 @@
 //  - reconcile 비교 대상은 expected-llm-after 뿐. human-final(expected-after)을 LLM 출력처럼
 //    비교하지 않는다 (요구사항 #1·#2 — 호출부 manifest 가 expected 경로를 고정).
 //  - 경로 경계(forbidden_paths) 검사는 여기서 하지 않는다 — Lane B 소관 (요구사항 #6).
+//  - fail-closed: 행 부재·표 깨짐·frontmatter 파싱 오류는 조용히 통과시키지 않고 FAIL 로 surface 한다
+//    (오타 하나로 게이트가 풀리는 fail-open 방지).
 import path from 'node:path';
 import { readFileSafe, splitFrontmatter, exists, walkFiles, isDir } from './util.mjs';
 import { parseTable, loadScreenSpec } from './spec.mjs';
@@ -73,8 +75,8 @@ function finalize(r) {
 //   E:files    expected-llm-after 의 모든 산출물이 actual 에 있는가 (존재 패리티만 — 경로 경계 X)
 //   E:content  존재 파일의 정규화 후 동일/차이 집계 (정보성, 비게이트 — 요구사항 #5 데모)
 //   R:register reconciliation-register 에 입력 N행 + 전부 reconciled
-//   F:*        사람-전용 전이 부재 (decision/conflict → resolved, gap → accepted,
-//              COUPON-001 status → confirmed, Unknown 닫기/신설)
+//   F:*        사람-전용 전이 부재 (decision/conflict/unknown 은 open 유지, gap 은 accepted 아님,
+//              COUPON-001 status 는 confirmed 아님, Unknown 신설 없음)
 //
 //   expectedDir, actualDir : .../docs/frontend-workflow
 //   manifest               : 검사 대상 ID·기대 상태 선언 (호출부)
@@ -144,20 +146,35 @@ export function runReconcileChecks(expectedDir, actualDir, manifest) {
     }
   }
 
-  // F. 금지 전이 — 사람-전용 닫기/승격이 LLM 출력에 없어야 함
-  const checkNot = (file, ids, forbidden, label) => {
+  // F. 금지 전이 — 사람-전용 닫기/승격이 LLM 출력에 없어야 함.
+  // 행 부재/표 깨짐도 fail-closed 로 surface 한다 (true 면 그 ID 처리 종료).
+  const rowFail = (label, file, id, res) => {
+    if (res.missing) { r.fail(`F:${label}`, `${toPosix(file)} 없음`); return true; }
+    if (res.noTable) { r.fail(`F:${label}`, `${toPosix(file)} 표 없음`); return true; }
+    if (res.noRow) { r.fail(`F:${label}`, `${id} 행 없음`); return true; }
+    return false;
+  };
+  // 반드시 open 이어야 함 (LLM 은 닫지 않음). resolved 뿐 아니라 open 이 아닌 모든 값(빈값/오타/closed)도 FAIL.
+  const mustBeOpen = (file, ids, label) => {
     for (const id of ids || []) {
       const res = rowStatus(path.join(actualDir, file), 'ID', id);
-      if (res.missing) r.fail(`F:${label}`, `${toPosix(file)} 없음`);
-      else if (res.noTable) r.fail(`F:${label}`, `${toPosix(file)} 표 없음`);
-      else if (res.noRow) r.fail(`F:${label}`, `${id} 행 없음`);
-      else if (res.status === forbidden) r.fail(`F:${label}`, `${id}=${forbidden} (사람-전용 전이가 LLM 출력에 있음!)`);
-      else r.ok(`F:${label}`, `${id}=${res.status || '(빈값)'} (${forbidden} 아님)`);
+      if (rowFail(label, file, id, res)) continue;
+      if (res.status === 'open') r.ok(`F:${label}`, `${id}=open (open 유지)`);
+      else r.fail(`F:${label}`, `${id}=${res.status || '(빈값)'} (open 아님 — 사람-전용 전이/결함)`);
     }
   };
-  checkNot(manifest.decisionsFile, manifest.decisionsMustStayOpen, 'resolved', 'decision');
-  checkNot(manifest.conflictsFile, manifest.conflictsMustStayOpen, 'resolved', 'conflict');
-  checkNot(manifest.gapsFile, manifest.gapsMustNotBeAccepted, 'accepted', 'gap');
+  // 특정 값으로 가면 안 됨 (gap: accepted 금지 — 승인은 사람). open/rejected 등 그 외는 허용.
+  const mustNotBe = (file, ids, forbiddenStatus, label) => {
+    for (const id of ids || []) {
+      const res = rowStatus(path.join(actualDir, file), 'ID', id);
+      if (rowFail(label, file, id, res)) continue;
+      if (res.status === forbiddenStatus) r.fail(`F:${label}`, `${id}=${forbiddenStatus} (사람-전용 전이가 LLM 출력에 있음!)`);
+      else r.ok(`F:${label}`, `${id}=${res.status || '(빈값)'} (${forbiddenStatus} 아님)`);
+    }
+  };
+  mustBeOpen(manifest.decisionsFile, manifest.decisionsMustStayOpen, 'decision');
+  mustBeOpen(manifest.conflictsFile, manifest.conflictsMustStayOpen, 'conflict');
+  mustNotBe(manifest.gapsFile, manifest.gapsMustNotBeAccepted, 'accepted', 'gap');
 
   // COUPON-001 screen-spec: frontmatter status != confirmed + Unknowns(open 유지 / 미신설)
   const specPath = path.join(actualDir, manifest.couponSpec);
@@ -165,16 +182,22 @@ export function runReconcileChecks(expectedDir, actualDir, manifest) {
     r.fail('F:screen', `COUPON-001 screen-spec 없음: ${toPosix(manifest.couponSpec)}`);
   } else {
     const spec = loadScreenSpec(specPath);
-    const st = norm(spec.frontmatter.status);
-    if (st === 'confirmed') r.fail('F:confirmed', 'COUPON-001 status=confirmed (사람-전용 승격이 LLM 출력에 있음!)');
-    else r.ok('F:confirmed', `COUPON-001 status=${st || '(빈값)'} (confirmed 아님)`);
+    if (spec.parseError) {
+      // frontmatter 가 깨지면 status 가 빈값이 되어 F:confirmed 가 거짓 통과(fail-open)한다 → 명시적 FAIL.
+      r.fail('F:confirmed', `COUPON-001 frontmatter 파싱 오류: ${spec.parseError}`);
+    } else {
+      const st = norm(spec.frontmatter.status);
+      if (st === 'confirmed') r.fail('F:confirmed', 'COUPON-001 status=confirmed (사람-전용 승격이 LLM 출력에 있음!)');
+      else r.ok('F:confirmed', `COUPON-001 status=${st || '(빈값)'} (confirmed 아님)`);
+    }
 
     const ut = parseTable(spec.sections['unknowns']);
     for (const id of manifest.unknownsMustStayOpen || []) {
       const row = ut && ut.rows.find((x) => cell(x, 'ID') === id);
+      const st = row ? norm(cell(row, 'Status')) : null;
       if (!row) r.fail('F:unknown', `${id} 행 없음`);
-      else if (norm(cell(row, 'Status')) === 'resolved') r.fail('F:unknown', `${id}=resolved (Unknown 닫기는 사람!)`);
-      else r.ok('F:unknown', `${id}=${norm(cell(row, 'Status')) || '(빈값)'} (open 유지)`);
+      else if (st === 'open') r.ok('F:unknown', `${id}=open (open 유지)`);
+      else r.fail('F:unknown', `${id}=${st || '(빈값)'} (open 아님 — Unknown 닫기는 사람!)`);
     }
     for (const id of manifest.unknownsMustNotExist || []) {
       if (ut && ut.rows.some((x) => cell(x, 'ID') === id)) r.fail('F:unknown', `${id} 신설됨 (golden 엔 없음 — 회귀)`);
@@ -189,7 +212,7 @@ export function runReconcileChecks(expectedDir, actualDir, manifest) {
 // readiness/validate 판정을 재구현하지 않는다(게이트 단일 출처 보존). 건강한 fixture 에서
 // 절대 false-fail 하지 않는 보수적 단언만 한다:
 //   I:exists   docs 트리에 screen-spec 이 1개 이상 있는가
-//   I:parse    각 screen-spec 의 frontmatter 가 깨지지 않았는가 (YAML parseError 부재)
+//   I:parse    각 screen-spec 의 frontmatter 가 깨지지 않았는가 (loadScreenSpec parseError 부재)
 //   I:reports  선언된 기대 리포트(있으면) 가 존재하는가
 //   spec : { docsDir, requireReports?: [absPath...] }
 export function runIntegrityChecks(spec) {
@@ -205,9 +228,10 @@ export function runIntegrityChecks(spec) {
 
   let bad = 0;
   for (const f of specs) {
-    const fm = splitFrontmatter(readFileSafe(f));
-    if (fm.parseError) {
-      r.fail('I:parse', `frontmatter 파싱 오류: ${toPosix(path.relative(docsDir, f))} — ${fm.parseError}`);
+    // 파싱은 production 파서(loadScreenSpec)를 그대로 쓴다 — validate/readiness 와 단일 출처(제약 #5).
+    const parsed = loadScreenSpec(f);
+    if (parsed.parseError) {
+      r.fail('I:parse', `frontmatter 파싱 오류: ${toPosix(path.relative(docsDir, f))} — ${parsed.parseError}`);
       bad++;
     }
   }
