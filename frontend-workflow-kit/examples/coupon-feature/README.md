@@ -48,7 +48,7 @@ npm run example:readiness
 #   COUPON-002 → screen-skeleton   (stub: 본문 미작성 → full UI 금지)
 
 npm run example:validate
-#   → 검사 9종 통과 (exit 0)
+#   → 검사 12종 통과 (exit 0)
 ```
 
 ## 이 예제가 보여주는 것

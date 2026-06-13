@@ -63,7 +63,7 @@ node scripts/readiness.mjs --docs {temp/runs/{run_id}/docs/frontend-workflow} --
 ```bash
 npm run workflow:state       # → workflow-state.yaml 재생성 (소스 무수정)
 npm run workflow:readiness   # → readiness_mode 재산출
-npm run workflow:validate    # → 검사 9종 통과 (exit 0)
+npm run workflow:validate    # → 검사 12종 통과 (exit 0)
 ```
 
 ## Result
