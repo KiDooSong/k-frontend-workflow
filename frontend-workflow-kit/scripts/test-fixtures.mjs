@@ -14,14 +14,16 @@
 //  - reconcile 비교 대상은 항상 expected-llm-after. human-final(expected-after)을 LLM 출력처럼
 //    비교하지 않는다 (요구사항 #1·#2 — GOLDEN_IR 로 고정 + run-metadata compare_against 검증).
 //  - reconcile-input-001 의 실패는 "의도된 증거"다 (요구사항 #3). 기대 판정은 run-metadata.json 의
-//    expect 필드로 데이터화(expect=xfail → 실패=비치명). strict: 통과로 바뀌면 xpass=치명(exit 1)
-//    — 증거 fixture 가 회귀를 더는 증명 못 하므로 시끄럽게 깨뜨려 재분류를 강제한다.
+//    expect 필드로 데이터화(expect=xfail → 실패=비치명). strict witness:
+//      · 통과(xpass) → 치명. · 선언된 expected_failures 와 정확히 일치하게 실패 → xfail(비치명).
+//      · 다른 이유로 실패(추가/누락=xdrift) → 치명. 즉 "올바른 이유로 실패"할 때만 증거로 인정한다.
 //  - reconcile-input-002 는 통과 필수 (요구사항 #4 — expect=pass, 실패 시 치명).
 //  - 경로 경계(forbidden_paths) 검사는 하지 않는다 — Lane B 소관 (요구사항 #6).
 //  - readiness/validate 판정을 재구현하지 않는다(게이트 단일 출처 보존).
 //
 // 사용: node scripts/test-fixtures.mjs [--json]
-// exit: 0 = 모든 fixture 가 기대대로(pass 통과 + xfail 실패) · 1 = 치명(pass 실패 또는 xfail 이 통과=xpass)
+// exit: 0 = 모든 fixture 가 기대대로(pass 통과 + xfail 가 선언된 이유로 실패)
+//       · 1 = 치명(pass 실패 / xfail 이 통과=xpass / xfail 이 다른 이유로 실패=xdrift)
 //       · 2 = 설정/IO 오류(깨진 run-metadata.json 등).
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -60,9 +62,9 @@ const RECON_MANIFEST = {
   unknownsMustNotExist: ['U-002'],                     // 신설되면 FAIL (-001 회귀)
 };
 
-// run-metadata.json 읽기 (expect: pass|xfail, reason). 파일이 없으면 기본 {}(=pass).
-// 깨진 JSON / 잘못된 expect / 비정상 compare_against·actual 은 조용히 넘기지 않고 설정 오류로 던진다
-// (main 이 exit 2 로 처리). 메타데이터 드리프트를 일찍, 시끄럽게 드러낸다.
+// run-metadata.json 읽기 (expect: pass|xfail, reason, expected_failures). 파일이 없으면 기본 {}(=pass).
+// 깨진 JSON / 잘못된 expect / 비정상 compare_against·actual / 잘못된 expected_failures 형식은
+// 조용히 넘기지 않고 설정 오류로 던진다 (main 이 exit 2 로 처리). 메타데이터 드리프트를 일찍 드러낸다.
 function readRunMeta(runId, runDir) {
   const raw = readFileSafe(path.join(runDir, 'run-metadata.json'));
   if (raw == null) return {};
@@ -82,6 +84,17 @@ function readRunMeta(runId, runDir) {
   if (meta.compare_against !== undefined &&
       !String(meta.compare_against).replace(/\\/g, '/').endsWith('expected-llm-after')) {
     throw new Error(`${runId}/run-metadata.json compare_against 가 expected-llm-after 가 아님: ${JSON.stringify(meta.compare_against)}`);
+  }
+  // expected_failures: xfail witness 가 "어떤 이유로" 실패해야 하는지 고정 (선택). [{check, match}...].
+  if (meta.expected_failures !== undefined) {
+    if (!Array.isArray(meta.expected_failures)) {
+      throw new Error(`${runId}/run-metadata.json expected_failures 는 배열이어야 함`);
+    }
+    for (const e of meta.expected_failures) {
+      if (!e || typeof e.check !== 'string' || typeof e.match !== 'string') {
+        throw new Error(`${runId}/run-metadata.json expected_failures 항목은 {check, match} 문자열이어야 함: ${JSON.stringify(e)}`);
+      }
+    }
   }
   return meta;
 }
@@ -110,6 +123,7 @@ function buildFixtures() {
       kind: 'reconcile',
       expectVerdict: meta.expect === 'xfail' ? 'xfail' : 'pass',
       reason: meta.reason || '',
+      expectedFailures: meta.expected_failures || [],
       expectedDir: path.join(GOLDEN_IR, DF),
       actualDir: path.join(runDir, 'actual-llm-after', DF),
       manifest: RECON_MANIFEST,
@@ -147,37 +161,56 @@ function runFixture(fx) {
   const res = fx.kind === 'reconcile'
     ? runReconcileChecks(fx.expectedDir, fx.actualDir, fx.manifest)
     : runIntegrityChecks(fx);
-  const checksFailed = res.failed > 0;
+  const checks = res.checks.slice();
+  const failedChecks = checks.filter((c) => !c.ok);
+  const checksFailed = failedChecks.length > 0;
 
-  // verdict: expect=xfail 은 strict — 실패해야 의미(증거)다. 실패=xfail(비치명), 통과=xpass(치명).
-  //          xpass 를 치명으로 두는 이유: 증거 fixture 가 통과로 바뀌면 더는 회귀를 증명하지 못하므로
-  //          (golden/actual 드리프트 신호) 시끄럽게 깨뜨려 재분류/갱신을 강제한다.
-  //          expect=pass 는 통과 필수 — 실패=fail(치명).
+  // verdict 판정.
+  //  expect=pass : 통과 필수 — 실패=fail(치명).
+  //  expect=xfail: strict 증거 witness —
+  //    · 통과(xpass)                          → 치명(회귀를 더는 증명 못 함).
+  //    · expected_failures 와 정확히 일치 실패 → xfail(비치명; 의도된 증거).
+  //    · 그 외 실패(추가/누락=xdrift)          → 치명(witness 가 다른 회귀를 가릴 수 있음).
+  //    · expected_failures 미선언 시 어떤 실패든 xfail(하위호환).
   let verdict;
   let fatal;
-  if (fx.expectVerdict === 'xfail') {
-    verdict = checksFailed ? 'xfail' : 'xpass';
-    fatal = !checksFailed; // xpass = 치명
-  } else {
+  if (fx.expectVerdict !== 'xfail') {
     verdict = checksFailed ? 'fail' : 'pass';
     fatal = checksFailed;
+  } else if (!checksFailed) {
+    verdict = 'xpass';
+    fatal = true;
+  } else {
+    const ef = fx.expectedFailures || [];
+    const hit = (c, e) => c.check === e.check && c.message.includes(e.match);
+    const unexpected = failedChecks.filter((c) => !ef.some((e) => hit(c, e)));
+    const missing = ef.filter((e) => !failedChecks.some((c) => hit(c, e)));
+    if (ef.length && (unexpected.length || missing.length)) {
+      verdict = 'xdrift';
+      fatal = true;
+      for (const c of unexpected) checks.push({ check: 'X:drift', ok: false, message: `예상 밖 실패: [${c.check}] ${c.message}` });
+      for (const e of missing) checks.push({ check: 'X:drift', ok: false, message: `예상한 실패 사라짐: [${e.check}] ~"${e.match}"` });
+    } else {
+      verdict = 'xfail';
+      fatal = false;
+    }
   }
-  return { ...fx, checks: res.checks, failed: res.failed, verdict, fatal };
+  return { ...fx, checks, failed: checks.filter((c) => !c.ok).length, verdict, fatal };
 }
 
 function render(results) {
   const lines = [];
-  const tally = { pass: 0, xfail: 0, xpass: 0, fail: 0 };
+  const tally = { pass: 0, xfail: 0, xpass: 0, xdrift: 0, fail: 0 };
   for (const r of results) {
     tally[r.verdict] = (tally[r.verdict] || 0) + 1;
     lines.push(`[${r.verdict.toUpperCase()}] ${r.id} (${r.kind})${r.reason ? ' — ' + r.reason : ''}`);
     for (const c of r.checks) lines.push(`    ${c.ok ? 'ok  ' : 'FAIL'} [${c.check}] ${c.message}`);
   }
-  // 치명 = fail + xpass (strict xfail). 둘 다 exit 1 을 부른다.
+  // 치명 = fail + xpass + xdrift (strict xfail). 모두 exit 1 을 부른다.
   const fatal = results.filter((r) => r.fatal).length;
   const summary =
     `test-fixtures — ${fatal ? fatal + ' FATAL' : 'PASS'} ` +
-    `(${results.length} fixtures: ${tally.pass} pass, ${tally.xfail} xfail, ${tally.xpass} xpass, ${tally.fail} fail)`;
+    `(${results.length} fixtures: ${tally.pass} pass, ${tally.xfail} xfail, ${tally.xpass} xpass, ${tally.xdrift} xdrift, ${tally.fail} fail)`;
   return { summary, body: lines.join('\n'), fatal };
 }
 

@@ -5,10 +5,14 @@
   "compare_against": "frontend-workflow-kit/examples/input-reconciliation/expected-llm-after",
   "actual": "actual-llm-after",
   "expect": "xfail",
+  "expected_failures": [
+    { "check": "F:unknown", "match": "U-001" },
+    { "check": "F:unknown", "match": "U-002" }
+  ],
   "reason": "pre-fix 계약 블라인드 dry-run — LLM 이 U-001 을 resolved 로 닫고 U-002 를 신설(올리기만 위반). 계약 결함을 노출해 PR #1 로 이어진 증거 run. golden 아님.",
   "known_divergences": [
     "U-001 = resolved (golden: open — Unknown 닫기는 사람)",
     "U-002 신설 (golden: 미존재)"
   ],
-  "note": "expect=xfail (strict): 하니스가 이 run 의 raise-only 위반을 잡아 FAIL 하는 것이 정상(비치명). 통과로 바뀌면 xpass=치명(exit 1) — 증거가 회귀를 더는 증명 못 하므로 재분류/갱신 필요."
+  "note": "expect=xfail (strict): 하니스가 이 run 의 raise-only 위반을 잡아 FAIL 하는 것이 정상(비치명). expected_failures 로 실패 이유(F:unknown U-001·U-002)를 고정 — 통과하면 xpass=치명(exit 1), 다른 이유로 실패하면 xdrift=치명. 즉 '올바른 이유로 실패'할 때만 증거로 인정."
 }
