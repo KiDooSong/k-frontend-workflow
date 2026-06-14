@@ -225,7 +225,7 @@ artifacts:
   # MVP-C 가 아니다. 레지스트리 완전성을 위해 등록만 한다(구현 아님). 생성기 lint-gen.mjs 미존재.
   # 경로가 레포 루트라(docs/frontend-workflow/ 밑이 아님) validate 검사 6 의 경로 해소
   # (docs/frontend-workflow/ 접두 가정: validate.mjs:436)가 이 루트 파일을 못 짚는다 —
-  # 이 가드 공백은 generated-file-guard-followup.md 에 정리.
+  # 이 가드 공백은 frontend-workflow-kit/temp/proposals/generated-file-guard-followup.md 에 정리.
   eslint-workflow-config:
     kind: generated
     generated: true
