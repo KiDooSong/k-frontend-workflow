@@ -26,6 +26,7 @@ import {
   parseArgs,
   DEFAULTS,
   loadYaml,
+  loadYamlOrExit,
   walkFiles,
   findFiles,
   readFileSafe,
@@ -100,10 +101,17 @@ function main() {
   const docsDir = path.resolve(flags.docs || DEFAULTS.docs);
   const srcDir = path.resolve(flags.src || DEFAULTS.src);
   const projectRoot = flags.root ? path.resolve(flags.root) : path.dirname(srcDir);
-  const manifest = loadYaml(path.resolve(flags.manifest || DEFAULTS.manifest)) || {};
-  const schema = JSON.parse(readFileSafe(path.resolve(flags.schema || DEFAULTS.schema)) || '{}');
+  const manifest = loadYamlOrExit(path.resolve(flags.manifest || DEFAULTS.manifest), 'manifest', 'validate') || {};
+  const schemaPath = path.resolve(flags.schema || DEFAULTS.schema);
+  let schema;
+  try {
+    schema = JSON.parse(readFileSafe(schemaPath) || '{}');
+  } catch (err) {
+    process.stderr.write(`validate: schema JSON 파싱 실패 — ${schemaPath}\n  ${err.message}\n`);
+    process.exit(2);
+  }
   // 정책: 검사 9 의 Blocking Mode 유효성(정책 모드명인지)에 쓴다. 게이트 판정은 readiness 단일 출처.
-  const policy = loadYaml(path.resolve(flags.policy || DEFAULTS.policy)) || {};
+  const policy = loadYamlOrExit(path.resolve(flags.policy || DEFAULTS.policy), 'policy', 'validate') || {};
 
   const errors = [];
   const add = (check, file, message) =>

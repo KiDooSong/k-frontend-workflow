@@ -1,5 +1,10 @@
 # 프론트엔드 LLM 워크플로우 (Core)
 
+> ⚠ **현행 정본 주의 (2026-06-14 추가)**: 게이트·검사·티어·모드 사다리의 **현재 정본**은
+> [roadmap-current.md](frontend-workflow-kit/roadmap-current.md) · [open-decisions.md](frontend-workflow-kit/open-decisions.md) · [README 문서지도](frontend-workflow-kit/README.md#문서-지도)다.
+> 이 문서는 **설계 배경·사상**으로 읽되, `decision_cap`·검사 9~12·`screen-skeleton`/`docs-only` 등
+> 현행 게이트 세부는 위 정본을 따른다 (이 문서엔 미반영 — 역방향 드리프트, 분석 보고서 P3/P4).
+
 > 목적: Expo 앱, 디자인시스템, Figma, 와이어프레임, 백엔드 API를 LLM 기반 프론트엔드 개발 흐름에 맞게 단계별로 정리한다.
 > 버전: v5 (2026-06-12) — 이전 버전: `archive/` (v1 원본명, `*-v2`~`*-v4`)
 > v5 변경(외부 리뷰 반영): 문서 경로 통일(docs/frontend-workflow/design/*), Entry Points를 GENERATED 블록 마커로,

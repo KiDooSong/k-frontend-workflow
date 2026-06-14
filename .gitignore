@@ -4,3 +4,6 @@
 # 임시 작업물 — 추적 안 함
 temp/archive/
 temp/claude-handoff*
+
+# git worktree (격리 작업용) — 본래 추적 대상 아님 (분석 보고서 P11)
+.claude/worktrees/
