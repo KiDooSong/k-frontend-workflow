@@ -8,7 +8,7 @@
 //   기본값: --src src/components/ui  --out docs/frontend-workflow/design/component-catalog.md
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { parseArgs, writeFile } from './lib/util.mjs';
+import { parseArgs, writeFile, isDir } from './lib/util.mjs';
 import { buildCatalog, renderCatalog } from './lib/catalog-gen.mjs';
 
 function main() {
@@ -19,6 +19,18 @@ function main() {
       ? flags.out
       : 'docs/frontend-workflow/design/component-catalog.md',
   );
+
+  // --src 가 실재 디렉토리가 아니면(오타·잘못된 CWD) walkFiles 가 []를 돌려주고, 빈 카탈로그로
+  // 기존 산출물을 덮어쓰는 사일런트 데이터 손실이 난다(util.walkFiles:isDir 가드). → 스캔·쓰기 전에
+  // 입력을 검증해 exit 2(입력 오류, util.loadYamlOrExit 계약과 일치)로 끊는다. --json/--dry-run 포함.
+  const srcAbs = path.resolve(src);
+  if (!isDir(srcAbs)) {
+    process.stderr.write(
+      `workflow:catalog — --src is not a directory: ${src}\n` +
+        `  (resolved: ${srcAbs})\n`,
+    );
+    process.exit(2);
+  }
 
   const model = buildCatalog({ src });
   const count = model.components.length;

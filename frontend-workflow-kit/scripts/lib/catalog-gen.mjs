@@ -48,6 +48,8 @@ export function classifyComponentFile(absFile, content) {
   const src = content || '';
   // memo/forwardRef 래퍼 → 제외 (v1 plain 선언만, §7.4(d)/OD-5). RHS 가 다음 줄에 와도
   // (`export const X =` 다음 줄 `  forwardRef(...)`) `=\s*` 의 \s 가 개행을 포함하므로 잡힌다.
+  // 한계(v1 heuristic): `= /* @__PURE__ */ React.memo(…)` 처럼 주석이 끼거나 `= (React.memo)(…)`
+  // 처럼 괄호로 감싼 표기는 못 잡아 false-include 될 수 있다(실트리엔 0건, 견고한 파싱은 후속 §3).
   const wrapRe = new RegExp(
     `^\\s*export\\s+const\\s+${base}\\b[^\\n]*=\\s*(?:React\\.)?(?:memo|forwardRef)\\b`,
     'm',
@@ -64,7 +66,8 @@ export function classifyComponentFile(absFile, content) {
   if (!fnRe.test(src) && !constRe.test(src)) return null;
 
   // source_path: 정본 글롭 기준 posix 상대경로 — 매니페스트 source(src/components/ui/**)와 일치.
-  // --src 가 어디를 가리키든 components/ui 세그먼트부터 앵커링해 결정적·이식적 경로를 낸다.
+  // --src 가 어디를 가리키든 첫 `/components/ui/` 세그먼트부터 앵커링해 결정적·이식적 경로를 낸다.
+  // (전제: --src 아래 ui 루트는 하나 — v1 단일루트 계약. 여러 ui 루트를 한 번에 스캔하면 동일 상대경로 충돌 가능.)
   const rest = posixAbs.slice(idx + UI_MARKER.length); // 'Button.tsx' | 'forms/Field.tsx'
   const source_path = 'src/components/ui/' + rest;
 
