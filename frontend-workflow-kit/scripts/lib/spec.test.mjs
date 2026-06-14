@@ -77,18 +77,19 @@ test('P7: computeReadiness 가 policy.modes 누락 시 throw 하지 않는다 (f
   );
 });
 
-test('P13: interactionResultRoutes 가 후행 구두점·쿼리·외부 URL 을 라우트로 오인하지 않는다', () => {
+test('P13: interactionResultRoutes — 다중 라우트 추출 · 후행 구두점·쿼리·외부/PR URL 제외', () => {
   const spec = {
     sections: {
       'interaction matrix': [
         '| Trigger | Result |',
         '| --- | --- |',
-        '| tap | go /coupons/[id], then back |',
+        '| tap | go /coupons/[id], then /home |',
         '| q | /list?x=1 |',
         '| ext | see http://a/b |',
+        '| pr | //cdn/x asset |',
       ].join('\n'),
     },
   };
-  // 후행 콤마 제거 · 쿼리 절단 · 외부 URL 제외
-  assert.deepEqual(interactionResultRoutes(spec), ['/coupons/[id]', '/list']);
+  // 한 셀의 두 라우트 모두 추출(/coupons/[id], /home) · 콤마 제거 · 쿼리 절단 · http(s):// 와 protocol-relative // 제외
+  assert.deepEqual(interactionResultRoutes(spec), ['/coupons/[id]', '/home', '/list']);
 });
