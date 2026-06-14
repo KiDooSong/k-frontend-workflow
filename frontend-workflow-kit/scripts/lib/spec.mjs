@@ -374,9 +374,14 @@ export function interactionResultRoutes(spec) {
   for (const r of table.rows) {
     const v = col(r, 'Result');
     if (!v) continue;
-    // "/coupons/[id] 이동" 처럼 텍스트가 섞일 수 있으므로 라우트 토큰만 뽑는다
-    const m = /(\/[^\s]+)/.exec(v);
-    if (m) routes.push(m[1]);
+    // "/coupons/[id] 이동" 처럼 텍스트가 섞일 수 있으므로 라우트 토큰만 뽑는다.
+    // 외부 URL(http(s)://…)은 라우트가 아니므로 제외하고(스킴의 / 는 콜론/슬래시/단어 뒤라 lookbehind 로 걸러짐),
+    // 쿼리(?)·프래그먼트(#)는 자르고 후행 구두점은 떼어낸다 — 검사 4 오탐 방지.
+    const m = /(?<![:/\w])(\/[^\s?#]+)/.exec(v);
+    if (m) {
+      const route = m[1].replace(/[),.;:]+$/, '');
+      if (route.length > 1) routes.push(route);
+    }
   }
   return routes;
 }

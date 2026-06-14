@@ -3,10 +3,11 @@
 //   P1: parseTable 가 빈 줄로 구분된 두 표를 병합해 진짜 Open Decisions 표가 증발 → readiness fail-OPEN.
 //   P2: splitRow 가 셀 내 escaped pipe(\|)를 컬럼 구분자로 오인해 Status/Blocking Mode 가 밀림.
 //   P7: computeReadiness 가 policy.modes 누락 시 Object.keys(undefined) 로 throw (fail-closed 구멍).
+//   P13: interactionResultRoutes 가 후행 구두점·쿼리·외부 URL 을 라우트로 오인 (검사 4 오탐).
 // 실행: npm run test:spec  (또는 node --test scripts/lib/spec.test.mjs)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseTable, parseTables, parseOpenDecisions, parseCopyKeys } from './spec.mjs';
+import { parseTable, parseTables, parseOpenDecisions, parseCopyKeys, interactionResultRoutes } from './spec.mjs';
 import { computeReadiness } from '../readiness.mjs';
 
 test('P1: 범례 표 뒤 빈 줄로 분리된 진짜 Open Decisions 표가 증발하지 않는다', () => {
@@ -74,4 +75,20 @@ test('P7: computeReadiness 가 policy.modes 누락 시 throw 하지 않는다 (f
   assert.doesNotThrow(() =>
     computeReadiness({ state: { screens: {} }, policy: { version: 1 }, ci: {}, manifest: {} }),
   );
+});
+
+test('P13: interactionResultRoutes 가 후행 구두점·쿼리·외부 URL 을 라우트로 오인하지 않는다', () => {
+  const spec = {
+    sections: {
+      'interaction matrix': [
+        '| Trigger | Result |',
+        '| --- | --- |',
+        '| tap | go /coupons/[id], then back |',
+        '| q | /list?x=1 |',
+        '| ext | see http://a/b |',
+      ].join('\n'),
+    },
+  };
+  // 후행 콤마 제거 · 쿼리 절단 · 외부 URL 제외
+  assert.deepEqual(interactionResultRoutes(spec), ['/coupons/[id]', '/list']);
 });
