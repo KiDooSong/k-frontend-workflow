@@ -171,7 +171,7 @@ edges:
 
 **왜.** `component-catalog` 는 `artifact-manifest.yaml` 에 `kind=generated` 로 이미 등록돼 있으나(line 120-128), 템플릿·생성기(`catalog-gen.mjs`)가 없고 **`do_not_edit: false`(MVP-A 수동 모드)**다. **MVP-C readiness 게이트가 `component_catalog_generated == true` 를 요구**한다(`implementation-mode-policy.yaml:63`) — 이 fact 가 `false` 인 한 `rough-fixture-ui` 가 안 열린다. **단 현재 이 fact 는 `design/component-catalog.md` 의 *존재 여부*다**(`workflow-state.mjs:98` `exists(catalogPath)`) — 수동 작성 파일도 fact 를 켠다. 따라서 catalog-gen 은 게이트를 처음 여는 게 아니라 그 수동 존재를 **생성 계약(do_not_edit:true)으로 승격**하는 작업이다. drift 위험: 저작(component-gap-register.md)과 생성(component-catalog.md) 사이 가시성 공백 — 화면이 컴포넌트를 참조하고 gap 을 선언하므로, catalog 가 실제 사용 + gap 을 집계해야 툴링·gap 추적이 이어진다.
 
-**source of truth.** `artifact-manifest.yaml §component-catalog`(line 120-128: 경로/명령/source) + README §"MVP-A에 들어있는 것"(component-catalog 은 C 단계 생성기 도입 취지 — "lint-pack·Figma·생성뷰·훅은 이후 B~D") + `implementation-mode-policy.yaml`(line 63, 97-98, 104). 참조 산출물: coupon-feature 의 **수동 작성** `design/component-catalog.md`(MVP-A) — 생성기가 맞춰야 할 구체 출력 예시.
+**source of truth.** `artifact-manifest.yaml §component-catalog`(line 120-128: 경로/명령/source) + README §"MVP-A에 들어있는 것"(component-catalog 은 C 단계 생성기 도입 취지 — "lint-pack·Figma·생성뷰·훅은 이후 B~D") + `implementation-mode-policy.yaml`(rough-fixture-ui 의 requires: `component_catalog_generated == true`). 참조 산출물: coupon-feature 의 **수동 작성** `design/component-catalog.md`(MVP-A) — 생성기가 맞춰야 할 구체 출력 예시.
 
 **output file.** `docs/frontend-workflow/design/component-catalog.md` (GENERATED) — `artifact-manifest.yaml:123` 과 일치해야 함. `do_not_edit` 은 MVP-C 핸드오프에서 **false→true** 전환(line 127).
 
