@@ -122,7 +122,7 @@ npm test (하니스)     → 21 fixtures: 20 pass / 1 의도된 xfail / 0 fail
 P5 splitFrontmatter  → hasFrontmatter=true · required 9필드 인식
 ```
 
-**미수정(후속)**: P6/P7(설정 로드 통일·TypeError) · P8/P9/P10/P12/P15/P16(문서-코드 정합) · P13/P14(파서 오탐). 우선순위는 §7.
+**미수정(후속)**: P8/P9/P10/P12/P15/P16(문서-코드 정합) · P13/P14(파서 오탐). (P3/P4·P6/P7·P11 은 후속 브랜치에서 완료 — §7.) 우선순위는 §7.
 
 ---
 
