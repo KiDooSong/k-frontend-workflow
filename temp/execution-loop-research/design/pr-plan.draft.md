@@ -87,6 +87,7 @@ PR2~4 는 **실행 계층**이지만, 셋 다 아래 전제를 깬 줄이라도 
 
 - packet 스킬은 `Ambiguity Review Required` 의 `Safe To Proceed?` 표를 **후보로 채운다** — `ambiguity-triage.md` rubric 을 *대화 가이드로* 따르되, 분류 결과는 항상 **후보(D-cand/U-cand) 제안**이다.
 - **닫지 않는다**: LLM 은 Unknown/Decision/Conflict 를 닫거나, ScreenSpec 에 직접 확정하거나, `candidate→confirmed` 로 올리지 않는다(불변식 4). 빈 표면은 "없음 — <사유>" 로 명시.
+  - ⚠ **scope 주의 (PR2 설계 혼선 방지)**: 위 "닫지 않는다 / 직접 확정 안 한다"는 `workflow:packet` / `workflow:run` / review 단계에 **한정**한다. ScreenSpec **authoring / reconcile** 단계의 LLM 은 기존 규칙대로 `open` Unknown / Open Decision 행을 추가하거나 `resolved → open` 재오픈할 수 있다(`global/llm-rules.md` · `input-reconciliation.md`). 항상 사람만: resolve / close / confirmed 승격 / 재-resolve.
 - 이 표는 **warning-only 텍스트**다 — packet 스킬이 `Safe To Proceed?` 를 파싱해 exit 1 하지 않는다(§8 가드 1).
 
 ### 5.3 §9.6 가드 (PR2 적용)
@@ -239,4 +240,4 @@ generated file/guard 세부는 **확정하지 않는다**. Session C(generated-f
 ### 잔여 불확실성 (self_check)
 - run-report 의 변경 목록 섹션은 실제로 `## Files Changed` **와** `## Diff Summary` 두 개가 있다(템플릿 확인). 증거 ② 매핑은 PR1b 초안을 따라 `## Diff Summary`(+`## Files Changed`)로 적었다 — PR3 작성 시 둘의 역할 분담은 사람이 확정(보수적으로 양쪽 모두 라벨링 권고).
 - `docs/workflows/ambiguity-triage.md` 의 **최종 위치/형식**은 사람 미확정(ambiguity-triage.draft.md §8-4). 이 계획은 PR1b 가 그 경로로 신설한다고 가정하되, proposal 로 둘 가능성을 열어둔다.
-- PR2~4 가 스킬(`skills/`)로 갈지 순수 스크립트(`scripts/*.mjs` + `package.json`)로 갈지의 **형식**은 이 계획에서 확정하지 않았다(계약만). 보수적으로 "스킬 + npm script 1줄"로 적었으나, 구현 형식은 각 PR 시점 결정.
+- PR2~4 가 스킬(`skills/`)로 갈지 순수 스크립트(`scripts/*.mjs` + `package.json`)로 갈지의 **형식**은 이 계획에서 확정하지 않았다(계약만). PR2 착수 *전*에 아래 둘 중 하나로 못박는다 — **A. 스킬 중심**: `skills/workflow-packet/SKILL.md` 위주, npm script 는 없거나 얇은 alias. / **B. 스크립트 중심**: `scripts/workflow-packet.mjs` + `package.json` `workflow:packet`. 현재 초안은 "스킬 + npm script 1줄"로 *양쪽이 섞여* 보여(혼선 소지) 비차단으로 두되, 각 PR 시점에 A/B 를 택한다. **결정 필요.**

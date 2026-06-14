@@ -56,8 +56,9 @@
   나쁜 첫 질문: "구현 가능?"  /  좋은 첫 질문: "애매한 거 놓친 거 없나?"
   이 섹션은 warning-only 텍스트다 — 코드 게이트가 아니다. 게이트는 readiness(Open Decision)+validate 뿐.
   여기서 readiness 를 재계산하지 않는다. 표의 입력원은 위 ## Blocking Items 다.
-  불변식: LLM 은 후보를 "제안"만 한다. Unknown/Decision/Conflict 를 닫거나 candidate→confirmed 로
+  불변식: 이 단계(workflow:packet/run/review)의 LLM 은 후보를 "제안"만 한다. Unknown/Decision/Conflict 를 닫거나 candidate→confirmed 로
           올리거나 ScreenSpec 결정을 resolve 하지 않는다 — 승격·resolve·close 는 전부 사람.
+          (단, ScreenSpec authoring/reconcile 단계의 LLM 은 기존 계약대로 open 행 추가·resolved→open 재오픈 가능 — global/llm-rules.md. "직접 안 쓴다"는 이 packet/run/review 단계 한정.)
   auto-stop: 아래 Safe To Proceed? 가 어떤 모드에서 'no' 면, 그 모드 이상으로 코딩하지 않고
           멈춰서 그 후보를 사람에게 올린다(=runner 의 HALT_AMBIGUITY 입력). 사람이 ScreenSpec 반영
           → readiness 재실행 후 packet 재발급.
