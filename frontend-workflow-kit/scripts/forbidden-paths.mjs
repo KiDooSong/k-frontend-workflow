@@ -18,10 +18,10 @@
 //   2  입력 오류(state/policy 부재, git 실행/ base ref 해석 실패).
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { parseArgs, DEFAULTS, loadYaml, readFileSafe } from './lib/util.mjs';
+import { parseArgs, DEFAULTS, KIT_ROOT, loadYaml, readFileSafe } from './lib/util.mjs';
 import { computeReadiness } from './readiness.mjs';
+import { loadLayoutProfile } from './lib/layout-profile.mjs';
 import {
-  deriveGuardedSurface,
   thresholdOf,
   isCleared,
   highestScreenMode,
@@ -33,6 +33,37 @@ import {
   GitError,
   DiffParseError,
 } from './lib/path-backstop.mjs';
+
+// 정책의 {roles.X} 토큰을 물리 글롭으로 펼친 "resolved policy" 를 만든다(tier1 §6·§7).
+//   path-backstop 의 thresholdOf/isCleared/covers/materializeGuardedSurface 는 글롭 *문자열*만
+//   보므로, 토큰화된 정책을 그대로 주면 매칭이 깨진다. {domain} 은 보존한다(materializeGuardedSurface
+//   가 도메인 union 을 직접 펼침 — §7-i). resolvePaths(p,{}) = {roles.X} 펼침 + {domain} 보존.
+//   리터럴/blanket 글롭(src/**, src/features/**, openapi.yaml)은 resolvePaths 가 그대로 통과시키므로
+//   결과는 토큰화 이전 정책과 BYTE-동치다(회귀 기준).
+function resolvePolicyPaths(policy, layout) {
+  const modes = policy && typeof policy.modes === 'object' && policy.modes ? policy.modes : {};
+  const outModes = {};
+  for (const [name, mode] of Object.entries(modes)) {
+    outModes[name] = {
+      ...mode,
+      allowed_paths: layout.resolvePaths(mode.allowed_paths || [], {}),
+      forbidden_paths: layout.resolvePaths(mode.forbidden_paths || [], {}),
+    };
+  }
+  return { ...policy, modes: outModes };
+}
+
+// state.screens 에서 실제 도메인 리스트를 모은다(materializeGuardedSurface 의 {domain} union 입력).
+// 도메인이 없으면 빈 배열 — 현 deriveGuardedSurface 가 domain-scoped 를 통째로 버리는 것과 동일 결과.
+function domainsFromState(state) {
+  const screens = (state && state.screens) || {};
+  const set = new Set();
+  for (const id of Object.keys(screens)) {
+    const d = screens[id] && screens[id].domain;
+    if (d != null && d !== '') set.add(d);
+  }
+  return [...set].sort();
+}
 
 // 위반 1건의 reason / would_clear 문구를 만든다(설계 §4 출력 규약).
 function describeViolation(surface, policy, readinessOutput) {
@@ -98,12 +129,21 @@ function main() {
   // 매니페스트는 computeReadiness 의 부가 입력(next_actions 템플릿 경로 등). 게이트 판정은 정책 단일 출처.
   const manifest = loadYamlOrExit(path.resolve(flags.manifest || DEFAULTS.manifest), 'manifest') || {};
 
+  // --- 레이아웃 프로파일 + resolved policy (tier1 §6·§7) ---
+  // 정책이 {roles.X} 로 토큰화돼 있으므로, path-backstop 의 글롭-문자열 helper 에 넘기기 전에
+  // 토큰을 물리 글롭으로 펼친다(BYTE-동치 회귀 기준 — §10). --layout 으로 프로파일 경로 오버라이드.
+  const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags });
+  const resolvedPolicy = resolvePolicyPaths(policy, layout);
+
   // --- readiness 소비 (모드 판정 단일 출처) ---
   // ci={} : 경로 게이트는 CI fact 불필요(threshold 인 api-integrated-ui 는 fact-only).
-  const readinessOutput = computeReadiness({ state, policy, ci: {}, manifest });
+  const readinessOutput = computeReadiness({ state, policy, ci: {}, manifest, layout });
 
-  // --- guarded surface 파생 (정책에서) ---
-  const guardedSurface = deriveGuardedSurface(policy);
+  // --- guarded surface 파생 (정책에서; 도메인 union 사전 구체화 — §7-i) ---
+  // materializeGuardedSurface 는 {domain} forbidden 을 실제 도메인들로 펼친 구체 글롭 합집합을
+  // 만든 뒤 deriveGuardedSurface 와 동일 분류/threshold 필터를 적용한다. 도메인 오버라이드가 없는
+  // expo 에선 결과가 deriveGuardedSurface(policy) 와 BYTE-동치.
+  const guardedSurface = layout.materializeGuardedSurface(resolvedPolicy, domainsFromState(state));
 
   // --- diff source 결정 → 상태 인식 record (우선순위: §3) ---
   let records;
@@ -156,9 +196,9 @@ function main() {
       const surface = matched.sort(
         (a, b) => b.replace(/\*+/g, '').length - a.replace(/\*+/g, '').length || a.localeCompare(b),
       )[0];
-      if (isCleared(surface, readinessOutput, policy)) continue; // (b) 프로젝트가 레이어 열 자격 도달 — 침묵
+      if (isCleared(surface, readinessOutput, resolvedPolicy)) continue; // (b) 프로젝트가 레이어 열 자격 도달 — 침묵
       seenFiles.add(F);
-      const { reason, would_clear } = describeViolation(surface, policy, readinessOutput);
+      const { reason, would_clear } = describeViolation(surface, resolvedPolicy, readinessOutput);
       violations.push({ file: F, change: changeLabel(record), surface, reason, would_clear });
     }
   }

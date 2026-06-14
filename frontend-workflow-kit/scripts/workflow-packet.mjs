@@ -18,6 +18,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { parseArgs, DEFAULTS, KIT_ROOT, readFileSafe, writeFile, yamlParse } from './lib/util.mjs';
 import { buildPacketModel, renderPacketMarkdown, renderJsonEnvelope } from './lib/workflow-packet.mjs';
+import { loadLayoutProfile } from './lib/layout-profile.mjs';
 
 const SELF_DIR = path.dirname(fileURLToPath(import.meta.url));
 const READINESS_SCRIPT = path.join(SELF_DIR, 'readiness.mjs');
@@ -180,6 +181,9 @@ function main() {
     ? toPosix(path.relative(path.dirname(outPath), AMBIGUITY_DOC))
     : toPosix(path.relative(process.cwd(), AMBIGUITY_DOC));
 
+  // 레이아웃 프로파일(tier1): MODE_HINTS 경로 카피를 role 글롭에서 생성. --layout 으로 오버라이드.
+  const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags });
+
   const model = buildPacketModel({
     entry,
     screen,
@@ -191,6 +195,7 @@ function main() {
     owner,
     seq,
     ambiguityLink,
+    layout,
   });
 
   const md = renderPacketMarkdown(model);

@@ -41,20 +41,20 @@ modes:
       - stub_screen_specs_count > 0
       - navigation_map_status >= draft
     allowed_paths:
-      - src/app/**
+      - "{roles.route_entry}"
     forbidden_paths:
-      - src/features/**
-      - src/api/**
+      - src/features/** # blanket guard — 리터럴 유지(role 아님; tier1 §2 blanket)
+      - "{roles.api_client}"
 
   # 화면 골격(스크린 컴포넌트 자리)만. fixture/hook 이전 단계.
   screen-skeleton:
     requires:
       - screen_spec_status >= draft
     allowed_paths:
-      - src/features/{domain}/screens/**
+      - "{roles.screen}"
     forbidden_paths:
-      - src/api/**
-      - openapi.yaml
+      - "{roles.api_client}"
+      - openapi.yaml # blanket guard — 리터럴 유지(role 아님)
 
   rough-fixture-ui:
     requires:
@@ -63,32 +63,32 @@ modes:
       - component_catalog_generated == true
       - fake_hook_exists == true
     allowed_paths:
-      - src/features/{domain}/screens/**
-      - src/features/{domain}/components/**
-      - src/features/{domain}/hooks/**
+      - "{roles.screen}"
+      - "{roles.domain_component}"
+      - "{roles.hook}"
     forbidden_paths:
-      - src/api/**
-      - openapi.yaml
+      - "{roles.api_client}"
+      - openapi.yaml # blanket guard — 리터럴 유지(role 아님)
 
   final-fixture-ui:
     requires:
       - screen_spec_status >= confirmed
       - figma_mapping_status >= draft
     allowed_paths:
-      - src/features/{domain}/screens/**
-      - src/features/{domain}/components/**
+      - "{roles.screen}"
+      - "{roles.domain_component}"
     forbidden_paths:
-      - src/api/**
+      - "{roles.api_client}"
 
   api-integrated-ui:
     requires:
       - api_confidence_min == confirmed
       - state_matrix_complete == true
     allowed_paths:
-      - src/features/{domain}/hooks/** # hook 내부 교체
-      - src/api/**
+      - "{roles.hook}" # hook 내부 교체
+      - "{roles.api_client}"
     forbidden_paths:
-      - src/features/{domain}/screens/** # 화면은 건드리지 않는다 (fake hook 계약)
+      - "{roles.screen}" # 화면은 건드리지 않는다 (fake hook 계약)
 
   production-ready:
     requires:

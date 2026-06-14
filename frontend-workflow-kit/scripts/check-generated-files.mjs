@@ -30,7 +30,8 @@
 //   2  설정 오류: manifest 부재/형식오류/YAML 손상 — validate 와 같은 계약(설계 §6.1).
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { parseArgs, DEFAULTS, loadYamlOrExit } from './lib/util.mjs';
+import { parseArgs, DEFAULTS, KIT_ROOT, loadYamlOrExit } from './lib/util.mjs';
+import { loadLayoutProfile } from './lib/layout-profile.mjs';
 import {
   V1_ARTIFACT_IDS,
   selectArtifactIds,
@@ -165,7 +166,9 @@ function main() {
   }
 
   // 기본(check): selected 산출물을 reproduce-to-scratch 비교.
-  const results = shown.filter((d) => d.selected).map((d) => reproduceArtifact(d.id, { docsDir, srcDir }));
+  // 레이아웃 프로파일(tier1): route-tree 입력 디렉토리를 {roles.route_entry} 에서 파생한다.
+  const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags });
+  const results = shown.filter((d) => d.selected).map((d) => reproduceArtifact(d.id, { docsDir, srcDir, layout }));
   const summary = summarize(results);
   const bad = results.filter((r) => r.status !== 'ok' && r.status !== 'skip');
   const report = {

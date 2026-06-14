@@ -218,8 +218,11 @@ export function isStub(spec) {
 
 // --- 파생값 ---------------------------------------------------------------
 // 본문 표/파일시스템에서 readiness 가 필요로 하는 값을 계산한다 (impl §5).
+//   opts.layout : tier1 resolvedLayout. fake_hook_exists 의 hook 디렉토리를 role 바인딩에서
+//     파생한다(literal 'features/<domain>/hooks' 금지 — §6·§10 CRITICAL). 미주입 시 호출부
+//     책임이지만, layout 이 없으면 hook fact 를 유도할 수 없다(아래 가드).
 export function deriveMetrics(spec, opts = {}) {
-  const { srcDir } = opts;
+  const { srcDir, layout } = opts;
   const domain = spec.frontmatter.domain;
   const sections = spec.sections;
 
@@ -298,11 +301,17 @@ export function deriveMetrics(spec, opts = {}) {
   // API Candidates: 항목 중 가장 낮은 confidence
   const apiConfidenceMin = minApiConfidence(sections['api candidates']);
 
-  // fake hook 존재: src/features/{domain}/hooks/ 에 파일이 있는지
+  // fake hook 존재: {roles.hook} 디렉토리에 파일이 있는지. 경로는 layout.roleToDir 단일 출처에서
+  // 파생한다 — {roles.hook} 글롭(allowed_paths)과 반드시 같은 경로라야 rough-fixture-ui 게이트가
+  // 안 깨진다(§10 CRITICAL). role 글롭은 프로젝트-루트 상대(src/...)이므로 projectRoot(=dirname(srcDir),
+  // validate.mjs 와 동일 규약)에 resolve 한다.
   let fakeHookExists = false;
-  if (srcDir && domain) {
-    const hookDir = path.join(srcDir, 'features', domain, 'hooks');
-    fakeHookExists = dirHasFiles(hookDir, ['.ts', '.tsx']);
+  if (srcDir && domain && layout) {
+    const hookRel = layout.roleToDir('hook', { domain }); // 예: src/features/coupons/hooks
+    if (hookRel) {
+      const hookDir = path.resolve(path.dirname(srcDir), hookRel);
+      fakeHookExists = dirHasFiles(hookDir, ['.ts', '.tsx']);
+    }
   }
 
   // figma mapping: 같은 디렉토리의 figma-component-mapping.md 존재 + status

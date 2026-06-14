@@ -9,6 +9,7 @@ import { pathToFileURL } from 'node:url';
 import {
   parseArgs,
   DEFAULTS,
+  KIT_ROOT,
   loadYaml,
   loadYamlOrExit,
   statusRank,
@@ -16,6 +17,7 @@ import {
   yamlStringify,
   writeFile,
 } from './lib/util.mjs';
+import { loadLayoutProfile } from './lib/layout-profile.mjs';
 
 // fact 키별 스케일 분류
 const STATUS_SCALED = new Set([
@@ -149,10 +151,6 @@ function compare(op, a, b) {
   }
 }
 
-function substituteDomain(p, domain) {
-  return p.replace(/\{domain\}/g, domain || '{domain}');
-}
-
 // 화면별 사실 객체 구성 (전역 + 화면 + derived + CI)
 function buildFacts(screen, global, ci) {
   const d = screen.derived || {};
@@ -199,7 +197,12 @@ const CI_FACTS = new Set([
   'state_coverage_complete',
 ]);
 
-export function computeReadiness({ state, policy, ci, manifest }) {
+export function computeReadiness({ state, policy, ci, manifest, layout }) {
+  // 레이아웃 프로파일(tier1): 정책의 {roles.X} 토큰을 물리 글롭으로 펼치는 단일 출처.
+  //   호출부가 주입하지 않으면 기본 프로파일(expo-feature 프리셋)을 로드 — 토큰화 이전과
+  //   BYTE-동치를 보장한다(README §1.1: 경로 fact 의 단일 resolvedLayout). substituteDomain 의
+  //   per-screen {domain} 치환은 resolvePaths(p,{domain}) 안에 흡수된다(§5 the seam).
+  const resolvedLayout = layout || loadLayoutProfile({ kitRoot: KIT_ROOT });
   // policy.modes 가 객체가 아니면(문자열/숫자 등 손상된 정책) Object.keys 가 가짜 모드를 만들지 않게 막는다.
   const modes = policy.modes && typeof policy.modes === 'object' ? policy.modes : {};
   const order = Array.isArray(policy.order) ? policy.order : Object.keys(modes);
@@ -302,10 +305,12 @@ export function computeReadiness({ state, policy, ci, manifest }) {
     out[id] = {
       readiness_mode: chosenName,
       next_mode: chosenIdx < order.length - 1 ? order[chosenIdx + 1] : null,
-      allowed_paths: (chosen.allowed_paths || []).map((p) => substituteDomain(p, screen.domain)),
-      forbidden_paths: (chosen.forbidden_paths || []).map((p) =>
-        substituteDomain(p, screen.domain),
-      ),
+      // 정책 글롭의 {roles.X} 펼침 + per-screen {domain} 치환을 한 번에(§5). 리터럴/blanket
+      // 글롭(src/features/**, openapi.yaml 등)은 resolvePaths 가 그대로 통과시킨다.
+      allowed_paths: resolvedLayout.resolvePaths(chosen.allowed_paths || [], { domain: screen.domain }),
+      forbidden_paths: resolvedLayout.resolvePaths(chosen.forbidden_paths || [], {
+        domain: screen.domain,
+      }),
       blocking,
       next_actions: nextActions,
     };
@@ -341,8 +346,10 @@ function main() {
   // 매니페스트는 next_actions 의 템플릿 경로 등 부가 정보로만 쓴다 (판정 중복 금지).
   const manifest = loadYamlOrExit(path.resolve(flags.manifest || DEFAULTS.manifest), 'manifest', 'readiness') || {};
   const ci = loadCi(flags);
+  // 레이아웃 프로파일(tier1): role→glob 단일 출처. --layout 으로 project-layout.yaml 경로 오버라이드.
+  const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags });
 
-  let result = computeReadiness({ state, policy, ci, manifest });
+  let result = computeReadiness({ state, policy, ci, manifest, layout });
 
   if (flags.screen !== undefined) {
     // 값 없는 bare --screen 은 parseArgs 가 boolean true 로 둔다 — 빈 결과로 조용히 오인되지 않게 명확히 막는다.
