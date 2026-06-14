@@ -44,6 +44,8 @@ Workflow totals: 9 agents, ~595k subagent tokens, 132 tool uses. All agents were
 read-only; **no agent wrote, edited, or executed anything in the repo** — the parent process wrote
 the two `.md` deliverables and ran the verification commands.
 
+**Post-draft Codex review (review-until-resolved).** 산출물 커밋 후, 설계를 Codex(codex rescue 런타임)로 독립 적대 리뷰에 넘겨 수렴까지 반복했다: iteration 1 → P2×1 + P3×4 (§4 헤더 형태 모순, §0.3 교차참조 오기, 취약한 line-count, 현재시제 표현, 분리해야 할 인용); iteration 2 → 잔여 P2×2 (`emitGeneratedYaml` 참조가 §4 결정과 모순); iteration 3 → **CLEAN / merge-ready**. 모든 해소는 이 두 markdown 문서 편집뿐 (commits `e52390a` → `2df838a` → `ceb8a50`); 코드/매니페스트/스크립트/CI 무변경.
+
 ---
 
 ## 2. Files inspected (read at `main` @ `7672f9a`, identical to the fresh worktree at branch point)
