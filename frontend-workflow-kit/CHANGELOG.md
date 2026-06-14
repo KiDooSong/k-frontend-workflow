@@ -4,7 +4,7 @@
 
 ## 0.3.0-mvp-c-phase1 — 2026-06-14
 
-MVP-C Phase 1: 전역 생성 뷰 2종(route-tree·nav-graph) **읽기 전용** 생성기 통합. 새 게이트 없음 — 생성기는 src/app 트리·screen-spec/navigation-map 을 읽어 `_meta` 산출물을 만들 뿐 screen-spec 을 수정하지 않는다. (버전 문자열은 잠정 — 릴리스 시맨틱은 머지 전 확정.)
+MVP-C Phase 1: 전역 생성 뷰 2종(route-tree·nav-graph) **읽기 전용** 생성기 통합. 새 게이트 없음 — 생성기는 src/app 트리·screen-spec/navigation-map 을 읽어 `_meta` 산출물을 만들 뿐 screen-spec 을 수정하지 않는다. `0.3.0-mvp-c-phase1` 은 정식 git 태그/릴리스가 아니라 MVP-C Phase 1 통합 마일스톤 라벨이다.
 
 ### Added
 - scripts: `route-tree.mjs`(+`lib/route-tree.mjs`) · `nav-graph.mjs`(+`lib/nav-graph.mjs`) — 결정적·멱등 생성기. 커밋된 골든 픽스처(`examples/route-tree/{basic-app,edge-cases}`, `examples/nav-graph/basic-flow`)를 byte-identical 재현(검증 증거: `temp/runs/mvp-c-generated-views-integration.md`).
