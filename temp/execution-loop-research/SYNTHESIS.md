@@ -20,6 +20,7 @@ boost_done:
 
 - **6트랙은 충돌하는 별개 제안이 아니라 하나의 파이프라인으로 수렴한다.** Track 02(auto-stop 상태기계)가 척추이고, 01·03·04·05·06이 그 상태들에 내용을 채운다.
 - **신뢰도 주의**: 5/6 트랙의 자동 적대적 검증이 동시-burst rate-limit 으로 전멸 → 수동 재검증으로 복원. Track 01은 자동 "25/25 반박"이 위양성(재검증 결과 확인 19·부분 3·교정 1·접근불가 2)임을 입증했고, 그 과정에서 green 쪽 과장 추출 1건(arXiv 2605.06717)도 교정했다. **즉 이 묶음 자체가 Track 05 테제(자동 green/red verdict 불신)의 실사례다.** 아래 종합은 raw 파이프라인 출력이 아니라 수동 재검증분 기반.
+- **코덱스 독립 리뷰 반영 (2026-06-14)**: 코덱스가 *이 종합을 못 본 채* 6보고서만 보고 같은 척추에 수렴 — 강한 교차검증. 그 리뷰의 정합성 지적(어휘 중복·층위·verdict 사회적 게이트화·Run Report 과중·PR 분할)을 **§9 로 reconcile**. 사내 표준이 **GitLab** 이므로 review 근거는 GitHub 한정에서 플랫폼 중립으로 일반화(§9.3).
 
 ---
 
@@ -109,10 +110,9 @@ flowchart TD
 - **03**: review-artifact 에 Semantic Review 루브릭 S1~S8 + verdict-as-evidence 표기 규칙 / run-report 에 Review Evidence(advisory) 섹션.
 - **04**: run-report 증거 스키마 주석 강화(`readiness_source`=builder.id 등가, 빈 diff=PASS, blockers verbatim) — 대부분 이미 템플릿에 있음, 문구 격상만.
 
-### Phase 1 — 얇은 auto-stop runner (새 코드, 단 기존 게이트 *소비*만)
-- `scripts/workflow-run.mjs` = 02 상태기계. 기존 4 스크립트를 **서브프로세스로 소비**(판정 재구현 0). `computeReadiness` 출력 *복사*만.
-- 기계적 정지조건만: SC1~SC4(pre), SC7~SC10(post), SC13~SC15(loop-safety). **순수 auto-stop, auto-retry 없음.** 기본 종료 = `HALT_AMBIGUITY`.
-- `package.json` 에 `workflow:run` 1줄.
+### Phase 1 — 실행 계층 (※ §9.5 에서 packet→report→run 3 PR 로 분할)
+- **PR2 `workflow:packet`** → **PR3 `workflow:report`** → **PR4 `workflow:run`**(auto-stop 상태기계). 생성기 먼저·상태기계 나중 = 더 점진적이고 notes/01 원안과 정합.
+- 공통: 기존 4 스크립트를 **서브프로세스로 소비**(판정 재구현 0), `computeReadiness` 출력 *복사*만, **순수 auto-stop·auto-retry 없음**, 기본 종료 `HALT_AMBIGUITY`. 기계적 정지조건 SC1~SC4 / SC7~SC10 / SC13~SC15.
 
 ### Phase 2 — 의미 배선
 - AMBIGUITY_GATE 의 [의미] 입력 계약 확정 후 SC5/SC6 연결(01↔02 open question).
@@ -126,7 +126,7 @@ auto-retry narrow band(02 §4-3) · confidence 주석(06/Devin식) · 파일 SHA
 
 ## 6. 첫 PR 스코프 (④)
 
-**첫 PR = Phase 0 (문서/템플릿만). `workflow:run` 스크립트는 2번째 PR.**
+**첫 PR = Phase 0 (문서/템플릿만). 실행 계층 스크립트는 후속 (§9.5: PR2 `workflow:packet` → PR3 `workflow:report` → PR4 `workflow:run`).**
 
 근거: (a) 새 실행경로·새 게이트 0 → 불변식 위험 최저, (b) 6트랙 §4 산출물이 전부 "act-now" 성숙도, (c) runner 는 미해결 계약(SC5/SC6 ambiguity 입력 포맷, SC12 비용계측)이 남아 먼저 박으면 재작업 위험, (d) markdown ~300–500줄로 리뷰 가능.
 
@@ -183,3 +183,73 @@ auto-retry narrow band(02 §4-3) · confidence 주석(06/Devin식) · 파일 SHA
 3. **digest 병기**: Diff Summary 에 파일 SHA-256 넣을지(nice→must?) — Phase 0 는 라벨만, 보류.
 4. **실측 트랙(별도)**: critic 실효성·ask 임계 보정은 *조사*가 아니라 **coupon-feature A/B 측정** 과제 — 별도 태스크로 분리(딥리서치로는 안 풀림).
 5. **확정된 것**: 첫 PR=Phase 0 문서, 디스클레이머는 Skill/문서만, EARS 문법 미채택, 게이트는 readiness+validate 만.
+
+---
+
+## 9. 정합성 정리 — 코덱스 독립 리뷰 반영 (2026-06-14)
+
+코덱스가 (이 종합을 못 본 채) 6개 보고서만 보고 같은 척추에 수렴했고, 아래 정합성 지적을 더했다. 전부 "기능 추가"가 아니라 **어휘·층위·MVP 경계 정리**다.
+
+### 9.1 어휘집 (용어 계층 — 중복 제거)
+같은 개념이 여러 이름으로 흩어져 있던 것을 4층으로 고정한다. **새 이름을 더 만들지 않는다.**
+
+| 용어 | 정확한 의미 | 사는 곳 |
+|---|---|---|
+| `Ambiguity Review Required` | 구현 전 애매함을 표면화하는 **섹션** | Work Packet 본문 (작성: `workflow:packet`) |
+| `Safe To Proceed?` | 그 섹션 안의 **모드별 판단표**(yes/no + 사유) | Ambiguity Review 하위 |
+| `HALT_AMBIGUITY` | runner 가 구현 전 멈추는 **종료 상태** | `workflow:run` 상태기계 |
+| `Pre-Implementation Review` | 집행 직전 **체크 항목**(Validity 무변경·Blocking 분류 완료) | Review Checklist 한 행 |
+
+보조: `Open Decision Candidate`/`Unknown Candidate` = Ambiguity Review 가 *제안*만 하는 후보(닫는 건 사람) · `Blocking Ambiguities` = `Safe To Proceed?=no` 를 유발하는 미해결 후보(별도 개념 아님, 위 표의 입력).
+
+### 9.2 warning-first 와 auto-stop 은 충돌이 아니라 다른 층위
+"하드 게이트 금지라며 왜 HALT 하나?" 오해를 막는 핵심 구분:
+- **warning-first** = (게이트 *승격* 층위) Ambiguity·`Safe To Proceed?` 를 readiness/validate 같은 **공식 게이트로 올리지 않는다**. exit 1 금지.
+- **auto-stop** = (실행 *전진* 층위) runner 가 구현으로 **자동 전진하지 않고** packet/report 에서 멈춘다.
+→ 둘 다 참. `HALT_AMBIGUITY` 는 "게이트가 막은 것"이 아니라 "runner 가 스스로 안 나아간 것". 실제 차단 권한은 여전히 Open Decision(readiness cap) + 사람뿐.
+
+### 9.3 Review Artifact 표준 스키마 (플랫폼 중립 — GitHub/GitLab 무관)
+코덱스의 "사회적 게이트화" 우려 반영. **사내 표준이 GitLab** 이라 GitHub 어휘에 묶지 않는다 — 단 "review 는 어느 플랫폼에서나 기본 advisory, 차단은 명시 opt-in"이라는 *원리*는 GitLab 에서도 동일(**MR approval rules · merge checks · protected branches**; GitHub 의 branch protection·required checks 와 대응). **그 opt-in 에 verdict 를 배선하지 않는 게 불변식.**
+
+```yaml
+review_status: advisory          # 항상. 이 리뷰는 머지를 자동 차단하지 않는다.
+verdict: ok | changes-suggested | needs-human-decision   # 전체 1줄 판정(중립 어휘 — 'blocked' 안 씀)
+human_action_required: true|false
+findings:
+  - severity: info | warning | major | blocker-candidate  # 'blocker' 아님 — 후보일 뿐
+    ref: { file, line, diff }     # 근거 필수(추측 금지)
+    route: recommended-fix | human-only-decision | do-not-auto-fix
+```
+- 진짜 blocker 는 **Open Decision(readiness cap) + 사람 승인**으로만. `blocker-candidate` 는 사람에게 올리는 후보일 뿐.
+- `needs-human-decision`(구 'blocked') = "리뷰어가 더 못 나아감"이지 "결정을 닫았다"가 아니다.
+
+### 9.4 Run Report 사용자-facing = "증거 6개" (provenance jargon 은 rationale 로)
+`builder.id`/`predicateType`/`SLSA L1 등가` 같은 용어는 **설계 rationale(Track 04 보고서)**에만 둔다. 사용자/템플릿이 보는 Run Report 는 6개면 충분:
+```
+1. readiness_source       — 어떤 readiness 를 봤나
+2. diff summary           — 무엇을 바꿨나 (ADDED/MODIFIED/REMOVED, 빈 diff 명시)
+3. validate result        — 구조 검사 통과?
+4. forbidden-paths result — 경계 지켰나
+5. idempotency result     — 재실행 빈 diff?
+6. blockers (verbatim)    — 왜 멈췄나 (readiness 의 blocking/next_actions 그대로)
+```
+(코덱스 5개 + `blockers verbatim` 6번째 — auto-stop 보고의 "왜 멈췄나"가 증거의 절반.)
+
+### 9.5 PR 순서 — packet → report → run (분할)  ※ §5/§6 Phase 1 대체
+runner 한 덩이보다 **생성기 먼저, 상태기계 나중**이 더 점진적이고 notes/01 원안과도 맞는다.
+- **PR1 — 문서/템플릿만** (= 기존 Phase 0; §6 그대로).
+- **PR2 — `workflow:packet` 초안**: readiness 출력 복사 → Work Packet 초안(`Ambiguity Review Required` 포함). **구현 실행 없음.**
+- **PR3 — `workflow:report` 초안**: diff/validate/forbidden-paths/test-fixtures 수집 → Run Report(증거 6개). **승인/머지 판단 없음.**
+- **PR4 — `workflow:run` auto-stop 상태기계**: PR2/PR3 를 엮되 `HALT_AMBIGUITY`/`HALT_READY_FOR_WORK` 까지만. **auto-fix 없음.**
+(Phase 2/3 의 의미 배선·auto-retry·confidence·digest 는 그대로 후속.)
+
+### 9.6 "절대 코드로 구현하지 말 것" 목록 (§4 드리프트의 양성 표현)
+runner/스크립트가 **절대** 하면 안 되는 것 — 하나라도 코드화하면 불변식 위반:
+- Ambiguity·`Safe To Proceed?` 를 파싱해 **exit 1** (warning-only 유지)
+- review verdict 를 **머지 차단 / required-approval(merge check)** 에 배선
+- blocking Unknown 을 **게이트**로 (막는 건 승격된 Open Decision 만)
+- 멱등 재실행 결과로 **readiness 덮어쓰기 / 머지 차단**
+- Validity stale 을 **자동 검사 스크립트**로
+- PASS 디스클레이머를 **exit 1 경고-게이트**로
+- auto-retry 가 **테스트/golden/readiness-입력** 수정 (reward hacking)
+- LLM 이 `D-cand`/`U-cand` 를 ScreenSpec 에 **직접 확정/close**
