@@ -4,7 +4,10 @@ status: "done"
 kind: "review-artifact"
 packet_id: "WP-{SCREEN_ID}-{mode}-{NNN}"
 run_id: "{run_id}"
-verdict: "{approve|changes-requested|blocked}"
+# 구 verdict→review_summary (판정 어감 제거 — advisory). 'verdict'/'blocked' 는 active 용어로 쓰지 않는다.
+review_status: advisory          # 항상 advisory. 이 리뷰는 머지를 자동 차단하지 않는다.
+review_summary: "{ok | changes-suggested | needs-human-decision}"   # 전체 1줄(중립)
+human_action_required: "{true|false}"
 readiness_source: "{path-to-readiness-output-or-run-report}"
 reviewer: "{agent-or-person}"
 date: "{YYYY-MM-DD}"
@@ -18,16 +21,45 @@ date: "{YYYY-MM-DD}"
   - 리뷰어는 Open Decision / Conflict / Unknown 을 닫지 못한다 — 사람-전용 불변식.
   - 위반은 근거(파일·라인·diff)와 함께 기록한다. 추측으로 메우지 않는다.
   - Checklist 는 work-packet-rubric 의 10개 check 를 그룹 롤업해 Work Packet 의 Review Checklist 와 정합시킨다 (1:1 아님 — 그룹 매핑, 아래 표 주석의 매핑 참조).
+  배선 금지: 이 산출물(review_status/review_summary/findings)을 required approval / merge check 에 연결하지 않는다.
+            GitLab 의 MR approval rules · merge checks · protected branches (GitHub branch protection·required checks 대응)
+            어디에도 묶지 않는다. blocker-candidate 는 후보일 뿐 — 진짜 blocker 는 Open Decision(readiness cap)+사람만.
+  후속(이 PR 범위 밖): 의미/제품 갭 점검 루브릭(S1~S8: 빠진 state·엣지케이스·오분류 등)은 별도 doc 으로 분리한다
+            (템플릿 과적재 금지). 여기서는 advisory 스키마(review_summary/findings)까지만 둔다.
 -->
 
 # Review Artifact: {packet_id}
 
-## Verdict
-<!-- 셋 중 하나. changes-requested/blocked 면 Violations 또는 Human-only Decisions 에 근거가 있어야 한다.
-       approve            = 게이트·천장·불변식 모두 통과.
-       changes-requested  = 구현이 고칠 수 있는 위반(경로/과구현/발명) 존재 → Recommended Fixes 로.
-       blocked            = 사람-전용 결정/Conflict 때문에 진행 불가 → Human-only Decisions Needed 로. -->
-**{approve | changes-requested | blocked}** — {한 줄 근거.}
+## Review Summary (advisory)
+<!-- review_summary 는 리뷰 evidence 라벨이다 — 머지를 자동으로 막거나 허가하지 않는다.
+     게이트는 readiness(Open Decision) + validate(구조) 뿐. 이 요약은 그 위의 advisory 신호다.
+     이 repo 는 review 결과를 required approval / merge check 에 배선하지 않는다
+       (GitLab: MR approval rules · merge checks · protected branches 에 연결 금지).
+       ok                  = 경계·천장·불변식 + 아래 findings 에서 막을 사유를 못 찾음(=advisory 통과).
+       changes-suggested   = 고칠 수 있는 위반/의미 갭 존재 → findings 의 route=recommended-fix.
+                             (자동 머지차단 아님 — 머지 결정은 사람.)
+       needs-human-decision = 사람-전용 결정/Conflict 때문에 "리뷰어가 더 진행 못 함" → Human-only Decisions Needed.
+                             ⚠ needs-human-decision(구 'blocked') = "리뷰어가 더 못 나아감"이지 "결정을 닫았다"가 아니다.
+                             ⚠ 이 값 자체가 머지를 자동 차단하지 않는다 — 차단 권한은 Open Decision(readiness cap)+사람뿐. -->
+**{ok | changes-suggested | needs-human-decision}** — {한 줄 근거.} (advisory evidence — 머지 게이트 아님)
+
+## Findings (advisory — 근거 필수)
+<!-- 각 finding 은 severity + ref(file/line/diff 근거 필수, 추측 금지) + route 를 갖는다.
+     severity 의 blocker-candidate 는 '후보'일 뿐 — 진짜 blocker 가 아니다.
+     진짜 blocker 는 Open Decision(readiness cap) + 사람 승인으로만 성립한다.
+     route 가 human-only-decision 이면 아래 Human-only Decisions Needed 표로도 옮긴다(리뷰어는 닫지 않음). -->
+```yaml
+findings:
+  - severity: "{info | warning | major | blocker-candidate}"   # 'blocker' 아님 — 후보일 뿐
+    ref: { file: "{path}", line: "{n}", diff: "{인용/요지}" }   # 근거 필수
+    route: "{recommended-fix | human-only-decision | do-not-auto-fix}"
+    note: "{한 줄 설명}"
+  # findings 없으면: 빈 목록 [] 로 두고 review_summary: ok.
+```
+
+> `blocker-candidate ≠ blocker`. severity 가 blocker-candidate 라도 그 자체로는 아무것도 막지 못한다 — 사람이 Open Decision 으로 승격해 readiness cap 이 걸릴 때만 실제 차단이 된다.
+
+> **기존 섹션 ↔ findings 매핑** (advisory): `## Violations` → `severity: major`(forbidden 침범 등 강한 건 `blocker-candidate`) + `route: recommended-fix` · `## Recommended Fixes` → `route: recommended-fix` · `## Human-only Decisions Needed` → `route: human-only-decision`(표 유지 — 리뷰어는 닫지 않음) · `## Do Not Auto-Fix` → `route: do-not-auto-fix`. 아래 4섹션은 삭제하지 않고 findings 와 정합하도록 유지한다. (Human-only 표의 세부 컬럼·S1~S8 의미 루브릭은 PR1b 범위 밖 — 후속/별도 doc.)
 
 ## Reviewed Inputs
 <!-- 복사 금지 — 링크만. 무엇을 보고 판정했는가. -->
@@ -65,14 +97,14 @@ date: "{YYYY-MM-DD}"
 
 ## Human-only Decisions Needed
 <!-- 리뷰어/구현자가 못 닫는 사람-전용 항목. Open Decision / Conflict / candidate→confirmed 승격.
-     blocked verdict 의 근거가 여기 있어야 한다. -->
+     review_summary=needs-human-decision 의 근거(route=human-only-decision)가 여기 있어야 한다. -->
 | ID | 유형 | 내용 | Owner | 왜 사람만 |
 |---|---|---|---|---|
 | {D-301} | decision | {결정 질문} | {PM} | 게이트 해제는 사람-전용 (LLM 은 open/재오픈만) |
 | {C-001} | conflict | {충돌 내용} | {PM} | conflict close 는 사람-전용 |
 
 ## Recommended Fixes
-<!-- changes-requested 일 때 구현이 자동 수행 가능한 교정. 게이트를 건드리지 않는 범위만. -->
+<!-- review_summary=changes-suggested(route=recommended-fix) 일 때 구현이 자동 수행 가능한 교정. 게이트를 건드리지 않는 범위만. -->
 - {예: `src/api/**` 변경 되돌리고 fake hook 계약 유지 — readiness 재실행.}
 - {예: 과구현 fixture UI 제거, screen-skeleton shell 로 환원.}
 

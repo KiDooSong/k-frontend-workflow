@@ -38,6 +38,18 @@ date: "{YYYY-MM-DD}"
 
 ---
 
+## Evidence (사용자-facing 증거 6개)
+<!-- 이 6개가 "이 실행을 신뢰할 수 있는가?"의 사용자-facing 근거다. provenance jargon
+     (builder.id/predicateType/SLSA 등)은 여기 넣지 않는다 — 설계 rationale 에만 둔다. -->
+```txt
+1. readiness_source       — 어떤 readiness 를 봤나        → 아래 ## Readiness Used
+2. diff summary           — 무엇을 바꿨나 (ADDED/MODIFIED/REMOVED, 빈 diff 명시) → 아래 ## Diff Summary
+3. validate result        — 구조 검사 통과?               → 아래 ## Commands Run / ## Gate Compliance
+4. forbidden-paths result — 경계 지켰나                   → 아래 ## Gate Compliance (forbidden 무접촉 행)
+5. idempotency result     — 재실행 빈 diff?               → 아래 ## Idempotency
+6. blockers (verbatim)    — 왜 멈췄나 (readiness 의 blocking/next_actions 그대로) → 아래 ## Blockers Reported
+```
+
 ## Work Packet Reference
 <!-- 복사 금지 — 링크만. 이 실행이 어느 packet 을 집행했는가. -->
 - Work Packet: `{path-to-work-packet}` (`packet_id` = {packet_id})
@@ -78,6 +90,8 @@ npm run workflow:validate    # → 검사 12종 통과 (exit 0)
 | API endpoint 발명 금지 | ✅ | {예: `src/api/**`·`openapi.yaml`·fetch/axios/DTO 0건} |
 | Open Decision/Conflict/Unknown 미닫힘 | ✅ | {예: {D-001} 상태 open 보존} |
 | readiness gate 무시 금지 | ✅ | {예: 변경 파일 ⊆ allowed_paths} |
+<!-- ⚠ MVP-C 종속 — Session C generated-file guard 확정 후 정렬: forbidden-paths 결과에서 generated-file 경로
+     (hand-edit 금지 vs 재생성 허용)의 처리는 generated-file guard 확정 후 정렬. -->
 
 ## Diff Summary
 <!-- 경로 경계는 diff 로 본다. ADDED/MODIFIED/REMOVED 라벨 + (none) + 인라인 주석.
@@ -91,6 +105,9 @@ REMOVED:
   (none)                       # _meta/*.yaml 외 변동 없음
 ```
 {거절/무변경이면: run diff **완전 빈 diff**(added/modified/removed 모두 none).}
+<!-- ⚠ MVP-C 종속 — Session C generated-file guard 확정 후 정렬: 어떤 파일이 generated(_meta/*.yaml 등)이고
+     diff 에서 어떻게 취급/제외되는지는 generated-file guard 가 그 표면을 정의 중. 확정 전까지 라벨만 두고 세부 미확정.
+     참고: frontend-workflow-kit/temp/proposals/generated-file-guard-followup.md -->
 
 ## Blockers Reported
 <!-- readiness 의 blocking/next_actions 를 그대로 전달 (자체 추론 금지).
@@ -100,12 +117,29 @@ REMOVED:
 
 (blocker 없음이면 "blocker 없음 — 게이트 안에서 완료" 한 줄.)
 
+## Review Evidence (advisory — 게이트 아님)
+<!-- Review Artifact 의 review_summary 를 evidence 로 옮긴다. readiness/validate 게이트 판정과 섞지 않는다.
+     review_summary 는 머지를 자동 차단/허가하지 않는다. -->
+- Review Artifact: `{path}` / review_summary: **{ok | changes-suggested | needs-human-decision}** (advisory)
+- findings 수: {n} (severity 별: info/warning/major/blocker-candidate; blocker-candidate ≠ blocker)
+- Human-only Decisions (리뷰가 닫지 않음): {D-301(open), C-001(open), ...} 또는 "없음"
+- 처리 상태: route=recommended-fix 중 반영 {k}/{m} (나머지는 do-not-auto-fix 또는 사람 대기)
+- ⚠ review_summary 가 needs-human-decision 이어도 이 Run Report 는 머지를 자동 차단하지 않는다 — 머지 결정은 사람.
+
 ## Idempotency
 <!-- 2차 실행 멱등 표기. byte 동일 / 완전 빈 diff / validate exit 0 관례를 따른다. -->
 - 2차 실행 후 full-tree diff **완전 빈 diff**. 2차 readiness JSON 은 1차와 byte 동일, validate exit 0.
 - 재생성 허용 범위: `workflow:state`/`readiness`/`validate` 재실행은 OK (재생성 `_meta/*.yaml` 만, 소스 무수정).
+<!-- ⚠ MVP-C 종속 — Session C generated-file guard 확정 후 정렬: 재생성 허용 범위(generated 화이트리스트)는
+     generated-file guard 확정 후 정렬한다. 현재는 _meta/*.yaml 예시만 라벨로 둔다. -->
 
 ## Follow-up
 <!-- 다음 세션/사람이 해야 할 일. 게이트 해제는 사람-전용임을 명시. -->
 - {예: D-001 사람 resolve → readiness 재실행 → `{next_mode}` Work Packet 재발급.}
 - {예: component_catalog_generated / fake_hook_exists 전제 충족 후 rough-fixture-ui 가능.}
+
+---
+> **통과 ≠ 완료. Run Report ≠ 사람 승인.** 위 증거 6개가 전부 PASS(빈 diff·validate exit 0·멱등)라도
+> 그것은 *결정성·경계 준수*의 증거일 뿐 **제품적 정확성·사람 승인**이 아니다. 이 Run Report 는
+> 머지 판단·승인을 하지 않는다 — 게이트는 readiness(Open Decision)+validate 뿐이고, 다음 행동은
+> 사람/지정 구현자가 정한다.
