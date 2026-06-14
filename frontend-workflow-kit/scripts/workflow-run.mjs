@@ -20,7 +20,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { parseArgs, writeFile } from './lib/util.mjs';
+import { parseArgs, writeFile, readFileSafe, yamlParse, DEFAULTS } from './lib/util.mjs';
 import {
   STATES,
   STATE_EXIT,
@@ -64,6 +64,22 @@ function isoToday() {
 
 function relToCwd(p) {
   return toPosix(path.relative(process.cwd(), p)) || toPosix(p);
+}
+
+// mode 사다리(policy.order)를 읽어 --requested-mode 가 알려진 모드인지 대조한다.
+// readiness 재계산이 아니다 — 봉투의 mode_known 은 readiness 모드 기준이라 미지/오타 requested 모드를 못 잡으므로,
+// orchestrator 가 자기 인자를 사다리와 대조해 fail-closed 한다(미지 requested → HALT_AMBIGUITY).
+// packet 과 동일한 policy(기본 또는 --policy)를 읽어 일관성을 유지한다.
+function loadModeOrder(policyFlag) {
+  const p = policyFlag ? path.resolve(policyFlag) : DEFAULTS.policy;
+  const raw = readFileSafe(p);
+  if (raw == null) return [];
+  try {
+    const data = yamlParse(raw);
+    return Array.isArray(data && data.order) ? data.order : [];
+  } catch {
+    return [];
+  }
 }
 
 // 서브프로세스를 throw 없이 실행해 { code, stdout, stderr, json } 으로 정규화한다.
@@ -140,7 +156,7 @@ function main() {
   }
 
   // 상태 확정 → 모델 빌드 → 상태 파일 쓰기/출력 → exit.
-  const finalize = (state, { packet = null, report = null, reason = null } = {}) => {
+  const finalize = (state, { packet = null, report = null, reason = null, requestedKnown = true } = {}) => {
     const model = buildRunModel({
       screen,
       requestedMode,
@@ -156,6 +172,7 @@ function main() {
       reason,
       date,
       seq,
+      requestedKnown,
     });
     const md = renderStatusMarkdown(model);
     if (statusPath) {
@@ -197,9 +214,13 @@ function main() {
   }
   const packet = pk.json;
 
-  // 2) packet 봉투 분기. 안 깨끗 → HALT_AMBIGUITY(기본 경로, report 생성 안 함).
-  if (!isPacketClean(packet)) {
-    finalize(STATES.HALT_AMBIGUITY, { packet });
+  // 2) --requested-mode 가 알려진 모드인지 대조 (봉투 mode_known 은 readiness 모드 기준이라 미지/오타 requested 모드를 못 잡음).
+  const modeOrder = loadModeOrder(policy);
+  const requestedKnown = modeOrder.length === 0 ? true : modeOrder.includes(requestedMode);
+
+  // 3) packet 봉투 분기. 안 깨끗하거나 requested 모드가 미지값이면 → HALT_AMBIGUITY (기본 경로 · report 생성 안 함 · fail-closed).
+  if (!isPacketClean(packet) || !requestedKnown) {
+    finalize(STATES.HALT_AMBIGUITY, { packet, requestedKnown });
     return;
   }
 

@@ -58,11 +58,16 @@ export function isPacketClean(env) {
 }
 
 // HALT_AMBIGUITY 사유(사람에게 올릴 후보·신호). 판정 아님 — 표면화만.
-export function ambiguityReasons(env) {
+// requestedKnown=false 는 orchestrator 가 --requested-mode 를 mode 사다리와 대조해 얻은 신호다
+// (packet 봉투의 mode_known 은 *readiness* 모드 기준이라 미지 requested 모드를 못 잡는다).
+export function ambiguityReasons(env, requestedKnown = true) {
   if (!env) return ['packet 봉투를 읽지 못함'];
   const r = [];
+  if (requestedKnown === false) {
+    r.push(`requested_mode \`${env.requested_mode}\` 가 mode 사다리(policy.order)에 없는 미지 값 — needs-human (fail-closed)`);
+  }
   if (env.mode_known === false) {
-    r.push(`requested_mode \`${env.requested_mode}\` 가 policy.order 사다리에 없음 — 천장 비교 불가 (needs-human)`);
+    r.push(`readiness_mode \`${env.readiness_mode}\` 가 policy.order 사다리에 없음 — 천장 비교 불가 (needs-human)`);
   }
   if (env.over_ceiling === true) {
     r.push(`requested_mode \`${env.requested_mode}\` 가 readiness 천장 \`${env.readiness_mode}\` 초과 (over-ceiling)`);
@@ -89,6 +94,7 @@ export function buildRunModel(opts) {
     reason = null,
     date,
     seq = '001',
+    requestedKnown = true,
     generatedBy = 'workflow:run (PR4 auto-stop orchestrator)',
   } = opts;
 
@@ -101,14 +107,15 @@ export function buildRunModel(opts) {
     headline: STATE_HEADLINE[state] || state,
     readiness_mode: packet ? packet.readiness_mode : null,
     next_mode: packet ? packet.next_mode : null,
-    over_ceiling: packet ? !!packet.over_ceiling : null,
-    mode_known: packet ? !!packet.mode_known : null,
-    blocking_count: packet ? Number(packet.blocking_count) : null,
+    // packet 봉투값을 verbatim 으로 옮긴다(강제변환 없음 — 손상 타입은 그대로 드러나게). 판정은 isPacketClean 이 이미 끝냈다.
+    over_ceiling: packet ? packet.over_ceiling : null,
+    mode_known: packet ? packet.mode_known : null,
+    blocking_count: packet ? packet.blocking_count : null,
     d_cand: packet && Array.isArray(packet.d_cand) ? packet.d_cand : [],
     u_cand: packet && Array.isArray(packet.u_cand) ? packet.u_cand : [],
     readiness_source: packet ? packet.readiness_source : null,
     packet_warnings: packet && Array.isArray(packet.warnings) ? packet.warnings : [],
-    ambiguity_reasons: state === STATES.HALT_AMBIGUITY ? ambiguityReasons(packet) : [],
+    ambiguity_reasons: state === STATES.HALT_AMBIGUITY ? ambiguityReasons(packet, requestedKnown) : [],
     report_evidence: report ? report.evidence || null : null,
     report_blockers: report ? report.blockers || null : null,
     review_summary: report ? report.review_summary || null : null,
