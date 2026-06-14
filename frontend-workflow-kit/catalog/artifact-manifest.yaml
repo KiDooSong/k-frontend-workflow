@@ -2,9 +2,10 @@
 # 경로는 {domain}, {screen} 플레이스홀더를 사용한다.
 # validate.mjs 는 이 레지스트리를 기준으로 누락 frontmatter / 잘못된 경로 / do_not_edit 위반을 검사한다.
 #
-# MVP-A 등록분 + reconcile-input 산출물을 포함한다.
-# (lint-pack / api-manifest 및 그 외 figma 툴링(input·lint·생성뷰) 템플릿은 B~D 단계.
-#  단 figma-component-mapping 은 reconcile-input 이 생성하고 readiness 가 status 를 읽으므로 등록한다.)
+# MVP-A 등록분 + reconcile-input 산출물 + api-manifest(검사 8 입력)를 포함한다.
+# (lint-pack / 그 외 figma 툴링(input·lint·생성뷰) 템플릿은 B~D 단계.
+#  단 figma-component-mapping 은 reconcile-input 이 생성하고 readiness 가 status 를 읽으므로 등록하고,
+#  api-manifest 는 검사 8(API Candidates↔스키마 매칭)의 canonical 입력이라 등록한다.)
 # 참고: frontend-workflow-kit-implementation.md §4
 
 version: 1
@@ -94,6 +95,19 @@ artifacts:
       - artifact_id
       - artifact_type
       - domain
+      - status
+
+  # 미확정 API 명세의 단일 출처. ScreenSpec ## API Candidates 가 (Method,Path) 로 ## Endpoints 표를 참조하고,
+  # validate 검사 8 이 confirmed 후보를 그 행의 Linked Schema(zod export)로 해소한다.
+  # "필요할 때 생성"하는 문서라 항상 존재하지는 않는다 — validate 는 존재하는 인스턴스만 검사한다.
+  api-manifest:
+    kind: authoring
+    scope: api
+    path: docs/frontend-workflow/api/api-manifest.md
+    template: templates/api/api-manifest.template.md
+    required_frontmatter:
+      - artifact_id
+      - artifact_type
       - status
 
   # --- 생성물 (do_not_edit) ---

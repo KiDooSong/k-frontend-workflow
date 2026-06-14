@@ -309,11 +309,12 @@ function main() {
         continue;
       }
       if (isSchemaUnset(m.linkedSchema)) {
-        add(
-          8,
-          m.file,
-          `confirmed endpoint ${e.method} ${e.path} 에 Linked Schema 가 없음(빈칸/TBD) → 해소: ## Endpoints 행의 Linked Schema 에 실제 export 스키마명을 기입하세요.`,
-        );
+        // 컬럼 자체 부재(레거시 형식)와 셀 빈칸/TBD 를 구분 — 전자는 표에서 없는 칸을 찾게 만드는 혼란을 막는다.
+        const detail =
+          m.hasLinkedSchemaCol === false
+            ? `## Endpoints 표에 Linked Schema 컬럼이 없음(레거시 형식) → 해소: api-manifest 를 Method|Path|Confidence|Linked Schema|Source 5컬럼으로 맞추고(templates/api/api-manifest.template.md 참조) Linked Schema 에 실제 zod export 명을 기입하세요.`
+            : `Linked Schema 가 비어있음(빈칸/TBD) → 해소: ## Endpoints 행의 Linked Schema 에 실제 export 스키마명을 기입하세요.`;
+        add(8, m.file, `confirmed endpoint ${e.method} ${e.path}: ${detail}`);
         continue;
       }
       if (!schemaExports.has(m.linkedSchema)) {

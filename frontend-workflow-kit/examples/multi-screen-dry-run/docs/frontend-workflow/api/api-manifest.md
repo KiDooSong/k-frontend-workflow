@@ -11,15 +11,17 @@ last_reviewed: 2026-06-12
 > 화면은 이 manifest 의 DTO 에 직접 의존하지 않는다 (fake hook + AsyncState 계약).
 
 ## Endpoints
-| Method | Path | 용도 | Response (요약) | confidence |
-|---|---|---|---|---|
-| POST | /auth/login | 로그인 | { token, user } | candidate |
-| GET | /home/summary | 홈 대시보드 요약 | { coupons, notices, reco } | unknown |
-| GET | /coupons | 보유 쿠폰 목록 | CouponDto[] | candidate |
-| GET | /coupons/{id} | 쿠폰 상세 | CouponDto | candidate |
-| GET | /profile | 프로필 조회 | ProfileDto | unknown |
-| PATCH | /profile | 프로필 수정 | ProfileDto | unknown |
-| GET | /notices | 공지 목록 | NoticeDto[] | candidate |
+<!-- 검사 8 은 앞 5컬럼(Method|Path|Confidence|Linked Schema|Source)만 읽는다 — 용도·Response (요약)는 사람용 참고(검사 무관).
+     Linked Schema 는 src/api/schemas/*.ts 의 zod export. 이 예제는 전부 candidate/unknown 이라 TBD(미연결). -->
+| Method | Path | Confidence | Linked Schema | Source | 용도 | Response (요약) |
+|---|---|---|---|---|---|---|
+| POST | /auth/login | candidate | TBD | - | 로그인 | { token, user } |
+| GET | /home/summary | unknown | TBD | - | 홈 대시보드 요약 | { coupons, notices, reco } |
+| GET | /coupons | candidate | TBD | - | 보유 쿠폰 목록 | CouponDto[] |
+| GET | /coupons/{id} | candidate | TBD | - | 쿠폰 상세 | CouponDto |
+| GET | /profile | unknown | TBD | - | 프로필 조회 | ProfileDto |
+| PATCH | /profile | unknown | TBD | - | 프로필 수정 | ProfileDto |
+| GET | /notices | candidate | TBD | - | 공지 목록 | NoticeDto[] |
 
 ## Notes
 - /coupons 응답은 현재 bare array(CouponDto[]). 페이지네이션 정책 미정 (D-003).

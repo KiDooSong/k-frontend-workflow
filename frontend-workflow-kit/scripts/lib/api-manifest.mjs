@@ -6,7 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { readFileSafe, isDir, splitFrontmatter } from './util.mjs';
-import { getSections, parseTable, col } from './spec.mjs';
+import { getSections, parseTable, col, hasHeader } from './spec.mjs';
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'TRACE', 'CONNECT'];
 
@@ -33,12 +33,15 @@ export function isSchemaUnset(linkedSchema) {
 }
 
 // api-manifest 본문(frontmatter 제외)에서 ## Endpoints 표를 파싱한다.
-// → [{ method, path, confidence, linkedSchema, source, key }]
+// → [{ method, path, confidence, linkedSchema, source, key, hasLinkedSchemaCol }]
+//   hasLinkedSchemaCol: 표에 'Linked Schema' 헤더가 존재하는가. 레거시 형식(컬럼 자체 부재)을
+//   빈칸/TBD 와 구분해 validate 가 더 정확한 해소 안내를 주도록 한다(검사 8).
 export function parseManifestEndpoints(body) {
   const sections = getSections(body || '');
   const table = parseTable(sections['endpoints']);
   const out = [];
   if (!table) return out;
+  const hasLinkedSchemaCol = hasHeader(table.headers, 'Linked Schema');
   for (const row of table.rows) {
     const method = (col(row, 'Method') || '').trim();
     const p = (col(row, 'Path') || '').trim();
@@ -50,6 +53,7 @@ export function parseManifestEndpoints(body) {
       linkedSchema: (col(row, 'Linked Schema') || '').trim(),
       source: (col(row, 'Source') || '').trim(),
       key: normEndpoint(method, p),
+      hasLinkedSchemaCol,
     });
   }
   return out;

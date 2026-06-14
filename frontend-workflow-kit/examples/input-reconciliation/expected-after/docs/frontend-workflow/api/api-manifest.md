@@ -11,15 +11,17 @@ last_reviewed: 2026-06-13
 > 화면은 이 DTO 에 직접 의존하지 않는다 (fake hook + AsyncState).
 
 ## Endpoints
-| Method | Path | 용도 | Response (요약) | confidence |
-|---|---|---|---|---|
-| POST | /auth/login | 로그인 | { token, user } | candidate |
-| GET | /home/summary | 홈 대시보드 요약 | { coupons, notices, reco } | unknown |
-| GET | /coupons | 보유 쿠폰 목록 | { items: CouponDto[], page, size, hasNext } | candidate |
-| GET | /coupons/{id} | 쿠폰 상세 | CouponDto | candidate |
-| GET | /profile | 프로필 조회 | ProfileDto | unknown |
-| PATCH | /profile | 프로필 수정 | ProfileDto | unknown |
-| GET | /notices | 공지 목록 | NoticeDto[] | candidate |
+<!-- 검사 8 은 앞 5컬럼(Method|Path|Confidence|Linked Schema|Source)만 읽는다 — 용도·Response (요약)는 사람용 참고(검사 무관).
+     reconcile 후(after): 여전히 candidate → Linked Schema=TBD(confirmed 승격은 api-integrated 단계). GET /coupons 가 page envelope 으로 바뀐 사실은 아래 Pagination Policy 참조. -->
+| Method | Path | Confidence | Linked Schema | Source | 용도 | Response (요약) |
+|---|---|---|---|---|---|---|
+| POST | /auth/login | candidate | TBD | - | 로그인 | { token, user } |
+| GET | /home/summary | unknown | TBD | - | 홈 대시보드 요약 | { coupons, notices, reco } |
+| GET | /coupons | candidate | TBD | - | 보유 쿠폰 목록 | { items: CouponDto[], page, size, hasNext } |
+| GET | /coupons/{id} | candidate | TBD | - | 쿠폰 상세 | CouponDto |
+| GET | /profile | unknown | TBD | - | 프로필 조회 | ProfileDto |
+| PATCH | /profile | unknown | TBD | - | 프로필 수정 | ProfileDto |
+| GET | /notices | candidate | TBD | - | 공지 목록 | NoticeDto[] |
 
 ## Pagination Policy (신규 — D-003)
 - 방식: offset/page (page, size). 기본 size = 20.

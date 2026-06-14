@@ -15,7 +15,8 @@ LLM이 프론트 프로젝트를 **환각 없이** 진행하게 만드는 워크
 ```txt
 templates/   screen-spec(통합형+stub), navigation-map(뼈대), llm-rules, domain-rules,
              component-gap-register, conflicts (막힘 기록용 전역 레지스터),
-             figma-component-mapping (화면별 figma 시각 매핑; reconcile-input 산출물)
+             figma-component-mapping (화면별 figma 시각 매핑; reconcile-input 산출물),
+             api-manifest (## Endpoints — 검사 8 API Candidates↔스키마 매칭 입력)
 scripts/     workflow-state.mjs · readiness.mjs · validate.mjs   (MVP-A 코어 3개)
 skills/      implement-screen
 schemas/     frontmatter.schema.json

@@ -12,15 +12,17 @@ last_reviewed: 2026-06-13
 > 화면은 이 DTO 에 직접 의존하지 않는다 (fake hook + AsyncState).
 
 ## Endpoints
-| Method | Path | 용도 | Response (요약) | confidence |
-|---|---|---|---|---|
-| POST | /auth/login | 로그인 | { token, user } | candidate |
-| GET | /home/summary | 홈 대시보드 요약 | { coupons, notices, reco } | unknown |
-| GET | /coupons | 보유 쿠폰 목록 | { items: CouponDto[], page, size, hasNext } | candidate |
-| GET | /coupons/{id} | 쿠폰 상세 | CouponDto | candidate |
-| GET | /profile | 프로필 조회 | ProfileDto | unknown |
-| PATCH | /profile | 프로필 수정 | ProfileDto | unknown |
-| GET | /notices | 공지 목록 | NoticeDto[] | candidate |
+<!-- 검사 8 은 앞 5컬럼(Method|Path|Confidence|Linked Schema|Source)만 읽는다 — 용도·Response (요약)는 사람용 참고(검사 무관).
+     reconcile 후(llm): 여전히 candidate → Linked Schema=TBD. GET /coupons 응답=page envelope(아래 Pagination 절). -->
+| Method | Path | Confidence | Linked Schema | Source | 용도 | Response (요약) |
+|---|---|---|---|---|---|---|
+| POST | /auth/login | candidate | TBD | - | 로그인 | { token, user } |
+| GET | /home/summary | unknown | TBD | - | 홈 대시보드 요약 | { coupons, notices, reco } |
+| GET | /coupons | candidate | TBD | - | 보유 쿠폰 목록 | { items: CouponDto[], page, size, hasNext } |
+| GET | /coupons/{id} | candidate | TBD | - | 쿠폰 상세 | CouponDto |
+| GET | /profile | unknown | TBD | - | 프로필 조회 | ProfileDto |
+| PATCH | /profile | unknown | TBD | - | 프로필 수정 | ProfileDto |
+| GET | /notices | candidate | TBD | - | 공지 목록 | NoticeDto[] |
 
 ## Pagination (응답 형태=사실, 화면 방식=D-003 open)
 - **응답 형태 (사실 · IN-api-001)**: `GET /coupons` 는 page envelope `{ items, page, size, hasNext }` 를 돌려준다. 기본 size = 20. 정렬은 만료 임박 순(서버 결정).
