@@ -167,6 +167,19 @@ export function loadYaml(p) {
   return yamlParse(raw);
 }
 
+// 손상된(파싱 실패) YAML 설정 파일을 exit 2(입력 오류)로 우아하게 처리한다.
+// 부재(파일 없음)는 loadYaml 이 null 을 돌려주므로 호출부가 별도 처리 — 여기선 "손상"만 잡는다.
+// forbidden-paths.mjs 가 먼저 쓰던 패턴을 공유화: readiness/validate 도 같은 exit 2 계약을 따른다
+// (이전엔 손상 설정에서 stack trace + exit 1 로 새, 도구마다 exit code 가 갈리던 비대칭을 해소).
+export function loadYamlOrExit(p, label, tool = 'workflow') {
+  try {
+    return loadYaml(p);
+  } catch (err) {
+    process.stderr.write(`${tool}: ${label} YAML 파싱 실패 — ${p}\n  ${err.message}\n`);
+    process.exit(2);
+  }
+}
+
 // --- 순서값(ordinal) 비교 --------------------------------------------------
 export const STATUS_ORDER = [
   'missing',

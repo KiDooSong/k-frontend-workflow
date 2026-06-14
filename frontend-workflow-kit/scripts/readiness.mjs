@@ -10,6 +10,7 @@ import {
   parseArgs,
   DEFAULTS,
   loadYaml,
+  loadYamlOrExit,
   statusRank,
   confidenceRank,
   yamlStringify,
@@ -199,7 +200,7 @@ const CI_FACTS = new Set([
 ]);
 
 export function computeReadiness({ state, policy, ci, manifest }) {
-  const order = policy.order || Object.keys(policy.modes);
+  const order = policy.order || Object.keys(policy.modes || {});
   const modes = policy.modes || {};
   const global = state.global || {};
   const ciProvided = ci && Object.keys(ci).length > 0;
@@ -313,7 +314,7 @@ export function computeReadiness({ state, policy, ci, manifest }) {
 
 function loadCi(flags) {
   if (!flags.ci) return {};
-  const data = loadYaml(path.resolve(flags.ci));
+  const data = loadYamlOrExit(path.resolve(flags.ci), 'CI', 'readiness');
   return data || {};
 }
 
@@ -323,21 +324,21 @@ function main() {
   const policyPath = path.resolve(flags.policy || DEFAULTS.policy);
   const statePath = path.join(docsDir, '_meta', 'workflow-state.yaml');
 
-  const state = loadYaml(statePath);
+  const state = loadYamlOrExit(statePath, 'workflow-state', 'readiness');
   if (!state) {
     process.stderr.write(
       `readiness: ${path.relative(process.cwd(), statePath)} 없음. 먼저 \`npm run workflow:state\` 실행.\n`,
     );
     process.exit(2);
   }
-  const policy = loadYaml(policyPath);
+  const policy = loadYamlOrExit(policyPath, 'policy', 'readiness');
   if (!policy) {
     process.stderr.write(`readiness: 정책 파일 없음: ${policyPath}\n`);
     process.exit(2);
   }
   // 매니페스트는 §6 입력 계약상의 입력. 게이트 판정은 정책이 단일 출처이고(불변식 #1),
   // 매니페스트는 next_actions 의 템플릿 경로 등 부가 정보로만 쓴다 (판정 중복 금지).
-  const manifest = loadYaml(path.resolve(flags.manifest || DEFAULTS.manifest)) || {};
+  const manifest = loadYamlOrExit(path.resolve(flags.manifest || DEFAULTS.manifest), 'manifest', 'readiness') || {};
   const ci = loadCi(flags);
 
   let result = computeReadiness({ state, policy, ci, manifest });
