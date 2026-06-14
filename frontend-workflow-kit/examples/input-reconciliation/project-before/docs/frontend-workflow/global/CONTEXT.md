@@ -1,10 +1,10 @@
 ---
-title: Domain Glossary
+title: CONTEXT
 status: draft
 kind: glossary
 ---
 
-# Domain Glossary
+# CONTEXT
 
 "샘플 커머스 앱"의 도메인 용어집. 화면·문서·입력에서 같은 말을 같은 뜻으로 쓰기 위한 단일 출처다.
 이 문서는 prose 문서이므로 `artifact_type` 을 갖지 않는다.
