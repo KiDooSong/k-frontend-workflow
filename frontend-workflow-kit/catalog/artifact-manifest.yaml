@@ -124,7 +124,9 @@ artifacts:
   #   generated: true        — 명시적 생성물 플래그. kind:generated 와 의미가 겹치나
   #                            의도를 못박고, 향후 검사가 이 플래그로 분기할 여지를 둔다.
   #                            (현재 validate.mjs 검사 6 은 kind+do_not_edit 만 본다.)
-  #   do_not_edit: true      — 사람 직접 편집 금지. 생성기만 파일 전체(또는 마커 안)를 교체.
+  #   do_not_edit: true|false — 직접 편집 금지(true). 생성기만 파일 전체(또는 마커 안)를 교체.
+  #                            예외: component-catalog 은 생성기(catalog-gen) active 전까지 false
+  #                            (수동 작성 임시 허용) → 생성기 도입 시 true 로 승격.
   #   source: [...]          — 파생 입력(정본). 생성기가 이걸 읽어 산출물을 만든다.
   #   command: npm run ...   — 재생성 명령.
   #   path: ...              — 산출 파일 경로.
