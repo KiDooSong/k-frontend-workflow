@@ -39,3 +39,20 @@
 ## 3. 메타룰
 
 > 두 스킬은 **거의 그대로** 쓴다. 우리가 만드는 건 "스킬"이 아니라 **write-back 결선**(엔진 결과 → 게이트가 보는 표면) 하나. 예외는 **①온보딩(새 스킬)** 과 **⑥확정(체크리스트)**.
+
+## 4. 검증 로그 (증거)
+
+> Codex 리뷰(Round 1, PASS) area 5 의 "런타임 클레임 재실행 불가(샌드박스 npm/node 차단)" 항목을 닫기 위해 첨부.
+> 워크트리 `.claude/worktrees/grill-adoption/frontend-workflow-kit` 에서 실측:
+
+```txt
+$ npm run example:validate
+workflow:validate — OK (검사 12종 통과)
+
+$ npm test
+ℹ tests 15
+ℹ pass 15
+ℹ fail 0
+ℹ duration_ms 281.1965
+```
+
