@@ -95,7 +95,9 @@ function runCapture(scriptPath, args) {
 
 function invocationLabel(scriptPath, args) {
   // 실제 상대 경로를 그대로 표기 — 소비 프로젝트에선 tools/frontend-workflow/scripts/... 로 정확히 나온다.
-  return `node ${relToCwd(scriptPath)} ${args.join(' ')}`;
+  // 공백 포함 토큰(예: 공백 있는 docs 경로)은 따옴표로 감싸 그대로 복사-실행 가능하게 한다.
+  const quote = (a) => (/\s/.test(a) ? `"${a}"` : a);
+  return `node ${quote(relToCwd(scriptPath))} ${args.map(quote).join(' ')}`;
 }
 
 // --- 도구별 수집기 (결과를 정규화 — 판정 아님, evidence) -------------------
