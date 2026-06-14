@@ -307,7 +307,7 @@ export function deriveMetrics(spec, opts = {}) {
 // "- GET /coupons (confidence: candidate)" 같은 줄에서 method/path/confidence 추출.
 // raw·confidence 는 기존 계약 그대로(minApiConfidence/deriveMetrics 가 confidence 만 읽으므로 readiness 불변).
 // method/path 는 검사 8(엔드포인트 매칭)용으로만 추가하며, 미인식 시 null.
-const API_CANDIDATE_RE = /\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b\s+(\/[^\s()]+)/i;
+const API_CANDIDATE_RE = /\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE|CONNECT)\b\s+(\/[^\s()]+)/i;
 export function parseApiCandidates(sectionText) {
   if (!sectionText) return [];
   const clean = stripComments(sectionText);

@@ -244,7 +244,17 @@ function main() {
   const manifestFiles = docs
     .filter((d) => d.fm.artifact_type === 'api-manifest')
     .map((d) => d.file);
-  const endpointIndex = manifestFiles.length ? buildEndpointIndex(manifestFiles) : null;
+  const endpoints = manifestFiles.length ? buildEndpointIndex(manifestFiles) : null;
+  const endpointIndex = endpoints ? endpoints.index : null;
+  // canonical 출처(api-manifest)에 같은 (Method,Path) 가 서로 다른 Linked Schema/confidence 로 중복 선언되면
+  // 매칭이 행 순서에 의존(모순)하므로 에러로 surface 한다(동일 중복 행은 무시).
+  for (const c of endpoints ? endpoints.conflicts : []) {
+    add(
+      8,
+      c.file,
+      `api-manifest ## Endpoints 의 ${c.key} 가 충돌 중복 선언됨 (Linked Schema '${c.prev.linkedSchema || '(빈값)'}' vs '${c.next.linkedSchema || '(빈값)'}', confidence '${c.prev.confidence || '(빈값)'}' vs '${c.next.confidence || '(빈값)'}') → 해소: (Method,Path) 당 canonical 행 1개만 남기세요.`,
+    );
+  }
   const schemaExports = collectSchemaExports(schemasDir);
   for (const spec of specs) {
     const confirmed = parseApiCandidates(spec.sections['api candidates']).filter(

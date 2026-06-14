@@ -142,3 +142,24 @@ validation.commandsRun 및 build 검증 기준. 모든 exit code 실측.
 - **OD-6 — api-manifest 템플릿**: Linked Schema 컬럼을 포함한 `## Endpoints` 표 템플릿을 templates/ 에 추가(현재 픽스처에만 표 형태 존재).
 - **릴리스 전제**: `v0.2.0-mvp-b-rc1` 태그 생성(본 작업 범위 밖 — 미수행, 전제로만 기록)을 릴리스 전에 처리.
 - **골든 커버리지 확장**: 골든 예제 트리 하나를 마이그레이션해 `npm test` 안에서 검사 8 을 직접 행사(현재는 무회귀만 보장)하도록 고려.
+
+---
+
+## 9. Codex 리뷰 반영 (PR #19 follow-up)
+
+PR #19 의 Codex 자동 리뷰(코멘트) 중 타당한 지적을 반영했다.
+
+| 지적 | 반영 | 변경 |
+|---|---|---|
+| M1 export 스캔 거짓양성 | ✅ | `collectSchemaExports`: 스캔 전 주석 제거(죽은 export 무시) + 타입 전용 export(`type`/`interface`, `export type {}`, 인라인 `{ type X }`) 제외 — 런타임 값 export 만 인정. ("export 가 실제 zod 인지"의 AST 증명은 여전히 known limitation.) |
+| M2 중복 endpoint 무음 | ✅ | `buildEndpointIndex` 가 `{ index, conflicts }` 반환. 같은 (Method,Path) 가 다른 Linked Schema/confidence 로 중복 선언되면 검사 8 이 manifest 파일에 에러(동일 중복 행은 무시). |
+| m1 `:id`/`[id]` 미정규화 | ✅ | `normEndpoint` 가 `{id}`·`[id]`·`:id` 를 모두 `{}` 로 정규화(표기 차이 거짓 "미등록" 방지). |
+| m2 `TRACE`/`CONNECT` 누락 | ✅ | `API_CANDIDATE_RE`(spec.mjs) + `HTTP_METHODS` 에 추가. |
+| m3 OpenAPI 한계 미고지 | ✅ | 픽스처 README 에 zod-export-only / `Source=openapi` 도 zod export 필요 명시. |
+| M3 픽스처 npm test 미편입 | ⏸ 보류 | 골든 하니스(test-fixtures.mjs)에 validate-exit 종류 추가가 필요한 별도 후속(§8). manual/매트릭스 실행으로만 검증. |
+
+신규 회귀 픽스처 2종(총 7종: pass 3 / fail 4):
+- `fail-duplicate-endpoint` — 충돌 중복 endpoint → exit 1(검사 8, manifest 귀속). 두 스키마 모두 export 해 해소 자체는 통과시키고 충돌만 단일 사유로 남긴다.
+- `pass-param-normalize` — `GET /coupons/:id`·`POST /coupons/[id]/use`(ScreenSpec) ↔ `/coupons/{id}`·`/coupons/{couponId}/use`(manifest) → 정규화 매칭 → exit 0.
+
+재검증: `node --check` 3파일 OK · `example:state/readiness/validate` + `npm test` green(무회귀) · 픽스처 7종 의도대로 exit code + 검사 8 단일 사유.
