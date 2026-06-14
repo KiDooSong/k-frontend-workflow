@@ -13,7 +13,7 @@
 docs/frontend-workflow/
   global/
     llm-rules.md                  # 유일하게 artifact_type 을 갖는 prose 문서 (artifact_type: llm-rules)
-    domain-glossary.md            # 도메인 용어집
+    CONTEXT.md                    # 도메인 용어집
     frontend-architecture.md      # 라우팅·AsyncState·fake-hook 단계 개요 (doc-level)
     source-map.md                 # 예정 소스 구조 (이 fixture 엔 코드 없음)
     component-gap-register.md     # baseline: 열린 gap 없음 (manifest 경로 = global/)

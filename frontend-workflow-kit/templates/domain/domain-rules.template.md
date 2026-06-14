@@ -23,4 +23,4 @@ last_reviewed: "{YYYY-MM-DD}"
 - {이 도메인의 query key factory 위치, invalidation 정책 등}
 
 ## 용어
-- {도메인 용어 통일 — domain-glossary 와 연결}
+- {도메인 용어 통일 — CONTEXT.md (도메인 용어집, CONTEXT-FORMAT 기준) 와 연결}
