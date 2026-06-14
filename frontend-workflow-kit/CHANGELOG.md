@@ -2,6 +2,22 @@
 
 킷 자체의 버전 관리 (템플릿/스크립트 계약 추적용).
 
+## 0.3.0-mvp-c-phase1 — 2026-06-14
+
+MVP-C Phase 1: 전역 생성 뷰 2종(route-tree·nav-graph) **읽기 전용** 생성기 통합. 새 게이트 없음 — 생성기는 src/app 트리·screen-spec/navigation-map 을 읽어 `_meta` 산출물을 만들 뿐 screen-spec 을 수정하지 않는다. (버전 문자열은 잠정 — 릴리스 시맨틱은 머지 전 확정.)
+
+### Added
+- scripts: `route-tree.mjs`(+`lib/route-tree.mjs`) · `nav-graph.mjs`(+`lib/nav-graph.mjs`) — 결정적·멱등 생성기. 커밋된 골든 픽스처(`examples/route-tree/{basic-app,edge-cases}`, `examples/nav-graph/basic-flow`)를 byte-identical 재현(검증 증거: `temp/runs/mvp-c-generated-views-integration.md`).
+- scripts(`package.json`): `workflow:route-tree`·`workflow:nav-graph` alias 승격(대상 .mjs 존재·동작 확인 후). `package-scripts.template.json` 도 동기화(`//roadmap-scripts` → active `scripts`; 파킹돼 있던 `workflow:nav` → `workflow:nav-graph` 로 정렬).
+
+### Changed
+- `catalog/artifact-manifest.yaml`: route-tree·nav-graph `status: planned → active`(생성기 존재). nav-graph `command` 을 실제 동작 alias `npm run workflow:nav-graph` 로 정렬(이전 `npm run workflow:nav` 은 package.json·생성기 헤더 어디에도 없던 명령). stale '미존재' 주석 정정. **메타데이터 전용** — 생성기 로직·픽스처·게이트 불변.
+- README/roadmap: route-tree·nav-graph 를 '제안(승격 금지)' 에서 'Phase 1 구현(읽기 전용)' 으로 정정.
+
+### Notes
+- **CI 미배선(의도)**: route-tree/nav-graph 는 아직 CI 에서 돌리지 않는다. 기존 멱등성 diff 게이트는 coupon-feature `_meta` 만 보는데 거기엔 두 뷰의 커밋 산출물이 없어 의미있는 diff 가 불가하고, 두 생성기는 `test-fixtures.mjs` 에도 미등록이다. 선행 과제 = `test-fixtures.mjs` 에 두 뷰 픽스처 등록 → 그러면 기존 warning-first golden-fixture CI step(`example:test`, `continue-on-error`)이 새 step 없이 자동 커버. 어떤 경우에도 warning-first 만, 하드 게이트 승격 없음.
+- route-tree 생성기 출력 헤더가 여전히 `# Command: npm run workflow:route-tree` 를 하드코드(`scripts/lib/route-tree.mjs`) — 이제 npm alias 가 생겨 해소되나, nav-graph(29a401c)처럼 `node scripts/...` 형으로 통일하는 헤더 변경은 route-tree 로직 수정이라 별도 과제로 분리.
+
 ## 0.2.0-mvp-b-rc1 — 2026-06-14
 
 MVP-B 릴리스 후보(rc1): **킷 런타임 코드 변경 0** — 외부 소비 프로젝트 도그푸드로 킷을 end-to-end 실증하고 그 증거를 고정한 뒤 문서를 정합한 **릴리스 준비** 마일스톤. 게이트 동작은 `0.2.0-mvp-b-phase0` 그대로(불변) — 기능 추가가 아니라 검증·증거·문서 정합이다.

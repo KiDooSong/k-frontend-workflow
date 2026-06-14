@@ -9,7 +9,8 @@
 #
 # MVP-C Phase 0 하드닝(2026-06-14): 모든 생성물 엔트리에 generated/status 필드를 일관
 # 적용하고, 아직 생성기가 없는 planned 산출물도 레지스트리 완전성을 위해 등록한다(구현 아님) —
-# route-tree·nav-graph(MVP-C, status: planned), eslint.workflow.config(MVP-B, status: planned).
+# eslint.workflow.config(MVP-B, status: planned). route-tree·nav-graph(MVP-C)는 Phase 1
+# 생성기 구현 완료로 status: active 로 갱신(2026-06-14 통합 점검 — temp/runs/mvp-c-generated-views-integration.md).
 # 생성물 필드 계약·planned 표기 규칙은 아래 "생성물" 섹션 주석 참고.
 # 직접편집 가드(헤더/마커/diff/hook) 설계: frontend-workflow-kit/temp/proposals/generated-file-guard-followup.md
 # 참고: frontend-workflow-kit-implementation.md §4
@@ -185,25 +186,25 @@ artifacts:
     status: planned # catalog-gen.mjs 미구현 — 현재 수동 작성
     mvp: C
 
-  # ── planned 산출물 (생성기 미존재) — Phase 0 등록만, 구현 아님 ──
+  # ── MVP-C Phase 1 생성 뷰 — route-tree · nav-graph (생성기 구현 완료 → status: active) ──
 
   # route-tree (MVP-C, View 2) — src/app 파일 트리(Expo Router)에서 라우트 트리를 파생.
-  # 생성기 route-tree.mjs 미존재. 교차검증 입력: screen-spec frontmatter.route.
-  # 출력 포맷(.txt vs .yaml)은 미해소 Open Decision — impl §9 권장(.txt)으로 등록.
+  # 생성기 route-tree.mjs 구현 완료(Phase 1). 교차검증 입력: screen-spec frontmatter.route.
+  # 출력 포맷 .txt 로 구현(impl §9 권장). 골든 픽스처: examples/route-tree/{basic-app,edge-cases}.
   route-tree:
     kind: generated
     generated: true
     scope: global
     path: docs/frontend-workflow/_meta/route-tree.txt
-    command: npm run workflow:route-tree # route-tree.mjs (MVP-C, 미존재)
+    command: npm run workflow:route-tree # route-tree.mjs (MVP-C)
     source:
       - src/app/** # Expo Router 파일 트리 (정본, impl §9)
     do_not_edit: true
-    status: planned
+    status: active
     mvp: C
 
   # nav-graph (MVP-C, View 1) — 모든 screen-spec 의 ## Interaction Matrix +
-  # navigation-map 의 Cross-Domain Edges 에서 내비 그래프를 파생. 생성기 nav-graph.mjs 미존재.
+  # navigation-map 의 Cross-Domain Edges 에서 내비 그래프를 파생. 생성기 nav-graph.mjs 구현 완료(Phase 1).
   # 같은 생성기가 각 screen-spec 의 Entry Points GENERATED 블록도 채운다 — 그 인-파일 블록
   # 계약은 screen-spec.generated_sections(entry-points/nav-graph)에 이미 등록돼 있다.
   # 여기선 _meta/nav-graph.yaml 파일 전체(whole-file 헤더) 산출물만 등록한다.
@@ -213,12 +214,12 @@ artifacts:
     generated: true
     scope: global
     path: docs/frontend-workflow/_meta/nav-graph.yaml
-    command: npm run workflow:nav # nav-graph.mjs (MVP-C, 미존재)
+    command: npm run workflow:nav-graph # nav-graph.mjs (MVP-C)
     source:
       - docs/frontend-workflow/domains/**/screen-spec.md # ## Interaction Matrix
       - docs/frontend-workflow/app/navigation-map.md # Cross-Domain Edges
     do_not_edit: true
-    status: planned
+    status: active
     mvp: C
 
   # eslint.workflow.config (MVP-B, lint-pack) — lint-policy 에서 lint-gen.mjs 가 합성.
