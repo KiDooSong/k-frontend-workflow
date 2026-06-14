@@ -67,10 +67,12 @@
 
 ## 4. validate 지원 상태
 
-- **이미 generated 시맨틱을 지원한다.** 검사 6a(screen-spec 블록 마커)·6b(생성 파일 헤더 무결성).
-- **변경 없음 / 변경 불필요.** planned 엔트리는 존재 가드 `if (!exists(full)) continue;`
-  (`validate.mjs:438`)로 건너뛰고, 매니페스트 스키마 검증이 없어 신규 필드(`generated`,`status`)는
-  무시된다. `command`/`source` 는 미독취·미실행.
+- **이미 generated 시맨틱을 지원한다.** 검사 6 = 섹션 마커 검사(screen-spec, `validate.mjs:239–258`, 코드 라벨 `6b`) + 헤더 검사(생성 파일 전체, `validate.mjs:432–443`, 코드 라벨 `6`).
+- **변경 없음 / 변경 불필요.** do_not_edit:true 인데 파일이 아직 없는 planned 엔트리(route-tree·
+  nav-graph·eslint)는 헤더 검사의 존재 가드 `if (!exists(full)) continue;`(`validate.mjs:438`)로
+  건너뛴다. component-catalog 은 status:planned 이지만 do_not_edit:false 라 그 앞 필터
+  (`validate.mjs:434`)에서 먼저 제외된다(존재 가드 이전). 또 매니페스트 스키마 검증이 없어 신규 필드
+  (`generated`,`status`)는 무시되고, `command`/`source` 는 미독취·미실행.
 - **증거 (편집된 매니페스트에 대해 실제 실행):**
   ```
   $ npm run example:validate    # node scripts/validate.mjs --docs examples/coupon-feature/... --src ...
@@ -79,9 +81,9 @@
   ```
   (worktree 에 `node_modules` 정션 연결 후 실행. 정션은 gitignore 됨 — git status 무영향.)
 - **알려진 가드 공백(향후 `check-generated-files.mjs` 몫, 후속 제안 §3 에 상술):**
-  1. **본문 직접 편집 미탐지** — 헤더가 멀쩡하면 6b 통과. diff/훅 없이는 못 잡음.
-  2. **블록 마커 스캔이 screen-spec 전용** — 6a 가 `'screen-spec'` 키 하드코딩(`validate.mjs:242`).
-  3. **루트 경로 미해소** — 6b 경로 매핑이 `docs/frontend-workflow/` 접두 가정(`validate.mjs:436`)이라
+  1. **본문 직접 편집 미탐지** — 헤더가 멀쩡하면 헤더 검사 통과. diff/훅 없이는 못 잡음.
+  2. **섹션 마커 스캔이 screen-spec 전용** — 마커 검사가 `'screen-spec'` 키 하드코딩(`validate.mjs:241–242`).
+  3. **루트 경로 미해소** — 헤더 검사 경로 매핑이 `docs/frontend-workflow/` 접두 가정(`validate.mjs:436`)이라
      루트 파일 `eslint.workflow.config.mjs` 를 영원히 건너뜀.
 
 ## 5. risks
@@ -89,12 +91,12 @@
 - **`generated: true` 중복.** `kind: generated` 와 의미가 겹친다. 가드 셀렉터로 채택할지(`generated===true`)
   `kind` 만 쓸지 **결정 필요**(후속 제안 §4). 이 세션은 하드닝 스펙대로 추가만 했다.
 - **`status` 는 신규 규약 — 아직 코드가 읽지 않는다.** 가드/CI 가 도입되기 전까진 **문서 수준 계약**.
-- **eslint 루트 경로 잠복 이슈.** 현행 6b 가 못 해소(위 §4-3). 지금은 파일이 없어 무해하나, 생성 시
+- **eslint 루트 경로 잠복 이슈.** 현행 헤더 검사(:432–443)가 못 해소(위 §4-3). 지금은 파일이 없어 무해하나, 생성 시
   가드 수정 전까진 미보호. 후속 제안 §3.1 에 수정안.
 - **MVP-B 항목을 MVP-C 세션에 등록.** `eslint-workflow-config` 는 lint-pack(B) 소속. Goal 의 generated
   목록에 들어 레지스트리 완전성 차원에서 등록했고 `mvp: B`·`status: planned` 로 명시 — 분리/되돌리기 쉽다.
 - **planned 의 `do_not_edit: true`.** route-tree/nav-graph 를 누군가 헤더 없이 수동 stub 하면 파일 생성
-  순간 6b 가 실패한다 — **의도된 동작**(헤더 강제)이나 인지 필요.
+  순간 헤더 검사가 실패한다 — **의도된 동작**(헤더 강제)이나 인지 필요.
 
 ## 6. next steps
 

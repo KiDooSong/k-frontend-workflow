@@ -19,7 +19,7 @@ artifact-manifest 의 generated 계약을 **하드닝(필드 일관화 + planned
   한다 — 구조/필드 검증 없음. `validateSchema`(lib/schema.mjs)는 **문서 frontmatter 에만**
   적용된다(validate.mjs:159). 따라서 `generated: true`·`status: planned` 같은 **미지(未知) 필드는
   조용히 무시**된다. (기존 `component-catalog` 의 `mvp: C` 가 이미 그렇게 무해히 존재해 왔다.)
-- **planned 산출물은 검사를 통과한다.** 검사 6b(아래 §1)는 생성 파일이 **실제 존재할 때만**
+- **planned 산출물은 검사를 통과한다.** 검사 6 의 헤더 검사(아래 §1-ii)는 생성 파일이 **실제 존재할 때만**
   헤더를 본다 — `if (!exists(full)) continue;`(**validate.mjs:438**). 아직 생성기가 없어 파일도 없는
   `route-tree`·`nav-graph`·`eslint.workflow.config` 는 **건너뛴다(에러/경고 없음).**
 - **`command`·`source` 는 validate 가 읽지도 실행하지도 않는다.** 존재하지 않는 명령/스크립트를
@@ -30,19 +30,24 @@ artifact-manifest 의 generated 계약을 **하드닝(필드 일관화 + planned
 
 ## 1. 현행 검사 6 의 정확한 동작
 
-검사 6 은 두 갈래다(불변식 #3 "생성물엔 GENERATED 헤더/마커, 마커 밖은 생성기가 안 건드린다").
+검사 6(상단 목록 line 9 "do_not_edit 산출물의 GENERATED 헤더/마커 훼손")은 코드상 두 갈래다 —
+본문 **섹션 마커** 검사와 **파일 전체 헤더** 검사. (코드 주석 라벨이 엇갈려 — 섹션 블록은 `6b`,
+헤더 블록은 `6` — 아래는 기능+라인으로 적는다.) 불변식 #3: "생성물엔 GENERATED 헤더/마커, 마커
+밖은 생성기가 안 건드린다."
 
-### 6a — 문서 내 생성 섹션 마커 (`GENERATED:START/END`)
-- `validate.mjs` 약 239–258. **하드코딩된 `'screen-spec'` 키**만 본다 —
-  `(manifest.artifacts || {})['screen-spec']?.generated_sections`(:242).
+### (i) 문서 내 생성 섹션 마커 — `validate.mjs:239–258` (코드 주석 라벨 `6b`)
+- **하드코딩된 `'screen-spec'` 키**만 본다 —
+  `(manifest.artifacts || {})['screen-spec']?.generated_sections`(:241–242).
 - 각 (stub 아닌) screen-spec **본문**을 정규식 `new RegExp('GENERATED:START\\s+' + gen + '\\b')`
-  / `...END...` 로 검사. 마커가 없거나 `START index >= END index` 면 `add(6, ...)` 에러.
-- 즉 **이 검사는 screen-spec 파일만 순회**하고, manifest 의 다른 항목·다른 in-file 블록은 못 본다.
+  / `...END...`(:248–249) 로 검사. 마커가 없거나 `START index >= END index`(:250) 면 에러 —
+  메시지 `generated section 마커 부재/훼손/순서오류: ${sec.name} ...`(:254).
+- **존재 가드(:438)와 무관**: 이 검사는 screen-spec 본문을 직접 순회하므로 (ii)의 파일-존재 가드를
+  거치지 않는다. 그래서 **screen-spec 파일만 순회**하고 manifest 의 다른 항목·다른 in-file 블록은 못 본다.
   현재 in-file 블록을 쓰는 생성물은 screen-spec 의 `## Entry Points`(generator `nav-graph`) 하나뿐이라
   당장은 충분하지만, **데이터 주도(모든 `generated_sections`)가 아니다.**
 
-### 6b — 생성 파일 전체 헤더 무결성 (`GENERATED FILE — DO NOT EDIT`)
-- `validate.mjs` 약 432–443. **모든 매니페스트 항목 순회**:
+### (ii) 생성 파일 전체 헤더 무결성 — `validate.mjs:432–443` (코드 주석 라벨 `6`)
+- **모든 매니페스트 항목 순회**:
   `for (const [name, entry] of Object.entries(manifest.artifacts || {}))`(:433).
 - **필터(:434):** `if (entry.kind !== 'generated' || entry.do_not_edit !== true) continue;`
   → 처리 대상은 **정확히 `kind === 'generated' && do_not_edit === true`**. (별도 `generated: true`
@@ -51,7 +56,8 @@ artifact-manifest 의 generated 계약을 **하드닝(필드 일관화 + planned
   `path.join(docsDir, rel)`.
 - **존재 가드(:438):** `if (!exists(full)) continue;` — 파일이 없으면 건너뜀.
 - **헤더 검사(:439–441):** 존재하면 앞 **400바이트**를 읽어 `/GENERATED FILE\s+—\s+DO NOT EDIT/`
-  (em-dash U+2014) 매칭 실패 시 `add(6, full, 'GENERATED 헤더 훼손/부재')`.
+  (em-dash U+2014) 매칭 실패 시 `add(6, full, …)` — 메시지 `생성물(${name})의 GENERATED 헤더 훼손/부재`
+  (백틱 템플릿, name=아티팩트 키).
 
 헤더 정본(impl §3): Markdown 은 `<!-- ... GENERATED FILE — DO NOT EDIT ... -->`,
 YAML/JS 는 `# GENERATED FILE — DO NOT EDIT`. 실제 생성기(`workflow-state.mjs`)가 쓰는 바이트:
@@ -65,8 +71,8 @@ YAML/JS 는 `# GENERATED FILE — DO NOT EDIT`. 실제 생성기(`workflow-state
 
 | | 대상 | 현행 검사 6 |
 |---|---|---|
-| ✅ | do_not_edit:true 생성 파일의 **헤더 부재/훼손** (존재할 때) | 6b 가 잡음 |
-| ✅ | screen-spec Entry Points **블록 마커** 부재/순서오류 | 6a 가 잡음 |
+| ✅ | do_not_edit:true 생성 파일의 **헤더 부재/훼손** (존재할 때) | 헤더 검사(:432–443) |
+| ✅ | screen-spec Entry Points **블록 마커** 부재/순서오류 | 섹션 마커 검사(:239–258) |
 | ❌ | 헤더가 멀쩡한데 **본문을 손으로 고친 경우** | **못 잡음** (앞 400바이트 헤더만 봄) |
 | ❌ | screen-spec **외** 파일의 in-file 블록 마커 | 못 잡음 (`'screen-spec'` 하드코딩) |
 | ❌ | **레포 루트** 생성 파일 (`eslint.workflow.config.mjs`) | 못 잡음 (경로 접두 가정, §3.1) |
@@ -85,7 +91,7 @@ YAML/JS 는 `# GENERATED FILE — DO NOT EDIT`. 실제 생성기(`workflow-state
 ### 3.1 generated header present (헤더 존재)
 - **파일 목록을 매니페스트에서 끌어온다**: `kind: generated` 항목(선택적으로 `generated: true` 게이트).
   각 항목의 `path` 가 가리키는 파일이 존재하면 확장자에 맞는 헤더 형태(Markdown/YAML·JS)를 요구.
-- **경로 해소를 고친다(가드 공백).** 현행 6b 의 `path.replace(/^docs\/frontend-workflow\//,'')`
+- **경로 해소를 고친다(가드 공백).** 현행 헤더 검사(:432–443)의 `path.replace(/^docs\/frontend-workflow\//,'')`
   +`join(docsDir,...)`(:436)는 **`docs/frontend-workflow/` 접두를 가정**한다. 그래서 루트 경로
   `eslint.workflow.config.mjs` 는 `docs/frontend-workflow/eslint.workflow.config.mjs` 로 잘못
   해소돼 **영원히 건너뛴다.** 가드는 매니페스트 `path` 를 **프로젝트 루트 기준**으로 해소하거나
@@ -94,14 +100,14 @@ YAML/JS 는 `# GENERATED FILE — DO NOT EDIT`. 실제 생성기(`workflow-state
   planned 인데 파일이 **나타나면** 헤더를 요구해 **반쪽짜리 수동 stub 을 잡는다.**
 
 ### 3.2 generated block markers present where applicable (블록 마커)
-- **6a 를 데이터 주도로 일반화**: 하드코딩 `'screen-spec'` 대신 **모든 artifact 의
+- **섹션 마커 검사(:239–258)를 데이터 주도로 일반화**: 하드코딩 `'screen-spec'` 대신 **모든 artifact 의
   `generated_sections`** 를 순회(현재는 screen-spec 의 `entry-points`/`nav-graph` 하나뿐이나,
   catalog/nav-graph 도입 시 늘어난다). 각 인스턴스에서 선언된 섹션의 `GENERATED:START <gen>` /
   `GENERATED:END <gen>` 쌍 존재 + `START < END` 를 검사.
 - 정규식 계약 유지(`GENERATED:START\s+<gen>\b`). **공백/대소문자 민감**을 문서화하고 lint-policy 로 보강.
 
 ### 3.3 direct edits are not detectable without diff/hook (핵심 한계)
-헤더/마커 검사로는 **본문 직접 편집을 못 잡는다**(헤더가 멀쩡하면 검사 6b 통과). 본문 수정을 잡으려면
+헤더/마커 검사로는 **본문 직접 편집을 못 잡는다**(헤더가 멀쩡하면 헤더 검사 통과). 본문 수정을 잡으려면
 둘 중 하나가 **반드시** 필요하다:
 
 - **(a) 재생성 + diff (멱등성 게이트, 유일한 본문 수준 보증).** 각 `status: active` 생성기를
@@ -137,7 +143,7 @@ YAML/JS 는 `# GENERATED FILE — DO NOT EDIT`. 실제 생성기(`workflow-state
   추가했다 — 결정 대기 항목으로 남긴다.)
 - **`status: active|planned`** — 가드/CI 가 **planned 생성기를 건너뛰게**(없는 명령을 실행하지 않게)
   하면서, 그래도 **존재하는 파일은 헤더 검사**하게 한다. **diff 게이트는 `status: active` 만 순회.**
-- **`do_not_edit`** — 검사 6b 필터(`do_not_edit === true`)와 직접 연결. `component-catalog` 처럼
+- **`do_not_edit`** — 헤더 검사 필터(:434, `do_not_edit === true`)와 직접 연결. `component-catalog` 처럼
   수동 임시 허용 구간은 `false` 로 두어 **MVP-A 오탐을 피한다**(생성기 도입 시 true 전환).
 
 ## 5. 위험 / 비목표
