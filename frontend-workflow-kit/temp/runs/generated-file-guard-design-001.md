@@ -91,7 +91,7 @@ existence nuances worth recording:
 | `frontend-workflow-kit/temp/runs/mvp-c-generated-views-integration.md` | Alias decisions, manifest fixups, guard deferral, `_meta/*` non-backstop decision |
 | `frontend-workflow-kit/temp/runs/generated-views-test-fixtures-001.md` | route-tree/nav-graph golden registration; notes guard not yet implemented |
 | `frontend-workflow-kit/temp/runs/route-tree-header-command-001.md` | Aligned route-tree `# Command:` header to direct `node` CLI form |
-| `frontend-workflow-kit/temp/runs/nav-graph-001.md` | nav-graph impl report; header decisions; manifest registration deferred |
+| `frontend-workflow-kit/temp/runs/nav-graph-001.md` | nav-graph impl report; header decisions; manifest registration deferred *at the time* (since completed — now registered & `active`) |
 | `frontend-workflow-kit/temp/runs/path-backstop-001.md` | T3 decision: `_meta/*` intentionally outside forbidden-paths backstop |
 
 ### Packaging & CI
@@ -111,7 +111,7 @@ existence nuances worth recording:
 | `_meta/workflow-state.yaml` | generated | true | true | active | **now** | regenerate-to-scratch (`--out` = dir, co-emits screen-inventory); pin `--date` from committed `generated_at`; `generated_at`-only fallback normalizer |
 | `_meta/screen-inventory.yaml` | generated | true | true | active | **now** | regenerate-to-scratch (co-emitted with workflow-state); no timestamp → plain `normalizeGeneratedViewText` |
 | `_meta/route-tree.txt` | generated | true | true | active | **now** | regenerate-to-scratch (`--out` = file); timestamp-free, fully deterministic |
-| `_meta/nav-graph.yaml` | generated | true | true | active | **now** | regenerate-to-scratch (`--out` = file); timestamp-free; manifest registration of nav-graph still deferred (schema Open Decision) |
+| `_meta/nav-graph.yaml` | generated | true | true | active | **now** | regenerate-to-scratch (`--out` = file); timestamp-free; manifest entry **registered & `status: active`** — only the node/edge schema remains an Open Decision (per manifest comment) |
 | `design/component-catalog.md` | generated | true | **false** | planned | **not-yet** | header-only, deferred; **must-not-fail** while `do_not_edit:false`/generator absent; graduates to regenerate when flag flips |
 | screen-spec `GENERATED:START/END nav-graph` block | generated (in-file) | true (via `generated_sections`) | true (region) | partial | **partial** | marker-integrity only (presence/order/no-dup/no-nest); no body regenerate (back-fill generator absent); empty blocks valid |
 | `eslint.workflow.config.mjs` | generated | true | true | planned | **not-yet** | **must-not-fail** (generator absent); **repo-root path** — fix the docs-prefix resolver blind spot before guarding |
