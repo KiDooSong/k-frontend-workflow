@@ -61,10 +61,12 @@ GENERATED FILE — DO NOT EDIT
 Source:  src/components/ui/**
 Command: npm run workflow:catalog
 업데이트하려면: 원본 컴포넌트를 수정하고 위 명령을 실행
+
+NOTE(MVP-A): … 2 advisory lines (manual-authoring allowance until `catalog-gen.mjs` lands) …
 -->
 ```
 
-The required marker substring (`GENERATED FILE — DO NOT EDIT`, em-dash U+2014) appears on its own line *inside* the comment block (not the file's literal first line). Guard behavior: the marker must appear within the leading HTML comment block — read a bounded leading region (up to the first `-->` or a fixed 800-byte cap, whichever comes first; §3.5), not byte-0 and not an unbounded scan. **This artifact is `do_not_edit: false` and `status: planned`** (manual authoring temporarily allowed until `catalog-gen.mjs` lands) — therefore the guard, under the selector decided in §2, treats it as **header-optional / no-regenerate** today and only escalates when `do_not_edit` flips to `true`.
+(Snippet abbreviated: the actual fixture has two `NOTE(MVP-A)` advisory lines after `업데이트하려면:` — see Appendix A.1. Only the `GENERATED FILE — DO NOT EDIT` marker and the `Source:`/`Command:` lines are guard-relevant.) The required marker substring (`GENERATED FILE — DO NOT EDIT`, em-dash U+2014) appears on its own line *inside* the comment block (not the file's literal first line). Guard behavior: the marker must appear within the leading HTML comment block — read a bounded leading region (up to the first `-->` or a fixed 800-byte cap, whichever comes first; §3.5), not byte-0 and not an unbounded scan. **This artifact is `do_not_edit: false` and `status: planned`** (manual authoring temporarily allowed until `catalog-gen.mjs` lands) — therefore the guard, under the selector decided in §2, treats it as **header-optional / no-regenerate** today and only escalates when `do_not_edit` flips to `true`.
 
 ## 1.4 In-file generated Markdown block
 
@@ -205,7 +207,7 @@ Strategy vocabulary: **header-only**, **regenerate-to-scratch-and-compare**, **g
 - **Strategy: regenerate-to-scratch-and-compare + manifest-consistency, with a `generated_at`-ONLY normalization fallback.**
 - `workflow-state.mjs` writes **two** files into a directory (`--out` is a **directory**, default `_meta/`): `workflow-state.yaml` **and** `screen-inventory.yaml`. The guard invokes `node scripts/workflow-state.mjs --docs <docs> --src <src> --out <scratchDir>` once (covering both outputs), twice for determinism.
 - `workflow-state.yaml` has a top-level `generated_at:` that varies by calendar date unless `--date` is pinned. The **sanctioned path is (a): pin `--date` to the committed file's `generated_at` value.** Parse `generated_at` from the committed header region and pass it as `--date` so regeneration reproduces the file byte-for-byte; the comparison is then exact under plain `normalizeGeneratedViewText` with **no** extra normalizer. This is the default and primary mechanism.
-- **Fallback (b), only if the committed `generated_at` is unparseable:** apply a **`generated_at`-ONLY line normalizer** to **both** sides before compare — i.e. **just** the line transform `/^(\s*generated_at\s*:).*$/m` → `$1 <normalized>`, neutralizing only the `generated_at:` line. **Do NOT reuse `test-fixture.mjs`'s `normalizeText` wholesale here.** The real `normalizeText` (verified at `test-fixture.mjs:38-43`) does two things — it neutralizes `generated_at`/`date`/`last_reviewed` lines **and** replaces every ISO-date token anywhere in the file (`/\b\d{4}-\d{2}-\d{2}(?:[T ]…)?\b/g` → `<date>`). The `workflow-state.yaml` body legitimately contains date-like fields (screen `status`/date values and other content); that global ISO-date masking would mask a *real body edit* that changes a date value, directly contradicting this document's own §8.9 promise that the only tolerated normalization is CRLF/path-sep plus `generated_at` for `workflow-state` — never anything that masks a real body edit. The fallback therefore drops the global ISO-date replacement entirely and touches only the single `generated_at:` line. Path (a) remains strongly preferred precisely because it needs no body-side normalization at all.
+- **Fallback (b), only if the committed `generated_at` is unparseable:** apply a **`generated_at`-ONLY line normalizer** to **both** sides before compare — i.e. **just** the line transform `/^(\s*generated_at\s*:).*$/m` → `$1 <normalized>`, neutralizing only the `generated_at:` line. **Do NOT reuse `test-fixture.mjs`'s `normalizeText` wholesale here.** The real `normalizeText` (verified at `test-fixture.mjs:38-43`) does two things — it neutralizes `generated_at`/`date`/`last_reviewed` lines **and** replaces every ISO-date token anywhere in the file (`/\b\d{4}-\d{2}-\d{2}(?:[T ]…)?\b/g` → `<date>`). Even though the current `workflow-state.yaml` body carries no date-valued field other than `generated_at`, that global ISO-date masking is broader than needed — it would mask any *future* body field that held a date value, directly contradicting this document's own §8.9 promise that the only tolerated normalization is CRLF/path-sep plus `generated_at` for `workflow-state` — never anything that masks a real body edit. The fallback therefore drops the global ISO-date replacement entirely and touches only the single `generated_at:` line. Path (a) remains strongly preferred precisely because it needs no body-side normalization at all.
 - Manifest-consistency: confirm both emitted filenames match the two manifest entries (`workflow-state`, `screen-inventory`) `path` values.
 
 ## 4.2 `screen-inventory.yaml`
@@ -372,7 +374,7 @@ Small, independently reviewable future PRs. The sequence below adopts the task's
 
 # Appendix A. Observed headers, markers & commands
 
-Ground truth captured during inspection. The implementation PR must reproduce these **exactly** (em-dash U+2014; observed double-spaces preserved).
+Ground truth captured during inspection. The implementation PR must reproduce the **guard-relevant** lines exactly — the `GENERATED FILE — DO NOT EDIT` marker plus `Source:` and `Command:` (em-dash U+2014; observed double-spaces preserved). Advisory/disclaimer lines (e.g. component-catalog's `업데이트하려면:` / `NOTE(MVP-A):`) are informational, not guard-checked, and are shown abbreviated below.
 
 ## A.1 Whole-file headers — observed verbatim
 
@@ -382,7 +384,7 @@ Ground truth captured during inspection. The implementation PR must reproduce th
 | `nav-graph` | `nav-graph.yaml` (basic-flow & stub-destination; `_meta/` == `expected/`) | `# GENERATED FILE — DO NOT EDIT` / `# Source: domains/**/screen-spec.md Interaction Matrix + app/navigation-map.md` / `# Command: node scripts/nav-graph.mjs --docs docs/frontend-workflow` | `#` hash, 3 lines, then `screens:` |
 | `screen-inventory` | `screen-inventory.yaml` (coupon-feature) | `# GENERATED FILE — DO NOT EDIT` / `# Source:  docs/frontend-workflow/domains/**/screen-spec.md (frontmatter)` / `# Command: npm run workflow:state` | `#` hash; **double space** after `Source:` |
 | `workflow-state` | `workflow-state.yaml` (coupon-feature) | `# GENERATED FILE — DO NOT EDIT` / `# Source:  docs/frontend-workflow/domains/**/screen-spec.md (frontmatter + 본문)` / `# Command: npm run workflow:state` then `generated_at: 2026-06-13`, `global:` | `#` hash; **double space** after `Source:`; has `generated_at` |
-| `component-catalog` | `component-catalog.md` (coupon-feature) | `<!--` / `GENERATED FILE — DO NOT EDIT` / (blank) / `Source:  src/components/ui/**` / `Command: npm run workflow:catalog` / `업데이트하려면: 원본 컴포넌트를 수정하고 위 명령을 실행` / `-->` | HTML block comment (`do_not_edit:false`, `status:planned`) |
+| `component-catalog` | `component-catalog.md` (coupon-feature) | `<!--` / `GENERATED FILE — DO NOT EDIT` / (blank) / `Source:  src/components/ui/**` / `Command: npm run workflow:catalog` / `업데이트하려면: 원본 컴포넌트를 수정하고 위 명령을 실행` / (blank) / `NOTE(MVP-A): …` (2 advisory lines, elided) / `-->` | HTML block comment (`do_not_edit:false`, `status:planned`; advisory lines informational, not guard-checked) |
 
 ## A.2 In-file block markers — observed verbatim
 
