@@ -13,6 +13,8 @@ Deterministic Expo Router `src/app` file-tree → `route-tree.txt` generator. So
 | `frontend-workflow-kit/examples/route-tree/basic-app/src/app/**` | 5-file fixture tree (`_layout.tsx`, `index.tsx`, `(tabs)/_layout.tsx`, `(tabs)/home.tsx`, `coupons/[id].tsx`). |
 | `frontend-workflow-kit/examples/route-tree/basic-app/docs/frontend-workflow/_meta/route-tree.txt` | Generated output. |
 | `frontend-workflow-kit/examples/route-tree/basic-app/expected/route-tree.txt` | Known-good snapshot (byte-identical copy of the generated file). |
+| `frontend-workflow-kit/examples/route-tree/edge-cases/src/app/**` | Edge-case fixture (added in Codex round 1): group index `(tabs)/index.tsx`, nested index `(tabs)/settings/index.tsx`, folder index beside dynamic (`coupons/index.tsx` + `coupons/[id].tsx`). Pins non-root `index` → directory route with **no** trailing slash. |
+| `frontend-workflow-kit/examples/route-tree/edge-cases/{docs/…/_meta,expected}/route-tree.txt` | Edge-case generated output + golden snapshot. |
 | `temp/runs/route-tree-001.md` | This report. |
 
 ## 2. Route extraction rules
@@ -60,6 +62,35 @@ Generated `route-tree.txt`:
    └─ [id].tsx                       route: /coupons/[id]
 ```
 
+### Edge-case fixture (`edge-cases/`) — pins non-root `index`
+
+| Input file (under `edge-cases/src/app/`) | Kind | Produced route |
+| --- | --- | --- |
+| `(tabs)/index.tsx` | screen (group index) | `/(tabs)` |
+| `(tabs)/settings/index.tsx` | screen (nested index) | `/(tabs)/settings` |
+| `coupons/index.tsx` | screen (folder index) | `/coupons` |
+| `coupons/[id].tsx` | screen (dynamic) | `/coupons/[id]` |
+
+Non-root `index.<ext>` maps to the directory route **without** a trailing slash (`/coupons`, not
+`/coupons/`), consistent with sibling routes such as `/coupons/[id]`. Generated `route-tree.txt`:
+
+```
+# GENERATED FILE — DO NOT EDIT
+# Source: src/app/**
+# Command: npm run workflow:route-tree
+
+/
+├─ _layout.tsx
+├─ (tabs)/
+│  ├─ _layout.tsx
+│  ├─ index.tsx                      route: /(tabs)
+│  └─ settings/
+│     └─ index.tsx                   route: /(tabs)/settings
+└─ coupons/
+   ├─ [id].tsx                       route: /coupons/[id]
+   └─ index.tsx                      route: /coupons
+```
+
 ## 4. Commands run
 
 | Command | Result |
@@ -100,3 +131,17 @@ Generated `route-tree.txt`:
 4. Fold route-tree into the generated-file guard (extend validate check 6).
 5. Broaden fixtures: an `(auth)` group, deeper nesting, and a negative/mismatch fixture; consider
    special-casing `+`-prefixed Expo files.
+
+## 7. Codex review log
+
+### Round 1
+- **Finding 1 (claimed fixture mismatch) — rejected (hallucination).** Codex asserted the fixtures should be
+  `(tabs)/index.tsx`, `(tabs)/explore.tsx`, `+not-found.tsx` — that is the default `create-expo-app`
+  template, not this PR. The actual fixtures match the task spec and the PR body exactly. No change.
+- **Finding 2 (non-root `index` needs a trailing slash) — rejected; the proposed fix is incorrect.**
+  Adding a trailing slash would make `coupons/index.tsx` → `/coupons/`, which is wrong (the list route is
+  `/coupons`, matching sibling `/coupons/[id]`). Current behavior is correct. Resolved by **pinning** the
+  behavior with the new `edge-cases/` golden fixture (group/nested/folder index), so it is now explicit and
+  regression-protected rather than underspecified.
+- Note: round 1 ran in a read-only Codex sandbox, so it could not execute the verification commands and its
+  findings were static guesses. Round 2 is run with command execution enabled.
