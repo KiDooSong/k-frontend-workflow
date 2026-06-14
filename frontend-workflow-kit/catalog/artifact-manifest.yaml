@@ -11,7 +11,7 @@
 # 적용하고, 아직 생성기가 없는 planned 산출물도 레지스트리 완전성을 위해 등록한다(구현 아님) —
 # route-tree·nav-graph(MVP-C, status: planned), eslint.workflow.config(MVP-B, status: planned).
 # 생성물 필드 계약·planned 표기 규칙은 아래 "생성물" 섹션 주석 참고.
-# 직접편집 가드(헤더/마커/diff/hook) 설계: temp/proposals/generated-file-guard-followup.md
+# 직접편집 가드(헤더/마커/diff/hook) 설계: frontend-workflow-kit/temp/proposals/generated-file-guard-followup.md
 # 참고: frontend-workflow-kit-implementation.md §4
 
 version: 1
@@ -141,7 +141,7 @@ artifacts:
   # 실제 존재할 때만 헤더를 본다 — 없으면 존재 가드(validate.mjs:438)로 건너뛴다. route-tree·
   # nav-graph·eslint 처럼 do_not_edit:true 인데 파일이 아직 없는 planned 엔트리는 그래서 무해하다.
   # (섹션 마커 검사 validate.mjs:239-258 은 screen-spec 전용이라 이 planned 엔트리들과 무관.)
-  # 직접편집 가드의 한계·CI 옵션: temp/proposals/generated-file-guard-followup.md
+  # 직접편집 가드의 한계·CI 옵션: frontend-workflow-kit/temp/proposals/generated-file-guard-followup.md
   # --------------------------------------------------------------------------
 
   # active — workflow-state.mjs 가 생성. workflow:state 는 package.json 에 존재(MVP-A).
