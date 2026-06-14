@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// validate.mjs — 검사 12종 (impl §8). exit code 0/1 로 CI 게이트가 된다.
+// validate.mjs — 검사 12종. exit code 0/1 로 CI 게이트가 된다.
+//   출처: 검사 1~8 = impl §8 / 검사 9~12 = open-decisions.md · input-reconciliation.md (아래 각 항목 참조).
 //   1. frontmatter ↔ frontmatter.schema.json
 //   2. artifact-manifest 기준 필수 frontmatter 누락
 //   3. 끊어진 참조 (depends_on 대상 부재, sources 로컬 파일 부재)

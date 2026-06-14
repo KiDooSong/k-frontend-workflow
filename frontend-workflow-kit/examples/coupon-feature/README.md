@@ -40,7 +40,7 @@ src/
 ```bash
 npm run example:state
 #   → COUPON-001 derived: state_matrix_complete=true, copy_keys_has_tbd=true,
-#     tbd_count=3, api_confidence_min=candidate, fake_hook_exists=true, figma_mapping_status=missing
+#     tbd_count=1, api_confidence_min=candidate, fake_hook_exists=true, figma_mapping_status=missing
 #   → screen-inventory: 중복 ID/route 없음
 
 npm run example:readiness

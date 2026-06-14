@@ -343,7 +343,12 @@ function main() {
 
   let result = computeReadiness({ state, policy, ci, manifest });
 
-  if (flags.screen) {
+  if (flags.screen !== undefined) {
+    // 값 없는 bare --screen 은 parseArgs 가 boolean true 로 둔다 — 빈 결과로 조용히 오인되지 않게 명확히 막는다.
+    if (typeof flags.screen !== 'string') {
+      process.stderr.write('readiness: --screen 에는 화면 ID 값이 필요합니다 (예: --screen COUPON-001)\n');
+      process.exit(2);
+    }
     result = result[flags.screen] ? { [flags.screen]: result[flags.screen] } : {};
   }
 
