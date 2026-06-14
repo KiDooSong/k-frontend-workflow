@@ -54,6 +54,8 @@ const ROUTE_TREE_ROOT = path.join(EXAMPLES, 'route-tree');
 const NAV_GRAPH_ROOT = path.join(EXAMPLES, 'nav-graph');
 const ROUTE_TREE_SCRIPT = path.join(KIT_ROOT, 'scripts', 'route-tree.mjs');
 const NAV_GRAPH_SCRIPT = path.join(KIT_ROOT, 'scripts', 'nav-graph.mjs');
+const COMPONENT_CATALOG_ROOT = path.join(EXAMPLES, 'component-catalog');
+const CATALOG_GEN_SCRIPT = path.join(KIT_ROOT, 'scripts', 'catalog-gen.mjs');
 
 // input-reconciliation golden(expected-llm-after) 의 stage=llm-after manifest.
 // 검사 대상 ID·기대 상태(올리기만 불변식). golden 의 실제 파일에서 확인한 값:
@@ -169,9 +171,10 @@ function readGeneratedViewCases(kind, rootDir) {
   if (!isDir(rootDir)) return [];
   const files = walkFiles(rootDir, ['run-metadata.json']);
   const cases = [];
-  const inputKey = kind === 'route-tree' ? 'app' : 'docs';
-  const inputFlag = kind === 'route-tree' ? '--app' : '--docs';
-  const scriptPath = kind === 'route-tree' ? ROUTE_TREE_SCRIPT : NAV_GRAPH_SCRIPT;
+  const inputKey = kind === 'route-tree' ? 'app' : kind === 'nav-graph' ? 'docs' : 'src';
+  const inputFlag = kind === 'route-tree' ? '--app' : kind === 'nav-graph' ? '--docs' : '--src';
+  const scriptPath =
+    kind === 'route-tree' ? ROUTE_TREE_SCRIPT : kind === 'nav-graph' ? NAV_GRAPH_SCRIPT : CATALOG_GEN_SCRIPT;
 
   for (const metaFile of files) {
     const caseDir = path.dirname(metaFile);
@@ -296,6 +299,8 @@ function buildFixtures() {
   // MVP-C Phase 1 generated views — 기존 warning-first example:test CI step 에 자연 편입.
   for (const gv of readGeneratedViewCases('route-tree', ROUTE_TREE_ROOT)) fixtures.push(gv);
   for (const gv of readGeneratedViewCases('nav-graph', NAV_GRAPH_ROOT)) fixtures.push(gv);
+  // component-catalog golden(PR-4) — 동일 generated-view 하니스. manifest active 전환·guard 등록은 후속.
+  for (const gv of readGeneratedViewCases('component-catalog', COMPONENT_CATALOG_ROOT)) fixtures.push(gv);
 
   return fixtures;
 }
@@ -352,7 +357,7 @@ function runFixture(fx, update) {
     }
   } else if (fx.kind === 'path-backstop') {
     res = runPathBackstopCase(fx);
-  } else if (fx.kind === 'route-tree' || fx.kind === 'nav-graph') {
+  } else if (fx.kind === 'route-tree' || fx.kind === 'nav-graph' || fx.kind === 'component-catalog') {
     res = runGeneratedViewCase(fx);
   } else {
     res = { checks: [{ check: 'kind', ok: false, message: `unknown fixture kind: ${fx.kind}` }], failed: 1 };
