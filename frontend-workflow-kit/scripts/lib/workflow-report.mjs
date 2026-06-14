@@ -20,7 +20,9 @@ export function cell(s) {
   return String(s == null ? '—' : s).replace(/\|/g, '\\|');
 }
 function q(v) {
-  return `"${String(v == null ? '' : v).replace(/"/g, '\\"')}"`;
+  // YAML double-quoted scalar: 역슬래시를 먼저, 그다음 따옴표를 이스케이프해야 유효 YAML 이 된다
+  // (Windows 역슬래시 경로가 readiness_source 등에 섞여도 frontmatter 파싱이 깨지지 않게).
+  return `"${String(v == null ? '' : v).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
 export function toPosix(p) {
   return String(p == null ? '' : p).replace(/\\/g, '/');
@@ -106,8 +108,9 @@ export function extractNextActions(body) {
 
 // readiness_source 문자열에서 --docs 값을 best-effort 추출 (docs 자동 유도용).
 export function docsFromReadinessSource(readinessSource) {
-  const m = /--docs\s+(\S+)/.exec(String(readinessSource == null ? '' : readinessSource));
-  return m ? m[1] : null;
+  // `--docs <dir>` 또는 `--docs=<dir>` — 다음 ` --` 플래그(또는 문자열 끝)까지 잡아 공백 포함 경로도 보존.
+  const m = /--docs[ =]+(.+?)(?:\s+--|\s*$)/.exec(String(readinessSource == null ? '' : readinessSource));
+  return m ? m[1].trim() : null;
 }
 
 // --- diff(name-status) 파서 (순수 문자열) ---------------------------------
@@ -428,7 +431,7 @@ function renderIdempotency(m) {
 function renderFollowup(m) {
   const lines = [];
   if (m.next_actions.length) {
-    lines.push('> next_actions (readiness 출력 그대로 — 게이트 해제는 사람-전용):');
+    lines.push('> next_actions (readiness 출력 재표면화 — verbatim 원본은 ## Blockers Reported; 게이트 해제는 사람-전용):');
     for (const a of m.next_actions) lines.push(`> - ${a}`);
   } else {
     lines.push('- readiness next_actions 없음 — 현재 천장에서 후속 차단 항목 미표면화.');

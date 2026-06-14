@@ -143,7 +143,7 @@ node scripts/check-generated-files.mjs --json --docs examples/coupon-feature/doc
 <!-- ⚠ MVP-C 종속: 재생성 화이트리스트/빈-diff 정의는 generated-file guard 확정 후 정렬. 지금은 라벨만. -->
 
 ## Follow-up
-> next_actions (readiness 출력 그대로 — 게이트 해제는 사람-전용):
+> next_actions (readiness 출력 재표면화 — verbatim 원본은 ## Blockers Reported; 게이트 해제는 사람-전용):
 > - resolve decision D-001: 만료 쿠폰을 목록에 노출할 것인가?
 > - resolve decision D-002: 쿠폰 목록 정렬 기준은 무엇인가?
 > - resolve decision D-003: 쿠폰 목록 페이지네이션 방식은?

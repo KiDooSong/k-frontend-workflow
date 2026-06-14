@@ -94,7 +94,8 @@ function runCapture(scriptPath, args) {
 }
 
 function invocationLabel(scriptPath, args) {
-  return `node scripts/${path.basename(scriptPath)} ${args.join(' ')}`;
+  // 실제 상대 경로를 그대로 표기 — 소비 프로젝트에선 tools/frontend-workflow/scripts/... 로 정확히 나온다.
+  return `node ${relToCwd(scriptPath)} ${args.join(' ')}`;
 }
 
 // --- 도구별 수집기 (결과를 정규화 — 판정 아님, evidence) -------------------
@@ -266,12 +267,15 @@ function main() {
   const nextActions = extractNextActions(body);
   const snapshot = extractReadinessSnapshot(body);
 
-  // 2) docs/src 유도: 플래그 우선 → packet readiness_source 의 --docs → DEFAULTS.
-  const docs = docsFlag || docsFromReadinessSource(fm.readiness_source) || DEFAULTS.docs;
-  let src = srcFlag;
-  if (!src) {
-    src = /\/docs\/frontend-workflow\/?$/.test(docs) ? docs.replace(/\/docs\/frontend-workflow\/?$/, '/src') : DEFAULTS.src;
-  }
+  // 2) docs/src/root 유도: 플래그 우선 → packet readiness_source 의 --docs → DEFAULTS.
+  //    docs 를 posix 로 정규화해 Windows 역슬래시 경로에서도 root/src 유도가 동작하게 한다.
+  const docs = toPosix(docsFlag || docsFromReadinessSource(fm.readiness_source) || DEFAULTS.docs);
+  const docsRootMatch = /^(.*)\/docs\/frontend-workflow\/?$/.exec(docs);
+  const projectRoot = docsRootMatch ? docsRootMatch[1] : null; // 예: examples/coupon-feature (monorepo 프로젝트 루트)
+  let src;
+  if (srcFlag) src = toPosix(srcFlag);
+  else if (projectRoot) src = `${projectRoot}/src`;
+  else src = DEFAULTS.src;
 
   // 3) diff 읽기 (제공 시). 명시된 파일이 없으면 도구 오류(exit 2).
   let diff = null;
@@ -298,7 +302,7 @@ function main() {
 
   // 5) 도구 evidence 수집 (서브프로세스 — 실패해도 report 는 성공).
   const validate = collectValidate(docs, src);
-  const forbidden = collectForbidden(diffResolved, docs, /\/docs\/frontend-workflow\/?$/.test(docs) ? docs.replace(/\/docs\/frontend-workflow\/?$/, '') : undefined);
+  const forbidden = collectForbidden(diffResolved, docs, projectRoot || undefined);
   const idempotency = collectTests(skipTests);
   const checkgen = collectCheckGenerated(docs, src);
 
