@@ -40,7 +40,9 @@ export function cellRoutes(cellText) {
 
 // navigation-map.md 의 ## Structure 불릿 + ## Deep Links 표에서 "알려진 라우트" 집합을 모은다.
 // 비권위적 시드/교차검증용 — 이동 엣지는 여기서 만들지 않는다(이동 엣지는 SOURCE Interaction Matrix 단일 출처).
-// ## Cross-Domain Edges 는 의도적으로 읽지 않는다(Must-follow: movement edges only from source Interaction Matrix).
+// ## Cross-Domain Edges 는 MVP-C Phase 1 에서 의도적으로 읽지 않는다(Must-follow: movement edges only from
+// source Interaction Matrix). nav-map 의 From/To 표를 엣지원으로 삼는 reconciliation 은 후속 단계로 미룬다
+// (Codex 리뷰 P2 — Phase 1 규칙상 의도적 제외).
 export function parseNavigationMapRoutes(navMapText) {
   const routes = new Set();
   if (!navMapText) return routes;
@@ -89,7 +91,9 @@ function outboundEdgesOf(spec) {
   return edges;
 }
 
-// 안정 정렬 키 — 엣지 배열을 diff 안정하게 정렬한다.
+// 안정 정렬 키 — 엣지 배열을 결정적으로 정렬한다(필드를 빈 문자열로 이어 비교).
+// 키가 단사(injective)일 필요는 없다: 키가 같아도 Array.prototype.sort 안정성 덕에 입력 순서가
+// 보존되어(정렬된 specPaths·표 행 순서) 출력이 항상 결정적이다.
 function inboundKey(e) {
   return [e.from || '', e.trigger || '', e.route || ''].join('');
 }
@@ -115,9 +119,16 @@ export function buildNavGraph({ docsDir }) {
   const routeToScreen = new Map(); // fm.route(EXACT) -> screenId. 검사 4 와 동일한 정확 일치.
   for (const specPath of specPaths) {
     const spec = loadScreenSpec(specPath);
-    if (isStub(spec)) continue; // 본문 없는 stub 은 그래프에 기여하지 않는다(Interaction Matrix 없음)
     const id = screenIdOf(spec, specPath);
     const route = (spec.frontmatter && spec.frontmatter.route) || null;
+
+    // route->screenId 등록은 stub 여부와 무관하게 먼저 한다. stub(frontmatter 만 있는 발견 단계 화면)도
+    // 자신의 route 로 들어오는 inbound 의 "목적지"가 될 수 있다 (Codex 리뷰 P2: stub destination 해소).
+    if (route && !routeToScreen.has(route)) routeToScreen.set(route, id);
+
+    // stub 은 본문(Interaction Matrix)이 없어 outbound 이동 엣지를 만들 수 없다 — 목적지로만 남는다.
+    if (isStub(spec)) continue;
+
     const outbound = outboundEdgesOf(spec);
 
     // 교차검증: 셀 단위 추출의 합집합이 interactionResultRoutes(전체 spec) 와 같은 라우트 집합인지 확인.
@@ -133,7 +144,6 @@ export function buildNavGraph({ docsDir }) {
     }
 
     loaded.push({ id, route, outbound });
-    if (route && !routeToScreen.has(route)) routeToScreen.set(route, id);
   }
 
   const screens = {}; // id -> { inbound:[], outbound:[] } (빈 키는 마지막에 제거)

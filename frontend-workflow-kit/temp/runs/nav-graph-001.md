@@ -116,3 +116,19 @@ routes:
 3. **Entry Points 생성으로 전환(MVP-C 완성 기준)**: 별도 PR 에서 각 screen-spec 의 `<!-- GENERATED:START nav-graph -->` 블록을 이 그래프의 inbound 엣지로 채우는 in-place writer 추가(마커 밖 불변 — `stripGeneratedBlocks` 규약 준수)와 `check-generated-files` 가드(Phase 0) 결합. 기존 수동 Entry Points 주석 마이그레이션 가이드도 함께(blast-radius 위험 (c)).
 4. **lib 유닛 테스트**: `cellRoutes`(검사 P13 입력 재사용)·`buildNavGraph`(해소/미해소·비-라우트 무시·정렬 결정성)에 대한 `nav-graph.test.mjs` 추가.
 5. **route-tree(View 2)** 는 별도 생성기로 nav-graph 와 함께 착지(라우트 발견을 nav-graph 에 접지 말 것 — FINDINGS scopeInfo).
+
+## 8. Codex 리뷰 라운드 1 대응
+
+`codex review --base main` (gpt-5.5, xhigh) 결과 P2 2건 + 커밋 전 인코딩 결함 1건을 처리했다.
+
+- **[P2 반영] stub 목적지 화면 라우트 해소** — `scripts/lib/nav-graph.mjs`: 이전엔 `isStub` 화면을 루프 초입에서 `continue` 해 `routeToScreen` 등록 전에 건너뛰어, frontmatter-only stub(발견 단계 화면)이 자신의 route 로 들어오는 inbound 의 목적지가 되지 못했다. 이제 route 등록을 stub 판정보다 먼저 하고 outbound 도출만 stub 에서 건너뛴다. 검증: `examples/coupon-feature` 재실행 시 COUPON-002(stub, route `/coupons/[id]`)가 COUPON-001 로부터 inbound 를 받는다. 회귀 fixture `examples/nav-graph/stub-destination/` 추가.
+- **[P2 비반영·근거] nav-map `## Cross-Domain Edges` 를 엣지원으로 파싱** — Phase 1 Must-follow("movement edges are declared only in source screen Interaction Matrix")와 정면 충돌하므로 의도적으로 보류. nav-map 의 From/To 표를 엣지원으로 삼는 reconciliation 은 후속 단계 항목으로 코드 주석과 next step 에 명시. Codex 는 과제 규칙을 모른 채(리뷰가 `--base` 와 커스텀 프롬프트 동시 사용 불가) 일반론으로 지적한 것.
+- **[인코딩 수정] 정렬 키 구분자의 NUL 바이트 제거** — 생성기가 쓴 `scripts/lib/nav-graph.mjs` 의 정렬 키 `.join()` 구분자에 NUL(0x00)이 섞여 git 이 파일을 binary 로 표기했다. NUL 제거 후 `.join('')` 로 정리. 정렬 키는 단사일 필요가 없어(동일 키는 안정 정렬로 입력 순서 보존) 생성 YAML 은 byte 동일하게 유지된다.
+
+재검증: `node --check`(lib+cli) OK · basic-flow `_meta`==`expected` byte 동일 · stub-destination `_meta`==`expected` byte 동일 · `npm test` exit 0 · `example:state`/`example:readiness`/`example:validate` exit 0.
+
+### fixture: examples/nav-graph/stub-destination
+| 종류 | 엣지 | 결과 |
+|---|---|---|
+| screen→screen (stub 목적지) | COUPON-001 → COUPON-002 | COUPON-002 는 본문 없는 stub 이나 frontmatter route `/coupons/[id]` 로 해소되어 `screens.COUPON-002.inbound = [{from: COUPON-001, trigger: CouponCard press, route: /coupons/[id]}]` |
+| 무시되는 비-라우트 | COUPON-001 `status filter 변경` | 출력 없음 |
