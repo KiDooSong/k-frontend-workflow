@@ -106,8 +106,8 @@ function main() {
   // 않게 한다(forbidden-paths·readiness 와 대칭). 실제 설치는 킷 위치에서 자동 해석돼 항상 존재한다.
   const manifestPath = path.resolve(flags.manifest || DEFAULTS.manifest);
   const manifest = loadYamlOrExit(manifestPath, 'manifest', 'validate');
-  if (!manifest) {
-    process.stderr.write(`validate: manifest 파일 없음: ${manifestPath}\n`);
+  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
+    process.stderr.write(`validate: manifest 파일 없음/형식 오류(매핑 아님): ${manifestPath}\n`);
     process.exit(2);
   }
   const schemaPath = path.resolve(flags.schema || DEFAULTS.schema);
@@ -123,11 +123,15 @@ function main() {
     process.stderr.write(`validate: schema JSON 파싱 실패 — ${schemaPath}\n  ${err.message}\n`);
     process.exit(2);
   }
+  if (typeof schema !== 'object' || schema === null || Array.isArray(schema)) {
+    process.stderr.write(`validate: schema 가 매핑(객체)이 아님: ${schemaPath}\n`);
+    process.exit(2);
+  }
   // 정책: 검사 9 의 Blocking Mode 유효성(정책 모드명인지)에 쓴다. 게이트 판정은 readiness 단일 출처.
   const policyPath = path.resolve(flags.policy || DEFAULTS.policy);
   const policy = loadYamlOrExit(policyPath, 'policy', 'validate');
-  if (!policy) {
-    process.stderr.write(`validate: 정책 파일 없음: ${policyPath}\n`);
+  if (!policy || typeof policy !== 'object' || Array.isArray(policy)) {
+    process.stderr.write(`validate: 정책 파일 없음/형식 오류(매핑 아님): ${policyPath}\n`);
     process.exit(2);
   }
 
