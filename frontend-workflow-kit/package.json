@@ -21,7 +21,8 @@
     "example:readiness": "node scripts/readiness.mjs --docs examples/coupon-feature/docs/frontend-workflow",
     "example:validate": "node scripts/validate.mjs --docs examples/coupon-feature/docs/frontend-workflow --src examples/coupon-feature/src",
     "example:test": "node scripts/test-fixtures.mjs",
-    "test": "node scripts/test-fixtures.mjs"
+    "test:spec": "node --test scripts/lib/spec.test.mjs",
+    "test": "node scripts/test-fixtures.mjs && node --test scripts/lib/spec.test.mjs"
   },
   "dependencies": {
     "yaml": "^2.5.0"
