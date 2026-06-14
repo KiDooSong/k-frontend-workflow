@@ -56,7 +56,7 @@ fixture: `examples/nav-graph/basic-flow/` (test-fixtures.mjs 의 명시적 fixtu
 ```yaml
 # GENERATED FILE — DO NOT EDIT
 # Source: domains/**/screen-spec.md Interaction Matrix + app/navigation-map.md
-# Command: npm run workflow:nav-graph
+# Command: node scripts/nav-graph.mjs --docs docs/frontend-workflow
 screens:
   COUPON-001:
     inbound:
@@ -102,7 +102,7 @@ routes:
 
 ## 6. known limitations
 
-- **`npm run workflow:nav-graph` 스크립트는 이 PR 에서 package.json 에 추가하지 않았다**(hard rule: package.json 수정 금지). 생성 헤더의 `# Command: npm run workflow:nav-graph` 는 정본 명령 관례를 따른 placeholder 일 뿐, **현재 실제 호출은**: `node scripts/nav-graph.mjs --docs <dir> --out <file>` (`--out` 생략 시 `<docs>/_meta/nav-graph.yaml`).
+- **`workflow:nav-graph` npm 스크립트는 이 PR 에서 package.json 에 추가하지 않았다**(hard rule: package.json 수정 금지). 대신 생성 헤더의 `# Command:` 를 **실제 동작하는** `node scripts/nav-graph.mjs --docs docs/frontend-workflow` 로 적는다(`--out` 생략 시 `<docs>/_meta/nav-graph.yaml`). Codex 리뷰 2차의 "존재하지 않는 npm 스크립트 광고" 지적을 반영해 헤더를 dangling 명령에서 동작 명령으로 교체했다. npm 스크립트 등록은 package.json·manifest 동시 착지(next step 1)로 미룬다.
 - **`catalog/artifact-manifest.yaml` 에 nav-graph 생성물 메타데이터를 추가하지 않았다.** 스키마(kind/scope/path/command/source/do_not_edit)는 기존 `workflow-state`/`screen-inventory` 항목과 정확히 맞출 수 있으나, (1) 등록 시 `command: npm run workflow:nav-graph` 가 존재하지 않는 npm 스크립트를 가리키게 되고(package.json 수정 금지와 충돌), (2) `do_not_edit: true` 등록은 validate 검사 6 이 모든 검증 docs 의 `_meta/nav-graph.yaml` 헤더를 강제하게 만들어 "additive" 범위를 넘으며, (3) FINDINGS(scopeInfo)상 nav-graph.yaml 스키마는 아직 미결(Open Decision)이다. 과제 지침의 보수적 조건("EXACTLY 매칭 가능할 때만, 아니면 그대로 두고 보고")에 따라 **그대로 두었다**.
 - nav-graph.yaml 을 어느 생성물 레지스트리에도 등록하지 않았으므로 validate 검사 6(생성 헤더 무결성)·idempotency 게이트가 자동으로 이 산출물을 보호하지는 않는다(헤더 자체는 정본 형식 `GENERATED FILE — DO NOT EDIT` em-dash 로 작성됨).
 - 동적 라우트(`/coupons/[id]`)는 어떤 화면 frontmatter.route 와도 EXACT 일치하지 않으면 화면으로 해소되지 않고 `routes[]` 에만 남는다(설계대로). param 정규화는 하지 않는다(검사 4 와 동일).
@@ -132,3 +132,12 @@ routes:
 |---|---|---|
 | screen→screen (stub 목적지) | COUPON-001 → COUPON-002 | COUPON-002 는 본문 없는 stub 이나 frontmatter route `/coupons/[id]` 로 해소되어 `screens.COUPON-002.inbound = [{from: COUPON-001, trigger: CouponCard press, route: /coupons/[id]}]` |
 | 무시되는 비-라우트 | COUPON-001 `status filter 변경` | 출력 없음 |
+
+## 9. Codex 리뷰 라운드 2 대응
+
+라운드 1 수정(stub 해소·NUL 제거)은 라운드 2 에서 재지적이 없었다(stub COUPON-002 inbound 확인). 신규 P2 2건 처리.
+
+- **[P2 반영] 템플릿 자리표시자 라우트 필터** — `scripts/lib/nav-graph.mjs`: `navigation-map.template.md` 의 `{/route}`·`{/(tabs)/... 목록}` 과 `screen-spec.template.md` 의 `{결과/라우트}` 가 스캐폴딩 직후 남아 있으면 `cellRoutes` 가 `/route}`·`/(tabs)/`·`/라우트}` 같은 가짜 토큰을 라우트로 뽑았다. `isConcreteRoute()`(중괄호/꺾쇠 포함·후행 슬래시 토큰 제외)를 도입해 nav-map 시드와 Interaction Matrix outbound 양쪽에 적용. 교차검증 `viaHelper` 도 같은 필터로 묶어 정규식 drift 판정 parity 를 유지. 검증: 템플릿 nav-map → 라우트 0건, `[id]`·`[...slug]`·`(group)` 보존.
+- **[P2 반영] 동작하는 명령 광고** — 생성 헤더 `# Command:` 를 존재하지 않는 `npm run workflow:nav-graph` 대신 실제 동작 명령 `node scripts/nav-graph.mjs --docs docs/frontend-workflow` 로 교체(package.json 수정 금지 하드룰 유지). 두 fixture 의 `_meta`/`expected` 재생성.
+
+재검증: `node --check`(lib+cli) OK · 템플릿 nav-map 필터 0건 · basic-flow/stub-destination `_meta`==`expected` byte 동일 · `npm test`·`example:state`/`example:readiness`/`example:validate` exit 0.

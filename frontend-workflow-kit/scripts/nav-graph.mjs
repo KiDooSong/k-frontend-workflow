@@ -32,7 +32,7 @@ function main() {
     [
       'GENERATED FILE — DO NOT EDIT',
       'Source: domains/**/screen-spec.md Interaction Matrix + app/navigation-map.md',
-      'Command: npm run workflow:nav-graph',
+      'Command: node scripts/nav-graph.mjs --docs docs/frontend-workflow',
     ],
     graph,
   );

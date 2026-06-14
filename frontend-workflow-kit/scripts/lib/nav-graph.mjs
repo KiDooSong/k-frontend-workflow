@@ -38,6 +38,17 @@ export function cellRoutes(cellText) {
   return routes;
 }
 
+// 구체 라우트만 통과시킨다 — navigation-map 템플릿 자리표시자({/route}, {/(tabs)/... 목록} 등)와
+// screen-spec 템플릿의 {결과/라우트} 에서 나오는 불완전 토큰(/route}, /(tabs)/, /라우트})을 nav-graph 가
+// 라우트로 오인하지 않게 한다. Expo 라우트엔 중괄호/꺾쇠가 없고 후행 슬래시(빈 세그먼트)도 구체 경로가
+// 아니다. 정상 동적/그룹 세그먼트([id]·[...slug]·(group))는 보존된다.
+export function isConcreteRoute(r) {
+  if (!r || r.length < 2) return false;
+  if (/[{}<>]/.test(r)) return false; // 템플릿 자리표시자 중괄호/꺾쇠
+  if (r.endsWith('/')) return false; // 후행 슬래시 = 빈 세그먼트
+  return true;
+}
+
 // navigation-map.md 의 ## Structure 불릿 + ## Deep Links 표에서 "알려진 라우트" 집합을 모은다.
 // 비권위적 시드/교차검증용 — 이동 엣지는 여기서 만들지 않는다(이동 엣지는 SOURCE Interaction Matrix 단일 출처).
 // ## Cross-Domain Edges 는 MVP-C Phase 1 에서 의도적으로 읽지 않는다(Must-follow: movement edges only from
@@ -51,7 +62,7 @@ export function parseNavigationMapRoutes(navMapText) {
   // ## Structure: "- Tabs: /(tabs)/home, /(tabs)/coupons, /(tabs)/my" 같은 불릿. 각 라우트 토큰 추출.
   const structure = sections['structure'];
   if (structure) {
-    for (const r of cellRoutes(structure)) routes.add(r);
+    for (const r of cellRoutes(structure)) if (isConcreteRoute(r)) routes.add(r);
   }
 
   // ## Deep Links: | Pattern | Route | ... | 표의 Route 컬럼.
@@ -59,7 +70,7 @@ export function parseNavigationMapRoutes(navMapText) {
   if (deepLinks) {
     for (const row of deepLinks.rows) {
       const v = col(row, 'Route');
-      for (const r of cellRoutes(v)) routes.add(r);
+      for (const r of cellRoutes(v)) if (isConcreteRoute(r)) routes.add(r);
     }
   }
   return routes;
@@ -80,7 +91,7 @@ function outboundEdgesOf(spec) {
   const edges = [];
   for (const row of table.rows) {
     const result = col(row, 'Result');
-    const routes = cellRoutes(result);
+    const routes = cellRoutes(result).filter(isConcreteRoute);
     if (routes.length === 0) continue; // 비-라우트 Result(refetch, "status filter 변경" 등)는 엣지 없음
     const trigger = (col(row, 'Trigger') || '').trim();
     const action = (col(row, 'User Action') || '').trim();
@@ -134,7 +145,7 @@ export function buildNavGraph({ docsDir }) {
     // 교차검증: 셀 단위 추출의 합집합이 interactionResultRoutes(전체 spec) 와 같은 라우트 집합인지 확인.
     // 불일치는 정규식 drift 신호 → 던져서 조용한 표류를 막는다(검사 P13 과 동작 일치 보장).
     const perRow = new Set(outbound.map((e) => e.to_route));
-    const viaHelper = new Set(interactionResultRoutes(spec));
+    const viaHelper = new Set(interactionResultRoutes(spec).filter(isConcreteRoute));
     for (const r of viaHelper) {
       if (!perRow.has(r)) {
         throw new Error(
