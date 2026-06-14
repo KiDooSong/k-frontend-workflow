@@ -238,7 +238,7 @@ examples/component-catalog/basic-ui/
 - **(b) ordering 비결정성** — `fs.readdir` 순서는 OS 의존. 정렬 안 하면 `CG:deterministic` 트립 (`scripts/lib/check-generated-files.mjs:229-234`). → component id/path 키는 **plain `.sort()`** (route-tree 의 `files.sort()`/`dirs.sort()` UTF-16 코드유닛 정렬 관례 `scripts/lib/route-tree.mjs:52`); 다중 필드 레코드 배열에만 `localeCompare` (nav-graph `lib/nav-graph.mjs:192` 관례).
 - **(c) barrel / re-export 이중계수** — `index.ts` 가 같은 컴포넌트를 re-export 하면 중복/팽창 → drift. → §1 권고대로 **배럴을 정본으로 쓰지 않음**으로 v1 에서 원천 차단; canonical source module 기준 de-dup.
 - **(d) memo/forwardRef display-name** — 래퍼는 displayName 이 undefined/유도값이라 휴리스틱 결과가 불안정 → `CG:content` 미스매치. → §2 권고대로 v1 은 **plain 선언만**; 래퍼는 OD-5.
-- **(e) prettier/format 드리프트** — catalog-gen 이 prettier 를 돌리면 버전/설정 차로 공백·테이블 패딩이 바뀜; 가드는 intra-line 공백을 정규화 안 함 (`scripts/lib/check-generated-files.mjs:9`). → **v1 은 prettier 미사용**, 결정적 문자열을 직접 조립(`emitGeneratedYaml` 또는 명시적 `\n` join + 단일 trailing newline, route-tree `lib/route-tree.mjs:106`).
+- **(e) prettier/format 드리프트** — catalog-gen 이 prettier 를 돌리면 버전/설정 차로 공백·테이블 패딩이 바뀜; 가드는 intra-line 공백을 정규화 안 함 (`scripts/lib/check-generated-files.mjs:9`). → **v1 은 prettier 미사용**, 결정적 문자열을 직접 조립(명시적 `\n` join + 단일 trailing newline, route-tree 식 `lib/route-tree.mjs:106`; `.md` 라 YAML 용 `emitGeneratedYaml` 은 쓰지 않음).
 - **(f) CRLF / path-separator** — 이 둘만 가드가 이미 흡수 (`scripts/lib/check-generated-files.mjs:9`). Windows(이 repo 플랫폼) CRLF/백슬래시는 안전하나, **경로 토큰의 casing 이나 absolute-vs-relative 차이는 정규화 안 됨** — generator 는 머신 의존 절대경로를 출력하면 안 되고 posix-상대경로를 써야 한다 (가드 자신의 `relPosix`/`toPosixRel` 관례 `scripts/lib/check-generated-files.mjs:96-100`).
 
 ---

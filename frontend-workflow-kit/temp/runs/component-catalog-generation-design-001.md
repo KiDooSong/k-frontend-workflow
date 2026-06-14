@@ -159,7 +159,7 @@ and are not applied here.
 
 **FUTURE PR-2 — `catalog-gen.mjs` 스켈레톤** (per design §10): pure `scripts/lib/catalog.mjs` builder +
 `scripts/catalog-gen.mjs` CLI mirroring the nav-graph skeleton (`parseArgs` → `--src`/`--out`/`--json`
-→ `emitGeneratedYaml` → `writeFile` → `import.meta.url` guard). Walk `src/components/ui/**`
+→ HTML-comment 헤더 Markdown 렌더러(`.md` 라 `emitGeneratedYaml` 아님) → `writeFile` → `import.meta.url` guard). Walk `src/components/ui/**`
 (`walkFiles(uiDir, ['.tsx','.ts'])`), identify by §2 rule, emit the v1 4-field model, **timestamp-free
 + plain `.sort()`**. No manifest flip, no alias, no guard wiring, no CI — those follow in PR-5/PR-6 only
 after the generator's golden fixture proves two-run determinism.
