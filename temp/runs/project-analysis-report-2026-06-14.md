@@ -126,19 +126,49 @@ P5 splitFrontmatter  → hasFrontmatter=true · required 9필드 인식
 
 ---
 
-## 6. 시장 위치 & 웹 조사 (GPT Pro 리뷰로 단정 하향)
+## 6. 시장 위치 & 웹 조사 (딥리서치 검증 완료)
 
-**✅ 확실(레포 자체 근거)**: 검증을 **레포 내 결정적 Node 스크립트**로 고정 — 이 한 줄만으로 충분한 차별 서사. byte-identical 멱등 실측.
+> 딥리서치 109 에이전트 / 26 소스 / 118 주장 추출 → 25 검증(**20 confirmed, 5 killed**). 아래는 **1차 출처로 확증된 것만** 단정하고, 미검증/반증은 §6-d 에 분리한다.
 
-**✅ 확인됨(웹)**: Spec Kit `/speckit.analyze`는 cross-artifact 일관성 검사 명령이 맞음 → **"그들도 분석은 하되 LLM 기반(비결정), 이 킷은 결정적 스크립트"**가 가장 안전한 비교축.
+**핵심 결론**: 차별점 ①(결정적 게이트 판정)은 **외부 검증된 진짜 빈자리(white space)**. ②(readiness 사다리)·③(raise-only 게이트)는 **검증된 패턴의 규율 있는 종합** — 발명이 아니다.
 
-**차별점 후보(외부 검증 권장)**:
-- **staged readiness-mode 사다리** — Martin Fowler 가 "SDD 도구가 못 푼 워크플로 사이즈 유연성 공백"으로 지목한 것을 정면 겨냥. BMAD `check-implementation-readiness`·Factory.ai Agent Readiness 와 유사 선례.
-- **raise-only(단방향) 게이트 불변식** — HITL "pre-action approval"의 코딩판. audit-friendly 각도(EU AI Act/SB-833) positioning 가능.
+### 6-a. 1차 출처로 확증 (high)
+- **GitHub Spec Kit `/speckit.analyze` = LLM 에이전트**(결정적 스크립트 아님). 명령 템플릿이 문자 그대로 `You are a Claude agent …` 프롬프트로 시작하고, 유일한 스크립트는 파일 탐색(JSON 출력)만. 일관성·커버리지·constitution 정렬을 전부 LLM 이 판정.
+- **Spec Kit 결정성 = 열망뿐**: "Rerunning … should produce consistent IDs"는 모델 지시일 뿐 temperature=0/seed/hash 강제 없음. 유지보수자(Den Delimarsky, MS): 같은 프롬프트가 *"완전히 다른 결과를 낼 수 있다."*
+- **`constitution.md` = 프롬프트 강제**(기계 게이트 아님): "non-negotiable" 자연어 지시, 충돌=자동 CRITICAL, 그러나 read-only 리포트라 기계적 차단은 없다.
+- **Tessl = spec-as-source**: `@generate` 디렉티브로 코드 생성 + `// GENERATED FROM` 마커. **결정성 보장 없음**, "vibe-specs" 판매, Fowler 가 같은 스펙에서 다른 코드 재현.
+- **Factory.ai Agent Readiness = LLM 기반**: Droid(`/readiness-report`)로 60+ 기준 평가, **벤더가 비결정성을 자인**(grounding 으로 분산 7%→0.6%, **결코 0% 아님**).
 
-**⚠ 출처 보강 전 발표 금지**: **Tessl·BMAD·Factory.ai·ResearchLoop·Kiro** 1:1 단정 — 워크플로 리서치 에이전트 일부가 confidence=undefined/malformed 출력. 공식 문서·릴리스·논문 재확인 필요 → **task 3 딥리서치로 진행 중**.
+**→ 차별점 ① 외부 타당성 확정**: 조사한 모든 경쟁사가 판정을 LLM 으로 돌리고 기껏해야 통계적으로 일관성을 *근사*한다. **"완전 결정적·재현가능한 게이트 판정"은 실재하는 방어 가능한 빈자리.** Factory 의 `0.6% ≠ 0%` 가 가장 깨끗한 증거.
 
-**⚠ 외부 위험(이미 증상)**: SDD 1순위 실패모드 "마크다운 스펙이 코드와 드리프트" = 본 보고서 P3 증상. 산문 중복(§4-2)은 "리뷰할 마크다운만 양산" 함정.
+### 6-b. 비교표 (확증분만 단정, ⚠는 미검증)
+| 도구 | 검증 방식 | 게이트 모델 | 스펙↔코드 바인딩 | FWK 차별 | 중복 |
+|---|---|---|---|---|---|
+| **Spec Kit** | LLM(에이전트 프롬프트) | soft/advisory · AI 해석 · read-only 리포트 | spec-first→anchored | 결정적 판정 + raise-only 단방향 게이트 | constitution 거버넌스 · 교차검증 의도 |
+| **Tessl** | LLM(비결정 재생성) | 하드 가드레일+테스트 · 코드 전 사람 승인 | spec-as-source (DO-NOT-EDIT) | 사람-편집 코드 유지 + 결정적 게이트 | "에이전트 불신, 스펙이 계약" |
+| **Factory.ai** | LLM(Droid)+일부 파일존재 신호 | 5단 성숙도 · grounding 통계 일관성(0.6% 잔여) | repo-readiness(스펙바인딩 아님) | 0% 분산 보증 + readiness 가 *구현*을 게이트 | staged-readiness 개념 |
+| **AWS Kiro** | ⚠ 미검증 | ⚠ 미검증(post-hoc 승인 추정) | spec-first/task-anchored(추정) | — | spec→plan→code 단계 |
+| **BMAD** | ⚠ 미검증 | ⚠ 미검증 | 미검증 | — | 에이전트 오케스트레이션·readiness(추정) |
+
+### 6-c. positioning 권고
+- **LEAD**: 차별점 ①(**결정적 Node 스크립트 판정, 동일입력→동일출력**)을 1순위 차별점으로. 증거 기반·방어 가능.
+- ②·③은 **"검증된 패턴의 규율 있는 형식화"**로 표기 — 발명 아님(Spec Kit/Tessl 의 human-approval 체크포인트, Factory 5단 성숙도, Böckeler 의 spec-first/anchored/as-source 사다리가 선례).
+- ③의 **진짜 신규 부분 = monotonic 불변식**(에이전트는 blocker 를 올리기만, 사람만 내림) — 어느 경쟁사에서도 관찰 안 됨. 단 **반례 부재**에 근거(긍정적 신규성 증명은 아님).
+- ❌ 주장 금지: "FWK 가 staged readiness/HITL 승인을 발명". ✅ 주장 가능: **결정적 판정 + monotonic raise-only + readiness-게이트된 *구현*(리포팅 아님)의 결합은 (아마) 최초.**
+
+### 6-d. 미검증·반증 — 발표 전 확인 필수
+- **AWS Kiro**: 모든 Kiro 주장 1차 출처 부재로 refuted(0-3). 비교표 Kiro 칸은 잠정 → kiro.dev 직접 확인 필요.
+- **BMAD `check-implementation-readiness`**: 살아남은 주장 0건 → 결정성 여부 **아무것도 단정 금지**.
+- **Factory 정확한 "8 pillar/5 level/80%"**: 구조·임계 refuted → "5단계/60+기준/80%"만 느슨히 인용, 정확한 pillar 이름 미검증.
+- **arXiv ResearchLoop "blocker conservation" · EU AI Act/SB-833 · "drift-in-hours" 논문**(RQ #7·#8): 살아남은 주장 0건 → 그 선례/반례 미검증. (SDD 드리프트 자체는 업계가 반복 지적하나 *정량* 근거는 미확보 — 본 보고서 P3 가 그 *질적* 증상.)
+- **시간민감성**: Spec Kit=main 브랜치(커밋마다 변동), Tessl=closed beta(spec-as-source 는 열망), Factory 0.6%=6주 윈도우. provenance: 사다리 분류는 Böckeler/Thoughtworks-Fowler 귀속.
+
+### 6-e. 주요 출처
+- Spec Kit `analyze.md`(1차): `raw.githubusercontent.com/github/spec-kit/main/templates/commands/analyze.md`
+- Tessl 런칭: `tessl.io/blog/tessl-launches-spec-driven-framework-and-registry`
+- Factory Agent Readiness: `factory.ai/news/agent-readiness` · `docs.factory.ai/web/agent-readiness/overview`
+- Fowler/Böckeler SDD 3 tools: `martinfowler.com/articles/exploring-gen-ai/sdd-3-tools.html`
+- (전체 26 소스: 딥리서치 산출물 `w0mxuaxn3`)
 
 ---
 
@@ -150,7 +180,7 @@ P5 splitFrontmatter  → hasFrontmatter=true · required 9필드 인식
 | 2 | **P3/P4 진입점**: 4종에 `superseded` 헤더 + IMPLEMENTING §0 를 roadmap 으로 | 후속 |
 | 3 | P6·P7 설정 로드 견고화(`loadYamlOrExit` util 통일 + TypeError) | 후속 |
 | 4 | P9·P10·P12·P15·P16 문서-코드 정합 | 후속 |
-| 5 | §6 "Prior art & 차별점" 매핑 + 적정 범위 문서화 (task 3 결과 반영) | 진행 중 |
+| 5 | §6 Prior art 비교표 — 딥리서치 검증(20 confirmed). 차별점 ①=빈자리 확정, Kiro/BMAD 사양 미검증 분리 | ✅ 완료 |
 | 6 | §4-2 산문 중복 통합, P11 추적위생 | 후속 |
 
 ---
