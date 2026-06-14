@@ -17,9 +17,10 @@ import path from 'node:path';
 import { walkFiles, readFileSafe } from './util.mjs';
 
 const SCAN_EXTS = ['.tsx', '.ts'];
-// 스코프 가드 — 이 세그먼트를 포함하는 파일만 후보 (features/<domain>/components·screens 배제).
-// --src 가 넓은 src 루트를 가리켜도 components/ui 밖은 걸러진다.
-const UI_MARKER = '/components/ui/';
+// 스코프 가드 — 정본 글롭 `src/components/ui/**` 만 후보. 이 세그먼트를 포함하는 파일만 통과시켜
+// features/<domain>/components·screens, 그리고 features/foo/components/ui 같은 비정본 중첩 ui 까지 배제한다.
+// --src 가 넓은 src 루트를 가리켜도 정본 ui 밖은 걸러진다 (source-contract §1).
+const UI_MARKER = '/src/components/ui/';
 const PASCAL_RE = /^[A-Z][A-Za-z0-9]*$/;
 
 // 임의 경로를 posix 슬래시로 정규화한다 (Windows 백슬래시 → '/'). 출력 경로 결정성용 (§7.4(f)).
@@ -33,7 +34,7 @@ function toPosix(p) {
 export function classifyComponentFile(absFile, content) {
   const posixAbs = toPosix(absFile);
   const idx = posixAbs.indexOf(UI_MARKER);
-  if (idx === -1) return null; // components/ui/ 밖 → 제외 (§1 스코프)
+  if (idx === -1) return null; // 정본 src/components/ui/ 밖 → 제외 (§1 스코프)
 
   const ext = path.extname(absFile);
   if (!SCAN_EXTS.includes(ext)) return null;
@@ -46,12 +47,13 @@ export function classifyComponentFile(absFile, content) {
 
   // base 는 PascalCase 라 정규식 메타문자가 없다 → 그대로 보간 안전.
   const src = content || '';
-  // memo/forwardRef 래퍼 → 제외 (v1 plain 선언만, §7.4(d)/OD-5). RHS 가 다음 줄에 와도
-  // (`export const X =` 다음 줄 `  forwardRef(...)`) `=\s*` 의 \s 가 개행을 포함하므로 잡힌다.
-  // 한계(v1 heuristic): `= /* @__PURE__ */ React.memo(…)` 처럼 주석이 끼거나 `= (React.memo)(…)`
-  // 처럼 괄호로 감싼 표기는 못 잡아 false-include 될 수 있다(실트리엔 0건, 견고한 파싱은 후속 §3).
+  // memo/forwardRef 래퍼 → 제외 (v1 plain 선언만, §7.4(d)/OD-5). 선언 헤드(다중 줄 타입 주석 포함)와
+  // RHS 가 여러 줄에 걸쳐도 잡도록 `(?:[^=;]|=>)*` 로 할당 `=` 까지 스캔한다: 개행 포함, 타입의 `=>`(arrow)
+  // 는 건너뛰되 다른 선언 경계(`;`)나 할당 `=` 는 넘지 않아 엉뚱한 형제 선언을 오판하지 않는다.
+  // 잔여 한계(v1 heuristic): `= /* @__PURE__ */ React.memo(…)` 처럼 `=` 뒤 주석이 끼거나 `= (React.memo)(…)`
+  // 처럼 괄호로 감싼 표기는 여전히 못 잡아 false-include 될 수 있다(실트리엔 0건, 견고한 파싱은 후속 §3).
   const wrapRe = new RegExp(
-    `^\\s*export\\s+const\\s+${base}\\b[^\\n]*=\\s*(?:React\\.)?(?:memo|forwardRef)\\b`,
+    `^\\s*export\\s+const\\s+${base}\\b(?:[^=;]|=>)*=\\s*(?:React\\.)?(?:memo|forwardRef)\\b`,
     'm',
   );
   if (wrapRe.test(src)) return null;
@@ -65,11 +67,11 @@ export function classifyComponentFile(absFile, content) {
   const constRe = new RegExp(`^\\s*export\\s+const\\s+${base}\\b`, 'm');
   if (!fnRe.test(src) && !constRe.test(src)) return null;
 
-  // source_path: 정본 글롭 기준 posix 상대경로 — 매니페스트 source(src/components/ui/**)와 일치.
-  // --src 가 어디를 가리키든 첫 `/components/ui/` 세그먼트부터 앵커링해 결정적·이식적 경로를 낸다.
-  // (전제: --src 아래 ui 루트는 하나 — v1 단일루트 계약. 여러 ui 루트를 한 번에 스캔하면 동일 상대경로 충돌 가능.)
-  const rest = posixAbs.slice(idx + UI_MARKER.length); // 'Button.tsx' | 'forms/Field.tsx'
-  const source_path = 'src/components/ui/' + rest;
+  // source_path: 정본 src/components/ui/ 루트 기준 posix 상대경로 — 매니페스트 source(src/components/ui/**)
+  // 와 일치. idx 는 '/src/components/ui/' 의 선행 '/' 위치이므로 slice(idx+1) 이 'src/components/ui/<...>' 를 낸다.
+  // (전제: --src 아래 정본 src/components/ui 루트는 하나 — v1 단일루트 계약. 여러 루트를 한 번에 스캔하면
+  //  동일 상대경로 충돌 가능.)
+  const source_path = posixAbs.slice(idx + 1); // 'src/components/ui/Button.tsx' | '.../forms/Field.tsx'
 
   // v1 4필드만. export_kind 는 현재 항상 'named'(default 미수집), status 는 추출상태 'ok' (OD-2).
   return { name: base, source_path, export_kind: 'named', status: 'ok' };
