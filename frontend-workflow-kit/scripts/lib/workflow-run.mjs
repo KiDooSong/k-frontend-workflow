@@ -51,7 +51,7 @@ export function isPacketClean(env) {
   return (
     env.over_ceiling === false &&
     env.mode_known === true &&
-    Number(env.blocking_count) === 0 &&
+    env.blocking_count === 0 && // 엄격 비교 — null/false/""/[]/"0" 같은 손상값은 0 으로 강제변환하지 않고 fail-closed(HALT_AMBIGUITY).
     Array.isArray(env.d_cand) && env.d_cand.length === 0 &&
     Array.isArray(env.u_cand) && env.u_cand.length === 0
   );

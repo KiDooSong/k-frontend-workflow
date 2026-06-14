@@ -131,7 +131,13 @@ function main() {
   const reportPath = outDirResolved
     ? path.join(outDirResolved, 'run-report.md')
     : path.join(os.tmpdir(), `workflow-run-${seq}-run-report.md`);
-  const statusPath = outDirResolved ? outDirResolved.replace(/[\\/]+$/, '') + '.md' : null;
+  // 상태 요약은 <dir>.md (헤드라인 산출물 — 검증 명령의 --out <dir> 이 <dir>.md 를 만든다).
+  // basename/dirname 으로 만들어 drive-root('C:\\') 같은 병리적 --out 도 안전 처리(C:.md 로 깨지지 않게).
+  let statusPath = null;
+  if (outDirResolved) {
+    const base = path.basename(outDirResolved);
+    statusPath = base ? path.join(path.dirname(outDirResolved), base + '.md') : path.join(outDirResolved, 'run-status.md');
+  }
 
   // 상태 확정 → 모델 빌드 → 상태 파일 쓰기/출력 → exit.
   const finalize = (state, { packet = null, report = null, reason = null } = {}) => {
