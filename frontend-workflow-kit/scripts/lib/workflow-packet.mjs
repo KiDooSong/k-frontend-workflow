@@ -132,7 +132,7 @@ function buildAmbiguityRows(order, rIdx, readinessMode, decisions) {
       reason = `상위 모드 — \`${readinessMode}\` 가 이미 cap (평가 생략)`;
       if (caps.length) reason += ` · D-cand ${caps.join(', ')} 가 이 모드 cap`;
     }
-    return { mode, safe, reason, candidates: caps.length ? caps.map((id) => `D-cand: ${id}`).join('<br>') : '—' };
+    return { mode, safe, reason, candidates: caps.length ? caps.map((id) => `D-cand: ${cell(id)}`).join('<br>') : '—' };
   });
 }
 
@@ -351,8 +351,8 @@ export function renderPacketMarkdown(m) {
   out.push('## Readiness Snapshot');
   out.push('| 항목 | 값 |');
   out.push('|---|---|');
-  out.push(`| readiness_mode | \`${m.readiness_mode}\` |`);
-  out.push(`| next_mode | ${m.next_mode ? '`' + m.next_mode + '`' : '— (최상위)'} |`);
+  out.push(`| readiness_mode | \`${cell(m.readiness_mode)}\` |`);
+  out.push(`| next_mode | ${m.next_mode ? '`' + cell(m.next_mode) + '`' : '— (최상위)'} |`);
   out.push(`| requested_mode | \`${cell(m.requested_mode)}\`${m.overCeiling ? ' — ⚠ 천장 초과 (경고만, exit 0)' : ''} |`);
   out.push(`| 천장 근거 | ${cell(ceilingEvidence)} |`);
   out.push('');

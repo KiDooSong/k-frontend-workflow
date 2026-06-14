@@ -36,6 +36,18 @@ function requireStringFlag(flags, name) {
   return v.trim();
 }
 
+// 값이 필요한 선택 플래그. 부재면 undefined, 값 있으면 trim 문자열.
+// bare(값 없는) 플래그는 parser 가 boolean true 로 두므로 exit 2 로 막는다 — path.resolve(true) 등
+// 미처리 TypeError 로 새는 exit 1 을 차단(도구 오류는 항상 exit 2).
+function optStr(flags, name) {
+  const v = flags[name];
+  if (v === undefined) return undefined;
+  if (typeof v !== 'string' || v.trim() === '') {
+    fail(`--${name} 에는 값이 필요합니다 (예: --${name} <value>)`);
+  }
+  return v.trim();
+}
+
 function toPosix(p) {
   return String(p).replace(/\\/g, '/');
 }
@@ -52,6 +64,19 @@ function pickEntry(data, screen) {
     if (typeof data.readiness_mode === 'string') return data; // 단일 엔트리로 저장된 파일
   }
   return null;
+}
+
+// 파싱은 되지만 형식이 깨진 readiness 엔트리(배열 자리에 비배열 등)를 fail-closed 로 거른다.
+// 정규화/재계산 없음 — exit 2 로 멈춰 spread/iterate/join 의 미처리 TypeError(=exit 1)를 차단한다.
+function validateEntry(entry, screen) {
+  if (typeof entry.readiness_mode !== 'string' || entry.readiness_mode.trim() === '') {
+    fail(`readiness entry '${screen}' 에 readiness_mode(string) 가 없음 — 손상된 readiness 출력`);
+  }
+  for (const k of ['allowed_paths', 'forbidden_paths', 'blocking', 'next_actions']) {
+    if (entry[k] != null && !Array.isArray(entry[k])) {
+      fail(`readiness entry '${screen}' 의 ${k} 가 배열이 아님 — 손상된 readiness 출력`);
+    }
+  }
 }
 
 function parseReadinessFile(p) {
@@ -115,24 +140,30 @@ function main() {
 
   const screen = requireStringFlag(flags, 'screen');
   const requestedMode = requireStringFlag(flags, 'requested-mode');
-  const date = typeof flags.date === 'string' ? flags.date : isoToday();
-  const owner = typeof flags.owner === 'string' ? flags.owner : 'workflow:packet';
-  const seq = typeof flags.seq === 'string' ? flags.seq : '001';
+  const readinessFlag = optStr(flags, 'readiness');
+  const docsFlag = optStr(flags, 'docs');
+  const policyFlag = optStr(flags, 'policy');
+  const manifestFlag = optStr(flags, 'manifest');
+  const outFlag = optStr(flags, 'out');
+  const domainFlag = optStr(flags, 'domain');
+  const date = optStr(flags, 'date') ?? isoToday();
+  const owner = optStr(flags, 'owner') ?? 'workflow:packet';
+  const seq = optStr(flags, 'seq') ?? '001';
 
-  const policyPath = flags.policy ? path.resolve(flags.policy) : DEFAULTS.policy;
-  const manifestPath = flags.manifest ? path.resolve(flags.manifest) : DEFAULTS.manifest;
+  const policyPath = policyFlag ? path.resolve(policyFlag) : DEFAULTS.policy;
+  const manifestPath = manifestFlag ? path.resolve(manifestFlag) : DEFAULTS.manifest;
 
   // 1) readiness 소비: --readiness 파일 우선, 없으면 readiness.mjs 서브프로세스.
   let data;
   let readinessSource;
-  if (typeof flags.readiness === 'string' && flags.readiness.trim() !== '') {
-    const p = path.resolve(flags.readiness);
+  if (readinessFlag) {
+    const p = path.resolve(readinessFlag);
     data = parseReadinessFile(p);
-    readinessSource = toPosix(path.relative(process.cwd(), p)) || flags.readiness;
+    readinessSource = toPosix(path.relative(process.cwd(), p)) || readinessFlag;
   } else {
-    const docs = flags.docs ? path.resolve(flags.docs) : path.resolve(DEFAULTS.docs);
+    const docs = docsFlag ? path.resolve(docsFlag) : path.resolve(DEFAULTS.docs);
     data = runReadinessSubprocess({ screen, docs, policy: policyPath, manifest: manifestPath });
-    const docsLabel = toPosix(flags.docs || DEFAULTS.docs);
+    const docsLabel = toPosix(docsFlag || DEFAULTS.docs);
     readinessSource = `readiness.mjs --docs ${docsLabel} --screen ${screen} --json (computed ${date})`;
   }
 
@@ -140,10 +171,11 @@ function main() {
   if (!entry) {
     fail(`screen '${screen}' 을 readiness 출력에서 찾지 못함 (사용 가능: ${Object.keys(data || {}).join(', ') || '없음'})`);
   }
+  validateEntry(entry, screen);
 
   // 2) 모델 빌드 + 렌더. policy.order 는 사다리 위치(표 행 + requested>readiness 비교)용으로만 사용.
   const order = loadOrder(policyPath);
-  const outPath = flags.out ? path.resolve(flags.out) : null;
+  const outPath = outFlag ? path.resolve(outFlag) : null;
   const ambiguityLink = outPath
     ? toPosix(path.relative(path.dirname(outPath), AMBIGUITY_DOC))
     : toPosix(path.relative(process.cwd(), AMBIGUITY_DOC));
@@ -152,7 +184,7 @@ function main() {
     entry,
     screen,
     requestedMode,
-    domain: flags.domain,
+    domain: domainFlag,
     readinessSource,
     order,
     date,
@@ -165,7 +197,12 @@ function main() {
 
   // 3) 출력: --out 이면 markdown 파일로, stdout 은 --json(봉투) 또는 markdown(또는 짧은 확인줄).
   if (outPath) {
-    writeFile(outPath, md);
+    try {
+      writeFile(outPath, md);
+    } catch (e) {
+      // --out 은 사용자 입력 — 디렉터리/권한/부모생성 실패는 미처리 예외(exit 1)가 아니라 도구 오류(exit 2)로.
+      fail(`--out 쓰기 실패 "${toPosix(outPath)}": ${e.message}`);
+    }
     model.out = toPosix(path.relative(process.cwd(), outPath));
   }
 
