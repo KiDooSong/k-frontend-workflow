@@ -59,8 +59,8 @@
 | 검증 | 결과 |
 |---|---|
 | `git diff --name-only` ⊆ 허용 파일 | ✅ (위 4파일만) |
-| `grep "Ambiguity Review Required" work-packet.template.md` | ✅ 매치 없음 |
-| `git diff -- scripts package.json .github catalog/artifact-manifest.yaml review-artifact.template.md run-report.template.md` | ✅ 비어 있음 |
+| `grep -n "Ambiguity Review Required" frontend-workflow-kit/templates/work-packet/work-packet.template.md` | ✅ 매치 없음 |
+| `git diff -- frontend-workflow-kit/scripts frontend-workflow-kit/scripts/lib frontend-workflow-kit/package.json .github frontend-workflow-kit/catalog/artifact-manifest.yaml frontend-workflow-kit/templates/work-packet/review-artifact.template.md frontend-workflow-kit/templates/work-packet/run-report.template.md` | ✅ 비어 있음 |
 | 라인엔딩 일관 CRLF · `git diff --check` | ✅ 무이슈 |
 | `npm run example:validate` | ✅ 검사 12종 통과, exit 0 |
 | `npm test` (test-fixtures + 단위) | ✅ fixtures PASS + 15/15 pass, exit 0 |
