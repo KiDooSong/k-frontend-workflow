@@ -163,3 +163,5 @@ PR #19 의 Codex 자동 리뷰(코멘트) 중 타당한 지적을 반영했다.
 - `pass-param-normalize` — `GET /coupons/:id`·`POST /coupons/[id]/use`(ScreenSpec) ↔ `/coupons/{id}`·`/coupons/{couponId}/use`(manifest) → 정규화 매칭 → exit 0.
 
 재검증: `node --check` 3파일 OK · `example:state/readiness/validate` + `npm test` green(무회귀) · 픽스처 7종 의도대로 exit code + 검사 8 단일 사유.
+
+**잔여 위험(수용, Codex 3c).** `normEndpoint` 가 파라미터가 아닌 **리터럴** `[seg]`/`:seg` 도 `{}` 로 합칠 수 있다(예: `/files/[draft]` ↔ `/files/{id}`). 실제 API path 에선 드물고, 더 조이면 `:id`/`[id]` 거짓-누락(m1)이 재발하므로 트레이드오프로 수용한다. 의도된 정규화(쿼리스트링·trailing slash 제거, `{id}↔{couponId}` 통합)는 위험이 아니다. 또한 zod export 스캔의 배럴(`export * from`)·타파일 재-export 미해소(§7)와 "matched export 가 실제 zod 인지"의 AST 미검증은 known limitation 으로 유지한다.
