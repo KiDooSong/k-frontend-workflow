@@ -93,8 +93,8 @@ export function parseTable(sectionText) {
   return { headers, rows, rowCount: rows.length };
 }
 
-// 헤더 이름을 느슨하게 매칭 (대소문자/공백 무시)
-function col(row, name) {
+// 헤더 이름을 느슨하게 매칭 (대소문자/공백 무시). api-manifest.mjs(검사 8) 도 공유한다.
+export function col(row, name) {
   const want = name.toLowerCase().replace(/\s+/g, '');
   for (const k of Object.keys(row)) {
     if (k.toLowerCase().replace(/\s+/g, '') === want) return row[k];
@@ -304,7 +304,10 @@ export function deriveMetrics(spec, opts = {}) {
   };
 }
 
-// "- GET /coupons (confidence: candidate)" 같은 줄에서 confidence 추출
+// "- GET /coupons (confidence: candidate)" 같은 줄에서 method/path/confidence 추출.
+// raw·confidence 는 기존 계약 그대로(minApiConfidence/deriveMetrics 가 confidence 만 읽으므로 readiness 불변).
+// method/path 는 검사 8(엔드포인트 매칭)용으로만 추가하며, 미인식 시 null.
+const API_CANDIDATE_RE = /\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b\s+(\/[^\s()]+)/i;
 export function parseApiCandidates(sectionText) {
   if (!sectionText) return [];
   const clean = stripComments(sectionText);
@@ -314,7 +317,14 @@ export function parseApiCandidates(sectionText) {
     if (!t.startsWith('-')) continue;
     const m = /confidence\s*[:=]\s*([a-zA-Z]+)/.exec(t);
     const conf = m ? m[1].toLowerCase() : 'unknown';
-    out.push({ raw: t.replace(/^-\s*/, ''), confidence: conf });
+    const raw = t.replace(/^-\s*/, '');
+    const em = API_CANDIDATE_RE.exec(raw);
+    out.push({
+      raw,
+      confidence: conf,
+      method: em ? em[1].toUpperCase() : null,
+      path: em ? em[2] : null,
+    });
   }
   return out;
 }
