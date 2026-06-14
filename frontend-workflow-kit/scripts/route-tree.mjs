@@ -20,6 +20,9 @@ if (!isDir(appDir)) {
 }
 
 const tree = scanAppDir(appDir);
-const text = renderRouteTree(tree, { source: 'src/app/**', command: 'npm run workflow:route-tree' });
+const text = renderRouteTree(tree, {
+  source: 'src/app/**',
+  command: 'node scripts/route-tree.mjs --app src/app --out docs/frontend-workflow/_meta/route-tree.txt',
+});
 writeFile(outFile, text);
 process.stdout.write('workflow:route-tree — ' + outFile + ' 생성 완료\n');
