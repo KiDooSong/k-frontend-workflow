@@ -1,4 +1,28 @@
+---
+# --- required (canonical) ---
+input_id: "IN-{YYYYMMDD}-{source}-{NNN}"   # required·불변·전역유일. 멱등성·역추적·supersede·미처리 감지가 이 키에 걸린다.
+input_type: "{planning|figma|api|meeting|qa|user-note}"     # required. normalized category(입력 성격 라벨)
+source_type: "{planning-doc|figma|api-doc|meeting|qa|user-note}"   # required. concrete source adapter/type(원천 종류)
+source_ref: "{원본 링크 또는 파일 경로}"   # required. 추적용 원천 포인터
+captured_at: "{YYYY-MM-DD}T00:00:00+09:00"   # required. 입력을 수집한 시점
+captured_by: "{입력 스킬 이름}"             # required. 어떤 입력 스킬이 저장했는지
+status: "captured"                          # required. 입력 *자체*의 상태. ★ Reconciliation Register 의 Reconcile Status 와 다르다(별개 라이프사이클).
+affected_domains: ["{domain}"]              # required. 관련 도메인 (canonical scope 필드)
+affected_screens: ["{SCREEN_ID}"]           # required. 관련 화면 (canonical scope 필드)
+# --- optional ---
+confidence: "{unknown|candidate|confirmed}"  # optional(recommended). 입력의 확신도. candidate 가 기본. confirmed 라도 LLM 이 문서를 confirmed 로 올리진 않는다.
+supersedes: null                            # optional. 같은 원천의 이전 input_id 를 대체할 때만(입력↔입력 축. 결정값 번복 아님).
+raw_artifacts: []                           # optional. 원본 첨부(스크린샷·export 등) 경로/URL 목록. 없으면 생략 가능.
+# deprecated alias (읽기 호환만 — 새로 쓰지 말 것):
+#   suggested_scope.domains/screens → affected_domains/affected_screens
+#   frontmatter summary             → 아래 body 의 ## Summary 섹션이 정본
+---
+
 <!--
+  ⚠ frontmatter(여는 `---`)는 반드시 파일 **첫 줄**에서 시작한다. splitFrontmatter 는 선행 주석/공백 뒤의
+    `---` 를 인식하지 못해, 이 설명 블록을 위로 올리면 이 템플릿으로 만든 입력 파일이 검사 11
+    (input-artifact frontmatter)에서 "frontmatter 없음"으로 통째로 실패한다. 설명은 frontmatter 아래에 둔다.
+
   input-artifact.template.md — 외부 입력 스킬이 저장하는 "입력 결과물" 한 건의 형식.
 
   무엇인가:
@@ -21,25 +45,6 @@
   - 범위는 canonical 필드 affected_domains/affected_screens 로 쓴다. suggested_scope(중첩)·frontmatter summary 는 deprecated alias 라 새로 쓰지 않는다(요약은 body ## Summary 가 정본).
   - 입력은 "사실 수집"만 한다 — 결정을 내리거나(resolve), confirmed 로 올리거나, 코드를 만들지 않는다. 그건 reconcile-input·사람 몫.
 -->
----
-# --- required (canonical) ---
-input_id: "IN-{YYYYMMDD}-{source}-{NNN}"   # required·불변·전역유일. 멱등성·역추적·supersede·미처리 감지가 이 키에 걸린다.
-input_type: "{planning|figma|api|meeting|qa|user-note}"     # required. normalized category(입력 성격 라벨)
-source_type: "{planning-doc|figma|api-doc|meeting|qa|user-note}"   # required. concrete source adapter/type(원천 종류)
-source_ref: "{원본 링크 또는 파일 경로}"   # required. 추적용 원천 포인터
-captured_at: "{YYYY-MM-DD}T00:00:00+09:00"   # required. 입력을 수집한 시점
-captured_by: "{입력 스킬 이름}"             # required. 어떤 입력 스킬이 저장했는지
-status: "captured"                          # required. 입력 *자체*의 상태. ★ Reconciliation Register 의 Reconcile Status 와 다르다(별개 라이프사이클).
-affected_domains: ["{domain}"]              # required. 관련 도메인 (canonical scope 필드)
-affected_screens: ["{SCREEN_ID}"]           # required. 관련 화면 (canonical scope 필드)
-# --- optional ---
-confidence: "{unknown|candidate|confirmed}"  # optional(recommended). 입력의 확신도. candidate 가 기본. confirmed 라도 LLM 이 문서를 confirmed 로 올리진 않는다.
-supersedes: null                            # optional. 같은 원천의 이전 input_id 를 대체할 때만(입력↔입력 축. 결정값 번복 아님).
-raw_artifacts: []                           # optional. 원본 첨부(스크린샷·export 등) 경로/URL 목록. 없으면 생략 가능.
-# deprecated alias (읽기 호환만 — 새로 쓰지 말 것):
-#   suggested_scope.domains/screens → affected_domains/affected_screens
-#   frontmatter summary             → 아래 body 의 ## Summary 섹션이 정본
----
 
 # Input: {입력을 한 줄로 요약한 제목}
 

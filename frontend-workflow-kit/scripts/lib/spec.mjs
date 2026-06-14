@@ -45,52 +45,69 @@ export function getSections(body) {
   return sections;
 }
 
-// 섹션 텍스트에서 첫 번째 마크다운 표를 파싱한다.
-// { headers: [...], rows: [{Header: value}], rowCount } 또는 null.
-export function parseTable(sectionText) {
-  if (!sectionText) return null;
+// 마크다운 표의 한 행을 셀 배열로 분리한다.
+// 셀 안의 escaped pipe(`\|`, 마크다운 리터럴 파이프)는 컬럼 구분자가 아니므로 보호한다 —
+// 보호하지 않으면 Status·Blocking Mode 같은 오른쪽 컬럼이 한 칸씩 밀려 게이트 신호가 오염된다.
+function splitRow(line) {
+  return line
+    .replace(/^\s*\|/, '') // 표의 선행 파이프 (escape 대상 아님)
+    .replace(/(?<!\\)\|\s*$/, '') // 후행 파이프 (escaped pipe 는 보존)
+    .split(/(?<!\\)\|/) // escape 되지 않은 파이프에서만 분리
+    .map((c) => c.replace(/\\\|/g, '|').trim()); // `\|` → 리터럴 `|` 로 복원
+}
+
+// 섹션 텍스트의 모든 마크다운 표 블록을 파싱한다.
+// 빈 줄/비-표 라인이 표 블록을 종료한다 — 한 섹션의 "범례/예시 표 → 빈 줄 → 진짜 표"가
+// 하나로 병합돼 진짜 표의 행이 첫 표 헤더로 잘못 매핑되며 조용히 사라지던 결함(fail-open)을 막는다.
+export function parseTables(sectionText) {
+  if (!sectionText) return [];
   const clean = stripComments(sectionText);
-  const lines = clean.split(/\r?\n/);
-  const tableLines = [];
-  let started = false;
-  for (const raw of lines) {
+  const blocks = [];
+  let cur = [];
+  const flush = () => {
+    if (cur.length) blocks.push(cur);
+    cur = [];
+  };
+  for (const raw of clean.split(/\r?\n/)) {
     const line = raw.trim();
-    const isRow = line.startsWith('|');
-    if (isRow) {
-      tableLines.push(line);
-      started = true;
-    } else if (started) {
-      // 표가 시작된 뒤 비-표 라인을 만나면 표 종료
-      if (line === '') continue; // 표 중간 빈 줄은 허용하지 않지만 관대하게 무시
-      break;
+    if (line.startsWith('|')) cur.push(line);
+    else flush(); // 빈 줄 포함 비-표 라인 → 현재 표 블록 종료
+  }
+  flush();
+
+  const tables = [];
+  for (const tableLines of blocks) {
+    if (tableLines.length < 2) continue;
+    // 두 번째 줄은 구분자 (---). 없으면 표가 아님.
+    if (!/^\|?[\s:|-]+\|?$/.test(tableLines[1])) continue;
+    const headers = splitRow(tableLines[0]);
+    const rows = [];
+    for (let i = 2; i < tableLines.length; i++) {
+      const cells = splitRow(tableLines[i]);
+      const row = {};
+      headers.forEach((h, idx) => {
+        row[h] = (cells[idx] ?? '').trim();
+      });
+      rows.push(row);
     }
+    tables.push({ headers, rows, rowCount: rows.length });
   }
-  if (tableLines.length < 2) return null;
+  return tables;
+}
 
-  const splitRow = (line) =>
-    line
-      .replace(/^\|/, '')
-      .replace(/\|$/, '')
-      .split('|')
-      .map((c) => c.trim());
+// 섹션의 첫 번째 마크다운 표 (하위호환). 특정 표가 필요하면 parseTables + pickTableBySignature.
+export function parseTable(sectionText) {
+  const tables = parseTables(sectionText);
+  return tables.length ? tables[0] : null;
+}
 
-  const headers = splitRow(tableLines[0]);
-  // 두 번째 줄은 구분자 (---). 검증만 하고 건너뛴다.
-  const sep = tableLines[1];
-  if (!/^\|?[\s:|-]+\|?$/.test(sep)) {
-    // 구분자가 없으면 표가 아님
-    return null;
-  }
-  const rows = [];
-  for (let i = 2; i < tableLines.length; i++) {
-    const cells = splitRow(tableLines[i]);
-    const row = {};
-    headers.forEach((h, idx) => {
-      row[h] = (cells[idx] ?? '').trim();
-    });
-    rows.push(row);
-  }
-  return { headers, rows, rowCount: rows.length };
+// 섹션에서 requiredCols 를 모두 가진 표 블록을 고른다. 범례/예시 표가 앞서 있어도
+// 진짜 게이트 표(예: Open Decisions)를 시그니처로 집어낸다. 못 찾으면 table=null 이되
+// hadTables 로 "표는 있었음"을 알려 호출부가 fail-closed 할 수 있게 한다.
+function pickTableBySignature(sectionText, requiredCols) {
+  const tables = parseTables(sectionText);
+  const table = tables.find((t) => requiredCols.every((c) => hasHeader(t.headers, c))) || null;
+  return { table, hadTables: tables.length > 0 };
 }
 
 // 헤더 이름을 느슨하게 매칭 (대소문자/공백 무시). api-manifest.mjs(검사 8) 도 공유한다.
@@ -115,7 +132,9 @@ export function hasHeader(headers, name) {
 //   rows             [{ id, status, blockingMode, decisionNeeded, options, owner }] (빈 행 제외)
 //   sectionHasContent 섹션에 실질 내용이 있는데 파싱 가능한 표가 없는가 (불릿/문장/깨진 표)
 export function parseOpenDecisions(sectionText) {
-  const table = parseTable(sectionText);
+  // 시그니처(ID·Status·Blocking Mode)로 진짜 Open Decisions 표를 고른다 —
+  // 같은 섹션의 범례/예시 표에 속아 진짜 결정이 사라지지 않게 한다.
+  const { table, hadTables } = pickTableBySignature(sectionText, ['ID', 'Status', 'Blocking Mode']);
   const rows = [];
   if (table) {
     for (const r of table.rows) {
@@ -131,12 +150,17 @@ export function parseOpenDecisions(sectionText) {
   }
   let sectionHasContent = false;
   if (sectionText && !table) {
-    const lines = stripComments(sectionText)
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0);
-    sectionHasContent =
-      !(lines.length === 0 || (lines.length === 1 && /^(없음|none|n\/a|-)$/i.test(lines[0])));
+    if (hadTables) {
+      // 표는 있는데 Open Decisions 시그니처와 안 맞음 → 게이트가 조용히 열리지 않게 fail-closed 신호.
+      sectionHasContent = true;
+    } else {
+      const lines = stripComments(sectionText)
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0);
+      sectionHasContent =
+        !(lines.length === 0 || (lines.length === 1 && /^(없음|none|n\/a|-)$/i.test(lines[0])));
+    }
   }
   return { table, headers: table?.headers || null, rows, sectionHasContent };
 }

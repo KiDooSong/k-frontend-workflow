@@ -40,6 +40,10 @@ jobs:
       # 진짜 검사 게이트 (검사 12종, exit 0/1)
       - run: npm run example:validate
 
+      # 파서 회귀 (게이트 신호 파싱: 표 병합/escaped pipe) — 결정적 단위 테스트 하드 게이트.
+      #   parseTable/parseOpenDecisions 의 fail-open/신호오염 회귀를 막는다 (warning-first 아님).
+      - run: npm run test:spec
+
       # golden fixture 회귀 하니스 (test-fixtures.mjs) — warning-first(비차단).
       #   - actions/checkout 가 repo 전체를 받고, KIT_ROOT 는 파일상대(import.meta.url) 라
       #     working-directory=frontend-workflow-kit 에서도 repo-root temp/runs fixture 를 해석한다.
