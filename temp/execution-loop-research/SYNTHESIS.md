@@ -21,6 +21,7 @@ boost_done:
 - **6트랙은 충돌하는 별개 제안이 아니라 하나의 파이프라인으로 수렴한다.** Track 02(auto-stop 상태기계)가 척추이고, 01·03·04·05·06이 그 상태들에 내용을 채운다.
 - **신뢰도 주의**: 5/6 트랙의 자동 적대적 검증이 동시-burst rate-limit 으로 전멸 → 수동 재검증으로 복원. Track 01은 자동 "25/25 반박"이 위양성(재검증 결과 확인 19·부분 3·교정 1·접근불가 2)임을 입증했고, 그 과정에서 green 쪽 과장 추출 1건(arXiv 2605.06717)도 교정했다. **즉 이 묶음 자체가 Track 05 테제(자동 green/red verdict 불신)의 실사례다.** 아래 종합은 raw 파이프라인 출력이 아니라 수동 재검증분 기반.
 - **코덱스 독립 리뷰 반영 (2026-06-14)**: 코덱스가 *이 종합을 못 본 채* 6보고서만 보고 같은 척추에 수렴 — 강한 교차검증. 그 리뷰의 정합성 지적(어휘 중복·층위·verdict 사회적 게이트화·Run Report 과중·PR 분할)을 **§9 로 reconcile**. 사내 표준이 **GitLab** 이므로 review 근거는 GitHub 한정에서 플랫폼 중립으로 일반화(§9.3).
+- **GPT Pro 2차 리뷰 반영 (2026-06-14)**: §9 reconcile 후 추가 리뷰 — 모두 "더 보수적·더 얇게" 방향. 반영: `verdict`→`review_summary`(어감 약화) · §9.3 근거를 "플랫폼 advisory 기본" 대신 "우리가 required check 에 배선 안 함"으로 보수화 · PR1a/1b 파일그룹 명시 · ambiguity triage rubric 은 템플릿 과적재 말고 별도 doc 링크 · `HALT_READY_FOR_WORK`=구현 허가 아님 명시. (3차 리뷰가 같은 지점으로 수렴 — 다음은 조사 아닌 PR1a 빌드.)
 
 ---
 
@@ -197,7 +198,8 @@ auto-retry narrow band(02 §4-3) · confidence 주석(06/Devin식) · 파일 SHA
 |---|---|---|
 | `Ambiguity Review Required` | 구현 전 애매함을 표면화하는 **섹션** | Work Packet 본문 (작성: `workflow:packet`) |
 | `Safe To Proceed?` | 그 섹션 안의 **모드별 판단표**(yes/no + 사유) | Ambiguity Review 하위 |
-| `HALT_AMBIGUITY` | runner 가 구현 전 멈추는 **종료 상태** | `workflow:run` 상태기계 |
+| `HALT_AMBIGUITY` | runner 가 구현 전 멈추는 **종료 상태**(기본 경로) | `workflow:run` 상태기계 |
+| `HALT_READY_FOR_WORK` | 게이트 깨끗·증거 준비 완료 — **구현 허가 아님**, 사람/지정 구현자가 다음 행동 결정하는 대기 상태 | `workflow:run` 상태기계 |
 | `Pre-Implementation Review` | 집행 직전 **체크 항목**(Validity 무변경·Blocking 분류 완료) | Review Checklist 한 행 |
 
 보조: `Open Decision Candidate`/`Unknown Candidate` = Ambiguity Review 가 *제안*만 하는 후보(닫는 건 사람) · `Blocking Ambiguities` = `Safe To Proceed?=no` 를 유발하는 미해결 후보(별도 개념 아님, 위 표의 입력).
@@ -208,19 +210,20 @@ auto-retry narrow band(02 §4-3) · confidence 주석(06/Devin식) · 파일 SHA
 - **auto-stop** = (실행 *전진* 층위) runner 가 구현으로 **자동 전진하지 않고** packet/report 에서 멈춘다.
 → 둘 다 참. `HALT_AMBIGUITY` 는 "게이트가 막은 것"이 아니라 "runner 가 스스로 안 나아간 것". 실제 차단 권한은 여전히 Open Decision(readiness cap) + 사람뿐.
 
-### 9.3 Review Artifact 표준 스키마 (플랫폼 중립 — GitHub/GitLab 무관)
-코덱스의 "사회적 게이트화" 우려 반영. **사내 표준이 GitLab** 이라 GitHub 어휘에 묶지 않는다 — 단 "review 는 어느 플랫폼에서나 기본 advisory, 차단은 명시 opt-in"이라는 *원리*는 GitLab 에서도 동일(**MR approval rules · merge checks · protected branches**; GitHub 의 branch protection·required checks 와 대응). **그 opt-in 에 verdict 를 배선하지 않는 게 불변식.**
+### 9.3 Review Artifact 표준 스키마 (review 를 게이트에 배선하지 않음)
+코덱스의 "사회적 게이트화" 우려 반영. **핵심 불변식 = "이 repo 는 review 결과를 required approval / merge check 에 배선하지 않는다."** 이건 플랫폼 기본 동작에 *기대지 않는* 우리 규칙이다 — 사내 GitLab 은 approval rule 을 흔히 켜므로 "플랫폼이 알아서 advisory" 에 의존하면 안 된다. GitLab 대응(연결 금지 대상): **MR approval rules · merge checks · protected branches** (GitHub 의 branch protection·required checks 와 대응). 여기에 review 산출물을 묶지 않는 한 review 는 evidence 로만 남는다.
 
 ```yaml
 review_status: advisory          # 항상. 이 리뷰는 머지를 자동 차단하지 않는다.
-verdict: ok | changes-suggested | needs-human-decision   # 전체 1줄 판정(중립 어휘 — 'blocked' 안 씀)
+review_summary: ok | changes-suggested | needs-human-decision   # 전체 1줄(중립 — 'verdict'/'blocked' 안 씀)
 human_action_required: true|false
 findings:
   - severity: info | warning | major | blocker-candidate  # 'blocker' 아님 — 후보일 뿐
     ref: { file, line, diff }     # 근거 필수(추측 금지)
     route: recommended-fix | human-only-decision | do-not-auto-fix
 ```
-- 진짜 blocker 는 **Open Decision(readiness cap) + 사람 승인**으로만. `blocker-candidate` 는 사람에게 올리는 후보일 뿐.
+- 기존 `review-artifact.template.md` 의 `verdict:` 필드를 **`review_summary:` 로 대체**(판정 어감 제거 — GPT 리뷰).
+- 진짜 blocker 는 **Open Decision(readiness cap) + 사람 승인**으로만. `blocker-candidate` 는 후보일 뿐.
 - `needs-human-decision`(구 'blocked') = "리뷰어가 더 못 나아감"이지 "결정을 닫았다"가 아니다.
 
 ### 9.4 Run Report 사용자-facing = "증거 6개" (provenance jargon 은 rationale 로)
@@ -237,10 +240,14 @@ findings:
 
 ### 9.5 PR 순서 — packet → report → run (분할)  ※ §5/§6 Phase 1 대체
 runner 한 덩이보다 **생성기 먼저, 상태기계 나중**이 더 점진적이고 notes/01 원안과도 맞는다.
-- **PR1 — 문서/템플릿만** (= 기존 Phase 0; §6 그대로).
+- **PR1 — 문서/템플릿만** (= 기존 Phase 0). diff 가 크면(>~300줄) **2분할**:
+  - **PR1a — green≠done + 봉투 안전선**: `README` · `implement-screen/SKILL` · work-packet 의 헤더·Validity·Expected Output·Must Read.
+  - **PR1b — Ambiguity/Review/Report 섹션**: work-packet 의 `Ambiguity Review Required`(최소 표만) · review-artifact 의 advisory 스키마(§9.3) · run-report 의 증거 6개·Review Evidence.
+  - ⚠ **템플릿 과적재 금지**(GPT 리뷰): Track 01 triage rubric 전체(결정트리·신호표·Blocking Mode 매핑)는 템플릿에 넣지 않는다 → 별도 `docs/workflows/ambiguity-triage.md`(또는 proposal)로 빼고 템플릿엔 **최소 표 + 링크 참조**. (Work Packet=얇은 봉투 불변식.)
 - **PR2 — `workflow:packet` 초안**: readiness 출력 복사 → Work Packet 초안(`Ambiguity Review Required` 포함). **구현 실행 없음.**
 - **PR3 — `workflow:report` 초안**: diff/validate/forbidden-paths/test-fixtures 수집 → Run Report(증거 6개). **승인/머지 판단 없음.**
 - **PR4 — `workflow:run` auto-stop 상태기계**: PR2/PR3 를 엮되 `HALT_AMBIGUITY`/`HALT_READY_FOR_WORK` 까지만. **auto-fix 없음.**
+  - `HALT_READY_FOR_WORK` = **구현 허가 아님**(GPT 리뷰). readiness/packet 증거가 준비됐으니 *사람 또는 지정 구현자가 다음 행동을 고르는* 대기 상태다.
 (Phase 2/3 의 의미 배선·auto-retry·confidence·digest 는 그대로 후속.)
 
 ### 9.6 "절대 코드로 구현하지 말 것" 목록 (§4 드리프트의 양성 표현)
