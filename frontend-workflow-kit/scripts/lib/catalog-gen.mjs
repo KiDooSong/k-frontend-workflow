@@ -17,9 +17,10 @@ import path from 'node:path';
 import { walkFiles, readFileSafe } from './util.mjs';
 
 const SCAN_EXTS = ['.tsx', '.ts'];
-// 스코프 가드 — 이 세그먼트를 포함하는 파일만 후보 (features/<domain>/components·screens 배제).
-// --src 가 넓은 src 루트를 가리켜도 components/ui 밖은 걸러진다.
-const UI_MARKER = '/components/ui/';
+// 스코프 가드 — 정본 글롭 `src/components/ui/**` 만 후보. 이 세그먼트를 포함하는 파일만 통과시켜
+// features/<domain>/components·screens, 그리고 features/foo/components/ui 같은 비정본 중첩 ui 까지 배제한다.
+// --src 가 넓은 src 루트를 가리켜도 정본 ui 밖은 걸러진다 (source-contract §1).
+const UI_MARKER = '/src/components/ui/';
 const PASCAL_RE = /^[A-Z][A-Za-z0-9]*$/;
 
 // 임의 경로를 posix 슬래시로 정규화한다 (Windows 백슬래시 → '/'). 출력 경로 결정성용 (§7.4(f)).
@@ -27,13 +28,47 @@ function toPosix(p) {
   return p.replace(/\\/g, '/');
 }
 
+// `export const <base>` 의 초기화식(RHS)이 memo/forwardRef 호출인지 판정한다 — 그러면 래퍼라 v1 에서 제외.
+// 타입 주석에 `=`(제네릭 기본값 `<T = U>`)·`;`(타입 리터럴 `{a; b}`)·`<…>`/`{…}`/`(…)` 가 들어와도
+// 괄호류 깊이를 세어 "최상위(depth 0) 할당 `=`" 만 잡는다. arrow `=>`·비교 `== >= <= !=` 는 할당이 아니다.
+// 다중 줄 선언 헤드/RHS 와 `= /* @__PURE__ */ memo(…)` 의 선두 PURE 주석도 흡수한다.
+// 잔여 한계(드묾, OD-5): 문자열 리터럴 안의 비균형 괄호, `= (React.memo)(…)` 처럼 괄호로 감싼 표기.
+function isWrappedConst(src, base) {
+  const m = new RegExp(`(?:^|\\n)\\s*export\\s+const\\s+${base}\\b`).exec(src);
+  if (!m) return false;
+  let depth = 0;
+  for (let i = m.index + m[0].length; i < src.length; i++) {
+    const ch = src[i];
+    if (ch === '<' || ch === '(' || ch === '[' || ch === '{') depth++;
+    else if (ch === '>' || ch === ')' || ch === ']' || ch === '}') {
+      if (depth > 0) depth--;
+    } else if (depth === 0) {
+      if (ch === ';') return false; // 초기화식 없이 선언/타입이 끝남
+      // 최상위 할당 `=` (arrow `=>`·비교 `==`/`>=`/`<=`/`!=` 는 제외)
+      if (
+        ch === '=' &&
+        src[i + 1] !== '>' &&
+        src[i + 1] !== '=' &&
+        src[i - 1] !== '<' &&
+        src[i - 1] !== '>' &&
+        src[i - 1] !== '!' &&
+        src[i - 1] !== '='
+      ) {
+        const rhs = src.slice(i + 1).replace(/^\s*(?:\/\*[^]*?\*\/\s*)?/, '');
+        return /^(?:React\.)?(?:memo|forwardRef)\b/.test(rhs);
+      }
+    }
+  }
+  return false;
+}
+
 // 한 후보 파일이 v1 카탈로그 컴포넌트인지 판정한다.
 //   반환: { name, source_path, export_kind, status } | null (비-컴포넌트)
 // content 는 파일 본문(없으면 빈 문자열로 취급). IO 는 호출부가 한다(이 함수는 순수).
 export function classifyComponentFile(absFile, content) {
   const posixAbs = toPosix(absFile);
-  const idx = posixAbs.indexOf(UI_MARKER);
-  if (idx === -1) return null; // components/ui/ 밖 → 제외 (§1 스코프)
+  const idx = posixAbs.lastIndexOf(UI_MARKER); // 중첩 시 가장 안쪽(프로젝트-로컬) 정본 루트 채택
+  if (idx === -1) return null; // 정본 src/components/ui/ 밖 → 제외 (§1 스코프)
 
   const ext = path.extname(absFile);
   if (!SCAN_EXTS.includes(ext)) return null;
@@ -46,15 +81,9 @@ export function classifyComponentFile(absFile, content) {
 
   // base 는 PascalCase 라 정규식 메타문자가 없다 → 그대로 보간 안전.
   const src = content || '';
-  // memo/forwardRef 래퍼 → 제외 (v1 plain 선언만, §7.4(d)/OD-5). RHS 가 다음 줄에 와도
-  // (`export const X =` 다음 줄 `  forwardRef(...)`) `=\s*` 의 \s 가 개행을 포함하므로 잡힌다.
-  // 한계(v1 heuristic): `= /* @__PURE__ */ React.memo(…)` 처럼 주석이 끼거나 `= (React.memo)(…)`
-  // 처럼 괄호로 감싼 표기는 못 잡아 false-include 될 수 있다(실트리엔 0건, 견고한 파싱은 후속 §3).
-  const wrapRe = new RegExp(
-    `^\\s*export\\s+const\\s+${base}\\b[^\\n]*=\\s*(?:React\\.)?(?:memo|forwardRef)\\b`,
-    'm',
-  );
-  if (wrapRe.test(src)) return null;
+  // memo/forwardRef 래퍼 → 제외 (v1 plain 선언만, §7.4(d)/OD-5). 타입 주석 안의 `=`/`;` 에 속지 않도록
+  // 괄호류 깊이를 세어 최상위 할당 `=` 의 RHS 가 래퍼 호출인지 검사한다(isWrappedConst 위 정의 참조).
+  if (isWrappedConst(src, base)) return null;
 
   // 동명 named export(plain 함수 또는 const). `export default function <base>` 는 'export' 와
   // 'function' 사이의 'default' 때문에 매칭되지 않아 자연히 제외된다 (§2).
@@ -65,11 +94,11 @@ export function classifyComponentFile(absFile, content) {
   const constRe = new RegExp(`^\\s*export\\s+const\\s+${base}\\b`, 'm');
   if (!fnRe.test(src) && !constRe.test(src)) return null;
 
-  // source_path: 정본 글롭 기준 posix 상대경로 — 매니페스트 source(src/components/ui/**)와 일치.
-  // --src 가 어디를 가리키든 첫 `/components/ui/` 세그먼트부터 앵커링해 결정적·이식적 경로를 낸다.
-  // (전제: --src 아래 ui 루트는 하나 — v1 단일루트 계약. 여러 ui 루트를 한 번에 스캔하면 동일 상대경로 충돌 가능.)
-  const rest = posixAbs.slice(idx + UI_MARKER.length); // 'Button.tsx' | 'forms/Field.tsx'
-  const source_path = 'src/components/ui/' + rest;
+  // source_path: 정본 src/components/ui/ 루트 기준 posix 상대경로 — 매니페스트 source(src/components/ui/**)
+  // 와 일치. idx 는 마지막 '/src/components/ui/' 의 선행 '/' 위치(lastIndexOf)라, 경로에 마커가 중첩돼도
+  // 가장 안쪽(프로젝트-로컬) 루트부터 slice(idx+1) → 'src/components/ui/<...>'. v1 은 --src 아래 정본 ui
+  // 루트가 하나라는 단일루트 계약을 전제한다.
+  const source_path = posixAbs.slice(idx + 1); // 'src/components/ui/Button.tsx' | '.../forms/Field.tsx'
 
   // v1 4필드만. export_kind 는 현재 항상 'named'(default 미수집), status 는 추출상태 'ok' (OD-2).
   return { name: base, source_path, export_kind: 'named', status: 'ok' };
