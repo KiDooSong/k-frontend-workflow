@@ -16,7 +16,7 @@
 | `frontend-workflow-kit/docs/workflows/ambiguity-triage.md` | 신규 | triage 결정트리·신호표·Blocking Mode 매핑·모드별 Safe-To-Proceed 전체(템플릿 과적재 분리) + 상세 4블록 스키마(부록 A) |
 | `temp/runs/execution-loop-pr1b-001.md` | 신규 | 본 실행 기록(작업용) |
 
-`git diff --name-only` 결과 = 위 3 수정 파일만. 신규 2파일은 untracked. 그 외 변경 0.
+커밋/PR diff(`git diff main...HEAD`) = 5 파일(**3 modified + 2 added**). (커밋 전 작업트리에선 `git diff --name-only` 가 3 modified, 신규 2파일은 untracked 로 보였음.) 그 외 변경 0.
 
 ## 2. PR1b 범위 준수 여부 — ✅
 
@@ -74,5 +74,18 @@ PR1b 는 아래 사람-결정을 **닫지 않고** "결정 필요"로 남김(SYN
 - `npm test` → **exit 0** (golden fixtures + route-tree/nav-graph + spec 15 pass / 0 fail).
 - `git diff -- scripts package.json .github catalog/artifact-manifest.yaml` → **빈 diff**.
 - 적대적 검증 워크플로우(6 read-only 감사 에이전트, 차원별) → **전 차원 pass**, 모든 finding `info` 등급(warn/fail/major/blocker-candidate **0**).
+
+## 10. Codex 리뷰 (해소될 때까지 반복) — 완료
+
+- 리뷰 주체: Codex (`codex-cli 0.130.0`, ChatGPT 로그인 `only3ss@tongro.co.kr`) — companion `task`(read-only sandbox)로 `git diff main` 전체 검토.
+- **Round 1**: blocker 0, 하드 제약 모두 충족. major 4 + minor 2 = **6건** 지적 → 전부 유효·스코프 내(markdown-only) → 6건 모두 수정:
+  1. (major) work-packet Blocking Items 를 Ambiguity Review 의 "입력원 중 하나"로 정정 — triage 가 새 U-cand/D-cand 후보도 표면화(유일 출처 아님).
+  2. (major) work-packet `Safe To Proceed?` 표를 placeholder 스켈레톤으로 — 채워진 예시는 ambiguity-triage.md §6 로 일원화(`{readiness_mode}` 까지만 평가 규칙과 모순 제거).
+  3. (major) ambiguity-triage §5 분리: 문서 수준=cap 없음 / nav-map 미정·충돌=`route-skeleton` cap (§6 `route-skeleton` 행과 정합).
+  4. (major) run-report `Review Evidence` 를 "Review Artifact 생성 후 선택적 post-review append"로 명시 — Run Report↔Review Artifact 순환 의존 회피.
+  5. (minor) work-packet triage 참조를 상대경로 markdown 링크(`../../docs/workflows/ambiguity-triage.md`)로.
+  6. (minor) run log diff 카운트를 "3 modified + 2 added"로 정정.
+- **Round 2 (재리뷰)**: **CLEAN — no remaining findings.** 6건 전부 해소 확인 + 하드 제약(markdown-only·게이트 미배선·runner 미구현·guard 미구현·advisory-only·후보-only) 유지 확인.
+- 비이슈: Codex 가 `global/llm-rules.md` 참조를 점검했으나 "소비 프로젝트 인스턴스 경로(kit-root 파일 아님)"로 판단해 finding 으로 올리지 않음.
 
 > 통과 ≠ 완료. 이 기록은 결정성·범위 준수의 증거이며, 제품적 적합성·사람 승인은 별도다.

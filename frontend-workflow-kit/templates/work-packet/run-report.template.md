@@ -119,7 +119,9 @@ REMOVED:
 
 ## Review Evidence (advisory — 게이트 아님)
 <!-- Review Artifact 의 review_summary 를 evidence 로 옮긴다. readiness/validate 게이트 판정과 섞지 않는다.
-     review_summary 는 머지를 자동 차단/허가하지 않는다. -->
+     review_summary 는 머지를 자동 차단/허가하지 않는다.
+     ⚠ 순서(순환 의존 회피): 이 섹션은 Review Artifact 가 생성된 뒤 선택적으로 덧붙이는 post-review append 다
+       (Review Artifact 가 이 Run Report 를 입력으로 리뷰하므로). Run Report 최초 생성 시엔 비워 두거나 "리뷰 전" 으로 둔다. -->
 - Review Artifact: `{path}` / review_summary: **{ok | changes-suggested | needs-human-decision}** (advisory)
 - findings 수: {n} (severity 별: info/warning/major/blocker-candidate; blocker-candidate ≠ blocker)
 - Human-only Decisions (리뷰가 닫지 않음): {D-301(open), C-001(open), ...} 또는 "없음"
