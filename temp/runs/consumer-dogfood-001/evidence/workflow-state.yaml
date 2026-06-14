@@ -1,0 +1,47 @@
+# GENERATED FILE — DO NOT EDIT
+# Source:  docs/frontend-workflow/domains/**/screen-spec.md (frontmatter + 본문)
+# Command: npm run workflow:state
+generated_at: 2026-06-14
+global:
+  navigation_map_status: draft
+  component_catalog_generated: false
+  stub_screen_specs_count: 2
+screens:
+  HOME-001:
+    status: draft
+    domain: home
+    route: /
+    stub: true
+    derived:
+      state_matrix_complete: false
+      interaction_matrix_complete: false
+      copy_keys_has_tbd: false
+      tbd_count: 0
+      unknown_count: 0
+      open_decisions_count: 0
+      blocking_decisions: []
+      malformed_decisions: []
+      api_confidence_min: null
+      fake_hook_exists: false
+      figma_mapping_status: missing
+  PROFILE-001:
+    status: draft
+    domain: profile
+    route: /profile-edit
+    stub: true
+    derived:
+      state_matrix_complete: false
+      interaction_matrix_complete: false
+      copy_keys_has_tbd: false
+      tbd_count: 0
+      unknown_count: 0
+      open_decisions_count: 1
+      blocking_decisions:
+        - id: D-301
+          decision_needed: 프로필 편집 범위·필드 미확정 (닉네임/이메일/아바타/비밀번호?)
+          blocking_mode: route-skeleton
+          owner: PM
+      malformed_decisions: []
+      api_confidence_min: null
+      fake_hook_exists: false
+      figma_mapping_status: missing

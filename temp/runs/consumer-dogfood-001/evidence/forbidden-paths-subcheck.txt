@@ -1,0 +1,9 @@
+forbidden-paths — 1 건 위반(경고)
+  file        src/api/dummy.ts
+  change      A (added)
+  surface     src/api/**
+  reason      guarded(src/api/**) 인데 프로젝트의 어떤 화면도 api-integrated-ui 에 도달하지 못함 (현재 최고 화면 모드: screen-skeleton)
+  would-clear 화면 하나라도 api-integrated-ui 이상 도달하면 src/api/** 전체가 열린다(프로젝트 단위·§1 한계)
+
+  (warning-first: --enforce 없이는 exit 0. CI 차단은 --enforce)
+exit 0
