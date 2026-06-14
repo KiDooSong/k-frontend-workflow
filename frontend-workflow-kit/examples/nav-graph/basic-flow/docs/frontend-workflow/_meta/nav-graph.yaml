@@ -1,0 +1,29 @@
+# GENERATED FILE — DO NOT EDIT
+# Source: domains/**/screen-spec.md Interaction Matrix + app/navigation-map.md
+# Command: npm run workflow:nav-graph
+screens:
+  COUPON-001:
+    inbound:
+      - from: HOME-001
+        trigger: 보유 쿠폰 카드
+        route: /(tabs)/coupons
+    outbound:
+      - to_route: /coupons/[id]
+        trigger: CouponCard press
+        action: 쿠폰 클릭
+  HOME-001:
+    outbound:
+      - to_route: /(tabs)/coupons
+        trigger: 보유 쿠폰 카드
+        action: 보유 쿠폰 카드 클릭
+routes:
+  /(tabs)/coupons:
+    inbound:
+      - from: HOME-001
+        trigger: 보유 쿠폰 카드
+  /(tabs)/home:
+    inbound: []
+  /coupons/[id]:
+    inbound:
+      - from: COUPON-001
+        trigger: CouponCard press

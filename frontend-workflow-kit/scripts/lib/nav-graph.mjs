@@ -1,0 +1,189 @@
+// nav-graph.mjs (lib) — 화면 간 내비게이션 그래프 모델 빌더 (순수 함수, IO 없음).
+// screen-spec.md 의 ## Interaction Matrix(Result 컬럼)에서 이동 엣지를 도출하고,
+// app/navigation-map.md 로 알려진 라우트를 시드한다. ScreenSpec 은 절대 수정하지 않는다(읽기 전용).
+//
+// 파싱 단일 출처(spec.mjs:2): 직접 md 파싱 금지. loadScreenSpec/parseTable/col 을 그대로 쓰고,
+// 라우트 추출 정규식은 spec.mjs 의 interactionResultRoutes 와 "글자 단위로 동일"하게 재사용한다
+// (검사 4·검사 P13 과 동작 일치 — drift 방지). interactionResultRoutes 는 화면당 교차검증으로도 호출한다.
+//
+// 참고: frontend-workflow-kit-implementation.md (nav-graph View 1)
+import path from 'node:path';
+import {
+  loadScreenSpec,
+  parseTable,
+  col,
+  isStub,
+  interactionResultRoutes,
+  getSections,
+} from './spec.mjs';
+import { findFiles, readFileSafe } from './util.mjs';
+
+// 라우트 추출 정규식 — spec.mjs interactionResultRoutes 와 글자 단위 동일.
+//   (?<![:/\w])  : ':' '/' 단어문자 뒤가 아님 → URL 스킴(http://…)·protocol-relative(//…) 의 / 거부
+//   \/(?!\/)     : '/' 로 시작하되 바로 다음이 또 '/' 가 아님
+//   [^\s?#]+     : 공백·쿼리(?)·프래그먼트(#) 전까지 → 쿼리/프래그먼트 절단, 후행 prose 탈락
+// 매칭 후 후행 구두점 [),.;:] 제거, 길이 1(맨 '/')은 버린다. [id]/(auth) 대괄호·괄호는 보존(후행 ')' 만 탈락).
+const ROUTE_RE = /(?<![:/\w])\/(?!\/)[^\s?#]+/g;
+
+// 한 셀 텍스트에서 라우트(슬래시로 시작)들을 추출한다 — interactionResultRoutes 의 셀 단위 버전.
+// interactionResultRoutes 는 spec 전체를 받아 Result 컬럼만 읽으므로 행별 메타데이터(trigger/action)를
+// 엮을 수 없다. 그래서 동일 로직을 셀 단위로 분리해 행을 직접 재순회한다.
+export function cellRoutes(cellText) {
+  if (!cellText) return [];
+  const routes = [];
+  for (const m of String(cellText).matchAll(ROUTE_RE)) {
+    const route = m[0].replace(/[),.;:]+$/, '');
+    if (route.length > 1) routes.push(route);
+  }
+  return routes;
+}
+
+// navigation-map.md 의 ## Structure 불릿 + ## Deep Links 표에서 "알려진 라우트" 집합을 모은다.
+// 비권위적 시드/교차검증용 — 이동 엣지는 여기서 만들지 않는다(이동 엣지는 SOURCE Interaction Matrix 단일 출처).
+// ## Cross-Domain Edges 는 의도적으로 읽지 않는다(Must-follow: movement edges only from source Interaction Matrix).
+export function parseNavigationMapRoutes(navMapText) {
+  const routes = new Set();
+  if (!navMapText) return routes;
+  const sections = getSections(navMapText);
+
+  // ## Structure: "- Tabs: /(tabs)/home, /(tabs)/coupons, /(tabs)/my" 같은 불릿. 각 라우트 토큰 추출.
+  const structure = sections['structure'];
+  if (structure) {
+    for (const r of cellRoutes(structure)) routes.add(r);
+  }
+
+  // ## Deep Links: | Pattern | Route | ... | 표의 Route 컬럼.
+  const deepLinks = parseTable(sections['deep links']);
+  if (deepLinks) {
+    for (const row of deepLinks.rows) {
+      const v = col(row, 'Route');
+      for (const r of cellRoutes(v)) routes.add(r);
+    }
+  }
+  return routes;
+}
+
+// 한 spec 의 screenId 를 도출한다 — workflow-state.mjs 의 fallback 체인과 동일(대시보드와 노드 id 일치).
+function screenIdOf(spec, specPath) {
+  const fm = spec.frontmatter || {};
+  return fm.screen_id || fm.artifact_id || path.basename(path.dirname(specPath));
+}
+
+// 한 spec 의 outbound 이동 엣지를 도출한다. Interaction Matrix 행을 직접 재순회한다
+// (interactionResultRoutes 는 행 메타데이터를 안 주므로). Result 가 라우트 >=1 개를 내는 행만 엣지.
+//   각 엣지: { to_route, trigger, action } — to_route=Result 의 라우트, trigger=Trigger, action=User Action.
+function outboundEdgesOf(spec) {
+  const table = parseTable(spec.sections['interaction matrix']);
+  if (!table) return [];
+  const edges = [];
+  for (const row of table.rows) {
+    const result = col(row, 'Result');
+    const routes = cellRoutes(result);
+    if (routes.length === 0) continue; // 비-라우트 Result(refetch, "status filter 변경" 등)는 엣지 없음
+    const trigger = (col(row, 'Trigger') || '').trim();
+    const action = (col(row, 'User Action') || '').trim();
+    for (const to_route of routes) {
+      edges.push({ to_route, trigger, action });
+    }
+  }
+  return edges;
+}
+
+// 안정 정렬 키 — 엣지 배열을 diff 안정하게 정렬한다.
+function inboundKey(e) {
+  return [e.from || '', e.trigger || '', e.route || ''].join('');
+}
+function outboundKey(e) {
+  return [e.to_route || '', e.trigger || '', e.action || ''].join('');
+}
+
+// 순수 빌더: docsDir 를 읽어 { screens, routes } 그래프 모델을 만든다. 부작용 없음(직렬화/쓰기는 CLI 가).
+//   screens[<id>] = { inbound?: [{from, trigger, route}], outbound?: [{to_route, trigger, action}] }
+//   routes[<route>] = { inbound: [{from, trigger}] }
+// 규칙:
+//   - 이동/outbound 엣지는 SOURCE 화면 자신의 Interaction Matrix Result 컬럼에서만 나온다.
+//   - 모든 outbound 엣지 S->R 은 routes[R].inbound 에 {from:S, trigger} 를 무조건 추가한다.
+//   - R 이 어떤 로드된 화면의 fm.route 와 EXACT 문자열 일치하면 그 화면 D 로 해소(검사 4 routeSet.has 와 동일,
+//     param 정규화 없음). 해소되고 D!==S 면 screens[D].inbound 에 {from:S, trigger, route:R} 추가.
+//   - navigation-map 의 라우트는 routes 레지스트리에 시드만 한다(엣지 생성 아님).
+export function buildNavGraph({ docsDir }) {
+  const domainsRoot = path.join(docsDir, 'domains');
+  const specPaths = findFiles(domainsRoot, 'screen-spec.md');
+
+  // 1) 모든 spec 로드 + (id, route, outbound 엣지) 수집. route->screenId 해소 맵 구성.
+  const loaded = [];
+  const routeToScreen = new Map(); // fm.route(EXACT) -> screenId. 검사 4 와 동일한 정확 일치.
+  for (const specPath of specPaths) {
+    const spec = loadScreenSpec(specPath);
+    if (isStub(spec)) continue; // 본문 없는 stub 은 그래프에 기여하지 않는다(Interaction Matrix 없음)
+    const id = screenIdOf(spec, specPath);
+    const route = (spec.frontmatter && spec.frontmatter.route) || null;
+    const outbound = outboundEdgesOf(spec);
+
+    // 교차검증: 셀 단위 추출의 합집합이 interactionResultRoutes(전체 spec) 와 같은 라우트 집합인지 확인.
+    // 불일치는 정규식 drift 신호 → 던져서 조용한 표류를 막는다(검사 P13 과 동작 일치 보장).
+    const perRow = new Set(outbound.map((e) => e.to_route));
+    const viaHelper = new Set(interactionResultRoutes(spec));
+    for (const r of viaHelper) {
+      if (!perRow.has(r)) {
+        throw new Error(
+          `nav-graph: 라우트 추출 불일치(${id}) — interactionResultRoutes 는 ${r} 를 냈으나 행별 추출엔 없음`,
+        );
+      }
+    }
+
+    loaded.push({ id, route, outbound });
+    if (route && !routeToScreen.has(route)) routeToScreen.set(route, id);
+  }
+
+  const screens = {}; // id -> { inbound:[], outbound:[] } (빈 키는 마지막에 제거)
+  const routes = {}; // route -> { inbound:[] }
+  const ensureScreen = (id) => (screens[id] ||= { inbound: [], outbound: [] });
+  const ensureRoute = (r) => (routes[r] ||= { inbound: [] });
+
+  // 2) navigation-map 라우트 시드 — 알려진 라우트가 미참조라도 routes[] 에 등장하게.
+  const navMapText = readFileSafe(path.join(docsDir, 'app', 'navigation-map.md'));
+  for (const r of parseNavigationMapRoutes(navMapText)) ensureRoute(r);
+
+  // 3) 엣지 적용.
+  for (const s of loaded) {
+    for (const e of s.outbound) {
+      // outbound: 소스 화면에 기록.
+      ensureScreen(s.id).outbound.push({
+        to_route: e.to_route,
+        trigger: e.trigger,
+        action: e.action,
+      });
+      // route inbound: 무조건 기록.
+      ensureRoute(e.to_route).inbound.push({ from: s.id, trigger: e.trigger });
+      // 목적 화면 해소: EXACT 라우트 일치 + 자기 자신 아님.
+      const dest = routeToScreen.get(e.to_route);
+      if (dest && dest !== s.id) {
+        ensureScreen(dest).inbound.push({ from: s.id, trigger: e.trigger, route: e.to_route });
+      }
+    }
+  }
+
+  // 4) 결정성: 화면 id 정렬 · 라우트 경로 정렬 · 각 inbound/outbound 정렬. 빈 키 제거.
+  const outScreens = {};
+  for (const id of Object.keys(screens).sort()) {
+    const node = screens[id];
+    node.inbound.sort((a, b) => inboundKey(a).localeCompare(inboundKey(b)));
+    node.outbound.sort((a, b) => outboundKey(a).localeCompare(outboundKey(b)));
+    const emitted = {};
+    if (node.inbound.length) emitted.inbound = node.inbound;
+    if (node.outbound.length) emitted.outbound = node.outbound;
+    if (Object.keys(emitted).length) outScreens[id] = emitted; // 엣지 없는 화면은 노드로 넣지 않는다
+  }
+
+  const outRoutes = {};
+  for (const r of Object.keys(routes).sort()) {
+    const node = routes[r];
+    node.inbound.sort((a, b) =>
+      [a.from || '', a.trigger || ''].join('').localeCompare([b.from || '', b.trigger || ''].join('')),
+    );
+    outRoutes[r] = { inbound: node.inbound };
+  }
+
+  return { screens: outScreens, routes: outRoutes };
+}
