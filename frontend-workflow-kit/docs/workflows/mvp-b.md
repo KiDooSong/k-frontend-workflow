@@ -93,6 +93,13 @@ node scripts/forbidden-paths.mjs --enforce --diff <file> --docs <dir>
 
 소비 프로젝트는 `workflow:state`/`workflow:readiness`/`workflow:validate`(+ warning-first `workflow:forbidden-paths`)로 호출한다. `validate` 는 이제 검사 12종을 돈다.
 
+### 검증 두 갈래 (내부 픽스처 ↔ 외부 소비 dogfood)
+
+- **(a) 내부 픽스처 검증 — 킷 레포 *안*.** Lane A 골든-픽스처 하니스(`scripts/test-fixtures.mjs`, alias `example:test`)를 `examples/` 대상으로 돌려 회귀 불변식(reconcile/integrity)을 고정한다. 범위 = 킷 자체의 예제·드라이런 산출물. CI 에는 warning-only(`continue-on-error`)로 배선.
+- **(b) 외부 소비 dogfood — 킷 레포 *밖*.** `consumer-dogfood-001`: 킷을 vendoring 한 fresh Expo 프로젝트(create-expo-app sdk-56)에서 `state → readiness → Work Packet → implement-screen → validate → forbidden-paths(경고)` 전 구간을 게이트 천장 안에서 완주(HOME-001 screen-skeleton 정상 진행 + PROFILE-001 docs-only 거절). 킷 소스 커밋 `4601347`. 실측 보고: [`temp/runs/consumer-dogfood-001/run-report.md`](../../../temp/runs/consumer-dogfood-001/run-report.md) (+ 동봉 `evidence/`).
+
+즉 (a)는 킷 *내부*에서 픽스처 무결성을, (b)는 킷 *외부* 소비 프로젝트에서 실제 적용 가능성을 검증한다 — 둘은 별개 축이다.
+
 ## 잔여 (다음)
 
 - `test-fixtures` **하드 gating 승격** — 현재 CI 는 warning-only(`continue-on-error`); FP율 확인 후 gating.

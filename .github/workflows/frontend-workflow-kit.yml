@@ -2,7 +2,7 @@ name: frontend-workflow-kit
 
 # MVP-A 게이트: 킷이 자기 golden example(coupon-feature)을 CI 에서 계속 검증한다.
 #   - 생성기(state)가 커밋된 _meta 산출물을 재현하는지 (멱등성 불변식 #7)
-#   - validate 9종이 통과하는지 (exit 0/1 게이트)
+#   - validate 12종이 통과하는지 (exit 0/1 게이트)
 on:
   push:
     branches: [main]
@@ -37,7 +37,7 @@ jobs:
             exit 1
           fi
 
-      # 진짜 검사 게이트 (검사 9종, exit 0/1)
+      # 진짜 검사 게이트 (검사 12종, exit 0/1)
       - run: npm run example:validate
 
       # golden fixture 회귀 하니스 (test-fixtures.mjs) — warning-first(비차단).

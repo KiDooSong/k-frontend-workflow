@@ -36,7 +36,7 @@ examples/    coupon-feature (golden example, end-to-end 1회 완주)
 | [input-reconciliation.md](input-reconciliation.md) | 새 입력 반영·충돌·`resolved→open` 재오픈 계약 | **Tier 2 (설계 계약)** | 📄 계약 동결 + reconcile-input 스킬 작성(리포-로컬 `.claude/skills/`, 절차 가이드일 뿐 코드 강제 0) — 킷 `skills/` vendor·hook·CI 후속 |
 | [investigation-and-verification.md](investigation-and-verification.md) | 장기 조사·플랫폼 검증·evidence 핸드오프 | **Tier 2 (설계 계약)** | 📄 문서 계약만 — 템플릿·manifest·readiness 파싱 후속 |
 | [docs/workflows/mvp-b.md](docs/workflows/mvp-b.md) | MVP-B Phase 0 통합 노트(lanes A/B/C) | **MVP-B Phase 0** | 🆕 회귀 하니스(하드)·경로 backstop/register 미처리(warning-first) |
-| `temp/work-packet-review-artifacts-proposal.md` (킷 외부) | Work Packet & Review Artifacts (리뷰 관문 흡수) | **Future Candidate** | 📝 설계 제안 초안(리포에 추적됨, 킷 미포함) |
+| `temp/work-packet-review-artifacts-proposal.md` (킷 외부) | Work Packet & Review Artifacts (리뷰 관문 흡수) | **Future Candidate** | 📝 설계 제안 초안(리포에 추적됨) — 단 `templates/work-packet/*.template.md` 는 킷에 포함(코드 강제 0, 여전히 Future Candidate) |
 
 **Tier 1 — MVP-A 구현·강제됨:** 템플릿 · `scripts/`(workflow-state·readiness·validate) · schemas·catalog·policies · skills/implement-screen · Open Decisions readiness cap · golden example.
 
@@ -62,7 +62,7 @@ examples/    coupon-feature (golden example, end-to-end 1회 완주)
 
    (state/readiness/validate 루프만 쓰는 단계에서는 둘 다 불필요.)
 
-> 경로 가정: 정책의 `src/app/**`·`src/features/{domain}/**`·`src/components/ui/**` 는 최신 Expo 기본 템플릿(`src/` 기반)과 정합한다 (실제 `create-expo-app` dry-run 으로 확인).
+> 경로 가정: 정책의 `src/app/**`·`src/features/{domain}/**`·`src/components/ui/**` 는 최신 Expo 기본 템플릿(`src/` 기반)과 정합한다 (실제 `create-expo-app` dry-run 으로 확인). 더 나아가 신선한 Expo 소비 프로젝트(킷 레포 **밖**)에 킷을 vendoring 해 `state→readiness→Work Packet→implement-screen→validate→forbidden-paths` 를 게이트 천장 안에서 **end-to-end 1회 완주**(consumer dogfood)도 확인 — 정상 진행(screen-skeleton)과 게이트 거절(docs-only) 둘 다 정답대로 동작 ([temp/runs/consumer-dogfood-001/run-report.md](../temp/runs/consumer-dogfood-001/run-report.md)).
 
 스크립트는 설정 파일(manifest/policy/schema)을 **킷 위치 기준**으로 자동 해석하고,
 문서는 `--docs docs/frontend-workflow` (기본값)에서 읽는다.
