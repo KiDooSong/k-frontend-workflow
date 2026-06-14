@@ -93,7 +93,9 @@ function renderChildren(children, prefix, out) {
 // 트리를 GENERATED 헤더 + 박스드로잉 본문 텍스트로 렌더링한다. 결정적(타임스탬프 없음).
 export function renderRouteTree(children, opts) {
   const source = (opts && opts.source) || 'src/app/**';
-  const command = (opts && opts.command) || 'npm run workflow:route-tree';
+  const command =
+    (opts && opts.command) ||
+    'node scripts/route-tree.mjs --app src/app --out docs/frontend-workflow/_meta/route-tree.txt';
   const out = [];
   out.push('# GENERATED FILE — DO NOT EDIT');
   out.push('# Source: ' + source);

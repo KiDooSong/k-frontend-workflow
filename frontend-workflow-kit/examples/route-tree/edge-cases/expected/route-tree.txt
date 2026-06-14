@@ -1,6 +1,6 @@
 # GENERATED FILE — DO NOT EDIT
 # Source: src/app/**
-# Command: npm run workflow:route-tree
+# Command: node scripts/route-tree.mjs --app src/app --out docs/frontend-workflow/_meta/route-tree.txt
 
 /
 ├─ _layout.tsx
