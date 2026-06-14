@@ -200,8 +200,9 @@ const CI_FACTS = new Set([
 ]);
 
 export function computeReadiness({ state, policy, ci, manifest }) {
-  const order = policy.order || Object.keys(policy.modes || {});
-  const modes = policy.modes || {};
+  // policy.modes 가 객체가 아니면(문자열/숫자 등 손상된 정책) Object.keys 가 가짜 모드를 만들지 않게 막는다.
+  const modes = policy.modes && typeof policy.modes === 'object' ? policy.modes : {};
+  const order = Array.isArray(policy.order) ? policy.order : Object.keys(modes);
   const global = state.global || {};
   const ciProvided = ci && Object.keys(ci).length > 0;
   const screenSpecTemplate =
@@ -345,7 +346,7 @@ function main() {
 
   if (flags.screen !== undefined) {
     // 값 없는 bare --screen 은 parseArgs 가 boolean true 로 둔다 — 빈 결과로 조용히 오인되지 않게 명확히 막는다.
-    if (typeof flags.screen !== 'string') {
+    if (typeof flags.screen !== 'string' || flags.screen === '') {
       process.stderr.write('readiness: --screen 에는 화면 ID 값이 필요합니다 (예: --screen COUPON-001)\n');
       process.exit(2);
     }

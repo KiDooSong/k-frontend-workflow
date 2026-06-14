@@ -102,17 +102,34 @@ function main() {
   const docsDir = path.resolve(flags.docs || DEFAULTS.docs);
   const srcDir = path.resolve(flags.src || DEFAULTS.src);
   const projectRoot = flags.root ? path.resolve(flags.root) : path.dirname(srcDir);
-  const manifest = loadYamlOrExit(path.resolve(flags.manifest || DEFAULTS.manifest), 'manifest', 'validate') || {};
+  // 설정 파일(manifest/schema/policy)은 부재·손상 시 exit 2 — 누락된 설정이 검사를 조용히 비활성화하지
+  // 않게 한다(forbidden-paths·readiness 와 대칭). 실제 설치는 킷 위치에서 자동 해석돼 항상 존재한다.
+  const manifestPath = path.resolve(flags.manifest || DEFAULTS.manifest);
+  const manifest = loadYamlOrExit(manifestPath, 'manifest', 'validate');
+  if (!manifest) {
+    process.stderr.write(`validate: manifest 파일 없음: ${manifestPath}\n`);
+    process.exit(2);
+  }
   const schemaPath = path.resolve(flags.schema || DEFAULTS.schema);
+  const schemaRaw = readFileSafe(schemaPath);
+  if (schemaRaw == null) {
+    process.stderr.write(`validate: schema 파일 없음: ${schemaPath}\n`);
+    process.exit(2);
+  }
   let schema;
   try {
-    schema = JSON.parse(readFileSafe(schemaPath) || '{}');
+    schema = JSON.parse(schemaRaw);
   } catch (err) {
     process.stderr.write(`validate: schema JSON 파싱 실패 — ${schemaPath}\n  ${err.message}\n`);
     process.exit(2);
   }
   // 정책: 검사 9 의 Blocking Mode 유효성(정책 모드명인지)에 쓴다. 게이트 판정은 readiness 단일 출처.
-  const policy = loadYamlOrExit(path.resolve(flags.policy || DEFAULTS.policy), 'policy', 'validate') || {};
+  const policyPath = path.resolve(flags.policy || DEFAULTS.policy);
+  const policy = loadYamlOrExit(policyPath, 'policy', 'validate');
+  if (!policy) {
+    process.stderr.write(`validate: 정책 파일 없음: ${policyPath}\n`);
+    process.exit(2);
+  }
 
   const errors = [];
   const add = (check, file, message) =>

@@ -28,7 +28,7 @@
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { parseArgs, KIT_ROOT, DEFAULTS, loadYaml, readFileSafe } from './lib/util.mjs';
+import { parseArgs, KIT_ROOT, DEFAULTS, loadYaml, loadYamlOrExit, readFileSafe } from './lib/util.mjs';
 import {
   runReconcileChecks,
   runIntegrityChecks,
@@ -258,8 +258,8 @@ function runValidateJson(docsDir, srcDir) {
 // 판정 로직 재구현 0: 생산 함수의 실제 출력을 그대로 모은다.
 function computePipelineActual(fx) {
   const { state, inventory } = buildState({ docsDir: fx.docsDir, srcDir: fx.srcDir, date: fx.date });
-  const policy = loadYaml(DEFAULTS.policy) || {};
-  const manifest = loadYaml(DEFAULTS.manifest) || {};
+  const policy = loadYamlOrExit(DEFAULTS.policy, 'policy', 'test-fixtures') || {};
+  const manifest = loadYamlOrExit(DEFAULTS.manifest, 'manifest', 'test-fixtures') || {};
   const readiness = computeReadiness({ state, policy, ci: {}, manifest });
   const validate = runValidateJson(fx.docsDir, fx.srcDir);
   return { state: { state, inventory }, readiness, validate };

@@ -16,7 +16,8 @@ kind: meta-register
 > - ★ **오직 `Reconcile Status` 만 게이트 신호다.** `Created Items` 의 `(open)`/`(resolved)` 주석은 파싱하지 않는다
 >   (`reconciled` + 자식 decision open == 정상 PASS). 자식 open|closed 출처는 Open Decisions/Conflicts/Unknowns 다.
 >
-> placeholder `{X}` 는 실제 값으로 치환한다. 입력이 아직 없으면 표는 헤더만 두면 된다(검사 12 는 inputs/ 가 없으면 NO-OP).
+> placeholder `{X}` 는 실제 값으로 치환한다. **미치환 placeholder 행은 검사 12(Reconcile Status enum)에서 실패하므로,
+> 복사 후 실제 입력 행으로 채우거나 그 행을 삭제한다.** 입력이 아직 없으면 표는 헤더만 두면 된다(검사 12 는 inputs/ 가 없으면 NO-OP).
 
 | Input ID | Source | Classification | Reconcile Status | Result | Touched Artifacts | Created Items | Supersedes |
 |---|---|---|---|---|---|---|---|

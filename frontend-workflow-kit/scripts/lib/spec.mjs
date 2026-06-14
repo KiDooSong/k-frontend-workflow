@@ -374,12 +374,11 @@ export function interactionResultRoutes(spec) {
   for (const r of table.rows) {
     const v = col(r, 'Result');
     if (!v) continue;
-    // "/coupons/[id] 이동" 처럼 텍스트가 섞일 수 있으므로 라우트 토큰만 뽑는다.
-    // 외부 URL(http(s)://…)은 라우트가 아니므로 제외하고(스킴의 / 는 콜론/슬래시/단어 뒤라 lookbehind 로 걸러짐),
-    // 쿼리(?)·프래그먼트(#)는 자르고 후행 구두점은 떼어낸다 — 검사 4 오탐 방지.
-    const m = /(?<![:/\w])(\/[^\s?#]+)/.exec(v);
-    if (m) {
-      const route = m[1].replace(/[),.;:]+$/, '');
+    // 한 셀에 여러 라우트가 올 수 있으므로 전부 추출한다(matchAll). 외부·protocol-relative URL
+    // (http(s)://… , //…)은 라우트가 아니므로 제외하고(스킴의 / 는 콜론/슬래시/단어 뒤 + 다음 문자가 / 가 아님),
+    // 쿼리(?)·프래그먼트(#)는 자르고 후행 구두점은 떼어낸다. 대괄호 [id] 는 Expo 동적 라우트라 보존 — 검사 4 오탐 방지.
+    for (const m of v.matchAll(/(?<![:/\w])\/(?!\/)[^\s?#]+/g)) {
+      const route = m[0].replace(/[),.;:]+$/, '');
       if (route.length > 1) routes.push(route);
     }
   }
