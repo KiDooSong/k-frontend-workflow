@@ -1,0 +1,12 @@
+# GENERATED FILE — DO NOT EDIT
+# Source: src/app/**
+# Command: npm run workflow:route-tree
+
+/
+├─ _layout.tsx
+├─ index.tsx                         route: /
+├─ (tabs)/
+│  ├─ _layout.tsx
+│  └─ home.tsx                       route: /(tabs)/home
+└─ coupons/
+   └─ [id].tsx                       route: /coupons/[id]
