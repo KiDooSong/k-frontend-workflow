@@ -18,7 +18,18 @@
 //   (도메인이 명시한 role 만 base 를 덮어쓴다; 나머지는 상속). glob 단위 병합이 아니다.
 
 import path from 'node:path';
-import { loadYamlOrExit } from './util.mjs';
+import { loadYamlOrExit, exists } from './util.mjs';
+
+// 레이아웃 설정 오류(fail-CLOSED): {roles.X} 토큰이 정의되지 않은 role 을 참조하거나, 명시적으로
+// 지정된 layout/preset 파일이 부재한 경우. CLI 경계가 잡아 exit 2(도구/설정 오류)로 surface 한다 —
+// 조용히 [] 로 떨어뜨려 forbidden 경로를 누락(게이트 확장)하지 않게(MAJOR 1). 일반 Error 의 하위형이라
+// 호출부가 instanceof 로 구분하거나 그냥 메시지를 출력해도 된다.
+export class LayoutConfigError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'LayoutConfigError';
+  }
+}
 
 // classifyForbidden/covers/thresholdOf 미러를 두지 않고 path-backstop 의 순수 helper 를 재사용한다.
 // (단일 출처 — guarded surface 분류 로직이 두 곳으로 갈리지 않게.)
@@ -40,6 +51,20 @@ function asGlobArray(value) {
 // {roles.X} 토큰 1개를 가진 문자열인가. (resolvePaths 의 passthrough 판정용.)
 const ROLE_TOKEN_RE = /\{roles\.([A-Za-z0-9_]+)\}/g;
 
+// fail-CLOSED 룩업: roles 맵에 role 키가 *정의돼 있지 않으면* throw 한다(MAJOR 1).
+//   undefined role 을 조용히 [] 로 펼치면 forbidden_paths 의 그 항목이 통째로 사라져 게이트가
+//   소리없이 넓어진다(금지 경로 누락). 정의는 됐으나 빈 값([])인 role 은 의도된 설정이므로 통과시킨다.
+//   ownProperty 검사로 prototype 오염(예: 'constructor')도 미정의로 본다.
+function requireRole(roles, role, sourceGlob) {
+  if (!Object.prototype.hasOwnProperty.call(roles, role)) {
+    throw new LayoutConfigError(
+      `layout-profile: 정의되지 않은 role '${role}' 을 참조함 ('${sourceGlob}'). ` +
+        `policies/project-layout.yaml 또는 preset 의 roles: 에 '${role}' 을 추가하세요.`,
+    );
+  }
+  return roles[role];
+}
+
 // --- 머지 (preset < roles < domains.<d>.roles) ----------------------------
 // base roles 맵 위에 override roles 맵을 role 단위로 얹는다(명시 role 만 교체).
 function mergeRoles(base, override) {
@@ -59,12 +84,20 @@ function mergeRoles(base, override) {
 export function loadLayoutProfile({ kitRoot, flags = {} } = {}) {
   if (!kitRoot) throw new Error('loadLayoutProfile: kitRoot 필요');
   const presetsDir = path.join(kitRoot, 'presets');
-  const layoutPath =
-    typeof flags.layout === 'string'
-      ? flags.layout
-      : path.join(kitRoot, 'policies', 'project-layout.yaml');
+  const explicitLayout = typeof flags.layout === 'string';
+  const layoutPath = explicitLayout
+    ? flags.layout
+    : path.join(kitRoot, 'policies', 'project-layout.yaml');
 
-  // project-layout.yaml — 부재 허용(프리셋 기본값으로 동작). 손상은 exit 2(loadYamlOrExit).
+  // 명시적 --layout 경로가 부재하면 fail-CLOSED(MAJOR 1): 조용히 빈 roles 로 떨어지지 않게 throw.
+  //   (DEFAULT 경로 policies/project-layout.yaml 은 부재 허용 — preset 기본값으로 동작. 동봉돼 항상 존재.)
+  if (explicitLayout && !exists(layoutPath)) {
+    throw new LayoutConfigError(
+      `layout-profile: --layout 경로가 존재하지 않음: ${layoutPath}`,
+    );
+  }
+
+  // project-layout.yaml — (DEFAULT 한정) 부재 허용(프리셋 기본값으로 동작). 손상은 exit 2(loadYamlOrExit).
   const layout = loadYamlOrExit(layoutPath, 'project-layout', 'layout-profile') || {};
 
   // preset 머지(가장 낮은 우선순위). preset 이름이 있으면 presets/<name>.yaml 로드.
@@ -118,8 +151,10 @@ export function loadLayoutProfile({ kitRoot, flags = {} } = {}) {
   }
 
   // {domain} 치환(domain 미지정 시 토큰 보존). {screen} 은 의도적으로 건드리지 않는다(§2 주의).
+  // domain==='' 은 null 과 같게 본다 — readiness 의 옛 substituteDomain falsy-domain 의미 복원
+  // (MINOR 1): 빈 도메인으로 '{domain}' 을 '' 로 접지하면 'src/features//hooks' 같은 깨진 경로가 나온다.
   function substituteDomain(str, domain) {
-    if (domain == null) return str;
+    if (domain == null || domain === '') return str;
     return String(str).split('{domain}').join(domain);
   }
 
@@ -144,14 +179,14 @@ export function loadLayoutProfile({ kitRoot, flags = {} } = {}) {
       // 토큰이 글롭 '전체'면(= "{roles.X}") 그 role 의 모든 글롭으로 spread.
       const whole = /^\{roles\.([A-Za-z0-9_]+)\}$/.exec(s);
       if (whole) {
-        const expanded = asGlobArray(roles[whole[1]]);
+        const expanded = asGlobArray(requireRole(roles, whole[1], s));
         for (const g of expanded) out.push(substituteDomain(g, domain));
         continue;
       }
       // 토큰이 더 큰 문자열 안에 박힌(접두/접미 있는) 경우 — 단일 글롭으로 치환(role 이 다중이면 첫 글롭).
       // (현 킷 정책엔 이 형태가 없지만 일반성 위해 처리.)
       const substituted = s.replace(ROLE_TOKEN_RE, (_m, role) => {
-        const g = asGlobArray(roles[role]);
+        const g = asGlobArray(requireRole(roles, role, s));
         return g.length ? g[0] : _m;
       });
       out.push(substituteDomain(substituted, domain));
@@ -159,47 +194,80 @@ export function loadLayoutProfile({ kitRoot, flags = {} } = {}) {
     return out;
   }
 
-  // materializeGuardedSurface(policy, domains) -> string[] (§7-i):
-  //   forbidden 글롭의 {domain} 을 *실제 도메인 리스트*로 펼쳐, 더는 domain-scoped 가 아닌
-  //   구체(global+specific) 글롭의 합집합을 만들어 deriveGuardedSurface 와 같은 필터를 적용한다.
-  //   목적: path-backstop 의 deriveGuardedSurface 가 domain-scoped 를 guard 에서 제외(L119)하므로,
-  //   도메인별 forbidden 을 사전 구체화해 fail-closed union 으로 넘긴다.
+  // materializeGuardedSurface(policy, domains) -> string[] (§7-i, MAJOR 3 수정):
+  //   guarded surface 를 *구체(concrete) 글롭의 합집합*으로 사전 구체화한다. path-backstop 의
+  //   deriveGuardedSurface 는 domain-scoped({domain}) forbidden 을 통째로 버리므로(L119), 도메인별
+  //   forbidden 이 게이트되지 않는다(§7-i union 결손). 여기서 {domain} 을 실제 도메인들로 펼쳐 메운다.
   //
-  //   회귀(HARD CONSTRAINT): 도메인 오버라이드가 *없는* expo 에선 deriveGuardedSurface(policy) 와
-  //   BYTE-동치여야 한다. 아래 로직은 deriveGuardedSurface 를 그대로 미러하되, domain-scoped 글롭만
-  //   도메인 union 으로 확장한 뒤 동일 분류/threshold 필터를 통과시킨다. expo 의 유일한 domain-scoped
-  //   forbidden(api-integrated-ui 의 src/features/{domain}/screens/**)은 확장돼도 threshold 가
-  //   null 이라 채택되지 않으므로, 결과 집합이 변하지 않는다.
+  //   ★ MAJOR 3 의 핵심: threshold 는 **도메인별 구체 정책**(allowed_paths·forbidden_paths 를 둘 다
+  //   {domain} 으로 치환)에 대해 계산한다. 이전 버그는 정책을 도메인 없이 1회만 해소한 뒤
+  //   thresholdOf(policy, concreteForbidden) 로 *구체* forbidden 을 *토큰화된* allowed 와 비교해,
+  //   covers() 가 항상 빗나가 도메인/커스텀 role forbidden 표면이 조용히 누락됐다(expo 는 우연히 통과).
+  //   이제 같은 도메인의 allowed 도 구체화하므로 covers 가 올바로 동작한다.
+  //
+  //   채택 규칙(deriveGuardedSurface 의 "낮은 모드 금지 → 높은 모드 허용" 레이어 경계 의미 보존):
+  //   표면 S 를 채택하려면 (a) tIdx=threshold(S) 가 존재(어떤 비-blanket 모드가 S 전체를 allow)하고,
+  //   (b) S 를 *금지*한 모드가 그 threshold 보다 **엄격히 아래**여야 한다(forbiddingIdx < tIdx).
+  //   ─ src/api/** : route/screen/rough/final(1~4)에서 금지, api-integrated-ui(5)에서 허용 → 채택.
+  //   ─ src/features/{domain}/screens/** : screen-skeleton(2)에서 허용, api-integrated-ui(5)에서 금지
+  //     (fake-hook 재-잠금 계약). forbiddingIdx(5) ≥ tIdx(2) → 채택 안 함. ← 이 조건이 expo BYTE-동치를
+  //     지킨다(case2-screen-allowed=위반0). 재-잠금은 forward 게이트·readiness 가 담당하지, diff backstop 의
+  //     프로젝트-단위 clearance 모델 대상이 아니다.
+  //
+  //   회귀(HARD CONSTRAINT): 도메인 오버라이드가 없는 expo 에선 결과가
+  //   deriveGuardedSurface(rawLiteralPolicy) = ['openapi.yaml','openapi.yml','src/api/**'] 와 BYTE-동치.
   function materializeGuardedSurface(policy, domains = []) {
     const modes = (policy && policy.modes) || {};
-    const domainList = Array.isArray(domains) ? domains.filter((d) => d != null) : [];
-    const set = new Set();
+    const order =
+      Array.isArray(policy && policy.order) && policy.order.length
+        ? policy.order
+        : Object.keys(modes);
+    const domainList = Array.isArray(domains) ? domains.filter((d) => d != null && d !== '') : [];
 
-    for (const name of Object.keys(modes)) {
-      const forbidden = modes[name].forbidden_paths || [];
-      for (const f of forbidden) {
+    // 도메인 d 로 allowed/forbidden 을 모두 치환한 구체 정책(threshold 계산 입력). d=null 이면 무치환.
+    // ({roles.X} 는 호출부가 이미 펼쳤다고 가정 — resolvePolicyPaths. 여기선 {domain} 만 구체화.)
+    const concreteCache = new Map();
+    function concretePolicyFor(d) {
+      const key = d == null ? '\0null' : d;
+      if (concreteCache.has(key)) return concreteCache.get(key);
+      const outModes = {};
+      for (const [name, mode] of Object.entries(modes)) {
+        outModes[name] = {
+          allowed_paths: (mode.allowed_paths || []).map((x) => substituteDomain(toPosix(x), d)),
+          forbidden_paths: (mode.forbidden_paths || []).map((x) => substituteDomain(toPosix(x), d)),
+        };
+      }
+      const cp = { ...policy, order, modes: outModes };
+      concreteCache.set(key, cp);
+      return cp;
+    }
+
+    const set = new Set();
+    for (let idx = 0; idx < order.length; idx++) {
+      const mode = modes[order[idx]];
+      if (!mode) continue;
+      for (const f of mode.forbidden_paths || []) {
         const g = toPosix(f);
         const cls = classifyForbidden(g);
         if (cls === 'blanket') continue; // src/** 제외(공유코드 오탐)
-        if (cls === 'global+specific') {
-          // {domain} 없는 일반 글롭 — deriveGuardedSurface 와 동일 조건(threshold 존재)으로 채택.
-          if (thresholdOf(policy, g) == null) continue;
-          set.add(g);
-          continue;
-        }
-        // domain-scoped: {domain} 을 실제 도메인들로 펼쳐 구체 글롭 union 으로 만든다.
-        // (도메인 리스트가 비면 — 도메인 미발견 — 펼칠 게 없으므로 아무것도 추가하지 않는다.
-        //  이는 현 deriveGuardedSurface 가 domain-scoped 를 통째로 버리는 것과 동일한 결과.)
-        for (const d of domainList) {
-          const concrete = g.split('{domain}').join(d);
-          // 펼친 글롭이 {domain}/{screen} 을 더는 포함하지 않으면 global+specific 로 재분류.
-          if (classifyForbidden(concrete) !== 'global+specific') continue;
-          if (thresholdOf(policy, concrete) == null) continue; // threshold 없으면 레이어 경계 아님
-          set.add(concrete);
+        // domain-scoped 는 실제 도메인들로 펼치고(각각 그 도메인 구체 정책으로 threshold),
+        // global+specific 은 도메인 무관(d=null) 한 후보 하나로 둔다.
+        const candidates =
+          cls === 'domain-scoped'
+            ? domainList.map((d) => ({ surface: substituteDomain(g, d), domain: d }))
+            : [{ surface: g, domain: null }];
+        for (const { surface, domain } of candidates) {
+          // 펼친 뒤에도 {domain}/{screen} 이 남으면(도메인 리스트 비었거나 {screen} 포함) 구체화 불가 → 제외.
+          if (classifyForbidden(surface) !== 'global+specific') continue;
+          const cp = concretePolicyFor(domain);
+          const threshold = thresholdOf(cp, surface);
+          if (threshold == null) continue; // 어떤 모드도 S 전체를 allow 안 함 → 레이어 경계 아님
+          // (b) 금지 모드가 threshold 보다 엄격히 아래일 때만 채택(낮은 금지 → 높은 허용 경계).
+          if (idx < order.indexOf(threshold)) set.add(surface);
         }
       }
     }
-    // openapi parity (deriveGuardedSurface 와 동일 — yaml/yml 둘 다).
+    // openapi parity (deriveGuardedSurface 와 동일 — yaml/yml 둘 다, threshold 무관 항상 플래그).
     set.add('openapi.yaml');
     set.add('openapi.yml');
     return [...set].sort();

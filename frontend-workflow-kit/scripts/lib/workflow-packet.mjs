@@ -40,7 +40,7 @@ export function modeHintsFor(layout) {
       expectedOutput: 'WHEN 라우트 진입 THEN 화면 shell 렌더; fixture UI·fake hook 부재.',
     },
     'rough-fixture-ui': {
-      goal: 'fixture 데이터로 화면을 구동한다 (실제 API 연동·src/api 변경 없음).',
+      goal: `fixture 데이터로 화면을 구동한다 (실제 API 연동·${apiClient} 변경 없음).`,
       expectedOutput: `fixture 데이터로 화면 구동; ${apiClient} 변경 0; fake hook(AsyncState) 계약 충족.`,
     },
     'final-fixture-ui': {
@@ -211,6 +211,9 @@ export function buildPacketModel(opts) {
   }
 
   const modeHint = modeHintsFor(resolvedLayout)[readinessMode] || genericHint(readinessMode);
+  // api_client role 글롭을 모델에 실어 Acceptance/Review prose 가 literal 'src/api/**' 대신 쓰게 한다(MINOR 6).
+  // (openapi.yaml 은 role 이 아닌 리터럴 가드라 그대로 둔다 — modeHintsFor 의 리터럴 가드 정책과 일관.)
+  const apiClientGlob = resolvedLayout.roleGlobs('api_client')[0] || 'src/api/**';
 
   return {
     packet_id: `WP-${screen}-${readinessMode}-${seq}`,
@@ -234,6 +237,7 @@ export function buildPacketModel(opts) {
     ambiguityRows,
     warnings,
     modeHint,
+    apiClientGlob,
     ambiguityLink,
   };
 }
@@ -431,7 +435,7 @@ export function renderPacketMarkdown(m) {
   out.push('');
   out.push('## Acceptance Criteria');
   out.push('- [ ] 변경 파일이 Allowed Paths(readiness 출력) 안에만 존재 — `git diff --name-only` 로 확인.');
-  out.push('- [ ] Forbidden Paths 무접촉 (특히 `src/api/**` · `openapi.yaml` 에 한 줄도 닿지 않음).');
+  out.push(`- [ ] Forbidden Paths 무접촉 (특히 \`${m.apiClientGlob}\` · \`openapi.yaml\` 에 한 줄도 닿지 않음).`);
   out.push(`- [ ] 모드 천장(\`${m.readiness_mode}\`) 초과 산출물 없음 (상위 모드 UI/연동 욱여넣기 금지).`);
   out.push('- [ ] Blocking Items 의 결정/Unknown/Conflict 가 그대로 열려 있음 (이 세션이 닫지 않음).');
   out.push('- [ ] `npm run workflow:validate` exit 0, 재실행 멱등 (재생성물 외 빈 diff).');
@@ -439,7 +443,7 @@ export function renderPacketMarkdown(m) {
   out.push('## Review Checklist');
   out.push(`- [ ] **Pre-Implementation Review** — Ambiguity Review Required 의 \`Safe To Proceed?\` 가 \`${m.readiness_mode}\` 까지 검토됐고(빈 표면은 "없음—사유"), Validity 전제(readiness_source mode/facts) 무변경, Blocking 후보(D-cand/U-cand)가 분류돼 그대로 열림(이 세션이 닫지 않음).`);
   out.push(`- [ ] **게이트 판독** — readiness_mode/allowed/forbidden 이 \`${m.readiness_source}\` 와 글자 일치 (재계산·hand-edit 없음).`);
-  out.push('- [ ] **경로 준수** — diff 가 allowed 안에만, forbidden(특히 `src/api/**`) 무접촉.');
+  out.push(`- [ ] **경로 준수** — diff 가 allowed 안에만, forbidden(특히 \`${m.apiClientGlob}\`) 무접촉.`);
   out.push(`- [ ] **천장 미초과** — \`${m.readiness_mode}\` 가 허용하는 산출물만 (과구현 없음).`);
   out.push('- [ ] **미확정 미발명** — API/copy/design value 추측 없음, tbd 행 그대로.');
   out.push('- [ ] **결정 미닫힘** — Open Decision/Conflict/Unknown 상태 보존 (사람-전용 불변식).');

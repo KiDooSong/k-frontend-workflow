@@ -16,6 +16,7 @@ import {
   confidenceRank,
   yamlStringify,
   writeFile,
+  runCli,
 } from './lib/util.mjs';
 import { loadLayoutProfile } from './lib/layout-profile.mjs';
 
@@ -60,8 +61,15 @@ function actionHint(factKey, screen) {
       return 'raise screen-spec status (confirmed requires human approval metadata)';
     case 'screen_spec_authored':
       return `write the ScreenSpec body using ${screen.screenSpecTemplate || 'the screen-spec template'} (stub has frontmatter only)`;
-    case 'fake_hook_exists':
-      return `add fake hook at src/features/${screen.domain || '{domain}'}/hooks/`;
+    case 'fake_hook_exists': {
+      // hook 힌트 디렉토리를 {roles.hook} 단일 출처에서 파생(MINOR 4) — literal 'src/features/.../hooks' 금지.
+      // spec.mjs 의 fake_hook_exists fact 와 같은 role 바인딩이라 힌트 경로가 실제 검사 경로와 일치한다.
+      const hookDir = screen.layout
+        ? screen.layout.roleToDir('hook', { domain: screen.domain })
+        : '';
+      const hint = hookDir || `src/features/${screen.domain || '{domain}'}/hooks`;
+      return `add fake hook at ${hint}/`;
+    }
     case 'component_catalog_generated':
       return 'create docs/frontend-workflow/design/component-catalog.md manually (catalog-gen is MVP-C)';
     case 'state_matrix_complete':
@@ -214,7 +222,8 @@ export function computeReadiness({ state, policy, ci, manifest, layout }) {
 
   for (const [id, screen] of Object.entries(state.screens || {})) {
     const facts = buildFacts(screen, global, ci);
-    const screenCtx = { domain: screen.domain, facts, screenSpecTemplate };
+    // resolvedLayout 를 screenCtx 에 실어 actionHint 가 hook 힌트 경로를 role 바인딩에서 파생하게 한다(MINOR 4).
+    const screenCtx = { domain: screen.domain, facts, screenSpecTemplate, layout: resolvedLayout };
 
     // 모드 사다리는 누적이다: 한 모드를 충족하려면 아래 모든 모드도 충족해야 한다.
     // 따라서 바닥(docs-only)부터 올라가며 연속으로 충족되는 가장 높은 모드를 고른다.
@@ -372,4 +381,5 @@ function main() {
 }
 
 // 직접 실행될 때만 main() (import 시 부작용 없음 — computeReadiness 를 테스트/훅에서 재사용 가능)
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+// runCli: 레이아웃 설정 오류(미정의 role·부재 --layout)를 exit 2 로 surface(stack trace+exit 1 차단).
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) runCli(main, 'readiness');

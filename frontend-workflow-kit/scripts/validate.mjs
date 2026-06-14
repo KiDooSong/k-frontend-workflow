@@ -35,6 +35,8 @@ import {
   splitFrontmatter,
   exists,
   dirHasFiles,
+  runCli,
+  projectRootOf,
 } from './lib/util.mjs';
 import { validateSchema } from './lib/schema.mjs';
 import { loadLayoutProfile } from './lib/layout-profile.mjs';
@@ -103,7 +105,8 @@ function main() {
   const { flags } = parseArgs(process.argv.slice(2));
   const docsDir = path.resolve(flags.docs || DEFAULTS.docs);
   const srcDir = path.resolve(flags.src || DEFAULTS.src);
-  const projectRoot = flags.root ? path.resolve(flags.root) : path.dirname(srcDir);
+  // projectRoot = role 글롭 앵커 단일 출처(MINOR 2 — spec.mjs·check-generated-files 와 동일 식).
+  const projectRoot = projectRootOf(srcDir, flags);
   // 설정 파일(manifest/schema/policy)은 부재·손상 시 exit 2 — 누락된 설정이 검사를 조용히 비활성화하지
   // 않게 한다(forbidden-paths·readiness 와 대칭). 실제 설치는 킷 위치에서 자동 해석돼 항상 존재한다.
   const manifestPath = path.resolve(flags.manifest || DEFAULTS.manifest);
@@ -495,4 +498,5 @@ function main() {
 }
 
 // 직접 실행될 때만 main()
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+// runCli: 레이아웃 설정 오류(미정의 role·부재 --layout)를 exit 2 로 surface(stack trace+exit 1 차단).
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) runCli(main, 'validate');

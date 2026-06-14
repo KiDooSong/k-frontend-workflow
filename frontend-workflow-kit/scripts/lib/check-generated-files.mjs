@@ -18,7 +18,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { KIT_ROOT, exists, isDir, readFileSafe } from './util.mjs';
+import { KIT_ROOT, exists, isDir, readFileSafe, projectRootOf } from './util.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
 // 정규화 원시함수는 골든 하니스와 동일한 것을 재사용한다(설계 §A.5 "reuse verbatim; do not invent").
 import { normalizeGeneratedViewText, toPosix } from './test-fixture.mjs';
@@ -106,13 +106,14 @@ function relPosix(abs) {
 //   outName      : _meta 산출 파일명(scratch 출력 파일명으로도 사용).
 // route-tree: {roles.route_entry} 파일트리 → _meta/route-tree.txt.  nav-graph: docs → _meta/nav-graph.yaml.
 // route-tree 입력 디렉토리는 {roles.route_entry} 바인딩에서 파생한다(literal <srcDir>/app 금지 — §6·§10:
-// tier2 router 경로와 같은 출처). role 글롭은 프로젝트-루트 상대(src/app)이므로 projectRoot(=dirname(srcDir))
-// 에 resolve 한다. (커스텀 라우트 경로[예: Next app/**]를 쓰는 프로젝트에서 생성물 가드가 입력을 짚게.)
+// tier2 router 경로와 같은 출처). role 글롭은 프로젝트-루트 상대(src/app)이므로 projectRootOf 로 앵커한다
+// (validate 검사 8·spec.mjs fake_hook 와 동일 식 — MINOR 2; 표준 <root>/src 가정 시 dirname(srcDir)).
+// (커스텀 라우트 경로[예: Next app/**]를 쓰는 프로젝트에서 생성물 가드가 입력을 짚게.)
 export const V1_REPRODUCE = {
   'route-tree': {
     script: 'route-tree.mjs',
     inputFlag: '--app',
-    resolveInput: ({ srcDir, layout }) => path.resolve(path.dirname(srcDir), layout.roleToDir('route_entry')),
+    resolveInput: ({ srcDir, layout }) => path.resolve(projectRootOf(srcDir), layout.roleToDir('route_entry')),
     outName: 'route-tree.txt',
   },
   'nav-graph': {

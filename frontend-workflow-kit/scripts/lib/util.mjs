@@ -180,6 +180,35 @@ export function loadYamlOrExit(p, label, tool = 'workflow') {
   }
 }
 
+// 프로젝트 루트(=role 글롭의 앵커) 단일 출처(MINOR 2). role 글롭은 프로젝트-루트 상대(src/...)이므로
+// 존재검사·입력 디렉토리 해소는 모두 이 값에 resolve 한다. 세 소비처(spec.mjs fake_hook,
+// validate 검사 8, check-generated-files route-tree 입력)가 같은 식을 쓰게 한다.
+//   flags.root 가 있으면(monorepo: repo-root 상대 프로젝트 접두) 그것을, 없으면 표준 <root>/src 가정으로
+//   dirname(srcDir) 를 쓴다. (workflow-state·check-generated-files 는 --root 를 노출하지 않으므로 사실상
+//    항상 dirname(srcDir) 이지만, 식을 공유해 표류를 막고 --root 도입 시 자동 정합.)
+export function projectRootOf(srcDir, flags = {}) {
+  return flags && typeof flags.root === 'string' && flags.root
+    ? path.resolve(flags.root)
+    : path.dirname(srcDir);
+}
+
+// CLI 엔트리 래퍼: main() 을 실행하되 레이아웃 설정 오류(LayoutConfigError — layout-profile.mjs)는
+// 도구/설정 오류로 보고 exit 2 로 surface 한다(정의되지 않은 {roles.X}·부재한 --layout 경로 등).
+//   loadYamlOrExit·forbidden-paths 등과 같은 exit 2 계약: 잘못된 설정이 stack trace+exit 1 로 새지 않게.
+//   순환 import 회피를 위해 instanceof 가 아니라 err.name 으로 덕타이핑한다(util ← layout-profile ← util).
+//   그 외 예외는 그대로 던져 기존 동작(미처리 → exit 1)을 보존한다.
+export function runCli(main, tool = 'workflow') {
+  try {
+    main();
+  } catch (err) {
+    if (err && err.name === 'LayoutConfigError') {
+      process.stderr.write(`${tool}: ${err.message}\n`);
+      process.exit(2);
+    }
+    throw err;
+  }
+}
+
 // --- 순서값(ordinal) 비교 --------------------------------------------------
 export const STATUS_ORDER = [
   'missing',

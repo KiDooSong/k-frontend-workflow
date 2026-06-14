@@ -8,6 +8,7 @@ import {
   dirHasFiles,
   confidenceRank,
   CONFIDENCE_ORDER,
+  projectRootOf,
 } from './util.mjs';
 
 const REQUIRED_STATES = ['loading', 'success', 'empty', 'error', 'refreshing'];
@@ -221,8 +222,11 @@ export function isStub(spec) {
 //   opts.layout : tier1 resolvedLayout. fake_hook_exists 의 hook 디렉토리를 role 바인딩에서
 //     파생한다(literal 'features/<domain>/hooks' 금지 — §6·§10 CRITICAL). 미주입 시 호출부
 //     책임이지만, layout 이 없으면 hook fact 를 유도할 수 없다(아래 가드).
+//   opts.projectRoot : role 글롭 앵커(MINOR 2). 미주입 시 표준 <root>/src 가정으로 dirname(srcDir).
+//     validate 검사 8·check-generated-files route-tree 입력과 동일 식(projectRootOf)을 써 표류 방지.
 export function deriveMetrics(spec, opts = {}) {
   const { srcDir, layout } = opts;
+  const projectRoot = opts.projectRoot || projectRootOf(srcDir);
   const domain = spec.frontmatter.domain;
   const sections = spec.sections;
 
@@ -303,13 +307,13 @@ export function deriveMetrics(spec, opts = {}) {
 
   // fake hook 존재: {roles.hook} 디렉토리에 파일이 있는지. 경로는 layout.roleToDir 단일 출처에서
   // 파생한다 — {roles.hook} 글롭(allowed_paths)과 반드시 같은 경로라야 rough-fixture-ui 게이트가
-  // 안 깨진다(§10 CRITICAL). role 글롭은 프로젝트-루트 상대(src/...)이므로 projectRoot(=dirname(srcDir),
-  // validate.mjs 와 동일 규약)에 resolve 한다.
+  // 안 깨진다(§10 CRITICAL). role 글롭은 프로젝트-루트 상대(src/...)이므로 projectRoot 에 resolve 한다
+  // (validate 검사 8·check-generated-files 와 동일 식 — MINOR 2).
   let fakeHookExists = false;
   if (srcDir && domain && layout) {
     const hookRel = layout.roleToDir('hook', { domain }); // 예: src/features/coupons/hooks
     if (hookRel) {
-      const hookDir = path.resolve(path.dirname(srcDir), hookRel);
+      const hookDir = path.resolve(projectRoot, hookRel);
       fakeHookExists = dirHasFiles(hookDir, ['.ts', '.tsx']);
     }
   }
