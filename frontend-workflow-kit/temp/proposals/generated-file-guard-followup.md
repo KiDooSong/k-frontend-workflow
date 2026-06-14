@@ -92,7 +92,7 @@ YAML/JS 는 `# GENERATED FILE — DO NOT EDIT`. 실제 생성기(`workflow-state
 - **파일 목록을 매니페스트에서 끌어온다**: `kind: generated` 항목(선택적으로 `generated: true` 게이트).
   각 항목의 `path` 가 가리키는 파일이 존재하면 확장자에 맞는 헤더 형태(Markdown/YAML·JS)를 요구.
 - **경로 해소를 고친다(가드 공백).** 현행 헤더 검사(:432–443)의 `path.replace(/^docs\/frontend-workflow\//,'')`
-  +`join(docsDir,...)`(:436)는 **`docs/frontend-workflow/` 접두를 가정**한다. 그래서 루트 경로
+  +`join(docsDir,...)`(:436–437)는 **`docs/frontend-workflow/` 접두를 가정**한다. 그래서 루트 경로
   `eslint.workflow.config.mjs` 는 `docs/frontend-workflow/eslint.workflow.config.mjs` 로 잘못
   해소돼 **영원히 건너뛴다.** 가드는 매니페스트 `path` 를 **프로젝트 루트 기준**으로 해소하거나
   루트/_meta 경로를 분기 처리해야 한다.
