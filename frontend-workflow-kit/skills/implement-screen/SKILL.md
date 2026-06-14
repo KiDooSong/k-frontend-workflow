@@ -8,6 +8,11 @@ description: 지정된 Screen ID를 readiness gate가 허용하는 모드 범위
 화면 하나를 readiness gate가 허용하는 모드 범위에서만 구현한다.
 **구현 가능 여부를 직접 판단하지 않는다** — `readiness.mjs` 출력을 그대로 따른다 (판정 로직 단일 출처).
 
+> **통과 ≠ 완료.** readiness 가 모드를 열어줘도 그건 *기계적 상한*이지 설계 승인이 아니다.
+> validate 통과는 *구조* OK 일 뿐 *제품적으로 맞다*는 뜻이 아니다. 빠진 상태·UX·정책은
+> 추측해 메우지 말고 Unknowns / Open Decisions / `global/conflicts.md` 로 남긴다.
+> (전체 "하는 것 vs 안 하는 것" → kit README "이 킷이 보장하는 것 / 보장하지 않는 것" 참조.)
+
 ## 입력
 - 대상 Screen ID (예: `COUPON-001`). 없으면 사용자에게 묻는다.
 
@@ -26,6 +31,7 @@ description: 지정된 Screen ID를 readiness gate가 허용하는 모드 범위
    - `readiness_mode` 가 UI 구현을 허용하지 않으면(`docs-only` / `route-skeleton` 등) **구현하지 말고**
      `blocking` 과 `next_actions` 를 사용자에게 보고하고 멈춘다.
    - 막힌 항목(미확정 API, figma mapping 부재 등)은 추측해서 메우지 않는다. ScreenSpec 의 Unknowns / `global/conflicts.md` 에 남긴다.
+   - **애매함은 구현보다 먼저 표면화한다.** 구현 가능 여부보다 "놓친 애매함이 없는가"를 먼저 확인하고, 애매하면 추측 구현 대신 멈춰서 Unknowns / Open Decisions 로 남기고 보고한다. (게이트화 아님 — warning-only 지시.)
 
 4. **컨텍스트 로드** (이 화면 작업에 필요한 것만 — 다른 도메인 문서는 로드하지 않는다):
    - `docs/frontend-workflow/domains/{domain}/screens/{screen}/screen-spec.md`
@@ -48,3 +54,4 @@ description: 지정된 Screen ID를 readiness gate가 허용하는 모드 범위
 - `forbidden_paths` 수정 (특히 fixture-ui 모드에서 `src/api/**`).
 - API endpoint / 디자인 값 / 문구의 추측.
 - 생성물(`_meta/*.yaml`, `component-catalog.md`) 직접 편집.
+- `readiness 통과 = 설계 OK`, `validate 통과 = 제품 OK` 로 보고하는 것. (통과는 *증거*일 뿐 *승인*이 아니다.)

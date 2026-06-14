@@ -3,6 +3,27 @@
 LLM이 프론트 프로젝트를 **환각 없이** 진행하게 만드는 워크플로우 킷.
 "LLM이 추론하던 것을 파일로 고정한다" — 상태/판정/검사를 결정적 스크립트로 옮긴다.
 
+## 이 킷이 보장하는 것 / 보장하지 않는 것
+
+스크립트는 **가드레일이지 리뷰어가 아니다.** "검증 없는 루프는 그냥 자동화"다.
+
+| 스크립트가 하는 것 (기계적·결정적) | 스크립트가 **안** 하는 것 (사람·리뷰 몫) |
+|---|---|
+| readiness = 화면별 구현 가능 **모드의 기계적 상한** 계산 | 이 설계가 **제품적으로 맞는지** 판단 |
+| validate = frontmatter·manifest·route·승인메타 등 **구조 검사** | 빠진 상태/엣지케이스/UX/정책 의도 **의미 리뷰** |
+| forbidden-paths·test-fixtures = **경로·회귀** 검증 | 기획 의도 반영·납득되는 설계인지 **사람 판단** |
+| 통과/실패를 **반복 가능하게** 보고 | candidate→confirmed·Open Decision·Unknown **닫기** |
+
+> **통과 = 완료가 아니다.** 아래는 이 킷에서 *금지된 착각*이다:
+> - `readiness 통과` ≠ 설계 리뷰 완료
+> - `validate 통과` ≠ 제품적으로 올바름
+> - `Unknown open` ≠ 구현해도 항상 안전
+> - `draft` ≠ 리뷰 완료
+> - `Work Packet` ≠ 구현 허가서
+> - `Run Report` ≠ 사람 승인
+>
+> 스크립트가 초록불을 줘도, **의미·제품 리뷰(사람 또는 Codex)와 confirmed 승인(사람)은 따로** 거쳐야 한다.
+
 > 현재 단계: **MVP-A** 강제 코어 + **MVP-B Phase 0** 착수분(golden fixture 회귀 하니스 · forbidden_paths backstop[warning-first] · 입력/register 검증 검사 11·12). lint-pack·Figma·생성뷰·훅은 이후 B~D 잔여. ([docs/workflows/mvp-b.md](docs/workflows/mvp-b.md))
 > 설계 문서: [Core](../frontend-llm-workflow.md) · [확장판](../frontend-llm-workflow-expanded.md) ·
 > [스킬팩 개념](../frontend-workflow-skillpack-concept.md) · [구현 명세](../frontend-workflow-kit-implementation.md)

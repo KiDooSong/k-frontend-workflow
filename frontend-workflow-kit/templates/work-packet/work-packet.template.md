@@ -14,6 +14,8 @@ owner: "{agent-or-person}"
 <!--
   Work Packet 은 새로운 source of truth 도, 새로운 gate 도 아니다.
   기존 readiness gate 를 "한 세션 단위"로 포장하는 실행 봉투(execution envelope)일 뿐이다.
+  통과 ≠ 완료: 이 봉투가 발급됐다는 것은 readiness 게이트가 깨끗하고 경로/모드 상한이 정해졌다는 뜻일 뿐,
+  설계가 제품적으로 맞다는 승인도 구현 허가서도 아니다. 모드 상한·경로는 기계가 정했지만 설계 적합성은 사람이 따로 확인한다.
   작성 규칙:
   - ScreenSpec 을 복사하지 않는다 — Must Read 에서 링크만 건다. 정본은 ScreenSpec/decision-log.
   - readiness 를 재계산하지 않는다 — readiness output(또는 run-report)을 그대로 소비한다.
@@ -31,16 +33,21 @@ owner: "{agent-or-person}"
 {이 세션이 `{readiness_mode}` 안에서 달성할 한 가지를 1~2문장으로. 상위 모드 산출물은 적지 않는다.}
 
 ## Validity
-<!-- 이 packet 이 유효한 전제. readiness_source 의 mode/facts 가 바뀌면 이 packet 은 무효다 (재발급).
-     스냅샷 시점(날짜)과 그때의 ScreenSpec status·Open Decision 상태를 명시한다. -->
+<!-- 이 packet 이 유효한 전제. 아래 무효조건 중 하나라도 바뀌면 packet 무효 → readiness 부터 재실행 후 재발급.
+     스냅샷은 readiness 출력만 복사한다(정본 복사 금지). 정본 변화 감지는 사람이 한다 — 자동 stale 검사 스크립트로 만들지 않는다(게이트화 금지). -->
 - 기준 스냅샷: `{readiness_source}` (실행/확인 시점: {YYYY-MM-DD}).
-- 전제: `readiness_mode` = `{readiness_mode}`, ScreenSpec `status` = `{status}`. 이 값이 바뀌면 packet 무효 → 재발급.
-- Open Decision 스냅샷: 아래 Blocking Items 의 항목/상태는 {YYYY-MM-DD} 기준. 새 결정이 열리거나 닫히면 readiness 부터 다시 돌린다.
+- **무효조건 (하나라도 바뀌면 무효 → 재발급):**
+  - [ ] readiness 재실행 결과의 `readiness_mode` 가 `{readiness_mode}` 와 달라짐.
+  - [ ] `readiness_source` 의 mode/facts(천장 근거 fact·allowed/forbidden)가 달라짐.
+  - [ ] ScreenSpec `status` 가 `{status}` 와 달라짐.
+  - [ ] Blocking Items 의 Open Decision 이 새로 열리거나 닫힘.
+  - [ ] `readiness_source` 파일 자체가 갱신됨(날짜/내용 변경).
+- 이 packet 은 스냅샷이다. 위 항목이 의심되면 집행 **전** `npm run workflow:readiness` 로 대조한다(사람 확인 — 자동 차단 아님).
 
 ## Must Read
-<!-- 복사하지 말고 링크만. 구현자는 정본을 직접 읽는다. -->
+<!-- 복사하지 말고 링크만. 구현자는 정본을 직접 읽는다. 우선순위 없는 링크 더미는 noise — 첫 줄에 "여기부터"를 둔다. -->
+- ▶ **여기부터**: `{readiness_source}` — 이 세션의 게이트 사실(allowed/forbidden/mode)의 출처. readiness output / run-report.
 - ScreenSpec (정본): `{docs/.../domains/{domain}/screens/{screen}/screen-spec.md}`
-- readiness output / run-report: `{readiness_source}`
 - 관련 정책: `frontend-workflow-kit/policies/implementation-mode-policy.yaml`
 - (해당 시) Open Decisions / Conflicts: `{open-decisions.md}` · `{global/conflicts.md}`
 
@@ -84,12 +91,14 @@ owner: "{agent-or-person}"
 > **Blocking Mode** = 이 항목이 cap 하는(=도달을 막는) 모드. decision·missing-fact 는 cap 모드를 갖지만, unknown 은 모드를 직접 cap 하지 않으면 `—` 로 둔다 (그래도 close 는 사람-전용 — Out of Scope 참조).
 
 ## Expected Output
-<!-- 이 모드에서 "정답"인 산출물 형태를 못박는다. 모드별 정답 형태 예:
-       docs-only        = docs/frontend-workflow/** 문서만.
-       route-skeleton   = src/app/** 라우트 엔트리만 (features 무접촉).
-       screen-skeleton  = 화면 shell only (fixture UI·fake hook 없음).
-       rough-fixture-ui = fixture 데이터로 구동되는 거친 UI (src/api 무접촉, fake hook 계약). -->
-{`{readiness_mode}` 에서 정답인 산출물 형태를 한 줄로. 상위 모드 산출물(예: fixture UI, API 연동)은 정답이 아니다.}
+<!-- 이 모드에서 "정답"인 산출물을 *이진 판정 가능*하게 적는다. 산문 대신 검증 문장으로 (EARS 정신 — 문법은 채택 안 함).
+     좋은 형태: "X 가 존재하고 Y 는 부재" / "WHEN <조건> THEN <관측 가능한 결과>" / "<경로>에 변경 N개, allowed 밖 0개".
+     모드별 정답 형태 예:
+       docs-only        = docs/frontend-workflow/** 문서만 변경; src/** 변경 0 (git diff 로 확인).
+       route-skeleton   = src/app/** 라우트 엔트리만 존재; features/** 무접촉.
+       screen-skeleton  = WHEN 라우트 진입 THEN 화면 shell 렌더; fixture UI·fake hook 부재.
+       rough-fixture-ui = fixture 데이터로 화면 구동; src/api/** 변경 0; fake hook(AsyncState) 계약 충족. -->
+{`{readiness_mode}` 의 정답 산출물을, 만족/위반을 이진 판정할 수 있는 1~2개 문장으로. 상위 모드 산출물(예: fixture UI·API 연동)은 정답이 아니다.}
 
 ## Out of Scope
 <!-- 명시적 금지. Work Packet MUST NOT 목록과 정합. -->
