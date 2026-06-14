@@ -51,7 +51,8 @@ $ node scripts/check-generated-files.mjs --docs examples/nav-graph/basic-flow/do
 # 음성 — 커밋본 변조(임시 복사본)
   [mismatch] route-tree  CG:content FAIL line N …                   exit 0  ← warning-first
 
-# 기본(킷 루트, _meta 없음) — skip 2                                  exit 0
+# 기본(킷 루트, _meta·src/app 없음) — missing-committed 2             exit 0  ← warning-first
+#   (active v1 산출물의 커밋본 부재를 surface — 조용히 skip 하지 않음, 설계 §5)
 ```
 
 ---
@@ -85,7 +86,18 @@ $ node scripts/check-generated-files.mjs --docs examples/nav-graph/basic-flow/do
    `report.ok` 는 향후 `--enforce` 가 게이트로 쓸 신호로 남겨 두되 exit 에는 영향 없음.
 4. **`--enforce` 보류** — 추가 여부가 애매하므로(하드룰 "애매하면 추가 말 것") 도입하지 않고 후속으로
    문서화. CLI 는 플래그를 인지해 "미구현" 안내만 한다(거짓 게이트 오해 방지).
-5. **테스트는 examples 기반 smoke/golden** — 양성·음성·skip·트리불변. on-demand 실행(미배선).
+5. **테스트는 examples 기반 smoke/golden** — 양성·음성·트리불변. on-demand 실행(미배선).
+
+---
+
+## 3.1 Codex 리뷰 반영 (changes-requested 1건)
+
+- **[P2] both-missing 을 skip 으로 숨기지 말 것** (`lib/check-generated-files.mjs`).
+  초기 구현은 selected active 산출물의 입력·커밋본이 **둘 다** 없으면 `skip`(=ok 취급)을 반환했다 —
+  active 산출물의 커밋본 부재(설계 §5: active + 출력 부재 → 위반)를 조용히 통과시킬 수 있었다.
+  **수정:** both-missing 분기를 제거하고, 커밋본 부재는 입력 유무와 무관하게 `missing-committed`
+  로 surface 한다(입력도 없으면 `CG:input` 사유를 덧붙임). `skip` 은 이제 v1 계약이 없는 비-v1 id
+  (방어적)에서만 발생한다. 단위 테스트도 `missing-committed` 기대로 갱신. warning-first(exit 0)는 유지.
 
 ---
 
@@ -104,7 +116,7 @@ $ node scripts/check-generated-files.mjs --docs examples/nav-graph/basic-flow/do
 | 7 | `npm test` | 위 PASS + node:test `pass 15 / fail 0` |
 | 8 | CLI route-tree/nav-graph 픽스처 | 둘 다 `[ok]` · exit 0 |
 | 9 | CLI 변조 임시본 | `[mismatch]` 감지 · exit 0(warning-first) |
-| 10 | CLI 기본(킷 루트) | `skip 2` · exit 0 |
+| 10 | CLI 기본(킷 루트) | `missing-committed 2` surface · exit 0(warning-first) |
 | 11 | forbidden-file `git diff`(+route-tree/nav-graph 생성기) | **empty** |
 
 `xfail` 1건은 의도된 witness(`reconcile-input-001`).

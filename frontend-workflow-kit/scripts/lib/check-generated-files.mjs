@@ -141,6 +141,8 @@ function firstLineDiff(committed, regenerated) {
 // route-tree·nav-graph 하나를 임시 디렉토리에 2회 재생성하고 커밋본과 비교한다.
 //   반환: { id, status, committed, input, checks:[{check,ok,message}] }
 //   status: ok | mismatch | nondeterministic | generator-error | missing-committed | missing-input | skip
+//     - skip 은 v1 reproduce 계약이 없는 id(=비-v1, 방어적)에서만 난다. active v1 산출물의
+//       입력/커밋본 부재는 skip 이 아니라 missing-input/missing-committed 로 surface 한다(설계 §5).
 //   설계 §4.7 CG: 키 — CG:run:N · CG:output:N · CG:deterministic · CG:content.
 //   - 생성기를 import 하지 않고 서브프로세스(process.execPath)로 호출(계약 고정).
 //   - 정규화 normalizeGeneratedViewText 만(CRLF/path-sep). timestamp 정규화 없음.
@@ -165,22 +167,21 @@ export function reproduceArtifact(id, { docsDir, srcDir }) {
   const committedOk = committedRaw != null;
   const inputOk = isDir(inputDir);
 
-  // 둘 다 없으면 이 트리에 해당 산출물이 없는 것 — skip(작업 없음, must-not-fail).
-  if (!inputOk && !committedOk) {
-    ok('CG:skip', '입력·커밋본 모두 없음 — 이 트리에 해당 산출물 없음');
-    return result('skip');
-  }
   if (!exists(scriptPath)) {
     fail('CG:config', `생성기 없음: ${relPosix(scriptPath)}`);
     return result('generator-error');
   }
+  // active v1 산출물의 커밋본 부재는 finding 이다(설계 §5: active + 출력 부재 → 위반).
+  // 입력 디렉터리까지 없어도 조용히 통과(skip)시키지 않는다 — 입력 부재는 부가 사유로만 덧붙이고,
+  // 커밋 산출물의 부재 자체를 missing-committed 로 surface 한다(가드가 놓치면 안 되는 신호).
+  if (!committedOk) {
+    fail('CG:committed', `커밋된 산출물 없음: ${relPosix(committed)}`);
+    if (!inputOk) fail('CG:input', `입력 디렉터리도 없음(재생성도 불가): ${relPosix(inputDir)}`);
+    return result('missing-committed');
+  }
   if (!inputOk) {
     fail('CG:input', `입력 디렉터리 없음(재생성 불가): ${relPosix(inputDir)}`);
     return result('missing-input');
-  }
-  if (!committedOk) {
-    fail('CG:committed', `커밋된 산출물 없음(비교 대상 부재): ${relPosix(committed)}`);
-    return result('missing-committed');
   }
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), `cgf-${id}-`));
