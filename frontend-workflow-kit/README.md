@@ -78,6 +78,10 @@ npm run workflow:validate    # 검사 12종, exit 0/1 (CI 게이트)
 # MVP-B Phase 0 추가 명령:
 npm run workflow:forbidden-paths -- --diff <file> --docs <dir>   # 경로 backstop (warning-first; --enforce 로 하드)
 npm run example:test                                             # golden fixture 회귀 하니스 (킷 내부; CI 는 warning-only)
+
+# MVP-C Phase 1 생성 뷰 (읽기 전용 — 게이트 아님, screen-spec/src 를 수정하지 않음):
+npm run workflow:route-tree   # src/app 트리 → _meta/route-tree.txt (결정적·멱등)
+npm run workflow:nav-graph    # screen-spec Interaction Matrix + navigation-map → _meta/nav-graph.yaml
 ```
 
 각 스크립트는 `--json` (스킬 파싱용), `--docs`, `--src` 플래그를 지원한다.

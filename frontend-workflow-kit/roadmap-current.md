@@ -17,7 +17,14 @@ MVP-A 에서 코드로 강제되는 구간은 **Documents → State → Readines
 
 - **구현·강제(하드)**: validate 검사 11·12 구조 검사(입력 결과물 frontmatter + Reconciliation Register) · `test-fixtures.mjs` golden fixture 회귀 하니스(CI 배선됨 — warning-only/`continue-on-error`; 하드 gating 후속).
 - **경고-전용(warning-first, `--enforce` 로 하드)**: `forbidden-paths.mjs` 경로 backstop(Lane B) · Reconciliation Register 미처리 감지(검사 12 일부, Lane C).
-- **여전히 제안(승격 금지)**: lint-gen/lint-baseline(MVP-B) · catalog/nav/route-tree/check-generated(MVP-C) · reconcile-input 킷 `skills/` vendor · API-스키마 1:1 매칭 · Interaction Matrix `Result` 컬럼 구조화 · Work Packet & Review Artifacts(템플릿만 존재, 강제 0).
+- **여전히 제안(승격 금지)**: lint-gen/lint-baseline(MVP-B) · catalog/check-generated(MVP-C) · reconcile-input 킷 `skills/` vendor · API-스키마 1:1 매칭 · Interaction Matrix `Result` 컬럼 구조화 · Work Packet & Review Artifacts(템플릿만 존재, 강제 0).
+
+## MVP-C Phase 1 — 생성 뷰 2종 (2026-06-14, 구현·읽기 전용)
+
+- **구현(읽기 전용, 게이트 아님)**: `route-tree.mjs`(src/app 트리 → `_meta/route-tree.txt`) · `nav-graph.mjs`(screen-spec `## Interaction Matrix` + navigation-map → `_meta/nav-graph.yaml`). 결정적·멱등, 커밋된 골든 픽스처 byte-identical 재현. screen-spec/src 를 **읽기만** 한다.
+- **패키징**: alias `workflow:route-tree`·`workflow:nav-graph` 승격(`package.json` + `package-scripts.template.json`). 매니페스트 `status: planned → active`.
+- **CI 미배선(의도)**: warning-first 배선의 선행 = `test-fixtures.mjs` 에 두 뷰 픽스처 등록(그 후 기존 `example:test` warning-only step 이 자동 커버). 하드 게이트 승격 없음.
+- 통합 점검 기록: [temp/runs/mvp-c-generated-views-integration.md](temp/runs/mvp-c-generated-views-integration.md).
 
 ## 산출물 축 (artifact axes)
 
@@ -95,7 +102,7 @@ Review          MVP-A 에 없음 (Future Candidate).
 ## 다음 구현 후보 (하나를 명시적으로 고를 때만 착수)
 
 1. **API Candidates ↔ 스키마 매칭** (검사 8 강화) — PR #16 이 **옵션 C**(api-manifest `## Endpoints` 를 endpoint→schema canonical 로, ScreenSpec 은 `(Method, Path)` 로 참조)를 **선결 매칭 규약**으로 결정. 후속은 그 규약 위에서 검사 8 을 엔드포인트 단위(존재→Linked Schema→실 export)로 강화.
-2. **MVP-C generated views** — #13 스코프(수동 작성하던 전역 뷰 3종 `component-catalog`·`nav-graph`·`route-tree` 를 생성물로 전환). `temp/proposals/mvp-c-generated-views-scope.md`.
+2. **MVP-C generated views (잔여: component-catalog)** — #13 스코프 중 `nav-graph`·`route-tree` 는 Phase 1 구현 완료(읽기 전용 — 위 "MVP-C Phase 1" 절). 남은 것은 수동 작성 중인 `component-catalog` 의 생성물 전환(`catalog-gen.mjs`) + `check-generated` 가드. `temp/proposals/mvp-c-generated-views-scope.md`.
 3. **Interaction Matrix 구조화** — `Result` 컬럼 분리(Result Type/Target/Params → `Result Type=route` 행만 route 존재 검사). 위 Tier 3 절과 동일 항목.
 4. **lint-pack / adapt-lint-pack** — 기존 로드맵의 `lint-gen/lint-baseline(MVP-B)` 생성물 lint 게이트와 **동일 개념**의 라벨(별도 신규 스킬/파일 아님 — `lint-gen.mjs`+`lint-baseline.mjs` 생성기 + 브라운필드 도입용 `adapt-lint-pack` 스킬, frontend-workflow-kit-implementation.md §11).
 
