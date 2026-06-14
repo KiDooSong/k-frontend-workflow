@@ -49,6 +49,12 @@ import {
   parseReconciliationRegister,
   validateReconciliationRegister,
 } from './lib/reconciliation-register.mjs';
+import {
+  buildEndpointIndex,
+  collectSchemaExports,
+  isSchemaUnset,
+  normEndpoint,
+} from './lib/api-manifest.mjs';
 
 function isLocalRef(ref) {
   if (typeof ref !== 'string') return false;
@@ -225,22 +231,90 @@ function main() {
     }
   }
 
-  // 8. API Candidates confirmed → zod 스키마(src/api/schemas/*.ts) 또는 openapi.yaml 필요
-  //    MVP-A 범위: 스키마 소스의 "존재" 만 확인한다. 후보↔스키마 1:1 매칭(엔드포인트→스키마명)은
-  //    api-manifest/OpenAPI 통합이 들어오는 MVP-B 에서 강화한다.
-  const hasZod = dirHasFiles(path.join(srcDir, 'api', 'schemas'), ['.ts']);
+  // 8. API Candidates(confirmed) ↔ 스키마 매칭 (제안서 옵션 C: api-manifest ## Endpoints 가 canonical).
+  //    각 confirmed ScreenSpec 후보의 (Method, Path) → api-manifest endpoint → Linked Schema(zod export) 해소.
+  //    - manifest 부재 시: 현행 전역 존재검사(hasZod||hasOpenApi)로 폴백(엄격 모드로 깨지 않음).
+  //    - confirmed 0건 화면은 무발화(candidate 전용 화면의 옛 동작·readiness 불변).
+  //    - 사실 출처는 zod export 심볼. Source 컬럼 / OpenAPI components.schemas 해소는 범위 밖(known limitation).
+  const schemasDir = path.join(srcDir, 'api', 'schemas');
+  const hasZod = dirHasFiles(schemasDir, ['.ts']);
   const hasOpenApi =
     exists(path.join(projectRoot, 'openapi.yaml')) ||
     exists(path.join(projectRoot, 'openapi.yml'));
+  const manifestFiles = docs
+    .filter((d) => d.fm.artifact_type === 'api-manifest')
+    .map((d) => d.file);
+  const endpoints = manifestFiles.length ? buildEndpointIndex(manifestFiles) : null;
+  const endpointIndex = endpoints ? endpoints.index : null;
+  // canonical 출처(api-manifest)에 같은 (Method,Path) 가 서로 다른 Linked Schema/confidence 로 중복 선언되면
+  // 매칭이 행 순서에 의존(모순)하므로 에러로 surface 한다(동일 중복 행은 무시).
+  for (const c of endpoints ? endpoints.conflicts : []) {
+    add(
+      8,
+      c.file,
+      `api-manifest ## Endpoints 의 ${c.key} 가 충돌 중복 선언됨 (Linked Schema '${c.prev.linkedSchema || '(빈값)'}' vs '${c.next.linkedSchema || '(빈값)'}', confidence '${c.prev.confidence || '(빈값)'}' vs '${c.next.confidence || '(빈값)'}') → 해소: (Method,Path) 당 canonical 행 1개만 남기세요.`,
+    );
+  }
+  const schemaExports = collectSchemaExports(schemasDir);
   for (const spec of specs) {
-    const items = parseApiCandidates(spec.sections['api candidates']);
-    const confirmed = items.filter((it) => it.confidence === 'confirmed');
-    if (confirmed.length && !hasZod && !hasOpenApi) {
-      add(
-        8,
-        spec.path,
-        `confirmed API ${confirmed.length}건인데 zod 스키마(src/api/schemas/*.ts)/OpenAPI 부재`,
-      );
+    const confirmed = parseApiCandidates(spec.sections['api candidates']).filter(
+      (it) => it.confidence === 'confirmed',
+    );
+    if (confirmed.length === 0) continue; // candidate/unknown 전용 → 무발화(옛 동작 유지)
+    if (!endpointIndex) {
+      // 폴백: api-manifest 부재 → 현행 전역 존재검사
+      if (!hasZod && !hasOpenApi) {
+        add(
+          8,
+          spec.path,
+          `confirmed API ${confirmed.length}건인데 zod 스키마(src/api/schemas/*.ts)/OpenAPI 부재 (api-manifest 부재 → 전역 존재검사 폴백)`,
+        );
+      }
+      continue;
+    }
+    for (const e of confirmed) {
+      const label = `${e.method || '?'} ${e.path || e.raw}`;
+      if (!e.method || !e.path) {
+        add(
+          8,
+          spec.path,
+          `confirmed API 후보의 Method/Path 를 파싱할 수 없음: "${e.raw}" → 해소: "- GET /path (confidence: confirmed)" 형식으로 작성하세요.`,
+        );
+        continue;
+      }
+      const m = endpointIndex.get(normEndpoint(e.method, e.path));
+      if (!m) {
+        add(
+          8,
+          spec.path,
+          `confirmed API ${label} 가 api-manifest ## Endpoints 에 매칭되는 엔드포인트가 없음 → 해소: api/api-manifest.md ## Endpoints 에 ${e.method} ${e.path} 행을 추가하거나 ScreenSpec confidence 를 candidate 로 낮추세요.`,
+        );
+        continue;
+      }
+      if (m.confidence !== 'confirmed') {
+        add(
+          8,
+          spec.path,
+          `confirmed API ${label} 의 api-manifest 엔드포인트 confidence=${m.confidence || '(빈값)'} 이라 confirmed 아님 → 해소: manifest 행의 confidence 를 confirmed 로 올리거나 ScreenSpec 을 candidate 로 낮추세요.`,
+        );
+        continue;
+      }
+      if (isSchemaUnset(m.linkedSchema)) {
+        add(
+          8,
+          m.file,
+          `confirmed endpoint ${e.method} ${e.path} 에 Linked Schema 가 없음(빈칸/TBD) → 해소: ## Endpoints 행의 Linked Schema 에 실제 export 스키마명을 기입하세요.`,
+        );
+        continue;
+      }
+      if (!schemaExports.has(m.linkedSchema)) {
+        add(
+          8,
+          m.file,
+          `confirmed endpoint ${e.method} ${e.path} 의 Linked Schema=${m.linkedSchema} 가 src/api/schemas/*.ts export 에서 발견되지 않음 → 해소: 스키마 export 를 추가하거나 Linked Schema 를 올바른 export 이름으로 수정하세요.`,
+        );
+        continue;
+      }
     }
   }
 
