@@ -170,6 +170,13 @@ P5 splitFrontmatter  → hasFrontmatter=true · required 9필드 인식
 - Fowler/Böckeler SDD 3 tools: `martinfowler.com/articles/exploring-gen-ai/sdd-3-tools.html`
 - (전체 26 소스: 딥리서치 산출물 `w0mxuaxn3`)
 
+### 6-f. 왜 경쟁사는 안 했나 — 빈자리의 비용 (정직한 보정)
+"결정적 게이트"가 빈자리인 건 오버사이트가 아니라 **의도된 트레이드오프**다:
+- **결정성은 *구조* 검사만 커버하고 *의미* 검사는 못 한다.** 스크립트는 "컬럼·enum·파일존재·모드 산술"은 보지만 "스펙이 모호/과소명세인가"는 못 본다. 경쟁사(Spec Kit `/analyze`)는 그 *의미* 타깃을 노리므로 LLM 이 필연 — 못 한 게 아니라 결정적으로는 불가능한 목표.
+- **이 킷도 의미 판정을 결정화하지 못한다**: `llm_semantic_review` 가 게이트 fact 이고 resolve·confirmed 승격은 사람 전용. → 킷의 결정성은 **게이트 *부기(bookkeeping)***(상태 집계·`min(fact_mode, decision_cap)`·구조 검사)에 국한. 진짜 차별점은 좁다: "경쟁사는 의미+부기를 *둘 다* LLM 으로 돌려 부기까지 비결정적; 킷은 둘을 *분리해* 부기만 결정적."
+- **경쟁사가 피한 비용 = 킷이 치르는 비용**: (a) 경직된 기계파싱 포맷 → 저작 마찰 + **파싱 취약성**(P1/P2 가 그 발현), (b) 도메인 종속(RN/Expo 하드코딩 — 범용 도구 불가), (c) 좁은 커버리지(구조만).
+- **정직한 포지셔닝**: "결정적 *판정*"이 아니라 **"결정적 *부기*"**로 주장하고 그 비용(경직 포맷·취약성)을 인정한다. → 범용 LLM 분석의 *대체*가 아니라 구조화된 RN/Expo 니치의 *보완*. 이게 오히려 킷의 니치 서사를 강화한다.
+
 ---
 
 ## 7. 권장 우선순위
@@ -177,11 +184,11 @@ P5 splitFrontmatter  → hasFrontmatter=true · required 9필드 인식
 | 순위 | 액션 | 상태 |
 |---|---|---|
 | 1 | **P1+P2 파서 + P5 템플릿** + 회귀 테스트 | ✅ **본 브랜치 완료** |
-| 2 | **P3/P4 진입점**: 4종에 `superseded` 헤더 + IMPLEMENTING §0 를 roadmap 으로 | 후속 |
-| 3 | P6·P7 설정 로드 견고화(`loadYamlOrExit` util 통일 + TypeError) | 후속 |
+| 2 | **P3/P4 진입점**: 4종 설계문서 + IMPLEMENTING 에 현행 정본 포인터 배너 | ✅ 완료 |
+| 3 | P6·P7 설정 로드 견고화(`loadYamlOrExit` util 통일 + TypeError 가드 + 회귀) | ✅ 완료 |
 | 4 | P9·P10·P12·P15·P16 문서-코드 정합 | 후속 |
-| 5 | §6 Prior art 비교표 — 딥리서치 검증(20 confirmed). 차별점 ①=빈자리 확정, Kiro/BMAD 사양 미검증 분리 | ✅ 완료 |
-| 6 | §4-2 산문 중복 통합, P11 추적위생 | 후속 |
+| 5 | §6 Prior art 비교표 — 딥리서치 검증(20 confirmed) + §6-f 빈자리 비용 보정 | ✅ 완료 |
+| 6 | P11 `.claude/worktrees/` .gitignore | ✅ 완료 (그 외 추적위생·§4-2 중복은 후속) |
 
 ---
 
