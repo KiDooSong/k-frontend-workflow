@@ -8,7 +8,8 @@
     "workflow:route-tree": "node tools/frontend-workflow/scripts/route-tree.mjs",
     "workflow:nav-graph": "node tools/frontend-workflow/scripts/nav-graph.mjs",
     "workflow:packet": "node tools/frontend-workflow/scripts/workflow-packet.mjs",
-    "workflow:report": "node tools/frontend-workflow/scripts/workflow-report.mjs"
+    "workflow:report": "node tools/frontend-workflow/scripts/workflow-report.mjs",
+    "workflow:run": "node tools/frontend-workflow/scripts/workflow-run.mjs"
   },
   "//roadmap": "B~D 단계에서 추가될 명령. 대상 .mjs 가 아직 없어 scripts 에 넣지 않는다 — 그대로 병합 후 실행하면 'Cannot find module' 로 깨지기 때문이다. 각 스크립트가 구현되면 해당 줄을 위 scripts 로 옮긴다. 값 형식은 '대상 모듈 (도입 MVP 단계)'.",
   "//roadmap-scripts": {
