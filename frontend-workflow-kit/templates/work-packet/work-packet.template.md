@@ -81,7 +81,8 @@ owner: "{agent-or-person}"
 ## Blocking Items
 <!-- 이 세션이 "푸는" 목록이 아니라 "닫지 말 것" 목록이다.
      Open Decision / Unknown / missing fact 를 나열하고 owner·blocking_mode 를 적는다.
-     게이트 해제(resolve/close/confirm)는 모두 사람만 — 여기서는 손대지 않는다. -->
+     게이트 해제(resolve/close/confirm)는 모두 사람만 — 여기서는 손대지 않는다.
+     이 표(Open Decision/Unknown/missing-fact)는 아래 ## Ambiguity Review Required 의 입력원 중 하나다 — 기존 미해결 항목은 여기서 끌어오고, 새로 발견한 U-cand/D-cand 후보는 triage 가 추가로 표면화한다(여기가 유일 출처는 아님). -->
 | ID | 유형 | 내용 | Blocking Mode | Owner | 처리 |
 |---|---|---|---|---|---|
 | {D-001} | decision | {결정 질문} | {final-fixture-ui} | {PM} | 닫지 말 것 (사람만) |
@@ -89,6 +90,33 @@ owner: "{agent-or-person}"
 | {fact} | missing-fact | {예: component_catalog_generated == false} | {rough-fixture-ui} | {agent} | 전제 충족 전까지 상위 모드 금지 |
 
 > **Blocking Mode** = 이 항목이 cap 하는(=도달을 막는) 모드. decision·missing-fact 는 cap 모드를 갖지만, unknown 은 모드를 직접 cap 하지 않으면 `—` 로 둔다 (그래도 close 는 사람-전용 — Out of Scope 참조).
+
+## Ambiguity Review Required
+<!--
+  workflow:packet 의 산출물 — 코딩 전에 먼저 채운다. (PR2 workflow:packet 이 작성)
+  나쁜 첫 질문: "구현 가능?"  /  좋은 첫 질문: "애매한 거 놓친 거 없나?"
+  이 섹션은 warning-only 텍스트다 — 코드 게이트가 아니다. 게이트는 readiness(Open Decision)+validate 뿐.
+  여기서 readiness 를 재계산하지 않는다. 입력원은 위 ## Blocking Items(기존 미해결 항목) + triage 가 새로 발견한 후보 — Blocking Items 가 유일 출처는 아니다.
+  불변식: 이 단계(workflow:packet/run/review)의 LLM 은 후보를 "제안"만 한다. Unknown/Decision/Conflict 를 닫거나 candidate→confirmed 로
+          올리거나 ScreenSpec 결정을 resolve 하지 않는다 — 승격·resolve·close 는 전부 사람.
+          (단, ScreenSpec authoring/reconcile 단계의 LLM 은 기존 계약대로 open 행 추가·resolved→open 재오픈 가능 — global/llm-rules.md. "직접 안 쓴다"는 이 packet/run/review 단계 한정.)
+  auto-stop: 아래 Safe To Proceed? 가 어떤 모드에서 'no' 면, 그 모드 이상으로 코딩하지 않고
+          멈춰서 그 후보를 사람에게 올린다(=runner 의 HALT_AMBIGUITY 입력). 사람이 ScreenSpec 반영
+          → readiness 재실행 후 packet 재발급.
+  빈 표는 "없음 — <사유>" 한 줄로 명시(형식주의 회피: 억지로 채우지 않는다).
+  ⚠ 이 표는 "최소 표"다. 전체 triage(결정트리·신호표·Blocking Mode 매핑)는 템플릿에 넣지 않는다 → 아래 링크.
+-->
+
+| 모드 | Safe To Proceed? (yes/no) | 사유 | Blocking 후보 (D-cand / U-cand) |
+|---|---|---|---|
+| docs-only | yes | 문서만 — 애매함을 여기서 표면화 (항상 yes) | — |
+| {… `{readiness_mode}` 까지 각 모드 한 행씩 채움; 그 위 모드는 "—" 평가 생략} | {yes/no} | {근거 한 줄} | {— / D-cand / U-cand} |
+
+> **Safe To Proceed?** 는 readiness 재계산이 아니다 — 천장은 항상 `{readiness_mode}` 이고, 이 표는 그 아래에서 **더 보수적으로만** 멈출 수 있다(게이트를 *올리지* 못함). 모드를 아래에서 위로 훑어 'no' 가 처음 나오는 모드 **직전**에서 멈춘다. `readiness_mode` 보다 위 모드는 readiness 가 이미 cap 했으므로 평가하지 않는다.
+> **Blocking 후보**(D-cand/U-cand)는 *제안*일 뿐 — 닫거나 ScreenSpec 에 확정하는 것은 사람. (별도 개념 아님: `Safe To Proceed?=no` 를 유발하는 미해결 후보일 뿐.)
+
+> 전체 triage 결정트리·신호표·Blocking Mode 매핑 + **채워진 Safe To Proceed? 예시(§6)**는 → [docs/workflows/ambiguity-triage.md](../../docs/workflows/ambiguity-triage.md)
+> New Unknowns / New Open Decision Candidates / Possibly Blocking 의 **상세 4블록 스키마**도 위 doc 으로 분리한다(템플릿엔 위 최소 표만).
 
 ## Expected Output
 <!-- 이 모드에서 "정답"인 산출물을 *이진 판정 가능*하게 적는다. 산문 대신 검증 문장으로 (EARS 정신 — 문법은 채택 안 함).
@@ -128,6 +156,7 @@ npm run workflow:validate    # 스키마/구조 검사 12종 (exit 0 = 통과)
 
 ## Review Checklist
 <!-- 리뷰어 확인 항목. work-packet-rubric 의 10개 check 를 그룹으로 롤업한 것 (1:1 아님 — 한 줄이 여러 rubric check 를 묶는다). review-artifact.template.md 의 Checklist 가 이를 미러. -->
+- [ ] **Pre-Implementation Review** — Ambiguity Review Required 의 `Safe To Proceed?` 가 `{readiness_mode}` 까지 모두 검토됐고(빈 표면은 "없음—사유"로 명시), Validity 전제(readiness_source mode/facts)가 무변경이며, Blocking 후보(D-cand/U-cand)가 모드별로 분류돼 있음 — 미해결 후보는 그대로 열림(이 세션이 닫지 않음).
 - [ ] **게이트 판독** — readiness_mode/allowed/forbidden 이 `{readiness_source}` 와 글자 일치 (재계산·hand-edit 없음).
 - [ ] **경로 준수** — diff 가 allowed 안에만, forbidden(특히 `src/api/**`) 무접촉.
 - [ ] **천장 미초과** — `{readiness_mode}` 가 허용하는 산출물만 (과구현 없음).
