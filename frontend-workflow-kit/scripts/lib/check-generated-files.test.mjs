@@ -162,13 +162,15 @@ test('reproduceArtifact: 커밋본 변조를 mismatch 로 감지', () => {
   }
 });
 
-test('reproduceArtifact: 입력·커밋본 모두 없으면 skip(must-not-fail)', () => {
+test('reproduceArtifact: 입력·커밋본 모두 없어도 조용히 통과 안 함(missing-committed)', () => {
+  // active v1 산출물의 커밋본 부재는 finding(설계 §5) — both-missing 을 skip/ok 로 숨기지 않는다.
   const nowhere = path.join(os.tmpdir(), 'cgf-absent-does-not-exist');
   const r = reproduceArtifact('route-tree', {
     docsDir: path.join(nowhere, 'docs', 'frontend-workflow'),
     srcDir: path.join(nowhere, 'src'),
   });
-  assert.equal(r.status, 'skip');
+  assert.equal(r.status, 'missing-committed');
+  assert.ok(r.checks.some((c) => c.check === 'CG:committed' && !c.ok));
 });
 
 test('reproduceArtifact: 변조 테스트가 실제 커밋 픽스처를 건드리지 않음', () => {
