@@ -38,7 +38,7 @@ the two deliverables):
 | **Gather** (parallel, read-only) | 6 readers: generators · fixture harness · real component source · MVP-C scope/history · check-generated guard · README/policy | structured ground-truth findings + `path:line` citations |
 | **Draft** | 1 | full source-contract markdown (grounded in parent KNOWN-FACTS + reader findings) |
 | **Review** | 1 (adversarial) | constraint + completeness verdict — **pass=false, 5 issues** |
-| **Revise** | 1 | corrected markdown (final, 313 lines / ~32 KB) addressing the 5 issues |
+| **Revise** | 1 | corrected markdown (final design doc) addressing the 5 issues |
 
 Workflow totals: 9 agents, ~595k subagent tokens, 132 tool uses. All agents were instructed
 read-only; **no agent wrote, edited, or executed anything in the repo** — the parent process wrote
@@ -112,7 +112,7 @@ All run against the worktree; `main` working tree untouched.
 |---|---|---|
 | 1 | `git worktree add -b docs/mvp-c-component-catalog-source-contract .claude/worktrees/mvp-c-catalog-source-contract main` | worktree created, exit 0 |
 | 2 | `git check-ignore -v <both deliverable paths>` | exit 1 (NOT ignored → trackable) |
-| 3 | (parent) write `component-catalog-generation-source-contract.md` | 313 lines, UTF-8 no BOM, LF |
+| 3 | (parent) write `component-catalog-generation-source-contract.md` | UTF-8 no BOM, LF |
 | 4 | `npm ci --no-audit --no-fund` (worktree kit) | ok |
 | 5 | `npm test` | node:test **pass 15 / fail 0**; generated-view fixtures (route-tree, nav-graph) `GV:run/output/deterministic/content` all ok; **exit 0** |
 | 6 | `npm run example:validate` | `workflow:validate — OK (검사 12종 통과)`; exit 0 |

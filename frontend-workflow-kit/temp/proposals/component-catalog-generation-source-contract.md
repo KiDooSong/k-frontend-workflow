@@ -36,7 +36,7 @@
 - **NG-7** `src/components/**` 코드를 수정하지 않는다.
 - **NG-8** 생성-파일 가드(`check-generated-files.mjs`)를 구현/재설계하지 않는다. 가드는 이미 component-catalog 를 *planned / must-not-fail* 로 올바르게 분류한다 (`scripts/lib/check-generated-files.mjs:46-74`).
 - **NG-9** in-flight Execution Loop PR2 작업과 충돌하지 않는다 — 이 설계는 *오직* 산출물 파일 하나만 건드린다(실제로는 그 파일조차 부모가 기록; 본 태스크는 읽기 전용).
-- **NG-10** readiness/policy 를 바꾸지 않는다. `component_catalog_generated` 의 readiness 함의는 **NOTE 만** 한다 (§6.4, §9).
+- **NG-10** readiness/policy 를 바꾸지 않는다. `component_catalog_generated` 의 readiness 함의는 **NOTE 만** 한다 (§6.5, §9).
 
 ---
 
@@ -53,7 +53,7 @@
 ### Recommendation — **(1a): 파일시스템 `src/components/ui/**` 가 canonical source.** 배럴은 *참고(reconcile)*하되 정본 아님.
 근거:
 - 매니페스트가 이미 `source: [src/components/ui/**]` 로 못박았다 (`catalog/artifact-manifest.yaml:183-184`); 수동 카탈로그 헤더도 `Source:  src/components/ui/**` 로 같은 글롭을 선언한다 (`examples/coupon-feature/docs/frontend-workflow/design/component-catalog.md:4`). 정본을 매니페스트와 어긋나게 두면 가드/검증과 즉시 불일치한다.
-- 기존 생성기의 확립된 관례가 "export 파싱이 아니라 파일 경로/이름으로 키잉"이다: route-tree 는 확장자 필터(`['.tsx','.ts','.jsx','.js']`)로 파일시스템을 워크하고 `node_modules`·dot-dir 를 건너뛴다 (`scripts/lib/route-tree.mjs:8,37,48`). catalog-gen 도 같은 워크 + 확장자 필터를 쓴다.
+- 기존 생성기의 확립된 관례가 "export 파싱이 아니라 파일 경로/이름으로 키잉"이다: route-tree 는 확장자 필터(`['.tsx','.ts','.jsx','.js']`)로 파일시스템을 워크하고 `node_modules`·dot-dir 를 건너뛴다 (`scripts/lib/route-tree.mjs:8,37,48`). future catalog-gen 도 같은 워크 + 확장자 필터를 쓰도록 한다 (PROPOSED).
 - 현재 100% 샘플이 `Button.tsx`→`Button` 처럼 파일명 = 컴포넌트명 1:1 이므로 (source-components 리서치 §2) 파일시스템 워크로 정확한 답을 얻는다.
 
 **배럴 reconcile (비정본):** 만약 미래에 `src/components/ui/index.ts` 가 생기면, catalog-gen 은 그것을 정본으로 삼지 **않되**, "배럴이 re-export 하지만 파일 워크에 안 잡힌 컴포넌트" 또는 그 역을 **diagnostic(경고)** 으로만 보고할 수 있다 (§9 Open Decision OD-3). v1 은 배럴을 아예 읽지 않는 단순안을 채택한다.
@@ -131,20 +131,23 @@
 - **(4b) YAML 본문 + GENERATED 헤더 (nav-graph 동형)** — `emitGeneratedYaml(headerLines, model)` 재사용 (`scripts/lib/util.mjs:206-210`); `--json` 동일 모델 출력 가능 (`scripts/nav-graph.mjs:25-28`). 결정성·diff 친화·무의존. **단점: 매니페스트 `path` 가 `…/design/component-catalog.md`(.md) 라서** YAML 본문을 .md 파일에 담는 모양이 어색.
 - **(4c) 둘 다 (md + yaml)** — 산출물 2개 → 골든/가드 표면 2배. v1 과대.
 
-### Recommendation — **(4b)의 직렬화 메커니즘(YAML body via `emitGeneratedYaml`)을, (4a)의 Markdown 컨테이너 안에 담는 하이브리드**, 단 **v1 본문은 결정적 Markdown 으로 한정**:
+### Recommendation — **(4a) Markdown 형태 유지 + 결정적 본문**, 헤더는 수동본과 동형의 **HTML-comment 블록**. **YAML/TXT 전용 `emitGeneratedYaml`(각 줄 `# ` 해시 헤더, `util.mjs:206-210`)은 재사용하지 않는다** — `.md` 에서 `# GENERATED FILE …` 는 H1 으로 렌더돼 수동본 헤더(`component-catalog.md:1-10`)와 어긋나기 때문:
 
 > v1 산출물은 **Markdown** 파일(`docs/frontend-workflow/design/component-catalog.md`, 매니페스트 `path` 그대로 `catalog/artifact-manifest.yaml:181`)이며:
 > 1. **HTML-comment GENERATED 헤더 블록** — 단, 마커 텍스트는 **em-dash 정본** `GENERATED FILE — DO NOT EDIT` 으로 통일한다 (현재 수동본은 em-dash 사용 `component-catalog.md:2`; validate 검사 6 이 `/GENERATED FILE\s+—\s+DO NOT EDIT/` 를 grep `scripts/validate.mjs:444`).
 > 2. **`# Component Catalog` 제목**, 이어서 컴포넌트별 `## Name` 섹션 (기존 구조 호환 `component-catalog.md:12-14`).
 > 3. 각 섹션 본문은 v1 4필드만: `- path:` , `- export:` , `- status:` (그리고 호환을 위해 `- import:` 는 §3 화해에 따름 — import 경로는 path 에서 결정적으로 파생 가능하므로 v1 에 **포함 가능**, props 만 드롭).
 
-**헤더 라인 형태 (illustrative / non-binding):** 두 기존 생성기가 공유하는 3줄 계약을 그대로 — 단 아래는 `emitGeneratedYaml` 에 넘기는 **인자 형태**(prefix 없는 raw 라인)이며, 실제 on-disk 라인은 `emitGeneratedYaml(headerLines, obj)` 가 각 줄에 `# ` 를 붙여 방출하므로 `# ` 로 시작한다 (`util.mjs:206-210`; 렌더된 형태 예: `nav-graph.mjs:31-38` / `route-tree.mjs:100-102`):
+**헤더 블록 형태 (illustrative / non-binding) — 수동본과 동형의 HTML-comment:** route-tree 가 헤더를 lib 렌더러에 하드코딩한 것(`lib/route-tree.mjs:99-107`)처럼, catalog-gen 은 아래 HTML-comment 헤더를 **직접 찍는 전용 Markdown 렌더러**를 쓴다 (`emitGeneratedYaml` 의 `#` 해시 헤더가 아님):
 ```
+<!--
 GENERATED FILE — DO NOT EDIT
+
 Source: src/components/ui/**
 Command: node scripts/catalog-gen.mjs --src src/components/ui --out docs/frontend-workflow/design/component-catalog.md
+-->
 ```
-*(illustrative only — 코드 아님. 위는 인자 형태이고, 디스크에는 `# GENERATED FILE — DO NOT EDIT` 처럼 `# ` 가 붙는다 — §7.1 골든 헤더 참조.)* `# Command:` 는 **존재하지 않는 npm alias 가 아니라 동작하는 직접 CLI 호출**이어야 한다 — nav-graph/route-tree 가 이미 이 교훈을 적용했다 (`nav-graph.mjs:35`; route-tree-header-command-001.md:34).
+*(illustrative only — 코드 아님. on-disk 형태는 위 HTML-comment 그대로이며 `# ` 해시 접두는 붙지 않는다 — §7.1 골든 헤더 참조.)* `Command:` 는 **존재하지 않는 npm alias 가 아니라 동작하는 직접 CLI 호출**로 적는다 — nav-graph/route-tree 가 이미 이 교훈을 적용했다 (`nav-graph.mjs:35`; route-tree-header-command-001.md:34).
 
 근거: Markdown 컨테이너 유지로 수동본과 구조 호환(`component-catalog.md:12-32`)하면서 헤더 마커는 검증 가능 형태로 통일. .md path 는 매니페스트가 강제하므로 (4b)의 순수 .yaml 로 바꾸지 않는다. 본문을 결정적 텍스트(불릿)로 한정해 prettier 드리프트 표면을 최소화. **이 본문 스키마(섹션/필드/정렬)는 OD-1/OD-2 가 닫히기 전까지 비구속(illustrative)** 이다.
 
@@ -210,13 +213,13 @@ examples/component-catalog/basic-ui/
 ```
 *(illustrative — 디렉토리/JSON 모양 스케치, 코드 아님.)* 하니스 배선은 route-tree/nav-graph 와 동일한 3줄 추가(roots/script const, kind-switch 의 `inputKey/inputFlag`, `buildFixtures` 등록)면 충분하다 (`scripts/test-fixtures.mjs:53-56,170-174,297-298`) — **단, 이 fixture 하니스 배선은 future PR 이며 본 PR(설계)에서는 수행하지 않는다 (가드 자체의 NG-8 과는 별개 사안).**
 
-골든 헤더는 기존 골든들처럼 리터럴 `# GENERATED FILE — DO NOT EDIT` + `# Source:` + `# Command:` 로 시작해야 한다 — `normalizeGeneratedViewText` 가 모든 줄을 verbatim 유지하기 때문 (`scripts/lib/test-fixture.mjs:47-49`). (이 `# ` prefix 는 §4 의 raw 헤더 인자에 `emitGeneratedYaml` 이 붙이는 것과 동일 — `util.mjs:207`.)
+골든 헤더는 §4 결정대로 **HTML-comment 블록**(`<!-- GENERATED FILE — DO NOT EDIT … -->`, 수동본 `component-catalog.md:1-10` 동형)이다 — route-tree/nav-graph 골든의 `#` 해시 헤더와 달리 catalog 는 `.md` 라 HTML-comment 를 쓴다. 헤더 스타일과 무관하게 `normalizeGeneratedViewText` 가 모든 줄을 verbatim 유지하므로 골든 비교는 그대로 성립한다 (`scripts/lib/test-fixture.mjs:47-49`).
 
 ### 7.2 가드가 catalog 를 강제 대상에 넣는 정확한 조건 (데이터-드리븐 졸업)
 가드에는 **component-catalog 특수분기가 전혀 없다.** 선택 술어는 매니페스트 필드에 대한 4-clause AND 다 (`scripts/lib/check-generated-files.mjs:41,72`):
 > `selected = generated:true ∧ status:active ∧ do_not_edit:true ∧ id∈allowlist`
 
-오늘 component-catalog 는 **세 가지**로 동시에 탈락 → 구조적으로 *must-not-fail*: `status:planned` (`:53-55`), `do_not_edit:false` (`:56-58`), allowlist 밖 (`:59-61`, allowlist = `['nav-graph','route-tree']` `:27`). 미선택이므로 reproduce 단계에서 완전 제외 — 생성기 부재(`CG:config`)조차 도달 불가, 즉 **catalog-gen 미존재로는 어떤 실패도 못 만든다** (`scripts/check-generated-files.mjs:168`; `:170-173`).
+오늘 component-catalog 는 **세 가지**로 동시에 탈락 → 구조적으로 *must-not-fail*: `status:planned` (`:53-55`), `do_not_edit:false` (`:56-58`), allowlist 밖 (`:59-61`, allowlist = `['nav-graph','route-tree']` `:27`). 미선택이므로 reproduce 단계에서 완전 제외 — 생성기 부재(`CG:config`)조차 도달 불가, 즉 **catalog-gen 미존재로는 어떤 실패도 못 만든다** (`scripts/check-generated-files.mjs:168` 이 `selected` 만 reproduce; 생성기-부재 `CG:config` 분기는 `scripts/lib/check-generated-files.mjs:170-173`).
 
 **졸업 조건 (전부 future PR):** 아래가 **동시에** 참이 될 때만 강제 진입한다:
 1. `generated:true` — 이미 참 (`catalog/artifact-manifest.yaml:179`).
@@ -247,7 +250,7 @@ examples/component-catalog/basic-ui/
 - **Source of truth:** 파일시스템 글롭 `src/components/ui/**` (배럴 비정본) — §1. 매니페스트와 일치 (`catalog/artifact-manifest.yaml:183-184`).
 - **Identification:** 경로(`components/ui/**`) ∩ named PascalCase export; plain 함수/const 선언만. default-export 라우트·`src/features/<domain>/screens/` 스크린·memo/forwardRef 래퍼·stories/tests/styles 파일 제외 — §2.
 - **Output fields (컴포넌트당):** `name`, `source-path`, `export-kind`(named|default), `status`(추출상태). **import 경로는 path 에서 결정적 파생 시 포함 가능. props/docgen/NativeWind/style/stories presence 는 전부 후속** — §3.
-- **Format:** Markdown 컨테이너(매니페스트 path `.md` 준수) + 리터럴 em-dash GENERATED 헤더 3줄 + `# Component Catalog` + `## Name` 섹션(4필드 불릿) — §4.
+- **Format:** Markdown 컨테이너(매니페스트 path `.md` 준수) + **HTML-comment GENERATED 헤더**(em-dash 마커, 수동본 동형; `emitGeneratedYaml` 해시 헤더 미사용) + `# Component Catalog` + `## Name` 섹션(4필드 불릿) — §4.
 - **Artifact strategy:** whole-file generated, in-file START/END 블록 없음(별도 제안) — §5.
 - **Determinism:** **무타임스탬프**, plain `.sort()` 키, prettier 미사용, 명시적 LF + 단일 trailing newline, posix-상대경로 — §7.4.
 - **CLI shape (illustrative):** nav-graph 형 — `--src <dir>`(default `src/components/ui` 또는 DEFAULTS.src 파생), `--out <file>`(default 매니페스트 path), `--json`(동일 모델 stdout, early-return, 헤더 없음), `import.meta.url` 직접실행 가드, 순수 builder 를 `lib/` 에 분리 — §A.3.
@@ -298,11 +301,11 @@ examples/component-catalog/basic-ui/
 
 ### A.3 미러할 generator 패턴 (route-tree·nav-graph + util)
 - **CLI:** 커스텀 `parseArgs(process.argv.slice(2))` (`scripts/lib/util.mjs:23`, `--flag value`/`--flag=value`/bare `--bool`). `DEFAULTS` (`:13`: docs/src 등). **`--date` 플래그 없음 — 결정성 의도.** nav-graph: `--docs`(default `DEFAULTS.docs`)·`--out`(단일 파일 default `<docs>/_meta/nav-graph.yaml`)·`--json`(stdout early-return) (`nav-graph.mjs:16-28`). route-tree: `--app`(default `'src/app'`)·`--out`(파일) (`route-tree.mjs:11-15`).
-- **헤더 방출 — 두 메커니즘:** nav-graph 는 공유 `emitGeneratedYaml(headerLines,obj)` 사용 (`util.mjs:206-210`; `nav-graph.mjs:31-38`). route-tree 는 lib 렌더러에 하드코딩 (`lib/route-tree.mjs:99-107`). **공통 3줄 계약:** `# GENERATED FILE — DO NOT EDIT`(em-dash, validate 검사 6 grep `scripts/validate.mjs:444`) / `# Source: …` / `# Command: <동작하는 node 호출>`. 각 줄의 `# ` prefix 는 `emitGeneratedYaml` 이 raw 헤더 라인에 붙인다 (`util.mjs:207`). → catalog-gen 은 `emitGeneratedYaml` 재사용 권장.
+- **헤더 방출 — 두 메커니즘:** nav-graph 는 공유 `emitGeneratedYaml(headerLines,obj)` 사용 (`util.mjs:206-210`; `nav-graph.mjs:31-38`). route-tree 는 lib 렌더러에 하드코딩 (`lib/route-tree.mjs:99-107`). **YAML/TXT 공통 3줄 계약:** `# GENERATED FILE — DO NOT EDIT`(em-dash, validate 검사 6 grep `scripts/validate.mjs:444`) / `# Source: …` / `# Command: <동작하는 node 호출>` — 각 줄 `# ` prefix 는 `emitGeneratedYaml` 이 붙인다 (`util.mjs:207`). → **단, component-catalog 는 `.md` 라 `emitGeneratedYaml`(해시 헤더)를 재사용하지 않고** route-tree 식으로 HTML-comment 헤더를 찍는 전용 렌더러를 쓴다 (§4).
 - **결정성/정렬:** 무타임스탬프 (`lib/route-tree.mjs:93`; nav-graph-001.md:30). 객체/파일명 키 = plain `.sort()` (`lib/route-tree.mjs:52`; `lib/nav-graph.mjs:190,201`); 다중필드 레코드 배열 = `localeCompare`(joined key) + stable-sort 의존 (`lib/nav-graph.mjs:192-193,108-113,105-107`).
 - **discovery:** `findFiles(root,basename)`(정확 일치, 정렬, node_modules/dot skip `util.mjs:91-114`), `walkFiles(root,exts)`(`:117-140`), `readFileSafe`(`:49-55`). route-tree 는 자체 `scanAppDir`(`lib/route-tree.mjs:37-70`). → catalog-gen 은 `walkFiles(<uiDir>, ['.tsx','.ts'])` 형이 자연.
 - **write:** `writeFile(p,content)` — `mkdirSync recursive` + utf8, **newline 미정규화 → 호출부가 LF 생성** (`util.mjs:142-145`). route-tree `out.join('\n')+'\n'` (`lib/route-tree.mjs:106`).
-- **skeleton:** shebang+헤더코멘트 → import util+순수 builder → `main()`(parseArgs→resolve `--src`/`--out`) → `flags.json` early-return → else `emitGeneratedYaml(3줄, model)`+`writeFile`+stdout 상태줄 → `import.meta.url` 직접실행 가드 (`nav-graph.mjs:50`) → builder 는 IO-free·정렬·무타임스탬프.
+- **skeleton (nav-graph 형, 미러):** shebang+헤더코멘트 → import util+순수 builder → `main()`(parseArgs→resolve `--src`/`--out`) → `flags.json` early-return → else 헤더+본문 방출+`writeFile`+stdout 상태줄 → `import.meta.url` 직접실행 가드 (`nav-graph.mjs:50`) → builder 는 IO-free·정렬·무타임스탬프. **단 방출 단계는 catalog 가 `.md` 라 `emitGeneratedYaml`(해시 YAML 헤더) 대신 HTML-comment 헤더 Markdown 렌더러**(route-tree 식 하드코딩, `lib/route-tree.mjs:99-107`).
 
 ### A.4 매니페스트 엔트리 (오늘 그대로 — 변경 없음)
 `catalog/artifact-manifest.yaml:177-187`: `kind: generated`, `generated: true`, `scope: design`, `path: docs/frontend-workflow/design/component-catalog.md`, `command: npm run workflow:catalog` (catalog-gen.mjs **미존재**), `source: [src/components/ui/**]`, `do_not_edit: false` (MVP-A 수동 허용 `:185`), `status: planned` (`:186`), `mvp: C`. 주석이 전환을 예고: do_not_edit 은 catalog-gen active 전까지 false, 생성기 도입 시 true 승격 (`:129-130,173-176`). 매니페스트 의미론: active=스크립트 존재·실행 가능, planned=계약만 등록·구현 아님, planned 를 구현된 것처럼 보이게 하지 말 것 (`:135,139-140`).
