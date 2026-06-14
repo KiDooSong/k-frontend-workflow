@@ -2,6 +2,31 @@
 
 킷 자체의 버전 관리 (템플릿/스크립트 계약 추적용).
 
+## 0.2.0-mvp-b-rc1 — 2026-06-14
+
+MVP-B 릴리스 후보(rc1): **킷 런타임 코드 변경 0** — 외부 소비 프로젝트 도그푸드로 킷을 end-to-end 실증하고 그 증거를 고정한 뒤 문서를 정합한 **릴리스 준비** 마일스톤. 게이트 동작은 `0.2.0-mvp-b-phase0` 그대로(불변) — 기능 추가가 아니라 검증·증거·문서 정합이다.
+
+### Added
+- evidence: `temp/runs/consumer-dogfood-001/` — **킷 레포 밖** fresh Expo(sdk-56) 소비 프로젝트에서 `state → readiness → Work Packet → implement-screen → validate → forbidden-paths` 전 구간을 게이트 천장 안에서 완주한 실측 증거. `run-report.md` + `evidence/*`(생성된 `_meta/*.yaml` · `readiness.json` · `validate.txt` · `forbidden-paths-clean/subcheck.txt` · diff · `environment.txt`). 소비 프로젝트 자체는 ephemeral — 이 스냅샷이 정본 증거다. (PR #17)
+- docs: `temp/runs/release-mvp-b-final-check.md` — MVP-B 릴리스 최종 체크리스트(PR #17 반영 · dogfood verdict · hard/warning-first 게이트 인벤토리 · docs/scripts/CI 정합성 · known limitations · 태그 권고/명령).
+
+### Verified (consumer-dogfood-001)
+- **게이트가 설계대로 동작**: `screen-skeleton`(HOME-001) **정상 진행** → 화면 shell 1파일, `validate` exit 0("검사 12종 통과"). `docs-only`(PROFILE-001, Open Decision `D-301` open) **거절이 정답** → `src` 변경 0(빈 diff).
+- **forbidden-paths warning-first 확인**: 정상 diff = `OK ... exit 0`; 의도적 `src/api/dummy.ts` 위반(커밋 후) = `1 건 위반(경고)` 이지만 `--enforce` 없이 **exit 0**(이후 폐기). 경계 검증은 validate 가 아니라 diff 가 본다.
+- **하드룰 준수**: 킷 레포 무수정(vendored copy 만) · API endpoint 발명 0 · Open Decision/Conflict 미닫힘(D-301 open 유지) · 변경 ⊆ allowed_paths · 멱등(`workflow:state` 재실행 byte-identical).
+- **전이 유효성(transfer validity)**: 도그푸드가 실제로 돌린 런타임 스크립트(`workflow-state`·`readiness`·`validate`·`forbidden-paths` + 의존 lib)는 증거 소스 커밋 `4601347`↔`6bbe8bd` 사이 **byte-identical**. 그 구간의 유일한 런타임 변경은 도그푸드가 호출하지 않은 내부 회귀 하니스(`test-fixtures.mjs`·`lib/test-fixture.mjs`)의 **가산적** path-backstop fixture 종류뿐(커밋 `04773eb`) — 증거는 이 릴리스에 그대로 전이된다.
+
+### Changed (문서 정합 — 코드 강제 0)
+- README: 외부 consumer dogfood end-to-end 완주 사실을 경로-가정 노트에 1줄 추가(기존 MVP-A path-가정 dry-run 과 구분). 문서 지도 Work Packet 행의 "킷 미포함" 라벨 정정 — `templates/work-packet/*.template.md` 는 킷에 포함(여전히 코드 강제 0, Future Candidate).
+- roadmap-current.md: 스냅샷·Phase 0 헤더에 consumer-dogfood-001 외부 검증(PR #17, 완료) 명시. "다음 구현 후보"를 ① API Candidates↔스키마 매칭(검사 8 강화 · PR #16 옵션 C 선결) ② MVP-C generated views(#13) ③ Interaction Matrix 구조화 ④ lint-pack/adapt-lint-pack 로 재정렬.
+- docs/workflows/mvp-b.md: **내부 픽스처 검증**(`test-fixtures`/`example:test`, 킷 *안*) ↔ **외부 소비 dogfood**(consumer-dogfood-001, 킷 *밖*) 두 갈래를 구분하는 노트 추가(run-report 링크).
+- ci: golden example 워크플로 주석의 stale "검사 9종" → "검사 12종" 동기화 — **주석 전용**(게이트 로직·warning-first 배선 불변, 하드 게이트 승격 없음).
+
+### Notes
+- `test-fixtures`(golden fixture)·`forbidden-paths` 는 CI 에서 **warning-first** 유지(`0.2.0-mvp-b-phase0` 의 `continue-on-error`/`--enforce` opt-in 계약 불변). 하드 gating 승격은 별도 PR(후속).
+- **rc(릴리스 후보)인 이유**: test-fixtures/forbidden-paths 하드 게이팅 미승격 + 잔여 known limitations(reconcile-input 킷 vendor 전, forbidden-paths `--root` 호출 위치, Windows CRLF, forbidden-paths 전용 CI step 부재). 상세·go/no-go 는 `temp/runs/release-mvp-b-final-check.md`.
+- 증거 run 의 킷 소스 커밋은 `4601347`(origin/main) — `run-report.md`/`environment.txt` 참조.
+
 ## 0.2.0-mvp-b-phase0 — 2026-06-14
 
 MVP-B Phase 0: 회귀 하니스 + 경로 backstop + 입력/register 검증 (lanes A/B/C 통합). 대부분 warning-first — 기본 CI exit code 불변.
