@@ -1,0 +1,8 @@
+{
+  "run_id": "route-tree:edge-cases",
+  "fixture": "route-tree",
+  "app": "src/app",
+  "expected": "expected/route-tree.txt",
+  "expect": "pass",
+  "reason": "route-tree edge cases for route groups, index routes, and dynamic segments"
+}

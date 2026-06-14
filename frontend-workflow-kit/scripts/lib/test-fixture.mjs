@@ -15,6 +15,8 @@
 //    풀리는 fail-open 방지). frontmatter parseError 는 그 값을 실제 검사에 쓰는 screen-spec(status)
 //    에서만 fail-closed 다 — register/decision/conflict/gap 검사는 본문 표만 읽으므로(splitFrontmatter
 //    (raw).body → parseTable) frontmatter 와 무관.
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { readFileSafe, splitFrontmatter, exists, walkFiles, isDir, writeFile } from './util.mjs';
@@ -38,6 +40,27 @@ export function normalizeText(s) {
     .replace(/\r\n/g, '\n')
     .replace(/^(\s*(?:generated_at|date|last_reviewed)\s*:).*$/gim, '$1 <normalized>')
     .replace(/\b\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?\S*)?\b/g, '<date>');
+}
+
+// generated view 비교 정규화 — timestamp/date 는 절대 지우지 않는다.
+// 비교 계약은 "exact text, except CRLF/path separator normalization" 이다.
+export function normalizeGeneratedViewText(s) {
+  return String(s ?? '').replace(/\r\n/g, '\n').replace(/\\/g, '/');
+}
+
+function firstTextDiff(expected, actual) {
+  const e = normalizeGeneratedViewText(expected);
+  const a = normalizeGeneratedViewText(actual);
+  if (e === a) return null;
+  const eLines = e.split('\n');
+  const aLines = a.split('\n');
+  const n = Math.max(eLines.length, aLines.length);
+  for (let i = 0; i < n; i++) {
+    if (eLines[i] !== aLines[i]) {
+      return `line ${i + 1}: expected ${JSON.stringify(eLines[i] ?? '<missing>')} ≠ actual ${JSON.stringify(aLines[i] ?? '<missing>')}`;
+    }
+  }
+  return 'content differs';
 }
 
 // 느슨한 셀 접근 (헤더 공백/대소문자 무시) — spec.mjs 의 col 과 동일 규칙.
@@ -368,6 +391,84 @@ export function writePipelineExpected({ expectedDir, actual }) {
     written.push(toPosix(file));
   }
   return written;
+}
+
+// MVP-C generated view fixture 검사 — route-tree/nav-graph CLI 를 직접 실행해
+// 1) 실행 성공, 2) 같은 입력 2회 출력 결정성, 3) 커밋 expected 와 exact text 일치를 확인한다.
+// 생성기 내부 로직은 재구현하지 않는다. timestamp/date normalization 은 하지 않는다.
+// spec: { id, kind, scriptPath, inputFlag, inputDir, expectedFile }
+export function runGeneratedViewCase(spec) {
+  const r = makeResults();
+  if (!exists(spec.scriptPath)) {
+    r.fail('GV:config', `생성기 없음: ${toPosix(spec.scriptPath)}`);
+    return finalize(r);
+  }
+  if (!isDir(spec.inputDir)) {
+    r.fail('GV:input', `입력 디렉터리 없음: ${toPosix(spec.inputDir)}`);
+    return finalize(r);
+  }
+  const expected = readFileSafe(spec.expectedFile);
+  if (expected == null) {
+    r.fail('GV:expected', `expected 파일 없음: ${toPosix(spec.expectedFile)}`);
+    return finalize(r);
+  }
+
+  const safeId = String(spec.id || spec.kind || 'generated-view').replace(/[^a-zA-Z0-9_.-]+/g, '-');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), `fwk-${safeId}-`));
+  const outputs = [path.join(tmpDir, 'actual-1.out'), path.join(tmpDir, 'actual-2.out')];
+  const runOnce = (outFile) => spawnSync(
+    process.execPath,
+    [spec.scriptPath, spec.inputFlag, spec.inputDir, '--out', outFile],
+    { encoding: 'utf8' },
+  );
+
+  try {
+    const results = outputs.map((outFile) => ({ outFile, result: runOnce(outFile) }));
+    let runOk = true;
+    for (let i = 0; i < results.length; i++) {
+      const { result } = results[i];
+      const label = `GV:run:${i + 1}`;
+      if (result.error) {
+        r.fail(label, `${spec.kind} 실행 실패: ${result.error.message}`);
+        runOk = false;
+      } else if (result.status !== 0) {
+        const snip = (result.stderr || '').trim().split('\n')[0] || (result.stdout || '').trim().slice(0, 160);
+        r.fail(label, `exit ${result.status} (기대 0)${snip ? ' — ' + snip : ''}`);
+        runOk = false;
+      } else {
+        r.ok(label, 'exit 0');
+      }
+    }
+
+    const actuals = outputs.map((outFile) => readFileSafe(outFile));
+    for (let i = 0; i < actuals.length; i++) {
+      if (actuals[i] == null) {
+        r.fail(`GV:output:${i + 1}`, `출력 파일 없음: ${toPosix(outputs[i])}`);
+        runOk = false;
+      } else {
+        r.ok(`GV:output:${i + 1}`, `출력 파일 생성: ${toPosix(path.basename(outputs[i]))}`);
+      }
+    }
+
+    if (actuals[0] != null && actuals[1] != null) {
+      if (normalizeGeneratedViewText(actuals[0]) === normalizeGeneratedViewText(actuals[1])) {
+        r.ok('GV:deterministic', '동일 입력 2회 출력 일치');
+      } else {
+        r.fail('GV:deterministic', `동일 입력 2회 출력 불일치 — ${firstTextDiff(actuals[0], actuals[1])}`);
+      }
+    }
+
+    if (runOk && actuals[0] != null) {
+      if (normalizeGeneratedViewText(expected) === normalizeGeneratedViewText(actuals[0])) {
+        r.ok('GV:content', `${toPosix(path.basename(spec.expectedFile))} 일치`);
+      } else {
+        r.fail('GV:content', `${toPosix(path.basename(spec.expectedFile))} 불일치 — ${firstTextDiff(expected, actuals[0])}`);
+      }
+    }
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+  return finalize(r);
 }
 
 // path-backstop fixture 검사 — forbidden-paths.mjs(Lane B CLI)를 알려진 diff/state 에 돌려

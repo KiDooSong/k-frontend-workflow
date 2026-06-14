@@ -11,6 +11,8 @@
 //      - coupon-feature · multi-screen-dry-run · implement-screen-001
 //   [pipeline] (L2) 예제 트리에 state/readiness/validate 를 돌린 출력 ↔ 커밋된 기계가독 기대값
 //      - coupon-feature · multi-screen-dry-run (reports/expected-{state,readiness,validate}.json)
+//   [generated view] MVP-C Phase 1 생성기 출력 ↔ 커밋된 expected golden 비교
+//      - route-tree/basic-app · route-tree/edge-cases · nav-graph/basic-flow · nav-graph/stub-destination
 //
 // 불변식:
 //  - reconcile 비교 대상은 항상 expected-llm-after. human-final(expected-after)을 LLM 출력처럼
@@ -28,13 +30,14 @@
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { parseArgs, KIT_ROOT, DEFAULTS, loadYaml, loadYamlOrExit, readFileSafe } from './lib/util.mjs';
+import { parseArgs, KIT_ROOT, DEFAULTS, loadYaml, loadYamlOrExit, readFileSafe, isDir, walkFiles } from './lib/util.mjs';
 import {
   runReconcileChecks,
   runIntegrityChecks,
   runPipelineChecks,
   writePipelineExpected,
   runPathBackstopCase,
+  runGeneratedViewCase,
 } from './lib/test-fixture.mjs';
 import { buildState } from './workflow-state.mjs';
 import { computeReadiness } from './readiness.mjs';
@@ -47,6 +50,10 @@ const GOLDEN_IR = path.join(EXAMPLES, 'input-reconciliation', 'expected-llm-afte
 const VALIDATE_SCRIPT = path.join(KIT_ROOT, 'scripts', 'validate.mjs');
 const PB_ROOT = path.join(EXAMPLES, 'path-backstop');           // forbidden-paths 픽스처 루트
 const FORBIDDEN_PATHS = path.join(KIT_ROOT, 'scripts', 'forbidden-paths.mjs'); // Lane B CLI(서브프로세스 실행 대상)
+const ROUTE_TREE_ROOT = path.join(EXAMPLES, 'route-tree');
+const NAV_GRAPH_ROOT = path.join(EXAMPLES, 'nav-graph');
+const ROUTE_TREE_SCRIPT = path.join(KIT_ROOT, 'scripts', 'route-tree.mjs');
+const NAV_GRAPH_SCRIPT = path.join(KIT_ROOT, 'scripts', 'nav-graph.mjs');
 
 // input-reconciliation golden(expected-llm-after) 의 stage=llm-after manifest.
 // 검사 대상 ID·기대 상태(올리기만 불변식). golden 의 실제 파일에서 확인한 값:
@@ -153,7 +160,67 @@ function readPathBackstopCases() {
   });
 }
 
-// fixture 목록 구성 — kind: reconcile | integrity | pipeline | path-backstop.
+// generated view fixture 선언 읽기:
+//   examples/route-tree/<case>/run-metadata.json
+//   examples/nav-graph/<case>/run-metadata.json
+// route-tree/nav-graph 생성기 로직은 재구현하지 않고 CLI 를 서브프로세스로 2회 실행해
+// 결정성 + 커밋 expected 와의 텍스트 일치를 확인한다. run-metadata 는 case-local 계약만 담는다.
+function readGeneratedViewCases(kind, rootDir) {
+  if (!isDir(rootDir)) return [];
+  const files = walkFiles(rootDir, ['run-metadata.json']);
+  const cases = [];
+  const inputKey = kind === 'route-tree' ? 'app' : 'docs';
+  const inputFlag = kind === 'route-tree' ? '--app' : '--docs';
+  const scriptPath = kind === 'route-tree' ? ROUTE_TREE_SCRIPT : NAV_GRAPH_SCRIPT;
+
+  for (const metaFile of files) {
+    const caseDir = path.dirname(metaFile);
+    const caseId = path.relative(rootDir, caseDir).replace(/\\/g, '/');
+    const raw = readFileSafe(metaFile);
+    let meta;
+    try {
+      meta = JSON.parse(raw) || {};
+    } catch (e) {
+      throw new Error(`${kind}/${caseId}/run-metadata.json JSON 파싱 실패: ${e.message}`);
+    }
+    if (meta.fixture !== kind) {
+      throw new Error(`${kind}/${caseId}/run-metadata.json fixture 값이 잘못됨: ${JSON.stringify(meta.fixture)} (기대: ${kind})`);
+    }
+    if (meta.expect !== undefined && meta.expect !== 'pass' && meta.expect !== 'xfail') {
+      throw new Error(`${kind}/${caseId}/run-metadata.json expect 값이 잘못됨: ${JSON.stringify(meta.expect)} (pass|xfail 만 허용)`);
+    }
+    if (typeof meta[inputKey] !== 'string' || !meta[inputKey]) {
+      throw new Error(`${kind}/${caseId}/run-metadata.json ${inputKey} 문자열이 필요함`);
+    }
+    if (typeof meta.expected !== 'string' || !meta.expected) {
+      throw new Error(`${kind}/${caseId}/run-metadata.json expected 문자열이 필요함`);
+    }
+    if (meta.expected_failures !== undefined) {
+      if (!Array.isArray(meta.expected_failures)) {
+        throw new Error(`${kind}/${caseId}/run-metadata.json expected_failures 는 배열이어야 함`);
+      }
+      for (const e of meta.expected_failures) {
+        if (!e || typeof e.check !== 'string' || typeof e.match !== 'string') {
+          throw new Error(`${kind}/${caseId}/run-metadata.json expected_failures 항목은 {check, match} 문자열이어야 함: ${JSON.stringify(e)}`);
+        }
+      }
+    }
+    cases.push({
+      id: meta.run_id || `${kind}:${caseId}`,
+      kind,
+      expectVerdict: meta.expect === 'xfail' ? 'xfail' : 'pass',
+      reason: meta.reason || `${kind} generated view golden comparison`,
+      expectedFailures: meta.expected_failures || [],
+      scriptPath,
+      inputFlag,
+      inputDir: path.join(caseDir, meta[inputKey]),
+      expectedFile: path.join(caseDir, meta.expected),
+    });
+  }
+  return cases.sort((a, b) => a.id.localeCompare(b.id));
+}
+
+// fixture 목록 구성 — kind: reconcile | integrity | pipeline | path-backstop | route-tree | nav-graph.
 function buildFixtures() {
   const fixtures = [];
 
@@ -226,6 +293,10 @@ function buildFixtures() {
   // path-backstop fixtures (forbidden-paths CLI 회귀 — cases.json 선언, 부재면 생략)
   for (const pb of readPathBackstopCases()) fixtures.push(pb);
 
+  // MVP-C Phase 1 generated views — 기존 warning-first example:test CI step 에 자연 편입.
+  for (const gv of readGeneratedViewCases('route-tree', ROUTE_TREE_ROOT)) fixtures.push(gv);
+  for (const gv of readGeneratedViewCases('nav-graph', NAV_GRAPH_ROOT)) fixtures.push(gv);
+
   return fixtures;
 }
 
@@ -281,6 +352,8 @@ function runFixture(fx, update) {
     }
   } else if (fx.kind === 'path-backstop') {
     res = runPathBackstopCase(fx);
+  } else if (fx.kind === 'route-tree' || fx.kind === 'nav-graph') {
+    res = runGeneratedViewCase(fx);
   } else {
     res = { checks: [{ check: 'kind', ok: false, message: `unknown fixture kind: ${fx.kind}` }], failed: 1 };
   }

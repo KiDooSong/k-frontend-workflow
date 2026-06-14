@@ -1,0 +1,8 @@
+{
+  "run_id": "route-tree:basic-app",
+  "fixture": "route-tree",
+  "app": "src/app",
+  "expected": "expected/route-tree.txt",
+  "expect": "pass",
+  "reason": "route-tree basic Expo Router src/app file-tree golden comparison"
+}

@@ -1,0 +1,8 @@
+{
+  "run_id": "nav-graph:stub-destination",
+  "fixture": "nav-graph",
+  "docs": "docs/frontend-workflow",
+  "expected": "expected/nav-graph.yaml",
+  "expect": "pass",
+  "reason": "nav-graph resolves inbound edges to a stub destination screen without generating outbound edges from the stub"
+}
