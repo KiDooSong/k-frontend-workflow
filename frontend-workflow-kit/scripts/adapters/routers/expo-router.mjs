@@ -1,6 +1,6 @@
 // scripts/adapters/routers/expo-router.mjs — 내장 router 어댑터: Expo Router src/app 파일트리 발견(discovery).
 //
-// 경계(temp/proposals/tier2-router-codegen-adapter.md §6, customizable-architecture/tier2-router-adapter.md:151-163):
+// 경계(temp/proposals/tier2-router-codegen-adapter.md §6, docs/design/drafts/customizable-architecture/tier2-router-adapter.md:151-163):
 //   어댑터는 *발견(discovery)* 만 한다 — 파일트리를 스캔해 노드 트리를 반환할 뿐, 정규화/정렬/렌더/쓰기/결정성은
 //   route-core 가 독점한다. 어댑터는 파일을 쓰지 않는다.
 //

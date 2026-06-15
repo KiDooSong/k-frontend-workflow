@@ -1,5 +1,5 @@
 // layout-profile.mjs — tier1 레이아웃 프로파일 로더.
-// 설계: temp/proposals/customizable-architecture/tier1-layout-profile.md (§2·§5·§6·§7·§10),
+// 설계: docs/design/drafts/customizable-architecture/tier1-layout-profile.md (§2·§5·§6·§7·§10),
 //       README.md §1.1 (단일 resolvedLayout 객체).
 //
 // 역할: policies/project-layout.yaml 을 로드 → preset(presets/<name>.yaml) 머지 →

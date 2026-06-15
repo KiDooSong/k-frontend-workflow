@@ -4,7 +4,7 @@
 > Branch: `docs/mvp-c-tier2-design-proposals` (new, off `main`).
 > Worktree: `.claude/worktrees/mvp-c-tier2-design-proposals` (main checkout left on `main`, untouched).
 > Deliverable design doc: [`tier2-router-codegen-adapter.md`](../proposals/tier2-router-codegen-adapter.md).
-> Task class: design/spec — **extends** the existing deep-research Tier-2 router adapter design ([`customizable-architecture/tier2-router-adapter.md`](../proposals/customizable-architecture/tier2-router-adapter.md)) into the codegen / server-client / link-API / ScreenSpec-reconciliation dimensions it does not yet cover. No runtime behavior changed; no adapter/codegen code implemented.
+> Task class: design/spec — **extends** the existing deep-research Tier-2 router adapter design ([`customizable-architecture/tier2-router-adapter.md`](../../docs/design/drafts/customizable-architecture/tier2-router-adapter.md)) into the codegen / server-client / link-API / ScreenSpec-reconciliation dimensions it does not yet cover. No runtime behavior changed; no adapter/codegen code implemented.
 
 This report accompanies the design document and records the inspection, the multi-agent process,
 the decisions, the validation placeholder, and hard-rule compliance. The substance lives in the
@@ -43,9 +43,9 @@ in full and treated them as the foundation, then added only the dimensions the b
 ### Prior-art baseline (the foundation — read in full, cited not re-derived)
 | Path | Role |
 |---|---|
-| `temp/proposals/customizable-architecture/README.md` | two-tier model (Tier1=config role→glob, Tier2=plugin adapter), single `resolvedLayout`, invariants (`:43-74`, `:78-88`) |
-| `temp/proposals/customizable-architecture/tier1-layout-profile.md` | Tier-1 role→glob pair; preset byte-equivalence; `{domain}` preservation; affected-files table (`:33-53`, `:155-171`, `:247-249`) |
-| `temp/proposals/customizable-architecture/tier2-router-adapter.md` | **existing ROUTER adapter design** — config-or-plugin union, RouteNode+meta, discover-vs-core seam, file↔code reconciliation, registration manifest, byte-identical regression (`:61-77`, `:91-109`, `:131-163`, `:189-204`, `:232-253`) |
+| `docs/design/drafts/customizable-architecture/README.md` | two-tier model (Tier1=config role→glob, Tier2=plugin adapter), single `resolvedLayout`, invariants (`:43-74`, `:78-88`) |
+| `docs/design/drafts/customizable-architecture/tier1-layout-profile.md` | Tier-1 role→glob pair; preset byte-equivalence; `{domain}` preservation; affected-files table (`:33-53`, `:155-171`, `:247-249`) |
+| `docs/design/drafts/customizable-architecture/tier2-router-adapter.md` | **existing ROUTER adapter design** — config-or-plugin union, RouteNode+meta, discover-vs-core seam, file↔code reconciliation, registration manifest, byte-identical regression (`:61-77`, `:91-109`, `:131-163`, `:189-204`, `:232-253`) |
 
 ### House-style references
 | Path | Role |

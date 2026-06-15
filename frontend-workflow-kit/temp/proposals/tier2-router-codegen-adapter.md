@@ -1,10 +1,10 @@
-> **Status: DESIGN / SPEC ONLY — 2026-06-15.** 이 문서는 Tier-2 어댑터 모델을 **router 에서 codegen(API client/hook 생성) 까지 확장**하는 설계 제안이다. **런타임 변경을 지시하지 않는다.** 코드/스크립트/매니페스트/CI/정책/생성물/골든 픽스처를 **지금 바꾸지 않으며**, 모든 변경은 *PROPOSED (future PR)* 로만 기술한다. 본 PR 의 산출물은 이 문서(설계)와 짝 run report 하나뿐이다. 이 문서는 기존 Tier-2 router 설계([customizable-architecture/tier2-router-adapter.md](customizable-architecture/tier2-router-adapter.md))를 **재유도하지 않고 baseline 으로 인용**하며, 그것이 아직 다루지 않는 차원만 추가한다.
+> **Status: DESIGN / SPEC ONLY — 2026-06-15.** 이 문서는 Tier-2 어댑터 모델을 **router 에서 codegen(API client/hook 생성) 까지 확장**하는 설계 제안이다. **런타임 변경을 지시하지 않는다.** 코드/스크립트/매니페스트/CI/정책/생성물/골든 픽스처를 **지금 바꾸지 않으며**, 모든 변경은 *PROPOSED (future PR)* 로만 기술한다. 본 PR 의 산출물은 이 문서(설계)와 짝 run report 하나뿐이다. 이 문서는 기존 Tier-2 router 설계([customizable-architecture/tier2-router-adapter.md](../../docs/design/drafts/customizable-architecture/tier2-router-adapter.md))를 **재유도하지 않고 baseline 으로 인용**하며, 그것이 아직 다루지 않는 차원만 추가한다.
 
 # Tier 2 — Router / Codegen Adapter 확장 — design
 
 하우스 스타일은 `temp/proposals/component-catalog-generation-source-contract.md` 와 `temp/proposals/generated-file-guard-design.md` 의 register-first / Options→Recommendation 형식을 따른다 (번호 매긴 섹션, 각 결정마다 Options a/b/c… + Recommendation + file:line). 모든 결정 섹션은 **Options considered** 와 **Recommendation (근거 + file:line)** 를 포함한다.
 
-> **인용 경로 주의:** 본 문서가 참조하는 지원 문서/소스는 여러 위치에 흩어져 있다 — Tier-1/2 baseline 설계는 `frontend-workflow-kit/temp/proposals/customizable-architecture/{README,tier1-layout-profile,tier2-router-adapter}.md` 에, 가드 설계는 `frontend-workflow-kit/temp/proposals/generated-file-guard-design.md` 에, run reports 는 `frontend-workflow-kit/temp/runs/` 에 있다. 소스 코드는 `frontend-workflow-kit/scripts/**`. 아래 인용은 파일명 + 라인만으로 참조하며, 직접 열어 검증한 line 만 인용한다. 검증 못 한 주장은 **Unknown** 으로 표시한다.
+> **인용 경로 주의:** 본 문서가 참조하는 지원 문서/소스는 여러 위치에 흩어져 있다 — Tier-1/2 baseline 설계는 `frontend-workflow-kit/docs/design/drafts/customizable-architecture/{README,tier1-layout-profile,tier2-router-adapter}.md` 에, 가드 설계는 `frontend-workflow-kit/temp/proposals/generated-file-guard-design.md` 에, run reports 는 `frontend-workflow-kit/temp/runs/` 에 있다. 소스 코드는 `frontend-workflow-kit/scripts/**`. 아래 인용은 파일명 + 라인만으로 참조하며, 직접 열어 검증한 line 만 인용한다. 검증 못 한 주장은 **Unknown** 으로 표시한다.
 
 ---
 
