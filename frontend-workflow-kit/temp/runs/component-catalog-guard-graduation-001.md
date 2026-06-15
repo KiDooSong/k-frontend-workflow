@@ -61,9 +61,17 @@ code-level registration) plus the reproduce contract:
 
 - **reproduce-to-scratch in a temp dir**, committed-vs-regenerated comparison —
   reuses `reproduceArtifact` (double-run + golden compare) verbatim.
-- **CRLF-only normalization**, **no timestamp normalization** — the shared
-  `normalizeGeneratedViewText` (CRLF→LF, `\`→`/`) is the only normalizer; the
-  generator emits no timestamp, so the golden is purely structural.
+- **Normalization reused verbatim from the golden harness; no timestamp
+  normalization** — `normalizeGeneratedViewText` = `CRLF→LF` + path-separator
+  `\`→`/`, the same primitive route-tree/nav-graph use (design §A.5 "reuse
+  verbatim; do not invent"), not a catalog-specific normalizer. The binding
+  constraint is **no timestamp/date/content normalization** — satisfied (the
+  generator emits no timestamp; the golden is purely structural). The `\`→`/`
+  step is a no-op for these generators (catalog-gen/route-tree/nav-graph all emit
+  posix paths via `toPosix`, so there is no `\` to mask) and is intentionally
+  **not** removed: the primitive lives in the shared `scripts/lib/test-fixture.mjs`
+  (outside PR B's scope) and editing it would change route-tree/nav-graph
+  comparison behavior — both forbidden by the scope.
 - **No auto-fix / no overwrite** — committed files are read-only; all writes go
   to an `os.tmpdir()` scratch dir cleaned in `finally`.
 - **Default exit 0 / report status** — unchanged warning-first policy. Config
