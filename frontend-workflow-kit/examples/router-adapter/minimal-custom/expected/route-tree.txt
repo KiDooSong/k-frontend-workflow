@@ -3,7 +3,7 @@
 # Command: node scripts/route-tree.mjs --router examples/router-adapter/minimal-custom/my-router.mjs
 
 /
-├─ index.tsx                         route: /
 ├─ about.tsx                         route: /about
+├─ index.tsx                         route: /
 └─ blog/
    └─ [slug].tsx                     route: /blog/[slug]

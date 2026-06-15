@@ -44,6 +44,12 @@ npm run example:test    → test-fixtures — PASS (26 fixtures: 25 pass, 1 xfai
 - `package.json` (test/test:spec 에 route-core.test.mjs 배선)
 - `temp/runs/tier2-route-tree-adapter-seam-001.md` (본 run report)
 
+## Codex 리뷰 반영 (2026-06-16)
+
+- **MAJOR-1 (코어가 결정성 소유):** 이전엔 정렬이 어댑터(`scanAppDir`)에만 있고 코어는 받은 순서를 그대로 렌더했다 → 미정렬 커스텀 어댑터가 비결정적 출력 가능. **수정:** `route-core.normalizeRouteTree`(파일 먼저·이름 UTF-16 순·재귀)를 추가하고 `renderRouteTree` 가 렌더 전에 항상 호출. 이미 정렬된 expo 입력에는 no-op → route-tree 골든 byte-identical. custom 픽스처는 일부러 미정렬을 반환해 코어 정규화를 골든으로 고정(about→index). 테스트 S5 추가.
+- **MAJOR-2 (CLI 입력 게이트):** 이전엔 CLI 가 어댑터 로드 전에 `src/app` 존재를 무조건 강제 → 코드 정의 커스텀 어댑터가 발견 전에 막힘. **수정:** 입력 디렉토리 검증을 `expo-router.discover`(FC-5, 부재 시 throw)로 이관하고, CLI 는 사전 `isDir` 게이트를 제거한 뒤 `discover` 오류를 exit 2 로 잡는다. 디렉토리가 필요 없는 커스텀 어댑터는 더 이상 막히지 않는다(검증: `--router <custom>` 가 src/app 없이 exit 0; expo 부재 `--app` 은 여전히 exit 2). 테스트 S6 추가.
+- (mild) custom 픽스처의 `expected/route-tree.txt` 는 코어 정규화 결과(about→index)로 재생성. expo 골든은 불변.
+
 ## 후속 (이 PR 범위 밖 — 설계 §16/§17 잔여)
 
 - **PR-3:** codegen-core + `openapi-client` 어댑터 + codegen 매니페스트/출력경로/hook 네이밍(§7·§8·§9). 본 PR 미구현.

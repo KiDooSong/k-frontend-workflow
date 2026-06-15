@@ -71,13 +71,30 @@ export function scanAppDir(appDir) {
   return walk(appDir, []);
 }
 
+// 디렉토리 여부(부재/비-디렉토리 모두 false). fail-closed 입력 검증용.
+function isDir(p) {
+  try {
+    return fs.statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 // RouterAdapter 계약: { name, version, discover(ctx) }.
 //   ctx.appDir : 스캔할 라우트 엔트리 디렉토리(CLI 가 --app 에서 해석해 절대경로로 준다).
 //   반환       : 코어가 렌더할 노드 트리(children 배열). 파일 쓰기·정렬·렌더는 하지 않는다.
+// fail-closed(FC-5): 이 어댑터는 *파일트리* 어댑터라 입력 디렉토리가 없으면 throw 한다(빈 트리 추측 금지).
+//   입력 요구는 어댑터 책임이다 — CLI 는 src/app 존재를 미리 강제하지 않으므로, 디렉토리가 필요 없는
+//   코드 정의 커스텀 어댑터는 이 게이트에 막히지 않는다. CLI 가 이 throw 를 잡아 exit 2 로 처리한다.
+// (scanAppDir 자체는 부재 디렉토리에 [] 를 반환하는 관대한 동작을 유지한다 — shim 하위호환 보존.)
 export const name = 'expo-router';
 export const version = 1;
 export function discover(ctx) {
-  return scanAppDir((ctx && ctx.appDir) || 'src/app');
+  const appDir = (ctx && ctx.appDir) || 'src/app';
+  if (!isDir(appDir)) {
+    throw new Error('app 디렉토리를 찾을 수 없음: ' + appDir);
+  }
+  return scanAppDir(appDir);
 }
 
 export default { name, version, discover };

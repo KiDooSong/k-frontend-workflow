@@ -99,6 +99,23 @@ export async function loadRouterAdapter(spec, opts = {}) {
   return adapter;
 }
 
+// 결정성 정규화 — 어댑터가 어떤 순서로 발견하든 코어가 결정적 순서로 정렬한다(어댑터=발견, 코어=결정성).
+//   정렬: 파일 먼저(isDir=false) → 디렉토리, 각 그룹은 이름 UTF-16 코드유닛 오름차순(이전 scanAppDir 와 동일 규약).
+//   이미 그 순서인 expo-router 입력에는 no-op → route-tree.txt 골든 byte-identical.
+// 코어가 정렬을 소유하므로 비결정적(미정렬) 어댑터도 결정적 출력을 낸다(determinism 단일 출처).
+export function normalizeRouteTree(children) {
+  if (!Array.isArray(children)) return [];
+  const sorted = children.slice().sort((a, b) => {
+    if (!!a.isDir !== !!b.isDir) return a.isDir ? 1 : -1; // 파일 먼저, 디렉토리 나중
+    return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; // UTF-16 코드유닛(scanAppDir 의 .sort() 와 동일)
+  });
+  return sorted.map((node) =>
+    node.isDir && Array.isArray(node.children)
+      ? { ...node, children: normalizeRouteTree(node.children) }
+      : node,
+  );
+}
+
 // children 배열을 박스드로잉 트리 라인들로 렌더링한다 (out 배열에 push).
 //   연결자: 마지막 '└─ ', 그 외 '├─ '
 //   상위 들여쓰기: 형제가 더 있으면 '│  ', 없으면 '   '
@@ -121,17 +138,19 @@ function renderChildren(children, prefix, out) {
 }
 
 // 트리(children 배열)를 GENERATED 헤더 + 박스드로잉 본문 텍스트로 렌더링한다. 결정적(타임스탬프 없음).
+// 코어가 입력 트리를 normalizeRouteTree 로 먼저 정렬한다 — 어댑터 발견 순서와 무관히 결정적 출력 보장.
 export function renderRouteTree(children, opts) {
   const source = (opts && opts.source) || 'src/app/**';
   const command =
     (opts && opts.command) ||
     'node scripts/route-tree.mjs --app src/app --out docs/frontend-workflow/_meta/route-tree.txt';
+  const normalized = normalizeRouteTree(children || []);
   const out = [];
   out.push('# GENERATED FILE — DO NOT EDIT');
   out.push('# Source: ' + source);
   out.push('# Command: ' + command);
   out.push('');
   out.push('/');
-  renderChildren(children, '', out);
+  renderChildren(normalized, '', out);
   return out.join('\n') + '\n';
 }

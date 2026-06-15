@@ -9,6 +9,9 @@ export const name = 'minimal-custom';
 export const version = 1;
 
 // discover(ctx) → 코어가 렌더할 노드 트리(children 배열). 노드 계약: { name, isDir, children?, route? }.
+// 일부러 *미정렬* 순서(index 가 about 앞)로 반환한다 — 코어(route-core.normalizeRouteTree)가 결정적
+// 순서(파일 먼저·이름순)로 정규화함을 골든으로 고정하기 위함이다("어댑터=발견, 코어=결정성").
+// 그래서 expected/route-tree.txt 는 about → index 순(코어가 정렬한 결과)이다.
 export function discover() {
   return [
     { name: 'index.tsx', isDir: false, route: '/' },
