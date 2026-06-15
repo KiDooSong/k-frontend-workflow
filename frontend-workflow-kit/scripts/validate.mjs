@@ -21,6 +21,9 @@
 //         --enforce 플래그로 에러 승격. in-progress(중단)/failed/enum/중복/컬럼누락 같은 망가짐·중단 상태는 항상 에러.
 //       ★ HARD RULE: 오직 Reconcile Status 만 본다 — 자식 항목(D-/C-/U-/G-) open/closed 와 Created Items 의 (open) 주석은
 //       절대 게이트 신호로 쓰지 않는다(reconciled + 자식 open == 정상 PASS). 세 축은 독립.
+//   13. Interaction Matrix v2(structured) 형식 — WARNING-ONLY (하드 게이트 아님, 검사 카운트 "12종"에 미포함).
+//       Result Type 헤더가 있는 표만 점검 → v1 표는 무발화 = v1 출력 byte-identical. 에러 승격 없음(warning-first).
+//       설계: temp/proposals/interaction-matrix-structured-format.md §6·§7 (route-tree 정밀 교차검증은 후속).
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
@@ -44,6 +47,7 @@ import {
   loadScreenSpec,
   parseApiCandidates,
   interactionResultRoutes,
+  interactionMatrixV2Issues,
   parseOpenDecisions,
   parseCopyKeys,
   COPY_KEYS_STATUS_VALUES,
@@ -440,6 +444,16 @@ function main() {
           `Copy Keys '${r.key || '(no-key)'}': Status 는 ${COPY_KEYS_STATUS_VALUES.join('|')} 여야 함 (현재: ${r.status || '(빈값)'})`,
         );
       }
+    }
+  }
+
+  // 13. Interaction Matrix v2(structured) 형식 — warning-first (검사 4·게이트 불변, 하드 게이트 없음).
+  //     Result Type 헤더가 있는 표(v2 모드)만 점검한다 → v1 표는 무발화 = v1 validate 출력 byte-identical.
+  //     enum/route 행 Target 부재/비-route 행 라우트 토큰/Result↔Target drift/Target inventory 부재를 경고로 surface.
+  //     route-tree 정밀 교차검증은 후속(여기선 inventory 집합 약식 점검) — 경고이지 차단이 아니다.
+  for (const spec of specs) {
+    for (const issue of interactionMatrixV2Issues(spec, { routeSet })) {
+      warn(13, spec.path, issue.message);
     }
   }
 

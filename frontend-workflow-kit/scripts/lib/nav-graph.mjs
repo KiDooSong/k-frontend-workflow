@@ -3,8 +3,9 @@
 // app/navigation-map.md 로 알려진 라우트를 시드한다. ScreenSpec 은 절대 수정하지 않는다(읽기 전용).
 //
 // 파싱 단일 출처(spec.mjs:2): 직접 md 파싱 금지. loadScreenSpec/parseTable/col 을 그대로 쓰고,
-// 라우트 추출 정규식은 spec.mjs 의 interactionResultRoutes 와 "글자 단위로 동일"하게 재사용한다
-// (검사 4·검사 P13 과 동작 일치 — drift 방지). interactionResultRoutes 는 화면당 교차검증으로도 호출한다.
+// 라우트 추출(cellRoutes/isConcreteRoute)은 spec.mjs 의 단일 출처를 import 해 쓴다 — 정규식 drift 불가
+// (검사 4·검사 P13 과 동작 일치). v2 구조화 표(Result Type/Target)는 interactionRowRoutes/
+// interactionEdgeRoutes 로 Target 셀에서 라우트를 읽는다(어느 셀을 읽느냐만 모드 분기, 정규식은 공유).
 //
 // 참고: frontend-workflow-kit-implementation.md (nav-graph View 1)
 import path from 'node:path';
@@ -13,41 +14,16 @@ import {
   parseTable,
   col,
   isStub,
-  interactionResultRoutes,
   getSections,
+  cellRoutes,
+  isConcreteRoute,
+  interactionMatrixIsV2,
+  interactionRowRoutes,
+  interactionEdgeRoutes,
 } from './spec.mjs';
 import { findFiles, readFileSafe } from './util.mjs';
 
-// 라우트 추출 정규식 — spec.mjs interactionResultRoutes 와 글자 단위 동일.
-//   (?<![:/\w])  : ':' '/' 단어문자 뒤가 아님 → URL 스킴(http://…)·protocol-relative(//…) 의 / 거부
-//   \/(?!\/)     : '/' 로 시작하되 바로 다음이 또 '/' 가 아님
-//   [^\s?#]+     : 공백·쿼리(?)·프래그먼트(#) 전까지 → 쿼리/프래그먼트 절단, 후행 prose 탈락
-// 매칭 후 후행 구두점 [),.;:] 제거, 길이 1(맨 '/')은 버린다. [id]/(auth) 대괄호·괄호는 보존(후행 ')' 만 탈락).
-const ROUTE_RE = /(?<![:/\w])\/(?!\/)[^\s?#]+/g;
-
-// 한 셀 텍스트에서 라우트(슬래시로 시작)들을 추출한다 — interactionResultRoutes 의 셀 단위 버전.
-// interactionResultRoutes 는 spec 전체를 받아 Result 컬럼만 읽으므로 행별 메타데이터(trigger/action)를
-// 엮을 수 없다. 그래서 동일 로직을 셀 단위로 분리해 행을 직접 재순회한다.
-export function cellRoutes(cellText) {
-  if (!cellText) return [];
-  const routes = [];
-  for (const m of String(cellText).matchAll(ROUTE_RE)) {
-    const route = m[0].replace(/[),.;:]+$/, '');
-    if (route.length > 1) routes.push(route);
-  }
-  return routes;
-}
-
-// 구체 라우트만 통과시킨다 — navigation-map 템플릿 자리표시자({/route}, {/(tabs)/... 목록} 등)와
-// screen-spec 템플릿의 {결과/라우트} 에서 나오는 불완전 토큰(/route}, /(tabs)/, /라우트})을 nav-graph 가
-// 라우트로 오인하지 않게 한다. Expo 라우트엔 중괄호/꺾쇠가 없고 후행 슬래시(빈 세그먼트)도 구체 경로가
-// 아니다. 정상 동적/그룹 세그먼트([id]·[...slug]·(group))는 보존된다.
-export function isConcreteRoute(r) {
-  if (!r || r.length < 2) return false;
-  if (/[{}<>]/.test(r)) return false; // 템플릿 자리표시자 중괄호/꺾쇠
-  if (r.endsWith('/')) return false; // 후행 슬래시 = 빈 세그먼트
-  return true;
-}
+export { cellRoutes, isConcreteRoute }; // 하위호환 재노출(이전 nav-graph export 소비자 보호)
 
 // navigation-map.md 의 ## Structure 불릿 + ## Deep Links 표에서 "알려진 라우트" 집합을 모은다.
 // 비권위적 시드/교차검증용 — 이동 엣지는 여기서 만들지 않는다(이동 엣지는 SOURCE Interaction Matrix 단일 출처).
@@ -83,16 +59,17 @@ function screenIdOf(spec, specPath) {
 }
 
 // 한 spec 의 outbound 이동 엣지를 도출한다. Interaction Matrix 행을 직접 재순회한다
-// (interactionResultRoutes 는 행 메타데이터를 안 주므로). Result 가 라우트 >=1 개를 내는 행만 엣지.
-//   각 엣지: { to_route, trigger, action } — to_route=Result 의 라우트, trigger=Trigger, action=User Action.
+// (interactionRowRoutes 가 행 메타데이터와 무관히 라우트만 주므로 trigger/action 은 여기서 엮는다).
+// 라우트 >=1 개를 내는 행만 엣지. v1: Result 셀, v2: Result Type=route 행의 Target 셀(어느 셀이냐만 모드 분기).
+//   각 엣지: { to_route, trigger, action } — to_route=라우트, trigger=Trigger, action=User Action.
 function outboundEdgesOf(spec) {
   const table = parseTable(spec.sections['interaction matrix']);
   if (!table) return [];
+  const mode = interactionMatrixIsV2(table) ? 'v2' : 'v1';
   const edges = [];
   for (const row of table.rows) {
-    const result = col(row, 'Result');
-    const routes = cellRoutes(result).filter(isConcreteRoute);
-    if (routes.length === 0) continue; // 비-라우트 Result(refetch, "status filter 변경" 등)는 엣지 없음
+    const routes = interactionRowRoutes(row, mode).filter(isConcreteRoute);
+    if (routes.length === 0) continue; // 라우트 없는 행(refetch·"status filter 변경"·비-route 타입)은 엣지 없음
     const trigger = (col(row, 'Trigger') || '').trim();
     const action = (col(row, 'User Action') || '').trim();
     for (const to_route of routes) {
@@ -142,14 +119,15 @@ export function buildNavGraph({ docsDir }) {
 
     const outbound = outboundEdgesOf(spec);
 
-    // 교차검증: 셀 단위 추출의 합집합이 interactionResultRoutes(전체 spec) 와 같은 라우트 집합인지 확인.
-    // 불일치는 정규식 drift 신호 → 던져서 조용한 표류를 막는다(검사 P13 과 동작 일치 보장).
+    // 교차검증: 행별 추출의 합집합이 interactionEdgeRoutes(전체 spec, v2-aware) 와 같은 라우트 집합인지 확인.
+    // 불일치는 행 순회/추출 표류 신호 → 던져서 조용한 누락을 막는다(검사 P13 과 동작 일치 보장).
+    // interactionEdgeRoutes 는 v1 표에서 interactionResultRoutes 와 같은 집합을 내므로 v1 동작은 불변.
     const perRow = new Set(outbound.map((e) => e.to_route));
-    const viaHelper = new Set(interactionResultRoutes(spec).filter(isConcreteRoute));
+    const viaHelper = new Set(interactionEdgeRoutes(spec).filter(isConcreteRoute));
     for (const r of viaHelper) {
       if (!perRow.has(r)) {
         throw new Error(
-          `nav-graph: 라우트 추출 불일치(${id}) — interactionResultRoutes 는 ${r} 를 냈으나 행별 추출엔 없음`,
+          `nav-graph: 라우트 추출 불일치(${id}) — interactionEdgeRoutes 는 ${r} 를 냈으나 행별 추출엔 없음`,
         );
       }
     }

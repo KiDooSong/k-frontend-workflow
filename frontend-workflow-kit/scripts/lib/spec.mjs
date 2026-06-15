@@ -379,23 +379,142 @@ function minApiConfidence(sectionText) {
   return min;
 }
 
-// Interaction Matrix 의 Result 컬럼에서 라우트(슬래시로 시작)들을 추출 (validate 용)
+// --- Interaction Matrix 라우트 추출 (단일 출처) + v2 구조화(dual-read) ----------------------
+// 라우트 추출 정규식은 여기 한 곳에만 둔다 — nav-graph 와 validate(검사 4)가 모두 cellRoutes 를
+// 재사용해 "글자 단위 동일"을 구조적으로 보장한다(정규식 drift 불가, 검사 P13 동작 일치).
+//   (?<![:/\w]) : ':' '/' 단어문자 뒤가 아님 → URL 스킴(http://…)·protocol-relative(//…) 의 / 거부
+//   \/(?!\/)    : '/' 로 시작하되 바로 다음이 또 '/' 가 아님
+//   [^\s?#]+    : 공백·쿼리(?)·프래그먼트(#) 전까지 → 쿼리/프래그먼트 절단, 후행 prose 탈락
+// 매칭 후 후행 구두점 [),.;:] 제거, 길이 1(맨 '/')은 버린다. [id]/(tabs) 대괄호·괄호는 보존(후행 ')' 만 탈락).
+const ROUTE_RE = /(?<![:/\w])\/(?!\/)[^\s?#]+/g;
+
+// 한 셀 텍스트에서 라우트(슬래시로 시작)들을 추출한다 — 라우트 추출 단일 출처.
+export function cellRoutes(cellText) {
+  if (!cellText) return [];
+  const routes = [];
+  for (const m of String(cellText).matchAll(ROUTE_RE)) {
+    const route = m[0].replace(/[),.;:]+$/, '');
+    if (route.length > 1) routes.push(route);
+  }
+  return routes;
+}
+
+// 구체 라우트만 통과 — 템플릿 자리표시자({/route}·꺾쇠)와 후행 슬래시(빈 세그먼트)를 거른다.
+// 정상 동적/그룹 세그먼트([id]·[...slug]·(group))는 보존된다.
+export function isConcreteRoute(r) {
+  if (!r || r.length < 2) return false;
+  if (/[{}<>]/.test(r)) return false; // 템플릿 자리표시자 중괄호/꺾쇠
+  if (r.endsWith('/')) return false; // 후행 슬래시 = 빈 세그먼트
+  return true;
+}
+
+// Interaction Matrix 의 Result 컬럼에서 라우트들을 추출 (검사 4 전용 — v1 free-form 경로, 불변).
+// v2 표라도 검사 4 는 Result 셀만 본다(byte-identical 보존 + warning-first: v2 route 점검은 검사 13).
 export function interactionResultRoutes(spec) {
   const table = parseTable(spec.sections['interaction matrix']);
   if (!table) return [];
   const routes = [];
-  for (const r of table.rows) {
-    const v = col(r, 'Result');
-    if (!v) continue;
-    // 한 셀에 여러 라우트가 올 수 있으므로 전부 추출한다(matchAll). 외부·protocol-relative URL
-    // (http(s)://… , //…)은 라우트가 아니므로 제외하고(스킴의 / 는 콜론/슬래시/단어 뒤 + 다음 문자가 / 가 아님),
-    // 쿼리(?)·프래그먼트(#)는 자르고 후행 구두점은 떼어낸다. 대괄호 [id] 는 Expo 동적 라우트라 보존 — 검사 4 오탐 방지.
-    for (const m of v.matchAll(/(?<![:/\w])\/(?!\/)[^\s?#]+/g)) {
-      const route = m[0].replace(/[),.;:]+$/, '');
-      if (route.length > 1) routes.push(route);
+  for (const r of table.rows) routes.push(...cellRoutes(col(r, 'Result')));
+  return routes;
+}
+
+// === Interaction Matrix v2 (optional structured format) — dual-read ==========================
+// v1: 자유서술 Result 한 컬럼(정본, 유지). v2: optional 추가 컬럼 Result Type / Target / Params.
+//   - Result Type 헤더가 있으면 v2 모드(표 단위), 없으면 v1 free-form 으로 완전 폴백.
+//   - Result Type=route 행만 Target 에서 라우트를 읽는다(나머지 타입은 이동 엣지 없음 → 자연어 오탐 제거).
+//   - 라우트 추출은 cellRoutes 단일 출처를 그대로 쓴다 — "어느 셀을 읽느냐"만 모드로 분기(정규식 drift 불가).
+// 설계: temp/proposals/interaction-matrix-structured-format.md (roadmap-current.md:91).
+export const INTERACTION_V2_RESULT_TYPES = ['route', 'state', 'mutation', 'external', 'none'];
+
+function normResultType(v) {
+  return (v || '').trim().toLowerCase();
+}
+
+// 표가 v2 구조화 모드인가 — Result Type 헤더 존재로 판정(느슨한 매칭). table 이 null 이면 false.
+export function interactionMatrixIsV2(table) {
+  return !!table && hasHeader(table.headers, 'Result Type');
+}
+
+// 한 행의 이동 라우트(들).
+//   v1 모드: Result 셀.
+//   v2 모드: Result Type=route → Target 셀. 빈 Result Type → v1 free-form(Result 셀)로 폴백한다
+//            (설계 §4.1: 부분 마이그레이션 행은 조용히 누락하지 않고 v1 폴백 + 경고; type-empty 경고와 정합).
+//            그 외 명시적 비-route 타입(state/mutation/external/none) → 이동 엣지 없음.
+export function interactionRowRoutes(row, mode) {
+  if (mode === 'v2') {
+    const rt = normResultType(col(row, 'Result Type'));
+    if (!rt) return cellRoutes(col(row, 'Result')); // 빈 Result Type → v1 free-form 폴백(누락 금지)
+    if (rt !== 'route') return []; // 명시적 비-route 타입 → 라우트 없음
+    return cellRoutes(col(row, 'Target'));
+  }
+  return cellRoutes(col(row, 'Result'));
+}
+
+// nav-graph 가 outbound 엣지를 도출할 때 쓰는 spec-단위 v2-aware 라우트 집합.
+// v1 표에서는 interactionResultRoutes 와 동일한 집합을 낸다(byte-identical) — 어느 셀을 읽느냐만 다르다.
+export function interactionEdgeRoutes(spec) {
+  const table = parseTable(spec.sections['interaction matrix']);
+  if (!table) return [];
+  const mode = interactionMatrixIsV2(table) ? 'v2' : 'v1';
+  const routes = [];
+  for (const r of table.rows) routes.push(...interactionRowRoutes(r, mode));
+  return routes;
+}
+
+// v2 형식 점검(warning-first, 순수 함수) — validate 검사 13 이 호출한다. v1 표는 항상 빈 배열 → v1 출력 불변.
+// 절대 에러로 승격하지 않는다(하드 게이트 없음). Target 의 inventory 존재는 약식 warning(route-tree 정밀 교차검증은 후속).
+//   opts.routeSet : 알려진 route 집합(frontmatter.route 합집합). 주면 Result Type=route 행 Target 의 inventory 존재를 약식 점검.
+// 반환: [{ row, kind, message }]  (kind: type-empty|enum|route-missing-target|result-target-drift|target-unknown|nonroute-has-route)
+export function interactionMatrixV2Issues(spec, opts = {}) {
+  const table = parseTable(spec.sections['interaction matrix']);
+  if (!interactionMatrixIsV2(table)) return [];
+  const routeSet = opts.routeSet || null;
+  const issues = [];
+  let rowNo = 0;
+  for (const row of table.rows) {
+    rowNo++;
+    const rtRaw = (col(row, 'Result Type') || '').trim();
+    const rt = rtRaw.toLowerCase();
+    const action = (col(row, 'User Action') || '').trim();
+    const trigger = (col(row, 'Trigger') || '').trim();
+    const result = (col(row, 'Result') || '').trim();
+    const target = (col(row, 'Target') || '').trim();
+    if (!rtRaw && !action && !trigger && !result && !target) continue; // 완전 빈 행(스페이서)
+    const label = action || trigger || result || `행 ${rowNo}`;
+
+    if (!rtRaw) {
+      issues.push({ row: rowNo, kind: 'type-empty', message: `v2 형식 표인데 Result Type 이 비어있음 (${label}) — 이 행은 v1 Result 파싱으로 폴백합니다` });
+      continue; // Result Type 이 없으면 나머지 v2 점검은 의미 없음(v1 폴백)
+    }
+    if (!INTERACTION_V2_RESULT_TYPES.includes(rt)) {
+      issues.push({ row: rowNo, kind: 'enum', message: `Result Type '${rtRaw}' 가 허용값이 아님 (${label}) — ${INTERACTION_V2_RESULT_TYPES.join('|')} 중 하나 (제안값, OD-2)` });
+    }
+    const targetRoutes = cellRoutes(target).filter(isConcreteRoute);
+    const resultRoutes = cellRoutes(result).filter(isConcreteRoute);
+    if (rt === 'route') {
+      if (targetRoutes.length === 0) {
+        issues.push({ row: rowNo, kind: 'route-missing-target', message: `Result Type=route 인데 Target 에 구체 라우트가 없음 (${label}) — Target 에 라우트를 적거나 candidate/Open Decision 으로 남기세요` });
+      }
+      for (const r of resultRoutes) {
+        if (!targetRoutes.includes(r)) {
+          issues.push({ row: rowNo, kind: 'result-target-drift', message: `Result 의 라우트 ${r} 가 Target 에 없음 (${label}) — v2 Target 이 기계 판정의 권위입니다(불일치 확인 권장)` });
+        }
+      }
+      if (routeSet) {
+        for (const r of targetRoutes) {
+          if (!routeSet.has(r)) {
+            issues.push({ row: rowNo, kind: 'target-unknown', message: `Result Type=route Target ${r} 가 화면 inventory 에 없음 (${label}) — route-tree 정밀 교차검증은 후속(warning-first)` });
+          }
+        }
+      }
+    } else {
+      const stray = [...new Set([...targetRoutes, ...resultRoutes])];
+      if (stray.length) {
+        issues.push({ row: rowNo, kind: 'nonroute-has-route', message: `Result Type=${rt} 인데 라우트처럼 보이는 토큰(${stray.join(', ')})이 있음 (${label}) — 이동이면 Result Type=route 로 분류하세요` });
+      }
     }
   }
-  return routes;
+  return issues;
 }
 
 export { REQUIRED_STATES };
