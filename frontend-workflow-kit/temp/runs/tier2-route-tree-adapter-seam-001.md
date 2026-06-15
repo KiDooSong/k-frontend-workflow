@@ -50,6 +50,12 @@ npm run example:test    → test-fixtures — PASS (26 fixtures: 25 pass, 1 xfai
 - **MAJOR-2 (CLI 입력 게이트):** 이전엔 CLI 가 어댑터 로드 전에 `src/app` 존재를 무조건 강제 → 코드 정의 커스텀 어댑터가 발견 전에 막힘. **수정:** 입력 디렉토리 검증을 `expo-router.discover`(FC-5, 부재 시 throw)로 이관하고, CLI 는 사전 `isDir` 게이트를 제거한 뒤 `discover` 오류를 exit 2 로 잡는다. 디렉토리가 필요 없는 커스텀 어댑터는 더 이상 막히지 않는다(검증: `--router <custom>` 가 src/app 없이 exit 0; expo 부재 `--app` 은 여전히 exit 2). 테스트 S6 추가.
 - (mild) custom 픽스처의 `expected/route-tree.txt` 는 코어 정규화 결과(about→index)로 재생성. expo 골든은 불변.
 
+### 2차 리뷰 MINOR 반영
+
+- **MINOR-1 (CLI 헤더 오해 소지):** 커스텀 `--router` 실행도 헤더가 기본 `--app src/app` 명령을 찍어 오해 소지가 있었다. **수정:** 기본 `expo-router` 는 정본(canonical) 헤더 그대로(골든 byte-identical), 커스텀 router 면 헤더가 실제 어댑터를 반영(`Source: router-adapter: <arg>`, `Command: … --router <arg> …`). custom 골든을 CLI 로 재생성해 CLI-재현 가능하게 맞추고 S3 를 정합.
+- **MINOR-2 (이름-vs-경로 휴리스틱):** 구분자/확장자 기반 분류가 확장자 없는 경로(`my-router`)나 점 포함 이름(`expo.router`)을 오분류할 수 있었다. **수정:** CLI 휴리스틱 제거. `loadRouterAdapter` 가 문자열을 **매니페스트 이름 우선 → 아니면 파일 경로**로 해소하고, 둘 다 아니면 fail-closed(등록 어댑터+시도 경로 모두 메시지에 표기). 테스트 S7 추가.
+- 2차 검증: `npm test` 37 pass(S1~S7) · `example:test` 26 fixtures · `example:validate` OK · expo 골든 byte-identical · 커스텀 `--router <path>` exit 0(정직한 헤더) · `my-router`(이름·파일 모두 아님) exit 2.
+
 ## 후속 (이 PR 범위 밖 — 설계 §16/§17 잔여)
 
 - **PR-3:** codegen-core + `openapi-client` 어댑터 + codegen 매니페스트/출력경로/hook 네이밍(§7·§8·§9). 본 PR 미구현.

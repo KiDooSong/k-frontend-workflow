@@ -44,15 +44,16 @@ test('S2: expo-router 경로 렌더가 커밋된 route-tree 골든과 byte-ident
   assert.equal(text.replace(/\r\n/g, '\n'), golden.replace(/\r\n/g, '\n'));
 });
 
-test('S3: 커스텀 {module} 어댑터를 코어가 해소·렌더 (비-expo 어댑터도 동작)', async () => {
+test('S3: 커스텀 {module} 어댑터를 코어가 해소·렌더 (비-expo 어댑터도 동작; CLI 헤더와 동일)', async () => {
   const adapter = await loadRouterAdapter(
     { module: path.join(CUSTOM, 'my-router.mjs') },
     { baseDir: KIT_ROOT },
   );
   assert.equal(adapter.name, 'minimal-custom');
+  // CLI 가 커스텀 router 에 쓰는 헤더와 동일한 opts — 골든은 CLI 로 재생성되므로 byte 단위로 일치해야 한다.
   const text = renderRouteTree(adapter.discover({}), {
-    source: 'custom: minimal-custom adapter (code-defined routes)',
-    command: 'node scripts/route-tree.mjs --router examples/router-adapter/minimal-custom/my-router.mjs',
+    source: 'router-adapter: examples/router-adapter/minimal-custom/my-router.mjs',
+    command: 'node scripts/route-tree.mjs --router examples/router-adapter/minimal-custom/my-router.mjs --out docs/frontend-workflow/_meta/route-tree.txt',
   });
   const golden = fs.readFileSync(path.join(CUSTOM, 'expected', 'route-tree.txt'), 'utf8');
   assert.equal(text.replace(/\r\n/g, '\n'), golden.replace(/\r\n/g, '\n'));
@@ -107,4 +108,15 @@ test('S6: expo-router discover 는 부재 app 디렉토리에 fail-closed(throw)
   // 존재하는 디렉토리는 scanAppDir 과 동치(S1 과 정합).
   const appDir = path.join(BASIC_APP, 'src', 'app');
   assert.deepEqual(expoDiscover({ appDir }), scanAppDir(appDir));
+});
+
+test('S7: 문자열 spec — 매니페스트 이름 우선, 아니면 파일 경로 (취약한 이름-vs-경로 휴리스틱 제거)', async () => {
+  // 이름: 매니페스트 등록 이름은 그대로 어댑터.
+  const byName = await loadRouterAdapter('expo-router');
+  assert.equal(byName.name, 'expo-router');
+  // 경로: 등록 이름이 아니지만 존재하는 파일이면 모듈로 로드(구분자/확장자 휴리스틱 불필요 — MINOR-2).
+  const byPath = await loadRouterAdapter(path.join(CUSTOM, 'my-router.mjs'), { baseDir: KIT_ROOT });
+  assert.equal(byPath.name, 'minimal-custom');
+  // 이름도 아니고 파일도 아니면 fail-closed.
+  await assert.rejects(() => loadRouterAdapter('definitely-not-a-thing'), RouterAdapterError);
 });

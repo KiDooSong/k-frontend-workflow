@@ -61,13 +61,26 @@ export async function loadRouterAdapter(spec, opts = {}) {
   } else {
     let modulePath;
     if (typeof spec === 'string') {
+      // 문자열 해소 순서: ① 매니페스트 등록 이름이면 그 이름. ② 아니면 모듈 경로로 시도(존재하는 파일이면 커스텀 어댑터).
+      // 이 순서 덕에 점(.) 포함 어댑터 이름이 경로로 오해되지 않고, 구분자 없는 문자열도 파일이면 모듈로 로드된다
+      // (취약한 이름-vs-경로 휴리스틱 제거). 둘 다 아니면 fail-closed.
       const manifest = readAdapterManifest(adaptersDir);
       const entry = manifest[spec];
-      if (!entry || typeof entry.module !== 'string') {
-        const known = Object.keys(manifest).join(', ') || '(없음)';
-        throw new RouterAdapterError(`알 수 없는 router 어댑터: '${spec}' (등록된 어댑터: ${known})`);
+      if (entry && typeof entry.module === 'string') {
+        modulePath = path.resolve(adaptersDir, entry.module);
+      } else {
+        const candidate = path.isAbsolute(spec)
+          ? spec
+          : path.resolve(opts.baseDir || process.cwd(), spec);
+        if (fs.existsSync(candidate)) {
+          modulePath = candidate;
+        } else {
+          const known = Object.keys(manifest).join(', ') || '(없음)';
+          throw new RouterAdapterError(
+            `알 수 없는 router 어댑터: '${spec}' (등록된 어댑터: ${known}; 모듈 파일도 아님: ${candidate})`,
+          );
+        }
       }
-      modulePath = path.resolve(adaptersDir, entry.module);
     } else if (spec && typeof spec === 'object' && typeof spec.module === 'string') {
       modulePath = path.isAbsolute(spec.module)
         ? spec.module

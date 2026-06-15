@@ -17,15 +17,13 @@ async function main() {
     typeof flags.out === 'string' ? flags.out : 'docs/frontend-workflow/_meta/route-tree.txt',
   );
   // router 어댑터 선택: 내장 이름(매니페스트 조회) 또는 커스텀 모듈 경로. 기본 = expo-router.
-  // 경로 형태(구분자 포함 또는 .mjs/.js/.cjs 확장자)면 {module} 로, 아니면 매니페스트 이름으로 해석한다.
+  // 이름-vs-경로 분류는 loadRouterAdapter 가 한다(매니페스트 이름 우선 → 아니면 파일 경로) — CLI 휴리스틱 없음.
   const routerArg = typeof flags.router === 'string' && flags.router ? flags.router : 'expo-router';
-  const looksLikePath = /[\\/]/.test(routerArg) || /\.(mjs|cjs|js)$/.test(routerArg);
-  const routerSpec = looksLikePath ? { module: routerArg } : routerArg;
 
   // fail-closed: 미지 어댑터/부재 모듈/version 불일치는 exit 2(조용한 폴백·빈 트리 추측 금지).
   let adapter;
   try {
-    adapter = await loadRouterAdapter(routerSpec, { baseDir: process.cwd() });
+    adapter = await loadRouterAdapter(routerArg, { baseDir: process.cwd() });
   } catch (e) {
     process.stderr.write('workflow:route-tree — router 어댑터 로드 실패: ' + e.message + '\n');
     process.exit(2);
@@ -41,10 +39,19 @@ async function main() {
     process.stderr.write('workflow:route-tree — ' + e.message + '\n');
     process.exit(2);
   }
-  const text = renderRouteTree(tree, {
-    source: 'src/app/**',
-    command: 'node scripts/route-tree.mjs --app src/app --out docs/frontend-workflow/_meta/route-tree.txt',
-  });
+  // GENERATED 헤더: 기본 expo-router 는 정본(canonical) 문자열 그대로(골든 byte-identical).
+  // 커스텀 router 면 헤더가 실제 사용한 어댑터를 정직하게 반영한다(오해 소지 제거 — 기본 경로는 불변).
+  const isDefaultExpo = routerArg === 'expo-router';
+  const header = isDefaultExpo
+    ? {
+        source: 'src/app/**',
+        command: 'node scripts/route-tree.mjs --app src/app --out docs/frontend-workflow/_meta/route-tree.txt',
+      }
+    : {
+        source: 'router-adapter: ' + routerArg,
+        command: 'node scripts/route-tree.mjs --router ' + routerArg + ' --out docs/frontend-workflow/_meta/route-tree.txt',
+      };
+  const text = renderRouteTree(tree, header);
   writeFile(outFile, text);
   process.stdout.write('workflow:route-tree — ' + outFile + ' 생성 완료\n');
 }

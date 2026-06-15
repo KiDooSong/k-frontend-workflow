@@ -1,6 +1,6 @@
 # GENERATED FILE — DO NOT EDIT
-# Source: custom: minimal-custom adapter (code-defined routes)
-# Command: node scripts/route-tree.mjs --router examples/router-adapter/minimal-custom/my-router.mjs
+# Source: router-adapter: examples/router-adapter/minimal-custom/my-router.mjs
+# Command: node scripts/route-tree.mjs --router examples/router-adapter/minimal-custom/my-router.mjs --out docs/frontend-workflow/_meta/route-tree.txt
 
 /
 ├─ about.tsx                         route: /about
