@@ -29,7 +29,7 @@ import { normalizeGeneratedViewText, toPosix } from './test-fixture.mjs';
 export const V1_ARTIFACT_IDS = ['component-catalog', 'nav-graph', 'route-tree'];
 
 // --artifact 입력을 v1 정책으로 해소한다(작업/표시 집합).
-//   requested 없음        → v1 전체(route-tree·nav-graph).
+//   requested 없음        → v1 전체(route-tree·nav-graph·component-catalog).
 //   requested 가 v1 대상  → 그 하나로 좁힘.
 //   requested 가 비-v1    → 빈 배열(가드 대상 아님 — 호출부가 사유를 안내).
 export function selectArtifactIds(requested) {
@@ -157,7 +157,7 @@ function firstLineDiff(committed, regenerated) {
   return '내용 상이';
 }
 
-// route-tree·nav-graph 하나를 임시 디렉토리에 2회 재생성하고 커밋본과 비교한다.
+// route-tree·nav-graph·component-catalog 하나를 임시 디렉토리에 2회 재생성하고 커밋본과 비교한다.
 //   반환: { id, status, committed, input, checks:[{check,ok,message}] }
 //   status: ok | mismatch | nondeterministic | generator-error | missing-committed | missing-input | skip
 //     - skip 은 v1 reproduce 계약이 없는 id(=비-v1, 방어적)에서만 난다. active v1 산출물의
