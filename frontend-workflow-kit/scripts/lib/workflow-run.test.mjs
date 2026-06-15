@@ -24,6 +24,30 @@ const COUPON_DOCS = path.join(KIT_ROOT, 'examples', 'coupon-feature', 'docs', 'f
 const CUSTOM_LAYOUT = path.join(
   KIT_ROOT, 'examples', 'layout-profile', 'custom-monorepo', 'project-layout.yaml',
 );
+// cwd=KIT_ROOT 기준 상대 layout 경로 — path.resolve 회귀 고정용(raw 상대값을 그대로 흘리면 잡힌다).
+const REL_CUSTOM_LAYOUT = path.relative(KIT_ROOT, CUSTOM_LAYOUT);
+// path-backstop AUTH-001 의 clean packet 입력(_meta 만). 커밋된 예제는 게이트 시연용이라 clean 화면이 없다.
+const PATHBACKSTOP_STATE = path.join(
+  KIT_ROOT, 'examples', 'path-backstop', 'docs', 'frontend-workflow', '_meta', 'workflow-state.yaml',
+);
+
+function toPosix(p) {
+  return String(p).split(path.sep).join('/');
+}
+
+// "clean packet" tmp fixture: path-backstop AUTH-001 은 api_confidence 한 개만 빼면 clean 이므로,
+// 그 unknown(api_confidence_min)을 confirmed 로 올려 isPacketClean 을 만족시킨다 → workflow:run 이
+// DONE_PENDING_REVIEW 로 진입해 report child 를 실제로 호출하게 된다(run→report 전달 witness 용).
+function buildCleanDocs() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wf-run-clean-'));
+  const metaDir = path.join(dir, 'docs', 'frontend-workflow', '_meta');
+  fs.mkdirSync(metaDir, { recursive: true });
+  const state = fs
+    .readFileSync(PATHBACKSTOP_STATE, 'utf8')
+    .replace(/api_confidence_min: candidate/g, 'api_confidence_min: confirmed');
+  fs.writeFileSync(path.join(metaDir, 'workflow-state.yaml'), state);
+  return { dir, docs: path.join(dir, 'docs', 'frontend-workflow') };
+}
 
 // workflow:run 을 서브프로세스로 실행한다(throw 없이 { code, stdout } 정규화). cwd=KIT_ROOT 로 고정해
 // 상대 라벨/해소를 결정적으로 만든다(스크립트 자체 경로 해소는 cwd 와 독립 — SELF_DIR 기반).
@@ -82,6 +106,58 @@ test('default(--layout 미지정): readiness_source 에 --layout 누출 없음(B
     const src = readReadinessSource(path.join(out, 'work-packet.md'));
     assert.ok(!/--layout/.test(src), `default 경로는 --layout 을 누출하지 않아야 한다: ${src}`);
   } finally {
+    fs.rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test('상대 --layout: readiness_source 에 path.resolve 된 절대경로로 기록(raw 상대값 흘림 방지)', () => {
+  const out = mkOut();
+  try {
+    const r = runRun([
+      '--screen', 'COUPON-001', '--requested-mode', 'rough-fixture-ui',
+      '--docs', COUPON_DOCS, '--layout', REL_CUSTOM_LAYOUT, '--out', out,
+    ]);
+    assert.equal(r.code, 0, `auto-stop 는 exit 0 이어야 한다. stdout=${r.stdout}`);
+    const src = readReadinessSource(path.join(out, 'work-packet.md'));
+    const expectedAbs = toPosix(path.resolve(KIT_ROOT, REL_CUSTOM_LAYOUT));
+    assert.ok(
+      toPosix(src).includes(expectedAbs),
+      `상대 --layout 입력이 path.resolve 된 절대경로로 기록돼야 한다: ${src}`,
+    );
+  } finally {
+    fs.rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test('clean packet + --diff + custom --layout: DONE_PENDING_REVIEW · run-report leaf invocation 에 --layout 전달(run→report child witness)', () => {
+  const { dir, docs } = buildCleanDocs();
+  const out = mkOut();
+  try {
+    const diff = path.join(dir, 'diff.txt');
+    fs.writeFileSync(diff, 'A\tsrc/features/auth/screens/Login.tsx\n', 'utf8');
+    // 상대 --layout 으로 넘겨 run 의 path.resolve(보고-child 방향)까지 동시에 고정한다.
+    const r = runRun([
+      '--screen', 'AUTH-001', '--requested-mode', 'final-fixture-ui',
+      '--docs', docs, '--layout', REL_CUSTOM_LAYOUT, '--diff', diff, '--skip-tests', '--out', out,
+    ]);
+    assert.equal(r.code, 0, `DONE 경로도 exit 0 이어야 한다. stdout=${r.stdout}`);
+    assert.match(r.stdout, /DONE_PENDING_REVIEW/, `clean packet + --diff 는 DONE_PENDING_REVIEW 여야 한다: ${r.stdout}`);
+    const reportMd = path.join(out, 'run-report.md');
+    assert.ok(fs.existsSync(reportMd), 'run-report.md 가 생성돼야 한다');
+    const raw = fs.readFileSync(reportMd, 'utf8');
+    const expectedAbs = toPosix(path.resolve(KIT_ROOT, REL_CUSTOM_LAYOUT));
+    // report child 가 leaf 로 --layout 을 전달했는지 + run 이 절대경로로 넘겼는지 동시 witness.
+    // (reportArgs.push('--layout', layoutResolved) 가 사라지면 이 줄에서 --layout 이 빠져 실패한다.)
+    for (const s of ['validate.mjs', 'forbidden-paths.mjs', 'check-generated-files.mjs']) {
+      const line = raw.split(/\r?\n/).find((l) => l.includes(s + ' '));
+      assert.ok(line, `run-report 에 ${s} invocation 줄이 있어야 한다`);
+      assert.ok(
+        toPosix(line).includes(expectedAbs),
+        `${s} invocation 에 path.resolve 된 --layout 절대경로가 있어야 한다: ${line}`,
+      );
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
     fs.rmSync(out, { recursive: true, force: true });
   }
 });

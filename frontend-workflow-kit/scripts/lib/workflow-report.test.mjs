@@ -26,6 +26,10 @@ const CUSTOM_LAYOUT = path.join(
   KIT_ROOT, 'examples', 'layout-profile', 'custom-monorepo', 'project-layout.yaml',
 );
 
+function toPosix(p) {
+  return String(p).split(path.sep).join('/');
+}
+
 function run(script, args) {
   try {
     const stdout = execFileSync(process.execPath, [script, ...args], {
@@ -86,6 +90,24 @@ test('default(--layout 미지정): leaf invocation 에 --layout 누출 없음(BY
   assert.equal(r.code, 0, `report 생성은 exit 0 이어야 한다. stdout=${r.stdout}`);
   for (const s of ['validate.mjs', 'forbidden-paths.mjs', 'check-generated-files.mjs']) {
     assert.ok(!/--layout/.test(invocationLine(reportMd, s)), `default 경로는 ${s} 에 --layout 을 누출하지 않아야 한다`);
+  }
+});
+
+test('상대 --layout: leaf invocation 에 path.resolve 된 절대경로 기록(raw 상대값 흘림 방지)', () => {
+  const reportMd = path.join(shared.dir, 'report-rel.md');
+  const relLayout = path.relative(KIT_ROOT, CUSTOM_LAYOUT); // cwd=KIT_ROOT 기준 상대
+  const r = run(REPORT_SCRIPT, [
+    '--packet', shared.packet, '--docs', COUPON_DOCS, '--diff', shared.diff,
+    '--layout', relLayout, '--skip-tests', '--out', reportMd,
+  ]);
+  assert.equal(r.code, 0, `report 생성은 exit 0 이어야 한다. stdout=${r.stdout}`);
+  const expectedAbs = toPosix(path.resolve(KIT_ROOT, relLayout));
+  // report 가 path.resolve 를 건너뛰고 raw 상대값을 흘리면 절대경로가 라벨에 안 보여 실패한다.
+  for (const s of ['validate.mjs', 'forbidden-paths.mjs', 'check-generated-files.mjs']) {
+    assert.ok(
+      toPosix(invocationLine(reportMd, s)).includes(expectedAbs),
+      `${s} invocation 에 path.resolve 된 --layout 절대경로가 있어야 한다`,
+    );
   }
 });
 
