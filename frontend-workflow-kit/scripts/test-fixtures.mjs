@@ -165,7 +165,8 @@ function readPathBackstopCases() {
 // generated view fixture 선언 읽기:
 //   examples/route-tree/<case>/run-metadata.json
 //   examples/nav-graph/<case>/run-metadata.json
-// route-tree/nav-graph 생성기 로직은 재구현하지 않고 CLI 를 서브프로세스로 2회 실행해
+//   examples/component-catalog/<case>/run-metadata.json
+// route-tree/nav-graph/component-catalog 생성기 로직은 재구현하지 않고 CLI 를 서브프로세스로 2회 실행해
 // 결정성 + 커밋 expected 와의 텍스트 일치를 확인한다. run-metadata 는 case-local 계약만 담는다.
 function readGeneratedViewCases(kind, rootDir) {
   if (!isDir(rootDir)) return [];
@@ -223,7 +224,7 @@ function readGeneratedViewCases(kind, rootDir) {
   return cases.sort((a, b) => a.id.localeCompare(b.id));
 }
 
-// fixture 목록 구성 — kind: reconcile | integrity | pipeline | path-backstop | route-tree | nav-graph.
+// fixture 목록 구성 — kind: reconcile | integrity | pipeline | path-backstop | route-tree | nav-graph | component-catalog.
 function buildFixtures() {
   const fixtures = [];
 
