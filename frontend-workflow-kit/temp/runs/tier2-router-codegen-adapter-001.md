@@ -157,11 +157,13 @@ documents.
 ## 7. Next recommended task
 
 **FUTURE PR-1 — config schema + docs only** (per design §17): add the `adapters.router` /
-`adapters.codegen` schema (plus JSON schema) and the reconciled conventions from this document to
-`project-layout.yaml` as **documentation/schema only**, and bundle `adapters` defaults into the
-`expo-feature` preset — **with zero runtime/generator/manifest behavior change** (route-core and
-codegen-core remain absent). This closes OD-1 (default codegen adapter identity) and OD-10 (adapters
-config location) candidates. Only after PR-1 does PR-2 (route-tree adapter seam, holding
-`examples/route-tree/{basic-app,edge-cases}` byte-identical) and PR-3 (validate / nav-graph / codegen
-seam with the first codegen golden fixture) proceed — never adding a guard/fixture before the
-corresponding core lands.
+`adapters.codegen` **schema (plus JSON schema)** and the reconciled conventions from this document to
+`project-layout.yaml` as **documentation/schema only** — **with zero runtime/generator/manifest/preset
+behavior change** (route-core and codegen-core remain absent). Bundling `adapters` defaults into the
+`expo-feature` preset is a config behavior change, so it is **deferred to PR-2** (the route-tree adapter
+seam, where a runtime consumer first reads it) — not part of the docs-only PR-1. PR-1 **surfaces** OD-1
+(default codegen adapter identity) as a candidate for a **human** decision and does **not** close OD-10
+(physical adapters-config file location) — that stays an open, human-decided question. Only after PR-1
+does PR-2 (route-tree adapter seam, holding `examples/route-tree/{basic-app,edge-cases}` byte-identical)
+and PR-3 (validate / nav-graph / codegen seam with the first codegen golden fixture) proceed — never
+adding a guard/fixture before the corresponding core lands.
