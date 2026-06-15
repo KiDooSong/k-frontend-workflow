@@ -1,0 +1,9 @@
+# GENERATED FILE — DO NOT EDIT
+# Source: custom: minimal-custom adapter (code-defined routes)
+# Command: node scripts/route-tree.mjs --router examples/router-adapter/minimal-custom/my-router.mjs
+
+/
+├─ index.tsx                         route: /
+├─ about.tsx                         route: /about
+└─ blog/
+   └─ [slug].tsx                     route: /blog/[slug]
