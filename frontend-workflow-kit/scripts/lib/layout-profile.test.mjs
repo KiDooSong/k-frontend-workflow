@@ -8,6 +8,9 @@
 //   - §7-i union: materializeGuardedSurface 가 expo 에선 deriveGuardedSurface(rawLiteral) 와 BYTE-동치.
 //   - MAJOR 3: 도메인-스코프 forbidden(낮은 모드 금지→높은 모드 허용)이 구체 정책 threshold 로 실제
 //     guarded surface 에 나타난다(이전 버그: 구체 forbidden 을 토큰화 allowed 와 비교해 조용히 누락).
+//   - M3 clearance: materializeGuardedSurface 가 노출한 구체 thresholdOf(surface) 로 clearance 를
+//     계산하면 커스텀 도메인 표면이 화면 readiness 도달 시 CLEAR 된다(이전: 토큰화 정책으로 thresholdOf
+//     재계산 → null → 영구 fail-closed). 미달 시엔 여전히 위반. expo 글로벌 표면 threshold 는 불변.
 // 실행: npm run test:spec  (또는 node --test scripts/lib/layout-profile.test.mjs)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -16,7 +19,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadLayoutProfile, LayoutConfigError } from './layout-profile.mjs';
-import { deriveGuardedSurface } from './path-backstop.mjs';
+import { deriveGuardedSurface, isCleared, isClearedAt } from './path-backstop.mjs';
 
 // 킷 루트: scripts/lib/ → scripts/ → kit-root. presets/·policies/ 가 그 아래.
 const KIT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -235,6 +238,85 @@ test('MAJOR 3: 커스텀 layout 의 도메인-스코프 forbidden role 이 guard
     assert.ok(surface.includes('openapi.yaml') && surface.includes('openapi.yml'));
     // screens 는 여전히 채택 안 됨(낮은 허용→높은 금지 — 재-잠금 계약).
     assert.ok(!surface.includes('src/features/legacymod/screens/**'));
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// --- M3 clearance: 커스텀 도메인-스코프 표면이 영구 fail-closed 가 아니라 화면 readiness 도달 시 CLEAR ----
+
+test('M3 clearance: 커스텀 도메인-스코프 표면이 구체 threshold 도달 시 CLEAR (미달 시 위반)', () => {
+  // MAJOR 3 와 동일한 임시 layout/policy — legacy 를 route-skeleton(낮음)에서 금지, final-fixture-ui(높음)에서 허용.
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'layout-profile-m3-clear-'));
+  const layoutPath = path.join(tmpDir, 'project-layout.yaml');
+  try {
+    fs.writeFileSync(
+      layoutPath,
+      ['version: 1', 'preset: expo-feature', 'roles:', '  legacy: src/features/{domain}/legacy/**', ''].join('\n'),
+    );
+    const L = loadLayoutProfile({ kitRoot: KIT_ROOT, flags: { layout: layoutPath } });
+    const policy = {
+      order: rawLiteralExpoPolicy().order,
+      modes: {
+        ...tokenizedExpoPolicy().modes,
+        'route-skeleton': {
+          allowed_paths: ['{roles.route_entry}'],
+          forbidden_paths: ['src/features/**', '{roles.api_client}', '{roles.legacy}'],
+        },
+        'final-fixture-ui': {
+          allowed_paths: ['{roles.screen}', '{roles.domain_component}', '{roles.legacy}'],
+          forbidden_paths: ['{roles.api_client}'],
+        },
+      },
+    };
+    const resolved = resolvePolicyPaths(policy, L);
+    const guarded = L.materializeGuardedSurface(resolved, ['legacymod']);
+    const order = resolved.order;
+
+    const surface = 'src/features/legacymod/legacy/**';
+    // (a) 표면이 guarded 이고, 노출된 구체 threshold 가 final-fixture-ui(허용 모드)다.
+    assert.ok(guarded.includes(surface), `표면이 guarded 여야 한다. 실제: ${JSON.stringify(guarded)}`);
+    const threshold = guarded.thresholdOf(surface);
+    assert.equal(threshold, 'final-fixture-ui');
+
+    // ★ M3 핵심: 이전 버그라면 forbidden-paths 가 thresholdOf(resolved=토큰화, surface) 로 재계산해
+    //   null 을 얻어 isCleared 가 항상 false → 영구 fail-closed. 그것을 재현해 NOT-CLEAR 임을 보인다.
+    const readinessAbove = { S1: { readiness_mode: 'api-integrated-ui' } }; // threshold 초과
+    assert.equal(
+      isCleared(surface, readinessAbove, resolved),
+      false,
+      '이전 경로(토큰화 정책으로 thresholdOf 재계산)는 covers 가 빗나가 영구 fail-closed 였다(버그 재현).',
+    );
+
+    // (b) 수정된 경로: 구체 threshold 를 직접 써서 clearance 판정.
+    //   화면이 threshold 이상(>=)에 도달 → CLEAR.
+    assert.equal(
+      isClearedAt(threshold, { S1: { readiness_mode: 'final-fixture-ui' } }, order),
+      true,
+      'threshold 와 동일 모드 화면이면 CLEAR 여야 한다(>= 경계).',
+    );
+    assert.equal(
+      isClearedAt(threshold, { S1: { readiness_mode: 'api-integrated-ui' } }, order),
+      true,
+      'threshold 초과 모드 화면이면 CLEAR 여야 한다(누적 사다리).',
+    );
+    //   화면이 threshold 미만 → NOT CLEAR (여전히 위반 — fail-closed 가 의도대로 동작).
+    assert.equal(
+      isClearedAt(threshold, { S1: { readiness_mode: 'screen-skeleton' } }, order),
+      false,
+      'threshold 미만 모드 화면이면 NOT CLEAR(위반) 여야 한다.',
+    );
+    assert.equal(
+      isClearedAt(threshold, {}, order),
+      false,
+      '화면이 없으면 NOT CLEAR(위반) 여야 한다.',
+    );
+
+    // expo parity: 글로벌 표면 src/api/** 의 구체 threshold 는 api-integrated-ui 로 불변 → clearance 불변.
+    assert.equal(guarded.thresholdOf('src/api/**'), 'api-integrated-ui');
+    // openapi 표면은 threshold 미기록(null) → clearance 항상 false(변경 시 항상 플래그).
+    assert.equal(guarded.thresholdOf('openapi.yaml'), null);
+    assert.equal(isClearedAt(guarded.thresholdOf('openapi.yaml'), { S1: { readiness_mode: 'production-ready' } }, order), false);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }

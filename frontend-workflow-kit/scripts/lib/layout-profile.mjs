@@ -216,6 +216,13 @@ export function loadLayoutProfile({ kitRoot, flags = {} } = {}) {
   //
   //   회귀(HARD CONSTRAINT): 도메인 오버라이드가 없는 expo 에선 결과가
   //   deriveGuardedSurface(rawLiteralPolicy) = ['openapi.yaml','openapi.yml','src/api/**'] 와 BYTE-동치.
+  //
+  //   반환(M3 clearance 대칭): sorted string[] 을 그대로 돌려주되(back-compat — 기존 호출부의
+  //   .filter/.join/.includes/deepEqual 가 BYTE-동치로 유지), 그 위에 **non-enumerable**
+  //   thresholdOf(surface) -> modeName|null 메서드를 얹는다. 이 thresholdOf 는 표면을 *채택할 때 쓴
+  //   도메인별 구체(concrete) 정책*으로 계산한 threshold 를 돌려준다 — clearance 가 토큰화된
+  //   resolvedPolicy(아직 {domain} 보존)로 thresholdOf 를 재계산해 covers 가 빗나가던 M3 버그를
+  //   제거한다. enumerable=false 라 assert.deepEqual(arr, [...]) 의 expo-parity 단언에 보이지 않는다.
   function materializeGuardedSurface(policy, domains = []) {
     const modes = (policy && policy.modes) || {};
     const order =
@@ -243,6 +250,10 @@ export function loadLayoutProfile({ kitRoot, flags = {} } = {}) {
     }
 
     const set = new Set();
+    // surface → 채택 시 쓴 도메인별 구체 정책의 threshold(모드 이름). clearance 가 이 값을 재사용한다
+    // (토큰화 resolvedPolicy 로 thresholdOf 재계산 금지 — M3). openapi.yaml/yml 은 의도적으로 미기록
+    // (threshold 부재 → clearance 항상 false, deriveGuardedSurface/thresholdOf(null) 의미 보존).
+    const thresholds = new Map();
     for (let idx = 0; idx < order.length; idx++) {
       const mode = modes[order[idx]];
       if (!mode) continue;
@@ -263,14 +274,32 @@ export function loadLayoutProfile({ kitRoot, flags = {} } = {}) {
           const threshold = thresholdOf(cp, surface);
           if (threshold == null) continue; // 어떤 모드도 S 전체를 allow 안 함 → 레이어 경계 아님
           // (b) 금지 모드가 threshold 보다 엄격히 아래일 때만 채택(낮은 금지 → 높은 허용 경계).
-          if (idx < order.indexOf(threshold)) set.add(surface);
+          if (idx < order.indexOf(threshold)) {
+            set.add(surface);
+            // 같은 표면이 여러 도메인/모드에서 채택될 수 있다 — deriveGuardedSurface 의 "가장 낮은(먼저
+            // 만나는) 모드" 의미를 유지하려 더 낮은 order index 의 threshold 만 기록한다.
+            const prev = thresholds.get(surface);
+            if (prev == null || order.indexOf(threshold) < order.indexOf(prev)) {
+              thresholds.set(surface, threshold);
+            }
+          }
         }
       }
     }
     // openapi parity (deriveGuardedSurface 와 동일 — yaml/yml 둘 다, threshold 무관 항상 플래그).
     set.add('openapi.yaml');
     set.add('openapi.yml');
-    return [...set].sort();
+    const surfaces = [...set].sort();
+    // back-compat: string[] 를 그대로 돌려주되 concrete threshold 접근자를 non-enumerable 로 얹는다.
+    //   thresholdOf(surface) -> modeName|null : 채택 시 쓴 구체 정책의 threshold(미채택/openapi 는 null).
+    Object.defineProperty(surfaces, 'thresholdOf', {
+      value: (surface) => {
+        const t = thresholds.get(surface);
+        return t == null ? null : t;
+      },
+      enumerable: false,
+    });
+    return surfaces;
   }
 
   // --- resolvedLayout 객체 --------------------------------------------------

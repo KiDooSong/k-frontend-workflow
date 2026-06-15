@@ -172,7 +172,9 @@ function main() {
     data = runReadinessSubprocess({ screen, docs, policy: policyPath, manifest: manifestPath, layout: layoutPath });
     const docsLabel = toPosix(docsFlag || DEFAULTS.docs);
     // readinessSource 에도 --layout 을 반영(MAJOR 2): allowed/forbidden 과 힌트의 출처가 일치함을 명시.
-    const layoutLabel = layoutFlag ? ` --layout ${toPosix(layoutFlag)}` : '';
+    // 기록 문자열은 서브프로세스가 *실제로 받은* 인자(resolve 된 절대경로 layoutPath)와 일치시킨다 —
+    // raw layoutFlag 를 적으면 provenance 가 실제 전달값과 어긋난다(Codex minor).
+    const layoutLabel = layoutPath ? ` --layout ${toPosix(layoutPath)}` : '';
     readinessSource = `readiness.mjs --docs ${docsLabel} --screen ${screen}${layoutLabel} --json (computed ${date})`;
   }
 

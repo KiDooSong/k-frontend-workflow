@@ -22,8 +22,7 @@ import { parseArgs, DEFAULTS, KIT_ROOT, loadYaml, readFileSafe, runCli } from '.
 import { computeReadiness } from './readiness.mjs';
 import { loadLayoutProfile } from './lib/layout-profile.mjs';
 import {
-  thresholdOf,
-  isCleared,
+  isClearedAt,
   highestScreenMode,
   parseNameStatusText,
   writePathsOf,
@@ -66,7 +65,9 @@ function domainsFromState(state) {
 }
 
 // 위반 1건의 reason / would_clear 문구를 만든다(설계 §4 출력 규약).
-function describeViolation(surface, policy, readinessOutput) {
+//   threshold 는 호출부가 넘기는 표면의 *구체* threshold(materializeGuardedSurface 가 계산) — M3.
+//   토큰화된 정책으로 재계산하면 커스텀 도메인 표면에서 null 이 나와 reason 이 깨진다.
+function describeViolation(surface, threshold, policy, readinessOutput) {
   const isOpenApi = surface === 'openapi.yaml' || surface === 'openapi.yml';
   if (isOpenApi) {
     return {
@@ -74,7 +75,6 @@ function describeViolation(surface, policy, readinessOutput) {
       would_clear: `정책 결정 필요: api-integrated-ui 가 openapi 를 허용해야 하는가? (§8 미결)`,
     };
   }
-  const threshold = thresholdOf(policy, surface);
   const highest = highestScreenMode(readinessOutput, policy) || '(없음)';
   return {
     reason: `guarded(${surface}) 인데 프로젝트의 어떤 화면도 ${threshold} 에 도달하지 못함 (현재 최고 화면 모드: ${highest})`,
@@ -134,6 +134,9 @@ function main() {
   // 토큰을 물리 글롭으로 펼친다(BYTE-동치 회귀 기준 — §10). --layout 으로 프로파일 경로 오버라이드.
   const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags });
   const resolvedPolicy = resolvePolicyPaths(policy, layout);
+  // 모드 사다리 순서(clearance index 비교용). thresholdOf 를 토큰화 정책으로 재계산하지 않고
+  // materializeGuardedSurface 가 준 구체 threshold 의 index 만 본다(§7-i / M3).
+  const order = resolvedPolicy.order || Object.keys(resolvedPolicy.modes || {});
 
   // --- readiness 소비 (모드 판정 단일 출처) ---
   // ci={} : 경로 게이트는 CI fact 불필요(threshold 인 api-integrated-ui 는 fact-only).
@@ -196,9 +199,13 @@ function main() {
       const surface = matched.sort(
         (a, b) => b.replace(/\*+/g, '').length - a.replace(/\*+/g, '').length || a.localeCompare(b),
       )[0];
-      if (isCleared(surface, readinessOutput, resolvedPolicy)) continue; // (b) 프로젝트가 레이어 열 자격 도달 — 침묵
+      // M3 대칭: clearance 는 materialization 이 쓴 *구체* threshold 로 판정한다(토큰화 resolvedPolicy 로
+      // thresholdOf 재계산 금지 — 커스텀 도메인 표면은 {domain} 잔존 allowed 가 covers() 를 빗나가 영구
+      // 위반이 됐다). expo 의 global 표면(src/api/**)은 threshold 가 동일해 byte-동치.
+      const threshold = guardedSurface.thresholdOf(surface);
+      if (isClearedAt(threshold, readinessOutput, order)) continue; // (b) 프로젝트가 레이어 열 자격 도달 — 침묵
       seenFiles.add(F);
-      const { reason, would_clear } = describeViolation(surface, resolvedPolicy, readinessOutput);
+      const { reason, would_clear } = describeViolation(surface, threshold, resolvedPolicy, readinessOutput);
       violations.push({ file: F, change: changeLabel(record), surface, reason, would_clear });
     }
   }
