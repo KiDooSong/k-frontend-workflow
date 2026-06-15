@@ -115,7 +115,7 @@ function main() {
     process.stdout.write(
       'workflow:run — workflow:packet(+report)를 엮어 auto-stop 상태를 낸다 (구현/auto-fix/auto-retry 0, 게이트 아님).\n' +
         '필수: --screen <ID> --requested-mode <mode>\n' +
-        '선택: --out <dir> --docs <dir> --src <dir> --readiness <path> --policy <path> --manifest <path> --domain <name>\n' +
+        '선택: --out <dir> --docs <dir> --src <dir> --readiness <path> --policy <path> --manifest <path> --layout <path> --domain <name>\n' +
         '       --diff <name-status.txt> --review <path> --skip-tests --json --date YYYY-MM-DD --seq NNN --owner <name>\n' +
         '상태: HALT_AMBIGUITY | HALT_READY_FOR_WORK | DONE_PENDING_REVIEW (exit 0) · HALT_TOOL_ERROR (exit 2)\n',
     );
@@ -129,6 +129,7 @@ function main() {
   const src = optStr(flags, 'src');
   const policy = optStr(flags, 'policy');
   const manifest = optStr(flags, 'manifest');
+  const layout = optStr(flags, 'layout');
   const readiness = optStr(flags, 'readiness');
   const domain = optStr(flags, 'domain');
   const diff = optStr(flags, 'diff');
@@ -141,6 +142,10 @@ function main() {
   // 출력 경로: --out <dir> 이면 packet/report 는 그 디렉터리 안, 상태 요약은 <dir>.md (헤드라인 산출물).
   // --out 없으면 packet/report 는 임시 디렉터리(소비용), 상태는 stdout.
   const outDirResolved = outDir ? path.resolve(outDir) : null;
+  // --layout 은 서브프로세스 cwd 모호성을 피하려 절대경로로 children(packet·report)에 전달한다
+  //   (packet/report → leaf 의 --layout 규약과 동일). 누락 시 children 은 기본(expo) 레이아웃으로 해소돼
+  //   custom layout 에서 orchestrator/leaf 가 서로 다른 프로파일을 보는 split-brain 이 된다.
+  const layoutResolved = layout ? path.resolve(layout) : null;
   const packetPath = outDirResolved
     ? path.join(outDirResolved, 'work-packet.md')
     : path.join(os.tmpdir(), `workflow-run-${seq}-work-packet.md`);
@@ -202,6 +207,7 @@ function main() {
   if (docs) packetArgs.push('--docs', docs);
   if (policy) packetArgs.push('--policy', policy);
   if (manifest) packetArgs.push('--manifest', manifest);
+  if (layoutResolved) packetArgs.push('--layout', layoutResolved);
   if (domain) packetArgs.push('--domain', domain);
   if (owner) packetArgs.push('--owner', owner);
   packetArgs.push('--date', date, '--seq', seq);
@@ -233,6 +239,7 @@ function main() {
   const reportArgs = ['--packet', packetPath, '--out', reportPath, '--diff', diff, '--json'];
   if (docs) reportArgs.push('--docs', docs);
   if (src) reportArgs.push('--src', src);
+  if (layoutResolved) reportArgs.push('--layout', layoutResolved);
   if (review) reportArgs.push('--review', review);
   if (skipTests) reportArgs.push('--skip-tests');
   reportArgs.push('--date', date, '--seq', seq);

@@ -102,8 +102,9 @@ function invocationLabel(scriptPath, args) {
 }
 
 // --- 도구별 수집기 (결과를 정규화 — 판정 아님, evidence) -------------------
-function collectValidate(docs, src) {
+function collectValidate(docs, src, layout) {
   const args = ['--json', '--docs', docs, '--src', src];
+  if (layout) args.push('--layout', layout);
   const invocation = invocationLabel(VALIDATE_SCRIPT, args);
   const r = runCapture(VALIDATE_SCRIPT, args);
   if (r.stdout.trim()) {
@@ -132,13 +133,14 @@ function collectValidate(docs, src) {
   };
 }
 
-function collectForbidden(diffFile, docs, root) {
+function collectForbidden(diffFile, docs, root, layout) {
   if (!diffFile) {
     return { tool: 'forbidden-paths', invocation: null, exitCode: null, status: 'not-collected', ok: null, reason: 'no --diff (경계는 diff 로 판정; diff 미제공)' };
   }
   const args = ['--json', '--diff', diffFile];
   if (docs) args.push('--docs', docs);
   if (root) args.push('--root', root);
+  if (layout) args.push('--layout', layout);
   const invocation = invocationLabel(FORBIDDEN_SCRIPT, args);
   const r = runCapture(FORBIDDEN_SCRIPT, args);
   if (r.stdout.trim()) {
@@ -200,8 +202,9 @@ function collectTests(skip) {
   };
 }
 
-function collectCheckGenerated(docs, src) {
+function collectCheckGenerated(docs, src, layout) {
   const args = ['--json', '--docs', docs, '--src', src];
+  if (layout) args.push('--layout', layout);
   const invocation = invocationLabel(CHECKGEN_SCRIPT, args);
   const r = runCapture(CHECKGEN_SCRIPT, args);
   if (r.stdout.trim()) {
@@ -237,7 +240,7 @@ function main() {
     process.stdout.write(
       'workflow:report — Work Packet 실행 evidence 를 수집해 Run Report 초안을 만든다 (evidence bundle, 게이트 아님).\n' +
         '필수: --packet <path>\n' +
-        '선택: --out <path> --docs <dir> --src <dir> --diff <name-status.txt> --review <path> --skip-tests --json --date YYYY-MM-DD --seq NNN\n',
+        '선택: --out <path> --docs <dir> --src <dir> --layout <path> --diff <name-status.txt> --review <path> --skip-tests --json --date YYYY-MM-DD --seq NNN\n',
     );
     process.exit(0);
   }
@@ -246,6 +249,7 @@ function main() {
   const outFlag = optStr(flags, 'out');
   const docsFlag = optStr(flags, 'docs');
   const srcFlag = optStr(flags, 'src');
+  const layoutFlag = optStr(flags, 'layout');
   const diffFlag = optStr(flags, 'diff');
   const reviewFlag = optStr(flags, 'review');
   const skipTests = !!flags['skip-tests'];
@@ -304,10 +308,15 @@ function main() {
   }
 
   // 5) 도구 evidence 수집 (서브프로세스 — 실패해도 report 는 성공).
-  const validate = collectValidate(docs, src);
-  const forbidden = collectForbidden(diffResolved, docs, projectRoot || undefined);
+  //    --layout 은 서브프로세스 cwd 모호성을 피하려 절대경로로 leaf(validate·forbidden·check-generated)에
+  //    전달한다(packet 의 --layout 규약과 동일). 누락 시 leaf 는 기본(expo) 레이아웃으로 해소돼 custom
+  //    layout 에서 packet/report 와 leaf 가 서로 다른 프로파일을 보는 split-brain 이 된다.
+  //    test-fixtures 는 전체 fixture harness 이므로 --layout 을 넘기지 않는다(기존 동작 유지).
+  const layoutResolved = layoutFlag ? path.resolve(layoutFlag) : null;
+  const validate = collectValidate(docs, src, layoutResolved);
+  const forbidden = collectForbidden(diffResolved, docs, projectRoot || undefined, layoutResolved);
   const idempotency = collectTests(skipTests);
-  const checkgen = collectCheckGenerated(docs, src);
+  const checkgen = collectCheckGenerated(docs, src, layoutResolved);
 
   // 6) 모델 빌드 + 렌더.
   const outPath = outFlag ? path.resolve(outFlag) : null;
