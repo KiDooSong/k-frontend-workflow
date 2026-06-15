@@ -44,6 +44,11 @@ npm run example:test    → test-fixtures — PASS (27 fixtures: 26 pass, 1 xfai
 - `examples/nav-graph/v2-structured/**` — v2 골든 픽스처(입력 + `_meta`/expected 생성물).
 - `temp/runs/interaction-matrix-v2-dual-read-001.md` — 본 run report.
 
+## Codex 리뷰 반영 (2026-06-16)
+
+- **MAJOR (빈 Result Type 행 누락):** 이전엔 v2 표에서 `Result Type` 이 빈 행을 `interactionRowRoutes` 가 `[]` 로 처리해(라우트 누락) 경고 메시지("v1 Result 폴백")와 실제 동작이 어긋났다 — 부분 마이그레이션 표의 nav-graph 엣지가 조용히 사라질 수 있었다. **수정:** v2 모드에서 빈 `Result Type` 행은 실제로 `Result` 셀(v1 free-form)로 폴백한다(설계 §4.1, type-empty 경고와 정합). 명시적 비-route 타입(state/mutation/…)은 그대로 라우트 없음. v1 표·v2 fixture(빈 타입 행 없음)는 불변 → byte-identical 유지. 회귀 테스트 추가("빈 Result Type 행은 실제로 v1 Result 로 폴백한다").
+- (비수용) Codex WARN(h): `examples/nav-graph/v2-structured/docs/.../_meta/nav-graph.yaml` 은 generator 로 생성한 픽스처 복사본(basic-flow 와 동일 관례)이라 "생성물 직접 수정 금지" 위반이 아님 — 유지.
+
 ## 후속 (이 PR 범위 밖 — 설계 §11/§12 의 잔여 Open Decision)
 
 - **OD-1/OD-2:** v2 컬럼 순서/필수성/`Result Type` enum 멤버십 동결(현재 enum 은 제안값, 경고만).

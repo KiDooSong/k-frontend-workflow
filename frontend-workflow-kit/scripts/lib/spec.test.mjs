@@ -202,3 +202,21 @@ test('v2 issues: 빈 Result Type 행은 v1 폴백 경고(type-empty), 완전 빈
   const issues = interactionMatrixV2Issues(spec);
   assert.equal(issues.filter((i) => i.kind === 'type-empty').length, 1);
 });
+
+test('v2: 빈 Result Type 행은 실제로 v1 Result 로 폴백한다 (엣지 누락 금지 — Codex MAJOR)', () => {
+  // 부분 마이그레이션: v2 표인데 한 행의 Result Type 이 비었고 라우트는 v1 Result 셀에 있다.
+  // 경고만 하고 조용히 누락하면 안 된다 — interactionRowRoutes/interactionEdgeRoutes 가 Result 로 폴백해야 한다.
+  const row = { Result: '쿠폰 목록 /(tabs)/coupons', 'Result Type': '', Target: '' };
+  assert.deepEqual(interactionRowRoutes(row, 'v2'), ['/(tabs)/coupons'], '빈 타입 행은 Result 로 폴백');
+  // 명시적 비-route 타입은 여전히 폴백하지 않는다(엣지 없음).
+  assert.deepEqual(interactionRowRoutes({ Result: '/x', 'Result Type': 'state', Target: '' }, 'v2'), []);
+
+  // spec 레벨: 빈 타입 행의 라우트가 nav-graph 의 edge 집합(interactionEdgeRoutes)에 포함된다.
+  const spec = specWithMatrix([
+    '| User Action | Trigger | Result | Result Type | Target |',
+    '|---|---|---|---|---|',
+    '| 상세 | tap | /coupons/[id] | route | /coupons/[id] |',  // 정상 v2 route
+    '| 목록 | tap | /(tabs)/coupons | | |',                    // 빈 타입 → v1 폴백
+  ]);
+  assert.deepEqual(interactionEdgeRoutes(spec), ['/coupons/[id]', '/(tabs)/coupons']);
+});

@@ -435,10 +435,16 @@ export function interactionMatrixIsV2(table) {
   return !!table && hasHeader(table.headers, 'Result Type');
 }
 
-// 한 행의 이동 라우트(들). v1: Result 셀. v2: Result Type=route 행만 Target 셀, 그 외는 라우트 없음.
+// 한 행의 이동 라우트(들).
+//   v1 모드: Result 셀.
+//   v2 모드: Result Type=route → Target 셀. 빈 Result Type → v1 free-form(Result 셀)로 폴백한다
+//            (설계 §4.1: 부분 마이그레이션 행은 조용히 누락하지 않고 v1 폴백 + 경고; type-empty 경고와 정합).
+//            그 외 명시적 비-route 타입(state/mutation/external/none) → 이동 엣지 없음.
 export function interactionRowRoutes(row, mode) {
   if (mode === 'v2') {
-    if (normResultType(col(row, 'Result Type')) !== 'route') return [];
+    const rt = normResultType(col(row, 'Result Type'));
+    if (!rt) return cellRoutes(col(row, 'Result')); // 빈 Result Type → v1 free-form 폴백(누락 금지)
+    if (rt !== 'route') return []; // 명시적 비-route 타입 → 라우트 없음
     return cellRoutes(col(row, 'Target'));
   }
   return cellRoutes(col(row, 'Result'));
