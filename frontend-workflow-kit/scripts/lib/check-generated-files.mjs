@@ -18,7 +18,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { KIT_ROOT, exists, isDir, readFileSafe } from './util.mjs';
+import { KIT_ROOT, exists, isDir, readFileSafe, projectRootOf } from './util.mjs';
+import { loadLayoutProfile } from './layout-profile.mjs';
 // 정규화 원시함수는 골든 하니스와 동일한 것을 재사용한다(설계 §A.5 "reuse verbatim; do not invent").
 import { normalizeGeneratedViewText, toPosix } from './test-fixture.mjs';
 
@@ -100,15 +101,19 @@ function relPosix(abs) {
 }
 
 // v1 reproduce 계약 — 생성기 호출 방식을 코드로 고정한다(헤더/manifest command 문자열 비파싱).
-//   resolveInput : --docs/--src 에서 생성기 입력 디렉토리.
+//   resolveInput : --docs/--src/layout 에서 생성기 입력 디렉토리.
 //   inputFlag    : 생성기 입력 플래그.
 //   outName      : _meta 산출 파일명(scratch 출력 파일명으로도 사용).
-// route-tree: src/app 파일트리 → _meta/route-tree.txt.  nav-graph: docs → _meta/nav-graph.yaml.
+// route-tree: {roles.route_entry} 파일트리 → _meta/route-tree.txt.  nav-graph: docs → _meta/nav-graph.yaml.
+// route-tree 입력 디렉토리는 {roles.route_entry} 바인딩에서 파생한다(literal <srcDir>/app 금지 — §6·§10:
+// tier2 router 경로와 같은 출처). role 글롭은 프로젝트-루트 상대(src/app)이므로 projectRootOf 로 앵커한다
+// (validate 검사 8·spec.mjs fake_hook 와 동일 식 — MINOR 2; 표준 <root>/src 가정 시 dirname(srcDir)).
+// (커스텀 라우트 경로[예: Next app/**]를 쓰는 프로젝트에서 생성물 가드가 입력을 짚게.)
 export const V1_REPRODUCE = {
   'route-tree': {
     script: 'route-tree.mjs',
     inputFlag: '--app',
-    resolveInput: ({ srcDir }) => path.join(srcDir, 'app'),
+    resolveInput: ({ srcDir, layout }) => path.resolve(projectRootOf(srcDir), layout.roleToDir('route_entry')),
     outName: 'route-tree.txt',
   },
   'nav-graph': {
@@ -147,7 +152,7 @@ function firstLineDiff(committed, regenerated) {
 //   - 생성기를 import 하지 않고 서브프로세스(process.execPath)로 호출(계약 고정).
 //   - 정규화 normalizeGeneratedViewText 만(CRLF/path-sep). timestamp 정규화 없음.
 //   - 커밋본은 읽기만 — 임시 디렉토리에만 쓰고 finally 로 삭제(자동수정/덮어쓰기 없음).
-export function reproduceArtifact(id, { docsDir, srcDir }) {
+export function reproduceArtifact(id, { docsDir, srcDir, layout }) {
   const checks = [];
   const ok = (check, message) => checks.push({ check, ok: true, message });
   const fail = (check, message) => checks.push({ check, ok: false, message });
@@ -158,8 +163,11 @@ export function reproduceArtifact(id, { docsDir, srcDir }) {
     return { id, status: 'skip', committed: null, input: null, checks };
   }
 
+  // 레이아웃 프로파일(tier1): route-tree 입력 디렉토리를 {roles.route_entry} 에서 파생한다.
+  // 호출부가 주지 않으면 기본 프로파일(expo-feature) 로드 — 토큰화 이전과 BYTE-동치(README §1.1).
+  const resolvedLayout = layout || loadLayoutProfile({ kitRoot: KIT_ROOT });
   const scriptPath = path.join(KIT_ROOT, 'scripts', contract.script);
-  const inputDir = contract.resolveInput({ docsDir, srcDir });
+  const inputDir = contract.resolveInput({ docsDir, srcDir, layout: resolvedLayout });
   const committed = committedPathFor(contract, docsDir);
   const result = (status) => ({ id, status, committed: relPosix(committed), input: relPosix(inputDir), checks });
 

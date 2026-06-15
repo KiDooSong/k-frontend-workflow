@@ -18,12 +18,11 @@
 //   2  입력 오류(state/policy 부재, git 실행/ base ref 해석 실패).
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { parseArgs, DEFAULTS, loadYaml, readFileSafe } from './lib/util.mjs';
+import { parseArgs, DEFAULTS, KIT_ROOT, loadYaml, readFileSafe, runCli } from './lib/util.mjs';
 import { computeReadiness } from './readiness.mjs';
+import { loadLayoutProfile } from './lib/layout-profile.mjs';
 import {
-  deriveGuardedSurface,
-  thresholdOf,
-  isCleared,
+  isClearedAt,
   highestScreenMode,
   parseNameStatusText,
   writePathsOf,
@@ -34,8 +33,41 @@ import {
   DiffParseError,
 } from './lib/path-backstop.mjs';
 
+// 정책의 {roles.X} 토큰을 물리 글롭으로 펼친 "resolved policy" 를 만든다(tier1 §6·§7).
+//   path-backstop 의 thresholdOf/isCleared/covers/materializeGuardedSurface 는 글롭 *문자열*만
+//   보므로, 토큰화된 정책을 그대로 주면 매칭이 깨진다. {domain} 은 보존한다(materializeGuardedSurface
+//   가 도메인 union 을 직접 펼침 — §7-i). resolvePaths(p,{}) = {roles.X} 펼침 + {domain} 보존.
+//   리터럴/blanket 글롭(src/**, src/features/**, openapi.yaml)은 resolvePaths 가 그대로 통과시키므로
+//   결과는 토큰화 이전 정책과 BYTE-동치다(회귀 기준).
+function resolvePolicyPaths(policy, layout) {
+  const modes = policy && typeof policy.modes === 'object' && policy.modes ? policy.modes : {};
+  const outModes = {};
+  for (const [name, mode] of Object.entries(modes)) {
+    outModes[name] = {
+      ...mode,
+      allowed_paths: layout.resolvePaths(mode.allowed_paths || [], {}),
+      forbidden_paths: layout.resolvePaths(mode.forbidden_paths || [], {}),
+    };
+  }
+  return { ...policy, modes: outModes };
+}
+
+// state.screens 에서 실제 도메인 리스트를 모은다(materializeGuardedSurface 의 {domain} union 입력).
+// 도메인이 없으면 빈 배열 — 현 deriveGuardedSurface 가 domain-scoped 를 통째로 버리는 것과 동일 결과.
+function domainsFromState(state) {
+  const screens = (state && state.screens) || {};
+  const set = new Set();
+  for (const id of Object.keys(screens)) {
+    const d = screens[id] && screens[id].domain;
+    if (d != null && d !== '') set.add(d);
+  }
+  return [...set].sort();
+}
+
 // 위반 1건의 reason / would_clear 문구를 만든다(설계 §4 출력 규약).
-function describeViolation(surface, policy, readinessOutput) {
+//   threshold 는 호출부가 넘기는 표면의 *구체* threshold(materializeGuardedSurface 가 계산) — M3.
+//   토큰화된 정책으로 재계산하면 커스텀 도메인 표면에서 null 이 나와 reason 이 깨진다.
+function describeViolation(surface, threshold, policy, readinessOutput) {
   const isOpenApi = surface === 'openapi.yaml' || surface === 'openapi.yml';
   if (isOpenApi) {
     return {
@@ -43,7 +75,6 @@ function describeViolation(surface, policy, readinessOutput) {
       would_clear: `정책 결정 필요: api-integrated-ui 가 openapi 를 허용해야 하는가? (§8 미결)`,
     };
   }
-  const threshold = thresholdOf(policy, surface);
   const highest = highestScreenMode(readinessOutput, policy) || '(없음)';
   return {
     reason: `guarded(${surface}) 인데 프로젝트의 어떤 화면도 ${threshold} 에 도달하지 못함 (현재 최고 화면 모드: ${highest})`,
@@ -98,12 +129,24 @@ function main() {
   // 매니페스트는 computeReadiness 의 부가 입력(next_actions 템플릿 경로 등). 게이트 판정은 정책 단일 출처.
   const manifest = loadYamlOrExit(path.resolve(flags.manifest || DEFAULTS.manifest), 'manifest') || {};
 
+  // --- 레이아웃 프로파일 + resolved policy (tier1 §6·§7) ---
+  // 정책이 {roles.X} 로 토큰화돼 있으므로, path-backstop 의 글롭-문자열 helper 에 넘기기 전에
+  // 토큰을 물리 글롭으로 펼친다(BYTE-동치 회귀 기준 — §10). --layout 으로 프로파일 경로 오버라이드.
+  const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags });
+  const resolvedPolicy = resolvePolicyPaths(policy, layout);
+  // 모드 사다리 순서(clearance index 비교용). thresholdOf 를 토큰화 정책으로 재계산하지 않고
+  // materializeGuardedSurface 가 준 구체 threshold 의 index 만 본다(§7-i / M3).
+  const order = resolvedPolicy.order || Object.keys(resolvedPolicy.modes || {});
+
   // --- readiness 소비 (모드 판정 단일 출처) ---
   // ci={} : 경로 게이트는 CI fact 불필요(threshold 인 api-integrated-ui 는 fact-only).
-  const readinessOutput = computeReadiness({ state, policy, ci: {}, manifest });
+  const readinessOutput = computeReadiness({ state, policy, ci: {}, manifest, layout });
 
-  // --- guarded surface 파생 (정책에서) ---
-  const guardedSurface = deriveGuardedSurface(policy);
+  // --- guarded surface 파생 (정책에서; 도메인 union 사전 구체화 — §7-i) ---
+  // materializeGuardedSurface 는 {domain} forbidden 을 실제 도메인들로 펼친 구체 글롭 합집합을
+  // 만든 뒤 deriveGuardedSurface 와 동일 분류/threshold 필터를 적용한다. 도메인 오버라이드가 없는
+  // expo 에선 결과가 deriveGuardedSurface(policy) 와 BYTE-동치.
+  const guardedSurface = layout.materializeGuardedSurface(resolvedPolicy, domainsFromState(state));
 
   // --- diff source 결정 → 상태 인식 record (우선순위: §3) ---
   let records;
@@ -156,9 +199,13 @@ function main() {
       const surface = matched.sort(
         (a, b) => b.replace(/\*+/g, '').length - a.replace(/\*+/g, '').length || a.localeCompare(b),
       )[0];
-      if (isCleared(surface, readinessOutput, policy)) continue; // (b) 프로젝트가 레이어 열 자격 도달 — 침묵
+      // M3 대칭: clearance 는 materialization 이 쓴 *구체* threshold 로 판정한다(토큰화 resolvedPolicy 로
+      // thresholdOf 재계산 금지 — 커스텀 도메인 표면은 {domain} 잔존 allowed 가 covers() 를 빗나가 영구
+      // 위반이 됐다). expo 의 global 표면(src/api/**)은 threshold 가 동일해 byte-동치.
+      const threshold = guardedSurface.thresholdOf(surface);
+      if (isClearedAt(threshold, readinessOutput, order)) continue; // (b) 프로젝트가 레이어 열 자격 도달 — 침묵
       seenFiles.add(F);
-      const { reason, would_clear } = describeViolation(surface, policy, readinessOutput);
+      const { reason, would_clear } = describeViolation(surface, threshold, resolvedPolicy, readinessOutput);
       violations.push({ file: F, change: changeLabel(record), surface, reason, would_clear });
     }
   }
@@ -212,4 +259,5 @@ function main() {
 }
 
 // 직접 실행될 때만 main() (import 시 부작용 없음)
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+// runCli: 레이아웃 설정 오류(미정의 role·부재 --layout)를 exit 2 로 surface(stack trace+exit 1 차단).
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) runCli(main, 'forbidden-paths');

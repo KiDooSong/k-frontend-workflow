@@ -9,14 +9,17 @@ import { pathToFileURL } from 'node:url';
 import {
   parseArgs,
   DEFAULTS,
+  KIT_ROOT,
   findFiles,
   exists,
   splitFrontmatter,
   readFileSafe,
   emitGeneratedYaml,
   writeFile,
+  runCli,
 } from './lib/util.mjs';
 import { loadScreenSpec, deriveMetrics, isStub } from './lib/spec.mjs';
+import { loadLayoutProfile } from './lib/layout-profile.mjs';
 
 function todayISO() {
   // 결정성: --date 로 고정 가능. 기본은 오늘 (generated_at 한 줄만 변동 허용).
@@ -26,7 +29,11 @@ function todayISO() {
   ).padStart(2, '0')}`;
 }
 
-export function buildState({ docsDir, srcDir, date }) {
+export function buildState({ docsDir, srcDir, date, layout }) {
+  // 레이아웃 프로파일(tier1): deriveMetrics 의 fake_hook_exists 가 {roles.hook} 디렉토리를 단일
+  // 출처에서 파생하도록 주입한다. 호출부가 주지 않으면 기본 프로파일(expo-feature)을 로드 —
+  // 토큰화 이전과 BYTE-동치(README §1.1).
+  const resolvedLayout = layout || loadLayoutProfile({ kitRoot: KIT_ROOT });
   const domainsRoot = path.join(docsDir, 'domains');
   const specPaths = findFiles(domainsRoot, 'screen-spec.md');
 
@@ -43,7 +50,7 @@ export function buildState({ docsDir, srcDir, date }) {
     const route = fm.route || null;
     const status = fm.status || 'draft';
 
-    const derived = deriveMetrics(spec, { srcDir });
+    const derived = deriveMetrics(spec, { srcDir, layout: resolvedLayout });
 
     screens[id] = {
       status,
@@ -137,8 +144,10 @@ function main() {
   const srcDir = path.resolve(flags.src || DEFAULTS.src);
   const date = (typeof flags.date === 'string' && flags.date) || todayISO();
   const outDir = flags.out ? path.resolve(flags.out) : path.join(docsDir, '_meta');
+  // 레이아웃 프로파일(tier1): role→glob 단일 출처. --layout 으로 project-layout.yaml 경로 오버라이드.
+  const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags });
 
-  const { state, inventory } = buildState({ docsDir, srcDir, date });
+  const { state, inventory } = buildState({ docsDir, srcDir, date, layout });
 
   if (flags.json) {
     process.stdout.write(JSON.stringify({ state, inventory }, null, 2) + '\n');
@@ -182,4 +191,5 @@ function main() {
 }
 
 // 직접 실행될 때만 main() (import 시 부작용 없음 — buildState 재사용 가능)
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+// runCli: 레이아웃 설정 오류(미정의 role·부재 --layout)를 exit 2 로 surface(stack trace+exit 1 차단).
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) runCli(main, 'workflow:state');

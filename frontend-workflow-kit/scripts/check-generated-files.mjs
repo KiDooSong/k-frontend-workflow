@@ -30,7 +30,8 @@
 //   2  설정 오류: manifest 부재/형식오류/YAML 손상 — validate 와 같은 계약(설계 §6.1).
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { parseArgs, DEFAULTS, loadYamlOrExit } from './lib/util.mjs';
+import { parseArgs, DEFAULTS, KIT_ROOT, loadYamlOrExit, runCli } from './lib/util.mjs';
+import { loadLayoutProfile } from './lib/layout-profile.mjs';
 import {
   V1_ARTIFACT_IDS,
   selectArtifactIds,
@@ -165,7 +166,9 @@ function main() {
   }
 
   // 기본(check): selected 산출물을 reproduce-to-scratch 비교.
-  const results = shown.filter((d) => d.selected).map((d) => reproduceArtifact(d.id, { docsDir, srcDir }));
+  // 레이아웃 프로파일(tier1): route-tree 입력 디렉토리를 {roles.route_entry} 에서 파생한다.
+  const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags });
+  const results = shown.filter((d) => d.selected).map((d) => reproduceArtifact(d.id, { docsDir, srcDir, layout }));
   const summary = summarize(results);
   const bad = results.filter((r) => r.status !== 'ok' && r.status !== 'skip');
   const report = {
@@ -183,4 +186,5 @@ function main() {
 }
 
 // 직접 실행될 때만 main() (import 시 부작용 없음 — 테스트가 lib 를 직접 소비)
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+// runCli: 레이아웃 설정 오류(미정의 role·부재 --layout)를 exit 2 로 surface(설정 오류 계약과 일치).
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) runCli(main, 'check-generated-files');

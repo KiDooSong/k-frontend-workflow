@@ -1,0 +1,14 @@
+# Expo Router + feature-folder preset (tier1 layout profile).
+# 현 하드코딩과 BYTE-동치 — 회귀 기준 (tier1-layout-profile.md §8·§10).
+# role → 물리 glob. {domain} 토큰은 readiness 의 per-screen 치환에서 펼쳐지므로 여기선 보존한다.
+# ({screen} 은 코드 role 에서 치환되지 않는다 — 킷 문서 경로 전용. §2 주의.)
+version: 1
+
+roles:
+  route_entry: src/app/**
+  screen: src/features/{domain}/screens/**
+  domain_component: src/features/{domain}/components/**
+  hook: src/features/{domain}/hooks/**
+  ui_primitive: src/components/ui/**
+  api_client: src/api/**
+  api_schema: src/api/schemas/**

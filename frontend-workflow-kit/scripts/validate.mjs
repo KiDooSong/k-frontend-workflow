@@ -26,6 +26,7 @@ import { pathToFileURL } from 'node:url';
 import {
   parseArgs,
   DEFAULTS,
+  KIT_ROOT,
   loadYaml,
   loadYamlOrExit,
   walkFiles,
@@ -34,8 +35,11 @@ import {
   splitFrontmatter,
   exists,
   dirHasFiles,
+  runCli,
+  projectRootOf,
 } from './lib/util.mjs';
 import { validateSchema } from './lib/schema.mjs';
+import { loadLayoutProfile } from './lib/layout-profile.mjs';
 import {
   loadScreenSpec,
   parseApiCandidates,
@@ -101,7 +105,8 @@ function main() {
   const { flags } = parseArgs(process.argv.slice(2));
   const docsDir = path.resolve(flags.docs || DEFAULTS.docs);
   const srcDir = path.resolve(flags.src || DEFAULTS.src);
-  const projectRoot = flags.root ? path.resolve(flags.root) : path.dirname(srcDir);
+  // projectRoot = role 글롭 앵커 단일 출처(MINOR 2 — spec.mjs·check-generated-files 와 동일 식).
+  const projectRoot = projectRootOf(srcDir, flags);
   // 설정 파일(manifest/schema/policy)은 부재·손상 시 exit 2 — 누락된 설정이 검사를 조용히 비활성화하지
   // 않게 한다(forbidden-paths·readiness 와 대칭). 실제 설치는 킷 위치에서 자동 해석돼 항상 존재한다.
   const manifestPath = path.resolve(flags.manifest || DEFAULTS.manifest);
@@ -134,6 +139,9 @@ function main() {
     process.stderr.write(`validate: 정책 파일 없음/형식 오류(매핑 아님): ${policyPath}\n`);
     process.exit(2);
   }
+  // 레이아웃 프로파일(tier1): 검사 8 의 스키마 디렉토리를 {roles.api_schema} 단일 출처에서 파생한다
+  // (literal <srcDir>/api/schemas 금지 — §6·§10). --layout 으로 project-layout.yaml 경로 오버라이드.
+  const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags });
 
   const errors = [];
   const add = (check, file, message) =>
@@ -266,7 +274,9 @@ function main() {
   //    - manifest 부재 시: 현행 전역 존재검사(hasZod||hasOpenApi)로 폴백(엄격 모드로 깨지 않음).
   //    - confirmed 0건 화면은 무발화(candidate 전용 화면의 옛 동작·readiness 불변).
   //    - 사실 출처는 zod export 심볼. Source 컬럼 / OpenAPI components.schemas 해소는 범위 밖(known limitation).
-  const schemasDir = path.join(srcDir, 'api', 'schemas');
+  // 검사 8 의 스키마 디렉토리: {roles.api_schema} 바인딩(예: src/api/schemas). role 글롭은
+  // 프로젝트-루트 상대이므로 projectRoot 에 resolve 한다(api_client 와 별도 role — §2 주의).
+  const schemasDir = path.resolve(projectRoot, layout.roleToDir('api_schema'));
   const hasZod = dirHasFiles(schemasDir, ['.ts']);
   const hasOpenApi =
     exists(path.join(projectRoot, 'openapi.yaml')) ||
@@ -488,4 +498,5 @@ function main() {
 }
 
 // 직접 실행될 때만 main()
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+// runCli: 레이아웃 설정 오류(미정의 role·부재 --layout)를 exit 2 로 surface(stack trace+exit 1 차단).
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) runCli(main, 'validate');

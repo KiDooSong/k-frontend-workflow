@@ -16,8 +16,9 @@
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { parseArgs, DEFAULTS, KIT_ROOT, readFileSafe, writeFile, yamlParse } from './lib/util.mjs';
+import { parseArgs, DEFAULTS, KIT_ROOT, readFileSafe, writeFile, yamlParse, runCli } from './lib/util.mjs';
 import { buildPacketModel, renderPacketMarkdown, renderJsonEnvelope } from './lib/workflow-packet.mjs';
+import { loadLayoutProfile } from './lib/layout-profile.mjs';
 
 const SELF_DIR = path.dirname(fileURLToPath(import.meta.url));
 const READINESS_SCRIPT = path.join(SELF_DIR, 'readiness.mjs');
@@ -95,10 +96,13 @@ function parseReadinessFile(p) {
   }
 }
 
-function runReadinessSubprocess({ screen, docs, policy, manifest }) {
+function runReadinessSubprocess({ screen, docs, policy, manifest, layout }) {
   const args = [READINESS_SCRIPT, '--docs', docs, '--screen', screen, '--json'];
   if (policy) args.push('--policy', policy);
   if (manifest) args.push('--manifest', manifest);
+  // --layout 전달(MAJOR 2): allowed/forbidden(서브프로세스 readiness)과 모드 힌트(아래 loadLayoutProfile)가
+  //   같은 레이아웃 프로파일을 보게 한다. 누락 시 readiness 는 기본(expo) 정책으로 해소돼 split-brain 이 된다.
+  if (layout) args.push('--layout', layout);
   let out;
   try {
     out = execFileSync(process.execPath, args, { encoding: 'utf8' });
@@ -146,6 +150,7 @@ function main() {
   const manifestFlag = optStr(flags, 'manifest');
   const outFlag = optStr(flags, 'out');
   const domainFlag = optStr(flags, 'domain');
+  const layoutFlag = optStr(flags, 'layout');
   const date = optStr(flags, 'date') ?? isoToday();
   const owner = optStr(flags, 'owner') ?? 'workflow:packet';
   const seq = optStr(flags, 'seq') ?? '001';
@@ -162,9 +167,15 @@ function main() {
     readinessSource = toPosix(path.relative(process.cwd(), p)) || readinessFlag;
   } else {
     const docs = docsFlag ? path.resolve(docsFlag) : path.resolve(DEFAULTS.docs);
-    data = runReadinessSubprocess({ screen, docs, policy: policyPath, manifest: manifestPath });
+    // --layout 은 서브프로세스 cwd 모호성을 피하려 절대경로로 넘긴다(policy/manifest 와 동일 규약).
+    const layoutPath = layoutFlag ? path.resolve(layoutFlag) : null;
+    data = runReadinessSubprocess({ screen, docs, policy: policyPath, manifest: manifestPath, layout: layoutPath });
     const docsLabel = toPosix(docsFlag || DEFAULTS.docs);
-    readinessSource = `readiness.mjs --docs ${docsLabel} --screen ${screen} --json (computed ${date})`;
+    // readinessSource 에도 --layout 을 반영(MAJOR 2): allowed/forbidden 과 힌트의 출처가 일치함을 명시.
+    // 기록 문자열은 서브프로세스가 *실제로 받은* 인자(resolve 된 절대경로 layoutPath)와 일치시킨다 —
+    // raw layoutFlag 를 적으면 provenance 가 실제 전달값과 어긋난다(Codex minor).
+    const layoutLabel = layoutPath ? ` --layout ${toPosix(layoutPath)}` : '';
+    readinessSource = `readiness.mjs --docs ${docsLabel} --screen ${screen}${layoutLabel} --json (computed ${date})`;
   }
 
   const entry = pickEntry(data, screen);
@@ -180,6 +191,9 @@ function main() {
     ? toPosix(path.relative(path.dirname(outPath), AMBIGUITY_DOC))
     : toPosix(path.relative(process.cwd(), AMBIGUITY_DOC));
 
+  // 레이아웃 프로파일(tier1): MODE_HINTS 경로 카피를 role 글롭에서 생성. --layout 으로 오버라이드.
+  const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags });
+
   const model = buildPacketModel({
     entry,
     screen,
@@ -191,6 +205,7 @@ function main() {
     owner,
     seq,
     ambiguityLink,
+    layout,
   });
 
   const md = renderPacketMarkdown(model);
@@ -221,4 +236,5 @@ function main() {
   process.exit(0);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+// runCli: 레이아웃 설정 오류(미정의 role·부재 --layout)를 exit 2 로 surface(stack trace+exit 1 차단).
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) runCli(main, 'workflow:packet');

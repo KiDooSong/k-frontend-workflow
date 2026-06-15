@@ -135,12 +135,22 @@ export function deriveGuardedSurface(policy) {
 export function isCleared(surface, readinessOutput, policy) {
   const order = policy.order || Object.keys(policy.modes || {});
   const threshold = thresholdOf(policy, surface);
+  return isClearedAt(threshold, readinessOutput, order);
+}
+
+// threshold(모드 이름)를 직접 받아 clearance 를 판정한다(M3): 호출부가 표면의 *구체* threshold 를
+// 이미 알고 있을 때(materializeGuardedSurface 가 도메인별 구체 정책으로 계산한 값) thresholdOf 를
+// 토큰화된 정책으로 재계산하지 않고 그 값을 그대로 쓰게 한다. isCleared 가 이 함수에 위임한다 —
+// "어떤 화면의 readiness_mode 가 threshold 에 도달/초과하는가" 로직은 변경 없음.
+//   threshold==null → false(예: openapi.yaml/yml, 또는 미채택 표면).
+export function isClearedAt(threshold, readinessOutput, order) {
   if (threshold == null) return false;
-  const tIdx = order.indexOf(threshold);
+  const ord = order || [];
+  const tIdx = ord.indexOf(threshold);
   if (tIdx < 0) return false;
   for (const screenId of Object.keys(readinessOutput || {})) {
     const mode = readinessOutput[screenId]?.readiness_mode;
-    const sIdx = order.indexOf(mode);
+    const sIdx = ord.indexOf(mode);
     if (sIdx >= tIdx) return true;
   }
   return false;

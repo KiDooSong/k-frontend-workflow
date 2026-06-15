@@ -11,38 +11,56 @@
 // 어휘 가드(§3): 'verdict' / 'blocked' 를 능동 용어로 쓰지 않는다 — Safe To Proceed? / D-cand / U-cand /
 //               blocker-candidate / HALT_AMBIGUITY / cap 을 쓴다.
 
+import { loadLayoutProfile } from './layout-profile.mjs';
+import { KIT_ROOT } from './util.mjs';
+
 // 모드별 정답 산출물 힌트 — work-packet.template.md(Goal/Expected Output 주석)의 예시를 그대로 인코딩한 것.
 // 화면 추론이 아니라 "모드 이름 → 정적 설명" 룩업이다(템플릿이 이미 제시한 형태를 옮김).
-export const MODE_HINTS = {
-  'docs-only': {
-    goal: 'docs/frontend-workflow/** 문서만 정리/작성한다 (src/** 무변경).',
-    expectedOutput: 'docs/frontend-workflow/** 문서만 변경; src/** 변경 0 (git diff 로 확인).',
-  },
-  'route-skeleton': {
-    goal: '라우트 엔트리(src/app/**)만 세운다 (features/** 무접촉).',
-    expectedOutput: 'src/app/** 라우트 엔트리만 존재; src/features/** 무접촉 (git diff 로 확인).',
-  },
-  'screen-skeleton': {
-    goal: '라우트에 연결된 화면 shell 만 세운다 (fixture UI·fake hook 없음).',
-    expectedOutput: 'WHEN 라우트 진입 THEN 화면 shell 렌더; fixture UI·fake hook 부재.',
-  },
-  'rough-fixture-ui': {
-    goal: 'fixture 데이터로 화면을 구동한다 (실제 API 연동·src/api 변경 없음).',
-    expectedOutput: 'fixture 데이터로 화면 구동; src/api/** 변경 0; fake hook(AsyncState) 계약 충족.',
-  },
-  'final-fixture-ui': {
-    goal: '확정 ScreenSpec + figma 매핑 기반으로 fixture UI 를 마감한다 (API 미연동).',
-    expectedOutput: 'figma 매핑 반영된 fixture UI; src/api/** 변경 0.',
-  },
-  'api-integrated-ui': {
-    goal: 'fake hook 내부를 실제 API 로 교체한다 (화면 컴포넌트 무접촉).',
-    expectedOutput: 'hook 내부 API 연동; src/features/{domain}/screens/** 무접촉 (fake hook 계약).',
-  },
-  'production-ready': {
-    goal: 'CI 게이트(lint/schema/state coverage/LLM review)를 모두 통과시킨다.',
-    expectedOutput: 'CI 4종 pass; src/** 산출물 완성 (state coverage 포함).',
-  },
-};
+//
+// 경로 카피(tier1 §6): 사람-대상 안내 카피의 *role* 경로는 resolvedLayout 의 role 글롭에서 생성한다
+// (literal 'src/app/**' 등 하드코딩 금지). 리터럴 가드 경로(docs/frontend-workflow/**, src/**,
+// src/features/**)는 role 이 아니므로 그대로 둔다. expo 프리셋에선 렌더 텍스트가 BYTE-동치.
+//   route_entry → src/app/**, api_client → src/api/**, screen → src/features/{domain}/screens/**.
+export function modeHintsFor(layout) {
+  const g = (role) => layout.roleGlobs(role)[0] || `{roles.${role}}`;
+  const routeEntry = g('route_entry');
+  const apiClient = g('api_client');
+  const screen = g('screen');
+  return {
+    'docs-only': {
+      goal: 'docs/frontend-workflow/** 문서만 정리/작성한다 (src/** 무변경).',
+      expectedOutput: 'docs/frontend-workflow/** 문서만 변경; src/** 변경 0 (git diff 로 확인).',
+    },
+    'route-skeleton': {
+      goal: `라우트 엔트리(${routeEntry})만 세운다 (features/** 무접촉).`,
+      expectedOutput: `${routeEntry} 라우트 엔트리만 존재; src/features/** 무접촉 (git diff 로 확인).`,
+    },
+    'screen-skeleton': {
+      goal: '라우트에 연결된 화면 shell 만 세운다 (fixture UI·fake hook 없음).',
+      expectedOutput: 'WHEN 라우트 진입 THEN 화면 shell 렌더; fixture UI·fake hook 부재.',
+    },
+    'rough-fixture-ui': {
+      goal: `fixture 데이터로 화면을 구동한다 (실제 API 연동·${apiClient} 변경 없음).`,
+      expectedOutput: `fixture 데이터로 화면 구동; ${apiClient} 변경 0; fake hook(AsyncState) 계약 충족.`,
+    },
+    'final-fixture-ui': {
+      goal: '확정 ScreenSpec + figma 매핑 기반으로 fixture UI 를 마감한다 (API 미연동).',
+      expectedOutput: `figma 매핑 반영된 fixture UI; ${apiClient} 변경 0.`,
+    },
+    'api-integrated-ui': {
+      goal: 'fake hook 내부를 실제 API 로 교체한다 (화면 컴포넌트 무접촉).',
+      expectedOutput: `hook 내부 API 연동; ${screen} 무접촉 (fake hook 계약).`,
+    },
+    'production-ready': {
+      goal: 'CI 게이트(lint/schema/state coverage/LLM review)를 모두 통과시킨다.',
+      expectedOutput: 'CI 4종 pass; src/** 산출물 완성 (state coverage 포함).',
+    },
+  };
+}
+
+// import 부작용 0(loader 와 동일 불변식): MODE_HINTS 를 모듈 로드 시점에 *eager* 로 만들지 않는다
+// (그러면 import 만으로 YAML 파일을 읽게 됨). buildPacketModel 이 주입된 layout(또는 lazy 기본 로드)으로
+// modeHintsFor 를 호출한다.
 
 function genericHint(mode) {
   return {
@@ -147,7 +165,11 @@ export function buildPacketModel(opts) {
     owner = 'workflow:packet',
     seq = '001',
     ambiguityLink = 'docs/workflows/ambiguity-triage.md',
+    layout,
   } = opts;
+  // 레이아웃 프로파일(tier1): MODE_HINTS 경로 카피를 role 글롭에서 생성한다. 호출부가 주지 않으면
+  // 기본 프로파일(expo-feature) 로드 — 토큰화 이전과 BYTE-동치(README §1.1).
+  const resolvedLayout = layout || loadLayoutProfile({ kitRoot: KIT_ROOT });
 
   const readinessMode = entry.readiness_mode || '(unknown)';
   const nextMode = entry.next_mode || null;
@@ -188,7 +210,10 @@ export function buildPacketModel(opts) {
     }
   }
 
-  const modeHint = MODE_HINTS[readinessMode] || genericHint(readinessMode);
+  const modeHint = modeHintsFor(resolvedLayout)[readinessMode] || genericHint(readinessMode);
+  // api_client role 글롭을 모델에 실어 Acceptance/Review prose 가 literal 'src/api/**' 대신 쓰게 한다(MINOR 6).
+  // (openapi.yaml 은 role 이 아닌 리터럴 가드라 그대로 둔다 — modeHintsFor 의 리터럴 가드 정책과 일관.)
+  const apiClientGlob = resolvedLayout.roleGlobs('api_client')[0] || 'src/api/**';
 
   return {
     packet_id: `WP-${screen}-${readinessMode}-${seq}`,
@@ -212,6 +237,7 @@ export function buildPacketModel(opts) {
     ambiguityRows,
     warnings,
     modeHint,
+    apiClientGlob,
     ambiguityLink,
   };
 }
@@ -409,7 +435,7 @@ export function renderPacketMarkdown(m) {
   out.push('');
   out.push('## Acceptance Criteria');
   out.push('- [ ] 변경 파일이 Allowed Paths(readiness 출력) 안에만 존재 — `git diff --name-only` 로 확인.');
-  out.push('- [ ] Forbidden Paths 무접촉 (특히 `src/api/**` · `openapi.yaml` 에 한 줄도 닿지 않음).');
+  out.push(`- [ ] Forbidden Paths 무접촉 (특히 \`${m.apiClientGlob}\` · \`openapi.yaml\` 에 한 줄도 닿지 않음).`);
   out.push(`- [ ] 모드 천장(\`${m.readiness_mode}\`) 초과 산출물 없음 (상위 모드 UI/연동 욱여넣기 금지).`);
   out.push('- [ ] Blocking Items 의 결정/Unknown/Conflict 가 그대로 열려 있음 (이 세션이 닫지 않음).');
   out.push('- [ ] `npm run workflow:validate` exit 0, 재실행 멱등 (재생성물 외 빈 diff).');
@@ -417,7 +443,7 @@ export function renderPacketMarkdown(m) {
   out.push('## Review Checklist');
   out.push(`- [ ] **Pre-Implementation Review** — Ambiguity Review Required 의 \`Safe To Proceed?\` 가 \`${m.readiness_mode}\` 까지 검토됐고(빈 표면은 "없음—사유"), Validity 전제(readiness_source mode/facts) 무변경, Blocking 후보(D-cand/U-cand)가 분류돼 그대로 열림(이 세션이 닫지 않음).`);
   out.push(`- [ ] **게이트 판독** — readiness_mode/allowed/forbidden 이 \`${m.readiness_source}\` 와 글자 일치 (재계산·hand-edit 없음).`);
-  out.push('- [ ] **경로 준수** — diff 가 allowed 안에만, forbidden(특히 `src/api/**`) 무접촉.');
+  out.push(`- [ ] **경로 준수** — diff 가 allowed 안에만, forbidden(특히 \`${m.apiClientGlob}\`) 무접촉.`);
   out.push(`- [ ] **천장 미초과** — \`${m.readiness_mode}\` 가 허용하는 산출물만 (과구현 없음).`);
   out.push('- [ ] **미확정 미발명** — API/copy/design value 추측 없음, tbd 행 그대로.');
   out.push('- [ ] **결정 미닫힘** — Open Decision/Conflict/Unknown 상태 보존 (사람-전용 불변식).');
