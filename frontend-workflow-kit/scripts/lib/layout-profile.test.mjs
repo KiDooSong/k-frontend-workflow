@@ -321,3 +321,38 @@ test('M3 clearance: 커스텀 도메인-스코프 표면이 구체 threshold 도
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+// --- custom fixture: 머지 3계층(preset < roles < domains.<d>.roles) 온-디스크 회귀 --------------
+// examples/layout-profile/custom-monorepo/project-layout.yaml 를 --layout 으로 로드한다.
+// (위 MAJOR3/M3 케이스는 tmp 파일 — 여기선 *커밋된* fixture 로 도메인 오버라이드 해소를 고정한다.)
+// 배경: temp/runs/tier1-integration-dogfood-001.md §7-1·§8.
+const CUSTOM_LAYOUT = path.join(
+  KIT_ROOT, 'examples', 'layout-profile', 'custom-monorepo', 'project-layout.yaml',
+);
+function customLayout() {
+  return loadLayoutProfile({ kitRoot: KIT_ROOT, flags: { layout: CUSTOM_LAYOUT } });
+}
+
+test('custom fixture: preset < roles — route_entry 재바인딩(app/**), 비오버라이드 role 은 프리셋 상속', () => {
+  const L = customLayout();
+  assert.deepEqual(L.roleGlobs('route_entry'), ['app/**']); // roles 가 프리셋 src/app/** 을 role 단위 교체
+  assert.equal(L.roleToDir('route_entry'), 'app');
+  assert.deepEqual(L.roleGlobs('ui_primitive'), ['src/components/ui/**']); // 비오버라이드 → 프리셋 상속
+  assert.equal(L.preset, 'expo-feature');
+});
+
+test('custom fixture: roles < domains.<d>.roles — legacy 도메인만 screen 오버라이드(도메인-스코프 격리)', () => {
+  const L = customLayout();
+  assert.ok(Object.keys(L.domains).includes('legacy'));
+  // legacy 도메인: 오버라이드된 screen 경로로 해소(+{domain} 치환).
+  assert.deepEqual(L.resolvePaths(['{roles.screen}'], { domain: 'legacy' }), [
+    'src/legacy/legacy/screens/**',
+  ]);
+  // 다른 도메인(coupons): base(프리셋) screen 을 그대로 — 도메인 오버라이드가 새지 않는다.
+  assert.deepEqual(L.resolvePaths(['{roles.screen}'], { domain: 'coupons' }), [
+    'src/features/coupons/screens/**',
+  ]);
+  // roleToDir 도 도메인별로 갈린다(존재검사용 디렉토리 파생).
+  assert.equal(L.roleToDir('screen', { domain: 'legacy' }), 'src/legacy/legacy/screens');
+  assert.equal(L.roleToDir('screen', { domain: 'coupons' }), 'src/features/coupons/screens');
+});
