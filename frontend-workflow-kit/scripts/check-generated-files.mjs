@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // check-generated-files.mjs — generated-file guard v1 (CLI).
 //
-// 2.5C(reproduce): selected(route-tree·nav-graph)를 임시 디렉토리에 재생성해 커밋본과 비교한다.
+// 2.5C(reproduce): selected(route-tree·nav-graph·component-catalog)를 임시 디렉토리에 재생성해 커밋본과 비교한다.
 //   기본 동작 = 검사(reproduce-to-scratch). `--list` 는 2.5B discovery(분류 나열)만.
 //   warning-first: 검사 결과가 어떻든 **항상 exit 0**. 설정 오류(manifest)만 exit 2.
 //   생성기는 명시 계약으로 호출 — manifest/헤더 command 문자열 비교 없음(설계 §2.1, §8.1).
@@ -11,7 +11,7 @@
 //
 // 사용:
 //   node scripts/check-generated-files.mjs [--json] [--docs <dir>] [--src <dir>]
-//       [--manifest <file>] [--artifact <id>]            # 기본: route-tree·nav-graph 재생성 비교
+//       [--manifest <file>] [--artifact <id>]            # 기본: route-tree·nav-graph·component-catalog 재생성 비교
 //   node scripts/check-generated-files.mjs --list [...]   # 분류 나열만(검사 없음)
 //
 // 옵션:
@@ -20,7 +20,7 @@
 //   --docs <dir>      문서 루트(기본 docs/frontend-workflow). nav-graph 입력·_meta 커밋본 위치.
 //   --src  <dir>      소스 루트(기본 src). route-tree 입력 app 디렉터리는 <src>/app.
 //   --manifest <file> 산출물 레지스트리(기본 catalog/artifact-manifest.yaml).
-//   --artifact <id>   v1 대상 하나로 좁힘(route-tree|nav-graph).
+//   --artifact <id>   v1 대상 하나로 좁힘(route-tree|nav-graph|component-catalog).
 //
 // 후속(미구현, 의도적 보류): --enforce(위반 시 exit 1). v1 은 warning-first 만 — 후속 PR 에서
 //   FP율 관찰 후 도입 여부 결정(설계 §6, §9 PR G). 도입하더라도 CI 미배선이 전제.

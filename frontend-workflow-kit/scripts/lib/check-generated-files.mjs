@@ -1,9 +1,9 @@
 // check-generated-files.mjs (lib) — generated-file guard v1 의 로직.
 //
 // 2.5B(discovery): manifest 의 모든 생성물(kind:generated)을 분류한다(부작용 없음).
-//   - selected = generated:true ∧ status:active ∧ do_not_edit:true ∧ id∈allowlist(route-tree·nav-graph).
+//   - selected = generated:true ∧ status:active ∧ do_not_edit:true ∧ id∈allowlist(route-tree·nav-graph·component-catalog).
 //   - 그 외(planned·수동모드·비-allowlist)는 selected:false + skip 사유(must-not-fail).
-// 2.5C(reproduce): selected(route-tree·nav-graph)를 임시 디렉토리에 재생성해 커밋본과 비교한다.
+// 2.5C(reproduce): selected(route-tree·nav-graph·component-catalog)를 임시 디렉토리에 재생성해 커밋본과 비교한다.
 //   - 생성기를 명시 계약(V1_REPRODUCE)으로 서브프로세스 호출 — manifest/헤더의 command 문자열에
 //     의존하지 않는다(설계 §2.1, §8.1). 헤더가 manifest command 와 다르다고 실패시키지 않는다.
 //   - 정규화는 normalizeGeneratedViewText(CRLF→LF, \→/)만 — timestamp/date 정규화 없음(§4.3-4.4, §A.5).
@@ -23,12 +23,13 @@ import { loadLayoutProfile } from './layout-profile.mjs';
 // 정규화 원시함수는 골든 하니스와 동일한 것을 재사용한다(설계 §A.5 "reuse verbatim; do not invent").
 import { normalizeGeneratedViewText, toPosix } from './test-fixture.mjs';
 
-// v1 가드 대상 allowlist — whole-file generated artifact 중 route-tree·nav-graph 만.
-// 정렬된 형태로 둔다(나열 출력 안정성). 설계 §1.7 "Guardable NOW" 두 항목.
-export const V1_ARTIFACT_IDS = ['nav-graph', 'route-tree'];
+// v1 가드 대상 allowlist — whole-file generated artifact: route-tree·nav-graph·component-catalog.
+// 정렬된 형태로 둔다(나열 출력 안정성). route-tree/nav-graph = 설계 §1.7 "Guardable NOW";
+// component-catalog = 생성기(catalog-gen) active + v1 출력 포맷 freeze 후 졸업(PR-6).
+export const V1_ARTIFACT_IDS = ['component-catalog', 'nav-graph', 'route-tree'];
 
 // --artifact 입력을 v1 정책으로 해소한다(작업/표시 집합).
-//   requested 없음        → v1 전체(route-tree·nav-graph).
+//   requested 없음        → v1 전체(route-tree·nav-graph·component-catalog).
 //   requested 가 v1 대상  → 그 하나로 좁힘.
 //   requested 가 비-v1    → 빈 배열(가드 대상 아님 — 호출부가 사유를 안내).
 export function selectArtifactIds(requested) {
@@ -122,12 +123,25 @@ export const V1_REPRODUCE = {
     resolveInput: ({ docsDir }) => docsDir,
     outName: 'nav-graph.yaml',
   },
+  // component-catalog: src/components/ui/** → design/component-catalog.md.
+  // 입력은 정본 <srcDir>/components/ui (매니페스트 source: src/components/ui/**). 생성기는
+  // 절대경로의 마지막 '/src/components/ui/' 마커를 앵커로 source_path 를 슬라이스하므로(catalog-gen.mjs)
+  // 더 넓은 --src 를 줘도 동치지만, 정본 디렉터리를 직접 가리켜 입력 부재를 정확히 surface 한다.
+  // 커밋본은 _meta 가 아니라 design/ 아래(committedSubdir) — 매니페스트 path 와 일치.
+  'component-catalog': {
+    script: 'catalog-gen.mjs',
+    inputFlag: '--src',
+    resolveInput: ({ srcDir }) => path.join(srcDir, 'components', 'ui'),
+    outName: 'component-catalog.md',
+    committedSubdir: 'design',
+  },
 };
 
-// 커밋된 산출물 경로 — 두 v1 산출물 모두 <docsDir>/_meta/<outName>.
-//  (생성기 기본 --out 해석과 동일: nav-graph.mjs path.join(docsDir,'_meta',...), route-tree 기본값.)
+// 커밋된 산출물 경로 — outName 을 docsDir 아래 contract.committedSubdir(기본 _meta)에 매핑한다.
+//  route-tree/nav-graph = _meta/<outName>(생성기 기본 --out 해석과 동일);
+//  component-catalog    = design/<outName>(매니페스트 path 와 일치).
 function committedPathFor(contract, docsDir) {
-  return path.join(docsDir, '_meta', contract.outName);
+  return path.join(docsDir, contract.committedSubdir || '_meta', contract.outName);
 }
 
 // 첫 번째 다른 줄을 사람이 읽게 — 회귀 디버깅용(정규화 후 비교).
@@ -143,7 +157,7 @@ function firstLineDiff(committed, regenerated) {
   return '내용 상이';
 }
 
-// route-tree·nav-graph 하나를 임시 디렉토리에 2회 재생성하고 커밋본과 비교한다.
+// route-tree·nav-graph·component-catalog 하나를 임시 디렉토리에 2회 재생성하고 커밋본과 비교한다.
 //   반환: { id, status, committed, input, checks:[{check,ok,message}] }
 //   status: ok | mismatch | nondeterministic | generator-error | missing-committed | missing-input | skip
 //     - skip 은 v1 reproduce 계약이 없는 id(=비-v1, 방어적)에서만 난다. active v1 산출물의
