@@ -22,6 +22,7 @@ import { loadYaml, DEFAULTS, KIT_ROOT } from './util.mjs';
 // 실제 픽스처를 대상으로 돌려도 트리를 변경하지 않는다(임시 디렉토리에서만 재생성).
 const RT_BASIC = path.join(KIT_ROOT, 'examples', 'route-tree', 'basic-app');
 const NG_BASIC = path.join(KIT_ROOT, 'examples', 'nav-graph', 'basic-flow');
+const CC_BASIC = path.join(KIT_ROOT, 'examples', 'component-catalog', 'basic-ui');
 const RT_DOCS = path.join(RT_BASIC, 'docs', 'frontend-workflow');
 const RT_SRC = path.join(RT_BASIC, 'src');
 const NG_DOCS = path.join(NG_BASIC, 'docs', 'frontend-workflow');
@@ -99,11 +100,12 @@ test('discoverArtifacts: 주입 allowlist 로 selected 를 좁힐 수 있다', (
 });
 
 test('selectArtifactIds: v1 전체 / v1 하나 / 비-v1', () => {
-  assert.deepEqual(selectArtifactIds(null).sort(), ['nav-graph', 'route-tree']);
+  assert.deepEqual(selectArtifactIds(null).sort(), ['component-catalog', 'nav-graph', 'route-tree']);
   assert.deepEqual(selectArtifactIds('route-tree'), ['route-tree']);
   assert.deepEqual(selectArtifactIds('nav-graph'), ['nav-graph']);
+  assert.deepEqual(selectArtifactIds('component-catalog'), ['component-catalog']);
   assert.deepEqual(selectArtifactIds('workflow-state'), []);
-  assert.deepEqual(V1_ARTIFACT_IDS, ['nav-graph', 'route-tree']);
+  assert.deepEqual(V1_ARTIFACT_IDS, ['component-catalog', 'nav-graph', 'route-tree']);
 });
 
 test('discoverArtifacts: 빈/이상 manifest 도 안전(빈 배열)', () => {
@@ -119,9 +121,9 @@ test('discoverArtifacts: 실제 artifact-manifest.yaml 분류가 v1 규약과 �
   // v1 대상은 selected
   assert.equal(byId['route-tree'].selected, true);
   assert.equal(byId['nav-graph'].selected, true);
-  // planned 는 skip(planned)
-  assert.equal(byId['component-catalog'].selected, false);
-  assert.match(byId['component-catalog'].skip_reasons[0], /planned/);
+  // component-catalog: PR-5 manifest active + PR-6 allowlist 등록 → 이제 selected
+  assert.equal(byId['component-catalog'].selected, true);
+  // eslint-workflow-config: 여전히 planned(생성기 미존재) → skip(planned)
   assert.equal(byId['eslint-workflow-config'].selected, false);
   assert.match(byId['eslint-workflow-config'].skip_reasons[0], /planned/);
   // active+lock 이지만 비-v1
@@ -142,6 +144,31 @@ test('reproduceArtifact: nav-graph 픽스처가 커밋본을 재현(ok)', () => 
   const r = reproduceArtifact('nav-graph', { docsDir: NG_DOCS, srcDir: NG_DOCS });
   assert.equal(r.status, 'ok', JSON.stringify(r.checks));
   assert.ok(r.checks.some((c) => c.check === 'CG:content' && c.ok));
+});
+
+test('reproduceArtifact: component-catalog 픽스처가 커밋본을 재현(ok)', () => {
+  // basic-ui 픽스처는 골든을 expected/ 에 두는 generated-view 관례라, check-generated 의
+  // 프로젝트 레이아웃(<docsDir>/design/<file> + <srcDir>/components/ui)으로 임시 디렉토리에
+  // 재배치해 reproduce 한다. 커밋 트리는 건드리지 않는다(임시 디렉토리에만 쓰기).
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cgf-cc-'));
+  try {
+    fs.cpSync(path.join(CC_BASIC, 'src'), path.join(tmp, 'src'), { recursive: true });
+    const designDir = path.join(tmp, 'docs', 'frontend-workflow', 'design');
+    fs.mkdirSync(designDir, { recursive: true });
+    fs.cpSync(
+      path.join(CC_BASIC, 'expected', 'component-catalog.md'),
+      path.join(designDir, 'component-catalog.md'),
+    );
+    const r = reproduceArtifact('component-catalog', {
+      docsDir: path.join(tmp, 'docs', 'frontend-workflow'),
+      srcDir: path.join(tmp, 'src'),
+    });
+    assert.equal(r.status, 'ok', JSON.stringify(r.checks));
+    assert.ok(r.checks.some((c) => c.check === 'CG:content' && c.ok));
+    assert.ok(r.checks.some((c) => c.check === 'CG:deterministic' && c.ok));
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 });
 
 test('reproduceArtifact: 커밋본 변조를 mismatch 로 감지', () => {
