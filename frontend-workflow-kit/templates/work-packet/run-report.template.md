@@ -135,6 +135,23 @@ REMOVED:
 <!-- ⚠ MVP-C 종속 — Session C generated-file guard 확정 후 정렬: 재생성 허용 범위(generated 화이트리스트)는
      generated-file guard 확정 후 정렬한다. 현재는 _meta/*.yaml 예시만 라벨로 둔다. -->
 
+## Discovered Work
+<!--
+  현재 Work Packet 범위 밖에서 발견한 후속 작업을 기록만 한다. 현재 세션이 이를 몰래 흡수하거나
+  allowed_paths 를 자기 판단으로 넓히지 못하게 격리하는 record-only 표다.
+  불변식:
+  - 이 섹션은 evidence/advisory 이며 gate 가 아니다.
+  - 사람 판단 전에는 새 Work Packet, Open Decision, layout/policy 변경으로 승격하지 않는다.
+  - 사람 승격 전에는 현재 세션에서 처리하지 않는다.
+  - 현재 세션은 allowed_paths 를 자기 판단으로 넓히지 않는다.
+  - 여기에 적힌 항목을 처리하려고 Open Decision / Unknown / Conflict / Discovered Work 를 닫거나 확정하지 않는다.
+-->
+허용 Class 예시: `current-scope`, `blocker`, `scope-extension-request`, `follow-up`, `refactor-candidate`, `duplicate`.
+
+| ID | Class | Title | Affected Scope | Current Session Action | Suggested Next |
+|---|---|---|---|---|---|
+| {FU-YYYYMMDD-001} | {scope-extension-request \| follow-up \| refactor-candidate} | {발견한 일 한 줄} | {screen/domain/path 등 영향 범위} | recorded-only | {new Work Packet / human decision / link existing artifact} |
+
 ## Follow-up
 <!-- 다음 세션/사람이 해야 할 일. 게이트 해제는 사람-전용임을 명시. -->
 - {예: D-001 사람 resolve → readiness 재실행 → `{next_mode}` Work Packet 재발급.}

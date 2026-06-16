@@ -136,6 +136,8 @@ owner: "{agent-or-person}"
 - generated file(`_meta/*.yaml`, `component-catalog.md` 등) · confirmed 산출물 hand-edit — 금지.
 - `{next_mode}` 이상 상위 모드 산출물 — 금지 (천장은 `{readiness_mode}`).
 - ScreenSpec 대체 / readiness.mjs 대체 — 금지 (이 packet 은 인덱스일 뿐).
+- allowed_paths 밖 작업 — 현재 세션에서 처리하지 않는다. 필요하면 Run Report 의 `## Discovered Work` 에 `scope-extension-request` 또는 `follow-up` 으로 기록한다(record-only/advisory, gate 아님).
+- shared helper / refactor / shared-contract / architecture role 확장 — 별도 Work Packet 또는 사람 승인 후 layout/policy 변경으로만 다룬다.
 
 ## Commands
 <!-- 컨텍스트 팩의 실제 npm scripts. 경로는 이 packet 의 fixture/대상에 맞게 치환한다. -->
