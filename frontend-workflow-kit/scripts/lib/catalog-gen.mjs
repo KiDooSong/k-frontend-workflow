@@ -173,13 +173,24 @@ export function renderCatalog(model) {
 //   - 절 안 `type X` 인라인 specifier → 스킵(타입).
 //   - PascalCase 가 아닌 이름(util/hook 등) → 컴포넌트 아님 → 조용히 무시.
 //   - `export function/const <X>` 같은 선언은 `{` 가 바로 오지 않아 named-re-export 정규식에 안 걸린다.
+//   - 블록 주석(`/* … */`)은 스캔 전에 제거한다(주석 처리된 export 오인식·절 안 인라인 주석 방지, Codex MINOR).
+
+// 블록 주석(`/* … */`)을 같은 줄 수의 공백으로 치환한다(줄 구조·`^` 앵커 보존). 주석 처리된
+// `export { … }` 오인식(false-positive)과 절 안 인라인 주석(`Button /* x */`, false-negative)을
+// 무의존으로 막는다. 라인 주석(`//`)은 `^[ \t]*export` 앵커가 이미 배제하므로 건드리지 않는다
+// (모듈 경로의 '//' 훼손 방지). 문자열 리터럴 안의 `/* */` 는 드물고 진단(warning-first)이라 무해.
+function stripBlockComments(src) {
+  return src.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '));
+}
+
 export function parseBarrelReexports(content) {
-  const text = content || '';
+  const text = stripBlockComments(content || '');
   const names = [];
   let unsupported = 0;
 
-  // export [type] { a, b as c } from '<module>'  — `[^}]*` 는 첫 `}` 에서 멈춰 함수 본문을 넘지 않는다.
-  const NAMED_RE = /^[ \t]*export\s+(type\s+)?\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]/gm;
+  // export [type] { a, b as c } from '<module>'  — export 뒤 공백은 선택(`\s*`, 공백없는 `export{` 허용),
+  // `[^}]*` 는 첫 `}` 에서 멈춰 함수 본문을 넘지 않는다.
+  const NAMED_RE = /^[ \t]*export\s*(type\s+)?\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]/gm;
   let m;
   while ((m = NAMED_RE.exec(text)) !== null) {
     const isType = Boolean(m[1]);
@@ -200,8 +211,8 @@ export function parseBarrelReexports(content) {
     }
   }
 
-  // export [type] * [as Ns] from '<module>'
-  const STAR_RE = /^[ \t]*export\s+(type\s+)?\*(?:\s+as\s+\w+)?\s*from\s*['"]([^'"]+)['"]/gm;
+  // export [type] * [as Ns] from '<module>'  — export 뒤 공백은 선택(`\s*`).
+  const STAR_RE = /^[ \t]*export\s*(type\s+)?\*(?:\s+as\s+\w+)?\s*from\s*['"]([^'"]+)['"]/gm;
   while ((m = STAR_RE.exec(text)) !== null) {
     const isType = Boolean(m[1]);
     const mod = m[2];

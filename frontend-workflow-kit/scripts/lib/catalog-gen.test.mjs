@@ -63,6 +63,27 @@ test('parseBarrelReexports: 여러 줄에 걸친 named re-export 도 수집', ()
   assert.equal(r.unsupported, 0);
 });
 
+// --- Codex 리뷰 MINOR 회귀 방지 ---------------------------------------------
+test('parseBarrelReexports: 공백 없는 export{…} 도 매칭(Codex MINOR)', () => {
+  const r = parseBarrelReexports("export{ Button }from'./Button';\nexport{Card}from'./Card';\n");
+  assert.deepEqual([...r.names].sort(), ['Button', 'Card']);
+  assert.equal(r.unsupported, 0);
+});
+
+test('parseBarrelReexports: 블록 주석 처리된 export 는 오인식하지 않음(Codex MINOR)', () => {
+  const r = parseBarrelReexports(
+    "/* export { Ghost } from './Ghost'; */\nexport { Button } from './Button';\n",
+  );
+  assert.deepEqual(r.names, ['Button']);
+  assert.equal(r.unsupported, 0);
+});
+
+test('parseBarrelReexports: 절 안 인라인 블록 주석을 제거하고 이름 수집(Codex MINOR)', () => {
+  const r = parseBarrelReexports("export { Button /* primary */, Card } from './ui';\n");
+  assert.deepEqual([...r.names].sort(), ['Button', 'Card']);
+  assert.equal(r.unsupported, 0);
+});
+
 test('formatBarrelWarnings: 일치/배럴부재 → 무경고(빈 배열)', () => {
   assert.deepEqual(
     formatBarrelWarnings({
