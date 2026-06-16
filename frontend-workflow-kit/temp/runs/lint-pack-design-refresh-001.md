@@ -25,6 +25,7 @@
 
 - `new-code-only` must not become schema-valid before its Open Decision defines changed-code semantics. The design now keeps schema v1 to `rollout: all | ratchet` and treats `new-code-only` as reserved.
 - Warning-first ratchet cannot rely on raw ESLint `error` output. The design now states that ratchet policies emit report-only/warn behavior by default and `lint-baseline.mjs` owns the process exit.
+- `warn` must remain a severity, not a rollout. The design now phrases brownfield recommendations as `rollout: all` with `severity: warn|error`, or `rollout: ratchet`.
 - `lint-policy.yaml` needed one canonical path. The design now uses `docs/frontend-workflow/_meta/lint-policy.yaml` across generator input, manifest source, and banner wording.
 - The roadmap sequential principle expects a run report. This file records the read set, decisions, validation, and intentional non-goals.
 

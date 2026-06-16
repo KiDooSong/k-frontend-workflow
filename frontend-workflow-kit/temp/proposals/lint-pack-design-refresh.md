@@ -56,7 +56,7 @@ Brownfield:
 - Assume an existing ESLint/Biome/Prettier/CI setup and existing violation backlog.
 - Never overwrite or reorder existing project config.
 - Use `adapt-lint-pack` to propose policy changes before any generation.
-- Prefer `warn` or `ratchet` for noisy policies.
+- For noisy policies, prefer `rollout: all` with `severity: warn` when the backlog is manageable, or `rollout: ratchet` when the backlog needs count-based control.
 - Treat `new-code-only` as a reserved rollout candidate until its Open Decision is closed.
 
 ## adapt-lint-pack Procedure
@@ -76,7 +76,7 @@ Brownfield:
    - missing: mark as adoption candidate
 
 4. Rollout
-   Run report-only measurement per candidate policy. Recommend `all`, `warn`, or `ratchet` based on current violation count and policy tier. Mention `new-code-only` only as a reserved future option until its definition is resolved.
+   Run report-only measurement per candidate policy. Recommend `rollout: all` with `severity: warn|error`, or `rollout: ratchet` based on current violation count and policy tier. Mention `new-code-only` only as a reserved future option until its definition is resolved.
 
 5. Propose
    Output a `docs/frontend-workflow/_meta/lint-policy.yaml` draft, conflict report, measured counts, and rollout plan. Do not run `lint-gen.mjs` until a human approves the proposal.
