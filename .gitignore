@@ -11,5 +11,9 @@
 temp/archive/
 temp/claude-handoff*
 
+# decision visualization skill outputs
+docs/frontend-workflow/_viz/
+docs/frontend-workflow_viz/
+
 # git worktree (격리 작업용) — 본래 추적 대상 아님 (분석 보고서 P11)
 .claude/worktrees/

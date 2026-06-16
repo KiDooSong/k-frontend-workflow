@@ -1,6 +1,6 @@
 # Current Roadmap
 
-> 스냅샷: 2026-06-16. MVP-B Phase 0 완료분 위에 **2026-06-15~16 추가 랜딩** — **검사 8 API-스키마 매칭 엔드포인트 단위 격상**(구현·하드, PR #19) · **Interaction Matrix v2 dual-read + 검사 13**(warning-first, #48) 및 route-tree EXACT 정밀화(여전히 warning-first) · **Tier2 route-tree 어댑터 솔기**(#49) · **component-catalog phase2-1 배럴 reconcile 진단**(warning-first, stderr-only) 및 **phase2 첫 additive `Default Export Candidates` 섹션**(append-only, candidate-only) · **Follow-up Quarantine / Role Expansion 설계 초안**(#50, docs-only, 실행 게이트 0). 잔여는 아래 "다음 구현 후보" 로 이어진다.
+> 스냅샷: 2026-06-16. MVP-B Phase 0 완료분 위에 **2026-06-15~16 추가 랜딩** — **검사 8 API-스키마 매칭 엔드포인트 단위 격상**(구현·하드, PR #19) · **Interaction Matrix v2 dual-read + 검사 13**(warning-first, #48) 및 route-tree EXACT 정밀화(여전히 warning-first) · **Tier2 route-tree 어댑터 솔기**(#49) · **component-catalog phase2-1 배럴 reconcile 진단**(warning-first, stderr-only) 및 **phase2 첫 additive `Default Export Candidates` 섹션**(append-only, candidate-only) · **Follow-up Quarantine / Role Expansion 설계 초안**(#50, docs-only, 실행 게이트 0) + **Option A 템플릿 가이드**(Discovered Work/Out of Scope, 게이트 0). 잔여는 아래 "다음 구현 후보" 로 이어진다.
 > 이전 스냅샷(2026-06-14): MVP-B Phase 0 **완료** — 회귀 하니스·경로 backstop[warning-first]·입력/register 검증; consumer-dogfood-001 외부 소비 dry-run 으로 end-to-end 검증, PR #17.
 > 목적: **MVP-A 구현 범위 / 설계 계약(코드 후속) / Future Candidate** 세 티어의 경계를 한 파일로 고정한다.
 > 문서별 역할·링크는 [README 문서 지도](README.md#문서-지도) 참조.
@@ -99,19 +99,20 @@ Review          MVP-A 에 없음 (Future Candidate).
 
 **Future Candidate (새 축 아님 — 흡수형):**
 - **Work Packet & Review Artifacts** — 작업 단위 인덱스/핸드오프 보드(Work Packet) + 리뷰 상세(Review Artifacts). **Review Gates 는 독립 축이 아니라 여기 안에서** 다룬다(처음엔 Work Packet 의 required 행으로 시작). Open Decision 이 여전히 readiness 게이트이고 Work Packet 은 인덱스일 뿐이다. *템플릿 초안이 킷 `templates/work-packet/`(work-packet·run-report·review-artifact)에 추가됨 — 설계/문서일 뿐 코드 강제 0, 여전히 Future Candidate. 원 설계 제안: `temp/work-packet-review-artifacts-proposal.md`.*
-- **Follow-up Quarantine / Role Expansion** — PR #50 으로 [설계 초안](docs/design/drafts/follow-up-quarantine-and-role-expansion.md)이 `docs/design/drafts/` 에 랜딩됨. 작업 중 발견한 범위 밖 후속을 현재 세션이 흡수하지 못하게 `Discovered Work`/`scope-extension-request` 로 격리하고, architecture role 확장은 별도 layout/policy 변경으로 승격한다는 방향. **실행 게이트·전역 레지스터·role metadata 는 아직 0**. 권고된 첫 슬라이스는 Option A(run-report template 의 `## Discovered Work` + work-packet `Out of Scope` 문구)이며, 새 산출물 축 추가 없이 Work Packet/Run Report 후보 안에 흡수한다.
+- **Follow-up Quarantine / Role Expansion** — PR #50 으로 [설계 초안](docs/design/drafts/follow-up-quarantine-and-role-expansion.md)이 `docs/design/drafts/` 에 랜딩됨. Option A 로 run-report template 의 `## Discovered Work` 와 work-packet `Out of Scope` 기록 규칙이 반영돼, 작업 중 발견한 범위 밖 후속을 현재 세션이 흡수하지 못하게 record-only 로 격리한다. **실행 게이트·전역 레지스터·role metadata 는 여전히 0**. Option B(collector)나 Option C(Follow-up Register)는 필요성이 반복될 때 별도 decision PR 로만 검토한다.
 
-## 다음 구현 후보 (하나를 명시적으로 고를 때만 착수)
+## 다음 구현 후보 (순차 진행 — 하나를 끝낸 뒤 다음 착수)
 
-> **최근 랜딩(이 슬롯에서 내려감, 2026-06-15~16):** ① 검사 8 API-스키마 매칭 엔드포인트 단위 격상(구현·하드, PR #19) · ② Interaction Matrix v2 dual-read + 검사 13(warning-first, #48) · ③ Tier2 route-tree 어댑터 솔기(#49) · ④ component-catalog generated artifact + `check-generated` 가드(#40/#42), phase2-1 배럴 reconcile **진단** 슬라이스(warning-first, stderr-only), phase2 첫 additive `Default Export Candidates` 섹션 · ⑤ Follow-up Quarantine / Role Expansion 설계 초안(#50, docs-only, 게이트 0). 각 항목의 **잔여**가 아래 후보다.
+> **최근 랜딩(이 슬롯에서 내려감, 2026-06-15~16):** ① 검사 8 API-스키마 매칭 엔드포인트 단위 격상(구현·하드, PR #19) · ② Interaction Matrix v2 dual-read + 검사 13(warning-first, #48) 및 route-tree EXACT 정밀화(warning-first) · ③ Tier2 route-tree 어댑터 솔기(#49) · ④ component-catalog generated artifact + `check-generated` 가드(#40/#42), phase2-1 배럴 reconcile **진단** 슬라이스(warning-first, stderr-only), phase2 첫 additive `Default Export Candidates` 섹션 · ⑤ Follow-up Quarantine / Role Expansion 설계 초안(#50, docs-only, 게이트 0) + Option A 템플릿 가이드(게이트 0). 각 항목의 **잔여**가 아래 후보다.
+
+> **순차 원칙:** 병렬 구현·병렬 정본 변경을 열지 않는다. 각 항목은 PR/run report/roadmap 정리까지 끝낸 뒤 다음 항목에 착수한다. 설계 보강이 필요해도 다음 항목의 구현을 앞당기지 않는다.
 
 1. ✅ **component-catalog phase2 — 첫 additive 섹션 (PR-3)** — phase2-1 의 배럴 reconcile **진단(warning-first, stderr-only, 출력·exit·골든 불변)** 위에 `## Default Export Candidates` 를 append-only 로 추가함. default function export 후보는 `default_export_candidates`/Markdown 섹션에만 surface 하고 기존 4컬럼 `## Components` 테이블에는 승격하지 않는다. 새 골든 픽스처 뒤에서 두-run 결정성·byte-exact 입증 완료. 설계: `temp/proposals/component-catalog-phase2.md`. 진단 슬라이스 기록: [component-catalog-phase2-1-diagnostics-001.md](temp/runs/component-catalog-phase2-1-diagnostics-001.md). additive 섹션 기록: [component-catalog-phase2-additive-section-001.md](temp/runs/component-catalog-phase2-additive-section-001.md). **잔여:** props/docgen, wrapper/default alias 확장, lifecycle status 등은 별도 future PR/OD 로 유지하며 readiness/validate/hard gate 승격 없음.
-2. **Tier2 codegen 어댑터 (PR-3 잔여)** — route-tree 어댑터 솔기(PR-2: `scripts/lib/route-core.mjs` + `scripts/adapters/routers/{expo-router}.mjs` + `manifest.json`)는 #49 로 랜딩(golden byte-identical). **잔여 = codegen 절반**: `scripts/lib/codegen-core.mjs`(결정성 독점) + `scripts/adapters/codegens/{openapi-client}.mjs` + codegen 매니페스트 + 출력경로/**hook 네이밍**(§7·§8·§9) + validate/nav-graph 솔기. 설계: `temp/proposals/tier2-router-codegen-adapter.md` §17 PR-3. 솔기 랜딩 기록: [tier2-route-tree-adapter-seam-001.md](temp/runs/tier2-route-tree-adapter-seam-001.md).
-3. **Interaction Matrix telemetry / 승격 decision (후속, 아직 하드 게이트 아님)** — 정밀화(route-tree.txt `route: <token>` EXACT 교차검증 + `Result Type` enum 동결)는 warning-first 로 랜딩됨(위 Tier 3 절). 남은 것은 telemetry 후 검사 13 의 하드 게이트 승격 여부를 별도 decision PR 에서 검토하는 것뿐이며, 현재 readiness/정책 게이트는 변경하지 않는다.
-4. **lint-pack / adapt-lint-pack** — 기존 로드맵의 `lint-gen/lint-baseline(MVP-B)` 생성물 lint 게이트와 **동일 개념**의 라벨(별도 신규 스킬/파일 아님 — `lint-gen.mjs`+`lint-baseline.mjs` 생성기 + 브라운필드 도입용 `adapt-lint-pack` 스킬, frontend-workflow-kit-implementation.md §11).
-5. **Follow-up Quarantine Option A (템플릿만, 게이트 없음)** — PR #50 설계의 첫 실행 가능한 슬라이스. `templates/work-packet/run-report.template.md` 에 `## Discovered Work` 구조를 추가하고 `work-packet.template.md` 의 `Out of Scope` 에 범위 밖 후속 기록 규칙을 더한다. 전역 Follow-up Register, 자동 stale/freshness 판정, role metadata/lock 은 도입하지 않는다.
+2. **lint-pack / adapt-lint-pack — 설계 refresh 후 구현** — 기존 로드맵의 `lint-gen/lint-baseline(MVP-B)` 생성물 lint 게이트와 **동일 개념**의 라벨(별도 신규 스킬/파일 아님 — `lint-gen.mjs`+`lint-baseline.mjs` 생성기 + 브라운필드 도입용 `adapt-lint-pack` 스킬, frontend-workflow-kit-implementation.md §11). 예전 설계 문서가 많으므로 바로 구현하지 말고, 먼저 최신 킷 상태 기준으로 PR slicing·입출력·warning-first/ratchet 기준을 재확정한다.
+3. **Tier2 codegen 어댑터 — 마지막 큰 확장** — route-tree 어댑터 솔기(PR-2: `scripts/lib/route-core.mjs` + `scripts/adapters/routers/{expo-router}.mjs` + `manifest.json`)는 #49 로 랜딩(golden byte-identical). **잔여 = codegen 절반**: `scripts/lib/codegen-core.mjs`(결정성 독점) + `scripts/adapters/codegens/{openapi-client}.mjs` + codegen 매니페스트 + 출력경로/**hook 네이밍**(§7·§8·§9) + validate/nav-graph 솔기. 출력/golden/role/OD 표면이 커서 1~2 완료 뒤에 착수한다. 설계: `temp/proposals/tier2-router-codegen-adapter.md` §17 PR-3. 솔기 랜딩 기록: [tier2-route-tree-adapter-seam-001.md](temp/runs/tier2-route-tree-adapter-seam-001.md).
+4. **Interaction Matrix telemetry / 승격 decision (later, 아직 하드 게이트 아님)** — 정밀화(route-tree.txt `route: <token>` EXACT 교차검증 + `Result Type` enum 동결)는 warning-first 로 랜딩됨(위 Tier 3 절). 남은 것은 telemetry 후 검사 13 의 하드 게이트 승격 여부를 별도 decision PR 에서 검토하는 것뿐이며, 현재 readiness/정책 게이트는 변경하지 않는다.
 
-> 위 재정렬로 직전 후보(Work Packet · reconcile-input 킷 vendor · test-fixtures 하드 게이팅 승격)는 *우선순위 슬롯*에서 내려가지만 문서 내 다른 곳에 그대로 남는다 — Work Packet=Future Candidate(아래) · reconcile-input vendor=Tier 2(위) · test-fixtures 하드 게이팅=Phase 0 "하드 gating 후속".
+> 이 순차 정렬로 직전 후보(Work Packet · reconcile-input 킷 vendor · test-fixtures 하드 게이팅 승격)는 *우선순위 슬롯*에서 내려가지만 문서 내 다른 곳에 그대로 남는다 — Work Packet=Future Candidate(아래) · reconcile-input vendor=Tier 2(위) · test-fixtures 하드 게이팅=Phase 0 "하드 gating 후속".
 
 *이번 세션 완료: reconcile-input 스킬 작성(write-a-skill 방법론 + 코덱스 medium 1건 반영) — 리포-로컬 `.claude/skills/`.*
 *MVP-B Phase 0 통합: test-fixtures 하니스 + forbidden_paths backstop(warning-first) + 입력/register 검증(검사 11·12).*
@@ -120,5 +121,6 @@ Review          MVP-A 에 없음 (Future Candidate).
 
 - 새 산출물 축 추가 — idea surface 확장 금지 (리뷰도 새 축 아님, Work Packet 후보로 흡수)
 - 구현 후보 중 하나를 명시적으로 고르지 않은 채 MVP-A 확장
+- 다음 구현 후보를 병렬 구현하거나, 앞 항목 완료 전에 뒤 항목의 정본 파일(`README`/roadmap/package/manifest/policy/templates/scripts)을 바꾸기
 - LLM 이 게이트를 **내리게** 만드는 자동화 (resolve/confirm/conflict-close 는 사람-전용 불변식 유지)
 - Unknown/Conflict/Work Packet/Review/Discovered Work 를 readiness 게이트로 만들기 (게이트는 Open Decision + 정책 fact 뿐)
