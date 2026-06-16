@@ -112,8 +112,8 @@ test('default(--layout 미지정): readiness_source 에 --layout 누출 없음(B
     assert.ok(!/--layout/.test(src), `default 경로는 --layout 을 누출하지 않아야 한다: ${src}`);
     assert.match(
       readPacket(packet),
-      /## Out of Scope[\s\S]*allowed_paths 밖 작업[\s\S]*## Commands/,
-      '생성 Work Packet Out of Scope 에 allowed_paths 밖 후속 격리 규칙이 있어야 한다',
+      /## Out of Scope[\s\S]*allowed_paths 밖 작업[\s\S]*shared helper \/ refactor \/ shared-contract \/ architecture role 확장[\s\S]*## Commands/,
+      '생성 Work Packet Out of Scope 에 후속 격리와 role 확장 가드가 있어야 한다',
     );
   } finally {
     fs.rmSync(out, { recursive: true, force: true });
