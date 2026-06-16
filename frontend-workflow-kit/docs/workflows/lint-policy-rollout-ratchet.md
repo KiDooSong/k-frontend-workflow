@@ -11,6 +11,13 @@ The only canonical project policy path is
 `templates/meta/lint-policy.template.yaml` and validate against
 `schemas/lint-policy.schema.json`.
 
+That schema requires a real JSON Schema draft-07 validator before it is wired
+into `lint-gen.mjs` or any CI path. The repo's existing
+`scripts/lib/schema.mjs` helper is intentionally limited to the
+`frontmatter.schema.json` subset and does not enforce the draft-07 features used
+here, including `$ref`, `allOf`, `if`/`then`/`else`, `not`,
+`additionalProperties`, `minLength`, `minimum`, and `pattern`.
+
 The future flow is:
 
 ```txt
