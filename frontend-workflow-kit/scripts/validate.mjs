@@ -23,7 +23,7 @@
 //       절대 게이트 신호로 쓰지 않는다(reconciled + 자식 open == 정상 PASS). 세 축은 독립.
 //   13. Interaction Matrix v2(structured) 형식 — WARNING-ONLY (하드 게이트 아님, 검사 카운트 "12종"에 미포함).
 //       Result Type 헤더가 있는 표만 점검 → v1 표는 무발화 = v1 출력 byte-identical. 에러 승격 없음(warning-first).
-//       설계: temp/proposals/interaction-matrix-structured-format.md §6·§7 (route-tree 정밀 교차검증은 후속).
+//       Result Type=route Target 은 route-tree.txt 의 route token 과 EXACT 문자열 교차검증한다(artifact 부재 시 skip).
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
@@ -65,6 +65,7 @@ import {
   isSchemaUnset,
   normEndpoint,
 } from './lib/api-manifest.mjs';
+import { parseRouteTreeRouteTokens } from './lib/route-core.mjs';
 
 function isLocalRef(ref) {
   if (typeof ref !== 'string') return false;
@@ -236,6 +237,13 @@ function main() {
     if (id) idCount.set(id, (idCount.get(id) || 0) + 1);
     if (route) routeCount.set(route, (routeCount.get(route) || 0) + 1);
   }
+
+  // 검사 13 의 정밀 route 존재 확인 입력. route-tree 는 생성물이라 없거나 아직 stale 일 수 있으므로
+  // 부재는 hard fail 이 아니라 skip 이다. 존재하는 경우에만 `route: <token>` 을 EXACT 문자열로 비교한다.
+  const routeTreeFile = path.join(docsDir, '_meta', 'route-tree.txt');
+  const routeTreeRouteSet = exists(routeTreeFile)
+    ? parseRouteTreeRouteTokens(readFileSafe(routeTreeFile))
+    : null;
 
   // 5. 중복
   for (const [id, n] of idCount) if (n > 1) add(5, path.join(docsDir, 'domains'), `screen_id 중복: ${id} (${n}건)`);
@@ -449,10 +457,10 @@ function main() {
 
   // 13. Interaction Matrix v2(structured) 형식 — warning-first (검사 4·게이트 불변, 하드 게이트 없음).
   //     Result Type 헤더가 있는 표(v2 모드)만 점검한다 → v1 표는 무발화 = v1 validate 출력 byte-identical.
-  //     enum/route 행 Target 부재/비-route 행 라우트 토큰/Result↔Target drift/Target inventory 부재를 경고로 surface.
-  //     route-tree 정밀 교차검증은 후속(여기선 inventory 집합 약식 점검) — 경고이지 차단이 아니다.
+  //     enum/route 행 Target 부재/비-route 행 라우트 토큰/Result↔Target drift 를 경고로 surface.
+  //     route-tree.txt 가 있으면 Result Type=route Target 과 route token 을 EXACT 교차검증한다(warning-first).
   for (const spec of specs) {
-    for (const issue of interactionMatrixV2Issues(spec, { routeSet })) {
+    for (const issue of interactionMatrixV2Issues(spec, { routeTreeRouteSet })) {
       warn(13, spec.path, issue.message);
     }
   }

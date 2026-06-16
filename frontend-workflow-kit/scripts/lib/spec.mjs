@@ -423,8 +423,9 @@ export function interactionResultRoutes(spec) {
 //   - Result Type 헤더가 있으면 v2 모드(표 단위), 없으면 v1 free-form 으로 완전 폴백.
 //   - Result Type=route 행만 Target 에서 라우트를 읽는다(나머지 타입은 이동 엣지 없음 → 자연어 오탐 제거).
 //   - 라우트 추출은 cellRoutes 단일 출처를 그대로 쓴다 — "어느 셀을 읽느냐"만 모드로 분기(정규식 drift 불가).
-// 설계: temp/proposals/interaction-matrix-structured-format.md (roadmap-current.md:91).
-export const INTERACTION_V2_RESULT_TYPES = ['route', 'state', 'mutation', 'external', 'none'];
+// Result Type enum 의 단일 출처. 새 값은 이 상수와 테스트를 함께 바꾸는 명시 PR 로만 추가한다.
+// 설계 초안의 권장값(route|state|mutation|external|none)을 현재 구현 enum 으로 동결한다.
+export const INTERACTION_V2_RESULT_TYPES = Object.freeze(['route', 'state', 'mutation', 'external', 'none']);
 
 function normResultType(v) {
   return (v || '').trim().toLowerCase();
@@ -462,13 +463,14 @@ export function interactionEdgeRoutes(spec) {
 }
 
 // v2 형식 점검(warning-first, 순수 함수) — validate 검사 13 이 호출한다. v1 표는 항상 빈 배열 → v1 출력 불변.
-// 절대 에러로 승격하지 않는다(하드 게이트 없음). Target 의 inventory 존재는 약식 warning(route-tree 정밀 교차검증은 후속).
-//   opts.routeSet : 알려진 route 집합(frontmatter.route 합집합). 주면 Result Type=route 행 Target 의 inventory 존재를 약식 점검.
-// 반환: [{ row, kind, message }]  (kind: type-empty|enum|route-missing-target|result-target-drift|target-unknown|nonroute-has-route)
+// 절대 에러로 승격하지 않는다(하드 게이트 없음). Target 존재 검사는 route-tree.txt route token 과 EXACT 비교한다.
+//   opts.routeTreeRouteSet : route-tree.txt 의 `route: <token>` 집합. 없으면 교차검증은 skip(생성 전/부재 허용).
+// 반환: [{ row, kind, message }]
+//   kind: type-empty|enum|route-missing-target|result-target-drift|route-tree-target-missing|nonroute-has-route
 export function interactionMatrixV2Issues(spec, opts = {}) {
   const table = parseTable(spec.sections['interaction matrix']);
   if (!interactionMatrixIsV2(table)) return [];
-  const routeSet = opts.routeSet || null;
+  const routeTreeRouteSet = opts.routeTreeRouteSet instanceof Set ? opts.routeTreeRouteSet : null;
   const issues = [];
   let rowNo = 0;
   for (const row of table.rows) {
@@ -487,7 +489,7 @@ export function interactionMatrixV2Issues(spec, opts = {}) {
       continue; // Result Type 이 없으면 나머지 v2 점검은 의미 없음(v1 폴백)
     }
     if (!INTERACTION_V2_RESULT_TYPES.includes(rt)) {
-      issues.push({ row: rowNo, kind: 'enum', message: `Result Type '${rtRaw}' 가 허용값이 아님 (${label}) — ${INTERACTION_V2_RESULT_TYPES.join('|')} 중 하나 (제안값, OD-2)` });
+      issues.push({ row: rowNo, kind: 'enum', message: `Result Type '${rtRaw}' 가 허용값이 아님 (${label}) — ${INTERACTION_V2_RESULT_TYPES.join('|')} 중 하나` });
     }
     const targetRoutes = cellRoutes(target).filter(isConcreteRoute);
     const resultRoutes = cellRoutes(result).filter(isConcreteRoute);
@@ -500,10 +502,14 @@ export function interactionMatrixV2Issues(spec, opts = {}) {
           issues.push({ row: rowNo, kind: 'result-target-drift', message: `Result 의 라우트 ${r} 가 Target 에 없음 (${label}) — v2 Target 이 기계 판정의 권위입니다(불일치 확인 권장)` });
         }
       }
-      if (routeSet) {
+      if (routeTreeRouteSet) {
         for (const r of targetRoutes) {
-          if (!routeSet.has(r)) {
-            issues.push({ row: rowNo, kind: 'target-unknown', message: `Result Type=route Target ${r} 가 화면 inventory 에 없음 (${label}) — route-tree 정밀 교차검증은 후속(warning-first)` });
+          if (!routeTreeRouteSet.has(r)) {
+            issues.push({
+              row: rowNo,
+              kind: 'route-tree-target-missing',
+              message: `route-tree EXACT cross-check: Result Type=route Target ${r} 가 route-tree.txt route token 에 없음 (${label}) — warning-first`,
+            });
           }
         }
       }

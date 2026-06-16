@@ -167,3 +167,15 @@ export function renderRouteTree(children, opts) {
   renderChildren(normalized, '', out);
   return out.join('\n') + '\n';
 }
+
+// route-tree.txt 렌더 포맷에서 `route: <token>` 토큰만 읽는다.
+// EXACT 교차검증용이므로 [id]/(group) 같은 Expo raw 표기를 정규화하지 않는다.
+export function parseRouteTreeRouteTokens(text) {
+  const routes = new Set();
+  if (!text) return routes;
+  for (const line of String(text).split(/\r?\n/)) {
+    const m = /\broute:\s*([^\s]+)/.exec(line);
+    if (m) routes.add(m[1]);
+  }
+  return routes;
+}
