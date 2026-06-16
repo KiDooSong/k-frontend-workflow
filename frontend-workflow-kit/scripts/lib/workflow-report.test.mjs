@@ -70,6 +70,10 @@ function invocationLine(reportMd, scriptName) {
   return line;
 }
 
+function readReport(reportMd) {
+  return fs.readFileSync(reportMd, 'utf8');
+}
+
 test('custom --layout: validate/forbidden/check-generated invocation 에 --layout 전달(split-brain 차단)', () => {
   const reportMd = path.join(shared.dir, 'report-custom.md');
   const r = run(REPORT_SCRIPT, [
@@ -91,6 +95,13 @@ test('default(--layout 미지정): leaf invocation 에 --layout 누출 없음(BY
   for (const s of ['validate.mjs', 'forbidden-paths.mjs', 'check-generated-files.mjs']) {
     assert.ok(!/--layout/.test(invocationLine(reportMd, s)), `default 경로는 ${s} 에 --layout 을 누출하지 않아야 한다`);
   }
+  const raw = readReport(reportMd);
+  const discovered = raw.indexOf('\n## Discovered Work\n');
+  const followup = raw.indexOf('\n## Follow-up\n');
+  assert.ok(discovered > -1, '생성 Run Report 에 ## Discovered Work placeholder 가 있어야 한다');
+  assert.ok(discovered < followup, 'Discovered Work 는 Idempotency 와 Follow-up 사이에 있어야 한다');
+  assert.match(raw, /허용 Class 예시: `scope-extension-request`, `follow-up`, `refactor-candidate`, `duplicate`/);
+  assert.ok(!/허용 Class 예시: `current-scope`, `blocker`/.test(raw), 'record-only 표에 current-scope/blocker 를 예시로 두지 않는다');
 });
 
 test('상대 --layout: leaf invocation 에 path.resolve 된 절대경로 기록(raw 상대값 흘림 방지)', () => {

@@ -428,6 +428,21 @@ function renderIdempotency(m) {
   return lines.join('\n');
 }
 
+function renderDiscoveredWork() {
+  return [
+    '<!--',
+    '  현재 Work Packet 범위 밖에서 발견했지만 현재 세션에서 처리하지 않은 후속 작업을 기록만 한다.',
+    '  allowed_paths 를 자기 판단으로 넓히지 못하게 격리하는 record-only/advisory 표이며 gate 가 아니다.',
+    '  current-scope 는 본문 Result/Files Changed 로, blocker 는 ## Blockers Reported 또는 Open Decision 후보로 보고한다.',
+    '-->',
+    '허용 Class 예시: `scope-extension-request`, `follow-up`, `refactor-candidate`, `duplicate`.',
+    '',
+    '| ID | Class | Title | Affected Scope | Current Session Action | Suggested Next |',
+    '|---|---|---|---|---|---|',
+    '| — | — | 기록된 항목 없음 | — | — | — |',
+  ].join('\n');
+}
+
 function renderFollowup(m) {
   const lines = [];
   if (m.next_actions.length) {
@@ -539,6 +554,9 @@ export function renderReportMarkdown(m) {
   out.push('');
   out.push('## Idempotency');
   out.push(renderIdempotency(m));
+  out.push('');
+  out.push('## Discovered Work');
+  out.push(renderDiscoveredWork(m));
   out.push('');
   out.push('## Follow-up');
   out.push(renderFollowup(m));

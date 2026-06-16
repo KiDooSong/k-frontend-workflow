@@ -70,6 +70,10 @@ function readReadinessSource(packetPath) {
   return m[1];
 }
 
+function readPacket(packetPath) {
+  return fs.readFileSync(packetPath, 'utf8');
+}
+
 function mkOut() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'wf-run-layout-'));
 }
@@ -103,8 +107,14 @@ test('default(--layout 미지정): readiness_source 에 --layout 누출 없음(B
       '--docs', COUPON_DOCS, '--out', out,
     ]);
     assert.equal(r.code, 0, `auto-stop 는 exit 0 이어야 한다. stdout=${r.stdout}`);
-    const src = readReadinessSource(path.join(out, 'work-packet.md'));
+    const packet = path.join(out, 'work-packet.md');
+    const src = readReadinessSource(packet);
     assert.ok(!/--layout/.test(src), `default 경로는 --layout 을 누출하지 않아야 한다: ${src}`);
+    assert.match(
+      readPacket(packet),
+      /## Out of Scope[\s\S]*allowed_paths 밖 작업[\s\S]*## Commands/,
+      '생성 Work Packet Out of Scope 에 allowed_paths 밖 후속 격리 규칙이 있어야 한다',
+    );
   } finally {
     fs.rmSync(out, { recursive: true, force: true });
   }

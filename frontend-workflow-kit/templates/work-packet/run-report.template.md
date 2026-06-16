@@ -145,8 +145,9 @@ REMOVED:
   - 사람 승격 전에는 현재 세션에서 처리하지 않는다.
   - 현재 세션은 allowed_paths 를 자기 판단으로 넓히지 않는다.
   - 여기에 적힌 항목을 처리하려고 Open Decision / Unknown / Conflict / Discovered Work 를 닫거나 확정하지 않는다.
+  - current-scope 는 본문 Result/Files Changed 로, blocker 는 Blockers Reported 또는 Open Decision 후보로 보고한다.
 -->
-허용 Class 예시: `current-scope`, `blocker`, `scope-extension-request`, `follow-up`, `refactor-candidate`, `duplicate`.
+허용 Class 예시: `scope-extension-request`, `follow-up`, `refactor-candidate`, `duplicate`.
 
 | ID | Class | Title | Affected Scope | Current Session Action | Suggested Next |
 |---|---|---|---|---|---|
