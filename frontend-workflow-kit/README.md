@@ -24,7 +24,7 @@ LLM이 프론트 프로젝트를 **환각 없이** 진행하게 만드는 워크
 >
 > 스크립트가 초록불을 줘도, **의미·제품 리뷰(사람 또는 Codex)와 confirmed 승인(사람)은 따로** 거쳐야 한다.
 
-> 현재 단계: **MVP-A** 강제 코어 + **MVP-B Phase 0** 착수분(golden fixture 회귀 하니스 · forbidden_paths backstop[warning-first] · 입력/register 검증 검사 11·12). lint-pack·Figma·생성뷰·훅은 이후 B~D 잔여. ([docs/workflows/mvp-b.md](docs/workflows/mvp-b.md))
+> 현재 단계: **MVP-A** 강제 코어 + **MVP-B Phase 0**(golden fixture 회귀 하니스 · forbidden_paths backstop[warning-first] · 입력/register 검증 검사 11·12) + **MVP-C Phase 1 생성 뷰**(route-tree·nav-graph·component-catalog, 읽기 전용). 추가 랜딩: 검사 8 API-스키마 매칭(엔드포인트 단위·하드) · Interaction Matrix v2 dual-read(warning-first) · Tier2 route-tree 어댑터 솔기. lint-pack·Figma·codegen 어댑터·훅은 이후 잔여 — 상세·티어링: [roadmap-current.md](roadmap-current.md). ([docs/workflows/mvp-b.md](docs/workflows/mvp-b.md))
 > 설계 문서: [Core](../frontend-llm-workflow.md) · [확장판](../frontend-llm-workflow-expanded.md) ·
 > [스킬팩 개념](../frontend-workflow-skillpack-concept.md) · [구현 명세](../frontend-workflow-kit-implementation.md)
 > 입력 중 결정 대기 항목 분리: [Open Decisions](open-decisions.md)
