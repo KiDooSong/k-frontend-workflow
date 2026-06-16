@@ -4,6 +4,9 @@
 # 로컬 전용 워크트리 스킬 — 추적 안 함
 .claude/skills/wt/
 
+# Codex 로컬 호환 스킬 — Claude 스킬과 거의 중복되므로 추적 안 함
+.codex/
+
 # 임시 작업물 — 추적 안 함
 temp/archive/
 temp/claude-handoff*
