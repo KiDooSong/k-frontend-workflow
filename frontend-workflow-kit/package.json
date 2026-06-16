@@ -20,6 +20,7 @@
     "workflow:route-tree": "node scripts/route-tree.mjs",
     "workflow:nav-graph": "node scripts/nav-graph.mjs",
     "workflow:catalog": "node scripts/catalog-gen.mjs",
+    "workflow:lint-gen": "node scripts/lint-gen.mjs",
     "workflow:packet": "node scripts/workflow-packet.mjs",
     "workflow:report": "node scripts/workflow-report.mjs",
     "workflow:run": "node scripts/workflow-run.mjs",
@@ -27,8 +28,8 @@
     "example:readiness": "node scripts/readiness.mjs --docs examples/coupon-feature/docs/frontend-workflow",
     "example:validate": "node scripts/validate.mjs --docs examples/coupon-feature/docs/frontend-workflow --src examples/coupon-feature/src",
     "example:test": "node scripts/test-fixtures.mjs",
-    "test:spec": "node --test scripts/lib/spec.test.mjs scripts/lib/api-manifest.test.mjs scripts/lib/layout-profile.test.mjs scripts/lib/route-core.test.mjs scripts/lib/catalog-gen.test.mjs",
-    "test": "node scripts/test-fixtures.mjs && node --test scripts/lib/spec.test.mjs scripts/lib/api-manifest.test.mjs scripts/lib/layout-profile.test.mjs scripts/lib/route-core.test.mjs scripts/lib/catalog-gen.test.mjs"
+    "test:spec": "node --test scripts/lib/spec.test.mjs scripts/lib/api-manifest.test.mjs scripts/lib/layout-profile.test.mjs scripts/lib/route-core.test.mjs scripts/lib/catalog-gen.test.mjs scripts/lib/lint-gen-core.test.mjs",
+    "test": "node scripts/test-fixtures.mjs && node --test scripts/lib/spec.test.mjs scripts/lib/api-manifest.test.mjs scripts/lib/layout-profile.test.mjs scripts/lib/route-core.test.mjs scripts/lib/catalog-gen.test.mjs scripts/lib/lint-gen-core.test.mjs"
   },
   "dependencies": {
     "yaml": "^2.5.0"
