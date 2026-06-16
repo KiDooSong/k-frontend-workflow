@@ -25,15 +25,19 @@
 
 MVP-B lint-pack is not a drop-in ESLint config that overwrites a project's lint setup.
 
+The canonical policy file path is `docs/frontend-workflow/_meta/lint-policy.yaml`.
 The model is:
 
 ```txt
-lint-policy.yaml  ->  lint-gen.mjs  ->  eslint.workflow.config.mjs
+docs/frontend-workflow/_meta/lint-policy.yaml
+  ->  lint-gen.mjs
+  ->  eslint.workflow.config.mjs
 ```
 
-`lint-policy.yaml` is the human-approved policy source. `eslint.workflow.config.mjs`
-is generated and must not be hand-edited. Existing ESLint config remains owned by
-the project; workflow lint config is composed after it, append-only.
+`docs/frontend-workflow/_meta/lint-policy.yaml` is the human-approved policy
+source. `eslint.workflow.config.mjs` is generated and must not be hand-edited.
+Existing ESLint config remains owned by the project; workflow lint config is
+composed after it, append-only.
 
 This keeps lint-pack inside the existing workflow gates. It is the same concept as
 the roadmap's `lint-gen/lint-baseline(MVP-B)`, not a new independent artifact axis.
@@ -52,7 +56,8 @@ Brownfield:
 - Assume an existing ESLint/Biome/Prettier/CI setup and existing violation backlog.
 - Never overwrite or reorder existing project config.
 - Use `adapt-lint-pack` to propose policy changes before any generation.
-- Prefer `warn`, `new-code-only`, or `ratchet` for noisy policies.
+- Prefer `warn` or `ratchet` for noisy policies.
+- Treat `new-code-only` as a reserved rollout candidate until its Open Decision is closed.
 
 ## adapt-lint-pack Procedure
 
@@ -71,14 +76,16 @@ Brownfield:
    - missing: mark as adoption candidate
 
 4. Rollout
-   Run report-only measurement per candidate policy. Recommend `all`, `warn`, `new-code-only`, or `ratchet` based on current violation count and policy tier.
+   Run report-only measurement per candidate policy. Recommend `all`, `warn`, or `ratchet` based on current violation count and policy tier. Mention `new-code-only` only as a reserved future option until its definition is resolved.
 
 5. Propose
-   Output a `lint-policy.yaml` draft, conflict report, measured counts, and rollout plan. Do not run `lint-gen.mjs` until a human approves the proposal.
+   Output a `docs/frontend-workflow/_meta/lint-policy.yaml` draft, conflict report, measured counts, and rollout plan. Do not run `lint-gen.mjs` until a human approves the proposal.
 
 ## lint-policy.yaml Schema Draft
 
-Recommended location remains `docs/frontend-workflow/_meta/lint-policy.yaml`; the manifest source path should be tightened when PR-1 lands.
+Canonical location: `docs/frontend-workflow/_meta/lint-policy.yaml`.
+PR-1 must align the schema/template docs, manifest source path, generator input,
+and generated-file banner text to this path in one slice.
 
 Required top-level fields:
 
@@ -96,10 +103,11 @@ Policy entry rules:
 
 - `enabled` is required for every known policy.
 - `severity` is required when `enabled: true`; enum: `off | warn | error`.
-- `rollout` is required when `enabled: true`; enum: `all | new-code-only | ratchet`.
+- `rollout` is required when `enabled: true`; v1 enum: `all | ratchet`.
+- `new-code-only` is reserved and must not be schema-valid until its definition Open Decision is closed.
 - `reason` is required when a policy is disabled, severity is downgraded from the tier default, rollout is not `all` in greenfield, or implementation deviates from `auto`.
 - `baseline` is required only for `rollout: ratchet`; it must be a non-negative integer and must not be present for other rollout modes.
-- `tier` belongs to the policy catalog (`safety | architecture | style`). If mirrored into `lint-policy.yaml`, validation must ensure it matches the catalog; users must not be able to change a policy's tier through project policy.
+- `tier` belongs to the policy catalog (`safety | architecture | style`). If mirrored into `docs/frontend-workflow/_meta/lint-policy.yaml`, validation must ensure it matches the catalog; users must not be able to change a policy's tier through project policy.
 - Safety policies cannot be disabled or downgraded without an explicit human-owned decision reference.
 - Architecture policies may adjust paths or rollout; disabling requires `reason` and usually an Open Decision reference.
 - Style policies may be disabled when they conflict with local convention, but the reason must record the convention.
@@ -115,7 +123,7 @@ Optional fields for PR-1 consideration:
 
 Inputs:
 
-- `lint-policy.yaml`
+- `docs/frontend-workflow/_meta/lint-policy.yaml`
 - workflow policy catalog docs
 - project architecture paths, primarily from `frontend-architecture.md` or `defaults.paths`
 - existing lint config discovery, read-only, to compose after the project config
@@ -143,7 +151,14 @@ Append-only / existing-config contract:
 - Do not overwrite `eslint.config.*`, `.eslintrc*`, Biome config, Prettier config, or package lint scripts.
 - For flat config, generated output should compose the detected project config first and append workflow rules after it.
 - For eslintrc or non-ESLint projects, either generate through an explicit compatibility strategy or fail/propose; do not silently replace the toolchain.
-- The generated file must include a JS generated-file banner that points back to `lint-policy.yaml` and says not to edit the output directly.
+- The generated file must include a JS generated-file banner that points back to `docs/frontend-workflow/_meta/lint-policy.yaml` and says not to edit the output directly.
+
+Emit severity vs policy severity:
+
+- For `rollout: all`, emitted ESLint severity may match policy `severity`.
+- For `rollout: ratchet`, generated ESLint rules must run in report-only/warn mode by default, even when policy `severity: error` records the target severity. `lint-baseline.mjs` owns the exit decision.
+- Do not wire raw `eslint` execution as a hard CI gate for ratchet policies; otherwise ESLint `error` output can bypass the warning-first ratchet contract.
+- If a future implementation chooses a separate runner that absorbs ESLint exit codes and reads formatter output, that runner becomes part of the ratchet contract and must have fixtures before CI wiring.
 
 ## lint-baseline.mjs Ratchet Contract
 
@@ -162,6 +177,9 @@ Exit code candidates:
 - hard default: exit `1` on any increase from day one.
 
 Recommendation: start warning-first by default. This matches MVP-B Phase 0 posture and avoids making a noisy brownfield adoption fail CI before telemetry. Hard gating should be a later decision after fixtures and at least one brownfield dogfood run.
+
+When ratchet is warning-first, baseline comparison controls the process exit. ESLint
+rule severity alone must not decide the exit for ratchet policies.
 
 `lint-baseline.mjs` should have fixtures that cover:
 
@@ -191,8 +209,9 @@ This is also why this design refresh does not generate `eslint.workflow.config.m
 PR-1: schema/template/policy docs only
 
 - Add `lint-policy.template.yaml`, `lint-policy.schema.json`, policy catalog docs, and rollout-ratchet docs.
-- Decide and document the canonical `lint-policy.yaml` path.
-- Optionally update manifest source path only as documentation.
+- Document `docs/frontend-workflow/_meta/lint-policy.yaml` as the canonical policy path.
+- Update manifest source path and generated-file banner wording as documentation in the same slice.
+- Keep `new-code-only` out of the schema enum until its Open Decision is closed.
 - No runnable generator, package script, CI, or generated root file.
 
 PR-2: `lint-gen` skeleton and deterministic output
@@ -227,7 +246,6 @@ PR-5: CI/gate promotion decision
 - What is the minimum supported ESLint flat config version?
 - Is dependency-cruiser part of MVP-B or only a fallback for specific policies?
 - How exactly is `new-code-only` defined: changed files, changed lines, base ref, creation date, or ownership?
-- What is the final canonical path for `lint-policy.yaml`, and should manifest source use that full path?
 - What baseline storage format is stable enough for future multi-package projects?
 - How should eslintrc, CommonJS config, Biome-only projects, and monorepos compose with the generated workflow config?
 - What human approval field is required for safety-tier downgrade or disable?
@@ -241,4 +259,5 @@ PR-5: CI/gate promotion decision
 - Do not generate `eslint.workflow.config.mjs` in a docs-only design PR.
 - Do not treat lint-pack as a new independent workflow axis.
 - Do not run `lint-gen.mjs` from `adapt-lint-pack` before human approval.
+- Do not allow `new-code-only` in PR-1 schema before its definition Open Decision is closed.
 - Do not resolve or close Open Decisions as part of implementation.
