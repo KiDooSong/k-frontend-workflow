@@ -239,9 +239,10 @@ function main() {
   }
 
   // 검사 13 의 정밀 route 존재 확인 입력. route-tree 는 생성물이라 없거나 아직 stale 일 수 있으므로
-  // 부재는 hard fail 이 아니라 skip 이다. 존재하는 경우에만 `route: <token>` 을 EXACT 문자열로 비교한다.
+  // 부재는 hard fail 이 아니라 advisory warning 이다. 존재하는 경우에만 `route: <token>` 을 EXACT 문자열로 비교한다.
   const routeTreeFile = path.join(docsDir, '_meta', 'route-tree.txt');
-  const routeTreeRouteSet = exists(routeTreeFile)
+  const routeTreeExists = exists(routeTreeFile);
+  const routeTreeRouteSet = routeTreeExists
     ? parseRouteTreeRouteTokens(readFileSafe(routeTreeFile))
     : null;
 
@@ -458,9 +459,10 @@ function main() {
   // 13. Interaction Matrix v2(structured) 형식 — warning-first (검사 4·게이트 불변, 하드 게이트 없음).
   //     Result Type 헤더가 있는 표(v2 모드)만 점검한다 → v1 표는 무발화 = v1 validate 출력 byte-identical.
   //     enum/route 행 Target 부재/비-route 행 라우트 토큰/Result↔Target drift 를 경고로 surface.
-  //     route-tree.txt 가 있으면 Result Type=route Target 과 route token 을 EXACT 교차검증한다(warning-first).
+  //     route-tree.txt 가 있으면 Result Type=route Target 과 route token 을 EXACT 교차검증한다.
+  //     route-tree.txt 가 없으면 v2 route Target 존재 시 warning 으로만 알린다(warning-first).
   for (const spec of specs) {
-    for (const issue of interactionMatrixV2Issues(spec, { routeTreeRouteSet })) {
+    for (const issue of interactionMatrixV2Issues(spec, { routeTreeRouteSet, routeTreeMissing: !routeTreeExists })) {
       warn(13, spec.path, issue.message);
     }
   }

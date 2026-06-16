@@ -399,6 +399,16 @@ export function cellRoutes(cellText) {
   return routes;
 }
 
+// v2 Target 은 기계 판정 권위라 루트 라우트(`/`)도 명시 대상이 될 수 있다.
+// v1 free-form Result 파서는 byte-identical 보존을 위해 여전히 `/` 단독 토큰을 버린다.
+function targetCellRoutes(cellText) {
+  const routes = cellRoutes(cellText);
+  const raw = String(cellText == null ? '' : cellText).trim();
+  const unquoted = /^`([^`]+)`$/.exec(raw)?.[1]?.trim() || raw;
+  if (unquoted === '/' && !routes.includes('/')) return ['/', ...routes];
+  return routes;
+}
+
 // 구체 라우트만 통과 — 템플릿 자리표시자({/route}·꺾쇠)와 후행 슬래시(빈 세그먼트)를 거른다.
 // 정상 동적/그룹 세그먼트([id]·[...slug]·(group))는 보존된다.
 export function isConcreteRoute(r) {
@@ -406,6 +416,10 @@ export function isConcreteRoute(r) {
   if (/[{}<>]/.test(r)) return false; // 템플릿 자리표시자 중괄호/꺾쇠
   if (r.endsWith('/')) return false; // 후행 슬래시 = 빈 세그먼트
   return true;
+}
+
+function isConcreteTargetRoute(r) {
+  return r === '/' || isConcreteRoute(r);
 }
 
 // Interaction Matrix 의 Result 컬럼에서 라우트들을 추출 (검사 4 전용 — v1 free-form 경로, 불변).
@@ -446,7 +460,7 @@ export function interactionRowRoutes(row, mode) {
     const rt = normResultType(col(row, 'Result Type'));
     if (!rt) return cellRoutes(col(row, 'Result')); // 빈 Result Type → v1 free-form 폴백(누락 금지)
     if (rt !== 'route') return []; // 명시적 비-route 타입 → 라우트 없음
-    return cellRoutes(col(row, 'Target'));
+    return targetCellRoutes(col(row, 'Target'));
   }
   return cellRoutes(col(row, 'Result'));
 }
@@ -466,11 +480,13 @@ export function interactionEdgeRoutes(spec) {
 // 절대 에러로 승격하지 않는다(하드 게이트 없음). Target 존재 검사는 route-tree.txt route token 과 EXACT 비교한다.
 //   opts.routeTreeRouteSet : route-tree.txt 의 `route: <token>` 집합. 없으면 교차검증은 skip(생성 전/부재 허용).
 // 반환: [{ row, kind, message }]
-//   kind: type-empty|enum|route-missing-target|result-target-drift|route-tree-target-missing|nonroute-has-route
+//   kind: type-empty|enum|route-missing-target|result-target-drift|route-tree-target-missing|route-tree-missing|nonroute-has-route
 export function interactionMatrixV2Issues(spec, opts = {}) {
   const table = parseTable(spec.sections['interaction matrix']);
   if (!interactionMatrixIsV2(table)) return [];
   const routeTreeRouteSet = opts.routeTreeRouteSet instanceof Set ? opts.routeTreeRouteSet : null;
+  const routeTreeMissing = opts.routeTreeMissing === true && !routeTreeRouteSet;
+  let routeTreeMissingWarned = false;
   const issues = [];
   let rowNo = 0;
   for (const row of table.rows) {
@@ -491,7 +507,7 @@ export function interactionMatrixV2Issues(spec, opts = {}) {
     if (!INTERACTION_V2_RESULT_TYPES.includes(rt)) {
       issues.push({ row: rowNo, kind: 'enum', message: `Result Type '${rtRaw}' 가 허용값이 아님 (${label}) — ${INTERACTION_V2_RESULT_TYPES.join('|')} 중 하나` });
     }
-    const targetRoutes = cellRoutes(target).filter(isConcreteRoute);
+    const targetRoutes = targetCellRoutes(target).filter(isConcreteTargetRoute);
     const resultRoutes = cellRoutes(result).filter(isConcreteRoute);
     if (rt === 'route') {
       if (targetRoutes.length === 0) {
@@ -512,6 +528,13 @@ export function interactionMatrixV2Issues(spec, opts = {}) {
             });
           }
         }
+      } else if (routeTreeMissing && targetRoutes.length > 0 && !routeTreeMissingWarned) {
+        issues.push({
+          row: rowNo,
+          kind: 'route-tree-missing',
+          message: `route-tree EXACT cross-check skipped: _meta/route-tree.txt 가 없어 Result Type=route Target 존재 확인을 건너뜀 (${label}) — warning-first`,
+        });
+        routeTreeMissingWarned = true;
       }
     } else {
       const stray = [...new Set([...targetRoutes, ...resultRoutes])];
