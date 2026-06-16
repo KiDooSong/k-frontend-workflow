@@ -6,6 +6,7 @@ import {
   buildLintGenModel,
   firstTextDiff,
   LintPolicyContractError,
+  normalizeLineEndings,
   parseLintPolicyYaml,
   renderWorkflowConfig,
   toPosixPath,
@@ -123,12 +124,20 @@ function runLintGen(options) {
 
   const existing = readFileSafe(options.outPath);
   const unchanged = existing === text;
+  const lineEndingOnlyDrift = existing != null && !unchanged && normalizeLineEndings(existing) === text;
   if (options.check) {
     if (existing == null) {
       const err = new LintPolicyContractError('--check failed: output file is missing', [
         `${outputLabel}: missing generated output`,
       ]);
       err.summary = { status: 'missing-output' };
+      throw err;
+    }
+    if (lineEndingOnlyDrift) {
+      const err = new LintPolicyContractError('--check failed: generated output line endings drifted', [
+        `${outputLabel}: line endings differ; generated workflow config must be LF-only`,
+      ]);
+      err.summary = { status: 'line-ending-drift' };
       throw err;
     }
     if (!unchanged) {

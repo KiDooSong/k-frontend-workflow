@@ -1,7 +1,7 @@
 # Lint Policy Rollout And Ratchet
 
-> MVP-B lint-pack PR-1 adoption contract. This document describes policy rollout
-> choices only; the generator, baseline runner, scripts, and CI gates remain
+> MVP-B lint-pack adoption contract. PR-2 adds `lint-gen.mjs` for deterministic
+> ESLint flat-config fragment emission; the baseline runner and CI gates remain
 > future work.
 
 ## Canonical Source
@@ -12,13 +12,14 @@ The only canonical project policy path is
 `schemas/lint-policy.schema.json`.
 
 That schema requires a real JSON Schema draft-07 validator before it is wired
-into `lint-gen.mjs` or any CI path. The repo's existing
+into any CI path. The PR-2 `lint-gen.mjs` skeleton performs its own fail-closed
+operational validation for the supported subset. The repo's existing
 `scripts/lib/schema.mjs` helper is intentionally limited to the
 `frontmatter.schema.json` subset and does not enforce the draft-07 features used
 here, including `$ref`, `allOf`, `if`/`then`/`else`, `not`,
 `additionalProperties`, `minLength`, `minimum`, and `pattern`.
 
-The future flow is:
+The PR-2 generator flow is:
 
 ```txt
 docs/frontend-workflow/_meta/lint-policy.yaml
@@ -26,9 +27,11 @@ docs/frontend-workflow/_meta/lint-policy.yaml
   -> eslint.workflow.config.mjs
 ```
 
-`eslint.workflow.config.mjs` is generated at repo root, but PR-1 must not create
-it. The manifest keeps `eslint-workflow-config` as `status: planned`, so a
-missing file or missing generator remains must-not-fail.
+`eslint.workflow.config.mjs` is generated at repo root as an ESLint flat-config
+fragment, not a standalone replacement for project ESLint config. The manifest
+keeps `eslint-workflow-config` as `status: planned` until repo-root
+generated-file guard support lands, so a missing generated file remains
+must-not-fail.
 
 ## Rollout Modes
 

@@ -1,19 +1,24 @@
 # Lint Policy Catalog
 
-> MVP-B lint-pack PR-1 catalog. This is schema/template/policy documentation only:
-> no `lint-gen.mjs`, no `lint-baseline.mjs`, no package script, no CI wiring, and
-> no generated `eslint.workflow.config.mjs`.
+> MVP-B lint-pack policy catalog. PR-1 added the schema/template/docs contract;
+> PR-2 adds a deterministic `lint-gen.mjs` skeleton. `lint-baseline.mjs`,
+> generated-file guard promotion, and CI wiring remain future work.
 
 Canonical policy path: `docs/frontend-workflow/_meta/lint-policy.yaml`.
 Template: `templates/meta/lint-policy.template.yaml`.
 Schema: `schemas/lint-policy.schema.json`.
-Future generated output: repo-root `eslint.workflow.config.mjs`.
+Generated output: repo-root `eslint.workflow.config.mjs`.
 
 `lint-policy.yaml` is the human-approved project policy source. The catalog owns
 policy identity, tier, and defaults; project policy files must not redefine a
 policy's `tier`. Existing ESLint/Biome/Prettier configuration remains project
-owned. A future generator may compose after existing project config, but it must
-not overwrite or reorder it.
+owned. PR-2 `lint-gen.mjs` emits a flat-config fragment to append after the
+project's existing ESLint flat config; it does not configure parser or
+`languageOptions` and must not overwrite or reorder existing project config.
+
+The schema v1 `implementation` enum preserves future vocabulary
+(`eslint-boundaries`, `dep-cruiser`, `eslint-restricted-imports`), but the PR-2
+generator's operational subset is fail-closed `implementation: auto` only.
 
 ## Policy Table
 
@@ -37,14 +42,15 @@ not overwrite or reorder it.
 - `new-code-only` is reserved. It is intentionally absent from the v1 schema
   rollout enum until its Open Decision defines changed-code semantics.
 
-## Future Generated Banner
+## Generated Banner
 
-When `lint-gen.mjs` exists, `eslint.workflow.config.mjs` must be emitted as a
-repo-root generated file with a JS banner equivalent to:
+`eslint.workflow.config.mjs` is emitted as a repo-root generated file with a JS
+banner equivalent to:
 
 ```js
 // GENERATED FILE — DO NOT EDIT. Source: docs/frontend-workflow/_meta/lint-policy.yaml. Regenerate with npm run workflow:lint-gen.
 ```
 
-PR-1 defines this wording as documentation only. It does not create the generated
-file or make generated-file guards require it.
+PR-2 emits this banner, plus fragment/parser ownership comments. Generated-file
+guards still do not require this root artifact until a separate guard promotion
+slice handles repo-root path resolution.

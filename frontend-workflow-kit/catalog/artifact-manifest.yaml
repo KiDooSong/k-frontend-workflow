@@ -233,15 +233,16 @@ artifacts:
 
   # eslint.workflow.config (MVP-B, lint-pack) — docs/frontend-workflow/_meta/lint-policy.yaml 에서
   # lint-gen.mjs 가 합성.
-  # MVP-C 가 아니다. PR-2 에서 lint-gen skeleton 은 runnable 이지만, repo-root generated guard
-  # 승격은 아직 후속이므로 레지스트리에서는 generated artifact 를 planned 로 유지한다.
+  # MVP-C 가 아니다. PR-2 에서 lint-gen skeleton/package script 는 runnable 이지만,
+  # repo-root generated guard 승격은 아직 후속이므로 레지스트리에서는 generated artifact 를
+  # planned 로 유지한다. 즉 "생성 명령 존재"와 "guard-enforced artifact"를 분리한다.
   # 경로가 레포 루트라(docs/frontend-workflow/ 밑이 아님) validate 검사 6 의 경로 해소
   # (docs/frontend-workflow/ 접두 가정: validate.mjs:436)가 이 루트 파일을 못 짚는다 —
   # 이 가드 공백은 frontend-workflow-kit/temp/proposals/generated-file-guard-followup.md 에 정리.
   # JS 생성 파일 배너 문구는 docs/workflows/lint-policy-catalog.md 에 문서화되어 있고,
   # lint-gen.mjs 가 그대로 emit 한다.
-  # status: planned 이므로 파일 부재는 must-not-fail 이며, check-generated 가 아직 이 루트 파일을
-  # 재생성/비교하지 않는다.
+  # status: planned 이므로 파일 부재는 must-not-fail 이며, check-generated/CI 가 아직 이 루트
+  # 파일을 재생성/비교하지 않는다.
   eslint-workflow-config:
     kind: generated
     generated: true

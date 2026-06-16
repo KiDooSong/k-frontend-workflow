@@ -4,6 +4,10 @@ import { yamlParse } from './util.mjs';
 export const CANONICAL_POLICY_SOURCE = 'docs/frontend-workflow/_meta/lint-policy.yaml';
 export const GENERATED_BANNER_PREFIX = '// GENERATED FILE — DO NOT EDIT.';
 export const GENERATED_COMMAND = 'npm run workflow:lint-gen';
+export const FLAT_CONFIG_FRAGMENT_COMMENT =
+  '// Workflow lint fragment: append this flat-config array after the project ESLint flat config.';
+export const PROJECT_PARSER_COMMENT =
+  '// Parser and languageOptions remain project-owned; this fragment does not replace JS/JSX/TS/TSX setup.';
 
 export const POLICY_CATALOG = Object.freeze({
   'layer-boundaries': Object.freeze({
@@ -112,6 +116,13 @@ function validateContractPath(errors, label, value) {
   }
 }
 
+function validateDefaultPath(errors, label, value) {
+  validateContractPath(errors, label, value);
+  if (typeof value === 'string' && normalizeContractPath(value).includes('**')) {
+    errors.push(`${label}: PR-2 defaults.paths supports project-relative paths with simple * segments only, not **`);
+  }
+}
+
 function validateGlobList(errors, label, value) {
   if (value === undefined) return;
   if (!Array.isArray(value)) {
@@ -163,7 +174,7 @@ export function validateLintPolicy(policy) {
       addAllowedKeyErrors(errors, 'defaults.paths', policy.defaults.paths, PATH_KEYS);
       for (const key of PATH_KEYS) {
         requiredField(errors, 'defaults.paths', policy.defaults.paths, key);
-        if (key in policy.defaults.paths) validateContractPath(errors, `defaults.paths.${key}`, policy.defaults.paths[key]);
+        if (key in policy.defaults.paths) validateDefaultPath(errors, `defaults.paths.${key}`, policy.defaults.paths[key]);
       }
     }
   }
@@ -229,7 +240,10 @@ function validatePolicyEntry(errors, id, entry, catalog) {
 
   const implementation = entry.implementation || catalog.defaultImplementation;
   if (implementation !== 'auto') {
-    errors.push(`${label}.implementation: unsupported in PR-2 skeleton (${implementation}); only auto is supported`);
+    errors.push(
+      `${label}.implementation: schema v1 preserves future implementation vocabulary, ` +
+        `but lint-gen PR-2 supports only operational subset implementation: auto (${implementation} unsupported)`,
+    );
   }
 
   if (entry.rollout === 'ratchet') {
@@ -547,7 +561,7 @@ function renderPolicyConfig(policy) {
 
 export function renderWorkflowConfig(model) {
   const enabled = model.enabledPolicies.slice().sort((a, b) => a.policy_id.localeCompare(b.policy_id));
-  const lines = [generatedBanner(model.source), ''];
+  const lines = [generatedBanner(model.source), FLAT_CONFIG_FRAGMENT_COMMENT, PROJECT_PARSER_COMMENT, ''];
 
   if (!enabled.length) {
     lines.push('export default [];', '');
