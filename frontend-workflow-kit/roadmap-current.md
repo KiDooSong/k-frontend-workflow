@@ -1,6 +1,6 @@
 # Current Roadmap
 
-> 스냅샷: 2026-06-16. MVP-B Phase 0 완료분 위에 **2026-06-15~16 추가 랜딩** — **검사 8 API-스키마 매칭 엔드포인트 단위 격상**(구현·하드, PR #19) · **Interaction Matrix v2 dual-read + 검사 13**(warning-first, #48) · **Tier2 route-tree 어댑터 솔기**(#49) · **component-catalog phase2-1 배럴 reconcile 진단**(warning-first, stderr-only) · **Follow-up Quarantine / Role Expansion 설계 초안**(#50, docs-only, 실행 게이트 0). 잔여는 아래 "다음 구현 후보" 로 이어진다.
+> 스냅샷: 2026-06-16. MVP-B Phase 0 완료분 위에 **2026-06-15~16 추가 랜딩** — **검사 8 API-스키마 매칭 엔드포인트 단위 격상**(구현·하드, PR #19) · **Interaction Matrix v2 dual-read + 검사 13**(warning-first, #48) 및 route-tree EXACT 정밀화(여전히 warning-first) · **Tier2 route-tree 어댑터 솔기**(#49) · **component-catalog phase2-1 배럴 reconcile 진단**(warning-first, stderr-only) · **Follow-up Quarantine / Role Expansion 설계 초안**(#50, docs-only, 실행 게이트 0). 잔여는 아래 "다음 구현 후보" 로 이어진다.
 > 이전 스냅샷(2026-06-14): MVP-B Phase 0 **완료** — 회귀 하니스·경로 backstop[warning-first]·입력/register 검증; consumer-dogfood-001 외부 소비 dry-run 으로 end-to-end 검증, PR #17.
 > 목적: **MVP-A 구현 범위 / 설계 계약(코드 후속) / Future Candidate** 세 티어의 경계를 한 파일로 고정한다.
 > 문서별 역할·링크는 [README 문서 지도](README.md#문서-지도) 참조.
@@ -89,7 +89,7 @@ Review          MVP-A 에 없음 (Future Candidate).
 **Tier 1 강화:**
 - ✅ Open Decisions validate **형식 검사** 구현됨(검사 9: 표·`Status`·`Blocking Mode`·전역 ID 중복). ✅ `forbidden_paths` 경계 backstop 구현(MVP-B Phase 0, diff 기반, warning-first — `scripts/forbidden-paths.mjs`; `--enforce` 로 하드).
 - ✅ **API Candidate ↔ zod 스키마 매칭 검사 구현됨**(검사 8, 하드·exit 1 — PR #19, 옵션 C): confirmed ScreenSpec 후보의 `(Method, Path)` → api-manifest `## Endpoints` → Linked Schema → `src/api/schemas/*.ts` 실 export 해소까지. **Known limitation:** OpenAPI `components.schemas` 해소는 **아직 미구현**(zod export 매칭 중심) · manifest 부재 시 옛 전역 존재검사(`hasZod || hasOpenApi`)로 폴백 · manifest `Source` 컬럼은 정보용(검사에 미사용). 증거: [api-schema-match-001.md](../temp/runs/api-schema-match-001.md).
-- 🔶 Interaction Matrix **`Result` 컬럼 구조화 — v2 dual-read 구현됨**(#48): 선택적 `Result Type`/`Target`/`Params` 컬럼 파서 + **검사 13(warning-only)** + v2 골든 픽스처. v1 free-form Result 는 정본 유지, v2 출력 byte-identical. **잔여(warning-first 유지):** route-tree.txt 토큰과의 **EXACT 교차검증**(현재 inventory 집합 약식 경고) · `Result Type` enum 동결 · 하드 게이트 승격. 증거: [interaction-matrix-v2-dual-read-001.md](temp/runs/interaction-matrix-v2-dual-read-001.md).
+- 🔶 Interaction Matrix **`Result` 컬럼 구조화 — v2 dual-read + 정밀화 구현됨**(#48 + follow-up): 선택적 `Result Type`/`Target`/`Params` 컬럼 파서 + **검사 13(warning-only)** + v2 골든 픽스처. v1 free-form Result 는 정본 유지, v2 출력 byte-identical. `Result Type` enum 은 `route|state|mutation|external|none` 으로 코드 단일 출처에 동결했고, `Result Type=route` Target 은 route-tree.txt 의 `route: <token>` 과 **EXACT** 로 경고 교차검증한다(route-tree artifact 부재 시 skip). **잔여:** 하드 게이트 승격 없음; telemetry 후 별도 decision PR 에서만 검토. 증거: [interaction-matrix-v2-dual-read-001.md](temp/runs/interaction-matrix-v2-dual-read-001.md).
 - decision-log.md 전역 이관 · deferred+Reversible+Assumptions 묶음 · 교차-화면 참조 (open-decisions.md 후속 절)
 
 **Tier 2 구현:**
@@ -107,7 +107,7 @@ Review          MVP-A 에 없음 (Future Candidate).
 
 1. **component-catalog phase2 — 첫 additive 섹션/컬럼 (PR-3)** — phase2-1 의 배럴 reconcile **진단(warning-first, stderr-only, 출력·exit·골든 불변)** 슬라이스는 머지됨. **다음 작은 PR** = 기존 4컬럼 `## Components` 테이블에 **첫 additive 섹션/컬럼**을 더하는 슬라이스 — **아직 미구현**. 새 골든 픽스처 뒤에서 두-run 결정성·byte-exact 입증 후에만 착수(design §6/§9/§11 PR-3). 설계: `temp/proposals/component-catalog-phase2.md`. 진단 슬라이스 기록: [component-catalog-phase2-1-diagnostics-001.md](temp/runs/component-catalog-phase2-1-diagnostics-001.md).
 2. **Tier2 codegen 어댑터 (PR-3 잔여)** — route-tree 어댑터 솔기(PR-2: `scripts/lib/route-core.mjs` + `scripts/adapters/routers/{expo-router}.mjs` + `manifest.json`)는 #49 로 랜딩(golden byte-identical). **잔여 = codegen 절반**: `scripts/lib/codegen-core.mjs`(결정성 독점) + `scripts/adapters/codegens/{openapi-client}.mjs` + codegen 매니페스트 + 출력경로/**hook 네이밍**(§7·§8·§9) + validate/nav-graph 솔기. 설계: `temp/proposals/tier2-router-codegen-adapter.md` §17 PR-3. 솔기 랜딩 기록: [tier2-route-tree-adapter-seam-001.md](temp/runs/tier2-route-tree-adapter-seam-001.md).
-3. **Interaction Matrix 정밀화 (잔여, warning-first)** — v2 dual-read·검사 13 은 #48 로 랜딩(위 Tier 3 절). 잔여 = route-tree.txt 토큰과의 **EXACT 교차검증**(현재 inventory 집합 약식 경고) + `Result Type` enum 동결. 하드 게이트 승격은 telemetry 후 별도 decision PR.
+3. **Interaction Matrix telemetry / 승격 decision (후속, 아직 하드 게이트 아님)** — 정밀화(route-tree.txt `route: <token>` EXACT 교차검증 + `Result Type` enum 동결)는 warning-first 로 랜딩됨(위 Tier 3 절). 남은 것은 telemetry 후 검사 13 의 하드 게이트 승격 여부를 별도 decision PR 에서 검토하는 것뿐이며, 현재 readiness/정책 게이트는 변경하지 않는다.
 4. **lint-pack / adapt-lint-pack** — 기존 로드맵의 `lint-gen/lint-baseline(MVP-B)` 생성물 lint 게이트와 **동일 개념**의 라벨(별도 신규 스킬/파일 아님 — `lint-gen.mjs`+`lint-baseline.mjs` 생성기 + 브라운필드 도입용 `adapt-lint-pack` 스킬, frontend-workflow-kit-implementation.md §11).
 5. **Follow-up Quarantine Option A (템플릿만, 게이트 없음)** — PR #50 설계의 첫 실행 가능한 슬라이스. `templates/work-packet/run-report.template.md` 에 `## Discovered Work` 구조를 추가하고 `work-packet.template.md` 의 `Out of Scope` 에 범위 밖 후속 기록 규칙을 더한다. 전역 Follow-up Register, 자동 stale/freshness 판정, role metadata/lock 은 도입하지 않는다.
 

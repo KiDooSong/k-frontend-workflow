@@ -14,6 +14,7 @@ import {
   loadRouterAdapter,
   renderRouteTree,
   normalizeRouteTree,
+  parseRouteTreeRouteTokens,
   RouterAdapterError,
   CORE_ROUTER_ADAPTER_VERSION,
 } from './route-core.mjs';
@@ -119,4 +120,20 @@ test('S7: 문자열 spec — 매니페스트 이름 우선, 아니면 파일 경
   assert.equal(byPath.name, 'minimal-custom');
   // 이름도 아니고 파일도 아니면 fail-closed.
   await assert.rejects(() => loadRouterAdapter('definitely-not-a-thing'), RouterAdapterError);
+});
+
+test('S8: route-tree.txt 에서 route token 을 EXACT 문자열로 추출한다', () => {
+  const text = [
+    '# GENERATED FILE — DO NOT EDIT',
+    '/',
+    '├─ index.tsx                       route: /',
+    '├─ (tabs)/',
+    '│  └─ home.tsx                    route: /(tabs)/home',
+    '└─ coupons/',
+    '   └─ [id].tsx                    route: /coupons/[id]',
+  ].join('\n');
+  assert.deepEqual(
+    [...parseRouteTreeRouteTokens(text)].sort(),
+    ['/', '/(tabs)/home', '/coupons/[id]'],
+  );
 });
