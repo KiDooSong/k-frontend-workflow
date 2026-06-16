@@ -28,6 +28,26 @@ function toPosix(p) {
   return p.replace(/\\/g, '/');
 }
 
+function classifyUiFilePath(absFile) {
+  const posixAbs = toPosix(absFile);
+  const idx = posixAbs.lastIndexOf(UI_MARKER); // 중첩 시 가장 안쪽(프로젝트-로컬) 정본 루트 채택
+  if (idx === -1) return null; // 정본 src/components/ui/ 밖 → 제외 (§1 스코프)
+
+  const ext = path.extname(absFile);
+  if (!SCAN_EXTS.includes(ext)) return null;
+  const base = path.basename(absFile, ext);
+
+  // co-located *.styles.ts / *.test.tsx / *.stories.tsx / *.d.ts → basename 에 '.' 잔존 → 제외 (§2).
+  if (base.includes('.')) return null;
+  // PascalCase basename 만 후보 (index, queryKeys, utils 등 제외) (§2).
+  if (!PASCAL_RE.test(base)) return null;
+
+  return {
+    base,
+    source_path: posixAbs.slice(idx + 1), // 'src/components/ui/Button.tsx' | '.../forms/Field.tsx'
+  };
+}
+
 // `export const <base>` 의 초기화식(RHS)이 memo/forwardRef 호출인지 판정한다 — 그러면 래퍼라 v1 에서 제외.
 // 타입 주석에 `=`(제네릭 기본값 `<T = U>`)·`;`(타입 리터럴 `{a; b}`)·`<…>`/`{…}`/`(…)` 가 들어와도
 // 괄호류 깊이를 세어 "최상위(depth 0) 할당 `=`" 만 잡는다. arrow `=>`·비교 `== >= <= !=` 는 할당이 아니다.
@@ -66,20 +86,11 @@ function isWrappedConst(src, base) {
 //   반환: { name, source_path, export_kind, status } | null (비-컴포넌트)
 // content 는 파일 본문(없으면 빈 문자열로 취급). IO 는 호출부가 한다(이 함수는 순수).
 export function classifyComponentFile(absFile, content) {
-  const posixAbs = toPosix(absFile);
-  const idx = posixAbs.lastIndexOf(UI_MARKER); // 중첩 시 가장 안쪽(프로젝트-로컬) 정본 루트 채택
-  if (idx === -1) return null; // 정본 src/components/ui/ 밖 → 제외 (§1 스코프)
-
-  const ext = path.extname(absFile);
-  if (!SCAN_EXTS.includes(ext)) return null;
-  const base = path.basename(absFile, ext);
-
-  // co-located *.styles.ts / *.test.tsx / *.stories.tsx / *.d.ts → basename 에 '.' 잔존 → 제외 (§2).
-  if (base.includes('.')) return null;
-  // PascalCase basename 만 후보 (index, queryKeys, utils 등 제외) (§2).
-  if (!PASCAL_RE.test(base)) return null;
+  const file = classifyUiFilePath(absFile);
+  if (!file) return null;
 
   // base 는 PascalCase 라 정규식 메타문자가 없다 → 그대로 보간 안전.
+  const base = file.base;
   const src = content || '';
   // memo/forwardRef 래퍼 → 제외 (v1 plain 선언만, §7.4(d)/OD-5). 타입 주석 안의 `=`/`;` 에 속지 않도록
   // 괄호류 깊이를 세어 최상위 할당 `=` 의 RHS 가 래퍼 호출인지 검사한다(isWrappedConst 위 정의 참조).
@@ -94,14 +105,26 @@ export function classifyComponentFile(absFile, content) {
   const constRe = new RegExp(`^\\s*export\\s+const\\s+${base}\\b`, 'm');
   if (!fnRe.test(src) && !constRe.test(src)) return null;
 
-  // source_path: 정본 src/components/ui/ 루트 기준 posix 상대경로 — 매니페스트 source(src/components/ui/**)
-  // 와 일치. idx 는 마지막 '/src/components/ui/' 의 선행 '/' 위치(lastIndexOf)라, 경로에 마커가 중첩돼도
-  // 가장 안쪽(프로젝트-로컬) 루트부터 slice(idx+1) → 'src/components/ui/<...>'. v1 은 --src 아래 정본 ui
-  // 루트가 하나라는 단일루트 계약을 전제한다.
-  const source_path = posixAbs.slice(idx + 1); // 'src/components/ui/Button.tsx' | '.../forms/Field.tsx'
-
   // v1 4필드만. export_kind 는 현재 항상 'named'(default 미수집), status 는 추출상태 'ok' (OD-2).
-  return { name: base, source_path, export_kind: 'named', status: 'ok' };
+  return { name: base, source_path: file.source_path, export_kind: 'named', status: 'ok' };
+}
+
+// phase2 PR-3: default function export 는 정식 components 로 승격하지 않고 candidate 로만 surface 한다.
+// 이름은 default function 명보다 PascalCase 파일 basename 을 우선한다(Modal.tsx → Modal).
+export function classifyDefaultExportCandidate(absFile, content) {
+  const file = classifyUiFilePath(absFile);
+  if (!file) return null;
+
+  const src = stripBlockComments(content || '');
+  const defaultFunctionRe = /^\s*export\s+default\s+(?:async\s+)?function(?:\s+[A-Za-z_$][\w$]*)?\s*\(/m;
+  if (!defaultFunctionRe.test(src)) return null;
+
+  return {
+    name: file.base,
+    source_path: file.source_path,
+    export_kind: 'default',
+    status: 'candidate',
+  };
 }
 
 // 정렬: (source_path, name) 튜플 비교 — plain 코드유닛 순서(route-tree 의 plain .sort() 관례, §7.4(b)).
@@ -119,12 +142,17 @@ export function buildCatalog({ src }) {
   const root = path.resolve(src);
   const files = walkFiles(root, SCAN_EXTS); // 정렬된 절대경로(node_modules/dot 디렉토리 스킵)
   const components = [];
+  const default_export_candidates = [];
   for (const f of files) {
-    const c = classifyComponentFile(f, readFileSafe(f));
+    const content = readFileSafe(f);
+    const c = classifyComponentFile(f, content);
     if (c) components.push(c);
+    const d = classifyDefaultExportCandidate(f, content);
+    if (d) default_export_candidates.push(d);
   }
   components.sort(compareComponents);
-  return { components };
+  default_export_candidates.sort(compareComponents);
+  return { components, default_export_candidates };
 }
 
 // 생성물 헤더(H1 em-dash 마커) + ## Components 테이블을 결정적 Markdown 문자열로 렌더링한다.
@@ -147,6 +175,17 @@ export function renderCatalog(model) {
   out.push('| --- | --- | --- | --- |');
   for (const c of model.components) {
     out.push(`| ${c.name} | ${c.source_path} | ${c.export_kind} | ${c.status} |`);
+  }
+  const defaultExportCandidates = model.default_export_candidates || [];
+  if (defaultExportCandidates.length > 0) {
+    out.push('');
+    out.push('## Default Export Candidates');
+    out.push('');
+    out.push('| Name | Source Path | Export Kind | Status |');
+    out.push('| --- | --- | --- | --- |');
+    for (const c of defaultExportCandidates) {
+      out.push(`| ${c.name} | ${c.source_path} | ${c.export_kind} | ${c.status} |`);
+    }
   }
   return out.join('\n') + '\n';
 }

@@ -4,5 +4,5 @@
   "src": "src",
   "expected": "expected/component-catalog.md",
   "expect": "pass",
-  "reason": "component-catalog generated view golden — name/source_path/export_kind/status; excludes memo/forwardRef/default-export/non-Pascal/nested-scope decoys"
+  "reason": "component-catalog generated view golden — named components plus default-export candidates; excludes memo/forwardRef/non-Pascal/nested-scope decoys"
 }
