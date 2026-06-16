@@ -9,7 +9,7 @@
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs, writeFile, isDir } from './lib/util.mjs';
-import { buildCatalog, renderCatalog } from './lib/catalog-gen.mjs';
+import { buildCatalog, renderCatalog, runBarrelReconcileDiagnostic } from './lib/catalog-gen.mjs';
 
 function main() {
   const { flags } = parseArgs(process.argv.slice(2));
@@ -34,6 +34,10 @@ function main() {
 
   const model = buildCatalog({ src });
   const count = model.components.length;
+
+  // phase2-1: 배럴 ↔ 카탈로그 정합성 진단 (warning-first, stderr only — 출력 파일·exit code 불변).
+  // 모든 성공 경로(--json/--dry-run/쓰기)에서 동일하게 돌며, 불일치가 없으면 아무것도 출력하지 않는다.
+  runBarrelReconcileDiagnostic({ src, components: model.components }, process.stderr);
 
   // --json: 동일 모델을 stdout 으로 (헤더 없음, early-return — nav-graph.mjs:25-28 미러).
   if (flags.json) {

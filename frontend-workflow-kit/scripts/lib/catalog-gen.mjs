@@ -150,3 +150,142 @@ export function renderCatalog(model) {
   }
   return out.join('\n') + '\n';
 }
+
+// ===========================================================================
+// phase2-1 — 배럴(barrel) ↔ 카탈로그 정합성 진단 (static diagnostic, warning-first)
+// ---------------------------------------------------------------------------
+// 정본 src/components/ui/ 루트의 배럴(index.ts|index.tsx)이 `export { X } from './X'` 로
+// re-export 하는 컴포넌트 이름과, 파일워크가 수집한 카탈로그 컴포넌트 이름의 **불일치만**
+// stderr 경고로 surface 한다. 출력 파일 내용·exit code·골든 테이블은 전혀 바꾸지 않는다
+// (component-catalog-phase2.md §3.4/§7/§11 PR-2). 무의존·정적 regex 만 사용(§2 무의존 계약 상속).
+//
+// 범위 밖(이번 phase 에서 결정적 해소 안 함 — 조용히 무시하거나 unsupported 로만 카운트, false
+// hard-fail 없음): re-export 별칭 `export { A as B }`, star `export *`/`export * as N`,
+// type-only re-export `export type { … }`. 외부 패키지 re-export(상대경로 아님)도 컴포넌트
+// reconcile 대상이 아니므로 무시한다.
+
+// 배럴 한 개의 본문에서 상대 모듈 `export { … } from './…'` 의 단순 PascalCase 이름만 추출한다.
+//   반환: { names: string[], unsupported: number }
+//   - line/JSDoc 주석 줄은 `^[ \t]*export` 앵커로 자연 배제(v1 classifyComponentFile 와 동일 관례).
+//   - `export type { … }` (type-only) → 전체 스킵(컴포넌트 아님, unsupported 아님).
+//   - `export * …` (상대 star, non-type) → unsupported++ (열거 불가).
+//   - 절(clause) 안 `… as …` 별칭 → unsupported++ (이름 비교 제외).
+//   - 절 안 `type X` 인라인 specifier → 스킵(타입).
+//   - PascalCase 가 아닌 이름(util/hook 등) → 컴포넌트 아님 → 조용히 무시.
+//   - `export function/const <X>` 같은 선언은 `{` 가 바로 오지 않아 named-re-export 정규식에 안 걸린다.
+export function parseBarrelReexports(content) {
+  const text = content || '';
+  const names = [];
+  let unsupported = 0;
+
+  // export [type] { a, b as c } from '<module>'  — `[^}]*` 는 첫 `}` 에서 멈춰 함수 본문을 넘지 않는다.
+  const NAMED_RE = /^[ \t]*export\s+(type\s+)?\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]/gm;
+  let m;
+  while ((m = NAMED_RE.exec(text)) !== null) {
+    const isType = Boolean(m[1]);
+    const clauses = m[2];
+    const mod = m[3];
+    if (isType) continue; // type-only re-export → 컴포넌트 아님
+    if (!mod.startsWith('.')) continue; // 외부 패키지 → 무시
+    for (const raw of clauses.split(',')) {
+      const c = raw.trim();
+      if (!c) continue;
+      if (/\bas\b/.test(c)) {
+        unsupported++; // 별칭 → 이번 phase 범위 밖
+        continue;
+      }
+      if (/^type\s+/.test(c)) continue; // 인라인 type specifier → 타입
+      if (PASCAL_RE.test(c)) names.push(c); // PascalCase 컴포넌트 이름만
+      // 그 외(camelCase util 등)는 컴포넌트가 아니므로 조용히 무시
+    }
+  }
+
+  // export [type] * [as Ns] from '<module>'
+  const STAR_RE = /^[ \t]*export\s+(type\s+)?\*(?:\s+as\s+\w+)?\s*from\s*['"]([^'"]+)['"]/gm;
+  while ((m = STAR_RE.exec(text)) !== null) {
+    const isType = Boolean(m[1]);
+    const mod = m[2];
+    if (isType) continue; // type-only star → 무시
+    if (mod.startsWith('.')) unsupported++; // 상대 star → 열거 불가(범위 밖)
+  }
+
+  return { names, unsupported };
+}
+
+// src 아래 정본 ui 루트 직속 배럴(index.ts|index.tsx)을 찾아 re-export 집합을 카탈로그 컴포넌트
+// 집합과 대조한다. IO 수행(walkFiles/readFileSafe). 순수 파싱은 parseBarrelReexports 가 담당.
+//   반환: { barrelFound, barrelPaths, reexported, missingFromCatalog, missingFromBarrel, unsupported }
+export function analyzeBarrelReconcile({ src, components }) {
+  const root = path.resolve(src);
+  const files = walkFiles(root, SCAN_EXTS);
+  const barrels = [];
+  for (const f of files) {
+    const posixAbs = toPosix(f);
+    const idx = posixAbs.lastIndexOf(UI_MARKER); // 정본 ui 루트 (중첩 시 가장 안쪽)
+    if (idx === -1) continue; // 정본 src/components/ui/ 밖
+    const rest = posixAbs.slice(idx + UI_MARKER.length);
+    if (rest === 'index.ts' || rest === 'index.tsx') {
+      barrels.push({ rel: posixAbs.slice(idx + 1), abs: f }); // 'src/components/ui/index.ts'
+    }
+  }
+  if (barrels.length === 0) {
+    return {
+      barrelFound: false,
+      barrelPaths: [],
+      reexported: [],
+      missingFromCatalog: [],
+      missingFromBarrel: [],
+      unsupported: 0,
+    };
+  }
+
+  const reexported = new Set();
+  let unsupported = 0;
+  for (const b of barrels) {
+    const parsed = parseBarrelReexports(readFileSafe(b.abs) || '');
+    for (const n of parsed.names) reexported.add(n);
+    unsupported += parsed.unsupported;
+  }
+  const catalog = new Set((components || []).map((c) => c.name));
+  const missingFromCatalog = [...reexported].filter((n) => !catalog.has(n)).sort();
+  const missingFromBarrel = [...catalog].filter((n) => !reexported.has(n)).sort();
+  return {
+    barrelFound: true,
+    barrelPaths: barrels.map((b) => b.rel).sort(),
+    reexported: [...reexported].sort(),
+    missingFromCatalog,
+    missingFromBarrel,
+    unsupported,
+  };
+}
+
+// diff → stderr 경고 라인 배열. 불일치가 없으면(또는 배럴 부재) 빈 배열(=무경고, 정상 케이스).
+export function formatBarrelWarnings(diff) {
+  if (!diff || !diff.barrelFound) return [];
+  if (diff.missingFromCatalog.length === 0 && diff.missingFromBarrel.length === 0) return [];
+  const lines = [
+    'workflow:catalog — WARNING: barrel ↔ catalog mismatch (phase2-1 diagnostic, non-blocking)',
+    `  barrel: ${diff.barrelPaths.join(', ')}`,
+  ];
+  if (diff.missingFromCatalog.length) {
+    lines.push(`  re-exported by barrel but not in catalog: ${diff.missingFromCatalog.join(', ')}`);
+  }
+  if (diff.missingFromBarrel.length) {
+    lines.push(`  in catalog but not re-exported by barrel: ${diff.missingFromBarrel.join(', ')}`);
+  }
+  if (diff.unsupported > 0) {
+    lines.push(
+      `  note: ${diff.unsupported} unsupported re-export form(s) (alias/star) ignored — reconcile may be incomplete`,
+    );
+  }
+  return lines;
+}
+
+// CLI 편의: 진단을 돌려 경고를 stderr 로 쓴다(있을 때만). 반환은 diff(테스트/재사용용).
+// exit code 는 절대 바꾸지 않는다 — warning-first(§7). 입력 검증(--src 비디렉토리)은 CLI 가 이미 했다.
+export function runBarrelReconcileDiagnostic({ src, components }, stderr) {
+  const diff = analyzeBarrelReconcile({ src, components });
+  const lines = formatBarrelWarnings(diff);
+  if (lines.length) stderr.write(lines.join('\n') + '\n');
+  return diff;
+}
