@@ -68,6 +68,7 @@ MVP-B Phase 0 = lanes **A/B/C** 통합. 회귀 하니스(A) · 경로 backstop(B
 | `test-fixtures` 회귀 하니스 (Lane A) | 구현·강제(하드) | 자체 실행 exit 1; CI 는 warning-only(`continue-on-error`) 배선 — 하드 gating 후속 |
 | `forbidden-paths` backstop (Lane B) | 경고-전용 | 기본 exit 0, `--enforce` 로 opt-in 하드 |
 | Reconciliation Register **미처리 감지** (검사 12 일부, Lane C) | 경고-전용 | Reconcile Status `in-progress`/`failed`, `--enforce` 로 하드 |
+| `lint-policy` template/schema/catalog/rollout docs (MVP-B PR-1) | 문서 계약 | canonical path = `docs/frontend-workflow/_meta/lint-policy.yaml`; generator/CI/generated output 없음 |
 | `lint-gen` / `lint-baseline` (MVP-B) | 제안 | 승격 금지 |
 | `catalog` / `nav` / `route-tree` / `check-generated` (MVP-C) | 제안 | 승격 금지 |
 | `reconcile-input` 킷 `skills/` vendor | 제안 | 리포-로컬 스킬은 절차 가이드일 뿐 코드 강제 0 |

@@ -58,6 +58,7 @@ examples/    coupon-feature (golden example, end-to-end 1회 완주)
 | [input-reconciliation.md](input-reconciliation.md) | 새 입력 반영·충돌·`resolved→open` 재오픈 계약 | **Tier 2 (설계 계약)** | 📄 계약 동결 + reconcile-input 스킬 작성(리포-로컬 `.claude/skills/`, 절차 가이드일 뿐 코드 강제 0) — 킷 `skills/` vendor·hook·CI 후속 |
 | [investigation-and-verification.md](investigation-and-verification.md) | 장기 조사·플랫폼 검증·evidence 핸드오프 | **Tier 2 (설계 계약)** | 📄 문서 계약만 — 템플릿·manifest·readiness 파싱 후속 |
 | [docs/workflows/mvp-b.md](docs/workflows/mvp-b.md) | MVP-B Phase 0 통합 노트(lanes A/B/C) | **MVP-B Phase 0** | 🆕 회귀 하니스(하드)·경로 backstop/register 미처리(warning-first) |
+| [docs/workflows/lint-policy-catalog.md](docs/workflows/lint-policy-catalog.md) / [lint-policy-rollout-ratchet.md](docs/workflows/lint-policy-rollout-ratchet.md) | MVP-B lint-pack policy catalog · rollout/adoption 계약 | **MVP-B PR-1 (docs-only)** | 📄 `docs/frontend-workflow/_meta/lint-policy.yaml` schema/template/docs only — `lint-gen`/`lint-baseline`/CI 후속 |
 | [docs/design/README.md](docs/design/README.md) | 장기 설계 초안 인덱스(customizable architecture · follow-up quarantine) | **Design Drafts / Future Candidate** | 📄 PR #50 로 follow-up quarantine/role expansion 초안 랜딩 — 실행 게이트 0 |
 | `temp/work-packet-review-artifacts-proposal.md` (킷 외부) | Work Packet & Review Artifacts (리뷰 관문 흡수) | **Future Candidate** | 📝 설계 제안 초안(리포에 추적됨) — 단 `templates/work-packet/*.template.md` 는 킷에 포함(코드 강제 0, 여전히 Future Candidate) |
 

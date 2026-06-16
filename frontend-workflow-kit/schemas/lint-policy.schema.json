@@ -1,0 +1,212 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "lint-policy.schema.json",
+  "title": "Frontend Workflow lint-policy.yaml",
+  "description": "Schema for docs/frontend-workflow/_meta/lint-policy.yaml. This PR-1 schema defines the policy source only; lint-gen.mjs and eslint.workflow.config.mjs are future generated surfaces.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "defaults", "policies"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "enum": [1]
+    },
+    "defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["paths"],
+      "properties": {
+        "paths": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["screens", "api", "ui"],
+          "properties": {
+            "screens": { "type": "string", "minLength": 1 },
+            "api": { "type": "string", "minLength": 1 },
+            "ui": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "policies": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "layer-boundaries",
+        "no-fetch-in-screens",
+        "no-adhoc-buttons",
+        "no-arbitrary-style-values"
+      ],
+      "properties": {
+        "layer-boundaries": {
+          "allOf": [{ "$ref": "#/definitions/defaultErrorPolicy" }]
+        },
+        "no-fetch-in-screens": {
+          "allOf": [{ "$ref": "#/definitions/safetyErrorPolicy" }]
+        },
+        "no-adhoc-buttons": {
+          "allOf": [{ "$ref": "#/definitions/defaultWarnPolicy" }]
+        },
+        "no-arbitrary-style-values": {
+          "allOf": [{ "$ref": "#/definitions/defaultWarnPolicy" }]
+        }
+      }
+    }
+  },
+  "definitions": {
+    "globList": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "decisionId": {
+      "type": "string",
+      "pattern": "^D-[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "basePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "severity": {
+          "type": "string",
+          "enum": ["off", "warn", "error"]
+        },
+        "rollout": {
+          "type": "string",
+          "enum": ["all", "ratchet"]
+        },
+        "baseline": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "decision_id": {
+          "$ref": "#/definitions/decisionId"
+        },
+        "implementation": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "eslint-boundaries",
+            "dep-cruiser",
+            "eslint-restricted-imports"
+          ]
+        },
+        "include": {
+          "$ref": "#/definitions/globList"
+        },
+        "exclude": {
+          "$ref": "#/definitions/globList"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["enabled"],
+            "properties": { "enabled": { "const": true } }
+          },
+          "then": {
+            "required": ["severity", "rollout"]
+          },
+          "else": {
+            "required": ["reason"],
+            "not": {
+              "anyOf": [
+                { "required": ["severity"] },
+                { "required": ["rollout"] },
+                { "required": ["baseline"] }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["rollout"],
+            "properties": { "rollout": { "const": "ratchet" } }
+          },
+          "then": {
+            "required": ["baseline", "reason"]
+          },
+          "else": {
+            "not": { "required": ["baseline"] }
+          }
+        },
+        {
+          "if": {
+            "required": ["implementation"],
+            "properties": {
+              "implementation": { "not": { "const": "auto" } }
+            }
+          },
+          "then": {
+            "required": ["reason"]
+          }
+        }
+      ]
+    },
+    "defaultErrorPolicy": {
+      "allOf": [
+        { "$ref": "#/definitions/basePolicy" },
+        {
+          "if": {
+            "required": ["enabled", "severity"],
+            "properties": {
+              "enabled": { "const": true },
+              "severity": { "enum": ["off", "warn"] }
+            }
+          },
+          "then": {
+            "required": ["reason"]
+          }
+        }
+      ]
+    },
+    "defaultWarnPolicy": {
+      "allOf": [
+        { "$ref": "#/definitions/basePolicy" },
+        {
+          "if": {
+            "required": ["enabled", "severity"],
+            "properties": {
+              "enabled": { "const": true },
+              "severity": { "const": "off" }
+            }
+          },
+          "then": {
+            "required": ["reason"]
+          }
+        }
+      ]
+    },
+    "safetyErrorPolicy": {
+      "allOf": [
+        { "$ref": "#/definitions/defaultErrorPolicy" },
+        {
+          "if": {
+            "anyOf": [
+              {
+                "required": ["enabled"],
+                "properties": { "enabled": { "const": false } }
+              },
+              {
+                "required": ["enabled", "severity"],
+                "properties": {
+                  "enabled": { "const": true },
+                  "severity": { "enum": ["off", "warn"] }
+                }
+              }
+            ]
+          },
+          "then": {
+            "required": ["reason", "decision_id"]
+          }
+        }
+      ]
+    }
+  }
+}

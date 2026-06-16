@@ -333,7 +333,7 @@ exit code 0/1로 CI 게이트가 된다.
 | catalog-gen.mjs | src/components/ui/** (TS props) | design/component-catalog.md | react-docgen-typescript 또는 TS compiler API |
 | nav-graph.mjs | 모든 screen-spec의 Interaction Matrix + navigation-map의 Cross-Domain Edges | _meta/nav-graph.yaml + 각 ScreenSpec의 Entry Points GENERATED 블록 | 블록 밖은 수정 금지 |
 | route-tree.mjs | src/app 파일 트리 | _meta/route-tree.txt | Expo Router 규칙(그룹/동적 세그먼트) 해석 |
-| lint-gen.mjs | _meta/lint-policy.yaml + frontend-architecture.md(경로) | eslint.workflow.config.mjs | 기존 설정 뒤 합성. enabled:false는 생략 |
+| lint-gen.mjs | docs/frontend-workflow/_meta/lint-policy.yaml + frontend-architecture.md(경로) | eslint.workflow.config.mjs | 기존 설정 뒤 합성. enabled:false는 생략 |
 | lint-baseline.mjs | lint-policy의 ratchet 정책 | 정책별 baseline 기록/비교 | 증가 시 exit 1 |
 
 ---
@@ -345,7 +345,7 @@ exit code 0/1로 CI 게이트가 된다.
 | pre-edit-confirmed-doc | (frontmatter 직접 읽기 — 빠른 경로) | 대상 status==confirmed면 차단, 사유 출력 |
 | pre-edit-generated-file | workflow:check-generated 의 대상 목록 | 생성물 편집 차단, 원본+명령 안내 |
 | pre-edit-mode-guard | workflow:readiness 출력 캐시 | forbidden_paths 편집 차단 |
-| post-edit-lint-policy | workflow:lint-gen | lint-policy.yaml 변경 시 재생성 |
+| post-edit-lint-policy | workflow:lint-gen | docs/frontend-workflow/_meta/lint-policy.yaml 변경 시 재생성 |
 | post-implement-validate | workflow:validate | 구현 작업 종료 시 검증 실행 |
 
 훅이 없는 환경에서는 같은 검사가 2차(npm)·3차(CI)에서 잡힌다 — 강제 수준의 차이는 "언제 알게 되는가"뿐이다.
@@ -376,7 +376,7 @@ exit code 0/1로 CI 게이트가 된다.
 ### MVP-B: lint-policy 적응
 
 ```txt
-lint-policy.template.yaml + lint-policy.schema.json
+lint-policy.template.yaml + lint-policy.schema.json (canonical path: docs/frontend-workflow/_meta/lint-policy.yaml)
 lint-gen.mjs + lint-baseline.mjs
 policies 4종(no-fetch-in-screens, layer-boundaries, no-adhoc-buttons, no-arbitrary-style-values)
 presets/eslint-flat + adoption/rollout-ratchet.md
