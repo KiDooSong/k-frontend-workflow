@@ -116,7 +116,9 @@ export function classifyDefaultExportCandidate(absFile, content) {
   if (!file) return null;
 
   const src = stripBlockComments(content || '');
-  const defaultFunctionRe = /^\s*export\s+default\s+(?:async\s+)?function(?:\s+[A-Za-z_$][\w$]*)?\s*\(/m;
+  // named export 판정처럼 `function` 선언 자체를 신호로 본다. `export default function Select<T>(...)`
+  // 처럼 함수명 뒤에 TS type parameter 가 오면 `(` 가 바로 뒤따르지 않으므로, `function\b`까지만 고정한다.
+  const defaultFunctionRe = /^\s*export\s+default\s+(?:async\s+)?function\b/m;
   if (!defaultFunctionRe.test(src)) return null;
 
   return {

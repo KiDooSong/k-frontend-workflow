@@ -137,6 +137,19 @@ test('classifyDefaultExportCandidate: default function export 는 basename 기�
   });
 });
 
+test('classifyDefaultExportCandidate: generic default function export 도 candidate 로 수집', () => {
+  const candidate = classifyDefaultExportCandidate(
+    path.join(FIXTURE_UI, 'Select.tsx'),
+    'export default function Select<T>(props: { value: T }) { return null; }\n',
+  );
+  assert.deepEqual(candidate, {
+    name: 'Select',
+    source_path: 'src/components/ui/Select.tsx',
+    export_kind: 'default',
+    status: 'candidate',
+  });
+});
+
 test('build/render: default export 후보는 components 에 승격하지 않고 additive 섹션에만 출력', () => {
   const model = buildCatalog({ src: FIXTURE_SRC });
   assert.deepEqual(
