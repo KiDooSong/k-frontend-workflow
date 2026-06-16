@@ -1,6 +1,6 @@
 # 소비 프로젝트 레이아웃 프로파일 (tier1 layout profile — role → glob).
 # 기본은 동봉 프리셋 'expo-feature' (= 현 하드코딩). 소비자는 여기서 `roles:` 부분 오버라이드 또는
 # `domains.<d>.roles:` 도메인별 오버라이드를 얹는다. 머지: preset < roles < domains.<d>.roles.
-# 설계: temp/proposals/customizable-architecture/tier1-layout-profile.md
+# 설계: docs/design/drafts/customizable-architecture/tier1-layout-profile.md
 version: 1
 preset: expo-feature

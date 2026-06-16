@@ -1,5 +1,5 @@
 // layout-profile.test.mjs — tier1 레이아웃 프로파일 로더 회귀 테스트 (node:test, 외부 의존성 0).
-// 설계: temp/proposals/customizable-architecture/tier1-layout-profile.md (§2·§5·§7·§10), README §1.1.
+// 설계: docs/design/drafts/customizable-architecture/tier1-layout-profile.md (§2·§5·§7·§10), README §1.1.
 // 막는 회귀:
 //   - role→dir/glob 해소가 expo-feature 프리셋(=현 하드코딩)과 동치인지(HARD CONSTRAINT byte-parity).
 //   - resolvePaths 의 {roles.X} 펼침 + {domain} 치환(§5 the seam) + 리터럴 passthrough.

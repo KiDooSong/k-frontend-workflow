@@ -1,6 +1,6 @@
 // scripts/lib/route-core.mjs — route-tree 의 framework-무관 결정성 코어 + router 어댑터 로더.
 //
-// 경계(temp/proposals/tier2-router-codegen-adapter.md §5·§6, customizable-architecture/tier2-router-adapter.md:151-163):
+// 경계(temp/proposals/tier2-router-codegen-adapter.md §5·§6, docs/design/drafts/customizable-architecture/tier2-router-adapter.md:151-163):
 //   어댑터 = 발견(discover) 만. 코어 = 정규화/정렬/렌더/쓰기/결정성 독점. 어댑터는 파일을 쓰지 않는다.
 //   기본 expo-router 어댑터의 discover() 는 이전 scanAppDir 과 동치라 route-tree.txt 골든이 byte-identical 하다.
 //
