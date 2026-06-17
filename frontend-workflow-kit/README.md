@@ -24,7 +24,7 @@ LLM이 프론트 프로젝트를 **환각 없이** 진행하게 만드는 워크
 >
 > 스크립트가 초록불을 줘도, **의미·제품 리뷰(사람 또는 Codex)와 confirmed 승인(사람)은 따로** 거쳐야 한다.
 
-> 현재 단계: **MVP-A** 강제 코어 + **MVP-B Phase 0**(golden fixture 회귀 하니스 · forbidden_paths backstop[warning-first] · 입력/register 검증 검사 11·12) + **MVP-C Phase 1 생성 뷰**(route-tree·nav-graph·component-catalog, 읽기 전용). 추가 랜딩: 검사 8 API-스키마 매칭(엔드포인트 단위·하드) · Interaction Matrix v2 dual-read(warning-first) · Tier2 route-tree 어댑터 솔기 · Follow-up Quarantine/Role Expansion 설계 초안(#50, docs-only, 게이트 0). lint-pack·Figma·codegen 어댑터·훅은 이후 잔여 — 상세·티어링: [roadmap-current.md](roadmap-current.md). ([docs/workflows/mvp-b.md](docs/workflows/mvp-b.md))
+> 현재 단계: **MVP-A** 강제 코어 + **MVP-B Phase 0**(golden fixture 회귀 하니스 · forbidden_paths backstop[warning-first] · 입력/register 검증 검사 11·12) + **MVP-C Phase 1 생성 뷰**(route-tree·nav-graph·component-catalog, 읽기 전용). 추가 랜딩: 검사 8 API-스키마 매칭(엔드포인트 단위·하드) · Interaction Matrix v2 dual-read(warning-first) · Tier2 route-tree 어댑터 솔기 · Follow-up Quarantine/Role Expansion 설계 초안(#50, docs-only, 게이트 0) · **lint-pack PR-2 lint-gen**(deterministic `eslint.workflow.config.mjs` 생성기 + `--check`, CI/baseline 미승격). lint-baseline·CI 게이트·Figma·codegen 어댑터·훅은 이후 잔여 — 상세·티어링: [roadmap-current.md](roadmap-current.md). ([docs/workflows/mvp-b.md](docs/workflows/mvp-b.md))
 > 설계 문서: [Core](../frontend-llm-workflow.md) · [확장판](../frontend-llm-workflow-expanded.md) ·
 > [스킬팩 개념](../frontend-workflow-skillpack-concept.md) · [구현 명세](../frontend-workflow-kit-implementation.md)
 > 입력 중 결정 대기 항목 분리: [Open Decisions](open-decisions.md)
@@ -58,7 +58,7 @@ examples/    coupon-feature (golden example, end-to-end 1회 완주)
 | [input-reconciliation.md](input-reconciliation.md) | 새 입력 반영·충돌·`resolved→open` 재오픈 계약 | **Tier 2 (설계 계약)** | 📄 계약 동결 + reconcile-input 스킬 작성(리포-로컬 `.claude/skills/`, 절차 가이드일 뿐 코드 강제 0) — 킷 `skills/` vendor·hook·CI 후속 |
 | [investigation-and-verification.md](investigation-and-verification.md) | 장기 조사·플랫폼 검증·evidence 핸드오프 | **Tier 2 (설계 계약)** | 📄 문서 계약만 — 템플릿·manifest·readiness 파싱 후속 |
 | [docs/workflows/mvp-b.md](docs/workflows/mvp-b.md) | MVP-B Phase 0 통합 노트(lanes A/B/C) | **MVP-B Phase 0** | 🆕 회귀 하니스(하드)·경로 backstop/register 미처리(warning-first) |
-| [docs/workflows/lint-policy-catalog.md](docs/workflows/lint-policy-catalog.md) / [lint-policy-rollout-ratchet.md](docs/workflows/lint-policy-rollout-ratchet.md) | MVP-B lint-pack policy catalog · rollout/adoption 계약 | **MVP-B PR-1 (docs-only)** | 📄 `docs/frontend-workflow/_meta/lint-policy.yaml` schema/template/docs only — `lint-gen`/`lint-baseline`/CI 후속 |
+| [docs/workflows/lint-policy-catalog.md](docs/workflows/lint-policy-catalog.md) / [lint-policy-rollout-ratchet.md](docs/workflows/lint-policy-rollout-ratchet.md) | MVP-B lint-pack policy catalog · rollout/adoption 계약 | **MVP-B PR-1~2** | 📄 PR-1 schema/template/docs + 🆕 PR-2 `lint-gen.mjs` deterministic `eslint.workflow.config.mjs` emission(`--check`) — `lint-baseline`/`adapt-lint-pack`/CI 후속 |
 | [docs/design/README.md](docs/design/README.md) | 장기 설계 초안 인덱스(customizable architecture · follow-up quarantine) | **Design Drafts / Future Candidate** | 📄 PR #50 로 follow-up quarantine/role expansion 초안 랜딩 — 실행 게이트 0 |
 | `temp/work-packet-review-artifacts-proposal.md` (킷 외부) | Work Packet & Review Artifacts (리뷰 관문 흡수) | **Future Candidate** | 📝 설계 제안 초안(리포에 추적됨) — 단 `templates/work-packet/*.template.md` 는 킷에 포함(코드 강제 0, 여전히 Future Candidate) |
 
@@ -105,6 +105,10 @@ npm run example:test                                             # golden fixtur
 # MVP-C Phase 1 생성 뷰 (읽기 전용 — 게이트 아님, screen-spec/src 를 수정하지 않음):
 npm run workflow:route-tree   # src/app 트리 → _meta/route-tree.txt (결정적·멱등)
 npm run workflow:nav-graph    # screen-spec Interaction Matrix + navigation-map → _meta/nav-graph.yaml
+
+# MVP-B lint-pack PR-2 생성기 (deterministic eslint flat-config fragment — CI/게이트 미승격):
+npm run workflow:lint-gen                          # 킷 예제 fixture 재생성 (examples/lint-gen/basic-policy/)
+node scripts/lint-gen.mjs --docs <dir> --check     # 소비 프로젝트: lint-policy.yaml → eslint.workflow.config.mjs drift 검사
 ```
 
 각 스크립트는 `--json` (스킬 파싱용), `--docs`, `--src` 플래그를 지원한다.
