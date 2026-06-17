@@ -1,7 +1,8 @@
 # Lint Policy Rollout And Ratchet
 
 > MVP-B lint-pack adoption contract. PR-2 adds `lint-gen.mjs` for deterministic
-> ESLint flat-config fragment emission; the baseline runner and CI gates remain
+> ESLint flat-config fragment emission; PR-3 adds `skills/adapt-lint-pack` for
+> brownfield scan/propose adoption. The baseline runner and CI gates remain
 > future work.
 
 ## Canonical Source
@@ -67,7 +68,8 @@ Greenfield projects should begin with the catalog defaults and `rollout: all`
 when measured violations are zero. Keep CI warning-first until a separate gate
 promotion decision chooses otherwise.
 
-Brownfield projects should use a proposal workflow before generation:
+Brownfield projects should use `skills/adapt-lint-pack` as a proposal workflow
+before generation:
 
 1. Scan existing lint tools, package scripts, presets, CI commands, styling
    stack, and architecture paths.
@@ -79,6 +81,12 @@ Brownfield projects should use a proposal workflow before generation:
 5. Propose `rollout: all` with `severity: warn|error`, or `rollout: ratchet`
    with `baseline` and `reason`.
 6. Wait for human approval before running any future generator.
+
+PR-3 fixes the skill output contract as: lint adaptation report,
+`docs/frontend-workflow/_meta/lint-policy.yaml` draft, conflict report,
+measured counts, and rollout plan. This is a report/draft contract only; it does
+not run `lint-gen.mjs`, mutate existing lint config, wire CI, or lower a
+human-owned gate.
 
 ## Weakening And Approval
 

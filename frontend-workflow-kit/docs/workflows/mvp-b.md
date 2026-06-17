@@ -68,8 +68,10 @@ MVP-B Phase 0 = lanes **A/B/C** 통합. 회귀 하니스(A) · 경로 backstop(B
 | `test-fixtures` 회귀 하니스 (Lane A) | 구현·강제(하드) | 자체 실행 exit 1; CI 는 warning-only(`continue-on-error`) 배선 — 하드 gating 후속 |
 | `forbidden-paths` backstop (Lane B) | 경고-전용 | 기본 exit 0, `--enforce` 로 opt-in 하드 |
 | Reconciliation Register **미처리 감지** (검사 12 일부, Lane C) | 경고-전용 | Reconcile Status `in-progress`/`failed`, `--enforce` 로 하드 |
-| `lint-policy` template/schema/catalog/rollout docs (MVP-B PR-1) | 문서 계약 | canonical path = `docs/frontend-workflow/_meta/lint-policy.yaml`; generator/CI/generated output 없음 |
-| `lint-gen` / `lint-baseline` (MVP-B) | 제안 | 승격 금지 |
+| `lint-policy` template/schema/catalog/rollout docs (MVP-B PR-1) | 문서 계약 | canonical path = `docs/frontend-workflow/_meta/lint-policy.yaml` |
+| `lint-gen` skeleton (MVP-B PR-2) | 구현·미승격 | deterministic `eslint.workflow.config.mjs` flat-config fragment emission; generated guard/CI/baseline 미승격 |
+| `adapt-lint-pack` skill (MVP-B PR-3) | 문서/스킬 계약 | brownfield scan -> map -> diff -> rollout -> propose; drafts/reports only, 승인 전 `lint-gen.mjs` 실행 없음 |
+| `lint-baseline` / CI gate promotion (MVP-B PR-4/5) | 제안 | 승격 금지 |
 | `catalog` / `nav` / `route-tree` / `check-generated` (MVP-C) | 제안 | 승격 금지 |
 | `reconcile-input` 킷 `skills/` vendor | 제안 | 리포-로컬 스킬은 절차 가이드일 뿐 코드 강제 0 |
 | API Candidate ↔ zod/OpenAPI **1:1 매칭** | 제안 | 현재 검사 8 은 스키마 소스 존재만 확인 |
@@ -106,7 +108,8 @@ node scripts/forbidden-paths.mjs --enforce --diff <file> --docs <dir>
 - `test-fixtures` **하드 gating 승격** — 현재 CI 는 warning-only(`continue-on-error`); FP율 확인 후 gating.
 - `forbidden-paths` **전용 CI step** — 현재 npm alias 만 배선(단일 `--diff` CLI), self-contained step 후속.
 - `reconcile-input` **킷 `skills/` vendor** (Reconciliation Register 검증은 검사 12 로 완료; pre-edit/commit hook 확장은 후속).
-- `lint-gen` / `lint-baseline` (MVP-B).
+- `lint-baseline` ratchet runner/fixtures (MVP-B PR-4).
+- lint CI/gate promotion decision (MVP-B PR-5).
 - MVP-C: `catalog` / `nav` / `route-tree` / `check-generated`.
 - API Candidate ↔ zod/OpenAPI **스키마 1:1 매칭** 검사.
 - Interaction Matrix **`Result` 컬럼 구조화**.

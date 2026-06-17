@@ -1,7 +1,8 @@
 # Lint Policy Catalog
 
 > MVP-B lint-pack policy catalog. PR-1 added the schema/template/docs contract;
-> PR-2 adds a deterministic `lint-gen.mjs` skeleton. `lint-baseline.mjs`,
+> PR-2 adds a deterministic `lint-gen.mjs` skeleton; PR-3 adds the
+> `skills/adapt-lint-pack` brownfield scan/propose workflow. `lint-baseline.mjs`,
 > generated-file guard promotion, and CI wiring remain future work.
 
 Canonical policy path: `docs/frontend-workflow/_meta/lint-policy.yaml`.
@@ -15,6 +16,9 @@ policy's `tier`. Existing ESLint/Biome/Prettier configuration remains project
 owned. PR-2 `lint-gen.mjs` emits a flat-config fragment to append after the
 project's existing ESLint flat config; it does not configure parser or
 `languageOptions` and must not overwrite or reorder existing project config.
+PR-3 `adapt-lint-pack` keeps brownfield adoption as a proposal workflow:
+scan -> map -> diff -> rollout -> propose, then wait for human approval before
+any generation.
 
 The schema v1 `implementation` enum preserves future vocabulary
 (`eslint-boundaries`, `dep-cruiser`, `eslint-restricted-imports`), but the PR-2
