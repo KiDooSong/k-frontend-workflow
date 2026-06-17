@@ -2,15 +2,20 @@
 
 > lanes A/B/C 머지 결과를 한 파일로 고정한다 — 무엇이 코드로 강제되고, 무엇이 경고-전용이며, 무엇이 여전히 제안인지.
 
-> 스냅샷: 2026-06-14
-> 기준: `origin/main` (commit `16bf472` — lanes A/B/C + CI 배선 포함)
-> 브랜치: `docs/mvp-b-integration-notes`
+> 스냅샷: 2026-06-18
+> 기준: `origin/main` (commit `f9a4e1c` — lanes A/B/C + lint-pack PR-3/MR #55 상태 동기화 포함)
+> 원 Phase 0 기준: commit `16bf472` — lanes A/B/C + CI 배선 포함
 
 ## 요약
 
 MVP-B Phase 0 = lanes **A/B/C** 통합. 회귀 하니스(A) · 경로 backstop(B) · 입력/register 검증(C) 세 갈래가 `main` 에 들어왔다.
 
 핵심은 **대부분 warning-first** 라는 점이다 — 기본 CI exit code 는 바뀌지 않는다. 새로 들어온 강제 중 빌드를 깨는 것은 validate 구조 검사(검사 11·12)뿐이고, 나머지(경로 backstop · Reconciliation Register 미처리 감지)는 기본 exit 0 으로 경고만 내고 `--enforce` 로 opt-in 해야 하드가 된다. 회귀 하니스(A)는 자체 실행 시 하드-exit 의미를 갖고, CI 에는 **warning-only**(`continue-on-error: true`)로 배선됐다 — 결과는 로그에 보이되 job 은 안 깬다(하드 gating 승격은 후속).
+
+2026-06-18 현재, lint-pack 은 PR-1 schema/template/docs, PR-2 `lint-gen.mjs`
+skeleton, PR-3/MR #55 `skills/adapt-lint-pack` 제안 workflow 까지 완료됐다.
+남은 lint-pack 순서는 `lint-baseline` ratchet runner/fixtures(PR-4) 와 CI/gate
+promotion decision(PR-5) 이다.
 
 ## Lane 별 상세
 
@@ -72,7 +77,8 @@ MVP-B Phase 0 = lanes **A/B/C** 통합. 회귀 하니스(A) · 경로 backstop(B
 | `lint-gen` skeleton (MVP-B PR-2) | 구현·미승격 | deterministic `eslint.workflow.config.mjs` flat-config fragment emission; generated guard/CI/baseline 미승격 |
 | `adapt-lint-pack` skill (MVP-B PR-3) | 문서/스킬 계약 | brownfield scan -> map -> diff -> rollout -> propose; drafts/reports only, 승인 전 `lint-gen.mjs` 실행 없음 |
 | `lint-baseline` / CI gate promotion (MVP-B PR-4/5) | 제안 | 승격 금지 |
-| `catalog` / `nav` / `route-tree` / `check-generated` (MVP-C) | 제안 | 승격 금지 |
+| `route-tree` / `nav-graph` / `component-catalog` generated views (MVP-C) | 구현·읽기 전용 | 게이트 아님; `example:test` warning-only 회귀 표면에서 커버 |
+| `check-generated` alias/CI promotion (MVP-C) | 제안·미승격 | 스크립트는 advisory guard 로 존재하지만 소비 package alias/CI hard gate 는 승격 금지 |
 | `reconcile-input` 킷 `skills/` vendor | 제안 | 리포-로컬 스킬은 절차 가이드일 뿐 코드 강제 0 |
 | API Candidate ↔ zod/OpenAPI **1:1 매칭** | 제안 | 현재 검사 8 은 스키마 소스 존재만 확인 |
 | Interaction Matrix **`Result` 컬럼 구조화** | 제안 | 승격 금지 |
@@ -110,7 +116,7 @@ node scripts/forbidden-paths.mjs --enforce --diff <file> --docs <dir>
 - `reconcile-input` **킷 `skills/` vendor** (Reconciliation Register 검증은 검사 12 로 완료; pre-edit/commit hook 확장은 후속).
 - `lint-baseline` ratchet runner/fixtures (MVP-B PR-4).
 - lint CI/gate promotion decision (MVP-B PR-5).
-- MVP-C: `catalog` / `nav` / `route-tree` / `check-generated`.
+- MVP-C: `check-generated` 소비 package alias / CI promotion (현 상태는 advisory, 새 hard gate 아님).
 - API Candidate ↔ zod/OpenAPI **스키마 1:1 매칭** 검사.
 - Interaction Matrix **`Result` 컬럼 구조화**.
 - **Work Packet** 강제 (현재 템플릿만 존재 — Future Candidate).

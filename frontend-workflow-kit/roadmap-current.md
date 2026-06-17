@@ -1,6 +1,6 @@
 # Current Roadmap
 
-> 스냅샷: 2026-06-17. MVP-B Phase 0 완료분 위에 **2026-06-15~17 추가 랜딩** — **검사 8 API-스키마 매칭 엔드포인트 단위 격상**(구현·하드, PR #19) · **Interaction Matrix v2 dual-read + 검사 13**(warning-first, #48) 및 route-tree EXACT 정밀화(여전히 warning-first) · **Tier2 route-tree 어댑터 솔기**(#49) · **component-catalog phase2-1 배럴 reconcile 진단**(warning-first, stderr-only) 및 **phase2 첫 additive `Default Export Candidates` 섹션**(append-only, candidate-only) · **Follow-up Quarantine / Role Expansion 설계 초안**(#50, docs-only, 실행 게이트 0) + **Option A 템플릿/생성기 가드**(Discovered Work/Out of Scope, 게이트 0) · **MVP-B lint-gen PR-2 skeleton**(deterministic `eslint.workflow.config.mjs` flat-config fragment emission, CI/ratchet baseline 미승격) · **MVP-B adapt-lint-pack PR-3**(brownfield scan/propose skill, drafts/reports only). 잔여는 아래 "다음 구현 후보" 로 이어진다.
+> 스냅샷: 2026-06-18. MVP-B Phase 0 완료분 위에 **2026-06-15~18 추가 랜딩** — **검사 8 API-스키마 매칭 엔드포인트 단위 격상**(구현·하드, PR #19) · **Interaction Matrix v2 dual-read + 검사 13**(warning-first, #48) 및 route-tree EXACT 정밀화(여전히 warning-first) · **Tier2 route-tree 어댑터 솔기**(#49) · **component-catalog phase2-1 배럴 reconcile 진단**(warning-first, stderr-only) 및 **phase2 첫 additive `Default Export Candidates` 섹션**(append-only, candidate-only) · **Follow-up Quarantine / Role Expansion 설계 초안**(#50, docs-only, 실행 게이트 0) + **Option A 템플릿/생성기 가드**(Discovered Work/Out of Scope, 게이트 0) · **MVP-B lint-gen PR-2 skeleton**(deterministic `eslint.workflow.config.mjs` flat-config fragment emission, CI/ratchet baseline 미승격) · **MVP-B adapt-lint-pack PR-3 / MR #55**(brownfield scan/propose skill, drafts/reports only). 잔여는 아래 "다음 구현 후보" 로 이어진다.
 > 이전 스냅샷(2026-06-14): MVP-B Phase 0 **완료** — 회귀 하니스·경로 backstop[warning-first]·입력/register 검증; consumer-dogfood-001 외부 소비 dry-run 으로 end-to-end 검증, PR #17.
 > 목적: **MVP-A 구현 범위 / 설계 계약(코드 후속) / Future Candidate** 세 티어의 경계를 한 파일로 고정한다.
 > 문서별 역할·링크는 [README 문서 지도](README.md#문서-지도) 참조.
@@ -18,13 +18,13 @@ MVP-A 에서 코드로 강제되는 구간은 **Documents → State → Readines
 
 - **구현·강제(하드)**: validate 검사 11·12 구조 검사(입력 결과물 frontmatter + Reconciliation Register) · `test-fixtures.mjs` golden fixture 회귀 하니스(CI 배선됨 — warning-only/`continue-on-error`; 하드 gating 후속).
 - **경고-전용(warning-first, `--enforce` 로 하드)**: `forbidden-paths.mjs` 경로 backstop(Lane B) · Reconciliation Register 미처리 감지(검사 12 일부, Lane C).
-- **여전히 제안(승격 금지)**: lint-baseline/CI gate promotion(MVP-B 잔여) · catalog/check-generated(MVP-C) · reconcile-input 킷 `skills/` vendor · API-스키마 1:1 매칭 · Interaction Matrix `Result` 컬럼 구조화 · Work Packet & Review Artifacts(템플릿만 존재, 강제 0). `lint-gen.mjs` 는 PR-2 skeleton 으로 runnable 하지만, root generated guard/CI hard gate 는 아직 승격하지 않는다.
+- **여전히 제안(승격 금지)**: lint-baseline/CI gate promotion(MVP-B 잔여) · check-generated alias/CI promotion(MVP-C 잔여) · reconcile-input 킷 `skills/` vendor · API-스키마 1:1 매칭 · Interaction Matrix `Result` 컬럼 구조화 · Work Packet & Review Artifacts(템플릿만 존재, 강제 0). `lint-gen.mjs` 는 PR-2 skeleton 으로 runnable 하지만, root generated guard/CI hard gate 는 아직 승격하지 않는다.
 
-## MVP-C Phase 1 — 생성 뷰 2종 (2026-06-14, 구현·읽기 전용)
+## MVP-C Phase 1 — 생성 뷰 3종 (2026-06-14~16, 구현·읽기 전용)
 
-- **구현(읽기 전용, 게이트 아님)**: `route-tree.mjs`(src/app 트리 → `_meta/route-tree.txt`) · `nav-graph.mjs`(screen-spec `## Interaction Matrix` + navigation-map → `_meta/nav-graph.yaml`). 결정적·멱등, 커밋된 골든 픽스처 byte-identical 재현. screen-spec/src 를 **읽기만** 한다.
-- **패키징**: alias `workflow:route-tree`·`workflow:nav-graph` 승격(`package.json` + `package-scripts.template.json`). 매니페스트 `status: planned → active`.
-- **CI 미배선(의도)**: warning-first 배선의 선행 = `test-fixtures.mjs` 에 두 뷰 픽스처 등록(그 후 기존 `example:test` warning-only step 이 자동 커버). 하드 게이트 승격 없음.
+- **구현(읽기 전용, 게이트 아님)**: `route-tree.mjs`(src/app 트리 → `_meta/route-tree.txt`) · `nav-graph.mjs`(screen-spec `## Interaction Matrix` + navigation-map → `_meta/nav-graph.yaml`) · `catalog-gen.mjs`(src/components/ui 트리 → `design/component-catalog.md`). 결정적·멱등, 커밋된 골든 픽스처 byte-identical 재현. 입력 문서/소스는 **읽기만** 하고 생성 산출물만 쓴다.
+- **패키징**: alias `workflow:route-tree`·`workflow:nav-graph`·`workflow:catalog` 승격(`package.json` + `package-scripts.template.json`). 매니페스트 `status: planned → active`.
+- **CI 미배선(의도)**: warning-first 배선의 선행 = `test-fixtures.mjs` 에 생성 뷰 픽스처 등록(그 후 기존 `example:test` warning-only step 이 자동 커버). 하드 게이트 승격 없음.
 - 통합 점검 기록: [temp/runs/mvp-c-generated-views-integration.md](temp/runs/mvp-c-generated-views-integration.md).
 
 ## 산출물 축 (artifact axes)
@@ -103,7 +103,7 @@ Review          MVP-A 에 없음 (Future Candidate).
 
 ## 다음 구현 후보 (순차 진행 — 하나를 끝낸 뒤 다음 착수)
 
-> **최근 랜딩(이 슬롯에서 내려감, 2026-06-15~16):** ① 검사 8 API-스키마 매칭 엔드포인트 단위 격상(구현·하드, PR #19) · ② Interaction Matrix v2 dual-read + 검사 13(warning-first, #48) 및 route-tree EXACT 정밀화(warning-first) · ③ Tier2 route-tree 어댑터 솔기(#49) · ④ component-catalog generated artifact + `check-generated` 가드(#40/#42), phase2-1 배럴 reconcile **진단** 슬라이스(warning-first, stderr-only), phase2 첫 additive `Default Export Candidates` 섹션 · ⑤ Follow-up Quarantine / Role Expansion 설계 초안(#50, docs-only, 게이트 0) + Option A 템플릿/생성기 가드(게이트 0). 완료 항목은 활성 후보에서 제외하고, 각 항목의 **잔여**만 아래 후보다.
+> **최근 랜딩(완료분, 2026-06-15~18):** ① 검사 8 API-스키마 매칭 엔드포인트 단위 격상(구현·하드, PR #19) · ② Interaction Matrix v2 dual-read + 검사 13(warning-first, #48) 및 route-tree EXACT 정밀화(warning-first) · ③ Tier2 route-tree 어댑터 솔기(#49) · ④ component-catalog generated artifact + `check-generated` 가드(#40/#42), phase2-1 배럴 reconcile **진단** 슬라이스(warning-first, stderr-only), phase2 첫 additive `Default Export Candidates` 섹션 · ⑤ Follow-up Quarantine / Role Expansion 설계 초안(#50, docs-only, 게이트 0) + Option A 템플릿/생성기 가드(게이트 0) · ⑥ MVP-B lint-pack PR-2/PR-3(MR #55) 완료분. 완료 항목은 활성 후보에서 제외하고, 각 항목의 **잔여**만 아래 후보다.
 
 > **순차 원칙:** 병렬 구현·병렬 정본 변경을 열지 않는다. 각 항목은 PR/run report/roadmap 정리까지 끝낸 뒤 다음 항목에 착수한다. 설계 보강이 필요해도 다음 항목의 구현을 앞당기지 않는다.
 
