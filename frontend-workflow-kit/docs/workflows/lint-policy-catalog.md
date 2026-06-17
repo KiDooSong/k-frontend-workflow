@@ -20,6 +20,11 @@ The schema v1 `implementation` enum preserves future vocabulary
 (`eslint-boundaries`, `dep-cruiser`, `eslint-restricted-imports`), but the PR-2
 generator's operational subset is fail-closed `implementation: auto` only.
 
+`defaults.paths` and include/exclude globs are **project-relative**: absolute
+paths and parent-directory (`..`) escapes are rejected, and `defaults.paths`
+accepts simple `*` segments only (no `**`). Monorepo/cross-package layouts that
+would need to reach outside the project root are out of scope for PR-2.
+
 ## Policy Table
 
 | Policy ID | Tier | Default severity | Default rollout | Default implementation | Contract |

@@ -253,6 +253,32 @@ test('generated rule semantics: screen fetch reports, layer direction is enforce
   assert.equal(screenToApiReports.length, 0);
 });
 
+test('no-fetch-in-screens skips type-only axios imports but flags runtime imports', async () => {
+  const rules = await loadGeneratedRules();
+  const screen = projectFile('src/features/shop/screens/Home.tsx');
+  const importCase = (node) => runRuleVisitor(rules['no-fetch-in-screens'], 'ImportDeclaration', node, screen).length;
+
+  // import type { AxiosError } from "axios" — erased at runtime, must not report.
+  assert.equal(
+    importCase({ source: { value: 'axios' }, importKind: 'type', specifiers: [{ importKind: 'type' }] }),
+    0,
+  );
+  // import { type AxiosError } from "axios" — all specifiers type-only, must not report.
+  assert.equal(
+    importCase({ source: { value: 'axios' }, importKind: 'value', specifiers: [{ importKind: 'type' }] }),
+    0,
+  );
+  // import axios from "axios" — runtime value import, must report.
+  assert.equal(
+    importCase({ source: { value: 'axios' }, importKind: 'value', specifiers: [{ importKind: 'value' }] }),
+    1,
+  );
+  // import "axios" — side-effect import (no specifiers), must still report.
+  assert.equal(importCase({ source: { value: 'axios' }, importKind: 'value', specifiers: [] }), 1);
+  // plain JS parser (no importKind) keeps prior behavior: value import reports.
+  assert.equal(importCase({ source: { value: 'axios' }, specifiers: [{}] }), 1);
+});
+
 test('generated rule semantics: JSX button and inline style object report', async (t) => {
   const rules = await loadRulesForPolicy(basePolicy(), t);
   const filename = projectFile('src/features/shop/screens/Home.tsx');
@@ -309,6 +335,32 @@ test('defaults.paths use PR-2 simple path pattern subset, not recursive glob sem
     (err) => {
       assert.ok(err instanceof LintPolicyContractError);
       assert.match(err.details.join('\n'), /simple \* segments only/);
+      return true;
+    },
+  );
+});
+
+test('defaults.paths reject parent-directory escapes (project-relative contract)', () => {
+  const policy = basePolicy();
+  policy.defaults.paths.api = '../shared/api';
+  assert.throws(
+    () => buildLintGenModel(policy),
+    (err) => {
+      assert.ok(err instanceof LintPolicyContractError);
+      assert.match(err.details.join('\n'), /parent-directory '\.\.' segments are not allowed/);
+      return true;
+    },
+  );
+});
+
+test('include/exclude globs reject parent-directory escapes', () => {
+  const policy = basePolicy();
+  policy.policies['no-fetch-in-screens'].include = ['../shared/screens/**/*'];
+  assert.throws(
+    () => buildLintGenModel(policy),
+    (err) => {
+      assert.ok(err instanceof LintPolicyContractError);
+      assert.match(err.details.join('\n'), /parent-directory '\.\.' segments are not allowed/);
       return true;
     },
   );

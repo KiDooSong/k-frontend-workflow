@@ -114,6 +114,9 @@ function validateContractPath(errors, label, value) {
   if (isAbsoluteContractPath(value)) {
     errors.push(`${label}: absolute paths are not allowed in lint policy contracts`);
   }
+  if (normalizeContractPath(value).split('/').includes('..')) {
+    errors.push(`${label}: parent-directory '..' segments are not allowed in project-relative lint policy contracts`);
+  }
 }
 
 function validateDefaultPath(errors, label, value) {
@@ -523,7 +526,11 @@ const RULE_SNIPPETS = Object.freeze({
       }
       return {
         ImportDeclaration(node) {
-          if (node.source && node.source.value === "axios") report(node);
+          if (!node.source || node.source.value !== "axios") return;
+          if (node.importKind === "type") return;
+          const specifiers = node.specifiers || [];
+          if (specifiers.length && specifiers.every((specifier) => specifier.importKind === "type")) return;
+          report(node);
         },
         CallExpression(node) {
           const callee = node.callee;

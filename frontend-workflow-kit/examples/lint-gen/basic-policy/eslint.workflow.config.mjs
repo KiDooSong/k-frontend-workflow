@@ -197,7 +197,11 @@ const workflowRules = {
       }
       return {
         ImportDeclaration(node) {
-          if (node.source && node.source.value === "axios") report(node);
+          if (!node.source || node.source.value !== "axios") return;
+          if (node.importKind === "type") return;
+          const specifiers = node.specifiers || [];
+          if (specifiers.length && specifiers.every((specifier) => specifier.importKind === "type")) return;
+          report(node);
         },
         CallExpression(node) {
           const callee = node.callee;
