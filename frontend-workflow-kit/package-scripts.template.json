@@ -1,5 +1,5 @@
 {
-  "//": "소비 프로젝트의 package.json scripts 에 병합한다. 킷은 tools/frontend-workflow/ 에 복사된다. 스킬/훅/CI 는 항상 이 이름으로 호출한다. 아래 scripts 는 대상 .mjs 가 존재해 바로 동작한다(state/readiness/validate = MVP-A, forbidden-paths = MVP-B diff 백스톱; --diff/--base + --docs 인자 필요. route-tree/nav-graph = MVP-C Phase 1 읽기 전용 생성 뷰, packet = Execution Loop PR2 readiness 소비 봉투). 이 블록만 병합하면 된다.",
+  "//": "소비 프로젝트의 package.json scripts 에 병합한다. 킷은 tools/frontend-workflow/ 에 복사된다. 스킬/훅/CI 는 항상 이 이름으로 호출한다. 아래 scripts 는 대상 .mjs 가 존재해 바로 동작한다(state/readiness/validate = MVP-A, forbidden-paths = MVP-B diff 백스톱; --diff/--base + --docs 인자 필요. lint-gen = MVP-B PR-2 deterministic eslint.workflow.config.mjs 생성기이며 consumer root 의 docs/frontend-workflow/_meta/lint-policy.yaml 을 요구한다; generation-only 이고 generated guard/CI 로 강제되지 않는다. route-tree/nav-graph = MVP-C Phase 1 읽기 전용 생성 뷰, packet = Execution Loop PR2 readiness 소비 봉투). 이 블록만 병합하면 된다.",
   "scripts": {
     "workflow:state": "node tools/frontend-workflow/scripts/workflow-state.mjs",
     "workflow:readiness": "node tools/frontend-workflow/scripts/readiness.mjs",
@@ -8,13 +8,13 @@
     "workflow:route-tree": "node tools/frontend-workflow/scripts/route-tree.mjs",
     "workflow:nav-graph": "node tools/frontend-workflow/scripts/nav-graph.mjs",
     "workflow:catalog": "node tools/frontend-workflow/scripts/catalog-gen.mjs",
+    "workflow:lint-gen": "node tools/frontend-workflow/scripts/lint-gen.mjs",
     "workflow:packet": "node tools/frontend-workflow/scripts/workflow-packet.mjs",
     "workflow:report": "node tools/frontend-workflow/scripts/workflow-report.mjs",
     "workflow:run": "node tools/frontend-workflow/scripts/workflow-run.mjs"
   },
   "//roadmap": "B~D 단계에서 추가될 명령. 대상 .mjs 가 아직 없어 scripts 에 넣지 않는다 — 그대로 병합 후 실행하면 'Cannot find module' 로 깨지기 때문이다. 각 스크립트가 구현되면 해당 줄을 위 scripts 로 옮긴다. 값 형식은 '대상 모듈 (도입 MVP 단계)'.",
   "//roadmap-scripts": {
-    "workflow:lint-gen": "scripts/lint-gen.mjs (MVP-B)",
     "workflow:lint-baseline": "scripts/lint-baseline.mjs (MVP-B)",
     "workflow:check-generated": "scripts/check-generated-files.mjs (MVP-C)"
   }
