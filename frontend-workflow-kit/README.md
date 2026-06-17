@@ -75,8 +75,9 @@ examples/    coupon-feature (golden example, end-to-end 1회 완주)
 ## 설치 (소비 프로젝트)
 
 1. 이 디렉토리를 프로젝트의 `tools/frontend-workflow/` 로 복사한다.
-   런타임에 필요한 것은 `scripts/` `catalog/` `policies/` `schemas/` `templates/` `skills/` `package*.json` 뿐이다 —
-   `examples/` · `*.html` · 설계 `*.md`(open-decisions/roadmap 등)는 개발용이라 복사하지 않아도 된다.
+   런타임에 필요한 것은 `scripts/` `catalog/` `policies/` `schemas/` `templates/` `skills/` `package*.json` 과
+   `docs/workflows/lint-policy-*.md` 뿐이다 —
+   `examples/` · `*.html` · 기타 설계 `*.md`(open-decisions/roadmap 등)는 개발용이라 복사하지 않아도 된다.
 2. `tools/frontend-workflow/` 에서 `npm install` (의존성은 `yaml` 하나).
 3. `package-scripts.template.json` 의 `scripts` 를 프로젝트 `package.json` 에 병합한다.
 4. 문서는 `docs/frontend-workflow/` 에 템플릿을 복사해 만든다.

@@ -45,6 +45,14 @@
 - No Open Decision resolution or human-owned gate transition.
 - No Tier2 codegen adapter or Interaction Matrix telemetry work.
 
+## Review Follow-up
+
+- Accepted P1: `adapt-lint-pack` depends on lint policy workflow docs, so the
+  consumer install contract now includes `docs/workflows/lint-policy-*.md` in
+  the runtime copy set.
+- Accepted P2: the output-contract YAML sample now includes all four required
+  policy keys and marks the example as `Schema-ready: yes`.
+
 ## Validation
 
 - `git diff --check` passed.

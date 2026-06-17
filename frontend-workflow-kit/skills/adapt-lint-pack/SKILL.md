@@ -97,6 +97,8 @@ brownfield 프로젝트에 workflow lint-pack을 도입하기 위한 **제안 �
 |---|---:|---|---|---|
 
 ### docs/frontend-workflow/_meta/lint-policy.yaml Draft
+Schema-ready: yes
+
 ```yaml
 version: 1
 defaults:
@@ -108,6 +110,21 @@ policies:
   layer-boundaries:
     enabled: true
     severity: error
+    rollout: all
+    implementation: auto
+  no-fetch-in-screens:
+    enabled: true
+    severity: error
+    rollout: all
+    implementation: auto
+  no-adhoc-buttons:
+    enabled: true
+    severity: warn
+    rollout: all
+    implementation: auto
+  no-arbitrary-style-values:
+    enabled: true
+    severity: warn
     rollout: all
     implementation: auto
 ```
