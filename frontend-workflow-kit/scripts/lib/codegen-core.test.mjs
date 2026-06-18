@@ -198,3 +198,66 @@ test('C14: openapi-client fails closed when api_schema is outside baseDir', asyn
     /source file must stay under baseDir/,
   );
 });
+
+test('C15: fail-closed — convention leafs cannot escape their Tier-1 role roots', () => {
+  assert.throws(
+    () => normalizeCodegenModel({
+      conventions: { clientSubdir: '../leaked' },
+      operations: [{ method: 'GET', path: '/ok', operationId: 'getX', domain: 'coupons' }],
+    }),
+    /clientSubdir.*without '\.\.'/,
+  );
+  assert.throws(
+    () => normalizeCodegenModel({
+      conventions: { hookFileSuffix: '/../../shared/useGetX.ts' },
+      operations: [{ method: 'GET', path: '/ok', operationId: 'getX', domain: 'coupons' }],
+    }),
+    /hookFileSuffix.*filename suffix/,
+  );
+  assert.throws(
+    () => normalizeCodegenModel({
+      conventions: { hookOut: '{roles.hook}/../../shared/**' },
+      operations: [{ method: 'GET', path: '/ok', operationId: 'getX', domain: 'coupons' }],
+    }),
+    /escaped role root/,
+  );
+});
+
+test('C16: fail-closed — manifest header fields cannot inject extra lines', () => {
+  assert.throws(
+    () => renderCodegenManifest({
+      source: 'src/api/**\n# Injected: yes',
+      operations: [{ method: 'GET', path: '/ok', operationId: 'getX', domain: 'coupons' }],
+    }),
+    /source header must not contain control characters/,
+  );
+  assert.throws(
+    () => renderCodegenManifest({
+      adapter: 'openapi-client\n# Injected: yes',
+      operations: [{ method: 'GET', path: '/ok', operationId: 'getX', domain: 'coupons' }],
+    }),
+    /adapter header must not contain control characters/,
+  );
+});
+
+test('C17: role references accept single-glob string arrays and reject multi-glob output roles precisely', () => {
+  const normalized = normalizeCodegenModel({
+    roles: {
+      api_client: ['lib/api/**'],
+      hook: ['app/{domain}/hooks/**'],
+      api_schema: ['schema/openapi/**'],
+    },
+    operations: [{ method: 'GET', path: '/ok', operationId: 'getX', domain: 'coupons' }],
+  });
+  assert.equal(normalized.source, 'schema/openapi/**');
+  assert.equal(normalized.operations[0].clientOut, 'lib/api/generated/getX.client.ts');
+  assert.equal(normalized.operations[0].hookOut, 'app/coupons/hooks/useGetXQuery.ts');
+
+  assert.throws(
+    () => normalizeCodegenModel({
+      roles: { api_client: ['lib/api/**', 'packages/*/api/**'] },
+      operations: [{ method: 'GET', path: '/ok', operationId: 'getX', domain: 'coupons' }],
+    }),
+    /multi-glob output role unsupported: api_client/,
+  );
+});

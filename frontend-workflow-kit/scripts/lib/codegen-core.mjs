@@ -197,6 +197,14 @@ function validateConventions(conventions) {
   if (CONTROL_CHARS.test(conventions.clientSubdir)) {
     throw new CodegenModelError("codegen convention 'clientSubdir' must not contain control characters");
   }
+  if (hasDotDotSegment(conventions.clientSubdir) || isRootedPath(conventions.clientSubdir)) {
+    throw new CodegenModelError("codegen convention 'clientSubdir' must be a relative subpath without '..'");
+  }
+  for (const key of ['clientFileSuffix', 'hookFileSuffix']) {
+    if (/[\\/]/.test(conventions[key]) || hasDotDotSegment(conventions[key])) {
+      throw new CodegenModelError(`codegen convention '${key}' must be a filename suffix, not a path`);
+    }
+  }
 }
 
 function operationLabel(op) {
@@ -273,14 +281,33 @@ export function buildHookName(operation, conventions = DEFAULT_CODEGEN_CONVENTIO
   return `${conventions.hookPrefix}${pascalCaseOperationId(operation.operationId)}${conventions[suffixKey]}`;
 }
 
+function rolePattern(roles, role) {
+  const value = roles[role];
+  if (Array.isArray(value)) {
+    if (value.length === 1 && typeof value[0] === 'string' && value[0]) {
+      return value[0];
+    }
+    throw new CodegenModelError(`multi-glob output role unsupported: ${role}`);
+  }
+  if (typeof value !== 'string' || !value) {
+    throw new CodegenModelError(`unknown role reference in codegen output pattern: ${role}`);
+  }
+  return value;
+}
+
 function resolveRoleRef(pattern, roles) {
   return String(pattern).replace(/\{roles\.([A-Za-z0-9_]+)\}/g, (_, role) => {
-    const value = roles[role];
-    if (typeof value !== 'string' || !value) {
-      throw new CodegenModelError(`unknown role reference in codegen output pattern: ${role}`);
-    }
-    return value;
+    return rolePattern(roles, role);
   });
+}
+
+function isRootedPath(p) {
+  const raw = String(p).replace(/\\/g, '/');
+  return path.posix.isAbsolute(raw) || WINDOWS_ABSOLUTE.test(raw) || UNC_ROOT.test(raw);
+}
+
+function hasDotDotSegment(p) {
+  return String(p).replace(/\\/g, '/').split('/').includes('..');
 }
 
 function normalizeRelativePath(p, label) {
@@ -307,8 +334,35 @@ function normalizeRelativeOut(p) {
   return normalizeRelativePath(p, 'codegen output path');
 }
 
+function outputRootFromPattern(pattern) {
+  const p = String(pattern).replace(/\\/g, '/');
+  let root;
+  const globIndex = p.indexOf('**');
+  if (globIndex !== -1) {
+    root = p.slice(0, globIndex);
+  } else if (p.endsWith('/')) {
+    root = p;
+  } else if (!path.posix.extname(p)) {
+    root = p;
+  } else {
+    root = path.posix.dirname(p);
+  }
+  root = root.replace(/\/+$/, '');
+  if (!root || root === '.') return '';
+  return normalizeRelativeOut(root);
+}
+
+function assertUnderOutputRoot(out, root) {
+  if (!root) return;
+  if (out !== root && !out.startsWith(root + '/')) {
+    throw new CodegenModelError(`codegen output path escaped role root '${root}': ${out}`);
+  }
+}
+
 function expandOutPattern(pattern, roles, domain, leaf) {
-  let p = resolveRoleRef(pattern, roles).replace(/\{domain\}/g, domain).replace(/\\/g, '/');
+  const resolvedPattern = resolveRoleRef(pattern, roles).replace(/\{domain\}/g, domain).replace(/\\/g, '/');
+  const root = outputRootFromPattern(resolvedPattern);
+  let p = resolvedPattern;
   if (p.includes('**')) {
     p = p.replace('**', leaf);
   } else if (p.endsWith('/')) {
@@ -316,7 +370,9 @@ function expandOutPattern(pattern, roles, domain, leaf) {
   } else if (!path.posix.extname(p)) {
     p = path.posix.join(p, leaf);
   }
-  return normalizeRelativeOut(p);
+  const out = normalizeRelativeOut(p);
+  assertUnderOutputRoot(out, root);
+  return out;
 }
 
 function makeClientLeaf(operationId, conventions) {
@@ -340,6 +396,20 @@ function checkUnique(map, key, label, op) {
     throw new CodegenModelError(`${label} collision '${key}' between ${prev} and ${operationLabel(op)}`);
   }
   map.set(key, operationLabel(op));
+}
+
+function normalizeHeaderField(value, label) {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new CodegenModelError(`codegen ${label} header must be a non-empty string`);
+  }
+  const text = value.trim();
+  if (CONTROL_CHARS.test(text)) {
+    throw new CodegenModelError(`codegen ${label} header must not contain control characters`);
+  }
+  if (isRootedPath(text)) {
+    throw new CodegenModelError(`codegen ${label} header must stay relative and in-repo: ${value}`);
+  }
+  return text;
 }
 
 export function normalizeCodegenModel(model, opts = {}) {
@@ -401,9 +471,9 @@ export function normalizeCodegenModel(model, opts = {}) {
   }
 
   return {
-    adapter: model.adapter || model.name || 'unknown',
+    adapter: normalizeHeaderField(model.adapter || model.name || 'unknown', 'adapter'),
     version: model.version ?? null,
-    source: opts.source || model.source || roles.api_schema,
+    source: normalizeHeaderField(opts.source || model.source || rolePattern(roles, 'api_schema'), 'source'),
     sourceFiles: normalizeSourceFiles(model.sourceFiles),
     roles,
     conventions,
