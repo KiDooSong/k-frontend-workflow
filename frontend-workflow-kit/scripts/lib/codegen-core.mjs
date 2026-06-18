@@ -550,7 +550,7 @@ function relativeImport(fromOut, toOut) {
 
 function renderQueryKeyExpression(op, params) {
   const parts = [stringLiteral(op.domain), stringLiteral(op.operationId)];
-  for (const param of params) parts.push(`options.pathParams.${param}`);
+  for (const param of params) parts.push(`String(options.pathParams.${param})`);
   return `[${parts.join(', ')}] as const`;
 }
 

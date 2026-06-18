@@ -22,7 +22,7 @@ export function useGetCouponQuery(options: UseGetCouponQueryOptions) {
     path: "/coupons/{couponId}",
     clientOut: "src/api/generated/getCoupon.client.ts",
     hookOut: "src/features/coupons/hooks/useGetCouponQuery.ts",
-    queryKey: ["coupons", "getCoupon", options.pathParams.couponId] as const,
+    queryKey: ["coupons", "getCoupon", String(options.pathParams.couponId)] as const,
     queryFn: () => getCouponClient(options),
   } as const;
 }

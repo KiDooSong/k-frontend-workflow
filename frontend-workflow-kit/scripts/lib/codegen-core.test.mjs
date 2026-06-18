@@ -106,7 +106,7 @@ test('C3c: parameterized query hooks include path identifiers in queryKey', asyn
 
   assert.match(
     getCouponHook.content,
-    /queryKey: \["coupons", "getCoupon", options\.pathParams\.couponId\] as const,/,
+    /queryKey: \["coupons", "getCoupon", String\(options\.pathParams\.couponId\)\] as const,/,
   );
   assert.match(
     listCouponsHook.content,
