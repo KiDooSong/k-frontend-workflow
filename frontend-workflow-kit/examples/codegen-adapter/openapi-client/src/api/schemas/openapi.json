@@ -1,0 +1,25 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Coupon API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/coupons/{couponId}/redeem": {
+      "post": {
+        "operationId": "redeemCoupon",
+        "x-workflow-domain": "coupons"
+      }
+    },
+    "/coupons": {
+      "get": {
+        "operationId": "listCoupons"
+      }
+    },
+    "/coupons/{couponId}": {
+      "get": {
+        "operationId": "getCoupon"
+      }
+    }
+  }
+}

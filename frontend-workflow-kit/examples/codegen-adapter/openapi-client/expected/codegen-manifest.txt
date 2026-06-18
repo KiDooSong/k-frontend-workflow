@@ -1,0 +1,28 @@
+# GENERATED FILE - DO NOT EDIT
+# Source: src/api/schemas/**
+# Adapter: openapi-client
+# Core: codegen-core@1
+# Source Files: src/api/schemas/openapi.json
+
+operations:
+- GET /coupons
+  operationId: listCoupons
+  domain: coupons
+  kind: query
+  clientOut: src/api/generated/listCoupons.client.ts
+  hookName: useListCouponsQuery
+  hookOut: src/features/coupons/hooks/useListCouponsQuery.ts
+- GET /coupons/{couponId}
+  operationId: getCoupon
+  domain: coupons
+  kind: query
+  clientOut: src/api/generated/getCoupon.client.ts
+  hookName: useGetCouponQuery
+  hookOut: src/features/coupons/hooks/useGetCouponQuery.ts
+- POST /coupons/{couponId}/redeem
+  operationId: redeemCoupon
+  domain: coupons
+  kind: mutation
+  clientOut: src/api/generated/redeemCoupon.client.ts
+  hookName: useRedeemCouponMutation
+  hookOut: src/features/coupons/hooks/useRedeemCouponMutation.ts

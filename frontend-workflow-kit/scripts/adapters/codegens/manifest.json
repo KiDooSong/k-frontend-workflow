@@ -1,0 +1,8 @@
+{
+  "openapi-client": {
+    "id": "openapi-client",
+    "version": 1,
+    "module": "./openapi-client.mjs",
+    "core": { "compatibleVersion": 1 }
+  }
+}

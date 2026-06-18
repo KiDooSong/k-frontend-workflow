@@ -29,8 +29,8 @@
     "example:readiness": "node scripts/readiness.mjs --docs examples/coupon-feature/docs/frontend-workflow",
     "example:validate": "node scripts/validate.mjs --docs examples/coupon-feature/docs/frontend-workflow --src examples/coupon-feature/src",
     "example:test": "node scripts/test-fixtures.mjs",
-    "test:spec": "node --test scripts/lib/spec.test.mjs scripts/lib/api-manifest.test.mjs scripts/lib/layout-profile.test.mjs scripts/lib/route-core.test.mjs scripts/lib/catalog-gen.test.mjs scripts/lib/lint-gen-core.test.mjs scripts/lib/lint-baseline-core.test.mjs",
-    "test": "node scripts/test-fixtures.mjs && node --test scripts/lib/spec.test.mjs scripts/lib/api-manifest.test.mjs scripts/lib/layout-profile.test.mjs scripts/lib/route-core.test.mjs scripts/lib/catalog-gen.test.mjs scripts/lib/lint-gen-core.test.mjs scripts/lib/lint-baseline-core.test.mjs"
+    "test:spec": "node --test scripts/lib/spec.test.mjs scripts/lib/api-manifest.test.mjs scripts/lib/layout-profile.test.mjs scripts/lib/route-core.test.mjs scripts/lib/codegen-core.test.mjs scripts/lib/catalog-gen.test.mjs scripts/lib/lint-gen-core.test.mjs scripts/lib/lint-baseline-core.test.mjs",
+    "test": "node scripts/test-fixtures.mjs && node --test scripts/lib/spec.test.mjs scripts/lib/api-manifest.test.mjs scripts/lib/layout-profile.test.mjs scripts/lib/route-core.test.mjs scripts/lib/codegen-core.test.mjs scripts/lib/catalog-gen.test.mjs scripts/lib/lint-gen-core.test.mjs scripts/lib/lint-baseline-core.test.mjs"
   },
   "dependencies": {
     "yaml": "^2.5.0"
