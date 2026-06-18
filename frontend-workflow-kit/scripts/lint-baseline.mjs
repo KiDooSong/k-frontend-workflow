@@ -22,6 +22,7 @@ Usage:
 Options:
   --docs <path>    Docs root. Default: docs/frontend-workflow
   --counts <path>  Current measured counts JSON. Default: <docs>/_meta/lint-counts.json
+                   Explicit --counts is always validated, even with no ratchet policies.
   --enforce        Exit 1 when current count is higher than baseline.
   --json           Print a machine-readable summary.
   --help           Show this help.
@@ -75,10 +76,12 @@ function parseCli(argv) {
   const enforce = booleanFlag(flags, 'enforce');
   const docsArg = stringFlag(flags, 'docs', 'docs/frontend-workflow');
   const docsDir = path.resolve(docsArg);
+  const countsExplicit = 'counts' in flags;
   const countsArg = stringFlag(flags, 'counts', path.join(docsDir, '_meta', 'lint-counts.json'));
   const projectRoot = inferProjectRoot(docsDir);
 
   return {
+    countsExplicit,
     countsPath: path.resolve(countsArg),
     docsDir,
     enforce,
@@ -113,7 +116,8 @@ function runLintBaseline(options) {
   const policy = loadPolicy(policyPath, policySource);
   const model = buildLintGenModel(policy, { sourceLabel: policySource });
   const hasRatchet = model.enabledPolicies.some((entry) => entry.rollout === 'ratchet');
-  const counts = hasRatchet ? loadCounts(options.countsPath, countsSource) : { version: 1, counts: {} };
+  const shouldLoadCounts = hasRatchet || options.countsExplicit;
+  const counts = shouldLoadCounts ? loadCounts(options.countsPath, countsSource) : { version: 1, counts: {} };
   const report = buildLintBaselineReport(model, counts);
 
   return {
@@ -122,7 +126,7 @@ function runLintBaseline(options) {
     exit_code: options.enforce && report.status === 'increase' ? 1 : 0,
     mode: options.enforce ? 'enforce' : 'warning-first',
     policy_source: policySource,
-    counts_source: hasRatchet ? countsSource : null,
+    counts_source: shouldLoadCounts ? countsSource : null,
   };
 }
 

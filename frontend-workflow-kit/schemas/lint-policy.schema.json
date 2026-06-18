@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "lint-policy.schema.json",
   "title": "Frontend Workflow lint-policy.yaml",
-  "description": "Schema for docs/frontend-workflow/_meta/lint-policy.yaml. PR-2 lint-gen.mjs consumes this policy source to emit eslint.workflow.config.mjs as an ESLint flat-config fragment; baseline and CI gates remain future work.",
+  "description": "Schema for docs/frontend-workflow/_meta/lint-policy.yaml. PR-2 lint-gen.mjs consumes this policy source to emit eslint.workflow.config.mjs as an ESLint flat-config fragment; PR-4 lint-baseline.mjs compares ratchet baselines with measured counts. CI gate promotion remains future work.",
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "defaults", "policies"],

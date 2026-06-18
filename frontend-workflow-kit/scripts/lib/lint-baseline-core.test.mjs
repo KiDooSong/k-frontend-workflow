@@ -59,6 +59,19 @@ test('fixture: no ratchet policies pass without current counts', () => {
   assert.equal(summary.counts_source, null);
 });
 
+test('fixture: explicit --counts is validated even without ratchet policies', () => {
+  const counts = fixturePath('equal', 'docs/frontend-workflow/_meta/lint-counts.json');
+  const ok = runCli('no-ratchet', ['--counts', counts, '--json']);
+  assert.equal(ok.status, 0, ok.stdout + ok.stderr);
+  const summary = JSON.parse(ok.stdout);
+  assert.equal(summary.status, 'no-ratchet');
+  assert.equal(summary.counts_source, '../equal/docs/frontend-workflow/_meta/lint-counts.json');
+
+  const missing = runCli('no-ratchet', ['--counts', path.join(FIXTURE_ROOT, 'no-ratchet', 'missing-counts.json'), '--json']);
+  assert.equal(missing.status, 1, missing.stdout + missing.stderr);
+  assert.match(JSON.parse(missing.stdout).details.join('\n'), /required current counts file/);
+});
+
 test('fixture: current equal to baseline passes', () => {
   const report = reportFor('equal');
   assert.equal(report.status, 'pass');
