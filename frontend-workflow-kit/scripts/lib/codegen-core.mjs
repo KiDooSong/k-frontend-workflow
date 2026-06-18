@@ -361,6 +361,11 @@ function assertUnderOutputRoot(out, root) {
 
 function expandOutPattern(pattern, roles, domain, leaf) {
   const resolvedPattern = resolveRoleRef(pattern, roles).replace(/\{domain\}/g, domain).replace(/\\/g, '/');
+  if (hasDotDotSegment(resolvedPattern) || isRootedPath(resolvedPattern)) {
+    throw new CodegenModelError(
+      `codegen output path must stay relative and in-repo; output pattern must not contain '..': ${resolvedPattern}`,
+    );
+  }
   const root = outputRootFromPattern(resolvedPattern);
   let p = resolvedPattern;
   if (p.includes('**')) {
@@ -405,6 +410,9 @@ function normalizeHeaderField(value, label) {
   const text = value.trim();
   if (CONTROL_CHARS.test(text)) {
     throw new CodegenModelError(`codegen ${label} header must not contain control characters`);
+  }
+  if (label === 'source') {
+    return normalizeRelativePath(text, 'codegen source header');
   }
   if (isRootedPath(text)) {
     throw new CodegenModelError(`codegen ${label} header must stay relative and in-repo: ${value}`);

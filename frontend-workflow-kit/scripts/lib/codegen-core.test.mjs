@@ -219,7 +219,24 @@ test('C15: fail-closed — convention leafs cannot escape their Tier-1 role root
       conventions: { hookOut: '{roles.hook}/../../shared/**' },
       operations: [{ method: 'GET', path: '/ok', operationId: 'getX', domain: 'coupons' }],
     }),
-    /escaped role root/,
+    /output pattern.*must not contain '\.\.'/,
+  );
+});
+
+test('C18: fail-closed — resolved output patterns cannot traverse before role-root calculation', () => {
+  assert.throws(
+    () => normalizeCodegenModel({
+      conventions: { clientOut: 'src/api/../leaked/**' },
+      operations: [{ method: 'GET', path: '/ok', operationId: 'getX', domain: 'coupons' }],
+    }),
+    /output pattern.*must not contain '\.\.'/,
+  );
+  assert.throws(
+    () => normalizeCodegenModel({
+      conventions: { hookOut: 'src/features/{domain}/hooks/../shared/**' },
+      operations: [{ method: 'GET', path: '/ok', operationId: 'getX', domain: 'coupons' }],
+    }),
+    /output pattern.*must not contain '\.\.'/,
   );
 });
 
@@ -237,6 +254,13 @@ test('C16: fail-closed — manifest header fields cannot inject extra lines', ()
       operations: [{ method: 'GET', path: '/ok', operationId: 'getX', domain: 'coupons' }],
     }),
     /adapter header must not contain control characters/,
+  );
+  assert.throws(
+    () => renderCodegenManifest({
+      source: '../schemas/**',
+      operations: [{ method: 'GET', path: '/ok', operationId: 'getX', domain: 'coupons' }],
+    }),
+    /source header must stay relative and in-repo/,
   );
 });
 
