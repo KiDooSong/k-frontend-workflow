@@ -7,8 +7,8 @@
 | Area | Files | Scope |
 |---|---|---|
 | Guard target | `scripts/lib/check-generated-files.mjs`, `scripts/check-generated-files.mjs` | Added focused advisory target `codegen-openapi-client`. It is available through `--artifact codegen-openapi-client` and is not part of the default manifest-driven target set. |
-| Codegen reproduce/check | `scripts/lib/check-generated-files.mjs` | Reuses `openapi-client` discovery plus `codegen-core` `renderCodegenFiles` and `checkCodegenFiles` to verify the committed fixture client/hook outputs. Checks include discovery, two-render determinism, stable file ordering, content mismatch, and missing output reporting. |
-| Tests | `scripts/lib/check-generated-files.test.mjs` | Added focused coverage for selected target discovery without manifest registration, stable six-file output ordering, tamper mismatch detection, and missing generated output detection. |
+| Codegen reproduce/check | `scripts/lib/check-generated-files.mjs` | Reuses `openapi-client` discovery plus `codegen-core` `renderCodegenFiles` and `checkCodegenFiles` to verify the committed fixture client/hook outputs. Checks include discovery, two-render determinism, stable file ordering, content mismatch, missing output reporting, and stale extra output detection under the focused target roots. |
+| Tests | `scripts/lib/check-generated-files.test.mjs` | Added focused coverage for selected target discovery without manifest registration, stable six-file output ordering, tamper mismatch detection, missing generated output detection, stale extra client detection, and stale extra hook detection. |
 | Roadmap | `roadmap-current.md` | Marked the guard advisory alignment slice complete while keeping hard gate/CI/manifest promotion and OD-5/OD-6/OD-7 as remaining work. |
 
 ## Intentionally Not Done
@@ -35,7 +35,7 @@ Reason: the current manifest contract is built around a single `path` field, whi
 node --test scripts/lib/codegen-core.test.mjs scripts/lib/check-generated-files.test.mjs
 ```
 
-Result: PASS — 41 tests.
+Result: PASS — 43 tests.
 
 ```bash
 node scripts/check-generated-files.mjs --artifact codegen-openapi-client --src examples/codegen-adapter/openapi-client/src --json

@@ -174,6 +174,10 @@ const V1_CODEGEN_REPRODUCE = {
     adapter: openApiClientAdapter,
     resolveInput: ({ srcDir }) => path.join(srcDir, 'api', 'schemas'),
     source: 'src/api/schemas/**',
+    scanOutputs: [
+      { root: 'src/api/generated', match: /^[^/]+\.client\.ts$/ },
+      { root: 'src/features', match: /^[^/]+\/hooks\/[^/]+\.ts$/ },
+    ],
   },
 };
 
@@ -211,6 +215,44 @@ function firstRenderedFileDiff(a, b) {
 
 function summarizeCodegenChanges(changes) {
   return changes.map((c) => `${c.status}: ${c.path}`).join(', ');
+}
+
+function collectFilesUnder(rootAbs, relPrefix = '') {
+  let entries;
+  try {
+    entries = fs.readdirSync(rootAbs, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const out = [];
+  entries.sort((a, b) => compareText(a.name, b.name));
+  for (const entry of entries) {
+    const childRel = relPrefix ? `${relPrefix}/${entry.name}` : entry.name;
+    const childAbs = path.join(rootAbs, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...collectFilesUnder(childAbs, childRel));
+    } else if (entry.isFile()) {
+      out.push(childRel);
+    }
+  }
+  return out;
+}
+
+function collectActualCodegenOutputs(baseDir, contract) {
+  const out = [];
+  for (const scan of contract.scanOutputs || []) {
+    const rootRel = scan.root.replace(/\\/g, '/').replace(/\/+$/, '');
+    const rootAbs = path.join(baseDir, ...rootRel.split('/'));
+    for (const rel of collectFilesUnder(rootAbs)) {
+      if (scan.match.test(rel)) out.push(`${rootRel}/${rel}`);
+    }
+  }
+  return [...new Set(out)].sort(compareText);
+}
+
+function staleCodegenOutputs(expectedFiles, actualFiles) {
+  const expected = new Set(expectedFiles);
+  return actualFiles.filter((file) => !expected.has(file));
 }
 
 function reproduceCodegenTarget(id, { srcDir }) {
@@ -289,6 +331,13 @@ function reproduceCodegenTarget(id, { srcDir }) {
     if (status === 'ok') {
       status = check.changes.some((c) => c.status === 'missing') ? 'missing-committed' : 'mismatch';
     }
+  }
+  const stale = staleCodegenOutputs(files, collectActualCodegenOutputs(baseDir, contract));
+  if (stale.length) {
+    fail('CG:stale', stale.map((file) => `stale: ${file}`).join(', '));
+    if (status === 'ok') status = 'mismatch';
+  } else {
+    ok('CG:stale', '선언된 codegen output roots 에 stale 파일 없음');
   }
   return result(status);
 }

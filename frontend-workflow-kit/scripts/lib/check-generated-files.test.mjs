@@ -239,6 +239,46 @@ test('reproduceArtifact: missing codegen output is reported as missing-committed
   }
 });
 
+test('reproduceArtifact: stale extra codegen client output is reported as mismatch', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cgf-codegen-stale-client-'));
+  try {
+    fs.cpSync(CODEGEN_FIXTURE, tmp, { recursive: true });
+    fs.writeFileSync(
+      path.join(tmp, 'src', 'api', 'generated', 'staleCoupon.client.ts'),
+      '// stale generated client\n',
+      'utf8',
+    );
+    const r = reproduceArtifact('codegen-openapi-client', { srcDir: path.join(tmp, 'src') });
+    assert.equal(r.status, 'mismatch', JSON.stringify(r.checks));
+    assert.deepEqual(r.files, CODEGEN_OUTPUTS);
+    assert.ok(
+      r.checks.some((c) => c.check === 'CG:stale' && !c.ok && /staleCoupon\.client\.ts/.test(c.message)),
+    );
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('reproduceArtifact: stale extra codegen hook output is reported as mismatch', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cgf-codegen-stale-hook-'));
+  try {
+    fs.cpSync(CODEGEN_FIXTURE, tmp, { recursive: true });
+    fs.writeFileSync(
+      path.join(tmp, 'src', 'features', 'coupons', 'hooks', 'useStaleCouponQuery.ts'),
+      '// stale generated hook\n',
+      'utf8',
+    );
+    const r = reproduceArtifact('codegen-openapi-client', { srcDir: path.join(tmp, 'src') });
+    assert.equal(r.status, 'mismatch', JSON.stringify(r.checks));
+    assert.deepEqual(r.files, CODEGEN_OUTPUTS);
+    assert.ok(
+      r.checks.some((c) => c.check === 'CG:stale' && !c.ok && /useStaleCouponQuery\.ts/.test(c.message)),
+    );
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('reproduceArtifact: 커밋본 변조를 mismatch 로 감지', () => {
   // 픽스처를 임시 디렉토리로 복사 → 커밋본만 변조 → 재생성은 원본을 만들어 불일치.
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cgf-neg-'));
