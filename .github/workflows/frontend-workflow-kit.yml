@@ -52,3 +52,15 @@ jobs:
       - name: golden fixture regression (warning-only)
         continue-on-error: true
         run: npm run example:test
+
+      # lint-pack PR-5 관측 CI — warning-first(비차단).
+      #   - lint-gen 은 예제 fixture 의 generated config drift 만 확인한다. manifest status 는 planned 유지.
+      #   - lint-baseline 은 ratchet report 를 JSON 으로 남기되 --enforce 를 쓰지 않는다.
+      #   - hard gate/required check 승격은 telemetry 와 별도 Open Decision 전까지 금지.
+      - name: lint-pack generated config drift (warning-only)
+        continue-on-error: true
+        run: npm run workflow:lint-gen -- --check
+
+      - name: lint-pack ratchet baseline (warning-only)
+        continue-on-error: true
+        run: npm run workflow:lint-baseline -- --json

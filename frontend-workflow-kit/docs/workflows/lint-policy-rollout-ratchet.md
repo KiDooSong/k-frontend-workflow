@@ -3,7 +3,8 @@
 > MVP-B lint-pack adoption contract. PR-2 adds `lint-gen.mjs` for deterministic
 > ESLint flat-config fragment emission; PR-3 adds `skills/adapt-lint-pack` for
 > brownfield scan/propose adoption; PR-4 adds `lint-baseline.mjs` for
-> warning-first ratchet comparison. CI gate promotion remains future work.
+> warning-first ratchet comparison; PR-5 adds warning-first CI observation.
+> Hard CI gate promotion remains future work.
 
 ## Canonical Source
 
@@ -54,9 +55,29 @@ The counts file is an input snapshot of current measured violations:
 }
 ```
 
-PR-4 does not run ESLint, update baselines, or wire CI. It validates the policy
-and count contracts, reports pass/increase/improvement, exits 0 by default on
-increases, and exits 1 on increases only with `--enforce`.
+PR-4 does not run ESLint or update baselines. It validates the policy and count
+contracts, reports pass/increase/improvement, exits 0 by default on increases,
+and exits 1 on increases only with `--enforce`.
+
+PR-5 wires CI only as warning-first observation:
+
+```txt
+lint-gen --check       -> generated config drift signal
+lint-baseline --json   -> ratchet report signal
+```
+
+Both CI steps must remain non-blocking (`continue-on-error` or an equivalent
+report-only wrapper). CI must not use `lint-baseline --enforce`, remove
+`continue-on-error`, make a required check, or promote `eslint-workflow-config`
+to an active generated artifact without a separate Open Decision.
+
+## CI Gate Options (PR-5 Decision)
+
+| Option | Behavior | Decision |
+|---|---|---|
+| no CI | Keep `lint-gen`/`lint-baseline` runnable only through package scripts and local/manual verification. | Valid fallback, but not selected because PR-4 fixtures and package smoke are stable enough for non-blocking CI observation. |
+| warning-first CI | Run `workflow:lint-gen -- --check` and `workflow:lint-baseline -- --json` in CI with `continue-on-error` or equivalent non-blocking behavior. | **Selected for PR-5.** Logs drift/ratchet signals without changing merge eligibility. |
+| hard CI | Remove non-blocking behavior, wire `lint-baseline --enforce`, make the check required, or otherwise fail PRs on lint-pack signals. | **Deferred.** Requires telemetry, explicit rationale, and a separate Open Decision. |
 
 ## Rollout Modes
 
