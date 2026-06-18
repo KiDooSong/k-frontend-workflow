@@ -5,5 +5,7 @@ Minimal Tier2 codegen adapter fixture.
 - Input: `src/api/schemas/openapi.json`
 - Adapter: `scripts/adapters/codegens/openapi-client.mjs`
 - Core golden: `expected/codegen-manifest.txt`
+- Generated client golden: `src/api/generated/*.client.ts`
+- Generated hook golden: `src/features/coupons/hooks/*.ts`
 
-The golden is a deterministic candidate manifest only. This slice does not generate TypeScript client or hook files, does not register a new artifact axis, and does not promote any readiness/validate/CI hard gate.
+The golden set is deterministic and warning/advisory only. This slice does not register a new artifact axis and does not promote any readiness/validate/CI hard gate.

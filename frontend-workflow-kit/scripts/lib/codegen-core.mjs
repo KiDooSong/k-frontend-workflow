@@ -36,6 +36,9 @@ const CONTROL_CHARS = /[\u0000-\u001F\u007F]/;
 const WINDOWS_ABSOLUTE = /^[A-Za-z]:/;
 const UNC_ROOT = /^\/\//;
 const OUTPUT_GLOB_META = /[*?\[\]{}]/;
+const OPERATION_ID = /^[A-Za-z][A-Za-z0-9]*$/;
+const TS_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const PATH_PARAM = /\{([^}]+)\}/g;
 const REQUIRED_CONVENTION_STRINGS = [
   'hookPrefix',
   'querySuffix',
@@ -242,7 +245,7 @@ function assertOperationId(operationId, label) {
     throw new CodegenModelError(`operationId is missing for ${label}`);
   }
   const id = operationId.trim();
-  if (!/^[A-Za-z][A-Za-z0-9]*$/.test(id)) {
+  if (!OPERATION_ID.test(id)) {
     throw new CodegenModelError(
       `unsupported operationId '${operationId}' for ${label}: expected /^[A-Za-z][A-Za-z0-9]*$/`,
     );
@@ -455,6 +458,276 @@ function normalizeHeaderField(value, label) {
     throw new CodegenModelError(`codegen ${label} header must stay relative and in-repo: ${value}`);
   }
   return text;
+}
+
+function assertTsIdentifier(value, label) {
+  if (typeof value !== 'string' || !TS_IDENTIFIER.test(value)) {
+    throw new CodegenModelError(`codegen ${label} must be a TypeScript identifier: ${value}`);
+  }
+  return value;
+}
+
+function stringLiteral(value) {
+  return JSON.stringify(String(value));
+}
+
+function typeName(identifier, suffix = '') {
+  return `${identifier.charAt(0).toUpperCase()}${identifier.slice(1)}${suffix}`;
+}
+
+function extractPathParams(routePath) {
+  const stripped = routePath.replace(/\{[A-Za-z_][A-Za-z0-9_]*\}/g, '');
+  if (/[{}]/.test(stripped)) {
+    throw new CodegenModelError(
+      `unsupported path parameter syntax for ${routePath}: expected {TypeScriptIdentifier}`,
+    );
+  }
+  const params = [];
+  for (const match of routePath.matchAll(PATH_PARAM)) {
+    const name = assertTsIdentifier(match[1], `path parameter for ${routePath}`);
+    if (!params.includes(name)) params.push(name);
+  }
+  return params;
+}
+
+function renderPathExpression(routePath, params) {
+  if (!params.length) return stringLiteral(routePath);
+
+  const parts = [];
+  let last = 0;
+  for (const match of routePath.matchAll(PATH_PARAM)) {
+    const raw = match[0];
+    const name = match[1];
+    const index = match.index ?? 0;
+    if (index > last) parts.push(stringLiteral(routePath.slice(last, index)));
+    parts.push(`encodePathParam(pathParams.${name})`);
+    last = index + raw.length;
+  }
+  if (last < routePath.length) parts.push(stringLiteral(routePath.slice(last)));
+  return parts.join(' + ');
+}
+
+function normalizedRenderableOperation(operation) {
+  if (!operation || typeof operation !== 'object' || Array.isArray(operation)) {
+    throw new CodegenModelError('codegen render operation must be an object');
+  }
+  const method = normalizeMethod(operation.method, 'render');
+  const routePath = normalizePath(operation.path, 'render');
+  const base = { method, path: routePath };
+  const label = operationLabel(base);
+  const operationId = assertOperationId(operation.operationId, label);
+  const domain = assertDomain(operation.domain, label);
+  const hookName = assertTsIdentifier(operation.hookName, `hookName for ${label}`);
+  const clientOut = normalizeRelativeOut(operation.clientOut);
+  const hookOut = normalizeRelativeOut(operation.hookOut);
+  const kind = operation.kind || (QUERY_METHODS.has(method) ? 'query' : 'mutation');
+  if (kind !== 'query' && kind !== 'mutation') {
+    throw new CodegenModelError(`unsupported codegen operation kind '${kind}' for ${label}`);
+  }
+  return { method, path: routePath, operationId, domain, kind, hookName, clientOut, hookOut };
+}
+
+function renderGeneratedHeader(op) {
+  return [
+    '// GENERATED FILE - DO NOT EDIT',
+    `// Operation: ${op.operationId}`,
+    `// Method: ${op.method}`,
+    `// Path: ${op.path}`,
+    `// Domain: ${op.domain}`,
+    `// Hook: ${op.hookName}`,
+    `// Client Output: ${op.clientOut}`,
+    `// Hook Output: ${op.hookOut}`,
+    '',
+  ];
+}
+
+function relativeImport(fromOut, toOut) {
+  const fromDir = path.posix.dirname(fromOut);
+  let rel = path.posix.relative(fromDir, toOut).replace(/\\/g, '/');
+  if (!rel.startsWith('.')) rel = './' + rel;
+  return rel.replace(/\.(?:[cm]?tsx?)$/, '');
+}
+
+export function renderCodegenClientFile(operation) {
+  const op = normalizedRenderableOperation(operation);
+  const params = extractPathParams(op.path);
+  const pascal = typeName(op.operationId);
+  const pathParamsType = `${pascal}PathParams`;
+  const optionsType = `${pascal}ClientOptions`;
+  const pathFn = `${op.operationId}Path`;
+  const clientFn = `${op.operationId}Client`;
+  const out = renderGeneratedHeader(op);
+
+  if (params.length) {
+    out.push(`export type ${pathParamsType} = {`);
+    for (const param of params) out.push(`  ${param}: string | number;`);
+    out.push('};');
+    out.push('');
+    out.push('function encodePathParam(value: string | number): string {');
+    out.push('  return encodeURIComponent(String(value));');
+    out.push('}');
+    out.push('');
+    out.push(`export function ${pathFn}(pathParams: ${pathParamsType}): string {`);
+    out.push(`  return ${renderPathExpression(op.path, params)};`);
+    out.push('}');
+  } else {
+    out.push(`export function ${pathFn}(): string {`);
+    out.push(`  return ${stringLiteral(op.path)};`);
+    out.push('}');
+  }
+  out.push('');
+  out.push(`export type ${optionsType} = {`);
+  if (params.length) out.push(`  pathParams: ${pathParamsType};`);
+  out.push('  baseUrl?: string;');
+  out.push('  fetch?: typeof fetch;');
+  out.push('  init?: RequestInit;');
+  out.push('};');
+  out.push('');
+  const optionsParam = params.length ? `options: ${optionsType}` : `options: ${optionsType} = {}`;
+  out.push(`export async function ${clientFn}(${optionsParam}): Promise<unknown> {`);
+  out.push('  const fetcher = options.fetch ?? fetch;');
+  const pathCall = params.length ? `${pathFn}(options.pathParams)` : `${pathFn}()`;
+  out.push(`  const url = (options.baseUrl ?? '') + ${pathCall};`);
+  out.push('  const response = await fetcher(url, {');
+  out.push('    ...(options.init ?? {}),');
+  out.push(`    method: ${stringLiteral(op.method)},`);
+  out.push('  });');
+  out.push('  if (!response.ok) {');
+  out.push(`    throw new Error(${stringLiteral(`${op.method} ${op.path} failed with `)} + response.status);`);
+  out.push('  }');
+  out.push('  const text = await response.text();');
+  out.push('  return text ? JSON.parse(text) : undefined;');
+  out.push('}');
+  return out.join('\n') + '\n';
+}
+
+export function renderCodegenHookFile(operation) {
+  const op = normalizedRenderableOperation(operation);
+  const params = extractPathParams(op.path);
+  const pascal = typeName(op.operationId);
+  const clientFn = `${op.operationId}Client`;
+  const clientOptionsType = `${pascal}ClientOptions`;
+  const hookOptionsType = typeName(op.hookName, 'Options');
+  const importPath = relativeImport(op.hookOut, op.clientOut);
+  const out = renderGeneratedHeader(op);
+
+  out.push('import {');
+  out.push(`  ${clientFn},`);
+  out.push(`  type ${clientOptionsType},`);
+  out.push(`} from ${stringLiteral(importPath)};`);
+  out.push('');
+  out.push(`export type ${hookOptionsType} = ${clientOptionsType};`);
+  out.push('');
+  if (op.kind === 'query') {
+    const optionsParam = params.length
+      ? `options: ${hookOptionsType}`
+      : `options: ${hookOptionsType} = {}`;
+    out.push(`export function ${op.hookName}(${optionsParam}) {`);
+    out.push('  return {');
+    out.push(`    operationId: ${stringLiteral(op.operationId)},`);
+    out.push(`    domain: ${stringLiteral(op.domain)},`);
+    out.push(`    method: ${stringLiteral(op.method)},`);
+    out.push(`    path: ${stringLiteral(op.path)},`);
+    out.push(`    clientOut: ${stringLiteral(op.clientOut)},`);
+    out.push(`    hookOut: ${stringLiteral(op.hookOut)},`);
+    out.push(`    queryKey: [${stringLiteral(op.domain)}, ${stringLiteral(op.operationId)}] as const,`);
+    out.push(`    queryFn: () => ${clientFn}(options),`);
+    out.push('  } as const;');
+    out.push('}');
+  } else {
+    const callbackParam = params.length
+      ? `options: ${hookOptionsType}`
+      : `options: ${hookOptionsType} = {}`;
+    out.push(`export function ${op.hookName}() {`);
+    out.push('  return {');
+    out.push(`    operationId: ${stringLiteral(op.operationId)},`);
+    out.push(`    domain: ${stringLiteral(op.domain)},`);
+    out.push(`    method: ${stringLiteral(op.method)},`);
+    out.push(`    path: ${stringLiteral(op.path)},`);
+    out.push(`    clientOut: ${stringLiteral(op.clientOut)},`);
+    out.push(`    hookOut: ${stringLiteral(op.hookOut)},`);
+    out.push(`    mutationKey: [${stringLiteral(op.domain)}, ${stringLiteral(op.operationId)}] as const,`);
+    out.push(`    mutationFn: (${callbackParam}) => ${clientFn}(options),`);
+    out.push('  } as const;');
+    out.push('}');
+  }
+  return out.join('\n') + '\n';
+}
+
+function checkFilePathCollision(files) {
+  const seen = new Map();
+  for (const file of files) {
+    const previous = seen.get(file.path);
+    if (previous) {
+      throw new CodegenModelError(
+        `generated output path collision '${file.path}' between ${previous} and ${file.kind}:${file.operationId}`,
+      );
+    }
+    seen.set(file.path, `${file.kind}:${file.operationId}`);
+  }
+}
+
+export function renderCodegenFiles(model, opts = {}) {
+  const normalized = normalizeCodegenModel(model, opts);
+  const files = [];
+  for (const op of normalized.operations) {
+    files.push({
+      kind: 'client',
+      operationId: op.operationId,
+      path: op.clientOut,
+      content: renderCodegenClientFile(op),
+    });
+    files.push({
+      kind: 'hook',
+      operationId: op.operationId,
+      path: op.hookOut,
+      content: renderCodegenHookFile(op),
+    });
+  }
+  files.sort((a, b) => compareText(a.path, b.path));
+  checkFilePathCollision(files);
+  return files;
+}
+
+function outputPathUnderBase(baseDir, outputPath) {
+  const base = path.resolve(baseDir || process.cwd());
+  const resolved = path.resolve(base, normalizeRelativeOut(outputPath));
+  const rel = path.relative(base, resolved).replace(/\\/g, '/');
+  if (!rel || rel === '..' || rel.startsWith('../') || path.isAbsolute(rel)) {
+    throw new CodegenModelError(`codegen filesystem output escaped baseDir: ${outputPath}`);
+  }
+  return resolved;
+}
+
+export function checkCodegenFiles(model, opts = {}) {
+  const files = renderCodegenFiles(model, opts);
+  const changes = [];
+  for (const file of files) {
+    const target = outputPathUnderBase(opts.baseDir, file.path);
+    let current = null;
+    try {
+      current = fs.readFileSync(target, 'utf8');
+    } catch {
+      changes.push({ path: file.path, status: 'missing' });
+      continue;
+    }
+    if (current !== file.content) changes.push({ path: file.path, status: 'different' });
+  }
+  return {
+    ok: changes.length === 0,
+    files: files.map((file) => file.path),
+    changes,
+  };
+}
+
+export function writeCodegenFiles(model, opts = {}) {
+  const files = renderCodegenFiles(model, opts);
+  for (const file of files) {
+    const target = outputPathUnderBase(opts.baseDir, file.path);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, file.content, 'utf8');
+  }
+  return files.map((file) => file.path);
 }
 
 export function normalizeCodegenModel(model, opts = {}) {

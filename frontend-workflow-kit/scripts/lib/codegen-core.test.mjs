@@ -8,8 +8,10 @@ import {
   CORE_CODEGEN_ADAPTER_VERSION,
   CodegenAdapterError,
   buildHookName,
+  checkCodegenFiles,
   loadCodegenAdapter,
   normalizeCodegenModel,
+  renderCodegenFiles,
   renderCodegenManifest,
 } from './codegen-core.mjs';
 
@@ -65,6 +67,35 @@ test('C3: renderCodegenManifest is byte-identical to golden and stable across re
 
   const golden = fs.readFileSync(path.join(FIXTURE, 'expected', 'codegen-manifest.txt'), 'utf8');
   assert.equal(once.replace(/\r\n/g, '\n'), golden.replace(/\r\n/g, '\n'));
+});
+
+test('C3b: renderCodegenFiles emits byte-identical client/hook files and advisory check passes', async () => {
+  const adapter = await loadCodegenAdapter('openapi-client');
+  const model = discoverFixture(adapter);
+  const once = renderCodegenFiles(model);
+  const twice = renderCodegenFiles(model);
+  assert.deepEqual(once, twice);
+  assert.deepEqual(
+    once.map((file) => file.path),
+    [
+      'src/api/generated/getCoupon.client.ts',
+      'src/api/generated/listCoupons.client.ts',
+      'src/api/generated/redeemCoupon.client.ts',
+      'src/features/coupons/hooks/useGetCouponQuery.ts',
+      'src/features/coupons/hooks/useListCouponsQuery.ts',
+      'src/features/coupons/hooks/useRedeemCouponMutation.ts',
+    ],
+  );
+  for (const file of once) {
+    assert.equal(file.content.includes('\r'), false, `${file.path} should render LF-only content`);
+    const golden = fs.readFileSync(path.join(FIXTURE, file.path), 'utf8');
+    assert.equal(file.content, golden, `${file.path} should match golden`);
+  }
+  assert.deepEqual(checkCodegenFiles(model, { baseDir: FIXTURE }), {
+    ok: true,
+    files: once.map((file) => file.path),
+    changes: [],
+  });
 });
 
 test('C4: core sorting makes shuffled operation input render identically', async () => {
@@ -261,6 +292,19 @@ test('C19: fail-closed — output paths must be concrete files without glob wild
       operations: [{ method: 'GET', path: '/ok', operationId: 'getX', domain: 'coupons' }],
     }),
     /output path must be a concrete file path without glob metacharacters/,
+  );
+});
+
+test('C20: fail-closed — TypeScript emitter rejects unsupported path parameter syntax', () => {
+  const files = renderCodegenFiles({
+    operations: [{ method: 'GET', path: '/ok/{coupon_id}', operationId: 'getX', domain: 'coupons' }],
+  });
+  assert.match(files.find((file) => file.kind === 'client').content, /pathParams\.coupon_id/);
+  assert.throws(
+    () => renderCodegenFiles({
+      operations: [{ method: 'GET', path: '/ok/{bad-id}', operationId: 'getX', domain: 'coupons' }],
+    }),
+    /unsupported path parameter syntax/,
   );
 });
 
