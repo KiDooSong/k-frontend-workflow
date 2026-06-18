@@ -6,7 +6,13 @@ Worktree: `/private/tmp/k-frontend-workflow-lint-ci-gate-decision`
 
 ## Scope
 
-MVP-B lint-pack PR-5: decide how `lint-gen.mjs` and `lint-baseline.mjs` enter CI after PR-4 added the warning-first ratchet runner.
+MVP-B lint-pack PR-5 smoke wiring: put `lint-gen.mjs` and
+`lint-baseline.mjs` on CI as warning-first signals after PR-4 added the
+warning-first ratchet runner.
+
+This is **not** the evidence-based gate promotion decision from
+`temp/proposals/lint-pack-design-refresh.md`. That later decision still needs
+observed telemetry and brownfield dogfood results.
 
 ## Inputs Checked
 
@@ -14,12 +20,20 @@ MVP-B lint-pack PR-5: decide how `lint-gen.mjs` and `lint-baseline.mjs` enter CI
 - `workflow:lint-baseline` runs the equal ratchet fixture and supports `--json`.
 - PR-4 test surface is stable: `npm test` passes `test-fixtures` and the node test suite.
 
+## Evidence Boundary
+
+- Fixture smoke and package tests are enough to add non-blocking CI smoke.
+- They are **not** enough to promote a lint-pack gate.
+- Required check promotion, `lint-baseline --enforce`, and hard CI remain blocked
+  on observed telemetry, brownfield dogfood results, explicit rationale, and a
+  separate Open Decision.
+
 ## Options
 
-| Option | Meaning | Decision |
+| Option | Meaning | Current stance |
 |---|---|---|
-| no CI | Keep lint-pack checks manual/package-script only. | Valid fallback, not selected. The fixture smoke surface is stable enough for non-blocking observation. |
-| warning-first CI | Run `npm run workflow:lint-gen -- --check` and `npm run workflow:lint-baseline -- --json` with `continue-on-error`. | **Selected.** Adds CI telemetry without changing merge eligibility. |
+| no CI | Keep lint-pack checks manual/package-script only. | Valid fallback. This PR moves one notch beyond it by adding non-blocking smoke only. |
+| warning-first CI smoke | Run `npm run workflow:lint-gen -- --check` and `npm run workflow:lint-baseline -- --json` with `continue-on-error`. | **Wired in this PR.** Starts CI smoke signals without changing merge eligibility. |
 | hard CI | Make lint-pack failures block PRs, wire `lint-baseline --enforce`, or require the check. | Deferred. Requires telemetry, explicit rationale, and a separate Open Decision. |
 
 ## Changes
@@ -28,7 +42,7 @@ MVP-B lint-pack PR-5: decide how `lint-gen.mjs` and `lint-baseline.mjs` enter CI
   - `lint-pack generated config drift (warning-only)`
   - `lint-pack ratchet baseline (warning-only)`
 - Both steps use `continue-on-error: true`.
-- Updated README, roadmap, MVP-B notes, and lint workflow docs to mark PR-5 as warning-first CI observation.
+- Updated README, roadmap, MVP-B notes, and lint workflow docs to mark PR-5 as warning-first CI smoke wiring, not a completed promotion decision.
 
 ## Explicit Non-Changes
 
