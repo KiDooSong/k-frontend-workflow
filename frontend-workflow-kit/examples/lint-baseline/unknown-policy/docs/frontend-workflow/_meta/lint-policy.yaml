@@ -1,0 +1,38 @@
+version: 1
+
+defaults:
+  paths:
+    screens: src/features/*/screens
+    api: src/api
+    ui: src/components/ui
+
+policies:
+  layer-boundaries:
+    enabled: true
+    severity: error
+    rollout: all
+    implementation: auto
+
+  no-fetch-in-screens:
+    enabled: true
+    severity: error
+    rollout: all
+    implementation: auto
+
+  no-adhoc-buttons:
+    enabled: true
+    severity: warn
+    rollout: all
+    implementation: auto
+
+  no-arbitrary-style-values:
+    enabled: true
+    severity: warn
+    rollout: all
+    implementation: auto
+
+  made-up-policy:
+    enabled: true
+    severity: warn
+    rollout: all
+    implementation: auto

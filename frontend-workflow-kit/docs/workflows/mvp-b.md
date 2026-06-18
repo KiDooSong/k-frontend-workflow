@@ -13,9 +13,9 @@ MVP-B Phase 0 = lanes **A/B/C** 통합. 회귀 하니스(A) · 경로 backstop(B
 핵심은 **대부분 warning-first** 라는 점이다 — 기본 CI exit code 는 바뀌지 않는다. 새로 들어온 강제 중 빌드를 깨는 것은 validate 구조 검사(검사 11·12)뿐이고, 나머지(경로 backstop · Reconciliation Register 미처리 감지)는 기본 exit 0 으로 경고만 내고 `--enforce` 로 opt-in 해야 하드가 된다. 회귀 하니스(A)는 자체 실행 시 하드-exit 의미를 갖고, CI 에는 **warning-only**(`continue-on-error: true`)로 배선됐다 — 결과는 로그에 보이되 job 은 안 깬다(하드 gating 승격은 후속).
 
 2026-06-18 현재, lint-pack 은 PR-1 schema/template/docs, PR-2 `lint-gen.mjs`
-skeleton, PR-3/MR #55 `skills/adapt-lint-pack` 제안 workflow 까지 완료됐다.
-남은 lint-pack 순서는 `lint-baseline` ratchet runner/fixtures(PR-4) 와 CI/gate
-promotion decision(PR-5) 이다.
+skeleton, PR-3/MR #55 `skills/adapt-lint-pack` 제안 workflow, PR-4
+`lint-baseline.mjs` warning-first ratchet runner/fixtures 까지 완료됐다.
+남은 lint-pack 순서는 CI/gate promotion decision(PR-5) 이다.
 
 ## Lane 별 상세
 
@@ -76,7 +76,8 @@ promotion decision(PR-5) 이다.
 | `lint-policy` template/schema/catalog/rollout docs (MVP-B PR-1) | 문서 계약 | canonical path = `docs/frontend-workflow/_meta/lint-policy.yaml` |
 | `lint-gen` skeleton (MVP-B PR-2) | 구현·미승격 | deterministic `eslint.workflow.config.mjs` flat-config fragment emission; generated guard/CI/baseline 미승격 |
 | `adapt-lint-pack` skill (MVP-B PR-3) | 문서/스킬 계약 | brownfield scan -> map -> diff -> rollout -> propose; drafts/reports only, 승인 전 `lint-gen.mjs` 실행 없음 |
-| `lint-baseline` / CI gate promotion (MVP-B PR-4/5) | 제안 | 승격 금지 |
+| `lint-baseline` ratchet runner (MVP-B PR-4) | 경고-전용 | 기본 exit 0; `--enforce` 때 baseline 증가 exit 1 |
+| lint CI gate promotion (MVP-B PR-5) | 제안 | 승격 금지 |
 | `route-tree` / `nav-graph` / `component-catalog` generated views (MVP-C) | 구현·읽기 전용 | 게이트 아님; `example:test` warning-only 회귀 표면에서 커버 |
 | `check-generated` alias/CI promotion (MVP-C) | 제안·미승격 | 스크립트는 advisory guard 로 존재하지만 소비 package alias/CI hard gate 는 승격 금지 |
 | `reconcile-input` 킷 `skills/` vendor | 제안 | 리포-로컬 스킬은 절차 가이드일 뿐 코드 강제 0 |
@@ -98,6 +99,10 @@ npm run example:test                  # = node scripts/test-fixtures.mjs
 # 경로 backstop (warning-first; --enforce 로 하드). --diff/--docs 로 대상 지정.
 npm run workflow:forbidden-paths -- --diff examples/path-backstop/diffs/case1-api-write.txt --docs examples/path-backstop/docs/frontend-workflow
 node scripts/forbidden-paths.mjs --enforce --diff <file> --docs <dir>
+
+# lint ratchet baseline (warning-first; --enforce 로 증가를 하드 실패 처리)
+npm run workflow:lint-baseline
+node scripts/lint-baseline.mjs --docs <dir> --counts <file> --enforce
 ```
 
 소비 프로젝트는 `workflow:state`/`workflow:readiness`/`workflow:validate`(+ warning-first `workflow:forbidden-paths`)로 호출한다. `validate` 는 이제 검사 12종을 돈다.
@@ -114,7 +119,6 @@ node scripts/forbidden-paths.mjs --enforce --diff <file> --docs <dir>
 - `test-fixtures` **하드 gating 승격** — 현재 CI 는 warning-only(`continue-on-error`); FP율 확인 후 gating.
 - `forbidden-paths` **전용 CI step** — 현재 npm alias 만 배선(단일 `--diff` CLI), self-contained step 후속.
 - `reconcile-input` **킷 `skills/` vendor** (Reconciliation Register 검증은 검사 12 로 완료; pre-edit/commit hook 확장은 후속).
-- `lint-baseline` ratchet runner/fixtures (MVP-B PR-4).
 - lint CI/gate promotion decision (MVP-B PR-5).
 - MVP-C: `check-generated` 소비 package alias / CI promotion (현 상태는 advisory, 새 hard gate 아님).
 - API Candidate ↔ zod/OpenAPI **스키마 1:1 매칭** 검사.

@@ -1,0 +1,34 @@
+version: 1
+
+defaults:
+  paths:
+    screens: src/features/*/screens
+    api: src/api
+    ui: src/components/ui
+
+policies:
+  layer-boundaries:
+    enabled: true
+    severity: error
+    rollout: all
+    implementation: auto
+
+  no-fetch-in-screens:
+    enabled: true
+    severity: error
+    rollout: ratchet
+    baseline: 3
+    reason: Brownfield screen fetch calls are being ratcheted down.
+    implementation: auto
+
+  no-adhoc-buttons:
+    enabled: true
+    severity: warn
+    rollout: all
+    implementation: auto
+
+  no-arbitrary-style-values:
+    enabled: true
+    severity: warn
+    rollout: all
+    implementation: auto

@@ -2,8 +2,9 @@
 
 > MVP-B lint-pack policy catalog. PR-1 added the schema/template/docs contract;
 > PR-2 adds a deterministic `lint-gen.mjs` skeleton; PR-3 adds the
-> `skills/adapt-lint-pack` brownfield scan/propose workflow. `lint-baseline.mjs`,
-> generated-file guard promotion, and CI wiring remain future work.
+> `skills/adapt-lint-pack` brownfield scan/propose workflow; PR-4 adds
+> warning-first `lint-baseline.mjs` ratchet comparison. Generated-file guard
+> promotion and CI wiring remain future work.
 
 Canonical policy path: `docs/frontend-workflow/_meta/lint-policy.yaml`.
 Template: `templates/meta/lint-policy.template.yaml`.
@@ -19,6 +20,9 @@ project's existing ESLint flat config; it does not configure parser or
 PR-3 `adapt-lint-pack` keeps brownfield adoption as a proposal workflow:
 scan -> map -> diff -> rollout -> propose, then wait for human approval before
 any generation.
+PR-4 `lint-baseline.mjs` compares `rollout: ratchet` baselines with current
+measured counts and exits 0 by default on increases; only `--enforce` makes an
+increase exit 1.
 
 The schema v1 `implementation` enum preserves future vocabulary
 (`eslint-boundaries`, `dep-cruiser`, `eslint-restricted-imports`), but the PR-2
@@ -63,3 +67,18 @@ banner equivalent to:
 PR-2 emits this banner, plus fragment/parser ownership comments. Generated-file
 guards still do not require this root artifact until a separate guard promotion
 slice handles repo-root path resolution.
+
+## Ratchet Counts Input
+
+`lint-baseline.mjs` reads current measured counts from JSON. PR-4 does not run
+ESLint or rewrite baselines; it only compares the supplied current counts with
+the committed `baseline` values in `lint-policy.yaml`.
+
+```json
+{
+  "version": 1,
+  "counts": {
+    "no-fetch-in-screens": 3
+  }
+}
+```
