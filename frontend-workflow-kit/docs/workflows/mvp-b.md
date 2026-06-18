@@ -14,8 +14,13 @@ MVP-B Phase 0 = lanes **A/B/C** 통합. 회귀 하니스(A) · 경로 backstop(B
 
 2026-06-18 현재, lint-pack 은 PR-1 schema/template/docs, PR-2 `lint-gen.mjs`
 skeleton, PR-3/MR #55 `skills/adapt-lint-pack` 제안 workflow, PR-4
-`lint-baseline.mjs` warning-first ratchet runner/fixtures 까지 완료됐다.
-남은 lint-pack 순서는 CI/gate promotion decision(PR-5) 이다.
+`lint-baseline.mjs` warning-first ratchet runner/fixtures, PR-5 warning-first
+CI smoke 배선까지 완료됐다. PR-5 는 `lint-gen --check` 와
+`lint-baseline --json` 을 `continue-on-error` 로 실행해 로그만 남긴다.
+설계 refresh 의 gate promotion decision 은 아직 완료하지 않았다. 해당 결정은
+observed telemetry 와 brownfield dogfood results 를 모은 뒤 `no CI`/
+`warning-first CI`/`hard CI` 중 다시 고르며, hard gate·required check·
+`--enforce` 승격은 별도 Open Decision 전까지 하지 않는다.
 
 ## Lane 별 상세
 
@@ -77,7 +82,7 @@ skeleton, PR-3/MR #55 `skills/adapt-lint-pack` 제안 workflow, PR-4
 | `lint-gen` skeleton (MVP-B PR-2) | 구현·미승격 | deterministic `eslint.workflow.config.mjs` flat-config fragment emission; generated guard/CI/baseline 미승격 |
 | `adapt-lint-pack` skill (MVP-B PR-3) | 문서/스킬 계약 | brownfield scan -> map -> diff -> rollout -> propose; drafts/reports only, 승인 전 `lint-gen.mjs` 실행 없음 |
 | `lint-baseline` ratchet runner (MVP-B PR-4) | 경고-전용 | 기본 exit 0; `--enforce` 때 baseline 증가 exit 1 |
-| lint CI gate promotion (MVP-B PR-5) | 제안 | 승격 금지 |
+| lint CI smoke wiring (MVP-B PR-5) | 경고-전용 CI smoke | `workflow:lint-gen -- --check` + `workflow:lint-baseline -- --json` 을 CI 에 `continue-on-error` 로 배선. evidence 기반 gate promotion decision, hard gate/required check/`--enforce` 승격은 후속 |
 | `route-tree` / `nav-graph` / `component-catalog` generated views (MVP-C) | 구현·읽기 전용 | 게이트 아님; `example:test` warning-only 회귀 표면에서 커버 |
 | `check-generated` alias/CI promotion (MVP-C) | 제안·미승격 | 스크립트는 advisory guard 로 존재하지만 소비 package alias/CI hard gate 는 승격 금지 |
 | `reconcile-input` 킷 `skills/` vendor | 제안 | 리포-로컬 스킬은 절차 가이드일 뿐 코드 강제 0 |
@@ -105,6 +110,17 @@ npm run workflow:lint-baseline
 node scripts/lint-baseline.mjs --docs <dir> --counts <file> --enforce
 ```
 
+PR-5 CI 는 위 lint 명령을 다음처럼 smoke 전용으로만 실행한다:
+
+```bash
+npm run workflow:lint-gen -- --check
+npm run workflow:lint-baseline -- --json
+```
+
+두 step 모두 `continue-on-error: true` 이며, `--enforce` 와 required check
+승격은 사용하지 않는다. 설계 refresh 가 요구한 observed telemetry/brownfield
+dogfood 기반 promotion decision 은 후속으로 남긴다.
+
 소비 프로젝트는 `workflow:state`/`workflow:readiness`/`workflow:validate`(+ warning-first `workflow:forbidden-paths`)로 호출한다. `validate` 는 이제 검사 12종을 돈다.
 
 ### 검증 두 갈래 (내부 픽스처 ↔ 외부 소비 dogfood)
@@ -119,7 +135,7 @@ node scripts/lint-baseline.mjs --docs <dir> --counts <file> --enforce
 - `test-fixtures` **하드 gating 승격** — 현재 CI 는 warning-only(`continue-on-error`); FP율 확인 후 gating.
 - `forbidden-paths` **전용 CI step** — 현재 npm alias 만 배선(단일 `--diff` CLI), self-contained step 후속.
 - `reconcile-input` **킷 `skills/` vendor** (Reconciliation Register 검증은 검사 12 로 완료; pre-edit/commit hook 확장은 후속).
-- lint CI/gate promotion decision (MVP-B PR-5).
+- lint gate promotion decision — PR-5 는 warning-first CI smoke 만 배선했다. hard gate, required check, `lint-baseline --enforce` CI 승격은 observed telemetry, brownfield dogfood results, 별도 Open Decision 후속.
 - MVP-C: `check-generated` 소비 package alias / CI promotion (현 상태는 advisory, 새 hard gate 아님).
 - API Candidate ↔ zod/OpenAPI **스키마 1:1 매칭** 검사.
 - Interaction Matrix **`Result` 컬럼 구조화**.

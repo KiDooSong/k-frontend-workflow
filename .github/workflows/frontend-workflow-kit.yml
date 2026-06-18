@@ -24,6 +24,20 @@ jobs:
 
       - run: npm ci
 
+      # lint-pack PR-5 smoke CI — warning-first(비차단).
+      #   - npm ci 이후 hard gate 들보다 먼저 실행해, 뒤쪽 validate/idempotency 실패와 무관하게
+      #     smoke 신호를 남긴다.
+      #   - lint-gen 은 예제 fixture 의 generated config drift 만 확인한다. manifest status 는 planned 유지.
+      #   - lint-baseline 은 ratchet report 를 JSON 으로 남기되 --enforce 를 쓰지 않는다.
+      #   - hard gate/required check 승격은 observed telemetry/brownfield dogfood 와 별도 Open Decision 전까지 금지.
+      - name: lint-pack generated config drift (warning-only)
+        continue-on-error: true
+        run: npm run workflow:lint-gen -- --check
+
+      - name: lint-pack ratchet baseline (warning-only)
+        continue-on-error: true
+        run: npm run workflow:lint-baseline -- --json
+
       # 생성기 실행 (파일을 쓴다 → 커밋본과 어긋나면 아래 diff 단계에서 잡힌다)
       - run: npm run example:state
       - run: npm run example:readiness

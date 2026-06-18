@@ -3,8 +3,9 @@
 > MVP-B lint-pack policy catalog. PR-1 added the schema/template/docs contract;
 > PR-2 adds a deterministic `lint-gen.mjs` skeleton; PR-3 adds the
 > `skills/adapt-lint-pack` brownfield scan/propose workflow; PR-4 adds
-> warning-first `lint-baseline.mjs` ratchet comparison. Generated-file guard
-> promotion and CI wiring remain future work.
+> warning-first `lint-baseline.mjs` ratchet comparison; PR-5 adds warning-first
+> CI smoke wiring. Generated-file guard promotion and evidence-based hard CI
+> gate decision remain future work.
 
 Canonical policy path: `docs/frontend-workflow/_meta/lint-policy.yaml`.
 Template: `templates/meta/lint-policy.template.yaml`.
@@ -23,6 +24,11 @@ any generation.
 PR-4 `lint-baseline.mjs` compares `rollout: ratchet` baselines with current
 measured counts and exits 0 by default on increases; only `--enforce` makes an
 increase exit 1.
+PR-5 wires warning-first CI smoke: CI may run `workflow:lint-gen -- --check`
+and `workflow:lint-baseline -- --json` with `continue-on-error`, but this is not
+the gate promotion decision. CI must not wire `lint-baseline --enforce`, a
+required check, or hard gate promotion without observed telemetry, brownfield
+dogfood results, and a separate Open Decision.
 
 The schema v1 `implementation` enum preserves future vocabulary
 (`eslint-boundaries`, `dep-cruiser`, `eslint-restricted-imports`), but the PR-2

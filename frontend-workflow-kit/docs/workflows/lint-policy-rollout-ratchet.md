@@ -3,7 +3,8 @@
 > MVP-B lint-pack adoption contract. PR-2 adds `lint-gen.mjs` for deterministic
 > ESLint flat-config fragment emission; PR-3 adds `skills/adapt-lint-pack` for
 > brownfield scan/propose adoption; PR-4 adds `lint-baseline.mjs` for
-> warning-first ratchet comparison. CI gate promotion remains future work.
+> warning-first ratchet comparison; PR-5 adds warning-first CI smoke wiring.
+> Evidence-based CI gate promotion remains future work.
 
 ## Canonical Source
 
@@ -54,9 +55,33 @@ The counts file is an input snapshot of current measured violations:
 }
 ```
 
-PR-4 does not run ESLint, update baselines, or wire CI. It validates the policy
-and count contracts, reports pass/increase/improvement, exits 0 by default on
-increases, and exits 1 on increases only with `--enforce`.
+PR-4 does not run ESLint or update baselines. It validates the policy and count
+contracts, reports pass/increase/improvement, exits 0 by default on increases,
+and exits 1 on increases only with `--enforce`.
+
+PR-5 wires CI only as warning-first smoke:
+
+```txt
+lint-gen --check       -> generated config drift signal
+lint-baseline --json   -> ratchet report signal
+```
+
+Both CI steps must remain non-blocking (`continue-on-error` or an equivalent
+report-only wrapper). This smoke wiring is not the design refresh's gate
+promotion decision because it is based on fixture/package verification, not
+observed telemetry or brownfield dogfood results. CI must not use
+`lint-baseline --enforce`, remove `continue-on-error`, make a required check, or
+promote `eslint-workflow-config` to an active generated artifact without
+observed telemetry, brownfield dogfood results, explicit rationale, and a
+separate Open Decision.
+
+## CI Gate Options (PR-5 Smoke Posture)
+
+| Option | Behavior | Current posture |
+|---|---|---|
+| no CI | Keep `lint-gen`/`lint-baseline` runnable only through package scripts and local/manual verification. | Valid fallback. PR-5 moves one notch beyond it by adding non-blocking smoke only. |
+| warning-first CI smoke | Run `workflow:lint-gen -- --check` and `workflow:lint-baseline -- --json` in CI with `continue-on-error` or equivalent non-blocking behavior. | **Wired for PR-5.** Logs smoke signals without changing merge eligibility. |
+| hard CI | Remove non-blocking behavior, wire `lint-baseline --enforce`, make the check required, or otherwise fail PRs on lint-pack signals. | **Deferred.** Requires observed telemetry, brownfield dogfood results, explicit rationale, and a separate Open Decision. |
 
 ## Rollout Modes
 
@@ -88,8 +113,9 @@ contract; `lint-baseline.mjs` owns exit behavior for ratchet policies.
 ## Adoption Procedure
 
 Greenfield projects should begin with the catalog defaults and `rollout: all`
-when measured violations are zero. Keep CI warning-first until a separate gate
-promotion decision chooses otherwise.
+when measured violations are zero. Keep CI warning-first until observed
+telemetry, brownfield dogfood results, and a separate gate promotion decision
+choose otherwise.
 
 Brownfield projects should use `skills/adapt-lint-pack` as a proposal workflow
 before generation:
