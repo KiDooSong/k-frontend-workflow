@@ -32,6 +32,18 @@ const DEFAULT_ADAPTERS_DIR = path.resolve(HERE, '..', 'adapters', 'codegens');
 const QUERY_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const METHOD_ORDER = ['GET', 'HEAD', 'OPTIONS', 'POST', 'PUT', 'PATCH', 'DELETE'];
 const METHOD_RANK = new Map(METHOD_ORDER.map((m, i) => [m, i]));
+const CONTROL_CHARS = /[\u0000-\u001F\u007F]/;
+const WINDOWS_ABSOLUTE = /^[A-Za-z]:/;
+const UNC_ROOT = /^\/\//;
+const REQUIRED_CONVENTION_STRINGS = [
+  'hookPrefix',
+  'querySuffix',
+  'mutationSuffix',
+  'clientOut',
+  'hookOut',
+  'clientFileSuffix',
+  'hookFileSuffix',
+];
 
 export class CodegenAdapterError extends Error {
   constructor(message) {
@@ -152,7 +164,10 @@ export async function loadCodegenAdapter(spec, opts = {}) {
 
 function normalizeSourceFiles(files) {
   if (!Array.isArray(files)) return [];
-  return [...new Set(files.map((f) => String(f).replace(/\\/g, '/')))].sort(compareText);
+  return [...new Set(files.map((f) => {
+    const sourceFile = normalizeRelativePath(String(f).replace(/\\/g, '/'), 'codegen source file');
+    return sourceFile;
+  }))].sort(compareText);
 }
 
 function mergeConfig(model, opts) {
@@ -164,6 +179,24 @@ function mergeConfig(model, opts) {
       ...(opts.conventions || {}),
     },
   };
+}
+
+function validateConventions(conventions) {
+  for (const key of REQUIRED_CONVENTION_STRINGS) {
+    const value = conventions[key];
+    if (typeof value !== 'string' || !value) {
+      throw new CodegenModelError(`codegen convention '${key}' must be a non-empty string`);
+    }
+    if (CONTROL_CHARS.test(value)) {
+      throw new CodegenModelError(`codegen convention '${key}' must not contain control characters`);
+    }
+  }
+  if (typeof conventions.clientSubdir !== 'string') {
+    throw new CodegenModelError("codegen convention 'clientSubdir' must be a string");
+  }
+  if (CONTROL_CHARS.test(conventions.clientSubdir)) {
+    throw new CodegenModelError("codegen convention 'clientSubdir' must not contain control characters");
+  }
 }
 
 function operationLabel(op) {
@@ -188,6 +221,9 @@ function normalizePath(routePath, index) {
   const p = routePath.trim();
   if (!p.startsWith('/')) {
     throw new CodegenModelError(`operation[${index}] path must start with '/': ${p}`);
+  }
+  if (CONTROL_CHARS.test(p)) {
+    throw new CodegenModelError(`operation[${index}] path must not contain control characters`);
   }
   return p;
 }
@@ -224,8 +260,17 @@ function pascalCaseOperationId(operationId) {
 
 export function buildHookName(operation, conventions = DEFAULT_CODEGEN_CONVENTIONS) {
   const kind = operation.kind || (QUERY_METHODS.has(operation.method) ? 'query' : 'mutation');
-  const suffix = kind === 'query' ? conventions.querySuffix : conventions.mutationSuffix;
-  return `${conventions.hookPrefix}${pascalCaseOperationId(operation.operationId)}${suffix}`;
+  const suffixKey = kind === 'query' ? 'querySuffix' : 'mutationSuffix';
+  if (typeof conventions.hookPrefix !== 'string' || !conventions.hookPrefix) {
+    throw new CodegenModelError("codegen convention 'hookPrefix' must be a non-empty string");
+  }
+  if (typeof conventions[suffixKey] !== 'string' || !conventions[suffixKey]) {
+    throw new CodegenModelError(`codegen convention '${suffixKey}' must be a non-empty string`);
+  }
+  if (CONTROL_CHARS.test(conventions.hookPrefix) || CONTROL_CHARS.test(conventions[suffixKey])) {
+    throw new CodegenModelError('codegen hook naming conventions must not contain control characters');
+  }
+  return `${conventions.hookPrefix}${pascalCaseOperationId(operation.operationId)}${conventions[suffixKey]}`;
 }
 
 function resolveRoleRef(pattern, roles) {
@@ -238,8 +283,14 @@ function resolveRoleRef(pattern, roles) {
   });
 }
 
-function normalizeRelativeOut(p) {
+function normalizeRelativePath(p, label) {
   const raw = String(p).replace(/\\/g, '/');
+  if (CONTROL_CHARS.test(raw)) {
+    throw new CodegenModelError(`${label} must not contain control characters: ${p}`);
+  }
+  if (WINDOWS_ABSOLUTE.test(raw) || UNC_ROOT.test(raw)) {
+    throw new CodegenModelError(`${label} must stay relative and in-repo: ${p}`);
+  }
   const normalized = path.posix.normalize(raw);
   if (
     path.posix.isAbsolute(normalized) ||
@@ -247,9 +298,13 @@ function normalizeRelativeOut(p) {
     normalized.startsWith('../') ||
     normalized.includes('/../')
   ) {
-    throw new CodegenModelError(`codegen output path must stay relative and in-repo: ${p}`);
+    throw new CodegenModelError(`${label} must stay relative and in-repo: ${p}`);
   }
   return normalized.replace(/^\.\//, '');
+}
+
+function normalizeRelativeOut(p) {
+  return normalizeRelativePath(p, 'codegen output path');
 }
 
 function expandOutPattern(pattern, roles, domain, leaf) {
@@ -296,6 +351,7 @@ export function normalizeCodegenModel(model, opts = {}) {
   }
 
   const { roles, conventions } = mergeConfig(model, opts);
+  validateConventions(conventions);
   const operations = model.operations.map((raw, index) => {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
       throw new CodegenModelError(`operation[${index}] must be an object`);

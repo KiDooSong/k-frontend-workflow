@@ -18,6 +18,7 @@ export const conventions = {
 };
 
 const HTTP_METHODS = new Set(['get', 'head', 'options', 'post', 'put', 'patch', 'delete']);
+const CONTROL_CHARS = /[\u0000-\u001F\u007F]/;
 
 function isDir(p) {
   try {
@@ -71,7 +72,20 @@ function isObject(value) {
 }
 
 function relativePath(baseDir, file) {
-  return path.relative(baseDir, file).replace(/\\/g, '/');
+  const base = path.resolve(baseDir);
+  const resolved = path.resolve(file);
+  const rel = path.relative(base, resolved).replace(/\\/g, '/');
+  if (
+    !rel ||
+    CONTROL_CHARS.test(rel) ||
+    path.isAbsolute(rel) ||
+    rel === '..' ||
+    rel.startsWith('../') ||
+    rel.includes('/../')
+  ) {
+    throw new Error(`openapi-client: source file must stay under baseDir: ${file}`);
+  }
+  return rel;
 }
 
 function deriveDomain(pathKey, operation) {

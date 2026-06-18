@@ -40,7 +40,7 @@
 ```bash
 cd frontend-workflow-kit
 node --test scripts/lib/codegen-core.test.mjs
-# PASS — 9 tests
+# PASS — 14 tests
 
 npm test
 # PASS — test-fixtures 27 fixtures(26 pass, 1 xfail) + node:test 100 pass
@@ -49,6 +49,7 @@ npm test
 추가 확인:
 
 - codegen golden determinism 은 `C3: renderCodegenManifest is byte-identical to golden and stable across repeated renders` 로 고정.
+- 리뷰 반영 회귀는 `C10`~`C14` 로 고정: multiline path injection, Windows/UNC absolute output, out-of-base sourceFiles, malformed conventions.
 - 기존 route-tree/nav-graph/component-catalog generated-view fixtures 는 `test-fixtures` 에서 각 2회 실행 결정성 + golden 일치를 통과.
 - 새 CLI 는 만들지 않았다. 그래서 별도 CLI 2회 실행 검증 대상은 없다.
 

@@ -134,3 +134,67 @@ test('C9: openapi-client fails closed on missing api_schema input', async () => 
     /api_schema directory not found/,
   );
 });
+
+test('C10: fail-closed — multiline/control-character OpenAPI paths cannot inject manifest lines', () => {
+  assert.throws(
+    () => renderCodegenManifest({
+      operations: [{ method: 'GET', path: '/ok\ninjected: yes', operationId: 'getX', domain: 'coupons' }],
+    }),
+    /path must not contain control characters/,
+  );
+});
+
+test('C11: fail-closed — output paths reject Windows drive and UNC absolutes', () => {
+  assert.throws(
+    () => normalizeCodegenModel({
+      roles: { api_client: 'C:/tmp/api/**' },
+      operations: [{ method: 'GET', path: '/ok', operationId: 'getX', domain: 'coupons' }],
+    }),
+    /codegen output path must stay relative and in-repo/,
+  );
+  assert.throws(
+    () => normalizeCodegenModel({
+      roles: { hook: '//server/share/{domain}/hooks/**' },
+      operations: [{ method: 'GET', path: '/ok', operationId: 'getX', domain: 'coupons' }],
+    }),
+    /codegen output path must stay relative and in-repo/,
+  );
+});
+
+test('C12: fail-closed — sourceFiles must remain project-relative', () => {
+  assert.throws(
+    () => renderCodegenManifest({
+      sourceFiles: ['../openapi.json'],
+      operations: [{ method: 'GET', path: '/ok', operationId: 'getX', domain: 'coupons' }],
+    }),
+    /codegen source file must stay relative and in-repo/,
+  );
+});
+
+test('C13: fail-closed — malformed convention tokens are rejected before naming/rendering', () => {
+  assert.throws(
+    () => normalizeCodegenModel({
+      conventions: { hookPrefix: undefined },
+      operations: [{ method: 'GET', path: '/ok', operationId: 'getX', domain: 'coupons' }],
+    }),
+    /hookPrefix.*non-empty string/,
+  );
+  assert.throws(
+    () => normalizeCodegenModel({
+      conventions: { hookFileSuffix: null },
+      operations: [{ method: 'GET', path: '/ok', operationId: 'getX', domain: 'coupons' }],
+    }),
+    /hookFileSuffix.*non-empty string/,
+  );
+});
+
+test('C14: openapi-client fails closed when api_schema is outside baseDir', async () => {
+  const adapter = await loadCodegenAdapter('openapi-client');
+  assert.throws(
+    () => adapter.discover({
+      apiSchemaDir: path.join(FIXTURE, 'src', 'api', 'schemas'),
+      baseDir: path.join(FIXTURE, 'src', 'features'),
+    }),
+    /source file must stay under baseDir/,
+  );
+});
