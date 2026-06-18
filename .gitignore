@@ -7,6 +7,9 @@
 # Codex 로컬 호환 스킬 — Claude 스킬과 거의 중복되므로 추적 안 함
 .codex/
 
+# Serena 로컬 프로젝트 메타데이터 — 추적 안 함
+.serena/
+
 # 임시 작업물 — 추적 안 함
 temp/archive/
 temp/claude-handoff*

@@ -121,8 +121,9 @@ artifacts:
   # MVP-B lint-pack 의 canonical human-approved policy source.
   # PR-1 은 schema/template/docs-only 계약을 추가했고, PR-2 는 이 YAML 정책 파일을 읽어
   # eslint.workflow.config.mjs 를 생성하는 lint-gen.mjs skeleton 을 runnable 하게 만들었다.
-  # PR-3/MR #55 는 brownfield scan/propose 스킬(adapt-lint-pack)을 추가했다. 다만
-  # validate/CI 는 이 스키마를 아직 강제하지 않고, lint-baseline/CI gate 도 미승격 상태다.
+  # PR-3/MR #55 는 brownfield scan/propose 스킬(adapt-lint-pack)을 추가했고, PR-4 는
+  # lint-baseline.mjs warning-first ratchet runner 를 runnable 하게 만들었다. 다만
+  # validate/CI 는 이 스키마를 아직 강제하지 않고, CI gate 도 미승격 상태다.
   lint-policy:
     kind: authoring
     scope: global

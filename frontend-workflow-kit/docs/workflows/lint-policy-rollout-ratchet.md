@@ -2,8 +2,8 @@
 
 > MVP-B lint-pack adoption contract. PR-2 adds `lint-gen.mjs` for deterministic
 > ESLint flat-config fragment emission; PR-3 adds `skills/adapt-lint-pack` for
-> brownfield scan/propose adoption. The baseline runner and CI gates remain
-> future work.
+> brownfield scan/propose adoption; PR-4 adds `lint-baseline.mjs` for
+> warning-first ratchet comparison. CI gate promotion remains future work.
 
 ## Canonical Source
 
@@ -34,6 +34,30 @@ keeps `eslint-workflow-config` as `status: planned` until repo-root
 generated-file guard support lands, so a missing generated file remains
 must-not-fail.
 
+The PR-4 baseline runner flow is:
+
+```txt
+docs/frontend-workflow/_meta/lint-policy.yaml
+  + docs/frontend-workflow/_meta/lint-counts.json
+  -> lint-baseline.mjs
+  -> warning-first ratchet report
+```
+
+The counts file is an input snapshot of current measured violations:
+
+```json
+{
+  "version": 1,
+  "counts": {
+    "no-fetch-in-screens": 3
+  }
+}
+```
+
+PR-4 does not run ESLint, update baselines, or wire CI. It validates the policy
+and count contracts, reports pass/increase/improvement, exits 0 by default on
+increases, and exits 1 on increases only with `--enforce`.
+
 ## Rollout Modes
 
 | Rollout | Baseline | Intended use |
@@ -57,10 +81,9 @@ semantics:
 - A missing baseline for a ratchet policy is invalid.
 - A baseline on `rollout: all` is invalid.
 
-The recommended future default is warning-first: report increases without
-breaking CI unless an explicit enforcement mode is selected. Raw ESLint `error`
-output must not bypass the ratchet contract; a future `lint-baseline.mjs` or
-runner owns exit behavior.
+The default is warning-first: report increases without breaking CI unless
+`--enforce` is selected. Raw ESLint `error` output must not bypass the ratchet
+contract; `lint-baseline.mjs` owns exit behavior for ratchet policies.
 
 ## Adoption Procedure
 
