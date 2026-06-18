@@ -548,6 +548,12 @@ function relativeImport(fromOut, toOut) {
   return rel.replace(/\.(?:[cm]?tsx?)$/, '');
 }
 
+function renderQueryKeyExpression(op, params) {
+  const parts = [stringLiteral(op.domain), stringLiteral(op.operationId)];
+  for (const param of params) parts.push(`options.pathParams.${param}`);
+  return `[${parts.join(', ')}] as const`;
+}
+
 export function renderCodegenClientFile(operation) {
   const op = normalizedRenderableOperation(operation);
   const params = extractPathParams(op.path);
@@ -630,7 +636,7 @@ export function renderCodegenHookFile(operation) {
     out.push(`    path: ${stringLiteral(op.path)},`);
     out.push(`    clientOut: ${stringLiteral(op.clientOut)},`);
     out.push(`    hookOut: ${stringLiteral(op.hookOut)},`);
-    out.push(`    queryKey: [${stringLiteral(op.domain)}, ${stringLiteral(op.operationId)}] as const,`);
+    out.push(`    queryKey: ${renderQueryKeyExpression(op, params)},`);
     out.push(`    queryFn: () => ${clientFn}(options),`);
     out.push('  } as const;');
     out.push('}');

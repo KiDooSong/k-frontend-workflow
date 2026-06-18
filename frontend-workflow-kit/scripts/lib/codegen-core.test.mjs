@@ -98,6 +98,22 @@ test('C3b: renderCodegenFiles emits byte-identical client/hook files and advisor
   });
 });
 
+test('C3c: parameterized query hooks include path identifiers in queryKey', async () => {
+  const adapter = await loadCodegenAdapter('openapi-client');
+  const model = discoverFixture(adapter);
+  const getCouponHook = renderCodegenFiles(model).find((file) => file.path.endsWith('useGetCouponQuery.ts'));
+  const listCouponsHook = renderCodegenFiles(model).find((file) => file.path.endsWith('useListCouponsQuery.ts'));
+
+  assert.match(
+    getCouponHook.content,
+    /queryKey: \["coupons", "getCoupon", options\.pathParams\.couponId\] as const,/,
+  );
+  assert.match(
+    listCouponsHook.content,
+    /queryKey: \["coupons", "listCoupons"\] as const,/,
+  );
+});
+
 test('C4: core sorting makes shuffled operation input render identically', async () => {
   const adapter = await loadCodegenAdapter('openapi-client');
   const model = discoverFixture(adapter);
