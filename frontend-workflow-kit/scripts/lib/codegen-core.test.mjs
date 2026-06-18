@@ -240,6 +240,30 @@ test('C18: fail-closed — resolved output patterns cannot traverse before role-
   );
 });
 
+test('C19: fail-closed — output paths must be concrete files without glob wildcards', () => {
+  assert.throws(
+    () => normalizeCodegenModel({
+      conventions: { clientOut: 'src/api/**/extra/**' },
+      operations: [{ method: 'GET', path: '/ok', operationId: 'getX', domain: 'coupons' }],
+    }),
+    /output pattern supports only one terminal '\*\*' segment/,
+  );
+  assert.throws(
+    () => normalizeCodegenModel({
+      roles: { api_client: 'src/api/*/**' },
+      operations: [{ method: 'GET', path: '/ok', operationId: 'getX', domain: 'coupons' }],
+    }),
+    /output pattern must not contain unsupported glob metacharacters/,
+  );
+  assert.throws(
+    () => normalizeCodegenModel({
+      conventions: { hookFileSuffix: '*.ts' },
+      operations: [{ method: 'GET', path: '/ok', operationId: 'getX', domain: 'coupons' }],
+    }),
+    /output path must be a concrete file path without glob metacharacters/,
+  );
+});
+
 test('C16: fail-closed — manifest header fields cannot inject extra lines', () => {
   assert.throws(
     () => renderCodegenManifest({

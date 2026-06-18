@@ -35,6 +35,7 @@ const METHOD_RANK = new Map(METHOD_ORDER.map((m, i) => [m, i]));
 const CONTROL_CHARS = /[\u0000-\u001F\u007F]/;
 const WINDOWS_ABSOLUTE = /^[A-Za-z]:/;
 const UNC_ROOT = /^\/\//;
+const OUTPUT_GLOB_META = /[*?\[\]{}]/;
 const REQUIRED_CONVENTION_STRINGS = [
   'hookPrefix',
   'querySuffix',
@@ -352,6 +353,40 @@ function outputRootFromPattern(pattern) {
   return normalizeRelativeOut(root);
 }
 
+function assertSupportedOutputPattern(pattern) {
+  const parts = String(pattern).replace(/\\/g, '/').split('/');
+  let globstarCount = 0;
+  for (const [index, part] of parts.entries()) {
+    if (part === '**') {
+      globstarCount += 1;
+      if (index !== parts.length - 1) {
+        throw new CodegenModelError(
+          `codegen output pattern supports only one terminal '**' segment: ${pattern}`,
+        );
+      }
+      continue;
+    }
+    if (OUTPUT_GLOB_META.test(part)) {
+      throw new CodegenModelError(
+        `codegen output pattern must not contain unsupported glob metacharacters: ${pattern}`,
+      );
+    }
+  }
+  if (globstarCount > 1) {
+    throw new CodegenModelError(
+      `codegen output pattern supports only one terminal '**' segment: ${pattern}`,
+    );
+  }
+}
+
+function assertConcreteOutputPath(out) {
+  if (OUTPUT_GLOB_META.test(out)) {
+    throw new CodegenModelError(
+      `codegen output path must be a concrete file path without glob metacharacters: ${out}`,
+    );
+  }
+}
+
 function assertUnderOutputRoot(out, root) {
   if (!root) return;
   if (out !== root && !out.startsWith(root + '/')) {
@@ -366,6 +401,7 @@ function expandOutPattern(pattern, roles, domain, leaf) {
       `codegen output path must stay relative and in-repo; output pattern must not contain '..': ${resolvedPattern}`,
     );
   }
+  assertSupportedOutputPattern(resolvedPattern);
   const root = outputRootFromPattern(resolvedPattern);
   let p = resolvedPattern;
   if (p.includes('**')) {
@@ -376,6 +412,7 @@ function expandOutPattern(pattern, roles, domain, leaf) {
     p = path.posix.join(p, leaf);
   }
   const out = normalizeRelativeOut(p);
+  assertConcreteOutputPath(out);
   assertUnderOutputRoot(out, root);
   return out;
 }
