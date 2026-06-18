@@ -20,6 +20,8 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { KIT_ROOT, exists, isDir, readFileSafe, projectRootOf } from './util.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
+import { checkCodegenFiles, renderCodegenFiles } from './codegen-core.mjs';
+import openApiClientAdapter from '../adapters/codegens/openapi-client.mjs';
 // 정규화 원시함수는 골든 하니스와 동일한 것을 재사용한다(설계 §A.5 "reuse verbatim; do not invent").
 import { normalizeGeneratedViewText, toPosix } from './test-fixture.mjs';
 
@@ -27,6 +29,8 @@ import { normalizeGeneratedViewText, toPosix } from './test-fixture.mjs';
 // 정렬된 형태로 둔다(나열 출력 안정성). route-tree/nav-graph = 설계 §1.7 "Guardable NOW";
 // component-catalog = 생성기(catalog-gen) active + v1 출력 포맷 freeze 후 졸업(PR-6).
 export const V1_ARTIFACT_IDS = ['component-catalog', 'nav-graph', 'route-tree'];
+export const V1_CODEGEN_TARGET_IDS = ['codegen-openapi-client'];
+export const V1_TARGET_IDS = [...V1_ARTIFACT_IDS, ...V1_CODEGEN_TARGET_IDS].sort(compareText);
 
 // --artifact 입력을 v1 정책으로 해소한다(작업/표시 집합).
 //   requested 없음        → v1 전체(route-tree·nav-graph·component-catalog).
@@ -34,7 +38,11 @@ export const V1_ARTIFACT_IDS = ['component-catalog', 'nav-graph', 'route-tree'];
 //   requested 가 비-v1    → 빈 배열(가드 대상 아님 — 호출부가 사유를 안내).
 export function selectArtifactIds(requested) {
   if (requested == null) return [...V1_ARTIFACT_IDS];
-  return V1_ARTIFACT_IDS.includes(requested) ? [requested] : [];
+  return V1_TARGET_IDS.includes(requested) ? [requested] : [];
+}
+
+function compareText(a, b) {
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 // ── 2.5B discovery (순수) ─────────────────────────────────────────────────────
@@ -93,6 +101,30 @@ export function discoverArtifacts(manifest, { allowlist = V1_ARTIFACT_IDS } = {}
   return out.sort((a, b) => a.id.localeCompare(b.id));
 }
 
+// Codegen 은 아직 전역 artifact-manifest.yaml 에 등록하지 않는다. 현재 manifest 는 단일 `path`
+// 중심이고, codegen fixture 는 client+hook 다중 출력이라 OD-5/OD-6/OD-7 없이 일반 표현을
+// 확정하면 안 된다. 대신 실제 PR #60 fixture 산출물만 focused advisory target 으로 노출한다.
+export function discoverCodegenTargets({ ids = V1_CODEGEN_TARGET_IDS } = {}) {
+  const wanted = new Set(ids);
+  return V1_CODEGEN_TARGET_IDS
+    .filter((id) => wanted.has(id))
+    .map((id) => ({
+      id,
+      kind: 'generated',
+      generated: true,
+      status: 'active',
+      do_not_edit: true,
+      path:
+        'examples/codegen-adapter/openapi-client/src/api/generated/*.client.ts + examples/codegen-adapter/openapi-client/src/features/*/hooks/*.ts',
+      command:
+        'node scripts/check-generated-files.mjs --artifact codegen-openapi-client --src examples/codegen-adapter/openapi-client/src',
+      source: ['examples/codegen-adapter/openapi-client/src/api/schemas/**'],
+      selected: true,
+      skip_reasons: [],
+    }))
+    .sort((a, b) => compareText(a.id, b.id));
+}
+
 // ── 2.5C reproduce-to-scratch (IO; 커밋 트리 불변) ─────────────────────────────
 
 // 표시/메시지용 경로 — cwd 상대 posix(머신 종속 절대경로를 출력에 흘리지 않음).
@@ -137,6 +169,14 @@ export const V1_REPRODUCE = {
   },
 };
 
+const V1_CODEGEN_REPRODUCE = {
+  'codegen-openapi-client': {
+    adapter: openApiClientAdapter,
+    resolveInput: ({ srcDir }) => path.join(srcDir, 'api', 'schemas'),
+    source: 'src/api/schemas/**',
+  },
+};
+
 // 커밋된 산출물 경로 — outName 을 docsDir 아래 contract.committedSubdir(기본 _meta)에 매핑한다.
 //  route-tree/nav-graph = _meta/<outName>(생성기 기본 --out 해석과 동일);
 //  component-catalog    = design/<outName>(매니페스트 path 와 일치).
@@ -157,6 +197,102 @@ function firstLineDiff(committed, regenerated) {
   return '내용 상이';
 }
 
+function firstRenderedFileDiff(a, b) {
+  const n = Math.max(a.length, b.length);
+  for (let i = 0; i < n; i++) {
+    const left = a[i];
+    const right = b[i];
+    if (!left || !right) return `file ${i + 1}: ${left?.path ?? '<없음>'} vs ${right?.path ?? '<없음>'}`;
+    if (left.path !== right.path) return `file ${i + 1}: ${left.path} vs ${right.path}`;
+    if (left.content !== right.content) return `${left.path} — ${firstLineDiff(left.content, right.content)}`;
+  }
+  return null;
+}
+
+function summarizeCodegenChanges(changes) {
+  return changes.map((c) => `${c.status}: ${c.path}`).join(', ');
+}
+
+function reproduceCodegenTarget(id, { srcDir }) {
+  const checks = [];
+  let files = [];
+  const ok = (check, message) => checks.push({ check, ok: true, message });
+  const fail = (check, message) => checks.push({ check, ok: false, message });
+  const contract = V1_CODEGEN_REPRODUCE[id];
+  if (!contract) {
+    fail('CG:config', `codegen reproduce 계약 없음(v1 대상 아님): ${id}`);
+    return { id, status: 'skip', committed: null, input: null, files, checks };
+  }
+
+  const baseDir = projectRootOf(srcDir);
+  const schemaDir = contract.resolveInput({ srcDir, baseDir });
+  const result = (status) => ({
+    id,
+    status,
+    committed: relPosix(baseDir),
+    input: relPosix(schemaDir),
+    files,
+    checks,
+  });
+
+  if (!isDir(schemaDir)) {
+    fail('CG:input', `api_schema 입력 디렉터리 없음(재생성 불가): ${relPosix(schemaDir)}`);
+    return result('missing-input');
+  }
+
+  let model;
+  try {
+    model = contract.adapter.discover({
+      apiSchemaDir: schemaDir,
+      baseDir,
+      source: contract.source,
+    });
+    ok('CG:discover', `${contract.adapter.name || id} adapter discovery 완료`);
+  } catch (err) {
+    fail('CG:discover', err?.message || String(err));
+    return result('generator-error');
+  }
+
+  let once;
+  let twice;
+  try {
+    once = renderCodegenFiles(model);
+    twice = renderCodegenFiles(model);
+    files = once.map((file) => file.path);
+  } catch (err) {
+    fail('CG:render', err?.message || String(err));
+    return result('generator-error');
+  }
+
+  let status = 'ok';
+  const diff = firstRenderedFileDiff(once, twice);
+  if (diff == null) {
+    ok('CG:deterministic', `동일 입력 2회 render 일치(${files.length} files)`);
+  } else {
+    fail('CG:deterministic', `동일 입력 2회 render 불일치 — ${diff}`);
+    status = 'nondeterministic';
+  }
+
+  let check;
+  try {
+    check = checkCodegenFiles(model, { baseDir });
+    files = check.files;
+  } catch (err) {
+    fail('CG:content', err?.message || String(err));
+    return result('generator-error');
+  }
+
+  if (check.ok) {
+    ok('CG:content', `${files.length} codegen client/hook outputs 커밋본과 일치`);
+  } else {
+    fail('CG:content', summarizeCodegenChanges(check.changes));
+    if (status === 'ok') {
+      status = check.changes.some((c) => c.status === 'missing') ? 'missing-committed' : 'mismatch';
+    }
+  }
+  return result(status);
+}
+
 // route-tree·nav-graph·component-catalog 하나를 임시 디렉토리에 2회 재생성하고 커밋본과 비교한다.
 //   반환: { id, status, committed, input, checks:[{check,ok,message}] }
 //   status: ok | mismatch | nondeterministic | generator-error | missing-committed | missing-input | skip
@@ -167,6 +303,8 @@ function firstLineDiff(committed, regenerated) {
 //   - 정규화 normalizeGeneratedViewText 만(CRLF/path-sep). timestamp 정규화 없음.
 //   - 커밋본은 읽기만 — 임시 디렉토리에만 쓰고 finally 로 삭제(자동수정/덮어쓰기 없음).
 export function reproduceArtifact(id, { docsDir, srcDir, layout }) {
+  if (V1_CODEGEN_REPRODUCE[id]) return reproduceCodegenTarget(id, { srcDir });
+
   const checks = [];
   const ok = (check, message) => checks.push({ check, ok: true, message });
   const fail = (check, message) => checks.push({ check, ok: false, message });
