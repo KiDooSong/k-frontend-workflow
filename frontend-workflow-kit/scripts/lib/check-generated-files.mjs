@@ -31,6 +31,7 @@ import { normalizeGeneratedViewText, toPosix } from './test-fixture.mjs';
 export const V1_ARTIFACT_IDS = ['component-catalog', 'nav-graph', 'route-tree'];
 export const V1_CODEGEN_TARGET_IDS = ['codegen-openapi-client'];
 export const V1_TARGET_IDS = [...V1_ARTIFACT_IDS, ...V1_CODEGEN_TARGET_IDS].sort(compareText);
+const GENERATED_HEADER_RE = /GENERATED FILE\s+(?:—|-)\s+DO NOT EDIT/;
 
 // --artifact 입력을 v1 정책으로 해소한다(작업/표시 집합).
 //   requested 없음        → v1 전체(route-tree·nav-graph·component-catalog).
@@ -77,6 +78,7 @@ function classifyArtifact(id, entry, allowlist) {
     status,
     do_not_edit: doNotEdit,
     path: typeof entry.path === 'string' ? entry.path : null,
+    outputs: normalizeManifestOutputs(entry),
     command: typeof entry.command === 'string' ? entry.command : null,
     source: Array.isArray(entry.source) ? entry.source.slice() : [],
     selected: reasons.length === 0,
@@ -101,31 +103,100 @@ export function discoverArtifacts(manifest, { allowlist = V1_ARTIFACT_IDS } = {}
   return out.sort((a, b) => a.id.localeCompare(b.id));
 }
 
-// Codegen 은 아직 전역 artifact-manifest.yaml 에 등록하지 않는다. 현재 manifest 는 단일 `path`
-// 중심이고, codegen fixture 는 client+hook 다중 출력이라 OD-5/OD-6/OD-7 없이 일반 표현을
-// 확정하면 안 된다. 대신 실제 PR #60 fixture 산출물만 focused advisory target 으로 노출한다.
-export function discoverCodegenTargets({ ids = V1_CODEGEN_TARGET_IDS } = {}) {
+// Codegen 은 전역 manifest 에 하나의 artifact + outputs[] 로 등록하되, 기본 v1 전체 대상에는
+// 넣지 않는다. 실제 fixture 산출물은 focused advisory target 으로만 노출한다.
+export function discoverCodegenTargets({ ids = V1_CODEGEN_TARGET_IDS, manifest } = {}) {
   const wanted = new Set(ids);
   return V1_CODEGEN_TARGET_IDS
     .filter((id) => wanted.has(id))
-    .map((id) => ({
-      id,
-      kind: 'generated',
-      generated: true,
-      status: 'active',
-      do_not_edit: true,
-      path:
-        'examples/codegen-adapter/openapi-client/src/api/generated/*.client.ts + examples/codegen-adapter/openapi-client/src/features/*/hooks/*.ts',
-      command:
-        'node scripts/check-generated-files.mjs --artifact codegen-openapi-client --src examples/codegen-adapter/openapi-client/src',
-      source: ['examples/codegen-adapter/openapi-client/src/api/schemas/**'],
-      selected: true,
-      skip_reasons: [],
-    }))
+    .map((id) => {
+      const entry = manifest?.artifacts?.[id] || {};
+      const outputs = normalizeManifestOutputs(entry);
+      return {
+        id,
+        kind: 'generated',
+        generated: true,
+        status: 'active',
+        do_not_edit: true,
+        path: outputs.length
+          ? outputs.map((output) => output.path).join(' + ')
+          : 'codegen-core expected output list',
+        outputs,
+        command:
+          entry.command ||
+          'node scripts/check-generated-files.mjs --artifact codegen-openapi-client --src examples/codegen-adapter/openapi-client/src',
+        source: Array.isArray(entry.source) ? entry.source.slice() : ['src/api/schemas/**'],
+        selected: true,
+        skip_reasons: [],
+      };
+    })
     .sort((a, b) => compareText(a.id, b.id));
 }
 
 // ── 2.5C reproduce-to-scratch (IO; 커밋 트리 불변) ─────────────────────────────
+
+function normalizeManifestOutputs(entry) {
+  if (!entry || !Array.isArray(entry.outputs)) return [];
+  return entry.outputs
+    .map((output) => {
+      if (typeof output === 'string') return { path: output };
+      if (output && typeof output === 'object' && typeof output.path === 'string') {
+        return { ...output, path: output.path };
+      }
+      return null;
+    })
+    .filter(Boolean);
+}
+
+function codegenOutputPatternsFromManifest(manifest, id) {
+  const entry = manifest?.artifacts?.[id];
+  return normalizeManifestOutputs(entry).map((output) => output.path);
+}
+
+function globRoot(pattern) {
+  const parts = String(pattern).replace(/\\/g, '/').split('/');
+  const root = [];
+  for (const part of parts) {
+    if (!part || /[*?\[\]{}]/.test(part)) break;
+    root.push(part);
+  }
+  return root.join('/');
+}
+
+function globToRegExp(pattern) {
+  const raw = String(pattern).replace(/\\/g, '/');
+  let out = '^';
+  for (let i = 0; i < raw.length; i += 1) {
+    const ch = raw[i];
+    const next = raw[i + 1];
+    if (ch === '*') {
+      if (next === '*') {
+        out += '.*';
+        i += 1;
+      } else {
+        out += '[^/]*';
+      }
+    } else if (ch === '?') {
+      out += '[^/]';
+    } else if (ch === '{') {
+      const end = raw.indexOf('}', i + 1);
+      if (end !== -1) {
+        out += '[^/]+';
+        i = end;
+      } else {
+        out += '\\{';
+      }
+    } else {
+      out += ch.replace(/[\\^$+?.()|[\]]/g, '\\$&');
+    }
+  }
+  return new RegExp(out + '$');
+}
+
+function hasGeneratedHeader(absPath) {
+  const head = (readFileSafe(absPath) || '').slice(0, 400);
+  return GENERATED_HEADER_RE.test(head);
+}
 
 // 표시/메시지용 경로 — cwd 상대 posix(머신 종속 절대경로를 출력에 흘리지 않음).
 function relPosix(abs) {
@@ -174,10 +245,6 @@ const V1_CODEGEN_REPRODUCE = {
     adapter: openApiClientAdapter,
     resolveInput: ({ srcDir }) => path.join(srcDir, 'api', 'schemas'),
     source: 'src/api/schemas/**',
-    scanOutputs: [
-      { root: 'src/api/generated', match: /^[^/]+\.client\.ts$/ },
-      { root: 'src/features', match: /^[^/]+\/hooks\/[^/]+\.ts$/ },
-    ],
   },
 };
 
@@ -238,13 +305,16 @@ function collectFilesUnder(rootAbs, relPrefix = '') {
   return out;
 }
 
-function collectActualCodegenOutputs(baseDir, contract) {
+function collectActualCodegenOutputs(baseDir, outputPatterns) {
   const out = [];
-  for (const scan of contract.scanOutputs || []) {
-    const rootRel = scan.root.replace(/\\/g, '/').replace(/\/+$/, '');
-    const rootAbs = path.join(baseDir, ...rootRel.split('/'));
+  for (const pattern of outputPatterns || []) {
+    const rootRel = globRoot(pattern).replace(/\/+$/, '');
+    const matcher = globToRegExp(pattern);
+    const rootAbs = rootRel ? path.join(baseDir, ...rootRel.split('/')) : baseDir;
     for (const rel of collectFilesUnder(rootAbs)) {
-      if (scan.match.test(rel)) out.push(`${rootRel}/${rel}`);
+      const candidate = rootRel ? `${rootRel}/${rel}` : rel;
+      const abs = path.join(baseDir, ...candidate.split('/'));
+      if (matcher.test(candidate) && hasGeneratedHeader(abs)) out.push(candidate);
     }
   }
   return [...new Set(out)].sort(compareText);
@@ -255,7 +325,7 @@ function staleCodegenOutputs(expectedFiles, actualFiles) {
   return actualFiles.filter((file) => !expected.has(file));
 }
 
-function reproduceCodegenTarget(id, { srcDir }) {
+function reproduceCodegenTarget(id, { srcDir, manifest }) {
   const checks = [];
   let files = [];
   const ok = (check, message) => checks.push({ check, ok: true, message });
@@ -332,12 +402,14 @@ function reproduceCodegenTarget(id, { srcDir }) {
       status = check.changes.some((c) => c.status === 'missing') ? 'missing-committed' : 'mismatch';
     }
   }
-  const stale = staleCodegenOutputs(files, collectActualCodegenOutputs(baseDir, contract));
+  const manifestOutputPatterns = codegenOutputPatternsFromManifest(manifest, id);
+  const outputPatterns = manifestOutputPatterns.length ? manifestOutputPatterns : files;
+  const stale = staleCodegenOutputs(files, collectActualCodegenOutputs(baseDir, outputPatterns));
   if (stale.length) {
     fail('CG:stale', stale.map((file) => `stale: ${file}`).join(', '));
     if (status === 'ok') status = 'mismatch';
   } else {
-    ok('CG:stale', '선언된 codegen output roots 에 stale 파일 없음');
+    ok('CG:stale', 'manifest-listed generated-owned codegen outputs 에 stale 파일 없음');
   }
   return result(status);
 }
@@ -351,8 +423,8 @@ function reproduceCodegenTarget(id, { srcDir }) {
 //   - 생성기를 import 하지 않고 서브프로세스(process.execPath)로 호출(계약 고정).
 //   - 정규화 normalizeGeneratedViewText 만(CRLF/path-sep). timestamp 정규화 없음.
 //   - 커밋본은 읽기만 — 임시 디렉토리에만 쓰고 finally 로 삭제(자동수정/덮어쓰기 없음).
-export function reproduceArtifact(id, { docsDir, srcDir, layout }) {
-  if (V1_CODEGEN_REPRODUCE[id]) return reproduceCodegenTarget(id, { srcDir });
+export function reproduceArtifact(id, { docsDir, srcDir, layout, manifest }) {
+  if (V1_CODEGEN_REPRODUCE[id]) return reproduceCodegenTarget(id, { srcDir, manifest });
 
   const checks = [];
   const ok = (check, message) => checks.push({ check, ok: true, message });

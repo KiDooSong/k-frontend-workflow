@@ -101,6 +101,36 @@ function runValidate(root) {
     return JSON.parse(String((e && e.stdout) || ''));
   }
 }
+
+test('E2E: 검사 6은 codegen outputs[]의 TS ASCII GENERATED 헤더를 허용하고 handwritten hook은 건너뜀', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check6-codegen-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/_meta/.keep': '',
+      'src/api/generated/getX.client.ts': '// GENERATED FILE - DO NOT EDIT\nexport const x = 1;\n',
+      'src/features/coupons/hooks/useHandWrittenCoupon.ts': 'export function useHandWrittenCoupon() {}\n',
+    });
+    const c6 = (runValidate(root).errors || []).filter((e) => e.check === 6);
+    assert.deepEqual(c6, []);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('E2E: 검사 6은 codegen outputs[] 안의 malformed GENERATED 헤더를 경고 없이 에러로 잡음', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check6-codegen-bad-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/_meta/.keep': '',
+      'src/api/generated/getX.client.ts': '// GENERATED FILE -- DO NOT EDIT\nexport const x = 1;\n',
+    });
+    const c6 = (runValidate(root).errors || []).filter((e) => e.check === 6);
+    assert.equal(c6.length, 1);
+    assert.match(c6[0].file, /src\/api\/generated\/getX\.client\.ts/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 // confirmed API 후보 1개를 가진 최소 화면(Entry Points nav-graph 마커 포함 → 검사 6 무소음).
 const SCREEN_CONFIRMED =
   '---\nartifact_id: S1\nartifact_type: screen-spec\ndomain: d\nscreen_id: S1\nroute: /x\nstatus: draft\n---\n' +

@@ -148,7 +148,7 @@ function main() {
   const actionIds = selectArtifactIds(requested);
   const codegenFocused =
     requested != null && V1_CODEGEN_TARGET_IDS.includes(requested)
-      ? discoverCodegenTargets({ ids: actionIds })
+      ? discoverCodegenTargets({ ids: actionIds, manifest })
       : [];
   const discovered = [...discoverArtifacts(manifest), ...codegenFocused]
     .sort((a, b) => a.id.localeCompare(b.id));
@@ -183,7 +183,9 @@ function main() {
   // 기본(check): selected 산출물을 reproduce-to-scratch 비교.
   // 레이아웃 프로파일(tier1): route-tree 입력 디렉토리를 {roles.route_entry} 에서 파생한다.
   const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags });
-  const results = shown.filter((d) => d.selected).map((d) => reproduceArtifact(d.id, { docsDir, srcDir, layout }));
+  const results = shown
+    .filter((d) => d.selected)
+    .map((d) => reproduceArtifact(d.id, { docsDir, srcDir, layout, manifest }));
   const summary = summarize(results);
   const bad = results.filter((r) => r.status !== 'ok' && r.status !== 'skip');
   const report = {
