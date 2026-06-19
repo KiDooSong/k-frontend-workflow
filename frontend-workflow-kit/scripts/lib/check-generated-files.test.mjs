@@ -11,10 +11,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
+  discoverCodegenTargets,
   discoverArtifacts,
   selectArtifactIds,
   reproduceArtifact,
   V1_ARTIFACT_IDS,
+  V1_CODEGEN_TARGET_IDS,
+  V1_TARGET_IDS,
 } from './check-generated-files.mjs';
 import { loadYaml, DEFAULTS, KIT_ROOT } from './util.mjs';
 
@@ -23,9 +26,20 @@ import { loadYaml, DEFAULTS, KIT_ROOT } from './util.mjs';
 const RT_BASIC = path.join(KIT_ROOT, 'examples', 'route-tree', 'basic-app');
 const NG_BASIC = path.join(KIT_ROOT, 'examples', 'nav-graph', 'basic-flow');
 const CC_BASIC = path.join(KIT_ROOT, 'examples', 'component-catalog', 'basic-ui');
+const CODEGEN_FIXTURE = path.join(KIT_ROOT, 'examples', 'codegen-adapter', 'openapi-client');
 const RT_DOCS = path.join(RT_BASIC, 'docs', 'frontend-workflow');
 const RT_SRC = path.join(RT_BASIC, 'src');
 const NG_DOCS = path.join(NG_BASIC, 'docs', 'frontend-workflow');
+const CODEGEN_SRC = path.join(CODEGEN_FIXTURE, 'src');
+
+const CODEGEN_OUTPUTS = [
+  'src/api/generated/getCoupon.client.ts',
+  'src/api/generated/listCoupons.client.ts',
+  'src/api/generated/redeemCoupon.client.ts',
+  'src/features/coupons/hooks/useGetCouponQuery.ts',
+  'src/features/coupons/hooks/useListCouponsQuery.ts',
+  'src/features/coupons/hooks/useRedeemCouponMutation.ts',
+];
 
 // 합성 manifest — 분류 분기를 모두 덮는다(실제 manifest 와 독립적인 결정적 입력).
 const SYNTH = {
@@ -104,8 +118,24 @@ test('selectArtifactIds: v1 전체 / v1 하나 / 비-v1', () => {
   assert.deepEqual(selectArtifactIds('route-tree'), ['route-tree']);
   assert.deepEqual(selectArtifactIds('nav-graph'), ['nav-graph']);
   assert.deepEqual(selectArtifactIds('component-catalog'), ['component-catalog']);
+  assert.deepEqual(selectArtifactIds('codegen-openapi-client'), ['codegen-openapi-client']);
   assert.deepEqual(selectArtifactIds('workflow-state'), []);
   assert.deepEqual(V1_ARTIFACT_IDS, ['component-catalog', 'nav-graph', 'route-tree']);
+  assert.deepEqual(V1_CODEGEN_TARGET_IDS, ['codegen-openapi-client']);
+  assert.deepEqual(V1_TARGET_IDS, [
+    'codegen-openapi-client',
+    'component-catalog',
+    'nav-graph',
+    'route-tree',
+  ]);
+});
+
+test('discoverCodegenTargets: focused target is selected without manifest registration', () => {
+  const targets = discoverCodegenTargets({ ids: ['codegen-openapi-client'] });
+  assert.equal(targets.length, 1);
+  assert.equal(targets[0].id, 'codegen-openapi-client');
+  assert.equal(targets[0].selected, true);
+  assert.deepEqual(targets[0].skip_reasons, []);
 });
 
 test('discoverArtifacts: 빈/이상 manifest 도 안전(빈 배열)', () => {
@@ -166,6 +196,84 @@ test('reproduceArtifact: component-catalog 픽스처가 커밋본을 재현(ok)'
     assert.equal(r.status, 'ok', JSON.stringify(r.checks));
     assert.ok(r.checks.some((c) => c.check === 'CG:content' && c.ok));
     assert.ok(r.checks.some((c) => c.check === 'CG:deterministic' && c.ok));
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('reproduceArtifact: codegen openapi-client fixture reproduces multi-output client/hooks in stable order', () => {
+  const r = reproduceArtifact('codegen-openapi-client', { srcDir: CODEGEN_SRC });
+  assert.equal(r.status, 'ok', JSON.stringify(r.checks));
+  assert.deepEqual(r.files, CODEGEN_OUTPUTS);
+  assert.ok(r.checks.some((c) => c.check === 'CG:discover' && c.ok));
+  assert.ok(r.checks.some((c) => c.check === 'CG:deterministic' && c.ok));
+  assert.ok(r.checks.some((c) => c.check === 'CG:content' && c.ok));
+});
+
+test('reproduceArtifact: codegen output tamper is reported as mismatch without rewriting files', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cgf-codegen-neg-'));
+  try {
+    fs.cpSync(CODEGEN_FIXTURE, tmp, { recursive: true });
+    const tampered = path.join(tmp, 'src', 'features', 'coupons', 'hooks', 'useListCouponsQuery.ts');
+    fs.appendFileSync(tampered, '\n// tampered codegen output\n', 'utf8');
+    const r = reproduceArtifact('codegen-openapi-client', { srcDir: path.join(tmp, 'src') });
+    assert.equal(r.status, 'mismatch', JSON.stringify(r.checks));
+    assert.deepEqual(r.files, CODEGEN_OUTPUTS);
+    assert.ok(r.checks.some((c) => c.check === 'CG:content' && !c.ok && /different/.test(c.message)));
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('reproduceArtifact: missing codegen output is reported as missing-committed', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cgf-codegen-missing-'));
+  try {
+    fs.cpSync(CODEGEN_FIXTURE, tmp, { recursive: true });
+    fs.rmSync(path.join(tmp, 'src', 'api', 'generated', 'redeemCoupon.client.ts'));
+    const r = reproduceArtifact('codegen-openapi-client', { srcDir: path.join(tmp, 'src') });
+    assert.equal(r.status, 'missing-committed', JSON.stringify(r.checks));
+    assert.deepEqual(r.files, CODEGEN_OUTPUTS);
+    assert.ok(r.checks.some((c) => c.check === 'CG:content' && !c.ok && /missing/.test(c.message)));
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('reproduceArtifact: stale extra codegen client output is reported as mismatch', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cgf-codegen-stale-client-'));
+  try {
+    fs.cpSync(CODEGEN_FIXTURE, tmp, { recursive: true });
+    fs.writeFileSync(
+      path.join(tmp, 'src', 'api', 'generated', 'staleCoupon.client.ts'),
+      '// stale generated client\n',
+      'utf8',
+    );
+    const r = reproduceArtifact('codegen-openapi-client', { srcDir: path.join(tmp, 'src') });
+    assert.equal(r.status, 'mismatch', JSON.stringify(r.checks));
+    assert.deepEqual(r.files, CODEGEN_OUTPUTS);
+    assert.ok(
+      r.checks.some((c) => c.check === 'CG:stale' && !c.ok && /staleCoupon\.client\.ts/.test(c.message)),
+    );
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('reproduceArtifact: stale extra codegen hook output is reported as mismatch', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cgf-codegen-stale-hook-'));
+  try {
+    fs.cpSync(CODEGEN_FIXTURE, tmp, { recursive: true });
+    fs.writeFileSync(
+      path.join(tmp, 'src', 'features', 'coupons', 'hooks', 'useStaleCouponQuery.ts'),
+      '// stale generated hook\n',
+      'utf8',
+    );
+    const r = reproduceArtifact('codegen-openapi-client', { srcDir: path.join(tmp, 'src') });
+    assert.equal(r.status, 'mismatch', JSON.stringify(r.checks));
+    assert.deepEqual(r.files, CODEGEN_OUTPUTS);
+    assert.ok(
+      r.checks.some((c) => c.check === 'CG:stale' && !c.ok && /useStaleCouponQuery\.ts/.test(c.message)),
+    );
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

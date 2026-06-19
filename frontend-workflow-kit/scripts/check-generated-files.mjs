@@ -20,7 +20,7 @@
 //   --docs <dir>      문서 루트(기본 docs/frontend-workflow). nav-graph 입력·_meta 커밋본 위치.
 //   --src  <dir>      소스 루트(기본 src). route-tree 입력 app 디렉터리는 <src>/app.
 //   --manifest <file> 산출물 레지스트리(기본 catalog/artifact-manifest.yaml).
-//   --artifact <id>   v1 대상 하나로 좁힘(route-tree|nav-graph|component-catalog).
+//   --artifact <id>   v1 대상 하나로 좁힘(route-tree|nav-graph|component-catalog|codegen-openapi-client).
 //
 // 후속(미구현, 의도적 보류): --enforce(위반 시 exit 1). v1 은 warning-first 만 — 후속 PR 에서
 //   FP율 관찰 후 도입 여부 결정(설계 §6, §9 PR G). 도입하더라도 CI 미배선이 전제.
@@ -34,8 +34,11 @@ import { parseArgs, DEFAULTS, KIT_ROOT, loadYamlOrExit, runCli } from './lib/uti
 import { loadLayoutProfile } from './lib/layout-profile.mjs';
 import {
   V1_ARTIFACT_IDS,
+  V1_CODEGEN_TARGET_IDS,
+  V1_TARGET_IDS,
   selectArtifactIds,
   discoverArtifacts,
+  discoverCodegenTargets,
   reproduceArtifact,
 } from './lib/check-generated-files.mjs';
 
@@ -72,9 +75,15 @@ function renderHead(report, notV1) {
   w(`  docs     : ${report.docs}\n`);
   w(`  src      : ${report.src}\n`);
   w(`  v1 대상  : ${report.v1_targets.join(', ')}\n`);
+  if (report.focused_targets.length) w(`  focused : ${report.focused_targets.join(', ')}\n`);
   if (report.artifact_filter) w(`  --artifact: ${report.artifact_filter}\n`);
   if (notV1) {
-    w(`  주의: '${report.artifact_filter}' 는 v1 가드 대상이 아님 (v1: ${report.v1_targets.join(', ')})\n`);
+    w(
+      `  주의: '${report.artifact_filter}' 는 v1 가드 대상이 아님 (v1/focused: ${[
+        ...report.v1_targets,
+        ...report.focused_targets,
+      ].join(', ')})\n`,
+    );
   }
 }
 
@@ -135,9 +144,14 @@ function main() {
 
   // 전체 생성물을 intrinsic v1 기준으로 분류. 그 뒤 --artifact 로 표시/작업 집합을 좁힌다.
   const requested = typeof flags.artifact === 'string' ? flags.artifact : null;
-  const notV1 = requested != null && !V1_ARTIFACT_IDS.includes(requested);
+  const notV1 = requested != null && !V1_TARGET_IDS.includes(requested);
   const actionIds = selectArtifactIds(requested);
-  const discovered = discoverArtifacts(manifest);
+  const codegenFocused =
+    requested != null && V1_CODEGEN_TARGET_IDS.includes(requested)
+      ? discoverCodegenTargets({ ids: actionIds })
+      : [];
+  const discovered = [...discoverArtifacts(manifest), ...codegenFocused]
+    .sort((a, b) => a.id.localeCompare(b.id));
   const shown = requested == null ? discovered : discovered.filter((d) => actionIds.includes(d.id));
 
   const base = {
@@ -148,6 +162,7 @@ function main() {
     docs: toPosixRel(docsDir),
     src: toPosixRel(srcDir),
     v1_targets: [...V1_ARTIFACT_IDS],
+    focused_targets: [...V1_CODEGEN_TARGET_IDS],
     artifact_filter: requested,
   };
 
