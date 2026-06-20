@@ -183,10 +183,22 @@ screen-spec routes         : /(tabs)/coupons         (coupon-list/screen-spec.md
                              /coupons/[id]           (coupon-detail/screen-spec.md)
 ```
 
-`route-cross-check --docs <scratch> --json` is **byte-identical across two runs**
-(528 / `4a7c54b6…`), **exit 0**, and surfaces exactly one warning — the
-`/coupons/[id]` drift with file attribution (isomorphic to the
-`tier2-route-cross-check-001.md` demo):
+`route-cross-check --docs <scratch> --json` is **byte-identical across the two
+runs at the same scratch path** (528 B / `4a7c54b6…` at this run's temp
+location), **exit 0**, and surfaces exactly one warning — the `/coupons/[id]`
+drift with file attribution (isomorphic to the `tier2-route-cross-check-001.md`
+demo):
+
+> **Caveat — this byte count / sha is not a portable reproduction key.** It is
+> location-dependent: the top-level `docs` field is a `cwd`-relative path echo
+> (F3), so its length — and thus the serialized byte stream — varies with the
+> scratch directory's path. An independent re-run at a different path produced
+> `514 B / 2a5ddc97…` (scratch `pr65-scratch`) while the *finding* was
+> unchanged. The portable invariant is the finding, not the sha:
+> `warning_count: 1`, `spec_not_in_tree: [/coupons/[id] →
+> domains/coupons/screens/coupon-detail/screen-spec.md]`, `tree_not_in_spec: []`
+> — all `docsDir`-relative posix. (Same cross-runner determinism gap noted in
+> Evidence 6 / Promotion Telemetry.)
 
 ```json
 {
@@ -406,8 +418,10 @@ decision pending.** No option is selected or resolved here.
 - No source / generated / golden / test-logic changes. All scratch artifacts
   were written outside the repo (OS temp) and removed; the committed
   coupon-feature tree was read, never modified.
-- No `roadmap-current.md` edit — even the item-2 cross-link to this report is
-  deferred (this slice constrains the diff to the new report file only).
+- `roadmap-current.md`: a single item-2 evidence cross-link sub-bullet was added
+  (mirroring item 1's evidence line) so this report is discoverable from the
+  roadmap — no gate, manifest status, or contract change. (Accepted from the
+  PR #65 review; the original slice had deferred it for a report-only diff.)
 - No Open Decision resolved or closed; no readiness/validate gate raised or
   lowered.
 - No lint-pack / Interaction Matrix work started (this slice covers the Tier2
