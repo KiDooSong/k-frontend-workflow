@@ -395,8 +395,8 @@ test('C22: custom adapter renders byte-identical manifest + client/hook goldens,
   const model = adapter.discover({});
   assert.equal(model.adapter, 'minimal-custom');
 
-  const once = renderCodegenManifest(normalizeCodegenModel(model));
-  const twice = renderCodegenManifest(normalizeCodegenModel(model));
+  const once = renderCodegenManifest(model); // renderCodegenManifest normalizes internally
+  const twice = renderCodegenManifest(model);
   assert.equal(once, twice); // determinism
   const manifestGolden = fs.readFileSync(path.join(CUSTOM, 'expected', 'codegen-manifest.txt'), 'utf8');
   assert.equal(once.replace(/\r\n/g, '\n'), manifestGolden.replace(/\r\n/g, '\n'));
