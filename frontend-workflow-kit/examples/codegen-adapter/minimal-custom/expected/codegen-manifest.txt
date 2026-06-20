@@ -1,0 +1,28 @@
+# GENERATED FILE - DO NOT EDIT
+# Source: examples/codegen-adapter/minimal-custom/my-codegen.mjs
+# Adapter: minimal-custom
+# Core: codegen-core@1
+# Source Files: examples/codegen-adapter/minimal-custom/my-codegen.mjs
+
+operations:
+- GET /widgets
+  operationId: listWidgets
+  domain: widgets
+  kind: query
+  clientOut: src/api/_generated/listWidgets.api.ts
+  hookName: useListWidgetsFetch
+  hookOut: src/features/widgets/hooks/useListWidgetsFetch.ts
+- GET /widgets/{widgetId}
+  operationId: getWidget
+  domain: widgets
+  kind: query
+  clientOut: src/api/_generated/getWidget.api.ts
+  hookName: useGetWidgetFetch
+  hookOut: src/features/widgets/hooks/useGetWidgetFetch.ts
+- POST /widgets/{widgetId}/archive
+  operationId: archiveWidget
+  domain: widgets
+  kind: mutation
+  clientOut: src/api/_generated/archiveWidget.api.ts
+  hookName: useArchiveWidgetCommand
+  hookOut: src/features/widgets/hooks/useArchiveWidgetCommand.ts

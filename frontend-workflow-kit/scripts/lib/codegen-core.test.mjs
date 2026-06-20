@@ -18,6 +18,8 @@ import {
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const KIT_ROOT = path.resolve(HERE, '..', '..');
 const FIXTURE = path.join(KIT_ROOT, 'examples', 'codegen-adapter', 'openapi-client');
+const CUSTOM = path.join(KIT_ROOT, 'examples', 'codegen-adapter', 'minimal-custom');
+const CUSTOM_MODULE = path.join(CUSTOM, 'my-codegen.mjs');
 
 function discoverFixture(adapter) {
   return adapter.discover({
@@ -368,4 +370,92 @@ test('C17: role references accept single-glob string arrays and reject multi-glo
     }),
     /multi-glob output role unsupported: api_client/,
   );
+});
+
+// --- minimal-custom codegen adapter dogfood (examples/codegen-adapter/minimal-custom) ------------
+// route-core.test.mjs S3/S5/S7/S4 미러: 비-내장 custom 어댑터를 코어가 해소·정렬·렌더(결정성)하고,
+// fail-closed 가 추측 대신 거부함을 고정한다. 픽스처는 단위 입력일 뿐 — 실제 소스 트리/매니페스트 등록 없음.
+
+test('C21: loadCodegenAdapter resolves a non-built-in custom adapter via {module} and via path string (S7)', async () => {
+  const byModule = await loadCodegenAdapter({ module: CUSTOM_MODULE }, { baseDir: KIT_ROOT });
+  assert.equal(byModule.name, 'minimal-custom');
+  assert.equal(byModule.version, CORE_CODEGEN_ADAPTER_VERSION);
+  assert.equal(typeof byModule.discover, 'function');
+
+  const byPath = await loadCodegenAdapter(CUSTOM_MODULE, { baseDir: KIT_ROOT });
+  assert.equal(byPath.name, 'minimal-custom');
+  assert.equal(byPath.version, CORE_CODEGEN_ADAPTER_VERSION);
+
+  // not registered in the built-in manifest — resolved purely by {module}/path, never by name lookup.
+  await assert.rejects(() => loadCodegenAdapter('minimal-custom'), CodegenAdapterError);
+});
+
+test('C22: custom adapter renders byte-identical manifest + client/hook goldens, stable across repeats (S3)', async () => {
+  const adapter = await loadCodegenAdapter({ module: CUSTOM_MODULE }, { baseDir: KIT_ROOT });
+  const model = adapter.discover({});
+  assert.equal(model.adapter, 'minimal-custom');
+
+  const once = renderCodegenManifest(normalizeCodegenModel(model));
+  const twice = renderCodegenManifest(normalizeCodegenModel(model));
+  assert.equal(once, twice); // determinism
+  const manifestGolden = fs.readFileSync(path.join(CUSTOM, 'expected', 'codegen-manifest.txt'), 'utf8');
+  assert.equal(once.replace(/\r\n/g, '\n'), manifestGolden.replace(/\r\n/g, '\n'));
+
+  // render surface goldens: one matched parameterized-query pair (client + hook).
+  const files = renderCodegenFiles(model);
+  assert.deepEqual(renderCodegenFiles(model), files); // determinism across repeated renders
+  const client = files.find((file) => file.path.endsWith('getWidget.api.ts'));
+  const hook = files.find((file) => file.path.endsWith('useGetWidgetFetch.ts'));
+  for (const [file, name] of [[client, 'getWidget.api.ts'], [hook, 'useGetWidgetFetch.ts']]) {
+    assert.equal(file.content.includes('\r'), false, `${name} should render LF-only content`);
+    const golden = fs.readFileSync(path.join(CUSTOM, 'expected', name), 'utf8');
+    assert.equal(file.content.replace(/\r\n/g, '\n'), golden.replace(/\r\n/g, '\n'), `${name} should match golden`);
+  }
+});
+
+test('C23: core owns ordering — the adapter discovers unsorted and the core normalizes deterministically (S5)', async () => {
+  const adapter = await loadCodegenAdapter({ module: CUSTOM_MODULE }, { baseDir: KIT_ROOT });
+  const model = adapter.discover({});
+
+  // the fixture deliberately discovers in a non-deterministic (unsorted) order ...
+  assert.deepEqual(
+    model.operations.map((op) => `${op.method} ${op.path}`),
+    ['POST /widgets/{widgetId}/archive', 'GET /widgets', 'GET /widgets/{widgetId}'],
+  );
+  // ... and the core normalizes to a deterministic order (path -> method rank -> operationId).
+  const normalized = normalizeCodegenModel(model);
+  assert.deepEqual(
+    normalized.operations.map((op) => `${op.method} ${op.path}`),
+    ['GET /widgets', 'GET /widgets/{widgetId}', 'POST /widgets/{widgetId}/archive'],
+  );
+  // purity: the adapter's input array is not mutated by normalization.
+  assert.equal(model.operations[0].operationId, 'archiveWidget');
+  // a pre-shuffled model renders identically (order-independent core).
+  const shuffled = { ...model, operations: [model.operations[1], model.operations[2], model.operations[0]] };
+  assert.equal(renderCodegenManifest(shuffled), renderCodegenManifest(model));
+});
+
+test('C24: custom conventions flow through the core (conventions-as-config), distinct from openapi-client', async () => {
+  const adapter = await loadCodegenAdapter({ module: CUSTOM_MODULE }, { baseDir: KIT_ROOT });
+  const normalized = normalizeCodegenModel(adapter.discover({}));
+  const byId = Object.fromEntries(normalized.operations.map((op) => [op.operationId, op]));
+
+  // query/mutation suffixes and the client subdir/suffix come from the adapter's conventions, not hardcoded.
+  assert.equal(byId.listWidgets.hookName, 'useListWidgetsFetch'); //   querySuffix 'Fetch' (vs openapi 'Query')
+  assert.equal(byId.archiveWidget.hookName, 'useArchiveWidgetCommand'); // mutationSuffix 'Command' (vs 'Mutation')
+  assert.equal(byId.getWidget.clientOut, 'src/api/_generated/getWidget.api.ts'); // clientSubdir '_generated' + '.api.ts'
+  // hook output stays domain-scoped under the Tier-1 role (roles.hook) — same surface as openapi-client (OD-7).
+  assert.equal(byId.getWidget.hookOut, 'src/features/widgets/hooks/useGetWidgetFetch.ts');
+});
+
+test('C25: fail-closed — a missing custom {module} and a version-mismatched custom adapter are rejected (S4)', async () => {
+  // {module} pointing at a non-existent file -> CodegenAdapterError (no silent fallback to a built-in).
+  await assert.rejects(
+    () => loadCodegenAdapter({ module: path.join(CUSTOM, '__no_such_codegen__.mjs') }, { baseDir: KIT_ROOT }),
+    CodegenAdapterError,
+  );
+  // the real custom adapter, re-presented with an out-of-range version -> CodegenAdapterError.
+  const adapter = await loadCodegenAdapter({ module: CUSTOM_MODULE }, { baseDir: KIT_ROOT });
+  const incompatible = { ...adapter, version: CORE_CODEGEN_ADAPTER_VERSION + 1 };
+  await assert.rejects(() => loadCodegenAdapter(incompatible), CodegenAdapterError);
 });
