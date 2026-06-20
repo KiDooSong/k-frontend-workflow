@@ -179,6 +179,8 @@ function globToRegExp(pattern) {
     } else if (ch === '?') {
       out += '[^/]';
     } else if (ch === '{') {
+      // 규약: `{...}` 는 `{domain}` 류의 단일-세그먼트 placeholder 전용 — `[^/]+` 로 처리한다.
+      // 실제 brace-alternation(`{a,b}`)은 지원하지 않는다(manifest 글롭은 kit 이 작성).
       const end = raw.indexOf('}', i + 1);
       if (end !== -1) {
         out += '[^/]+';
