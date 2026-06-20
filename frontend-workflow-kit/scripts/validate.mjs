@@ -66,6 +66,8 @@ import {
   normEndpoint,
 } from './lib/api-manifest.mjs';
 import { parseRouteTreeRouteTokens } from './lib/route-core.mjs';
+// 글롭 미니엔진·생성물 헤더 정규식은 check-generated-files 가드와 단일 출처를 공유한다(표류 방지).
+import { GENERATED_HEADER_RE, globRoot, globToRegExp } from './lib/glob.mjs';
 
 function isLocalRef(ref) {
   if (typeof ref !== 'string') return false;
@@ -94,50 +96,8 @@ function manifestPathRegex(pattern) {
   return new RegExp('^' + withVars + '$');
 }
 
-const GENERATED_HEADER_RE = /GENERATED FILE\s+(?:—|-)\s+DO NOT EDIT/;
+// GENERATED_HEADER_RE·globRoot·globToRegExp 는 ./lib/glob.mjs 단일 출처에서 import.
 const GENERATED_HEADER_HINT_RE = /GENERATED FILE/i;
-
-function globRoot(pattern) {
-  const parts = String(pattern).replace(/\\/g, '/').split('/');
-  const root = [];
-  for (const part of parts) {
-    if (!part || /[*?\[\]{}]/.test(part)) break;
-    root.push(part);
-  }
-  return root.join('/');
-}
-
-function globToRegExp(pattern) {
-  const raw = String(pattern).replace(/\\/g, '/');
-  let out = '^';
-  for (let i = 0; i < raw.length; i += 1) {
-    const ch = raw[i];
-    const next = raw[i + 1];
-    if (ch === '*') {
-      if (next === '*') {
-        out += '.*';
-        i += 1;
-      } else {
-        out += '[^/]*';
-      }
-    } else if (ch === '?') {
-      out += '[^/]';
-    } else if (ch === '{') {
-      // 규약: `{...}` 는 `{domain}` 류의 단일-세그먼트 placeholder 전용 — `[^/]+` 로 처리한다.
-      // 실제 brace-alternation(`{a,b}`)은 지원하지 않는다(manifest 글롭은 kit 이 작성).
-      const end = raw.indexOf('}', i + 1);
-      if (end !== -1) {
-        out += '[^/]+';
-        i = end;
-      } else {
-        out += '\\{';
-      }
-    } else {
-      out += ch.replace(/[\\^$+?.()|[\]]/g, '\\$&');
-    }
-  }
-  return new RegExp(out + '$');
-}
 
 function resolveManifestPath(pattern, { docsDir, projectRoot }) {
   const normalized = String(pattern).replace(/\\/g, '/');
