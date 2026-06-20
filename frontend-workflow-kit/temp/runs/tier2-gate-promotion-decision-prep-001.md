@@ -4,6 +4,7 @@ Date: 2026-06-21
 Base: `main@cb75e9a`
 Branch: `docs/tier2-gate-promotion-decision`
 Worktree: `C:\Users\thdrl\source\repos\k-frontend-workflow\.claude\worktrees\tier2-gate-promotion-decision`
+Status: **RESOLVED (2026-06-21)** — OD-11 = "no CI" (warning-first 유지); 승격은 실제 도입(adoption) telemetry 전까지 연기. 상세 → [## Resolution](#resolution-2026-06-21).
 
 ## Scope
 
@@ -102,8 +103,27 @@ git diff --check               → clean
 docs 만 추가하므로 결과가 동일하다. viz 산출은 OD-4 와 같은 디렉터리에 두어 사람이 나란히 열 수
 있게 했다.)
 
-## resolve 는 사람 몫
+## Resolution (2026-06-21)
 
-이 슬라이스는 OD-11 을 **준비**만 했다. 옵션 선택(open→resolved)은 별도 사람-승인 decision PR
-에서 `decision_id` 와 명시 rationale 과 함께 사람이 한다. 시각화는 그 직전 이해 보조일 뿐
-"확정/적용됨" 이 아니다.
+**OD-11 = resolved (decision_id: OD-11) — 사람 결정.** 선택: **"no CI" (현 상태 유지).** Tier2
+codegen/route 의 모든 warning-first 표면(`check-generated-files` codegen focused target ·
+`route-cross-check` · v1 default guard)을 **warning-first(exit 0) 그대로** 둔다.
+
+- **승격은 도입(adoption) 후로 연기.** warning-first CI smoke / hard CI / required check /
+  `--enforce` 는 실제 도입이 telemetry 를 만들 때까지 보류. 근거: PR #65 증거
+  [`tier2-gate-promotion-evidence-001.md`](tier2-gate-promotion-evidence-001.md) (Decision Draft ·
+  Promotion Telemetry Needed · Evidence 1d) — 도입 전엔 멀티런 smoke 이력·방향별 FP rate·소비
+  트리 준비도·교차환경 결정성·사람 `decision_id` 가 없어 어떤 승격도 정당화되지 않는다(Evidence
+  1d component-catalog placeholder 위험 포함).
+- **CI 재분류 (GitLab):** CI 를 하게 되면 GitHub Actions(`.github/workflows`)가 아니라
+  **GitLab(`.gitlab-ci.yml`) 기준**이어야 한다(현 킷 CI 는 타깃 환경과 불일치). 따라서 CI 는
+  "승격 결정"이 아니라 **도입 작업**으로 재분류 — 이 슬라이스에서 GitLab CI 도 만들지 않는다.
+- **재오픈 트리거:** 킷이 실제 프로젝트에 도입되어 warning-first telemetry(멀티런 smoke 이력 +
+  방향별 FP 분류)가 생기면 그때 재검토.
+- **이 슬라이스가 한 일(docs-only):** `temp/proposals/tier2-router-codegen-adapter.md` §16 에서
+  OD-11 을 open → **Resolved by human decision — 2026-06-21** 블록으로 옮기고(decision_id 명시),
+  `roadmap-current.md` item 2 잔여를 resolved/deferred 로 갱신, 본 보고서에 Resolution 기록.
+  게이트(readiness/validate)·CI·`artifact-manifest.yaml` status·소스/생성물/golden/테스트 **무변경.**
+- **resolve 는 사람 몫:** 위 결정은 사람이 내렸고 본 보고서는 그것을 *기록*만 한다. "no CI" 는 현
+  상태 유지라 **적용된 코드/CI 변화가 없다** — 시각화는 이해 보조일 뿐 "확정/적용됨"이 아니다.
+  (도입 작업: 온보딩/vendor/dogfood 는 이 슬라이스에서 시작하지 않으며 별도로 정한다.)
