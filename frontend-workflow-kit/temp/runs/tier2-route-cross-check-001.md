@@ -25,16 +25,26 @@
 
 - **Direction 1 — ScreenSpec route not in route-tree** (stronger drift/typo signal): each missing route is reported with its source spec file(s) for attribution.
 - **Direction 2 — route-tree route without ScreenSpec** (missing doc, or a layout/group route): reported as a lexicographically-sorted route list.
-- **Determinism:** all findings sorted (route/file lexicographic); all finding paths are `docsDir`-relative posix; no timestamps, no absolute machine paths.
-- **Fail-soft:** `route-tree.txt` absent **or** 0 screen-specs → quietly skipped (isomorphic to validate check 13 "skip when artifact absent", `validate.mjs:277-283`). Never crashes.
+- **Determinism:** all findings sorted (route/file lexicographic); all **finding** paths are `docsDir`-relative posix with no timestamps and no absolute machine paths. (The top-level `docs` field is a cwd-relative input echo — same convention as `check-generated-files` `toPosixRel`; it is run context, not a finding.)
+- **Fail-soft:** `route-tree.txt` absent **or** 0 screen-specs → quietly skipped (isomorphic to validate check 13 "skip when artifact absent", `validate.mjs:277-283`). Never crashes. When the tree exists but specs are 0, `tree_route_count` reports the real token count (not a hardcoded 0) so it never contradicts `route_tree_found: true`.
 
 ## Intentionally Not Done (NG)
 
 - No coupling of the cross-check into `validate` / `nav-graph` / `route-tree` (no direct import, no new check) — separate tool only (§10 / NG-1). The adapter is not imported either (artifacts read only).
 - No nav-graph dimension and no codegen output↔docs dimension (recorded as follow-up only).
 - No CI (`.github/workflows`), required check, hard gate, `--enforce`, or `exit 1` promotion. Always warning-first (exit 0).
-- No edits to existing goldens/generated artifacts (`route-tree.txt`, codegen fixtures, etc.). No new role / preset / package alias.
+- No edits to existing goldens/generated artifacts (`route-tree.txt`, codegen fixtures, etc.). No new role / preset, and **no consumer-facing package-alias promotion** — `package-scripts.template.json` is unchanged (held back like `check-generated-files`, the other warning-first tool not yet promoted). The kit-internal `package.json` `scripts` shortcut `workflow:route-cross-check` *is* added (review F1), matching all sibling CLI tools.
 - No readiness/validate gate raised or lowered — this tool only diagnoses (warnings).
+
+## Review follow-ups applied (post-implementation)
+
+| # | Severity | Finding | Disposition |
+|---|---|---|---|
+| F1 | Minor | Missing `workflow:route-cross-check` npm alias | **Accepted (scoped).** Added the kit-internal `package.json` `scripts` alias (universal convention; `lint-baseline` set the in-PR precedent). Deliberately **not** added to the consumer-facing `package-scripts.template.json` — that surface is the "소비 package alias 승격" the warning-first/no-promotion stance defers (same hold-back as `check-generated-files`). |
+| F2 | Minor | Not listed in README `## 명령` | **Accepted.** Added a route cross-check command block next to the generated-views (route-tree/nav-graph) entries. |
+| F3 | Cosmetic | Top-level `docs` JSON field is `process.cwd()`-relative (cross-drive could be absolute) | **Accepted as a claim fix, not a code change.** The `docs` field intentionally matches the `check-generated-files` `toPosixRel` sibling convention; *findings* are always `docsDir`-relative. Scoped the determinism claim to findings for accuracy. |
+| F4 | Cosmetic | `tree_route_count: 0` hardcoded in skip payload | **Accepted.** The tree is now parsed whenever the file exists, so `tree_route_count` is honest even on skip (no contradiction with `route_tree_found: true`). Added a regression assertion. |
+| F5 | Design tension (not a defect) | Two route cross-checks: check 13 (in validate) vs this standalone tool | **Recorded, no code change.** They are complementary (different inputs — Result/Target vs frontmatter route — completing the triangle's last edge), and the in-validate vs standalone asymmetry is the intended product of OD-4 (§10(10b): keep validate dependency-light). Added a cross-reference comment in the lib header; future unification noted as a follow-up. |
 
 ## Verification (Windows, green)
 

@@ -22,6 +22,12 @@
 //
 // 이 모듈은 순수 로직 + 얕은 IO(산출물 읽기)만 한다. 출력/exit 는 CLI(scripts/route-cross-check.mjs).
 // 첫 슬라이스는 route 차원만 — nav 차원(navigation-map drift)·codegen output↔docs 차원은 후속(§11b·§17).
+//
+// 상보 관계: validate 검사 13(interactionMatrixV2Issues, route-core.mjs:484)은 이미 Interaction Matrix v2
+//   Target ↔ route-tree 를 validate 내부 경고로 교차검증한다. 이 도구는 입력이 다른 frontmatter route ↔
+//   route-tree 변을 별도 standalone 으로 채운다(삼각형 {Result/Target}↔{frontmatter route}↔{route-tree}
+//   의 마지막 변 — 실제 갭 메움, 중복 아님). "한쪽은 validate 안, 한쪽은 독립 도구" 비대칭은 OD-4 사람
+//   결정(§10(10b): validate 를 무의존 contract 게이트로 유지)의 산물 — 향후 통합 여지로만 기록.
 import path from 'node:path';
 import { findFiles, readFileSafe, exists } from './util.mjs';
 import { loadScreenSpec } from './spec.mjs';
@@ -60,6 +66,11 @@ function collectSpecRoutes(docsDir) {
 export function analyzeRouteCrossCheck({ docsDir }) {
   const routeTreeFile = path.join(docsDir, '_meta', 'route-tree.txt');
   const routeTreeFound = exists(routeTreeFile);
+  // route-tree 토큰은 파일이 있으면 항상 파싱한다 — skip 케이스에도 tree_route_count 를 정직하게 보고하기
+  // 위해(route_tree_found:true 옆에 하드코딩 0 을 박지 않는다). 파일이 없으면 빈 집합(=0).
+  const treeRouteSet = routeTreeFound
+    ? parseRouteTreeRouteTokens(readFileSafe(routeTreeFile))
+    : new Set();
   const { count: screenSpecCount, routeToFiles } = collectSpecRoutes(docsDir);
 
   const base = {
@@ -81,14 +92,13 @@ export function analyzeRouteCrossCheck({ docsDir }) {
       skipped: true,
       skip_reason: reason,
       spec_route_count: routeToFiles.size,
-      tree_route_count: 0,
+      tree_route_count: treeRouteSet.size,
       spec_not_in_tree: [],
       tree_not_in_spec: [],
       warning_count: 0,
     };
   }
 
-  const treeRouteSet = parseRouteTreeRouteTokens(readFileSafe(routeTreeFile));
   const specRouteSet = new Set(routeToFiles.keys());
 
   // 방향 1: ScreenSpec route 인데 route-tree 에 없음 — 선언했는데 트리에 없음(drift/오타 신호, 더 강함).

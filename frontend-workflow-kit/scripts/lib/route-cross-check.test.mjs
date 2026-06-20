@@ -168,13 +168,16 @@ test('route-tree.txt 부재 → 조용히 skip (크래시 없음, 경고 0)', ()
   );
 });
 
-test('screen-spec 0건 → 조용히 skip', () => {
-  withDocs({ treeRoutes: ['/'], specs: [] }, (docsDir) => {
+test('screen-spec 0건 → 조용히 skip (route-tree 존재 시 tree_route_count 는 정직하게 보고)', () => {
+  withDocs({ treeRoutes: ['/', '/(tabs)/home'], specs: [] }, (docsDir) => {
     const r = analyzeRouteCrossCheck({ docsDir });
     assert.equal(r.skipped, true);
     assert.equal(r.screen_spec_count, 0);
     assert.match(r.skip_reason, /screen-spec/);
     assert.equal(r.warning_count, 0);
+    // skip 이어도 route-tree 가 존재하면 실제 토큰 수를 보고한다(하드코딩 0 아님).
+    assert.equal(r.route_tree_found, true);
+    assert.equal(r.tree_route_count, 2);
   });
 });
 

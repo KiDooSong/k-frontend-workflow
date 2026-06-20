@@ -109,6 +109,10 @@ npm run example:test                                             # golden fixtur
 npm run workflow:route-tree   # src/app 트리 → _meta/route-tree.txt (결정적·멱등)
 npm run workflow:nav-graph    # screen-spec Interaction Matrix + navigation-map → _meta/nav-graph.yaml
 
+# Tier2 route cross-check (warning-first — ScreenSpec route ↔ route-tree.txt EXACT 교차검증, 항상 exit 0; validate/nav-graph/route-tree 비결합):
+npm run workflow:route-cross-check                       # 기본 docs/frontend-workflow (route-tree/screen-spec 부재 시 조용히 skip)
+node scripts/route-cross-check.mjs --docs <dir> --json   # 기계가독 JSON 리포트(stdout); 사람-읽기 경고는 stderr
+
 # MVP-B lint-pack PR-2 생성기 (deterministic eslint flat-config fragment; CI 에서는 warning-only --check):
 npm run workflow:lint-gen                          # 킷 예제 fixture 재생성 (examples/lint-gen/basic-policy/)
 node scripts/lint-gen.mjs --docs <dir> --check     # 소비 프로젝트: lint-policy.yaml → eslint.workflow.config.mjs drift 검사
