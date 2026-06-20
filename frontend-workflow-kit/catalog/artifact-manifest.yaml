@@ -143,6 +143,12 @@ artifacts:
   #   source: [...]          — 파생 입력(정본). 생성기가 이걸 읽어 산출물을 만든다.
   #   command: npm run ...   — 재생성 명령.
   #   path: ...              — 산출 파일 경로.
+  #   outputs: [...]         — codegen 전용 다중 산출물 표현. 기존 단일 path 계약을 깨지
+  #                            않기 위해 일반 생성물은 path 를 유지하고, codegen artifact 만
+  #                            하나의 artifact 아래 outputs[] 로 여러 파일 패턴을 나열한다.
+  #                            generated ownership 은 "manifest-listed outputs + GENERATED
+  #                            header/marker" 의 교집합이다. 따라서 같은 hook 경로에 있는
+  #                            사람이 쓴 파일(헤더 없음)은 stale output 으로 보지 않는다.
   #   status: active|planned — 생성기(command)가 구현됐는가.
   #                            active  = 스크립트 존재·실행 가능.
   #                            planned = 스크립트 미존재. 계약만 등록한 것이지 구현이 아니다.
@@ -232,6 +238,29 @@ artifacts:
     do_not_edit: true
     status: active
     mvp: C
+
+  # codegen-openapi-client (Tier2 codegen) — OpenAPI schema 에서 deterministic TS client/hook
+  # 파일들을 파생한다. 단일 path artifact 가 아니라 하나의 artifact 가 outputs[] 로 다중
+  # 산출물을 표현한다(OD-6 결정). 출력 경로는 새 api_generated role 없이 기존 roles.api_client
+  # / roles.hook 표면을 쓴다(OD-5 결정). hook 은 domain-scoped 경로를 유지한다(OD-7 결정).
+  # check-generated-files 의 focused advisory target 만 소비한다. validate/readiness/nav-graph 는
+  # codegen adapter 를 직접 소비하지 않으며, CI/hard gate/required check/--enforce 승격도 없다.
+  codegen-openapi-client:
+    kind: generated
+    generated: true
+    scope: api
+    outputs:
+      - path: src/api/generated/*.client.ts
+        role: api_client
+      - path: src/features/{domain}/hooks/*.ts
+        role: hook
+    command: node scripts/check-generated-files.mjs --artifact codegen-openapi-client --src examples/codegen-adapter/openapi-client/src
+    source:
+      - src/api/schemas/**
+    do_not_edit: true
+    status: active
+    mvp: C
+    guard: focused-advisory
 
   # eslint.workflow.config (MVP-B, lint-pack) — docs/frontend-workflow/_meta/lint-policy.yaml 에서
   # lint-gen.mjs 가 합성.

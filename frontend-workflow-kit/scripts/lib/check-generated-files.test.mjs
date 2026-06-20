@@ -40,6 +40,7 @@ const CODEGEN_OUTPUTS = [
   'src/features/coupons/hooks/useListCouponsQuery.ts',
   'src/features/coupons/hooks/useRedeemCouponMutation.ts',
 ];
+const MANIFEST = loadYaml(DEFAULTS.manifest);
 
 // 합성 manifest — 분류 분기를 모두 덮는다(실제 manifest 와 독립적인 결정적 입력).
 const SYNTH = {
@@ -130,11 +131,15 @@ test('selectArtifactIds: v1 전체 / v1 하나 / 비-v1', () => {
   ]);
 });
 
-test('discoverCodegenTargets: focused target is selected without manifest registration', () => {
-  const targets = discoverCodegenTargets({ ids: ['codegen-openapi-client'] });
+test('discoverCodegenTargets: focused target reflects manifest-listed outputs', () => {
+  const targets = discoverCodegenTargets({ ids: ['codegen-openapi-client'], manifest: MANIFEST });
   assert.equal(targets.length, 1);
   assert.equal(targets[0].id, 'codegen-openapi-client');
   assert.equal(targets[0].selected, true);
+  assert.deepEqual(
+    targets[0].outputs.map((output) => output.path),
+    ['src/api/generated/*.client.ts', 'src/features/{domain}/hooks/*.ts'],
+  );
   assert.deepEqual(targets[0].skip_reasons, []);
 });
 
@@ -145,7 +150,7 @@ test('discoverArtifacts: 빈/이상 manifest 도 안전(빈 배열)', () => {
 });
 
 test('discoverArtifacts: 실제 artifact-manifest.yaml 분류가 v1 규약과 일치', () => {
-  const manifest = loadYaml(DEFAULTS.manifest);
+  const manifest = MANIFEST;
   assert.ok(manifest && manifest.artifacts, '번들 manifest 로드');
   const byId = Object.fromEntries(discoverArtifacts(manifest).map((a) => [a.id, a]));
   // v1 대상은 selected
@@ -156,6 +161,13 @@ test('discoverArtifacts: 실제 artifact-manifest.yaml 분류가 v1 규약과 �
   // eslint-workflow-config: 여전히 planned(생성기 미존재) → skip(planned)
   assert.equal(byId['eslint-workflow-config'].selected, false);
   assert.match(byId['eslint-workflow-config'].skip_reasons[0], /planned/);
+  // codegen 은 manifest 에 outputs[] 로 등록됐지만 기본 v1 전체 대상은 아니다.
+  assert.equal(byId['codegen-openapi-client'].selected, false);
+  assert.equal(byId['codegen-openapi-client'].path, null);
+  assert.deepEqual(
+    byId['codegen-openapi-client'].outputs.map((output) => output.path),
+    ['src/api/generated/*.client.ts', 'src/features/{domain}/hooks/*.ts'],
+  );
   // active+lock 이지만 비-v1
   assert.equal(byId['workflow-state'].selected, false);
   assert.equal(byId['screen-inventory'].selected, false);
@@ -202,7 +214,7 @@ test('reproduceArtifact: component-catalog 픽스처가 커밋본을 재현(ok)'
 });
 
 test('reproduceArtifact: codegen openapi-client fixture reproduces multi-output client/hooks in stable order', () => {
-  const r = reproduceArtifact('codegen-openapi-client', { srcDir: CODEGEN_SRC });
+  const r = reproduceArtifact('codegen-openapi-client', { srcDir: CODEGEN_SRC, manifest: MANIFEST });
   assert.equal(r.status, 'ok', JSON.stringify(r.checks));
   assert.deepEqual(r.files, CODEGEN_OUTPUTS);
   assert.ok(r.checks.some((c) => c.check === 'CG:discover' && c.ok));
@@ -216,7 +228,7 @@ test('reproduceArtifact: codegen output tamper is reported as mismatch without r
     fs.cpSync(CODEGEN_FIXTURE, tmp, { recursive: true });
     const tampered = path.join(tmp, 'src', 'features', 'coupons', 'hooks', 'useListCouponsQuery.ts');
     fs.appendFileSync(tampered, '\n// tampered codegen output\n', 'utf8');
-    const r = reproduceArtifact('codegen-openapi-client', { srcDir: path.join(tmp, 'src') });
+    const r = reproduceArtifact('codegen-openapi-client', { srcDir: path.join(tmp, 'src'), manifest: MANIFEST });
     assert.equal(r.status, 'mismatch', JSON.stringify(r.checks));
     assert.deepEqual(r.files, CODEGEN_OUTPUTS);
     assert.ok(r.checks.some((c) => c.check === 'CG:content' && !c.ok && /different/.test(c.message)));
@@ -230,7 +242,7 @@ test('reproduceArtifact: missing codegen output is reported as missing-committed
   try {
     fs.cpSync(CODEGEN_FIXTURE, tmp, { recursive: true });
     fs.rmSync(path.join(tmp, 'src', 'api', 'generated', 'redeemCoupon.client.ts'));
-    const r = reproduceArtifact('codegen-openapi-client', { srcDir: path.join(tmp, 'src') });
+    const r = reproduceArtifact('codegen-openapi-client', { srcDir: path.join(tmp, 'src'), manifest: MANIFEST });
     assert.equal(r.status, 'missing-committed', JSON.stringify(r.checks));
     assert.deepEqual(r.files, CODEGEN_OUTPUTS);
     assert.ok(r.checks.some((c) => c.check === 'CG:content' && !c.ok && /missing/.test(c.message)));
@@ -245,10 +257,10 @@ test('reproduceArtifact: stale extra codegen client output is reported as mismat
     fs.cpSync(CODEGEN_FIXTURE, tmp, { recursive: true });
     fs.writeFileSync(
       path.join(tmp, 'src', 'api', 'generated', 'staleCoupon.client.ts'),
-      '// stale generated client\n',
+      '// GENERATED FILE - DO NOT EDIT\n// stale generated client\n',
       'utf8',
     );
-    const r = reproduceArtifact('codegen-openapi-client', { srcDir: path.join(tmp, 'src') });
+    const r = reproduceArtifact('codegen-openapi-client', { srcDir: path.join(tmp, 'src'), manifest: MANIFEST });
     assert.equal(r.status, 'mismatch', JSON.stringify(r.checks));
     assert.deepEqual(r.files, CODEGEN_OUTPUTS);
     assert.ok(
@@ -265,15 +277,33 @@ test('reproduceArtifact: stale extra codegen hook output is reported as mismatch
     fs.cpSync(CODEGEN_FIXTURE, tmp, { recursive: true });
     fs.writeFileSync(
       path.join(tmp, 'src', 'features', 'coupons', 'hooks', 'useStaleCouponQuery.ts'),
-      '// stale generated hook\n',
+      '// GENERATED FILE - DO NOT EDIT\n// stale generated hook\n',
       'utf8',
     );
-    const r = reproduceArtifact('codegen-openapi-client', { srcDir: path.join(tmp, 'src') });
+    const r = reproduceArtifact('codegen-openapi-client', { srcDir: path.join(tmp, 'src'), manifest: MANIFEST });
     assert.equal(r.status, 'mismatch', JSON.stringify(r.checks));
     assert.deepEqual(r.files, CODEGEN_OUTPUTS);
     assert.ok(
       r.checks.some((c) => c.check === 'CG:stale' && !c.ok && /useStaleCouponQuery\.ts/.test(c.message)),
     );
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('reproduceArtifact: hand-written hook under codegen output pattern is not stale-owned', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cgf-codegen-hand-hook-'));
+  try {
+    fs.cpSync(CODEGEN_FIXTURE, tmp, { recursive: true });
+    fs.writeFileSync(
+      path.join(tmp, 'src', 'features', 'coupons', 'hooks', 'useHandWrittenCoupon.ts'),
+      'export function useHandWrittenCoupon() {\n  return null;\n}\n',
+      'utf8',
+    );
+    const r = reproduceArtifact('codegen-openapi-client', { srcDir: path.join(tmp, 'src'), manifest: MANIFEST });
+    assert.equal(r.status, 'ok', JSON.stringify(r.checks));
+    assert.deepEqual(r.files, CODEGEN_OUTPUTS);
+    assert.ok(r.checks.some((c) => c.check === 'CG:stale' && c.ok));
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

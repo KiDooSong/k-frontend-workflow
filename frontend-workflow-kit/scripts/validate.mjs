@@ -94,6 +94,82 @@ function manifestPathRegex(pattern) {
   return new RegExp('^' + withVars + '$');
 }
 
+const GENERATED_HEADER_RE = /GENERATED FILE\s+(?:—|-)\s+DO NOT EDIT/;
+const GENERATED_HEADER_HINT_RE = /GENERATED FILE/i;
+
+function globRoot(pattern) {
+  const parts = String(pattern).replace(/\\/g, '/').split('/');
+  const root = [];
+  for (const part of parts) {
+    if (!part || /[*?\[\]{}]/.test(part)) break;
+    root.push(part);
+  }
+  return root.join('/');
+}
+
+function globToRegExp(pattern) {
+  const raw = String(pattern).replace(/\\/g, '/');
+  let out = '^';
+  for (let i = 0; i < raw.length; i += 1) {
+    const ch = raw[i];
+    const next = raw[i + 1];
+    if (ch === '*') {
+      if (next === '*') {
+        out += '.*';
+        i += 1;
+      } else {
+        out += '[^/]*';
+      }
+    } else if (ch === '?') {
+      out += '[^/]';
+    } else if (ch === '{') {
+      // 규약: `{...}` 는 `{domain}` 류의 단일-세그먼트 placeholder 전용 — `[^/]+` 로 처리한다.
+      // 실제 brace-alternation(`{a,b}`)은 지원하지 않는다(manifest 글롭은 kit 이 작성).
+      const end = raw.indexOf('}', i + 1);
+      if (end !== -1) {
+        out += '[^/]+';
+        i = end;
+      } else {
+        out += '\\{';
+      }
+    } else {
+      out += ch.replace(/[\\^$+?.()|[\]]/g, '\\$&');
+    }
+  }
+  return new RegExp(out + '$');
+}
+
+function resolveManifestPath(pattern, { docsDir, projectRoot }) {
+  const normalized = String(pattern).replace(/\\/g, '/');
+  if (normalized.startsWith('docs/frontend-workflow/')) {
+    return path.join(docsDir, normalized.replace(/^docs\/frontend-workflow\//, ''));
+  }
+  return path.join(projectRoot, normalized);
+}
+
+function manifestOutputs(entry) {
+  if (!Array.isArray(entry.outputs)) return [];
+  return entry.outputs
+    .map((output) => {
+      if (typeof output === 'string') return output;
+      if (output && typeof output === 'object' && typeof output.path === 'string') return output.path;
+      return null;
+    })
+    .filter(Boolean);
+}
+
+function generatedOutputFiles(pattern, { projectRoot }) {
+  const normalized = String(pattern).replace(/\\/g, '/');
+  const rootRel = globRoot(normalized);
+  const matcher = globToRegExp(normalized);
+  const rootAbs = rootRel ? path.join(projectRoot, ...rootRel.split('/')) : projectRoot;
+  return walkFiles(rootAbs)
+    .filter((file) => {
+      const rel = toPosix(path.relative(projectRoot, file));
+      return matcher.test(rel);
+    });
+}
+
 // depends_on 대상이 실제로 존재하는지. manifest 키면 concrete 경로(placeholder 없음)일 때 파일 존재 요구.
 function dependencyResolves(dep, { knownArtifactIds, manifest, docsDir }) {
   if (knownArtifactIds.has(dep)) return true; // 로드된 문서의 artifact_id → 파일 존재함
@@ -150,11 +226,11 @@ function main() {
 
   const errors = [];
   const add = (check, file, message) =>
-    errors.push({ check, file: path.relative(projectRoot, file), message });
+    errors.push({ check, file: toPosix(path.relative(projectRoot, file)), message });
   // 경고: exit code 에 영향 없는 약한 권장(현재 resolved→Options 선택값). open-decisions.md 의 "약하게 시작".
   const warnings = [];
   const warn = (check, file, message) =>
-    warnings.push({ check, file: path.relative(projectRoot, file), message });
+    warnings.push({ check, file: toPosix(path.relative(projectRoot, file)), message });
 
   // --- authoring 문서 수집 (docs/ 하위, _meta 제외) ---
   const mdFiles = walkFiles(docsDir, ['.md']).filter(
@@ -470,13 +546,22 @@ function main() {
   // --- 6. do_not_edit 생성물 헤더/마커 무결성 ---
   for (const [name, entry] of Object.entries(manifest.artifacts || {})) {
     if (entry.kind !== 'generated' || entry.do_not_edit !== true) continue;
-    // manifest path 는 docs/frontend-workflow/... 기준. docsDir 로 매핑.
-    const rel = entry.path.replace(/^docs\/frontend-workflow\//, '');
-    const full = path.join(docsDir, rel);
-    if (!exists(full)) continue; // 아직 생성 전이면 건너뜀
-    const head = (readFileSafe(full) || '').slice(0, 400);
-    if (!/GENERATED FILE\s+—\s+DO NOT EDIT/.test(head)) {
-      add(6, full, `생성물(${name})의 GENERATED 헤더 훼손/부재`);
+    const generatedPaths = [];
+    if (typeof entry.path === 'string' && entry.path) {
+      generatedPaths.push({ file: resolveManifestPath(entry.path, { docsDir, projectRoot }), requireHeader: true });
+    }
+    for (const pattern of manifestOutputs(entry)) {
+      for (const file of generatedOutputFiles(pattern, { projectRoot })) {
+        generatedPaths.push({ file, requireHeader: false });
+      }
+    }
+    for (const { file, requireHeader } of generatedPaths) {
+      if (!exists(file)) continue; // 아직 생성 전이면 건너뜀
+      const head = (readFileSafe(file) || '').slice(0, 400);
+      if (!requireHeader && !GENERATED_HEADER_HINT_RE.test(head)) continue;
+      if (!GENERATED_HEADER_RE.test(head)) {
+        add(6, file, `생성물(${name})의 GENERATED 헤더 훼손/부재`);
+      }
     }
   }
 
