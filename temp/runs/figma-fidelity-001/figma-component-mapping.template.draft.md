@@ -1,48 +1,46 @@
-<!--
-  ════════════════════════════════════════════════════════════════════════════
-  DRAFT 템플릿 (figma-fidelity-001 산출) — 킷 정본 아님.
-  figma-fidelity-001 의 L010 + J020(3화면) 추출·구현·검증에서 얻은 학습으로
-  기존 templates/screen/figma-component-mapping.template.md 를 "화면별 시각 계약"으로
-  정식화한 제안. 킷 templates/ 로의 승격은 사람-승인 Open Decision 으로(킷 규율).
-
-  ── 추출 산출물 3계층 (이 문서가 떠받치는 모델) ──────────────────────────────
-  1. Raw     : node.rest.json     — REST 원본(6~10k줄). **아카이브, 아무도 안 읽음.**
-               gitignore + extract-raw.mjs + file_key/node 로 재생성(재현성은 스크립트에서).
-  2. Facts   : implementation-facts.json — distill(instance에서 가지치기 + 토큰 해소).
-               **기계 인터페이스** — 구현자가 실제로 읽는 단일 입력. 정본 유지.
-  3. Contract: 이 문서(figma-component-mapping) — **사람 계약**. 토큰 ID·출처마커·override 로그.
-
-  ── 경계 (기존 유지) ─────────────────────────────────────────────────────────
-  - 비즈니스 동작 = ScreenSpec(단일 출처). 여기엔 안 적는다("어떻게 보이나"만).
-  - 컴포넌트 정본(존재·props) = 전역 component-catalog. 갭은 component-gap-register(G-xxx).
-  - 값은 토큰 ID. 토큰 없는 값은 `raw` 명시. 데이터가 틀려 override 한 건 ## Data Corrections 에.
-  - 표 헤더는 바꾸지 않는다.
-  ════════════════════════════════════════════════════════════════════════════
--->
 ---
 artifact_id: "{SCREEN_ID}-figma-component-mapping"
-artifact_type: figma-component-mapping     # per-screen(화면당 1개). 전역 컴포넌트 정본 = design/component-catalog.md
+artifact_type: figma-component-mapping
 domain: "{domain}"
 screen_id: "{SCREEN_ID}"
-status: draft                              # missing|draft|review|confirmed|implemented|verified (confirmed 승격=사람만)
-mode: light                               # 추출 모드(현재 light only). 다크/멀티모드는 후속.
+status: draft             # 문서 라이프사이클: missing|draft|review|confirmed|implemented|verified|deprecated (confirmed 승격은 사람만)
 sources:
-  - { type: figma, ref: "{frame name} / node {node-id}" }
-figma:
-  file_key: "{FILE_KEY}"                  # ★ REST 재호출 필수 (L010 누락 교훈). figma.com/design/<KEY>/...
-  node: "{node-id}"
-facts: "{rel path}/implementation-facts.json"   # ★ 기계 인터페이스(REST distill). raw(node.rest.json)은 gitignore·재생성.
-baseline: "{rel path}/baseline.png"
+  - { type: figma, ref: "file {FILE_KEY} / {frame name} / node {node-id}" }   # ref 에 file_key 포함(REST 재호출용). 비표준 frontmatter 필드 금지 — ref 는 여기와 본문 Frame 절에만. 여러 프레임(모달/상태 오버레이 포함)이면 줄 추가.
 last_reviewed: "{YYYY-MM-DD}"
-# status: confirmed 승격 시에만 사람이 추가: approved_by / approved_at / decision_id
+# status: confirmed 로 승격할 때만 사람이 추가 (LLM 승격 금지):
+#   approved_by / approved_at / decision_id
 ---
+
+<!--
+  ════════════════════════════════════════════════════════════════════════════
+  DRAFT 템플릿 (figma-fidelity-001 산출) — 킷 정본 아님. 승격은 사람-승인 Open Decision.
+  figma-fidelity-001 의 L010 + J020(3화면) 추출·구현·검증 학습으로 기존
+  templates/screen/figma-component-mapping.template.md 를 "화면별 시각 계약"으로 정식화한 제안.
+
+  경계 (기존 유지):
+  - 비즈니스 동작 = ScreenSpec(단일 출처). 여기엔 안 적는다("어떻게 보이나"만).
+  - 컴포넌트 존재/props = 전역 component-catalog. 갭은 component-gap-register(G-xxx).
+  - 값은 토큰 ID. 토큰 없는 값은 `raw` 명시. 데이터가 틀려 override 한 칸은 ## Data Corrections 에.
+  - 비표준 frontmatter 필드 금지(figma_frame_ref 등). file_key 는 sources ref + 본문 Frame 절에.
+  - 표 헤더는 바꾸지 않는다 — Component Mapping 은 기존 4컬럼 유지(variant/props 는 비고로).
+
+  추출 산출물 3계층 (이 문서가 떠받치는 모델):
+  1. Raw     : node.rest.json (REST 원본 6~10k줄) — 아카이브, 아무도 안 읽음.
+               gitignore + extract-raw.mjs + file_key/node 로 재생성(재현성은 스크립트에서).
+  2. Facts   : implementation-facts.json (distill: instance 가지치기 + 토큰 해소) — 기계 인터페이스. 정본.
+  3. Contract: 이 문서 — 사람 계약(토큰 ID·출처마커·override 로그).
+
+  주: 현 worked example(J020 3종 figma-component-mapping)은 이 정식화 이전 작성 —
+      ## Data Corrections 섹션 retrofit 예정(구현보고 §4 가 출처).
+  ════════════════════════════════════════════════════════════════════════════
+-->
 
 # Figma Component Mapping (화면별 시각 계약): {화면 이름}
 
-> 시각=Figma(이 문서), 동작=ScreenSpec(단일 출처), 컴포넌트 정본=component-catalog(전역).
+> 시각=Figma(이 문서), 동작=ScreenSpec(단일 출처), 컴포넌트 존재=component-catalog(전역).
 > 값은 **토큰 ID**(또는 `raw` 명시). 데이터가 틀려 다르게 구현한 칸은 `## Data Corrections`.
 
-## 출처 범례 (Provenance) — 모든 값 칸에 마커 1개
+## 출처 범례 (Provenance) — 값/토큰 칸마다 마커 1개
 - `✔`  get_variable_defs(used-variables) 직접 — 토큰명 신뢰
 - `✔R` **REST node 정확값**(facts: itemSpacing·padding·layoutMode·layoutSizing·cornerRadius·characters·componentProperties)
 - `◎`  DS 컴포넌트 계약 내부값(화면 추출 아님 — component-catalog 소관)
@@ -50,23 +48,30 @@ last_reviewed: "{YYYY-MM-DD}"
 - `⚠`  추론/리터럴/미해결 → `## Gaps` 또는 `## Data Corrections`
 
 ## Frame
-- {frame name} / node `{node-id}` · {W}×{H} · {mode}
+- {frame name} / node `{node-id}` · {W}×{H} · mode: {light}
+- (모달/오버레이 상태가 있으면 줄 추가) {modal frame name} / node `{modal-node-id}` — `## Visual Spec — Modal` 참조
+- file_key: `{FILE_KEY}`   <!-- ★ REST 재호출 필수(L010 누락 교훈). figma.com/design/<KEY>/... -->
 
 ## Component Mapping
-<!-- "어떤 Figma 노드 = 어떤 카탈로그 컴포넌트". 미보유는 (G-xxx, component-gap-register). -->
-| Figma Node | UI 요소 | 컴포넌트 import | variant/props | 비고 |
-|---|---|---|---|---|
-| {node} | {UI 요소} | {components/ui/Xxx 또는 features/{domain}/components/Xxx} | {size=lg · state=default · …} | {(G-xxx) 등} |
+<!-- "어떤 Figma 노드 = 어떤 카탈로그 컴포넌트". 4컬럼 고정. variant/props·미보유(G-xxx)는 비고. -->
+| Figma Frame / Node | UI 요소 | 매핑 컴포넌트 | 비고 |
+|---|---|---|---|
+| {frame} / {node} | {UI 요소} | {components/ui/Xxx 또는 features/{domain}/components/Xxx} | {variant/props: size=lg·state=default … · 카탈로그 미보유면 (G-xxx)} |
 
 ## Visual Spec
-<!-- 노드별 auto-layout/토큰. 값 = 토큰 ID + 출처마커. 토큰 없으면 `raw`. 컴포넌트 내부는 ◎(여기 미지정). -->
+<!-- 노드별 auto-layout/토큰. 값 = 토큰 ID + 출처마커. 토큰 없으면 `raw N`. 컴포넌트 내부 스타일은 ◎(여기 미지정). -->
 | Section/Node | direction | gap | padding | align/justify | sizing | color | type |
 |---|---|---|---|---|---|---|---|
-| {Section/Node} | row/column | `space.N`(px) ✔R · 또는 `raw N` | t/r/b/l ✔R | justify / align ✔R | FILL/HUG/FIXED ✔R · `radius.*` | `color.*` ✔ | `type.*` ✔ |
+| {Section/Node} | column ✔R | `spacing/p-N`(px) ✔R · 또는 `raw N` ✔R | t/r/b/l ✔R | justify / align ✔R | FILL/HUG/FIXED ✔R · `radius/md` ✔ | `background/normal` ✔ | `heading-lg` ✔ |
 
-## Data Corrections / Override Log   ★ (신설)
+<!-- 모달/오버레이가 있으면 별도 표:
+## Visual Spec — Modal ({modal node})
+| Section/Node | direction | gap | padding | align/justify | sizing | color | type |
+... -->
+
+## Data Corrections / Override Log
 <!-- 소스(Figma/facts/컴포넌트 문서)가 틀렸거나 신뢰 불가해 **다르게 구현**한 칸 + 근거.
-     ScreenSpec 의 Open Decisions 에 대응하는 시각 축 장치. 빈 표라도 둔다(검토했음의 증거). -->
+     ScreenSpec 의 Open Decisions 에 대응하는 시각 축 장치. 없으면 빈 표 유지(검토했음의 증거). -->
 | 항목 | 소스가 말한 것 | 실제 · 근거 | 구현 결정 / 후속 |
 |---|---|---|---|
 | {예: 모달 이어하기} | variant=danger + fill #2563eb | 긍정 액션=primary 의도 · #2563eb 비토큰 | color=primary 구현 · Figma variant 수정 요청 |
@@ -83,6 +88,6 @@ last_reviewed: "{YYYY-MM-DD}"
 
 ## Cross-links
 - facts(기계 인터페이스): {rel}/implementation-facts.json
-- baseline: {rel}/baseline.png
+- baseline: {rel}/baseline.png  (모달 등 추가 프레임은 각 baseline 추가)
 - screen-spec(동작 단일출처): ./screen-spec.md
-- 추출 스크립트(재생성): temp/runs/figma-fidelity-001/extract-raw.mjs
+- 추출 스크립트(재생성): temp/runs/figma-fidelity-001/extract-raw.mjs  ※ 현재 **J020 파일럿용 하드코딩**(file_key·SECTION·targets·date) — 다른 run/screen 은 그 값들을 수정 후 사용
