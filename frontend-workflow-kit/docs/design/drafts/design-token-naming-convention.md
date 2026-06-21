@@ -10,7 +10,7 @@
 
 ## 0. 결론 요약 (한 화면)
 
-1. **네임스페이스 최소(필수) 5종**: `color` · `space` · `type` · `radius` · `shadow`\|`elevation`. **asset/icon 은 필수 세트에 없음**(킷이 토큰/경로 어느 쪽도 강제 안 함) — 경로면 `## Assets`, 토큰화하면 `icon.*`/`asset.*` 확장. 둘 다 1급(§2).
+1. **네임스페이스 최소(필수) 5종**: `color` · `space` · `type` · `radius` · `shadow`\|`elevation`. **에셋은 필수 세트에 없음**(킷이 토큰/경로 강제 안 함) — 경로면 `## Assets`, 토큰화하면 `asset.*`(아이콘 파일 `asset.icon.*`) 확장. bare `icon.*`/`border.*` 는 *색* 역할(틴트/보더색)이라 에셋과 구분(§2·§4.1). 둘 다 1급.
 2. **Visual Spec 8컬럼 매핑**: `gap`·`padding` → `space.*` / `color` → `color.*` / `type` → `type.*`. `radius.*` 는 **`sizing` 칸 inline**(컬럼 신설 안 함). `shadow`/`elevation` 은 **8컬럼 밖 optional**(inline 주석 또는 `## Notes`).
 3. **형식**: 정본 템플릿 예시처럼 semantic **head 생략형**(`bg.surface`·`title.md`)과 네임스페이스형(`space.4`·`radius.md`·`color.bg.surface`)을 함께 쓴다 — 일반 역할은 **내장 role-map**(§4.1)으로 dialect 없이 W1 분류, 레포 고유 역할·슬래시·`spacing`·유틸리티(`p-4`)는 dialect 로 흡수. 구분자 점(권장)/슬래시(허용). **atomic(원시 팔레트)→semantic(역할 alias) 2-tier 는 소비 레포 토큰 source 소유**(§4.6). **킷은 특정 DS 를 정본화하지 않는다.**
 4. **raw 허용**: 토큰 없는 값은 `raw N` 으로 명시하되 출처마커 `⚠` + `## Gaps / Open` 등록을 **요구/권장**(승격 경로).
@@ -50,8 +50,8 @@
 
 **확장(extension) — 필수 아님, 소비 레포 선언 시 허용:**
 
-- `icon` / `asset` — **소비 레포 선택(킷이 하드 결정하지 않음).** 에셋/아이콘을 *토큰으로* 다루면(아이콘-이름 레지스트리·Tokens Studio asset 토큰 등) `icon.*`/`asset.*` 를 §4.1 문법대로 쓰고, *경로로* 다루면 `## Assets`(path·format)에 적는다 — **둘 다 1급**. 최소 *필수* 5종에서 빠진 이유는 "에셋=비토큰"이 아니라, 색/간격/타이포/radius/shadow 는 거의 모든 DS 공통인데 **에셋 토큰화는 DS 마다 갈려 보편이 아니기** 때문이다([04 §1c](../../../../docs/research/figma-design/04-figma-mcp-rest-data-collection.md)·[03 3순위](../../../../docs/research/figma-design/03-gaps-and-path-to-95.md) 는 *경로 방식의 예시* 로 인용 — 강제 아님).
-- 기타 레포가 이미 가진 것(`size`/dimension, `opacity`, `z`/zIndex, `border`/width, `breakpoint` …) — 규약은 **금지하지 않되 요구하지도 않는다**. W1 은 선언된 확장 head 를 알고 있을 때만 통과시키고, 모르는 head 는 *경고*(에러 아님)한다(§5).
+- `asset` (아이콘 파일 `asset.icon.*`) — **소비 레포 선택(킷이 하드 결정하지 않음).** SVG/이미지 에셋을 *토큰으로* 다루면(레지스트리·Tokens Studio asset 토큰) `asset.*` 확장을 §4.1 문법대로 쓰고, *경로로* 다루면 `## Assets`(path·format)에 적는다 — **둘 다 1급**. ⚠ bare `icon.*`/`border.*` 는 **색 역할**(아이콘 *틴트*·보더 *색*; research [04](../../../../docs/research/figma-design/04-figma-mcp-rest-data-collection.md) 의 `icon/default/...` 색 precedent)이라 에셋 네임스페이스로 쓰지 않는다(충돌 회피 — §4.1 우선순위). 최소 *필수* 5종에서 빠진 이유는 "에셋=비토큰"이 아니라, 색/간격/타이포/radius/shadow 는 거의 모든 DS 공통인데 **에셋 토큰화는 DS 마다 갈려 보편이 아니기** 때문이다([03 3순위](../../../../docs/research/figma-design/03-gaps-and-path-to-95.md) 는 *경로 방식 예시*).
+- 기타 레포가 이미 가진 것(`size`/dimension, `opacity`, `z`/zIndex, `border-width`, `breakpoint` …) — 규약은 **금지하지 않되 요구하지도 않는다**. (bare `border.*` 는 색 역할이므로 보더 *두께* 는 `border-width.*` 등 구분된 head 로.) W1 은 선언된 확장 head 를 알 때만 분류 통과시키고, 분류 안 되는 head 는 *경고*(에러 아님)한다(§5).
 
 > **asset/icon 결론 — 중요한 하드 결정 아님:** 킷은 어느 쪽도 강제하지 않는다. 토큰화하면 `icon.*`/`asset.*`(확장 네임스페이스), 아니면 `## Assets` 경로 — **둘 다 흡수**. 최소 필수 5종은 *보편성* 기준이지 "에셋=비토큰" 선언이 아니다. (worked example 이 경로로 둔 건 급조판 사정일 뿐 — 토큰화한 DS 도 정상 흡수.)
 
@@ -110,7 +110,9 @@ SEP        := "."                          # 권장. 허용: "/" (Tokens Studio 
 
 - 문자: 소문자 `[a-z]`·숫자 `[0-9]`·세그먼트 내부 `-`. 공백·대문자·기타 문장부호는 권장 형식에서 제외.
 - head 는 **(a) 네임스페이스(§2) 직접**(`space.4`·`radius.md`·`color.bg.surface`) **또는 (b) semantic 역할**(head 생략형 `bg.surface`·`title.md`)이다. (b)는 아래 **내장 role-map** 또는 소비 레포 dialect 로 네임스페이스에 매핑된다.
-- **내장 role-map (킷 기본값 — 일반 역할일 뿐, 소비 레포가 dialect 로 확장/재정의 가능; 특정 DS·값 세트 아님):** 색 역할 `bg`·`background`·`surface`·`text`·`fg`·`foreground`·`border`·`icon` → `color`; 타이포 역할 `title`·`heading`·`body`·`label`·`caption` → `type`. 정본 템플릿 예시(`bg.surface`·`title.md`)가 이 map 으로 **dialect 없이도 분류**된다. (목록은 최소·일반 역할 예시 — 강제 세트도, 값도 아니다.)
+- **내장 role-map (킷 기본값 — 일반 역할일 뿐, 소비 레포가 dialect 로 확장/재정의 가능; 특정 DS·값 세트 아님):** 색 역할 `bg`·`background`·`surface`·`text`·`fg`·`foreground`·`border`·`icon` → `color`(`icon`=아이콘 *틴트* 색, `border`=보더 *색* — research 04 의 `icon/default/...` 색 precedent); 타이포 역할 `title`·`heading`·`body`·`label`·`caption` → `type`. 정본 템플릿 예시(`bg.surface`·`title.md`)가 이 map 으로 **dialect 없이도 분류**된다. (목록은 최소·일반 역할 예시 — 강제 세트도, 값도 아니다.)
+  - **충돌 회피:** 토큰화된 *에셋* 은 `asset.*`(아이콘 파일 `asset.icon.*`)로 적는다(§2) — bare `icon.*`/`border.*` 는 *색* 이므로 에셋과 겹치지 않는다.
+  - **우선순위:** 소비 레포 **dialect/확장 선언 > 내장 role-map**. 레포가 bare head 를 다르게 매핑하려면 dialect 로 선언하면 그 선언이 이긴다.
 - 이 문법이 **W1(형식 검사)의 근거**다(§5). 문법은 "ID 처럼 생겼나 + 어느 네임스페이스인가"만 본다 — 값/존재는 보지 않는다.
 
 ### 4.2 권장(canonical) form — 정본 템플릿 예시와 동일
@@ -219,7 +221,7 @@ token-dialect:
 | 규칙 | 본다 | 위반 시 |
 |---|---|---|
 | **W1-FORMAT** | 토큰 칸이 {§4.1 문법의 토큰 ID} \| {`raw <value>`} \| {placeholder `{...}`} \| (구조 칸) {알려진 enum} 중 하나인가 | warning |
-| **W1-NS** | head 가 (a) §2 네임스페이스 \| (b) 내장 role-map(§4.1) \| (c) 레포 dialect/확장 중 하나로 네임스페이스에 분류되나 | 분류 실패 → **info**("미분류 — 의도 시 dialect 선언"); 명백한 오타성 head 만 warning |
+| **W1-NS** | head 가 (a) §2 네임스페이스 \| (b) 내장 role-map(§4.1) \| (c) 레포 dialect/확장 중 하나로 분류되나. 우선순위 (c)>(b) | 분류 실패 → **warning**("미분류 head — 오타이거나 dialect 미선언"). info 는 W1-CANON(권장형 이탈)·명시적 provisional dialect head 에만 |
 | **W1-RAW** | `raw <value>` 칸이 `⚠` + `## Gaps / Open` 항목을 동반하는가 | warning *(formalization §6 W4 와 동일 관심사 — VS-3 에서 합치거나 정렬)* |
 | **W1-PLACEHOLDER** | `{...}` 는 pending 으로 통과(에러 아님) | info |
 | **W1-ENUM** | 구조 칸(direction/align·justify/sizing)은 enum 을 받음 — 토큰-형식 검사에서 **제외**(오탐 방지). 단 `sizing` 의 inline `radius.*` 는 토큰으로 함께 인식 | (오탐 방지 규칙) |
@@ -292,7 +294,7 @@ VS-3(warning-first validate) 슬롯이 *명시 지시* 와 함께 `continue-on-e
 | # | 규칙 | 의존 | 심각도 | 상태 |
 |---|---|---|---|---|
 | W1-FORMAT | 토큰 칸 = 토큰ID \| `raw N` \| `{placeholder}` \| (구조칸)enum | 문서만(킷 단독) | warning | future / VS-3 |
-| W1-NS | head → 네임스페이스 분류: §2 ns \| 내장 role-map(§4.1) \| dialect/확장 | 문서(+내장 map; 그밖 dialect) | info(미분류) | future / VS-3 |
+| W1-NS | head → 네임스페이스 분류: §2 ns \| 내장 role-map(§4.1) \| dialect/확장(우선) | 문서(+내장 map; 그밖 dialect) | warning(미분류) | future / VS-3 |
 | W1-RAW | `raw N` ↔ `⚠` + `## Gaps` 동반 | 문서만 | warning | future / VS-3 *(formalization W4 와 정렬/합치기)* |
 | W1-PLACEHOLDER | `{...}` = pending 통과 | 문서만 | info | future / VS-3 |
 | W1-ENUM | 구조 칸은 토큰-형식 검사 제외(오탐 방지); `sizing` inline `radius.*` 는 토큰 인식 | 문서만 | (규칙) | future / VS-3 |
