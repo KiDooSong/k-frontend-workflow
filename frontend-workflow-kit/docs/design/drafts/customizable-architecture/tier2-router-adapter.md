@@ -65,8 +65,9 @@
 이름은 로드시 같은 인터페이스로 정규화된다(`ResolvedOptions` 가 `resolver` 를 `PageResolver` 로 좁힘). [S1]
 
 → 킷의 커스터마이즈 파일 `project-layout.yaml` 의 `adapters.router` 를 정확히 이 모양으로. (이 파일은
-티어1 `roles`/`domains`(config)와 티어2 `adapters`(plugin 선택)를 **함께** 담는다 — 두 티어는 *메커니즘*
-구분이지 파일 구분이 아니다. README §1 의 노트 참고.)
+티어1 `roles`/`domains`(config)와 티어2 `adapters`(plugin 선택)를 **함께** 담는다 — *메커니즘* 구분이지
+파일 구분이 아니다. 이 문서는 티어1·2 범위만 다루며, 티어3 `layers` 도 같은 파일에 산다 — README §1 ·
+[tier3-layer-model.md](tier3-layer-model.md).)
 
 ```yaml
 # project-layout.yaml 의 일부 (roles = 티어1, adapters = 티어2 — 같은 파일)
