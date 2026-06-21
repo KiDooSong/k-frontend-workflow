@@ -42,6 +42,8 @@
 - **유보:** 소비 레포가 생성기를 쓸 때의 *멱등 + GENERATED 마커* 는 규약 문서에 **권고**로만 적고, 킷이 번들하지 않는다.
 - **전제:** VS-1(토큰 ID 칸 존재). 이 규약이 있어야 VS-3 의 W2(토큰 존재 검사)가 가능.
 - **다음 구체 액션:** VS-1 후, "design-token naming 규약" 드래프트.
+- **실행 업데이트(2026-06-21, branch `docs/vs2-design-token-naming`):** "design-token naming 규약" 드래프트 작성 → [design-token-naming-convention.md](design-token-naming-convention.md). 네임스페이스 최소 5종(color/space/type/radius/shadow\|elevation)·권장 vs 허용(소비 레포 dialect 흡수) 형식·`raw N` escape·**W1(형식)/W2(존재) 검사 분리** 정의. 결정(옵션 a) **불변**: 킷은 네이밍 규약만, 값/source/생성/검증은 소비 레포, 생성기·수집기 미번들. 규약은 **draft**(미-confirmed) — confirmed 승격·W2 hard gate 는 사람. VS-2 seed 는 deprecated. 정본 템플릿 patch 는 *제안만*(사람/오너 적용).
+  - **정합성 점검(소비 레포 worked example, figma-fidelity 파일럿):** 파일럿의 **atomic→semantic 2-tier**(DTCG 슬래시 경로 — atomic `color/<palette>/<step>` → semantic `<role>/<variant>` alias) + NativeWind 유틸(`bg-*`/`rounded-*`/`text-<type>`·spacing=Tailwind 수치) 방향과 **구조적 차이 없음**을 확인했다. 규약 §4.2(semantic head 생략형 = 정본 템플릿 예시)·§4.3(dialect: 슬래시·`spacing`·유틸리티 흡수)·§4.6(2-tier 명시, 무결성 검증은 소비 레포)로 반영. 특정 DS 값/세트는 정본화하지 않음.
 
 ## OD-VS-3 — warning-first visual spec validate · 수용: 옵션 (a)
 
@@ -68,7 +70,7 @@
 ```
 [done] PR69 머지 + Patch B(§3 교정)
    └─> [done·branch] VS-1 (정본 옵션 섹션화)  ← merge·`.draft` 제거(단계2)는 사람
-         └─> VS-2 (토큰 네이밍 규약, 소비-레포 소유)
+         └─> [draft·branch] VS-2 (토큰 네이밍 규약, 소비-레포 소유)  ← confirmed 승격은 사람
                └─> VS-3 (warning-only validate; W2 는 VS-2 후)
    VS-4 (비주얼 회귀 evidence) ── 병행 가능, 단 hard 게이트는 telemetry 후 별도 OD
 ```
@@ -86,6 +88,7 @@
 ## Cross-links
 
 - 출처 제안: [visual-spec-formalization](visual-spec-formalization.md) (§3 교정·§6 검사·§8 OD 후보)
+- VS-2 규약 드래프트: [design-token-naming-convention.md](design-token-naming-convention.md) (OD-VS-2 실행 산출물)
 - 정본 템플릿: [figma-component-mapping.template.md](../../../templates/screen/figma-component-mapping.template.md)
 - 정책(`figma_mapping_status`): [implementation-mode-policy.yaml](../../../policies/implementation-mode-policy.yaml)
 - 리서치: [figma-design](../../../../docs/research/figma-design/README.md) · 검증 도구 playwright 리서치(`docs/research/playwright/`, PR69 도입 예정)
