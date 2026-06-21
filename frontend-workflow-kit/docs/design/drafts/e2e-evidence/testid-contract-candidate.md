@@ -83,7 +83,8 @@ testID는 Generator / Playwright / Maestro가 **발명**하는 게 아니라, **
 ## E2E 앵커(testID) 네이밍
 - testID는 screen-spec이 선언하고 구현자가 심는 계약이다. Generator/E2E 도구는 소비만 — 임의 발명 금지.
 - 네이밍: `{screen}-{element}` · `{screen}-{action}` · 리스트 `{screen}-{entity}-item-{stableId}`
-  (stableId = 안정적 도메인 id, 배열 인덱스/위치 금지).
+  (screen 슬러그가 이미 엔티티 컬렉션을 가리키면 `{entity}` 생략 → `{screen}-item-{stableId}`.
+   stableId = 안정 도메인 id, 배열 인덱스/위치 금지).
 - 카피 텍스트를 testID로 쓰지 않는다(문구는 Copy Keys). testID는 접근성(role/label)을 대체하지 않는다 — 둘 다 둔다.
 ```
 
