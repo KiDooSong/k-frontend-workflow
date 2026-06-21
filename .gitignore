@@ -21,6 +21,14 @@ docs/frontend-workflow_viz/
 # git worktree (격리 작업용) — 본래 추적 대상 아님 (분석 보고서 P11)
 .claude/worktrees/
 
+# Figma PAT(개인 액세스 토큰) — 절대 커밋 금지 (origin 누락분 보강)
+figma-pat
+
+# figma-fidelity-001 실험: 회사 Figma 디자인 소스·카피·렌더가 임베드되어 전체 비추적(민감).
+# 추출물(disign-file·implementation-facts·baseline·node.rest.json)·화면 스펙(카피)·앱코드·
+# 리포트(file_key) 포함. 일반 분석은 docs/research/ 에, 정식 템플릿은 별도로 추적.
+temp/runs/figma-fidelity-001/
+
 # Expo/RN 실험 샌드박스(temp/runs/<run>/app/) — 소스는 추적, 생성·빌드 산출물만 제외
 temp/runs/*/app/node_modules/
 temp/runs/*/app/.expo/
@@ -30,5 +38,3 @@ temp/runs/*/app/web-build/
 # REST 추출 원본(node.rest.json, 6~10k줄) — 아카이브, 아무도 안 읽음. extract-raw.mjs + file_key/node 로 재생성.
 # 정본(기계 인터페이스)은 implementation-facts.json(추적 유지).
 temp/runs/**/node.rest.json
-
-figma-pat
