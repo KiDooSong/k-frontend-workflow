@@ -5,6 +5,7 @@
 > 이 문서는 결정을 **준비**한다. 게이트를 풀거나 정본(roadmap/policy)을 바꾸지 않는다 — resolve 후 사람이 roadmap 에 cross-link.
 > 근거 보고서(세션 산출, 이 브랜치에 vendored): [../reports/kit-multilayer-adoption-assessment-20260621.md](../reports/kit-multilayer-adoption-assessment-20260621.md) (멀티에이전트 조사 + 코드 실측).
 > 짝 설계 초안: [docs/design/drafts/customizable-architecture/tier3-layer-model.md](../../docs/design/drafts/customizable-architecture/tier3-layer-model.md).
+> 실측 검증(별도 PR #71 로 main 동봉): [다층 도입 dry-run](multilayer-adoption-dryrun/EXPERIMENT-REPORT.md) — 킷이 현재 Axis 2 를 게이트 못 함을 Clean Arch 6계층으로 실측 · [A안 blocker① 스파이크](axis2-a-blocker1-spike/SPIKE-REPORT.md) — blocker ① 실재하나 per-mode 행렬로 해결가능.
 
 ---
 
@@ -78,8 +79,8 @@
 
 | 항목 | 이전 분류 | 본 결정 후 |
 |---|---|---|
-| orphan 테스트 3종 CI 등록 | (신규 발견) | ✅ **완료** (이번 PR, commit `b5bc838`) |
-| validate cold-start 경고 (vacuous-green fail-open) | (신규 발견) | ✅ **완료** (이번 PR, warning-first) |
+| orphan 테스트 3종 CI 등록 | (신규 발견) | ✅ **완료** (별도 머지 — main `8919a6d`, PR #67) |
+| validate cold-start 경고 (vacuous-green fail-open) | (신규 발견) | ✅ **완료** (별도 머지 — main, PR #67, warning-first) |
 | catalog-gen `ui_primitive` 바인딩 | Top5 #3 | 🔄 **Axis 2 선결**로 흡수 (tier3 §8) |
 | doctor/preflict 오설정 탐지 | Top5 #4 | 🔄 Axis 2 선결 후보 (warning) |
 | adapt 온보딩 스킬 | Top5 #1 | ⏸ **Axis 2 이후로 보류** (바뀔 모델 위 온보딩 자동화는 헛수고) |
@@ -96,7 +97,7 @@
 
 ## 8. 다음 단계 / 재오픈 트리거
 
-1. (이번 PR) 도입 선결 버그 2건 완료 + tier3 설계 초안 동봉.
+1. 도입 선결 버그 2건은 **별도로 main 머지 완료**(PR #67, `8919a6d`). 이 PR 은 tier3 설계 초안 동봉 + 실측 증거 cross-link(PR #71).
 2. **사람 resolve**: 옵션 A/B/C 선택. A 면 roadmap 에 OD-12 cross-link + "지금 하지 말 것"에서 Axis 2 예외 명문화.
 3. resolve=A 시 → tier3 초안 리뷰(코덱스 포함) → 구현 OD(별도) → 구현(expo-feature byte-동치 회귀 기준).
 4. 재오픈 트리거: tier3 초안이 byte-동치 회귀를 깨거나, 실제 도입에서 N계층 모델의 결함이 드러나면.
@@ -105,7 +106,7 @@
 
 resolve=A(구현 착수) 전에 tier3 §10 에서 반드시 닫아야 한다 — 현재 tier3 설계는 그대로는 구현 불가:
 
-1. **비단조 allow/forbidden 표현력** — `edits_at` 단일 임계값이 "화면@api-integrated 차단(fake-hook 계약)" 같은 *열렸다 다시 잠김* 패턴을 표현 못 함 + `layers:` 에 forbidden 필드 부재 → §7/§11 byte-동치 주장과 자기모순.
+1. **비단조 allow/forbidden 표현력** — `edits_at` 단일 임계값이 "화면@api-integrated 차단(fake-hook 계약)" 같은 *열렸다 다시 잠김* 패턴을 표현 못 함 + `layers:` 에 forbidden 필드 부재 → §7/§11 byte-동치 주장과 자기모순. **사전검증(스파이크, PR #71): 실재 확인이며 과소평가였음** — 단일 `edits_at` 은 정책 role-derived 14셀 中 **10셀 불일치**(allowed_paths 가 본질적 비누적). **per-mode allow/forbid 행렬이면 byte-동치 회복(0 불일치) → 해결 가능, 단 §3 스키마를 `edits_at`→행렬로 교체 필요.** 상세: [SPIKE-REPORT](axis2-a-blocker1-spike/SPIKE-REPORT.md).
 2. **`layers` ↔ 정책 단일출처** — §5(layers 가 정책 합성) vs §11(정책 불변)의 충돌, 병합 규칙 미정.
 3. **"depth 축" 용어** — README "depth 축" 브랜딩 ↔ §4 "새 축 아님" 주장의 양다리, 표현 통일 필요.
 
@@ -116,6 +117,7 @@ resolve=A(구현 착수) 전에 tier3 §10 에서 반드시 닫아야 한다 —
 ## 증거 / 링크
 
 - 조사 보고서: [../reports/kit-multilayer-adoption-assessment-20260621.md](../reports/kit-multilayer-adoption-assessment-20260621.md) (세션, 멀티에이전트 + 코드 실측; 이 브랜치에 vendored)
+- **실측 검증 (PR #71, main 동봉):** [다층 도입 dry-run](multilayer-adoption-dryrun/EXPERIMENT-REPORT.md) (Clean Arch 6계층 → F1~F5 게이트 사각지대) · [A안 blocker① 스파이크](axis2-a-blocker1-spike/SPIKE-REPORT.md) (정책 재생성 diff — blocker ① 실재+해결가능)
 - 설계 초안: [tier3-layer-model.md](../../docs/design/drafts/customizable-architecture/tier3-layer-model.md)
 - 선례: [tier2-gate-promotion-decision-prep-001.md](tier2-gate-promotion-decision-prep-001.md) (OD-11 prep 형식)
 - 핵심 코드: `policies/implementation-mode-policy.yaml` · `scripts/lib/spec.mjs:308-318` · `presets/expo-feature.yaml` · `templates/meta/lint-policy.template.yaml`

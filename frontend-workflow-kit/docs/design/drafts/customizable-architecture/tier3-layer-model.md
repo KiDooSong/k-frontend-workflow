@@ -6,6 +6,7 @@
 > 상위 맥락: [README.md](README.md). 짝 문서: [tier1-layout-profile.md](tier1-layout-profile.md)(경로 바인딩) ·
 > [tier2-router-adapter.md](tier2-router-adapter.md)(router/codegen 의미).
 > 결정 근거: `../../../../temp/runs/axis2-pivot-decision-prep-001.md`(OD-12) · `../../../../temp/reports/kit-multilayer-adoption-assessment-20260621.md`.
+> 실측 검증(PR #71, main 동봉): [다층 도입 dry-run](../../../../temp/runs/multilayer-adoption-dryrun/EXPERIMENT-REPORT.md)(§1 의 3계층 천장을 Clean Arch 6계층으로 실증 — F1~F3) · [blocker① 스파이크](../../../../temp/runs/axis2-a-blocker1-spike/SPIKE-REPORT.md)(§10 ① 사전검증).
 
 ---
 
@@ -187,7 +188,7 @@ expo-feature 프리셋의 layers: 선언 = 현 3계층(screen/hook/api) =
 
 > ①~③ 은 **tier3 초안 코덱스 리뷰(2026-06-21)가 표면화한 핵심 미해결 쟁점**이다 — resolve(구현 착수) 전 반드시 닫는다. 현재 설계는 그대로는 구현 불가.
 
-- **① 비단조 allow/forbidden 표현력 (blocker 급):** 현 정책의 편집권은 *비단조*다 — `{roles.screen}` 은 screen-skeleton~final-fixture-ui 에서 allowed → **api-integrated-ui 에서 명시 forbidden**(fake-hook 계약, `implementation-mode-policy.yaml:82`) → production-ready 에서 다시 allowed. `{roles.hook}` 은 rough·api-integrated 에선 allowed 지만 그 사이 final-fixture-ui 에선 미허용(비연속). 그런데 §3 의 단일 `edits_at: <min mode>`(+spread)는 (a)"구간 허용 후 후속 모드 명시 금지"도 (b)"비연속 허용"도 표현 못 하고, `layers:` 스키마엔 `forbidden_paths` 를 산출하는 필드가 **아예 없다**. 즉 §1 이 "가장 큰 단일 가정"이라 부른 fake-hook 차단을 layers 만으로 재생성하면 사라진다 → §7/§11 의 byte-동치 수용기준과 **자기모순**. **선택지:** `forbidden_at`(명시 per-mode allow/deny) 필드 추가 vs. byte-동치 주장을 *presence-fact* 범위로 한정하고 `forbidden_paths` 는 정책에 손수 유지.
+- **① 비단조 allow/forbidden 표현력 (blocker 급):** 현 정책의 편집권은 *비단조*다 — `{roles.screen}` 은 screen-skeleton~final-fixture-ui 에서 allowed → **api-integrated-ui 에서 명시 forbidden**(fake-hook 계약, `implementation-mode-policy.yaml:82`) → production-ready 에서 다시 allowed. `{roles.hook}` 은 rough·api-integrated 에선 allowed 지만 그 사이 final-fixture-ui 에선 미허용(비연속). 그런데 §3 의 단일 `edits_at: <min mode>`(+spread)는 (a)"구간 허용 후 후속 모드 명시 금지"도 (b)"비연속 허용"도 표현 못 하고, `layers:` 스키마엔 `forbidden_paths` 를 산출하는 필드가 **아예 없다**. 즉 §1 이 "가장 큰 단일 가정"이라 부른 fake-hook 차단을 layers 만으로 재생성하면 사라진다 → §7/§11 의 byte-동치 수용기준과 **자기모순**. **선택지:** `forbidden_at`(명시 per-mode allow/deny) 필드 추가 vs. byte-동치 주장을 *presence-fact* 범위로 한정하고 `forbidden_paths` 는 정책에 손수 유지. **사전검증(스파이크, PR #71):** 실재 확인이며 **과소평가였음** — 단일 `edits_at` 은 정책 role-derived 14셀 中 **10셀 불일치**(비단조가 screen 한 케이스가 아니라 allowed_paths 전반이 본질적 *비누적*). `forbidden_at`(per-mode allow/forbid 행렬) 쪽이면 **0 불일치 byte-동치** → **해결 가능하되 §3 의 단일 `edits_at` 을 행렬로 교체 필요**, "간결한 한 줄 depth" 셀링포인트는 줄어든다. 부수: maturity×depth 가 fake-hook 으로 얽혀 **§2 "직교 합성" 서사도 "얽힌 mode×layer 행렬"로 정정 권장**. [SPIKE-REPORT](../../../../temp/runs/axis2-a-blocker1-spike/SPIKE-REPORT.md).
 - **② `layers` ↔ 정책 단일출처 / 병합 의미:** §5 는 "정책 YAML 손수 토큰이 데이터 선언으로 *승격*(로더가 allowed_paths/requires 합성)"이라 하고, §11 은 같은 정책 파일 edit 을 "(선택) … expo 는 *불변*"이라 한다 — 둘 다 참일 수 없다(layers 가 source-of-truth 면 정책 재생성, 정책 불변이면 allowed_paths 이중 보유·drift). **누가 authoritative 인지 + 병합 규칙(override/union)** 미정.
 - **③ "depth 축" 용어 통일:** 같은 커밋이 한쪽(README 표·tier3 §1)에선 "Axis 2 / depth 축"으로 브랜딩하고, OD §4 에선 "새 축 아님"을 주장 → 양다리로 보임. literal(roadmap "축"=artifact 축)로는 방어되나, **"readiness/mode 축의 depth 일반화"로 표현 통일** 또는 OD §4 에 "'depth 축' 라벨은 포지셔닝일 뿐 새 artifact 축 아님" 명시 필요.
 
