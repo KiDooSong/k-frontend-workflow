@@ -1,0 +1,11 @@
+# GENERATED FILE — DO NOT EDIT
+# Source:  docs/frontend-workflow/domains/**/screen-spec.md (frontmatter)
+# Command: npm run workflow:state
+screens:
+  - id: PROFILE-001
+    domain: profile
+    route: /(tabs)/profile
+    status: confirmed
+checks:
+  duplicate_ids: []
+  duplicate_routes: []
