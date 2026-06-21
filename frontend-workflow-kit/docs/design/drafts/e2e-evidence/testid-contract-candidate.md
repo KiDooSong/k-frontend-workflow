@@ -40,12 +40,12 @@ testID는 Generator / Playwright / Maestro가 **발명**하는 게 아니라, **
 |---|---|---|
 | element | `{screen}-{element}` | `l010-title` · `coupon-list-empty` |
 | action | `{screen}-{action}` | `l010-login-submit` · `signup-provider-google` |
-| list item | `{screen}-{entity}-item-{stableId}` | `coupon-list-item-42` · `wishlist-product-item-SKU123` |
+| list item | `{screen}-{entity}-item-{stableId}` (기본) · `{screen}-item-{stableId}` (예외) | `wishlist-product-item-SKU123` · `coupon-list-item-42` |
 
 규칙:
 - **`stableId`는 안정적 도메인 식별자**(entity id). **배열 인덱스 / 위치 금지**(재정렬에 깨진다). **카피 텍스트 금지**.
 - **kebab-case.** `{screen}` prefix는 `screen_id`의 안정 슬러그를 쓴다(라우트 아님 — 라우트는 바뀐다).
-- **stutter 회피:** `screen`과 `entity` 이름이 겹치면 축약 가능(`coupon-item-{id}`) — 단 한 화면 내 **일관**.
+- **예외(stutter 회피) — 한 가지로 고정:** `{screen}` 슬러그가 이미 엔티티 컬렉션을 가리키면 `{entity}`를 생략해 **`{screen}-item-{stableId}`** 로 쓴다(예: 화면 `coupon-list` → `coupon-list-item-42`). `screen`과 `entity`가 같은 단어면 한 번만 쓴다(화면 `coupon` → `coupon-item-42`). 한 화면 내 **한 형태로 일관**.
 - **안정성 원칙:** testID는 *카피·마크업·레이아웃이 바뀌어도 살아남는 계약*. 그래서 **의미(역할/엔티티) 기반**으로 짓고 **시각/문구 기반으로 짓지 않는다**.
 
 ---
@@ -110,7 +110,7 @@ testID는 Generator / Playwright / Maestro가 **발명**하는 게 아니라, **
 ```md
 <!-- 테스트로 옮길 항목은 표면별로 적는다:
        (웹) → tests/web/*.spec.ts  [Playwright, Verification Matrix Web 열]
-       (네이티브) → maestro/*.yml   [Maestro, iOS/Android 열]
+       (네이티브) → maestro/*.yaml  [Maestro, iOS/Android 열]
      E2E 는 evidence 이지 게이트 아님 — green 이 confirmed/OD 를 닫지 않는다. -->
 ```
 

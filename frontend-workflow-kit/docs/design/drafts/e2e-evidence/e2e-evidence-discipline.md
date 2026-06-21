@@ -25,13 +25,15 @@
 | 표면 | 도구 | Verification Matrix 열 | evidence 산출물 |
 |---|---|---|---|
 | **Web** (react-native-web) | **Playwright** (+ Test Agents) | `Web` | `playwright-report` / `trace.zip` |
-| **iOS** (네이티브) | **Maestro**(Expo 권장) / Detox | `iOS` | `.maestro` 실행 로그 / detox |
+| **iOS** (네이티브) | **Maestro**(Expo 권장) / Detox | `iOS` | `maestro/` 실행 로그 / detox |
 | **Android** (네이티브) | **Maestro** / Detox | `Android` | 〃 |
 
 규율(근거 [02 §0/(d)](../../../../../docs/research/playwright/02-expo-web-and-mobile-simulator.md)):
 - **Playwright는 네이티브 미구동**(메인테이너 공식 확정). Expo에서 직접 만지는 표면은 **react-native-web 웹 하나뿐**.
 - **"Web green ≠ Native green".** 같은 `testID`가 세 열을 먹이되 **evidence는 표면별로 분리**한다 — 한 열의 `passed`를 다른 열로 복사하면 evidence 위조에 가깝다.
 - 모바일 *웹* 에뮬레이션(`isMobile`/뷰포트)은 `Web`(모바일 폼팩터) evidence이지 네이티브 대체재가 아니다.
+
+> 경로 표기(잠정): 네이티브 플로우는 골든 screen-spec Acceptance Criteria 핸들과 동일하게 **`maestro/*.yaml`**(웹은 `tests/web/*.spec.ts`)로 적는다. 정확한 glob(`maestro/` vs `.maestro/`, `.yaml` vs `.yml`)은 `native_e2e` role이 **Tier3 substrate 이후** 정식 매핑될 때 확정한다 — 그 전까지 이 문서의 경로는 *예시 컨벤션*이지 강제 계약이 아니다.
 
 ---
 
@@ -42,13 +44,17 @@
 ```md
 | Case | iOS | Android | Web | Evidence | Status |
 |---|---|---|---|---|---|
-| 쿠폰 목록 표시 | passed | passed | passed | playwright-report#shows-list / .maestro log | passed |
+| 쿠폰 목록 표시 | passed | passed | passed | playwright-report#shows-list / maestro log | passed |
 | 만료 쿠폰 노출 | -      | -      | -      | (D-001 open)                                | blocked |
 ```
 
 - `Web` 열 evidence = Playwright 리포트/trace 링크. `iOS`/`Android` = Maestro/Detox 링크. **Status는 사람**이 기입.
 - **`blocks_mode`:** MVP-A에선 Verification이 readiness를 직접 게이트하지 않는다 — **연결된 Open Decision이 실제 blocker**. 위 "만료 쿠폰"은 `D-001 open` 때문에 `blocked`.
-- `n/a`(웹 한정 Case의 네이티브 열, 또는 그 반대)·`blocked`(도구 미구축)을 **정확히** 쓴다. `open`으로 방치하면 fact-finding 큐가 아니라 게이트가 오작동한다.
+- **Status 값 규약(제안 — E0 status-policy 정제):** 현 모델과 정합하도록 아래로 고정한다.
+  - `open` = 아직 확인/구축 안 됨(**네이티브 하니스 미구축 포함**). 정당한 **비-게이트** 상태 — fact-finding 큐.
+  - `blocked` = **사람이 연결한 실제 blocker**(블로킹 Open Decision, 또는 device/account/env 의존). **E2E 도구 미구축 자체는 `blocked`가 아니다** — 그렇게 쓰면 "E2E 도구가 게이트"라는 오해를 부른다(§1 불변식 위반).
+  - `n/a` = 표면이 진짜 적용 불가(웹 한정 Case의 네이티브 열, 또는 그 반대).
+  - 실제 blocker를 `open`으로 방치하면 트리아지에서 숨는다 — 그때만 사람이 `blocked`로 올린다. (도구 미구축은 evidence 공백일 뿐 게이트 아님.)
 
 ---
 
@@ -97,7 +103,7 @@
 | W1 | **testID handle declared-but-missing** | screen-spec이 선언한 testID가 구현/tests에 없음 | warning-first (생성물 부재 시 skip) | screen-spec testID 선언 후 |
 | W2 | **`test.fixme` without linked OD/conflict** | `tests/web/**`에 `test.fixme(`가 있는데 연결 OD/Conflict 없음 → Healer silent skip을 트리아지로 | warning-first | E2E 산출 후 |
 | W3 | **E2E provenance header missing** | `tests/web/**`가 `// spec:` · `// seed:` provenance 헤더를 안 가짐 | warning-first | E2E 산출 후 |
-| W4 | **`e2e-index` generated view** | Acceptance Criteria 테스트 핸들 ↔ 실제 `tests/web/**`·`.maestro/**` 역색인(읽기 전용·멱등·GENERATED 헤더) | warning-first (artifact 부재 시 skip) | **Tier3 access-matrix substrate 이후** |
+| W4 | **`e2e-index` generated view** | Acceptance Criteria 테스트 핸들 ↔ 실제 `tests/web/**`·`maestro/**` 역색인(읽기 전용·멱등·GENERATED 헤더) | warning-first (artifact 부재 시 skip) | **Tier3 access-matrix substrate 이후** |
 
 공통 규율:
 - **전부 warning-first(exit 0).** `--enforce`로만 하드. 그 승격은 telemetry/dogfood 후 **별도 사람 OD**(lint-baseline ratchet · [VS-3 패턴](../visual-spec-od-decisions.md) 그대로).
