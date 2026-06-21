@@ -18,7 +18,7 @@
 **수용에 포함되지 *않은* 것 (불변식 유지):**
 - 어떤 **hard 게이트**도 신설/상향하지 않는다 — 전부 warning-first. hard 승격은 telemetry 후 *재차 별도 사람 OD*.
 - **코드/정책/CI 구현을 지금 착수하지 않는다** — VS-3 validate 스크립트·VS-4 CI smoke 는 별도 *명시 지시 + 순차 슬롯* 필요(이 세션은 설계 중심).
-- 정본 템플릿 즉시 대체·`.draft` 제거 시점은 실행 슬롯에서(전제 충족 후).
+- 정본 템플릿 옵션 섹션화·`.draft` deprecated 는 실행 슬롯(branch)에서 적용됨; `.draft` *제거*(단계2)·main merge 시점만 유보(사람).
 - `figma_mapping_status` 는 **존재 신호로 유지** — 시각 충실도 게이트로 쓰지 않는다(formalization §2.2).
 - 킷 core 는 Figma 수집기/토큰 생성기를 구현·번들하지 않는다(VS-2 소유 = 소비 레포).
 
@@ -31,7 +31,8 @@
 - **지금 승인하는 것:** 정본 템플릿에 옵션 섹션을 더하는 방향. 기존 화면 일괄 마이그레이션은 강제하지 않는다.
 - **유보(실행 슬롯에서):** `.draft` 제거·정본 완전 대체 *시점*, 기존 골든 예제 retrofit 범위.
 - **전제·차단:** ⚠ **PR69 가 아직 OPEN**(2026-06-21 기준). 정합을 위해 (1) PR69 머지 → (2) §3 교정(Patch B: §3.1 격리경로·§3.2 provenance·§3.3 facts·§3.4 회사 screen id) 적용 → (3) 정본에 옵션 섹션 반영. **이 순서 전엔 정본 편집 금지.**
-- **다음 구체 액션:** PR69 머지 후 Patch B 적용 → 정본 템플릿 옵션 섹션화. (VS-1 이 다른 모든 VS 의 기반.)
+- **다음 구체 액션(수용 시점 계획):** PR69 머지 후 Patch B 적용 → 정본 템플릿 옵션 섹션화. (VS-1 이 다른 모든 VS 의 기반.)
+- **실행 업데이트(2026-06-21, branch `docs/visual-spec-vs1-figma-mapping`):** 전제(PR69 OPEN) 해소(머지 가정) + 레포 오너 명시 지시로 §3.2 정본 옵션 섹션 적용·`.draft` deprecated(단계1). "정본 편집 금지"는 *LLM 자율 편집* 가드 — 사람 지시·브랜치 격리·사람 merge 로 충족. 결정(옵션 b) 불변. 남은 것 = `.draft` 제거(단계2)·main merge(PR #75) — 둘 다 사람. 근거: [visual-spec-vs1-execution.md](visual-spec-vs1-execution.md).
 
 ## OD-VS-2 — Design-token source 계약 · 수용: 옵션 (a)
 
@@ -65,20 +66,20 @@
 ## 순차 실행 계획 (roadmap "병렬 금지 — 슬롯 하나씩")
 
 ```
-[blocked] PR69 머지 + Patch B(§3 교정)
-   └─> VS-1 (정본 옵션 섹션화)  ← 1순위 슬롯
+[done] PR69 머지 + Patch B(§3 교정)
+   └─> [done·branch] VS-1 (정본 옵션 섹션화)  ← merge·`.draft` 제거(단계2)는 사람
          └─> VS-2 (토큰 네이밍 규약, 소비-레포 소유)
                └─> VS-3 (warning-only validate; W2 는 VS-2 후)
    VS-4 (비주얼 회귀 evidence) ── 병행 가능, 단 hard 게이트는 telemetry 후 별도 OD
 ```
 
-- **즉시 가능한 다음 액션은 VS-1 의 *전제 해소*** = PR69 머지 + Patch B. VS-1 본체는 그 후.
+- **VS-1 전제 해소 + VS-1 본체 = 완료**(branch `docs/visual-spec-vs1-figma-mapping`, 오너 지시: 정본 옵션 섹션 적용·`.draft` deprecated). 남은 슬롯 = `.draft` 제거(단계2)·main merge(PR #75) — 사람.
 - 각 슬롯은 한 번에 하나. confirmed 승격·OD resolve·hard gate 신설/상향은 **사람만**.
 
 ## 이 수용이 하지 *않는* 것 (범위 밖)
 
 - validate 스크립트·CI smoke 구현(별도 명시 지시 + 슬롯).
-- 정본 템플릿 즉시 대체(PR69 머지·Patch B 선행).
+- 정본 템플릿 즉시 대체(PR69 머지·Patch B 선행) — *수용 자체*의 범위 밖. (이후 별도 오너 지시 실행으로 branch 에서 옵션 섹션화 반영됨.)
 - 어떤 hard 게이트 신설/상향.
 - `roadmap-current.md` "다음 구현 후보" 슬롯 편집(사람이 슬롯팅 — 본 기록을 근거로).
 
