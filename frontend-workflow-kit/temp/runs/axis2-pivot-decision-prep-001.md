@@ -69,7 +69,7 @@
 
 | ID | 옵션 | 내용 | 트레이드오프 |
 |---|---|---|---|
-| **A** | **Axis 2 선회 (추천)** | `project-layout.yaml` 에 순서 있는 `layers:` 선언(role glob + 완성도 fact + 진입 모드) → readiness/spec/lint 일반화. expo-feature 프리셋 = 현 3계층 = byte-동치 회귀. | 게이트 의미 변경(코드+거버넌스). 단 tier1/tier2 와 동일 메커니즘(데이터화)이라 재발명 아님. |
+| **A** | **Axis 2 선회 (추천)** | `project-layout.yaml` 에 순서 있는 `layers:` 선언(role glob + 완성도 fact + mode×layer `access` 행렬, `fact`/`access`/`gates` 3필드) → readiness/spec/lint 일반화. expo-feature 프리셋 = 현 3계층 = byte-동치 회귀. | 게이트 의미 변경(코드+거버넌스). 단 tier1/tier2 와 동일 메커니즘(데이터화)이라 재발명 아님. |
 | B | 현행 유지 + 도입 강행 | 3계층 고정 유지, 도입 프로젝트가 screen→hook→api 로 평탄화하도록 권장. | 실프로젝트 다수가 다층이라 도입률↓ → 데드락 지속. |
 | C | 하이브리드(문서 가이드) | 3계층 코어 유지 + production-ready 자유영역 + "다층은 게이트 밖" 문서 가이드. | 다층이 단계적으로 게이트되지 않음(킷 핵심 가치 일부 포기). |
 
@@ -132,8 +132,9 @@ resolve=A(구현 착수) 전에 tier3 §10 에서 닫아야 했던 ①~③ 은, 
 
 **OD-12-impl (구현 OD) — A 일 때만 별도로 열고 지금은 resolve 안 함:**
 
-- **(I1)** source-of-truth & 머지: 정책 role-token 셀을 합성 `layers/access` 에 양도(정책=리터럴+requires+order,
-  생성+멱등성) vs layers 추가만(정책 손수, drift 감수). 보수적 기본=전자.
+- **(I1)** 정책 파일 전환 방식 & 머지: authoritative=`layers/access` 는 확정(§8.1②). 정책 *파일* 처리만 택1 —
+  (a) 즉시 생성물화(role-token 셀 제거 + 멱등성 CI) vs (b) 점진 전환(layers 가 single-source, 정책은 재생성·검증).
+  보수적 기본=(a). 머지는 tier1 `mergeRoles` 우선순위 계승.
 - **(I2)** `edits_at` 손실 alias 잔류(tier3 §3.1) vs 완전 삭제.
 - **(I3)** 게이트 강도 기본값: 신규 계층은 `access`(경로 허용)만, `gates`(requires) 엄격 opt-in + 사람 승격.
 - **(I4)** byte-동치 범위: forward-gate parity(SPIKE 0/14) **AND** backstop guarded-surface parity 둘 다.
