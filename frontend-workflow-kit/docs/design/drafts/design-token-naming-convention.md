@@ -12,7 +12,7 @@
 
 1. **네임스페이스 최소 5종**: `color` · `space` · `type` · `radius` · `shadow`\|`elevation`. **asset/icon 은 토큰 아님**(파일 경로 — `## Assets`); 아이콘-이름 레지스트리를 쓰는 레포만 `icon.*` 를 *확장*으로 허용.
 2. **Visual Spec 8컬럼 매핑**: `gap`·`padding` → `space.*` / `color` → `color.*` / `type` → `type.*`. `radius.*` 는 **`sizing` 칸 inline**(컬럼 신설 안 함). `shadow`/`elevation` 은 **8컬럼 밖 optional**(inline 주석 또는 `## Notes`).
-3. **형식 2단계**: *권장(canonical)* = 점-구분 소문자 `color.bg.surface`·`space.4`·`type.title.md`·`radius.md`. *허용(absorb)* = 소비 레포가 dialect 를 선언하면 `bg.surface`·`color/bg/surface`·`p-4` 같은 기존 표기도 흡수. **킷은 특정 DS 를 정본화하지 않는다.**
+3. **형식**: Visual Spec 이 참조하는 건 **semantic(역할) ID** — 정본 템플릿 예시처럼 **head 생략형**(`bg.surface`·`title.md`·`space.4`·`radius.md`)이 기본, namespace 명시형(`color.bg.surface`·`type.title.md`)도 동치. 구분자 점(권장)/슬래시(허용). **atomic(원시 팔레트)→semantic(역할 alias) 2-tier 는 소비 레포 토큰 source 소유**(§4.6). dialect 선언 시 슬래시·`spacing`·유틸리티(`p-4`) 흡수. **킷은 특정 DS 를 정본화하지 않는다.**
 4. **raw 허용**: 토큰 없는 값은 `raw N` 으로 명시하되 출처마커 `⚠` + `## Gaps / Open` 등록을 **요구/권장**(승격 경로).
 5. **검사 분리**: **W1 = 형식 검사**(킷이 *문서만으로* 가능, warning-first) vs **W2 = 존재 검사**(소비 레포가 토큰 manifest 를 제공할 때만 가능, opt-in). **둘 다 warning-only. W2 는 절대 hard gate 아님.**
 6. **킷이 하지 *않는* 것**: 토큰 생성기/수집기 번들, 특정 회사 DS token set 정본화, 토큰 존재의 hard gate 화.
@@ -53,7 +53,9 @@
 - `icon` / `asset` — 아이콘-이름 *레지스트리*(토큰처럼 ID 로 참조)를 운영하는 레포만. 기본값은 **에셋 = 파일 경로**(`## Assets` 의 path·format) 이며 토큰이 아니다([04 §1c](../../../../docs/research/figma-design/04-figma-mcp-rest-data-collection.md): "에셋 = 파일 경로(토큰 아님)", [03 3순위](../../../../docs/research/figma-design/03-gaps-and-path-to-95.md): 에셋 파이프라인은 별도·core 밖).
 - 기타 레포가 이미 가진 것(`size`/dimension, `opacity`, `z`/zIndex, `border`/width, `breakpoint` …) — 규약은 **금지하지 않되 요구하지도 않는다**. W1 은 선언된 확장 head 를 알고 있을 때만 통과시키고, 모르는 head 는 *경고*(에러 아님)한다(§5).
 
-> **asset/icon 필요 여부 결론:** 토큰 네임스페이스 최소 세트에 **넣지 않는다**. 에셋은 경로 기반(`## Assets`)으로 남기고, 아이콘-이름 토큰 레지스트리는 *옵션 확장* `icon.*` 으로만 허용한다. 이는 "킷이 에셋 파이프라인을 책임지지 않는다"는 경계와 정합한다.
+> **asset/icon 필요 여부 결론:** 토큰 네임스페이스 최소 세트에 **넣지 않는다**. 에셋은 경로 기반(`## Assets`)으로 남기고, 아이콘-이름 토큰 레지스트리는 *옵션 확장* `icon.*` 으로만 허용한다. 이는 "킷이 에셋 파이프라인을 책임지지 않는다"는 경계와 정합한다. (소비 레포 worked example 도 아이콘을 `assets/icons/<set>/<size>/*.svg` 경로로 두고 토큰화하지 않는다 — 정합.)
+
+> **atomic vs semantic:** 위 head 는 두 tier 에 공통으로 쓰인다 — **atomic**(원시 팔레트, 예 `color.neutral.5`)·**semantic**(역할 alias, 예 `bg.surface`). 2-tier 정의·alias·검증은 소비 레포 소유(§4.6). 흔한 표기 별칭 `spacing` ↔ `space`, `opacity.*`·`elevation.*` 도 허용(§4.3·확장).
 
 ---
 
@@ -83,9 +85,9 @@
 
 > 두 판단 모두 VS-1 의 "표 필드는 최소 8칸 — 더 늘리지 않는다(스코프 절제)"를 지킨다. 매핑은 **어느 칸이 토큰을 받는가**만 고정하고, 표 구조는 불변.
 
-### 3.3 동일값 다중후보 — semantic 우선
+### 3.3 동일값 다중후보 — semantic 우선 (atomic 직접 참조 지양)
 
-같은 값에 토큰 ID 후보가 여럿일 때(템플릿 `## Gaps` 예시: "동일값 토큰 다중후보"), **역할 기반 semantic ID 를 primitive ID 보다 우선**한다(권고): `color.bg.surface` ≻ `color.blue.500`. 확정 불가하면 `## Gaps / Open` 에 후보를 남기고, manifest 가 있으면 W2 가 존재를 교차확인한다(§5).
+같은 값에 토큰 ID 후보가 여럿일 때(템플릿 `## Gaps` 예시: "동일값 토큰 다중후보"), Visual Spec 은 **역할 기반 semantic ID 를 atomic(원시 팔레트) ID 보다 우선**한다(권고): `bg.surface`(= `color.bg.surface`) ≻ `color.neutral.5`. atomic→semantic 2-tier 정의는 §4.6. 확정 불가하면 `## Gaps / Open` 에 후보를 남기고, manifest 가 있으면 W2 가 존재를 교차확인한다(§5).
 
 ---
 
@@ -107,17 +109,19 @@ SEP        := "."                          # 권장. 허용: "/" (Tokens Studio 
 - head 는 §2 의 네임스페이스(또는 레포가 선언한 확장/alias)여야 한다.
 - 이 문법이 **W1(형식 검사)의 근거**다(§5). 문법은 "ID 처럼 생겼나"만 본다 — 값/존재는 보지 않는다.
 
-### 4.2 권장(canonical) form — 킷 예시·신규 레포 기본
+### 4.2 권장(canonical) form — 정본 템플릿 예시와 동일
 
-| 네임스페이스 | 권장 형식 | 예 |
-|---|---|---|
-| color | `color.<role>.<variant?>` | `color.bg.surface` · `color.text.primary` · `color.border.subtle` |
-| space | `space.<step>` | `space.4`(수치 스케일) · `space.md`(명명 스케일) |
-| type | `type.<role>.<size?>` (합성) | `type.title.md` · `type.body.sm` |
-| radius | `radius.<size>` | `radius.md` · `radius.full` |
-| shadow/elevation | `shadow.<level>` / `elevation.<level>` | `shadow.sm` · `elevation.1` |
+Visual Spec 칸에는 **semantic(역할) ID** 를 적는다. 정본 템플릿 예시(`space.4`·`bg.surface`·`title.md`·`radius.md`)처럼 **head 생략형**이 기본이고, namespace 명시형은 동치다(둘 다 유효).
 
-> 권장형은 head 를 **명시**한다(`color.bg.surface`, `bg.surface` 아님). 신규 소비 레포는 권장형 채택을 권한다.
+| 관심사 | 권장(head 생략) | namespace 명시(동치) | 예 |
+|---|---|---|---|
+| color (semantic) | `<role>.<variant?>` | `color.<role>.<variant?>` | `bg.surface` · `text.primary` · `background.normal` |
+| space | `space.<step>` | `space.<step>` | `space.4`(수치) · `space.md`(명명) |
+| type (합성) | `<role>.<variant>` | `type.<role>.<variant>` | `title.md` · `label.normal` |
+| radius | `radius.<size>` | `radius.<size>` | `radius.md` · `radius.full` |
+| shadow/elevation | `shadow.<level>` | `elevation.<level>` | `shadow.sm` · `elevation.1` |
+
+> head 생략형은 사람이 읽는 Visual Spec 에 적합하다(정본 템플릿이 이미 채택). 단 W1 이 dialect 없이 네임스페이스를 분류하려면 명시형이 필요하다(§5.1 W1-NS) — 소비 레포는 둘 중 무엇을 쓰든 dialect 로 선언(§4.3). atomic(원시 팔레트) ID 는 §4.6.
 
 ### 4.3 허용(absorb) form — 기존 DS 흡수
 
@@ -125,9 +129,10 @@ SEP        := "."                          # 권장. 허용: "/" (Tokens Studio 
 
 | 허용 변형 | 예 | 흡수 조건 |
 |---|---|---|
-| head 생략(semantic) | `bg.surface` · `text.primary` | 레포가 `bg.*`·`text.*`·`border.*`·`icon.*` → `color` 매핑을 선언 |
-| `/` 구분자(경로식) | `color/bg/surface` · `spacing/4` | `.` 과 동치 처리 |
-| 유틸리티/atomic | `p-4` · `bg-surface` · `rounded-md` | 레포가 prefix 매핑 선언(`p-*`·`gap-*`·`m-*`→`space`, `rounded-*`→`radius`) |
+| head 생략(semantic·역할 우선) | `bg.surface` · `text.primary` · `background.normal` | 레포가 `bg.*`·`text.*`·`border.*`·`background.*`·`icon.*` → `color` 매핑을 선언 |
+| `/` 구분자(경로식·DTCG) | `color/neutral/5` · `background/normal` · `spacing/4` | `.` 과 동치 처리 |
+| `spacing` 별칭 | `spacing.4` · `spacing/16` | `spacing` ↔ `space` 동치(흔한 DS·Tailwind 표기) |
+| 유틸리티/atomic | `p-4` · `bg-surface` · `rounded-md` · `text-title-xl` | 레포가 prefix 매핑 선언(`p-*`·`gap-*`·`m-*`→`space`, `rounded-*`→`radius`, `text-<type>`→`type`) |
 | 스케일 flavor | `space.4` ↔ `space.md` | 수치/티셔츠 **둘 다 허용**(택1 강제 안 함) |
 | 세그먼트 casing | `color.bgSurface` | 허용하되 **비권장**(W1 info 수준) |
 
@@ -145,6 +150,29 @@ token-dialect:
     "rounded-*": radius
 ```
 
+**Worked example — DTCG 2-tier(Tokens Studio) + NativeWind 소비 레포** (소비 레포 worked example 의 방향; 런 산출물은 비추적):
+
+- source = DTCG JSON, **슬래시 경로**: atomic `color/<palette>/<step>`(예 `color/neutral/5`) · semantic `<role>/<variant>`(예 `background/normal`, alias→atomic).
+- 소비 = NativeWind 유틸 `bg-*`/`text-*`/`border-*`(semantic 색) · `rounded-*`(radius) · `text-<type>`(합성 타이포) · `p-N`/`gap-N`(spacing = Tailwind 4px 수치 기본 — 별도 토큰 불필요).
+
+```yaml
+# (소비 레포 소유. 이 방향을 받아 적기 위한 dialect — 킷이 생성/번들하지 않음)
+token-dialect:
+  separator: "/"
+  scale: numeric                       # spacing = Tailwind 수치
+  tiers: { atomic: "color/*", semantic: "<role>/*" }   # semantic 이 atomic 을 alias
+  aliases:
+    "background.*": color
+    "text.*": color
+    "border.*": color
+    "rounded-*": radius
+    "p-*": space
+    "gap-*": space
+    "text-<type>": type
+```
+
+> 이 방향과 **구조적 차이 없음** — 규약은 semantic/atomic 2-tier·슬래시·NativeWind 유틸을 그대로 *받아 적는다*(§4.6). 표기 차이만 dialect 로 흡수하며, DS 값/세트는 정본화하지 않는다.
+
 선언이 **없으면** W1 은 §4.1 권장 문법으로 폴백한다(허용형은 선언이 있어야 정규화 가능).
 
 ### 4.4 raw escape hatch + 승격 경로
@@ -158,6 +186,21 @@ token-dialect:
 ### 4.5 placeholder
 
 `{...}`(중괄호)는 **미채움 템플릿 슬롯**이다 — 에러가 아니라 "pending". W1 은 이를 통과시키되 info 로만 센다(§5). 빈 옵션 섹션은 통째 생략 가능(VS-1).
+
+### 4.6 atomic / semantic 2-tier — 소비 레포 소유
+
+성숙한 DS 는 보통 **2-tier** 로 토큰을 정의한다(소비 레포 worked example · 리서치 [04 §5](../../../../docs/research/figma-design/04-figma-mcp-rest-data-collection.md) 의 alias 보존 `outputReferences`).
+
+| tier | 무엇 | 형식 예 | 누가 정의 |
+|---|---|---|---|
+| **atomic / primitive** | 팔레트·원시 스케일(역할 없음) | `color.neutral.5` · `color.common.0` · `spacing.16` | 소비 레포 토큰 source |
+| **semantic** | 역할 토큰 — atomic 을 **alias** | `bg.surface` → `color.neutral.5` · `background.normal` | 소비 레포 토큰 source |
+
+- **Visual Spec 은 semantic 을 참조**한다(역할이 화면 의도를 담음). atomic 직접 참조는 지양(§3.3).
+- **alias·해소값 드리프트·atomic 커버리지 같은 2-tier 무결성 검증은 소비 레포 도구의 몫**이다(킷 범위 밖 — OD-VS-2 소유 경계). 킷의 W2(존재 검사)는 *참조 ID 가 manifest 에 있나*만 보고, atomic↔semantic 일관성까지 보지 않는다.
+- 킷은 두 tier 의 **ID 형식**만 규정한다(§4.1 문법은 atomic·semantic 공통). 값·alias·tier 경계 정의는 소비 레포.
+
+> **정합성 점검(소비 레포 worked example):** 파일럿의 DTCG 2-tier(atomic `color/<palette>/<step>` → semantic `<role>/<variant>` alias, 예 `background/normal`) + NativeWind 유틸 소비 방향과 **구조적 차이 없음**. 본 규약은 그 방향을 *받아 적는* 계약이며, 표기 차이(슬래시·`spacing`·head 생략·유틸리티)는 §4.3 dialect 로 흡수한다 — 특정 DS 값/세트를 정본화하지 않는다.
 
 ---
 

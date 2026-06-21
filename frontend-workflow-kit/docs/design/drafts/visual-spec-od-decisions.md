@@ -43,6 +43,7 @@
 - **전제:** VS-1(토큰 ID 칸 존재). 이 규약이 있어야 VS-3 의 W2(토큰 존재 검사)가 가능.
 - **다음 구체 액션:** VS-1 후, "design-token naming 규약" 드래프트.
 - **실행 업데이트(2026-06-21, branch `docs/vs2-design-token-naming`):** "design-token naming 규약" 드래프트 작성 → [design-token-naming-convention.md](design-token-naming-convention.md). 네임스페이스 최소 5종(color/space/type/radius/shadow\|elevation)·권장 vs 허용(소비 레포 dialect 흡수) 형식·`raw N` escape·**W1(형식)/W2(존재) 검사 분리** 정의. 결정(옵션 a) **불변**: 킷은 네이밍 규약만, 값/source/생성/검증은 소비 레포, 생성기·수집기 미번들. 규약은 **draft**(미-confirmed) — confirmed 승격·W2 hard gate 는 사람. VS-2 seed 는 deprecated. 정본 템플릿 patch 는 *제안만*(사람/오너 적용).
+  - **정합성 점검(소비 레포 worked example, figma-fidelity 파일럿):** 파일럿의 **atomic→semantic 2-tier**(DTCG 슬래시 경로 — atomic `color/<palette>/<step>` → semantic `<role>/<variant>` alias) + NativeWind 유틸(`bg-*`/`rounded-*`/`text-<type>`·spacing=Tailwind 수치) 방향과 **구조적 차이 없음**을 확인했다. 규약 §4.2(semantic head 생략형 = 정본 템플릿 예시)·§4.3(dialect: 슬래시·`spacing`·유틸리티 흡수)·§4.6(2-tier 명시, 무결성 검증은 소비 레포)로 반영. 특정 DS 값/세트는 정본화하지 않음.
 
 ## OD-VS-3 — warning-first visual spec validate · 수용: 옵션 (a)
 
