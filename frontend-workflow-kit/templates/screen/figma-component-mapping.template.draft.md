@@ -3,13 +3,18 @@ artifact_id: "{SCREEN_ID}-figma-component-mapping"
 artifact_type: figma-component-mapping
 domain: "{domain}"
 screen_id: "{SCREEN_ID}"
-status: draft             # 문서 라이프사이클: missing|draft|review|confirmed|implemented|verified|deprecated (confirmed 승격은 사람만)
+status: deprecated        # DEPRECATED(2026-06-21) — 정본 옵션 섹션으로 흡수(OD-VS-1=b). missing|draft|review|confirmed|implemented|verified|deprecated
 sources:
   - { type: figma, ref: "file {FILE_KEY} / {frame name} / node {node-id}" }   # ref 에 file_key 포함(REST 재호출용). 비표준 frontmatter 필드 금지 — ref 는 여기와 본문 Frame 절에만. 여러 프레임(모달/상태 오버레이 포함)이면 줄 추가.
 last_reviewed: "{YYYY-MM-DD}"
 # status: confirmed 로 승격할 때만 사람이 추가 (LLM 승격 금지):
 #   approved_by / approved_at / decision_id
 ---
+
+> ⚠ **DEPRECATED (2026-06-21~)** — 이 드래프트의 내용은 정본
+> [figma-component-mapping.template.md](figma-component-mapping.template.md) 의 **옵션 섹션**으로 흡수됐다(OD-VS-1 = 옵션 b).
+> 신규 작성은 정본을 쓴다. 본 파일은 §3 교정 근거 보존용으로 한 사이클만 유지 후 제거 예정(§4 단계2).
+> 실행 근거: [visual-spec-vs1-execution.md](../../docs/design/drafts/visual-spec-vs1-execution.md)
 
 <!--
   ════════════════════════════════════════════════════════════════════════════
