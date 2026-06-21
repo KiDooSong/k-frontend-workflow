@@ -4,7 +4,7 @@
 > 성격: roadmap-direction / gate-semantics 결정 (OD-11 선례와 동형 — run-report 로 prep, **resolve 는 사람만**).
 > 이 문서는 결정을 **준비**한다. 게이트를 풀거나 정본(roadmap/policy)을 바꾸지 않는다 — resolve 후 사람이 roadmap 에 cross-link.
 > 근거 보고서(세션 산출, 이 브랜치에 vendored): [../reports/kit-multilayer-adoption-assessment-20260621.md](../reports/kit-multilayer-adoption-assessment-20260621.md) (멀티에이전트 조사 + 코드 실측).
-> 짝 설계 초안: [docs/design/drafts/customizable-architecture/tier3-layer-model.md](../../docs/design/drafts/customizable-architecture/tier3-layer-model.md).
+> 짝 설계 초안: [tier3-layer-model.md](../../docs/design/drafts/customizable-architecture/tier3-layer-model.md) (2026-06-21 **access matrix 로 정정**: canonical = mode×layer `access` 행렬, `edits_at` 격하) · 정정 제안서 [tier3-access-matrix-revision.md](../proposals/tier3-access-matrix-revision.md).
 > 실측 검증(별도 PR #71 로 main 동봉): [다층 도입 dry-run](multilayer-adoption-dryrun/EXPERIMENT-REPORT.md) — 킷이 현재 Axis 2 를 게이트 못 함을 Clean Arch 6계층으로 실측 · [A안 blocker① 스파이크](axis2-a-blocker1-spike/SPIKE-REPORT.md) — blocker ① 실재하나 per-mode 행렬로 해결가능.
 
 ---
@@ -69,7 +69,7 @@
 
 | ID | 옵션 | 내용 | 트레이드오프 |
 |---|---|---|---|
-| **A** | **Axis 2 선회 (추천)** | `project-layout.yaml` 에 순서 있는 `layers:` 선언(role glob + 완성도 fact + 진입 모드) → readiness/spec/lint 일반화. expo-feature 프리셋 = 현 3계층 = byte-동치 회귀. | 게이트 의미 변경(코드+거버넌스). 단 tier1/tier2 와 동일 메커니즘(데이터화)이라 재발명 아님. |
+| **A** | **Axis 2 선회 (추천)** | `project-layout.yaml` 에 순서 있는 `layers:` 선언(role glob + 완성도 fact + mode×layer `access` 행렬, `fact`/`access`/`gates` 3필드) → readiness/spec/lint 일반화. expo-feature 프리셋 = 현 3계층 = byte-동치 회귀. | 게이트 의미 변경(코드+거버넌스). 단 tier1/tier2 와 동일 메커니즘(데이터화)이라 재발명 아님. |
 | B | 현행 유지 + 도입 강행 | 3계층 고정 유지, 도입 프로젝트가 screen→hook→api 로 평탄화하도록 권장. | 실프로젝트 다수가 다층이라 도입률↓ → 데드락 지속. |
 | C | 하이브리드(문서 가이드) | 3계층 코어 유지 + production-ready 자유영역 + "다층은 게이트 밖" 문서 가이드. | 다층이 단계적으로 게이트되지 않음(킷 핵심 가치 일부 포기). |
 
@@ -102,13 +102,46 @@
 3. resolve=A 시 → tier3 초안 리뷰(코덱스 포함) → 구현 OD(별도) → 구현(expo-feature byte-동치 회귀 기준).
 4. 재오픈 트리거: tier3 초안이 byte-동치 회귀를 깨거나, 실제 도입에서 N계층 모델의 결함이 드러나면.
 
-### 8.1 tier3 초안 리뷰(코덱스, 2026-06-21)가 표면화한 미해결 설계 쟁점
+### 8.1 tier3 초안 리뷰(코덱스)가 표면화한 쟁점 — 정정 반영(2026-06-21)
 
-resolve=A(구현 착수) 전에 tier3 §10 에서 반드시 닫아야 한다 — 현재 tier3 설계는 그대로는 구현 불가:
+resolve=A(구현 착수) 전에 tier3 §10 에서 닫아야 했던 ①~③ 은, 정정 제안서(PR #74) + blocker① 스파이크
+**독립 재현**으로 방향이 정리됐다(여전히 사람 resolve 대상 — 이 prep 은 닫지 않는다):
 
-1. **비단조 allow/forbidden 표현력** — `edits_at` 단일 임계값이 "화면@api-integrated 차단(fake-hook 계약)" 같은 *열렸다 다시 잠김* 패턴을 표현 못 함 + `layers:` 에 forbidden 필드 부재 → §7/§11 byte-동치 주장과 자기모순. **사전검증(스파이크, PR #71): 실재 확인이며 과소평가였음** — 단일 `edits_at` 은 정책 role-derived 14셀 中 **10셀 불일치**(allowed_paths 가 본질적 비누적). **per-mode allow/forbid 행렬이면 byte-동치 회복(0 불일치) → 해결 가능, 단 §3 스키마를 `edits_at`→행렬로 교체 필요.** 상세: [SPIKE-REPORT](axis2-a-blocker1-spike/SPIKE-REPORT.md).
-2. **`layers` ↔ 정책 단일출처** — §5(layers 가 정책 합성) vs §11(정책 불변)의 충돌, 병합 규칙 미정.
-3. **"depth 축" 용어** — README "depth 축" 브랜딩 ↔ §4 "새 축 아님" 주장의 양다리, 표현 통일 필요.
+1. **비단조 allow/forbidden 표현력 — 강등(구현불가 → 해결되는 설계 결함).** 단일 `edits_at` = 정책 role-derived
+   **10/14 불일치**(독립 재현), per-(layer×mode) `access:{allow[],forbid[]}` 행렬 = **0/14 byte-동치**. → "구현
+   불가" 아님. tier3 §3 canonical 을 `edits_at`→행렬로 **교체 완료**(tier3 §3, PR #74 반영). 단 "한 줄 depth"
+   셀링포인트는 축소(byte-동치엔 layer 당 명시 mode 멤버십 필요). [SPIKE-REPORT](axis2-a-blocker1-spike/SPIKE-REPORT.md).
+2. **`layers` ↔ 정책 단일출처 — 정리됨.** role-token allowed/forbidden 셀 = `layers/access` authoritative(→ 생성),
+   리터럴·`requires`·`order` = 정책 손수. §5/§11 충돌을 **셀 종류 경계**로 해소(tier3 §5).
+3. **"depth 축" 용어 — 통일.** "readiness/mode 정책의 access 표현력 일반화"로 표기 통일, "depth 축"은 포지셔닝
+   라벨(새 artifact 축 아님) 각주(tier3 §9·§10③, README).
+
+상세·patch: [tier3-layer-model.md](../../docs/design/drafts/customizable-architecture/tier3-layer-model.md) (정정 반영됨) ·
+[tier3-access-matrix-revision.md](../proposals/tier3-access-matrix-revision.md).
+
+### 8.2 OD-12 사람 결정 — 방향(now) / 구현(별도) 분리
+
+> 불변식: confirmed 승격·OD resolve·hard gate 신설/상향·구현 착수는 **사람만**. 이 prep 은 결정을 *준비*만 한다.
+
+**OD-12 (방향) — 지금 resolve:**
+
+- **(D1) 선회 방향 택1:** **A**(추천)/B/C (§5).
+- **(D2) 거버넌스:** "새 산출물 축 아님 = readiness/mode access 표현력 일반화" 명문화 → roadmap 닫힌 목록
+  (`roadmap-current.md:30-40`) 불변, "새 축 금지"(`:125`)에 "이 일반화는 그 금지 대상 아님" 예외 각주.
+- **(D3)** tier3 §3 행렬 스키마 재설계 인가 + 신규 계층 게이트 **warning-first 기본**(telemetry 전 hard 승격 없음).
+
+**OD-12-impl (구현 OD) — A 일 때만 별도로 열고 지금은 resolve 안 함:**
+
+- **(I1)** 정책 파일 전환 방식 & 머지: authoritative=`layers/access` 는 확정(§8.1②). 정책 *파일* 처리만 택1 —
+  (a) 즉시 생성물화(role-token 셀 제거 + 멱등성 CI) vs (b) 점진 전환(layers 가 single-source, 정책은 재생성·검증).
+  보수적 기본=(a). 머지는 tier1 `mergeRoles` 우선순위 계승.
+- **(I2)** `edits_at` 손실 alias 잔류(tier3 §3.1) vs 완전 삭제.
+- **(I3)** 게이트 강도 기본값: 신규 계층은 `access`(경로 허용)만, `gates`(requires) 엄격 opt-in + 사람 승격.
+- **(I4)** byte-동치 범위: forward-gate parity(SPIKE 0/14) **AND** backstop guarded-surface parity 둘 다.
+- **(I5)** `layers` 물리 위치: tier1 **OD-10**(킷 내부 vs 소비 루트)과 같은 파일에서 함께.
+- **(I6)** `fact` 종류 로드맵: v1 `dir_has_files` 만; props/export/test 존재는 후속.
+- **(I7)** 멱등성 CI **새 check target**: role-token 셀이 생성물이 되면 resolved 정책 재생성·diff(현행은 coupon
+  `_meta` 만 diff — 같은 패턴, 새 대상).
 
 상세·선택지: [tier3-layer-model.md §10](../../docs/design/drafts/customizable-architecture/tier3-layer-model.md).
 
