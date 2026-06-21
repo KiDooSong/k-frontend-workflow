@@ -1,0 +1,13 @@
+{
+  "name": "maestro-dogfood-001",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Dogfood of Playwright Test Agents (planner/generator) flow against the figma-fidelity-001 Expo web app. Isolated from the app so the app source stays untouched.",
+  "scripts": {
+    "test": "playwright test",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0"
+  }
+}
