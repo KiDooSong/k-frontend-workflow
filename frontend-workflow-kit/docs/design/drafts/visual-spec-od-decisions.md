@@ -32,6 +32,7 @@
 - **유보(실행 슬롯에서):** `.draft` 제거·정본 완전 대체 *시점*, 기존 골든 예제 retrofit 범위.
 - **전제·차단:** ⚠ **PR69 가 아직 OPEN**(2026-06-21 기준). 정합을 위해 (1) PR69 머지 → (2) §3 교정(Patch B: §3.1 격리경로·§3.2 provenance·§3.3 facts·§3.4 회사 screen id) 적용 → (3) 정본에 옵션 섹션 반영. **이 순서 전엔 정본 편집 금지.**
 - **다음 구체 액션:** PR69 머지 후 Patch B 적용 → 정본 템플릿 옵션 섹션화. (VS-1 이 다른 모든 VS 의 기반.)
+- **실행 업데이트(2026-06-21, branch `docs/visual-spec-vs1-figma-mapping`):** 전제(PR69 OPEN) 해소(머지 가정) + 레포 오너 명시 지시로 §3.2 정본 옵션 섹션 적용·`.draft` deprecated(단계1). "정본 편집 금지"는 *LLM 자율 편집* 가드 — 사람 지시·브랜치 격리·사람 merge 로 충족. 결정(옵션 b) 불변. 남은 것 = `.draft` 제거(단계2)·main merge(PR #75) — 둘 다 사람. 근거: [visual-spec-vs1-execution.md](visual-spec-vs1-execution.md).
 
 ## OD-VS-2 — Design-token source 계약 · 수용: 옵션 (a)
 
