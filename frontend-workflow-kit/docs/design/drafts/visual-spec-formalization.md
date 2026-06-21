@@ -242,7 +242,7 @@ last_reviewed: "{YYYY-MM-DD}"
 ## Cross-links
 - facts(소비 레포의 선택적 기계 인터페이스) · baseline: **프레임별로 위 `## Frame` 절에 기재**.
 - screen-spec(동작 단일출처): ./screen-spec.md
-- component-catalog(컴포넌트 존재/props 단일출처): ../../../design/component-catalog.md
+- component-catalog(컴포넌트 존재/props 단일출처): ../../../../design/component-catalog.md
 - 추출 스크립트(재생성): {추출 스크립트 경로 — 소비 레포 소유, 킷 미포함}
     ※ 수집/재생성은 소비 프로젝트 책임(킷 core 범위 밖). 회사 런(file_key·baseline 포함)은 비추적될 수 있다.
 ````
