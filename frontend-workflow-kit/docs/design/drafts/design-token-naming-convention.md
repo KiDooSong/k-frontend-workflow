@@ -220,7 +220,7 @@ token-dialect:
 
 | 규칙 | 본다 | 위반 시 |
 |---|---|---|
-| **W1-PARSE** | (선행 정규화) 칸에서 출처마커(`✔T`·`✔M`·`◎`·`▱`·`⚠`) 제거 → `·`/`또는` 로 fragment 분리 → backtick 해제. 이후 규칙은 **fragment 단위** 적용 | (정규화 규칙 — 오탐 방지) |
+| **W1-PARSE** | (선행 정규화) 칸을 `·`/`또는` 로 fragment 분리 → 각 fragment 를 **{값, 출처마커}** 로 구조화(backtick 해제; 마커 `✔T`·`✔M`·`◎`·`▱`·`⚠` 는 **버리지 않고 메타로 보존**). 이후 규칙은 fragment 단위 — W1-FORMAT/NS 는 *값*, W1-RAW 는 *마커* 를 본다 | (정규화 규칙 — 오탐 방지) |
 | **W1-FORMAT** | 정규화(W1-PARSE) 후 각 fragment 가 {§4.1 문법의 토큰 ID} \| {`raw <value>`} \| {placeholder `{...}`} \| (구조 칸) {알려진 enum} 중 하나인가 | warning |
 | **W1-NS** | head 가 (a) §2 네임스페이스 \| (b) 내장 role-map(§4.1) \| (c) 레포 dialect/확장 중 하나로 분류되나. 우선순위 (c)>(b) | 분류 실패 → **warning**("미분류 head — 오타이거나 dialect 미선언"). info 는 W1-CANON(권장형 이탈)·명시적 provisional dialect head 에만 |
 | **W1-RAW** | `raw <value>` 칸이 `⚠` + `## Gaps / Open` 항목을 동반하는가 | warning *(formalization §6 W4 와 동일 관심사 — VS-3 에서 합치거나 정렬)* |
@@ -230,7 +230,7 @@ token-dialect:
 
 W1 은 **소비 레포 토큰 source 없이도** 항상 가능하다(문서 텍스트만 파싱) — W1-FORMAT 은 전적으로, W1-NS 는 §2 네임스페이스·내장 role-map 범위에서 단독 분류(그밖 역할은 dialect 시). 그래서 VS-3 의 1차 후보다.
 
-> **정규화 예(정본 셀이 통과해야 함):** `` `space.4` ✔T · 또는 `raw 48` ⚠ `` → fragment `space.4`(토큰)·`raw 48`(raw) / `` fill ✔M · `radius.md` ✔T `` → `fill`(구조 enum)·`radius.md`(토큰) / `center / between ✔M` → 구조 enum. **셀 통째로 검사하면 오탐** — 반드시 W1-PARSE 후 fragment 단위로.
+> **정규화 예(정본 셀이 통과해야 함):** `` `space.4` ✔T · 또는 `raw 48` ⚠ `` → {값 `space.4`, 마커 ✔T}·{값 `raw 48`, 마커 ⚠}(W1-RAW 가 ⚠ 확인) / `` fill ✔M · `radius.md` ✔T `` → {`fill` 구조 enum}·{`radius.md` 토큰} / `center / between ✔M` → 구조 enum. **셀 통째로 검사하면 오탐** — 반드시 W1-PARSE 후 fragment 단위로(마커는 메타로 보존).
 
 ### 5.2 W2 — 토큰 ID **존재** 검사 (소비 레포 manifest 있을 때만, opt-in, warning-only, **never hard gate**)
 
@@ -296,7 +296,7 @@ VS-3(warning-first validate) 슬롯이 *명시 지시* 와 함께 `continue-on-e
 
 | # | 규칙 | 의존 | 심각도 | 상태 |
 |---|---|---|---|---|
-| W1-PARSE | 칸 정규화: 출처마커 제거·`·`/`또는` 분리·backtick 해제 → fragment 단위 적용 | 문서만 | (정규화) | future / VS-3 |
+| W1-PARSE | 칸 정규화: `·`/`또는` 분리 → fragment={값, 마커}(backtick 해제, 마커 메타 보존) → fragment 단위(값=FORMAT/NS, 마커=RAW) | 문서만 | (정규화) | future / VS-3 |
 | W1-FORMAT | (정규화 후) 각 fragment = 토큰ID \| `raw N` \| `{placeholder}` \| (구조칸)enum | 문서만(킷 단독) | warning | future / VS-3 |
 | W1-NS | head → 네임스페이스 분류: §2 ns \| 내장 role-map(§4.1) \| dialect/확장(우선) | 문서(+내장 map; 그밖 dialect) | warning(미분류) | future / VS-3 |
 | W1-RAW | `raw N` ↔ `⚠` + `## Gaps` 동반 | 문서만 | warning | future / VS-3 *(formalization W4 와 정렬/합치기)* |
