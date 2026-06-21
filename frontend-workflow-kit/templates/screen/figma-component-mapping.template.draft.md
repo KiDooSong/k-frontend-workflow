@@ -13,8 +13,8 @@ last_reviewed: "{YYYY-MM-DD}"
 
 <!--
   ════════════════════════════════════════════════════════════════════════════
-  DRAFT 템플릿 (figma-fidelity-001 산출) — 킷 정본 아님. 승격은 사람-승인 Open Decision.
-  figma-fidelity-001 의 L010 + J020(3화면) 추출·구현·검증 학습으로 기존
+  DRAFT 템플릿 (figma 추출 파일럿 산출) — 킷 정본 아님. 승격은 사람-승인 Open Decision.
+  figma 추출 파일럿(다화면) 의 추출·구현·검증 학습으로 기존
   templates/screen/figma-component-mapping.template.md 를 "화면별 시각 계약"으로 정식화한 제안.
 
   경계 (기존 유지):
@@ -30,7 +30,7 @@ last_reviewed: "{YYYY-MM-DD}"
   2. Facts   : implementation-facts.json (distill: instance 가지치기 + 토큰 해소) — 기계 인터페이스. 정본.
   3. Contract: 이 문서 — 사람 계약(토큰 ID·출처마커·override 로그).
 
-  주: 현 worked example(J020 3종 figma-component-mapping)은 이 정식화 이전 작성 —
+  주: 현 worked example(파일럿 화면들)은 이 정식화 이전 작성 —
       ## Data Corrections 섹션 retrofit 예정(구현보고 §4 가 출처).
   ════════════════════════════════════════════════════════════════════════════
 -->
@@ -51,7 +51,7 @@ last_reviewed: "{YYYY-MM-DD}"
 <!-- 프레임마다 줄 1개. 모달/오버레이 상태도 별도 프레임으로 — 각자 node·facts·baseline 을 가진다. -->
 - {frame name} / node `{node-id}` · {W}×{H} · mode: {light} · facts `{rel}/implementation-facts.json` · baseline `{rel}/baseline.png`
 - (모달/오버레이가 있으면) {modal frame name} / node `{modal-node-id}` · facts `{rel-modal}/implementation-facts.json` · baseline `{rel-modal}/baseline.png` — `## Visual Spec — Modal` 참조
-- file_key: `{FILE_KEY}`   <!-- ★ REST 재호출 필수(L010 누락 교훈). figma.com/design/<KEY>/... -->
+- file_key: `{FILE_KEY}`   <!-- ★ REST 재호출 필수(file_key 누락 교훈). figma.com/design/<KEY>/... -->
 
 ## Component Mapping
 <!-- "어떤 Figma 노드 = 어떤 카탈로그 컴포넌트". 4컬럼 고정. variant/props·미보유(G-xxx)는 비고. -->
@@ -90,4 +90,4 @@ last_reviewed: "{YYYY-MM-DD}"
 ## Cross-links
 - facts(기계 인터페이스) · baseline: **프레임별로 위 `## Frame` 절에 기재**(모달 등 추가 프레임은 각자 facts/baseline)
 - screen-spec(동작 단일출처): ./screen-spec.md
-- 추출 스크립트(재생성): temp/runs/figma-fidelity-001/extract-raw.mjs  ※ 현재 **J020 파일럿용 하드코딩**(file_key·SECTION·targets·date) — 다른 run/screen 은 그 값들을 수정 후 사용
+- 추출 스크립트(재생성): 외부 수집 스크립트(런 디렉터리 — 비추적). ※ 파일럿용 하드코딩(file_key·SECTION·targets·date) — 다른 run/screen 은 그 값들을 수정 후 사용. 수집 구현은 킷 core 밖 — 킷은 표준 visual-spec 계약만 정의.
