@@ -1,9 +1,13 @@
 # (TODO seed) Design-token Naming 규약 — VS-2 슬롯용
 
-> Status: **TODO seed (규약 본문 아님)**. 2026-06-21.
-> 이 파일은 VS-2 세션이 작성할 "design-token naming 규약" 문서의 **범위·소유·전제 메모**일 뿐이다.
-> 규약 본문(형식·네임스페이스 확정값)은 여기 없다 — VS-2(사람-결정 슬롯)에서 작성한다. (OD-VS-2 = 옵션 a)
-> 금지: 이 파일에 토큰 네이밍 규약을 상세 구현하지 않는다(VS-1 스코프 절제).
+> ⚠ DEPRECATED (2026-06-21~): 이 seed 의 역할(VS-2 범위·소유·전제 메모)은 규약 본문
+> [design-token-naming-convention.md](design-token-naming-convention.md) 로 **대체**됐다. 신규 참조는 그 문서를 쓴다.
+> 본 파일은 seed→규약 추적 근거 보존용으로 **한 사이클만 유지** 후 제거 예정(제거는 사람 정리 슬롯).
+> 아래 체크리스트는 규약 본문에서 어떻게 해소됐는지의 대조용 기록으로만 남긴다.
+>
+> Status: ~~TODO seed~~ → **superseded by design-token-naming-convention.md**. 2026-06-21.
+> 이 파일은 VS-2 세션이 작성할 "design-token naming 규약" 문서의 **범위·소유·전제 메모**였다(규약 본문 아님).
+> 규약 본문(형식·네임스페이스 확정값)은 여기 없다 — VS-2 에서 위 문서로 작성됨. (OD-VS-2 = 옵션 a)
 
 ---
 
@@ -19,14 +23,14 @@
 - **소비 레포**: 토큰 **값·생성·검증** 소유. 킷 core 는 Figma 수집기·토큰 생성기를 구현/번들하지 않는다.
 - 생성기를 쓰는 소비 레포의 **멱등 + GENERATED 마커**는 규약에 **권고로만**(킷 미번들).
 
-## VS-2 가 결정/작성할 것 (scope — 본 seed 에서 값 채우지 않음)
+## VS-2 가 결정/작성할 것 (scope — ✅ 규약 본문에서 해소됨)
 
-- [ ] 네임스페이스 집합 확정: `color.*` / `space.*` / `type.*` / `radius.*` / `shadow.*`(또는 `elevation.*`) — 최종 집합·계층 깊이.
-- [ ] 형식 규약(형식만, 값 아님): 소문자·점-구분·세그먼트 의미(예: `color.<role>.<variant>` 류를 채택할지).
-- [ ] 합성 토큰(typography): `type.*` 가 family/size/weight/lineHeight 를 어떻게 묶나(04 §1a "합성 토큰 expand").
-- [ ] `raw N` ↔ 토큰 승격 경로: raw 가 어떤 조건에서 토큰화되나(`## Gaps / Open` → 토큰 추가 결정).
-- [ ] 소비 레포 토큰 source 의 **인터페이스**(킷이 "받아 적는" 형식) — 생성기 자체는 소비 레포(Tokens Studio→Style Dictionary→NativeWind 는 *reference*, 04 §5).
-- [ ] (검사 연결) W1 형식 검사가 읽을 패턴의 근거 정의(VS-3 가 소비; 여기선 규약만).
+- [x] 네임스페이스 집합 확정 → 규약 §2 (필수 5종 `color`/`space`/`type`/`radius`/`shadow`\|`elevation` + 확장; asset/icon 은 토큰 아님).
+- [x] 형식 규약(형식만, 값 아님) → 규약 §4.1 문법 + §4.2 권장 canonical.
+- [x] 합성 토큰(typography) → 규약 §2(`type` = 합성) + §4.2(`type.<role>.<size>`); expand 는 소비 레포(04 §5 reference).
+- [x] `raw N` ↔ 토큰 승격 경로 → 규약 §4.4.
+- [x] 소비 레포 토큰 source 인터페이스("받아 적는" 형식) → 규약 §1 소유 표 + §4.3 dialect 선언(킷 미번들).
+- [x] (검사 연결) W1 형식 검사 근거 → 규약 §4.1 문법 + §5.1 W1; VS-3 가 소비(§8 handoff).
 
 ## 전제 / 비전제
 
