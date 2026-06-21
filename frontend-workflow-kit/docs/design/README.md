@@ -13,3 +13,4 @@ final/    합의가 끝나 정본으로 승격된 설계. (아직 없음)
 
 - [Customizable Architecture](drafts/customizable-architecture/README.md) — Tier 1 layout profile 과 Tier 2 router adapter 설계.
 - [Follow-up Quarantine and Role Expansion](drafts/follow-up-quarantine-and-role-expansion.md) — 작업 중 발견되는 후속 격리와 architecture role 확장 기준.
+- [Visual Spec 정식화](drafts/visual-spec-formalization.md) — figma-component-mapping 에 화면별 시각 계약(`## Visual Spec`) 강화. 수집기는 킷 core 밖, warning-first, 새 축 아님.
