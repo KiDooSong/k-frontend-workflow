@@ -24,6 +24,9 @@
 //   13. Interaction Matrix v2(structured) 형식 — WARNING-ONLY (하드 게이트 아님, 검사 카운트 "12종"에 미포함).
 //       Result Type 헤더가 있는 표만 점검 → v1 표는 무발화 = v1 출력 byte-identical. 에러 승격 없음(warning-first).
 //       Result Type=route Target 은 route-tree.txt 의 route token 과 EXACT 문자열 교차검증한다(artifact 부재 시 skip).
+//   ※ Preflight cold-start(warning-only): 저작 artifact(artifact_type frontmatter) 0건이면 validate 가 막을
+//      대상이 없어 vacuously green(exit 0)으로 통과한다 — 갓 도입한 프로젝트의 fail-open. 게이트(exit code)는
+//      건드리지 않고 경고로만 표면화한다(정상 최소 부트스트랩은 stub 도 artifact_type 을 가져 발화 안 함).
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
@@ -202,6 +205,21 @@ function main() {
     if (parseError) add(1, f, `frontmatter YAML 파싱 실패: ${parseError}`);
     if (!hasFrontmatter || !data.artifact_type) continue; // 규칙 문서가 아님
     docs.push({ file: f, fm: data });
+  }
+
+  // 콜드스타트 fail-open 가드 (warning-first): 저작된 artifact 문서가 0건이면 막을 대상이 없어
+  // vacuously green(exit 0)으로 통과한다 — 갓 도입한 프로젝트가 "통과=됐다"로 오인하는 fail-open.
+  // 게이트(exit code)는 건드리지 않고 경고만 띄워 LLM/사람이 부트스트랩 미완을 인지하게 한다.
+  // 정상 최소 부트스트랩(navigation-map + screen-spec stub)은 artifact_type frontmatter 를 가지므로
+  // docs.length>=1 이라 발화하지 않는다(open-decisions.md "약하게 시작" 계열의 추가 신호).
+  if (docs.length === 0) {
+    warn(
+      'cold-start',
+      docsDir,
+      '저작된 artifact 문서(artifact_type frontmatter)가 0건 — validate 가 막을 대상이 없어 ' +
+        'vacuously 통과합니다(exit 0). 부트스트랩 미완이거나(--docs 경로 확인) 템플릿만 복사된 ' +
+        '상태일 수 있습니다. navigation-map + screen-spec stub 을 먼저 저작하세요.',
+    );
   }
 
   const knownArtifactIds = new Set(docs.map((d) => d.fm.artifact_id).filter(Boolean));
