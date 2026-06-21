@@ -19,7 +19,7 @@
 
 | 기록 | 무엇을 했나 |
 |---|---|
-| [dogfood-001-l010.md](dogfood-001-l010.md) | 01~03 의 결론을 **실제 구동 Expo 앱(L010 회원가입)** 에 한 번 적용한 맛보기. `screen-spec → Planner 플랜 → Generator 스펙 → playwright test` 체인을 getByRole/getByTestId 두 번 굴려 **18/18 green**. testID 가 선택자를 카피 결합에서 풀어준 것, E2E 가 spec↔구현 드리프트를 라이브로 잡아낸 것(F9), 진짜 비용은 *에이전트*가 아니라 *앱↔킷 경계 가정*(testID·route·layout)이라는 것을 실증. 원시 로그: [`temp/runs/maestro-dogfood-001/`](../../../temp/runs/maestro-dogfood-001). |
+| [dogfood-001-l010.md](dogfood-001-l010.md) | 01~03 의 결론을 **실제 구동 Expo 앱(L010 가입 랜딩)** 에 한 번 적용한 맛보기. `screen-spec → Planner 플랜 → Generator 스펙 → playwright test` 체인을 getByRole/getByTestId 두 번 굴려 **18/18 green**. testID 가 선택자를 카피 결합에서 풀어준 것, E2E 가 spec↔구현 드리프트를 라이브로 잡아낸 것(F9), 진짜 비용은 *에이전트*가 아니라 *앱↔킷 경계 가정*(testID·route·layout)이라는 것을 실증. 원시 로그 `temp/runs/maestro-dogfood-001/` 는 **비추적 로컬**(앱 카피·소스 임베드). |
 
 ## 이 보고서를 떠받치는 단 하나의 사실
 

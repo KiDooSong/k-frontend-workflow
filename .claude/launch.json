@@ -18,13 +18,6 @@
       "runtimeExecutable": "node",
       "runtimeArgs": [".claude/skills/visualize-decision/assets/serve.mjs", ".claude/skills/visualize-decision/assets/examples/_test-skip.html"],
       "port": 4178
-    },
-    {
-      "name": "figma-fidelity-app",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "web", "--", "--port", "19006"],
-      "cwd": "temp/runs/figma-fidelity-001/app",
-      "port": 19006
     }
   ]
 }

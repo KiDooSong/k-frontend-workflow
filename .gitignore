@@ -29,6 +29,11 @@ figma-pat
 # 리포트(file_key) 포함. 일반 분석은 docs/research/ 에, 정식 템플릿은 별도로 추적.
 temp/runs/figma-fidelity-001/
 
+# maestro dogfood 하니스: 위 figma 앱(figma-fidelity-001)을 구동하는 per-run 산출물.
+# 앱 카피·컴포넌트 소스(app-testid.patch)·앱 경로·screen-spec 카피가 임베드되어 figma-fidelity-001 과 동일 범주.
+# findings 는 docs/research/playwright/ 에 추적. 하니스는 로컬 재현용으로만 보관.
+temp/runs/maestro-dogfood-001/
+
 # Expo/RN 실험 샌드박스(temp/runs/<run>/app/) — 소스는 추적, 생성·빌드 산출물만 제외
 temp/runs/*/app/node_modules/
 temp/runs/*/app/.expo/
