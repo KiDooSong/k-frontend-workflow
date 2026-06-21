@@ -48,8 +48,9 @@ last_reviewed: "{YYYY-MM-DD}"
 - `⚠`  추론/리터럴/미해결 → `## Gaps` 또는 `## Data Corrections`
 
 ## Frame
-- {frame name} / node `{node-id}` · {W}×{H} · mode: {light}
-- (모달/오버레이 상태가 있으면 줄 추가) {modal frame name} / node `{modal-node-id}` — `## Visual Spec — Modal` 참조
+<!-- 프레임마다 줄 1개. 모달/오버레이 상태도 별도 프레임으로 — 각자 node·facts·baseline 을 가진다. -->
+- {frame name} / node `{node-id}` · {W}×{H} · mode: {light} · facts `{rel}/implementation-facts.json` · baseline `{rel}/baseline.png`
+- (모달/오버레이가 있으면) {modal frame name} / node `{modal-node-id}` · facts `{rel-modal}/implementation-facts.json` · baseline `{rel-modal}/baseline.png` — `## Visual Spec — Modal` 참조
 - file_key: `{FILE_KEY}`   <!-- ★ REST 재호출 필수(L010 누락 교훈). figma.com/design/<KEY>/... -->
 
 ## Component Mapping
@@ -87,7 +88,6 @@ last_reviewed: "{YYYY-MM-DD}"
 - {예: 동일값 토큰 다중후보 — boundVariables ID 로만 확정(Professional Variables API 부재)}
 
 ## Cross-links
-- facts(기계 인터페이스): {rel}/implementation-facts.json
-- baseline: {rel}/baseline.png  (모달 등 추가 프레임은 각 baseline 추가)
+- facts(기계 인터페이스) · baseline: **프레임별로 위 `## Frame` 절에 기재**(모달 등 추가 프레임은 각자 facts/baseline)
 - screen-spec(동작 단일출처): ./screen-spec.md
 - 추출 스크립트(재생성): temp/runs/figma-fidelity-001/extract-raw.mjs  ※ 현재 **J020 파일럿용 하드코딩**(file_key·SECTION·targets·date) — 다른 run/screen 은 그 값들을 수정 후 사용
