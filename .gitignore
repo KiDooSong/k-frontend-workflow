@@ -20,3 +20,15 @@ docs/frontend-workflow_viz/
 
 # git worktree (격리 작업용) — 본래 추적 대상 아님 (분석 보고서 P11)
 .claude/worktrees/
+
+# Expo/RN 실험 샌드박스(temp/runs/<run>/app/) — 소스는 추적, 생성·빌드 산출물만 제외
+temp/runs/*/app/node_modules/
+temp/runs/*/app/.expo/
+temp/runs/*/app/dist/
+temp/runs/*/app/web-build/
+
+# REST 추출 원본(node.rest.json, 6~10k줄) — 아카이브, 아무도 안 읽음. extract-raw.mjs + file_key/node 로 재생성.
+# 정본(기계 인터페이스)은 implementation-facts.json(추적 유지).
+temp/runs/**/node.rest.json
+
+figma-pat
