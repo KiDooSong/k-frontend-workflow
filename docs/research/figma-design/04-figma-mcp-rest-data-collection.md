@@ -247,6 +247,7 @@ REST/Plugin 필드를 RN/NativeWind 로 옮기는 결정적 매핑. RN 특이점
 - 실험·추출: [실험 프로토콜](../../../temp/proposals/figma-fidelity-experiment.md)(V-A/V-B/V-C·합격선 ≤2%) · [EXTRACTION.md](../../../temp/runs/figma-fidelity-001/EXTRACTION.md)(채널 분담)
 - 검증 도구: [playwright 리서치](../playwright/README.md)(Expo 웹 캡처)
 - 정착지 템플릿: [figma-component-mapping.template.md](../../../frontend-workflow-kit/templates/screen/figma-component-mapping.template.md)
+- 정식화 제안: [visual-spec-formalization](../../../frontend-workflow-kit/docs/design/drafts/visual-spec-formalization.md) (§7 스키마의 채택 경로·PR69 드래프트 교정·후속 OD)
 
 ---
 

@@ -41,6 +41,8 @@
 
 읽는 순서: **01 → 02 → 03**(진단·처방) → **04**(처방 1·2·3 을 MCP/REST 2채널로 *어떻게 구현·수집·조합* 하나의 레퍼런스). 04 는 [실험 프로토콜](../../../temp/proposals/figma-fidelity-experiment.md)·[EXTRACTION.md](../../../temp/runs/figma-fidelity-001/EXTRACTION.md) 의 채널 분담을 전제로 한다.
 
+> 후속 정식화: 위 처방 1·2(시각 계약 산출물)는 [visual-spec 정식화 제안](../../../frontend-workflow-kit/docs/design/drafts/visual-spec-formalization.md) 으로 이어진다 — figma-component-mapping 강화(새 축 아님) · warning-first · 수집기는 킷 core 범위 밖. (이 폴더는 리서치 evidence, 정식 템플릿은 별도 추적)
+
 ## 핵심 주장 검증 (실제 파일 대조 결과)
 
 | 주장 | 판정 | 근거(실제 파일) |
