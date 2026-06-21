@@ -50,10 +50,10 @@
 
 **확장(extension) — 필수 아님, 소비 레포 선언 시 허용:**
 
-- `icon` / `asset` — 아이콘-이름 *레지스트리*(토큰처럼 ID 로 참조)를 운영하는 레포만. 기본값은 **에셋 = 파일 경로**(`## Assets` 의 path·format) 이며 토큰이 아니다([04 §1c](../../../../docs/research/figma-design/04-figma-mcp-rest-data-collection.md): "에셋 = 파일 경로(토큰 아님)", [03 3순위](../../../../docs/research/figma-design/03-gaps-and-path-to-95.md): 에셋 파이프라인은 별도·core 밖).
+- `icon` / `asset` — **소비 레포 선택(킷이 하드 결정하지 않음).** 에셋/아이콘을 *토큰으로* 다루면(아이콘-이름 레지스트리·Tokens Studio asset 토큰 등) `icon.*`/`asset.*` 를 §4.1 문법대로 쓰고, *경로로* 다루면 `## Assets`(path·format)에 적는다 — **둘 다 1급**. 최소 *필수* 5종에서 빠진 이유는 "에셋=비토큰"이 아니라, 색/간격/타이포/radius/shadow 는 거의 모든 DS 공통인데 **에셋 토큰화는 DS 마다 갈려 보편이 아니기** 때문이다([04 §1c](../../../../docs/research/figma-design/04-figma-mcp-rest-data-collection.md)·[03 3순위](../../../../docs/research/figma-design/03-gaps-and-path-to-95.md) 는 *경로 방식의 예시* 로 인용 — 강제 아님).
 - 기타 레포가 이미 가진 것(`size`/dimension, `opacity`, `z`/zIndex, `border`/width, `breakpoint` …) — 규약은 **금지하지 않되 요구하지도 않는다**. W1 은 선언된 확장 head 를 알고 있을 때만 통과시키고, 모르는 head 는 *경고*(에러 아님)한다(§5).
 
-> **asset/icon 필요 여부 결론:** 토큰 네임스페이스 최소 세트에 **넣지 않는다**. 에셋은 경로 기반(`## Assets`)으로 남기고, 아이콘-이름 토큰 레지스트리는 *옵션 확장* `icon.*` 으로만 허용한다. 이는 "킷이 에셋 파이프라인을 책임지지 않는다"는 경계와 정합한다. (소비 레포 worked example 도 아이콘을 `assets/icons/<set>/<size>/*.svg` 경로로 두고 토큰화하지 않는다 — 정합.)
+> **asset/icon 결론 — 중요한 하드 결정 아님:** 킷은 어느 쪽도 강제하지 않는다. 토큰화하면 `icon.*`/`asset.*`(확장 네임스페이스), 아니면 `## Assets` 경로 — **둘 다 흡수**. 최소 필수 5종은 *보편성* 기준이지 "에셋=비토큰" 선언이 아니다. (worked example 이 경로로 둔 건 급조판 사정일 뿐 — 토큰화한 DS 도 정상 흡수.)
 
 > **atomic vs semantic:** 위 head 는 두 tier 에 공통으로 쓰인다 — **atomic**(원시 팔레트, 예 `color.neutral.5`)·**semantic**(역할 alias, 예 `bg.surface`). 2-tier 정의·alias·검증은 소비 레포 소유(§4.6). 흔한 표기 별칭 `spacing` ↔ `space`, `opacity.*`·`elevation.*` 도 허용(§4.3·확장).
 
@@ -63,6 +63,8 @@
 
 정본 템플릿 `## Visual Spec` 의 **최소 8컬럼**(VS-1 에서 고정, 더 늘리지 않음):
 `Section/Node | direction | gap | padding | align/justify | sizing | color | type`
+
+> **왜 토큰 네이밍이 필요한가 (scope):** 화면은 카탈로그 **컴포넌트**로 조립하고, 컴포넌트 *내부* 스타일(버튼의 색·radius·패딩 등)은 컴포넌트 계약이 소유한다 — Visual Spec 에서 **재지정하지 않는다**(Provenance `◎` = "DS 컴포넌트 내부값, 화면 추출 아님"). 토큰·네이밍이 필요한 건 컴포넌트 *사이·주변* 의 **화면-레벨 구성**이다: auto-layout 구조(direction/gap/padding/align/sizing)·위치(절대배치는 구조 enum/Notes), 그리고 어느 단일 컴포넌트도 소유하지 않는 화면 표면(배경)·간격·섹션 타이포. 이 "작은 레이아웃 디테일"을 리터럴(`raw 16`)이 아니라 **토큰 ID(`space.4`)** 로 적어야 검사 가능해지고(W1/W2), 2-tier(semantic) 덕에 화면은 역할 이름(`bg.surface`)만 참조한다. → 컴포넌트 존재/props=component-catalog, 동작=ScreenSpec, **컴포넌트 내부 시각=`◎`**, **컴포넌트를 배치한 화면-레벨 시각=여기(8컬럼)**.
 
 | 컬럼 | 토큰? | 네임스페이스 | 표기 |
 |---|---|---|---|
