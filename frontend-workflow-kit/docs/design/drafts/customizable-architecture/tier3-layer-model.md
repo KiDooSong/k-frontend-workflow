@@ -5,7 +5,7 @@
 > 정책/매니페스트 파일 변경을 지시하지 않는다. 모든 변경은 **PROPOSED (future PR)** 표기.
 > 상위 맥락: [README.md](README.md). 짝 문서: [tier1-layout-profile.md](tier1-layout-profile.md)(경로 바인딩) ·
 > [tier2-router-adapter.md](tier2-router-adapter.md)(router/codegen 의미).
-> 결정 근거: `../../../temp/runs/axis2-pivot-decision-prep-001.md`(OD-12) · `../../../temp/reports/kit-multilayer-adoption-assessment-20260621.md`.
+> 결정 근거: `../../../../temp/runs/axis2-pivot-decision-prep-001.md`(OD-12) · `../../../../temp/reports/kit-multilayer-adoption-assessment-20260621.md`.
 
 ---
 
@@ -100,7 +100,12 @@ layers:
 
 ```txt
 for each layer L in resolvedLayout.layers (fact: dir_has_files):
-    facts[`${L.role}_present`] = dirHasFiles(layout.roleToDir(L.role, {domain}), ['.ts','.tsx'])
+    // 가드 보존(spec.mjs:312-318 동형): srcDir·domain·layout 미주입이거나 roleToDir 미해소면 fact 생략.
+    // 이 가드를 빠뜨리면 hook_present == fake_hook_exists byte-동치(§7)가 깨진다.
+    if (srcDir && domain && layout):
+        roleDir = layout.roleToDir(L.role, {domain})
+        if (roleDir):
+            facts[`${L.role}_present`] = dirHasFiles(resolve(projectRoot, roleDir), ['.ts','.tsx'])
 ```
 
 - expo-feature 는 `hook` layer 를 선언 → `hook_present` 산출. **back-compat 별칭**: `fake_hook_exists := hook_present`
@@ -115,7 +120,7 @@ for each layer L in resolvedLayout.layers (fact: dir_has_files):
 - 로더(`layout-profile.mjs` 확장)가 `layers[].edits_at`/`gates` 를 읽어 **resolved policy 의 allowed_paths/requires 를 합성**한다.
   정책 YAML 의 손수 토큰 박기(tier1)가 *데이터 선언*으로 승격된다.
 - **불변식 보존:** "게이트를 *올리는*"(새 계층을 gates 로 묶어 더 막는) 건 config 로 가능하되, LLM 이 **게이트를 내리는**(allowed_paths
-  자가 확장·gates 제거) 건 금지. `layers:` 편집은 사람 리뷰 대상(README 불변식 6 계열). LLM 은 새 계층을 *추가 제안*만.
+  자가 확장·gates 제거) 건 금지. `layers:` 편집은 사람 리뷰 대상(open-decisions.md "게이트 해제는 사람만" 원칙 계열). LLM 은 새 계층을 *추가 제안*만.
 - tier2 와의 결합: codegen 어댑터가 산출하는 `roles.hook`/`roles.api_client` 출력은 해당 layer 의 fact 에 자연 합류(별도 결합 불필요).
 
 ---
@@ -172,13 +177,19 @@ expo-feature 프리셋의 layers: 선언 = 현 3계층(screen/hook/api) =
 # 9. 보존 불변식 (킷 README §불변식 와 정합)
 
 - **#1 판정 로직 한 곳.** `layers:` 는 *데이터*다. 모드 판정은 여전히 `readiness.mjs`(`computeReadiness`) 단일 출처 — fact 공급원만 늘어난다.
-- **#6 게이트 푸는 전이는 사람만.** 새 계층을 gates 로 묶는 건 config 가능하나, LLM 은 게이트를 *올리기만*(§5). `layers:` 편집은 사람 리뷰.
+- **게이트 해제는 사람만** (open-decisions.md 원칙; README #6 "confirmed 승격은 사람만"과 같은 계열). 새 계층을 gates 로 묶는 건 config 가능하나, LLM 은 게이트를 *올리기만*(§5). `layers:` 편집은 사람 리뷰.
 - **#7 생성기 멱등.** lint/catalog 생성기는 선언에서 결정적으로 산출(정렬 고정).
 - **warning-first 기본.** 새 계층 fact 게이트·layer 린트는 도입 telemetry 전까지 warning(OD-12 §3) — 하드 승격은 사람 결정.
 
 ---
 
 # 10. Open decisions (tier3 구현 OD 에서 닫을 것)
+
+> ①~③ 은 **tier3 초안 코덱스 리뷰(2026-06-21)가 표면화한 핵심 미해결 쟁점**이다 — resolve(구현 착수) 전 반드시 닫는다. 현재 설계는 그대로는 구현 불가.
+
+- **① 비단조 allow/forbidden 표현력 (blocker 급):** 현 정책의 편집권은 *비단조*다 — `{roles.screen}` 은 screen-skeleton~final-fixture-ui 에서 allowed → **api-integrated-ui 에서 명시 forbidden**(fake-hook 계약, `implementation-mode-policy.yaml:82`) → production-ready 에서 다시 allowed. `{roles.hook}` 은 rough·api-integrated 에선 allowed 지만 그 사이 final-fixture-ui 에선 미허용(비연속). 그런데 §3 의 단일 `edits_at: <min mode>`(+spread)는 (a)"구간 허용 후 후속 모드 명시 금지"도 (b)"비연속 허용"도 표현 못 하고, `layers:` 스키마엔 `forbidden_paths` 를 산출하는 필드가 **아예 없다**. 즉 §1 이 "가장 큰 단일 가정"이라 부른 fake-hook 차단을 layers 만으로 재생성하면 사라진다 → §7/§11 의 byte-동치 수용기준과 **자기모순**. **선택지:** `forbidden_at`(명시 per-mode allow/deny) 필드 추가 vs. byte-동치 주장을 *presence-fact* 범위로 한정하고 `forbidden_paths` 는 정책에 손수 유지.
+- **② `layers` ↔ 정책 단일출처 / 병합 의미:** §5 는 "정책 YAML 손수 토큰이 데이터 선언으로 *승격*(로더가 allowed_paths/requires 합성)"이라 하고, §11 은 같은 정책 파일 edit 을 "(선택) … expo 는 *불변*"이라 한다 — 둘 다 참일 수 없다(layers 가 source-of-truth 면 정책 재생성, 정책 불변이면 allowed_paths 이중 보유·drift). **누가 authoritative 인지 + 병합 규칙(override/union)** 미정.
+- **③ "depth 축" 용어 통일:** 같은 커밋이 한쪽(README 표·tier3 §1)에선 "Axis 2 / depth 축"으로 브랜딩하고, OD §4 에선 "새 축 아님"을 주장 → 양다리로 보임. literal(roadmap "축"=artifact 축)로는 방어되나, **"readiness/mode 축의 depth 일반화"로 표현 통일** 또는 OD §4 에 "'depth 축' 라벨은 포지셔닝일 뿐 새 artifact 축 아님" 명시 필요.
 
 - **계층 게이트의 강도:** 새 계층을 `gates`(진입 requires)로 막을지, `edits_at`(경로 허용만)으로 둘지의 기본값. 보수적이면 경로 허용만 + 명시 opt-in gates.
 - **`fact` 종류 확장:** v1 `dir_has_files` 외에 props/export/테스트 존재 등 완성도 측정을 언제 도입할지.

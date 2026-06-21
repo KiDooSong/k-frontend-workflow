@@ -3,7 +3,7 @@
 > Status: **DECISION PREP (open)** · 2026-06-21 · decision_id: **OD-12 (제안)** · owner: **maintainer(사람)**
 > 성격: roadmap-direction / gate-semantics 결정 (OD-11 선례와 동형 — run-report 로 prep, **resolve 는 사람만**).
 > 이 문서는 결정을 **준비**한다. 게이트를 풀거나 정본(roadmap/policy)을 바꾸지 않는다 — resolve 후 사람이 roadmap 에 cross-link.
-> 근거 보고서(세션 산출): `temp/reports/kit-multilayer-adoption-assessment-20260621.md` (멀티에이전트 조사 + 코드 실측).
+> 근거 보고서(세션 산출, 이 브랜치에 vendored): [../reports/kit-multilayer-adoption-assessment-20260621.md](../reports/kit-multilayer-adoption-assessment-20260621.md) (멀티에이전트 조사 + 코드 실측).
 > 짝 설계 초안: [docs/design/drafts/customizable-architecture/tier3-layer-model.md](../../docs/design/drafts/customizable-architecture/tier3-layer-model.md).
 
 ---
@@ -101,11 +101,21 @@
 3. resolve=A 시 → tier3 초안 리뷰(코덱스 포함) → 구현 OD(별도) → 구현(expo-feature byte-동치 회귀 기준).
 4. 재오픈 트리거: tier3 초안이 byte-동치 회귀를 깨거나, 실제 도입에서 N계층 모델의 결함이 드러나면.
 
+### 8.1 tier3 초안 리뷰(코덱스, 2026-06-21)가 표면화한 미해결 설계 쟁점
+
+resolve=A(구현 착수) 전에 tier3 §10 에서 반드시 닫아야 한다 — 현재 tier3 설계는 그대로는 구현 불가:
+
+1. **비단조 allow/forbidden 표현력** — `edits_at` 단일 임계값이 "화면@api-integrated 차단(fake-hook 계약)" 같은 *열렸다 다시 잠김* 패턴을 표현 못 함 + `layers:` 에 forbidden 필드 부재 → §7/§11 byte-동치 주장과 자기모순.
+2. **`layers` ↔ 정책 단일출처** — §5(layers 가 정책 합성) vs §11(정책 불변)의 충돌, 병합 규칙 미정.
+3. **"depth 축" 용어** — README "depth 축" 브랜딩 ↔ §4 "새 축 아님" 주장의 양다리, 표현 통일 필요.
+
+상세·선택지: [tier3-layer-model.md §10](../../docs/design/drafts/customizable-architecture/tier3-layer-model.md).
+
 ---
 
 ## 증거 / 링크
 
-- 조사 보고서: `temp/reports/kit-multilayer-adoption-assessment-20260621.md` (세션, 멀티에이전트 + 코드 실측)
+- 조사 보고서: [../reports/kit-multilayer-adoption-assessment-20260621.md](../reports/kit-multilayer-adoption-assessment-20260621.md) (세션, 멀티에이전트 + 코드 실측; 이 브랜치에 vendored)
 - 설계 초안: [tier3-layer-model.md](../../docs/design/drafts/customizable-architecture/tier3-layer-model.md)
 - 선례: [tier2-gate-promotion-decision-prep-001.md](tier2-gate-promotion-decision-prep-001.md) (OD-11 prep 형식)
 - 핵심 코드: `policies/implementation-mode-policy.yaml` · `scripts/lib/spec.mjs:308-318` · `presets/expo-feature.yaml` · `templates/meta/lint-policy.template.yaml`
