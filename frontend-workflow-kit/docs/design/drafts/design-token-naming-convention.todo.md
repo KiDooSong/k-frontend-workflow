@@ -25,7 +25,7 @@
 
 ## VS-2 가 결정/작성할 것 (scope — ✅ 규약 본문에서 해소됨)
 
-- [x] 네임스페이스 집합 확정 → 규약 §2 (필수 5종 `color`/`space`/`type`/`radius`/`shadow`\|`elevation` + 확장; asset/icon 은 필수 세트 밖 — 경로 `## Assets` 또는 `icon.*`/`asset.*` 확장, 킷 비강제).
+- [x] 네임스페이스 집합 확정 → 규약 §2 (필수 5종 + 확장; 에셋은 필수 세트 밖 — 경로 `## Assets` 또는 `asset.*` 확장, 킷 비강제. bare `icon.*`/`border.*` 는 색 역할).
 - [x] 형식 규약(형식만, 값 아님) → 규약 §4.1 문법 + §4.2 권장 canonical.
 - [x] 합성 토큰(typography) → 규약 §2(`type` = 합성) + §4.2(`type.<role>.<size>`); expand 는 소비 레포(04 §5 reference).
 - [x] `raw N` ↔ 토큰 승격 경로 → 규약 §4.4.

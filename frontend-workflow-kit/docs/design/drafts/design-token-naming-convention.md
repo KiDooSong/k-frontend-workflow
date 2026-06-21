@@ -53,7 +53,7 @@
 - `asset` (아이콘 파일 `asset.icon.*`) — **소비 레포 선택(킷이 하드 결정하지 않음).** SVG/이미지 에셋을 *토큰으로* 다루면(레지스트리·Tokens Studio asset 토큰) `asset.*` 확장을 §4.1 문법대로 쓰고, *경로로* 다루면 `## Assets`(path·format)에 적는다 — **둘 다 1급**. ⚠ bare `icon.*`/`border.*` 는 **색 역할**(아이콘 *틴트*·보더 *색*; research [04](../../../../docs/research/figma-design/04-figma-mcp-rest-data-collection.md) 의 `icon/default/...` 색 precedent)이라 에셋 네임스페이스로 쓰지 않는다(충돌 회피 — §4.1 우선순위). 최소 *필수* 5종에서 빠진 이유는 "에셋=비토큰"이 아니라, 색/간격/타이포/radius/shadow 는 거의 모든 DS 공통인데 **에셋 토큰화는 DS 마다 갈려 보편이 아니기** 때문이다([03 3순위](../../../../docs/research/figma-design/03-gaps-and-path-to-95.md) 는 *경로 방식 예시*).
 - 기타 레포가 이미 가진 것(`size`/dimension, `opacity`, `z`/zIndex, `border-width`, `breakpoint` …) — 규약은 **금지하지 않되 요구하지도 않는다**. (bare `border.*` 는 색 역할이므로 보더 *두께* 는 `border-width.*` 등 구분된 head 로.) W1 은 선언된 확장 head 를 알 때만 분류 통과시키고, 분류 안 되는 head 는 *경고*(에러 아님)한다(§5).
 
-> **asset/icon 결론 — 중요한 하드 결정 아님:** 킷은 어느 쪽도 강제하지 않는다. 토큰화하면 `icon.*`/`asset.*`(확장 네임스페이스), 아니면 `## Assets` 경로 — **둘 다 흡수**. 최소 필수 5종은 *보편성* 기준이지 "에셋=비토큰" 선언이 아니다. (worked example 이 경로로 둔 건 급조판 사정일 뿐 — 토큰화한 DS 도 정상 흡수.)
+> **asset/icon 결론 — 중요한 하드 결정 아님:** 킷은 어느 쪽도 강제하지 않는다. 토큰화하면 `asset.*`(아이콘 파일 `asset.icon.*`), 아니면 `## Assets` 경로 — **둘 다 흡수**. (bare `icon.*`/`border.*` 는 색 역할 — §4.1; bare `icon.*` 를 *에셋* 으로 쓰려면 dialect 로 내장 color 역할을 명시적으로 override 해야 한다.) 최소 필수 5종은 *보편성* 기준이지 "에셋=비토큰" 선언이 아니다. (worked example 이 경로로 둔 건 급조판 사정일 뿐 — 토큰화한 DS 도 정상 흡수.)
 
 > **atomic vs semantic:** 위 head 는 두 tier 에 공통으로 쓰인다 — **atomic**(원시 팔레트, 예 `color.neutral.5`)·**semantic**(역할 alias, 예 `bg.surface`). 2-tier 정의·alias·검증은 소비 레포 소유(§4.6). 흔한 표기 별칭 `spacing` ↔ `space`, `opacity.*`·`elevation.*` 도 허용(§4.3·확장).
 
@@ -206,7 +206,7 @@ token-dialect:
 - **alias·해소값 드리프트·atomic 커버리지 같은 2-tier 무결성 검증은 소비 레포 도구의 몫**이다(킷 범위 밖 — OD-VS-2 소유 경계). 킷의 W2(존재 검사)는 *참조 ID 가 manifest 에 있나*만 보고, atomic↔semantic 일관성까지 보지 않는다.
 - 킷은 두 tier 의 **ID 형식**만 규정한다(§4.1 문법은 atomic·semantic 공통). 값·alias·tier 경계 정의는 소비 레포.
 
-> **정합성 점검(소비 레포 worked example):** 파일럿의 DTCG 2-tier(atomic `color/<palette>/<step>` → semantic `<role>/<variant>` alias, 예 `background/normal`) + NativeWind 유틸 소비 방향과 **구조적 차이 없음**. 본 규약은 그 방향을 *받아 적는* 계약이며, 표기 차이(슬래시·`spacing`·head 생략·유틸리티)는 §4.3 dialect 로 흡수한다 — 특정 DS 값/세트를 정본화하지 않는다.
+> **정합성 점검(소비 레포 worked example):** 파일럿의 DTCG 2-tier(atomic `color/<palette>/<step>` → semantic `<role>/<variant>` alias, 예 `background/normal`) + NativeWind 유틸 소비 방향과 **구조적 차이 없음**. 본 규약은 그 방향을 *받아 적는* 계약이며, head 생략형(`background` 등 일반 역할)은 내장 role-map 으로, 그 밖 표기 차이(슬래시·`spacing`·유틸리티)는 §4.3 dialect 로 흡수한다 — 특정 DS 값/세트를 정본화하지 않는다.
 
 ---
 
@@ -225,7 +225,7 @@ token-dialect:
 | **W1-RAW** | `raw <value>` 칸이 `⚠` + `## Gaps / Open` 항목을 동반하는가 | warning *(formalization §6 W4 와 동일 관심사 — VS-3 에서 합치거나 정렬)* |
 | **W1-PLACEHOLDER** | `{...}` 는 pending 으로 통과(에러 아님) | info |
 | **W1-ENUM** | 구조 칸(direction/align·justify/sizing)은 enum 을 받음 — 토큰-형식 검사에서 **제외**(오탐 방지). 단 `sizing` 의 inline `radius.*` 는 토큰으로 함께 인식 | (오탐 방지 규칙) |
-| **W1-CANON** | 권장 canonical 형식 이탈(`/`·head 생략·camelCase 등 허용형) | **info 만**(허용형은 유효 — 경고 아님) |
+| **W1-CANON** | 권장 canonical 이탈 — **슬래시·camelCase·유틸리티(`p-4`) 등 dialect 흡수형**. (head 생략형 `bg.surface`·`title.md` 은 canonical 이므로 **제외**) | **info 만**(허용형은 유효 — 경고 아님) |
 
 W1 은 **소비 레포 토큰 source 없이도** 항상 가능하다(문서 텍스트만 파싱) — W1-FORMAT 은 전적으로, W1-NS 는 §2 네임스페이스·내장 role-map 범위에서 단독 분류(그밖 역할은 dialect 시). 그래서 VS-3 의 1차 후보다.
 
@@ -298,7 +298,7 @@ VS-3(warning-first validate) 슬롯이 *명시 지시* 와 함께 `continue-on-e
 | W1-RAW | `raw N` ↔ `⚠` + `## Gaps` 동반 | 문서만 | warning | future / VS-3 *(formalization W4 와 정렬/합치기)* |
 | W1-PLACEHOLDER | `{...}` = pending 통과 | 문서만 | info | future / VS-3 |
 | W1-ENUM | 구조 칸은 토큰-형식 검사 제외(오탐 방지); `sizing` inline `radius.*` 는 토큰 인식 | 문서만 | (규칙) | future / VS-3 |
-| W1-CANON | 권장형 이탈은 info(허용형 유효) | 문서(+dialect) | info | future / VS-3 |
+| W1-CANON | 권장형 이탈(슬래시·camelCase·유틸리티; head 생략형은 canonical=제외) | 문서(+dialect) | info | future / VS-3 |
 | W2-PRECOND | manifest 없으면 W2 전체 skip(no-op) | **소비 레포 manifest** | (전제) | future / **VS-2 후**·manifest 레포만 |
 | W2-RESOLVE | 토큰 ID 가 manifest 에 존재(dialect 정규화 후) | **소비 레포 manifest** | warning | future / **VS-2 후** |
 | W2-EXEMPT | `raw N` 은 W2 면제 | 문서 | (규칙) | future |
