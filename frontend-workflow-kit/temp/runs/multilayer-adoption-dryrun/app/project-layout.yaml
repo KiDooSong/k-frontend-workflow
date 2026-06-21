@@ -1,0 +1,23 @@
+# 소비 프로젝트(Clean Architecture Expo) 레이아웃 프로파일.
+# Tier1 = 기존 7 role 을 clean-arch 경로로 재바인딩. Axis 2 = 추가 계층을 새 role 로 선언 시도.
+version: 1
+preset: expo-feature
+
+roles:
+  # --- Tier1: 기존 role 재바인딩 (같은 3계층을 다른 폴더에) ---
+  route_entry: src/app/**
+  screen: src/presentation/{domain}/screens/**
+  domain_component: src/presentation/{domain}/components/**
+  hook: src/presentation/{domain}/viewmodels/**   # ViewModel 을 hook role 에 욱여넣음 (보고서 §3.4 MVVM)
+  ui_primitive: src/components/ui/**
+  api_client: src/data/{domain}/datasources/**
+  api_schema: src/api/schemas/**
+
+  # --- Axis 2: 추가 계층을 새 role 로 선언 (loader 의 mergeRoles 가 임의 키 허용) ---
+  view_model: src/presentation/{domain}/viewmodels/**
+  use_case: src/domain/{domain}/usecases/**
+  entity: src/domain/{domain}/entities/**
+  repository_interface: src/domain/{domain}/repositories/**
+  repository_impl: src/data/{domain}/repositories/**
+  data_source: src/data/{domain}/datasources/**
+  mapper: src/data/{domain}/mappers/**

@@ -1,0 +1,26 @@
+# GENERATED FILE — DO NOT EDIT
+# Source:  docs/frontend-workflow/domains/**/screen-spec.md (frontmatter + 본문)
+# Command: npm run workflow:state
+generated_at: 2026-06-21
+global:
+  navigation_map_status: draft
+  component_catalog_generated: true
+  stub_screen_specs_count: 1
+screens:
+  PROFILE-001:
+    status: confirmed
+    domain: profile
+    route: /(tabs)/profile
+    stub: false
+    derived:
+      state_matrix_complete: false
+      interaction_matrix_complete: true
+      copy_keys_has_tbd: false
+      tbd_count: 0
+      unknown_count: 0
+      open_decisions_count: 0
+      blocking_decisions: []
+      malformed_decisions: []
+      api_confidence_min: confirmed
+      fake_hook_exists: true
+      figma_mapping_status: missing
