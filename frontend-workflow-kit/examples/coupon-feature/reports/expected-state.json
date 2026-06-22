@@ -33,7 +33,7 @@
           "api_client_present": false,
           "domain_component_present": true,
           "hook_present": true,
-          "route_entry_present": false,
+          "route_entry_present": true,
           "screen_present": true,
           "blocking_decisions": [
             {
@@ -76,7 +76,7 @@
           "api_client_present": false,
           "domain_component_present": true,
           "hook_present": true,
-          "route_entry_present": false,
+          "route_entry_present": true,
           "screen_present": true,
           "blocking_decisions": [],
           "copy_keys_has_tbd": false,

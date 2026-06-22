@@ -328,6 +328,8 @@ function reproduceCodegenTarget(id, { srcDir, manifest, layout }) {
   const baseDir = projectRootOf(srcDir);
   const resolvedLayout = layout || loadLayoutProfile({ kitRoot: KIT_ROOT });
   const schemaDir = contract.resolveInput({ srcDir, baseDir, layout: resolvedLayout });
+  const apiSchemaGlobs =
+    typeof resolvedLayout.roleGlobs === 'function' ? resolvedLayout.roleGlobs('api_schema') : [];
   const result = (status) => ({
     id,
     status,
@@ -336,6 +338,14 @@ function reproduceCodegenTarget(id, { srcDir, manifest, layout }) {
     files,
     checks,
   });
+
+  if (apiSchemaGlobs.length > 1) {
+    fail(
+      'CG:config',
+      `api_schema multi-glob is unsupported for ${contract.adapter.name || id}: ${apiSchemaGlobs.join(', ')}`,
+    );
+    return result('generator-error');
+  }
 
   if (!isDir(schemaDir)) {
     fail('CG:input', `api_schema 입력 디렉터리 없음(재생성 불가): ${relPosix(schemaDir)}`);

@@ -37,7 +37,7 @@ screens:
       api_client_present: false
       domain_component_present: true
       hook_present: true
-      route_entry_present: false
+      route_entry_present: true
       screen_present: true
       fake_hook_exists: true
       figma_mapping_status: missing
@@ -59,7 +59,7 @@ screens:
       api_client_present: false
       domain_component_present: true
       hook_present: true
-      route_entry_present: false
+      route_entry_present: true
       screen_present: true
       fake_hook_exists: true
       figma_mapping_status: missing

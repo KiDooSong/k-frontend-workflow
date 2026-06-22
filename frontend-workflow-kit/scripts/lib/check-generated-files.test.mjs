@@ -440,6 +440,31 @@ test('reproduceArtifact: codegen openapi-client fixture reproduces multi-output 
   assert.ok(r.checks.some((c) => c.check === 'CG:content' && c.ok));
 });
 
+test('reproduceArtifact: codegen api_schema multi-glob is explicit unsupported config', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cgf-codegen-api-multiglob-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(tmp, 'src', 'api', 'schemas'), { recursive: true });
+  const layout = {
+    roleToDir(role) {
+      return role === 'api_schema' ? 'src/api/schemas' : '';
+    },
+    roleGlobs(role) {
+      return role === 'api_schema' ? ['src/api/schemas/**', 'contracts/openapi/**'] : [];
+    },
+  };
+  const r = reproduceArtifact('codegen-openapi-client', {
+    srcDir: path.join(tmp, 'src'),
+    manifest: MANIFEST,
+    layout,
+  });
+  assert.equal(r.status, 'generator-error', JSON.stringify(r.checks));
+  assert.ok(
+    r.checks.some(
+      (c) => c.check === 'CG:config' && !c.ok && /api_schema multi-glob is unsupported/.test(c.message),
+    ),
+  );
+});
+
 test('reproduceArtifact: codegen output tamper is reported as mismatch without rewriting files', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cgf-codegen-neg-'));
   try {

@@ -49,6 +49,21 @@ test('collectDoctorFindings: layer role/fact issues are advisory findings', () =
   assert.equal(findings.every((f) => f.severity === 'warning'), true);
 });
 
+test('collectDoctorFindings: multi-glob api_schema is an explicit warning-only unsupported finding', () => {
+  const findings = collectDoctorFindings({
+    projectRoot: process.cwd(),
+    layout: {
+      roles: { api_schema: ['src/api/schemas/**', 'contracts/openapi/**'] },
+      layers: [],
+    },
+  });
+  const finding = findings.find((f) => f.check === 'codegen-api-schema-multiglob');
+  assert.ok(finding);
+  assert.equal(finding.severity, 'warning');
+  assert.equal(finding.role, 'api_schema');
+  assert.equal(finding.count, 2);
+});
+
 test('workflow:doctor CLI wraps LayoutConfigError with runCli exit 2 and no stack trace', () => {
   const r = spawnSync(process.execPath, [DOCTOR_CLI, '--layout', '__missing__.yaml'], {
     cwd: KIT_ROOT,

@@ -136,6 +136,72 @@ test('deriveMetrics: domain layersFor derives domain-scoped <role>_present facts
   assert.equal(derived.repository_present, true);
 });
 
+test('deriveMetrics: dir_has_files facts follow role globs recursively', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'spec-role-glob-fact-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const nestedRoute = path.join(tmp, 'src', 'app', '(tabs)');
+  const nestedHook = path.join(tmp, 'src', 'features', 'coupons', 'hooks', 'nested');
+  fs.mkdirSync(nestedRoute, { recursive: true });
+  fs.mkdirSync(nestedHook, { recursive: true });
+  fs.writeFileSync(path.join(nestedRoute, 'index.tsx'), 'export default function Route() { return null; }\n');
+  fs.writeFileSync(path.join(nestedHook, 'useCoupons.ts'), 'export const useCoupons = () => null;\n');
+  const roles = {
+    route_entry: 'src/app/**',
+    hook: 'src/features/{domain}/hooks/**',
+  };
+  const layout = {
+    layers: [
+      { role: 'route_entry', fact: 'dir_has_files' },
+      { role: 'hook', fact: 'dir_has_files' },
+    ],
+    roleGlobs(role) {
+      const value = roles[role];
+      return value ? [value] : [];
+    },
+  };
+  const derived = deriveMetrics(
+    { frontmatter: { domain: 'coupons' }, sections: {}, dir: tmp },
+    { srcDir: path.join(tmp, 'src'), projectRoot: tmp, layout },
+  );
+  assert.equal(derived.route_entry_present, true);
+  assert.equal(derived.hook_present, true);
+  assert.equal(derived.fake_hook_exists, true);
+});
+
+test('deriveMetrics: broader role facts ignore nested sub-role files', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'spec-role-overlap-fact-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const schemas = path.join(tmp, 'src', 'api', 'schemas');
+  fs.mkdirSync(schemas, { recursive: true });
+  fs.writeFileSync(path.join(schemas, 'coupon.schema.ts'), 'export const schema = {};\n');
+  const roles = {
+    api_client: 'src/api/**',
+    api_schema: 'src/api/schemas/**',
+  };
+  const layout = {
+    roles,
+    layers: [{ role: 'api_client', fact: 'dir_has_files' }],
+    roleGlobs(role) {
+      const value = roles[role];
+      return value ? [value] : [];
+    },
+  };
+  const beforeClient = deriveMetrics(
+    { frontmatter: { domain: 'coupons' }, sections: {}, dir: tmp },
+    { srcDir: path.join(tmp, 'src'), projectRoot: tmp, layout },
+  );
+  assert.equal(beforeClient.api_client_present, false);
+
+  const generated = path.join(tmp, 'src', 'api', 'generated');
+  fs.mkdirSync(generated, { recursive: true });
+  fs.writeFileSync(path.join(generated, 'coupon.client.ts'), 'export const client = {};\n');
+  const afterClient = deriveMetrics(
+    { frontmatter: { domain: 'coupons' }, sections: {}, dir: tmp },
+    { srcDir: path.join(tmp, 'src'), projectRoot: tmp, layout },
+  );
+  assert.equal(afterClient.api_client_present, true);
+});
+
 test('buildState: workflow-state serialization keeps generic <role>_present facts', (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'workflow-state-present-facts-'));
   t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));

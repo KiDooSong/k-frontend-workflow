@@ -47,6 +47,17 @@ export function collectDoctorFindings({ layout, projectRoot }) {
     }
   }
 
+  const apiSchemaGlobs = asArray(roles.api_schema).filter(Boolean);
+  if (apiSchemaGlobs.length > 1) {
+    findings.push({
+      severity: 'warning',
+      check: 'codegen-api-schema-multiglob',
+      role: 'api_schema',
+      count: apiSchemaGlobs.length,
+      message: `codegen-openapi-client currently supports a single api_schema glob; found ${apiSchemaGlobs.length}`,
+    });
+  }
+
   const knownRoles = new Set(Object.keys(roles));
   const supportedFacts = new Set(['dir_has_files']);
   for (const layer of layers) {
