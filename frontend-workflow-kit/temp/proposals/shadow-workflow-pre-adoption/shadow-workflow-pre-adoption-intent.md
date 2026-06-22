@@ -16,6 +16,9 @@ readiness/validate/forbidden-paths/catalog generation unwired.
 
 The goal is migration preparation, not enforcement.
 
+The proposed handoff and copy-ready templates are grouped in this directory so
+they can move together into a follow-up `ck-ai-mobile` change.
+
 ## 1. Why defer full adoption
 
 The latest probe against `ck-ai-mobile` showed:
@@ -167,5 +170,7 @@ repo will already contain recognizable contract surfaces.
 
 Send the handoff draft
 [`ck-ai-mobile-shadow-skeleton-handoff.md`](./ck-ai-mobile-shadow-skeleton-handoff.md)
-to the ck repo, then create the first shadow skeleton there in a separate
-change. Keep that change free of kit vendoring and CI edits.
+and the copy templates
+[`shadow-skeleton-templates.md`](./shadow-skeleton-templates.md) to the ck repo,
+then create the first shadow skeleton there in a separate change. Keep that
+change free of kit vendoring and CI edits.

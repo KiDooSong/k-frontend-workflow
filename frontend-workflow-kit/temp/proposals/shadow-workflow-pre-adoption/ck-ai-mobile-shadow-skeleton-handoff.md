@@ -37,16 +37,20 @@ docs/frontend-workflow/
   _shadow/adoption-notes.md
 ```
 
+Use the copy-ready shadow templates in
+[`shadow-skeleton-templates.md`](./shadow-skeleton-templates.md) when creating
+these files in `ck-ai-mobile`.
+
 Why this shape:
 
 | File | Purpose | Source template |
 |---|---|---|
 | `README.md` | Declare shadow-mode status and boundaries | this document |
-| `global/llm-rules.md` | LLM behavior rules before implementation | [`llm-rules.template.md`](../../templates/global/llm-rules.template.md) |
-| `app/navigation-map.md` | App-level route guard, stack/tab/modals, cross-domain edges | [`navigation-map.template.md`](../../templates/app/navigation-map.template.md) |
-| `domains/auth/domain-rules.md` | Auth-wide rules, vocabulary, data contract notes | [`domain-rules.template.md`](../../templates/domain/domain-rules.template.md) |
-| `screen-spec.md` | Screen behavior, state, API candidates, copy, unknowns, decisions | [`screen-spec.template.md`](../../templates/screen/screen-spec.template.md) |
-| `figma-component-mapping.md` | Visual/Figma mapping and optional visual spec | [`figma-component-mapping.template.md`](../../templates/screen/figma-component-mapping.template.md) |
+| `global/llm-rules.md` | LLM behavior rules before implementation | [`llm-rules.template.md`](../../../templates/global/llm-rules.template.md) |
+| `app/navigation-map.md` | App-level route guard, stack/tab/modals, cross-domain edges | [`navigation-map.template.md`](../../../templates/app/navigation-map.template.md) |
+| `domains/auth/domain-rules.md` | Auth-wide rules, vocabulary, data contract notes | [`domain-rules.template.md`](../../../templates/domain/domain-rules.template.md) |
+| `screen-spec.md` | Screen behavior, state, API candidates, copy, unknowns, decisions | [`screen-spec.template.md`](../../../templates/screen/screen-spec.template.md) |
+| `figma-component-mapping.md` | Visual/Figma mapping and optional visual spec | [`figma-component-mapping.template.md`](../../../templates/screen/figma-component-mapping.template.md) |
 | `_shadow/component-index.md` | Temporary manual DS index while catalog-gen still assumes `src/components/ui/**` | ck-specific |
 | `_shadow/adoption-notes.md` | What is intentionally not wired yet | ck-specific |
 
@@ -186,6 +190,19 @@ Recommended sources:
 
 Do not make the kit responsible for collection. In shadow mode, ck owns Figma
 facts, token manifests, screenshots, and baselines.
+
+Keep the Visual Spec aligned with the future kit direction:
+
+- keep `## Component Mapping` as the baseline required surface
+- use `## Visual Spec` as optional evidence, not as readiness proof
+- prefer token ids over raw values
+- mark raw or inferred values with a warning
+- record provenance per row so later migration can distinguish token-backed
+  values from Figma measurements, manual matches, and guesses
+- leave visual gaps under `Gaps / Open` instead of silently inventing values
+
+The concrete copy template is in
+[`shadow-skeleton-templates.md`](./shadow-skeleton-templates.md).
 
 ## 7. Temporary component index
 
