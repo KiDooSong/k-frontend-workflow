@@ -21,6 +21,7 @@ full `frontend-workflow-kit` adoption is safe.
 The pack is intentionally authoring-only:
 
 - no kit install
+- no current-parser consumption guarantee
 - no generated `design/component-catalog.md`
 - no readiness or `validate` gate
 - no `forbidden-paths` enforcement
@@ -29,3 +30,5 @@ The pack is intentionally authoring-only:
 
 The intended use is to let `ck-ai-mobile` write future-compatible skeleton docs
 early, while keeping humans clear that those docs are not active protection yet.
+Before real adoption, these shadow docs still need a canonicalization pass
+against the active kit templates, parser, and readiness contracts.

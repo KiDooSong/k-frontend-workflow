@@ -2,8 +2,8 @@
 
 > Status: **DRAFT / COPY TEMPLATE ONLY**. 2026-06-22.
 > These templates are for a `ck-ai-mobile` shadow workflow. They align with the
-> intended `frontend-workflow-kit` document shape, but they are not consumed by
-> kit commands until the kit is explicitly adopted.
+> intended `frontend-workflow-kit` document shape, but they are not active kit
+> inputs until the kit is explicitly adopted.
 
 ---
 
@@ -13,12 +13,17 @@
 - Keep sparse sections instead of deleting them. Empty sections are useful
   migration anchors.
 - Record `Unknowns` and `Open Decisions` instead of guessing.
+- Use `status: draft` in frontmatter. Do not use `status: shadow`; shadow is a
+  document banner/adoption phase, not a lifecycle enum.
 - Do not use `status: confirmed` in shadow mode.
 - Do not create generated kit files such as `design/component-catalog.md`,
   `_meta/workflow-state.yaml`, `_meta/screen-inventory.yaml`, or
   `_meta/nav-graph.yaml`.
 - Keep `Visual Spec` rows evidence-based. If a value is not token-backed or
   measured, mark it as a gap.
+- Treat this as a future-design-aligned pre-adoption pack. Before real kit
+  adoption, run a canonicalization pass against the then-current parser,
+  manifest, and readiness contracts.
 
 ## 1. Recommended target tree
 
@@ -68,6 +73,14 @@ docs/frontend-workflow/
 Create `docs/frontend-workflow/global/llm-rules.md`:
 
 ```md
+---
+artifact_id: llm-rules
+artifact_type: llm-rules
+status: draft
+adoption_phase: shadow
+last_reviewed: "2026-06-22"
+---
+
 # LLM Rules
 
 > Shadow mode: these rules guide implementation, but no kit gate is active.
@@ -108,9 +121,17 @@ Create `docs/frontend-workflow/global/llm-rules.md`:
 Create `docs/frontend-workflow/app/navigation-map.md`:
 
 ```md
+---
+artifact_id: navigation-map
+artifact_type: navigation-map
+status: draft
+adoption_phase: shadow
+last_reviewed: "2026-06-22"
+---
+
 # Navigation Map
 
-> Status: shadow / draft.
+> Shadow mode / draft.
 > This is a human-readable route and guard overview. It does not replace
 > generated route-tree or nav-graph outputs.
 
@@ -148,9 +169,18 @@ Create `docs/frontend-workflow/app/navigation-map.md`:
 Create `docs/frontend-workflow/domains/auth/domain-rules.md`:
 
 ```md
+---
+artifact_id: "auth-domain-rules"
+artifact_type: domain-rules
+domain: "auth"
+status: draft
+adoption_phase: shadow
+last_reviewed: "2026-06-22"
+---
+
 # Auth Domain Rules
 
-> Status: shadow / draft.
+> Shadow mode / draft.
 
 ## Scope
 
@@ -205,6 +235,7 @@ domain: "auth"
 screen_id: "AUTH-LOGIN"
 route: "/(auth)/login"
 status: draft
+adoption_phase: shadow
 sources:
   - { type: code, ref: "src/app/(auth)/login/index.tsx" }
   - { type: code, ref: "src/features/auth/components/login-email-form.tsx" }
@@ -217,6 +248,8 @@ last_reviewed: "2026-06-22"
 
 > Shadow mode: this guides LLM implementation but does not unlock kit
 > readiness.
+> Keep canonical table headers unless the future kit contract explicitly
+> changes them. Put ck-specific detail in notes or optional sections.
 
 ## Purpose
 
@@ -230,37 +263,50 @@ last_reviewed: "2026-06-22"
 | `src/features/auth/components/login-email-form.tsx` | form | [notes] |
 | `src/features/auth/components/social-login-buttons.tsx` | social auth | [notes] |
 
+## UI Sections
+
+1. Email/password form
+2. Social login buttons
+3. Signup and password reset links
+
 ## State Matrix
 
-| State | Entry condition | Visible UI | Disabled UI | Exit |
-|---|---|---|---|---|
-| idle | screen opened | email/password form, social buttons | none | submit/social/signup/reset |
-| submitting | login submitted | loading affordance | submit button | success/error |
-| error | login failed | error copy | none | edit/retry |
+| State | Condition | UI |
+|---|---|---|
+| loading | login request or social auth flow is pending | loading affordance; submit/social actions disabled |
+| success | authenticated session is accepted | navigation to authenticated app route |
+| empty | initial form has no user input | email/password form; social buttons; signup/reset links |
+| error | login request or validation fails | error copy near affected field or form summary |
+| refreshing | session status is rechecked after return from provider | existing form state with refresh affordance if needed |
 
 ## Interaction Matrix
 
-| Trigger | Preconditions | Expected behavior | Data/API | Unknowns |
-|---|---|---|---|---|
-| submit email login | valid form | call candidate login operation | [candidate module] | response shape |
-| tap social provider | provider available | start social login flow | [candidate module] | provider taxonomy |
-| tap signup | none | navigate to signup | none | target route |
-| tap forgot password | none | navigate to reset flow | email? | email prefill policy |
+| User Action | Trigger | Result | Analytics Event |
+|---|---|---|---|
+| submit email login | valid form submit | call candidate login operation; on success route to authenticated app | [event or -] |
+| tap social provider | provider button press | start provider flow; on return refresh session status | [event or -] |
+| tap signup | signup entry press | route to signup flow | [event or -] |
+| tap forgot password | password reset entry press | route to reset/send-code flow; email prefill policy is unknown | [event or -] |
+
+## Shadow Interaction Notes
+
+| User Action | Preconditions | Candidate data/API | Unknowns |
+|---|---|---|---|
+| submit email login | valid form | `src/features/auth/api/[file].ts` | response shape; session side effect |
+| tap social provider | provider available | `src/features/auth/api/[file].ts` | provider taxonomy; return handling |
 
 ## API Candidates
 
-| Operation | Candidate module | Request | Response | Cache/session effect | Status |
-|---|---|---|---|---|---|
-| email login | `src/features/auth/api/[file].ts` | [unknown] | [unknown] | [unknown] | candidate |
-| social login | `src/features/auth/api/[file].ts` | [unknown] | [unknown] | [unknown] | candidate |
+- POST /auth/login (confidence: candidate)
+- POST /auth/social/[provider] (confidence: candidate)
 
 ## Copy Keys
 
-| UI copy | Current text | Source | Notes |
-|---|---|---|---|
-| title | [text] | [source] | [notes] |
-| submit | [text] | [source] | [notes] |
-| error generic | [text] | [source] | [notes] |
+| Key | 문구 | Status |
+|---|---|---|
+| auth.login.title | [text from source] | draft |
+| auth.login.submit | [text from source] | draft |
+| auth.login.error.generic | TBD | tbd |
 
 ## Accessibility and testID
 
@@ -272,15 +318,16 @@ last_reviewed: "2026-06-22"
 
 ## Unknowns
 
-| ID | Unknown | Why it matters | How to resolve |
-|---|---|---|---|
-| AUTH-LOGIN-U001 | [unknown] | [impact] | [source/person] |
+| ID | Question | Status |
+|---|---|---|
+| AUTH-LOGIN-U001 | What is the confirmed login response/session side effect? | open |
+| AUTH-LOGIN-U002 | Should reset flow prefill the typed email? | open |
 
 ## Open Decisions
 
-| ID | Decision | Options | Owner | Needed by |
-|---|---|---|---|---|
-| AUTH-LOGIN-OD001 | [question] | [options] | [owner] | [date/work] |
+| ID | Decision Needed | Options | Blocking Mode | Owner | Status |
+|---|---|---|---|---|---|
+| AUTH-LOGIN-OD001 | Which social providers are in the launch scope? | TBD | final-fixture-ui | PM | open |
 ```
 
 ## 7. Figma mapping and Visual Spec template
@@ -296,22 +343,24 @@ The final kit direction is:
 - The kit records and checks shape; ck owns Figma facts, token manifests,
   screenshots, and baselines.
 - Prefer token ids. Raw values are allowed only when marked as gaps or warnings.
+- Screen behavior and route ownership stay in Screen Spec. Figma mapping records
+  how a screen looks and how Figma nodes map to UI components.
 
 Use this provenance legend consistently:
 
 | Marker | Meaning |
 |---|---|
-| `T` | token-backed value from a token manifest or named token source |
-| `M` | measured from Figma export or frame metadata |
-| `H` | human/manual match with a source note |
-| `I` | inferred from existing code only |
-| `!` | warning, gap, or unstable value |
+| `✔T` | token-backed value from a token manifest or named token source |
+| `✔M` | measured from Figma export or frame metadata |
+| `◎` | design-system component contract value, not screen-specific |
+| `▱` | coordinate-derived or approximate measurement; replace when better evidence exists |
+| `⚠` | warning, gap, raw value, or unstable inference |
 
 Future warning behavior should stay compatible with the expected kit direction:
 
 | Warning | Shadow interpretation |
 |---|---|
-| W1 token format | Prefer token ids; mark raw values with `!` |
+| W1 token format | Prefer token ids; mark raw values with `⚠` |
 | W2 manifest evidence | Record manifest path when available; absence is warning-only |
 | W3 visual section shape | Required only for artifacts that opt into `## Visual Spec` |
 
@@ -323,10 +372,9 @@ artifact_id: "AUTH-LOGIN-figma-component-mapping"
 artifact_type: figma-component-mapping
 domain: "auth"
 screen_id: "AUTH-LOGIN"
-route: "/(auth)/login"
 status: draft
+adoption_phase: shadow
 sources:
-  - { type: code, ref: "src/app/(auth)/login/index.tsx" }
   - { type: figma, ref: "codex-figma/[path-or-frame].json" }
   - { type: tokens, ref: "src/design-system/tokens/token-name-map.json" }
 depends_on: [AUTH-LOGIN-screen-spec]
@@ -337,69 +385,65 @@ last_reviewed: "2026-06-22"
 
 > Shadow mode: this records visual intent and mapping evidence. It does not
 > prove visual fidelity or activate kit readiness.
+> Behavior and route facts belong in `screen-spec.md`.
+
+## Frame
+
+- `codex-figma/[path-or-frame].json` / node `[node-id]`
 
 ## Component Mapping
 
-| Figma node | UI role | Existing component | Props/variant | State | Evidence | Gap |
-|---|---|---|---|---|---|---|
-| [node name/id] | primary action | `Button` | variant=[name] | idle/loading | T/M/H/I | [gap] |
-| [node name/id] | email field | `Input` | type=email | idle/error | T/M/H/I | [gap] |
+| Figma Frame / Node | UI 요소 | 매핑 컴포넌트 | 비고 |
+|---|---|---|---|
+| [frame] / [primary button node] | primary action | `Button` | variant=[name]; loading state noted in Screen Spec |
+| [frame] / [email input node] | email field | `Input` | validation behavior belongs in Screen Spec |
+
+## Notes
+
+- Keep this section visual. Business behavior, state ownership, and navigation
+  are single-sourced from `screen-spec.md`.
+- If a mapped component is missing from the real catalog, propose it as a gap;
+  do not create a new shared component from this file alone.
+- If an element's existence depends on an Open Decision, note the decision id
+  here and keep the mapping provisional.
+
+## Provenance
+
+- `✔T` token-system evidence. Prefer token id over raw value.
+- `✔M` measured Figma/frame evidence.
+- `◎` design-system component contract value; do not restate component internals
+  as screen-specific visual facts.
+- `▱` approximate geometry-derived value. Replace with `✔M` or `✔T` when
+  possible.
+- `⚠` raw literal, inferred value, or unresolved gap. Add a matching
+  `## Gaps / Open` item.
 
 ## Visual Spec
 
-> Optional in shadow mode. Keep this section only when reliable visual evidence
-> exists. Otherwise leave a `Visual Spec Needed` gap.
+> Optional in shadow mode. Fill this only when ck has reliable Figma/token
+> evidence. Omit the section or leave a gap if visual facts are not available.
 
-### Evidence
+| Section/Node | direction | gap | padding | align/justify | sizing | color | type |
+|---|---|---|---|---|---|---|---|
+| [login form] | column ✔M | `space.4` ✔T or `raw 16` ⚠ | `space.4` ✔T | center ✔M | fill ✔M | `bg.surface` ✔T | `body.md` ✔T |
 
-| Evidence | Source | Owner | Updated | Notes |
-|---|---|---|---|---|
-| Figma frame | `codex-figma/[path]` | ck | [date] | [frame/node id] |
-| Token manifest | `src/design-system/tokens/token-name-map.json` | ck | [date] | [notes] |
-| Baseline screenshot | [path] | ck | [date] | optional |
+## Assets
 
-### Frame
-
-| Property | Value | Provenance | Notes |
+| node | source | format | status |
 |---|---|---|---|
-| platform | iOS/Android/web | H | [notes] |
-| viewport | [width] x [height] | M | [notes] |
-| safe area | [value/token] | T/M/! | [notes] |
-
-### Layout
-
-| Region | Position/spacing | Token or raw value | Provenance | Notes |
-|---|---|---|---|---|
-| screen padding | [description] | [token id or raw] | T/M/! | [notes] |
-| form gap | [description] | [token id or raw] | T/M/! | [notes] |
-
-### Typography
-
-| Element | Text style token | Size/weight/line height | Provenance | Notes |
-|---|---|---|---|---|
-| title | [token id] | [values] | T/M/! | [notes] |
-| button label | [token id] | [values] | T/M/! | [notes] |
-
-### Color
-
-| Element | Color token | Raw fallback | Provenance | Notes |
-|---|---|---|---|---|
-| screen background | [token id] | [raw if needed] | T/M/! | [notes] |
-| primary action | [token id] | [raw if needed] | T/M/! | [notes] |
-
-### States
-
-| State | Visual change | Token/component variant | Evidence | Gap |
-|---|---|---|---|---|
-| idle | [description] | [variant/token] | T/M/H | [gap] |
-| loading | [description] | [variant/token] | T/M/H | [gap] |
-| error | [description] | [variant/token] | T/M/H | [gap] |
+| [provider icon] | [design-system path or asset path] | svg/tsx/png | [available/gap] |
 
 ## Gaps / Open
 
 | ID | Gap | Impact | Resolution path |
 |---|---|---|---|
-| AUTH-LOGIN-VIS-001 | [gap] | [impact] | [source/person] |
+| AUTH-LOGIN-VIS-001 | `raw 16` spacing has no token id | token migration ambiguity | confirm token id or add token gap |
+| AUTH-LOGIN-VIS-002 | provider icon source not confirmed | asset drift risk | confirm DS asset path |
+
+## Cross-links
+
+- screen-spec: ./screen-spec.md
+- shadow component index: ../../../_shadow/component-index.md
 ```
 
 ## 8. Shadow component index template
@@ -441,7 +485,7 @@ Create `docs/frontend-workflow/_shadow/adoption-notes.md`:
 ```md
 # Shadow Adoption Notes
 
-> Status: shadow / draft.
+> Shadow mode / draft.
 
 ## What is intentionally not wired
 
@@ -476,5 +520,9 @@ Create `docs/frontend-workflow/_shadow/adoption-notes.md`:
 - Preserve ck's current catalog paths and design-system structure.
 - Use `_shadow/component-index.md` instead of generated
   `design/component-catalog.md`.
-- Keep all statuses `draft` or `shadow`.
+- Keep frontmatter lifecycle statuses as `draft`. Express shadow/pre-adoption
+  status in the document banner or `adoption_phase: shadow`, not in the
+  lifecycle enum.
+- Before real adoption, canonicalize these shadow docs against the active kit
+  templates and parser contracts.
 - Commit the skeleton separately from any app source changes.

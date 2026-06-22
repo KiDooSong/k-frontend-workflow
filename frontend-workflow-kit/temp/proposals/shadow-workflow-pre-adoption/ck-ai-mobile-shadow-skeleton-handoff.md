@@ -17,6 +17,11 @@ Use `docs/frontend-workflow/**` as a **shadow contract**: LLMs must read and
 update it before implementation, but humans must not treat it as a readiness
 gate until the kit is explicitly adopted.
 
+Use `status: draft` in frontmatter. Express shadow/pre-adoption state in the
+document banner or an explicit non-gating field such as
+`adoption_phase: shadow`; do not introduce `status: shadow` as a lifecycle
+value.
+
 ## 1. What to create in ck-ai-mobile
 
 Create only authoring/shadow documents first. Do not create generated kit outputs
@@ -161,6 +166,7 @@ domain: "auth"
 screen_id: "AUTH-LOGIN"
 route: "/(auth)/login"
 status: draft
+adoption_phase: shadow
 sources:
   - { type: code, ref: "src/app/(auth)/login/index.tsx" }
   - { type: code, ref: "src/features/auth/components/login-email-form.tsx" }
@@ -178,7 +184,13 @@ The important migration benefit is preserving the table shapes.
 
 `figma-component-mapping.md` should start with the baseline
 `## Component Mapping` table and only opt into `## Visual Spec` where ck has
-reliable Figma/token evidence.
+reliable Figma/token evidence. Keep the baseline Component Mapping shape close
+to the kit contract:
+
+```md
+| Figma Frame / Node | UI 요소 | 매핑 컴포넌트 | 비고 |
+|---|---|---|---|
+```
 
 Recommended sources:
 
@@ -197,8 +209,10 @@ Keep the Visual Spec aligned with the future kit direction:
 - use `## Visual Spec` as optional evidence, not as readiness proof
 - prefer token ids over raw values
 - mark raw or inferred values with a warning
-- record provenance per row so later migration can distinguish token-backed
-  values from Figma measurements, manual matches, and guesses
+- put provenance, visual values, assets, and gaps in optional sections instead
+  of widening the baseline Component Mapping table
+- keep behavior and route facts in Screen Spec; Figma mapping is the visual
+  mapping surface
 - leave visual gaps under `Gaps / Open` instead of silently inventing values
 
 The concrete copy template is in
