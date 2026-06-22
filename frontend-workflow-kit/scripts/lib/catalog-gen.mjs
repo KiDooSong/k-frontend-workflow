@@ -65,7 +65,9 @@ export function catalogSourceConfig({ src, layout, projectRoot } = {}) {
   if (!rootAbs) rootAbs = projectRootOf(srcAbs);
 
   const sourceRoots = sourceDirs.map((d) => path.resolve(rootAbs, ...d.split('/')));
-  const scanRoots = sourceRoots.filter((root) => isWithin(srcAbs, root) || isWithin(root, srcAbs));
+  const scanRoots = roleGlobs.length
+    ? sourceRoots
+    : sourceRoots.filter((root) => isWithin(srcAbs, root) || isWithin(root, srcAbs));
   return {
     projectRoot: rootAbs,
     sourceGlobs,
@@ -344,20 +346,26 @@ export function parseBarrelReexports(content) {
   return { names, unsupported };
 }
 
-// src 아래 정본 ui 루트 직속 배럴(index.ts|index.tsx)을 찾아 re-export 집합을 카탈로그 컴포넌트
-// 집합과 대조한다. IO 수행(walkFiles/readFileSafe). 순수 파싱은 parseBarrelReexports 가 담당.
+// resolved ui_primitive role root 직속 배럴(index.ts|index.tsx)을 찾아 re-export 집합을
+// 카탈로그 컴포넌트 집합과 대조한다. IO 수행(walkFiles/readFileSafe). 순수 파싱은 parseBarrelReexports 가 담당.
 //   반환: { barrelFound, barrelPaths, reexported, missingFromCatalog, missingFromBarrel, unsupported }
-export function analyzeBarrelReconcile({ src, components }) {
-  const root = path.resolve(src);
-  const files = walkFiles(root, SCAN_EXTS);
+export function analyzeBarrelReconcile({ src, components, layout, projectRoot }) {
+  const sourceConfig = catalogSourceConfig({ src, layout, projectRoot });
+  const files = new Set();
+  for (const root of sourceConfig.scanRoots) {
+    for (const f of walkFiles(root, SCAN_EXTS)) files.add(f);
+  }
   const barrels = [];
   for (const f of files) {
-    const posixAbs = toPosix(f);
-    const idx = posixAbs.lastIndexOf(UI_MARKER); // 정본 ui 루트 (중첩 시 가장 안쪽)
-    if (idx === -1) continue; // 정본 src/components/ui/ 밖
-    const rest = posixAbs.slice(idx + UI_MARKER.length);
-    if (rest === 'index.ts' || rest === 'index.tsx') {
-      barrels.push({ rel: posixAbs.slice(idx + 1), abs: f }); // 'src/components/ui/index.ts'
+    const base = path.basename(f);
+    if (base !== 'index.ts' && base !== 'index.tsx') continue;
+    const sourcePath = sourcePathFor(f, sourceConfig);
+    if (!sourcePath) continue;
+    for (const root of sourceConfig.sourceRoots) {
+      if (path.dirname(path.resolve(f)) === path.resolve(root)) {
+        barrels.push({ rel: sourcePath, abs: f });
+        break;
+      }
     }
   }
   if (barrels.length === 0) {
@@ -415,8 +423,8 @@ export function formatBarrelWarnings(diff) {
 
 // CLI 편의: 진단을 돌려 경고를 stderr 로 쓴다(있을 때만). 반환은 diff(테스트/재사용용).
 // exit code 는 절대 바꾸지 않는다 — warning-first(§7). 입력 검증(--src 비디렉토리)은 CLI 가 이미 했다.
-export function runBarrelReconcileDiagnostic({ src, components }, stderr) {
-  const diff = analyzeBarrelReconcile({ src, components });
+export function runBarrelReconcileDiagnostic({ src, components, layout, projectRoot }, stderr) {
+  const diff = analyzeBarrelReconcile({ src, components, layout, projectRoot });
   const lines = formatBarrelWarnings(diff);
   if (lines.length) stderr.write(lines.join('\n') + '\n');
   return diff;

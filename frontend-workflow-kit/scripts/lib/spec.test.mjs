@@ -112,6 +112,29 @@ test('deriveMetrics: layer dir_has_files derives <role>_present and keeps fake_h
   assert.equal(derived.fake_hook_exists, true);
 });
 
+test('deriveMetrics: domain layersFor derives domain-scoped <role>_present facts', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'spec-domain-layer-fact-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const repoDir = path.join(tmp, 'src', 'features', 'coupons', 'repositories');
+  fs.mkdirSync(repoDir, { recursive: true });
+  fs.writeFileSync(path.join(repoDir, 'couponRepository.ts'), 'export const couponRepository = {};\n');
+  const layout = {
+    layers: [],
+    layersFor(domain) {
+      return domain === 'coupons' ? [{ role: 'repository', fact: 'dir_has_files' }] : [];
+    },
+    roleToDir(role, { domain } = {}) {
+      if (role === 'repository') return `src/features/${domain}/repositories`;
+      return '';
+    },
+  };
+  const derived = deriveMetrics(
+    { frontmatter: { domain: 'coupons' }, sections: {}, dir: tmp },
+    { srcDir: path.join(tmp, 'src'), projectRoot: tmp, layout },
+  );
+  assert.equal(derived.repository_present, true);
+});
+
 test('P7: computeReadiness 가 policy.modes 누락 시 throw 하지 않는다 (fail-closed 구멍)', () => {
   // policy.order 도 modes 도 없으면 예전엔 Object.keys(undefined) 로 TypeError 가 났다.
   assert.doesNotThrow(() =>

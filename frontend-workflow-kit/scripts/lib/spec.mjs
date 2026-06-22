@@ -308,8 +308,9 @@ export function deriveMetrics(spec, opts = {}) {
   // layer presence facts: declared layers with fact: dir_has_files derive <role>_present.
   // fake_hook_exists remains a back-compat alias for hook_present and keeps the old guard behavior.
   const layerPresenceFacts = {};
-  if (srcDir && domain && layout && Array.isArray(layout.layers)) {
-    for (const layer of layout.layers) {
+  if (srcDir && domain && layout) {
+    const layers = typeof layout.layersFor === 'function' ? layout.layersFor(domain) : layout.layers;
+    for (const layer of Array.isArray(layers) ? layers : []) {
       if (!layer || layer.fact !== 'dir_has_files' || !layer.role) continue;
       const rel = layout.roleToDir(layer.role, { domain });
       if (!rel) continue;

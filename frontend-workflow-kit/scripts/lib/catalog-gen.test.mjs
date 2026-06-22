@@ -219,6 +219,54 @@ test('build/render: ui_primitive role override scans nonstandard UI root and ign
   assert.equal(text.includes('Ghost'), false);
 });
 
+test('build/render: ui_primitive role outside --src scans role root instead of empty fallback', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-ui-role-outside-src-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(tmp, 'packages', 'ui', 'src'), { recursive: true });
+  fs.mkdirSync(path.join(tmp, 'src', 'components', 'ui'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmp, 'packages', 'ui', 'src', 'Button.tsx'),
+    'export function Button() { return null; }\n',
+  );
+  fs.writeFileSync(
+    path.join(tmp, 'src', 'components', 'ui', 'Ghost.tsx'),
+    'export function Ghost() { return null; }\n',
+  );
+  const layout = { roleGlobs: (role) => (role === 'ui_primitive' ? ['packages/ui/src/**'] : []) };
+  const model = buildCatalog({ src: path.join(tmp, 'src'), projectRoot: tmp, layout });
+  assert.deepEqual(model.source_globs, ['packages/ui/src/**']);
+  assert.deepEqual(model.components, [
+    { name: 'Button', source_path: 'packages/ui/src/Button.tsx', export_kind: 'named', status: 'ok' },
+  ]);
+});
+
+test('analyzeBarrelReconcile: ui_primitive role ignores legacy src/components/ui barrel', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-ui-role-barrel-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const sharedUi = path.join(tmp, 'src', 'shared', 'ui');
+  const legacyUi = path.join(tmp, 'src', 'components', 'ui');
+  fs.mkdirSync(sharedUi, { recursive: true });
+  fs.mkdirSync(legacyUi, { recursive: true });
+  fs.writeFileSync(path.join(sharedUi, 'Button.tsx'), 'export function Button() { return null; }\n');
+  fs.writeFileSync(path.join(sharedUi, 'index.ts'), "export { Button } from './Button';\n");
+  fs.writeFileSync(path.join(legacyUi, 'Ghost.tsx'), 'export function Ghost() { return null; }\n');
+  fs.writeFileSync(path.join(legacyUi, 'index.ts'), "export { Ghost } from './Ghost';\n");
+  const layout = { roleGlobs: (role) => (role === 'ui_primitive' ? ['src/shared/ui/**'] : []) };
+  const model = buildCatalog({ src: path.join(tmp, 'src'), projectRoot: tmp, layout });
+  const diff = analyzeBarrelReconcile({
+    src: path.join(tmp, 'src'),
+    projectRoot: tmp,
+    layout,
+    components: model.components,
+  });
+  assert.equal(diff.barrelFound, true);
+  assert.deepEqual(diff.barrelPaths, ['src/shared/ui/index.ts']);
+  assert.deepEqual(diff.reexported, ['Button']);
+  assert.deepEqual(diff.missingFromCatalog, []);
+  assert.deepEqual(diff.missingFromBarrel, []);
+  assert.deepEqual(formatBarrelWarnings(diff), []);
+});
+
 test('CLI --json: default_export_candidates 를 같은 모델에 포함', () => {
   const r = spawnSync(process.execPath, [CLI, '--src', FIXTURE_SRC, '--json'], {
     cwd: KIT_ROOT,
