@@ -48,7 +48,11 @@ export function catalogSourceConfig({ src, layout, projectRoot } = {}) {
     layout && typeof layout.roleGlobs === 'function'
       ? layout.roleGlobs('ui_primitive')
       : [];
-  const sourceGlobs = roleGlobs.length ? roleGlobs : ['src/components/ui/**'];
+  const hasExplicitRole = Boolean(
+    layout?.roles && Object.prototype.hasOwnProperty.call(layout.roles, 'ui_primitive'),
+  );
+  const useLayoutRole = hasExplicitRole || roleGlobs.length > 0;
+  const sourceGlobs = useLayoutRole ? roleGlobs : ['src/components/ui/**'];
   const sourceDirs = sourceGlobs.map(globToDir).filter(Boolean);
 
   let rootAbs = projectRoot ? path.resolve(projectRoot) : null;
@@ -65,7 +69,7 @@ export function catalogSourceConfig({ src, layout, projectRoot } = {}) {
   if (!rootAbs) rootAbs = projectRootOf(srcAbs);
 
   const sourceRoots = sourceDirs.map((d) => path.resolve(rootAbs, ...d.split('/')));
-  const scanRoots = roleGlobs.length
+  const scanRoots = useLayoutRole
     ? sourceRoots
     : sourceRoots.filter((root) => isWithin(srcAbs, root) || isWithin(root, srcAbs));
   return {
@@ -73,7 +77,7 @@ export function catalogSourceConfig({ src, layout, projectRoot } = {}) {
     sourceGlobs,
     sourceDirs,
     sourceRoots,
-    scanRoots: scanRoots.length ? scanRoots : [srcAbs],
+    scanRoots: useLayoutRole ? scanRoots : scanRoots.length ? scanRoots : [srcAbs],
   };
 }
 
@@ -244,8 +248,10 @@ export function buildCatalog({ src, layout, projectRoot } = {}) {
 // NOTE(header): H1 마커는 사용자 PR-4 동결 포맷을 따른다. contract §4 는 HTML-comment 블록 헤더(on-disk
 //       `#` 미사용)를 권고하므로, 이 헤더 형태(H1 vs HTML-comment)는 PR-4 포맷 동결 시 최종 확정 대상이다.
 export function renderCatalog(model, opts = {}) {
-  const sourceGlob = opts.sourceGlob || model.source_globs?.[0] || 'src/components/ui/**';
-  const commandSrc = opts.commandSrc || model.source_dirs?.[0] || 'src/components/ui';
+  const modelHasSourceGlobs = Array.isArray(model.source_globs);
+  const modelHasSourceDirs = Array.isArray(model.source_dirs);
+  const sourceGlob = opts.sourceGlob || (modelHasSourceGlobs ? model.source_globs[0] || '' : 'src/components/ui/**');
+  const commandSrc = opts.commandSrc || (modelHasSourceDirs ? model.source_dirs[0] || '' : 'src/components/ui');
   const out = [];
   out.push('# GENERATED FILE — DO NOT EDIT');
   out.push(`<!-- Source: ${sourceGlob} -->`);

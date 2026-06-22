@@ -24,6 +24,7 @@ import {
   deriveMetrics,
 } from './spec.mjs';
 import { computeReadiness } from '../readiness.mjs';
+import { buildState } from '../workflow-state.mjs';
 
 // 한 줄 헬퍼: Interaction Matrix 표 텍스트로 spec-유사 객체를 만든다(섹션 파서가 보는 형태).
 function specWithMatrix(lines) {
@@ -133,6 +134,49 @@ test('deriveMetrics: domain layersFor derives domain-scoped <role>_present facts
     { srcDir: path.join(tmp, 'src'), projectRoot: tmp, layout },
   );
   assert.equal(derived.repository_present, true);
+});
+
+test('buildState: workflow-state serialization keeps generic <role>_present facts', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'workflow-state-present-facts-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const docsDir = path.join(tmp, 'docs', 'frontend-workflow');
+  const specDir = path.join(docsDir, 'domains', 'coupons', 'screens', 'coupon-list');
+  fs.mkdirSync(specDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(specDir, 'screen-spec.md'),
+    [
+      '---',
+      'screen_id: COUPON-001',
+      'domain: coupons',
+      'route: /coupons',
+      'status: draft',
+      '---',
+      '',
+      '## Purpose',
+      'Coupon list.',
+      '',
+    ].join('\n'),
+  );
+  for (const [dir, file] of [
+    ['src/app', 'index.tsx'],
+    ['src/features/coupons/screens', 'CouponListScreen.tsx'],
+    ['src/features/coupons/components', 'CouponCard.tsx'],
+    ['src/features/coupons/hooks', 'useCoupons.ts'],
+    ['src/api', 'client.ts'],
+  ]) {
+    const abs = path.join(tmp, dir);
+    fs.mkdirSync(abs, { recursive: true });
+    fs.writeFileSync(path.join(abs, file), 'export const marker = true;\n');
+  }
+
+  const { state } = buildState({ docsDir, srcDir: path.join(tmp, 'src'), date: '2026-06-22' });
+  const derived = state.screens['COUPON-001'].derived;
+  assert.equal(derived.route_entry_present, true);
+  assert.equal(derived.screen_present, true);
+  assert.equal(derived.domain_component_present, true);
+  assert.equal(derived.hook_present, true);
+  assert.equal(derived.api_client_present, true);
+  assert.equal(derived.fake_hook_exists, true);
 });
 
 test('P7: computeReadiness 가 policy.modes 누락 시 throw 하지 않는다 (fail-closed 구멍)', () => {

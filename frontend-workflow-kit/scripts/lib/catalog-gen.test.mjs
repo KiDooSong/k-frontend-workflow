@@ -219,6 +219,20 @@ test('build/render: ui_primitive role override scans nonstandard UI root and ign
   assert.equal(text.includes('Ghost'), false);
 });
 
+test('build/render: explicit empty ui_primitive role does not fall back to legacy root', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-empty-ui-role-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const legacyUi = path.join(tmp, 'src', 'components', 'ui');
+  fs.mkdirSync(legacyUi, { recursive: true });
+  fs.writeFileSync(path.join(legacyUi, 'Ghost.tsx'), 'export function Ghost() { return null; }\n');
+  const layout = { roles: { ui_primitive: [] }, roleGlobs: () => [] };
+  const model = buildCatalog({ src: path.join(tmp, 'src'), projectRoot: tmp, layout });
+  assert.deepEqual(model.source_globs, []);
+  assert.deepEqual(model.source_dirs, []);
+  assert.deepEqual(model.components, []);
+  assert.equal(renderCatalog(model).includes('Ghost'), false);
+});
+
 test('build/render: ui_primitive role outside --src scans role root instead of empty fallback', (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-ui-role-outside-src-'));
   t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));

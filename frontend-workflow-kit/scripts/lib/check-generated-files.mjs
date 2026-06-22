@@ -202,11 +202,17 @@ export const V1_REPRODUCE = {
   },
 };
 
+export function resolveCodegenSource(contract, layout) {
+  return typeof contract.resolveSource === 'function'
+    ? contract.resolveSource({ layout })
+    : contract.source;
+}
+
 const V1_CODEGEN_REPRODUCE = {
   'codegen-openapi-client': {
     adapter: openApiClientAdapter,
     resolveInput: ({ srcDir, layout }) => path.resolve(projectRootOf(srcDir), layout.roleToDir('api_schema')),
-    source: 'src/api/schemas/**',
+    resolveSource: ({ layout }) => layout.roleGlobs('api_schema')[0] || '{roles.api_schema}',
   },
 };
 
@@ -320,7 +326,7 @@ function reproduceCodegenTarget(id, { srcDir, manifest, layout }) {
     model = contract.adapter.discover({
       apiSchemaDir: schemaDir,
       baseDir,
-      source: contract.source,
+      source: resolveCodegenSource(contract, resolvedLayout),
     });
     ok('CG:discover', `${contract.adapter.name || id} adapter discovery 완료`);
   } catch (err) {

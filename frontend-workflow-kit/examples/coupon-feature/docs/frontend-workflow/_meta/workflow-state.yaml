@@ -34,6 +34,11 @@ screens:
           owner: BE
       malformed_decisions: []
       api_confidence_min: candidate
+      api_client_present: false
+      domain_component_present: true
+      hook_present: true
+      route_entry_present: false
+      screen_present: true
       fake_hook_exists: true
       figma_mapping_status: missing
   COUPON-002:
@@ -51,5 +56,10 @@ screens:
       blocking_decisions: []
       malformed_decisions: []
       api_confidence_min: null
+      api_client_present: false
+      domain_component_present: true
+      hook_present: true
+      route_entry_present: false
+      screen_present: true
       fake_hook_exists: true
       figma_mapping_status: missing

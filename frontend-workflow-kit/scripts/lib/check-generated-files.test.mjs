@@ -15,6 +15,7 @@ import {
   discoverArtifacts,
   selectArtifactIds,
   reproduceArtifact,
+  resolveCodegenSource,
   V1_ARTIFACT_IDS,
   V1_CODEGEN_TARGET_IDS,
   V1_TARGET_IDS,
@@ -262,6 +263,21 @@ test('reproduceArtifact: component-catalog uses ui_primitive role override for n
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+});
+
+test('resolveCodegenSource: codegen source metadata follows custom api_schema role', () => {
+  const layout = {
+    roleGlobs(role) {
+      return role === 'api_schema' ? ['contracts/openapi/**'] : [];
+    },
+  };
+  assert.equal(
+    resolveCodegenSource(
+      { resolveSource: ({ layout }) => layout.roleGlobs('api_schema')[0] || '{roles.api_schema}' },
+      layout,
+    ),
+    'contracts/openapi/**',
+  );
 });
 
 test('reproduceArtifact: codegen openapi-client fixture reproduces multi-output client/hooks in stable order', () => {
