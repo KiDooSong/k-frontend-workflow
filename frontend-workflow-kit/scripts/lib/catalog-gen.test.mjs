@@ -315,6 +315,43 @@ test('CLI: custom layout command header includes layout and concrete wildcard sr
   assert.equal(text.includes('Ghost'), false);
 });
 
+test('CLI: disjoint multi-glob command header falls back to runnable src', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-cli-disjoint-header-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  fs.writeFileSync(
+    path.join(tmp, 'project-layout.yaml'),
+    [
+      'version: 1',
+      'preset: expo-feature',
+      'roles:',
+      '  ui_primitive:',
+      '    - missing-ui/**',
+      '    - packages/*/ui/**',
+      '',
+    ].join('\n'),
+  );
+  fs.mkdirSync(path.join(tmp, 'packages', 'web', 'ui'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmp, 'packages', 'web', 'ui', 'Button.tsx'),
+    'export function Button() { return null; }\n',
+  );
+  const out = path.join('docs', 'frontend-workflow', 'design', 'component-catalog.md');
+  const r = spawnSync(
+    process.execPath,
+    [CLI, '--src', 'packages', '--out', out, '--layout', 'project-layout.yaml'],
+    { cwd: tmp, encoding: 'utf8' },
+  );
+  assert.equal(r.status, 0, r.stderr);
+  const text = fs.readFileSync(path.join(tmp, out), 'utf8');
+  assert.match(text, /Source: missing-ui\/\*\*, packages\/\*\/ui\/\*\*/);
+  assert.match(
+    text,
+    /Command: node scripts\/catalog-gen\.mjs --src packages --out docs\/frontend-workflow\/design\/component-catalog\.md --layout project-layout\.yaml/,
+  );
+  assert.doesNotMatch(text, /--src missing-ui/);
+  assert.match(text, /\| Button \| packages\/web\/ui\/Button\.tsx \| named \| ok \|/);
+});
+
 test('analyzeBarrelReconcile: ui_primitive role ignores legacy src/components/ui barrel', (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-ui-role-barrel-'));
   t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));

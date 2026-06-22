@@ -364,6 +364,58 @@ test('reproduceArtifact: component-catalog multi-glob ui_primitive does not stop
   }
 });
 
+test('reproduceArtifact: component-catalog disjoint multi-glob skips missing first root', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cgf-cc-disjoint-multiglob-ui-'));
+  try {
+    fs.writeFileSync(
+      path.join(tmp, 'project-layout.yaml'),
+      [
+        'version: 1',
+        'preset: expo-feature',
+        'roles:',
+        '  ui_primitive:',
+        '    - missing-ui/**',
+        '    - packages/*/ui/**',
+        '',
+      ].join('\n'),
+    );
+    const ui = path.join(tmp, 'packages', 'web', 'ui');
+    fs.mkdirSync(ui, { recursive: true });
+    fs.writeFileSync(path.join(ui, 'Button.tsx'), 'export function Button() { return null; }\n');
+    fs.mkdirSync(path.join(tmp, 'src'), { recursive: true });
+    const designDir = path.join(tmp, 'docs', 'frontend-workflow', 'design');
+    fs.mkdirSync(designDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(designDir, 'component-catalog.md'),
+      [
+        '# GENERATED FILE — DO NOT EDIT',
+        '<!-- Source: missing-ui/**, packages/*/ui/** -->',
+        '<!-- Command: node scripts/catalog-gen.mjs --src packages --out docs/frontend-workflow/design/component-catalog.md --layout project-layout.yaml -->',
+        '',
+        '## Components',
+        '',
+        '| Name | Source Path | Export Kind | Status |',
+        '| --- | --- | --- | --- |',
+        '| Button | packages/web/ui/Button.tsx | named | ok |',
+        '',
+      ].join('\n'),
+    );
+    const layoutPath = path.join(tmp, 'project-layout.yaml');
+    const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags: { layout: layoutPath } });
+    const r = reproduceArtifact('component-catalog', {
+      docsDir: path.join(tmp, 'docs', 'frontend-workflow'),
+      srcDir: path.join(tmp, 'src'),
+      layout,
+      layoutPath,
+    });
+    assert.equal(r.status, 'ok', JSON.stringify(r.checks));
+    assert.match(r.input, /packages$/);
+    assert.ok(r.checks.some((c) => c.check === 'CG:content' && c.ok));
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('resolveCodegenSource: codegen source metadata follows custom api_schema role', () => {
   const layout = {
     roleGlobs(role) {

@@ -174,8 +174,9 @@ function roleRootAbs(baseDir, rel) {
 function roleGlobInputDir(srcDir, layout, role) {
   const baseDir = projectRootOf(srcDir);
   const globs = layout.roleGlobs(role);
-  const preferred = catalogCommandSrcForGlobs(globs);
-  const candidates = [preferred, ...globs.map((glob) => globRoot(glob).replace(/\/+$/, '')), ''];
+  const preferred = catalogCommandSrcForGlobs(globs, { fallback: '' });
+  const roots = globs.map((glob) => globRoot(glob).replace(/\/+$/, '')).filter((root) => root !== '');
+  const candidates = [...(preferred ? [preferred] : []), ...roots, ''];
   const seen = new Set();
   for (const rel of candidates) {
     const key = rel || '.';
@@ -184,7 +185,7 @@ function roleGlobInputDir(srcDir, layout, role) {
     const abs = roleRootAbs(baseDir, rel);
     if (isDir(abs)) return abs;
   }
-  return roleRootAbs(baseDir, preferred);
+  return roleRootAbs(baseDir, preferred || roots[0] || '');
 }
 
 // v1 reproduce 계약 — 생성기 호출 방식을 코드로 고정한다(헤더/manifest command 문자열 비파싱).

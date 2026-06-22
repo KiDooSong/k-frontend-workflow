@@ -68,15 +68,15 @@ function commonPrefixPath(paths) {
   return prefix.join('/');
 }
 
-export function catalogCommandSrcForGlobs(globs) {
+export function catalogCommandSrcForGlobs(globs, { fallback = '.' } = {}) {
   if (!Array.isArray(globs)) return 'src/components/ui';
   const roots = globs.map((g) => globRoot(g).replace(/\/+$/, '')).filter((g) => g !== '');
-  if (roots.length === 0) return '.';
-  return commonPrefixPath(roots) || roots[0] || '.';
+  if (roots.length === 0) return fallback;
+  return commonPrefixPath(roots) || fallback;
 }
 
-export function catalogCommandSrc(model = {}) {
-  if (Array.isArray(model.source_globs)) return catalogCommandSrcForGlobs(model.source_globs);
+export function catalogCommandSrc(model = {}, opts = {}) {
+  if (Array.isArray(model.source_globs)) return catalogCommandSrcForGlobs(model.source_globs, opts);
   return Array.isArray(model.source_dirs) ? model.source_dirs[0] || 'src/components/ui' : 'src/components/ui';
 }
 

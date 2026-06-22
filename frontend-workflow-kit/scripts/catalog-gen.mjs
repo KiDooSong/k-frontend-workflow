@@ -65,7 +65,8 @@ function main() {
     return;
   }
 
-  const text = renderCatalog(model, { commandSrc: catalogCommandSrc(model), commandLayout });
+  const commandSrc = catalogCommandSrc(model, { fallback: relativeFrom(sourceConfig.projectRoot, srcAbs) });
+  const text = renderCatalog(model, { commandSrc, commandLayout });
 
   // --dry-run: 파일을 쓰지 않고 렌더 결과를 stdout 으로 미리보기 (--out 미변경).
   if (flags['dry-run']) {
