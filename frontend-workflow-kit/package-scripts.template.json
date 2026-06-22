@@ -1,5 +1,5 @@
 {
-  "//": "소비 프로젝트의 package.json scripts 에 병합한다. 킷은 tools/frontend-workflow/ 에 복사된다. 스킬/훅/CI 는 항상 이 이름으로 호출한다. 아래 scripts 는 대상 .mjs 가 존재해 바로 동작한다(state/readiness/validate = MVP-A, doctor = warning-only preflight, forbidden-paths = MVP-B diff 백스톱; --diff/--base + --docs 인자 필요. lint-gen = MVP-B PR-2 deterministic eslint.workflow.config.mjs 생성기이며 consumer root 의 docs/frontend-workflow/_meta/lint-policy.yaml 을 요구한다; lint-baseline = MVP-B PR-4 warning-first ratchet 비교이며 --enforce 때만 증가를 실패로 만든다. route-tree/nav-graph = MVP-C Phase 1 읽기 전용 생성 뷰, packet = Execution Loop PR2 readiness 소비 봉투). 이 블록만 병합하면 된다.",
+  "//": "소비 프로젝트의 package.json scripts 에 병합한다. 킷은 tools/frontend-workflow/ 에 복사된다. 스킬/훅/CI 는 항상 이 이름으로 호출한다. 아래 scripts 는 대상 .mjs 가 존재해 바로 동작한다(state/readiness/validate = MVP-A, doctor = warning-only preflight, forbidden-paths = MVP-B diff 백스톱; --diff/--base + --docs 인자 필요. lint-gen = MVP-B PR-2 deterministic eslint.workflow.config.mjs 생성기이며 consumer root 의 docs/frontend-workflow/_meta/lint-policy.yaml 을 요구한다; lint-baseline = MVP-B PR-4 warning-first ratchet 비교이며 --enforce 때만 증가를 실패로 만든다. route-tree/nav-graph = MVP-C Phase 1 읽기 전용 생성 뷰, packet = Execution Loop PR2 readiness 소비 봉투, adoption-probe = draft-only brownfield probe/temp output). 이 블록만 병합하면 된다.",
   "scripts": {
     "workflow:state": "node tools/frontend-workflow/scripts/workflow-state.mjs",
     "workflow:readiness": "node tools/frontend-workflow/scripts/readiness.mjs",
@@ -13,7 +13,8 @@
     "workflow:lint-baseline": "node tools/frontend-workflow/scripts/lint-baseline.mjs",
     "workflow:packet": "node tools/frontend-workflow/scripts/workflow-packet.mjs",
     "workflow:report": "node tools/frontend-workflow/scripts/workflow-report.mjs",
-    "workflow:run": "node tools/frontend-workflow/scripts/workflow-run.mjs"
+    "workflow:run": "node tools/frontend-workflow/scripts/workflow-run.mjs",
+    "workflow:adoption-probe": "node tools/frontend-workflow/scripts/adoption-probe.mjs"
   },
   "//roadmap": "B~D 단계에서 추가될 명령 또는 소비 package alias 승격이 보류된 명령. 대상 .mjs 가 없거나, 있어도 아직 consumer-facing alias/CI gate 로 승격하지 않은 항목은 scripts 에 넣지 않는다. 각 항목이 구현·승격되면 해당 줄을 위 scripts 로 옮긴다. 값 형식은 '대상 모듈 (도입 MVP 단계)'.",
   "//roadmap-scripts": {

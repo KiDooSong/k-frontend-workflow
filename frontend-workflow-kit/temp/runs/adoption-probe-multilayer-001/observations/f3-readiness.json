@@ -1,0 +1,15 @@
+{
+  "tool": "readiness.mjs",
+  "args": [
+    "--docs",
+    "C:\\Users\\thdrl\\source\\repos\\k-frontend-workflow\\.claude\\worktrees\\adoption-probe-completeness\\frontend-workflow-kit\\temp\\runs\\adoption-probe-multilayer-001\\scratch-f3\\project\\docs\\frontend-workflow",
+    "--layout",
+    "C:\\Users\\thdrl\\source\\repos\\k-frontend-workflow\\.claude\\worktrees\\adoption-probe-completeness\\frontend-workflow-kit\\temp\\runs\\adoption-probe-multilayer-001\\project-layout.draft.yaml",
+    "--json"
+  ],
+  "invocation": "node scripts/readiness.mjs --docs C:\\Users\\thdrl\\source\\repos\\k-frontend-workflow\\.claude\\worktrees\\adoption-probe-completeness\\frontend-workflow-kit\\temp\\runs\\adoption-probe-multilayer-001\\scratch-f3\\project\\docs\\frontend-workflow --layout C:\\Users\\thdrl\\source\\repos\\k-frontend-workflow\\.claude\\worktrees\\adoption-probe-completeness\\frontend-workflow-kit\\temp\\runs\\adoption-probe-multilayer-001\\project-layout.draft.yaml --json",
+  "exitCode": 0,
+  "stdout": "{\n  \"PROFILE-001\": {\n    \"readiness_mode\": \"screen-skeleton\",\n    \"next_mode\": \"rough-fixture-ui\",\n    \"allowed_paths\": [\n      \"src/presentation/profile/screens/**\"\n    ],\n    \"forbidden_paths\": [\n      \"src/api/**\",\n      \"openapi.yaml\"\n    ],\n    \"blocking\": [\n      {\n        \"fake_hook\": false\n      },\n      {\n        \"figma_mapping\": \"missing\"\n      },\n      {\n        \"state_matrix\": false\n      }\n    ],\n    \"next_actions\": [\n      \"add fake hook at src/presentation/profile/viewmodels/\",\n      \"create figma-component-mapping (status >= draft)\",\n      \"complete State Matrix (loading/success/empty/error/refreshing)\"\n    ]\n  }\n}\n",
+  "stderr": "",
+  "ok": true
+}

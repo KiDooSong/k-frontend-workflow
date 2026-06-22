@@ -1,0 +1,17 @@
+{
+  "tool": "validate.mjs",
+  "args": [
+    "--docs",
+    "C:\\Users\\thdrl\\source\\repos\\k-frontend-workflow\\.claude\\worktrees\\adoption-probe-completeness\\frontend-workflow-kit\\temp\\runs\\adoption-probe-multilayer-001\\scratch\\project\\docs\\frontend-workflow",
+    "--src",
+    "C:\\Users\\thdrl\\source\\repos\\k-frontend-workflow\\.claude\\worktrees\\adoption-probe-completeness\\frontend-workflow-kit\\temp\\runs\\adoption-probe-multilayer-001\\scratch\\project\\src",
+    "--layout",
+    "C:\\Users\\thdrl\\source\\repos\\k-frontend-workflow\\.claude\\worktrees\\adoption-probe-completeness\\frontend-workflow-kit\\temp\\runs\\adoption-probe-multilayer-001\\project-layout.draft.yaml",
+    "--json"
+  ],
+  "invocation": "node scripts/validate.mjs --docs C:\\Users\\thdrl\\source\\repos\\k-frontend-workflow\\.claude\\worktrees\\adoption-probe-completeness\\frontend-workflow-kit\\temp\\runs\\adoption-probe-multilayer-001\\scratch\\project\\docs\\frontend-workflow --src C:\\Users\\thdrl\\source\\repos\\k-frontend-workflow\\.claude\\worktrees\\adoption-probe-completeness\\frontend-workflow-kit\\temp\\runs\\adoption-probe-multilayer-001\\scratch\\project\\src --layout C:\\Users\\thdrl\\source\\repos\\k-frontend-workflow\\.claude\\worktrees\\adoption-probe-completeness\\frontend-workflow-kit\\temp\\runs\\adoption-probe-multilayer-001\\project-layout.draft.yaml --json",
+  "exitCode": 0,
+  "stdout": "{\n  \"ok\": true,\n  \"count\": 0,\n  \"errors\": [],\n  \"warnings\": []\n}\n",
+  "stderr": "",
+  "ok": true
+}

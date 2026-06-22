@@ -1,0 +1,79 @@
+# project-layout.yaml — adoption-probe DRAFT (probe multilayer-001, proposal only, not wired)
+# ─────────────────────────────────────────────────────────────────────────────
+# 이 파일은 adoption-probe 스킬이 산출하는 **초안**이다. 다음을 반드시 지킨다:
+#   - 산출 위치 = 프로브 출력 디렉토리(temp/runs/adoption-probe-<id>/) — 소비 레포 루트에
+#     이걸 그대로 떨궈 라이브 게이트에 배선하지 않는다(배선=사람 결정, 별 작업).
+#   - Axis 1(role→glob 재바인딩)만 표현한다. 이건 현재 킷이 이미 소비할 수 있는 유일한 축이다
+#     (layout-profile.mjs mergeRoles — preset < project-layout.roles < domains.<d>.roles).
+#   - Axis 2(repository/usecase/entity/data-source/mapper/view-model 등 추가 계층)는 아래
+#     `# layers:` 블록에 **주석으로만** 적는다. Tier3 미구현이라 지금 선언해도 inert —
+#     readiness/validate/lint 어디에도 안 잡힌다(다층 dry-run F1). 게이트처럼 표현 금지.
+#   - 이 초안은 confirmed/OD/CI/소스 무엇도 바꾸지 않는다.
+#
+# 사용 흐름: 프로브가 소비 레포 구조를 스캔 → 아래 roles 의 placeholder 를 실제 glob 으로 채움 →
+#           confidence 표기 → adoption-report 의 "Role Map(Axis 1)" 표와 1:1 대응.
+# ─────────────────────────────────────────────────────────────────────────────
+version: 1
+preset: expo-feature        # 기준 프리셋(현 3계층 byte-동치). 소비 레포가 다른 프레임이면 비우고 roles 전부 명시.
+
+# (Axis 1) role → 물리 glob 재바인딩. {domain} 토큰은 readiness per-screen 치환에서 펼쳐지므로 보존.
+# 7개 내장 role 이 전부다 — 이 목록을 늘리면(예: view_model:) glob 이름표만 생기고 게이트 의미는 안 생긴다(F1).
+roles:
+  route_entry:      "src/app/**"        # 예: src/app/**            · confidence: see adoption-report · 근거: see adoption-report
+  screen:           "src/presentation/{domain}/screens/**"       # 예: src/presentation/{domain}/screens/**
+  domain_component: "src/presentation/{domain}/components/**"    # 예: src/presentation/{domain}/components/**
+  hook:             "src/presentation/{domain}/viewmodels/**"         # 예: src/features/{domain}/hooks/**  (← 다층 레포에선 ViewModel 을 임시로 여기 평탄화)
+  ui_primitive:     "src/components/ui/**"           # 예: src/components/ui/**  ⚠ catalog-gen 하드코딩 주의 — 아래 ⚠ 참고
+  api_client:       "src/api/**"   # 예: src/api/**
+  api_schema:       "src/api/schemas/**"   # 예: src/api/schemas/**
+
+# (선택) 도메인별 오버라이드 — 특정 도메인만 다른 경로를 쓰면 여기서 role 단위 교체.
+# domains:
+#   {domain}:
+#     roles:
+#       screen: "{DOMAIN_SCREEN_GLOB}"
+
+# ⚠⚠⚠ ui_primitive 하드코딩 경고 (catalog-gen.mjs) ⚠⚠⚠
+# catalog-gen 은 이 project-layout 을 **읽지 않고** `/src/components/ui/` 리터럴(UI_MARKER)만 본다
+# (scripts/catalog-gen.mjs 기본값 --src src/components/ui · lib/catalog-gen 의 UI_MARKER).
+# 따라서 ui_primitive 를 위에서 비표준 경로로 재바인딩해도 catalog-gen 은 그 경로를 못 본다 →
+#   component-catalog 0건 → readiness 의 component_catalog_generated:false → rough-fixture-ui 진입 차단.
+# 즉 **Axis 1 재바인딩만으로도** 비표준 ui 경로 레포는 도입이 막힌다(dry-run F4). 우회는 catalog-gen 에
+# --src 를 수동으로 넘기는 것뿐이고, 그건 게이트(readiness)가 보는 산출 경로와 어긋날 수 있다.
+# → adoption-report 의 known blind spots 표 + Warning 콜아웃에 반드시 명시. 선결 PR-0a(ui_primitive 소비)가 닫는다.
+
+# ════════════════════════════════════════════════════════════════════════════
+# (Tier3 PROPOSED — 주석으로만. 지금 활성화 금지. layout-profile.mjs 가 layers: 를 아직 파싱·소비하지 않음.)
+# 아래는 "Tier3 가 랜딩하면 이 다층 레포가 어떻게 선언될지"를 보여주는 미리보기일 뿐이다.
+# 현재 상태에서 주석을 풀어도 inert(F1): 추가 계층은 allowed/forbidden 어디에도 안 나타난다.
+# 설계 근거: docs/design/drafts/customizable-architecture/tier3-layer-model.md §3 (access 행렬).
+# ────────────────────────────────────────────────────────────────────────────
+# layers:                      # 순서 = depth(화면 근처 → 데이터 근처). 한 엔트리 = role + fact + access(+gates).
+#   - role: route_entry
+#     fact: dir_has_files
+#     access: { allow: [route-skeleton] }
+#   - role: screen
+#     fact: dir_has_files
+#     access: { allow: [screen-skeleton, rough-fixture-ui, final-fixture-ui], forbid: [api-integrated-ui] }
+#   - role: view_model         # ← 다층 레포의 추가 계층. 지금은 role 도 게이트도 fact 도 없음(Tier3 blind spot).
+#     fact: dir_has_files      #    Tier3 에서 비로소 view_model_present fact + access 행을 얻는다.
+#     access: { allow: [rough-fixture-ui, final-fixture-ui] }
+#   - role: use_case           # ← blind spot
+#     fact: dir_has_files
+#     access: { allow: [rough-fixture-ui, final-fixture-ui] }
+#   - role: repository         # ← blind spot (의존성 역전 경계)
+#     fact: dir_has_files
+#     access: { allow: [final-fixture-ui, api-integrated-ui] }
+#   - role: data_source        # ← blind spot
+#     fact: dir_has_files
+#     access: { allow: [api-integrated-ui] }
+#   - role: mapper             # ← blind spot
+#     fact: dir_has_files
+#     access: { allow: [api-integrated-ui] }
+#   - role: hook
+#     fact: dir_has_files
+#     access: { allow: [rough-fixture-ui, api-integrated-ui] }
+#   - role: api_client
+#     fact: dir_has_files
+#     access: { allow: [api-integrated-ui], forbid: [route-skeleton, screen-skeleton, rough-fixture-ui, final-fixture-ui] }
+# ════════════════════════════════════════════════════════════════════════════

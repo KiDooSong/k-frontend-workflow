@@ -1,0 +1,53 @@
+# Tier3 Gap Report — app
+
+<!-- Rendered from templates/adoption/tier3-gap-report.template.md. Draft-only; Tier3 is not wired here. -->
+
+> **Status: PROBE / READ-ONLY — 2026-06-23.** This note records Axis 2 gaps only. It does not implement PR-D/E.
+
+## 1. Repo Layers vs Proposed Tier3
+
+| Repo layer/path | Tier3 role (proposed) | Tier3 access (proposed) | Current role? | Current fact? | Current gate? |
+|---|---|---|:---:|:---:|:---:|
+| `src/data/profile/datasources` | data_source | proposed access row only | no | no | no |
+| `src/domain/profile/entities` | entity | proposed access row only | no | no | no |
+| `src/data/profile/mappers` | mapper | proposed access row only | no | no | no |
+| `src/data/profile/repositories` | repository | proposed access row only | no | no | no |
+| `src/domain/profile/repositories` | repository | proposed access row only | no | no | no |
+| `src/domain/profile/usecases` | use_case | proposed access row only | no | no | no |
+| `src/presentation/profile/viewmodels` | view_model | proposed access row only | no | no | no |
+
+## 2. F1-F5 Observations
+
+| F | Breakage | This run | Core signal |
+|---|---|---|---|
+| F1 | Additional layer roles inert | 7 path(s) found; native roles not live-wired | silent |
+| F2 | Domain/data edit boundary absent | possible; not enforced by current readiness | silent |
+| F3 | Complete vs missing layers indistinguishable | changed in scratch | observed change |
+| F4 | catalog-gen source mismatch | 1 components observed from src/components/ui/** | observed |
+| F5 | validate layer-blind | ok=true, errors=0, warnings=0, exit=0 | validate is document-only |
+
+## 3. Flattening Loss
+
+| Layer | Temporary handling | Loss until Tier3 |
+|---|---|---|
+| view_model | may flatten to hook | state-owner boundary has no distinct fact |
+| use_case | not native | use-case completion and access not represented |
+| repository | not native | dependency inversion boundary not represented |
+| data_source | not native | api-integrated-only edit timing not represented |
+| mapper | not native | DTO/domain transform boundary not represented |
+| entity | not native | domain model completeness not represented |
+
+## 4. Closing Work (Proposed Only)
+
+| Gap | Closing slice | Note |
+|---|---|---|
+| F4 catalog source | Track 0 / PR-0a behavior | Current main is observed by this probe; keep parity tests. |
+| Missing layer facts | PR-C | General `<role>_present` fact, warning-first. |
+| Missing access rows | PR-D | Live wiring only after parity safety net. |
+| Layer lint | PR-E | Import-boundary subset, warning-first. |
+
+## 5. Boundaries
+
+- No Tier3 gate was enabled by this probe.
+- No hard gate, CI, Open Decision, or confirmed state changed.
+- This file is telemetry for later human-owned implementation decisions.
