@@ -4,7 +4,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { collectDoctorFindings } from './doctor.mjs';
+
+const KIT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const DOCTOR_CLI = path.join(KIT_ROOT, 'scripts', 'doctor.mjs');
 
 test('collectDoctorFindings: existing role glob is not warned, missing role glob is warning-only finding', (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'doctor-role-'));
@@ -42,4 +47,15 @@ test('collectDoctorFindings: layer role/fact issues are advisory findings', () =
   assert.ok(findings.some((f) => f.check === 'layer-role' && f.role === 'repository'));
   assert.ok(findings.some((f) => f.check === 'layer-fact' && f.role === 'repository'));
   assert.equal(findings.every((f) => f.severity === 'warning'), true);
+});
+
+test('workflow:doctor CLI wraps LayoutConfigError with runCli exit 2 and no stack trace', () => {
+  const r = spawnSync(process.execPath, [DOCTOR_CLI, '--layout', '__missing__.yaml'], {
+    cwd: KIT_ROOT,
+    encoding: 'utf8',
+  });
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /workflow:doctor: layout-profile:/);
+  assert.doesNotMatch(r.stderr, /\n\s+at\s+/);
+  assert.equal(r.stdout, '');
 });
