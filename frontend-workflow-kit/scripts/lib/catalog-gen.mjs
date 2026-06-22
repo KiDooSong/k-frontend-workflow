@@ -51,6 +51,35 @@ function uniquePaths(paths) {
   return [...new Set(paths.map((p) => path.resolve(p)))].sort();
 }
 
+function splitRelPath(p) {
+  const s = toPosix(p || '').replace(/\/+$/, '');
+  return s && s !== '.' ? s.split('/').filter(Boolean) : [];
+}
+
+function commonPrefixPath(paths) {
+  if (paths.length === 0) return '';
+  let prefix = splitRelPath(paths[0]);
+  for (const p of paths.slice(1)) {
+    const parts = splitRelPath(p);
+    let i = 0;
+    while (i < prefix.length && i < parts.length && prefix[i] === parts[i]) i += 1;
+    prefix = prefix.slice(0, i);
+  }
+  return prefix.join('/');
+}
+
+export function catalogCommandSrcForGlobs(globs) {
+  if (!Array.isArray(globs)) return 'src/components/ui';
+  const roots = globs.map((g) => globRoot(g).replace(/\/+$/, '')).filter((g) => g !== '');
+  if (roots.length === 0) return '.';
+  return commonPrefixPath(roots) || roots[0] || '.';
+}
+
+export function catalogCommandSrc(model = {}) {
+  if (Array.isArray(model.source_globs)) return catalogCommandSrcForGlobs(model.source_globs);
+  return Array.isArray(model.source_dirs) ? model.source_dirs[0] || 'src/components/ui' : 'src/components/ui';
+}
+
 export function catalogSourceConfig({ src, layout, projectRoot } = {}) {
   const srcAbs = path.resolve(src || '.');
   const roleGlobs =
@@ -272,14 +301,14 @@ export function buildCatalog({ src, layout, projectRoot } = {}) {
 //       `#` 미사용)를 권고하므로, 이 헤더 형태(H1 vs HTML-comment)는 PR-4 포맷 동결 시 최종 확정 대상이다.
 export function renderCatalog(model, opts = {}) {
   const modelHasSourceGlobs = Array.isArray(model.source_globs);
-  const modelHasSourceDirs = Array.isArray(model.source_dirs);
-  const sourceGlob = opts.sourceGlob || (modelHasSourceGlobs ? model.source_globs[0] || '' : 'src/components/ui/**');
-  const commandSrc = opts.commandSrc || (modelHasSourceDirs ? model.source_dirs[0] || '' : 'src/components/ui');
+  const sourceGlob = opts.sourceGlob || (modelHasSourceGlobs ? model.source_globs.join(', ') : 'src/components/ui/**');
+  const commandSrc = opts.commandSrc ?? catalogCommandSrc(model);
+  const commandLayout = opts.commandLayout ? ` --layout ${opts.commandLayout}` : '';
   const out = [];
   out.push('# GENERATED FILE — DO NOT EDIT');
   out.push(`<!-- Source: ${sourceGlob} -->`);
   out.push(
-    `<!-- Command: node scripts/catalog-gen.mjs --src ${commandSrc} --out docs/frontend-workflow/design/component-catalog.md -->`,
+    `<!-- Command: node scripts/catalog-gen.mjs --src ${commandSrc} --out docs/frontend-workflow/design/component-catalog.md${commandLayout} -->`,
   );
   out.push('');
   out.push('## Components');

@@ -239,7 +239,7 @@ test('reproduceArtifact: component-catalog uses ui_primitive role override for n
       [
         '# GENERATED FILE — DO NOT EDIT',
         '<!-- Source: src/shared/ui/** -->',
-        '<!-- Command: node scripts/catalog-gen.mjs --src src/shared/ui --out docs/frontend-workflow/design/component-catalog.md -->',
+        '<!-- Command: node scripts/catalog-gen.mjs --src src/shared/ui --out docs/frontend-workflow/design/component-catalog.md --layout project-layout.yaml -->',
         '',
         '## Components',
         '',
@@ -287,7 +287,7 @@ test('reproduceArtifact: component-catalog uses wildcard ui_primitive role glob'
       [
         '# GENERATED FILE — DO NOT EDIT',
         '<!-- Source: packages/*/ui/** -->',
-        '<!-- Command: node scripts/catalog-gen.mjs --src packages/*/ui --out docs/frontend-workflow/design/component-catalog.md -->',
+        '<!-- Command: node scripts/catalog-gen.mjs --src packages --out docs/frontend-workflow/design/component-catalog.md --layout project-layout.yaml -->',
         '',
         '## Components',
         '',
@@ -307,6 +307,57 @@ test('reproduceArtifact: component-catalog uses wildcard ui_primitive role glob'
     });
     assert.equal(r.status, 'ok', JSON.stringify(r.checks));
     assert.match(r.input, /packages$/);
+    assert.ok(r.checks.some((c) => c.check === 'CG:content' && c.ok));
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('reproduceArtifact: component-catalog multi-glob ui_primitive does not stop at missing first root', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cgf-cc-multiglob-ui-'));
+  try {
+    fs.writeFileSync(
+      path.join(tmp, 'project-layout.yaml'),
+      [
+        'version: 1',
+        'preset: expo-feature',
+        'roles:',
+        '  ui_primitive:',
+        '    - src/missing-ui/**',
+        '    - src/shared/ui/**',
+        '',
+      ].join('\n'),
+    );
+    const ui = path.join(tmp, 'src', 'shared', 'ui');
+    fs.mkdirSync(ui, { recursive: true });
+    fs.writeFileSync(path.join(ui, 'Button.tsx'), 'export function Button() { return null; }\n');
+    const designDir = path.join(tmp, 'docs', 'frontend-workflow', 'design');
+    fs.mkdirSync(designDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(designDir, 'component-catalog.md'),
+      [
+        '# GENERATED FILE — DO NOT EDIT',
+        '<!-- Source: src/missing-ui/**, src/shared/ui/** -->',
+        '<!-- Command: node scripts/catalog-gen.mjs --src src --out docs/frontend-workflow/design/component-catalog.md --layout project-layout.yaml -->',
+        '',
+        '## Components',
+        '',
+        '| Name | Source Path | Export Kind | Status |',
+        '| --- | --- | --- | --- |',
+        '| Button | src/shared/ui/Button.tsx | named | ok |',
+        '',
+      ].join('\n'),
+    );
+    const layoutPath = path.join(tmp, 'project-layout.yaml');
+    const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags: { layout: layoutPath } });
+    const r = reproduceArtifact('component-catalog', {
+      docsDir: path.join(tmp, 'docs', 'frontend-workflow'),
+      srcDir: path.join(tmp, 'src'),
+      layout,
+      layoutPath,
+    });
+    assert.equal(r.status, 'ok', JSON.stringify(r.checks));
+    assert.match(r.input, /src$/);
     assert.ok(r.checks.some((c) => c.check === 'CG:content' && c.ok));
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });

@@ -4,13 +4,28 @@
 // 4필드만 내보내며, props/docgen/style 분석은 후속 phase. 기존 수동 component-catalog 를 아직
 // 대체하지 않는다(매니페스트 plip·alias·guard 등록 없음 — source-contract §6/§7, 전부 future PR).
 // 사용:
-//   node scripts/catalog-gen.mjs [--src <dir>] [--out <file>] [--json] [--dry-run]
+//   node scripts/catalog-gen.mjs [--src <dir>] [--out <file>] [--layout <file>] [--json] [--dry-run]
 //   기본값: --src src  --out docs/frontend-workflow/design/component-catalog.md
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs, writeFile, isDir, KIT_ROOT, runCli } from './lib/util.mjs';
 import { loadLayoutProfile } from './lib/layout-profile.mjs';
-import { buildCatalog, renderCatalog, runBarrelReconcileDiagnostic } from './lib/catalog-gen.mjs';
+import {
+  buildCatalog,
+  catalogCommandSrc,
+  catalogSourceConfig,
+  renderCatalog,
+  runBarrelReconcileDiagnostic,
+} from './lib/catalog-gen.mjs';
+
+function toPosixPath(p) {
+  return p.split(path.sep).join('/');
+}
+
+function relativeFrom(root, abs) {
+  const rel = path.relative(root, abs);
+  return toPosixPath(rel || '.');
+}
 
 function main() {
   const { flags } = parseArgs(process.argv.slice(2));
@@ -35,6 +50,9 @@ function main() {
   }
 
   const model = buildCatalog({ src, layout });
+  const sourceConfig = catalogSourceConfig({ src, layout });
+  const commandLayout =
+    typeof flags.layout === 'string' ? relativeFrom(sourceConfig.projectRoot, path.resolve(flags.layout)) : null;
   const count = model.components.length;
 
   // phase2-1: 배럴 ↔ 카탈로그 정합성 진단 (warning-first, stderr only — 출력 파일·exit code 불변).
@@ -47,7 +65,7 @@ function main() {
     return;
   }
 
-  const text = renderCatalog(model);
+  const text = renderCatalog(model, { commandSrc: catalogCommandSrc(model), commandLayout });
 
   // --dry-run: 파일을 쓰지 않고 렌더 결과를 stdout 으로 미리보기 (--out 미변경).
   if (flags['dry-run']) {

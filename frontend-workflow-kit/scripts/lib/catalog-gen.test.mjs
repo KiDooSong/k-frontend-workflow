@@ -282,6 +282,39 @@ test('build/render: ui_primitive wildcard segment scans matching concrete roots 
   assert.equal(renderCatalog(model).includes('Legacy'), false);
 });
 
+test('CLI: custom layout command header includes layout and concrete wildcard src', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-cli-header-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  fs.writeFileSync(
+    path.join(tmp, 'project-layout.yaml'),
+    ['version: 1', 'preset: expo-feature', 'roles:', '  ui_primitive: packages/*/ui/**', ''].join('\n'),
+  );
+  fs.mkdirSync(path.join(tmp, 'packages', 'web', 'ui'), { recursive: true });
+  fs.mkdirSync(path.join(tmp, 'src', 'components', 'ui'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmp, 'packages', 'web', 'ui', 'Button.tsx'),
+    'export function Button() { return null; }\n',
+  );
+  fs.writeFileSync(
+    path.join(tmp, 'src', 'components', 'ui', 'Ghost.tsx'),
+    'export function Ghost() { return null; }\n',
+  );
+  const out = path.join('docs', 'frontend-workflow', 'design', 'component-catalog.md');
+  const r = spawnSync(
+    process.execPath,
+    [CLI, '--src', 'packages', '--out', out, '--layout', 'project-layout.yaml'],
+    { cwd: tmp, encoding: 'utf8' },
+  );
+  assert.equal(r.status, 0, r.stderr);
+  const text = fs.readFileSync(path.join(tmp, out), 'utf8');
+  assert.match(
+    text,
+    /Command: node scripts\/catalog-gen\.mjs --src packages --out docs\/frontend-workflow\/design\/component-catalog\.md --layout project-layout\.yaml/,
+  );
+  assert.match(text, /\| Button \| packages\/web\/ui\/Button\.tsx \| named \| ok \|/);
+  assert.equal(text.includes('Ghost'), false);
+});
+
 test('analyzeBarrelReconcile: ui_primitive role ignores legacy src/components/ui barrel', (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-ui-role-barrel-'));
   t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));

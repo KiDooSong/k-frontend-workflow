@@ -26,6 +26,7 @@ import openApiClientAdapter from '../adapters/codegens/openapi-client.mjs';
 import { normalizeGeneratedViewText, toPosix } from './test-fixture.mjs';
 // 글롭 미니엔진·생성물 헤더 정규식은 validate(검사 6)와 단일 출처를 공유한다(표류 방지).
 import { GENERATED_HEADER_RE, globRoot, globToRegExp } from './glob.mjs';
+import { catalogCommandSrcForGlobs } from './catalog-gen.mjs';
 
 // v1 가드 대상 allowlist — whole-file generated artifact: route-tree·nav-graph·component-catalog.
 // 정렬된 형태로 둔다(나열 출력 안정성). route-tree/nav-graph = 설계 §1.7 "Guardable NOW";
@@ -166,11 +167,24 @@ function relPosix(abs) {
   return toPosix(rel || '.');
 }
 
+function roleRootAbs(baseDir, rel) {
+  return rel && rel !== '.' ? path.resolve(baseDir, ...rel.split('/')) : baseDir;
+}
+
 function roleGlobInputDir(srcDir, layout, role) {
   const baseDir = projectRootOf(srcDir);
-  const [glob] = layout.roleGlobs(role);
-  const rootRel = glob ? globRoot(glob).replace(/\/+$/, '') : '';
-  return rootRel ? path.resolve(baseDir, ...rootRel.split('/')) : baseDir;
+  const globs = layout.roleGlobs(role);
+  const preferred = catalogCommandSrcForGlobs(globs);
+  const candidates = [preferred, ...globs.map((glob) => globRoot(glob).replace(/\/+$/, '')), ''];
+  const seen = new Set();
+  for (const rel of candidates) {
+    const key = rel || '.';
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const abs = roleRootAbs(baseDir, rel);
+    if (isDir(abs)) return abs;
+  }
+  return roleRootAbs(baseDir, preferred);
 }
 
 // v1 reproduce 계약 — 생성기 호출 방식을 코드로 고정한다(헤더/manifest command 문자열 비파싱).
@@ -196,8 +210,8 @@ export const V1_REPRODUCE = {
     outName: 'nav-graph.yaml',
   },
   // component-catalog: {roles.ui_primitive} → design/component-catalog.md.
-  // 입력은 role glob 의 고정 접두(globRoot)를 넘기고, 실제 포함 여부는 catalog-gen 의
-  // resolved ui_primitive glob matcher 가 판정한다. wildcard root 를 literal path 로 보지 않는다.
+  // 입력은 role glob 목록의 공통 고정 접두를 우선 넘기고, 없으면 존재하는 개별 고정 접두를 쓴다.
+  // 실제 포함 여부는 catalog-gen 의 resolved ui_primitive glob matcher 가 판정한다.
   // 커밋본은 _meta 가 아니라 design/ 아래(committedSubdir) — 매니페스트 path 와 일치.
   'component-catalog': {
     script: 'catalog-gen.mjs',
