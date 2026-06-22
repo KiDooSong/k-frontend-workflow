@@ -15,10 +15,12 @@ import {
   discoverArtifacts,
   selectArtifactIds,
   reproduceArtifact,
+  resolveCodegenSource,
   V1_ARTIFACT_IDS,
   V1_CODEGEN_TARGET_IDS,
   V1_TARGET_IDS,
 } from './check-generated-files.mjs';
+import { loadLayoutProfile } from './layout-profile.mjs';
 import { loadYaml, DEFAULTS, KIT_ROOT } from './util.mjs';
 
 // examples 픽스처(KIT_ROOT 기준 — cwd 무관). reproduceArtifact 는 커밋본을 읽기만 하므로
@@ -141,6 +143,7 @@ test('discoverCodegenTargets: focused target reflects manifest-listed outputs', 
     ['src/api/generated/*.client.ts', 'src/features/{domain}/hooks/*.ts'],
   );
   assert.deepEqual(targets[0].skip_reasons, []);
+  assert.deepEqual(targets[0].source, ['{roles.api_schema}']);
 });
 
 test('discoverArtifacts: 빈/이상 manifest 도 안전(빈 배열)', () => {
@@ -213,6 +216,221 @@ test('reproduceArtifact: component-catalog 픽스처가 커밋본을 재현(ok)'
   }
 });
 
+
+test('reproduceArtifact: component-catalog uses ui_primitive role override for nonstandard UI root', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cgf-cc-custom-ui-'));
+  try {
+    fs.writeFileSync(
+      path.join(tmp, 'project-layout.yaml'),
+      ['version: 1', 'preset: expo-feature', 'roles:', '  ui_primitive: src/shared/ui/**', ''].join('\n'),
+    );
+    const ui = path.join(tmp, 'src', 'shared', 'ui');
+    fs.mkdirSync(ui, { recursive: true });
+    fs.writeFileSync(path.join(ui, 'Button.tsx'), 'export function Button() { return null; }\n');
+    fs.mkdirSync(path.join(tmp, 'src', 'components', 'ui'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmp, 'src', 'components', 'ui', 'Ghost.tsx'),
+      'export function Ghost() { return null; }\n',
+    );
+    const designDir = path.join(tmp, 'docs', 'frontend-workflow', 'design');
+    fs.mkdirSync(designDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(designDir, 'component-catalog.md'),
+      [
+        '# GENERATED FILE — DO NOT EDIT',
+        '<!-- Source: src/shared/ui/** -->',
+        '<!-- Command: node scripts/catalog-gen.mjs --src src/shared/ui --out docs/frontend-workflow/design/component-catalog.md --layout project-layout.yaml -->',
+        '',
+        '## Components',
+        '',
+        '| Name | Source Path | Export Kind | Status |',
+        '| --- | --- | --- | --- |',
+        '| Button | src/shared/ui/Button.tsx | named | ok |',
+        '',
+      ].join('\n'),
+    );
+    const layoutPath = path.join(tmp, 'project-layout.yaml');
+    const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags: { layout: layoutPath } });
+    const r = reproduceArtifact('component-catalog', {
+      docsDir: path.join(tmp, 'docs', 'frontend-workflow'),
+      srcDir: path.join(tmp, 'src'),
+      layout,
+      layoutPath,
+    });
+    assert.equal(r.status, 'ok', JSON.stringify(r.checks));
+    assert.match(r.input, /src\/shared\/ui$/);
+    assert.ok(r.checks.some((c) => c.check === 'CG:content' && c.ok));
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('reproduceArtifact: component-catalog uses wildcard ui_primitive role glob', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cgf-cc-wildcard-ui-'));
+  try {
+    fs.writeFileSync(
+      path.join(tmp, 'project-layout.yaml'),
+      ['version: 1', 'preset: expo-feature', 'roles:', '  ui_primitive: packages/*/ui/**', ''].join('\n'),
+    );
+    const ui = path.join(tmp, 'packages', 'web', 'ui');
+    fs.mkdirSync(ui, { recursive: true });
+    fs.writeFileSync(path.join(ui, 'Button.tsx'), 'export function Button() { return null; }\n');
+    fs.mkdirSync(path.join(tmp, 'src', 'components', 'ui'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmp, 'src', 'components', 'ui', 'Ghost.tsx'),
+      'export function Ghost() { return null; }\n',
+    );
+    const designDir = path.join(tmp, 'docs', 'frontend-workflow', 'design');
+    fs.mkdirSync(designDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(designDir, 'component-catalog.md'),
+      [
+        '# GENERATED FILE — DO NOT EDIT',
+        '<!-- Source: packages/*/ui/** -->',
+        '<!-- Command: node scripts/catalog-gen.mjs --src packages --out docs/frontend-workflow/design/component-catalog.md --layout project-layout.yaml -->',
+        '',
+        '## Components',
+        '',
+        '| Name | Source Path | Export Kind | Status |',
+        '| --- | --- | --- | --- |',
+        '| Button | packages/web/ui/Button.tsx | named | ok |',
+        '',
+      ].join('\n'),
+    );
+    const layoutPath = path.join(tmp, 'project-layout.yaml');
+    const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags: { layout: layoutPath } });
+    const r = reproduceArtifact('component-catalog', {
+      docsDir: path.join(tmp, 'docs', 'frontend-workflow'),
+      srcDir: path.join(tmp, 'src'),
+      layout,
+      layoutPath,
+    });
+    assert.equal(r.status, 'ok', JSON.stringify(r.checks));
+    assert.match(r.input, /packages$/);
+    assert.ok(r.checks.some((c) => c.check === 'CG:content' && c.ok));
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('reproduceArtifact: component-catalog multi-glob ui_primitive does not stop at missing first root', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cgf-cc-multiglob-ui-'));
+  try {
+    fs.writeFileSync(
+      path.join(tmp, 'project-layout.yaml'),
+      [
+        'version: 1',
+        'preset: expo-feature',
+        'roles:',
+        '  ui_primitive:',
+        '    - src/missing-ui/**',
+        '    - src/shared/ui/**',
+        '',
+      ].join('\n'),
+    );
+    const ui = path.join(tmp, 'src', 'shared', 'ui');
+    fs.mkdirSync(ui, { recursive: true });
+    fs.writeFileSync(path.join(ui, 'Button.tsx'), 'export function Button() { return null; }\n');
+    const designDir = path.join(tmp, 'docs', 'frontend-workflow', 'design');
+    fs.mkdirSync(designDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(designDir, 'component-catalog.md'),
+      [
+        '# GENERATED FILE — DO NOT EDIT',
+        '<!-- Source: src/missing-ui/**, src/shared/ui/** -->',
+        '<!-- Command: node scripts/catalog-gen.mjs --src src --out docs/frontend-workflow/design/component-catalog.md --layout project-layout.yaml -->',
+        '',
+        '## Components',
+        '',
+        '| Name | Source Path | Export Kind | Status |',
+        '| --- | --- | --- | --- |',
+        '| Button | src/shared/ui/Button.tsx | named | ok |',
+        '',
+      ].join('\n'),
+    );
+    const layoutPath = path.join(tmp, 'project-layout.yaml');
+    const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags: { layout: layoutPath } });
+    const r = reproduceArtifact('component-catalog', {
+      docsDir: path.join(tmp, 'docs', 'frontend-workflow'),
+      srcDir: path.join(tmp, 'src'),
+      layout,
+      layoutPath,
+    });
+    assert.equal(r.status, 'ok', JSON.stringify(r.checks));
+    assert.match(r.input, /src$/);
+    assert.ok(r.checks.some((c) => c.check === 'CG:content' && c.ok));
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('reproduceArtifact: component-catalog disjoint multi-glob skips missing first root', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cgf-cc-disjoint-multiglob-ui-'));
+  try {
+    fs.writeFileSync(
+      path.join(tmp, 'project-layout.yaml'),
+      [
+        'version: 1',
+        'preset: expo-feature',
+        'roles:',
+        '  ui_primitive:',
+        '    - missing-ui/**',
+        '    - packages/*/ui/**',
+        '',
+      ].join('\n'),
+    );
+    const ui = path.join(tmp, 'packages', 'web', 'ui');
+    fs.mkdirSync(ui, { recursive: true });
+    fs.writeFileSync(path.join(ui, 'Button.tsx'), 'export function Button() { return null; }\n');
+    fs.mkdirSync(path.join(tmp, 'src'), { recursive: true });
+    const designDir = path.join(tmp, 'docs', 'frontend-workflow', 'design');
+    fs.mkdirSync(designDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(designDir, 'component-catalog.md'),
+      [
+        '# GENERATED FILE — DO NOT EDIT',
+        '<!-- Source: missing-ui/**, packages/*/ui/** -->',
+        '<!-- Command: node scripts/catalog-gen.mjs --src packages --out docs/frontend-workflow/design/component-catalog.md --layout project-layout.yaml -->',
+        '',
+        '## Components',
+        '',
+        '| Name | Source Path | Export Kind | Status |',
+        '| --- | --- | --- | --- |',
+        '| Button | packages/web/ui/Button.tsx | named | ok |',
+        '',
+      ].join('\n'),
+    );
+    const layoutPath = path.join(tmp, 'project-layout.yaml');
+    const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags: { layout: layoutPath } });
+    const r = reproduceArtifact('component-catalog', {
+      docsDir: path.join(tmp, 'docs', 'frontend-workflow'),
+      srcDir: path.join(tmp, 'src'),
+      layout,
+      layoutPath,
+    });
+    assert.equal(r.status, 'ok', JSON.stringify(r.checks));
+    assert.match(r.input, /packages$/);
+    assert.ok(r.checks.some((c) => c.check === 'CG:content' && c.ok));
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('resolveCodegenSource: codegen source metadata follows custom api_schema role', () => {
+  const layout = {
+    roleGlobs(role) {
+      return role === 'api_schema' ? ['contracts/openapi/**'] : [];
+    },
+  };
+  assert.equal(
+    resolveCodegenSource(
+      { resolveSource: ({ layout }) => layout.roleGlobs('api_schema')[0] || '{roles.api_schema}' },
+      layout,
+    ),
+    'contracts/openapi/**',
+  );
+});
+
 test('reproduceArtifact: codegen openapi-client fixture reproduces multi-output client/hooks in stable order', () => {
   const r = reproduceArtifact('codegen-openapi-client', { srcDir: CODEGEN_SRC, manifest: MANIFEST });
   assert.equal(r.status, 'ok', JSON.stringify(r.checks));
@@ -220,6 +438,31 @@ test('reproduceArtifact: codegen openapi-client fixture reproduces multi-output 
   assert.ok(r.checks.some((c) => c.check === 'CG:discover' && c.ok));
   assert.ok(r.checks.some((c) => c.check === 'CG:deterministic' && c.ok));
   assert.ok(r.checks.some((c) => c.check === 'CG:content' && c.ok));
+});
+
+test('reproduceArtifact: codegen api_schema multi-glob is explicit unsupported config', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cgf-codegen-api-multiglob-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(tmp, 'src', 'api', 'schemas'), { recursive: true });
+  const layout = {
+    roleToDir(role) {
+      return role === 'api_schema' ? 'src/api/schemas' : '';
+    },
+    roleGlobs(role) {
+      return role === 'api_schema' ? ['src/api/schemas/**', 'contracts/openapi/**'] : [];
+    },
+  };
+  const r = reproduceArtifact('codegen-openapi-client', {
+    srcDir: path.join(tmp, 'src'),
+    manifest: MANIFEST,
+    layout,
+  });
+  assert.equal(r.status, 'generator-error', JSON.stringify(r.checks));
+  assert.ok(
+    r.checks.some(
+      (c) => c.check === 'CG:config' && !c.ok && /api_schema multi-glob is unsupported/.test(c.message),
+    ),
+  );
 });
 
 test('reproduceArtifact: codegen output tamper is reported as mismatch without rewriting files', () => {

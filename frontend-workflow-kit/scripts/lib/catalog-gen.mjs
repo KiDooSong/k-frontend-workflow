@@ -14,12 +14,12 @@
 //
 // 참고: frontend-workflow-kit/temp/proposals/component-catalog-generation-source-contract.md
 import path from 'node:path';
-import { walkFiles, readFileSafe } from './util.mjs';
+import { walkFiles, readFileSafe, projectRootOf } from './util.mjs';
+import { globRoot, globToRegExp } from './glob.mjs';
 
 const SCAN_EXTS = ['.tsx', '.ts'];
-// 스코프 가드 — 정본 글롭 `src/components/ui/**` 만 후보. 이 세그먼트를 포함하는 파일만 통과시켜
-// features/<domain>/components·screens, 그리고 features/foo/components/ui 같은 비정본 중첩 ui 까지 배제한다.
-// --src 가 넓은 src 루트를 가리켜도 정본 ui 밖은 걸러진다 (source-contract §1).
+// 하위호환 fallback: layout 미주입 단위 테스트/구형 호출은 기존 정본 글롭 `src/components/ui/**` 로 판정한다.
+// CLI/check-generated 경로는 resolvedLayout.roles.ui_primitive 에서 source root 를 주입한다.
 const UI_MARKER = '/src/components/ui/';
 const PASCAL_RE = /^[A-Z][A-Za-z0-9]*$/;
 
@@ -28,7 +28,134 @@ function toPosix(p) {
   return p.replace(/\\/g, '/');
 }
 
-function classifyUiFilePath(absFile) {
+function isWithin(parent, child) {
+  const rel = path.relative(parent, child);
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+function globToDir(glob) {
+  let g = toPosix(String(glob || '')).replace(/\/+$/, '');
+  if (g.endsWith('/**')) g = g.slice(0, -3);
+  else {
+    const wildcard = g.search(/[*?\[\]{}]/);
+    if (wildcard !== -1) g = g.slice(0, wildcard).replace(/\/+$/, '');
+  }
+  return g;
+}
+
+function pathFromProjectRoot(projectRoot, rel) {
+  return rel ? path.resolve(projectRoot, ...rel.split('/')) : projectRoot;
+}
+
+function uniquePaths(paths) {
+  return [...new Set(paths.map((p) => path.resolve(p)))].sort();
+}
+
+function splitRelPath(p) {
+  const s = toPosix(p || '').replace(/\/+$/, '');
+  return s && s !== '.' ? s.split('/').filter(Boolean) : [];
+}
+
+function commonPrefixPath(paths) {
+  if (paths.length === 0) return '';
+  let prefix = splitRelPath(paths[0]);
+  for (const p of paths.slice(1)) {
+    const parts = splitRelPath(p);
+    let i = 0;
+    while (i < prefix.length && i < parts.length && prefix[i] === parts[i]) i += 1;
+    prefix = prefix.slice(0, i);
+  }
+  return prefix.join('/');
+}
+
+export function catalogCommandSrcForGlobs(globs, { fallback = '.' } = {}) {
+  if (!Array.isArray(globs)) return 'src/components/ui';
+  const roots = globs.map((g) => globRoot(g).replace(/\/+$/, '')).filter((g) => g !== '');
+  if (roots.length === 0) return fallback;
+  return commonPrefixPath(roots) || fallback;
+}
+
+export function catalogCommandSrc(model = {}, opts = {}) {
+  if (Array.isArray(model.source_globs)) return catalogCommandSrcForGlobs(model.source_globs, opts);
+  return Array.isArray(model.source_dirs) ? model.source_dirs[0] || 'src/components/ui' : 'src/components/ui';
+}
+
+export function catalogSourceConfig({ src, layout, projectRoot } = {}) {
+  const srcAbs = path.resolve(src || '.');
+  const roleGlobs =
+    layout && typeof layout.roleGlobs === 'function'
+      ? layout.roleGlobs('ui_primitive')
+      : [];
+  const hasExplicitRole = Boolean(
+    layout?.roles && Object.prototype.hasOwnProperty.call(layout.roles, 'ui_primitive'),
+  );
+  const useLayoutRole = hasExplicitRole || roleGlobs.length > 0;
+  const sourceGlobs = useLayoutRole ? roleGlobs : ['src/components/ui/**'];
+  const sourceDirs = sourceGlobs.map(globToDir).filter(Boolean);
+  const sourceMatchers = sourceGlobs.map((g) => globToRegExp(g));
+  const barrelMatchers = sourceDirs.flatMap((d) => [
+    globToRegExp(`${d}/index.ts`),
+    globToRegExp(`${d}/index.tsx`),
+  ]);
+
+  let rootAbs = projectRoot ? path.resolve(projectRoot) : null;
+  if (!rootAbs) {
+    const srcPosix = toPosix(srcAbs);
+    for (const d of [...sourceDirs].sort((a, b) => b.length - a.length)) {
+      const suffix = `/${d}`;
+      if (srcPosix.endsWith(suffix) || srcPosix === d) {
+        rootAbs = srcAbs.slice(0, Math.max(0, srcAbs.length - d.length)).replace(/[\\/]+$/, '');
+        break;
+      }
+    }
+  }
+  if (!rootAbs) rootAbs = projectRootOf(srcAbs);
+
+  const sourceRoots = uniquePaths(sourceGlobs.map((g) => pathFromProjectRoot(rootAbs, globRoot(g))));
+  const scanRoots = useLayoutRole
+    ? sourceRoots
+    : sourceDirs
+        .map((d) => path.resolve(rootAbs, ...d.split('/')))
+        .filter((root) => isWithin(srcAbs, root) || isWithin(root, srcAbs));
+  return {
+    projectRoot: rootAbs,
+    sourceGlobs,
+    sourceDirs,
+    sourceRoots,
+    sourceMatchers,
+    barrelMatchers,
+    scanRoots: useLayoutRole ? scanRoots : scanRoots.length ? scanRoots : [srcAbs],
+  };
+}
+
+function sourcePathFor(absFile, opts = {}) {
+  const projectRoot = opts.projectRoot ? path.resolve(opts.projectRoot) : null;
+  const abs = path.resolve(absFile);
+  if (projectRoot) {
+    const rel = toPosix(path.relative(projectRoot, abs));
+    if (rel && !rel.startsWith('../') && !path.isAbsolute(rel)) {
+      const matchers = opts.sourceMatchers || [];
+      if (matchers.length > 0) return matchers.some((matcher) => matcher.test(rel)) ? rel : null;
+    }
+  }
+  const roots = (opts.sourceRoots || []).map((r) => path.resolve(r));
+  for (const root of roots) {
+    if (isWithin(root, abs)) return projectRoot ? toPosix(path.relative(projectRoot, abs)) : toPosix(abs);
+  }
+  return null;
+}
+
+function classifyUiFilePath(absFile, opts = {}) {
+  const configuredSourcePath = sourcePathFor(absFile, opts);
+  if (configuredSourcePath) {
+    const ext = path.extname(absFile);
+    if (!SCAN_EXTS.includes(ext)) return null;
+    const base = path.basename(absFile, ext);
+    if (base.includes('.')) return null;
+    if (!PASCAL_RE.test(base)) return null;
+    return { base, source_path: configuredSourcePath };
+  }
+
   const posixAbs = toPosix(absFile);
   const idx = posixAbs.lastIndexOf(UI_MARKER); // 중첩 시 가장 안쪽(프로젝트-로컬) 정본 루트 채택
   if (idx === -1) return null; // 정본 src/components/ui/ 밖 → 제외 (§1 스코프)
@@ -85,8 +212,8 @@ function isWrappedConst(src, base) {
 // 한 후보 파일이 v1 카탈로그 컴포넌트인지 판정한다.
 //   반환: { name, source_path, export_kind, status } | null (비-컴포넌트)
 // content 는 파일 본문(없으면 빈 문자열로 취급). IO 는 호출부가 한다(이 함수는 순수).
-export function classifyComponentFile(absFile, content) {
-  const file = classifyUiFilePath(absFile);
+export function classifyComponentFile(absFile, content, opts = {}) {
+  const file = classifyUiFilePath(absFile, opts);
   if (!file) return null;
 
   // base 는 PascalCase 라 정규식 메타문자가 없다 → 그대로 보간 안전.
@@ -111,8 +238,8 @@ export function classifyComponentFile(absFile, content) {
 
 // phase2 PR-3: default function export 는 정식 components 로 승격하지 않고 candidate 로만 surface 한다.
 // 이름은 default function 명보다 PascalCase 파일 basename 을 우선한다(Modal.tsx → Modal).
-export function classifyDefaultExportCandidate(absFile, content) {
-  const file = classifyUiFilePath(absFile);
+export function classifyDefaultExportCandidate(absFile, content, opts = {}) {
+  const file = classifyUiFilePath(absFile, opts);
   if (!file) return null;
 
   const src = stripBlockComments(content || '');
@@ -140,21 +267,30 @@ function compareComponents(a, b) {
 
 // 순수 빌더: src 디렉토리를 스캔해 { components } 모델을 만든다. 직렬화/쓰기는 CLI 가 한다.
 //   components: [{ name, source_path, export_kind, status }] — (source_path, name) 안정 정렬.
-export function buildCatalog({ src }) {
-  const root = path.resolve(src);
-  const files = walkFiles(root, SCAN_EXTS); // 정렬된 절대경로(node_modules/dot 디렉토리 스킵)
+export function buildCatalog({ src, layout, projectRoot } = {}) {
+  const sourceConfig = catalogSourceConfig({ src, layout, projectRoot });
+  const fileSet = new Set();
+  for (const root of sourceConfig.scanRoots) {
+    for (const f of walkFiles(root, SCAN_EXTS)) fileSet.add(f);
+  }
+  const files = [...fileSet].sort(); // 정렬된 절대경로(node_modules/dot 디렉토리 스킵)
   const components = [];
   const default_export_candidates = [];
   for (const f of files) {
     const content = readFileSafe(f);
-    const c = classifyComponentFile(f, content);
+    const c = classifyComponentFile(f, content, sourceConfig);
     if (c) components.push(c);
-    const d = classifyDefaultExportCandidate(f, content);
+    const d = classifyDefaultExportCandidate(f, content, sourceConfig);
     if (d) default_export_candidates.push(d);
   }
   components.sort(compareComponents);
   default_export_candidates.sort(compareComponents);
-  return { components, default_export_candidates };
+  return {
+    components,
+    default_export_candidates,
+    source_globs: sourceConfig.sourceGlobs,
+    source_dirs: sourceConfig.sourceDirs,
+  };
 }
 
 // 생성물 헤더(H1 em-dash 마커) + ## Components 테이블을 결정적 Markdown 문자열로 렌더링한다.
@@ -163,12 +299,16 @@ export function buildCatalog({ src }) {
 // 본문은 명시적 '\n' join + 단일 trailing newline (prettier 미사용, §7.4(e)).
 // NOTE(header): H1 마커는 사용자 PR-4 동결 포맷을 따른다. contract §4 는 HTML-comment 블록 헤더(on-disk
 //       `#` 미사용)를 권고하므로, 이 헤더 형태(H1 vs HTML-comment)는 PR-4 포맷 동결 시 최종 확정 대상이다.
-export function renderCatalog(model) {
+export function renderCatalog(model, opts = {}) {
+  const modelHasSourceGlobs = Array.isArray(model.source_globs);
+  const sourceGlob = opts.sourceGlob || (modelHasSourceGlobs ? model.source_globs.join(', ') : 'src/components/ui/**');
+  const commandSrc = opts.commandSrc ?? catalogCommandSrc(model);
+  const commandLayout = opts.commandLayout ? ` --layout ${opts.commandLayout}` : '';
   const out = [];
   out.push('# GENERATED FILE — DO NOT EDIT');
-  out.push('<!-- Source: src/components/ui/** -->');
+  out.push(`<!-- Source: ${sourceGlob} -->`);
   out.push(
-    '<!-- Command: node scripts/catalog-gen.mjs --src src/components/ui --out docs/frontend-workflow/design/component-catalog.md -->',
+    `<!-- Command: node scripts/catalog-gen.mjs --src ${commandSrc} --out docs/frontend-workflow/design/component-catalog.md${commandLayout} -->`,
   );
   out.push('');
   out.push('## Components');
@@ -264,20 +404,23 @@ export function parseBarrelReexports(content) {
   return { names, unsupported };
 }
 
-// src 아래 정본 ui 루트 직속 배럴(index.ts|index.tsx)을 찾아 re-export 집합을 카탈로그 컴포넌트
-// 집합과 대조한다. IO 수행(walkFiles/readFileSafe). 순수 파싱은 parseBarrelReexports 가 담당.
+// resolved ui_primitive role root 직속 배럴(index.ts|index.tsx)을 찾아 re-export 집합을
+// 카탈로그 컴포넌트 집합과 대조한다. IO 수행(walkFiles/readFileSafe). 순수 파싱은 parseBarrelReexports 가 담당.
 //   반환: { barrelFound, barrelPaths, reexported, missingFromCatalog, missingFromBarrel, unsupported }
-export function analyzeBarrelReconcile({ src, components }) {
-  const root = path.resolve(src);
-  const files = walkFiles(root, SCAN_EXTS);
+export function analyzeBarrelReconcile({ src, components, layout, projectRoot }) {
+  const sourceConfig = catalogSourceConfig({ src, layout, projectRoot });
+  const files = new Set();
+  for (const root of sourceConfig.scanRoots) {
+    for (const f of walkFiles(root, SCAN_EXTS)) files.add(f);
+  }
   const barrels = [];
   for (const f of files) {
-    const posixAbs = toPosix(f);
-    const idx = posixAbs.lastIndexOf(UI_MARKER); // 정본 ui 루트 (중첩 시 가장 안쪽)
-    if (idx === -1) continue; // 정본 src/components/ui/ 밖
-    const rest = posixAbs.slice(idx + UI_MARKER.length);
-    if (rest === 'index.ts' || rest === 'index.tsx') {
-      barrels.push({ rel: posixAbs.slice(idx + 1), abs: f }); // 'src/components/ui/index.ts'
+    const base = path.basename(f);
+    if (base !== 'index.ts' && base !== 'index.tsx') continue;
+    const sourcePath = sourcePathFor(f, sourceConfig);
+    if (!sourcePath) continue;
+    if (sourceConfig.barrelMatchers.some((matcher) => matcher.test(sourcePath))) {
+      barrels.push({ rel: sourcePath, abs: f });
     }
   }
   if (barrels.length === 0) {
@@ -335,8 +478,8 @@ export function formatBarrelWarnings(diff) {
 
 // CLI 편의: 진단을 돌려 경고를 stderr 로 쓴다(있을 때만). 반환은 diff(테스트/재사용용).
 // exit code 는 절대 바꾸지 않는다 — warning-first(§7). 입력 검증(--src 비디렉토리)은 CLI 가 이미 했다.
-export function runBarrelReconcileDiagnostic({ src, components }, stderr) {
-  const diff = analyzeBarrelReconcile({ src, components });
+export function runBarrelReconcileDiagnostic({ src, components, layout, projectRoot }, stderr) {
+  const diff = analyzeBarrelReconcile({ src, components, layout, projectRoot });
   const lines = formatBarrelWarnings(diff);
   if (lines.length) stderr.write(lines.join('\n') + '\n');
   return diff;

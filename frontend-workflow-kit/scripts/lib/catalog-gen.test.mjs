@@ -193,6 +193,192 @@ test('build/render: default export candidates 정렬과 두-run 결정성 고정
   assert.equal(renderCatalog(first), renderCatalog(second));
 });
 
+
+test('build/render: ui_primitive role override scans nonstandard UI root and ignores default path decoys', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-ui-role-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(tmp, 'src', 'shared', 'ui'), { recursive: true });
+  fs.mkdirSync(path.join(tmp, 'src', 'components', 'ui'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmp, 'src', 'shared', 'ui', 'Button.tsx'),
+    'export function Button() { return null; }\n',
+  );
+  fs.writeFileSync(
+    path.join(tmp, 'src', 'components', 'ui', 'Ghost.tsx'),
+    'export function Ghost() { return null; }\n',
+  );
+  const layout = { roleGlobs: (role) => (role === 'ui_primitive' ? ['src/shared/ui/**'] : []) };
+  const model = buildCatalog({ src: path.join(tmp, 'src'), projectRoot: tmp, layout });
+  assert.deepEqual(model.components, [
+    { name: 'Button', source_path: 'src/shared/ui/Button.tsx', export_kind: 'named', status: 'ok' },
+  ]);
+  assert.equal(model.default_export_candidates.length, 0);
+  const text = renderCatalog(model);
+  assert.match(text, /Source: src\/shared\/ui\/\*\*/);
+  assert.match(text, /\| Button \| src\/shared\/ui\/Button\.tsx \| named \| ok \|/);
+  assert.equal(text.includes('Ghost'), false);
+});
+
+test('build/render: explicit empty ui_primitive role does not fall back to legacy root', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-empty-ui-role-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const legacyUi = path.join(tmp, 'src', 'components', 'ui');
+  fs.mkdirSync(legacyUi, { recursive: true });
+  fs.writeFileSync(path.join(legacyUi, 'Ghost.tsx'), 'export function Ghost() { return null; }\n');
+  const layout = { roles: { ui_primitive: [] }, roleGlobs: () => [] };
+  const model = buildCatalog({ src: path.join(tmp, 'src'), projectRoot: tmp, layout });
+  assert.deepEqual(model.source_globs, []);
+  assert.deepEqual(model.source_dirs, []);
+  assert.deepEqual(model.components, []);
+  assert.equal(renderCatalog(model).includes('Ghost'), false);
+});
+
+test('build/render: ui_primitive role outside --src scans role root instead of empty fallback', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-ui-role-outside-src-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(tmp, 'packages', 'ui', 'src'), { recursive: true });
+  fs.mkdirSync(path.join(tmp, 'src', 'components', 'ui'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmp, 'packages', 'ui', 'src', 'Button.tsx'),
+    'export function Button() { return null; }\n',
+  );
+  fs.writeFileSync(
+    path.join(tmp, 'src', 'components', 'ui', 'Ghost.tsx'),
+    'export function Ghost() { return null; }\n',
+  );
+  const layout = { roleGlobs: (role) => (role === 'ui_primitive' ? ['packages/ui/src/**'] : []) };
+  const model = buildCatalog({ src: path.join(tmp, 'src'), projectRoot: tmp, layout });
+  assert.deepEqual(model.source_globs, ['packages/ui/src/**']);
+  assert.deepEqual(model.components, [
+    { name: 'Button', source_path: 'packages/ui/src/Button.tsx', export_kind: 'named', status: 'ok' },
+  ]);
+});
+
+test('build/render: ui_primitive wildcard segment scans matching concrete roots only', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-ui-role-wildcard-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(tmp, 'packages', 'web', 'ui'), { recursive: true });
+  fs.mkdirSync(path.join(tmp, 'packages', 'admin', 'not-ui'), { recursive: true });
+  fs.mkdirSync(path.join(tmp, 'src', 'components', 'ui'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmp, 'packages', 'web', 'ui', 'Button.tsx'),
+    'export function Button() { return null; }\n',
+  );
+  fs.writeFileSync(
+    path.join(tmp, 'packages', 'admin', 'not-ui', 'Ghost.tsx'),
+    'export function Ghost() { return null; }\n',
+  );
+  fs.writeFileSync(
+    path.join(tmp, 'src', 'components', 'ui', 'Legacy.tsx'),
+    'export function Legacy() { return null; }\n',
+  );
+  const layout = { roleGlobs: (role) => (role === 'ui_primitive' ? ['packages/*/ui/**'] : []) };
+  const model = buildCatalog({ src: path.join(tmp, 'src'), projectRoot: tmp, layout });
+  assert.deepEqual(model.source_dirs, ['packages/*/ui']);
+  assert.deepEqual(model.components, [
+    { name: 'Button', source_path: 'packages/web/ui/Button.tsx', export_kind: 'named', status: 'ok' },
+  ]);
+  assert.equal(renderCatalog(model).includes('Ghost'), false);
+  assert.equal(renderCatalog(model).includes('Legacy'), false);
+});
+
+test('CLI: custom layout command header includes layout and concrete wildcard src', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-cli-header-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  fs.writeFileSync(
+    path.join(tmp, 'project-layout.yaml'),
+    ['version: 1', 'preset: expo-feature', 'roles:', '  ui_primitive: packages/*/ui/**', ''].join('\n'),
+  );
+  fs.mkdirSync(path.join(tmp, 'packages', 'web', 'ui'), { recursive: true });
+  fs.mkdirSync(path.join(tmp, 'src', 'components', 'ui'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmp, 'packages', 'web', 'ui', 'Button.tsx'),
+    'export function Button() { return null; }\n',
+  );
+  fs.writeFileSync(
+    path.join(tmp, 'src', 'components', 'ui', 'Ghost.tsx'),
+    'export function Ghost() { return null; }\n',
+  );
+  const out = path.join('docs', 'frontend-workflow', 'design', 'component-catalog.md');
+  const r = spawnSync(
+    process.execPath,
+    [CLI, '--src', 'packages', '--out', out, '--layout', 'project-layout.yaml'],
+    { cwd: tmp, encoding: 'utf8' },
+  );
+  assert.equal(r.status, 0, r.stderr);
+  const text = fs.readFileSync(path.join(tmp, out), 'utf8');
+  assert.match(
+    text,
+    /Command: node scripts\/catalog-gen\.mjs --src packages --out docs\/frontend-workflow\/design\/component-catalog\.md --layout project-layout\.yaml/,
+  );
+  assert.match(text, /\| Button \| packages\/web\/ui\/Button\.tsx \| named \| ok \|/);
+  assert.equal(text.includes('Ghost'), false);
+});
+
+test('CLI: disjoint multi-glob command header falls back to runnable src', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-cli-disjoint-header-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  fs.writeFileSync(
+    path.join(tmp, 'project-layout.yaml'),
+    [
+      'version: 1',
+      'preset: expo-feature',
+      'roles:',
+      '  ui_primitive:',
+      '    - missing-ui/**',
+      '    - packages/*/ui/**',
+      '',
+    ].join('\n'),
+  );
+  fs.mkdirSync(path.join(tmp, 'packages', 'web', 'ui'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmp, 'packages', 'web', 'ui', 'Button.tsx'),
+    'export function Button() { return null; }\n',
+  );
+  const out = path.join('docs', 'frontend-workflow', 'design', 'component-catalog.md');
+  const r = spawnSync(
+    process.execPath,
+    [CLI, '--src', 'packages', '--out', out, '--layout', 'project-layout.yaml'],
+    { cwd: tmp, encoding: 'utf8' },
+  );
+  assert.equal(r.status, 0, r.stderr);
+  const text = fs.readFileSync(path.join(tmp, out), 'utf8');
+  assert.match(text, /Source: missing-ui\/\*\*, packages\/\*\/ui\/\*\*/);
+  assert.match(
+    text,
+    /Command: node scripts\/catalog-gen\.mjs --src packages --out docs\/frontend-workflow\/design\/component-catalog\.md --layout project-layout\.yaml/,
+  );
+  assert.doesNotMatch(text, /--src missing-ui/);
+  assert.match(text, /\| Button \| packages\/web\/ui\/Button\.tsx \| named \| ok \|/);
+});
+
+test('analyzeBarrelReconcile: ui_primitive role ignores legacy src/components/ui barrel', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-ui-role-barrel-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const sharedUi = path.join(tmp, 'src', 'shared', 'ui');
+  const legacyUi = path.join(tmp, 'src', 'components', 'ui');
+  fs.mkdirSync(sharedUi, { recursive: true });
+  fs.mkdirSync(legacyUi, { recursive: true });
+  fs.writeFileSync(path.join(sharedUi, 'Button.tsx'), 'export function Button() { return null; }\n');
+  fs.writeFileSync(path.join(sharedUi, 'index.ts'), "export { Button } from './Button';\n");
+  fs.writeFileSync(path.join(legacyUi, 'Ghost.tsx'), 'export function Ghost() { return null; }\n');
+  fs.writeFileSync(path.join(legacyUi, 'index.ts'), "export { Ghost } from './Ghost';\n");
+  const layout = { roleGlobs: (role) => (role === 'ui_primitive' ? ['src/shared/ui/**'] : []) };
+  const model = buildCatalog({ src: path.join(tmp, 'src'), projectRoot: tmp, layout });
+  const diff = analyzeBarrelReconcile({
+    src: path.join(tmp, 'src'),
+    projectRoot: tmp,
+    layout,
+    components: model.components,
+  });
+  assert.equal(diff.barrelFound, true);
+  assert.deepEqual(diff.barrelPaths, ['src/shared/ui/index.ts']);
+  assert.deepEqual(diff.reexported, ['Button']);
+  assert.deepEqual(diff.missingFromCatalog, []);
+  assert.deepEqual(diff.missingFromBarrel, []);
+  assert.deepEqual(formatBarrelWarnings(diff), []);
+});
+
 test('CLI --json: default_export_candidates 를 같은 모델에 포함', () => {
   const r = spawnSync(process.execPath, [CLI, '--src', FIXTURE_SRC, '--json'], {
     cwd: KIT_ROOT,

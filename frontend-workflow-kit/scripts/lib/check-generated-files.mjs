@@ -26,6 +26,7 @@ import openApiClientAdapter from '../adapters/codegens/openapi-client.mjs';
 import { normalizeGeneratedViewText, toPosix } from './test-fixture.mjs';
 // 글롭 미니엔진·생성물 헤더 정규식은 validate(검사 6)와 단일 출처를 공유한다(표류 방지).
 import { GENERATED_HEADER_RE, globRoot, globToRegExp } from './glob.mjs';
+import { catalogCommandSrcForGlobs } from './catalog-gen.mjs';
 
 // v1 가드 대상 allowlist — whole-file generated artifact: route-tree·nav-graph·component-catalog.
 // 정렬된 형태로 둔다(나열 출력 안정성). route-tree/nav-graph = 설계 §1.7 "Guardable NOW";
@@ -166,6 +167,27 @@ function relPosix(abs) {
   return toPosix(rel || '.');
 }
 
+function roleRootAbs(baseDir, rel) {
+  return rel && rel !== '.' ? path.resolve(baseDir, ...rel.split('/')) : baseDir;
+}
+
+function roleGlobInputDir(srcDir, layout, role) {
+  const baseDir = projectRootOf(srcDir);
+  const globs = layout.roleGlobs(role);
+  const preferred = catalogCommandSrcForGlobs(globs, { fallback: '' });
+  const roots = globs.map((glob) => globRoot(glob).replace(/\/+$/, '')).filter((root) => root !== '');
+  const candidates = [...(preferred ? [preferred] : []), ...roots, ''];
+  const seen = new Set();
+  for (const rel of candidates) {
+    const key = rel || '.';
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const abs = roleRootAbs(baseDir, rel);
+    if (isDir(abs)) return abs;
+  }
+  return roleRootAbs(baseDir, preferred || roots[0] || '');
+}
+
 // v1 reproduce 계약 — 생성기 호출 방식을 코드로 고정한다(헤더/manifest command 문자열 비파싱).
 //   resolveInput : --docs/--src/layout 에서 생성기 입력 디렉토리.
 //   inputFlag    : 생성기 입력 플래그.
@@ -188,25 +210,30 @@ export const V1_REPRODUCE = {
     resolveInput: ({ docsDir }) => docsDir,
     outName: 'nav-graph.yaml',
   },
-  // component-catalog: src/components/ui/** → design/component-catalog.md.
-  // 입력은 정본 <srcDir>/components/ui (매니페스트 source: src/components/ui/**). 생성기는
-  // 절대경로의 마지막 '/src/components/ui/' 마커를 앵커로 source_path 를 슬라이스하므로(catalog-gen.mjs)
-  // 더 넓은 --src 를 줘도 동치지만, 정본 디렉터리를 직접 가리켜 입력 부재를 정확히 surface 한다.
+  // component-catalog: {roles.ui_primitive} → design/component-catalog.md.
+  // 입력은 role glob 목록의 공통 고정 접두를 우선 넘기고, 없으면 존재하는 개별 고정 접두를 쓴다.
+  // 실제 포함 여부는 catalog-gen 의 resolved ui_primitive glob matcher 가 판정한다.
   // 커밋본은 _meta 가 아니라 design/ 아래(committedSubdir) — 매니페스트 path 와 일치.
   'component-catalog': {
     script: 'catalog-gen.mjs',
     inputFlag: '--src',
-    resolveInput: ({ srcDir }) => path.join(srcDir, 'components', 'ui'),
+    resolveInput: ({ srcDir, layout }) => roleGlobInputDir(srcDir, layout, 'ui_primitive'),
     outName: 'component-catalog.md',
     committedSubdir: 'design',
   },
 };
 
+export function resolveCodegenSource(contract, layout) {
+  return typeof contract.resolveSource === 'function'
+    ? contract.resolveSource({ layout })
+    : contract.source;
+}
+
 const V1_CODEGEN_REPRODUCE = {
   'codegen-openapi-client': {
     adapter: openApiClientAdapter,
-    resolveInput: ({ srcDir }) => path.join(srcDir, 'api', 'schemas'),
-    source: 'src/api/schemas/**',
+    resolveInput: ({ srcDir, layout }) => path.resolve(projectRootOf(srcDir), layout.roleToDir('api_schema')),
+    resolveSource: ({ layout }) => layout.roleGlobs('api_schema')[0] || '{roles.api_schema}',
   },
 };
 
@@ -287,7 +314,7 @@ function staleCodegenOutputs(expectedFiles, actualFiles) {
   return actualFiles.filter((file) => !expected.has(file));
 }
 
-function reproduceCodegenTarget(id, { srcDir, manifest }) {
+function reproduceCodegenTarget(id, { srcDir, manifest, layout }) {
   const checks = [];
   let files = [];
   const ok = (check, message) => checks.push({ check, ok: true, message });
@@ -299,7 +326,10 @@ function reproduceCodegenTarget(id, { srcDir, manifest }) {
   }
 
   const baseDir = projectRootOf(srcDir);
-  const schemaDir = contract.resolveInput({ srcDir, baseDir });
+  const resolvedLayout = layout || loadLayoutProfile({ kitRoot: KIT_ROOT });
+  const schemaDir = contract.resolveInput({ srcDir, baseDir, layout: resolvedLayout });
+  const apiSchemaGlobs =
+    typeof resolvedLayout.roleGlobs === 'function' ? resolvedLayout.roleGlobs('api_schema') : [];
   const result = (status) => ({
     id,
     status,
@@ -308,6 +338,14 @@ function reproduceCodegenTarget(id, { srcDir, manifest }) {
     files,
     checks,
   });
+
+  if (apiSchemaGlobs.length > 1) {
+    fail(
+      'CG:config',
+      `api_schema multi-glob is unsupported for ${contract.adapter.name || id}: ${apiSchemaGlobs.join(', ')}`,
+    );
+    return result('generator-error');
+  }
 
   if (!isDir(schemaDir)) {
     fail('CG:input', `api_schema 입력 디렉터리 없음(재생성 불가): ${relPosix(schemaDir)}`);
@@ -319,7 +357,7 @@ function reproduceCodegenTarget(id, { srcDir, manifest }) {
     model = contract.adapter.discover({
       apiSchemaDir: schemaDir,
       baseDir,
-      source: contract.source,
+      source: resolveCodegenSource(contract, resolvedLayout),
     });
     ok('CG:discover', `${contract.adapter.name || id} adapter discovery 완료`);
   } catch (err) {
@@ -385,8 +423,8 @@ function reproduceCodegenTarget(id, { srcDir, manifest }) {
 //   - 생성기를 import 하지 않고 서브프로세스(process.execPath)로 호출(계약 고정).
 //   - 정규화 normalizeGeneratedViewText 만(CRLF/path-sep). timestamp 정규화 없음.
 //   - 커밋본은 읽기만 — 임시 디렉토리에만 쓰고 finally 로 삭제(자동수정/덮어쓰기 없음).
-export function reproduceArtifact(id, { docsDir, srcDir, layout, manifest }) {
-  if (V1_CODEGEN_REPRODUCE[id]) return reproduceCodegenTarget(id, { srcDir, manifest });
+export function reproduceArtifact(id, { docsDir, srcDir, layout, layoutPath, manifest }) {
+  if (V1_CODEGEN_REPRODUCE[id]) return reproduceCodegenTarget(id, { srcDir, manifest, layout });
 
   const checks = [];
   const ok = (check, message) => checks.push({ check, ok: true, message });
@@ -432,10 +470,11 @@ export function reproduceArtifact(id, { docsDir, srcDir, layout, manifest }) {
     path.join(tmpDir, `run1-${contract.outName}`),
     path.join(tmpDir, `run2-${contract.outName}`),
   ];
-  const runOnce = (outFile) =>
-    spawnSync(process.execPath, [scriptPath, contract.inputFlag, inputDir, '--out', outFile], {
-      encoding: 'utf8',
-    });
+  const runOnce = (outFile) => {
+    const args = [scriptPath, contract.inputFlag, inputDir, '--out', outFile];
+    if (layoutPath) args.push('--layout', layoutPath);
+    return spawnSync(process.execPath, args, { encoding: 'utf8' });
+  };
 
   let status = 'ok';
   try {

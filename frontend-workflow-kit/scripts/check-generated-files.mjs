@@ -183,9 +183,10 @@ function main() {
   // 기본(check): selected 산출물을 reproduce-to-scratch 비교.
   // 레이아웃 프로파일(tier1): route-tree 입력 디렉토리를 {roles.route_entry} 에서 파생한다.
   const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags });
+  const layoutPath = typeof flags.layout === 'string' ? path.resolve(flags.layout) : null;
   const results = shown
     .filter((d) => d.selected)
-    .map((d) => reproduceArtifact(d.id, { docsDir, srcDir, layout, manifest }));
+    .map((d) => reproduceArtifact(d.id, { docsDir, srcDir, layout, layoutPath, manifest }));
   const summary = summarize(results);
   const bad = results.filter((r) => r.status !== 'ok' && r.status !== 'skip');
   const report = {

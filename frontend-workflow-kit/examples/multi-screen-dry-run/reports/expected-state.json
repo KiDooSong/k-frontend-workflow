@@ -54,6 +54,11 @@
       "AUTH-001": {
         "derived": {
           "api_confidence_min": "candidate",
+          "api_client_present": false,
+          "domain_component_present": false,
+          "hook_present": false,
+          "route_entry_present": false,
+          "screen_present": false,
           "blocking_decisions": [],
           "copy_keys_has_tbd": false,
           "fake_hook_exists": false,
@@ -73,6 +78,11 @@
       "COUPON-001": {
         "derived": {
           "api_confidence_min": "candidate",
+          "api_client_present": false,
+          "domain_component_present": false,
+          "hook_present": false,
+          "route_entry_present": false,
+          "screen_present": false,
           "blocking_decisions": [
             {
               "blocking_mode": "final-fixture-ui",
@@ -105,6 +115,11 @@
       "COUPON-002": {
         "derived": {
           "api_confidence_min": null,
+          "api_client_present": false,
+          "domain_component_present": false,
+          "hook_present": false,
+          "route_entry_present": false,
+          "screen_present": false,
           "blocking_decisions": [],
           "copy_keys_has_tbd": false,
           "fake_hook_exists": false,
@@ -124,6 +139,11 @@
       "HOME-001": {
         "derived": {
           "api_confidence_min": "unknown",
+          "api_client_present": false,
+          "domain_component_present": false,
+          "hook_present": false,
+          "route_entry_present": false,
+          "screen_present": false,
           "blocking_decisions": [
             {
               "blocking_mode": "rough-fixture-ui",
@@ -150,6 +170,11 @@
       "NOTICE-001": {
         "derived": {
           "api_confidence_min": "candidate",
+          "api_client_present": false,
+          "domain_component_present": false,
+          "hook_present": false,
+          "route_entry_present": false,
+          "screen_present": false,
           "blocking_decisions": [
             {
               "blocking_mode": "screen-skeleton",
@@ -176,6 +201,11 @@
       "PROFILE-001": {
         "derived": {
           "api_confidence_min": "unknown",
+          "api_client_present": false,
+          "domain_component_present": false,
+          "hook_present": false,
+          "route_entry_present": false,
+          "screen_present": false,
           "blocking_decisions": [
             {
               "blocking_mode": "route-skeleton",

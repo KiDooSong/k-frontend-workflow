@@ -72,6 +72,11 @@ export function buildState({ docsDir, srcDir, date, layout }) {
   const sortedScreens = {};
   for (const k of sortedScreenKeys) {
     const s = screens[k];
+    const presentFacts = Object.fromEntries(
+      Object.entries(s.derived)
+        .filter(([key, value]) => /_present$/.test(key) && typeof value === 'boolean')
+        .sort(([a], [b]) => a.localeCompare(b)),
+    );
     // 키 순서 고정
     sortedScreens[k] = {
       status: s.status,
@@ -88,6 +93,7 @@ export function buildState({ docsDir, srcDir, date, layout }) {
         blocking_decisions: s.derived.blocking_decisions,
         malformed_decisions: s.derived.malformed_decisions,
         api_confidence_min: s.derived.api_confidence_min,
+        ...presentFacts,
         fake_hook_exists: s.derived.fake_hook_exists,
         figma_mapping_status: s.derived.figma_mapping_status,
       },

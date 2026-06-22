@@ -199,6 +199,9 @@ function readGeneratedViewCases(kind, rootDir) {
     if (typeof meta.expected !== 'string' || !meta.expected) {
       throw new Error(`${kind}/${caseId}/run-metadata.json expected 문자열이 필요함`);
     }
+    if (meta.layout !== undefined && (typeof meta.layout !== 'string' || !meta.layout)) {
+      throw new Error(`${kind}/${caseId}/run-metadata.json layout 값은 문자열이어야 함`);
+    }
     if (meta.expected_failures !== undefined) {
       if (!Array.isArray(meta.expected_failures)) {
         throw new Error(`${kind}/${caseId}/run-metadata.json expected_failures 는 배열이어야 함`);
@@ -218,6 +221,7 @@ function readGeneratedViewCases(kind, rootDir) {
       scriptPath,
       inputFlag,
       inputDir: path.join(caseDir, meta[inputKey]),
+      extraArgs: meta.layout ? ['--layout', path.join(caseDir, meta.layout)] : [],
       expectedFile: path.join(caseDir, meta.expected),
     });
   }

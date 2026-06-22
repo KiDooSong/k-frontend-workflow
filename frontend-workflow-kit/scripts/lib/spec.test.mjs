@@ -7,6 +7,9 @@
 // 실행: npm run test:spec  (또는 node --test scripts/lib/spec.test.mjs)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import {
   parseTable,
   parseTables,
@@ -18,8 +21,10 @@ import {
   interactionEdgeRoutes,
   interactionMatrixV2Issues,
   INTERACTION_V2_RESULT_TYPES,
+  deriveMetrics,
 } from './spec.mjs';
 import { computeReadiness } from '../readiness.mjs';
+import { buildState } from '../workflow-state.mjs';
 
 // 한 줄 헬퍼: Interaction Matrix 표 텍스트로 spec-유사 객체를 만든다(섹션 파서가 보는 형태).
 function specWithMatrix(lines) {
@@ -84,6 +89,160 @@ test('회귀: 정상 단일 Open Decisions 표는 그대로 파싱된다', () =>
   assert.equal(od.rows[0].id, 'D-001');
   assert.equal(od.rows[0].status, 'open');
   assert.equal(od.rows[1].status, 'resolved');
+});
+
+
+test('deriveMetrics: layer dir_has_files derives <role>_present and keeps fake_hook_exists alias', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'spec-layer-fact-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const hooks = path.join(tmp, 'src', 'features', 'coupons', 'hooks');
+  fs.mkdirSync(hooks, { recursive: true });
+  fs.writeFileSync(path.join(hooks, 'useCoupons.ts'), 'export const useCoupons = () => null;\n');
+  const layout = {
+    layers: [{ role: 'hook', fact: 'dir_has_files' }],
+    roleToDir(role, { domain } = {}) {
+      if (role === 'hook') return `src/features/${domain}/hooks`;
+      return '';
+    },
+  };
+  const derived = deriveMetrics(
+    { frontmatter: { domain: 'coupons' }, sections: {}, dir: tmp },
+    { srcDir: path.join(tmp, 'src'), projectRoot: tmp, layout },
+  );
+  assert.equal(derived.hook_present, true);
+  assert.equal(derived.fake_hook_exists, true);
+});
+
+test('deriveMetrics: domain layersFor derives domain-scoped <role>_present facts', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'spec-domain-layer-fact-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const repoDir = path.join(tmp, 'src', 'features', 'coupons', 'repositories');
+  fs.mkdirSync(repoDir, { recursive: true });
+  fs.writeFileSync(path.join(repoDir, 'couponRepository.ts'), 'export const couponRepository = {};\n');
+  const layout = {
+    layers: [],
+    layersFor(domain) {
+      return domain === 'coupons' ? [{ role: 'repository', fact: 'dir_has_files' }] : [];
+    },
+    roleToDir(role, { domain } = {}) {
+      if (role === 'repository') return `src/features/${domain}/repositories`;
+      return '';
+    },
+  };
+  const derived = deriveMetrics(
+    { frontmatter: { domain: 'coupons' }, sections: {}, dir: tmp },
+    { srcDir: path.join(tmp, 'src'), projectRoot: tmp, layout },
+  );
+  assert.equal(derived.repository_present, true);
+});
+
+test('deriveMetrics: dir_has_files facts follow role globs recursively', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'spec-role-glob-fact-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const nestedRoute = path.join(tmp, 'src', 'app', '(tabs)');
+  const nestedHook = path.join(tmp, 'src', 'features', 'coupons', 'hooks', 'nested');
+  fs.mkdirSync(nestedRoute, { recursive: true });
+  fs.mkdirSync(nestedHook, { recursive: true });
+  fs.writeFileSync(path.join(nestedRoute, 'index.tsx'), 'export default function Route() { return null; }\n');
+  fs.writeFileSync(path.join(nestedHook, 'useCoupons.ts'), 'export const useCoupons = () => null;\n');
+  const roles = {
+    route_entry: 'src/app/**',
+    hook: 'src/features/{domain}/hooks/**',
+  };
+  const layout = {
+    layers: [
+      { role: 'route_entry', fact: 'dir_has_files' },
+      { role: 'hook', fact: 'dir_has_files' },
+    ],
+    roleGlobs(role) {
+      const value = roles[role];
+      return value ? [value] : [];
+    },
+  };
+  const derived = deriveMetrics(
+    { frontmatter: { domain: 'coupons' }, sections: {}, dir: tmp },
+    { srcDir: path.join(tmp, 'src'), projectRoot: tmp, layout },
+  );
+  assert.equal(derived.route_entry_present, true);
+  assert.equal(derived.hook_present, true);
+  assert.equal(derived.fake_hook_exists, true);
+});
+
+test('deriveMetrics: broader role facts ignore nested sub-role files', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'spec-role-overlap-fact-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const schemas = path.join(tmp, 'src', 'api', 'schemas');
+  fs.mkdirSync(schemas, { recursive: true });
+  fs.writeFileSync(path.join(schemas, 'coupon.schema.ts'), 'export const schema = {};\n');
+  const roles = {
+    api_client: 'src/api/**',
+    api_schema: 'src/api/schemas/**',
+  };
+  const layout = {
+    roles,
+    layers: [{ role: 'api_client', fact: 'dir_has_files' }],
+    roleGlobs(role) {
+      const value = roles[role];
+      return value ? [value] : [];
+    },
+  };
+  const beforeClient = deriveMetrics(
+    { frontmatter: { domain: 'coupons' }, sections: {}, dir: tmp },
+    { srcDir: path.join(tmp, 'src'), projectRoot: tmp, layout },
+  );
+  assert.equal(beforeClient.api_client_present, false);
+
+  const generated = path.join(tmp, 'src', 'api', 'generated');
+  fs.mkdirSync(generated, { recursive: true });
+  fs.writeFileSync(path.join(generated, 'coupon.client.ts'), 'export const client = {};\n');
+  const afterClient = deriveMetrics(
+    { frontmatter: { domain: 'coupons' }, sections: {}, dir: tmp },
+    { srcDir: path.join(tmp, 'src'), projectRoot: tmp, layout },
+  );
+  assert.equal(afterClient.api_client_present, true);
+});
+
+test('buildState: workflow-state serialization keeps generic <role>_present facts', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'workflow-state-present-facts-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const docsDir = path.join(tmp, 'docs', 'frontend-workflow');
+  const specDir = path.join(docsDir, 'domains', 'coupons', 'screens', 'coupon-list');
+  fs.mkdirSync(specDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(specDir, 'screen-spec.md'),
+    [
+      '---',
+      'screen_id: COUPON-001',
+      'domain: coupons',
+      'route: /coupons',
+      'status: draft',
+      '---',
+      '',
+      '## Purpose',
+      'Coupon list.',
+      '',
+    ].join('\n'),
+  );
+  for (const [dir, file] of [
+    ['src/app', 'index.tsx'],
+    ['src/features/coupons/screens', 'CouponListScreen.tsx'],
+    ['src/features/coupons/components', 'CouponCard.tsx'],
+    ['src/features/coupons/hooks', 'useCoupons.ts'],
+    ['src/api', 'client.ts'],
+  ]) {
+    const abs = path.join(tmp, dir);
+    fs.mkdirSync(abs, { recursive: true });
+    fs.writeFileSync(path.join(abs, file), 'export const marker = true;\n');
+  }
+
+  const { state } = buildState({ docsDir, srcDir: path.join(tmp, 'src'), date: '2026-06-22' });
+  const derived = state.screens['COUPON-001'].derived;
+  assert.equal(derived.route_entry_present, true);
+  assert.equal(derived.screen_present, true);
+  assert.equal(derived.domain_component_present, true);
+  assert.equal(derived.hook_present, true);
+  assert.equal(derived.api_client_present, true);
+  assert.equal(derived.fake_hook_exists, true);
 });
 
 test('P7: computeReadiness 가 policy.modes 누락 시 throw 하지 않는다 (fail-closed 구멍)', () => {

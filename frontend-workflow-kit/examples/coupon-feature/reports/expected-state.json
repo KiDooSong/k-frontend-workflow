@@ -30,6 +30,11 @@
       "COUPON-001": {
         "derived": {
           "api_confidence_min": "candidate",
+          "api_client_present": false,
+          "domain_component_present": true,
+          "hook_present": true,
+          "route_entry_present": true,
+          "screen_present": true,
           "blocking_decisions": [
             {
               "blocking_mode": "final-fixture-ui",
@@ -68,6 +73,11 @@
       "COUPON-002": {
         "derived": {
           "api_confidence_min": null,
+          "api_client_present": false,
+          "domain_component_present": true,
+          "hook_present": true,
+          "route_entry_present": true,
+          "screen_present": true,
           "blocking_decisions": [],
           "copy_keys_has_tbd": false,
           "fake_hook_exists": true,

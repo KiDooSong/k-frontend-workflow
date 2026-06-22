@@ -18,8 +18,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadLayoutProfile, LayoutConfigError } from './layout-profile.mjs';
+import { loadLayoutProfile, LayoutConfigError, synthesizeModePolicy } from './layout-profile.mjs';
 import { deriveGuardedSurface, isCleared, isClearedAt } from './path-backstop.mjs';
+import { loadYaml } from './util.mjs';
 
 // 킷 루트: scripts/lib/ → scripts/ → kit-root. presets/·policies/ 가 그 아래.
 const KIT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -133,6 +134,48 @@ test('resolvePaths: {roles.X} 펼침 + {domain} 치환 + 리터럴 passthrough',
     L.resolvePaths(['{roles.screen}', 'src/features/**', 'openapi.yaml'], { domain: 'coupons' }),
     ['src/features/coupons/screens/**', 'src/features/**', 'openapi.yaml'],
   );
+});
+
+test('layers: expo-feature exposes current layer/access declarations', () => {
+  const L = expoLayout();
+  assert.deepEqual(
+    L.layers.map((layer) => ({ role: layer.role, fact: layer.fact, access: layer.access })),
+    [
+      { role: 'route_entry', fact: 'dir_has_files', access: { allow: ['route-skeleton'], forbid: [] } },
+      {
+        role: 'screen',
+        fact: 'dir_has_files',
+        access: {
+          allow: ['screen-skeleton', 'rough-fixture-ui', 'final-fixture-ui'],
+          forbid: ['api-integrated-ui'],
+        },
+      },
+      {
+        role: 'domain_component',
+        fact: 'dir_has_files',
+        access: { allow: ['rough-fixture-ui', 'final-fixture-ui'], forbid: [] },
+      },
+      {
+        role: 'hook',
+        fact: 'dir_has_files',
+        access: { allow: ['rough-fixture-ui', 'api-integrated-ui'], forbid: [] },
+      },
+      {
+        role: 'api_client',
+        fact: 'dir_has_files',
+        access: {
+          allow: ['api-integrated-ui'],
+          forbid: ['route-skeleton', 'screen-skeleton', 'rough-fixture-ui', 'final-fixture-ui'],
+        },
+      },
+    ],
+  );
+});
+
+test('synthesizeModePolicy: expo layers/access is parity with live role-token policy (no wiring)', () => {
+  const L = expoLayout();
+  const livePolicy = loadYaml(path.join(KIT_ROOT, 'policies', 'implementation-mode-policy.yaml'));
+  assert.deepEqual(synthesizeModePolicy(livePolicy, L), livePolicy);
 });
 
 // --- MAJOR 1: fail-CLOSED -------------------------------------------------
