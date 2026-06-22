@@ -1,0 +1,4 @@
+version: 1
+preset: expo-feature
+roles:
+  ui_primitive: src/shared/ui/**

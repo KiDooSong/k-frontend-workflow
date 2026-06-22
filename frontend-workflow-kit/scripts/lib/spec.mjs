@@ -305,12 +305,22 @@ export function deriveMetrics(spec, opts = {}) {
   // API Candidates: 항목 중 가장 낮은 confidence
   const apiConfidenceMin = minApiConfidence(sections['api candidates']);
 
-  // fake hook 존재: {roles.hook} 디렉토리에 파일이 있는지. 경로는 layout.roleToDir 단일 출처에서
-  // 파생한다 — {roles.hook} 글롭(allowed_paths)과 반드시 같은 경로라야 rough-fixture-ui 게이트가
-  // 안 깨진다(§10 CRITICAL). role 글롭은 프로젝트-루트 상대(src/...)이므로 projectRoot 에 resolve 한다
-  // (validate 검사 8·check-generated-files 와 동일 식 — MINOR 2).
+  // layer presence facts: declared layers with fact: dir_has_files derive <role>_present.
+  // fake_hook_exists remains a back-compat alias for hook_present and keeps the old guard behavior.
+  const layerPresenceFacts = {};
+  if (srcDir && domain && layout && Array.isArray(layout.layers)) {
+    for (const layer of layout.layers) {
+      if (!layer || layer.fact !== 'dir_has_files' || !layer.role) continue;
+      const rel = layout.roleToDir(layer.role, { domain });
+      if (!rel) continue;
+      const dir = path.resolve(projectRoot, rel);
+      layerPresenceFacts[`${layer.role}_present`] = dirHasFiles(dir, ['.ts', '.tsx']);
+    }
+  }
   let fakeHookExists = false;
-  if (srcDir && domain && layout) {
+  if (Object.prototype.hasOwnProperty.call(layerPresenceFacts, 'hook_present')) {
+    fakeHookExists = layerPresenceFacts.hook_present;
+  } else if (srcDir && domain && layout) {
     const hookRel = layout.roleToDir('hook', { domain }); // 예: src/features/coupons/hooks
     if (hookRel) {
       const hookDir = path.resolve(projectRoot, hookRel);
@@ -336,6 +346,7 @@ export function deriveMetrics(spec, opts = {}) {
     blocking_decisions: blockingDecisions,
     malformed_decisions: malformedDecisions,
     api_confidence_min: apiConfidenceMin,
+    ...layerPresenceFacts,
     fake_hook_exists: fakeHookExists,
     figma_mapping_status: figmaMappingStatus,
   };

@@ -418,7 +418,7 @@ export function runGeneratedViewCase(spec) {
   const outputs = [path.join(tmpDir, 'actual-1.out'), path.join(tmpDir, 'actual-2.out')];
   const runOnce = (outFile) => spawnSync(
     process.execPath,
-    [spec.scriptPath, spec.inputFlag, spec.inputDir, '--out', outFile],
+    [spec.scriptPath, spec.inputFlag, spec.inputDir, ...(spec.extraArgs || []), '--out', outFile],
     { encoding: 'utf8' },
   );
 

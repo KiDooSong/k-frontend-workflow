@@ -7,6 +7,9 @@
 // 실행: npm run test:spec  (또는 node --test scripts/lib/spec.test.mjs)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import {
   parseTable,
   parseTables,
@@ -18,6 +21,7 @@ import {
   interactionEdgeRoutes,
   interactionMatrixV2Issues,
   INTERACTION_V2_RESULT_TYPES,
+  deriveMetrics,
 } from './spec.mjs';
 import { computeReadiness } from '../readiness.mjs';
 
@@ -84,6 +88,28 @@ test('회귀: 정상 단일 Open Decisions 표는 그대로 파싱된다', () =>
   assert.equal(od.rows[0].id, 'D-001');
   assert.equal(od.rows[0].status, 'open');
   assert.equal(od.rows[1].status, 'resolved');
+});
+
+
+test('deriveMetrics: layer dir_has_files derives <role>_present and keeps fake_hook_exists alias', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'spec-layer-fact-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const hooks = path.join(tmp, 'src', 'features', 'coupons', 'hooks');
+  fs.mkdirSync(hooks, { recursive: true });
+  fs.writeFileSync(path.join(hooks, 'useCoupons.ts'), 'export const useCoupons = () => null;\n');
+  const layout = {
+    layers: [{ role: 'hook', fact: 'dir_has_files' }],
+    roleToDir(role, { domain } = {}) {
+      if (role === 'hook') return `src/features/${domain}/hooks`;
+      return '';
+    },
+  };
+  const derived = deriveMetrics(
+    { frontmatter: { domain: 'coupons' }, sections: {}, dir: tmp },
+    { srcDir: path.join(tmp, 'src'), projectRoot: tmp, layout },
+  );
+  assert.equal(derived.hook_present, true);
+  assert.equal(derived.fake_hook_exists, true);
 });
 
 test('P7: computeReadiness 가 policy.modes 누락 시 throw 하지 않는다 (fail-closed 구멍)', () => {

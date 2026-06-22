@@ -19,6 +19,7 @@ import {
   V1_CODEGEN_TARGET_IDS,
   V1_TARGET_IDS,
 } from './check-generated-files.mjs';
+import { loadLayoutProfile } from './layout-profile.mjs';
 import { loadYaml, DEFAULTS, KIT_ROOT } from './util.mjs';
 
 // examples 픽스처(KIT_ROOT 기준 — cwd 무관). reproduceArtifact 는 커밋본을 읽기만 하므로
@@ -141,6 +142,7 @@ test('discoverCodegenTargets: focused target reflects manifest-listed outputs', 
     ['src/api/generated/*.client.ts', 'src/features/{domain}/hooks/*.ts'],
   );
   assert.deepEqual(targets[0].skip_reasons, []);
+  assert.deepEqual(targets[0].source, ['{roles.api_schema}']);
 });
 
 test('discoverArtifacts: 빈/이상 manifest 도 안전(빈 배열)', () => {
@@ -208,6 +210,55 @@ test('reproduceArtifact: component-catalog 픽스처가 커밋본을 재현(ok)'
     assert.equal(r.status, 'ok', JSON.stringify(r.checks));
     assert.ok(r.checks.some((c) => c.check === 'CG:content' && c.ok));
     assert.ok(r.checks.some((c) => c.check === 'CG:deterministic' && c.ok));
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+
+test('reproduceArtifact: component-catalog uses ui_primitive role override for nonstandard UI root', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cgf-cc-custom-ui-'));
+  try {
+    fs.writeFileSync(
+      path.join(tmp, 'project-layout.yaml'),
+      ['version: 1', 'preset: expo-feature', 'roles:', '  ui_primitive: src/shared/ui/**', ''].join('\n'),
+    );
+    const ui = path.join(tmp, 'src', 'shared', 'ui');
+    fs.mkdirSync(ui, { recursive: true });
+    fs.writeFileSync(path.join(ui, 'Button.tsx'), 'export function Button() { return null; }\n');
+    fs.mkdirSync(path.join(tmp, 'src', 'components', 'ui'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmp, 'src', 'components', 'ui', 'Ghost.tsx'),
+      'export function Ghost() { return null; }\n',
+    );
+    const designDir = path.join(tmp, 'docs', 'frontend-workflow', 'design');
+    fs.mkdirSync(designDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(designDir, 'component-catalog.md'),
+      [
+        '# GENERATED FILE — DO NOT EDIT',
+        '<!-- Source: src/shared/ui/** -->',
+        '<!-- Command: node scripts/catalog-gen.mjs --src src/shared/ui --out docs/frontend-workflow/design/component-catalog.md -->',
+        '',
+        '## Components',
+        '',
+        '| Name | Source Path | Export Kind | Status |',
+        '| --- | --- | --- | --- |',
+        '| Button | src/shared/ui/Button.tsx | named | ok |',
+        '',
+      ].join('\n'),
+    );
+    const layoutPath = path.join(tmp, 'project-layout.yaml');
+    const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags: { layout: layoutPath } });
+    const r = reproduceArtifact('component-catalog', {
+      docsDir: path.join(tmp, 'docs', 'frontend-workflow'),
+      srcDir: path.join(tmp, 'src'),
+      layout,
+      layoutPath,
+    });
+    assert.equal(r.status, 'ok', JSON.stringify(r.checks));
+    assert.match(r.input, /src\/shared\/ui$/);
+    assert.ok(r.checks.some((c) => c.check === 'CG:content' && c.ok));
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

@@ -1,0 +1,9 @@
+{
+  "run_id": "component-catalog:custom-ui-role",
+  "fixture": "component-catalog",
+  "src": "src",
+  "layout": "project-layout.yaml",
+  "expected": "expected/component-catalog.md",
+  "expect": "pass",
+  "reason": "component-catalog uses ui_primitive role override so nonstandard UI roots are not silently cataloged as 0 components"
+}

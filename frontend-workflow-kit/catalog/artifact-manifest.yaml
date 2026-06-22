@@ -198,7 +198,7 @@ artifacts:
     path: docs/frontend-workflow/design/component-catalog.md
     command: npm run workflow:catalog # catalog-gen.mjs (MVP-C)
     source:
-      - src/components/ui/**
+      - "{roles.ui_primitive}"
     do_not_edit: true
     status: active
     mvp: C
@@ -215,7 +215,7 @@ artifacts:
     path: docs/frontend-workflow/_meta/route-tree.txt
     command: npm run workflow:route-tree # route-tree.mjs (MVP-C)
     source:
-      - src/app/** # Expo Router 파일 트리 (정본, impl §9)
+      - "{roles.route_entry}" # Expo Router 파일 트리 (role-token source, impl §9)
     do_not_edit: true
     status: active
     mvp: C
@@ -256,7 +256,7 @@ artifacts:
         role: hook
     command: node scripts/check-generated-files.mjs --artifact codegen-openapi-client --src examples/codegen-adapter/openapi-client/src
     source:
-      - src/api/schemas/**
+      - "{roles.api_schema}"
     do_not_edit: true
     status: active
     mvp: C

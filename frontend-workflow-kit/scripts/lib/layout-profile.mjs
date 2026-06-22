@@ -75,6 +75,118 @@ function mergeRoles(base, override) {
   return out;
 }
 
+function asStringArray(value) {
+  if (value == null) return [];
+  return (Array.isArray(value) ? value : [value]).map((v) => String(v));
+}
+
+function cloneLayer(layer) {
+  if (!layer || typeof layer !== 'object' || typeof layer.role !== 'string') return null;
+  const access = layer.access && typeof layer.access === 'object' ? layer.access : {};
+  const out = {
+    ...layer,
+    role: layer.role,
+    fact: layer.fact || null,
+    access: {
+      allow: asStringArray(access.allow),
+      forbid: asStringArray(access.forbid),
+    },
+  };
+  if (layer.gates !== undefined) out.gates = asStringArray(layer.gates);
+  return out;
+}
+
+function asLayerArray(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map(cloneLayer).filter(Boolean);
+}
+
+// preset.layers < project-layout.layers < domains.<d>.layers. role 단위 교체, 새 role 은 뒤에 추가한다.
+function mergeLayers(base, override) {
+  const out = asLayerArray(base);
+  const indexByRole = new Map(out.map((layer, index) => [layer.role, index]));
+  for (const layer of asLayerArray(override)) {
+    if (indexByRole.has(layer.role)) out[indexByRole.get(layer.role)] = layer;
+    else {
+      indexByRole.set(layer.role, out.length);
+      out.push(layer);
+    }
+  }
+  return out;
+}
+
+const WHOLE_ROLE_TOKEN_RE = /^\{roles\.([A-Za-z0-9_]+)\}$/;
+function roleToken(role) {
+  return `{roles.${role}}`;
+}
+
+function addUnique(map, key, value) {
+  if (!map.has(key)) map.set(key, []);
+  const arr = map.get(key);
+  if (!arr.includes(value)) arr.push(value);
+}
+
+function synthesizePathList(existing, synthesizedTokens) {
+  const tokens = synthesizedTokens || [];
+  const remaining = new Set(tokens);
+  const out = [];
+  for (const raw of existing || []) {
+    const s = toPosix(raw);
+    const m = WHOLE_ROLE_TOKEN_RE.exec(s);
+    if (!m) {
+      out.push(s);
+      continue;
+    }
+    if (remaining.has(s)) {
+      out.push(s);
+      remaining.delete(s);
+    }
+  }
+  for (const token of tokens) {
+    if (remaining.has(token)) {
+      out.push(token);
+      remaining.delete(token);
+    }
+  }
+  return out;
+}
+
+// Tier3 no-wiring helper: layers[].access 를 mode-major policy role-token 셀로 전치한다.
+// readiness.mjs 는 아직 이 함수를 호출하지 않는다. 기존 policy 파일의 리터럴/requires/order 는 유지하고,
+// role-token allowed/forbidden 셀만 layers 에서 합성해 parity 테스트가 drift 를 잡게 한다.
+export function synthesizeModePolicy(policy = {}, layout = {}) {
+  const layers = asLayerArray(layout.layers || []);
+  const modes = policy.modes && typeof policy.modes === 'object' ? policy.modes : {};
+  const order = Array.isArray(policy.order) ? policy.order.slice() : Object.keys(modes);
+  const allowByMode = new Map();
+  const forbidByMode = new Map();
+  const gatesByMode = new Map();
+
+  for (const layer of layers) {
+    const token = roleToken(layer.role);
+    for (const mode of layer.access.allow || []) addUnique(allowByMode, mode, token);
+    for (const mode of layer.access.forbid || []) addUnique(forbidByMode, mode, token);
+    for (const mode of layer.gates || []) addUnique(gatesByMode, mode, `${layer.role}_present == true`);
+  }
+
+  const modeNames = [...new Set([...order, ...Object.keys(modes), ...allowByMode.keys(), ...forbidByMode.keys(), ...gatesByMode.keys()])];
+  const outModes = {};
+  for (const name of modeNames) {
+    const mode = modes[name] || {};
+    const requires = Array.isArray(mode.requires) ? mode.requires.slice() : [];
+    for (const req of gatesByMode.get(name) || []) {
+      if (!requires.includes(req)) requires.push(req);
+    }
+    outModes[name] = {
+      ...mode,
+      requires,
+      allowed_paths: synthesizePathList(mode.allowed_paths || [], allowByMode.get(name) || []),
+      forbidden_paths: synthesizePathList(mode.forbidden_paths || [], forbidByMode.get(name) || []),
+    };
+  }
+  return { ...policy, order, modes: outModes };
+}
+
 // --- 로더 -----------------------------------------------------------------
 // loadLayoutProfile({ kitRoot, flags }) -> resolvedLayout
 //   kitRoot : 킷 루트 절대경로(presets/·policies/ 가 그 아래). 미지정 시 util.KIT_ROOT 사용은
@@ -102,6 +214,7 @@ export function loadLayoutProfile({ kitRoot, flags = {} } = {}) {
 
   // preset 머지(가장 낮은 우선순위). preset 이름이 있으면 presets/<name>.yaml 로드.
   let presetRoles = {};
+  let presetLayers = [];
   const presetName = layout.preset;
   if (presetName) {
     const presetPath = path.join(presetsDir, `${presetName}.yaml`);
@@ -113,21 +226,30 @@ export function loadLayoutProfile({ kitRoot, flags = {} } = {}) {
       process.exit(2);
     }
     presetRoles = preset.roles || {};
+    presetLayers = asLayerArray(preset.layers || []);
   }
 
-  // base roles: preset < project-layout.roles.
+  // base roles/layers: preset < project-layout.
   const baseRoles = mergeRoles(presetRoles, layout.roles || {});
+  const baseLayers = mergeLayers(presetLayers, layout.layers || []);
 
   // 도메인 오버라이드 맵(raw 보존 — per-screen 해소 시 룩업). 머지는 resolve 시점에 적용.
   const domainOverrides = {};
+  const domainLayerOverrides = {};
   for (const [d, cfg] of Object.entries(layout.domains || {})) {
     if (cfg && cfg.roles) domainOverrides[d] = cfg.roles;
+    if (cfg && cfg.layers) domainLayerOverrides[d] = cfg.layers;
   }
 
-  // 특정 도메인에 유효한 roles 맵(base + 그 도메인 오버라이드).
+  // 특정 도메인에 유효한 roles/layers 맵(base + 그 도메인 오버라이드).
   function rolesFor(domain) {
     const ov = domain != null ? domainOverrides[domain] : null;
     return ov ? mergeRoles(baseRoles, ov) : baseRoles;
+  }
+
+  function layersFor(domain) {
+    const ov = domain != null ? domainLayerOverrides[domain] : null;
+    return ov ? mergeLayers(baseLayers, ov) : baseLayers;
   }
 
   // --- resolvedLayout API ---------------------------------------------------
@@ -308,8 +430,10 @@ export function loadLayoutProfile({ kitRoot, flags = {} } = {}) {
     roleToDir,
     resolvePaths,
     materializeGuardedSurface,
+    layersFor,
     // raw 노출(README §1.1 — 소비처가 필요 시 직접 조회).
     roles: baseRoles,
+    layers: baseLayers,
     domains: domainOverrides,
     preset: presetName || null,
   };

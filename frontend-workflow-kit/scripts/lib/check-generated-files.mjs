@@ -196,7 +196,7 @@ export const V1_REPRODUCE = {
   'component-catalog': {
     script: 'catalog-gen.mjs',
     inputFlag: '--src',
-    resolveInput: ({ srcDir }) => path.join(srcDir, 'components', 'ui'),
+    resolveInput: ({ srcDir, layout }) => path.resolve(projectRootOf(srcDir), layout.roleToDir('ui_primitive')),
     outName: 'component-catalog.md',
     committedSubdir: 'design',
   },
@@ -205,7 +205,7 @@ export const V1_REPRODUCE = {
 const V1_CODEGEN_REPRODUCE = {
   'codegen-openapi-client': {
     adapter: openApiClientAdapter,
-    resolveInput: ({ srcDir }) => path.join(srcDir, 'api', 'schemas'),
+    resolveInput: ({ srcDir, layout }) => path.resolve(projectRootOf(srcDir), layout.roleToDir('api_schema')),
     source: 'src/api/schemas/**',
   },
 };
@@ -287,7 +287,7 @@ function staleCodegenOutputs(expectedFiles, actualFiles) {
   return actualFiles.filter((file) => !expected.has(file));
 }
 
-function reproduceCodegenTarget(id, { srcDir, manifest }) {
+function reproduceCodegenTarget(id, { srcDir, manifest, layout }) {
   const checks = [];
   let files = [];
   const ok = (check, message) => checks.push({ check, ok: true, message });
@@ -299,7 +299,8 @@ function reproduceCodegenTarget(id, { srcDir, manifest }) {
   }
 
   const baseDir = projectRootOf(srcDir);
-  const schemaDir = contract.resolveInput({ srcDir, baseDir });
+  const resolvedLayout = layout || loadLayoutProfile({ kitRoot: KIT_ROOT });
+  const schemaDir = contract.resolveInput({ srcDir, baseDir, layout: resolvedLayout });
   const result = (status) => ({
     id,
     status,
@@ -385,8 +386,8 @@ function reproduceCodegenTarget(id, { srcDir, manifest }) {
 //   - 생성기를 import 하지 않고 서브프로세스(process.execPath)로 호출(계약 고정).
 //   - 정규화 normalizeGeneratedViewText 만(CRLF/path-sep). timestamp 정규화 없음.
 //   - 커밋본은 읽기만 — 임시 디렉토리에만 쓰고 finally 로 삭제(자동수정/덮어쓰기 없음).
-export function reproduceArtifact(id, { docsDir, srcDir, layout, manifest }) {
-  if (V1_CODEGEN_REPRODUCE[id]) return reproduceCodegenTarget(id, { srcDir, manifest });
+export function reproduceArtifact(id, { docsDir, srcDir, layout, layoutPath, manifest }) {
+  if (V1_CODEGEN_REPRODUCE[id]) return reproduceCodegenTarget(id, { srcDir, manifest, layout });
 
   const checks = [];
   const ok = (check, message) => checks.push({ check, ok: true, message });
@@ -432,10 +433,11 @@ export function reproduceArtifact(id, { docsDir, srcDir, layout, manifest }) {
     path.join(tmpDir, `run1-${contract.outName}`),
     path.join(tmpDir, `run2-${contract.outName}`),
   ];
-  const runOnce = (outFile) =>
-    spawnSync(process.execPath, [scriptPath, contract.inputFlag, inputDir, '--out', outFile], {
-      encoding: 'utf8',
-    });
+  const runOnce = (outFile) => {
+    const args = [scriptPath, contract.inputFlag, inputDir, '--out', outFile];
+    if (layoutPath) args.push('--layout', layoutPath);
+    return spawnSync(process.execPath, args, { encoding: 'utf8' });
+  };
 
   let status = 'ok';
   try {

@@ -162,6 +162,9 @@ function compare(op, a, b) {
 // 화면별 사실 객체 구성 (전역 + 화면 + derived + CI)
 function buildFacts(screen, global, ci) {
   const d = screen.derived || {};
+  const rolePresenceFacts = Object.fromEntries(
+    Object.entries(d).filter(([key, value]) => /_present$/.test(key) && typeof value === 'boolean'),
+  );
   return {
     // 전역
     stub_screen_specs_count: global.stub_screen_specs_count,
@@ -172,7 +175,8 @@ function buildFacts(screen, global, ci) {
     // 본문이 작성됐는지 (stub = frontmatter 만). full UI 모드의 전제.
     screen_spec_authored: screen.stub !== true,
     // derived
-    fake_hook_exists: d.fake_hook_exists,
+    ...rolePresenceFacts,
+    fake_hook_exists: d.fake_hook_exists ?? d.hook_present,
     figma_mapping_status: d.figma_mapping_status,
     api_confidence_min: d.api_confidence_min,
     state_matrix_complete: d.state_matrix_complete,

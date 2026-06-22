@@ -12,3 +12,33 @@ roles:
   ui_primitive: src/components/ui/**
   api_client: src/api/**
   api_schema: src/api/schemas/**
+
+
+# Tier3 layer model (no live readiness wiring yet): current role-token policy cells expressed as data.
+# This is byte-equivalent to policies/implementation-mode-policy.yaml role-derived allow/forbid cells.
+layers:
+  - role: route_entry
+    fact: dir_has_files
+    access:
+      allow: [route-skeleton]
+      forbid: []
+  - role: screen
+    fact: dir_has_files
+    access:
+      allow: [screen-skeleton, rough-fixture-ui, final-fixture-ui]
+      forbid: [api-integrated-ui]
+  - role: domain_component
+    fact: dir_has_files
+    access:
+      allow: [rough-fixture-ui, final-fixture-ui]
+      forbid: []
+  - role: hook
+    fact: dir_has_files
+    access:
+      allow: [rough-fixture-ui, api-integrated-ui]
+      forbid: []
+  - role: api_client
+    fact: dir_has_files
+    access:
+      allow: [api-integrated-ui]
+      forbid: [route-skeleton, screen-skeleton, rough-fixture-ui, final-fixture-ui]

@@ -193,6 +193,32 @@ test('build/render: default export candidates 정렬과 두-run 결정성 고정
   assert.equal(renderCatalog(first), renderCatalog(second));
 });
 
+
+test('build/render: ui_primitive role override scans nonstandard UI root and ignores default path decoys', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-ui-role-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(tmp, 'src', 'shared', 'ui'), { recursive: true });
+  fs.mkdirSync(path.join(tmp, 'src', 'components', 'ui'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmp, 'src', 'shared', 'ui', 'Button.tsx'),
+    'export function Button() { return null; }\n',
+  );
+  fs.writeFileSync(
+    path.join(tmp, 'src', 'components', 'ui', 'Ghost.tsx'),
+    'export function Ghost() { return null; }\n',
+  );
+  const layout = { roleGlobs: (role) => (role === 'ui_primitive' ? ['src/shared/ui/**'] : []) };
+  const model = buildCatalog({ src: path.join(tmp, 'src'), projectRoot: tmp, layout });
+  assert.deepEqual(model.components, [
+    { name: 'Button', source_path: 'src/shared/ui/Button.tsx', export_kind: 'named', status: 'ok' },
+  ]);
+  assert.equal(model.default_export_candidates.length, 0);
+  const text = renderCatalog(model);
+  assert.match(text, /Source: src\/shared\/ui\/\*\*/);
+  assert.match(text, /\| Button \| src\/shared\/ui\/Button\.tsx \| named \| ok \|/);
+  assert.equal(text.includes('Ghost'), false);
+});
+
 test('CLI --json: default_export_candidates 를 같은 모델에 포함', () => {
   const r = spawnSync(process.execPath, [CLI, '--src', FIXTURE_SRC, '--json'], {
     cwd: KIT_ROOT,
