@@ -166,6 +166,13 @@ function relPosix(abs) {
   return toPosix(rel || '.');
 }
 
+function roleGlobInputDir(srcDir, layout, role) {
+  const baseDir = projectRootOf(srcDir);
+  const [glob] = layout.roleGlobs(role);
+  const rootRel = glob ? globRoot(glob).replace(/\/+$/, '') : '';
+  return rootRel ? path.resolve(baseDir, ...rootRel.split('/')) : baseDir;
+}
+
 // v1 reproduce 계약 — 생성기 호출 방식을 코드로 고정한다(헤더/manifest command 문자열 비파싱).
 //   resolveInput : --docs/--src/layout 에서 생성기 입력 디렉토리.
 //   inputFlag    : 생성기 입력 플래그.
@@ -188,15 +195,14 @@ export const V1_REPRODUCE = {
     resolveInput: ({ docsDir }) => docsDir,
     outName: 'nav-graph.yaml',
   },
-  // component-catalog: src/components/ui/** → design/component-catalog.md.
-  // 입력은 정본 <srcDir>/components/ui (매니페스트 source: src/components/ui/**). 생성기는
-  // 절대경로의 마지막 '/src/components/ui/' 마커를 앵커로 source_path 를 슬라이스하므로(catalog-gen.mjs)
-  // 더 넓은 --src 를 줘도 동치지만, 정본 디렉터리를 직접 가리켜 입력 부재를 정확히 surface 한다.
+  // component-catalog: {roles.ui_primitive} → design/component-catalog.md.
+  // 입력은 role glob 의 고정 접두(globRoot)를 넘기고, 실제 포함 여부는 catalog-gen 의
+  // resolved ui_primitive glob matcher 가 판정한다. wildcard root 를 literal path 로 보지 않는다.
   // 커밋본은 _meta 가 아니라 design/ 아래(committedSubdir) — 매니페스트 path 와 일치.
   'component-catalog': {
     script: 'catalog-gen.mjs',
     inputFlag: '--src',
-    resolveInput: ({ srcDir, layout }) => path.resolve(projectRootOf(srcDir), layout.roleToDir('ui_primitive')),
+    resolveInput: ({ srcDir, layout }) => roleGlobInputDir(srcDir, layout, 'ui_primitive'),
     outName: 'component-catalog.md',
     committedSubdir: 'design',
   },

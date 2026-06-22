@@ -15,6 +15,7 @@
 // 참고: frontend-workflow-kit/temp/proposals/component-catalog-generation-source-contract.md
 import path from 'node:path';
 import { walkFiles, readFileSafe, projectRootOf } from './util.mjs';
+import { globRoot, globToRegExp } from './glob.mjs';
 
 const SCAN_EXTS = ['.tsx', '.ts'];
 // 하위호환 fallback: layout 미주입 단위 테스트/구형 호출은 기존 정본 글롭 `src/components/ui/**` 로 판정한다.
@@ -42,6 +43,14 @@ function globToDir(glob) {
   return g;
 }
 
+function pathFromProjectRoot(projectRoot, rel) {
+  return rel ? path.resolve(projectRoot, ...rel.split('/')) : projectRoot;
+}
+
+function uniquePaths(paths) {
+  return [...new Set(paths.map((p) => path.resolve(p)))].sort();
+}
+
 export function catalogSourceConfig({ src, layout, projectRoot } = {}) {
   const srcAbs = path.resolve(src || '.');
   const roleGlobs =
@@ -54,6 +63,11 @@ export function catalogSourceConfig({ src, layout, projectRoot } = {}) {
   const useLayoutRole = hasExplicitRole || roleGlobs.length > 0;
   const sourceGlobs = useLayoutRole ? roleGlobs : ['src/components/ui/**'];
   const sourceDirs = sourceGlobs.map(globToDir).filter(Boolean);
+  const sourceMatchers = sourceGlobs.map((g) => globToRegExp(g));
+  const barrelMatchers = sourceDirs.flatMap((d) => [
+    globToRegExp(`${d}/index.ts`),
+    globToRegExp(`${d}/index.tsx`),
+  ]);
 
   let rootAbs = projectRoot ? path.resolve(projectRoot) : null;
   if (!rootAbs) {
@@ -68,27 +82,36 @@ export function catalogSourceConfig({ src, layout, projectRoot } = {}) {
   }
   if (!rootAbs) rootAbs = projectRootOf(srcAbs);
 
-  const sourceRoots = sourceDirs.map((d) => path.resolve(rootAbs, ...d.split('/')));
+  const sourceRoots = uniquePaths(sourceGlobs.map((g) => pathFromProjectRoot(rootAbs, globRoot(g))));
   const scanRoots = useLayoutRole
     ? sourceRoots
-    : sourceRoots.filter((root) => isWithin(srcAbs, root) || isWithin(root, srcAbs));
+    : sourceDirs
+        .map((d) => path.resolve(rootAbs, ...d.split('/')))
+        .filter((root) => isWithin(srcAbs, root) || isWithin(root, srcAbs));
   return {
     projectRoot: rootAbs,
     sourceGlobs,
     sourceDirs,
     sourceRoots,
+    sourceMatchers,
+    barrelMatchers,
     scanRoots: useLayoutRole ? scanRoots : scanRoots.length ? scanRoots : [srcAbs],
   };
 }
 
 function sourcePathFor(absFile, opts = {}) {
-  const roots = (opts.sourceRoots || []).map((r) => path.resolve(r));
   const projectRoot = opts.projectRoot ? path.resolve(opts.projectRoot) : null;
   const abs = path.resolve(absFile);
-  for (const root of roots) {
-    if (isWithin(root, abs)) {
-      return projectRoot ? toPosix(path.relative(projectRoot, abs)) : toPosix(abs);
+  if (projectRoot) {
+    const rel = toPosix(path.relative(projectRoot, abs));
+    if (rel && !rel.startsWith('../') && !path.isAbsolute(rel)) {
+      const matchers = opts.sourceMatchers || [];
+      if (matchers.length > 0) return matchers.some((matcher) => matcher.test(rel)) ? rel : null;
     }
+  }
+  const roots = (opts.sourceRoots || []).map((r) => path.resolve(r));
+  for (const root of roots) {
+    if (isWithin(root, abs)) return projectRoot ? toPosix(path.relative(projectRoot, abs)) : toPosix(abs);
   }
   return null;
 }
@@ -367,11 +390,8 @@ export function analyzeBarrelReconcile({ src, components, layout, projectRoot })
     if (base !== 'index.ts' && base !== 'index.tsx') continue;
     const sourcePath = sourcePathFor(f, sourceConfig);
     if (!sourcePath) continue;
-    for (const root of sourceConfig.sourceRoots) {
-      if (path.dirname(path.resolve(f)) === path.resolve(root)) {
-        barrels.push({ rel: sourcePath, abs: f });
-        break;
-      }
+    if (sourceConfig.barrelMatchers.some((matcher) => matcher.test(sourcePath))) {
+      barrels.push({ rel: sourcePath, abs: f });
     }
   }
   if (barrels.length === 0) {

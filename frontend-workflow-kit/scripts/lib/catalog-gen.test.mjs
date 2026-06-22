@@ -254,6 +254,34 @@ test('build/render: ui_primitive role outside --src scans role root instead of e
   ]);
 });
 
+test('build/render: ui_primitive wildcard segment scans matching concrete roots only', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-ui-role-wildcard-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(tmp, 'packages', 'web', 'ui'), { recursive: true });
+  fs.mkdirSync(path.join(tmp, 'packages', 'admin', 'not-ui'), { recursive: true });
+  fs.mkdirSync(path.join(tmp, 'src', 'components', 'ui'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmp, 'packages', 'web', 'ui', 'Button.tsx'),
+    'export function Button() { return null; }\n',
+  );
+  fs.writeFileSync(
+    path.join(tmp, 'packages', 'admin', 'not-ui', 'Ghost.tsx'),
+    'export function Ghost() { return null; }\n',
+  );
+  fs.writeFileSync(
+    path.join(tmp, 'src', 'components', 'ui', 'Legacy.tsx'),
+    'export function Legacy() { return null; }\n',
+  );
+  const layout = { roleGlobs: (role) => (role === 'ui_primitive' ? ['packages/*/ui/**'] : []) };
+  const model = buildCatalog({ src: path.join(tmp, 'src'), projectRoot: tmp, layout });
+  assert.deepEqual(model.source_dirs, ['packages/*/ui']);
+  assert.deepEqual(model.components, [
+    { name: 'Button', source_path: 'packages/web/ui/Button.tsx', export_kind: 'named', status: 'ok' },
+  ]);
+  assert.equal(renderCatalog(model).includes('Ghost'), false);
+  assert.equal(renderCatalog(model).includes('Legacy'), false);
+});
+
 test('analyzeBarrelReconcile: ui_primitive role ignores legacy src/components/ui barrel', (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-ui-role-barrel-'));
   t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
