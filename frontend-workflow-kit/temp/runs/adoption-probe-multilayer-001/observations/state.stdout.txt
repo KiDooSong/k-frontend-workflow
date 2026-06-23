@@ -1,3 +1,4 @@
 workflow:state — 1 screen(s)
   wrote temp\runs\adoption-probe-multilayer-001\scratch\project\docs\frontend-workflow\_meta\workflow-state.yaml
   wrote temp\runs\adoption-probe-multilayer-001\scratch\project\docs\frontend-workflow\_meta\screen-inventory.yaml
+  wrote temp\runs\adoption-probe-multilayer-001\scratch\project\docs\frontend-workflow\_meta\layer-inventory.yaml

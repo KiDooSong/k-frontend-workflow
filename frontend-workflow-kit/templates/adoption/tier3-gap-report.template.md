@@ -3,7 +3,7 @@
 <!-- Rendered from templates/adoption/tier3-gap-report.template.md by adoption-probe. Draft-only; Tier3 is not wired here. -->
 
 > **Status: PROBE / READ-ONLY — {YYYY-MM-DD}.** This note records Axis 2 gaps only.
-> It does not implement PR-D/E, promote gates, or close Open Decisions.
+> Layer rows are parsed/observed telemetry only. This report does not implement PR-D/E, promote gates, or close Open Decisions.
 
 ## 1. Repo Layers vs Proposed Tier3
 
@@ -15,7 +15,7 @@
 
 | F | Breakage | This run | Core signal |
 |---|---|---|---|
-| F1 | Additional layer roles inert | {EXTRA_LAYER_COUNT} path(s) found; native roles not live-wired | silent |
+| F1 | Additional layer roles inert | {EXTRA_LAYER_COUNT} path(s) found; layer inventory parsed/observed | not gate-wired |
 | F2 | Domain/data edit boundary absent | possible when extra domain/data layers exist; not enforced by current readiness | silent |
 | F3 | Complete vs missing layers indistinguishable | {F3_SUMMARY} | {F3_SIGNAL} |
 | F4 | Catalog source observation | {CATALOG_SUMMARY} | layout-aware observation |
@@ -45,5 +45,5 @@
 
 - No Tier3 gate was enabled by this probe.
 - No hard gate, CI, Open Decision, or confirmed state changed.
-- This file is telemetry for later human-owned implementation decisions.
+- This file is telemetry for later human-owned implementation decisions; layer access is parsed/observed, not gate-wired.
 - Observed extra layers in this run: {OBSERVED_EXTRA_LAYERS}.

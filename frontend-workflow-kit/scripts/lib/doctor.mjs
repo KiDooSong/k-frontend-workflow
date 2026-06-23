@@ -2,6 +2,7 @@
 import path from 'node:path';
 import { isDir, walkFiles } from './util.mjs';
 import { globRoot, globToRegExp } from './glob.mjs';
+import { BUILT_IN_LAYER_ROLES } from './layer-inventory.mjs';
 
 function toPosix(p) {
   return String(p).split(path.sep).join('/').replace(/\\/g, '/');
@@ -12,10 +13,16 @@ function asArray(value) {
   return Array.isArray(value) ? value : [value];
 }
 
+function isSameOrInside(parent, child) {
+  const rel = path.relative(parent, child);
+  return rel === '' || (!!rel && !rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
 function countMatchingFiles(glob, { projectRoot }) {
   const normalized = toPosix(glob);
   const rootRel = globRoot(normalized);
-  const rootAbs = rootRel ? path.join(projectRoot, ...rootRel.split('/')) : projectRoot;
+  const rootAbs = rootRel ? path.resolve(projectRoot, ...rootRel.split('/')) : projectRoot;
+  if (!isSameOrInside(projectRoot, rootAbs)) return { count: 0, root: rootRel || '.', outOfScope: true };
   if (!isDir(rootAbs)) return { count: 0, root: rootRel || '.' };
   const matcher = globToRegExp(normalized);
   let count = 0;
@@ -24,6 +31,35 @@ function countMatchingFiles(glob, { projectRoot }) {
     if (matcher.test(rel)) count += 1;
   }
   return { count, root: rootRel || '.' };
+}
+
+function rootsOverlap(a, b) {
+  if (!a || !b) return false;
+  return a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
+}
+
+function globRootForOverlap(glob) {
+  return globRoot(toPosix(glob).replace(/\{[^/{}]+\}/g, '__placeholder__')).replace(/\/+$/, '');
+}
+
+function globRoots(value, { preservePlaceholders = false } = {}) {
+  return asArray(value)
+    .map((glob) =>
+      preservePlaceholders ? globRootForOverlap(glob) : globRoot(toPosix(glob)).replace(/\/+$/, ''),
+    )
+    .filter(Boolean);
+}
+
+function accessDeclared(access) {
+  if (!access || typeof access !== 'object') return false;
+  return asArray(access.allow).length > 0 || asArray(access.forbid).length > 0;
+}
+
+function layerGlobValues(layer, roles) {
+  if (layer && BUILT_IN_LAYER_ROLES.includes(layer.role) && Object.prototype.hasOwnProperty.call(roles, layer.role)) {
+    return asArray(roles[layer.role]);
+  }
+  return asArray(layer?.glob);
 }
 
 export function collectDoctorFindings({ layout, projectRoot }) {
@@ -59,24 +95,55 @@ export function collectDoctorFindings({ layout, projectRoot }) {
   }
 
   const knownRoles = new Set(Object.keys(roles));
-  const supportedFacts = new Set(['dir_has_files']);
   for (const layer of layers) {
     if (!layer || typeof layer.role !== 'string') continue;
-    if (!knownRoles.has(layer.role)) {
+    if (!knownRoles.has(layer.role) && !layer.glob) {
       findings.push({
         severity: 'warning',
         check: 'layer-role',
         role: layer.role,
-        message: `layer '${layer.role}' has no matching roles.${layer.role} binding`,
+        message: `layer '${layer.role}' has no matching roles.${layer.role} binding and no layer glob`,
       });
     }
-    if (layer.fact && !supportedFacts.has(layer.fact)) {
+    const layerGlobs = layerGlobValues(layer, roles);
+    if (layerGlobs.length) {
+      for (const glob of layerGlobs) {
+        const { count, root } = countMatchingFiles(glob, { projectRoot });
+        if (count === 0) {
+          findings.push({
+            severity: 'warning',
+            check: 'layer-glob',
+            role: layer.role,
+            glob: toPosix(glob),
+            count,
+            message: `layer '${layer.role}' glob matched 0 files: ${toPosix(glob)} (root: ${root})`,
+          });
+        }
+      }
+    }
+    if (!BUILT_IN_LAYER_ROLES.includes(layer.role)) {
+      const layerRoots = globRoots(layer.glob, { preservePlaceholders: true });
+      for (const role of BUILT_IN_LAYER_ROLES) {
+        if (role === layer.role || !roles[role]) continue;
+        const roleRoots = globRoots(roles[role], { preservePlaceholders: true });
+        if (layerRoots.some((a) => roleRoots.some((b) => rootsOverlap(a, b)))) {
+          findings.push({
+            severity: 'warning',
+            check: 'layer-overlap',
+            role: layer.role,
+            overlap_role: role,
+            message: `layer '${layer.role}' overlaps built-in role '${role}' (observed as flattened/overlap, not a hard failure)`,
+          });
+          break;
+        }
+      }
+    }
+    if (accessDeclared(layer.access)) {
       findings.push({
-        severity: 'warning',
-        check: 'layer-fact',
+        severity: 'info',
+        check: 'layer-access-not-gate-wired',
         role: layer.role,
-        fact: layer.fact,
-        message: `layer '${layer.role}' uses unsupported fact '${layer.fact}' (supported: dir_has_files)`,
+        message: `layer '${layer.role}' declares access, but access is parsed/observed only and not gate-wired`,
       });
     }
   }

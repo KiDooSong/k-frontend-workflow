@@ -18,10 +18,12 @@ function render(report) {
   lines.push(`  project_root: ${report.project_root}`);
   lines.push(`  layout      : ${report.layout || '(default)'}`);
   if (report.findings.length === 0) {
-    lines.push('  ok: no layout/layer preflight warnings');
+    lines.push('  ok: no layout/layer preflight findings');
   } else {
-    lines.push(`  warnings: ${report.findings.length}`);
-    for (const f of report.findings) lines.push(`    [${f.check}] ${f.message}`);
+    const warnings = report.findings.filter((f) => f.severity === 'warning').length;
+    const info = report.findings.filter((f) => f.severity === 'info').length;
+    lines.push(`  findings: ${report.findings.length} (warnings=${warnings}, info=${info})`);
+    for (const f of report.findings) lines.push(`    [${f.severity || 'warning'}:${f.check}] ${f.message}`);
   }
   lines.push('  (warning-only: exit 0, no CI/hard gate promotion)');
   return lines.join('\n') + '\n';
@@ -36,7 +38,8 @@ function main() {
   const report = {
     tool: 'workflow:doctor',
     ok: true,
-    warning_count: findings.length,
+    warning_count: findings.filter((f) => f.severity === 'warning').length,
+    info_count: findings.filter((f) => f.severity === 'info').length,
     project_root: toPosixRel(projectRoot),
     layout: typeof flags.layout === 'string' ? toPosixRel(path.resolve(flags.layout)) : null,
     findings,
