@@ -71,10 +71,6 @@ function layerGlobEntries(layer) {
   return asArray(layer?.glob).map(toPosix).filter(Boolean);
 }
 
-function roleGlobEntries(roles, role) {
-  return asArray(roles?.[role]).map(toPosix).filter(Boolean);
-}
-
 function layerPolicyPathEntries(layer, roles) {
   if (!layer || typeof layer.role !== 'string') return { entries: [], source: 'unmaterialized' };
   const roleIsBound = hasOwn(roles, layer.role);
@@ -87,13 +83,11 @@ function layerPolicyPathEntries(layer, roles) {
   return { entries: [], source: 'unmaterialized' };
 }
 
-function layerOwnedEntries(layer, roles) {
-  const owned = new Set(layerPolicyPathEntries(layer, roles).entries);
+function layerRemovableEntries(layer, roles) {
+  const owned = new Set();
   if (layer && typeof layer.role === 'string' && hasOwn(roles, layer.role)) {
     owned.add(roleToken(layer.role));
-    for (const glob of roleGlobEntries(roles, layer.role)) owned.add(glob);
   }
-  for (const glob of layerGlobEntries(layer)) owned.add(glob);
   return [...owned].filter(Boolean);
 }
 
@@ -118,7 +112,7 @@ function collectLayerProjection(policy, layout) {
   const knownModes = knownModeNames(policy);
   const allowByMode = new Map();
   const forbidByMode = new Map();
-  const ownedEntries = new Set();
+  const removableEntries = new Set();
   const layerRows = [];
   const manualDecisions = [];
 
@@ -126,7 +120,7 @@ function collectLayerProjection(policy, layout) {
     if (!layer || typeof layer.role !== 'string') continue;
     const access = accessModel(layer);
     const { entries, source } = layerPolicyPathEntries(layer, roles);
-    for (const entry of layerOwnedEntries(layer, roles)) ownedEntries.add(entry);
+    for (const entry of layerRemovableEntries(layer, roles)) removableEntries.add(entry);
 
     const accessDeclared = access.allow.length > 0 || access.forbid.length > 0;
     if (accessDeclared && entries.length === 0) {
@@ -163,10 +157,10 @@ function collectLayerProjection(policy, layout) {
     }
   }
 
-  return { allowByMode, forbidByMode, ownedEntries, layerRows, manualDecisions };
+  return { allowByMode, forbidByMode, removableEntries, layerRows, manualDecisions };
 }
 
-function mergeDraftPathList(existing, synthesized, ownedEntries) {
+function mergeDraftPathList(existing, synthesized, removableEntries) {
   const synth = (synthesized || []).map(toPosix);
   const remaining = new Set(synth);
   const out = [];
@@ -174,7 +168,7 @@ function mergeDraftPathList(existing, synthesized, ownedEntries) {
 
   for (const raw of existing || []) {
     const entry = toPosix(raw);
-    if (ownedEntries.has(entry)) {
+    if (removableEntries.has(entry)) {
       if (remaining.has(entry) && !seen.has(entry)) {
         out.push(entry);
         seen.add(entry);
@@ -212,12 +206,12 @@ function buildDraftPolicy(policy, projection) {
       allowed_paths: mergeDraftPathList(
         mode.allowed_paths || [],
         projection.allowByMode.get(name) || [],
-        projection.ownedEntries,
+        projection.removableEntries,
       ),
       forbidden_paths: mergeDraftPathList(
         mode.forbidden_paths || [],
         projection.forbidByMode.get(name) || [],
-        projection.ownedEntries,
+        projection.removableEntries,
       ),
     };
   }

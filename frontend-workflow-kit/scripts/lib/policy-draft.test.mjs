@@ -176,6 +176,86 @@ test('buildPolicyDraft adds custom explicit globs without custom role tokens', (
   );
 });
 
+test('buildPolicyDraft keeps literal guards when custom layer globs collide', () => {
+  const policy = {
+    version: 1,
+    order: ['docs-only', 'screen-skeleton', 'rough-fixture-ui', 'api-integrated-ui'],
+    modes: {
+      'docs-only': {
+        requires: [],
+        allowed_paths: ['docs/frontend-workflow/**'],
+        forbidden_paths: ['src/**'],
+      },
+      'screen-skeleton': {
+        requires: [],
+        allowed_paths: ['{roles.screen}'],
+        forbidden_paths: ['{roles.api_client}', 'openapi.yaml'],
+      },
+      'rough-fixture-ui': {
+        requires: [],
+        allowed_paths: ['{roles.screen}'],
+        forbidden_paths: ['{roles.api_client}', 'openapi.yaml'],
+      },
+      'api-integrated-ui': {
+        requires: [],
+        allowed_paths: ['{roles.api_client}'],
+        forbidden_paths: ['{roles.screen}'],
+      },
+    },
+  };
+  const layout = {
+    roles: {
+      screen: 'src/features/{domain}/screens/**',
+      api_client: 'src/api/**',
+    },
+    layers: [
+      {
+        role: 'screen',
+        glob: 'src/features/{domain}/screens/**',
+        fact: 'dir_has_files',
+        access: { allow: ['screen-skeleton', 'rough-fixture-ui'], forbid: ['api-integrated-ui'] },
+      },
+      {
+        role: 'api_client',
+        glob: 'src/api/**',
+        fact: 'dir_has_files',
+        access: { allow: ['api-integrated-ui'], forbid: ['screen-skeleton', 'rough-fixture-ui'] },
+      },
+      {
+        role: 'custom_source',
+        glob: 'src/**',
+        fact: 'dir_has_files',
+        access: { allow: ['api-integrated-ui'], forbid: [] },
+      },
+      {
+        role: 'contract_file',
+        glob: 'openapi.yaml',
+        fact: 'file_exists',
+        access: { allow: ['api-integrated-ui'], forbid: [] },
+      },
+    ],
+  };
+
+  const result = buildPolicyDraft({ policy, layout, date: '2026-06-23' });
+
+  assert.deepEqual(result.draftPolicy.modes['docs-only'].forbidden_paths, ['src/**']);
+  assert.deepEqual(result.draftPolicy.modes['screen-skeleton'].forbidden_paths, [
+    '{roles.api_client}',
+    'openapi.yaml',
+  ]);
+  assert.deepEqual(result.draftPolicy.modes['rough-fixture-ui'].forbidden_paths, [
+    '{roles.api_client}',
+    'openapi.yaml',
+  ]);
+  assert.deepEqual(result.draftPolicy.modes['api-integrated-ui'].allowed_paths, [
+    '{roles.api_client}',
+    'src/**',
+    'openapi.yaml',
+  ]);
+  assert.equal(result.diff.removed_paths.some((row) => row.mode === 'docs-only' && row.path === 'src/**'), false);
+  assert.equal(result.diff.removed_paths.some((row) => row.path === 'openapi.yaml'), false);
+});
+
 test('renderMigrationGuide includes added, removed, custom, and draft-only adoption guidance', () => {
   const policy = samplePolicy();
   const layout = {
