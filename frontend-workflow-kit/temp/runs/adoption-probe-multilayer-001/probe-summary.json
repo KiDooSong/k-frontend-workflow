@@ -1,0 +1,196 @@
+{
+  "probe_id": "multilayer-001",
+  "project_name": "app",
+  "date": "2026-06-23",
+  "draft_only": true,
+  "repo_ref": "./temp/runs/multilayer-adoption-dryrun/app",
+  "docs_source": "./temp/runs/multilayer-adoption-dryrun/app/docs/frontend-workflow",
+  "src_source": "./temp/runs/multilayer-adoption-dryrun/app/src",
+  "out_dir": "./temp/runs/adoption-probe-multilayer-001",
+  "scratch_dir": "./temp/runs/adoption-probe-multilayer-001/scratch",
+  "invariants": {
+    "live_docs_untouched_by_workflow_state": true,
+    "source_scaffold_created": false,
+    "ci_changed": false,
+    "open_decision_resolved": false,
+    "hard_gate_promoted": false
+  },
+  "role_map": {
+    "route_entry": {
+      "role": "route_entry",
+      "glob": "src/app/**",
+      "confidence": "confirmed",
+      "evidence": "src/app",
+      "note": ""
+    },
+    "screen": {
+      "role": "screen",
+      "glob": "src/presentation/{domain}/screens/**",
+      "confidence": "confirmed",
+      "evidence": "src/presentation/profile/screens",
+      "note": ""
+    },
+    "domain_component": {
+      "role": "domain_component",
+      "glob": "src/presentation/{domain}/components/**",
+      "confidence": "confirmed",
+      "evidence": "src/presentation/profile/components",
+      "note": ""
+    },
+    "hook": {
+      "role": "hook",
+      "glob": "src/presentation/{domain}/viewmodels/**",
+      "confidence": "confirmed",
+      "evidence": "src/presentation/profile/viewmodels",
+      "note": "temporary flattening: viewmodel path mapped to hook role"
+    },
+    "ui_primitive": {
+      "role": "ui_primitive",
+      "glob": "src/components/ui/**",
+      "confidence": "confirmed",
+      "evidence": "src/components/ui",
+      "note": ""
+    },
+    "api_client": {
+      "role": "api_client",
+      "glob": "src/api/**",
+      "confidence": "confirmed",
+      "evidence": "src/api",
+      "note": ""
+    },
+    "api_schema": {
+      "role": "api_schema",
+      "glob": "src/api/schemas/**",
+      "confidence": "confirmed",
+      "evidence": "src/api/schemas",
+      "note": ""
+    }
+  },
+  "extra_layers": [
+    {
+      "layer": "data_source",
+      "path": "src/data/profile/datasources"
+    },
+    {
+      "layer": "entity",
+      "path": "src/domain/profile/entities"
+    },
+    {
+      "layer": "mapper",
+      "path": "src/data/profile/mappers"
+    },
+    {
+      "layer": "repository",
+      "path": "src/data/profile/repositories"
+    },
+    {
+      "layer": "repository",
+      "path": "src/domain/profile/repositories"
+    },
+    {
+      "layer": "use_case",
+      "path": "src/domain/profile/usecases"
+    },
+    {
+      "layer": "view_model",
+      "path": "src/presentation/profile/viewmodels"
+    }
+  ],
+  "environment": {
+    "framework": "not observed",
+    "frameworkEvidence": "package.json missing",
+    "packageManager": "not observed",
+    "architecture": "Clean Architecture / layered",
+    "srcDepth": "9+ layer signals (data_source, entity, mapper, repository, use_case, view_model)",
+    "ci": "not observed",
+    "api": "src/api, src/data",
+    "visual": "not observed",
+    "testid": "not observed",
+    "roleMap": {
+      "route_entry": {
+        "role": "route_entry",
+        "glob": "src/app/**",
+        "confidence": "confirmed",
+        "evidence": "src/app",
+        "note": ""
+      },
+      "screen": {
+        "role": "screen",
+        "glob": "src/presentation/{domain}/screens/**",
+        "confidence": "confirmed",
+        "evidence": "src/presentation/profile/screens",
+        "note": ""
+      },
+      "domain_component": {
+        "role": "domain_component",
+        "glob": "src/presentation/{domain}/components/**",
+        "confidence": "confirmed",
+        "evidence": "src/presentation/profile/components",
+        "note": ""
+      },
+      "hook": {
+        "role": "hook",
+        "glob": "src/presentation/{domain}/viewmodels/**",
+        "confidence": "confirmed",
+        "evidence": "src/presentation/profile/viewmodels",
+        "note": "temporary flattening: viewmodel path mapped to hook role"
+      },
+      "ui_primitive": {
+        "role": "ui_primitive",
+        "glob": "src/components/ui/**",
+        "confidence": "confirmed",
+        "evidence": "src/components/ui",
+        "note": ""
+      },
+      "api_client": {
+        "role": "api_client",
+        "glob": "src/api/**",
+        "confidence": "confirmed",
+        "evidence": "src/api",
+        "note": ""
+      },
+      "api_schema": {
+        "role": "api_schema",
+        "glob": "src/api/schemas/**",
+        "confidence": "confirmed",
+        "evidence": "src/api/schemas",
+        "note": ""
+      }
+    }
+  },
+  "observations": {
+    "readiness": "PROFILE-001: rough-fixture-ui",
+    "validate": "ok=true, errors=0, warnings=0, exit=0",
+    "catalog": "1 components observed from src/components/ui/** via draft layout",
+    "f3": {
+      "status": "observed",
+      "same": true,
+      "removed": [
+        "src/data/profile/datasources",
+        "src/domain/profile/entities",
+        "src/data/profile/mappers",
+        "src/data/profile/repositories",
+        "src/domain/profile/repositories",
+        "src/domain/profile/usecases"
+      ],
+      "excluded": [
+        {
+          "layer": "view_model",
+          "path": "src/presentation/profile/viewmodels",
+          "role": "hook",
+          "reason": "flattened into built-in hook role"
+        }
+      ],
+      "exitCode": 0
+    }
+  },
+  "outputs": {
+    "adoption_report": "./temp/runs/adoption-probe-multilayer-001/adoption-report.md",
+    "project_layout": "./temp/runs/adoption-probe-multilayer-001/project-layout.draft.yaml",
+    "tier3_gap_report": "./temp/runs/adoption-probe-multilayer-001/tier3-gap-report.md",
+    "visual_spec_intake_note": "./temp/runs/adoption-probe-multilayer-001/visual-spec-intake-note.md",
+    "testid_intake_note": "./temp/runs/adoption-probe-multilayer-001/testid-intake-note.md",
+    "tier3_live_wiring_note": "./temp/runs/adoption-probe-multilayer-001/tier3-live-wiring-implementation-note.md",
+    "summary": "./temp/runs/adoption-probe-multilayer-001/probe-summary.json"
+  }
+}

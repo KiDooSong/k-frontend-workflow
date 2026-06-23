@@ -1,4 +1,4 @@
-# project-layout.yaml — adoption-probe DRAFT (제안만 · 미배선)
+# project-layout.yaml — adoption-probe DRAFT (probe multilayer-001, proposal only, not wired)
 # ─────────────────────────────────────────────────────────────────────────────
 # 이 파일은 adoption-probe 스킬이 산출하는 **초안**이다. 다음을 반드시 지킨다:
 #   - 산출 위치 = 프로브 출력 디렉토리(temp/runs/adoption-probe-<id>/) — 소비 레포 루트에
@@ -19,19 +19,19 @@ preset: expo-feature        # 기준 프리셋(현 3계층 byte-동치). 소비 
 # (Axis 1) role → 물리 glob 재바인딩. {domain} 토큰은 readiness per-screen 치환에서 펼쳐지므로 보존.
 # 7개 내장 role 이 전부다 — 이 목록을 늘리면(예: view_model:) glob 이름표만 생기고 게이트 의미는 안 생긴다(F1).
 roles:
-  route_entry:      "{ROUTE_GLOB}"        # 예: src/app/**            · confidence: {confirmed|candidate} · 근거: {path}
-  screen:           "{SCREEN_GLOB}"       # 예: src/presentation/{domain}/screens/**
-  domain_component: "{COMPONENT_GLOB}"    # 예: src/presentation/{domain}/components/**
-  hook:             "{HOOK_GLOB}"         # 예: src/features/{domain}/hooks/**  (← 다층 레포에선 ViewModel 을 임시로 여기 평탄화)
-  ui_primitive:     "{UI_GLOB}"           # 예: src/components/ui/**  · catalog-gen --layout observation source
-  api_client:       "{API_CLIENT_GLOB}"   # 예: src/api/**
-  api_schema:       "{API_SCHEMA_GLOB}"   # 예: src/api/schemas/**
+  route_entry:      "src/app/**"        # 예: src/app/**            · confidence: see adoption-report · 근거: see adoption-report
+  screen:           "src/presentation/{domain}/screens/**"       # 예: src/presentation/{domain}/screens/**
+  domain_component: "src/presentation/{domain}/components/**"    # 예: src/presentation/{domain}/components/**
+  hook:             "src/presentation/{domain}/viewmodels/**"         # 예: src/features/{domain}/hooks/**  (← 다층 레포에선 ViewModel 을 임시로 여기 평탄화)
+  ui_primitive:     "src/components/ui/**"           # 예: src/components/ui/**  · catalog-gen --layout observation source
+  api_client:       "src/api/**"   # 예: src/api/**
+  api_schema:       "src/api/schemas/**"   # 예: src/api/schemas/**
 
 # (선택) 도메인별 오버라이드 — 특정 도메인만 다른 경로를 쓰면 여기서 role 단위 교체.
 # domains:
 #   {domain}:
 #     roles:
-#       screen: "{DOMAIN_SCREEN_GLOB}"
+#       screen: "see adoption-report"
 
 # catalog-gen layout note
 # adoption-probe passes this draft layout to catalog-gen with --layout.

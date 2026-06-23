@@ -1,0 +1,27 @@
+{
+  "PROFILE-001": {
+    "readiness_mode": "rough-fixture-ui",
+    "next_mode": "final-fixture-ui",
+    "allowed_paths": [
+      "src/presentation/profile/screens/**",
+      "src/presentation/profile/components/**",
+      "src/presentation/profile/viewmodels/**"
+    ],
+    "forbidden_paths": [
+      "src/api/**",
+      "openapi.yaml"
+    ],
+    "blocking": [
+      {
+        "figma_mapping": "missing"
+      },
+      {
+        "state_matrix": false
+      }
+    ],
+    "next_actions": [
+      "create figma-component-mapping (status >= draft)",
+      "complete State Matrix (loading/success/empty/error/refreshing)"
+    ]
+  }
+}

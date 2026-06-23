@@ -1,0 +1,15 @@
+{
+  "tool": "readiness.mjs",
+  "args": [
+    "--docs",
+    "<probe-run>/scratch/project/docs/frontend-workflow",
+    "--layout",
+    "<probe-run>/project-layout.draft.yaml",
+    "--json"
+  ],
+  "invocation": "node scripts/readiness.mjs --docs <probe-run>/scratch/project/docs/frontend-workflow --layout <probe-run>/project-layout.draft.yaml --json",
+  "exitCode": 0,
+  "stdout": "{\n  \"PROFILE-001\": {\n    \"readiness_mode\": \"rough-fixture-ui\",\n    \"next_mode\": \"final-fixture-ui\",\n    \"allowed_paths\": [\n      \"src/presentation/profile/screens/**\",\n      \"src/presentation/profile/components/**\",\n      \"src/presentation/profile/viewmodels/**\"\n    ],\n    \"forbidden_paths\": [\n      \"src/api/**\",\n      \"openapi.yaml\"\n    ],\n    \"blocking\": [\n      {\n        \"figma_mapping\": \"missing\"\n      },\n      {\n        \"state_matrix\": false\n      }\n    ],\n    \"next_actions\": [\n      \"create figma-component-mapping (status >= draft)\",\n      \"complete State Matrix (loading/success/empty/error/refreshing)\"\n    ]\n  }\n}\n",
+  "stderr": "",
+  "ok": true
+}

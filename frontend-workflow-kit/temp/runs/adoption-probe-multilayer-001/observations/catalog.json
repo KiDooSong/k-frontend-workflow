@@ -1,0 +1,16 @@
+{
+  "tool": "catalog-gen.mjs",
+  "args": [
+    "--src",
+    "<probe-run>/scratch/project/src",
+    "--layout",
+    "<probe-run>/project-layout.draft.yaml",
+    "--out",
+    "<probe-run>/component-catalog.observed.md"
+  ],
+  "invocation": "node scripts/catalog-gen.mjs --src <probe-run>/scratch/project/src --layout <probe-run>/project-layout.draft.yaml --out <probe-run>/component-catalog.observed.md",
+  "exitCode": 0,
+  "stdout": "workflow:catalog — 1 component(s)\n  wrote temp\\runs\\adoption-probe-multilayer-001\\component-catalog.observed.md\n",
+  "stderr": "",
+  "ok": true
+}

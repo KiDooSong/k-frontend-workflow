@@ -1,25 +1,31 @@
-# Tier3 Gap Report — {PROJECT_NAME}
+# Tier3 Gap Report — app
 
 <!-- Rendered from templates/adoption/tier3-gap-report.template.md by adoption-probe. Draft-only; Tier3 is not wired here. -->
 
-> **Status: PROBE / READ-ONLY — {YYYY-MM-DD}.** This note records Axis 2 gaps only.
+> **Status: PROBE / READ-ONLY — 2026-06-23.** This note records Axis 2 gaps only.
 > It does not implement PR-D/E, promote gates, or close Open Decisions.
 
 ## 1. Repo Layers vs Proposed Tier3
 
 | Repo layer/path | Tier3 role (proposed) | Tier3 access (proposed) | Current role? | Current fact? | Current gate? |
 |---|---|---|:---:|:---:|:---:|
-{TIER3_ROWS}
+| `src/data/profile/datasources` | data_source | proposed access row only | no | no | no |
+| `src/domain/profile/entities` | entity | proposed access row only | no | no | no |
+| `src/data/profile/mappers` | mapper | proposed access row only | no | no | no |
+| `src/data/profile/repositories` | repository | proposed access row only | no | no | no |
+| `src/domain/profile/repositories` | repository | proposed access row only | no | no | no |
+| `src/domain/profile/usecases` | use_case | proposed access row only | no | no | no |
+| `src/presentation/profile/viewmodels` | view_model | proposed access row only | built-in hook | no | no |
 
 ## 2. F1-F5 Observations
 
 | F | Breakage | This run | Core signal |
 |---|---|---|---|
-| F1 | Additional layer roles inert | {EXTRA_LAYER_COUNT} path(s) found; native roles not live-wired | silent |
+| F1 | Additional layer roles inert | 7 path(s) found; native roles not live-wired | silent |
 | F2 | Domain/data edit boundary absent | possible when extra domain/data layers exist; not enforced by current readiness | silent |
-| F3 | Complete vs missing layers indistinguishable | {F3_SUMMARY} | {F3_SIGNAL} |
-| F4 | Catalog source observation | {CATALOG_SUMMARY} | layout-aware observation |
-| F5 | validate layer-blind | {VALIDATE_SUMMARY} | validate is document-only |
+| F3 | Complete vs missing layers indistinguishable | readiness byte-identical after scratch Tier3-only layer removal; 1 flattened built-in path(s) kept | silent |
+| F4 | Catalog source observation | 1 components observed from src/components/ui/** via draft layout | layout-aware observation |
+| F5 | validate layer-blind | ok=true, errors=0, warnings=0, exit=0 | validate is document-only |
 
 ## 3. Flattening Loss
 
@@ -46,4 +52,4 @@
 - No Tier3 gate was enabled by this probe.
 - No hard gate, CI, Open Decision, or confirmed state changed.
 - This file is telemetry for later human-owned implementation decisions.
-- Observed extra layers in this run: {OBSERVED_EXTRA_LAYERS}.
+- Observed extra layers in this run: `src/data/profile/datasources`, `src/domain/profile/entities`, `src/data/profile/mappers`, `src/data/profile/repositories`, `src/domain/profile/repositories`, `src/domain/profile/usecases`, `src/presentation/profile/viewmodels`.

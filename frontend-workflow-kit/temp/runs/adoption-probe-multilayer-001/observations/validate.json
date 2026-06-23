@@ -1,0 +1,17 @@
+{
+  "tool": "validate.mjs",
+  "args": [
+    "--docs",
+    "<probe-run>/scratch/project/docs/frontend-workflow",
+    "--src",
+    "<probe-run>/scratch/project/src",
+    "--layout",
+    "<probe-run>/project-layout.draft.yaml",
+    "--json"
+  ],
+  "invocation": "node scripts/validate.mjs --docs <probe-run>/scratch/project/docs/frontend-workflow --src <probe-run>/scratch/project/src --layout <probe-run>/project-layout.draft.yaml --json",
+  "exitCode": 0,
+  "stdout": "{\n  \"ok\": true,\n  \"count\": 0,\n  \"errors\": [],\n  \"warnings\": []\n}\n",
+  "stderr": "",
+  "ok": true
+}
