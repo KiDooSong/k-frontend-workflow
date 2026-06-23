@@ -214,6 +214,52 @@ function detectExtraLayers(projectRoot, srcDir) {
   return out.sort((a, b) => (a.layer + a.path).localeCompare(b.layer + b.path));
 }
 
+function isSameOrInside(parent, child) {
+  const p = toPosix(parent).replace(/\/+$/, '');
+  const c = toPosix(child).replace(/\/+$/, '');
+  return c === p || c.startsWith(`${p}/`);
+}
+
+function roleGlobRootsForLayer(roleMap, layerPath) {
+  const roots = [];
+  const pathParts = toPosix(layerPath).split('/');
+  const srcIndex = pathParts.indexOf('src');
+  const domains = new Set();
+  if (srcIndex >= 0) {
+    for (const segment of pathParts.slice(srcIndex + 1)) {
+      const isLayerSegment = EXTRA_LAYER_PATTERNS.some((p) => p.segments.includes(segment.toLowerCase()));
+      if (segment && !isLayerSegment) domains.add(segment);
+    }
+  }
+
+  for (const role of Object.values(roleMap)) {
+    const glob = toPosix(role.glob || '');
+    if (!glob) continue;
+    const concreteGlobs = glob.includes('{domain}')
+      ? Array.from(domains).map((domain) => glob.replaceAll('{domain}', domain))
+      : [glob];
+    for (const concrete of concreteGlobs) {
+      const root = concrete.replace(/\/\*\*$/, '').replace(/\*.*$/, '').replace(/\/+$/, '');
+      if (root) roots.push({ role: role.role, root });
+    }
+  }
+  return roots;
+}
+
+function builtInRoleForLayer(roleMap, layer) {
+  return roleGlobRootsForLayer(roleMap, layer.path).find((candidate) => isSameOrInside(candidate.root, layer.path));
+}
+
+function splitF3Layers(roleMap, extraLayers) {
+  const removable = [];
+  const excluded = [];
+  for (const layer of extraLayers) {
+    const builtInRole = builtInRoleForLayer(roleMap, layer);
+    if (builtInRole) excluded.push({ ...layer, role: builtInRole.role, reason: `flattened into built-in ${builtInRole.role} role` });
+    else removable.push(layer);
+  }
+  return { removable, excluded };
+}
 function walkDirs(root) {
   const out = [];
   if (!isDir(root)) return out;
@@ -345,12 +391,20 @@ function roleRows(roleMap) {
   }).join('\n');
 }
 
-function layerRows(extraLayers) {
+function f3ExcludedMap(f3) {
+  return new Map((f3.excluded || []).map((layer) => [layer.path, layer]));
+}
+
+function layerRows(extraLayers, f3) {
   if (extraLayers.length === 0) {
     return '| not observed | not observed | - | - | - | - | no extra Axis 2 layer detected |';
   }
+  const excluded = f3ExcludedMap(f3);
   return extraLayers
-    .map((l) => `| ${l.layer} | \`${l.path}\` | no | no | no | no | tier3-gap-report |`)
+    .map((l) => {
+      const flattened = excluded.get(l.path);
+      return `| ${l.layer} | \`${l.path}\` | ${flattened ? `built-in ${flattened.role}` : 'no'} | no | no | no | ${flattened ? flattened.reason : 'tier3-gap-report'} |`;
+    })
     .join('\n');
 }
 
@@ -373,6 +427,54 @@ function cell(value) {
   return String(value == null || value === '' ? 'not observed' : value).replace(/\n/g, '<br>');
 }
 
+function pathRef(opts, target) {
+  const abs = path.resolve(target);
+  const bases = [
+    [opts.cwd, '.'],
+    [opts.outDir, '<probe-run>'],
+    [opts.repoRoot, '<target-repo>'],
+    [KIT_ROOT, '<kit-root>'],
+  ];
+  for (const [base, label] of bases) {
+    const root = path.resolve(base);
+    if (isSameOrInside(root, abs)) {
+      const suffix = toPosix(path.relative(root, abs));
+      return suffix ? `${label}/${suffix}` : label;
+    }
+  }
+  return toPosix(path.basename(abs));
+}
+
+function sanitizeEvidenceText(text, opts) {
+  const replacements = [
+    [opts.outDir, '<probe-run>'],
+    [opts.repoRoot, '<target-repo>'],
+    [KIT_ROOT, '<kit-root>'],
+    [opts.cwd, '.'],
+  ]
+    .filter(([from]) => from)
+    .map(([from, to]) => [path.resolve(from), to])
+    .sort((a, b) => b[0].length - a[0].length);
+  let out = String(text || '');
+  for (const [from, to] of replacements) {
+    out = out.split(from).join(to).split(toPosix(from)).join(to);
+  }
+  return out;
+}
+
+function sanitizePathishEvidenceText(text, opts) {
+  return sanitizeEvidenceText(text, opts).split(path.sep).join('/');
+}
+
+function sanitizeCommandForEvidence(command, opts) {
+  return {
+    ...command,
+    args: (command.args || []).map((arg) => sanitizePathishEvidenceText(arg, opts)),
+    invocation: sanitizePathishEvidenceText(command.invocation, opts),
+    stdout: sanitizeEvidenceText(command.stdout, opts),
+    stderr: sanitizeEvidenceText(command.stderr, opts),
+  };
+}
 function commandLine(name, args) {
   return `node ${toPosix(path.relative(KIT_ROOT, path.join(SCRIPT_ROOT, name)))} ${args.join(' ')}`;
 }
@@ -395,11 +497,13 @@ function runNodeScript(name, args, opts) {
   };
 }
 
-function writeObservation(outDir, name, command) {
+function writeObservation(opts, name, command) {
+  const sanitized = sanitizeCommandForEvidence(command, opts);
+  const outDir = opts.outDir;
   const dir = path.join(outDir, 'observations');
-  writeFile(path.join(dir, `${name}.stdout.txt`), command.stdout || '');
-  writeFile(path.join(dir, `${name}.stderr.txt`), command.stderr || '');
-  writeFile(path.join(dir, `${name}.json`), JSON.stringify(command, null, 2) + '\n');
+  writeFile(path.join(dir, `${name}.stdout.txt`), sanitized.stdout || '');
+  writeFile(path.join(dir, `${name}.stderr.txt`), sanitized.stderr || '');
+  writeFile(path.join(dir, `${name}.json`), JSON.stringify(sanitized, null, 2) + '\n');
 }
 
 function copyDirIfExists(from, to) {
@@ -463,7 +567,7 @@ function observeWorkflow(opts, scratch) {
       };
 
   const commands = { state, readiness, validate, catalog };
-  for (const [name, cmd] of Object.entries(commands)) writeObservation(opts.outDir, name, cmd);
+  for (const [name, cmd] of Object.entries(commands)) writeObservation(opts, name, cmd);
   return {
     commands,
     readinessJson: parseJson(readiness.stdout),
@@ -485,12 +589,22 @@ function parseCatalogCount(text) {
   return m ? Number(m[1]) : null;
 }
 
-function observeF3(opts, extraLayers, originalReadiness) {
+function observeF3(opts, roleMap, extraLayers, originalReadiness) {
+  const { removable, excluded } = splitF3Layers(roleMap, extraLayers);
   if (opts.skipF3 || extraLayers.length === 0 || !isDir(opts.srcDir)) {
     return {
       status: extraLayers.length === 0 ? 'skipped: no extra layers detected' : 'skipped',
       same: null,
       removed: [],
+      excluded,
+    };
+  }
+  if (removable.length === 0) {
+    return {
+      status: 'skipped: all extra layers are flattened into built-in roles',
+      same: null,
+      removed: [],
+      excluded,
     };
   }
   const f3Root = path.join(opts.outDir, 'scratch-f3', 'project');
@@ -501,7 +615,7 @@ function observeF3(opts, extraLayers, originalReadiness) {
   copyDirIfExists(opts.docsDir, f3Docs);
   copyDirIfExists(opts.srcDir, f3Src);
   const removed = [];
-  for (const layer of extraLayers) {
+  for (const layer of removable) {
     const relPath = layer.path.replace(/^src\//, '');
     const target = path.join(f3Src, ...relPath.split('/'));
     if (isDir(target)) {
@@ -519,13 +633,14 @@ function observeF3(opts, extraLayers, originalReadiness) {
     ['--docs', f3Docs, '--layout', opts.layoutPath, '--json'],
     { cwd: KIT_ROOT },
   );
-  writeObservation(opts.outDir, 'f3-state', state);
-  writeObservation(opts.outDir, 'f3-readiness', readiness);
+  writeObservation(opts, 'f3-state', state);
+  writeObservation(opts, 'f3-readiness', readiness);
   const same = normalizeJsonText(readiness.stdout) === normalizeJsonText(originalReadiness.commands.readiness.stdout);
   return {
     status: readiness.ok ? 'observed' : 'readiness failed',
     same,
     removed,
+    excluded,
     exitCode: readiness.exitCode,
   };
 }
@@ -563,6 +678,13 @@ function catalogSummary(observation, roleMap) {
   return `catalog failed exit=${observation.commands.catalog.exitCode}`;
 }
 
+function f3Summary(f3) {
+  if (f3.same == null) return f3.status;
+  const comparison = f3.same
+    ? 'readiness byte-identical after scratch Tier3-only layer removal'
+    : 'readiness changed after scratch Tier3-only layer removal';
+  return f3.excluded && f3.excluded.length ? `${comparison}; ${f3.excluded.length} flattened built-in path(s) kept` : comparison;
+}
 function blindSpotRows(extraLayers, observation, f3) {
   const catalogStatus =
     observation.commands.catalog.ok && observation.catalogCount > 0
@@ -573,7 +695,7 @@ function blindSpotRows(extraLayers, observation, f3) {
     ['B1', 'catalog-gen ui_primitive / F4', catalogStatus, observation.commands.catalog.ok ? 'observed output' : 'tool error', 'PR-0a / current main behavior check'],
     ['B2', 'additional layers inert / F1', layerCount ? `${layerCount} layer path(s)` : 'not observed', 'silent as native roles', 'Tier3 PR-A/C/D'],
     ['B3', 'domain+data edit boundary / F2', layerCount ? 'possible' : 'not observed', 'silent', 'Tier3 PR-D'],
-    ['B4', 'complete vs missing layers / F3', f3.same == null ? f3.status : f3.same ? 'byte-identical' : 'changed', 'silent check', 'Tier3 PR-C'],
+    ['B4', 'complete vs missing layers / F3', f3Summary(f3), 'silent check', 'Tier3 PR-C'],
     ['B5', 'validate layer-blind / F5', 'applies: validate is document-structure only', 'green can be misleading', 'Tier3 PR-E + PR-C'],
   ]
     .map((r) => `| ${r[0]} | ${r[1]} | ${r[2]} | ${r[3]} | ${r[4]} |`)
@@ -590,11 +712,11 @@ function renderAdoptionReport(opts, env, roleMap, extraLayers, observation, f3) 
     : 'not requested by observed tree';
   return `# Adoption Probe Report — ${opts.projectName}
 
-<!-- Rendered from templates/adoption/adoption-report.template.md. Draft-only output; not a readiness/validate fact. -->
+<!-- Generated by adoption-probe; templates/adoption/adoption-report.template.md contract checked. Draft-only output; not a readiness/validate fact. -->
 
 > **Status: PROBE / READ-ONLY — ${opts.date}.** This report observes how the workflow kit sees this repo.
 > It does not modify source, CI, confirmed status, Open Decisions, or live docs/frontend-workflow gates.
-> Kit snapshot: \`${opts.kitCommit}\` · Probe output: \`${toPosix(path.relative(opts.repoRoot, opts.outDir))}\` · Target repo: \`${opts.repoRef}\`
+> Kit snapshot: \`${opts.kitSnapshot}\` · Probe output: \`${pathRef(opts, opts.outDir)}\` · Target repo: \`${opts.repoRef}\`
 
 ## 0. Scope Banner
 
@@ -618,7 +740,7 @@ ${roleRows(roleMap)}
 
 | Discovered layer | Location | role? | mode gate? | readiness fact? | lint aware? | Note |
 |---|---|:---:|:---:|:---:|:---:|---|
-${layerRows(extraLayers)}
+${layerRows(extraLayers, f3)}
 
 ## 4. What Current Kit Sees / Misses
 
@@ -626,7 +748,7 @@ ${layerRows(extraLayers)}
 |---|---|---|
 | Axis 1 role rebinding | draft \`project-layout.draft.yaml\` rendered and used for observations | observed |
 | Extra layers as native roles | ${extraLayers.length ? `${extraLayers.length} extra layer path(s) found` : 'none found'} | silent until Tier3 wiring |
-| F3 complete-vs-missing check | ${f3.same == null ? f3.status : f3.same ? 'readiness byte-identical after scratch layer removal' : 'readiness changed after scratch layer removal'} | draft-only observation |
+| F3 complete-vs-missing check | ${f3Summary(f3)} | draft-only observation |
 | F4 catalog behavior | ${catalogSummary(observation, roleMap)} | observed with draft layout |
 | validate scope | ${validateSummary(observation.validateJson, observation.commands.validate)} | document-structure evidence only |
 
@@ -645,12 +767,12 @@ ${layerRows(extraLayers)}
 
 | Command | Exit | Observation | Meaning |
 |---|---:|---|---|
-| \`${observation.commands.state.invocation}\` | ${observation.commands.state.exitCode} | workflow-state generated under probe scratch | not a live docs fact |
-| \`${observation.commands.readiness.invocation}\` | ${observation.commands.readiness.exitCode} | ${readinessSummary(observation.readinessJson)} | 3-layer readiness view only |
-| \`${observation.commands.validate.invocation}\` | ${observation.commands.validate.exitCode} | ${validateSummary(observation.validateJson, observation.commands.validate)} | document consistency only |
-| \`${observation.commands.catalog.invocation}\` | ${observation.commands.catalog.exitCode} | ${catalogSummary(observation, roleMap)} | catalog F4 observation |
+| \`${sanitizePathishEvidenceText(observation.commands.state.invocation, opts)}\` | ${observation.commands.state.exitCode} | workflow-state generated under probe scratch | not a live docs fact |
+| \`${sanitizePathishEvidenceText(observation.commands.readiness.invocation, opts)}\` | ${observation.commands.readiness.exitCode} | ${readinessSummary(observation.readinessJson)} | 3-layer readiness view only |
+| \`${sanitizePathishEvidenceText(observation.commands.validate.invocation, opts)}\` | ${observation.commands.validate.exitCode} | ${validateSummary(observation.validateJson, observation.commands.validate)} | document consistency only |
+| \`${sanitizePathishEvidenceText(observation.commands.catalog.invocation, opts)}\` | ${observation.commands.catalog.exitCode} | ${catalogSummary(observation, roleMap)} | catalog F4 observation |
 
-Observation files are in \`${toPosix(path.relative(opts.repoRoot, path.join(opts.outDir, 'observations')))}\`.
+Observation files are in \`${pathRef(opts, path.join(opts.outDir, 'observations'))}\`.
 
 ## 7. Known Blind Spots Applied Here
 
@@ -662,12 +784,12 @@ ${blindSpotRows(extraLayers, observation, f3)}
 
 | Output | Path | Status |
 |---|---|---|
-| Adoption report | \`${toPosix(path.relative(opts.repoRoot, path.join(opts.outDir, 'adoption-report.md')))}\` | draft |
-| Layout draft | \`${toPosix(path.relative(opts.repoRoot, opts.layoutPath))}\` | draft, not wired |
-| Tier3 gap report | \`${toPosix(path.relative(opts.repoRoot, path.join(opts.outDir, 'tier3-gap-report.md')))}\` | draft |
-| Visual intake note | \`${toPosix(path.relative(opts.repoRoot, path.join(opts.outDir, 'visual-spec-intake-note.md')))}\` | draft |
-| testID intake note | \`${toPosix(path.relative(opts.repoRoot, path.join(opts.outDir, 'testid-intake-note.md')))}\` | draft |
-| Tier3 live wiring implementation note | \`${toPosix(path.relative(opts.repoRoot, path.join(opts.outDir, 'tier3-live-wiring-implementation-note.md')))}\` | draft |
+| Adoption report | \`${pathRef(opts, path.join(opts.outDir, 'adoption-report.md'))}\` | draft |
+| Layout draft | \`${pathRef(opts, opts.layoutPath)}\` | draft, not wired |
+| Tier3 gap report | \`${pathRef(opts, path.join(opts.outDir, 'tier3-gap-report.md'))}\` | draft |
+| Visual intake note | \`${pathRef(opts, path.join(opts.outDir, 'visual-spec-intake-note.md'))}\` | draft |
+| testID intake note | \`${pathRef(opts, path.join(opts.outDir, 'testid-intake-note.md'))}\` | draft |
+| Tier3 live wiring implementation note | \`${pathRef(opts, path.join(opts.outDir, 'tier3-live-wiring-implementation-note.md'))}\` | draft |
 
 ## 9. Human Surface Only
 
@@ -686,17 +808,18 @@ ${blindSpotRows(extraLayers, observation, f3)}
 
 function renderTier3GapReport(opts, extraLayers, observation, f3) {
   requireTemplate('tier3-gap-report.template.md');
+  const excluded = f3ExcludedMap(f3);
   const rows = extraLayers.length
     ? extraLayers
-        .map(
-          (l) =>
-            `| \`${l.path}\` | ${l.layer} | proposed access row only | no | no | no |`,
-        )
+        .map((l) => {
+          const flattened = excluded.get(l.path);
+          return `| \`${l.path}\` | ${l.layer} | proposed access row only | ${flattened ? `built-in ${flattened.role}` : 'no'} | no | no |`;
+        })
         .join('\n')
     : '| not observed | not observed | none | no | no | no |';
   return `# Tier3 Gap Report — ${opts.projectName}
 
-<!-- Rendered from templates/adoption/tier3-gap-report.template.md. Draft-only; Tier3 is not wired here. -->
+<!-- Generated by adoption-probe; templates/adoption/tier3-gap-report.template.md contract checked. Draft-only; Tier3 is not wired here. -->
 
 > **Status: PROBE / READ-ONLY — ${opts.date}.** This note records Axis 2 gaps only. It does not implement PR-D/E.
 
@@ -712,7 +835,7 @@ ${rows}
 |---|---|---|---|
 | F1 | Additional layer roles inert | ${extraLayers.length ? `${extraLayers.length} path(s) found; native roles not live-wired` : 'not triggered'} | silent |
 | F2 | Domain/data edit boundary absent | ${extraLayers.length ? 'possible; not enforced by current readiness' : 'not triggered'} | silent |
-| F3 | Complete vs missing layers indistinguishable | ${f3.same == null ? f3.status : f3.same ? 'byte-identical in scratch' : 'changed in scratch'} | ${f3.same ? 'silent' : 'observed change'} |
+| F3 | Complete vs missing layers indistinguishable | ${f3Summary(f3)} | ${f3.same ? 'silent' : 'observed change'} |
 | F4 | catalog-gen source mismatch | ${catalogSummary(observation, opts.roleMap)} | observed |
 | F5 | validate layer-blind | ${validateSummary(observation.validateJson, observation.commands.validate)} | validate is document-only |
 
@@ -828,11 +951,11 @@ function renderSummary(opts, env, roleMap, extraLayers, observation, f3, outputs
     project_name: opts.projectName,
     date: opts.date,
     draft_only: true,
-    repo_root: opts.repoRoot,
-    docs_source: opts.docsDir,
-    src_source: opts.srcDir,
-    out_dir: opts.outDir,
-    scratch_dir: path.join(opts.outDir, 'scratch'),
+    repo_ref: opts.repoRef,
+    docs_source: pathRef(opts, opts.docsDir),
+    src_source: pathRef(opts, opts.srcDir),
+    out_dir: pathRef(opts, opts.outDir),
+    scratch_dir: pathRef(opts, path.join(opts.outDir, 'scratch')),
     invariants: {
       live_docs_untouched_by_workflow_state: true,
       source_scaffold_created: false,
@@ -849,34 +972,48 @@ function renderSummary(opts, env, roleMap, extraLayers, observation, f3, outputs
       catalog: catalogSummary(observation, roleMap),
       f3,
     },
-    outputs,
+    outputs: Object.fromEntries(Object.entries(outputs).map(([key, value]) => [key, pathRef(opts, value)])),
   };
   return JSON.stringify(data, null, 2) + '\n';
 }
 
-function gitCommit(cwd) {
-  const r = spawnSync('git', ['rev-parse', '--short', 'HEAD'], { cwd, encoding: 'utf8' });
-  return r.status === 0 ? r.stdout.trim() : 'unknown';
+function kitSnapshot() {
+  return 'working-tree draft';
+}
+
+function assertDraftOutDir(repoRoot, docsDir, srcDir, outDir) {
+  const blocked = [
+    ['live docs/frontend-workflow', docsDir],
+    ['source tree', srcDir],
+  ];
+  for (const [label, dir] of blocked) {
+    if (dir && isSameOrInside(path.resolve(dir), path.resolve(outDir))) {
+      throw new Error(`--out must not be inside ${label}: ${toPosix(path.relative(repoRoot, dir) || dir)}`);
+    }
+  }
 }
 
 export function normalizeOptions(flags = {}) {
+  const cwd = path.resolve(flags.cwd || process.cwd());
   const repoRoot = path.resolve(flags.repo || process.cwd());
   const srcDir = resolveUnder(repoRoot, flags.src || 'src');
   const docsDir = resolveUnder(repoRoot, flags.docs || path.join('docs', 'frontend-workflow'));
   const id = sanitizeId(flags.id);
   const outDir = path.resolve(flags.out || path.join(repoRoot, 'temp', 'runs', `adoption-probe-${id}`));
+  assertDraftOutDir(repoRoot, docsDir, srcDir, outDir);
   const projectName = flags['project-name'] || packageName(repoRoot);
   return {
+    cwd,
     id,
     repoRoot,
     srcDir,
     docsDir,
     outDir,
     projectName,
-    repoRef: toPosix(repoRoot),
+    repoRef: pathRef({ cwd, repoRoot, outDir, srcDir, docsDir }, repoRoot),
     date: flags.date || todayISO(),
     skipF3: Boolean(flags['skip-f3']),
-    kitCommit: gitCommit(KIT_ROOT),
+    kitSnapshot: kitSnapshot(),
     layoutPath: path.join(outDir, 'project-layout.draft.yaml'),
   };
 }
@@ -894,7 +1031,7 @@ export function runAdoptionProbe(flags = {}) {
   writeFile(opts.layoutPath, renderProjectLayout(opts, roleMap));
   const scratch = prepareScratch(opts);
   const observation = observeWorkflow(opts, scratch);
-  const f3 = observeF3(opts, extraLayers, observation);
+  const f3 = observeF3(opts, roleMap, extraLayers, observation);
 
   const outputs = {
     adoption_report: path.join(opts.outDir, 'adoption-report.md'),
@@ -921,13 +1058,13 @@ export function formatProbeResult(result) {
   const lines = [];
   lines.push('workflow:adoption-probe — draft-only run complete');
   lines.push(`  probe_id: ${opts.id}`);
-  lines.push(`  out_dir : ${toPosix(outputs.adoption_report ? path.dirname(outputs.adoption_report) : opts.outDir)}`);
-  lines.push(`  report  : ${toPosix(outputs.adoption_report)}`);
-  lines.push(`  layout  : ${toPosix(outputs.project_layout)}`);
+  lines.push(`  out_dir : ${pathRef(opts, outputs.adoption_report ? path.dirname(outputs.adoption_report) : opts.outDir)}`);
+  lines.push(`  report  : ${pathRef(opts, outputs.adoption_report)}`);
+  lines.push(`  layout  : ${pathRef(opts, outputs.project_layout)}`);
   lines.push(`  readiness: ${readinessSummary(observation.readinessJson)}`);
   lines.push(`  validate : ${validateSummary(observation.validateJson, observation.commands.validate)}`);
   lines.push(`  catalog  : ${catalogSummary(observation, result.roleMap)}`);
-  lines.push(`  f3       : ${f3.same == null ? f3.status : f3.same ? 'byte-identical' : 'changed'}`);
+  lines.push(`  f3       : ${f3Summary(f3)}`);
   lines.push('  invariant: draft-only; live docs/source/CI/OD/confirmed untouched');
   return lines.join('\n') + '\n';
 }

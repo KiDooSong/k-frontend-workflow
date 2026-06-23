@@ -2,13 +2,13 @@
   "tool": "catalog-gen.mjs",
   "args": [
     "--src",
-    "C:\\Users\\thdrl\\source\\repos\\k-frontend-workflow\\.claude\\worktrees\\adoption-probe-completeness\\frontend-workflow-kit\\temp\\runs\\adoption-probe-multilayer-001\\scratch\\project\\src",
+    "<probe-run>/scratch/project/src",
     "--layout",
-    "C:\\Users\\thdrl\\source\\repos\\k-frontend-workflow\\.claude\\worktrees\\adoption-probe-completeness\\frontend-workflow-kit\\temp\\runs\\adoption-probe-multilayer-001\\project-layout.draft.yaml",
+    "<probe-run>/project-layout.draft.yaml",
     "--out",
-    "C:\\Users\\thdrl\\source\\repos\\k-frontend-workflow\\.claude\\worktrees\\adoption-probe-completeness\\frontend-workflow-kit\\temp\\runs\\adoption-probe-multilayer-001\\component-catalog.observed.md"
+    "<probe-run>/component-catalog.observed.md"
   ],
-  "invocation": "node scripts/catalog-gen.mjs --src C:\\Users\\thdrl\\source\\repos\\k-frontend-workflow\\.claude\\worktrees\\adoption-probe-completeness\\frontend-workflow-kit\\temp\\runs\\adoption-probe-multilayer-001\\scratch\\project\\src --layout C:\\Users\\thdrl\\source\\repos\\k-frontend-workflow\\.claude\\worktrees\\adoption-probe-completeness\\frontend-workflow-kit\\temp\\runs\\adoption-probe-multilayer-001\\project-layout.draft.yaml --out C:\\Users\\thdrl\\source\\repos\\k-frontend-workflow\\.claude\\worktrees\\adoption-probe-completeness\\frontend-workflow-kit\\temp\\runs\\adoption-probe-multilayer-001\\component-catalog.observed.md",
+  "invocation": "node scripts/catalog-gen.mjs --src <probe-run>/scratch/project/src --layout <probe-run>/project-layout.draft.yaml --out <probe-run>/component-catalog.observed.md",
   "exitCode": 0,
   "stdout": "workflow:catalog — 1 component(s)\n  wrote temp\\runs\\adoption-probe-multilayer-001\\component-catalog.observed.md\n",
   "stderr": "",

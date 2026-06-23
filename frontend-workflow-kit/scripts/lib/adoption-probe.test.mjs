@@ -97,6 +97,35 @@ test('runAdoptionProbe renders draft outputs and keeps live docs untouched', (t)
   assert.equal(result.observation.commands.state.ok, true);
 });
 
+test('F3 excludes layers already flattened into built-in roles', (t) => {
+  const repo = makeRepo(t);
+  const out = path.join(repo, 'temp', 'runs', 'adoption-probe-f3');
+  const result = runAdoptionProbe({ repo, out, id: 'f3', date: '2026-06-23' });
+
+  assert.equal(result.f3.status, 'observed');
+  assert.equal(result.f3.removed.includes('src/presentation/profile/viewmodels'), false);
+  assert.equal(
+    result.f3.excluded.some((layer) => layer.path === 'src/presentation/profile/viewmodels' && layer.role === 'hook'),
+    true,
+  );
+  assert.equal(result.f3.removed.some((p) => p.startsWith('src/domain/') || p.startsWith('src/data/')), true);
+
+  const summary = JSON.parse(fs.readFileSync(path.join(out, 'probe-summary.json'), 'utf8'));
+  assert.equal(summary.observations.f3.excluded.some((layer) => layer.path === 'src/presentation/profile/viewmodels'), true);
+});
+
+test('runAdoptionProbe rejects output under live docs or source trees', (t) => {
+  const repo = makeRepo(t);
+  assert.throws(
+    () => runAdoptionProbe({ repo, out: path.join(repo, 'docs', 'frontend-workflow', 'probe'), id: 'bad-docs' }),
+    /--out must not be inside live docs\/frontend-workflow/,
+  );
+  assert.throws(
+    () => runAdoptionProbe({ repo, out: path.join(repo, 'src', 'probe'), id: 'bad-src' }),
+    /--out must not be inside source tree/,
+  );
+});
+
 test('CLI writes the same draft-only output contract', (t) => {
   const repo = makeRepo(t);
   const out = path.join(repo, 'temp', 'runs', 'adoption-probe-cli');

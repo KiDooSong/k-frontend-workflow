@@ -1,18 +1,17 @@
 {
   "PROFILE-001": {
-    "readiness_mode": "screen-skeleton",
-    "next_mode": "rough-fixture-ui",
+    "readiness_mode": "rough-fixture-ui",
+    "next_mode": "final-fixture-ui",
     "allowed_paths": [
-      "src/presentation/profile/screens/**"
+      "src/presentation/profile/screens/**",
+      "src/presentation/profile/components/**",
+      "src/presentation/profile/viewmodels/**"
     ],
     "forbidden_paths": [
       "src/api/**",
       "openapi.yaml"
     ],
     "blocking": [
-      {
-        "fake_hook": false
-      },
       {
         "figma_mapping": "missing"
       },
@@ -21,7 +20,6 @@
       }
     ],
     "next_actions": [
-      "add fake hook at src/presentation/profile/viewmodels/",
       "create figma-component-mapping (status >= draft)",
       "complete State Matrix (loading/success/empty/error/refreshing)"
     ]

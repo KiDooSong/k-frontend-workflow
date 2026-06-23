@@ -3,11 +3,11 @@
   "project_name": "app",
   "date": "2026-06-23",
   "draft_only": true,
-  "repo_root": "C:\\Users\\thdrl\\source\\repos\\k-frontend-workflow\\.claude\\worktrees\\adoption-probe-completeness\\frontend-workflow-kit\\temp\\runs\\multilayer-adoption-dryrun\\app",
-  "docs_source": "C:\\Users\\thdrl\\source\\repos\\k-frontend-workflow\\.claude\\worktrees\\adoption-probe-completeness\\frontend-workflow-kit\\temp\\runs\\multilayer-adoption-dryrun\\app\\docs\\frontend-workflow",
-  "src_source": "C:\\Users\\thdrl\\source\\repos\\k-frontend-workflow\\.claude\\worktrees\\adoption-probe-completeness\\frontend-workflow-kit\\temp\\runs\\multilayer-adoption-dryrun\\app\\src",
-  "out_dir": "C:\\Users\\thdrl\\source\\repos\\k-frontend-workflow\\.claude\\worktrees\\adoption-probe-completeness\\frontend-workflow-kit\\temp\\runs\\adoption-probe-multilayer-001",
-  "scratch_dir": "C:\\Users\\thdrl\\source\\repos\\k-frontend-workflow\\.claude\\worktrees\\adoption-probe-completeness\\frontend-workflow-kit\\temp\\runs\\adoption-probe-multilayer-001\\scratch",
+  "repo_ref": "./temp/runs/multilayer-adoption-dryrun/app",
+  "docs_source": "./temp/runs/multilayer-adoption-dryrun/app/docs/frontend-workflow",
+  "src_source": "./temp/runs/multilayer-adoption-dryrun/app/src",
+  "out_dir": "./temp/runs/adoption-probe-multilayer-001",
+  "scratch_dir": "./temp/runs/adoption-probe-multilayer-001/scratch",
   "invariants": {
     "live_docs_untouched_by_workflow_state": true,
     "source_scaffold_created": false,
@@ -164,26 +164,33 @@
     "catalog": "1 components observed from src/components/ui/**",
     "f3": {
       "status": "observed",
-      "same": false,
+      "same": true,
       "removed": [
         "src/data/profile/datasources",
         "src/domain/profile/entities",
         "src/data/profile/mappers",
         "src/data/profile/repositories",
         "src/domain/profile/repositories",
-        "src/domain/profile/usecases",
-        "src/presentation/profile/viewmodels"
+        "src/domain/profile/usecases"
+      ],
+      "excluded": [
+        {
+          "layer": "view_model",
+          "path": "src/presentation/profile/viewmodels",
+          "role": "hook",
+          "reason": "flattened into built-in hook role"
+        }
       ],
       "exitCode": 0
     }
   },
   "outputs": {
-    "adoption_report": "C:\\Users\\thdrl\\source\\repos\\k-frontend-workflow\\.claude\\worktrees\\adoption-probe-completeness\\frontend-workflow-kit\\temp\\runs\\adoption-probe-multilayer-001\\adoption-report.md",
-    "project_layout": "C:\\Users\\thdrl\\source\\repos\\k-frontend-workflow\\.claude\\worktrees\\adoption-probe-completeness\\frontend-workflow-kit\\temp\\runs\\adoption-probe-multilayer-001\\project-layout.draft.yaml",
-    "tier3_gap_report": "C:\\Users\\thdrl\\source\\repos\\k-frontend-workflow\\.claude\\worktrees\\adoption-probe-completeness\\frontend-workflow-kit\\temp\\runs\\adoption-probe-multilayer-001\\tier3-gap-report.md",
-    "visual_spec_intake_note": "C:\\Users\\thdrl\\source\\repos\\k-frontend-workflow\\.claude\\worktrees\\adoption-probe-completeness\\frontend-workflow-kit\\temp\\runs\\adoption-probe-multilayer-001\\visual-spec-intake-note.md",
-    "testid_intake_note": "C:\\Users\\thdrl\\source\\repos\\k-frontend-workflow\\.claude\\worktrees\\adoption-probe-completeness\\frontend-workflow-kit\\temp\\runs\\adoption-probe-multilayer-001\\testid-intake-note.md",
-    "tier3_live_wiring_note": "C:\\Users\\thdrl\\source\\repos\\k-frontend-workflow\\.claude\\worktrees\\adoption-probe-completeness\\frontend-workflow-kit\\temp\\runs\\adoption-probe-multilayer-001\\tier3-live-wiring-implementation-note.md",
-    "summary": "C:\\Users\\thdrl\\source\\repos\\k-frontend-workflow\\.claude\\worktrees\\adoption-probe-completeness\\frontend-workflow-kit\\temp\\runs\\adoption-probe-multilayer-001\\probe-summary.json"
+    "adoption_report": "./temp/runs/adoption-probe-multilayer-001/adoption-report.md",
+    "project_layout": "./temp/runs/adoption-probe-multilayer-001/project-layout.draft.yaml",
+    "tier3_gap_report": "./temp/runs/adoption-probe-multilayer-001/tier3-gap-report.md",
+    "visual_spec_intake_note": "./temp/runs/adoption-probe-multilayer-001/visual-spec-intake-note.md",
+    "testid_intake_note": "./temp/runs/adoption-probe-multilayer-001/testid-intake-note.md",
+    "tier3_live_wiring_note": "./temp/runs/adoption-probe-multilayer-001/tier3-live-wiring-implementation-note.md",
+    "summary": "./temp/runs/adoption-probe-multilayer-001/probe-summary.json"
   }
 }
