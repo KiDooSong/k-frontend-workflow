@@ -13,7 +13,9 @@
     "source_scaffold_created": false,
     "ci_changed": false,
     "open_decision_resolved": false,
-    "hard_gate_promoted": false
+    "hard_gate_promoted": false,
+    "live_policy_replaced": false,
+    "pre_edit_hooks_promoted": false
   },
   "role_map": {
     "route_entry": {
@@ -446,6 +448,8 @@
   "outputs": {
     "adoption_report": "./frontend-workflow-kit/temp/runs/adoption-probe-multilayer-001/adoption-report.md",
     "project_layout": "./frontend-workflow-kit/temp/runs/adoption-probe-multilayer-001/project-layout.draft.yaml",
+    "implementation_policy_draft": "./frontend-workflow-kit/temp/runs/adoption-probe-multilayer-001/implementation-mode-policy.draft.yaml",
+    "implementation_policy_migration": "./frontend-workflow-kit/temp/runs/adoption-probe-multilayer-001/implementation-mode-policy.migration.md",
     "tier3_gap_report": "./frontend-workflow-kit/temp/runs/adoption-probe-multilayer-001/tier3-gap-report.md",
     "visual_spec_intake_note": "./frontend-workflow-kit/temp/runs/adoption-probe-multilayer-001/visual-spec-intake-note.md",
     "testid_intake_note": "./frontend-workflow-kit/temp/runs/adoption-probe-multilayer-001/testid-intake-note.md",

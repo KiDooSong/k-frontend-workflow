@@ -165,3 +165,28 @@ test('collectDoctorFindings: layer access with no role binding or glob warns as 
   assert.ok(findings.some((f) => f.check === 'layer-role' && f.role === 'repository'));
   assert.ok(findings.some((f) => f.check === 'layer-access-unmaterializable' && f.role === 'repository'));
 });
+
+test('collectDoctorFindings: generated policy draft difference is info-only', () => {
+  const policy = {
+    order: ['docs-only', 'rough-fixture-ui'],
+    modes: {
+      'docs-only': { requires: [], allowed_paths: ['docs/frontend-workflow/**'], forbidden_paths: ['src/**'] },
+      'rough-fixture-ui': { requires: [], allowed_paths: [], forbidden_paths: [] },
+    },
+  };
+  const findings = collectDoctorFindings({
+    projectRoot: process.cwd(),
+    policy,
+    layout: {
+      roles: {},
+      layers: [
+        { role: 'view_model', glob: 'src/presentation/{domain}/viewmodels/**', fact: 'dir_has_files', access: { allow: ['rough-fixture-ui'], forbid: [] } },
+      ],
+    },
+  });
+  const diff = findings.find((f) => f.check === 'policy-draft-diff');
+  assert.ok(diff);
+  assert.equal(diff.severity, 'info');
+  assert.equal(diff.count, 1);
+  assert.equal(findings.some((f) => f.check === 'policy-draft-generate'), false);
+});

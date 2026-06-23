@@ -14,6 +14,7 @@ import {
   loadYaml,
   yamlStringify,
 } from './util.mjs';
+import { writePolicyDraftArtifacts } from './policy-draft.mjs';
 
 const SCRIPT_ROOT = path.join(KIT_ROOT, 'scripts');
 const TEMPLATE_ROOT = path.join(KIT_ROOT, 'templates', 'adoption');
@@ -819,26 +820,28 @@ function commandRows(opts, observation, roleMap) {
     .join('\n');
 }
 
-function outputRows(opts) {
+function outputRows(opts, outputs) {
   return [
-    ['Adoption report', path.join(opts.outDir, 'adoption-report.md'), 'draft'],
-    ['Layout draft', opts.layoutPath, 'draft; scratch-readiness input'],
-    ['Tier3 gap report', path.join(opts.outDir, 'tier3-gap-report.md'), 'draft'],
-    ['Visual intake note', path.join(opts.outDir, 'visual-spec-intake-note.md'), 'draft'],
-    ['testID intake note', path.join(opts.outDir, 'testid-intake-note.md'), 'draft'],
-    ['Tier3 live wiring implementation note', path.join(opts.outDir, 'tier3-live-wiring-implementation-note.md'), 'draft'],
+    ['Adoption report', outputs.adoption_report, 'draft'],
+    ['Layout draft', outputs.project_layout, 'draft; scratch-readiness input'],
+    ['Implementation policy draft', outputs.implementation_policy_draft, 'draft; not live wired'],
+    ['Implementation policy migration guide', outputs.implementation_policy_migration, 'draft; human review before live replacement'],
+    ['Tier3 gap report', outputs.tier3_gap_report, 'draft'],
+    ['Visual intake note', outputs.visual_spec_intake_note, 'draft'],
+    ['testID intake note', outputs.testid_intake_note, 'draft'],
+    ['Tier3 live wiring implementation note', outputs.tier3_live_wiring_note, 'draft'],
   ]
     .map(([name, file, status]) => `| ${name} | \`${pathRef(opts, file)}\` | ${status} |`)
     .join('\n');
 }
 
-function renderAdoptionReport(opts, env, roleMap, extraLayers, observation, f3) {
+function renderAdoptionReport(opts, env, roleMap, extraLayers, observation, f3, outputs) {
   const axis1 = Object.values(roleMap).some((r) => r.confidence === 'confirmed')
     ? 'possible/partial: role map drafted from observed paths'
     : 'candidate only: no matching src layout observed';
   const axis2 = extraLayers.length
-    ? 'readiness access wired: layer inventory access rows feed readiness paths; hard gates not promoted'
-    : 'not requested by observed tree';
+    ? 'readiness access wired; implementation-mode-policy draft generated; live policy not replaced; hard gates/CI/pre-edit hooks not promoted'
+    : 'policy draft generated from default layout; live policy not replaced; hard gates/CI/pre-edit hooks not promoted';
   return renderTemplate('adoption-report.template.md', {
     PROJECT_NAME: opts.projectName,
     'YYYY-MM-DD': opts.date,
@@ -857,7 +860,7 @@ function renderAdoptionReport(opts, env, roleMap, extraLayers, observation, f3) 
     COMMAND_ROWS: commandRows(opts, observation, roleMap),
     OBSERVATIONS_PATH: pathRef(opts, path.join(opts.outDir, 'observations')),
     BLIND_SPOT_ROWS: blindSpotRows(extraLayers, observation, f3),
-    OUTPUT_ROWS: outputRows(opts),
+    OUTPUT_ROWS: outputRows(opts, outputs),
   });
 }
 
@@ -934,8 +937,9 @@ function renderTier3ImplementationNote(opts, extraLayers) {
 | Slice | Wiring point | Required before touching |
 |---|---|---|
 | PR-D | \`layout-profile.synthesizeModePolicy()\` feeds layer allow/forbid cells into readiness paths | implemented for readiness access; hard gates remain off |
-| PR-D | \`implementation-mode-policy.yaml\` role-token cells become generated/checked | resolved-policy diff target, no literal/requires/order drift |
-| PR-D | CI gets a new idempotency check target | not a hard-gate promotion beyond deterministic diff for generated policy |
+| PR-D | \`implementation-mode-policy.draft.yaml\` is generated from resolved layer access | review artifact only; live policy is not replaced |
+| PR-D | \`implementation-mode-policy.migration.md\` compares live vs draft | human review before any live policy update |
+| PR-D | CI/pre-edit hardening | not promoted in this probe |
 | PR-E | \`lint-gen-core\` consumes import-boundary layer subset | warning-first rollout and import-DAG subset agreed |
 
 ## Parity Tests
@@ -982,6 +986,8 @@ function renderSummary(opts, env, roleMap, extraLayers, observation, f3, outputs
       ci_changed: false,
       open_decision_resolved: false,
       hard_gate_promoted: false,
+      live_policy_replaced: false,
+      pre_edit_hooks_promoted: false,
     },
     role_map: roleMap,
     extra_layers: extraLayers,
@@ -1062,6 +1068,14 @@ export function runAdoptionProbe(flags = {}) {
   opts.roleMap = roleMap;
 
   writeFile(opts.layoutPath, renderProjectLayout(opts, roleMap, extraLayers));
+  const policyDraft = writePolicyDraftArtifacts({
+    kitRoot: KIT_ROOT,
+    layoutPath: opts.layoutPath,
+    policyPath: path.join(KIT_ROOT, 'policies', 'implementation-mode-policy.yaml'),
+    outDir: opts.outDir,
+    date: opts.date,
+    cwd: opts.cwd,
+  });
   const scratch = prepareScratch(opts);
   const observation = observeWorkflow(opts, scratch);
   const f3 = observeF3(opts, roleMap, extraLayers, observation);
@@ -1069,6 +1083,8 @@ export function runAdoptionProbe(flags = {}) {
   const outputs = {
     adoption_report: path.join(opts.outDir, 'adoption-report.md'),
     project_layout: opts.layoutPath,
+    implementation_policy_draft: policyDraft.paths.draft,
+    implementation_policy_migration: policyDraft.paths.migration,
     tier3_gap_report: path.join(opts.outDir, 'tier3-gap-report.md'),
     visual_spec_intake_note: path.join(opts.outDir, 'visual-spec-intake-note.md'),
     testid_intake_note: path.join(opts.outDir, 'testid-intake-note.md'),
@@ -1076,14 +1092,14 @@ export function runAdoptionProbe(flags = {}) {
     summary: path.join(opts.outDir, 'probe-summary.json'),
   };
 
-  writeFile(outputs.adoption_report, renderAdoptionReport(opts, env, roleMap, extraLayers, observation, f3));
+  writeFile(outputs.adoption_report, renderAdoptionReport(opts, env, roleMap, extraLayers, observation, f3, outputs));
   writeFile(outputs.tier3_gap_report, renderTier3GapReport(opts, extraLayers, observation, f3));
   writeFile(outputs.visual_spec_intake_note, renderVisualNote(opts, env));
   writeFile(outputs.testid_intake_note, renderTestIdNote(opts, env));
   writeFile(outputs.tier3_live_wiring_note, renderTier3ImplementationNote(opts, extraLayers));
   writeFile(outputs.summary, renderSummary(opts, env, roleMap, extraLayers, observation, f3, outputs));
 
-  return { opts, env, roleMap, extraLayers, observation, f3, outputs };
+  return { opts, env, roleMap, extraLayers, observation, f3, policyDraft, outputs };
 }
 
 export function formatProbeResult(result) {
@@ -1094,12 +1110,14 @@ export function formatProbeResult(result) {
   lines.push(`  out_dir : ${pathRef(opts, outputs.adoption_report ? path.dirname(outputs.adoption_report) : opts.outDir)}`);
   lines.push(`  report  : ${pathRef(opts, outputs.adoption_report)}`);
   lines.push(`  layout  : ${pathRef(opts, outputs.project_layout)}`);
+  lines.push(`  policy  : ${pathRef(opts, outputs.implementation_policy_draft)}`);
+  lines.push(`  guide   : ${pathRef(opts, outputs.implementation_policy_migration)}`);
   lines.push(`  readiness: ${readinessSummary(observation.readinessJson)}`);
   lines.push(`  validate : ${validateSummary(observation.validateJson, observation.commands.validate)}`);
   lines.push(`  catalog  : ${catalogSummary(observation, result.roleMap)}`);
   lines.push(`  layers   : ${observation.layerInventory ? `${observation.layerInventory.layers.length} inventory row(s), readiness access wired; hard gates off` : 'not observed'}`);
   lines.push(`  f3       : ${f3Summary(f3)}`);
-  lines.push('  invariant: draft-only; live docs/source/CI/OD/confirmed untouched');
+  lines.push('  invariant: draft-only; live docs/source/policy/CI/pre-edit/OD/confirmed untouched');
   return lines.join('\n') + '\n';
 }
 

@@ -9,8 +9,8 @@
 ## 0. Scope Banner
 
 - **Adoption summary:** Axis 1 = {AXIS1_SUMMARY}. Axis 2 = {AXIS2_SUMMARY}.
-- **This probe does:** read-only scan, role-to-glob draft, scratch-only workflow observations, draft notes.
-- **This probe does not:** scaffold, wire live `project-layout.yaml`, resolve Open Decisions, promote hard gates, edit CI, or declare architecture complete.
+- **This probe does:** read-only scan, role-to-glob draft, scratch-only workflow observations, generated implementation-policy draft, migration guide, draft notes.
+- **This probe does not:** scaffold, wire live `project-layout.yaml`, replace live `implementation-mode-policy.yaml`, resolve Open Decisions, promote hard gates, edit CI, enable pre-edit hooks, or declare architecture complete.
 
 ## 1. Scanned Environment
 
@@ -35,7 +35,7 @@
 | Area | Current observation | Signal |
 |---|---|---|
 | Axis 1 role rebinding | draft `project-layout.draft.yaml` rendered and used for observations | observed |
-| Extra layers as native readiness paths | {EXTRA_LAYER_COUNT} extra layer path(s) found | readiness access wired; hard gates not promoted |
+| Extra layers as native readiness paths | {EXTRA_LAYER_COUNT} extra layer path(s) found | readiness access wired; policy draft generated; live policy not replaced |
 | F3 complete-vs-missing check | {F3_SUMMARY} | draft-only observation |
 | F4 catalog behavior | {CATALOG_SUMMARY} | observed with draft layout |
 | validate scope | {VALIDATE_SUMMARY} | document-structure evidence only |
@@ -73,6 +73,7 @@ Observation files are in `{OBSERVATIONS_PATH}`.
 
 ## 9. Human Surface Only
 
+- Inspect `implementation-mode-policy.draft.yaml` and `implementation-mode-policy.migration.md` before any live policy update.
 - Confirm candidate role paths before any live wiring.
 - Decide whether Axis 2 gating is desired for this brownfield repo; this probe supplies scratch readiness-access evidence and leaves CI/hard gates unwired.
 - If catalog count is 0, inspect `ui_primitive` and catalog source before treating readiness as actionable.
@@ -81,5 +82,5 @@ Observation files are in `{OBSERVATIONS_PATH}`.
 
 - [x] Source untouched by probe workflow.
 - [x] Live `docs/frontend-workflow` untouched; workflow-state ran only in scratch.
-- [x] No confirmed promotion, Open Decision resolve, CI edit, or hard gate promotion.
+- [x] No confirmed promotion, Open Decision resolve, CI edit, pre-edit hook, live policy replacement, or hard gate promotion.
 - [x] Outputs are draft-only under the probe run directory.

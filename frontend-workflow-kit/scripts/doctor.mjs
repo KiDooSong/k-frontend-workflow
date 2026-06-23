@@ -3,7 +3,7 @@
 // Findings never become a hard gate here: this tool exits 0 after reporting warnings.
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { parseArgs, DEFAULTS, KIT_ROOT, projectRootOf, runCli } from './lib/util.mjs';
+import { parseArgs, DEFAULTS, KIT_ROOT, loadYamlOrExit, projectRootOf, runCli } from './lib/util.mjs';
 import { loadLayoutProfile } from './lib/layout-profile.mjs';
 import { collectDoctorFindings } from './lib/doctor.mjs';
 
@@ -17,6 +17,7 @@ function render(report) {
   lines.push('workflow:doctor — warning-only preflight');
   lines.push(`  project_root: ${report.project_root}`);
   lines.push(`  layout      : ${report.layout || '(default)'}`);
+  lines.push(`  policy      : ${report.policy || '(default)'}`);
   if (report.findings.length === 0) {
     lines.push('  ok: no layout/layer preflight findings');
   } else {
@@ -33,8 +34,14 @@ function main() {
   const { flags } = parseArgs(process.argv.slice(2));
   const srcDir = path.resolve(typeof flags.src === 'string' ? flags.src : DEFAULTS.src);
   const projectRoot = projectRootOf(srcDir, flags);
+  if (flags.policy === true || flags.policy === '') {
+    process.stderr.write('workflow:doctor: --policy requires a value\n');
+    process.exit(2);
+  }
+  const policyPath = path.resolve(typeof flags.policy === 'string' ? flags.policy : DEFAULTS.policy);
+  const policy = loadYamlOrExit(policyPath, 'policy', 'workflow:doctor');
   const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags });
-  const findings = collectDoctorFindings({ layout, projectRoot });
+  const findings = collectDoctorFindings({ layout, projectRoot, policy });
   const report = {
     tool: 'workflow:doctor',
     ok: true,
@@ -42,6 +49,7 @@ function main() {
     info_count: findings.filter((f) => f.severity === 'info').length,
     project_root: toPosixRel(projectRoot),
     layout: typeof flags.layout === 'string' ? toPosixRel(path.resolve(flags.layout)) : null,
+    policy: typeof flags.policy === 'string' ? toPosixRel(policyPath) : null,
     findings,
   };
   if (flags.json) process.stdout.write(JSON.stringify(report, null, 2) + '\n');

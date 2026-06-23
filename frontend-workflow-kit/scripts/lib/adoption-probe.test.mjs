@@ -76,6 +76,8 @@ test('runAdoptionProbe renders draft outputs and keeps live docs untouched', (t)
   for (const file of [
     'adoption-report.md',
     'project-layout.draft.yaml',
+    'implementation-mode-policy.draft.yaml',
+    'implementation-mode-policy.migration.md',
     'tier3-gap-report.md',
     'visual-spec-intake-note.md',
     'testid-intake-note.md',
@@ -94,12 +96,15 @@ test('runAdoptionProbe renders draft outputs and keeps live docs untouched', (t)
   assert.match(fs.readFileSync(path.join(out, 'component-catalog.observed.md'), 'utf8'), /src\/shared\/ui\/Button\.tsx/);
   const adoptionReport = fs.readFileSync(path.join(out, 'adoption-report.md'), 'utf8');
   assert.match(adoptionReport, /draft-only/);
-  assert.match(adoptionReport, /readiness access wired; hard gates not promoted/);
+  assert.match(adoptionReport, /implementation-mode-policy draft generated/);
+  assert.match(adoptionReport, /live policy not replaced/);
+  assert.match(adoptionReport, /pre-edit hooks not promoted|pre-edit hooks/);
   assert.match(adoptionReport, /Rendered from templates\/adoption\/adoption-report\.template\.md/);
   assert.doesNotMatch(adoptionReport, /\{[A-Z0-9_-]+\}/);
   const tier3Report = fs.readFileSync(path.join(out, 'tier3-gap-report.md'), 'utf8');
   assert.match(tier3Report, /Rendered from templates\/adoption\/tier3-gap-report\.template\.md/);
   assert.match(tier3Report, /readiness_access_wired=true; hard_gate_wired=false|readiness yes \/ hard gate no/);
+  assert.match(tier3Report, /policy draft is generated|policy draft/);
   assert.match(tier3Report, /\| F3 \| Complete vs missing layers indistinguishable \| skipped \| not run \|/);
   assert.doesNotMatch(tier3Report, /observed change/);
   assert.doesNotMatch(tier3Report, /\{[A-Z0-9_-]+\}/);
@@ -110,7 +115,16 @@ test('runAdoptionProbe renders draft outputs and keeps live docs untouched', (t)
   assert.match(layoutDraft, /role: view_model/);
   assert.doesNotMatch(layoutDraft, /주석으로만|아직 파싱/);
   assert.doesNotMatch(layoutDraft, /hardcod|하드코딩|UI_MARKER/);
+  const policyDraft = fs.readFileSync(path.join(out, 'implementation-mode-policy.draft.yaml'), 'utf8');
+  assert.match(policyDraft, /src\/presentation\/\{domain\}\/viewmodels\/\*\*/);
+  const migrationGuide = fs.readFileSync(path.join(out, 'implementation-mode-policy.migration.md'), 'utf8');
+  assert.match(migrationGuide, /Draft only/);
+  assert.match(migrationGuide, /Human review is required/);
   const summary = JSON.parse(fs.readFileSync(path.join(out, 'probe-summary.json'), 'utf8'));
+  assert.ok(summary.outputs.implementation_policy_draft);
+  assert.ok(summary.outputs.implementation_policy_migration);
+  assert.equal(summary.invariants.live_policy_replaced, false);
+  assert.equal(summary.invariants.pre_edit_hooks_promoted, false);
   assert.ok(summary.layer_inventory);
   assert.equal(summary.layer_inventory.facts.view_model_present, true);
   assert.equal(summary.layer_inventory.layers.some((row) => row.role === 'view_model' && row.readiness_access_wired === true), true);
@@ -143,6 +157,11 @@ test('F3 excludes layers already flattened into built-in roles', (t) => {
   );
   assert.equal(result.f3.removed.some((p) => p.startsWith('src/domain/') || p.startsWith('src/data/')), true);
 
+  const policyDraft = fs.readFileSync(path.join(out, 'implementation-mode-policy.draft.yaml'), 'utf8');
+  assert.match(policyDraft, /src\/presentation\/\{domain\}\/viewmodels\/\*\*/);
+  const migrationGuide = fs.readFileSync(path.join(out, 'implementation-mode-policy.migration.md'), 'utf8');
+  assert.match(migrationGuide, /Draft only/);
+  assert.match(migrationGuide, /Human review is required/);
   const summary = JSON.parse(fs.readFileSync(path.join(out, 'probe-summary.json'), 'utf8'));
   assert.equal(summary.observations.f3.excluded.some((layer) => layer.path === 'src/presentation/profile/viewmodels'), true);
   assert.ok(summary.layer_inventory.layers.some((row) => row.role === 'repository' && row.readiness_access_wired === true && row.hard_gate_wired === false));
