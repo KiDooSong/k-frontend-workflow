@@ -226,12 +226,15 @@ export function computeReadiness({ state, policy, ci, manifest, layout }) {
   //   BYTE-동치를 보장한다(README §1.1: 경로 fact 의 단일 resolvedLayout). substituteDomain 의
   //   per-screen {domain} 치환은 resolvePaths(p,{domain}) 안에 흡수된다(§5 the seam).
   const resolvedLayout = layout || loadLayoutProfile({ kitRoot: KIT_ROOT });
-  const effectivePolicy = resolvedLayout.layerTelemetryDeclared
-    ? synthesizeModePolicy(policy, resolvedLayout, { includeGates: false })
-    : policy;
-  // policy.modes 가 객체가 아니면(문자열/숫자 등 손상된 정책) Object.keys 가 가짜 모드를 만들지 않게 막는다.
-  const modes = effectivePolicy.modes && typeof effectivePolicy.modes === 'object' ? effectivePolicy.modes : {};
-  const order = Array.isArray(effectivePolicy.order) ? effectivePolicy.order : Object.keys(modes);
+  const policyCache = new Map();
+  function effectivePolicyFor(domain) {
+    if (!resolvedLayout.layerTelemetryDeclared) return policy;
+    const key = domain == null ? '\0' : String(domain);
+    if (!policyCache.has(key)) {
+      policyCache.set(key, synthesizeModePolicy(policy, resolvedLayout, { includeGates: false, domain }));
+    }
+    return policyCache.get(key);
+  }
   const global = state.global || {};
   const ciProvided = ci && Object.keys(ci).length > 0;
   const screenSpecTemplate =
@@ -242,6 +245,10 @@ export function computeReadiness({ state, policy, ci, manifest, layout }) {
     const facts = buildFacts(screen, global, ci);
     // resolvedLayout 를 screenCtx 에 실어 actionHint 가 hook 힌트 경로를 role 바인딩에서 파생하게 한다(MINOR 4).
     const screenCtx = { domain: screen.domain, facts, screenSpecTemplate, layout: resolvedLayout };
+    const effectivePolicy = effectivePolicyFor(screen.domain);
+    // policy.modes 가 객체가 아니면(문자열/숫자 등 손상된 정책) Object.keys 가 가짜 모드를 만들지 않게 막는다.
+    const modes = effectivePolicy.modes && typeof effectivePolicy.modes === 'object' ? effectivePolicy.modes : {};
+    const order = Array.isArray(effectivePolicy.order) ? effectivePolicy.order : Object.keys(modes);
 
     // 모드 사다리는 누적이다: 한 모드를 충족하려면 아래 모든 모드도 충족해야 한다.
     // 따라서 바닥(docs-only)부터 올라가며 연속으로 충족되는 가장 높은 모드를 고른다.

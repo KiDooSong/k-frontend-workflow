@@ -319,6 +319,66 @@ test('computeReadiness: explicit custom layer glob resolves per-screen domain', 
   const readiness = computeReadiness({ state, policy, ci: {}, manifest: {}, layout });
   assert.deepEqual(readiness['PROFILE-001'].allowed_paths, ['src/presentation/profile/viewmodels/**']);
 });
+test('computeReadiness: domain layer overrides synthesize access per screen domain', (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'layout-profile-domain-layers-'));
+  t.after(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
+  const layoutPath = path.join(tmpDir, 'project-layout.yaml');
+  fs.writeFileSync(
+    layoutPath,
+    [
+      'version: 1',
+      'domains:',
+      '  profile:',
+      '    layers:',
+      '      - role: profile_view_model',
+      '        glob: src/presentation/{domain}/viewmodels/**',
+      '        fact: dir_has_files',
+      '        access:',
+      '          allow: [rough-fixture-ui]',
+      '      - role: profile_api_boundary',
+      '        glob: src/presentation/{domain}/api-boundary/**',
+      '        fact: dir_has_files',
+      '        access:',
+      '          forbid: [rough-fixture-ui]',
+      '  coupons:',
+      '    layers:',
+      '      - role: coupon_repository',
+      '        glob: src/domain/{domain}/repositories/**',
+      '        fact: dir_has_files',
+      '        access:',
+      '          allow: [rough-fixture-ui]',
+      '      - role: coupon_internal_api',
+      '        glob: src/domain/{domain}/internal-api/**',
+      '        fact: dir_has_files',
+      '        access:',
+      '          forbid: [rough-fixture-ui]',
+      '',
+    ].join('\n'),
+  );
+  const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags: { layout: layoutPath } });
+  assert.equal(layout.layerTelemetryDeclared, true);
+  const policy = {
+    order: ['docs-only', 'rough-fixture-ui'],
+    modes: {
+      'docs-only': { requires: [], allowed_paths: ['docs/frontend-workflow/**'], forbidden_paths: [] },
+      'rough-fixture-ui': { requires: [], allowed_paths: [], forbidden_paths: [] },
+    },
+  };
+  const state = {
+    global: {},
+    screens: {
+      'PROFILE-001': { status: 'draft', domain: 'profile', stub: false, derived: {} },
+      'COUPONS-001': { status: 'draft', domain: 'coupons', stub: false, derived: {} },
+    },
+  };
+
+  const readiness = computeReadiness({ state, policy, ci: {}, manifest: {}, layout });
+
+  assert.deepEqual(readiness['PROFILE-001'].allowed_paths, ['src/presentation/profile/viewmodels/**']);
+  assert.deepEqual(readiness['PROFILE-001'].forbidden_paths, ['src/presentation/profile/api-boundary/**']);
+  assert.deepEqual(readiness['COUPONS-001'].allowed_paths, ['src/domain/coupons/repositories/**']);
+  assert.deepEqual(readiness['COUPONS-001'].forbidden_paths, ['src/domain/coupons/internal-api/**']);
+});
 test('computeReadiness: layer-derived paths are de-duplicated after role/domain resolution', () => {
   const layout = {
     layerTelemetryDeclared: true,

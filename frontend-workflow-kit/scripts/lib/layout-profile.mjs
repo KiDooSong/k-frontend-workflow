@@ -237,8 +237,16 @@ function synthesizeRequires(existing, gates) {
 // Built-in layer roles keep role-token semantics to preserve preset/rebinding parity. Custom layers
 // with explicit glob materialize the glob directly, so they do not require a matching roles.<role>.
 export function synthesizeModePolicy(policy = {}, layout = {}, options = {}) {
-  const layers = asLayerArray(layout.layers || []);
-  const roles = layout?.roles && typeof layout.roles === 'object' ? layout.roles : {};
+  const domain = options.domain;
+  const layers = asLayerArray(
+    typeof layout.layersFor === 'function' ? layout.layersFor(domain) : layout.layers || [],
+  );
+  const roles =
+    typeof layout.rolesFor === 'function'
+      ? layout.rolesFor(domain)
+      : layout?.roles && typeof layout.roles === 'object'
+        ? layout.roles
+        : {};
   const modes = policy.modes && typeof policy.modes === 'object' ? policy.modes : {};
   const order = Array.isArray(policy.order) ? policy.order.slice() : Object.keys(modes);
   const allowByMode = new Map();
@@ -517,6 +525,7 @@ export function loadLayoutProfile({ kitRoot, flags = {} } = {}) {
     roleToDir,
     resolvePaths,
     materializeGuardedSurface,
+    rolesFor,
     layersFor,
     // raw 노출(README §1.1 — 소비처가 필요 시 직접 조회).
     roles: baseRoles,
