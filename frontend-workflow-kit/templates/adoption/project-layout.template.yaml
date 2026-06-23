@@ -1,12 +1,12 @@
-# project-layout.yaml — adoption-probe DRAFT (제안만 · 미배선)
+# project-layout.yaml — adoption-probe DRAFT (제안만 · 초안)
 # ─────────────────────────────────────────────────────────────────────────────
 # 이 파일은 adoption-probe 스킬이 산출하는 **초안**이다. 다음을 반드시 지킨다:
 #   - 산출 위치 = 프로브 출력 디렉토리(temp/runs/adoption-probe-<id>/) — 소비 레포 루트에
 #     이걸 그대로 떨궈 라이브 게이트에 배선하지 않는다(배선=사람 결정, 별 작업).
 #   - Axis 1(role→glob 재바인딩)을 roles: 로 표현한다.
 #   - Axis 2(repository/usecase/entity/data-source/mapper/view-model 등 추가 계층)는 layers: 로
-#     telemetry-only 선언한다. layout-profile/workflow-state 는 파싱·관찰하지만 readiness/validate/lint
-#     hard gate 에는 연결하지 않는다. 게이트처럼 표현 금지.
+#     readiness-access 선언한다. layout-profile/readiness 는 access allow/forbid 를 scratch 관찰에
+#     반영하지만 validate/lint/CI/hard gate 에는 연결하지 않는다.
 #   - 이 초안은 confirmed/OD/CI/소스 무엇도 바꾸지 않는다.
 #
 # 사용 흐름: 프로브가 소비 레포 구조를 스캔 → 아래 roles 의 placeholder 를 실제 glob 으로 채움 →
@@ -39,8 +39,8 @@ roles:
 # not as evidence that catalog-gen ignored project-layout.
 
 # ════════════════════════════════════════════════════════════════════════════
-# (Tier3 telemetry-only layers — parsed/observed, not gate-wired.)
-# access 는 보존되고 layer-inventory 에 gate_wired:false 로 표면화된다.
-# readiness allowed/forbidden, lint, CI, Open Decision, confirmed 상태는 바꾸지 않는다.
+# (Tier3 layers — readiness access wired; hard gates/CI not promoted.)
+# access 는 readiness allowed/forbidden paths 에 반영되고 layer-inventory 에 readiness_access_wired / hard_gate_wired 로 표면화된다.
+# lint, CI, Open Decision, confirmed 상태와 hard gate 는 바꾸지 않는다.
 # ────────────────────────────────────────────────────────────────────────────
 {LAYERS_BLOCK}

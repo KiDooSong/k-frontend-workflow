@@ -94,12 +94,12 @@ test('runAdoptionProbe renders draft outputs and keeps live docs untouched', (t)
   assert.match(fs.readFileSync(path.join(out, 'component-catalog.observed.md'), 'utf8'), /src\/shared\/ui\/Button\.tsx/);
   const adoptionReport = fs.readFileSync(path.join(out, 'adoption-report.md'), 'utf8');
   assert.match(adoptionReport, /draft-only/);
-  assert.match(adoptionReport, /parsed\/observed, not gate-wired/);
+  assert.match(adoptionReport, /readiness access wired; hard gates not promoted/);
   assert.match(adoptionReport, /Rendered from templates\/adoption\/adoption-report\.template\.md/);
   assert.doesNotMatch(adoptionReport, /\{[A-Z0-9_-]+\}/);
   const tier3Report = fs.readFileSync(path.join(out, 'tier3-gap-report.md'), 'utf8');
   assert.match(tier3Report, /Rendered from templates\/adoption\/tier3-gap-report\.template\.md/);
-  assert.match(tier3Report, /not gate-wired|gate_wired=false/);
+  assert.match(tier3Report, /readiness_access_wired=true; hard_gate_wired=false|readiness yes \/ hard gate no/);
   assert.match(tier3Report, /\| F3 \| Complete vs missing layers indistinguishable \| skipped \| not run \|/);
   assert.doesNotMatch(tier3Report, /observed change/);
   assert.doesNotMatch(tier3Report, /\{[A-Z0-9_-]+\}/);
@@ -112,6 +112,7 @@ test('runAdoptionProbe renders draft outputs and keeps live docs untouched', (t)
   const summary = JSON.parse(fs.readFileSync(path.join(out, 'probe-summary.json'), 'utf8'));
   assert.ok(summary.layer_inventory);
   assert.equal(summary.layer_inventory.facts.view_model_present, true);
+  assert.equal(summary.layer_inventory.layers.some((row) => row.role === 'view_model' && row.readiness_access_wired === true), true);
   assert.match(fs.readFileSync(path.join(out, 'tier3-live-wiring-implementation-note.md'), 'utf8'), /PR-D/);
   assert.equal(result.observation.commands.state.ok, true);
   assert.ok(result.observation.layerInventory);
@@ -132,7 +133,7 @@ test('F3 excludes layers already flattened into built-in roles', (t) => {
 
   const summary = JSON.parse(fs.readFileSync(path.join(out, 'probe-summary.json'), 'utf8'));
   assert.equal(summary.observations.f3.excluded.some((layer) => layer.path === 'src/presentation/profile/viewmodels'), true);
-  assert.ok(summary.layer_inventory.layers.some((row) => row.role === 'repository' && row.gate_wired === false));
+  assert.ok(summary.layer_inventory.layers.some((row) => row.role === 'repository' && row.readiness_access_wired === true && row.hard_gate_wired === false));
 });
 
 test('runAdoptionProbe confines output to temp/runs/adoption-probe-id', (t) => {

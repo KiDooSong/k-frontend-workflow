@@ -19,6 +19,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadLayoutProfile, LayoutConfigError, synthesizeModePolicy } from './layout-profile.mjs';
+import { computeReadiness } from '../readiness.mjs';
 import { deriveGuardedSurface, isCleared, isClearedAt } from './path-backstop.mjs';
 import { loadYaml } from './util.mjs';
 
@@ -230,6 +231,175 @@ test('layers: malformed project layer follows LayoutConfigError contract', (t) =
     () => loadLayoutProfile({ kitRoot: KIT_ROOT, flags: { layout: layoutPath } }),
     LayoutConfigError,
   );
+});
+test('synthesizeModePolicy: custom explicit glob contributes paths without roles binding', () => {
+  const policy = {
+    order: ['docs-only', 'rough-fixture-ui', 'api-integrated-ui'],
+    modes: {
+      'docs-only': { allowed_paths: ['docs/frontend-workflow/**'], forbidden_paths: ['src/**'] },
+      'rough-fixture-ui': { allowed_paths: [], forbidden_paths: [] },
+      'api-integrated-ui': { allowed_paths: [], forbidden_paths: [] },
+    },
+  };
+  const layout = {
+    roles: {},
+    layers: [
+      {
+        role: 'view_model',
+        glob: 'src/presentation/{domain}/viewmodels/**',
+        fact: 'dir_has_files',
+        access: { allow: ['rough-fixture-ui'], forbid: ['api-integrated-ui'] },
+      },
+    ],
+  };
+  const synthesized = synthesizeModePolicy(policy, layout);
+  assert.deepEqual(synthesized.modes['rough-fixture-ui'].allowed_paths, ['src/presentation/{domain}/viewmodels/**']);
+  assert.deepEqual(synthesized.modes['api-integrated-ui'].forbidden_paths, ['src/presentation/{domain}/viewmodels/**']);
+});
+
+test('synthesizeModePolicy: multi-glob custom layer contributes all globs deterministically', () => {
+  const policy = {
+    order: ['final-fixture-ui'],
+    modes: {
+      'final-fixture-ui': { allowed_paths: ['src/local/**'], forbidden_paths: [] },
+    },
+  };
+  const layout = {
+    roles: {},
+    layers: [
+      {
+        role: 'repository',
+        glob: ['src/data/{domain}/repositories/**', 'src/domain/{domain}/repositories/**'],
+        fact: 'dir_has_files',
+        access: { allow: ['final-fixture-ui'], forbid: [] },
+      },
+    ],
+  };
+  const synthesized = synthesizeModePolicy(policy, layout);
+  assert.deepEqual(synthesized.modes['final-fixture-ui'].allowed_paths, [
+    'src/local/**',
+    'src/data/{domain}/repositories/**',
+    'src/domain/{domain}/repositories/**',
+  ]);
+});
+
+test('computeReadiness: explicit custom layer glob resolves per-screen domain', () => {
+  const layout = {
+    layerTelemetryDeclared: true,
+    roles: {},
+    layers: [
+      {
+        role: 'view_model',
+        glob: 'src/presentation/{domain}/viewmodels/**',
+        fact: 'dir_has_files',
+        access: { allow: ['rough-fixture-ui'], forbid: ['api-integrated-ui'] },
+      },
+    ],
+    resolvePaths(globs, { domain } = {}) {
+      const input = Array.isArray(globs) ? globs : [globs];
+      return input.map((glob) => String(glob).replaceAll('{domain}', domain));
+    },
+    roleToDir() {
+      return '';
+    },
+  };
+  const policy = {
+    order: ['docs-only', 'rough-fixture-ui'],
+    modes: {
+      'docs-only': { requires: [], allowed_paths: ['docs/frontend-workflow/**'], forbidden_paths: ['src/**'] },
+      'rough-fixture-ui': { requires: [], allowed_paths: [], forbidden_paths: [] },
+    },
+  };
+  const state = {
+    global: {},
+    screens: {
+      'PROFILE-001': { status: 'draft', domain: 'profile', stub: false, derived: {} },
+    },
+  };
+  const readiness = computeReadiness({ state, policy, ci: {}, manifest: {}, layout });
+  assert.deepEqual(readiness['PROFILE-001'].allowed_paths, ['src/presentation/profile/viewmodels/**']);
+});
+test('computeReadiness: layer-derived paths are de-duplicated after role/domain resolution', () => {
+  const layout = {
+    layerTelemetryDeclared: true,
+    roles: { hook: 'src/presentation/{domain}/viewmodels/**' },
+    layers: [
+      {
+        role: 'hook',
+        glob: 'src/features/{domain}/hooks/**',
+        fact: 'dir_has_files',
+        access: { allow: ['rough-fixture-ui'], forbid: [] },
+      },
+      {
+        role: 'view_model',
+        glob: 'src/presentation/{domain}/viewmodels/**',
+        fact: 'dir_has_files',
+        access: { allow: ['rough-fixture-ui'], forbid: [] },
+      },
+    ],
+    resolvePaths(globs, { domain } = {}) {
+      return (Array.isArray(globs) ? globs : [globs]).flatMap((glob) =>
+        glob === '{roles.hook}' ? [`src/presentation/${domain}/viewmodels/**`] : [String(glob).replaceAll('{domain}', domain)],
+      );
+    },
+    roleToDir() {
+      return '';
+    },
+  };
+  const policy = {
+    order: ['docs-only', 'rough-fixture-ui'],
+    modes: {
+      'docs-only': { requires: [], allowed_paths: ['docs/frontend-workflow/**'], forbidden_paths: [] },
+      'rough-fixture-ui': { requires: [], allowed_paths: [], forbidden_paths: [] },
+    },
+  };
+  const state = {
+    global: {},
+    screens: {
+      'PROFILE-001': { status: 'draft', domain: 'profile', stub: false, derived: {} },
+    },
+  };
+  const readiness = computeReadiness({ state, policy, ci: {}, manifest: {}, layout });
+  assert.deepEqual(readiness['PROFILE-001'].allowed_paths, ['src/presentation/profile/viewmodels/**']);
+});
+
+test('synthesizeModePolicy: built-in layer role rebinding follows roles paths', () => {
+  const policy = {
+    order: ['screen-skeleton'],
+    modes: {
+      'screen-skeleton': { allowed_paths: [], forbidden_paths: [] },
+    },
+  };
+  const layout = {
+    roles: { screen: 'src/presentation/{domain}/screens/**' },
+    layers: [
+      {
+        role: 'screen',
+        glob: 'src/features/{domain}/screens/**',
+        fact: 'dir_has_files',
+        access: { allow: ['screen-skeleton'], forbid: [] },
+      },
+    ],
+    resolvePaths(globs, { domain } = {}) {
+      return (Array.isArray(globs) ? globs : [globs]).flatMap((glob) =>
+        glob === '{roles.screen}' ? [`src/presentation/${domain}/screens/**`] : [String(glob).replaceAll('{domain}', domain)],
+      );
+    },
+  };
+  const synthesized = synthesizeModePolicy(policy, layout);
+  assert.deepEqual(synthesized.modes['screen-skeleton'].allowed_paths, ['{roles.screen}']);
+  assert.deepEqual(layout.resolvePaths(synthesized.modes['screen-skeleton'].allowed_paths, { domain: 'profile' }), [
+    'src/presentation/profile/screens/**',
+  ]);
+});
+
+test('computeReadiness: default coupon fixture remains expected', () => {
+  const L = expoLayout();
+  const state = loadYaml(path.join(KIT_ROOT, 'examples', 'coupon-feature', 'docs', 'frontend-workflow', '_meta', 'workflow-state.yaml'));
+  const policy = loadYaml(path.join(KIT_ROOT, 'policies', 'implementation-mode-policy.yaml'));
+  const expected = JSON.parse(fs.readFileSync(path.join(KIT_ROOT, 'examples', 'coupon-feature', 'reports', 'expected-readiness.json'), 'utf8'));
+  const readiness = computeReadiness({ state, policy, ci: {}, manifest: {}, layout: L });
+  assert.deepEqual(readiness, expected);
 });
 
 // --- MAJOR 1: fail-CLOSED -------------------------------------------------

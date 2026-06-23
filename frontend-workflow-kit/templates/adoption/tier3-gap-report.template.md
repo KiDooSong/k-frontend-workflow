@@ -1,13 +1,13 @@
 # Tier3 Gap Report — {PROJECT_NAME}
 
-<!-- Rendered from templates/adoption/tier3-gap-report.template.md by adoption-probe. Draft-only; Tier3 is not wired here. -->
+<!-- Rendered from templates/adoption/tier3-gap-report.template.md by adoption-probe. Draft-only; readiness access is observed in scratch, hard gates are not promoted. -->
 
 > **Status: PROBE / READ-ONLY — {YYYY-MM-DD}.** This note records Axis 2 gaps only.
-> Layer rows are parsed/observed telemetry only. This report does not implement PR-D/E, promote gates, or close Open Decisions.
+> Layer access rows are readiness-wired in scratch observations. This report does not promote CI/hard gates, lint enforcement, or close Open Decisions.
 
 ## 1. Repo Layers vs Proposed Tier3
 
-| Repo layer/path | Tier3 role (proposed) | Tier3 access (proposed) | Current role? | Current fact? | Current gate? |
+| Repo layer/path | Tier3 role (proposed) | Tier3 access | Current role? | Current fact? | Hard gate? |
 |---|---|---|:---:|:---:|:---:|
 {TIER3_ROWS}
 
@@ -15,8 +15,8 @@
 
 | F | Breakage | This run | Core signal |
 |---|---|---|---|
-| F1 | Additional layer roles inert | {EXTRA_LAYER_COUNT} path(s) found; layer inventory parsed/observed | not gate-wired |
-| F2 | Domain/data edit boundary absent | possible when extra domain/data layers exist; not enforced by current readiness | silent |
+| F1 | Additional layer access | {EXTRA_LAYER_COUNT} path(s) found; access rows reflected in readiness paths | readiness access wired |
+| F2 | Domain/data edit boundary | possible when extra domain/data layers exist; declared access is reflected in readiness paths | hard gates not promoted |
 | F3 | Complete vs missing layers indistinguishable | {F3_SUMMARY} | {F3_SIGNAL} |
 | F4 | Catalog source observation | {CATALOG_SUMMARY} | layout-aware observation |
 | F5 | validate layer-blind | {VALIDATE_SUMMARY} | validate is document-only |
@@ -38,12 +38,12 @@
 |---|---|---|
 | Catalog count 0 triage | verify `ui_primitive` glob/source | catalog-gen consumes `--layout`; 0 count is a role/source observation, not proof that project-layout was skipped |
 | Missing layer facts | PR-C | General `<role>_present` fact, warning-first. |
-| Missing access rows | PR-D | Live wiring only after parity safety net. |
+| Missing access rows | PR-D | Readiness access wiring active; hard-gate promotion remains separate. |
 | Layer lint | PR-E | Import-boundary subset, warning-first. |
 
 ## 5. Boundaries
 
-- No Tier3 gate was enabled by this probe.
+- Layer access is reflected in scratch readiness output when declared.
 - No hard gate, CI, Open Decision, or confirmed state changed.
-- This file is telemetry for later human-owned implementation decisions; layer access is parsed/observed, not gate-wired.
+- This file is telemetry for later human-owned hardening decisions; readiness access is wired, hard gates are not promoted.
 - Observed extra layers in this run: {OBSERVED_EXTRA_LAYERS}.

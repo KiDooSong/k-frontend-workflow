@@ -1,6 +1,6 @@
-// layer-inventory.mjs — Tier3 telemetry-only layer facts.
-// This module observes declared layout layers. It does not change readiness,
-// policy, forbidden paths, lint rules, or CI behavior.
+// layer-inventory.mjs — Tier3 layer facts and readiness-access wiring inventory.
+// This module observes declared layout layers and records whether access rows are readiness-wired.
+// It does not promote hard gates, lint rules, pre-edit hooks, or CI behavior.
 import path from 'node:path';
 import { walkFiles, projectRootOf } from './util.mjs';
 import { globRoot, globToRegExp } from './glob.mjs';
@@ -202,12 +202,19 @@ function cloneAccess(access) {
   };
 }
 
+function readinessAccessWired(layer) {
+  const access = accessModel(layer);
+  return access.allow.length > 0 || access.forbid.length > 0;
+}
+
 function layerModel(layer, domain) {
   return {
     role: layer.role,
     glob: layer.glob,
     fact: layer.fact,
     access: accessModel(layer),
+    readiness_access_wired: readinessAccessWired(layer),
+    hard_gate_wired: false,
     gate_wired: false,
     domain,
   };
@@ -297,6 +304,8 @@ export function scanLayerInventory({ projectRoot, srcDir, layout, screens = [] }
         fact: layer.fact,
         status: rowScan.outOfScope ? 'out_of_scope' : rowScan.count > 0 ? 'present' : 'missing',
         file_count: rowScan.count,
+        readiness_access_wired: layer.readiness_access_wired,
+        hard_gate_wired: false,
         gate_wired: false,
         access: cloneAccess(layer.access),
         ...(overlap ? { overlap: overlap.status, overlap_role: overlap.role } : {}),

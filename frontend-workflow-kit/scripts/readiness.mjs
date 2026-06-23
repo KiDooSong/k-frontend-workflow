@@ -18,7 +18,7 @@ import {
   writeFile,
   runCli,
 } from './lib/util.mjs';
-import { loadLayoutProfile } from './lib/layout-profile.mjs';
+import { loadLayoutProfile, synthesizeModePolicy } from './lib/layout-profile.mjs';
 
 // fact 키별 스케일 분류
 const STATUS_SCALED = new Set([
@@ -201,6 +201,17 @@ function evalMode(mode, facts) {
   return { pass: failed.length === 0, failed };
 }
 
+function uniquePaths(paths) {
+  const out = [];
+  const seen = new Set();
+  for (const pathEntry of paths || []) {
+    if (seen.has(pathEntry)) continue;
+    seen.add(pathEntry);
+    out.push(pathEntry);
+  }
+  return out;
+}
+
 // CI 결과가 입력되지 않으면 로컬에서 알 수 없는 게이트라 blocking 에서 제외한다.
 const CI_FACTS = new Set([
   'ci_lint',
@@ -215,9 +226,12 @@ export function computeReadiness({ state, policy, ci, manifest, layout }) {
   //   BYTE-동치를 보장한다(README §1.1: 경로 fact 의 단일 resolvedLayout). substituteDomain 의
   //   per-screen {domain} 치환은 resolvePaths(p,{domain}) 안에 흡수된다(§5 the seam).
   const resolvedLayout = layout || loadLayoutProfile({ kitRoot: KIT_ROOT });
+  const effectivePolicy = resolvedLayout.layerTelemetryDeclared
+    ? synthesizeModePolicy(policy, resolvedLayout, { includeGates: false })
+    : policy;
   // policy.modes 가 객체가 아니면(문자열/숫자 등 손상된 정책) Object.keys 가 가짜 모드를 만들지 않게 막는다.
-  const modes = policy.modes && typeof policy.modes === 'object' ? policy.modes : {};
-  const order = Array.isArray(policy.order) ? policy.order : Object.keys(modes);
+  const modes = effectivePolicy.modes && typeof effectivePolicy.modes === 'object' ? effectivePolicy.modes : {};
+  const order = Array.isArray(effectivePolicy.order) ? effectivePolicy.order : Object.keys(modes);
   const global = state.global || {};
   const ciProvided = ci && Object.keys(ci).length > 0;
   const screenSpecTemplate =
@@ -320,10 +334,10 @@ export function computeReadiness({ state, policy, ci, manifest, layout }) {
       next_mode: chosenIdx < order.length - 1 ? order[chosenIdx + 1] : null,
       // 정책 글롭의 {roles.X} 펼침 + per-screen {domain} 치환을 한 번에(§5). 리터럴/blanket
       // 글롭(src/features/**, openapi.yaml 등)은 resolvePaths 가 그대로 통과시킨다.
-      allowed_paths: resolvedLayout.resolvePaths(chosen.allowed_paths || [], { domain: screen.domain }),
-      forbidden_paths: resolvedLayout.resolvePaths(chosen.forbidden_paths || [], {
+      allowed_paths: uniquePaths(resolvedLayout.resolvePaths(chosen.allowed_paths || [], { domain: screen.domain })),
+      forbidden_paths: uniquePaths(resolvedLayout.resolvePaths(chosen.forbidden_paths || [], {
         domain: screen.domain,
-      }),
+      })),
       blocking,
       next_actions: nextActions,
     };

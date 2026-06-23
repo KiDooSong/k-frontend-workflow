@@ -143,9 +143,25 @@ test('collectDoctorFindings: telemetry layer with explicit glob does not require
     layout: {
       roles: {},
       layers: [
-        { role: 'repository', glob: 'src/data/{domain}/repositories/**', fact: 'dir_has_files', access: { allow: [], forbid: [] } },
+        { role: 'repository', glob: 'src/data/{domain}/repositories/**', fact: 'dir_has_files', access: { allow: ['final-fixture-ui'], forbid: [] } },
       ],
     },
   });
   assert.equal(findings.some((f) => f.check === 'layer-role' && f.role === 'repository'), false);
+  assert.equal(findings.some((f) => f.check === 'layer-access-unmaterializable' && f.role === 'repository'), false);
+  assert.ok(findings.some((f) => f.check === 'layer-access-readiness-wired' && f.role === 'repository'));
+});
+
+test('collectDoctorFindings: layer access with no role binding or glob warns as unmaterializable', () => {
+  const findings = collectDoctorFindings({
+    projectRoot: process.cwd(),
+    layout: {
+      roles: {},
+      layers: [
+        { role: 'repository', fact: 'dir_has_files', access: { allow: ['final-fixture-ui'], forbid: [] } },
+      ],
+    },
+  });
+  assert.ok(findings.some((f) => f.check === 'layer-role' && f.role === 'repository'));
+  assert.ok(findings.some((f) => f.check === 'layer-access-unmaterializable' && f.role === 'repository'));
 });

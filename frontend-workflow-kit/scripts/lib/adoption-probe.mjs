@@ -414,7 +414,7 @@ function renderLayersBlock(extraLayers) {
     return [
       '# layers: []',
       '# No extra Axis 2 layer paths were observed by this probe.',
-      '# If added later, layers remain telemetry-only until a separate live wiring PR.',
+      '# If added later, layers affect readiness only when passed through a declared layout; hard gates stay separate.',
     ].join('\n');
   }
   return yamlStringify({ layers }, { lineWidth: 0 }).trimEnd();
@@ -437,8 +437,8 @@ function renderProjectLayout(opts, roleMap, extraLayers) {
   let text = renderTemplate('project-layout.template.yaml', replacements);
   text = text.replace(/\{confirmed\|candidate\}/g, 'see adoption-report');
   text = text.replace(
-    '# project-layout.yaml — adoption-probe DRAFT (제안만 · 미배선)',
-    `# project-layout.yaml — adoption-probe DRAFT (probe ${opts.id}, proposal only, not wired)`,
+    '# project-layout.yaml — adoption-probe DRAFT (제안만 · scratch-readiness input)',
+    `# project-layout.yaml — adoption-probe DRAFT (probe ${opts.id}, proposal only, scratch-readiness input)`,
   );
   return text;
 }
@@ -465,7 +465,7 @@ function layerRows(extraLayers, f3, layerInventory) {
       .map((row) => {
         const roleCell = row.overlap_role ? `flattened into ${row.overlap_role}` : 'telemetry role';
         const fact = `${row.role}_present=${facts[`${row.role}_present`] === true}`;
-        return `| ${row.role} | \`${row.resolved_glob || row.glob}\` | ${roleCell} | no (not gate-wired) | ${fact} | no | parsed/observed, not gate-wired |`;
+        return `| ${row.role} | \`${row.resolved_glob || row.glob}\` | ${roleCell} | yes (readiness access) | ${fact} | no | readiness access wired; hard_gate_wired=false |`;
       })
       .join('\n');
   }
@@ -473,7 +473,7 @@ function layerRows(extraLayers, f3, layerInventory) {
   return extraLayers
     .map((l) => {
       const flattened = excluded.get(l.path);
-      return `| ${l.layer} | \`${l.path}\` | ${flattened ? `built-in ${flattened.role}` : 'telemetry draft'} | no (not gate-wired) | pending inventory | no | ${flattened ? flattened.reason : 'parsed/observed, not gate-wired'} |`;
+      return `| ${l.layer} | \`${l.path}\` | ${flattened ? `built-in ${flattened.role}` : 'telemetry draft'} | yes (readiness access) | pending inventory | no | ${flattened ? flattened.reason : 'readiness access wired; hard_gate_wired=false'} |`;
     })
     .join('\n');
 }
@@ -489,7 +489,7 @@ function extraInventoryRows(layerInventory, extraLayers) {
 
 function accessSummary(row) {
   const allow = row?.access?.allow || [];
-  return allow.length ? `allow [${allow.join(', ')}]; gate_wired=false` : 'gate_wired=false';
+  return allow.length ? `allow [${allow.join(', ')}]; readiness_access_wired=true; hard_gate_wired=false` : 'readiness_access_wired=false; hard_gate_wired=false';
 }
 
 function envRows(env) {
@@ -793,8 +793,8 @@ function blindSpotRows(extraLayers, observation, f3) {
   const layerCount = extraLayers.length;
   return [
     ['B1', 'catalog-gen ui_primitive observation / F4', catalogStatus, observation.commands.catalog.ok ? 'layout-aware catalog output' : 'tool error', 'verify draft role map if count is 0'],
-    ['B2', 'additional layers inert / F1', layerCount ? `${layerCount} parsed/observed layer path(s)` : 'not observed', 'not gate-wired', 'Tier3 PR-A/C/D'],
-    ['B3', 'domain+data edit boundary / F2', layerCount ? 'telemetry only' : 'not observed', 'not gate-wired', 'Tier3 PR-D'],
+    ['B2', 'additional layer access / F1', layerCount ? `${layerCount} readiness-wired layer path(s)` : 'not observed', 'readiness access wired', 'hard-gate promotion follow-up'],
+    ['B3', 'domain+data edit boundary / F2', layerCount ? 'declared access reflected in readiness paths' : 'not observed', 'hard gates not promoted', 'CI/pre-edit enforcement follow-up'],
     ['B4', 'complete vs missing layers / F3', f3Summary(f3), f3CoreSignal(f3), 'Tier3 PR-C'],
     ['B5', 'validate layer-blind / F5', 'applies: validate is document-structure only', 'green can be misleading', 'Tier3 PR-E + PR-C'],
   ]
@@ -804,8 +804,8 @@ function blindSpotRows(extraLayers, observation, f3) {
 
 function commandRows(opts, observation, roleMap) {
   return [
-    [sanitizePathishEvidenceText(observation.commands.state.invocation, opts), observation.commands.state.exitCode, observation.layerInventory ? 'workflow-state generated layer inventory under probe scratch' : 'workflow-state generated under probe scratch', 'parsed/observed, not gate-wired'],
-    [sanitizePathishEvidenceText(observation.commands.readiness.invocation, opts), observation.commands.readiness.exitCode, readinessSummary(observation.readinessJson), '3-layer readiness view only'],
+    [sanitizePathishEvidenceText(observation.commands.state.invocation, opts), observation.commands.state.exitCode, observation.layerInventory ? 'workflow-state generated layer inventory under probe scratch' : 'workflow-state generated under probe scratch', 'readiness access metadata split from hard gates'],
+    [sanitizePathishEvidenceText(observation.commands.readiness.invocation, opts), observation.commands.readiness.exitCode, readinessSummary(observation.readinessJson), 'readiness paths include declared layer access when layout declares layers'],
     [sanitizePathishEvidenceText(observation.commands.validate.invocation, opts), observation.commands.validate.exitCode, validateSummary(observation.validateJson, observation.commands.validate), 'document consistency only'],
     [sanitizePathishEvidenceText(observation.commands.catalog.invocation, opts), observation.commands.catalog.exitCode, catalogSummary(observation, roleMap), 'layout-aware catalog observation'],
   ]
@@ -816,7 +816,7 @@ function commandRows(opts, observation, roleMap) {
 function outputRows(opts) {
   return [
     ['Adoption report', path.join(opts.outDir, 'adoption-report.md'), 'draft'],
-    ['Layout draft', opts.layoutPath, 'draft, not wired'],
+    ['Layout draft', opts.layoutPath, 'draft; scratch-readiness input'],
     ['Tier3 gap report', path.join(opts.outDir, 'tier3-gap-report.md'), 'draft'],
     ['Visual intake note', path.join(opts.outDir, 'visual-spec-intake-note.md'), 'draft'],
     ['testID intake note', path.join(opts.outDir, 'testid-intake-note.md'), 'draft'],
@@ -831,7 +831,7 @@ function renderAdoptionReport(opts, env, roleMap, extraLayers, observation, f3) 
     ? 'possible/partial: role map drafted from observed paths'
     : 'candidate only: no matching src layout observed';
   const axis2 = extraLayers.length
-    ? 'parsed/observed, not gate-wired: layer inventory telemetry recorded'
+    ? 'readiness access wired: layer inventory access rows feed readiness paths; hard gates not promoted'
     : 'not requested by observed tree';
   return renderTemplate('adoption-report.template.md', {
     PROJECT_NAME: opts.projectName,
@@ -862,7 +862,7 @@ function renderTier3GapReport(opts, extraLayers, observation, f3) {
         .map((row) => {
           const currentRole = row.overlap_role ? `flattened into ${row.overlap_role}` : 'telemetry role only';
           const fact = `${row.role}_present=${observation.layerInventory?.facts?.[`${row.role}_present`] === true}`;
-          return `| \`${row.resolved_glob || row.glob}\` | ${row.role} | ${accessSummary(row)} | ${currentRole} | ${fact} | no (\`gate_wired=false\`) |`;
+          return `| \`${row.resolved_glob || row.glob}\` | ${row.role} | ${accessSummary(row)} | ${currentRole} | ${fact} | readiness yes / hard gate no |`;
         })
         .join('\n')
     : extraLayers.length
@@ -920,14 +920,14 @@ function renderTestIdNote(opts, env) {
 function renderTier3ImplementationNote(opts, extraLayers) {
   return `# Tier3 Live Wiring Implementation Note — ${opts.projectName}
 
-> **Status: IMPLEMENTATION NOTE / NOT IMPLEMENTED — ${opts.date}.** This note assumes Adoption-Probe telemetry exists.
-> It does not change PR-D/E code, policy, CI, or gates.
+> **Status: READINESS ACCESS WIRED / HARD GATES NOT PROMOTED — ${opts.date}.** This note describes the remaining non-readiness wiring.
+> It does not promote CI, pre-edit hooks, Open Decisions, confirmed state, or hard gates.
 
 ## Wiring Points
 
 | Slice | Wiring point | Required before touching |
 |---|---|---|
-| PR-D | \`layout-profile.synthesizeModePolicy()\` feeds role-token allow/forbid cells | PR-B parity green, role-token SoT decision confirmed |
+| PR-D | \`layout-profile.synthesizeModePolicy()\` feeds layer allow/forbid cells into readiness paths | implemented for readiness access; hard gates remain off |
 | PR-D | \`implementation-mode-policy.yaml\` role-token cells become generated/checked | resolved-policy diff target, no literal/requires/order drift |
 | PR-D | CI gets a new idempotency check target | not a hard-gate promotion beyond deterministic diff for generated policy |
 | PR-E | \`lint-gen-core\` consumes import-boundary layer subset | warning-first rollout and import-DAG subset agreed |
@@ -952,7 +952,7 @@ function renderTier3ImplementationNote(opts, extraLayers) {
 1. Keep this probe draft-only and collect one real brownfield run.
 2. If catalog count is 0, verify the ui_primitive glob/source before Tier3 work.
 3. PR-B parity tests first, then PR-C fact generalization if needed.
-4. PR-D live policy wiring only with both parity faces green.
+4. PR-D readiness access wiring is active for declared layers; keep CI/pre-edit hardening separate.
 5. PR-E lint DAG warning-first, then telemetry before any hardening OD.
 
 Observed extra layers in this run: ${extraLayers.length ? extraLayers.map((l) => `\`${l.path}\``).join(', ') : 'none'}.
@@ -1091,7 +1091,7 @@ export function formatProbeResult(result) {
   lines.push(`  readiness: ${readinessSummary(observation.readinessJson)}`);
   lines.push(`  validate : ${validateSummary(observation.validateJson, observation.commands.validate)}`);
   lines.push(`  catalog  : ${catalogSummary(observation, result.roleMap)}`);
-  lines.push(`  layers   : ${observation.layerInventory ? `${observation.layerInventory.layers.length} inventory row(s), not gate-wired` : 'not observed'}`);
+  lines.push(`  layers   : ${observation.layerInventory ? `${observation.layerInventory.layers.length} inventory row(s), readiness access wired; hard gates off` : 'not observed'}`);
   lines.push(`  f3       : ${f3Summary(f3)}`);
   lines.push('  invariant: draft-only; live docs/source/CI/OD/confirmed untouched');
   return lines.join('\n') + '\n';

@@ -34,7 +34,7 @@ export class LayoutConfigError extends Error {
 // classifyForbidden/covers/thresholdOf 미러를 두지 않고 path-backstop 의 순수 helper 를 재사용한다.
 // (단일 출처 — guarded surface 분류 로직이 두 곳으로 갈리지 않게.)
 import { classifyForbidden, thresholdOf } from './path-backstop.mjs';
-import { SUPPORTED_LAYER_FACTS } from './layer-inventory.mjs';
+import { BUILT_IN_LAYER_ROLES, SUPPORTED_LAYER_FACTS } from './layer-inventory.mjs';
 
 // --- 경로 정규화 ----------------------------------------------------------
 // glob 은 항상 forward-slash 로 비교/저장한다(Windows 대응; path-backstop.toPosix 와 동일 의미).
@@ -186,67 +186,88 @@ function addUnique(map, key, value) {
   if (!arr.includes(value)) arr.push(value);
 }
 
-function synthesizePathList(existing, synthesizedTokens) {
-  const tokens = synthesizedTokens || [];
-  const remaining = new Set(tokens);
+function layerPolicyPathEntries(layer, roles) {
+  if (!layer || typeof layer.role !== 'string') return [];
+  const roleIsBound = hasOwn(roles, layer.role);
+  if (roleIsBound && BUILT_IN_LAYER_ROLES.includes(layer.role)) return [roleToken(layer.role)];
+  if (layer.glob != null) return asGlobArray(layer.glob);
+  if (roleIsBound) return [roleToken(layer.role)];
+  return [];
+}
+
+function synthesizePathList(existing, synthesizedPaths) {
+  const paths = synthesizedPaths || [];
+  const remaining = new Set(paths);
   const out = [];
+  const seen = new Set();
   for (const raw of existing || []) {
     const s = toPosix(raw);
-    const m = WHOLE_ROLE_TOKEN_RE.exec(s);
-    if (!m) {
+    if (!seen.has(s)) {
       out.push(s);
-      continue;
+      seen.add(s);
     }
-    if (remaining.has(s)) {
-      out.push(s);
-      remaining.delete(s);
-    }
+    if (remaining.has(s)) remaining.delete(s);
   }
-  for (const token of tokens) {
-    if (remaining.has(token)) {
-      out.push(token);
-      remaining.delete(token);
+  for (const pathEntry of paths) {
+    if (!remaining.has(pathEntry)) continue;
+    if (!seen.has(pathEntry)) {
+      out.push(pathEntry);
+      seen.add(pathEntry);
     }
+    remaining.delete(pathEntry);
   }
   return out;
 }
 
-// Tier3 no-wiring helper: layers[].access 를 mode-major policy role-token 셀로 전치한다.
-// readiness.mjs 는 아직 이 함수를 호출하지 않는다. 기존 policy 파일의 리터럴/requires/order 는 유지하고,
-// role-token allowed/forbidden 셀만 layers 에서 합성해 parity 테스트가 drift 를 잡게 한다.
-export function synthesizeModePolicy(policy = {}, layout = {}) {
+function addLayerAccessList(map, modes, entries) {
+  for (const mode of modes || []) {
+    for (const entry of entries) addUnique(map, mode, entry);
+  }
+}
+
+function synthesizeRequires(existing, gates) {
+  const requires = Array.isArray(existing) ? existing.slice() : [];
+  for (const req of gates || []) {
+    if (!requires.includes(req)) requires.push(req);
+  }
+  return requires;
+}
+
+// Tier3 readiness-access helper: layers[].access 를 mode-major policy path 셀로 전치한다.
+// Built-in layer roles keep role-token semantics to preserve preset/rebinding parity. Custom layers
+// with explicit glob materialize the glob directly, so they do not require a matching roles.<role>.
+export function synthesizeModePolicy(policy = {}, layout = {}, options = {}) {
   const layers = asLayerArray(layout.layers || []);
+  const roles = layout?.roles && typeof layout.roles === 'object' ? layout.roles : {};
   const modes = policy.modes && typeof policy.modes === 'object' ? policy.modes : {};
   const order = Array.isArray(policy.order) ? policy.order.slice() : Object.keys(modes);
   const allowByMode = new Map();
   const forbidByMode = new Map();
   const gatesByMode = new Map();
+  const includeGates = options.includeGates === true;
 
   for (const layer of layers) {
-    const token = roleToken(layer.role);
-    for (const mode of layer.access.allow || []) addUnique(allowByMode, mode, token);
-    for (const mode of layer.access.forbid || []) addUnique(forbidByMode, mode, token);
-    for (const mode of layer.gates || []) addUnique(gatesByMode, mode, `${layer.role}_present == true`);
+    const entries = layerPolicyPathEntries(layer, roles);
+    addLayerAccessList(allowByMode, layer.access.allow, entries);
+    addLayerAccessList(forbidByMode, layer.access.forbid, entries);
+    if (includeGates) {
+      for (const mode of layer.gates || []) addUnique(gatesByMode, mode, `${layer.role}_present == true`);
+    }
   }
 
   const modeNames = [...new Set([...order, ...Object.keys(modes), ...allowByMode.keys(), ...forbidByMode.keys(), ...gatesByMode.keys()])];
   const outModes = {};
   for (const name of modeNames) {
     const mode = modes[name] || {};
-    const requires = Array.isArray(mode.requires) ? mode.requires.slice() : [];
-    for (const req of gatesByMode.get(name) || []) {
-      if (!requires.includes(req)) requires.push(req);
-    }
     outModes[name] = {
       ...mode,
-      requires,
+      requires: synthesizeRequires(mode.requires, gatesByMode.get(name)),
       allowed_paths: synthesizePathList(mode.allowed_paths || [], allowByMode.get(name) || []),
       forbidden_paths: synthesizePathList(mode.forbidden_paths || [], forbidByMode.get(name) || []),
     };
   }
   return { ...policy, order, modes: outModes };
 }
-
 // --- 로더 -----------------------------------------------------------------
 // loadLayoutProfile({ kitRoot, flags }) -> resolvedLayout
 //   kitRoot : 킷 루트 절대경로(presets/·policies/ 가 그 아래). 미지정 시 util.KIT_ROOT 사용은

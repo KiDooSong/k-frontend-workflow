@@ -199,7 +199,7 @@ function main() {
         'GENERATED FILE — DO NOT EDIT',
         'Source:  project-layout.yaml layers: telemetry + source tree scan',
         'Command: npm run workflow:state',
-        'Scope:   warning-first; access is parsed/observed, not gate-wired',
+        'Scope:   warning-first; layer access feeds readiness paths; hard gates/CI are not promoted',
       ],
       layerInventory,
     );
