@@ -30,7 +30,7 @@
 ## Rollout Order
 
 1. Keep this probe draft-only and collect one real brownfield run.
-2. Land/verify Track 0 source wiring if F4 or source mismatch appears.
+2. If catalog count is 0, verify the ui_primitive glob/source before Tier3 work.
 3. PR-B parity tests first, then PR-C fact generalization if needed.
 4. PR-D live policy wiring only with both parity faces green.
 5. PR-E lint DAG warning-first, then telemetry before any hardening OD.

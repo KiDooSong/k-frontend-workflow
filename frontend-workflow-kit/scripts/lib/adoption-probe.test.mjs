@@ -92,7 +92,16 @@ test('runAdoptionProbe renders draft outputs and keeps live docs untouched', (t)
   );
   assert.match(fs.readFileSync(path.join(out, 'project-layout.draft.yaml'), 'utf8'), /ui_primitive:\s+"src\/shared\/ui\/\*\*"/);
   assert.match(fs.readFileSync(path.join(out, 'component-catalog.observed.md'), 'utf8'), /src\/shared\/ui\/Button\.tsx/);
-  assert.match(fs.readFileSync(path.join(out, 'adoption-report.md'), 'utf8'), /draft-only/);
+  const adoptionReport = fs.readFileSync(path.join(out, 'adoption-report.md'), 'utf8');
+  assert.match(adoptionReport, /draft-only/);
+  assert.match(adoptionReport, /Rendered from templates\/adoption\/adoption-report\.template\.md/);
+  assert.doesNotMatch(adoptionReport, /\{[A-Z0-9_-]+\}/);
+  const tier3Report = fs.readFileSync(path.join(out, 'tier3-gap-report.md'), 'utf8');
+  assert.match(tier3Report, /Rendered from templates\/adoption\/tier3-gap-report\.template\.md/);
+  assert.doesNotMatch(tier3Report, /\{[A-Z0-9_-]+\}/);
+  const layoutDraft = fs.readFileSync(path.join(out, 'project-layout.draft.yaml'), 'utf8');
+  assert.match(layoutDraft, /catalog-gen loads project-layout/);
+  assert.doesNotMatch(layoutDraft, /hardcod|하드코딩|UI_MARKER/);
   assert.match(fs.readFileSync(path.join(out, 'tier3-live-wiring-implementation-note.md'), 'utf8'), /PR-D/);
   assert.equal(result.observation.commands.state.ok, true);
 });
@@ -114,14 +123,31 @@ test('F3 excludes layers already flattened into built-in roles', (t) => {
   assert.equal(summary.observations.f3.excluded.some((layer) => layer.path === 'src/presentation/profile/viewmodels'), true);
 });
 
-test('runAdoptionProbe rejects output under live docs or source trees', (t) => {
+test('runAdoptionProbe confines output to temp/runs/adoption-probe-id', (t) => {
   const repo = makeRepo(t);
   assert.throws(
-    () => runAdoptionProbe({ repo, out: path.join(repo, 'docs', 'frontend-workflow', 'probe'), id: 'bad-docs' }),
+    () => runAdoptionProbe({ repo, out: repo, id: 'root' }),
+    /--out must resolve to temp\/runs\/adoption-probe-root/,
+  );
+  assert.throws(
+    () => runAdoptionProbe({ repo, out: path.join(repo, '.github', 'workflows', 'probe'), id: 'ci' }),
+    /--out must resolve to temp\/runs\/adoption-probe-ci/,
+  );
+  assert.throws(
+    () => runAdoptionProbe({ repo, out: path.join(repo, 'temp', 'runs', 'probe'), id: 'plain' }),
+    /--out must resolve to temp\/runs\/adoption-probe-plain/,
+  );
+  assert.throws(
+    () =>
+      runAdoptionProbe({
+        repo,
+        out: path.join(repo, 'docs', 'frontend-workflow', 'temp', 'runs', 'adoption-probe-bad-docs'),
+        id: 'bad-docs',
+      }),
     /--out must not be inside live docs\/frontend-workflow/,
   );
   assert.throws(
-    () => runAdoptionProbe({ repo, out: path.join(repo, 'src', 'probe'), id: 'bad-src' }),
+    () => runAdoptionProbe({ repo, out: path.join(repo, 'src', 'temp', 'runs', 'adoption-probe-bad-src'), id: 'bad-src' }),
     /--out must not be inside source tree/,
   );
 });

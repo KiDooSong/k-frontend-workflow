@@ -161,7 +161,7 @@
   "observations": {
     "readiness": "PROFILE-001: rough-fixture-ui",
     "validate": "ok=true, errors=0, warnings=0, exit=0",
-    "catalog": "1 components observed from src/components/ui/**",
+    "catalog": "1 components observed from src/components/ui/** via draft layout",
     "f3": {
       "status": "observed",
       "same": true,

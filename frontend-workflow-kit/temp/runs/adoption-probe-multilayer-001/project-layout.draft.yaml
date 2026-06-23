@@ -23,7 +23,7 @@ roles:
   screen:           "src/presentation/{domain}/screens/**"       # 예: src/presentation/{domain}/screens/**
   domain_component: "src/presentation/{domain}/components/**"    # 예: src/presentation/{domain}/components/**
   hook:             "src/presentation/{domain}/viewmodels/**"         # 예: src/features/{domain}/hooks/**  (← 다층 레포에선 ViewModel 을 임시로 여기 평탄화)
-  ui_primitive:     "src/components/ui/**"           # 예: src/components/ui/**  ⚠ catalog-gen 하드코딩 주의 — 아래 ⚠ 참고
+  ui_primitive:     "src/components/ui/**"           # 예: src/components/ui/**  · catalog-gen --layout observation source
   api_client:       "src/api/**"   # 예: src/api/**
   api_schema:       "src/api/schemas/**"   # 예: src/api/schemas/**
 
@@ -31,16 +31,13 @@ roles:
 # domains:
 #   {domain}:
 #     roles:
-#       screen: "{DOMAIN_SCREEN_GLOB}"
+#       screen: "see adoption-report"
 
-# ⚠⚠⚠ ui_primitive 하드코딩 경고 (catalog-gen.mjs) ⚠⚠⚠
-# catalog-gen 은 이 project-layout 을 **읽지 않고** `/src/components/ui/` 리터럴(UI_MARKER)만 본다
-# (scripts/catalog-gen.mjs 기본값 --src src/components/ui · lib/catalog-gen 의 UI_MARKER).
-# 따라서 ui_primitive 를 위에서 비표준 경로로 재바인딩해도 catalog-gen 은 그 경로를 못 본다 →
-#   component-catalog 0건 → readiness 의 component_catalog_generated:false → rough-fixture-ui 진입 차단.
-# 즉 **Axis 1 재바인딩만으로도** 비표준 ui 경로 레포는 도입이 막힌다(dry-run F4). 우회는 catalog-gen 에
-# --src 를 수동으로 넘기는 것뿐이고, 그건 게이트(readiness)가 보는 산출 경로와 어긋날 수 있다.
-# → adoption-report 의 known blind spots 표 + Warning 콜아웃에 반드시 명시. 선결 PR-0a(ui_primitive 소비)가 닫는다.
+# catalog-gen layout note
+# adoption-probe passes this draft layout to catalog-gen with --layout.
+# catalog-gen loads project-layout and scans the resolved roles.ui_primitive source.
+# If the observed catalog count is 0, treat it as a draft role/source mismatch to inspect,
+# not as evidence that catalog-gen ignored project-layout.
 
 # ════════════════════════════════════════════════════════════════════════════
 # (Tier3 PROPOSED — 주석으로만. 지금 활성화 금지. layout-profile.mjs 가 layers: 를 아직 파싱·소비하지 않음.)
