@@ -70,6 +70,8 @@ test('scanLayerInventory observes deterministic layer facts and flattened overla
 
   const byRole = new Map(inventory.layers.map((row) => [row.role, row]));
   assert.equal(byRole.get('view_model').overlap_role, 'hook');
+  assert.equal(byRole.get('view_model').readiness_access_wired, true);
+  assert.equal(byRole.get('view_model').hard_gate_wired, false);
   assert.equal(byRole.get('view_model').gate_wired, false);
   assert.equal(byRole.get('use_case').file_count, 1, 'node_modules and dot-directories are ignored');
   assert.equal(byRole.get('missing').status, 'missing');
@@ -173,6 +175,7 @@ test('workflow-state writes layer-inventory only for explicit telemetry layers',
   assert.equal(layerRun.status, 0, layerRun.stderr);
   const inventoryText = fs.readFileSync(path.join(outLayer, 'layer-inventory.yaml'), 'utf8');
   assert.match(inventoryText, /view_model_present: true/);
-  assert.match(inventoryText, /gate_wired: false/);
-  assert.match(inventoryText, /not gate-wired/);
+  assert.match(inventoryText, /readiness_access_wired: true/);
+  assert.match(inventoryText, /hard_gate_wired: false/);
+  assert.match(inventoryText, /layer access feeds readiness paths/);
 });

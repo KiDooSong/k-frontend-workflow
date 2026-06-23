@@ -26,7 +26,7 @@
 
 ## 3. Layer Probe (Axis 2)
 
-| Discovered layer | Location | role? | mode gate? | readiness fact? | lint aware? | Note |
+| Discovered layer | Location | role? | readiness access? | readiness fact? | lint aware? | Note |
 |---|---|:---:|:---:|:---:|:---:|---|
 {LAYER_ROWS}
 
@@ -35,7 +35,7 @@
 | Area | Current observation | Signal |
 |---|---|---|
 | Axis 1 role rebinding | draft `project-layout.draft.yaml` rendered and used for observations | observed |
-| Extra layers as native roles | {EXTRA_LAYER_COUNT} extra layer path(s) found | parsed/observed, not gate-wired |
+| Extra layers as native readiness paths | {EXTRA_LAYER_COUNT} extra layer path(s) found | readiness access wired; hard gates not promoted |
 | F3 complete-vs-missing check | {F3_SUMMARY} | draft-only observation |
 | F4 catalog behavior | {CATALOG_SUMMARY} | observed with draft layout |
 | validate scope | {VALIDATE_SUMMARY} | document-structure evidence only |
@@ -74,7 +74,7 @@ Observation files are in `{OBSERVATIONS_PATH}`.
 ## 9. Human Surface Only
 
 - Confirm candidate role paths before any live wiring.
-- Decide whether Axis 2 gating is desired for this brownfield repo; this probe only supplies parsed/observed telemetry and leaves gates unwired.
+- Decide whether Axis 2 gating is desired for this brownfield repo; this probe supplies scratch readiness-access evidence and leaves CI/hard gates unwired.
 - If catalog count is 0, inspect `ui_primitive` and catalog source before treating readiness as actionable.
 
 ## 10. Invariant Check

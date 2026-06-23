@@ -139,12 +139,21 @@ export function collectDoctorFindings({ layout, projectRoot }) {
       }
     }
     if (accessDeclared(layer.access)) {
-      findings.push({
-        severity: 'info',
-        check: 'layer-access-not-gate-wired',
-        role: layer.role,
-        message: `layer '${layer.role}' declares access, but access is parsed/observed only and not gate-wired`,
-      });
+      if (layerGlobs.length === 0) {
+        findings.push({
+          severity: 'warning',
+          check: 'layer-access-unmaterializable',
+          role: layer.role,
+          message: `layer '${layer.role}' declares access but cannot materialize paths; add roles.${layer.role} or layer.glob`,
+        });
+      } else {
+        findings.push({
+          severity: 'info',
+          check: 'layer-access-readiness-wired',
+          role: layer.role,
+          message: `layer '${layer.role}' access materializes to readiness policy paths; hard gates/CI are not promoted`,
+        });
+      }
     }
   }
 

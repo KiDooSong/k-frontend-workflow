@@ -106,6 +106,8 @@
         "fact": "dir_has_files",
         "status": "missing",
         "file_count": 0,
+        "readiness_access_wired": true,
+        "hard_gate_wired": false,
         "gate_wired": false,
         "access": {
           "allow": [
@@ -129,6 +131,8 @@
         "fact": "dir_has_files",
         "status": "present",
         "file_count": 1,
+        "readiness_access_wired": true,
+        "hard_gate_wired": false,
         "gate_wired": false,
         "access": {
           "allow": [
@@ -145,6 +149,8 @@
         "fact": "dir_has_files",
         "status": "present",
         "file_count": 1,
+        "readiness_access_wired": true,
+        "hard_gate_wired": false,
         "gate_wired": false,
         "access": {
           "allow": [
@@ -162,6 +168,8 @@
         "fact": "dir_has_files",
         "status": "present",
         "file_count": 1,
+        "readiness_access_wired": true,
+        "hard_gate_wired": false,
         "gate_wired": false,
         "access": {
           "allow": [
@@ -179,6 +187,8 @@
         "fact": "dir_has_files",
         "status": "present",
         "file_count": 1,
+        "readiness_access_wired": true,
+        "hard_gate_wired": false,
         "gate_wired": false,
         "access": {
           "allow": [
@@ -196,6 +206,8 @@
         "fact": "dir_has_files",
         "status": "present",
         "file_count": 1,
+        "readiness_access_wired": true,
+        "hard_gate_wired": false,
         "gate_wired": false,
         "access": {
           "allow": [
@@ -215,6 +227,8 @@
         "fact": "dir_has_files",
         "status": "present",
         "file_count": 1,
+        "readiness_access_wired": true,
+        "hard_gate_wired": false,
         "gate_wired": false,
         "access": {
           "allow": [
@@ -235,6 +249,8 @@
         "fact": "dir_has_files",
         "status": "present",
         "file_count": 1,
+        "readiness_access_wired": true,
+        "hard_gate_wired": false,
         "gate_wired": false,
         "access": {
           "allow": [
@@ -252,6 +268,8 @@
         "fact": "dir_has_files",
         "status": "present",
         "file_count": 1,
+        "readiness_access_wired": true,
+        "hard_gate_wired": false,
         "gate_wired": false,
         "access": {
           "allow": [
@@ -268,6 +286,8 @@
         "fact": "dir_has_files",
         "status": "present",
         "file_count": 1,
+        "readiness_access_wired": true,
+        "hard_gate_wired": false,
         "gate_wired": false,
         "access": {
           "allow": [
@@ -288,6 +308,8 @@
         "fact": "dir_has_files",
         "status": "present",
         "file_count": 1,
+        "readiness_access_wired": true,
+        "hard_gate_wired": false,
         "gate_wired": false,
         "access": {
           "allow": [
@@ -305,6 +327,8 @@
         "fact": "dir_has_files",
         "status": "present",
         "file_count": 1,
+        "readiness_access_wired": true,
+        "hard_gate_wired": false,
         "gate_wired": false,
         "access": {
           "allow": [

@@ -5,7 +5,9 @@
     "allowed_paths": [
       "src/presentation/profile/screens/**",
       "src/presentation/profile/components/**",
-      "src/presentation/profile/viewmodels/**"
+      "src/presentation/profile/viewmodels/**",
+      "src/domain/profile/usecases/**",
+      "src/domain/profile/entities/**"
     ],
     "forbidden_paths": [
       "src/api/**",
