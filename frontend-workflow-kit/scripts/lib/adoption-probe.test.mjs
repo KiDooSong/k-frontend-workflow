@@ -98,6 +98,8 @@ test('runAdoptionProbe renders draft outputs and keeps live docs untouched', (t)
   assert.doesNotMatch(adoptionReport, /\{[A-Z0-9_-]+\}/);
   const tier3Report = fs.readFileSync(path.join(out, 'tier3-gap-report.md'), 'utf8');
   assert.match(tier3Report, /Rendered from templates\/adoption\/tier3-gap-report\.template\.md/);
+  assert.match(tier3Report, /\| F3 \| Complete vs missing layers indistinguishable \| skipped \| not run \|/);
+  assert.doesNotMatch(tier3Report, /observed change/);
   assert.doesNotMatch(tier3Report, /\{[A-Z0-9_-]+\}/);
   const layoutDraft = fs.readFileSync(path.join(out, 'project-layout.draft.yaml'), 'utf8');
   assert.match(layoutDraft, /catalog-gen loads project-layout/);
@@ -150,6 +152,12 @@ test('runAdoptionProbe confines output to temp/runs/adoption-probe-id', (t) => {
     () => runAdoptionProbe({ repo, out: path.join(repo, 'src', 'temp', 'runs', 'adoption-probe-bad-src'), id: 'bad-src' }),
     /--out must not be inside source tree/,
   );
+});
+test('CLI rejects bare value flags with exit 2', () => {
+  const r = spawnSync(process.execPath, [CLI, '--repo'], { cwd: KIT_ROOT, encoding: 'utf8' });
+  assert.equal(r.status, 2, r.stderr);
+  assert.equal(r.stdout, '');
+  assert.match(r.stderr, /workflow:adoption-probe: --repo requires a value/);
 });
 
 test('CLI writes the same draft-only output contract', (t) => {

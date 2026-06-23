@@ -686,6 +686,12 @@ function f3Summary(f3) {
     : 'readiness changed after scratch Tier3-only layer removal';
   return f3.excluded && f3.excluded.length ? `${comparison}; ${f3.excluded.length} flattened built-in path(s) kept` : comparison;
 }
+
+function f3CoreSignal(f3) {
+  if (f3.same == null) return 'not run';
+  return f3.same ? 'silent' : 'observed change';
+}
+
 function blindSpotRows(extraLayers, observation, f3) {
   const catalogStatus =
     observation.commands.catalog.ok && observation.catalogCount > 0
@@ -696,7 +702,7 @@ function blindSpotRows(extraLayers, observation, f3) {
     ['B1', 'catalog-gen ui_primitive observation / F4', catalogStatus, observation.commands.catalog.ok ? 'layout-aware catalog output' : 'tool error', 'verify draft role map if count is 0'],
     ['B2', 'additional layers inert / F1', layerCount ? `${layerCount} layer path(s)` : 'not observed', 'silent as native roles', 'Tier3 PR-A/C/D'],
     ['B3', 'domain+data edit boundary / F2', layerCount ? 'possible' : 'not observed', 'silent', 'Tier3 PR-D'],
-    ['B4', 'complete vs missing layers / F3', f3Summary(f3), 'silent check', 'Tier3 PR-C'],
+    ['B4', 'complete vs missing layers / F3', f3Summary(f3), f3CoreSignal(f3), 'Tier3 PR-C'],
     ['B5', 'validate layer-blind / F5', 'applies: validate is document-structure only', 'green can be misleading', 'Tier3 PR-E + PR-C'],
   ]
     .map((r) => `| ${r[0]} | ${r[1]} | ${r[2]} | ${r[3]} | ${r[4]} |`)
@@ -772,7 +778,7 @@ function renderTier3GapReport(opts, extraLayers, observation, f3) {
     TIER3_ROWS: rows,
     EXTRA_LAYER_COUNT: String(extraLayers.length),
     F3_SUMMARY: f3Summary(f3),
-    F3_SIGNAL: f3.same ? 'silent' : 'observed change',
+    F3_SIGNAL: f3CoreSignal(f3),
     CATALOG_SUMMARY: catalogSummary(observation, opts.roleMap),
     VALIDATE_SUMMARY: validateSummary(observation.validateJson, observation.commands.validate),
     OBSERVED_EXTRA_LAYERS: extraLayers.length ? extraLayers.map((l) => `\`${l.path}\``).join(', ') : 'none',
@@ -993,11 +999,28 @@ export function formatProbeResult(result) {
   return lines.join('\n') + '\n';
 }
 
+const STRING_FLAGS = new Set(['repo', 'out', 'src', 'docs', 'id', 'date', 'project-name']);
+
+function adoptionProbeCliError(message) {
+  const err = new Error(message);
+  err.name = 'AdoptionProbeCliError';
+  return err;
+}
+
 export function cliMain(argv) {
-  const flags = parseCliArgs(argv);
-  const result = runAdoptionProbe(flags);
-  if (flags.json) process.stdout.write(JSON.stringify(result.outputs, null, 2) + '\n');
-  else process.stdout.write(formatProbeResult(result));
+  try {
+    const flags = parseCliArgs(argv);
+    const result = runAdoptionProbe(flags);
+    if (flags.json) process.stdout.write(JSON.stringify(result.outputs, null, 2) + '\n');
+    else process.stdout.write(formatProbeResult(result));
+  } catch (err) {
+    if (err && err.name === 'AdoptionProbeCliError') {
+      process.stderr.write(`workflow:adoption-probe: ${err.message}\n`);
+      process.exitCode = 2;
+      return;
+    }
+    throw err;
+  }
 }
 
 function parseCliArgs(argv) {
@@ -1007,7 +1030,8 @@ function parseCliArgs(argv) {
     if (!a.startsWith('--')) continue;
     const eq = a.indexOf('=');
     if (eq !== -1) {
-      flags[a.slice(2, eq)] = a.slice(eq + 1);
+      const key = a.slice(2, eq);
+      flags[key] = a.slice(eq + 1);
       continue;
     }
     const key = a.slice(2);
@@ -1018,6 +1042,9 @@ function parseCliArgs(argv) {
     } else {
       flags[key] = true;
     }
+  }
+  for (const key of STRING_FLAGS) {
+    if (flags[key] === true || flags[key] === '') throw adoptionProbeCliError(`--${key} requires a value`);
   }
   return flags;
 }

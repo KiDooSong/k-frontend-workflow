@@ -88,7 +88,7 @@ Observation files are in `./temp/runs/adoption-probe-multilayer-001/observations
 | B1 | catalog-gen ui_primitive observation / F4 | layout-aware catalog populated | layout-aware catalog output | verify draft role map if count is 0 |
 | B2 | additional layers inert / F1 | 7 layer path(s) | silent as native roles | Tier3 PR-A/C/D |
 | B3 | domain+data edit boundary / F2 | possible | silent | Tier3 PR-D |
-| B4 | complete vs missing layers / F3 | readiness byte-identical after scratch Tier3-only layer removal; 1 flattened built-in path(s) kept | silent check | Tier3 PR-C |
+| B4 | complete vs missing layers / F3 | readiness byte-identical after scratch Tier3-only layer removal; 1 flattened built-in path(s) kept | silent | Tier3 PR-C |
 | B5 | validate layer-blind / F5 | applies: validate is document-structure only | green can be misleading | Tier3 PR-E + PR-C |
 
 ## 8. Draft Outputs
