@@ -2,7 +2,7 @@
 import path from 'node:path';
 import { isDir, walkFiles } from './util.mjs';
 import { globRoot, globToRegExp } from './glob.mjs';
-import { BUILT_IN_LAYER_ROLES, SUPPORTED_LAYER_FACTS } from './layer-inventory.mjs';
+import { BUILT_IN_LAYER_ROLES } from './layer-inventory.mjs';
 
 function toPosix(p) {
   return String(p).split(path.sep).join('/').replace(/\\/g, '/');
@@ -38,9 +38,15 @@ function rootsOverlap(a, b) {
   return a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
 }
 
-function globRoots(value) {
+function globRootForOverlap(glob) {
+  return globRoot(toPosix(glob).replace(/\{[^/{}]+\}/g, '__placeholder__')).replace(/\/+$/, '');
+}
+
+function globRoots(value, { preservePlaceholders = false } = {}) {
   return asArray(value)
-    .map((glob) => globRoot(toPosix(glob)).replace(/\/+$/, ''))
+    .map((glob) =>
+      preservePlaceholders ? globRootForOverlap(glob) : globRoot(toPosix(glob)).replace(/\/+$/, ''),
+    )
     .filter(Boolean);
 }
 
@@ -82,7 +88,6 @@ export function collectDoctorFindings({ layout, projectRoot }) {
   }
 
   const knownRoles = new Set(Object.keys(roles));
-  const supportedFacts = new Set(SUPPORTED_LAYER_FACTS);
   for (const layer of layers) {
     if (!layer || typeof layer.role !== 'string') continue;
     if (!knownRoles.has(layer.role) && !layer.glob) {
@@ -91,15 +96,6 @@ export function collectDoctorFindings({ layout, projectRoot }) {
         check: 'layer-role',
         role: layer.role,
         message: `layer '${layer.role}' has no matching roles.${layer.role} binding and no layer glob`,
-      });
-    }
-    if (layer.fact && !supportedFacts.has(layer.fact)) {
-      findings.push({
-        severity: 'warning',
-        check: 'layer-fact',
-        role: layer.role,
-        fact: layer.fact,
-        message: `layer '${layer.role}' uses unsupported fact '${layer.fact}' (supported: ${SUPPORTED_LAYER_FACTS.join(', ')})`,
       });
     }
     if (layer.glob) {
@@ -117,19 +113,21 @@ export function collectDoctorFindings({ layout, projectRoot }) {
         }
       }
     }
-    const layerRoots = globRoots(layer.glob);
-    for (const role of BUILT_IN_LAYER_ROLES) {
-      if (role === layer.role || !roles[role]) continue;
-      const roleRoots = globRoots(roles[role]);
-      if (layerRoots.some((a) => roleRoots.some((b) => rootsOverlap(a, b)))) {
-        findings.push({
-          severity: 'warning',
-          check: 'layer-overlap',
-          role: layer.role,
-          overlap_role: role,
-          message: `layer '${layer.role}' overlaps built-in role '${role}' (observed as flattened/overlap, not a hard failure)`,
-        });
-        break;
+    if (!BUILT_IN_LAYER_ROLES.includes(layer.role)) {
+      const layerRoots = globRoots(layer.glob, { preservePlaceholders: true });
+      for (const role of BUILT_IN_LAYER_ROLES) {
+        if (role === layer.role || !roles[role]) continue;
+        const roleRoots = globRoots(roles[role], { preservePlaceholders: true });
+        if (layerRoots.some((a) => roleRoots.some((b) => rootsOverlap(a, b)))) {
+          findings.push({
+            severity: 'warning',
+            check: 'layer-overlap',
+            role: layer.role,
+            overlap_role: role,
+            message: `layer '${layer.role}' overlaps built-in role '${role}' (observed as flattened/overlap, not a hard failure)`,
+          });
+          break;
+        }
       }
     }
     if (accessDeclared(layer.access)) {

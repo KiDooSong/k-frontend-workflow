@@ -33,19 +33,19 @@ test('collectDoctorFindings: existing role glob is not warned, missing role glob
   assert.equal(missing.count, 0);
 });
 
-test('collectDoctorFindings: layer role/fact issues are advisory findings', () => {
+test('collectDoctorFindings: missing layer role binding is advisory when no glob is declared', () => {
   const findings = collectDoctorFindings({
     projectRoot: process.cwd(),
     layout: {
       roles: { hook: 'src/features/{domain}/hooks/**' },
       layers: [
         { role: 'hook', fact: 'dir_has_files', access: { allow: [], forbid: [] } },
-        { role: 'repository', fact: 'dir_has_tests', access: { allow: [], forbid: [] } },
+        { role: 'repository', fact: 'dir_has_files', access: { allow: [], forbid: [] } },
       ],
     },
   });
   assert.ok(findings.some((f) => f.check === 'layer-role' && f.role === 'repository'));
-  assert.ok(findings.some((f) => f.check === 'layer-fact' && f.role === 'repository'));
+  assert.equal(findings.some((f) => f.check === 'layer-fact'), false);
   assert.equal(findings.every((f) => f.severity === 'warning'), true);
 });
 
@@ -73,6 +73,43 @@ test('workflow:doctor CLI wraps LayoutConfigError with runCli exit 2 and no stac
   assert.match(r.stderr, /workflow:doctor: layout-profile:/);
   assert.doesNotMatch(r.stderr, /\n\s+at\s+/);
   assert.equal(r.stdout, '');
+});
+
+test('workflow:doctor CLI surfaces unsupported layer fact as layout config error', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'doctor-unsupported-fact-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(tmp, 'src'), { recursive: true });
+  const layoutPath = path.join(tmp, 'project-layout.yaml');
+  fs.writeFileSync(
+    layoutPath,
+    [
+      'version: 1',
+      'layers:',
+      '  - role: repository',
+      '    glob: src/data/{domain}/repositories/**',
+      '    fact: dir_has_tests',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  const r = spawnSync(process.execPath, [DOCTOR_CLI, '--src', path.join(tmp, 'src'), '--layout', layoutPath], {
+    cwd: KIT_ROOT,
+    encoding: 'utf8',
+  });
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /workflow:doctor: layout-profile: .*unsupported/);
+  assert.equal(r.stdout, '');
+});
+
+test('workflow:doctor default coupon fixture has no overlap warnings', () => {
+  const r = spawnSync(process.execPath, [DOCTOR_CLI, '--src', 'examples/coupon-feature/src', '--json'], {
+    cwd: KIT_ROOT,
+    encoding: 'utf8',
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const report = JSON.parse(r.stdout);
+  assert.equal(report.findings.some((f) => f.check === 'layer-overlap'), false);
+  assert.equal(report.warning_count, 0);
 });
 
 test('collectDoctorFindings: telemetry layer with explicit glob does not require matching role binding', () => {

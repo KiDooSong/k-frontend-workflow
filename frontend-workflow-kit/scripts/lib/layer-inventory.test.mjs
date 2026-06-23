@@ -102,6 +102,35 @@ test('scanLayerInventory reports multi-glob rows independently while facts stay 
   assert.equal(rows.get('src/domain/profile/repositories/**').file_count, 0);
 });
 
+test('scanLayerInventory follows domain-specific layersFor declarations', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'layer-inventory-domain-layers-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  write(path.join(tmp, 'src', 'features', 'coupons', 'repositories', 'couponRepository.ts'), 'export const couponRepository = {};\n');
+
+  const layout = {
+    layers: [],
+    layersFor(domain) {
+      return domain === 'coupons'
+        ? [
+            {
+              role: 'repository',
+              glob: 'src/features/{domain}/repositories/**',
+              fact: 'dir_has_files',
+              access: { allow: [], forbid: [] },
+            },
+          ]
+        : [];
+    },
+  };
+
+  const inventory = scanLayerInventory({ projectRoot: tmp, srcDir: path.join(tmp, 'src'), layout, screens: [{ domain: 'coupons' }] });
+  assert.equal(inventory.facts.repository_present, true);
+  assert.equal(inventory.layers.length, 1);
+  assert.equal(inventory.layers[0].domain, 'coupons');
+  assert.equal(inventory.layers[0].resolved_glob, 'src/features/coupons/repositories/**');
+  assert.equal(inventory.layers[0].status, 'present');
+});
+
 test('workflow-state writes layer-inventory only for explicit telemetry layers', (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'workflow-layer-inventory-'));
   t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));

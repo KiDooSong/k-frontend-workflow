@@ -136,6 +136,29 @@ test('deriveMetrics: domain layersFor derives domain-scoped <role>_present facts
   assert.equal(derived.repository_present, true);
 });
 
+test('deriveMetrics: fake_hook_exists keeps legacy TypeScript-only guard', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'spec-fake-hook-ts-only-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const hooks = path.join(tmp, 'src', 'features', 'coupons', 'hooks');
+  fs.mkdirSync(hooks, { recursive: true });
+  fs.writeFileSync(path.join(hooks, 'useCoupons.js'), 'export const useCoupons = () => null;\n');
+  const roles = { hook: 'src/features/{domain}/hooks/**' };
+  const layout = {
+    roles,
+    layers: [{ role: 'hook', fact: 'dir_has_files' }],
+    roleGlobs(role) {
+      const value = roles[role];
+      return value ? [value] : [];
+    },
+  };
+  const derived = deriveMetrics(
+    { frontmatter: { domain: 'coupons' }, sections: {}, dir: tmp },
+    { srcDir: path.join(tmp, 'src'), projectRoot: tmp, layout },
+  );
+  assert.equal(derived.hook_present, true);
+  assert.equal(derived.fake_hook_exists, false);
+});
+
 test('deriveMetrics: dir_has_files facts follow role globs recursively', (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'spec-role-glob-fact-'));
   t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));

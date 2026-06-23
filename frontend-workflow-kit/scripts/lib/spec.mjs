@@ -10,7 +10,7 @@ import {
   CONFIDENCE_ORDER,
   projectRootOf,
 } from './util.mjs';
-import { layerHasFiles } from './layer-inventory.mjs';
+import { layerHasFiles, TYPESCRIPT_FACT_EXTS } from './layer-inventory.mjs';
 
 const REQUIRED_STATES = ['loading', 'success', 'empty', 'error', 'refreshing'];
 // HTML 주석 제거 (표/섹션 감지를 방해하지 않도록)
@@ -306,11 +306,12 @@ export function deriveMetrics(spec, opts = {}) {
   const apiConfidenceMin = minApiConfidence(sections['api candidates']);
 
   // layer presence facts: declared layers with fact: dir_has_files derive <role>_present.
-  // fake_hook_exists remains a back-compat alias for hook_present and keeps the old guard behavior.
+  // fake_hook_exists remains the legacy readiness input and keeps the old .ts/.tsx-only guard behavior.
   const layerPresenceFacts = {};
+  let effectiveLayers = [];
   if (srcDir && domain && layout) {
-    const layers = typeof layout.layersFor === 'function' ? layout.layersFor(domain) : layout.layers;
-    for (const layer of Array.isArray(layers) ? layers : []) {
+    effectiveLayers = typeof layout.layersFor === 'function' ? layout.layersFor(domain) : layout.layers;
+    for (const layer of Array.isArray(effectiveLayers) ? effectiveLayers : []) {
       if (!layer || layer.fact !== 'dir_has_files' || !layer.role) continue;
       layerPresenceFacts[`${layer.role}_present`] = layerHasFiles(layer, {
         layout,
@@ -321,13 +322,17 @@ export function deriveMetrics(spec, opts = {}) {
     }
   }
   let fakeHookExists = false;
-  if (Object.prototype.hasOwnProperty.call(layerPresenceFacts, 'hook_present')) {
-    fakeHookExists = layerPresenceFacts.hook_present;
-  } else if (srcDir && domain && layout) {
-    fakeHookExists = layerHasFiles(
-      { role: 'hook', fact: 'dir_has_files' },
-      { layout, projectRoot, domain, excludeNestedRoles: true },
-    );
+  if (srcDir && domain && layout) {
+    const hookLayer =
+      (Array.isArray(effectiveLayers) ? effectiveLayers : []).find((layer) => layer && layer.role === 'hook') ||
+      { role: 'hook', fact: 'dir_has_files' };
+    fakeHookExists = layerHasFiles(hookLayer, {
+      layout,
+      projectRoot,
+      domain,
+      excludeNestedRoles: true,
+      exts: TYPESCRIPT_FACT_EXTS,
+    });
   }
 
   // figma mapping: 같은 디렉토리의 figma-component-mapping.md 존재 + status

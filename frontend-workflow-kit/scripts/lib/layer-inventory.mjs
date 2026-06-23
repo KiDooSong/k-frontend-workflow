@@ -16,7 +16,8 @@ export const BUILT_IN_LAYER_ROLES = [
   'api_schema',
 ];
 
-const SOURCE_FACT_EXTS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'];
+export const SOURCE_FACT_EXTS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'];
+export const TYPESCRIPT_FACT_EXTS = ['.ts', '.tsx'];
 
 function toPosix(p) {
   return String(p || '').replace(/\\/g, '/');
@@ -84,9 +85,15 @@ function roleGlobValues(layout, role, domain) {
   return [];
 }
 
-function globRoots(globs) {
+function globRootForOverlap(glob) {
+  return globRoot(toPosix(glob).replace(/\{[^/{}]+\}/g, '__placeholder__')).replace(/\/+$/, '');
+}
+
+function globRoots(globs, { preservePlaceholders = false } = {}) {
   return globs
-    .map((g) => globRoot(g).replace(/\/+$/, ''))
+    .map((g) =>
+      preservePlaceholders ? globRootForOverlap(g) : globRoot(g).replace(/\/+$/, ''),
+    )
     .filter((root) => root !== '');
 }
 
@@ -127,23 +134,23 @@ function matchingFilesForGlob(glob, { projectRoot, excludeMatchers = [], exts = 
   return { files, outOfScope: false };
 }
 
-export function countLayerFiles(layer, { layout, projectRoot, domain, excludeNestedRoles = false } = {}) {
+export function countLayerFiles(layer, { layout, projectRoot, domain, excludeNestedRoles = false, exts = SOURCE_FACT_EXTS } = {}) {
   const globs = layerGlobValues(layer, { layout, domain });
   const excludeMatchers = excludeNestedRoles ? nestedRoleMatchers(layout, layer.role, domain, globs) : [];
   const files = new Set();
   let outOfScope = false;
   for (const glob of globs) {
-    const result = matchingFilesForGlob(glob, { projectRoot, excludeMatchers });
+    const result = matchingFilesForGlob(glob, { projectRoot, excludeMatchers, exts });
     outOfScope = outOfScope || result.outOfScope;
     for (const file of result.files) files.add(file);
   }
   return { count: files.size, outOfScope, globs };
 }
 
-function countResolvedGlobFiles(layer, resolvedGlob, { layout, projectRoot, domain, excludeNestedRoles = false } = {}) {
+function countResolvedGlobFiles(layer, resolvedGlob, { layout, projectRoot, domain, excludeNestedRoles = false, exts = SOURCE_FACT_EXTS } = {}) {
   if (!resolvedGlob) return { count: 0, outOfScope: false };
   const excludeMatchers = excludeNestedRoles ? nestedRoleMatchers(layout, layer.role, domain, [resolvedGlob]) : [];
-  const result = matchingFilesForGlob(resolvedGlob, { projectRoot, excludeMatchers });
+  const result = matchingFilesForGlob(resolvedGlob, { projectRoot, excludeMatchers, exts });
   return { count: result.files.length, outOfScope: result.outOfScope };
 }
 
@@ -151,8 +158,9 @@ export function layerHasFiles(layer, opts = {}) {
   return countLayerFiles(layer, opts).count > 0;
 }
 
-function layerDomains(layer, domains) {
-  const rawGlobs = asArray(layer.glob);
+function layerDomains(layer, domains, layout) {
+  let rawGlobs = asArray(layer.glob);
+  if (rawGlobs.length === 0 && layer?.role && layout) rawGlobs = roleGlobValues(layout, layer.role, null);
   const needsDomain = rawGlobs.some((g) => String(g).includes('{domain}'));
   if (!needsDomain) return [null];
   return domains.length ? domains : [null];
@@ -167,11 +175,11 @@ function screenDomains(screens) {
 
 function overlapInfo(layer, { layout, domain }) {
   if (!layout?.roles) return null;
-  const layerRoots = globRoots(layerGlobValues(layer, { layout, domain }));
+  const layerRoots = globRoots(layerGlobValues(layer, { layout, domain }), { preservePlaceholders: true });
   if (!layerRoots.length) return null;
   for (const role of BUILT_IN_LAYER_ROLES) {
     if (role === layer.role || !Object.prototype.hasOwnProperty.call(layout.roles, role)) continue;
-    const roleRoots = globRoots(roleGlobValues(layout, role, domain));
+    const roleRoots = globRoots(roleGlobValues(layout, role, domain), { preservePlaceholders: true });
     if (layerRoots.some((a) => roleRoots.some((b) => rootsOverlap(a, b)))) {
       return { status: 'flattened_overlap', role };
     }
@@ -194,62 +202,100 @@ function cloneAccess(access) {
   };
 }
 
-export function resolveLayerModel({ layout } = {}) {
-  const layers = Array.isArray(layout?.layers) ? layout.layers : [];
+function layerModel(layer, domain) {
   return {
-    layers: layers.map((layer) => ({
-      role: layer.role,
-      glob: layer.glob,
-      fact: layer.fact,
-      access: accessModel(layer),
-      gate_wired: false,
-    })),
+    role: layer.role,
+    glob: layer.glob,
+    fact: layer.fact,
+    access: accessModel(layer),
+    gate_wired: false,
+    domain,
   };
 }
 
+function layerModelKey(layer) {
+  return JSON.stringify([
+    layer.domain ?? null,
+    layer.role,
+    layer.glob ?? null,
+    layer.fact,
+    layer.access,
+  ]);
+}
+
+export function resolveLayerModel({ layout, domains = [] } = {}) {
+  const layers = [];
+  const seen = new Set();
+  const addLayer = (layer, domain) => {
+    if (!layer || typeof layer.role !== 'string') return;
+    const model = layerModel(layer, domain);
+    const key = layerModelKey(model);
+    if (seen.has(key)) return;
+    seen.add(key);
+    layers.push(model);
+  };
+
+  if (typeof layout?.layersFor === 'function') {
+    const domainList = domains.length ? domains : [null];
+    for (const domain of domainList) {
+      const effectiveLayers = layout.layersFor(domain);
+      for (const layer of Array.isArray(effectiveLayers) ? effectiveLayers : []) {
+        for (const scanDomain of layerDomains(layer, domain == null ? [] : [domain], layout)) {
+          addLayer(layer, scanDomain);
+        }
+      }
+    }
+  } else {
+    const baseLayers = Array.isArray(layout?.layers) ? layout.layers : [];
+    for (const layer of baseLayers) {
+      for (const scanDomain of layerDomains(layer, domains, layout)) {
+        addLayer(layer, scanDomain);
+      }
+    }
+  }
+
+  return { layers };
+}
+
 export function scanLayerInventory({ projectRoot, srcDir, layout, screens = [] } = {}) {
-  const model = resolveLayerModel({ layout });
-  if (model.layers.length === 0) return null;
   const root = projectRoot || projectRootOf(srcDir);
   const domains = screenDomains(screens);
+  const model = resolveLayerModel({ layout, domains });
+  if (model.layers.length === 0) return null;
   const rows = [];
   const facts = {};
 
   for (const layer of model.layers) {
     if (layer.fact !== 'dir_has_files') continue;
-    const domainsForLayer = layerDomains(layer, domains);
-    let anyPresent = false;
-    for (const domain of domainsForLayer) {
-      const { count, globs } = countLayerFiles(layer, {
+    const domain = layer.domain;
+    const { count, globs } = countLayerFiles(layer, {
+      layout,
+      projectRoot: root,
+      domain,
+      excludeNestedRoles: true,
+    });
+    facts[`${layer.role}_present`] = Boolean(facts[`${layer.role}_present`]) || count > 0;
+    for (const resolvedGlob of globs.length ? globs : [null]) {
+      const rowScan = countResolvedGlobFiles(layer, resolvedGlob, {
         layout,
         projectRoot: root,
         domain,
         excludeNestedRoles: true,
       });
-      anyPresent = anyPresent || count > 0;
-      for (const resolvedGlob of globs.length ? globs : [null]) {
-        const rowScan = countResolvedGlobFiles(layer, resolvedGlob, {
-          layout,
-          projectRoot: root,
-          domain,
-          excludeNestedRoles: true,
-        });
-        const overlap = overlapInfo({ ...layer, glob: resolvedGlob || layer.glob }, { layout, domain });
-        rows.push({
-          role: layer.role,
-          glob: Array.isArray(layer.glob) ? layer.glob.slice() : layer.glob,
-          domain,
-          resolved_glob: resolvedGlob,
-          fact: layer.fact,
-          status: rowScan.outOfScope ? 'out_of_scope' : rowScan.count > 0 ? 'present' : 'missing',
-          file_count: rowScan.count,
-          gate_wired: false,
-          access: cloneAccess(layer.access),
-          ...(overlap ? { overlap: overlap.status, overlap_role: overlap.role } : {}),
-        });
-      }
+      const overlap = overlapInfo({ ...layer, glob: resolvedGlob || layer.glob }, { layout, domain });
+      rows.push({
+        role: layer.role,
+        glob: Array.isArray(layer.glob) ? layer.glob.slice() : layer.glob,
+        domain,
+        resolved_glob: resolvedGlob,
+        fact: layer.fact,
+        status: rowScan.outOfScope ? 'out_of_scope' : rowScan.count > 0 ? 'present' : 'missing',
+        file_count: rowScan.count,
+        gate_wired: false,
+        access: cloneAccess(layer.access),
+        ...(overlap ? { overlap: overlap.status, overlap_role: overlap.role } : {}),
+      });
     }
-    facts[`${layer.role}_present`] = anyPresent;
   }
 
   rows.sort((a, b) =>
