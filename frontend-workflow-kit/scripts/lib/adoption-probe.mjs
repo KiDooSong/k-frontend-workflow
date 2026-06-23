@@ -937,7 +937,7 @@ function renderTier3ImplementationNote(opts, extraLayers) {
 - Forward-gate parity: synthesized role-token allow/forbid cells equal current policy role-token cells.
 - Backstop parity: guarded surface remains \`openapi.yaml\`, \`openapi.yml\`, \`src/api/**\`; screen re-lock does not leak into clearance.
 - Golden parity: coupon/readiness fixtures remain byte-equivalent.
-- Alias parity: \`fake_hook_exists\` stays equivalent to \`hook_present\` if PR-C is present.
+- Alias parity: \`fake_hook_exists\` remains the legacy TS-only hook readiness input; \`hook_present\` may observe broader source files.
 
 ## Failure Modes
 

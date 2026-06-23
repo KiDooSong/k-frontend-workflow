@@ -55,6 +55,13 @@ function accessDeclared(access) {
   return asArray(access.allow).length > 0 || asArray(access.forbid).length > 0;
 }
 
+function layerGlobValues(layer, roles) {
+  if (layer && BUILT_IN_LAYER_ROLES.includes(layer.role) && Object.prototype.hasOwnProperty.call(roles, layer.role)) {
+    return asArray(roles[layer.role]);
+  }
+  return asArray(layer?.glob);
+}
+
 export function collectDoctorFindings({ layout, projectRoot }) {
   const findings = [];
   const roles = layout?.roles && typeof layout.roles === 'object' ? layout.roles : {};
@@ -98,8 +105,9 @@ export function collectDoctorFindings({ layout, projectRoot }) {
         message: `layer '${layer.role}' has no matching roles.${layer.role} binding and no layer glob`,
       });
     }
-    if (layer.glob) {
-      for (const glob of asArray(layer.glob)) {
+    const layerGlobs = layerGlobValues(layer, roles);
+    if (layerGlobs.length) {
+      for (const glob of layerGlobs) {
         const { count, root } = countMatchingFiles(glob, { projectRoot });
         if (count === 0) {
           findings.push({

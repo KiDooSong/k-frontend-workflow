@@ -158,11 +158,11 @@ export function layerHasFiles(layer, opts = {}) {
   return countLayerFiles(layer, opts).count > 0;
 }
 
-function layerDomains(layer, domains, layout) {
+function layerDomains(layer, domains, layout, { preserveConcreteDomain = false } = {}) {
   let rawGlobs = asArray(layer.glob);
   if (rawGlobs.length === 0 && layer?.role && layout) rawGlobs = roleGlobValues(layout, layer.role, null);
   const needsDomain = rawGlobs.some((g) => String(g).includes('{domain}'));
-  if (!needsDomain) return [null];
+  if (!needsDomain) return preserveConcreteDomain && domains.length === 1 ? domains : [null];
   return domains.length ? domains : [null];
 }
 
@@ -223,6 +223,10 @@ function layerModelKey(layer) {
   ]);
 }
 
+function layerIdentityKey(layer) {
+  return layerModelKey(layerModel(layer, null));
+}
+
 export function resolveLayerModel({ layout, domains = [] } = {}) {
   const layers = [];
   const seen = new Set();
@@ -236,11 +240,13 @@ export function resolveLayerModel({ layout, domains = [] } = {}) {
   };
 
   if (typeof layout?.layersFor === 'function') {
+    const baseLayerKeys = new Set((Array.isArray(layout.layers) ? layout.layers : []).map(layerIdentityKey));
     const domainList = domains.length ? domains : [null];
     for (const domain of domainList) {
       const effectiveLayers = layout.layersFor(domain);
       for (const layer of Array.isArray(effectiveLayers) ? effectiveLayers : []) {
-        for (const scanDomain of layerDomains(layer, domain == null ? [] : [domain], layout)) {
+        const preserveConcreteDomain = domain != null && !baseLayerKeys.has(layerIdentityKey(layer));
+        for (const scanDomain of layerDomains(layer, domain == null ? [] : [domain], layout, { preserveConcreteDomain })) {
           addLayer(layer, scanDomain);
         }
       }

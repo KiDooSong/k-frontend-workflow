@@ -114,7 +114,7 @@ test('scanLayerInventory follows domain-specific layersFor declarations', (t) =>
         ? [
             {
               role: 'repository',
-              glob: 'src/features/{domain}/repositories/**',
+              glob: 'src/features/coupons/repositories/**',
               fact: 'dir_has_files',
               access: { allow: [], forbid: [] },
             },

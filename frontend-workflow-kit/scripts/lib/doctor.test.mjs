@@ -101,6 +101,31 @@ test('workflow:doctor CLI surfaces unsupported layer fact as layout config error
   assert.equal(r.stdout, '');
 });
 
+test('collectDoctorFindings: built-in layer glob checks follow rebound role paths', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'doctor-role-rebind-layer-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(tmp, 'src', 'presentation', 'profile', 'screens'), { recursive: true });
+  fs.writeFileSync(path.join(tmp, 'src', 'presentation', 'profile', 'screens', 'Profile.tsx'), 'export function Profile() { return null; }\n');
+
+  const findings = collectDoctorFindings({
+    projectRoot: tmp,
+    layout: {
+      roles: { screen: 'src/presentation/{domain}/screens/**' },
+      layers: [
+        {
+          role: 'screen',
+          glob: 'src/features/{domain}/screens/**',
+          fact: 'dir_has_files',
+          access: { allow: [], forbid: [] },
+        },
+      ],
+    },
+  });
+
+  assert.equal(findings.some((f) => f.check === 'role-glob' && f.role === 'screen'), false);
+  assert.equal(findings.some((f) => f.check === 'layer-glob' && f.role === 'screen'), false);
+});
+
 test('workflow:doctor default coupon fixture has no overlap warnings', () => {
   const r = spawnSync(process.execPath, [DOCTOR_CLI, '--src', 'examples/coupon-feature/src', '--json'], {
     cwd: KIT_ROOT,
