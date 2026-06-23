@@ -74,3 +74,16 @@ test('workflow:doctor CLI wraps LayoutConfigError with runCli exit 2 and no stac
   assert.doesNotMatch(r.stderr, /\n\s+at\s+/);
   assert.equal(r.stdout, '');
 });
+
+test('collectDoctorFindings: telemetry layer with explicit glob does not require matching role binding', () => {
+  const findings = collectDoctorFindings({
+    projectRoot: process.cwd(),
+    layout: {
+      roles: {},
+      layers: [
+        { role: 'repository', glob: 'src/data/{domain}/repositories/**', fact: 'dir_has_files', access: { allow: [], forbid: [] } },
+      ],
+    },
+  });
+  assert.equal(findings.some((f) => f.check === 'layer-role' && f.role === 'repository'), false);
+});

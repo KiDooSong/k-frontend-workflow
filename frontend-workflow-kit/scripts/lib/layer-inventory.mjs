@@ -140,6 +140,13 @@ export function countLayerFiles(layer, { layout, projectRoot, domain, excludeNes
   return { count: files.size, outOfScope, globs };
 }
 
+function countResolvedGlobFiles(layer, resolvedGlob, { layout, projectRoot, domain, excludeNestedRoles = false } = {}) {
+  if (!resolvedGlob) return { count: 0, outOfScope: false };
+  const excludeMatchers = excludeNestedRoles ? nestedRoleMatchers(layout, layer.role, domain, [resolvedGlob]) : [];
+  const result = matchingFilesForGlob(resolvedGlob, { projectRoot, excludeMatchers });
+  return { count: result.files.length, outOfScope: result.outOfScope };
+}
+
 export function layerHasFiles(layer, opts = {}) {
   return countLayerFiles(layer, opts).count > 0;
 }
@@ -213,7 +220,7 @@ export function scanLayerInventory({ projectRoot, srcDir, layout, screens = [] }
     const domainsForLayer = layerDomains(layer, domains);
     let anyPresent = false;
     for (const domain of domainsForLayer) {
-      const { count, outOfScope, globs } = countLayerFiles(layer, {
+      const { count, globs } = countLayerFiles(layer, {
         layout,
         projectRoot: root,
         domain,
@@ -221,6 +228,12 @@ export function scanLayerInventory({ projectRoot, srcDir, layout, screens = [] }
       });
       anyPresent = anyPresent || count > 0;
       for (const resolvedGlob of globs.length ? globs : [null]) {
+        const rowScan = countResolvedGlobFiles(layer, resolvedGlob, {
+          layout,
+          projectRoot: root,
+          domain,
+          excludeNestedRoles: true,
+        });
         const overlap = overlapInfo({ ...layer, glob: resolvedGlob || layer.glob }, { layout, domain });
         rows.push({
           role: layer.role,
@@ -228,8 +241,8 @@ export function scanLayerInventory({ projectRoot, srcDir, layout, screens = [] }
           domain,
           resolved_glob: resolvedGlob,
           fact: layer.fact,
-          status: outOfScope ? 'out_of_scope' : count > 0 ? 'present' : 'missing',
-          file_count: count,
+          status: rowScan.outOfScope ? 'out_of_scope' : rowScan.count > 0 ? 'present' : 'missing',
+          file_count: rowScan.count,
           gate_wired: false,
           access: cloneAccess(layer.access),
           ...(overlap ? { overlap: overlap.status, overlap_role: overlap.role } : {}),

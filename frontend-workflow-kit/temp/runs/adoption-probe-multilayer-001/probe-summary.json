@@ -214,7 +214,7 @@
         "resolved_glob": "src/data/profile/repositories/**",
         "fact": "dir_has_files",
         "status": "present",
-        "file_count": 2,
+        "file_count": 1,
         "gate_wired": false,
         "access": {
           "allow": [
@@ -234,7 +234,7 @@
         "resolved_glob": "src/domain/profile/repositories/**",
         "fact": "dir_has_files",
         "status": "present",
-        "file_count": 2,
+        "file_count": 1,
         "gate_wired": false,
         "access": {
           "allow": [

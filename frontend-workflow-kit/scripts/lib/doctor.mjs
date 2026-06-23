@@ -85,12 +85,12 @@ export function collectDoctorFindings({ layout, projectRoot }) {
   const supportedFacts = new Set(SUPPORTED_LAYER_FACTS);
   for (const layer of layers) {
     if (!layer || typeof layer.role !== 'string') continue;
-    if (!knownRoles.has(layer.role)) {
+    if (!knownRoles.has(layer.role) && !layer.glob) {
       findings.push({
         severity: 'warning',
         check: 'layer-role',
         role: layer.role,
-        message: `layer '${layer.role}' has no matching roles.${layer.role} binding`,
+        message: `layer '${layer.role}' has no matching roles.${layer.role} binding and no layer glob`,
       });
     }
     if (layer.fact && !supportedFacts.has(layer.fact)) {

@@ -76,6 +76,32 @@ test('scanLayerInventory observes deterministic layer facts and flattened overla
   assert.equal(byRole.get('outside').status, 'out_of_scope');
 });
 
+test('scanLayerInventory reports multi-glob rows independently while facts stay aggregate', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'layer-inventory-multiglob-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  write(path.join(tmp, 'src', 'data', 'profile', 'repositories', 'ProfileRepo.ts'), 'export const repo = true;\n');
+
+  const layout = {
+    roles: {},
+    layers: [
+      {
+        role: 'repository',
+        glob: ['src/data/{domain}/repositories/**', 'src/domain/{domain}/repositories/**'],
+        fact: 'dir_has_files',
+        access: { allow: ['final-fixture-ui'], forbid: [] },
+      },
+    ],
+  };
+
+  const inventory = scanLayerInventory({ projectRoot: tmp, srcDir: path.join(tmp, 'src'), layout, screens: [{ domain: 'profile' }] });
+  assert.equal(inventory.facts.repository_present, true);
+  const rows = new Map(inventory.layers.map((row) => [row.resolved_glob, row]));
+  assert.equal(rows.get('src/data/profile/repositories/**').status, 'present');
+  assert.equal(rows.get('src/data/profile/repositories/**').file_count, 1);
+  assert.equal(rows.get('src/domain/profile/repositories/**').status, 'missing');
+  assert.equal(rows.get('src/domain/profile/repositories/**').file_count, 0);
+});
+
 test('workflow-state writes layer-inventory only for explicit telemetry layers', (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'workflow-layer-inventory-'));
   t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
