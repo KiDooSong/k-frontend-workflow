@@ -432,14 +432,12 @@ function renderProjectLayout(opts, roleMap, extraLayers) {
     confirmed: 'see adoption-report',
     path: 'see adoption-report',
     DOMAIN_SCREEN_GLOB: 'see adoption-report',
+    PROJECT_LAYOUT_CONTEXT: `probe ${opts.id}, proposal only, scratch-readiness input`,
     LAYERS_BLOCK: renderLayersBlock(extraLayers),
   };
   let text = renderTemplate('project-layout.template.yaml', replacements);
   text = text.replace(/\{confirmed\|candidate\}/g, 'see adoption-report');
-  text = text.replace(
-    '# project-layout.yaml — adoption-probe DRAFT (제안만 · scratch-readiness input)',
-    `# project-layout.yaml — adoption-probe DRAFT (probe ${opts.id}, proposal only, scratch-readiness input)`,
-  );
+
   return text;
 }
 
@@ -487,9 +485,17 @@ function extraInventoryRows(layerInventory, extraLayers) {
   return (layerInventory?.layers || []).filter((row) => roles.has(row.role));
 }
 
-function accessSummary(row) {
+export function accessSummary(row) {
   const allow = row?.access?.allow || [];
-  return allow.length ? `allow [${allow.join(', ')}]; readiness_access_wired=true; hard_gate_wired=false` : 'readiness_access_wired=false; hard_gate_wired=false';
+  const forbid = row?.access?.forbid || [];
+  const parts = [];
+  if (allow.length) parts.push(`allow [${allow.join(', ')}]`);
+  if (forbid.length) parts.push(`forbid [${forbid.join(', ')}]`);
+  const readinessWired = row?.readiness_access_wired === true || allow.length > 0 || forbid.length > 0;
+  const hardGateWired = row?.hard_gate_wired === true;
+  parts.push(`readiness_access_wired=${readinessWired}`);
+  parts.push(`hard_gate_wired=${hardGateWired}`);
+  return parts.join('; ');
 }
 
 function envRows(env) {

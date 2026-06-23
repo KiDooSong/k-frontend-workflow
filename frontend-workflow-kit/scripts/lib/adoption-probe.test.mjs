@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { runAdoptionProbe } from './adoption-probe.mjs';
+import { accessSummary, runAdoptionProbe } from './adoption-probe.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const KIT_ROOT = path.resolve(HERE, '..', '..');
@@ -104,6 +104,7 @@ test('runAdoptionProbe renders draft outputs and keeps live docs untouched', (t)
   assert.doesNotMatch(tier3Report, /observed change/);
   assert.doesNotMatch(tier3Report, /\{[A-Z0-9_-]+\}/);
   const layoutDraft = fs.readFileSync(path.join(out, 'project-layout.draft.yaml'), 'utf8');
+  assert.match(layoutDraft, /^# project-layout\.yaml — adoption-probe DRAFT \(probe unit, proposal only, scratch-readiness input\)/);
   assert.match(layoutDraft, /catalog-gen loads project-layout/);
   assert.match(layoutDraft, /\nlayers:\n/);
   assert.match(layoutDraft, /role: view_model/);
@@ -118,6 +119,17 @@ test('runAdoptionProbe renders draft outputs and keeps live docs untouched', (t)
   assert.ok(result.observation.layerInventory);
 });
 
+test('accessSummary treats forbid-only layer access as readiness wired', () => {
+  assert.equal(
+    accessSummary({
+      role: 'api_boundary',
+      access: { allow: [], forbid: ['rough-fixture-ui'] },
+      readiness_access_wired: true,
+      hard_gate_wired: false,
+    }),
+    'forbid [rough-fixture-ui]; readiness_access_wired=true; hard_gate_wired=false',
+  );
+});
 test('F3 excludes layers already flattened into built-in roles', (t) => {
   const repo = makeRepo(t);
   const out = path.join(repo, 'temp', 'runs', 'adoption-probe-f3');

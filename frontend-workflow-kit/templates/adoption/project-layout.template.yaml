@@ -1,4 +1,4 @@
-# project-layout.yaml — adoption-probe DRAFT (제안만 · 초안)
+# project-layout.yaml — adoption-probe DRAFT ({PROJECT_LAYOUT_CONTEXT})
 # ─────────────────────────────────────────────────────────────────────────────
 # 이 파일은 adoption-probe 스킬이 산출하는 **초안**이다. 다음을 반드시 지킨다:
 #   - 산출 위치 = 프로브 출력 디렉토리(temp/runs/adoption-probe-<id>/) — 소비 레포 루트에
