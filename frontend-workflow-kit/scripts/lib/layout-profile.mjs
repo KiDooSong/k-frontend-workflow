@@ -34,6 +34,7 @@ export class LayoutConfigError extends Error {
 // classifyForbidden/covers/thresholdOf 미러를 두지 않고 path-backstop 의 순수 helper 를 재사용한다.
 // (단일 출처 — guarded surface 분류 로직이 두 곳으로 갈리지 않게.)
 import { classifyForbidden, thresholdOf } from './path-backstop.mjs';
+import { SUPPORTED_LAYER_FACTS } from './layer-inventory.mjs';
 
 // --- 경로 정규화 ----------------------------------------------------------
 // glob 은 항상 forward-slash 로 비교/저장한다(Windows 대응; path-backstop.toPosix 와 동일 의미).
@@ -75,9 +76,67 @@ function mergeRoles(base, override) {
   return out;
 }
 
-function asStringArray(value) {
+function hasOwn(obj, key) {
+  return !!obj && Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+function asStringArray(value, label = 'value') {
   if (value == null) return [];
-  return (Array.isArray(value) ? value : [value]).map((v) => String(v));
+  const arr = Array.isArray(value) ? value : [value];
+  return arr.map((v, index) => {
+    if (typeof v !== 'string' || v.trim() === '') {
+      throw new LayoutConfigError(`layout-profile: ${label}[${index}] must be a non-empty string`);
+    }
+    return v;
+  });
+}
+
+function normalizeLayerGlob(value, label) {
+  const globs = asStringArray(value, label).map((g) => toPosix(g));
+  if (globs.length === 0) {
+    throw new LayoutConfigError(`layout-profile: ${label} is required`);
+  }
+  return Array.isArray(value) ? globs : globs[0];
+}
+
+function normalizeLayer(layer, label) {
+  if (!layer || typeof layer !== 'object' || Array.isArray(layer)) {
+    throw new LayoutConfigError(`layout-profile: ${label} must be an object`);
+  }
+  if (typeof layer.role !== 'string' || layer.role.trim() === '') {
+    throw new LayoutConfigError(`layout-profile: ${label}.role is required`);
+  }
+  if (typeof layer.fact !== 'string' || layer.fact.trim() === '') {
+    throw new LayoutConfigError(`layout-profile: ${label}.fact is required`);
+  }
+  if (!SUPPORTED_LAYER_FACTS.includes(layer.fact)) {
+    throw new LayoutConfigError(
+      `layout-profile: ${label}.fact '${layer.fact}' is unsupported (supported: ${SUPPORTED_LAYER_FACTS.join(', ')})`,
+    );
+  }
+  const access = layer.access == null ? {} : layer.access;
+  if (access && (typeof access !== 'object' || Array.isArray(access))) {
+    throw new LayoutConfigError(`layout-profile: ${label}.access must be an object when present`);
+  }
+  const out = {
+    role: layer.role,
+    glob: normalizeLayerGlob(layer.glob, `${label}.glob`),
+    fact: layer.fact,
+    access: {
+      allow: asStringArray(access.allow, `${label}.access.allow`),
+      forbid: asStringArray(access.forbid, `${label}.access.forbid`),
+    },
+  };
+  if (layer.gates !== undefined) out.gates = asStringArray(layer.gates, `${label}.gates`);
+  return out;
+}
+
+function normalizeLayerArray(value, label) {
+  if (value == null) return [];
+  if (!Array.isArray(value)) {
+    throw new LayoutConfigError(`layout-profile: ${label} must be an array`);
+  }
+  return value.map((layer, index) => normalizeLayer(layer, `${label}[${index}]`));
 }
 
 function cloneLayer(layer) {
@@ -86,13 +145,14 @@ function cloneLayer(layer) {
   const out = {
     ...layer,
     role: layer.role,
+    glob: layer.glob,
     fact: layer.fact || null,
     access: {
-      allow: asStringArray(access.allow),
-      forbid: asStringArray(access.forbid),
+      allow: Array.isArray(access.allow) ? access.allow.map(String) : access.allow == null ? [] : [String(access.allow)],
+      forbid: Array.isArray(access.forbid) ? access.forbid.map(String) : access.forbid == null ? [] : [String(access.forbid)],
     },
   };
-  if (layer.gates !== undefined) out.gates = asStringArray(layer.gates);
+  if (layer.gates !== undefined) out.gates = Array.isArray(layer.gates) ? layer.gates.map(String) : [String(layer.gates)];
   return out;
 }
 
@@ -226,19 +286,25 @@ export function loadLayoutProfile({ kitRoot, flags = {} } = {}) {
       process.exit(2);
     }
     presetRoles = preset.roles || {};
-    presetLayers = asLayerArray(preset.layers || []);
+    presetLayers = normalizeLayerArray(preset.layers || [], `preset '${presetName}'.layers`);
   }
 
   // base roles/layers: preset < project-layout.
+  const projectLayersDeclared = hasOwn(layout, 'layers');
+  const projectLayers = normalizeLayerArray(layout.layers || [], 'project-layout.layers');
   const baseRoles = mergeRoles(presetRoles, layout.roles || {});
-  const baseLayers = mergeLayers(presetLayers, layout.layers || []);
+  const baseLayers = mergeLayers(presetLayers, projectLayers);
 
   // 도메인 오버라이드 맵(raw 보존 — per-screen 해소 시 룩업). 머지는 resolve 시점에 적용.
   const domainOverrides = {};
   const domainLayerOverrides = {};
+  let domainLayersDeclared = false;
   for (const [d, cfg] of Object.entries(layout.domains || {})) {
     if (cfg && cfg.roles) domainOverrides[d] = cfg.roles;
-    if (cfg && cfg.layers) domainLayerOverrides[d] = cfg.layers;
+    if (cfg && hasOwn(cfg, 'layers')) {
+      domainLayersDeclared = true;
+      domainLayerOverrides[d] = normalizeLayerArray(cfg.layers || [], `project-layout.domains.${d}.layers`);
+    }
   }
 
   // 특정 도메인에 유효한 roles/layers 맵(base + 그 도메인 오버라이드).
@@ -434,6 +500,7 @@ export function loadLayoutProfile({ kitRoot, flags = {} } = {}) {
     // raw 노출(README §1.1 — 소비처가 필요 시 직접 조회).
     roles: baseRoles,
     layers: baseLayers,
+    layerTelemetryDeclared: projectLayersDeclared || domainLayersDeclared,
     domains: domainOverrides,
     preset: presetName || null,
   };

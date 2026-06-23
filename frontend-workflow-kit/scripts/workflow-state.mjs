@@ -20,6 +20,7 @@ import {
 } from './lib/util.mjs';
 import { loadScreenSpec, deriveMetrics, isStub } from './lib/spec.mjs';
 import { loadLayoutProfile } from './lib/layout-profile.mjs';
+import { scanLayerInventory } from './lib/layer-inventory.mjs';
 
 function todayISO() {
   // 결정성: --date 로 고정 가능. 기본은 오늘 (generated_at 한 줄만 변동 허용).
@@ -141,7 +142,16 @@ export function buildState({ docsDir, srcDir, date, layout }) {
     },
   };
 
-  return { state, inventory: inventoryDoc };
+  const layerInventory = resolvedLayout.layerTelemetryDeclared
+    ? scanLayerInventory({
+        projectRoot: path.dirname(srcDir),
+        srcDir,
+        layout: resolvedLayout,
+        screens: inventory,
+      })
+    : null;
+
+  return { state, inventory: inventoryDoc, layerInventory };
 }
 
 function main() {
@@ -153,10 +163,11 @@ function main() {
   // 레이아웃 프로파일(tier1): role→glob 단일 출처. --layout 으로 project-layout.yaml 경로 오버라이드.
   const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags });
 
-  const { state, inventory } = buildState({ docsDir, srcDir, date, layout });
+  const { state, inventory, layerInventory } = buildState({ docsDir, srcDir, date, layout });
 
   if (flags.json) {
-    process.stdout.write(JSON.stringify({ state, inventory }, null, 2) + '\n');
+    const payload = layerInventory ? { state, inventory, layer_inventory: layerInventory } : { state, inventory };
+    process.stdout.write(JSON.stringify(payload, null, 2) + '\n');
     return;
   }
 
@@ -181,12 +192,27 @@ function main() {
   const invOut = path.join(outDir, 'screen-inventory.yaml');
   writeFile(stateOut, stateYaml);
   writeFile(invOut, invYaml);
+  let layerOut = null;
+  if (layerInventory) {
+    const layerYaml = emitGeneratedYaml(
+      [
+        'GENERATED FILE — DO NOT EDIT',
+        'Source:  project-layout.yaml layers: telemetry + source tree scan',
+        'Command: npm run workflow:state',
+        'Scope:   warning-first; access is parsed/observed, not gate-wired',
+      ],
+      layerInventory,
+    );
+    layerOut = path.join(outDir, 'layer-inventory.yaml');
+    writeFile(layerOut, layerYaml);
+  }
 
   const screenCount = Object.keys(state.screens).length;
   process.stdout.write(
     `workflow:state — ${screenCount} screen(s)\n` +
       `  wrote ${path.relative(process.cwd(), stateOut)}\n` +
-      `  wrote ${path.relative(process.cwd(), invOut)}\n`,
+      `  wrote ${path.relative(process.cwd(), invOut)}\n` +
+      (layerOut ? `  wrote ${path.relative(process.cwd(), layerOut)}\n` : ''),
   );
   if (inventory.checks.duplicate_ids.length || inventory.checks.duplicate_routes.length) {
     process.stdout.write(

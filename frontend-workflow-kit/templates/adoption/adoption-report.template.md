@@ -35,7 +35,7 @@
 | Area | Current observation | Signal |
 |---|---|---|
 | Axis 1 role rebinding | draft `project-layout.draft.yaml` rendered and used for observations | observed |
-| Extra layers as native roles | {EXTRA_LAYER_COUNT} extra layer path(s) found | silent until Tier3 wiring |
+| Extra layers as native roles | {EXTRA_LAYER_COUNT} extra layer path(s) found | parsed/observed, not gate-wired |
 | F3 complete-vs-missing check | {F3_SUMMARY} | draft-only observation |
 | F4 catalog behavior | {CATALOG_SUMMARY} | observed with draft layout |
 | validate scope | {VALIDATE_SUMMARY} | document-structure evidence only |
@@ -74,7 +74,7 @@ Observation files are in `{OBSERVATIONS_PATH}`.
 ## 9. Human Surface Only
 
 - Confirm candidate role paths before any live wiring.
-- Decide whether Axis 2 gating is desired for this brownfield repo; this probe only supplies telemetry.
+- Decide whether Axis 2 gating is desired for this brownfield repo; this probe only supplies parsed/observed telemetry and leaves gates unwired.
 - If catalog count is 0, inspect `ui_primitive` and catalog source before treating readiness as actionable.
 
 ## 10. Invariant Check

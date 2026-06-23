@@ -18,26 +18,31 @@ roles:
 # This is byte-equivalent to policies/implementation-mode-policy.yaml role-derived allow/forbid cells.
 layers:
   - role: route_entry
+    glob: src/app/**
     fact: dir_has_files
     access:
       allow: [route-skeleton]
       forbid: []
   - role: screen
+    glob: src/features/{domain}/screens/**
     fact: dir_has_files
     access:
       allow: [screen-skeleton, rough-fixture-ui, final-fixture-ui]
       forbid: [api-integrated-ui]
   - role: domain_component
+    glob: src/features/{domain}/components/**
     fact: dir_has_files
     access:
       allow: [rough-fixture-ui, final-fixture-ui]
       forbid: []
   - role: hook
+    glob: src/features/{domain}/hooks/**
     fact: dir_has_files
     access:
       allow: [rough-fixture-ui, api-integrated-ui]
       forbid: []
   - role: api_client
+    glob: src/api/**
     fact: dir_has_files
     access:
       allow: [api-integrated-ui]

@@ -139,11 +139,12 @@ test('resolvePaths: {roles.X} 펼침 + {domain} 치환 + 리터럴 passthrough',
 test('layers: expo-feature exposes current layer/access declarations', () => {
   const L = expoLayout();
   assert.deepEqual(
-    L.layers.map((layer) => ({ role: layer.role, fact: layer.fact, access: layer.access })),
+    L.layers.map((layer) => ({ role: layer.role, glob: layer.glob, fact: layer.fact, access: layer.access })),
     [
-      { role: 'route_entry', fact: 'dir_has_files', access: { allow: ['route-skeleton'], forbid: [] } },
+      { role: 'route_entry', glob: 'src/app/**', fact: 'dir_has_files', access: { allow: ['route-skeleton'], forbid: [] } },
       {
         role: 'screen',
+        glob: 'src/features/{domain}/screens/**',
         fact: 'dir_has_files',
         access: {
           allow: ['screen-skeleton', 'rough-fixture-ui', 'final-fixture-ui'],
@@ -152,16 +153,19 @@ test('layers: expo-feature exposes current layer/access declarations', () => {
       },
       {
         role: 'domain_component',
+        glob: 'src/features/{domain}/components/**',
         fact: 'dir_has_files',
         access: { allow: ['rough-fixture-ui', 'final-fixture-ui'], forbid: [] },
       },
       {
         role: 'hook',
+        glob: 'src/features/{domain}/hooks/**',
         fact: 'dir_has_files',
         access: { allow: ['rough-fixture-ui', 'api-integrated-ui'], forbid: [] },
       },
       {
         role: 'api_client',
+        glob: 'src/api/**',
         fact: 'dir_has_files',
         access: {
           allow: ['api-integrated-ui'],
@@ -176,6 +180,56 @@ test('synthesizeModePolicy: expo layers/access is parity with live role-token po
   const L = expoLayout();
   const livePolicy = loadYaml(path.join(KIT_ROOT, 'policies', 'implementation-mode-policy.yaml'));
   assert.deepEqual(synthesizeModePolicy(livePolicy, L), livePolicy);
+});
+
+test('layers: preset layers do not mark project telemetry declared by default', () => {
+  const L = expoLayout();
+  assert.equal(L.layerTelemetryDeclared, false);
+});
+
+test('layers: valid project layers normalize role glob fact and access', (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'layout-profile-layers-'));
+  t.after(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
+  const layoutPath = path.join(tmpDir, 'project-layout.yaml');
+  fs.writeFileSync(
+    layoutPath,
+    [
+      'version: 1',
+      'roles:',
+      '  screen: src/presentation/{domain}/screens/**',
+      'layers:',
+      '  - role: view_model',
+      '    glob: src/presentation/{domain}/viewmodels/**',
+      '    fact: dir_has_files',
+      '    access:',
+      '      allow: [rough-fixture-ui, final-fixture-ui]',
+      '',
+    ].join('\n'),
+  );
+  const L = loadLayoutProfile({ kitRoot: KIT_ROOT, flags: { layout: layoutPath } });
+  assert.equal(L.layerTelemetryDeclared, true);
+  assert.deepEqual(L.layers, [
+    {
+      role: 'view_model',
+      glob: 'src/presentation/{domain}/viewmodels/**',
+      fact: 'dir_has_files',
+      access: { allow: ['rough-fixture-ui', 'final-fixture-ui'], forbid: [] },
+    },
+  ]);
+});
+
+test('layers: malformed project layer follows LayoutConfigError contract', (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'layout-profile-bad-layer-'));
+  t.after(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
+  const layoutPath = path.join(tmpDir, 'project-layout.yaml');
+  fs.writeFileSync(
+    layoutPath,
+    ['version: 1', 'layers:', '  - role: repository', '    fact: dir_has_files', ''].join('\n'),
+  );
+  assert.throws(
+    () => loadLayoutProfile({ kitRoot: KIT_ROOT, flags: { layout: layoutPath } }),
+    LayoutConfigError,
+  );
 });
 
 // --- MAJOR 1: fail-CLOSED -------------------------------------------------

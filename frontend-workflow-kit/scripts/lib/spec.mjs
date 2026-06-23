@@ -10,73 +10,9 @@ import {
   CONFIDENCE_ORDER,
   projectRootOf,
 } from './util.mjs';
-import { globRoot, globToRegExp } from './glob.mjs';
+import { layerHasFiles } from './layer-inventory.mjs';
 
 const REQUIRED_STATES = ['loading', 'success', 'empty', 'error', 'refreshing'];
-const ROLE_FACT_EXTS = ['.ts', '.tsx'];
-
-function toPosixPath(p) {
-  return String(p).replace(/\\/g, '/');
-}
-
-function substituteDomain(s, domain) {
-  return domain == null || domain === '' ? s : String(s).split('{domain}').join(domain);
-}
-
-function roleFactGlobs(layout, role, domain) {
-  if (!layout || !role) return [];
-  try {
-    if (typeof layout.resolvePaths === 'function') {
-      return layout.resolvePaths([`{roles.${role}}`], { domain }).map(toPosixPath);
-    }
-  } catch {
-    return [];
-  }
-  if (typeof layout.roleGlobs === 'function') {
-    return layout.roleGlobs(role).map((g) => substituteDomain(toPosixPath(g), domain));
-  }
-  if (typeof layout.roleToDir === 'function') {
-    const dir = layout.roleToDir(role, { domain });
-    return dir ? [`${toPosixPath(dir).replace(/\/+$/, '')}/**`] : [];
-  }
-  return [];
-}
-
-function isNestedRoot(parent, child) {
-  return parent !== '' && child !== parent && child.startsWith(`${parent}/`);
-}
-
-function nestedRoleMatchers(layout, role, domain, ownerGlobs) {
-  const roles = layout?.roles && typeof layout.roles === 'object' ? Object.keys(layout.roles) : [];
-  if (roles.length === 0) return [];
-  const ownerRoots = ownerGlobs.map((g) => globRoot(g).replace(/\/+$/, ''));
-  const out = [];
-  for (const otherRole of roles) {
-    if (otherRole === role) continue;
-    for (const raw of roleFactGlobs(layout, otherRole, domain)) {
-      const glob = toPosixPath(raw);
-      const root = globRoot(glob).replace(/\/+$/, '');
-      if (ownerRoots.some((ownerRoot) => isNestedRoot(ownerRoot, root))) out.push(globToRegExp(glob));
-    }
-  }
-  return out;
-}
-
-function roleGlobHasFiles(role, { layout, projectRoot, domain }) {
-  const globs = roleFactGlobs(layout, role, domain).map(toPosixPath);
-  const excludeMatchers = nestedRoleMatchers(layout, role, domain, globs);
-  for (const glob of globs) {
-    const rootRel = globRoot(glob).replace(/\/+$/, '');
-    const rootAbs = rootRel ? path.resolve(projectRoot, ...rootRel.split('/')) : projectRoot;
-    const matcher = globToRegExp(glob);
-    for (const file of walkFiles(rootAbs, ROLE_FACT_EXTS)) {
-      const rel = toPosixPath(path.relative(projectRoot, file));
-      if (matcher.test(rel) && !excludeMatchers.some((exclude) => exclude.test(rel))) return true;
-    }
-  }
-  return false;
-}
-
 // HTML 주석 제거 (표/섹션 감지를 방해하지 않도록)
 function stripComments(text) {
   return text.replace(/<!--[\s\S]*?-->/g, '');
@@ -376,10 +312,11 @@ export function deriveMetrics(spec, opts = {}) {
     const layers = typeof layout.layersFor === 'function' ? layout.layersFor(domain) : layout.layers;
     for (const layer of Array.isArray(layers) ? layers : []) {
       if (!layer || layer.fact !== 'dir_has_files' || !layer.role) continue;
-      layerPresenceFacts[`${layer.role}_present`] = roleGlobHasFiles(layer.role, {
+      layerPresenceFacts[`${layer.role}_present`] = layerHasFiles(layer, {
         layout,
         projectRoot,
         domain,
+        excludeNestedRoles: true,
       });
     }
   }
@@ -387,7 +324,10 @@ export function deriveMetrics(spec, opts = {}) {
   if (Object.prototype.hasOwnProperty.call(layerPresenceFacts, 'hook_present')) {
     fakeHookExists = layerPresenceFacts.hook_present;
   } else if (srcDir && domain && layout) {
-    fakeHookExists = roleGlobHasFiles('hook', { layout, projectRoot, domain });
+    fakeHookExists = layerHasFiles(
+      { role: 'hook', fact: 'dir_has_files' },
+      { layout, projectRoot, domain, excludeNestedRoles: true },
+    );
   }
 
   // figma mapping: 같은 디렉토리의 figma-component-mapping.md 존재 + status

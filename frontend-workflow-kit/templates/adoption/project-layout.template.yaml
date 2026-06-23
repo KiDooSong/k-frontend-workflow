@@ -3,11 +3,10 @@
 # 이 파일은 adoption-probe 스킬이 산출하는 **초안**이다. 다음을 반드시 지킨다:
 #   - 산출 위치 = 프로브 출력 디렉토리(temp/runs/adoption-probe-<id>/) — 소비 레포 루트에
 #     이걸 그대로 떨궈 라이브 게이트에 배선하지 않는다(배선=사람 결정, 별 작업).
-#   - Axis 1(role→glob 재바인딩)만 표현한다. 이건 현재 킷이 이미 소비할 수 있는 유일한 축이다
-#     (layout-profile.mjs mergeRoles — preset < project-layout.roles < domains.<d>.roles).
-#   - Axis 2(repository/usecase/entity/data-source/mapper/view-model 등 추가 계층)는 아래
-#     `# layers:` 블록에 **주석으로만** 적는다. Tier3 미구현이라 지금 선언해도 inert —
-#     readiness/validate/lint 어디에도 안 잡힌다(다층 dry-run F1). 게이트처럼 표현 금지.
+#   - Axis 1(role→glob 재바인딩)을 roles: 로 표현한다.
+#   - Axis 2(repository/usecase/entity/data-source/mapper/view-model 등 추가 계층)는 layers: 로
+#     telemetry-only 선언한다. layout-profile/workflow-state 는 파싱·관찰하지만 readiness/validate/lint
+#     hard gate 에는 연결하지 않는다. 게이트처럼 표현 금지.
 #   - 이 초안은 confirmed/OD/CI/소스 무엇도 바꾸지 않는다.
 #
 # 사용 흐름: 프로브가 소비 레포 구조를 스캔 → 아래 roles 의 placeholder 를 실제 glob 으로 채움 →
@@ -40,37 +39,8 @@ roles:
 # not as evidence that catalog-gen ignored project-layout.
 
 # ════════════════════════════════════════════════════════════════════════════
-# (Tier3 PROPOSED — 주석으로만. 지금 활성화 금지. layout-profile.mjs 가 layers: 를 아직 파싱·소비하지 않음.)
-# 아래는 "Tier3 가 랜딩하면 이 다층 레포가 어떻게 선언될지"를 보여주는 미리보기일 뿐이다.
-# 현재 상태에서 주석을 풀어도 inert(F1): 추가 계층은 allowed/forbidden 어디에도 안 나타난다.
-# 설계 근거: docs/design/drafts/customizable-architecture/tier3-layer-model.md §3 (access 행렬).
+# (Tier3 telemetry-only layers — parsed/observed, not gate-wired.)
+# access 는 보존되고 layer-inventory 에 gate_wired:false 로 표면화된다.
+# readiness allowed/forbidden, lint, CI, Open Decision, confirmed 상태는 바꾸지 않는다.
 # ────────────────────────────────────────────────────────────────────────────
-# layers:                      # 순서 = depth(화면 근처 → 데이터 근처). 한 엔트리 = role + fact + access(+gates).
-#   - role: route_entry
-#     fact: dir_has_files
-#     access: { allow: [route-skeleton] }
-#   - role: screen
-#     fact: dir_has_files
-#     access: { allow: [screen-skeleton, rough-fixture-ui, final-fixture-ui], forbid: [api-integrated-ui] }
-#   - role: view_model         # ← 다층 레포의 추가 계층. 지금은 role 도 게이트도 fact 도 없음(Tier3 blind spot).
-#     fact: dir_has_files      #    Tier3 에서 비로소 view_model_present fact + access 행을 얻는다.
-#     access: { allow: [rough-fixture-ui, final-fixture-ui] }
-#   - role: use_case           # ← blind spot
-#     fact: dir_has_files
-#     access: { allow: [rough-fixture-ui, final-fixture-ui] }
-#   - role: repository         # ← blind spot (의존성 역전 경계)
-#     fact: dir_has_files
-#     access: { allow: [final-fixture-ui, api-integrated-ui] }
-#   - role: data_source        # ← blind spot
-#     fact: dir_has_files
-#     access: { allow: [api-integrated-ui] }
-#   - role: mapper             # ← blind spot
-#     fact: dir_has_files
-#     access: { allow: [api-integrated-ui] }
-#   - role: hook
-#     fact: dir_has_files
-#     access: { allow: [rough-fixture-ui, api-integrated-ui] }
-#   - role: api_client
-#     fact: dir_has_files
-#     access: { allow: [api-integrated-ui], forbid: [route-skeleton, screen-skeleton, rough-fixture-ui, final-fixture-ui] }
-# ════════════════════════════════════════════════════════════════════════════
+{LAYERS_BLOCK}

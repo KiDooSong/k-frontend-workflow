@@ -4,11 +4,11 @@
 
 > **Status: PROBE / READ-ONLY — 2026-06-23.** This report observes how the workflow kit sees this repo.
 > It does not modify source, CI, confirmed status, Open Decisions, or live docs/frontend-workflow gates.
-> Kit snapshot: `working-tree draft` · Probe output: `./temp/runs/adoption-probe-multilayer-001` · Target repo: `./temp/runs/multilayer-adoption-dryrun/app`
+> Kit snapshot: `working-tree draft` · Probe output: `./frontend-workflow-kit/temp/runs/adoption-probe-multilayer-001` · Target repo: `./frontend-workflow-kit/temp/runs/multilayer-adoption-dryrun/app`
 
 ## 0. Scope Banner
 
-- **Adoption summary:** Axis 1 = possible/partial: role map drafted from observed paths. Axis 2 = not live-wired: extra layers are recorded as Tier3 gaps.
+- **Adoption summary:** Axis 1 = possible/partial: role map drafted from observed paths. Axis 2 = parsed/observed, not gate-wired: layer inventory telemetry recorded.
 - **This probe does:** read-only scan, role-to-glob draft, scratch-only workflow observations, draft notes.
 - **This probe does not:** scaffold, wire live `project-layout.yaml`, resolve Open Decisions, promote hard gates, edit CI, or declare architecture complete.
 
@@ -41,20 +41,20 @@
 
 | Discovered layer | Location | role? | mode gate? | readiness fact? | lint aware? | Note |
 |---|---|:---:|:---:|:---:|:---:|---|
-| data_source | `src/data/profile/datasources` | no | no | no | no | tier3-gap-report |
-| entity | `src/domain/profile/entities` | no | no | no | no | tier3-gap-report |
-| mapper | `src/data/profile/mappers` | no | no | no | no | tier3-gap-report |
-| repository | `src/data/profile/repositories` | no | no | no | no | tier3-gap-report |
-| repository | `src/domain/profile/repositories` | no | no | no | no | tier3-gap-report |
-| use_case | `src/domain/profile/usecases` | no | no | no | no | tier3-gap-report |
-| view_model | `src/presentation/profile/viewmodels` | built-in hook | no | no | no | flattened into built-in hook role |
+| data_source | `src/data/profile/datasources/**` | telemetry role | no (not gate-wired) | data_source_present=true | no | parsed/observed, not gate-wired |
+| entity | `src/domain/profile/entities/**` | telemetry role | no (not gate-wired) | entity_present=true | no | parsed/observed, not gate-wired |
+| mapper | `src/data/profile/mappers/**` | telemetry role | no (not gate-wired) | mapper_present=true | no | parsed/observed, not gate-wired |
+| repository | `src/data/profile/repositories/**` | telemetry role | no (not gate-wired) | repository_present=true | no | parsed/observed, not gate-wired |
+| repository | `src/domain/profile/repositories/**` | telemetry role | no (not gate-wired) | repository_present=true | no | parsed/observed, not gate-wired |
+| use_case | `src/domain/profile/usecases/**` | telemetry role | no (not gate-wired) | use_case_present=true | no | parsed/observed, not gate-wired |
+| view_model | `src/presentation/profile/viewmodels/**` | flattened into hook | no (not gate-wired) | view_model_present=true | no | parsed/observed, not gate-wired |
 
 ## 4. What Current Kit Sees / Misses
 
 | Area | Current observation | Signal |
 |---|---|---|
 | Axis 1 role rebinding | draft `project-layout.draft.yaml` rendered and used for observations | observed |
-| Extra layers as native roles | 7 extra layer path(s) found | silent until Tier3 wiring |
+| Extra layers as native roles | 7 extra layer path(s) found | parsed/observed, not gate-wired |
 | F3 complete-vs-missing check | readiness byte-identical after scratch Tier3-only layer removal; 1 flattened built-in path(s) kept | draft-only observation |
 | F4 catalog behavior | 1 components observed from src/components/ui/** via draft layout | observed with draft layout |
 | validate scope | ok=true, errors=0, warnings=0, exit=0 | document-structure evidence only |
@@ -74,20 +74,20 @@
 
 | Command | Exit | Observation | Meaning |
 |---|---:|---|---|
-| `node scripts/workflow-state.mjs --docs <probe-run>/scratch/project/docs/frontend-workflow --src <probe-run>/scratch/project/src --layout <probe-run>/project-layout.draft.yaml --date 2026-06-23` | 0 | workflow-state generated under probe scratch | not a live docs fact |
+| `node scripts/workflow-state.mjs --docs <probe-run>/scratch/project/docs/frontend-workflow --src <probe-run>/scratch/project/src --layout <probe-run>/project-layout.draft.yaml --date 2026-06-23` | 0 | workflow-state generated layer inventory under probe scratch | parsed/observed, not gate-wired |
 | `node scripts/readiness.mjs --docs <probe-run>/scratch/project/docs/frontend-workflow --layout <probe-run>/project-layout.draft.yaml --json` | 0 | PROFILE-001: rough-fixture-ui | 3-layer readiness view only |
 | `node scripts/validate.mjs --docs <probe-run>/scratch/project/docs/frontend-workflow --src <probe-run>/scratch/project/src --layout <probe-run>/project-layout.draft.yaml --json` | 0 | ok=true, errors=0, warnings=0, exit=0 | document consistency only |
 | `node scripts/catalog-gen.mjs --src <probe-run>/scratch/project/src --layout <probe-run>/project-layout.draft.yaml --out <probe-run>/component-catalog.observed.md` | 0 | 1 components observed from src/components/ui/** via draft layout | layout-aware catalog observation |
 
-Observation files are in `./temp/runs/adoption-probe-multilayer-001/observations`.
+Observation files are in `./frontend-workflow-kit/temp/runs/adoption-probe-multilayer-001/observations`.
 
 ## 7. Known Blind Spots Applied Here
 
 | # | Blind spot | This repo | Core signal | Closing work |
 |---|---|---|---|---|
 | B1 | catalog-gen ui_primitive observation / F4 | layout-aware catalog populated | layout-aware catalog output | verify draft role map if count is 0 |
-| B2 | additional layers inert / F1 | 7 layer path(s) | silent as native roles | Tier3 PR-A/C/D |
-| B3 | domain+data edit boundary / F2 | possible | silent | Tier3 PR-D |
+| B2 | additional layers inert / F1 | 7 parsed/observed layer path(s) | not gate-wired | Tier3 PR-A/C/D |
+| B3 | domain+data edit boundary / F2 | telemetry only | not gate-wired | Tier3 PR-D |
 | B4 | complete vs missing layers / F3 | readiness byte-identical after scratch Tier3-only layer removal; 1 flattened built-in path(s) kept | silent | Tier3 PR-C |
 | B5 | validate layer-blind / F5 | applies: validate is document-structure only | green can be misleading | Tier3 PR-E + PR-C |
 
@@ -95,17 +95,17 @@ Observation files are in `./temp/runs/adoption-probe-multilayer-001/observations
 
 | Output | Path | Status |
 |---|---|---|
-| Adoption report | `./temp/runs/adoption-probe-multilayer-001/adoption-report.md` | draft |
-| Layout draft | `./temp/runs/adoption-probe-multilayer-001/project-layout.draft.yaml` | draft, not wired |
-| Tier3 gap report | `./temp/runs/adoption-probe-multilayer-001/tier3-gap-report.md` | draft |
-| Visual intake note | `./temp/runs/adoption-probe-multilayer-001/visual-spec-intake-note.md` | draft |
-| testID intake note | `./temp/runs/adoption-probe-multilayer-001/testid-intake-note.md` | draft |
-| Tier3 live wiring implementation note | `./temp/runs/adoption-probe-multilayer-001/tier3-live-wiring-implementation-note.md` | draft |
+| Adoption report | `./frontend-workflow-kit/temp/runs/adoption-probe-multilayer-001/adoption-report.md` | draft |
+| Layout draft | `./frontend-workflow-kit/temp/runs/adoption-probe-multilayer-001/project-layout.draft.yaml` | draft, not wired |
+| Tier3 gap report | `./frontend-workflow-kit/temp/runs/adoption-probe-multilayer-001/tier3-gap-report.md` | draft |
+| Visual intake note | `./frontend-workflow-kit/temp/runs/adoption-probe-multilayer-001/visual-spec-intake-note.md` | draft |
+| testID intake note | `./frontend-workflow-kit/temp/runs/adoption-probe-multilayer-001/testid-intake-note.md` | draft |
+| Tier3 live wiring implementation note | `./frontend-workflow-kit/temp/runs/adoption-probe-multilayer-001/tier3-live-wiring-implementation-note.md` | draft |
 
 ## 9. Human Surface Only
 
 - Confirm candidate role paths before any live wiring.
-- Decide whether Axis 2 gating is desired for this brownfield repo; this probe only supplies telemetry.
+- Decide whether Axis 2 gating is desired for this brownfield repo; this probe only supplies parsed/observed telemetry and leaves gates unwired.
 - If catalog count is 0, inspect `ui_primitive` and catalog source before treating readiness as actionable.
 
 ## 10. Invariant Check

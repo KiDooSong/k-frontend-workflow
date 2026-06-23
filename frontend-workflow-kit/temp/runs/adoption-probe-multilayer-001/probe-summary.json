@@ -3,11 +3,11 @@
   "project_name": "app",
   "date": "2026-06-23",
   "draft_only": true,
-  "repo_ref": "./temp/runs/multilayer-adoption-dryrun/app",
-  "docs_source": "./temp/runs/multilayer-adoption-dryrun/app/docs/frontend-workflow",
-  "src_source": "./temp/runs/multilayer-adoption-dryrun/app/src",
-  "out_dir": "./temp/runs/adoption-probe-multilayer-001",
-  "scratch_dir": "./temp/runs/adoption-probe-multilayer-001/scratch",
+  "repo_ref": "./frontend-workflow-kit/temp/runs/multilayer-adoption-dryrun/app",
+  "docs_source": "./frontend-workflow-kit/temp/runs/multilayer-adoption-dryrun/app/docs/frontend-workflow",
+  "src_source": "./frontend-workflow-kit/temp/runs/multilayer-adoption-dryrun/app/src",
+  "out_dir": "./frontend-workflow-kit/temp/runs/adoption-probe-multilayer-001",
+  "scratch_dir": "./frontend-workflow-kit/temp/runs/adoption-probe-multilayer-001/scratch",
   "invariants": {
     "live_docs_untouched_by_workflow_state": true,
     "source_scaffold_created": false,
@@ -96,6 +96,241 @@
       "path": "src/presentation/profile/viewmodels"
     }
   ],
+  "layer_inventory": {
+    "layers": [
+      {
+        "role": "api_client",
+        "glob": "src/api/**",
+        "domain": null,
+        "resolved_glob": "src/api/**",
+        "fact": "dir_has_files",
+        "status": "missing",
+        "file_count": 0,
+        "gate_wired": false,
+        "access": {
+          "allow": [
+            "api-integrated-ui"
+          ],
+          "forbid": [
+            "route-skeleton",
+            "screen-skeleton",
+            "rough-fixture-ui",
+            "final-fixture-ui"
+          ]
+        },
+        "overlap": "flattened_overlap",
+        "overlap_role": "api_schema"
+      },
+      {
+        "role": "data_source",
+        "glob": "src/data/{domain}/datasources/**",
+        "domain": "profile",
+        "resolved_glob": "src/data/profile/datasources/**",
+        "fact": "dir_has_files",
+        "status": "present",
+        "file_count": 1,
+        "gate_wired": false,
+        "access": {
+          "allow": [
+            "api-integrated-ui"
+          ],
+          "forbid": []
+        }
+      },
+      {
+        "role": "domain_component",
+        "glob": "src/features/{domain}/components/**",
+        "domain": "profile",
+        "resolved_glob": "src/presentation/profile/components/**",
+        "fact": "dir_has_files",
+        "status": "present",
+        "file_count": 1,
+        "gate_wired": false,
+        "access": {
+          "allow": [
+            "rough-fixture-ui",
+            "final-fixture-ui"
+          ],
+          "forbid": []
+        }
+      },
+      {
+        "role": "entity",
+        "glob": "src/domain/{domain}/entities/**",
+        "domain": "profile",
+        "resolved_glob": "src/domain/profile/entities/**",
+        "fact": "dir_has_files",
+        "status": "present",
+        "file_count": 1,
+        "gate_wired": false,
+        "access": {
+          "allow": [
+            "rough-fixture-ui",
+            "final-fixture-ui"
+          ],
+          "forbid": []
+        }
+      },
+      {
+        "role": "hook",
+        "glob": "src/features/{domain}/hooks/**",
+        "domain": "profile",
+        "resolved_glob": "src/presentation/profile/viewmodels/**",
+        "fact": "dir_has_files",
+        "status": "present",
+        "file_count": 1,
+        "gate_wired": false,
+        "access": {
+          "allow": [
+            "rough-fixture-ui",
+            "api-integrated-ui"
+          ],
+          "forbid": []
+        }
+      },
+      {
+        "role": "mapper",
+        "glob": "src/data/{domain}/mappers/**",
+        "domain": "profile",
+        "resolved_glob": "src/data/profile/mappers/**",
+        "fact": "dir_has_files",
+        "status": "present",
+        "file_count": 1,
+        "gate_wired": false,
+        "access": {
+          "allow": [
+            "api-integrated-ui"
+          ],
+          "forbid": []
+        }
+      },
+      {
+        "role": "repository",
+        "glob": [
+          "src/data/{domain}/repositories/**",
+          "src/domain/{domain}/repositories/**"
+        ],
+        "domain": "profile",
+        "resolved_glob": "src/data/profile/repositories/**",
+        "fact": "dir_has_files",
+        "status": "present",
+        "file_count": 2,
+        "gate_wired": false,
+        "access": {
+          "allow": [
+            "final-fixture-ui",
+            "api-integrated-ui"
+          ],
+          "forbid": []
+        }
+      },
+      {
+        "role": "repository",
+        "glob": [
+          "src/data/{domain}/repositories/**",
+          "src/domain/{domain}/repositories/**"
+        ],
+        "domain": "profile",
+        "resolved_glob": "src/domain/profile/repositories/**",
+        "fact": "dir_has_files",
+        "status": "present",
+        "file_count": 2,
+        "gate_wired": false,
+        "access": {
+          "allow": [
+            "final-fixture-ui",
+            "api-integrated-ui"
+          ],
+          "forbid": []
+        }
+      },
+      {
+        "role": "route_entry",
+        "glob": "src/app/**",
+        "domain": null,
+        "resolved_glob": "src/app/**",
+        "fact": "dir_has_files",
+        "status": "present",
+        "file_count": 1,
+        "gate_wired": false,
+        "access": {
+          "allow": [
+            "route-skeleton"
+          ],
+          "forbid": []
+        }
+      },
+      {
+        "role": "screen",
+        "glob": "src/features/{domain}/screens/**",
+        "domain": "profile",
+        "resolved_glob": "src/presentation/profile/screens/**",
+        "fact": "dir_has_files",
+        "status": "present",
+        "file_count": 1,
+        "gate_wired": false,
+        "access": {
+          "allow": [
+            "screen-skeleton",
+            "rough-fixture-ui",
+            "final-fixture-ui"
+          ],
+          "forbid": [
+            "api-integrated-ui"
+          ]
+        }
+      },
+      {
+        "role": "use_case",
+        "glob": "src/domain/{domain}/usecases/**",
+        "domain": "profile",
+        "resolved_glob": "src/domain/profile/usecases/**",
+        "fact": "dir_has_files",
+        "status": "present",
+        "file_count": 1,
+        "gate_wired": false,
+        "access": {
+          "allow": [
+            "rough-fixture-ui",
+            "final-fixture-ui"
+          ],
+          "forbid": []
+        }
+      },
+      {
+        "role": "view_model",
+        "glob": "src/presentation/{domain}/viewmodels/**",
+        "domain": "profile",
+        "resolved_glob": "src/presentation/profile/viewmodels/**",
+        "fact": "dir_has_files",
+        "status": "present",
+        "file_count": 1,
+        "gate_wired": false,
+        "access": {
+          "allow": [
+            "rough-fixture-ui",
+            "final-fixture-ui"
+          ],
+          "forbid": []
+        },
+        "overlap": "flattened_overlap",
+        "overlap_role": "hook"
+      }
+    ],
+    "facts": {
+      "api_client_present": false,
+      "data_source_present": true,
+      "domain_component_present": true,
+      "entity_present": true,
+      "hook_present": true,
+      "mapper_present": true,
+      "repository_present": true,
+      "route_entry_present": true,
+      "screen_present": true,
+      "use_case_present": true,
+      "view_model_present": true
+    }
+  },
   "environment": {
     "framework": "not observed",
     "frameworkEvidence": "package.json missing",
@@ -185,12 +420,12 @@
     }
   },
   "outputs": {
-    "adoption_report": "./temp/runs/adoption-probe-multilayer-001/adoption-report.md",
-    "project_layout": "./temp/runs/adoption-probe-multilayer-001/project-layout.draft.yaml",
-    "tier3_gap_report": "./temp/runs/adoption-probe-multilayer-001/tier3-gap-report.md",
-    "visual_spec_intake_note": "./temp/runs/adoption-probe-multilayer-001/visual-spec-intake-note.md",
-    "testid_intake_note": "./temp/runs/adoption-probe-multilayer-001/testid-intake-note.md",
-    "tier3_live_wiring_note": "./temp/runs/adoption-probe-multilayer-001/tier3-live-wiring-implementation-note.md",
-    "summary": "./temp/runs/adoption-probe-multilayer-001/probe-summary.json"
+    "adoption_report": "./frontend-workflow-kit/temp/runs/adoption-probe-multilayer-001/adoption-report.md",
+    "project_layout": "./frontend-workflow-kit/temp/runs/adoption-probe-multilayer-001/project-layout.draft.yaml",
+    "tier3_gap_report": "./frontend-workflow-kit/temp/runs/adoption-probe-multilayer-001/tier3-gap-report.md",
+    "visual_spec_intake_note": "./frontend-workflow-kit/temp/runs/adoption-probe-multilayer-001/visual-spec-intake-note.md",
+    "testid_intake_note": "./frontend-workflow-kit/temp/runs/adoption-probe-multilayer-001/testid-intake-note.md",
+    "tier3_live_wiring_note": "./frontend-workflow-kit/temp/runs/adoption-probe-multilayer-001/tier3-live-wiring-implementation-note.md",
+    "summary": "./frontend-workflow-kit/temp/runs/adoption-probe-multilayer-001/probe-summary.json"
   }
 }
