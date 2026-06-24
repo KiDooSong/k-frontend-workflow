@@ -17,7 +17,10 @@ kind: meta-register
 | IN-20260613-api-001 | api | simple-update + resolves-unknown + resolves-decision | reconciled | accepted | api-manifest, COUPON-001 screen-spec | U-001 (resolved), D-003 (resolved by human) | - |
 | IN-20260613-meeting-001 | meeting | conflict (decision reopen) | reconciled | accepted | navigation-map, AUTH-001 screen-spec | C-001, D-204 (reopened → re-resolved by human) | - |
 | IN-20260613-qa-001 | qa | simple-update | reconciled | accepted | COUPON-001 screen-spec (State Matrix `offline` 행), api-error-policy | - | - |
+| IN-20260613-testid-001 | qa-automation | simple-update + investigation-needed | reconciled | delegated | COUPON-001 screen-spec (Accessibility testID anchors draft/recommended; VER-001 materialized as note) | VER-001 (open · selector structure depends on D-001) | - |
+| IN-20260613-policy-migration-001 | architecture | simple-update + conflict + new-decision | reconciled | pending user decision | project-layout `layers:`, layer-inventory, readiness output, implementation-mode-policy.draft.yaml, implementation-mode-policy.migration.md | C-002 (open), D-501 (open · live policy adoption decision) | - |
 
 ## 미처리 감지 메모
 - 모든 input_id 가 register 에 `reconciled` 행으로 존재 → 미처리 입력 없음.
 - 자식 decision(D-101/D-301/D-401)이 open 이어도 그 입력들과는 무관하다. 해당 차단은 readiness 다운그레이드가 담당한다.
+- D-501/C-002 는 live policy replacement / hard gate / CI promotion 을 다루는 별도 promotion decision 이라 이 fixture 에서 닫지 않는다.

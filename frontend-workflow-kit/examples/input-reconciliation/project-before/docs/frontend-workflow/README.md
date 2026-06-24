@@ -1,7 +1,7 @@
 # project-before — baseline 문서 트리
 
 `input-reconciliation` fixture 의 **입력 전(before) baseline** 이다.
-외부 입력 5건이 닿기 직전의 문서 상태를 고정한다 — reconcile-input 은 이 트리를 입력으로 받아
+외부 입력 7건이 닿기 직전의 문서 상태를 고정한다 — reconcile-input 은 이 트리를 입력으로 받아
 `expected-after/` 에 가까운 결과를 만들어야 한다.
 
 - 이 트리는 production app 도, 코드 구현 예제도 아니다 (`src/` 없음, md-only).

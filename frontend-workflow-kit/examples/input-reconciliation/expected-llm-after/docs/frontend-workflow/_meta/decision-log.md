@@ -18,7 +18,10 @@ kind: meta-register
 | D-204 | 로그인 성공 후 이동 위치 | AUTH-001 | final-fixture-ui | PM | open | **재오픈됨**: IN-20260613-meeting-001(returnTo 우선)이 기존 resolved `항상 홈` 과 충돌 → `resolved → open`. 이전 값 `항상 홈` 은 C-001 에 보존. 재-resolve 는 사람. |
 | D-301 | 프로필 편집 범위/필드 확정 | PROFILE-001 | route-skeleton | PM | open | 관련 입력 없음 — 그대로 |
 | D-401 | 공지 독립 화면 vs 홈 섹션 | NOTICE-001 | screen-skeleton | PM | open | 관련 입력 없음 — 그대로 |
+| D-501 | Tier3 policy draft 를 live implementation policy 로 채택할 것인가? | global | api-integrated-ui | Tech Lead | open | IN-20260613-policy-migration-001 은 draft/migration review artifact 만 생성. live policy replacement·CI/hard gate promotion 은 사람 결정 전 금지. |
 
 ## 메모
 - D-204 는 baseline 에서 `resolved`(→ 항상 홈)였다. 재오픈은 게이트를 **올리는** 보수적 전이라 LLM 이 한다.
   `항상 홈` → `기본 홈 + returnTo 우선` 의 supersede 확정과 C-001 닫기는 사람 단계(expected-after) 에서 일어난다.
+- D-501 은 Tier3 policy draft adoption 을 live policy replacement 로 승격할지 묻는 결정이다. LLM 은 open 생성만 하고,
+  `implementation-mode-policy.yaml` 교체, CI promotion, pre-edit hook enforcement 는 하지 않는다.

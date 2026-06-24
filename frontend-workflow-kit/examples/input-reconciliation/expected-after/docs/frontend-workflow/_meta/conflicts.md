@@ -10,9 +10,11 @@ kind: meta-register
 > A = 새 입력, B = 기존 결정/문서 (input-reconciliation.md 의 A/B 규약).
 > C-001 은 IN-20260613-meeting-001 이 resolved 결정 D-204 에 도전하며 생겼다. 게이트를 실제로 건 것은 D-204 재오픈이다(Conflicts 는 신호).
 > 사람이 D-204 를 재-resolve 하며 C-001 도 함께 닫았다(닫힘 동기화).
+> C-002 는 Tier3 draft/live policy boundary 충돌이다. 이 fixture 는 live policy promotion 을 닫지 않으므로 open 유지한다.
 
 | ID | 충돌 지점 | A (출처/값) | B (출처/값) | 영향 화면 | Status |
 |---|---|---|---|---|---|
 | C-001 | 로그인 성공 후 리다이렉트 정책 | IN-20260613-meeting-001 / 기본 홈 + returnTo 우선 | D-204 / 항상 홈 | AUTH-001 | resolved |
+| C-002 | Tier3 policy draft adoption boundary | IN-20260613-policy-migration-001 / draft policy 를 live policy 로 채택 제안 | current policy boundary / draft-review only, live policy not replaced | global | open |
 
 <!-- Status: open(미해결) | resolved(출처 문서/결정 수정 완료) -->

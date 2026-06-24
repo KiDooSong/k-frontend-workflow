@@ -1,2 +1,2 @@
 workflow:catalog — 1 component(s)
-  wrote temp\runs\adoption-probe-multilayer-001\component-catalog.observed.md
+  wrote temp/runs/adoption-probe-multilayer-001/component-catalog.observed.md

@@ -19,12 +19,14 @@
 input-reconciliation/
   project-before/                 # 입력이 닿기 전의 baseline 문서 트리
     docs/frontend-workflow/        # 6개 화면 + global/_meta (트리 설명은 하위 README)
-  inputs/                          # 외부 입력 5건 (reconcile-input 의 입력) — 파일명 = {input_id}.md
+  inputs/                          # 외부 입력 7건 (reconcile-input 의 입력) — 파일명 = {input_id}.md
     IN-20260613-planning-001.md
     IN-20260613-figma-001.md
     IN-20260613-api-001.md
     IN-20260613-meeting-001.md
     IN-20260613-qa-001.md
+    IN-20260613-testid-001.md
+    IN-20260613-policy-migration-001.md
   expected-llm-after/             # reconcile-input(LLM) 단독 출력 정답 (사람 닫기 전 — open/reopened/conflict/gap/simple-update)
   expected-after/                  # 위에 사람 단계까지 끝낸 이상적 최종 상태 (human-final)
   reports/                         # reconciliation 요약 등 산출 리포트
@@ -35,9 +37,9 @@ input-reconciliation/
 > reconcile-input·register·리포트가 모두 `input_id` 로 입력을 참조하므로, 파일명 stem 을 id 와 일치시키면
 > "어느 입력 파일이 어느 register 행인지"를 grep 한 번으로 추적할 수 있다.
 
-## 5개 입력과 각자 테스트하는 것
+## 7개 입력과 각자 테스트하는 것
 
-`inputs/` 의 5건은 reconcile-input 이 마주칠 대표 시나리오를 한 건씩 고정한다.
+`inputs/` 의 7건은 reconcile-input 이 마주칠 대표 시나리오를 한 건씩 고정한다.
 input_id 는 킷의 `IN-YYYYMMDD-{source}-NNN` 형식이고, 모두 `captured_at: 2026-06-13` 이다.
 
 | input_id | 종류 | 테스트하는 것 |
@@ -47,6 +49,8 @@ input_id 는 킷의 `IN-YYYYMMDD-{source}-NNN` 형식이고, 모두 `captured_at
 | IN-20260613-api-001 | api | 데이터 계약 입력 → api-manifest 의 `GET /coupons` 응답을 bare array → page envelope 로 simple-update, `U-001` resolves-unknown, `D-003`(페이지네이션) 에 정보 제공. "화면은 API DTO 에 직접 의존하지 않는다" 유지. |
 | IN-20260613-meeting-001 | meeting | resolved 결정과의 **충돌** 입력 → `D-204`(로그인 후 항상 홈)에 returnTo 우선이 부딪힘. LLM 은 `C-001` 생성 + `D-204` 를 `resolved → open` 으로 재오픈까지만 한다(navigation-map Route Guard 의 returnTo 반영은 사람이 D-204 를 재-resolve 한 뒤 — `expected-after` 에만 있고 `expected-llm-after` 엔 없다). 결과는 사람 결정 보류. |
 | IN-20260613-qa-001 | qa | 누락 상태 입력 → COUPON-001 State Matrix 에 `offline`/network-error 행 추가, api-error-policy(네트워크/오프라인 retry) 갱신, Acceptance Criteria 추가. simple-update 범위. |
+| IN-20260613-testid-001 | testid | QA automation selector 입력 → ScreenSpec Accessibility 에 draft/recommended anchors 만 남기고, unresolved tab 구조는 `VER-001` 로 보류. 코드/test 구현과 naming confirmed 승격 금지. |
+| IN-20260613-policy-migration-001 | policy-migration | Tier3 layer access / policy migration 입력 → readiness access wired, policy draft/migration guide generated 를 기록하되 live policy replacement·hard gate·CI promotion 은 금지. live adoption 요구는 `C-002 + D-501 open` 으로 올림. |
 
 ## md-only 게이트 천장
 
@@ -61,7 +65,7 @@ fake hook·생성 카탈로그·figma 매핑·사람 승인을 더했을 때 도
 ## 나중 세션이 이 fixture 를 쓰는 법
 
 1. baseline 으로 `project-before/` 를 연다.
-2. `inputs/` 의 5건을 reconcile-input 에 입력한다.
+2. `inputs/` 의 7건을 reconcile-input 에 입력한다.
 3. reconcile-input(LLM) 이 만든 결과를 **`expected-llm-after/` 와 1:1 로 대조한다.** 이것이 LLM 단독 출력의 정답지다
    (decision/conflict/unknown 은 `open`·재오픈·근거 연결까지만, simple-update·gap 제안 반영, 닫기·승격·accept 는 없음).
 4. 그 다음 사람이 결정을 닫은 **이상적 최종 상태**는 `expected-after/` 다. reconcile-input 은 blocker 를 **올리기만** 하고

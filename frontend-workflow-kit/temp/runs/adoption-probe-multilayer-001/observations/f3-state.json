@@ -12,7 +12,7 @@
   ],
   "invocation": "node scripts/workflow-state.mjs --docs <probe-run>/scratch-f3/project/docs/frontend-workflow --src <probe-run>/scratch-f3/project/src --layout <probe-run>/project-layout.draft.yaml --date 2026-06-23",
   "exitCode": 0,
-  "stdout": "workflow:state — 1 screen(s)\n  wrote temp\\runs\\adoption-probe-multilayer-001\\scratch-f3\\project\\docs\\frontend-workflow\\_meta\\workflow-state.yaml\n  wrote temp\\runs\\adoption-probe-multilayer-001\\scratch-f3\\project\\docs\\frontend-workflow\\_meta\\screen-inventory.yaml\n  wrote temp\\runs\\adoption-probe-multilayer-001\\scratch-f3\\project\\docs\\frontend-workflow\\_meta\\layer-inventory.yaml\n",
+  "stdout": "workflow:state — 1 screen(s)\n  wrote temp/runs/adoption-probe-multilayer-001/scratch-f3/project/docs/frontend-workflow/_meta/workflow-state.yaml\n  wrote temp/runs/adoption-probe-multilayer-001/scratch-f3/project/docs/frontend-workflow/_meta/screen-inventory.yaml\n  wrote temp/runs/adoption-probe-multilayer-001/scratch-f3/project/docs/frontend-workflow/_meta/layer-inventory.yaml\n",
   "stderr": "",
   "ok": true
 }

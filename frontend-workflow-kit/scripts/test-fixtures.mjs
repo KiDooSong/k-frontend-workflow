@@ -59,7 +59,7 @@ const CATALOG_GEN_SCRIPT = path.join(KIT_ROOT, 'scripts', 'catalog-gen.mjs');
 
 // input-reconciliation golden(expected-llm-after) 의 stage=llm-after manifest.
 // 검사 대상 ID·기대 상태(올리기만 불변식). golden 의 실제 파일에서 확인한 값:
-//   register 5행 reconciled · D-001/D-003/D-204 + C-001 open · G-001 open(accept 아님)
+//   register 7행 reconciled · D-001/D-003/D-204/D-501 + C-001/C-002 open · G-001 open(accept 아님)
 //   · COUPON-001 status:draft · U-001 open · U-002 미존재.
 const RECON_MANIFEST = {
   registerFile: '_meta/reconciliation-register.md',
@@ -71,16 +71,42 @@ const RECON_MANIFEST = {
     'IN-20260613-api-001',
     'IN-20260613-meeting-001',
     'IN-20260613-qa-001',
+    'IN-20260613-testid-001',
+    'IN-20260613-policy-migration-001',
   ],
   decisionsFile: '_meta/decision-log.md',
-  decisionsMustStayOpen: ['D-001', 'D-003', 'D-204'], // open 아니면 FAIL (LLM 은 닫지 않음)
+  decisionsMustStayOpen: ['D-001', 'D-003', 'D-204', 'D-501'], // open 아니면 FAIL (LLM 은 닫지 않음)
   conflictsFile: '_meta/conflicts.md',
-  conflictsMustStayOpen: ['C-001'],                    // open 아니면 FAIL
+  conflictsMustStayOpen: ['C-001', 'C-002'],            // open 아니면 FAIL
   gapsFile: 'global/component-gap-register.md',
   gapsMustNotBeAccepted: ['G-001'],                    // accepted 면 FAIL (승인은 사람)
   couponSpec: 'domains/coupons/screens/coupon-list/screen-spec.md',
   unknownsMustStayOpen: ['U-001'],                     // open 아니면 FAIL (Unknown 닫기는 사람)
   unknownsMustNotExist: ['U-002'],                     // 신설되면 FAIL (-001 회귀)
+  surfaceMustContain: [
+    {
+      label: 'testid',
+      file: 'domains/coupons/screens/coupon-list/screen-spec.md',
+      snippets: [
+        'IN-20260613-testid-001',
+        'coupon-list-title',
+        'coupon-list-item-{couponId}',
+        'coupon-list-status-tabs',
+        'confirmed 로 올리지 않는다',
+        'VER-001',
+      ],
+    },
+    {
+      label: 'visual-spec',
+      file: 'domains/coupons/screens/coupon-list/figma-component-mapping.md',
+      snippets: [
+        '## Visual Spec',
+        'Token Status',
+        'Provenance',
+        'raw 999',
+      ],
+    },
+  ],
 };
 
 // L2 pipeline 코퍼스: 예제별 src 하위 경로. src='__no_src__' = 의도적으로 없는 경로(md-only fixture)
