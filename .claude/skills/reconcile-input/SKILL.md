@@ -52,7 +52,9 @@ description: 외부 입력 스킬이 저장한 새 입력 결과물(input_id 보
 10. Register 행을 `reconciled`로 바꾸고 `Result`·`Touched Artifacts`·`Created Items`를 채운다.
     자식 decision이 `open`이어도 reconcile 자체는 끝 — 그 차단은 readiness가 담당한다.
 11. `npm run workflow:state` → `workflow:readiness` → `workflow:validate`를 실행하고 결과를 보고한다.
-    Tier3/layout/policy migration 입력을 건드렸으면 `npm run workflow:policy-draft`(또는 해당 repo의 policy-draft 명령)도 review-only 로 실행한다. fixture/dogfood 갱신일 때만 adoption-probe 를 추가로 돌린다.
+    Tier3/layout/policy migration 입력을 건드렸으면 `npm run workflow:policy-draft -- --out <review-output-dir>`처럼
+    review-only 출력 디렉터리를 명시해 실행한다(또는 해당 repo의 policy-draft 명령에 동등한 `--out` 전달).
+    이 출력은 live policy 교체가 아니다. fixture/dogfood 갱신일 때만 adoption-probe 를 추가로 돌린다.
 
 ## Classification (입력은 ≥1개로 분류)
 | Type | Action |

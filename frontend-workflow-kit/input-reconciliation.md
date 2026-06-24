@@ -210,7 +210,8 @@ docs/frontend-workflow/_meta/reconciliation-register.md
 10. Register 행을 `reconciled` 로 바꾸고 Result·Touched Artifacts·Created Items 를 채운다.
       자식 decision 이 열려 있어도 reconcile 자체는 끝난 것이다 (그 차단은 readiness 가 담당).
 11. workflow:state → workflow:readiness → workflow:validate 를 실행한다.
-      Tier3/layout/policy-migration 입력을 다뤘다면 policy-draft 생성도 review-only 로 실행해 결과를 보고한다.
+      Tier3/layout/policy-migration 입력을 다뤘다면 `npm run workflow:policy-draft -- --out <review-output-dir>`처럼
+      review-only 출력 디렉터리를 명시해 policy-draft 생성 결과를 보고한다. 이 출력은 live policy 교체가 아니다.
 12. readiness 가 허용한 범위에서만 개발한다.
 ```
 
@@ -560,7 +561,8 @@ reconcile-input
 9.  사용자 결정 후 문서를 업데이트한다.
 10. Register 행을 `reconciled` 로 바꾸고 Result·Touched Artifacts·Created Items 를 채운다 (자식 decision 이 open 이어도 reconcile 은 끝).
 11. workflow:state/readiness/validate 결과를 보고한다.
-      layout/policy migration 입력이면 policy-draft 생성 결과도 "review-only" 로 보고한다.
+      layout/policy migration 입력이면 `npm run workflow:policy-draft -- --out <review-output-dir>`처럼
+      review-only 출력 디렉터리를 명시해 policy-draft 생성 결과도 보고한다.
 ```
 
 **register-first 가 핵심이다.** 문서부터 고치고 register 를 나중에 쓰면, 중간에 세션이 끊겼을 때 "처리 중이었음"을 알 수 없어 재실행이 같은 수정을 중복한다. pending 행을 먼저 남기면 중단돼도 미완 상태가 보인다.
@@ -591,8 +593,11 @@ npm run workflow:state
 npm run workflow:readiness
 npm run workflow:validate
 # Tier3/layout/policy-migration 입력을 다룬 경우에만:
-npm run workflow:policy-draft
+npm run workflow:policy-draft -- --out <review-output-dir>
 ```
+
+`<review-output-dir>` 는 `temp/runs/...` 같은 리뷰용 디렉터리다. 이 명령은 draft/migration 산출물을
+리뷰용으로 만들 뿐, live `policies/implementation-mode-policy.yaml` 을 교체하지 않는다.
 
 fixture/dogfood 자체를 갱신하는 PR 에서는 adoption-probe 를 추가로 돌릴 수 있다. 일반 사용자 reconcile run 에서
 adoption-probe 는 필수 명령이 아니다.
