@@ -226,6 +226,28 @@ test('E2E: confirmed ts-type contract passes for generic exported type alias', (
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+test('E2E: ts-type Source outside project does not satisfy contract evidence', () => {
+  for (const mode of ['relative traversal', 'absolute outside']) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check8-ts-outside-'));
+    const outsideAbs = path.resolve(root, '..', `${path.basename(root)}-outside-types.ts`);
+    const source = mode === 'relative traversal' ? `../${path.basename(outsideAbs)}` : outsideAbs;
+    try {
+      fs.writeFileSync(outsideAbs, 'export type OutsideResponse = { ok: true }\n', 'utf8');
+      writeTree(root, {
+        'docs/frontend-workflow/api/api-manifest.md': manifestDoc(
+          `| Method | Path | Operation ID | Confidence | Linked Contract | Contract Kind | Source |\n|---|---|---|---|---|---|---|\n| GET | /x | getX | confirmed | OutsideResponse | ts-type | ${source} |`,
+        ),
+        'docs/frontend-workflow/domains/d/screens/s/screen-spec.md': SCREEN_CONFIRMED,
+      });
+      const c8 = (runValidate(root).errors || []).filter((e) => e.check === 8);
+      assert.equal(c8.length, 1, mode);
+      assert.match(c8[0].message, /ts-type contract=OutsideResponse/, mode);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+      fs.rmSync(outsideAbs, { force: true });
+    }
+  }
+});
 test('E2E: confirmed ts-type contract fails when type/interface export is missing', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check8-ts-missing-'));
   try {
@@ -282,6 +304,73 @@ test('E2E: unsupported contract kind produces clear validation error', () => {
   }
 });
 
+test('E2E: confirmed openapi contract passes when Source file contains linked contract', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check8-openapi-pass-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/api/api-manifest.md': manifestDoc(
+        '| Method | Path | Operation ID | Confidence | Linked Contract | Contract Kind | Source |\n|---|---|---|---|---|---|---|\n| GET | /x | getX | confirmed | XResponse | openapi | openapi.yaml |',
+      ),
+      'docs/frontend-workflow/domains/d/screens/s/screen-spec.md': SCREEN_CONFIRMED,
+      'openapi.yaml': 'openapi: 3.1.0\ncomponents:\n  schemas:\n    XResponse:\n      type: object\n',
+    });
+    const c8 = (runValidate(root).errors || []).filter((e) => e.check === 8);
+    assert.deepEqual(c8, []);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('E2E: confirmed openapi contract fails without checked Source evidence', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check8-openapi-fail-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/api/api-manifest.md': manifestDoc(
+        '| Method | Path | Operation ID | Confidence | Linked Contract | Contract Kind | Source |\n|---|---|---|---|---|---|---|\n| GET | /x | getX | confirmed | TotallyUnverified | openapi | - |',
+      ),
+      'docs/frontend-workflow/domains/d/screens/s/screen-spec.md': SCREEN_CONFIRMED,
+    });
+    const c8 = (runValidate(root).errors || []).filter((e) => e.check === 8);
+    assert.equal(c8.length, 1);
+    assert.match(c8[0].message, /openapi contract=TotallyUnverified/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('E2E: confirmed manual contract passes when Source doc contains linked contract', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check8-manual-pass-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/api/api-manifest.md': manifestDoc(
+        '| Method | Path | Operation ID | Confidence | Linked Contract | Contract Kind | Source |\n|---|---|---|---|---|---|---|\n| GET | /x | getX | confirmed | ManualXResponse | manual | docs/contracts/x.md |',
+      ),
+      'docs/frontend-workflow/domains/d/screens/s/screen-spec.md': SCREEN_CONFIRMED,
+      'docs/contracts/x.md': '# API contract\n\nManualXResponse is confirmed by the backend owner.\n',
+    });
+    const c8 = (runValidate(root).errors || []).filter((e) => e.check === 8);
+    assert.deepEqual(c8, []);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('E2E: confirmed unknown contract kind cannot satisfy confirmed evidence', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check8-unknown-fail-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/api/api-manifest.md': manifestDoc(
+        '| Method | Path | Operation ID | Confidence | Linked Contract | Contract Kind | Source |\n|---|---|---|---|---|---|---|\n| GET | /x | getX | confirmed | TotallyUnverified | unknown | - |',
+      ),
+      'docs/frontend-workflow/domains/d/screens/s/screen-spec.md': SCREEN_CONFIRMED,
+    });
+    const c8 = (runValidate(root).errors || []).filter((e) => e.check === 8);
+    assert.equal(c8.length, 1);
+    assert.match(c8[0].message, /Contract Kind=unknown/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 test('E2E: Linked Contract without Contract Kind reports omitted kind', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check8-kind-omitted-'));
   try {

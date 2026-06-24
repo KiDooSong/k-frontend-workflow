@@ -131,7 +131,7 @@ scan -> map -> diff -> rollout -> propose 보고서와 `lint-policy.yaml` 초안
 
 ## Brownfield adoption compatibility
 
-- API manifest confirmed rows can link contract evidence by kind: zod, ts-type, openapi, manual, or unknown. Existing Linked Schema rows remain valid zod-compatible legacy rows; ts-type checks exported TypeScript types/interfaces as static evidence, not runtime validation.
+- API manifest confirmed rows can link project-local contract evidence by kind: zod, ts-type, openapi, or manual. Existing Linked Schema rows remain valid zod-compatible legacy rows; ts-type checks exported TypeScript types/interfaces as static evidence, not runtime validation; unknown is a compatibility/tracking kind and does not satisfy confirmed evidence.
 - ScreenSpec frontmatter may include optional route_entry and screen_entry. route_entry is the router/framework boundary; screen_entry is the product screen implementation. They may live under unrelated roots, and tooling should not infer one path from the other.
 
 ## Readiness 정책

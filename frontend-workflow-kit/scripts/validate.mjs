@@ -8,7 +8,7 @@
 //   5. screen_id 중복, route 중복
 //   6. do_not_edit 산출물의 GENERATED 헤더/마커 훼손
 //   7. confirmed 문서의 승인 메타데이터(approved_by/approved_at) 누락
-//   8. API Candidates 가 confirmed 인데 zod 스키마/OpenAPI 부재
+//   8. API Candidates 가 confirmed 인데 manifest contract evidence 부재/불일치
 //   9. Open Decisions 형식 (표 컬럼·Status enum·Blocking Mode 정책 모드·전역 ID 중복; resolved→Options 는 경고)
 //      ※ forbidden_paths 경계 backstop 은 diff 기반(후속) — 트리 스캔은 공유 src/api 에 오탐. open-decisions.md "Validate 통합" 참조.
 //   10. Copy Keys Status enum (confirmed|draft|tbd) — screen-spec.template.md 의 3-state 계약. stub·placeholder 행은 제외.
@@ -66,6 +66,7 @@ import {
   buildEndpointIndex,
   collectSchemaExports,
   collectTsTypeExports,
+  contractSourceHasText,
   CONTRACT_KINDS,
   isContractUnset,
   normEndpoint,
@@ -464,6 +465,31 @@ function main() {
           );
           continue;
         }
+      } else if (m.contractKind === 'openapi') {
+        if (!contractSourceHasText(m.source, projectRoot, m.linkedContract, ['.yaml', '.yml', '.json'])) {
+          add(
+            8,
+            m.file,
+            `confirmed endpoint ${e.method} ${e.path} 의 openapi contract=${m.linkedContract} 가 Source=${m.source || '(빈값)'} 의 project-local OpenAPI 파일(.yaml/.yml/.json)에서 발견되지 않음 → 해소: Source 를 프로젝트 내부 OpenAPI 파일로 지정하고 Linked Contract 이름을 포함시키세요.`,
+          );
+          continue;
+        }
+      } else if (m.contractKind === 'manual') {
+        if (!contractSourceHasText(m.source, projectRoot, m.linkedContract, ['.md', '.txt', '.yaml', '.yml', '.json'])) {
+          add(
+            8,
+            m.file,
+            `confirmed endpoint ${e.method} ${e.path} 의 manual contract=${m.linkedContract} 가 Source=${m.source || '(빈값)'} 의 project-local manual evidence 파일에서 발견되지 않음 → 해소: Source 를 프로젝트 내부 문서/스펙 파일로 지정하고 Linked Contract 이름을 포함시키세요.`,
+          );
+          continue;
+        }
+      } else if (m.contractKind === 'unknown') {
+        add(
+          8,
+          m.file,
+          `confirmed endpoint ${e.method} ${e.path} 의 Contract Kind=unknown 은 confirmed API evidence 를 만족할 수 없음 → 해소: zod|ts-type|openapi|manual 중 확인 가능한 evidence kind 로 바꾸거나 ScreenSpec confidence 를 candidate 로 낮추세요.`,
+        );
+        continue;
       }
     }
   }

@@ -68,6 +68,15 @@ function makeRepo(t) {
   return root;
 }
 
+function makeMinimalRepo(t) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'adoption-probe-minimal-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  write(
+    path.join(root, 'package.json'),
+    JSON.stringify({ name: 'probe-minimal', dependencies: { expo: '^56.0.0', 'expo-router': '^6.0.0' } }, null, 2),
+  );
+  return root;
+}
 function makeMonorepoRepo(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'adoption-probe-monorepo-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -250,6 +259,21 @@ test('runAdoptionProbe renders draft outputs and keeps live docs untouched', (t)
   assert.ok(result.observation.layerInventory);
 });
 
+test('runAdoptionProbe reports candidate route/screen defaults as not observed', (t) => {
+  const repo = makeMinimalRepo(t);
+  const out = path.join(repo, 'temp', 'runs', 'adoption-probe-minimal');
+  runAdoptionProbe({ repo, out, id: 'minimal', date: '2026-06-23', 'skip-f3': true });
+
+  const adoptionReport = fs.readFileSync(path.join(out, 'adoption-report.md'), 'utf8');
+  assert.match(adoptionReport, /candidate defaults, not observed/);
+  assert.match(adoptionReport, /candidate defaults are independent, not observed/);
+  assert.doesNotMatch(adoptionReport, /observed independent roots/);
+
+  const summary = JSON.parse(fs.readFileSync(path.join(out, 'probe-summary.json'), 'utf8'));
+  assert.equal(summary.route_screen_separation.separated, false);
+  assert.equal(summary.route_screen_separation.confirmed, false);
+  assert.equal(summary.route_screen_separation.candidate_separated, true);
+});
 test('runAdoptionProbe honors custom --src for monorepo role, env, and catalog scans', (t) => {
   const repo = makeMonorepoRepo(t);
   const out = path.join(repo, 'temp', 'runs', 'adoption-probe-monorepo');

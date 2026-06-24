@@ -138,23 +138,34 @@ export function collectSchemaExports(schemasDir) {
 
 export function collectTsTypeExports(source, projectRoot) {
   const names = new Set();
-  for (const file of contractSourceFiles(source, projectRoot)) {
+  for (const file of contractSourceFiles(source, projectRoot, ['.ts', '.tsx'])) {
     collectTypeExportsFromText(readFileSafe(file) || '', names);
   }
   return names;
 }
 
-function contractSourceFiles(source, projectRoot) {
+export function contractSourceHasText(source, projectRoot, needle, extensions) {
+  const target = String(needle == null ? '' : needle).trim();
+  if (!target) return false;
+  for (const file of contractSourceFiles(source, projectRoot, extensions)) {
+    if ((readFileSafe(file) || '').includes(target)) return true;
+  }
+  return false;
+}
+
+function contractSourceFiles(source, projectRoot, extensions = ['.ts', '.tsx']) {
   const src = String(source == null ? '' : source).trim();
   if (isSchemaUnset(src)) return [];
   if (/^(openapi|manual|unknown|confluence|planning)$/i.test(src)) return [];
+  const projectAbs = path.resolve(projectRoot || '.');
   const parts = src
     .split(',')
     .map((p) => p.trim())
     .filter(Boolean);
   const files = [];
   for (const part of parts) {
-    const abs = path.isAbsolute(part) ? path.resolve(part) : path.resolve(projectRoot, part);
+    const abs = path.isAbsolute(part) ? path.resolve(part) : path.resolve(projectAbs, part);
+    if (!isInsidePath(abs, projectAbs)) continue;
     let st;
     try {
       st = fs.statSync(abs);
@@ -162,12 +173,23 @@ function contractSourceFiles(source, projectRoot) {
       continue;
     }
     if (st.isDirectory()) {
-      for (const file of walkFiles(abs, ['.ts', '.tsx'])) files.push(file);
-    } else if (st.isFile() && /\.(?:d\.)?tsx?$/.test(path.basename(abs))) {
+      for (const file of walkFiles(abs, extensions)) files.push(file);
+    } else if (st.isFile() && hasExtension(abs, extensions)) {
       files.push(abs);
     }
   }
   return [...new Set(files)].sort();
+}
+
+function isInsidePath(absPath, rootPath) {
+  const rel = path.relative(rootPath, absPath);
+  return rel === '' || (rel && !rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+function hasExtension(file, extensions) {
+  if (!extensions || extensions.length === 0) return true;
+  const base = path.basename(file).toLowerCase();
+  return extensions.some((ext) => base.endsWith(String(ext).toLowerCase()));
 }
 
 // 주석을 제거한다 — 주석 처리된(죽은) export 가 거짓 매칭되지 않도록.

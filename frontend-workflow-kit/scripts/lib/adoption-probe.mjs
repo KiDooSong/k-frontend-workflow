@@ -257,11 +257,13 @@ function routeScreenSeparation(roleMap) {
   const screen = roleMap?.screen;
   const routeRoot = globRootPattern(route?.glob || '');
   const screenRoot = globRootPattern(screen?.glob || '');
-  const separated = Boolean(routeRoot && screenRoot && !rootsOverlap(routeRoot, screenRoot));
+  const shapeSeparated = Boolean(routeRoot && screenRoot && !rootsOverlap(routeRoot, screenRoot));
   const confirmed = route?.confidence === 'confirmed' && screen?.confidence === 'confirmed';
+  const separated = Boolean(shapeSeparated && confirmed);
   return {
     supported: true,
     separated,
+    candidate_separated: Boolean(shapeSeparated && !confirmed),
     confirmed,
     route_entry_glob: route?.glob || null,
     screen_glob: screen?.glob || null,
@@ -269,7 +271,9 @@ function routeScreenSeparation(roleMap) {
     screen_evidence: screen?.evidence || null,
     observation: separated
       ? 'route_entry and screen roots are independent; thin routes plus separate screen/view files are supported'
-      : 'route_entry and screen roots overlap or one role is candidate; path coupling is not assumed',
+      : shapeSeparated
+        ? 'candidate defaults are independent, not observed; thin route support is a proposal until both roles are confirmed'
+        : 'route_entry and screen roots overlap or one role is candidate; path coupling is not assumed',
   };
 }
 function detectRoleMap(projectRoot, srcDir) {
@@ -607,7 +611,7 @@ function routeScreenRows(env) {
   const rows = [
     ['Route entry role', s.route_entry_glob ? `\`${s.route_entry_glob}\`` : 'not observed', s.route_entry_evidence ? `evidence: \`${s.route_entry_evidence}\`` : 'candidate'],
     ['Screen entry role', s.screen_glob ? `\`${s.screen_glob}\`` : 'not observed', s.screen_evidence ? `evidence: \`${s.screen_evidence}\`` : 'candidate'],
-    ['Separation model', s.separated ? 'observed independent roots' : 'not proven from roots', s.observation || 'path coupling is not assumed'],
+    ['Separation model', s.separated ? 'observed independent roots' : s.candidate_separated ? 'candidate defaults, not observed' : 'not proven from roots', s.observation || 'path coupling is not assumed'],
   ];
   return rows.map((r) => `| ${r[0]} | ${r[1]} | ${r[2]} |`).join('\n');
 }
