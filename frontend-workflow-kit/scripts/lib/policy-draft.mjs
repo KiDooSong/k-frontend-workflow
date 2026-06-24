@@ -9,7 +9,7 @@ import {
   loadYamlOrExit,
   writeFile,
 } from './util.mjs';
-import { loadLayoutProfile } from './layout-profile.mjs';
+import { LayoutConfigError, loadLayoutProfile } from './layout-profile.mjs';
 import { BUILT_IN_LAYER_ROLES } from './layer-inventory.mjs';
 
 export const DRAFT_POLICY_FILENAME = 'implementation-mode-policy.draft.yaml';
@@ -464,7 +464,7 @@ export function writePolicyDraftArtifacts({
     ? path.resolve(layoutPath)
     : path.join(path.resolve(kitRoot), 'policies', 'project-layout.yaml');
   const policy = loadYamlOrExit(resolvedPolicyPath, 'policy', 'policy-draft');
-  if (!policy) throw new Error(`policy-draft: policy file missing: ${resolvedPolicyPath}`);
+  if (!policy) throw new LayoutConfigError(`policy-draft: policy file missing: ${resolvedPolicyPath}`);
   const layout = loadLayoutProfile({
     kitRoot,
     flags: layoutPath ? { layout: resolvedLayoutPath } : {},

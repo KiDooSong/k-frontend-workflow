@@ -385,3 +385,21 @@ test('workflow:policy-draft writes only requested draft outputs and does not mut
   assert.match(fs.readFileSync(path.join(outDir, DRAFT_POLICY_FILENAME), 'utf8'), /src\/presentation\/\{domain\}\/viewmodels\/\*\*/);
   assert.equal(fs.existsSync(path.join(KIT_ROOT, 'policies', DRAFT_POLICY_FILENAME)), false);
 });
+
+test('workflow:policy-draft CLI fails closed for explicit missing --policy', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'policy-draft-missing-policy-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const missingPolicy = path.join(tmp, 'missing-policy.yaml');
+  const outDir = path.join(tmp, 'out');
+  const r = spawnSync(process.execPath, [CLI, '--policy', missingPolicy, '--out', outDir], {
+    cwd: KIT_ROOT,
+    encoding: 'utf8',
+  });
+
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /workflow:policy-draft: policy-draft: policy file missing:/);
+  assert.doesNotMatch(r.stderr, /\n\s+at\s+/);
+  assert.equal(r.stdout, '');
+  assert.equal(fs.existsSync(path.join(outDir, DRAFT_POLICY_FILENAME)), false);
+  assert.equal(fs.existsSync(path.join(outDir, MIGRATION_GUIDE_FILENAME)), false);
+});
