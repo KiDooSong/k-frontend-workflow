@@ -13,13 +13,19 @@ date: 2026-06-24
 
 전제: 이 fixture 는 md-only 다. 사실 기준 readiness 천장은 모든 화면 `screen-skeleton` 이고, 일부 화면은 Open Decision 이 더 낮게 cap 한다.
 기대 게이트값의 단일 출처는 `reports/expected-readiness.md` 와 최신 `workflow:readiness -- --json` 출력이다.
+원본 fixture 기준 재현 명령은 kit root에서 fixture-specific 인자를 명시한다.
+
+- docs: `examples/multi-screen-dry-run/docs/frontend-workflow`
+- src: `examples/multi-screen-dry-run/__no_src__`
+- date: `2026-06-13`
+- temp workspace 복사본을 평가할 때는 같은 옵션의 경로만 복사본 위치로 바꾼다.
 
 ## Test 1 — readiness output consumption
 
 - **목적**: state/readiness 스크립트가 화면별 `readiness_mode`, `allowed_paths`, `forbidden_paths`, `blocking`, `next_actions` 를 내고 implement-screen 이 그 값을 그대로 소비하는지 확인한다.
 - **절차**
-  1. `npm run workflow:state` 실행.
-  2. `npm run workflow:readiness -- --screen <ID> --json` 실행.
+  1. `npm run workflow:state -- --docs examples/multi-screen-dry-run/docs/frontend-workflow --src examples/multi-screen-dry-run/__no_src__ --date 2026-06-13` 실행.
+  2. `npm run workflow:readiness -- --docs examples/multi-screen-dry-run/docs/frontend-workflow --screen <ID> --json` 실행.
   3. 출력의 `result["<ID>"]` 를 `reports/expected-readiness.md` §실측과 대조.
 - **기대**
   - AUTH-001 / HOME-001 / COUPON-001 / COUPON-002 → `screen-skeleton`
@@ -64,9 +70,9 @@ date: 2026-06-24
 - **목적**: 구현 후 검증 순서와 재실행 안정성을 확인한다.
 - **절차**
   1. 가능한 가장 작은 관련 lint/test 를 실행한다.
-  2. `npm run workflow:state` 실행.
-  3. `npm run workflow:readiness -- --screen <ID> --json` 실행.
-  4. `npm run workflow:validate` 실행.
+  2. `npm run workflow:state -- --docs examples/multi-screen-dry-run/docs/frontend-workflow --src examples/multi-screen-dry-run/__no_src__ --date 2026-06-13` 실행.
+  3. `npm run workflow:readiness -- --docs examples/multi-screen-dry-run/docs/frontend-workflow --screen <ID> --json` 실행.
+  4. `npm run workflow:validate -- --docs examples/multi-screen-dry-run/docs/frontend-workflow --src examples/multi-screen-dry-run/__no_src__` 실행.
   5. 같은 입력/readiness 로 implement-screen 을 재실행한다.
 - **기대**
   - readiness before/after 와 validation 결과를 보고한다.

@@ -30,7 +30,8 @@ description: 지정된 Screen ID를 readiness gate가 허용하는 모드와 경
 
 - readiness 판정은 스스로 재구현하지 않는다.
 - 항상 workflow 스크립트를 실행하고 그 출력을 소비한다.
-- `allowed_paths` 안의 파일만 수정한다.
+- manual/source edit 은 `allowed_paths` 안의 파일로 제한한다.
+- script-owned generated output 은 직접 편집하지 않고 workflow 스크립트로만 재생성한다.
 - `forbidden_paths` 는 절대 수정하지 않는다.
 - 생성 파일은 직접 수정하지 않고 스크립트로 재생성한다.
 - readiness pass 를 design/product approval 로 보고하지 않는다.
