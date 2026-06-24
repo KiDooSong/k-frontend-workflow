@@ -38,6 +38,7 @@ import {
   writePipelineExpected,
   runPathBackstopCase,
   runGeneratedViewCase,
+  runSkillContractChecks,
 } from './lib/test-fixture.mjs';
 import { buildState } from './workflow-state.mjs';
 import { computeReadiness } from './readiness.mjs';
@@ -56,6 +57,7 @@ const ROUTE_TREE_SCRIPT = path.join(KIT_ROOT, 'scripts', 'route-tree.mjs');
 const NAV_GRAPH_SCRIPT = path.join(KIT_ROOT, 'scripts', 'nav-graph.mjs');
 const COMPONENT_CATALOG_ROOT = path.join(EXAMPLES, 'component-catalog');
 const CATALOG_GEN_SCRIPT = path.join(KIT_ROOT, 'scripts', 'catalog-gen.mjs');
+const IMPLEMENT_SCREEN_SKILL = path.join(KIT_ROOT, 'skills', 'implement-screen', 'SKILL.md');
 
 // input-reconciliation golden(expected-llm-after) 의 stage=llm-after manifest.
 // 검사 대상 ID·기대 상태(올리기만 불변식). golden 의 실제 파일에서 확인한 값:
@@ -309,6 +311,32 @@ function buildFixtures() {
     ],
   });
 
+  // skill contract fixture — 스킬 본문이 최신 surface 를 계속 언급하고 stale 전역 규칙으로
+  // 돌아가지 않는지 확인한다. 로직 판정은 여전히 workflow scripts 가 단일 출처다.
+  fixtures.push({
+    id: 'implement-screen:skill-contract',
+    kind: 'skill-contract',
+    expectVerdict: 'pass',
+    file: IMPLEMENT_SCREEN_SKILL,
+    mustContain: [
+      { label: 'readiness', snippet: '`allowed_paths`' },
+      { label: 'readiness', snippet: '`forbidden_paths`' },
+      { label: 'reconcile', snippet: 'Reconciliation Register' },
+      { label: 'roots', snippet: '`--docs`, `--src`, `--root`, `--layout`' },
+      { label: 'visual', snippet: '`figma-component-mapping.md`' },
+      { label: 'testid', snippet: 'testID' },
+      { label: 'tier3', snippet: 'custom Tier3 layer' },
+      { label: 'policy-draft', snippet: '`implementation-mode-policy.draft.yaml`' },
+      { label: 'policy-draft', snippet: '`implementation-mode-policy.migration.md`' },
+      { label: 'src-api', snippet: '`src/api/**` 를 항상 금지라고 가정하지 않는다' },
+      { label: 'validation', snippet: 'npm run workflow:validate' },
+    ],
+    mustNotContain: [
+      { label: 'stale-fake-hook-only', snippet: '`useXxx` fake hook 만 사용한다' },
+      { label: 'stale-src-api-forbidden', snippet: '`src/api` 등 forbidden 경로는 건드리지 않는다' },
+    ],
+  });
+
   // pipeline fixtures (L2) — state/readiness/validate 출력 재현 회귀.
   for (const ex of L2_CORPUS) {
     const dir = path.join(EXAMPLES, ex.id);
@@ -390,6 +418,8 @@ function runFixture(fx, update) {
     res = runPathBackstopCase(fx);
   } else if (fx.kind === 'route-tree' || fx.kind === 'nav-graph' || fx.kind === 'component-catalog') {
     res = runGeneratedViewCase(fx);
+  } else if (fx.kind === 'skill-contract') {
+    res = runSkillContractChecks(fx);
   } else {
     res = { checks: [{ check: 'kind', ok: false, message: `unknown fixture kind: ${fx.kind}` }], failed: 1 };
   }

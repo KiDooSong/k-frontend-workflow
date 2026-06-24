@@ -296,6 +296,37 @@ export function runIntegrityChecks(spec) {
   return finalize(r);
 }
 
+// skill contract fixture 검사 — skill 문서가 현재 workflow surface 를 언급하는지 확인하는
+// 가벼운 텍스트 회귀 안전망이다. readiness/validate/policy 로직은 재구현하지 않는다.
+// spec : { file, mustContain?: [{label,snippet}], mustNotContain?: [{label,snippet}] }
+export function runSkillContractChecks(spec) {
+  const r = makeResults();
+  const raw = readFileSafe(spec.file);
+  if (raw == null) {
+    r.fail('S:exists', `skill 파일 없음: ${toPosix(spec.file)}`);
+    return finalize(r);
+  }
+  r.ok('S:exists', `존재: ${toPosix(spec.file)}`);
+
+  for (const item of spec.mustContain || []) {
+    const label = item.label || 'must-contain';
+    if (raw.includes(item.snippet)) {
+      r.ok(`S:${label}`, `contains ${JSON.stringify(item.snippet)}`);
+    } else {
+      r.fail(`S:${label}`, `missing ${JSON.stringify(item.snippet)}`);
+    }
+  }
+  for (const item of spec.mustNotContain || []) {
+    const label = item.label || 'must-not-contain';
+    if (raw.includes(item.snippet)) {
+      r.fail(`S:${label}`, `stale snippet present ${JSON.stringify(item.snippet)}`);
+    } else {
+      r.ok(`S:${label}`, `absent ${JSON.stringify(item.snippet)}`);
+    }
+  }
+  return finalize(r);
+}
+
 // ── L2: state/readiness/validate 출력 재현 회귀 (pipeline fixture) ─────────────────
 // 예제 트리에 buildState/computeReadiness/validate 를 돌린 출력을, 커밋된 기계가독 기대값
 // (reports/expected-*.json)과 대조한다. 판정 로직은 재구현하지 않는다 — 호출부(test-fixtures.mjs)가
