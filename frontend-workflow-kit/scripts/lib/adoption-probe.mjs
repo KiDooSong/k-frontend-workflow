@@ -276,18 +276,36 @@ function isSameOrInside(parent, child) {
   return c === p || c.startsWith(`${p}/`);
 }
 
+function globRootPattern(glob) {
+  return toPosix(glob || '').replace(/\/\*\*$/, '').replace(/\*.*$/, '').replace(/\/+$/, '');
+}
+
+function concreteRoleRootsForLayer(glob, layerPath) {
+  const rootPattern = globRootPattern(glob);
+  if (!rootPattern) return [];
+  if (!rootPattern.includes('{domain}')) return [rootPattern];
+
+  const patternParts = rootPattern.split('/').filter(Boolean);
+  const layerParts = toPosix(layerPath).replace(/\/+$/, '').split('/').filter(Boolean);
+  if (patternParts.length > layerParts.length) return [];
+
+  const concreteParts = [];
+  for (let i = 0; i < patternParts.length; i++) {
+    const patternPart = patternParts[i];
+    const layerPart = layerParts[i];
+    if (patternPart === '{domain}') {
+      if (!layerPart) return [];
+      concreteParts.push(layerPart);
+      continue;
+    }
+    if (patternPart !== layerPart) return [];
+    concreteParts.push(patternPart);
+  }
+  return [concreteParts.join('/')];
+}
+
 function roleGlobRootsForLayer(roleMap, layerPath) {
   const roots = [];
-  const pathParts = toPosix(layerPath).split('/');
-  const srcIndex = pathParts.indexOf('src');
-  const domains = new Set();
-  if (srcIndex >= 0) {
-    for (const segment of pathParts.slice(srcIndex + 1)) {
-      const isLayerSegment = EXTRA_LAYER_PATTERNS.some((p) => p.segments.includes(segment.toLowerCase()));
-      if (segment && !isLayerSegment) domains.add(segment);
-    }
-  }
-
   for (const role of Object.values(roleMap)) {
     const evidence = toPosix(role.evidence || '').replace(/\/+$/, '');
     if (evidence && evidence !== 'default preset fallback') {
@@ -296,11 +314,7 @@ function roleGlobRootsForLayer(roleMap, layerPath) {
 
     const glob = toPosix(role.glob || '');
     if (!glob) continue;
-    const concreteGlobs = glob.includes('{domain}')
-      ? Array.from(domains).map((domain) => glob.replaceAll('{domain}', domain))
-      : [glob];
-    for (const concrete of concreteGlobs) {
-      const root = concrete.replace(/\/\*\*$/, '').replace(/\*.*$/, '').replace(/\/+$/, '');
+    for (const root of concreteRoleRootsForLayer(glob, layerPath)) {
       if (root) roots.push({ role: role.role, root });
     }
   }

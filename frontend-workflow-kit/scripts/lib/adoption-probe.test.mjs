@@ -140,6 +140,42 @@ function makeAppcodeRepo(t) {
   return root;
 }
 
+function makeMultiDomainAppcodeRepo(t) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'adoption-probe-appcode-multi-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  write(
+    path.join(root, 'package.json'),
+    JSON.stringify({ name: 'probe-appcode-multi', dependencies: { expo: '^56.0.0', 'expo-router': '^6.0.0' } }, null, 2),
+  );
+  for (const domain of ['profile', 'settings']) {
+    const screenName = `${domain[0].toUpperCase()}${domain.slice(1)}Screen`;
+    write(path.join(root, 'appcode', 'presentation', domain, 'screens', `${screenName}.tsx`), `export function ${screenName}() { return null; }\n`);
+    write(path.join(root, 'appcode', 'presentation', domain, 'viewmodels', `use${screenName}ViewModel.ts`), `export function use${screenName}ViewModel() { return {}; }\n`);
+    write(
+      path.join(root, 'docs', 'frontend-workflow', 'domains', domain, 'screens', domain, 'screen-spec.md'),
+      [
+        '---',
+        `artifact_id: screen-spec-${domain}`,
+        'artifact_type: screen-spec',
+        `domain: ${domain}`,
+        `screen_id: ${domain.toUpperCase()}-001`,
+        `route: /${domain}`,
+        'status: draft',
+        '---',
+        '',
+        `# ${screenName}`,
+        '',
+        '## State Matrix',
+        '| State | UI |',
+        '|---|---|',
+        '| loading | spinner |',
+        '',
+      ].join('\n'),
+    );
+  }
+  return root;
+}
+
 function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -311,6 +347,24 @@ test('F3 excludes flattened built-in roles when custom --src has no literal src 
   assert.equal(result.f3.removed.includes('appcode/presentation/profile/viewmodels'), false);
   assert.equal(
     result.f3.excluded.some((layer) => layer.path === 'appcode/presentation/profile/viewmodels' && layer.role === 'hook'),
+    true,
+  );
+});
+
+test('F3 excludes every matching domain for flattened built-in roles without src segment', (t) => {
+  const repo = makeMultiDomainAppcodeRepo(t);
+  const out = path.join(repo, 'temp', 'runs', 'adoption-probe-appcode-multi-f3');
+  const result = runAdoptionProbe({ repo, src: 'appcode', out, id: 'appcode-multi-f3', date: '2026-06-23' });
+
+  assert.equal(result.roleMap.hook.glob, 'appcode/presentation/{domain}/viewmodels/**');
+  assert.equal(result.f3.status, 'skipped: all extra layers are flattened into built-in roles');
+  assert.deepEqual(result.f3.removed, []);
+  assert.equal(
+    result.f3.excluded.some((layer) => layer.path === 'appcode/presentation/profile/viewmodels' && layer.role === 'hook'),
+    true,
+  );
+  assert.equal(
+    result.f3.excluded.some((layer) => layer.path === 'appcode/presentation/settings/viewmodels' && layer.role === 'hook'),
     true,
   );
 });
