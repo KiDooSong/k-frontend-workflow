@@ -13,5 +13,6 @@ kind: meta-register
 | ID | 충돌 지점 | A (출처/값) | B (출처/값) | 영향 화면 | Status |
 |---|---|---|---|---|---|
 | C-001 | 로그인 성공 후 이동 위치 | IN-20260613-meeting-001 / 기본 홈 + protected redirect 시 returnTo 우선 | D-204 / 항상 홈(/(tabs)/home) | AUTH-001 | open |
+| C-002 | Tier3 policy draft adoption boundary | IN-20260613-policy-migration-001 / draft policy 를 live policy 로 채택 제안 | current policy boundary / draft-review only, live policy not replaced | global | open |
 
 <!-- Status: open(미해결) | resolved(출처 문서 수정 완료) -->

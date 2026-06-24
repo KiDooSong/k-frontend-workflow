@@ -19,6 +19,8 @@ kind: meta-register
 | IN-20260613-api-001 | api-doc | simple-update + resolves-unknown + resolves-decision | reconciled | pending user decision (U-001 답 제공·open 유지, D-003 offset/page 후보) | api-manifest, COUPON-001 screen-spec, decision-log | U-001 (open · IN-api-001 답 제공), D-003 (open · offset/page 후보) | - |
 | IN-20260613-meeting-001 | meeting | conflict (decision reopen) | reconciled | pending user decision (D-204 재오픈, C-001 open) | AUTH-001 screen-spec, conflicts, decision-log | C-001 (open), D-204 (reopened → open) | - |
 | IN-20260613-qa-001 | qa | simple-update + policy-update | reconciled | accepted (State Matrix offline 행, Acceptance, api-error-policy) | COUPON-001 screen-spec, api-error-policy | - | - |
+| IN-20260613-testid-001 | qa-automation | simple-update + investigation-needed | reconciled | delegated | COUPON-001 screen-spec (Accessibility testID anchors draft/recommended) | VER-001 (open · selector structure depends on D-001) | - |
+| IN-20260613-policy-migration-001 | architecture | simple-update + conflict + new-decision | reconciled | pending user decision | project-layout `layers:`, layer-inventory, readiness output, implementation-mode-policy.draft.yaml, implementation-mode-policy.migration.md | C-002 (open), D-501 (open · live policy adoption decision) | - |
 
 <!-- Reconcile Status: not-started → in-progress → reconciled / failed -->
 <!-- Result 어휘: accepted / rejected / delegated / pending user decision / conflict-created -->

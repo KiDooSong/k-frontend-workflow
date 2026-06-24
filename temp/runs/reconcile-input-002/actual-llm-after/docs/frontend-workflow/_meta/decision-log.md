@@ -18,3 +18,4 @@ kind: meta-register
 | D-204 | 로그인 성공 후 이동 위치 | AUTH-001 | final-fixture-ui | PM | open | 재오픈(IN-20260613-meeting-001): returnTo 우선 vs 이전 resolved '항상 홈' — C-001 |
 | D-301 | 프로필 편집 범위/필드 확정 | PROFILE-001 | route-skeleton | PM | open | |
 | D-401 | 공지 독립 화면 vs 홈 섹션 | NOTICE-001 | screen-skeleton | PM | open | |
+| D-501 | Tier3 policy draft 를 live implementation policy 로 채택할 것인가? | global | api-integrated-ui | Tech Lead | open | IN-20260613-policy-migration-001 은 draft/migration review artifact 만 생성. live policy replacement·CI/hard gate promotion 은 사람 결정 전 금지. |

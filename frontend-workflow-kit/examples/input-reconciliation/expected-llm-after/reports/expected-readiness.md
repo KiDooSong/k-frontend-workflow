@@ -1,6 +1,6 @@
 # Expected Readiness — expected-llm-after (reconcile-input 단독)
 
-> `inputs/` 5건을 reconcile-input **만** 돌린 뒤(사람 결정 전)의 화면별 readiness.
+> `inputs/` 7건을 reconcile-input **만** 돌린 뒤(사람 결정 전)의 화면별 readiness.
 > **핵심**: reconcile-input 단독으로는 readiness 가 **올라가지 않는다.** 게이트를 내리는 닫기·승격(decision resolve,
 > status confirmed)은 전부 사람 몫이기 때문이다. 오히려 충돌로 재오픈된 D-204 가 AUTH-001 의 design-intent 를 **낮춘다.**
 > reconcile-input 의 성공은 "게이트 숫자"가 아니라 "open/재오픈/conflict/gap/simple-update 델타를 올바르게 만들었는가"로 본다.
@@ -9,8 +9,9 @@
 
 | Screen ID | Before | After (LLM 단독) | Reason |
 |---|---|---|---|
-| COUPON-001 | rough-fixture-ui | rough-fixture-ui (천장 유지) | D-001(blocking final-fixture-ui)·D-003(blocking api-integrated-ui)이 **여전히 open** → final/api-integrated 도달 불가. simple-update(offline·page envelope·가로형)는 형태만 보강. `confirmed` 승격(→ final)은 사람. |
+| COUPON-001 | rough-fixture-ui | rough-fixture-ui (천장 유지) | D-001(blocking final-fixture-ui)·D-003(blocking api-integrated-ui)이 **여전히 open** → final/api-integrated 도달 불가. simple-update(offline·page envelope·가로형·testID draft anchors)는 형태만 보강. `confirmed` 승격(→ final)은 사람. |
 | AUTH-001 | final-fixture-ui | **rough-fixture-ui (내려감)** | IN-meeting-001 충돌로 D-204 가 `resolved → open` 재오픈 → `decision_cap` 이 final 을 다시 막는다. 사람이 재-resolve 하면 final 회복(→ expected-after). |
+| global / Tier3 policy | review-only | review-only | IN-policy-migration-001 은 readiness access wired / policy draft generated 를 기록하지만 live policy replacement, hard gate, CI promotion 을 하지 않는다. D-501/C-002 open 유지. |
 
 > 나머지 화면(HOME-001, COUPON-002, PROFILE-001, NOTICE-001)에는 대응 입력이 없어 readiness 가 그대로다.
 
@@ -42,5 +43,5 @@
 ## 4) 검증 방법
 
 1. `project-before` 에서 `workflow:state` → `workflow:readiness` → 위 (2) before 열과 비교.
-2. `reconcile-input` 으로 inputs/ 5개를 처리 → 결과 트리를 `expected-llm-after/` 와 1:1 비교 (문서 델타).
+2. `reconcile-input` 으로 inputs/ 7개를 처리 → 결과 트리를 `expected-llm-after/` 와 1:1 비교 (문서 델타).
 3. (사람 결정까지 본다면) `expected-after/` 와 비교 — 둘의 차이가 "사람 단계"임을 확인.

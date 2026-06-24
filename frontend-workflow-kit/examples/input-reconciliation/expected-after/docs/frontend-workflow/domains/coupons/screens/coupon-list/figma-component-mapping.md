@@ -19,6 +19,14 @@ last_reviewed: 2026-06-13
 | coupon-list-12-v2 / StatusTabs | 상태 탭 | SegmentedTabs (G-001, 카탈로그 미보유) | 사용 가능/사용 완료/만료 |
 | coupon-list-12-v2 / EmptyState | 빈 상태 | components/ui/EmptyState | |
 
+## Visual Spec
+| Element | Property | Value | Source | Token Status | Provenance | Gap / Open | Notes |
+|---|---|---|---|---|---|---|---|
+| CouponCard | layout | horizontal | figma node `CouponCard` | source-backed | IN-20260613-figma-001 | - | behavior remains ScreenSpec-owned |
+| CouponCard | spacing | `space.4` | figma token export | tokenized | IN-20260613-figma-001 / token manifest candidate | - | source-backed token |
+| StatusTabs | radius | raw 999 | figma visual observation | raw | IN-20260613-figma-001 | G-001 / VER-001 | keep as open visual value until token source exists |
+
 ## Notes
 - SegmentedTabs 는 Component Catalog 에 없다 → G-001(component-gap-register)로 제안됨. accept 전까지 구현 금지.
 - 어떤 쿠폰이 어느 탭에 들어가는지(분류)는 ScreenSpec 의 State/Interaction 이 단일 출처. Figma 는 시각만.
+- `figma_mapping_status=draft` 는 lifecycle 만 뜻하며 pixel fidelity / token completeness 를 증명하지 않는다.

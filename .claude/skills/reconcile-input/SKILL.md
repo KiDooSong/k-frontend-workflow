@@ -18,6 +18,20 @@ description: 외부 입력 스킬이 저장한 새 입력 결과물(input_id 보
 - LLM은 게이트를 **올리기만** 한다 (open 추가, `resolved→open` 재오픈). **내리는** 전이(resolve/close)는 사람-전용.
 - `input_id`는 불변. 내용이 바뀌면 같은 id를 덮어쓰지 말고 **새 id + supersedes**.
 - 세 status 축은 **별개 라이프사이클**: 입력 frontmatter `status`(입력 수집 상태, 예: `captured`) ≠ register `Reconcile Status`(reconcile 행위) ≠ 자식 항목(D-/C-/U-/G-/INV-/VER-) open/closed. 섞으면 결정 대기 입력이 "미처리"로 오탐된다.
+- reconciliation 중 **코드·테스트·생성 파일을 직접 수정하지 않는다**. 입력은 문서/레지스터/리뷰용 draft 산출물로만 반영한다.
+
+## 산출물 라우팅
+입력 종류를 먼저 판별하고, 아래 산출물을 필요한 만큼만 연다.
+
+| 입력 종류 | 우선 확인/수정 산출물 | 경계 |
+|---|---|---|
+| planning / meeting / user-note | ScreenSpec, Navigation Map, Domain Rules, Open Decisions, Conflicts, Unknowns | 행동·라우팅·정책 선택은 ScreenSpec/Decision 축. resolved 결정과 충돌하면 Conflict + decision 재오픈 |
+| api | API manifest / OpenAPI references, ScreenSpec Data/API, Domain Rules, Unknowns, Open Decisions | 화면이 DTO에 직접 종속되게 쓰지 않는다. API 후보 confirmed 승격은 사람 |
+| figma / visual-spec | `figma-component-mapping.md`, visual spec sections, Component Catalog, Component Gap Register, Open Decisions/Conflicts | 시각 매핑은 Figma mapping에, 행동은 ScreenSpec에. 시각 충실도는 readiness hard gate가 아님 |
+| qa / testid / qa-automation | testID/QA intake note(있으면), ScreenSpec Accessibility/Acceptance, Investigation/Verification, Open Decisions | selector/testID는 구현 지원 evidence. 코드·테스트를 만들지 않고, naming confirmed 승격 금지 |
+| architecture / policy-migration / Tier3 | `project-layout.yaml`, `layers:` 선언, layer-inventory, readiness output, `implementation-mode-policy.draft.yaml`, `implementation-mode-policy.migration.md`, Open Decisions/Conflicts | readiness access wired / policy draft generated / live policy not replaced / hard gate·CI not promoted 를 구분 |
+
+필요 시 함께 대조하는 공통 산출물: ScreenSpec, Navigation Map, Domain Rules, Component Catalog, Component Gap Register, Open Decisions, Conflicts, Unknowns, Investigation/Verification items, API manifest/OpenAPI references, figma-component-mapping.
 
 ## 절차 (register-first)
 1. 입력 결과물을 읽고 canonical required frontmatter(input_id / input_type / source_type / source_ref / captured_at / captured_by / status / affected_domains / affected_screens)를 확인한다. `input_id`가 멱등성·역추적의 키.
@@ -26,7 +40,7 @@ description: 외부 입력 스킬이 저장한 새 입력 결과물(input_id 보
    - `in-progress` (이전 실행 중단) → 새 행 추가하지 말고 **그 행을 이어서** 처리한다.
    - 없음 → 다음 단계.
 3. Register에 행을 먼저 쓴다 (`Reconcile Status: in-progress`). ← 문서 수정보다 먼저. 파일이 없으면 아래 스키마로 생성.
-4. `affected_domains`/`affected_screens`(구 `suggested_scope` — deprecated read-compat) 기준으로 관련 산출물을 연다 (ScreenSpec / Navigation Map / Domain Rules / Component Catalog / Open Decisions / Conflicts / API schema).
+4. `affected_domains`/`affected_screens`(구 `suggested_scope` — deprecated read-compat) 기준으로 관련 산출물을 연다. 위 라우팅 표에 따라 visual/testID/Tier3 산출물도 포함한다.
 5. 기존 `confirmed` 문서·`resolved` 결정과 충돌하는지 대조한다.
 6. classification을 만든다 (입력 1개 → item 여러 개 가능). 아래 분류표 참조.
 7. 자동 반영 가능한 `simple-update`만 문서에 반영한다.
@@ -38,6 +52,7 @@ description: 외부 입력 스킬이 저장한 새 입력 결과물(input_id 보
 10. Register 행을 `reconciled`로 바꾸고 `Result`·`Touched Artifacts`·`Created Items`를 채운다.
     자식 decision이 `open`이어도 reconcile 자체는 끝 — 그 차단은 readiness가 담당한다.
 11. `npm run workflow:state` → `workflow:readiness` → `workflow:validate`를 실행하고 결과를 보고한다.
+    Tier3/layout/policy migration 입력을 건드렸으면 `npm run workflow:policy-draft`(또는 해당 repo의 policy-draft 명령)도 review-only 로 실행한다. fixture/dogfood 갱신일 때만 adoption-probe 를 추가로 돌린다.
 
 ## Classification (입력은 ≥1개로 분류)
 | Type | Action |
@@ -51,6 +66,30 @@ description: 외부 입력 스킬이 저장한 새 입력 결과물(input_id 보
 | conflict | Conflicts 기록 (`resolved` 결정과 충돌이면 decision 재오픈) |
 | scope-unclear | 막아야 하면 Open Decision, 단순 확인이면 Unknown |
 | reject-input | Register `Result`에 사유 기록, 문서는 유지 |
+
+## Visual / Figma 규칙
+- Figma 노드·프레임·컴포넌트 매핑 사실은 `figma-component-mapping.md` 로 간다. 입력이 행동을 바꾸지 않는 한 ScreenSpec 을 수정하지 않는다.
+- ScreenSpec 단일 출처: state, interaction, routing, filtering, sorting, tab semantics, API behavior.
+- Figma mapping 단일 출처: Frame, Component Mapping, Visual Spec, Provenance, Data Corrections / Override Log, Assets, Gaps / Open, Cross-links.
+- `figma_mapping_status` 는 mapping 산출물 존재/라이프사이클 fact 이다. pixel fidelity 증명이 아니고 readiness hard gate 도 아니다.
+- tokenized/source-backed visual 값은 token/provenance 를 적는다. raw/inferred/unresolved 값은 visual gap/open 으로 남기고 필요하면 D-/INV-/VER- 링크를 단다.
+- 카탈로그에 없는 공통 컴포넌트가 필요하면 `component-gap` 으로 분류하고 Gap Register 에 `G-xxx open` 을 제안한다. 구현/accept 금지.
+- Figma 가 confirmed/resolved 행동과 충돌하면 Conflict + Open Decision 재오픈/생성. 순수 시각 충돌이면 Data Corrections / Override Log 와 필요 시 INV-/VER- 로 처리한다.
+
+## testID / QA automation 규칙
+- testID/selector 입력은 구현 지원 evidence 이다. source code, production test, generated file 을 직접 고치지 않는다.
+- repo 에 testID intake note/artifact 가 있으면 그 노트를 갱신한다. 없으면 ScreenSpec Accessibility/Acceptance 에 **draft/recommended** 선언 또는 Verification item 으로 남긴다.
+- testID 요구가 화면 의미(구조, 상태, 역할, 사용자 동작)를 바꾸면 ScreenSpec simple-update 또는 Open Decision 으로 올린다.
+- selector 가 미정 UI 구조에 의존하면 Open Decision 또는 Verification(`VER-`) 을 만든다.
+- testID naming 을 confirmed 로 올리거나 CI/E2E hard gate 로 승격하지 않는다.
+
+## Tier3 layout / policy migration 규칙
+- 새 layer, role glob, access boundary 입력은 `project-layout.yaml`, layer inventory, readiness output, policy draft, migration guide 를 함께 대조한다.
+- layer access 변경 제안은 사용자 명시가 없으면 draft/review artifact 만 갱신한다.
+- live policy 또는 resolved architecture decision 과 충돌하면 Conflict 를 기록하고 Open Decision 을 재오픈/생성한다. 필요하면 migration guide/draft notes 에 반영한다.
+- `policies/implementation-mode-policy.yaml` 을 replace 하지 않는다.
+- hard gate, CI, pre-edit hook enforcement 를 승격하지 않는다.
+- 보고서에는 반드시 네 상태를 분리해 적는다: readiness access wired, policy draft generated, live policy not replaced, hard gate/CI not promoted.
 
 ## Reconciliation Register 스키마
 `docs/frontend-workflow/_meta/reconciliation-register.md` (처리 이력용 meta-register — validate 가 `_meta/` 제외)
@@ -73,3 +112,5 @@ description: 외부 입력 스킬이 저장한 새 입력 결과물(input_id 보
 - `Owner`만 보고 사용자 판단 가능성을 배제하기.
 - 같은 `input_id` 덮어쓰기 (새 id + supersedes).
 - reconciliation 전 코드 변경.
+- production code / tests / generated files 직접 수정.
+- live `policies/implementation-mode-policy.yaml` replacement, CI promotion, pre-edit hook enforcement.

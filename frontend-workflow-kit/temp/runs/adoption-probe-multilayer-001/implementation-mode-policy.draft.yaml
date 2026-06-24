@@ -87,3 +87,54 @@ modes:
     allowed_paths:
       - src/**
     forbidden_paths: []
+x_policy_draft:
+  version: 1
+  generated_paths:
+    - mode: rough-fixture-ui
+      column: allowed_paths
+      path: src/presentation/{domain}/viewmodels/**
+      role: view_model
+    - mode: final-fixture-ui
+      column: allowed_paths
+      path: src/presentation/{domain}/viewmodels/**
+      role: view_model
+    - mode: rough-fixture-ui
+      column: allowed_paths
+      path: src/domain/{domain}/usecases/**
+      role: use_case
+    - mode: final-fixture-ui
+      column: allowed_paths
+      path: src/domain/{domain}/usecases/**
+      role: use_case
+    - mode: final-fixture-ui
+      column: allowed_paths
+      path: src/data/{domain}/repositories/**
+      role: repository
+    - mode: final-fixture-ui
+      column: allowed_paths
+      path: src/domain/{domain}/repositories/**
+      role: repository
+    - mode: api-integrated-ui
+      column: allowed_paths
+      path: src/data/{domain}/repositories/**
+      role: repository
+    - mode: api-integrated-ui
+      column: allowed_paths
+      path: src/domain/{domain}/repositories/**
+      role: repository
+    - mode: rough-fixture-ui
+      column: allowed_paths
+      path: src/domain/{domain}/entities/**
+      role: entity
+    - mode: final-fixture-ui
+      column: allowed_paths
+      path: src/domain/{domain}/entities/**
+      role: entity
+    - mode: api-integrated-ui
+      column: allowed_paths
+      path: src/data/{domain}/datasources/**
+      role: data_source
+    - mode: api-integrated-ui
+      column: allowed_paths
+      path: src/data/{domain}/mappers/**
+      role: mapper

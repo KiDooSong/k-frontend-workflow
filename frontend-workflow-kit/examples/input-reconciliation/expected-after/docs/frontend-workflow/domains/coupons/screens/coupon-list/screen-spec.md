@@ -73,6 +73,8 @@ last_reviewed: 2026-06-13
 ## Accessibility
 - CouponCard: accessibilityRole="button", accessibilityLabel="{title}, {만료일}"
 - 상태 탭(SegmentedTabs): accessibilityState selected 반영
+- testID anchors (recommended, IN-20260613-testid-001): `coupon-list-title`, `coupon-list-status-tabs`, `coupon-list-item-{couponId}`, `coupon-list-empty`, `coupon-list-error`, `coupon-list-retry`
+- testID naming 은 별도 승인 전까지 readiness/confirmed 승격 근거가 아니다.
 
 ## Acceptance Criteria
 - [ ] State Matrix 의 상태(loading/success/empty/error/offline/refreshing)가 모두 구현됨 → CouponListScreen.test.tsx

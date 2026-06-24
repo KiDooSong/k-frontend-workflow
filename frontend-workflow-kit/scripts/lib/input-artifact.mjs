@@ -14,9 +14,32 @@ import { splitFrontmatter, readFileSafe, walkFiles, isDir } from './util.mjs';
 export const INPUT_ID_PATTERN = /^IN-\d{8}-[a-z0-9]+(?:-[a-z0-9]+)*-\d{3,}$/;
 
 // normalized category(입력 성격 라벨) — input frontmatter 의 input_type.
-export const INPUT_TYPE_VALUES = ['planning', 'figma', 'api', 'meeting', 'qa', 'user-note'];
+export const INPUT_TYPE_VALUES = [
+  'planning',
+  'figma',
+  'visual-spec',
+  'api',
+  'meeting',
+  'qa',
+  'testid',
+  'architecture',
+  'policy-migration',
+  'user-note',
+];
 // concrete source adapter/type — input frontmatter 의 source_type.
-export const SOURCE_TYPE_VALUES = ['planning-doc', 'figma', 'api-doc', 'meeting', 'qa', 'user-note'];
+export const SOURCE_TYPE_VALUES = [
+  'planning-doc',
+  'figma',
+  'visual-spec',
+  'api-doc',
+  'meeting',
+  'qa',
+  'qa-automation',
+  'testid',
+  'architecture',
+  'policy-migration',
+  'user-note',
+];
 // 입력의 확신도(optional). 있으면 enum 검사만, 누락은 검사하지 않는다.
 export const INPUT_CONFIDENCE_VALUES = ['unknown', 'candidate', 'confirmed'];
 
