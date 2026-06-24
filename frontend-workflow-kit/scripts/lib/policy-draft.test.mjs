@@ -352,6 +352,56 @@ test('buildPolicyDraft treats domains.<d>.layers as role-level replacement', (t)
   );
 });
 
+test('buildPolicyDraft keeps inherited base access for non-overridden domains', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'policy-draft-domain-mixed-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const layoutPath = path.join(tmp, 'project-layout.yaml');
+  write(
+    layoutPath,
+    [
+      'version: 1',
+      'layers:',
+      '  - role: repository',
+      '    glob: src/data/{domain}/repositories/**',
+      '    fact: dir_has_files',
+      '    access:',
+      '      allow: [api-integrated-ui]',
+      'domains:',
+      '  profile:',
+      '    layers:',
+      '      - role: repository',
+      '        glob: src/profile-only/repositories/**',
+      '        fact: dir_has_files',
+      '        access:',
+      '          allow: [final-fixture-ui]',
+      '  coupons: {}',
+      '',
+    ].join('\n'),
+  );
+  const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags: { layout: layoutPath } });
+  const policy = {
+    version: 1,
+    order: ['final-fixture-ui', 'api-integrated-ui'],
+    modes: {
+      'final-fixture-ui': { requires: [], allowed_paths: [], forbidden_paths: [] },
+      'api-integrated-ui': { requires: [], allowed_paths: [], forbidden_paths: [] },
+    },
+  };
+
+  const result = buildPolicyDraft({ policy, layout, date: '2026-06-23' });
+
+  assert.deepEqual(result.draftPolicy.modes['final-fixture-ui'].allowed_paths, [
+    'src/profile-only/repositories/**',
+  ]);
+  assert.deepEqual(result.draftPolicy.modes['api-integrated-ui'].allowed_paths, [
+    'src/data/coupons/repositories/**',
+  ]);
+  assert.equal(
+    result.layerRows.some((row) => row.role === 'repository' && row.path === 'src/data/{domain}/repositories/**'),
+    false,
+  );
+});
+
 test('renderMigrationGuide includes added, removed, custom, and draft-only adoption guidance', () => {
   const policy = samplePolicy();
   const layout = {

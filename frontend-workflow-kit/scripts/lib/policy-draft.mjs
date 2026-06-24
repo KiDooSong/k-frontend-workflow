@@ -72,6 +72,26 @@ function layerGlobEntries(layer) {
   return asArray(layer?.glob).map(toPosix).filter(Boolean);
 }
 
+const WHOLE_ROLE_TOKEN_RE = /^\{roles\.([A-Za-z0-9_]+)\}$/;
+
+function substituteDomain(value, domain) {
+  if (domain == null || domain === '') return value;
+  return String(value).split('{domain}').join(domain);
+}
+
+function roleGlobEntries(roles, role) {
+  return asArray(roles?.[role]).map(toPosix).filter(Boolean);
+}
+
+function materializeEntriesForDomain(entries, roles, domain) {
+  if (domain == null || domain === '') return entries;
+  return entries.flatMap((entry) => {
+    const match = WHOLE_ROLE_TOKEN_RE.exec(entry);
+    if (match) return roleGlobEntries(roles, match[1]).map((glob) => substituteDomain(glob, domain));
+    return [substituteDomain(entry, domain)];
+  }).filter(Boolean);
+}
+
 function layerPolicyPathEntries(layer, roles) {
   if (!layer || typeof layer.role !== 'string') return { entries: [], source: 'unmaterialized' };
   const roleIsBound = hasOwn(roles, layer.role);
@@ -105,39 +125,40 @@ function layerIdentityKey(layer) {
 
 function layerContextsForPolicy(layout) {
   const contexts = [];
-  const addLayers = (layers, roles, skipKeys = new Set()) => {
-    for (const layer of asArray(layers)) {
-      if (!layer || typeof layer.role !== 'string') continue;
-      if (skipKeys.has(layerIdentityKey(layer))) continue;
-      contexts.push({ layer, roles });
-    }
+  const addLayer = (layer, roles, domain = null) => {
+    if (!layer || typeof layer.role !== 'string') return;
+    contexts.push({ layer, roles, domain });
   };
 
   if (typeof layout?.layersFor === 'function') {
     const baseLayers = asArray(layout.layersFor());
     const baseLayerByRole = new Map(baseLayers.filter((layer) => layer?.role).map((layer) => [layer.role, layer]));
-    const baseKeys = new Set(baseLayers.map(layerIdentityKey));
     const domains = domainNamesForPolicy(layout);
+    const layersByDomain = new Map(domains.map((domain) => [domain, asArray(layout.layersFor(domain))]));
     const replacedBaseRoles = new Set();
-    for (const domain of domains) {
-      for (const layer of asArray(layout.layersFor(domain))) {
+    for (const layers of layersByDomain.values()) {
+      for (const layer of layers) {
         const baseLayer = baseLayerByRole.get(layer?.role);
         if (baseLayer && layerIdentityKey(baseLayer) !== layerIdentityKey(layer)) {
           replacedBaseRoles.add(layer.role);
         }
       }
     }
-    addLayers(
-      baseLayers.filter((layer) => !replacedBaseRoles.has(layer.role)),
-      rolesForPolicy(layout),
-    );
+    for (const layer of baseLayers) {
+      if (!replacedBaseRoles.has(layer.role)) addLayer(layer, rolesForPolicy(layout));
+    }
     for (const domain of domains) {
-      addLayers(asArray(layout.layersFor(domain)), rolesForPolicy(layout, domain), baseKeys);
+      for (const layer of layersByDomain.get(domain) || []) {
+        const baseLayer = baseLayerByRole.get(layer?.role);
+        const matchesBase = baseLayer && layerIdentityKey(baseLayer) === layerIdentityKey(layer);
+        if (matchesBase && !replacedBaseRoles.has(layer.role)) continue;
+        addLayer(layer, rolesForPolicy(layout, domain), domain);
+      }
     }
     return contexts;
   }
 
-  addLayers(Array.isArray(layout?.layers) ? layout.layers : [], rolesForPolicy(layout));
+  for (const layer of Array.isArray(layout?.layers) ? layout.layers : []) addLayer(layer, rolesForPolicy(layout));
   return contexts;
 }
 
@@ -165,10 +186,11 @@ function collectLayerProjection(policy, layout) {
   const layerRows = [];
   const manualDecisions = [];
 
-  for (const { layer, roles } of layerContexts) {
+  for (const { layer, roles, domain } of layerContexts) {
     if (!layer || typeof layer.role !== 'string') continue;
     const access = accessModel(layer);
-    const { entries, source } = layerPolicyPathEntries(layer, roles);
+    const { entries: rawEntries, source } = layerPolicyPathEntries(layer, roles);
+    const entries = materializeEntriesForDomain(rawEntries, roles, domain);
     for (const entry of layerRemovableEntries(layer, roles)) removableEntries.add(entry);
 
     const accessDeclared = access.allow.length > 0 || access.forbid.length > 0;
