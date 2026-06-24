@@ -129,6 +129,11 @@ scan -> map -> diff -> rollout -> propose 보고서와 `lint-policy.yaml` 초안
 각 스크립트는 `--json` (스킬 파싱용), `--docs`, `--src` 플래그를 지원한다.
 `readiness.mjs` 는 `--screen <ID>`, `--ci <file>`, `--out <file>` 도 받는다.
 
+## Brownfield adoption compatibility
+
+- API manifest confirmed rows can link contract evidence by kind: zod, ts-type, openapi, manual, or unknown. Existing Linked Schema rows remain valid zod-compatible legacy rows; ts-type checks exported TypeScript types/interfaces as static evidence, not runtime validation.
+- ScreenSpec frontmatter may include optional route_entry and screen_entry. route_entry is the router/framework boundary; screen_entry is the product screen implementation. They may live under unrelated roots, and tooling should not infer one path from the other.
+
 ## Readiness 정책
 
 화면별 구현 가능 모드의 **단일 출처**는 [policies/implementation-mode-policy.yaml](policies/implementation-mode-policy.yaml) 다.
@@ -148,7 +153,7 @@ docs-only → route-skeleton → screen-skeleton → rough-fixture-ui
 1. 판정 로직은 readiness.mjs 한 곳. 훅·스킬은 출력을 소비만.
 2. 파생값(tbd_count 등)은 frontmatter 에 쓰지 않는다 — 스크립트가 본문에서 계산.
 3. 생성물엔 GENERATED 헤더/마커. 마커 밖은 생성기가 안 건드린다.
-4. 사실의 단일 출처: zod=코드, query key=factory, props=컴포넌트. 문서는 링크/의도만.
+4. 사실의 단일 출처: API contract evidence=manifest linked kind/source, query key=factory, props=컴포넌트. 문서는 링크/의도만.
 5. 화면은 AsyncState 계약만 의존. TanStack Query 객체 노출 금지.
 6. confirmed 승격은 사람만. 승인 메타 없으면 validate 실패.
 7. 생성기는 멱등. 같은 입력 → 같은 출력 (타임스탬프는 generated_at 한 줄만).

@@ -36,6 +36,12 @@
     "route": {
       "type": "string"
     },
+    "route_entry": {
+      "type": "string"
+    },
+    "screen_entry": {
+      "type": "string"
+    },
     "status": {
       "type": "string",
       "enum": [

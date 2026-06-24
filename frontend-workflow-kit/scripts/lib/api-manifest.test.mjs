@@ -37,6 +37,9 @@ test('canonical 5컬럼: hasLinkedSchemaCol=true, Linked Schema/Confidence 파�
   assert.equal(eps[0].hasLinkedSchemaCol, true);
   assert.equal(eps[0].confidence, 'confirmed');
   assert.equal(eps[0].linkedSchema, 'CouponListResponseSchema');
+  assert.equal(eps[0].linkedContract, 'CouponListResponseSchema');
+  assert.equal(eps[0].contractKind, 'zod');
+  assert.equal(eps[0].contractKindInferred, true);
   assert.equal(eps[0].key, 'GET /coupons');
 });
 
@@ -167,6 +170,96 @@ test('E2E: 5컬럼 표 Linked Schema=TBD → 검사 8 이 "비어있음(빈칸/T
     const c8 = (runValidate(root).errors || []).filter((e) => e.check === 8);
     assert.ok(c8.some((e) => /비어있음\(빈칸\/TBD\)/.test(e.message)), '빈칸/TBD 메시지가 있어야 한다');
     assert.ok(!c8.some((e) => /컬럼이 없음/.test(e.message)), '컬럼이 있으므로 "컬럼 없음" 이 나오면 안 된다');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('새 7컬럼: Linked Contract + Contract Kind(ts-type) 파싱', () => {
+  const eps = parseManifestEndpoints(
+    body(
+      [
+        '| Method | Path | Operation ID | Confidence | Linked Contract | Contract Kind | Source |',
+        '| --- | --- | --- | --- | --- | --- | --- |',
+        '| GET | /coupons | listCoupons | confirmed | ListCouponsResponse | ts-type | src/api/types/coupon.ts |',
+      ].join('\n'),
+    ),
+  );
+  assert.equal(eps.length, 1);
+  assert.equal(eps[0].operationId, 'listCoupons');
+  assert.equal(eps[0].linkedSchema, '');
+  assert.equal(eps[0].linkedContract, 'ListCouponsResponse');
+  assert.equal(eps[0].contractKind, 'ts-type');
+  assert.equal(eps[0].contractKindOmitted, false);
+});
+
+test('E2E: confirmed ts-type contract passes when exported interface exists', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check8-ts-pass-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/api/api-manifest.md': manifestDoc(
+        '| Method | Path | Operation ID | Confidence | Linked Contract | Contract Kind | Source |\n|---|---|---|---|---|---|---|\n| GET | /x | getX | confirmed | ListXResponse | ts-type | src/api/types/x.ts |',
+      ),
+      'docs/frontend-workflow/domains/d/screens/s/screen-spec.md': SCREEN_CONFIRMED,
+      'src/api/types/x.ts': 'export interface ListXResponse { items: string[] }\n',
+    });
+    const c8 = (runValidate(root).errors || []).filter((e) => e.check === 8);
+    assert.deepEqual(c8, []);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('E2E: confirmed ts-type contract fails when type/interface export is missing', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check8-ts-missing-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/api/api-manifest.md': manifestDoc(
+        '| Method | Path | Operation ID | Confidence | Linked Contract | Contract Kind | Source |\n|---|---|---|---|---|---|---|\n| GET | /x | getX | confirmed | ListXResponse | ts-type | src/api/types/x.ts |',
+      ),
+      'docs/frontend-workflow/domains/d/screens/s/screen-spec.md': SCREEN_CONFIRMED,
+      'src/api/types/x.ts': 'export type OtherResponse = { ok: boolean }\n',
+    });
+    const c8 = (runValidate(root).errors || []).filter((e) => e.check === 8);
+    assert.equal(c8.length, 1);
+    assert.match(c8[0].message, /ts-type contract=ListXResponse/);
+    assert.match(c8[0].message, /export type\/interface/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('E2E: unsupported contract kind produces clear validation error', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check8-kind-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/api/api-manifest.md': manifestDoc(
+        '| Method | Path | Confidence | Linked Contract | Contract Kind | Source |\n|---|---|---|---|---|---|\n| GET | /x | confirmed | ListXResponse | io-ts | src/api/types/x.ts |',
+      ),
+      'docs/frontend-workflow/domains/d/screens/s/screen-spec.md': SCREEN_CONFIRMED,
+      'src/api/types/x.ts': 'export interface ListXResponse {}\n',
+    });
+    const c8 = (runValidate(root).errors || []).filter((e) => e.check === 8);
+    assert.equal(c8.length, 1);
+    assert.match(c8[0].message, /Contract Kind='io-ts'.*지원되지 않음/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('E2E: Linked Contract without Contract Kind reports omitted kind', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check8-kind-omitted-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/api/api-manifest.md': manifestDoc(
+        '| Method | Path | Confidence | Linked Contract | Source |\n|---|---|---|---|---|\n| GET | /x | confirmed | ListXResponse | src/api/types/x.ts |',
+      ),
+      'docs/frontend-workflow/domains/d/screens/s/screen-spec.md': SCREEN_CONFIRMED,
+      'src/api/types/x.ts': 'export interface ListXResponse {}\n',
+    });
+    const c8 = (runValidate(root).errors || []).filter((e) => e.check === 8);
+    assert.equal(c8.length, 1);
+    assert.match(c8[0].message, /Contract Kind 가 비어있음/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

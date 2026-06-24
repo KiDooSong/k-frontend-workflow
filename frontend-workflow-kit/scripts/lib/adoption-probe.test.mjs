@@ -212,6 +212,9 @@ test('runAdoptionProbe renders draft outputs and keeps live docs untouched', (t)
   assert.match(adoptionReport, /live policy not replaced/);
   assert.match(adoptionReport, /pre-edit hooks not promoted|pre-edit hooks/);
   assert.match(adoptionReport, /Rendered from templates\/adoption\/adoption-report\.template\.md/);
+  assert.match(adoptionReport, /Route \/ Screen Entry Mapping/);
+  assert.match(adoptionReport, /observed independent roots/);
+  assert.match(adoptionReport, /thin route boundary supported|separate screen\/view files are supported/);
   assert.doesNotMatch(adoptionReport, /\{[A-Z0-9_-]+\}/);
   const tier3Report = fs.readFileSync(path.join(out, 'tier3-gap-report.md'), 'utf8');
   assert.match(tier3Report, /Rendered from templates\/adoption\/tier3-gap-report\.template\.md/);
@@ -234,6 +237,8 @@ test('runAdoptionProbe renders draft outputs and keeps live docs untouched', (t)
   assert.match(migrationGuide, /Human review is required/);
   const summary = JSON.parse(fs.readFileSync(path.join(out, 'probe-summary.json'), 'utf8'));
   assert.ok(summary.outputs.implementation_policy_draft);
+  assert.equal(summary.route_screen_separation.separated, true);
+  assert.equal(summary.route_screen_separation.supported, true);
   assert.ok(summary.outputs.implementation_policy_migration);
   assert.equal(summary.invariants.live_policy_replaced, false);
   assert.equal(summary.invariants.pre_edit_hooks_promoted, false);

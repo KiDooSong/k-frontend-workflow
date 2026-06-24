@@ -201,3 +201,70 @@ test('collectDoctorFindings: generated policy draft difference is info-only', ()
   assert.equal(diff.count, 1);
   assert.equal(findings.some((f) => f.check === 'policy-draft-generate'), false);
 });
+
+test('collectDoctorFindings: route-tree route without ScreenSpec mapping is warning-first gap', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'doctor-route-screen-gap-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const docsDir = path.join(tmp, 'docs', 'frontend-workflow');
+  fs.mkdirSync(path.join(docsDir, '_meta'), { recursive: true });
+  fs.writeFileSync(
+    path.join(docsDir, '_meta', 'route-tree.txt'),
+    '# GENERATED FILE - DO NOT EDIT\n   page.tsx                          route: /profile\n',
+    'utf8',
+  );
+
+  const findings = collectDoctorFindings({
+    projectRoot: tmp,
+    docsDir,
+    layout: { roles: {}, layers: [] },
+  });
+
+  const gap = findings.find((f) => f.check === 'route-screen-mapping-gap');
+  assert.ok(gap);
+  assert.equal(gap.severity, 'warning');
+  assert.equal(gap.route, '/profile');
+});
+
+test('collectDoctorFindings: explicit separated route_entry and screen_entry are supported without path-shape warning', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'doctor-route-screen-separated-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const docsDir = path.join(tmp, 'docs', 'frontend-workflow');
+  fs.mkdirSync(path.join(tmp, 'src', 'app', 'profile'), { recursive: true });
+  fs.mkdirSync(path.join(tmp, 'src', 'features', 'profile', 'screens'), { recursive: true });
+  fs.writeFileSync(path.join(tmp, 'src', 'app', 'profile', 'page.tsx'), 'export default function Page() { return null; }\n', 'utf8');
+  fs.writeFileSync(path.join(tmp, 'src', 'features', 'profile', 'screens', 'ProfileScreen.tsx'), 'export function ProfileScreen() { return null; }\n', 'utf8');
+  fs.mkdirSync(path.join(docsDir, 'domains', 'profile', 'screens', 'profile'), { recursive: true });
+  fs.writeFileSync(
+    path.join(docsDir, 'domains', 'profile', 'screens', 'profile', 'screen-spec.md'),
+    [
+      '---',
+      'artifact_id: screen-spec-profile',
+      'artifact_type: screen-spec',
+      'domain: profile',
+      'screen_id: PROFILE-001',
+      'route: /profile',
+      'route_entry: src/app/profile/page.tsx',
+      'screen_entry: src/features/profile/screens/ProfileScreen.tsx',
+      'status: draft',
+      '---',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
+  const findings = collectDoctorFindings({
+    projectRoot: tmp,
+    docsDir,
+    layout: {
+      roles: {
+        route_entry: 'src/app/**',
+        screen: 'src/features/{domain}/screens/**',
+      },
+      layers: [],
+    },
+  });
+
+  assert.equal(findings.some((f) => f.check === 'route-screen-mapping-entry-missing'), false);
+  assert.equal(findings.some((f) => f.check === 'route-screen-mapping-gap'), false);
+  assert.ok(findings.some((f) => f.check === 'route-screen-mapping-supported'));
+});

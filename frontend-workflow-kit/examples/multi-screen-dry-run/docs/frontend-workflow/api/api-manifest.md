@@ -12,7 +12,7 @@ last_reviewed: 2026-06-12
 
 ## Endpoints
 <!-- 검사 8 은 앞 5컬럼(Method|Path|Confidence|Linked Schema|Source)만 읽는다 — 용도·Response (요약)는 사람용 참고(검사 무관).
-     Linked Schema 는 src/api/schemas/*.ts 의 zod export. 이 예제는 전부 candidate/unknown 이라 TBD(미연결). -->
+     Linked Schema 는 레거시 zod export 컬럼이다. 새 표는 Linked Contract + Contract Kind 를 쓸 수 있다. 이 예제는 전부 candidate/unknown 이라 TBD(미연결). -->
 | Method | Path | Confidence | Linked Schema | Source | 용도 | Response (요약) |
 |---|---|---|---|---|---|---|
 | POST | /auth/login | candidate | TBD | - | 로그인 | { token, user } |

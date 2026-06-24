@@ -24,6 +24,12 @@
 |---|---|---|---|---|
 {ROLE_ROWS}
 
+## 2.1 Route / Screen Entry Mapping
+
+| Signal | Observation | Meaning |
+|---|---|---|
+{ROUTE_SCREEN_ROWS}
+
 ## 3. Layer Probe (Axis 2)
 
 | Discovered layer | Location | role? | readiness access? | readiness fact? | lint aware? | Note |

@@ -329,6 +329,8 @@ function buildFixtures() {
       { label: 'policy-draft', snippet: '`implementation-mode-policy.draft.yaml`' },
       { label: 'policy-draft', snippet: '`implementation-mode-policy.migration.md`' },
       { label: 'src-api', snippet: '`src/api/**` 를 항상 금지라고 가정하지 않는다' },
+      { label: 'screen-entry', snippet: 'screen_entry' },
+      { label: 'route-entry', snippet: 'route_entry' },
       { label: 'validation', snippet: 'npm run workflow:validate' },
     ],
     mustNotContain: [
