@@ -112,9 +112,42 @@ function layerRemovableEntries(layer, roles) {
   return [...owned].filter(Boolean);
 }
 
-function isLayerGeneratedPathCandidate(entry) {
-  const value = String(entry);
-  return WHOLE_ROLE_TOKEN_RE.test(value) || value.includes('{domain}');
+function normalizedName(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function rolePathAliases(role) {
+  const base = normalizedName(role);
+  if (!base) return new Set();
+  const aliases = new Set([base, `${base}s`]);
+  if (base.endsWith('y')) aliases.add(`${base.slice(0, -1)}ies`);
+  return aliases;
+}
+
+function pathSegmentNames(entry) {
+  return String(entry || '')
+    .split('/')
+    .filter((segment) => segment && segment !== '**' && segment !== '*')
+    .map(normalizedName)
+    .filter(Boolean);
+}
+
+function isLegacyLayerGlobCandidate(entry, generatedLayers) {
+  const value = String(entry || '');
+  if (!value.includes('{domain}')) return false;
+  // Older drafts did not record per-path provenance, so only prune domain globs
+  // that look role-owned by a layer currently generating this mode/column.
+  const segments = pathSegmentNames(value);
+  return (generatedLayers || []).some((layer) => {
+    const aliases = rolePathAliases(layer?.role);
+    return segments.some((segment) => aliases.has(segment));
+  });
+}
+
+function addGeneratedLayer(map, key, layer) {
+  if (!map.has(key)) map.set(key, []);
+  const rows = map.get(key);
+  if (!rows.some((row) => row.role === layer.role)) rows.push({ role: layer.role });
 }
 
 function layerIdentityKey(layer) {
@@ -188,7 +221,7 @@ function collectLayerProjection(policy, layout) {
   const allowByMode = new Map();
   const forbidByMode = new Map();
   const removableEntries = new Set();
-  const generatedColumns = new Set();
+  const generatedLayersByColumn = new Map();
   const layerRows = [];
   const manualDecisions = [];
 
@@ -220,8 +253,8 @@ function collectLayerProjection(policy, layout) {
         }
         for (const entry of entries) {
           addUnique(target, mode, entry);
-          generatedColumns.add(`${mode}:${kind === 'allow' ? 'allowed_paths' : 'forbidden_paths'}`);
         }
+        addGeneratedLayer(generatedLayersByColumn, `${mode}:${kind === 'allow' ? 'allowed_paths' : 'forbidden_paths'}`, layer);
       }
     }
 
@@ -237,10 +270,10 @@ function collectLayerProjection(policy, layout) {
     }
   }
 
-  return { allowByMode, forbidByMode, removableEntries, generatedColumns, layerRows, manualDecisions };
+  return { allowByMode, forbidByMode, removableEntries, generatedLayersByColumn, layerRows, manualDecisions };
 }
 
-function mergeDraftPathList(existing, synthesized, removableEntries, canReplaceGenerated = false) {
+function mergeDraftPathList(existing, synthesized, removableEntries, generatedLayers = []) {
   const synth = (synthesized || []).map(toPosix);
   const remaining = new Set(synth);
   const out = [];
@@ -248,7 +281,10 @@ function mergeDraftPathList(existing, synthesized, removableEntries, canReplaceG
 
   for (const raw of existing || []) {
     const entry = toPosix(raw);
-    if (removableEntries.has(entry) || (canReplaceGenerated && isLayerGeneratedPathCandidate(entry))) {
+    if (
+      removableEntries.has(entry) ||
+      isLegacyLayerGlobCandidate(entry, generatedLayers)
+    ) {
       if (remaining.has(entry) && !seen.has(entry)) {
         out.push(entry);
         seen.add(entry);
@@ -287,13 +323,13 @@ function buildDraftPolicy(policy, projection) {
         mode.allowed_paths || [],
         projection.allowByMode.get(name) || [],
         projection.removableEntries,
-        projection.generatedColumns.has(`${name}:allowed_paths`),
+        projection.generatedLayersByColumn.get(`${name}:allowed_paths`) || [],
       ),
       forbidden_paths: mergeDraftPathList(
         mode.forbidden_paths || [],
         projection.forbidByMode.get(name) || [],
         projection.removableEntries,
-        projection.generatedColumns.has(`${name}:forbidden_paths`),
+        projection.generatedLayersByColumn.get(`${name}:forbidden_paths`) || [],
       ),
     };
   }

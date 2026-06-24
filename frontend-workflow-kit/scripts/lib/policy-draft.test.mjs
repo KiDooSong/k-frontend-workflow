@@ -176,14 +176,18 @@ test('buildPolicyDraft adds custom explicit globs without custom role tokens', (
   );
 });
 
-test('buildPolicyDraft prunes stale custom layer-derived globs', () => {
+test('buildPolicyDraft prunes stale custom layer-derived globs while preserving manual domain literals', () => {
   const policy = {
     version: 1,
     order: ['api-integrated-ui'],
     modes: {
       'api-integrated-ui': {
         requires: [],
-        allowed_paths: ['openapi.yaml', 'src/data/{domain}/repositories/**'],
+        allowed_paths: [
+          'openapi.yaml',
+          'src/manual/{domain}/fixtures/**',
+          'src/data/{domain}/repositories/**',
+        ],
         forbidden_paths: [],
       },
     },
@@ -197,6 +201,12 @@ test('buildPolicyDraft prunes stale custom layer-derived globs', () => {
         fact: 'dir_has_files',
         access: { allow: ['api-integrated-ui'], forbid: [] },
       },
+      {
+        role: 'view_model',
+        glob: 'src/presentation/{domain}/viewmodels/**',
+        fact: 'dir_has_files',
+        access: { allow: ['api-integrated-ui'], forbid: [] },
+      },
     ],
   };
 
@@ -204,7 +214,9 @@ test('buildPolicyDraft prunes stale custom layer-derived globs', () => {
 
   assert.deepEqual(result.draftPolicy.modes['api-integrated-ui'].allowed_paths, [
     'openapi.yaml',
+    'src/manual/{domain}/fixtures/**',
     'src/infra/{domain}/repos/**',
+    'src/presentation/{domain}/viewmodels/**',
   ]);
   assert.ok(
     result.diff.removed_paths.some(
@@ -213,6 +225,10 @@ test('buildPolicyDraft prunes stale custom layer-derived globs', () => {
         row.column === 'allowed_paths' &&
         row.path === 'src/data/{domain}/repositories/**',
     ),
+  );
+  assert.equal(
+    result.diff.removed_paths.some((row) => row.path === 'src/manual/{domain}/fixtures/**'),
+    false,
   );
   assert.equal(result.diff.removed_paths.some((row) => row.path === 'openapi.yaml'), false);
 });
