@@ -176,6 +176,47 @@ test('buildPolicyDraft adds custom explicit globs without custom role tokens', (
   );
 });
 
+test('buildPolicyDraft prunes stale custom layer-derived globs', () => {
+  const policy = {
+    version: 1,
+    order: ['api-integrated-ui'],
+    modes: {
+      'api-integrated-ui': {
+        requires: [],
+        allowed_paths: ['openapi.yaml', 'src/data/{domain}/repositories/**'],
+        forbidden_paths: [],
+      },
+    },
+  };
+  const layout = {
+    roles: {},
+    layers: [
+      {
+        role: 'repository',
+        glob: 'src/infra/{domain}/repos/**',
+        fact: 'dir_has_files',
+        access: { allow: ['api-integrated-ui'], forbid: [] },
+      },
+    ],
+  };
+
+  const result = buildPolicyDraft({ policy, layout, date: '2026-06-23' });
+
+  assert.deepEqual(result.draftPolicy.modes['api-integrated-ui'].allowed_paths, [
+    'openapi.yaml',
+    'src/infra/{domain}/repos/**',
+  ]);
+  assert.ok(
+    result.diff.removed_paths.some(
+      (row) =>
+        row.mode === 'api-integrated-ui' &&
+        row.column === 'allowed_paths' &&
+        row.path === 'src/data/{domain}/repositories/**',
+    ),
+  );
+  assert.equal(result.diff.removed_paths.some((row) => row.path === 'openapi.yaml'), false);
+});
+
 test('buildPolicyDraft keeps literal guards when custom layer globs collide', () => {
   const policy = {
     version: 1,

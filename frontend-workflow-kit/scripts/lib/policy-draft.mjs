@@ -112,6 +112,11 @@ function layerRemovableEntries(layer, roles) {
   return [...owned].filter(Boolean);
 }
 
+function isLayerGeneratedPathCandidate(entry) {
+  const value = String(entry);
+  return WHOLE_ROLE_TOKEN_RE.test(value) || value.includes('{domain}');
+}
+
 function layerIdentityKey(layer) {
   const access = accessModel(layer);
   return JSON.stringify([
@@ -183,6 +188,7 @@ function collectLayerProjection(policy, layout) {
   const allowByMode = new Map();
   const forbidByMode = new Map();
   const removableEntries = new Set();
+  const generatedColumns = new Set();
   const layerRows = [];
   const manualDecisions = [];
 
@@ -212,7 +218,10 @@ function collectLayerProjection(policy, layout) {
           });
           continue;
         }
-        for (const entry of entries) addUnique(target, mode, entry);
+        for (const entry of entries) {
+          addUnique(target, mode, entry);
+          generatedColumns.add(`${mode}:${kind === 'allow' ? 'allowed_paths' : 'forbidden_paths'}`);
+        }
       }
     }
 
@@ -228,10 +237,10 @@ function collectLayerProjection(policy, layout) {
     }
   }
 
-  return { allowByMode, forbidByMode, removableEntries, layerRows, manualDecisions };
+  return { allowByMode, forbidByMode, removableEntries, generatedColumns, layerRows, manualDecisions };
 }
 
-function mergeDraftPathList(existing, synthesized, removableEntries) {
+function mergeDraftPathList(existing, synthesized, removableEntries, canReplaceGenerated = false) {
   const synth = (synthesized || []).map(toPosix);
   const remaining = new Set(synth);
   const out = [];
@@ -239,7 +248,7 @@ function mergeDraftPathList(existing, synthesized, removableEntries) {
 
   for (const raw of existing || []) {
     const entry = toPosix(raw);
-    if (removableEntries.has(entry)) {
+    if (removableEntries.has(entry) || (canReplaceGenerated && isLayerGeneratedPathCandidate(entry))) {
       if (remaining.has(entry) && !seen.has(entry)) {
         out.push(entry);
         seen.add(entry);
@@ -278,11 +287,13 @@ function buildDraftPolicy(policy, projection) {
         mode.allowed_paths || [],
         projection.allowByMode.get(name) || [],
         projection.removableEntries,
+        projection.generatedColumns.has(`${name}:allowed_paths`),
       ),
       forbidden_paths: mergeDraftPathList(
         mode.forbidden_paths || [],
         projection.forbidByMode.get(name) || [],
         projection.removableEntries,
+        projection.generatedColumns.has(`${name}:forbidden_paths`),
       ),
     };
   }
