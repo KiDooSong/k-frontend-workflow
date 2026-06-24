@@ -107,6 +107,39 @@ function makeMonorepoRepo(t) {
   return root;
 }
 
+function makeAppcodeRepo(t) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'adoption-probe-appcode-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  write(
+    path.join(root, 'package.json'),
+    JSON.stringify({ name: 'probe-appcode', dependencies: { expo: '^56.0.0', 'expo-router': '^6.0.0' } }, null, 2),
+  );
+  write(path.join(root, 'appcode', 'presentation', 'profile', 'screens', 'ProfileScreen.tsx'), 'export function ProfileScreen() { return null; }\n');
+  write(path.join(root, 'appcode', 'presentation', 'profile', 'viewmodels', 'useProfileViewModel.ts'), 'export function useProfileViewModel() { return {}; }\n');
+  write(
+    path.join(root, 'docs', 'frontend-workflow', 'domains', 'profile', 'screens', 'profile', 'screen-spec.md'),
+    [
+      '---',
+      'artifact_id: screen-spec-profile',
+      'artifact_type: screen-spec',
+      'domain: profile',
+      'screen_id: PROFILE-001',
+      'route: /profile',
+      'status: draft',
+      '---',
+      '',
+      '# Profile',
+      '',
+      '## State Matrix',
+      '| State | UI |',
+      '|---|---|',
+      '| loading | spinner |',
+      '',
+    ].join('\n'),
+  );
+  return root;
+}
+
 function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -265,6 +298,21 @@ test('F3 excludes layers already flattened into built-in roles', (t) => {
   const summary = JSON.parse(fs.readFileSync(path.join(out, 'probe-summary.json'), 'utf8'));
   assert.equal(summary.observations.f3.excluded.some((layer) => layer.path === 'src/presentation/profile/viewmodels'), true);
   assert.ok(summary.layer_inventory.layers.some((row) => row.role === 'repository' && row.readiness_access_wired === true && row.hard_gate_wired === false));
+});
+
+test('F3 excludes flattened built-in roles when custom --src has no literal src segment', (t) => {
+  const repo = makeAppcodeRepo(t);
+  const out = path.join(repo, 'temp', 'runs', 'adoption-probe-appcode-f3');
+  const result = runAdoptionProbe({ repo, src: 'appcode', out, id: 'appcode-f3', date: '2026-06-23' });
+
+  assert.equal(result.roleMap.hook.glob, 'appcode/presentation/{domain}/viewmodels/**');
+  assert.equal(result.roleMap.hook.evidence, 'appcode/presentation/profile/viewmodels');
+  assert.equal(result.f3.status, 'skipped: all extra layers are flattened into built-in roles');
+  assert.equal(result.f3.removed.includes('appcode/presentation/profile/viewmodels'), false);
+  assert.equal(
+    result.f3.excluded.some((layer) => layer.path === 'appcode/presentation/profile/viewmodels' && layer.role === 'hook'),
+    true,
+  );
 });
 
 test('runAdoptionProbe confines output to temp/runs/adoption-probe-id', (t) => {

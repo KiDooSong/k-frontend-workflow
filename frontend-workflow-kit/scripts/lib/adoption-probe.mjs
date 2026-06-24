@@ -289,6 +289,11 @@ function roleGlobRootsForLayer(roleMap, layerPath) {
   }
 
   for (const role of Object.values(roleMap)) {
+    const evidence = toPosix(role.evidence || '').replace(/\/+$/, '');
+    if (evidence && evidence !== 'default preset fallback') {
+      roots.push({ role: role.role, root: evidence });
+    }
+
     const glob = toPosix(role.glob || '');
     if (!glob) continue;
     const concreteGlobs = glob.includes('{domain}')
