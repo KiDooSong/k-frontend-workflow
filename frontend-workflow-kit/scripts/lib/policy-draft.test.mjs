@@ -256,6 +256,55 @@ test('buildPolicyDraft keeps literal guards when custom layer globs collide', ()
   assert.equal(result.diff.removed_paths.some((row) => row.path === 'openapi.yaml'), false);
 });
 
+test('buildPolicyDraft includes domains.<d>.layers from resolved layouts', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'policy-draft-domain-layers-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const layoutPath = path.join(tmp, 'project-layout.yaml');
+  write(
+    layoutPath,
+    [
+      'version: 1',
+      'domains:',
+      '  profile:',
+      '    layers:',
+      '      - role: repository',
+      '        glob: src/profile-only/repositories/**',
+      '        fact: dir_has_files',
+      '        access:',
+      '          allow: [api-integrated-ui]',
+      '',
+    ].join('\n'),
+  );
+  const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags: { layout: layoutPath } });
+  const policy = {
+    version: 1,
+    order: ['api-integrated-ui'],
+    modes: {
+      'api-integrated-ui': {
+        requires: [],
+        allowed_paths: [],
+        forbidden_paths: [],
+      },
+    },
+  };
+
+  const result = buildPolicyDraft({ policy, layout, date: '2026-06-23' });
+
+  assert.deepEqual(Object.keys(layout.domains), ['profile']);
+  assert.deepEqual(result.draftPolicy.modes['api-integrated-ui'].allowed_paths, [
+    'src/profile-only/repositories/**',
+  ]);
+  assert.ok(
+    result.diff.added_paths.some(
+      (row) =>
+        row.mode === 'api-integrated-ui' &&
+        row.column === 'allowed_paths' &&
+        row.path === 'src/profile-only/repositories/**',
+    ),
+  );
+  assert.ok(result.layerRows.some((row) => row.role === 'repository' && row.path === 'src/profile-only/repositories/**'));
+});
+
 test('renderMigrationGuide includes added, removed, custom, and draft-only adoption guidance', () => {
   const policy = samplePolicy();
   const layout = {

@@ -327,8 +327,10 @@ export function loadLayoutProfile({ kitRoot, flags = {} } = {}) {
   // 도메인 오버라이드 맵(raw 보존 — per-screen 해소 시 룩업). 머지는 resolve 시점에 적용.
   const domainOverrides = {};
   const domainLayerOverrides = {};
+  const domainNames = new Set();
   let domainLayersDeclared = false;
   for (const [d, cfg] of Object.entries(layout.domains || {})) {
+    domainNames.add(d);
     if (cfg && cfg.roles) domainOverrides[d] = cfg.roles;
     if (cfg && hasOwn(cfg, 'layers')) {
       domainLayersDeclared = true;
@@ -531,7 +533,7 @@ export function loadLayoutProfile({ kitRoot, flags = {} } = {}) {
     roles: baseRoles,
     layers: baseLayers,
     layerTelemetryDeclared: projectLayersDeclared || domainLayersDeclared,
-    domains: domainOverrides,
+    domains: Object.fromEntries([...domainNames].map((domain) => [domain, domainOverrides[domain] || {}])),
     preset: presetName || null,
   };
 }

@@ -101,6 +101,17 @@ test('workflow:doctor CLI surfaces unsupported layer fact as layout config error
   assert.equal(r.stdout, '');
 });
 
+test('workflow:doctor CLI fails closed for explicit missing --policy', () => {
+  const missingPolicy = path.join(os.tmpdir(), `missing-policy-${process.pid}.yaml`);
+  const r = spawnSync(process.execPath, [DOCTOR_CLI, '--policy', missingPolicy, '--json'], {
+    cwd: KIT_ROOT,
+    encoding: 'utf8',
+  });
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /workflow:doctor: --policy 경로가 존재하지 않음:/);
+  assert.equal(r.stdout, '');
+});
+
 test('collectDoctorFindings: built-in layer glob checks follow rebound role paths', (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'doctor-role-rebind-layer-'));
   t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));

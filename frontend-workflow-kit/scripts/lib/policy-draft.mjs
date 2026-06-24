@@ -56,15 +56,16 @@ function accessModel(layer) {
   };
 }
 
-function layersForPolicy(layout) {
-  if (Array.isArray(layout?.layers)) return layout.layers;
-  if (typeof layout?.layersFor === 'function') return asArray(layout.layersFor());
-  return [];
+function rolesForPolicy(layout, domain) {
+  if (typeof layout?.rolesFor === 'function') return layout.rolesFor(domain);
+  return layout?.roles && typeof layout.roles === 'object' ? layout.roles : {};
 }
 
-function rolesForPolicy(layout) {
-  if (typeof layout?.rolesFor === 'function') return layout.rolesFor();
-  return layout?.roles && typeof layout.roles === 'object' ? layout.roles : {};
+function domainNamesForPolicy(layout) {
+  if (Array.isArray(layout?.domainNames)) return layout.domainNames.map(String).filter(Boolean);
+  if (Array.isArray(layout?.domains)) return layout.domains.map(String).filter(Boolean);
+  if (layout?.domains && typeof layout.domains === 'object') return Object.keys(layout.domains);
+  return [];
 }
 
 function layerGlobEntries(layer) {
@@ -91,6 +92,41 @@ function layerRemovableEntries(layer, roles) {
   return [...owned].filter(Boolean);
 }
 
+function layerIdentityKey(layer) {
+  const access = accessModel(layer);
+  return JSON.stringify([
+    layer?.role || null,
+    layerGlobEntries(layer),
+    layer?.fact || null,
+    access.allow,
+    access.forbid,
+  ]);
+}
+
+function layerContextsForPolicy(layout) {
+  const contexts = [];
+  const addLayers = (layers, roles, skipKeys = new Set()) => {
+    for (const layer of asArray(layers)) {
+      if (!layer || typeof layer.role !== 'string') continue;
+      if (skipKeys.has(layerIdentityKey(layer))) continue;
+      contexts.push({ layer, roles });
+    }
+  };
+
+  if (typeof layout?.layersFor === 'function') {
+    const baseLayers = asArray(layout.layersFor());
+    const baseKeys = new Set(baseLayers.map(layerIdentityKey));
+    addLayers(baseLayers, rolesForPolicy(layout));
+    for (const domain of domainNamesForPolicy(layout)) {
+      addLayers(asArray(layout.layersFor(domain)), rolesForPolicy(layout, domain), baseKeys);
+    }
+    return contexts;
+  }
+
+  addLayers(Array.isArray(layout?.layers) ? layout.layers : [], rolesForPolicy(layout));
+  return contexts;
+}
+
 function knownModeNames(policy) {
   const modes = policy?.modes && typeof policy.modes === 'object' ? policy.modes : {};
   const order = Array.isArray(policy?.order) ? policy.order : [];
@@ -107,8 +143,7 @@ function orderedModeNames(policy) {
 }
 
 function collectLayerProjection(policy, layout) {
-  const roles = rolesForPolicy(layout);
-  const layers = layersForPolicy(layout);
+  const layerContexts = layerContextsForPolicy(layout);
   const knownModes = knownModeNames(policy);
   const allowByMode = new Map();
   const forbidByMode = new Map();
@@ -116,7 +151,7 @@ function collectLayerProjection(policy, layout) {
   const layerRows = [];
   const manualDecisions = [];
 
-  for (const layer of layers) {
+  for (const { layer, roles } of layerContexts) {
     if (!layer || typeof layer.role !== 'string') continue;
     const access = accessModel(layer);
     const { entries, source } = layerPolicyPathEntries(layer, roles);
