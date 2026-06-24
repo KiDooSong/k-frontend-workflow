@@ -115,9 +115,23 @@ function layerContextsForPolicy(layout) {
 
   if (typeof layout?.layersFor === 'function') {
     const baseLayers = asArray(layout.layersFor());
+    const baseLayerByRole = new Map(baseLayers.filter((layer) => layer?.role).map((layer) => [layer.role, layer]));
     const baseKeys = new Set(baseLayers.map(layerIdentityKey));
-    addLayers(baseLayers, rolesForPolicy(layout));
-    for (const domain of domainNamesForPolicy(layout)) {
+    const domains = domainNamesForPolicy(layout);
+    const replacedBaseRoles = new Set();
+    for (const domain of domains) {
+      for (const layer of asArray(layout.layersFor(domain))) {
+        const baseLayer = baseLayerByRole.get(layer?.role);
+        if (baseLayer && layerIdentityKey(baseLayer) !== layerIdentityKey(layer)) {
+          replacedBaseRoles.add(layer.role);
+        }
+      }
+    }
+    addLayers(
+      baseLayers.filter((layer) => !replacedBaseRoles.has(layer.role)),
+      rolesForPolicy(layout),
+    );
+    for (const domain of domains) {
       addLayers(asArray(layout.layersFor(domain)), rolesForPolicy(layout, domain), baseKeys);
     }
     return contexts;
