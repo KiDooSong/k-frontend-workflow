@@ -27,7 +27,7 @@ description: 외부 입력 스킬이 저장한 새 입력 결과물(input_id 보
 |---|---|---|
 | planning / meeting / user-note | ScreenSpec, Navigation Map, Domain Rules, Open Decisions, Conflicts, Unknowns | 행동·라우팅·정책 선택은 ScreenSpec/Decision 축. resolved 결정과 충돌하면 Conflict + decision 재오픈 |
 | api | API manifest / OpenAPI references, ScreenSpec Data/API, Domain Rules, Unknowns, Open Decisions | 화면이 DTO에 직접 종속되게 쓰지 않는다. API 후보 confirmed 승격은 사람 |
-| figma / visual-spec | `figma-component-mapping.md`, visual spec sections, Component Catalog, Component Gap Register, Open Decisions/Conflicts | 시각 매핑은 Figma mapping에, 행동은 ScreenSpec에. 시각 충실도는 readiness hard gate가 아님 |
+| figma / visual-spec | `figma-component-mapping.md`, visual spec sections, Component Catalog, Component Gap Register, Open Decisions/Conflicts | 시각 매핑은 Figma mapping에, 행동은 ScreenSpec에. mapping artifact lifecycle gate 와 visual fidelity evidence 를 구분 |
 | qa / testid / qa-automation | testID/QA intake note(있으면), ScreenSpec Accessibility/Acceptance, Investigation/Verification, Open Decisions | selector/testID는 구현 지원 evidence. 코드·테스트를 만들지 않고, naming confirmed 승격 금지 |
 | architecture / policy-migration / Tier3 | `project-layout.yaml`, `layers:` 선언, layer-inventory, readiness output, `implementation-mode-policy.draft.yaml`, `implementation-mode-policy.migration.md`, Open Decisions/Conflicts | readiness access wired / policy draft generated / live policy not replaced / hard gate·CI not promoted 를 구분 |
 
@@ -71,7 +71,7 @@ description: 외부 입력 스킬이 저장한 새 입력 결과물(input_id 보
 - Figma 노드·프레임·컴포넌트 매핑 사실은 `figma-component-mapping.md` 로 간다. 입력이 행동을 바꾸지 않는 한 ScreenSpec 을 수정하지 않는다.
 - ScreenSpec 단일 출처: state, interaction, routing, filtering, sorting, tab semantics, API behavior.
 - Figma mapping 단일 출처: Frame, Component Mapping, Visual Spec, Provenance, Data Corrections / Override Log, Assets, Gaps / Open, Cross-links.
-- `figma_mapping_status` 는 mapping 산출물 존재/라이프사이클 fact 이다. pixel fidelity 증명이 아니고 readiness hard gate 도 아니다.
+- `figma_mapping_status` 는 mapping artifact 의 존재/라이프사이클 fact 이며 `final-fixture-ui` 의 artifact-existence gate 에 쓰인다. pixel fidelity, token completeness, visual regression green 을 의미하지 않으며 그 증명은 별도 Verification evidence 로 다룬다.
 - tokenized/source-backed visual 값은 token/provenance 를 적는다. raw/inferred/unresolved 값은 visual gap/open 으로 남기고 필요하면 D-/INV-/VER- 링크를 단다.
 - 카탈로그에 없는 공통 컴포넌트가 필요하면 `component-gap` 으로 분류하고 Gap Register 에 `G-xxx open` 을 제안한다. 구현/accept 금지.
 - Figma 가 confirmed/resolved 행동과 충돌하면 Conflict + Open Decision 재오픈/생성. 순수 시각 충돌이면 Data Corrections / Override Log 와 필요 시 INV-/VER- 로 처리한다.

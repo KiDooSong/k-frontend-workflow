@@ -77,6 +77,9 @@ last_reviewed: 2026-06-13
 ## Accessibility
 - CouponCard: accessibilityRole="button", accessibilityLabel="{title}, {만료일}"
 - Status Tabs: accessibilityRole="tab", 선택 탭 accessibilityState selected 반영
+- testID anchors (draft/recommended, IN-20260613-testid-001): `coupon-list-title`, `coupon-list-item-{couponId}`, `coupon-list-empty`, `coupon-list-error`, `coupon-list-retry`
+- `coupon-list-status-tabs` 는 D-001(open) 이 separate-tab 으로 닫히기 전까지 confirmed 로 올리지 않는다.
+- VER-001: 상태 탭 selector 구조는 D-001 이 닫힌 뒤 Verification register 또는 이 note 에서 재확인한다.
 
 ## Acceptance Criteria
 - [ ] State Matrix 의 상태(loading/success/empty/error/offline/refreshing)가 모두 구현됨 → CouponListScreen.test.tsx

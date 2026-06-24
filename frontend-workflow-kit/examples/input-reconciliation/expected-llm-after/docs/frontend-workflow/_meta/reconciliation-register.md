@@ -18,7 +18,7 @@ kind: meta-register
 | IN-20260613-api-001 | api | simple-update + resolves-unknown + resolves-decision | reconciled | pending user decision | api-manifest (page envelope), COUPON-001 screen-spec (Data) | U-001 (open · IN-api-001 가 답 제공), D-003 (open · offset/page 후보) | - |
 | IN-20260613-meeting-001 | meeting | conflict (decision reopen) | reconciled | pending user decision | AUTH-001 screen-spec (D-204 재오픈) | C-001 (open), D-204 (reopened → open) | - |
 | IN-20260613-qa-001 | qa | simple-update | reconciled | accepted | COUPON-001 screen-spec (State Matrix offline, Acceptance), api-error-policy | COUPON-001 State Matrix `offline` 행 | - |
-| IN-20260613-testid-001 | qa-automation | simple-update + investigation-needed | reconciled | delegated | COUPON-001 screen-spec (Accessibility testID anchors draft/recommended) | VER-001 (open · selector structure depends on D-001) | - |
+| IN-20260613-testid-001 | qa-automation | simple-update + investigation-needed | reconciled | delegated | COUPON-001 screen-spec (Accessibility testID anchors draft/recommended; VER-001 materialized as note) | VER-001 (open · selector structure depends on D-001) | - |
 | IN-20260613-policy-migration-001 | architecture | simple-update + conflict + new-decision | reconciled | pending user decision | project-layout `layers:`, layer-inventory, readiness output, implementation-mode-policy.draft.yaml, implementation-mode-policy.migration.md | C-002 (open), D-501 (open · live policy adoption decision) | - |
 
 ## 메모 (LLM 단독 단계)

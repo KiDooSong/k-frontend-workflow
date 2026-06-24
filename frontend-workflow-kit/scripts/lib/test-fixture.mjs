@@ -231,6 +231,32 @@ export function runReconcileChecks(expectedDir, actualDir, manifest) {
     }
   }
 
+  // S. 새 reconcile surface marker — 내용 전체 diff 는 비게이트지만, 새 surface 를 대표하는 핵심
+  // marker 는 반드시 actual 에 있어야 한다. 이 PR 의 testID/Visual Spec fixture 가 "존재만" 통과하는
+  // fail-open 을 막는 focused invariant 다.
+  for (const entry of manifest.surfaceMustContain || []) {
+    const rel = entry.file;
+    const label = entry.label || 'surface';
+    const f = path.join(actualDir, rel);
+    const raw = readFileSafe(f);
+    if (raw == null) {
+      r.fail(`S:${label}`, `${toPosix(rel)} 없음`);
+      continue;
+    }
+    let missing = 0;
+    for (const snippet of entry.snippets || []) {
+      if (raw.includes(snippet)) {
+        r.ok(`S:${label}`, `${toPosix(rel)} contains ${JSON.stringify(snippet)}`);
+      } else {
+        r.fail(`S:${label}`, `${toPosix(rel)} missing ${JSON.stringify(snippet)}`);
+        missing++;
+      }
+    }
+    if (!missing && entry.snippets?.length) {
+      r.ok(`S:${label}`, `${entry.snippets.length} marker(s) present`);
+    }
+  }
+
   return finalize(r);
 }
 

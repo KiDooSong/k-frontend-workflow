@@ -83,6 +83,30 @@ const RECON_MANIFEST = {
   couponSpec: 'domains/coupons/screens/coupon-list/screen-spec.md',
   unknownsMustStayOpen: ['U-001'],                     // open 아니면 FAIL (Unknown 닫기는 사람)
   unknownsMustNotExist: ['U-002'],                     // 신설되면 FAIL (-001 회귀)
+  surfaceMustContain: [
+    {
+      label: 'testid',
+      file: 'domains/coupons/screens/coupon-list/screen-spec.md',
+      snippets: [
+        'IN-20260613-testid-001',
+        'coupon-list-title',
+        'coupon-list-item-{couponId}',
+        'coupon-list-status-tabs',
+        'confirmed 로 올리지 않는다',
+        'VER-001',
+      ],
+    },
+    {
+      label: 'visual-spec',
+      file: 'domains/coupons/screens/coupon-list/figma-component-mapping.md',
+      snippets: [
+        '## Visual Spec',
+        'Token Status',
+        'Provenance',
+        'raw 999',
+      ],
+    },
+  ],
 };
 
 // L2 pipeline 코퍼스: 예제별 src 하위 경로. src='__no_src__' = 의도적으로 없는 경로(md-only fixture)
