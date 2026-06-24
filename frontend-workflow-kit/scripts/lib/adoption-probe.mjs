@@ -57,12 +57,24 @@ const EXTRA_LAYER_ACCESS = {
 };
 
 function toPosix(p) {
-  return String(p || '').split(path.sep).join('/');
+  return String(p || '').replace(/\\/g, '/');
 }
 
 function rel(root, abs) {
   const r = toPosix(path.relative(root, abs));
   return r || '.';
+}
+
+function joinPosix(...parts) {
+  return parts
+    .filter((p) => p != null && p !== '')
+    .map((p) => toPosix(p).replace(/^\/+|\/+$/g, ''))
+    .filter(Boolean)
+    .join('/');
+}
+
+function safeRepoRel(repoRoot, abs, fallback) {
+  return isSameOrInside(path.resolve(repoRoot), path.resolve(abs)) ? rel(repoRoot, abs) : fallback;
 }
 
 function resolveUnder(root, value) {
@@ -154,31 +166,60 @@ function globForDir(dir) {
   return dir ? `${toPosix(dir).replace(/\/+$/, '')}/**` : null;
 }
 
-function pickRole(projectRoot, role) {
+function roleCandidates(srcRel, role) {
   const candidatesByRole = {
-    route_entry: ['src/app', 'app', 'src/routes', 'src/pages'],
+    route_entry: [
+      { base: 'src', path: 'app' },
+      { base: 'repo', path: 'app' },
+      { base: 'src', path: 'routes' },
+      { base: 'src', path: 'pages' },
+    ],
     screen: [
-      'src/presentation/{domain}/screens',
-      'src/features/{domain}/screens',
-      'src/screens',
-      'src/pages',
+      { base: 'src', path: 'presentation/{domain}/screens' },
+      { base: 'src', path: 'features/{domain}/screens' },
+      { base: 'src', path: 'screens' },
+      { base: 'src', path: 'pages' },
     ],
     domain_component: [
-      'src/presentation/{domain}/components',
-      'src/features/{domain}/components',
-      'src/components',
+      { base: 'src', path: 'presentation/{domain}/components' },
+      { base: 'src', path: 'features/{domain}/components' },
+      { base: 'src', path: 'components' },
     ],
     hook: [
-      'src/features/{domain}/hooks',
-      'src/presentation/{domain}/hooks',
-      'src/presentation/{domain}/viewmodels',
-      'src/hooks',
+      { base: 'src', path: 'features/{domain}/hooks' },
+      { base: 'src', path: 'presentation/{domain}/hooks' },
+      { base: 'src', path: 'presentation/{domain}/viewmodels' },
+      { base: 'src', path: 'hooks' },
     ],
-    ui_primitive: ['src/components/ui', 'src/shared/ui', 'src/ui', 'packages/ui/src'],
-    api_client: ['src/api', 'src/data/{domain}/datasources', 'src/services'],
-    api_schema: ['src/api/schemas', 'src/api/schema', 'src/schemas'],
+    ui_primitive: [
+      { base: 'src', path: 'components/ui' },
+      { base: 'src', path: 'shared/ui' },
+      { base: 'src', path: 'ui' },
+      { base: 'repo', path: 'packages/ui/src' },
+    ],
+    api_client: [
+      { base: 'src', path: 'api' },
+      { base: 'src', path: 'data/{domain}/datasources' },
+      { base: 'src', path: 'services' },
+    ],
+    api_schema: [
+      { base: 'src', path: 'api/schemas' },
+      { base: 'src', path: 'api/schema' },
+      { base: 'src', path: 'schemas' },
+    ],
   };
-  const candidates = candidatesByRole[role] || [];
+  return (candidatesByRole[role] || []).map((c) =>
+    c.base === 'src' ? joinPosix(srcRel, c.path) : toPosix(c.path),
+  );
+}
+
+function defaultRoleGlob(srcRel, role) {
+  const fallback = DEFAULT_ROLE_GLOBS[role];
+  return fallback ? fallback.replace(/^src(?=\/|$)/, srcRel) : fallback;
+}
+
+function pickRole(projectRoot, srcRel, role) {
+  const candidates = roleCandidates(srcRel, role);
   for (const raw of candidates) {
     if (!raw.includes('{domain}')) {
       const found = firstExistingDir(projectRoot, [raw]);
@@ -193,15 +234,18 @@ function pickRole(projectRoot, role) {
     const match = domains.find((d) => isDir(path.join(rootAbs, d.name, ...suffix.split('/'))));
     if (match) return roleInfo(role, `${raw}/**`, 'confirmed', `${concreteRoot}/${match.name}/${suffix}`);
   }
-  return roleInfo(role, DEFAULT_ROLE_GLOBS[role], 'candidate', 'default preset fallback');
+  return roleInfo(role, defaultRoleGlob(srcRel, role), 'candidate', 'default preset fallback');
 }
 
 function roleInfo(role, glob, confidence, evidence) {
   return { role, glob: toPosix(glob), confidence, evidence: toPosix(evidence), note: '' };
 }
 
-function detectRoleMap(projectRoot) {
-  const roles = Object.fromEntries(BUILT_IN_ROLES.map((role) => [role, pickRole(projectRoot, role)]));
+function detectRoleMap(projectRoot, srcDir) {
+  const srcRel = safeRepoRel(projectRoot, srcDir, 'src');
+  const roles = Object.fromEntries(
+    BUILT_IN_ROLES.map((role) => [role, pickRole(projectRoot, srcRel, role)]),
+  );
   if (roles.hook.evidence.includes('/viewmodels')) {
     roles.hook.note = 'temporary flattening: viewmodel path mapped to hook role';
   }
@@ -232,26 +276,45 @@ function isSameOrInside(parent, child) {
   return c === p || c.startsWith(`${p}/`);
 }
 
+function globRootPattern(glob) {
+  return toPosix(glob || '').replace(/\/\*\*$/, '').replace(/\*.*$/, '').replace(/\/+$/, '');
+}
+
+function concreteRoleRootsForLayer(glob, layerPath) {
+  const rootPattern = globRootPattern(glob);
+  if (!rootPattern) return [];
+  if (!rootPattern.includes('{domain}')) return [rootPattern];
+
+  const patternParts = rootPattern.split('/').filter(Boolean);
+  const layerParts = toPosix(layerPath).replace(/\/+$/, '').split('/').filter(Boolean);
+  if (patternParts.length > layerParts.length) return [];
+
+  const concreteParts = [];
+  for (let i = 0; i < patternParts.length; i++) {
+    const patternPart = patternParts[i];
+    const layerPart = layerParts[i];
+    if (patternPart === '{domain}') {
+      if (!layerPart) return [];
+      concreteParts.push(layerPart);
+      continue;
+    }
+    if (patternPart !== layerPart) return [];
+    concreteParts.push(patternPart);
+  }
+  return [concreteParts.join('/')];
+}
+
 function roleGlobRootsForLayer(roleMap, layerPath) {
   const roots = [];
-  const pathParts = toPosix(layerPath).split('/');
-  const srcIndex = pathParts.indexOf('src');
-  const domains = new Set();
-  if (srcIndex >= 0) {
-    for (const segment of pathParts.slice(srcIndex + 1)) {
-      const isLayerSegment = EXTRA_LAYER_PATTERNS.some((p) => p.segments.includes(segment.toLowerCase()));
-      if (segment && !isLayerSegment) domains.add(segment);
-    }
-  }
-
   for (const role of Object.values(roleMap)) {
+    const evidence = toPosix(role.evidence || '').replace(/\/+$/, '');
+    if (evidence && evidence !== 'default preset fallback') {
+      roots.push({ role: role.role, root: evidence });
+    }
+
     const glob = toPosix(role.glob || '');
     if (!glob) continue;
-    const concreteGlobs = glob.includes('{domain}')
-      ? Array.from(domains).map((domain) => glob.replaceAll('{domain}', domain))
-      : [glob];
-    for (const concrete of concreteGlobs) {
-      const root = concrete.replace(/\/\*\*$/, '').replace(/\*.*$/, '').replace(/\/+$/, '');
+    for (const root of concreteRoleRootsForLayer(glob, layerPath)) {
       if (root) roots.push({ role: role.role, root });
     }
   }
@@ -296,10 +359,11 @@ function walkDirs(root) {
 }
 
 function detectArchitecture(projectRoot, srcDir, extraLayers) {
-  const has = (p) => isDir(path.join(projectRoot, ...p.split('/')));
-  if (has('src/domain') && has('src/data')) return 'Clean Architecture / layered';
+  const srcRel = safeRepoRel(projectRoot, srcDir, 'src');
+  const has = (p) => isDir(path.join(projectRoot, ...joinPosix(srcRel, p).split('/')));
+  if (has('domain') && has('data')) return 'Clean Architecture / layered';
   if (extraLayers.some((x) => x.layer === 'view_model')) return 'MVVM-like';
-  if (['src/pages', 'src/widgets', 'src/features', 'src/entities', 'src/shared'].filter(has).length >= 3) {
+  if (['pages', 'widgets', 'features', 'entities', 'shared'].filter(has).length >= 3) {
     return 'Feature-Sliced Design-like';
   }
   if (isDir(srcDir)) return 'ad-hoc / shallow layered';
@@ -312,8 +376,9 @@ function detectCi(repoRoot) {
   return found.length ? found.join(', ') : 'not observed';
 }
 
-function detectApi(repoRoot) {
-  const candidates = ['src/api', 'openapi.yaml', 'openapi.yml', 'src/data'];
+function detectApi(repoRoot, srcDir) {
+  const srcRel = safeRepoRel(repoRoot, srcDir, 'src');
+  const candidates = [joinPosix(srcRel, 'api'), 'openapi.yaml', 'openapi.yml', joinPosix(srcRel, 'data')];
   const found = candidates.filter((p) => exists(path.join(repoRoot, ...p.split('/'))));
   return found.length ? found.join(', ') : 'not observed';
 }
@@ -326,8 +391,8 @@ function detectVisual(repoRoot) {
   return files.length ? files.join(', ') : 'not observed';
 }
 
-function detectTestId(repoRoot) {
-  const files = walkFiles(path.join(repoRoot, 'src'), ['.tsx', '.ts', '.jsx', '.js']).slice(0, 2000);
+function detectTestId(repoRoot, srcDir) {
+  const files = walkFiles(srcDir, ['.tsx', '.ts', '.jsx', '.js']).slice(0, 2000);
   const hits = [];
   for (const f of files) {
     const text = readFileSafe(f);
@@ -346,9 +411,9 @@ function scanEnvironment(opts, roleMap, extraLayers) {
     architecture: detectArchitecture(opts.repoRoot, opts.srcDir, extraLayers),
     srcDepth: srcDepthSummary(opts.srcDir, extraLayers),
     ci: detectCi(opts.repoRoot),
-    api: detectApi(opts.repoRoot),
+    api: detectApi(opts.repoRoot, opts.srcDir),
     visual: detectVisual(opts.repoRoot),
-    testid: detectTestId(opts.repoRoot),
+    testid: detectTestId(opts.repoRoot, opts.srcDir),
     roleMap,
   };
 }
@@ -615,7 +680,7 @@ function copyDirIfExists(from, to) {
 function prepareScratch(opts) {
   const scratchRoot = path.join(opts.outDir, 'scratch', 'project');
   const docsScratch = path.join(scratchRoot, 'docs', 'frontend-workflow');
-  const srcScratch = path.join(scratchRoot, 'src');
+  const srcScratch = path.join(scratchRoot, ...opts.srcRel.split('/'));
   fs.rmSync(path.join(opts.outDir, 'scratch'), { recursive: true, force: true });
   fs.mkdirSync(scratchRoot, { recursive: true });
   copyDirIfExists(opts.docsDir, docsScratch);
@@ -627,7 +692,7 @@ function observeWorkflow(opts, scratch) {
   const layoutArg = opts.layoutPath;
   const state = runNodeScript(
     'workflow-state.mjs',
-    ['--docs', scratch.docsScratch, '--src', scratch.srcScratch, '--layout', layoutArg, '--date', opts.date],
+    ['--root', scratch.scratchRoot, '--docs', scratch.docsScratch, '--src', scratch.srcScratch, '--layout', layoutArg, '--date', opts.date],
     { cwd: KIT_ROOT },
   );
   const readiness = runNodeScript(
@@ -637,14 +702,14 @@ function observeWorkflow(opts, scratch) {
   );
   const validate = runNodeScript(
     'validate.mjs',
-    ['--docs', scratch.docsScratch, '--src', scratch.srcScratch, '--layout', layoutArg, '--json'],
+    ['--root', scratch.scratchRoot, '--docs', scratch.docsScratch, '--src', scratch.srcScratch, '--layout', layoutArg, '--json'],
     { cwd: KIT_ROOT },
   );
   const catalogOut = path.join(opts.outDir, 'component-catalog.observed.md');
   const catalog = isDir(scratch.srcScratch)
     ? runNodeScript(
         'catalog-gen.mjs',
-        ['--src', scratch.srcScratch, '--layout', layoutArg, '--out', catalogOut],
+        ['--root', scratch.scratchRoot, '--src', scratch.srcScratch, '--layout', layoutArg, '--out', catalogOut],
         { cwd: KIT_ROOT },
       )
     : {
@@ -690,6 +755,14 @@ function parseCatalogCount(text) {
   return m ? Number(m[1]) : null;
 }
 
+function relativeToSrc(opts, repoRelativePath) {
+  const layerPath = toPosix(repoRelativePath).replace(/^\/+/, '');
+  const srcRel = toPosix(opts.srcRel).replace(/^\/+|\/+$/g, '');
+  if (!srcRel || srcRel === '.') return layerPath;
+  if (layerPath === srcRel) return '';
+  return layerPath.startsWith(`${srcRel}/`) ? layerPath.slice(srcRel.length + 1) : layerPath;
+}
+
 function observeF3(opts, roleMap, extraLayers, originalReadiness) {
   const { removable, excluded } = splitF3Layers(roleMap, extraLayers);
   if (opts.skipF3 || extraLayers.length === 0 || !isDir(opts.srcDir)) {
@@ -710,23 +783,23 @@ function observeF3(opts, roleMap, extraLayers, originalReadiness) {
   }
   const f3Root = path.join(opts.outDir, 'scratch-f3', 'project');
   const f3Docs = path.join(f3Root, 'docs', 'frontend-workflow');
-  const f3Src = path.join(f3Root, 'src');
+  const f3Src = path.join(f3Root, ...opts.srcRel.split('/'));
   fs.rmSync(path.join(opts.outDir, 'scratch-f3'), { recursive: true, force: true });
   fs.mkdirSync(f3Root, { recursive: true });
   copyDirIfExists(opts.docsDir, f3Docs);
   copyDirIfExists(opts.srcDir, f3Src);
   const removed = [];
   for (const layer of removable) {
-    const relPath = layer.path.replace(/^src\//, '');
+    const relPath = relativeToSrc(opts, layer.path);
     const target = path.join(f3Src, ...relPath.split('/'));
     if (isDir(target)) {
       fs.rmSync(target, { recursive: true, force: true });
-      removed.push(`src/${relPath}`);
+      removed.push(layer.path);
     }
   }
   const state = runNodeScript(
     'workflow-state.mjs',
-    ['--docs', f3Docs, '--src', f3Src, '--layout', opts.layoutPath, '--date', opts.date],
+    ['--root', f3Root, '--docs', f3Docs, '--src', f3Src, '--layout', opts.layoutPath, '--date', opts.date],
     { cwd: KIT_ROOT },
   );
   const readiness = runNodeScript(
@@ -1004,6 +1077,10 @@ function renderSummary(opts, env, roleMap, extraLayers, observation, f3, outputs
   return JSON.stringify(data, null, 2) + '\n';
 }
 
+function displayOutputs(opts, outputs) {
+  return Object.fromEntries(Object.entries(outputs).map(([key, value]) => [key, pathRef(opts, value)]));
+}
+
 function kitSnapshot() {
   return 'working-tree draft';
 }
@@ -1041,11 +1118,13 @@ export function normalizeOptions(flags = {}) {
   const outDir = path.resolve(flags.out || path.join(repoRoot, 'temp', 'runs', `adoption-probe-${id}`));
   assertDraftOutDir(repoRoot, docsDir, srcDir, outDir, id);
   const projectName = flags['project-name'] || packageName(repoRoot);
+  const srcRel = safeRepoRel(repoRoot, srcDir, 'src');
   return {
     cwd,
     id,
     repoRoot,
     srcDir,
+    srcRel,
     docsDir,
     outDir,
     projectName,
@@ -1062,7 +1141,7 @@ export function runAdoptionProbe(flags = {}) {
   fs.mkdirSync(opts.outDir, { recursive: true });
   writeFile(path.join(opts.outDir, '.gitignore'), 'scratch/\nscratch-f3/\n');
 
-  const roleMap = detectRoleMap(opts.repoRoot);
+  const roleMap = detectRoleMap(opts.repoRoot, opts.srcDir);
   const extraLayers = detectExtraLayers(opts.repoRoot, opts.srcDir);
   const env = scanEnvironment(opts, roleMap, extraLayers);
   opts.roleMap = roleMap;
@@ -1133,7 +1212,7 @@ export function cliMain(argv) {
   try {
     const flags = parseCliArgs(argv);
     const result = runAdoptionProbe(flags);
-    if (flags.json) process.stdout.write(JSON.stringify(result.outputs, null, 2) + '\n');
+    if (flags.json) process.stdout.write(JSON.stringify(displayOutputs(result.opts, result.outputs), null, 2) + '\n');
     else process.stdout.write(formatProbeResult(result));
   } catch (err) {
     if (err && err.name === 'AdoptionProbeCliError') {

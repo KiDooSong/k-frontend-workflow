@@ -68,6 +68,118 @@ function makeRepo(t) {
   return root;
 }
 
+function makeMonorepoRepo(t) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'adoption-probe-monorepo-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  write(
+    path.join(root, 'package.json'),
+    JSON.stringify({ name: 'probe-monorepo', dependencies: { expo: '^56.0.0', 'expo-router': '^6.0.0' } }, null, 2),
+  );
+  write(path.join(root, 'apps', 'mobile', 'src', 'app', 'profile.tsx'), 'export default function ProfileRoute() { return null; }\n');
+  write(path.join(root, 'apps', 'mobile', 'src', 'shared', 'ui', 'Button.tsx'), 'export function Button() { return null; }\n');
+  write(
+    path.join(root, 'apps', 'mobile', 'src', 'presentation', 'profile', 'screens', 'ProfileScreen.tsx'),
+    'export function ProfileScreen() { return <Button testID="profile-save" />; }\n',
+  );
+  write(path.join(root, 'apps', 'mobile', 'src', 'presentation', 'profile', 'viewmodels', 'useProfileViewModel.ts'), 'export function useProfileViewModel() { return {}; }\n');
+  write(path.join(root, 'apps', 'mobile', 'src', 'api', 'schemas', 'profile.schema.ts'), 'export const ProfileSchema = {};\n');
+  write(
+    path.join(root, 'docs', 'frontend-workflow', 'domains', 'profile', 'screens', 'profile', 'screen-spec.md'),
+    [
+      '---',
+      'artifact_id: screen-spec-profile',
+      'artifact_type: screen-spec',
+      'domain: profile',
+      'screen_id: PROFILE-001',
+      'route: /profile',
+      'status: draft',
+      '---',
+      '',
+      '# Profile',
+      '',
+      '## State Matrix',
+      '| State | UI |',
+      '|---|---|',
+      '| loading | spinner |',
+      '',
+    ].join('\n'),
+  );
+  return root;
+}
+
+function makeAppcodeRepo(t) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'adoption-probe-appcode-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  write(
+    path.join(root, 'package.json'),
+    JSON.stringify({ name: 'probe-appcode', dependencies: { expo: '^56.0.0', 'expo-router': '^6.0.0' } }, null, 2),
+  );
+  write(path.join(root, 'appcode', 'presentation', 'profile', 'screens', 'ProfileScreen.tsx'), 'export function ProfileScreen() { return null; }\n');
+  write(path.join(root, 'appcode', 'presentation', 'profile', 'viewmodels', 'useProfileViewModel.ts'), 'export function useProfileViewModel() { return {}; }\n');
+  write(
+    path.join(root, 'docs', 'frontend-workflow', 'domains', 'profile', 'screens', 'profile', 'screen-spec.md'),
+    [
+      '---',
+      'artifact_id: screen-spec-profile',
+      'artifact_type: screen-spec',
+      'domain: profile',
+      'screen_id: PROFILE-001',
+      'route: /profile',
+      'status: draft',
+      '---',
+      '',
+      '# Profile',
+      '',
+      '## State Matrix',
+      '| State | UI |',
+      '|---|---|',
+      '| loading | spinner |',
+      '',
+    ].join('\n'),
+  );
+  return root;
+}
+
+function makeMultiDomainAppcodeRepo(t) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'adoption-probe-appcode-multi-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  write(
+    path.join(root, 'package.json'),
+    JSON.stringify({ name: 'probe-appcode-multi', dependencies: { expo: '^56.0.0', 'expo-router': '^6.0.0' } }, null, 2),
+  );
+  for (const domain of ['profile', 'settings']) {
+    const screenName = `${domain[0].toUpperCase()}${domain.slice(1)}Screen`;
+    write(path.join(root, 'appcode', 'presentation', domain, 'screens', `${screenName}.tsx`), `export function ${screenName}() { return null; }\n`);
+    write(path.join(root, 'appcode', 'presentation', domain, 'viewmodels', `use${screenName}ViewModel.ts`), `export function use${screenName}ViewModel() { return {}; }\n`);
+    write(
+      path.join(root, 'docs', 'frontend-workflow', 'domains', domain, 'screens', domain, 'screen-spec.md'),
+      [
+        '---',
+        `artifact_id: screen-spec-${domain}`,
+        'artifact_type: screen-spec',
+        `domain: ${domain}`,
+        `screen_id: ${domain.toUpperCase()}-001`,
+        `route: /${domain}`,
+        'status: draft',
+        '---',
+        '',
+        `# ${screenName}`,
+        '',
+        '## State Matrix',
+        '| State | UI |',
+        '|---|---|',
+        '| loading | spinner |',
+        '',
+      ].join('\n'),
+    );
+  }
+  return root;
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 test('runAdoptionProbe renders draft outputs and keeps live docs untouched', (t) => {
   const repo = makeRepo(t);
   const out = path.join(repo, 'temp', 'runs', 'adoption-probe-unit');
@@ -133,6 +245,63 @@ test('runAdoptionProbe renders draft outputs and keeps live docs untouched', (t)
   assert.ok(result.observation.layerInventory);
 });
 
+test('runAdoptionProbe honors custom --src for monorepo role, env, and catalog scans', (t) => {
+  const repo = makeMonorepoRepo(t);
+  const out = path.join(repo, 'temp', 'runs', 'adoption-probe-monorepo');
+  const result = runAdoptionProbe({
+    repo,
+    src: 'apps/mobile/src',
+    out,
+    id: 'monorepo',
+    date: '2026-06-23',
+    'skip-f3': true,
+  });
+
+  const layout = fs.readFileSync(path.join(out, 'project-layout.draft.yaml'), 'utf8');
+  const report = fs.readFileSync(path.join(out, 'adoption-report.md'), 'utf8');
+  const summary = fs.readFileSync(path.join(out, 'probe-summary.json'), 'utf8');
+  const catalog = fs.readFileSync(path.join(out, 'component-catalog.observed.md'), 'utf8');
+
+  assert.equal(result.roleMap.ui_primitive.glob, 'apps/mobile/src/shared/ui/**');
+  assert.match(layout, /ui_primitive:\s+"apps\/mobile\/src\/shared\/ui\/\*\*"/);
+  assert.doesNotMatch(layout, /ui_primitive:\s+"src\/components\/ui\/\*\*"/);
+  assert.match(catalog, /apps\/mobile\/src\/shared\/ui\/Button\.tsx/);
+  assert.equal(result.env.api, 'apps/mobile/src/api');
+  assert.match(result.env.testid, /apps\/mobile\/src\/presentation\/profile\/screens\/ProfileScreen\.tsx/);
+  assert.doesNotMatch(report, new RegExp(escapeRegExp(repo)));
+  assert.doesNotMatch(summary, new RegExp(escapeRegExp(repo)));
+  assert.match(summary, /"src_source": "<target-repo>\/apps\/mobile\/src"/);
+});
+
+test('CLI --json redacts output paths', (t) => {
+  const repo = makeMonorepoRepo(t);
+  const out = path.join(repo, 'temp', 'runs', 'adoption-probe-json');
+  const r = spawnSync(
+    process.execPath,
+    [
+      CLI,
+      '--repo',
+      repo,
+      '--src',
+      'apps/mobile/src',
+      '--out',
+      out,
+      '--id',
+      'json',
+      '--date',
+      '2026-06-23',
+      '--skip-f3',
+      '--json',
+    ],
+    { cwd: KIT_ROOT, encoding: 'utf8' },
+  );
+  assert.equal(r.status, 0, r.stderr);
+  const outputs = JSON.parse(r.stdout);
+  assert.equal(outputs.adoption_report, '<probe-run>/adoption-report.md');
+  assert.doesNotMatch(r.stdout, new RegExp(escapeRegExp(repo)));
+  assert.doesNotMatch(r.stdout, new RegExp(escapeRegExp(out)));
+});
+
 test('accessSummary treats forbid-only layer access as readiness wired', () => {
   assert.equal(
     accessSummary({
@@ -165,6 +334,39 @@ test('F3 excludes layers already flattened into built-in roles', (t) => {
   const summary = JSON.parse(fs.readFileSync(path.join(out, 'probe-summary.json'), 'utf8'));
   assert.equal(summary.observations.f3.excluded.some((layer) => layer.path === 'src/presentation/profile/viewmodels'), true);
   assert.ok(summary.layer_inventory.layers.some((row) => row.role === 'repository' && row.readiness_access_wired === true && row.hard_gate_wired === false));
+});
+
+test('F3 excludes flattened built-in roles when custom --src has no literal src segment', (t) => {
+  const repo = makeAppcodeRepo(t);
+  const out = path.join(repo, 'temp', 'runs', 'adoption-probe-appcode-f3');
+  const result = runAdoptionProbe({ repo, src: 'appcode', out, id: 'appcode-f3', date: '2026-06-23' });
+
+  assert.equal(result.roleMap.hook.glob, 'appcode/presentation/{domain}/viewmodels/**');
+  assert.equal(result.roleMap.hook.evidence, 'appcode/presentation/profile/viewmodels');
+  assert.equal(result.f3.status, 'skipped: all extra layers are flattened into built-in roles');
+  assert.equal(result.f3.removed.includes('appcode/presentation/profile/viewmodels'), false);
+  assert.equal(
+    result.f3.excluded.some((layer) => layer.path === 'appcode/presentation/profile/viewmodels' && layer.role === 'hook'),
+    true,
+  );
+});
+
+test('F3 excludes every matching domain for flattened built-in roles without src segment', (t) => {
+  const repo = makeMultiDomainAppcodeRepo(t);
+  const out = path.join(repo, 'temp', 'runs', 'adoption-probe-appcode-multi-f3');
+  const result = runAdoptionProbe({ repo, src: 'appcode', out, id: 'appcode-multi-f3', date: '2026-06-23' });
+
+  assert.equal(result.roleMap.hook.glob, 'appcode/presentation/{domain}/viewmodels/**');
+  assert.equal(result.f3.status, 'skipped: all extra layers are flattened into built-in roles');
+  assert.deepEqual(result.f3.removed, []);
+  assert.equal(
+    result.f3.excluded.some((layer) => layer.path === 'appcode/presentation/profile/viewmodels' && layer.role === 'hook'),
+    true,
+  );
+  assert.equal(
+    result.f3.excluded.some((layer) => layer.path === 'appcode/presentation/settings/viewmodels' && layer.role === 'hook'),
+    true,
+  );
 });
 
 test('runAdoptionProbe confines output to temp/runs/adoption-probe-id', (t) => {
