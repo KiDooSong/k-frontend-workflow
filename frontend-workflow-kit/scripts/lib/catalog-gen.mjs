@@ -1,12 +1,13 @@
 // catalog-gen.mjs (lib) — component-catalog 모델 빌더 + 렌더러 (읽기 전용 스캔, 쓰기는 CLI 가).
 // 정본(source of truth)은 src/components/ui/** 파일 트리다 (catalog/artifact-manifest.yaml:183-184).
 //
-// v1 식별 규칙 (source-contract §2): 경로(components/ui/**) ∩ 파일 basename PascalCase ∩ 동명 named
-// export(plain `export function`/`export const`). 다음은 의도적으로 제외한다:
+// v1 식별 규칙 (source-contract §2 확장): 경로(components/ui/**) ∩ 파일 basename 이 PascalCase 또는
+// lowercase/kebab-case ∩ 파일명에서 유도한 PascalCase 동명 named export(plain `export function`/`export const`).
+// 다음은 의도적으로 제외한다:
 //   - default export (라우트/스크린 관용) — §2
 //   - memo/forwardRef 래퍼 (display-name 비결정성, §7.4(d)/OD-5)
 //   - co-located *.styles / *.test / *.stories / *.d (basename 에 '.' 잔존) — §2
-//   - 비-PascalCase basename (index, queryKeys, utils 등) — §2
+//   - 파일명에서 PascalCase 컴포넌트명을 안정적으로 유도할 수 없는 basename (index, queryKeys 등)
 //   - components/ui/ 밖 파일 (features/<domain>/components·screens 등) — §1 스코프
 //
 // props/docgen/NativeWind/style 분석은 후속 phase (이 skeleton 의 비목표, §3).
@@ -22,6 +23,7 @@ const SCAN_EXTS = ['.tsx', '.ts'];
 // CLI/check-generated 경로는 resolvedLayout.roles.ui_primitive 에서 source root 를 주입한다.
 const UI_MARKER = '/src/components/ui/';
 const PASCAL_RE = /^[A-Z][A-Za-z0-9]*$/;
+const KEBAB_FILENAME_RE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 
 // 임의 경로를 posix 슬래시로 정규화한다 (Windows 백슬래시 → '/'). 출력 경로 결정성용 (§7.4(f)).
 function toPosix(p) {
@@ -66,6 +68,16 @@ function commonPrefixPath(paths) {
     prefix = prefix.slice(0, i);
   }
   return prefix.join('/');
+}
+
+function componentNameFromFileBase(base) {
+  if (PASCAL_RE.test(base)) return base;
+  if (base === 'index') return null;
+  if (!KEBAB_FILENAME_RE.test(base)) return null;
+  return base
+    .split('-')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join('');
 }
 
 export function catalogCommandSrcForGlobs(globs, { fallback = '.' } = {}) {
@@ -152,8 +164,9 @@ function classifyUiFilePath(absFile, opts = {}) {
     if (!SCAN_EXTS.includes(ext)) return null;
     const base = path.basename(absFile, ext);
     if (base.includes('.')) return null;
-    if (!PASCAL_RE.test(base)) return null;
-    return { base, source_path: configuredSourcePath };
+    const componentName = componentNameFromFileBase(base);
+    if (!componentName) return null;
+    return { base: componentName, file_base: base, source_path: configuredSourcePath };
   }
 
   const posixAbs = toPosix(absFile);
@@ -166,11 +179,12 @@ function classifyUiFilePath(absFile, opts = {}) {
 
   // co-located *.styles.ts / *.test.tsx / *.stories.tsx / *.d.ts → basename 에 '.' 잔존 → 제외 (§2).
   if (base.includes('.')) return null;
-  // PascalCase basename 만 후보 (index, queryKeys, utils 등 제외) (§2).
-  if (!PASCAL_RE.test(base)) return null;
+  const componentName = componentNameFromFileBase(base);
+  if (!componentName) return null;
 
   return {
-    base,
+    base: componentName,
+    file_base: base,
     source_path: posixAbs.slice(idx + 1), // 'src/components/ui/Button.tsx' | '.../forms/Field.tsx'
   };
 }
@@ -216,7 +230,7 @@ export function classifyComponentFile(absFile, content, opts = {}) {
   const file = classifyUiFilePath(absFile, opts);
   if (!file) return null;
 
-  // base 는 PascalCase 라 정규식 메타문자가 없다 → 그대로 보간 안전.
+  // base 는 PascalCase 컴포넌트명이라 정규식 메타문자가 없다 → 그대로 보간 안전.
   const base = file.base;
   const src = content || '';
   // memo/forwardRef 래퍼 → 제외 (v1 plain 선언만, §7.4(d)/OD-5). 타입 주석 안의 `=`/`;` 에 속지 않도록

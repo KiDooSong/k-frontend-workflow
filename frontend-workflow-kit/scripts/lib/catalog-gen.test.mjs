@@ -10,6 +10,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
   buildCatalog,
+  classifyComponentFile,
   classifyDefaultExportCandidate,
   renderCatalog,
   parseBarrelReexports,
@@ -30,6 +31,54 @@ const FIXTURE_SRC = path.resolve(
   'src',
 );
 const FIXTURE_UI = path.join(FIXTURE_SRC, 'components', 'ui');
+
+test('classifyComponentFile: lowercase and kebab filenames map to PascalCase named exports', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-kebab-filenames-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const ui = path.join(tmp, 'src', 'components', 'ui');
+  fs.mkdirSync(ui, { recursive: true });
+  fs.writeFileSync(path.join(ui, 'button.tsx'), 'export const Button = () => null;\n');
+  fs.writeFileSync(
+    path.join(ui, 'primary-button.tsx'),
+    'export function PrimaryButton() { return null; }\n',
+  );
+  fs.writeFileSync(path.join(ui, 'mismatch.tsx'), 'export const NotMismatch = () => null;\n');
+  fs.writeFileSync(path.join(ui, 'index.ts'), 'export function Index() { return null; }\n');
+
+  assert.deepEqual(
+    classifyComponentFile(
+      path.join(ui, 'button.tsx'),
+      fs.readFileSync(path.join(ui, 'button.tsx'), 'utf8'),
+    ),
+    {
+      name: 'Button',
+      source_path: 'src/components/ui/button.tsx',
+      export_kind: 'named',
+      status: 'ok',
+    },
+  );
+
+  const model = buildCatalog({ src: path.join(tmp, 'src'), projectRoot: tmp });
+  assert.deepEqual(model.components, [
+    {
+      name: 'Button',
+      source_path: 'src/components/ui/button.tsx',
+      export_kind: 'named',
+      status: 'ok',
+    },
+    {
+      name: 'PrimaryButton',
+      source_path: 'src/components/ui/primary-button.tsx',
+      export_kind: 'named',
+      status: 'ok',
+    },
+  ]);
+  const text = renderCatalog(model);
+  assert.match(text, /\| Button \| src\/components\/ui\/button\.tsx \| named \| ok \|/);
+  assert.match(text, /\| PrimaryButton \| src\/components\/ui\/primary-button\.tsx \| named \| ok \|/);
+  assert.equal(text.includes('mismatch.tsx'), false);
+  assert.equal(text.includes('index.ts'), false);
+});
 
 test('parseBarrelReexports: 상대 named re-export 의 PascalCase 이름만 수집', () => {
   const r = parseBarrelReexports(
