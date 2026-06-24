@@ -8,7 +8,7 @@
 //   5. screen_id 중복, route 중복
 //   6. do_not_edit 산출물의 GENERATED 헤더/마커 훼손
 //   7. confirmed 문서의 승인 메타데이터(approved_by/approved_at) 누락
-//   8. API Candidates 가 confirmed 인데 zod 스키마/OpenAPI 부재
+//   8. API Candidates 가 confirmed 인데 manifest contract evidence 부재/불일치
 //   9. Open Decisions 형식 (표 컬럼·Status enum·Blocking Mode 정책 모드·전역 ID 중복; resolved→Options 는 경고)
 //      ※ forbidden_paths 경계 backstop 은 diff 기반(후속) — 트리 스캔은 공유 src/api 에 오탐. open-decisions.md "Validate 통합" 참조.
 //   10. Copy Keys Status enum (confirmed|draft|tbd) — screen-spec.template.md 의 3-state 계약. stub·placeholder 행은 제외.
@@ -65,7 +65,10 @@ import {
 import {
   buildEndpointIndex,
   collectSchemaExports,
-  isSchemaUnset,
+  collectTsTypeExports,
+  contractSourceHasText,
+  CONTRACT_KINDS,
+  isContractUnset,
   normEndpoint,
 } from './lib/api-manifest.mjs';
 import { parseRouteTreeRouteTokens } from './lib/route-core.mjs';
@@ -341,13 +344,13 @@ function main() {
     }
   }
 
-  // 8. API Candidates(confirmed) ↔ 스키마 매칭 (제안서 옵션 C: api-manifest ## Endpoints 가 canonical).
-  //    각 confirmed ScreenSpec 후보의 (Method, Path) → api-manifest endpoint → Linked Schema(zod export) 해소.
+  // 8. API Candidates(confirmed) ↔ contract evidence 매칭 (제안서 옵션 C: api-manifest ## Endpoints 가 canonical).
+  //    각 confirmed ScreenSpec 후보의 (Method, Path) → api-manifest endpoint → Linked Contract 해소.
+  //    - Linked Schema 레거시 컬럼은 zod 런타임 export 로 계속 해소한다.
+  //    - Contract Kind=ts-type 은 Source 경로의 export type/interface 정적 evidence 로만 인정한다.
+  //      TS type evidence 는 런타임 validation evidence 가 아니다.
   //    - manifest 부재 시: 현행 전역 존재검사(hasZod||hasOpenApi)로 폴백(엄격 모드로 깨지 않음).
   //    - confirmed 0건 화면은 무발화(candidate 전용 화면의 옛 동작·readiness 불변).
-  //    - 사실 출처는 zod export 심볼. Source 컬럼 / OpenAPI components.schemas 해소는 범위 밖(known limitation).
-  // 검사 8 의 스키마 디렉토리: {roles.api_schema} 바인딩(예: src/api/schemas). role 글롭은
-  // 프로젝트-루트 상대이므로 projectRoot 에 resolve 한다(api_client 와 별도 role — §2 주의).
   const schemasDir = path.resolve(projectRoot, layout.roleToDir('api_schema'));
   const hasZod = dirHasFiles(schemasDir, ['.ts']);
   const hasOpenApi =
@@ -358,16 +361,23 @@ function main() {
     .map((d) => d.file);
   const endpoints = manifestFiles.length ? buildEndpointIndex(manifestFiles) : null;
   const endpointIndex = endpoints ? endpoints.index : null;
-  // canonical 출처(api-manifest)에 같은 (Method,Path) 가 서로 다른 Linked Schema/confidence 로 중복 선언되면
+  // canonical 출처(api-manifest)에 같은 (Method,Path) 가 서로 다른 contract/source/confidence 로 중복 선언되면
   // 매칭이 행 순서에 의존(모순)하므로 에러로 surface 한다(동일 중복 행은 무시).
   for (const c of endpoints ? endpoints.conflicts : []) {
     add(
       8,
       c.file,
-      `api-manifest ## Endpoints 의 ${c.key} 가 충돌 중복 선언됨 (Linked Schema '${c.prev.linkedSchema || '(빈값)'}' vs '${c.next.linkedSchema || '(빈값)'}', confidence '${c.prev.confidence || '(빈값)'}' vs '${c.next.confidence || '(빈값)'}') → 해소: (Method,Path) 당 canonical 행 1개만 남기세요.`,
+      `api-manifest ## Endpoints 의 ${c.key} 가 충돌 중복 선언됨 (Linked Contract '${c.prev.linkedContract || '(빈값)'}'/${c.prev.contractKind || '(kind 없음)'} vs '${c.next.linkedContract || '(빈값)'}'/${c.next.contractKind || '(kind 없음)'}, Source '${c.prev.source || '(빈값)'}' vs '${c.next.source || '(빈값)'}', confidence '${c.prev.confidence || '(빈값)'}' vs '${c.next.confidence || '(빈값)'}') → 해소: (Method,Path) 당 canonical 행 1개만 남기세요.`,
     );
   }
   const schemaExports = collectSchemaExports(schemasDir);
+  const tsTypeExportCache = new Map();
+  const tsTypeExportsFor = (source) => {
+    const key = String(source || '');
+    if (!tsTypeExportCache.has(key)) tsTypeExportCache.set(key, collectTsTypeExports(source, projectRoot));
+    return tsTypeExportCache.get(key);
+  };
+
   for (const spec of specs) {
     const confirmed = parseApiCandidates(spec.sections['api candidates']).filter(
       (it) => it.confidence === 'confirmed',
@@ -411,20 +421,73 @@ function main() {
         );
         continue;
       }
-      if (isSchemaUnset(m.linkedSchema)) {
+      if (isContractUnset(m.linkedContract)) {
         // 컬럼 자체 부재(레거시 형식)와 셀 빈칸/TBD 를 구분 — 전자는 표에서 없는 칸을 찾게 만드는 혼란을 막는다.
         const detail =
-          m.hasLinkedSchemaCol === false
-            ? `## Endpoints 표에 Linked Schema 컬럼이 없음(레거시 형식) → 해소: api-manifest 를 Method|Path|Confidence|Linked Schema|Source 5컬럼으로 맞추고(templates/api/api-manifest.template.md 참조) Linked Schema 에 실제 zod export 명을 기입하세요.`
-            : `Linked Schema 가 비어있음(빈칸/TBD) → 해소: ## Endpoints 행의 Linked Schema 에 실제 export 스키마명을 기입하세요.`;
+          m.hasLinkedSchemaCol === false && m.hasLinkedContractCol === false
+            ? `## Endpoints 표에 Linked Schema 컬럼이 없음(레거시 형식) → 해소: api-manifest 를 Method|Path|Confidence|Linked Contract|Contract Kind|Source 형식으로 맞추고(templates/api/api-manifest.template.md 참조) Linked Contract 에 실제 contract 이름을 기입하세요.`
+            : `${m.hasLinkedContractCol ? 'Linked Contract' : 'Linked Schema'} 가 비어있음(빈칸/TBD) → 해소: ## Endpoints 행의 contract 이름을 기입하세요.`;
         add(8, m.file, `confirmed endpoint ${e.method} ${e.path}: ${detail}`);
         continue;
       }
-      if (!schemaExports.has(m.linkedSchema)) {
+      if (m.contractKindOmitted) {
         add(
           8,
           m.file,
-          `confirmed endpoint ${e.method} ${e.path} 의 Linked Schema=${m.linkedSchema} 가 src/api/schemas/*.ts export 에서 발견되지 않음 → 해소: 스키마 export 를 추가하거나 Linked Schema 를 올바른 export 이름으로 수정하세요.`,
+          `confirmed endpoint ${e.method} ${e.path} 의 Contract Kind 가 비어있음 → 해소: ${CONTRACT_KINDS.join('|')} 중 하나를 기입하세요. 기존 Linked Schema 5컬럼 레거시 표는 zod 로 자동 추론됩니다.`,
+        );
+        continue;
+      }
+      if (!CONTRACT_KINDS.includes(m.contractKind)) {
+        add(
+          8,
+          m.file,
+          `confirmed endpoint ${e.method} ${e.path} 의 Contract Kind='${m.contractKind || '(빈값)'}' 는 지원되지 않음 → 해소: ${CONTRACT_KINDS.join('|')} 중 하나를 사용하세요.`,
+        );
+        continue;
+      }
+      if (m.contractKind === 'zod') {
+        if (!schemaExports.has(m.linkedContract)) {
+          add(
+            8,
+            m.file,
+            `confirmed endpoint ${e.method} ${e.path} 의 zod contract=${m.linkedContract} 가 src/api/schemas/*.ts 런타임 export 에서 발견되지 않음 → 해소: zod 스키마 export 를 추가하거나 Linked Contract/Linked Schema 를 올바른 export 이름으로 수정하세요.`,
+          );
+          continue;
+        }
+      } else if (m.contractKind === 'ts-type') {
+        const typeExports = tsTypeExportsFor(m.source);
+        if (!typeExports.has(m.linkedContract)) {
+          add(
+            8,
+            m.file,
+            `confirmed endpoint ${e.method} ${e.path} 의 ts-type contract=${m.linkedContract} 가 Source=${m.source || '(빈값)'} 의 export type/interface 에서 발견되지 않음 → 해소: Source 경로에 export type 또는 export interface 를 추가하거나 Linked Contract 를 수정하세요. TS type evidence 는 런타임 validation evidence 가 아닙니다.`,
+          );
+          continue;
+        }
+      } else if (m.contractKind === 'openapi') {
+        if (!contractSourceHasText(m.source, projectRoot, m.linkedContract, ['.yaml', '.yml', '.json'])) {
+          add(
+            8,
+            m.file,
+            `confirmed endpoint ${e.method} ${e.path} 의 openapi contract=${m.linkedContract} 가 Source=${m.source || '(빈값)'} 의 project-local OpenAPI 파일(.yaml/.yml/.json)에서 발견되지 않음 → 해소: Source 를 프로젝트 내부 OpenAPI 파일로 지정하고 Linked Contract 이름을 포함시키세요.`,
+          );
+          continue;
+        }
+      } else if (m.contractKind === 'manual') {
+        if (!contractSourceHasText(m.source, projectRoot, m.linkedContract, ['.md', '.txt', '.yaml', '.yml', '.json'])) {
+          add(
+            8,
+            m.file,
+            `confirmed endpoint ${e.method} ${e.path} 의 manual contract=${m.linkedContract} 가 Source=${m.source || '(빈값)'} 의 project-local manual evidence 파일에서 발견되지 않음 → 해소: Source 를 프로젝트 내부 문서/스펙 파일로 지정하고 Linked Contract 이름을 포함시키세요.`,
+          );
+          continue;
+        }
+      } else if (m.contractKind === 'unknown') {
+        add(
+          8,
+          m.file,
+          `confirmed endpoint ${e.method} ${e.path} 의 Contract Kind=unknown 은 confirmed API evidence 를 만족할 수 없음 → 해소: zod|ts-type|openapi|manual 중 확인 가능한 evidence kind 로 바꾸거나 ScreenSpec confidence 를 candidate 로 낮추세요.`,
         );
         continue;
       }

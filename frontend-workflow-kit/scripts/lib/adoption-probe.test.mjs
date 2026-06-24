@@ -68,6 +68,15 @@ function makeRepo(t) {
   return root;
 }
 
+function makeMinimalRepo(t) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'adoption-probe-minimal-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  write(
+    path.join(root, 'package.json'),
+    JSON.stringify({ name: 'probe-minimal', dependencies: { expo: '^56.0.0', 'expo-router': '^6.0.0' } }, null, 2),
+  );
+  return root;
+}
 function makeMonorepoRepo(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'adoption-probe-monorepo-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -212,6 +221,9 @@ test('runAdoptionProbe renders draft outputs and keeps live docs untouched', (t)
   assert.match(adoptionReport, /live policy not replaced/);
   assert.match(adoptionReport, /pre-edit hooks not promoted|pre-edit hooks/);
   assert.match(adoptionReport, /Rendered from templates\/adoption\/adoption-report\.template\.md/);
+  assert.match(adoptionReport, /Route \/ Screen Entry Mapping/);
+  assert.match(adoptionReport, /observed independent roots/);
+  assert.match(adoptionReport, /thin route boundary supported|separate screen\/view files are supported/);
   assert.doesNotMatch(adoptionReport, /\{[A-Z0-9_-]+\}/);
   const tier3Report = fs.readFileSync(path.join(out, 'tier3-gap-report.md'), 'utf8');
   assert.match(tier3Report, /Rendered from templates\/adoption\/tier3-gap-report\.template\.md/);
@@ -234,6 +246,8 @@ test('runAdoptionProbe renders draft outputs and keeps live docs untouched', (t)
   assert.match(migrationGuide, /Human review is required/);
   const summary = JSON.parse(fs.readFileSync(path.join(out, 'probe-summary.json'), 'utf8'));
   assert.ok(summary.outputs.implementation_policy_draft);
+  assert.equal(summary.route_screen_separation.separated, true);
+  assert.equal(summary.route_screen_separation.supported, true);
   assert.ok(summary.outputs.implementation_policy_migration);
   assert.equal(summary.invariants.live_policy_replaced, false);
   assert.equal(summary.invariants.pre_edit_hooks_promoted, false);
@@ -245,6 +259,21 @@ test('runAdoptionProbe renders draft outputs and keeps live docs untouched', (t)
   assert.ok(result.observation.layerInventory);
 });
 
+test('runAdoptionProbe reports candidate route/screen defaults as not observed', (t) => {
+  const repo = makeMinimalRepo(t);
+  const out = path.join(repo, 'temp', 'runs', 'adoption-probe-minimal');
+  runAdoptionProbe({ repo, out, id: 'minimal', date: '2026-06-23', 'skip-f3': true });
+
+  const adoptionReport = fs.readFileSync(path.join(out, 'adoption-report.md'), 'utf8');
+  assert.match(adoptionReport, /candidate defaults, not observed/);
+  assert.match(adoptionReport, /candidate defaults are independent, not observed/);
+  assert.doesNotMatch(adoptionReport, /observed independent roots/);
+
+  const summary = JSON.parse(fs.readFileSync(path.join(out, 'probe-summary.json'), 'utf8'));
+  assert.equal(summary.route_screen_separation.separated, false);
+  assert.equal(summary.route_screen_separation.confirmed, false);
+  assert.equal(summary.route_screen_separation.candidate_separated, true);
+});
 test('runAdoptionProbe honors custom --src for monorepo role, env, and catalog scans', (t) => {
   const repo = makeMonorepoRepo(t);
   const out = path.join(repo, 'temp', 'runs', 'adoption-probe-monorepo');

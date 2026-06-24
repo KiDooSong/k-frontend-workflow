@@ -30,7 +30,7 @@ description: 지정된 Screen ID를 readiness gate가 허용하는 모드와 경
 
 - readiness 판정은 스스로 재구현하지 않는다.
 - 항상 workflow 스크립트를 실행하고 그 출력을 소비한다.
-- manual/source edit 은 `allowed_paths` 안의 파일로 제한한다.
+- manual/source edit 은 `allowed_paths` 안의 파일로 제한한다. ScreenSpec `screen_entry` 는 구현 파일 힌트일 뿐이며 readiness 를 넓히지 않는다.
 - script-owned generated output 은 직접 편집하지 않고 workflow 스크립트로만 재생성한다.
 - `forbidden_paths` 는 절대 수정하지 않는다.
 - 생성 파일은 직접 수정하지 않고 스크립트로 재생성한다.
@@ -118,6 +118,8 @@ Tier3/policy 관련 항목이 있으면:
 ## 모드별 구현 규칙
 
 - 항상 readiness 의 `allowed_paths` / `forbidden_paths` 를 따른다.
+- ScreenSpec `screen_entry` 가 있으면 그 파일을 구현 후보로 우선 확인하되, 해당 concrete path 가 `allowed_paths` 안이고 `forbidden_paths` 밖일 때만 수정한다.
+- `route_entry` 는 route shell/loader/bridge 경계다. 사용자가 route 작업을 요청했고 readiness 가 허용한 경우가 아니면 thin route 파일을 screen 구현 대신 수정하지 않는다.
 - `route-skeleton`, `screen-skeleton`, `rough-fixture-ui` 같은 early mode 에서는 API/client/data layer 를 건드리지 않는다. 단 readiness 출력이 구체 path 를 허용한 경우만 예외다.
 - fake hooks / fixtures 는 해당 mode의 의도된 패턴일 때만 사용한다. 이 스킬은 더 이상 "`useXxx` fake hook only" 를 전역 규칙으로 두지 않는다.
 - `final-fixture-ui` 에서도 readiness 가 허용하지 않으면 real API integration 을 하지 않는다. confirmed/candidate visual mapping 은 evidence 로만 쓰고, 빠진 값을 발명하지 않는다.

@@ -86,7 +86,7 @@ observed telemetry 와 brownfield dogfood results 를 모은 뒤 `no CI`/
 | `route-tree` / `nav-graph` / `component-catalog` generated views (MVP-C) | 구현·읽기 전용 | 게이트 아님; `example:test` warning-only 회귀 표면에서 커버 |
 | `check-generated` alias/CI promotion (MVP-C) | 제안·미승격 | 스크립트는 advisory guard 로 존재하지만 소비 package alias/CI hard gate 는 승격 금지 |
 | `reconcile-input` 킷 `skills/` vendor | 제안 | 리포-로컬 스킬은 절차 가이드일 뿐 코드 강제 0 |
-| API Candidate ↔ zod/OpenAPI **1:1 매칭** | 제안 | 현재 검사 8 은 스키마 소스 존재만 확인 |
+| API Candidate ↔ contract evidence **1:1 매칭** | 제안 | 검사 8 은 api-manifest contract kind(zod/ts-type 등)와 linked evidence 를 확인 |
 | Interaction Matrix **`Result` 컬럼 구조화** | 제안 | 승격 금지 |
 | **Work Packet & Review Artifacts** | 제안(템플릿만) | `templates/work-packet/` 에 설계/문서 템플릿만 존재, 코드 강제 0 — Future Candidate |
 
@@ -137,7 +137,7 @@ dogfood 기반 promotion decision 은 후속으로 남긴다.
 - `reconcile-input` **킷 `skills/` vendor** (Reconciliation Register 검증은 검사 12 로 완료; pre-edit/commit hook 확장은 후속).
 - lint gate promotion decision — PR-5 는 warning-first CI smoke 만 배선했다. hard gate, required check, `lint-baseline --enforce` CI 승격은 observed telemetry, brownfield dogfood results, 별도 Open Decision 후속.
 - MVP-C: `check-generated` 소비 package alias / CI promotion (현 상태는 advisory, 새 hard gate 아님).
-- API Candidate ↔ zod/OpenAPI **스키마 1:1 매칭** 검사.
+- API Candidate ↔ contract evidence **1:1 매칭** 검사.
 - Interaction Matrix **`Result` 컬럼 구조화**.
 - **Work Packet** 강제 (현재 템플릿만 존재 — Future Candidate).
 

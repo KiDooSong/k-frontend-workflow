@@ -50,6 +50,8 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
     const id = fm.screen_id || fm.artifact_id || path.basename(path.dirname(specPath));
     const domain = fm.domain || null;
     const route = fm.route || null;
+    const routeEntry = fm.route_entry || null;
+    const screenEntry = fm.screen_entry || null;
     const status = fm.status || 'draft';
 
     const derived = deriveMetrics(spec, { srcDir, layout: resolvedLayout, projectRoot });
@@ -58,11 +60,16 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
       status,
       domain,
       route,
+      route_entry: routeEntry,
+      screen_entry: screenEntry,
       stub: isStub(spec),
       derived,
     };
 
-    inventory.push({ id, domain, route, status });
+    const inventoryRow = { id, domain, route, status };
+    if (routeEntry) inventoryRow.route_entry = routeEntry;
+    if (screenEntry) inventoryRow.screen_entry = screenEntry;
+    inventory.push(inventoryRow);
 
     // 중복 추적
     if (id) idSeen.set(id, (idSeen.get(id) || 0) + 1);
@@ -100,6 +107,8 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
         figma_mapping_status: s.derived.figma_mapping_status,
       },
     };
+    if (s.route_entry) sortedScreens[k].route_entry = s.route_entry;
+    if (s.screen_entry) sortedScreens[k].screen_entry = s.screen_entry;
   }
 
   // 전역 사실
@@ -131,12 +140,17 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
 
   inventory.sort((a, b) => String(a.id).localeCompare(String(b.id)));
   const inventoryDoc = {
-    screens: inventory.map((s) => ({
-      id: s.id,
-      domain: s.domain,
-      route: s.route,
-      status: s.status,
-    })),
+    screens: inventory.map((s) => {
+      const row = {
+        id: s.id,
+        domain: s.domain,
+        route: s.route,
+        status: s.status,
+      };
+      if (s.route_entry) row.route_entry = s.route_entry;
+      if (s.screen_entry) row.screen_entry = s.screen_entry;
+      return row;
+    }),
     checks: {
       duplicate_ids,
       duplicate_routes,

@@ -34,6 +34,7 @@ function main() {
   const { flags } = parseArgs(process.argv.slice(2));
   const srcDir = path.resolve(typeof flags.src === 'string' ? flags.src : DEFAULTS.src);
   const projectRoot = projectRootOf(srcDir, flags);
+  const docsDir = path.resolve(typeof flags.docs === 'string' ? flags.docs : path.join(projectRoot, 'docs', 'frontend-workflow'));
   if (flags.policy === true || flags.policy === '') {
     process.stderr.write('workflow:doctor: --policy requires a value\n');
     process.exit(2);
@@ -46,7 +47,7 @@ function main() {
   }
   const policy = loadYamlOrExit(policyPath, 'policy', 'workflow:doctor');
   const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags });
-  const findings = collectDoctorFindings({ layout, projectRoot, policy });
+  const findings = collectDoctorFindings({ layout, projectRoot, policy, docsDir });
   const report = {
     tool: 'workflow:doctor',
     ok: true,
@@ -55,6 +56,7 @@ function main() {
     project_root: toPosixRel(projectRoot),
     layout: typeof flags.layout === 'string' ? toPosixRel(path.resolve(flags.layout)) : null,
     policy: typeof flags.policy === 'string' ? toPosixRel(policyPath) : null,
+    docs: toPosixRel(docsDir),
     findings,
   };
   if (flags.json) process.stdout.write(JSON.stringify(report, null, 2) + '\n');

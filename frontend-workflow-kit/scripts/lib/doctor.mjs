@@ -1,9 +1,12 @@
 // doctor.mjs (lib) — warning-only preflight checks for layout/profile adoption.
 import path from 'node:path';
-import { isDir, walkFiles } from './util.mjs';
+import { isDir, walkFiles, exists, findFiles, readFileSafe } from './util.mjs';
 import { globRoot, globToRegExp } from './glob.mjs';
 import { BUILT_IN_LAYER_ROLES } from './layer-inventory.mjs';
 import { buildPolicyDraft } from './policy-draft.mjs';
+import { loadScreenSpec } from './spec.mjs';
+import { parseRouteTreeRouteTokens } from './route-core.mjs';
+import { CONTRACT_KINDS, parseManifestEndpoints } from './api-manifest.mjs';
 
 function toPosix(p) {
   return String(p).split(path.sep).join('/').replace(/\\/g, '/');
@@ -51,6 +54,121 @@ function globRoots(value, { preservePlaceholders = false } = {}) {
     .filter(Boolean);
 }
 
+
+function relPosix(fromDir, absPath) {
+  const rel = path.relative(fromDir, absPath);
+  return toPosix(rel || '.');
+}
+
+function resolveProjectPath(projectRoot, value) {
+  if (!value) return null;
+  return path.isAbsolute(value) ? path.resolve(value) : path.resolve(projectRoot, value);
+}
+
+function collectRouteScreenMappingFindings({ docsDir, projectRoot }) {
+  const findings = [];
+  if (!docsDir || !isDir(docsDir)) return findings;
+  const specPaths = findFiles(path.join(docsDir, 'domains'), 'screen-spec.md');
+  const routeToSpecs = new Map();
+  let explicitMappingHints = 0;
+  for (const specPath of specPaths) {
+    const spec = loadScreenSpec(specPath);
+    const fm = spec.frontmatter || {};
+    const screenId = fm.screen_id || fm.artifact_id || path.basename(path.dirname(specPath));
+    const route = typeof fm.route === 'string' && fm.route ? fm.route : null;
+    if (route) {
+      const list = routeToSpecs.get(route) || [];
+      list.push(relPosix(docsDir, specPath));
+      routeToSpecs.set(route, list);
+    }
+    for (const key of ['route_entry', 'screen_entry']) {
+      const value = typeof fm[key] === 'string' && fm[key] ? fm[key] : null;
+      if (!value) continue;
+      explicitMappingHints++;
+      const abs = resolveProjectPath(projectRoot, value);
+      if (!abs || !exists(abs)) {
+        findings.push({
+          severity: 'warning',
+          check: 'route-screen-mapping-entry-missing',
+          screen_id: screenId,
+          field: key,
+          path: toPosix(value),
+          message: `ScreenSpec ${screenId} declares ${key}=${toPosix(value)} but the file was not found (warning-first mapping gap)`,
+        });
+      }
+    }
+  }
+
+  const routeTreeFile = path.join(docsDir, '_meta', 'route-tree.txt');
+  if (exists(routeTreeFile)) {
+    const routeTreeRoutes = parseRouteTreeRouteTokens(readFileSafe(routeTreeFile));
+    for (const route of [...routeTreeRoutes].sort()) {
+      if (!routeToSpecs.has(route)) {
+        findings.push({
+          severity: 'warning',
+          check: 'route-screen-mapping-gap',
+          route,
+          message: `route-tree route ${route} has no ScreenSpec route mapping (warning-first; add a ScreenSpec route and optional route_entry/screen_entry, do not reshape paths)`,
+        });
+      }
+    }
+  }
+
+  if (explicitMappingHints > 0) {
+    findings.push({
+      severity: 'info',
+      check: 'route-screen-mapping-supported',
+      count: explicitMappingHints,
+      message: `${explicitMappingHints} explicit route_entry/screen_entry mapping hint(s) observed; route and screen implementation paths may be independent`,
+    });
+  }
+  return findings;
+}
+
+function collectApiContractFindings({ docsDir }) {
+  const findings = [];
+  if (!docsDir || !isDir(docsDir)) return findings;
+  const manifestFiles = findFiles(docsDir, 'api-manifest.md');
+  const counts = new Map();
+  for (const file of manifestFiles) {
+    const raw = readFileSafe(file);
+    if (raw == null) continue;
+    for (const endpoint of parseManifestEndpoints(raw)) {
+      if (endpoint.confidence !== 'confirmed') continue;
+      if (endpoint.contractKindOmitted) {
+        findings.push({
+          severity: 'warning',
+          check: 'api-contract-kind-omitted',
+          file: relPosix(docsDir, file),
+          endpoint: endpoint.key,
+          message: `confirmed endpoint ${endpoint.key} has Linked Contract but no Contract Kind (supported: ${CONTRACT_KINDS.join('|')})`,
+        });
+        continue;
+      }
+      const kind = endpoint.contractKind || '(none)';
+      counts.set(kind, (counts.get(kind) || 0) + 1);
+      if (kind !== '(none)' && !CONTRACT_KINDS.includes(kind)) {
+        findings.push({
+          severity: 'warning',
+          check: 'api-contract-kind-unsupported',
+          file: relPosix(docsDir, file),
+          endpoint: endpoint.key,
+          kind,
+          message: `confirmed endpoint ${endpoint.key} uses unsupported Contract Kind='${kind}' (supported: ${CONTRACT_KINDS.join('|')})`,
+        });
+      }
+    }
+  }
+  if (counts.size > 0) {
+    const summary = [...counts.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([kind, count]) => `${kind}=${count}`).join(', ');
+    findings.push({
+      severity: 'info',
+      check: 'api-contract-kind-support',
+      message: `api-manifest contract kinds observed: ${summary}; supported kinds: ${CONTRACT_KINDS.join('|')}`,
+    });
+  }
+  return findings;
+}
 function accessDeclared(access) {
   if (!access || typeof access !== 'object') return false;
   return asArray(access.allow).length > 0 || asArray(access.forbid).length > 0;
@@ -63,7 +181,7 @@ function layerGlobValues(layer, roles) {
   return asArray(layer?.glob);
 }
 
-export function collectDoctorFindings({ layout, projectRoot, policy } = {}) {
+export function collectDoctorFindings({ layout, projectRoot, policy, docsDir } = {}) {
   const findings = [];
   const roles = layout?.roles && typeof layout.roles === 'object' ? layout.roles : {};
   const layers = Array.isArray(layout?.layers) ? layout.layers : [];
@@ -190,5 +308,8 @@ export function collectDoctorFindings({ layout, projectRoot, policy } = {}) {
     }
   }
 
-  return findings.sort((a, b) => `${a.check}:${a.role || ''}:${a.glob || ''}`.localeCompare(`${b.check}:${b.role || ''}:${b.glob || ''}`));
+  findings.push(...collectRouteScreenMappingFindings({ docsDir, projectRoot }));
+  findings.push(...collectApiContractFindings({ docsDir }));
+
+  return findings.sort((a, b) => `${a.check}:${a.role || ''}:${a.glob || ''}:${a.route || ''}:${a.file || ''}`.localeCompare(`${b.check}:${b.role || ''}:${b.glob || ''}:${b.route || ''}:${b.file || ''}`));
 }

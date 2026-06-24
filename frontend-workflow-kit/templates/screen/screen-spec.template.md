@@ -3,7 +3,9 @@ artifact_id: "{SCREEN_ID}-screen-spec"
 artifact_type: screen-spec
 domain: "{domain}"
 screen_id: "{SCREEN_ID}"
-route: "{route}"          # 라우트의 단일 출처. inventory/stub 가 frontmatter 에서 읽는다 (본문에 중복 금지)
+route: "{route}"          # URL route token. inventory/stub 가 frontmatter 에서 읽는다 (본문에 중복 금지)
+# route_entry: "{src/app/.../page.tsx}"          # 선택: router/framework boundary 파일. screen_entry 와 경로 형태가 달라도 된다.
+# screen_entry: "{src/features/.../Screen.tsx}" # 선택: 화면 구현 파일. implement-screen 은 readiness allowed_paths 와 함께 이 힌트를 사용한다.
 status: draft             # 문서 라이프사이클: missing|draft|review|confirmed|implemented|verified|deprecated
 sources:
   - { type: planning, ref: "{기획 출처}" }
