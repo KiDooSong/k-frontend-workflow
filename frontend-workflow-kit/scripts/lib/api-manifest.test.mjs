@@ -210,6 +210,22 @@ test('E2E: confirmed ts-type contract passes when exported interface exists', ()
   }
 });
 
+test('E2E: confirmed ts-type contract passes for generic exported type alias', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check8-ts-generic-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/api/api-manifest.md': manifestDoc(
+        '| Method | Path | Operation ID | Confidence | Linked Contract | Contract Kind | Source |\n|---|---|---|---|---|---|---|\n| GET | /x | getX | confirmed | ListXResponse | ts-type | src/api/types/x.ts |',
+      ),
+      'docs/frontend-workflow/domains/d/screens/s/screen-spec.md': SCREEN_CONFIRMED,
+      'src/api/types/x.ts': 'export type ListXResponse<T> = { items: T[] }\n',
+    });
+    const c8 = (runValidate(root).errors || []).filter((e) => e.check === 8);
+    assert.deepEqual(c8, []);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 test('E2E: confirmed ts-type contract fails when type/interface export is missing', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check8-ts-missing-'));
   try {
@@ -229,6 +245,25 @@ test('E2E: confirmed ts-type contract fails when type/interface export is missin
   }
 });
 
+test('E2E: duplicate endpoint with different Source is a conflict', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check8-source-conflict-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/api/api-manifest.md': manifestDoc(
+        '| Method | Path | Operation ID | Confidence | Linked Contract | Contract Kind | Source |\n|---|---|---|---|---|---|---|\n| GET | /x | getX | confirmed | XResponse | ts-type | src/api/types/a.ts |\n| GET | /x | getX | confirmed | XResponse | ts-type | src/api/types/b.ts |',
+      ),
+      'docs/frontend-workflow/domains/d/screens/s/screen-spec.md': SCREEN_CONFIRMED,
+      'src/api/types/a.ts': 'export type XResponse = { from: "a" }\n',
+      'src/api/types/b.ts': 'export type XResponse = { from: "b" }\n',
+    });
+    const c8 = (runValidate(root).errors || []).filter((e) => e.check === 8);
+    assert.equal(c8.length, 1);
+    assert.match(c8[0].message, /충돌 중복 선언/);
+    assert.match(c8[0].message, /Source 'src\/api\/types\/a\.ts' vs 'src\/api\/types\/b\.ts'/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 test('E2E: unsupported contract kind produces clear validation error', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check8-kind-'));
   try {

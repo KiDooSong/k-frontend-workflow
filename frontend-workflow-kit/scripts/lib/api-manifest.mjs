@@ -93,7 +93,7 @@ export function parseManifestEndpoints(body) {
 
 // manifest 파일 경로 목록에서 endpoint 인덱스를 만든다.
 //   index     Map<key, { method, path, confidence, linkedContract, contractKind, source, file }> (충돌 시 last-wins)
-//   conflicts [{ key, file, prev, next }] — 같은 (Method,Path) 인데 contract/confidence 가 다른 행.
+//   conflicts [{ key, file, prev, next }] — 같은 (Method,Path) 인데 contract/source/confidence 가 다른 행.
 //             canonical 출처가 모순(매칭이 행 순서에 의존)이므로 validate 가 에러로 surface 한다.
 //             완전히 동일한 중복 행은 무해하므로 무시한다.
 export function buildEndpointIndex(manifestFiles) {
@@ -109,7 +109,8 @@ export function buildEndpointIndex(manifestFiles) {
         prev &&
         (prev.linkedContract !== e.linkedContract ||
           prev.contractKind !== e.contractKind ||
-          prev.confidence !== e.confidence)
+          prev.confidence !== e.confidence ||
+          prev.source !== e.source)
       ) {
         conflicts.push({ key: e.key, file, prev, next: Object.assign({}, e, { file }) });
       }
@@ -206,7 +207,7 @@ function collectExportsFromText(raw, names) {
 function collectTypeExportsFromText(raw, names) {
   const text = stripTsComments(raw || '');
   let m;
-  const reTypeDecl = /export\s+(?:declare\s+)?type\s+([A-Za-z_$][\w$]*)\s*=/g;
+  const reTypeDecl = /export\s+(?:declare\s+)?type\s+([A-Za-z_$][\w$]*)\s*(?:<[^;]*?>)?\s*=/g;
   while ((m = reTypeDecl.exec(text))) names.add(m[1]);
   const reInterfaceDecl = /export\s+(?:declare\s+)?interface\s+([A-Za-z_$][\w$]*)\b/g;
   while ((m = reInterfaceDecl.exec(text))) names.add(m[1]);

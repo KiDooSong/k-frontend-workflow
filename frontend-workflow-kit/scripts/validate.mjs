@@ -360,13 +360,13 @@ function main() {
     .map((d) => d.file);
   const endpoints = manifestFiles.length ? buildEndpointIndex(manifestFiles) : null;
   const endpointIndex = endpoints ? endpoints.index : null;
-  // canonical 출처(api-manifest)에 같은 (Method,Path) 가 서로 다른 contract/confidence 로 중복 선언되면
+  // canonical 출처(api-manifest)에 같은 (Method,Path) 가 서로 다른 contract/source/confidence 로 중복 선언되면
   // 매칭이 행 순서에 의존(모순)하므로 에러로 surface 한다(동일 중복 행은 무시).
   for (const c of endpoints ? endpoints.conflicts : []) {
     add(
       8,
       c.file,
-      `api-manifest ## Endpoints 의 ${c.key} 가 충돌 중복 선언됨 (Linked Contract '${c.prev.linkedContract || '(빈값)'}'/${c.prev.contractKind || '(kind 없음)'} vs '${c.next.linkedContract || '(빈값)'}'/${c.next.contractKind || '(kind 없음)'}, confidence '${c.prev.confidence || '(빈값)'}' vs '${c.next.confidence || '(빈값)'}') → 해소: (Method,Path) 당 canonical 행 1개만 남기세요.`,
+      `api-manifest ## Endpoints 의 ${c.key} 가 충돌 중복 선언됨 (Linked Contract '${c.prev.linkedContract || '(빈값)'}'/${c.prev.contractKind || '(kind 없음)'} vs '${c.next.linkedContract || '(빈값)'}'/${c.next.contractKind || '(kind 없음)'}, Source '${c.prev.source || '(빈값)'}' vs '${c.next.source || '(빈값)'}', confidence '${c.prev.confidence || '(빈값)'}' vs '${c.next.confidence || '(빈값)'}') → 해소: (Method,Path) 당 canonical 행 1개만 남기세요.`,
     );
   }
   const schemaExports = collectSchemaExports(schemasDir);
