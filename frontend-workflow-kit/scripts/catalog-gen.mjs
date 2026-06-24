@@ -8,7 +8,7 @@
 //   기본값: --src src  --out docs/frontend-workflow/design/component-catalog.md
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { parseArgs, writeFile, isDir, KIT_ROOT, runCli } from './lib/util.mjs';
+import { parseArgs, writeFile, isDir, KIT_ROOT, runCli, projectRootOf } from './lib/util.mjs';
 import { loadLayoutProfile } from './lib/layout-profile.mjs';
 import {
   buildCatalog,
@@ -41,6 +41,7 @@ function main() {
   // 기존 산출물을 덮어쓰는 사일런트 데이터 손실이 난다(util.walkFiles:isDir 가드). → 스캔·쓰기 전에
   // 입력을 검증해 exit 2(입력 오류, util.loadYamlOrExit 계약과 일치)로 끊는다. --json/--dry-run 포함.
   const srcAbs = path.resolve(src);
+  const projectRoot = typeof flags.root === 'string' && flags.root ? projectRootOf(srcAbs, flags) : null;
   if (!isDir(srcAbs)) {
     process.stderr.write(
       `workflow:catalog — --src is not a directory: ${src}\n` +
@@ -49,15 +50,15 @@ function main() {
     process.exit(2);
   }
 
-  const model = buildCatalog({ src, layout });
-  const sourceConfig = catalogSourceConfig({ src, layout });
+  const model = buildCatalog({ src, layout, projectRoot });
+  const sourceConfig = catalogSourceConfig({ src, layout, projectRoot });
   const commandLayout =
     typeof flags.layout === 'string' ? relativeFrom(sourceConfig.projectRoot, path.resolve(flags.layout)) : null;
   const count = model.components.length;
 
   // phase2-1: 배럴 ↔ 카탈로그 정합성 진단 (warning-first, stderr only — 출력 파일·exit code 불변).
   // 모든 성공 경로(--json/--dry-run/쓰기)에서 동일하게 돌며, 불일치가 없으면 아무것도 출력하지 않는다.
-  runBarrelReconcileDiagnostic({ src, layout, components: model.components }, process.stderr);
+  runBarrelReconcileDiagnostic({ src, layout, projectRoot, components: model.components }, process.stderr);
 
   // --json: 동일 모델을 stdout 으로 (헤더 없음, early-return — nav-graph.mjs:25-28 미러).
   if (flags.json) {

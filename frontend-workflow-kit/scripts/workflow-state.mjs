@@ -17,6 +17,7 @@ import {
   emitGeneratedYaml,
   writeFile,
   runCli,
+  projectRootOf,
 } from './lib/util.mjs';
 import { loadScreenSpec, deriveMetrics, isStub } from './lib/spec.mjs';
 import { loadLayoutProfile } from './lib/layout-profile.mjs';
@@ -30,7 +31,7 @@ function todayISO() {
   ).padStart(2, '0')}`;
 }
 
-export function buildState({ docsDir, srcDir, date, layout }) {
+export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
   // 레이아웃 프로파일(tier1): deriveMetrics 의 fake_hook_exists 가 {roles.hook} 디렉토리를 단일
   // 출처에서 파생하도록 주입한다. 호출부가 주지 않으면 기본 프로파일(expo-feature)을 로드 —
   // 토큰화 이전과 BYTE-동치(README §1.1).
@@ -51,7 +52,7 @@ export function buildState({ docsDir, srcDir, date, layout }) {
     const route = fm.route || null;
     const status = fm.status || 'draft';
 
-    const derived = deriveMetrics(spec, { srcDir, layout: resolvedLayout });
+    const derived = deriveMetrics(spec, { srcDir, layout: resolvedLayout, projectRoot });
 
     screens[id] = {
       status,
@@ -144,7 +145,7 @@ export function buildState({ docsDir, srcDir, date, layout }) {
 
   const layerInventory = resolvedLayout.layerTelemetryDeclared
     ? scanLayerInventory({
-        projectRoot: path.dirname(srcDir),
+        projectRoot: projectRoot || path.dirname(srcDir),
         srcDir,
         layout: resolvedLayout,
         screens: inventory,
@@ -158,12 +159,13 @@ function main() {
   const { flags } = parseArgs(process.argv.slice(2));
   const docsDir = path.resolve(flags.docs || DEFAULTS.docs);
   const srcDir = path.resolve(flags.src || DEFAULTS.src);
+  const projectRoot = projectRootOf(srcDir, flags);
   const date = (typeof flags.date === 'string' && flags.date) || todayISO();
   const outDir = flags.out ? path.resolve(flags.out) : path.join(docsDir, '_meta');
   // 레이아웃 프로파일(tier1): role→glob 단일 출처. --layout 으로 project-layout.yaml 경로 오버라이드.
   const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags });
 
-  const { state, inventory, layerInventory } = buildState({ docsDir, srcDir, date, layout });
+  const { state, inventory, layerInventory } = buildState({ docsDir, srcDir, date, layout, projectRoot });
 
   if (flags.json) {
     const payload = layerInventory ? { state, inventory, layer_inventory: layerInventory } : { state, inventory };

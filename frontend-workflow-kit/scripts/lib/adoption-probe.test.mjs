@@ -68,6 +68,49 @@ function makeRepo(t) {
   return root;
 }
 
+function makeMonorepoRepo(t) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'adoption-probe-monorepo-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  write(
+    path.join(root, 'package.json'),
+    JSON.stringify({ name: 'probe-monorepo', dependencies: { expo: '^56.0.0', 'expo-router': '^6.0.0' } }, null, 2),
+  );
+  write(path.join(root, 'apps', 'mobile', 'src', 'app', 'profile.tsx'), 'export default function ProfileRoute() { return null; }\n');
+  write(path.join(root, 'apps', 'mobile', 'src', 'shared', 'ui', 'Button.tsx'), 'export function Button() { return null; }\n');
+  write(
+    path.join(root, 'apps', 'mobile', 'src', 'presentation', 'profile', 'screens', 'ProfileScreen.tsx'),
+    'export function ProfileScreen() { return <Button testID="profile-save" />; }\n',
+  );
+  write(path.join(root, 'apps', 'mobile', 'src', 'presentation', 'profile', 'viewmodels', 'useProfileViewModel.ts'), 'export function useProfileViewModel() { return {}; }\n');
+  write(path.join(root, 'apps', 'mobile', 'src', 'api', 'schemas', 'profile.schema.ts'), 'export const ProfileSchema = {};\n');
+  write(
+    path.join(root, 'docs', 'frontend-workflow', 'domains', 'profile', 'screens', 'profile', 'screen-spec.md'),
+    [
+      '---',
+      'artifact_id: screen-spec-profile',
+      'artifact_type: screen-spec',
+      'domain: profile',
+      'screen_id: PROFILE-001',
+      'route: /profile',
+      'status: draft',
+      '---',
+      '',
+      '# Profile',
+      '',
+      '## State Matrix',
+      '| State | UI |',
+      '|---|---|',
+      '| loading | spinner |',
+      '',
+    ].join('\n'),
+  );
+  return root;
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 test('runAdoptionProbe renders draft outputs and keeps live docs untouched', (t) => {
   const repo = makeRepo(t);
   const out = path.join(repo, 'temp', 'runs', 'adoption-probe-unit');
@@ -131,6 +174,63 @@ test('runAdoptionProbe renders draft outputs and keeps live docs untouched', (t)
   assert.match(fs.readFileSync(path.join(out, 'tier3-live-wiring-implementation-note.md'), 'utf8'), /PR-D/);
   assert.equal(result.observation.commands.state.ok, true);
   assert.ok(result.observation.layerInventory);
+});
+
+test('runAdoptionProbe honors custom --src for monorepo role, env, and catalog scans', (t) => {
+  const repo = makeMonorepoRepo(t);
+  const out = path.join(repo, 'temp', 'runs', 'adoption-probe-monorepo');
+  const result = runAdoptionProbe({
+    repo,
+    src: 'apps/mobile/src',
+    out,
+    id: 'monorepo',
+    date: '2026-06-23',
+    'skip-f3': true,
+  });
+
+  const layout = fs.readFileSync(path.join(out, 'project-layout.draft.yaml'), 'utf8');
+  const report = fs.readFileSync(path.join(out, 'adoption-report.md'), 'utf8');
+  const summary = fs.readFileSync(path.join(out, 'probe-summary.json'), 'utf8');
+  const catalog = fs.readFileSync(path.join(out, 'component-catalog.observed.md'), 'utf8');
+
+  assert.equal(result.roleMap.ui_primitive.glob, 'apps/mobile/src/shared/ui/**');
+  assert.match(layout, /ui_primitive:\s+"apps\/mobile\/src\/shared\/ui\/\*\*"/);
+  assert.doesNotMatch(layout, /ui_primitive:\s+"src\/components\/ui\/\*\*"/);
+  assert.match(catalog, /apps\/mobile\/src\/shared\/ui\/Button\.tsx/);
+  assert.equal(result.env.api, 'apps/mobile/src/api');
+  assert.match(result.env.testid, /apps\/mobile\/src\/presentation\/profile\/screens\/ProfileScreen\.tsx/);
+  assert.doesNotMatch(report, new RegExp(escapeRegExp(repo)));
+  assert.doesNotMatch(summary, new RegExp(escapeRegExp(repo)));
+  assert.match(summary, /"src_source": "<target-repo>\/apps\/mobile\/src"/);
+});
+
+test('CLI --json redacts output paths', (t) => {
+  const repo = makeMonorepoRepo(t);
+  const out = path.join(repo, 'temp', 'runs', 'adoption-probe-json');
+  const r = spawnSync(
+    process.execPath,
+    [
+      CLI,
+      '--repo',
+      repo,
+      '--src',
+      'apps/mobile/src',
+      '--out',
+      out,
+      '--id',
+      'json',
+      '--date',
+      '2026-06-23',
+      '--skip-f3',
+      '--json',
+    ],
+    { cwd: KIT_ROOT, encoding: 'utf8' },
+  );
+  assert.equal(r.status, 0, r.stderr);
+  const outputs = JSON.parse(r.stdout);
+  assert.equal(outputs.adoption_report, '<probe-run>/adoption-report.md');
+  assert.doesNotMatch(r.stdout, new RegExp(escapeRegExp(repo)));
+  assert.doesNotMatch(r.stdout, new RegExp(escapeRegExp(out)));
 });
 
 test('accessSummary treats forbid-only layer access as readiness wired', () => {
