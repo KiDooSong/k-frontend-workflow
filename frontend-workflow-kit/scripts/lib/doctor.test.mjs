@@ -101,6 +101,17 @@ test('workflow:doctor CLI surfaces unsupported layer fact as layout config error
   assert.equal(r.stdout, '');
 });
 
+test('workflow:doctor CLI fails closed for explicit missing --policy', () => {
+  const missingPolicy = path.join(os.tmpdir(), `missing-policy-${process.pid}.yaml`);
+  const r = spawnSync(process.execPath, [DOCTOR_CLI, '--policy', missingPolicy, '--json'], {
+    cwd: KIT_ROOT,
+    encoding: 'utf8',
+  });
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /workflow:doctor: --policy 경로가 존재하지 않음:/);
+  assert.equal(r.stdout, '');
+});
+
 test('collectDoctorFindings: built-in layer glob checks follow rebound role paths', (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'doctor-role-rebind-layer-'));
   t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
@@ -164,4 +175,29 @@ test('collectDoctorFindings: layer access with no role binding or glob warns as 
   });
   assert.ok(findings.some((f) => f.check === 'layer-role' && f.role === 'repository'));
   assert.ok(findings.some((f) => f.check === 'layer-access-unmaterializable' && f.role === 'repository'));
+});
+
+test('collectDoctorFindings: generated policy draft difference is info-only', () => {
+  const policy = {
+    order: ['docs-only', 'rough-fixture-ui'],
+    modes: {
+      'docs-only': { requires: [], allowed_paths: ['docs/frontend-workflow/**'], forbidden_paths: ['src/**'] },
+      'rough-fixture-ui': { requires: [], allowed_paths: [], forbidden_paths: [] },
+    },
+  };
+  const findings = collectDoctorFindings({
+    projectRoot: process.cwd(),
+    policy,
+    layout: {
+      roles: {},
+      layers: [
+        { role: 'view_model', glob: 'src/presentation/{domain}/viewmodels/**', fact: 'dir_has_files', access: { allow: ['rough-fixture-ui'], forbid: [] } },
+      ],
+    },
+  });
+  const diff = findings.find((f) => f.check === 'policy-draft-diff');
+  assert.ok(diff);
+  assert.equal(diff.severity, 'info');
+  assert.equal(diff.count, 1);
+  assert.equal(findings.some((f) => f.check === 'policy-draft-generate'), false);
 });

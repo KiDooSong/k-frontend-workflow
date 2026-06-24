@@ -8,8 +8,9 @@
 | Slice | Wiring point | Required before touching |
 |---|---|---|
 | PR-D | `layout-profile.synthesizeModePolicy()` feeds layer allow/forbid cells into readiness paths | implemented for readiness access; hard gates remain off |
-| PR-D | `implementation-mode-policy.yaml` role-token cells become generated/checked | resolved-policy diff target, no literal/requires/order drift |
-| PR-D | CI gets a new idempotency check target | not a hard-gate promotion beyond deterministic diff for generated policy |
+| PR-D | `implementation-mode-policy.draft.yaml` is generated from resolved layer access | review artifact only; live policy is not replaced |
+| PR-D | `implementation-mode-policy.migration.md` compares live vs draft | human review before any live policy update |
+| PR-D | CI/pre-edit hardening | not promoted in this probe |
 | PR-E | `lint-gen-core` consumes import-boundary layer subset | warning-first rollout and import-DAG subset agreed |
 
 ## Parity Tests

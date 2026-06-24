@@ -8,9 +8,9 @@
 
 ## 0. Scope Banner
 
-- **Adoption summary:** Axis 1 = possible/partial: role map drafted from observed paths. Axis 2 = readiness access wired: layer inventory access rows feed readiness paths; hard gates not promoted.
-- **This probe does:** read-only scan, role-to-glob draft, scratch-only workflow observations, draft notes.
-- **This probe does not:** scaffold, wire live `project-layout.yaml`, resolve Open Decisions, promote hard gates, edit CI, or declare architecture complete.
+- **Adoption summary:** Axis 1 = possible/partial: role map drafted from observed paths. Axis 2 = readiness access wired; implementation-mode-policy draft generated; live policy not replaced; hard gates/CI/pre-edit hooks not promoted.
+- **This probe does:** read-only scan, role-to-glob draft, scratch-only workflow observations, generated implementation-policy draft, migration guide, draft notes.
+- **This probe does not:** scaffold, wire live `project-layout.yaml`, replace live `implementation-mode-policy.yaml`, resolve Open Decisions, promote hard gates, edit CI, enable pre-edit hooks, or declare architecture complete.
 
 ## 1. Scanned Environment
 
@@ -54,7 +54,7 @@
 | Area | Current observation | Signal |
 |---|---|---|
 | Axis 1 role rebinding | draft `project-layout.draft.yaml` rendered and used for observations | observed |
-| Extra layers as native readiness paths | 7 extra layer path(s) found | readiness access wired; hard gates not promoted |
+| Extra layers as native readiness paths | 7 extra layer path(s) found | readiness access wired; policy draft generated; live policy not replaced |
 | F3 complete-vs-missing check | readiness byte-identical after scratch Tier3-only layer removal; 1 flattened built-in path(s) kept | draft-only observation |
 | F4 catalog behavior | 1 components observed from src/components/ui/** via draft layout | observed with draft layout |
 | validate scope | ok=true, errors=0, warnings=0, exit=0 | document-structure evidence only |
@@ -97,6 +97,8 @@ Observation files are in `./frontend-workflow-kit/temp/runs/adoption-probe-multi
 |---|---|---|
 | Adoption report | `./frontend-workflow-kit/temp/runs/adoption-probe-multilayer-001/adoption-report.md` | draft |
 | Layout draft | `./frontend-workflow-kit/temp/runs/adoption-probe-multilayer-001/project-layout.draft.yaml` | draft; scratch-readiness input |
+| Implementation policy draft | `./frontend-workflow-kit/temp/runs/adoption-probe-multilayer-001/implementation-mode-policy.draft.yaml` | draft; not live wired |
+| Implementation policy migration guide | `./frontend-workflow-kit/temp/runs/adoption-probe-multilayer-001/implementation-mode-policy.migration.md` | draft; human review before live replacement |
 | Tier3 gap report | `./frontend-workflow-kit/temp/runs/adoption-probe-multilayer-001/tier3-gap-report.md` | draft |
 | Visual intake note | `./frontend-workflow-kit/temp/runs/adoption-probe-multilayer-001/visual-spec-intake-note.md` | draft |
 | testID intake note | `./frontend-workflow-kit/temp/runs/adoption-probe-multilayer-001/testid-intake-note.md` | draft |
@@ -104,6 +106,7 @@ Observation files are in `./frontend-workflow-kit/temp/runs/adoption-probe-multi
 
 ## 9. Human Surface Only
 
+- Inspect `implementation-mode-policy.draft.yaml` and `implementation-mode-policy.migration.md` before any live policy update.
 - Confirm candidate role paths before any live wiring.
 - Decide whether Axis 2 gating is desired for this brownfield repo; this probe supplies scratch readiness-access evidence and leaves CI/hard gates unwired.
 - If catalog count is 0, inspect `ui_primitive` and catalog source before treating readiness as actionable.
@@ -112,5 +115,5 @@ Observation files are in `./frontend-workflow-kit/temp/runs/adoption-probe-multi
 
 - [x] Source untouched by probe workflow.
 - [x] Live `docs/frontend-workflow` untouched; workflow-state ran only in scratch.
-- [x] No confirmed promotion, Open Decision resolve, CI edit, or hard gate promotion.
+- [x] No confirmed promotion, Open Decision resolve, CI edit, pre-edit hook, live policy replacement, or hard gate promotion.
 - [x] Outputs are draft-only under the probe run directory.

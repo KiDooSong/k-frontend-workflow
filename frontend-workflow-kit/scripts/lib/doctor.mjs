@@ -3,6 +3,7 @@ import path from 'node:path';
 import { isDir, walkFiles } from './util.mjs';
 import { globRoot, globToRegExp } from './glob.mjs';
 import { BUILT_IN_LAYER_ROLES } from './layer-inventory.mjs';
+import { buildPolicyDraft } from './policy-draft.mjs';
 
 function toPosix(p) {
   return String(p).split(path.sep).join('/').replace(/\\/g, '/');
@@ -62,7 +63,7 @@ function layerGlobValues(layer, roles) {
   return asArray(layer?.glob);
 }
 
-export function collectDoctorFindings({ layout, projectRoot }) {
+export function collectDoctorFindings({ layout, projectRoot, policy } = {}) {
   const findings = [];
   const roles = layout?.roles && typeof layout.roles === 'object' ? layout.roles : {};
   const layers = Array.isArray(layout?.layers) ? layout.layers : [];
@@ -154,6 +155,38 @@ export function collectDoctorFindings({ layout, projectRoot }) {
           message: `layer '${layer.role}' access materializes to readiness policy paths; hard gates/CI are not promoted`,
         });
       }
+    }
+  }
+
+  if (policy && typeof policy === 'object') {
+    try {
+      const draft = buildPolicyDraft({ policy, layout, date: 'doctor' });
+      const changed = draft.diff.changed_mode_access_rows.length;
+      for (const decision of draft.manualDecisions || []) {
+        if (String(decision.reason || '').includes('unknown policy mode')) {
+          findings.push({
+            severity: 'warning',
+            check: 'policy-draft-manual',
+            role: decision.role,
+            mode: decision.mode,
+            message: decision.reason,
+          });
+        }
+      }
+      findings.push({
+        severity: 'info',
+        check: changed ? 'policy-draft-diff' : 'policy-draft-ready',
+        count: changed,
+        message: changed
+          ? `generated implementation-mode-policy draft would differ from live policy (${changed} mode access row(s)); draft only, live policy/CI/pre-edit hooks unchanged`
+          : 'implementation-mode-policy draft can be generated from current layout; no live policy access diff',
+      });
+    } catch (err) {
+      findings.push({
+        severity: 'warning',
+        check: 'policy-draft-generate',
+        message: `implementation-mode-policy draft could not be generated: ${err.message || err}`,
+      });
     }
   }
 
