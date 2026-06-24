@@ -176,7 +176,7 @@ test('buildPolicyDraft adds custom explicit globs without custom role tokens', (
   );
 });
 
-test('buildPolicyDraft prunes stale custom layer-derived globs while preserving manual domain literals', () => {
+test('buildPolicyDraft prunes stale custom layer-derived globs from policy-draft provenance', () => {
   const policy = {
     version: 1,
     order: ['api-integrated-ui'],
@@ -185,11 +185,22 @@ test('buildPolicyDraft prunes stale custom layer-derived globs while preserving 
         requires: [],
         allowed_paths: [
           'openapi.yaml',
-          'src/manual/{domain}/fixtures/**',
-          'src/data/{domain}/repositories/**',
+          'src/manual/{domain}/repositories/**',
+          'src/infra/{domain}/repos/**',
         ],
         forbidden_paths: [],
       },
+    },
+    x_policy_draft: {
+      version: 1,
+      generated_paths: [
+        {
+          mode: 'api-integrated-ui',
+          column: 'allowed_paths',
+          path: 'src/infra/{domain}/repos/**',
+          role: 'repository',
+        },
+      ],
     },
   };
   const layout = {
@@ -197,13 +208,7 @@ test('buildPolicyDraft prunes stale custom layer-derived globs while preserving 
     layers: [
       {
         role: 'repository',
-        glob: 'src/infra/{domain}/repos/**',
-        fact: 'dir_has_files',
-        access: { allow: ['api-integrated-ui'], forbid: [] },
-      },
-      {
-        role: 'view_model',
-        glob: 'src/presentation/{domain}/viewmodels/**',
+        glob: 'src/data/{domain}/repositories/**',
         fact: 'dir_has_files',
         access: { allow: ['api-integrated-ui'], forbid: [] },
       },
@@ -214,23 +219,78 @@ test('buildPolicyDraft prunes stale custom layer-derived globs while preserving 
 
   assert.deepEqual(result.draftPolicy.modes['api-integrated-ui'].allowed_paths, [
     'openapi.yaml',
-    'src/manual/{domain}/fixtures/**',
-    'src/infra/{domain}/repos/**',
-    'src/presentation/{domain}/viewmodels/**',
+    'src/manual/{domain}/repositories/**',
+    'src/data/{domain}/repositories/**',
   ]);
   assert.ok(
     result.diff.removed_paths.some(
       (row) =>
         row.mode === 'api-integrated-ui' &&
         row.column === 'allowed_paths' &&
-        row.path === 'src/data/{domain}/repositories/**',
+        row.path === 'src/infra/{domain}/repos/**',
     ),
   );
   assert.equal(
-    result.diff.removed_paths.some((row) => row.path === 'src/manual/{domain}/fixtures/**'),
+    result.diff.removed_paths.some((row) => row.path === 'src/manual/{domain}/repositories/**'),
     false,
   );
   assert.equal(result.diff.removed_paths.some((row) => row.path === 'openapi.yaml'), false);
+  assert.deepEqual(result.draftPolicy.x_policy_draft.generated_paths, [
+    {
+      mode: 'api-integrated-ui',
+      column: 'allowed_paths',
+      path: 'src/data/{domain}/repositories/**',
+      role: 'repository',
+    },
+  ]);
+});
+
+test('buildPolicyDraft preserves unprovenanced domain literals for manual review', () => {
+  const policy = {
+    version: 1,
+    order: ['api-integrated-ui'],
+    modes: {
+      'api-integrated-ui': {
+        requires: [],
+        allowed_paths: [
+          'src/manual/{domain}/repositories/**',
+          'src/infra/{domain}/repos/**',
+        ],
+        forbidden_paths: [],
+      },
+    },
+  };
+  const layout = {
+    roles: {},
+    layers: [
+      {
+        role: 'repository',
+        glob: 'src/data/{domain}/repositories/**',
+        fact: 'dir_has_files',
+        access: { allow: ['api-integrated-ui'], forbid: [] },
+      },
+    ],
+  };
+
+  const result = buildPolicyDraft({ policy, layout, date: '2026-06-23' });
+
+  assert.deepEqual(result.draftPolicy.modes['api-integrated-ui'].allowed_paths, [
+    'src/manual/{domain}/repositories/**',
+    'src/infra/{domain}/repos/**',
+    'src/data/{domain}/repositories/**',
+  ]);
+  assert.equal(result.diff.removed_paths.some((row) => row.path === 'src/manual/{domain}/repositories/**'), false);
+  assert.equal(result.diff.removed_paths.some((row) => row.path === 'src/infra/{domain}/repos/**'), false);
+  assert.ok(
+    result.manualDecisions.some((row) =>
+      String(row.reason).includes("literal 'src/manual/{domain}/repositories/**' is domain-scoped but has no policy-draft provenance"),
+    ),
+  );
+  assert.ok(
+    result.manualDecisions.some((row) =>
+      String(row.reason).includes("literal 'src/infra/{domain}/repos/**' is domain-scoped but has no policy-draft provenance"),
+    ),
+  );
 });
 
 test('buildPolicyDraft keeps literal guards when custom layer globs collide', () => {

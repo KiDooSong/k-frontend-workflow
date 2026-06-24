@@ -14,6 +14,8 @@ import { BUILT_IN_LAYER_ROLES } from './layer-inventory.mjs';
 
 export const DRAFT_POLICY_FILENAME = 'implementation-mode-policy.draft.yaml';
 export const MIGRATION_GUIDE_FILENAME = 'implementation-mode-policy.migration.md';
+const DRAFT_METADATA_KEY = 'x_policy_draft';
+const DRAFT_METADATA_VERSION = 1;
 
 function toPosix(p) {
   return String(p || '').split(path.sep).join('/').replace(/\\/g, '/');
@@ -112,42 +114,63 @@ function layerRemovableEntries(layer, roles) {
   return [...owned].filter(Boolean);
 }
 
-function normalizedName(value) {
-  return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+function columnKey(mode, column) {
+  return `${mode}:${column}`;
 }
 
-function rolePathAliases(role) {
-  const base = normalizedName(role);
-  if (!base) return new Set();
-  const aliases = new Set([base, `${base}s`]);
-  if (base.endsWith('y')) aliases.add(`${base.slice(0, -1)}ies`);
-  return aliases;
+function pathRowKey(row) {
+  return `${row.mode}:${row.column}:${toPosix(row.path)}:${row.role || ''}`;
 }
 
-function pathSegmentNames(entry) {
-  return String(entry || '')
-    .split('/')
-    .filter((segment) => segment && segment !== '**' && segment !== '*')
-    .map(normalizedName)
-    .filter(Boolean);
+function addGeneratedPathRow(rows, row) {
+  const next = {
+    mode: String(row.mode),
+    column: String(row.column),
+    path: toPosix(row.path),
+    role: String(row.role || ''),
+  };
+  if (!next.mode || !next.path) return;
+  if (!rows.some((existing) => pathRowKey(existing) === pathRowKey(next))) rows.push(next);
 }
 
-function isLegacyLayerGlobCandidate(entry, generatedLayers) {
-  const value = String(entry || '');
-  if (!value.includes('{domain}')) return false;
-  // Older drafts did not record per-path provenance, so only prune domain globs
-  // that look role-owned by a layer currently generating this mode/column.
-  const segments = pathSegmentNames(value);
-  return (generatedLayers || []).some((layer) => {
-    const aliases = rolePathAliases(layer?.role);
-    return segments.some((segment) => aliases.has(segment));
-  });
+function generatedPathRowsFromPolicy(policy) {
+  const rawRows = asArray(policy?.[DRAFT_METADATA_KEY]?.generated_paths);
+  const rows = [];
+  for (const row of rawRows) {
+    if (!row || typeof row !== 'object') continue;
+    const column = String(row.column || '');
+    if (column !== 'allowed_paths' && column !== 'forbidden_paths') continue;
+    addGeneratedPathRow(rows, {
+      mode: row.mode,
+      column,
+      path: row.path,
+      role: row.role || '',
+    });
+  }
+  return rows;
 }
 
-function addGeneratedLayer(map, key, layer) {
-  if (!map.has(key)) map.set(key, []);
-  const rows = map.get(key);
-  if (!rows.some((row) => row.role === layer.role)) rows.push({ role: layer.role });
+function generatedPathRowsByColumn(rows) {
+  const map = new Map();
+  for (const row of rows || []) {
+    const key = columnKey(row.mode, row.column);
+    addUnique(map, key, row.path);
+  }
+  return map;
+}
+
+function draftMetadata(generatedPathRows) {
+  const rows = generatedPathRows || [];
+  if (!rows.length) return null;
+  return {
+    version: DRAFT_METADATA_VERSION,
+    generated_paths: rows.map((row) => ({
+      mode: row.mode,
+      column: row.column,
+      path: row.path,
+      role: row.role,
+    })),
+  };
 }
 
 function layerIdentityKey(layer) {
@@ -221,7 +244,7 @@ function collectLayerProjection(policy, layout) {
   const allowByMode = new Map();
   const forbidByMode = new Map();
   const removableEntries = new Set();
-  const generatedLayersByColumn = new Map();
+  const generatedPathRows = [];
   const layerRows = [];
   const manualDecisions = [];
 
@@ -242,6 +265,7 @@ function collectLayerProjection(policy, layout) {
 
     for (const kind of ['allow', 'forbid']) {
       const target = kind === 'allow' ? allowByMode : forbidByMode;
+      const column = kind === 'allow' ? 'allowed_paths' : 'forbidden_paths';
       for (const mode of access[kind]) {
         if (!knownModes.has(mode)) {
           manualDecisions.push({
@@ -253,8 +277,15 @@ function collectLayerProjection(policy, layout) {
         }
         for (const entry of entries) {
           addUnique(target, mode, entry);
+          if (source === 'layer glob') {
+            addGeneratedPathRow(generatedPathRows, {
+              mode,
+              column,
+              path: entry,
+              role: layer.role,
+            });
+          }
         }
-        addGeneratedLayer(generatedLayersByColumn, `${mode}:${kind === 'allow' ? 'allowed_paths' : 'forbidden_paths'}`, layer);
       }
     }
 
@@ -270,12 +301,13 @@ function collectLayerProjection(policy, layout) {
     }
   }
 
-  return { allowByMode, forbidByMode, removableEntries, generatedLayersByColumn, layerRows, manualDecisions };
+  return { allowByMode, forbidByMode, removableEntries, generatedPathRows, layerRows, manualDecisions };
 }
 
-function mergeDraftPathList(existing, synthesized, removableEntries, generatedLayers = []) {
+function mergeDraftPathList(existing, synthesized, removableEntries, previousGeneratedEntries = []) {
   const synth = (synthesized || []).map(toPosix);
   const remaining = new Set(synth);
+  const previousGenerated = new Set((previousGeneratedEntries || []).map(toPosix));
   const out = [];
   const seen = new Set();
 
@@ -283,7 +315,7 @@ function mergeDraftPathList(existing, synthesized, removableEntries, generatedLa
     const entry = toPosix(raw);
     if (
       removableEntries.has(entry) ||
-      isLegacyLayerGlobCandidate(entry, generatedLayers)
+      previousGenerated.has(entry)
     ) {
       if (remaining.has(entry) && !seen.has(entry)) {
         out.push(entry);
@@ -307,11 +339,41 @@ function mergeDraftPathList(existing, synthesized, removableEntries, generatedLa
   return out;
 }
 
+function untrackedDomainLiteralDecisions(policy, projection) {
+  const previousByColumn = generatedPathRowsByColumn(generatedPathRowsFromPolicy(policy));
+  const modes = policy?.modes && typeof policy.modes === 'object' ? policy.modes : {};
+  const rows = [];
+  for (const modeName of orderedModeNames(policy)) {
+    const mode = modes[modeName] || {};
+    for (const column of ['allowed_paths', 'forbidden_paths']) {
+      const key = columnKey(modeName, column);
+      const synthesized =
+        column === 'allowed_paths'
+          ? new Set((projection.allowByMode.get(modeName) || []).map(toPosix))
+          : new Set((projection.forbidByMode.get(modeName) || []).map(toPosix));
+      if (!synthesized.size) continue;
+      const previousGenerated = new Set(previousByColumn.get(key) || []);
+      for (const raw of mode[column] || []) {
+        const entry = toPosix(raw);
+        if (!entry.includes('{domain}')) continue;
+        if (synthesized.has(entry) || previousGenerated.has(entry) || projection.removableEntries.has(entry)) continue;
+        rows.push({
+          role: '-',
+          mode: modeName,
+          reason: `${column} literal '${entry}' is domain-scoped but has no policy-draft provenance; preserved for manual review`,
+        });
+      }
+    }
+  }
+  return rows;
+}
+
 function cloneRequires(mode) {
   return Array.isArray(mode?.requires) ? mode.requires.slice() : [];
 }
 
 function buildDraftPolicy(policy, projection) {
+  const previousByColumn = generatedPathRowsByColumn(generatedPathRowsFromPolicy(policy));
   const modes = policy?.modes && typeof policy.modes === 'object' ? policy.modes : {};
   const outModes = {};
   for (const name of orderedModeNames(policy)) {
@@ -323,21 +385,25 @@ function buildDraftPolicy(policy, projection) {
         mode.allowed_paths || [],
         projection.allowByMode.get(name) || [],
         projection.removableEntries,
-        projection.generatedLayersByColumn.get(`${name}:allowed_paths`) || [],
+        previousByColumn.get(columnKey(name, 'allowed_paths')) || [],
       ),
       forbidden_paths: mergeDraftPathList(
         mode.forbidden_paths || [],
         projection.forbidByMode.get(name) || [],
         projection.removableEntries,
-        projection.generatedLayersByColumn.get(`${name}:forbidden_paths`) || [],
+        previousByColumn.get(columnKey(name, 'forbidden_paths')) || [],
       ),
     };
   }
-  return {
-    ...policy,
+  const { [DRAFT_METADATA_KEY]: _oldDraftMetadata, ...policyBase } = policy || {};
+  const nextMetadata = draftMetadata(projection.generatedPathRows);
+  const draft = {
+    ...policyBase,
     order: Array.isArray(policy?.order) ? policy.order.slice() : orderedModeNames(policy),
     modes: outModes,
   };
+  if (nextMetadata) draft[DRAFT_METADATA_KEY] = nextMetadata;
+  return draft;
 }
 
 function listDiff(before, after) {
@@ -396,7 +462,7 @@ export function buildPolicyDraft({ policy = {}, layout = {}, date = todayISO() }
     draftPolicy,
     diff,
     layerRows: projection.layerRows,
-    manualDecisions: projection.manualDecisions,
+    manualDecisions: [...projection.manualDecisions, ...untrackedDomainLiteralDecisions(policy, projection)],
   };
 }
 
