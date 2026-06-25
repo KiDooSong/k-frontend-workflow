@@ -292,7 +292,7 @@ implementation-mode-policy.migration.md
 | resolves-decision | 열린 `Open Decision`에 대한 선택을 제공 | 사용자 확인 후 `resolved` 처리 |
 | new-decision | 새 선택이 필요함 | `Open Decisions`에 `open` 행 추가 |
 | component-gap | 카탈로그에 없는 새 공통 컴포넌트가 필요(주로 figma·디자인 입력) | `Component Gap Register`(`global/component-gap-register.md`)에 `G-xxx` 를 `open` 으로 **제안만**. accept(카탈로그 반영)·구현은 사람 (게이트 내림 계열). 새 공통 컴포넌트 직접 생성은 llm-rules 금지 |
-| investigation-needed | 검증·실험·플랫폼 확인 없이는 결정 불가 | Investigation/Verification 생성(INV-/VER-) + 막을 화면에 Open Decision 을 올림 (investigation·Unknown 단독은 게이트 아님 — 게이트는 Open Decision). 상세: `investigation-and-verification.md` |
+| investigation-needed | 검증·실험·플랫폼 확인 없이는 결정 불가 | Register `Created Items` 에 `INV-`/`VER-` 포인터를 남기고, 필요한 증거·owner·검증 방법을 대상 ScreenSpec note 또는 review output에 적는다. 구현을 막아야 하면 별도 Open Decision 을 올린다. investigation/verification 자체와 Unknown 단독은 게이트가 아니며, green/failed evidence 만으로 confirmed 승격이나 decision resolve 를 하지 않는다. |
 | conflict | 기존 입력/문서와 충돌 | `Conflicts`에 기록(resolved 결정과 충돌이면 decision 재오픈) |
 | scope-unclear | 영향 범위가 불명확 | 막아야 하면 `Open Decisions`(게이트), 단순 확인이면 `Unknowns`(fact-finding)로 남김 |
 | reject-input | 새 입력을 반영하지 않기로 함 | Register `Result` 에 사유 기록, 문서는 유지 |

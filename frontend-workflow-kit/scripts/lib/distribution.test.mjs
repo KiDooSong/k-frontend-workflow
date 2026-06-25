@@ -13,6 +13,27 @@ function exists(rel, root) {
   return fs.existsSync(path.join(root, rel));
 }
 
+function walkPackedDocs(root, relDirs) {
+  const out = [];
+  for (const relDir of relDirs) {
+    const start = path.join(root, relDir);
+    if (!fs.existsSync(start)) continue;
+    const stack = [start];
+    while (stack.length) {
+      const dir = stack.pop();
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          stack.push(full);
+        } else if (entry.isFile() && /\.(md|ya?ml|json)$/i.test(entry.name)) {
+          out.push(full);
+        }
+      }
+    }
+  }
+  return out.sort((a, b) => a.localeCompare(b));
+}
+
 test('kit:pack copies only the consumer allowlist and writes a stable summary', (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-pack-'));
   t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
@@ -73,6 +94,30 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
   assert.deepEqual(summary.files, [...summary.files].sort((a, b) => a.localeCompare(b)));
   assert.ok(summary.excluded.some((entry) => entry.path === 'examples/**' && entry.classification === 'kit-dev-fixture'));
   assert.ok(summary.excluded.some((entry) => entry.path === 'docs/design/**' && entry.classification === 'design-draft'));
+});
+
+test('packed consumer-facing markdown does not link to excluded docs', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-pack-links-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const out = path.join(tmp, 'frontend-workflow-kit');
+
+  const r = spawnSync(process.execPath, [PACK_CLI, '--out', out, '--json'], {
+    cwd: KIT_ROOT,
+    encoding: 'utf8',
+  });
+  assert.equal(r.status, 0, r.stderr);
+
+  const scanned = walkPackedDocs(out, ['docs/reference', 'templates', 'skills']);
+  assert.ok(scanned.length > 0, 'expected packed consumer docs/templates/skills to be scanned');
+
+  for (const file of scanned) {
+    const rel = path.relative(out, file).replace(/\\/g, '/');
+    const raw = fs.readFileSync(file, 'utf8');
+    assert.doesNotMatch(raw, /investigation-and-verification\.md/, rel);
+    assert.doesNotMatch(raw, /docs\/workflows\//, rel);
+    assert.doesNotMatch(raw, /docs\/design\//, rel);
+    assert.doesNotMatch(raw, /\]\([^)]*(?:examples|temp)\//, rel);
+  }
 });
 
 test('kit:pack fails closed when an allowlisted source is missing', (t) => {
