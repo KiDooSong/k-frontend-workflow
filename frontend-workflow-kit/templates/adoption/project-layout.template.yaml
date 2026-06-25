@@ -1,7 +1,7 @@
 # project-layout.yaml — adoption-probe DRAFT ({PROJECT_LAYOUT_CONTEXT})
 # ─────────────────────────────────────────────────────────────────────────────
 # 이 파일은 adoption-probe 스킬이 산출하는 **초안**이다. 다음을 반드시 지킨다:
-#   - 산출 위치 = 프로브 출력 디렉토리(예: docs/frontend-workflow/_meta/adoption-probe/<id>/) — 소비 레포 루트에
+#   - 산출 위치 = 프로브 출력 디렉토리(예: temp/runs/adoption-probe-<id>/) — 소비 레포 루트에
 #     이걸 그대로 떨궈 라이브 게이트에 배선하지 않는다(배선=사람 결정, 별 작업).
 #   - Axis 1(role→glob 재바인딩)을 roles: 로 표현한다.
 #   - Axis 2(repository/usecase/entity/data-source/mapper/view-model 등 추가 계층)는 layers: 로

@@ -114,7 +114,7 @@ Start from `templates/meta/lint-policy.template.yaml`. See [docs/reference/lint-
 ## Adoption Probe
 
 ```bash
-npm run workflow:adoption-probe -- --repo apps/mobile --out docs/frontend-workflow/_meta/adoption-probe --id mobile-001
+npm run workflow:adoption-probe -- --repo apps/mobile --out temp/runs/adoption-probe-mobile-001 --id mobile-001
 ```
 
 Use adoption-probe for kit adoption assessment or dry-run reports. Treat its

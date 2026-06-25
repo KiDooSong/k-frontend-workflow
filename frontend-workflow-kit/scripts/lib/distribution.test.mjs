@@ -120,6 +120,26 @@ test('packed consumer-facing markdown does not link to excluded docs', (t) => {
   }
 });
 
+test('packed adoption-probe docs match the draft output contract', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-pack-adoption-docs-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const out = path.join(tmp, 'frontend-workflow-kit');
+
+  const r = spawnSync(process.execPath, [PACK_CLI, '--out', out, '--json'], {
+    cwd: KIT_ROOT,
+    encoding: 'utf8',
+  });
+  assert.equal(r.status, 0, r.stderr);
+
+  const commands = fs.readFileSync(path.join(out, 'COMMANDS.md'), 'utf8');
+  assert.match(commands, /--out temp\/runs\/adoption-probe-mobile-001 --id mobile-001/);
+  assert.doesNotMatch(commands, /docs\/frontend-workflow\/_meta\/adoption-probe/);
+
+  const layout = fs.readFileSync(path.join(out, 'templates', 'adoption', 'project-layout.template.yaml'), 'utf8');
+  assert.match(layout, /temp\/runs\/adoption-probe-<id>\//);
+  assert.doesNotMatch(layout, /docs\/frontend-workflow\/_meta\/adoption-probe/);
+});
+
 test('kit:pack fails closed when an allowlisted source is missing', (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-pack-missing-'));
   t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));

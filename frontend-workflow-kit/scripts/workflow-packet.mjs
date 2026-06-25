@@ -22,7 +22,7 @@ import { loadLayoutProfile } from './lib/layout-profile.mjs';
 
 const SELF_DIR = path.dirname(fileURLToPath(import.meta.url));
 const READINESS_SCRIPT = path.join(SELF_DIR, 'readiness.mjs');
-const AMBIGUITY_DOC = path.join(KIT_ROOT, 'docs', 'workflows', 'ambiguity-triage.md');
+const AMBIGUITY_DOC = path.join(KIT_ROOT, 'docs', 'reference', 'ambiguity-triage.md');
 
 function fail(msg) {
   process.stderr.write(`workflow:packet: ${msg}\n`);
