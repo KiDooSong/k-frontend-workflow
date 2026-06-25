@@ -372,6 +372,8 @@ test('P13: cellRoutes — prose/code/JSX false positive 를 라우트로 오인�
     ['see [spec.mjs](/Users/gidoo/project/frontend-workflow-kit/scripts/lib/spec.mjs:411)', []],
     ['see /home/runner/work/app/src/app/page.tsx', []],
     ['see [page](/home/runner/work/app/src/app/page.tsx:12)', []],
+    ['see /home/runner/work/app/frontend-workflow-kit/scripts/lib/spec.mjs', []],
+    ['see [spec.mjs](/home/runner/work/app/frontend-workflow-kit/scripts/lib/spec.mjs:411)', []],
   ];
   for (const [input, expected] of cases) {
     assert.deepEqual(cellRoutes(input), expected, input);
@@ -398,6 +400,7 @@ test('P13: cellRoutes — 정상 v1/v2 route token 은 보존한다', () => {
     ['/src/styles/global.css', ['/src/styles/global.css']],
     ['go to /src/styles/global.css', ['/src/styles/global.css']],
     ['/(home,search)/users/[id]', ['/(home,search)/users/[id]']],
+    ['/(+auth)/login', ['/(+auth)/login']],
   ];
   for (const [input, expected] of cases) {
     assert.deepEqual(cellRoutes(input), expected, input);
@@ -487,8 +490,10 @@ test('E2E: validate check 4 — v1 Result source file path 는 route 로 오인�
           '| root source | tap | see /src/app/page.tsx |',
           '| absolute source | tap | see /Users/gidoo/project/src/app/page.tsx |',
           '| linux ci source | tap | see /home/runner/work/app/src/app/page.tsx |',
+          '| linux ci package source | tap | see /home/runner/work/app/frontend-workflow-kit/scripts/lib/spec.mjs |',
           '| markdown source | tap | see [page](/Users/gidoo/project/src/app/page.tsx:12) |',
           '| markdown linux source | tap | see [page](/home/runner/work/app/src/app/page.tsx:12) |',
+          '| markdown linux package source | tap | see [spec.mjs](/home/runner/work/app/frontend-workflow-kit/scripts/lib/spec.mjs:411) |',
           '| markdown local file | tap | see [spec.mjs](/Users/gidoo/project/frontend-workflow-kit/scripts/lib/spec.mjs:411) |',
         ].join('\n'),
       }),
@@ -594,6 +599,27 @@ test('E2E: validate check 4 — comma route group target keeps exact route', () 
   }
 });
 
+test('E2E: validate check 4 — plus route group target keeps exact route', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check4-plus-group-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/domains/d/screens/login/screen-spec.md': screenSpec({
+        artifactId: 'LOGIN-001-screen-spec',
+        screenId: 'LOGIN-001',
+        route: '/(+auth)/login',
+        matrix: [
+          '| User Action | Trigger | Result | Result Type | Target | Params |',
+          '|---|---|---|---|---|---|',
+          '| open login | tap | 이동 | route | /(+auth)/login |  |',
+        ].join('\n'),
+      }),
+    });
+    assert.deepEqual(check4Errors(runValidate(root)), []);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('E2E: validate check 4 — route-tree style optional catch-all and dotted routes are validated', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check4-route-tree-tokens-'));
   try {
@@ -612,11 +638,12 @@ test('E2E: validate check 4 — route-tree style optional catch-all and dotted r
           '| home dynamic dotted route | tap | 이동 | route | /home/[id]/notes.ts |  |',
           '| src dotted route | tap | 이동 | route | /src/styles/global.css |  |',
           '| comma route group | tap | 이동 | route | /(home,search)/users/[id] |  |',
+          '| plus route group | tap | 이동 | route | /(+auth)/login |  |',
         ].join('\n'),
       }),
     });
     const messages = check4Errors(runValidate(root)).map((e) => e.message);
-    assert.equal(messages.length, 7);
+    assert.equal(messages.length, 8);
     assert.ok(messages.some((m) => m.includes('/docs/[[...slug]]')), 'optional catch-all target must be validated');
     assert.ok(messages.some((m) => m.includes('/legal/privacy.v2')), 'dotted literal target must be validated');
     assert.ok(messages.some((m) => m.includes('/release/notes.ts')), 'extension-like dotted route target must be validated');
@@ -624,6 +651,7 @@ test('E2E: validate check 4 — route-tree style optional catch-all and dotted r
     assert.ok(messages.some((m) => m.includes('/home/[id]/notes.ts')), 'home dynamic dotted route target must be validated');
     assert.ok(messages.some((m) => m.includes('/src/styles/global.css')), 'src dotted route target must be validated');
     assert.ok(messages.some((m) => m.includes('/(home,search)/users/[id]')), 'comma route group target must be validated');
+    assert.ok(messages.some((m) => m.includes('/(+auth)/login')), 'plus route group target must be validated');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

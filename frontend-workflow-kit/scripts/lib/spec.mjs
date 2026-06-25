@@ -402,7 +402,7 @@ function minApiConfidence(sectionText) {
 // 재사용해 "글자 단위 동일"을 구조적으로 보장한다(정규식 drift 불가, 검사 P13 동작 일치).
 // 넓은 "슬래시부터 공백까지" 매칭은 prose/JSX/code tail 오탐이 크므로, 시작 경계와 라우트
 // 세그먼트 문법을 함께 본다. 지원 세그먼트: literal, dotted.literal, (group), [id], [...slug], [[...slug]], :id.
-const ROUTE_GROUP_SEGMENT_RE = /^\([A-Za-z0-9][A-Za-z0-9._-]*(?:,[A-Za-z0-9][A-Za-z0-9._-]*)*\)/;
+const ROUTE_GROUP_SEGMENT_RE = /^\([^/\s)]+\)/;
 const ROUTE_OPTIONAL_SPREAD_SEGMENT_RE = /^\[\[\.\.\.[A-Za-z0-9_][A-Za-z0-9_-]*\]\]/;
 const ROUTE_SPREAD_SEGMENT_RE = /^\[\.\.\.[A-Za-z0-9_][A-Za-z0-9_-]*\]/;
 const ROUTE_DYNAMIC_SEGMENT_RE = /^\[[A-Za-z0-9_][A-Za-z0-9_-]*\]/;
@@ -461,10 +461,21 @@ function hasSourceFileContext(text, index) {
   return /(?:^|[\s([`])(?:see|source|file|path|ref|reference|참고|소스|파일|경로)\s*$/iu.test(before);
 }
 
+function isMarkdownLinkPathContext(text, index) {
+  return text.slice(0, index).trimEnd().endsWith('(');
+}
+
+function segmentCount(route) {
+  return route.split('/').filter(Boolean).length;
+}
+
 function isSourceFilePathRoute(route, text, index) {
   if (!ROUTE_LOCAL_FILE_EXTENSION_RE.test(route)) return false;
   if (route.startsWith('/src/')) return hasSourceFileContext(text, index);
-  if (ROUTE_HOME_ABSOLUTE_PATH_RE.test(route)) return route.includes('/src/') && hasSourceFileContext(text, index);
+  if (ROUTE_HOME_ABSOLUTE_PATH_RE.test(route)) {
+    if (isMarkdownLinkPathContext(text, index)) return true;
+    return hasSourceFileContext(text, index) && (route.includes('/src/') || segmentCount(route) >= 5);
+  }
   return ROUTE_LOCAL_ABSOLUTE_PATH_RE.test(route);
 }
 
