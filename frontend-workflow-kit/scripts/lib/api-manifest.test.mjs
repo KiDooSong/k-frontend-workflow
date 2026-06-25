@@ -104,6 +104,18 @@ function runValidate(root) {
     return JSON.parse(String((e && e.stdout) || ''));
   }
 }
+function symlinkOrSkip(t, target, linkPath, type) {
+  try {
+    fs.symlinkSync(target, linkPath, type);
+    return true;
+  } catch (e) {
+    if (['EACCES', 'EPERM', 'ENOSYS', 'ENOTSUP'].includes(e && e.code)) {
+      t.skip(`symlink unavailable on this platform: ${e.code}`);
+      return false;
+    }
+    throw e;
+  }
+}
 
 test('E2E: 검사 6은 codegen outputs[]의 TS ASCII GENERATED 헤더를 허용하고 handwritten hook은 건너뜀', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check6-codegen-'));
@@ -246,6 +258,71 @@ test('E2E: ts-type Source outside project does not satisfy contract evidence', (
       fs.rmSync(root, { recursive: true, force: true });
       fs.rmSync(outsideAbs, { force: true });
     }
+  }
+});
+test('E2E: ts-type Source symlink to outside file does not satisfy contract evidence', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check8-ts-symlink-file-'));
+  const outsideAbs = path.resolve(root, '..', `${path.basename(root)}-outside-types.ts`);
+  const linkRel = 'src/api/types/link.ts';
+  const linkAbs = path.join(root, linkRel);
+  try {
+    fs.writeFileSync(outsideAbs, 'export type OutsideResponse = { ok: true }\n', 'utf8');
+    writeTree(root, {
+      'docs/frontend-workflow/api/api-manifest.md': manifestDoc(
+        `| Method | Path | Operation ID | Confidence | Linked Contract | Contract Kind | Source |\n|---|---|---|---|---|---|---|\n| GET | /x | getX | confirmed | OutsideResponse | ts-type | ${linkRel} |`,
+      ),
+      'docs/frontend-workflow/domains/d/screens/s/screen-spec.md': SCREEN_CONFIRMED,
+    });
+    fs.mkdirSync(path.dirname(linkAbs), { recursive: true });
+    if (!symlinkOrSkip(t, outsideAbs, linkAbs, 'file')) return;
+
+    const c8 = (runValidate(root).errors || []).filter((e) => e.check === 8);
+    assert.equal(c8.length, 1);
+    assert.match(c8[0].message, /ts-type contract=OutsideResponse/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(outsideAbs, { force: true });
+  }
+});
+
+test('E2E: ts-type Source symlink to outside directory does not satisfy contract evidence', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check8-ts-symlink-dir-'));
+  const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check8-outside-types-'));
+  const linkRel = 'src/api/types/linked';
+  const linkAbs = path.join(root, linkRel);
+  try {
+    fs.writeFileSync(path.join(outsideDir, 'outside.ts'), 'export interface OutsideResponse { ok: true }\n', 'utf8');
+    writeTree(root, {
+      'docs/frontend-workflow/api/api-manifest.md': manifestDoc(
+        `| Method | Path | Operation ID | Confidence | Linked Contract | Contract Kind | Source |\n|---|---|---|---|---|---|---|\n| GET | /x | getX | confirmed | OutsideResponse | ts-type | ${linkRel} |`,
+      ),
+      'docs/frontend-workflow/domains/d/screens/s/screen-spec.md': SCREEN_CONFIRMED,
+    });
+    fs.mkdirSync(path.dirname(linkAbs), { recursive: true });
+    if (!symlinkOrSkip(t, outsideDir, linkAbs, 'dir')) return;
+
+    const c8 = (runValidate(root).errors || []).filter((e) => e.check === 8);
+    assert.equal(c8.length, 1);
+    assert.match(c8[0].message, /ts-type contract=OutsideResponse/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(outsideDir, { recursive: true, force: true });
+  }
+});
+test('E2E: comma-separated ts-type Source still scans project-local entries after missing paths', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check8-ts-comma-source-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/api/api-manifest.md': manifestDoc(
+        '| Method | Path | Operation ID | Confidence | Linked Contract | Contract Kind | Source |\n|---|---|---|---|---|---|---|\n| GET | /x | getX | confirmed | LocalResponse | ts-type | src/api/types/missing.ts, src/api/types/local.ts |',
+      ),
+      'docs/frontend-workflow/domains/d/screens/s/screen-spec.md': SCREEN_CONFIRMED,
+      'src/api/types/local.ts': 'export type LocalResponse = { ok: true }\n',
+    });
+    const c8 = (runValidate(root).errors || []).filter((e) => e.check === 8);
+    assert.deepEqual(c8, []);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });
 test('E2E: confirmed ts-type contract fails when type/interface export is missing', () => {

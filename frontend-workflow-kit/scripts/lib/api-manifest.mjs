@@ -158,6 +158,8 @@ function contractSourceFiles(source, projectRoot, extensions = ['.ts', '.tsx']) 
   if (isSchemaUnset(src)) return [];
   if (/^(openapi|manual|unknown|confluence|planning)$/i.test(src)) return [];
   const projectAbs = path.resolve(projectRoot || '.');
+  const projectReal = realpathOrNull(projectAbs);
+  if (!projectReal) return [];
   const parts = src
     .split(',')
     .map((p) => p.trim())
@@ -165,20 +167,29 @@ function contractSourceFiles(source, projectRoot, extensions = ['.ts', '.tsx']) 
   const files = [];
   for (const part of parts) {
     const abs = path.isAbsolute(part) ? path.resolve(part) : path.resolve(projectAbs, part);
-    if (!isInsidePath(abs, projectAbs)) continue;
+    const real = realpathOrNull(abs);
+    if (!real || !isInsidePath(real, projectReal)) continue;
     let st;
     try {
-      st = fs.statSync(abs);
+      st = fs.statSync(real);
     } catch {
       continue;
     }
     if (st.isDirectory()) {
-      for (const file of walkFiles(abs, extensions)) files.push(file);
-    } else if (st.isFile() && hasExtension(abs, extensions)) {
-      files.push(abs);
+      for (const file of walkFiles(real, extensions)) files.push(file);
+    } else if (st.isFile() && hasExtension(real, extensions)) {
+      files.push(real);
     }
   }
   return [...new Set(files)].sort();
+}
+
+function realpathOrNull(p) {
+  try {
+    return (fs.realpathSync.native || fs.realpathSync)(p);
+  } catch {
+    return null;
+  }
 }
 
 function isInsidePath(absPath, rootPath) {
