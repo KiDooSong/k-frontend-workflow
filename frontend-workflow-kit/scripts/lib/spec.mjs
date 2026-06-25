@@ -398,21 +398,85 @@ function minApiConfidence(sectionText) {
 }
 
 // --- Interaction Matrix 라우트 추출 (단일 출처) + v2 구조화(dual-read) ----------------------
-// 라우트 추출 정규식은 여기 한 곳에만 둔다 — nav-graph 와 validate(검사 4)가 모두 cellRoutes 를
+// 라우트 추출은 여기 한 곳에만 둔다 — nav-graph 와 validate(검사 4)가 모두 cellRoutes 를
 // 재사용해 "글자 단위 동일"을 구조적으로 보장한다(정규식 drift 불가, 검사 P13 동작 일치).
-//   (?<![:/\w]) : ':' '/' 단어문자 뒤가 아님 → URL 스킴(http://…)·protocol-relative(//…) 의 / 거부
-//   \/(?!\/)    : '/' 로 시작하되 바로 다음이 또 '/' 가 아님
-//   [^\s?#]+    : 공백·쿼리(?)·프래그먼트(#) 전까지 → 쿼리/프래그먼트 절단, 후행 prose 탈락
-// 매칭 후 후행 구두점 [),.;:] 제거, 길이 1(맨 '/')은 버린다. [id]/(tabs) 대괄호·괄호는 보존(후행 ')' 만 탈락).
-const ROUTE_RE = /(?<![:/\w])\/(?!\/)[^\s?#]+/g;
+// 넓은 "슬래시부터 공백까지" 매칭은 prose/JSX/code tail 오탐이 크므로, 시작 경계와 라우트
+// 세그먼트 문법을 함께 본다. 지원 세그먼트: literal, (group), [id], [...slug], :id.
+const ROUTE_GROUP_SEGMENT_RE = /^\([A-Za-z0-9][A-Za-z0-9._-]*\)/;
+const ROUTE_SPREAD_SEGMENT_RE = /^\[\.\.\.[A-Za-z0-9_][A-Za-z0-9_-]*\]/;
+const ROUTE_DYNAMIC_SEGMENT_RE = /^\[[A-Za-z0-9_][A-Za-z0-9_-]*\]/;
+const ROUTE_PARAM_SEGMENT_RE = /^:[A-Za-z_][A-Za-z0-9_-]*/;
+const ROUTE_LITERAL_SEGMENT_RE = /^[A-Za-z0-9_+][A-Za-z0-9_+~-]*/;
+
+function charBefore(text, index) {
+  const chars = Array.from(text.slice(Math.max(0, index - 2), index));
+  return chars.length ? chars[chars.length - 1] : '';
+}
+
+function charAt(text, index) {
+  return Array.from(text.slice(index, index + 2))[0] || '';
+}
+
+function isRouteStart(text, index) {
+  if (text[index] !== '/' || text[index + 1] === '/') return false;
+  const prev = charBefore(text, index);
+  // Unicode letter/number aware: "형식/마스킹" and "foo/bar" are word-internal, not routes.
+  return !prev || !/[\p{L}\p{N}_:/<]/u.test(prev);
+}
+
+function readRouteSegment(text, index) {
+  const rest = text.slice(index);
+  const match =
+    ROUTE_GROUP_SEGMENT_RE.exec(rest) ||
+    ROUTE_SPREAD_SEGMENT_RE.exec(rest) ||
+    ROUTE_DYNAMIC_SEGMENT_RE.exec(rest) ||
+    ROUTE_PARAM_SEGMENT_RE.exec(rest) ||
+    ROUTE_LITERAL_SEGMENT_RE.exec(rest);
+  if (!match) return null;
+  return { value: match[0], end: index + match[0].length };
+}
+
+function hasSafeRouteEnd(text, index) {
+  const next = charAt(text, index);
+  if (!next) return true;
+  if (/[\p{L}\p{N}_/]/u.test(next)) return false;
+  if (next === '.') {
+    const after = charAt(text, index + 1);
+    return !/[\p{L}\p{N}_]/u.test(after);
+  }
+  return true;
+}
+
+function readRouteToken(text, index) {
+  if (!isRouteStart(text, index)) return null;
+  let pos = index + 1;
+  const first = readRouteSegment(text, pos);
+  if (!first) return null;
+  let route = `/${first.value}`;
+  pos = first.end;
+
+  while (text[pos] === '/') {
+    const next = readRouteSegment(text, pos + 1);
+    if (!next) break;
+    route += `/${next.value}`;
+    pos = next.end;
+  }
+
+  if (!hasSafeRouteEnd(text, pos)) return null;
+  return { route, end: pos };
+}
 
 // 한 셀 텍스트에서 라우트(슬래시로 시작)들을 추출한다 — 라우트 추출 단일 출처.
 export function cellRoutes(cellText) {
   if (!cellText) return [];
+  const text = String(cellText);
   const routes = [];
-  for (const m of String(cellText).matchAll(ROUTE_RE)) {
-    const route = m[0].replace(/[),.;:]+$/, '');
-    if (route.length > 1) routes.push(route);
+  for (let i = 0; i < text.length; i += 1) {
+    if (text[i] !== '/') continue;
+    const token = readRouteToken(text, i);
+    if (!token) continue;
+    routes.push(token.route);
+    i = token.end - 1;
   }
   return routes;
 }
@@ -440,8 +504,8 @@ function isConcreteTargetRoute(r) {
   return r === '/' || isConcreteRoute(r);
 }
 
-// Interaction Matrix 의 Result 컬럼에서 라우트들을 추출 (검사 4 전용 — v1 free-form 경로, 불변).
-// v2 표라도 검사 4 는 Result 셀만 본다(byte-identical 보존 + warning-first: v2 route 점검은 검사 13).
+// Interaction Matrix 의 Result 컬럼에서 라우트들을 추출 (v1 free-form/backcompat helper).
+// validate 검사 4 는 interactionEdgeRoutes 를 써서 v2 Target 을 hard gate 입력으로 삼는다.
 export function interactionResultRoutes(spec) {
   const table = parseTable(spec.sections['interaction matrix']);
   if (!table) return [];

@@ -58,15 +58,18 @@ last_reviewed: "{YYYY-MM-DD}"
 
 ## Interaction Matrix
 <!-- 화면 이동 엣지의 단일 선언 지점. 여기 적은 이동이 대상 화면 Entry Points 로 집계된다.
-     Result 컬럼은 비워두지 않는다 (이동이면 라우트, 상태변경이면 동작을 적는다).
+     Result 컬럼은 비워두지 않는다 (이동이면 명시적 라우트 토큰, 상태변경이면 동작을 적는다).
+     v1 free-form Result 에서 라우트는 `/route`처럼 독립 토큰으로, 가능하면 backtick 으로 감싼다.
+     자연어의 슬래시 표현(예: 형식/마스킹)은 라우트 근거가 아니다.
 
      (선택) v2 구조화 컬럼 — 아래 4컬럼 사이에 Result Type | Target | Params 를 더 추가하면 라우트를 명시적으로 분리할 수 있다.
        · Result Type 값: route | state | mutation | external | none (제안값).
-       · Result Type=route 행은 nav-graph 가 Target 셀에서 라우트를 읽는다(자연어 Result 의 라우트 오탐 제거).
+       · Result Type=route 행은 nav-graph 와 validate 검사 4가 Target 셀에서 라우트를 읽는다.
+         코드 예시/자연어 Result 는 Target 이 있을 때 canonical route source 가 아니다.
          비-route 행(state/mutation/external/none)은 이동 엣지를 만들지 않는다.
        · v2 컬럼이 없으면 기존 v1 Result 파싱으로 그대로 동작한다(완전 하위호환 — 표 단위로 자동 판정).
        · 미확정 이동 대상은 Target 을 추측해 채우지 말고 candidate 표기/Open Decision 으로 남긴다(LLM 승격 금지).
-       · validate 는 v2 형식 문제를 경고(warning-first)로만 알린다 — 차단하지 않는다. -->
+       · validate 는 v2 형식 문제(검사 13)를 경고(warning-first)로만 알린다 — 차단하지 않는다. -->
 | User Action | Trigger | Result | Analytics Event |
 |---|---|---|---|
 | {액션} | {트리거} | {결과/라우트} | {이벤트 또는 -} |
