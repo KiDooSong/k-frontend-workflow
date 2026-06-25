@@ -407,7 +407,7 @@ const ROUTE_OPTIONAL_SPREAD_SEGMENT_RE = /^\[\[\.\.\.[A-Za-z0-9_][A-Za-z0-9_-]*\
 const ROUTE_SPREAD_SEGMENT_RE = /^\[\.\.\.[A-Za-z0-9_][A-Za-z0-9_-]*\]/;
 const ROUTE_DYNAMIC_SEGMENT_RE = /^\[[A-Za-z0-9_][A-Za-z0-9_-]*\]/;
 const ROUTE_PARAM_SEGMENT_RE = /^:[A-Za-z_][A-Za-z0-9_-]*/;
-const ROUTE_LITERAL_SEGMENT_RE = /^[A-Za-z0-9_+](?:[A-Za-z0-9_+~-]|\.(?=[A-Za-z0-9_+~-]))*/;
+const ROUTE_LITERAL_SEGMENT_RE = /^[A-Za-z0-9_+-](?:[A-Za-z0-9_+~-]|\.(?=[A-Za-z0-9_+~-]))*/;
 const ROUTE_LOCAL_ABSOLUTE_PATH_RE = /^\/(?:Users|private|tmp|var|opt|Volumes)\//;
 const ROUTE_HOME_ABSOLUTE_PATH_RE = /^\/home\/[^/]+\//;
 const ROUTE_LOCAL_FILE_EXTENSION_RE = /\.(?:[cm]?[jt]sx?|mdx?|ya?ml|json|css|scss|sass|less|html)$/i;

@@ -394,6 +394,7 @@ test('P13: cellRoutes — 정상 v1/v2 route token 은 보존한다', () => {
     ['/legal/privacy.v2', ['/legal/privacy.v2']],
     ['/legal/privacy.v2.', ['/legal/privacy.v2']],
     ['/release/notes.ts', ['/release/notes.ts']],
+    ['/-debug', ['/-debug']],
     ['/home/alice/notes.ts', ['/home/alice/notes.ts']],
     ['/home/[id]/notes.ts', ['/home/[id]/notes.ts']],
     ['see /home/alice/notes.ts', ['/home/alice/notes.ts']],
@@ -634,6 +635,7 @@ test('E2E: validate check 4 — route-tree style optional catch-all and dotted r
           '| optional catch-all | tap | 이동 | route | /docs/[[...slug]] |  |',
           '| dotted literal | tap | 이동 | route | /legal/privacy.v2 |  |',
           '| dotted extension-like literal | tap | 이동 | route | /release/notes.ts |  |',
+          '| leading hyphen literal | tap | 이동 | route | /-debug |  |',
           '| home literal dotted route | tap | 이동 | route | /home/alice/notes.ts |  |',
           '| home dynamic dotted route | tap | 이동 | route | /home/[id]/notes.ts |  |',
           '| src dotted route | tap | 이동 | route | /src/styles/global.css |  |',
@@ -643,10 +645,11 @@ test('E2E: validate check 4 — route-tree style optional catch-all and dotted r
       }),
     });
     const messages = check4Errors(runValidate(root)).map((e) => e.message);
-    assert.equal(messages.length, 8);
+    assert.equal(messages.length, 9);
     assert.ok(messages.some((m) => m.includes('/docs/[[...slug]]')), 'optional catch-all target must be validated');
     assert.ok(messages.some((m) => m.includes('/legal/privacy.v2')), 'dotted literal target must be validated');
     assert.ok(messages.some((m) => m.includes('/release/notes.ts')), 'extension-like dotted route target must be validated');
+    assert.ok(messages.some((m) => m.includes('/-debug')), 'leading hyphen literal target must be validated');
     assert.ok(messages.some((m) => m.includes('/home/alice/notes.ts')), 'home dotted route target must be validated');
     assert.ok(messages.some((m) => m.includes('/home/[id]/notes.ts')), 'home dynamic dotted route target must be validated');
     assert.ok(messages.some((m) => m.includes('/src/styles/global.css')), 'src dotted route target must be validated');
