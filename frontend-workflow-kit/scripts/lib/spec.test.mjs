@@ -10,11 +10,14 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
 import {
   parseTable,
   parseTables,
   parseOpenDecisions,
   parseCopyKeys,
+  cellRoutes,
   interactionResultRoutes,
   interactionMatrixIsV2,
   interactionRowRoutes,
@@ -26,9 +29,59 @@ import {
 import { computeReadiness } from '../readiness.mjs';
 import { buildState } from '../workflow-state.mjs';
 
+const VALIDATE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'validate.mjs');
+
 // 한 줄 헬퍼: Interaction Matrix 표 텍스트로 spec-유사 객체를 만든다(섹션 파서가 보는 형태).
 function specWithMatrix(lines) {
   return { sections: { 'interaction matrix': lines.join('\n') }, path: 'test/screen-spec.md' };
+}
+
+function writeTree(root, files) {
+  for (const [rel, content] of Object.entries(files)) {
+    const p = path.join(root, rel);
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, content, 'utf8');
+  }
+  fs.mkdirSync(path.join(root, 'src'), { recursive: true });
+}
+
+function runValidate(root) {
+  const args = [VALIDATE, '--docs', path.join(root, 'docs', 'frontend-workflow'), '--src', path.join(root, 'src'), '--json'];
+  try {
+    return JSON.parse(execFileSync(process.execPath, args, { encoding: 'utf8' }));
+  } catch (e) {
+    return JSON.parse(String((e && e.stdout) || ''));
+  }
+}
+
+function screenSpec({ artifactId, screenId, route, matrix }) {
+  return [
+    '---',
+    `artifact_id: ${artifactId}`,
+    'artifact_type: screen-spec',
+    'domain: d',
+    `screen_id: ${screenId}`,
+    `route: ${route}`,
+    'status: draft',
+    '---',
+    `# ${screenId}`,
+    '',
+    '## Entry Points',
+    '<!-- GENERATED:START nav-graph -->',
+    '<!-- GENERATED:END nav-graph -->',
+    '',
+    '## Interaction Matrix',
+    matrix,
+    '',
+  ].join('\n');
+}
+
+function basicMatrix(result) {
+  return ['| User Action | Trigger | Result |', '|---|---|---|', `| a | tap | ${result} |`].join('\n');
+}
+
+function check4Errors(result) {
+  return (result.errors || []).filter((e) => e.check === 4);
 }
 
 test('P1: 범례 표 뒤 빈 줄로 분리된 진짜 Open Decisions 표가 증발하지 않는다', () => {
@@ -292,6 +345,69 @@ test('P13: interactionResultRoutes — 다중 라우트 추출 · 후행 구두�
   assert.deepEqual(interactionResultRoutes(spec), ['/coupons/[id]', '/home', '/list']);
 });
 
+test('P13: cellRoutes — prose/code/JSX false positive 를 라우트로 오인하지 않는다', () => {
+  const cases = [
+    ["`router.replace('/reset/send-code')`(L310)", ['/reset/send-code']],
+    ["`/login')`(L010", ['/login']],
+    ['표시 형식/마스킹 처리', []],
+    ['/마스킹 /형식 /가입', []],
+    ['`/signup/email` 로 이동', ['/signup/email']],
+    ['`/signup/email`` 로 이동', ['/signup/email']],
+    ["<Redirect href='/signup' />(J010)", ['/signup']],
+    ['`/>`(J020)', []],
+    ['컴포넌트 `/`setPasswordConfirm` 설명', []],
+    ['http://example.com/path and //cdn/path', []],
+    ['see ./src/app/page.tsx', []],
+    ['see ../src/app/page.tsx', []],
+    ['see /src/app/page.tsx', []],
+    ['see /src/[id]/page.tsx', []],
+    ['see /src/styles/global.css', []],
+    ['see /src/docs/readme.md', []],
+    ['see /src/config/app.json', []],
+    ['see [style](/src/styles/global.css:1)', []],
+    ['see ./src/app/privacy.v2.tsx', []],
+    ['see /Users/gidoo/project/src/app/page.tsx', []],
+    ['see [page](/Users/gidoo/project/src/app/page.tsx:12)', []],
+    ['see [page](/Users/gidoo/project/src/app/[id]/page.tsx:12)', []],
+    ['see [spec.mjs](/Users/gidoo/project/frontend-workflow-kit/scripts/lib/spec.mjs:411)', []],
+    ['see /home/runner/work/app/src/app/page.tsx', []],
+    ['see [page](/home/runner/work/app/src/app/page.tsx:12)', []],
+    ['see /home/runner/work/app/frontend-workflow-kit/scripts/lib/spec.mjs', []],
+    ['see [spec.mjs](/home/runner/work/app/frontend-workflow-kit/scripts/lib/spec.mjs:411)', []],
+  ];
+  for (const [input, expected] of cases) {
+    assert.deepEqual(cellRoutes(input), expected, input);
+  }
+});
+
+test('P13: cellRoutes — 정상 v1/v2 route token 은 보존한다', () => {
+  const cases = [
+    ['/login', ['/login']],
+    ['`/login`', ['/login']],
+    ["router.replace('/login')", ['/login']],
+    ['/users/[id]', ['/users/[id]']],
+    ['/users/[...slug]', ['/users/[...slug]']],
+    ['/[[...slug]]', ['/[[...slug]]']],
+    ['/docs/[[...slug]]', ['/docs/[[...slug]]']],
+    ['/(auth)/login', ['/(auth)/login']],
+    ['/users/:id', ['/users/:id']],
+    ['/legal/privacy.v2', ['/legal/privacy.v2']],
+    ['/legal/privacy.v2.', ['/legal/privacy.v2']],
+    ['/release/notes.ts', ['/release/notes.ts']],
+    ['/-debug', ['/-debug']],
+    ['/home/alice/notes.ts', ['/home/alice/notes.ts']],
+    ['/home/[id]/notes.ts', ['/home/[id]/notes.ts']],
+    ['see /home/alice/notes.ts', ['/home/alice/notes.ts']],
+    ['/src/styles/global.css', ['/src/styles/global.css']],
+    ['go to /src/styles/global.css', ['/src/styles/global.css']],
+    ['/(home,search)/users/[id]', ['/(home,search)/users/[id]']],
+    ['/(+auth)/login', ['/(+auth)/login']],
+  ];
+  for (const [input, expected] of cases) {
+    assert.deepEqual(cellRoutes(input), expected, input);
+  }
+});
+
 // === Interaction Matrix v2 (structured, dual-read) ===========================================
 
 test('v2: Result Type 헤더 유무로 v1/v2 모드를 판정한다', () => {
@@ -329,7 +445,7 @@ test('v2: interactionEdgeRoutes — v1 표는 interactionResultRoutes 와 동일
   assert.deepEqual(interactionEdgeRoutes(v1), ['/coupons/[id]']);
 });
 
-test('v2: interactionEdgeRoutes 는 Target 을, 검사 4(interactionResultRoutes)는 여전히 Result 를 본다', () => {
+test('v2: interactionEdgeRoutes 는 Target 을, interactionResultRoutes 는 legacy Result helper 로 남는다', () => {
   // v2 표에서 라우트가 Target 에만 있고 Result 는 자연어인 경우.
   const v2 = specWithMatrix([
     '| User Action | Trigger | Result | Result Type | Target | Params | Analytics Event |',
@@ -339,8 +455,209 @@ test('v2: interactionEdgeRoutes 는 Target 을, 검사 4(interactionResultRoutes
   ]);
   // nav-graph 경로: Target 에서 라우트.
   assert.deepEqual(interactionEdgeRoutes(v2), ['/coupons/[id]']);
-  // 검사 4 경로: Result 셀만 → 자연어라 라우트 0개(검사 4 byte-identical·warning-first 보장).
+  // legacy helper: Result 셀만 → 자연어라 라우트 0개. validate 검사 4 는 interactionEdgeRoutes 를 쓴다.
   assert.deepEqual(interactionResultRoutes(v2), []);
+});
+
+test('E2E: validate check 4 — v1 Result prose slash fragment 는 hard error 로 승격하지 않는다', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check4-v1-prose-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/domains/d/screens/home/screen-spec.md': screenSpec({
+        artifactId: 'HOME-001-screen-spec',
+        screenId: 'HOME-001',
+        route: '/home',
+        matrix: basicMatrix('표시 형식/마스킹 처리'),
+      }),
+    });
+    assert.deepEqual(check4Errors(runValidate(root)), []);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('E2E: validate check 4 — v1 Result source file path 는 route 로 오인하지 않는다', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check4-v1-source-path-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/domains/d/screens/home/screen-spec.md': screenSpec({
+        artifactId: 'HOME-001-screen-spec',
+        screenId: 'HOME-001',
+        route: '/home',
+        matrix: [
+          '| User Action | Trigger | Result |',
+          '|---|---|---|',
+          '| relative source | tap | see ./src/app/page.tsx |',
+          '| root source | tap | see /src/app/page.tsx |',
+          '| absolute source | tap | see /Users/gidoo/project/src/app/page.tsx |',
+          '| linux ci source | tap | see /home/runner/work/app/src/app/page.tsx |',
+          '| linux ci package source | tap | see /home/runner/work/app/frontend-workflow-kit/scripts/lib/spec.mjs |',
+          '| markdown source | tap | see [page](/Users/gidoo/project/src/app/page.tsx:12) |',
+          '| markdown linux source | tap | see [page](/home/runner/work/app/src/app/page.tsx:12) |',
+          '| markdown linux package source | tap | see [spec.mjs](/home/runner/work/app/frontend-workflow-kit/scripts/lib/spec.mjs:411) |',
+          '| markdown local file | tap | see [spec.mjs](/Users/gidoo/project/frontend-workflow-kit/scripts/lib/spec.mjs:411) |',
+        ].join('\n'),
+      }),
+    });
+    assert.deepEqual(check4Errors(runValidate(root)), []);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('E2E: validate check 4 — v1 backticked route 는 screen inventory 로 검증한다', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check4-v1-route-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/domains/d/screens/home/screen-spec.md': screenSpec({
+        artifactId: 'HOME-001-screen-spec',
+        screenId: 'HOME-001',
+        route: '/home',
+        matrix: basicMatrix('`/login` 로 이동'),
+      }),
+      'docs/frontend-workflow/domains/d/screens/login/screen-spec.md': screenSpec({
+        artifactId: 'LOGIN-001-screen-spec',
+        screenId: 'LOGIN-001',
+        route: '/login',
+        matrix: basicMatrix('stay'),
+      }),
+    });
+    assert.deepEqual(check4Errors(runValidate(root)), []);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('E2E: validate check 4 — v2 route 행은 Result prose 대신 Target 을 hard gate 입력으로 쓴다', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check4-v2-target-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/domains/d/screens/home/screen-spec.md': screenSpec({
+        artifactId: 'HOME-001-screen-spec',
+        screenId: 'HOME-001',
+        route: '/home',
+        matrix: [
+          '| User Action | Trigger | Result | Result Type | Target | Params |',
+          '|---|---|---|---|---|---|',
+          '| a | tap | legacy prose `/login` | route | /missing |  |',
+        ].join('\n'),
+      }),
+      'docs/frontend-workflow/domains/d/screens/login/screen-spec.md': screenSpec({
+        artifactId: 'LOGIN-001-screen-spec',
+        screenId: 'LOGIN-001',
+        route: '/login',
+        matrix: basicMatrix('stay'),
+      }),
+    });
+    const errors = check4Errors(runValidate(root));
+    assert.equal(errors.length, 1);
+    assert.match(errors[0].message, /\/missing/);
+    assert.doesNotMatch(errors[0].message, /\/login/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('E2E: validate check 4 — v2 explicit non-route Result prose 는 hard gate 입력이 아니다', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check4-v2-nonroute-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/domains/d/screens/home/screen-spec.md': screenSpec({
+        artifactId: 'HOME-001-screen-spec',
+        screenId: 'HOME-001',
+        route: '/home',
+        matrix: [
+          '| User Action | Trigger | Result | Result Type | Target | Params |',
+          '|---|---|---|---|---|---|',
+          "| a | tap | code `router.replace('/missing')` shown as explanation | state |  |  |",
+        ].join('\n'),
+      }),
+    });
+    assert.deepEqual(check4Errors(runValidate(root)), []);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('E2E: validate check 4 — comma route group target keeps exact route', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check4-comma-group-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/domains/d/screens/user/screen-spec.md': screenSpec({
+        artifactId: 'USER-001-screen-spec',
+        screenId: 'USER-001',
+        route: '/(home,search)/users/[id]',
+        matrix: [
+          '| User Action | Trigger | Result | Result Type | Target | Params |',
+          '|---|---|---|---|---|---|',
+          '| open user | tap | 이동 | route | /(home,search)/users/[id] |  |',
+        ].join('\n'),
+      }),
+    });
+    assert.deepEqual(check4Errors(runValidate(root)), []);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('E2E: validate check 4 — plus route group target keeps exact route', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check4-plus-group-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/domains/d/screens/login/screen-spec.md': screenSpec({
+        artifactId: 'LOGIN-001-screen-spec',
+        screenId: 'LOGIN-001',
+        route: '/(+auth)/login',
+        matrix: [
+          '| User Action | Trigger | Result | Result Type | Target | Params |',
+          '|---|---|---|---|---|---|',
+          '| open login | tap | 이동 | route | /(+auth)/login |  |',
+        ].join('\n'),
+      }),
+    });
+    assert.deepEqual(check4Errors(runValidate(root)), []);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('E2E: validate check 4 — route-tree style optional catch-all and dotted routes are validated', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check4-route-tree-tokens-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/domains/d/screens/home/screen-spec.md': screenSpec({
+        artifactId: 'HOME-001-screen-spec',
+        screenId: 'HOME-001',
+        route: '/home',
+        matrix: [
+          '| User Action | Trigger | Result | Result Type | Target | Params |',
+          '|---|---|---|---|---|---|',
+          '| optional catch-all | tap | 이동 | route | /docs/[[...slug]] |  |',
+          '| dotted literal | tap | 이동 | route | /legal/privacy.v2 |  |',
+          '| dotted extension-like literal | tap | 이동 | route | /release/notes.ts |  |',
+          '| leading hyphen literal | tap | 이동 | route | /-debug |  |',
+          '| home literal dotted route | tap | 이동 | route | /home/alice/notes.ts |  |',
+          '| home dynamic dotted route | tap | 이동 | route | /home/[id]/notes.ts |  |',
+          '| src dotted route | tap | 이동 | route | /src/styles/global.css |  |',
+          '| comma route group | tap | 이동 | route | /(home,search)/users/[id] |  |',
+          '| plus route group | tap | 이동 | route | /(+auth)/login |  |',
+        ].join('\n'),
+      }),
+    });
+    const messages = check4Errors(runValidate(root)).map((e) => e.message);
+    assert.equal(messages.length, 9);
+    assert.ok(messages.some((m) => m.includes('/docs/[[...slug]]')), 'optional catch-all target must be validated');
+    assert.ok(messages.some((m) => m.includes('/legal/privacy.v2')), 'dotted literal target must be validated');
+    assert.ok(messages.some((m) => m.includes('/release/notes.ts')), 'extension-like dotted route target must be validated');
+    assert.ok(messages.some((m) => m.includes('/-debug')), 'leading hyphen literal target must be validated');
+    assert.ok(messages.some((m) => m.includes('/home/alice/notes.ts')), 'home dotted route target must be validated');
+    assert.ok(messages.some((m) => m.includes('/home/[id]/notes.ts')), 'home dynamic dotted route target must be validated');
+    assert.ok(messages.some((m) => m.includes('/src/styles/global.css')), 'src dotted route target must be validated');
+    assert.ok(messages.some((m) => m.includes('/(home,search)/users/[id]')), 'comma route group target must be validated');
+    assert.ok(messages.some((m) => m.includes('/(+auth)/login')), 'plus route group target must be validated');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('v2 issues: v1 표는 항상 빈 배열(v2 점검 무발화 → v1 출력 불변)', () => {

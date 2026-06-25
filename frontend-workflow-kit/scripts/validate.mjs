@@ -4,7 +4,7 @@
 //   1. frontmatter ↔ frontmatter.schema.json
 //   2. artifact-manifest 기준 필수 frontmatter 누락
 //   3. 끊어진 참조 (depends_on 대상 부재, sources 로컬 파일 부재)
-//   4. 이동 대상 부재 (Interaction Matrix Result route 가 inventory 에 없음)
+//   4. 이동 대상 부재 (Interaction Matrix route target 이 inventory 에 없음)
 //   5. screen_id 중복, route 중복
 //   6. do_not_edit 산출물의 GENERATED 헤더/마커 훼손
 //   7. confirmed 문서의 승인 메타데이터(approved_by/approved_at) 누락
@@ -49,7 +49,7 @@ import { loadLayoutProfile } from './lib/layout-profile.mjs';
 import {
   loadScreenSpec,
   parseApiCandidates,
-  interactionResultRoutes,
+  interactionEdgeRoutes,
   interactionMatrixV2Issues,
   parseOpenDecisions,
   parseCopyKeys,
@@ -313,9 +313,11 @@ function main() {
   for (const [r, n] of routeCount)
     if (n > 1) add(5, path.join(docsDir, 'domains'), `route 중복: ${r} (${n}건)`);
 
-  // 4. Interaction Matrix Result route 가 inventory(route 집합)에 있는지
+  // 4. Interaction Matrix route target 이 inventory(route 집합)에 있는지
+  //    v1 표는 free-form Result 를 읽고, v2 표는 Result Type=route 행의 Target 을 읽는다.
+  //    명시적 비-route v2 행(state/mutation/external/none)의 Result prose 는 하드 게이트 입력이 아니다.
   for (const spec of specs) {
-    const targets = interactionResultRoutes(spec);
+    const targets = interactionEdgeRoutes(spec);
     for (const t of targets) {
       if (!routeSet.has(t)) {
         add(4, spec.path, `Interaction Matrix 이동 대상 route 가 화면에 없음: ${t}`);
@@ -578,7 +580,7 @@ function main() {
     }
   }
 
-  // 13. Interaction Matrix v2(structured) 형식 — warning-first (검사 4·게이트 불변, 하드 게이트 없음).
+  // 13. Interaction Matrix v2(structured) 형식 — warning-first (검사 13 자체는 하드 게이트 없음).
   //     Result Type 헤더가 있는 표(v2 모드)만 점검한다 → v1 표는 무발화 = v1 validate 출력 byte-identical.
   //     enum/route 행 Target 부재/비-route 행 라우트 토큰/Result↔Target drift 를 경고로 surface.
   //     route-tree.txt 가 있으면 Result Type=route Target 과 route token 을 EXACT 교차검증한다.
