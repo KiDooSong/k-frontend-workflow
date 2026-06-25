@@ -3,6 +3,8 @@
 Run commands from the consumer repository root after copying the packed payload
 to `tools/frontend-workflow/` and merging `package-scripts.template.json`.
 
+Start task routing from [docs/reference/task-artifact-matrix.md](docs/reference/task-artifact-matrix.md). For `generated/do_not_edit` files, use [docs/reference/generated-files.md](docs/reference/generated-files.md).
+
 ## Daily Loop
 
 ```bash
@@ -65,11 +67,10 @@ npm run workflow:route-tree
 npm run workflow:nav-graph
 npm run workflow:catalog
 npm run workflow:route-cross-check
+npm run workflow:check-generated
 ```
 
-These commands produce read-only metadata under `docs/frontend-workflow/_meta/`
-or compare existing metadata. They do not approve design decisions or replace
-readiness/validate gates.
+These commands produce read-only metadata under `docs/frontend-workflow/_meta/`, regenerate the component catalog, or compare existing metadata. They do not approve design decisions or replace readiness/validate gates. `workflow:check-generated` is warning-first: it reports generated-file drift without overwriting files or failing on mismatches.
 
 ## Implementation Packets
 
@@ -99,6 +100,15 @@ npm run workflow:forbidden-paths -- --diff changes.diff --docs docs/frontend-wor
 ```
 
 Without `--enforce`, path findings are reported without failing the command.
+
+## Post-Task Checklist
+
+```bash
+npm run workflow:validate
+npm run workflow:check-generated
+```
+
+Always run `workflow:validate` before finishing. Run `workflow:check-generated` when route, nav, catalog, codegen, lint, policy, or layout sources changed, or when a task in the matrix says a generated view may be stale. The command is advisory and must not be treated as a hard CI gate unless a separate human decision promotes it.
 
 ## Lint Adoption
 

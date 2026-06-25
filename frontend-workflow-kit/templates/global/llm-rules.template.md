@@ -13,6 +13,12 @@ last_reviewed: "{YYYY-MM-DD}"
 
 # Frontend AI Rules
 
+## 문서 역할
+- 레포 root `AGENTS.md` / `CLAUDE.md`: LLM session starting point.
+- 이 파일: 프로젝트 정책 규칙과 우선순위 규칙.
+- task-artifact matrix: 작업별 추가 산출물/재생성 체크리스트.
+- generated-files guide: `generated/do_not_edit` 파일의 재생성 명령표.
+
 ## 판단 금지 (문서 기반으로만)
 - API endpoint, request, response 는 추측하지 않는다. 확정 정보가 없으면 candidate/unknown 으로 표시하고 구현하지 않는다.
 - 화면 구현 전 해당 화면의 ScreenSpec 을 먼저 읽는다.
@@ -33,11 +39,13 @@ last_reviewed: "{YYYY-MM-DD}"
 
 ## 참조 경로
 - 화면 계약: docs/frontend-workflow/domains/{domain}/screens/{screen}/screen-spec.md
-- 컴포넌트 카탈로그: docs/frontend-workflow/design/component-catalog.md (자동 생성)
+- 컴포넌트 카탈로그: docs/frontend-workflow/design/component-catalog.md (자동 생성; generated-files guide의 명령으로 재생성)
 - API: openapi.yaml (확정분) / docs/frontend-workflow/api/api-manifest.md (미확정분)
 - 네비게이션: docs/frontend-workflow/app/navigation-map.md (뼈대)
 - 컴포넌트 갭(새 공통 컴포넌트 제안): docs/frontend-workflow/global/component-gap-register.md
 - 충돌 기록: docs/frontend-workflow/global/conflicts.md
+- 작업별 산출물 체크: tools/frontend-workflow/docs/reference/task-artifact-matrix.md
+- 생성 파일 재생성 표: tools/frontend-workflow/docs/reference/generated-files.md
 
 ## 구현 범위
 - 구현 전 `npm run workflow:state` → `npm run workflow:readiness` 로 화면의 readiness_mode 를 확인한다.

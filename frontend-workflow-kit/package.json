@@ -31,6 +31,7 @@
     "workflow:run": "node scripts/workflow-run.mjs",
     "workflow:policy-draft": "node scripts/policy-draft.mjs",
     "workflow:adoption-probe": "node scripts/adoption-probe.mjs",
+    "workflow:check-generated": "node scripts/check-generated-files.mjs",
     "example:state": "node scripts/workflow-state.mjs --docs examples/coupon-feature/docs/frontend-workflow --src examples/coupon-feature/src --date 2026-06-13",
     "example:readiness": "node scripts/readiness.mjs --docs examples/coupon-feature/docs/frontend-workflow",
     "example:validate": "node scripts/validate.mjs --docs examples/coupon-feature/docs/frontend-workflow --src examples/coupon-feature/src",
