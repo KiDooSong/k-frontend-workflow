@@ -177,7 +177,7 @@ function contractSourceFiles(source, projectRoot, extensions = ['.ts', '.tsx']) 
     }
     if (st.isDirectory()) {
       for (const file of walkFiles(real, extensions)) files.push(file);
-    } else if (st.isFile() && hasExtension(real, extensions)) {
+    } else if (st.isFile() && hasExtension(abs, extensions) && hasExtension(real, extensions)) {
       files.push(real);
     }
   }

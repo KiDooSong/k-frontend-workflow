@@ -325,6 +325,28 @@ test('E2E: comma-separated ts-type Source still scans project-local entries afte
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+test('E2E: ts-type Source symlink keeps Source path extension guard', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check8-ts-symlink-extension-'));
+  const targetRel = 'src/api/types/local.ts';
+  const linkRel = 'src/api/types/link.md';
+  const linkAbs = path.join(root, linkRel);
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/api/api-manifest.md': manifestDoc(
+        `| Method | Path | Operation ID | Confidence | Linked Contract | Contract Kind | Source |\n|---|---|---|---|---|---|---|\n| GET | /x | getX | confirmed | LocalResponse | ts-type | ${linkRel} |`,
+      ),
+      'docs/frontend-workflow/domains/d/screens/s/screen-spec.md': SCREEN_CONFIRMED,
+      [targetRel]: 'export type LocalResponse = { ok: true }\n',
+    });
+    if (!symlinkOrSkip(t, path.join(root, targetRel), linkAbs, 'file')) return;
+
+    const c8 = (runValidate(root).errors || []).filter((e) => e.check === 8);
+    assert.equal(c8.length, 1);
+    assert.match(c8[0].message, /ts-type contract=LocalResponse/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 test('E2E: confirmed ts-type contract fails when type/interface export is missing', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check8-ts-missing-'));
   try {
