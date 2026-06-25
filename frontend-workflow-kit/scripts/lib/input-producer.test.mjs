@@ -102,6 +102,18 @@ test('writeInputArtifact allows --overwrite only for the same output path', (t) 
   assert.match(fs.readFileSync(path.join(dir, `${inputId}.md`), 'utf8'), /Replacement summary\./);
 });
 
+test('writeInputArtifact rejects --overwrite when another file duplicates the same input_id', (t) => {
+  const dir = path.join(tmpdir(t), 'inputs');
+  const inputId = 'IN-20260625-figma-001';
+  write(path.join(dir, `${inputId}.md`), `---\ninput_id: "${inputId}"\n---\n`);
+  write(path.join(dir, 'legacy.md'), `---\ninput_id: "${inputId}"\n---\n`);
+
+  assert.throws(
+    () => writeInputArtifact(payload({ input_id: inputId }), { inputsDir: dir, overwrite: true }),
+    /only the same output file may be overwritten/,
+  );
+});
+
 test('writeInputArtifact rejects --overwrite when the existing input_id is in a different file', (t) => {
   const dir = path.join(tmpdir(t), 'inputs');
   const inputId = 'IN-20260625-figma-001';
@@ -110,6 +122,26 @@ test('writeInputArtifact rejects --overwrite when the existing input_id is in a 
   assert.throws(
     () => writeInputArtifact(payload({ input_id: inputId }), { inputsDir: dir, overwrite: true }),
     /only the same output file may be overwritten/,
+  );
+});
+
+test('writeInputArtifact rejects supersedes when inputs dir is missing', (t) => {
+  const dir = path.join(tmpdir(t), 'missing-inputs');
+
+  assert.throws(
+    () => writeInputArtifact(payload({ supersedes: 'IN-20260625-figma-999' }), { inputsDir: dir, dryRun: true }),
+    /supersedes target does not exist/,
+  );
+});
+
+test('writeInputArtifact rejects supersedes that only matches a filename', (t) => {
+  const dir = path.join(tmpdir(t), 'inputs');
+  const supersedes = 'IN-20260625-figma-999';
+  write(path.join(dir, `${supersedes}.md`), '# Legacy file without input frontmatter\n');
+
+  assert.throws(
+    () => writeInputArtifact(payload({ supersedes }), { inputsDir: dir, dryRun: true }),
+    /supersedes target does not exist/,
   );
 });
 
@@ -207,4 +239,36 @@ test('CLI JSON payload mode writes an artifact for adapters', (t) => {
   assert.equal(body.input_id, 'IN-20260625-figma-001');
   assert.equal(body.wrote, true);
   assert.equal(fs.existsSync(path.join(docs, 'inputs', 'IN-20260625-figma-001.md')), true);
+});
+
+test('CLI dry-run rejects dangling supersedes before writing', (t) => {
+  const docs = path.join(tmpdir(t), 'docs', 'frontend-workflow');
+  const res = spawnSync(
+    process.execPath,
+    [
+      CLI,
+      '--docs',
+      docs,
+      '--input-type',
+      'planning',
+      '--source-type',
+      'planning-doc',
+      '--source-ref',
+      'planning://note',
+      '--captured-by',
+      'producer-test',
+      '--domain',
+      'auth',
+      '--screen',
+      'AUTH-001',
+      '--supersedes',
+      'IN-20260625-planning-999',
+      '--dry-run',
+      '--json',
+    ],
+    { encoding: 'utf8' },
+  );
+
+  assert.equal(res.status, 2);
+  assert.match(res.stderr, /supersedes target does not exist/);
 });

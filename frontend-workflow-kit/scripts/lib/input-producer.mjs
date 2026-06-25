@@ -61,7 +61,7 @@ function defaultCapturedAt({ date, now = new Date() } = {}) {
   return now.toISOString();
 }
 
-function collectKnownInputIds(inputsDir) {
+function collectInputIdSequenceCandidates(inputsDir) {
   const ids = new Set();
   if (!isDir(inputsDir)) return ids;
   for (const file of walkFiles(inputsDir, ['.md'])) {
@@ -76,13 +76,28 @@ function collectKnownInputIds(inputsDir) {
   return ids;
 }
 
+function collectFrontmatterInputIdFiles(inputsDir) {
+  const ids = new Map();
+  if (!isDir(inputsDir)) return ids;
+  for (const file of walkFiles(inputsDir, ['.md'])) {
+    const raw = readFileSafe(file);
+    const { data, parseError } = splitFrontmatter(raw);
+    if (parseError || typeof data.input_id !== 'string' || !INPUT_ID_PATTERN.test(data.input_id)) {
+      continue;
+    }
+    if (!ids.has(data.input_id)) ids.set(data.input_id, []);
+    ids.get(data.input_id).push(file);
+  }
+  return ids;
+}
+
 export function nextInputId({ inputsDir, date, source, capturedAt, now } = {}) {
   const sourceToken = normalizeInputSourceToken(source);
   if (!sourceToken) throw new InputProducerError('source token is required to generate input_id');
   const dateToken = inputDateToken({ date, capturedAt, now });
   const prefix = `IN-${dateToken}-${sourceToken}-`;
   let maxSeq = 0;
-  for (const id of collectKnownInputIds(inputsDir)) {
+  for (const id of collectInputIdSequenceCandidates(inputsDir)) {
     if (!id.startsWith(prefix)) continue;
     const seq = Number(id.slice(prefix.length));
     if (Number.isInteger(seq) && seq > maxSeq) maxSeq = seq;
@@ -262,10 +277,11 @@ export function writeInputArtifact(payload, options = {}) {
   const inputsDir = path.resolve(options.inputsDir);
   const artifact = buildInputArtifact(payload, { ...options, inputsDir });
   const outputPath = path.join(inputsDir, `${artifact.input_id}.md`);
-  const knownIds = collectKnownInputIds(inputsDir);
+  const frontmatterIdFiles = collectFrontmatterInputIdFiles(inputsDir);
   const outputExists = exists(outputPath);
+  const outputPathResolved = path.resolve(outputPath);
 
-  if (artifact.frontmatter.supersedes && isDir(inputsDir) && !knownIds.has(artifact.frontmatter.supersedes)) {
+  if (artifact.frontmatter.supersedes && !frontmatterIdFiles.has(artifact.frontmatter.supersedes)) {
     throw new InputProducerError(`supersedes target does not exist: ${artifact.frontmatter.supersedes}`);
   }
   if (outputExists && !options.overwrite) {
@@ -273,7 +289,9 @@ export function writeInputArtifact(payload, options = {}) {
       `input artifact already exists: ${outputPath}\nCreate a new input_id and set supersedes to ${artifact.input_id}, or pass --overwrite intentionally.`,
     );
   }
-  if (knownIds.has(artifact.input_id) && !(outputExists && options.overwrite)) {
+  const duplicateIdFiles = (frontmatterIdFiles.get(artifact.input_id) || [])
+    .filter((file) => path.resolve(file) !== outputPathResolved);
+  if (duplicateIdFiles.length || (frontmatterIdFiles.has(artifact.input_id) && !(outputExists && options.overwrite))) {
     throw new InputProducerError(
       `input_id already exists in inputs: ${artifact.input_id}\nCreate a new input_id and set supersedes to ${artifact.input_id}; only the same output file may be overwritten with --overwrite.`,
     );
