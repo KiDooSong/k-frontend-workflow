@@ -37,6 +37,8 @@ const VALUE_FLAGS = new Set([
   'from-yaml',
   ...REPEAT_FLAGS,
 ]);
+const BOOLEAN_FLAGS = new Set(['help', 'json', 'dry-run', 'overwrite']);
+const KNOWN_FLAGS = new Set([...VALUE_FLAGS, ...BOOLEAN_FLAGS]);
 
 function cliError(message) {
   process.stderr.write(`workflow:create-input: ${message}\n`);
@@ -54,6 +56,7 @@ function parseProducerArgs(argv) {
     }
     const eq = arg.indexOf('=');
     const key = eq === -1 ? arg.slice(2) : arg.slice(2, eq);
+    if (!KNOWN_FLAGS.has(key)) cliError(`unknown flag: --${key}`);
     let value = eq === -1 ? undefined : arg.slice(eq + 1);
     if (value === undefined && VALUE_FLAGS.has(key)) {
       const next = argv[i + 1];

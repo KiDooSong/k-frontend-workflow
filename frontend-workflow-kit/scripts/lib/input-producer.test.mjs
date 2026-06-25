@@ -280,6 +280,68 @@ test('CLI rejects --overwrite=false instead of treating it as overwrite', (t) =>
   assert.doesNotMatch(fs.readFileSync(existing, 'utf8'), /replacement/);
 });
 
+test('CLI rejects mistyped --dryrun before writing', (t) => {
+  const docs = path.join(tmpdir(t), 'docs', 'frontend-workflow');
+  const res = spawnSync(
+    process.execPath,
+    [
+      CLI,
+      '--docs',
+      docs,
+      '--input-type',
+      'planning',
+      '--source-type',
+      'planning-doc',
+      '--source-ref',
+      'planning://note',
+      '--captured-by',
+      'producer-test',
+      '--domain',
+      'auth',
+      '--screen',
+      'AUTH-001',
+      '--dryrun',
+      '--json',
+    ],
+    { encoding: 'utf8' },
+  );
+
+  assert.equal(res.status, 2);
+  assert.match(res.stderr, /unknown flag: --dryrun/);
+  assert.equal(fs.existsSync(path.join(docs, 'inputs', 'IN-20260625-planning-001.md')), false);
+});
+
+test('CLI rejects unknown valued flags', (t) => {
+  const docs = path.join(tmpdir(t), 'docs', 'frontend-workflow');
+  const res = spawnSync(
+    process.execPath,
+    [
+      CLI,
+      '--docs',
+      docs,
+      '--input-type',
+      'planning',
+      '--source-type',
+      'planning-doc',
+      '--source-ref',
+      'planning://note',
+      '--captured-by',
+      'producer-test',
+      '--domain',
+      'auth',
+      '--screen',
+      'AUTH-001',
+      '--foo=1',
+      '--dry-run',
+    ],
+    { encoding: 'utf8' },
+  );
+
+  assert.equal(res.status, 2);
+  assert.match(res.stderr, /unknown flag: --foo/);
+  assert.equal(fs.existsSync(path.join(docs, 'inputs', 'IN-20260625-planning-001.md')), false);
+});
+
 test('CLI dry-run rejects dangling supersedes before writing', (t) => {
   const docs = path.join(tmpdir(t), 'docs', 'frontend-workflow');
   const res = spawnSync(
