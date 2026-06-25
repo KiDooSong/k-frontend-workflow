@@ -7,7 +7,7 @@ description: 외부 입력 스킬이 저장한 새 입력 결과물(input_id 보
 
 외부 입력 스킬이 저장한 입력 결과물을 기존 산출물과 대조해 분류하고, 처리 이력을 Reconciliation Register에 남긴다.
 **충돌을 조용히 해결하지 않는다** — LLM은 게이트를 올리기만 하고, 게이트는 Open Decision(readiness)이 건다.
-전체 계약: [input-reconciliation.md](../../../frontend-workflow-kit/docs/reference/input-reconciliation.md).
+전체 계약: [input-reconciliation.md](../../docs/reference/input-reconciliation.md).
 
 ## 입력
 - 입력 결과물 경로 (예: `docs/frontend-workflow/inputs/IN-20260613-figma-001.md` — 파일명 = `{input_id}.md`). 없으면 사용자에게 묻는다.

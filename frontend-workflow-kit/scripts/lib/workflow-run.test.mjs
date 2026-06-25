@@ -110,11 +110,16 @@ test('default(--layout 미지정): readiness_source 에 --layout 누출 없음(B
     const packet = path.join(out, 'work-packet.md');
     const src = readReadinessSource(packet);
     assert.ok(!/--layout/.test(src), `default 경로는 --layout 을 누출하지 않아야 한다: ${src}`);
+    const packetRaw = readPacket(packet);
     assert.match(
-      readPacket(packet),
+      packetRaw,
       /## Out of Scope[\s\S]*allowed_paths 밖 작업[\s\S]*shared helper \/ refactor \/ shared-contract \/ architecture role 확장[\s\S]*## Commands/,
       '생성 Work Packet Out of Scope 에 후속 격리와 role 확장 가드가 있어야 한다',
     );
+    assert.match(packetRaw, /docs\/reference\/ambiguity-triage\.md/, '생성 Work Packet 은 packed reference 링크를 써야 한다');
+    assert.match(packetRaw, /Compact triage rules/, '생성 Work Packet 은 compact reference scope 를 설명해야 한다');
+    assert.doesNotMatch(packetRaw, /docs\/workflows\/ambiguity-triage\.md/, '생성 Work Packet 은 excluded workflows 링크를 쓰지 않는다');
+    assert.doesNotMatch(packetRaw, /전체 triage 결정트리|상세 4블록 스키마|예시\(§6\)/, '생성 Work Packet 은 stale full-triage 문구를 내지 않는다');
   } finally {
     fs.rmSync(out, { recursive: true, force: true });
   }

@@ -164,7 +164,7 @@ export function buildPacketModel(opts) {
     date,
     owner = 'workflow:packet',
     seq = '001',
-    ambiguityLink = 'docs/workflows/ambiguity-triage.md',
+    ambiguityLink = 'docs/reference/ambiguity-triage.md',
     layout,
   } = opts;
   // 레이아웃 프로파일(tier1): MODE_HINTS 경로 카피를 role 글롭에서 생성한다. 호출부가 주지 않으면
@@ -411,8 +411,8 @@ export function renderPacketMarkdown(m) {
   out.push('**Blocking 후보 (warning-only — 닫지 말 것, 사람-전용):**');
   out.push(renderCandidateSummary(m));
   out.push('');
-  out.push(`> 전체 triage 결정트리·신호표·Blocking Mode 매핑 + 채워진 Safe To Proceed? 예시(§6)는 → [${m.ambiguityLink}](${m.ambiguityLink})`);
-  out.push('> New Unknowns / New Open Decision Candidates / Possibly Blocking 의 상세 4블록 스키마도 위 doc 으로 분리(여기엔 위 최소 표만).');
+  out.push(`> Compact triage rules 와 mode별 \`Safe To Proceed?\` stop 기준은 → [${m.ambiguityLink}](${m.ambiguityLink}).`);
+  out.push('> D-cand/U-cand 는 advisory 후보일 뿐이며, ScreenSpec/Open Decisions 에 확정하거나 닫는 일은 사람 몫이다.');
   out.push('');
   out.push('## Expected Output');
   out.push(`${m.modeHint.expectedOutput} 변경은 Allowed Paths 안에만, allowed 밖 0 (git diff 로 확인). 상위 모드 산출물(예: API 연동)은 정답이 아니다.`);

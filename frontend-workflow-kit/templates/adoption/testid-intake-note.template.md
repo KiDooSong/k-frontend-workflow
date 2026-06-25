@@ -3,8 +3,7 @@
 <!--
   adoption-probe 가 산출하는 read-only/draft-only 노트. 게이트 트리 밖.
   목적: 이 레포 도입 시 **E2E 안정 앵커(testID)를 어떻게 다룰지**의 계약을 적는다.
-  ★ 상태 경계: testID 계약은 아직 **PROPOSAL**이다(temp/proposals/testid-contract-canon-patch.md ·
-    docs/design/drafts/e2e-evidence/). 정본(screen-spec/llm-rules)에 **아직 반영 안 됨**.
+  ★ 상태 경계: testID 계약은 입력/reconcile evidence 이며, 정본 반영은 docs/reference/input-reconciliation.md 흐름을 따른다.
     따라서 이 노트는 testID 를 "recommended, not gate"로만 기술한다 — 강제·게이트·readiness fact 0.
   근거: testid-contract-canon-patch.md §2·§3·§4·§6 · e2e-evidence-discipline(drift) · candidate(naming).
 -->

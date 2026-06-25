@@ -12,10 +12,10 @@ npm run workflow:validate
 ```
 
 - `workflow:state` reads `docs/frontend-workflow/` and writes `_meta/workflow-state.yaml` plus `_meta/screen-inventory.yaml`.
-- `workflow:readiness` computes the highest allowed implementation mode per screen.
-- `workflow:validate` checks frontmatter, manifests, routes, approval metadata, API candidates, and reconciliation structure.
+- `workflow:readiness` computes the highest allowed implementation mode per screen and reports allowed/forbidden paths.
+- `workflow:validate` checks frontmatter, manifests, routes, approval metadata, API candidates, input artifacts, and Reconciliation Register structure.
 
-## Useful Options
+Useful options:
 
 ```bash
 npm run workflow:state -- --docs docs/frontend-workflow --src src
@@ -25,7 +25,8 @@ npm run workflow:doctor -- --root apps/mobile --src apps/mobile/src
 ```
 
 Use `--root` when the project root is not the current working directory. Use
-`--src` when source files live outside `src/`.
+`--src` when source files live outside `src/`. Use `--layout` when a custom
+`project-layout.yaml` declares Tier3/custom layer roles.
 
 ## Input Artifacts
 
@@ -35,8 +36,27 @@ npm run workflow:create-input -- --docs docs/frontend-workflow --source planning
 ```
 
 `workflow:create-input` turns normalized payloads into canonical
-`inputs/{input_id}.md` files. It does not update the Reconciliation Register or
-approve implementation.
+`inputs/{input_id}.md` files. Source-specific Figma/OpenAPI/meeting parsers live
+in the consumer repo. The generic producer does not update the Reconciliation
+Register, run `reconcile-input`, approve implementation, or promote facts to
+confirmed.
+
+Reference: [docs/reference/input-reconciliation.md](docs/reference/input-reconciliation.md).
+
+## Reconciliation Validation
+
+Validate check 12 is active only after
+`docs/frontend-workflow/_meta/reconciliation-register.md` exists.
+
+```bash
+npm run workflow:validate
+npm run workflow:validate -- --enforce
+```
+
+- Register absent: check 12 is NO-OP.
+- Register row missing and `Reconcile Status=not-started`: warning by default, error with `--enforce`.
+- `in-progress`, `failed`, invalid enum, duplicate Input ID, and missing required columns: always errors.
+- `reconciled`: passes even when Created Items point at open decisions/gaps/unknowns.
 
 ## Generated Views
 
@@ -48,7 +68,8 @@ npm run workflow:route-cross-check
 ```
 
 These commands produce read-only metadata under `docs/frontend-workflow/_meta/`
-or compare existing metadata. They do not approve design decisions.
+or compare existing metadata. They do not approve design decisions or replace
+readiness/validate gates.
 
 ## Implementation Packets
 
@@ -58,8 +79,17 @@ npm run workflow:run -- --screen COUPON-001
 npm run workflow:report -- --packet docs/frontend-workflow/_meta/work-packets/WP-001.md
 ```
 
-Packets consume readiness output. They do not close Open Decisions or mark
-candidate facts as confirmed.
+Packets consume readiness output. They do not close Open Decisions, mark
+candidate facts as confirmed, or widen allowed paths.
+
+## Policy Drafts
+
+```bash
+npm run workflow:policy-draft -- --out docs/frontend-workflow/_meta/policy-drafts
+```
+
+Policy draft output is a review artifact. It does not replace the live policy,
+promote hard gates, or change CI by itself.
 
 ## Safety Checks
 
@@ -79,5 +109,13 @@ npm run workflow:lint-baseline -- --counts docs/frontend-workflow/_meta/lint-cou
 npm run workflow:lint-baseline -- --counts docs/frontend-workflow/_meta/lint-counts.json --enforce
 ```
 
-Start from `templates/meta/lint-policy.template.yaml`. Keep hard CI promotion a
-separate human decision.
+Start from `templates/meta/lint-policy.template.yaml`. See [docs/reference/lint-policy-catalog.md](docs/reference/lint-policy-catalog.md) and [docs/reference/lint-policy-rollout-ratchet.md](docs/reference/lint-policy-rollout-ratchet.md). Keep hard CI promotion a separate human decision.
+
+## Adoption Probe
+
+```bash
+npm run workflow:adoption-probe -- --repo apps/mobile --out temp/runs/adoption-probe-mobile-001 --id mobile-001
+```
+
+Use adoption-probe for kit adoption assessment or dry-run reports. Treat its
+output as review evidence, not a CI hard gate.

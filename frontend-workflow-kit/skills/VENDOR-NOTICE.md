@@ -20,9 +20,10 @@
 
 - **지금 반영(이번 벤더링)**: 위 3개 파일(엔진 1 + 포맷 2)을 그대로 가져왔다. 킷 글로서리 산출물의
   표준 명칭을 **`CONTEXT.md`** 로 채택한다(CONTEXT-FORMAT.md 기준). 기록 결정 축은 `docs/adr/` (ADR-FORMAT.md 기준).
-- **나중(보류)**: grill-with-docs 의 **라이브 인터뷰 스킬(SKILL.md)** 는 가져오지 않았다 — reconcile-input
-  과 책임이 겹쳐, 조건부로만 켠다. 통합 설계·write-back 불변식·삽입 지점 지도는
-  [`temp/proposals/grill-adoption.md`](../temp/proposals/grill-adoption.md) 참고.
+- **first-party 포함**: `reconcile-input/SKILL.md` 는 이 킷의 소비자 workflow skill 이며 외부 벤더링 원본이 아니다. 계약 정본은
+  [`docs/reference/input-reconciliation.md`](../docs/reference/input-reconciliation.md) 이다.
+- **나중(보류)**: grill-with-docs 의 **라이브 인터뷰 스킬(SKILL.md)** 는 가져오지 않았다. reconcile-input 과 책임이 겹쳐,
+  조건부로만 켠다. 통합 설계·write-back 불변식·삽입 지점 지도는 kit-dev history/proposal 자료를 참고한다.
 
 ## 불변식 (킷에서 grill 계열을 쓸 때)
 
