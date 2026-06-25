@@ -241,6 +241,45 @@ test('CLI JSON payload mode writes an artifact for adapters', (t) => {
   assert.equal(fs.existsSync(path.join(docs, 'inputs', 'IN-20260625-figma-001.md')), true);
 });
 
+test('CLI rejects --overwrite=false instead of treating it as overwrite', (t) => {
+  const docs = path.join(tmpdir(t), 'docs', 'frontend-workflow');
+  const inputId = 'IN-20260625-planning-001';
+  const existing = path.join(docs, 'inputs', `${inputId}.md`);
+  write(existing, `---\ninput_id: "${inputId}"\n---\n\noriginal\n`);
+
+  const res = spawnSync(
+    process.execPath,
+    [
+      CLI,
+      '--docs',
+      docs,
+      '--input-id',
+      inputId,
+      '--input-type',
+      'planning',
+      '--source-type',
+      'planning-doc',
+      '--source-ref',
+      'planning://note',
+      '--captured-by',
+      'producer-test',
+      '--domain',
+      'auth',
+      '--screen',
+      'AUTH-001',
+      '--summary',
+      'replacement',
+      '--overwrite=false',
+    ],
+    { encoding: 'utf8' },
+  );
+
+  assert.equal(res.status, 2);
+  assert.match(res.stderr, /--overwrite does not accept a value/);
+  assert.match(fs.readFileSync(existing, 'utf8'), /original/);
+  assert.doesNotMatch(fs.readFileSync(existing, 'utf8'), /replacement/);
+});
+
 test('CLI dry-run rejects dangling supersedes before writing', (t) => {
   const docs = path.join(tmpdir(t), 'docs', 'frontend-workflow');
   const res = spawnSync(

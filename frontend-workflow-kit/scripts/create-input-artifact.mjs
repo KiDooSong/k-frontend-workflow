@@ -116,6 +116,13 @@ function flagPayload(flags) {
   return payload;
 }
 
+function destructiveBooleanFlag(flags, key) {
+  const value = flags[key];
+  if (value === undefined) return false;
+  if (value === true) return true;
+  cliError(`--${key} does not accept a value; use bare --${key} to enable it`);
+}
+
 function help() {
   return `workflow:create-input
 
@@ -147,13 +154,14 @@ function main() {
 
   const docsDir = path.resolve(typeof flags.docs === 'string' ? flags.docs : DEFAULTS.docs);
   const inputsDir = path.resolve(typeof flags.out === 'string' ? flags.out : path.join(docsDir, 'inputs'));
+  const overwrite = destructiveBooleanFlag(flags, 'overwrite');
 
   try {
     const result = writeInputArtifact(payload, {
       inputsDir,
       date: typeof flags.date === 'string' ? flags.date : undefined,
       dryRun: Boolean(flags['dry-run']),
-      overwrite: Boolean(flags.overwrite),
+      overwrite,
     });
 
     if (flags.json) {
