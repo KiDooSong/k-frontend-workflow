@@ -1,0 +1,100 @@
+version: 1
+name: frontend-workflow-kit-consumer-payload
+description: >
+  Explicit allowlist for the files that are safe and useful to vendor into a
+  consumer repository.
+destination_hint: tools/frontend-workflow
+
+payload:
+  include:
+    - path: README.md
+      classification: consumer-doc
+    - path: COMMANDS.md
+      classification: consumer-doc
+    - path: CONVENTIONS.md
+      classification: consumer-doc
+    - path: distribution-manifest.yaml
+      classification: consumer-doc
+    - path: package.json
+      classification: consumer-runtime
+    - path: package-lock.json
+      classification: consumer-runtime
+    - path: package-scripts.template.json
+      classification: consumer-doc
+    - source: ../LICENSE
+      target: LICENSE
+      classification: notice
+    - path: catalog/**
+      classification: consumer-runtime
+    - path: policies/**
+      classification: consumer-runtime
+    - path: presets/**
+      classification: consumer-runtime
+    - path: schemas/**
+      classification: consumer-runtime
+    - path: scripts/**
+      classification: consumer-runtime
+    - path: skills/**
+      classification: consumer-runtime
+    - path: templates/**
+      classification: consumer-runtime
+
+exclude:
+  - path: examples/**
+    classification: kit-dev-fixture
+    reason: Golden fixtures and dogfood projects used by kit tests.
+  - path: temp/**
+    classification: generated-dogfood-output
+    reason: Per-run reports, proposals, probes, and local experiment outputs.
+  - path: docs/design/**
+    classification: kit-dev-history
+    reason: Design drafts and future-candidate architecture notes.
+  - path: docs/workflows/mvp-b.md
+    classification: kit-dev-history
+    reason: Historical MVP phase notes.
+  - path: docs/workflows/**
+    classification: kit-dev-history
+    reason: Internal workflow evolution notes; consumer guidance lives in README, COMMANDS, and CONVENTIONS.
+  - path: roadmap-current.md
+    classification: kit-dev-history
+    reason: Internal planning snapshot.
+  - path: CHANGELOG.md
+    classification: kit-dev-history
+    reason: Repo development history rather than consumer installation guidance.
+  - path: open-decisions.md
+    classification: kit-dev-history
+    reason: Kit repo decision log.
+  - path: input-reconciliation.md
+    classification: kit-dev-history
+    reason: Full design contract; consumer bootstrap uses templates and concise conventions.
+  - path: investigation-and-verification.md
+    classification: kit-dev-history
+    reason: Long-form research and verification workflow.
+  - path: "*.html"
+    classification: generated-dogfood-output
+    reason: Diagnostics are generated explicitly into output dirs when needed.
+
+classification:
+  top_level:
+    catalog: consumer-runtime
+    policies: consumer-runtime
+    presets: consumer-runtime
+    schemas: consumer-runtime
+    scripts: consumer-runtime
+    skills: consumer-runtime
+    templates: consumer-runtime
+    package.json: consumer-runtime
+    package-lock.json: consumer-runtime
+    package-scripts.template.json: consumer-doc
+    README.md: consumer-doc
+    COMMANDS.md: consumer-doc
+    CONVENTIONS.md: consumer-doc
+    distribution-manifest.yaml: consumer-doc
+    examples: kit-dev-fixture
+    docs: kit-dev-history
+    temp: generated-dogfood-output
+    roadmap-current.md: kit-dev-history
+    CHANGELOG.md: kit-dev-history
+    open-decisions.md: kit-dev-history
+    input-reconciliation.md: kit-dev-history
+    investigation-and-verification.md: kit-dev-history
