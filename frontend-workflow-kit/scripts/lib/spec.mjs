@@ -408,6 +408,7 @@ const ROUTE_SPREAD_SEGMENT_RE = /^\[\.\.\.[A-Za-z0-9_][A-Za-z0-9_-]*\]/;
 const ROUTE_DYNAMIC_SEGMENT_RE = /^\[[A-Za-z0-9_][A-Za-z0-9_-]*\]/;
 const ROUTE_PARAM_SEGMENT_RE = /^:[A-Za-z_][A-Za-z0-9_-]*/;
 const ROUTE_LITERAL_SEGMENT_RE = /^[A-Za-z0-9_+](?:[A-Za-z0-9_+~-]|\.(?=[A-Za-z0-9_+~-]))*/;
+const ROUTE_SOURCE_FILE_EXTENSION_RE = /\.(?:tsx?|jsx?)$/i;
 
 function charBefore(text, index) {
   const chars = Array.from(text.slice(Math.max(0, index - 2), index));
@@ -421,6 +422,7 @@ function charAt(text, index) {
 function isRouteStart(text, index) {
   if (text[index] !== '/' || text[index + 1] === '/') return false;
   const prev = charBefore(text, index);
+  if (prev === '.') return false; // relative file paths: ./src, ../src
   // Unicode letter/number aware: "형식/마스킹" and "foo/bar" are word-internal, not routes.
   return !prev || !/[\p{L}\p{N}_:/<]/u.test(prev);
 }
@@ -465,6 +467,7 @@ function readRouteToken(text, index) {
   }
 
   if (!hasSafeRouteEnd(text, pos)) return null;
+  if (ROUTE_SOURCE_FILE_EXTENSION_RE.test(route)) return null;
   return { route, end: pos };
 }
 
