@@ -6,7 +6,7 @@
   ★ 핵심 경계(불변식): 킷 core 는 Figma 수집기·디자인-토큰 생성기를 **구현/번들하지 않는다**.
     소비 레포가 *수집한* facts/token-manifest/baseline 을 킷이 *받아 적기만* 한다.
     이 노트는 수집을 시키지 않는다 — "소비 레포가 무엇을 제공하면 킷이 어디에 받아 적는가"만 기술.
-  근거: docs/design/drafts/design-token-naming-convention.md (VS-2, W1/W2) ·
+  근거: visual-spec 입력은 docs/reference/input-reconciliation.md 의 input/reconcile 흐름을 따른다.
         templates/screen/figma-component-mapping.template.md (## Frame · ## Visual Spec · Provenance).
 -->
 

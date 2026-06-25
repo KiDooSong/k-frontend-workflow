@@ -16,10 +16,11 @@
     "workflow:report": "node tools/frontend-workflow/scripts/workflow-report.mjs",
     "workflow:run": "node tools/frontend-workflow/scripts/workflow-run.mjs",
     "workflow:policy-draft": "node tools/frontend-workflow/scripts/policy-draft.mjs",
-    "workflow:adoption-probe": "node tools/frontend-workflow/scripts/adoption-probe.mjs"
+    "workflow:adoption-probe": "node tools/frontend-workflow/scripts/adoption-probe.mjs",
+    "workflow:route-cross-check": "node tools/frontend-workflow/scripts/route-cross-check.mjs"
   },
   "//roadmap": "아직 consumer-facing alias로 승격하지 않은 명령. 승격되면 scripts로 옮긴다.",
   "//roadmap-scripts": {
-    "workflow:check-generated": "scripts/check-generated-files.mjs (MVP-C)"
+    "workflow:check-generated": "scripts/check-generated-files.mjs (advisory generated-file drift guard; not consumer-facing by default)"
   }
 }

@@ -14,7 +14,6 @@ last_reviewed: "{YYYY-MM-DD}"
 > ⚠ **DEPRECATED (2026-06-21~)** — 이 드래프트의 내용은 정본
 > [figma-component-mapping.template.md](figma-component-mapping.template.md) 의 **옵션 섹션**으로 흡수됐다(OD-VS-1 = 옵션 b).
 > 신규 작성은 정본을 쓴다. 본 파일은 §3 교정 근거 보존용으로 한 사이클만 유지 후 제거 예정(§4 단계2).
-> 실행 근거: [visual-spec-vs1-execution.md](../../docs/design/drafts/visual-spec-vs1-execution.md)
 
 <!--
   ════════════════════════════════════════════════════════════════════════════

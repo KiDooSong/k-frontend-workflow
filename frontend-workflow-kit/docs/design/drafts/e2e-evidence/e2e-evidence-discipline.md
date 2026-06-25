@@ -91,7 +91,7 @@
                     → Open Decision(open) 으로 올림 — 게이트는 사람.
   ```
 
-- **조용한 green 금지.** drift는 `reconcile-input`/Open Decision 파이프라인으로 흐른다 — 스펙 갱신 vs 구현 회귀를 **사람이 판정**한다([input-reconciliation.md](../../../../input-reconciliation.md)).
+- **조용한 green 금지.** drift는 `reconcile-input`/Open Decision 파이프라인으로 흐른다 — 스펙 갱신 vs 구현 회귀를 **사람이 판정**한다([input-reconciliation.md](../../../reference/input-reconciliation.md)).
 - **후보(future, warning-first):** "screen-spec route/interaction ↔ 실제 라우팅" 정합 검사. 현재 [03 §5.5](../../../../../docs/research/playwright/03-workflow-integration.md) 검사 14~16은 *테스트 핸들* 정합이지 *구현 행동* 정합이 아니다 — F9는 후자라 아직 자동탐지 부재. hard gate 아님.
 
 ---
@@ -136,5 +136,5 @@
 
 - 폴더 불변식·금지: [README](README.md) · testID 계약: [testid-contract-candidate.md](testid-contract-candidate.md)
 - 리서치: [03 §3~7](../../../../../docs/research/playwright/03-workflow-integration.md) · [02 (d)](../../../../../docs/research/playwright/02-expo-web-and-mobile-simulator.md) · [01 §c.3/g](../../../../../docs/research/playwright/01-playwright-agents-planner-generator-healer.md) · [dogfood §3/§6](../../../../../docs/research/playwright/dogfood-001-l010.md)
-- 기존 축: [investigation-and-verification.md](../../../../investigation-and-verification.md) · [input-reconciliation.md](../../../../input-reconciliation.md) · [roadmap-current.md](../../../../roadmap-current.md)
+- 기존 축: [investigation-and-verification.md](../../../../investigation-and-verification.md) · [input-reconciliation.md](../../../reference/input-reconciliation.md) · [roadmap-current.md](../../../../roadmap-current.md)
 - substrate: [tier3-access-matrix-revision](../../../../temp/proposals/tier3-access-matrix-revision.md)

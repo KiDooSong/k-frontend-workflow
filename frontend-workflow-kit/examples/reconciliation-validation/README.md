@@ -118,6 +118,6 @@ register 표가 필수 컬럼을 빠뜨린 경우. `Input ID | Reconcile Status`
 
 ## 참고
 
-- 계약: `../../input-reconciliation.md` (Reconciliation Register 스키마 / status vs Reconcile Status 3축 / register-first).
+- 계약: `../../docs/reference/input-reconciliation.md` (Reconciliation Register 스키마 / status vs Reconcile Status 3축 / register-first).
 - 실제 8컬럼 register 형태: `../input-reconciliation/expected-llm-after/docs/frontend-workflow/_meta/reconciliation-register.md`.
 - Check 11(input frontmatter) 전용 픽스처: `../input-validation/`.

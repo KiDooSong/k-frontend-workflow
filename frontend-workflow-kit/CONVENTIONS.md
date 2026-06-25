@@ -7,17 +7,22 @@ packed output, not the full kit repository directory.
 
 Included by default:
 
-- `scripts/`, `catalog/`, `policies/`, `presets/`, `schemas/`, `templates/`, `skills/`
+- `scripts/`, `catalog/`, `policies/`, `presets/`, `schemas/`
+- `templates/`, `skills/`, `docs/reference/`
 - `package.json`, `package-lock.json`, `package-scripts.template.json`
-- `README.md`, `COMMANDS.md`, `CONVENTIONS.md`, `LICENSE`
+- `README.md`, `COMMANDS.md`, `CONVENTIONS.md`, `distribution-manifest.yaml`, `LICENSE`
 
 Excluded by default:
 
 - `examples/`
 - `temp/`
 - `docs/design/`
-- historical workflow notes and roadmap files
-- generated diagnostics unless a command writes them to an explicit output path
+- `docs/workflows/`
+- roadmap/history/run-report/proposal/generated diagnostic files
+
+`docs/reference/input-reconciliation.md` is consumer-facing because it defines
+the input artifact contract, Reconciliation Register schema, retry behavior, and
+validate check 12 severity.
 
 ## Project Layout Profiles
 
@@ -37,7 +42,8 @@ npm run workflow:doctor -- --root apps/mobile --src apps/mobile/src
 
 When the layer model differs from the default, copy
 `templates/adoption/project-layout.template.yaml`, adapt it, then pass
-`--layout project-layout.yaml`.
+`--layout project-layout.yaml` to state/readiness/validate/doctor commands that
+need project structure.
 
 ## Thin Route, Separate Screen
 
@@ -46,26 +52,52 @@ the feature or presentation layer and pass only route params or app shell state.
 Screen implementation work should happen in the screen/component layer allowed
 by readiness.
 
+ScreenSpec fields serve different purposes:
+
+- `route_entry`: router/framework shell or route file.
+- `screen_entry`: product screen implementation.
+
+Do not infer one from the other when a project uses custom roots or generated
+routes. Use `workflow:route-tree`, `workflow:nav-graph`, and
+`workflow:route-cross-check` as read-only evidence.
+
 ## API Contract Styles
 
-Use the TypeScript contract path when an API shape already has stable exported
-types. Use the Zod/schema path when runtime validation is the project norm or
-when the response shape is still being confirmed.
+Document API candidates in `api/api-manifest.md` before treating a screen as
+API-integrated. Confirmed rows can link these contract kinds:
 
-For either style, document candidates in `api/api-manifest.md` before treating a
-screen as API-integrated.
+- `zod`: exported runtime schema evidence.
+- `ts-type`: exported TypeScript type/interface evidence, not runtime validation.
+- `openapi`: OpenAPI/manual schema evidence when supported by the project.
+- `manual`: reviewed manual contract evidence.
+- `unknown`: tracking/compatibility value; it does not satisfy confirmed evidence.
 
-## Tier 3 Layers
+Existing `Linked Schema` rows remain zod-compatible legacy evidence.
 
-Tier 3 layers are supported through `project-layout.yaml`, not by editing
+## Input Reconciliation
+
+`workflow:create-input` belongs to the kit. Source-specific parsing belongs to
+the consumer repo. Reconciliation is separate and does not run automatically
+when an input artifact is created.
+
+One `input_id` has one canonical Reconciliation Register row. Retrying the same
+input updates that row; a new `input_id` is only for changed input content or a
+new source snapshot.
+
+## Tier3 Layers
+
+Tier3 layers are supported through `project-layout.yaml`, not by editing
 readiness code. Declare custom roles and access rules there, run
 `workflow:doctor`, and keep policy changes as reviewed documents until the team
 accepts them.
+
+Policy draft and migration guide output is review evidence. It does not replace
+`policies/implementation-mode-policy.yaml`, promote CI, or enable hard gates.
 
 ## Existing Adopters
 
 If a previous setup copied the full `frontend-workflow-kit/` directory into
 `tools/frontend-workflow/`, it is safe to remove dev-only material there:
-`examples/`, `temp/`, `docs/design/`, historical workflow notes, roadmap files,
-and run reports. Keep the included files listed above and use packed output for
-future updates.
+`examples/`, `temp/`, `docs/design/`, `docs/workflows/`, roadmap files, and run
+reports. Keep the included files listed above and use packed output for future
+updates.

@@ -4,7 +4,7 @@
 세 서브트리(`pass` / `warn` / `fail`)는 각각 "에러·경고 없음 / 경고만 / 에러" 케이스를 보여준다.
 
 검사 11 은 `--docs` 디렉토리 아래 `inputs/` 폴더의 `*.md` 입력 결과물을 정본 입력 스키마([../../templates/input/input-artifact.template.md](../../templates/input/input-artifact.template.md),
-[../../input-reconciliation.md](../../input-reconciliation.md) 의 *Input Result Contract*)와 대조한다. `inputs/` 가 없으면 NO-OP 다.
+[../../docs/reference/input-reconciliation.md](../../docs/reference/input-reconciliation.md) 의 *Input Result Contract*)와 대조한다. `inputs/` 가 없으면 NO-OP 다.
 
 > 이 트리는 **검사 11 전용**이다. `_meta/reconciliation-register.md` 가 없으므로 검사 12(register 검증)는 NO-OP 이고,
 > `docs/frontend-workflow` 아래에 `artifact_type` 을 가진 authoring 문서가 없으므로 검사 1~10 도 조용히 통과한다 — 출력은 검사 11 결과만 반영한다.

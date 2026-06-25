@@ -8,19 +8,19 @@ destination_hint: tools/frontend-workflow
 payload:
   include:
     - path: README.md
-      classification: consumer-doc
+      classification: consumer-guide
     - path: COMMANDS.md
-      classification: consumer-doc
+      classification: consumer-reference
     - path: CONVENTIONS.md
-      classification: consumer-doc
+      classification: consumer-reference
     - path: distribution-manifest.yaml
-      classification: consumer-doc
+      classification: consumer-reference
     - path: package.json
       classification: consumer-runtime
     - path: package-lock.json
       classification: consumer-runtime
     - path: package-scripts.template.json
-      classification: consumer-doc
+      classification: consumer-template
     - source: ../LICENSE
       target: LICENSE
       classification: notice
@@ -37,7 +37,9 @@ payload:
     - path: skills/**
       classification: consumer-runtime
     - path: templates/**
-      classification: consumer-runtime
+      classification: consumer-template
+    - path: docs/reference/**
+      classification: consumer-reference
 
 exclude:
   - path: examples/**
@@ -47,7 +49,7 @@ exclude:
     classification: generated-dogfood-output
     reason: Per-run reports, proposals, probes, and local experiment outputs.
   - path: docs/design/**
-    classification: kit-dev-history
+    classification: design-draft
     reason: Design drafts and future-candidate architecture notes.
   - path: docs/workflows/mvp-b.md
     classification: kit-dev-history
@@ -64,9 +66,6 @@ exclude:
   - path: open-decisions.md
     classification: kit-dev-history
     reason: Kit repo decision log.
-  - path: input-reconciliation.md
-    classification: kit-dev-history
-    reason: Full design contract; consumer bootstrap uses templates and concise conventions.
   - path: investigation-and-verification.md
     classification: kit-dev-history
     reason: Long-form research and verification workflow.
@@ -82,19 +81,24 @@ classification:
     schemas: consumer-runtime
     scripts: consumer-runtime
     skills: consumer-runtime
-    templates: consumer-runtime
+    templates: consumer-template
     package.json: consumer-runtime
     package-lock.json: consumer-runtime
-    package-scripts.template.json: consumer-doc
-    README.md: consumer-doc
-    COMMANDS.md: consumer-doc
-    CONVENTIONS.md: consumer-doc
-    distribution-manifest.yaml: consumer-doc
+    package-scripts.template.json: consumer-template
+    README.md: consumer-guide
+    COMMANDS.md: consumer-reference
+    CONVENTIONS.md: consumer-reference
+    distribution-manifest.yaml: consumer-reference
     examples: kit-dev-fixture
     docs: kit-dev-history
     temp: generated-dogfood-output
     roadmap-current.md: kit-dev-history
     CHANGELOG.md: kit-dev-history
     open-decisions.md: kit-dev-history
-    input-reconciliation.md: kit-dev-history
     investigation-and-verification.md: kit-dev-history
+  paths:
+    docs/reference: consumer-reference
+    docs/design: design-draft
+    docs/workflows: kit-dev-history
+    examples: kit-dev-fixture
+    temp: generated-dogfood-output

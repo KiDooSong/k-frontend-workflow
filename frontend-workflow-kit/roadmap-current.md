@@ -81,7 +81,7 @@ Review          MVP-A 에 없음 (Future Candidate).
 
 문서로 계약은 동결됐지만 **스크립트 강제는 0** 이다. MVP-A 의 코드 게이트(위 인벤토리)에 들어가지 않는다.
 
-- **Input Reconciliation** ([input-reconciliation.md](input-reconciliation.md)) — register · Reconcile Status 라이프사이클 · conflict 수동 로그 · `resolved→open` 재오픈 계약. 실제 게이트는 Open Decision(readiness)이 담당.
+- **Input Reconciliation** ([input-reconciliation.md](docs/reference/input-reconciliation.md)) — register · Reconcile Status 라이프사이클 · conflict 수동 로그 · `resolved→open` 재오픈 계약. 실제 게이트는 Open Decision(readiness)이 담당.
 - **Investigation / Verification** ([investigation-and-verification.md](investigation-and-verification.md)) — 조사/검증 문서는 evidence 핸드오프 아티팩트. 막는 조사는 연결된 Open Decision 을 만들어야 하고, 그 Open Decision 이 blocker.
 
 ## Tier 3 — 후속 / Later (구현 안 함)

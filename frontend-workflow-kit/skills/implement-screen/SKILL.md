@@ -48,7 +48,7 @@ description: 지정된 Screen ID를 readiness gate가 허용하는 모드와 경
 ### 1. 입력 정합성 preflight
 
 1. 대상 화면과 관련된 Reconciliation Register 가 있으면 확인한다.
-   - 관련 input 이 `not-started` 또는 `in-progress` 면 멈추고 먼저 reconcile 하라고 보고한다.
+   - 관련 input 이 `not-started`, `in-progress`, 또는 `failed` 면 멈춘다. 같은 input_id 의 register row 를 재사용해 reconcile 을 시작/재개하라고 보고한다.
    - `reconciled` 가 Open Decision/Conflict/Unknown 을 만들었으면 직접 닫지 않는다. readiness 가 구현 가능 여부를 결정하게 둔다.
 2. repo configured command 를 기준으로 상태와 readiness 를 실행한다.
 

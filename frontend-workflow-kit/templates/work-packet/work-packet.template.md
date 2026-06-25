@@ -115,7 +115,7 @@ owner: "{agent-or-person}"
 > **Safe To Proceed?** 는 readiness 재계산이 아니다 — 천장은 항상 `{readiness_mode}` 이고, 이 표는 그 아래에서 **더 보수적으로만** 멈출 수 있다(게이트를 *올리지* 못함). 모드를 아래에서 위로 훑어 'no' 가 처음 나오는 모드 **직전**에서 멈춘다. `readiness_mode` 보다 위 모드는 readiness 가 이미 cap 했으므로 평가하지 않는다.
 > **Blocking 후보**(D-cand/U-cand)는 *제안*일 뿐 — 닫거나 ScreenSpec 에 확정하는 것은 사람. (별도 개념 아님: `Safe To Proceed?=no` 를 유발하는 미해결 후보일 뿐.)
 
-> 전체 triage 결정트리·신호표·Blocking Mode 매핑 + **채워진 Safe To Proceed? 예시(§6)**는 → [docs/workflows/ambiguity-triage.md](../../docs/workflows/ambiguity-triage.md)
+> 전체 triage 결정트리·신호표·Blocking Mode 매핑 + **채워진 Safe To Proceed? 예시(§6)**는 → [docs/reference/ambiguity-triage.md](../../docs/reference/ambiguity-triage.md)
 > New Unknowns / New Open Decision Candidates / Possibly Blocking 의 **상세 4블록 스키마**도 위 doc 으로 분리한다(템플릿엔 위 최소 표만).
 
 ## Expected Output

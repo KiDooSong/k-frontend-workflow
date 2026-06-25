@@ -21,9 +21,9 @@ date: "{YYYY-MM-DD}"
 # Run Report: {packet_id}
 
 리드 문단(목적 1~2문장): {이 실행이 무엇을 했는지 — 예: "WP-... 를 fixture 복사본에서 실행하고 게이트 준수·멱등을 채점".}
-- 작업 디렉토리: `{temp/runs/{run_id}/...}` (examples 원본 무수정 — 복사본에서만 작업)
+- 작업 디렉토리: `{docs/frontend-workflow/_meta/runs/{run_id}/...}` 또는 명시한 output directory
 - 게이트 단일 출처: `{readiness_source}` (`readiness.mjs` 출력)
-- 채점 기준: `temp/evaluations/work-packet-rubric.md` (필수 10 checks; Review Checklist 가 A~F 로 그룹 롤업)
+- 채점 기준: 아래 Review Checklist
 
 ## Summary
 <!-- 종합 판정 표. 컬럼·✅+근거구 관례는 implement-run-report.md 의 '종합 판정' 표를 따른다. -->
@@ -60,8 +60,8 @@ date: "{YYYY-MM-DD}"
 - `readiness_mode` = `{readiness_mode}`, `next_mode` = `{next_mode}`, 천장 근거: {그대로 옮김}.
 - 실행 명령(복사본 경로):
 ```bash
-node scripts/workflow-state.mjs --docs {temp/runs/{run_id}/docs/frontend-workflow} --src {temp/runs/{run_id}/__no_src__} --date {YYYY-MM-DD}
-node scripts/readiness.mjs --docs {temp/runs/{run_id}/docs/frontend-workflow} --json
+node scripts/workflow-state.mjs --docs {docs/frontend-workflow} --src {src} --date {YYYY-MM-DD}
+node scripts/readiness.mjs --docs {docs/frontend-workflow} --json
 ```
 - 소비: `result["{SCREEN_ID}"].readiness_mode` (+ `next_mode` / `allowed_paths` / `forbidden_paths`).
 
@@ -86,7 +86,7 @@ npm run workflow:validate    # → 검사 12종 통과 (exit 0)
 <!-- 하드룰 준수 표. 확인열 ✅ 단독, 근거열은 검사ID/diff 인용. 4행 고정. -->
 | 하드룰 | 확인 | 근거 |
 |---|---|---|
-| examples 원본 무수정 | ✅ | {예: 복사본(temp/runs)에서만 작업, 원본 diff 0} |
+| 입력/fixture 원본 무수정 | ✅ | {예: 지정 output directory 에서만 작업, 원본 diff 0} |
 | API endpoint 발명 금지 | ✅ | {예: `src/api/**`·`openapi.yaml`·fetch/axios/DTO 0건} |
 | Open Decision/Conflict/Unknown 미닫힘 | ✅ | {예: {D-001} 상태 open 보존} |
 | readiness gate 무시 금지 | ✅ | {예: 변경 파일 ⊆ allowed_paths} |
@@ -107,7 +107,7 @@ REMOVED:
 {거절/무변경이면: run diff **완전 빈 diff**(added/modified/removed 모두 none).}
 <!-- ⚠ MVP-C 종속 — Session C generated-file guard 확정 후 정렬: 어떤 파일이 generated(_meta/*.yaml 등)이고
      diff 에서 어떻게 취급/제외되는지는 generated-file guard 가 그 표면을 정의 중. 확정 전까지 라벨만 두고 세부 미확정.
-     참고: frontend-workflow-kit/temp/proposals/generated-file-guard-followup.md -->
+     참고: generated-file guard 관련 결정은 별도 reference 또는 human decision 으로 확인한다. -->
 
 ## Blockers Reported
 <!-- readiness 의 blocking/next_actions 를 그대로 전달 (자체 추론 금지).
