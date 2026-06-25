@@ -370,8 +370,12 @@ test('P13: cellRoutes — 정상 v1/v2 route token 은 보존한다', () => {
     ["router.replace('/login')", ['/login']],
     ['/users/[id]', ['/users/[id]']],
     ['/users/[...slug]', ['/users/[...slug]']],
+    ['/[[...slug]]', ['/[[...slug]]']],
+    ['/docs/[[...slug]]', ['/docs/[[...slug]]']],
     ['/(auth)/login', ['/(auth)/login']],
     ['/users/:id', ['/users/:id']],
+    ['/legal/privacy.v2', ['/legal/privacy.v2']],
+    ['/legal/privacy.v2.', ['/legal/privacy.v2']],
   ];
   for (const [input, expected] of cases) {
     assert.deepEqual(cellRoutes(input), expected, input);
@@ -515,6 +519,31 @@ test('E2E: validate check 4 — v2 explicit non-route Result prose 는 hard gate
       }),
     });
     assert.deepEqual(check4Errors(runValidate(root)), []);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('E2E: validate check 4 — route-tree style optional catch-all and dotted routes are validated', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check4-route-tree-tokens-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/domains/d/screens/home/screen-spec.md': screenSpec({
+        artifactId: 'HOME-001-screen-spec',
+        screenId: 'HOME-001',
+        route: '/home',
+        matrix: [
+          '| User Action | Trigger | Result | Result Type | Target | Params |',
+          '|---|---|---|---|---|---|',
+          '| optional catch-all | tap | 이동 | route | /docs/[[...slug]] |  |',
+          '| dotted literal | tap | 이동 | route | /legal/privacy.v2 |  |',
+        ].join('\n'),
+      }),
+    });
+    const messages = check4Errors(runValidate(root)).map((e) => e.message);
+    assert.equal(messages.length, 2);
+    assert.ok(messages.some((m) => m.includes('/docs/[[...slug]]')), 'optional catch-all target must be validated');
+    assert.ok(messages.some((m) => m.includes('/legal/privacy.v2')), 'dotted literal target must be validated');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

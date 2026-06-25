@@ -401,12 +401,13 @@ function minApiConfidence(sectionText) {
 // 라우트 추출은 여기 한 곳에만 둔다 — nav-graph 와 validate(검사 4)가 모두 cellRoutes 를
 // 재사용해 "글자 단위 동일"을 구조적으로 보장한다(정규식 drift 불가, 검사 P13 동작 일치).
 // 넓은 "슬래시부터 공백까지" 매칭은 prose/JSX/code tail 오탐이 크므로, 시작 경계와 라우트
-// 세그먼트 문법을 함께 본다. 지원 세그먼트: literal, (group), [id], [...slug], :id.
+// 세그먼트 문법을 함께 본다. 지원 세그먼트: literal, dotted.literal, (group), [id], [...slug], [[...slug]], :id.
 const ROUTE_GROUP_SEGMENT_RE = /^\([A-Za-z0-9][A-Za-z0-9._-]*\)/;
+const ROUTE_OPTIONAL_SPREAD_SEGMENT_RE = /^\[\[\.\.\.[A-Za-z0-9_][A-Za-z0-9_-]*\]\]/;
 const ROUTE_SPREAD_SEGMENT_RE = /^\[\.\.\.[A-Za-z0-9_][A-Za-z0-9_-]*\]/;
 const ROUTE_DYNAMIC_SEGMENT_RE = /^\[[A-Za-z0-9_][A-Za-z0-9_-]*\]/;
 const ROUTE_PARAM_SEGMENT_RE = /^:[A-Za-z_][A-Za-z0-9_-]*/;
-const ROUTE_LITERAL_SEGMENT_RE = /^[A-Za-z0-9_+][A-Za-z0-9_+~-]*/;
+const ROUTE_LITERAL_SEGMENT_RE = /^[A-Za-z0-9_+](?:[A-Za-z0-9_+~-]|\.(?=[A-Za-z0-9_+~-]))*/;
 
 function charBefore(text, index) {
   const chars = Array.from(text.slice(Math.max(0, index - 2), index));
@@ -428,6 +429,7 @@ function readRouteSegment(text, index) {
   const rest = text.slice(index);
   const match =
     ROUTE_GROUP_SEGMENT_RE.exec(rest) ||
+    ROUTE_OPTIONAL_SPREAD_SEGMENT_RE.exec(rest) ||
     ROUTE_SPREAD_SEGMENT_RE.exec(rest) ||
     ROUTE_DYNAMIC_SEGMENT_RE.exec(rest) ||
     ROUTE_PARAM_SEGMENT_RE.exec(rest) ||
