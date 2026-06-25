@@ -74,6 +74,45 @@ test('writeInputArtifact refuses to overwrite an explicit input_id by default', 
   );
 });
 
+test('writeInputArtifact refuses an input_id already used by another file frontmatter', (t) => {
+  const dir = path.join(tmpdir(t), 'inputs');
+  const inputId = 'IN-20260625-figma-001';
+  write(path.join(dir, 'legacy.md'), `---\ninput_id: "${inputId}"\n---\n`);
+
+  assert.throws(
+    () => writeInputArtifact(payload({ input_id: inputId }), { inputsDir: dir }),
+    /input_id already exists in inputs/,
+  );
+});
+
+test('writeInputArtifact allows --overwrite only for the same output path', (t) => {
+  const dir = path.join(tmpdir(t), 'inputs');
+  const inputId = 'IN-20260625-figma-001';
+  write(path.join(dir, `${inputId}.md`), `---\ninput_id: "${inputId}"\n---\n`);
+
+  const result = writeInputArtifact(
+    payload({
+      input_id: inputId,
+      summary: 'Replacement summary.',
+    }),
+    { inputsDir: dir, overwrite: true },
+  );
+
+  assert.equal(result.artifact.input_id, inputId);
+  assert.match(fs.readFileSync(path.join(dir, `${inputId}.md`), 'utf8'), /Replacement summary\./);
+});
+
+test('writeInputArtifact rejects --overwrite when the existing input_id is in a different file', (t) => {
+  const dir = path.join(tmpdir(t), 'inputs');
+  const inputId = 'IN-20260625-figma-001';
+  write(path.join(dir, 'legacy.md'), `---\ninput_id: "${inputId}"\n---\n`);
+
+  assert.throws(
+    () => writeInputArtifact(payload({ input_id: inputId }), { inputsDir: dir, overwrite: true }),
+    /only the same output file may be overwritten/,
+  );
+});
+
 test('renderInputArtifact emits canonical frontmatter and no deprecated aliases', (t) => {
   const dir = path.join(tmpdir(t), 'inputs');
   const artifact = buildInputArtifact(payload({ source: 'figma' }), {

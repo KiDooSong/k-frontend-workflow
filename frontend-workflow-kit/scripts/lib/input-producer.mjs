@@ -263,13 +263,19 @@ export function writeInputArtifact(payload, options = {}) {
   const artifact = buildInputArtifact(payload, { ...options, inputsDir });
   const outputPath = path.join(inputsDir, `${artifact.input_id}.md`);
   const knownIds = collectKnownInputIds(inputsDir);
+  const outputExists = exists(outputPath);
 
   if (artifact.frontmatter.supersedes && isDir(inputsDir) && !knownIds.has(artifact.frontmatter.supersedes)) {
     throw new InputProducerError(`supersedes target does not exist: ${artifact.frontmatter.supersedes}`);
   }
-  if (exists(outputPath) && !options.overwrite) {
+  if (outputExists && !options.overwrite) {
     throw new InputProducerError(
       `input artifact already exists: ${outputPath}\nCreate a new input_id and set supersedes to ${artifact.input_id}, or pass --overwrite intentionally.`,
+    );
+  }
+  if (knownIds.has(artifact.input_id) && !(outputExists && options.overwrite)) {
+    throw new InputProducerError(
+      `input_id already exists in inputs: ${artifact.input_id}\nCreate a new input_id and set supersedes to ${artifact.input_id}; only the same output file may be overwritten with --overwrite.`,
     );
   }
 
