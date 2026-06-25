@@ -452,9 +452,17 @@ function hasSafeRouteEnd(text, index) {
   return true;
 }
 
-function isSourceFilePathRoute(route) {
+function hasSourceFileContext(text, index) {
+  const before = text.slice(0, index).trimEnd();
+  if (!before) return false;
+  if (before.endsWith('(')) return true;
+  if (/['"`=:\[]$/.test(before)) return false;
+  return /(?:^|[\s([`])(?:see|source|file|path|ref|reference|참고|소스|파일|경로)\s*$/iu.test(before);
+}
+
+function isSourceFilePathRoute(route, text, index) {
   if (!ROUTE_LOCAL_FILE_EXTENSION_RE.test(route)) return false;
-  if (route.startsWith('/src/')) return true;
+  if (route.startsWith('/src/')) return hasSourceFileContext(text, index);
   return ROUTE_LOCAL_ABSOLUTE_PATH_RE.test(route);
 }
 
@@ -474,7 +482,7 @@ function readRouteToken(text, index) {
   }
 
   if (!hasSafeRouteEnd(text, pos)) return null;
-  if (isSourceFilePathRoute(route)) return { route: null, end: pos };
+  if (isSourceFilePathRoute(route, text, index)) return { route: null, end: pos };
   return { route, end: pos };
 }
 
