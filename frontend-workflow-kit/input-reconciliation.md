@@ -16,14 +16,21 @@
 
 외부 입력 스킬이 저장한 새 입력 결과물을 기존 frontend-workflow 문서와 맞춰보고, 단순 반영인지, 결정 필요인지, 충돌인지 분류하는 단계다.
 
-이 문서는 입력을 "가져오는 방법"을 정의하지 않는다. Figma, 기획 문서, API 문서, 회의록, QA 메모 등은 프로젝트별 입력 스킬이 수집하고 저장한다고 가정한다. 이 킷은 그 결과물의 위치와 메타만 받아 기존 산출물과 대조한다.
+이 문서는 입력을 "가져오는 방법"을 정의하지 않는다. Figma, 기획 문서, API 문서, 회의록, QA 메모 등은 프로젝트별 입력 스킬이 수집·해석한다. 킷은 두 가지 경계만 가진다.
+
+- `workflow:create-input`: 이미 정규화된 입력 facts 를 canonical `docs/frontend-workflow/inputs/{input_id}.md` 로 쓰는 generic producer.
+- `reconcile-input`: canonical 입력 artifact 를 기존 frontend-workflow 문서와 대조하는 reconciliation 단계.
+
+즉 킷은 Figma raw format, 내부 폴더 구조, auth navigation map, 화면 id drift 같은 consumer-specific mapping 을 알지 않는다. 그런 추출·해석은 consumer repo 의 source-specific producer 가 맡고, 마지막에 normalized producer payload 또는 CLI flags 로 generic producer 를 호출한다.
 
 ```txt
-input skill
-→ 입력 수집 및 저장
-→ 입력 결과물 위치 반환
+source-specific producer
+→ raw source 수집/해석
+→ normalized producer payload
+→ workflow:create-input
+→ docs/frontend-workflow/inputs/{input_id}.md
 
-frontend-workflow-kit
+reconcile-input
 → 입력 결과물을 읽음
 → 기존 산출물과 대조
 → 업데이트 / Unknown / Open Decision / Conflict 로 분류
@@ -46,7 +53,7 @@ Input Reconciliation의 목적은 다음이다.
 
 ## 전제
 
-입력 스킬은 입력 원천별로 따로 존재할 수 있다.
+입력 스킬 또는 adapter 는 입력 원천별로 따로 존재할 수 있다.
 
 ```txt
 figma-input skill
@@ -60,9 +67,49 @@ policy-migration-input skill
 user-note-input skill
 ```
 
-이 스킬들은 원본을 가져오고, 요약하고, 결과물을 프로젝트 안 어딘가에 저장한다. 우리 킷은 수집 방식에는 관여하지 않는다.
+이 스킬들은 원본을 가져오고, 요약하고, normalized payload 를 만든다. 우리 킷은 수집 방식과 raw format 해석에는 관여하지 않는다.
 
-중요한 계약은 입력 스킬이 마지막에 **입력 결과물 위치**와 **`input_id`** 를 남기는 것이다.
+중요한 계약은 source-specific producer 가 마지막에 `workflow:create-input` 를 호출해 **입력 결과물 위치**와 **`input_id`** 를 남기는 것이다. 입력 생성은 acceptance, confirmed 승격, 구현 허가를 의미하지 않는다. reconciliation 은 반드시 별도 단계다.
+
+### Generic Producer Boundary
+
+`workflow:create-input` 는 canonical input artifact 를 만드는 scaffold/producer 이다. source-specific adapter 는 Figma/OpenAPI/회의록/내부 데이터 등을 프로젝트 맥락에 맞게 먼저 정규화하고, producer 는 그 결과를 파일로 렌더링한다.
+
+```bash
+node tools/frontend-workflow/scripts/create-input-artifact.mjs \
+  --docs docs/frontend-workflow \
+  --source figma \
+  --input-type visual-spec \
+  --source-type figma \
+  --source-ref "figma://file/node" \
+  --captured-by "consumer-figma-adapter" \
+  --domain auth \
+  --screen AUTH-001 \
+  --title "Auth login visual spec" \
+  --summary "Login visual facts from the design source." \
+  --fact "Primary CTA is visible in the default state." \
+  --target "AUTH-001 figma-component-mapping" \
+  --expected "classification: simple-update"
+```
+
+Source-specific adapters should prefer structured mode:
+
+```bash
+node tools/frontend-workflow/scripts/create-input-artifact.mjs \
+  --docs docs/frontend-workflow \
+  --from-json input.json
+```
+
+또는 `--from-yaml input.yaml` 을 사용할 수 있다. Producer 는 `input_id` 를 `IN-{YYYYMMDD}-{source}-{NNN}` 로 생성하고, 같은 id 파일 덮어쓰기를 기본으로 거부한다. 내용이 바뀌면 새 입력을 만들고 `supersedes` 로 이전 `input_id` 를 연결한다.
+
+생성 후 흐름:
+
+```txt
+workflow:create-input
+→ workflow:validate
+→ reconcile-input
+→ workflow:state / workflow:readiness / workflow:validate
+```
 
 ## Input Result Contract
 
