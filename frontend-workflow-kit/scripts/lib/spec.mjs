@@ -408,7 +408,6 @@ const ROUTE_SPREAD_SEGMENT_RE = /^\[\.\.\.[A-Za-z0-9_][A-Za-z0-9_-]*\]/;
 const ROUTE_DYNAMIC_SEGMENT_RE = /^\[[A-Za-z0-9_][A-Za-z0-9_-]*\]/;
 const ROUTE_PARAM_SEGMENT_RE = /^:[A-Za-z_][A-Za-z0-9_-]*/;
 const ROUTE_LITERAL_SEGMENT_RE = /^[A-Za-z0-9_+](?:[A-Za-z0-9_+~-]|\.(?=[A-Za-z0-9_+~-]))*/;
-const ROUTE_PROJECT_SOURCE_FILE_PATH_RE = /^\/src\/.+\.(?:tsx?|jsx?)$/i;
 const ROUTE_LOCAL_ABSOLUTE_PATH_RE = /^\/(?:Users|private|tmp|var|opt|Volumes)\//;
 const ROUTE_LOCAL_FILE_EXTENSION_RE = /\.(?:[cm]?[jt]sx?|mdx?|ya?ml|json|css|scss|sass|less|html)$/i;
 
@@ -454,8 +453,8 @@ function hasSafeRouteEnd(text, index) {
 }
 
 function isSourceFilePathRoute(route) {
-  if (ROUTE_PROJECT_SOURCE_FILE_PATH_RE.test(route)) return true;
   if (!ROUTE_LOCAL_FILE_EXTENSION_RE.test(route)) return false;
+  if (route.startsWith('/src/')) return true;
   return ROUTE_LOCAL_ABSOLUTE_PATH_RE.test(route);
 }
 
