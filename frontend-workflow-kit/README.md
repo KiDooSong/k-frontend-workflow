@@ -39,6 +39,7 @@ templates/   screen-spec(통합형+stub), navigation-map(뼈대), llm-rules, dom
              figma-component-mapping (화면별 figma 시각 매핑; reconcile-input 산출물),
              api-manifest (## Endpoints — 검사 8 API Candidates↔스키마 매칭 입력)
 scripts/     workflow-state.mjs · readiness.mjs · validate.mjs   (MVP-A 코어 3개)
+             create-input-artifact.mjs (canonical input artifact generic producer)
 skills/      implement-screen
 schemas/     frontmatter.schema.json
 catalog/     artifact-manifest.yaml (등록분만)
@@ -100,6 +101,8 @@ examples/    coupon-feature (golden example, end-to-end 1회 완주)
 npm run workflow:state       # frontmatter+본문 → _meta/workflow-state.yaml + screen-inventory.yaml
 npm run workflow:readiness   # 화면별 readiness_mode / allowed·forbidden paths / blocking
 npm run workflow:validate    # 검사 12종, exit 0/1 (CI 게이트)
+npm run workflow:create-input -- --docs docs/frontend-workflow --from-json input.json
+                              # normalized payload → inputs/{input_id}.md (reconcile/register 는 별도)
 
 # MVP-B Phase 0 추가 명령:
 npm run workflow:forbidden-paths -- --diff <file> --docs <dir>   # 경로 backstop (warning-first; --enforce 로 하드)
@@ -128,6 +131,38 @@ scan -> map -> diff -> rollout -> propose 보고서와 `lint-policy.yaml` 초안
 
 각 스크립트는 `--json` (스킬 파싱용), `--docs`, `--src` 플래그를 지원한다.
 `readiness.mjs` 는 `--screen <ID>`, `--ci <file>`, `--out <file>` 도 받는다.
+
+## Input artifact producer
+
+`workflow:create-input` 는 canonical input artifact 를 만드는 generic producer 다. Source-specific producer(예: Figma, OpenAPI, 회의록, 내부 데이터 mapper)는 raw source 를 수집·해석해 normalized payload 를 만들고, 이 명령에 위임한다.
+
+```txt
+source-specific producer
+→ normalized producer payload
+→ workflow:create-input
+→ docs/frontend-workflow/inputs/{input_id}.md
+→ reconcile-input
+→ workflow:state/readiness/validate
+```
+
+이 명령은 Figma raw format, ck 폴더 구조, auth navigation map, screen id drift 같은 소비 프로젝트별 규칙을 알지 않는다. 입력 생성은 acceptance, confirmed 승격, 구현 허가가 아니며 Reconciliation Register 도 직접 수정하지 않는다.
+
+```bash
+npm run workflow:create-input -- \
+  --docs docs/frontend-workflow \
+  --source planning \
+  --input-type planning \
+  --source-type planning-doc \
+  --source-ref "planning://auth-login-copy" \
+  --captured-by "consumer-planning-adapter" \
+  --domain auth \
+  --screen AUTH-001 \
+  --title "Auth login copy input" \
+  --summary "Login copy changed in the planning note." \
+  --fact "Primary CTA copy is Sign in." \
+  --target "AUTH-001 screen-spec" \
+  --expected "classification: simple-update"
+```
 
 ## Brownfield adoption compatibility
 

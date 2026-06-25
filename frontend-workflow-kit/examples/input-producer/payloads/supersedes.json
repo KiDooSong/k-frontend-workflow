@@ -1,0 +1,24 @@
+{
+  "source": "planning",
+  "input_type": "planning",
+  "source_type": "planning-doc",
+  "source_ref": "planning://auth-login-copy-v2",
+  "captured_at": "2026-06-25T11:00:00+09:00",
+  "captured_by": "example-planning-producer",
+  "affected_domains": ["auth"],
+  "affected_screens": ["AUTH-001"],
+  "confidence": "candidate",
+  "supersedes": "IN-20260625-planning-001",
+  "title": "Auth login planning input v2",
+  "summary": "Planning note updates the prior login copy input.",
+  "extracted_facts": [
+    "Primary CTA copy is Sign in.",
+    "Legal copy appears below the CTA."
+  ],
+  "suggested_target_artifacts": [
+    "AUTH-001 screen-spec"
+  ],
+  "expected_reconciliation": [
+    "classification: simple-update"
+  ]
+}

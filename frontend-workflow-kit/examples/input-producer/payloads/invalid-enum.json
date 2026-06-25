@@ -1,0 +1,13 @@
+{
+  "source": "planning",
+  "input_type": "wireframe",
+  "source_type": "planning-doc",
+  "source_ref": "planning://invalid",
+  "captured_at": "2026-06-25T11:00:00+09:00",
+  "captured_by": "example-planning-producer",
+  "affected_domains": ["auth"],
+  "affected_screens": ["AUTH-001"],
+  "title": "Invalid enum example",
+  "summary": "This payload should exit 2.",
+  "extracted_facts": ["input_type is invalid."]
+}

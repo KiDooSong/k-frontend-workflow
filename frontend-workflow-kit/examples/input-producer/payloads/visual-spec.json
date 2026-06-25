@@ -1,0 +1,29 @@
+{
+  "source": "figma",
+  "input_type": "visual-spec",
+  "source_type": "figma",
+  "source_ref": "figma://file/auth-login/node/1:2",
+  "captured_at": "2026-06-25T10:00:00+09:00",
+  "captured_by": "example-figma-producer",
+  "affected_domains": ["auth"],
+  "affected_screens": ["AUTH-001"],
+  "confidence": "candidate",
+  "raw_artifacts": ["docs/raw/figma/auth-login.png"],
+  "title": "Auth login visual spec",
+  "summary": "Visual source provides layout and component facts for the login screen.",
+  "extracted_facts": [
+    "Primary CTA is full-width below the password field.",
+    "Forgot-password link is visually secondary."
+  ],
+  "suggested_target_artifacts": [
+    "AUTH-001 figma-component-mapping",
+    "AUTH-001 screen-spec"
+  ],
+  "expected_reconciliation": [
+    "classification: simple-update",
+    "Missing shared form field component should be proposed as component-gap if absent."
+  ],
+  "should_not_do": [
+    "Do not edit production code directly from this input."
+  ]
+}
