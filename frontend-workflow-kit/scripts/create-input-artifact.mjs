@@ -57,6 +57,9 @@ function parseProducerArgs(argv) {
     const eq = arg.indexOf('=');
     const key = eq === -1 ? arg.slice(2) : arg.slice(2, eq);
     if (!KNOWN_FLAGS.has(key)) cliError(`unknown flag: --${key}`);
+    if (BOOLEAN_FLAGS.has(key) && eq !== -1) {
+      cliError(`--${key} does not accept a value; use bare --${key} to enable it`);
+    }
     let value = eq === -1 ? undefined : arg.slice(eq + 1);
     if (value === undefined && VALUE_FLAGS.has(key)) {
       const next = argv[i + 1];
@@ -119,7 +122,7 @@ function flagPayload(flags) {
   return payload;
 }
 
-function destructiveBooleanFlag(flags, key) {
+function booleanFlag(flags, key) {
   const value = flags[key];
   if (value === undefined) return false;
   if (value === true) return true;
@@ -140,7 +143,7 @@ Examples:
 
 function main() {
   const { flags, positionals } = parseProducerArgs(process.argv.slice(2));
-  if (flags.help) {
+  if (booleanFlag(flags, 'help')) {
     process.stdout.write(help());
     return;
   }
@@ -157,17 +160,19 @@ function main() {
 
   const docsDir = path.resolve(typeof flags.docs === 'string' ? flags.docs : DEFAULTS.docs);
   const inputsDir = path.resolve(typeof flags.out === 'string' ? flags.out : path.join(docsDir, 'inputs'));
-  const overwrite = destructiveBooleanFlag(flags, 'overwrite');
+  const dryRun = booleanFlag(flags, 'dry-run');
+  const json = booleanFlag(flags, 'json');
+  const overwrite = booleanFlag(flags, 'overwrite');
 
   try {
     const result = writeInputArtifact(payload, {
       inputsDir,
       date: typeof flags.date === 'string' ? flags.date : undefined,
-      dryRun: Boolean(flags['dry-run']),
+      dryRun,
       overwrite,
     });
 
-    if (flags.json) {
+    if (json) {
       const body = {
         input_id: result.artifact.input_id,
         output_path: result.outputPath,
