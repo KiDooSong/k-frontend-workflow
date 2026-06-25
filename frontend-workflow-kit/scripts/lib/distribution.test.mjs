@@ -199,6 +199,9 @@ test('consumer agent guide and task matrix cover artifact update traps', () => {
   assert.match(guide, /CLAUDE\.md/);
   assert.match(guide, /task-artifact-matrix\.md/);
   assert.match(guide, /generated-files\.md/);
+  assert.match(guide, /npm run workflow:state/);
+  assert.match(guide, /npm run workflow:readiness -- --screen <SCREEN_ID> --json/);
+  assert.match(guide, /npm run workflow:validate/);
 
   for (const term of [
     'component-catalog',
@@ -211,9 +214,17 @@ test('consumer agent guide and task matrix cover artifact update traps', () => {
     assert.match(matrix, new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
 
+  assert.match(matrix, /If ScreenSpec frontmatter or parsed body sections changed, run `workflow:state`/);
+  assert.match(matrix, /Add or modify a route entry[\s\S]*workflow:state[\s\S]*workflow:route-tree/);
+  assert.match(matrix, /Close or answer Unknowns[\s\S]*workflow:state[\s\S]*workflow:validate/);
+  assert.match(matrix, /Codegen outputs \| The repo's actual codegen command/);
+
   assert.match(generated, /component-catalog\.md[\s\S]*workflow:catalog/);
   assert.match(generated, /layer-inventory\.yaml[\s\S]*workflow:state/);
   assert.match(generated, /workflow:check-generated[\s\S]*warning-first/);
+  assert.match(generated, /Codegen outputs when present \| The repo's actual codegen command/);
+  assert.match(generated, /does not update committed codegen files/);
+  assert.doesNotMatch(generated, /Codegen outputs when present \|[^\n]*workflow:check-generated/);
 });
 
 test('consumer reconciliation docs describe check 12 severity and retry row reuse', () => {

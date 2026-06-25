@@ -12,7 +12,7 @@ Keep it short: this is the agent starting point, not the full workflow manual.
 
 ## Before Editing Code
 
-- For screen work, run or inspect `workflow:state` and `workflow:readiness -- --screen <SCREEN_ID> --json`.
+- For screen work, run or inspect `npm run workflow:state` and `npm run workflow:readiness -- --screen <SCREEN_ID> --json`.
 - Read the target ScreenSpec before changing implementation files.
 - Only edit readiness `allowed_paths`. Do not edit `forbidden_paths`.
 - If using new external input from Figma, planning, API, QA, or meetings, create the input artifact and reconcile it before implementation.
@@ -34,6 +34,6 @@ Keep it short: this is the agent starting point, not the full workflow manual.
 
 ## Before Finishing
 
-- Run the smallest relevant checks, then run `workflow:validate`.
+- Run the smallest relevant checks, then run `npm run workflow:validate`.
 - If route, nav, catalog, policy, lint, or codegen sources changed, regenerate the matching generated view or run the advisory generated-file guard.
 - Report which workflow artifacts changed, which generated files were regenerated, and which Open Decisions, Unknowns, or Component Gaps remain open.

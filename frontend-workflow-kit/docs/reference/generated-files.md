@@ -17,7 +17,7 @@ Generated files can become stale when their source docs, registers, layout, poli
 | ScreenSpec generated blocks, such as `<!-- GENERATED:START nav-graph -->` | Owning generator, currently `npm run workflow:nav-graph` | Same generator inputs as the owning block | The generator source changes or the generated block is stale |
 | Policy draft outputs | `npm run workflow:policy-draft -- --out <review-output-dir>` | `project-layout.yaml` and implementation-mode policy | Layout/policy migration review is requested. Draft output does not replace live policy |
 | `eslint.workflow.config.mjs` when present | `npm run workflow:lint-gen` | `docs/frontend-workflow/_meta/lint-policy.yaml` | Lint policy changes or generated lint config drifts |
-| Codegen outputs when present | The repo's codegen command, or focused `npm run workflow:check-generated -- --artifact codegen-openapi-client --src <src>` when configured | API schema role, OpenAPI/manual schema evidence, and codegen adapter inputs | API schemas or codegen adapter inputs change |
+| Codegen outputs when present | The repo's actual codegen command | API schema role, OpenAPI/manual schema evidence, and codegen adapter inputs | API schemas or codegen adapter inputs change |
 
 ## Advisory Guard
 
@@ -32,6 +32,8 @@ Default v1 targets:
 Focused target:
 
 - `codegen-openapi-client`
+
+Use `npm run workflow:check-generated -- --artifact codegen-openapi-client --src <src>` only as an advisory drift check for codegen outputs. It does not update committed codegen files.
 
 Do not wire this command as a hard CI gate or rely on `--enforce` unless a separate human decision and implementation make that behavior explicit.
 
