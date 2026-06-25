@@ -408,7 +408,7 @@ const ROUTE_SPREAD_SEGMENT_RE = /^\[\.\.\.[A-Za-z0-9_][A-Za-z0-9_-]*\]/;
 const ROUTE_DYNAMIC_SEGMENT_RE = /^\[[A-Za-z0-9_][A-Za-z0-9_-]*\]/;
 const ROUTE_PARAM_SEGMENT_RE = /^:[A-Za-z_][A-Za-z0-9_-]*/;
 const ROUTE_LITERAL_SEGMENT_RE = /^[A-Za-z0-9_+](?:[A-Za-z0-9_+~-]|\.(?=[A-Za-z0-9_+~-]))*/;
-const ROUTE_SOURCE_FILE_EXTENSION_RE = /\.(?:tsx?|jsx?)$/i;
+const ROUTE_SOURCE_FILE_PATH_RE = /^\/src\/.+\.(?:tsx?|jsx?)$/i;
 
 function charBefore(text, index) {
   const chars = Array.from(text.slice(Math.max(0, index - 2), index));
@@ -467,7 +467,7 @@ function readRouteToken(text, index) {
   }
 
   if (!hasSafeRouteEnd(text, pos)) return null;
-  if (ROUTE_SOURCE_FILE_EXTENSION_RE.test(route)) return null;
+  if (ROUTE_SOURCE_FILE_PATH_RE.test(route)) return null;
   return { route, end: pos };
 }
 

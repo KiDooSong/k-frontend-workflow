@@ -380,6 +380,7 @@ test('P13: cellRoutes — 정상 v1/v2 route token 은 보존한다', () => {
     ['/users/:id', ['/users/:id']],
     ['/legal/privacy.v2', ['/legal/privacy.v2']],
     ['/legal/privacy.v2.', ['/legal/privacy.v2']],
+    ['/release/notes.ts', ['/release/notes.ts']],
   ];
   for (const [input, expected] of cases) {
     assert.deepEqual(cellRoutes(input), expected, input);
@@ -558,13 +559,15 @@ test('E2E: validate check 4 — route-tree style optional catch-all and dotted r
           '|---|---|---|---|---|---|',
           '| optional catch-all | tap | 이동 | route | /docs/[[...slug]] |  |',
           '| dotted literal | tap | 이동 | route | /legal/privacy.v2 |  |',
+          '| dotted extension-like literal | tap | 이동 | route | /release/notes.ts |  |',
         ].join('\n'),
       }),
     });
     const messages = check4Errors(runValidate(root)).map((e) => e.message);
-    assert.equal(messages.length, 2);
+    assert.equal(messages.length, 3);
     assert.ok(messages.some((m) => m.includes('/docs/[[...slug]]')), 'optional catch-all target must be validated');
     assert.ok(messages.some((m) => m.includes('/legal/privacy.v2')), 'dotted literal target must be validated');
+    assert.ok(messages.some((m) => m.includes('/release/notes.ts')), 'extension-like dotted route target must be validated');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
