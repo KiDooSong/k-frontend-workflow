@@ -2,6 +2,12 @@
 
 킷 자체의 버전 관리 (템플릿/스크립트 계약 추적용).
 
+## Unreleased
+
+### Changed
+- **Breaking ScreenSpec contract**: State Matrix canonical mandatory states are now `loading / empty / error / success / disabled / refreshing`. Existing ScreenSpecs that only declare the old five states (`loading / success / empty / error / refreshing`) now report `state_matrix_complete=false` until they add a distinct `disabled` interactivity row.
+- templates/readiness/examples: `screen-spec.template.md`, readiness next-action text, active examples, and expected readiness snapshots now use the 6-state order above. Treat `disabled` as an interactivity state, not a loading subcase.
+
 ## 0.3.0-mvp-c-phase1 — 2026-06-14
 
 MVP-C Phase 1: 전역 생성 뷰 2종(route-tree·nav-graph) **읽기 전용** 생성기 통합. 새 게이트 없음 — 생성기는 src/app 트리·screen-spec/navigation-map 을 읽어 `_meta` 산출물을 만들 뿐 screen-spec 을 수정하지 않는다. `0.3.0-mvp-c-phase1` 은 정식 git 태그/릴리스가 아니라 MVP-C Phase 1 통합 마일스톤 라벨이다.
