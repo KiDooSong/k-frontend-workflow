@@ -35,11 +35,12 @@ last_reviewed: 2026-06-13
 | State | Condition | UI |
 |---|---|---|
 | loading | query.isLoading | SkeletonList |
-| success | data.length > 0 | CouponList |
 | empty | data.length === 0 | EmptyState |
 | error | query.isError (서버) | ErrorState + Retry |
-| offline | 네트워크 없음 | 네트워크 전용 ErrorState + Retry |
+| success | data.length > 0 | CouponList |
+| disabled | 주요 액션 사용 조건 미충족 또는 요청 처리 중 | disabled control/state |
 | refreshing | query.isRefreshing | RefreshControl |
+| offline | 네트워크 없음 | 네트워크 전용 ErrorState + Retry |
 
 ## Interaction Matrix
 | User Action | Trigger | Result | Analytics Event |
@@ -78,7 +79,7 @@ last_reviewed: 2026-06-13
 - VER-001: 상태 탭 selector 구조는 별도 Verification evidence 이며 readiness/confirmed 승격 근거가 아니다.
 
 ## Acceptance Criteria
-- [ ] State Matrix 의 상태(loading/success/empty/error/offline/refreshing)가 모두 구현됨 → CouponListScreen.test.tsx
+- [ ] State Matrix 의 상태(loading/empty/error/success/disabled/refreshing/offline)가 모두 구현됨 → CouponListScreen.test.tsx
 - [ ] 상태 탭 전환 시 목록이 해당 상태로 필터링됨
 - [ ] 오프라인 진입 시 네트워크 전용 ErrorState 표시, 복귀 후 Retry 시 정상 로드
 - [ ] 만료 쿠폰은 '만료' 탭에 노출 (D-001 → separate tab)

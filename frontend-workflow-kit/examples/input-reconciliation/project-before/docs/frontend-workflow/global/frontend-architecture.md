@@ -19,7 +19,7 @@ kind: architecture-overview
 ## AsyncState 계약
 - 화면은 데이터 로딩 결과를 `status`(loading / success / empty / error) 한 축으로만 보고 분기한다.
 - TanStack Query 등 내부 라이브러리 객체는 화면에 노출하지 않는다 — 화면은 AsyncState 만 본다.
-- 그래서 각 ScreenSpec 의 State Matrix 는 `loading | success | empty | error | refreshing` 5행을 모두 채운다.
+- 그래서 각 ScreenSpec 의 State Matrix 는 `loading | empty | error | success | disabled | refreshing` 6행을 모두 채운다.
 
 ## fake-hook → API 교체 단계 (fixture-first)
 1. 화면은 도메인 데이터 훅 하나(예: `useCoupons`)만 사용한다.

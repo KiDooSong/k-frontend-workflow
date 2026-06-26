@@ -119,7 +119,7 @@
       "raise screen-spec status (confirmed requires human approval metadata)",
       "create figma-component-mapping (status >= draft)",
       "confirm API candidates",
-      "complete State Matrix (loading/success/empty/error/refreshing)"
+      "complete State Matrix (loading/empty/error/success/disabled/refreshing)"
     ],
     "next_mode": "rough-fixture-ui",
     "readiness_mode": "screen-skeleton"

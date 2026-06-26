@@ -35,9 +35,10 @@ last_reviewed: 2026-06-13
 | State | Condition | UI |
 |---|---|---|
 | loading | mutation.isPending | Button spinner + 입력 비활성화 |
-| success | mutation.isSuccess | Route Guard 이동 |
 | empty | 초기 진입 | 빈 폼 |
 | error | mutation.isError | Inline Error |
+| success | mutation.isSuccess | Route Guard 이동 |
+| disabled | 입력값 유효성 미충족 또는 mutation.isPending | Submit controls disabled |
 | refreshing | 세션 재검증 중 | Button spinner |
 
 ## Interaction Matrix
@@ -71,7 +72,7 @@ last_reviewed: 2026-06-13
 - Submit: accessibilityState disabled 반영
 
 ## Acceptance Criteria
-- [ ] State Matrix 의 5개 상태가 모두 구현됨 → LoginScreen.test.tsx
+- [ ] State Matrix 의 6개 상태가 모두 구현됨 → LoginScreen.test.tsx
 - [ ] 로그인 성공 시 returnTo 가 있으면 returnTo, 없으면 /(tabs)/home 으로 이동 (D-204)
 - [ ] 잘못된 자격 증명 시 Inline Error 표시
 

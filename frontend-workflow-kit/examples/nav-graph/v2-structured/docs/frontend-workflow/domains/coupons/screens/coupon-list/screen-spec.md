@@ -29,9 +29,10 @@ last_reviewed: 2026-06-15
 | State | Condition | UI |
 |---|---|---|
 | loading | query.isLoading | SkeletonList |
-| success | data.length > 0 | CouponList |
 | empty | data.length === 0 | EmptyState |
 | error | query.isError | ErrorState + Retry |
+| success | data.length > 0 | CouponList |
+| disabled | 주요 액션 사용 조건 미충족 또는 요청 처리 중 | disabled control/state |
 | refreshing | query.isRefreshing | RefreshControl |
 
 ## Interaction Matrix

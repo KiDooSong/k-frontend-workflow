@@ -30,9 +30,10 @@ last_reviewed: 2026-06-12
 | State | Condition | UI |
 |---|---|---|
 | loading | query.isLoading | SkeletonList |
-| success | data 존재 | Profile Form |
 | empty | 데이터 없음 | EmptyState |
 | error | query.isError | ErrorState + Retry |
+| success | data 존재 | Profile Form |
+| disabled | 저장 가능 조건 미충족 또는 mutation.isPending | Save control disabled |
 | refreshing | query.isRefreshing | RefreshControl |
 
 ## Interaction Matrix
@@ -64,7 +65,7 @@ last_reviewed: 2026-06-12
 
 ## Acceptance Criteria
 - [ ] 편집 범위 확정(D-301) 전에는 문서까지만 진행한다
-- [ ] State Matrix 의 5개 상태가 모두 구현됨 (확정 후)
+- [ ] State Matrix 의 6개 상태가 모두 구현됨 (확정 후)
 
 ## Unknowns
 | ID | Question | Status |

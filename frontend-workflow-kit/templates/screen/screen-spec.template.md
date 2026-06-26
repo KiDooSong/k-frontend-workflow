@@ -47,13 +47,14 @@ last_reviewed: "{YYYY-MM-DD}"
 2. {섹션}
 
 ## State Matrix
-<!-- 필수 상태 5종(loading/success/empty/error/refreshing)은 모두 채운다. State 컬럼 이름/값을 유지한다. -->
+<!-- 필수 상태 6종(loading/empty/error/success/disabled/refreshing)은 모두 채운다. State 컬럼 이름/값을 유지한다. -->
 | State | Condition | UI |
 |---|---|---|
 | loading | {조건} | {컴포넌트} |
-| success | {조건} | {컴포넌트} |
 | empty | {조건} | {컴포넌트} |
 | error | {조건} | {컴포넌트} |
+| success | {조건} | {컴포넌트} |
+| disabled | {비활성 조건} | {disabled control/state} |
 | refreshing | {조건} | {컴포넌트} |
 
 ## Interaction Matrix
