@@ -1,5 +1,5 @@
 {
-  "//": "소비 프로젝트의 package.json scripts에 병합한다. 킷 위치는 tools/frontend-workflow/로 가정한다. 자세한 사용법은 tools/frontend-workflow/COMMANDS.md를 본다.",
+  "//": "Merge these scripts into the consumer repo package.json. The kit path assumes tools/frontend-workflow/. See tools/frontend-workflow/COMMANDS.md for usage.",
   "scripts": {
     "workflow:state": "node tools/frontend-workflow/scripts/workflow-state.mjs",
     "workflow:readiness": "node tools/frontend-workflow/scripts/readiness.mjs",
@@ -17,10 +17,7 @@
     "workflow:run": "node tools/frontend-workflow/scripts/workflow-run.mjs",
     "workflow:policy-draft": "node tools/frontend-workflow/scripts/policy-draft.mjs",
     "workflow:adoption-probe": "node tools/frontend-workflow/scripts/adoption-probe.mjs",
-    "workflow:route-cross-check": "node tools/frontend-workflow/scripts/route-cross-check.mjs"
-  },
-  "//roadmap": "아직 consumer-facing alias로 승격하지 않은 명령. 승격되면 scripts로 옮긴다.",
-  "//roadmap-scripts": {
-    "workflow:check-generated": "scripts/check-generated-files.mjs (advisory generated-file drift guard; not consumer-facing by default)"
+    "workflow:route-cross-check": "node tools/frontend-workflow/scripts/route-cross-check.mjs",
+    "workflow:check-generated": "node tools/frontend-workflow/scripts/check-generated-files.mjs"
   }
 }

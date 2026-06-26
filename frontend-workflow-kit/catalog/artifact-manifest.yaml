@@ -188,6 +188,21 @@ artifacts:
     status: active
     mvp: A
 
+  # conditional — workflow-state.mjs writes this when project-layout.yaml declares layer telemetry.
+  # It is still generated/do_not_edit; absence is expected for repos that use the default layer model.
+  layer-inventory:
+    kind: generated
+    generated: true
+    scope: global
+    path: docs/frontend-workflow/_meta/layer-inventory.yaml
+    command: npm run workflow:state
+    source:
+      - project-layout.yaml
+      - "{roles.*}"
+    do_not_edit: true
+    status: active
+    mvp: A
+
   # component-catalog (MVP-C, View 3) — src/components/ui/** 파일 트리에서 컴포넌트 카탈로그를 파생.
   # 생성기 catalog-gen.mjs 구현 완료 + 출력 포맷 v1 freeze(골든). 4필드 Markdown 표:
   # name/source-path/export-kind/status. 골든 픽스처: examples/component-catalog/basic-ui.

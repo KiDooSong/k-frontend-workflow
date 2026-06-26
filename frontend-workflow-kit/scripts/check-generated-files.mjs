@@ -120,7 +120,7 @@ function renderCheck(report, notV1) {
     }
   }
   w(`  요약: ${Object.entries(report.summary).map(([k, v]) => `${k} ${v}`).join(' / ') || '(없음)'}\n`);
-  w('  (2.5C: warning-first — 항상 exit 0. 생성 파일 자동수정/덮어쓰기 없음. --enforce/CI 미배선.)\n');
+  w('  (warning-first — 항상 exit 0. 생성 파일 자동수정/덮어쓰기 없음. --enforce/CI 미배선.)\n');
 }
 
 function main() {

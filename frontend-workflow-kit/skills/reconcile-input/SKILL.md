@@ -7,7 +7,7 @@ description: 외부 입력 스킬이 저장한 새 입력 결과물(input_id 보
 
 외부 입력 스킬이 저장한 입력 결과물을 기존 산출물과 대조해 분류하고, 처리 이력을 Reconciliation Register에 남긴다.
 **충돌을 조용히 해결하지 않는다** — LLM은 게이트를 올리기만 하고, 게이트는 Open Decision(readiness)이 건다.
-전체 계약: [input-reconciliation.md](../../docs/reference/input-reconciliation.md).
+전체 계약: [input-reconciliation.md](../../docs/reference/input-reconciliation.md). 작업별 추가 산출물 판단은 [task-artifact-matrix.md](../../docs/reference/task-artifact-matrix.md)를 함께 본다.
 
 ## 입력
 - 입력 결과물 경로 (예: `docs/frontend-workflow/inputs/IN-20260613-figma-001.md` — 파일명 = `{input_id}.md`). 없으면 사용자에게 묻는다.
@@ -43,7 +43,7 @@ description: 외부 입력 스킬이 저장한 새 입력 결과물(input_id 보
    - invalid enum / duplicate row / missing required columns → 먼저 register 구조를 수리한다.
    - 없음 → 다음 단계.
 3. 행이 없을 때만 Register에 행을 먼저 쓴다 (`Reconcile Status: in-progress`). ← 문서 수정보다 먼저. 파일이 없으면 아래 스키마로 생성.
-4. `affected_domains`/`affected_screens`(구 `suggested_scope` — deprecated read-compat) 기준으로 관련 산출물을 연다. 위 라우팅 표에 따라 visual/testID/Tier3 산출물도 포함한다.
+4. `affected_domains`/`affected_screens`(구 `suggested_scope` — deprecated read-compat) 기준으로 관련 산출물을 연다. 위 라우팅 표와 task-artifact matrix에 따라 visual/testID/Tier3 산출물과 secondary generated artifacts도 포함한다.
 5. 기존 `confirmed` 문서·`resolved` 결정과 충돌하는지 대조한다.
 6. classification을 만든다 (입력 1개 → item 여러 개 가능). 아래 분류표 참조.
 7. 자동 반영 가능한 `simple-update`만 문서에 반영한다.
@@ -54,7 +54,7 @@ description: 외부 입력 스킬이 저장한 새 입력 결과물(input_id 보
 9. 사용자 결정 후 문서를 업데이트한다 (게이트 내림은 사람이).
 10. Register 행을 `reconciled`로 바꾸고 `Result`·`Touched Artifacts`·`Created Items`를 채운다.
     자식 decision이 `open`이어도 reconcile 자체는 끝 — 그 차단은 readiness가 담당한다.
-11. `npm run workflow:state` → `workflow:readiness` → `workflow:validate`를 실행하고 결과를 보고한다.
+11. task-artifact matrix로 touched artifacts와 created items를 재확인한 뒤 `npm run workflow:state` → `workflow:readiness` → `workflow:validate`를 실행하고 결과를 보고한다.
     Tier3/layout/policy migration 입력을 건드렸으면 `npm run workflow:policy-draft -- --out <review-output-dir>`처럼
     review-only 출력 디렉터리를 명시해 실행한다(또는 해당 repo의 policy-draft 명령에 동등한 `--out` 전달).
     이 출력은 live policy 교체가 아니다. fixture/dogfood 갱신일 때만 adoption-probe 를 추가로 돌린다.

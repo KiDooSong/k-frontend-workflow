@@ -1,6 +1,6 @@
 // check-generated-files.test.mjs — generated-file guard v1 lib 단위 테스트.
 //
-// 실행(CI 미배선 — 하드룰상 package script/CI 변경 금지):
+// 실행(consumer alias는 warning-first로 노출, CI/hard gate는 미배선):
 //   node --test scripts/lib/check-generated-files.test.mjs
 //
 // 2.5B 범위: discoverArtifacts 분류 + selectArtifactIds 정책.

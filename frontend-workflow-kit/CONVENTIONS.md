@@ -24,6 +24,12 @@ Excluded by default:
 the input artifact contract, Reconciliation Register schema, retry behavior, and
 validate check 12 severity.
 
+`templates/repo/AGENTS.template.md` is the short root guide to copy as
+`AGENTS.md` or `CLAUDE.md`. Keep startup guidance there, project-specific policy
+rules in `docs/frontend-workflow/global/llm-rules.md`, task routing in
+`docs/reference/task-artifact-matrix.md`, and regeneration rules in
+`docs/reference/generated-files.md`.
+
 ## Project Layout Profiles
 
 Default Expo-like project:

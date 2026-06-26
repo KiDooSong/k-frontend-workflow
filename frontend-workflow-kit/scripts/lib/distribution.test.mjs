@@ -51,9 +51,11 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
     'CONVENTIONS.md',
     'distribution-manifest.yaml',
     'docs/reference/ambiguity-triage.md',
+    'docs/reference/generated-files.md',
     'docs/reference/input-reconciliation.md',
     'docs/reference/lint-policy-catalog.md',
     'docs/reference/lint-policy-rollout-ratchet.md',
+    'docs/reference/task-artifact-matrix.md',
     'package.json',
     'package-lock.json',
     'package-scripts.template.json',
@@ -66,6 +68,7 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
     'scripts/pack-frontend-workflow-kit.mjs',
     'skills/implement-screen/SKILL.md',
     'skills/reconcile-input/SKILL.md',
+    'templates/repo/AGENTS.template.md',
     'templates/screen/screen-spec.template.md',
   ]) {
     assert.equal(exists(rel, out), true, `${rel} should be packed`);
@@ -90,10 +93,23 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
   assert.equal(summary.destination_hint, 'tools/frontend-workflow');
   assert.equal(summary.files.includes('examples/coupon-feature/README.md'), false);
   assert.equal(summary.files.includes('docs/reference/input-reconciliation.md'), true);
+  assert.equal(summary.files.includes('docs/reference/task-artifact-matrix.md'), true);
+  assert.equal(summary.files.includes('docs/reference/generated-files.md'), true);
+  assert.equal(summary.files.includes('templates/repo/AGENTS.template.md'), true);
   assert.equal(summary.files.includes('input-reconciliation.md'), false);
   assert.deepEqual(summary.files, [...summary.files].sort((a, b) => a.localeCompare(b)));
   assert.ok(summary.excluded.some((entry) => entry.path === 'examples/**' && entry.classification === 'kit-dev-fixture'));
   assert.ok(summary.excluded.some((entry) => entry.path === 'docs/design/**' && entry.classification === 'design-draft'));
+
+  const readme = fs.readFileSync(path.join(out, 'README.md'), 'utf8');
+  for (const rel of [
+    'templates/repo/AGENTS.template.md',
+    'docs/reference/task-artifact-matrix.md',
+    'docs/reference/generated-files.md',
+  ]) {
+    assert.match(readme, new RegExp(rel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.equal(exists(rel, out), true, `${rel} should be linked and packed`);
+  }
 });
 
 test('packed consumer-facing markdown does not link to excluded docs', (t) => {
@@ -174,6 +190,43 @@ test('consumer README points to the manifest-backed pack flow', () => {
   assert.doesNotMatch(readme, /MVP-B Phase/);
 });
 
+test('consumer agent guide and task matrix cover artifact update traps', () => {
+  const guide = fs.readFileSync(path.join(KIT_ROOT, 'templates', 'repo', 'AGENTS.template.md'), 'utf8');
+  const matrix = fs.readFileSync(path.join(KIT_ROOT, 'docs', 'reference', 'task-artifact-matrix.md'), 'utf8');
+  const generated = fs.readFileSync(path.join(KIT_ROOT, 'docs', 'reference', 'generated-files.md'), 'utf8');
+
+  assert.match(guide, /AGENTS\.md/);
+  assert.match(guide, /CLAUDE\.md/);
+  assert.match(guide, /task-artifact-matrix\.md/);
+  assert.match(guide, /generated-files\.md/);
+  assert.match(guide, /npm run workflow:state/);
+  assert.match(guide, /npm run workflow:readiness -- --screen <SCREEN_ID> --json/);
+  assert.match(guide, /npm run workflow:validate/);
+
+  for (const term of [
+    'component-catalog',
+    'component-gap-register',
+    'workflow:catalog',
+    'generated/do_not_edit',
+    'Open Decisions',
+    'Reconciliation Register',
+  ]) {
+    assert.match(matrix, new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+
+  assert.match(matrix, /If ScreenSpec frontmatter or parsed body sections changed, run `workflow:state`/);
+  assert.match(matrix, /Add or modify a route entry[\s\S]*workflow:state[\s\S]*workflow:route-tree/);
+  assert.match(matrix, /Close or answer Unknowns[\s\S]*workflow:state[\s\S]*workflow:validate/);
+  assert.match(matrix, /Codegen outputs \| The repo's actual codegen command/);
+
+  assert.match(generated, /component-catalog\.md[\s\S]*workflow:catalog/);
+  assert.match(generated, /layer-inventory\.yaml[\s\S]*workflow:state/);
+  assert.match(generated, /workflow:check-generated[\s\S]*warning-first/);
+  assert.match(generated, /Codegen outputs when present \| The repo's actual codegen command/);
+  assert.match(generated, /does not update committed codegen files/);
+  assert.doesNotMatch(generated, /Codegen outputs when present \|[^\n]*workflow:check-generated/);
+});
+
 test('consumer reconciliation docs describe check 12 severity and retry row reuse', () => {
   const reference = fs.readFileSync(path.join(KIT_ROOT, 'docs', 'reference', 'input-reconciliation.md'), 'utf8');
   const template = fs.readFileSync(path.join(KIT_ROOT, 'templates', 'input', 'input-artifact.template.md'), 'utf8');
@@ -192,8 +245,15 @@ test('consumer reconciliation docs describe check 12 severity and retry row reus
 
 test('consumer package script template exposes current command aliases only', () => {
   const scriptsTemplate = JSON.parse(fs.readFileSync(path.join(KIT_ROOT, 'package-scripts.template.json'), 'utf8'));
+  const packageJson = JSON.parse(fs.readFileSync(path.join(KIT_ROOT, 'package.json'), 'utf8'));
+  const commands = fs.readFileSync(path.join(KIT_ROOT, 'COMMANDS.md'), 'utf8');
+
   assert.equal(scriptsTemplate.scripts['workflow:create-input'], 'node tools/frontend-workflow/scripts/create-input-artifact.mjs');
   assert.equal(scriptsTemplate.scripts['workflow:route-cross-check'], 'node tools/frontend-workflow/scripts/route-cross-check.mjs');
   assert.equal(scriptsTemplate.scripts['workflow:policy-draft'], 'node tools/frontend-workflow/scripts/policy-draft.mjs');
-  assert.equal(Object.hasOwn(scriptsTemplate.scripts, 'workflow:check-generated'), false);
+  assert.equal(scriptsTemplate.scripts['workflow:check-generated'], 'node tools/frontend-workflow/scripts/check-generated-files.mjs');
+  assert.equal(packageJson.scripts['workflow:check-generated'], 'node scripts/check-generated-files.mjs');
+  assert.match(commands, /npm run workflow:check-generated/);
+  assert.match(commands, /warning-first/);
+  assert.match(commands, /must not be treated as a hard CI gate/);
 });

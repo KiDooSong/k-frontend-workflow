@@ -25,7 +25,7 @@ npm run kit:pack
 생성된 `dist/frontend-workflow-kit/`를 소비 repo의 `tools/frontend-workflow/`로 vendor한다. 포함되는 기본 surface는 다음뿐이다.
 
 - runtime/reference: `scripts/`, `catalog/`, `policies/`, `presets/`, `schemas/`, `docs/reference/`
-- templates/skills: `templates/`, `skills/`
+- templates/skills: `templates/`, `skills/` (including `templates/repo/AGENTS.template.md`)
 - package/docs: `package.json`, `package-lock.json`, `package-scripts.template.json`, `README.md`, `COMMANDS.md`, `CONVENTIONS.md`, `distribution-manifest.yaml`, `LICENSE`
 
 `examples/`, `temp/`, `docs/design/`, `docs/workflows/`, roadmap/history/run-report/proposal 문서는 기본 payload에서 제외된다.
@@ -48,6 +48,21 @@ npm run workflow:doctor
 
 명령 전체 목록과 옵션은 [COMMANDS.md](COMMANDS.md)를 본다.
 
+소비 repo root에는 짧은 agent guide를 둔다. `templates/repo/AGENTS.template.md`를 복사해 `AGENTS.md` 또는 `CLAUDE.md`로 사용하고, repo 고유 정책은 `docs/frontend-workflow/global/llm-rules.md`에 둔다.
+
+```bash
+cp tools/frontend-workflow/templates/repo/AGENTS.template.md AGENTS.md
+mkdir -p docs/frontend-workflow/global
+cp tools/frontend-workflow/templates/global/llm-rules.template.md docs/frontend-workflow/global/llm-rules.md
+```
+
+역할 구분:
+
+- root `AGENTS.md` / `CLAUDE.md`: LLM session starting point.
+- `docs/frontend-workflow/global/llm-rules.md`: project policy and priority rules.
+- [docs/reference/task-artifact-matrix.md](docs/reference/task-artifact-matrix.md): task-to-artifact operational checklist.
+- [docs/reference/generated-files.md](docs/reference/generated-files.md): `generated/do_not_edit` regeneration map.
+
 ## Minimal Docs Bootstrap
 
 소비 repo root 기준으로 최소 문서 트리를 만든다.
@@ -62,7 +77,7 @@ docs/frontend-workflow/
 
 - `tools/frontend-workflow/templates/app/navigation-map.template.md`
 - `tools/frontend-workflow/templates/screen/screen-spec.template.md`
-- 필요 시 `templates/global/`, `templates/domain/`, `templates/api/`, `templates/meta/`, `templates/input/`
+- 필요 시 `templates/repo/`, `templates/global/`, `templates/domain/`, `templates/api/`, `templates/meta/`, `templates/input/`
 
 입력/reconcile flow를 쓰기 시작하면 `_meta/reconciliation-register.md`도 만든다.
 
@@ -133,7 +148,7 @@ npm run workflow:readiness -- --screen <SCREEN_ID> --json
 npm run workflow:validate
 ```
 
-관련 입력이 `not-started`, `in-progress`, `failed` 상태면 구현 전에 reconcile을 끝내거나 같은 row로 재개한다. 구현은 readiness가 허용한 파일에만 하며, generated files, Open Decision resolve, Unknown close, Component Gap accept, live policy replacement는 사람이 명시하지 않으면 하지 않는다.
+관련 입력이 `not-started`, `in-progress`, `failed` 상태면 구현 전에 reconcile을 끝내거나 같은 row로 재개한다. 구현은 readiness가 허용한 파일에만 하며, generated files, Open Decision resolve, Unknown close, Component Gap accept, live policy replacement는 사람이 명시하지 않으면 하지 않는다. 작업 중 어떤 artifact를 함께 갱신해야 할지 애매하면 [docs/reference/task-artifact-matrix.md](docs/reference/task-artifact-matrix.md)를 확인한다.
 
 ## Tier3 And Policy Drafts
 
@@ -152,4 +167,5 @@ policy draft나 migration guide가 만들어져도 hard gate, CI required check,
 - monorepo에서 파일을 못 찾으면 모든 workflow 명령에 같은 `--root`, `--src`, `--docs`, `--layout` 값을 넘긴다.
 - check 12가 row 없음이나 `not-started`를 보고하면 reconcile을 실행하거나 `--enforce` 없이 도입 중 경고로 남긴다.
 - check 12가 `in-progress`/`failed`를 보고하면 새 row를 만들지 말고 기존 row를 `in-progress`로 재개해 완료/실패 결과를 갱신한다.
+- 생성 파일이 stale 해 보이면 직접 수정하지 말고 [docs/reference/generated-files.md](docs/reference/generated-files.md)의 명령으로 재생성한다. `workflow:check-generated`는 advisory guard이며 hard CI gate가 아니다.
 - 기존에 전체 kit 디렉토리를 복사했다면 packed payload 기준으로 갱신하고 `examples/`, `temp/`, design/history/roadmap/run-report 문서를 소비 repo에서 제거한다.
