@@ -42,6 +42,12 @@ payload:
       classification: consumer-reference
 
 exclude:
+  - path: scripts/pack-frontend-workflow-kit.mjs
+    classification: kit-dev-tooling
+    reason: kit repo에서만 실행되는 pack/distribution 검증용이며 consumer runtime/gate가 아님.
+  - path: scripts/lib/distribution.test.mjs
+    classification: kit-dev-test
+    reason: kit repo에서만 실행되는 pack/distribution 검증용이며 consumer runtime/gate가 아님.
   - path: examples/**
     classification: kit-dev-fixture
     reason: Golden fixtures and dogfood projects used by kit tests.

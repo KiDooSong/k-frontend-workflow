@@ -11,6 +11,10 @@ function toPosix(p) {
   return String(p).replace(/\\/g, '/');
 }
 
+function normalizeManifestPath(p) {
+  return toPosix(path.normalize(String(p))).replace(/^\.\//, '');
+}
+
 function fail(message, code = 2) {
   process.stderr.write(`kit:pack: ${message}\n`);
   process.exit(code);
@@ -54,6 +58,43 @@ function normalizeEntry(entry) {
   if (typeof source !== 'string' || !source) fail(`manifest entry needs source/path: ${JSON.stringify(entry)}`);
   if (typeof target !== 'string' || !target) fail(`manifest entry needs target/path: ${JSON.stringify(entry)}`);
   return { ...entry, source, target };
+}
+
+function normalizeExcludeEntry(entry) {
+  if (!entry || typeof entry !== 'object') fail(`invalid manifest exclude entry: ${JSON.stringify(entry)}`);
+  if (typeof entry.path !== 'string' || !entry.path) {
+    fail(`manifest exclude entry needs path: ${JSON.stringify(entry)}`);
+  }
+  return {
+    ...entry,
+    path: normalizeManifestPath(entry.path),
+  };
+}
+
+function escapeRegex(raw) {
+  return raw.replace(/[|\\{}()[\]^$+?.]/g, '\\$&');
+}
+
+function excludeMatcherFor(pattern) {
+  if (pattern.endsWith('/**')) {
+    const base = pattern.slice(0, -3);
+    return (rel) => rel === base || rel.startsWith(`${base}/`);
+  }
+  if (pattern.includes('*')) {
+    const source = pattern.split('*').map(escapeRegex).join('[^/]*');
+    const re = new RegExp(`^${source}$`);
+    return (rel) => re.test(rel);
+  }
+  return (rel) => rel === pattern;
+}
+
+function shouldExcludeCopyItem(item, excludeEntries) {
+  const sourceRel = normalizeManifestPath(path.relative(KIT_ROOT, item.src));
+  const targetRel = normalizeManifestPath(item.target);
+  return excludeEntries.some((entry) => {
+    const matches = excludeMatcherFor(entry.path);
+    return matches(sourceRel) || matches(targetRel);
+  });
 }
 
 function resolveKitSource(source) {
@@ -102,6 +143,20 @@ function copyFilePreserveMode(src, dest) {
   fs.chmodSync(dest, stat.mode & 0o777);
 }
 
+function copyConsumerPackageJson(src, dest) {
+  const stat = fs.statSync(src);
+  let packageJson;
+  try {
+    packageJson = JSON.parse(fs.readFileSync(src, 'utf8'));
+  } catch (err) {
+    fail(`package.json parse failed: ${err.message}`);
+  }
+  delete packageJson.scripts;
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.writeFileSync(dest, JSON.stringify(packageJson, null, 2) + '\n', 'utf8');
+  fs.chmodSync(dest, stat.mode & 0o777);
+}
+
 function expandEntry(entry) {
   const normalized = normalizeEntry(entry);
   if (normalized.source.endsWith('/**')) {
@@ -133,8 +188,11 @@ export function packFrontendWorkflowKit({ outDir = DEFAULT_OUT, manifestPath = D
   assertSafeOutDir(resolvedOut);
   const manifest = loadManifest(resolvedManifest);
 
-  const copyPlan = [];
-  for (const entry of manifest.payload.include) copyPlan.push(...expandEntry(entry));
+  const expandedPlan = [];
+  for (const entry of manifest.payload.include) expandedPlan.push(...expandEntry(entry));
+
+  const excluded = (manifest.exclude || []).map(normalizeExcludeEntry);
+  const copyPlan = expandedPlan.filter((item) => !shouldExcludeCopyItem(item, excluded));
 
   const seen = new Map();
   for (const item of copyPlan) {
@@ -151,7 +209,11 @@ export function packFrontendWorkflowKit({ outDir = DEFAULT_OUT, manifestPath = D
   const copied = [];
   for (const item of copyPlan.sort((a, b) => toPosix(a.target).localeCompare(toPosix(b.target)))) {
     const dest = resolveTarget(resolvedOut, item.target);
-    copyFilePreserveMode(item.src, dest);
+    if (toPosix(item.target) === 'package.json' && path.resolve(item.src) === path.join(KIT_ROOT, 'package.json')) {
+      copyConsumerPackageJson(item.src, dest);
+    } else {
+      copyFilePreserveMode(item.src, dest);
+    }
     copied.push(toPosix(item.target));
   }
 
@@ -161,7 +223,7 @@ export function packFrontendWorkflowKit({ outDir = DEFAULT_OUT, manifestPath = D
     destination_hint: manifest.destination_hint || null,
     file_count: copied.length,
     files: copied,
-    excluded: (manifest.exclude || []).map((entry) => ({
+    excluded: excluded.map((entry) => ({
       path: entry.path,
       classification: entry.classification,
       reason: entry.reason,

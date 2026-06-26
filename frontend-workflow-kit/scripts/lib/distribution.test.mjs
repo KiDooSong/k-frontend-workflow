@@ -64,8 +64,11 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
     'policies/implementation-mode-policy.yaml',
     'presets/expo-feature.yaml',
     'schemas/frontmatter.schema.json',
+    'scripts/create-input-artifact.mjs',
     'scripts/readiness.mjs',
-    'scripts/pack-frontend-workflow-kit.mjs',
+    'scripts/validate.mjs',
+    'scripts/workflow-run.mjs',
+    'scripts/workflow-state.mjs',
     'skills/implement-screen/SKILL.md',
     'skills/reconcile-input/SKILL.md',
     'templates/repo/AGENTS.template.md',
@@ -84,6 +87,8 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
     'open-decisions.md',
     'input-reconciliation.md',
     'investigation-and-verification.md',
+    'scripts/pack-frontend-workflow-kit.mjs',
+    'scripts/lib/distribution.test.mjs',
   ]) {
     assert.equal(exists(rel, out), false, `${rel} should not be packed`);
   }
@@ -97,9 +102,25 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
   assert.equal(summary.files.includes('docs/reference/generated-files.md'), true);
   assert.equal(summary.files.includes('templates/repo/AGENTS.template.md'), true);
   assert.equal(summary.files.includes('input-reconciliation.md'), false);
+  assert.equal(summary.files.includes('scripts/pack-frontend-workflow-kit.mjs'), false);
+  assert.equal(summary.files.includes('scripts/lib/distribution.test.mjs'), false);
   assert.deepEqual(summary.files, [...summary.files].sort((a, b) => a.localeCompare(b)));
+  assert.ok(summary.excluded.some((entry) => (
+    entry.path === 'scripts/pack-frontend-workflow-kit.mjs'
+      && entry.classification === 'kit-dev-tooling'
+      && /kit repo에서만 실행되는 pack\/distribution 검증용/.test(entry.reason)
+  )));
+  assert.ok(summary.excluded.some((entry) => (
+    entry.path === 'scripts/lib/distribution.test.mjs'
+      && entry.classification === 'kit-dev-test'
+      && /kit repo에서만 실행되는 pack\/distribution 검증용/.test(entry.reason)
+  )));
   assert.ok(summary.excluded.some((entry) => entry.path === 'examples/**' && entry.classification === 'kit-dev-fixture'));
   assert.ok(summary.excluded.some((entry) => entry.path === 'docs/design/**' && entry.classification === 'design-draft'));
+
+  const packageJson = JSON.parse(fs.readFileSync(path.join(out, 'package.json'), 'utf8'));
+  assert.equal(Object.hasOwn(packageJson, 'scripts'), false);
+  assert.equal(packageJson.bin['workflow-state'], 'scripts/workflow-state.mjs');
 
   const readme = fs.readFileSync(path.join(out, 'README.md'), 'utf8');
   for (const rel of [
@@ -154,6 +175,56 @@ test('packed adoption-probe docs match the draft output contract', (t) => {
   const layout = fs.readFileSync(path.join(out, 'templates', 'adoption', 'project-layout.template.yaml'), 'utf8');
   assert.match(layout, /temp\/runs\/adoption-probe-<id>\//);
   assert.doesNotMatch(layout, /docs\/frontend-workflow\/_meta\/adoption-probe/);
+});
+
+test('manifest exclude filters files captured by broad script includes', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-pack-exclude-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const manifest = path.join(tmp, 'manifest.yaml');
+  const out = path.join(tmp, 'out');
+  fs.writeFileSync(
+    manifest,
+    [
+      'version: 1',
+      'destination_hint: tools/frontend-workflow',
+      'payload:',
+      '  include:',
+      '    - path: scripts/**',
+      'exclude:',
+      '  - path: scripts/pack-frontend-workflow-kit.mjs',
+      '    classification: kit-dev-tooling',
+      '    reason: kit repo에서만 실행되는 pack/distribution 검증용이며 consumer runtime/gate가 아님.',
+      '  - path: scripts/lib/distribution.test.mjs',
+      '    classification: kit-dev-test',
+      '    reason: kit repo에서만 실행되는 pack/distribution 검증용이며 consumer runtime/gate가 아님.',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
+  const r = spawnSync(process.execPath, [PACK_CLI, '--manifest', manifest, '--out', out, '--json'], {
+    cwd: KIT_ROOT,
+    encoding: 'utf8',
+  });
+  assert.equal(r.status, 0, r.stderr);
+
+  assert.equal(exists('scripts/readiness.mjs', out), true);
+  assert.equal(exists('scripts/validate.mjs', out), true);
+  assert.equal(exists('scripts/pack-frontend-workflow-kit.mjs', out), false);
+  assert.equal(exists('scripts/lib/distribution.test.mjs', out), false);
+
+  const summary = JSON.parse(fs.readFileSync(path.join(out, '_distribution-summary.json'), 'utf8'));
+  assert.equal(summary.files.includes('scripts/readiness.mjs'), true);
+  assert.equal(summary.files.includes('scripts/pack-frontend-workflow-kit.mjs'), false);
+  assert.equal(summary.files.includes('scripts/lib/distribution.test.mjs'), false);
+  assert.ok(summary.excluded.some((entry) => (
+    entry.path === 'scripts/pack-frontend-workflow-kit.mjs'
+      && entry.classification === 'kit-dev-tooling'
+  )));
+  assert.ok(summary.excluded.some((entry) => (
+    entry.path === 'scripts/lib/distribution.test.mjs'
+      && entry.classification === 'kit-dev-test'
+  )));
 });
 
 test('kit:pack fails closed when an allowlisted source is missing', (t) => {
