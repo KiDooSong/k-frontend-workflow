@@ -31,9 +31,10 @@ last_reviewed: 2026-06-12
 | State | Condition | UI |
 |---|---|---|
 | loading | query.isLoading | SkeletonList |
-| success | data 존재 | Dashboard Sections |
 | empty | 데이터 없음 | EmptyState |
 | error | query.isError | ErrorState + Retry |
+| success | data 존재 | Dashboard Sections |
+| disabled | 주요 액션 사용 조건 미충족 또는 요청 처리 중 | disabled control/state |
 | refreshing | query.isRefreshing | RefreshControl |
 
 ## Interaction Matrix
@@ -65,7 +66,7 @@ last_reviewed: 2026-06-12
 - 섹션 헤더 accessibilityRole="header"
 
 ## Acceptance Criteria
-- [ ] State Matrix 의 5개 상태가 모두 구현됨 → HomeScreen.test.tsx
+- [ ] State Matrix 의 6개 상태가 모두 구현됨 → HomeScreen.test.tsx
 - [ ] 쿠폰 요약 카드 클릭 시 쿠폰 목록으로 이동
 - [ ] 위젯 구성 확정(D-101) 전에는 추천 영역을 placeholder 로 둔다
 

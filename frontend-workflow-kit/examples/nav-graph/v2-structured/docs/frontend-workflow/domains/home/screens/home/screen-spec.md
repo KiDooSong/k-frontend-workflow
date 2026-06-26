@@ -29,9 +29,10 @@ last_reviewed: 2026-06-15
 | State | Condition | UI |
 |---|---|---|
 | loading | query.isLoading | SkeletonList |
-| success | data 존재 | Dashboard Sections |
 | empty | 데이터 없음 | EmptyState |
 | error | query.isError | ErrorState + Retry |
+| success | data 존재 | Dashboard Sections |
+| disabled | 주요 액션 사용 조건 미충족 또는 요청 처리 중 | disabled control/state |
 | refreshing | query.isRefreshing | RefreshControl |
 
 ## Interaction Matrix

@@ -12,7 +12,7 @@ import {
 } from './util.mjs';
 import { layerHasFiles, TYPESCRIPT_FACT_EXTS } from './layer-inventory.mjs';
 
-const REQUIRED_STATES = ['loading', 'success', 'empty', 'error', 'refreshing'];
+const REQUIRED_STATES = ['loading', 'empty', 'error', 'success', 'disabled', 'refreshing'];
 // HTML 주석 제거 (표/섹션 감지를 방해하지 않도록)
 function stripComments(text) {
   return text.replace(/<!--[\s\S]*?-->/g, '');
@@ -230,7 +230,7 @@ export function deriveMetrics(spec, opts = {}) {
   const domain = spec.frontmatter.domain;
   const sections = spec.sections;
 
-  // State Matrix: 필수 상태 5종이 모두 있으면 complete
+  // State Matrix: 필수 상태 6종이 모두 있으면 complete
   const stateTable = parseTable(sections['state matrix']);
   const presentStates = new Set();
   if (stateTable) {

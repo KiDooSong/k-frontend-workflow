@@ -73,7 +73,7 @@ function actionHint(factKey, screen) {
     case 'component_catalog_generated':
       return 'create docs/frontend-workflow/design/component-catalog.md manually (catalog-gen is MVP-C)';
     case 'state_matrix_complete':
-      return 'complete State Matrix (loading/success/empty/error/refreshing)';
+      return 'complete State Matrix (loading/empty/error/success/disabled/refreshing)';
     case 'navigation_map_status':
       return 'raise navigation-map status to draft';
     case 'stub_screen_specs_count':

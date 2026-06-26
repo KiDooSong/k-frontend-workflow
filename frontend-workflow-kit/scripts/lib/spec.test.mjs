@@ -80,9 +80,49 @@ function basicMatrix(result) {
   return ['| User Action | Trigger | Result |', '|---|---|---|', `| a | tap | ${result} |`].join('\n');
 }
 
+function specWithStateMatrix(states) {
+  return {
+    frontmatter: { domain: 'coupons' },
+    dir: os.tmpdir(),
+    sections: {
+      'state matrix': [
+        '| State | Condition | UI |',
+        '|---|---|---|',
+        ...states.map((state) => `| ${state} | condition | UI |`),
+      ].join('\n'),
+    },
+  };
+}
+
 function check4Errors(result) {
   return (result.errors || []).filter((e) => e.check === 4);
 }
+
+test('deriveMetrics: old five states are incomplete because disabled is separate from loading', () => {
+  const derived = deriveMetrics(
+    specWithStateMatrix(['loading', 'empty', 'error', 'success', 'refreshing']),
+    { srcDir: path.join(os.tmpdir(), 'state-matrix-old-five-src'), projectRoot: os.tmpdir() },
+  );
+
+  assert.equal(
+    derived.state_matrix_complete,
+    false,
+    'old five states must not complete the matrix without the disabled interactivity state',
+  );
+});
+
+test('deriveMetrics: six canonical states complete with disabled as an independent state', () => {
+  const derived = deriveMetrics(
+    specWithStateMatrix(['loading', 'empty', 'error', 'success', 'Disabled', 'refreshing']),
+    { srcDir: path.join(os.tmpdir(), 'state-matrix-six-src'), projectRoot: os.tmpdir() },
+  );
+
+  assert.equal(
+    derived.state_matrix_complete,
+    true,
+    'loading plus the other content/result states still need disabled as a sixth canonical state',
+  );
+});
 
 test('P1: 범례 표 뒤 빈 줄로 분리된 진짜 Open Decisions 표가 증발하지 않는다', () => {
   const section = [

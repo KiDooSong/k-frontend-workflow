@@ -178,7 +178,7 @@ frontmatter와 본문을 파싱해 대시보드를 생성한다. **파생 카운
 | 산출 값 | 출처 | 규칙 |
 |---|---|---|
 | 문서 status/route/domain 등 | frontmatter | 그대로 수집 |
-| state_matrix_complete | 본문 State Matrix 표 | 필수 상태(loading/success/empty/error/refreshing) 행이 모두 있으면 true |
+| state_matrix_complete | 본문 State Matrix 표 | 필수 상태(loading/empty/error/success/disabled/refreshing) 행이 모두 있으면 true |
 | interaction_matrix_complete | 본문 Interaction Matrix 표 | 표 존재 + Result 컬럼 비어있지 않음 |
 | copy_keys_has_tbd | 본문 Copy Keys 표 | Status 컬럼에 tbd 존재 여부 |
 | tbd_count / unknown_count | 본문 Unknowns 표 | open 상태 행 수 |
