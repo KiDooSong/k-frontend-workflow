@@ -7,6 +7,7 @@ description: 지정된 Screen ID를 readiness gate가 허용하는 모드와 경
 
 화면 하나를 현재 workflow surface 기준으로 구현한다. 이 스킬은 **구현 가능 여부를 직접 판단하지 않는다.**
 `workflow:state` / `workflow:readiness` / `workflow:validate` 와 관련 스크립트 출력을 단일 출처로 소비한다.
+Workflow 위치: 이 스킬은 [workflow spine](../../docs/reference/workflow-spine.md) 의 **Stage 06**([06-implement-screen-or-code.md](../../docs/reference/workflow-stages/06-implement-screen-or-code.md)) 다. 화면 identity 가 아직 없으면 먼저 **Stage 02**([02-screen-identity-source-mapping.md](../../docs/reference/workflow-stages/02-screen-identity-source-mapping.md)) 로 푼다.
 
 > **통과는 승인이 아니다.** readiness pass 는 기계적 상한이고, validate pass 는 구조 검증이다.
 > 제품 의도, 디자인 확정, confirmed 승격, Open Decision resolve, Unknown close, Component Gap accept 는 사람이 한다.
