@@ -2,7 +2,9 @@
 
 Consumer repo agents use this matrix to answer: "When I do X, what else must I update, regenerate, or check?"
 
-This reference complements the root `AGENTS.md` or `CLAUDE.md`. The root guide tells an agent where to start; `global/llm-rules.md` defines project policy; this matrix lists operational follow-up by task; `generated-files.md` maps `generated/do_not_edit` files to regeneration commands.
+This reference complements the root `AGENTS.md` or `CLAUDE.md`. The root guide tells an agent where to start; `workflow-spine.md` is the numbered stage index and `workflow-stages/00-start-here.md` routes a task to its current stage; `global/llm-rules.md` defines project policy; this matrix lists operational follow-up by task; `generated-files.md` maps `generated/do_not_edit` files to regeneration commands.
+
+Use the spine to find the current stage, then this matrix for the secondary artifacts that stage's task touches. The "Stage Reference" section below maps common matrix tasks to spine stages.
 
 If ScreenSpec frontmatter or parsed body sections changed, run `workflow:state` before readiness/validate. This includes route/screen mapping, Unknowns, API Candidates, Copy Keys, and status changes.
 
@@ -29,6 +31,30 @@ If ScreenSpec frontmatter or parsed body sections changed, run `workflow:state` 
 | Change project layout or Tier3 layers | `project-layout.yaml`, layer inventory, implementation-mode policy, policy draft docs | `project-layout.yaml` intentionally; review-only policy draft outputs | `workflow:doctor`; `workflow:state`; `workflow:readiness`; `workflow:policy-draft`; `workflow:validate` | Replace live policy or promote hard gates without human review |
 | Regenerate generated views | `generated-files.md`, artifact manifest, source docs/code for the generated file | Generated output through the owning command only | `workflow:state`, `workflow:catalog`, `workflow:route-tree`, `workflow:nav-graph`, `workflow:policy-draft`, `workflow:lint-gen`, or codegen command as applicable; `workflow:check-generated` for advisory drift | Hand-edit `generated/do_not_edit` outputs |
 | Work across multiple sessions | Recent inputs, Reconciliation Register, Open Decisions, component gaps, state/readiness/validate output for target screen/domain | Only current task artifacts | Before starting: inspect state/readiness/validate and relevant registers. Before finishing: validate and report updated artifacts/follow-ups | Assume a prior session updated generated files or closed human-owned gates |
+
+## Stage Reference
+
+Map a task to its spine stage(s), then read that stage doc plus this matrix row.
+Full index: [workflow-spine.md](workflow-spine.md); router:
+[workflow-stages/00-start-here.md](workflow-stages/00-start-here.md).
+
+| Task | Stage(s) |
+|---|---|
+| New screen discovered from source input | 02 → 03 → 04 |
+| Source code / Figma node mapping changed | 02 |
+| Duplicate or split source code | 02 (→ 09 if it blocks) |
+| Add external input (artifact does not exist yet) | 01 → 02 → 03 |
+| Input artifact exists | 04 |
+| Author/update ScreenSpec, nav, API, visual contracts | 05 |
+| Implement or edit a screen | 06 |
+| Create shared/common component | 06 → 07 |
+| Add or modify a route entry | 05/06 → 07 → 08 |
+| Regenerate generated views | 07 |
+| Accept component gap | 09 → 06/07 |
+| Resolve Open Decision / close Unknown / promote confirmed | 09 |
+| Change project-layout / Tier3 layers | 10 → 07/08 |
+
+These stage numbers are stable, greppable prefixes (`workflow-stages/NN-*.md`).
 
 ## Generated View Shortcuts
 

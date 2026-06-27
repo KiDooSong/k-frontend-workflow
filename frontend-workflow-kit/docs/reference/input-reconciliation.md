@@ -2,6 +2,8 @@
 
 > Consumer reference for canonical input artifacts, the Reconciliation Register, retry semantics, and validate check 12. It covers how normalized inputs become workflow documentation. It does not define source-specific raw parsers.
 
+> Workflow stages: this covers **Stage 03** (create canonical input artifact, [workflow-stages/03-create-canonical-input-artifact.md](workflow-stages/03-create-canonical-input-artifact.md)) and **Stage 04** (reconcile input, [workflow-stages/04-reconcile-input.md](workflow-stages/04-reconcile-input.md)) in the [workflow spine](workflow-spine.md).
+
 외부 입력 스킬이 저장한 새 입력 결과물을 기존 frontend-workflow 문서와 맞춰보고, 단순 반영인지, 결정 필요인지, 충돌인지 분류하는 단계다.
 
 이 문서는 입력을 "가져오는 방법"을 정의하지 않는다. Figma, 기획 문서, API 문서, 회의록, QA 메모 등은 프로젝트별 입력 스킬이 수집·해석한다. 킷은 두 가지 경계만 가진다.

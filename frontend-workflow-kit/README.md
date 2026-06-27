@@ -59,6 +59,7 @@ cp tools/frontend-workflow/templates/global/llm-rules.template.md docs/frontend-
 역할 구분:
 
 - root `AGENTS.md` / `CLAUDE.md`: LLM session starting point.
+- [docs/reference/workflow-spine.md](docs/reference/workflow-spine.md): numbered workflow stage index. Agents start here; [docs/reference/workflow-stages/00-start-here.md](docs/reference/workflow-stages/00-start-here.md) routes a task to its current stage. Read only the matching stage doc.
 - `docs/frontend-workflow/global/llm-rules.md`: project policy and priority rules.
 - [docs/reference/task-artifact-matrix.md](docs/reference/task-artifact-matrix.md): task-to-artifact operational checklist.
 - [docs/reference/generated-files.md](docs/reference/generated-files.md): `generated/do_not_edit` regeneration map.

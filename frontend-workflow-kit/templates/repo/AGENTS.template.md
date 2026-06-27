@@ -5,9 +5,12 @@ Keep it short: this is the agent starting point, not the full workflow manual.
 
 ## Start Here
 
+- Start with the workflow spine: `tools/frontend-workflow/docs/reference/workflow-spine.md`. It is the numbered index of the workflow lifecycle.
+- Use `tools/frontend-workflow/docs/reference/workflow-stages/00-start-here.md` to identify the current stage for this task.
+- Read only that stage doc and the references it links — not the whole workflow.
 - Read `docs/frontend-workflow/global/llm-rules.md` for project policy and priority rules.
-- When doing a concrete task, read `tools/frontend-workflow/docs/reference/task-artifact-matrix.md`.
-- For generated files, read `tools/frontend-workflow/docs/reference/generated-files.md`.
+- Use `tools/frontend-workflow/docs/reference/task-artifact-matrix.md` for secondary artifact updates a task triggers.
+- Read `tools/frontend-workflow/docs/reference/generated-files.md` before touching any generated output.
 - For command syntax, read `tools/frontend-workflow/COMMANDS.md`.
 
 ## Before Editing Code

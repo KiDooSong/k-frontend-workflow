@@ -2,6 +2,8 @@
 
 > Consumer reference for how external source screen codes (planning Figma, design Figma, node ids, slugs) map to canonical workflow Screen IDs. It defines the Screen Source Map contract and when to scaffold a ScreenSpec. It does not define source-specific Figma/planning parsers.
 
+> Workflow stage: this is the contract for **Stage 02** ([workflow-stages/02-screen-identity-source-mapping.md](workflow-stages/02-screen-identity-source-mapping.md)) in the [workflow spine](workflow-spine.md). New/unmapped screens resolve identity here before authoring or reconcile.
+
 새 페이지·화면이 기획/디자인 입력에서 들어올 때, 그 입력은 자기만의 화면 코드를 들고 온다. 이 문서는 그 source 코드를 **워크플로우가 소유하는 canonical Screen ID** 로 안전하게 잇는 규칙이다.
 
 ## Core Principle

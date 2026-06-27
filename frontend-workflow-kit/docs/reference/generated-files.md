@@ -2,6 +2,8 @@
 
 Files marked `generated/do_not_edit` are command output. Do not hand-edit them. Update the source of truth, then run the owning command.
 
+This is the regeneration map for **Stage 07** ([workflow-stages/07-regenerate-derived-views.md](workflow-stages/07-regenerate-derived-views.md)) in the [workflow spine](workflow-spine.md).
+
 Generated files can become stale when their source docs, registers, layout, policy, or code changes. Use the table below to choose the regeneration command, and use `workflow:check-generated` as an advisory drift guard when it is available in the consumer repo.
 
 ## Regeneration Map

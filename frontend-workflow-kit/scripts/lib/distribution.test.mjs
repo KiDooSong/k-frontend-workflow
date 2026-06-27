@@ -56,6 +56,18 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
     'docs/reference/lint-policy-catalog.md',
     'docs/reference/lint-policy-rollout-ratchet.md',
     'docs/reference/task-artifact-matrix.md',
+    'docs/reference/workflow-spine.md',
+    'docs/reference/workflow-stages/00-start-here.md',
+    'docs/reference/workflow-stages/01-source-specific-input-production.md',
+    'docs/reference/workflow-stages/02-screen-identity-source-mapping.md',
+    'docs/reference/workflow-stages/03-create-canonical-input-artifact.md',
+    'docs/reference/workflow-stages/04-reconcile-input.md',
+    'docs/reference/workflow-stages/05-author-workflow-contracts.md',
+    'docs/reference/workflow-stages/06-implement-screen-or-code.md',
+    'docs/reference/workflow-stages/07-regenerate-derived-views.md',
+    'docs/reference/workflow-stages/08-validate-and-report.md',
+    'docs/reference/workflow-stages/09-human-decision-gates.md',
+    'docs/reference/workflow-stages/10-policy-layout-tier3-changes.md',
     'package.json',
     'package-lock.json',
     'package-scripts.template.json',
@@ -100,6 +112,9 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
   assert.equal(summary.files.includes('docs/reference/input-reconciliation.md'), true);
   assert.equal(summary.files.includes('docs/reference/task-artifact-matrix.md'), true);
   assert.equal(summary.files.includes('docs/reference/generated-files.md'), true);
+  assert.equal(summary.files.includes('docs/reference/workflow-spine.md'), true);
+  assert.equal(summary.files.includes('docs/reference/workflow-stages/00-start-here.md'), true);
+  assert.equal(summary.files.includes('docs/reference/workflow-stages/10-policy-layout-tier3-changes.md'), true);
   assert.equal(summary.files.includes('templates/repo/AGENTS.template.md'), true);
   assert.equal(summary.files.includes('input-reconciliation.md'), false);
   assert.equal(summary.files.includes('scripts/pack-frontend-workflow-kit.mjs'), false);
@@ -127,6 +142,8 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
     'templates/repo/AGENTS.template.md',
     'docs/reference/task-artifact-matrix.md',
     'docs/reference/generated-files.md',
+    'docs/reference/workflow-spine.md',
+    'docs/reference/workflow-stages/00-start-here.md',
   ]) {
     assert.match(readme, new RegExp(rel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
     assert.equal(exists(rel, out), true, `${rel} should be linked and packed`);
@@ -327,4 +344,82 @@ test('consumer package script template exposes current command aliases only', ()
   assert.match(commands, /npm run workflow:check-generated/);
   assert.match(commands, /warning-first/);
   assert.match(commands, /must not be treated as a hard CI gate/);
+});
+
+const SPINE_STAGES = [
+  '00-start-here',
+  '01-source-specific-input-production',
+  '02-screen-identity-source-mapping',
+  '03-create-canonical-input-artifact',
+  '04-reconcile-input',
+  '05-author-workflow-contracts',
+  '06-implement-screen-or-code',
+  '07-regenerate-derived-views',
+  '08-validate-and-report',
+  '09-human-decision-gates',
+  '10-policy-layout-tier3-changes',
+];
+
+test('workflow spine and numbered stage docs exist and are wired', () => {
+  const refDir = path.join(KIT_ROOT, 'docs', 'reference');
+  const spinePath = path.join(refDir, 'workflow-spine.md');
+  const stageDir = path.join(refDir, 'workflow-stages');
+
+  // spine exists; stage docs 00-10 exist; spine links each one.
+  assert.equal(fs.existsSync(spinePath), true, 'workflow-spine.md should exist');
+  const spine = fs.readFileSync(spinePath, 'utf8');
+  for (const name of SPINE_STAGES) {
+    assert.equal(fs.existsSync(path.join(stageDir, `${name}.md`)), true, `${name}.md should exist`);
+    assert.match(spine, new RegExp(`workflow-stages/${name}\\.md`), `spine should link ${name}`);
+  }
+
+  // AGENTS template routes to the spine + start-here first.
+  const guide = fs.readFileSync(path.join(KIT_ROOT, 'templates', 'repo', 'AGENTS.template.md'), 'utf8');
+  assert.match(guide, /docs\/reference\/workflow-spine\.md/);
+  assert.match(guide, /docs\/reference\/workflow-stages\/00-start-here\.md/);
+
+  // task-artifact matrix references stage numbers and the greppable prefix.
+  const matrix = fs.readFileSync(path.join(refDir, 'task-artifact-matrix.md'), 'utf8');
+  assert.match(matrix, /workflow-spine\.md/);
+  assert.match(matrix, /02 → 03 → 04/);
+  assert.match(matrix, /workflow-stages\/NN-\*\.md/);
+
+  // Stage 01 + Stage 03 carry explicit consumer-customization guidance.
+  const stage01 = fs.readFileSync(path.join(stageDir, '01-source-specific-input-production.md'), 'utf8');
+  const stage03 = fs.readFileSync(path.join(stageDir, '03-create-canonical-input-artifact.md'), 'utf8');
+  assert.match(stage01, /consumer-owned/i);
+  assert.match(stage01, /Consumer repo customization:/);
+  assert.match(stage03, /Consumer repo customization:/);
+  assert.match(stage03, /default implementation \+ safe extension points/i);
+
+  // Stage 02 references the screen-identity contract and the scaffolder.
+  const stage02 = fs.readFileSync(path.join(stageDir, '02-screen-identity-source-mapping.md'), 'utf8');
+  assert.match(stage02, /screen-identity\.md/);
+  assert.match(stage02, /workflow:create-screen/);
+});
+
+test('workflow spine and stage docs have no broken relative links', () => {
+  const refDir = path.join(KIT_ROOT, 'docs', 'reference');
+  const stageDir = path.join(refDir, 'workflow-stages');
+  const files = [
+    path.join(refDir, 'workflow-spine.md'),
+    ...SPINE_STAGES.map((name) => path.join(stageDir, `${name}.md`)),
+  ];
+  const linkRe = /\]\(([^)]+)\)/g;
+  for (const file of files) {
+    const raw = fs.readFileSync(file, 'utf8');
+    let match;
+    while ((match = linkRe.exec(raw)) !== null) {
+      const target = match[1].trim();
+      if (/^(https?:|mailto:|#)/.test(target)) continue;
+      const rel = target.split('#')[0];
+      if (!rel) continue;
+      const resolved = path.resolve(path.dirname(file), rel);
+      assert.equal(
+        fs.existsSync(resolved),
+        true,
+        `${path.relative(KIT_ROOT, file).replace(/\\/g, '/')} links to missing ${target}`,
+      );
+    }
+  }
 });
