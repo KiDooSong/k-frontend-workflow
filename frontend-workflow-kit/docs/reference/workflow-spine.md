@@ -96,7 +96,7 @@ source formats and product decisions. Know which side a stage sits on before you
 |---|---|---|
 | 01 | **consumer repo** | The kit does **not** parse your Figma/planning/API/QA/internal formats. You provide local skills/producers. This stage doc is a customizable template — adapt it. |
 | 03 | **kit, adapter-friendly** | Default path is `workflow:create-input`. A consumer producer may wrap it or write the artifact directly **only if** it still satisfies the canonical input artifact contract. "Default implementation + safe extension points." |
-| 02, 04–10 | **kit** | Contracts, scripts, and gates are kit-owned. Consumer repos configure via `project-layout.yaml`, policy, and docs — not by forking the contract. |
+| 02, 04–08, 10 | **kit** | Contracts, scripts, and gates are kit-owned. Consumer repos configure via `project-layout.yaml`, policy, and docs — not by forking the contract. |
 | 09 | **human** | Resolve / accept / confirm transitions are human-owned. Agents raise gates; people lower them. |
 
 Cross-cutting invariants that hold in every stage:

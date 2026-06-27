@@ -27,8 +27,12 @@ index: [`../workflow-spine.md`](../workflow-spine.md).
   "Skip previous stages when…" table.
 - A `02` that appears before authoring/reconcile is **not** skippable for a new or
   unmapped screen. Resolve identity first.
-- Two stages always run at session end regardless of where you entered:
-  **08 validate and report**, and **09** if you touched any human-owned gate.
+- **08 validate and report** always runs at session end, regardless of where you
+  entered.
+- **09 human decision gates** is entered only when the user explicitly asks to
+  resolve/accept/confirm a human-owned transition. Merely raising or recording an
+  open decision, unknown, or component gap stays in 04–06 and is reported in 08 —
+  it does not pull you into 09.
 
 ## Stage docs
 
