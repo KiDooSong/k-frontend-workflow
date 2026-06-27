@@ -13,6 +13,7 @@
 # 임시 작업물 — 추적 안 함
 temp/archive/
 temp/claude-handoff*
+temp/local-pull-blockers-20260627/
 
 # decision visualization skill outputs
 docs/frontend-workflow/_viz/
