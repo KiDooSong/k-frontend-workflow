@@ -78,11 +78,25 @@ export function loadInputArtifact(file) {
   return { file, fm: data || {}, hasFrontmatter, parseError };
 }
 
-// inputs 디렉토리 전체를 수집한다. 디렉토리가 없으면 빈 배열(NO-OP 의 근거).
+// 디렉토리 안내 파일(README.md / index.md)은 입력 결과물이 아니라 그룹 가이드/인덱스다.
+// inputs/{domain}/ 같은 그룹 디렉토리에 사람이 두는 README 를 입력 frontmatter 로 검증하면
+// "frontmatter 없음" 오탐이 나므로 수집에서 제외한다. 이 판정은 inputs/** 안에서만 쓰인다
+// (collectInputArtifacts 가 inputs 루트로 호출됨). IN-*.md 같은 실제/malformed 입력은 절대
+// 무시하지 않는다 — 오직 basename 이 정확히 readme.md|index.md 인 파일만 제외한다.
+export function isInputDirGuideFile(file) {
+  const base = path.basename(file).toLowerCase();
+  return base === 'readme.md' || base === 'index.md';
+}
+
+// inputs 디렉토리 전체를 (재귀로) 수집한다. 디렉토리가 없으면 빈 배열(NO-OP 의 근거).
+// walkFiles 는 트리 전체를 도므로 inputs/{domain}/{input_id}.md 같은 그룹 하위도 함께 수집된다.
+// 디렉토리 안내 파일(README/index)은 입력 결과물이 아니므로 제외한다.
 // 검사 11·12 가 같은 수집 결과를 공유하도록 validate.mjs 가 한 번만 부른다.
 export function collectInputArtifacts(inputsDir) {
   if (!inputsDir || !isDir(inputsDir)) return [];
-  return walkFiles(inputsDir, ['.md']).map((f) => loadInputArtifact(f));
+  return walkFiles(inputsDir, ['.md'])
+    .filter((f) => !isInputDirGuideFile(f))
+    .map((f) => loadInputArtifact(f));
 }
 
 // 입력 결과물 검증(검사 11). artifacts 는 collectInputArtifacts 결과.
