@@ -3,7 +3,7 @@
 > 스냅샷: 2026-06-14. **설계 제안 초안일 뿐 구현이 아니다** — 이 세션의 산출물은 이 문서 하나다.
 > scripts·package.json·기존 docs(README/CHANGELOG/roadmap/CI/templates/schemas/policies)는 건드리지 않는다.
 > nav-graph / route-tree / catalog-gen / check-generated / workflow-state 등 **어떤 스크립트도 만들거나 고치지 않는다.** 각 생성기의 실제 착수는 명시적으로 하나를 고를 때만.
-> 함께 읽을 것: [roadmap-current.md](../../frontend-workflow-kit/roadmap-current.md) ·
+> 함께 읽을 것: [roadmap-current.md](../../kit-dev/roadmap-current.md) ·
 > [README.md](../../frontend-workflow-kit/README.md) ·
 > [frontend-workflow-kit-implementation.md](../../frontend-workflow-kit-implementation.md) ·
 > [artifact-manifest.yaml](../../frontend-workflow-kit/catalog/artifact-manifest.yaml) ·

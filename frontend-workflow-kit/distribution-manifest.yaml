@@ -41,7 +41,16 @@ payload:
     - path: docs/reference/**
       classification: consumer-reference
 
+# Dev/design/history docs no longer live under the kit — they were moved to the repo-root
+# kit-dev/ directory (design drafts, workflow-evolution notes, roadmap-current.md, CHANGELOG.md,
+# open-decisions.md, investigation-and-verification.md, and dogfood run reports). Because they
+# are physically outside frontend-workflow-kit/ and not in payload.include, they can never be
+# packed and need no per-file excludes. The docs/design/**, docs/workflows/**, and temp/**
+# entries below are retained only as SAFETY GUARDS: if such a directory is ever re-created under
+# the kit, the pack tool still drops it. A kit test (distribution.test.mjs) asserts these
+# directories do not physically exist under the kit so they cannot silently reappear.
 exclude:
+  # --- real excludes: live inside the kit, but are kit-dev tooling/fixtures, not consumer runtime ---
   - path: scripts/pack-frontend-workflow-kit.mjs
     classification: kit-dev-tooling
     reason: kit repo에서만 실행되는 pack/distribution 검증용이며 consumer runtime/gate가 아님.
@@ -50,34 +59,21 @@ exclude:
     reason: kit repo에서만 실행되는 pack/distribution 검증용이며 consumer runtime/gate가 아님.
   - path: examples/**
     classification: kit-dev-fixture
-    reason: Golden fixtures and dogfood projects used by kit tests.
-  - path: temp/**
-    classification: generated-dogfood-output
-    reason: Per-run reports, proposals, probes, and local experiment outputs.
-  - path: docs/design/**
-    classification: design-draft
-    reason: Design drafts and future-candidate architecture notes.
-  - path: docs/workflows/mvp-b.md
-    classification: kit-dev-history
-    reason: Historical MVP phase notes.
-  - path: docs/workflows/**
-    classification: kit-dev-history
-    reason: Internal workflow evolution notes; consumer guidance lives in README, COMMANDS, and CONVENTIONS.
-  - path: roadmap-current.md
-    classification: kit-dev-history
-    reason: Internal planning snapshot.
-  - path: CHANGELOG.md
-    classification: kit-dev-history
-    reason: Repo development history rather than consumer installation guidance.
-  - path: open-decisions.md
-    classification: kit-dev-history
-    reason: Kit repo decision log.
-  - path: investigation-and-verification.md
-    classification: kit-dev-history
-    reason: Long-form research and verification workflow.
+    reason: Golden fixtures and dogfood projects used by kit tests; kept in the kit repo, never vendored.
   - path: "*.html"
     classification: generated-dogfood-output
     reason: Diagnostics are generated explicitly into output dirs when needed.
+  # --- safety guards: dev docs moved to repo-root kit-dev/; these directories should NOT exist
+  #     under the kit. Retained so a re-created directory can never leak into the payload. ---
+  - path: docs/design/**
+    classification: design-draft
+    reason: 디자인 드래프트는 repo-root kit-dev/docs/design/ 로 이동. guard 로만 유지(킷 안에 재생성되면 제외).
+  - path: docs/workflows/**
+    classification: kit-dev-history
+    reason: 워크플로우 진화 노트는 repo-root kit-dev/docs/workflows/ 로 이동. guard 로만 유지.
+  - path: temp/**
+    classification: generated-dogfood-output
+    reason: dogfood/run-report 산출물은 repo-root kit-dev/temp/ 로 이동. guard 로만 유지(로컬 재생성 dogfood 출력 포함 제외).
 
 classification:
   top_level:
@@ -95,16 +91,13 @@ classification:
     COMMANDS.md: consumer-reference
     CONVENTIONS.md: consumer-reference
     distribution-manifest.yaml: consumer-reference
+    docs: consumer-reference          # only docs/reference/ remains under the kit
     examples: kit-dev-fixture
-    docs: kit-dev-history
-    temp: generated-dogfood-output
-    roadmap-current.md: kit-dev-history
-    CHANGELOG.md: kit-dev-history
-    open-decisions.md: kit-dev-history
-    investigation-and-verification.md: kit-dev-history
+    temp: generated-dogfood-output    # guard only — dev dogfood output lives in repo-root kit-dev/temp/
   paths:
     docs/reference: consumer-reference
-    docs/design: design-draft
-    docs/workflows: kit-dev-history
     examples: kit-dev-fixture
     temp: generated-dogfood-output
+  # Moved OUT of the kit to repo-root kit-dev/ (no longer classified here because they are not
+  # under frontend-workflow-kit/): docs/design, docs/workflows, roadmap-current.md, CHANGELOG.md,
+  # open-decisions.md, investigation-and-verification.md, and dogfood run reports.

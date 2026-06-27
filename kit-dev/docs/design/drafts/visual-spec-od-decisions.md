@@ -89,7 +89,7 @@
 
 - 출처 제안: [visual-spec-formalization](visual-spec-formalization.md) (§3 교정·§6 검사·§8 OD 후보)
 - VS-2 규약 드래프트: [design-token-naming-convention.md](design-token-naming-convention.md) (OD-VS-2 실행 산출물)
-- 정본 템플릿: [figma-component-mapping.template.md](../../../templates/screen/figma-component-mapping.template.md)
-- 정책(`figma_mapping_status`): [implementation-mode-policy.yaml](../../../policies/implementation-mode-policy.yaml)
+- 정본 템플릿: [figma-component-mapping.template.md](../../../../frontend-workflow-kit/templates/screen/figma-component-mapping.template.md)
+- 정책(`figma_mapping_status`): [implementation-mode-policy.yaml](../../../../frontend-workflow-kit/policies/implementation-mode-policy.yaml)
 - 리서치: [figma-design](../../../../docs/research/figma-design/README.md) · 검증 도구 playwright 리서치(`docs/research/playwright/`, PR69 도입 예정)
 - 로드맵(슬롯팅 근거): [roadmap-current.md](../../../roadmap-current.md)

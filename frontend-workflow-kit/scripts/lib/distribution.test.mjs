@@ -423,3 +423,52 @@ test('workflow spine and stage docs have no broken relative links', () => {
     }
   }
 });
+
+// Distribution hygiene: dev/design/history docs must live OUTSIDE the consumer kit tree.
+// This is the physical-tree counterpart to the manifest exclude guards — it fails if a
+// dev-only directory/file ever reappears under frontend-workflow-kit/.
+const MOVED_TO_KIT_DEV = [
+  'docs/design',
+  'docs/workflows',
+  'roadmap-current.md',
+  'CHANGELOG.md',
+  'open-decisions.md',
+  'investigation-and-verification.md',
+  'temp',
+];
+
+test('dev-only docs do not physically live under the kit (moved to repo-root kit-dev/)', () => {
+  for (const rel of MOVED_TO_KIT_DEV) {
+    assert.equal(
+      fs.existsSync(path.join(KIT_ROOT, rel)),
+      false,
+      `frontend-workflow-kit/${rel} must not exist — dev docs belong in repo-root kit-dev/`,
+    );
+  }
+  // Consumer reference docs stay inside the kit.
+  assert.equal(fs.existsSync(path.join(KIT_ROOT, 'docs', 'reference')), true, 'docs/reference must remain under the kit');
+  // docs/ under the kit now contains only the consumer reference tree.
+  assert.deepEqual(
+    fs.readdirSync(path.join(KIT_ROOT, 'docs')).sort(),
+    ['reference'],
+    'frontend-workflow-kit/docs/ should contain only reference/',
+  );
+});
+
+test('moved dev/design/history docs are present in repo-root kit-dev/', () => {
+  const REPO_ROOT = path.resolve(KIT_ROOT, '..');
+  for (const rel of MOVED_TO_KIT_DEV) {
+    assert.equal(
+      fs.existsSync(path.join(REPO_ROOT, 'kit-dev', rel)),
+      true,
+      `kit-dev/${rel} should exist after the move`,
+    );
+  }
+});
+
+test('manifest retains exclude guards for the moved dev-doc directories', () => {
+  const manifest = fs.readFileSync(path.join(KIT_ROOT, 'distribution-manifest.yaml'), 'utf8');
+  for (const guard of ['docs/design/**', 'docs/workflows/**', 'temp/**']) {
+    assert.match(manifest, new RegExp(`path:\\s*${guard.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`), `manifest should keep ${guard} as a guard`);
+  }
+});

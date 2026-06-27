@@ -28,7 +28,7 @@ npm run kit:pack
 - templates/skills: `templates/`, `skills/` (including `templates/repo/AGENTS.template.md`)
 - package/docs: `package.json`, `package-lock.json`, `package-scripts.template.json`, `README.md`, `COMMANDS.md`, `CONVENTIONS.md`, `distribution-manifest.yaml`, `LICENSE`
 
-`examples/`, `temp/`, `docs/design/`, `docs/workflows/`, roadmap/history/run-report/proposal 문서는 기본 payload에서 제외된다.
+`examples/`는 kit 테스트 fixture로 킷 repo에는 남지만 payload에서는 제외된다. 디자인 드래프트·워크플로우 진화 노트·roadmap/history·open decision·investigation·dogfood run-report 같은 개발 전용 문서는 더 이상 킷 트리 안에 두지 않는다 — kit repo의 repo-root `kit-dev/`로 옮겼고 payload에는 절대 포함되지 않는다. manifest는 `docs/design/`·`docs/workflows/`·`temp/`를 exclude guard로 유지해, 그런 디렉터리가 다시 킷 안에 생겨도 payload로 새지 않게 한다.
 
 ## Install In A Consumer Repo
 

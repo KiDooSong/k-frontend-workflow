@@ -58,7 +58,7 @@
 | 컴포넌트 → Catalog | ✅ | ✅ | ✅ |
 | **시각 → Figma** | ❌(원격) | ❌(담을 칸 없음) | ❌ |
 
-게이트 인벤토리도 이를 뒷받침한다. [roadmap-current.md](../../../frontend-workflow-kit/roadmap-current.md) 의 readiness fact 목록에 시각/픽셀 fact 는 없다. 유일한 Figma 관련 fact 인 `figma_mapping_status` 조차 매핑 문서가 **draft 로 존재하는지**(`>= draft`)만 보고, 값이 채워졌는지·코드와 일치하는지는 보지 않는다([figma-component-mapping.template.md](../../../frontend-workflow-kit/templates/screen/figma-component-mapping.template.md) frontmatter 주석). 즉 **"매핑 문서가 있다" ≠ "Figma 대로 보인다".**
+게이트 인벤토리도 이를 뒷받침한다. [roadmap-current.md](../../../kit-dev/roadmap-current.md) 의 readiness fact 목록에 시각/픽셀 fact 는 없다. 유일한 Figma 관련 fact 인 `figma_mapping_status` 조차 매핑 문서가 **draft 로 존재하는지**(`>= draft`)만 보고, 값이 채워졌는지·코드와 일치하는지는 보지 않는다([figma-component-mapping.template.md](../../../frontend-workflow-kit/templates/screen/figma-component-mapping.template.md) frontmatter 주석). 즉 **"매핑 문서가 있다" ≠ "Figma 대로 보인다".**
 
 ## 3. 혼동 주의 — `layout-profile` 은 시각 레이아웃이 아니다
 

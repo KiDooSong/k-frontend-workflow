@@ -31,7 +31,7 @@
 ## Cross-links
 
 - 리서치(evidence): [playwright/README](../../../../../docs/research/playwright/README.md) · [01](../../../../../docs/research/playwright/01-playwright-agents-planner-generator-healer.md) · [02](../../../../../docs/research/playwright/02-expo-web-and-mobile-simulator.md) · [03](../../../../../docs/research/playwright/03-workflow-integration.md) · [dogfood-001-l010](../../../../../docs/research/playwright/dogfood-001-l010.md)
-- 템플릿(patch 제안 대상): [screen-spec.template.md](../../../../templates/screen/screen-spec.template.md) · [llm-rules.template.md](../../../../templates/global/llm-rules.template.md)
-- 기존 evidence 축: [investigation-and-verification.md](../../../../investigation-and-verification.md) (Verification Matrix) · [input-reconciliation.md](../../../reference/input-reconciliation.md) (drift reconcile)
+- 템플릿(patch 제안 대상): [screen-spec.template.md](../../../../../frontend-workflow-kit/templates/screen/screen-spec.template.md) · [llm-rules.template.md](../../../../../frontend-workflow-kit/templates/global/llm-rules.template.md)
+- 기존 evidence 축: [investigation-and-verification.md](../../../../investigation-and-verification.md) (Verification Matrix) · [input-reconciliation.md](../../../../../frontend-workflow-kit/docs/reference/input-reconciliation.md) (drift reconcile)
 - substrate 의존(E2E role/index는 이 뒤): [tier3-layer-model.md](../customizable-architecture/tier3-layer-model.md) + [tier3-access-matrix-revision](../../../../temp/proposals/tier3-access-matrix-revision.md)
 - 결정 기록 패턴 참고: [visual-spec-od-decisions.md](../visual-spec-od-decisions.md)

@@ -147,5 +147,5 @@ Web (RNW):    <div data-testid="coupon-list-item-42" role="button" aria-label="�
 
 - 폴더 불변식·운영 규율: [README](README.md) · [e2e-evidence-discipline.md](e2e-evidence-discipline.md)
 - 리서치: [dogfood-001-l010 §6](../../../../../docs/research/playwright/dogfood-001-l010.md) · [01 §c.2/g](../../../../../docs/research/playwright/01-playwright-agents-planner-generator-healer.md) · [02 §b-3/b-4](../../../../../docs/research/playwright/02-expo-web-and-mobile-simulator.md) · [03 §3.2](../../../../../docs/research/playwright/03-workflow-integration.md)
-- 템플릿(patch 대상): [screen-spec.template.md](../../../../templates/screen/screen-spec.template.md) · [llm-rules.template.md](../../../../templates/global/llm-rules.template.md)
+- 템플릿(patch 대상): [screen-spec.template.md](../../../../../frontend-workflow-kit/templates/screen/screen-spec.template.md) · [llm-rules.template.md](../../../../../frontend-workflow-kit/templates/global/llm-rules.template.md)
 - substrate: [tier3-layer-model.md](../customizable-architecture/tier3-layer-model.md) · [tier3-access-matrix-revision](../../../../temp/proposals/tier3-access-matrix-revision.md)

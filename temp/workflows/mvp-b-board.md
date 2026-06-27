@@ -2,7 +2,7 @@
 
 > 스냅샷: 2026-06-14 (rev9) · **path-backstop 회귀 MERGED**(PR#12 rebase → main, CI green) — forbidden-paths fixture 회귀를 test-fixtures(kind:path-backstop)에 흡수, `example:test` 가 CI 에서 커버(새 CI/npm 배선 0). rev8: PR-WIRE MERGED(PR#8 → `16bf472`) — MVP-B 검증 스위트 + CI·npm 배선 완료. rev7: A·B·C 전부 MERGED(+PR#7 Lane B → `b066ca2`). rev6: A·C MERGED(PR#4·#5) + 워크트리 정리. rev5: #1 (b) 확정(PR#5 `b1879c9`). rev4: Lane A PR#4 반영 — 딜리버러블 `test-fixtures.mjs`+`lib/test-fixture.mjs`(초안 example-compare.mjs superseded), 매니페스트 CLI·xfail 의미로 §2/§4/§6/부록 동기화. [rev3: Lane C 4a32b59 — 검사 12 stale-conflict 스코프아웃 + lib 2파일 등록. rev2: 워크트리 착수 + 검사번호 9→10종.] 작성: plan-mvp-b (보드만 수정 — 코드/스크립트/README 무변경).
 > 목적: MVP-B 검증 작업을 충돌 없이 병렬화할 수 있도록 **파일 소유권·의존성·PR 순서·수용 기준**을 한 파일로 고정한다.
-> 근거 문서: [mvp-b-validation-candidates.md](../proposals/mvp-b-validation-candidates.md) · [diff-based-forbidden-paths-backstop.md](../proposals/diff-based-forbidden-paths-backstop.md) · [example-compare-harness-proposal.md](../example-compare-harness-proposal.md) · [reconcile-input-rubric.md](../evaluations/reconcile-input-rubric.md) · [implement-screen-dry-run-checklist.md](../evaluations/implement-screen-dry-run-checklist.md) · [roadmap-current.md](../../frontend-workflow-kit/roadmap-current.md)
+> 근거 문서: [mvp-b-validation-candidates.md](../proposals/mvp-b-validation-candidates.md) · [diff-based-forbidden-paths-backstop.md](../proposals/diff-based-forbidden-paths-backstop.md) · [example-compare-harness-proposal.md](../example-compare-harness-proposal.md) · [reconcile-input-rubric.md](../evaluations/reconcile-input-rubric.md) · [implement-screen-dry-run-checklist.md](../evaluations/implement-screen-dry-run-checklist.md) · [roadmap-current.md](../../kit-dev/roadmap-current.md)
 
 ## 실행 현황 (워크트리) — 2026-06-14
 

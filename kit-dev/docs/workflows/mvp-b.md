@@ -143,6 +143,6 @@ dogfood 기반 promotion decision 은 후속으로 남긴다.
 
 ## 링크
 
-- [README 문서 지도](../../README.md#문서-지도)
+- [README 문서 지도](../../../frontend-workflow-kit/README.md#문서-지도)
 - [roadmap-current.md](../../roadmap-current.md)
 - [CHANGELOG.md](../../CHANGELOG.md)

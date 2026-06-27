@@ -28,7 +28,7 @@ proposal 첫 문장: *"킷은 현재 단 하나의 컨벤션을 가정한다: Ex
 | **Tier1 — 레이아웃 프로파일** | role→glob 순수 설정 (변형의 ~90%) | [layout-profile.mjs](frontend-workflow-kit/scripts/lib/layout-profile.mjs) · [project-layout.yaml](frontend-workflow-kit/policies/project-layout.yaml) · `presets/expo-feature.yaml` · 정책 `{roles.*}` 토큰화 |
 | **Tier2 — 라우터 어댑터** | 플러그인 전략 패턴 (파일트리↔코드정의 패러다임) | [route-core.mjs](frontend-workflow-kit/scripts/lib/route-core.mjs) · [adapters/routers/expo-router.mjs](frontend-workflow-kit/scripts/adapters/routers/expo-router.mjs) · custom 어댑터 예제 |
 
-설계 문서: [customizable-architecture/](frontend-workflow-kit/temp/proposals/customizable-architecture/). 소비자 커스터마이즈 파일은 `project-layout.yaml` 하나에 `roles`(Tier1)·`adapters`(Tier2)를 모두 담는다. 머지 순서: preset < `roles` < `domains.<d>.roles`.
+설계 문서: [customizable-architecture/](kit-dev/temp/proposals/customizable-architecture/). 소비자 커스터마이즈 파일은 `project-layout.yaml` 하나에 `roles`(Tier1)·`adapters`(Tier2)를 모두 담는다. 머지 순서: preset < `roles` < `domains.<d>.roles`.
 
 preset `expo-feature` 역할(= 현 하드코딩과 byte-동치):
 ```yaml

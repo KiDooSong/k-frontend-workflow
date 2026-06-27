@@ -6,7 +6,7 @@
 >
 > 함께 읽을 것:
 > [mvp-c-generated-views-scope.md](../../../temp/proposals/mvp-c-generated-views-scope.md) (§View 5 generated file guard) ·
-> [artifact-manifest.yaml](../../catalog/artifact-manifest.yaml) (Phase 0 하드닝 — 생성물 계약) ·
+> [artifact-manifest.yaml](../../../frontend-workflow-kit/catalog/artifact-manifest.yaml) (Phase 0 하드닝 — 생성물 계약) ·
 > [generated-file-guard-001.md](../../../temp/runs/generated-file-guard-001.md) (이 작업 런 리포트) ·
 > `frontend-workflow-kit-implementation.md` §3(생성 블록 규약)·§8(검사 6)·§9(생성기 명세)·§10(훅)
 

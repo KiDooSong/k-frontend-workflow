@@ -8,7 +8,7 @@
   - `frontend-workflow-kit/catalog/artifact-manifest.yaml` (수정)
   - `frontend-workflow-kit/temp/proposals/generated-file-guard-followup.md` (신규)
   - `temp/runs/generated-file-guard-001.md` (이 파일)
-- **참고:** [mvp-c-generated-views-scope.md](../proposals/mvp-c-generated-views-scope.md) · [generated-file-guard-followup.md](../../frontend-workflow-kit/temp/proposals/generated-file-guard-followup.md) · [artifact-manifest.yaml](../../frontend-workflow-kit/catalog/artifact-manifest.yaml)
+- **참고:** [mvp-c-generated-views-scope.md](../proposals/mvp-c-generated-views-scope.md) · [generated-file-guard-followup.md](../../kit-dev/temp/proposals/generated-file-guard-followup.md) · [artifact-manifest.yaml](../../frontend-workflow-kit/catalog/artifact-manifest.yaml)
 
 ## 1. artifact-manifest 변경
 

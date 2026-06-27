@@ -1,7 +1,7 @@
 # grill 계열 채택 — 진행/보류 노트
 
 > 상태: **포맷+개명+엔진 벤더링 = 완료(이번)**, **라이브 인터뷰 통합 = 보류(나중)**.
-> 원본: [mattpocock/skills](https://github.com/mattpocock/skills) (MIT). 고지: [`skills/VENDOR-NOTICE.md`](../../skills/VENDOR-NOTICE.md).
+> 원본: [mattpocock/skills](https://github.com/mattpocock/skills) (MIT). 고지: [`skills/VENDOR-NOTICE.md`](../../../frontend-workflow-kit/skills/VENDOR-NOTICE.md).
 
 ## 1. 지금 반영됨 (이번 작업)
 

@@ -249,7 +249,7 @@ W2 는 (1) 이 네이밍 규약 + (2) 소비 레포 토큰 source 를 **둘 다*
 
 ## 6. 산출물 — 정본 템플릿 patch **제안** (적용은 사람/오너)
 
-정본 [figma-component-mapping.template.md](../../../templates/screen/figma-component-mapping.template.md) `## Visual Spec` 주석의 마지막 줄은 현재 "규약은 OD-VS-2 에서 확정"이라는 *forward-pointer* 다. 규약 드래프트가 생겼으니, **이 규약을 가리키도록** + "예시는 규약일 뿐 값의 출처가 아님"을 박는 **최소 문구**를 제안한다.
+정본 [figma-component-mapping.template.md](../../../../frontend-workflow-kit/templates/screen/figma-component-mapping.template.md) `## Visual Spec` 주석의 마지막 줄은 현재 "규약은 OD-VS-2 에서 확정"이라는 *forward-pointer* 다. 규약 드래프트가 생겼으니, **이 규약을 가리키도록** + "예시는 규약일 뿐 값의 출처가 아님"을 박는 **최소 문구**를 제안한다.
 
 > ⚠ **적용하지 않았다(제안만).** 정본 템플릿 편집은 VS-1 에서 *오너 명시 지시* 로만 이뤄진 클래스이고, 본 규약은 아직 *드래프트*(미-confirmed)다. 아래는 confirmed 시점에 사람/오너가 적용할 정확한 diff 다.
 
@@ -327,6 +327,6 @@ VS-3(warning-first validate) 슬롯이 *명시 지시* 와 함께 `continue-on-e
 - 결정 기록: [visual-spec-od-decisions.md](visual-spec-od-decisions.md) (OD-VS-2 = a)
 - VS-1 실행안: [visual-spec-vs1-execution.md](visual-spec-vs1-execution.md) · 대체 대상 seed: [design-token-naming-convention.todo.md](design-token-naming-convention.todo.md) (deprecated)
 - 출처 제안: [visual-spec-formalization.md](visual-spec-formalization.md) (§6 W1·W2 · §8 OD)
-- 정본 템플릿: [figma-component-mapping.template.md](../../../templates/screen/figma-component-mapping.template.md) (`## Visual Spec`)
-- 정책(`figma_mapping_status`): [implementation-mode-policy.yaml](../../../policies/implementation-mode-policy.yaml)
+- 정본 템플릿: [figma-component-mapping.template.md](../../../../frontend-workflow-kit/templates/screen/figma-component-mapping.template.md) (`## Visual Spec`)
+- 정책(`figma_mapping_status`): [implementation-mode-policy.yaml](../../../../frontend-workflow-kit/policies/implementation-mode-policy.yaml)
 - 리서치(reference): [03 — 95로 좁히기](../../../../docs/research/figma-design/03-gaps-and-path-to-95.md) (처방1 토큰 단일출처) · [04 — 토큰 분류·파이프라인](../../../../docs/research/figma-design/04-figma-mcp-rest-data-collection.md) (§1a 토큰 5종·§4 채널·§5 파이프라인)
