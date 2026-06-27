@@ -67,6 +67,24 @@ Do not infer one from the other when a project uses custom roots or generated
 routes. Use `workflow:route-tree`, `workflow:nav-graph`, and
 `workflow:route-cross-check` as read-only evidence.
 
+## Screen Identity And Source Map
+
+Canonical screen identity (`screen_id`, `route`, `domain`, screen-spec path) is workflow-owned.
+External source codes — planning Figma codes, design Figma codes, Figma node ids, slugs — are
+aliases, not identity. They drift, duplicate, disappear, and get copied across screens.
+
+Map source codes to canonical Screen IDs in the Screen Source Map
+(`docs/frontend-workflow/_meta/screen-source-map.md`, from
+`templates/meta/screen-source-map.template.md`). Resolve mapping before creating or editing a
+ScreenSpec. When identity is confirmed, scaffold a stub with `workflow:create-screen`.
+
+- Do not invent a canonical `screen_id` from a source code. Ambiguous mapping is `scope-unclear`
+  and, when it blocks work, an Open Decision.
+- One source code maps to multiple canonical screens only with `split` (intentional) status.
+- Route hints are evidence, not identity. The same route may belong to a different screen.
+
+See [docs/reference/screen-identity.md](docs/reference/screen-identity.md) for the contract and examples.
+
 ## API Contract Styles
 
 Document API candidates in `api/api-manifest.md` before treating a screen as

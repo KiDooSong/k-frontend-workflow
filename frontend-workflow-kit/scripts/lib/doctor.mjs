@@ -7,6 +7,7 @@ import { buildPolicyDraft } from './policy-draft.mjs';
 import { loadScreenSpec } from './spec.mjs';
 import { parseRouteTreeRouteTokens } from './route-core.mjs';
 import { CONTRACT_KINDS, parseManifestEndpoints } from './api-manifest.mjs';
+import { collectScreenSourceMapFindings } from './screen-source-map.mjs';
 
 function toPosix(p) {
   return String(p).split(path.sep).join('/').replace(/\\/g, '/');
@@ -310,6 +311,7 @@ export function collectDoctorFindings({ layout, projectRoot, policy, docsDir } =
 
   findings.push(...collectRouteScreenMappingFindings({ docsDir, projectRoot }));
   findings.push(...collectApiContractFindings({ docsDir }));
+  findings.push(...collectScreenSourceMapFindings({ docsDir }));
 
   return findings.sort((a, b) => `${a.check}:${a.role || ''}:${a.glob || ''}:${a.route || ''}:${a.file || ''}`.localeCompare(`${b.check}:${b.role || ''}:${b.glob || ''}:${b.route || ''}:${b.file || ''}`));
 }

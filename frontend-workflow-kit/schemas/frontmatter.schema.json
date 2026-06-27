@@ -22,7 +22,8 @@
         "conflicts",
         "figma-component-mapping",
         "component-guidelines",
-        "api-manifest"
+        "api-manifest",
+        "screen-source-map"
       ]
     },
     "domain": {

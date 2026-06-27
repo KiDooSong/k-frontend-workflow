@@ -45,6 +45,24 @@ confirmed.
 
 Reference: [docs/reference/input-reconciliation.md](docs/reference/input-reconciliation.md).
 
+## Screen Identity
+
+```bash
+npm run workflow:create-screen -- --docs docs/frontend-workflow --domain auth --screen-id AUTH-SIGNUP-EMAIL --route /signup/email --source-input IN-20260625-visual-spec-001
+npm run workflow:create-screen -- --docs docs/frontend-workflow --domain auth --screen-id AUTH-SIGNUP-EMAIL --screen-slug signup-email --route /signup/email --title "Signup Email" --json
+```
+
+`workflow:create-screen` scaffolds a stub ScreenSpec at
+`domains/{domain}/screens/{screen-slug}/screen-spec.md` once canonical identity is known.
+Required: `--domain`, `--screen-id`, `--route`. It validates `screen_id` uniqueness, warns on
+duplicate routes, refuses overwrite by default (`--overwrite` to force), and prints next steps.
+
+External source codes (planning/design codes, Figma node ids) are aliases mapped in the Screen
+Source Map (`_meta/screen-source-map.md`, from `templates/meta/screen-source-map.template.md`), not
+canonical screen ids. The command does not invent screen ids, update navigation-map, resolve Open
+Decisions, or promote status to confirmed. Reference:
+[docs/reference/screen-identity.md](docs/reference/screen-identity.md).
+
 ## Reconciliation Validation
 
 Validate check 12 is active only after

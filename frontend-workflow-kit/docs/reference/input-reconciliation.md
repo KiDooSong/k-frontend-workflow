@@ -90,6 +90,28 @@ node tools/frontend-workflow/scripts/create-input-artifact.mjs \
 
 또는 `--from-yaml input.yaml` 을 사용할 수 있다. Producer 는 `input_id` 를 `IN-{YYYYMMDD}-{source}-{NNN}` 로 생성하고, 같은 id 파일 덮어쓰기를 기본으로 거부한다. 내용이 바뀌면 새 입력을 만들고 `supersedes` 로 이전 `input_id` 를 연결한다.
 
+### Source-Specific Producers And Screen Identity
+
+source-specific producer(Figma/planning adapter)는 자기 source 의 화면 코드를 들고 온다. 그 코드는 **alias 이지 canonical Screen ID 가 아니다**(계약: [screen-identity.md](screen-identity.md)). producer 는:
+
+- 가능하면 `screen-source-map.md` 를 참조해 planning/design/source 코드를 canonical `affected_screens` 로 매핑한다.
+- 매핑이 ambiguous 면 canonical id 를 **추측해 채우지 않는다.** source 코드를 `## Extracted Facts` 에 남기고 `expected_reconciliation` 에 `classification: scope-unclear` 를 적는다.
+- `AUTH-*` 같은 canonical Screen ID 를 **발명하지 않는다.**
+- source alias 를 payload 에 실어 보낸다: planning ids, design ids, node ids, route hints, source raw refs.
+
+canonical frontmatter 는 안정적으로 유지한다 — source alias 는 frontmatter 를 키우지 않고 body 로 보낸다. `workflow:create-input` 은 optional `source_screen_refs` 를 받아 `## Source Screen Refs` 섹션으로 렌더한다(없으면 섹션도 없다 — byte-stable). frontmatter 는 그대로다.
+
+```json
+{
+  "source_screen_refs": [
+    { "source": "planning-figma", "source_id": "A-001", "route_hint": "/signup/email", "node_id": null, "confidence": "candidate" },
+    { "source": "design-figma",   "source_id": "J010", "node_id": "1:234", "confidence": "candidate" }
+  ]
+}
+```
+
+이 source ref 들은 reconcile-input 이 Screen Source Map 으로 canonical 화면을 확정할 때 쓰는 evidence 다. canonical frontmatter 확장이 과하면 그냥 `## Extracted Facts` 에 같은 내용을 적어도 된다.
+
 생성 후 흐름:
 
 ```txt
@@ -401,6 +423,27 @@ reconcile-input 결과를 리뷰할 때는 아래 항목을 통과 기준으로 
 | no code/generated edits | production code, tests, generated files 를 직접 수정하지 않았다 |
 | no live promotion | live implementation policy replacement, CI/hard gate promotion, pre-edit hook enforcement 가 없다 |
 | idempotency | 같은 `input_id` 재실행 시 register 의 `reconciled` 행으로 멈출 수 있다. 내용 변경은 새 id + `supersedes` 다 |
+
+## Screen Identity And New Screens
+
+입력이 **존재하지 않는 화면**을 가리키거나 source 코드(planning `A-001`·design `J010`·Figma node id)를 들고 오면, reconcile-input 은 canonical Screen ID 를 발명하지 않고 **Screen Source Map**(`_meta/screen-source-map.md`)으로 푼다. canonical identity(`screen_id`/`route`/ScreenSpec 경로)는 워크플로우가 소유하고, source 코드는 alias/evidence 일 뿐이다. 전체 계약·예시: [screen-identity.md](screen-identity.md).
+
+| 상황 | 처리 |
+|---|---|
+| source 코드가 `confirmed` canonical 로 매핑돼 있고 ScreenSpec 도 존재 | 그 `screen_id` 로 평소처럼 reconcile |
+| `confirmed` canonical 인데 ScreenSpec 이 없음 | 내용 반영 전에 `workflow:create-screen` 으로 stub 을 만든 뒤 reconcile |
+| 매핑이 `ambiguous` (같은 코드가 여러 화면, 근거 부족) | canonical id 를 만들지 않는다. `scope-unclear` 로 분류하고 구현이 막히면 Open Decision. 적절하면 Screen Source Map 에 `candidate`/`ambiguous` 행 |
+| 입력이 분명히 새 화면을 도입하지만 canonical id 없음 | Screen Source Map 에 `candidate` 행을 만들고 사람에게 canonical `screen_id`/`route` 확인을 받은 뒤 `workflow:create-screen` |
+
+```txt
+reconcile-input 은:
+- 기존 문서를 갱신하고 decision/gap/unknown 을 만들/재오픈할 수 있다.
+- 하지만 canonical 화면 identity 를 발명하지 않는다.
+identity 생성은: (1) 사람-확인, 또는 (2) workflow:create-screen(주어진 canonical id) 뿐이다.
+workflow:create-screen 은 stub 만 만든다 — navigation-map 자동 수정·Open Decision resolve·confirmed 승격 없음.
+```
+
+doctor 는 Screen Source Map 일관성을 warning-first 로만 표면화한다(canonical 에 ScreenSpec 부재, route 불일치, split/ambiguous 없는 중복 alias, input `affected_screens` 의 raw alias). hard gate 가 아니며 cold-start 를 막지 않는다.
 
 ## Conflict Handling
 
