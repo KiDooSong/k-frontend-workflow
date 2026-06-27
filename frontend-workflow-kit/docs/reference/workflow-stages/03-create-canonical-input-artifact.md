@@ -21,6 +21,21 @@ npm run workflow:create-input -- --docs docs/frontend-workflow --from-json input
 stays in the consumer repo (Stage 01); this producer only renders already-normalized
 facts. Command detail: [`../../../COMMANDS.md`](../../../COMMANDS.md).
 
+## Output location (flat default, grouped optional)
+
+Flat `inputs/{input_id}.md` is the default and stays supported. For large repos,
+group output (opt-in) so `inputs/` does not become a flat pile of dozens of files:
+
+- **Single-domain input** → `--group-by domain` writes `inputs/{domain}/{input_id}.md`.
+- **Cross-domain input** → `--group-by domain` writes `inputs/_multi/`, or pass an
+  explicit `--input-subdir <path>` when you want a deliberate grouping.
+- **Unmapped source input** (screen identity not resolved yet) → `--group-by domain`
+  writes `inputs/_unknown/`, or keep it flat until identity is resolved in Stage 02.
+- Whatever the directory, the filename stays `{input_id}.md`, `input_id` stays
+  globally unique, and `workflow:validate` check 11 scans `inputs/**` recursively.
+- Preserve `source_screen_refs` (Stage 01) so screen-identity mapping survives into
+  reconcile regardless of which subdirectory the artifact lands in.
+
 ## Extension points (adapter-friendly)
 
 ```text
@@ -40,7 +55,9 @@ should not duplicate input_id/frontmatter rendering if workflow:create-input is 
 
 The output must satisfy all of:
 
-- path `docs/frontend-workflow/inputs/{input_id}.md` (filename = `input_id`),
+- path `docs/frontend-workflow/inputs/{input_id}.md` — or a grouped subpath
+  `inputs/{domain}/{input_id}.md` / `inputs/{path}/{input_id}.md` (filename always =
+  `input_id`; `input_id` is globally unique across subdirectories),
 - canonical frontmatter (`input_id`, `input_type`, `source_type`, `source_ref`,
   `captured_at`, `captured_by`, `status`, `affected_domains`, `affected_screens`),
 - **no** deprecated `suggested_scope` (use `affected_domains` / `affected_screens`),

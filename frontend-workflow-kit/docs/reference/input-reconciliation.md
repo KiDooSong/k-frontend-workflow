@@ -92,6 +92,28 @@ node tools/frontend-workflow/scripts/create-input-artifact.mjs \
 
 또는 `--from-yaml input.yaml` 을 사용할 수 있다. Producer 는 `input_id` 를 `IN-{YYYYMMDD}-{source}-{NNN}` 로 생성하고, 같은 id 파일 덮어쓰기를 기본으로 거부한다. 내용이 바뀌면 새 입력을 만들고 `supersedes` 로 이전 `input_id` 를 연결한다.
 
+### Grouped Input Directories (대규모 레포 옵션)
+
+flat 경로 `docs/frontend-workflow/inputs/{input_id}.md` 는 기본값이자 계속 지원된다. auth/main/profile 처럼 도메인이 늘어 입력이 수십 개가 되면 도메인별 하위 디렉토리로 묶는 것을 권장한다(opt-in).
+
+```bash
+# 단일 도메인 입력 → inputs/{domain}/{input_id}.md
+npm run workflow:create-input -- --docs docs/frontend-workflow --from-json input.json --group-by domain
+
+# 명시 하위 경로 → inputs/auth/figma/{input_id}.md (상대경로만; '..'·절대경로는 거부)
+npm run workflow:create-input -- --docs docs/frontend-workflow --from-json input.json --input-subdir auth/figma
+```
+
+- `--group-by domain`: `affected_domains` 가 1개면 `inputs/{domain}/`, 2개 이상이면 `inputs/_multi/`, 도메인이 없거나 불명확하면 `inputs/_unknown/` 로 쓴다.
+- `--input-subdir <path>`: 명시 하위 경로(예: `auth/figma`). `--group-by` 보다 **우선**한다. `..`·절대경로·드라이브·`.` 로 시작하는 세그먼트는 거부한다(inputs/ 밖으로 새거나 walk 가 못 보는 dot 디렉토리에 숨는 것 방지).
+- grouping 플래그가 없으면 flat 동작 그대로다(하위호환).
+
+**불변식(경로와 무관):** `input_id` 는 모든 하위 디렉토리를 통틀어 **전역 유일**하다. 파일 basename 은 항상 `{input_id}.md` 다. next id 시퀀스·중복 검사·`supersedes` 해소·validate 검사 11 은 `inputs/**` 를 **재귀로** 스캔한다. Reconciliation Register 의 키는 **`input_id` 이지 경로가 아니다** — 파일을 하위 디렉토리로 옮겨도 register 행은 그대로다.
+
+**디렉토리 안내 파일:** `inputs/README.md` · `inputs/{domain}/README.md` · `inputs/**/index.md` 는 입력 결과물이 아니라 그룹 가이드/인덱스다. validate 검사 11·12 는 이 파일들을 입력으로 취급하지 않는다(`IN-*.md` 같은 실제/malformed 입력은 계속 검사한다). 템플릿: `templates/input/inputs-readme.template.md` · `templates/input/inputs-domain-readme.template.md`. 이 README 는 사람/에이전트가 유지하는 가이드이며, register 가 Reconcile Status 의 정본이다.
+
+**기존 레포 마이그레이션:** 이미 flat `inputs/*.md` 가 있으면 그대로 둬도 된다. 큰 프로젝트는 *앞으로의* 입력만 `inputs/{domain}/` 로 모으면 된다. `input_id` 값은 **절대 바꾸지 않는다.** 파일을 하위 디렉토리로 옮길 때 파일명은 `{input_id}.md` 로 유지한다 — validate 가 재귀로 스캔하므로 경로가 바뀌어도 검사·reconcile 키는 유지된다.
+
 ### Source-Specific Producers And Screen Identity
 
 source-specific producer(Figma/planning adapter)는 자기 source 의 화면 코드를 들고 온다. 그 코드는 **alias 이지 canonical Screen ID 가 아니다**(계약: [screen-identity.md](screen-identity.md)). producer 는:

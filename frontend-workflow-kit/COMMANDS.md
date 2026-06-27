@@ -43,6 +43,20 @@ in the consumer repo. The generic producer does not update the Reconciliation
 Register, run `reconcile-input`, approve implementation, or promote facts to
 confirmed.
 
+For large repos, group inputs by domain (flat output stays the default):
+
+```bash
+npm run workflow:create-input -- --docs docs/frontend-workflow --from-json input.json --group-by domain
+npm run workflow:create-input -- --docs docs/frontend-workflow --from-json input.json --input-subdir auth/figma
+```
+
+`--group-by domain` writes `inputs/{domain}/{input_id}.md` (one domain),
+`inputs/_multi/` (multiple domains), or `inputs/_unknown/` (none). `--input-subdir
+<path>` writes an explicit relative subdir and takes precedence; `..`/absolute
+paths are rejected. `input_id` stays globally unique and the Reconciliation
+Register key stays `input_id` regardless of path. `README.md` / `index.md` under
+`inputs/**` are directory guides, not input artifacts, and validate skips them.
+
 Reference: [docs/reference/input-reconciliation.md](docs/reference/input-reconciliation.md).
 
 ## Screen Identity
