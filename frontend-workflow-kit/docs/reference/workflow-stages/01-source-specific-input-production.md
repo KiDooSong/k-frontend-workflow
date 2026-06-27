@@ -8,8 +8,10 @@
 report, an internal export) needs to be turned into normalized facts the workflow
 can consume.
 
-**Skip this stage when** no external/raw source is involved — you were handed a
-normalized payload, or an input artifact already exists. Then start at 02 or 03.
+**Skip this stage when** no external/raw source needs parsing:
+
+- you were handed a normalized payload → start at 02 (resolve identity) or 03 (create the artifact);
+- the input artifact `docs/frontend-workflow/inputs/{input_id}.md` already exists → start at 04 (reconcile). Do not re-create it here or in 03 — that duplicates the artifact and can leave the register unreconciled.
 
 ## What the kit does and does not do here
 
