@@ -12,6 +12,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { exists, findFiles, isDir, readFileSafe, splitFrontmatter } from './util.mjs';
+import { isRealDate } from './schema.mjs';
 
 export class ScreenScaffoldError extends Error {
   constructor(message) {
@@ -26,8 +27,6 @@ export const SCREEN_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 export const DOMAIN_PATTERN = /^[a-z0-9-]+$/;
 // screen-slug: 디렉토리 이름으로 안전한 kebab(소문자/숫자/하이픈). 경로 구분자·'.'·'..' 를 막아 path traversal 차단.
 export const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
-// last_reviewed/date: frontmatter.schema.json 의 date 형식(YYYY-MM-DD).
-const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 // canonical screen_id 에서 디렉토리 slug 를 파생한다 (대문자/구분자 정규화). --screen-slug 로 오버라이드 가능.
 export function screenSlugFromId(screenId) {
@@ -163,8 +162,10 @@ export function buildScreenSpec(options = {}) {
     // 경로 구분자·'..' 가 든 slug 는 traversal 위험 — 거부한다.
     errors.push(`screen-slug must match ${SLUG_PATTERN} (lowercase kebab, no path separators; got: ${screenSlug})`);
   }
-  if (lastReviewed && !ISO_DATE_PATTERN.test(lastReviewed)) {
-    errors.push(`last_reviewed/date must be YYYY-MM-DD (got: ${lastReviewed})`);
+  // 형식(YYYY-MM-DD)뿐 아니라 실재 달력 날짜여야 한다 — frontmatter.schema.json 의 format:date 와 동일 검사.
+  // (그렇지 않으면 stub 이 곧바로 workflow:validate 검사 1 에서 실패한다.)
+  if (lastReviewed && !isRealDate(lastReviewed)) {
+    errors.push(`last_reviewed/date must be a real YYYY-MM-DD date (got: ${lastReviewed})`);
   }
   if (errors.length) throw new ScreenScaffoldError(errors.join('\n'));
 

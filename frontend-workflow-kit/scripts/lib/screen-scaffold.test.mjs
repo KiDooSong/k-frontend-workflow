@@ -68,8 +68,15 @@ test('buildScreenSpec rejects an unsafe screen-slug (path traversal) and a malfo
   );
   assert.throws(
     () => buildScreenSpec({ domain: 'auth', screenId: 'AUTH-001', route: '/x', date: 'not-a-date' }),
-    /must be YYYY-MM-DD/,
+    /must be a real YYYY-MM-DD date/,
   );
+  // shape-valid but impossible calendar date is rejected (schema format:date enforces a real date).
+  assert.throws(
+    () => buildScreenSpec({ domain: 'auth', screenId: 'AUTH-001', route: '/x', date: '2026-02-31' }),
+    /must be a real YYYY-MM-DD date/,
+  );
+  // a real date is accepted.
+  assert.equal(buildScreenSpec({ domain: 'auth', screenId: 'AUTH-001', route: '/x', date: '2026-06-27' }).last_reviewed, '2026-06-27');
 });
 
 // Case 5: new screen confirmed -> create-screen writes a stub ScreenSpec.

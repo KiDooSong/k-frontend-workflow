@@ -103,6 +103,7 @@ function asScreenList(value) {
 //   - screen-source-map-input-alias     : input affected_screens 가 canonical 대신 알려진 source alias
 //   - screen-source-map-input-unmapped  : input affected_screens 가 canonical 도 alias 도 아님 (미지 raw)
 //   - screen-source-map-status-enum     : Mapping Status enum 위반
+//   - screen-source-map-status-missing  : Mapping Status 가 비어 있음
 //   - screen-source-map-unparsable      : map 은 있으나 표를 못 읽음
 export function collectScreenSourceMapFindings({ docsDir } = {}) {
   const findings = [];
@@ -125,7 +126,16 @@ export function collectScreenSourceMapFindings({ docsDir } = {}) {
   const aliasToRows = new Map(); // alias -> [{ canonicalId, status }]
 
   for (const row of parsed.rows) {
-    if (row.status && !SCREEN_SOURCE_MAP_STATUS_VALUES.includes(row.status)) {
+    // status 는 deprecated 면제·split/ambiguous 인정 계약을 가르므로 비어 있으면 명시적으로 surface 한다.
+    // (빈 status 는 두 계약 모두 안전 방향으로 falls back 하지만 — 면제 안 됨·인정 안 됨 — 작성자가 채우도록 알린다.)
+    if (!row.status) {
+      findings.push({
+        severity: 'warning',
+        check: 'screen-source-map-status-missing',
+        screen_id: row.canonicalId,
+        message: `Mapping Status is empty for ${row.canonicalId} — set one of ${SCREEN_SOURCE_MAP_STATUS_VALUES.join('|')} (status drives the deprecated/split contracts)`,
+      });
+    } else if (!SCREEN_SOURCE_MAP_STATUS_VALUES.includes(row.status)) {
       findings.push({
         severity: 'warning',
         check: 'screen-source-map-status-enum',

@@ -182,6 +182,20 @@ test('an input referencing an unmapped raw source alias warns instead of being s
   assert.equal(unmapped[0].input_id, 'IN-20260625-figma-001');
 });
 
+test('a row with a blank Mapping Status is surfaced (status drives the deprecated/split contracts)', (t) => {
+  const docsDir = path.join(tmpdir(t), 'docs', 'frontend-workflow');
+  writeSpec(docsDir, { domain: 'auth', slug: 'a', screenId: 'AUTH-A', route: '/a' });
+  writeMap(docsDir, [
+    ['AUTH-A', 'auth', '/a', '-', 'A-001', '-', '-', '-', '', '-'], // blank Mapping Status
+  ]);
+  const findings = collectScreenSourceMapFindings({ docsDir });
+  const missing = findings.find((f) => f.check === 'screen-source-map-status-missing');
+  assert.ok(missing);
+  assert.equal(missing.screen_id, 'AUTH-A');
+  // blank status must not be misread as a valid enum value.
+  assert.equal(findings.some((f) => f.check === 'screen-source-map-status-enum'), false);
+});
+
 test('parseScreenSourceMap reads the signature table and skips placeholder rows', () => {
   const raw = [
     '---',

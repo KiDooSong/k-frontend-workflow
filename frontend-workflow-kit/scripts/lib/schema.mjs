@@ -6,7 +6,7 @@
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // YYYY-MM-DD 형식 + 실재하는 달력 날짜인지 (월 1-12, 일 유효)
-function isRealDate(s) {
+export function isRealDate(s) {
   if (!DATE_RE.test(s)) return false;
   const [y, m, d] = s.split('-').map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d));
