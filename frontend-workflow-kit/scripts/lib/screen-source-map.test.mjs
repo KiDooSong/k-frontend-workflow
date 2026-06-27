@@ -126,6 +126,33 @@ test('a mapping to a canonical id with no ScreenSpec warns to run create-screen'
   assert.match(missing.message, /workflow:create-screen/);
 });
 
+test('a merged canonical with no ScreenSpec still warns (merged is a current screen, only deprecated is exempt)', (t) => {
+  const docsDir = path.join(tmpdir(t), 'docs', 'frontend-workflow');
+  writeMap(docsDir, [
+    ['AUTH-MERGED', 'auth', '/merged', '-', 'A-001', 'J010', '-', '-', 'merged', 'two sources, one screen'],
+    ['AUTH-OLD', 'auth', '/old', '-', 'A-099', '-', '-', '-', 'deprecated', 'retired'],
+  ]);
+  const findings = collectScreenSourceMapFindings({ docsDir });
+  assert.ok(findings.some((f) => f.check === 'screen-source-map-screen-missing' && f.screen_id === 'AUTH-MERGED'));
+  // deprecated stays exempt
+  assert.equal(findings.some((f) => f.check === 'screen-source-map-screen-missing' && f.screen_id === 'AUTH-OLD'), false);
+});
+
+test('an input using a known source alias is told to use the canonical id (not flagged as unknown)', (t) => {
+  const docsDir = path.join(tmpdir(t), 'docs', 'frontend-workflow');
+  writeSpec(docsDir, { domain: 'auth', slug: 'signup-email', screenId: 'AUTH-SIGNUP-EMAIL', route: '/signup/email' });
+  writeMap(docsDir, [
+    ['AUTH-SIGNUP-EMAIL', 'auth', '/signup/email', '-', 'A-001', 'J010', '-', '-', 'confirmed', '-'],
+  ]);
+  writeInput(docsDir, 'IN-20260627-figma-003', ['J010']); // J010 is a recognized design alias
+  const findings = collectScreenSourceMapFindings({ docsDir });
+  const alias = findings.find((f) => f.check === 'screen-source-map-input-alias');
+  assert.ok(alias);
+  assert.equal(alias.screen, 'J010');
+  assert.deepEqual(alias.canonical_ids, ['AUTH-SIGNUP-EMAIL']);
+  assert.equal(findings.some((f) => f.check === 'screen-source-map-input-unmapped'), false);
+});
+
 test('a map route that differs from the ScreenSpec route warns (route is evidence, not identity)', (t) => {
   const docsDir = path.join(tmpdir(t), 'docs', 'frontend-workflow');
   writeSpec(docsDir, { domain: 'auth', slug: 'signup-email', screenId: 'AUTH-SIGNUP-EMAIL', route: '/signup/email' });

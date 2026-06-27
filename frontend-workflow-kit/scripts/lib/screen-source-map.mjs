@@ -100,7 +100,8 @@ function asScreenList(value) {
 //   - screen-source-map-screen-missing : canonical id 에 ScreenSpec 부재 (create-screen 필요)
 //   - screen-source-map-route-mismatch  : map route ≠ ScreenSpec route (route 는 evidence)
 //   - screen-source-map-duplicate-alias : 같은 source alias 가 여러 canonical 에, split/ambiguous 없이
-//   - screen-source-map-input-unmapped  : input affected_screens 가 canonical 도 map 도 아님 (raw alias)
+//   - screen-source-map-input-alias     : input affected_screens 가 canonical 대신 알려진 source alias
+//   - screen-source-map-input-unmapped  : input affected_screens 가 canonical 도 alias 도 아님 (미지 raw)
 //   - screen-source-map-status-enum     : Mapping Status enum 위반
 //   - screen-source-map-unparsable      : map 은 있으나 표를 못 읽음
 export function collectScreenSourceMapFindings({ docsDir } = {}) {
@@ -136,8 +137,9 @@ export function collectScreenSourceMapFindings({ docsDir } = {}) {
 
     const spec = specIds.get(row.canonicalId);
     if (!spec) {
-      // deprecated/merged 행은 의도적으로 ScreenSpec 이 없을 수 있어 제외.
-      if (row.status !== 'deprecated' && row.status !== 'merged') {
+      // deprecated 행만 의도적으로 ScreenSpec 이 없을 수 있어 제외한다.
+      // merged 는 여러 source 가 한 *현재* canonical 화면으로 합쳐진 것이라 ScreenSpec 이 있어야 한다.
+      if (row.status !== 'deprecated') {
         findings.push({
           severity: 'warning',
           check: 'screen-source-map-screen-missing',
@@ -180,8 +182,10 @@ export function collectScreenSourceMapFindings({ docsDir } = {}) {
     }
   }
 
-  // input affected_screens 가 canonical 도 map entry 도 아니면 raw source alias 로 본다(scope-unclear).
-  // map 이 존재한다는 것 자체가 매핑 흐름에 opt-in 한 신호이므로 이때만 발화한다.
+  // input affected_screens 토큰을 canonical / 알려진 alias / 미지 로 가른다(map 존재 = 매핑 흐름 opt-in).
+  //   - canonical(spec screen_id 또는 map canonical) → ok
+  //   - 알려진 source alias(planning/design/node) → input-alias: canonical screen_id 로 바꾸라고 정확히 안내
+  //   - 그 외 → input-unmapped: raw alias(scope-unclear), 매핑부터 푼다
   const canonicalIds = new Set([...specIds.keys(), ...parsed.rows.map((r) => r.canonicalId)]);
   for (const a of collectInputArtifacts(path.join(docsDir, 'inputs'))) {
     if (a.parseError) continue;
@@ -189,7 +193,19 @@ export function collectScreenSourceMapFindings({ docsDir } = {}) {
     for (const s of asScreenList(a.fm.affected_screens)) {
       const token = String(s).trim();
       if (!token || token.startsWith('{')) continue;
-      if (!canonicalIds.has(token)) {
+      if (canonicalIds.has(token)) continue;
+      const aliasRows = aliasToRows.get(token);
+      if (aliasRows && aliasRows.length) {
+        const canon = [...new Set(aliasRows.map((r) => r.canonicalId))].sort();
+        findings.push({
+          severity: 'warning',
+          check: 'screen-source-map-input-alias',
+          input_id: inputId,
+          screen: token,
+          canonical_ids: canon,
+          message: `input ${inputId} references affected_screen '${token}', which is a source alias for ${canon.join(', ')} — use the canonical screen_id in affected_screens, not the source code`,
+        });
+      } else {
         findings.push({
           severity: 'warning',
           check: 'screen-source-map-input-unmapped',

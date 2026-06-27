@@ -24,6 +24,10 @@ export class ScreenScaffoldError extends Error {
 export const SCREEN_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 // domain 형식: frontmatter.schema.json 의 domain 패턴과 동일.
 export const DOMAIN_PATTERN = /^[a-z0-9-]+$/;
+// screen-slug: 디렉토리 이름으로 안전한 kebab(소문자/숫자/하이픈). 경로 구분자·'.'·'..' 를 막아 path traversal 차단.
+export const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+// last_reviewed/date: frontmatter.schema.json 의 date 형식(YYYY-MM-DD).
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 // canonical screen_id 에서 디렉토리 slug 를 파생한다 (대문자/구분자 정규화). --screen-slug 로 오버라이드 가능.
 export function screenSlugFromId(screenId) {
@@ -138,6 +142,8 @@ export function buildScreenSpec(options = {}) {
   const domain = trimmed(options.domain);
   const screenId = trimmed(options.screenId ?? options.screen_id);
   const route = trimmed(options.route);
+  const lastReviewed = trimmed(options.lastReviewed ?? options.last_reviewed ?? options.date);
+  const screenSlug = trimmed(options.screenSlug ?? options.screen_slug) || screenSlugFromId(screenId);
 
   if (!domain) errors.push('domain is required');
   if (!screenId) errors.push('screen_id is required');
@@ -151,12 +157,18 @@ export function buildScreenSpec(options = {}) {
   if (route && !route.startsWith('/')) {
     errors.push(`route must start with '/' (got: ${route})`);
   }
+  if (!screenSlug) {
+    errors.push('screen-slug could not be derived; pass --screen-slug');
+  } else if (!SLUG_PATTERN.test(screenSlug)) {
+    // 경로 구분자·'..' 가 든 slug 는 traversal 위험 — 거부한다.
+    errors.push(`screen-slug must match ${SLUG_PATTERN} (lowercase kebab, no path separators; got: ${screenSlug})`);
+  }
+  if (lastReviewed && !ISO_DATE_PATTERN.test(lastReviewed)) {
+    errors.push(`last_reviewed/date must be YYYY-MM-DD (got: ${lastReviewed})`);
+  }
   if (errors.length) throw new ScreenScaffoldError(errors.join('\n'));
 
-  const screenSlug = trimmed(options.screenSlug ?? options.screen_slug) || screenSlugFromId(screenId);
-  if (!screenSlug) throw new ScreenScaffoldError('screen-slug could not be derived; pass --screen-slug');
-
-  const spec = {
+  return {
     artifact_id: `${screenId}-screen-spec`,
     domain,
     screen_id: screenId,
@@ -165,11 +177,10 @@ export function buildScreenSpec(options = {}) {
     screen_entry: trimmed(options.screenEntry ?? options.screen_entry),
     status: 'draft',
     sources: normalizeSources({ sources: options.sources, sourceInput: options.sourceInput ?? options.source_input }),
-    last_reviewed: trimmed(options.lastReviewed ?? options.last_reviewed ?? options.date),
+    last_reviewed: lastReviewed,
     title: trimmed(options.title) || screenId,
     screenSlug,
   };
-  return spec;
 }
 
 // stub screen-spec 을 docsDir 하위에 쓴다. 기본은 overwrite 거부, screen_id 유일성 강제, route 중복은 경고.

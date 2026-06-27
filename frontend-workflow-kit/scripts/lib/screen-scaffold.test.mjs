@@ -57,6 +57,21 @@ test('buildScreenSpec requires domain, screen_id, and route', () => {
   assert.throws(() => buildScreenSpec({ domain: 'auth', screenId: 'AUTH-001', route: 'signup' }), /route must start with/);
 });
 
+test('buildScreenSpec rejects an unsafe screen-slug (path traversal) and a malformed date', () => {
+  assert.throws(
+    () => buildScreenSpec({ domain: 'auth', screenId: 'AUTH-001', route: '/x', screenSlug: '../../evil' }),
+    /screen-slug must match/,
+  );
+  assert.throws(
+    () => buildScreenSpec({ domain: 'auth', screenId: 'AUTH-001', route: '/x', screenSlug: 'a/b' }),
+    /screen-slug must match/,
+  );
+  assert.throws(
+    () => buildScreenSpec({ domain: 'auth', screenId: 'AUTH-001', route: '/x', date: 'not-a-date' }),
+    /must be YYYY-MM-DD/,
+  );
+});
+
 // Case 5: new screen confirmed -> create-screen writes a stub ScreenSpec.
 test('writeScreenSpec writes a stub ScreenSpec that readiness treats as a stub', (t) => {
   const docsDir = path.join(tmpdir(t), 'docs', 'frontend-workflow');
@@ -232,6 +247,17 @@ test('CLI exits 2 for a duplicate screen_id rather than inventing a path', (t) =
   );
   assert.equal(res.status, 2);
   assert.match(res.stderr, /screen_id already exists/);
+});
+
+test('CLI exits 2 for a path-traversal screen-slug instead of writing outside the tree', (t) => {
+  const docs = path.join(tmpdir(t), 'docs', 'frontend-workflow');
+  const res = spawnSync(
+    process.execPath,
+    [CLI, '--docs', docs, '--domain', 'auth', '--screen-id', 'AUTH-X', '--screen-slug', '../../evil', '--route', '/x'],
+    { encoding: 'utf8' },
+  );
+  assert.equal(res.status, 2);
+  assert.match(res.stderr, /screen-slug must match/);
 });
 
 test('CLI rejects unknown flags before writing', (t) => {
