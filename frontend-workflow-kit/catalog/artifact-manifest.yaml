@@ -13,7 +13,7 @@
 # eslint.workflow.config(MVP-B, status: planned). route-tree·nav-graph(MVP-C)는 Phase 1
 # 생성기 구현 완료로 status: active 로 갱신(2026-06-14 통합 점검 — temp/runs/mvp-c-generated-views-integration.md).
 # 생성물 필드 계약·planned 표기 규칙은 아래 "생성물" 섹션 주석 참고.
-# 직접편집 가드(헤더/마커/diff/hook) 설계: frontend-workflow-kit/temp/proposals/generated-file-guard-followup.md
+# 직접편집 가드(헤더/마커/diff/hook) 설계: kit-dev/temp/proposals/generated-file-guard-followup.md
 # 참고: frontend-workflow-kit-implementation.md §4
 
 version: 1
@@ -160,7 +160,7 @@ artifacts:
   # 실제 존재할 때만 헤더를 본다 — 없으면 존재 가드(validate.mjs:438)로 건너뛴다. route-tree·
   # nav-graph·eslint 처럼 do_not_edit:true 인데 파일이 아직 없는 planned 엔트리는 그래서 무해하다.
   # (섹션 마커 검사 validate.mjs:239-258 은 screen-spec 전용이라 이 planned 엔트리들과 무관.)
-  # 직접편집 가드의 한계·CI 옵션: frontend-workflow-kit/temp/proposals/generated-file-guard-followup.md
+  # 직접편집 가드의 한계·CI 옵션: kit-dev/temp/proposals/generated-file-guard-followup.md
   # --------------------------------------------------------------------------
 
   # active — workflow-state.mjs 가 생성. workflow:state 는 package.json 에 존재(MVP-A).
@@ -284,7 +284,7 @@ artifacts:
   # planned 로 유지한다. 즉 "생성 명령 존재"와 "guard-enforced artifact"를 분리한다.
   # 경로가 레포 루트라(docs/frontend-workflow/ 밑이 아님) validate 검사 6 의 경로 해소
   # (docs/frontend-workflow/ 접두 가정: validate.mjs:436)가 이 루트 파일을 못 짚는다 —
-  # 이 가드 공백은 frontend-workflow-kit/temp/proposals/generated-file-guard-followup.md 에 정리.
+  # 이 가드 공백은 kit-dev/temp/proposals/generated-file-guard-followup.md 에 정리.
   # JS 생성 파일 배너 문구는 docs/workflows/lint-policy-catalog.md 에 문서화되어 있고,
   # lint-gen.mjs 가 그대로 emit 한다.
   # status: planned 이므로 파일 부재는 must-not-fail 이며, check-generated/CI 가 아직 이 루트

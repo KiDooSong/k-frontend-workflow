@@ -522,13 +522,13 @@ test('--input-subdir writes a nested subdir and takes precedence over --group-by
   assert.equal(fs.existsSync(path.join(dir, 'auth', 'figma', 'IN-20260625-figma-001.md')), true);
 });
 
-test('sanitizeInputSubdir normalizes separators and rejects traversal/absolute/dot paths', () => {
+test('sanitizeInputSubdir normalizes separators and rejects traversal/absolute/dot/empty segments', () => {
   assert.equal(sanitizeInputSubdir('auth/figma'), 'auth/figma');
   assert.equal(sanitizeInputSubdir('auth\\figma'), 'auth/figma');
-  assert.equal(sanitizeInputSubdir('a/./b'), 'a/b');
   assert.equal(sanitizeInputSubdir(''), '');
   assert.equal(sanitizeInputSubdir(undefined), '');
-  for (const bad of ['../bad', 'a/../b', '/abs', 'C:\\x', '.hidden', 'a/.git/b']) {
+  // '.'/'..'/dot-leading/empty('//' or trailing '/')/absolute/drive segments are rejected, not normalized.
+  for (const bad of ['../bad', 'a/../b', '/abs', 'C:\\x', '.hidden', 'a/.git/b', '.', 'a/./b', 'auth//figma', 'auth/']) {
     assert.throws(() => sanitizeInputSubdir(bad), InputProducerError, `should reject ${bad}`);
   }
 });

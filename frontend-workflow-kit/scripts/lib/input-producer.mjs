@@ -28,9 +28,10 @@ export function normalizeInputSourceToken(value) {
 }
 
 // inputs/ 하위 그룹 경로를 안전한 상대 세그먼트로 검증한다(--input-subdir / --group-by 산출물).
-// 거부: 절대경로·드라이브(C:)·'..'·'.' 시작 세그먼트·허용 외 문자. inputs/ 밖으로 새거나
-// walkFiles 가 못 보는 dot 디렉토리에 쓰는 것을 막는다(검사 11 이 재귀로 다 봐야 하므로).
-// 빈 입력은 '' (flat) 로 통과. 반환은 posix('/') 로 join 된 정규화 상대경로.
+// 거부(정규화하지 않고 명시적으로 throw): 절대경로·드라이브(C:)·'..'·'.' 또는 '.' 로 시작하는 세그먼트·
+//   빈 세그먼트('//'·앞뒤 '/')·허용 외 문자. inputs/ 밖으로 새거나 walkFiles 가 못 보는 dot 디렉토리에
+//   쓰는 것을 막는다(검사 11 이 재귀로 다 봐야 하므로). 모호한 입력을 조용히 normalize 하지 않는다.
+// 빈/undefined 입력만 '' (flat) 로 통과. 반환은 posix('/') 로 join 된 상대경로.
 export function sanitizeInputSubdir(raw) {
   if (raw === undefined || raw === null) return '';
   const value = String(raw).trim();
@@ -38,11 +39,16 @@ export function sanitizeInputSubdir(raw) {
   if (path.isAbsolute(value) || /^[A-Za-z]:/.test(value) || /^[\\/]/.test(value)) {
     throw new InputProducerError(`input subdir must be a relative path inside inputs/: '${raw}'`);
   }
-  const segments = value.split(/[\\/]+/).filter((s) => s !== '');
+  // split 하되 collapse 하지 않는다 — '//'·앞뒤 '/' 가 만드는 빈 세그먼트를 그대로 잡아 거부한다(모호 입력 거부).
+  const segments = value.split(/[\\/]/);
   const clean = [];
   for (const seg of segments) {
-    if (seg === '.') continue;
-    if (seg === '..') throw new InputProducerError(`input subdir must not contain '..': '${raw}'`);
+    if (seg === '') {
+      throw new InputProducerError(`input subdir must not contain empty path segments (no '//' or trailing '/'): '${raw}'`);
+    }
+    if (seg === '..') {
+      throw new InputProducerError(`input subdir must not contain '..': '${raw}'`);
+    }
     if (seg.startsWith('.')) {
       throw new InputProducerError(`input subdir segment must not start with '.': '${seg}'`);
     }

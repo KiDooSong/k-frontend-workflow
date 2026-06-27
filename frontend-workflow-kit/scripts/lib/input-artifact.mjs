@@ -81,8 +81,10 @@ export function loadInputArtifact(file) {
 // 디렉토리 안내 파일(README.md / index.md)은 입력 결과물이 아니라 그룹 가이드/인덱스다.
 // inputs/{domain}/ 같은 그룹 디렉토리에 사람이 두는 README 를 입력 frontmatter 로 검증하면
 // "frontmatter 없음" 오탐이 나므로 수집에서 제외한다. 이 판정은 inputs/** 안에서만 쓰인다
-// (collectInputArtifacts 가 inputs 루트로 호출됨). IN-*.md 같은 실제/malformed 입력은 절대
-// 무시하지 않는다 — 오직 basename 이 정확히 readme.md|index.md 인 파일만 제외한다.
+// (collectInputArtifacts 가 inputs 루트로 호출됨). basename 을 대소문자 무시로 비교한다 — Windows/macOS
+// 파일시스템은 README.md 와 readme.md 를 같은 파일로 보므로 Readme.md·README.MD·index.MD 같은 변형도
+// 가이드로 처리한다. IN-*.md 같은 입력 id 는 readme.md/index.md 로 소문자화되지 않으므로 실제/malformed
+// 입력은 절대 제외되지 않는다(오직 basename 이 readme.md|index.md 인 파일만 가이드로 본다).
 export function isInputDirGuideFile(file) {
   const base = path.basename(file).toLowerCase();
   return base === 'readme.md' || base === 'index.md';

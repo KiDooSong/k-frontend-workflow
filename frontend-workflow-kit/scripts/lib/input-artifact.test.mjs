@@ -94,10 +94,14 @@ test('collectInputArtifacts ignores directory README/index guides but still flag
   fs.writeFileSync(path.join(inputsDir, 'README.md'), '# Workflow Inputs\n\nGuide only, no frontmatter.\n');
   fs.writeFileSync(path.join(inputsDir, 'auth', 'README.md'), '# Inputs — auth\n');
   fs.writeFileSync(path.join(inputsDir, 'auth', 'index.md'), '# index\n');
+  // mixed-case variants are also guides (Windows/macOS treat them as the same file).
+  fs.mkdirSync(path.join(inputsDir, '_global'), { recursive: true });
+  fs.writeFileSync(path.join(inputsDir, '_global', 'Readme.md'), '# mixed-case guide\n');
+  fs.writeFileSync(path.join(inputsDir, '_global', 'Index.MD'), '# mixed-case index\n');
   writeInput(path.join(inputsDir, 'auth'), 'IN-20260613-figma-001', { inputType: 'figma', sourceType: 'figma' });
 
   const clean = validateInputArtifacts(collectInputArtifacts(inputsDir));
-  assert.deepEqual(clean.errors, [], 'README/index guides must not raise input frontmatter errors');
+  assert.deepEqual(clean.errors, [], 'README/index guides (any case) must not raise input frontmatter errors');
 
   // Guard: a genuinely malformed IN-*.md (no frontmatter) is still reported — only README/index are skipped.
   fs.writeFileSync(path.join(inputsDir, 'IN-20260613-figma-002.md'), 'no frontmatter at all\n');
