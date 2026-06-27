@@ -108,6 +108,11 @@ function main() {
     return;
   }
   if (positionals.length) cliError(`unexpected positional arguments: ${positionals.join(' ')}`);
+  // `--date=` (빈 값)은 omit 이 아니라 usage 오류로 본다 — date 를 줄 거면 실재 날짜여야 한다.
+  // (omit 하려면 --date 자체를 빼면 된다 → last_reviewed 생략, valid stub.)
+  if (typeof flags.date === 'string' && flags.date.trim() === '') {
+    cliError('--date requires a real YYYY-MM-DD value (omit --date entirely to skip last_reviewed)');
+  }
 
   const docsDir = path.resolve(typeof flags.docs === 'string' ? flags.docs : DEFAULTS.docs);
   const json = booleanFlag(flags, 'json');

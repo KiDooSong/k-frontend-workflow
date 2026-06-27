@@ -267,6 +267,31 @@ test('CLI exits 2 for a path-traversal screen-slug instead of writing outside th
   assert.match(res.stderr, /screen-slug must match/);
 });
 
+test('CLI rejects an explicitly empty --date= rather than silently omitting it', (t) => {
+  const docs = path.join(tmpdir(t), 'docs', 'frontend-workflow');
+  const res = spawnSync(
+    process.execPath,
+    [CLI, '--docs', docs, '--domain', 'auth', '--screen-id', 'AUTH-X', '--route', '/x', '--date='],
+    { encoding: 'utf8' },
+  );
+  assert.equal(res.status, 2);
+  assert.match(res.stderr, /--date requires a real YYYY-MM-DD value/);
+  assert.equal(fs.existsSync(path.join(docs, 'domains', 'auth', 'screens', 'auth-x', 'screen-spec.md')), false);
+});
+
+test('CLI omits last_reviewed (valid stub) when --date is not passed at all', (t) => {
+  const docs = path.join(tmpdir(t), 'docs', 'frontend-workflow');
+  const res = spawnSync(
+    process.execPath,
+    [CLI, '--docs', docs, '--domain', 'auth', '--screen-id', 'AUTH-NODATE', '--route', '/nodate', '--json'],
+    { encoding: 'utf8' },
+  );
+  assert.equal(res.status, 0, res.stderr);
+  const written = path.join(docs, 'domains', 'auth', 'screens', 'auth-nodate', 'screen-spec.md');
+  const { data } = splitFrontmatter(fs.readFileSync(written, 'utf8'));
+  assert.equal(Object.prototype.hasOwnProperty.call(data, 'last_reviewed'), false);
+});
+
 test('CLI rejects unknown flags before writing', (t) => {
   const docs = path.join(tmpdir(t), 'docs', 'frontend-workflow');
   const res = spawnSync(
