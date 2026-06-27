@@ -14,11 +14,15 @@ Included by default:
 
 Excluded by default:
 
-- `examples/`
-- `temp/`
-- `docs/design/`
-- `docs/workflows/`
-- roadmap/history/run-report/proposal/generated diagnostic files
+- `examples/` — kit test fixtures, kept in the kit repo but never part of the payload.
+- generated diagnostic files (`*.html`) and any local dogfood output under `temp/`.
+
+Dev-only documentation — design drafts, workflow-evolution notes, roadmap/history,
+open decisions, investigation notes, and dogfood run reports — no longer lives under
+the kit at all. It sits in the kit repo's repo-root `kit-dev/` directory and is never
+packed. The manifest still lists `docs/design/`, `docs/workflows/`, and `temp/` as
+exclude guards so that if any such directory reappears under the kit it cannot leak
+into the payload.
 
 `docs/reference/input-reconciliation.md` is consumer-facing because it defines
 the input artifact contract, Reconciliation Register schema, retry behavior, and

@@ -41,7 +41,7 @@
 
 읽는 순서: **01 → 02 → 03**(진단·처방) → **04**(처방 1·2·3 을 MCP/REST 2채널로 *어떻게 구현·수집·조합* 하나의 레퍼런스). 04 는 [실험 프로토콜](../../../temp/proposals/figma-fidelity-experiment.md)·[EXTRACTION.md](../../../temp/runs/figma-fidelity-001/EXTRACTION.md) 의 채널 분담을 전제로 한다.
 
-> 후속 정식화: 위 처방 1·2(시각 계약 산출물)는 [visual-spec 정식화 제안](../../../frontend-workflow-kit/docs/design/drafts/visual-spec-formalization.md) 으로 이어진다 — figma-component-mapping 강화(새 축 아님) · warning-first · 수집기는 킷 core 범위 밖. (이 폴더는 리서치 evidence, 정식 템플릿은 별도 추적)
+> 후속 정식화: 위 처방 1·2(시각 계약 산출물)는 [visual-spec 정식화 제안](../../../kit-dev/docs/design/drafts/visual-spec-formalization.md) 으로 이어진다 — figma-component-mapping 강화(새 축 아님) · warning-first · 수집기는 킷 core 범위 밖. (이 폴더는 리서치 evidence, 정식 템플릿은 별도 추적)
 
 ## 핵심 주장 검증 (실제 파일 대조 결과)
 
@@ -51,13 +51,13 @@
 | LLM 은 디자인 값을 추측하지 못하게 강제됨 → 값이 없으면 TODO 로 남음 | **confirmed** | [frontend-llm-workflow.md](../../../frontend-llm-workflow.md) "디자인 값을 추측하지 않는다. 모르면 TODO 주석으로 남긴다" · [component-guidelines.md](../../../frontend-workflow-kit/examples/input-reconciliation/project-before/docs/frontend-workflow/design/component-guidelines.md) "색상·간격·타이포 … TODO 로 남긴다" |
 | 픽셀 정합성은 §8 "UI 보정"으로 미뤄지고, 그 추출은 "Figma MCP frame context" 한 줄에 의존 | **confirmed** | [frontend-llm-workflow.md](../../../frontend-llm-workflow.md) §7 "픽셀 정합성은 최종 Figma 단계에서 잡는다" · §8 "Figma MCP 로 frame context 를 가져와 매핑 문서 작성에 활용" |
 | `figma_mapping_status` 게이트는 매핑 문서의 **존재(draft)** 만 보고 값 충실도/코드 일치는 안 본다 | **confirmed** | [figma-component-mapping.template.md](../../../frontend-workflow-kit/templates/screen/figma-component-mapping.template.md) "final-fixture-ui 게이트가 `figma_mapping_status >= draft` 로 읽는다" |
-| MVP-A 게이트 인벤토리에 **시각/픽셀 fact 가 없다** | **confirmed** | [roadmap-current.md](../../../frontend-workflow-kit/roadmap-current.md) 게이트 인벤토리 fact 목록(`figma_mapping_status` 는 있으나 값이 아닌 존재 신호) |
+| MVP-A 게이트 인벤토리에 **시각/픽셀 fact 가 없다** | **confirmed** | [roadmap-current.md](../../../kit-dev/roadmap-current.md) 게이트 인벤토리 fact 목록(`figma_mapping_status` 는 있으나 값이 아닌 존재 신호) |
 | Figma 입력 산출물은 간격 수치를 잡을 수 *있으나* 정착지(mapping)에 칸이 없어 자연어 Notes 로만 남는다 | **confirmed** | [IN-20260614-figma-002.md](../../../frontend-workflow-kit/examples/input-validation/pass/docs/frontend-workflow/inputs/IN-20260614-figma-002.md) `Extracted Facts: 일러스트-문구 세로 간격 16 → 24` |
 | 이 레포의 `layout-profile` 은 **폴더/role 경로**이지 시각 레이아웃이 아니다 | **confirmed** | [presets/expo-feature.yaml](../../../frontend-workflow-kit/presets/expo-feature.yaml) `route_entry: src/app/**` 등 role→glob |
 
 ## 조사 방법
 
-- 정본 문서 통독: [roadmap-current.md](../../../frontend-workflow-kit/roadmap-current.md) · [README.md](../../../frontend-workflow-kit/README.md) · [frontend-llm-workflow.md](../../../frontend-llm-workflow.md)(핵심 설계·11단계 작업 순서·충돌 우선순위).
+- 정본 문서 통독: [roadmap-current.md](../../../kit-dev/roadmap-current.md) · [README.md](../../../frontend-workflow-kit/README.md) · [frontend-llm-workflow.md](../../../frontend-llm-workflow.md)(핵심 설계·11단계 작업 순서·충돌 우선순위).
 - 산출물 계약 대조: 템플릿([screen-spec](../../../frontend-workflow-kit/templates/screen/screen-spec.template.md) · [figma-component-mapping](../../../frontend-workflow-kit/templates/screen/figma-component-mapping.template.md)) ↔ golden example([coupon-feature screen-spec](../../../frontend-workflow-kit/examples/coupon-feature/docs/frontend-workflow/domains/coupons/screens/coupon-list/screen-spec.md) · figma-component-mapping · [component-catalog](../../../frontend-workflow-kit/examples/coupon-feature/docs/frontend-workflow/design/component-catalog.md) · [component-guidelines](../../../frontend-workflow-kit/examples/input-reconciliation/project-before/docs/frontend-workflow/design/component-guidelines.md)).
 - 입력 파이프라인: [reconcile-input SKILL](../../../.claude/skills/reconcile-input/SKILL.md) · Figma 입력 예제([IN-20260614-figma-002](../../../frontend-workflow-kit/examples/input-validation/pass/docs/frontend-workflow/inputs/IN-20260614-figma-002.md)).
 - 게이트 fact 인벤토리·"layout-profile" 의미 확인: roadmap 게이트 인벤토리 · [presets/expo-feature.yaml](../../../frontend-workflow-kit/presets/expo-feature.yaml).

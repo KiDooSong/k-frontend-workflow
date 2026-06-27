@@ -11,7 +11,7 @@ description: 외부 입력 스킬이 저장한 새 입력 결과물(input_id 보
 Workflow 위치: 이 스킬은 [workflow spine](../../docs/reference/workflow-spine.md) 의 **Stage 04**([04-reconcile-input.md](../../docs/reference/workflow-stages/04-reconcile-input.md)) 다. 입력이 raw source 코드나 미매핑 화면을 들고 오면 먼저 **Stage 02**([02-screen-identity-source-mapping.md](../../docs/reference/workflow-stages/02-screen-identity-source-mapping.md)) 로 돌아가 identity 를 푼다.
 
 ## 입력
-- 입력 결과물 경로 (예: `docs/frontend-workflow/inputs/IN-20260613-figma-001.md` — 파일명 = `{input_id}.md`). 없으면 사용자에게 묻는다.
+- 입력 결과물 경로 (예: `docs/frontend-workflow/inputs/IN-20260613-figma-001.md`, 또는 그룹 하위 경로 `inputs/{domain}/IN-...md` — 파일명은 항상 `{input_id}.md`). 없으면 사용자에게 묻는다. inputs/ 는 하위 디렉토리까지 재귀로 스캔하며, register 매칭 키는 **경로가 아니라 `input_id`** 다. `inputs/README.md`·`index.md` 는 그룹 가이드/인덱스이지 입력 결과물이 아니다.
 - (선택) 대상 screen/domain.
 
 ## 핵심 불변식

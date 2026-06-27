@@ -9,7 +9,7 @@
 //   - 정규화는 normalizeGeneratedViewText(CRLF→LF, \→/)만 — timestamp/date 정규화 없음(§4.3-4.4, §A.5).
 //   - 커밋된 파일은 읽기만 한다 — 임시 디렉토리에만 쓰고 finally 로 정리(자동수정/덮어쓰기 없음, §4).
 //
-// 설계 출처: frontend-workflow-kit/temp/proposals/generated-file-guard-design.md
+// 설계 출처: kit-dev/temp/proposals/generated-file-guard-design.md
 //   §1.7 · §2 · §4.3-4.4(regenerate) · §4.7(CG: 키) · §5(reproduce-not-diff) · §A.5(정규화 재사용).
 //
 // discovery(discoverArtifacts/selectArtifactIds)는 순수(IO 없음)다. reproduceArtifact 만

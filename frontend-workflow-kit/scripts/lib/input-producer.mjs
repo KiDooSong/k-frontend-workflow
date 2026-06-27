@@ -27,6 +27,61 @@ export function normalizeInputSourceToken(value) {
     .replace(/^-|-$/g, '');
 }
 
+// inputs/ 하위 그룹 경로를 안전한 상대 세그먼트로 검증한다(--input-subdir / --group-by 산출물).
+// 거부(정규화하지 않고 명시적으로 throw): 절대경로·드라이브(C:)·'..'·'.' 또는 '.' 로 시작하는 세그먼트·
+//   빈 세그먼트('//'·앞뒤 '/')·허용 외 문자. inputs/ 밖으로 새거나 walkFiles 가 못 보는 dot 디렉토리에
+//   쓰는 것을 막는다(검사 11 이 재귀로 다 봐야 하므로). 모호한 입력을 조용히 normalize 하지 않는다.
+// 빈/undefined 입력만 '' (flat) 로 통과. 반환은 posix('/') 로 join 된 상대경로.
+export function sanitizeInputSubdir(raw) {
+  if (raw === undefined || raw === null) return '';
+  const value = String(raw).trim();
+  if (value === '') return '';
+  if (path.isAbsolute(value) || /^[A-Za-z]:/.test(value) || /^[\\/]/.test(value)) {
+    throw new InputProducerError(`input subdir must be a relative path inside inputs/: '${raw}'`);
+  }
+  // split 하되 collapse 하지 않는다 — '//'·앞뒤 '/' 가 만드는 빈 세그먼트를 그대로 잡아 거부한다(모호 입력 거부).
+  const segments = value.split(/[\\/]/);
+  const clean = [];
+  for (const seg of segments) {
+    if (seg === '') {
+      throw new InputProducerError(`input subdir must not contain empty path segments (no '//' or trailing '/'): '${raw}'`);
+    }
+    if (seg === '..') {
+      throw new InputProducerError(`input subdir must not contain '..': '${raw}'`);
+    }
+    if (seg.startsWith('.')) {
+      throw new InputProducerError(`input subdir segment must not start with '.': '${seg}'`);
+    }
+    if (!/^[A-Za-z0-9_][A-Za-z0-9._-]*$/.test(seg)) {
+      throw new InputProducerError(
+        `invalid input subdir segment '${seg}' (allowed: letters, digits, '.', '_', '-'; not starting with '.')`,
+      );
+    }
+    clean.push(seg);
+  }
+  return clean.join('/');
+}
+
+// 출력 그룹 디렉토리 결정. 우선순위: 명시 --input-subdir > --group-by domain > flat('').
+//   --group-by domain: affected_domains 가 정확히 1개면 그 도메인, 2개 이상이면 '_multi',
+//                       0개(방어적)면 '_unknown'. (도메인은 path-safe 토큰으로 정규화.)
+// flat 출력은 하위호환 기본값이다(그룹 플래그 없으면 inputs/{input_id}.md).
+export function computeInputSubdir({ groupBy, inputSubdir } = {}, affectedDomains = []) {
+  if (inputSubdir !== undefined && String(inputSubdir).trim() !== '') {
+    return sanitizeInputSubdir(inputSubdir);
+  }
+  if (groupBy === undefined || groupBy === null || String(groupBy).trim() === '') {
+    return '';
+  }
+  if (groupBy !== 'domain') {
+    throw new InputProducerError(`unsupported --group-by '${groupBy}' (supported: domain)`);
+  }
+  const domains = [...new Set((affectedDomains || []).map(normalizeInputSourceToken).filter(Boolean))];
+  if (domains.length === 1) return domains[0];
+  if (domains.length > 1) return '_multi';
+  return '_unknown';
+}
+
 function asArray(value) {
   if (value === undefined || value === null || value === '') return [];
   if (Array.isArray(value)) {
@@ -320,7 +375,11 @@ export function loadProducerPayload(file, { format } = {}) {
 export function writeInputArtifact(payload, options = {}) {
   const inputsDir = path.resolve(options.inputsDir);
   const artifact = buildInputArtifact(payload, { ...options, inputsDir });
-  const outputPath = path.join(inputsDir, `${artifact.input_id}.md`);
+  // 그룹 디렉토리 결정(옵션 없으면 flat). 출력만 하위로 가고, id 생성·중복·supersede 스캔은
+  // 항상 inputs 루트(inputsDir)를 재귀로 보므로 input_id 전역유일·supersede 전역해소가 유지된다.
+  const subdir = computeInputSubdir(options, artifact.frontmatter.affected_domains);
+  const outDir = subdir ? path.join(inputsDir, ...subdir.split('/')) : inputsDir;
+  const outputPath = path.join(outDir, `${artifact.input_id}.md`);
   const frontmatterIdFiles = collectFrontmatterInputIdFiles(inputsDir);
   const outputExists = exists(outputPath);
   const outputPathResolved = path.resolve(outputPath);
@@ -343,8 +402,8 @@ export function writeInputArtifact(payload, options = {}) {
 
   const text = renderInputArtifact(artifact);
   if (!options.dryRun) {
-    fs.mkdirSync(inputsDir, { recursive: true });
+    fs.mkdirSync(outDir, { recursive: true });
     fs.writeFileSync(outputPath, text, 'utf8');
   }
-  return { artifact, outputPath, text, wrote: !options.dryRun };
+  return { artifact, outputPath, subdir, text, wrote: !options.dryRun };
 }

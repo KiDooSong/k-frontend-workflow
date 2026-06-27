@@ -13,7 +13,7 @@
 // props/docgen/NativeWind/style 분석은 후속 phase (이 skeleton 의 비목표, §3).
 // 결정성 계약 (§7.4): 무타임스탬프 · plain 코드유닛 정렬 · posix 상대경로 · prettier 미사용.
 //
-// 참고: frontend-workflow-kit/temp/proposals/component-catalog-generation-source-contract.md
+// 참고: kit-dev/temp/proposals/component-catalog-generation-source-contract.md
 import path from 'node:path';
 import { walkFiles, readFileSafe, projectRootOf } from './util.mjs';
 import { globRoot, globToRegExp } from './glob.mjs';

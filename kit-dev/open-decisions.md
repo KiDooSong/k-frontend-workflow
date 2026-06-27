@@ -55,7 +55,7 @@ Dependencies (후속)
 = 외부 산출물(BE 엔드포인트, 디자인 확정 등)에 막힌 항목. Unknown 도 Decision 도 아님.
 ```
 
-MVP-A 에서는 `Unknowns` 와 `Open Decisions` 만 도입한다. `Assumptions`·`Dependencies` 는 후속, `Conflicts` 는 [conflicts.template.md](templates/global/conflicts.template.md) 로 이미 골격이 있다.
+MVP-A 에서는 `Unknowns` 와 `Open Decisions` 만 도입한다. `Assumptions`·`Dependencies` 는 후속, `Conflicts` 는 [conflicts.template.md](../frontend-workflow-kit/templates/global/conflicts.template.md) 로 이미 골격이 있다.
 
 ## 라이프사이클 — MVP-A 는 한 곳에 산다
 
@@ -141,7 +141,7 @@ production-ready: 불가
 
 ## 저작 규칙 (LLM 행동)
 
-이 표는 LLM 이 **스스로 채우지 않으면** 의미가 없다. 데이터 구조만 있고 행동 규칙이 없으면 LLM 은 그냥 추측하고 진행한다. 따라서 [llm-rules.template.md](templates/global/llm-rules.template.md) 에 다음을 명시한다(Spec Kit 의 "추측 금지" 와 동일 원리).
+이 표는 LLM 이 **스스로 채우지 않으면** 의미가 없다. 데이터 구조만 있고 행동 규칙이 없으면 LLM 은 그냥 추측하고 진행한다. 따라서 [llm-rules.template.md](../frontend-workflow-kit/templates/global/llm-rules.template.md) 에 다음을 명시한다(Spec Kit 의 "추측 금지" 와 동일 원리).
 
 ```txt
 입력만으로 해소되지 않고 산출물의 형태를 바꾸는 선택을 만나면:

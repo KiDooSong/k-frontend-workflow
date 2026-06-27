@@ -106,6 +106,17 @@ identity resolvable now   → produce canonical affected_screens → 03 (workflo
 identity ambiguous/new    → stop at payload + source_screen_refs → 02 (screen identity)
 ```
 
+When a producer does call `workflow:create-input` (Stage 03), choose the output
+grouping from the resolved scope (flat output stays the default):
+
+- single resolved domain → `--group-by domain` (`inputs/{domain}/`);
+- cross-domain input → `--group-by domain` (`inputs/_multi/`) or an explicit `--input-subdir`;
+- source not yet mapped to identity → `--group-by domain` lands in `inputs/_unknown/`, or
+  keep it flat until Stage 02 resolves identity.
+
+Grouping only changes the file's directory — never its `input_id` and never the
+`source_screen_refs` evidence, both of which must survive into reconcile.
+
 | Next | when |
 |---|---|
 | [02 Screen identity / source mapping](02-screen-identity-source-mapping.md) | aliases need to map to canonical screen ids before an artifact can be valid |

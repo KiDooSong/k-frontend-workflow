@@ -21,6 +21,8 @@ const REPEAT_FLAGS = new Set([
 const VALUE_FLAGS = new Set([
   'docs',
   'out',
+  'group-by',
+  'input-subdir',
   'input-id',
   'source',
   'input-type',
@@ -132,12 +134,22 @@ function booleanFlag(flags, key) {
 function help() {
   return `workflow:create-input
 
-Create docs/frontend-workflow/inputs/{input_id}.md from normalized input facts.
+Create an input artifact from normalized input facts. Default output is the flat
+path docs/frontend-workflow/inputs/{input_id}.md (backwards-compatible).
+
+Grouping (optional, recommended for large repos):
+  --group-by domain      one affected domain -> inputs/{domain}/{input_id}.md
+                         multiple domains    -> inputs/_multi/{input_id}.md
+                         no/unknown domain   -> inputs/_unknown/{input_id}.md
+  --input-subdir <path>  explicit subdir, e.g. auth/figma -> inputs/auth/figma/{input_id}.md
+                         (relative only; '..'/absolute paths are rejected)
+  --input-subdir takes precedence over --group-by. input_id stays globally unique
+  and file basename stays {input_id}.md regardless of subdirectory.
 
 Examples:
   node scripts/create-input-artifact.mjs --docs docs/frontend-workflow --source planning --input-type planning --source-type planning-doc --source-ref planning://note --captured-by planning-adapter --domain auth --screen AUTH-001 --summary "Login copy changed" --fact "Primary CTA text is Sign in"
-  node scripts/create-input-artifact.mjs --docs docs/frontend-workflow --from-json input.json --json
-  node scripts/create-input-artifact.mjs --docs docs/frontend-workflow --from-yaml input.yaml --dry-run
+  node scripts/create-input-artifact.mjs --docs docs/frontend-workflow --from-json input.json --group-by domain --json
+  node scripts/create-input-artifact.mjs --docs docs/frontend-workflow --from-yaml input.yaml --input-subdir auth/figma --dry-run
 `;
 }
 
@@ -170,12 +182,15 @@ function main() {
       date: typeof flags.date === 'string' ? flags.date : undefined,
       dryRun,
       overwrite,
+      groupBy: typeof flags['group-by'] === 'string' ? flags['group-by'] : undefined,
+      inputSubdir: typeof flags['input-subdir'] === 'string' ? flags['input-subdir'] : undefined,
     });
 
     if (json) {
       const body = {
         input_id: result.artifact.input_id,
         output_path: result.outputPath,
+        grouped_under: result.subdir || null,
         wrote: result.wrote,
         next_step: 'run workflow:validate, then reconcile-input',
       };

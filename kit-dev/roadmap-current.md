@@ -3,7 +3,7 @@
 > 스냅샷: 2026-06-19. MVP-B Phase 0 완료분 위에 **2026-06-15~19 추가 랜딩** — **검사 8 API-스키마 매칭 엔드포인트 단위 격상**(구현·하드, PR #19) · **Interaction Matrix v2 dual-read + 검사 13**(warning-first, #48) 및 route-tree EXACT 정밀화(여전히 warning-first) · **Tier2 route-tree 어댑터 솔기**(#49) · **Tier2 codegen 어댑터 첫 slice + real emitter slice + generated-file guard advisory 정합 slice + output strategy 정리**(`codegen-core` + `openapi-client` + 후보 manifest golden + 실제 client/hook TS golden + focused `check-generated-files` target + codegen `outputs[]`, hard gate 없음) · **component-catalog phase2-1 배럴 reconcile 진단**(warning-first, stderr-only) 및 **phase2 첫 additive `Default Export Candidates` 섹션**(append-only, candidate-only) · **Follow-up Quarantine / Role Expansion 설계 초안**(#50, docs-only, 실행 게이트 0) + **Option A 템플릿/생성기 가드**(Discovered Work/Out of Scope, 게이트 0) · **MVP-B lint-gen PR-2 skeleton**(deterministic `eslint.workflow.config.mjs` flat-config fragment emission) · **MVP-B adapt-lint-pack PR-3 / MR #55**(brownfield scan/propose skill, drafts/reports only) · **MVP-B lint-baseline PR-4**(warning-first ratchet runner/fixtures, `--enforce` opt-in) · **MVP-B lint-pack PR-5 smoke**(warning-first CI smoke: `lint-gen --check` + `lint-baseline --json`, `continue-on-error`). 잔여는 아래 "다음 구현 후보" 로 이어진다.
 > 이전 스냅샷(2026-06-14): MVP-B Phase 0 **완료** — 회귀 하니스·경로 backstop[warning-first]·입력/register 검증; consumer-dogfood-001 외부 소비 dry-run 으로 end-to-end 검증, PR #17.
 > 목적: **MVP-A 구현 범위 / 설계 계약(코드 후속) / Future Candidate** 세 티어의 경계를 한 파일로 고정한다.
-> 문서별 역할·링크는 [README 문서 지도](README.md#문서-지도) 참조.
+> 문서별 역할·링크는 [README 문서 지도](../frontend-workflow-kit/README.md#문서-지도) 참조.
 
 ## 핵심 루프
 
@@ -81,7 +81,7 @@ Review          MVP-A 에 없음 (Future Candidate).
 
 문서로 계약은 동결됐지만 **스크립트 강제는 0** 이다. MVP-A 의 코드 게이트(위 인벤토리)에 들어가지 않는다.
 
-- **Input Reconciliation** ([input-reconciliation.md](docs/reference/input-reconciliation.md)) — register · Reconcile Status 라이프사이클 · conflict 수동 로그 · `resolved→open` 재오픈 계약. 실제 게이트는 Open Decision(readiness)이 담당.
+- **Input Reconciliation** ([input-reconciliation.md](../frontend-workflow-kit/docs/reference/input-reconciliation.md)) — register · Reconcile Status 라이프사이클 · conflict 수동 로그 · `resolved→open` 재오픈 계약. 실제 게이트는 Open Decision(readiness)이 담당.
 - **Investigation / Verification** ([investigation-and-verification.md](investigation-and-verification.md)) — 조사/검증 문서는 evidence 핸드오프 아티팩트. 막는 조사는 연결된 Open Decision 을 만들어야 하고, 그 Open Decision 이 blocker.
 
 ## Tier 3 — 후속 / Later (구현 안 함)

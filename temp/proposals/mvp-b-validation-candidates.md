@@ -2,8 +2,8 @@
 
 > 스냅샷: 2026-06-13. **설계 제안 초안일 뿐 구현이 아니다** — 이 세션의 산출물은 이 문서 하나다.
 > scripts/schema/package.json/기존 docs 는 건드리지 않는다. 각 후보의 실제 착수는 명시적으로 하나를 고를 때만.
-> 함께 읽을 것: [roadmap-current.md](../../frontend-workflow-kit/roadmap-current.md) ·
-> [open-decisions.md](../../frontend-workflow-kit/open-decisions.md) ·
+> 함께 읽을 것: [roadmap-current.md](../../kit-dev/roadmap-current.md) ·
+> [open-decisions.md](../../kit-dev/open-decisions.md) ·
 > [input-reconciliation.md](../../frontend-workflow-kit/input-reconciliation.md) ·
 > 기존 후보 초안 [work-packet-review-artifacts-proposal.md](../work-packet-review-artifacts-proposal.md)
 

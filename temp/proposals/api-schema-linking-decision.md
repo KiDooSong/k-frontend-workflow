@@ -7,8 +7,8 @@
 > 함께 읽을 것:
 > [mvp-b-validation-candidates.md](./mvp-b-validation-candidates.md) ·
 > [diff-based-forbidden-paths-backstop.md](./diff-based-forbidden-paths-backstop.md) ·
-> [roadmap-current.md](../../frontend-workflow-kit/roadmap-current.md) ·
-> [open-decisions.md](../../frontend-workflow-kit/open-decisions.md)
+> [roadmap-current.md](../../kit-dev/roadmap-current.md) ·
+> [open-decisions.md](../../kit-dev/open-decisions.md)
 >
 > 참조 코드/산출물:
 > [validate.mjs](../../frontend-workflow-kit/scripts/validate.mjs) (검사 8 = :228-245) ·

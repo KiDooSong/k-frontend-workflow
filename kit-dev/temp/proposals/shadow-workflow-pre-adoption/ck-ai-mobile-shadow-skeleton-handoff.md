@@ -51,11 +51,11 @@ Why this shape:
 | File | Purpose | Source template |
 |---|---|---|
 | `README.md` | Declare shadow-mode status and boundaries | this document |
-| `global/llm-rules.md` | LLM behavior rules before implementation | [`llm-rules.template.md`](../../../templates/global/llm-rules.template.md) |
-| `app/navigation-map.md` | App-level route guard, stack/tab/modals, cross-domain edges | [`navigation-map.template.md`](../../../templates/app/navigation-map.template.md) |
-| `domains/auth/domain-rules.md` | Auth-wide rules, vocabulary, data contract notes | [`domain-rules.template.md`](../../../templates/domain/domain-rules.template.md) |
-| `screen-spec.md` | Screen behavior, state, API candidates, copy, unknowns, decisions | [`screen-spec.template.md`](../../../templates/screen/screen-spec.template.md) |
-| `figma-component-mapping.md` | Visual/Figma mapping and optional visual spec | [`figma-component-mapping.template.md`](../../../templates/screen/figma-component-mapping.template.md) |
+| `global/llm-rules.md` | LLM behavior rules before implementation | [`llm-rules.template.md`](../../../../frontend-workflow-kit/templates/global/llm-rules.template.md) |
+| `app/navigation-map.md` | App-level route guard, stack/tab/modals, cross-domain edges | [`navigation-map.template.md`](../../../../frontend-workflow-kit/templates/app/navigation-map.template.md) |
+| `domains/auth/domain-rules.md` | Auth-wide rules, vocabulary, data contract notes | [`domain-rules.template.md`](../../../../frontend-workflow-kit/templates/domain/domain-rules.template.md) |
+| `screen-spec.md` | Screen behavior, state, API candidates, copy, unknowns, decisions | [`screen-spec.template.md`](../../../../frontend-workflow-kit/templates/screen/screen-spec.template.md) |
+| `figma-component-mapping.md` | Visual/Figma mapping and optional visual spec | [`figma-component-mapping.template.md`](../../../../frontend-workflow-kit/templates/screen/figma-component-mapping.template.md) |
 | `_shadow/component-index.md` | Temporary manual DS index while catalog-gen still assumes `src/components/ui/**` | ck-specific |
 | `_shadow/adoption-notes.md` | What is intentionally not wired yet | ck-specific |
 

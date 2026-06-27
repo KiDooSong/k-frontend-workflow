@@ -62,7 +62,7 @@
 
 ## 3. 킷 사상과의 정합성 (반드시 지킬 것)
 
-[roadmap-current.md](../../../frontend-workflow-kit/roadmap-current.md) "지금 하지 말 것"이 못박는다: **"새 산출물 축 추가 — idea surface 확장 금지."** 그래서 위 처방은 **새 축이 아니라 기존 축 강화**로 프레이밍해야 한다:
+[roadmap-current.md](../../../kit-dev/roadmap-current.md) "지금 하지 말 것"이 못박는다: **"새 산출물 축 추가 — idea surface 확장 금지."** 그래서 위 처방은 **새 축이 아니라 기존 축 강화**로 프레이밍해야 한다:
 
 - 처방 1·2 는 기존 **저작/design 축**(figma-component-mapping 은 이미 존재) 안에서 확장. 새 "비주얼 축"을 만들지 않는다.
 - 처방 3 은 기존 **조사/검증 축**의 evidence 생성기로(Playwright 보고서 03 이 이미 같은 논리로 E2E 를 흡수했다 — "테스트는 새 축이 아니라 Verification 축의 evidence").

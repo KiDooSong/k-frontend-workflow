@@ -8,9 +8,11 @@ import { fileURLToPath } from 'node:url';
 import {
   InputProducerError,
   buildInputArtifact,
+  computeInputSubdir,
   nextInputId,
   normalizeInputSourceToken,
   renderInputArtifact,
+  sanitizeInputSubdir,
   writeInputArtifact,
 } from './input-producer.mjs';
 import { splitFrontmatter } from './util.mjs';
@@ -477,4 +479,132 @@ test('CLI dry-run rejects dangling supersedes before writing', (t) => {
 
   assert.equal(res.status, 2);
   assert.match(res.stderr, /supersedes target does not exist/);
+});
+
+// --- grouped input output (Part C) -----------------------------------------
+
+test('writeInputArtifact writes the flat inputs/ path by default (backwards-compatible)', (t) => {
+  const dir = path.join(tmpdir(t), 'inputs');
+  const result = writeInputArtifact(payload({ source: 'figma' }), { inputsDir: dir, date: '2026-06-25' });
+  assert.equal(result.subdir, '');
+  assert.equal(result.outputPath, path.join(dir, 'IN-20260625-figma-001.md'));
+  assert.equal(fs.existsSync(path.join(dir, 'IN-20260625-figma-001.md')), true);
+});
+
+test('--group-by domain with a single domain writes to inputs/{domain}/', (t) => {
+  const dir = path.join(tmpdir(t), 'inputs');
+  const result = writeInputArtifact(
+    payload({ source: 'figma', affected_domains: ['auth'] }),
+    { inputsDir: dir, date: '2026-06-25', groupBy: 'domain' },
+  );
+  assert.equal(result.subdir, 'auth');
+  assert.equal(fs.existsSync(path.join(dir, 'auth', 'IN-20260625-figma-001.md')), true);
+  assert.equal(path.basename(result.outputPath), 'IN-20260625-figma-001.md');
+});
+
+test('--group-by domain with multiple domains writes to inputs/_multi/', (t) => {
+  const dir = path.join(tmpdir(t), 'inputs');
+  const result = writeInputArtifact(
+    payload({ source: 'figma', affected_domains: ['auth', 'coupons'] }),
+    { inputsDir: dir, date: '2026-06-25', groupBy: 'domain' },
+  );
+  assert.equal(result.subdir, '_multi');
+  assert.equal(fs.existsSync(path.join(dir, '_multi', 'IN-20260625-figma-001.md')), true);
+});
+
+test('--input-subdir writes a nested subdir and takes precedence over --group-by', (t) => {
+  const dir = path.join(tmpdir(t), 'inputs');
+  const result = writeInputArtifact(
+    payload({ source: 'figma', affected_domains: ['auth'] }),
+    { inputsDir: dir, date: '2026-06-25', groupBy: 'domain', inputSubdir: 'auth/figma' },
+  );
+  assert.equal(result.subdir, 'auth/figma');
+  assert.equal(fs.existsSync(path.join(dir, 'auth', 'figma', 'IN-20260625-figma-001.md')), true);
+});
+
+test('sanitizeInputSubdir normalizes separators and rejects traversal/absolute/dot/empty segments', () => {
+  assert.equal(sanitizeInputSubdir('auth/figma'), 'auth/figma');
+  assert.equal(sanitizeInputSubdir('auth\\figma'), 'auth/figma');
+  assert.equal(sanitizeInputSubdir(''), '');
+  assert.equal(sanitizeInputSubdir(undefined), '');
+  // '.'/'..'/dot-leading/empty('//' or trailing '/')/absolute/drive segments are rejected, not normalized.
+  for (const bad of ['../bad', 'a/../b', '/abs', 'C:\\x', '.hidden', 'a/.git/b', '.', 'a/./b', 'auth//figma', 'auth/']) {
+    assert.throws(() => sanitizeInputSubdir(bad), InputProducerError, `should reject ${bad}`);
+  }
+});
+
+test('computeInputSubdir: precedence, domain grouping, dedupe, and bad group-by', () => {
+  assert.equal(computeInputSubdir({}, ['auth']), '');
+  assert.equal(computeInputSubdir({ groupBy: 'domain' }, ['auth']), 'auth');
+  assert.equal(computeInputSubdir({ groupBy: 'domain' }, ['auth', 'auth']), 'auth');
+  assert.equal(computeInputSubdir({ groupBy: 'domain' }, ['auth', 'coupons']), '_multi');
+  assert.equal(computeInputSubdir({ groupBy: 'domain' }, []), '_unknown');
+  assert.equal(computeInputSubdir({ inputSubdir: 'x/y', groupBy: 'domain' }, ['auth']), 'x/y');
+  assert.throws(() => computeInputSubdir({ groupBy: 'team' }, ['auth']), InputProducerError);
+});
+
+test('nextInputId scans recursively across grouped subdirs', (t) => {
+  const dir = path.join(tmpdir(t), 'inputs');
+  write(path.join(dir, 'auth', 'IN-20260625-figma-001.md'), '---\ninput_id: "IN-20260625-figma-001"\n---\n');
+  write(path.join(dir, '_multi', 'IN-20260625-figma-002.md'), '---\ninput_id: "IN-20260625-figma-002"\n---\n');
+  assert.equal(nextInputId({ inputsDir: dir, date: '2026-06-25', source: 'figma' }), 'IN-20260625-figma-003');
+});
+
+test('writeInputArtifact rejects an input_id that already exists in another subdir', (t) => {
+  const dir = path.join(tmpdir(t), 'inputs');
+  const id = 'IN-20260625-figma-001';
+  write(path.join(dir, 'auth', `${id}.md`), `---\ninput_id: "${id}"\n---\n`);
+  assert.throws(
+    () => writeInputArtifact(
+      payload({ input_id: id, source: 'figma', affected_domains: ['coupons'] }),
+      { inputsDir: dir, groupBy: 'domain' },
+    ),
+    /input_id already exists in inputs/,
+  );
+});
+
+test('supersedes resolves against an input stored in another subdir', (t) => {
+  const dir = path.join(tmpdir(t), 'inputs');
+  write(path.join(dir, 'auth', 'IN-20260625-figma-001.md'), '---\ninput_id: "IN-20260625-figma-001"\n---\n');
+  const result = writeInputArtifact(
+    payload({ source: 'figma', supersedes: 'IN-20260625-figma-001', affected_domains: ['auth'] }),
+    { inputsDir: dir, date: '2026-06-25', groupBy: 'domain' },
+  );
+  assert.equal(result.artifact.input_id, 'IN-20260625-figma-002');
+  assert.equal(result.subdir, 'auth');
+  assert.match(result.text, /supersedes: "IN-20260625-figma-001"/);
+});
+
+test('CLI --group-by domain writes a grouped artifact', (t) => {
+  const root = tmpdir(t);
+  const docs = path.join(root, 'docs', 'frontend-workflow');
+  const res = spawnSync(
+    process.execPath,
+    [
+      CLI, '--docs', docs, '--source', 'figma', '--input-type', 'figma', '--source-type', 'figma',
+      '--source-ref', 'figma://node', '--captured-by', 'producer-test', '--domain', 'auth',
+      '--screen', 'AUTH-001', '--date', '2026-06-25', '--group-by', 'domain', '--json',
+    ],
+    { encoding: 'utf8' },
+  );
+  assert.equal(res.status, 0, res.stderr);
+  const body = JSON.parse(res.stdout);
+  assert.equal(body.grouped_under, 'auth');
+  assert.equal(fs.existsSync(path.join(docs, 'inputs', 'auth', 'IN-20260625-figma-001.md')), true);
+});
+
+test('CLI --input-subdir rejects path traversal before writing', (t) => {
+  const docs = path.join(tmpdir(t), 'docs', 'frontend-workflow');
+  const res = spawnSync(
+    process.execPath,
+    [
+      CLI, '--docs', docs, '--source', 'figma', '--input-type', 'figma', '--source-type', 'figma',
+      '--source-ref', 'figma://node', '--captured-by', 'producer-test', '--domain', 'auth',
+      '--screen', 'AUTH-001', '--date', '2026-06-25', '--input-subdir', '../bad', '--json',
+    ],
+    { encoding: 'utf8' },
+  );
+  assert.equal(res.status, 2);
+  assert.match(res.stderr, /input subdir must not contain/);
+  assert.equal(fs.existsSync(path.join(docs, 'inputs')), false);
 });
