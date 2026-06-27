@@ -167,6 +167,40 @@ test('renderInputArtifact emits canonical frontmatter and no deprecated aliases'
   assert.match(text, /## Extracted Facts\n- Primary CTA is visible\./);
 });
 
+test('source_screen_refs ride in the body, not canonical frontmatter, without breaking parsing', (t) => {
+  const dir = path.join(tmpdir(t), 'inputs');
+  const artifact = buildInputArtifact(
+    payload({
+      source: 'figma',
+      source_screen_refs: [
+        { source: 'planning-figma', source_id: 'A-001', route_hint: '/signup/email', node_id: null, confidence: 'candidate' },
+        { source: 'design-figma', source_id: 'J010', node_id: '1:234', confidence: 'candidate' },
+      ],
+    }),
+    { inputsDir: dir, date: '2026-06-25' },
+  );
+  const text = renderInputArtifact(artifact);
+  const { data, hasFrontmatter, parseError } = splitFrontmatter(text);
+
+  // canonical frontmatter stays stable: source refs are not promoted into it.
+  assert.equal(hasFrontmatter, true);
+  assert.equal(parseError, undefined);
+  assert.equal(Object.prototype.hasOwnProperty.call(data, 'source_screen_refs'), false);
+  assert.deepEqual(data.affected_screens, ['AUTH-001']);
+
+  // refs are visible as body evidence (planning/design aliases), labeled as not-canonical.
+  assert.match(text, /## Source Screen Refs/);
+  assert.match(text, /planning-figma A-001 \(route_hint: \/signup\/email, confidence: candidate\)/);
+  assert.match(text, /design-figma J010 \(node: 1:234, confidence: candidate\)/);
+  assert.match(text, /NOT canonical screen ids/);
+});
+
+test('input without source_screen_refs renders no Source Screen Refs section (byte-stable)', (t) => {
+  const dir = path.join(tmpdir(t), 'inputs');
+  const artifact = buildInputArtifact(payload({ source: 'figma' }), { inputsDir: dir, date: '2026-06-25' });
+  assert.doesNotMatch(renderInputArtifact(artifact), /## Source Screen Refs/);
+});
+
 test('supersedes writes a new input id and links the prior artifact', (t) => {
   const dir = path.join(tmpdir(t), 'inputs');
   write(path.join(dir, 'IN-20260625-figma-001.md'), '---\ninput_id: "IN-20260625-figma-001"\n---\n');

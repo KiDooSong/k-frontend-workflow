@@ -62,6 +62,7 @@ cp tools/frontend-workflow/templates/global/llm-rules.template.md docs/frontend-
 - `docs/frontend-workflow/global/llm-rules.md`: project policy and priority rules.
 - [docs/reference/task-artifact-matrix.md](docs/reference/task-artifact-matrix.md): task-to-artifact operational checklist.
 - [docs/reference/generated-files.md](docs/reference/generated-files.md): `generated/do_not_edit` regeneration map.
+- [docs/reference/screen-identity.md](docs/reference/screen-identity.md): source screen code ↔ canonical Screen ID mapping (Screen Source Map).
 
 ## Minimal Docs Bootstrap
 
@@ -137,6 +138,26 @@ check 12는 mixed severity다.
 - register가 있으면 row 없음과 `Reconcile Status=not-started`는 기본 경고이며 `--enforce`에서 에러가 된다.
 - `in-progress`, `failed`, enum 위반, duplicate Input ID, required column 누락은 항상 에러다.
 - `reconciled`는 Created Items에 open decision/gap/unknown이 있어도 통과한다. 자식 상태는 register rollup이 아니다.
+
+## Screen Identity And New Screens
+
+기획/디자인 입력이 들고 오는 source 화면 코드(planning `A-001`·design `J010`·Figma node id·slug)는 **alias** 이고 canonical Screen ID 가 아니다. canonical identity(`screen_id`/`route`/`domain`/ScreenSpec 경로)는 워크플로우가 소유한다. source 코드 ↔ canonical 매핑은 **Screen Source Map**(`docs/frontend-workflow/_meta/screen-source-map.md`) 한 곳에 둔다. 계약·예시는 [docs/reference/screen-identity.md](docs/reference/screen-identity.md).
+
+식별이 확정되면 stub ScreenSpec 을 scaffold 한다(canonical id 발명·navigation-map 자동수정·confirmed 승격 없음).
+
+```bash
+npm run workflow:create-screen -- --docs docs/frontend-workflow --domain auth --screen-id AUTH-SIGNUP-EMAIL --route /signup/email --source-input IN-20260625-visual-spec-001
+```
+
+라우팅:
+
+```txt
+"새 화면이 생겼어"                 -> Screen Source Map 에 매핑 -> 확정되면 workflow:create-screen -> reconcile-input
+"Figma 코드가 어느 ScreenSpec 에도 안 붙어" -> screen-source-map 후보 행 / scope-unclear (canonical id 발명 금지)
+"같은 design 코드가 두 화면에 보여"   -> ambiguous/split 표기 -> 막으면 Open Decision (자동 선택 금지)
+```
+
+doctor 가 Screen Source Map 일관성을 warning-first 로 표면화한다(canonical 에 ScreenSpec 부재, route 불일치, split/ambiguous 없는 중복 alias, input `affected_screens` 의 raw alias). hard gate 가 아니다.
 
 ## Implement Screen Flow
 

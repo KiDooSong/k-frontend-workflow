@@ -4,6 +4,15 @@
 
 ## Unreleased
 
+### Added
+- **Screen identity / source mapping**: source 화면 코드(planning `A-001`·design `J010`·Figma node id·slug)를 canonical workflow Screen ID 로 잇는 first-class 흐름. 핵심 원칙 — external source ids 는 alias/evidence 이고 canonical identity(`screen_id`/`route`/`domain`/screen-spec 경로)는 워크플로우가 소유한다.
+  - templates: `templates/meta/screen-source-map.template.md` — Screen Source Map meta-register(canonical ↔ source alias 표 + `candidate`/`confirmed`/`ambiguous`/`split`/`merged`/`deprecated` status). reconciliation-register 처럼 `_meta/` 에 두며 validate authoring 검사에서 제외.
+  - docs: `docs/reference/screen-identity.md` — canonical vs source alias 계약 + 5개 예시(코드 drift·node-only·중복·split·rename).
+  - scripts: `create-screen.mjs`(+`lib/screen-scaffold.mjs`) — generic `workflow:create-screen` stub scaffolder. 필수 domain/screen_id/route, screen_id 유일성 강제, route 중복 경고, overwrite 기본 거부, STUB 모드(`--frontmatter-only`), next-steps 출력. screen-slug 형식 검증(path traversal 차단)·`--date` YYYY-MM-DD 검증. canonical id 발명·navigation-map 수정·Open Decision resolve·confirmed 승격을 하지 않는다. `package.json` bin/scripts + `package-scripts.template.json` 소비 alias 추가.
+  - doctor: `lib/screen-source-map.mjs` warning-first 진단(canonical 에 ScreenSpec 부재·map↔spec route 불일치·split/ambiguous 없는 중복 alias·input `affected_screens` 가 알려진 alias(`input-alias`)인지 미지 raw(`input-unmapped`)인지 구분). `deprecated` 만 ScreenSpec 부재 면제(`merged` 는 현재 화면이라 필요). map 부재 시 NO-OP — cold-start 무차단.
+  - reconcile-input/producer: SKILL·`input-reconciliation.md` 에 미매핑/새 화면 처리(scope-unclear·Open Decision·`create-screen`) 추가. source-specific producer 는 canonical id 를 발명하지 않고 optional `source_screen_refs`(body `## Source Screen Refs`, frontmatter 불변)로 alias evidence 를 싣는다.
+  - spine/AGENTS: README·CONVENTIONS·task-artifact-matrix(새 4행)·AGENTS·llm-rules 템플릿이 새-화면 세션을 screen identity stage 로 라우팅. schema `artifact_type` enum 에 `screen-source-map` 추가.
+
 ### Changed
 - **Breaking ScreenSpec contract**: State Matrix canonical mandatory states are now `loading / empty / error / success / disabled / refreshing`. Existing ScreenSpecs that only declare the old five states (`loading / success / empty / error / refreshing`) now report `state_matrix_complete=false` until they add a distinct `disabled` interactivity row.
 - templates/readiness/examples: `screen-spec.template.md`, readiness next-action text, active examples, and expected readiness snapshots now use the 6-state order above. Treat `disabled` as an interactivity state, not a loading subcase.

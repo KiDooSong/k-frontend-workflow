@@ -40,6 +40,32 @@ function asArray(value) {
     .filter(Boolean);
 }
 
+function trimOrNull(value) {
+  const v = typeof value === 'string' ? value.trim() : value == null ? '' : String(value).trim();
+  return v === '' ? null : v;
+}
+
+// source_screen_refs: source-specific producer 가 실어 보내는 source alias evidence
+// (planning/design code, figma node id, route hint). canonical screen id 가 아니다 —
+// frontmatter 를 키우지 않고 body `## Source Screen Refs` 로만 렌더해 reconcile/screen-source-map 에 넘긴다.
+function normalizeSourceScreenRefs(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((ref) => {
+      if (ref && typeof ref === 'object') {
+        return {
+          source: trimOrNull(ref.source),
+          source_id: trimOrNull(ref.source_id ?? ref.sourceId),
+          route_hint: trimOrNull(ref.route_hint ?? ref.routeHint),
+          node_id: trimOrNull(ref.node_id ?? ref.nodeId),
+          confidence: trimOrNull(ref.confidence),
+        };
+      }
+      return { source: null, source_id: trimOrNull(ref), route_hint: null, node_id: null, confidence: null };
+    })
+    .filter((r) => r.source_id || r.source || r.node_id || r.route_hint);
+}
+
 function firstDatePart(value) {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || ''));
   return m ? `${m[1]}${m[2]}${m[3]}` : null;
@@ -194,7 +220,17 @@ export function buildInputArtifact(payload, options = {}) {
     suggested_target_artifacts: asArray(merged.suggested_target_artifacts ?? merged.targets ?? merged.target),
     expected_reconciliation: asArray(merged.expected_reconciliation ?? merged.expected),
     should_not_do: asArray(merged.should_not_do),
+    source_screen_refs: normalizeSourceScreenRefs(merged.source_screen_refs),
   };
+}
+
+function renderSourceScreenRef(ref) {
+  const detail = [];
+  if (ref.route_hint) detail.push(`route_hint: ${ref.route_hint}`);
+  if (ref.node_id) detail.push(`node: ${ref.node_id}`);
+  if (ref.confidence) detail.push(`confidence: ${ref.confidence}`);
+  const head = `${ref.source ? `${ref.source} ` : ''}${ref.source_id || '(no source_id)'}`.trim();
+  return `- ${head}${detail.length ? ` (${detail.join(', ')})` : ''}`;
 }
 
 function yamlScalar(value) {
@@ -241,6 +277,14 @@ export function renderInputArtifact(artifact) {
     '## Extracted Facts',
     renderList(artifact.extracted_facts, 'No extracted facts provided.'),
     '',
+    ...(artifact.source_screen_refs && artifact.source_screen_refs.length
+      ? [
+        '## Source Screen Refs',
+        '<!-- source alias evidence (planning/design code, figma node, route hint). NOT canonical screen ids — map via screen-source-map / reconcile-input. -->',
+        artifact.source_screen_refs.map(renderSourceScreenRef).join('\n'),
+        '',
+      ]
+      : []),
     '## Suggested Target Artifacts',
     renderList(artifact.suggested_target_artifacts, 'No suggested target artifacts provided.'),
     '',

@@ -22,6 +22,7 @@ last_reviewed: "{YYYY-MM-DD}"
 ## 판단 금지 (문서 기반으로만)
 - API endpoint, request, response 는 추측하지 않는다. 확정 정보가 없으면 candidate/unknown 으로 표시하고 구현하지 않는다.
 - 화면 구현 전 해당 화면의 ScreenSpec 을 먼저 읽는다.
+- 새 화면 코드나 Figma 노드를 만나면, 먼저 Screen Source Map(_meta/screen-source-map.md)에서 canonical Screen ID 로 매핑됐는지 확인한다. source id(planning/design 코드, node id, slug)는 alias 일 뿐 canonical Screen ID 가 아니다 — source 코드로 Screen ID 를 발명하지 않는다. 미매핑/충돌은 reconcile-input 에서 처리하고, identity 가 확정되면 `workflow:create-screen` 으로 stub 을 만든다.
 - 디자인 값을 추측하지 않는다. 모르면 TODO 주석으로 남긴다.
 - 새 공통 컴포넌트가 필요하면 구현하지 말고 Component Gap Register(global/component-gap-register.md)에 제안만 남긴다.
 - 모르는 내용(사실 확인)은 해당 ScreenSpec 의 Unknowns 섹션에 남긴다.
@@ -33,12 +34,14 @@ last_reviewed: "{YYYY-MM-DD}"
 - 시각 디자인: 최종 Figma 우선
 - 데이터 계약: OpenAPI / API Manifest 우선
 - 라우팅 구조: Navigation Map 우선
+- 화면 식별: Screen Source Map 우선 (source 코드는 alias — canonical Screen ID 는 워크플로우 소유)
 - 컴포넌트 사용: Component Catalog 우선
 - 문구: Copy Keys confirmed 우선
 - 충돌을 발견하면 임의 판단하지 말고 conflicts(global/conflicts.md)에 기록한다.
 
 ## 참조 경로
 - 화면 계약: docs/frontend-workflow/domains/{domain}/screens/{screen}/screen-spec.md
+- 화면 식별(source 코드 ↔ canonical Screen ID): docs/frontend-workflow/_meta/screen-source-map.md (source id 는 alias)
 - 컴포넌트 카탈로그: docs/frontend-workflow/design/component-catalog.md (자동 생성; generated-files guide의 명령으로 재생성)
 - API: openapi.yaml (확정분) / docs/frontend-workflow/api/api-manifest.md (미확정분)
 - 네비게이션: docs/frontend-workflow/app/navigation-map.md (뼈대)

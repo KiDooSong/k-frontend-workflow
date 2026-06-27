@@ -16,10 +16,12 @@ Keep it short: this is the agent starting point, not the full workflow manual.
 - Read the target ScreenSpec before changing implementation files.
 - Only edit readiness `allowed_paths`. Do not edit `forbidden_paths`.
 - If using new external input from Figma, planning, API, QA, or meetings, create the input artifact and reconcile it before implementation.
+- Before creating a new ScreenSpec or interpreting an external screen code (planning/design code, Figma node id, slug), read the Screen Source Map (`docs/frontend-workflow/_meta/screen-source-map.md`). Source ids are aliases, not canonical screen ids. Resolve mapping, then scaffold with `npm run workflow:create-screen` once the canonical `screen_id`/`route` is confirmed.
 
 ## Common Source Of Truth
 
 - Screen behavior: `docs/frontend-workflow/domains/{domain}/screens/{screen}/screen-spec.md`.
+- Screen identity (source code ↔ canonical screen id): `docs/frontend-workflow/_meta/screen-source-map.md`. Source ids are aliases.
 - Navigation: `docs/frontend-workflow/app/navigation-map.md`.
 - Project policy: `docs/frontend-workflow/global/llm-rules.md`.
 - Shared components: `docs/frontend-workflow/design/component-catalog.md` and `docs/frontend-workflow/global/component-gap-register.md`.

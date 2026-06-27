@@ -19,6 +19,7 @@ description: 외부 입력 스킬이 저장한 새 입력 결과물(input_id 보
 - `input_id`는 불변. 내용이 바뀌면 같은 id를 덮어쓰지 말고 **새 id + supersedes**.
 - 세 status 축은 **별개 라이프사이클**: 입력 frontmatter `status`(입력 수집 상태, 예: `captured`) ≠ register `Reconcile Status`(reconcile 행위) ≠ 자식 항목(D-/C-/U-/G-/INV-/VER-) open/closed. 섞으면 결정 대기 입력이 "미처리"로 오탐된다.
 - reconciliation 중 **코드·테스트·생성 파일을 직접 수정하지 않는다**. 입력은 문서/레지스터/리뷰용 draft 산출물로만 반영한다.
+- **canonical 화면 identity(`screen_id`/`route`/ScreenSpec 경로)는 워크플로우가 소유한다.** 입력의 source 코드(planning `A-001`, design `J010`, Figma node id, slug)는 alias/evidence 일 뿐이다. reconcile-input 은 source 코드로 **canonical Screen ID 를 발명하지 않는다** — 매핑은 Screen Source Map 이 단일 출처이고, 새 identity 생성은 사람-확인 또는 `workflow:create-screen`(주어진 canonical id) 뿐이다.
 
 ## 산출물 라우팅
 입력 종류를 먼저 판별하고, 아래 산출물을 필요한 만큼만 연다.
@@ -44,6 +45,7 @@ description: 외부 입력 스킬이 저장한 새 입력 결과물(input_id 보
    - 없음 → 다음 단계.
 3. 행이 없을 때만 Register에 행을 먼저 쓴다 (`Reconcile Status: in-progress`). ← 문서 수정보다 먼저. 파일이 없으면 아래 스키마로 생성.
 4. `affected_domains`/`affected_screens`(구 `suggested_scope` — deprecated read-compat) 기준으로 관련 산출물을 연다. 위 라우팅 표와 task-artifact matrix에 따라 visual/testID/Tier3 산출물과 secondary generated artifacts도 포함한다.
+   - 입력이 **존재하지 않는 화면**(또는 source 코드)을 가리키면 먼저 **Screen Source Map**(`_meta/screen-source-map.md`)을 확인한다 — 아래 "새 화면 / 화면 식별" 절차를 따른다. `affected_screens` 가 canonical id 가 아니라 raw source 코드면 거기서 멈추고 매핑부터 푼다.
 5. 기존 `confirmed` 문서·`resolved` 결정과 충돌하는지 대조한다.
 6. classification을 만든다 (입력 1개 → item 여러 개 가능). 아래 분류표 참조.
 7. 자동 반영 가능한 `simple-update`만 문서에 반영한다.
@@ -71,6 +73,21 @@ description: 외부 입력 스킬이 저장한 새 입력 결과물(input_id 보
 | conflict | Conflicts 기록 (`resolved` 결정과 충돌이면 decision 재오픈) |
 | scope-unclear | 막아야 하면 Open Decision, 단순 확인이면 Unknown |
 | reject-input | Register `Result`에 사유 기록, 문서는 유지 |
+
+## 새 화면 / 화면 식별 (Screen Source Map)
+
+입력이 기존에 없는 화면을 가리키거나 source 코드(planning `A-001`·design `J010`·node id)를 들고 오면, **canonical Screen ID 를 발명하지 말고** Screen Source Map 으로 푼다. 계약·예시: [`../../docs/reference/screen-identity.md`](../../docs/reference/screen-identity.md).
+
+| 상황 | 처리 |
+|---|---|
+| source 코드가 **confirmed** canonical 로 매핑돼 있고 ScreenSpec 도 존재 | 그 `screen_id` 로 내용을 반영한다 (평소 reconcile) |
+| **confirmed** canonical 인데 ScreenSpec 이 아직 없음 | 내용 반영 전에 `workflow:create-screen` 으로 stub 을 만든다(주어진 canonical id). 그 다음 reconcile |
+| 매핑이 **ambiguous**(같은 코드가 여러 화면, 근거 부족) | canonical id 를 만들지 않는다. `scope-unclear` 로 분류하고, 구현이 막히면 Open Decision 을 올린다. 적절하면 Screen Source Map 에 `candidate`/`ambiguous` 행을 남긴다 |
+| 입력이 분명히 **새 화면**을 도입하지만 canonical id 없음 | Screen Source Map 에 `candidate` 행을 만들고, 사람에게 canonical `screen_id`/`route` 확인을 받는다. 확정 후 `workflow:create-screen` |
+
+- reconcile-input 은 기존 문서를 갱신하고 decision/gap/unknown 을 만들/재오픈할 수 있다 — 하지만 **canonical 화면 identity 를 발명하는 자리가 아니다.**
+- identity 생성은 둘 중 하나로만: (1) 사람-확인, (2) 명시적 `workflow:create-screen`(주어진 canonical id).
+- `workflow:create-screen` 은 stub 만 만든다 — navigation-map 자동 수정·Open Decision resolve·confirmed 승격을 하지 않는다.
 
 ## Visual / Figma 규칙
 - Figma 노드·프레임·컴포넌트 매핑 사실은 `figma-component-mapping.md` 로 간다. 입력이 행동을 바꾸지 않는 한 ScreenSpec 을 수정하지 않는다.
@@ -116,6 +133,7 @@ description: 외부 입력 스킬이 저장한 새 입력 결과물(input_id 보
 - Gap을 직접 accept / 새 공통 컴포넌트 직접 생성 (제안=`open`만, accept는 사람).
 - `Owner`만 보고 사용자 판단 가능성을 배제하기.
 - 같은 `input_id` 덮어쓰기 (새 id + supersedes).
+- source 코드(planning/design/node id)로 canonical Screen ID 를 발명하기 (매핑은 Screen Source Map, 생성은 사람-확인/`workflow:create-screen` 뿐).
 - reconciliation 전 코드 변경.
 - production code / tests / generated files 직접 수정.
 - live `policies/implementation-mode-policy.yaml` replacement, CI promotion, pre-edit hook enforcement.

@@ -5,6 +5,7 @@
     "workflow:readiness": "node tools/frontend-workflow/scripts/readiness.mjs",
     "workflow:validate": "node tools/frontend-workflow/scripts/validate.mjs",
     "workflow:create-input": "node tools/frontend-workflow/scripts/create-input-artifact.mjs",
+    "workflow:create-screen": "node tools/frontend-workflow/scripts/create-screen.mjs",
     "workflow:doctor": "node tools/frontend-workflow/scripts/doctor.mjs",
     "workflow:forbidden-paths": "node tools/frontend-workflow/scripts/forbidden-paths.mjs",
     "workflow:route-tree": "node tools/frontend-workflow/scripts/route-tree.mjs",
