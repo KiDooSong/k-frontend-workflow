@@ -16,7 +16,7 @@ ScreenSpec 기반 **선택형 웹 E2E evidence**를 만든다. 이 스킬은
 
 - E2E green은 승인, `confirmed` 승격, Open Decision resolve, Gap accept, readiness 상승이 아니다.
 - Playwright는 웹 표면 evidence다. fixture green은 실제 통합 동작 정확성을 증명하지 않는다.
-- E2E green은 필요조건이지 충분조건이 아니다. faithful generator는 약한 plan 단언을 green-but-inert 테스트로 굳히므로(예: `.click()` 직후 `toBeFocused()`), assertion/locator 정밀도 게이트는 codegen이 아니라 plan/review에서 적용한다. app 정의 상태만 단언하고(브라우저 focus/`:active` 아티팩트 금지), 반복 행은 container testid+id로 스코핑한다. 규칙 정본은 [e2e-authoring-rules.md](../../docs/reference/e2e-authoring-rules.md).
+- E2E green은 필요조건이지 충분조건이 아니다. faithful generator는 약한 plan 단언을 green-but-inert 테스트로 굳히므로(예: `.click()` 직후 `toBeFocused()`), assertion/locator 정밀도 게이트는 codegen이 아니라 plan/review에서 적용한다. app 정의 상태만 단언하고(브라우저 focus/`:active` 아티팩트 금지), 반복 행은 container testid+id로 스코핑한다. 규칙 정본은 [e2e-behavioral-rules.md](../../docs/reference/e2e-behavioral-rules.md).
 - canonical Screen ID는 [screen-identity.md](../../docs/reference/screen-identity.md)가 정본이다. source alias로 만들지 않는다.
 - 제품 코드 수정은 항상 Stage 06 readiness의 `allowed_paths`/`forbidden_paths`를 따른다.
 - `tests/web-plans/**`와 `tests/web/**`는 consumer-owned E2E 표면이다. readiness path governance가 이 경로를 허용한다는 뜻이 아니며, 새 테스트 파일 생성은 사용자 요청/확인 뒤에만 한다.
@@ -40,7 +40,7 @@ ScreenSpec 기반 **선택형 웹 E2E evidence**를 만든다. 이 스킬은
 - 2차 산출물 판단은 [task-artifact-matrix.md](../../docs/reference/task-artifact-matrix.md).
 - 명령 syntax는 [COMMANDS.md](../../COMMANDS.md), route/screen 관례는 [CONVENTIONS.md](../../CONVENTIONS.md).
 - Playwright Test Agents setup은 [e2e-playwright-agents.md](../../docs/reference/e2e-playwright-agents.md).
-- plan/generate/verify에서 적용·주입할 assertion·locator·coverage 규칙은 [e2e-authoring-rules.md](../../docs/reference/e2e-authoring-rules.md).
+- plan/generate/verify에서 적용·주입할 assertion·locator·coverage 규칙은 [e2e-behavioral-rules.md](../../docs/reference/e2e-behavioral-rules.md).
 - planner context scaffold는 [web-plan.template.md](../../templates/e2e/web-plan.template.md).
 - 기존 `tests/web-plans/**`, `tests/web/**`, Playwright config, web server command.
 
@@ -50,13 +50,12 @@ ScreenSpec 기반 **선택형 웹 E2E evidence**를 만든다. 이 스킬은
 
 ```txt
 tests/web-plans/{domain}/{screen-slug}/plan.md
-tests/web/{domain}/{screen-slug}.spec.ts            # 한 화면이 단일 suite일 때
-tests/web/{domain}/{screen-slug}/<suite>.spec.ts    # plan이 한 화면을 여러 suite로 쪼갤 때 (folder per screen)
+tests/web/{domain}/{screen-slug}/<suite>.spec.ts    # 화면당 폴더, suite 파일 1..N개
 ```
 
 `{screen-slug}`는 canonical `screen_id`를 lowercase로 만들고 non-alphanumeric 문자를 `-`로 치환한 파일명이다(예: `COUPON-001` -> `coupon-001`, `AUTH/SIGNUP_EMAIL` -> `auth-signup-email`; ScreenSpec folder slug가 아니다). plan/test 첫머리에는 canonical `screen_id`, ScreenSpec path, seed/route 출처를 남겨 slug drift를 막는다.
 
-**파일 패키징.** planner는 `**File:**`을 테스트별로 적되 suite마다 한 파일명을 재사용한다(실측: 17 scenario → list/detail/copy/apply 4파일). 한 화면이 단일 suite면 `{screen-slug}.spec.ts` 단일 파일을 쓰고, 여러 suite로 쪼개지면 한 파일로 억지로 합치지 말고 화면별 폴더 `tests/web/{domain}/{screen-slug}/<suite>.spec.ts`에 둔다(`<suite>`는 planner의 `File:` basename). 어느 쪽이든 `testDir`은 불변이고 도메인/화면은 `fileName` subpath로만 라우팅된다. planner "suite"가 사실 별개의 canonical screen이면 suite로 묻지 말고 그 screen의 `screen-slug`로 보낸다([screen-identity.md](../../docs/reference/screen-identity.md)가 정본).
+**파일 패키징.** planner는 `**File:**`을 테스트별로 적되 suite마다 한 파일명을 재사용한다(실측: 17 scenario → list/detail/copy/apply 4파일). 테스트는 **항상 화면당 폴더** `tests/web/{domain}/{screen-slug}/<suite>.spec.ts`에 두며 suite 파일은 1..N개다(단일 suite도 파일 하나짜리 폴더 — suite를 추가해도 shape가 바뀌지 않는다; `<suite>`는 planner의 `File:` basename). 한 파일로 억지로 합치지 않는다. `testDir`은 불변이고 도메인/화면/suite는 `fileName` subpath로만 라우팅된다. planner "suite"가 사실 별개의 canonical screen이면 suite로 묻지 말고 그 screen의 `screen-slug`로 보낸다([screen-identity.md](../../docs/reference/screen-identity.md)가 정본).
 
 `tests/web-plans/{domain}/{screen-slug}/plan.md`는 reviewed canonical final plan 경로다. raw planner output은 `specs/` 또는 run-isolated draft 경로에 두고, 검토 후 official planner output body를 보존한 canonical plan으로 옮긴다.
 
@@ -83,10 +82,10 @@ Playwright report/trace는 기본 커밋하지 않는다. 결과는 run report, 
    npm run workflow:state
    npm run workflow:readiness -- --screen <SCREEN_ID> --json
    ```
-3. context packet을 만든다: screen id/domain/route, `seed_file`/`playwright_project`/`base_url`/`test_dir`, State/Interaction rows, 제외할 Open Decisions, copy/a11y/testID anchors, visual facts as evidence only. [e2e-authoring-rules.md](../../docs/reference/e2e-authoring-rules.md)의 assertion·locator 규칙을 packet에 포함한다.
-4. `plan`: consumer repo에 Playwright Test Agents setup이 없으면 멈추고 setup required로 보고한다. 있으면 planner를 우선 호출한다. scenario는 app 정의 상태를 타깃하고(authoring-rules §A), 커버리지 깊이는 planner가 책임진다(§C: state-transition·side-effect까지). template은 kit dogfood, preflight notes, human-reviewed context scaffold에만 쓰며 generator input으로 넘기지 않는다. Plan-only는 test runner, generator/healer를 실행하지 않고 `tests/web/**`를 만들지 않는다.
-5. `generate`: approved plan + seed/entry URL로 generator를 쓰고 configured `test_dir` 아래에 둔다. generator(직접/위임) 프롬프트에 authoring-rules 규칙을 주입한다 — dogfood에서 행 스코핑 규칙(§B1) 주입이 strict-mode 버그를 예방했다. 한 화면이 여러 suite로 쪼개지면 folder per screen으로 둔다(아래 Output Paths). 생성 전 사용자 확인을 받는다.
-6. `verify`: 가장 작은 관련 Playwright command를 실행하고 결과 요약을 남긴다. 생성 세트 채택 전 authoring-rules의 Review checklist로 inert 단언(`.click()` 직후 `toBeFocused()` 등)을 걸러낸다.
+3. context packet을 만든다: screen id/domain/route, `seed_file`/`playwright_project`/`base_url`/`test_dir`, State/Interaction rows, 제외할 Open Decisions, copy/a11y/testID anchors, visual facts as evidence only. [e2e-behavioral-rules.md](../../docs/reference/e2e-behavioral-rules.md)의 assertion·locator 규칙을 packet에 포함한다.
+4. `plan`: consumer repo에 Playwright Test Agents setup이 없으면 멈추고 setup required로 보고한다. 있으면 planner를 우선 호출한다. scenario는 app 정의 상태를 타깃하고(behavioral-rules §A), 커버리지 깊이는 planner가 책임진다(§C: state-transition·side-effect까지). template은 kit dogfood, preflight notes, human-reviewed context scaffold에만 쓰며 generator input으로 넘기지 않는다. Plan-only는 test runner, generator/healer를 실행하지 않고 `tests/web/**`를 만들지 않는다.
+5. `generate`: approved plan + seed/entry URL로 generator를 쓰고 configured `test_dir` 아래에 둔다. generator(직접/위임) 프롬프트에 behavioral-rules 규칙을 주입한다 — dogfood에서 행 스코핑 규칙(§B1) 주입이 strict-mode 버그를 예방했다. 테스트는 화면당 폴더(`{screen-slug}/<suite>.spec.ts`)에 둔다(아래 Output Paths). 생성 전 사용자 확인을 받는다.
+6. `verify`: 가장 작은 관련 Playwright command를 실행하고 결과 요약을 남긴다. 생성 세트 채택 전 behavioral-rules의 Review checklist로 inert 단언(`.click()` 직후 `toBeFocused()` 등)을 걸러낸다.
 7. `heal`: 실패 evidence 뒤에만 healer를 쓰고 assertion weakening, broad regex, `test.fixme()`를 diff에서 확인한다.
 8. plan-only가 아니거나 workflow docs가 바뀌었으면 `npm run workflow:validate`를 실행한다. 최종 보고는 evidence로만 말한다.
 

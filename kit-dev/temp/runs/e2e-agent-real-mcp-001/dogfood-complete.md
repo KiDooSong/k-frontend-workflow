@@ -54,13 +54,13 @@ Recommended adopted output:
 ## Candidate rules — FORMALIZED
 
 These dogfood recommendations are now canonical in
-[`e2e-authoring-rules.md`](../../../../frontend-workflow-kit/docs/reference/e2e-authoring-rules.md)
+[`e2e-behavioral-rules.md`](../../../../frontend-workflow-kit/docs/reference/e2e-behavioral-rules.md)
 (grounded in community practice via a deep-research pass; wired into the e2e-agent
 skill and read each mode). They are no longer candidates — kept here as the run's
 provenance:
 
 1. Assert app-defined state (class / text / visibility / attribute / URL); never browser
-   artifacts (`focus`, `:active`, `document.activeElement`). → authoring-rules §A1.
+   artifacts (`focus`, `:active`, `document.activeElement`). → behavioral-rules §A1.
 2. Drop any assertion that passes independent of app logic (e.g. `toBeFocused()` right after
    `.click()`) — generators are faithful, not critical, so review must catch these. → §A2.
 3. Scope a row by its container testid plus id, not an attribute its children also carry. → §B1.

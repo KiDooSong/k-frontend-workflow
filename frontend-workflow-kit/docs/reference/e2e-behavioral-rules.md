@@ -1,8 +1,9 @@
-# E2E Test Authoring Rules
+# E2E Behavioral Rules
 
-Consumer reference for the behavioral rules the `e2e-agent` applies while it
-**authors** evidence — at `plan`, `generate`, and `verify`/review time. These are
-quality rules, not setup. For Playwright Test Agents setup, MCP wiring, the path
+Consumer reference for the behavioral rules the `e2e-agent` applies across its
+modes — `plan`, `generate`, and `verify`/review (and `heal`). They are read each
+mode and folded into the work, not background reading. These are quality rules,
+not setup. For Playwright Test Agents setup, MCP wiring, the path
 model, and the output-path Kit Mapping, see
 [e2e-playwright-agents.md](e2e-playwright-agents.md) (read once, at setup). The
 non-gating boundary is owned by [Stage 08](workflow-stages/08-validate-and-report.md)
@@ -190,7 +191,7 @@ MCP vs delegated subagent) for **style and cost**, not for pass rate.
 
 ## D. (Optional) Enforcement
 
-These rules are applied by the agent at author/review time; a consumer repo may
+These rules are applied by the agent at generate/review time; a consumer repo may
 additionally back §A3 (and related assertion smells) with
 [`eslint-plugin-playwright`](https://github.com/mskelton/eslint-plugin-playwright)
 (`prefer-web-first-assertions` is in the recommended config and auto-fixable).
@@ -215,8 +216,12 @@ Run before adopting any generated set (the §A2 critique the generator will not 
 
 ## File packaging
 
-When a plan splits one screen into per-suite spec files, the output-path
-convention (folder per screen) is owned by
+Generated tests live in a **folder per screen** —
+`tests/web/{domain}/{screen-slug}/<suite>.spec.ts`, holding the 1..N suite files
+the planner produces for that screen (it emits `**File:**` per test but reuses
+one filename per suite). This is unconditional: a single-suite screen is still a
+folder with one file, so the shape never changes as suites are added. The
+convention is owned by
 [e2e-playwright-agents.md → Kit Mapping](e2e-playwright-agents.md#kit-mapping) and
 mirrored in the [e2e-agent skill](../../skills/e2e-agent/SKILL.md#output-paths).
 A planner "suite" that is actually a distinct canonical screen is routed to its
@@ -225,7 +230,7 @@ suite.
 
 ## Boundaries
 
-These are authoring-quality rules. They do not add CI, hard gates, readiness
+These are behavioral / quality rules. They do not add CI, hard gates, readiness
 promotion, Open Decision resolution, Unknown closure, Gap acceptance, or
 `confirmed` promotion. Playwright E2E remains optional evidence
 ([Stage 08](workflow-stages/08-validate-and-report.md)).

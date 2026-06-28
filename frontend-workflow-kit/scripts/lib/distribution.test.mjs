@@ -582,7 +582,7 @@ test('e2e-agent optional web evidence surface is wired without a missing matrix 
   assert.match(skill, /^name: e2e-agent$/m);
   assert.match(skill, /e2e 짜줘/);
   assert.match(skill, /tests\/web-plans\/\{domain\}/);
-  assert.match(skill, /tests\/web\/\{domain\}\/\{screen-slug\}\.spec\.ts/);
+  assert.match(skill, /tests\/web\/\{domain\}\/\{screen-slug\}\/<suite>\.spec\.ts/);
   assert.match(skill, /e2e-playwright-agents\.md/);
   assert.match(skill, /templates\/e2e\/web-plan\.template\.md/);
   assert.match(skill, /consumer-owned E2E 표면/);
@@ -623,7 +623,7 @@ test('e2e-agent optional web evidence surface is wired without a missing matrix 
   assert.match(planTemplate, /base_url/);
   assert.match(planTemplate, /test_dir/);
   assert.match(planTemplate, /\*\*Seed:\*\*/);
-  assert.match(planTemplate, /\*\*File:\*\* `\{test_dir\}\/\{domain\}\/\{screen-slug\}\.spec\.ts`/);
+  assert.match(planTemplate, /\*\*File:\*\* `\{test_dir\}\/\{domain\}\/\{screen-slug\}\/<suite>\.spec\.ts`/);
   assert.match(planTemplate, /- expect:/);
   assert.doesNotMatch(planTemplate, /Verification Matrix/);
 
@@ -651,7 +651,7 @@ test('e2e-agent optional web evidence surface is wired without a missing matrix 
   assert.match(setupDoc, /governance convention, not a\s+Playwright requirement/);
   assert.match(setupDoc, /Playwright planner output body/);
   assert.match(setupDoc, /Per-run drafts must be isolated/);
-  assert.match(setupDoc, /Generator output -> `tests\/web\/\{domain\}\/\{screen-slug\}\.spec\.ts`/);
+  assert.match(setupDoc, /Generator output -> `tests\/web\/\{domain\}\/\{screen-slug\}\/<suite>\.spec\.ts`/);
   assert.match(setupDoc, /Regenerate the agent\s+definitions whenever Playwright is updated/);
   assert.match(setupDoc, /ScreenSpec -> planner context/);
   assert.match(setupDoc, /stop with setup\s+required/);
