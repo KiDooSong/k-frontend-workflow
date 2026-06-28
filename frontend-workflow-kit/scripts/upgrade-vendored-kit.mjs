@@ -48,7 +48,8 @@ Apply safety (all default OFF):
   --backup-dir <p>   Copy each file before it is overwritten/pruned into <p>.
 
 Notes:
-  - Only files inside --current are ever modified.
+  - Writes only inside --current, plus any --backup-dir / --plan path you pass.
+  - Symlinked targets under --current are refused (no escape via links).
   - Locally modified files are never overwritten unless you opt in explicitly.
   - Conflicts are written as <current>/.upgrade-conflicts/<path>.incoming for manual merge.
   - No migrations are run and no consumer docs/source are touched.
@@ -70,6 +71,16 @@ function requireDir(label, value) {
   }
   if (!stat.isDirectory()) fail(`${label} path is not a directory: ${abs}`);
   return abs;
+}
+
+// Parse a boolean flag without the `!!` footgun: --flag and --flag=true enable;
+// --flag=false/0/no/off (and absence) disable. Critical for destructive flags
+// (--prune, --allow-conflicts, --force-runtime) where `!!'false'` === true.
+function boolFlag(v) {
+  if (v === undefined) return false;
+  if (v === true) return true;
+  const s = String(v).trim().toLowerCase();
+  return !(s === 'false' || s === '0' || s === 'no' || s === 'off' || s === '');
 }
 
 function sanitizeRef(ref) {
@@ -94,7 +105,7 @@ function renderHumanSummary(plan) {
 function main() {
   const { flags } = parseArgs(process.argv.slice(2));
 
-  if (flags.help) {
+  if (boolFlag(flags.help)) {
     process.stdout.write(HELP);
     process.exit(0);
   }
@@ -102,8 +113,8 @@ function main() {
   const currentDir = requireDir('--current', flags.current);
   const nextDir = requireDir('--next', flags.next);
 
-  if (flags.apply && flags['dry-run']) fail('--apply and --dry-run are mutually exclusive');
-  const apply = !!flags.apply;
+  if (boolFlag(flags.apply) && boolFlag(flags['dry-run'])) fail('--apply and --dry-run are mutually exclusive');
+  const apply = boolFlag(flags.apply);
 
   if ((flags['backup-dir'] === true || flags['backup-dir'] === '')) {
     fail('--backup-dir requires a value');
@@ -112,21 +123,18 @@ function main() {
 
   const options = {
     apply,
-    prune: !!flags.prune,
-    allowConflicts: !!flags['allow-conflicts'],
-    forceRuntime: !!flags['force-runtime'],
+    prune: boolFlag(flags.prune),
+    allowConflicts: boolFlag(flags['allow-conflicts']),
+    forceRuntime: boolFlag(flags['force-runtime']),
     backupDir: typeof flags['backup-dir'] === 'string' ? path.resolve(flags['backup-dir']) : null,
   };
 
   const plan = buildPlan({ currentDir, nextDir, options });
   const markdown = renderPlanMarkdown(plan);
 
-  let applied = null;
-  if (apply) {
-    applied = applyPlan({ plan, currentDir, nextDir, options });
-  }
-
-  // Resolve where (if anywhere) to write the markdown plan.
+  // Resolve where (if anywhere) to write the markdown plan, and write it BEFORE
+  // mutating, so a bad --plan path fails fast instead of leaving an applied kit
+  // with no saved plan.
   let planPath = null;
   if (typeof flags.plan === 'string') {
     planPath = path.resolve(flags.plan);
@@ -138,7 +146,12 @@ function main() {
     fs.writeFileSync(planPath, markdown, 'utf8');
   }
 
-  if (flags.json) {
+  let applied = null;
+  if (apply) {
+    applied = applyPlan({ plan, currentDir, nextDir, options });
+  }
+
+  if (boolFlag(flags.json)) {
     process.stdout.write(JSON.stringify({
       ok: true,
       mode: apply ? 'apply' : 'dry-run',

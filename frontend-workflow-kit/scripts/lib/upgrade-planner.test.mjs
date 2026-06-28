@@ -19,6 +19,7 @@ import {
   INSTALL_MANIFEST_NAME,
   CONFLICTS_DIR_NAME,
   manifestFileIndex,
+  isSafeRelPath,
 } from './kit-manifest.mjs';
 
 const KIT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -440,6 +441,104 @@ test('kit:pack writes a deterministic payload manifest with hashes + classificat
     fs.readFileSync(path.join(out2, PAYLOAD_MANIFEST_NAME), 'utf8'),
   );
   assert.deepEqual(m.payload.files.map((f) => f.path), [...m.payload.files.map((f) => f.path)].sort((a, b) => a.localeCompare(b)));
+});
+
+// --- security: path traversal, symlinks, boolean-flag coercion -------------
+test('isSafeRelPath rejects traversal, absolute, and drive/UNC paths', () => {
+  for (const ok of ['scripts/readiness.mjs', 'a/b/c.md', 'README.md']) {
+    assert.equal(isSafeRelPath(ok), true, ok);
+  }
+  for (const bad of ['../escape', 'a/../../b', '/etc/passwd', 'C:/win', 'C:\\win', '\\\\unc\\share', '', 'a/', './x']) {
+    assert.equal(isSafeRelPath(bad), false, bad);
+  }
+});
+
+test('manifestFileIndex drops traversal/absolute entries (fail-closed)', () => {
+  const idx = manifestFileIndex({
+    payload: {
+      files: [
+        { path: 'good.mjs', sha256: sha('g') },
+        { path: '../evil.mjs', sha256: sha('e') },
+        { path: '/abs/evil.mjs', sha256: sha('e') },
+        { path: 'C:/evil.mjs', sha256: sha('e') },
+      ],
+    },
+  });
+  assert.deepEqual([...idx.keys()], ['good.mjs']);
+});
+
+test('a crafted next manifest with a traversal path neither plans nor writes outside current', (t) => {
+  const tmp = mkTmp('traversal');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const currentDir = path.join(tmp, 'current');
+  const nextDir = path.join(tmp, 'next');
+  writeFile(currentDir, INSTALL_MANIFEST_NAME, JSON.stringify({
+    schema_version: 1, kit: { source_ref: 'OLD' }, payload: { files: [] },
+  }, null, 2) + '\n');
+  writeFile(nextDir, 'safe.mjs', 'S');
+  // a sentinel a sibling of current; the crafted '../evil.mjs' entry must never reach it
+  writeFile(tmp, 'evil.mjs', 'SENTINEL');
+  writeFile(nextDir, PAYLOAD_MANIFEST_NAME, JSON.stringify({
+    schema_version: 1,
+    kit: { source_ref: 'NEW' },
+    payload: { files: [
+      { path: 'safe.mjs', sha256: sha('S'), classification: 'consumer-runtime', mode: '100644' },
+      { path: '../evil.mjs', sha256: sha('EVIL'), classification: 'consumer-runtime', mode: '100644' },
+    ] },
+  }, null, 2) + '\n');
+
+  const plan = buildPlan({ currentDir, nextDir });
+  assert.equal(plan.files.some((f) => f.path.includes('..')), false);
+  applyPlan({ plan, currentDir, nextDir });
+  // the traversal target (a sibling of current) must be left exactly as it was
+  assert.equal(read(tmp, 'evil.mjs'), 'SENTINEL');
+  assert.equal(read(currentDir, 'safe.mjs'), 'S');
+});
+
+test('apply refuses to write through a symlinked target (no escape via links)', (t) => {
+  const tmp = mkTmp('symlink');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const { currentDir, nextDir } = buildScenario(tmp);
+  // replace current/safe.mjs with a symlink pointing OUTSIDE current
+  const outside = path.join(tmp, 'outside-target.mjs');
+  fs.writeFileSync(outside, 'A', 'utf8'); // same content as baseline → classified safe-update
+  const linkPath = path.join(currentDir, 'safe.mjs');
+  fs.rmSync(linkPath, { force: true });
+  try {
+    fs.symlinkSync(outside, linkPath);
+  } catch {
+    t.skip('symlink creation not permitted on this platform');
+    return;
+  }
+  const plan = buildPlan({ currentDir, nextDir });
+  assert.equal(categoryOf(plan, 'safe.mjs'), 'safe-update');
+  assert.throws(() => applyPlan({ plan, currentDir, nextDir }), /symlink/i);
+  // the outside target must be untouched
+  assert.equal(fs.readFileSync(outside, 'utf8'), 'A');
+});
+
+test('CLI does not enable destructive flags on --flag=false', (t) => {
+  const tmp = mkTmp('boolflag');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const { currentDir, nextDir } = buildScenario(tmp);
+  const r = spawnSync(process.execPath, [
+    UPGRADE_CLI, '--current', currentDir, '--next', nextDir, '--apply', '--prune=false',
+  ], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  // --prune=false must NOT delete the orphan
+  assert.equal(fs.existsSync(path.join(currentDir, 'orphan.mjs')), true);
+});
+
+test('CLI --apply=false stays a dry-run (no apply)', (t) => {
+  const tmp = mkTmp('applyfalse');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const { currentDir, nextDir } = buildScenario(tmp);
+  const r = spawnSync(process.execPath, [
+    UPGRADE_CLI, '--current', currentDir, '--next', nextDir, '--apply=false', '--json',
+  ], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout).mode, 'dry-run');
+  assert.equal(read(currentDir, 'safe.mjs'), 'A'); // unchanged (not overwritten to B)
 });
 
 // --- end-to-end: plan a freshly packed kit against a vendored copy ----------

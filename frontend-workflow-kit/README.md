@@ -96,7 +96,7 @@ node /path/to/new/frontend-workflow-kit/scripts/upgrade-vendored-kit.mjs \
 - `--apply`는 safe-update와 new-file만 자동 적용하고 `.kit-install-manifest.json`을 갱신한다.
 - 로컬 수정 파일은 기본적으로 절대 덮어쓰지 않는다. conflict는 `.upgrade-conflicts/<path>.incoming`으로 남겨 수동/LLM 병합한다.
 - upstream에서 삭제된 파일은 기본 보존(orphan 보고)하며 `--prune`을 줄 때만 삭제한다.
-- `tools/frontend-workflow/` 밖(소비 `docs/frontend-workflow/**`, 앱 소스, 루트 `AGENTS.md`/`package.json`)은 절대 건드리지 않는다.
+- 명시적으로 지정한 `--backup-dir`/`--plan` 경로를 빼면 `tools/frontend-workflow/` 밖(소비 `docs/frontend-workflow/**`, 앱 소스, 루트 `AGENTS.md`/`package.json`)은 자동으로 건드리지 않는다. `--current` 안의 symlink 타깃은 거부해 링크로 밖을 덮어쓰지 못하게 한다.
 - `.kit-install-manifest.json`이 없는 기존(비관리) 설치는 보수적 plan(차이 파일=conflict)을 만들고, 첫 apply 이후부터 manifest 기반으로 동작한다.
 
 옵션·분류 규칙은 [COMMANDS.md](COMMANDS.md)의 Upgrade 항목과 `--help`를 본다. 사람이 봐야 할 마이그레이션 노트는 [docs/reference/upgrade-notes.md](docs/reference/upgrade-notes.md)에 있고 plan에 함께 포함된다.

@@ -24,6 +24,7 @@ import {
   manifestFileIndex,
   scanPayloadFiles,
   statMode,
+  isSafeRelPath,
 } from './kit-manifest.mjs';
 
 export const CATEGORIES = [
@@ -395,10 +396,38 @@ export function renderPlanMarkdown(plan) {
 }
 
 // --- apply -----------------------------------------------------------------
+// Lexical containment: childAbs must be strictly under parentAbs.
 function assertInside(parentAbs, childAbs, label) {
   const rel = path.relative(parentAbs, childAbs);
   if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) {
     throw new Error(`refusing to write outside ${label}: ${childAbs}`);
+  }
+}
+
+// Physical containment: defends the lexical check against symlink escapes.
+// A symlinked file (or symlinked parent dir) under --current could otherwise let
+// fs.copyFileSync/rmSync follow the link and touch a file outside the kit. We
+// realpath the deepest existing ancestor and refuse if it leaves realRoot, and
+// refuse to write through a symlinked destination at all (kit payload files are
+// always regular files — pack rejects symlinks).
+function assertSafeWriteTarget(realRoot, destAbs, label) {
+  let probe = destAbs;
+  while (!fs.existsSync(probe)) {
+    const parent = path.dirname(probe);
+    if (parent === probe) return; // no existing ancestor (cannot happen under realRoot)
+    probe = parent;
+  }
+  const realAncestor = fs.realpathSync(probe);
+  const rel = path.relative(realRoot, realAncestor);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) {
+    throw new Error(`refusing to write outside ${label} (symlink escape): ${destAbs}`);
+  }
+  try {
+    if (fs.lstatSync(destAbs).isSymbolicLink()) {
+      throw new Error(`refusing to overwrite a symlink under ${label}: ${destAbs}`);
+    }
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
   }
 }
 
@@ -476,32 +505,36 @@ export function buildInstallManifest({ currentDir, nextResolved, baseline, sourc
 export function applyPlan({ plan, currentDir, nextDir, options = {} }) {
   const resolvedCurrent = path.resolve(currentDir);
   const resolvedNext = path.resolve(nextDir);
+  const realCurrent = fs.realpathSync(resolvedCurrent);
   const backupDir = options.backupDir ? path.resolve(options.backupDir) : null;
   const next = resolveNext(resolvedNext);
   const baseline = resolveBaseline(resolvedCurrent);
 
   const actions = [];
   const record = (rel, action) => actions.push({ path: rel, action });
+  const LABEL = 'current vendored kit';
 
   for (const f of plan.files) {
     const action = f.planned_action;
+    if (!isSafeRelPath(f.path)) continue; // never act on a traversal/absolute path
     const destAbs = path.join(resolvedCurrent, f.path);
 
     if (WRITE_ACTIONS.has(action)) {
-      assertInside(resolvedCurrent, destAbs, 'current vendored kit');
+      assertInside(resolvedCurrent, destAbs, LABEL);
+      assertSafeWriteTarget(realCurrent, destAbs, LABEL);
       if (OVERWRITE_ACTIONS.has(action)) backupFile(resolvedCurrent, backupDir, f.path);
-      const srcAbs = path.join(resolvedNext, f.path);
-      copyFileMode(srcAbs, destAbs, f.mode);
+      copyFileMode(path.join(resolvedNext, f.path), destAbs, f.mode);
       record(f.path, action);
     } else if (action === 'write-incoming') {
       const incoming = path.join(resolvedCurrent, CONFLICTS_DIR_NAME, `${f.path}.incoming`);
-      assertInside(resolvedCurrent, incoming, 'current vendored kit');
-      const srcAbs = path.join(resolvedNext, f.path);
+      assertInside(resolvedCurrent, incoming, LABEL);
+      assertSafeWriteTarget(realCurrent, incoming, LABEL);
       fs.mkdirSync(path.dirname(incoming), { recursive: true });
-      fs.copyFileSync(srcAbs, incoming);
+      fs.copyFileSync(path.join(resolvedNext, f.path), incoming);
       record(f.path, 'write-incoming');
     } else if (action === 'prune') {
-      assertInside(resolvedCurrent, destAbs, 'current vendored kit');
+      assertInside(resolvedCurrent, destAbs, LABEL);
+      assertSafeWriteTarget(realCurrent, destAbs, LABEL);
       backupFile(resolvedCurrent, backupDir, f.path);
       try {
         fs.rmSync(destAbs, { force: true });

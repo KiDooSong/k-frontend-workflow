@@ -186,9 +186,11 @@ Per-file classification:
 | `unknown-local` | local file not in any payload manifest | left untouched |
 
 Safety: never overwrites locally modified files by default, never deletes
-upstream-removed files without `--prune`, never runs migrations, and never edits
-anything outside `--current` (consumer `docs/frontend-workflow/**`, app source, and
-root config are off limits). An install with no `.kit-install-manifest.json` gets a
+upstream-removed files without `--prune`, never runs migrations, and writes only
+inside `--current` (plus any `--backup-dir` / `--plan` path you explicitly pass).
+Symlinked targets under `--current` are refused so links can't escape the kit, and
+consumer `docs/frontend-workflow/**`, app source, and root config are never touched
+automatically. An install with no `.kit-install-manifest.json` gets a
 conservative "unmanaged baseline" plan; after the first apply it becomes
 manifest-based. Consumer-impacting migration notes
 ([docs/reference/upgrade-notes.md](docs/reference/upgrade-notes.md)) are embedded in

@@ -42,6 +42,20 @@ export function toPosix(p) {
   return String(p).replace(/\\/g, '/');
 }
 
+// A payload-relative path is safe only if it stays inside the kit tree: no
+// absolute paths, no Windows drive/UNC, no `..` segments, no leading `/`.
+// Untrusted install/payload manifests are filtered through this so a crafted
+// entry cannot drive reads/writes outside the vendored kit (fail-closed).
+export function isSafeRelPath(rel) {
+  if (typeof rel !== 'string' || rel === '') return false;
+  const p = toPosix(rel);
+  if (p.startsWith('/')) return false; // POSIX absolute
+  if (/^[a-zA-Z]:/.test(p)) return false; // Windows drive (C:...)
+  if (p.startsWith('\\\\') || rel.startsWith('\\\\')) return false; // UNC
+  // reject non-canonical segments: '..' (traversal), '.' (cwd), '' (//, trailing /)
+  return !p.split('/').some((seg) => seg === '..' || seg === '.' || seg === '');
+}
+
 // --- hashing ---------------------------------------------------------------
 export function sha256OfBuffer(buf) {
   return crypto.createHash('sha256').update(buf).digest('hex');
@@ -181,6 +195,7 @@ export function manifestFileIndex(manifest) {
   if (!Array.isArray(files)) return map;
   for (const f of files) {
     if (!f || typeof f.path !== 'string') continue;
+    if (!isSafeRelPath(f.path)) continue; // drop traversal/absolute entries fail-closed
     map.set(toPosix(f.path), {
       sha256: typeof f.sha256 === 'string' ? f.sha256 : null,
       classification: f.classification ?? null,
