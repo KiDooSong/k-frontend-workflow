@@ -4,6 +4,10 @@
 > Scope: define a repo skill that wraps Playwright Test Agents as optional web evidence.
 > Sources: [playwright research 01](../../../../docs/research/playwright/01-playwright-agents-planner-generator-healer.md), [playwright workflow integration 03](../../../../docs/research/playwright/03-workflow-integration.md), [E2E evidence drafts](e2e-evidence/README.md), [testID contract candidate](e2e-evidence/testid-contract-candidate.md).
 
+This design note stays dev-only. The consumer-facing skill is live only through
+`frontend-workflow-kit/skills/e2e-agent/SKILL.md` and is wired as optional evidence
+from `README.md`, Stage 00, Stage 08, and `doc-ownership.md`.
+
 ## Decision Summary
 
 `e2e-agent` is an optional evidence workflow, not a new required workflow stage.
@@ -34,6 +38,10 @@ or confirmed-status promotion path.
 
 Every session still ends through Stage 08. E2E evidence may be mentioned in the
 handoff summary, but `workflow:validate` remains the structural validation command.
+
+Stage 07 is intentionally skipped unless normal generated-view sources changed
+(route, nav, catalog, codegen, lint, policy/layout). Web E2E test files are not
+`generated/do_not_edit` derived views owned by Stage 07.
 
 ## Invocation Policy
 
@@ -93,6 +101,10 @@ tests/web-plans/{domain}/{screen-slug}.plan.md
 The plan is not a ScreenSpec, VisualSpec, or product contract. It is a test
 generation input and evidence draft.
 
+`{screen-slug}` is a deterministic filesystem-safe rendering of the canonical
+`screen_id` (lowercase, non-alphanumeric runs collapsed to `-`). The plan should
+store the canonical `screen_id` and ScreenSpec path to prevent slug drift.
+
 ### `generate`
 
 Use an approved plan and a running web surface to create Playwright tests.
@@ -114,6 +126,11 @@ tests/web/{domain}/{screen-slug}.spec.ts
 Generated tests are commit-worthy regression assets when reviewed. They remain
 evidence, not source of truth.
 
+This path is a consumer-owned E2E surface, not a readiness `allowed_paths` grant.
+Product code fixes still go through Stage 06 path governance; creating new
+`tests/web/**` files requires a user request or confirmation. A fixture-green web
+test does not prove real integration correctness or native/mobile correctness.
+
 ### `verify`
 
 Run existing Playwright web tests and report results as evidence.
@@ -127,7 +144,7 @@ Inputs:
 Outputs:
 
 - normal Playwright report / trace artifacts,
-- optional Verification Matrix or run-report summary link.
+- run-report summary link, Stage 08 handoff text, or consumer-defined verification note.
 
 Reports and traces are usually not committed; the workflow docs should retain
 links or summaries only.
@@ -200,6 +217,12 @@ Require explicit user request or confirmation for:
 
 This draft deliberately stops before `e2e-index`, validate checks 14-16, or CI
 smoke wiring. Those belong after real plan/test artifacts accumulate.
+
+It also deliberately does **not** require a consumer-facing Verification Matrix.
+That would need its own payload infrastructure first: reference doc, template,
+path convention, and validation/packing tests. Until then, the live skill should
+only mention run reports, Stage 08 handoff evidence, or consumer-defined
+verification notes.
 
 Future warning-first candidates:
 

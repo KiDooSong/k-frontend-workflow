@@ -522,6 +522,7 @@ test('manifest retains exclude guards for the moved dev-doc directories', () => 
 const WORKFLOW_SKILLS = [
   { skill: 'reconcile-input', stage: '04-reconcile-input' },
   { skill: 'implement-screen', stage: '06-implement-screen-or-code' },
+  { skill: 'e2e-agent', stage: '08-validate-and-report' },
 ];
 
 test('doc-ownership map exists, maps concepts to homes, and is wired into the spine', () => {
@@ -562,6 +563,38 @@ test('workflow skills are compact routers that link the spine, their stage doc, 
     const lines = raw.split('\n').length;
     assert.ok(lines <= 120, `${skill}/SKILL.md should stay a compact router (<=120 lines), got ${lines}`);
   }
+});
+
+test('e2e-agent optional web evidence surface is wired without a missing matrix dependency', () => {
+  const skill = fs.readFileSync(path.join(KIT_ROOT, 'skills', 'e2e-agent', 'SKILL.md'), 'utf8');
+  const readme = fs.readFileSync(path.join(KIT_ROOT, 'README.md'), 'utf8');
+  const startHere = fs.readFileSync(path.join(KIT_ROOT, 'docs', 'reference', 'workflow-stages', '00-start-here.md'), 'utf8');
+  const stage08 = fs.readFileSync(path.join(KIT_ROOT, 'docs', 'reference', 'workflow-stages', '08-validate-and-report.md'), 'utf8');
+  const spine = fs.readFileSync(path.join(KIT_ROOT, 'docs', 'reference', 'workflow-spine.md'), 'utf8');
+  const ownership = fs.readFileSync(path.join(KIT_ROOT, 'docs', 'reference', 'doc-ownership.md'), 'utf8');
+
+  assert.match(skill, /^name: e2e-agent$/m);
+  assert.match(skill, /e2e 짜줘/);
+  assert.match(skill, /tests\/web-plans\/\{domain\}/);
+  assert.match(skill, /tests\/web\/\{domain\}/);
+  assert.match(skill, /consumer-owned E2E 표면/);
+  assert.match(skill, /fixture green/);
+  assert.match(skill, /Stage 07의 generated derived view가 아니다/);
+  assert.doesNotMatch(skill, /Verification Matrix/);
+
+  assert.match(stage08, /e2e-agent/);
+  assert.match(stage08, /\.\.\/\.\.\/\.\.\/skills\/e2e-agent\/SKILL\.md/);
+  assert.match(stage08, /\*\*optional and never a gate\*\*/);
+  assert.doesNotMatch(stage08, /Verification Matrix/);
+
+  assert.match(startHere, /e2e-agent/);
+  assert.match(startHere, /\|\s*05\/06\/08\s*\|\s*e2e-agent\s*\|/);
+  assert.match(readme, /Optional Web E2E Evidence/);
+  assert.match(readme, /skills\/e2e-agent\/SKILL\.md/);
+  assert.match(readme, /tests\/web-plans\/\*\*/);
+  assert.match(spine, /e2e-agent/);
+  assert.match(spine, /optional evidence/);
+  assert.match(ownership, /optional web E2E evidence/);
 });
 
 test('no skill embeds the canonical task-artifact matrix or generated-file tables', () => {
@@ -727,8 +760,9 @@ test('session-learnings capture surface is wired into template, skill, schema, s
   assert.match(matrix, /Capture a workflow \/ adoption learning \| 08/);
 });
 
-test('capture-learning skill and session-learnings template have no broken relative links', () => {
+test('optional skill surfaces have no broken relative links', () => {
   const files = [
+    path.join(KIT_ROOT, 'skills', 'e2e-agent', 'SKILL.md'),
     path.join(KIT_ROOT, 'skills', 'capture-learning', 'SKILL.md'),
     path.join(KIT_ROOT, 'templates', 'meta', 'session-learnings.template.md'),
   ];
