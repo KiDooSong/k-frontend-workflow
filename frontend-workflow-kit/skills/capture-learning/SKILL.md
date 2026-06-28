@@ -33,7 +33,8 @@ description: 세션 끝 무렵 발견한 재현 가능한 교훈(워크플로우
    어떤 docs/files/commands 를 읽거나 실행했나 · 무엇을 기대했나 · 실제로 무슨 일이 났나 ·
    어떤 우회를 썼나 · 다음 검토자가 먼저 볼 것.
 5. 파일이 없으면 위 템플릿으로 만든다. 다음 비어있는 `LRN-####` (zero-padded, 단조 증가) 항목을 append 한다.
-6. 항목 id 와 한 줄 요약을 보고한다 (예: `LRN-0007: 카탈로그 재생성 리마인더 누락 (kit, skill update)`).
+6. 항목 id 와 한 줄 요약을 보고한다. 요약 괄호는 Stage 08 핸드오프와 같은 `({scope}, {candidate follow-up})`
+   형식이고 `{scope}` 는 Repo Scope enum 값이다 (예: `LRN-0007: 카탈로그 재생성 리마인더 누락 (frontend-workflow-kit, skill update)`).
 7. 긴급/blocking 이면 지금 일반 이슈/태스크를 만들자고 *제안*한다 — 자동으로 만들지 않는다.
 
 ## 금지

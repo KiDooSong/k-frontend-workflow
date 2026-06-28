@@ -634,6 +634,7 @@ test('session-learnings capture surface is wired into template, skill, schema, s
   const skill = fs.readFileSync(path.join(KIT_ROOT, 'skills', 'capture-learning', 'SKILL.md'), 'utf8');
   const schema = JSON.parse(fs.readFileSync(path.join(KIT_ROOT, 'schemas', 'frontmatter.schema.json'), 'utf8'));
   const stage08 = fs.readFileSync(path.join(KIT_ROOT, 'docs', 'reference', 'workflow-stages', '08-validate-and-report.md'), 'utf8');
+  const startHere = fs.readFileSync(path.join(KIT_ROOT, 'docs', 'reference', 'workflow-stages', '00-start-here.md'), 'utf8');
   const agents = fs.readFileSync(path.join(KIT_ROOT, 'templates', 'repo', 'AGENTS.template.md'), 'utf8');
   const matrix = fs.readFileSync(path.join(KIT_ROOT, 'docs', 'reference', 'task-artifact-matrix.md'), 'utf8');
 
@@ -652,10 +653,27 @@ test('session-learnings capture surface is wired into template, skill, schema, s
   assert.match(template, /How to review/);
   assert.match(template, /Group entries by/);
   assert.match(template, /LRN-0001/);
-  assert.match(template, /Repo Scope/);
-  assert.match(template, /Candidate Follow-up/);
   assert.match(template, /consumer-repo/);
   assert.match(template, /frontend-workflow-kit/);
+  // Pin the full canonical LRN entry schema (exact column labels) so field drift is caught.
+  for (const field of [
+    'Date',
+    'Repo Scope',
+    'Workflow Stage',
+    'Trigger',
+    'Context Read',
+    'Expected',
+    'Actual / Friction',
+    'Workaround Used',
+    'Evidence',
+    'Suspected Root Cause',
+    'Impact',
+    'Candidate Follow-up',
+    'Owner Guess',
+    'Status',
+  ]) {
+    assert.match(template, new RegExp(`\\|\\s*${field.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}\\s*\\|`), `template should keep LRN field "${field}"`);
+  }
 
   // Skill: short, template-driven, classifies scope, never auto-files, never records secrets,
   // never invents missing facts, and links the template + spine + stage 08.
@@ -670,6 +688,9 @@ test('session-learnings capture surface is wired into template, skill, schema, s
   assert.match(skill, /LRN-####/);
   assert.match(skill, /발명하지 않는다/);
   assert.match(skill, /모르면[^\n]*unknown/);
+  // The report-summary example must use a valid Repo Scope enum value in the {scope} slot,
+  // not a bare "kit" (matches Stage 08's "({scope}, {candidate follow-up})" pattern).
+  assert.doesNotMatch(skill, /\(kit,/, 'skill example {scope} should be a Repo Scope enum value (frontend-workflow-kit), not "kit"');
   const skillLines = skill.split('\n').length;
   assert.ok(skillLines <= 80, `capture-learning/SKILL.md should stay short (<=80 lines), got ${skillLines}`);
 
@@ -686,6 +707,11 @@ test('session-learnings capture surface is wired into template, skill, schema, s
   assert.match(stage08, /Learnings captured/);
   assert.match(stage08, /LRN-0007/);
   assert.match(stage08, /\.\.\/\.\.\/\.\.\/skills\/capture-learning\/SKILL\.md/);
+
+  // Start Here router: a row points the capture ask at Stage 08 + capture-learning.
+  assert.match(startHere, /capture-learning/);
+  assert.match(startHere, /session-learnings/);
+  assert.match(startHere, /\|\s*08\s*\|\s*capture-learning/);
 
   // AGENTS template: session-end prompt with the non-negotiable guardrails.
   assert.match(agents, /session-learnings/);
