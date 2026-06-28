@@ -106,6 +106,62 @@ export default defineConfig({
 });
 ```
 
+## Worktrees and Sessions
+
+`init-agents` output is repo content. Generate it once, review the diff, and
+commit the intended files instead of regenerating them in every worktree:
+
+- For Claude-loop setup, commit `.mcp.json`, `.claude/agents/playwright-test-*.md`,
+  the seed file, and `specs/` when those outputs are intentional.
+- For Codex-loop setup, commit the generated `.codex/agents/playwright_test_*.toml`
+  files and any intended seed/planning scaffold output.
+- A git worktree is a checkout of its branch, so worktrees created after those
+  files are committed inherit them automatically. Untracked `init-agents` output
+  is the normal reason a fresh worktree appears to "miss" the setup.
+
+MCP mounting is session-time behavior:
+
+- The host agent process mounts `.mcp.json` when the session starts, from the
+  session/workspace root. Writing `.mcp.json` mid-run does not hot-mount the
+  `playwright-test` server into the current session; restart the session or start
+  a new one rooted where the committed `.mcp.json` lives.
+- Planner, generator, and healer subagent calls consume the parent session's
+  already-mounted MCP tools. A subagent call does not mount MCP again and does not
+  search a different working directory for `.mcp.json`.
+- Parallel worktree sessions normally spawn separate `playwright-test` stdio
+  processes, so the larger practical collision is the app under test and the
+  generated run artifacts: web server ports, Playwright `outputDir`, reports, and
+  traces. Set `E2E_PORT`, `E2E_BASE_URL`, and `E2E_RUN_ID` per session, and keep
+  reports/output under run-specific directories.
+
+## Path model
+
+Three path systems are in play. Only generated tests and the seed are bound to
+the configured Playwright `testDir`.
+
+| Artifact | Where it lands | Set by | Bound to `testDir`? |
+|---|---|---|---|
+| Input contracts (ScreenSpec, visual/Figma mapping, templates) | kit/consumer doc tree | agent context paths | No |
+| Plan (`plan.md`) | any workspace-relative path | planner save path | No |
+| Generated test (`*.spec.ts`) | inside configured `testDir` | generator file path | Yes |
+| Seed (`seed.spec.ts`) | inside configured `testDir` | setup/discovery under `testDir` | Yes |
+
+- The workspace root is the session cwd: the consumer repo root, a worktree root,
+  or a scratch consumer directory for kit dogfood. Plan and test paths must
+  resolve inside that workspace.
+- A plan path is workspace-relative and not tied to `testDir`. This kit's
+  canonical final plan path is `tests/web-plans/{domain}/{screen-slug}/plan.md`,
+  but the generator receives the plan body, not authority from its file location.
+- Generated tests must stay inside the configured `testDir`. With the kit's
+  default `testDir: './tests/web'`, generated test subpaths follow
+  `tests/web/{domain}/{screen-slug}/<suite>.spec.ts`: a folder per screen with
+  the 1..N suite files for that screen.
+- The seed must also live inside `testDir` so planner/generator/healer setup can
+  discover and run it with the selected Playwright project.
+- Do not set `testDir` to the repo root. Seed setup and Playwright discovery
+  would scan unrelated repo files, including non-Playwright `*.test.*` files.
+  Keep `testDir` dedicated, such as `tests/web`.
+
 ## Kit Mapping
 
 - ScreenSpec -> planner context.
