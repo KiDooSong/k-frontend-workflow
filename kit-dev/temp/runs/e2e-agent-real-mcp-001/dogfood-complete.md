@@ -38,8 +38,9 @@ Recommended adopted output:
    spec file per suite, not per scenario (direct 5→3 files, agent 17→4). PR #114's
    "one test per file" concern does not hold in practice. Files are named semantically
    (`coupon-list/detail/copy/apply`), not by `screen_id` slug — a divergence from the kit's
-   `tests/web/{domain}/{screen-slug}.spec.ts` convention the kit should reconcile (accept
-   the planner's per-suite semantic split, or re-bucket into one file per screen).
+   then-current `tests/web/{domain}/{screen-slug}.spec.ts` convention, **now reconciled** to a
+   folder per screen `tests/web/{domain}/{screen-slug}/<suite>.spec.ts` (see Candidate rules
+   below).
 3. **Coverage is set by the planner, not the generator.** The agent planner found 3 real
    behaviors the direct planner missed — View clears the status, Apply accumulates per
    coupon, Back resets all applied state — each verified against `app/index.html`. Generator

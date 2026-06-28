@@ -63,8 +63,10 @@ await expect(page.getByTestId('status')).toHaveText('Copied WELCOME10 to clipboa
 If an assertion would pass whether or not the handler does anything, it is inert:
 it adds maintenance and false coverage (best case tautological, worst case flaky
 on headless/CI). The canonical example is `toBeFocused()` immediately after
-`.click()` — it passes by Playwright's click semantics regardless of app logic.
-Remove it, or replace it with a check of real app state (§A1).
+`.click()` — clicking a control typically moves browser focus onto it, so the
+assertion passes regardless of what the handler does (and the focus behavior can
+itself differ across browsers). Remove it, or replace it with a check of real app
+state (§A1).
 
 - **Why this is a *review* rule:** generators are faithful, not critical — they
   freeze a weak plan line into green. The reviewer, not the generator, must catch
@@ -146,11 +148,13 @@ page.getByRole('listitem').filter({ hasText: 'Welcome 10%' })
 
 ### B2. Treat a strict-mode multi-match as a signal, not noise
 
-When a locator matches more than one element, Playwright fails loudly rather than
-guessing. That is desirable. **Fix the selector** (scope it — §B1); do not
-silence it with `.first()` / `.last()` / `.nth()` / `strict: false`. Failing on
-an ambiguous selector is better than silently asserting against the wrong
-element.
+When a locator used in a single-element action or assertion (`click`, `fill`,
+`toHaveText`, …) matches more than one element, Playwright fails loudly rather
+than guessing — strict mode (multi-element APIs like `count()` / `all()` are
+intentionally exempt). That failure is desirable: **fix the selector** (scope it
+— §B1); do not silence it with `.first()` / `.last()` / `.nth()` /
+`strict: false`. Failing on an ambiguous selector is better than silently
+asserting against the wrong element.
 [Treymack — debugging strict-mode violations](https://www.treymack.com/blog/debugging-playwright-strict-mode-violations/)
 
 ### B3. Prefer user-first locators; use test-ids for record-specific targeting
