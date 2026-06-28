@@ -52,7 +52,8 @@ The blockers are:
 - kit repo is not a runnable consumer web app;
 - Playwright is not installed as a repo dependency;
 - Playwright `init-agents` output is absent;
-- planner MCP tools are not available in the current Codex session;
+- generated `playwright-test` MCP tools are not available in the current Codex
+  session, so `planner_setup_page` / `planner_save_plan` cannot run;
 - no seed test or Playwright config exists for a plan-only agent handoff.
 
 Conclusion: this is not evidence that a manual scaffold is an equivalent

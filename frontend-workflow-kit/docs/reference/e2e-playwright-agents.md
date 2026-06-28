@@ -23,16 +23,34 @@ Run the Playwright setup in the consumer repo, choosing the local agent loop:
 
 ```bash
 npx playwright init-agents --loop=codex
+npx playwright init-agents --loop=claude
 ```
 
-Other loops, such as `claude`, `vscode`, or `opencode`, may be used when that is
-the repo's active agent environment. Regenerate the agent definitions whenever
-Playwright is updated so tools and instructions stay in sync.
+Use the loop matching the repo's active agent environment. Other loops, such as
+`vscode` or `opencode`, may be used when appropriate. Regenerate the agent
+definitions whenever Playwright is updated so tools and instructions stay in sync.
 
 The setup creates agent definitions plus the supporting planning surface, such
 as Markdown plan directory files, a seed test, and Playwright MCP wiring. A
 consumer repo still owns its Playwright config, web server command, seed data,
 and generated tests.
+
+The MCP wiring is required for real planner/generator/healer work. Without the
+`playwright-test` MCP tools, the planner cannot call `planner_setup_page` /
+`planner_save_plan`, the generator cannot write tests from live exploration, and
+the healer cannot run/debug tests through the agent workflow. A docs-only
+preflight scaffold can be written without MCP, but that is not equivalent to a
+Playwright planner run.
+
+Observed loop-specific outputs:
+
+- `--loop=codex` creates `.codex/agents/playwright_test_*.toml`; each agent embeds
+  its own `[mcp_servers.playwright-test]` command.
+- `--loop=claude` creates `.claude/agents/playwright-test-*.md` plus repo-root
+  `.mcp.json` for the shared `playwright-test` server.
+
+If `.mcp.json`, `.codex/agents/`, or `.claude/agents/` already exist, inspect the
+diff and merge intentionally instead of blindly overwriting local agent setup.
 
 `init-agents` can read the consumer Playwright config and project selection:
 
@@ -61,19 +79,43 @@ ad-hoc shell startup:
 - Keep Playwright reports, traces, and `outputDir` in run-specific directories
   and do not commit them by default.
 
+Minimal consumer config shape:
+
+```ts
+import { defineConfig } from '@playwright/test';
+
+const port = Number(process.env.E2E_PORT ?? 3100);
+const baseURL = process.env.E2E_BASE_URL ?? `http://127.0.0.1:${port}`;
+const runId = process.env.E2E_RUN_ID ?? 'local';
+
+export default defineConfig({
+  testDir: './tests/web',
+  outputDir: `.playwright-results/${runId}`,
+  use: { baseURL },
+  webServer: {
+    command: `npm run web -- --port ${port}`,
+    url: baseURL,
+    reuseExistingServer: !process.env.CI,
+  },
+});
+```
+
 ## Kit Mapping
 
 - ScreenSpec -> planner context.
 - [web-plan.template.md](../../templates/e2e/web-plan.template.md) -> scaffold
   for preflight notes, kit dogfood, or human-reviewed context before planner use.
-- Official Playwright examples use `specs/*.plan.md`, and
-  `planner_save_plan.fileName` can save to any relative workspace path. For this
-  kit, use `tests/web-plans/{domain}/{screen-slug}.plan.md` only as the reviewed
-  canonical final plan, or follow the consumer's established plan path.
+- Official Playwright setup creates `specs/` for planner output. Until a real
+  planner session verifies path redirection, treat `specs/` as the raw planner
+  output surface.
+- For this kit, copy or curate the human-reviewed canonical final plan to
+  `tests/web-plans/{domain}/{screen-slug}/plan.md`, or follow the consumer's
+  established plan path.
 - Per-run drafts must be isolated, for example
   `tests/web-plans/{domain}/{screen-slug}/drafts/{run-id}.plan.md` or a
   repo-local run folder such as `kit-dev/temp/runs/<run-id>/...`.
-- Generator output -> `tests/web/{domain}/{screen-slug}.spec.ts`.
+- Generator output -> `tests/web/{domain}/{screen-slug}/{scenario-slug}.spec.ts`
+  unless the consumer repo already has a clearer convention.
 
 Do not treat the scaffold template as the normal substitute for planner output.
 If a consumer repo lacks Test Agents setup, stop with setup required instead of

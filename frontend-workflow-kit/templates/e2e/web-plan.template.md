@@ -22,10 +22,11 @@ normal generator handoff.
 
 ## Output Path
 
-- Canonical final plan path: `tests/web-plans/{domain}/{screen-slug}.plan.md`
+- Raw planner output path: `specs/{planner-output}.md`
+- Canonical final plan path: `tests/web-plans/{domain}/{screen-slug}/plan.md`
 - Per-run draft path: `tests/web-plans/{domain}/{screen-slug}/drafts/{run-id}.plan.md`
-- Actual dogfood path, if kit repo dogfood: `kit-dev/temp/runs/{run-id}/tests/web-plans/{domain}/{screen-slug}.plan.md`
-- Future generated test target, if approved later: `tests/web/{domain}/{screen-slug}.spec.ts`
+- Actual dogfood path, if kit repo dogfood: `kit-dev/temp/runs/{run-id}/tests/web-plans/{domain}/{screen-slug}/plan.md`
+- Future generated test target, if approved later: `tests/web/{domain}/{screen-slug}/{scenario-slug}.spec.ts`
 
 ## Shallow Smoke Scope
 
@@ -55,7 +56,8 @@ screen:
   route: "{route}"
   screen_spec: "{path/to/screen-spec.md}"
 output:
-  plan_path: "tests/web-plans/{domain}/{screen-slug}.plan.md"
+  raw_planner_output: "specs/{planner-output}.md"
+  canonical_plan_path: "tests/web-plans/{domain}/{screen-slug}/plan.md"
 states: []
 interactions: []
 exclude:

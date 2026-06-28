@@ -25,7 +25,7 @@ ScreenSpec 기반 **선택형 웹 E2E evidence**를 만든다. 이 스킬은
 
 | 요청/상태 | Mode | 기준 stage |
 |---|---|---|
-| 테스트 계획, e2e 설계, 아직 앱 실행 불명 | `plan` | Stage 05 |
+| 테스트 계획, e2e 설계, planner preflight | `plan` | Stage 05 |
 | 계획이 있고 앱/seed URL/locator가 준비됨 | `generate` | Stage 06 |
 | 기존 테스트 실행, handoff evidence | `verify` | Stage 08 |
 | 실패 evidence가 있고 사용자가 수리 요청 | `heal` | Stage 08/maintenance |
@@ -47,13 +47,13 @@ ScreenSpec 기반 **선택형 웹 E2E evidence**를 만든다. 이 스킬은
 기존 consumer 관례가 있으면 따른다. 없으면:
 
 ```txt
-tests/web-plans/{domain}/{screen-slug}.plan.md
-tests/web/{domain}/{screen-slug}.spec.ts
+tests/web-plans/{domain}/{screen-slug}/plan.md
+tests/web/{domain}/{screen-slug}/{scenario-slug}.spec.ts
 ```
 
 `{screen-slug}`는 canonical `screen_id`를 lowercase로 만들고 non-alphanumeric 문자를 `-`로 치환한 파일명이다(예: `COUPON-001` -> `coupon-001`, `AUTH/SIGNUP_EMAIL` -> `auth-signup-email`; ScreenSpec folder slug가 아니다). plan/test 첫머리에는 canonical `screen_id`, ScreenSpec path, seed/route 출처를 남겨 slug drift를 막는다.
 
-`tests/web-plans/{domain}/{screen-slug}.plan.md`는 reviewed canonical final plan 경로다. 병렬 세션 draft는 run-isolated 경로를 쓴다.
+`tests/web-plans/{domain}/{screen-slug}/plan.md`는 reviewed canonical final plan 경로다. raw planner output은 `specs/` 또는 run-isolated draft 경로에 두고, 검토 후 canonical plan으로 옮긴다.
 
 Kit repo 자체 dogfood에서는 repo-root `tests/web-plans/**`를 만들지 말고 consumer path shape를 `kit-dev/temp/runs/<run-id>/tests/web-plans/...` 아래에 보존한다.
 
@@ -63,7 +63,7 @@ Playwright report/trace는 기본 커밋하지 않는다. 결과는 run report, 
 
 | Mode | 필요한 것 |
 |---|---|
-| `plan` | canonical Screen ID, ScreenSpec, runnable web app/seed, Playwright Test Agents setup |
+| `plan` | canonical Screen ID, ScreenSpec; actual planner run also needs runnable web app/seed and Playwright Test Agents setup |
 | `generate` | approved plan, runnable web app, seed/entry URL, locator strategy, preferably `final-fixture-ui`+ |
 | `verify` | existing tests, Playwright command/config, web server command |
 | `heal` | failing evidence, limited test write scope, explicit user request |

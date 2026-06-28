@@ -25,13 +25,14 @@ records only the setup result and generated file list.
 
 ```bash
 npx -y playwright init-agents --loop=codex
+npx -y playwright init-agents --loop=claude
 ```
 
 ## Result
 
-The command succeeded in the scratch directory.
+Both loop-specific setup commands succeeded in scratch directories.
 
-Observed generated files:
+Observed Codex generated files:
 
 ```txt
 .codex/agents/playwright_test_generator.toml
@@ -41,12 +42,26 @@ seed.spec.ts
 specs/README.md
 ```
 
+Observed Claude generated files:
+
+```txt
+.claude/agents/playwright-test-generator.md
+.claude/agents/playwright-test-healer.md
+.claude/agents/playwright-test-planner.md
+.mcp.json
+seed.spec.ts
+specs/README.md
+```
+
 Notable observations:
 
 - The planner agent definition uses `planner_setup_page` and
   `planner_save_plan`.
-- The planner MCP server command is `cmd /c npx playwright run-test-mcp-server`
-  in the generated Codex agent definition.
+- The planner MCP server command is `cmd /c npx playwright run-test-mcp-server`.
+- Codex stores the `playwright-test` MCP server inside each generated
+  `.codex/agents/playwright_test_*.toml` file.
+- Claude stores agent instructions under `.claude/agents/` and the shared
+  `playwright-test` MCP server in repo-root `.mcp.json`.
 - The default seed file is only a placeholder and still needs consumer-specific
   auth/session/route/data setup before planner or generator use.
 - No Playwright agent definitions are added to the kit payload by this PR.
@@ -79,6 +94,14 @@ Conclusion from the probe: Playwright config/project selection can change the
 seed file directory, but the seed filename remains `seed.spec.ts`, the plan
 scaffold directory remains `specs/`, and Codex agent definitions remain under
 `.codex/agents/`.
+
+## MCP Requirement
+
+MCP setup is required for actual planner/generator/healer execution. Without the
+generated `playwright-test` MCP server, the planner cannot call
+`planner_setup_page` or `planner_save_plan`; generator/healer likewise lose their
+browser/test tools. A markdown scaffold can still be written, but that is only
+preflight evidence and not a real Playwright Test Agents run.
 
 ## Conclusion
 

@@ -592,6 +592,7 @@ test('e2e-agent optional web evidence surface is wired without a missing matrix 
   assert.match(skill, /AUTH\/SIGNUP_EMAIL` -> `auth-signup-email/);
   assert.match(skill, /kit-dev\/temp\/runs\/<run-id>\/tests\/web-plans/);
   assert.match(skill, /reviewed canonical final plan/);
+  assert.match(skill, /raw planner output/);
   assert.match(skill, /run-isolated/);
   assert.match(skill, /setup required/);
   assert.match(skill, /planner를 우선 호출/);
@@ -605,11 +606,18 @@ test('e2e-agent optional web evidence surface is wired without a missing matrix 
   assert.match(planTemplate, /## Planner Context Packet/);
   assert.match(planTemplate, /## Generator Handoff Boundary/);
   assert.match(planTemplate, /prefer real\s+planner output over this template/);
+  assert.match(planTemplate, /Raw planner output path: `specs\/\{planner-output\}\.md`/);
+  assert.match(planTemplate, /Canonical final plan path: `tests\/web-plans\/\{domain\}\/\{screen-slug\}\/plan\.md`/);
   assert.match(planTemplate, /Per-run draft path/);
   assert.doesNotMatch(planTemplate, /Verification Matrix/);
 
   assert.match(setupDoc, /planner -> generator -> healer/);
   assert.match(setupDoc, /npx playwright init-agents --loop=codex/);
+  assert.match(setupDoc, /--loop=claude/);
+  assert.match(setupDoc, /MCP wiring is required/);
+  assert.match(setupDoc, /\.codex\/agents\/playwright_test_\*\.toml/);
+  assert.match(setupDoc, /\.claude\/agents\/playwright-test-\*\.md/);
+  assert.match(setupDoc, /\.mcp\.json/);
   assert.match(setupDoc, /--config playwright\.config\.ts --project web/);
   assert.match(setupDoc, /selected Playwright `testDir` or project\s+`testDir`/);
   assert.match(setupDoc, /`seed\.spec\.ts` filename/);
@@ -618,10 +626,10 @@ test('e2e-agent optional web evidence surface is wired without a missing matrix 
   assert.match(setupDoc, /use\.baseURL/);
   assert.match(setupDoc, /E2E_BASE_URL/);
   assert.match(setupDoc, /reuseExistingServer: !process\.env\.CI/);
-  assert.match(setupDoc, /planner_save_plan\.fileName/);
+  assert.match(setupDoc, /raw planner\s+output surface/);
   assert.match(setupDoc, /reviewed\s+canonical final plan/);
   assert.match(setupDoc, /Per-run drafts must be isolated/);
-  assert.match(setupDoc, /Regenerate the agent definitions whenever\s+Playwright is updated/);
+  assert.match(setupDoc, /Regenerate the agent\s+definitions whenever Playwright is updated/);
   assert.match(setupDoc, /ScreenSpec -> planner context/);
   assert.match(setupDoc, /stop with setup required/);
   assert.doesNotMatch(setupDoc, /Verification Matrix/);
