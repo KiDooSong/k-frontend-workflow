@@ -59,7 +59,7 @@ Point setup at the consumer config/project so the seed lands inside the
 configured `testDir` instead of the repo root:
 
 ```bash
-npx playwright init-agents --loop=claude --config playwright.config.ts --project chromium
+npx playwright init-agents --loop=claude --config playwright.config.ts --project web
 ```
 
 **Commit candidates** — review the diff and merge intentionally; if `.mcp.json`,
@@ -70,8 +70,7 @@ agent setup:
   loop).
 - `.claude/agents/playwright-test-*.md` (Claude loop).
 - the seed (`seed.spec.ts`) under the configured `testDir`.
-- `specs/README.md` and the `specs/` planning scaffold when the output is
-  intentional.
+- the `specs/` planning scaffold when the output is intentional.
 - `playwright.config.*` changes.
 
 **Do not commit:**
@@ -116,42 +115,34 @@ At minimum the consumer config must:
 
 ## D. Path model
 
-Three path systems are in play; only generated tests and the seed are bound to
-the configured `testDir`. The full table is in
-[e2e-playwright-agents.md → Path model](e2e-playwright-agents.md#path-model).
+Only generated tests and the seed are bound to the configured `testDir`; plans
+are not. The full table (the three path systems and what each is bound to) is in
+[e2e-playwright-agents.md → Path model](e2e-playwright-agents.md#path-model) —
+this guide only names the consumer's write targets so they are in hand while
+adopting:
 
-| Artifact | Path | Bound to `testDir`? |
-|---|---|---|
-| Raw planner output | `specs/` (official default) or an explicit workspace-relative path | No |
-| Canonical final plan | `tests/web-plans/{domain}/{screen-slug}/plan.md` | No |
-| Per-run draft | `tests/web-plans/{domain}/{screen-slug}/drafts/{run-id}/plan.md` | No |
-| Generated tests | `tests/web/{domain}/{screen-slug}/<suite>.spec.ts` | Yes |
-| Seed | `seed.spec.ts` inside `testDir` | Yes |
+- raw planner output → `specs/` (official default) or an explicit
+  workspace-relative path.
+- canonical final plan → `tests/web-plans/{domain}/{screen-slug}/plan.md`.
+- per-run draft → `tests/web-plans/{domain}/{screen-slug}/drafts/{run-id}/plan.md`.
+- generated tests → `tests/web/{domain}/{screen-slug}/<suite>.spec.ts` — a folder
+  per screen holding the 1..N suite files for that screen (a single-suite screen
+  is still a `{screen-slug}/` folder with one file), kept inside `testDir`.
 
-- Generated tests are a **folder per screen** holding the 1..N suite files for
-  that screen; a single-suite screen is still a `{screen-slug}/` folder with one
-  file. They must stay inside the configured `testDir`.
-- The plan is **not** tied to `testDir`; the generator receives the plan body,
-  not authority from its file location.
-- `{screen-slug}` is the canonical `screen_id` lowercased with non-alphanumerics
-  replaced by `-`. A planner "suite" that is actually a distinct canonical screen
-  goes to its own `screen-slug`, not nested as a suite
-  ([screen-identity.md](screen-identity.md)).
+`{screen-slug}` is the canonical `screen_id` lowercased with non-alphanumerics
+replaced by `-`; a planner "suite" that is really a distinct canonical screen
+gets its own `screen-slug`, not nested as a suite
+([screen-identity.md](screen-identity.md)).
 
 ## E. Session / MCP model
 
-Details in
+`.mcp.json` is session-time wiring, which drives two consumer-visible habits:
+generate the setup in a committed session and start from there (writing
+`.mcp.json` mid-run does not hot-mount it), and treat MCP as parent-session state
+(planner / generator / healer subagents reuse the already-mounted tools). The
+full mounting model — start-time mount root, no hot-mount, subagent reuse,
+worktree inheritance — is in
 [e2e-playwright-agents.md → Worktrees and Sessions](e2e-playwright-agents.md#worktrees-and-sessions).
-The operational facts to plan around:
-
-- `.mcp.json` is mounted **at session start**, from the session/workspace root.
-- Writing `.mcp.json` mid-run does **not** hot-mount the `playwright-test` server
-  into the current session — restart, or start a session rooted where the
-  committed `.mcp.json` lives.
-- Planner / generator / healer subagent calls consume the parent session's
-  already-mounted MCP tools; a subagent call does not mount MCP again.
-- A new worktree/session inherits the committed setup, but MCP approval may still
-  be requested again per session.
 
 ## F. Workflow usage
 
