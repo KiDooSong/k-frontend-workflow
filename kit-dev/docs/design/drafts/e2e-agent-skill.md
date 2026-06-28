@@ -95,7 +95,7 @@ Inputs:
 Output:
 
 ```txt
-tests/web-plans/{domain}/{screen-slug}.plan.md
+tests/web-plans/{domain}/{screen-slug}/plan.md
 ```
 
 The plan is not a ScreenSpec, VisualSpec, or product contract. It is a test
@@ -111,7 +111,7 @@ Use an approved plan and a running web surface to create Playwright tests.
 
 Inputs:
 
-- `tests/web-plans/{domain}/{screen-slug}.plan.md`,
+- `tests/web-plans/{domain}/{screen-slug}/plan.md`,
 - Playwright Test Agent setup in the consumer repo,
 - seed test or entry URL,
 - stable testID / accessibility locator strategy,

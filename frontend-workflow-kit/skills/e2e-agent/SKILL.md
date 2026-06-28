@@ -25,7 +25,7 @@ ScreenSpec 기반 **선택형 웹 E2E evidence**를 만든다. 이 스킬은
 
 | 요청/상태 | Mode | 기준 stage |
 |---|---|---|
-| 테스트 계획, e2e 설계, 아직 앱 실행 불명 | `plan` | Stage 05 |
+| 테스트 계획, e2e 설계, planner preflight | `plan` | Stage 05 |
 | 계획이 있고 앱/seed URL/locator가 준비됨 | `generate` | Stage 06 |
 | 기존 테스트 실행, handoff evidence | `verify` | Stage 08 |
 | 실패 evidence가 있고 사용자가 수리 요청 | `heal` | Stage 08/maintenance |
@@ -38,6 +38,8 @@ ScreenSpec 기반 **선택형 웹 E2E evidence**를 만든다. 이 스킬은
 - 시각 evidence가 필요하면 [figma-component-mapping.template.md](../../templates/screen/figma-component-mapping.template.md) 계열 문서.
 - 2차 산출물 판단은 [task-artifact-matrix.md](../../docs/reference/task-artifact-matrix.md).
 - 명령 syntax는 [COMMANDS.md](../../COMMANDS.md), route/screen 관례는 [CONVENTIONS.md](../../CONVENTIONS.md).
+- Playwright Test Agents setup은 [e2e-playwright-agents.md](../../docs/reference/e2e-playwright-agents.md).
+- planner context scaffold는 [web-plan.template.md](../../templates/e2e/web-plan.template.md).
 - 기존 `tests/web-plans/**`, `tests/web/**`, Playwright config, web server command.
 
 ## Output Paths
@@ -45,11 +47,15 @@ ScreenSpec 기반 **선택형 웹 E2E evidence**를 만든다. 이 스킬은
 기존 consumer 관례가 있으면 따른다. 없으면:
 
 ```txt
-tests/web-plans/{domain}/{screen-slug}.plan.md
+tests/web-plans/{domain}/{screen-slug}/plan.md
 tests/web/{domain}/{screen-slug}.spec.ts
 ```
 
-`{screen-slug}`는 canonical `screen_id`를 lowercase로 만들고 non-alphanumeric 문자를 `-`로 치환한 파일명이다. plan/test 첫머리에는 canonical `screen_id`, ScreenSpec path, seed/route 출처를 남겨 slug drift를 막는다.
+`{screen-slug}`는 canonical `screen_id`를 lowercase로 만들고 non-alphanumeric 문자를 `-`로 치환한 파일명이다(예: `COUPON-001` -> `coupon-001`, `AUTH/SIGNUP_EMAIL` -> `auth-signup-email`; ScreenSpec folder slug가 아니다). plan/test 첫머리에는 canonical `screen_id`, ScreenSpec path, seed/route 출처를 남겨 slug drift를 막는다.
+
+`tests/web-plans/{domain}/{screen-slug}/plan.md`는 reviewed canonical final plan 경로다. raw planner output은 `specs/` 또는 run-isolated draft 경로에 두고, 검토 후 official planner output body를 보존한 canonical plan으로 옮긴다.
+
+Kit repo 자체 dogfood에서는 repo-root `tests/web-plans/**`를 만들지 말고 consumer path shape를 `kit-dev/temp/runs/<run-id>/tests/web-plans/...` 아래에 보존한다.
 
 Playwright report/trace는 기본 커밋하지 않는다. 결과는 run report, Stage 08 handoff, 또는 consumer가 정의한 verification note에 링크/요약한다.
 
@@ -57,7 +63,7 @@ Playwright report/trace는 기본 커밋하지 않는다. 결과는 run report, 
 
 | Mode | 필요한 것 |
 |---|---|
-| `plan` | canonical Screen ID, ScreenSpec, 유의미한 State/Interaction content |
+| `plan` | canonical Screen ID, ScreenSpec; actual planner run also needs runnable web app/seed and Playwright Test Agents setup |
 | `generate` | approved plan, runnable web app, seed/entry URL, locator strategy, preferably `final-fixture-ui`+ |
 | `verify` | existing tests, Playwright command/config, web server command |
 | `heal` | failing evidence, limited test write scope, explicit user request |
@@ -72,9 +78,9 @@ Playwright report/trace는 기본 커밋하지 않는다. 결과는 run report, 
    npm run workflow:state
    npm run workflow:readiness -- --screen <SCREEN_ID> --json
    ```
-3. context packet을 만든다: screen id/domain/route, State/Interaction rows, 제외할 Open Decisions, copy/a11y/testID anchors, visual facts as evidence only.
-4. `plan`: Playwright planner가 있으면 호출하고, 없으면 draft plan을 작성한다.
-5. `generate`: plan + seed/entry URL로 generator를 쓰고 `tests/web/{domain}/`에 둔다. 생성 전 사용자 확인을 받는다.
+3. context packet을 만든다: screen id/domain/route, `seed_file`/`playwright_project`/`base_url`/`test_dir`, State/Interaction rows, 제외할 Open Decisions, copy/a11y/testID anchors, visual facts as evidence only.
+4. `plan`: consumer repo에 Playwright Test Agents setup이 없으면 멈추고 setup required로 보고한다. 있으면 planner를 우선 호출한다. template은 kit dogfood, preflight notes, human-reviewed context scaffold에만 쓰며 generator input으로 넘기지 않는다. Plan-only는 test runner, generator/healer를 실행하지 않고 `tests/web/**`를 만들지 않는다.
+5. `generate`: approved plan + seed/entry URL로 generator를 쓰고 configured `test_dir` 아래에 둔다. 생성 전 사용자 확인을 받는다.
 6. `verify`: 가장 작은 관련 Playwright command를 실행하고 결과 요약을 남긴다.
 7. `heal`: 실패 evidence 뒤에만 healer를 쓰고 assertion weakening, broad regex, `test.fixme()`를 diff에서 확인한다.
 8. plan-only가 아니거나 workflow docs가 바뀌었으면 `npm run workflow:validate`를 실행한다. 최종 보고는 evidence로만 말한다.
