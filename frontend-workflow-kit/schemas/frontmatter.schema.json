@@ -23,7 +23,8 @@
         "figma-component-mapping",
         "component-guidelines",
         "api-manifest",
-        "screen-source-map"
+        "screen-source-map",
+        "session-learnings"
       ]
     },
     "domain": {

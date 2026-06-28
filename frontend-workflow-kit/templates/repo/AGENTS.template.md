@@ -43,3 +43,4 @@ Keep it short: this is the agent starting point, not the full workflow manual.
 - Run the smallest relevant checks, then run `npm run workflow:validate`.
 - If route, nav, catalog, policy, lint, or codegen sources changed, regenerate the matching generated view or run the advisory generated-file guard.
 - Report which workflow artifacts changed, which generated files were regenerated, and which Open Decisions, Unknowns, or Component Gaps remain open.
+- If the session hit a workflow gap, stale doc, repeated workaround, or consumer-vs-kit boundary issue, append a factual, contextual entry to `docs/frontend-workflow/_meta/session-learnings.md` (use the `capture-learning` skill). Keep it optional, do not store secrets, and do not file issues automatically — review and promotion are manual.

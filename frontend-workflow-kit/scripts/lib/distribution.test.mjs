@@ -84,8 +84,10 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
     'scripts/workflow-state.mjs',
     'skills/implement-screen/SKILL.md',
     'skills/reconcile-input/SKILL.md',
+    'skills/capture-learning/SKILL.md',
     'templates/repo/AGENTS.template.md',
     'templates/screen/screen-spec.template.md',
+    'templates/meta/session-learnings.template.md',
   ]) {
     assert.equal(exists(rel, out), true, `${rel} should be packed`);
   }
@@ -620,4 +622,105 @@ test('safety invariants removed from skills still live in canonical references',
   // allowed_paths / forbidden_paths invariant home
   assert.match(stage06, /allowed_paths/);
   assert.match(stage06, /forbidden_paths/);
+});
+
+// --- Session-learnings capture surface: lightweight, manual, non-gating review backlog. ---
+// These checks pin the wiring so the feature cannot silently lose its template, skill, or the
+// docs that tell an agent when (optionally) to capture a learning — and so its safety framing
+// (no auto-issues, no secrets, not a source of truth, not a gate) stays in the text.
+
+test('session-learnings capture surface is wired into template, skill, schema, stage 08, AGENTS, and the task matrix', () => {
+  const template = fs.readFileSync(path.join(KIT_ROOT, 'templates', 'meta', 'session-learnings.template.md'), 'utf8');
+  const skill = fs.readFileSync(path.join(KIT_ROOT, 'skills', 'capture-learning', 'SKILL.md'), 'utf8');
+  const schema = JSON.parse(fs.readFileSync(path.join(KIT_ROOT, 'schemas', 'frontmatter.schema.json'), 'utf8'));
+  const stage08 = fs.readFileSync(path.join(KIT_ROOT, 'docs', 'reference', 'workflow-stages', '08-validate-and-report.md'), 'utf8');
+  const agents = fs.readFileSync(path.join(KIT_ROOT, 'templates', 'repo', 'AGENTS.template.md'), 'utf8');
+  const matrix = fs.readFileSync(path.join(KIT_ROOT, 'docs', 'reference', 'task-artifact-matrix.md'), 'utf8');
+
+  // Template: meta-register frontmatter (screen-source-map family), review-backlog framing,
+  // context-quality guidance, manual review steps, and the structured entry schema.
+  assert.match(template, /artifact_type: session-learnings/);
+  assert.match(template, /status: draft/);
+  assert.match(template, /review backlog/i);
+  assert.match(template, /source of truth/);
+  assert.match(template, /not\*\* a gate/);
+  assert.match(template, /memory store/);
+  assert.match(template, /does not file GitHub issues/);
+  assert.match(template, /Never record secrets/);
+  assert.match(template, /Minimum context checklist/);
+  assert.match(template, /future reconstructability/i);
+  assert.match(template, /How to review/);
+  assert.match(template, /Group entries by/);
+  assert.match(template, /LRN-0001/);
+  assert.match(template, /Repo Scope/);
+  assert.match(template, /Candidate Follow-up/);
+  assert.match(template, /consumer-repo/);
+  assert.match(template, /frontend-workflow-kit/);
+
+  // Skill: short, template-driven, classifies scope, never auto-files, never records secrets,
+  // never invents missing facts, and links the template + spine + stage 08.
+  assert.match(skill, /^name: capture-learning$/m);
+  assert.match(skill, /_meta\/session-learnings\.md/);
+  assert.match(skill, /templates\/meta\/session-learnings\.template\.md/);
+  assert.match(skill, /workflow-spine\.md/);
+  assert.match(skill, /08-validate-and-report\.md/);
+  assert.match(skill, /이슈를 자동 생성하지 않는다/);
+  assert.match(skill, /비밀을 기록하지 않는다/);
+  assert.match(skill, /consumer-repo.*frontend-workflow-kit.*both.*unknown/);
+  assert.match(skill, /LRN-####/);
+  assert.match(skill, /발명하지 않는다/);
+  assert.match(skill, /모르면[^\n]*unknown/);
+  const skillLines = skill.split('\n').length;
+  assert.ok(skillLines <= 80, `capture-learning/SKILL.md should stay short (<=80 lines), got ${skillLines}`);
+
+  // Schema: artifact_type enum carries session-learnings (consistent with screen-source-map).
+  assert.ok(
+    schema.properties.artifact_type.enum.includes('session-learnings'),
+    'frontmatter schema enum should include session-learnings',
+  );
+
+  // Stage 08: optional, non-gating capture step + skill/template links + handoff summary field.
+  assert.match(stage08, /capture-learning/);
+  assert.match(stage08, /session-learnings/);
+  assert.match(stage08, /optional and never a gate/i);
+  assert.match(stage08, /Learnings captured/);
+  assert.match(stage08, /LRN-0007/);
+  assert.match(stage08, /\.\.\/\.\.\/\.\.\/skills\/capture-learning\/SKILL\.md/);
+
+  // AGENTS template: session-end prompt with the non-negotiable guardrails.
+  assert.match(agents, /session-learnings/);
+  assert.match(agents, /capture-learning/);
+  assert.match(agents, /do not store secrets/i);
+  assert.match(agents, /do not file issues automatically/i);
+
+  // Task matrix: a capture row in both the main matrix and the stage reference.
+  assert.match(matrix, /Capture a workflow \/ adoption learning/);
+  assert.match(matrix, /session-learnings\.md/);
+  assert.match(matrix, /auto-file GitHub issues/);
+  assert.match(matrix, /Treat captured entries as source of truth/);
+  assert.match(matrix, /Capture a workflow \/ adoption learning \| 08/);
+});
+
+test('capture-learning skill and session-learnings template have no broken relative links', () => {
+  const files = [
+    path.join(KIT_ROOT, 'skills', 'capture-learning', 'SKILL.md'),
+    path.join(KIT_ROOT, 'templates', 'meta', 'session-learnings.template.md'),
+  ];
+  const linkRe = /\]\(([^)]+)\)/g;
+  for (const file of files) {
+    const raw = fs.readFileSync(file, 'utf8');
+    let match;
+    while ((match = linkRe.exec(raw)) !== null) {
+      const target = match[1].trim();
+      if (/^(https?:|mailto:|#)/.test(target)) continue;
+      const rel = target.split('#')[0];
+      if (!rel) continue;
+      const resolved = path.resolve(path.dirname(file), rel);
+      assert.equal(
+        fs.existsSync(resolved),
+        true,
+        `${path.relative(KIT_ROOT, file).replace(/\\/g, '/')} links to missing ${target}`,
+      );
+    }
+  }
 });

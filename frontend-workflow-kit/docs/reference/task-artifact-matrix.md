@@ -31,6 +31,7 @@ If ScreenSpec frontmatter or parsed body sections changed, run `workflow:state` 
 | Change project layout or Tier3 layers | `project-layout.yaml`, layer inventory, implementation-mode policy, policy draft docs | `project-layout.yaml` intentionally; review-only policy draft outputs | `workflow:doctor`; `workflow:state`; `workflow:readiness`; `workflow:policy-draft`; `workflow:validate` | Replace live policy or promote hard gates without human review |
 | Regenerate generated views | `generated-files.md`, artifact manifest, source docs/code for the generated file | Generated output through the owning command only | `workflow:state`, `workflow:catalog`, `workflow:route-tree`, `workflow:nav-graph`, `workflow:policy-draft`, `workflow:lint-gen`, or codegen command as applicable; `workflow:check-generated` for advisory drift | Hand-edit `generated/do_not_edit` outputs |
 | Work across multiple sessions | Recent inputs, Reconciliation Register, Open Decisions, component gaps, state/readiness/validate output for target screen/domain | Only current task artifacts | Before starting: inspect state/readiness/validate and relevant registers. Before finishing: validate and report updated artifacts/follow-ups | Assume a prior session updated generated files or closed human-owned gates |
+| Capture a workflow / adoption learning | `_meta/session-learnings.md` (the session-learnings template), workflow spine Stage 08 | `_meta/session-learnings.md` only — append one `LRN-####` entry via the `capture-learning` skill | None required; optionally `workflow:validate` (it ignores `_meta/`, so absence/presence never hard-fails) | Treat captured entries as source of truth; auto-file GitHub issues; record secrets or raw private source; make it a gate |
 
 ## Stage Reference
 
@@ -53,6 +54,7 @@ Full index: [workflow-spine.md](workflow-spine.md); router:
 | Accept component gap | 09 → 06/07 |
 | Resolve Open Decision / close Unknown / promote confirmed | 09 |
 | Change project-layout / Tier3 layers | 10 → 07/08 |
+| Capture a workflow / adoption learning | 08 |
 
 These stage numbers are stable, greppable prefixes (`workflow-stages/NN-*.md`).
 
