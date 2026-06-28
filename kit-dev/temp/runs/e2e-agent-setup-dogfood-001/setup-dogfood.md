@@ -51,6 +51,35 @@ Notable observations:
   auth/session/route/data setup before planner or generator use.
 - No Playwright agent definitions are added to the kit payload by this PR.
 
+## Config Probe
+
+A follow-up scratch probe checked whether `playwright.config.ts` affects setup
+paths. The scratch files were removed after inspection.
+
+Observed results:
+
+```txt
+no config:
+  seed.spec.ts
+  specs/README.md
+  .codex/agents/playwright_test_*.toml
+
+--config playwright.config.ts with testDir: "./tests/web":
+  tests/web/seed.spec.ts
+  specs/README.md
+  .codex/agents/playwright_test_*.toml
+
+--config playwright.config.ts --project webkit where project.testDir is "./tests/webkit":
+  tests/webkit/seed.spec.ts
+  specs/README.md
+  .codex/agents/playwright_test_*.toml
+```
+
+Conclusion from the probe: Playwright config/project selection can change the
+seed file directory, but the seed filename remains `seed.spec.ts`, the plan
+scaffold directory remains `specs/`, and Codex agent definitions remain under
+`.codex/agents/`.
+
 ## Conclusion
 
 The setup path is available, but actual planner invocation still requires a real

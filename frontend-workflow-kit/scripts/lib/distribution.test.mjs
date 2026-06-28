@@ -607,6 +607,10 @@ test('e2e-agent optional web evidence surface is wired without a missing matrix 
 
   assert.match(setupDoc, /planner -> generator -> healer/);
   assert.match(setupDoc, /npx playwright init-agents --loop=codex/);
+  assert.match(setupDoc, /--config playwright\.config\.ts --project web/);
+  assert.match(setupDoc, /selected Playwright `testDir` or project\s+`testDir`/);
+  assert.match(setupDoc, /`seed\.spec\.ts` filename/);
+  assert.match(setupDoc, /The plan scaffold directory remains `specs\/`/);
   assert.match(setupDoc, /Regenerate the agent definitions whenever\s+Playwright is updated/);
   assert.match(setupDoc, /ScreenSpec -> planner context/);
   assert.match(setupDoc, /stop with setup required/);

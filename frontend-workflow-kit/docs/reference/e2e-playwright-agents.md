@@ -33,6 +33,17 @@ as Markdown plan directory files, a seed test, and Playwright MCP wiring. A
 consumer repo still owns its Playwright config, web server command, seed data,
 and generated tests.
 
+`init-agents` can read the consumer Playwright config and project selection:
+
+```bash
+npx playwright init-agents --loop=codex --config playwright.config.ts --project web
+```
+
+The seed file is generated under the selected Playwright `testDir` or project
+`testDir` while keeping the `seed.spec.ts` filename. Without a config, a scratch
+run may create `seed.spec.ts` at repo root; with `testDir: "./tests/web"` it
+creates `tests/web/seed.spec.ts`. The plan scaffold directory remains `specs/`.
+
 ## Kit Mapping
 
 - ScreenSpec -> planner context.
