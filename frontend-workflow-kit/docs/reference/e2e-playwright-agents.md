@@ -8,6 +8,10 @@ repo. The intended flow is planner -> generator -> healer:
 - Generator turns an approved plan into Playwright tests.
 - Healer repairs failing test code from failure evidence and human-reviewed diff.
 
+This is a setup reference (read once). For the rules the agent applies while
+*authoring* plans and tests — assertion & locator hygiene, coverage division —
+see [e2e-authoring-rules.md](e2e-authoring-rules.md).
+
 ## Prerequisites
 
 - Runnable web app and known entry URL.
@@ -151,8 +155,9 @@ something to edit per screen.
   of `tests/web`. The generator receives the plan as text, not a path, so the plan
   file location is organizational only.
 - A generated test must live inside `testDir`. Put the per-domain/per-screen segment
-  as a subpath under one stable `testDir`
-  (`tests/web/{domain}/{screen-slug}.spec.ts`); `testDir` does not change per screen.
+  as a subpath under one stable `testDir` (`tests/web/{domain}/{screen-slug}.spec.ts`,
+  or a `{screen-slug}/` folder per screen for multi-suite plans — see
+  [Kit Mapping](#kit-mapping)); `testDir` does not change per screen.
 - Do not set `testDir` to the repo root. Seed setup runs the test runner over
   `testDir`, so a repo-root `testDir` tries to load unrelated `*.test.*` files (for
   example node:test files) and fails. Keep `testDir` a dedicated folder such as
@@ -175,8 +180,17 @@ something to edit per screen.
 - Per-run drafts must be isolated, for example
   `tests/web-plans/{domain}/{screen-slug}/drafts/{run-id}/plan.md` or a
   repo-local run folder such as `kit-dev/temp/runs/<run-id>/...`.
-- Generator output -> `tests/web/{domain}/{screen-slug}.spec.ts`
-  unless the consumer repo already has a clearer convention.
+- Generator output -> `tests/web/{domain}/{screen-slug}.spec.ts` for a
+  single-suite screen, or a folder per screen
+  `tests/web/{domain}/{screen-slug}/<suite>.spec.ts` when the planner splits one
+  screen into per-suite files. The planner emits `**File:**` per test but reuses
+  one filename per suite (observed: a 17-scenario plan -> `list`/`detail`/`copy`/
+  `apply`, 4 files), so do not merge unrelated suites into one file to satisfy the
+  single-file shape. `testDir` stays fixed either way; the domain/screen/suite is a
+  `fileName` subpath (see [Path model](#path-model)). A planner "suite" that is
+  actually a distinct canonical screen goes to its own `screen-slug`
+  ([screen-identity.md](screen-identity.md)), not nested as a suite. Use the
+  consumer repo's convention if it already has a clearer one.
 
 Do not treat the scaffold template as the normal substitute for planner output.
 The generator-facing plan must preserve the Playwright planner output body

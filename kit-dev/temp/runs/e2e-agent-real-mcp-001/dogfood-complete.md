@@ -51,24 +51,33 @@ Recommended adopted output:
    precision gate must live at plan/review time, not be delegated to codegen (see
    `_precision-gated/`).
 
-## Candidate rules (to formalize separately — NOT yet in canonical docs)
+## Candidate rules — FORMALIZED
 
-Recommendations from this dogfood. Per review, agent *behavioral* rules should not live in the
-setup-oriented `e2e-playwright-agents.md` (read once, at setup) — they belong in a dedicated
-agent-rules surface whose home and wording need a separate investigation. Until that exists,
-these stay here as candidates only:
+These dogfood recommendations are now canonical in
+[`e2e-authoring-rules.md`](../../../../frontend-workflow-kit/docs/reference/e2e-authoring-rules.md)
+(grounded in community practice via a deep-research pass; wired into the e2e-agent
+skill and read each mode). They are no longer candidates — kept here as the run's
+provenance:
 
 1. Assert app-defined state (class / text / visibility / attribute / URL); never browser
-   artifacts (`focus`, `:active`, `document.activeElement`).
+   artifacts (`focus`, `:active`, `document.activeElement`). → authoring-rules §A1.
 2. Drop any assertion that passes independent of app logic (e.g. `toBeFocused()` right after
-   `.click()`) — generators are faithful, not critical, so review must catch these.
-3. Scope a row by its container testid plus id, not an attribute its children also carry.
-4. Invest in the planner for coverage; choose the generator for style/cost.
+   `.click()`) — generators are faithful, not critical, so review must catch these. → §A2.
+3. Scope a row by its container testid plus id, not an attribute its children also carry. → §B1.
+4. Invest in the planner for coverage; choose the generator for style/cost. → §C.
 
-Related open decision (file packaging): the planner splits one screen into per-suite files
-(`coupon-list/detail/copy/apply`), not by `screen_id`. Reconcile with the kit's
-`{screen-slug}` convention — recommended: a folder per screen
-(`tests/web/{domain}/{screen-slug}/<suite>.spec.ts`) rather than merging into one file.
+Plus rules the research surfaced and added to the doc: web-first assertions (§A3),
+every scenario asserts an outcome (§A4), strict-mode-as-signal (§B2), user-first
+locator ranking (§B3), exact text matches (§B4); the §A2 "faithful generator
+validates bugs" risk is backed by the arXiv keep-only-passing finding.
+
+Related open decision (file packaging) — RESOLVED: a planner that splits one screen into
+per-suite files (`coupon-list/detail/copy/apply`) lands as a **folder per screen**
+(`tests/web/{domain}/{screen-slug}/<suite>.spec.ts`) — not merged into one file, and not
+renamed to the `screen_id` slug. A "suite" that is actually a distinct canonical screen goes
+to its own slug. Canonical in
+[e2e-playwright-agents.md → Kit Mapping](../../../../frontend-workflow-kit/docs/reference/e2e-playwright-agents.md#kit-mapping)
+and the e2e-agent skill Output Paths.
 
 ## Cost note (from the reports)
 
