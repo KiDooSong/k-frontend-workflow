@@ -1,9 +1,15 @@
-# {SCREEN_ID} Web E2E Plan
+# {SCREEN_ID} Web E2E Planner Context Scaffold
 
 ## Evidence-Only Disclaimer
 
-This plan is optional evidence only. It is not approval, readiness elevation,
-CI/hard-gate wiring, or resolution of an Open Decision, Unknown, or Gap.
+This scaffold is optional evidence/preflight material only. It is not approval,
+readiness elevation, CI/hard-gate wiring, or resolution of an Open Decision,
+Unknown, or Gap.
+
+Use this for planner context prep, kit dogfood, or a human-reviewed planning
+scaffold. In consumer repos with Playwright Test Agents setup, prefer real
+planner output over this template and do not treat this template alone as the
+normal generator handoff.
 
 ## Identity / Source
 
@@ -60,5 +66,5 @@ locator_gaps: []
 ## Generator Handoff Boundary
 
 - Stop after plan evidence.
-- Do not create `tests/web/**`, run Playwright test runner/browser, or call generator/healer in plan-only mode.
-- Generation later requires explicit approval, runnable web app, seed/entry URL, locator strategy, and approved plan.
+- Do not create `tests/web/**`, run Playwright test runner, or call generator/healer in plan-only mode.
+- Generation later requires explicit approval, Playwright Test Agents setup, runnable web app, seed/entry URL, locator strategy, and approved planner output.

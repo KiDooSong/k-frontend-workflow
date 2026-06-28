@@ -55,7 +55,13 @@ The blockers are:
 - planner MCP tools are not available in the current Codex session;
 - no seed test or Playwright config exists for a plan-only agent handoff.
 
-Conclusion: the skill should stay planner-preferred but fallback-capable. In this
-kit-only dogfood environment, `plan` mode should use the web plan template and
-ScreenSpec evidence to draft a plan, preserving consumer path shape under
-`kit-dev/temp/runs/<run-id>/tests/web-plans/...`.
+Conclusion: this is not evidence that a manual scaffold is an equivalent
+consumer flow. It is evidence that setup guidance is required before a consumer
+repo can use `e2e-agent` meaningfully. In consumer repos, missing Playwright
+Test Agents setup should stop as setup required. The template remains useful
+only for kit dogfood, preflight notes, or a human-reviewed context scaffold
+before invoking a real planner.
+
+Next dogfood should run in a scratch consumer fixture or real consumer repo after
+`npx playwright init-agents --loop=codex`, with a runnable web app, seed test,
+Playwright config, and locator/testID strategy.

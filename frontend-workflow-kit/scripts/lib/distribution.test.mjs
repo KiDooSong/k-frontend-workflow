@@ -51,6 +51,7 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
     'CONVENTIONS.md',
     'distribution-manifest.yaml',
     'docs/reference/ambiguity-triage.md',
+    'docs/reference/e2e-playwright-agents.md',
     'docs/reference/doc-ownership.md',
     'docs/reference/generated-files.md',
     'docs/reference/input-reconciliation.md',
@@ -115,6 +116,7 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
   assert.equal(summary.files.includes('examples/coupon-feature/README.md'), false);
   assert.equal(summary.files.includes('docs/reference/input-reconciliation.md'), true);
   assert.equal(summary.files.includes('docs/reference/doc-ownership.md'), true);
+  assert.equal(summary.files.includes('docs/reference/e2e-playwright-agents.md'), true);
   assert.equal(summary.files.includes('docs/reference/task-artifact-matrix.md'), true);
   assert.equal(summary.files.includes('docs/reference/generated-files.md'), true);
   assert.equal(summary.files.includes('docs/reference/workflow-spine.md'), true);
@@ -570,6 +572,7 @@ test('workflow skills are compact routers that link the spine, their stage doc, 
 test('e2e-agent optional web evidence surface is wired without a missing matrix dependency', () => {
   const skill = fs.readFileSync(path.join(KIT_ROOT, 'skills', 'e2e-agent', 'SKILL.md'), 'utf8');
   const planTemplate = fs.readFileSync(path.join(KIT_ROOT, 'templates', 'e2e', 'web-plan.template.md'), 'utf8');
+  const setupDoc = fs.readFileSync(path.join(KIT_ROOT, 'docs', 'reference', 'e2e-playwright-agents.md'), 'utf8');
   const readme = fs.readFileSync(path.join(KIT_ROOT, 'README.md'), 'utf8');
   const startHere = fs.readFileSync(path.join(KIT_ROOT, 'docs', 'reference', 'workflow-stages', '00-start-here.md'), 'utf8');
   const stage08 = fs.readFileSync(path.join(KIT_ROOT, 'docs', 'reference', 'workflow-stages', '08-validate-and-report.md'), 'utf8');
@@ -580,6 +583,7 @@ test('e2e-agent optional web evidence surface is wired without a missing matrix 
   assert.match(skill, /e2e 짜줘/);
   assert.match(skill, /tests\/web-plans\/\{domain\}/);
   assert.match(skill, /tests\/web\/\{domain\}/);
+  assert.match(skill, /e2e-playwright-agents\.md/);
   assert.match(skill, /templates\/e2e\/web-plan\.template\.md/);
   assert.match(skill, /consumer-owned E2E 표면/);
   assert.match(skill, /fixture green/);
@@ -587,9 +591,10 @@ test('e2e-agent optional web evidence surface is wired without a missing matrix 
   assert.match(skill, /COUPON-001` -> `coupon-001/);
   assert.match(skill, /AUTH\/SIGNUP_EMAIL` -> `auth-signup-email/);
   assert.match(skill, /kit-dev\/temp\/runs\/<run-id>\/tests\/web-plans/);
-  assert.match(skill, /planner가 있으면 우선 호출/);
-  assert.match(skill, /template 기반 ScreenSpec draft로 fallback/);
-  assert.match(skill, /Plan-only는 Playwright test runner\/browser, generator\/healer를 실행하지 않고 `tests\/web\/\*\*`를 만들지 않는다/);
+  assert.match(skill, /setup required/);
+  assert.match(skill, /planner를 우선 호출/);
+  assert.match(skill, /template은 kit dogfood, preflight notes, human-reviewed context scaffold에만 쓴다/);
+  assert.match(skill, /Plan-only는 test runner, generator\/healer를 실행하지 않고 `tests\/web\/\*\*`를 만들지 않는다/);
   assert.doesNotMatch(skill, /Verification Matrix/);
 
   assert.match(planTemplate, /## Identity \/ Source/);
@@ -597,7 +602,15 @@ test('e2e-agent optional web evidence surface is wired without a missing matrix 
   assert.match(planTemplate, /## Evidence-Only Disclaimer/);
   assert.match(planTemplate, /## Planner Context Packet/);
   assert.match(planTemplate, /## Generator Handoff Boundary/);
+  assert.match(planTemplate, /prefer real\s+planner output over this template/);
   assert.doesNotMatch(planTemplate, /Verification Matrix/);
+
+  assert.match(setupDoc, /planner -> generator -> healer/);
+  assert.match(setupDoc, /npx playwright init-agents --loop=codex/);
+  assert.match(setupDoc, /Regenerate the agent definitions whenever\s+Playwright is updated/);
+  assert.match(setupDoc, /ScreenSpec -> planner context/);
+  assert.match(setupDoc, /stop with setup required/);
+  assert.doesNotMatch(setupDoc, /Verification Matrix/);
 
   assert.match(stage08, /e2e-agent/);
   assert.match(stage08, /\.\.\/\.\.\/\.\.\/skills\/e2e-agent\/SKILL\.md/);
@@ -781,6 +794,7 @@ test('optional skill surfaces have no broken relative links', () => {
   const files = [
     path.join(KIT_ROOT, 'skills', 'e2e-agent', 'SKILL.md'),
     path.join(KIT_ROOT, 'skills', 'capture-learning', 'SKILL.md'),
+    path.join(KIT_ROOT, 'docs', 'reference', 'e2e-playwright-agents.md'),
     path.join(KIT_ROOT, 'templates', 'e2e', 'web-plan.template.md'),
     path.join(KIT_ROOT, 'templates', 'meta', 'session-learnings.template.md'),
   ];
