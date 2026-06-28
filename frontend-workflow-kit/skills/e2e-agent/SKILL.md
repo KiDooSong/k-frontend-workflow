@@ -39,7 +39,7 @@ ScreenSpec 기반 **선택형 웹 E2E evidence**를 만든다. 이 스킬은
 - 시각 evidence가 필요하면 [figma-component-mapping.template.md](../../templates/screen/figma-component-mapping.template.md) 계열 문서.
 - 2차 산출물 판단은 [task-artifact-matrix.md](../../docs/reference/task-artifact-matrix.md).
 - 명령 syntax는 [COMMANDS.md](../../COMMANDS.md), route/screen 관례는 [CONVENTIONS.md](../../CONVENTIONS.md).
-- Playwright Test Agents setup은 [e2e-playwright-agents.md](../../docs/reference/e2e-playwright-agents.md).
+- Playwright Test Agents setup은 [e2e-playwright-agents.md](../../docs/reference/e2e-playwright-agents.md). consumer repo 적용 순서(install/commit/ignore/run)+체크리스트는 [e2e-consumer-adoption.md](../../docs/reference/e2e-consumer-adoption.md).
 - plan/generate/verify에서 적용·주입할 assertion·locator·coverage 규칙은 [e2e-behavioral-rules.md](../../docs/reference/e2e-behavioral-rules.md).
 - planner context scaffold는 [web-plan.template.md](../../templates/e2e/web-plan.template.md).
 - 기존 `tests/web-plans/**`, `tests/web/**`, Playwright config, web server command.

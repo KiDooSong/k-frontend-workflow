@@ -227,6 +227,8 @@ npm run workflow:validate
 
 이 흐름은 선택형 evidence다. `tests/web-plans/**`와 `tests/web/**`는 ScreenSpec이나 readiness gate가 아니며, green test가 Open Decision resolve, `confirmed` 승격, 제품 승인, CI hard gate를 뜻하지 않는다. 결과는 Stage 08 handoff, run report, 또는 소비 repo가 정의한 verification note에 링크/요약한다.
 
+소비 repo에 실제 적용할 때의 install·commit·ignore·run 순서와 채택 체크리스트는 [docs/reference/e2e-consumer-adoption.md](docs/reference/e2e-consumer-adoption.md)를 본다. setup/path/session 정본([e2e-playwright-agents.md](docs/reference/e2e-playwright-agents.md))과 behavioral rules([e2e-behavioral-rules.md](docs/reference/e2e-behavioral-rules.md))를 대체하지 않고 consumer 절차로 묶는 문서다.
+
 ## Tier3 And Policy Drafts
 
 Tier3/custom layer는 readiness 코드를 바꾸지 않고 `project-layout.yaml`로 선언한다. `workflow:doctor`로 layout을 확인하고, policy 변경은 live policy 교체가 아니라 draft/review artifact로 다룬다.

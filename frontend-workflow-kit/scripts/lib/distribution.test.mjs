@@ -51,6 +51,7 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
     'CONVENTIONS.md',
     'distribution-manifest.yaml',
     'docs/reference/ambiguity-triage.md',
+    'docs/reference/e2e-consumer-adoption.md',
     'docs/reference/e2e-playwright-agents.md',
     'docs/reference/doc-ownership.md',
     'docs/reference/generated-files.md',
@@ -116,6 +117,7 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
   assert.equal(summary.files.includes('examples/coupon-feature/README.md'), false);
   assert.equal(summary.files.includes('docs/reference/input-reconciliation.md'), true);
   assert.equal(summary.files.includes('docs/reference/doc-ownership.md'), true);
+  assert.equal(summary.files.includes('docs/reference/e2e-consumer-adoption.md'), true);
   assert.equal(summary.files.includes('docs/reference/e2e-playwright-agents.md'), true);
   assert.equal(summary.files.includes('docs/reference/task-artifact-matrix.md'), true);
   assert.equal(summary.files.includes('docs/reference/generated-files.md'), true);
@@ -685,6 +687,56 @@ test('e2e-agent optional web evidence surface is wired without a missing matrix 
   assert.match(ownership, /optional web E2E evidence/);
 });
 
+test('e2e consumer adoption guide sequences setup without duplicating the canonical references', () => {
+  const refDir = path.join(KIT_ROOT, 'docs', 'reference');
+  const adoption = fs.readFileSync(path.join(refDir, 'e2e-consumer-adoption.md'), 'utf8');
+  const readme = fs.readFileSync(path.join(KIT_ROOT, 'README.md'), 'utf8');
+  const ownership = fs.readFileSync(path.join(refDir, 'doc-ownership.md'), 'utf8');
+  const skill = fs.readFileSync(path.join(KIT_ROOT, 'skills', 'e2e-agent', 'SKILL.md'), 'utf8');
+
+  // It is a wrapper that links the canonical homes rather than restating them.
+  assert.match(adoption, /e2e-playwright-agents\.md/);
+  assert.match(adoption, /e2e-behavioral-rules\.md/);
+  assert.match(adoption, /\.\.\/\.\.\/skills\/e2e-agent\/SKILL\.md/);
+  assert.match(adoption, /workflow-stages\/08-validate-and-report\.md/);
+  assert.match(adoption, /screen-identity\.md/);
+
+  // The consumer install/commit/ignore/run sequence is present.
+  assert.match(adoption, /npx playwright init-agents --loop=codex/);
+  assert.match(adoption, /--loop=claude/);
+  assert.match(adoption, /--config playwright\.config\.ts --project chromium/);
+  assert.match(adoption, /\.mcp\.json/);
+  assert.match(adoption, /\.codex\/agents\/playwright_test_\*\.toml/);
+  assert.match(adoption, /\.claude\/agents\/playwright-test-\*\.md/);
+  assert.match(adoption, /Do not commit:/);
+  assert.match(adoption, /node_modules/);
+  assert.match(adoption, /E2E_PORT/);
+  assert.match(adoption, /E2E_BASE_URL/);
+  assert.match(adoption, /E2E_RUN_ID/);
+  assert.match(adoption, /Do not set `testDir`\s+to the repo root/);
+
+  // Canonical paths match the post-#116 model: folder-per-screen tests + plan/draft tree.
+  assert.match(adoption, /tests\/web\/\{domain\}\/\{screen-slug\}\/<suite>\.spec\.ts/);
+  assert.match(adoption, /tests\/web-plans\/\{domain\}\/\{screen-slug\}\/plan\.md/);
+  assert.match(adoption, /tests\/web-plans\/\{domain\}\/\{screen-slug\}\/drafts\/\{run-id\}\/plan\.md/);
+  assert.match(adoption, /setup\s+required/);
+  assert.match(adoption, /Review checklist/);
+
+  // It must not reintroduce retired/forbidden surface into a consumer-facing e2e doc.
+  assert.doesNotMatch(adoption, /tests\/web\/\{domain\}\/\{screen-slug\}\.spec\.ts/);
+  assert.doesNotMatch(adoption, /scenario-slug/);
+  assert.doesNotMatch(adoption, /Verification Matrix/);
+
+  // It is non-gating, like the rest of the optional E2E surface.
+  assert.match(adoption, /never a gate/);
+  assert.match(adoption, /optional/i);
+
+  // It is discoverable from the README, the ownership map, and the skill.
+  assert.match(readme, /docs\/reference\/e2e-consumer-adoption\.md/);
+  assert.match(ownership, /e2e-consumer-adoption\.md/);
+  assert.match(skill, /e2e-consumer-adoption\.md/);
+});
+
 test('no skill embeds the canonical task-artifact matrix or generated-file tables', () => {
   const skillsDir = path.join(KIT_ROOT, 'skills');
   const skillFiles = fs.readdirSync(skillsDir, { withFileTypes: true })
@@ -852,6 +904,7 @@ test('optional skill surfaces have no broken relative links', () => {
   const files = [
     path.join(KIT_ROOT, 'skills', 'e2e-agent', 'SKILL.md'),
     path.join(KIT_ROOT, 'skills', 'capture-learning', 'SKILL.md'),
+    path.join(KIT_ROOT, 'docs', 'reference', 'e2e-consumer-adoption.md'),
     path.join(KIT_ROOT, 'docs', 'reference', 'e2e-playwright-agents.md'),
     path.join(KIT_ROOT, 'templates', 'e2e', 'web-plan.template.md'),
     path.join(KIT_ROOT, 'templates', 'meta', 'session-learnings.template.md'),
