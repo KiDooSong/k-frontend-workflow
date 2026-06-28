@@ -591,6 +591,8 @@ test('e2e-agent optional web evidence surface is wired without a missing matrix 
   assert.match(skill, /COUPON-001` -> `coupon-001/);
   assert.match(skill, /AUTH\/SIGNUP_EMAIL` -> `auth-signup-email/);
   assert.match(skill, /kit-dev\/temp\/runs\/<run-id>\/tests\/web-plans/);
+  assert.match(skill, /reviewed canonical final plan/);
+  assert.match(skill, /run-isolated/);
   assert.match(skill, /setup required/);
   assert.match(skill, /planner를 우선 호출/);
   assert.match(skill, /template은 kit dogfood, preflight notes, human-reviewed context scaffold에만 쓴다/);
@@ -603,6 +605,7 @@ test('e2e-agent optional web evidence surface is wired without a missing matrix 
   assert.match(planTemplate, /## Planner Context Packet/);
   assert.match(planTemplate, /## Generator Handoff Boundary/);
   assert.match(planTemplate, /prefer real\s+planner output over this template/);
+  assert.match(planTemplate, /Per-run draft path/);
   assert.doesNotMatch(planTemplate, /Verification Matrix/);
 
   assert.match(setupDoc, /planner -> generator -> healer/);
@@ -611,6 +614,13 @@ test('e2e-agent optional web evidence surface is wired without a missing matrix 
   assert.match(setupDoc, /selected Playwright `testDir` or project\s+`testDir`/);
   assert.match(setupDoc, /`seed\.spec\.ts` filename/);
   assert.match(setupDoc, /The plan scaffold directory remains `specs\/`/);
+  assert.match(setupDoc, /webServer\.url/);
+  assert.match(setupDoc, /use\.baseURL/);
+  assert.match(setupDoc, /E2E_BASE_URL/);
+  assert.match(setupDoc, /reuseExistingServer: !process\.env\.CI/);
+  assert.match(setupDoc, /planner_save_plan\.fileName/);
+  assert.match(setupDoc, /reviewed\s+canonical final plan/);
+  assert.match(setupDoc, /Per-run drafts must be isolated/);
   assert.match(setupDoc, /Regenerate the agent definitions whenever\s+Playwright is updated/);
   assert.match(setupDoc, /ScreenSpec -> planner context/);
   assert.match(setupDoc, /stop with setup required/);

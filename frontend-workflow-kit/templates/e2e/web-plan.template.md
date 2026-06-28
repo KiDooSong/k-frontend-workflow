@@ -22,7 +22,8 @@ normal generator handoff.
 
 ## Output Path
 
-- Consumer-shape plan path: `tests/web-plans/{domain}/{screen-slug}.plan.md`
+- Canonical final plan path: `tests/web-plans/{domain}/{screen-slug}.plan.md`
+- Per-run draft path: `tests/web-plans/{domain}/{screen-slug}/drafts/{run-id}.plan.md`
 - Actual dogfood path, if kit repo dogfood: `kit-dev/temp/runs/{run-id}/tests/web-plans/{domain}/{screen-slug}.plan.md`
 - Future generated test target, if approved later: `tests/web/{domain}/{screen-slug}.spec.ts`
 

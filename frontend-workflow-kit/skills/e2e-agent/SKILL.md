@@ -53,6 +53,8 @@ tests/web/{domain}/{screen-slug}.spec.ts
 
 `{screen-slug}`는 canonical `screen_id`를 lowercase로 만들고 non-alphanumeric 문자를 `-`로 치환한 파일명이다(예: `COUPON-001` -> `coupon-001`, `AUTH/SIGNUP_EMAIL` -> `auth-signup-email`; ScreenSpec folder slug가 아니다). plan/test 첫머리에는 canonical `screen_id`, ScreenSpec path, seed/route 출처를 남겨 slug drift를 막는다.
 
+`tests/web-plans/{domain}/{screen-slug}.plan.md`는 reviewed canonical final plan 경로다. 병렬 세션 draft는 run-isolated 경로를 쓴다.
+
 Kit repo 자체 dogfood에서는 repo-root `tests/web-plans/**`를 만들지 말고 consumer path shape를 `kit-dev/temp/runs/<run-id>/tests/web-plans/...` 아래에 보존한다.
 
 Playwright report/trace는 기본 커밋하지 않는다. 결과는 run report, Stage 08 handoff, 또는 consumer가 정의한 verification note에 링크/요약한다.
