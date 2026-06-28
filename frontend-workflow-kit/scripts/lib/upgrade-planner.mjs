@@ -410,7 +410,7 @@ function assertInside(parentAbs, childAbs, label) {
 // realpath the deepest existing ancestor and refuse if it leaves realRoot, and
 // refuse to write through a symlinked destination at all (kit payload files are
 // always regular files — pack rejects symlinks).
-function assertSafeWriteTarget(realRoot, destAbs, label) {
+export function assertSafeWriteTarget(realRoot, destAbs, label) {
   let probe = destAbs;
   while (!fs.existsSync(probe)) {
     const parent = path.dirname(probe);
@@ -551,11 +551,15 @@ export function applyPlan({ plan, currentDir, nextDir, options = {} }) {
     nextResolved: next,
     baseline,
   });
-  writeJson(path.join(resolvedCurrent, INSTALL_MANIFEST_NAME), installManifest);
+  const installPath = path.join(resolvedCurrent, INSTALL_MANIFEST_NAME);
+  assertSafeWriteTarget(realCurrent, installPath, LABEL); // meta writes get the same symlink guard
+  writeJson(installPath, installManifest);
 
   const nextManifestRaw = readJsonSafe(path.join(resolvedNext, PAYLOAD_MANIFEST_NAME));
   if (nextManifestRaw) {
-    writeJson(path.join(resolvedCurrent, PAYLOAD_MANIFEST_NAME), nextManifestRaw);
+    const payloadPath = path.join(resolvedCurrent, PAYLOAD_MANIFEST_NAME);
+    assertSafeWriteTarget(realCurrent, payloadPath, LABEL);
+    writeJson(payloadPath, nextManifestRaw);
   }
 
   return { actions, installManifest };

@@ -517,6 +517,24 @@ test('apply refuses to write through a symlinked target (no escape via links)', 
   assert.equal(fs.readFileSync(outside, 'utf8'), 'A');
 });
 
+test('apply refuses to write the install manifest through a symlink', (t) => {
+  const tmp = mkTmp('symlink-meta');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const { currentDir, nextDir } = buildScenario(tmp);
+  const outside = path.join(tmp, 'outside-install.json');
+  fs.writeFileSync(outside, '{"sentinel":true}\n', 'utf8');
+  const linkPath = path.join(currentDir, INSTALL_MANIFEST_NAME);
+  fs.rmSync(linkPath, { force: true });
+  try {
+    fs.symlinkSync(outside, linkPath);
+  } catch {
+    t.skip('symlink creation not permitted on this platform');
+    return;
+  }
+  assert.throws(() => applyPlan({ plan: buildPlan({ currentDir, nextDir }), currentDir, nextDir }), /symlink/i);
+  assert.equal(fs.readFileSync(outside, 'utf8'), '{"sentinel":true}\n'); // not overwritten through the link
+});
+
 test('CLI does not enable destructive flags on --flag=false', (t) => {
   const tmp = mkTmp('boolflag');
   t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));

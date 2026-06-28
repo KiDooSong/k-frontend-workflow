@@ -18,7 +18,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs, runCli } from './lib/util.mjs';
 import { UPGRADE_DIR_NAME } from './lib/kit-manifest.mjs';
-import { buildPlan, renderPlanMarkdown, applyPlan } from './lib/upgrade-planner.mjs';
+import { buildPlan, renderPlanMarkdown, applyPlan, assertSafeWriteTarget } from './lib/upgrade-planner.mjs';
 
 const TOOL = 'upgrade-vendored-kit';
 
@@ -136,12 +136,19 @@ function main() {
   // mutating, so a bad --plan path fails fast instead of leaving an applied kit
   // with no saved plan.
   let planPath = null;
+  let planInsideCurrent = false;
   if (typeof flags.plan === 'string') {
-    planPath = path.resolve(flags.plan);
+    planPath = path.resolve(flags.plan); // explicit, user-chosen destination
   } else if (apply) {
     planPath = path.join(currentDir, UPGRADE_DIR_NAME, `upgrade-plan-${sanitizeRef(plan.next.source_ref)}.md`);
+    planInsideCurrent = true;
   }
   if (planPath) {
+    // The default in-kit plan path gets the same symlink containment as apply
+    // (a symlinked _upgrade/ must not let the plan escape --current).
+    if (planInsideCurrent) {
+      assertSafeWriteTarget(fs.realpathSync(currentDir), planPath, 'current vendored kit');
+    }
     fs.mkdirSync(path.dirname(planPath), { recursive: true });
     fs.writeFileSync(planPath, markdown, 'utf8');
   }
