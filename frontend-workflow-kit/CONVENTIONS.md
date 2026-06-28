@@ -34,6 +34,22 @@ rules in `docs/frontend-workflow/global/llm-rules.md`, task routing in
 `docs/reference/task-artifact-matrix.md`, and regeneration rules in
 `docs/reference/generated-files.md`.
 
+## Doc Layers (progressive disclosure)
+
+Information lives in layers so a skill stays a compact trigger + procedure while
+detailed contracts are pulled in only when relevant:
+
+```txt
+AGENTS.md / CLAUDE.md → workflow-spine.md → workflow-stages/NN-*.md
+  → task-artifact-matrix.md / generated-files.md → reference docs
+skills/*/SKILL.md = compact executors that link the above
+```
+
+One fact has one home. A skill names the critical invariants inline (register-first,
+gate-raising-only, `allowed_paths`/`forbidden_paths`, "do not invent canonical screen
+ids from source codes") and links the rest. The full map of which doc owns which fact
+is [docs/reference/doc-ownership.md](docs/reference/doc-ownership.md).
+
 ## Project Layout Profiles
 
 Default Expo-like project:

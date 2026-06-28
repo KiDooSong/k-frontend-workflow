@@ -51,6 +51,7 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
     'CONVENTIONS.md',
     'distribution-manifest.yaml',
     'docs/reference/ambiguity-triage.md',
+    'docs/reference/doc-ownership.md',
     'docs/reference/generated-files.md',
     'docs/reference/input-reconciliation.md',
     'docs/reference/lint-policy-catalog.md',
@@ -110,6 +111,7 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
   assert.equal(summary.destination_hint, 'tools/frontend-workflow');
   assert.equal(summary.files.includes('examples/coupon-feature/README.md'), false);
   assert.equal(summary.files.includes('docs/reference/input-reconciliation.md'), true);
+  assert.equal(summary.files.includes('docs/reference/doc-ownership.md'), true);
   assert.equal(summary.files.includes('docs/reference/task-artifact-matrix.md'), true);
   assert.equal(summary.files.includes('docs/reference/generated-files.md'), true);
   assert.equal(summary.files.includes('docs/reference/workflow-spine.md'), true);
@@ -508,4 +510,114 @@ test('manifest retains exclude guards for the moved dev-doc directories', () => 
   for (const guard of ['docs/design/**', 'docs/workflows/**', 'temp/**']) {
     assert.match(manifest, new RegExp(`path:\\s*${guard.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`), `manifest should keep ${guard} as a guard`);
   }
+});
+
+// --- Progressive-disclosure lint: skills stay compact routers, detail lives in canonical docs. ---
+// "One fact, one home" — a skill names the critical invariants inline and links the rest; it does
+// not restate the references. These grep-style checks fail if a skill re-bloats into a handbook or
+// if a safety rule removed from a skill loses its canonical home.
+
+const WORKFLOW_SKILLS = [
+  { skill: 'reconcile-input', stage: '04-reconcile-input' },
+  { skill: 'implement-screen', stage: '06-implement-screen-or-code' },
+];
+
+test('doc-ownership map exists, maps concepts to homes, and is wired into the spine', () => {
+  const refDir = path.join(KIT_ROOT, 'docs', 'reference');
+  const ownershipPath = path.join(refDir, 'doc-ownership.md');
+  assert.equal(fs.existsSync(ownershipPath), true, 'docs/reference/doc-ownership.md should exist');
+  const ownership = fs.readFileSync(ownershipPath, 'utf8');
+
+  // It maps the repeated concepts to their canonical homes (incl. the implement-path invariant).
+  for (const home of [
+    'workflow-spine.md',
+    'task-artifact-matrix.md',
+    'generated-files.md',
+    'input-reconciliation.md',
+    'screen-identity.md',
+    'allowed_paths',
+    'forbidden_paths',
+  ]) {
+    assert.match(ownership, new RegExp(home.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `ownership map should reference ${home}`);
+  }
+  // The "one fact, one home" dedup rule is stated explicitly.
+  assert.match(ownership, /canonical home/i);
+  assert.match(ownership, /2\+ skills\/docs/);
+
+  // The spine links the ownership map so an agent can discover it.
+  const spine = fs.readFileSync(path.join(refDir, 'workflow-spine.md'), 'utf8');
+  assert.match(spine, /doc-ownership\.md/);
+});
+
+test('workflow skills are compact routers that link the spine, their stage doc, and the ownership map', () => {
+  for (const { skill, stage } of WORKFLOW_SKILLS) {
+    const raw = fs.readFileSync(path.join(KIT_ROOT, 'skills', skill, 'SKILL.md'), 'utf8');
+    // Progressive disclosure: link the spine + the owning stage doc + the ownership map.
+    assert.match(raw, /workflow-spine\.md/, `${skill} should link the workflow spine`);
+    assert.match(raw, new RegExp(`workflow-stages/${stage}\\.md`), `${skill} should link its stage doc`);
+    assert.match(raw, /doc-ownership\.md/, `${skill} should link the doc-ownership map`);
+    // Stays compact — handbook detail moved to references. Old sizes were 140 / 217 lines.
+    const lines = raw.split('\n').length;
+    assert.ok(lines <= 120, `${skill}/SKILL.md should stay a compact router (<=120 lines), got ${lines}`);
+  }
+});
+
+test('no skill embeds the canonical task-artifact matrix or generated-file tables', () => {
+  const skillsDir = path.join(KIT_ROOT, 'skills');
+  const skillFiles = fs.readdirSync(skillsDir, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => path.join(skillsDir, e.name, 'SKILL.md'))
+    .filter((p) => fs.existsSync(p));
+  assert.ok(skillFiles.length >= 2, 'expected at least the two workflow skills with SKILL.md');
+  for (const file of skillFiles) {
+    const raw = fs.readFileSync(file, 'utf8');
+    const rel = path.relative(KIT_ROOT, file).replace(/\\/g, '/');
+    // The canonical task-artifact matrix header must live only in task-artifact-matrix.md.
+    assert.doesNotMatch(raw, /\|\s*Task\s*\|\s*Read first\s*\|\s*May update\s*\|/i, `${rel} must not embed the task-artifact matrix`);
+    // The canonical generated-file regeneration table must live only in generated-files.md.
+    assert.doesNotMatch(raw, /\|\s*Generated file[^|\n]*\|\s*Regenerate with\s*\|/i, `${rel} must not embed the generated-file table`);
+  }
+});
+
+test('reconcile-input keeps the critical register/gate invariants inline (not just linked)', () => {
+  const skill = fs.readFileSync(path.join(KIT_ROOT, 'skills', 'reconcile-input', 'SKILL.md'), 'utf8');
+  // The executor needs these in-hand to act safely without a second read.
+  assert.match(skill, /register-first/);
+  assert.match(skill, /gate raising only/i);
+  assert.match(skill, /`reconciled` → \*\*멈춘다/);
+  assert.match(skill, /`failed` → 새 행을 만들지 않는다/);
+  assert.match(skill, /`not-started` → 같은 행을 `in-progress` 로 이동한다/);
+  // Identity is never invented from a source code; ambiguous identity routes to Stage 02.
+  assert.match(skill, /canonical Screen ID 를 발명하지 않는다/);
+  assert.match(skill, /02-screen-identity-source-mapping\.md/);
+});
+
+test('safety invariants removed from skills still live in canonical references', () => {
+  const refDir = path.join(KIT_ROOT, 'docs', 'reference');
+  const read = (p) => fs.readFileSync(path.join(refDir, p), 'utf8');
+  const reconciliation = read('input-reconciliation.md');
+  const generated = read('generated-files.md');
+  const identity = read('screen-identity.md');
+  const stage06 = read('workflow-stages/06-implement-screen-or-code.md');
+  const stage09 = read('workflow-stages/09-human-decision-gates.md');
+
+  // register-first + same-input retry row reuse
+  assert.match(reconciliation, /register-first/);
+  assert.match(reconciliation, /Retry updates that row/);
+  // gate raising only (agents raise gates, people lower them)
+  assert.match(reconciliation, /gate raising only/i);
+  assert.match(stage09, /raise/i);
+  // generated files are not hand-edited, and a concrete regeneration command stays listed
+  assert.match(generated, /Do not hand-edit/i);
+  assert.match(generated, /workflow:catalog/);
+  // source ids are aliases; the canonical screen id is workflow-owned
+  assert.match(identity, /aliases/i);
+  assert.match(identity, /워크플로우가 소유|workflow-owned/);
+  // component gaps are proposal-only (accept is human)
+  assert.match(reconciliation, /accept\(카탈로그 반영\)·구현은 사람/);
+  // live policy is not replaced by a draft
+  assert.match(reconciliation, /live policy replacement 아님|implementation-mode-policy\.yaml replacement/);
+  // allowed_paths / forbidden_paths invariant home
+  assert.match(stage06, /allowed_paths/);
+  assert.match(stage06, /forbidden_paths/);
 });
