@@ -38,6 +38,7 @@ ScreenSpec 기반 **선택형 웹 E2E evidence**를 만든다. 이 스킬은
 - 시각 evidence가 필요하면 [figma-component-mapping.template.md](../../templates/screen/figma-component-mapping.template.md) 계열 문서.
 - 2차 산출물 판단은 [task-artifact-matrix.md](../../docs/reference/task-artifact-matrix.md).
 - 명령 syntax는 [COMMANDS.md](../../COMMANDS.md), route/screen 관례는 [CONVENTIONS.md](../../CONVENTIONS.md).
+- plan 산출물 골격은 [web-plan.template.md](../../templates/e2e/web-plan.template.md).
 - 기존 `tests/web-plans/**`, `tests/web/**`, Playwright config, web server command.
 
 ## Output Paths
@@ -75,7 +76,7 @@ Playwright report/trace는 기본 커밋하지 않는다. 결과는 run report, 
    npm run workflow:readiness -- --screen <SCREEN_ID> --json
    ```
 3. context packet을 만든다: screen id/domain/route, State/Interaction rows, 제외할 Open Decisions, copy/a11y/testID anchors, visual facts as evidence only.
-4. `plan`: Playwright planner가 있으면 호출하고, 없으면 draft plan을 작성한다. Plan-only는 Playwright를 실행하지 않고 `tests/web/**`를 만들지 않는다. plan 산출물은 최소 checklist로 identity, shallow smoke, exclusions, locator/testID gaps, generator context packet, evidence-only disclaimer를 포함한다.
+4. `plan`: repo에 plan-only/dry-run 가능한 Playwright planner가 있으면 우선 호출한다. 없거나 kit-only/dogfood 환경이면 template 기반 ScreenSpec draft로 fallback한다. Plan-only는 Playwright test runner/browser, generator/healer를 실행하지 않고 `tests/web/**`를 만들지 않는다.
 5. `generate`: plan + seed/entry URL로 generator를 쓰고 `tests/web/{domain}/`에 둔다. 생성 전 사용자 확인을 받는다.
 6. `verify`: 가장 작은 관련 Playwright command를 실행하고 결과 요약을 남긴다.
 7. `heal`: 실패 evidence 뒤에만 healer를 쓰고 assertion weakening, broad regex, `test.fixme()`를 diff에서 확인한다.
