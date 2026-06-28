@@ -56,14 +56,16 @@ mkdir -p docs/frontend-workflow/global
 cp tools/frontend-workflow/templates/global/llm-rules.template.md docs/frontend-workflow/global/llm-rules.md
 ```
 
-역할 구분:
+문서는 레이어로 쌓여 있고, 작업에 필요한 깊이까지만 내려가 읽는다(progressive disclosure). 어떤 사실이 어느 문서에 사는지의 지도는 [docs/reference/doc-ownership.md](docs/reference/doc-ownership.md) 다.
 
-- root `AGENTS.md` / `CLAUDE.md`: LLM session starting point.
-- [docs/reference/workflow-spine.md](docs/reference/workflow-spine.md): numbered workflow stage index. Agents start here; [docs/reference/workflow-stages/00-start-here.md](docs/reference/workflow-stages/00-start-here.md) routes a task to its current stage. Read only the matching stage doc.
+- root `AGENTS.md` / `CLAUDE.md`: LLM session starting point — workflow spine 으로 보낸다.
+- [docs/reference/workflow-spine.md](docs/reference/workflow-spine.md): numbered workflow stage index ("지금 어느 stage 인가"). Agents start here; [docs/reference/workflow-stages/00-start-here.md](docs/reference/workflow-stages/00-start-here.md) routes a task to its current stage. Read only the matching stage doc.
+- [docs/reference/workflow-stages/](docs/reference/workflow-stages/) `NN-*.md`: 현재 stage 의 운영 절차 (the middle layer).
+- [docs/reference/task-artifact-matrix.md](docs/reference/task-artifact-matrix.md): task-to-artifact operational checklist (2차 산출물 lookup).
+- [docs/reference/generated-files.md](docs/reference/generated-files.md): `generated/do_not_edit` regeneration authority.
+- reference docs ([input-reconciliation.md](docs/reference/input-reconciliation.md), [screen-identity.md](docs/reference/screen-identity.md) 등): 상세 계약. 화면 코드 ↔ canonical Screen ID 매핑은 Screen Source Map.
 - `docs/frontend-workflow/global/llm-rules.md`: project policy and priority rules.
-- [docs/reference/task-artifact-matrix.md](docs/reference/task-artifact-matrix.md): task-to-artifact operational checklist.
-- [docs/reference/generated-files.md](docs/reference/generated-files.md): `generated/do_not_edit` regeneration map.
-- [docs/reference/screen-identity.md](docs/reference/screen-identity.md): source screen code ↔ canonical Screen ID mapping (Screen Source Map).
+- `skills/*/SKILL.md`: 위 문서를 링크하는 **compact task executor** — 규칙을 복제하지 않고 핵심 불변식만 인라인으로 둔다.
 
 ## Upgrade A Vendored Kit
 

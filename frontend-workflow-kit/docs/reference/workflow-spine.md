@@ -107,6 +107,7 @@ Cross-cutting invariants that hold in every stage:
 
 ## Related references
 
+- Where each repeated fact is canonically owned (the progressive-disclosure map): [`doc-ownership.md`](doc-ownership.md).
 - Per-task secondary updates: [`task-artifact-matrix.md`](task-artifact-matrix.md).
 - Regeneration map for generated views: [`generated-files.md`](generated-files.md).
 - Screen identity contract: [`screen-identity.md`](screen-identity.md).
