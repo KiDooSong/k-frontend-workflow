@@ -19,6 +19,7 @@ index: [`../workflow-spine.md`](../workflow-spine.md).
 | "API 타입 추가했어" | 05/06 → 08 | API contract + validate |
 | "route 추가했어" | 05/06 → 07/08 | route/screen + generated route/nav |
 | "policy draft 반영할까?" | 10 | policy/layout/Tier3 |
+| "이거 회고로 남겨/교훈 기록해/킷 이슈 후보로 적어" | 08 | capture-learning + session-learnings |
 
 ## How to read this
 

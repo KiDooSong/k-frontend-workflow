@@ -19,6 +19,19 @@ Add `workflow:check-generated` (advisory) when route, nav, catalog, codegen, lin
 policy, or layout sources changed. `validate` pass is structural integrity, not
 product approval.
 
+## Capture session learnings (optional)
+
+If the session discovered a workflow gap, a stale doc, a confusing consumer-vs-kit
+boundary, a `validate` false positive, or a repeated manual workaround, append a
+session learning with the [`capture-learning`](../../../skills/capture-learning/SKILL.md)
+skill. It writes one structured entry to
+`docs/frontend-workflow/_meta/session-learnings.md` (template:
+[`../../../templates/meta/session-learnings.template.md`](../../../templates/meta/session-learnings.template.md)).
+
+This is **optional and never a gate** — capture context, not a one-line complaint, do
+not record secrets, and do not file issues automatically. Review and promotion stay
+manual.
+
 ## Session handoff summary
 
 End the session with this block so the next agent can resume without re-reading the
@@ -30,6 +43,8 @@ Updated:
 Regenerated:
 Validation:
 Still open:
+Learnings captured:
+- LRN-0007: {title} ({scope}, {candidate follow-up})
 Next recommended stage:
 ```
 
@@ -39,6 +54,8 @@ Next recommended stage:
 - **Validation** — `workflow:validate` result (and any targeted checks).
 - **Still open** — Open Decisions, Unknowns, Component Gaps, `failed`/`in-progress`
   register rows left for a human or a later session.
+- **Learnings captured** — any `LRN-####` entries appended to `session-learnings.md`
+  this session, with scope and candidate follow-up. Omit the line if none.
 - **Next recommended stage** — where the next session should enter (often 09 for a
   human decision, or back to 05/06).
 
