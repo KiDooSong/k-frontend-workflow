@@ -65,6 +65,46 @@ cp tools/frontend-workflow/templates/global/llm-rules.template.md docs/frontend-
 - [docs/reference/generated-files.md](docs/reference/generated-files.md): `generated/do_not_edit` regeneration map.
 - [docs/reference/screen-identity.md](docs/reference/screen-identity.md): source screen code ↔ canonical Screen ID mapping (Screen Source Map).
 
+## Upgrade A Vendored Kit
+
+새 kit 버전으로 올릴 때는 디렉터리를 통째로 덮어쓰거나 "PR N까지 적용"처럼 PR 번호로 추론하지 않는다. packed payload에 들어 있는 `.kit-payload-manifest.json`(파일별 sha256·classification)을 기준으로, manifest 기반 안전 업그레이드 도구가 로컬 수정·stale 파일·upstream 삭제 파일을 구분해 안전한 파일만 갱신한다.
+
+먼저 업스트림에서 최신 payload를 만든다.
+
+```bash
+cd frontend-workflow-kit && npm run kit:pack
+```
+
+소비 repo에서 **새 payload의** planner를 dry-run으로 돌린다(기본이 dry-run, 무쓰기). planner는 교체 전 새 payload에서 실행하는 업그레이드 도구이며 `workflow:*` 명령으로 등록하지 않는다.
+
+```bash
+node /path/to/new/frontend-workflow-kit/scripts/upgrade-vendored-kit.mjs \
+  --current tools/frontend-workflow \
+  --next /path/to/new/frontend-workflow-kit \
+  --dry-run --plan kit-upgrade-plan.md
+```
+
+plan을 검토(필요하면 LLM에게 리뷰)한 뒤 안전한 파일만 적용한다.
+
+```bash
+node /path/to/new/frontend-workflow-kit/scripts/upgrade-vendored-kit.mjs \
+  --current tools/frontend-workflow \
+  --next /path/to/new/frontend-workflow-kit \
+  --apply
+```
+
+- `--apply`는 safe-update와 new-file만 자동 적용하고 `.kit-install-manifest.json`을 갱신한다.
+- 로컬 수정 파일은 기본적으로 절대 덮어쓰지 않는다. conflict는 `.upgrade-conflicts/<path>.incoming`으로 남겨 수동/LLM 병합한다.
+- upstream에서 삭제된 파일은 기본 보존(orphan 보고)하며 `--prune`을 줄 때만 삭제한다.
+- `tools/frontend-workflow/` 밖(소비 `docs/frontend-workflow/**`, 앱 소스, 루트 `AGENTS.md`/`package.json`)은 절대 건드리지 않는다.
+- `.kit-install-manifest.json`이 없는 기존(비관리) 설치는 보수적 plan(차이 파일=conflict)을 만들고, 첫 apply 이후부터 manifest 기반으로 동작한다.
+
+옵션·분류 규칙은 [COMMANDS.md](COMMANDS.md)의 Upgrade 항목과 `--help`를 본다. 사람이 봐야 할 마이그레이션 노트는 [docs/reference/upgrade-notes.md](docs/reference/upgrade-notes.md)에 있고 plan에 함께 포함된다.
+
+```bash
+node tools/frontend-workflow/scripts/upgrade-vendored-kit.mjs --help
+```
+
 ## Minimal Docs Bootstrap
 
 소비 repo root 기준으로 최소 문서 트리를 만든다.
@@ -190,4 +230,4 @@ policy draft나 migration guide가 만들어져도 hard gate, CI required check,
 - check 12가 row 없음이나 `not-started`를 보고하면 reconcile을 실행하거나 `--enforce` 없이 도입 중 경고로 남긴다.
 - check 12가 `in-progress`/`failed`를 보고하면 새 row를 만들지 말고 기존 row를 `in-progress`로 재개해 완료/실패 결과를 갱신한다.
 - 생성 파일이 stale 해 보이면 직접 수정하지 말고 [docs/reference/generated-files.md](docs/reference/generated-files.md)의 명령으로 재생성한다. `workflow:check-generated`는 advisory guard이며 hard CI gate가 아니다.
-- 기존에 전체 kit 디렉토리를 복사했다면 packed payload 기준으로 갱신하고 `examples/`, `temp/`, design/history/roadmap/run-report 문서를 소비 repo에서 제거한다.
+- 기존에 전체 kit 디렉토리를 복사했다면 디렉터리를 덮어쓰지 말고 `scripts/upgrade-vendored-kit.mjs`로 보수적 plan을 만든 뒤 안전한 파일만 적용하고(위 "Upgrade A Vendored Kit"), `examples/`, `temp/`, design/history/roadmap/run-report 문서를 소비 repo에서 제거한다.
