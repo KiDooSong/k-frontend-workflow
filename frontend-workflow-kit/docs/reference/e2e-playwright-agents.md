@@ -160,26 +160,6 @@ something to edit per screen.
 - Input contracts are independent of `testDir` and of the Playwright workspace;
   they are read by path when the agent builds the planner context.
 
-## Assertion hygiene
-
-A live dogfood (run `e2e-agent-real-mcp-001`) confirmed a failure mode: a generator faithfully
-encodes whatever the plan says, so a weak plan assertion becomes a green-but-inert test. Apply
-these at plan and review time — a passing test is necessary, not sufficient.
-
-- **Assert app-defined state, not browser artifacts.** Check classes, text, visibility,
-  attributes, URL, or the status/region text the app actually sets. Do not assert `focus`,
-  `:active`, or `document.activeElement` unless focus management is the feature under test.
-- **Drop assertions that pass independent of app logic.** For example
-  `await el.click(); await expect(el).toBeFocused()` passes by Playwright's click semantics
-  whether or not the handler does anything; such lines add maintenance and false coverage.
-- **Coverage comes from the planner, not the generator.** A deeper plan (more
-  state-transition / side-effect scenarios) drives coverage; the generator choice (direct
-  vs delegated subagent) changes style and cost, not the pass rate.
-- **Scope a row by its container testid plus id**, not an attribute its children also carry —
-  e.g. if the View/Copy/Apply buttons repeat the row's `data-coupon-id`, then
-  `[data-coupon-id="X"]` matches the row *and* its buttons (strict-mode hazard); use
-  `[data-testid="coupon-item"][data-coupon-id="X"]`.
-
 ## Kit Mapping
 
 - ScreenSpec -> planner context.

@@ -51,7 +51,12 @@ Recommended adopted output:
    precision gate must live at plan/review time, not be delegated to codegen (see
    `_precision-gated/`).
 
-## Rules added to `e2e-playwright-agents.md` (Assertion hygiene)
+## Candidate rules (to formalize separately — NOT yet in canonical docs)
+
+Recommendations from this dogfood. Per review, agent *behavioral* rules should not live in the
+setup-oriented `e2e-playwright-agents.md` (read once, at setup) — they belong in a dedicated
+agent-rules surface whose home and wording need a separate investigation. Until that exists,
+these stay here as candidates only:
 
 1. Assert app-defined state (class / text / visibility / attribute / URL); never browser
    artifacts (`focus`, `:active`, `document.activeElement`).
@@ -59,6 +64,11 @@ Recommended adopted output:
    `.click()`) — generators are faithful, not critical, so review must catch these.
 3. Scope a row by its container testid plus id, not an attribute its children also carry.
 4. Invest in the planner for coverage; choose the generator for style/cost.
+
+Related open decision (file packaging): the planner splits one screen into per-suite files
+(`coupon-list/detail/copy/apply`), not by `screen_id`. Reconcile with the kit's
+`{screen-slug}` convention — recommended: a folder per screen
+(`tests/web/{domain}/{screen-slug}/<suite>.spec.ts`) rather than merging into one file.
 
 ## Cost note (from the reports)
 
