@@ -50,17 +50,17 @@ fileName: "The file to save the test plan to ... Relative to the workspace root.
 ```
 
 The tool resolves the path inside the workspace root, creates parent
-directories, and writes the Markdown plan. In the scratch consumer workspace, a
-direct tool-level call successfully saved:
+directories, and writes the Markdown plan. That capability supports the kit's
+normalized directory-style target:
 
 ```txt
-tests/web-plans/coupons/coupon-001.plan.md
+tests/web-plans/coupons/coupon-001/plan.md
 ```
 
-Returned message:
+Expected save message shape for that requested target:
 
 ```txt
-Test plan saved to tests/web-plans/coupons/coupon-001.plan.md
+Test plan saved to tests/web-plans/coupons/coupon-001/plan.md
 ```
 
 ## Serialized Shape
@@ -103,9 +103,9 @@ The saved Markdown shape was:
 ## Path Policy
 
 - Canonical final plan: use the consumer's established path, defaulting in this
-  kit to `tests/web-plans/{domain}/{screen-slug}.plan.md`.
+  kit to `tests/web-plans/{domain}/{screen-slug}/plan.md`.
 - Per-run draft: use an isolated path, such as
-  `tests/web-plans/{domain}/{screen-slug}/drafts/{run-id}.plan.md` or
+  `tests/web-plans/{domain}/{screen-slug}/drafts/{run-id}/plan.md` or
   `kit-dev/temp/runs/<run-id>/tests/web-plans/...`.
 - Do not let parallel sessions write competing drafts directly to the canonical
   final plan path.

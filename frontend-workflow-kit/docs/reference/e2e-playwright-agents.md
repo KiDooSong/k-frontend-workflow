@@ -16,6 +16,8 @@ repo. The intended flow is planner -> generator -> healer:
   anchors declared from the ScreenSpec/component contract.
 - A ScreenSpec context packet: canonical `screen_id`, route, State/Interaction
   rows, exclusions, and unresolved decisions or unknowns to avoid asserting.
+- The Playwright handoff fields: `seed_file`, `playwright_project`, `base_url`,
+  and `test_dir`.
 
 ## Setup
 
@@ -105,21 +107,24 @@ export default defineConfig({
 - ScreenSpec -> planner context.
 - [web-plan.template.md](../../templates/e2e/web-plan.template.md) -> scaffold
   for preflight notes, kit dogfood, or human-reviewed context before planner use.
-- Official Playwright setup creates `specs/` for planner output. Until a real
-  planner session verifies path redirection, treat `specs/` as the raw planner
-  output surface.
-- For this kit, copy or curate the human-reviewed canonical final plan to
+- Official Playwright setup creates `specs/` as the default human-readable
+  planning surface. Treat `specs/` as the raw/default landing surface unless the
+  planner is explicitly asked to save to another workspace-relative path.
+- This kit's canonical final plan path is a governance convention, not a
+  Playwright requirement: copy or curate the human-reviewed final plan to
   `tests/web-plans/{domain}/{screen-slug}/plan.md`, or follow the consumer's
   established plan path.
 - Per-run drafts must be isolated, for example
-  `tests/web-plans/{domain}/{screen-slug}/drafts/{run-id}.plan.md` or a
+  `tests/web-plans/{domain}/{screen-slug}/drafts/{run-id}/plan.md` or a
   repo-local run folder such as `kit-dev/temp/runs/<run-id>/...`.
 - Generator output -> `tests/web/{domain}/{screen-slug}/{scenario-slug}.spec.ts`
   unless the consumer repo already has a clearer convention.
 
 Do not treat the scaffold template as the normal substitute for planner output.
-If a consumer repo lacks Test Agents setup, stop with setup required instead of
-continuing into generator/healer by hand.
+The generator-facing plan must preserve the Playwright planner output body
+(`Application Overview`, `Test Scenarios`, `Seed`, `File`, `Steps`, and
+expectations). If a consumer repo lacks Test Agents setup, stop with setup
+required instead of continuing into generator/healer by hand.
 
 ## Boundaries
 

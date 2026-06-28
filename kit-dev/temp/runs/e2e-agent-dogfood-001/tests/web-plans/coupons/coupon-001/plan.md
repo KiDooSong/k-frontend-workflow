@@ -10,16 +10,16 @@
 - Canonical screen_id: `COUPON-001`
 - Domain: `coupons`
 - Route: `/(tabs)/coupons`
-- Consumer-shape plan path: `tests/web-plans/coupons/coupon-001.plan.md`
-- Actual dogfood path: `kit-dev/temp/runs/e2e-agent-dogfood-001/tests/web-plans/coupons/coupon-001.plan.md`
-- ScreenSpec: [screen-spec.md](../../../../../../../frontend-workflow-kit/examples/multi-screen-dry-run/docs/frontend-workflow/domains/coupons/screens/coupon-list/screen-spec.md)
-- Supporting docs: [navigation-map.md](../../../../../../../frontend-workflow-kit/examples/multi-screen-dry-run/docs/frontend-workflow/app/navigation-map.md), [api-manifest.md](../../../../../../../frontend-workflow-kit/examples/multi-screen-dry-run/docs/frontend-workflow/api/api-manifest.md), [domain-rules.md](../../../../../../../frontend-workflow-kit/examples/multi-screen-dry-run/docs/frontend-workflow/domains/coupons/domain-rules.md), [flows.md](../../../../../../../frontend-workflow-kit/examples/multi-screen-dry-run/docs/frontend-workflow/domains/coupons/flows.md)
-- Skill: [e2e-agent/SKILL.md](../../../../../../../frontend-workflow-kit/skills/e2e-agent/SKILL.md)
-- Dogfood notes: [dogfood-notes.md](../../../dogfood-notes.md)
+- Consumer-shape plan path: `tests/web-plans/coupons/coupon-001/plan.md`
+- Actual dogfood path: `kit-dev/temp/runs/e2e-agent-dogfood-001/tests/web-plans/coupons/coupon-001/plan.md`
+- ScreenSpec: [screen-spec.md](../../../../../../../../frontend-workflow-kit/examples/multi-screen-dry-run/docs/frontend-workflow/domains/coupons/screens/coupon-list/screen-spec.md)
+- Supporting docs: [navigation-map.md](../../../../../../../../frontend-workflow-kit/examples/multi-screen-dry-run/docs/frontend-workflow/app/navigation-map.md), [api-manifest.md](../../../../../../../../frontend-workflow-kit/examples/multi-screen-dry-run/docs/frontend-workflow/api/api-manifest.md), [domain-rules.md](../../../../../../../../frontend-workflow-kit/examples/multi-screen-dry-run/docs/frontend-workflow/domains/coupons/domain-rules.md), [flows.md](../../../../../../../../frontend-workflow-kit/examples/multi-screen-dry-run/docs/frontend-workflow/domains/coupons/flows.md)
+- Skill: [e2e-agent/SKILL.md](../../../../../../../../frontend-workflow-kit/skills/e2e-agent/SKILL.md)
+- Dogfood notes: [dogfood-notes.md](../../../../dogfood-notes.md)
 
 ## Output Path Decision
 
-The skill's default output shape is `tests/web-plans/{domain}/{screen-slug}.plan.md`,
+The skill's default output shape is `tests/web-plans/{domain}/{screen-slug}/plan.md`,
 but this repository is the kit repository, and `tests/web-plans/**` is described by
 the skill as consumer-owned E2E surface. To avoid mistaking this dogfood artifact
 for a consumer payload or live test plan, this run preserves the consumer shape
@@ -101,9 +101,15 @@ screen:
   route: "/(tabs)/coupons"
   screen_spec: "frontend-workflow-kit/examples/multi-screen-dry-run/docs/frontend-workflow/domains/coupons/screens/coupon-list/screen-spec.md"
   source_status: draft
+playwright:
+  seed_file: null
+  project: null
+  base_url: null
+  test_dir: "tests/web"
+  note: "Not configured in this plan-only kit dogfood run."
 output:
-  consumer_shape: "tests/web-plans/coupons/coupon-001.plan.md"
-  dogfood_path: "kit-dev/temp/runs/e2e-agent-dogfood-001/tests/web-plans/coupons/coupon-001.plan.md"
+  consumer_shape: "tests/web-plans/coupons/coupon-001/plan.md"
+  dogfood_path: "kit-dev/temp/runs/e2e-agent-dogfood-001/tests/web-plans/coupons/coupon-001/plan.md"
   note: "Do not create repo-root tests/web-plans or tests/web files during this run."
 states:
   - state: loading

@@ -14,14 +14,14 @@ created, no product code was modified, no CI or hard gate was added, and no
 Open Decision, Unknown, Component Gap, readiness, or `confirmed` status was
 changed.
 
-Output plan: [tests/web-plans/coupons/coupon-001.plan.md](tests/web-plans/coupons/coupon-001.plan.md)
+Output plan: [tests/web-plans/coupons/coupon-001/plan.md](tests/web-plans/coupons/coupon-001/plan.md)
 
 Target ScreenSpec: [coupon-list/screen-spec.md](../../../../frontend-workflow-kit/examples/multi-screen-dry-run/docs/frontend-workflow/domains/coupons/screens/coupon-list/screen-spec.md)
 
 ## Output Path Judgment
 
-I used `kit-dev/temp/runs/e2e-agent-dogfood-001/tests/web-plans/coupons/coupon-001.plan.md`
-instead of repo-root `tests/web-plans/coupons/coupon-001.plan.md`.
+I used `kit-dev/temp/runs/e2e-agent-dogfood-001/tests/web-plans/coupons/coupon-001/plan.md`
+instead of repo-root `tests/web-plans/coupons/coupon-001/plan.md`.
 
 Reason: the skill states that `tests/web-plans/**` and `tests/web/**` are
 consumer-owned E2E surfaces, while [CONVENTIONS.md](../../../../frontend-workflow-kit/CONVENTIONS.md)
@@ -34,10 +34,9 @@ repo artifact look like consumer payload.
 - Skill wording was mostly sufficient for plan-only work. The mode router,
   invariants, and `generate` confirmation boundary prevented accidental test
   generation.
-- Output path rules were the main ambiguity. The skill says to use
-  `tests/web-plans/{domain}/{screen-slug}.plan.md` by default, but does not say
-  where kit-repo dogfood should put those paths. A short "when dogfooding the kit
-  itself" note would remove this judgment call.
+- Output path rules were the main ambiguity. This follow-up normalizes the
+  default to `tests/web-plans/{domain}/{screen-slug}/plan.md` and keeps kit repo
+  dogfood under `kit-dev/temp/runs/<run-id>/...`.
 - `screen-slug` was technically sufficient but easy to misread. The rule uses
   canonical `screen_id`, so `COUPON-001` becomes `coupon-001`, not the ScreenSpec
   folder slug `coupon-list`. An inline example would help.
@@ -50,7 +49,7 @@ repo artifact look like consumer payload.
 ## Next PR Candidates
 
 1. Add a kit-dogfood output note to `frontend-workflow-kit/skills/e2e-agent/SKILL.md`:
-   preserve `tests/web-plans/{domain}/{screen-slug}.plan.md` shape under
+   preserve `tests/web-plans/{domain}/{screen-slug}/plan.md` shape under
    `kit-dev/temp/runs/<run-id>/` when the kit repo itself is the subject.
 2. Rename or clarify `screen-slug` as "screen-id slug" and include examples:
    `COUPON-001 -> coupon-001`, `AUTH/SIGNUP_EMAIL -> auth-signup-email`.
