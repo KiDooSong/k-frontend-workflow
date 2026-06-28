@@ -117,7 +117,7 @@ export default defineConfig({
 - Per-run drafts must be isolated, for example
   `tests/web-plans/{domain}/{screen-slug}/drafts/{run-id}/plan.md` or a
   repo-local run folder such as `kit-dev/temp/runs/<run-id>/...`.
-- Generator output -> `tests/web/{domain}/{screen-slug}/{scenario-slug}.spec.ts`
+- Generator output -> `tests/web/{domain}/{screen-slug}.spec.ts`
   unless the consumer repo already has a clearer convention.
 
 Do not treat the scaffold template as the normal substitute for planner output.

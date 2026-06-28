@@ -65,7 +65,7 @@ Test plan saved to tests/web-plans/coupons/coupon-001/plan.md
 
 ## Serialized Shape
 
-The saved Markdown shape was:
+The projected serialized Markdown shape from the planner implementation is:
 
 ```md
 # Coupon List Test Plan

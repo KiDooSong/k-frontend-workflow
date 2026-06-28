@@ -48,7 +48,7 @@ ScreenSpec 기반 **선택형 웹 E2E evidence**를 만든다. 이 스킬은
 
 ```txt
 tests/web-plans/{domain}/{screen-slug}/plan.md
-tests/web/{domain}/{screen-slug}/{scenario-slug}.spec.ts
+tests/web/{domain}/{screen-slug}.spec.ts
 ```
 
 `{screen-slug}`는 canonical `screen_id`를 lowercase로 만들고 non-alphanumeric 문자를 `-`로 치환한 파일명이다(예: `COUPON-001` -> `coupon-001`, `AUTH/SIGNUP_EMAIL` -> `auth-signup-email`; ScreenSpec folder slug가 아니다). plan/test 첫머리에는 canonical `screen_id`, ScreenSpec path, seed/route 출처를 남겨 slug drift를 막는다.
