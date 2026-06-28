@@ -580,6 +580,10 @@ test('e2e-agent optional web evidence surface is wired without a missing matrix 
   assert.match(skill, /consumer-owned E2E 표면/);
   assert.match(skill, /fixture green/);
   assert.match(skill, /Stage 07의 generated derived view가 아니다/);
+  assert.match(skill, /COUPON-001` -> `coupon-001/);
+  assert.match(skill, /AUTH\/SIGNUP_EMAIL` -> `auth-signup-email/);
+  assert.match(skill, /kit-dev\/temp\/runs\/<run-id>\/tests\/web-plans/);
+  assert.match(skill, /Plan-only는 Playwright를 실행하지 않고 `tests\/web\/\*\*`를 만들지 않는다/);
   assert.doesNotMatch(skill, /Verification Matrix/);
 
   assert.match(stage08, /e2e-agent/);

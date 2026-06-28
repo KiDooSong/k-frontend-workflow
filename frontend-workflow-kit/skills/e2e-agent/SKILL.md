@@ -49,7 +49,9 @@ tests/web-plans/{domain}/{screen-slug}.plan.md
 tests/web/{domain}/{screen-slug}.spec.ts
 ```
 
-`{screen-slug}`는 canonical `screen_id`를 lowercase로 만들고 non-alphanumeric 문자를 `-`로 치환한 파일명이다. plan/test 첫머리에는 canonical `screen_id`, ScreenSpec path, seed/route 출처를 남겨 slug drift를 막는다.
+`{screen-slug}`는 canonical `screen_id`를 lowercase로 만들고 non-alphanumeric 문자를 `-`로 치환한 파일명이다(예: `COUPON-001` -> `coupon-001`, `AUTH/SIGNUP_EMAIL` -> `auth-signup-email`; ScreenSpec folder slug가 아니다). plan/test 첫머리에는 canonical `screen_id`, ScreenSpec path, seed/route 출처를 남겨 slug drift를 막는다.
+
+Kit repo 자체 dogfood에서는 repo-root `tests/web-plans/**`를 만들지 말고 consumer path shape를 `kit-dev/temp/runs/<run-id>/tests/web-plans/...` 아래에 보존한다.
 
 Playwright report/trace는 기본 커밋하지 않는다. 결과는 run report, Stage 08 handoff, 또는 consumer가 정의한 verification note에 링크/요약한다.
 
@@ -73,7 +75,7 @@ Playwright report/trace는 기본 커밋하지 않는다. 결과는 run report, 
    npm run workflow:readiness -- --screen <SCREEN_ID> --json
    ```
 3. context packet을 만든다: screen id/domain/route, State/Interaction rows, 제외할 Open Decisions, copy/a11y/testID anchors, visual facts as evidence only.
-4. `plan`: Playwright planner가 있으면 호출하고, 없으면 draft plan을 작성한다.
+4. `plan`: Playwright planner가 있으면 호출하고, 없으면 draft plan을 작성한다. Plan-only는 Playwright를 실행하지 않고 `tests/web/**`를 만들지 않는다. plan 산출물은 최소 checklist로 identity, shallow smoke, exclusions, locator/testID gaps, generator context packet, evidence-only disclaimer를 포함한다.
 5. `generate`: plan + seed/entry URL로 generator를 쓰고 `tests/web/{domain}/`에 둔다. 생성 전 사용자 확인을 받는다.
 6. `verify`: 가장 작은 관련 Playwright command를 실행하고 결과 요약을 남긴다.
 7. `heal`: 실패 evidence 뒤에만 healer를 쓰고 assertion weakening, broad regex, `test.fixme()`를 diff에서 확인한다.
