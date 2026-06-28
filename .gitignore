@@ -22,6 +22,9 @@ docs/frontend-workflow_viz/
 # git worktree (격리 작업용) — 본래 추적 대상 아님 (분석 보고서 P11)
 .claude/worktrees/
 
+# kit:pack distribution 빌드 산출물 (frontend-workflow-kit → ../dist/frontend-workflow-kit) — 생성물, 추적 안 함
+/dist/
+
 # Figma PAT(개인 액세스 토큰) — 절대 커밋 금지 (origin 누락분 보강)
 figma-pat
 

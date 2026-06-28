@@ -153,6 +153,49 @@ npm run workflow:lint-baseline -- --counts docs/frontend-workflow/_meta/lint-cou
 
 Start from `templates/meta/lint-policy.template.yaml`. See [docs/reference/lint-policy-catalog.md](docs/reference/lint-policy-catalog.md) and [docs/reference/lint-policy-rollout-ratchet.md](docs/reference/lint-policy-rollout-ratchet.md). Keep hard CI promotion a separate human decision.
 
+## Upgrade (Vendored Kit)
+
+This is an upgrade tool, not a daily `workflow:*` command — run it from the **new**
+packed kit before it replaces the old vendored copy. It compares
+`.kit-payload-manifest.json` hashes (current install vs next payload) and only
+touches files inside `--current`.
+
+```bash
+node /path/to/new/frontend-workflow-kit/scripts/upgrade-vendored-kit.mjs --help
+node /path/to/new/frontend-workflow-kit/scripts/upgrade-vendored-kit.mjs \
+  --current tools/frontend-workflow --next /path/to/new/frontend-workflow-kit --dry-run --plan kit-upgrade-plan.md
+node /path/to/new/frontend-workflow-kit/scripts/upgrade-vendored-kit.mjs \
+  --current tools/frontend-workflow --next /path/to/new/frontend-workflow-kit --apply
+```
+
+Flags: `--dry-run` (default, no writes), `--apply`, `--plan <path>`, `--json`,
+`--prune` (delete upstream-removed orphans), `--allow-conflicts`, `--force-runtime`
+(overwrite only `consumer-runtime` conflicts), `--backup-dir <path>`.
+
+Per-file classification:
+
+| Category | Condition | Apply behavior |
+|---|---|---|
+| `safe-update` | local == install baseline, upstream changed | overwrite |
+| `unchanged` | local == upstream | none |
+| `local-modified` | local changed, upstream == baseline | kept |
+| `conflict` | local changed AND upstream changed differently | `.upgrade-conflicts/<path>.incoming`; never overwritten by default |
+| `new-file` | absent locally, present upstream | added |
+| `removed-upstream` | present at install, gone upstream | reported orphan; deleted only with `--prune` |
+| `missing-current` | tracked at install, missing locally, present upstream | restored |
+| `unknown-local` | local file not in any payload manifest | left untouched |
+
+Safety: never overwrites locally modified files by default, never deletes
+upstream-removed files without `--prune`, never runs migrations, and writes only
+inside `--current` (plus any `--backup-dir` / `--plan` path you explicitly pass).
+Symlinked targets under `--current` are refused so links can't escape the kit, and
+consumer `docs/frontend-workflow/**`, app source, and root config are never touched
+automatically. An install with no `.kit-install-manifest.json` gets a
+conservative "unmanaged baseline" plan; after the first apply it becomes
+manifest-based. Consumer-impacting migration notes
+([docs/reference/upgrade-notes.md](docs/reference/upgrade-notes.md)) are embedded in
+every plan. The tool is advisory and is not a hard CI gate.
+
 ## Adoption Probe
 
 ```bash

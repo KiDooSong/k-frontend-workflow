@@ -150,6 +150,43 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
   }
 });
 
+test('kit:pack emits a payload manifest and excludes the upgrade-planner kit-dev test', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-pack-payload-manifest-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const out = path.join(tmp, 'frontend-workflow-kit');
+  const r = spawnSync(process.execPath, [PACK_CLI, '--out', out, '--json'], { cwd: KIT_ROOT, encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+
+  // Default path (no --source-ref): kit/git supply the metadata.
+  const manifest = JSON.parse(fs.readFileSync(path.join(out, '.kit-payload-manifest.json'), 'utf8'));
+  assert.equal(manifest.schema_version, 1);
+  assert.equal(manifest.distribution_manifest_version, 1);
+  assert.equal(manifest.payload.destination_hint, 'tools/frontend-workflow');
+  assert.ok(Object.hasOwn(manifest.kit, 'source_ref')); // present (a SHA when git is available, else null)
+  assert.equal(typeof manifest.kit.package_version, 'string');
+  assert.ok(manifest.payload.files.length > 50);
+
+  const readiness = manifest.payload.files.find((f) => f.path === 'scripts/readiness.mjs');
+  assert.ok(readiness, 'readiness.mjs should appear in the payload manifest');
+  assert.match(readiness.sha256, /^[0-9a-f]{64}$/);
+  assert.equal(readiness.classification, 'consumer-runtime');
+  assert.match(readiness.mode, /^100(644|755)$/);
+
+  // The upgrade tool ships to consumers; its kit-dev test stays in the kit repo.
+  assert.equal(exists('scripts/upgrade-vendored-kit.mjs', out), true);
+  assert.equal(exists('scripts/lib/upgrade-planner.test.mjs', out), false);
+  assert.equal(manifest.payload.files.some((f) => f.path === 'scripts/lib/upgrade-planner.test.mjs'), false);
+
+  // The manifest is not allowed to list itself or the summary file.
+  assert.equal(manifest.payload.files.some((f) => f.path === '.kit-payload-manifest.json'), false);
+  assert.equal(manifest.payload.files.some((f) => f.path === '_distribution-summary.json'), false);
+  // File list is sorted (deterministic diffs).
+  assert.deepEqual(
+    manifest.payload.files.map((f) => f.path),
+    [...manifest.payload.files.map((f) => f.path)].sort((a, b) => a.localeCompare(b)),
+  );
+});
+
 test('packed consumer-facing markdown does not link to excluded docs', (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-pack-links-'));
   t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));

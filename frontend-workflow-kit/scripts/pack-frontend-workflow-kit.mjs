@@ -3,6 +3,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { KIT_ROOT, parseArgs, readFileSafe, yamlParse } from './lib/util.mjs';
+import {
+  PAYLOAD_MANIFEST_NAME,
+  buildPayloadManifest,
+  gitInfo,
+  writeJson,
+} from './lib/kit-manifest.mjs';
 
 const DEFAULT_MANIFEST = path.join(KIT_ROOT, 'distribution-manifest.yaml');
 const DEFAULT_OUT = path.resolve(KIT_ROOT, '..', 'dist', 'frontend-workflow-kit');
@@ -159,6 +165,7 @@ function copyConsumerPackageJson(src, dest) {
 
 function expandEntry(entry) {
   const normalized = normalizeEntry(entry);
+  const classification = normalized.classification ?? null;
   if (normalized.source.endsWith('/**')) {
     const sourceDirRel = normalized.source.slice(0, -3);
     const targetDirRel = normalized.target.endsWith('/**') ? normalized.target.slice(0, -3) : normalized.target;
@@ -169,6 +176,7 @@ function expandEntry(entry) {
     return walkFilesAll(sourceDir).map((src) => ({
       src,
       target: path.join(targetDirRel, path.relative(sourceDir, src)),
+      classification,
     }));
   }
 
@@ -179,14 +187,30 @@ function expandEntry(entry) {
     fail(`directory entries must use /**: ${normalized.source}`);
   }
   if (!stat.isFile()) fail(`allowlisted path is not a regular file: ${normalized.source}`);
-  return [{ src, target: normalized.target }];
+  return [{ src, target: normalized.target, classification }];
 }
 
-export function packFrontendWorkflowKit({ outDir = DEFAULT_OUT, manifestPath = DEFAULT_MANIFEST } = {}) {
+function readPackageVersion() {
+  const raw = readFileSafe(path.join(KIT_ROOT, 'package.json'));
+  if (raw == null) return null;
+  try {
+    return JSON.parse(raw).version || null;
+  } catch {
+    return null;
+  }
+}
+
+export function packFrontendWorkflowKit({
+  outDir = DEFAULT_OUT,
+  manifestPath = DEFAULT_MANIFEST,
+  sourceRef = null,
+  sourceRepo = null,
+} = {}) {
   const resolvedOut = path.resolve(outDir);
   const resolvedManifest = path.resolve(manifestPath);
   assertSafeOutDir(resolvedOut);
   const manifest = loadManifest(resolvedManifest);
+  const repoRoot = path.resolve(KIT_ROOT, '..');
 
   const expandedPlan = [];
   for (const entry of manifest.payload.include) expandedPlan.push(...expandEntry(entry));
@@ -235,14 +259,38 @@ export function packFrontendWorkflowKit({ outDir = DEFAULT_OUT, manifestPath = D
     'utf8',
   );
 
-  return { outDir: resolvedOut, summary };
+  // Deterministic machine-readable payload manifest: lets consumers run a
+  // manifest-based safe upgrade (scripts/upgrade-vendored-kit.mjs) instead of
+  // re-copying the whole directory. Generated from the actual packed output.
+  let resolvedRef = sourceRef ?? process.env.KIT_SOURCE_REF ?? null;
+  let resolvedRepo = sourceRepo ?? process.env.KIT_SOURCE_REPO ?? null;
+  if (resolvedRef == null || resolvedRepo == null) {
+    const git = gitInfo(repoRoot); // single git probe, only when not provided explicitly
+    if (resolvedRef == null) resolvedRef = git.source_ref;
+    if (resolvedRepo == null) resolvedRepo = git.source_repo;
+  }
+  const payloadManifest = buildPayloadManifest({
+    items: copyPlan,
+    outDir: resolvedOut,
+    repoRoot,
+    destinationHint: manifest.destination_hint || null,
+    sourceRef: resolvedRef,
+    sourceRepo: resolvedRepo,
+    packageVersion: readPackageVersion(),
+    distributionManifestVersion: manifest.version ?? null,
+  });
+  writeJson(path.join(resolvedOut, PAYLOAD_MANIFEST_NAME), payloadManifest);
+
+  return { outDir: resolvedOut, summary, payloadManifest };
 }
 
 function main() {
   const { flags } = parseArgs(process.argv.slice(2));
   const outDir = flags.out ? path.resolve(String(flags.out)) : DEFAULT_OUT;
   const manifestPath = flags.manifest ? path.resolve(String(flags.manifest)) : DEFAULT_MANIFEST;
-  const result = packFrontendWorkflowKit({ outDir, manifestPath });
+  const sourceRef = typeof flags['source-ref'] === 'string' ? flags['source-ref'] : null;
+  const sourceRepo = typeof flags['source-repo'] === 'string' ? flags['source-repo'] : null;
+  const result = packFrontendWorkflowKit({ outDir, manifestPath, sourceRef, sourceRepo });
   if (flags.json) {
     process.stdout.write(JSON.stringify({ ok: true, out: result.outDir, file_count: result.summary.file_count }, null, 2) + '\n');
   } else {
