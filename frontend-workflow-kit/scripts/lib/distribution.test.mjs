@@ -604,14 +604,14 @@ test('safety invariants removed from skills still live in canonical references',
   // register-first + same-input retry row reuse
   assert.match(reconciliation, /register-first/);
   assert.match(reconciliation, /Retry updates that row/);
-  // gate raising only (agents raise gates, people lower them)
+  // gate raising only (agents raise gates, people lower them) — match the full principle
   assert.match(reconciliation, /gate raising only/i);
-  assert.match(stage09, /raise/i);
+  assert.match(stage09, /Agents \*\*raise\*\* gates; people \*\*lower\*\* them/);
   // generated files are not hand-edited, and a concrete regeneration command stays listed
   assert.match(generated, /Do not hand-edit/i);
   assert.match(generated, /workflow:catalog/);
-  // source ids are aliases; the canonical screen id is workflow-owned
-  assert.match(identity, /aliases/i);
+  // source ids are aliases (not canonical); the canonical screen id is workflow-owned
+  assert.match(identity, /aliases \/ evidence\*\*, not canonical/);
   assert.match(identity, /워크플로우가 소유|workflow-owned/);
   // component gaps are proposal-only (accept is human)
   assert.match(reconciliation, /accept\(카탈로그 반영\)·구현은 사람/);
