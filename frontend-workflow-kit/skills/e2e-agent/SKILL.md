@@ -9,7 +9,7 @@ ScreenSpec 기반 **선택형 웹 E2E evidence**를 만든다. 이 스킬은
 [workflow spine](../../docs/reference/workflow-spine.md)의
 [Stage 08](../../docs/reference/workflow-stages/08-validate-and-report.md) 보조 절차이며,
 계획은 [Stage 05](../../docs/reference/workflow-stages/05-author-workflow-contracts.md),
-생성/수정은 [Stage 06](../../docs/reference/workflow-stages/06-implement-screen-or-code.md)
+제품 코드 변경은 [Stage 06](../../docs/reference/workflow-stages/06-implement-screen-or-code.md)
 경계를 따른다. 세부 규칙의 정본은 [doc-ownership.md](../../docs/reference/doc-ownership.md).
 
 ## 핵심 불변식
