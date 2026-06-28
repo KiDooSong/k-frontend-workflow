@@ -704,7 +704,7 @@ test('e2e consumer adoption guide sequences setup without duplicating the canoni
   // The consumer install/commit/ignore/run sequence is present.
   assert.match(adoption, /npx playwright init-agents --loop=codex/);
   assert.match(adoption, /--loop=claude/);
-  assert.match(adoption, /--config playwright\.config\.ts --project chromium/);
+  assert.match(adoption, /--config playwright\.config\.ts --project web/);
   assert.match(adoption, /\.mcp\.json/);
   assert.match(adoption, /\.codex\/agents\/playwright_test_\*\.toml/);
   assert.match(adoption, /\.claude\/agents\/playwright-test-\*\.md/);

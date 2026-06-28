@@ -43,7 +43,7 @@ inline and links the rest; it does not restate the references.
 | optional web E2E evidence | [Stage 08](workflow-stages/08-validate-and-report.md) + [`e2e-agent`](../../skills/e2e-agent/SKILL.md) | keep non-gating boundary inline; link the rest |
 | e2e behavioral rules (assertion / locator / coverage) | [`e2e-behavioral-rules.md`](e2e-behavioral-rules.md) | keep "assert app state not browser artifacts; scope rows by container testid+id" inline; link the catalog + examples |
 | e2e Playwright setup / path model / output Kit Mapping | [`e2e-playwright-agents.md`](e2e-playwright-agents.md) | link only (setup, read once) |
-| e2e consumer adoption procedure (install / commit / ignore / run sequence + checklist) | [`e2e-consumer-adoption.md`](e2e-consumer-adoption.md) | link only; do not restate setup / path / rules |
+| e2e consumer adoption procedure (install / commit / ignore / run sequence + checklist) | [`e2e-consumer-adoption.md`](e2e-consumer-adoption.md) | link only; it sequences the procedure and links setup / path / rules to their homes (does not duplicate the catalog) |
 | command syntax | [`COMMANDS.md`](../../COMMANDS.md) | link only |
 
 ## The dedup rule
