@@ -1,5 +1,10 @@
 # e2e-agent Real-MCP Planner Dogfood
 
+> **STATUS UPDATE (2026-06-28): RESOLVED — dogfood now COMPLETE.** The "MCP not mounted"
+> blocker below was overcome by rooting the session on a valid Playwright project. The live
+> planner -> generator run (2 planners x 2 generators, all green) and its findings are in
+> [dogfood-complete.md](./dogfood-complete.md). This file is kept as the original record.
+
 Run id: `e2e-agent-real-mcp-001`
 
 Branch/worktree: `dogfood/e2e-agent-real-mcp-planner` (cut from `docs/e2e-agent-dogfood-followup` @ `7329039`) in `.claude/worktrees/dogfood-e2e-agent-real-mcp`.
