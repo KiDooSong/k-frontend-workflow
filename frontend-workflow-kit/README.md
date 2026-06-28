@@ -214,6 +214,19 @@ npm run workflow:validate
 
 관련 입력이 `not-started`, `in-progress`, `failed` 상태면 구현 전에 reconcile을 끝내거나 같은 row로 재개한다. 구현은 readiness가 허용한 파일에만 하며, generated files, Open Decision resolve, Unknown close, Component Gap accept, live policy replacement는 사람이 명시하지 않으면 하지 않는다. 작업 중 어떤 artifact를 함께 갱신해야 할지 애매하면 [docs/reference/task-artifact-matrix.md](docs/reference/task-artifact-matrix.md)를 확인한다.
 
+## Optional Web E2E Evidence
+
+웹 E2E 계획/생성/검증/수리가 필요하면 `skills/e2e-agent/SKILL.md`를 사용한다.
+
+```txt
+"이 화면 e2e 계획 짜줘"        -> e2e-agent plan (Stage 05 beside)
+"Playwright 테스트 생성해줘"   -> e2e-agent generate (Stage 06 boundaries)
+"웹 검증 돌려줘"               -> e2e-agent verify (Stage 08 evidence)
+"이 실패한 e2e 고쳐줘"         -> e2e-agent heal (failure evidence required)
+```
+
+이 흐름은 선택형 evidence다. `tests/web-plans/**`와 `tests/web/**`는 ScreenSpec이나 readiness gate가 아니며, green test가 Open Decision resolve, `confirmed` 승격, 제품 승인, CI hard gate를 뜻하지 않는다. 결과는 Stage 08 handoff, run report, 또는 소비 repo가 정의한 verification note에 링크/요약한다.
+
 ## Tier3 And Policy Drafts
 
 Tier3/custom layer는 readiness 코드를 바꾸지 않고 `project-layout.yaml`로 선언한다. `workflow:doctor`로 layout을 확인하고, policy 변경은 live policy 교체가 아니라 draft/review artifact로 다룬다.

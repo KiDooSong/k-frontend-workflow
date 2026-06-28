@@ -60,6 +60,9 @@ The whole point is to enter at the right stage and skip the rest.
   then 03/04. Never jump straight to 05/06 on an unmapped screen.
 - **"route 추가했어"** → enter at **05/06** to author/implement, then **07** to
   regenerate route-tree/nav-graph, then **08**.
+- **"이 화면 e2e 짜줘 / 웹 검증 돌려줘"** → use `e2e-agent`: plan beside
+  **05**, generate only within **06** boundaries when requested, verify/heal as
+  **08** evidence. E2E is optional evidence, not a gate.
 - **"Open Decision 닫아도 돼?"** → enter at **09** (human-owned), then re-run 07/08.
 - **"이 raw Figma를 workflow input으로 만들어"** → enter at **01** (consumer-owned
   parsing) → 02 (map aliases to canonical ids) → 03 (`workflow:create-input`).

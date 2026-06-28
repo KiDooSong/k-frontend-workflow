@@ -19,6 +19,20 @@ Add `workflow:check-generated` (advisory) when route, nav, catalog, codegen, lin
 policy, or layout sources changed. `validate` pass is structural integrity, not
 product approval.
 
+## Optional web E2E evidence
+
+When the user asks for web E2E, Playwright, web verification, test generation, or
+repairing a failing web test, use the
+[`e2e-agent`](../../../skills/e2e-agent/SKILL.md) skill. It can plan beside Stage
+05, generate within Stage 06 boundaries after explicit request, and verify/heal
+as Stage 08 evidence.
+
+This is **optional and never a gate**. Playwright green does not resolve Open
+Decisions, accept Component Gaps, promote `confirmed`, raise readiness, or prove
+native/mobile correctness. Link or summarize results in the handoff summary, a
+run report, or a consumer-defined verification note; do not require a separate
+canonical matrix.
+
 ## Capture session learnings (optional)
 
 If the session discovered a workflow gap, a stale doc, a confusing consumer-vs-kit
