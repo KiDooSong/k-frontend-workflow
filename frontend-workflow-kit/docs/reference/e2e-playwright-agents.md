@@ -8,6 +8,10 @@ repo. The intended flow is planner -> generator -> healer:
 - Generator turns an approved plan into Playwright tests.
 - Healer repairs failing test code from failure evidence and human-reviewed diff.
 
+This is a setup reference (read once). For the rules the agent applies while it
+plans, generates, and reviews tests — assertion & locator hygiene, coverage
+division — see [e2e-behavioral-rules.md](e2e-behavioral-rules.md).
+
 ## Prerequisites
 
 - Runnable web app and known entry URL.
@@ -117,8 +121,15 @@ export default defineConfig({
 - Per-run drafts must be isolated, for example
   `tests/web-plans/{domain}/{screen-slug}/drafts/{run-id}/plan.md` or a
   repo-local run folder such as `kit-dev/temp/runs/<run-id>/...`.
-- Generator output -> `tests/web/{domain}/{screen-slug}.spec.ts`
-  unless the consumer repo already has a clearer convention.
+- Generator output -> `tests/web/{domain}/{screen-slug}/<suite>.spec.ts` — a folder
+  per screen holding the 1..N suite files the planner produces for that screen. The
+  planner emits `**File:**` per test but reuses one filename per suite, so do not
+  merge unrelated suites into one file; a single-suite screen is still a
+  `{screen-slug}/` folder with one file. `testDir` stays fixed; the
+  domain/screen/suite is a `fileName` subpath. A planner "suite" that is actually a
+  distinct canonical screen goes to its own `screen-slug`
+  ([screen-identity.md](screen-identity.md)), not nested as a suite. Use the
+  consumer repo's convention if it already has a clearer one.
 
 Do not treat the scaffold template as the normal substitute for planner output.
 The generator-facing plan must preserve the Playwright planner output body

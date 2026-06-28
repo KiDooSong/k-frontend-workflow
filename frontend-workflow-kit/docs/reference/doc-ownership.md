@@ -41,6 +41,8 @@ inline and links the rest; it does not restate the references.
 | policy draft vs live policy | [Stage 10](workflow-stages/10-policy-layout-tier3-changes.md) + [`CONVENTIONS.md`](../../CONVENTIONS.md) §Tier3 + [`input-reconciliation.md`](input-reconciliation.md) §Tier3 | short reminder only |
 | route / screen / API conventions | [`CONVENTIONS.md`](../../CONVENTIONS.md) | link only |
 | optional web E2E evidence | [Stage 08](workflow-stages/08-validate-and-report.md) + [`e2e-agent`](../../skills/e2e-agent/SKILL.md) | keep non-gating boundary inline; link the rest |
+| e2e behavioral rules (assertion / locator / coverage) | [`e2e-behavioral-rules.md`](e2e-behavioral-rules.md) | keep "assert app state not browser artifacts; scope rows by container testid+id" inline; link the catalog + examples |
+| e2e Playwright setup / path model / output Kit Mapping | [`e2e-playwright-agents.md`](e2e-playwright-agents.md) | link only (setup, read once) |
 | command syntax | [`COMMANDS.md`](../../COMMANDS.md) | link only |
 
 ## The dedup rule

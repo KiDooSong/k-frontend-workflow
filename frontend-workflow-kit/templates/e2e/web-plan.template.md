@@ -37,7 +37,7 @@ Unknown, or Gap.
 - Canonical final plan path: `tests/web-plans/{domain}/{screen-slug}/plan.md`
 - Per-run draft path: `tests/web-plans/{domain}/{screen-slug}/drafts/{run-id}/plan.md`
 - Actual dogfood path, if kit repo dogfood: `kit-dev/temp/runs/{run-id}/tests/web-plans/{domain}/{screen-slug}/plan.md`
-- Future generated test target, if approved later: `{test_dir}/{domain}/{screen-slug}.spec.ts`
+- Future generated test target, if approved later: `{test_dir}/{domain}/{screen-slug}/<suite>.spec.ts` (folder per screen, 1..N suite files; see [e2e-playwright-agents.md](../../docs/reference/e2e-playwright-agents.md#kit-mapping))
 
 ### Shallow Smoke Scope
 
@@ -109,7 +109,7 @@ shape, even if the workflow context above is retained for provenance.
 
 #### {test name}
 
-**File:** `{test_dir}/{domain}/{screen-slug}.spec.ts`
+**File:** `{test_dir}/{domain}/{screen-slug}/<suite>.spec.ts`
 
 **Steps:**
   1. `{user-facing action}`
