@@ -20,6 +20,7 @@ import {
   CONFLICTS_DIR_NAME,
   manifestFileIndex,
   isSafeRelPath,
+  statMode,
 } from './kit-manifest.mjs';
 
 const KIT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -87,6 +88,50 @@ function buildScenario(tmp, { withInstallManifest = true } = {}) {
   return { currentDir, nextDir };
 }
 
+function buildModeUpdateScenario(tmp, t) {
+  const currentDir = path.join(tmp, 'current');
+  const nextDir = path.join(tmp, 'next');
+  const rel = 'script.sh';
+  const body = 'echo ok\n';
+
+  writeFile(currentDir, rel, body);
+  writeFile(nextDir, rel, body);
+
+  const currentAbs = path.join(currentDir, rel);
+  const nextAbs = path.join(nextDir, rel);
+  try {
+    fs.chmodSync(currentAbs, 0o644);
+    fs.chmodSync(nextAbs, 0o755);
+  } catch {
+    t.skip('chmod not supported on this platform');
+    return null;
+  }
+  if (statMode(currentAbs) !== '100644' || statMode(nextAbs) !== '100755') {
+    t.skip('executable bit is not observable on this platform');
+    return null;
+  }
+
+  writeFile(currentDir, INSTALL_MANIFEST_NAME, JSON.stringify({
+    schema_version: 1,
+    kit: { source_repo: 'O/R', source_ref: 'OLDREF', package_version: '1.0.0' },
+    payload: {
+      destination_hint: 'tools/frontend-workflow',
+      files: [{ path: rel, sha256: sha(body), classification: 'consumer-runtime', mode: '100644' }],
+    },
+  }, null, 2) + '\n');
+  writeFile(nextDir, PAYLOAD_MANIFEST_NAME, JSON.stringify({
+    schema_version: 1,
+    kit: { source_repo: 'O/R', source_ref: 'NEXTREF', package_version: '9.9.9' },
+    distribution_manifest_version: 1,
+    payload: {
+      destination_hint: 'tools/frontend-workflow',
+      files: [{ path: rel, sha256: sha(body), classification: 'consumer-runtime', mode: '100755' }],
+    },
+  }, null, 2) + '\n');
+
+  return { currentDir, nextDir, rel, body, currentAbs };
+}
+
 function categoryOf(plan, rel) {
   return plan.files.find((f) => f.path === rel)?.category;
 }
@@ -108,6 +153,41 @@ test('classifyFile covers all categories', () => {
   assert.equal(classifyFile({ oldHash: null, curHash: 'x', nextHash: 'y', baselineUnknown: true }), 'conflict');
   // a file added locally that upstream also ships differently is a conflict
   assert.equal(classifyFile({ oldHash: null, curHash: 'x', nextHash: 'y' }), 'conflict');
+  // content-stable upstream chmod is safe when the local mode still matches baseline
+  assert.equal(classifyFile({
+    oldHash: 'a',
+    curHash: 'a',
+    nextHash: 'a',
+    oldMode: '100644',
+    curMode: '100644',
+    nextMode: '100755',
+  }), 'mode-update');
+  // content-stable local chmod is preserved when upstream mode did not move
+  assert.equal(classifyFile({
+    oldHash: 'a',
+    curHash: 'a',
+    nextHash: 'a',
+    oldMode: '100755',
+    curMode: '100644',
+    nextMode: '100755',
+  }), 'local-modified');
+  // hash updates are safe only if the local mode still matches baseline too
+  assert.equal(classifyFile({
+    oldHash: 'a',
+    curHash: 'a',
+    nextHash: 'b',
+    oldMode: '100644',
+    curMode: '100644',
+    nextMode: '100755',
+  }), 'safe-update');
+  assert.equal(classifyFile({
+    oldHash: 'a',
+    curHash: 'a',
+    nextHash: 'b',
+    oldMode: '100755',
+    curMode: '100644',
+    nextMode: '100755',
+  }), 'conflict');
 });
 
 // --- dry-run categorization (Part I 3-9, 11 inputs) ------------------------
@@ -175,6 +255,29 @@ test('applyPlan performs only safe operations and refreshes the install manifest
   assert.equal(idx.get('orphan.mjs').sha256, sha('O'));
   // unknown-local never enters the managed manifest
   assert.equal(idx.has('localonly.mjs'), false);
+});
+
+test('applyPlan applies upstream mode-only changes and refreshes the install manifest mode', (t) => {
+  const tmp = mkTmp('mode-update');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const scenario = buildModeUpdateScenario(tmp, t);
+  if (!scenario) return;
+  const { currentDir, nextDir, rel, body, currentAbs } = scenario;
+
+  const plan = buildPlan({ currentDir, nextDir });
+  assert.equal(categoryOf(plan, rel), 'mode-update');
+  assert.equal(actionOf(plan, rel), 'chmod');
+  assert.equal(plan.counts['mode-update'], 1);
+  assert.equal(plan.counts.unchanged, 0);
+
+  const applied = applyPlan({ plan, currentDir, nextDir });
+  assert.deepEqual(applied.actions, [{ path: rel, action: 'chmod' }]);
+  assert.equal(read(currentDir, rel), body);
+  assert.equal(statMode(currentAbs), '100755');
+
+  const install = JSON.parse(read(currentDir, INSTALL_MANIFEST_NAME));
+  const idx = manifestFileIndex(install);
+  assert.equal(idx.get(rel).mode, '100755');
 });
 
 test('re-running the plan after apply preserves local edits (no overwrite regression)', (t) => {
@@ -368,6 +471,19 @@ test('CLI dry-run is the default and writes nothing into current', (t) => {
   // dry-run must not modify or create anything in current
   assert.equal(read(currentDir, 'safe.mjs'), before);
   assert.equal(fs.existsSync(path.join(currentDir, INSTALL_MANIFEST_NAME)), true); // pre-existing only
+});
+
+test('CLI human summary includes mode-only updates', (t) => {
+  const tmp = mkTmp('cli-mode-summary');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const scenario = buildModeUpdateScenario(tmp, t);
+  if (!scenario) return;
+  const { currentDir, nextDir } = scenario;
+
+  const r = spawnSync(process.execPath, [UPGRADE_CLI, '--current', currentDir, '--next', nextDir], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /mode-update=1/);
+  assert.match(r.stdout, /dry-run/);
 });
 
 test('CLI --apply applies safe updates and writes a plan file', (t) => {

@@ -29,6 +29,7 @@ import {
 
 export const CATEGORIES = [
   'safe-update',
+  'mode-update',
   'unchanged',
   'local-modified',
   'conflict',
@@ -41,6 +42,7 @@ export const CATEGORIES = [
 // One-line human descriptions used in the markdown plan.
 export const CATEGORY_DESCRIPTIONS = {
   'safe-update': 'Unchanged locally since install; upstream changed — safe to overwrite.',
+  'mode-update': 'Unchanged locally since install; upstream changed only file mode — safe to chmod.',
   'unchanged': 'Identical to the next payload — no action.',
   'local-modified': 'Modified locally; upstream unchanged from baseline — local file kept.',
   'conflict': 'Modified locally AND changed upstream — manual merge required.',
@@ -50,10 +52,24 @@ export const CATEGORY_DESCRIPTIONS = {
   'unknown-local': 'Local file not part of any payload manifest — left untouched.',
 };
 
+function sameFileState(leftHash, leftMode, rightHash, rightMode) {
+  if (leftHash !== rightHash) return false;
+  if (leftHash == null) return true;
+  return !leftMode || !rightMode || leftMode === rightMode;
+}
+
 // Pure classification of one path from its three hashes.
 //   oldHash/curHash/nextHash: hex string or null (null = absent in that view).
 //   baselineUnknown: true when there is no install/payload baseline (bootstrap).
-export function classifyFile({ oldHash, curHash, nextHash, baselineUnknown }) {
+export function classifyFile({
+  oldHash,
+  curHash,
+  nextHash,
+  baselineUnknown,
+  oldMode = null,
+  curMode = null,
+  nextMode = null,
+}) {
   const hasOld = oldHash != null;
   const hasCur = curHash != null;
   const hasNext = nextHash != null;
@@ -68,11 +84,19 @@ export function classifyFile({ oldHash, curHash, nextHash, baselineUnknown }) {
     if (hasOld) return 'missing-current'; // was installed, now deleted locally
     return 'new-file'; // genuinely new upstream file
   }
-  if (curHash === nextHash) return 'unchanged';
+  if (sameFileState(curHash, curMode, nextHash, nextMode)) {
+    return 'unchanged';
+  }
+  if (curHash === nextHash && curMode && nextMode && curMode !== nextMode) {
+    if (baselineUnknown || !hasOld) return 'local-modified';
+    if (sameFileState(oldHash, oldMode, curHash, curMode)) return 'mode-update';
+    if (sameFileState(oldHash, oldMode, nextHash, nextMode)) return 'local-modified';
+    return 'conflict';
+  }
   // current and next differ.
   if (baselineUnknown || !hasOld) return 'conflict'; // can't prove a safe overwrite
-  if (oldHash === curHash) return 'safe-update'; // local untouched, upstream moved
-  if (oldHash === nextHash) return 'local-modified'; // local moved, upstream same
+  if (sameFileState(oldHash, oldMode, curHash, curMode)) return 'safe-update'; // local untouched, upstream moved
+  if (sameFileState(oldHash, oldMode, nextHash, nextMode)) return 'local-modified'; // local moved, upstream same
   return 'conflict'; // both moved, differently
 }
 
@@ -81,6 +105,8 @@ function plannedAction(category, classification, options) {
   switch (category) {
     case 'safe-update':
       return 'overwrite';
+    case 'mode-update':
+      return 'chmod';
     case 'new-file':
       return 'add';
     case 'missing-current':
@@ -160,6 +186,16 @@ function hashCurrent(currentDir, rel) {
   return sha256OfFile(abs);
 }
 
+function modeCurrent(currentDir, rel) {
+  const abs = path.join(currentDir, rel);
+  try {
+    if (!fs.statSync(abs).isFile()) return null;
+  } catch {
+    return null;
+  }
+  return statMode(abs);
+}
+
 // Migration notes shipped with the next payload (Part F). Surfaced verbatim in
 // the plan with a "review if your baseline is older" caveat, since we do not
 // require knowing the exact installed baseline.
@@ -205,7 +241,18 @@ export function buildPlan({ currentDir, nextDir, options = {} }) {
     const oldHash = oldEntry?.sha256 ?? null;
     const nextHash = nextEntry?.sha256 ?? null;
     const curHash = hashCurrent(currentDir, rel);
-    const category = classifyFile({ oldHash, curHash, nextHash, baselineUnknown });
+    const oldMode = oldEntry?.mode ?? null;
+    const curMode = modeCurrent(currentDir, rel);
+    const nextMode = nextEntry?.mode ?? null;
+    const category = classifyFile({
+      oldHash,
+      curHash,
+      nextHash,
+      baselineUnknown,
+      oldMode,
+      curMode,
+      nextMode,
+    });
     const classification = nextEntry?.classification ?? oldEntry?.classification ?? null;
     files.push({
       path: rel,
@@ -214,7 +261,7 @@ export function buildPlan({ currentDir, nextDir, options = {} }) {
       old_sha256: oldHash,
       current_sha256: curHash,
       next_sha256: nextHash,
-      mode: nextEntry?.mode ?? oldEntry?.mode ?? null,
+      mode: nextMode ?? oldMode,
       planned_action: plannedAction(category, classification, opts),
     });
     counts[category] += 1;
@@ -307,6 +354,7 @@ export function renderPlanMarkdown(plan) {
   lines.push(`- Current: ${shortRef(plan.current.source_ref)}`);
   lines.push(`- Next: ${shortRef(plan.next.source_ref)}${plan.next.package_version ? ` (v${plan.next.package_version})` : ''}`);
   lines.push(`- Safe updates: ${c['safe-update']}`);
+  lines.push(`- Mode updates: ${c['mode-update']}`);
   lines.push(`- New files: ${c['new-file']}`);
   lines.push(`- Conflicts: ${c.conflict}`);
   lines.push(`- Local modifications: ${c['local-modified']}`);
@@ -336,6 +384,10 @@ export function renderPlanMarkdown(plan) {
   lines.push('## Safe updates');
   lines.push('');
   lines.push(fileTable(byCat('safe-update'), [PATH_COL, CLASS_COL, ACTION_COL]));
+
+  lines.push('## Mode updates');
+  lines.push('');
+  lines.push(fileTable(byCat('mode-update'), [PATH_COL, CLASS_COL, ACTION_COL]));
 
   lines.push('## New files');
   lines.push('');
@@ -431,15 +483,19 @@ export function assertSafeWriteTarget(realRoot, destAbs, label) {
   }
 }
 
-function copyFileMode(src, dest, mode) {
-  fs.mkdirSync(path.dirname(dest), { recursive: true });
-  fs.copyFileSync(src, dest);
+function applyFileMode(dest, mode) {
   // mode like "100755" → restore exec bits where the platform honors them.
   if (typeof mode === 'string' && /^100[0-7]{3}$/.test(mode)) {
     try {
       fs.chmodSync(dest, parseInt(mode.slice(3), 8));
     } catch { /* best-effort on platforms without exec bit */ }
   }
+}
+
+function copyFileMode(src, dest, mode) {
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.copyFileSync(src, dest);
+  applyFileMode(dest, mode);
 }
 
 function backupFile(currentDir, backupDir, rel) {
@@ -524,6 +580,11 @@ export function applyPlan({ plan, currentDir, nextDir, options = {} }) {
       assertSafeWriteTarget(realCurrent, destAbs, LABEL);
       if (OVERWRITE_ACTIONS.has(action)) backupFile(resolvedCurrent, backupDir, f.path);
       copyFileMode(path.join(resolvedNext, f.path), destAbs, f.mode);
+      record(f.path, action);
+    } else if (action === 'chmod') {
+      assertInside(resolvedCurrent, destAbs, LABEL);
+      assertSafeWriteTarget(realCurrent, destAbs, LABEL);
+      applyFileMode(destAbs, f.mode);
       record(f.path, action);
     } else if (action === 'write-incoming') {
       const incoming = path.join(resolvedCurrent, CONFLICTS_DIR_NAME, `${f.path}.incoming`);

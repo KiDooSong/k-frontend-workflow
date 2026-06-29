@@ -177,6 +177,7 @@ Per-file classification:
 | Category | Condition | Apply behavior |
 |---|---|---|
 | `safe-update` | local == install baseline, upstream changed | overwrite |
+| `mode-update` | content unchanged locally, upstream changed only file mode | chmod |
 | `unchanged` | local == upstream | none |
 | `local-modified` | local changed, upstream == baseline | kept |
 | `conflict` | local changed AND upstream changed differently | `.upgrade-conflicts/<path>.incoming`; never overwritten by default |

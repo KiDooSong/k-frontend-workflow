@@ -10,9 +10,10 @@
 //     --next    /path/to/new/frontend-workflow-kit \
 //     --dry-run --plan kit-upgrade-plan.md
 //
-// Default is --dry-run (no writes). --apply performs only safe updates and adds;
-// it never overwrites locally modified files, never deletes upstream-removed
-// files (unless --prune), and only ever writes inside --current.
+// Default is --dry-run (no writes). --apply performs only safe content updates,
+// mode-only chmods, and adds; it never overwrites locally modified files, never
+// deletes upstream-removed files (unless --prune), and only ever writes inside
+// --current.
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -33,7 +34,7 @@ Required:
 
 Mode:
   --dry-run          Plan only; no writes (default).
-  --apply            Apply safe updates and new files; refresh the install manifest.
+  --apply            Apply safe updates, mode-only chmods, and new files; refresh the install manifest.
 
 Output:
   --plan <path>      Write the markdown upgrade plan to <path>.
@@ -95,7 +96,7 @@ function renderHumanSummary(plan) {
   lines.push(`${TOOL} — ${plan.options.apply ? 'apply' : 'dry-run'} (baseline: ${plan.baseline})`);
   lines.push(`  current ref : ${plan.current.source_ref || 'unknown'}`);
   lines.push(`  next ref    : ${plan.next.source_ref || 'unknown'}`);
-  lines.push(`  safe-update=${c['safe-update']} new=${c['new-file']} conflict=${c.conflict} `
+  lines.push(`  safe-update=${c['safe-update']} mode-update=${c['mode-update']} new=${c['new-file']} conflict=${c.conflict} `
     + `local-modified=${c['local-modified']} orphan=${c['removed-upstream']} `
     + `missing=${c['missing-current']} unchanged=${c.unchanged} unknown-local=${c['unknown-local']}`);
   for (const w of plan.warnings) lines.push(`  ! ${w}`);
