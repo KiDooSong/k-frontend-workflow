@@ -20,8 +20,9 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs, DEFAULTS, KIT_ROOT, loadYaml, readFileSafe, runCli } from './lib/util.mjs';
 import { computeReadiness } from './readiness.mjs';
-import { loadLayoutProfile } from './lib/layout-profile.mjs';
+import { LayoutConfigError, loadLayoutProfile } from './lib/layout-profile.mjs';
 import {
+  covers,
   isClearedAt,
   highestScreenMode,
   parseNameStatusText,
@@ -62,6 +63,37 @@ function domainsFromState(state) {
     if (d != null && d !== '') set.add(d);
   }
   return [...set].sort();
+}
+
+function isUndefinedApiClientRoleError(err) {
+  if (!(err instanceof LayoutConfigError)) return false;
+  const message = String(err.message || '');
+  return /\bapi_client\b/.test(message) && (/정의되지 않은 role/.test(message) || /undefined role/i.test(message));
+}
+
+function optionalApiClientSurfaces(layout, domains = []) {
+  const out = [];
+  const seen = new Set();
+  const contexts = [{}, ...domains.map((domain) => ({ domain }))];
+  for (const ctx of contexts) {
+    let resolved;
+    try {
+      resolved = layout.resolvePaths(['{roles.api_client}'], ctx);
+    } catch (err) {
+      if (isUndefinedApiClientRoleError(err)) continue;
+      throw err;
+    }
+    for (const surface of resolved || []) {
+      if (seen.has(surface)) continue;
+      seen.add(surface);
+      out.push(surface);
+    }
+  }
+  return out;
+}
+
+function surfaceTouchesAny(surface, surfaces) {
+  return (surfaces || []).some((candidate) => covers(surface, candidate) || covers(candidate, surface));
 }
 
 // 위반 1건의 reason / would_clear 문구를 만든다(설계 §4 출력 규약).
@@ -153,7 +185,9 @@ function main() {
   // materializeGuardedSurface 는 {domain} forbidden 을 실제 도메인들로 펼친 구체 글롭 합집합을
   // 만든 뒤 deriveGuardedSurface 와 동일 분류/threshold 필터를 적용한다. 도메인 오버라이드가 없는
   // expo 에선 결과가 deriveGuardedSurface(policy) 와 BYTE-동치.
-  const guardedSurface = layout.materializeGuardedSurface(resolvedPolicy, domainsFromState(state));
+  const domains = domainsFromState(state);
+  const guardedSurface = layout.materializeGuardedSurface(resolvedPolicy, domains);
+  const apiClientSurfaces = optionalApiClientSurfaces(layout, domains);
 
   // --- diff source 결정 → 상태 인식 record (우선순위: §3) ---
   let records;
@@ -210,7 +244,7 @@ function main() {
       // thresholdOf 재계산 금지 — 커스텀 도메인 표면은 {domain} 잔존 allowed 가 covers() 를 빗나가 영구
       // 위반이 됐다). expo 의 global 표면(src/api/**)은 threshold 가 동일해 byte-동치.
       const threshold = guardedSurface.thresholdOf(surface);
-      const clearanceOptions = { requireApiRequired: threshold === 'api-integrated-ui' };
+      const clearanceOptions = { requireApiRequired: surfaceTouchesAny(surface, apiClientSurfaces) };
       if (isClearedAt(threshold, readinessOutput, order, clearanceOptions)) continue; // (b) 프로젝트가 레이어 열 자격 도달 — 침묵
       seenFiles.add(F);
       const { reason, would_clear } = describeViolation(surface, threshold, resolvedPolicy, readinessOutput, clearanceOptions);

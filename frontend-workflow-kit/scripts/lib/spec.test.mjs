@@ -571,6 +571,76 @@ test('computeReadiness: no-api limiter tolerates custom layouts without api_clie
   assert.deepEqual(result.blocking, []);
 });
 
+test('computeReadiness: no-api limiter restores lower non-API edit paths when API role is exact allow', () => {
+  const policy = {
+    version: 1,
+    order: ['docs-only', 'screen-skeleton', 'final-fixture-ui', 'api-integrated-ui'],
+    modes: {
+      'docs-only': { requires: [], allowed_paths: [], forbidden_paths: [] },
+      'screen-skeleton': {
+        requires: ['screen_spec_status >= draft'],
+        allowed_paths: ['{roles.screen}'],
+        forbidden_paths: ['{roles.api_client}'],
+      },
+      'final-fixture-ui': {
+        requires: ['screen_spec_status >= confirmed', 'figma_mapping_status >= draft'],
+        allowed_paths: ['{roles.screen}', '{roles.domain_component}'],
+        forbidden_paths: ['{roles.api_client}'],
+      },
+      'api-integrated-ui': {
+        requires: ['api_confidence_min == confirmed', 'state_matrix_complete == true'],
+        allowed_paths: ['{roles.api_client}'],
+        forbidden_paths: ['{roles.screen}'],
+      },
+    },
+  };
+  const layout = {
+    layerTelemetryDeclared: false,
+    resolvePaths(paths, ctx = {}) {
+      return (paths || []).flatMap((pathEntry) =>
+        pathEntry
+          .replace('{roles.api_client}', 'src/api/**')
+          .replace('{roles.screen}', 'src/features/{domain}/screens/**')
+          .replace('{roles.domain_component}', 'src/features/{domain}/components/**')
+          .replace('{domain}', ctx.domain || '{domain}'),
+      );
+    },
+  };
+  const result = computeReadiness({
+    state: {
+      global: {},
+      screens: {
+        NO_API: {
+          status: 'confirmed',
+          domain: 'auth',
+          route: '/result',
+          stub: false,
+          derived: {
+            state_matrix_complete: true,
+            blocking_decisions: [],
+            malformed_decisions: [],
+            api_confidence_min: null,
+            api_required: false,
+            figma_mapping_status: 'draft',
+          },
+        },
+      },
+    },
+    policy,
+    ci: {},
+    manifest: {},
+    layout,
+  }).NO_API;
+
+  assert.equal(result.readiness_mode, 'api-integrated-ui');
+  assert.equal(result.api_required, false);
+  assert.deepEqual(result.allowed_paths, [
+    'src/features/auth/screens/**',
+    'src/features/auth/components/**',
+  ]);
+  assert.deepEqual(result.forbidden_paths, ['src/api/**']);
+});
+
 test('P13: interactionResultRoutes — 다중 라우트 추출 · 후행 구두점·쿼리·외부/PR URL 제외', () => {
   const spec = {
     sections: {
