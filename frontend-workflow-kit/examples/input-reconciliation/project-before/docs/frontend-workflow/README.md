@@ -26,7 +26,7 @@ docs/frontend-workflow/
     component-guidelines.md       # 카탈로그 사용 가이드 (artifact_type: component-guidelines)
     figma-frame-index.md          # 화면 ↔ figma 프레임 인덱스
   domains/
-    auth/      (domain-rules.md, flows.md, screens/login/screen-spec.md)
+    auth/      (domain-rules.md, flows.md (legacy/sample residue), screens/login/screen-spec.md)
     home/      (domain-rules.md, screens/home/screen-spec.md)
     coupons/   (domain-rules.md, screens/coupon-list/, coupon-detail/)
     profile/   (domain-rules.md, screens/profile-edit/screen-spec.md)

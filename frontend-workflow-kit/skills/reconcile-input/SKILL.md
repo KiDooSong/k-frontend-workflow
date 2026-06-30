@@ -29,8 +29,10 @@ description: 외부 입력 스킬이 저장한 새 입력 결과물(input_id 보
   resolve / close / accept / `confirmed` 승격은 **사람** 전용.
 - **코드·테스트·생성 파일을 직접 수정하지 않는다.** 입력은 문서·레지스터·리뷰 draft 로만 반영한다.
 - **canonical 화면 identity는 워크플로우가 소유**하고 source 코드(planning/design/node id)는 alias 다.
-  reconcile-input 은 source 코드로 canonical Screen ID 를 발명하지 않는다 — 매핑이 ambiguous 거나 `affected_screens`
-  가 raw source 코드면 멈추고 **[Stage 02](../../docs/reference/workflow-stages/02-screen-identity-source-mapping.md)** 로 간다.
+  reconcile-input 은 source 코드나 `raw:flow/...` 로 canonical Screen ID 를 발명하지 않는다. raw token 이면
+  screen-level write 를 멈추고 **[Stage 02](../../docs/reference/workflow-stages/02-screen-identity-source-mapping.md)** 로
+  screen identity 를 보낸다. 입력 전체를 failed 로 취급하지 말고, source-backed domain/app-level facts 는
+  [flow-shaped/domain-level routing](../../docs/reference/input-reconciliation.md#flow-shaped--domain-level-input)에 따라 reconcile 할 수 있다.
 - `input_id` 는 불변. 내용이 바뀌면 같은 id 를 덮어쓰지 말고 **새 id + supersedes**.
 - 세 status 축은 별개 라이프사이클: 입력 frontmatter `status` ≠ register `Reconcile Status` ≠ 자식 항목(D-/C-/U-/G-/INV-/VER-).
 
@@ -51,8 +53,9 @@ Register에서 같은 `input_id` 행을 먼저 찾고 `Reconcile Status` 에 따
 2. 위 "같은 input_id 재시도" 표대로 register 행을 만들거나 재개한다 — **어떤 문서 수정보다 먼저**.
 3. `affected_domains`/`affected_screens`(구 `suggested_scope`) 기준으로 관련 산출물만 연다.
    종류별 1차 산출물은 아래 라우팅 표, 2차 산출물은 [task-artifact-matrix.md](../../docs/reference/task-artifact-matrix.md).
-4. `affected_screens` 가 canonical id 가 아니라 raw source 코드거나 미존재 화면이면 **멈추고 Stage 02** 로 식별을 푼다
-   ([screen-identity.md](../../docs/reference/screen-identity.md)).
+4. `affected_screens` 가 canonical id 가 아니라 raw source 코드, `raw:flow/...`, 미존재 화면이면 screen-level write 는 **멈추고 Stage 02** 로 식별을 푼다
+   ([screen-identity.md](../../docs/reference/screen-identity.md)). 다만 flow-shaped/domain-level 입력 전체가 failed 인 것은 아니다.
+   source-backed domain/app-level facts 는 [input-reconciliation.md](../../docs/reference/input-reconciliation.md#flow-shaped--domain-level-input) 의 라우팅 표에 따라 계속 reconcile 할 수 있다.
 5. 기존 `confirmed` 문서·`resolved` 결정과 충돌하는지 대조한다.
 6. classification 을 만든다 (입력 1개 → item 여러 개 가능). 분류 정의: [input-reconciliation.md](../../docs/reference/input-reconciliation.md) §Classification.
 7. 자동 반영 가능한 `simple-update` 만 문서에 반영한다.
@@ -69,6 +72,7 @@ Register에서 같은 `input_id` 행을 먼저 찾고 `Reconcile Status` 에 따
 | 입력 종류 | 1차 산출물 | 상세 (정본) |
 |---|---|---|
 | planning / meeting / user-note | ScreenSpec, Navigation Map, Domain Rules, Open Decisions/Conflicts/Unknowns | [input-reconciliation.md](../../docs/reference/input-reconciliation.md) §Classification |
+| flow-shaped / domain-level | Domain Rules, Navigation Map(app-level only), API manifest, ScreenSpec Interaction Matrix(after identity) | [input-reconciliation.md](../../docs/reference/input-reconciliation.md) §Flow-shaped / domain-level input |
 | api | API manifest/OpenAPI, ScreenSpec Data/API, Domain Rules | [CONVENTIONS.md](../../CONVENTIONS.md) §API |
 | figma / visual-spec | `figma-component-mapping.md`, Component Catalog/Gap, Open Decisions | [input-reconciliation.md](../../docs/reference/input-reconciliation.md) §Visual/Figma |
 | qa / testid | testID intake note 또는 ScreenSpec Accessibility/Acceptance, INV-/VER- | [input-reconciliation.md](../../docs/reference/input-reconciliation.md) §testID |

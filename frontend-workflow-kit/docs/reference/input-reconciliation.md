@@ -136,6 +136,35 @@ canonical frontmatter 는 안정적으로 유지한다 — source alias 는 fron
 
 이 source ref 들은 reconcile-input 이 Screen Source Map 으로 canonical 화면을 확정할 때 쓰는 evidence 다. canonical frontmatter 확장이 과하면 그냥 `## Extracted Facts` 에 같은 내용을 적어도 된다.
 
+### Flow-shaped / domain-level input
+
+모든 입력이 screen-shaped 는 아니다. Flowchart, domain policy/business rule, canonical 화면이 아직 없는 app-flow evidence 는 `affected_screens: ["raw:flow/..."]` 또는 source flow token 을 들고 올 수 있다. 이 값은 **screen axis 가 unresolved** 라는 뜻이지 confirmed screen identity 가 아니다. 또한 입력 전체가 failed 라는 뜻도 아니다.
+
+불변식:
+
+- `raw:flow/...` 나 raw affected screen token 을 canonical Screen ID 로 해석하지 않는다.
+- reconcile-input 은 raw flow/source token 으로 canonical Screen ID 를 발명하지 않는다.
+- screen-level movement, ScreenSpec `## Interaction Matrix`, screen route/entry 업데이트는 Stage 02 에서 source alias / `source_screen_refs` / human-confirmed canonical identity 가 확보된 뒤에만 한다.
+- screen axis 가 unresolved 여도 source-backed domain/app-level facts 는 아래 라우팅 표에 따라 reconcile 할 수 있다.
+- classification 은 `scope-unclear` 를 포함할 수 있고, 구현이나 authoring 을 막아야 하면 Unknown 또는 Open Decision 을 남긴다.
+
+raw flow node/edge detail 은 기본적으로 input artifact 의 `## Extracted Facts` 에 보존한다. 그 node/edge 가 실제 화면 identity 를 암시하는 안정적인 source alias 일 때만 `## Source Screen Refs` 또는 Screen Source Map 의 `candidate`/`ambiguous` evidence 로 올린다. `source_screen_refs` 는 IA code, Figma node id, route hint, wireframe observed title 처럼 screen identity evidence 로 쓸 수 있는 값에만 사용한다. 단순 flow step/state 를 screen alias 처럼 승격하지 않는다.
+
+Flowchart-like facts routing:
+
+| Flowchart-like fact | Route to | Notes |
+|---|---|---|
+| Branches, gates, intent rules, credit/accounting/business rules | `docs/frontend-workflow/domains/{domain}/domain-rules.md` | 도메인이 소유하는 정책·분기·계산 규칙이다. 화면 identity 가 없어도 source-backed fact 면 reconcile 가능하다. |
+| Internal screen-to-screen movement | target ScreenSpec `## Interaction Matrix` | canonical source/target Screen ID 가 확인된 뒤에만 쓴다. 확인 전에는 `scope-unclear` + `## Extracted Facts`/Unknown/Open Decision 으로 둔다. |
+| App shell, route guard, deep link, cross-domain edge | `docs/frontend-workflow/app/navigation-map.md` | **navigation-map boundary:** app shell structure, route guards, deep links, cross-domain/app-level edges 만 소유한다. 모든 flow transition 의 catch-all 이 아니다. |
+| Domain-internal list → detail movement, screen-local behavior | target ScreenSpec `## Interaction Matrix` 또는 해당 ScreenSpec section | `navigation-map.md` 에 쓰지 않는다. domain-internal movement 는 화면 계약이 소유한다. |
+| Domain business rules | `docs/frontend-workflow/domains/{domain}/domain-rules.md` | screen-local behavior 와 분리한다. |
+| Unmapped flow nodes/edges | input artifact `## Extracted Facts` + `scope-unclear` | screen identity alias 로 쓸 수 있는 증거가 있을 때만 `source_screen_refs` / Screen Source Map candidate or ambiguous row 로 남긴다. |
+| API or data contract facts | existing API manifest / ScreenSpec API Candidates / Domain Rules | 기존 API routing 을 따른다. 새 field 나 새 artifact 를 만들지 않는다. |
+| Visual-only evidence | figma/visual mapping docs | behavior source of truth 로 쓰지 않는다. Visual/Figma 경계를 따른다. |
+
+`flows.md` 는 현재 manifest/schema/template 이 정의한 first-class artifact 가 아니다. examples 또는 temp tree 에 남아 있는 `domains/{domain}/flows.md` 언급은 legacy/sample residue 로 취급한다. 이번 계약은 `domain-flow` artifact 를 만들지 않으며, future domain-flow artifact 는 별도 design decision 이 필요하다.
+
 생성 후 흐름:
 
 ```txt

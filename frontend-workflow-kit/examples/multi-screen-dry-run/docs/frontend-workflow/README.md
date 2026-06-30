@@ -21,7 +21,7 @@ docs/frontend-workflow/
   global/
     component-gap-register.md     # baseline: 열린 gap 없음 (manifest 경로 = global/)
   domains/
-    auth/      (domain-rules.md, flows.md, screens/login/screen-spec.md)
+    auth/      (domain-rules.md, flows.md (legacy/sample residue), screens/login/screen-spec.md)
     home/      (domain-rules.md, screens/home/screen-spec.md)
     coupons/   (domain-rules.md, screens/coupon-list/, coupon-detail/)
     profile/   (domain-rules.md, screens/profile-edit/screen-spec.md)

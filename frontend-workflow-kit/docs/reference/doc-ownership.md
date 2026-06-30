@@ -31,6 +31,7 @@ inline and links the rest; it does not restate the references.
 | generated / `do_not_edit` regeneration | [`generated-files.md`](generated-files.md) | link; do not duplicate the table |
 | input artifact contract | [`input-artifact.template.md`](../../templates/input/input-artifact.template.md) + [`input-reconciliation.md`](input-reconciliation.md) (Stage 03) | summarize only |
 | register-first / retry / check 12 | [`input-reconciliation.md`](input-reconciliation.md) (Stage 04) | keep the critical 2–3 bullets inline |
+| flow-shaped/domain-level input routing, `navigation-map.md` boundary, `flows.md` policy | [`input-reconciliation.md`](input-reconciliation.md) §Flow-shaped / domain-level input | summarize only; do not duplicate the routing table |
 | classification types | [`input-reconciliation.md`](input-reconciliation.md) §Classification | link only |
 | conflict vs gate (Open Decision) | [`input-reconciliation.md`](input-reconciliation.md) §Conflict Handling | short reminder only |
 | ambiguity → Unknown / Open Decision / stop | [`ambiguity-triage.md`](ambiguity-triage.md) | short reminder only |
