@@ -353,6 +353,8 @@ function main() {
   //      TS type evidence 는 런타임 validation evidence 가 아니다.
   //    - manifest 부재 시: 현행 전역 존재검사(hasZod||hasOpenApi)로 폴백(엄격 모드로 깨지 않음).
   //    - confirmed 0건 화면은 무발화(candidate 전용 화면의 옛 동작·readiness 불변).
+  //    - api_required:false 화면은 자체 API 후보를 요구하지 않는다. 단 실제 Method/Path 후보가
+  //      같이 있으면 no-API 선언과 충돌하므로 에러로 잡는다.
   const schemasDir = path.resolve(projectRoot, layout.roleToDir('api_schema'));
   const hasZod = dirHasFiles(schemasDir, ['.ts']);
   const hasOpenApi =
@@ -381,7 +383,19 @@ function main() {
   };
 
   for (const spec of specs) {
-    const confirmed = parseApiCandidates(spec.sections['api candidates']).filter(
+    const candidates = parseApiCandidates(spec.sections['api candidates']);
+    if (spec.frontmatter.api_required === false) {
+      const concrete = candidates.filter((it) => it.method && it.path);
+      for (const e of concrete) {
+        add(
+          8,
+          spec.path,
+          `api_required:false 화면은 자체 API 후보를 선언할 수 없음: ${e.method} ${e.path} → 해소: upstream API 결과 설명은 Data Requirements/Notes 에 남기고 API Candidates 에서 제거하거나 api_required 를 true 로 바꾸세요.`,
+        );
+      }
+      continue;
+    }
+    const confirmed = candidates.filter(
       (it) => it.confidence === 'confirmed',
     );
     if (confirmed.length === 0) continue; // candidate/unknown 전용 → 무발화(옛 동작 유지)

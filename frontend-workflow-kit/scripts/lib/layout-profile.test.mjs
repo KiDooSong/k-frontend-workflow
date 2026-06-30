@@ -641,6 +641,26 @@ test('M3 clearance: 커스텀 도메인-스코프 표면이 구체 threshold 도
 
     // expo parity: 글로벌 표면 src/api/** 의 구체 threshold 는 api-integrated-ui 로 불변 → clearance 불변.
     assert.equal(guarded.thresholdOf('src/api/**'), 'api-integrated-ui');
+    assert.equal(
+      isClearedAt(
+        guarded.thresholdOf('src/api/**'),
+        { NO_API: { readiness_mode: 'production-ready', api_required: false } },
+        order,
+        { requireApiRequired: true },
+      ),
+      false,
+      'no-API 화면은 production-ready 여도 API surface 해금 근거가 되면 안 된다.',
+    );
+    assert.equal(
+      isClearedAt(
+        guarded.thresholdOf('src/api/**'),
+        { API: { readiness_mode: 'api-integrated-ui', api_required: true } },
+        order,
+        { requireApiRequired: true },
+      ),
+      true,
+      'API-required 화면이 api-integrated-ui 에 도달하면 API surface 를 해금한다.',
+    );
     // openapi 표면은 threshold 미기록(null) → clearance 항상 false(변경 시 항상 플래그).
     assert.equal(guarded.thresholdOf('openapi.yaml'), null);
     assert.equal(isClearedAt(guarded.thresholdOf('openapi.yaml'), { S1: { readiness_mode: 'production-ready' } }, order), false);

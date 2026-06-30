@@ -44,6 +44,10 @@
     "screen_entry": {
       "type": "string"
     },
+    "api_required": {
+      "type": "boolean",
+      "description": "Set false only for screens that make no own API call and render data supplied by an upstream screen."
+    },
     "status": {
       "type": "string",
       "enum": [

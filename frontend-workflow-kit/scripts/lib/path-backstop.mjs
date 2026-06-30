@@ -132,10 +132,10 @@ export function deriveGuardedSurface(policy) {
 //   사다리는 누적이므로 상위 모드(production-ready)도 api-integrated-ui 자격을 포함한다.
 //   threshold(S) 가 null 이면 항상 false(예: openapi.yaml/yml).
 // readinessOutput: computeReadiness 의 반환값({ [screenId]: { readiness_mode, ... } }).
-export function isCleared(surface, readinessOutput, policy) {
+export function isCleared(surface, readinessOutput, policy, options = {}) {
   const order = policy.order || Object.keys(policy.modes || {});
   const threshold = thresholdOf(policy, surface);
-  return isClearedAt(threshold, readinessOutput, order);
+  return isClearedAt(threshold, readinessOutput, order, options);
 }
 
 // threshold(모드 이름)를 직접 받아 clearance 를 판정한다(M3): 호출부가 표면의 *구체* threshold 를
@@ -143,13 +143,16 @@ export function isCleared(surface, readinessOutput, policy) {
 // 토큰화된 정책으로 재계산하지 않고 그 값을 그대로 쓰게 한다. isCleared 가 이 함수에 위임한다 —
 // "어떤 화면의 readiness_mode 가 threshold 에 도달/초과하는가" 로직은 변경 없음.
 //   threshold==null → false(예: openapi.yaml/yml, 또는 미채택 표면).
-export function isClearedAt(threshold, readinessOutput, order) {
+export function isClearedAt(threshold, readinessOutput, order, options = {}) {
   if (threshold == null) return false;
   const ord = order || [];
   const tIdx = ord.indexOf(threshold);
   if (tIdx < 0) return false;
+  const requireApiRequired = options.requireApiRequired === true;
   for (const screenId of Object.keys(readinessOutput || {})) {
-    const mode = readinessOutput[screenId]?.readiness_mode;
+    const screen = readinessOutput[screenId] || {};
+    if (requireApiRequired && screen.api_required === false) continue;
+    const mode = screen.readiness_mode;
     const sIdx = ord.indexOf(mode);
     if (sIdx >= tIdx) return true;
   }
@@ -157,12 +160,15 @@ export function isClearedAt(threshold, readinessOutput, order) {
 }
 
 // 프로젝트에서 가장 높은 화면 readiness_mode(이름). reason 출력용. 화면이 없으면 null.
-export function highestScreenMode(readinessOutput, policy) {
+export function highestScreenMode(readinessOutput, policy, options = {}) {
   const order = policy.order || Object.keys(policy.modes || {});
+  const requireApiRequired = options.requireApiRequired === true;
   let bestIdx = -1;
   let best = null;
   for (const screenId of Object.keys(readinessOutput || {})) {
-    const mode = readinessOutput[screenId]?.readiness_mode;
+    const screen = readinessOutput[screenId] || {};
+    if (requireApiRequired && screen.api_required === false) continue;
+    const mode = screen.readiness_mode;
     const idx = order.indexOf(mode);
     if (idx > bestIdx) {
       bestIdx = idx;

@@ -6,7 +6,7 @@ This reference complements the root `AGENTS.md` or `CLAUDE.md`. The root guide t
 
 Use the spine to find the current stage, then this matrix for the secondary artifacts that stage's task touches. The "Stage Reference" section below maps common matrix tasks to spine stages.
 
-If ScreenSpec frontmatter or parsed body sections changed, run `workflow:state` before readiness/validate. This includes route/screen mapping, Unknowns, API Candidates, Copy Keys, and status changes.
+If ScreenSpec frontmatter or parsed body sections changed, run `workflow:state` before readiness/validate. This includes route/screen mapping, `api_required`, Unknowns, API Candidates, Copy Keys, and status changes.
 
 ## Matrix
 

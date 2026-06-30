@@ -185,7 +185,12 @@ function readPathBackstopCases() {
       diff: path.join(PB_ROOT, c.diff),
       docs: path.join(PB_ROOT, c.state),
       enforce: c.enforce === true,
-      expect: { exit: c.expect.exit, violations: c.expect.violations },
+      expect: {
+        exit: c.expect.exit,
+        violations: c.expect.violations,
+        reason_contains: c.expect.reason_contains,
+        would_clear_contains: c.expect.would_clear_contains,
+      },
     };
   });
 }

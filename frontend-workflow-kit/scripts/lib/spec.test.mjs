@@ -124,6 +124,20 @@ test('deriveMetrics: six canonical states complete with disabled as an independe
   );
 });
 
+test('deriveMetrics: api_required false preserves explicit no-API state separately from missing evidence', () => {
+  const derived = deriveMetrics(
+    {
+      frontmatter: { domain: 'auth', api_required: false },
+      sections: { 'api candidates': '없음 — upstream 화면의 API 결과를 route params 로 표시' },
+      dir: os.tmpdir(),
+    },
+    { srcDir: path.join(os.tmpdir(), 'no-api-src'), projectRoot: os.tmpdir() },
+  );
+
+  assert.equal(derived.api_confidence_min, null);
+  assert.equal(derived.api_required, false);
+});
+
 test('P1: 범례 표 뒤 빈 줄로 분리된 진짜 Open Decisions 표가 증발하지 않는다', () => {
   const section = [
     '범례:',
@@ -361,11 +375,114 @@ test('buildState: workflow-state serialization keeps generic <role>_present fact
   assert.equal(derived.fake_hook_exists, true);
 });
 
+test('buildState: workflow-state serialization preserves api_required false only for marked screens', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'workflow-state-no-api-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const docsDir = path.join(tmp, 'docs', 'frontend-workflow');
+  const srcDir = path.join(tmp, 'src');
+  fs.mkdirSync(path.join(docsDir, 'domains', 'auth', 'screens', 'duplicate'), { recursive: true });
+  fs.mkdirSync(srcDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(docsDir, 'domains', 'auth', 'screens', 'duplicate', 'screen-spec.md'),
+    [
+      '---',
+      'artifact_id: AUTH-DUPLICATE-screen-spec',
+      'artifact_type: screen-spec',
+      'domain: auth',
+      'screen_id: AUTH-DUPLICATE',
+      'route: /(auth)/signup/duplicate',
+      'api_required: false',
+      'status: confirmed',
+      '---',
+      '',
+      '# Duplicate account',
+      '',
+      '## API Candidates',
+      '없음 — upstream signup flow result 를 표시',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
+  const { state } = buildState({ docsDir, srcDir, date: '2026-06-30' });
+  const derived = state.screens['AUTH-DUPLICATE'].derived;
+  assert.equal(derived.api_confidence_min, null);
+  assert.equal(derived.api_required, false);
+});
+
 test('P7: computeReadiness 가 policy.modes 누락 시 throw 하지 않는다 (fail-closed 구멍)', () => {
   // policy.order 도 modes 도 없으면 예전엔 Object.keys(undefined) 로 TypeError 가 났다.
   assert.doesNotThrow(() =>
     computeReadiness({ state: { screens: {} }, policy: { version: 1 }, ci: {}, manifest: {} }),
   );
+});
+
+test('computeReadiness: api_required false does not require evidence and can reach production-ready', () => {
+  const policy = {
+    version: 1,
+    order: ['docs-only', 'api-integrated-ui', 'production-ready'],
+    modes: {
+      'docs-only': { requires: [], allowed_paths: [], forbidden_paths: [] },
+      'api-integrated-ui': {
+        requires: ['api_confidence_min == confirmed', 'state_matrix_complete == true'],
+        allowed_paths: ['src/api/**'],
+        forbidden_paths: [],
+      },
+      'production-ready': {
+        requires: [
+          'ci_lint == pass',
+          'ci_schema_validation == pass',
+          'state_coverage_complete == true',
+          'llm_semantic_review == pass',
+        ],
+        allowed_paths: ['src/**'],
+        forbidden_paths: [],
+      },
+    },
+  };
+  const layout = { layerTelemetryDeclared: false, resolvePaths(paths) { return paths || []; } };
+  const baseScreen = {
+    status: 'confirmed',
+    domain: 'auth',
+    route: '/duplicate',
+    stub: false,
+    derived: {
+      state_matrix_complete: true,
+      blocking_decisions: [],
+      malformed_decisions: [],
+      api_confidence_min: null,
+    },
+  };
+
+  const missing = computeReadiness({
+    state: { global: {}, screens: { S1: baseScreen } },
+    policy,
+    ci: {},
+    manifest: {},
+    layout,
+  }).S1;
+  assert.equal(missing.readiness_mode, 'docs-only');
+  assert.deepEqual(missing.blocking, [{ api_confidence: 'missing' }]);
+
+  const noApi = computeReadiness({
+    state: {
+      global: {},
+      screens: { S1: { ...baseScreen, derived: { ...baseScreen.derived, api_required: false } } },
+    },
+    policy,
+    ci: {
+      ci_lint: 'pass',
+      ci_schema_validation: 'pass',
+      state_coverage_complete: true,
+      llm_semantic_review: 'pass',
+    },
+    manifest: {},
+    layout,
+  }).S1;
+  assert.equal(noApi.readiness_mode, 'production-ready');
+  assert.equal(noApi.api_required, false);
+  assert.deepEqual(noApi.blocking, []);
+  assert.equal(noApi.next_actions.includes('confirm API candidates'), false);
 });
 
 test('P13: interactionResultRoutes — 다중 라우트 추출 · 후행 구두점·쿼리·외부/PR URL 제외', () => {

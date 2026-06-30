@@ -67,7 +67,7 @@ function domainsFromState(state) {
 // 위반 1건의 reason / would_clear 문구를 만든다(설계 §4 출력 규약).
 //   threshold 는 호출부가 넘기는 표면의 *구체* threshold(materializeGuardedSurface 가 계산) — M3.
 //   토큰화된 정책으로 재계산하면 커스텀 도메인 표면에서 null 이 나와 reason 이 깨진다.
-function describeViolation(surface, threshold, policy, readinessOutput) {
+function describeViolation(surface, threshold, policy, readinessOutput, options = {}) {
   const isOpenApi = surface === 'openapi.yaml' || surface === 'openapi.yml';
   if (isOpenApi) {
     return {
@@ -75,7 +75,14 @@ function describeViolation(surface, threshold, policy, readinessOutput) {
       would_clear: `정책 결정 필요: api-integrated-ui 가 openapi 를 허용해야 하는가? (§8 미결)`,
     };
   }
-  const highest = highestScreenMode(readinessOutput, policy) || '(없음)';
+  const highest = highestScreenMode(readinessOutput, policy, options) || '(없음)';
+  if (options.requireApiRequired === true) {
+    const overallHighest = highestScreenMode(readinessOutput, policy) || '(없음)';
+    return {
+      reason: `guarded(${surface}) 인데 프로젝트의 어떤 API-required 화면도 ${threshold} 에 도달하지 못함 (현재 API-required 최고 화면 모드: ${highest}; 전체 최고 화면 모드: ${overallHighest})`,
+      would_clear: `api_required:true 화면 하나라도 ${threshold} 이상 도달하면 ${surface} 전체가 열린다(프로젝트 단위·§1 한계)`,
+    };
+  }
   return {
     reason: `guarded(${surface}) 인데 프로젝트의 어떤 화면도 ${threshold} 에 도달하지 못함 (현재 최고 화면 모드: ${highest})`,
     would_clear: `화면 하나라도 ${threshold} 이상 도달하면 ${surface} 전체가 열린다(프로젝트 단위·§1 한계)`,
@@ -203,9 +210,10 @@ function main() {
       // thresholdOf 재계산 금지 — 커스텀 도메인 표면은 {domain} 잔존 allowed 가 covers() 를 빗나가 영구
       // 위반이 됐다). expo 의 global 표면(src/api/**)은 threshold 가 동일해 byte-동치.
       const threshold = guardedSurface.thresholdOf(surface);
-      if (isClearedAt(threshold, readinessOutput, order)) continue; // (b) 프로젝트가 레이어 열 자격 도달 — 침묵
+      const clearanceOptions = { requireApiRequired: threshold === 'api-integrated-ui' };
+      if (isClearedAt(threshold, readinessOutput, order, clearanceOptions)) continue; // (b) 프로젝트가 레이어 열 자격 도달 — 침묵
       seenFiles.add(F);
-      const { reason, would_clear } = describeViolation(surface, threshold, resolvedPolicy, readinessOutput);
+      const { reason, would_clear } = describeViolation(surface, threshold, resolvedPolicy, readinessOutput, clearanceOptions);
       violations.push({ file: F, change: changeLabel(record), surface, reason, would_clear });
     }
   }

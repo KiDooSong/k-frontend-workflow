@@ -150,8 +150,45 @@ test('E2E: 검사 6은 codegen outputs[] 안의 malformed GENERATED 헤더를 �
 const SCREEN_CONFIRMED =
   '---\nartifact_id: S1\nartifact_type: screen-spec\ndomain: d\nscreen_id: S1\nroute: /x\nstatus: draft\n---\n' +
   '# s\n\n## Entry Points\n<!-- GENERATED:START nav-graph -->\n- x\n<!-- GENERATED:END nav-graph -->\n\n## API Candidates\n- GET /x (confidence: confirmed)\n';
+const screenNoApi = (apiCandidates) =>
+  '---\nartifact_id: S1\nartifact_type: screen-spec\ndomain: d\nscreen_id: S1\nroute: /x\nstatus: draft\napi_required: false\n---\n' +
+  '# s\n\n## Entry Points\n<!-- GENERATED:START nav-graph -->\n- x\n<!-- GENERATED:END nav-graph -->\n\n## API Candidates\n' +
+  apiCandidates +
+  '\n';
 const manifestDoc = (table) =>
   '---\nartifact_id: api-manifest\nartifact_type: api-manifest\nstatus: draft\n---\n# m\n\n## Endpoints\n' + table + '\n';
+
+test('E2E: api_required false does not require endpoint evidence for no-API marker prose', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check8-no-api-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/domains/d/screens/s/screen-spec.md': screenNoApi(
+        '- none (confidence: confirmed, reason: no-api-required)',
+      ),
+    });
+    const c8 = (runValidate(root).errors || []).filter((e) => e.check === 8);
+    assert.deepEqual(c8, []);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('E2E: api_required false conflicts with concrete API candidates', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check8-no-api-conflict-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/domains/d/screens/s/screen-spec.md': screenNoApi(
+        '- GET /x (confidence: candidate)',
+      ),
+    });
+    const c8 = (runValidate(root).errors || []).filter((e) => e.check === 8);
+    assert.equal(c8.length, 1);
+    assert.match(c8[0].message, /api_required:false/);
+    assert.match(c8[0].message, /GET \/x/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test('E2E: 레거시 표(Linked Schema 컬럼 부재) → 검사 8 이 "컬럼이 없음(레거시)" 메시지', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check8-'));
