@@ -34,9 +34,17 @@ Look up the `input_id` in `_meta/reconciliation-register.md` first:
 Reconcile may update docs and raise/reopen decisions, gaps, and unknowns — but it
 is **not** where canonical screen identity is invented.
 
-- **Input references an unknown/new screen, or carries a raw source code as
-  `affected_screens`** → go back to [02 Screen identity / source mapping](02-screen-identity-source-mapping.md).
+- **Input references an unknown/new screen, carries a raw source code, or uses a
+  `raw:flow/...` token in `affected_screens`** → screen identity resolution goes
+  back to [02 Screen identity / source mapping](02-screen-identity-source-mapping.md).
   Resolve the mapping (or leave a `candidate`/`scope-unclear` row), then continue.
+  This does not make the whole flow-shaped/domain-level input failed: source-backed
+  domain/app-level facts may still be reconciled via the routing table in
+  [`../input-reconciliation.md`](../input-reconciliation.md#flow-shaped--domain-level-input).
+- **Screen-level movement waits for identity.** Do not update ScreenSpec
+  Interaction Matrix rows, screen route/entry details, or screen-to-screen movement
+  until source alias / `source_screen_refs` / human-confirmed canonical identity is
+  available.
 - **Identity is confirmed but the ScreenSpec is missing** → run
   `workflow:create-screen` (given the canonical id), then continue reconcile.
 - **Do not invent screen identity in reconcile.** Identity creation is only
