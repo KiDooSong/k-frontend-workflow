@@ -231,12 +231,13 @@ function pathTouchesAnySurface(pathEntry, surfaces) {
   return surfaces.some((surface) => covers(pathEntry, surface) || covers(surface, pathEntry));
 }
 
-function pathCoversAnySurface(pathEntry, surfaces) {
-  return surfaces.some((surface) => pathEntry !== surface && covers(pathEntry, surface));
-}
-
 function removeApiSurfaces(paths, apiSurfaces) {
   return (paths || []).filter((pathEntry) => !pathTouchesAnySurface(pathEntry, apiSurfaces));
+}
+
+function removeTouchedSurfaces(paths, surfaces) {
+  if (!Array.isArray(surfaces) || surfaces.length === 0) return paths || [];
+  return (paths || []).filter((pathEntry) => !pathTouchesAnySurface(pathEntry, surfaces));
 }
 
 function isUndefinedApiClientRoleError(err) {
@@ -268,15 +269,16 @@ function limitNoApiEditSurfaces({ allowedPaths, forbiddenPaths, modes, order, ch
   const apiSurfaces = optionalApiClientSurfaces(layout, domain);
   if (apiSurfaces.length === 0) return { allowedPaths, forbiddenPaths };
 
-  const allowedCoveredApiSurface = allowedPaths.some((pathEntry) => pathCoversAnySurface(pathEntry, apiSurfaces));
+  const allowedTouchedApiSurface = allowedPaths.some((pathEntry) => pathTouchesAnySurface(pathEntry, apiSurfaces));
   const limitedAllowed = removeApiSurfaces(allowedPaths, apiSurfaces);
-  const fallbackAllowed = allowedCoveredApiSurface
+  const fallbackAllowed = allowedTouchedApiSurface
     ? cumulativeNonApiAllowedPaths({ modes, order, chosenIdx, layout, domain, apiSurfaces })
     : [];
+  const limitedForbidden = removeTouchedSurfaces(forbiddenPaths, fallbackAllowed);
 
   return {
     allowedPaths: uniquePaths([...limitedAllowed, ...fallbackAllowed]),
-    forbiddenPaths: uniquePaths([...forbiddenPaths, ...apiSurfaces]),
+    forbiddenPaths: uniquePaths([...limitedForbidden, ...apiSurfaces]),
   };
 }
 

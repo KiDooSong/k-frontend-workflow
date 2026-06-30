@@ -1,0 +1,17 @@
+version: 1
+order:
+  - docs-only
+  - rough-fixture-ui
+modes:
+  docs-only:
+    requires: []
+    allowed_paths: []
+    forbidden_paths:
+      - "{roles.api_client}"
+  rough-fixture-ui:
+    requires:
+      - api_confidence_min == confirmed
+      - state_matrix_complete == true
+    allowed_paths:
+      - "{roles.api_client}"
+    forbidden_paths: []

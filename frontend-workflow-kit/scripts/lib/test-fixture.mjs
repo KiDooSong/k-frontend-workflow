@@ -539,6 +539,8 @@ export function runGeneratedViewCase(spec) {
 export function runPathBackstopCase(spec) {
   const r = makeResults();
   const args = [spec.scriptPath, '--diff', spec.diff, '--docs', spec.docs, '--json'];
+  if (spec.policy) args.push('--policy', spec.policy);
+  if (spec.layout) args.push('--layout', spec.layout);
   if (spec.enforce) args.push('--enforce');
 
   const res = spawnSync(process.execPath, args, { encoding: 'utf8' });

@@ -184,6 +184,8 @@ function readPathBackstopCases() {
       scriptPath: FORBIDDEN_PATHS,
       diff: path.join(PB_ROOT, c.diff),
       docs: path.join(PB_ROOT, c.state),
+      policy: typeof c.policy === 'string' ? path.join(PB_ROOT, c.policy) : undefined,
+      layout: typeof c.layout === 'string' ? path.join(PB_ROOT, c.layout) : undefined,
       enforce: c.enforce === true,
       expect: {
         exit: c.expect.exit,
