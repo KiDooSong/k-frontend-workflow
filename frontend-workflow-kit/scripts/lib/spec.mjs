@@ -302,8 +302,11 @@ export function deriveMetrics(spec, opts = {}) {
   blockingDecisions.sort((a, b) => String(a.id).localeCompare(String(b.id)));
   malformedDecisions.sort((a, b) => String(a.id).localeCompare(String(b.id)));
 
-  // API Candidates: 항목 중 가장 낮은 confidence
-  const apiConfidenceMin = minApiConfidence(sections['api candidates']);
+  // API Candidates: 항목 중 가장 낮은 confidence.
+  // api_required:false 는 upstream 화면이 받은 결과를 표시만 하는 result/transition 화면용 명시 마커다.
+  // API 후보 누락(null)과 의도적 무API를 workflow-state 에서 구분할 수 있게 별도 fact 로 보존한다.
+  const apiRequired = spec.frontmatter.api_required !== false;
+  const apiConfidenceMin = apiRequired ? minApiConfidence(sections['api candidates']) : null;
 
   // layer presence facts: declared layers with fact: dir_has_files derive <role>_present.
   // fake_hook_exists remains the legacy readiness input and keeps the old .ts/.tsx-only guard behavior.
@@ -353,6 +356,7 @@ export function deriveMetrics(spec, opts = {}) {
     blocking_decisions: blockingDecisions,
     malformed_decisions: malformedDecisions,
     api_confidence_min: apiConfidenceMin,
+    ...(apiRequired === false ? { api_required: false } : {}),
     ...layerPresenceFacts,
     fake_hook_exists: fakeHookExists,
     figma_mapping_status: figmaMappingStatus,

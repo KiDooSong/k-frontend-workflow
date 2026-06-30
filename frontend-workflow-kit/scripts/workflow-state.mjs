@@ -102,6 +102,7 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
         blocking_decisions: s.derived.blocking_decisions,
         malformed_decisions: s.derived.malformed_decisions,
         api_confidence_min: s.derived.api_confidence_min,
+        ...(s.derived.api_required === false ? { api_required: false } : {}),
         ...presentFacts,
         fake_hook_exists: s.derived.fake_hook_exists,
         figma_mapping_status: s.derived.figma_mapping_status,

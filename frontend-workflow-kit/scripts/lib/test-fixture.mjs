@@ -547,6 +547,17 @@ export function runPathBackstopCase(spec) {
     return finalize(r);
   }
   const actualExit = res.status;
+  let jsonOut = null;
+  const needsJson = spec.expect.violations !== undefined ||
+    typeof spec.expect.reason_contains === 'string' ||
+    typeof spec.expect.would_clear_contains === 'string';
+  if (needsJson) {
+    try {
+      jsonOut = JSON.parse(res.stdout);
+    } catch {
+      jsonOut = null;
+    }
+  }
 
   // exit code 계약 검증. 불일치면 stderr/stdout 첫 줄을 단서로 붙인다.
   if (actualExit === spec.expect.exit) {
@@ -558,19 +569,39 @@ export function runPathBackstopCase(spec) {
 
   // 위반 수 — expect.violations 가 선언된 경우만(exit 2 fail-closed 는 --json 출력 전에 종료되므로 생략).
   if (spec.expect.violations !== undefined) {
-    let viol = null;
-    try {
-      const out = JSON.parse(res.stdout);
-      if (Array.isArray(out.violations)) viol = out.violations.length;
-    } catch {
-      viol = null;
-    }
+    const viol = jsonOut && Array.isArray(jsonOut.violations) ? jsonOut.violations.length : null;
     if (viol === null) {
       r.fail('PB:violations', `--json 위반 파싱 실패 (exit ${actualExit})`);
     } else if (viol === spec.expect.violations) {
       r.ok('PB:violations', `위반 ${viol}건 (기대대로)`);
     } else {
       r.fail('PB:violations', `위반 ${viol}건 (기대 ${spec.expect.violations})`);
+    }
+  }
+  if (typeof spec.expect.reason_contains === 'string') {
+    const violations = jsonOut && Array.isArray(jsonOut.violations) ? jsonOut.violations : null;
+    if (!violations) {
+      r.fail('PB:reason', `--json reason 파싱 실패 (exit ${actualExit})`);
+    } else {
+      const missing = violations.filter((v) => !String(v.reason || '').includes(spec.expect.reason_contains));
+      if (missing.length === 0) {
+        r.ok('PB:reason', `reason contains "${spec.expect.reason_contains}"`);
+      } else {
+        r.fail('PB:reason', `reason 누락 ${missing.length}건: "${spec.expect.reason_contains}"`);
+      }
+    }
+  }
+  if (typeof spec.expect.would_clear_contains === 'string') {
+    const violations = jsonOut && Array.isArray(jsonOut.violations) ? jsonOut.violations : null;
+    if (!violations) {
+      r.fail('PB:would_clear', `--json would_clear 파싱 실패 (exit ${actualExit})`);
+    } else {
+      const missing = violations.filter((v) => !String(v.would_clear || '').includes(spec.expect.would_clear_contains));
+      if (missing.length === 0) {
+        r.ok('PB:would_clear', `would_clear contains "${spec.expect.would_clear_contains}"`);
+      } else {
+        r.fail('PB:would_clear', `would_clear 누락 ${missing.length}건: "${spec.expect.would_clear_contains}"`);
+      }
     }
   }
 

@@ -6,6 +6,7 @@ screen_id: "{SCREEN_ID}"
 route: "{route}"          # URL route token. inventory/stub 가 frontmatter 에서 읽는다 (본문에 중복 금지)
 # route_entry: "{src/app/.../page.tsx}"          # 선택: router/framework boundary 파일. screen_entry 와 경로 형태가 달라도 된다.
 # screen_entry: "{src/features/.../Screen.tsx}" # 선택: 화면 구현 파일. implement-screen 은 readiness allowed_paths 와 함께 이 힌트를 사용한다.
+# api_required: false       # 선택: 자체 API 호출이 없는 result/transition 화면. upstream 화면이 받은 데이터를 표시만 할 때만 사용.
 status: draft             # 문서 라이프사이클: missing|draft|review|confirmed|implemented|verified|deprecated
 sources:
   - { type: planning, ref: "{기획 출처}" }
@@ -84,7 +85,9 @@ last_reviewed: "{YYYY-MM-DD}"
 - {필요 데이터}
 
 ## API Candidates
-<!-- "- METHOD /path (confidence: unknown|candidate|confirmed)" 형식. 추측 금지. -->
+<!-- "- METHOD /path (confidence: unknown|candidate|confirmed)" 형식. 추측 금지.
+     자체 API 호출이 없는 result/transition 화면은 frontmatter 에 api_required:false 를 추가하고,
+     이 섹션에는 "없음 — upstream 화면의 API 결과/route params 를 표시" 처럼 prose 로 명시한다. -->
 - {METHOD} {/path} (confidence: candidate)
 
 ## Copy Keys

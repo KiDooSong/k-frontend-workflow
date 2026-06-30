@@ -27,6 +27,10 @@ This is where a ScreenSpec is authored **after identity is known** (Stage 02).
 
 - For an existing canonical screen, edit its ScreenSpec body (State Matrix,
   interactions, copy keys, API candidates) within scope.
+- For a result/transition screen with **no own API call**, set ScreenSpec
+  frontmatter `api_required: false` and write the API Candidates section as prose
+  such as `없음 — upstream 화면의 API 결과/route params 를 표시`. Do not add a fake
+  confirmed endpoint.
 - For a **brand-new screen**, Stage 02 / `workflow:create-screen` may have created a
   **stub** (canonical frontmatter only). Stage 05 fills the body, or — when facts
   are still missing — records open decisions / unknowns instead of guessing.

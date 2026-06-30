@@ -10,7 +10,7 @@ Generated files can become stale when their source docs, registers, layout, poli
 
 | Generated file or output | Regenerate with | Source inputs | When to regenerate |
 |---|---|---|---|
-| `docs/frontend-workflow/_meta/workflow-state.yaml` | `npm run workflow:state` | ScreenSpec frontmatter and parsed body sections | ScreenSpec status, Unknowns, Copy Keys, API Candidates, route/screen entries, or source presence facts change |
+| `docs/frontend-workflow/_meta/workflow-state.yaml` | `npm run workflow:state` | ScreenSpec frontmatter and parsed body sections | ScreenSpec status, `api_required`, Unknowns, Copy Keys, API Candidates, route/screen entries, or source presence facts change |
 | `docs/frontend-workflow/_meta/screen-inventory.yaml` | `npm run workflow:state` | ScreenSpec frontmatter | Screen IDs, domains, routes, route entries, screen entries, or status change |
 | `docs/frontend-workflow/_meta/layer-inventory.yaml` | `npm run workflow:state` when layer telemetry is declared | `project-layout.yaml` layer telemetry plus source tree scan | Tier3/custom layer declarations or source layout change |
 | `docs/frontend-workflow/design/component-catalog.md` | `npm run workflow:catalog` | `{roles.ui_primitive}` source files, or the default UI primitive root | Shared/common UI primitive files are added, removed, renamed, or exported differently |

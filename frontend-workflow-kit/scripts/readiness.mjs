@@ -38,6 +38,7 @@ const FRIENDLY = {
   fake_hook_exists: 'fake_hook',
   figma_mapping_status: 'figma_mapping',
   api_confidence_min: 'api_confidence',
+  api_required: 'api_required',
   state_matrix_complete: 'state_matrix',
   interaction_matrix_complete: 'interaction_matrix',
   ci_lint: 'ci_lint',
@@ -57,6 +58,8 @@ function actionHint(factKey, screen) {
         ? `confirm API (resolve ${n} open unknown(s))`
         : 'confirm API candidates';
     }
+    case 'api_required':
+      return 'skip API integration for this no-API-required screen';
     case 'screen_spec_status':
       return 'raise screen-spec status (confirmed requires human approval metadata)';
     case 'screen_spec_authored':
@@ -103,10 +106,19 @@ function coerceNumber(v) {
   return Number.isNaN(n) ? null : n;
 }
 
+function noApiSatisfiesConfidenceGate(cond, facts) {
+  if (cond.key !== 'api_confidence_min' || facts.api_required !== false) return false;
+  if (cond.op === '==') return cond.rhs === 'confirmed';
+  if (cond.op === '>=') return confidenceRank('confirmed') >= confidenceRank(cond.rhs);
+  return false;
+}
+
 // 조건 평가. facts: 화면별 사실 객체.
 function evalCondition(cond, facts) {
   const { key, op, rhs } = cond;
   const actual = facts[key];
+
+  if (noApiSatisfiesConfidenceGate(cond, facts)) return true;
 
   if (op === '==') {
     if (rhs === 'true') return actual === true;
@@ -162,6 +174,7 @@ function compare(op, a, b) {
 // 화면별 사실 객체 구성 (전역 + 화면 + derived + CI)
 function buildFacts(screen, global, ci) {
   const d = screen.derived || {};
+  const apiRequired = d.api_required !== false;
   const rolePresenceFacts = Object.fromEntries(
     Object.entries(d).filter(([key, value]) => /_present$/.test(key) && typeof value === 'boolean'),
   );
@@ -178,6 +191,7 @@ function buildFacts(screen, global, ci) {
     ...rolePresenceFacts,
     fake_hook_exists: d.fake_hook_exists ?? d.hook_present,
     figma_mapping_status: d.figma_mapping_status,
+    api_required: apiRequired,
     api_confidence_min: d.api_confidence_min,
     state_matrix_complete: d.state_matrix_complete,
     interaction_matrix_complete: d.interaction_matrix_complete,
@@ -327,6 +341,7 @@ export function computeReadiness({ state, policy, ci, manifest, layout }) {
       const { failed } = evalMode(mode, facts);
       for (const cond of failed) {
         if (CI_FACTS.has(cond.key) && !ciProvided) continue;
+        if (cond.key === 'api_confidence_min' && facts.api_required === false) continue;
         if (seen.has(cond.key)) continue;
         seen.add(cond.key);
         const friendly = FRIENDLY[cond.key] || cond.key;
@@ -345,6 +360,7 @@ export function computeReadiness({ state, policy, ci, manifest, layout }) {
       forbidden_paths: uniquePaths(resolvedLayout.resolvePaths(chosen.forbidden_paths || [], {
         domain: screen.domain,
       })),
+      ...(facts.api_required === false ? { api_required: false } : {}),
       blocking,
       next_actions: nextActions,
     };
