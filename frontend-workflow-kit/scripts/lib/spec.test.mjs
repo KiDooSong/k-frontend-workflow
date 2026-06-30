@@ -28,6 +28,7 @@ import {
 } from './spec.mjs';
 import { computeReadiness } from '../readiness.mjs';
 import { buildState } from '../workflow-state.mjs';
+import { LayoutConfigError } from './layout-profile.mjs';
 
 const VALIDATE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'validate.mjs');
 
@@ -425,8 +426,8 @@ test('computeReadiness: api_required false does not require evidence and can rea
       'docs-only': { requires: [], allowed_paths: [], forbidden_paths: [] },
       'api-integrated-ui': {
         requires: ['api_confidence_min == confirmed', 'state_matrix_complete == true'],
-        allowed_paths: ['src/api/**'],
-        forbidden_paths: [],
+        allowed_paths: ['src/features/{domain}/hooks/**', '{roles.api_client}'],
+        forbidden_paths: ['src/features/{domain}/screens/**'],
       },
       'production-ready': {
         requires: [
@@ -440,7 +441,16 @@ test('computeReadiness: api_required false does not require evidence and can rea
       },
     },
   };
-  const layout = { layerTelemetryDeclared: false, resolvePaths(paths) { return paths || []; } };
+  const layout = {
+    layerTelemetryDeclared: false,
+    resolvePaths(paths, ctx = {}) {
+      return (paths || []).map((pathEntry) =>
+        pathEntry
+          .replace('{roles.api_client}', 'src/api/**')
+          .replace('{domain}', ctx.domain || '{domain}'),
+      );
+    },
+  };
   const baseScreen = {
     status: 'confirmed',
     domain: 'auth',
@@ -464,6 +474,22 @@ test('computeReadiness: api_required false does not require evidence and can rea
   assert.equal(missing.readiness_mode, 'docs-only');
   assert.deepEqual(missing.blocking, [{ api_confidence: 'missing' }]);
 
+  const noApiWithoutCi = computeReadiness({
+    state: {
+      global: {},
+      screens: { S1: { ...baseScreen, derived: { ...baseScreen.derived, api_required: false } } },
+    },
+    policy,
+    ci: {},
+    manifest: {},
+    layout,
+  }).S1;
+  assert.equal(noApiWithoutCi.readiness_mode, 'api-integrated-ui');
+  assert.equal(noApiWithoutCi.api_required, false);
+  assert.deepEqual(noApiWithoutCi.allowed_paths, ['src/features/auth/hooks/**']);
+  assert.deepEqual(noApiWithoutCi.forbidden_paths, ['src/features/auth/screens/**', 'src/api/**']);
+  assert.equal(noApiWithoutCi.next_actions.includes('confirm API candidates'), false);
+
   const noApi = computeReadiness({
     state: {
       global: {},
@@ -481,8 +507,68 @@ test('computeReadiness: api_required false does not require evidence and can rea
   }).S1;
   assert.equal(noApi.readiness_mode, 'production-ready');
   assert.equal(noApi.api_required, false);
+  assert.deepEqual(noApi.allowed_paths, ['src/features/auth/hooks/**']);
+  assert.deepEqual(noApi.forbidden_paths, ['src/api/**']);
   assert.deepEqual(noApi.blocking, []);
   assert.equal(noApi.next_actions.includes('confirm API candidates'), false);
+});
+
+test('computeReadiness: no-api limiter tolerates custom layouts without api_client role', () => {
+  const policy = {
+    version: 1,
+    order: ['docs-only', 'api-integrated-ui'],
+    modes: {
+      'docs-only': { requires: [], allowed_paths: [], forbidden_paths: [] },
+      'api-integrated-ui': {
+        requires: ['api_confidence_min == confirmed', 'state_matrix_complete == true'],
+        allowed_paths: ['src/features/{domain}/hooks/**'],
+        forbidden_paths: ['src/features/{domain}/screens/**'],
+      },
+    },
+  };
+  const layout = {
+    layerTelemetryDeclared: false,
+    resolvePaths(paths, ctx = {}) {
+      return (paths || []).map((pathEntry) => {
+        if (String(pathEntry).includes('{roles.api_client}')) {
+          throw new LayoutConfigError(
+            "layout-profile: 정의되지 않은 role 'api_client' 을 참조함 ('{roles.api_client}').",
+          );
+        }
+        return String(pathEntry).replace('{domain}', ctx.domain || '{domain}');
+      });
+    },
+  };
+  const result = computeReadiness({
+    state: {
+      global: {},
+      screens: {
+        S1: {
+          status: 'confirmed',
+          domain: 'auth',
+          route: '/result',
+          stub: false,
+          derived: {
+            state_matrix_complete: true,
+            blocking_decisions: [],
+            malformed_decisions: [],
+            api_confidence_min: null,
+            api_required: false,
+          },
+        },
+      },
+    },
+    policy,
+    ci: {},
+    manifest: {},
+    layout,
+  }).S1;
+
+  assert.equal(result.readiness_mode, 'api-integrated-ui');
+  assert.equal(result.api_required, false);
+  assert.deepEqual(result.allowed_paths, ['src/features/auth/hooks/**']);
+  assert.deepEqual(result.forbidden_paths, ['src/features/auth/screens/**']);
+  assert.deepEqual(result.blocking, []);
 });
 
 test('P13: interactionResultRoutes — 다중 라우트 추출 · 후행 구두점·쿼리·외부/PR URL 제외', () => {

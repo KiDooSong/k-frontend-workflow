@@ -18,7 +18,8 @@ import {
   writeFile,
   runCli,
 } from './lib/util.mjs';
-import { loadLayoutProfile, synthesizeModePolicy } from './lib/layout-profile.mjs';
+import { LayoutConfigError, loadLayoutProfile, synthesizeModePolicy } from './lib/layout-profile.mjs';
+import { covers } from './lib/path-backstop.mjs';
 
 // fact 키별 스케일 분류
 const STATUS_SCALED = new Set([
@@ -226,6 +227,59 @@ function uniquePaths(paths) {
   return out;
 }
 
+function pathTouchesAnySurface(pathEntry, surfaces) {
+  return surfaces.some((surface) => covers(pathEntry, surface) || covers(surface, pathEntry));
+}
+
+function pathCoversAnySurface(pathEntry, surfaces) {
+  return surfaces.some((surface) => pathEntry !== surface && covers(pathEntry, surface));
+}
+
+function removeApiSurfaces(paths, apiSurfaces) {
+  return (paths || []).filter((pathEntry) => !pathTouchesAnySurface(pathEntry, apiSurfaces));
+}
+
+function isUndefinedApiClientRoleError(err) {
+  if (!(err instanceof LayoutConfigError)) return false;
+  const message = String(err.message || '');
+  return /\bapi_client\b/.test(message) && (/정의되지 않은 role/.test(message) || /undefined role/i.test(message));
+}
+
+function optionalApiClientSurfaces(layout, domain) {
+  try {
+    return uniquePaths(layout.resolvePaths(['{roles.api_client}'], { domain }));
+  } catch (err) {
+    if (isUndefinedApiClientRoleError(err)) return [];
+    throw err;
+  }
+}
+
+function cumulativeNonApiAllowedPaths({ modes, order, chosenIdx, layout, domain, apiSurfaces }) {
+  const paths = [];
+  for (let i = 1; i <= chosenIdx; i++) {
+    const mode = modes[order[i]];
+    if (!mode) continue;
+    paths.push(...layout.resolvePaths(mode.allowed_paths || [], { domain }));
+  }
+  return removeApiSurfaces(uniquePaths(paths), apiSurfaces);
+}
+
+function limitNoApiEditSurfaces({ allowedPaths, forbiddenPaths, modes, order, chosenIdx, layout, domain }) {
+  const apiSurfaces = optionalApiClientSurfaces(layout, domain);
+  if (apiSurfaces.length === 0) return { allowedPaths, forbiddenPaths };
+
+  const allowedCoveredApiSurface = allowedPaths.some((pathEntry) => pathCoversAnySurface(pathEntry, apiSurfaces));
+  const limitedAllowed = removeApiSurfaces(allowedPaths, apiSurfaces);
+  const fallbackAllowed = allowedCoveredApiSurface
+    ? cumulativeNonApiAllowedPaths({ modes, order, chosenIdx, layout, domain, apiSurfaces })
+    : [];
+
+  return {
+    allowedPaths: uniquePaths([...limitedAllowed, ...fallbackAllowed]),
+    forbiddenPaths: uniquePaths([...forbiddenPaths, ...apiSurfaces]),
+  };
+}
+
 // CI 결과가 입력되지 않으면 로컬에서 알 수 없는 게이트라 blocking 에서 제외한다.
 const CI_FACTS = new Set([
   'ci_lint',
@@ -351,15 +405,29 @@ export function computeReadiness({ state, policy, ci, manifest, layout }) {
       }
     }
 
+    let allowedPaths = uniquePaths(resolvedLayout.resolvePaths(chosen.allowed_paths || [], { domain: screen.domain }));
+    let forbiddenPaths = uniquePaths(resolvedLayout.resolvePaths(chosen.forbidden_paths || [], {
+      domain: screen.domain,
+    }));
+    if (facts.api_required === false) {
+      ({ allowedPaths, forbiddenPaths } = limitNoApiEditSurfaces({
+        allowedPaths,
+        forbiddenPaths,
+        modes,
+        order,
+        chosenIdx,
+        layout: resolvedLayout,
+        domain: screen.domain,
+      }));
+    }
+
     out[id] = {
       readiness_mode: chosenName,
       next_mode: chosenIdx < order.length - 1 ? order[chosenIdx + 1] : null,
       // 정책 글롭의 {roles.X} 펼침 + per-screen {domain} 치환을 한 번에(§5). 리터럴/blanket
       // 글롭(src/features/**, openapi.yaml 등)은 resolvePaths 가 그대로 통과시킨다.
-      allowed_paths: uniquePaths(resolvedLayout.resolvePaths(chosen.allowed_paths || [], { domain: screen.domain })),
-      forbidden_paths: uniquePaths(resolvedLayout.resolvePaths(chosen.forbidden_paths || [], {
-        domain: screen.domain,
-      })),
+      allowed_paths: allowedPaths,
+      forbidden_paths: forbiddenPaths,
       ...(facts.api_required === false ? { api_required: false } : {}),
       blocking,
       next_actions: nextActions,
