@@ -51,6 +51,8 @@ import {
   parseApiCandidates,
   interactionEdgeRoutes,
   interactionMatrixV2Issues,
+  buildRuntimeRouteTargetIndex,
+  routeTargetExistsInScreenInventory,
   parseOpenDecisions,
   parseCopyKeys,
   COPY_KEYS_STATUS_VALUES,
@@ -316,10 +318,13 @@ function main() {
   // 4. Interaction Matrix route target 이 inventory(route 집합)에 있는지
   //    v1 표는 free-form Result 를 읽고, v2 표는 Result Type=route 행의 Target 을 읽는다.
   //    명시적 비-route v2 행(state/mutation/external/none)의 Result prose 는 하드 게이트 입력이 아니다.
+  //    Expo Router 의 일반 filesystem group `(auth)` 는 런타임 URL 에 나타나지 않으므로, raw route
+  //    `/(auth)/login` 이 group-less Target `/login` 과 단일하게 대응할 때만 통과시킨다.
+  const runtimeRouteTargetIndex = buildRuntimeRouteTargetIndex(routeSet);
   for (const spec of specs) {
     const targets = interactionEdgeRoutes(spec);
     for (const t of targets) {
-      if (!routeSet.has(t)) {
+      if (!routeTargetExistsInScreenInventory(t, routeSet, runtimeRouteTargetIndex)) {
         add(4, spec.path, `Interaction Matrix 이동 대상 route 가 화면에 없음: ${t}`);
       }
     }
