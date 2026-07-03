@@ -126,6 +126,19 @@ Playwright project. A separate `visual` project may be useful when consumers wan
 a stable viewport or browser, but the kit does not require a kit-wide config
 change.
 
+Example commands, adjusted to the consumer's path/project names:
+
+```bash
+# capture only
+E2E_PORT=3100 E2E_RUN_ID=auth-ui npx playwright test tests/web/screenshots/auth --grep @visual
+
+# ordinary behavioral verify when visual specs live inside tests/web
+npx playwright test --grep-invert @visual
+
+# capture through a consumer-owned visual project
+E2E_RUN_ID=auth-ui npx playwright test --project visual --grep @visual
+```
+
 Keep screenshot artifacts run-specific and uncommitted, for example:
 
 ```txt

@@ -39,9 +39,10 @@ not a visual approval assertion.
 
 ## Capture matrix
 
-Maintain a capture matrix in the consumer runbook, screen note, or issue context
-before writing screenshot specs. Each row should describe exactly one
-screen/state pair.
+Prepare a lightweight capture row or table in the consumer runbook, screen note,
+or issue context before writing screenshot specs. Each row should describe
+exactly one screen/state pair; this is planning context, not a required canonical
+artifact.
 
 | Field | Meaning |
 |---|---|
