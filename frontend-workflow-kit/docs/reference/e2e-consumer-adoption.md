@@ -10,7 +10,9 @@ reference, path model, or behavioral rules. Read the canonical homes for detail:
   [e2e-playwright-agents.md](e2e-playwright-agents.md) (read once, at setup).
 - Assertion / locator / coverage rules applied during plan / generate / review →
   [e2e-behavioral-rules.md](e2e-behavioral-rules.md).
-- Workflow modes (`plan` / `generate` / `verify` / `heal`) and the core
+- Expo Web visual screenshot evidence →
+  [e2e-visual-capture.md](e2e-visual-capture.md).
+- Workflow modes (`plan` / `generate` / `verify` / `heal` / `capture`) and the core
   invariants → [e2e-agent skill](../../skills/e2e-agent/SKILL.md).
 - The non-gating boundary is owned by
   [Stage 08](workflow-stages/08-validate-and-report.md).
@@ -19,6 +21,10 @@ E2E is optional evidence and never a gate. A green run does not add CI, raise
 readiness, resolve an Open Decision, close an Unknown, accept a Component Gap, or
 promote `confirmed`. This guide does not change that — it only orders the
 consumer steps.
+
+Visual `capture` is the same kind of optional evidence: an Expo Web screenshot
+for human/Figma alignment review, not pass/fail verification or native parity
+proof.
 
 ## A. When to adopt
 
@@ -42,6 +48,10 @@ Stay in **plan / preflight only** when the surface is still in flux:
 Investing in coverage is a **plan-time** decision, not a codegen one: a weak plan
 assertion freezes into a green-but-inert test, so the precision gate lives at
 plan and review time ([e2e-behavioral-rules.md](e2e-behavioral-rules.md)).
+
+Use **capture** when the user needs a screenshot of an observed Expo Web state for
+human review. Do not use it to assert behavior, create a visual regression
+baseline, or judge native/mobile parity.
 
 ## B. One-time setup in the consumer repo
 
@@ -128,6 +138,12 @@ adopting:
 - generated tests → `tests/web/{domain}/{screen-slug}/<suite>.spec.ts` — a folder
   per screen holding the 1..N suite files for that screen (a single-suite screen
   is still a `{screen-slug}/` folder with one file), kept inside `testDir`.
+- visual capture specs → `tests/web/screenshots/{domain}/{screen-slug}/{state}.visual.spec.ts`,
+  selected explicitly by path/tag/project and kept out of ordinary behavioral
+  verify runs unless the user asks for them.
+- visual capture artifacts →
+  `.playwright-results/${E2E_RUN_ID}/screenshots/{domain}/{screen-slug}/{state}.png`,
+  run outputs that are not committed by default.
 
 `{screen-slug}` is the canonical `screen_id` lowercased with non-alphanumerics
 replaced by `-`; a planner "suite" that is really a distinct canonical screen
@@ -158,6 +174,9 @@ plan / generate / review, not read as background.
 - `verify` — run the smallest related Playwright command and report by evidence.
 - `heal` — only after failing evidence and an explicit user request; check the
   diff for weakened assertions, broad regex, or `test.fixme()`.
+- `capture` — classify `entry_context`, verify the Expo Web command/port and
+  viewport, capture a scoped screen/root locator, and link the run artifact as
+  Stage 08 evidence. Use `@visual` and select these specs explicitly.
 
 ## G. Adoption checklist
 
@@ -179,6 +198,18 @@ After generating, before keeping the set:
       [behavioral-rules Review checklist](e2e-behavioral-rules.md#review-checklist)
       to strip inert assertions (e.g. `toBeFocused()` right after `.click()`).
 - [ ] reports / traces / `outputDir` are not committed (§B).
+
+Before keeping a visual capture spec:
+
+- [ ] route or journey setup path chosen.
+- [ ] `entry_context` classified as `direct-entry`, `journey-entry`, or
+      `native-only`.
+- [ ] scoped root locator available; no ambiguous locator is silenced with
+      `.first()`, `.nth()`, or `strict: false`.
+- [ ] Expo Web command and port behavior verified for the current SDK/CLI/bundler.
+- [ ] screenshot artifacts are ignored and run-specific.
+- [ ] `@visual` tag used.
+- [ ] not part of ordinary behavioral `verify` unless explicitly selected.
 
 Boundary reminder: none of the above adds CI, hard gates, readiness promotion,
 Open Decision resolution, Unknown closure, Gap acceptance, or `confirmed`
