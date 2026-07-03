@@ -25,10 +25,12 @@ import {
   interactionMatrixV2Issues,
   stripExpoSingleFilesystemGroups,
   buildRuntimeRouteTargetIndex,
+  resolveRouteTargetInScreenInventory,
   routeTargetExistsInScreenInventory,
   INTERACTION_V2_RESULT_TYPES,
   deriveMetrics,
 } from './spec.mjs';
+import { buildNavGraph } from './nav-graph.mjs';
 import { computeReadiness } from '../readiness.mjs';
 import { buildState } from '../workflow-state.mjs';
 import { LayoutConfigError, loadLayoutProfile } from './layout-profile.mjs';
@@ -786,6 +788,11 @@ test('check 4 route inventory: Expo single filesystem group stripping is narrow 
     true,
     'single filesystem group route may satisfy a group-less runtime URL',
   );
+  assert.equal(
+    resolveRouteTargetInScreenInventory('/reset/send-code', one, buildRuntimeRouteTargetIndex(one)),
+    '/(auth)/reset/send-code',
+    'resolver returns the raw ScreenSpec route for downstream graph resolution',
+  );
 
   const ambiguous = new Set(['/(auth)/login', '/(marketing)/login']);
   assert.equal(
@@ -997,6 +1004,37 @@ test('E2E: validate check 4 — v2 Target group-less target matches one single f
   }
 });
 
+test('E2E: nav-graph — v2 Target group-less target resolves to the single filesystem group screen', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-nav-v2-single-group-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/domains/d/screens/source/screen-spec.md': screenSpec({
+        artifactId: 'SOURCE-001-screen-spec',
+        screenId: 'SOURCE-001',
+        route: '/source',
+        matrix: [
+          '| User Action | Trigger | Result | Result Type | Target | Params |',
+          '|---|---|---|---|---|---|',
+          '| send code | tap | 이동 | route | /reset/send-code |  |',
+        ].join('\n'),
+      }),
+      'docs/frontend-workflow/domains/d/screens/send-code/screen-spec.md': screenSpec({
+        artifactId: 'RESET-SEND-CODE-001-screen-spec',
+        screenId: 'RESET-SEND-CODE-001',
+        route: '/(auth)/reset/send-code',
+        matrix: basicMatrix('stay'),
+      }),
+    });
+    const graph = buildNavGraph({ docsDir: path.join(root, 'docs', 'frontend-workflow') });
+    assert.deepEqual(graph.routes['/reset/send-code'].inbound, [{ from: 'SOURCE-001', trigger: 'tap' }]);
+    assert.deepEqual(graph.screens['RESET-SEND-CODE-001'].inbound, [
+      { from: 'SOURCE-001', trigger: 'tap', route: '/reset/send-code' },
+    ]);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('E2E: validate check 4 — group-less target stays an error when multiple single groups match', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check4-single-group-ambiguous-'));
   try {
@@ -1027,6 +1065,42 @@ test('E2E: validate check 4 — group-less target stays an error when multiple s
     const errors = check4Errors(runValidate(root));
     assert.equal(errors.length, 1);
     assert.match(errors[0].message, /\/login/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('E2E: nav-graph — ambiguous group-less target does not resolve to a destination screen', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-nav-single-group-ambiguous-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/domains/d/screens/source/screen-spec.md': screenSpec({
+        artifactId: 'SOURCE-001-screen-spec',
+        screenId: 'SOURCE-001',
+        route: '/source',
+        matrix: [
+          '| User Action | Trigger | Result | Result Type | Target | Params |',
+          '|---|---|---|---|---|---|',
+          '| login | tap | 이동 | route | /login |  |',
+        ].join('\n'),
+      }),
+      'docs/frontend-workflow/domains/d/screens/auth-login/screen-spec.md': screenSpec({
+        artifactId: 'AUTH-LOGIN-001-screen-spec',
+        screenId: 'AUTH-LOGIN-001',
+        route: '/(auth)/login',
+        matrix: basicMatrix('stay'),
+      }),
+      'docs/frontend-workflow/domains/d/screens/marketing-login/screen-spec.md': screenSpec({
+        artifactId: 'MARKETING-LOGIN-001-screen-spec',
+        screenId: 'MARKETING-LOGIN-001',
+        route: '/(marketing)/login',
+        matrix: basicMatrix('stay'),
+      }),
+    });
+    const graph = buildNavGraph({ docsDir: path.join(root, 'docs', 'frontend-workflow') });
+    assert.deepEqual(graph.routes['/login'].inbound, [{ from: 'SOURCE-001', trigger: 'tap' }]);
+    assert.equal(graph.screens['AUTH-LOGIN-001'], undefined);
+    assert.equal(graph.screens['MARKETING-LOGIN-001'], undefined);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

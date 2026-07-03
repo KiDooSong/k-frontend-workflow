@@ -575,10 +575,15 @@ export function buildRuntimeRouteTargetIndex(routes) {
   return index;
 }
 
-export function routeTargetExistsInScreenInventory(target, routeSet, runtimeRouteTargetIndex) {
-  if (routeSet && routeSet.has(target)) return true;
+export function resolveRouteTargetInScreenInventory(target, routeSet, runtimeRouteTargetIndex) {
+  if (routeSet && routeSet.has(target)) return target;
   const matches = runtimeRouteTargetIndex?.get(target);
-  return !!matches && matches.size === 1;
+  if (!matches || matches.size !== 1) return null;
+  return [...matches][0];
+}
+
+export function routeTargetExistsInScreenInventory(target, routeSet, runtimeRouteTargetIndex) {
+  return !!resolveRouteTargetInScreenInventory(target, routeSet, runtimeRouteTargetIndex);
 }
 
 // Interaction Matrix 의 Result 컬럼에서 라우트들을 추출 (v1 free-form/backcompat helper).

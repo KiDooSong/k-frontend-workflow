@@ -12,9 +12,10 @@
 //                            (수집 findFiles + 파싱 loadScreenSpec — validate.mjs:262-275 의 screen-spec
 //                             수집/파싱을 그대로 재사용).
 //
-// 비교 규약은 §6 에서 확정: ScreenSpec route == adapter rawPath, EXACT(정규화 없음). nav-graph 의
-//   fm.route EXACT 매칭(lib/nav-graph.mjs:107,115 routeToScreen)과 동형이며, parseRouteTreeRouteTokens
-//   가 [id]/(group) raw 표기를 정규화하지 않으므로(route-core.mjs:171-172) 양쪽 표기 규약이 일치한다.
+// 비교 규약은 §6 에서 확정: ScreenSpec route == adapter rawPath, EXACT(정규화 없음).
+//   parseRouteTreeRouteTokens 가 [id]/(group) raw 표기를 정규화하지 않으므로(route-core.mjs:171-172)
+//   양쪽 표기 규약이 일치한다. nav-graph/check 4 의 런타임 URL 보조 해소와 별개로, 이 standalone
+//   route-tree cross-check 는 계속 raw token EXACT 만 본다.
 //
 // fail-soft: route-tree.txt 부재 또는 screen-spec 0건이면 조용히 skip(검사 13 "artifact 부재 시 skip"
 //   동형 — validate.mjs:277-283). 크래시 금지. 결정성: 경고 정렬 고정(route/file 사전식),
