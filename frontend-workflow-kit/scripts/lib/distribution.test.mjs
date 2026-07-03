@@ -575,6 +575,7 @@ test('e2e-agent optional web evidence surface is wired without a missing matrix 
   const skill = fs.readFileSync(path.join(KIT_ROOT, 'skills', 'e2e-agent', 'SKILL.md'), 'utf8');
   const planTemplate = fs.readFileSync(path.join(KIT_ROOT, 'templates', 'e2e', 'web-plan.template.md'), 'utf8');
   const setupDoc = fs.readFileSync(path.join(KIT_ROOT, 'docs', 'reference', 'e2e-playwright-agents.md'), 'utf8');
+  const visualCapture = fs.readFileSync(path.join(KIT_ROOT, 'docs', 'reference', 'e2e-visual-capture.md'), 'utf8');
   const readme = fs.readFileSync(path.join(KIT_ROOT, 'README.md'), 'utf8');
   const startHere = fs.readFileSync(path.join(KIT_ROOT, 'docs', 'reference', 'workflow-stages', '00-start-here.md'), 'utf8');
   const stage08 = fs.readFileSync(path.join(KIT_ROOT, 'docs', 'reference', 'workflow-stages', '08-validate-and-report.md'), 'utf8');
@@ -603,8 +604,10 @@ test('e2e-agent optional web evidence surface is wired without a missing matrix 
   assert.match(skill, /test_dir/);
   assert.match(skill, /setup required/);
   assert.match(skill, /planner를 우선 호출/);
+  assert.match(skill, /visual capture candidates를 planning sidecar/);
+  assert.match(skill, /needs-human-decision/);
   assert.match(skill, /template은 kit dogfood, preflight notes, human-reviewed context scaffold에만 쓰며 generator input으로 넘기지 않는다/);
-  assert.match(skill, /Plan-only는 test runner, generator\/healer를 실행하지 않고 `tests\/web\/\*\*`를 만들지 않는다/);
+  assert.match(skill, /Plan-only는 test runner, generator\/healer를 실행하지 않고 `tests\/web\/\*\*`나 `tests\/web\/screenshots\/\*\*`를 만들지 않으며 Playwright 실행이나 screenshot 생성을 하지 않는다/);
   assert.doesNotMatch(skill, /Verification Matrix/);
 
   assert.match(planTemplate, /## Not Generator Input/);
@@ -624,6 +627,10 @@ test('e2e-agent optional web evidence surface is wired without a missing matrix 
   assert.match(planTemplate, /playwright_project/);
   assert.match(planTemplate, /base_url/);
   assert.match(planTemplate, /test_dir/);
+  assert.match(planTemplate, /### Visual Capture Candidates/);
+  assert.match(planTemplate, /future `capture` mode only/);
+  assert.match(planTemplate, /direct-entry\|journey-entry\|native-only\|needs-human-decision/);
+  assert.match(planTemplate, /Do not pass Visual Capture Candidates as behavioral test scenarios/);
   assert.match(planTemplate, /\*\*Seed:\*\*/);
   assert.match(planTemplate, /\*\*File:\*\* `\{test_dir\}\/\{domain\}\/\{screen-slug\}\/<suite>\.spec\.ts`/);
   assert.match(planTemplate, /- expect:/);
@@ -667,10 +674,20 @@ test('e2e-agent optional web evidence surface is wired without a missing matrix 
   assert.match(setupDoc, /Playwright planner output body/);
   assert.match(setupDoc, /Per-run drafts must be isolated/);
   assert.match(setupDoc, /Generator output -> `tests\/web\/\{domain\}\/\{screen-slug\}\/<suite>\.spec\.ts`/);
+  assert.match(setupDoc, /non-generator `Visual Capture Candidates` sidecar/);
+  assert.match(setupDoc, /generator consumes the official\s+behavioral planner output only/);
   assert.match(setupDoc, /Regenerate the agent\s+definitions whenever Playwright is updated/);
   assert.match(setupDoc, /ScreenSpec -> planner context/);
   assert.match(setupDoc, /stop with setup\s+required/);
   assert.doesNotMatch(setupDoc, /Verification Matrix/);
+
+  assert.match(visualCapture, /## Candidate discovery during plan mode/);
+  assert.match(visualCapture, /include visual capture candidates\s+by default/);
+  assert.match(visualCapture, /not a required canonical artifact/);
+  assert.match(visualCapture, /mock\/fixture stages/);
+  assert.match(visualCapture, /## Visual Capture Candidates/);
+  assert.match(visualCapture, /direct-entry\|journey-entry\|native-only\|needs-human-decision/);
+  assert.match(visualCapture, /Do not write visual specs until the web surface is runnable/);
 
   assert.match(stage08, /e2e-agent/);
   assert.match(stage08, /\.\.\/\.\.\/\.\.\/skills\/e2e-agent\/SKILL\.md/);
@@ -721,6 +738,10 @@ test('e2e consumer adoption guide sequences setup without duplicating the canoni
   assert.match(adoption, /tests\/web-plans\/\{domain\}\/\{screen-slug\}\/drafts\/\{run-id\}\/plan\.md/);
   assert.match(adoption, /setup\s+required/);
   assert.match(adoption, /Review checklist/);
+  assert.match(adoption, /behavior-only planning/);
+  assert.match(adoption, /When reviewing a plan/);
+  assert.match(adoption, /Ambiguous candidates are marked `needs-human-decision`/);
+  assert.match(adoption, /No visual spec or screenshot artifact was created in plan-only mode/);
 
   // It must not reintroduce retired/forbidden surface into a consumer-facing e2e doc.
   assert.doesNotMatch(adoption, /tests\/web\/\{domain\}\/\{screen-slug\}\.spec\.ts/);

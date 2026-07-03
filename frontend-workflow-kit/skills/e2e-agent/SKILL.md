@@ -16,6 +16,7 @@ ScreenSpec 기반 **선택형 웹 E2E evidence**를 만든다. 이 스킬은
 
 - E2E green은 승인, `confirmed` 승격, Open Decision resolve, Gap accept, readiness 상승이 아니다.
 - Visual `capture`는 Expo Web 관찰 스크린샷 evidence일 뿐 pass/fail, approval, native parity proof, visual baseline이 아니다.
+- UI screen의 `plan` mode는 사용자가 명시적으로 opt out하지 않는 한 visual capture candidates를 planning sidecar로 제안한다. Capture candidates는 visual specs, screenshots, approval, readiness, native parity proof가 아니다.
 - Playwright는 웹 표면 evidence다. fixture green은 실제 통합 동작 정확성을 증명하지 않는다.
 - E2E green은 필요조건이지 충분조건이 아니다. faithful generator는 약한 plan 단언을 green-but-inert 테스트로 굳히므로(예: `.click()` 직후 `toBeFocused()`), assertion/locator 정밀도 게이트는 codegen이 아니라 plan/review에서 적용한다. app 정의 상태만 단언하고(브라우저 focus/`:active` 아티팩트 금지), 반복 행은 container testid+id로 스코핑한다. 규칙 정본은 [e2e-behavioral-rules.md](../../docs/reference/e2e-behavioral-rules.md).
 - canonical Screen ID는 [screen-identity.md](../../docs/reference/screen-identity.md)가 정본이다. source alias로 만들지 않는다.
@@ -27,11 +28,11 @@ ScreenSpec 기반 **선택형 웹 E2E evidence**를 만든다. 이 스킬은
 
 | 요청/상태 | Mode | 기준 stage |
 |---|---|---|
-| 테스트 계획, e2e 설계, planner preflight | `plan` | Stage 05 |
+| 테스트 계획, e2e 설계, planner preflight, UI screen capture candidate discovery | `plan` | Stage 05 |
 | 계획이 있고 앱/seed URL/locator가 준비됨 | `generate` | Stage 06 |
 | 기존 테스트 실행, handoff evidence | `verify` | Stage 08 |
 | 실패 evidence가 있고 사용자가 수리 요청 | `heal` | Stage 08/maintenance |
-| visual screenshot evidence / Figma alignment capture / Expo Web screenshot | `capture` | Stage 08 evidence, with Stage 05/06 context as needed |
+| selected capture candidates를 `@visual` screenshot specs/run artifacts로 materialize | `capture` | Stage 08 evidence, with Stage 05/06 context as needed |
 
 애매하면 `plan`으로 시작한다. deep/full coverage는 사용자가 요청했거나 핵심 business path, branchy interaction, prior bug/drift, resolved decision이 있을 때만 한다.
 
@@ -43,7 +44,7 @@ ScreenSpec 기반 **선택형 웹 E2E evidence**를 만든다. 이 스킬은
 - 명령 syntax는 [COMMANDS.md](../../COMMANDS.md), route/screen 관례는 [CONVENTIONS.md](../../CONVENTIONS.md).
 - Playwright Test Agents setup은 [e2e-playwright-agents.md](../../docs/reference/e2e-playwright-agents.md). consumer repo 적용 순서(install/commit/ignore/run)+체크리스트는 [e2e-consumer-adoption.md](../../docs/reference/e2e-consumer-adoption.md).
 - plan/generate/verify에서 적용·주입할 assertion·locator·coverage 규칙은 [e2e-behavioral-rules.md](../../docs/reference/e2e-behavioral-rules.md).
-- `capture`의 Expo Web screenshot evidence 규칙은 [e2e-visual-capture.md](../../docs/reference/e2e-visual-capture.md).
+- `plan`의 capture candidate discovery와 `capture`의 Expo Web screenshot evidence 규칙은 [e2e-visual-capture.md](../../docs/reference/e2e-visual-capture.md).
 - planner context scaffold는 [web-plan.template.md](../../templates/e2e/web-plan.template.md).
 - 기존 `tests/web-plans/**`, `tests/web/**`, Playwright config, web server command.
 
@@ -94,9 +95,9 @@ Visual capture artifact는 run output이며 기본 커밋하지 않는다:
    npm run workflow:readiness -- --screen <SCREEN_ID> --json
    ```
 3. context packet을 만든다: screen id/domain/route, `seed_file`/`playwright_project`/`base_url`/`test_dir`, State/Interaction rows, 제외할 Open Decisions, copy/a11y/testID anchors, visual facts as evidence only. [e2e-behavioral-rules.md](../../docs/reference/e2e-behavioral-rules.md)의 assertion·locator 규칙을 packet에 포함한다.
-4. `plan`: consumer repo에 Playwright Test Agents setup이 없으면 멈추고 setup required로 보고한다. 있으면 planner를 우선 호출한다. scenario는 app 정의 상태를 타깃하고(behavioral-rules §A), 커버리지 깊이는 planner가 책임진다(§C: state-transition·side-effect까지). template은 kit dogfood, preflight notes, human-reviewed context scaffold에만 쓰며 generator input으로 넘기지 않는다. Plan-only는 test runner, generator/healer를 실행하지 않고 `tests/web/**`를 만들지 않는다.
+4. `plan`: consumer repo에 Playwright Test Agents setup이 없으면 멈추고 setup required로 보고한다. 있으면 planner를 우선 호출해 behavioral E2E plan을 만든다. scenario는 app 정의 상태를 타깃하고(behavioral-rules §A), 커버리지 깊이는 planner가 책임진다(§C: state-transition·side-effect까지). UI screen이면 사용자가 behavior-only로 opt out하지 않는 한 `Visual Capture Candidates` sidecar를 붙인다. target이 명백히 non-visual/non-screen work이면 생략한다. Sidecar는 `entry_context`, reason, confidence를 포함하고, 애매한 행은 `needs-human-decision`으로 표시한다. template은 kit dogfood, preflight notes, human-reviewed context scaffold에만 쓰며 generator input으로 넘기지 않는다. Plan-only는 test runner, generator/healer를 실행하지 않고 `tests/web/**`나 `tests/web/screenshots/**`를 만들지 않으며 Playwright 실행이나 screenshot 생성을 하지 않는다.
 5. `generate`: approved plan + seed/entry URL로 generator를 쓰고 configured `test_dir` 아래에 둔다. generator(직접/위임) 프롬프트에 behavioral-rules 규칙을 주입한다 — dogfood에서 행 스코핑 규칙(§B1) 주입이 strict-mode 버그를 예방했다. 테스트는 화면당 폴더(`{screen-slug}/<suite>.spec.ts`)에 둔다(아래 Output Paths). 생성 전 사용자 확인을 받는다.
-6. `capture`: [e2e-visual-capture.md](../../docs/reference/e2e-visual-capture.md)의 capture matrix로 `entry_context`를 분류한다. `native-only`면 웹 screenshot spec을 만들지 않고 device automation으로 올린다. 그 외에는 scoped root locator와 run-specific artifact path를 정하고, 한 screen/state당 `@visual` spec 하나만 만든다. `toHaveScreenshot()` baseline semantics는 쓰지 않는다.
+6. `capture`: [e2e-visual-capture.md](../../docs/reference/e2e-visual-capture.md)의 capture matrix로 selected candidate의 `entry_context`를 분류/확정한다. `native-only`면 웹 screenshot spec을 만들지 않고 device automation으로 올린다. `needs-human-decision`이면 spec을 쓰기 전에 human decision으로 되돌린다. 그 외에는 scoped root locator와 run-specific artifact path를 정하고, 한 screen/state당 `@visual` spec 하나만 만든다. `toHaveScreenshot()` baseline semantics는 쓰지 않는다.
 7. `verify`: 가장 작은 관련 Playwright command를 실행하고 결과 요약을 남긴다. 생성 세트 채택 전 behavioral-rules의 Review checklist로 inert 단언(`.click()` 직후 `toBeFocused()` 등)을 걸러낸다.
 8. `heal`: 실패 evidence 뒤에만 healer를 쓰고 assertion weakening, broad regex, `test.fixme()`를 diff에서 확인한다.
 9. plan-only가 아니거나 workflow docs가 바뀌었으면 `npm run workflow:validate`를 실행한다. 최종 보고는 evidence로만 말한다.

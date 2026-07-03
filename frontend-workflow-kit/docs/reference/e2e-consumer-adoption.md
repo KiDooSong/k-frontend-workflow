@@ -43,7 +43,9 @@ Stay in **plan / preflight only** when the surface is still in flux:
 - Screen ID, ScreenSpec, route, seed, or `testID` are unclear or unstable.
 - Then run [`e2e-agent`](../../skills/e2e-agent/SKILL.md) in `plan` mode (a
   preflight context scaffold) and stop. Plan-only does not run the test runner
-  and does not create `tests/web/**`.
+  and does not create `tests/web/**`. For UI screens, plan mode may still include
+  visual capture candidates as a non-generator sidecar so the later route,
+  journey, state, root locator, and artifact naming contract is easier to reuse.
 
 Investing in coverage is a **plan-time** decision, not a codegen one: a weak plan
 assertion freezes into a green-but-inert test, so the precision gate lives at
@@ -168,15 +170,20 @@ plan / generate / review, not read as background.
 
 - `plan` — if Playwright Test Agents setup is absent, stop with **setup
   required**. Otherwise call the planner first; coverage depth is the planner's
-  job.
+  job. For UI screens, plan normally includes behavioral E2E scenarios plus
+  optional visual capture candidates unless the user asks for behavior-only
+  planning.
 - `generate` — requires an approved plan + seed/`baseURL` + locator strategy +
   explicit user approval; output lands under `testDir` as folder-per-screen (§D).
 - `verify` — run the smallest related Playwright command and report by evidence.
 - `heal` — only after failing evidence and an explicit user request; check the
   diff for weakened assertions, broad regex, or `test.fixme()`.
 - `capture` — classify `entry_context`, verify the Expo Web command/port and
-  viewport, capture a scoped screen/root locator, and link the run artifact as
-  Stage 08 evidence. Use `@visual` and select these specs explicitly.
+  viewport, then turn selected candidates into `@visual` screenshot specs and
+  link the run artifact as Stage 08 evidence. Use `@visual` and select these
+  specs explicitly.
+
+Consumers can opt out of capture candidates by asking for behavior-only planning.
 
 ## G. Adoption checklist
 
@@ -191,6 +198,13 @@ Before generating any test:
 - [ ] Open Decisions and Unknowns are listed and excluded from assertions.
 - [ ] runtime config: dedicated `testDir`, unified `baseURL` / `webServer.url`,
       per-session `E2E_PORT` / `E2E_BASE_URL` / `E2E_RUN_ID` (§C).
+
+When reviewing a plan:
+
+- [ ] Behavioral scenarios are separate from visual capture candidates.
+- [ ] Capture candidates include `entry_context`, reason, and confidence.
+- [ ] Ambiguous candidates are marked `needs-human-decision`.
+- [ ] No visual spec or screenshot artifact was created in plan-only mode.
 
 After generating, before keeping the set:
 

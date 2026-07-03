@@ -235,6 +235,11 @@ the configured Playwright `testDir`.
   ([screen-identity.md](screen-identity.md)), not nested as a suite. Use the
   consumer repo's convention if it already has a clearer one.
 
+A reviewed plan may keep a non-generator `Visual Capture Candidates` sidecar near
+the official planner output. The Playwright generator consumes the official
+behavioral planner output only; do not treat capture candidates as behavioral
+test scenarios.
+
 Do not treat the scaffold template as the normal substitute for planner output.
 The generator-facing plan must preserve the Playwright planner output body
 (`Application Overview`, `Test Scenarios`, `Seed`, `File`, `Steps`, and
