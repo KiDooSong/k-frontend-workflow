@@ -24,14 +24,16 @@ product approval.
 When the user asks for web E2E, Playwright, web verification, test generation, or
 repairing a failing web test, use the
 [`e2e-agent`](../../../skills/e2e-agent/SKILL.md) skill. It can plan beside Stage
-05, generate within Stage 06 boundaries after explicit request, and verify/heal
-as Stage 08 evidence.
+05, generate within Stage 06 boundaries after explicit request, verify/heal as
+Stage 08 evidence, or `capture` advisory Expo Web screenshots for visual/Figma
+alignment review.
 
 This is **optional and never a gate**. Playwright green does not resolve Open
 Decisions, accept Component Gaps, promote `confirmed`, raise readiness, or prove
-native/mobile correctness. Link or summarize results in the handoff summary, a
-run report, or a consumer-defined verification note; do not require a separate
-canonical matrix.
+native/mobile correctness. Screenshot capture is also optional evidence: it is
+not pass/fail, approval, readiness, visual regression baseline, or native parity
+proof. Link or summarize results in the handoff summary, a run report, or a
+consumer-defined verification note; do not require a separate canonical matrix.
 
 ## Capture session learnings (optional)
 

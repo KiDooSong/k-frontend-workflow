@@ -106,6 +106,49 @@ export default defineConfig({
 });
 ```
 
+### Visual capture specs and artifacts
+
+Visual capture specs are advisory Expo Web screenshot evidence, not behavioral
+E2E verification. The canonical rules live in
+[e2e-visual-capture.md](e2e-visual-capture.md); this setup reference only defines
+how they fit the Playwright path/runtime model.
+
+Keep the existing behavioral path model intact: generated behavioral tests still
+live under `tests/web/{domain}/{screen-slug}/<suite>.spec.ts`. Visual capture
+specs may live under:
+
+```txt
+tests/web/screenshots/{domain}/{screen-slug}/{state}.visual.spec.ts
+```
+
+Select visual specs explicitly by path, `@visual` tag, or a consumer-owned
+Playwright project. A separate `visual` project may be useful when consumers want
+a stable viewport or browser, but the kit does not require a kit-wide config
+change.
+
+Example commands, adjusted to the consumer's path/project names:
+
+```bash
+# capture only
+E2E_PORT=3100 E2E_RUN_ID=auth-ui npx playwright test tests/web/screenshots/auth --grep @visual
+
+# ordinary behavioral verify when visual specs live inside tests/web
+npx playwright test --grep-invert @visual
+
+# capture through a consumer-owned visual project
+E2E_RUN_ID=auth-ui npx playwright test --project visual --grep @visual
+```
+
+Keep screenshot artifacts run-specific and uncommitted, for example:
+
+```txt
+.playwright-results/${E2E_RUN_ID}/screenshots/{domain}/{screen-slug}/{state}.png
+```
+
+Do not use `toHaveScreenshot()` as the default capture primitive; that implies
+visual baseline/comparison semantics. Use `page.screenshot({ path })` or
+`locator.screenshot({ path })` for advisory artifacts.
+
 ## Worktrees and Sessions
 
 `init-agents` output is repo content. Generate it once, review the diff, and
@@ -144,6 +187,8 @@ the configured Playwright `testDir`.
 | Input contracts (ScreenSpec, visual/Figma mapping, templates) | kit/consumer doc tree | agent context paths | No |
 | Plan (`plan.md`) | any workspace-relative path | planner save path | No |
 | Generated test (`*.spec.ts`) | inside configured `testDir` | generator file path | Yes |
+| Visual capture spec (`*.visual.spec.ts`) | inside configured `testDir`, usually `tests/web/screenshots/**` | capture runbook/spec author | Yes |
+| Visual screenshot artifact (`*.png`) | run-specific output, e.g. `.playwright-results/${E2E_RUN_ID}/screenshots/**` | Playwright run | No |
 | Seed (`seed.spec.ts`) | inside configured `testDir` | setup/discovery under `testDir` | Yes |
 
 - The workspace root is the session cwd: the consumer repo root, a worktree root,
@@ -156,6 +201,9 @@ the configured Playwright `testDir`.
   default `testDir: './tests/web'`, generated test subpaths follow
   `tests/web/{domain}/{screen-slug}/<suite>.spec.ts`: a folder per screen with
   the 1..N suite files for that screen.
+- Visual capture specs also stay inside `testDir` when committed as source, but
+  should be selected explicitly by path, `@visual` tag, or visual project instead
+  of being swept into ordinary behavioral verification by default.
 - The seed must also live inside `testDir` so planner/generator/healer setup can
   discover and run it with the selected Playwright project.
 - Do not set `testDir` to the repo root. Seed setup and Playwright discovery
