@@ -83,10 +83,21 @@ exclude:
 locator_gaps: []
 ```
 
+### Visual Capture Candidates — Not Generator Input
+
+This sidecar is for future `capture` mode only. It is not behavioral generator
+input, not approval evidence, and not a visual regression baseline. Do not create
+`tests/web/screenshots/**` from this section during plan-only mode.
+
+| screen_id | state | entry_context | reason | confidence | setup | scoped root locator | future spec path | artifact path | notes |
+|---|---|---|---|---|---|---|---|---|---|
+| `{SCREEN_ID}` | `{state}` | `{direct-entry|journey-entry|native-only|needs-human-decision}` | `{why}` | `{high|medium|low}` | `{route or journey}` | `{locator}` | `tests/web/screenshots/{domain}/{screen-slug}/{state}.visual.spec.ts` | `.playwright-results/${E2E_RUN_ID}/screenshots/{domain}/{screen-slug}/{state}.png` | `{notes}` |
+
 ## Generator Handoff Boundary
 
 - Stop after plan evidence.
 - Do not create `tests/web/**`, run Playwright test runner, or call generator/healer in plan-only mode.
+- Do not pass Visual Capture Candidates as behavioral test scenarios.
 - Generation later requires explicit approval, Playwright Test Agents setup, runnable web app, seed/entry URL, locator strategy, and approved planner output.
 
 ## Official Planner Output

@@ -37,6 +37,46 @@ judge the screenshot in context. A capture spec may use a minimal visibility
 check to wait for the screen root, but that check is synchronization only. It is
 not a visual approval assertion.
 
+## Candidate discovery during plan mode
+
+When `e2e-agent plan` is used for a UI screen, include visual capture candidates
+by default unless the user requests behavior-only planning or the target is
+clearly non-visual/non-screen work.
+
+This is a lightweight planning sidecar, not a required canonical artifact,
+approval record, baseline, or generator input. Candidate discovery can happen
+before a screen is fully implemented, including mock/fixture stages, because the
+reusable value is the route/journey, state name, root locator contract, and
+artifact naming - not the screenshot itself.
+
+Do not write visual specs until the web surface is runnable and the capture
+preconditions are met: route or journey setup, scoped root locator,
+Playwright project/viewport, overlay/runtime assumptions, and `E2E_RUN_ID`. Do
+not include `native-only` rows as web screenshot specs.
+
+Recommended sidecar shape:
+
+## Visual Capture Candidates
+
+| screen_id | state | entry_context | reason | confidence | setup | scoped root locator | future spec path | artifact path | notes |
+|---|---|---|---|---|---|---|---|---|---|
+| `{SCREEN_ID}` | `{state}` | `direct-entry|journey-entry|native-only|needs-human-decision` | `{why}` | `high|medium|low` | `{route or journey}` | `{locator}` | `tests/web/screenshots/{domain}/{screen-slug}/{state}.visual.spec.ts` | `.playwright-results/${E2E_RUN_ID}/screenshots/{domain}/{screen-slug}/{state}.png` | `{divergence}` |
+
+Entry-context decision rubric for LLMs:
+
+- `direct-entry` - a route or seed URL is enough, and screenshot judgment is
+  limited to scoped screen content.
+- `journey-entry` - header/back/close/modal/tab/chrome, navigation stack, prior
+  state, auth/session flow, or previous-screen context affects the screenshot.
+- `native-only` - native header, safe area, system chrome, keyboard, gestures,
+  native modules, platform animation, or mobile parity itself is being judged.
+- `needs-human-decision` - the agent cannot tell whether chrome, stack, or
+  native behavior is part of the intended visual judgment.
+
+If uncertain between `direct-entry` and `journey-entry`, prefer `journey-entry`
+when visible chrome/back/close/header could be part of review; otherwise use
+`direct-entry` with an assumption note.
+
 ## Capture matrix
 
 Prepare a lightweight capture row or table in the consumer runbook, screen note,
@@ -50,7 +90,7 @@ artifact.
 | `domain` | Consumer domain folder used in test/artifact paths. |
 | `screen_slug` | Lowercase slug derived from the canonical `screen_id`, unless the consumer already has a documented convention. |
 | route or seed URL | Direct URL, deep link, seed URL, or journey setup entry. |
-| `entry_context` | `direct-entry`, `journey-entry`, or `native-only`. |
+| `entry_context` | `direct-entry`, `journey-entry`, `native-only`, or `needs-human-decision`; resolve `needs-human-decision` before capture. |
 | state name | Stable state label for the screenshot filename. |
 | setup steps | Data seeding, auth, navigation, mocks, or user journey needed before capture. |
 | expected chrome differences | Known header/back/close/shell differences caused by entry path or web runtime. |
@@ -86,6 +126,8 @@ Classify entry context before capture:
   intended user journey.
 - `native-only` - the row should not produce an Expo Web screenshot spec because
   the judged behavior belongs to native/device automation.
+- `needs-human-decision` - the row should stay a candidate until a human decides
+  whether direct, journey, or native evidence is intended.
 
 Direct URL/deep-link entry may not reproduce the local Expo Router navigation
 stack. Header, back, close, and modal chrome may require a journey setup path.
@@ -172,9 +214,11 @@ outputs unless the consumer explicitly documents a different artifact policy.
 
 1. Confirm canonical `screen_id`, `domain`, `screen_slug`, state name, and visual
    spec path.
-2. Classify `entry_context` as `direct-entry`, `journey-entry`, or `native-only`.
+2. Classify `entry_context` as `direct-entry`, `journey-entry`, `native-only`, or
+   `needs-human-decision`.
 3. If the row is `native-only`, do not write a web screenshot spec; route to
-   device automation evidence instead.
+   device automation evidence instead. If it is `needs-human-decision`, stop and
+   resolve the evidence intent before writing a spec.
 4. Verify the Expo Web command, port, `E2E_BASE_URL`, viewport/project, and
    overlay behavior.
 5. Choose a scoped screen/root locator and artifact path.
