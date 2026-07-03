@@ -23,9 +23,14 @@ import {
   interactionRowRoutes,
   interactionEdgeRoutes,
   interactionMatrixV2Issues,
+  stripExpoSingleFilesystemGroups,
+  buildRuntimeRouteTargetIndex,
+  resolveRouteTargetInScreenInventory,
+  routeTargetExistsInScreenInventory,
   INTERACTION_V2_RESULT_TYPES,
   deriveMetrics,
 } from './spec.mjs';
+import { buildNavGraph } from './nav-graph.mjs';
 import { computeReadiness } from '../readiness.mjs';
 import { buildState } from '../workflow-state.mjs';
 import { LayoutConfigError, loadLayoutProfile } from './layout-profile.mjs';
@@ -769,6 +774,48 @@ test('P13: cellRoutes — 정상 v1/v2 route token 은 보존한다', () => {
   }
 });
 
+test('check 4 route inventory: Expo single filesystem group stripping is narrow and unambiguous', () => {
+  assert.equal(stripExpoSingleFilesystemGroups('/(auth)/reset/send-code'), '/reset/send-code');
+  assert.equal(stripExpoSingleFilesystemGroups('/(auth)/users/[id]'), '/users/[id]');
+  assert.equal(stripExpoSingleFilesystemGroups('/(auth)/docs/[[...slug]]'), '/docs/[[...slug]]');
+  assert.equal(stripExpoSingleFilesystemGroups('/(home,search)/users/[id]'), '/(home,search)/users/[id]');
+  assert.equal(stripExpoSingleFilesystemGroups('/(+auth)/login'), '/(+auth)/login');
+  assert.equal(stripExpoSingleFilesystemGroups('/legal/privacy.v2'), '/legal/privacy.v2');
+
+  const one = new Set(['/(auth)/reset/send-code']);
+  assert.equal(
+    routeTargetExistsInScreenInventory('/reset/send-code', one, buildRuntimeRouteTargetIndex(one)),
+    true,
+    'single filesystem group route may satisfy a group-less runtime URL',
+  );
+  assert.equal(
+    resolveRouteTargetInScreenInventory('/reset/send-code', one, buildRuntimeRouteTargetIndex(one)),
+    '/(auth)/reset/send-code',
+    'resolver returns the raw ScreenSpec route for downstream graph resolution',
+  );
+
+  const ambiguous = new Set(['/(auth)/login', '/(marketing)/login']);
+  assert.equal(
+    routeTargetExistsInScreenInventory('/login', ambiguous, buildRuntimeRouteTargetIndex(ambiguous)),
+    false,
+    'multiple group-stripped ScreenSpec routes must not auto-resolve',
+  );
+
+  const arrayGroup = new Set(['/(home,search)/users/[id]']);
+  assert.equal(
+    routeTargetExistsInScreenInventory('/users/[id]', arrayGroup, buildRuntimeRouteTargetIndex(arrayGroup)),
+    false,
+    'array route groups keep exact matching',
+  );
+
+  const plusGroup = new Set(['/(+auth)/login']);
+  assert.equal(
+    routeTargetExistsInScreenInventory('/login', plusGroup, buildRuntimeRouteTargetIndex(plusGroup)),
+    false,
+    'plus route groups keep exact matching',
+  );
+});
+
 // === Interaction Matrix v2 (structured, dual-read) ===========================================
 
 test('v2: Result Type 헤더 유무로 v1/v2 모드를 판정한다', () => {
@@ -889,6 +936,23 @@ test('E2E: validate check 4 — v1 backticked route 는 screen inventory 로 검
   }
 });
 
+test('E2E: validate check 4 — v1 Result group-less target matches one single filesystem route group', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check4-v1-single-group-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/domains/d/screens/send-code/screen-spec.md': screenSpec({
+        artifactId: 'RESET-SEND-CODE-001-screen-spec',
+        screenId: 'RESET-SEND-CODE-001',
+        route: '/(auth)/reset/send-code',
+        matrix: basicMatrix('`/reset/send-code` 로 이동'),
+      }),
+    });
+    assert.deepEqual(check4Errors(runValidate(root)), []);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('E2E: validate check 4 — v2 route 행은 Result prose 대신 Target 을 hard gate 입력으로 쓴다', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check4-v2-target-'));
   try {
@@ -914,6 +978,158 @@ test('E2E: validate check 4 — v2 route 행은 Result prose 대신 Target 을 h
     assert.equal(errors.length, 1);
     assert.match(errors[0].message, /\/missing/);
     assert.doesNotMatch(errors[0].message, /\/login/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('E2E: validate check 4 — v2 Target group-less target matches one single filesystem route group', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check4-v2-single-group-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/domains/d/screens/send-code/screen-spec.md': screenSpec({
+        artifactId: 'RESET-SEND-CODE-001-screen-spec',
+        screenId: 'RESET-SEND-CODE-001',
+        route: '/(auth)/reset/send-code',
+        matrix: [
+          '| User Action | Trigger | Result | Result Type | Target | Params |',
+          '|---|---|---|---|---|---|',
+          '| send code | tap | 이동 | route | /reset/send-code |  |',
+        ].join('\n'),
+      }),
+    });
+    assert.deepEqual(check4Errors(runValidate(root)), []);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('E2E: nav-graph — v2 Target group-less target resolves to the single filesystem group screen', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-nav-v2-single-group-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/domains/d/screens/source/screen-spec.md': screenSpec({
+        artifactId: 'SOURCE-001-screen-spec',
+        screenId: 'SOURCE-001',
+        route: '/source',
+        matrix: [
+          '| User Action | Trigger | Result | Result Type | Target | Params |',
+          '|---|---|---|---|---|---|',
+          '| send code | tap | 이동 | route | /reset/send-code |  |',
+        ].join('\n'),
+      }),
+      'docs/frontend-workflow/domains/d/screens/send-code/screen-spec.md': screenSpec({
+        artifactId: 'RESET-SEND-CODE-001-screen-spec',
+        screenId: 'RESET-SEND-CODE-001',
+        route: '/(auth)/reset/send-code',
+        matrix: basicMatrix('stay'),
+      }),
+    });
+    const graph = buildNavGraph({ docsDir: path.join(root, 'docs', 'frontend-workflow') });
+    assert.deepEqual(graph.routes['/reset/send-code'].inbound, [{ from: 'SOURCE-001', trigger: 'tap' }]);
+    assert.deepEqual(graph.screens['RESET-SEND-CODE-001'].inbound, [
+      { from: 'SOURCE-001', trigger: 'tap', route: '/reset/send-code' },
+    ]);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('E2E: validate check 4 — group-less target stays an error when multiple single groups match', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check4-single-group-ambiguous-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/domains/d/screens/source/screen-spec.md': screenSpec({
+        artifactId: 'SOURCE-001-screen-spec',
+        screenId: 'SOURCE-001',
+        route: '/source',
+        matrix: [
+          '| User Action | Trigger | Result | Result Type | Target | Params |',
+          '|---|---|---|---|---|---|',
+          '| login | tap | 이동 | route | /login |  |',
+        ].join('\n'),
+      }),
+      'docs/frontend-workflow/domains/d/screens/auth-login/screen-spec.md': screenSpec({
+        artifactId: 'AUTH-LOGIN-001-screen-spec',
+        screenId: 'AUTH-LOGIN-001',
+        route: '/(auth)/login',
+        matrix: basicMatrix('stay'),
+      }),
+      'docs/frontend-workflow/domains/d/screens/marketing-login/screen-spec.md': screenSpec({
+        artifactId: 'MARKETING-LOGIN-001-screen-spec',
+        screenId: 'MARKETING-LOGIN-001',
+        route: '/(marketing)/login',
+        matrix: basicMatrix('stay'),
+      }),
+    });
+    const errors = check4Errors(runValidate(root));
+    assert.equal(errors.length, 1);
+    assert.match(errors[0].message, /\/login/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('E2E: nav-graph — ambiguous group-less target does not resolve to a destination screen', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-nav-single-group-ambiguous-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/domains/d/screens/source/screen-spec.md': screenSpec({
+        artifactId: 'SOURCE-001-screen-spec',
+        screenId: 'SOURCE-001',
+        route: '/source',
+        matrix: [
+          '| User Action | Trigger | Result | Result Type | Target | Params |',
+          '|---|---|---|---|---|---|',
+          '| login | tap | 이동 | route | /login |  |',
+        ].join('\n'),
+      }),
+      'docs/frontend-workflow/domains/d/screens/auth-login/screen-spec.md': screenSpec({
+        artifactId: 'AUTH-LOGIN-001-screen-spec',
+        screenId: 'AUTH-LOGIN-001',
+        route: '/(auth)/login',
+        matrix: basicMatrix('stay'),
+      }),
+      'docs/frontend-workflow/domains/d/screens/marketing-login/screen-spec.md': screenSpec({
+        artifactId: 'MARKETING-LOGIN-001-screen-spec',
+        screenId: 'MARKETING-LOGIN-001',
+        route: '/(marketing)/login',
+        matrix: basicMatrix('stay'),
+      }),
+    });
+    const graph = buildNavGraph({ docsDir: path.join(root, 'docs', 'frontend-workflow') });
+    assert.deepEqual(graph.routes['/login'].inbound, [{ from: 'SOURCE-001', trigger: 'tap' }]);
+    assert.equal(graph.screens['AUTH-LOGIN-001'], undefined);
+    assert.equal(graph.screens['MARKETING-LOGIN-001'], undefined);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('E2E: validate check 4 — array route group is not group-less normalized', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-check4-array-group-runtime-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/domains/d/screens/source/screen-spec.md': screenSpec({
+        artifactId: 'SOURCE-001-screen-spec',
+        screenId: 'SOURCE-001',
+        route: '/source',
+        matrix: [
+          '| User Action | Trigger | Result | Result Type | Target | Params |',
+          '|---|---|---|---|---|---|',
+          '| user | tap | 이동 | route | /users/[id] |  |',
+        ].join('\n'),
+      }),
+      'docs/frontend-workflow/domains/d/screens/user/screen-spec.md': screenSpec({
+        artifactId: 'USER-001-screen-spec',
+        screenId: 'USER-001',
+        route: '/(home,search)/users/[id]',
+        matrix: basicMatrix('stay'),
+      }),
+    });
+    const errors = check4Errors(runValidate(root));
+    assert.equal(errors.length, 1);
+    assert.match(errors[0].message, /\/users\/\[id\]/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

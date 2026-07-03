@@ -541,6 +541,51 @@ function isConcreteTargetRoute(r) {
   return r === '/' || isConcreteRoute(r);
 }
 
+const EXPO_SINGLE_FILESYSTEM_GROUP_RE = /^\((?!.*[,+])[^/()\s]+\)$/;
+
+// Expo Router 의 일반 filesystem route group 은 런타임 URL 에 나타나지 않는다.
+// check 4 전용 매칭 보조라 raw route token 자체는 절대 바꾸지 않는다. array group `(a,b)` 와
+// plus group `(+auth)` 는 기존 exact 정책을 유지하기 위해 stripping 대상에서 제외한다.
+export function stripExpoSingleFilesystemGroups(route) {
+  if (typeof route !== 'string' || route === '' || route[0] !== '/') return route;
+  if (route === '/') return route;
+  const segments = route.slice(1).split('/');
+  const kept = [];
+  let changed = false;
+  for (const segment of segments) {
+    if (EXPO_SINGLE_FILESYSTEM_GROUP_RE.test(segment)) {
+      changed = true;
+      continue;
+    }
+    kept.push(segment);
+  }
+  if (!changed) return route;
+  return kept.length ? `/${kept.join('/')}` : '/';
+}
+
+export function buildRuntimeRouteTargetIndex(routes) {
+  const index = new Map();
+  for (const route of routes || []) {
+    const runtimeRoute = stripExpoSingleFilesystemGroups(route);
+    if (!runtimeRoute || runtimeRoute === route) continue;
+    const matches = index.get(runtimeRoute) || new Set();
+    matches.add(route);
+    index.set(runtimeRoute, matches);
+  }
+  return index;
+}
+
+export function resolveRouteTargetInScreenInventory(target, routeSet, runtimeRouteTargetIndex) {
+  if (routeSet && routeSet.has(target)) return target;
+  const matches = runtimeRouteTargetIndex?.get(target);
+  if (!matches || matches.size !== 1) return null;
+  return [...matches][0];
+}
+
+export function routeTargetExistsInScreenInventory(target, routeSet, runtimeRouteTargetIndex) {
+  return !!resolveRouteTargetInScreenInventory(target, routeSet, runtimeRouteTargetIndex);
+}
+
 // Interaction Matrix 의 Result 컬럼에서 라우트들을 추출 (v1 free-form/backcompat helper).
 // validate 검사 4 는 interactionEdgeRoutes 를 써서 v2 Target 을 hard gate 입력으로 삼는다.
 export function interactionResultRoutes(spec) {

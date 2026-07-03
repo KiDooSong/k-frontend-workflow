@@ -20,6 +20,8 @@ import {
   interactionMatrixIsV2,
   interactionRowRoutes,
   interactionEdgeRoutes,
+  buildRuntimeRouteTargetIndex,
+  resolveRouteTargetInScreenInventory,
 } from './spec.mjs';
 import { findFiles, readFileSafe } from './util.mjs';
 
@@ -95,8 +97,9 @@ function outboundKey(e) {
 // 규칙:
 //   - 이동/outbound 엣지는 SOURCE 화면 자신의 Interaction Matrix Result 컬럼에서만 나온다.
 //   - 모든 outbound 엣지 S->R 은 routes[R].inbound 에 {from:S, trigger} 를 무조건 추가한다.
-//   - R 이 어떤 로드된 화면의 fm.route 와 EXACT 문자열 일치하면 그 화면 D 로 해소(검사 4 routeSet.has 와 동일,
-//     param 정규화 없음). 해소되고 D!==S 면 screens[D].inbound 에 {from:S, trigger, route:R} 추가.
+//   - R 이 어떤 로드된 화면의 fm.route 와 EXACT 문자열 일치하거나, Expo 단일 filesystem group 을 제외한
+//     런타임 URL 이 단일 ScreenSpec route 로 해소되면 그 화면 D 로 해소한다(검사 4 와 동일).
+//     해소되고 D!==S 면 screens[D].inbound 에 {from:S, trigger, route:R} 추가.
 //   - navigation-map 의 라우트는 routes 레지스트리에 시드만 한다(엣지 생성 아님).
 export function buildNavGraph({ docsDir }) {
   const domainsRoot = path.join(docsDir, 'domains');
@@ -104,7 +107,8 @@ export function buildNavGraph({ docsDir }) {
 
   // 1) 모든 spec 로드 + (id, route, outbound 엣지) 수집. route->screenId 해소 맵 구성.
   const loaded = [];
-  const routeToScreen = new Map(); // fm.route(EXACT) -> screenId. 검사 4 와 동일한 정확 일치.
+  const routeToScreen = new Map(); // fm.route(raw) -> screenId. 목적지 해소는 검사 4 와 같은 helper 를 쓴다.
+  const routeSet = new Set();
   for (const specPath of specPaths) {
     const spec = loadScreenSpec(specPath);
     const id = screenIdOf(spec, specPath);
@@ -112,7 +116,10 @@ export function buildNavGraph({ docsDir }) {
 
     // route->screenId 등록은 stub 여부와 무관하게 먼저 한다. stub(frontmatter 만 있는 발견 단계 화면)도
     // 자신의 route 로 들어오는 inbound 의 "목적지"가 될 수 있다 (Codex 리뷰 P2: stub destination 해소).
-    if (route && !routeToScreen.has(route)) routeToScreen.set(route, id);
+    if (route && !routeToScreen.has(route)) {
+      routeToScreen.set(route, id);
+      routeSet.add(route);
+    }
 
     // stub 은 본문(Interaction Matrix)이 없어 outbound 이동 엣지를 만들 수 없다 — 목적지로만 남는다.
     if (isStub(spec)) continue;
@@ -139,6 +146,7 @@ export function buildNavGraph({ docsDir }) {
   const routes = {}; // route -> { inbound:[] }
   const ensureScreen = (id) => (screens[id] ||= { inbound: [], outbound: [] });
   const ensureRoute = (r) => (routes[r] ||= { inbound: [] });
+  const runtimeRouteTargetIndex = buildRuntimeRouteTargetIndex(routeSet);
 
   // 2) navigation-map 라우트 시드 — 알려진 라우트가 미참조라도 routes[] 에 등장하게.
   const navMapText = readFileSafe(path.join(docsDir, 'app', 'navigation-map.md'));
@@ -155,8 +163,9 @@ export function buildNavGraph({ docsDir }) {
       });
       // route inbound: 무조건 기록.
       ensureRoute(e.to_route).inbound.push({ from: s.id, trigger: e.trigger });
-      // 목적 화면 해소: EXACT 라우트 일치 + 자기 자신 아님.
-      const dest = routeToScreen.get(e.to_route);
+      // 목적 화면 해소: 검사 4 와 같은 route target semantics + 자기 자신 아님.
+      const destRoute = resolveRouteTargetInScreenInventory(e.to_route, routeSet, runtimeRouteTargetIndex);
+      const dest = destRoute ? routeToScreen.get(destRoute) : null;
       if (dest && dest !== s.id) {
         ensureScreen(dest).inbound.push({ from: s.id, trigger: e.trigger, route: e.to_route });
       }
