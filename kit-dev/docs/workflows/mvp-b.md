@@ -143,6 +143,6 @@ dogfood 기반 promotion decision 은 후속으로 남긴다.
 
 ## 링크
 
-- [README 문서 지도](../../../frontend-workflow-kit/README.md#문서-지도)
+- [문서 소유권 지도](../../../frontend-workflow-kit/docs/reference/doc-ownership.md)
 - [roadmap-current.md](../../roadmap-current.md)
 - [CHANGELOG.md](../../CHANGELOG.md)

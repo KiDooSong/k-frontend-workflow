@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// validate.mjs — 검사 12종. exit code 0/1 로 CI 게이트가 된다.
+// validate.mjs — 하드 게이트 검사 12종(exit code 0/1 로 CI 게이트). + 검사 13(Interaction Matrix v2 구조)은 warning-first 로 게이트가 아니다.
 //   출처: 검사 1~8 = impl §8 / 검사 9~12 = open-decisions.md · input-reconciliation.md (아래 각 항목 참조).
 //   1. frontmatter ↔ frontmatter.schema.json
 //   2. artifact-manifest 기준 필수 frontmatter 누락

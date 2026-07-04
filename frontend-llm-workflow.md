@@ -1,7 +1,7 @@
 # 프론트엔드 LLM 워크플로우 (Core)
 
 > ⚠ **현행 정본 주의 (2026-06-14 추가)**: 게이트·검사·티어·모드 사다리의 **현재 정본**은
-> [roadmap-current.md](kit-dev/roadmap-current.md) · [open-decisions.md](kit-dev/open-decisions.md) · [README 문서지도](frontend-workflow-kit/README.md#문서-지도)다.
+> [roadmap-current.md](kit-dev/roadmap-current.md) · [open-decisions.md](kit-dev/open-decisions.md) · [문서 소유권 지도](frontend-workflow-kit/docs/reference/doc-ownership.md)다.
 > 이 문서는 **설계 배경·사상**으로 읽되, `decision_cap`·검사 9~12·`screen-skeleton`/`docs-only` 등
 > 현행 게이트 세부는 위 정본을 따른다 (이 문서엔 미반영 — 역방향 드리프트, 분석 보고서 P3/P4).
 
