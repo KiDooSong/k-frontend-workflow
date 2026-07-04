@@ -2,7 +2,7 @@
 
 > ⚠ **진입점 주의 (2026-06-14 추가)**: 아래 §0~§1 이 "빌드 스펙"으로 가리키는 4종 설계 문서는 **설계 배경**이다.
 > 게이트·검사·티어·모드의 **현행 정본**은 [roadmap-current.md](kit-dev/roadmap-current.md) ·
-> [README 문서지도](frontend-workflow-kit/README.md#문서-지도) · [open-decisions.md](kit-dev/open-decisions.md) 다.
+> [문서 소유권 지도](frontend-workflow-kit/docs/reference/doc-ownership.md) · [open-decisions.md](kit-dev/open-decisions.md) 다.
 > 4종은 사상·구조 근거로 읽되, `decision_cap`·검사 9~12 등 최신 게이트는 현행 정본에서 확인하라 (분석 보고서 P3/P4).
 
 > 작성일: 2026-06-12

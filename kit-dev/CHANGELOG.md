@@ -5,6 +5,18 @@
 ## Unreleased
 
 ### Added
+- **check 4 route group false-positive 축소 + nav-graph route group resolution** (#129/#131): validate 검사 4(route ↔ src 존재)와 nav-graph 생성기가 route group 세그먼트(`(group)`)를 실제 경로에서 제외하도록 정렬 — 그룹 폴더를 route token 으로 오인해 내던 오탐을 줄인다. 게이트 동작 자체는 그대로(warning/exit 계약 불변), 매칭 정밀도만 개선.
+- **no-api-required 화면 지원** (#123/#126): API 계약이 필요 없는 화면을 first-class 로 표기하고, no-api readiness 경로와 API backstop 게이트가 그 선언을 존중하도록 처리. no-api readiness 의 편집 경로(`allowed_paths`)를 제한해 API 레이어로 새지 않게 한다.
+- **e2e-agent 스킬 (선택형 web E2E evidence)** (#112~#128/#130): `skills/e2e-agent` — plan/generate/verify/heal 모드 + Playwright agents MCP setup + path/session model + consumer adoption guide + behavioral rules(folder-per-screen 패키징) + visual capture 모드(#128) 및 plan-mode visual capture 후보(#130). `tests/web-plans/**`·`tests/web/**` 는 ScreenSpec/readiness 게이트가 아니며 green test 가 confirmed 승격·제품 승인·CI hard gate 를 뜻하지 않는다(Stage 08 evidence). 정본: `docs/reference/e2e-playwright-agents.md`·`e2e-behavioral-rules.md`·`e2e-consumer-adoption.md`.
+- **session-learnings capture surface** (#110): consumer repo 가 세션 중 얻은 학습을 기록하는 표면 추가(scope 예시 + test pin). 게이트 동작 변경 없음.
+- **safe vendored-kit upgrade planner** (#108): `scripts/upgrade-vendored-kit.mjs`(+`lib/upgrade-planner.mjs`) — packed payload 의 `.kit-payload-manifest.json`(파일별 sha256·classification) 기준 manifest-based 안전 업그레이드. 로컬 수정/ stale / upstream 삭제 파일을 구분해 safe-update·mode-update·new-file 만 자동 적용하고, conflict 는 `.upgrade-conflicts/<path>.incoming` 으로 남기며 orphan 은 `--prune` 없이는 보존한다. symlink 타깃 거부·`..` 경로 traversal 거부·`tools/frontend-workflow/` 밖 미터치로 consumer 밖 덮어쓰기를 차단. mode-only payload 업데이트(chmod)도 처리(#123 follow-up).
+- **progressive-disclosure 문서 리팩터** (#109): skills + consumer 문서를 compact trigger+procedure(스킬) / 상세 계약(reference) 레이어로 분리. safety assertion 강화. `doc-ownership.md` 가 "one fact, one home" 지도.
+- **grouped / domain·topic-aware input artifact directories** (#107): `inputs/` 를 domain/topic 하위로 그룹핑 가능하게 하고 README/index 파일은 walk 에서 무시. subdir strictness + migration 노트.
+- **Tier3 custom-layer substrate + readiness access wiring** (#85/#87/#88): `project-layout.yaml` 로 Tier3/custom layer 를 선언하고 layer telemetry·domain layer access 를 readiness 로 합성(코드 강제 승격 없음, 진단 substrate).
+- **Tier3 policy-draft 생성기** (#89): `scripts/policy-draft.mjs` — live policy 교체가 아니라 draft/review artifact 로 policy 변경을 다룬다. missing policy 파일에 fail-closed, generated path provenance·literal guard 보존.
+- **adoption-probe (draft-only 온보딩 진단)** (#86/#91): `scripts/adoption-probe.mjs` — brownfield repo 를 draft/report 로만 진단(custom source root·flattened role·domain root 매칭). 게이트 아님.
+- **generic input artifact producer + interaction matrix route extraction 하드닝** (#96/#97): `workflow:create-input` 계열 id/flag 검증 강화(duplicate id·valued boolean flag·unknown flag 거부), Interaction Matrix route 추출이 src 파일 경로·확장자성 토큰·route group·home 링크를 오인하지 않도록 정밀화.
+- **adoption-compatible contracts / screen entries** (#94): 도입 초기 repo 의 contract evidence·screen entry 를 수용하되 symlink 로 프로젝트 밖 source 를 링크하는 것은 거부(Source 확장자 guard 보존).
 - **Workflow spine stage guides**: consumer-agent routing layer over the existing workflow. `docs/reference/workflow-spine.md`(numbered index 00–10 + stage table + start-midstream/skip-earlier guidance + kit-vs-consumer ownership map) 와 `docs/reference/workflow-stages/00-start-here.md` … `10-policy-layout-tier3-changes.md`. 미드세션 진입 agent 가 현재 stage 식별 → 건너뛸 이전 stage 판단 → 읽을 stage doc 1개 → 작업 후 할 일 → kit-owned vs consumer-owned 경계를 빠르게 답하게 한다. 화면 식별(PR #105)을 first-class **Stage 02** 로 편입 — 새/미매핑 화면은 authoring/reconcile 전에 identity 를 푼다.
   - 설계 계약: **Stage 01**(source-specific input production)은 consumer-owned 커스터마이즈 템플릿(킷은 raw Figma/기획/API/QA/내부 export 를 파싱하지 않음, normalized handoff 만 기대). **Stage 03**(create canonical input artifact)은 kit-owned 이지만 wrapper-friendly("default implementation + safe extension points" — consumer producer 가 `workflow:create-input` 을 wrap 하거나, 같은 canonical input artifact 계약을 만족할 때만 직접 작성).
   - 연결: `templates/repo/AGENTS.template.md`(spine-first Start Here)·`README.md`(역할 구분)·`docs/reference/task-artifact-matrix.md`(새 "Stage Reference" 섹션 + intro)·`screen-identity.md`(Stage 02)·`input-reconciliation.md`(Stage 03/04)·`generated-files.md`(Stage 07)·`skills/reconcile-input`·`skills/implement-screen` 가 spine stage 로 cross-link. distribution: manifest `docs/reference/**` glob 로 자동 포함, packed-payload 테스트 확장.
@@ -20,6 +32,8 @@
 ### Changed
 - **Breaking ScreenSpec contract**: State Matrix canonical mandatory states are now `loading / empty / error / success / disabled / refreshing`. Existing ScreenSpecs that only declare the old five states (`loading / success / empty / error / refreshing`) now report `state_matrix_complete=false` until they add a distinct `disabled` interactivity row.
 - templates/readiness/examples: `screen-spec.template.md`, readiness next-action text, active examples, and expected readiness snapshots now use the 6-state order above. Treat `disabled` as an interactivity state, not a loading subcase.
+- **catalog kebab-case component filenames** (#93): `catalog-gen` 이 kebab-case 컴포넌트 파일명을 지원하도록 확장.
+- **dev/design/history 문서 repo-root 이관** (#101/#103): kit dev tooling·design/history/roadmap/run-report 문서를 소비 payload 에서 제외하고 repo-root `kit-dev/` 로 옮김. payload hygiene — 소비 repo 에는 runtime/reference surface 만 vendor.
 
 ## 0.3.0-mvp-c-phase1 — 2026-06-14
 
