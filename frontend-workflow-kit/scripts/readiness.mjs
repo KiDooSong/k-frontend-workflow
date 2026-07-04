@@ -210,7 +210,14 @@ function evalMode(mode, facts) {
   const failed = [];
   for (const r of requires) {
     const cond = parseCondition(r);
-    if (!cond) continue;
+    if (!cond) {
+      // fail-closed: 파싱 불가한 요구조건(오타 `ci_lint = pass`·`api_confidence_min => confirmed`·
+      // 연산자/값 없는 bare 토큰 등)은 통과가 아니라 실패로 본다. 그냥 skip 하면 게이트가 조용히
+      // 사라진다. malformed Open Decision 을 docs-only 로 고정하는 것과 대칭 — live gate 인
+      // readiness 가 보수적으로 막고, 어느 정책 줄이 깨졌는지 blocker/next_action 으로 surface 한다.
+      failed.push({ malformed: true, raw: typeof r === 'string' ? r : String(r) });
+      continue;
+    }
     if (!evalCondition(cond, facts)) failed.push(cond);
   }
   return { pass: failed.length === 0, failed };
@@ -396,6 +403,19 @@ export function computeReadiness({ state, policy, ci, manifest, layout }) {
       if (!mode) continue;
       const { failed } = evalMode(mode, facts);
       for (const cond of failed) {
+        // malformed 요구조건: fact 키가 없어 FRIENDLY/actionHint 를 태울 수 없다. 어느 모드의
+        // 어떤 정책 줄이 깨졌는지 그대로 surface 해 저작자가 고치게 한다(fail-closed 의 이유 표시).
+        if (cond.malformed) {
+          const dedupKey = `malformed:${cond.raw}`;
+          if (seen.has(dedupKey)) continue;
+          seen.add(dedupKey);
+          blocking.push({ invalid_policy_requirement: { requirement: cond.raw, mode: order[i] } });
+          nextActions.push(
+            `fix malformed policy requirement in mode ${order[i]}: "${cond.raw}" ` +
+              `(expected "fact OP value", OP one of >= <= == > <)`,
+          );
+          continue;
+        }
         if (CI_FACTS.has(cond.key) && !ciProvided) continue;
         if (cond.key === 'api_confidence_min' && facts.api_required === false) continue;
         if (seen.has(cond.key)) continue;
