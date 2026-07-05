@@ -24,6 +24,10 @@
 //   13. Interaction Matrix v2(structured) 형식 — WARNING-ONLY (하드 게이트 아님, 검사 카운트 "12종"에 미포함).
 //       Result Type 헤더가 있는 표만 점검 → v1 표는 무발화 = v1 출력 byte-identical. 에러 승격 없음(warning-first).
 //       Result Type=route Target 은 route-tree.txt 의 route token 과 EXACT 문자열 교차검증한다(artifact 부재 시 skip).
+//   14. Policy `requires` 구문(mode 진입 조건 "fact OP value") — WARNING-ONLY (검사 13 과 동급, "12종"에 미포함).
+//       policy.modes[*].requires 각 줄을 policy-condition.mjs 의 파서(readiness 와 단일 출처)로 검사해
+//       파싱 불가한 항목(단일 `=`·`=>`·bare 토큰 등)을 저작 시점에 경고로 알린다. 런타임 fail-closed(#135)와
+//       대칭인 저작-시점 조기경보 — 하드 게이트 아님(warning→hard 승격은 별도 사람 결정).
 //   ※ Preflight cold-start(warning-only): 저작 artifact(artifact_type frontmatter) 0건이면 validate 가 막을
 //      대상이 없어 vacuously green(exit 0)으로 통과한다 — 갓 도입한 프로젝트의 fail-open. 게이트(exit code)는
 //      건드리지 않고 경고로만 표면화한다(정상 최소 부트스트랩은 stub 도 artifact_type 을 가져 발화 안 함).
@@ -74,6 +78,8 @@ import {
   normEndpoint,
 } from './lib/api-manifest.mjs';
 import { parseRouteTreeRouteTokens } from './lib/route-core.mjs';
+// policy `requires` 파싱 술어 — readiness.mjs 와 단일 출처를 공유해 검사 14 와 런타임 게이트가 표류하지 않게 한다.
+import { isWellFormedRequirement } from './lib/policy-condition.mjs';
 // 글롭 미니엔진·생성물 헤더 정규식은 check-generated-files 가드와 단일 출처를 공유한다(표류 방지).
 import { GENERATED_HEADER_RE, globRoot, globToRegExp } from './lib/glob.mjs';
 
@@ -650,6 +656,27 @@ function main() {
   const registerResult = validateReconciliationRegister({ register, inputArtifacts, registerFile, enforce: !!flags.enforce });
   for (const e of registerResult.errors) add(12, e.file, e.message);
   for (const w of registerResult.warnings) warn(12, w.file, w.message);
+
+  // --- 14. Policy `requires` 구문 검사 (warning-first, 하드 게이트 아님) ---
+  //   이미 로드된 policy(라인 위)/policyPath 를 재사용한다 — 재로딩 없음. 손상/부재 정책은 이미 exit 2 로
+  //   fail-closed 됐으므로 이 경로는 well-formed 매핑을 전제한다. 각 mode 의 requires 문자열을 파서
+  //   단일 출처(policy-condition.mjs, readiness 와 공유)로 검사해 malformed 를 저작 시점에 경고로 surface.
+  //   런타임(readiness.mjs)은 malformed 를 fail-closed 로 막지만(#135), 여기서는 저작자가 정책 파일을
+  //   저장할 때 바로 알아채게 하는 조기경보다. exit code 불변(경고만) — 하드 승격은 별도 사람 결정.
+  for (const [modeName, mode] of Object.entries(policy.modes || {})) {
+    const requires = Array.isArray(mode?.requires) ? mode.requires : [];
+    for (const req of requires) {
+      if (isWellFormedRequirement(req)) continue;
+      const raw = typeof req === 'string' ? req : JSON.stringify(req);
+      warn(
+        14,
+        policyPath,
+        `mode '${modeName}' 의 requires 항목이 'fact OP value'(OP ∈ >= <= == > <) 형식이 아님: ${JSON.stringify(raw)} ` +
+          `→ 해소: 단일 '='(→ '=='), '=>'(→ '>='), 연산자/값 없는 bare 토큰을 고치세요. ` +
+          `(런타임 readiness 는 이 항목을 fail-closed 로 막습니다)`,
+      );
+    }
+  }
 
   // --- 결과 출력 ---
   if (flags.json) {

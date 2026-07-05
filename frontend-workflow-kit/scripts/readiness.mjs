@@ -20,6 +20,8 @@ import {
 } from './lib/util.mjs';
 import { LayoutConfigError, loadLayoutProfile, synthesizeModePolicy } from './lib/layout-profile.mjs';
 import { covers } from './lib/path-backstop.mjs';
+// "fact OP value" 파싱은 policy-condition.mjs 단일 출처에서 온다 — validate 검사 14 와 규칙을 공유해 표류 방지.
+import { parseCondition } from './lib/policy-condition.mjs';
 
 // fact 키별 스케일 분류
 const STATUS_SCALED = new Set([
@@ -95,12 +97,7 @@ function actionHint(factKey, screen) {
   }
 }
 
-// "fact OP value" 한 줄을 파싱
-function parseCondition(str) {
-  const m = /^\s*([a-z0-9_]+)\s*(>=|<=|==|>|<)\s*(.+?)\s*$/i.exec(str);
-  if (!m) return null;
-  return { key: m[1], op: m[2], rhs: m[3] };
-}
+// "fact OP value" 파싱은 ./lib/policy-condition.mjs 의 parseCondition 로 이전됐다(validate 와 단일 출처).
 
 function coerceNumber(v) {
   const n = Number(v);
