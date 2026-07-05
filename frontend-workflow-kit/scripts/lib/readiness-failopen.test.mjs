@@ -72,6 +72,14 @@ test('malformed requires (single `=`) 도 fail-closed', () => {
   assert.ok(r.blocking.some((b) => b.invalid_policy_requirement?.requirement === 'screen_spec_status = authored'));
 });
 
+test('malformed requires (값 누락 `>=`) 도 fail-closed — 백트래킹으로 > "=" 되어 조용히 통과하면 안 됨', () => {
+  // 회귀: 예전 파서는 `screen_spec_status >=` 를 {op:">", rhs:"="} 로 파싱해 status > rank("=")=0 →
+  //   authored 화면마다 항상 통과시켜 게이트를 조용히 없앴다. 이제 malformed 로 fail-closed 여야 한다.
+  const r = run(policyWithFinalRequires(['screen_spec_status >=']));
+  assert.equal(r.readiness_mode, 'rough-fixture-ui', '값 누락 요구조건 모드로 올라가면 안 됨');
+  assert.ok(r.blocking.some((b) => b.invalid_policy_requirement?.requirement === 'screen_spec_status >='));
+});
+
 test('malformed CI requires 는 ciProvided=false 여도 CI-skip 뒤에 숨지 않는다', () => {
   // ci_lint 는 CI_FACTS 라 well-formed 였다면 ci 미입력 시 blocking 에서 제외되지만,
   // malformed 는 그보다 먼저 surface 돼야 하고 게이트도 살아 있어야 한다.

@@ -26,7 +26,8 @@
 //       Result Type=route Target 은 route-tree.txt 의 route token 과 EXACT 문자열 교차검증한다(artifact 부재 시 skip).
 //   14. Policy `requires` 구문(mode 진입 조건 "fact OP value") — WARNING-ONLY (검사 13 과 동급, "12종"에 미포함).
 //       policy.modes[*].requires 각 줄을 policy-condition.mjs 의 파서(readiness 와 단일 출처)로 검사해
-//       파싱 불가한 항목(단일 `=`·`=>`·bare 토큰 등)을 저작 시점에 경고로 알린다. 런타임 fail-closed(#135)와
+//       파싱 불가한 항목(단일 `=`·`=>`·bare 토큰·값 누락 `>=`/`<=` 등)을 저작 시점에 경고로 알린다.
+//       requires 가 리스트가 아니면(스칼라/매핑) 그것도 경고한다. 런타임 fail-closed(#135)와
 //       대칭인 저작-시점 조기경보 — 하드 게이트 아님(warning→hard 승격은 별도 사람 결정).
 //   ※ Preflight cold-start(warning-only): 저작 artifact(artifact_type frontmatter) 0건이면 validate 가 막을
 //      대상이 없어 vacuously green(exit 0)으로 통과한다 — 갓 도입한 프로젝트의 fail-open. 게이트(exit code)는
@@ -664,6 +665,18 @@ function main() {
   //   런타임(readiness.mjs)은 malformed 를 fail-closed 로 막지만(#135), 여기서는 저작자가 정책 파일을
   //   저장할 때 바로 알아채게 하는 조기경보다. exit code 불변(경고만) — 하드 승격은 별도 사람 결정.
   for (const [modeName, mode] of Object.entries(policy.modes || {})) {
+    // requires 는 리스트여야 한다. 스칼라/매핑으로 잘못 쓰면(`requires: "ci_lint == pass"`) 런타임
+    //   readiness 는 문자열을 문자 단위로 순회해 모드를 영구 fail-closed 시키지만, 그 신호가 저작 시점엔
+    //   보이지 않는다 — 여기서 명시 경고로 대칭을 맞춘다(리스트 부재/빈 배열은 정상, 무발화).
+    if (mode?.requires != null && !Array.isArray(mode.requires)) {
+      warn(
+        14,
+        policyPath,
+        `mode '${modeName}' 의 requires 가 리스트(YAML 시퀀스)가 아님: ${JSON.stringify(mode.requires)} ` +
+          `→ 해소: '- "fact OP value"' 형태의 리스트로 작성하세요. ` +
+          `(런타임 readiness 는 리스트가 아닌 requires 를 fail-closed 로 막습니다)`,
+      );
+    }
     const requires = Array.isArray(mode?.requires) ? mode.requires : [];
     for (const req of requires) {
       if (isWellFormedRequirement(req)) continue;
