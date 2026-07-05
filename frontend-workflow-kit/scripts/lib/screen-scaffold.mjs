@@ -112,7 +112,9 @@ export function renderScreenSpec(spec, { frontmatterOnly = false } = {}) {
   fm.push(`status: ${spec.status}`);
   if (spec.sources.length) {
     fm.push('sources:');
-    for (const s of spec.sources) fm.push(`  - { type: ${s.type}, ref: ${yamlScalar(s.ref)} }`);
+    // type 도 ref 처럼 quote 한다. raw interpolation 하면 콤마/중괄호/개행이 든 값이 YAML flow
+    // mapping 을 조용히 오염시킨다(예: "design, v2" → 가짜 키 `v2: null`). issue #134.
+    for (const s of spec.sources) fm.push(`  - { type: ${yamlScalar(s.type)}, ref: ${yamlScalar(s.ref)} }`);
   }
   fm.push('depends_on: [navigation-map]');
   if (spec.last_reviewed) fm.push(`last_reviewed: ${yamlScalar(spec.last_reviewed)}`);

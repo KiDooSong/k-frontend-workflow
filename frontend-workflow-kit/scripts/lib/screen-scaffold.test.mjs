@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import {
   ScreenScaffoldError,
   buildScreenSpec,
+  renderScreenSpec,
   screenSlugFromId,
   writeScreenSpec,
 } from './screen-scaffold.mjs';
@@ -301,4 +302,36 @@ test('CLI rejects unknown flags before writing', (t) => {
   );
   assert.equal(res.status, 2);
   assert.match(res.stderr, /unknown flag: --bogus/);
+});
+
+// --- issue #134: source.type 이 escape 없이 flow mapping 에 삽입돼 stub frontmatter 가 오염되던 회귀 ---
+
+function renderedFrontmatter(sources) {
+  const spec = buildScreenSpec({ domain: 'auth', screenId: 'AUTH-001', route: '/x', sources });
+  const { data, parseError } = splitFrontmatter(renderScreenSpec(spec));
+  return { data, parseError };
+}
+
+test('source type with a comma is preserved verbatim (no phantom flow-map key)', () => {
+  // "design, v2:DS-1" → type="design, v2" (첫 ':' 까지가 type). 예전엔 raw 삽입돼
+  // `{ type: design, v2, ref: "DS-1" }` = 가짜 키 v2:null 로 파싱됐다.
+  const { data, parseError } = renderedFrontmatter(['design, v2:DS-1']);
+  assert.equal(parseError, undefined);
+  assert.deepEqual(data.sources, [{ type: 'design, v2', ref: 'DS-1' }]);
+  assert.deepEqual(Object.keys(data.sources[0]).sort(), ['ref', 'type']); // v2 같은 가짜 키 없음
+});
+
+test('source type with a brace/newline stays valid YAML and preserves the value', () => {
+  const { data, parseError } = renderedFrontmatter([{ type: 'a}b\nc', ref: 'r' }]);
+  assert.equal(parseError, undefined, 'frontmatter must still parse');
+  assert.deepEqual(data.sources, [{ type: 'a}b\nc', ref: 'r' }]);
+});
+
+test('ordinary source type is unchanged after quoting (backwards-compatible value)', () => {
+  const { data, parseError } = renderedFrontmatter(['design:J010', 'input:IN-1']);
+  assert.equal(parseError, undefined);
+  assert.deepEqual(data.sources, [
+    { type: 'design', ref: 'J010' },
+    { type: 'input', ref: 'IN-1' },
+  ]);
 });
