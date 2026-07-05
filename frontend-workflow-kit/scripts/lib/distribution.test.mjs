@@ -321,6 +321,8 @@ test('consumer README points to the manifest-backed pack flow', () => {
   assert.match(readme, /npm run kit:pack/);
   assert.match(readme, /docs\/reference\/input-reconciliation\.md/);
   assert.match(readme, /check 12[^\n]+NO-OP/i);
+  assert.match(readme, /check 12[^\n]+row 없음[^\n]+row를 먼저 만들/);
+  assert.match(readme, /check 12[^\n]+기존 row[^\n]+새 row를 만들지 말고 같은 row를 재개/);
   assert.doesNotMatch(readme, /roadmap-current\.md/);
   assert.doesNotMatch(readme, /MVP-B Phase/);
 });
