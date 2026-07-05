@@ -1,5 +1,11 @@
 # Repository Agent Instructions
 
+## Where things live
+
+- Current scope, tier boundaries, and what not to touch: `kit-dev/roadmap-current.md`.
+- Build-session kickoff and read-order: `IMPLEMENTING.md`.
+- Where each fact is canonically owned: `frontend-workflow-kit/docs/reference/doc-ownership.md`.
+
 ## Codex and Claude skill compatibility
 
 This repository keeps the canonical repo-local agent skills in `.claude/skills/`.
@@ -7,9 +13,8 @@ When a user request matches one of those skills, read that skill's `SKILL.md`
 completely before acting, then read only the referenced assets or docs needed for
 the task.
 
-Local Codex compatibility wrappers may exist under `.codex/skills/`. They are
-intentionally ignored by git because they mostly mirror the Claude skills. If a
-wrapper is missing or stale, treat the matching `.claude/skills/<name>/SKILL.md`
+Local Codex compatibility wrappers under `.codex/skills/` are git-ignored and may
+be missing or stale — always treat the matching `.claude/skills/<name>/SKILL.md`
 as the source of truth.
 
 Active repo-local Claude skills:
@@ -18,10 +23,9 @@ Active repo-local Claude skills:
   frontend workflow documents through the Reconciliation Register.
 - `visualize-decision`: use for read-only Open Decision or option-comparison
   visualization, producing only `_viz/` outputs.
-- `wt`: local-only helper for isolated worktree branches when present.
-- `write-a-skill`: local-only vendored reference for creating Claude-style
-  skills; prefer Codex's built-in skill creation rules when creating Codex
-  skills.
+
+Some sessions may vendor local-only helpers (e.g. `wt`, `write-a-skill`) under
+`.claude/skills/`; use them only if they are actually present.
 
 Kit-distributed skills live in `frontend-workflow-kit/skills/`. Use those when
 working on the kit itself or when a user explicitly asks to use a kit skill such

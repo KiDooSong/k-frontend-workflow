@@ -28,7 +28,7 @@ npm run kit:pack
 - templates/skills: `templates/`, `skills/` (including `templates/repo/AGENTS.template.md`)
 - package/docs: `package.json`, `package-lock.json`, `package-scripts.template.json`, `README.md`, `COMMANDS.md`, `CONVENTIONS.md`, `distribution-manifest.yaml`, `LICENSE`
 
-`examples/`는 kit 테스트 fixture로 킷 repo에는 남지만 payload에서는 제외된다. 디자인 드래프트·워크플로우 진화 노트·roadmap/history·open decision·investigation·dogfood run-report 같은 개발 전용 문서는 더 이상 킷 트리 안에 두지 않는다 — kit repo의 repo-root `kit-dev/`로 옮겼고 payload에는 절대 포함되지 않는다. manifest는 `docs/design/`·`docs/workflows/`·`temp/`를 exclude guard로 유지해, 그런 디렉터리가 다시 킷 안에 생겨도 payload로 새지 않게 한다.
+`examples/`는 kit 테스트 fixture로 킷 repo에는 남지만 payload에서는 제외된다. 디자인 드래프트·roadmap/history·open decision·investigation·dogfood run-report 같은 개발 전용 문서는 킷 repo의 repo-root `kit-dev/`로 옮겼고 payload에는 포함되지 않는다. `docs/design/`·`docs/workflows/`·`temp/` exclude guard 등 payload 경계 메커니즘은 [CONVENTIONS.md](CONVENTIONS.md) §Payload Boundary가 정본이다.
 
 ## Install In A Consumer Repo
 
@@ -95,11 +95,8 @@ node /path/to/new/frontend-workflow-kit/scripts/upgrade-vendored-kit.mjs \
   --apply
 ```
 
-- `--apply`는 safe-update, mode-update(chmod), new-file만 자동 적용하고 `.kit-install-manifest.json`을 갱신한다.
 - 로컬 수정 파일은 기본적으로 절대 덮어쓰지 않는다. conflict는 `.upgrade-conflicts/<path>.incoming`으로 남겨 수동/LLM 병합한다.
 - upstream에서 삭제된 파일은 기본 보존(orphan 보고)하며 `--prune`을 줄 때만 삭제한다.
-- 명시적으로 지정한 `--backup-dir`/`--plan` 경로를 빼면 `tools/frontend-workflow/` 밖(소비 `docs/frontend-workflow/**`, 앱 소스, 루트 `AGENTS.md`/`package.json`)은 자동으로 건드리지 않는다. `--current` 안의 symlink 타깃은 거부해 링크로 밖을 덮어쓰지 못하게 한다.
-- `.kit-install-manifest.json`이 없는 기존(비관리) 설치는 보수적 plan(차이 파일=conflict)을 만들고, 첫 apply 이후부터 manifest 기반으로 동작한다.
 
 옵션·분류 규칙은 [COMMANDS.md](COMMANDS.md)의 Upgrade 항목과 `--help`를 본다. 사람이 봐야 할 마이그레이션 노트는 [docs/reference/upgrade-notes.md](docs/reference/upgrade-notes.md)에 있고 plan에 함께 포함된다.
 
@@ -141,20 +138,7 @@ npm run workflow:state -- --docs docs/frontend-workflow --src src
 npm run workflow:validate -- --docs docs/frontend-workflow --src src
 ```
 
-Monorepo/custom root:
-
-```bash
-npm run workflow:state -- --root apps/mobile --src apps/mobile/src
-npm run workflow:doctor -- --root apps/mobile --src apps/mobile/src
-```
-
-기본 layer model과 다르면 `templates/adoption/project-layout.template.yaml`에서 시작해 `project-layout.yaml`을 만들고 `--layout project-layout.yaml`을 넘긴다. 자세한 route/screen/API/Tier3 관례는 [CONVENTIONS.md](CONVENTIONS.md)를 본다.
-
-## Route, Screen, API Contracts
-
-Route file과 screen implementation은 다른 경계다. ScreenSpec의 `route_entry`는 router/framework shell, `screen_entry`는 제품 화면 구현을 가리킨다. thin route가 screen을 import하는 구조를 선호하되, readiness의 `allowed_paths`와 `forbidden_paths`가 실제 편집 경계다.
-
-API manifest confirmed 행은 `zod`, `ts-type`, `openapi`, `manual` contract kind를 링크할 수 있다. `ts-type`은 exported TypeScript type/interface 근거이고 런타임 검증을 뜻하지 않는다. `unknown`은 추적용이며 confirmed API evidence를 만족하지 않는다.
+기본 layer model과 다르면 `templates/adoption/project-layout.template.yaml`에서 시작해 `project-layout.yaml`을 만들고 `--layout project-layout.yaml`을 넘긴다. monorepo/custom root 변형과 layout profile 상세는 [CONVENTIONS.md](CONVENTIONS.md) §Project Layout Profiles, 플래그 의미는 [COMMANDS.md](COMMANDS.md)를 본다. route/screen/API/Tier3 관례도 CONVENTIONS.md를 본다.
 
 ## Input And Reconcile Flow
 
@@ -175,16 +159,11 @@ npm run workflow:create-input -- --docs docs/frontend-workflow --from-json input
 
 `workflow:create-input`은 `inputs/{input_id}.md`만 만든다. Reconciliation Register 수정, confirmed 승격, acceptance, 구현 허가는 별도 단계다. register retry, check 12 severity, status 축 구분은 [docs/reference/input-reconciliation.md](docs/reference/input-reconciliation.md)가 정본이다.
 
-check 12는 mixed severity다.
-
-- `_meta/reconciliation-register.md`가 없으면 NO-OP.
-- register가 있으면 row 없음과 `Reconcile Status=not-started`는 기본 경고이며 `--enforce`에서 에러가 된다.
-- `in-progress`, `failed`, enum 위반, duplicate Input ID, required column 누락은 항상 에러다.
-- `reconciled`는 Created Items에 open decision/gap/unknown이 있어도 통과한다. 자식 상태는 register rollup이 아니다.
+빠른 참조 — check 12 severity: register 없음=NO-OP, row 없음·`not-started`=경고(`--enforce`에서 에러), `in-progress`·`failed`·enum 위반·duplicate Input ID·required column 누락=항상 에러, `reconciled`=Created Items에 open decision/gap/unknown이 있어도 통과.
 
 ## Screen Identity And New Screens
 
-기획/디자인 입력이 들고 오는 source 화면 코드(planning `A-001`·design `J010`·Figma node id·slug)는 **alias** 이고 canonical Screen ID 가 아니다. canonical identity(`screen_id`/`route`/`domain`/ScreenSpec 경로)는 워크플로우가 소유한다. source 코드 ↔ canonical 매핑은 **Screen Source Map**(`docs/frontend-workflow/_meta/screen-source-map.md`) 한 곳에 둔다. 계약·예시는 [docs/reference/screen-identity.md](docs/reference/screen-identity.md).
+기획/디자인 입력의 source 화면 코드(planning `A-001`·design `J010`·Figma node id·slug)는 **alias** 이고 canonical Screen ID 가 아니다. canonical identity(`screen_id`/`route`/`domain`/ScreenSpec 경로)는 워크플로우가 소유하고, source ↔ canonical 매핑은 **Screen Source Map**(`docs/frontend-workflow/_meta/screen-source-map.md`) 한 곳에 둔다. 계약·예시는 [screen-identity.md](docs/reference/screen-identity.md).
 
 식별이 확정되면 stub ScreenSpec 을 scaffold 한다(canonical id 발명·navigation-map 자동수정·confirmed 승격 없음).
 
@@ -231,7 +210,7 @@ npm run workflow:validate
 
 ## Tier3 And Policy Drafts
 
-Tier3/custom layer는 readiness 코드를 바꾸지 않고 `project-layout.yaml`로 선언한다. `workflow:doctor`로 layout을 확인하고, policy 변경은 live policy 교체가 아니라 draft/review artifact로 다룬다.
+Tier3/custom layer는 readiness 코드를 바꾸지 않고 `project-layout.yaml`로 선언한다(layer/선언 상세는 [CONVENTIONS.md](CONVENTIONS.md) §Tier3). `workflow:doctor`로 layout을 확인하고, policy 변경은 live policy 교체가 아니라 draft/review artifact로 다룬다.
 
 ```bash
 npm run workflow:policy-draft -- --out docs/frontend-workflow/_meta/policy-drafts
@@ -244,7 +223,7 @@ policy draft나 migration guide가 만들어져도 hard gate, CI required check,
 - `validate`가 navigation-map 의존성으로 실패하면 `app/navigation-map.md`를 먼저 만든다.
 - `rough-fixture-ui` 이상으로 올라가지 않으면 screen hook/source path와 `--src`/`--layout`을 확인한다.
 - monorepo에서 파일을 못 찾으면 모든 workflow 명령에 같은 `--root`, `--src`, `--docs`, `--layout` 값을 넘긴다.
-- check 12가 row 없음이나 `not-started`를 보고하면 reconcile을 실행하거나 `--enforce` 없이 도입 중 경고로 남긴다.
-- check 12가 `in-progress`/`failed`를 보고하면 새 row를 만들지 말고 기존 row를 `in-progress`로 재개해 완료/실패 결과를 갱신한다.
+- check 12가 row 없음으로 경고/에러를 보고하면 Reconciliation Register에 해당 `input_id` row를 먼저 만들고 `in-progress`로 시작한다.
+- check 12가 기존 row의 `not-started`/`in-progress`/`failed` 상태를 보고하면 새 row를 만들지 말고 같은 row를 재개하며, severity 규칙은 [input-reconciliation.md](docs/reference/input-reconciliation.md)를 본다.
 - 생성 파일이 stale 해 보이면 직접 수정하지 말고 [docs/reference/generated-files.md](docs/reference/generated-files.md)의 명령으로 재생성한다. `workflow:check-generated`는 advisory guard이며 hard CI gate가 아니다.
 - 기존에 전체 kit 디렉토리를 복사했다면 디렉터리를 덮어쓰지 말고 `scripts/upgrade-vendored-kit.mjs`로 보수적 plan을 만든 뒤 안전한 파일만 적용하고(위 "Upgrade A Vendored Kit"), `examples/`, `temp/`, design/history/roadmap/run-report 문서를 소비 repo에서 제거한다.

@@ -8,8 +8,8 @@ Keep it short: this is the agent starting point, not the full workflow manual.
 - Start with the workflow spine: `tools/frontend-workflow/docs/reference/workflow-spine.md`. It is the numbered index of the workflow lifecycle.
 - Use `tools/frontend-workflow/docs/reference/workflow-stages/00-start-here.md` to identify the current stage for this task.
 - Read only that stage doc and the references it links — not the whole workflow.
-- The docs are layered (progressive disclosure): spine → current stage doc → task-artifact-matrix / generated-files → reference docs. Skills (`tools/frontend-workflow/skills/*/SKILL.md`) are compact executors that link these, not a second copy of the rules. The map of where each fact lives is `tools/frontend-workflow/docs/reference/doc-ownership.md`.
-- Read `docs/frontend-workflow/global/llm-rules.md` for project policy and priority rules.
+- The docs are layered — read only as deep as the task needs. The map of where each fact lives (including how skills link the rules rather than copy them) is `tools/frontend-workflow/docs/reference/doc-ownership.md`.
+- Read `docs/frontend-workflow/global/llm-rules.md` for project policy and priority rules before applying project-specific decisions.
 - Use `tools/frontend-workflow/docs/reference/task-artifact-matrix.md` for secondary artifact updates a task triggers.
 - Read `tools/frontend-workflow/docs/reference/generated-files.md` before touching any generated output.
 - For command syntax, read `tools/frontend-workflow/COMMANDS.md`.
@@ -25,9 +25,9 @@ Keep it short: this is the agent starting point, not the full workflow manual.
 ## Common Source Of Truth
 
 - Screen behavior: `docs/frontend-workflow/domains/{domain}/screens/{screen}/screen-spec.md`.
-- Screen identity (source code ↔ canonical screen id): `docs/frontend-workflow/_meta/screen-source-map.md`. Source ids are aliases.
+- Screen identity (source code ↔ canonical screen id): `docs/frontend-workflow/_meta/screen-source-map.md`.
 - Navigation: `docs/frontend-workflow/app/navigation-map.md`.
-- Project policy: `docs/frontend-workflow/global/llm-rules.md`.
+- Project policy and priority rules: `docs/frontend-workflow/global/llm-rules.md`.
 - Shared components: `docs/frontend-workflow/design/component-catalog.md` and `docs/frontend-workflow/global/component-gap-register.md`.
 - API contracts: `docs/frontend-workflow/api/api-manifest.md` plus linked contract evidence.
 
@@ -43,4 +43,4 @@ Keep it short: this is the agent starting point, not the full workflow manual.
 - Run the smallest relevant checks, then run `npm run workflow:validate`.
 - If route, nav, catalog, policy, lint, or codegen sources changed, regenerate the matching generated view or run the advisory generated-file guard.
 - Report which workflow artifacts changed, which generated files were regenerated, and which Open Decisions, Unknowns, or Component Gaps remain open.
-- If the session hit a workflow gap, stale doc, repeated workaround, or consumer-vs-kit boundary issue, append a factual, contextual entry to `docs/frontend-workflow/_meta/session-learnings.md` (use the `capture-learning` skill). Keep it optional, do not store secrets, and do not file issues automatically — review and promotion are manual.
+- If the session hit a workflow gap, stale doc, repeated workaround, or consumer-vs-kit boundary issue, optionally append a factual entry to `docs/frontend-workflow/_meta/session-learnings.md` via the `capture-learning` skill. Do not store secrets; do not file issues automatically — promotion is manual.
