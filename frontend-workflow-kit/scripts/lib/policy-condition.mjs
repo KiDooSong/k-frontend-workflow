@@ -5,9 +5,13 @@
 
 // "fact OP value" 한 줄을 파싱. 파싱 불가하면 null.
 //   OP ∈ {>=, <=, ==, >, <}. rhs 는 non-greedy 로 뒤 공백을 흘려보낸다.
-//   readiness.mjs 의 기존 동작을 바이트 동일하게 보존하려면 이 정규식·반환 형태를 그대로 유지한다.
+//   rhs 첫 글자는 공백·연산자 문자(= < >)일 수 없다 — 값 누락 오타(`screen_spec_status >=`)가 정규식
+//   백트래킹으로 `>=` 를 `>` 로 강등하고 남은 `=` 를 rhs 로 흡수해 `screen_spec_status > "="`(always-pass)
+//   로 조용히 둔갑하던 구멍, 그리고 `foo == `(공백뿐 rhs)를 막는다. 이런 항목은 이제 null → 런타임
+//   fail-closed(#135) + validate 경고(검사 14)로 양쪽에서 잡힌다. 도메인상 실제 rhs 값(status/confidence
+//   enum·true/false·pass·숫자)은 공백·연산자 문자로 시작하지 않으므로 well-formed 파싱 결과는 이전과 동일하다.
 export function parseCondition(str) {
-  const m = /^\s*([a-z0-9_]+)\s*(>=|<=|==|>|<)\s*(.+?)\s*$/i.exec(str);
+  const m = /^\s*([a-z0-9_]+)\s*(>=|<=|==|>|<)\s*([^\s=<>].*?)\s*$/i.exec(str);
   if (!m) return null;
   return { key: m[1], op: m[2], rhs: m[3] };
 }
