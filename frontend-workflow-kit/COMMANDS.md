@@ -99,10 +99,13 @@ npm run workflow:route-tree
 npm run workflow:nav-graph
 npm run workflow:catalog
 npm run workflow:route-cross-check
+npm run workflow:doc-drift
 npm run workflow:check-generated
 ```
 
 These commands produce read-only metadata under `docs/frontend-workflow/_meta/`, regenerate the component catalog, or compare existing metadata. They do not approve design decisions or replace readiness/validate gates. `workflow:check-generated` is warning-first: it reports generated-file drift without overwriting files or failing on mismatches.
+
+`workflow:doc-drift` is a Phase 0 warning-first diagnostic for Markdown docs. It checks only broken/orphan relative links and dead heading anchors, skips external URL reachability and semantic drift, and always exits 0 even when it reports findings.
 
 ## Implementation Packets
 
