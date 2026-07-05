@@ -5,7 +5,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { collectTelemetry, formatTelemetryHuman } from './telemetry.mjs';
+import {
+  CHILD_JSON_MAX_BUFFER,
+  collectTelemetry,
+  formatTelemetryHuman,
+} from './telemetry.mjs';
 import { KIT_ROOT } from './util.mjs';
 
 const CLI = path.join(KIT_ROOT, 'scripts', 'telemetry.mjs');
@@ -119,6 +123,56 @@ test('child command failures are unavailable, not telemetry failures', () => {
   assert.equal(report.ok, true);
   assert.equal(report.surfaces[1].available, false);
   assert.equal(report.surfaces[1].unavailable_reason, 'exit code 1');
+});
+
+test('child command ENOBUFS is surfaced explicitly if stdout still exceeds the buffer', () => {
+  const report = collectTelemetry({
+    rootDir: '/repo',
+    scriptDir: '/kit/scripts',
+    fileExists: () => true,
+    runner: ({ surface_id }) => (
+      surface_id === 'doc-drift'
+        ? { status: null, stdout: '', stderr: '', error: { code: 'ENOBUFS' } }
+        : { status: 0, stdout: JSON.stringify({ warning_count: 0 }), stderr: '' }
+    ),
+  });
+  assert.equal(report.ok, true);
+  assert.equal(report.surfaces[1].available, false);
+  assert.equal(report.surfaces[1].unavailable_reason, 'stdout maxBuffer exceeded');
+});
+
+test('runSurfaceCommand accepts child --json output larger than Node spawnSync default maxBuffer', () => {
+  assert.equal(CHILD_JSON_MAX_BUFFER, 16 * 1024 * 1024);
+  withRoot(
+    {
+      'scripts/route-cross-check.mjs': [
+        "const payload = { warning_count: 0, findings: [] };",
+        "process.stdout.write(JSON.stringify(payload));",
+        '',
+      ].join('\n'),
+      'scripts/doc-drift.mjs': [
+        "const findings = Array.from({ length: 1200 }, (_, index) => ({",
+        "  severity: 'warning',",
+        "  check: 'dead-anchor',",
+        "  source: `docs/${index}.md`,",
+        "  link: '#missing',",
+        "  target: `docs/${index}.md`,",
+        "  reason: 'x'.repeat(1024),",
+        "}));",
+        "process.stdout.write(JSON.stringify({ warning_count: findings.length, findings }));",
+        '',
+      ].join('\n'),
+    },
+    (root) => {
+      const report = collectTelemetry({
+        rootDir: root,
+        scriptDir: path.join(root, 'scripts'),
+      });
+      const drift = report.surfaces.find((s) => s.surface_id === 'doc-drift');
+      assert.equal(drift.available, true);
+      assert.equal(drift.warning_count, 1200);
+    },
+  );
 });
 
 test('CLI --json exits 0 and prints parseable JSON', () => {

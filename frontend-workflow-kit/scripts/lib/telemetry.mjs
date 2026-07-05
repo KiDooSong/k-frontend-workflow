@@ -6,6 +6,8 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { DEFAULTS, KIT_ROOT, exists } from './util.mjs';
 
+export const CHILD_JSON_MAX_BUFFER = 16 * 1024 * 1024;
+
 const SURFACES = [
   {
     surface_id: 'route-cross-check',
@@ -60,7 +62,13 @@ export function runSurfaceCommand({ scriptPath, args, cwd }) {
   return spawnSync(process.execPath, [scriptPath, ...args], {
     cwd,
     encoding: 'utf8',
+    maxBuffer: CHILD_JSON_MAX_BUFFER,
   });
+}
+
+function commandUnavailableReason(result) {
+  if (result?.error?.code === 'ENOBUFS') return 'stdout maxBuffer exceeded';
+  return 'command unavailable';
 }
 
 export function collectTelemetry({
@@ -97,7 +105,7 @@ export function collectTelemetry({
     }
 
     if (!result || result.error) {
-      surfaces.push(unavailable(surface, 'command unavailable'));
+      surfaces.push(unavailable(surface, commandUnavailableReason(result)));
       continue;
     }
     if (result.status !== 0) {
@@ -119,6 +127,8 @@ export function collectTelemetry({
     tool: 'workflow:telemetry',
     mode: 'warning-first',
     schema_version: 1,
+    // ok only means the telemetry command produced its observation report. It is
+    // not a verdict about any observed surface.
     ok: true,
     surfaces,
   };
