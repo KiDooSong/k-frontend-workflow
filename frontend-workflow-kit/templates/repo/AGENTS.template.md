@@ -9,6 +9,7 @@ Keep it short: this is the agent starting point, not the full workflow manual.
 - Use `tools/frontend-workflow/docs/reference/workflow-stages/00-start-here.md` to identify the current stage for this task.
 - Read only that stage doc and the references it links — not the whole workflow.
 - The docs are layered — read only as deep as the task needs. The map of where each fact lives (including how skills link the rules rather than copy them) is `tools/frontend-workflow/docs/reference/doc-ownership.md`.
+- Read `docs/frontend-workflow/global/llm-rules.md` for project policy and priority rules before applying project-specific decisions.
 - Use `tools/frontend-workflow/docs/reference/task-artifact-matrix.md` for secondary artifact updates a task triggers.
 - Read `tools/frontend-workflow/docs/reference/generated-files.md` before touching any generated output.
 - For command syntax, read `tools/frontend-workflow/COMMANDS.md`.
@@ -42,4 +43,4 @@ Keep it short: this is the agent starting point, not the full workflow manual.
 - Run the smallest relevant checks, then run `npm run workflow:validate`.
 - If route, nav, catalog, policy, lint, or codegen sources changed, regenerate the matching generated view or run the advisory generated-file guard.
 - Report which workflow artifacts changed, which generated files were regenerated, and which Open Decisions, Unknowns, or Component Gaps remain open.
-- If the session hit a workflow gap, stale doc, repeated workaround, or consumer-vs-kit boundary issue, optionally append a factual entry to `docs/frontend-workflow/_meta/session-learnings.md` via the `capture-learning` skill. No secrets; do not file issues automatically — promotion is manual.
+- If the session hit a workflow gap, stale doc, repeated workaround, or consumer-vs-kit boundary issue, optionally append a factual entry to `docs/frontend-workflow/_meta/session-learnings.md` via the `capture-learning` skill. Do not store secrets; do not file issues automatically — promotion is manual.
