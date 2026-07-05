@@ -20,6 +20,7 @@
     "workflow:adoption-probe": "node tools/frontend-workflow/scripts/adoption-probe.mjs",
     "workflow:route-cross-check": "node tools/frontend-workflow/scripts/route-cross-check.mjs",
     "workflow:doc-drift": "node tools/frontend-workflow/scripts/doc-drift.mjs",
+    "workflow:telemetry": "node tools/frontend-workflow/scripts/telemetry.mjs",
     "workflow:check-generated": "node tools/frontend-workflow/scripts/check-generated-files.mjs"
   }
 }
