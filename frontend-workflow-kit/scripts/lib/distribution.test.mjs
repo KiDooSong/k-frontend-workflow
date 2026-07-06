@@ -13,6 +13,18 @@ function exists(rel, root) {
   return fs.existsSync(path.join(root, rel));
 }
 
+function linkInstalledDependency(out, packageName) {
+  const source = path.join(KIT_ROOT, 'node_modules', packageName);
+  assert.equal(fs.existsSync(source), true, `dependency ${packageName} must be installed for packed CLI regression`);
+  const target = path.join(out, 'node_modules', packageName);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  try {
+    fs.symlinkSync(source, target, process.platform === 'win32' ? 'junction' : 'dir');
+  } catch {
+    fs.cpSync(source, target, { recursive: true });
+  }
+}
+
 function walkPackedDocs(root, relDirs) {
   const out = [];
   for (const relDir of relDirs) {
@@ -81,6 +93,8 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
     'schemas/frontmatter.schema.json',
     'scripts/create-input-artifact.mjs',
     'scripts/readiness.mjs',
+    'scripts/readiness-eval.mjs',
+    'scripts/lib/readiness-eval-cases.json',
     'scripts/validate.mjs',
     'scripts/workflow-run.mjs',
     'scripts/workflow-state.mjs',
@@ -124,6 +138,7 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
   assert.equal(summary.files.includes('docs/reference/workflow-spine.md'), true);
   assert.equal(summary.files.includes('docs/reference/workflow-stages/00-start-here.md'), true);
   assert.equal(summary.files.includes('docs/reference/workflow-stages/10-policy-layout-tier3-changes.md'), true);
+  assert.equal(summary.files.includes('scripts/lib/readiness-eval-cases.json'), true);
   assert.equal(summary.files.includes('templates/e2e/web-plan.template.md'), true);
   assert.equal(summary.files.includes('templates/repo/AGENTS.template.md'), true);
   assert.equal(summary.files.includes('input-reconciliation.md'), false);
@@ -182,6 +197,11 @@ test('kit:pack emits a payload manifest and excludes the upgrade-planner kit-dev
   assert.equal(readiness.classification, 'consumer-runtime');
   assert.match(readiness.mode, /^100(644|755)$/);
 
+  const readinessEvalCases = manifest.payload.files.find((f) => f.path === 'scripts/lib/readiness-eval-cases.json');
+  assert.ok(readinessEvalCases, 'default readiness eval cases should appear in the payload manifest');
+  assert.equal(readinessEvalCases.classification, 'consumer-runtime');
+  assert.match(readinessEvalCases.sha256, /^[0-9a-f]{64}$/);
+
   // The upgrade tool ships to consumers; its kit-dev test stays in the kit repo.
   assert.equal(exists('scripts/upgrade-vendored-kit.mjs', out), true);
   assert.equal(exists('scripts/lib/upgrade-planner.test.mjs', out), false);
@@ -219,6 +239,46 @@ test('packed consumer-facing markdown does not link to excluded docs', (t) => {
     assert.doesNotMatch(raw, /docs\/design\//, rel);
     assert.doesNotMatch(raw, /\]\([^)]*(?:examples|temp)\//, rel);
   }
+});
+
+test('packed eval and telemetry run with bundled default readiness cases', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-pack-eval-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const out = path.join(tmp, 'frontend-workflow-kit');
+
+  const pack = spawnSync(process.execPath, [PACK_CLI, '--out', out, '--json'], {
+    cwd: KIT_ROOT,
+    encoding: 'utf8',
+  });
+  assert.equal(pack.status, 0, pack.stderr);
+  linkInstalledDependency(out, 'yaml');
+
+  const evalRun = spawnSync(process.execPath, [path.join(out, 'scripts', 'readiness-eval.mjs'), '--json'], {
+    cwd: out,
+    encoding: 'utf8',
+  });
+  assert.equal(evalRun.status, 0, evalRun.stderr);
+  const evalReport = JSON.parse(evalRun.stdout);
+  assert.equal(evalReport.tool, 'workflow:eval');
+  assert.equal(evalReport.total, 16);
+  assert.equal(evalReport.confusion.false_open.count, 0);
+  assert.equal(evalReport.confusion.false_closed.count, 0);
+  assert.equal(evalReport.fail_closed_axis.leaked, 0);
+  assert.equal(evalReport.blocking_kinds.mismatch.count, 0);
+
+  const telemetryRun = spawnSync(process.execPath, [path.join(out, 'scripts', 'telemetry.mjs'), '--json'], {
+    cwd: out,
+    encoding: 'utf8',
+  });
+  assert.equal(telemetryRun.status, 0, telemetryRun.stderr);
+  const telemetry = JSON.parse(telemetryRun.stdout);
+  assert.equal(telemetry.tool, 'workflow:telemetry');
+  const evalSurface = telemetry.surfaces.find((s) => s.surface_id === 'readiness-eval');
+  assert.ok(evalSurface, 'telemetry should include readiness-eval surface');
+  assert.equal(evalSurface.available, true);
+  assert.equal(evalSurface.warning_count, 0);
+  assert.equal(evalSurface.total, 16);
+  assert.equal(evalSurface.blocking_mismatch, 0);
 });
 
 test('packed adoption-probe docs match the draft output contract', (t) => {
@@ -388,11 +448,15 @@ test('consumer package script template exposes current command aliases only', ()
   assert.equal(scriptsTemplate.scripts['workflow:create-input'], 'node tools/frontend-workflow/scripts/create-input-artifact.mjs');
   assert.equal(scriptsTemplate.scripts['workflow:route-cross-check'], 'node tools/frontend-workflow/scripts/route-cross-check.mjs');
   assert.equal(scriptsTemplate.scripts['workflow:doc-drift'], 'node tools/frontend-workflow/scripts/doc-drift.mjs');
+  assert.equal(scriptsTemplate.scripts['workflow:eval'], 'node tools/frontend-workflow/scripts/readiness-eval.mjs');
   assert.equal(scriptsTemplate.scripts['workflow:policy-draft'], 'node tools/frontend-workflow/scripts/policy-draft.mjs');
   assert.equal(scriptsTemplate.scripts['workflow:check-generated'], 'node tools/frontend-workflow/scripts/check-generated-files.mjs');
   assert.equal(packageJson.scripts['workflow:doc-drift'], 'node scripts/doc-drift.mjs');
+  assert.equal(packageJson.scripts['workflow:eval'], 'node scripts/readiness-eval.mjs');
   assert.equal(packageJson.scripts['workflow:check-generated'], 'node scripts/check-generated-files.mjs');
   assert.match(commands, /npm run workflow:doc-drift/);
+  assert.match(commands, /npm run workflow:eval/);
+  assert.match(commands, /false-open/);
   assert.match(commands, /Phase 0 warning-first diagnostic/);
   assert.match(commands, /npm run workflow:check-generated/);
   assert.match(commands, /warning-first/);

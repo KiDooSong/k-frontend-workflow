@@ -100,15 +100,18 @@ npm run workflow:nav-graph
 npm run workflow:catalog
 npm run workflow:route-cross-check
 npm run workflow:doc-drift
+npm run workflow:eval -- --json
 npm run workflow:telemetry -- --json
 npm run workflow:check-generated
 ```
 
-These commands produce read-only metadata under `docs/frontend-workflow/_meta/`, regenerate the component catalog, or compare existing metadata. They do not approve design decisions or replace readiness/validate gates. `workflow:check-generated` is warning-first: it reports generated-file drift without overwriting files or failing on mismatches.
+These commands produce read-only metadata under `docs/frontend-workflow/_meta/`, regenerate the component catalog, compare existing metadata, or measure readiness labels. They do not approve design decisions or replace readiness/validate gates. `workflow:check-generated` is warning-first: it reports generated-file drift without overwriting files or failing on mismatches.
 
 `workflow:doc-drift` is a Phase 0 warning-first diagnostic for Markdown docs. It checks only broken/orphan relative links and dead heading anchors, skips external URL reachability and semantic drift, and always exits 0 even when it reports findings.
 
-`workflow:telemetry` is an MVP stdout-only aggregator for warning-first observation surfaces. It summarizes `route-cross-check` and `doc-drift` warning counts through their public `--json` CLIs, records unavailable surfaces, writes no ledger/artifact, emits no pass/fail verdict, and always exits 0.
+`workflow:eval` is a warning-first readiness measurement harness. It compares labeled cases against `computeReadiness`, reports exact-match, false-open, false-closed, fail-closed leakage, and blocking-kind mismatch metrics, and does not fail because of metric mismatches.
+
+`workflow:telemetry` is an MVP stdout-only aggregator for warning-first observation surfaces. It summarizes `route-cross-check`, `doc-drift`, and `workflow:eval` warning counts through their public `--json` CLIs, records unavailable surfaces, includes the readiness-eval blocking mismatch count, writes no ledger/artifact, emits no pass/fail verdict, and always exits 0.
 
 ## Implementation Packets
 

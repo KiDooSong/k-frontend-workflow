@@ -1,0 +1,646 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "eval/control-final-open",
+      "description": "complete facts with no Open Decision reach final-fixture-ui",
+      "label_source": {
+        "kind": "existing-test",
+        "ref": "scripts/lib/readiness-redteam.test.mjs control: complete facts with no Open Decision reach final-fixture-ui"
+      },
+      "spec": {
+        "frontmatter": {
+          "screen_id": "S1",
+          "domain": "coupons",
+          "status": "authored"
+        },
+        "body": "## Purpose\n\nComplete facts with no Open Decision.\n\n## State Matrix\n\n| State | Notes |\n| --- | --- |\n| loading | yes |\n| empty | yes |\n| error | yes |\n| success | yes |\n| disabled | yes |\n| refreshing | yes |\n"
+      },
+      "expect": {
+        "target_mode": "final-fixture-ui",
+        "readiness_mode": "final-fixture-ui",
+        "gate": "open",
+        "fail_closed": false,
+        "blocking_kinds": []
+      }
+    },
+    {
+      "id": "eval/control-open-decision-blocks-final",
+      "description": "well-formed open decision blocking final-fixture-ui downgrades to rough-fixture-ui",
+      "label_source": {
+        "kind": "existing-test",
+        "ref": "scripts/lib/readiness-redteam.test.mjs control: well-formed open Open Decision blocks only the target mode"
+      },
+      "spec": {
+        "frontmatter": {
+          "screen_id": "S1",
+          "domain": "coupons",
+          "status": "authored"
+        },
+        "body": "## Purpose\n\nComplete facts with an open final blocker.\n\n## State Matrix\n\n| State | Notes |\n| --- | --- |\n| loading | yes |\n| empty | yes |\n| error | yes |\n| success | yes |\n| disabled | yes |\n| refreshing | yes |\n\n## Open Decisions\n\n| ID | Decision Needed | Options | Blocking Mode | Owner | Status |\n| --- | --- | --- | --- | --- | --- |\n| D-OK | choose copy | A/B | final-fixture-ui | pm | open |\n"
+      },
+      "expect": {
+        "target_mode": "final-fixture-ui",
+        "readiness_mode": "rough-fixture-ui",
+        "gate": "block",
+        "fail_closed": false,
+        "blocking_kinds": [
+          "open_decision"
+        ]
+      }
+    },
+    {
+      "id": "eval/control-resolved-decision-open",
+      "description": "resolved decision does not block final-fixture-ui",
+      "label_source": {
+        "kind": "research-seed",
+        "ref": "docs/research/next-ideas/02-eval-and-calibration-harness.md seed: resolved decision control"
+      },
+      "spec": {
+        "frontmatter": {
+          "screen_id": "S1",
+          "domain": "coupons",
+          "status": "authored"
+        },
+        "body": "## Purpose\n\nComplete facts with a resolved decision.\n\n## State Matrix\n\n| State | Notes |\n| --- | --- |\n| loading | yes |\n| empty | yes |\n| error | yes |\n| success | yes |\n| disabled | yes |\n| refreshing | yes |\n\n## Open Decisions\n\n| ID | Decision Needed | Options | Blocking Mode | Owner | Status |\n| --- | --- | --- | --- | --- | --- |\n| D-DONE | choose copy | A/B | final-fixture-ui | pm | resolved |\n"
+      },
+      "expect": {
+        "target_mode": "final-fixture-ui",
+        "readiness_mode": "final-fixture-ui",
+        "gate": "open",
+        "fail_closed": false,
+        "blocking_kinds": []
+      }
+    },
+    {
+      "id": "eval/control-well-formed-requires-block",
+      "description": "well-formed unmet policy requirement blocks final without invalid policy blocker",
+      "label_source": {
+        "kind": "existing-test",
+        "ref": "scripts/lib/readiness-failopen.test.mjs well-formed unmet requires keep the existing fact blocker path"
+      },
+      "spec": {
+        "frontmatter": {
+          "screen_id": "S1",
+          "domain": "coupons",
+          "status": "authored"
+        },
+        "body": "## Purpose\n\nComplete facts overridden to make state matrix incomplete.\n\n## State Matrix\n\n| State | Notes |\n| --- | --- |\n| loading | yes |\n| empty | yes |\n| error | yes |\n| success | yes |\n| disabled | yes |\n| refreshing | yes |\n"
+      },
+      "policy": {
+        "order": [
+          "docs-only",
+          "rough-fixture-ui",
+          "final-fixture-ui"
+        ],
+        "modes": {
+          "docs-only": {
+            "requires": [],
+            "allowed_paths": [
+              "docs/**"
+            ],
+            "forbidden_paths": []
+          },
+          "rough-fixture-ui": {
+            "requires": [
+              "screen_spec_authored == true"
+            ],
+            "allowed_paths": [
+              "src/rough/**"
+            ],
+            "forbidden_paths": []
+          },
+          "final-fixture-ui": {
+            "requires": [
+              "state_matrix_complete == true"
+            ],
+            "allowed_paths": [
+              "src/final/**"
+            ],
+            "forbidden_paths": []
+          }
+        }
+      },
+      "derived_override": {
+        "state_matrix_complete": false
+      },
+      "expect": {
+        "target_mode": "final-fixture-ui",
+        "readiness_mode": "rough-fixture-ui",
+        "gate": "block",
+        "fail_closed": false,
+        "blocking_kinds": [
+          "state_matrix"
+        ]
+      }
+    },
+    {
+      "id": "eval/control-well-formed-requires-open",
+      "description": "well-formed satisfied policy requirement opens final-fixture-ui",
+      "label_source": {
+        "kind": "existing-test",
+        "ref": "scripts/lib/readiness-failopen.test.mjs control: well-formed requires opens the mode"
+      },
+      "spec": {
+        "frontmatter": {
+          "screen_id": "S1",
+          "domain": "coupons",
+          "status": "authored"
+        },
+        "body": "## Purpose\n\nComplete facts with well-formed final requirement.\n\n## State Matrix\n\n| State | Notes |\n| --- | --- |\n| loading | yes |\n| empty | yes |\n| error | yes |\n| success | yes |\n| disabled | yes |\n| refreshing | yes |\n"
+      },
+      "policy": {
+        "order": [
+          "docs-only",
+          "rough-fixture-ui",
+          "final-fixture-ui"
+        ],
+        "modes": {
+          "docs-only": {
+            "requires": [],
+            "allowed_paths": [
+              "docs/**"
+            ],
+            "forbidden_paths": []
+          },
+          "rough-fixture-ui": {
+            "requires": [
+              "screen_spec_authored == true"
+            ],
+            "allowed_paths": [
+              "src/rough/**"
+            ],
+            "forbidden_paths": []
+          },
+          "final-fixture-ui": {
+            "requires": [
+              "state_matrix_complete == true"
+            ],
+            "allowed_paths": [
+              "src/final/**"
+            ],
+            "forbidden_paths": []
+          }
+        }
+      },
+      "derived_override": {
+        "state_matrix_complete": true
+      },
+      "expect": {
+        "target_mode": "final-fixture-ui",
+        "readiness_mode": "final-fixture-ui",
+        "gate": "open",
+        "fail_closed": false,
+        "blocking_kinds": []
+      }
+    },
+    {
+      "id": "eval/od-blocking-mode-typo",
+      "description": "Open Decision Blocking Mode typo fails closed to docs-only",
+      "label_source": {
+        "kind": "existing-test",
+        "ref": "scripts/lib/readiness-redteam.test.mjs Open Decision Blocking Mode typo fails closed to docs-only"
+      },
+      "spec": {
+        "frontmatter": {
+          "screen_id": "S1",
+          "domain": "coupons",
+          "status": "authored"
+        },
+        "body": "## Purpose\n\nComplete facts with a typo in Blocking Mode.\n\n## State Matrix\n\n| State | Notes |\n| --- | --- |\n| loading | yes |\n| empty | yes |\n| error | yes |\n| success | yes |\n| disabled | yes |\n| refreshing | yes |\n\n## Open Decisions\n\n| ID | Decision Needed | Options | Blocking Mode | Owner | Status |\n| --- | --- | --- | --- | --- | --- |\n| D-TYPO | choose copy | A/B | final_fixture_ui | pm | open |\n"
+      },
+      "expect": {
+        "target_mode": "final-fixture-ui",
+        "readiness_mode": "docs-only",
+        "gate": "block",
+        "fail_closed": true,
+        "blocking_kinds": [
+          "invalid_open_decision"
+        ]
+      }
+    },
+    {
+      "id": "eval/od-blocking-rough-mode",
+      "description": "open decision blocking rough-fixture-ui downgrades to docs-only",
+      "label_source": {
+        "kind": "research-seed",
+        "ref": "docs/research/next-ideas/02-eval-and-calibration-harness.md seed: open decision blocking rough-fixture-ui"
+      },
+      "spec": {
+        "frontmatter": {
+          "screen_id": "S1",
+          "domain": "coupons",
+          "status": "authored"
+        },
+        "body": "## Purpose\n\nComplete facts with an open rough blocker.\n\n## State Matrix\n\n| State | Notes |\n| --- | --- |\n| loading | yes |\n| empty | yes |\n| error | yes |\n| success | yes |\n| disabled | yes |\n| refreshing | yes |\n\n## Open Decisions\n\n| ID | Decision Needed | Options | Blocking Mode | Owner | Status |\n| --- | --- | --- | --- | --- | --- |\n| D-ROUGH | choose fixture direction | A/B | rough-fixture-ui | pm | open |\n"
+      },
+      "expect": {
+        "target_mode": "rough-fixture-ui",
+        "readiness_mode": "docs-only",
+        "gate": "block",
+        "fail_closed": false,
+        "blocking_kinds": [
+          "open_decision"
+        ]
+      }
+    },
+    {
+      "id": "eval/od-docs-only-blocking-mode",
+      "description": "Blocking Mode docs-only is invalid and fails closed",
+      "label_source": {
+        "kind": "existing-test",
+        "ref": "scripts/lib/readiness-redteam.test.mjs Blocking Mode docs-only is invalid and fails closed"
+      },
+      "spec": {
+        "frontmatter": {
+          "screen_id": "S1",
+          "domain": "coupons",
+          "status": "authored"
+        },
+        "body": "## Purpose\n\nComplete facts with docs-only as Blocking Mode.\n\n## State Matrix\n\n| State | Notes |\n| --- | --- |\n| loading | yes |\n| empty | yes |\n| error | yes |\n| success | yes |\n| disabled | yes |\n| refreshing | yes |\n\n## Open Decisions\n\n| ID | Decision Needed | Options | Blocking Mode | Owner | Status |\n| --- | --- | --- | --- | --- | --- |\n| D-FLOOR | choose copy | A/B | docs-only | pm | open |\n"
+      },
+      "expect": {
+        "target_mode": "final-fixture-ui",
+        "readiness_mode": "docs-only",
+        "gate": "block",
+        "fail_closed": true,
+        "blocking_kinds": [
+          "invalid_open_decision"
+        ]
+      }
+    },
+    {
+      "id": "eval/od-missing-status",
+      "description": "Open Decision missing Status fails closed instead of disappearing",
+      "label_source": {
+        "kind": "existing-test",
+        "ref": "scripts/lib/readiness-redteam.test.mjs Open Decision missing Status fails closed instead of disappearing"
+      },
+      "spec": {
+        "frontmatter": {
+          "screen_id": "S1",
+          "domain": "coupons",
+          "status": "authored"
+        },
+        "body": "## Purpose\n\nComplete facts with missing Open Decision status.\n\n## State Matrix\n\n| State | Notes |\n| --- | --- |\n| loading | yes |\n| empty | yes |\n| error | yes |\n| success | yes |\n| disabled | yes |\n| refreshing | yes |\n\n## Open Decisions\n\n| ID | Decision Needed | Options | Blocking Mode | Owner | Status |\n| --- | --- | --- | --- | --- | --- |\n| D-NO-STATUS | choose copy | A/B | final-fixture-ui | pm | |\n"
+      },
+      "expect": {
+        "target_mode": "final-fixture-ui",
+        "readiness_mode": "docs-only",
+        "gate": "block",
+        "fail_closed": true,
+        "blocking_kinds": [
+          "invalid_open_decision"
+        ]
+      }
+    },
+    {
+      "id": "eval/od-non-enum-status",
+      "description": "Open Decision non-enum Status fails closed instead of disappearing",
+      "label_source": {
+        "kind": "existing-test",
+        "ref": "scripts/lib/readiness-redteam.test.mjs Open Decision non-enum Status fails closed instead of disappearing"
+      },
+      "spec": {
+        "frontmatter": {
+          "screen_id": "S1",
+          "domain": "coupons",
+          "status": "authored"
+        },
+        "body": "## Purpose\n\nComplete facts with non-enum Open Decision status.\n\n## State Matrix\n\n| State | Notes |\n| --- | --- |\n| loading | yes |\n| empty | yes |\n| error | yes |\n| success | yes |\n| disabled | yes |\n| refreshing | yes |\n\n## Open Decisions\n\n| ID | Decision Needed | Options | Blocking Mode | Owner | Status |\n| --- | --- | --- | --- | --- | --- |\n| D-BAD-STATUS | choose copy | A/B | final-fixture-ui | pm | done |\n"
+      },
+      "expect": {
+        "target_mode": "final-fixture-ui",
+        "readiness_mode": "docs-only",
+        "gate": "block",
+        "fail_closed": true,
+        "blocking_kinds": [
+          "invalid_open_decision"
+        ]
+      }
+    },
+    {
+      "id": "eval/od-non-table-section",
+      "description": "Open Decisions section with non-table content fails closed",
+      "label_source": {
+        "kind": "existing-test",
+        "ref": "scripts/lib/readiness-redteam.test.mjs Open Decisions section with non-table content fails closed"
+      },
+      "spec": {
+        "frontmatter": {
+          "screen_id": "S1",
+          "domain": "coupons",
+          "status": "authored"
+        },
+        "body": "## Purpose\n\nComplete facts with prose in Open Decisions.\n\n## State Matrix\n\n| State | Notes |\n| --- | --- |\n| loading | yes |\n| empty | yes |\n| error | yes |\n| success | yes |\n| disabled | yes |\n| refreshing | yes |\n\n## Open Decisions\n\n- D-BULLET: decide the copy before final UI.\n"
+      },
+      "expect": {
+        "target_mode": "final-fixture-ui",
+        "readiness_mode": "docs-only",
+        "gate": "block",
+        "fail_closed": true,
+        "blocking_kinds": [
+          "invalid_open_decision"
+        ]
+      }
+    },
+    {
+      "id": "eval/policy-malformed-bare-token",
+      "description": "malformed bare-token policy requirement fails closed at final mode",
+      "label_source": {
+        "kind": "existing-test",
+        "ref": "scripts/lib/readiness-failopen.test.mjs malformed requires bare token does not pass final mode"
+      },
+      "spec": {
+        "frontmatter": {
+          "screen_id": "S1",
+          "domain": "coupons",
+          "status": "authored"
+        },
+        "body": "## Purpose\n\nComplete facts with malformed policy requirement.\n\n## State Matrix\n\n| State | Notes |\n| --- | --- |\n| loading | yes |\n| empty | yes |\n| error | yes |\n| success | yes |\n| disabled | yes |\n| refreshing | yes |\n"
+      },
+      "policy": {
+        "order": [
+          "docs-only",
+          "rough-fixture-ui",
+          "final-fixture-ui"
+        ],
+        "modes": {
+          "docs-only": {
+            "requires": [],
+            "allowed_paths": [
+              "docs/**"
+            ],
+            "forbidden_paths": []
+          },
+          "rough-fixture-ui": {
+            "requires": [
+              "screen_spec_authored == true"
+            ],
+            "allowed_paths": [
+              "src/rough/**"
+            ],
+            "forbidden_paths": []
+          },
+          "final-fixture-ui": {
+            "requires": [
+              "state_matrix_complete"
+            ],
+            "allowed_paths": [
+              "src/final/**"
+            ],
+            "forbidden_paths": []
+          }
+        }
+      },
+      "expect": {
+        "target_mode": "final-fixture-ui",
+        "readiness_mode": "rough-fixture-ui",
+        "gate": "block",
+        "fail_closed": true,
+        "blocking_kinds": [
+          "invalid_policy_requirement"
+        ]
+      }
+    },
+    {
+      "id": "eval/policy-malformed-ci-requires",
+      "description": "malformed CI policy requirement is not hidden by missing CI input",
+      "label_source": {
+        "kind": "existing-test",
+        "ref": "scripts/lib/readiness-failopen.test.mjs malformed CI requires is not hidden by ciProvided=false"
+      },
+      "spec": {
+        "frontmatter": {
+          "screen_id": "S1",
+          "domain": "coupons",
+          "status": "authored"
+        },
+        "body": "## Purpose\n\nComplete facts with malformed CI requirement.\n\n## State Matrix\n\n| State | Notes |\n| --- | --- |\n| loading | yes |\n| empty | yes |\n| error | yes |\n| success | yes |\n| disabled | yes |\n| refreshing | yes |\n"
+      },
+      "policy": {
+        "order": [
+          "docs-only",
+          "rough-fixture-ui",
+          "final-fixture-ui"
+        ],
+        "modes": {
+          "docs-only": {
+            "requires": [],
+            "allowed_paths": [
+              "docs/**"
+            ],
+            "forbidden_paths": []
+          },
+          "rough-fixture-ui": {
+            "requires": [
+              "screen_spec_authored == true"
+            ],
+            "allowed_paths": [
+              "src/rough/**"
+            ],
+            "forbidden_paths": []
+          },
+          "final-fixture-ui": {
+            "requires": [
+              "ci_lint = pass"
+            ],
+            "allowed_paths": [
+              "src/final/**"
+            ],
+            "forbidden_paths": []
+          }
+        }
+      },
+      "ci": {},
+      "expect": {
+        "target_mode": "final-fixture-ui",
+        "readiness_mode": "rough-fixture-ui",
+        "gate": "block",
+        "fail_closed": true,
+        "blocking_kinds": [
+          "invalid_policy_requirement"
+        ]
+      }
+    },
+    {
+      "id": "eval/policy-malformed-dedupe",
+      "description": "multiple malformed policy requirements are surfaced without duplicate blocker kinds",
+      "label_source": {
+        "kind": "existing-test",
+        "ref": "scripts/lib/readiness-failopen.test.mjs multiple malformed requirements surface and duplicate raw entries dedupe"
+      },
+      "spec": {
+        "frontmatter": {
+          "screen_id": "S1",
+          "domain": "coupons",
+          "status": "authored"
+        },
+        "body": "## Purpose\n\nComplete facts with duplicated malformed policy requirements.\n\n## State Matrix\n\n| State | Notes |\n| --- | --- |\n| loading | yes |\n| empty | yes |\n| error | yes |\n| success | yes |\n| disabled | yes |\n| refreshing | yes |\n"
+      },
+      "policy": {
+        "order": [
+          "docs-only",
+          "rough-fixture-ui",
+          "final-fixture-ui"
+        ],
+        "modes": {
+          "docs-only": {
+            "requires": [],
+            "allowed_paths": [
+              "docs/**"
+            ],
+            "forbidden_paths": []
+          },
+          "rough-fixture-ui": {
+            "requires": [
+              "screen_spec_authored == true"
+            ],
+            "allowed_paths": [
+              "src/rough/**"
+            ],
+            "forbidden_paths": []
+          },
+          "final-fixture-ui": {
+            "requires": [
+              "state_matrix_complete",
+              "foo bar baz",
+              "state_matrix_complete"
+            ],
+            "allowed_paths": [
+              "src/final/**"
+            ],
+            "forbidden_paths": []
+          }
+        }
+      },
+      "expect": {
+        "target_mode": "final-fixture-ui",
+        "readiness_mode": "rough-fixture-ui",
+        "gate": "block",
+        "fail_closed": true,
+        "blocking_kinds": [
+          "invalid_policy_requirement"
+        ]
+      }
+    },
+    {
+      "id": "eval/policy-malformed-missing-rhs",
+      "description": "malformed policy requirement with missing right-hand side fails closed",
+      "label_source": {
+        "kind": "existing-test",
+        "ref": "scripts/lib/readiness-failopen.test.mjs malformed requires missing RHS also fail-closed"
+      },
+      "spec": {
+        "frontmatter": {
+          "screen_id": "S1",
+          "domain": "coupons",
+          "status": "authored"
+        },
+        "body": "## Purpose\n\nComplete facts with missing RHS in policy requirement.\n\n## State Matrix\n\n| State | Notes |\n| --- | --- |\n| loading | yes |\n| empty | yes |\n| error | yes |\n| success | yes |\n| disabled | yes |\n| refreshing | yes |\n"
+      },
+      "policy": {
+        "order": [
+          "docs-only",
+          "rough-fixture-ui",
+          "final-fixture-ui"
+        ],
+        "modes": {
+          "docs-only": {
+            "requires": [],
+            "allowed_paths": [
+              "docs/**"
+            ],
+            "forbidden_paths": []
+          },
+          "rough-fixture-ui": {
+            "requires": [
+              "screen_spec_authored == true"
+            ],
+            "allowed_paths": [
+              "src/rough/**"
+            ],
+            "forbidden_paths": []
+          },
+          "final-fixture-ui": {
+            "requires": [
+              "screen_spec_status >="
+            ],
+            "allowed_paths": [
+              "src/final/**"
+            ],
+            "forbidden_paths": []
+          }
+        }
+      },
+      "expect": {
+        "target_mode": "final-fixture-ui",
+        "readiness_mode": "rough-fixture-ui",
+        "gate": "block",
+        "fail_closed": true,
+        "blocking_kinds": [
+          "invalid_policy_requirement"
+        ]
+      }
+    },
+    {
+      "id": "eval/policy-malformed-single-equals",
+      "description": "malformed policy requirement with single equals fails closed",
+      "label_source": {
+        "kind": "existing-test",
+        "ref": "scripts/lib/readiness-failopen.test.mjs malformed requires single equals also fail-closed"
+      },
+      "spec": {
+        "frontmatter": {
+          "screen_id": "S1",
+          "domain": "coupons",
+          "status": "authored"
+        },
+        "body": "## Purpose\n\nComplete facts with single equals policy requirement.\n\n## State Matrix\n\n| State | Notes |\n| --- | --- |\n| loading | yes |\n| empty | yes |\n| error | yes |\n| success | yes |\n| disabled | yes |\n| refreshing | yes |\n"
+      },
+      "policy": {
+        "order": [
+          "docs-only",
+          "rough-fixture-ui",
+          "final-fixture-ui"
+        ],
+        "modes": {
+          "docs-only": {
+            "requires": [],
+            "allowed_paths": [
+              "docs/**"
+            ],
+            "forbidden_paths": []
+          },
+          "rough-fixture-ui": {
+            "requires": [
+              "screen_spec_authored == true"
+            ],
+            "allowed_paths": [
+              "src/rough/**"
+            ],
+            "forbidden_paths": []
+          },
+          "final-fixture-ui": {
+            "requires": [
+              "screen_spec_status = authored"
+            ],
+            "allowed_paths": [
+              "src/final/**"
+            ],
+            "forbidden_paths": []
+          }
+        }
+      },
+      "expect": {
+        "target_mode": "final-fixture-ui",
+        "readiness_mode": "rough-fixture-ui",
+        "gate": "block",
+        "fail_closed": true,
+        "blocking_kinds": [
+          "invalid_policy_requirement"
+        ]
+      }
+    }
+  ]
+}
