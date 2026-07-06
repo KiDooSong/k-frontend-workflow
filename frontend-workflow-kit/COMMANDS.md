@@ -142,6 +142,39 @@ separate human decision. Findings are diagnostics, never approval, readiness
 promotion, or `confirmed` promotion. Reference:
 [docs/reference/visual-reconciliation.md](docs/reference/visual-reconciliation.md).
 
+## Visual Contract Bootstrap
+
+```bash
+npm run workflow:visual-contract-bootstrap -- --docs docs/frontend-workflow --src src --json
+npm run workflow:visual-contract-bootstrap -- --docs docs/frontend-workflow --src src --domain auth --out temp/visual-contract-draft.md
+npm run workflow:visual-contract-bootstrap -- --docs docs/frontend-workflow --src src --format markdown --out docs/frontend-workflow/design/visual-consistency-contract.draft.md
+```
+
+`workflow:visual-contract-bootstrap` is a review-only adoption helper for repos that
+do not have a visual consistency contract yet (or have a thin one). It scans
+ScreenSpec frontmatter (`domain`/`screen_id`/`route`/`screen_entry`/`status`),
+figma-component-mapping coverage, the component catalog, and (optionally, with
+`--src`) `screen_entry` sources, then proposes candidate screen families with
+confidence and evidence, shared shell/logo/header/CTA ownership candidates,
+component gap candidates (proposal only), and suggested contract rows. Filters:
+`--domain <d>`, `--screen <ID[,ID...]>`; `--contract <path>` overrides the existing
+contract location.
+
+Output is a deterministic draft: `--json` for a machine-readable report, `--format
+markdown` (default when `--out` is given) for a review-only draft document with
+`status: draft` frontmatter. Everything low-confidence stays
+`needs-review`/`needs-human-review` — repeated imports are candidate evidence, not
+proof of design intent. If an existing contract is found, bootstrap separates
+existing rows from suggested additions and never overwrites it; `--out` pointing at
+an existing canonical contract is refused with a `.draft.md` suggestion (scaffolding
+the canonical path is allowed only when the file does not exist). There is no
+`--apply`, `--overwrite`, or `--enforce`. No ScreenSpec means exit 0 with a "no
+screens discovered" report; only structural errors (missing docs, malformed existing
+contract, canonical overwrite attempt) exit 1. Candidates are never approval,
+readiness promotion, Component Gap acceptance, or `confirmed` promotion. Reference:
+[docs/reference/visual-reconciliation.md](docs/reference/visual-reconciliation.md)
+§Bootstrap / adoption.
+
 ## Implementation Packets
 
 ```bash
