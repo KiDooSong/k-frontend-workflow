@@ -84,7 +84,7 @@ jobs:
             fi
           done
 
-      - name: upload telemetry observation ledger
+      - name: upload telemetry observation artifacts
         if: always()
         continue-on-error: true
         uses: actions/upload-artifact@v4

@@ -47,7 +47,7 @@ test('frontend workflow CI collects telemetry artifacts without making telemetry
   );
   const uploadIndex = findStepIndex(
     steps,
-    (step) => step.name === 'upload telemetry observation ledger' && step.uses === 'actions/upload-artifact@v4',
+    (step) => step.name === 'upload telemetry observation artifacts' && step.uses === 'actions/upload-artifact@v4',
     'telemetry artifact upload',
   );
   const idempotencyIndex = findStepIndex(
