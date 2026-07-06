@@ -321,6 +321,7 @@ function normalizeSurface(surface, report) {
       fail_closed_count: nonNegativeInteger(summary.fail_closed_count),
       drift_detected_count: nonNegativeInteger(summary.drift_detected_count),
       skipped_count: nonNegativeInteger(summary.skipped_count),
+      input_error_count: nonNegativeInteger(summary.input_error_count),
     };
   }
   if (surface.surface_id === 'visual-consistency') {
@@ -412,6 +413,7 @@ function normalizeSurfaceForReport(surface) {
     out.fail_closed_count = nonNegativeInteger(surface?.fail_closed_count);
     out.drift_detected_count = nonNegativeInteger(surface?.drift_detected_count);
     out.skipped_count = nonNegativeInteger(surface?.skipped_count);
+    out.input_error_count = nonNegativeInteger(surface?.input_error_count);
   }
   // Visual summary fields are kept only for available surfaces; unavailable
   // visual surfaces stay on the minimal generic shape.

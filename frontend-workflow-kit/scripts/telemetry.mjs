@@ -16,6 +16,7 @@ import {
   TELEMETRY_SURFACE_GROUPS,
   writeTelemetryLedger,
 } from './lib/telemetry.mjs';
+import { listRedteamCases, REDTEAM_KNOWN_INCLUDES } from './lib/redteam.mjs';
 
 function helpText() {
   return `workflow:telemetry - aggregate warning-first observation surfaces
@@ -66,10 +67,12 @@ Options:
   --redteam-include <g>    Forwarded to workflow:redteam as --include (opt-in
                            red-team case groups, comma-separated ok). Requires
                            the redteam surface (--include redteam / --surface
-                           redteam).
+                           redteam). Unknown group names are usage errors
+                           (exit 2), validated against the redteam registry.
   --redteam-case <id>      Forwarded to workflow:redteam as --case (run only the
                            matching case ids, comma-separated ok). Requires the
-                           redteam surface.
+                           redteam surface. Unknown case ids are usage errors
+                           (exit 2).
   --doc-drift-include <f>  Forward an opt-in doc-drift feature as --include.
                            Known: status-heuristic (info-only manifest<->roadmap
                            wording heuristic; findings land in info_count, never
@@ -102,8 +105,10 @@ Behavior:
   expected defenses like blocked/fail-closed/input-error witnesses never count).
   Red-team observations are never a gate, approval, or readiness promotion, and
   never cause exit 1. Only --include/--case are forwarded; no mutating flag exists
-  or is forwarded. A missing script, child exit != 0, or invalid child JSON is
-  recorded as available:false while telemetry stays exit 0.
+  or is forwarded, and user-typed --redteam-include/--redteam-case values are
+  pre-validated against the redteam registry (typos exit 2 instead of being
+  absorbed as an unavailable surface). A missing script, child exit != 0, or
+  invalid child JSON is recorded as available:false while telemetry stays exit 0.
   --doc-drift-include status-heuristic opts the default doc-drift surface into the
   info-only status heuristic; default telemetry never runs the heuristic, and
   info findings never inflate warning_count (they surface as info_count).
@@ -140,7 +145,13 @@ function parseListFlag(flags, name, label) {
   if (typeof value !== 'string' || value.trim() === '') {
     usageError(`--${name} requires a ${label}`);
   }
-  return value.split(',').map((item) => item.trim()).filter((item) => item !== '');
+  const items = value.split(',').map((item) => item.trim()).filter((item) => item !== '');
+  // Comma-only values (e.g. ",") are empty lists in disguise - a usage error,
+  // not a silent no-op.
+  if (items.length === 0) {
+    usageError(`--${name} requires a ${label}`);
+  }
+  return items;
 }
 
 function parseValueFlag(flags, name, label) {
@@ -277,9 +288,10 @@ function main() {
 
   // --- redteam opt-in forwarding ---------------------------------------------
   // Only --include/--case reach workflow:redteam (read-only observation flags).
-  // The forwarded values are validated by the redteam CLI itself; an unknown
-  // group/case there exits 2 in the child, which telemetry records fail-soft as
-  // available:false.
+  // User-typed forwarding values are pre-validated here against the redteam
+  // registry (usage error exit 2) so a typo is never silently absorbed as an
+  // available:false surface. Programmatic lib callers stay fail-soft: a child
+  // rejection is still recorded as available:false, never a telemetry failure.
   const redteamIds = registry
     .filter((surface) => surface.groups.includes('redteam'))
     .map((surface) => surface.surface_id);
@@ -291,6 +303,25 @@ function main() {
     for (const name of REDTEAM_FLAGS) {
       if (hasFlag(flags, name)) {
         usageError(`--${name} requires the redteam surface (--include redteam or --surface redteam)`);
+      }
+    }
+  }
+  if (redteamInclude != null) {
+    const groups = redteamInclude.split(',').map((item) => item.trim()).filter((item) => item !== '');
+    if (groups.length === 0) usageError('--redteam-include requires a redteam group list');
+    for (const group of groups) {
+      if (!REDTEAM_KNOWN_INCLUDES.includes(group)) {
+        usageError(`unknown --redteam-include group: ${group} (known: ${REDTEAM_KNOWN_INCLUDES.join(', ')})`);
+      }
+    }
+  }
+  if (redteamCase != null) {
+    const ids = redteamCase.split(',').map((item) => item.trim()).filter((item) => item !== '');
+    if (ids.length === 0) usageError('--redteam-case requires a redteam case id list');
+    const knownCaseIds = listRedteamCases().map((def) => def.id);
+    for (const id of ids) {
+      if (!knownCaseIds.includes(id)) {
+        usageError(`unknown --redteam-case id: ${id} (known: ${knownCaseIds.join(', ')})`);
       }
     }
   }

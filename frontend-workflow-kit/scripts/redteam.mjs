@@ -79,7 +79,13 @@ function parseListFlag(flags, name, label) {
   if (typeof value !== 'string' || value.trim() === '') {
     usageError(`--${name} requires a ${label}`);
   }
-  return value.split(',').map((item) => item.trim()).filter((item) => item !== '');
+  const items = value.split(',').map((item) => item.trim()).filter((item) => item !== '');
+  // Comma-only values (e.g. ",") are empty lists in disguise - a usage error,
+  // not a silent no-op.
+  if (items.length === 0) {
+    usageError(`--${name} requires a ${label}`);
+  }
+  return items;
 }
 
 function main() {
