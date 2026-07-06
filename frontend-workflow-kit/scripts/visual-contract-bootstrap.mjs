@@ -5,7 +5,8 @@
 // ownership 후보 · figma mapping coverage · component gap 후보 · suggested contract rows 를
 // **review-only draft** 로 낸다. PR144 `workflow:visual-consistency` 의 도입(adoption) 보조 도구다.
 // 게이트가 아니다 — 후보는 approval/readiness/confirmed 승격이 아니며, 기존 canonical contract 를
-// 절대 overwrite 하지 않는다. --apply / --overwrite / --enforce 는 의도적으로 없다.
+// 절대 overwrite 하지 않는다. --apply / --overwrite / --enforce 는 의도적으로 없고,
+// 알 수 없는 옵션은 조용히 무시하지 않고 exit 1 로 거부한다 (review-only 경계 보호).
 //
 // 계약 정본: docs/reference/visual-reconciliation.md §Bootstrap / adoption.
 // 로직: scripts/lib/visual-contract-bootstrap.mjs.
@@ -80,20 +81,42 @@ Behavior:
   Everything is a review-only draft: no file is modified unless --out is given, an
   existing contract yields suggested additions only, candidate rows keep needs-review
   values, and nothing is promoted to confirmed. No ScreenSpec => exit 0 with a
-  "no screens discovered" report.
+  "no screens discovered" report. There is no --apply/--overwrite/--enforce; unknown
+  options are rejected with exit 1 instead of being silently ignored.
 
 Exit codes:
   0  Default (warnings/infos only - review-only, warning-first).
   1  Structural errors (docs missing / malformed existing contract / refusing to
-     overwrite the canonical contract / invalid --format).
+     overwrite the canonical contract / invalid --format / unknown option).
 `;
 }
+
+// 허용 옵션 allowlist — 알 수 없는 옵션은 조용히 무시하지 않고 거부한다. 특히
+// --apply/--overwrite/--enforce 는 "붙였는데 아무 일도 안 일어나는" 오해를 막기 위해
+// review-only 경계를 명시하며 exit 1 한다 (manual review boundary 보호).
+const ALLOWED_FLAGS = new Set([
+  'help', 'docs', 'src', 'domain', 'screen', 'contract', 'json', 'format', 'out',
+]);
+const REVIEW_ONLY_REJECTED_FLAGS = new Set(['apply', 'overwrite', 'enforce']);
 
 function main() {
   const { flags } = parseArgs(process.argv.slice(2));
   if (flags.help) {
     process.stdout.write(helpText());
     process.exit(0);
+  }
+
+  for (const key of Object.keys(flags)) {
+    if (ALLOWED_FLAGS.has(key)) continue;
+    if (REVIEW_ONLY_REJECTED_FLAGS.has(key)) {
+      process.stderr.write(
+        `visual-contract-bootstrap: --${key} 는 지원하지 않는다 — 이 도구는 review-only draft 만 만든다. ` +
+          'canonical contract 반영은 사람이 리뷰 후 수동으로만 한다.\n',
+      );
+    } else {
+      process.stderr.write(`visual-contract-bootstrap: unknown option --${key} (--help 참조)\n`);
+    }
+    process.exit(1);
   }
 
   const docsDir = path.resolve(typeof flags.docs === 'string' ? flags.docs : DEFAULTS.docs);

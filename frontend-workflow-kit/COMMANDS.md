@@ -168,9 +168,10 @@ proof of design intent. If an existing contract is found, bootstrap separates
 existing rows from suggested additions and never overwrites it; `--out` pointing at
 an existing canonical contract is refused with a `.draft.md` suggestion (scaffolding
 the canonical path is allowed only when the file does not exist). There is no
-`--apply`, `--overwrite`, or `--enforce`. No ScreenSpec means exit 0 with a "no
-screens discovered" report; only structural errors (missing docs, malformed existing
-contract, canonical overwrite attempt) exit 1. Candidates are never approval,
+`--apply`, `--overwrite`, or `--enforce` — passing them (or any unknown option) is
+rejected with exit 1 instead of being silently ignored. No ScreenSpec means exit 0
+with a "no screens discovered" report; only structural errors (missing docs,
+malformed existing contract, canonical overwrite attempt, unknown option) exit 1. Candidates are never approval,
 readiness promotion, Component Gap acceptance, or `confirmed` promotion. Reference:
 [docs/reference/visual-reconciliation.md](docs/reference/visual-reconciliation.md)
 §Bootstrap / adoption.

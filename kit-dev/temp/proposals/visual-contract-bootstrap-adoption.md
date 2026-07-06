@@ -66,6 +66,9 @@ shell/logo/header/CTA ownership 후보 · figma mapping coverage · component ga
 ## dogfood telemetry 이후 hardening 후보 (이번 PR 아님)
 
 - family/owner 휴리스틱 정밀화 (import graph 실해석, shell 사용부 위치 분석).
+- **alias import 해석**: 소스 휴리스틱은 현재 상대 import(`./`/`../`)만 따라간다 —
+  `@/components/...` 류 alias 기반 repo 에서는 shell 내부 logo/header 증거를 놓칠 수
+  있다 (best-effort 후보 제안 범위의 의도된 제한; tsconfig paths 해석은 follow-up).
 - copy drift 후보 정밀화 (string prop · i18n 화이트리스트 — PR144 TODO 공유).
 - suggested rows 를 반영하는 보조 편집 커맨드(`--apply` 류) 도입 여부 — 별도
   Open Decision 으로만.

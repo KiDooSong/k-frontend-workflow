@@ -431,6 +431,38 @@ test('markdown draft — 결정적이고 Suggested Contract Rows 만 canonical �
   assert.equal(parsed.components[0].direct_screen_import, 'needs-review'); // 확정값 발명 금지
 });
 
+test('suggested rows 없음 → placeholder data row 를 쓰지 않는다 (checker 가 가짜 row 를 읽지 않게)', () => {
+  // 기존 contract 가 모든 멤버/컴포넌트를 이미 담고 있으면 suggested additions = 0.
+  withTree(
+    {
+      contract:
+        CONTRACT_HEADER +
+        familiesTable([
+          '| auth | AUTH-001, AUTH-002 | AuthShell | shell-owned | - | - | - | draft | - |',
+        ]) +
+        componentsTable([
+          '| BrandLogo | AuthShell | auth | forbidden | shell | cataloged | - |',
+          '| Button | - | auth | allowed | screen | cataloged | - |',
+        ]),
+      specs: SYNTH_SPECS,
+      catalog: SIMPLE_CATALOG,
+      src: SYNTH_SRC,
+    },
+    (docsDir, srcDir) => {
+      const r = analyzeVisualContractBootstrap({ docsDir, srcDir });
+      assert.equal(r.summary.suggested_contract_rows, 0);
+      const md = renderBootstrapMarkdown(r);
+      assert.match(md, /suggested family additions 없음/);
+      assert.match(md, /suggested component additions 없음/);
+      // parseVisualContract 가 '-' 를 실제 family/component 로 읽는 가짜 row 가 없어야 한다.
+      const parsed = parseVisualContract(md);
+      assert.equal(parsed.hasFamilyTable, true); // 헤더는 남아 checker 호환 유지
+      assert.deepEqual(parsed.families, []);
+      assert.deepEqual(parsed.components, []);
+    },
+  );
+});
+
 test('human 포맷 — summary 한 줄 + findings/family/skip 라인', () => {
   const r = analyzeVisualContractBootstrap({ docsDir: FIXTURE_DOCS, srcDir: FIXTURE_SRC });
   const lines = formatBootstrapHuman(r);
@@ -492,6 +524,21 @@ test('CLI 잘못된 --format → exit 1', () => {
   const r = runCliOn(['--format', 'yaml', '--docs', FIXTURE_DOCS]);
   assert.equal(r.status, 1);
   assert.match(r.stderr, /json\|markdown/);
+});
+
+test('CLI 미지원 mutating flag(--apply/--overwrite/--enforce) → 조용히 무시하지 않고 exit 1', () => {
+  for (const flag of ['--apply', '--overwrite', '--enforce']) {
+    const r = runCliOn(['--docs', FIXTURE_DOCS, flag]);
+    assert.equal(r.status, 1, `${flag} should be rejected`);
+    assert.match(r.stderr, /review-only draft/);
+    assert.ok(r.stderr.includes(flag), r.stderr);
+  }
+});
+
+test('CLI 알 수 없는 옵션 → unknown option 으로 exit 1', () => {
+  const r = runCliOn(['--docs', FIXTURE_DOCS, '--frmat', 'json']);
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /unknown option --frmat/);
 });
 
 test('CLI --out draft 경로 → markdown draft 파일 생성 (기본 markdown, exit 0)', () => {
