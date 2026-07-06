@@ -104,6 +104,10 @@ npm run workflow:eval -- --json
 npm run workflow:telemetry -- --json
 npm run workflow:telemetry -- --out docs/frontend-workflow/_meta/telemetry-ledger.json
 npm run workflow:telemetry -- --check docs/frontend-workflow/_meta/telemetry-ledger.json --json
+npm run workflow:telemetry -- --include visual --docs docs/frontend-workflow --src src --json
+npm run workflow:telemetry -- --include visual --visual-domain auth --json
+npm run workflow:telemetry -- --include visual --visual-screen AUTH-001,AUTH-002 --json
+npm run workflow:telemetry -- --list-surfaces --json
 npm run workflow:check-generated
 ```
 
@@ -113,7 +117,11 @@ These commands produce read-only metadata under `docs/frontend-workflow/_meta/`,
 
 `workflow:eval` is a warning-first readiness measurement harness. It compares labeled cases against `computeReadiness`, reports exact-match, false-open, false-closed, fail-closed leakage, and blocking-kind mismatch metrics, and does not fail because of metric mismatches.
 
-`workflow:telemetry` is a warning-first observation tool. It summarizes `route-cross-check`, `doc-drift`, and `workflow:eval` warning counts through their public `--json` CLIs, records unavailable surfaces, and includes the readiness-eval blocking mismatch count. `--out` writes an explicitly requested deterministic ledger snapshot; `--check` compares current telemetry with a ledger and reports ledger drift as warning-only check data. Drift, unavailable surfaces, and findings keep the command on exit 0.
+`workflow:telemetry` is a warning-first observation tool. By default it runs only the existing core observation surfaces: it summarizes `route-cross-check`, `doc-drift`, and `workflow:eval` warning counts through their public `--json` CLIs, records unavailable surfaces, and includes the readiness-eval blocking mismatch count. `--out` writes an explicitly requested deterministic ledger snapshot; `--check` compares current telemetry with a ledger and reports ledger drift as warning-only check data. Drift, unavailable surfaces, and findings keep the command on exit 0.
+
+Visual surfaces are opt-in. `--include visual` (or `--surface visual-consistency` / `--surface visual-contract-bootstrap`, which add single surfaces on top of the defaults) additionally observes `workflow:visual-consistency` and `workflow:visual-contract-bootstrap` through their public `--json` output only. `--src` (default `src`), `--visual-domain`, `--visual-screen`, and `--visual-contract` are forwarded to the visual CLIs; `--skip-visual-bootstrap` / `--skip-visual-consistency` drop one of the two included visual surfaces; `--list-surfaces` prints the surface registry without running any child CLI. Telemetry never writes a visual-contract-bootstrap draft (`--out`/`--format markdown` are never forwarded) and never creates or modifies the canonical visual contract. Visual warnings/findings are observations only — not a gate, approval, readiness promotion, or `confirmed` promotion — and a missing contract, missing script, child exit 1, or invalid child JSON keeps telemetry on exit 0 (recorded as skip/unavailable). The default CI telemetry artifact does not include visual surfaces automatically; whether to add a visual telemetry CI artifact is a separate Open Decision that requires human approval first.
+
+Boundary vs `workflow:adoption-probe --visual`: telemetry `--include visual` observes the visual CLIs directly against the current checkout's docs/src, while adoption-probe `--visual` observes bootstrap/consistency inside a brownfield probe scratch copy. Telemetry never creates an adoption-probe run dir, and ingesting the adoption-probe visual summary as a telemetry surface is a follow-up, not part of this integration. Both are warning-first/review-only observations, not gates.
 
 CI artifact accumulation is observation-only. The Actions workflow writes the deterministic ledger under `$RUNNER_TEMP/frontend-workflow-telemetry/telemetry-ledger.json`, writes a separate current observation report under `telemetry-report.json`, and uploads both as one artifact so repeated runs within the artifact retention window can become evidence for later human review. The uploaded ledger/report are not a pass/fail verdict, and they are not a gate. The CI telemetry step uses `continue-on-error`, the artifact summary step emits warnings for missing or empty files without failing the job, and artifact upload uses `if: always()` plus `if-no-files-found: warn` so missing observation files do not fail the job. Do not wire telemetry ledger drift to exit 1, a hard gate, or a required check without a separate Open Decision and human approval.
 
