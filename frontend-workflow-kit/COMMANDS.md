@@ -123,7 +123,12 @@ CI artifact accumulation is observation-only. The Actions workflow writes the de
 npm run workflow:visual-consistency -- --docs docs/frontend-workflow --src src --json
 npm run workflow:visual-consistency -- --docs docs/frontend-workflow --domain auth
 npm run workflow:visual-consistency -- --docs docs/frontend-workflow --screen AUTH-001
+npm run workflow:visual-consistency -- --docs docs/frontend-workflow --screen AUTH-001,AUTH-002
 ```
+
+`--screen` accepts a single canonical screen id or a comma-separated list
+(mirroring `workflow:visual-contract-bootstrap --screen`), so both tools can be
+scoped identically.
 
 `workflow:visual-consistency` is a warning-first cross-screen diagnostic. It reads
 the visual consistency contract (`design/visual-consistency-contract.md`, template:
@@ -277,7 +282,30 @@ every plan. The tool is advisory and is not a hard CI gate.
 
 ```bash
 npm run workflow:adoption-probe -- --repo apps/mobile --out temp/runs/adoption-probe-mobile-001 --id mobile-001
+npm run workflow:adoption-probe -- --repo apps/mobile --visual
+npm run workflow:adoption-probe -- --repo apps/mobile --visual --visual-domain auth --json
+npm run workflow:adoption-probe -- --repo apps/mobile --visual --skip-visual-consistency
+npm run workflow:adoption-probe -- --repo apps/mobile --visual --visual-contract docs/frontend-workflow/design/visual-consistency-contract.md
 ```
 
 Use adoption-probe for kit adoption assessment or dry-run reports. Treat its
-output as review evidence, not a CI hard gate.
+output as review evidence, not a CI hard gate. `--repo-root` is accepted as an
+alias for `--repo`.
+
+`--visual` (optional, off by default — default probe output is unchanged without
+it) additionally runs `workflow:visual-contract-bootstrap` against the probe
+scratch copy, writes a review-only draft to
+`<probe-run>/visual/visual-consistency-contract.draft.md`, and — when a canonical
+contract exists in the scratch docs, or a bootstrap draft was produced — runs
+`workflow:visual-consistency` (against the existing contract, or the draft as an
+explicitly advisory baseline). Raw command output lands under
+`<probe-run>/observations/visual-*`; the adoption report gains a
+`Visual Reconciliation Adoption` section and the JSON output a `visual` summary.
+Filters: `--visual-domain <d>`, `--visual-screen <ID[,ID...]>`;
+`--visual-contract <path>` overrides the existing contract location;
+`--skip-visual-consistency` observes the bootstrap only. Everything stays
+draft-only and warning-first: live docs/src are never modified, the draft is
+never applied to the canonical contract, and visual findings are never a gate,
+approval, or readiness/`confirmed` promotion. Contract reference:
+[docs/reference/visual-reconciliation.md](docs/reference/visual-reconciliation.md)
+§Bootstrap / adoption.

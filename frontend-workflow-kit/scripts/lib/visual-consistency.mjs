@@ -270,6 +270,7 @@ export function findHardcodedCopyCandidates(source) {
 //   srcDir       : 선택. 없으면 소스 검사(직접 import/positioning/copy) 전체 skip.
 //   contractPath : 선택 override (absolute). 기본 <docs>/design/visual-consistency-contract.md.
 //   domain/screen: 선택 필터. family/finding 을 해당 범위로 좁힌다.
+//                  screen 은 단일 ID 또는 콤마 목록("A-001,A-002") — bootstrap --screen 과 동형.
 export function analyzeVisualConsistency({ docsDir, srcDir, contractPath, domain, screen }) {
   const findings = [];
   const skippedChecks = [];
@@ -337,10 +338,13 @@ export function analyzeVisualConsistency({ docsDir, srcDir, contractPath, domain
   const screens = collectScreens(docsDir);
   const mappings = collectFigmaMappings(docsDir);
 
-  // --- 선택 필터: --screen / --domain 은 family 멤버십 기준으로 범위를 좁힌다.
+  // --- 선택 필터: --screen(콤마 목록 허용) / --domain 은 family 멤버십 기준으로 범위를 좁힌다.
+  //     콤마 목록은 bootstrap --screen 과 scope 를 맞추기 위한 확장이다 — 단일 ID 동작은 불변.
+  const screenFilterIds = splitScreenIds(screen);
+  const screenFilter = screenFilterIds.length ? new Set(screenFilterIds) : null;
   let families = contract.families;
-  if (screen) {
-    families = families.filter((f) => f.screens.includes(screen));
+  if (screenFilter) {
+    families = families.filter((f) => f.screens.some((id) => screenFilter.has(id)));
   } else if (domain) {
     families = families.filter((f) =>
       f.screens.some((id) => (screens.get(id) || {}).domain === domain),
@@ -348,7 +352,7 @@ export function analyzeVisualConsistency({ docsDir, srcDir, contractPath, domain
   }
   const selectedScreenIds = new Set(families.flatMap((f) => f.screens));
   const screenInScope = (id) =>
-    screen ? id === screen : domain ? selectedScreenIds.has(id) : true;
+    screenFilter ? screenFilter.has(id) : domain ? selectedScreenIds.has(id) : true;
   const selectedFamilyNames = new Set(families.map((f) => f.family));
 
   // --- 검사 2: contract member ↔ ScreenSpec screen_id (screen-not-found = warning;
@@ -405,7 +409,7 @@ export function analyzeVisualConsistency({ docsDir, srcDir, contractPath, domain
   const componentsInScope = contract.components.filter(
     (c) =>
       c.applies_to_families.length === 0 ||
-      !screen && !domain ||
+      !screenFilter && !domain ||
       c.applies_to_families.some((fam) => selectedFamilyNames.has(fam)),
   );
   if (!exists(catalogFile)) {

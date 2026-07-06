@@ -132,6 +132,20 @@ bootstrap 이후 권장 순서:
 5. `workflow:visual-consistency` 로 대조 (warning-first)
 6. `visual-reconcile` / `implement-screen` 으로 실제 업데이트
 
+**adoption-probe 통합 (repo 전체 brownfield 진단과 함께 볼 때).**
+킷 도입 자체를 진단하는 중이라면 bootstrap 을 따로 돌리는 대신
+`workflow:adoption-probe -- --visual` 로 같은 관측을 probe 루프 안에서 얻을 수 있다.
+probe 는 **scratch copy** 기준으로 bootstrap 을 실행해
+`<probe-run>/visual/visual-consistency-contract.draft.md` (review-only draft) 와
+`<probe-run>/observations/visual-*` 관측 파일을 남기고, canonical contract 가 있으면
+그 contract 기준으로 — 없고 draft 만 있으면 **draft 기준 advisory** 로 —
+`workflow:visual-consistency` 를 실행한 뒤 adoption report 의
+`Visual Reconciliation Adoption` 섹션과 JSON `visual` 요약으로 정리한다.
+경계는 이 문서의 계약 그대로다: live docs/src 무수정 · draft 는 canonical contract 에
+자동 적용되지 않음 · warning 은 gate/approval/`confirmed` 승격이 아님 · Component Gap
+accept / Open Decision resolve 는 사람 전용. 옵션 syntax 는
+[COMMANDS.md](../../COMMANDS.md) §Adoption Probe.
+
 ## Drift candidates
 
 `workflow:visual-consistency` 가 warning-first 로 표면화하는 후보들:

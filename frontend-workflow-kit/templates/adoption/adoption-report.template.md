@@ -65,6 +65,10 @@
 
 Observation files are in `{OBSERVATIONS_PATH}`.
 
+## 6.1 Visual Reconciliation Adoption
+
+{VISUAL_ROWS}
+
 ## 7. Known Blind Spots Applied Here
 
 | # | Blind spot | This repo | Core signal | Closing work |
