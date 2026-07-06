@@ -69,6 +69,7 @@ test('control-final-open is an exact true_open', () => {
   assert.equal(result.actual_readiness_mode, 'final-fixture-ui');
   assert.equal(result.outcome, 'true_open');
   assert.equal(result.exact_match, true);
+  assert.equal(result.blocking_match, true);
   assert.deepEqual(result.observed_blocking_kinds, []);
 });
 
@@ -112,6 +113,19 @@ test('synthetic wrong label records false_open without adding it to the seed cor
   assert.equal(report.confusion.false_closed.count, 0);
 });
 
+test('synthetic blocker label drift records blocking_mismatch without changing exact_match', () => {
+  const wrong = caseById('eval/control-final-open');
+  wrong.id = 'eval/test-only-blocking-label-drift';
+  wrong.expect.blocking_kinds = ['open_decision'];
+
+  const report = summarizeEval([runEvalCase(wrong)]);
+  assert.equal(report.exact_match, 1);
+  assert.equal(report.blocking_kinds.match, 0);
+  assert.equal(report.blocking_kinds.mismatch.count, 1);
+  assert.deepEqual(report.blocking_kinds.mismatch.cases, ['eval/test-only-blocking-label-drift']);
+  assert.equal(report.cases[0].blocking_match, false);
+});
+
 test('report cases are sorted by id', () => {
   const zCase = caseById('eval/policy-malformed-single-equals');
   const aCase = caseById('eval/control-final-open');
@@ -138,6 +152,7 @@ test('CLI --json emits parseable JSON and exits 0', () => {
   assert.equal(obj.mode, 'warning-first');
   assert.equal(obj.total, 16);
   assert.equal(obj.confusion.false_open.count, 0);
+  assert.equal(obj.blocking_kinds.mismatch.count, 0);
 });
 
 test('eval metric mismatch does not cause exit 1', () => {

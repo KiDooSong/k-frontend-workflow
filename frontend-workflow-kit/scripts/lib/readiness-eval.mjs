@@ -10,7 +10,7 @@ import { computeReadiness } from '../readiness.mjs';
 import { deriveMetrics, isStub, loadScreenSpec } from './spec.mjs';
 import { KIT_ROOT, yamlStringify } from './util.mjs';
 
-export const DEFAULT_EVAL_CASES_PATH = path.join(KIT_ROOT, 'examples', 'readiness-eval', 'cases.json');
+export const DEFAULT_EVAL_CASES_PATH = path.join(KIT_ROOT, 'scripts', 'lib', 'readiness-eval-cases.json');
 
 const DEFAULT_EVAL_POLICY = {
   order: ['docs-only', 'rough-fixture-ui', 'final-fixture-ui'],
@@ -209,7 +209,13 @@ function publicCaseResult(result) {
     exact_match: result.exact_match,
     expected_blocking_kinds: result.expected_blocking_kinds,
     observed_blocking_kinds: result.observed_blocking_kinds,
+    blocking_match: result.blocking_match,
   };
+}
+
+function sameStringArray(left, right) {
+  if (left.length !== right.length) return false;
+  return left.every((value, index) => value === right[index]);
 }
 
 export function runEvalCase(testCase) {
@@ -241,6 +247,8 @@ export function runEvalCase(testCase) {
       targetMode: testCase.expect.target_mode,
       order,
     });
+    const expectedBlockingKinds = [...testCase.expect.blocking_kinds].sort();
+    const observedBlockingKinds = blockingKinds(readiness?.blocking);
     const result = {
       id: testCase.id,
       expected_readiness_mode: testCase.expect.readiness_mode,
@@ -250,8 +258,9 @@ export function runEvalCase(testCase) {
       actual_gate: actualGate,
       outcome: outcomeFor(testCase.expect.gate, actualGate),
       exact_match: testCase.expect.readiness_mode === actualMode,
-      expected_blocking_kinds: [...testCase.expect.blocking_kinds].sort(),
-      observed_blocking_kinds: blockingKinds(readiness?.blocking),
+      expected_blocking_kinds: expectedBlockingKinds,
+      observed_blocking_kinds: observedBlockingKinds,
+      blocking_match: sameStringArray(expectedBlockingKinds, observedBlockingKinds),
     };
     Object.defineProperty(result, '_expect_fail_closed', {
       value: testCase.expect.fail_closed,
@@ -267,6 +276,7 @@ export function summarizeEval(caseResults) {
   const falseClosedCases = results.filter((r) => r.outcome === 'false_closed').map((r) => r.id);
   const failClosedCases = results.filter((r) => r._expect_fail_closed === true);
   const leakedCases = failClosedCases.filter((r) => r.actual_gate === 'open').map((r) => r.id);
+  const blockingMismatchCases = results.filter((r) => !r.blocking_match).map((r) => r.id);
 
   return {
     tool: 'workflow:eval',
@@ -287,6 +297,13 @@ export function summarizeEval(caseResults) {
       leaked: leakedCases.length,
       leaked_cases: leakedCases,
     },
+    blocking_kinds: {
+      match: results.length - blockingMismatchCases.length,
+      mismatch: {
+        count: blockingMismatchCases.length,
+        cases: blockingMismatchCases,
+      },
+    },
     cases: results.map(publicCaseResult),
   };
 }
@@ -301,7 +318,8 @@ export function formatEvalHuman(report) {
   const lines = [
     `workflow:eval - warning-first: ${report.total} case(s), exact_match=${report.exact_match}, ` +
       `false_open=${report.confusion.false_open.count}, false_closed=${report.confusion.false_closed.count}, ` +
-      `fail_closed_leaked=${report.fail_closed_axis.leaked}`,
+      `fail_closed_leaked=${report.fail_closed_axis.leaked}, ` +
+      `blocking_mismatch=${report.blocking_kinds.mismatch.count}`,
   ];
   if (report.confusion.false_open.count > 0) {
     lines.push(`  false_open: ${report.confusion.false_open.cases.join(', ')}`);
@@ -311,6 +329,9 @@ export function formatEvalHuman(report) {
   }
   if (report.fail_closed_axis.leaked > 0) {
     lines.push(`  fail_closed_leaked: ${report.fail_closed_axis.leaked_cases.join(', ')}`);
+  }
+  if (report.blocking_kinds.mismatch.count > 0) {
+    lines.push(`  blocking_mismatch: ${report.blocking_kinds.mismatch.cases.join(', ')}`);
   }
   return lines;
 }

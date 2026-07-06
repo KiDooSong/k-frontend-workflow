@@ -19,14 +19,15 @@ Usage:
   node scripts/readiness-eval.mjs [--cases <file>] [--json] [--help]
 
 Options:
-  --cases <file>  Labeled cases JSON. Default: examples/readiness-eval/cases.json.
+  --cases <file>  Labeled cases JSON. Default: scripts/lib/readiness-eval-cases.json.
   --json          Print deterministic JSON to stdout.
   --help          Show this help.
 
 Behavior:
   Loads labeled cases, consumes computeReadiness, and reports exact-match,
-  false_open, false_closed, and fail-closed leakage metrics. Metric results never
-  cause exit 1. Malformed cases files and CLI usage errors exit 2.
+  false_open, false_closed, fail-closed leakage, and blocking-kind mismatch
+  metrics. Metric results never cause exit 1. Malformed cases files and CLI
+  usage errors exit 2.
   No timestamp, duration, absolute machine path, temp path, verdict, threshold,
   CI artifact, or ledger write is emitted.
 `;

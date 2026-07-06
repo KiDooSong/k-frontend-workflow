@@ -24,7 +24,7 @@ Options:
 Behavior:
   Calls route-cross-check, doc-drift, and readiness-eval through their public
   --json CLIs when available, records unavailable surfaces instead of failing,
-  and always exits 0.
+  includes readiness-eval blocking mismatch count, and always exits 0.
   Top-level ok:true means this telemetry command produced an observation report;
   it is not a pass/fail verdict about any observed surface.
   No ledger file, CI artifact, threshold, pass/fail verdict, duration, timestamp,

@@ -67,6 +67,7 @@ function normalizeSurface(surface, report) {
     const falseOpen = nonNegativeInteger(report?.confusion?.false_open?.count);
     const falseClosed = nonNegativeInteger(report?.confusion?.false_closed?.count);
     const failClosedLeaked = nonNegativeInteger(report?.fail_closed_axis?.leaked);
+    const blockingMismatch = nonNegativeInteger(report?.blocking_kinds?.mismatch?.count);
     return {
       surface_id: surface.surface_id,
       available: true,
@@ -76,6 +77,7 @@ function normalizeSurface(surface, report) {
       false_open: falseOpen,
       false_closed: falseClosed,
       fail_closed_leaked: failClosedLeaked,
+      blocking_mismatch: blockingMismatch,
     };
   }
   return {
@@ -171,7 +173,10 @@ export function formatTelemetryHuman(report) {
   ];
   for (const surface of surfaces) {
     if (surface.available) {
-      lines.push(`  ${surface.surface_id}: available, warnings=${surface.warning_count}`);
+      const blocking = surface.surface_id === 'readiness-eval'
+        ? `, blocking_mismatch=${nonNegativeInteger(surface.blocking_mismatch)}`
+        : '';
+      lines.push(`  ${surface.surface_id}: available, warnings=${surface.warning_count}${blocking}`);
     } else {
       lines.push(`  ${surface.surface_id}: unavailable (${surface.unavailable_reason})`);
     }

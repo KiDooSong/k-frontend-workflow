@@ -58,6 +58,7 @@ test('aggregates fake surface reports into deterministic JSON', () => {
           false_closed: { count: 2, cases: ['eval/b', 'eval/c'] },
         },
         fail_closed_axis: { leaked: 3, leaked_cases: ['eval/d', 'eval/e', 'eval/f'] },
+        blocking_kinds: { mismatch: { count: 4, cases: ['eval/g'] } },
       },
     }),
   };
@@ -91,6 +92,7 @@ test('aggregates fake surface reports into deterministic JSON', () => {
         false_open: 1,
         false_closed: 2,
         fail_closed_leaked: 3,
+        blocking_mismatch: 4,
       },
     ],
   });
@@ -110,6 +112,7 @@ test('warning_count is numeric and can fall back to findings length', () => {
           false_closed: { count: 1 },
         },
         fail_closed_axis: { leaked: 2 },
+        blocking_kinds: { mismatch: { count: 5 } },
       },
     }),
   });
@@ -119,6 +122,7 @@ test('warning_count is numeric and can fall back to findings length', () => {
   assert.equal(report.surfaces[1].warning_count, 3);
   assert.equal(typeof report.surfaces[2].warning_count, 'number');
   assert.equal(report.surfaces[2].warning_count, 7);
+  assert.equal(report.surfaces[2].blocking_mismatch, 5);
 });
 
 test('unavailable child tool is recorded as available false', () => {
@@ -227,6 +231,7 @@ test('CLI --json exits 0 and prints parseable JSON', () => {
       const evalSurface = obj.surfaces.find((s) => s.surface_id === 'readiness-eval');
       assert.equal(evalSurface.available, true);
       assert.equal(evalSurface.warning_count, 0);
+      assert.equal(evalSurface.blocking_mismatch, 0);
     },
   );
 });
@@ -275,10 +280,12 @@ test('human mode is stdout-only and does not introduce a verdict', () => {
       'readiness-eval': {
         confusion: { false_open: { count: 0 }, false_closed: { count: 0 } },
         fail_closed_axis: { leaked: 0 },
+        blocking_kinds: { mismatch: { count: 0 } },
       },
     }),
   });
   const lines = formatTelemetryHuman(report);
   assert.match(lines[0], /warning-first/);
+  assert.ok(lines.some((line) => /readiness-eval: available, warnings=0, blocking_mismatch=0/.test(line)));
   assert.equal(lines.some((line) => /verdict|pass|fail/i.test(line)), false);
 });
