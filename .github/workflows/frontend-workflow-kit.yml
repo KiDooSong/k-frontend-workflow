@@ -49,10 +49,40 @@ jobs:
         continue-on-error: true
         run: |
           mkdir -p "$RUNNER_TEMP/frontend-workflow-telemetry"
+
+          set +e
           npm --silent run workflow:telemetry -- \
             --docs examples/coupon-feature/docs/frontend-workflow \
-            --out "$RUNNER_TEMP/frontend-workflow-telemetry/telemetry-ledger.json" \
+            --out "$RUNNER_TEMP/frontend-workflow-telemetry/telemetry-ledger.json"
+          ledger_status=$?
+
+          npm --silent run workflow:telemetry -- \
+            --docs examples/coupon-feature/docs/frontend-workflow \
             --json > "$RUNNER_TEMP/frontend-workflow-telemetry/telemetry-report.json"
+          report_status=$?
+
+          if [ "$ledger_status" -ne 0 ]; then
+            echo "::warning::telemetry ledger collection exited with status $ledger_status"
+          fi
+          if [ "$report_status" -ne 0 ]; then
+            echo "::warning::telemetry report collection exited with status $report_status"
+          fi
+          exit 0
+
+      - name: summarize telemetry artifact files (warning-only)
+        if: always()
+        continue-on-error: true
+        run: |
+          for file in \
+            "$RUNNER_TEMP/frontend-workflow-telemetry/telemetry-ledger.json" \
+            "$RUNNER_TEMP/frontend-workflow-telemetry/telemetry-report.json"
+          do
+            if [ ! -s "$file" ]; then
+              echo "::warning::telemetry artifact file is missing or empty: $file"
+            else
+              wc -c "$file"
+            fi
+          done
 
       - name: upload telemetry observation ledger
         if: always()
