@@ -51,6 +51,9 @@ component catalog + component-gap-register, Open Decisions/Conflicts/Unknowns, A
 - 시각/Figma·testID·Tier3 항목이 있으면 해당 reconcile 산출물(`figma-component-mapping.md`, testID intake note,
   `implementation-mode-policy.draft.yaml`·`implementation-mode-policy.migration.md`)을 **읽기 context** 로 본다.
   live `policies/implementation-mode-policy.yaml` 도 읽기 전용 context 다.
+- 작업이 visual/Figma/design 정렬이거나 **여러 화면**에 걸치면
+  [visual-reconciliation.md](../../docs/reference/visual-reconciliation.md) 와 visual consistency contract
+  (`design/visual-consistency-contract.md`, 있으면)를 읽는다.
 - 2차 산출물 판단은 [task-artifact-matrix.md](../../docs/reference/task-artifact-matrix.md).
 
 ## 3. 모드 인지 구현
@@ -61,6 +64,9 @@ component catalog + component-gap-register, Open Decisions/Conflicts/Unknowns, A
   Unknown/VER-/Open Decision 으로 보고한다. (시각 vs 행동 정본 규칙: [input-reconciliation.md](../../docs/reference/input-reconciliation.md) §Visual/Figma; testID: [task-artifact-matrix.md](../../docs/reference/task-artifact-matrix.md).)
 - 카탈로그에 없는 공통 컴포넌트가 필요하면 직접 만들지 말고 Gap 을 제안하거나 기존 컴포넌트를 쓴다. **승인돼 `roles.ui_primitive` 아래로 코드가
   들어가면** catalog 를 재생성한다(`workflow:catalog`, [Stage 07](../../docs/reference/workflow-stages/07-regenerate-derived-views.md)).
+- per-screen code patch 전에 그 변경이 **shared shell/layout/component 소속인지** 먼저 본다 — visual contract 가
+  shell-owned 로 선언한 logo/header/CTA 를 화면 파일에 ad-hoc 으로 넣지 않는다(계약: [visual-reconciliation.md](../../docs/reference/visual-reconciliation.md)).
+  shared 표면 수정도 readiness `allowed_paths` 안일 때만 한다.
 - Figma 가 ScreenSpec 또는 resolved decision 과 충돌하면 멈추고 reconcile/conflict/Open Decision 으로 올린다.
 
 ## 4. 검증 / 핸드오프
@@ -70,6 +76,10 @@ npm run workflow:state
 npm run workflow:readiness -- --screen <ID> --json
 npm run workflow:validate
 ```
+visual/Figma 정렬 구현이었다면 추가로 `npm run workflow:visual-consistency -- --docs <docsDir> --src <srcDir> --json`
+을 돌린다 — state/readiness/validate 에 준 **동일한 `--docs`/`--src` 기준**을 그대로 전달한다
+(`--src` 를 빼면 직접 import/ad-hoc positioning/copy 소스 검사가 skip 된다).
+**warning-first 진단이지 gate/approval 이 아니다**. warning 은 후속 후보로 보고만 한다.
 2차 산출물·재생성 트리거는 [task-artifact-matrix.md](../../docs/reference/task-artifact-matrix.md) /
 [generated-files.md](../../docs/reference/generated-files.md) 로 확인한다(예: `roles.ui_primitive` 변경→`workflow:catalog`,
 route/nav 변경→`workflow:route-tree`·`workflow:nav-graph`·route cross-check, policy/Tier3 변경→`workflow:policy-draft`).

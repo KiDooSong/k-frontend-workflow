@@ -193,6 +193,16 @@ npm run workflow:validate
 
 관련 입력이 `not-started`, `in-progress`, `failed` 상태면 구현 전에 reconcile을 끝내거나 같은 row로 재개한다. 구현은 readiness가 허용한 파일에만 하며, generated files, Open Decision resolve, Unknown close, Component Gap accept, live policy replacement는 사람이 명시하지 않으면 하지 않는다. 작업 중 어떤 artifact를 함께 갱신해야 할지 애매하면 [docs/reference/task-artifact-matrix.md](docs/reference/task-artifact-matrix.md)를 확인한다.
 
+## Multi-Screen Visual Reconciliation
+
+여러 화면에 걸친 Figma/visual spec/design 업데이트("로고/레이아웃 공통 정리", "Figma 일괄 반영")는 `skills/visual-reconcile/SKILL.md` 절차를 따른다. 공통 shell/logo/header/CTA ownership 은 화면별 ad-hoc patch 가 아니라 visual consistency contract(`docs/frontend-workflow/design/visual-consistency-contract.md`, 템플릿: `templates/design/visual-consistency-contract.template.md`)로 정리하고, 구현 후 warning-first 검사를 돌린다.
+
+```bash
+npm run workflow:visual-consistency -- --docs docs/frontend-workflow --src src --json
+```
+
+contract 가 없으면 조용히 skip 한다(cold start 를 막지 않음). warning 은 drift 후보 진단일 뿐 approval, readiness promotion, `confirmed` 승격, gate 가 아니다. behavior 는 여전히 ScreenSpec/Navigation Map/Open Decision 경로만 탄다. 계약 정본: [docs/reference/visual-reconciliation.md](docs/reference/visual-reconciliation.md).
+
 ## Optional Web E2E Evidence
 
 웹 E2E 계획/생성/검증/수리가 필요하면 `skills/e2e-agent/SKILL.md`를 사용한다.

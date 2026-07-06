@@ -52,6 +52,21 @@ artifacts:
       - screen_id
       - status
 
+  # 여러 화면 공통 visual/layout/component ownership 정합성 계약 — route/screen identity 나 behavior 의
+  # 단일 출처가 아니다(ScreenSpec·figma-component-mapping·component-catalog·Open Decisions 를 참조만 한다).
+  # workflow:visual-consistency (warning-first) 가 이 문서를 읽어 cross-screen drift 후보를 경고로 낸다.
+  # "필요할 때 생성"하는 문서라 항상 존재하지는 않는다 — 부재 시 검사는 조용히 skip 한다(cold start 허용).
+  # readiness fact 가 아니며 게이트도 아니다. confirmed 승격은 사람만. 계약 정본: docs/reference/visual-reconciliation.md
+  visual-consistency-contract:
+    kind: authoring
+    scope: design
+    path: docs/frontend-workflow/design/visual-consistency-contract.md
+    template: templates/design/visual-consistency-contract.template.md
+    required_frontmatter:
+      - artifact_id
+      - artifact_type
+      - status
+
   navigation-map:
     kind: authoring
     scope: app
