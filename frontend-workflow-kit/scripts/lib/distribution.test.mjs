@@ -98,9 +98,14 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
     'scripts/validate.mjs',
     'scripts/workflow-run.mjs',
     'scripts/workflow-state.mjs',
+    'scripts/visual-consistency.mjs',
+    'scripts/lib/visual-consistency.mjs',
     'skills/implement-screen/SKILL.md',
     'skills/reconcile-input/SKILL.md',
     'skills/capture-learning/SKILL.md',
+    'skills/visual-reconcile/SKILL.md',
+    'docs/reference/visual-reconciliation.md',
+    'templates/design/visual-consistency-contract.template.md',
     'templates/e2e/web-plan.template.md',
     'templates/repo/AGENTS.template.md',
     'templates/screen/screen-spec.template.md',
@@ -447,6 +452,7 @@ test('consumer package script template exposes current command aliases only', ()
 
   assert.equal(scriptsTemplate.scripts['workflow:create-input'], 'node tools/frontend-workflow/scripts/create-input-artifact.mjs');
   assert.equal(scriptsTemplate.scripts['workflow:route-cross-check'], 'node tools/frontend-workflow/scripts/route-cross-check.mjs');
+  assert.equal(scriptsTemplate.scripts['workflow:visual-consistency'], 'node tools/frontend-workflow/scripts/visual-consistency.mjs');
   assert.equal(scriptsTemplate.scripts['workflow:doc-drift'], 'node tools/frontend-workflow/scripts/doc-drift.mjs');
   assert.equal(scriptsTemplate.scripts['workflow:eval'], 'node tools/frontend-workflow/scripts/readiness-eval.mjs');
   assert.equal(scriptsTemplate.scripts['workflow:policy-draft'], 'node tools/frontend-workflow/scripts/policy-draft.mjs');
@@ -454,6 +460,8 @@ test('consumer package script template exposes current command aliases only', ()
   assert.equal(packageJson.scripts['workflow:doc-drift'], 'node scripts/doc-drift.mjs');
   assert.equal(packageJson.scripts['workflow:eval'], 'node scripts/readiness-eval.mjs');
   assert.equal(packageJson.scripts['workflow:check-generated'], 'node scripts/check-generated-files.mjs');
+  assert.equal(packageJson.scripts['workflow:visual-consistency'], 'node scripts/visual-consistency.mjs');
+  assert.match(commands, /npm run workflow:visual-consistency/);
   assert.match(commands, /npm run workflow:doc-drift/);
   assert.match(commands, /npm run workflow:eval/);
   assert.match(commands, /false-open/);

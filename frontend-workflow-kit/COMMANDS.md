@@ -117,6 +117,31 @@ These commands produce read-only metadata under `docs/frontend-workflow/_meta/`,
 
 CI artifact accumulation is observation-only. The Actions workflow writes the deterministic ledger under `$RUNNER_TEMP/frontend-workflow-telemetry/telemetry-ledger.json`, writes a separate current observation report under `telemetry-report.json`, and uploads both as one artifact so repeated runs within the artifact retention window can become evidence for later human review. The uploaded ledger/report are not a pass/fail verdict, and they are not a gate. The CI telemetry step uses `continue-on-error`, the artifact summary step emits warnings for missing or empty files without failing the job, and artifact upload uses `if: always()` plus `if-no-files-found: warn` so missing observation files do not fail the job. Do not wire telemetry ledger drift to exit 1, a hard gate, or a required check without a separate Open Decision and human approval.
 
+## Visual Consistency
+
+```bash
+npm run workflow:visual-consistency -- --docs docs/frontend-workflow --src src --json
+npm run workflow:visual-consistency -- --docs docs/frontend-workflow --domain auth
+npm run workflow:visual-consistency -- --docs docs/frontend-workflow --screen AUTH-001
+```
+
+`workflow:visual-consistency` is a warning-first cross-screen diagnostic. It reads
+the visual consistency contract (`design/visual-consistency-contract.md`, template:
+`templates/design/visual-consistency-contract.template.md`) and cross-checks Screen
+Family members against ScreenSpec `screen_id`s, figma-component-mapping coverage,
+Shared Component Rules against the component catalog (missing components are
+reported as Component Gap candidates, proposal only), forbidden direct screen
+imports and ad-hoc positioning near shell-owned components (source heuristics —
+skipped without `--src`/`screen_entry`), hardcoded copy candidates (info), and
+Visual Exception hygiene (Reason + Decision ID required).
+
+No contract means a quiet skip — cold start is never blocked. Warnings keep exit 0;
+only structural errors (missing docs path, malformed contract) exit 1. `--enforce`
+promotes warnings to exit 1 but must not be wired into CI or validate without a
+separate human decision. Findings are diagnostics, never approval, readiness
+promotion, or `confirmed` promotion. Reference:
+[docs/reference/visual-reconciliation.md](docs/reference/visual-reconciliation.md).
+
 ## Implementation Packets
 
 ```bash

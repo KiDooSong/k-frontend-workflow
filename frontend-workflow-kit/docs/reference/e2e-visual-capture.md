@@ -98,7 +98,7 @@ artifact.
 | Playwright project / viewport | Project name, browser, device profile, or explicit viewport. |
 | Expo/web command assumptions | Exact command, bundler, port behavior, overlays, and environment assumptions. |
 | `E2E_RUN_ID` | Run-specific identifier used in artifact paths. |
-| visual spec path | ScreenSpec, Figma mapping, design note, or visual contract path. |
+| visual spec path | ScreenSpec, Figma mapping, design note, or visual contract path (e.g. the [visual consistency contract](visual-reconciliation.md) for cross-screen shell/logo/CTA context). Referencing a contract does not change capture semantics — the screenshot stays advisory evidence, never a consistency verdict. |
 | screenshot artifact path | Run output path for the PNG. |
 | known Expo Web divergence | Notes about web-only layout, font, safe area, navigation, or platform divergence. |
 

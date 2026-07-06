@@ -38,6 +38,7 @@ inline and links the rest; it does not restate the references.
 | screen source aliases / canonical identity | [`screen-identity.md`](screen-identity.md) (Stage 02) | link from source / reconcile / implement |
 | implement `allowed_paths` / `forbidden_paths` | readiness output + [Stage 06](workflow-stages/06-implement-screen-or-code.md) | state the invariant only |
 | visual vs behavior split | [`input-reconciliation.md`](input-reconciliation.md) §Visual/Figma + [`figma-component-mapping.template.md`](../../templates/screen/figma-component-mapping.template.md) | short reminder only |
+| cross-screen visual consistency / visual contract / shell ownership / `workflow:visual-consistency` | [`visual-reconciliation.md`](visual-reconciliation.md) + [`visual-consistency-contract.template.md`](../../templates/design/visual-consistency-contract.template.md) | link only; keep "warning-first, not a gate/approval" inline |
 | component gap rules (proposal-only) | [`component-gap-register.template.md`](../../templates/global/component-gap-register.template.md) + [`task-artifact-matrix.md`](task-artifact-matrix.md) | short reminder only |
 | policy draft vs live policy | [Stage 10](workflow-stages/10-policy-layout-tier3-changes.md) + [`CONVENTIONS.md`](../../CONVENTIONS.md) §Tier3 + [`input-reconciliation.md`](input-reconciliation.md) §Tier3 | short reminder only |
 | route / screen / API conventions | [`CONVENTIONS.md`](../../CONVENTIONS.md) | link only |
