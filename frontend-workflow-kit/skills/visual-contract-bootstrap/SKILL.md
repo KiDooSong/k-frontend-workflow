@@ -31,6 +31,10 @@ contract 가 없는(또는 빈약한) consumer repo 에 visual consistency contr
 1. **프로젝트 옵션 확인**: docs 루트(`docs/frontend-workflow` 기본)와 src 루트,
    monorepo 면 실제 기준 경로를 먼저 확인한다. 기존
    `design/visual-consistency-contract.md` 존재 여부를 본다.
+   목적이 개별 bootstrap 이 아니라 **consumer repo 전체 adoption 진단**이면
+   `workflow:adoption-probe -- --visual` 도 선택지다 — probe 가 scratch copy 에서
+   bootstrap(+가능하면 visual-consistency)을 함께 관측해 probe run dir 에 draft 와
+   observation 을 남긴다(동일하게 review-only, [COMMANDS.md](../../COMMANDS.md) §Adoption Probe).
 2. **실행**:
    ```bash
    npm run workflow:visual-contract-bootstrap -- --docs <docsDir> --src <srcDir> --json

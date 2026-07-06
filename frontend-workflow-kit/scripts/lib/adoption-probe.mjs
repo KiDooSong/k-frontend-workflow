@@ -15,6 +15,7 @@ import {
   yamlStringify,
 } from './util.mjs';
 import { writePolicyDraftArtifacts } from './policy-draft.mjs';
+import { renderBootstrapMarkdown } from './visual-contract-bootstrap.mjs';
 
 const SCRIPT_ROOT = path.join(KIT_ROOT, 'scripts');
 const TEMPLATE_ROOT = path.join(KIT_ROOT, 'templates', 'adoption');
@@ -875,6 +876,294 @@ function normalizeJsonText(text) {
   return parsed == null ? String(text || '').trim() : JSON.stringify(parsed);
 }
 
+// --- visual observation (--visual) -------------------------------------------
+// PR144/145 visual tooling을 probe scratch copy에 대해 관측만 한다. draft/observation
+// 출력은 전부 probe run dir 내부에 쓰고, live docs/src·canonical contract는 절대 건드리지
+// 않는다. 실패는 finding으로만 기록하고 probe 전체 exit behavior를 바꾸지 않는다(게이트 아님).
+
+// 기존 contract 위치: --visual-contract override가 live docsDir 안을 가리키면 scratch copy의
+// 같은 상대 경로로 재매핑한다 (probe는 scratch만 읽는다). docsDir 밖 경로는 그대로 읽는다(읽기 전용).
+function visualContractPaths(opts, scratch) {
+  if (opts.visualContract) {
+    const live = path.resolve(opts.visualContract);
+    if (isSameOrInside(path.resolve(opts.docsDir), live)) {
+      const relPath = path.relative(opts.docsDir, live);
+      return { scratchContract: path.join(scratch.docsScratch, relPath), liveContract: live, overridden: true };
+    }
+    return { scratchContract: live, liveContract: live, overridden: true };
+  }
+  const suffix = ['design', 'visual-consistency-contract.md'];
+  return {
+    scratchContract: path.join(scratch.docsScratch, ...suffix),
+    liveContract: path.join(opts.docsDir, ...suffix),
+    overridden: false,
+  };
+}
+
+function visualCommandSummary(json, fallbackLabel) {
+  const s = json && json.summary ? json.summary : null;
+  return {
+    errors: s ? s.errors ?? 0 : null,
+    warnings: s ? s.warnings ?? 0 : null,
+    infos: s ? s.infos ?? 0 : null,
+    parsed: Boolean(s),
+    label: fallbackLabel,
+  };
+}
+
+// consistency findings의 rule별 상위 빈도 (warning/error만 — advisory info는 잡음 방지 위해 제외).
+function topRules(consistencyJson, limit = 3) {
+  const counts = new Map();
+  for (const f of consistencyJson?.findings || []) {
+    if (f.severity !== 'warning' && f.severity !== 'error') continue;
+    counts.set(f.rule, (counts.get(f.rule) || 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+    .slice(0, limit)
+    .map(([rule, count]) => `${rule} (${count})`);
+}
+
+function observeVisual(opts, scratch) {
+  if (!opts.visual) {
+    return {
+      enabled: false,
+      status: 'skipped',
+      reason: '--visual not passed (default probe behavior unchanged)',
+      findings: [],
+      bootstrap: null,
+      consistency: null,
+      next_actions: [],
+    };
+  }
+
+  const findings = [];
+  const contractPaths = visualContractPaths(opts, scratch);
+  const existingContractFound = exists(contractPaths.scratchContract);
+
+  // 1) bootstrap — scratch docs/src 기준 review-only draft 후보 추출 (JSON stdout 관측).
+  //    cwd를 probe run dir로 두어 bootstrap/consistency 출력 내부 경로가 scratch/... 상대
+  //    경로로 나오게 한다 (머신 경로 누출 없는 deterministic observation).
+  const bootstrapArgs = ['--docs', scratch.docsScratch, '--src', scratch.srcScratch];
+  if (opts.visualDomain) bootstrapArgs.push('--domain', opts.visualDomain);
+  if (opts.visualScreens.length) bootstrapArgs.push('--screen', opts.visualScreens.join(','));
+  if (contractPaths.overridden) bootstrapArgs.push('--contract', contractPaths.scratchContract);
+  bootstrapArgs.push('--json');
+  const bootstrapCmd = runNodeScript('visual-contract-bootstrap.mjs', bootstrapArgs, { cwd: opts.outDir });
+  writeObservation(opts, 'visual-contract-bootstrap', bootstrapCmd);
+  const bootstrapJson = parseJson(bootstrapCmd.stdout);
+  if (!bootstrapCmd.ok) {
+    findings.push({
+      severity: 'error',
+      rule: 'visual-bootstrap-failed',
+      message: `visual-contract-bootstrap exit ${bootstrapCmd.exitCode} — observations/visual-contract-bootstrap.* 참조 (probe는 계속 진행; 게이트 아님).`,
+    });
+  }
+
+  // 2) markdown draft — bootstrap이 구조적으로 성공했을 때만 run dir 내부에 쓴다
+  //    (CLI --out 가드 동형: 깨진 입력으로 만든 draft는 review 대상이 아니다).
+  const draftPath = path.join(opts.outDir, 'visual', 'visual-consistency-contract.draft.md');
+  let draftWritten = false;
+  if (bootstrapCmd.ok && bootstrapJson && bootstrapJson.ok) {
+    writeFile(draftPath, renderBootstrapMarkdown(bootstrapJson));
+    draftWritten = true;
+  }
+
+  const bootstrapSummary = visualCommandSummary(bootstrapJson);
+  const bootstrap = {
+    ran: true,
+    ok: bootstrapCmd.ok,
+    exit: bootstrapCmd.exitCode,
+    screens: bootstrapJson?.summary?.screens ?? null,
+    candidate_families: bootstrapJson?.summary?.candidate_families ?? null,
+    suggested_contract_rows: bootstrapJson?.summary?.suggested_contract_rows ?? null,
+    component_gap_candidates: bootstrapJson?.summary?.component_gap_candidates ?? null,
+    errors: bootstrapSummary.errors,
+    warnings: bootstrapSummary.warnings,
+    infos: bootstrapSummary.infos,
+    draft_path: draftWritten ? draftPath : null,
+    existing_contract: {
+      found: existingContractFound,
+      path: contractPaths.liveContract,
+      overridden: contractPaths.overridden,
+    },
+  };
+
+  // 3) consistency — 기존 contract가 있으면 그 기준, 없고 draft만 있으면 draft 기준 advisory.
+  let consistency;
+  if (opts.skipVisualConsistency) {
+    consistency = {
+      ran: false,
+      contract_source: 'skipped',
+      reason: '--skip-visual-consistency passed — bootstrap observation only',
+    };
+  } else if (!existingContractFound && !draftWritten) {
+    consistency = {
+      ran: false,
+      contract_source: 'skipped',
+      reason: bootstrapCmd.ok
+        ? 'no existing contract and no bootstrap draft — nothing to check against'
+        : 'bootstrap failed — no contract to check against',
+    };
+  } else {
+    const contractSource = existingContractFound ? 'existing' : 'bootstrap-draft';
+    const consistencyArgs = ['--docs', scratch.docsScratch, '--src', scratch.srcScratch];
+    if (contractSource === 'bootstrap-draft') consistencyArgs.push('--contract', draftPath);
+    else if (contractPaths.overridden) consistencyArgs.push('--contract', contractPaths.scratchContract);
+    if (opts.visualDomain) consistencyArgs.push('--domain', opts.visualDomain);
+    if (opts.visualScreens.length === 1) consistencyArgs.push('--screen', opts.visualScreens[0]);
+    consistencyArgs.push('--json');
+    const consistencyCmd = runNodeScript('visual-consistency.mjs', consistencyArgs, { cwd: opts.outDir });
+    writeObservation(opts, 'visual-consistency', consistencyCmd);
+    const consistencyJson = parseJson(consistencyCmd.stdout);
+    if (!consistencyCmd.ok) {
+      findings.push({
+        severity: 'error',
+        rule: 'visual-consistency-failed',
+        message: `visual-consistency exit ${consistencyCmd.exitCode} (contract source: ${contractSource}) — observations/visual-consistency.* 참조 (probe는 계속 진행; 게이트 아님).`,
+      });
+    }
+    const summary = visualCommandSummary(consistencyJson);
+    consistency = {
+      ran: true,
+      contract_source: contractSource,
+      advisory_draft_contract: contractSource === 'bootstrap-draft',
+      ok: consistencyCmd.ok,
+      exit: consistencyCmd.exitCode,
+      families: consistencyJson?.summary?.families ?? null,
+      screens: consistencyJson?.summary?.screens ?? null,
+      errors: summary.errors,
+      warnings: summary.warnings,
+      infos: summary.infos,
+      top_rules: consistencyJson ? topRules(consistencyJson) : [],
+    };
+  }
+
+  const nextActions = [];
+  if (draftWritten) {
+    nextActions.push('Review the bootstrap draft before editing the canonical visual-consistency-contract (accepted rows only; needs-review values are decided by humans).');
+  }
+  if ((bootstrap.component_gap_candidates ?? 0) > 0) {
+    nextActions.push('Propose Component Gaps (G-xxx) in component-gap-register for uncataloged shared components — accept stays human-only.');
+  }
+  nextActions.push(
+    existingContractFound
+      ? 'Apply accepted suggested additions to the existing canonical contract manually; never overwrite it wholesale.'
+      : 'Create the canonical visual-consistency-contract manually from accepted rows only (start from templates/design/visual-consistency-contract.template.md).',
+  );
+  nextActions.push('Re-run workflow:visual-consistency against the canonical contract (warning-first, not a gate).');
+  nextActions.push('Continue with the visual-reconcile / implement-screen skills for actual updates.');
+
+  return {
+    enabled: true,
+    status: findings.some((f) => f.severity === 'error') ? 'failed' : 'observed',
+    reason: null,
+    findings,
+    bootstrap,
+    consistency,
+    next_actions: nextActions,
+  };
+}
+
+// probe-summary.json / CLI --json 용 visual 요약 — 경로는 pathRef로만 노출한다
+// (raw stdout은 observations/* 파일이 정본; JSON에 중복 embed하지 않는다).
+function visualSummaryJson(opts, visual) {
+  if (!visual.enabled) {
+    return { enabled: false, status: visual.status, reason: visual.reason };
+  }
+  const observations = { bootstrap: pathRef(opts, path.join(opts.outDir, 'observations', 'visual-contract-bootstrap.json')) };
+  if (visual.consistency && visual.consistency.ran) {
+    observations.consistency = pathRef(opts, path.join(opts.outDir, 'observations', 'visual-consistency.json'));
+  }
+  return {
+    enabled: true,
+    status: visual.status,
+    draft_only: true,
+    gate: false,
+    findings: visual.findings,
+    bootstrap: {
+      ...visual.bootstrap,
+      draft_path: visual.bootstrap.draft_path ? pathRef(opts, visual.bootstrap.draft_path) : null,
+      existing_contract: {
+        ...visual.bootstrap.existing_contract,
+        path: pathRef(opts, visual.bootstrap.existing_contract.path),
+      },
+    },
+    consistency: visual.consistency,
+    observations,
+    next_actions: visual.next_actions,
+  };
+}
+
+function visualCounts(bootstrap) {
+  return (
+    `${bootstrap.screens ?? '?'} screen(s), ${bootstrap.candidate_families ?? '?'} candidate family(ies), ` +
+    `${bootstrap.suggested_contract_rows ?? '?'} suggested contract row(s), ` +
+    `${bootstrap.component_gap_candidates ?? '?'} component gap candidate(s), ` +
+    `findings ${bootstrap.errors ?? '?'} error(s) · ${bootstrap.warnings ?? '?'} warning(s) · ${bootstrap.infos ?? '?'} info(s)`
+  );
+}
+
+function visualConsistencyCell(consistency) {
+  if (!consistency || !consistency.ran) {
+    return `skipped — ${consistency ? consistency.reason : 'not run'}`;
+  }
+  const source =
+    consistency.contract_source === 'bootstrap-draft'
+      ? 'bootstrap-draft contract (advisory — draft contract, not the canonical one)'
+      : 'existing contract';
+  return (
+    `ran against ${source}: exit ${consistency.exit}, ` +
+    `${consistency.errors ?? '?'} error(s), ${consistency.warnings ?? '?'} warning(s), ${consistency.infos ?? '?'} info(s)` +
+    (consistency.top_rules && consistency.top_rules.length ? `; top rules: ${consistency.top_rules.join(', ')}` : '')
+  );
+}
+
+function visualRows(opts, visual) {
+  if (!visual.enabled) {
+    return [
+      '- Status: **skipped** — `--visual` not passed (default probe output/behavior unchanged).',
+      '- Enable with `npm run workflow:adoption-probe -- --repo <target-repo> --visual` to observe `workflow:visual-contract-bootstrap` (and, when a contract or bootstrap draft exists, `workflow:visual-consistency`) against the probe scratch copy.',
+      '- Boundaries: observation-only when enabled — draft/review output under the probe run dir, warning-first, not a gate, never auto-applied to the canonical contract.',
+    ].join('\n');
+  }
+  const b = visual.bootstrap;
+  const lines = [];
+  lines.push(`- Status: **${visual.status}** — draft-only visual observation (warning-first; not a gate, not approval, not confirmed promotion).`);
+  lines.push('');
+  lines.push('| Item | Observation |');
+  lines.push('|---|---|');
+  lines.push(`| Bootstrap run | exit ${b.exit} — ${visualCounts(b)} |`);
+  lines.push(
+    `| Bootstrap draft | ${b.draft_path ? `\`${pathRef(opts, b.draft_path)}\` (review-only draft — apply accepted rows manually)` : 'not written (bootstrap failed or structural error)'} |`,
+  );
+  lines.push(
+    `| Existing contract | ${
+      b.existing_contract.found
+        ? `found: \`${pathRef(opts, b.existing_contract.path)}\` — used as consistency baseline; bootstrap emits suggested additions only (no overwrite)`
+        : `not found (\`${pathRef(opts, b.existing_contract.path)}\`) — cold start`
+    } |`,
+  );
+  lines.push(`| Visual consistency | ${visualConsistencyCell(visual.consistency)} |`);
+  const observationFiles = [`\`${pathRef(opts, path.join(opts.outDir, 'observations', 'visual-contract-bootstrap.json'))}\``];
+  if (visual.consistency && visual.consistency.ran) {
+    observationFiles.push(`\`${pathRef(opts, path.join(opts.outDir, 'observations', 'visual-consistency.json'))}\``);
+  }
+  lines.push(`| Observations | ${observationFiles.join(' · ')} |`);
+  for (const f of visual.findings) {
+    lines.push(`| Finding | [${f.severity}] ${f.rule}: ${sanitizePathishEvidenceText(f.message, opts)} |`);
+  }
+  lines.push('');
+  lines.push('Recommended next actions (human review only):');
+  lines.push('');
+  visual.next_actions.forEach((action, i) => lines.push(`${i + 1}. ${action}`));
+  lines.push('');
+  lines.push(
+    '- Boundaries: visual-consistency warnings are diagnostics, never approval/readiness/`confirmed` promotion; the bootstrap draft is never auto-applied to the canonical contract; no live docs/src were modified; Component Gap accept and Open Decision resolve stay human-only.',
+  );
+  return lines.join('\n');
+}
+
 function readinessSummary(readinessJson) {
   if (!readinessJson || typeof readinessJson !== 'object') return 'not parsed';
   const entries = Object.entries(readinessJson);
@@ -945,7 +1234,7 @@ function commandRows(opts, observation, roleMap) {
 }
 
 function outputRows(opts, outputs) {
-  return [
+  const rows = [
     ['Adoption report', outputs.adoption_report, 'draft'],
     ['Layout draft', outputs.project_layout, 'draft; scratch-readiness input'],
     ['Implementation policy draft', outputs.implementation_policy_draft, 'draft; not live wired'],
@@ -954,12 +1243,14 @@ function outputRows(opts, outputs) {
     ['Visual intake note', outputs.visual_spec_intake_note, 'draft'],
     ['testID intake note', outputs.testid_intake_note, 'draft'],
     ['Tier3 live wiring implementation note', outputs.tier3_live_wiring_note, 'draft'],
-  ]
-    .map(([name, file, status]) => `| ${name} | \`${pathRef(opts, file)}\` | ${status} |`)
-    .join('\n');
+  ];
+  if (outputs.visual_contract_bootstrap_draft) {
+    rows.push(['Visual contract bootstrap draft', outputs.visual_contract_bootstrap_draft, 'draft; review-only — never auto-applied to the canonical contract']);
+  }
+  return rows.map(([name, file, status]) => `| ${name} | \`${pathRef(opts, file)}\` | ${status} |`).join('\n');
 }
 
-function renderAdoptionReport(opts, env, roleMap, extraLayers, observation, f3, outputs) {
+function renderAdoptionReport(opts, env, roleMap, extraLayers, observation, f3, visual, outputs) {
   const axis1 = Object.values(roleMap).some((r) => r.confidence === 'confirmed')
     ? 'possible/partial: role map drafted from observed paths'
     : 'candidate only: no matching src layout observed';
@@ -983,6 +1274,7 @@ function renderAdoptionReport(opts, env, roleMap, extraLayers, observation, f3, 
     CATALOG_SUMMARY: catalogSummary(observation, roleMap),
     VALIDATE_SUMMARY: validateSummary(observation.validateJson, observation.commands.validate),
     COMMAND_ROWS: commandRows(opts, observation, roleMap),
+    VISUAL_ROWS: visualRows(opts, visual),
     OBSERVATIONS_PATH: pathRef(opts, path.join(opts.outDir, 'observations')),
     BLIND_SPOT_ROWS: blindSpotRows(extraLayers, observation, f3),
     OUTPUT_ROWS: outputRows(opts, outputs),
@@ -1094,7 +1386,7 @@ Observed extra layers in this run: ${extraLayers.length ? extraLayers.map((l) =>
 `;
 }
 
-function renderSummary(opts, env, roleMap, extraLayers, observation, f3, outputs) {
+function renderSummary(opts, env, roleMap, extraLayers, observation, f3, visual, outputs) {
   const data = {
     probe_id: opts.id,
     project_name: opts.projectName,
@@ -1125,6 +1417,7 @@ function renderSummary(opts, env, roleMap, extraLayers, observation, f3, outputs
       catalog: catalogSummary(observation, roleMap),
       f3,
     },
+    visual: visualSummaryJson(opts, visual),
     outputs: Object.fromEntries(Object.entries(outputs).map(([key, value]) => [key, pathRef(opts, value)])),
   };
   return JSON.stringify(data, null, 2) + '\n';
@@ -1164,7 +1457,7 @@ function assertDraftOutDir(repoRoot, docsDir, srcDir, outDir, id) {
 
 export function normalizeOptions(flags = {}) {
   const cwd = path.resolve(flags.cwd || process.cwd());
-  const repoRoot = path.resolve(flags.repo || process.cwd());
+  const repoRoot = path.resolve(flags.repo || flags['repo-root'] || process.cwd());
   const srcDir = resolveUnder(repoRoot, flags.src || 'src');
   const docsDir = resolveUnder(repoRoot, flags.docs || path.join('docs', 'frontend-workflow'));
   const id = sanitizeId(flags.id);
@@ -1172,6 +1465,12 @@ export function normalizeOptions(flags = {}) {
   assertDraftOutDir(repoRoot, docsDir, srcDir, outDir, id);
   const projectName = flags['project-name'] || packageName(repoRoot);
   const srcRel = safeRepoRel(repoRoot, srcDir, 'src');
+  const visual = Boolean(flags.visual);
+  for (const key of ['visual-domain', 'visual-screen', 'visual-contract', 'skip-visual-consistency']) {
+    if (flags[key] != null && !visual) {
+      throw adoptionProbeCliError(`--${key} requires --visual`);
+    }
+  }
   return {
     cwd,
     id,
@@ -1184,6 +1483,15 @@ export function normalizeOptions(flags = {}) {
     repoRef: pathRef({ cwd, repoRoot, outDir, srcDir, docsDir }, repoRoot),
     date: flags.date || todayISO(),
     skipF3: Boolean(flags['skip-f3']),
+    visual,
+    visualDomain: typeof flags['visual-domain'] === 'string' ? flags['visual-domain'] : null,
+    visualScreens:
+      typeof flags['visual-screen'] === 'string'
+        ? flags['visual-screen'].split(',').map((s) => s.trim()).filter(Boolean)
+        : [],
+    visualContract:
+      typeof flags['visual-contract'] === 'string' ? resolveUnder(repoRoot, flags['visual-contract']) : null,
+    skipVisualConsistency: Boolean(flags['skip-visual-consistency']),
     kitSnapshot: kitSnapshot(),
     layoutPath: path.join(outDir, 'project-layout.draft.yaml'),
   };
@@ -1211,6 +1519,7 @@ export function runAdoptionProbe(flags = {}) {
   const scratch = prepareScratch(opts);
   const observation = observeWorkflow(opts, scratch);
   const f3 = observeF3(opts, roleMap, extraLayers, observation);
+  const visual = observeVisual(opts, scratch);
 
   const outputs = {
     adoption_report: path.join(opts.outDir, 'adoption-report.md'),
@@ -1223,19 +1532,22 @@ export function runAdoptionProbe(flags = {}) {
     tier3_live_wiring_note: path.join(opts.outDir, 'tier3-live-wiring-implementation-note.md'),
     summary: path.join(opts.outDir, 'probe-summary.json'),
   };
+  if (visual.enabled && visual.bootstrap && visual.bootstrap.draft_path) {
+    outputs.visual_contract_bootstrap_draft = visual.bootstrap.draft_path;
+  }
 
-  writeFile(outputs.adoption_report, renderAdoptionReport(opts, env, roleMap, extraLayers, observation, f3, outputs));
+  writeFile(outputs.adoption_report, renderAdoptionReport(opts, env, roleMap, extraLayers, observation, f3, visual, outputs));
   writeFile(outputs.tier3_gap_report, renderTier3GapReport(opts, extraLayers, observation, f3));
   writeFile(outputs.visual_spec_intake_note, renderVisualNote(opts, env));
   writeFile(outputs.testid_intake_note, renderTestIdNote(opts, env));
   writeFile(outputs.tier3_live_wiring_note, renderTier3ImplementationNote(opts, extraLayers));
-  writeFile(outputs.summary, renderSummary(opts, env, roleMap, extraLayers, observation, f3, outputs));
+  writeFile(outputs.summary, renderSummary(opts, env, roleMap, extraLayers, observation, f3, visual, outputs));
 
-  return { opts, env, roleMap, extraLayers, observation, f3, policyDraft, outputs };
+  return { opts, env, roleMap, extraLayers, observation, f3, visual, policyDraft, outputs };
 }
 
 export function formatProbeResult(result) {
-  const { opts, observation, f3, outputs } = result;
+  const { opts, observation, f3, visual, outputs } = result;
   const lines = [];
   lines.push('workflow:adoption-probe — draft-only run complete');
   lines.push(`  probe_id: ${opts.id}`);
@@ -1249,11 +1561,33 @@ export function formatProbeResult(result) {
   lines.push(`  catalog  : ${catalogSummary(observation, result.roleMap)}`);
   lines.push(`  layers   : ${observation.layerInventory ? `${observation.layerInventory.layers.length} inventory row(s), readiness access wired; hard gates off` : 'not observed'}`);
   lines.push(`  f3       : ${f3Summary(f3)}`);
+  if (visual && visual.enabled) {
+    const consistencyPart =
+      visual.consistency && visual.consistency.ran
+        ? `consistency ${visual.consistency.warnings ?? '?'} warning(s) [${visual.consistency.contract_source}]`
+        : `consistency skipped (${visual.consistency ? visual.consistency.reason : 'not run'})`;
+    lines.push(
+      `  visual   : ${visual.status} — bootstrap ${visual.bootstrap.candidate_families ?? '?'} candidate family(ies), ` +
+        `${visual.bootstrap.component_gap_candidates ?? '?'} gap candidate(s); ${consistencyPart} (draft-only, not a gate)`,
+    );
+  }
   lines.push('  invariant: draft-only; live docs/source/policy/CI/pre-edit/OD/confirmed untouched');
   return lines.join('\n') + '\n';
 }
 
-const STRING_FLAGS = new Set(['repo', 'out', 'src', 'docs', 'id', 'date', 'project-name']);
+const STRING_FLAGS = new Set([
+  'repo',
+  'repo-root',
+  'out',
+  'src',
+  'docs',
+  'id',
+  'date',
+  'project-name',
+  'visual-domain',
+  'visual-screen',
+  'visual-contract',
+]);
 
 function adoptionProbeCliError(message) {
   const err = new Error(message);
@@ -1265,8 +1599,14 @@ export function cliMain(argv) {
   try {
     const flags = parseCliArgs(argv);
     const result = runAdoptionProbe(flags);
-    if (flags.json) process.stdout.write(JSON.stringify(displayOutputs(result.opts, result.outputs), null, 2) + '\n');
-    else process.stdout.write(formatProbeResult(result));
+    if (flags.json) {
+      const payload = displayOutputs(result.opts, result.outputs);
+      // --visual일 때만 visual 요약을 추가한다 — 기본(--visual 없음) JSON 계약은 그대로 유지.
+      if (result.visual && result.visual.enabled) payload.visual = visualSummaryJson(result.opts, result.visual);
+      process.stdout.write(JSON.stringify(payload, null, 2) + '\n');
+    } else {
+      process.stdout.write(formatProbeResult(result));
+    }
   } catch (err) {
     if (err && err.name === 'AdoptionProbeCliError') {
       process.stderr.write(`workflow:adoption-probe: ${err.message}\n`);

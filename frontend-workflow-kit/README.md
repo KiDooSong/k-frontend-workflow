@@ -206,6 +206,8 @@ npm run workflow:visual-consistency -- --docs docs/frontend-workflow --src src -
 
 contract 가 없으면 visual-consistency 는 조용히 skip 한다(cold start 를 막지 않음). warning 은 drift 후보 진단일 뿐 approval, readiness promotion, `confirmed` 승격, gate 가 아니다. behavior 는 여전히 ScreenSpec/Navigation Map/Open Decision 경로만 탄다. 계약 정본: [docs/reference/visual-reconciliation.md](docs/reference/visual-reconciliation.md).
 
+brownfield repo 전체 도입 진단과 함께 보려면 `workflow:adoption-probe -- --visual` 로 위 두 명령의 observation 을 probe scratch copy 에서 한 번에 관측할 수 있다 — bootstrap draft/관측 파일은 probe run dir 에만 남고, adoption report 에 요약 섹션이 추가된다(마찬가지로 draft-only·not a gate, [COMMANDS.md](COMMANDS.md) §Adoption Probe).
+
 ## Optional Web E2E Evidence
 
 웹 E2E 계획/생성/검증/수리가 필요하면 `skills/e2e-agent/SKILL.md`를 사용한다.
