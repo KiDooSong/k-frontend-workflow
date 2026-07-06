@@ -630,6 +630,69 @@ test('--visual uses an existing canonical contract as the consistency baseline w
   assert.match(report, /used as consistency baseline; bootstrap emits suggested additions only \(no overwrite\)/);
 });
 
+test('multi-value --visual-screen keeps bootstrap and consistency on the same scope', (t) => {
+  const repo = makeVisualRepo(t);
+  // 기존 contract 에 unrelated billing family(BILL-001 — ScreenSpec 없음)를 넣는다.
+  // scope 가 새면 consistency 가 screen-not-found(BILL-001) warning 을 report 에 섞는다.
+  write(
+    path.join(repo, 'docs', 'frontend-workflow', 'design', 'visual-consistency-contract.md'),
+    [
+      '---',
+      'artifact_id: "visual-consistency-contract"',
+      'artifact_type: visual-consistency-contract',
+      'status: draft',
+      '---',
+      '',
+      '# Visual Consistency Contract',
+      '',
+      '## Screen Families',
+      '',
+      '| Family | Member Screens | Layout/Shell Owner | Status |',
+      '|---|---|---|---|',
+      '| auth | AUTH-001, AUTH-002 | AuthShell | draft |',
+      '| billing | BILL-001 | BillingShell | draft |',
+      '',
+      '## Shared Component Rules',
+      '',
+      '| Component | Owned By | Applies To Families | Direct Screen Import | Positioning Owner |',
+      '|---|---|---|---|---|',
+      '| BrandLogo | AuthShell | auth | forbidden | shell |',
+      '',
+    ].join('\n'),
+  );
+  const out = path.join(repo, 'temp', 'runs', 'adoption-probe-visual-screens');
+  const result = runAdoptionProbe({
+    repo,
+    out,
+    id: 'visual-screens',
+    date: '2026-07-06',
+    'skip-f3': true,
+    visual: true,
+    'visual-screen': 'AUTH-001,AUTH-002',
+  });
+
+  assert.equal(result.visual.bootstrap.screens, 2);
+  assert.equal(result.visual.consistency.ran, true);
+  assert.equal(result.visual.consistency.contract_source, 'existing');
+
+  // 목록 전체가 consistency 에도 그대로 전달된다 (bootstrap 과 동일 scope).
+  const observation = JSON.parse(
+    fs.readFileSync(path.join(out, 'observations', 'visual-consistency.json'), 'utf8'),
+  );
+  const screenFlagIndex = observation.args.indexOf('--screen');
+  assert.notEqual(screenFlagIndex, -1, 'consistency invocation should carry --screen');
+  assert.equal(observation.args[screenFlagIndex + 1], 'AUTH-001,AUTH-002');
+
+  // unrelated billing family 는 범위 밖 — screen-not-found(BILL-001) 가 섞이지 않는다.
+  assert.equal(result.visual.consistency.families, 1);
+  assert.ok(!result.visual.consistency.top_rules.some((rule) => /screen-not-found/.test(rule)));
+  const consistencyReport = JSON.parse(observation.stdout);
+  assert.deepEqual(consistencyReport.families.map((f) => f.family), ['auth']);
+  assert.equal(consistencyReport.findings.some((f) => f.screen_id === 'BILL-001'), false);
+  // filter 범위 안의 실제 drift(AUTH-002 의 forbidden BrandLogo 직접 import)는 그대로 남는다.
+  assert.ok(result.visual.consistency.top_rules.some((rule) => /direct-screen-import/.test(rule)));
+});
+
 test('--visual-domain narrows the bootstrap scan and --skip-visual-consistency skips the consistency run', (t) => {
   const repo = makeVisualRepo(t);
   const out = path.join(repo, 'temp', 'runs', 'adoption-probe-visual-domain');

@@ -123,7 +123,12 @@ CI artifact accumulation is observation-only. The Actions workflow writes the de
 npm run workflow:visual-consistency -- --docs docs/frontend-workflow --src src --json
 npm run workflow:visual-consistency -- --docs docs/frontend-workflow --domain auth
 npm run workflow:visual-consistency -- --docs docs/frontend-workflow --screen AUTH-001
+npm run workflow:visual-consistency -- --docs docs/frontend-workflow --screen AUTH-001,AUTH-002
 ```
+
+`--screen` accepts a single canonical screen id or a comma-separated list
+(mirroring `workflow:visual-contract-bootstrap --screen`), so both tools can be
+scoped identically.
 
 `workflow:visual-consistency` is a warning-first cross-screen diagnostic. It reads
 the visual consistency contract (`design/visual-consistency-contract.md`, template:

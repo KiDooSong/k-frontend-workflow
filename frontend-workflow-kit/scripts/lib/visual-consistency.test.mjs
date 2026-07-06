@@ -540,6 +540,36 @@ test('--screen 필터 — 해당 screen 의 finding 만 남는다', () => {
   );
 });
 
+test('--screen 콤마 목록 필터 — 목록 밖 family/finding 은 제외한다 (bootstrap --screen 동형)', () => {
+  withTree(
+    {
+      contract:
+        CONTRACT_HEADER +
+        familiesTable([
+          '| auth | AUTH-001, AUTH-404 | AuthShell | - | - | - | - | draft | - |',
+          '| main | MAIN-001, MAIN-404 | MainShell | - | - | - | - | draft | - |',
+        ]),
+      specs: [
+        { domain: 'auth', slug: 'login', screenId: 'AUTH-001', mapping: 'draft' },
+        { domain: 'main', slug: 'home', screenId: 'MAIN-001', mapping: 'draft' },
+      ],
+    },
+    (docsDir) => {
+      // auth 목록만: unrelated main family 의 MAIN-404 screen-not-found 는 섞이지 않는다.
+      const auth = analyzeVisualConsistency({ docsDir, screen: 'AUTH-001,AUTH-404' });
+      assert.deepEqual(auth.families.map((f) => f.family), ['auth']);
+      assert.deepEqual(rulesOf(auth), ['warning:screen-not-found']);
+      assert.equal(auth.findings[0].screen_id, 'AUTH-404');
+
+      // family 를 가로지르는 목록: 두 family 모두 대상이 되고 목록 밖 화면은 여전히 제외.
+      const cross = analyzeVisualConsistency({ docsDir, screen: 'AUTH-404,MAIN-404' });
+      assert.deepEqual(cross.families.map((f) => f.family), ['auth', 'main']);
+      assert.deepEqual(rulesOf(cross), ['warning:screen-not-found', 'warning:screen-not-found']);
+      assert.deepEqual(cross.findings.map((f) => f.screen_id).sort(), ['AUTH-404', 'MAIN-404']);
+    },
+  );
+});
+
 test('--domain 필터 — 해당 도메인 화면을 포함하는 family 만 본다', () => {
   withTree(
     {

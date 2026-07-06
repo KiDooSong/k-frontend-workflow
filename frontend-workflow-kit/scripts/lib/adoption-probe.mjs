@@ -1011,7 +1011,10 @@ function observeVisual(opts, scratch) {
     if (contractSource === 'bootstrap-draft') consistencyArgs.push('--contract', draftPath);
     else if (contractPaths.overridden) consistencyArgs.push('--contract', contractPaths.scratchContract);
     if (opts.visualDomain) consistencyArgs.push('--domain', opts.visualDomain);
-    if (opts.visualScreens.length === 1) consistencyArgs.push('--screen', opts.visualScreens[0]);
+    // bootstrap 과 동일한 screen scope 를 유지한다 — visual-consistency --screen 도
+    // 콤마 목록을 받으므로 목록 전체를 그대로 넘긴다 (scope 불일치로 unrelated
+    // family warning 이 adoption report 에 섞이는 것 방지).
+    if (opts.visualScreens.length) consistencyArgs.push('--screen', opts.visualScreens.join(','));
     consistencyArgs.push('--json');
     const consistencyCmd = runNodeScript('visual-consistency.mjs', consistencyArgs, { cwd: opts.outDir });
     writeObservation(opts, 'visual-consistency', consistencyCmd);

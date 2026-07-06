@@ -9,8 +9,9 @@
 // 계약 정본: docs/reference/visual-reconciliation.md. 로직: scripts/lib/visual-consistency.mjs.
 //
 // 사용:
-//   node scripts/visual-consistency.mjs [--docs <dir>] [--src <dir>] [--domain <d>] [--screen <ID>]
-//                                       [--contract <path>] [--json] [--out <path>] [--enforce]
+//   node scripts/visual-consistency.mjs [--docs <dir>] [--src <dir>] [--domain <d>]
+//                                       [--screen <ID[,ID...]>] [--contract <path>]
+//                                       [--json] [--out <path>] [--enforce]
 //
 // 옵션:
 //   --docs <dir>      문서 루트(기본 docs/frontend-workflow).
@@ -18,7 +19,8 @@
 //                     screen_entry 힌트는 프로젝트 루트(= dirname(src)) 상대다.
 //                     명시했는데 디렉토리가 아니면 source-not-found warning 으로 표면화한다.
 //   --domain <d>      선택. 해당 도메인 화면을 포함하는 family 로 범위를 좁힌다.
-//   --screen <ID>     선택. 해당 canonical Screen ID 를 포함하는 family/finding 만 본다.
+//   --screen <ID[,..]> 선택. 해당 canonical Screen ID 들만 본다 (콤마로 여러 개 —
+//                     visual-contract-bootstrap --screen 과 동형).
 //   --contract <path> 선택. contract 경로 override (기본 <docs>/design/visual-consistency-contract.md).
 //   --json            기계가독 JSON 리포트를 stdout 으로 (결정적 — 정렬 고정·타임스탬프 없음).
 //   --out <path>      선택. 같은 JSON payload 를 파일로도 쓴다 (요청 시에만 — 기본 미출력).
@@ -42,8 +44,9 @@ function helpText() {
   return `visual-consistency — cross-screen visual contract check (warning-first)
 
 Usage:
-  node scripts/visual-consistency.mjs [--docs <dir>] [--src <dir>] [--domain <d>] [--screen <ID>]
-                                      [--contract <path>] [--json] [--out <path>] [--enforce]
+  node scripts/visual-consistency.mjs [--docs <dir>] [--src <dir>] [--domain <d>]
+                                      [--screen <ID[,ID...]>] [--contract <path>]
+                                      [--json] [--out <path>] [--enforce]
 
 Options:
   --docs <dir>      Docs root. Default: docs/frontend-workflow.
@@ -52,7 +55,8 @@ Options:
                     If given but not a directory, a source-not-found warning is
                     reported instead of a silent skip.
   --domain <d>      Optional. Narrow to families containing screens of this domain.
-  --screen <ID>     Optional. Narrow to families/findings for this canonical screen id.
+  --screen <ID[,..]> Optional. Narrow to families/findings for these canonical screen
+                    ids (comma-separated — mirrors visual-contract-bootstrap --screen).
   --contract <path> Optional contract path override.
                     Default: <docs>/design/visual-consistency-contract.md.
   --json            Print a deterministic machine-readable JSON report to stdout.
