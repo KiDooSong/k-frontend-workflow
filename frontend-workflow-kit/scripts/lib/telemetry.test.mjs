@@ -230,6 +230,18 @@ test('compareTelemetryLedger reports match, missing, drift, and invalid-json wit
     assert.equal(match.warning_count, 0);
     assert.deepEqual(match.findings, []);
 
+    const canonicalDrift = JSON.parse(stableTelemetryJson(report));
+    canonicalDrift.schema_version = 999;
+    canonicalDrift.ledger_version = 999;
+    canonicalDrift.kind = 'unexpected-kind';
+    canonicalDrift.generated_at = '2026-07-06T00:00:00Z';
+    canonicalDrift.promotion = 'approved';
+    fs.writeFileSync(path.join(root, 'telemetry-ledger.json'), `${JSON.stringify(canonicalDrift, null, 2)}\n`, 'utf8');
+    const strictDrift = compareTelemetryLedger({ filePath: 'telemetry-ledger.json', report, rootDir: root });
+    assert.equal(strictDrift.status, 'drift');
+    assert.equal(strictDrift.warning_count, 1);
+    assert.equal(strictDrift.findings[0].check, 'telemetry-ledger-drift');
+
     const drifted = JSON.parse(stableTelemetryJson(report));
     drifted.surfaces[0].warning_count = 1;
     fs.writeFileSync(path.join(root, 'telemetry-ledger.json'), stableTelemetryJson(drifted), 'utf8');
@@ -533,6 +545,51 @@ test('CLI --check drift exits 0 and reports warning-only drift', () => {
   );
 });
 
+test('CLI --check treats schema and forbidden extra field drift as warning-only drift', () => {
+  withRoot(
+    {
+      'docs/frontend-workflow/_meta/route-tree.txt': 'file.tsx route: /home\n',
+      'docs/frontend-workflow/domains/app/screens/home/screen-spec.md':
+        '---\nscreen_id: home\ndomain: app\nroute: "/home"\n---\n\n## Purpose\nHome\n',
+      'docs/readme.md': '# Readme\n',
+    },
+    (root) => {
+      const out = spawnSync(process.execPath, [
+        CLI,
+        '--root',
+        root,
+        '--out',
+        'telemetry-ledger.json',
+      ], { encoding: 'utf8' });
+      assert.equal(out.status, 0, out.stderr);
+      const ledgerPath = path.join(root, 'telemetry-ledger.json');
+      const stale = JSON.parse(fs.readFileSync(ledgerPath, 'utf8'));
+      stale.schema_version = 999;
+      stale.ledger_version = 999;
+      stale.kind = 'unexpected-kind';
+      stale.generated_at = '2026-07-06T00:00:00Z';
+      stale.promotion = 'approved';
+      fs.writeFileSync(ledgerPath, `${JSON.stringify(stale, null, 2)}\n`, 'utf8');
+
+      const r = spawnSync(process.execPath, [
+        CLI,
+        '--root',
+        root,
+        '--check',
+        'telemetry-ledger.json',
+        '--json',
+      ], { encoding: 'utf8' });
+      assert.equal(r.status, 0, r.stderr);
+      assert.equal(r.stderr, '');
+      const obj = JSON.parse(r.stdout);
+      assert.equal(obj.ok, true);
+      assert.equal(obj.check.status, 'drift');
+      assert.equal(obj.check.warning_count, 1);
+      assert.equal(obj.check.findings[0].check, 'telemetry-ledger-drift');
+    },
+  );
+});
+
 test('CLI --check missing exits 0 and reports warning-only missing ledger', () => {
   withRoot(
     {
@@ -556,6 +613,44 @@ test('CLI --check missing exits 0 and reports warning-only missing ledger', () =
       assert.equal(obj.check.findings[0].reason, 'ledger file not found');
     },
   );
+});
+
+test('CLI rejects empty ledger path values with exit 2', () => {
+  withRoot({}, (root) => {
+    const out = spawnSync(process.execPath, [
+      CLI,
+      '--root',
+      root,
+      '--out=',
+    ], { encoding: 'utf8' });
+    assert.equal(out.status, 2);
+    assert.match(out.stderr, /--out requires a file path/);
+
+    const check = spawnSync(process.execPath, [
+      CLI,
+      '--root',
+      root,
+      '--check=',
+    ], { encoding: 'utf8' });
+    assert.equal(check.status, 2);
+    assert.match(check.stderr, /--check requires a file path/);
+  });
+});
+
+test('CLI rejects fractional determinism runs with exit 2', () => {
+  withRoot({}, (root) => {
+    const r = spawnSync(process.execPath, [
+      CLI,
+      '--root',
+      root,
+      '--out',
+      'telemetry-ledger.json',
+      '--determinism-runs',
+      '1.9',
+    ], { encoding: 'utf8' });
+    assert.equal(r.status, 2);
+    assert.match(r.stderr, /--determinism-runs must be a positive integer/);
+  });
 });
 
 test('CLI rejects simultaneous --out and --check with exit 2', () => {

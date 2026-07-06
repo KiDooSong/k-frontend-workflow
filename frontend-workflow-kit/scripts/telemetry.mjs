@@ -47,9 +47,14 @@ Behavior:
 
 function parseDeterminismRuns(value, fallback) {
   if (value == null || value === true) return fallback;
-  const n = Number(value);
-  if (!Number.isFinite(n) || n < 1) return null;
-  return Math.trunc(n);
+  const text = String(value).trim();
+  if (!/^[1-9]\d*$/.test(text)) return null;
+  const n = Number(text);
+  return Number.isSafeInteger(n) ? n : null;
+}
+
+function hasFlag(flags, name) {
+  return Object.prototype.hasOwnProperty.call(flags, name);
 }
 
 function usageError(message) {
@@ -71,11 +76,14 @@ function main() {
   const docsDir = typeof flags.docs === 'string' && flags.docs
     ? flags.docs
     : DEFAULTS.docs;
-  const wantsOut = typeof flags.out === 'string' && flags.out;
-  const wantsCheck = typeof flags.check === 'string' && flags.check;
+  const wantsOut = hasFlag(flags, 'out');
+  const wantsCheck = hasFlag(flags, 'check');
 
-  if (flags.out === true || flags.check === true) {
-    usageError('--out and --check require file paths');
+  if (wantsOut && (typeof flags.out !== 'string' || flags.out.length === 0)) {
+    usageError('--out requires a file path');
+  }
+  if (wantsCheck && (typeof flags.check !== 'string' || flags.check.length === 0)) {
+    usageError('--check requires a file path');
   }
   if (wantsOut && wantsCheck) {
     usageError('--out and --check cannot be used together in this release');

@@ -403,9 +403,10 @@ export function compareTelemetryLedger({ filePath, report, rootDir = process.cwd
     });
   }
 
-  let parsed;
+  let existingRaw;
   try {
-    parsed = JSON.parse(fs.readFileSync(resolved, 'utf8'));
+    existingRaw = fs.readFileSync(resolved, 'utf8');
+    JSON.parse(existingRaw);
   } catch {
     return checkResult({
       rootDir,
@@ -417,8 +418,7 @@ export function compareTelemetryLedger({ filePath, report, rootDir = process.cwd
   }
 
   const currentJson = stableTelemetryJson(report);
-  const existingJson = stableTelemetryJson(parsed);
-  if (currentJson !== existingJson) {
+  if (currentJson !== existingRaw) {
     return checkResult({
       rootDir,
       filePath: resolved,
