@@ -86,7 +86,7 @@ npm run workflow:validate
 
 - state/readiness/validate 에 전달한 **동일한 `--docs`/`--src` 기준**을 visual-consistency 에도
   전달한다 (monorepo 포함). `--src` 를 빼면 핵심 소스 검사(직접 import · ad-hoc positioning ·
-  hardcoded copy)가 통째로 skip 된다 — 잘못된 `--src` 는 `source-not-found` warning 으로 표면화된다.
+  hardcoded copy)가 통째로 skip 된다 — 디렉토리가 아닌 `--src`(오타 등)는 `source-not-found` warning 으로 표면화된다.
 - 소스 파일이 바뀌었으면 가장 작은 관련 lint/test 를 먼저 돌린다.
 - visual evidence 가 요청되면 [e2e-agent](../e2e-agent/SKILL.md) `capture` 를 optional
   Stage 08 evidence 로 호출한다 — screenshot 을 pass/fail approval 로 다루지 않는다.

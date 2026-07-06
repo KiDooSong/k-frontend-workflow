@@ -60,8 +60,8 @@ consistency** 를 다룬다 — "이 화면이 맞게 구현됐나"가 아니라
 7. **문서 업데이트 후 검증한다**: `workflow:state` → `workflow:readiness` →
    `workflow:validate` → `workflow:visual-consistency`(warning-first). 앞 명령들에
    전달한 것과 **동일한 `--docs`/`--src` 기준**을 전달한다 — `--src` 가 없으면 소스
-   휴리스틱(직접 import·ad-hoc positioning·copy)이 skip 되고, 잘못된 `--src` 는
-   `source-not-found` warning 으로 표면화된다.
+   휴리스틱(직접 import·ad-hoc positioning·copy)이 skip 되고, 디렉토리가 아닌 `--src`(오타 등)는
+   `source-not-found` warning 으로 표면화된다(존재하지만 잘못된 디렉토리는 잡지 않는다).
 8. **구현은 implement-screen 또는 사람 지시로 넘긴다** — 이 흐름 자체는 readiness
    경계를 우회하지 않는다.
 
