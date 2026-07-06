@@ -746,6 +746,26 @@ const DEFAULT_FAKES = {
   'readiness-eval': {},
 };
 
+const REDTEAM_FAKES = {
+  redteam: {
+    tool: 'workflow:redteam',
+    mode: 'warning-first',
+    schema_version: 1,
+    ok: true,
+    summary: {
+      case_count: 11,
+      observed_gap_count: 1,
+      blocked_count: 2,
+      fail_closed_count: 6,
+      drift_detected_count: 0,
+      skipped_count: 1,
+      input_error_count: 1,
+      warning_count: 1,
+    },
+    cases: [],
+  },
+};
+
 const VISUAL_FAKES = {
   'visual-consistency': {
     tool: 'visual-consistency',
@@ -772,8 +792,8 @@ function surfaceIds(report) {
   return report.surfaces.map((surface) => surface.surface_id);
 }
 
-test('surface registry lists default, visual, and adoption groups in fixed order', () => {
-  assert.deepEqual(TELEMETRY_SURFACE_GROUPS, ['default', 'visual', 'adoption']);
+test('surface registry lists default, visual, adoption, and redteam groups in fixed order', () => {
+  assert.deepEqual(TELEMETRY_SURFACE_GROUPS, ['default', 'visual', 'adoption', 'redteam']);
   assert.deepEqual(listTelemetrySurfaces(), [
     { surface_id: 'route-cross-check', groups: ['default'], source_tool: 'workflow:route-cross-check', kind: 'cli' },
     { surface_id: 'doc-drift', groups: ['default'], source_tool: 'workflow:doc-drift', kind: 'cli' },
@@ -781,6 +801,7 @@ test('surface registry lists default, visual, and adoption groups in fixed order
     { surface_id: 'visual-consistency', groups: ['visual'], source_tool: 'workflow:visual-consistency', kind: 'cli' },
     { surface_id: 'visual-contract-bootstrap', groups: ['visual'], source_tool: 'workflow:visual-contract-bootstrap', kind: 'cli' },
     { surface_id: 'adoption-probe-summary', groups: ['adoption'], source_tool: 'workflow:adoption-probe', kind: 'ingest' },
+    { surface_id: 'redteam', groups: ['redteam'], source_tool: 'workflow:redteam', kind: 'cli' },
   ]);
 });
 
@@ -825,15 +846,15 @@ test('includeGroups visual adds visual surfaces in fixed registry order', () => 
   });
 });
 
-test('includeGroups all equals default plus visual and never implies adoption ingest', () => {
+test('includeGroups all equals the runnable groups (default+visual+redteam) and never implies adoption ingest', () => {
   const report = collectTelemetry({
     rootDir: '/repo',
     scriptDir: '/kit/scripts',
     includeGroups: ['all'],
     fileExists: () => true,
-    runner: fakeRun({ ...DEFAULT_FAKES, ...VISUAL_FAKES }),
+    runner: fakeRun({ ...DEFAULT_FAKES, ...VISUAL_FAKES, ...REDTEAM_FAKES }),
   });
-  assert.deepEqual(surfaceIds(report), ALL_SURFACE_IDS);
+  assert.deepEqual(surfaceIds(report), [...ALL_SURFACE_IDS, 'redteam']);
   assert.equal(surfaceIds(report).includes('adoption-probe-summary'), false);
 });
 
@@ -1709,12 +1730,13 @@ test('unknown adoption sub-flag is rejected even on the --list-surfaces path', (
   });
 });
 
-test('CLI --include all does not select the adoption ingest surface', () => {
+test('CLI --include all selects the runnable groups but never the adoption ingest surface', () => {
   withRoot({ 'docs/readme.md': '# Readme\n' }, (root) => {
     const r = spawnSync(process.execPath, [CLI, '--root', root, '--include', 'all', '--json'], { encoding: 'utf8' });
     assert.equal(r.status, 0, r.stderr);
     const obj = JSON.parse(r.stdout);
-    assert.deepEqual(surfaceIds(obj), ALL_SURFACE_IDS);
+    assert.deepEqual(surfaceIds(obj), [...ALL_SURFACE_IDS, 'redteam']);
+    assert.equal(surfaceIds(obj).includes('adoption-probe-summary'), false);
   });
 });
 
@@ -1764,4 +1786,405 @@ test('human mode is stdout-only and does not introduce a verdict', () => {
   assert.match(lines[0], /warning-first/);
   assert.ok(lines.some((line) => /readiness-eval: available, warnings=0, blocking_mismatch=0/.test(line)));
   assert.equal(lines.some((line) => /verdict|pass|fail/i.test(line)), false);
+});
+
+// --- redteam opt-in surface group ---------------------------------------------
+
+test('default telemetry never runs the redteam surface without an opt-in', () => {
+  const report = collectTelemetry({
+    rootDir: '/repo',
+    scriptDir: '/kit/scripts',
+    fileExists: () => true,
+    runner: fakeRun({ ...DEFAULT_FAKES, ...REDTEAM_FAKES }),
+  });
+  assert.deepEqual(surfaceIds(report), DEFAULT_SURFACE_IDS);
+});
+
+test('includeGroups redteam adds the redteam surface with summary count normalization', () => {
+  const report = collectTelemetry({
+    rootDir: '/repo',
+    scriptDir: '/kit/scripts',
+    includeGroups: ['redteam'],
+    fileExists: () => true,
+    runner: fakeRun({ ...DEFAULT_FAKES, ...REDTEAM_FAKES }),
+  });
+  assert.deepEqual(surfaceIds(report), [...DEFAULT_SURFACE_IDS, 'redteam']);
+  const redteam = report.surfaces.find((s) => s.surface_id === 'redteam');
+  assert.deepEqual(redteam, {
+    surface_id: 'redteam',
+    available: true,
+    warning_count: 1,
+    source_tool: 'workflow:redteam',
+    case_count: 11,
+    observed_gap_count: 1,
+    blocked_count: 2,
+    fail_closed_count: 6,
+    drift_detected_count: 0,
+    skipped_count: 1,
+  });
+});
+
+test('surface id redteam adds the redteam surface on top of the defaults', () => {
+  const report = collectTelemetry({
+    rootDir: '/repo',
+    scriptDir: '/kit/scripts',
+    includeSurfaces: ['redteam'],
+    fileExists: () => true,
+    runner: fakeRun({ ...DEFAULT_FAKES, ...REDTEAM_FAKES }),
+  });
+  assert.deepEqual(surfaceIds(report), [...DEFAULT_SURFACE_IDS, 'redteam']);
+});
+
+test('redteam surface forwards only --json plus opt-in --include/--case and never mutating flags', () => {
+  const seen = new Map();
+  const capture = (call) => {
+    seen.set(call.surface_id, call.args);
+    return {
+      status: 0,
+      stdout: JSON.stringify({ ...DEFAULT_FAKES, ...REDTEAM_FAKES }[call.surface_id]),
+      stderr: '',
+    };
+  };
+  collectTelemetry({
+    rootDir: '/repo',
+    scriptDir: '/kit/scripts',
+    includeGroups: ['redteam'],
+    fileExists: () => true,
+    runner: capture,
+  });
+  assert.deepEqual(seen.get('redteam'), ['--json']);
+
+  seen.clear();
+  collectTelemetry({
+    rootDir: '/repo',
+    scriptDir: '/kit/scripts',
+    includeGroups: ['redteam'],
+    redteam: { include: 'core,self-resolve', caseIds: 'rt-d-to-unknown-current-gap' },
+    fileExists: () => true,
+    runner: capture,
+  });
+  assert.deepEqual(seen.get('redteam'), [
+    '--json',
+    '--include', 'core,self-resolve',
+    '--case', 'rt-d-to-unknown-current-gap',
+  ]);
+  // Default surfaces never receive the redteam forwarding flags.
+  assert.equal(seen.get('route-cross-check').includes('--include'), false);
+  for (const args of seen.values()) {
+    for (const forbidden of ['--out', '--check', '--format', '--enforce', '--apply', '--overwrite']) {
+      assert.equal(args.includes(forbidden), false);
+    }
+  }
+});
+
+test('redteam warning_count comes from the report summary and defaults to zero when absent', () => {
+  const report = collectTelemetry({
+    rootDir: '/repo',
+    scriptDir: '/kit/scripts',
+    includeGroups: ['redteam'],
+    fileExists: () => true,
+    runner: fakeRun({
+      ...DEFAULT_FAKES,
+      redteam: { tool: 'workflow:redteam', ok: true, cases: [] },
+    }),
+  });
+  const redteam = report.surfaces.find((s) => s.surface_id === 'redteam');
+  assert.equal(redteam.warning_count, 0);
+  assert.equal(redteam.case_count, 0);
+  assert.equal(redteam.observed_gap_count, 0);
+});
+
+test('redteam child failure, non-zero exit, and invalid JSON are unavailable, not telemetry failures', () => {
+  const base = {
+    rootDir: '/repo',
+    scriptDir: '/kit/scripts',
+    includeGroups: ['redteam'],
+    fileExists: () => true,
+  };
+  const unavailableShape = (reason) => ({
+    surface_id: 'redteam',
+    available: false,
+    warning_count: 0,
+    source_tool: 'workflow:redteam',
+    unavailable_reason: reason,
+  });
+
+  const exit2 = collectTelemetry({
+    ...base,
+    runner: (call) => (call.surface_id === 'redteam'
+      ? { status: 2, stdout: '', stderr: 'usage error' }
+      : { status: 0, stdout: JSON.stringify(DEFAULT_FAKES[call.surface_id]), stderr: '' }),
+  });
+  assert.equal(exit2.ok, true);
+  assert.deepEqual(exit2.surfaces.find((s) => s.surface_id === 'redteam'), unavailableShape('exit code 2'));
+
+  const badJson = collectTelemetry({
+    ...base,
+    runner: (call) => (call.surface_id === 'redteam'
+      ? { status: 0, stdout: 'not json', stderr: '' }
+      : { status: 0, stdout: JSON.stringify(DEFAULT_FAKES[call.surface_id]), stderr: '' }),
+  });
+  assert.deepEqual(badJson.surfaces.find((s) => s.surface_id === 'redteam'), unavailableShape('invalid JSON'));
+
+  const missing = collectTelemetry({
+    ...base,
+    fileExists: (p) => !p.endsWith('redteam.mjs'),
+    runner: fakeRun(DEFAULT_FAKES),
+  });
+  assert.deepEqual(missing.surfaces.find((s) => s.surface_id === 'redteam'), unavailableShape('script not found'));
+});
+
+test('ledger with include redteam records the redteam group, forwarded inputs, and normalized-json witness', () => {
+  const ledger = collectTelemetryLedger({
+    rootDir: '/repo',
+    scriptDir: '/kit/scripts',
+    determinismRuns: 2,
+    includeGroups: ['redteam'],
+    redteam: { include: 'self-resolve', caseIds: 'rt-d-to-unknown-current-gap' },
+    fileExists: () => true,
+    runner: fakeRun({ ...DEFAULT_FAKES, ...REDTEAM_FAKES }),
+  });
+  assert.deepEqual(ledger.inputs.include, ['default', 'redteam']);
+  assert.deepEqual(ledger.inputs.redteam, {
+    include: 'self-resolve',
+    case: 'rt-d-to-unknown-current-gap',
+  });
+  const redteam = ledger.surfaces.find((s) => s.surface_id === 'redteam');
+  assert.equal(redteam.case_count, 11);
+  assert.equal(redteam.observed_gap_count, 1);
+  assert.deepEqual(redteam.determinism, { runs: 2, identical: true, witness: 'normalized-json' });
+});
+
+test('ledger with redteam selected but no forwarding flags records the group without a redteam inputs key', () => {
+  const ledger = collectTelemetryLedger({
+    rootDir: '/repo',
+    scriptDir: '/kit/scripts',
+    determinismRuns: 1,
+    includeGroups: ['redteam'],
+    fileExists: () => true,
+    runner: fakeRun({ ...DEFAULT_FAKES, ...REDTEAM_FAKES }),
+  });
+  assert.deepEqual(ledger.inputs.include, ['default', 'redteam']);
+  assert.equal('redteam' in ledger.inputs, false);
+});
+
+test('ledger without a redteam opt-in never records redteam inputs even when forwarding opts are set programmatically', () => {
+  const ledger = collectTelemetryLedger({
+    rootDir: '/repo',
+    scriptDir: '/kit/scripts',
+    determinismRuns: 1,
+    redteam: { include: 'self-resolve' },
+    fileExists: () => true,
+    runner: fakeRun(DEFAULT_FAKES),
+  });
+  assert.deepEqual(ledger.inputs, {
+    root: '.',
+    docs: 'docs/frontend-workflow',
+  });
+});
+
+test('determinism marks changing redteam summaries as non-identical without failing', () => {
+  const ledger = collectTelemetryLedger({
+    rootDir: '/repo',
+    scriptDir: '/kit/scripts',
+    determinismRuns: 2,
+    includeGroups: ['redteam'],
+    fileExists: () => true,
+    runner: fakeRunSequence({
+      ...DEFAULT_FAKES,
+      redteam: [
+        REDTEAM_FAKES.redteam,
+        { ...REDTEAM_FAKES.redteam, summary: { ...REDTEAM_FAKES.redteam.summary, warning_count: 2 } },
+      ],
+    }),
+  });
+  const redteam = ledger.surfaces.find((s) => s.surface_id === 'redteam');
+  assert.equal(redteam.determinism.identical, false);
+  assert.equal(ledger.ok, true);
+});
+
+test('CLI --include redteam --json runs workflow:redteam and stays exit 0', () => {
+  const r = spawnSync(process.execPath, [CLI, '--include', 'redteam', '--json'], {
+    encoding: 'utf8',
+    cwd: KIT_ROOT,
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const report = JSON.parse(r.stdout);
+  const redteam = report.surfaces.find((s) => s.surface_id === 'redteam');
+  assert.ok(redteam, 'redteam surface missing');
+  assert.equal(redteam.available, true);
+  assert.ok(redteam.case_count >= 11);
+  assert.ok(redteam.observed_gap_count >= 1, 'D->U gap must surface through telemetry');
+  assert.equal(/verdict|threshold|promotion_ready|can_promote|"passed"|"failed"/i.test(r.stdout), false);
+});
+
+test('CLI rejects redteam sub-flags without a redteam opt-in with exit 2', () => {
+  for (const args of [
+    ['--redteam-include', 'self-resolve', '--json'],
+    ['--redteam-case', 'rt-d-to-unknown-current-gap', '--json'],
+  ]) {
+    const r = spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8' });
+    assert.equal(r.status, 2, r.stdout);
+    assert.match(r.stderr, /requires the redteam surface/);
+  }
+});
+
+test('CLI rejects unknown redteam sub-flags with exit 2', () => {
+  const r = spawnSync(
+    process.execPath,
+    [CLI, '--include', 'redteam', '--redteam-mode', 'hard', '--json'],
+    { encoding: 'utf8' },
+  );
+  assert.equal(r.status, 2, r.stdout);
+  assert.match(r.stderr, /unknown flag: --redteam-mode/);
+});
+
+test('CLI --list-surfaces --json includes the redteam surface without running child CLIs', () => {
+  const r = spawnSync(process.execPath, [CLI, '--list-surfaces', '--json'], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  const listing = JSON.parse(r.stdout);
+  const redteam = listing.surfaces.find((s) => s.surface_id === 'redteam');
+  assert.deepEqual(redteam, {
+    surface_id: 'redteam',
+    groups: ['redteam'],
+    source_tool: 'workflow:redteam',
+    kind: 'cli',
+  });
+});
+
+// --- doc-drift status heuristic forwarding --------------------------------------
+
+test('default doc-drift surface args stay unchanged without a doc-drift include', () => {
+  const seen = new Map();
+  collectTelemetry({
+    rootDir: '/repo',
+    scriptDir: '/kit/scripts',
+    fileExists: () => true,
+    runner: (call) => {
+      seen.set(call.surface_id, call.args);
+      return { status: 0, stdout: JSON.stringify(DEFAULT_FAKES[call.surface_id]), stderr: '' };
+    },
+  });
+  assert.deepEqual(seen.get('doc-drift'), ['--root', path.resolve('/repo'), '--json']);
+});
+
+test('docDrift include forwards --include status-heuristic to the doc-drift surface only', () => {
+  const seen = new Map();
+  collectTelemetry({
+    rootDir: '/repo',
+    scriptDir: '/kit/scripts',
+    docDrift: { include: ['status-heuristic'] },
+    fileExists: () => true,
+    runner: (call) => {
+      seen.set(call.surface_id, call.args);
+      return { status: 0, stdout: JSON.stringify(DEFAULT_FAKES[call.surface_id]), stderr: '' };
+    },
+  });
+  assert.deepEqual(seen.get('doc-drift'), [
+    '--root', path.resolve('/repo'),
+    '--json',
+    '--include', 'status-heuristic',
+  ]);
+  assert.equal(seen.get('route-cross-check').includes('--include'), false);
+  assert.equal(seen.get('readiness-eval').includes('--include'), false);
+});
+
+test('doc-drift info_count is preserved on the surface only when the child report carries it', () => {
+  const withInfo = collectTelemetry({
+    rootDir: '/repo',
+    scriptDir: '/kit/scripts',
+    docDrift: { include: ['status-heuristic'] },
+    fileExists: () => true,
+    runner: fakeRun({
+      ...DEFAULT_FAKES,
+      'doc-drift': { warning_count: 1, info_count: 2 },
+    }),
+  });
+  assert.deepEqual(withInfo.surfaces.find((s) => s.surface_id === 'doc-drift'), {
+    surface_id: 'doc-drift',
+    available: true,
+    warning_count: 1,
+    source_tool: 'workflow:doc-drift',
+    info_count: 2,
+  });
+
+  // Info findings never inflate warning_count, and default reports keep the
+  // default surface byte shape (no info_count key).
+  const withoutInfo = collectTelemetry({
+    rootDir: '/repo',
+    scriptDir: '/kit/scripts',
+    fileExists: () => true,
+    runner: fakeRun(DEFAULT_FAKES),
+  });
+  assert.deepEqual(withoutInfo.surfaces.find((s) => s.surface_id === 'doc-drift'), {
+    surface_id: 'doc-drift',
+    available: true,
+    warning_count: 0,
+    source_tool: 'workflow:doc-drift',
+  });
+});
+
+test('ledger records doc_drift inputs and info_count only when the include is used', () => {
+  const withInclude = collectTelemetryLedger({
+    rootDir: '/repo',
+    scriptDir: '/kit/scripts',
+    determinismRuns: 1,
+    docDrift: { include: ['status-heuristic'] },
+    fileExists: () => true,
+    runner: fakeRun({
+      ...DEFAULT_FAKES,
+      'doc-drift': { warning_count: 0, info_count: 3 },
+    }),
+  });
+  assert.deepEqual(withInclude.inputs, {
+    root: '.',
+    docs: 'docs/frontend-workflow',
+    doc_drift: { include: ['status-heuristic'] },
+  });
+  assert.equal(withInclude.surfaces.find((s) => s.surface_id === 'doc-drift').info_count, 3);
+
+  const withoutInclude = collectTelemetryLedger({
+    rootDir: '/repo',
+    scriptDir: '/kit/scripts',
+    determinismRuns: 1,
+    fileExists: () => true,
+    runner: fakeRun(DEFAULT_FAKES),
+  });
+  assert.deepEqual(withoutInclude.inputs, {
+    root: '.',
+    docs: 'docs/frontend-workflow',
+  });
+  assert.equal('info_count' in withoutInclude.surfaces.find((s) => s.surface_id === 'doc-drift'), false);
+});
+
+test('CLI rejects unknown doc-drift include features and unknown doc-drift sub-flags with exit 2', () => {
+  const unknownFeature = spawnSync(
+    process.execPath,
+    [CLI, '--doc-drift-include', 'semantic-drift', '--json'],
+    { encoding: 'utf8' },
+  );
+  assert.equal(unknownFeature.status, 2, unknownFeature.stdout);
+  assert.match(unknownFeature.stderr, /unknown --doc-drift-include feature: semantic-drift/);
+
+  const unknownFlag = spawnSync(
+    process.execPath,
+    [CLI, '--doc-drift-root', 'x', '--json'],
+    { encoding: 'utf8' },
+  );
+  assert.equal(unknownFlag.status, 2, unknownFlag.stdout);
+  assert.match(unknownFlag.stderr, /unknown flag: --doc-drift-root/);
+});
+
+test('CLI --doc-drift-include status-heuristic exits 0 with info-only counts and clean output', () => {
+  const r = spawnSync(
+    process.execPath,
+    [CLI, '--doc-drift-include', 'status-heuristic', '--json'],
+    { encoding: 'utf8', cwd: KIT_ROOT },
+  );
+  assert.equal(r.status, 0, r.stderr);
+  const report = JSON.parse(r.stdout);
+  const docDrift = report.surfaces.find((s) => s.surface_id === 'doc-drift');
+  assert.equal(docDrift.available, true);
+  assert.equal(typeof docDrift.info_count, 'number');
+  assert.equal(/generated_at|timestamp|duration|verdict|threshold|promotion/i.test(r.stdout), false);
 });

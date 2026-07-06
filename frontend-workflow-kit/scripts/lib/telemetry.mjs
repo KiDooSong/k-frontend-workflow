@@ -13,7 +13,7 @@ export const CHILD_JSON_MAX_BUFFER = 16 * 1024 * 1024;
 // Surface registry. `default` group surfaces are always observed; other groups
 // are strictly opt-in and never run unless explicitly requested, so the default
 // telemetry output/ledger byte shape stays stable.
-export const TELEMETRY_SURFACE_GROUPS = ['default', 'visual', 'adoption'];
+export const TELEMETRY_SURFACE_GROUPS = ['default', 'visual', 'adoption', 'redteam'];
 
 // Ingest groups normalize files that an earlier tool run already produced; they
 // never spawn a child CLI and always need an explicit input path. `all` therefore
@@ -49,8 +49,14 @@ const SURFACES = [
     script: 'doc-drift.mjs',
     kind: 'cli',
     groups: ['default'],
-    args({ rootDir }) {
-      return ['--root', rootDir, '--json'];
+    // Default args are unchanged; the opt-in status heuristic is forwarded only
+    // when explicitly requested (--doc-drift-include status-heuristic).
+    args({ rootDir, docDrift }) {
+      const args = ['--root', rootDir, '--json'];
+      if (Array.isArray(docDrift?.include) && docDrift.include.length > 0) {
+        args.push('--include', docDrift.include.join(','));
+      }
+      return args;
     },
   },
   {
@@ -87,6 +93,23 @@ const SURFACES = [
     source_tool: 'workflow:adoption-probe',
     kind: 'ingest',
     groups: ['adoption'],
+  },
+  // Red-team observation surface: consumes the public workflow:redteam --json
+  // report only. Read-only forwarding (--include/--case); no mutating flag
+  // exists on that CLI and none is ever forwarded. Observed gaps are warnings,
+  // never a gate.
+  {
+    surface_id: 'redteam',
+    source_tool: 'workflow:redteam',
+    script: 'redteam.mjs',
+    kind: 'cli',
+    groups: ['redteam'],
+    args({ redteam }) {
+      const args = ['--json'];
+      if (redteam?.include) args.push('--include', redteam.include);
+      if (redteam?.caseIds) args.push('--case', redteam.caseIds);
+      return args;
+    },
   },
 ];
 
@@ -269,6 +292,37 @@ function ingestAdoptionSurface(surface, { rootAbs, adoption = {}, readFile = rea
 }
 
 function normalizeSurface(surface, report) {
+  if (surface.surface_id === 'doc-drift') {
+    const out = {
+      surface_id: surface.surface_id,
+      available: true,
+      warning_count: warningCountFrom(report),
+      source_tool: surface.source_tool,
+    };
+    // info_count exists only when the status heuristic ran; info findings are
+    // preserved separately and never inflate warning_count. Default doc-drift
+    // reports carry no info_count, so the default surface shape is unchanged.
+    if (report?.info_count != null) out.info_count = nonNegativeInteger(report.info_count);
+    return out;
+  }
+  if (surface.surface_id === 'redteam') {
+    const summary = report?.summary && typeof report.summary === 'object' ? report.summary : {};
+    return {
+      surface_id: surface.surface_id,
+      available: true,
+      // Red-team warnings are the report's own warning_count: observed gaps and
+      // unexpected observations only. Expected defense witnesses
+      // (blocked/fail-closed/input-error/drift sentinels) never count.
+      warning_count: nonNegativeInteger(summary.warning_count),
+      source_tool: surface.source_tool,
+      case_count: nonNegativeInteger(summary.case_count),
+      observed_gap_count: nonNegativeInteger(summary.observed_gap_count),
+      blocked_count: nonNegativeInteger(summary.blocked_count),
+      fail_closed_count: nonNegativeInteger(summary.fail_closed_count),
+      drift_detected_count: nonNegativeInteger(summary.drift_detected_count),
+      skipped_count: nonNegativeInteger(summary.skipped_count),
+    };
+  }
   if (surface.surface_id === 'visual-consistency') {
     return {
       surface_id: surface.surface_id,
@@ -343,6 +397,21 @@ function normalizeSurfaceForReport(surface) {
     out.false_closed = nonNegativeInteger(surface?.false_closed);
     out.fail_closed_leaked = nonNegativeInteger(surface?.fail_closed_leaked);
     out.blocking_mismatch = nonNegativeInteger(surface?.blocking_mismatch);
+  }
+  // Doc-drift info_count is an opt-in extra (status heuristic): preserved in the
+  // ledger only when the surface carries it, so the default byte shape holds.
+  if (out.available && surface?.surface_id === 'doc-drift' && surface?.info_count != null) {
+    out.info_count = nonNegativeInteger(surface.info_count);
+  }
+  // Red-team summary counts survive the ledger normalization for available
+  // surfaces; unavailable red-team surfaces stay on the minimal generic shape.
+  if (out.available && surface?.surface_id === 'redteam') {
+    out.case_count = nonNegativeInteger(surface?.case_count);
+    out.observed_gap_count = nonNegativeInteger(surface?.observed_gap_count);
+    out.blocked_count = nonNegativeInteger(surface?.blocked_count);
+    out.fail_closed_count = nonNegativeInteger(surface?.fail_closed_count);
+    out.drift_detected_count = nonNegativeInteger(surface?.drift_detected_count);
+    out.skipped_count = nonNegativeInteger(surface?.skipped_count);
   }
   // Visual summary fields are kept only for available surfaces; unavailable
   // visual surfaces stay on the minimal generic shape.
@@ -455,6 +524,19 @@ export function normalizeTelemetryReport(report) {
       }
       if (Object.keys(adoption).length > 0) out.inputs.adoption = adoption;
     }
+    const rawRedteam = report?.inputs?.redteam;
+    if (rawRedteam && typeof rawRedteam === 'object') {
+      const redteam = {};
+      for (const key of ['include', 'case']) {
+        if (rawRedteam[key] != null && rawRedteam[key] !== '') redteam[key] = String(rawRedteam[key]);
+      }
+      if (Object.keys(redteam).length > 0) out.inputs.redteam = redteam;
+    }
+    const rawDocDrift = report?.inputs?.doc_drift;
+    if (rawDocDrift && typeof rawDocDrift === 'object'
+      && Array.isArray(rawDocDrift.include) && rawDocDrift.include.length > 0) {
+      out.inputs.doc_drift = { include: rawDocDrift.include.map((feature) => String(feature)) };
+    }
     out.summary = summarizeSurfaces(surfaces);
   }
   out.surfaces = surfaces;
@@ -506,6 +588,8 @@ export function collectTelemetry({
   srcDir = DEFAULTS.src,
   visual = {},
   adoption = {},
+  redteam = {},
+  docDrift = {},
 } = {}) {
   const rootAbs = path.resolve(rootDir || process.cwd());
   const docsAbs = resolveUnder(rootAbs, docsDir || DEFAULTS.docs);
@@ -514,6 +598,15 @@ export function collectTelemetry({
     domain: visual?.domain || undefined,
     screen: visual?.screen || undefined,
     contract: visual?.contract ? resolveUnder(rootAbs, visual.contract) : undefined,
+  };
+  // Read-only forwarding only: redteam gets --include/--case, doc-drift gets the
+  // opt-in --include feature list. No mutating flag is ever forwarded.
+  const redteamOpts = {
+    include: redteam?.include || undefined,
+    caseIds: redteam?.caseIds || undefined,
+  };
+  const docDriftOpts = {
+    include: Array.isArray(docDrift?.include) ? docDrift.include.filter((item) => item) : [],
   };
   const scriptsAbs = path.resolve(scriptDir);
   const selected = selectTelemetrySurfaces({ includeGroups, includeSurfaces, skipSurfaces });
@@ -538,7 +631,14 @@ export function collectTelemetry({
         surface_id: surface.surface_id,
         source_tool: surface.source_tool,
         scriptPath,
-        args: surface.args({ rootDir: rootAbs, docsDir: docsAbs, srcDir: srcAbs, visual: visualOpts }),
+        args: surface.args({
+          rootDir: rootAbs,
+          docsDir: docsAbs,
+          srcDir: srcAbs,
+          visual: visualOpts,
+          redteam: redteamOpts,
+          docDrift: docDriftOpts,
+        }),
         cwd: rootAbs,
       });
     } catch {
@@ -636,7 +736,8 @@ export function collectTelemetryLedger({
   });
   const visualSelected = selected.some((surface) => surface.groups.includes('visual'));
   const adoptionSelected = selected.some((surface) => surface.groups.includes('adoption'));
-  if (visualSelected || adoptionSelected) {
+  const redteamSelected = selected.some((surface) => surface.groups.includes('redteam'));
+  if (visualSelected || adoptionSelected || redteamSelected) {
     if (visualSelected) {
       const srcAbs = resolveUnder(rootAbs, opts.srcDir || DEFAULTS.src);
       inputs.src = rootRelativePath(rootAbs, srcAbs);
@@ -644,6 +745,7 @@ export function collectTelemetryLedger({
     const requestedGroups = expandTelemetryGroups(opts.includeGroups || []);
     if (visualSelected) requestedGroups.add('visual');
     if (adoptionSelected) requestedGroups.add('adoption');
+    if (redteamSelected) requestedGroups.add('redteam');
     inputs.include = TELEMETRY_SURFACE_GROUPS.filter((group) => requestedGroups.has(group));
     const explicit = new Set(opts.includeSurfaces || []);
     if (explicit.size > 0) {
@@ -667,6 +769,18 @@ export function collectTelemetryLedger({
       if (summaryAbs) adoptionInputs.summary = rootRelativePath(rootAbs, summaryAbs);
       if (Object.keys(adoptionInputs).length > 0) inputs.adoption = adoptionInputs;
     }
+    if (redteamSelected) {
+      const redteamInputs = {};
+      if (opts.redteam?.include) redteamInputs.include = String(opts.redteam.include);
+      if (opts.redteam?.caseIds) redteamInputs.case = String(opts.redteam.caseIds);
+      if (Object.keys(redteamInputs).length > 0) inputs.redteam = redteamInputs;
+    }
+  }
+  // Doc-drift forwarding is recorded independently of the group opt-ins: the
+  // doc-drift surface is a default surface, so only the explicitly requested
+  // heuristic include list is an input worth pinning.
+  if (Array.isArray(opts.docDrift?.include) && opts.docDrift.include.length > 0) {
+    inputs.doc_drift = { include: opts.docDrift.include.map((feature) => String(feature)) };
   }
   return normalizeTelemetryReport({
     ...report,
@@ -774,7 +888,13 @@ export function formatTelemetryHuman(report) {
       const ingest = surface.surface_id === 'adoption-probe-summary'
         ? `, ingest=probe-summary, visual_enabled=${Boolean(surface.visual_enabled)}`
         : '';
-      lines.push(`  ${surface.surface_id}: available, warnings=${surface.warning_count}${blocking}${skipped}${ingest}`);
+      const redteam = surface.surface_id === 'redteam'
+        ? `, cases=${nonNegativeInteger(surface.case_count)}, observed_gaps=${nonNegativeInteger(surface.observed_gap_count)} (observations, not verdicts)`
+        : '';
+      const docDrift = surface.surface_id === 'doc-drift' && surface.info_count != null
+        ? `, info=${nonNegativeInteger(surface.info_count)} (info-only, manual review)`
+        : '';
+      lines.push(`  ${surface.surface_id}: available, warnings=${surface.warning_count}${blocking}${skipped}${ingest}${redteam}${docDrift}`);
     } else {
       lines.push(`  ${surface.surface_id}: unavailable (${surface.unavailable_reason})`);
     }

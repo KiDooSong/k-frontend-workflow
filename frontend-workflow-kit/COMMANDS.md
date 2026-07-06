@@ -110,6 +110,8 @@ npm run workflow:telemetry -- --include visual --visual-domain auth --json
 npm run workflow:telemetry -- --include visual --visual-screen AUTH-001,AUTH-002 --json
 npm run workflow:telemetry -- --include adoption --adoption-run temp/runs/adoption-probe-mobile-001 --json
 npm run workflow:telemetry -- --include adoption --adoption-summary temp/runs/adoption-probe-mobile-001/probe-summary.json --json
+npm run workflow:telemetry -- --include redteam --json
+npm run workflow:telemetry -- --doc-drift-include status-heuristic --json
 npm run workflow:telemetry -- --list-surfaces --json
 npm run workflow:check-generated
 ```
@@ -129,6 +131,26 @@ Visual surfaces are opt-in. `--include visual` (or `--surface visual-consistency
 The adoption surface is opt-in and ingest-only. `--include adoption` plus `--adoption-run <dir>` (or `--adoption-summary <file>`; the two flags cannot be combined) reads an EXISTING `workflow:adoption-probe` run's `probe-summary.json` and normalizes its summary into one `adoption-probe-summary` surface: probe run id, `draft_only` boundary flag, visual enabled/status, bootstrap/consistency warning counts, component gap candidate count, and the root-relative summary path. Telemetry never runs `workflow:adoption-probe` (with or without `--visual`), never creates a probe run dir or scratch copy, never rewrites the adoption report markdown, and never parses the run's raw `observations/*` files — summary only, and `--skip-adoption-visual` ignores the summary's visual section entirely. Visual warnings plus non-info probe findings count into the surface `warning_count`; info findings never do. `--include all` never implies adoption (an ingest surface needs an explicit input path), so `--include adoption` without a run/summary input is a usage error (exit 2) — telemetry must not silently probe the current repo. A missing or invalid summary file stays exit 0 and is recorded as `available:false`. In a ledger the adoption inputs (`run`/`summary`) are recorded root-relative only when the adoption surface was selected, and the determinism witness for ingest surfaces is `normalized-summary-json` (the same file is re-read and re-normalized per determinism run).
 
 Boundary vs `workflow:adoption-probe --visual`: telemetry `--include visual` observes the visual CLIs directly against the current checkout's docs/src; adoption-probe `--visual` CREATES observations inside a brownfield probe scratch copy; telemetry `--include adoption` only READS the summary an adoption-probe run already produced and includes it in the observation report/ledger. All three are warning-first/review-only observations, not gates, and whether telemetry should ever run adoption-probe itself remains a separate Open Decision (not implemented).
+
+### Telemetry redteam surface
+
+```bash
+npm run workflow:telemetry -- --include redteam --json
+npm run workflow:telemetry -- --include redteam --redteam-include self-resolve --json
+npm run workflow:telemetry -- --include redteam --redteam-case rt-d-to-unknown-current-gap --json
+npm run workflow:telemetry -- --include redteam --doc-drift-include status-heuristic --json
+npm run workflow:telemetry -- --include redteam --out temp/redteam-telemetry-ledger.json
+```
+
+The redteam surface is opt-in (`--include redteam`, `--surface redteam`, or `--include all` — like the visual group, `all` covers the runnable groups and never implies adoption). Telemetry consumes only the public `workflow:redteam --json` report and normalizes its summary: `case_count`, `observed_gap_count`, `blocked_count`, `fail_closed_count`, `drift_detected_count`, `skipped_count`, and `warning_count` (the red-team report's own warning count — observed gaps and unexpected observations only; expected defense witnesses such as blocked/fail-closed/input-error cases never count as warnings). `--redteam-include` / `--redteam-case` are forwarded to `workflow:redteam` as `--include` / `--case`; they require the redteam surface (usage error exit 2 otherwise), and no mutating flag exists or is ever forwarded. A missing script, child exit != 0, or invalid child JSON is recorded as `available:false` while telemetry stays exit 0. In a ledger, the redteam inputs (`include`/`case`) are recorded only when the redteam surface was selected and the flags were given; the determinism witness is the standard `normalized-json`. Red-team observations in telemetry are never a gate, required check, approval, or readiness/`confirmed` promotion — do not wire them to exit 1 or a required CI check without a separate Open Decision and human approval.
+
+### Doc-drift status heuristic forwarding
+
+```bash
+npm run workflow:telemetry -- --doc-drift-include status-heuristic --json
+```
+
+Default telemetry does not run the doc-drift status heuristic — the doc-drift surface keeps its Phase 0 args and byte shape. `--doc-drift-include status-heuristic` is the explicit opt-in: it forwards `--include status-heuristic` to the default doc-drift surface, and the surface then carries the child report's `info_count` alongside `warning_count`. Heuristic findings are info-only/manual review: they never inflate `warning_count`, never change any exit code, and are not a semantic-truth claim. An unknown feature value exits 2. In a ledger, `inputs.doc_drift.include` is recorded only when the flag was used, so default ledgers keep the `{root, docs}` inputs byte shape.
 
 CI artifact accumulation is observation-only. The Actions workflow writes the deterministic ledger under `$RUNNER_TEMP/frontend-workflow-telemetry/telemetry-ledger.json`, writes a separate current observation report under `telemetry-report.json`, and uploads both as one artifact so repeated runs within the artifact retention window can become evidence for later human review. The uploaded ledger/report are not a pass/fail verdict, and they are not a gate. The CI telemetry step uses `continue-on-error`, the artifact summary step emits warnings for missing or empty files without failing the job, and artifact upload uses `if: always()` plus `if-no-files-found: warn` so missing observation files do not fail the job. Do not wire telemetry ledger drift to exit 1, a hard gate, or a required check without a separate Open Decision and human approval.
 
@@ -228,6 +250,47 @@ npm run workflow:forbidden-paths -- --diff changes.diff --docs docs/frontend-wor
 ```
 
 Without `--enforce`, path findings are reported without failing the command.
+
+## Red-Team Suite
+
+```bash
+npm run workflow:redteam -- --json
+npm run workflow:redteam -- --include self-resolve --json
+npm run workflow:redteam -- --include golden-tampering --json
+npm run workflow:redteam -- --case rt-d-to-unknown-current-gap --json
+```
+
+`workflow:redteam` is a warning-first adversarial observation report. It consumes
+the existing readiness / forbidden-paths / test-fixture signals (synthetic
+adversarial specs through the real ScreenSpec parser + `computeReadiness`, and
+committed adversarial diff fixtures through the real `workflow:forbidden-paths`
+CLI — never a live git diff) and reimplements none of their decision logic.
+
+- No gate, no approval, no readiness promotion, no `confirmed` promotion: red-team
+  findings, observed gaps, and tampering observations always exit 0. Only
+  usage/config errors (unknown flag/group/case id) exit 2.
+- `status` is an observation label, not a pass/fail verdict. `blocked` /
+  `fail-closed` / `input-error` are witnesses that an existing defense held;
+  `drift-detected` records pinned behavior changing; `skipped` records controls or
+  fixtures unavailable in this install (`examples/**` are not vendored to
+  consumers); `observed-gap` means "a real current gap — needs a human design
+  decision", not failure.
+- Case groups: `core` (always on: `readiness` fail-closed witnesses,
+  `path-backstop` adversarial diffs, the `downgrade` D→U observation) plus opt-in
+  `self-resolve` and `golden-tampering` (`--include all` adds every group).
+- D→U and self-resolve are observed, not blocked: the D→U downgrade
+  (`rt-d-to-unknown-current-gap`) and the open→resolved provenance gap
+  (`rt-self-resolve-provenance-gap`) are recorded as `observed-gap` warnings with
+  notes. Unknowns stay non-blocking by design, readiness gains no actor tracking,
+  and nothing auto-resolves/confirms/closes decisions.
+- The golden tampering sentinel is test-only in this release:
+  `scripts/lib/redteam.test.mjs` tampers a temp copy of a generated-view golden
+  and asserts the existing fixture harness reports the drift; the CLI group
+  returns `skipped` with a note. Committed fixtures are never mutated.
+- `warning_count` counts only observed gaps and unexpected observations — expected
+  defense witnesses never inflate it. Do not promote red-team output to a hard
+  gate, required check, or `--enforce` CI step without a separate Open Decision
+  and human approval.
 
 ## Post-Task Checklist
 
