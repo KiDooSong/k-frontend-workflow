@@ -26,6 +26,8 @@ Usage:
                              [--visual-domain <d>] [--visual-screen <ID[,ID...]>] [--visual-contract <path>]
                              [--skip-visual-bootstrap] [--skip-visual-consistency]
                              [--adoption-run <dir>] [--adoption-summary <file>] [--skip-adoption-visual]
+                             [--redteam-include <group[,group...]>] [--redteam-case <id[,id...]>]
+                             [--doc-drift-include <feature>]
                              [--list-surfaces] [--help]
 
 Options:
@@ -39,10 +41,11 @@ Options:
                            Default: 1, or 2 with --out/--check. Ingest surfaces
                            re-read and re-normalize the same file per run.
   --include <group>        Add an opt-in surface group (comma-separated ok).
-                           Groups: default (no-op, always on), visual, adoption, all.
-                           "all" means default+visual (runnable groups) and may
-                           grow; adoption is never implied by "all" because it
-                           needs an explicit --adoption-run/--adoption-summary.
+                           Groups: default (no-op, always on), visual, adoption,
+                           redteam, all. "all" means the runnable groups
+                           (default+visual+redteam) and may grow; adoption is
+                           never implied by "all" because it needs an explicit
+                           --adoption-run/--adoption-summary.
   --surface <surface-id>   Add one opt-in surface on top of the default surfaces
                            (comma-separated ok). --surface never replaces the
                            default surfaces; it is additive, like --include.
@@ -60,6 +63,18 @@ Options:
                            --adoption-run; the two cannot be combined).
   --skip-adoption-visual   Ignore the visual section of the probe summary when
                            normalizing the adoption surface.
+  --redteam-include <g>    Forwarded to workflow:redteam as --include (opt-in
+                           red-team case groups, comma-separated ok). Requires
+                           the redteam surface (--include redteam / --surface
+                           redteam).
+  --redteam-case <id>      Forwarded to workflow:redteam as --case (run only the
+                           matching case ids, comma-separated ok). Requires the
+                           redteam surface.
+  --doc-drift-include <f>  Forward an opt-in doc-drift feature as --include.
+                           Known: status-heuristic (info-only manifest<->roadmap
+                           wording heuristic; findings land in info_count, never
+                           warning_count). Valid with default telemetry because
+                           doc-drift is a default surface.
   --list-surfaces          Print the surface registry (no child CLI runs) and exit 0.
   --help                   Show this help.
 
@@ -81,6 +96,17 @@ Behavior:
   invalid summary file is recorded as available:false and keeps exit 0; only the
   CLI usage itself (adoption flags without --include adoption, no run/summary
   input, or both inputs at once) exits 2.
+  The redteam surface is opt-in (--include redteam / --surface redteam / --include
+  all) and consumes only the public workflow:redteam --json report: case/status
+  counts plus its warning_count (observed gaps and unexpected observations only -
+  expected defenses like blocked/fail-closed/input-error witnesses never count).
+  Red-team observations are never a gate, approval, or readiness promotion, and
+  never cause exit 1. Only --include/--case are forwarded; no mutating flag exists
+  or is forwarded. A missing script, child exit != 0, or invalid child JSON is
+  recorded as available:false while telemetry stays exit 0.
+  --doc-drift-include status-heuristic opts the default doc-drift surface into the
+  info-only status heuristic; default telemetry never runs the heuristic, and
+  info findings never inflate warning_count (they surface as info_count).
   Top-level ok:true means this telemetry command produced an observation report;
   it is not a pass/fail verdict about any observed surface.
   --check drift, missing files, and invalid JSON are warnings only. No CI artifact,
@@ -128,6 +154,9 @@ function parseValueFlag(flags, name, label) {
 
 const KNOWN_GROUPS = [...TELEMETRY_SURFACE_GROUPS, 'all'];
 const ADOPTION_FLAGS = ['adoption-run', 'adoption-summary', 'skip-adoption-visual'];
+const REDTEAM_FLAGS = ['redteam-include', 'redteam-case'];
+const DOC_DRIFT_FLAGS = ['doc-drift-include'];
+const KNOWN_DOC_DRIFT_INCLUDES = ['status-heuristic'];
 
 function main() {
   const { flags } = parseArgs(process.argv.slice(2));
@@ -136,12 +165,18 @@ function main() {
     process.exit(0);
   }
 
-  // Unknown adoption sub-flag is a purely syntactic typo guard, so it must hold
-  // on every path - including --list-surfaces, which otherwise returns early
-  // before the adoption opt-in checks below.
+  // Unknown sub-flag typo guards are purely syntactic, so they must hold on
+  // every path - including --list-surfaces, which otherwise returns early
+  // before the opt-in checks below.
   for (const name of Object.keys(flags)) {
     if ((name.startsWith('adoption-') || name.startsWith('skip-adoption')) && !ADOPTION_FLAGS.includes(name)) {
       usageError(`unknown flag: --${name} (known adoption flags: ${ADOPTION_FLAGS.map((f) => `--${f}`).join(', ')})`);
+    }
+    if (name.startsWith('redteam-') && !REDTEAM_FLAGS.includes(name)) {
+      usageError(`unknown flag: --${name} (known redteam flags: ${REDTEAM_FLAGS.map((f) => `--${f}`).join(', ')})`);
+    }
+    if (name.startsWith('doc-drift-') && !DOC_DRIFT_FLAGS.includes(name)) {
+      usageError(`unknown flag: --${name} (known doc-drift flags: ${DOC_DRIFT_FLAGS.map((f) => `--${f}`).join(', ')})`);
     }
   }
 
@@ -240,6 +275,36 @@ function main() {
     }
   }
 
+  // --- redteam opt-in forwarding ---------------------------------------------
+  // Only --include/--case reach workflow:redteam (read-only observation flags).
+  // The forwarded values are validated by the redteam CLI itself; an unknown
+  // group/case there exits 2 in the child, which telemetry records fail-soft as
+  // available:false.
+  const redteamIds = registry
+    .filter((surface) => surface.groups.includes('redteam'))
+    .map((surface) => surface.surface_id);
+  const redteamRequested = includeGroups.some((group) => group === 'redteam' || group === 'all')
+    || includeSurfaces.some((id) => redteamIds.includes(id));
+  const redteamInclude = parseValueFlag(flags, 'redteam-include', 'redteam group list');
+  const redteamCase = parseValueFlag(flags, 'redteam-case', 'redteam case id list');
+  if (!redteamRequested) {
+    for (const name of REDTEAM_FLAGS) {
+      if (hasFlag(flags, name)) {
+        usageError(`--${name} requires the redteam surface (--include redteam or --surface redteam)`);
+      }
+    }
+  }
+
+  // --- doc-drift opt-in forwarding -------------------------------------------
+  // Valid with default telemetry (doc-drift is a default surface). Only known
+  // info-only features are forwarded; unknown features are usage errors.
+  const docDriftInclude = parseListFlag(flags, 'doc-drift-include', 'doc-drift feature name');
+  for (const feature of docDriftInclude) {
+    if (!KNOWN_DOC_DRIFT_INCLUDES.includes(feature)) {
+      usageError(`unknown --doc-drift-include feature: ${feature} (known: ${KNOWN_DOC_DRIFT_INCLUDES.join(', ')})`);
+    }
+  }
+
   const rootDir = typeof flags.root === 'string' && flags.root
     ? path.resolve(flags.root)
     : process.cwd();
@@ -282,6 +347,13 @@ function main() {
       runDir: adoptionRun,
       summaryPath: adoptionSummary,
       skipVisual: flags['skip-adoption-visual'] === true,
+    },
+    redteam: {
+      include: redteamInclude,
+      caseIds: redteamCase,
+    },
+    docDrift: {
+      include: docDriftInclude,
     },
   };
   const report = wantsOut || wantsCheck

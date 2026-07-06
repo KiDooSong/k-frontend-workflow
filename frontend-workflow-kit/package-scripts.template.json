@@ -23,6 +23,7 @@
     "workflow:visual-contract-bootstrap": "node tools/frontend-workflow/scripts/visual-contract-bootstrap.mjs",
     "workflow:doc-drift": "node tools/frontend-workflow/scripts/doc-drift.mjs",
     "workflow:eval": "node tools/frontend-workflow/scripts/readiness-eval.mjs",
+    "workflow:redteam": "node tools/frontend-workflow/scripts/redteam.mjs",
     "workflow:telemetry": "node tools/frontend-workflow/scripts/telemetry.mjs",
     "workflow:check-generated": "node tools/frontend-workflow/scripts/check-generated-files.mjs"
   }
