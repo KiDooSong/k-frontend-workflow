@@ -1191,6 +1191,59 @@ test('CLI rejects visual sub-flags without a visual opt-in with exit 2', () => {
   });
 });
 
+test('CLI rejects visual filters when every included visual surface is skipped', () => {
+  withRoot({}, (root) => {
+    for (const filter of [
+      ['--visual-domain', 'auth'],
+      ['--visual-screen', 'AUTH-001'],
+      ['--visual-contract', 'contract.md'],
+    ]) {
+      const r = spawnSync(process.execPath, [
+        CLI,
+        '--root', root,
+        '--include', 'visual',
+        '--skip-visual-bootstrap',
+        '--skip-visual-consistency',
+        ...filter,
+      ], { encoding: 'utf8' });
+      assert.equal(r.status, 2, r.stderr);
+      assert.match(r.stderr, /has no effect: all visual surfaces are skipped/);
+    }
+
+    // Filters targeting the surviving surface still pass the guard.
+    const single = spawnSync(process.execPath, [
+      CLI,
+      '--root', root,
+      '--surface', 'visual-consistency',
+      '--skip-visual-consistency',
+      '--visual-domain', 'auth',
+    ], { encoding: 'utf8' });
+    assert.equal(single.status, 2, single.stderr);
+    assert.match(single.stderr, /has no effect: all visual surfaces are skipped/);
+  });
+});
+
+test('CLI allows skipping every visual surface when no visual filter is given', () => {
+  withRoot(
+    {
+      'docs/readme.md': '# Readme\n',
+    },
+    (root) => {
+      const r = spawnSync(process.execPath, [
+        CLI,
+        '--root', root,
+        '--include', 'visual',
+        '--skip-visual-bootstrap',
+        '--skip-visual-consistency',
+        '--json',
+      ], { encoding: 'utf8' });
+      assert.equal(r.status, 0, r.stderr);
+      const obj = JSON.parse(r.stdout);
+      assert.deepEqual(surfaceIds(obj), DEFAULT_SURFACE_IDS);
+    },
+  );
+});
+
 test('CLI --include visual --json exits 0 with clean visual observation output', () => {
   withRoot(
     {

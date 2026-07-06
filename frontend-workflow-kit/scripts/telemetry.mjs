@@ -169,6 +169,20 @@ function main() {
       }
     }
   }
+  // Visual filters must reach at least one surface: reject the combination of
+  // filters plus skip flags that remove every included visual surface, instead
+  // of silently ignoring the filters.
+  const selectedVisualIds = visualIds.filter((id) => (
+    (includeGroups.some((group) => group === 'visual' || group === 'all') || includeSurfaces.includes(id))
+    && !skipSurfaces.includes(id)
+  ));
+  if (selectedVisualIds.length === 0) {
+    for (const name of ['visual-domain', 'visual-screen', 'visual-contract']) {
+      if (hasFlag(flags, name)) {
+        usageError(`--${name} has no effect: all visual surfaces are skipped`);
+      }
+    }
+  }
 
   const rootDir = typeof flags.root === 'string' && flags.root
     ? path.resolve(flags.root)
