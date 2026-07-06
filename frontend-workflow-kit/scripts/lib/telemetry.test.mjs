@@ -1696,6 +1696,19 @@ test('CLI rejects unknown adoption sub-flags with exit 2', () => {
   });
 });
 
+test('unknown adoption sub-flag is rejected even on the --list-surfaces path', () => {
+  withRoot({}, (root) => {
+    // --list-surfaces returns early; the syntactic typo guard must still fire so
+    // the "unknown adoption flag = exit 2" contract holds on every path.
+    const r = spawnSync(process.execPath, [
+      CLI, '--root', root, '--list-surfaces', '--json', '--adoption-nope', 'x',
+    ], { encoding: 'utf8' });
+    assert.equal(r.status, 2, r.stdout);
+    assert.match(r.stderr, /unknown flag: --adoption-nope/);
+    assert.equal(r.stdout.includes('"surfaces"'), false);
+  });
+});
+
 test('CLI --include all does not select the adoption ingest surface', () => {
   withRoot({ 'docs/readme.md': '# Readme\n' }, (root) => {
     const r = spawnSync(process.execPath, [CLI, '--root', root, '--include', 'all', '--json'], { encoding: 'utf8' });

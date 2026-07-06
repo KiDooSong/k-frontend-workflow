@@ -337,6 +337,11 @@ function dedupeFindings(findings) {
 // claims to understand roadmap prose — findings are manual-review pointers only.
 
 const IMPLEMENTED_SIGNAL = /구현\s*완료|구현됨|\bimplemented\b|\bactive\b|완료/i;
+// Negations that would otherwise trip the bare 완료 / implemented / active tokens:
+// 미완료 contains 완료, "not implemented" contains implemented, "not active"
+// contains active. Checked first so an explicitly-unfinished line never reads as
+// implemented (keeps the info-only pointer from crying wolf).
+const IMPLEMENTED_NEGATION = /미완료|미구현|미완성|\bnot\s+(?:yet\s+)?implemented\b|\bunimplemented\b|\bincomplete\b|\bnot\s+active\b/i;
 const PLANNED_SIGNAL = /\bplanned\b|예정|대기/i;
 
 // Artifact ids use [a-z0-9-]; the dot alias covers generated file spellings like
@@ -394,7 +399,7 @@ export function analyzeManifestRoadmapStatus({ rootDir, manifestPath, roadmapPat
     const aliasMatchers = artifactAliases(id).map((alias) => aliasRegex(alias));
     for (const line of lines) {
       if (!aliasMatchers.some((re) => re.test(line))) continue;
-      const implemented = IMPLEMENTED_SIGNAL.test(line);
+      const implemented = IMPLEMENTED_SIGNAL.test(line) && !IMPLEMENTED_NEGATION.test(line);
       const planned = PLANNED_SIGNAL.test(line);
       if (implemented === planned) continue; // no signal, or ambiguous (both)
       if (status === 'planned' && implemented) {

@@ -362,6 +362,28 @@ test('active manifest with planned roadmap wording is an info finding', () => {
   });
 });
 
+test('negated wording (미완료 / not implemented / not active) does not read as implemented', () => {
+  const roadmap = [
+    '# Roadmap',
+    '',
+    '- `eslint.workflow.config.mjs` 생성기는 아직 미완료.',
+    '- route-tree runner is not yet implemented.',
+    '- nav-graph 는 not active.',
+    '',
+  ].join('\n');
+  withRoot(heuristicRoot({ 'kit-dev/roadmap-current.md': roadmap }), (root) => {
+    const findings = analyzeManifestRoadmapStatus({
+      rootDir: root,
+      manifestPath: path.join(root, 'catalog/artifact-manifest.yaml'),
+      roadmapPath: path.join(root, 'kit-dev/roadmap-current.md'),
+    });
+    // eslint-workflow-config(planned) 미완료 → not implemented → no false info.
+    // route-tree(active) "not yet implemented" and nav-graph(active) "not active"
+    // are negations, not planned wording, so they also produce nothing.
+    assert.deepEqual(findings, []);
+  });
+});
+
 test('ambiguous lines (both signals) and unknown artifact ids produce no finding', () => {
   withRoot(heuristicRoot(), (root) => {
     const findings = analyzeManifestRoadmapStatus({

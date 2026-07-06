@@ -127,12 +127,22 @@ function parseValueFlag(flags, name, label) {
 }
 
 const KNOWN_GROUPS = [...TELEMETRY_SURFACE_GROUPS, 'all'];
+const ADOPTION_FLAGS = ['adoption-run', 'adoption-summary', 'skip-adoption-visual'];
 
 function main() {
   const { flags } = parseArgs(process.argv.slice(2));
   if (flags.help) {
     process.stdout.write(helpText());
     process.exit(0);
+  }
+
+  // Unknown adoption sub-flag is a purely syntactic typo guard, so it must hold
+  // on every path - including --list-surfaces, which otherwise returns early
+  // before the adoption opt-in checks below.
+  for (const name of Object.keys(flags)) {
+    if ((name.startsWith('adoption-') || name.startsWith('skip-adoption')) && !ADOPTION_FLAGS.includes(name)) {
+      usageError(`unknown flag: --${name} (known adoption flags: ${ADOPTION_FLAGS.map((f) => `--${f}`).join(', ')})`);
+    }
   }
 
   const registry = listTelemetrySurfaces();
@@ -206,13 +216,8 @@ function main() {
   // --- adoption ingest opt-in ------------------------------------------------
   // The adoption surface never runs a child CLI: it only reads an existing probe
   // run's probe-summary.json, so it always needs an explicit input path. Note
-  // that --include all does NOT select adoption (see --help).
-  const ADOPTION_FLAGS = ['adoption-run', 'adoption-summary', 'skip-adoption-visual'];
-  for (const name of Object.keys(flags)) {
-    if ((name.startsWith('adoption-') || name.startsWith('skip-adoption')) && !ADOPTION_FLAGS.includes(name)) {
-      usageError(`unknown flag: --${name} (known adoption flags: ${ADOPTION_FLAGS.map((f) => `--${f}`).join(', ')})`);
-    }
-  }
+  // that --include all does NOT select adoption (see --help). Unknown --adoption-*
+  // flags are already rejected above, before the --list-surfaces early return.
   const adoptionIds = registry
     .filter((surface) => surface.groups.includes('adoption'))
     .map((surface) => surface.surface_id);
