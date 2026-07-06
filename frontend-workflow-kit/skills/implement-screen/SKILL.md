@@ -53,7 +53,10 @@ component catalog + component-gap-register, Open Decisions/Conflicts/Unknowns, A
   live `policies/implementation-mode-policy.yaml` 도 읽기 전용 context 다.
 - 작업이 visual/Figma/design 정렬이거나 **여러 화면**에 걸치면
   [visual-reconciliation.md](../../docs/reference/visual-reconciliation.md) 와 visual consistency contract
-  (`design/visual-consistency-contract.md`, 있으면)를 읽는다.
+  (`design/visual-consistency-contract.md`, 있으면)를 읽는다. contract 가 없는데 multi-screen visual
+  consistency 가 문제라면 구현 전 bootstrap/adoption step
+  ([visual-contract-bootstrap](../visual-contract-bootstrap/SKILL.md), review-only)을 **제안만** 할 수 있다 —
+  이 스킬이 bootstrap 을 자동 실행해 scope 를 넓히지는 않는다.
 - 2차 산출물 판단은 [task-artifact-matrix.md](../../docs/reference/task-artifact-matrix.md).
 
 ## 3. 모드 인지 구현

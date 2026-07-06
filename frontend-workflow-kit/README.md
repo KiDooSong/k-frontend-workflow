@@ -197,11 +197,14 @@ npm run workflow:validate
 
 여러 화면에 걸친 Figma/visual spec/design 업데이트("로고/레이아웃 공통 정리", "Figma 일괄 반영")는 `skills/visual-reconcile/SKILL.md` 절차를 따른다. 공통 shell/logo/header/CTA ownership 은 화면별 ad-hoc patch 가 아니라 visual consistency contract(`docs/frontend-workflow/design/visual-consistency-contract.md`, 템플릿: `templates/design/visual-consistency-contract.template.md`)로 정리하고, 구현 후 warning-first 검사를 돌린다.
 
+contract 가 아직 없는(또는 빈약한) repo 는 **optional first step** 으로 bootstrap 을 먼저 돌려 screen family / shared ownership 후보 초안을 뽑을 수 있다(`skills/visual-contract-bootstrap/SKILL.md`). 출력은 review-only draft 다 — 기존 contract 를 절대 overwrite 하지 않고, 사람이 승인한 rows 만 canonical contract 에 반영한다.
+
 ```bash
+npm run workflow:visual-contract-bootstrap -- --docs docs/frontend-workflow --src src --json   # optional first step
 npm run workflow:visual-consistency -- --docs docs/frontend-workflow --src src --json
 ```
 
-contract 가 없으면 조용히 skip 한다(cold start 를 막지 않음). warning 은 drift 후보 진단일 뿐 approval, readiness promotion, `confirmed` 승격, gate 가 아니다. behavior 는 여전히 ScreenSpec/Navigation Map/Open Decision 경로만 탄다. 계약 정본: [docs/reference/visual-reconciliation.md](docs/reference/visual-reconciliation.md).
+contract 가 없으면 visual-consistency 는 조용히 skip 한다(cold start 를 막지 않음). warning 은 drift 후보 진단일 뿐 approval, readiness promotion, `confirmed` 승격, gate 가 아니다. behavior 는 여전히 ScreenSpec/Navigation Map/Open Decision 경로만 탄다. 계약 정본: [docs/reference/visual-reconciliation.md](docs/reference/visual-reconciliation.md).
 
 ## Optional Web E2E Evidence
 
