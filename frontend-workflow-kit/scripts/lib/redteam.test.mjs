@@ -358,6 +358,9 @@ test('CLI usage errors exit 2: unknown group, unknown case id, unknown flag, emp
     ['--case', 'rt-nope', '--json'],
     ['--enforce', '--json'],
     ['--include', '', '--json'],
+    // Comma-only list values are empty lists in disguise - usage errors too.
+    ['--include', ',', '--json'],
+    ['--case', ',', '--json'],
     ['--docs', '', '--json'],
   ]) {
     const r = runCli(args);

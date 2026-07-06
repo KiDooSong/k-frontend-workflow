@@ -1821,6 +1821,7 @@ test('includeGroups redteam adds the redteam surface with summary count normaliz
     fail_closed_count: 6,
     drift_detected_count: 0,
     skipped_count: 1,
+    input_error_count: 1,
   });
 });
 
@@ -1892,6 +1893,7 @@ test('redteam warning_count comes from the report summary and defaults to zero w
   assert.equal(redteam.warning_count, 0);
   assert.equal(redteam.case_count, 0);
   assert.equal(redteam.observed_gap_count, 0);
+  assert.equal(redteam.input_error_count, 0);
 });
 
 test('redteam child failure, non-zero exit, and invalid JSON are unavailable, not telemetry failures', () => {
@@ -1952,6 +1954,7 @@ test('ledger with include redteam records the redteam group, forwarded inputs, a
   const redteam = ledger.surfaces.find((s) => s.surface_id === 'redteam');
   assert.equal(redteam.case_count, 11);
   assert.equal(redteam.observed_gap_count, 1);
+  assert.equal(redteam.input_error_count, 1);
   assert.deepEqual(redteam.determinism, { runs: 2, identical: true, witness: 'normalized-json' });
 });
 
@@ -2037,6 +2040,53 @@ test('CLI rejects unknown redteam sub-flags with exit 2', () => {
   );
   assert.equal(r.status, 2, r.stdout);
   assert.match(r.stderr, /unknown flag: --redteam-mode/);
+});
+
+test('CLI pre-validates redteam forwarding values: typos are usage errors, not unavailable surfaces', () => {
+  const badGroup = spawnSync(
+    process.execPath,
+    [CLI, '--include', 'redteam', '--redteam-include', 'nope', '--json'],
+    { encoding: 'utf8' },
+  );
+  assert.equal(badGroup.status, 2, badGroup.stdout);
+  assert.match(badGroup.stderr, /unknown --redteam-include group: nope/);
+
+  const badCase = spawnSync(
+    process.execPath,
+    [CLI, '--include', 'redteam', '--redteam-case', 'rt-nope', '--json'],
+    { encoding: 'utf8' },
+  );
+  assert.equal(badCase.status, 2, badCase.stdout);
+  assert.match(badCase.stderr, /unknown --redteam-case id: rt-nope/);
+
+  // Comma-only values are empty lists in disguise - also usage errors.
+  const commaOnly = spawnSync(
+    process.execPath,
+    [CLI, '--include', 'redteam', '--redteam-include', ',', '--json'],
+    { encoding: 'utf8' },
+  );
+  assert.equal(commaOnly.status, 2, commaOnly.stdout);
+  assert.match(commaOnly.stderr, /--redteam-include requires a redteam group list/);
+});
+
+test('CLI valid redteam forwarding values still run and stay exit 0', () => {
+  const r = spawnSync(
+    process.execPath,
+    [CLI, '--include', 'redteam', '--redteam-include', 'self-resolve', '--redteam-case', 'rt-d-to-unknown-current-gap', '--json'],
+    { encoding: 'utf8', cwd: KIT_ROOT },
+  );
+  assert.equal(r.status, 0, r.stderr);
+  const report = JSON.parse(r.stdout);
+  const redteam = report.surfaces.find((s) => s.surface_id === 'redteam');
+  assert.equal(redteam.available, true);
+  assert.equal(redteam.case_count, 1);
+  assert.equal(redteam.observed_gap_count, 1);
+});
+
+test('CLI comma-only --include is a usage error, not a silent default run', () => {
+  const r = spawnSync(process.execPath, [CLI, '--include', ',', '--json'], { encoding: 'utf8' });
+  assert.equal(r.status, 2, r.stdout);
+  assert.match(r.stderr, /--include requires a group name/);
 });
 
 test('CLI --list-surfaces --json includes the redteam surface without running child CLIs', () => {
