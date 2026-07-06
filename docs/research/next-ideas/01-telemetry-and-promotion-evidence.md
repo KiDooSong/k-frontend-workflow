@@ -236,3 +236,7 @@ flowchart LR
 ---
 
 > 다시 강조: 이 문서는 게이트가 아니다. 제안된 `workflow:telemetry` 역시 만들어지더라도 게이트가 아니다 — 항상 exit 0 인 관측 도구다. 어떤 승격도 별도 Open Decision + 사람 승인을 거친다.
+
+## Implementation note
+
+- 2026-07-06 Phase 2 implemented `workflow:telemetry --out/--check` as a timestamp-free deterministic observation ledger. Ledger drift is reported only as warning-first check data; no CI artifact accumulation, hard gate, blocking check, or promotion decision was added.

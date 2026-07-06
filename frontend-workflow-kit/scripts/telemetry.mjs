@@ -1,35 +1,61 @@
 #!/usr/bin/env node
-// telemetry.mjs - stdout-only warning-first aggregation of observation CLI JSON.
+// telemetry.mjs - warning-first aggregation of observation CLI JSON.
 //
-// This MVP writes no ledger, creates no CI artifact, and makes no promotion
-// verdict. It only summarizes public CLI warning counts and availability.
+// This CLI can write/check deterministic observation ledgers, but it creates no
+// CI artifact by default and makes no promotion verdict.
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DEFAULTS, parseArgs } from './lib/util.mjs';
-import { collectTelemetry, formatTelemetryHuman } from './lib/telemetry.mjs';
+import {
+  collectTelemetry,
+  collectTelemetryLedger,
+  compareTelemetryLedger,
+  formatTelemetryHuman,
+  stableTelemetryJson,
+  writeTelemetryLedger,
+} from './lib/telemetry.mjs';
 
 function helpText() {
   return `workflow:telemetry - aggregate warning-first observation surfaces
 
 Usage:
-  node scripts/telemetry.mjs [--docs <dir>] [--root <dir>] [--json] [--help]
+  node scripts/telemetry.mjs [--docs <dir>] [--root <dir>] [--json] [--out <file>] [--check <file>] [--determinism-runs <n>] [--help]
 
 Options:
-  --root <dir>  Root passed to doc-drift. Default: current working directory.
-  --docs <dir>  Docs root passed to route-cross-check. Default: docs/frontend-workflow.
-                Relative docs paths resolve below --root.
-  --json        Print deterministic JSON to stdout.
-  --help        Show this help.
+  --root <dir>             Root passed to doc-drift. Default: current working directory.
+  --docs <dir>             Docs root passed to route-cross-check. Default: docs/frontend-workflow.
+                           Relative docs paths resolve below --root.
+  --json                   Print deterministic JSON to stdout.
+  --out <file>             Write a deterministic observation ledger JSON snapshot.
+  --check <file>           Compare current telemetry to a ledger and warn on drift.
+  --determinism-runs <n>   Surface runs for ledger determinism witness.
+                           Default: 1, or 2 with --out/--check.
+  --help                   Show this help.
 
 Behavior:
   Calls route-cross-check, doc-drift, and readiness-eval through their public
   --json CLIs when available, records unavailable surfaces instead of failing,
-  includes readiness-eval blocking mismatch count, and always exits 0.
+  includes readiness-eval blocking mismatch count, and always exits 0 except
+  usage errors.
   Top-level ok:true means this telemetry command produced an observation report;
   it is not a pass/fail verdict about any observed surface.
-  No ledger file, CI artifact, threshold, pass/fail verdict, duration, timestamp,
-  or absolute machine path is emitted.
+  --check drift, missing files, and invalid JSON are warnings only. No CI artifact,
+  threshold, pass/fail verdict, duration, timestamp, or absolute machine path is
+  emitted. --out and --check are intentionally not combined in this release.
 `;
+}
+
+function parseDeterminismRuns(value, fallback) {
+  if (value == null || value === true) return fallback;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 1) return null;
+  return Math.trunc(n);
+}
+
+function usageError(message) {
+  process.stderr.write(`workflow:telemetry: ${message}\n`);
+  process.stderr.write('Run with --help for usage.\n');
+  process.exit(2);
 }
 
 function main() {
@@ -45,13 +71,47 @@ function main() {
   const docsDir = typeof flags.docs === 'string' && flags.docs
     ? flags.docs
     : DEFAULTS.docs;
+  const wantsOut = typeof flags.out === 'string' && flags.out;
+  const wantsCheck = typeof flags.check === 'string' && flags.check;
 
-  const report = collectTelemetry({ rootDir, docsDir });
+  if (flags.out === true || flags.check === true) {
+    usageError('--out and --check require file paths');
+  }
+  if (wantsOut && wantsCheck) {
+    usageError('--out and --check cannot be used together in this release');
+  }
+
+  const determinismFallback = wantsOut || wantsCheck ? 2 : 1;
+  const determinismRuns = parseDeterminismRuns(flags['determinism-runs'], determinismFallback);
+  if (determinismRuns == null) usageError('--determinism-runs must be a positive integer');
+
+  const report = wantsOut || wantsCheck
+    ? collectTelemetryLedger({ rootDir, docsDir, determinismRuns })
+    : collectTelemetry({ rootDir, docsDir });
+
+  if (wantsOut) writeTelemetryLedger({ outPath: flags.out, report, rootDir });
+
+  let outputReport = report;
+  if (wantsCheck) {
+    const check = compareTelemetryLedger({ filePath: flags.check, report, rootDir });
+    outputReport = {
+      ...report,
+      check,
+    };
+    if (!flags.json && check.warning_count > 0) {
+      for (const finding of check.findings) {
+        process.stderr.write(`workflow:telemetry warning-first: ${check.status} ${finding.path} - ${finding.reason}\n`);
+      }
+    }
+  }
 
   if (flags.json) {
-    process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+    const json = wantsOut || wantsCheck
+      ? stableTelemetryJson(outputReport)
+      : `${JSON.stringify(outputReport, null, 2)}\n`;
+    process.stdout.write(json);
   } else {
-    process.stdout.write(formatTelemetryHuman(report).join('\n') + '\n');
+    process.stdout.write(formatTelemetryHuman(outputReport).join('\n') + '\n');
   }
 
   process.exit(0);

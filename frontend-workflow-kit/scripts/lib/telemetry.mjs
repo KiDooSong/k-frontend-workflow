@@ -1,7 +1,9 @@
 // telemetry.mjs (lib) - warning-first aggregation for existing observation CLIs.
 //
-// MVP skeleton: call public --json CLIs, normalize only availability and warning
-// counts, and never emit promotion/pass/fail verdicts.
+// Calls public --json CLIs, normalizes only availability and warning counts, and
+// can write deterministic observation ledgers. It never emits promotion/pass/fail
+// verdicts.
+import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { DEFAULTS, KIT_ROOT, exists } from './util.mjs';
@@ -35,9 +37,35 @@ const SURFACES = [
   },
 ];
 
+const NON_DETERMINISTIC_KEYS = new Set([
+  'generated_at',
+  'timestamp',
+  'duration',
+  'duration_ms',
+  'elapsed',
+  'elapsed_ms',
+  'cwd',
+  'absolute_path',
+  'temp_path',
+  'stderr',
+]);
+
 function resolveUnder(base, value) {
   if (path.isAbsolute(value)) return path.resolve(value);
   return path.resolve(base, value);
+}
+
+function toPosixPath(value) {
+  return String(value || '').split(path.sep).join('/');
+}
+
+function rootRelativePath(rootDir, value) {
+  const rootAbs = path.resolve(rootDir || process.cwd());
+  const abs = path.isAbsolute(value) ? path.resolve(value) : path.resolve(rootAbs, value);
+  const rel = path.relative(rootAbs, abs);
+  if (!rel || rel === '') return '.';
+  if (rel.startsWith('..') || path.isAbsolute(rel)) return path.basename(abs);
+  return toPosixPath(rel);
 }
 
 function warningCountFrom(report) {
@@ -86,6 +114,114 @@ function normalizeSurface(surface, report) {
     warning_count: warningCountFrom(report),
     source_tool: surface.source_tool,
   };
+}
+
+function sanitizeDeterministicValue(value) {
+  if (Array.isArray(value)) return value.map((item) => sanitizeDeterministicValue(item));
+  if (!value || typeof value !== 'object') return value;
+  const out = {};
+  for (const key of Object.keys(value).sort()) {
+    if (NON_DETERMINISTIC_KEYS.has(key)) continue;
+    out[key] = sanitizeDeterministicValue(value[key]);
+  }
+  return out;
+}
+
+function normalizeSurfaceForReport(surface) {
+  const out = {
+    surface_id: String(surface?.surface_id || ''),
+    source_tool: String(surface?.source_tool || ''),
+    available: Boolean(surface?.available),
+    warning_count: warningCountFrom(surface),
+  };
+  if (!out.available && surface?.unavailable_reason) {
+    out.unavailable_reason = String(surface.unavailable_reason);
+  }
+  if (surface?.surface_id === 'readiness-eval' || surface?.total != null) {
+    out.total = nonNegativeInteger(surface?.total);
+    out.false_open = nonNegativeInteger(surface?.false_open);
+    out.false_closed = nonNegativeInteger(surface?.false_closed);
+    out.fail_closed_leaked = nonNegativeInteger(surface?.fail_closed_leaked);
+    out.blocking_mismatch = nonNegativeInteger(surface?.blocking_mismatch);
+  }
+  if (surface?.determinism) {
+    out.determinism = {
+      runs: Math.max(1, nonNegativeInteger(surface.determinism.runs) || 1),
+      identical: Boolean(surface.determinism.identical),
+      witness: String(surface.determinism.witness || 'normalized-json'),
+    };
+  }
+  return out;
+}
+
+function summarizeSurfaces(surfaces) {
+  const availableCount = surfaces.filter((s) => s.available).length;
+  return {
+    surface_count: surfaces.length,
+    available_count: availableCount,
+    unavailable_count: surfaces.length - availableCount,
+    warning_count: surfaces.reduce((sum, s) => sum + warningCountFrom(s), 0),
+  };
+}
+
+function normalizeCheckFinding(finding) {
+  return {
+    severity: 'warning',
+    check: String(finding?.check || 'telemetry-ledger-drift'),
+    path: String(finding?.path || ''),
+    reason: String(finding?.reason || ''),
+  };
+}
+
+function normalizeTelemetryCheck(check) {
+  const findings = Array.isArray(check?.findings) ? check.findings.map(normalizeCheckFinding) : [];
+  return {
+    checked: Boolean(check?.checked),
+    path: String(check?.path || ''),
+    status: String(check?.status || 'match'),
+    warning_count: warningCountFrom({ warning_count: check?.warning_count, findings }),
+    findings,
+  };
+}
+
+export function normalizeTelemetryReport(report) {
+  const rawSurfaces = Array.isArray(report?.surfaces) ? report.surfaces : [];
+  const surfaces = rawSurfaces.map((surface) => normalizeSurfaceForReport(sanitizeDeterministicValue(surface)));
+  const hasLedgerFields = report?.ledger_version != null || report?.kind === 'observation-ledger' || report?.inputs || report?.summary;
+  const out = {
+    tool: 'workflow:telemetry',
+    mode: 'warning-first',
+    schema_version: 1,
+  };
+  if (hasLedgerFields) {
+    out.ledger_version = 1;
+    out.kind = 'observation-ledger';
+  }
+  out.ok = true;
+  if (hasLedgerFields) {
+    out.inputs = {
+      root: String(report?.inputs?.root || '.'),
+      docs: String(report?.inputs?.docs || DEFAULTS.docs),
+    };
+    out.summary = summarizeSurfaces(surfaces);
+  }
+  out.surfaces = surfaces;
+  if (report?.check) out.check = normalizeTelemetryCheck(report.check);
+  return out;
+}
+
+export function stableTelemetryJson(report) {
+  return `${JSON.stringify(normalizeTelemetryReport(report), null, 2)}\n`;
+}
+
+function surfaceSignature(surface) {
+  const normalized = normalizeSurfaceForReport(sanitizeDeterministicValue(surface));
+  delete normalized.determinism;
+  return JSON.stringify(normalized);
+}
+
+function determinismWitness(surface) {
+  return surface?.available ? 'normalized-json' : 'unavailable-reason';
 }
 
 export function runSurfaceCommand({ scriptPath, args, cwd }) {
@@ -162,6 +298,143 @@ export function collectTelemetry({
     ok: true,
     surfaces,
   };
+}
+
+export function collectTelemetryWithDeterminism({
+  determinismRuns = 1,
+  ...opts
+} = {}) {
+  const runs = Math.max(1, Math.trunc(Number(determinismRuns) || 1));
+  const reports = [];
+  for (let i = 0; i < runs; i++) reports.push(collectTelemetry(opts));
+  const normalizedRuns = reports.map((report) => normalizeTelemetryReport(report));
+  const first = normalizedRuns[0] || normalizeTelemetryReport({ surfaces: [] });
+  const surfaces = first.surfaces.map((surface) => {
+    const signatures = normalizedRuns.map((report) => {
+      const matching = report.surfaces.find((candidate) => candidate.surface_id === surface.surface_id);
+      return surfaceSignature(matching || unavailable({
+        surface_id: surface.surface_id,
+        source_tool: surface.source_tool,
+      }, 'surface missing'));
+    });
+    return {
+      ...surface,
+      determinism: {
+        runs,
+        identical: signatures.every((signature) => signature === signatures[0]),
+        witness: determinismWitness(surface),
+      },
+    };
+  });
+  return {
+    ...first,
+    surfaces,
+  };
+}
+
+export function collectTelemetryLedger({
+  rootDir = process.cwd(),
+  docsDir = DEFAULTS.docs,
+  determinismRuns = 1,
+  ...opts
+} = {}) {
+  const rootAbs = path.resolve(rootDir || process.cwd());
+  const docsAbs = resolveUnder(rootAbs, docsDir || DEFAULTS.docs);
+  const report = collectTelemetryWithDeterminism({
+    rootDir: rootAbs,
+    docsDir,
+    determinismRuns,
+    ...opts,
+  });
+  return normalizeTelemetryReport({
+    ...report,
+    ledger_version: 1,
+    kind: 'observation-ledger',
+    inputs: {
+      root: '.',
+      docs: rootRelativePath(rootAbs, docsAbs),
+    },
+  });
+}
+
+function resolveFileFromRoot(rootDir, filePath) {
+  const rootAbs = path.resolve(rootDir || process.cwd());
+  return path.isAbsolute(filePath) ? path.resolve(filePath) : path.resolve(rootAbs, filePath);
+}
+
+export function writeTelemetryLedger({ outPath, report, rootDir = process.cwd() }) {
+  const resolved = resolveFileFromRoot(rootDir, outPath);
+  fs.mkdirSync(path.dirname(resolved), { recursive: true });
+  fs.writeFileSync(resolved, stableTelemetryJson(report), 'utf8');
+  return {
+    path: resolved,
+    displayPath: rootRelativePath(rootDir, resolved),
+  };
+}
+
+function checkResult({ rootDir, filePath, status, check, reason }) {
+  const displayPath = rootRelativePath(rootDir, filePath);
+  const hasWarning = status !== 'match';
+  return {
+    checked: true,
+    path: displayPath,
+    status,
+    warning_count: hasWarning ? 1 : 0,
+    findings: hasWarning
+      ? [{
+        severity: 'warning',
+        check,
+        path: displayPath,
+        reason,
+      }]
+      : [],
+  };
+}
+
+export function compareTelemetryLedger({ filePath, report, rootDir = process.cwd() }) {
+  const resolved = resolveFileFromRoot(rootDir, filePath);
+  if (!exists(resolved)) {
+    return checkResult({
+      rootDir,
+      filePath: resolved,
+      status: 'missing',
+      check: 'telemetry-ledger-missing',
+      reason: 'ledger file not found',
+    });
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(resolved, 'utf8'));
+  } catch {
+    return checkResult({
+      rootDir,
+      filePath: resolved,
+      status: 'invalid-json',
+      check: 'telemetry-ledger-invalid-json',
+      reason: 'ledger file is not valid JSON',
+    });
+  }
+
+  const currentJson = stableTelemetryJson(report);
+  const existingJson = stableTelemetryJson(parsed);
+  if (currentJson !== existingJson) {
+    return checkResult({
+      rootDir,
+      filePath: resolved,
+      status: 'drift',
+      check: 'telemetry-ledger-drift',
+      reason: 'current telemetry differs from ledger',
+    });
+  }
+
+  return checkResult({
+    rootDir,
+    filePath: resolved,
+    status: 'match',
+    check: 'telemetry-ledger-match',
+    reason: '',
+  });
 }
 
 export function formatTelemetryHuman(report) {

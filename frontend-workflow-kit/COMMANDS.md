@@ -102,6 +102,8 @@ npm run workflow:route-cross-check
 npm run workflow:doc-drift
 npm run workflow:eval -- --json
 npm run workflow:telemetry -- --json
+npm run workflow:telemetry -- --out docs/frontend-workflow/_meta/telemetry-ledger.json
+npm run workflow:telemetry -- --check docs/frontend-workflow/_meta/telemetry-ledger.json --json
 npm run workflow:check-generated
 ```
 
@@ -111,7 +113,7 @@ These commands produce read-only metadata under `docs/frontend-workflow/_meta/`,
 
 `workflow:eval` is a warning-first readiness measurement harness. It compares labeled cases against `computeReadiness`, reports exact-match, false-open, false-closed, fail-closed leakage, and blocking-kind mismatch metrics, and does not fail because of metric mismatches.
 
-`workflow:telemetry` is an MVP stdout-only aggregator for warning-first observation surfaces. It summarizes `route-cross-check`, `doc-drift`, and `workflow:eval` warning counts through their public `--json` CLIs, records unavailable surfaces, includes the readiness-eval blocking mismatch count, writes no ledger/artifact, emits no pass/fail verdict, and always exits 0.
+`workflow:telemetry` is a warning-first observation tool. It summarizes `route-cross-check`, `doc-drift`, and `workflow:eval` warning counts through their public `--json` CLIs, records unavailable surfaces, and includes the readiness-eval blocking mismatch count. `--out` writes an explicitly requested deterministic ledger snapshot; `--check` compares current telemetry with a ledger and reports ledger drift as warning-only check data. Drift keeps the command on exit 0 and is not a gate. Any blocking check or hard-gate promotion stays outside this command until a separate Open Decision and human approval.
 
 ## Implementation Packets
 
