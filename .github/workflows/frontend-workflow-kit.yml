@@ -42,6 +42,30 @@ jobs:
       - run: npm run example:state
       - run: npm run example:readiness
 
+      # telemetry artifact accumulation — observation-only(비차단).
+      #   - example _meta 생성 뒤 실행해 route/doc/eval 관측이 현재 예제 문서 상태를 보게 한다.
+      #   - 아래 idempotency/validate 게이트와 분리되어 있으며, 원장은 승격 판단 재료일 뿐 판정이 아니다.
+      - name: telemetry observation ledger (warning-only)
+        continue-on-error: true
+        run: |
+          mkdir -p "$RUNNER_TEMP/frontend-workflow-telemetry"
+          npm --silent run workflow:telemetry -- \
+            --docs examples/coupon-feature/docs/frontend-workflow \
+            --out "$RUNNER_TEMP/frontend-workflow-telemetry/telemetry-ledger.json" \
+            --json > "$RUNNER_TEMP/frontend-workflow-telemetry/telemetry-report.json"
+
+      - name: upload telemetry observation ledger
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-workflow-telemetry-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/frontend-workflow-telemetry/telemetry-ledger.json
+            ${{ runner.temp }}/frontend-workflow-telemetry/telemetry-report.json
+          if-no-files-found: warn
+          retention-days: 30
+
       # 멱등성 게이트: 생성된 _meta 가 커밋된 것과 다르면 실패.
       # 이게 빠지면 "스크립트가 돈다"만 증명할 뿐 "커밋된 출력을 재현한다"는 증명하지 못한다.
       - name: assert generated docs match committed (idempotency)

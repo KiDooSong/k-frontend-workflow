@@ -113,7 +113,9 @@ These commands produce read-only metadata under `docs/frontend-workflow/_meta/`,
 
 `workflow:eval` is a warning-first readiness measurement harness. It compares labeled cases against `computeReadiness`, reports exact-match, false-open, false-closed, fail-closed leakage, and blocking-kind mismatch metrics, and does not fail because of metric mismatches.
 
-`workflow:telemetry` is a warning-first observation tool. It summarizes `route-cross-check`, `doc-drift`, and `workflow:eval` warning counts through their public `--json` CLIs, records unavailable surfaces, and includes the readiness-eval blocking mismatch count. `--out` writes an explicitly requested deterministic ledger snapshot; `--check` compares current telemetry with a ledger and reports ledger drift as warning-only check data. Drift keeps the command on exit 0 and is not a gate. Any blocking check or hard-gate promotion stays outside this command until a separate Open Decision and human approval.
+`workflow:telemetry` is a warning-first observation tool. It summarizes `route-cross-check`, `doc-drift`, and `workflow:eval` warning counts through their public `--json` CLIs, records unavailable surfaces, and includes the readiness-eval blocking mismatch count. `--out` writes an explicitly requested deterministic ledger snapshot; `--check` compares current telemetry with a ledger and reports ledger drift as warning-only check data. Drift, unavailable surfaces, and findings keep the command on exit 0.
+
+CI artifact accumulation is observation-only. The Actions workflow writes the ledger under `$RUNNER_TEMP/frontend-workflow-telemetry/` and uploads it as an artifact so repeated runs can become evidence for later human review. The uploaded ledger is not a pass/fail verdict, and it is not a gate. The CI telemetry step uses `continue-on-error`, and artifact upload uses `if: always()` plus `if-no-files-found: warn` so missing observation files do not fail the job. Do not wire telemetry ledger drift to exit 1, a hard gate, or a required check without a separate Open Decision and human approval.
 
 ## Implementation Packets
 
