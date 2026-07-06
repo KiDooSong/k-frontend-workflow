@@ -637,9 +637,20 @@ test('CLI rejects empty ledger path values with exit 2', () => {
   });
 });
 
-test('CLI rejects fractional determinism runs with exit 2', () => {
+test('CLI rejects missing or fractional determinism runs with exit 2', () => {
   withRoot({}, (root) => {
-    const r = spawnSync(process.execPath, [
+    const missing = spawnSync(process.execPath, [
+      CLI,
+      '--root',
+      root,
+      '--out',
+      'telemetry-ledger.json',
+      '--determinism-runs',
+    ], { encoding: 'utf8' });
+    assert.equal(missing.status, 2);
+    assert.match(missing.stderr, /--determinism-runs must be a positive integer/);
+
+    const fractional = spawnSync(process.execPath, [
       CLI,
       '--root',
       root,
@@ -648,8 +659,8 @@ test('CLI rejects fractional determinism runs with exit 2', () => {
       '--determinism-runs',
       '1.9',
     ], { encoding: 'utf8' });
-    assert.equal(r.status, 2);
-    assert.match(r.stderr, /--determinism-runs must be a positive integer/);
+    assert.equal(fractional.status, 2);
+    assert.match(fractional.stderr, /--determinism-runs must be a positive integer/);
   });
 });
 

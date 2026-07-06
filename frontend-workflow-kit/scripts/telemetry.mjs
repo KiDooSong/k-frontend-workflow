@@ -46,7 +46,8 @@ Behavior:
 }
 
 function parseDeterminismRuns(value, fallback) {
-  if (value == null || value === true) return fallback;
+  if (value == null) return fallback;
+  if (value === true) return null;
   const text = String(value).trim();
   if (!/^[1-9]\d*$/.test(text)) return null;
   const n = Number(text);
