@@ -6,14 +6,20 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { DEFAULTS, KIT_ROOT, exists } from './util.mjs';
+import { DEFAULTS, KIT_ROOT, exists, readFileSafe } from './util.mjs';
 
 export const CHILD_JSON_MAX_BUFFER = 16 * 1024 * 1024;
 
 // Surface registry. `default` group surfaces are always observed; other groups
 // are strictly opt-in and never run unless explicitly requested, so the default
 // telemetry output/ledger byte shape stays stable.
-export const TELEMETRY_SURFACE_GROUPS = ['default', 'visual'];
+export const TELEMETRY_SURFACE_GROUPS = ['default', 'visual', 'adoption'];
+
+// Ingest groups normalize files that an earlier tool run already produced; they
+// never spawn a child CLI and always need an explicit input path. `all` therefore
+// expands to the runnable groups only - adoption is never implied, because
+// telemetry must not guess (or create) a probe run dir for the current repo.
+export const TELEMETRY_INGEST_GROUPS = ['adoption'];
 
 // Visual surfaces consume only the public --json output of the visual CLIs.
 // No --out/--format/--enforce: telemetry never writes drafts or promotes warnings.
@@ -31,6 +37,7 @@ const SURFACES = [
     surface_id: 'route-cross-check',
     source_tool: 'workflow:route-cross-check',
     script: 'route-cross-check.mjs',
+    kind: 'cli',
     groups: ['default'],
     args({ docsDir }) {
       return ['--docs', docsDir, '--json'];
@@ -40,6 +47,7 @@ const SURFACES = [
     surface_id: 'doc-drift',
     source_tool: 'workflow:doc-drift',
     script: 'doc-drift.mjs',
+    kind: 'cli',
     groups: ['default'],
     args({ rootDir }) {
       return ['--root', rootDir, '--json'];
@@ -49,6 +57,7 @@ const SURFACES = [
     surface_id: 'readiness-eval',
     source_tool: 'workflow:eval',
     script: 'readiness-eval.mjs',
+    kind: 'cli',
     groups: ['default'],
     args() {
       return ['--json'];
@@ -58,6 +67,7 @@ const SURFACES = [
     surface_id: 'visual-consistency',
     source_tool: 'workflow:visual-consistency',
     script: 'visual-consistency.mjs',
+    kind: 'cli',
     groups: ['visual'],
     args: visualSurfaceArgs,
   },
@@ -65,8 +75,18 @@ const SURFACES = [
     surface_id: 'visual-contract-bootstrap',
     source_tool: 'workflow:visual-contract-bootstrap',
     script: 'visual-contract-bootstrap.mjs',
+    kind: 'cli',
     groups: ['visual'],
     args: visualSurfaceArgs,
+  },
+  // Ingest surface: reads an existing adoption-probe run's probe-summary.json.
+  // Telemetry never runs workflow:adoption-probe, never creates a probe run dir,
+  // and never parses the run's raw observations/* files - summary only.
+  {
+    surface_id: 'adoption-probe-summary',
+    source_tool: 'workflow:adoption-probe',
+    kind: 'ingest',
+    groups: ['adoption'],
   },
 ];
 
@@ -75,7 +95,27 @@ export function listTelemetrySurfaces() {
     surface_id: surface.surface_id,
     groups: [...surface.groups],
     source_tool: surface.source_tool,
+    kind: surface.kind,
   }));
+}
+
+// `all` expands to the runnable (non-ingest) groups only - see
+// TELEMETRY_INGEST_GROUPS above for why adoption is never implied.
+export function expandTelemetryGroups(includeGroups = []) {
+  const groups = new Set(['default']);
+  for (const group of includeGroups) {
+    if (group === 'all') {
+      for (const known of TELEMETRY_SURFACE_GROUPS) {
+        if (!TELEMETRY_INGEST_GROUPS.includes(known)) groups.add(known);
+      }
+      continue;
+    }
+    if (!TELEMETRY_SURFACE_GROUPS.includes(group)) {
+      throw new Error(`unknown surface group: ${group}`);
+    }
+    groups.add(group);
+  }
+  return groups;
 }
 
 // Selection is additive: the default group always runs; includeGroups/-Surfaces
@@ -86,17 +126,7 @@ export function selectTelemetrySurfaces({
   includeSurfaces = [],
   skipSurfaces = [],
 } = {}) {
-  const groups = new Set(['default']);
-  for (const group of includeGroups) {
-    if (group === 'all') {
-      for (const known of TELEMETRY_SURFACE_GROUPS) groups.add(known);
-      continue;
-    }
-    if (!TELEMETRY_SURFACE_GROUPS.includes(group)) {
-      throw new Error(`unknown surface group: ${group}`);
-    }
-    groups.add(group);
-  }
+  const groups = expandTelemetryGroups(includeGroups);
   const ids = new Set(includeSurfaces);
   for (const id of ids) {
     if (!SURFACES.some((surface) => surface.surface_id === id)) {
@@ -169,6 +199,73 @@ function unavailable(surface, reason) {
     source_tool: surface.source_tool,
     unavailable_reason: reason,
   };
+}
+
+// --- adoption-probe summary ingest ------------------------------------------
+// Normalizes an existing probe-summary.json (written by workflow:adoption-probe)
+// into one telemetry surface. File content only: no child process, no probe run
+// dir creation, no re-parse of the run's raw observations/stdout files, and no
+// new gate/verdict fields. Probe boundary fields (draft_only) are preserved as
+// booleans, never interpreted as a verdict.
+
+export function resolveAdoptionSummaryPath(rootAbs, adoption = {}) {
+  if (adoption.summaryPath) return resolveUnder(rootAbs, adoption.summaryPath);
+  if (adoption.runDir) return path.join(resolveUnder(rootAbs, adoption.runDir), 'probe-summary.json');
+  return null;
+}
+
+// Missing/null fields normalize to stable 0/false/null so synthetic or older
+// summaries still produce a deterministic surface shape.
+export function normalizeAdoptionProbeSummary(summary, { summaryDisplayPath = '', skipVisual = false } = {}) {
+  const visual = !skipVisual && summary?.visual && typeof summary.visual === 'object' ? summary.visual : null;
+  const visualEnabled = Boolean(visual?.enabled);
+  const findings = visualEnabled && Array.isArray(visual?.findings) ? visual.findings : [];
+  const nonInfoFindings = findings.filter((finding) => finding?.severity !== 'info').length;
+  const bootstrapWarnings = visualEnabled ? nonNegativeInteger(visual?.bootstrap?.warnings) : 0;
+  const consistencyWarnings = visualEnabled ? nonNegativeInteger(visual?.consistency?.warnings) : 0;
+  return {
+    surface_id: 'adoption-probe-summary',
+    available: true,
+    // Visual warnings plus non-info probe findings; info findings never count.
+    warning_count: bootstrapWarnings + consistencyWarnings + nonInfoFindings,
+    source_tool: 'workflow:adoption-probe',
+    run_id: summary?.probe_id != null ? String(summary.probe_id) : null,
+    status: 'observed',
+    draft_only: Boolean(summary?.draft_only),
+    finding_count: findings.length,
+    visual_enabled: visualEnabled,
+    visual_status: visualEnabled && visual?.status != null ? String(visual.status) : null,
+    visual_bootstrap_warnings: bootstrapWarnings,
+    visual_consistency_warnings: consistencyWarnings,
+    visual_component_gap_candidates: visualEnabled
+      ? nonNegativeInteger(visual?.bootstrap?.component_gap_candidates)
+      : 0,
+    observation_paths: {
+      summary: String(summaryDisplayPath || ''),
+    },
+  };
+}
+
+function ingestAdoptionSurface(surface, { rootAbs, adoption = {}, readFile = readFileSafe }) {
+  const summaryAbs = resolveAdoptionSummaryPath(rootAbs, adoption);
+  // CLI usage validation rejects this earlier (exit 2); programmatic callers get
+  // a safe unavailable surface instead of an implicit probe of the current repo.
+  if (!summaryAbs) return unavailable(surface, 'probe summary not specified');
+  const raw = readFile(summaryAbs);
+  if (raw == null) return unavailable(surface, 'summary not found');
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return unavailable(surface, 'invalid JSON');
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return unavailable(surface, 'invalid summary shape');
+  }
+  return normalizeAdoptionProbeSummary(parsed, {
+    summaryDisplayPath: rootRelativePath(rootAbs, summaryAbs),
+    skipVisual: Boolean(adoption.skipVisual),
+  });
 }
 
 function normalizeSurface(surface, report) {
@@ -259,6 +356,22 @@ function normalizeSurfaceForReport(surface) {
     out.suggested_addition_count = nonNegativeInteger(surface?.suggested_addition_count);
     out.component_gap_candidate_count = nonNegativeInteger(surface?.component_gap_candidate_count);
   }
+  // Adoption ingest fields survive the ledger normalization; unavailable ingest
+  // surfaces stay on the minimal generic shape like every other surface.
+  if (out.available && surface?.surface_id === 'adoption-probe-summary') {
+    out.run_id = surface?.run_id != null ? String(surface.run_id) : null;
+    out.status = String(surface?.status || 'observed');
+    out.draft_only = Boolean(surface?.draft_only);
+    out.finding_count = nonNegativeInteger(surface?.finding_count);
+    out.visual_enabled = Boolean(surface?.visual_enabled);
+    out.visual_status = surface?.visual_status != null ? String(surface.visual_status) : null;
+    out.visual_bootstrap_warnings = nonNegativeInteger(surface?.visual_bootstrap_warnings);
+    out.visual_consistency_warnings = nonNegativeInteger(surface?.visual_consistency_warnings);
+    out.visual_component_gap_candidates = nonNegativeInteger(surface?.visual_component_gap_candidates);
+    out.observation_paths = {
+      summary: String(surface?.observation_paths?.summary || ''),
+    };
+  }
   if (surface?.determinism) {
     out.determinism = {
       runs: Math.max(1, nonNegativeInteger(surface.determinism.runs) || 1),
@@ -334,6 +447,14 @@ export function normalizeTelemetryReport(report) {
       }
       if (Object.keys(visual).length > 0) out.inputs.visual = visual;
     }
+    const rawAdoption = report?.inputs?.adoption;
+    if (rawAdoption && typeof rawAdoption === 'object') {
+      const adoption = {};
+      for (const key of ['run', 'summary']) {
+        if (rawAdoption[key] != null && rawAdoption[key] !== '') adoption[key] = String(rawAdoption[key]);
+      }
+      if (Object.keys(adoption).length > 0) out.inputs.adoption = adoption;
+    }
     out.summary = summarizeSurfaces(surfaces);
   }
   out.surfaces = surfaces;
@@ -352,7 +473,12 @@ function surfaceSignature(surface) {
 }
 
 function determinismWitness(surface) {
-  return surface?.available ? 'normalized-json' : 'unavailable-reason';
+  if (!surface?.available) return 'unavailable-reason';
+  // Ingest surfaces are file-content normalizations, not child runs: the witness
+  // re-reads and re-normalizes the same summary file per determinism run.
+  const registered = SURFACES.find((candidate) => candidate.surface_id === surface.surface_id);
+  if (registered?.kind === 'ingest') return 'normalized-summary-json';
+  return 'normalized-json';
 }
 
 export function runSurfaceCommand({ scriptPath, args, cwd }) {
@@ -379,6 +505,7 @@ export function collectTelemetry({
   skipSurfaces = [],
   srcDir = DEFAULTS.src,
   visual = {},
+  adoption = {},
 } = {}) {
   const rootAbs = path.resolve(rootDir || process.cwd());
   const docsAbs = resolveUnder(rootAbs, docsDir || DEFAULTS.docs);
@@ -393,6 +520,12 @@ export function collectTelemetry({
   const surfaces = [];
 
   for (const surface of selected) {
+    // Ingest surfaces normalize an existing file - no script, no child process.
+    if (surface.kind === 'ingest') {
+      surfaces.push(ingestAdoptionSurface(surface, { rootAbs, adoption }));
+      continue;
+    }
+
     const scriptPath = path.join(scriptsAbs, surface.script);
     if (!fileExists(scriptPath)) {
       surfaces.push(unavailable(surface, 'script not found'));
@@ -493,25 +626,24 @@ export function collectTelemetryLedger({
     root: '.',
     docs: rootRelativePath(rootAbs, docsAbs),
   };
-  // Ledger inputs stay {root, docs} for default runs; src/include/surfaces/visual
-  // filters are recorded (root-relative, deterministic) only when a visual
-  // surface was actually selected.
+  // Ledger inputs stay {root, docs} for default runs; include/surfaces plus the
+  // visual/adoption opt-in inputs are recorded (root-relative, deterministic)
+  // only when an opt-in surface was actually selected.
   const selected = selectTelemetrySurfaces({
     includeGroups: opts.includeGroups || [],
     includeSurfaces: opts.includeSurfaces || [],
     skipSurfaces: opts.skipSurfaces || [],
   });
-  if (selected.some((surface) => surface.groups.includes('visual'))) {
-    const srcAbs = resolveUnder(rootAbs, opts.srcDir || DEFAULTS.src);
-    inputs.src = rootRelativePath(rootAbs, srcAbs);
-    const requestedGroups = new Set(['default']);
-    for (const group of opts.includeGroups || []) {
-      if (group === 'all') {
-        for (const known of TELEMETRY_SURFACE_GROUPS) requestedGroups.add(known);
-      } else {
-        requestedGroups.add(group);
-      }
+  const visualSelected = selected.some((surface) => surface.groups.includes('visual'));
+  const adoptionSelected = selected.some((surface) => surface.groups.includes('adoption'));
+  if (visualSelected || adoptionSelected) {
+    if (visualSelected) {
+      const srcAbs = resolveUnder(rootAbs, opts.srcDir || DEFAULTS.src);
+      inputs.src = rootRelativePath(rootAbs, srcAbs);
     }
+    const requestedGroups = expandTelemetryGroups(opts.includeGroups || []);
+    if (visualSelected) requestedGroups.add('visual');
+    if (adoptionSelected) requestedGroups.add('adoption');
     inputs.include = TELEMETRY_SURFACE_GROUPS.filter((group) => requestedGroups.has(group));
     const explicit = new Set(opts.includeSurfaces || []);
     if (explicit.size > 0) {
@@ -526,6 +658,15 @@ export function collectTelemetryLedger({
       visualFilters.contract = rootRelativePath(rootAbs, resolveUnder(rootAbs, opts.visual.contract));
     }
     if (Object.keys(visualFilters).length > 0) inputs.visual = visualFilters;
+    if (adoptionSelected) {
+      const adoptionInputs = {};
+      if (opts.adoption?.runDir) {
+        adoptionInputs.run = rootRelativePath(rootAbs, resolveUnder(rootAbs, opts.adoption.runDir));
+      }
+      const summaryAbs = resolveAdoptionSummaryPath(rootAbs, opts.adoption || {});
+      if (summaryAbs) adoptionInputs.summary = rootRelativePath(rootAbs, summaryAbs);
+      if (Object.keys(adoptionInputs).length > 0) inputs.adoption = adoptionInputs;
+    }
   }
   return normalizeTelemetryReport({
     ...report,
@@ -630,7 +771,10 @@ export function formatTelemetryHuman(report) {
       const skipped = surface.surface_id === 'visual-consistency' && surface.skipped
         ? ', skipped=true'
         : '';
-      lines.push(`  ${surface.surface_id}: available, warnings=${surface.warning_count}${blocking}${skipped}`);
+      const ingest = surface.surface_id === 'adoption-probe-summary'
+        ? `, ingest=probe-summary, visual_enabled=${Boolean(surface.visual_enabled)}`
+        : '';
+      lines.push(`  ${surface.surface_id}: available, warnings=${surface.warning_count}${blocking}${skipped}${ingest}`);
     } else {
       lines.push(`  ${surface.surface_id}: unavailable (${surface.unavailable_reason})`);
     }

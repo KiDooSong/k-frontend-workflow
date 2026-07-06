@@ -1,0 +1,40 @@
+{
+  "probe_id": "telemetry-ingest-basic-001",
+  "project_name": "telemetry-ingest-basic",
+  "date": "2026-07-01",
+  "draft_only": true,
+  "repo_ref": "<target-repo>",
+  "docs_source": "<target-repo>/docs/frontend-workflow",
+  "src_source": "<target-repo>/src",
+  "out_dir": "<probe-run>",
+  "scratch_dir": "<probe-run>/scratch",
+  "invariants": {
+    "live_docs_untouched_by_workflow_state": true,
+    "source_scaffold_created": false,
+    "ci_changed": false,
+    "open_decision_resolved": false,
+    "hard_gate_promoted": false,
+    "live_policy_replaced": false,
+    "pre_edit_hooks_promoted": false
+  },
+  "observations": {
+    "readiness": "no screens",
+    "validate": "ok",
+    "catalog": "0 component(s)",
+    "f3": {
+      "status": "skipped: no extra layers detected",
+      "same": null,
+      "removed": [],
+      "excluded": []
+    }
+  },
+  "visual": {
+    "enabled": false,
+    "status": "skipped",
+    "reason": "--visual not passed (default probe behavior unchanged)"
+  },
+  "outputs": {
+    "adoption_report": "<probe-run>/adoption-report.md",
+    "summary": "<probe-run>/probe-summary.json"
+  }
+}

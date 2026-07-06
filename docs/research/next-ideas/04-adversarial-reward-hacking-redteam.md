@@ -183,5 +183,9 @@ open→resolved 셀프 개방은 현재 **코드가 아니라 규칙**으로만 
 
 - [`./02-eval-and-calibration-harness.md`](./02-eval-and-calibration-harness.md) — red-team 스위트는 eval harness 의 **적대적 특수화**다. eval 이 "정상 입력에서 판정이 맞는가"를 재면, red-team 은 "적대 입력에서 방어가 fail-closed 하는가"를 잰다. 두 harness 는 같은 `computeReadiness`-소비 뼈대를 공유한다.
 - [`./01-telemetry-and-promotion-evidence.md`](./01-telemetry-and-promotion-evidence.md) — 승격 증거(promotion evidence)가 위조 가능한 채점기라면, red-team 스위트가 그 위조 시도를 fail-closed 로 막는지 검증하는 짝이다.
-</content>
-</invoke>
+
+## Implementation note
+
+- 2026-07-06 red-team Phase 1 landed as **tests/observation only** (no new gate, no CI wiring, no `--enforce` promotion):
+  - `scripts/lib/redteam-path-backstop.test.mjs` — forbidden-paths 경계 회귀 pin: camouflaged `src/api` write 가 `--enforce` 에서 exit 1, 같은 diff 가 `--enforce` 없이는 warning-first(exit 0 + violations JSON 유지), allowed-path diff 침묵, rename-IN/openapi 항상 플래그, 손상 name-status 입력은 exit 2(입력 오류 — metric finding 아님). 전부 committed `examples/path-backstop` state + `--diff <file>` fixture 로만 실행(라이브 git diff 미사용). 기존 backstop 판정 로직 재구현 0.
+  - `scripts/lib/readiness-redteam.test.mjs` — **D→U downgrade 관측** 추가: in-table Status 를 `unknown` 으로 바꾸는 시도는 이미 fail-closed(docs-only)지만, D row 를 `## Unknowns` 섹션으로 옮기면 decision cap 이 사라져 readiness 가 final-fixture-ui 로 되돌아간다. 이것은 **known gap 관측으로 고정**했고 막지 않았다 — Unknowns 는 로드맵 게이트 인벤토리상 의도적으로 non-blocking 이며, downgrade 는 `unknown_count`/`tbd_count` 로 관측 가능하게 남는다. D→U 를 어디서 canonical 하게 관측할지(validate/eval/telemetry 의 diff-aware 관측 등)는 Phase 2 사람 결정(위 "남은 사람 결정" 3 동형). golden 변조/self-resolve 축(Phase 2/3)은 미착수.

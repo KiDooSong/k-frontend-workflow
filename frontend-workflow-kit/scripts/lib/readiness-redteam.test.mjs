@@ -177,3 +177,80 @@ test('Blocking Mode docs-only is invalid and fails closed', () => {
     blocking_mode: 'docs-only',
   });
 });
+
+// --- red-team Phase 1: D→U downgrade observation ----------------------------
+// Threat model: an LLM (or a hurried author) rewrites an open Open Decision (D)
+// as an Unknown (U) so the decision cap disappears and readiness climbs back up.
+// These tests OBSERVE current behavior - they add no gate, do not make readiness
+// treat Unknowns as blocking, and must not fail while the gap exists. The point
+// is to pin the threat model in the repo mechanically.
+//
+// TODO(red-team Phase 2): decide where a D→U downgrade should be observed
+// canonically - e.g. a diff-aware observation (Open Decisions row removed while
+// an equivalent Unknowns row appears) in validate/eval/telemetry - and whether it
+// stays info-only. Blocking Unknowns outright is NOT the goal (Unknowns are a
+// legitimate fact-finding queue, per the roadmap gate inventory).
+
+function unknownsTable(row) {
+  return [
+    '## Unknowns',
+    '',
+    '| ID | Question | Status |',
+    '| --- | --- | --- |',
+    row,
+  ].join('\n');
+}
+
+function observe(openDecisionsSection) {
+  return withDerived(openDecisionsSection, (derived) => ({
+    derived,
+    readiness: computeReadiness({
+      state: {
+        global: {},
+        screens: {
+          S1: { domain: 'coupons', status: 'authored', stub: false, derived },
+        },
+      },
+      policy,
+      ci: {},
+      manifest: {},
+      layout,
+    }).S1,
+  }));
+}
+
+test('red-team control: the same decision kept as an open D row blocks final-fixture-ui', () => {
+  const { readiness } = observe(decisionTable('| D-DOWN | choose auth copy | A/B | final-fixture-ui | pm | open |'));
+  assert.equal(readiness.readiness_mode, 'rough-fixture-ui');
+  assert.ok(readiness.blocking.some((b) => b.open_decision?.id === 'D-DOWN'));
+});
+
+test('red-team: in-table downgrade (Status rewritten to "unknown") already fails closed', () => {
+  // Rewriting the Status cell in place does NOT bypass the gate: a non-enum
+  // status is malformed and pins the screen to docs-only (fail-closed).
+  const r = run(decisionTable('| D-DOWN | choose auth copy | A/B | final-fixture-ui | pm | unknown |'));
+  assert.equal(r.readiness_mode, 'docs-only');
+  assert.deepEqual(invalidDecision(r, 'D-DOWN'), {
+    id: 'D-DOWN',
+    blocking_mode: 'final-fixture-ui',
+  });
+});
+
+test('red-team: documents current D→U downgrade gap without changing readiness - a D row moved to the Unknowns section reopens final-fixture-ui', () => {
+  // KNOWN GAP OBSERVATION (not a desired pass/fail security proof): moving the
+  // decision out of Open Decisions into an open Unknowns row removes the
+  // decision cap entirely under current rules, so readiness climbs back to
+  // final-fixture-ui. This pins today's actual behavior; no gate is added and
+  // Unknowns stay non-blocking by design.
+  const { readiness, derived } = observe(
+    unknownsTable('| U-DOWN | which auth copy do we ship? | open |'),
+  );
+  assert.equal(readiness.readiness_mode, 'final-fixture-ui');
+  assert.deepEqual(readiness.blocking, []);
+  assert.equal(derived.open_decisions_count, 0);
+  // The downgrade is not invisible: it remains observable as an open Unknown in
+  // the derived metrics (unknown_count/tbd_count), which is where a Phase 2
+  // canonical observation could anchor without turning Unknowns into a gate.
+  assert.equal(derived.unknown_count, 1);
+  assert.equal(derived.tbd_count, 1);
+});

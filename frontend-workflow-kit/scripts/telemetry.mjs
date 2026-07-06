@@ -24,7 +24,9 @@ Usage:
   node scripts/telemetry.mjs [--docs <dir>] [--root <dir>] [--json] [--out <file>] [--check <file>] [--determinism-runs <n>]
                              [--include <group>] [--surface <surface-id>] [--src <dir>]
                              [--visual-domain <d>] [--visual-screen <ID[,ID...]>] [--visual-contract <path>]
-                             [--skip-visual-bootstrap] [--skip-visual-consistency] [--list-surfaces] [--help]
+                             [--skip-visual-bootstrap] [--skip-visual-consistency]
+                             [--adoption-run <dir>] [--adoption-summary <file>] [--skip-adoption-visual]
+                             [--list-surfaces] [--help]
 
 Options:
   --root <dir>             Root passed to doc-drift. Default: current working directory.
@@ -34,11 +36,13 @@ Options:
   --out <file>             Write a deterministic observation ledger JSON snapshot.
   --check <file>           Compare current telemetry to a ledger and warn on drift.
   --determinism-runs <n>   Surface runs for ledger determinism witness.
-                           Default: 1, or 2 with --out/--check.
+                           Default: 1, or 2 with --out/--check. Ingest surfaces
+                           re-read and re-normalize the same file per run.
   --include <group>        Add an opt-in surface group (comma-separated ok).
-                           Groups: default (no-op, always on), visual, all.
-                           "all" currently means default+visual and may grow as
-                           future groups are added.
+                           Groups: default (no-op, always on), visual, adoption, all.
+                           "all" means default+visual (runnable groups) and may
+                           grow; adoption is never implied by "all" because it
+                           needs an explicit --adoption-run/--adoption-summary.
   --surface <surface-id>   Add one opt-in surface on top of the default surfaces
                            (comma-separated ok). --surface never replaces the
                            default surfaces; it is additive, like --include.
@@ -49,6 +53,13 @@ Options:
   --visual-contract <p>    Forwarded to visual CLIs as --contract. Requires visual surfaces.
   --skip-visual-bootstrap  Exclude visual-contract-bootstrap from included visual surfaces.
   --skip-visual-consistency Exclude visual-consistency from included visual surfaces.
+  --adoption-run <dir>     Existing workflow:adoption-probe run directory; telemetry
+                           reads <dir>/probe-summary.json only. Requires the
+                           adoption surface (--include adoption).
+  --adoption-summary <f>   Explicit probe-summary.json path (instead of
+                           --adoption-run; the two cannot be combined).
+  --skip-adoption-visual   Ignore the visual section of the probe summary when
+                           normalizing the adoption surface.
   --list-surfaces          Print the surface registry (no child CLI runs) and exit 0.
   --help                   Show this help.
 
@@ -63,6 +74,13 @@ Behavior:
   touches the canonical visual contract. Visual warnings/findings are observations,
   not a gate, approval, readiness promotion, or confirmed promotion, and never
   cause exit 1.
+  The adoption surface (adoption-probe-summary) is ingest-only: telemetry reads an
+  existing probe run's probe-summary.json and normalizes its summary counts. It
+  never runs workflow:adoption-probe (with or without --visual), never creates a
+  probe run dir or scratch copy, and never rewrites probe outputs. A missing or
+  invalid summary file is recorded as available:false and keeps exit 0; only the
+  CLI usage itself (adoption flags without --include adoption, no run/summary
+  input, or both inputs at once) exits 2.
   Top-level ok:true means this telemetry command produced an observation report;
   it is not a pass/fail verdict about any observed surface.
   --check drift, missing files, and invalid JSON are warnings only. No CI artifact,
@@ -109,12 +127,22 @@ function parseValueFlag(flags, name, label) {
 }
 
 const KNOWN_GROUPS = [...TELEMETRY_SURFACE_GROUPS, 'all'];
+const ADOPTION_FLAGS = ['adoption-run', 'adoption-summary', 'skip-adoption-visual'];
 
 function main() {
   const { flags } = parseArgs(process.argv.slice(2));
   if (flags.help) {
     process.stdout.write(helpText());
     process.exit(0);
+  }
+
+  // Unknown adoption sub-flag is a purely syntactic typo guard, so it must hold
+  // on every path - including --list-surfaces, which otherwise returns early
+  // before the adoption opt-in checks below.
+  for (const name of Object.keys(flags)) {
+    if ((name.startsWith('adoption-') || name.startsWith('skip-adoption')) && !ADOPTION_FLAGS.includes(name)) {
+      usageError(`unknown flag: --${name} (known adoption flags: ${ADOPTION_FLAGS.map((f) => `--${f}`).join(', ')})`);
+    }
   }
 
   const registry = listTelemetrySurfaces();
@@ -128,7 +156,8 @@ function main() {
     } else {
       const lines = ['workflow:telemetry surfaces:'];
       for (const surface of registry) {
-        lines.push(`  ${surface.surface_id} [${surface.groups.join(', ')}] - ${surface.source_tool}`);
+        const ingest = surface.kind === 'ingest' ? ' (ingest)' : '';
+        lines.push(`  ${surface.surface_id} [${surface.groups.join(', ')}] - ${surface.source_tool}${ingest}`);
       }
       process.stdout.write(lines.join('\n') + '\n');
     }
@@ -184,6 +213,33 @@ function main() {
     }
   }
 
+  // --- adoption ingest opt-in ------------------------------------------------
+  // The adoption surface never runs a child CLI: it only reads an existing probe
+  // run's probe-summary.json, so it always needs an explicit input path. Note
+  // that --include all does NOT select adoption (see --help). Unknown --adoption-*
+  // flags are already rejected above, before the --list-surfaces early return.
+  const adoptionIds = registry
+    .filter((surface) => surface.groups.includes('adoption'))
+    .map((surface) => surface.surface_id);
+  const adoptionRequested = includeGroups.includes('adoption')
+    || includeSurfaces.some((id) => adoptionIds.includes(id));
+  const adoptionRun = parseValueFlag(flags, 'adoption-run', 'probe run directory');
+  const adoptionSummary = parseValueFlag(flags, 'adoption-summary', 'probe summary file path');
+  if (!adoptionRequested) {
+    for (const name of ADOPTION_FLAGS) {
+      if (hasFlag(flags, name)) {
+        usageError(`--${name} requires the adoption surface (--include adoption)`);
+      }
+    }
+  } else {
+    if (adoptionRun != null && adoptionSummary != null) {
+      usageError('--adoption-run and --adoption-summary cannot be used together');
+    }
+    if (adoptionRun == null && adoptionSummary == null) {
+      usageError('--include adoption requires --adoption-run <dir> or --adoption-summary <file> (telemetry never probes the current repo)');
+    }
+  }
+
   const rootDir = typeof flags.root === 'string' && flags.root
     ? path.resolve(flags.root)
     : process.cwd();
@@ -221,6 +277,11 @@ function main() {
       domain: visualDomain,
       screen: visualScreen,
       contract: visualContract,
+    },
+    adoption: {
+      runDir: adoptionRun,
+      summaryPath: adoptionSummary,
+      skipVisual: flags['skip-adoption-visual'] === true,
     },
   };
   const report = wantsOut || wantsCheck

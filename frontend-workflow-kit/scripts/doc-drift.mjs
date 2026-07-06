@@ -1,37 +1,95 @@
 #!/usr/bin/env node
-// doc-drift.mjs — Phase 0 canonical-doc drift detector (CLI, warning-first).
+// doc-drift.mjs — canonical-doc drift detector (CLI, warning-first).
 //
-// Scope: dead Markdown heading anchors and broken relative links only. This is a
-// diagnostic surface, not a gate: findings never change the exit code, and this
-// script is not wired into readiness/validate/CI required checks.
+// Phase 0 scope (default): dead Markdown heading anchors and broken relative
+// links only. Phase 1 adds ONE opt-in heuristic (--include status-heuristic):
+// manifest↔roadmap status wording cross-check, info-only. This is a diagnostic
+// surface, not a gate: findings never change the exit code, and this script is
+// not wired into readiness/validate/CI required checks.
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { parseArgs } from './lib/util.mjs';
-import { analyzeDocDrift, formatDocDriftHuman } from './lib/doc-drift.mjs';
+import { DEFAULTS, exists, parseArgs } from './lib/util.mjs';
+import { analyzeDocDrift, DocDriftInputError, formatDocDriftHuman } from './lib/doc-drift.mjs';
 
 function helpText() {
-  return `workflow:doc-drift — Phase 0 Markdown relative-link drift detector (warning-first)
+  return `workflow:doc-drift — Markdown relative-link drift detector (warning-first)
 
 Usage:
-  node scripts/doc-drift.mjs [--root <dir>] [--json] [--help]
+  node scripts/doc-drift.mjs [--root <dir>] [--json]
+                             [--include status-heuristic] [--manifest <file>] [--roadmap <file>]
+                             [--help]
 
 Options:
-  --root <dir>  Root to scan. Default: current working directory.
-  --json        Print a deterministic JSON report to stdout.
-  --help        Show this help.
+  --root <dir>       Root to scan. Default: current working directory.
+  --json             Print a deterministic JSON report to stdout.
+  --include <check>  Enable an opt-in check (comma-separated ok).
+                     Known: status-heuristic (manifest↔roadmap status wording,
+                     info-only; findings go to info_count, never warning_count).
+  --manifest <file>  Artifact manifest for the status heuristic.
+                     Default: the kit's catalog/artifact-manifest.yaml.
+                     Requires --include status-heuristic.
+  --roadmap <file>   Roadmap markdown for the status heuristic.
+                     Default: kit-dev/roadmap-current.md under --root (or one
+                     directory above it). Requires --include status-heuristic.
+  --help             Show this help.
 
 Behavior:
   Scans .md files below root, skipping node_modules, .git, hidden directories, and
   dist/build-style output directories. Checks inline Markdown links and image links.
   Skips external URLs and reference-style links. Fenced code blocks are ignored.
 
-  Phase 0 only reports missing relative target files and dead Markdown heading
-  anchors. It does not check semantic drift, manifests, roadmap/changelog PR ranges,
+  Phase 0 (default) only reports missing relative target files and dead Markdown
+  heading anchors. It does not check semantic drift, roadmap/changelog PR ranges,
   external URL reachability, or duplicate document copies.
 
+  --include status-heuristic additionally cross-checks artifact-manifest status
+  fields (active/planned) against roadmap wording on the same line (완료/active/
+  implemented/구현됨 vs planned/예정/대기). This is a narrow keyword heuristic for
+  manual review only: findings are severity "info", counted in info_count and never
+  in warning_count, and are NOT a gate and NOT a semantic-truth/semantic-drift
+  claim. Lines with both signal kinds (e.g. "planned → active") are skipped.
+
 Exit codes:
-  0  Always (warning-first - findings are diagnostics, never a failure).
+  0  Always for findings (warning-first — findings are diagnostics, never a failure).
+  2  Usage/input errors only (unknown --include value, heuristic flags without the
+     opt-in, missing/corrupt manifest or roadmap for the explicitly requested
+     status heuristic).
 `;
+}
+
+function usageError(message) {
+  process.stderr.write(`workflow:doc-drift: ${message}\n`);
+  process.stderr.write('Run with --help for usage.\n');
+  process.exit(2);
+}
+
+const KNOWN_INCLUDES = ['status-heuristic'];
+
+function parseIncludes(flags) {
+  if (!Object.prototype.hasOwnProperty.call(flags, 'include')) return [];
+  const value = flags.include;
+  if (typeof value !== 'string' || value.trim() === '') {
+    usageError('--include requires a check name');
+  }
+  const includes = value.split(',').map((item) => item.trim()).filter((item) => item !== '');
+  for (const include of includes) {
+    if (!KNOWN_INCLUDES.includes(include)) {
+      usageError(`unknown --include value: ${include} (known: ${KNOWN_INCLUDES.join(', ')})`);
+    }
+  }
+  return includes;
+}
+
+// Default roadmap: kit-dev/roadmap-current.md under --root, falling back to one
+// directory above (kit checkout inside the dev repo). Existence-based and stable
+// per checkout; when neither exists the explicitly requested heuristic is an
+// input error, not a silent skip.
+function defaultRoadmapPath(rootDir) {
+  const candidates = [
+    path.join(rootDir, 'kit-dev', 'roadmap-current.md'),
+    path.join(rootDir, '..', 'kit-dev', 'roadmap-current.md'),
+  ];
+  return candidates.find((candidate) => exists(candidate)) || null;
 }
 
 function main() {
@@ -44,7 +102,43 @@ function main() {
   const rootDir = typeof flags.root === 'string' && flags.root
     ? path.resolve(flags.root)
     : process.cwd();
-  const report = analyzeDocDrift({ rootDir });
+
+  const includes = parseIncludes(flags);
+  const heuristicEnabled = includes.includes('status-heuristic');
+  for (const name of ['manifest', 'roadmap']) {
+    if (Object.prototype.hasOwnProperty.call(flags, name)) {
+      if (!heuristicEnabled) {
+        usageError(`--${name} requires --include status-heuristic`);
+      }
+      if (typeof flags[name] !== 'string' || flags[name].trim() === '') {
+        usageError(`--${name} requires a file path`);
+      }
+    }
+  }
+
+  let statusHeuristic = null;
+  if (heuristicEnabled) {
+    const manifestPath = typeof flags.manifest === 'string'
+      ? path.resolve(rootDir, flags.manifest)
+      : DEFAULTS.manifest;
+    const roadmapPath = typeof flags.roadmap === 'string'
+      ? path.resolve(rootDir, flags.roadmap)
+      : defaultRoadmapPath(rootDir);
+    if (!roadmapPath) {
+      usageError('status heuristic: kit-dev/roadmap-current.md not found under --root — pass --roadmap <file>');
+    }
+    statusHeuristic = { manifestPath, roadmapPath };
+  }
+
+  let report;
+  try {
+    report = analyzeDocDrift({ rootDir, statusHeuristic });
+  } catch (err) {
+    if (err instanceof DocDriftInputError) {
+      usageError(err.message);
+    }
+    throw err;
+  }
 
   if (flags.json) {
     process.stdout.write(JSON.stringify(report, null, 2) + '\n');
