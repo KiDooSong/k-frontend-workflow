@@ -164,15 +164,19 @@ Output is a deterministic draft: `--json` for a machine-readable report, `--form
 markdown` (default when `--out` is given) for a review-only draft document with
 `status: draft` frontmatter. Everything low-confidence stays
 `needs-review`/`needs-human-review` — repeated imports are candidate evidence, not
-proof of design intent. If an existing contract is found, bootstrap separates
-existing rows from suggested additions and never overwrites it; `--out` pointing at
-an existing canonical contract is refused with a `.draft.md` suggestion (scaffolding
-the canonical path is allowed only when the file does not exist). There is no
-`--apply`, `--overwrite`, or `--enforce` — passing them (or any unknown option) is
-rejected with exit 1 instead of being silently ignored. No ScreenSpec means exit 0
-with a "no screens discovered" report; only structural errors (missing docs,
-malformed existing contract, canonical overwrite attempt, unknown option) exit 1. Candidates are never approval,
-readiness promotion, Component Gap acceptance, or `confirmed` promotion. Reference:
+proof of design intent.
+
+If an existing contract is found, bootstrap separates existing rows from suggested
+additions and never overwrites it. `--out` pointing at an existing canonical
+contract is refused with a `.draft.md` suggestion; scaffolding the canonical path is
+allowed only when the file does not exist. There is no `--apply`, `--overwrite`, or
+`--enforce` — passing them (or any unknown option) is rejected with exit 1 instead
+of being silently ignored.
+
+No ScreenSpec means exit 0 with a "no screens discovered" report. Only structural
+errors exit 1: missing docs, malformed existing contract, a canonical overwrite
+attempt, or an unknown option. Candidates are never approval, readiness promotion,
+Component Gap acceptance, or `confirmed` promotion. Reference:
 [docs/reference/visual-reconciliation.md](docs/reference/visual-reconciliation.md)
 §Bootstrap / adoption.
 

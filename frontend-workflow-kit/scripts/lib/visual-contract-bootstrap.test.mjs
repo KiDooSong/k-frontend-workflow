@@ -608,6 +608,21 @@ test('CLI 구조 오류 시 --out 파일을 만들지 않는다', () => {
   });
 });
 
+// --- 소스 텍스트 hygiene -------------------------------------------------------------------
+
+test('bootstrap 소스 파일에 literal NUL 등 제어 문자가 없다 (binary-ish 파일 방지)', () => {
+  // literal 제어 문자가 소스에 들어가면 diff/grep/린터/pack 검증이 binary 로 취급할 수 있다 —
+  // delimiter 가 필요하면 source text 에는 escape sequence(\uXXXX)로만 둔다.
+  for (const rel of [
+    ['scripts', 'lib', 'visual-contract-bootstrap.mjs'],
+    ['scripts', 'visual-contract-bootstrap.mjs'],
+    ['scripts', 'lib', 'visual-contract-bootstrap.test.mjs'],
+  ]) {
+    const raw = fs.readFileSync(path.join(KIT_ROOT, ...rel));
+    assert.equal(raw.includes(0), false, `${rel.join('/')} must not contain NUL bytes`);
+  }
+});
+
 // --- 휴리스틱 단위 ------------------------------------------------------------------------
 
 test('classifyComponentKind — shell/logo/header/cta 이름 휴리스틱 (우선순위: shell 우선)', () => {
