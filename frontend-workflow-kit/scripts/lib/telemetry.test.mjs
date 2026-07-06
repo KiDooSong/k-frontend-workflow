@@ -772,14 +772,15 @@ function surfaceIds(report) {
   return report.surfaces.map((surface) => surface.surface_id);
 }
 
-test('surface registry lists default and visual groups in fixed order', () => {
-  assert.deepEqual(TELEMETRY_SURFACE_GROUPS, ['default', 'visual']);
+test('surface registry lists default, visual, and adoption groups in fixed order', () => {
+  assert.deepEqual(TELEMETRY_SURFACE_GROUPS, ['default', 'visual', 'adoption']);
   assert.deepEqual(listTelemetrySurfaces(), [
-    { surface_id: 'route-cross-check', groups: ['default'], source_tool: 'workflow:route-cross-check' },
-    { surface_id: 'doc-drift', groups: ['default'], source_tool: 'workflow:doc-drift' },
-    { surface_id: 'readiness-eval', groups: ['default'], source_tool: 'workflow:eval' },
-    { surface_id: 'visual-consistency', groups: ['visual'], source_tool: 'workflow:visual-consistency' },
-    { surface_id: 'visual-contract-bootstrap', groups: ['visual'], source_tool: 'workflow:visual-contract-bootstrap' },
+    { surface_id: 'route-cross-check', groups: ['default'], source_tool: 'workflow:route-cross-check', kind: 'cli' },
+    { surface_id: 'doc-drift', groups: ['default'], source_tool: 'workflow:doc-drift', kind: 'cli' },
+    { surface_id: 'readiness-eval', groups: ['default'], source_tool: 'workflow:eval', kind: 'cli' },
+    { surface_id: 'visual-consistency', groups: ['visual'], source_tool: 'workflow:visual-consistency', kind: 'cli' },
+    { surface_id: 'visual-contract-bootstrap', groups: ['visual'], source_tool: 'workflow:visual-contract-bootstrap', kind: 'cli' },
+    { surface_id: 'adoption-probe-summary', groups: ['adoption'], source_tool: 'workflow:adoption-probe', kind: 'ingest' },
   ]);
 });
 
@@ -824,7 +825,7 @@ test('includeGroups visual adds visual surfaces in fixed registry order', () => 
   });
 });
 
-test('includeGroups all equals default plus visual', () => {
+test('includeGroups all equals default plus visual and never implies adoption ingest', () => {
   const report = collectTelemetry({
     rootDir: '/repo',
     scriptDir: '/kit/scripts',
@@ -833,6 +834,7 @@ test('includeGroups all equals default plus visual', () => {
     runner: fakeRun({ ...DEFAULT_FAKES, ...VISUAL_FAKES }),
   });
   assert.deepEqual(surfaceIds(report), ALL_SURFACE_IDS);
+  assert.equal(surfaceIds(report).includes('adoption-probe-summary'), false);
 });
 
 test('includeGroups default is a no-op alias for the default surfaces', () => {
@@ -1272,6 +1274,462 @@ test('CLI --include visual --json exits 0 with clean visual observation output',
       assert.equal(/generated_at|timestamp|duration|verdict|threshold|promotion|stderr/i.test(r.stdout), false);
     },
   );
+});
+
+// --- adoption opt-in ingest surface -----------------------------------------
+// telemetry ingests an EXISTING probe-summary.json only: no child adoption-probe
+// run, no probe run dir creation, no visual observation file parsing.
+
+const ADOPTION_RUN_DIR = 'temp/runs/adoption-probe-mobile-001';
+const ADOPTION_SUMMARY_REL = `${ADOPTION_RUN_DIR}/probe-summary.json`;
+
+const BASIC_ADOPTION_SUMMARY = {
+  probe_id: 'basic-001',
+  draft_only: true,
+  visual: { enabled: false, status: 'skipped', reason: '--visual not passed (default probe behavior unchanged)' },
+};
+
+const VISUAL_ADOPTION_SUMMARY = {
+  probe_id: 'mobile-001',
+  draft_only: true,
+  visual: {
+    enabled: true,
+    status: 'observed',
+    draft_only: true,
+    gate: false,
+    findings: [],
+    bootstrap: { warnings: 0, errors: 0, infos: 2, component_gap_candidates: 1 },
+    consistency: { ran: true, warnings: 2, errors: 0, infos: 1 },
+  },
+};
+
+function collectAdoption(root, { summary = VISUAL_ADOPTION_SUMMARY, adoption, ...opts } = {}) {
+  return collectTelemetry({
+    rootDir: root,
+    scriptDir: '/kit/scripts',
+    includeGroups: ['adoption'],
+    fileExists: () => true,
+    runner: fakeRun(DEFAULT_FAKES),
+    adoption: adoption || { runDir: ADOPTION_RUN_DIR },
+    ...opts,
+  });
+}
+
+function adoptionSurfaceOf(report) {
+  return report.surfaces.find((s) => s.surface_id === 'adoption-probe-summary');
+}
+
+test('include adoption ingests probe-summary.json from the run dir without a child run', () => {
+  withRoot({ [ADOPTION_SUMMARY_REL]: JSON.stringify(VISUAL_ADOPTION_SUMMARY) }, (root) => {
+    const runnerCalls = [];
+    const report = collectTelemetry({
+      rootDir: root,
+      scriptDir: '/kit/scripts',
+      includeGroups: ['adoption'],
+      fileExists: () => true,
+      runner: (call) => {
+        runnerCalls.push(call.surface_id);
+        return { status: 0, stdout: JSON.stringify(DEFAULT_FAKES[call.surface_id] || {}), stderr: '' };
+      },
+      adoption: { runDir: ADOPTION_RUN_DIR },
+    });
+    assert.deepEqual(surfaceIds(report), [...DEFAULT_SURFACE_IDS, 'adoption-probe-summary']);
+    // Ingest surface never reaches the child-CLI runner.
+    assert.deepEqual(runnerCalls, DEFAULT_SURFACE_IDS);
+    assert.deepEqual(adoptionSurfaceOf(report), {
+      surface_id: 'adoption-probe-summary',
+      available: true,
+      warning_count: 2,
+      source_tool: 'workflow:adoption-probe',
+      run_id: 'mobile-001',
+      status: 'observed',
+      draft_only: true,
+      finding_count: 0,
+      visual_enabled: true,
+      visual_status: 'observed',
+      visual_bootstrap_warnings: 0,
+      visual_consistency_warnings: 2,
+      visual_component_gap_candidates: 1,
+      observation_paths: { summary: ADOPTION_SUMMARY_REL },
+    });
+  });
+});
+
+test('adoption summaryPath override wins and non-visual summaries normalize to zeroed visual fields', () => {
+  withRoot({ 'elsewhere/summary.json': JSON.stringify(BASIC_ADOPTION_SUMMARY) }, (root) => {
+    const report = collectAdoption(root, { adoption: { summaryPath: 'elsewhere/summary.json' } });
+    const surface = adoptionSurfaceOf(report);
+    assert.equal(surface.available, true);
+    assert.equal(surface.run_id, 'basic-001');
+    assert.equal(surface.warning_count, 0);
+    assert.equal(surface.finding_count, 0);
+    assert.equal(surface.visual_enabled, false);
+    assert.equal(surface.visual_status, null);
+    assert.equal(surface.visual_bootstrap_warnings, 0);
+    assert.equal(surface.visual_consistency_warnings, 0);
+    assert.equal(surface.visual_component_gap_candidates, 0);
+    assert.equal(surface.observation_paths.summary, 'elsewhere/summary.json');
+  });
+});
+
+test('missing probe-summary.json is available:false while telemetry stays ok', () => {
+  withRoot({}, (root) => {
+    const report = collectAdoption(root);
+    assert.equal(report.ok, true);
+    assert.deepEqual(adoptionSurfaceOf(report), {
+      surface_id: 'adoption-probe-summary',
+      available: false,
+      warning_count: 0,
+      source_tool: 'workflow:adoption-probe',
+      unavailable_reason: 'summary not found',
+    });
+  });
+});
+
+test('invalid probe summary JSON is available:false while telemetry stays ok', () => {
+  withRoot({ [ADOPTION_SUMMARY_REL]: '{not json' }, (root) => {
+    const report = collectAdoption(root);
+    assert.equal(report.ok, true);
+    assert.equal(adoptionSurfaceOf(report).available, false);
+    assert.equal(adoptionSurfaceOf(report).unavailable_reason, 'invalid JSON');
+  });
+});
+
+test('non-object probe summary JSON is available:false with an explicit shape reason', () => {
+  withRoot({ [ADOPTION_SUMMARY_REL]: '[1, 2]' }, (root) => {
+    const surface = adoptionSurfaceOf(collectAdoption(root));
+    assert.equal(surface.available, false);
+    assert.equal(surface.unavailable_reason, 'invalid summary shape');
+  });
+});
+
+test('adoption selected without run or summary input is a safe unavailable surface (lib level)', () => {
+  withRoot({}, (root) => {
+    const surface = adoptionSurfaceOf(collectAdoption(root, { adoption: {} }));
+    assert.equal(surface.available, false);
+    assert.equal(surface.unavailable_reason, 'probe summary not specified');
+  });
+});
+
+test('skip-adoption-visual ignores the visual section including its warnings', () => {
+  withRoot({ [ADOPTION_SUMMARY_REL]: JSON.stringify(VISUAL_ADOPTION_SUMMARY) }, (root) => {
+    const surface = adoptionSurfaceOf(
+      collectAdoption(root, { adoption: { runDir: ADOPTION_RUN_DIR, skipVisual: true } }),
+    );
+    assert.equal(surface.available, true);
+    assert.equal(surface.visual_enabled, false);
+    assert.equal(surface.visual_status, null);
+    assert.equal(surface.warning_count, 0);
+    assert.equal(surface.finding_count, 0);
+  });
+});
+
+test('non-info probe findings count toward warning_count while info findings do not', () => {
+  const summary = {
+    probe_id: 'finding-001',
+    draft_only: true,
+    visual: {
+      enabled: true,
+      status: 'failed',
+      findings: [
+        { severity: 'error', rule: 'visual-bootstrap-failed', message: 'x' },
+        { severity: 'info', rule: 'advisory', message: 'y' },
+      ],
+      bootstrap: { warnings: 1 },
+      consistency: { ran: false },
+    },
+  };
+  withRoot({ [ADOPTION_SUMMARY_REL]: JSON.stringify(summary) }, (root) => {
+    const surface = adoptionSurfaceOf(collectAdoption(root, { summary }));
+    assert.equal(surface.finding_count, 2);
+    // 1 bootstrap warning + 1 non-info finding; the info finding is excluded.
+    assert.equal(surface.warning_count, 2);
+    assert.equal(surface.visual_status, 'failed');
+  });
+});
+
+test('ledger with include adoption records adoption inputs and determinism witness', () => {
+  withRoot({ [ADOPTION_SUMMARY_REL]: JSON.stringify(VISUAL_ADOPTION_SUMMARY) }, (root) => {
+    const ledger = collectTelemetryLedger({
+      rootDir: root,
+      docsDir: 'docs/frontend-workflow',
+      scriptDir: '/kit/scripts',
+      determinismRuns: 2,
+      includeGroups: ['adoption'],
+      fileExists: () => true,
+      runner: fakeRun(DEFAULT_FAKES),
+      adoption: { runDir: ADOPTION_RUN_DIR },
+    });
+    assert.deepEqual(ledger.inputs, {
+      root: '.',
+      docs: 'docs/frontend-workflow',
+      include: ['default', 'adoption'],
+      adoption: {
+        run: ADOPTION_RUN_DIR,
+        summary: ADOPTION_SUMMARY_REL,
+      },
+    });
+    const surface = ledger.surfaces.find((s) => s.surface_id === 'adoption-probe-summary');
+    assert.equal(surface.available, true);
+    assert.equal(surface.warning_count, 2);
+    assert.equal(surface.visual_enabled, true);
+    assert.deepEqual(surface.observation_paths, { summary: ADOPTION_SUMMARY_REL });
+    assert.deepEqual(surface.determinism, {
+      runs: 2,
+      identical: true,
+      witness: 'normalized-summary-json',
+    });
+    // Default surfaces keep the child-run witness.
+    const drift = ledger.surfaces.find((s) => s.surface_id === 'doc-drift');
+    assert.equal(drift.determinism.witness, 'normalized-json');
+  });
+});
+
+test('ledger with an explicit adoption summary records summary-only inputs', () => {
+  withRoot({ 'elsewhere/summary.json': JSON.stringify(BASIC_ADOPTION_SUMMARY) }, (root) => {
+    const ledger = collectTelemetryLedger({
+      rootDir: root,
+      docsDir: 'docs/frontend-workflow',
+      scriptDir: '/kit/scripts',
+      determinismRuns: 1,
+      includeGroups: ['adoption'],
+      fileExists: () => true,
+      runner: fakeRun(DEFAULT_FAKES),
+      adoption: { summaryPath: 'elsewhere/summary.json' },
+    });
+    assert.deepEqual(ledger.inputs.adoption, { summary: 'elsewhere/summary.json' });
+    assert.deepEqual(ledger.inputs.include, ['default', 'adoption']);
+    // No src key: src is a visual-surface input only.
+    assert.equal('src' in ledger.inputs, false);
+  });
+});
+
+test('ledger without adoption opt-in never records adoption inputs', () => {
+  const ledger = collectTelemetryLedger({
+    rootDir: '/repo',
+    docsDir: 'docs/frontend-workflow',
+    scriptDir: '/kit/scripts',
+    determinismRuns: 1,
+    fileExists: () => true,
+    runner: fakeRun(DEFAULT_FAKES),
+    adoption: { runDir: 'temp/runs/adoption-probe-mobile-001' },
+  });
+  assert.deepEqual(Object.keys(ledger.inputs), ['root', 'docs']);
+});
+
+test('unavailable adoption summary keeps ledger deterministic with unavailable-reason witness', () => {
+  withRoot({}, (root) => {
+    const ledger = collectTelemetryLedger({
+      rootDir: root,
+      scriptDir: '/kit/scripts',
+      determinismRuns: 2,
+      includeGroups: ['adoption'],
+      fileExists: () => true,
+      runner: fakeRun(DEFAULT_FAKES),
+      adoption: { runDir: ADOPTION_RUN_DIR },
+    });
+    const surface = ledger.surfaces.find((s) => s.surface_id === 'adoption-probe-summary');
+    assert.equal(surface.available, false);
+    assert.equal(surface.unavailable_reason, 'summary not found');
+    assert.deepEqual(surface.determinism, {
+      runs: 2,
+      identical: true,
+      witness: 'unavailable-reason',
+    });
+  });
+});
+
+test('CLI --include adoption --adoption-run reads the committed ingest fixture', () => {
+  const fixtureRoot = path.join(KIT_ROOT, 'examples', 'telemetry-adoption-probe');
+  withRoot({ 'docs/readme.md': '# Readme\n' }, (root) => {
+    fs.cpSync(fixtureRoot, path.join(root, 'examples/telemetry-adoption-probe'), { recursive: true });
+    const r = spawnSync(process.execPath, [
+      CLI,
+      '--root', root,
+      '--include', 'adoption',
+      '--adoption-run', 'examples/telemetry-adoption-probe/visual-run',
+      '--json',
+    ], { encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stderr, '');
+    const obj = JSON.parse(r.stdout);
+    assert.equal(obj.ok, true);
+    const surface = obj.surfaces.find((s) => s.surface_id === 'adoption-probe-summary');
+    assert.equal(surface.available, true);
+    assert.equal(surface.run_id, 'mobile-001');
+    assert.equal(surface.visual_enabled, true);
+    assert.equal(surface.visual_consistency_warnings, 2);
+    assert.equal(surface.visual_component_gap_candidates, 1);
+    assert.equal(surface.warning_count, 2);
+    // Root-relative posix observation path; no absolute machine/temp paths.
+    assert.equal(surface.observation_paths.summary, 'examples/telemetry-adoption-probe/visual-run/probe-summary.json');
+    assert.equal(r.stdout.includes(root), false);
+    assert.equal(r.stdout.includes('\\\\'), false);
+    // Output hygiene: no timestamps, durations, verdicts, or raw child streams.
+    assert.equal(/generated_at|timestamp|duration|verdict|threshold|promotion|stdout|stderr/i.test(r.stdout), false);
+  });
+});
+
+test('CLI --adoption-summary equals --adoption-run pointed at the same file', () => {
+  withRoot({
+    'docs/readme.md': '# Readme\n',
+    [ADOPTION_SUMMARY_REL]: JSON.stringify(BASIC_ADOPTION_SUMMARY),
+  }, (root) => {
+    const viaRun = spawnSync(process.execPath, [
+      CLI, '--root', root, '--include', 'adoption',
+      '--adoption-run', ADOPTION_RUN_DIR, '--json',
+    ], { encoding: 'utf8' });
+    const viaSummary = spawnSync(process.execPath, [
+      CLI, '--root', root, '--include', 'adoption',
+      '--adoption-summary', ADOPTION_SUMMARY_REL, '--json',
+    ], { encoding: 'utf8' });
+    assert.equal(viaRun.status, 0, viaRun.stderr);
+    assert.equal(viaSummary.status, 0, viaSummary.stderr);
+    assert.equal(viaRun.stdout, viaSummary.stdout);
+    const surface = JSON.parse(viaRun.stdout).surfaces.find((s) => s.surface_id === 'adoption-probe-summary');
+    assert.equal(surface.visual_enabled, false);
+    assert.equal(surface.warning_count, 0);
+  });
+});
+
+test('CLI missing or invalid probe summary stays exit 0 with available:false', () => {
+  withRoot({
+    'docs/readme.md': '# Readme\n',
+    'broken/probe-summary.json': '{not json',
+  }, (root) => {
+    const missing = spawnSync(process.execPath, [
+      CLI, '--root', root, '--include', 'adoption',
+      '--adoption-run', 'temp/runs/adoption-probe-nope', '--json',
+    ], { encoding: 'utf8' });
+    assert.equal(missing.status, 0, missing.stderr);
+    const missingSurface = JSON.parse(missing.stdout).surfaces.find((s) => s.surface_id === 'adoption-probe-summary');
+    assert.equal(missingSurface.available, false);
+    assert.equal(missingSurface.unavailable_reason, 'summary not found');
+
+    const invalid = spawnSync(process.execPath, [
+      CLI, '--root', root, '--include', 'adoption',
+      '--adoption-run', 'broken', '--json',
+    ], { encoding: 'utf8' });
+    assert.equal(invalid.status, 0, invalid.stderr);
+    const invalidSurface = JSON.parse(invalid.stdout).surfaces.find((s) => s.surface_id === 'adoption-probe-summary');
+    assert.equal(invalidSurface.available, false);
+    assert.equal(invalidSurface.unavailable_reason, 'invalid JSON');
+  });
+});
+
+test('CLI --out/--check ledger round-trips the adoption surface deterministically', () => {
+  withRoot({
+    'docs/readme.md': '# Readme\n',
+    [ADOPTION_SUMMARY_REL]: JSON.stringify(VISUAL_ADOPTION_SUMMARY),
+  }, (root) => {
+    const out = spawnSync(process.execPath, [
+      CLI, '--root', root, '--include', 'adoption',
+      '--adoption-summary', ADOPTION_SUMMARY_REL,
+      '--out', 'adoption-telemetry-ledger.json', '--json',
+    ], { encoding: 'utf8' });
+    assert.equal(out.status, 0, out.stderr);
+    const ledger = JSON.parse(out.stdout);
+    assert.deepEqual(ledger.inputs.include, ['default', 'adoption']);
+    assert.deepEqual(ledger.inputs.adoption, { summary: ADOPTION_SUMMARY_REL });
+    assert.equal(out.stdout.includes(root), false);
+
+    const check = spawnSync(process.execPath, [
+      CLI, '--root', root, '--include', 'adoption',
+      '--adoption-summary', ADOPTION_SUMMARY_REL,
+      '--check', 'adoption-telemetry-ledger.json', '--json',
+    ], { encoding: 'utf8' });
+    assert.equal(check.status, 0, check.stderr);
+    const checked = JSON.parse(check.stdout);
+    assert.equal(checked.check.status, 'match');
+    assert.equal(checked.check.warning_count, 0);
+  });
+});
+
+test('CLI rejects adoption opt-in without a run or summary input with exit 2', () => {
+  withRoot({}, (root) => {
+    for (const args of [
+      ['--include', 'adoption'],
+      ['--surface', 'adoption-probe-summary'],
+    ]) {
+      const r = spawnSync(process.execPath, [CLI, '--root', root, ...args], { encoding: 'utf8' });
+      assert.equal(r.status, 2, r.stderr);
+      assert.match(r.stderr, /requires --adoption-run <dir> or --adoption-summary <file>/);
+      assert.match(r.stderr, /never probes the current repo/);
+    }
+  });
+});
+
+test('CLI rejects combined --adoption-run and --adoption-summary with exit 2', () => {
+  withRoot({}, (root) => {
+    const r = spawnSync(process.execPath, [
+      CLI, '--root', root, '--include', 'adoption',
+      '--adoption-run', 'temp/runs/adoption-probe-a',
+      '--adoption-summary', 'temp/runs/adoption-probe-a/probe-summary.json',
+    ], { encoding: 'utf8' });
+    assert.equal(r.status, 2);
+    assert.match(r.stderr, /--adoption-run and --adoption-summary cannot be used together/);
+  });
+});
+
+test('CLI rejects adoption sub-flags without an adoption opt-in with exit 2', () => {
+  withRoot({}, (root) => {
+    for (const args of [
+      ['--adoption-run', 'temp/runs/adoption-probe-a'],
+      ['--adoption-summary', 'temp/runs/adoption-probe-a/probe-summary.json'],
+      ['--skip-adoption-visual'],
+    ]) {
+      const r = spawnSync(process.execPath, [CLI, '--root', root, ...args], { encoding: 'utf8' });
+      assert.equal(r.status, 2, r.stderr);
+      assert.match(r.stderr, /requires the adoption surface \(--include adoption\)/);
+    }
+  });
+});
+
+test('CLI rejects unknown adoption sub-flags with exit 2', () => {
+  withRoot({}, (root) => {
+    const r = spawnSync(process.execPath, [
+      CLI, '--root', root, '--include', 'adoption',
+      '--adoption-nope', 'x',
+    ], { encoding: 'utf8' });
+    assert.equal(r.status, 2);
+    assert.match(r.stderr, /unknown flag: --adoption-nope/);
+  });
+});
+
+test('CLI --include all does not select the adoption ingest surface', () => {
+  withRoot({ 'docs/readme.md': '# Readme\n' }, (root) => {
+    const r = spawnSync(process.execPath, [CLI, '--root', root, '--include', 'all', '--json'], { encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    const obj = JSON.parse(r.stdout);
+    assert.deepEqual(surfaceIds(obj), ALL_SURFACE_IDS);
+  });
+});
+
+test('CLI --list-surfaces includes the adoption ingest surface without reading any file', () => {
+  withRoot({}, (root) => {
+    const r = spawnSync(process.execPath, [CLI, '--root', root, '--list-surfaces', '--json'], { encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    const obj = JSON.parse(r.stdout);
+    const adoption = obj.surfaces.find((s) => s.surface_id === 'adoption-probe-summary');
+    assert.deepEqual(adoption, {
+      surface_id: 'adoption-probe-summary',
+      groups: ['adoption'],
+      source_tool: 'workflow:adoption-probe',
+      kind: 'ingest',
+    });
+
+    const human = spawnSync(process.execPath, [CLI, '--root', root, '--list-surfaces'], { encoding: 'utf8' });
+    assert.equal(human.status, 0, human.stderr);
+    assert.match(human.stdout, /adoption-probe-summary \[adoption\] - workflow:adoption-probe \(ingest\)/);
+  });
+});
+
+test('human mode labels the adoption surface as ingest without a verdict', () => {
+  withRoot({ [ADOPTION_SUMMARY_REL]: JSON.stringify(VISUAL_ADOPTION_SUMMARY) }, (root) => {
+    const lines = formatTelemetryHuman(collectAdoption(root));
+    assert.ok(lines.some((line) => /adoption-probe-summary: available, warnings=2, ingest=probe-summary, visual_enabled=true/.test(line)));
+    assert.equal(lines.some((line) => /verdict|pass|fail/i.test(line)), false);
+  });
 });
 
 test('human mode is stdout-only and does not introduce a verdict', () => {

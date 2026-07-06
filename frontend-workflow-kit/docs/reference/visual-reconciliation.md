@@ -146,6 +146,12 @@ probe 는 **scratch copy** 기준으로 bootstrap 을 실행해
 accept / Open Decision resolve 는 사람 전용. 옵션 syntax 는
 [COMMANDS.md](../../COMMANDS.md) §Adoption Probe.
 
+이미 만들어진 probe run 의 요약을 telemetry ledger 에 포함하고 싶으면
+`workflow:telemetry -- --include adoption --adoption-run <probe-run-dir>` 를 쓴다 —
+telemetry 는 그 run 의 `probe-summary.json` 을 **읽기만** 하며(ingest-only),
+adoption-probe 를 실행하거나 probe run dir/draft 를 새로 만들지 않는다.
+visual 요약 카운트는 그대로 정규화될 뿐 여전히 gate 가 아니다.
+
 ## Drift candidates
 
 `workflow:visual-consistency` 가 warning-first 로 표면화하는 후보들:

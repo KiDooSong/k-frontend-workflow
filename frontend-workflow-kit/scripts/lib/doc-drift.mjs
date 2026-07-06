@@ -2,12 +2,28 @@
 //
 // Phase 0 deliberately stays mechanical and conservative: it only checks Markdown
 // inline/image relative links for missing target files and Markdown heading anchors
-// for missing GitHub-like slugs. It does not attempt semantic drift, manifest↔roadmap
-// heuristics, changelog PR range checks, external URL reachability, dedup copy
-// detection, or any hard gate behavior.
+// for missing GitHub-like slugs. It does not attempt semantic drift, changelog PR
+// range checks, external URL reachability, dedup copy detection, or any hard gate
+// behavior.
+//
+// Phase 1 adds ONE opt-in, info-only heuristic (manifest↔roadmap status wording,
+// --include status-heuristic): a narrow same-line keyword cross-check between
+// artifact-manifest status fields and roadmap wording. It is a review pointer, not
+// a semantic-truth claim; its findings are severity "info", counted in info_count,
+// never in warning_count, and never change the exit code.
 import fs from 'node:fs';
 import path from 'node:path';
-import { isDir, readFileSafe } from './util.mjs';
+import { isDir, readFileSafe, yamlParse } from './util.mjs';
+
+// Input error for the opt-in status heuristic (missing/corrupt manifest or
+// roadmap). The CLI surfaces this as exit 2 - explicitly requested inputs that
+// cannot be read are usage/input errors, not warning-first findings.
+export class DocDriftInputError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'DocDriftInputError';
+  }
+}
 
 const IGNORED_DIRS = new Set([
   'node_modules',
@@ -277,13 +293,19 @@ function normalizeAnchor(anchor) {
   return String(anchor || '').trim().toLowerCase();
 }
 
+function findingKey(finding, name) {
+  return String(finding[name] ?? '');
+}
+
 function sortFindings(findings) {
   return findings.sort((a, b) => (
-    compareText(a.source, b.source) ||
-    compareText(a.check, b.check) ||
-    compareText(a.link, b.link) ||
-    compareText(a.target, b.target) ||
-    compareText(a.reason, b.reason)
+    compareText(findingKey(a, 'source'), findingKey(b, 'source')) ||
+    compareText(findingKey(a, 'check'), findingKey(b, 'check')) ||
+    compareText(findingKey(a, 'link'), findingKey(b, 'link')) ||
+    compareText(findingKey(a, 'target'), findingKey(b, 'target')) ||
+    compareText(findingKey(a, 'artifact_id'), findingKey(b, 'artifact_id')) ||
+    compareText(findingKey(a, 'roadmap_signal'), findingKey(b, 'roadmap_signal')) ||
+    compareText(findingKey(a, 'reason'), findingKey(b, 'reason'))
   ));
 }
 
@@ -292,13 +314,15 @@ function dedupeFindings(findings) {
   const out = [];
   for (const finding of findings) {
     const key = [
-      finding.severity,
-      finding.check,
-      finding.source,
-      finding.link,
-      finding.target,
-      finding.reason,
-    ].join('\u0000');
+      'severity',
+      'check',
+      'source',
+      'link',
+      'target',
+      'artifact_id',
+      'roadmap_signal',
+      'reason',
+    ].map((name) => findingKey(finding, name)).join('\u0000');
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(finding);
@@ -306,7 +330,105 @@ function dedupeFindings(findings) {
   return out;
 }
 
-export function analyzeDocDrift({ rootDir }) {
+// --- Phase 1 opt-in: manifest↔roadmap status heuristic ------------------------
+// Deliberately narrow: an artifact id (or its dot alias) and a status keyword on
+// the SAME roadmap line. Lines carrying both implemented- and planned-flavored
+// wording (e.g. "status: planned → active") are skipped as ambiguous. This never
+// claims to understand roadmap prose — findings are manual-review pointers only.
+
+const IMPLEMENTED_SIGNAL = /구현\s*완료|구현됨|\bimplemented\b|\bactive\b|완료/i;
+const PLANNED_SIGNAL = /\bplanned\b|예정|대기/i;
+
+// Artifact ids use [a-z0-9-]; the dot alias covers generated file spellings like
+// `eslint.workflow.config` for eslint-workflow-config. Nothing broader.
+function artifactAliases(id) {
+  const aliases = new Set([id]);
+  if (id.includes('-')) aliases.add(id.replace(/-/g, '.'));
+  return [...aliases];
+}
+
+function aliasRegex(alias) {
+  const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?<![A-Za-z0-9_-])${escaped}(?![A-Za-z0-9_-])`);
+}
+
+function loadManifestArtifactStatuses(manifestPath) {
+  const raw = readFileSafe(manifestPath);
+  if (raw == null) {
+    throw new DocDriftInputError(`artifact manifest not found: ${manifestPath}`);
+  }
+  let manifest;
+  try {
+    manifest = yamlParse(raw);
+  } catch (err) {
+    throw new DocDriftInputError(`artifact manifest YAML parse failed: ${manifestPath} — ${err.message}`);
+  }
+  const artifacts = manifest && typeof manifest.artifacts === 'object' && manifest.artifacts
+    ? manifest.artifacts
+    : {};
+  const out = [];
+  for (const [id, entry] of Object.entries(artifacts)) {
+    const status = String(entry?.status || '').toLowerCase();
+    if (status === 'active' || status === 'planned') out.push({ id, status });
+  }
+  return out.sort((a, b) => compareText(a.id, b.id));
+}
+
+export function analyzeManifestRoadmapStatus({ rootDir, manifestPath, roadmapPath }) {
+  const rootAbs = path.resolve(rootDir || process.cwd());
+  const manifestAbs = path.resolve(manifestPath);
+  const roadmapAbs = path.resolve(roadmapPath);
+  const artifacts = loadManifestArtifactStatuses(manifestAbs);
+  const roadmapRaw = readFileSafe(roadmapAbs);
+  if (roadmapRaw == null) {
+    throw new DocDriftInputError(`roadmap not found: ${roadmapAbs}`);
+  }
+
+  const source = relPosix(rootAbs, roadmapAbs);
+  const target = relPosix(rootAbs, manifestAbs);
+  // Fenced code blocks are ignored, mirroring the Phase 0 link checks.
+  const lines = stripFencedCodeBlocks(roadmapRaw).split(/\r?\n/);
+  const findings = [];
+
+  for (const { id, status } of artifacts) {
+    const aliasMatchers = artifactAliases(id).map((alias) => aliasRegex(alias));
+    for (const line of lines) {
+      if (!aliasMatchers.some((re) => re.test(line))) continue;
+      const implemented = IMPLEMENTED_SIGNAL.test(line);
+      const planned = PLANNED_SIGNAL.test(line);
+      if (implemented === planned) continue; // no signal, or ambiguous (both)
+      if (status === 'planned' && implemented) {
+        findings.push({
+          severity: 'info',
+          check: 'manifest-roadmap-status-heuristic',
+          source,
+          target,
+          artifact_id: id,
+          manifest_status: 'planned',
+          roadmap_signal: 'implemented',
+          reason: 'roadmap wording looks implemented while manifest status is planned (heuristic; review manually)',
+        });
+      } else if (status === 'active' && planned) {
+        findings.push({
+          severity: 'info',
+          check: 'manifest-roadmap-status-heuristic',
+          source,
+          target,
+          artifact_id: id,
+          manifest_status: 'active',
+          roadmap_signal: 'planned',
+          reason: 'roadmap wording looks planned while manifest status is active (heuristic; review manually)',
+        });
+      }
+    }
+  }
+
+  return findings;
+}
+
+// statusHeuristic: null (default, Phase 0 output byte-identical) or
+// { manifestPath, roadmapPath } to enable the opt-in Phase 1 heuristic.
+export function analyzeDocDrift({ rootDir, statusHeuristic = null }) {
   const rootAbs = path.resolve(rootDir || process.cwd());
   const mdFiles = walkMarkdownFiles(rootAbs);
   const headingCache = new Map();
@@ -373,25 +495,60 @@ export function analyzeDocDrift({ rootDir }) {
     }
   }
 
+  if (statusHeuristic) {
+    findings.push(...analyzeManifestRoadmapStatus({
+      rootDir: rootAbs,
+      manifestPath: statusHeuristic.manifestPath,
+      roadmapPath: statusHeuristic.roadmapPath,
+    }));
+  }
+
   const finalFindings = sortFindings(dedupeFindings(findings));
-  return {
+  const warningCount = finalFindings.filter((finding) => finding.severity === 'warning').length;
+  // Default output keeps the exact Phase 0 byte shape; include/info_count are
+  // opt-in extras that only appear when the status heuristic is enabled.
+  const out = {
     tool: 'workflow:doc-drift',
     mode: 'warning-first',
     root: '.',
-    ok: true,
-    warning_count: finalFindings.length,
-    findings: finalFindings,
   };
+  if (statusHeuristic) out.include = ['status-heuristic'];
+  out.ok = true;
+  out.warning_count = warningCount;
+  if (statusHeuristic) {
+    out.info_count = finalFindings.filter((finding) => finding.severity === 'info').length;
+  }
+  out.findings = finalFindings;
+  return out;
+}
+
+function formatFinding(finding) {
+  if (finding.check === 'manifest-roadmap-status-heuristic') {
+    return (
+      `workflow:doc-drift — INFO ${finding.check}: ${finding.artifact_id} ` +
+      `manifest=${finding.manifest_status} vs roadmap~${finding.roadmap_signal} ` +
+      `(${finding.source} ↔ ${finding.target}) — ${finding.reason}`
+    );
+  }
+  return (
+    `workflow:doc-drift — WARNING ${finding.check}: ${finding.source} ` +
+    `links to ${finding.link} (${finding.target}) — ${finding.reason}`
+  );
 }
 
 export function formatDocDriftHuman(report) {
-  if (!report || report.warning_count === 0) {
-    return ['workflow:doc-drift — ok (warning-first): no Phase 0 doc link drift found'];
+  const heuristicEnabled = Array.isArray(report?.include) && report.include.includes('status-heuristic');
+  const lines = [];
+  const findings = Array.isArray(report?.findings) ? report.findings : [];
+  if (!report || findings.length === 0) {
+    lines.push('workflow:doc-drift — ok (warning-first): no Phase 0 doc link drift found');
+  } else {
+    lines.push(...findings.map((finding) => formatFinding(finding)));
   }
-
-  return report.findings.map(
-    (finding) =>
-      `workflow:doc-drift — WARNING ${finding.check}: ${finding.source} ` +
-      `links to ${finding.link} (${finding.target}) — ${finding.reason}`,
-  );
+  if (heuristicEnabled) {
+    lines.push(
+      'workflow:doc-drift — status-heuristic findings are info-only: review manually; not a gate, not a semantic-truth claim.',
+    );
+  }
+  return lines;
 }

@@ -249,3 +249,7 @@ IMPLEMENTING.md §4 의 9 불변식 + roadmap "지금 하지 말 것" 대조.
 - "7개 활성 문서"는 `0593bca` stat 에서 앵커 repoint 된 파일 수(IMPLEMENTING.md·frontend-llm-workflow.md·frontend-llm-workflow-expanded.md·frontend-workflow-kit-implementation.md·frontend-workflow-skillpack-concept.md·kit-dev/docs/workflows/mvp-b.md·kit-dev/roadmap-current.md)로 확인.
 - warning-first·exit-0 posture 는 `scripts/route-cross-check.mjs`(`process.exit(0)` 항상)·`scripts/doctor.mjs`("warning-only: exit 0") 원문 확인.
 - 자매 보고서 `./01-telemetry-and-promotion-evidence.md` 는 본 세션에서 병렬 작성 중 — 상호 참조 링크는 파일명 규약에 따른 것으로, 작성 완료 시 유효.
+
+## Implementation note
+
+- 2026-07-06 Phase 1 first slice landed: `workflow:doc-drift --include status-heuristic` (opt-in) cross-checks `catalog/artifact-manifest.yaml` status fields (active/planned) against roadmap wording on the SAME line (완료/active/implemented/구현됨 vs planned/예정/대기; both-signal lines like "planned → active" are skipped as ambiguous; alias mapping is id + dot-alias only). Findings are severity `info`, counted in a new `info_count`, never in `warning_count`, never exit 1 — explicitly a manual-review pointer, not a semantic-drift/semantic-truth claim. Default Phase 0 output stays byte-identical, telemetry's doc-drift surface does NOT forward the heuristic (forwarding is a follow-up option), and missing/corrupt manifest/roadmap for the explicitly requested heuristic is a usage/input error (exit 2). "남은 사람 결정" 5 (진입 시점) was thereby answered as "opt-in only"; CI wiring (결정 3) remains open.

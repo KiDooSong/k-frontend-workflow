@@ -1,0 +1,81 @@
+{
+  "probe_id": "mobile-001",
+  "project_name": "telemetry-ingest-visual",
+  "date": "2026-07-01",
+  "draft_only": true,
+  "repo_ref": "<target-repo>",
+  "docs_source": "<target-repo>/docs/frontend-workflow",
+  "src_source": "<target-repo>/src",
+  "out_dir": "<probe-run>",
+  "scratch_dir": "<probe-run>/scratch",
+  "invariants": {
+    "live_docs_untouched_by_workflow_state": true,
+    "source_scaffold_created": false,
+    "ci_changed": false,
+    "open_decision_resolved": false,
+    "hard_gate_promoted": false,
+    "live_policy_replaced": false,
+    "pre_edit_hooks_promoted": false
+  },
+  "observations": {
+    "readiness": "AUTH-001: rough-fixture-ui",
+    "validate": "ok",
+    "catalog": "2 component(s)",
+    "f3": {
+      "status": "skipped: no extra layers detected",
+      "same": null,
+      "removed": [],
+      "excluded": []
+    }
+  },
+  "visual": {
+    "enabled": true,
+    "status": "observed",
+    "draft_only": true,
+    "gate": false,
+    "findings": [],
+    "bootstrap": {
+      "ran": true,
+      "ok": true,
+      "exit": 0,
+      "screens": 2,
+      "candidate_families": 1,
+      "suggested_contract_rows": 3,
+      "component_gap_candidates": 1,
+      "errors": 0,
+      "warnings": 0,
+      "infos": 2,
+      "draft_path": "<probe-run>/visual/visual-consistency-contract.draft.md",
+      "existing_contract": {
+        "found": false,
+        "path": "<target-repo>/docs/frontend-workflow/design/visual-consistency-contract.md",
+        "overridden": false
+      }
+    },
+    "consistency": {
+      "ran": true,
+      "contract_source": "bootstrap-draft",
+      "advisory_draft_contract": true,
+      "ok": true,
+      "exit": 0,
+      "families": 1,
+      "screens": 2,
+      "errors": 0,
+      "warnings": 2,
+      "infos": 1,
+      "top_rules": ["shared-component-missing (2)"]
+    },
+    "observations": {
+      "bootstrap": "<probe-run>/observations/visual-contract-bootstrap.json",
+      "consistency": "<probe-run>/observations/visual-consistency.json"
+    },
+    "next_actions": [
+      "Review the bootstrap draft before editing the canonical visual-consistency-contract (accepted rows only; needs-review values are decided by humans)."
+    ]
+  },
+  "outputs": {
+    "adoption_report": "<probe-run>/adoption-report.md",
+    "visual_contract_bootstrap_draft": "<probe-run>/visual/visual-consistency-contract.draft.md",
+    "summary": "<probe-run>/probe-summary.json"
+  }
+}
