@@ -388,11 +388,15 @@ test('consumer package script template exposes current command aliases only', ()
   assert.equal(scriptsTemplate.scripts['workflow:create-input'], 'node tools/frontend-workflow/scripts/create-input-artifact.mjs');
   assert.equal(scriptsTemplate.scripts['workflow:route-cross-check'], 'node tools/frontend-workflow/scripts/route-cross-check.mjs');
   assert.equal(scriptsTemplate.scripts['workflow:doc-drift'], 'node tools/frontend-workflow/scripts/doc-drift.mjs');
+  assert.equal(scriptsTemplate.scripts['workflow:eval'], 'node tools/frontend-workflow/scripts/readiness-eval.mjs');
   assert.equal(scriptsTemplate.scripts['workflow:policy-draft'], 'node tools/frontend-workflow/scripts/policy-draft.mjs');
   assert.equal(scriptsTemplate.scripts['workflow:check-generated'], 'node tools/frontend-workflow/scripts/check-generated-files.mjs');
   assert.equal(packageJson.scripts['workflow:doc-drift'], 'node scripts/doc-drift.mjs');
+  assert.equal(packageJson.scripts['workflow:eval'], 'node scripts/readiness-eval.mjs');
   assert.equal(packageJson.scripts['workflow:check-generated'], 'node scripts/check-generated-files.mjs');
   assert.match(commands, /npm run workflow:doc-drift/);
+  assert.match(commands, /npm run workflow:eval/);
+  assert.match(commands, /false-open/);
   assert.match(commands, /Phase 0 warning-first diagnostic/);
   assert.match(commands, /npm run workflow:check-generated/);
   assert.match(commands, /warning-first/);

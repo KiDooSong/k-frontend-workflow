@@ -25,6 +25,14 @@ const SURFACES = [
       return ['--root', rootDir, '--json'];
     },
   },
+  {
+    surface_id: 'readiness-eval',
+    source_tool: 'workflow:eval',
+    script: 'readiness-eval.mjs',
+    args() {
+      return ['--json'];
+    },
+  },
 ];
 
 function resolveUnder(base, value) {
@@ -39,6 +47,11 @@ function warningCountFrom(report) {
   return 0;
 }
 
+function nonNegativeInteger(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? Math.trunc(n) : 0;
+}
+
 function unavailable(surface, reason) {
   return {
     surface_id: surface.surface_id,
@@ -50,6 +63,21 @@ function unavailable(surface, reason) {
 }
 
 function normalizeSurface(surface, report) {
+  if (surface.surface_id === 'readiness-eval') {
+    const falseOpen = nonNegativeInteger(report?.confusion?.false_open?.count);
+    const falseClosed = nonNegativeInteger(report?.confusion?.false_closed?.count);
+    const failClosedLeaked = nonNegativeInteger(report?.fail_closed_axis?.leaked);
+    return {
+      surface_id: surface.surface_id,
+      available: true,
+      warning_count: falseOpen + falseClosed + failClosedLeaked,
+      source_tool: surface.source_tool,
+      total: nonNegativeInteger(report?.total),
+      false_open: falseOpen,
+      false_closed: falseClosed,
+      fail_closed_leaked: failClosedLeaked,
+    };
+  }
   return {
     surface_id: surface.surface_id,
     available: true,

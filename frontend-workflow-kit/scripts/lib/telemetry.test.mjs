@@ -41,7 +41,7 @@ function withRoot(files, fn) {
   }
 }
 
-test('aggregates two fake surface reports into deterministic JSON', () => {
+test('aggregates fake surface reports into deterministic JSON', () => {
   const opts = {
     rootDir: '/repo',
     docsDir: '/repo/docs/frontend-workflow',
@@ -50,6 +50,15 @@ test('aggregates two fake surface reports into deterministic JSON', () => {
     runner: fakeRun({
       'route-cross-check': { tool: 'workflow:route-cross-check', warning_count: 2 },
       'doc-drift': { tool: 'workflow:doc-drift', warning_count: 1 },
+      'readiness-eval': {
+        tool: 'workflow:eval',
+        total: 7,
+        confusion: {
+          false_open: { count: 1, cases: ['eval/a'] },
+          false_closed: { count: 2, cases: ['eval/b', 'eval/c'] },
+        },
+        fail_closed_axis: { leaked: 3, leaked_cases: ['eval/d', 'eval/e', 'eval/f'] },
+      },
     }),
   };
   const first = JSON.stringify(collectTelemetry(opts), null, 2);
@@ -73,6 +82,16 @@ test('aggregates two fake surface reports into deterministic JSON', () => {
         warning_count: 1,
         source_tool: 'workflow:doc-drift',
       },
+      {
+        surface_id: 'readiness-eval',
+        available: true,
+        warning_count: 6,
+        source_tool: 'workflow:eval',
+        total: 7,
+        false_open: 1,
+        false_closed: 2,
+        fail_closed_leaked: 3,
+      },
     ],
   });
 });
@@ -85,12 +104,21 @@ test('warning_count is numeric and can fall back to findings length', () => {
     runner: fakeRun({
       'route-cross-check': { findings: [{}, {}] },
       'doc-drift': { warning_count: '3' },
+      'readiness-eval': {
+        confusion: {
+          false_open: { count: '4' },
+          false_closed: { count: 1 },
+        },
+        fail_closed_axis: { leaked: 2 },
+      },
     }),
   });
   assert.equal(typeof report.surfaces[0].warning_count, 'number');
   assert.equal(report.surfaces[0].warning_count, 2);
   assert.equal(typeof report.surfaces[1].warning_count, 'number');
   assert.equal(report.surfaces[1].warning_count, 3);
+  assert.equal(typeof report.surfaces[2].warning_count, 'number');
+  assert.equal(report.surfaces[2].warning_count, 7);
 });
 
 test('unavailable child tool is recorded as available false', () => {
@@ -107,6 +135,10 @@ test('unavailable child tool is recorded as available false', () => {
   assert.equal(report.surfaces[1].available, false);
   assert.equal(report.surfaces[1].warning_count, 0);
   assert.equal(report.surfaces[1].unavailable_reason, 'script not found');
+  assert.equal(report.surfaces[2].surface_id, 'readiness-eval');
+  assert.equal(report.surfaces[2].available, false);
+  assert.equal(report.surfaces[2].warning_count, 0);
+  assert.equal(report.surfaces[2].unavailable_reason, 'script not found');
 });
 
 test('child command failures are unavailable, not telemetry failures', () => {
@@ -190,8 +222,11 @@ test('CLI --json exits 0 and prints parseable JSON', () => {
       const obj = JSON.parse(r.stdout);
       assert.equal(obj.tool, 'workflow:telemetry');
       assert.equal(obj.mode, 'warning-first');
-      assert.equal(obj.surfaces.length, 2);
+      assert.equal(obj.surfaces.length, 3);
       assert.ok(obj.surfaces.every((s) => typeof s.warning_count === 'number'));
+      const evalSurface = obj.surfaces.find((s) => s.surface_id === 'readiness-eval');
+      assert.equal(evalSurface.available, true);
+      assert.equal(evalSurface.warning_count, 0);
     },
   );
 });
@@ -224,7 +259,7 @@ test('output omits timestamp, duration, absolute paths, and verdict fields', () 
       assert.equal(r.status, 0);
       const text = r.stdout;
       assert.equal(text.includes(root), false);
-      assert.equal(/generated_at|timestamp|duration|verdict|pass|fail/i.test(text), false);
+      assert.equal(/generated_at|timestamp|duration|verdict|threshold|promotion/i.test(text), false);
     },
   );
 });
@@ -237,6 +272,10 @@ test('human mode is stdout-only and does not introduce a verdict', () => {
     runner: fakeRun({
       'route-cross-check': { warning_count: 0 },
       'doc-drift': { warning_count: 1 },
+      'readiness-eval': {
+        confusion: { false_open: { count: 0 }, false_closed: { count: 0 } },
+        fail_closed_axis: { leaked: 0 },
+      },
     }),
   });
   const lines = formatTelemetryHuman(report);
