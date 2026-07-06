@@ -339,6 +339,57 @@ test('forbidden direct import + ad-hoc positioning → warning 2건 (src+screen_
   );
 });
 
+test('명시된 --src 가 디렉토리가 아님 → source-not-found warning (조용한 통과 방지)', () => {
+  withTree(
+    {
+      contract: FORBIDDEN_CONTRACT,
+      specs: [
+        {
+          domain: 'auth',
+          slug: 'login',
+          screenId: 'AUTH-001',
+          entry: 'src/features/auth/LoginScreen.tsx',
+          mapping: 'draft',
+        },
+      ],
+      catalog: SIMPLE_CATALOG,
+      src: {
+        'src/features/auth/LoginScreen.tsx': `import { BrandLogo } from '../../components/ui/BrandLogo';\n`,
+      },
+    },
+    (docsDir, srcDir) => {
+      const wrongSrc = path.join(srcDir, 'no-such-subdir'); // 오타 시뮬레이션
+      const r = analyzeVisualConsistency({ docsDir, srcDir: wrongSrc });
+      const nf = r.findings.filter((f) => f.rule === 'source-not-found');
+      assert.equal(nf.length, 1);
+      assert.equal(nf[0].severity, 'warning'); // 통과처럼 보이지 않게 warning 으로 표면화
+      // 소스 검사 자체는 skip — 실제로 검사 못 한 direct-import finding 을 내지 않는다
+      assert.deepEqual(r.findings.filter((f) => f.rule === 'direct-screen-import'), []);
+      assert.ok(r.skipped_checks.some((s) => s.rule === 'direct-screen-import'));
+      assert.equal(r.ok, true); // warning-first — error 아님
+    },
+  );
+});
+
+test('공백 포함 family 이름 — Applies To Families 는 콤마로만 분해 (필터에서 rule 유실 방지)', () => {
+  withTree(
+    {
+      contract:
+        CONTRACT_HEADER +
+        familiesTable(['| Auth Flow | AUTH-001 | AuthShell | - | - | - | - | draft | - |']) +
+        componentsTable(['| MarketingBanner | AuthShell | Auth Flow | forbidden | shell | missing | - |']),
+      specs: [{ domain: 'auth', slug: 'login', screenId: 'AUTH-001', mapping: 'draft' }],
+      catalog: SIMPLE_CATALOG,
+    },
+    (docsDir) => {
+      // --screen 필터: selectedFamilyNames = {'Auth Flow'} 와 exact match 해야 rule 이 살아남는다.
+      const r = analyzeVisualConsistency({ docsDir, screen: 'AUTH-001' });
+      const gaps = r.findings.filter((f) => f.rule === 'component-gap-candidate');
+      assert.deepEqual(gaps.map((f) => f.component), ['MarketingBanner']);
+    },
+  );
+});
+
 test('src 미지정 → 소스 검사 skip (skipped_checks 보고, finding 없음)', () => {
   withTree(
     {

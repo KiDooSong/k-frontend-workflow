@@ -11,6 +11,8 @@
 //    contract 존재하는데 Screen Families 표 부재.
 //  - 소스 검사(direct import · ad-hoc positioning · copy)는 srcDir 와 ScreenSpec screen_entry 가
 //    둘 다 있을 때만 돈다. 휴리스틱이라 오탐이 가능하고, 그래서 hard gate 로 올리지 않는다.
+//    단 **명시된** --src 가 디렉토리가 아니면(오타 등) 조용히 skip 하지 않고 source-not-found
+//    warning 으로 표면화한다 — 핵심 검사가 빠졌는데 통과처럼 보이는 것을 막는다.
 //  - 결정성: findings/families 정렬 고정, 타임스탬프 없음, 모든 경로는 상대 posix.
 //  - 아무것도 쓰지/만들지 않는다 (component code·catalog·contract 생성 금지 — 읽기 전용 진단).
 //
@@ -29,10 +31,20 @@ function compareText(a, b) {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-// 셀의 목록 값("AUTH-001, AUTH-002")을 분해한다. 빈 값/placeholder(-) 는 버린다.
-function splitCellList(cell) {
+// screen id 목록 셀("AUTH-001, AUTH-002")을 분해한다. 빈 값/placeholder(-) 는 버린다.
+// screen id 는 공백을 포함하지 않으므로 콤마/공백 어느 쪽 구분도 허용한다.
+function splitScreenIds(cell) {
   return String(cell || '')
     .split(/[,\s]+/)
+    .map((s) => s.trim())
+    .filter((s) => s && s !== '-');
+}
+
+// family 이름 목록 셀을 분해한다 — family 이름은 공백을 포함할 수 있으므로("Auth Flow")
+// **콤마로만** 구분한다. 공백 분해하면 exact match 필터에서 rule 이 조용히 빠진다.
+function splitFamilyNames(cell) {
+  return String(cell || '')
+    .split(',')
     .map((s) => s.trim())
     .filter((s) => s && s !== '-');
 }
@@ -79,7 +91,7 @@ export function parseVisualContract(raw) {
   if (familyTable) {
     for (const r of familyTable.rows) {
       const family = (col(r, 'Family') || '').trim();
-      const members = splitCellList(col(r, 'Member Screens'));
+      const members = splitScreenIds(col(r, 'Member Screens'));
       if (!family && members.length === 0) continue; // 빈 행
       if (family && /^\{.*\}$/.test(family)) continue; // 미편집 템플릿 행
       families.push({
@@ -100,7 +112,7 @@ export function parseVisualContract(raw) {
       components.push({
         component,
         owned_by: (col(r, 'Owned By') || '').trim(),
-        applies_to_families: splitCellList(col(r, 'Applies To Families')),
+        applies_to_families: splitFamilyNames(col(r, 'Applies To Families')),
         direct_screen_import: (col(r, 'Direct Screen Import') || '').trim().toLowerCase(),
         positioning_owner: (col(r, 'Positioning Owner') || '').trim().toLowerCase(),
       });
@@ -454,6 +466,18 @@ export function analyzeVisualConsistency({ docsDir, srcDir, contractPath, domain
     skippedChecks.push({
       rule: 'direct-screen-import',
       reason: '--src 미지정 — 소스 검사(직접 import · ad-hoc positioning · copy) skip.',
+    });
+  } else if (!isDir(srcDir)) {
+    // --src 미지정(optional 생략)과 달리 **명시 입력이 틀린** 경우다 — 조용히 통과처럼 보이면
+    // 핵심 검사가 빠졌는지 알 수 없으므로 warning 으로 표면화한다 (warning-first — exit 은 그대로 0).
+    findings.push({
+      severity: 'warning',
+      rule: 'source-not-found',
+      message: `--src 경로가 디렉토리가 아님: ${relPosix(process.cwd(), srcDir)} — 소스 검사(직접 import · ad-hoc positioning · copy)를 실행하지 못함. --src 값을 확인하세요.`,
+    });
+    skippedChecks.push({
+      rule: 'direct-screen-import',
+      reason: '--src 경로가 디렉토리가 아님 — 소스 검사 skip (source-not-found warning 참조).',
     });
   } else {
     const projectRoot = path.dirname(srcDir); // screen_entry 는 프로젝트 루트 상대 (util.projectRootOf 동형)

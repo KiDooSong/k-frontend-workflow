@@ -16,6 +16,7 @@
 //   --docs <dir>      문서 루트(기본 docs/frontend-workflow).
 //   --src <dir>       선택. 소스 루트. 없으면 소스 검사(직접 import·positioning·copy)를 skip 한다.
 //                     screen_entry 힌트는 프로젝트 루트(= dirname(src)) 상대다.
+//                     명시했는데 디렉토리가 아니면 source-not-found warning 으로 표면화한다.
 //   --domain <d>      선택. 해당 도메인 화면을 포함하는 family 로 범위를 좁힌다.
 //   --screen <ID>     선택. 해당 canonical Screen ID 를 포함하는 family/finding 만 본다.
 //   --contract <path> 선택. contract 경로 override (기본 <docs>/design/visual-consistency-contract.md).
@@ -48,6 +49,8 @@ Options:
   --docs <dir>      Docs root. Default: docs/frontend-workflow.
   --src <dir>       Optional source root. Without it, source heuristics
                     (direct import / ad-hoc positioning / hardcoded copy) are skipped.
+                    If given but not a directory, a source-not-found warning is
+                    reported instead of a silent skip.
   --domain <d>      Optional. Narrow to families containing screens of this domain.
   --screen <ID>     Optional. Narrow to families/findings for this canonical screen id.
   --contract <path> Optional contract path override.

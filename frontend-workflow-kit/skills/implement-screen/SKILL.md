@@ -76,7 +76,9 @@ npm run workflow:state
 npm run workflow:readiness -- --screen <ID> --json
 npm run workflow:validate
 ```
-visual/Figma 정렬 구현이었다면 추가로 `npm run workflow:visual-consistency -- --json` 을 돌린다 —
+visual/Figma 정렬 구현이었다면 추가로 `npm run workflow:visual-consistency -- --docs <docsDir> --src <srcDir> --json`
+을 돌린다 — state/readiness/validate 에 준 **동일한 `--docs`/`--src` 기준**을 그대로 전달한다
+(`--src` 를 빼면 직접 import/ad-hoc positioning/copy 소스 검사가 skip 된다).
 **warning-first 진단이지 gate/approval 이 아니다**. warning 은 후속 후보로 보고만 한다.
 2차 산출물·재생성 트리거는 [task-artifact-matrix.md](../../docs/reference/task-artifact-matrix.md) /
 [generated-files.md](../../docs/reference/generated-files.md) 로 확인한다(예: `roles.ui_primitive` 변경→`workflow:catalog`,
