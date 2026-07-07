@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { parseArgs, readFileSafe } from './lib/util.mjs';
+import { parseArgs, readFileSafe, isCliEntry } from './lib/util.mjs';
 import { buildLintGenModel, LintPolicyContractError, parseLintPolicyYaml, toPosixPath } from './lib/lint-gen-core.mjs';
 import { buildLintBaselineReport, parseLintCountsJson } from './lib/lint-baseline-core.mjs';
 
@@ -192,4 +191,4 @@ function main() {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+if (isCliEntry(import.meta.url)) main();

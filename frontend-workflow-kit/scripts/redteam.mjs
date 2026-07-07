@@ -5,8 +5,7 @@
 // forbidden-paths CLI) and committed fixtures to produce a deterministic
 // red-team matrix. It adds no gate: red-team findings, observed gaps, and
 // tampering observations NEVER exit 1 - only usage/config errors exit 2.
-import { pathToFileURL } from 'node:url';
-import { DEFAULTS, parseArgs } from './lib/util.mjs';
+import { DEFAULTS, parseArgs, isCliEntry } from './lib/util.mjs';
 import {
   collectRedteamReport,
   formatRedteamHuman,
@@ -125,4 +124,4 @@ function main() {
   process.exit(0);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+if (isCliEntry(import.meta.url)) main();

@@ -16,8 +16,7 @@
 // --current.
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { parseArgs, runCli } from './lib/util.mjs';
+import { parseArgs, runCli, isCliEntry } from './lib/util.mjs';
 import { UPGRADE_DIR_NAME } from './lib/kit-manifest.mjs';
 import { buildPlan, renderPlanMarkdown, applyPlan, assertSafeWriteTarget } from './lib/upgrade-planner.mjs';
 
@@ -182,4 +181,4 @@ function main() {
   process.exit(0);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) runCli(main, TOOL);
+if (isCliEntry(import.meta.url)) runCli(main, TOOL);

@@ -29,8 +29,7 @@
 //   0  정상(warning-first — 검사 결과가 mismatch 여도 0).
 //   2  설정 오류: manifest 부재/형식오류/YAML 손상 — validate 와 같은 계약(설계 §6.1).
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { parseArgs, DEFAULTS, KIT_ROOT, loadYamlOrExit, runCli } from './lib/util.mjs';
+import { parseArgs, DEFAULTS, KIT_ROOT, loadYamlOrExit, runCli, isCliEntry } from './lib/util.mjs';
 import { loadLayoutProfile } from './lib/layout-profile.mjs';
 import {
   V1_ARTIFACT_IDS,
@@ -205,4 +204,4 @@ function main() {
 
 // 직접 실행될 때만 main() (import 시 부작용 없음 — 테스트가 lib 를 직접 소비)
 // runCli: 레이아웃 설정 오류(미정의 role·부재 --layout)를 exit 2 로 surface(설정 오류 계약과 일치).
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) runCli(main, 'check-generated-files');
+if (isCliEntry(import.meta.url)) runCli(main, 'check-generated-files');

@@ -7,8 +7,7 @@
 //   node scripts/catalog-gen.mjs [--src <dir>] [--out <file>] [--layout <file>] [--json] [--dry-run]
 //   기본값: --src src  --out docs/frontend-workflow/design/component-catalog.md
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { parseArgs, writeFile, isDir, KIT_ROOT, runCli, projectRootOf } from './lib/util.mjs';
+import { parseArgs, writeFile, isDir, KIT_ROOT, runCli, projectRootOf, isCliEntry } from './lib/util.mjs';
 import { loadLayoutProfile } from './lib/layout-profile.mjs';
 import {
   buildCatalog,
@@ -86,4 +85,4 @@ function main() {
 }
 
 // 직접 실행될 때만 main() (import 시 부작용 없음 — buildCatalog/renderCatalog 재사용 가능)
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) runCli(main, 'workflow:catalog');
+if (isCliEntry(import.meta.url)) runCli(main, 'workflow:catalog');

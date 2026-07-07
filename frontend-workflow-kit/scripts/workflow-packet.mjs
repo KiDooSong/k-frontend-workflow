@@ -14,9 +14,9 @@
 // exit: 0 = packet 생성 성공(천장 초과/Safe?=no 여도 0 — 경고는 markdown 에만). 2 = 입력/도구 오류(파일 없음·JSON 파싱 실패 등).
 //       Safe To Proceed?=no 또는 requested>readiness 를 이유로 exit 1 을 내지 않는다.
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { parseArgs, DEFAULTS, KIT_ROOT, readFileSafe, writeFile, yamlParse, runCli } from './lib/util.mjs';
+import { parseArgs, DEFAULTS, KIT_ROOT, readFileSafe, writeFile, yamlParse, runCli, isCliEntry } from './lib/util.mjs';
 import { buildPacketModel, renderPacketMarkdown, renderJsonEnvelope } from './lib/workflow-packet.mjs';
 import { loadLayoutProfile } from './lib/layout-profile.mjs';
 
@@ -237,4 +237,4 @@ function main() {
 }
 
 // runCli: 레이아웃 설정 오류(미정의 role·부재 --layout)를 exit 2 로 surface(stack trace+exit 1 차단).
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) runCli(main, 'workflow:packet');
+if (isCliEntry(import.meta.url)) runCli(main, 'workflow:packet');

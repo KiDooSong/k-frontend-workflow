@@ -33,7 +33,6 @@
 //      대상이 없어 vacuously green(exit 0)으로 통과한다 — 갓 도입한 프로젝트의 fail-open. 게이트(exit code)는
 //      건드리지 않고 경고로만 표면화한다(정상 최소 부트스트랩은 stub 도 artifact_type 을 가져 발화 안 함).
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import {
   parseArgs,
   DEFAULTS,
@@ -48,6 +47,7 @@ import {
   dirHasFiles,
   runCli,
   projectRootOf,
+  isCliEntry,
 } from './lib/util.mjs';
 import { validateSchema } from './lib/schema.mjs';
 import { loadLayoutProfile } from './lib/layout-profile.mjs';
@@ -715,4 +715,4 @@ function main() {
 
 // 직접 실행될 때만 main()
 // runCli: 레이아웃 설정 오류(미정의 role·부재 --layout)를 exit 2 로 surface(stack trace+exit 1 차단).
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) runCli(main, 'validate');
+if (isCliEntry(import.meta.url)) runCli(main, 'validate');

@@ -28,9 +28,8 @@
 //   node scripts/test-fixtures.mjs --update       L2 스냅샷(reports/expected-*.json) 갱신(유지보수 전용)
 // exit: 0 = 모든 fixture 가 기대대로 · 1 = 치명(pass 실패 / xpass / xdrift) · 2 = 설정/IO 오류.
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { parseArgs, KIT_ROOT, DEFAULTS, loadYaml, loadYamlOrExit, readFileSafe, isDir, walkFiles } from './lib/util.mjs';
+import { parseArgs, KIT_ROOT, DEFAULTS, loadYaml, loadYamlOrExit, readFileSafe, isDir, walkFiles, isCliEntry } from './lib/util.mjs';
 import {
   runReconcileChecks,
   runIntegrityChecks,
@@ -530,4 +529,4 @@ function main() {
   process.exit(fatal === 0 ? 0 : 1);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+if (isCliEntry(import.meta.url)) main();

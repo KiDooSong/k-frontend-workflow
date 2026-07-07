@@ -4,8 +4,7 @@
 // This command reports readiness label-vs-actual metrics. Metric mismatches are
 // observations, never exit-code failures.
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { parseArgs } from './lib/util.mjs';
+import { parseArgs, isCliEntry } from './lib/util.mjs';
 import {
   DEFAULT_EVAL_CASES_PATH,
   formatEvalHuman,
@@ -77,4 +76,4 @@ function main() {
   process.exit(0);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+if (isCliEntry(import.meta.url)) main();
