@@ -23,6 +23,22 @@ function tmpdir(t) {
   return dir;
 }
 
+// 디렉토리 symlink 생성 — win32 은 junction 을 쓰고(distribution.test.mjs 와 동일), symlink 자체가
+// 불가한 플랫폼(권한 없는 CI, Windows Developer Mode off)은 이 리포의 symlinkOrSkip
+// (api-manifest.test.mjs)처럼 t.skip 으로 우아하게 건너뛴다. 성공 시 true, 스킵 시 false.
+function symlinkDirOrSkip(t, target, linkPath) {
+  try {
+    fs.symlinkSync(target, linkPath, process.platform === 'win32' ? 'junction' : 'dir');
+    return true;
+  } catch (e) {
+    if (['EACCES', 'EPERM', 'ENOSYS', 'ENOTSUP'].includes(e && e.code)) {
+      t.skip(`symlink unavailable on this platform: ${e.code}`);
+      return false;
+    }
+    throw e;
+  }
+}
+
 test('isCliEntry: argv[1] 이 스크립트 경로 그대로면 true', (t) => {
   const dir = tmpdir(t);
   const script = path.join(dir, 'entry.mjs');
@@ -37,7 +53,7 @@ test('isCliEntry: argv[1] 이 symlink 경유 경로여도 realpath 가 일치하
   const script = path.join(real, 'entry.mjs');
   fs.writeFileSync(script, '');
   const link = path.join(dir, 'link');
-  fs.symlinkSync(real, link);
+  if (!symlinkDirOrSkip(t, real, link)) return;
   const argv1 = path.join(link, 'entry.mjs');
   // Node 기본 동작처럼 import.meta.url 은 realpath 기준, argv[1] 은 symlink 경유.
   assert.equal(isCliEntry(pathToFileURL(script).href, argv1), true);
@@ -54,7 +70,36 @@ test('isCliEntry: 다른 파일·부재 파일·argv[1] 없음은 모두 false',
   assert.equal(isCliEntry(pathToFileURL(script).href, undefined), false);
 });
 
-test('isCliEntry: 직접 실행 vs import 를 실제 Node 프로세스로 검증 (symlink 경유 포함)', (t) => {
+test('isCliEntry: 직접 실행은 true, import 로 로드하면 false (실제 Node 프로세스)', (t) => {
+  const dir = tmpdir(t);
+  const script = path.join(dir, 'entry.mjs');
+  fs.writeFileSync(
+    script,
+    [
+      `import { isCliEntry } from ${JSON.stringify(pathToFileURL(UTIL_PATH).href)};`,
+      "process.stdout.write(String(isCliEntry(import.meta.url)));",
+    ].join('\n'),
+  );
+
+  const direct = spawnSync(process.execPath, [script], { encoding: 'utf8' });
+  assert.equal(direct.status, 0, direct.stderr);
+  assert.equal(direct.stdout, 'true', '직접 실행은 true 여야 한다');
+
+  // import 로 로드하는 쪽: argv[1] 은 importer 스크립트 → 엔트리 판정 false.
+  const importer = path.join(dir, 'importer.mjs');
+  fs.writeFileSync(
+    importer,
+    [
+      `await import(${JSON.stringify(pathToFileURL(script).href)});`,
+      "process.stdout.write('|importer-done');",
+    ].join('\n'),
+  );
+  const imported = spawnSync(process.execPath, [importer], { encoding: 'utf8' });
+  assert.equal(imported.status, 0, imported.stderr);
+  assert.equal(imported.stdout, 'false|importer-done');
+});
+
+test('isCliEntry: symlink 경유 직접 실행도 실제 Node 프로세스에서 true', (t) => {
   const dir = tmpdir(t);
   const real = path.join(dir, 'real');
   fs.mkdirSync(real);
@@ -67,24 +112,10 @@ test('isCliEntry: 직접 실행 vs import 를 실제 Node 프로세스로 검증
     ].join('\n'),
   );
   const link = path.join(dir, 'link');
-  fs.symlinkSync(real, link);
+  if (!symlinkDirOrSkip(t, real, link)) return;
 
-  for (const argPath of [script, path.join(link, 'entry.mjs')]) {
-    const r = spawnSync(process.execPath, [argPath], { encoding: 'utf8' });
-    assert.equal(r.status, 0, r.stderr);
-    assert.equal(r.stdout, 'true', `직접 실행(${argPath})은 true 여야 한다`);
-  }
-
-  // import 로 로드하는 쪽: argv[1] 은 importer 스크립트 → 엔트리 판정 false.
-  const importer = path.join(real, 'importer.mjs');
-  fs.writeFileSync(
-    importer,
-    [
-      `await import(${JSON.stringify(pathToFileURL(script).href)});`,
-      "process.stdout.write('|importer-done');",
-    ].join('\n'),
-  );
-  const r = spawnSync(process.execPath, [importer], { encoding: 'utf8' });
+  // 옛 가드가 조용히 빠지던 바로 그 경로: symlink 경유 절대경로로 직접 실행.
+  const r = spawnSync(process.execPath, [path.join(link, 'entry.mjs')], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
-  assert.equal(r.stdout, 'false|importer-done');
+  assert.equal(r.stdout, 'true', 'symlink 경유 직접 실행도 true 여야 한다');
 });
