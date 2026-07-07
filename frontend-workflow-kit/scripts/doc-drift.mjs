@@ -42,9 +42,10 @@ Options:
 Behavior:
   Scans .md files below root, skipping node_modules, .git, hidden directories, and
   dist/build-style output directories. Checks inline Markdown links and image links.
-  Skips external URLs and reference-style links. Fenced code blocks and inline code
-  spans are ignored, so \`[label](target)\` examples inside backticks are never
-  scanned as links.
+  Skips external URLs and reference-style links. Fenced code blocks, inline code
+  spans, backslash-escaped brackets (\\[label](target)), and autolinks
+  (<http://...>) are ignored, so link-shaped examples in prose are never scanned
+  as links.
 
   Phase 0 (default) only reports missing relative target files and dead Markdown
   heading anchors. It does not check semantic drift, roadmap/changelog PR ranges,

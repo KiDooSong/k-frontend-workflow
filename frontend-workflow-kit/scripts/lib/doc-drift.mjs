@@ -186,6 +186,27 @@ export function maskInlineCodeSpans(content) {
   return out;
 }
 
+// CommonMark autolinks (<scheme:...> and <email>) are a single external
+// destination, not Markdown, yet their contents may embed `[x](y)`-looking text
+// (e.g. a URL path). Mask them with spaces before link extraction so that text
+// never surfaces as a false relative link. Autolinks never contain whitespace or
+// nested angle brackets, so equal-length space masking is safe (no newlines to
+// preserve). Run before inline-code masking so a stray backtick inside a URL
+// cannot mis-open a code span.
+const AUTOLINK_RE = /<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^<>\s]*>|<[^<>\s@]+@[^<>\s]+>/g;
+export function maskAutolinks(content) {
+  return String(content || '').replace(AUTOLINK_RE, (match) => ' '.repeat(match.length));
+}
+
+// A Markdown character is escaped when preceded by an odd run of backslashes:
+// `\[` is a literal bracket (not a link), but `\\[` is an escaped backslash then
+// a real bracket. Used to skip escaped `[` openers during link extraction.
+function isEscapedAt(text, pos) {
+  let backslashes = 0;
+  for (let i = pos - 1; i >= 0 && text[i] === '\\'; i--) backslashes++;
+  return backslashes % 2 === 1;
+}
+
 function findClosingBracket(text, start) {
   let depth = 0;
   for (let i = start; i < text.length; i++) {
@@ -248,7 +269,7 @@ function extractLinkDestination(raw) {
 }
 
 export function extractInlineMarkdownLinks(content) {
-  const text = maskInlineCodeSpans(stripFencedCodeBlocks(content));
+  const text = maskInlineCodeSpans(maskAutolinks(stripFencedCodeBlocks(content)));
   const links = [];
 
   for (let i = 0; i < text.length; i++) {
@@ -260,6 +281,9 @@ export function extractInlineMarkdownLinks(content) {
     } else {
       continue;
     }
+
+    // An escaped `\[` opener is a literal bracket, not a link label.
+    if (isEscapedAt(text, labelStart)) continue;
 
     const labelEnd = findClosingBracket(text, labelStart + 1);
     if (labelEnd === -1 || text[labelEnd + 1] !== '(') continue;

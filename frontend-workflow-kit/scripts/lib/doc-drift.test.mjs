@@ -393,6 +393,106 @@ test('CLI --json includes info_count only when default info findings exist', () 
   );
 });
 
+// --- Issue #150 review follow-up: escaped brackets, autolinks, anchor casing ---
+
+test('escaped opening bracket is not scanned as a link', () => {
+  withRoot(
+    {
+      'docs/foo.md': 'Write \\[x](./missing.md) to show the syntax.\n',
+    },
+    (root) => {
+      const r = analyzeDocDrift({ rootDir: root });
+      assert.equal(r.warning_count, 0);
+      assert.deepEqual(r.findings, []);
+    },
+  );
+});
+
+test('escaped backslash before a bracket keeps the real link (odd/even backslashes)', () => {
+  withRoot(
+    {
+      'docs/foo.md': 'A real link after an escaped backslash: \\\\[x](./missing.md)\n',
+    },
+    (root) => {
+      const r = analyzeDocDrift({ rootDir: root });
+      assert.equal(r.warning_count, 1);
+      assert.equal(r.findings[0].check, 'broken-relative-link');
+      assert.equal(r.findings[0].link, './missing.md');
+    },
+  );
+});
+
+test('markdown-looking text inside an autolink is not a relative link', () => {
+  withRoot(
+    {
+      'docs/foo.md': 'See <http://example.com/[x](./missing.md)> for details.\n',
+    },
+    (root) => {
+      const r = analyzeDocDrift({ rootDir: root });
+      assert.equal(r.warning_count, 0);
+      assert.deepEqual(r.findings, []);
+    },
+  );
+});
+
+test('autolink masking does not swallow angle-bracket relative destinations', () => {
+  withRoot(
+    {
+      'docs/foo.md': '[x](<./missing.md>)\n',
+    },
+    (root) => {
+      const r = analyzeDocDrift({ rootDir: root });
+      assert.equal(r.warning_count, 1);
+      assert.equal(r.findings[0].check, 'broken-relative-link');
+      assert.equal(r.findings[0].target, 'docs/missing.md');
+    },
+  );
+});
+
+test('lowercase and query-prefixed line anchors on existing files have warning 0', () => {
+  withRoot(
+    {
+      'docs/foo.md': '[a](./bar.md#l12)\n[b](./bar.md?plain=1#L12)\n',
+      'docs/bar.md': '# Bar\n',
+    },
+    (root) => {
+      const r = analyzeDocDrift({ rootDir: root });
+      assert.equal(r.warning_count, 0);
+      assert.deepEqual(r.findings, []);
+    },
+  );
+});
+
+test('nested bracket label with a real path keeps the broken-relative-link warning', () => {
+  withRoot(
+    {
+      'docs/foo.md': '[[key]](./missing.md)\n',
+    },
+    (root) => {
+      const r = analyzeDocDrift({ rootDir: root });
+      assert.equal(r.warning_count, 1);
+      assert.equal(r.findings[0].check, 'broken-relative-link');
+      assert.equal(r.findings[0].link, './missing.md');
+    },
+  );
+});
+
+test('CLI default run reports root-escaping links as exit-0 info with warning 0', () => {
+  withRoot(
+    {
+      'docs/foo.md': '[backend](../../backend/app/foo.md)\n',
+    },
+    (root) => {
+      const r = spawnSync(process.execPath, [CLI, '--root', root, '--json'], { encoding: 'utf8' });
+      assert.equal(r.status, 0, r.stderr);
+      const obj = JSON.parse(r.stdout);
+      assert.equal(obj.warning_count, 0);
+      assert.equal(obj.info_count, 1);
+      assert.equal(obj.findings[0].check, 'relative-link-escapes-root');
+    },
+  );
+});
+
 test('dead links inside fenced code blocks are ignored', () => {
   withRoot(
     {
