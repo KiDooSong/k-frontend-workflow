@@ -187,6 +187,312 @@ test('duplicate heading suffixes are assigned with GitHub-like -1 and -2 anchors
   );
 });
 
+// --- Issue #150: Phase 0 link-check false-positive classes ---------------------
+
+test('GitHub line anchor #L12 on an existing file has warning 0', () => {
+  withRoot(
+    {
+      'docs/foo.md': '[bar](./bar.md#L12)\n',
+      'docs/bar.md': '# Bar\n',
+    },
+    (root) => {
+      const r = analyzeDocDrift({ rootDir: root });
+      assert.equal(r.warning_count, 0);
+      assert.deepEqual(r.findings, []);
+    },
+  );
+});
+
+test('GitHub line range anchor #L12-L14 on an existing file has warning 0', () => {
+  withRoot(
+    {
+      'docs/foo.md': '[bar](./bar.md#L12-L14)\n[self](#L10)\n',
+      'docs/bar.md': '# Bar\n',
+    },
+    (root) => {
+      const r = analyzeDocDrift({ rootDir: root });
+      assert.equal(r.warning_count, 0);
+      assert.deepEqual(r.findings, []);
+    },
+  );
+});
+
+test('line anchor on a missing file is still one broken-relative-link warning', () => {
+  withRoot(
+    {
+      'docs/foo.md': '[bar](./missing.md#L12)\n',
+    },
+    (root) => {
+      const r = analyzeDocDrift({ rootDir: root });
+      assert.equal(r.warning_count, 1);
+      assert.equal(r.findings[0].check, 'broken-relative-link');
+      assert.equal(r.findings[0].link, './missing.md#L12');
+    },
+  );
+});
+
+test('link examples inside inline code spans are ignored', () => {
+  withRoot(
+    {
+      'docs/foo.md': 'Use `[missing](./missing.md)` to link.\n',
+    },
+    (root) => {
+      const r = analyzeDocDrift({ rootDir: root });
+      assert.equal(r.warning_count, 0);
+      assert.deepEqual(r.findings, []);
+    },
+  );
+});
+
+test('only the link outside an inline code span is scanned, including multi-backtick spans', () => {
+  withRoot(
+    {
+      'docs/foo.md': [
+        '`[in-span](./missing.md)` and [outside](./missing.md)',
+        '``code ` [also-in-span](./missing.md) inner`` end',
+        '',
+      ].join('\n'),
+    },
+    (root) => {
+      const r = analyzeDocDrift({ rootDir: root });
+      assert.equal(r.warning_count, 1);
+      assert.deepEqual(r.findings.map((f) => [f.check, f.link]), [
+        ['broken-relative-link', './missing.md'],
+      ]);
+    },
+  );
+});
+
+test('bare non-path-like bracket notation is info, not a warning', () => {
+  withRoot(
+    {
+      'docs/foo.md': [
+        '[이메일로 로그인](primary)',
+        'str[](시행일 이력 최신순)',
+        '[Select](select)',
+        '',
+      ].join('\n'),
+    },
+    (root) => {
+      const r = analyzeDocDrift({ rootDir: root });
+      assert.equal(r.warning_count, 0);
+      assert.equal(r.info_count, 3);
+      assert.ok(r.findings.every((f) => f.severity === 'info'));
+      assert.ok(r.findings.every((f) => f.check === 'ambiguous-non-link-bracket-notation'));
+      assert.ok(r.findings.every((f) => /non-path-like/.test(f.reason)));
+    },
+  );
+});
+
+test('path-like missing destinations keep the broken-relative-link warning', () => {
+  withRoot(
+    {
+      'docs/foo.md': [
+        '[missing](./missing.md)',
+        '[missing](docs/foo)',
+        '[missing](nope.md)',
+        '',
+      ].join('\n'),
+    },
+    (root) => {
+      const r = analyzeDocDrift({ rootDir: root });
+      assert.equal(r.warning_count, 3);
+      assert.ok(r.findings.every((f) => f.severity === 'warning'));
+      assert.ok(r.findings.every((f) => f.check === 'broken-relative-link'));
+    },
+  );
+});
+
+test('root-escaping relative link is unverifiable info by default', () => {
+  withRoot(
+    {
+      'docs/foo.md': '[backend](../../backend/app/foo.md)\n',
+    },
+    (root) => {
+      const r = analyzeDocDrift({ rootDir: root });
+      assert.equal(r.warning_count, 0);
+      assert.equal(r.info_count, 1);
+      assert.deepEqual(r.findings.map((f) => [f.severity, f.check]), [
+        ['info', 'relative-link-escapes-root'],
+      ]);
+      assert.match(r.findings[0].reason, /cannot be verified/);
+    },
+  );
+});
+
+test('escapesRootSeverity warning promotes root-escaping links to warning_count', () => {
+  withRoot(
+    {
+      'docs/foo.md': '[backend](../../backend/app/foo.md)\n',
+    },
+    (root) => {
+      const r = analyzeDocDrift({ rootDir: root, escapesRootSeverity: 'warning' });
+      assert.equal(r.warning_count, 1);
+      assert.equal('info_count' in r, false);
+      assert.equal(r.findings[0].check, 'relative-link-escapes-root');
+      assert.throws(
+        () => analyzeDocDrift({ rootDir: root, escapesRootSeverity: 'fatal' }),
+        DocDriftInputError,
+      );
+    },
+  );
+});
+
+test('default info findings appear as INFO (never WARNING) in human output', () => {
+  withRoot(
+    {
+      'docs/foo.md': '[이메일로 로그인](primary)\n[backend](../../backend/app/foo.md)\n',
+    },
+    (root) => {
+      const r = analyzeDocDrift({ rootDir: root });
+      const lines = formatDocDriftHuman(r);
+      assert.equal(lines.length, 2);
+      assert.ok(lines.every((line) => /— INFO /.test(line)));
+      assert.ok(lines.every((line) => !/WARNING/.test(line)));
+    },
+  );
+});
+
+test('CLI --escapes-root-severity warning promotes and invalid values exit 2', () => {
+  withRoot(
+    {
+      'docs/foo.md': '[backend](../../backend/app/foo.md)\n',
+    },
+    (root) => {
+      const promoted = spawnSync(process.execPath, [
+        CLI, '--root', root, '--escapes-root-severity', 'warning', '--json',
+      ], { encoding: 'utf8' });
+      assert.equal(promoted.status, 0, promoted.stderr);
+      const obj = JSON.parse(promoted.stdout);
+      assert.equal(obj.warning_count, 1);
+      assert.equal(obj.findings[0].check, 'relative-link-escapes-root');
+
+      const invalid = spawnSync(process.execPath, [
+        CLI, '--root', root, '--escapes-root-severity', 'fatal',
+      ], { encoding: 'utf8' });
+      assert.equal(invalid.status, 2);
+      assert.match(invalid.stderr, /--escapes-root-severity must be info or warning/);
+    },
+  );
+});
+
+test('CLI --json includes info_count only when default info findings exist', () => {
+  withRoot(
+    {
+      'docs/foo.md': '[이메일로 로그인](primary)\n[ok](./bar.md)\n',
+      'docs/bar.md': '# Bar\n',
+    },
+    (root) => {
+      const r = spawnSync(process.execPath, [CLI, '--root', root, '--json'], { encoding: 'utf8' });
+      assert.equal(r.status, 0, r.stderr);
+      const obj = JSON.parse(r.stdout);
+      assert.equal(obj.warning_count, 0);
+      assert.equal(obj.info_count, 1);
+      assert.deepEqual(Object.keys(obj), ['tool', 'mode', 'root', 'ok', 'warning_count', 'info_count', 'findings']);
+    },
+  );
+});
+
+// --- Issue #150 review follow-up: escaped brackets, autolinks, anchor casing ---
+
+test('escaped opening bracket is not scanned as a link', () => {
+  withRoot(
+    {
+      'docs/foo.md': 'Write \\[x](./missing.md) to show the syntax.\n',
+    },
+    (root) => {
+      const r = analyzeDocDrift({ rootDir: root });
+      assert.equal(r.warning_count, 0);
+      assert.deepEqual(r.findings, []);
+    },
+  );
+});
+
+test('escaped backslash before a bracket keeps the real link (odd/even backslashes)', () => {
+  withRoot(
+    {
+      'docs/foo.md': 'A real link after an escaped backslash: \\\\[x](./missing.md)\n',
+    },
+    (root) => {
+      const r = analyzeDocDrift({ rootDir: root });
+      assert.equal(r.warning_count, 1);
+      assert.equal(r.findings[0].check, 'broken-relative-link');
+      assert.equal(r.findings[0].link, './missing.md');
+    },
+  );
+});
+
+test('markdown-looking text inside an autolink is not a relative link', () => {
+  withRoot(
+    {
+      'docs/foo.md': 'See <http://example.com/[x](./missing.md)> for details.\n',
+    },
+    (root) => {
+      const r = analyzeDocDrift({ rootDir: root });
+      assert.equal(r.warning_count, 0);
+      assert.deepEqual(r.findings, []);
+    },
+  );
+});
+
+test('autolink masking does not swallow angle-bracket relative destinations', () => {
+  withRoot(
+    {
+      'docs/foo.md': '[x](<./missing.md>)\n',
+    },
+    (root) => {
+      const r = analyzeDocDrift({ rootDir: root });
+      assert.equal(r.warning_count, 1);
+      assert.equal(r.findings[0].check, 'broken-relative-link');
+      assert.equal(r.findings[0].target, 'docs/missing.md');
+    },
+  );
+});
+
+test('lowercase and query-prefixed line anchors on existing files have warning 0', () => {
+  withRoot(
+    {
+      'docs/foo.md': '[a](./bar.md#l12)\n[b](./bar.md?plain=1#L12)\n',
+      'docs/bar.md': '# Bar\n',
+    },
+    (root) => {
+      const r = analyzeDocDrift({ rootDir: root });
+      assert.equal(r.warning_count, 0);
+      assert.deepEqual(r.findings, []);
+    },
+  );
+});
+
+test('nested bracket label with a real path keeps the broken-relative-link warning', () => {
+  withRoot(
+    {
+      'docs/foo.md': '[[key]](./missing.md)\n',
+    },
+    (root) => {
+      const r = analyzeDocDrift({ rootDir: root });
+      assert.equal(r.warning_count, 1);
+      assert.equal(r.findings[0].check, 'broken-relative-link');
+      assert.equal(r.findings[0].link, './missing.md');
+    },
+  );
+});
+
+test('CLI default run reports root-escaping links as exit-0 info with warning 0', () => {
+  withRoot(
+    {
+      'docs/foo.md': '[backend](../../backend/app/foo.md)\n',
+    },
+    (root) => {
+      const r = spawnSync(process.execPath, [CLI, '--root', root, '--json'], { encoding: 'utf8' });
+      assert.equal(r.status, 0, r.stderr);
+      const obj = JSON.parse(r.stdout);
+      assert.equal(obj.warning_count, 0);
+      assert.equal(obj.info_count, 1);
+      assert.equal(obj.findings[0].check, 'relative-link-escapes-root');
+    },
+  );
+});
+
 test('dead links inside fenced code blocks are ignored', () => {
   withRoot(
     {
