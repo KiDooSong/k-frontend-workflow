@@ -2,8 +2,7 @@
 // doctor.mjs — warning-only preflight for layout/layer declarations.
 // Findings never become a hard gate here: this tool exits 0 after reporting warnings.
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { parseArgs, DEFAULTS, KIT_ROOT, exists, loadYamlOrExit, projectRootOf, runCli } from './lib/util.mjs';
+import { parseArgs, DEFAULTS, KIT_ROOT, exists, loadYamlOrExit, projectRootOf, runCli, isCliEntry } from './lib/util.mjs';
 import { loadLayoutProfile } from './lib/layout-profile.mjs';
 import { collectDoctorFindings } from './lib/doctor.mjs';
 
@@ -64,4 +63,4 @@ function main() {
   process.exit(0);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) runCli(main, 'workflow:doctor');
+if (isCliEntry(import.meta.url)) runCli(main, 'workflow:doctor');

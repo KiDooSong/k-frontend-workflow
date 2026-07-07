@@ -18,9 +18,9 @@
 //       exit 1 을 gate/HALT 의미로 쓰지 않는다.
 import path from 'node:path';
 import os from 'node:os';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { parseArgs, writeFile, readFileSafe, yamlParse, DEFAULTS } from './lib/util.mjs';
+import { parseArgs, writeFile, readFileSafe, yamlParse, DEFAULTS, isCliEntry } from './lib/util.mjs';
 import {
   STATES,
   STATE_EXIT,
@@ -253,4 +253,4 @@ function main() {
   finalize(STATES.DONE_PENDING_REVIEW, { packet, report: rp.json });
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+if (isCliEntry(import.meta.url)) main();

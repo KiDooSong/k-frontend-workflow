@@ -21,9 +21,9 @@
 //       2 = 도구 오류 (packet 없음/파싱 실패, --diff/--review 파일 없음, --out 쓰기 실패 등).
 //       exit 1 을 gate 의미로 쓰지 않는다.
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { parseArgs, DEFAULTS, readFileSafe, writeFile, splitFrontmatter } from './lib/util.mjs';
+import { parseArgs, DEFAULTS, readFileSafe, writeFile, splitFrontmatter, isCliEntry } from './lib/util.mjs';
 import {
   extractSection,
   extractFencedTxt,
@@ -368,4 +368,4 @@ function main() {
   process.exit(0);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+if (isCliEntry(import.meta.url)) main();

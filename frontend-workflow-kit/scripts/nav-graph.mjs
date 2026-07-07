@@ -3,12 +3,12 @@
 // screen-spec.md ## Interaction Matrix(Result 컬럼) + app/navigation-map.md 를 읽어
 // _meta/nav-graph.yaml(top-level: screens, routes)을 생성한다. ScreenSpec 은 절대 수정하지 않는다.
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import {
   parseArgs,
   DEFAULTS,
   emitGeneratedYaml,
   writeFile,
+  isCliEntry,
 } from './lib/util.mjs';
 import { buildNavGraph } from './lib/nav-graph.mjs';
 
@@ -47,4 +47,4 @@ function main() {
 }
 
 // 직접 실행될 때만 main() (import 시 부작용 없음 — buildNavGraph 재사용 가능)
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+if (isCliEntry(import.meta.url)) main();

@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { parseArgs, readFileSafe, writeFile } from './lib/util.mjs';
+import { parseArgs, readFileSafe, writeFile, isCliEntry } from './lib/util.mjs';
 import {
   buildLintGenModel,
   firstTextDiff,
@@ -218,4 +217,4 @@ function main() {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+if (isCliEntry(import.meta.url)) main();

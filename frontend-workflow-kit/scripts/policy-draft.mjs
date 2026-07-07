@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 // policy-draft.mjs - write review-only implementation-mode-policy draft outputs.
-import { pathToFileURL } from 'node:url';
-import { KIT_ROOT, parseArgs, runCli } from './lib/util.mjs';
+import { KIT_ROOT, parseArgs, runCli, isCliEntry } from './lib/util.mjs';
 import { formatPolicyDraftResult, writePolicyDraftArtifacts } from './lib/policy-draft.mjs';
 
 const STRING_FLAGS = new Set(['layout', 'policy', 'out', 'date']);
@@ -44,6 +43,6 @@ function main() {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isCliEntry(import.meta.url)) {
   runCli(main, 'workflow:policy-draft');
 }

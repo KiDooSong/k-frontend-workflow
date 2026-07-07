@@ -7,8 +7,7 @@
 // surface, not a gate: findings never change the exit code, and this script is
 // not wired into readiness/validate/CI required checks.
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { DEFAULTS, exists, parseArgs } from './lib/util.mjs';
+import { DEFAULTS, exists, parseArgs, isCliEntry } from './lib/util.mjs';
 import { analyzeDocDrift, DocDriftInputError, formatDocDriftHuman } from './lib/doc-drift.mjs';
 
 function helpText() {
@@ -150,4 +149,4 @@ function main() {
   process.exit(0);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+if (isCliEntry(import.meta.url)) main();

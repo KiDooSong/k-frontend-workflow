@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 // workflow:create-input - create a canonical input artifact from normalized facts.
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { DEFAULTS, runCli } from './lib/util.mjs';
+import { DEFAULTS, runCli, isCliEntry } from './lib/util.mjs';
 import {
   InputProducerError,
   loadProducerPayload,
@@ -217,6 +216,6 @@ function main() {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isCliEntry(import.meta.url)) {
   runCli(main, 'workflow:create-input');
 }

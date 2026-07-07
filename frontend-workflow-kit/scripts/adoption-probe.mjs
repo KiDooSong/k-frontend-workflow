@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-import { pathToFileURL } from 'node:url';
 import { cliMain } from './lib/adoption-probe.mjs';
+import { isCliEntry } from './lib/util.mjs';
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isCliEntry(import.meta.url)) {
   cliMain(process.argv.slice(2));
 }

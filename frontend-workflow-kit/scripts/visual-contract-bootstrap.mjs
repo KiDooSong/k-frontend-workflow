@@ -37,8 +37,7 @@
 //   0  기본 (warning/info 만 있으면 0 — warning-first).
 //   1  구조 오류(docs 부재 · 기존 contract malformed · canonical contract overwrite 시도 · 잘못된 --format).
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { parseArgs, DEFAULTS, exists, writeFile } from './lib/util.mjs';
+import { parseArgs, DEFAULTS, exists, writeFile, isCliEntry } from './lib/util.mjs';
 import {
   analyzeVisualContractBootstrap,
   renderBootstrapMarkdown,
@@ -191,4 +190,4 @@ function main() {
 }
 
 // 직접 실행될 때만 main() (import 시 부작용 없음 — 테스트가 lib 를 직접 소비).
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+if (isCliEntry(import.meta.url)) main();

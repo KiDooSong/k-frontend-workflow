@@ -30,8 +30,7 @@
 // exit code:
 //   0  항상(warning-first — 불일치/skip 과 무관하게 0). 게이트가 아니라 진단이라 exit 1/2 로 올리지 않는다.
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { parseArgs, DEFAULTS } from './lib/util.mjs';
+import { parseArgs, DEFAULTS, isCliEntry } from './lib/util.mjs';
 import { analyzeRouteCrossCheck, formatRouteCrossCheckHuman } from './lib/route-cross-check.mjs';
 
 function helpText() {
@@ -83,4 +82,4 @@ function main() {
 }
 
 // 직접 실행될 때만 main() (import 시 부작용 없음 — 테스트가 lib 를 직접 소비; nav-graph.mjs 가드 미러).
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+if (isCliEntry(import.meta.url)) main();

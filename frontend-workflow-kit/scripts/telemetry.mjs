@@ -4,8 +4,7 @@
 // This CLI can write/check deterministic observation ledgers, but it creates no
 // CI artifact by default and makes no promotion verdict.
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { DEFAULTS, parseArgs } from './lib/util.mjs';
+import { DEFAULTS, parseArgs, isCliEntry } from './lib/util.mjs';
 import {
   collectTelemetry,
   collectTelemetryLedger,
@@ -419,4 +418,4 @@ function main() {
   process.exit(0);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+if (isCliEntry(import.meta.url)) main();

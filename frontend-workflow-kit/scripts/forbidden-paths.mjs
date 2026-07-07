@@ -17,8 +17,7 @@
 //   1  --enforce 인데 위반 있음.
 //   2  입력 오류(state/policy 부재, git 실행/ base ref 해석 실패).
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { parseArgs, DEFAULTS, KIT_ROOT, loadYaml, readFileSafe, runCli } from './lib/util.mjs';
+import { parseArgs, DEFAULTS, KIT_ROOT, loadYaml, readFileSafe, runCli, isCliEntry } from './lib/util.mjs';
 import { computeReadiness } from './readiness.mjs';
 import { LayoutConfigError, loadLayoutProfile } from './lib/layout-profile.mjs';
 import {
@@ -302,4 +301,4 @@ function main() {
 
 // 직접 실행될 때만 main() (import 시 부작용 없음)
 // runCli: 레이아웃 설정 오류(미정의 role·부재 --layout)를 exit 2 로 surface(stack trace+exit 1 차단).
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) runCli(main, 'forbidden-paths');
+if (isCliEntry(import.meta.url)) runCli(main, 'forbidden-paths');

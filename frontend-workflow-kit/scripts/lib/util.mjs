@@ -2,7 +2,7 @@
 // 의존성 최소 원칙: Node 내장 + `yaml` 한 개만 사용한다.
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse as yamlParse, stringify as yamlStringify } from 'yaml';
 
 // 킷 루트(scripts/..)를 스크립트 위치 기준으로 해석한다.
@@ -206,6 +206,22 @@ export function runCli(main, tool = 'workflow') {
       process.exit(2);
     }
     throw err;
+  }
+}
+
+// CLI 엔트리 판정: `node <script>` 로 직접 실행됐을 때만 true (import 시 false).
+// 단순 `import.meta.url === pathToFileURL(argv[1]).href` 비교는 macOS 에서 깨진다:
+// argv[1] 이 symlink 경유 경로(예: os.tmpdir() 의 /var/folders → /private/var/folders)면
+// Node 는 import.meta.url 을 realpath 로 해석하되 argv[1] 은 호출자가 준 그대로 두므로
+// 비교가 false 가 되고, main() 이 실행되지 않은 채 exit 0 + 빈 stdout 으로 샌다.
+// 그래서 원문 비교(--preserve-symlinks-main 환경의 정답)를 먼저, realpath 비교를 보강으로 한다.
+export function isCliEntry(importMetaUrl, argv1 = process.argv[1]) {
+  if (!argv1) return false;
+  if (importMetaUrl === pathToFileURL(argv1).href) return true;
+  try {
+    return importMetaUrl === pathToFileURL(fs.realpathSync(argv1)).href;
+  } catch {
+    return false; // argv1 이 삭제·접근 불가면 직접 실행으로 볼 근거가 없다
   }
 }
 

@@ -33,8 +33,7 @@
 //   1  구조 오류(error: docs 부재·contract malformed) 또는 --enforce + warning 존재.
 //   2  (예약) 설정 오류 — runCli/LayoutConfigError 계열. 이 도구는 현재 쓰지 않는다.
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { parseArgs, DEFAULTS, writeFile } from './lib/util.mjs';
+import { parseArgs, DEFAULTS, writeFile, isCliEntry } from './lib/util.mjs';
 import {
   analyzeVisualConsistency,
   formatVisualConsistencyHuman,
@@ -121,4 +120,4 @@ function main() {
 }
 
 // 직접 실행될 때만 main() (import 시 부작용 없음 — 테스트가 lib 를 직접 소비).
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+if (isCliEntry(import.meta.url)) main();

@@ -6,8 +6,7 @@
 // live in the Screen Source Map — this command does not resolve mapping, invent ids,
 // update navigation-map, resolve Open Decisions, or promote status to confirmed.
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { DEFAULTS, runCli } from './lib/util.mjs';
+import { DEFAULTS, runCli, isCliEntry } from './lib/util.mjs';
 import { ScreenScaffoldError, writeScreenSpec } from './lib/screen-scaffold.mjs';
 
 const REPEAT_FLAGS = new Set(['source']);
@@ -175,6 +174,6 @@ function main() {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isCliEntry(import.meta.url)) {
   runCli(main, 'workflow:create-screen');
 }
