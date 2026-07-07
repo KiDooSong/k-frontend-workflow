@@ -16,12 +16,18 @@ function helpText() {
 
 Usage:
   node scripts/doc-drift.mjs [--root <dir>] [--json]
+                             [--escapes-root-severity <info|warning>]
                              [--include status-heuristic] [--manifest <file>] [--roadmap <file>]
                              [--help]
 
 Options:
   --root <dir>       Root to scan. Default: current working directory.
   --json             Print a deterministic JSON report to stdout.
+  --escapes-root-severity <info|warning>
+                     Severity for relative links that resolve outside the scan
+                     root (check: relative-link-escapes-root). Default: info,
+                     because such targets cannot be verified under the scan
+                     root; pass warning to opt into promotion.
   --include <check>  Enable an opt-in check (comma-separated ok).
                      Known: status-heuristic (manifest↔roadmap status wording,
                      info-only; findings go to info_count, never warning_count).
@@ -36,11 +42,22 @@ Options:
 Behavior:
   Scans .md files below root, skipping node_modules, .git, hidden directories, and
   dist/build-style output directories. Checks inline Markdown links and image links.
-  Skips external URLs and reference-style links. Fenced code blocks are ignored.
+  Skips external URLs and reference-style links. Fenced code blocks and inline code
+  spans are ignored, so \`[label](target)\` examples inside backticks are never
+  scanned as links.
 
   Phase 0 (default) only reports missing relative target files and dead Markdown
   heading anchors. It does not check semantic drift, roadmap/changelog PR ranges,
   external URL reachability, or duplicate document copies.
+
+  GitHub-style line anchors #L12 / #L12-L14 are treated as line references, not
+  heading anchors (the target file's existence is still checked). Bare
+  non-path-like bracket notation such as [label](annotation) is reported as
+  info (check: ambiguous-non-link-bracket-notation) for manual review instead of
+  a broken-relative-link warning. Relative links escaping the scan root are info
+  by default because they cannot be verified under the scan root
+  (--escapes-root-severity warning promotes them). Info findings go to
+  info_count, never warning_count, and never change the exit code.
 
   --include status-heuristic additionally cross-checks artifact-manifest status
   fields (active/planned) against roadmap wording on the same line (완료/active/
@@ -51,8 +68,9 @@ Behavior:
 
 Exit codes:
   0  Always for findings (warning-first — findings are diagnostics, never a failure).
-  2  Usage/input errors only (unknown --include value, heuristic flags without the
-     opt-in, missing/corrupt manifest or roadmap for the explicitly requested
+  2  Usage/input errors only (unknown --include value, invalid
+     --escapes-root-severity value, heuristic flags without the opt-in,
+     missing/corrupt manifest or roadmap for the explicitly requested
      status heuristic).
 `;
 }
@@ -103,6 +121,15 @@ function main() {
     ? path.resolve(flags.root)
     : process.cwd();
 
+  let escapesRootSeverity = 'info';
+  if (Object.prototype.hasOwnProperty.call(flags, 'escapes-root-severity')) {
+    const value = flags['escapes-root-severity'];
+    if (value !== 'info' && value !== 'warning') {
+      usageError(`--escapes-root-severity must be info or warning (got: ${value === true ? '(none)' : value})`);
+    }
+    escapesRootSeverity = value;
+  }
+
   const includes = parseIncludes(flags);
   const heuristicEnabled = includes.includes('status-heuristic');
   for (const name of ['manifest', 'roadmap']) {
@@ -132,7 +159,7 @@ function main() {
 
   let report;
   try {
-    report = analyzeDocDrift({ rootDir, statusHeuristic });
+    report = analyzeDocDrift({ rootDir, statusHeuristic, escapesRootSeverity });
   } catch (err) {
     if (err instanceof DocDriftInputError) {
       usageError(err.message);

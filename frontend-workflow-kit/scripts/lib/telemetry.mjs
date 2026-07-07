@@ -299,9 +299,11 @@ function normalizeSurface(surface, report) {
       warning_count: warningCountFrom(report),
       source_tool: surface.source_tool,
     };
-    // info_count exists only when the status heuristic ran; info findings are
-    // preserved separately and never inflate warning_count. Default doc-drift
-    // reports carry no info_count, so the default surface shape is unchanged.
+    // info_count exists when the child report carries it (status heuristic, or
+    // default-run info findings such as ambiguous bracket notation and
+    // root-escaping links); info findings are preserved separately and never
+    // inflate warning_count. Reports without info findings carry no info_count,
+    // so the default surface shape is unchanged.
     if (report?.info_count != null) out.info_count = nonNegativeInteger(report.info_count);
     return out;
   }
@@ -399,8 +401,9 @@ function normalizeSurfaceForReport(surface) {
     out.fail_closed_leaked = nonNegativeInteger(surface?.fail_closed_leaked);
     out.blocking_mismatch = nonNegativeInteger(surface?.blocking_mismatch);
   }
-  // Doc-drift info_count is an opt-in extra (status heuristic): preserved in the
-  // ledger only when the surface carries it, so the default byte shape holds.
+  // Doc-drift info_count (status heuristic, or default-run info findings):
+  // preserved in the ledger only when the surface carries it, so the
+  // no-info-finding byte shape holds.
   if (out.available && surface?.surface_id === 'doc-drift' && surface?.info_count != null) {
     out.info_count = nonNegativeInteger(surface.info_count);
   }

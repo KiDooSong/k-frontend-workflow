@@ -11,6 +11,12 @@
 // artifact-manifest status fields and roadmap wording. It is a review pointer, not
 // a semantic-truth claim; its findings are severity "info", counted in info_count,
 // never in warning_count, and never change the exit code.
+//
+// Issue #150 false-positive classes handled inside Phase 0 (still mechanical):
+// inline code spans are masked out of link scanning, GitHub/VSCode line anchors
+// (#L12, #L12-L14) are line references rather than heading slugs, bare
+// non-path-like bracket notation is demoted to info, and root-escaping relative
+// links are reported as unverifiable info by default (opt-in warning promotion).
 import fs from 'node:fs';
 import path from 'node:path';
 import { isDir, readFileSafe, yamlParse } from './util.mjs';
@@ -130,6 +136,56 @@ export function stripFencedCodeBlocks(content) {
   return out.join('\n');
 }
 
+// Mask inline code spans with spaces so `[label](target)` examples inside
+// backticks are never scanned as links. Minimal CommonMark idiom: a span opens
+// with a run of N backticks and closes at the next run of exactly N backticks
+// (so ``code ` inner`` works); an unmatched opener stays literal text. Space
+// masking (not removal) keeps newlines and offsets, so no fake links appear
+// from line joining. Fenced code blocks must be stripped before this runs.
+export function maskInlineCodeSpans(content) {
+  const text = String(content || '');
+  let out = '';
+  let i = 0;
+  while (i < text.length) {
+    if (text[i] !== '`') {
+      out += text[i];
+      i++;
+      continue;
+    }
+
+    let openEnd = i;
+    while (openEnd < text.length && text[openEnd] === '`') openEnd++;
+    const runLen = openEnd - i;
+
+    let close = -1;
+    let scan = openEnd;
+    while (scan < text.length) {
+      if (text[scan] !== '`') {
+        scan++;
+        continue;
+      }
+      let runEnd = scan;
+      while (runEnd < text.length && text[runEnd] === '`') runEnd++;
+      if (runEnd - scan === runLen) {
+        close = scan;
+        break;
+      }
+      scan = runEnd;
+    }
+
+    if (close === -1) {
+      out += text.slice(i, openEnd);
+      i = openEnd;
+      continue;
+    }
+
+    const spanEnd = close + runLen;
+    out += text.slice(i, spanEnd).replace(/[^\n]/g, ' ');
+    i = spanEnd;
+  }
+  return out;
+}
+
 function findClosingBracket(text, start) {
   let depth = 0;
   for (let i = start; i < text.length; i++) {
@@ -192,7 +248,7 @@ function extractLinkDestination(raw) {
 }
 
 export function extractInlineMarkdownLinks(content) {
-  const text = stripFencedCodeBlocks(content);
+  const text = maskInlineCodeSpans(stripFencedCodeBlocks(content));
   const links = [];
 
   for (let i = 0; i < text.length; i++) {
@@ -291,6 +347,29 @@ function isExternalOrNonRelative(link) {
 
 function normalizeAnchor(anchor) {
   return String(anchor || '').trim().toLowerCase();
+}
+
+// GitHub/VSCode line anchors (#L12, #L12-L14) reference source lines, not
+// heading slugs. Case-insensitive on the already URL-decoded anchor; the target
+// file's existence is still checked by the normal relative-link path.
+export function isGitHubLineAnchor(anchor) {
+  return /^L\d+(?:-L\d+)?$/i.test(String(anchor || '').trim());
+}
+
+// Conservative demotion for issue #150 class 3: `[label](annotation)` UI copy,
+// type notes, and key descriptions parse as CommonMark inline links but carry no
+// path signal at all. Only destinations with no anchor, no query, no slash or
+// backslash, and no extension qualify, and only when the token is short or
+// contains non-ASCII descriptive text — anything path-like keeps the full
+// broken-relative-link warning. This does not attempt full CommonMark judgment.
+export function isBareAmbiguousDestination({ link, filePart, anchor }) {
+  if (anchor != null) return false;
+  const raw = String(link || '').trim();
+  if (!raw || !filePart) return false;
+  if (raw.includes('?') || raw.includes('#')) return false;
+  if (/[/\\]/.test(raw)) return false;
+  if (path.extname(filePart) !== '') return false;
+  return /[^\x00-\x7F]/.test(filePart) || filePart.length <= 48;
 }
 
 function findingKey(finding, name) {
@@ -433,7 +512,14 @@ export function analyzeManifestRoadmapStatus({ rootDir, manifestPath, roadmapPat
 
 // statusHeuristic: null (default, Phase 0 output byte-identical) or
 // { manifestPath, roadmapPath } to enable the opt-in Phase 1 heuristic.
-export function analyzeDocDrift({ rootDir, statusHeuristic = null }) {
+// escapesRootSeverity: 'info' (default — root-escaping targets cannot be
+// verified under the scan root) or 'warning' (opt-in promotion).
+export function analyzeDocDrift({ rootDir, statusHeuristic = null, escapesRootSeverity = 'info' }) {
+  if (escapesRootSeverity !== 'info' && escapesRootSeverity !== 'warning') {
+    throw new DocDriftInputError(
+      `invalid escapesRootSeverity: ${escapesRootSeverity} (expected info or warning)`,
+    );
+  }
   const rootAbs = path.resolve(rootDir || process.cwd());
   const mdFiles = walkMarkdownFiles(rootAbs);
   const headingCache = new Map();
@@ -460,18 +546,31 @@ export function analyzeDocDrift({ rootDir, statusHeuristic = null }) {
       const target = relPosix(rootAbs, targetAbs);
 
       if (!isInside(rootAbs, targetAbs)) {
+        // The target lives outside the scan root (e.g. an intentional sibling
+        // repo reference), so it cannot be verified here — not a broken claim.
         findings.push({
-          severity: 'warning',
-          check: 'broken-relative-link',
+          severity: escapesRootSeverity,
+          check: 'relative-link-escapes-root',
           source,
           link,
           target,
-          reason: 'target path escapes root',
+          reason: 'target path escapes scan root; target cannot be verified',
         });
         continue;
       }
 
       if (filePart && !pathExists(targetAbs)) {
+        if (isBareAmbiguousDestination({ link, filePart, anchor })) {
+          findings.push({
+            severity: 'info',
+            check: 'ambiguous-non-link-bracket-notation',
+            source,
+            link,
+            target,
+            reason: 'bare parenthesized annotation looks non-path-like; not treated as a broken relative link (review manually)',
+          });
+          continue;
+        }
         findings.push({
           severity: 'warning',
           check: 'broken-relative-link',
@@ -485,6 +584,9 @@ export function analyzeDocDrift({ rootDir, statusHeuristic = null }) {
 
       const anchorSlug = normalizeAnchor(anchor);
       if (!anchorSlug) continue;
+      // Line references are never heading slugs; the target file's existence
+      // was already verified above.
+      if (isGitHubLineAnchor(anchorSlug)) continue;
       if (path.extname(targetAbs).toLowerCase() !== '.md') continue;
 
       if (!headingSlugsFor(targetAbs).has(anchorSlug)) {
@@ -510,8 +612,11 @@ export function analyzeDocDrift({ rootDir, statusHeuristic = null }) {
 
   const finalFindings = sortFindings(dedupeFindings(findings));
   const warningCount = finalFindings.filter((finding) => finding.severity === 'warning').length;
-  // Default output keeps the exact Phase 0 byte shape; include/info_count are
-  // opt-in extras that only appear when the status heuristic is enabled.
+  const infoCount = finalFindings.filter((finding) => finding.severity === 'info').length;
+  // Default no-info output keeps the exact Phase 0 byte shape; the include key
+  // appears only with the status heuristic, and info_count appears when the
+  // heuristic ran or when default info findings (ambiguous bracket notation,
+  // root-escaping links) exist.
   const out = {
     tool: 'workflow:doc-drift',
     mode: 'warning-first',
@@ -520,9 +625,7 @@ export function analyzeDocDrift({ rootDir, statusHeuristic = null }) {
   if (statusHeuristic) out.include = ['status-heuristic'];
   out.ok = true;
   out.warning_count = warningCount;
-  if (statusHeuristic) {
-    out.info_count = finalFindings.filter((finding) => finding.severity === 'info').length;
-  }
+  if (statusHeuristic || infoCount > 0) out.info_count = infoCount;
   out.findings = finalFindings;
   return out;
 }
@@ -535,8 +638,9 @@ function formatFinding(finding) {
       `(${finding.source} ↔ ${finding.target}) — ${finding.reason}`
     );
   }
+  const severityLabel = finding.severity === 'info' ? 'INFO' : 'WARNING';
   return (
-    `workflow:doc-drift — WARNING ${finding.check}: ${finding.source} ` +
+    `workflow:doc-drift — ${severityLabel} ${finding.check}: ${finding.source} ` +
     `links to ${finding.link} (${finding.target}) — ${finding.reason}`
   );
 }
