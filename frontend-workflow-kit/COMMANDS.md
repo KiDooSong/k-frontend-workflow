@@ -154,6 +154,35 @@ Default telemetry does not run the doc-drift status heuristic — the doc-drift 
 
 CI artifact accumulation is observation-only. The Actions workflow writes the deterministic ledger under `$RUNNER_TEMP/frontend-workflow-telemetry/telemetry-ledger.json`, writes a separate current observation report under `telemetry-report.json`, and uploads both as one artifact so repeated runs within the artifact retention window can become evidence for later human review. The uploaded ledger/report are not a pass/fail verdict, and they are not a gate. The CI telemetry step uses `continue-on-error`, the artifact summary step emits warnings for missing or empty files without failing the job, and artifact upload uses `if: always()` plus `if-no-files-found: warn` so missing observation files do not fail the job. Do not wire telemetry ledger drift to exit 1, a hard gate, or a required check without a separate Open Decision and human approval.
 
+### GitLab CI equivalent
+
+The `workflow:telemetry` command is runner-independent, so the same observation-only contract maps directly onto GitLab CI — only the artifact-upload surface differs. Keep the warning-first, no-gate contract intact:
+
+| Actions guidance | GitLab CI equivalent | Note |
+|---|---|---|
+| `continue-on-error: true` | `allow_failure: true` | a failed job does not fail the pipeline — preserves the no-gate contract |
+| `$RUNNER_TEMP/frontend-workflow-telemetry/` | a project-relative path, e.g. `temp/telemetry/` | GitLab only collects artifacts under `$CI_PROJECT_DIR`; there is no `RUNNER_TEMP` equivalent. Keep it under a `.gitignore`d path so the checkout stays clean |
+| `upload-artifact` + `if: always()` | `artifacts: when: always` | upload the evidence even when an earlier step warned |
+| `if-no-files-found: warn` | GitLab warns on a missing artifact path without failing the job (default) | doubles up with `allow_failure` |
+| `retention-days: 30` | `artifacts: expire_in: 30 days` | |
+
+```yaml
+workflow-telemetry:
+  stage: quality
+  allow_failure: true # observation-only — not a gate
+  script:
+    - mkdir -p temp/telemetry
+    - npm run workflow:telemetry -- --out temp/telemetry/telemetry-ledger.json
+    - npm run workflow:telemetry -- --json > temp/telemetry/telemetry-report.json
+  artifacts:
+    when: always
+    paths:
+      - temp/telemetry/
+    expire_in: 30 days
+```
+
+As on Actions, the ledger and report are never committed to the repo — they are per-run artifacts accumulated as evidence for later human review. Comparing a run against a previous run's ledger with `--check` is an optional extension on GitLab, not part of the base job: inter-job `dependencies` only pass artifacts within a single pipeline, so a cross-run `--check` must fetch the prior run's artifact through the GitLab API. As with the Actions guidance, do not wire telemetry ledger drift to removing `allow_failure`, GitLab merge checks or MR approval rules, or a required pipeline without a separate Open Decision and human approval.
+
 ## Visual Consistency
 
 ```bash
