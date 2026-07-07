@@ -17,6 +17,35 @@ or root config.
 
 ---
 
+## Visual axis, telemetry, and red-team observation surfaces
+
+- `visual-consistency-contract` is a **review-only** document you create when
+  needed (`docs/frontend-workflow/design/visual-consistency-contract.md`); its
+  absence is a silent skip, never a warning. The frontmatter schema now accepts
+  `artifact_type: visual-consistency-contract`, so contracts authored from the
+  shipped template pass `workflow:validate` check 1.
+- `workflow:visual-contract-bootstrap` can draft the contract from existing
+  ScreenSpecs (optionally `--src` for import heuristics), but promotion to the
+  canonical/confirmed contract is human-only — the draft is never applied
+  automatically. With `--src` set, screens without `screen_entry` frontmatter
+  are skipped; if **no** selected screen has `screen_entry`, the report now says
+  so in `skipped_checks` instead of silently returning zero candidates.
+  Repeated local imports whose names miss the shell/logo/header/CTA regexes now
+  surface as `kind: unknown` candidates (ownership stays needs-review).
+- `workflow:visual-consistency` is **warning-first**: findings are not gates,
+  exit stays 0 unless the structure itself is broken. Do not wire it into a CI
+  hard gate. Shared component rows can declare `Catalog Status` `domain` /
+  `out-of-scope` to record components that are intentionally outside the
+  ui_primitive catalog (check 4 reports info instead of a permanent warning).
+- Telemetry visual/redteam surfaces are **opt-in observation surfaces** — they
+  record adoption/observation data and never gate or promote anything.
+- **Manual action:** after upgrading, run `npm run workflow:validate` and, if
+  you use telemetry, inspect `npm run workflow:telemetry -- --list-surfaces
+  --json` to see the available surfaces. If you maintain adapted copies of the
+  root `AGENTS.md` / `CLAUDE.md` or vendored skill copies (e.g. under
+  `.agents/`), re-sync them with the new reference docs and scripts — the
+  planner flags conflicts but does not merge your adaptations.
+
 ## Grouped input artifact directories
 
 - `workflow:create-input` can now group input artifacts by domain or an explicit

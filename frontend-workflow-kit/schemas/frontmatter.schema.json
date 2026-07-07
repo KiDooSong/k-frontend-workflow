@@ -21,6 +21,7 @@
         "component-gap-register",
         "conflicts",
         "figma-component-mapping",
+        "visual-consistency-contract",
         "component-guidelines",
         "api-manifest",
         "screen-source-map",
