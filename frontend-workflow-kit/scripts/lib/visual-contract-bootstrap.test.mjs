@@ -20,6 +20,7 @@ import {
   formatBootstrapHuman,
   classifyComponentKind,
   extractImportBindings,
+  isLocalImportSpecifier,
 } from './visual-contract-bootstrap.mjs';
 import { parseVisualContract } from './visual-consistency.mjs';
 import { KIT_ROOT } from './util.mjs';
@@ -212,6 +213,35 @@ test('--src 미지정 → 소스 휴리스틱 skip (skipped_checks 보고), fami
   });
 });
 
+test('--src 지정 + selected screen_entry 0건 → source-scan skip 사유 표면화 (silent no-op 금지)', () => {
+  const specsNoEntry = SYNTH_SPECS.map(({ entry, ...rest }) => rest);
+  withTree({ contract: null, specs: specsNoEntry, src: SYNTH_SRC }, (docsDir, srcDir) => {
+    const r = analyzeVisualContractBootstrap({ docsDir, srcDir });
+    assert.equal(r.ok, true); // error 아님 — skip 표면화만 (exit 0 계약 유지)
+    const skip = r.skipped_checks.find((s) => s.rule === 'source-scan');
+    assert.ok(skip, JSON.stringify(r.skipped_checks));
+    assert.match(skip.reason, /--src 는 지정되었지만/);
+    assert.match(skip.reason, /screen_entry 가 0건/);
+    assert.equal(r.shared_components.length, 0);
+    // human 포맷에도 [skip] 라인으로 나온다
+    assert.ok(formatBootstrapHuman(r).some((l) => l.includes('[skip] source-scan')));
+  });
+});
+
+test('screen_entry 일부만 있으면 전체 skip 하지 않는다 — 가능한 화면만 분석 (부분 coverage)', () => {
+  const partial = [
+    ...SYNTH_SPECS,
+    { domain: 'auth', slug: 'verify', screenId: 'AUTH-003', route: '/verify' }, // entry 없음
+  ];
+  withTree({ contract: null, specs: partial, src: SYNTH_SRC }, (docsDir, srcDir) => {
+    const r = analyzeVisualContractBootstrap({ docsDir, srcDir });
+    assert.ok(!r.skipped_checks.some((s) => s.rule === 'source-scan'));
+    const button = r.shared_components.find((c) => c.component === 'Button');
+    assert.ok(button, 'entry 가 있는 화면은 기존처럼 분석되어야 한다');
+    assert.deepEqual(button.imported_by, ['AUTH-001', 'AUTH-002']);
+  });
+});
+
 // --- 후보 추론 --------------------------------------------------------------------
 
 test('contract 없음 → full draft suggestions (family 행 + component 행) 생성', () => {
@@ -292,6 +322,83 @@ test('direct logo import + ad-hoc positioning + hardcoded copy → info findings
       assert.equal(di.screen_id, 'AUTH-002');
       assert.equal(di.component, 'BrandLogo');
       assert.equal(di.severity, 'info'); // 관찰이지 계약 위반 판정이 아니다
+    },
+  );
+});
+
+// --- kind:unknown 반복 local import 후보 (#153 ②) -------------------------------------
+
+// 이름 정규식(shell/logo/header/CTA)에 안 잡히는 local 컴포넌트 반복 import 합성 소스.
+// SafeAreaView(react-native)·Icon(@expo/vector-icons) 은 bare package — 후보 금지 대상.
+const UNKNOWN_SRC = {
+  'src/features/auth/OtpScreen.tsx': `import { ScreenContainer } from '@/components/layout/ScreenContainer';\nimport { OtpVerifyBody } from './OtpVerifyBody';\nimport { SafeAreaView } from 'react-native';\nimport { Icon } from '@expo/vector-icons';\nexport const O = () => <ScreenContainer><SafeAreaView><OtpVerifyBody /></SafeAreaView></ScreenContainer>;\n`,
+  'src/features/auth/PinScreen.tsx': `import { ScreenContainer } from '@/components/layout/ScreenContainer';\nimport { OtpVerifyBody } from './OtpVerifyBody';\nimport { SafeAreaView } from 'react-native';\nimport { Icon } from '@expo/vector-icons';\nexport const P = () => <ScreenContainer><SafeAreaView><OtpVerifyBody /></SafeAreaView></ScreenContainer>;\n`,
+};
+const UNKNOWN_SPECS = [
+  {
+    domain: 'auth',
+    slug: 'otp',
+    screenId: 'AUTH-101',
+    route: '/otp',
+    entry: 'src/features/auth/OtpScreen.tsx',
+  },
+  {
+    domain: 'auth',
+    slug: 'pin',
+    screenId: 'AUTH-102',
+    route: '/pin',
+    entry: 'src/features/auth/PinScreen.tsx',
+  },
+];
+
+test('이름 정규식 미매칭 local import 가 2개 이상 화면에서 반복 → kind:unknown shared 후보', () => {
+  withTree(
+    { contract: null, specs: UNKNOWN_SPECS, catalog: SIMPLE_CATALOG, src: UNKNOWN_SRC },
+    (docsDir, srcDir) => {
+      const r = analyzeVisualContractBootstrap({ docsDir, srcDir });
+      const container = r.shared_components.find((c) => c.component === 'ScreenContainer');
+      assert.ok(container, JSON.stringify(r.shared_components));
+      assert.equal(container.kind, 'unknown'); // alias(@/) import 도 local 로 인정
+      assert.deepEqual(container.imported_by, ['AUTH-101', 'AUTH-102']);
+      const body = r.shared_components.find((c) => c.component === 'OtpVerifyBody');
+      assert.ok(body, '상대(./) import 도 unknown 후보가 되어야 한다');
+      assert.equal(body.kind, 'unknown');
+      // suggested component row 에 들어가되 ownership 추론은 하지 않는다
+      const row = r.suggested_rows.components.find((c) => c.component === 'ScreenContainer');
+      assert.ok(row);
+      assert.equal(row.owned_by, 'needs-review');
+      assert.equal(row.direct_screen_import, 'needs-review');
+      assert.equal(row.positioning_owner, 'needs-review');
+      // catalog 에 없으므로 gap 후보 — reason 이 오탐 가능성(kind unknown)을 드러낸다
+      const gap = r.component_gap_candidates.find((g) => g.component === 'ScreenContainer');
+      assert.ok(gap);
+      assert.match(gap.reason, /Repeated local import but kind unknown/);
+    },
+  );
+});
+
+test('bare package import (react-native·@scope/pkg) 는 반복돼도 unknown 후보가 되지 않는다', () => {
+  withTree(
+    { contract: null, specs: UNKNOWN_SPECS, catalog: SIMPLE_CATALOG, src: UNKNOWN_SRC },
+    (docsDir, srcDir) => {
+      const r = analyzeVisualContractBootstrap({ docsDir, srcDir });
+      const names = r.shared_components.map((c) => c.component);
+      assert.ok(!names.includes('SafeAreaView'), names.join(','));
+      assert.ok(!names.includes('Icon'), names.join(','));
+      assert.ok(!r.component_gap_candidates.some((g) => g.component === 'SafeAreaView'));
+    },
+  );
+});
+
+test('unknown 후보 도입 후에도 기존 shell/logo/header/CTA 분류·후보는 그대로다', () => {
+  withTree(
+    { contract: null, specs: SYNTH_SPECS, catalog: SIMPLE_CATALOG, src: SYNTH_SRC },
+    (docsDir, srcDir) => {
+      const r = analyzeVisualContractBootstrap({ docsDir, srcDir });
+      // SYNTH_SRC 는 lowercase 바인딩(t 등) 없이 classified 이름만 반복 — unknown 후보 0
+      assert.ok(!r.shared_components.some((c) => c.kind === 'unknown'));
+      const button = r.shared_components.find((c) => c.component === 'Button');
+      assert.equal(button.kind, 'cta');
     },
   );
 });
@@ -640,6 +747,21 @@ test('classifyComponentKind — shell/logo/header/cta 이름 휴리스틱 (우�
   assert.equal(classifyComponentKind('CTA'), 'cta');
   assert.equal(classifyComponentKind('Button'), 'cta');
   assert.equal(classifyComponentKind('useLoginQuery'), null);
+  // 이슈 #153 ② 의 실측 셸 이름들 — 이름 정규식엔 안 잡힌다 (kind:unknown 경로 대상)
+  for (const name of ['AuthFormScreen', 'OtpVerifyBody', 'BottomCtaBar', 'FormKeyboardScreen', 'ScreenContainer']) {
+    assert.equal(classifyComponentKind(name), null, name);
+  }
+});
+
+test('isLocalImportSpecifier — 상대(./ ../)·alias(@/ src/) 만 local, bare package 는 제외', () => {
+  assert.equal(isLocalImportSpecifier('./AuthShell'), true);
+  assert.equal(isLocalImportSpecifier('../ui/Button'), true);
+  assert.equal(isLocalImportSpecifier('@/components/layout/ScreenContainer'), true);
+  assert.equal(isLocalImportSpecifier('src/components/ScreenContainer'), true);
+  assert.equal(isLocalImportSpecifier('react'), false);
+  assert.equal(isLocalImportSpecifier('react-native'), false);
+  assert.equal(isLocalImportSpecifier('@expo/vector-icons'), false); // @scope ≠ @/
+  assert.equal(isLocalImportSpecifier('lodash/get'), false);
 });
 
 test('extractImportBindings — default/named/namespace/여러 줄, type-only 제외, 중복 제거', () => {

@@ -2,8 +2,8 @@
 //
 // consumer repo 의 ScreenSpec frontmatter · figma-component-mapping · component-catalog ·
 // (선택 --src) screen_entry 소스를 **읽기만** 하고, screen family 후보 · shared
-// shell/logo/header/CTA ownership 후보 · figma mapping coverage · component gap 후보 ·
-// suggested contract rows 를 draft/review-only 로 낸다.
+// shell/logo/header/CTA ownership 후보(이름 정규식 미매칭 반복 local import 는 kind:unknown) ·
+// figma mapping coverage · component gap 후보 · suggested contract rows 를 draft/review-only 로 낸다.
 // 계약 정본: docs/reference/visual-reconciliation.md §Bootstrap / adoption.
 // 설계 기록: kit-dev/temp/proposals/visual-contract-bootstrap-adoption.md.
 //
@@ -70,6 +70,24 @@ export function classifyComponentKind(name) {
   if (HEADER_NAME_RE.test(name)) return 'header';
   if (CTA_NAME_RE.test(name) || name === 'Button') return 'cta';
   return null;
+}
+
+// local import 판정 (보수적): 상대(./ ../) + 프로젝트 alias(@/ src/) 만 local 로 본다.
+// bare package("react", "react-native", "@scope/pkg")는 제외 — node_modules 컴포넌트가
+// shared 후보로 올라오면 안 된다.
+export function isLocalImportSpecifier(from) {
+  return (
+    from.startsWith('./') ||
+    from.startsWith('../') ||
+    from.startsWith('@/') ||
+    from.startsWith('src/')
+  );
+}
+
+// kind:unknown 후보로 볼 "컴포넌트처럼 보이는 이름" — PascalCase(소문자 포함).
+// useLoginQuery(hook)·API_BASE(상수)·icons(namespace) 같은 비-컴포넌트 바인딩을 거른다.
+function looksLikeComponentName(name) {
+  return /^[A-Z][A-Za-z0-9]*$/.test(name) && /[a-z]/.test(name);
 }
 
 // import 문에서 바인딩 이름을 뽑는다 (default / named / namespace, type-only 제외).
@@ -297,6 +315,19 @@ export function analyzeVisualContractBootstrap({ docsDir, srcDir, contractPath, 
     });
   } else {
     srcUsable = true;
+    // --src 는 지정됐는데 selected 화면 전부에 screen_entry 가 없으면 소스 휴리스틱이
+    // 통째로 no-op 이 된다 — silent pass 처럼 보이지 않게 skip 사유를 남긴다 (#153 ①).
+    // 일부만 있는 경우는 기존처럼 가능한 화면만 분석한다 (전체 skip 아님).
+    const entriesCount = selected.filter((s) => s.screen_entry).length;
+    if (entriesCount === 0) {
+      skippedChecks.push({
+        rule: 'source-scan',
+        reason:
+          `--src 는 지정되었지만 selected ScreenSpec ${selected.length}건 중 screen_entry 가 0건 — ` +
+          '소스 휴리스틱(shared shell/logo/header/CTA import · ad-hoc positioning · copy)을 실행하지 못함. ' +
+          'ScreenSpec frontmatter 에 screen_entry 를 백필하세요 (sources[type=code] ref 는 자동 fallback 하지 않는다).',
+      });
+    }
   }
   const projectRoot = srcUsable ? path.dirname(srcDir) : null; // screen_entry 는 프로젝트 루트 상대
 
@@ -363,8 +394,13 @@ export function analyzeVisualContractBootstrap({ docsDir, srcDir, contractPath, 
         const entryRel = relPosix(projectRoot, entryAbs);
         sources.set(s.screen_id, { source, entryAbs, entryRel });
         for (const b of extractImportBindings(source)) {
-          const kind = classifyComponentKind(b.name);
-          if (!kind) continue;
+          let kind = classifyComponentKind(b.name);
+          if (!kind) {
+            // 이름 정규식에 안 잡혀도 반복 import 되는 local 컴포넌트는 kind:unknown
+            // 후보로 표면화한다 (#153 ②). bare package import 는 후보가 아니다.
+            if (!isLocalImportSpecifier(b.from) || !looksLikeComponentName(b.name)) continue;
+            kind = 'unknown';
+          }
           if (!importCounts.has(b.name)) {
             importCounts.set(b.name, { kind, screens: new Set(), from: new Map() });
           }
@@ -526,6 +562,8 @@ export function analyzeVisualContractBootstrap({ docsDir, srcDir, contractPath, 
       const importedByShell =
         entry.kind !== 'shell' && shellBindings.some((b) => b.name === name);
       // 포함 기준: 반복(≥2) import, 또는 shell 이 렌더하는 logo/header (shared by construction).
+      // kind:unknown 은 오탐 가능성이 커 반복(≥2) import 만 인정한다 (shell 경유 shortcut 없음).
+      if (entry.kind === 'unknown' && entry.screens.size < 2) continue;
       if (entry.screens.size < 2 && !importedByShell) continue;
       if (!sharedByName.has(name)) {
         sharedByName.set(name, {
@@ -577,7 +615,11 @@ export function analyzeVisualContractBootstrap({ docsDir, srcDir, contractPath, 
     .filter((c) => c.catalog_status === 'missing')
     .map((c) => ({
       component: c.component,
-      reason: `Repeated ${c.kind}-like import but absent from component catalog`,
+      // unknown 은 이름 휴리스틱조차 못 잡은 후보 — reason 에 오탐 가능성을 드러낸다.
+      reason:
+        c.kind === 'unknown'
+          ? 'Repeated local import but kind unknown — absent from component catalog (needs-human-review)'
+          : `Repeated ${c.kind}-like import but absent from component catalog`,
       affected_families: c.families,
     }));
 
@@ -587,7 +629,11 @@ export function analyzeVisualContractBootstrap({ docsDir, srcDir, contractPath, 
     .filter((c) => !c.in_existing_contract && c.kind !== 'shell')
     .map((c) => ({
       component: c.component,
-      owned_by: c.imported_by_shell ? familyShellOwnerFor(familyReports, c.families) : 'needs-review',
+      // kind:unknown 은 ownership 을 추론하지 않는다 — 항상 needs-review 로 남긴다 (#153 ②).
+      owned_by:
+        c.kind !== 'unknown' && c.imported_by_shell
+          ? familyShellOwnerFor(familyReports, c.families)
+          : 'needs-review',
       applies_to_families: c.families,
       direct_screen_import: 'needs-review',
       positioning_owner: 'needs-review',

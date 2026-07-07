@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { loadYaml } from './util.mjs';
 
 const KIT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PACK_CLI = path.join(KIT_ROOT, 'scripts', 'pack-frontend-workflow-kit.mjs');
@@ -1004,6 +1005,42 @@ test('session-learnings capture surface is wired into template, skill, schema, s
   assert.match(matrix, /auto-file GitHub issues/);
   assert.match(matrix, /Treat captured entries as source of truth/);
   assert.match(matrix, /Capture a workflow \/ adoption learning \| 08/);
+});
+
+// --- Manifest ↔ schema ↔ template artifact_type consistency (#153 ⑤) -------------------
+// A document authored from a shipped template must not violate validate 검사 1: every
+// authoring artifact whose required_frontmatter includes artifact_type must have its
+// manifest key in the frontmatter schema artifact_type enum, and its template must stamp
+// that same artifact_type. This pins the kit against self-contradictions like the
+// visual-consistency-contract enum omission observed by consumer adoption.
+test('artifact-manifest authoring keys are in the frontmatter schema artifact_type enum and templates agree', () => {
+  const manifest = loadYaml(path.join(KIT_ROOT, 'catalog', 'artifact-manifest.yaml'));
+  const schema = JSON.parse(
+    fs.readFileSync(path.join(KIT_ROOT, 'schemas', 'frontmatter.schema.json'), 'utf8'),
+  );
+  const enumValues = schema.properties.artifact_type.enum;
+  const authoringKeys = Object.entries(manifest.artifacts)
+    .filter(
+      ([, a]) =>
+        a.kind === 'authoring' &&
+        Array.isArray(a.required_frontmatter) &&
+        a.required_frontmatter.includes('artifact_type'),
+    )
+    .map(([key]) => key);
+  // The regression that motivated this test stays pinned explicitly (#153 ⑤).
+  assert.ok(authoringKeys.includes('visual-consistency-contract'));
+  for (const key of authoringKeys) {
+    assert.ok(
+      enumValues.includes(key),
+      `frontmatter schema artifact_type enum must include manifest authoring key "${key}"`,
+    );
+    const template = fs.readFileSync(path.join(KIT_ROOT, manifest.artifacts[key].template), 'utf8');
+    assert.match(
+      template,
+      new RegExp(`^artifact_type:\\s*"?${key}"?\\s*(?:#.*)?$`, 'm'),
+      `template for "${key}" must stamp artifact_type: ${key}`,
+    );
+  }
 });
 
 test('optional skill surfaces have no broken relative links', () => {

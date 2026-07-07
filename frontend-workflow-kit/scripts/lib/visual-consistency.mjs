@@ -115,6 +115,9 @@ export function parseVisualContract(raw) {
         applies_to_families: splitFamilyNames(col(r, 'Applies To Families')),
         direct_screen_import: (col(r, 'Direct Screen Import') || '').trim().toLowerCase(),
         positioning_owner: (col(r, 'Positioning Owner') || '').trim().toLowerCase(),
+        // 권장 enum: cataloged | missing | domain | out-of-scope (검사 4 가 domain/out-of-scope
+        // 를 명시 선언으로 인정한다 — 존재 정본은 여전히 component-catalog).
+        catalog_status: (col(r, 'Catalog Status') || '').trim().toLowerCase(),
       });
     }
   }
@@ -424,6 +427,19 @@ export function analyzeVisualConsistency({ docsDir, srcDir, contractPath, domain
     );
     for (const c of componentsInScope) {
       if (catalogNames.has(c.component)) continue;
+      // Catalog Status 가 domain/out-of-scope 로 명시 선언된 행은 ui_primitive catalog 대상이
+      // 아니다 (#153 ③) — warning 대신 info 로 남긴다 (silent pass 아님, 선언 확인은 사람).
+      if (c.catalog_status === 'domain' || c.catalog_status === 'out-of-scope') {
+        findings.push({
+          severity: 'info',
+          rule: 'component-catalog-out-of-scope',
+          component: c.component,
+          message:
+            `contract 의 shared component '${c.component}' 는 Catalog Status '${c.catalog_status}' 로 명시 선언됨 — ` +
+            'ui_primitive catalog 대상이 아니어서 component-gap-candidate 경고를 내지 않음 (선언이 맞는지는 사람 리뷰).',
+        });
+        continue;
+      }
       const proposed = gapProposals.get(c.component);
       findings.push({
         severity: 'warning',
