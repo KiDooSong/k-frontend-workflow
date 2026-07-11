@@ -4,7 +4,9 @@
 
 ## Unreleased
 
-(비어 있음 — 다음 변경분이 여기 쌓인다.)
+### docs(governance) — warning-first 승격 정책 (#162 · IMP-01)
+
+- `kit-dev/warning-first-promotion-policy.md` 신설: warning-first surface 의 승격 evidence 임계 정책 + canonical surface inventory. 승격 후보 8개(test-fixtures CI step · forbidden-paths backstop · lint-gen/lint-baseline smoke · check-generated · validate 검사 13/14 · route-cross-check)는 전부 `deferred`, 관측 계기 9개(telemetry · redteam · eval · doc-drift · visual-consistency · visual-contract-bootstrap · adoption-probe · doctor · policy-draft)는 `rejected`(observation-only 영구, 재오픈 trigger 명시)로 등록. decision 상태 enum `deferred`/`eligible`/`rejected`/`promoted`, 관측·FP 기록 단위 `(surface, consumer repo, 스냅샷)`, consumer 평균 합산 금지, "경고 0 → 승격" 금지, 재검토 날짜 대신 재오픈 trigger. **정책 문서 전용 — 새 hard gate·required check·artifact 축 0, warning-first 승격 0, telemetry 형식/스크립트/CI 무변경, 모든 상태 전이는 사람 승인 decision PR 전용.** 교차링크: doc-ownership status-fact 행 + AGENTS.md + roadmap 포인터.
 
 ## 0.3.0-mvp.1 — 2026-07-11
 
