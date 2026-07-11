@@ -1,4 +1,17 @@
-# IMPLEMENTING — 킷 구현 세션 킥오프
+# IMPLEMENTING — MVP-A historical build note
+
+> 🗄 **HISTORICAL (2026-07-11 강등)**: 이 문서는 **MVP-A(2026-06-12~13) 최초 구현 세션의 킥오프 노트**다.
+> MVP-A 는 완료되었고, 이후 MVP-B/C·telemetry/eval/red-team/doc-drift·visual·adoption 계층까지 랜딩되어
+> 현재 킷은 이 문서가 말하는 "스크립트 3개 / 검사 8종" 범위를 훨씬 넘는다 (release baseline `0.3.0-mvp.1`).
+> **이 문서를 세션 진입점으로 쓰지 마라.** 현행 진입점과 정본은:
+> - 저장소 전체 개요: [README.md](README.md) (루트)
+> - 구현 상태·티어·게이트 인벤토리 정본: [kit-dev/roadmap-current.md](kit-dev/roadmap-current.md)
+> - 릴리스 이력: [kit-dev/CHANGELOG.md](kit-dev/CHANGELOG.md)
+> - 문서별 소유권: [doc-ownership.md](frontend-workflow-kit/docs/reference/doc-ownership.md)
+> - 열린 결정: [kit-dev/open-decisions.md](kit-dev/open-decisions.md)
+>
+> 아래 본문은 MVP-A 당시 상태 그대로 보존한다 — 설계 사상·불변식(§4)의 역사적 근거로만 읽고,
+> 게이트·검사 수·스크립트 목록 등 현행 사실은 반드시 위 정본에서 확인하라.
 
 > ⚠ **진입점 주의 (2026-06-14 추가)**: 아래 §0~§1 이 "빌드 스펙"으로 가리키는 4종 설계 문서는 **설계 배경**이다.
 > 게이트·검사·티어·모드의 **현행 정본**은 [roadmap-current.md](kit-dev/roadmap-current.md) ·
@@ -6,7 +19,7 @@
 > 4종은 사상·구조 근거로 읽되, `decision_cap`·검사 9~12 등 최신 게이트는 현행 정본에서 확인하라 (분석 보고서 P3/P4).
 
 > 작성일: 2026-06-12
-> 용도: frontend-workflow-kit을 **직접 만드는** 세션의 진입점. 이 파일부터 읽고 시작한다.
+> 용도(당시): frontend-workflow-kit을 **직접 만드는** 세션의 진입점.
 > 이 세션은 설계 대화의 맥락이 없다고 가정한다 — 필요한 모든 출발점을 여기 고정한다.
 >
 > ※ 이 파일은 "어디를 읽고 무엇을 만들지"만 가리킨다. 실제 스펙은 각 문서에 있고,
@@ -14,10 +27,11 @@
 
 ---
 
-## 0. 지금 만드는 것
+## 0. (당시) 만들던 것
 
 `frontend-workflow-kit` — LLM이 프론트 프로젝트를 환각 없이 진행하게 만드는 워크플로우 킷.
-현재 목표는 **MVP-A**: 문서 생성과 readiness 판정까지. 린트팩·Figma·훅은 이후 단계(B~D)다.
+당시 목표는 **MVP-A**: 문서 생성과 readiness 판정까지. 린트팩·Figma·훅은 이후 단계(B~D)였다.
+(→ 이후 전부 또는 대체 형태로 랜딩됨. 현행 범위는 [roadmap-current.md](kit-dev/roadmap-current.md).)
 
 설계 문서 4종 (읽는 우선순위 순):
 1. [frontend-workflow-kit-implementation.md](frontend-workflow-kit-implementation.md) — 빌드 스펙 (구현자용)

@@ -4,6 +4,29 @@
 
 ## Unreleased
 
+(비어 있음 — 다음 변경분이 여기 쌓인다.)
+
+## 0.3.0-mvp.1 — 2026-07-11
+
+MVP 종료 release baseline (tracker #167 · MVP-01). `0.2.0-mvp-b-rc1` 이후 랜딩된 telemetry/eval/red-team/doc-drift/visual/adoption 계층 전체를 현재 HEAD 기준 단일 기준선으로 자른다(release cut). **새 기능·새 hard gate·새 artifact axis 없음, warning-first surface 승격 없음** — 아래 Added/Changed 는 기존 `Unreleased` 섹션의 이동분이다. package `version`(vendored payload 추적 식별자, `.kit-payload-manifest.json` 의 `packageVersion` 으로 포함)과 이 heading, 태그가 같은 릴리스 계열을 가리킨다. 과거 `temp/runs/release-mvp-b-final-check.md` 는 `v0.2.0-mvp-b-rc1` 시점의 **historical** 증거이며 이 baseline 의 릴리스 증거가 아니다(현 HEAD 검증 증거는 tracker #167 의 MVP-05/#161 에서 생성).
+
+### Release note — hard gate vs warning-first surface 경계
+
+이 릴리스에서 빌드를 깨는 것과 관측 전용인 것의 경계는 다음과 같다.
+
+**Hard gates (exit 0/1 — 위반이 빌드를 깬다):**
+- `workflow:validate` 구조 검사(검사 12종 + Open Decisions 형식 검사 9 + API↔contract evidence 매칭 검사 8) — CI blocking
+- readiness `decision_cap` — 열린 Open Decision 이 모드를 제한하고, malformed Open Decision/policy requirement 는 fail-closed(docs-only)
+- CI 멱등성 게이트 — golden example `_meta` 생성물 `git diff --exit-code`
+- 각 CLI 의 usage/input error 계약(exit 2) — 입력 오류는 조용히 흡수하지 않는다
+
+**Warning-first / observation·review-only surfaces (기본 exit 0 — 승격은 별도 Open Decision + 사람 결정):**
+- `forbidden-paths` diff backstop — 위반도 기본 exit 0, `--enforce` opt-in 시에만 exit 1
+- `test-fixtures` golden fixture CI step(`continue-on-error`) · lint-gen/lint-baseline CI smoke
+- Interaction Matrix 검사 13 · `route-cross-check`(항상 exit 0)
+- `doc-drift`(+opt-in status heuristic 은 info-only) · `eval` · `telemetry`(+opt-in visual/adoption/redteam surface) · `redteam` — 관측 리포트 전용
+- `visual-consistency` · `visual-contract-bootstrap` · `adoption-probe`(+`--visual`) · `policy-draft` — review-only draft/진단, canonical 문서 무수정
+
 ### Added
 - **`workflow:redteam` — adversarial/reward-hacking red-team suite를 warning-first 관측 리포트로 승격 (신규 CLI + telemetry opt-in surface + doc-drift heuristic forwarding, 새 게이트 0)**: 흩어져 있던 red-team 테스트(readiness-redteam/failopen · redteam-path-backstop)를 하나의 deterministic 관측 매트릭스로 통합. 판정 로직 재구현 없음 — computeReadiness/ScreenSpec parser/forbidden-paths CLI 를 **소비**만 한다. finding/gap/tampering 관측으로 절대 exit 1 하지 않고(항상 exit 0), usage/config 오류만 exit 2. CI required check/`--enforce` 승격/Unknown 게이트화/actor tracking/auto-resolve 없음.
   - CLI (`scripts/redteam.mjs` + `scripts/lib/redteam.mjs`): `workflow:redteam [--json] [--docs] [--src] [--include <group>] [--case <id>]`. status 는 verdict 가 아닌 관측 라벨 — `blocked`/`fail-closed`/`input-error`(기존 방어 witness) · `drift-detected`(고정 동작 변화) · `observed-gap`("사람 설계 결정 필요" — 실패 아님) · `skipped`(control/미배포 fixture; `examples/**` 미벤더 소비 repo 는 path-backstop group 을 skip+note 로 fail-soft). summary: case/observed_gap/blocked/fail_closed/drift_detected/skipped/input_error/warning_count — **warning_count 는 severity warning(관측된 gap + 예상 밖 편차)만** 집계, 예상된 방어 witness 는 절대 미포함. pass/fail/verdict/promotion/threshold/timestamp/duration/absolute·temp path 필드 없음.
