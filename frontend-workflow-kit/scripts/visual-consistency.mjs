@@ -84,7 +84,7 @@ function main() {
   const { flags } = parseArgs(process.argv.slice(2));
   if (flags.help) {
     process.stdout.write(helpText());
-    process.exit(0);
+    return; // help 도 자연 종료(exit 0) — process.exit(0) 금지 계약(cli-stdout-flush.test.mjs)
   }
 
   const docsDir = path.resolve(typeof flags.docs === 'string' ? flags.docs : DEFAULTS.docs);
@@ -114,9 +114,10 @@ function main() {
 
   const errors = report.summary ? report.summary.errors : 0;
   const warnings = report.summary ? report.summary.warnings : 0;
-  if (errors > 0) process.exit(1); // 구조 자체가 깨진 경우만 기본 exit 1
-  if (flags.enforce && warnings > 0) process.exit(1); // opt-in 승격 — CI 배선은 이 PR 범위 밖
-  process.exit(0); // warning-first 기본
+  // process.exit() 금지(stdout pipe 8KB flush) — readiness-eval.mjs 의 flush-safe 자연 종료 계약.
+  if (errors > 0) process.exitCode = 1; // 구조 자체가 깨진 경우만 기본 exit 1
+  else if (flags.enforce && warnings > 0) process.exitCode = 1; // opt-in 승격 — CI 배선은 이 PR 범위 밖
+  else process.exitCode = 0; // warning-first 기본
 }
 
 // 직접 실행될 때만 main() (import 시 부작용 없음 — 테스트가 lib 를 직접 소비).

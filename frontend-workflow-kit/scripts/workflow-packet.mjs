@@ -139,7 +139,7 @@ function main() {
         '옵션: --screen <ID> --requested-mode <mode> [--readiness <path>] [--docs <dir>]\n' +
         '       [--policy <path>] [--manifest <path>] [--out <path>] [--json] [--date YYYY-MM-DD] [--owner <name>] [--seq NNN] [--domain <name>]\n',
     );
-    process.exit(0);
+    return; // help 도 자연 종료(exit 0) — process.exit(0) 금지 계약(cli-stdout-flush.test.mjs)
   }
 
   const screen = requireStringFlag(flags, 'screen');
@@ -233,7 +233,8 @@ function main() {
   }
 
   // packet 생성 성공 = exit 0. Safe?=no / requested>readiness 로 exit 1 을 내지 않는다.
-  process.exit(0);
+  // process.exit() 금지(stdout pipe 8KB flush) — readiness-eval.mjs 의 flush-safe 자연 종료 계약.
+  process.exitCode = 0;
 }
 
 // runCli: 레이아웃 설정 오류(미정의 role·부재 --layout)를 exit 2 로 surface(stack trace+exit 1 차단).

@@ -107,7 +107,7 @@ function main() {
 
   if (boolFlag(flags.help)) {
     process.stdout.write(HELP);
-    process.exit(0);
+    return; // help 도 자연 종료(exit 0) — process.exit(0) 금지 계약(cli-stdout-flush.test.mjs)
   }
 
   const currentDir = requireDir('--current', flags.current);
@@ -178,7 +178,8 @@ function main() {
       process.stdout.write('  (dry-run: pass --plan <path> to save the markdown plan, or --apply to update)\n');
     }
   }
-  process.exit(0);
+  // process.exit() 금지(stdout pipe 8KB flush) — readiness-eval.mjs 의 flush-safe 자연 종료 계약.
+  process.exitCode = 0;
 }
 
 if (isCliEntry(import.meta.url)) runCli(main, TOOL);

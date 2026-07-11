@@ -176,7 +176,9 @@ function main() {
     };
     if (flags.json) process.stdout.write(JSON.stringify(report, null, 2) + '\n');
     else renderList(report, notV1);
-    process.exit(0);
+    // process.exit() 금지(stdout pipe 8KB flush) — readiness-eval.mjs 의 flush-safe 자연 종료 계약.
+    process.exitCode = 0;
+    return;
   }
 
   // 기본(check): selected 산출물을 reproduce-to-scratch 비교.
@@ -199,7 +201,9 @@ function main() {
   if (flags.json) process.stdout.write(JSON.stringify(report, null, 2) + '\n');
   else renderCheck(report, notV1);
 
-  process.exit(0); // 2.5C: warning-first — 검사 결과와 무관하게 항상 0(설정 오류만 위에서 exit 2)
+  // 2.5C: warning-first — 검사 결과와 무관하게 항상 0(설정 오류만 위에서 exit 2).
+  // process.exit() 금지(stdout pipe 8KB flush) — readiness-eval.mjs 의 flush-safe 자연 종료 계약.
+  process.exitCode = 0;
 }
 
 // 직접 실행될 때만 main() (import 시 부작용 없음 — 테스트가 lib 를 직접 소비)

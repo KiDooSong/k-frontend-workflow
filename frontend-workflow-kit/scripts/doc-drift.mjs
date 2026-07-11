@@ -182,7 +182,7 @@ function main() {
   const { flags } = parseArgs(process.argv.slice(2));
   if (flags.help) {
     process.stdout.write(helpText());
-    process.exit(0);
+    return; // help 도 자연 종료(exit 0) — process.exit(0) 금지 계약(cli-stdout-flush.test.mjs)
   }
 
   const rootDir = typeof flags.root === 'string' && flags.root
@@ -299,7 +299,9 @@ function main() {
     process.stderr.write(lines.join('\n') + '\n');
   }
 
-  process.exit(0);
+  // process.exit() 금지: stdout 이 pipe 면 8KB(macOS pipe buffer) 초과분이 flush 되기 전에
+  // 프로세스가 죽어 JSON 이 잘린다 — readiness-eval.mjs 와 같은 flush-safe 자연 종료 계약.
+  process.exitCode = 0;
 }
 
 if (isCliEntry(import.meta.url)) main();

@@ -242,7 +242,7 @@ function main() {
         '필수: --packet <path>\n' +
         '선택: --out <path> --docs <dir> --src <dir> --layout <path> --diff <name-status.txt> --review <path> --skip-tests --json --date YYYY-MM-DD --seq NNN\n',
     );
-    process.exit(0);
+    return; // help 도 자연 종료(exit 0) — process.exit(0) 금지 계약(cli-stdout-flush.test.mjs)
   }
 
   const packetFlag = requireStringFlag(flags, 'packet');
@@ -365,7 +365,8 @@ function main() {
   }
 
   // Run Report 생성 성공 = exit 0. 수집 도구 fail 로 exit 1 을 내지 않는다.
-  process.exit(0);
+  // process.exit() 금지(stdout pipe 8KB flush) — readiness-eval.mjs 의 flush-safe 자연 종료 계약.
+  process.exitCode = 0;
 }
 
 if (isCliEntry(import.meta.url)) main();
