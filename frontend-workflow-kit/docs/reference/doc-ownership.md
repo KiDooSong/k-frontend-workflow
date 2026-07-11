@@ -63,6 +63,7 @@ link or name the home instead:
 | current implementation status, tier boundaries, gate inventory, what not to build | `kit-dev/roadmap-current.md` (kit dev repo) |
 | release history, version baseline, hard-gate vs warning-first release note | `kit-dev/CHANGELOG.md` (kit dev repo) |
 | open kit-level decisions | `kit-dev/open-decisions.md` (kit dev repo) |
+| warning-first → hard gate/required check promotion policy + per-surface decision states (`deferred`/`eligible`/`rejected`/`promoted`) | `kit-dev/warning-first-promotion-policy.md` (kit dev repo) |
 | per-artifact active/planned status | [`artifact-manifest.yaml`](../../catalog/artifact-manifest.yaml) (vendored; `workflow:doc-drift` cross-checks it against the roadmap) |
 
 `IMPLEMENTING.md` (kit dev repo root) is a historical MVP-A build note, not a

@@ -107,6 +107,8 @@ Review          MVP-A 에 없음 (Future Candidate).
 
 > **최근 랜딩(완료분, 2026-06-15~19):** ① 검사 8 API-스키마 매칭 엔드포인트 단위 격상(구현·하드, PR #19) · ② Interaction Matrix v2 dual-read + 검사 13(warning-first, #48) 및 route-tree EXACT 정밀화(warning-first) · ③ Tier2 route-tree 어댑터 솔기(#49) · ④ Tier2 codegen 어댑터 첫 slice + real emitter slice + generated-file guard advisory 정합 slice + output strategy 정리(`codegen-core` + `openapi-client` + 후보 manifest golden + 실제 client/hook TS golden + focused `check-generated-files` target + codegen `outputs[]`, hard gate 없음) · ⑤ component-catalog generated artifact + `check-generated` 가드(#40/#42), phase2-1 배럴 reconcile **진단** 슬라이스(warning-first, stderr-only), phase2 첫 additive `Default Export Candidates` 섹션 · ⑥ Follow-up Quarantine / Role Expansion 설계 초안(#50, docs-only, 게이트 0) + Option A 템플릿/생성기 가드(게이트 0) · ⑦ MVP-B lint-pack PR-2/PR-3(MR #55)/PR-4/PR-5 smoke 배선 완료분. 완료 항목은 활성 후보에서 제외하고, 각 항목의 **잔여**만 아래 후보다.
 
+> **승격 정책:** warning-first → hard gate/required check 승격의 evidence 임계·decision 상태(`deferred`/`eligible`/`rejected`/`promoted`)는 [warning-first-promotion-policy.md](warning-first-promotion-policy.md) 가 canonical 이다(#162). 개별 후보의 승격 논의는 그 임계·절차를 따르고, 상태 전이는 사람 승인 decision PR 전용.
+
 > **순차 원칙:** 병렬 구현·병렬 정본 변경을 열지 않는다. 각 항목은 PR/run report/roadmap 정리까지 끝낸 뒤 다음 항목에 착수한다. 설계 보강이 필요해도 다음 항목의 구현을 앞당기지 않는다.
 
 > **완료 처리(2026-06-16):** component-catalog phase2 첫 additive `## Default Export Candidates` 섹션은 완료. props/docgen, wrapper/default alias 확장, lifecycle status 등은 별도 future PR/OD 로 유지하며 readiness/validate/hard gate 승격 없음.
