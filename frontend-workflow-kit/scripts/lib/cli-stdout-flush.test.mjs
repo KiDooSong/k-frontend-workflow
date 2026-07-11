@@ -20,6 +20,9 @@ import { KIT_ROOT } from './util.mjs';
 
 const SCRIPTS_DIR = path.join(KIT_ROOT, 'scripts');
 const PIPE_LIMIT = 8 * 1024; // macOS 기본 pipe buffer
+// 자연 종료 회귀(이벤트 루프 잔존 핸들로 프로세스가 안 끝나는 케이스)가 무한 hang 이 아니라
+// 유한 실패로 떨어지게 spawnSync 에 timeout 을 건다.
+const SPAWN_TIMEOUT_MS = 30_000;
 
 function withTmpRoot(fn) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-flush-'));
@@ -30,7 +33,13 @@ function withTmpRoot(fn) {
   }
 }
 
-test('source contract: no process.exit(0) in top-level CLI scripts (natural exit flushes stdout)', () => {
+test('source contract: top-level CLI scripts only process.exit(1|2|code) — no exit(0), no dynamic exit', () => {
+  // 허용 인자: 리터럴 1(사전 가드) · 2(usage/설정 오류, stderr 전용) · code(fail(message, code = 2)
+  // stderr 전용 헬퍼 관례 — pack/upgrade-vendored-kit). 그 외 전부 위반:
+  //   - process.exit(0): 성공 경로는 process.exitCode 자연 종료여야 한다.
+  //   - 동적 인자(process.exit(summary.exit_code), process.exit(fatal === 0 ? 0 : 1) 등):
+  //     0 으로 평가될 수 있어 같은 truncation 클래스의 재유입 경로다.
+  const ALLOWED_ARGS = new Set(['1', '2', 'code']);
   const offenders = [];
   for (const file of fs.readdirSync(SCRIPTS_DIR)) {
     if (!file.endsWith('.mjs')) continue;
@@ -39,16 +48,17 @@ test('source contract: no process.exit(0) in top-level CLI scripts (natural exit
       .split('\n')
       .map((line) => line.replace(/\/\/.*$/, '')) // 주석 속 언급은 제외
       .join('\n');
-    let idx = src.indexOf('process.exit(0)');
-    while (idx !== -1) {
-      offenders.push(`${file}:${src.slice(0, idx).split('\n').length}`);
-      idx = src.indexOf('process.exit(0)', idx + 1);
+    const re = /process\.exit\(([^)]*)\)/g;
+    let m;
+    while ((m = re.exec(src))) {
+      if (ALLOWED_ARGS.has(m[1].trim())) continue;
+      offenders.push(`${file}:${src.slice(0, m.index).split('\n').length} process.exit(${m[1].trim()})`);
     }
   }
   assert.deepEqual(
     offenders,
     [],
-    `success 경로는 process.exitCode 로 자연 종료해야 한다(macOS 8KB pipe truncation): ${offenders.join(', ')}`,
+    `성공 가능 경로는 process.exitCode 로 자연 종료해야 한다(macOS 8KB pipe truncation): ${offenders.join(', ')}`,
   );
 });
 
@@ -63,7 +73,7 @@ test('doc-drift --json > 8KB pipes complete parseable JSON (macOS truncation reg
     const r = spawnSync(
       process.execPath,
       [path.join(SCRIPTS_DIR, 'doc-drift.mjs'), '--root', root, '--json'],
-      { encoding: 'utf8' },
+      { encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS },
     );
     assert.equal(r.status, 0, r.stderr);
     const bytes = Buffer.byteLength(r.stdout, 'utf8');
@@ -96,7 +106,7 @@ test('validate --json > 8KB of errors pipes complete JSON and exits 1', () => {
         '--src', path.join(root, 'src'),
         '--json',
       ],
-      { encoding: 'utf8' },
+      { encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS },
     );
     assert.equal(r.status, 1, r.stderr);
     const bytes = Buffer.byteLength(r.stdout, 'utf8');

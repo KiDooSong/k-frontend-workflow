@@ -172,7 +172,8 @@ function main() {
         process.stdout.write('  warning ratchet increased; default mode remains exit 0. Use --enforce to fail.\n');
       }
     }
-    process.exit(summary.exit_code);
+    // process.exit() 금지(stdout pipe 8KB flush) — readiness-eval.mjs 의 flush-safe 자연 종료 계약.
+    process.exitCode = summary.exit_code;
   } catch (err) {
     const exitCode = err.exitCode === 1 || err.exitCode === 2 ? err.exitCode : 2;
     const details = Array.isArray(err.details) ? err.details : [];
@@ -187,7 +188,8 @@ function main() {
       process.stderr.write(`workflow:lint-baseline — ${err.message}\n`);
       for (const detail of details) process.stderr.write(`  - ${detail}\n`);
     }
-    process.exit(exitCode);
+    // 오류 리포트(--json 이면 stdout emitJson)도 flush-safe 자연 종료로 — exit code 값(1/2)은 무변경.
+    process.exitCode = exitCode;
   }
 }
 

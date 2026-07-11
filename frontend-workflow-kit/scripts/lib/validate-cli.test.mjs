@@ -13,9 +13,11 @@ import { spawnSync } from 'node:child_process';
 import { KIT_ROOT } from './util.mjs';
 
 const CLI = path.join(KIT_ROOT, 'scripts', 'validate.mjs');
+// 자연 종료 회귀(잔존 핸들 hang)가 유한 실패로 떨어지게 timeout 을 건다.
+const SPAWN_TIMEOUT_MS = 30_000;
 
 function run(args) {
-  return spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8' });
+  return spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS });
 }
 
 test('--help prints usage to stdout and exits 0 without running checks', () => {
@@ -55,13 +57,25 @@ test('positional arguments are a usage error: exit 2', () => {
   assert.match(r.stderr, /positional arguments are not supported/);
 });
 
-test('known flags still run validate (empty docs → vacuous pass exit 0 with cold-start warning)', () => {
+test('every allowlisted flag still runs validate (empty docs → vacuous pass exit 0 with cold-start warning)', () => {
+  // allowlist 전수(value 7종 + boolean 2종 — --help 제외)를 한 번에 태워, allowlist 에서
+  // 기존 플래그가 빠지는 회귀(정상 호출이 exit 2 usage error 로 변함)를 잡는다.
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'validate-cli-'));
   try {
     const docsDir = path.join(root, 'docs');
     fs.mkdirSync(docsDir, { recursive: true });
     fs.mkdirSync(path.join(root, 'src'), { recursive: true });
-    const r = run(['--docs', docsDir, '--src', path.join(root, 'src'), '--json']);
+    const r = run([
+      '--root', root,
+      '--docs', docsDir,
+      '--src', path.join(root, 'src'),
+      '--manifest', path.join(KIT_ROOT, 'catalog', 'artifact-manifest.yaml'),
+      '--schema', path.join(KIT_ROOT, 'schemas', 'frontmatter.schema.json'),
+      '--policy', path.join(KIT_ROOT, 'policies', 'implementation-mode-policy.yaml'),
+      '--layout', path.join(KIT_ROOT, 'policies', 'project-layout.yaml'),
+      '--enforce',
+      '--json',
+    ]);
     assert.equal(r.status, 0, r.stderr);
     const obj = JSON.parse(r.stdout);
     assert.equal(obj.ok, true);
