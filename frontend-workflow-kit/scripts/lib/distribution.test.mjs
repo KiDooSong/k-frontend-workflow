@@ -1043,6 +1043,268 @@ test('artifact-manifest authoring keys are in the frontmatter schema artifact_ty
   }
 });
 
+// --- IMP-05 (#166): packed-payload CLI smoke — core / adoption / observation / visual. ---
+// One pack, one consumer-like payload under os.tmpdir() (examples/** is never packed), and
+// every check spawns the PUBLIC CLIs with cwd = payload root. Running from tmpdir is the
+// witness that no packed script accidentally imports from the kit source tree, and the
+// missing examples/ tree is the witness for the fail-soft cold-start contract.
+// Golden hygiene: assertions never touch absolute paths or wall-clock timestamps —
+// date-bearing flows pass an explicit --date, and the written artifacts are scanned to
+// prove no absolute path leaked into them.
+// These are kit-repo release checks only: the observed CLIs stay warning-first for
+// consumers (no new hard gate, no warning-first promotion, no new artifact axis).
+test('packed payload CLI smoke: core, adoption, observation, visual (IMP-05)', async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-pack-smoke-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const out = path.join(tmp, 'frontend-workflow-kit');
+
+  const pack = spawnSync(process.execPath, [PACK_CLI, '--out', out, '--json'], {
+    cwd: KIT_ROOT,
+    encoding: 'utf8',
+  });
+  assert.equal(pack.status, 0, pack.stderr);
+  linkInstalledDependency(out, 'yaml');
+
+  const cli = (script, ...args) =>
+    spawnSync(process.execPath, [path.join(out, 'scripts', script), ...args], {
+      cwd: out,
+      encoding: 'utf8',
+    });
+  const SMOKE_DATE = '2026-07-01';
+
+  await t.test('payload integrity: upgrade-planner files, package-scripts targets, relative links', () => {
+    // Upgrade planner ships complete: entry CLI + its lib imports + the payload manifest it plans against.
+    for (const rel of [
+      'scripts/upgrade-vendored-kit.mjs',
+      'scripts/lib/upgrade-planner.mjs',
+      'scripts/lib/kit-manifest.mjs',
+      'scripts/lib/util.mjs',
+      '.kit-payload-manifest.json',
+    ]) {
+      assert.equal(exists(rel, out), true, `${rel} is required by the upgrade planner`);
+    }
+    const upgradeHelp = cli('upgrade-vendored-kit.mjs', '--help');
+    assert.equal(upgradeHelp.status, 0, upgradeHelp.stderr);
+    assert.match(upgradeHelp.stdout, /--current/);
+    assert.match(upgradeHelp.stdout, /--next/);
+
+    // Every package-scripts.template.json target must exist inside the payload.
+    const scriptsTemplate = JSON.parse(
+      fs.readFileSync(path.join(out, 'package-scripts.template.json'), 'utf8'),
+    );
+    const targets = Object.entries(scriptsTemplate.scripts);
+    assert.ok(targets.length > 0, 'package-scripts.template.json should define scripts');
+    for (const [name, command] of targets) {
+      const match = command.match(/^node tools\/frontend-workflow\/(scripts\/[\w./-]+\.mjs)$/);
+      assert.ok(match, `${name} should invoke a payload script (got: ${command})`);
+      assert.equal(exists(match[1], out), true, `${name} target ${match[1]} must be packed`);
+    }
+
+    // Relative links inside the packed payload, checked with the SHIPPED doc-drift CLI
+    // (it already ignores code fences/spans and link-shaped prose examples). Asserting
+    // zero warnings here is a kit release check on the payload we ship; the consumer-side
+    // tool itself stays warning-first exit 0.
+    const drift = cli('doc-drift.mjs', '--json');
+    assert.equal(drift.status, 0, drift.stderr);
+    const driftReport = JSON.parse(drift.stdout);
+    assert.equal(driftReport.tool, 'workflow:doc-drift');
+    assert.equal(driftReport.mode, 'warning-first');
+    assert.equal(driftReport.ok, true);
+    assert.equal(
+      driftReport.warning_count,
+      0,
+      `packed payload should have no broken relative links: ${JSON.stringify(driftReport.findings)}`,
+    );
+  });
+
+  await t.test('observation surfaces run from the payload: redteam, telemetry --list-surfaces', () => {
+    // eval + full telemetry runs are covered by the dedicated packed-eval test above.
+    const redteam = cli('redteam.mjs', '--json');
+    assert.equal(redteam.status, 0, redteam.stderr);
+    const redteamReport = JSON.parse(redteam.stdout);
+    assert.equal(redteamReport.tool, 'workflow:redteam');
+    assert.equal(redteamReport.mode, 'warning-first');
+    assert.ok(redteamReport.summary.case_count > 0, 'redteam should run its bundled cases');
+    assert.equal(redteamReport.summary.input_error_count, 0);
+
+    // Usage/config errors exit 2 (never absorbed into the warning-first report).
+    const redteamBadGroup = cli('redteam.mjs', '--include', '__no-such-group__', '--json');
+    assert.equal(redteamBadGroup.status, 2);
+    assert.match(redteamBadGroup.stderr, /unknown redteam group/);
+
+    // --list-surfaces prints the registry without running any child CLI.
+    const surfaces = cli('telemetry.mjs', '--list-surfaces', '--json');
+    assert.equal(surfaces.status, 0, surfaces.stderr);
+    const registry = JSON.parse(surfaces.stdout);
+    assert.equal(registry.tool, 'workflow:telemetry');
+    const ids = registry.surfaces.map((s) => s.surface_id);
+    for (const id of [
+      'route-cross-check',
+      'doc-drift',
+      'readiness-eval',
+      'visual-consistency',
+      'visual-contract-bootstrap',
+      'redteam',
+    ]) {
+      assert.ok(ids.includes(id), `telemetry surface registry should list ${id}`);
+    }
+  });
+
+  await t.test('core cold start without examples is fail-soft; readiness fails closed without state', () => {
+    // state --json: report-only, exit 0, empty screens — no examples/** required.
+    const state = cli('workflow-state.mjs', '--json');
+    assert.equal(state.status, 0, state.stderr);
+    const stateReport = JSON.parse(state.stdout);
+    assert.deepEqual(stateReport.state.screens, {});
+    assert.deepEqual(stateReport.inventory.screens, []);
+
+    // readiness without workflow-state.yaml: fail-closed usage/input error (exit 2), not a silent pass.
+    const readiness = cli('readiness.mjs', '--json');
+    assert.equal(readiness.status, 2);
+    assert.match(readiness.stderr, /workflow-state\.yaml/);
+
+    // validate on an empty consumer repo: vacuous pass is exit 0 but loudly warned (cold-start).
+    const validate = cli('validate.mjs', '--json');
+    assert.equal(validate.status, 0, validate.stderr);
+    const validateReport = JSON.parse(validate.stdout);
+    assert.equal(validateReport.ok, true);
+    assert.equal(validateReport.count, 0);
+    assert.ok(
+      validateReport.warnings.some((w) => w.check === 'cold-start'),
+      'empty payload validate should carry the cold-start warning',
+    );
+
+    // visual-consistency structural error path: missing docs root is exit 1 (not a skip).
+    const visualNoDocs = cli('visual-consistency.mjs', '--json');
+    assert.equal(visualNoDocs.status, 1);
+    const visualNoDocsReport = JSON.parse(visualNoDocs.stdout);
+    assert.equal(visualNoDocsReport.skipped, false);
+    assert.ok(visualNoDocsReport.findings.some((f) => f.rule === 'docs-not-found'));
+  });
+
+  await t.test('adoption CLIs bootstrap a consumer docs tree: doctor, create-screen, create-input', () => {
+    const doctor = cli('doctor.mjs', '--json');
+    assert.equal(doctor.status, 0, doctor.stderr);
+    const doctorReport = JSON.parse(doctor.stdout);
+    assert.equal(doctorReport.tool, 'workflow:doctor');
+    assert.equal(doctorReport.ok, true);
+
+    // Usage error path: an invalid canonical screen id is exit 2.
+    const badScreen = cli('create-screen.mjs', '--domain', 'coupon', '--screen-id', 'COUPON/LIST', '--route', '/coupons', '--json');
+    assert.equal(badScreen.status, 2);
+    assert.match(badScreen.stderr, /screen_id/);
+
+    const screen = cli(
+      'create-screen.mjs',
+      '--domain', 'coupon',
+      '--screen-id', 'COUPON-LIST',
+      '--route', '/coupons',
+      '--date', SMOKE_DATE,
+      '--json',
+    );
+    assert.equal(screen.status, 0, screen.stderr);
+    const screenReport = JSON.parse(screen.stdout);
+    assert.equal(screenReport.screen_id, 'COUPON-LIST');
+    assert.equal(screenReport.wrote, true);
+    const screenSpecRel = 'docs/frontend-workflow/domains/coupon/screens/coupon-list/screen-spec.md';
+    assert.equal(exists(screenSpecRel, out), true, 'create-screen should write the stub ScreenSpec');
+
+    // Usage error path: unknown flag is exit 2.
+    const badInput = cli('create-input-artifact.mjs', '--id', 'x', '--json');
+    assert.equal(badInput.status, 2);
+    assert.match(badInput.stderr, /unknown flag/);
+
+    const input = cli(
+      'create-input-artifact.mjs',
+      '--source', 'figma',
+      '--input-type', 'figma',
+      '--source-type', 'figma',
+      '--source-ref', 'figma://file/abc',
+      '--captured-by', 'figma-adapter',
+      '--domain', 'coupon',
+      '--screen', 'COUPON-LIST',
+      '--summary', 'Coupon list',
+      '--fact', 'List shows coupons',
+      '--date', SMOKE_DATE,
+      '--json',
+    );
+    assert.equal(input.status, 0, input.stderr);
+    const inputReport = JSON.parse(input.stdout);
+    // Deterministic id: derived from the explicit --date, never from the wall clock.
+    assert.equal(inputReport.input_id, 'IN-20260701-figma-001');
+    assert.equal(exists('docs/frontend-workflow/inputs/IN-20260701-figma-001.md', out), true);
+
+    // Golden hygiene: authored artifacts must not embed the tmp payload's absolute path.
+    for (const rel of [screenSpecRel, 'docs/frontend-workflow/inputs/IN-20260701-figma-001.md']) {
+      const raw = fs.readFileSync(path.join(out, rel), 'utf8');
+      assert.doesNotMatch(raw, /fwk-pack-smoke-/, `${rel} must not embed the payload absolute path`);
+    }
+  });
+
+  await t.test('core post-bootstrap: state writes meta, readiness evaluates, validate blocks (exit 1)', () => {
+    // Write mode (no --json) persists the derived state views.
+    const stateWrite = cli('workflow-state.mjs', '--date', SMOKE_DATE);
+    assert.equal(stateWrite.status, 0, stateWrite.stderr);
+    for (const rel of [
+      'docs/frontend-workflow/_meta/workflow-state.yaml',
+      'docs/frontend-workflow/_meta/screen-inventory.yaml',
+    ]) {
+      assert.equal(exists(rel, out), true, `${rel} should be written by workflow:state`);
+      const raw = fs.readFileSync(path.join(out, rel), 'utf8');
+      assert.doesNotMatch(raw, /fwk-pack-smoke-/, `${rel} must not embed the payload absolute path`);
+    }
+    const stateYaml = fs.readFileSync(path.join(out, 'docs/frontend-workflow/_meta/workflow-state.yaml'), 'utf8');
+    assert.match(
+      stateYaml,
+      new RegExp(`generated_at: ["']?${SMOKE_DATE}`),
+      'workflow-state.yaml should stamp the explicit --date, not the wall clock',
+    );
+
+    const readiness = cli('readiness.mjs', '--screen', 'COUPON-LIST', '--json');
+    assert.equal(readiness.status, 0, readiness.stderr);
+    const readinessReport = JSON.parse(readiness.stdout)['COUPON-LIST'];
+    assert.ok(readinessReport, 'readiness should report the bootstrapped screen');
+    assert.equal(readinessReport.readiness_mode, 'docs-only');
+    assert.ok(readinessReport.allowed_paths.includes('docs/frontend-workflow/**'));
+    assert.ok(readinessReport.forbidden_paths.includes('src/**'));
+    assert.ok(readinessReport.blocking.length > 0, 'a stub screen must stay blocked (docs-only)');
+
+    // validate exit 1 path: the stub depends on a navigation-map that does not exist yet.
+    const validate = cli('validate.mjs', '--json');
+    assert.equal(validate.status, 1);
+    const validateReport = JSON.parse(validate.stdout);
+    assert.equal(validateReport.ok, false);
+    assert.ok(
+      validateReport.errors.some((e) => /navigation-map/.test(e.message)),
+      `validate should block on the missing navigation-map: ${JSON.stringify(validateReport.errors)}`,
+    );
+  });
+
+  await t.test('visual: contract-absent safe skip and review-only bootstrap smoke', () => {
+    // A docs tree without a visual contract is a quiet warning-first skip, never a block.
+    const visual = cli('visual-consistency.mjs', '--json');
+    assert.equal(visual.status, 0, visual.stderr);
+    const visualReport = JSON.parse(visual.stdout);
+    assert.equal(visualReport.contract_found, false);
+    assert.equal(visualReport.skipped, true);
+    assert.equal(visualReport.ok, true);
+    assert.equal(visualReport.summary.errors, 0);
+
+    // Structural smoke of the bootstrap helper: review-only, sees the screen, writes nothing.
+    const bootstrap = cli('visual-contract-bootstrap.mjs', '--json');
+    assert.equal(bootstrap.status, 0, bootstrap.stderr);
+    const bootstrapReport = JSON.parse(bootstrap.stdout);
+    assert.equal(bootstrapReport.mode, 'review-only');
+    assert.equal(bootstrapReport.summary.screens, 1);
+    assert.equal(bootstrapReport.existing_contract.found, false);
+    assert.equal(
+      exists('docs/frontend-workflow/design/visual-consistency-contract.md', out),
+      false,
+      'bootstrap smoke must not create a canonical contract',
+    );
+  });
+});
+
 test('optional skill surfaces have no broken relative links', () => {
   const files = [
     path.join(KIT_ROOT, 'skills', 'e2e-agent', 'SKILL.md'),
