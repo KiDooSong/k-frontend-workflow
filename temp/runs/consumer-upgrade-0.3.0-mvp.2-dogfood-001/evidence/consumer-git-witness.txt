@@ -1,0 +1,26 @@
+$ git log --format='%h %s' -3 kit-upgrade/0.3.0-mvp.2
+1970a68 chore(kit): vendored frontend-workflow-kit 0.1.0-mvp-a(unmanaged) → 0.3.0-mvp.2 safe upgrade
+878fd33 feat(home): HOME-001 screen-skeleton shell
+107aa39 chore(dogfood): vendor frontend-workflow-kit + bootstrap docs + merge workflow scripts
+
+$ git diff --exit-code 107aa39 878fd33 -- tools/frontend-workflow ; echo exit=$?
+exit=0
+(no output above = empty diff — vendored kit locally unmodified since vendor commit 107aa39)
+
+$ git show --stat --format='%h %s' 1970a68 | head -12
+1970a68 chore(kit): vendored frontend-workflow-kit 0.1.0-mvp-a(unmanaged) → 0.3.0-mvp.2 safe upgrade
+
+ docs/frontend-workflow/_meta/workflow-state.yaml   |   12 +-
+ package.json                                       |    4 +-
+ tools/frontend-workflow/.kit-install-manifest.json | 1129 ++++++++++
+ tools/frontend-workflow/.kit-payload-manifest.json | 1130 ++++++++++
+ tools/frontend-workflow/COMMANDS.md                |  429 ++++
+ tools/frontend-workflow/CONVENTIONS.md             |  147 ++
+ tools/frontend-workflow/LICENSE                    |  201 ++
+ tools/frontend-workflow/README.md                  |  260 +++
+ .../_upgrade/upgrade-plan-bf7705ced5e9.md          |  393 ++++
+ .../catalog/artifact-manifest.yaml                 |  207 +-
+  ...
+ .../templates/work-packet/run-report.template.md   |   64 +-
+ .../templates/work-packet/work-packet.template.md  |   66 +-
+ 187 files changed, 47268 insertions(+), 352 deletions(-)
