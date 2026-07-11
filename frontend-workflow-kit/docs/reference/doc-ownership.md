@@ -52,10 +52,11 @@ inline and links the rest; it does not restate the references.
 
 ## Implementation status / release — source of truth
 
-Kit-level **status facts** have exactly one home each. These live in the kit
-development repository (repo-root `kit-dev/`), are **not vendored** into the
-consumer payload, and must not be restated in consumer-facing docs (link or name
-them instead):
+Kit-level **status facts** have exactly one home each. The kit-level homes
+(`kit-dev/*` rows below) live in the kit development repository's repo-root
+`kit-dev/` and are **not vendored** into the consumer payload; the per-artifact
+manifest **is** vendored. Consumer-facing docs must not restate these facts —
+link or name the home instead:
 
 | Status fact | Canonical home |
 |---|---|

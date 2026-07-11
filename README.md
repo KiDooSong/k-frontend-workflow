@@ -34,7 +34,7 @@ npm run kit:pack             # consumer payload 생성 (dist/frontend-workflow-k
 
 킷의 도구는 두 부류로 엄격히 나뉜다 — 경계의 정본은 [kit-dev/CHANGELOG.md](kit-dev/CHANGELOG.md) `0.3.0-mvp.1` release note 와 [kit-dev/roadmap-current.md](kit-dev/roadmap-current.md) 게이트 인벤토리다.
 
-- **Hard gate (exit 0/1 — 빌드를 깬다)**: `workflow:validate` 구조 검사, readiness `decision_cap`(열린 Open Decision), CI 멱등성 게이트, 각 CLI 의 usage/input error(exit 2).
+- **Hard gate (exit 0/1 — 빌드를 깬다)**: `workflow:validate` 구조 검사, readiness `decision_cap`(열린 Open Decision), CI 멱등성 게이트. (별도 공통 계약: 모든 CLI 의 usage/input error 는 exit 2 — warning-first 도구 포함.)
 - **Warning-first / observation·review-only (기본 exit 0)**: `forbidden-paths` backstop(`--enforce` opt-in), golden fixture CI step, `route-cross-check`, `doc-drift`, `eval`, `telemetry`, `redteam`, `visual-consistency`, `visual-contract-bootstrap`, `adoption-probe`, `policy-draft`. 이들의 hard gate 승격은 자동으로 일어나지 않으며 **별도 Open Decision + 사람 결정**으로만 한다.
 
 Open Decision resolve·`confirmed` 승격·conflict close 는 사람 전용이다 — LLM/도구가 게이트를 내리지 못한다.
