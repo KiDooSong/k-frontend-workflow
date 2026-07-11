@@ -1291,6 +1291,39 @@ test('release-consistency stays deterministic: no wall clock reads in the lib so
   assert.doesNotMatch(src, /new Date\(\)/);
 });
 
+test('default CLI --json output matches a byte-for-byte golden (Phase 0 shape unchanged)', () => {
+  withRoot(
+    {
+      'docs/foo.md': '[missing](./missing.md)\n',
+    },
+    (root) => {
+      const r = spawnSync(process.execPath, [CLI, '--root', root, '--json'], { encoding: 'utf8' });
+      assert.equal(r.status, 0, r.stderr);
+      const golden = [
+        '{',
+        '  "tool": "workflow:doc-drift",',
+        '  "mode": "warning-first",',
+        '  "root": ".",',
+        '  "ok": true,',
+        '  "warning_count": 1,',
+        '  "findings": [',
+        '    {',
+        '      "severity": "warning",',
+        '      "check": "broken-relative-link",',
+        '      "source": "docs/foo.md",',
+        '      "link": "./missing.md",',
+        '      "target": "docs/missing.md",',
+        '      "reason": "target file not found"',
+        '    }',
+        '  ]',
+        '}',
+        '',
+      ].join('\n');
+      assert.equal(r.stdout, golden);
+    },
+  );
+});
+
 test('CLI default run on a release-consistency fixture root stays Phase 0', () => {
   withRoot(rcRoot({ 'package.json': RC_PACKAGE.replace('0.3.0-mvp.1', '0.1.0-mvp-a') }), (root) => {
     const r = spawnSync(process.execPath, [CLI, '--root', root, '--json'], { encoding: 'utf8' });
