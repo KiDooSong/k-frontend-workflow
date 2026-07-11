@@ -64,6 +64,7 @@ link or name the home instead:
 | release history, version baseline, hard-gate vs warning-first release note | `kit-dev/CHANGELOG.md` (kit dev repo) |
 | open kit-level decisions | `kit-dev/open-decisions.md` (kit dev repo) |
 | warning-first → hard gate/required check promotion policy + per-surface decision states (`deferred`/`eligible`/`rejected`/`promoted`) | `kit-dev/warning-first-promotion-policy.md` (kit dev repo) |
+| run/release evidence classification (`active`/`historical`/`generated-local`), retention rules, canonical evidence locations | `kit-dev/evidence-retention-policy.md` (kit dev repo; release/dogfood evidence index lives at repo-root `temp/runs/README.md`) |
 | per-artifact active/planned status | [`artifact-manifest.yaml`](../../catalog/artifact-manifest.yaml) (vendored; `workflow:doc-drift` cross-checks it against the roadmap) |
 
 `IMPLEMENTING.md` (kit dev repo root) is a historical MVP-A build note, not a

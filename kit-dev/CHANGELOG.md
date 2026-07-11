@@ -4,6 +4,13 @@
 
 ## Unreleased
 
+### docs(repo) — historical run evidence 보존·분류·인덱스 정책 (#165 · IMP-04)
+
+- `kit-dev/evidence-retention-policy.md` 신설: 산출물 분류 3종(`active`/`historical`/`generated-local`), run evidence canonical 위치(repo-level release check·consumer dogfood = `temp/runs/`, kit 개발 slice = `kit-dev/temp/runs/`, `frontend-workflow-kit/temp/**` 금지 — 팩 가드만 유지), archive-first 보존 규칙(증거 삭제 시 대체 링크 또는 보존 근거 필수, git history rewrite 금지), release-check frontmatter 계약(`status: current` 는 항상 정확히 1건), HISTORICAL 마커 규약(doc-drift historical skip 과 일치), generated-local ↔ `.gitignore` 매핑 표.
+- evidence index 신설: [temp/runs/README.md](../temp/runs/README.md)(release check 를 release·base commit·날짜·verdict·status 로, dogfood run 을 날짜·도입 commit 으로 색인 + local-only 산출물의 보존/대체 근거) · [temp/README.md](../temp/README.md)(historical workspace 배너 + 디렉토리 지도) · [kit-dev/temp/README.md](temp/README.md)(kit slice run 의 1차 인덱스는 roadmap evidence 링크 — 재인덱스 없음).
+- superseded/HISTORICAL 배너: `temp/workflows/mvp-b-board.md` · `temp/plans/consumer-dogfood-001-plan.md`. `temp/claude-handoff-open-decisions-next.md` 는 `.gitignore` 의 `temp/claude-handoff*`(로컬 전용) 규칙과 모순되게 추적되고 있어 `archive/` 로 `git mv`(삭제 아님 — 보존 유지).
+- **정책/문서 전용 — consumer payload allowlist 무변경(더 엄격 방향만 허용), 새 hard gate·required check·artifact 축 0, warning-first 승격 0, 분류 검사 도구/스크립트/CI 무변경, resolve/confirmed 무접촉.**
+
 ### feat(doc-drift) — release/version·implemented-status 모순 감지 opt-in (#163 · IMP-02)
 
 - `workflow:doc-drift --include release-consistency` 신설(두 번째 opt-in — 기본 Phase 0 출력 byte-identical 유지, telemetry doc-drift surface 미전달·기존 forwarding 규약 무변경). 좁은 구조 규칙만 사용하고 자유 서술 semantic truth 판정·외부 URL reachability 는 하지 않는다:
