@@ -509,9 +509,9 @@ function main() {
     process.stdout.write(helpText());
     return; // help 는 자연 종료 exit 0 (cli-stdout-flush 계약 — process.exit(0) 금지)
   }
-  // 빈 --screen 값(--screen= / --screen "")은 allowlist(문자열 요구)는 통과하지만 화면 ID 가
+  // 공백뿐인 --screen 값(--screen " ")은 allowlist(비어있지 않은 문자열)는 통과하지만 화면 ID 가
   // 될 수 없다. 예전의 bare --screen 방어와 같은 단일 usage 경로(exit 2)로 여기서 막는다 —
-  // 아래 필터가 빈 결과 {} 로 조용히 오인되지 않게.
+  // 아래 필터가 빈 결과 {} 로 조용히 오인되지 않게. (bare/빈 --screen= 은 helper 가 이미 거부.)
   if (typeof flags.screen === 'string' && flags.screen.trim() === '') {
     usageError('--screen requires a screen id value (e.g. --screen COUPON-001)');
   }

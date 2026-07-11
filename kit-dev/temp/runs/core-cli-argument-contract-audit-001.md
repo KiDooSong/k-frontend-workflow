@@ -5,6 +5,7 @@
 - scope: `frontend-workflow-kit/package.json` `workflow:*` scripts + `package-scripts.template.json` 에 노출된 consumer CLI 전수(25개). `example:*`/`kit:pack`/`test-fixtures.mjs` 는 kit-dev 전용이라 표 밖(비고 참조).
 - method: 각 CLI 소스를 직접 읽고 분류(문서 주장 복사 아님). 공통 `parseArgs`(scripts/lib/util.mjs:23) 는 allowlist 가 없고 아무것도 거부하지 않는다 — bare `--flag` 는 boolean `true`, boolean flag 뒤 non-`--` 토큰은 값으로 흡수, positional 은 별도 배열(대부분 CLI 가 버림), 중복 flag 는 last-wins. 거부는 전적으로 CLI 별 몫이다.
 - classification: `active` (이 PR 의 구현 근거 evidence)
+- **baseline: main HEAD `481b00a` — 이 PR 적용 전 코드의 스냅샷.** 아래 표의 `workflow-state.mjs`/`readiness.mjs` 행은 이 PR 이 해소한 pre-hardening 상태를 기록한 것이며, 해소 후 계약(두 CLI 모두 `--help` + unknown/bare·빈 값/boolean=value/positional → exit 2, 파일 IO·로드 전 검증)은 kit-dev/CHANGELOG.md Unreleased 항목이 정본이다.
 
 ## 표기
 
@@ -17,8 +18,8 @@
 
 | CLI | writes files | gate/decision role | --help | unknown rejected | valueless rejected | boolean=value rejected | positional rejected | duplicate semantics | current risk | recommended phase |
 |---|---|---|---|---|---|---|---|---|---|---|
-| workflow-state.mjs (`workflow:state`) | YES — `_meta/workflow-state.yaml`·`screen-inventory.yaml`(+`layer-inventory.yaml`), `--json` 만 read-only | readiness 판정의 **입력 생성기** (state 가 곧 게이트 입력) | ✗ | ✗ 무시 (`--jsno` → JSON 대신 실제 파일 쓰기) | ✗ (`--docs`/`--src`/`--out` bare → crash 1; `--date` bare → 조용히 오늘 날짜 fallback) | ✗ (`--json 2026` → 토큰 흡수 + truthy) | ✗ 무시 | last-wins | **HIGH** — typo 가 파일 쓰기로 직행 (`--outt` 무시 → 기본 경로에 쓰기) | **이번 PR** |
-| readiness.mjs (`workflow:readiness`) | `--out` 때만 | **판정의 단일 출처** — readiness_mode / allowed·forbidden_paths | ✗ | ✗ 무시 (`--screeen X` → 전체 화면 출력 fallback, `--polciy f` → 기본 policy 로 판정) | 부분 (`--screen` bare 만 exit 2; `--docs`/`--policy`/`--manifest`/`--ci`/`--out` bare → crash 1) | ✗ | ✗ 무시 | last-wins | **HIGH** — typo 가 잘못된 게이트 판정 출력으로 이어짐 | **이번 PR** |
+| workflow-state.mjs (`workflow:state`) | YES — `_meta/workflow-state.yaml`·`screen-inventory.yaml`(+`layer-inventory.yaml`), `--json` 만 read-only | readiness 판정의 **입력 생성기** (state 가 곧 게이트 입력) | ✗ | ✗ 무시 (`--jsno` → JSON 대신 실제 파일 쓰기) | ✗ (`--docs`/`--src`/`--out` bare → crash 1; `--date` bare → 조용히 오늘 날짜 fallback) | ✗ (`--json 2026` → 토큰 흡수 + truthy) | ✗ 무시 | last-wins | **HIGH** — typo 가 파일 쓰기로 직행 (`--outt` 무시 → 기본 경로에 쓰기) | **이번 PR (해소됨)** |
+| readiness.mjs (`workflow:readiness`) | `--out` 때만 | **판정의 단일 출처** — readiness_mode / allowed·forbidden_paths | ✗ | ✗ 무시 (`--screeen X` → 전체 화면 출력 fallback, `--polciy f` → 기본 policy 로 판정) | 부분 (`--screen` bare 만 exit 2; `--docs`/`--policy`/`--manifest`/`--ci`/`--out` bare → crash 1) | ✗ | ✗ 무시 | last-wins | **HIGH** — typo 가 잘못된 게이트 판정 출력으로 이어짐 | **이번 PR (해소됨)** |
 | validate.mjs (`workflow:validate`) | no | 하드 게이트 (검사 12종, exit 0/1) | ✓ | ✓ exit 2 | ✓ exit 2 | ✓ exit 2 | ✓ exit 2 | last-wins | 해소됨 (PR #175, allowlist) | 완료 |
 | create-input-artifact.mjs (`workflow:create-input`) | YES — `inputs/{input_id}.md` | 입력 artifact 생성기 | ✓ | ✓ exit 2 (자체 strict parser) | ✓ exit 2 | ✓ exit 2 | ✓ exit 2 | repeat flags 배열 누적 + 나머지 last-wins | 낮음 (모범 사례) | 완료 |
 | create-screen.mjs (`workflow:create-screen`) | YES — stub ScreenSpec | scaffolder | ✓ | ✓ exit 2 (자체 strict parser) | ✓ exit 2 | ✓ exit 2 | ✓ exit 2 | `--source` repeat + last-wins | 낮음 (모범 사례) | 완료 |
@@ -45,7 +46,7 @@
 
 ## 비고
 
-- **parseArgs 사용 vs 자체 parser**: 자체 strict parser + allowlist = `create-input-artifact`(REPEAT 지원)·`create-screen`. 공통 `parseArgs` + allowlist 검증 = `validate`(PR #175)·`readiness-eval`·`redteam`·`lint-gen`·`lint-baseline`. 자체 parser 이지만 allowlist 없음 = `adoption-probe`(lib 의 `parseCliArgs` clone). 나머지는 공통 `parseArgs` 무방비.
+- **parseArgs 사용 vs 자체 parser** (baseline 기준): 자체 strict parser + allowlist = `create-input-artifact`(REPEAT 지원)·`create-screen`. 공통 `parseArgs` + allowlist 검증 = `validate`(PR #175)·`readiness-eval`·`redteam`·`lint-gen`·`lint-baseline`. 자체 parser 이지만 allowlist 없음 = `adoption-probe`(lib 의 `parseCliArgs` clone). 나머지는 공통 `parseArgs` 무방비. **이 PR 이후**: `workflow-state`·`readiness` 가 공통 `parseArgs` + `scripts/lib/cli-args.mjs` `enforceCliFlagContract`(allowlist 검증, 빈 `--flag=` 값 포함 거부) 그룹에 합류.
 - `upgrade-vendored-kit.mjs` 는 package script 에 없는 업그레이드 전용 CLI(COMMANDS §Upgrade) — `--help` 지원·`fail(message, code=2)` 헬퍼 사용. 이번 표 대상 밖.
 - `test-fixtures.mjs`(`example:test`)·`pack-frontend-workflow-kit.mjs`(`kit:pack`) 는 kit-dev 전용(consumer payload 제외) — 감사 범위 밖.
 - **이번 PR 구현 대상은 `workflow-state.mjs` 와 `readiness.mjs` 로 제한**한다(가장 위험: 게이트 판정·게이트 입력 파일 쓰기). 나머지 행의 후속 후보 우선순위: ① `forbidden-paths`(`--enforc` typo 로 enforcement 소실 — fail-open), ② `adoption-probe`(`--help` 가 파일 생성), ③ 생성 뷰 3종(route-tree/nav-graph/catalog-gen) + `telemetry` 일반 unknown flag, ④ `visual-contract-bootstrap` exit 1→2 정렬, `readiness-eval`/`redteam` boolean=value 거부. 전부 별도 PR — 이번 PR 에서 대량 migration 하지 않는다.

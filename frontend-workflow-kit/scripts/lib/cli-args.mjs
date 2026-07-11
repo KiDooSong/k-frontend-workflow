@@ -8,7 +8,7 @@
 // 이 helper 는 파서 semantics 를 재구현하지 않고 parseArgs 의 *결과*(flags/positionals)를
 // CLI 별 allowlist 로 검증만 한다:
 //   - unknown option                          → exit 2
-//   - value flag 가 bare(값 없음)             → exit 2
+//   - value flag 가 bare(값 없음)/빈 값(--flag=) → exit 2
 //   - boolean flag 에 =value / 뒤따르는 값    → exit 2
 //   - positional argument                     → exit 2
 // 스칼라 중복(last-wins)·repeatable flag 정책은 다루지 않는다(기존 동작 유지 — 범위 밖).
@@ -21,7 +21,11 @@ export function enforceCliFlagContract({ flags, positionals, valueFlags, boolean
   };
   for (const name of Object.keys(flags)) {
     if (!valueFlags.has(name) && !booleanFlags.has(name)) usageError(`unknown option --${name}`);
-    if (valueFlags.has(name) && typeof flags[name] !== 'string') usageError(`--${name} requires a value`);
+    // bare(--flag → boolean true)와 빈 값(--flag= → '')을 함께 거부한다 — 빈 값이 기본값
+    // fallback(--out= 이 기본 _meta 로, --ci= 가 "CI 미제공"으로)으로 조용히 진행되지 않게.
+    if (valueFlags.has(name) && (typeof flags[name] !== 'string' || flags[name] === '')) {
+      usageError(`--${name} requires a value`);
+    }
     if (booleanFlags.has(name) && flags[name] !== true) usageError(`--${name} does not accept a value`);
   }
   if (positionals.length > 0) usageError(`positional arguments are not supported: ${positionals.join(' ')}`);

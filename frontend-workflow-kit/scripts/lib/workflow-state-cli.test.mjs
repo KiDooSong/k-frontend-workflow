@@ -74,12 +74,23 @@ test('unknown flag --outt (typo of --out) is exit 2 — no default-out write, no
   });
 });
 
-test('value flag without a value is a usage error: exit 2', () => {
+test('value flag without a value (bare or empty --flag=) is a usage error: exit 2', () => {
   for (const flag of ['--docs', '--src', '--date', '--out', '--layout', '--root']) {
-    const r = run([flag]);
-    assert.equal(r.status, 2, `${flag} bare should exit 2`);
-    assert.match(r.stderr, new RegExp(`${flag} requires a value`));
+    for (const form of [[flag], [`${flag}=`]]) {
+      const r = run(form);
+      assert.equal(r.status, 2, `${form.join(' ')} should exit 2`);
+      assert.match(r.stderr, new RegExp(`${flag} requires a value`));
+    }
   }
+});
+
+test('empty --out= must not silently fall back to the default _meta dir', () => {
+  withTmpDocs(({ docsDir }) => {
+    const r = run(['--out=', '--docs', docsDir]);
+    assert.equal(r.status, 2);
+    assert.match(r.stderr, /--out requires a value/);
+    assert.equal(fs.existsSync(path.join(docsDir, '_meta')), false, '--out= must not write the default out dir');
+  });
 });
 
 test('boolean flag with a value is a usage error: exit 2', () => {
@@ -118,6 +129,26 @@ test('every allowlisted flag still runs: --json mode is exit 0 and file-free', (
   });
 });
 
+test('duplicate scalar flags keep last-wins semantics (unchanged in this PR)', () => {
+  withTmpDocs(({ root, docsDir }) => {
+    const srcDir = path.join(root, 'src');
+    fs.mkdirSync(srcDir, { recursive: true });
+    const r = run(['--docs', docsDir, '--src', srcDir, '--date', '2026-01-01', '--date', '2026-02-02', '--json']);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(JSON.parse(r.stdout).state.generated_at, '2026-02-02', 'last --date must win');
+  });
+});
+
+test('a value starting with a single hyphen is consumed as a value (parser semantics unchanged)', () => {
+  withTmpDocs(({ root, docsDir }) => {
+    const srcDir = path.join(root, 'src');
+    fs.mkdirSync(srcDir, { recursive: true });
+    const r = run(['--docs', docsDir, '--src', srcDir, '--date', '-1', '--json']);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(JSON.parse(r.stdout).state.generated_at, '-1');
+  });
+});
+
 test('write mode against the golden example stays byte-identical to the committed _meta files', () => {
   // .gitattributes 가 저장소 전체를 eol=lf 로 고정하므로 checkout 바이트와 생성 바이트를 직접 비교할 수 있다.
   withTmpDocs(({ root }) => {
@@ -137,5 +168,13 @@ test('write mode against the golden example stays byte-identical to the committe
       const generated = fs.readFileSync(path.join(outDir, name), 'utf8');
       assert.equal(generated, committed, `${name} must stay byte-identical to the committed golden`);
     }
+    // 성공 stdout 도 byte 단위로 고정한다 (`wrote <cwd-상대 경로>` 형식 — spawn cwd 는 테스트 프로세스와 동일).
+    assert.equal(
+      r.stdout,
+      'workflow:state — 2 screen(s)\n' +
+        `  wrote ${path.relative(process.cwd(), path.join(outDir, 'workflow-state.yaml'))}\n` +
+        `  wrote ${path.relative(process.cwd(), path.join(outDir, 'screen-inventory.yaml'))}\n`,
+      'success stdout shape must stay byte-identical',
+    );
   });
 });
