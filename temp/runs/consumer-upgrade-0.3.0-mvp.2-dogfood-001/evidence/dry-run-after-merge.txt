@@ -1,0 +1,5 @@
+upgrade-vendored-kit — dry-run (baseline: install-manifest)
+  current ref : bf7705ced5e90718d4a71d6f03eeb26606ad1456
+  next ref    : bf7705ced5e90718d4a71d6f03eeb26606ad1456
+  safe-update=0 mode-update=0 new=0 conflict=0 local-modified=0 orphan=0 missing=0 unchanged=186 unknown-local=0
+  (dry-run: pass --plan <path> to save the markdown plan, or --apply to update)

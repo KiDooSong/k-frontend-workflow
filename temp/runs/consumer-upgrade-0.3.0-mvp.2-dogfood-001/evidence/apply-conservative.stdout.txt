@@ -1,0 +1,7 @@
+upgrade-vendored-kit — apply (baseline: unknown)
+  current ref : unknown
+  next ref    : bf7705ced5e90718d4a71d6f03eeb26606ad1456
+  safe-update=0 mode-update=0 new=157 conflict=29 local-modified=0 orphan=0 missing=0 unchanged=0 unknown-local=0
+  ! No installed manifest found. Treating current vendored kit as an unmanaged baseline. Differing files are reported as conflicts and require manual review. After a successful apply, future upgrades will be manifest-based.
+  applied 186 change(s); install manifest refreshed
+  plan: tools/frontend-workflow/_upgrade/upgrade-plan-bf7705ced5e9.md

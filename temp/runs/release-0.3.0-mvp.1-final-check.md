@@ -7,8 +7,11 @@ base_commit: 89d6564
 issues: ["#160", "#161", "tracker #167"]
 date: 2026-07-11
 verdict: GO (태그 v0.3.0-mvp.1 = PR B 병합 커밋 fea0501 에 생성됨 — 2026-07-11 pending 해소 표기)
-status: current
+status: historical
 ---
+
+> 🗄 **HISTORICAL (2026-07-12 강등)**: 이 문서는 `v0.3.0-mvp.1`(2026-07-11) 시점의 릴리스 검증 증거다.
+> 현행(`status: current`) release check 는 [release-0.3.0-mvp.2-final-check.md](release-0.3.0-mvp.2-final-check.md) — 인덱스는 [README.md](README.md).
 
 # 0.3.0-mvp.1 릴리스 최종 체크 — MVP 종료 PR B (#160 + #161)
 

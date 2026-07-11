@@ -1,0 +1,3 @@
+workflow:state — 2 screen(s)
+  wrote docs\frontend-workflow\_meta\workflow-state.yaml
+  wrote docs\frontend-workflow\_meta\screen-inventory.yaml

@@ -1,0 +1,19 @@
+workflow:doctor — warning-only preflight
+  project_root: .
+  layout      : (default)
+  policy      : (default)
+  findings: 13 (warnings=7, info=6)
+    [info:layer-access-readiness-wired] layer 'api_client' access materializes to readiness policy paths; hard gates/CI are not promoted
+    [info:layer-access-readiness-wired] layer 'domain_component' access materializes to readiness policy paths; hard gates/CI are not promoted
+    [info:layer-access-readiness-wired] layer 'hook' access materializes to readiness policy paths; hard gates/CI are not promoted
+    [info:layer-access-readiness-wired] layer 'route_entry' access materializes to readiness policy paths; hard gates/CI are not promoted
+    [info:layer-access-readiness-wired] layer 'screen' access materializes to readiness policy paths; hard gates/CI are not promoted
+    [warning:layer-glob] layer 'api_client' glob matched 0 files: src/api/** (root: src/api)
+    [warning:layer-glob] layer 'domain_component' glob matched 0 files: src/features/{domain}/components/** (root: src/features)
+    [warning:layer-glob] layer 'hook' glob matched 0 files: src/features/{domain}/hooks/** (root: src/features)
+    [info:policy-draft-ready] implementation-mode-policy draft can be generated from current layout; no live policy access diff
+    [warning:role-glob] role 'api_client' glob matched 0 files: src/api/** (root: src/api)
+    [warning:role-glob] role 'api_schema' glob matched 0 files: src/api/schemas/** (root: src/api/schemas)
+    [warning:role-glob] role 'domain_component' glob matched 0 files: src/features/{domain}/components/** (root: src/features)
+    [warning:role-glob] role 'hook' glob matched 0 files: src/features/{domain}/hooks/** (root: src/features)
+  (warning-only: exit 0, no CI/hard gate promotion)
