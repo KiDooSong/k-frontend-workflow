@@ -23,8 +23,8 @@
 |---|---|---|---|
 | [consumer-dogfood-001/](consumer-dogfood-001/run-report.md) | 2026-06-14 | `6bbe8bd` (#17) | fresh Expo 프로젝트에 킷 적용, state→readiness→packet→implement→validate 완주 — **PASS** (evidence/ 9파일) |
 | [implement-screen-001/](implement-screen-001/implement-run-report.md) | 2026-06-13 | `c6acfc2` | implement-screen 스킬 dry-run — done |
-| [reconcile-input-001/](reconcile-input-001/reconcile-run-report.md) | 2026-06-13 | `4225ddf` | reconcile-input dry-run (입력 5건) + LLM-after 산출물 |
-| [reconcile-input-002/](reconcile-input-002/reconcile-run-report.md) | 2026-06-13 | `4225ddf` | reconcile-input dry-run 2차 |
+| [reconcile-input-001/](reconcile-input-001/reconcile-run-report.md) | 2026-06-13 | `0b9e4f3` | reconcile-input dry-run (입력 5건) + LLM-after 산출물 |
+| [reconcile-input-002/](reconcile-input-002/reconcile-run-report.md) | 2026-06-14 | `0b9e4f3` | reconcile-input dry-run 2차 |
 | [2026-06-16/consumer-ck-adoption-resolution-status.md](2026-06-16/consumer-ck-adoption-resolution-status.md) | 2026-06-16 | `fe311ec` | consumer-ck 도입 이슈 해소 현황 — 2026-06-15 설계의도 리뷰를 대체(원 리뷰·probe raw 는 local-only, 아래 참조) |
 | [api-schema-match-001.md](api-schema-match-001.md) | 2026-06-14 | `2776367` (#19) | validate 검사 8 구현 증거 |
 | [api-schema-match-dogfood-001.md](api-schema-match-dogfood-001.md) | 2026-06-14 | `7c6f878` | 검사 8 dogfood |

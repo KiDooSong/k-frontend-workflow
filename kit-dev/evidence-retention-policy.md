@@ -92,6 +92,7 @@ generated-local  git 이 추적하지 않는 로컬 전용 산출물. 재생성 
 |---|---|---|
 | `temp/runs/figma-fidelity-001/` | 회사 Figma 디자인 소스·카피·렌더 임베드(민감) | 일반 분석은 `docs/research/` 에 추적 |
 | `temp/runs/maestro-dogfood-001/` | 위 figma 앱을 구동하는 하니스 — 앱 카피·소스 임베드(동일 범주) | findings 는 `docs/research/playwright/` 에 추적 |
+| `temp/runs/consumer-ck-ai-mobile-adoption-001.md` · `temp/runs/2026-06-15/` | consumer(ck) 코드·맥락 임베드 probe raw(민감) | 해소 현황·결론은 [2026-06-16 보고서](../temp/runs/2026-06-16/consumer-ck-adoption-resolution-status.md)에 추적 |
 | `temp/runs/*/app/node_modules/` · `.expo/` · `dist/` · `web-build/` | Expo/RN 샌드박스 빌드 산출물(재생성 가능) | 소스는 추적 유지 |
 | `temp/runs/**/node.rest.json` | Figma REST 추출 원본(6~10k줄) — 재생성 가능 | 정본은 `implementation-facts.json`(추적) |
 | `temp/archive/` · `temp/claude-handoff*` · `temp/local-pull-blockers-20260627/` | 세션 임시 작업물 | 보존 가치가 생기면 repo 루트 `archive/` 로 승격(추적) — 선례: [archive/claude-handoff-open-decisions-next.md](../archive/claude-handoff-open-decisions-next.md) |
