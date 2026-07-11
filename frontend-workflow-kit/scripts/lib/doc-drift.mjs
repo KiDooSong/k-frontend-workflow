@@ -12,6 +12,12 @@
 // a semantic-truth claim; its findings are severity "info", counted in info_count,
 // never in warning_count, and never change the exit code.
 //
+// Issue #163 adds a second opt-in (--include release-consistency): narrow
+// structural release/version ↔ implemented-status contradiction rules (package
+// version vs CHANGELOG heading, roadmap snapshot staleness, script-existence vs
+// "미구현" wording, fixed doc counts vs code). Warning-first, exit 0, historical
+// docs excluded, canonical_owner/fix_path on every finding, no auto doc edits.
+//
 // Issue #150 false-positive classes handled inside Phase 0 (still mechanical):
 // inline code spans are masked out of link scanning, GitHub/VSCode line anchors
 // (#L12, #L12-L14) are line references rather than heading slugs, bare
@@ -534,11 +540,351 @@ export function analyzeManifestRoadmapStatus({ rootDir, manifestPath, roadmapPat
   return findings;
 }
 
+// --- Issue #163 opt-in: release/version ↔ implemented-status consistency ------
+// Narrow structural rules only — no semantic-truth judgment of prose, no
+// automatic doc edits, never a gate (exit 0 stays). Rules:
+//   1. package.json version ↔ latest CHANGELOG release heading
+//   2. manifest active/planned ↔ roadmap wording — already covered by the
+//      existing opt-in status-heuristic (composable via --include a,b)
+//   3. package script existence ↔ same-line "미구현/not implemented" wording
+//      that names the exact script token
+//   4. canonical roadmap snapshot date ↔ latest release heading date
+//      (plus an optional explicit --now age threshold — no wall clock ever)
+//   5. fixed counts in canonical docs (검사 N종 / 스크립트·CLI N개) ↔ code
+// Historical/archive docs are excluded: only a small canonical doc allowlist is
+// scanned, and any allowlisted doc whose first lines carry an uppercase
+// HISTORICAL marker (or the 🗄 glyph) is skipped mechanically.
+// Every finding carries canonical_owner (the truth-holding file) and fix_path
+// (the file a human should edit) — the detector itself never fixes anything.
+
+const UNIMPLEMENTED_RE = /미구현|아직\s*구현되지\s*않|구현되어\s*있지\s*않|\bnot\s+(?:yet\s+)?implemented\b|\bunimplemented\b/i;
+// Uppercase-only marker (plus the archive glyph) so prose mentions of
+// "historical" in a living doc never demote it.
+const HISTORICAL_MARKER_RE = /\bHISTORICAL\b|🗄/;
+const SNAPSHOT_DATE_RE = /스냅샷[:：]\s*(\d{4}-\d{2}-\d{2})/;
+// The roadmap keeps prior snapshots inline as "> 이전 스냅샷(...)" lines —
+// historical content inside a living doc. Those lines are excluded from every
+// release-consistency rule input (snapshot extraction and doc-line scanning).
+const PREVIOUS_SNAPSHOT_LINE_RE = /^\s*>?\s*이전\s*스냅샷/;
+
+// Current roadmap snapshot date: first line that carries "스냅샷: YYYY-MM-DD"
+// and is not a prior-snapshot ("이전 스냅샷") historical line.
+function currentSnapshotDate(roadmapRaw) {
+  for (const line of stripFencedCodeBlocks(roadmapRaw).split(/\r?\n/)) {
+    if (PREVIOUS_SNAPSHOT_LINE_RE.test(line)) continue;
+    const m = SNAPSHOT_DATE_RE.exec(line);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+function parseDateUTC(value) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || '').trim());
+  if (!m) return null;
+  const ms = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const d = new Date(ms);
+  if (
+    d.getUTCFullYear() !== Number(m[1]) ||
+    d.getUTCMonth() !== Number(m[2]) - 1 ||
+    d.getUTCDate() !== Number(m[3])
+  ) return null;
+  return ms;
+}
+
+export function isHistoricalDoc(content) {
+  return String(content || '').split(/\r?\n/).slice(0, 40).some((line) => HISTORICAL_MARKER_RE.test(line));
+}
+
+// First H2 whose text starts with a semver-like version is the latest release
+// heading; `## Unreleased` is skipped. Non-version H2 sections are ignored.
+export function latestReleaseHeading(changelogRaw) {
+  for (const line of stripFencedCodeBlocks(changelogRaw).split(/\r?\n/)) {
+    const m = /^##\s+(.+?)\s*$/.exec(line);
+    if (!m) continue;
+    const text = m[1].replace(/`/g, '').trim();
+    if (/^unreleased\b/i.test(text)) continue;
+    const versionMatch = /^v?(\d+\.\d+\.\d+[0-9A-Za-z.+-]*)/.exec(text);
+    if (!versionMatch) continue;
+    const dateMatch = /(\d{4}-\d{2}-\d{2})/.exec(text);
+    return { version: versionMatch[1], date: dateMatch ? dateMatch[1] : null };
+  }
+  return null;
+}
+
+// Only namespaced aliases (workflow:*, example:* …) are contradiction tokens —
+// bare names like "test" are too generic to match mechanically. Each alias also
+// contributes its scripts/<file>.mjs basename as a token.
+function packageScriptTokens(pkg) {
+  const tokens = new Set();
+  for (const [name, cmd] of Object.entries(pkg?.scripts || {})) {
+    if (!/^[a-z][a-z0-9-]*:[a-z0-9][a-z0-9:-]*$/i.test(name)) continue;
+    tokens.add(name);
+    const m = /scripts\/([A-Za-z0-9._-]+\.mjs)/.exec(String(cmd || ''));
+    if (m) tokens.add(m[1]);
+  }
+  return [...tokens].sort(compareText);
+}
+
+function scriptTokenRegex(token) {
+  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // No '/' in the lookbehind so `scripts/doc-drift.mjs` still matches the
+  // basename token; ':'/'.'/'-' guards keep `workflow:catalog` from matching
+  // inside `workflow:catalog-gen`.
+  return new RegExp(`(?<![A-Za-z0-9:._-])${escaped}(?![A-Za-z0-9:._-])`);
+}
+
+export function analyzeReleaseConsistency({
+  rootDir,
+  packagePath,
+  changelogPath,
+  roadmapPath,
+  now = null,
+  maxSnapshotAgeDays = 30,
+}) {
+  const rootAbs = path.resolve(rootDir || process.cwd());
+  const packageAbs = path.resolve(packagePath);
+  const changelogAbs = path.resolve(changelogPath);
+  const roadmapAbs = path.resolve(roadmapPath);
+
+  // Explicitly requested inputs that cannot be read are usage/input errors
+  // (exit 2 in the CLI), mirroring the status heuristic — never a silent skip.
+  const packageRaw = readFileSafe(packageAbs);
+  if (packageRaw == null) {
+    throw new DocDriftInputError(`package.json not found: ${packageAbs}`);
+  }
+  let pkg;
+  try {
+    pkg = JSON.parse(packageRaw);
+  } catch (err) {
+    throw new DocDriftInputError(`package.json parse failed: ${packageAbs} — ${err.message}`);
+  }
+  const changelogRaw = readFileSafe(changelogAbs);
+  if (changelogRaw == null) {
+    throw new DocDriftInputError(`changelog not found: ${changelogAbs}`);
+  }
+  const roadmapRaw = readFileSafe(roadmapAbs);
+  if (roadmapRaw == null) {
+    throw new DocDriftInputError(`roadmap not found: ${roadmapAbs}`);
+  }
+  let nowMs = null;
+  if (now != null) {
+    nowMs = parseDateUTC(now);
+    if (nowMs == null) {
+      throw new DocDriftInputError(`invalid --now date: ${now} (expected YYYY-MM-DD)`);
+    }
+  }
+  if (!Number.isInteger(maxSnapshotAgeDays) || maxSnapshotAgeDays <= 0) {
+    throw new DocDriftInputError(`invalid max snapshot age: ${maxSnapshotAgeDays} (expected a positive integer of days)`);
+  }
+
+  const packageRel = relPosix(rootAbs, packageAbs);
+  const changelogRel = relPosix(rootAbs, changelogAbs);
+  const roadmapRel = relPosix(rootAbs, roadmapAbs);
+  const findings = [];
+
+  // Rule 1 — package version ↔ latest CHANGELOG release heading. A missing or
+  // unusable package version is itself release-metadata drift (exit-0 warning),
+  // never a silent skip.
+  const version = typeof pkg.version === 'string' && pkg.version.trim() !== '' ? pkg.version.trim() : null;
+  const release = latestReleaseHeading(changelogRaw);
+  if (!version) {
+    findings.push({
+      severity: 'warning',
+      check: 'package-version-changelog-mismatch',
+      source: packageRel,
+      target: changelogRel,
+      package_version: null,
+      changelog_version: release ? release.version : null,
+      canonical_owner: changelogRel,
+      fix_path: packageRel,
+      reason: 'package.json has no usable version string to compare with the changelog release heading',
+    });
+  }
+  if (version) {
+    if (!release) {
+      findings.push({
+        severity: 'warning',
+        check: 'package-version-changelog-mismatch',
+        source: packageRel,
+        target: changelogRel,
+        package_version: version,
+        changelog_version: null,
+        canonical_owner: changelogRel,
+        fix_path: changelogRel,
+        reason: `package version '${version}' has no release heading in the changelog (only Unreleased or none)`,
+      });
+    } else if (release.version !== version) {
+      findings.push({
+        severity: 'warning',
+        check: 'package-version-changelog-mismatch',
+        source: packageRel,
+        target: changelogRel,
+        package_version: version,
+        changelog_version: release.version,
+        canonical_owner: changelogRel,
+        fix_path: packageRel,
+        reason: `package version '${version}' does not match latest changelog release heading '${release.version}'`,
+      });
+    }
+  }
+
+  // Rule 4 — canonical roadmap snapshot date vs latest release date; the
+  // optional explicit --now check keeps determinism (no wall clock is read).
+  const snapshotDate = currentSnapshotDate(roadmapRaw);
+  const snapshotMs = snapshotDate ? parseDateUTC(snapshotDate) : null;
+  if (snapshotMs != null && release?.date) {
+    const releaseMs = parseDateUTC(release.date);
+    if (releaseMs != null && snapshotMs < releaseMs) {
+      findings.push({
+        severity: 'warning',
+        check: 'roadmap-snapshot-stale',
+        source: roadmapRel,
+        target: changelogRel,
+        snapshot_date: snapshotDate,
+        release_date: release.date,
+        canonical_owner: changelogRel,
+        fix_path: roadmapRel,
+        reason: `roadmap snapshot ${snapshotDate} predates latest changelog release ${release.date}`,
+      });
+    }
+  }
+  if (snapshotMs != null && nowMs != null) {
+    const ageDays = Math.floor((nowMs - snapshotMs) / 86400000);
+    if (ageDays > maxSnapshotAgeDays) {
+      findings.push({
+        severity: 'warning',
+        check: 'roadmap-snapshot-stale',
+        source: roadmapRel,
+        target: changelogRel,
+        snapshot_date: snapshotDate,
+        release_date: null,
+        canonical_owner: roadmapRel,
+        fix_path: roadmapRel,
+        reason: `roadmap snapshot ${snapshotDate} is ${ageDays} days old as of ${now} (threshold ${maxSnapshotAgeDays} days)`,
+      });
+    }
+  }
+
+  // Canonical doc allowlist for rules 3 and 5 — never a repo-wide walk, so
+  // archive/, temp/, docs/research raw evidence, and run reports are never
+  // scanned; HISTORICAL-marked docs (e.g. the demoted IMPLEMENTING.md) skip.
+  const docCandidates = [
+    path.join(rootAbs, 'README.md'),
+    path.join(rootAbs, 'IMPLEMENTING.md'),
+    path.join(rootAbs, 'frontend-workflow-kit', 'README.md'),
+    roadmapAbs,
+  ];
+  const seenDocs = new Set();
+  const docs = [];
+  for (const candidate of docCandidates) {
+    const abs = path.resolve(candidate);
+    if (seenDocs.has(abs)) continue;
+    seenDocs.add(abs);
+    const raw = readFileSafe(abs);
+    if (raw == null) continue;
+    if (isHistoricalDoc(raw)) continue;
+    // Prior-snapshot ("이전 스냅샷") lines are historical content inside a
+    // living doc — blanked so rules 3/5 never scan them.
+    const lines = stripFencedCodeBlocks(raw).split(/\r?\n/)
+      .map((line) => (PREVIOUS_SNAPSHOT_LINE_RE.test(line) ? '' : line));
+    docs.push({ rel: relPosix(rootAbs, abs), lines });
+  }
+
+  // Rule 3 — package script exists but a canonical doc line naming the exact
+  // script token says it is unimplemented.
+  const tokenMatchers = packageScriptTokens(pkg).map((token) => ({ token, re: scriptTokenRegex(token) }));
+  for (const doc of docs) {
+    for (const line of doc.lines) {
+      if (!UNIMPLEMENTED_RE.test(line)) continue;
+      for (const { token, re } of tokenMatchers) {
+        if (!re.test(line)) continue;
+        findings.push({
+          severity: 'warning',
+          check: 'script-doc-unimplemented-contradiction',
+          source: doc.rel,
+          target: packageRel,
+          script: token,
+          canonical_owner: packageRel,
+          fix_path: doc.rel,
+          reason: `doc wording says '${token}' is unimplemented but the package script exists`,
+        });
+      }
+    }
+  }
+
+  // Rule 5 — fixed counts in canonical docs vs code. '검사 N종' compares against
+  // the count validate.mjs itself prints (single code source); '스크립트/CLI N개'
+  // compares against top-level scripts/*.mjs files and stays info-only because
+  // the count basis is a convention, not a single declared fact.
+  const pkgDirAbs = path.dirname(packageAbs);
+  const validateAbs = path.join(pkgDirAbs, 'scripts', 'validate.mjs');
+  const validateRaw = readFileSafe(validateAbs);
+  const checkCountMatch = validateRaw ? /검사\s*(\d+)\s*종\s*통과/.exec(validateRaw) : null;
+  const checkCount = checkCountMatch ? Number(checkCountMatch[1]) : null;
+  const validateRel = relPosix(rootAbs, validateAbs);
+
+  const scriptsDirAbs = path.join(pkgDirAbs, 'scripts');
+  let scriptFileCount = null;
+  if (isDir(scriptsDirAbs)) {
+    try {
+      scriptFileCount = fs.readdirSync(scriptsDirAbs, { withFileTypes: true })
+        .filter((entry) => entry.isFile() && entry.name.endsWith('.mjs')).length;
+    } catch {
+      scriptFileCount = null;
+    }
+  }
+  const scriptsRel = relPosix(rootAbs, scriptsDirAbs);
+
+  for (const doc of docs) {
+    for (const line of doc.lines) {
+      if (checkCount != null) {
+        for (const m of line.matchAll(/검사\s*(\d+)\s*종/g)) {
+          const docCount = Number(m[1]);
+          if (docCount === checkCount) continue;
+          findings.push({
+            severity: 'warning',
+            check: 'fixed-count-mismatch',
+            source: doc.rel,
+            target: validateRel,
+            doc_count: docCount,
+            code_count: checkCount,
+            canonical_owner: validateRel,
+            fix_path: doc.rel,
+            reason: `doc fixed count '검사 ${docCount}종' conflicts with the validate.mjs success line '검사 ${checkCount}종'`,
+          });
+        }
+      }
+      if (scriptFileCount != null) {
+        for (const m of line.matchAll(/(?:스크립트|CLI)\s*(\d+)\s*개/g)) {
+          const docCount = Number(m[1]);
+          if (docCount === scriptFileCount) continue;
+          findings.push({
+            severity: 'info',
+            check: 'fixed-count-mismatch',
+            source: doc.rel,
+            target: scriptsRel,
+            doc_count: docCount,
+            code_count: scriptFileCount,
+            canonical_owner: scriptsRel,
+            fix_path: doc.rel,
+            reason: `doc fixed count '${docCount}개' differs from ${scriptFileCount} top-level scripts/*.mjs files (count-basis heuristic; review manually)`,
+          });
+        }
+      }
+    }
+  }
+
+  return findings;
+}
+
 // statusHeuristic: null (default, Phase 0 output byte-identical) or
 // { manifestPath, roadmapPath } to enable the opt-in Phase 1 heuristic.
+// releaseConsistency: null (default) or { packagePath, changelogPath,
+// roadmapPath, now?, maxSnapshotAgeDays? } to enable the opt-in issue #163
+// release/version ↔ implemented-status consistency checks.
 // escapesRootSeverity: 'info' (default — root-escaping targets cannot be
 // verified under the scan root) or 'warning' (opt-in promotion).
-export function analyzeDocDrift({ rootDir, statusHeuristic = null, escapesRootSeverity = 'info' }) {
+export function analyzeDocDrift({ rootDir, statusHeuristic = null, releaseConsistency = null, escapesRootSeverity = 'info' }) {
   if (escapesRootSeverity !== 'info' && escapesRootSeverity !== 'warning') {
     throw new DocDriftInputError(
       `invalid escapesRootSeverity: ${escapesRootSeverity} (expected info or warning)`,
@@ -634,22 +980,32 @@ export function analyzeDocDrift({ rootDir, statusHeuristic = null, escapesRootSe
     }));
   }
 
+  if (releaseConsistency) {
+    findings.push(...analyzeReleaseConsistency({
+      rootDir: rootAbs,
+      ...releaseConsistency,
+    }));
+  }
+
   const finalFindings = sortFindings(dedupeFindings(findings));
   const warningCount = finalFindings.filter((finding) => finding.severity === 'warning').length;
   const infoCount = finalFindings.filter((finding) => finding.severity === 'info').length;
   // Default no-info output keeps the exact Phase 0 byte shape; the include key
-  // appears only with the status heuristic, and info_count appears when the
-  // heuristic ran or when default info findings (ambiguous bracket notation,
-  // root-escaping links) exist.
+  // appears only with opt-in checks, and info_count appears when an opt-in ran
+  // or when default info findings (ambiguous bracket notation, root-escaping
+  // links) exist.
+  const includes = [];
+  if (releaseConsistency) includes.push('release-consistency');
+  if (statusHeuristic) includes.push('status-heuristic');
   const out = {
     tool: 'workflow:doc-drift',
     mode: 'warning-first',
     root: '.',
   };
-  if (statusHeuristic) out.include = ['status-heuristic'];
+  if (includes.length > 0) out.include = includes;
   out.ok = true;
   out.warning_count = warningCount;
-  if (statusHeuristic || infoCount > 0) out.info_count = infoCount;
+  if (includes.length > 0 || infoCount > 0) out.info_count = infoCount;
   out.findings = finalFindings;
   return out;
 }
@@ -663,6 +1019,16 @@ function formatFinding(finding) {
     );
   }
   const severityLabel = finding.severity === 'info' ? 'INFO' : 'WARNING';
+  // Release-consistency findings carry the canonical owner and the manual fix
+  // path — surface both so a human knows which file holds the truth and where
+  // to edit (the detector never edits anything itself).
+  if (finding.canonical_owner) {
+    return (
+      `workflow:doc-drift — ${severityLabel} ${finding.check}: ${finding.source} ` +
+      `↔ ${finding.target} — ${finding.reason} ` +
+      `[owner: ${finding.canonical_owner}; fix: ${finding.fix_path}]`
+    );
+  }
   return (
     `workflow:doc-drift — ${severityLabel} ${finding.check}: ${finding.source} ` +
     `links to ${finding.link} (${finding.target}) — ${finding.reason}`
@@ -671,6 +1037,7 @@ function formatFinding(finding) {
 
 export function formatDocDriftHuman(report) {
   const heuristicEnabled = Array.isArray(report?.include) && report.include.includes('status-heuristic');
+  const releaseEnabled = Array.isArray(report?.include) && report.include.includes('release-consistency');
   const lines = [];
   const findings = Array.isArray(report?.findings) ? report.findings : [];
   if (!report || findings.length === 0) {
@@ -681,6 +1048,11 @@ export function formatDocDriftHuman(report) {
   if (heuristicEnabled) {
     lines.push(
       'workflow:doc-drift — status-heuristic findings are info-only: review manually; not a gate, not a semantic-truth claim.',
+    );
+  }
+  if (releaseEnabled) {
+    lines.push(
+      'workflow:doc-drift — release-consistency findings are warning-first observations with a canonical owner and fix path: fix docs manually; not a gate, never auto-edited.',
     );
   }
   return lines;
