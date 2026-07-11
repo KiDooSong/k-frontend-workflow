@@ -22,6 +22,7 @@ import {
 import { loadScreenSpec, deriveMetrics, isStub } from './lib/spec.mjs';
 import { loadLayoutProfile } from './lib/layout-profile.mjs';
 import { scanLayerInventory } from './lib/layer-inventory.mjs';
+import { enforceCliFlagContract } from './lib/cli-args.mjs';
 
 function todayISO() {
   // 결정성: --date 로 고정 가능. 기본은 오늘 (generated_at 한 줄만 변동 허용).
@@ -170,8 +171,51 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
   return { state, inventory: inventoryDoc, layerInventory };
 }
 
+function helpText() {
+  return `workflow:state - screen-spec 집계로 _meta 상태 파일 생성 (workflow-state.yaml · screen-inventory.yaml)
+
+Usage:
+  node scripts/workflow-state.mjs [--docs <dir>] [--src <dir>] [--root <dir>]
+                                  [--date <YYYY-MM-DD>] [--out <dir>] [--layout <file>]
+                                  [--json] [--help]
+
+Options:
+  --docs <dir>    authoring 문서 루트. 기본: ${DEFAULTS.docs}
+  --src <dir>     소스 루트(fake hook 존재 등 derived fact 탐색 기준). 기본: ${DEFAULTS.src}
+  --root <dir>    프로젝트 루트 오버라이드. 기본: --src 의 상위 디렉토리
+  --date <date>   generated_at 고정(결정성). 기본: 오늘
+  --out <dir>     출력 디렉토리. 기본: <docs>/_meta
+  --layout <file> project-layout.yaml 경로 오버라이드
+  --json          파일을 쓰지 않고 결정적 JSON({ state, inventory })을 stdout 으로 출력
+  --help          이 도움말 출력
+
+Behavior:
+  usage 오류(unknown option·값 없는 value flag·값 붙은 boolean flag·positional)는
+  어떤 파일도 만들기 전에 exit 2 — 오타가 파일 쓰기로 조용히 진행되는 fail-open 을 금지한다.
+`;
+}
+
+// parseArgs 는 모든 --foo 를 그대로 flags 에 넣으므로(거부 없음) CLI 별 allowlist 로 오타를 잡는다.
+// 예: --jsno 오타가 "JSON 출력 없는 실제 _meta 파일 쓰기"로, --outt 오타가 기본 경로 쓰기로
+// 조용히 진행되는 것을 막는다(exit 2). validate.mjs(PR #175)와 같은 계약.
+const VALUE_FLAGS = new Set(['docs', 'src', 'root', 'date', 'out', 'layout']);
+const BOOLEAN_FLAGS = new Set(['json', 'help']);
+
 function main() {
-  const { flags } = parseArgs(process.argv.slice(2));
+  const { flags, positionals } = parseArgs(process.argv.slice(2));
+  // 인자 검증은 todayISO()·layout 로드·파일 탐색·파일 쓰기보다 먼저 — usage 오류에서 파일 생성/수정 0.
+  enforceCliFlagContract({
+    flags,
+    positionals,
+    valueFlags: VALUE_FLAGS,
+    booleanFlags: BOOLEAN_FLAGS,
+    tool: 'workflow:state',
+    helpCommand: 'node scripts/workflow-state.mjs',
+  });
+  if (flags.help) {
+    process.stdout.write(helpText());
+    return; // help 는 자연 종료 exit 0 (cli-stdout-flush 계약 — process.exit(0) 금지)
+  }
   const docsDir = path.resolve(flags.docs || DEFAULTS.docs);
   const srcDir = path.resolve(flags.src || DEFAULTS.src);
   const projectRoot = projectRootOf(srcDir, flags);

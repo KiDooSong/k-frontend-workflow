@@ -1182,6 +1182,31 @@ test('packed payload CLI smoke: core, adoption, observation, visual (IMP-05)', a
     assert.ok(visualNoDocsReport.findings.some((f) => f.rule === 'docs-not-found'));
   });
 
+  await t.test('core CLI argument contract from the packed payload: help + usage errors before any write', () => {
+    // 공개 CLI 를 payload 에서 직접 spawn — source tree import 에 우연히 의존하지 않는다.
+    // workflow-state: --help 는 exit 0 이고 payload 트리를 건드리지 않는다.
+    const stateHelp = cli('workflow-state.mjs', '--help');
+    assert.equal(stateHelp.status, 0, stateHelp.stderr);
+    assert.match(stateHelp.stdout, /workflow:state/);
+    assert.match(stateHelp.stdout, /--date/);
+    // unknown flag(--jsno 오타)는 파일 IO 전에 exit 2 — JSON 대신 실제 쓰기로 진행되지 않는다.
+    const stateTypo = cli('workflow-state.mjs', '--jsno');
+    assert.equal(stateTypo.status, 2);
+    assert.match(stateTypo.stderr, /unknown option --jsno/);
+    assert.equal(exists('docs/frontend-workflow/_meta', out), false, '--jsno must not write _meta');
+    // readiness: --help 는 workflow-state.yaml 이 아직 없어도 성공한다(인자 검증·help 가 state 로드보다 먼저).
+    const readinessHelp = cli('readiness.mjs', '--help');
+    assert.equal(readinessHelp.status, 0, readinessHelp.stderr);
+    assert.match(readinessHelp.stdout, /workflow:readiness/);
+    // --screeen 오타는 usage 오류(exit 2, unknown option)다 — state 부재 입력 오류로도,
+    // 전체 화면 출력 fallback 으로도 흡수되지 않는다.
+    const readinessTypo = cli('readiness.mjs', '--screeen', 'COUPON-001');
+    assert.equal(readinessTypo.status, 2);
+    assert.match(readinessTypo.stderr, /unknown option --screeen/);
+    assert.doesNotMatch(readinessTypo.stderr, /workflow-state\.yaml/);
+    assert.equal(readinessTypo.stdout, '');
+  });
+
   await t.test('adoption CLIs bootstrap a consumer docs tree: doctor, create-screen, create-input', () => {
     const doctor = cli('doctor.mjs', '--json');
     assert.equal(doctor.status, 0, doctor.stderr);

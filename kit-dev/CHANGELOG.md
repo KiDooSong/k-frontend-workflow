@@ -4,6 +4,16 @@
 
 ## Unreleased
 
+### fix(cli) — core CLI(workflow-state·readiness) 인자 계약 fail-closed hardening
+
+PR #175(validate `--help`/unknown flag exit 2)의 확장. 공통 `parseArgs` 는 여전히 모든 `--foo` 를 받아들이므로, 가장 위험한 두 core CLI 에서 오타가 "다른 실행"으로 조용히 진행되던 fail-open 을 해소한다. readiness 판정 로직·정책 fact·allowed/forbidden path 의미·artifact axis·warning-first→hard 승격 전부 무변경.
+
+- **Phase 0 감사**: `package.json`/`package-scripts.template.json` 노출 consumer CLI 25개의 인자 계약을 코드 기준으로 전수 분류 — [kit-dev/temp/runs/core-cli-argument-contract-audit-001.md](temp/runs/core-cli-argument-contract-audit-001.md) (kit-dev evidence, consumer payload 미포함). 이번 구현 대상은 `workflow-state`·`readiness` 로 제한하고 나머지(특히 `forbidden-paths` 의 `--enforc` typo enforcement 소실, `adoption-probe --help` 가 probe 를 실행) 는 후속 후보로만 기록.
+- **`workflow-state.mjs`**: `--help` 신설 + unknown option·값 없는 value flag(`--docs`/`--src`/`--root`/`--date`/`--out`/`--layout` bare)·값 붙은 boolean flag(`--json=yes`)·positional 을 exit 2 로 거부. 인자 검증은 `todayISO()`·layout 로드·파일 탐색·파일 쓰기보다 먼저 — **usage 오류에서 파일 생성/수정 0** (기존엔 `--jsno` 가 JSON 출력 대신 실제 `_meta` 쓰기로, `--outt` 가 기본 경로 쓰기로 진행됐다). 정상 호출의 stdout·생성 파일은 byte-identical, 기본 date/out 동작 무변경.
+- **`readiness.mjs`**: `--help` 신설 + unknown option(`--screeen`/`--polciy` 오타가 전체 화면 출력·기본 policy 판정으로 fallback 하던 것)·bare value flag·boolean=value·positional 을 exit 2 로 거부. 인자 검증은 state/policy/manifest 로드보다 먼저. 기존 bare `--screen` 방어는 단일 usage 경로로 통합(빈 `--screen=` 값 방어 유지). 정상 입력의 `computeReadiness` 판정·출력 shape 무변경.
+- **공통 helper**: `scripts/lib/cli-args.mjs` `enforceCliFlagContract` 신설 — `parseArgs` semantics 를 재구현하지 않고 파싱 *결과*를 CLI 별 allowlist 로 검증만 한다(additive; 전역 strict parser 교체로 다른 CLI 를 깨지 않음). 스칼라 중복 last-wins·repeatable flag 정책은 범위 밖(무변경). 메시지/exit 2 계약은 validate.mjs inline allowlist 와 동형(후속 migration 대비).
+- tests: `workflow-state-cli.test.mjs`(help/unknown/`--jsno`·`--outt` write-0/valueless/boolean-with-value/positional/allowlist 전수/golden `_meta` byte-identical 8건) · `readiness-cli.test.mjs`(help가 state 부재에서도 성공/`--screeen`·`--polciy` no-fallback/usage 오류가 state-load 오류에 선행/valueless 7종/빈 `--screen=`/boolean-with-value/positional/CLI 출력==`computeReadiness` deepEqual/결정성 10건) · distribution IMP-05 smoke 에 packed payload public CLI spawn 서브테스트(help + usage error, source tree import 비의존) 추가.
+
 ### fix(cli) — 성공 경로 stdout flush-safe 자연 종료 통일 + validate CLI 인자 계약
 
 0.3.0-mvp.1 릴리스 체크(`temp/runs/release-0.3.0-mvp.1-final-check.md` §3·§6)가 후속 후보로 기록한 미추적 기술 부채 2건의 해소. 기능·게이트 판정 무변경.
