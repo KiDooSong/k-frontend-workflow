@@ -124,8 +124,10 @@ jobs:
   # ── 지원 계약 smoke (#160, tracker #167 MVP-04) ─────────────────────────────
   # 아래 두 job 은 위 hard-gate job(validate-example: Ubuntu + Node 20)이 이미 hard 로 검증하는
   # 결정적 검사(test:spec / example:validate)의 부분집합을 다른 플랫폼/Node 버전에서 반복하는
-  # "기존 hard gate 의 플랫폼/버전 확장"이다 — 새 검사 종류를 gate 로 승격하지 않으며,
-  # warning-first 도구(lint/golden-fixture/visual/telemetry/red-team)는 여기서 실행하지 않는다.
+  # "기존 hard gate 의 플랫폼/버전 확장"이다 — 새 검사 종류를 gate 로 승격하지 않는다.
+  # warning-first 도구(lint/golden-fixture/visual/telemetry/red-team)의 CI 관측 step 을 두지
+  # 않고 관측 artifact 도 수집하지 않는다 — 단 test:spec/distribution 단위·패키징 테스트가
+  # 해당 CLI 들을 "테스트 대상"으로 spawn 하는 것은 관측 surface 실행/승격이 아니다.
   # required check(branch protection) 승격은 별도 Open Decision 전까지 하지 않는다.
   # Windows 는 CI 미검증 — kit README §지원 환경 지원 표에 명시적 best-effort 로만 기록.
   compat-smoke:
