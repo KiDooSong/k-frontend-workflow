@@ -33,36 +33,107 @@ function withTmpRoot(fn) {
   }
 }
 
+// --- 소스 계약 스캐너 -----------------------------------------------------
+// 허용 인자: 리터럴 1(사전 가드) · 2(usage/설정 오류, stderr 전용). 그 외 전부 위반:
+//   - process.exit(0): 성공 경로는 process.exitCode 자연 종료여야 한다.
+//   - 동적 인자(process.exit(summary.exit_code), process.exit(fatal === 0 ? 0 : 1) 등):
+//     0 으로 평가될 수 있어 같은 truncation 클래스의 재유입 경로다.
+// 유일한 예외: stderr 전용 `function fail(message, code = 2)` 헬퍼(pack/upgrade-vendored-kit
+// 관례) **본문 내부의** process.exit(code) — 헬퍼 밖에서 'code' 라는 이름만 흉내 낸
+// 동적 exit 는 허용하지 않는다. 본문 범위는 실제 brace-depth 추적으로 구한다.
+
+// 주석(//, /* */)과 문자열('…', "…", `…`) 내용을 같은 길이의 공백으로 마스킹한다
+// (개행은 보존 — 인덱스/라인 번호가 원문과 1:1 대응). 문자열/주석 속의
+// process.exit(…)·중괄호가 스캐너와 brace-depth 를 속이지 못하게 한다.
+// 한계: 템플릿 리터럴은 ${} 보간 포함 통째로 마스킹한다(보간 안의 실제 코드가 가려질 수
+// 있으나, CLI 종료 경로를 템플릿 보간 안에 두는 코드는 이 저장소 관례에 없다).
+function maskCommentsAndStrings(src) {
+  const out = src.split('');
+  let i = 0;
+  let state = 'code'; // code | line | block | single | double | template
+  while (i < src.length) {
+    const ch = src[i];
+    const next = src[i + 1];
+    if (state === 'code') {
+      if (ch === '/' && next === '/') state = 'line';
+      else if (ch === '/' && next === '*') state = 'block';
+      else if (ch === "'") state = 'single';
+      else if (ch === '"') state = 'double';
+      else if (ch === '`') state = 'template';
+      if (state !== 'code') out[i] = ' ';
+      i += 1;
+      continue;
+    }
+    // 주석/문자열 내부: 개행만 남기고 마스킹
+    if (ch !== '\n') out[i] = ' ';
+    if (state === 'line') {
+      if (ch === '\n') state = 'code';
+    } else if (state === 'block') {
+      if (ch === '*' && next === '/') {
+        out[i + 1] = ' ';
+        i += 1;
+        state = 'code';
+      }
+    } else if (state === 'single' || state === 'double' || state === 'template') {
+      const quote = state === 'single' ? "'" : state === 'double' ? '"' : '`';
+      if (ch === '\\') {
+        if (next !== '\n' && i + 1 < src.length) out[i + 1] = ' ';
+        i += 1; // 이스케이프 다음 문자 건너뜀
+      } else if (ch === quote) {
+        state = 'code';
+      } else if (ch === '\n' && state !== 'template') {
+        state = 'code'; // 비정상 개행 종단 — fail-safe
+      }
+    }
+    i += 1;
+  }
+  return out.join('');
+}
+
+// masked 소스에서 `function fail(message, code = 2)` 본문 [시작, 끝) 범위를
+// brace-depth 추적으로 수집한다(중첩 중괄호·긴 본문에도 정확).
+function collectFailHelperRanges(masked) {
+  const ranges = [];
+  const declRe = /function fail\(message, code = 2\)\s*\{/g;
+  let decl;
+  while ((decl = declRe.exec(masked))) {
+    const open = decl.index + decl[0].length - 1; // '{' 위치
+    let depth = 1;
+    let j = open + 1;
+    while (j < masked.length && depth > 0) {
+      if (masked[j] === '{') depth += 1;
+      else if (masked[j] === '}') depth -= 1;
+      j += 1;
+    }
+    if (depth === 0) ranges.push([open, j]);
+  }
+  return ranges;
+}
+
+// 소스 하나를 스캔해 위반 목록(각 항목: { line, arg })을 돌려준다.
+function collectExitOffenders(src) {
+  const masked = maskCommentsAndStrings(src);
+  const failRanges = collectFailHelperRanges(masked);
+  const insideFailHelper = (idx) => failRanges.some(([s, e]) => idx >= s && idx < e);
+  const offenders = [];
+  const re = /process\.exit\s*\(([^)]*)\)/g; // 공백 변형(process.exit (0))도 잡는다
+  let m;
+  while ((m = re.exec(masked))) {
+    const arg = m[1].trim();
+    if (arg === '1' || arg === '2') continue;
+    if (arg === 'code' && insideFailHelper(m.index)) continue;
+    offenders.push({ line: masked.slice(0, m.index).split('\n').length, arg });
+  }
+  return offenders;
+}
+
 test('source contract: top-level CLI scripts only process.exit(1|2) or fail-helper exit(code) — no exit(0), no dynamic exit', () => {
-  // 허용 인자: 리터럴 1(사전 가드) · 2(usage/설정 오류, stderr 전용). 그 외 전부 위반:
-  //   - process.exit(0): 성공 경로는 process.exitCode 자연 종료여야 한다.
-  //   - 동적 인자(process.exit(summary.exit_code), process.exit(fatal === 0 ? 0 : 1) 등):
-  //     0 으로 평가될 수 있어 같은 truncation 클래스의 재유입 경로다.
-  // 유일한 예외: stderr 전용 `function fail(message, code = 2)` 헬퍼(pack/upgrade-vendored-kit
-  // 관례) **내부의** process.exit(code) — 헬퍼 본문 밖에서 'code' 라는 이름만 흉내 낸
-  // 동적 exit 는 허용하지 않는다.
-  const FAIL_HELPER_RE = /function fail\(message, code = 2\) \{[\s\S]{0,300}?process\.exit\(code\);[\s\S]{0,50}?\n\}/g;
   const offenders = [];
   for (const file of fs.readdirSync(SCRIPTS_DIR)) {
     if (!file.endsWith('.mjs')) continue;
-    const src = fs
-      .readFileSync(path.join(SCRIPTS_DIR, file), 'utf8')
-      .split('\n')
-      .map((line) => line.replace(/\/\/.*$/, '')) // 주석 속 언급은 제외
-      .join('\n');
-    // fail 헬퍼 본문 범위 수집 — 이 범위 안의 process.exit(code) 만 허용.
-    const failRanges = [];
-    let fh;
-    while ((fh = FAIL_HELPER_RE.exec(src))) failRanges.push([fh.index, fh.index + fh[0].length]);
-    const insideFailHelper = (idx) => failRanges.some(([s, e]) => idx >= s && idx < e);
-
-    const re = /process\.exit\s*\(([^)]*)\)/g; // 공백 변형(process.exit (0))도 잡는다
-    let m;
-    while ((m = re.exec(src))) {
-      const arg = m[1].trim();
-      if (arg === '1' || arg === '2') continue;
-      if (arg === 'code' && insideFailHelper(m.index)) continue;
-      offenders.push(`${file}:${src.slice(0, m.index).split('\n').length} process.exit(${arg})`);
+    const src = fs.readFileSync(path.join(SCRIPTS_DIR, file), 'utf8');
+    for (const o of collectExitOffenders(src)) {
+      offenders.push(`${file}:${o.line} process.exit(${o.arg})`);
     }
   }
   assert.deepEqual(
@@ -70,6 +141,53 @@ test('source contract: top-level CLI scripts only process.exit(1|2) or fail-help
     [],
     `성공 가능 경로는 process.exitCode 로 자연 종료해야 한다(macOS 8KB pipe truncation): ${offenders.join(', ')}`,
   );
+});
+
+test('source contract scanner: catches exit(0) incl. whitespace variant and dynamic args', () => {
+  assert.deepEqual(collectExitOffenders('process.exit(0);'), [{ line: 1, arg: '0' }]);
+  assert.deepEqual(collectExitOffenders('process.exit (0);'), [{ line: 1, arg: '0' }]);
+  assert.deepEqual(collectExitOffenders('process.exit(summary.exit_code);'), [
+    { line: 1, arg: 'summary.exit_code' },
+  ]);
+  assert.deepEqual(collectExitOffenders('process.exit(fatal === 0 ? 0 : 1);'), [
+    { line: 1, arg: 'fatal === 0 ? 0 : 1' },
+  ]);
+  // 허용 리터럴은 무발화
+  assert.deepEqual(collectExitOffenders('process.exit(1);\nprocess.exit(2);'), []);
+});
+
+test('source contract scanner: exit(code) is allowed only inside the fail(message, code = 2) helper body', () => {
+  const helper = [
+    'function fail(message, code = 2) {',
+    '  process.stderr.write(`tool: ${message}\\n`);',
+    '  if (message) { /* nested braces */ }',
+    '  process.exit(code);',
+    '}',
+  ].join('\n');
+  assert.deepEqual(collectExitOffenders(helper), []); // 헬퍼 본문 내부 → 허용(중첩 중괄호 포함)
+
+  const outside = 'const code = 0;\nprocess.exit(code);'; // 헬퍼 밖에서 code 이름만 흉내
+  assert.deepEqual(collectExitOffenders(outside), [{ line: 2, arg: 'code' }]);
+
+  // 헬퍼 본문이 닫힌 **뒤의** exit(code) 는 위반 — brace-depth 로 본문 경계를 정확히 끊는다.
+  const after = `${helper}\nprocess.exit(code);`;
+  assert.deepEqual(collectExitOffenders(after), [{ line: 6, arg: 'code' }]);
+});
+
+test('source contract scanner: comments and strings cannot fool the scan', () => {
+  // 주석/문자열 속 process.exit(0) 언급은 무발화
+  assert.deepEqual(collectExitOffenders('// process.exit(0) 금지\nconst x = 1;'), []);
+  assert.deepEqual(collectExitOffenders('/* process.exit(0) */ const x = 1;'), []);
+  assert.deepEqual(collectExitOffenders("const s = 'process.exit(0)';"), []);
+  // 문자열 속 중괄호가 fail 헬퍼 본문 경계(brace-depth)를 깨지 못한다
+  const helperWithBraceString = [
+    'function fail(message, code = 2) {',
+    "  process.stderr.write('unbalanced { { brace');",
+    '  process.exit(code);',
+    '}',
+    'process.exit(code);', // 본문 밖 → 위반
+  ].join('\n');
+  assert.deepEqual(collectExitOffenders(helperWithBraceString), [{ line: 5, arg: 'code' }]);
 });
 
 test('doc-drift --json > 8KB pipes complete parseable JSON (macOS truncation regression)', () => {
