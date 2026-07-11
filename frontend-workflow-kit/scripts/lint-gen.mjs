@@ -213,7 +213,8 @@ function main() {
       process.stderr.write(`workflow:lint-gen — ${err.message}\n`);
       for (const detail of details) process.stderr.write(`  - ${detail}\n`);
     }
-    process.exit(exitCode);
+    // 오류 리포트(--json 이면 stdout emitJson)도 flush-safe 자연 종료로 — exit code 값(1/2)은 무변경.
+    process.exitCode = exitCode;
   }
 }
 

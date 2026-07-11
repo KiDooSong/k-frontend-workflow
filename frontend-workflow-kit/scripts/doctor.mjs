@@ -60,7 +60,8 @@ function main() {
   };
   if (flags.json) process.stdout.write(JSON.stringify(report, null, 2) + '\n');
   else process.stdout.write(render(report));
-  process.exit(0);
+  // process.exit() 금지(stdout pipe 8KB flush) — readiness-eval.mjs 의 flush-safe 자연 종료 계약.
+  process.exitCode = 0;
 }
 
 if (isCliEntry(import.meta.url)) runCli(main, 'workflow:doctor');

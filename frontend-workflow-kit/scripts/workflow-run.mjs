@@ -119,7 +119,7 @@ function main() {
         '       --diff <name-status.txt> --review <path> --skip-tests --json --date YYYY-MM-DD --seq NNN --owner <name>\n' +
         '상태: HALT_AMBIGUITY | HALT_READY_FOR_WORK | DONE_PENDING_REVIEW (exit 0) · HALT_TOOL_ERROR (exit 2)\n',
     );
-    process.exit(0);
+    return; // help 도 자연 종료(exit 0) — process.exit(0) 금지 계약(cli-stdout-flush.test.mjs)
   }
 
   const screen = requireStringFlag(flags, 'screen');
@@ -198,7 +198,9 @@ function main() {
           ` · packet=${model.paths.packet || '—'} · report=${model.paths.report || '—'}\n`,
       );
     }
-    process.exit(STATE_EXIT[state]);
+    // process.exit() 금지(stdout pipe 8KB flush) — readiness-eval.mjs 의 flush-safe 자연 종료 계약.
+    // 모든 호출부는 finalize 직후 return 하므로 자연 종료가 exit code 를 그대로 반영한다.
+    process.exitCode = STATE_EXIT[state];
   };
 
   // 1) workflow:packet 생성 (봉투 + markdown 파일). --out 으로 packet 파일을 남겨 report 입력으로도 쓴다.

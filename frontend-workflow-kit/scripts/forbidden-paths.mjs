@@ -295,8 +295,8 @@ function main() {
   }
 
   // --- exit code ---
-  if (ok) process.exit(0);
-  process.exit(enforced ? 1 : 0);
+  // process.exit() 금지(stdout pipe 8KB flush) — readiness-eval.mjs 의 flush-safe 자연 종료 계약.
+  process.exitCode = ok ? 0 : enforced ? 1 : 0;
 }
 
 // 직접 실행될 때만 main() (import 시 부작용 없음)

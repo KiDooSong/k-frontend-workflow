@@ -172,7 +172,7 @@ function main() {
   const { flags } = parseArgs(process.argv.slice(2));
   if (flags.help) {
     process.stdout.write(helpText());
-    process.exit(0);
+    return; // help 도 자연 종료(exit 0) — process.exit(0) 금지 계약(cli-stdout-flush.test.mjs)
   }
 
   // Unknown sub-flag typo guards are purely syntactic, so they must hold on
@@ -206,7 +206,9 @@ function main() {
       }
       process.stdout.write(lines.join('\n') + '\n');
     }
-    process.exit(0);
+    // process.exit() 금지(stdout pipe 8KB flush) — readiness-eval.mjs 의 flush-safe 자연 종료 계약.
+    process.exitCode = 0;
+    return;
   }
 
   const includeGroups = parseListFlag(flags, 'include', 'group name');
@@ -415,7 +417,8 @@ function main() {
     process.stdout.write(formatTelemetryHuman(outputReport).join('\n') + '\n');
   }
 
-  process.exit(0);
+  // process.exit() 금지(stdout pipe 8KB flush) — readiness-eval.mjs 의 flush-safe 자연 종료 계약.
+  process.exitCode = 0;
 }
 
 if (isCliEntry(import.meta.url)) main();

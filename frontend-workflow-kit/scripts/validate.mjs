@@ -157,8 +157,56 @@ function dependencyResolves(dep, { knownArtifactIds, manifest, docsDir }) {
   return exists(path.join(docsDir, rel));
 }
 
+function helpText() {
+  return `workflow:validate - authoring artifact 구조 검사 12종 (hard gate: 통과 exit 0 / 위반 exit 1)
+
+Usage:
+  node scripts/validate.mjs [--docs <dir>] [--src <dir>] [--root <dir>]
+                            [--manifest <file>] [--schema <file>] [--policy <file>]
+                            [--layout <file>] [--enforce] [--json] [--help]
+
+Options:
+  --docs <dir>      authoring 문서 루트. 기본: ${DEFAULTS.docs}
+  --src <dir>       소스 루트(검사 8 의 contract evidence 탐색 기준). 기본: ${DEFAULTS.src}
+  --root <dir>      프로젝트 루트 오버라이드. 기본: --src 의 상위 디렉토리
+  --manifest <file> artifact manifest 경로. 기본: 킷 catalog/artifact-manifest.yaml
+  --schema <file>   frontmatter 스키마 경로. 기본: 킷 schemas/frontmatter.schema.json
+  --policy <file>   정책 경로. 기본: 킷 policies/implementation-mode-policy.yaml
+  --layout <file>   project-layout.yaml 경로 오버라이드
+  --enforce         검사 12 의 미처리(reconcile 미완) 경고를 에러로 승격
+  --json            결정적 JSON({ ok, count, errors, warnings })을 stdout 으로 출력
+  --help            이 도움말 출력
+
+Behavior:
+  검사 통과 exit 0 / 위반 exit 1 (CI 하드 게이트). usage 오류·설정 파일(manifest/schema/policy)
+  부재·손상은 exit 2 — unknown flag 를 조용히 무시하는 fail-open 을 금지한다.
+`;
+}
+
+// usage 오류 exit 2 계약 — readiness-eval.mjs 의 usageError 와 동형(조용한 fail-open 금지).
+function usageError(message) {
+  process.stderr.write(`validate: ${message}\n`);
+  process.stderr.write('Try `node scripts/validate.mjs --help`.\n');
+  process.exit(2);
+}
+
+// parseArgs 는 모든 --foo 를 그대로 flags 에 넣으므로(거부 없음) CLI 별 allowlist 로 오타를 잡는다.
+// 예: --enforc 오타가 "--enforce 없는 실행"으로 조용히 진행되는 것을 막는다(exit 2).
+const VALUE_FLAGS = new Set(['docs', 'src', 'root', 'manifest', 'schema', 'policy', 'layout']);
+const BOOLEAN_FLAGS = new Set(['enforce', 'json', 'help']);
+
 function main() {
-  const { flags } = parseArgs(process.argv.slice(2));
+  const { flags, positionals } = parseArgs(process.argv.slice(2));
+  for (const name of Object.keys(flags)) {
+    if (!VALUE_FLAGS.has(name) && !BOOLEAN_FLAGS.has(name)) usageError(`unknown option --${name}`);
+    if (VALUE_FLAGS.has(name) && typeof flags[name] !== 'string') usageError(`--${name} requires a value`);
+    if (BOOLEAN_FLAGS.has(name) && flags[name] !== true) usageError(`--${name} does not accept a value`);
+  }
+  if (positionals.length > 0) usageError(`positional arguments are not supported: ${positionals.join(' ')}`);
+  if (flags.help) {
+    process.stdout.write(helpText());
+    return; // help 는 자연 종료 exit 0
+  }
   const docsDir = path.resolve(flags.docs || DEFAULTS.docs);
   const srcDir = path.resolve(flags.src || DEFAULTS.src);
   // projectRoot = role 글롭 앵커 단일 출처(MINOR 2 — spec.mjs·check-generated-files 와 동일 식).
@@ -710,7 +758,9 @@ function main() {
       process.stdout.write(`  [경고 ${w.check}] ${w.file}: ${w.message}\n`);
     }
   }
-  process.exit(errors.length === 0 ? 0 : 1);
+  // process.exit() 금지: stdout 이 pipe 면 8KB(macOS pipe buffer) 초과분이 flush 되기 전에
+  // 프로세스가 죽어 JSON 이 잘린다 — readiness-eval.mjs 와 같은 flush-safe 자연 종료 계약.
+  process.exitCode = errors.length === 0 ? 0 : 1;
 }
 
 // 직접 실행될 때만 main()

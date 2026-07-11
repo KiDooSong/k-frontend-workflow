@@ -4,6 +4,14 @@
 
 ## Unreleased
 
+### fix(cli) — 성공 경로 stdout flush-safe 자연 종료 통일 + validate CLI 인자 계약
+
+0.3.0-mvp.1 릴리스 체크(`temp/runs/release-0.3.0-mvp.1-final-check.md` §3·§6)가 후속 후보로 기록한 미추적 기술 부채 2건의 해소. 기능·게이트 판정 무변경.
+
+- **stdout truncation 클래스 해소**: `readiness-eval.mjs` 에서 실측된 macOS 8KB pipe buffer truncation(`write(JSON)+process.exit(0)` — flush 전 종료)과 같은 패턴을 `scripts/*.mjs` 전수에서 제거했다. 릴리스 문서가 기록한 8개 CLI(check-generated-files·doc-drift·doctor·route-cross-check·upgrade-vendored-kit·workflow-packet·workflow-report·workflow-run)에 더해 목록에 없던 validate(warning-first 설계상 warnings 배열이 커질 수 있음)·forbidden-paths·redteam·telemetry·visual-consistency·visual-contract-bootstrap, 그리고 동적 인자 exit(`process.exit(summary.exit_code)`·`process.exit(fatal === 0 ? 0 : 1)` — 0 으로 평가될 수 있음)를 쓰던 lint-baseline·lint-gen·test-fixtures 도 동일 수정(Codex 리뷰 검출). 성공/최종 exit 는 전부 자연 종료(`process.exitCode`)로 통일 — 자연 종료가 pending write 를 flush 한다. help 경로도 `return` 자연 종료로 통일해 "top-level CLI 의 `process.exit()` 인자는 리터럴 1/2(또는 stderr 전용 fail 헬퍼의 `code`)만 허용 — exit(0)·동적 인자 금지"를 소스 계약으로 고정. usage/입력 오류 exit 2 와 각 CLI 의 exit code 값 계약(validate 0/1, forbidden-paths `--enforce` 승격, visual-consistency errors→1, workflow-run STATE_EXIT)은 전부 무변경.
+- **validate CLI 인자 계약**: `validate.mjs --help` 가 도움말 없이 일반 validate 를 실행하고, 공통 `parseArgs` 가 unknown flag 를 거부하지 않아 `--enforc` 오타가 "`--enforce` 없는 실행"으로 조용히 진행되던 것을 해소. readiness-eval 의 allowlist 선례를 따라 `--help`(usage/옵션/exit code 계약 출력) + unknown flag·값 없는 value flag·값 붙은 boolean flag·positional 인자를 exit 2 usage error 로 거부한다. 기존 정상 호출 플래그(`--docs/--src/--root/--manifest/--schema/--policy/--layout/--enforce/--json`) 동작 무변경.
+- tests: `cli-stdout-flush.test.mjs` 신설(소스 계약 + doc-drift/validate 의 8KB 초과 JSON pipe 완전 `JSON.parse` macOS 회귀 — pre-fix macOS 에서 잘린 JSON 으로 실패) · `validate-cli.test.mjs` 신설(help/unknown/valueless/boolean-with-value/positional/기존 플래그 보존 6건).
+
 ### docs(repo) — historical run evidence 보존·분류·인덱스 정책 (#165 · IMP-04)
 
 - `kit-dev/evidence-retention-policy.md` 신설: 산출물 분류 3종(`active`/`historical`/`generated-local`), run evidence canonical 위치(repo-level release check·consumer dogfood = `temp/runs/`, kit 개발 slice = `kit-dev/temp/runs/`, `frontend-workflow-kit/temp/**` 금지 — 팩 가드만 유지), archive-first 보존 규칙(증거 삭제 시 대체 링크 또는 보존 근거 필수, git history rewrite 금지), release-check frontmatter 계약(`status: current` 는 항상 정확히 1건), HISTORICAL 마커 규약(doc-drift historical skip 과 일치), generated-local ↔ `.gitignore` 매핑 표.

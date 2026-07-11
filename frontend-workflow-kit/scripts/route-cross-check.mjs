@@ -62,7 +62,7 @@ function main() {
   const { flags } = parseArgs(process.argv.slice(2));
   if (flags.help) {
     process.stdout.write(helpText());
-    process.exit(0);
+    return; // help 도 자연 종료(exit 0) — process.exit(0) 금지 계약(cli-stdout-flush.test.mjs)
   }
 
   const docsDir = path.resolve(typeof flags.docs === 'string' ? flags.docs : DEFAULTS.docs);
@@ -78,7 +78,8 @@ function main() {
   }
 
   // warning-first — 불일치/skip 무관하게 항상 0. 진단 도구라 게이트로 올리지 않는다(NG: exit 1 승격 금지).
-  process.exit(0);
+  // process.exit() 금지(stdout pipe 8KB flush) — readiness-eval.mjs 의 flush-safe 자연 종료 계약.
+  process.exitCode = 0;
 }
 
 // 직접 실행될 때만 main() (import 시 부작용 없음 — 테스트가 lib 를 직접 소비; nav-graph.mjs 가드 미러).

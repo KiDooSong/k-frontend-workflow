@@ -526,7 +526,8 @@ function main() {
     process.stdout.write((update ? '(--update: L2 스냅샷 갱신)\n' : '') + summary + '\n' + body + '\n');
   }
 
-  process.exit(fatal === 0 ? 0 : 1);
+  // process.exit() 금지(stdout pipe 8KB flush) — readiness-eval.mjs 의 flush-safe 자연 종료 계약.
+  process.exitCode = fatal === 0 ? 0 : 1;
 }
 
 if (isCliEntry(import.meta.url)) main();

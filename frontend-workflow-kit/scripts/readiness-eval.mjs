@@ -48,7 +48,7 @@ function main() {
   if (positionals.length > 0) usageError('positional arguments are not supported');
   if (flags.help) {
     process.stdout.write(helpText());
-    process.exit(0);
+    return; // help 도 자연 종료(exit 0) — process.exit(0) 금지 계약(cli-stdout-flush.test.mjs)
   }
   if (flags.cases === true) usageError('--cases requires a file path');
 
