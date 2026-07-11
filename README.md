@@ -17,6 +17,7 @@ consumer 설치·업그레이드 절차는 [frontend-workflow-kit/README.md](fro
 ## 현재 릴리스 / 상태
 
 - **release baseline: `0.3.0-mvp.1`** (2026-07-11) — MVP 기능 범위 동결. 상세는 [kit-dev/CHANGELOG.md](kit-dev/CHANGELOG.md).
+- **지원 환경(Node/플랫폼) 계약**: [frontend-workflow-kit/README.md](frontend-workflow-kit/README.md) §지원 환경이 정본 — `engines: node >=20`, CI([frontend-workflow-kit.yml](.github/workflows/frontend-workflow-kit.yml))의 hard gate(Ubuntu + Node 20) + smoke(Ubuntu + Node 24, macOS + Node 20)가 검증한다. Windows 는 명시적 best-effort(미지원).
 - 구현 상태·티어 경계·게이트 인벤토리의 **source of truth**: [kit-dev/roadmap-current.md](kit-dev/roadmap-current.md).
 - MVP 종료 절차는 tracker 이슈 #167 로 추적한다. 루트의 `IMPLEMENTING.md` 는 **MVP-A historical build note** 이며 진입점이 아니다.
 

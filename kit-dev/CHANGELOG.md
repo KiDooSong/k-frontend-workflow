@@ -8,7 +8,16 @@
 
 ## 0.3.0-mvp.1 — 2026-07-11
 
-MVP 종료 release baseline (tracker #167 · MVP-01). `0.2.0-mvp-b-rc1` 이후 랜딩된 telemetry/eval/red-team/doc-drift/visual/adoption 계층 전체를 현재 HEAD 기준 단일 기준선으로 자른다(release cut). **새 기능·새 hard gate·새 artifact axis 없음, warning-first surface 승격 없음** — 아래 Added/Changed 는 기존 `Unreleased` 섹션의 이동분이다. package `version`(vendored payload 추적 식별자, `.kit-payload-manifest.json` 의 `packageVersion` 으로 포함)과 이 heading, 태그가 같은 릴리스 계열을 가리킨다. 과거 `temp/runs/release-mvp-b-final-check.md` 는 `v0.2.0-mvp-b-rc1` 시점의 **historical** 증거이며 이 baseline 의 릴리스 증거가 아니다(현 HEAD 검증 증거는 tracker #167 의 MVP-05/#161 에서 생성).
+MVP 종료 release baseline (tracker #167 · MVP-01).
+
+### Support contract — MVP 종료 PR B (tracker #167 · MVP-04/#160 + MVP-05/#161, 태그 전 추가)
+
+release cut(위 baseline) 이후·태그 전에 PR B 가 지원 계약과 릴리스 증거를 이 릴리스에 포함시킨다. 기능·hard gate 변경 없음.
+
+- package `engines` 를 `node >=18` → `node >=20` 으로 좁혔다(선택 A). Node 18 은 2025-04 EOL 이고 이 저장소에 검증 이력이 없어, 선언 하한을 실제 hard gate 검증 지점(Ubuntu + Node 20)에 맞춘다.
+- CI 에 `compat-smoke`(Ubuntu + Node 24 — 대표 최신 LTS, `test:spec` + `example:validate`)와 `macos-smoke`(macOS + Node 20 — #154 유형 symlink/realpath entry guard + packed-kit spawn + payload manifest e2e focused) job 추가. 기존 hard gate 검사의 플랫폼/버전 확장이며 **새 hard gate·warning-first 승격 없음**, required check 승격은 별도 Open Decision. Windows 는 명시적 best-effort(미지원) — kit README §지원 환경 지원 표가 정본.
+- `scripts/create-input-artifact.mjs`·`scripts/redteam.mjs` 의 git index mode 를 100755 → 100644 로 정규화(파일 내용 무변경, 나머지 CLI 26개와 동일). exec bit 를 표현하지 못하는 Windows 에서 payload manifest mode(git index 가 정본) ↔ fs `statMode()` 불일치로 upgrade-planner e2e 가 identical vendored copy 를 `local-modified` 로 오분류하던 것을 해소한다.
+- 최신 HEAD 릴리스 검증 증거(#161): `temp/runs/release-0.3.0-mvp.1-final-check.md` — npm ci/test/example:validate/kit:pack/payload boundary/packed smoke 실측 기록. `0.2.0-mvp-b-rc1` 이후 랜딩된 telemetry/eval/red-team/doc-drift/visual/adoption 계층 전체를 현재 HEAD 기준 단일 기준선으로 자른다(release cut). **새 기능·새 hard gate·새 artifact axis 없음, warning-first surface 승격 없음** — 아래 Added/Changed 는 기존 `Unreleased` 섹션의 이동분이다. package `version`(vendored payload 추적 식별자, `.kit-payload-manifest.json` 의 `packageVersion` 으로 포함)과 이 heading, 태그가 같은 릴리스 계열을 가리킨다. 과거 `temp/runs/release-mvp-b-final-check.md` 는 `v0.2.0-mvp-b-rc1` 시점의 **historical** 증거이며 이 baseline 의 릴리스 증거가 아니다(현 HEAD 검증 증거는 tracker #167 의 MVP-05/#161 에서 생성).
 
 ### Release note — hard gate vs warning-first surface 경계
 

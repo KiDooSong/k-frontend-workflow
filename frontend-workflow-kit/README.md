@@ -12,6 +12,20 @@
 
 `readiness` 통과는 구현 가능 상한이고, `validate` 통과는 구조 무결성이다. 둘 다 설계 리뷰나 제품 승인을 대신하지 않는다.
 
+## 지원 환경
+
+`package.json` `engines`는 `node >=20`이다. 선언 범위는 아래 표의 CI 검증 범위와 함께 움직이며, 검증하지 않는 환경을 암묵적으로 약속하지 않는다(#160). 검증 job은 킷 개발 저장소의 `.github/workflows/frontend-workflow-kit.yml`에 있다.
+
+| 환경 | 지원 수준 | CI 검증 |
+|---|---|---|
+| Linux(Ubuntu) + Node 20 | 지원 — `engines` 하한 | `validate-example` hard gate (validate 12종 + 멱등성 + `test:spec`) |
+| Linux(Ubuntu) + Node 24 | 지원 — 대표 최신 LTS | `compat-smoke` (`test:spec` + `example:validate`) |
+| macOS + Node 20 | 지원 — 경로/symlink focused | `macos-smoke` (#154 유형 symlink/realpath entry guard + packed-kit spawn + payload manifest e2e + `example:validate`) |
+| Windows | **미지원(best-effort)** | 없음 — 개발 로컬에서 동작 확인되나(symlink 는 junction fallback) 계약이 아니다 |
+| Node 20 미만 (18 포함) | 미지원 | 없음 — Node 18 은 2025-04 EOL, 이 저장소에 검증 이력 없음 |
+
+smoke job 의 required check(branch protection) 승격은 별도 Open Decision 전까지 하지 않는다.
+
 ## Consumer Payload
 
 소비 repo에는 `distribution-manifest.yaml` allowlist로 만든 packed payload만 vendoring한다. kit 개발 repo 전체를 복사하지 않는다.
