@@ -91,9 +91,10 @@ Behavior:
   release/version ↔ implemented-status contradiction rules — no semantic
   inference over free prose, no automatic doc edits:
     package-version-changelog-mismatch    package.json version vs the latest
-                                          CHANGELOG release heading
-    roadmap-snapshot-stale                roadmap 스냅샷 date vs the latest
-                                          release heading date (plus the
+                                          CHANGELOG release heading (a missing
+                                          package version is itself a warning)
+    roadmap-snapshot-stale                current roadmap 스냅샷 date vs the
+                                          latest release heading date (plus the
                                           explicit --now age rule)
     script-doc-unimplemented-contradiction  an existing package script named
                                           exactly on a doc line that also says
@@ -107,7 +108,8 @@ Behavior:
   Rules 3/5 scan only a canonical doc allowlist (README.md, IMPLEMENTING.md,
   frontend-workflow-kit/README.md under --root, plus the roadmap); historical/
   archive docs are excluded — any allowlisted doc carrying an uppercase
-  HISTORICAL marker (or 🗄) in its first lines is skipped. Every finding carries
+  HISTORICAL marker (or 🗄) in its first lines is skipped, and prior-snapshot
+  (이전 스냅샷) roadmap lines are excluded from every rule input. Every finding carries
   canonical_owner (the truth-holding file) and fix_path (the file a human should
   edit). Findings are warning-first observations: they never change the exit
   code, and this include is NOT a gate and never edits any document.

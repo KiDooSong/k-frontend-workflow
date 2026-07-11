@@ -1223,6 +1223,74 @@ test('CLI composes both opt-ins with a sorted include array and deterministic ou
   });
 });
 
+test('prior-snapshot (이전 스냅샷) historical lines are excluded from all release-consistency rules', () => {
+  // The historical line carries an older 스냅샷 date, an unimplemented-wording
+  // contradiction, and a stale count — none of it may fire; the current
+  // snapshot line below it is the one extracted.
+  const roadmap = [
+    '# Current Roadmap',
+    '',
+    '> 이전 스냅샷(2026-06-19): 당시 `workflow:telemetry` 는 미구현이었고 검사 8종이었다. 스냅샷: 2026-06-19.',
+    '> 스냅샷: 2026-07-11 (현행)',
+    '',
+  ].join('\n');
+  withRoot(rcRoot({ 'kit-dev/roadmap-current.md': roadmap }), (root) => {
+    assert.deepEqual(rcAnalyze(root), []);
+  });
+});
+
+test('missing package version is an exit-0 warning, not a silent skip', () => {
+  const pkg = JSON.stringify({ name: 'fixture-kit', scripts: {} }, null, 2) + '\n';
+  withRoot(rcRoot({ 'package.json': pkg }), (root) => {
+    const findings = rcAnalyze(root);
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0].check, 'package-version-changelog-mismatch');
+    assert.equal(findings[0].severity, 'warning');
+    assert.equal(findings[0].package_version, null);
+    assert.equal(findings[0].changelog_version, '0.3.0-mvp.1');
+    assert.match(findings[0].reason, /no usable version string/);
+    const r = runReleaseCli(root, ['--json']);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(JSON.parse(r.stdout).warning_count, 1);
+  });
+});
+
+test('missing scripts/validate.mjs silently skips the 검사 N종 count rule', () => {
+  withRoot(rcRoot({ 'README.md': '# Fixture\n\n검사 8종을 언급.\n' }), (root) => {
+    fs.rmSync(path.join(root, 'scripts/validate.mjs'));
+    assert.deepEqual(rcAnalyze(root), []);
+  });
+});
+
+test('CLI exit 0 with all four release-consistency check kinds and repeated byte-identical output', () => {
+  const files = rcRoot({
+    'package.json': RC_PACKAGE.replace('0.3.0-mvp.1', '0.1.0-mvp-a'),
+    'kit-dev/roadmap-current.md': '# Current Roadmap\n\n> 스냅샷: 2026-07-03 (기준)\n',
+    'README.md': '# Fixture\n\n- `workflow:telemetry` 는 미구현.\n- 검사 8종, 스크립트 5개.\n',
+  });
+  withRoot(files, (root) => {
+    const run = () => runReleaseCli(root, ['--json']);
+    const first = run();
+    assert.equal(first.status, 0, first.stderr);
+    const obj = JSON.parse(first.stdout);
+    assert.deepEqual([...new Set(obj.findings.map((f) => f.check))].sort(), [
+      'fixed-count-mismatch',
+      'package-version-changelog-mismatch',
+      'roadmap-snapshot-stale',
+      'script-doc-unimplemented-contradiction',
+    ]);
+    assert.equal(obj.warning_count, 4);
+    assert.equal(obj.info_count, 1);
+    assert.equal(first.stdout, run().stdout);
+  });
+});
+
+test('release-consistency stays deterministic: no wall clock reads in the lib source', () => {
+  const src = fs.readFileSync(path.join(KIT_ROOT, 'scripts', 'lib', 'doc-drift.mjs'), 'utf8');
+  assert.doesNotMatch(src, /Date\.now\s*\(/);
+  assert.doesNotMatch(src, /new Date\(\)/);
+});
+
 test('CLI default run on a release-consistency fixture root stays Phase 0', () => {
   withRoot(rcRoot({ 'package.json': RC_PACKAGE.replace('0.3.0-mvp.1', '0.1.0-mvp-a') }), (root) => {
     const r = spawnSync(process.execPath, [CLI, '--root', root, '--json'], { encoding: 'utf8' });

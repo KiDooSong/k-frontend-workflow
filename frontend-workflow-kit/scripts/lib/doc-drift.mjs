@@ -562,6 +562,21 @@ const UNIMPLEMENTED_RE = /미구현|아직\s*구현되지\s*않|구현되어\s*�
 // "historical" in a living doc never demote it.
 const HISTORICAL_MARKER_RE = /\bHISTORICAL\b|🗄/;
 const SNAPSHOT_DATE_RE = /스냅샷[:：]\s*(\d{4}-\d{2}-\d{2})/;
+// The roadmap keeps prior snapshots inline as "> 이전 스냅샷(...)" lines —
+// historical content inside a living doc. Those lines are excluded from every
+// release-consistency rule input (snapshot extraction and doc-line scanning).
+const PREVIOUS_SNAPSHOT_LINE_RE = /^\s*>?\s*이전\s*스냅샷/;
+
+// Current roadmap snapshot date: first line that carries "스냅샷: YYYY-MM-DD"
+// and is not a prior-snapshot ("이전 스냅샷") historical line.
+function currentSnapshotDate(roadmapRaw) {
+  for (const line of stripFencedCodeBlocks(roadmapRaw).split(/\r?\n/)) {
+    if (PREVIOUS_SNAPSHOT_LINE_RE.test(line)) continue;
+    const m = SNAPSHOT_DATE_RE.exec(line);
+    if (m) return m[1];
+  }
+  return null;
+}
 
 function parseDateUTC(value) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || '').trim());
@@ -667,9 +682,24 @@ export function analyzeReleaseConsistency({
   const roadmapRel = relPosix(rootAbs, roadmapAbs);
   const findings = [];
 
-  // Rule 1 — package version ↔ latest CHANGELOG release heading.
+  // Rule 1 — package version ↔ latest CHANGELOG release heading. A missing or
+  // unusable package version is itself release-metadata drift (exit-0 warning),
+  // never a silent skip.
   const version = typeof pkg.version === 'string' && pkg.version.trim() !== '' ? pkg.version.trim() : null;
   const release = latestReleaseHeading(changelogRaw);
+  if (!version) {
+    findings.push({
+      severity: 'warning',
+      check: 'package-version-changelog-mismatch',
+      source: packageRel,
+      target: changelogRel,
+      package_version: null,
+      changelog_version: release ? release.version : null,
+      canonical_owner: changelogRel,
+      fix_path: packageRel,
+      reason: 'package.json has no usable version string to compare with the changelog release heading',
+    });
+  }
   if (version) {
     if (!release) {
       findings.push({
@@ -700,8 +730,7 @@ export function analyzeReleaseConsistency({
 
   // Rule 4 — canonical roadmap snapshot date vs latest release date; the
   // optional explicit --now check keeps determinism (no wall clock is read).
-  const snapMatch = SNAPSHOT_DATE_RE.exec(stripFencedCodeBlocks(roadmapRaw));
-  const snapshotDate = snapMatch ? snapMatch[1] : null;
+  const snapshotDate = currentSnapshotDate(roadmapRaw);
   const snapshotMs = snapshotDate ? parseDateUTC(snapshotDate) : null;
   if (snapshotMs != null && release?.date) {
     const releaseMs = parseDateUTC(release.date);
@@ -754,7 +783,11 @@ export function analyzeReleaseConsistency({
     const raw = readFileSafe(abs);
     if (raw == null) continue;
     if (isHistoricalDoc(raw)) continue;
-    docs.push({ rel: relPosix(rootAbs, abs), lines: stripFencedCodeBlocks(raw).split(/\r?\n/) });
+    // Prior-snapshot ("이전 스냅샷") lines are historical content inside a
+    // living doc — blanked so rules 3/5 never scan them.
+    const lines = stripFencedCodeBlocks(raw).split(/\r?\n/)
+      .map((line) => (PREVIOUS_SNAPSHOT_LINE_RE.test(line) ? '' : line));
+    docs.push({ rel: relPosix(rootAbs, abs), lines });
   }
 
   // Rule 3 — package script exists but a canonical doc line naming the exact
