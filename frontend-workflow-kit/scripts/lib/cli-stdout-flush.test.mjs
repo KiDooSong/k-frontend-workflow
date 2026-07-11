@@ -33,13 +33,15 @@ function withTmpRoot(fn) {
   }
 }
 
-test('source contract: top-level CLI scripts only process.exit(1|2|code) — no exit(0), no dynamic exit', () => {
-  // 허용 인자: 리터럴 1(사전 가드) · 2(usage/설정 오류, stderr 전용) · code(fail(message, code = 2)
-  // stderr 전용 헬퍼 관례 — pack/upgrade-vendored-kit). 그 외 전부 위반:
+test('source contract: top-level CLI scripts only process.exit(1|2) or fail-helper exit(code) — no exit(0), no dynamic exit', () => {
+  // 허용 인자: 리터럴 1(사전 가드) · 2(usage/설정 오류, stderr 전용). 그 외 전부 위반:
   //   - process.exit(0): 성공 경로는 process.exitCode 자연 종료여야 한다.
   //   - 동적 인자(process.exit(summary.exit_code), process.exit(fatal === 0 ? 0 : 1) 등):
   //     0 으로 평가될 수 있어 같은 truncation 클래스의 재유입 경로다.
-  const ALLOWED_ARGS = new Set(['1', '2', 'code']);
+  // 유일한 예외: stderr 전용 `function fail(message, code = 2)` 헬퍼(pack/upgrade-vendored-kit
+  // 관례) **내부의** process.exit(code) — 헬퍼 본문 밖에서 'code' 라는 이름만 흉내 낸
+  // 동적 exit 는 허용하지 않는다.
+  const FAIL_HELPER_RE = /function fail\(message, code = 2\) \{[\s\S]{0,300}?process\.exit\(code\);[\s\S]{0,50}?\n\}/g;
   const offenders = [];
   for (const file of fs.readdirSync(SCRIPTS_DIR)) {
     if (!file.endsWith('.mjs')) continue;
@@ -48,11 +50,19 @@ test('source contract: top-level CLI scripts only process.exit(1|2|code) — no 
       .split('\n')
       .map((line) => line.replace(/\/\/.*$/, '')) // 주석 속 언급은 제외
       .join('\n');
-    const re = /process\.exit\(([^)]*)\)/g;
+    // fail 헬퍼 본문 범위 수집 — 이 범위 안의 process.exit(code) 만 허용.
+    const failRanges = [];
+    let fh;
+    while ((fh = FAIL_HELPER_RE.exec(src))) failRanges.push([fh.index, fh.index + fh[0].length]);
+    const insideFailHelper = (idx) => failRanges.some(([s, e]) => idx >= s && idx < e);
+
+    const re = /process\.exit\s*\(([^)]*)\)/g; // 공백 변형(process.exit (0))도 잡는다
     let m;
     while ((m = re.exec(src))) {
-      if (ALLOWED_ARGS.has(m[1].trim())) continue;
-      offenders.push(`${file}:${src.slice(0, m.index).split('\n').length} process.exit(${m[1].trim()})`);
+      const arg = m[1].trim();
+      if (arg === '1' || arg === '2') continue;
+      if (arg === 'code' && insideFailHelper(m.index)) continue;
+      offenders.push(`${file}:${src.slice(0, m.index).split('\n').length} process.exit(${arg})`);
     }
   }
   assert.deepEqual(
