@@ -6,7 +6,7 @@ branch: claude/ci-support-contract-release-5cbfb7
 base_commit: 89d6564
 issues: ["#160", "#161", "tracker #167"]
 date: 2026-07-11
-verdict: GO (태그는 PR B 병합 커밋에 생성 — pending)
+verdict: GO (태그 v0.3.0-mvp.1 = PR B 병합 커밋 fea0501 에 생성됨 — 2026-07-11 pending 해소 표기)
 status: current
 ---
 
