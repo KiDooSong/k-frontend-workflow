@@ -15,9 +15,12 @@ import { spawnSync } from 'node:child_process';
 import {
   analyzeDocDrift,
   analyzeManifestRoadmapStatus,
+  analyzeReleaseConsistency,
   collectHeadingSlugs,
   DocDriftInputError,
   formatDocDriftHuman,
+  isHistoricalDoc,
+  latestReleaseHeading,
 } from './doc-drift.mjs';
 import { KIT_ROOT } from './util.mjs';
 
@@ -850,5 +853,383 @@ test('CLI default run on a heuristic-triggering root stays Phase 0 (no info find
     assert.equal('info_count' in obj, false);
     assert.equal('include' in obj, false);
     assert.equal(obj.findings.some((f) => f.check === 'manifest-roadmap-status-heuristic'), false);
+  });
+});
+
+// --- Issue #163 opt-in: release-consistency ------------------------------------
+// Narrow structural release/version ↔ implemented-status contradiction rules.
+// Warning-first (exit 0 always), canonical_owner/fix_path on every finding,
+// historical docs excluded, no automatic doc edits.
+
+const RC_PACKAGE = JSON.stringify({
+  name: 'fixture-kit',
+  version: '0.3.0-mvp.1',
+  scripts: {
+    'workflow:telemetry': 'node scripts/telemetry.mjs',
+    'workflow:validate': 'node scripts/validate.mjs',
+    test: 'node scripts/run-tests.mjs',
+  },
+}, null, 2) + '\n';
+
+const RC_CHANGELOG = [
+  '# Changelog',
+  '',
+  '## Unreleased',
+  '',
+  '- pending work',
+  '',
+  '## 0.3.0-mvp.1 — 2026-07-11',
+  '',
+  '- release baseline',
+  '',
+  '## 0.2.0-mvp-b-rc1 — 2026-06-19',
+  '',
+].join('\n');
+
+const RC_ROADMAP = '# Current Roadmap\n\n> 스냅샷: 2026-07-11 (release baseline)\n\n- 본문.\n';
+
+// False-positive fixture README: a matching fixed count, a script mention
+// without unimplemented wording, and a fenced contradiction that must be masked.
+const RC_README = [
+  '# Fixture',
+  '',
+  '검사 12종 통과가 정본이다.',
+  '`workflow:telemetry` 를 실행한다.',
+  '스크립트 2개.',
+  '',
+  '```md',
+  '`workflow:telemetry` 는 미구현. 검사 8종.',
+  '```',
+  '',
+].join('\n');
+
+function rcRoot(extra = {}) {
+  return {
+    'package.json': RC_PACKAGE,
+    'kit-dev/CHANGELOG.md': RC_CHANGELOG,
+    'kit-dev/roadmap-current.md': RC_ROADMAP,
+    'scripts/validate.mjs': '// stub\nprocess.stdout.write(\'workflow:validate — OK (검사 12종 통과)\\n\');\n',
+    'scripts/telemetry.mjs': '// telemetry stub\n',
+    'README.md': RC_README,
+    ...extra,
+  };
+}
+
+function rcAnalyze(root, extra = {}) {
+  return analyzeReleaseConsistency({
+    rootDir: root,
+    packagePath: path.join(root, 'package.json'),
+    changelogPath: path.join(root, 'kit-dev/CHANGELOG.md'),
+    roadmapPath: path.join(root, 'kit-dev/roadmap-current.md'),
+    ...extra,
+  });
+}
+
+function runReleaseCli(root, extraArgs = []) {
+  return spawnSync(process.execPath, [
+    CLI, '--root', root, '--include', 'release-consistency', ...extraArgs,
+  ], { encoding: 'utf8' });
+}
+
+test('release-consistency false-positive fixture is clean (no findings, exit 0)', () => {
+  withRoot(rcRoot(), (root) => {
+    assert.deepEqual(rcAnalyze(root), []);
+    const r = runReleaseCli(root, ['--json']);
+    assert.equal(r.status, 0, r.stderr);
+    const obj = JSON.parse(r.stdout);
+    assert.deepEqual(obj.include, ['release-consistency']);
+    assert.equal(obj.warning_count, 0);
+    assert.equal(obj.info_count, 0);
+    assert.deepEqual(obj.findings, []);
+  });
+});
+
+test('package version vs latest changelog release heading mismatch is a warning with owner/fix', () => {
+  withRoot(rcRoot({ 'package.json': RC_PACKAGE.replace('0.3.0-mvp.1', '0.1.0-mvp-a') }), (root) => {
+    const findings = rcAnalyze(root);
+    assert.deepEqual(findings, [
+      {
+        severity: 'warning',
+        check: 'package-version-changelog-mismatch',
+        source: 'package.json',
+        target: 'kit-dev/CHANGELOG.md',
+        package_version: '0.1.0-mvp-a',
+        changelog_version: '0.3.0-mvp.1',
+        canonical_owner: 'kit-dev/CHANGELOG.md',
+        fix_path: 'package.json',
+        reason: "package version '0.1.0-mvp-a' does not match latest changelog release heading '0.3.0-mvp.1'",
+      },
+    ]);
+  });
+});
+
+test('changelog with only Unreleased yields a missing-release-heading warning', () => {
+  const changelog = '# Changelog\n\n## Unreleased\n\n- big pile of everything\n';
+  withRoot(rcRoot({ 'kit-dev/CHANGELOG.md': changelog }), (root) => {
+    const findings = rcAnalyze(root);
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0].check, 'package-version-changelog-mismatch');
+    assert.equal(findings[0].changelog_version, null);
+    assert.equal(findings[0].fix_path, 'kit-dev/CHANGELOG.md');
+    assert.match(findings[0].reason, /no release heading/);
+  });
+});
+
+test('latestReleaseHeading skips Unreleased and non-version H2 sections', () => {
+  assert.deepEqual(
+    latestReleaseHeading('## Unreleased\n\n## 배경 설명\n\n## `v1.2.3` — 2026-01-02\n'),
+    { version: '1.2.3', date: '2026-01-02' },
+  );
+  assert.equal(latestReleaseHeading('## Unreleased\n\ntext\n'), null);
+  assert.deepEqual(
+    latestReleaseHeading('## 0.3.0-mvp.1\n'),
+    { version: '0.3.0-mvp.1', date: null },
+  );
+});
+
+test('roadmap snapshot predating the latest release date is a warning', () => {
+  const roadmap = '# Current Roadmap\n\n> 스냅샷: 2026-07-03 (기준 커밋)\n';
+  withRoot(rcRoot({ 'kit-dev/roadmap-current.md': roadmap }), (root) => {
+    const findings = rcAnalyze(root);
+    assert.deepEqual(findings.map((f) => [f.check, f.snapshot_date, f.release_date]), [
+      ['roadmap-snapshot-stale', '2026-07-03', '2026-07-11'],
+    ]);
+    assert.equal(findings[0].severity, 'warning');
+    assert.equal(findings[0].fix_path, 'kit-dev/roadmap-current.md');
+  });
+});
+
+test('roadmap without a parsable snapshot line is silently skipped', () => {
+  withRoot(rcRoot({ 'kit-dev/roadmap-current.md': '# Current Roadmap\n\n- 본문.\n' }), (root) => {
+    assert.deepEqual(rcAnalyze(root), []);
+  });
+});
+
+test('explicit --now enables the snapshot age rule; no wall clock is read by default', () => {
+  // Release heading without a date so only the --now age rule can fire.
+  const changelog = '# Changelog\n\n## 0.3.0-mvp.1\n';
+  const roadmap = '# Current Roadmap\n\n> 스냅샷: 2026-05-01 (오래됨)\n';
+  const files = rcRoot({ 'kit-dev/CHANGELOG.md': changelog, 'kit-dev/roadmap-current.md': roadmap });
+  withRoot(files, (root) => {
+    assert.deepEqual(rcAnalyze(root), []);
+    const aged = rcAnalyze(root, { now: '2026-07-11' });
+    assert.equal(aged.length, 1);
+    assert.equal(aged[0].check, 'roadmap-snapshot-stale');
+    assert.match(aged[0].reason, /71 days old as of 2026-07-11 \(threshold 30 days\)/);
+    assert.deepEqual(rcAnalyze(root, { now: '2026-07-11', maxSnapshotAgeDays: 90 }), []);
+  });
+});
+
+test('existing package script named on a doc line with 미구현 wording is a contradiction warning', () => {
+  const readme = [
+    '# Fixture',
+    '',
+    '- `workflow:telemetry` 는 아직 미구현.',
+    '- telemetry.mjs is not implemented yet.',
+    '',
+  ].join('\n');
+  withRoot(rcRoot({ 'README.md': readme }), (root) => {
+    const findings = rcAnalyze(root);
+    assert.deepEqual(
+      findings.map((f) => [f.check, f.script, f.severity]).sort((a, b) => a[1].localeCompare(b[1])),
+      [
+        ['script-doc-unimplemented-contradiction', 'telemetry.mjs', 'warning'],
+        ['script-doc-unimplemented-contradiction', 'workflow:telemetry', 'warning'],
+      ],
+    );
+    assert.ok(findings.every((f) => f.canonical_owner === 'package.json'));
+    assert.ok(findings.every((f) => f.fix_path === 'README.md'));
+  });
+});
+
+test('script token matching is exact: superstrings and non-namespaced aliases never match', () => {
+  const readme = [
+    '# Fixture',
+    '',
+    '- workflow:telemetry-extra 는 미구현.',
+    '- test 는 미구현.',
+    '- 미구현 목록에는 스크립트 이름이 없다.',
+    '',
+  ].join('\n');
+  withRoot(rcRoot({ 'README.md': readme }), (root) => {
+    assert.deepEqual(rcAnalyze(root), []);
+  });
+});
+
+test('fixed 검사 N종 count conflicting with the validate.mjs success line is a warning', () => {
+  const readme = '# Fixture\n\nvalidate 는 검사 8종을 돈다.\n검사 12종 언급은 정합.\n';
+  withRoot(rcRoot({ 'README.md': readme }), (root) => {
+    const findings = rcAnalyze(root);
+    assert.deepEqual(findings, [
+      {
+        severity: 'warning',
+        check: 'fixed-count-mismatch',
+        source: 'README.md',
+        target: 'scripts/validate.mjs',
+        doc_count: 8,
+        code_count: 12,
+        canonical_owner: 'scripts/validate.mjs',
+        fix_path: 'README.md',
+        reason: "doc fixed count '검사 8종' conflicts with the validate.mjs success line '검사 12종'",
+      },
+    ]);
+  });
+});
+
+test('fixed 스크립트 N개 count vs top-level scripts/*.mjs files is info-only', () => {
+  const readme = '# Fixture\n\n스크립트 5개가 있다.\n';
+  withRoot(rcRoot({ 'README.md': readme }), (root) => {
+    const findings = rcAnalyze(root);
+    assert.deepEqual(findings.map((f) => [f.severity, f.check, f.doc_count, f.code_count]), [
+      ['info', 'fixed-count-mismatch', 5, 2],
+    ]);
+    assert.match(findings[0].reason, /count-basis heuristic; review manually/);
+    const report = analyzeDocDrift({
+      rootDir: root,
+      releaseConsistency: {
+        packagePath: path.join(root, 'package.json'),
+        changelogPath: path.join(root, 'kit-dev/CHANGELOG.md'),
+        roadmapPath: path.join(root, 'kit-dev/roadmap-current.md'),
+      },
+    });
+    assert.equal(report.warning_count, 0);
+    assert.equal(report.info_count, 1);
+  });
+});
+
+test('historical docs (HISTORICAL marker / 🗄) are excluded from rules 3 and 5', () => {
+  const historical = [
+    '# IMPLEMENTING — MVP-A historical build note',
+    '',
+    '> 🗄 **HISTORICAL (2026-07-11 강등)**: 당시 상태 그대로 보존.',
+    '',
+    '스크립트 3개 / 검사 8종.',
+    '- `workflow:telemetry` 는 미구현.',
+    '',
+  ].join('\n');
+  withRoot(rcRoot({ 'IMPLEMENTING.md': historical }), (root) => {
+    assert.deepEqual(rcAnalyze(root), []);
+  });
+  // The same content without the marker IS scanned — the exclusion is the
+  // marker, not the file name.
+  const living = historical.split('\n').filter((line) => !line.includes('HISTORICAL')).join('\n');
+  withRoot(rcRoot({ 'IMPLEMENTING.md': living }), (root) => {
+    const checks = rcAnalyze(root).map((f) => f.check).sort();
+    assert.deepEqual(checks, [
+      'fixed-count-mismatch',
+      'fixed-count-mismatch',
+      'script-doc-unimplemented-contradiction',
+    ]);
+  });
+  assert.equal(isHistoricalDoc('일반 문서에서 historical 이라는 단어를 소문자로 언급한다\n'), false);
+  assert.equal(isHistoricalDoc('> 🗄 보관\n'), true);
+  assert.equal(isHistoricalDoc(`${'x\n'.repeat(45)}HISTORICAL\n`), false);
+});
+
+test('missing/corrupt release-consistency inputs are typed input errors (lib level)', () => {
+  withRoot(rcRoot({ 'package.json': '{ broken' }), (root) => {
+    assert.throws(() => rcAnalyze(root), DocDriftInputError);
+  });
+  withRoot(rcRoot(), (root) => {
+    assert.throws(
+      () => rcAnalyze(root, { changelogPath: path.join(root, 'kit-dev/missing.md') }),
+      DocDriftInputError,
+    );
+    assert.throws(() => rcAnalyze(root, { now: 'yesterday' }), DocDriftInputError);
+    assert.throws(() => rcAnalyze(root, { now: '2026-02-30' }), DocDriftInputError);
+    assert.throws(() => rcAnalyze(root, { maxSnapshotAgeDays: 0 }), DocDriftInputError);
+  });
+});
+
+test('CLI release-consistency usage and input errors exit 2', () => {
+  withRoot(rcRoot(), (root) => {
+    const flagWithoutInclude = spawnSync(process.execPath, [
+      CLI, '--root', root, '--package', 'package.json',
+    ], { encoding: 'utf8' });
+    assert.equal(flagWithoutInclude.status, 2);
+    assert.match(flagWithoutInclude.stderr, /--package requires --include release-consistency/);
+
+    const nowWithoutInclude = spawnSync(process.execPath, [
+      CLI, '--root', root, '--now', '2026-07-11',
+    ], { encoding: 'utf8' });
+    assert.equal(nowWithoutInclude.status, 2);
+
+    const ageWithoutNow = runReleaseCli(root, ['--max-snapshot-age-days', '10']);
+    assert.equal(ageWithoutNow.status, 2);
+    assert.match(ageWithoutNow.stderr, /--max-snapshot-age-days requires --now/);
+
+    const badAge = runReleaseCli(root, ['--now', '2026-07-11', '--max-snapshot-age-days', 'lots']);
+    assert.equal(badAge.status, 2);
+    assert.match(badAge.stderr, /--max-snapshot-age-days must be a positive integer/);
+
+    const badNow = runReleaseCli(root, ['--now', 'yesterday']);
+    assert.equal(badNow.status, 2);
+    assert.match(badNow.stderr, /invalid --now date/);
+  });
+
+  withRoot(rcRoot({ 'package.json': '{ broken' }), (root) => {
+    const malformed = runReleaseCli(root, ['--json']);
+    assert.equal(malformed.status, 2);
+    assert.match(malformed.stderr, /package\.json parse failed/);
+  });
+
+  withRoot({ 'README.md': '# no kit here\n' }, (root) => {
+    const missing = runReleaseCli(root);
+    assert.equal(missing.status, 2);
+    assert.match(missing.stderr, /package\.json not found under --root/);
+  });
+});
+
+test('CLI reports release-consistency findings on exit 0 with owner/fix in human output', () => {
+  withRoot(rcRoot({ 'package.json': RC_PACKAGE.replace('0.3.0-mvp.1', '0.1.0-mvp-a') }), (root) => {
+    const r = runReleaseCli(root);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stderr, /WARNING package-version-changelog-mismatch/);
+    assert.match(r.stderr, /\[owner: kit-dev\/CHANGELOG\.md; fix: package\.json\]/);
+    assert.match(r.stderr, /release-consistency findings are warning-first observations/);
+    assert.match(r.stderr, /not a gate, never auto-edited/);
+
+    const json = runReleaseCli(root, ['--json']);
+    assert.equal(json.status, 0, json.stderr);
+    const obj = JSON.parse(json.stdout);
+    assert.equal(obj.ok, true);
+    assert.equal(obj.warning_count, 1);
+    assert.ok(obj.findings.every((f) => !path.isAbsolute(f.source) && !path.isAbsolute(f.target)));
+    assert.ok(obj.findings.every((f) => f.canonical_owner && f.fix_path));
+  });
+});
+
+test('CLI composes both opt-ins with a sorted include array and deterministic output', () => {
+  const files = {
+    ...rcRoot(),
+    'catalog/artifact-manifest.yaml': HEURISTIC_MANIFEST,
+    'kit-dev/roadmap-current.md': `${RC_ROADMAP}\n- \`eslint.workflow.config.mjs\` 생성기는 구현 완료.\n`,
+  };
+  withRoot(files, (root) => {
+    const run = () => spawnSync(process.execPath, [
+      CLI, '--root', root,
+      '--include', 'status-heuristic,release-consistency',
+      '--manifest', 'catalog/artifact-manifest.yaml',
+      '--json',
+    ], { encoding: 'utf8' });
+    const first = run();
+    assert.equal(first.status, 0, first.stderr);
+    const obj = JSON.parse(first.stdout);
+    assert.deepEqual(obj.include, ['release-consistency', 'status-heuristic']);
+    assert.equal(obj.warning_count, 0);
+    assert.equal(obj.info_count, 1);
+    assert.equal(obj.findings[0].check, 'manifest-roadmap-status-heuristic');
+    assert.equal(first.stdout, run().stdout);
+  });
+});
+
+test('CLI default run on a release-consistency fixture root stays Phase 0', () => {
+  withRoot(rcRoot({ 'package.json': RC_PACKAGE.replace('0.3.0-mvp.1', '0.1.0-mvp-a') }), (root) => {
+    const r = spawnSync(process.execPath, [CLI, '--root', root, '--json'], { encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    const obj = JSON.parse(r.stdout);
+    assert.equal('include' in obj, false);
+    assert.equal('info_count' in obj, false);
+    assert.equal(obj.findings.some((f) => f.canonical_owner), false);
   });
 });

@@ -4,6 +4,17 @@
 
 ## Unreleased
 
+### feat(doc-drift) — release/version·implemented-status 모순 감지 opt-in (#163 · IMP-02)
+
+- `workflow:doc-drift --include release-consistency` 신설(두 번째 opt-in — 기본 Phase 0 출력 byte-identical 유지, telemetry doc-drift surface 미전달·기존 forwarding 규약 무변경). 좁은 구조 규칙만 사용하고 자유 서술 semantic truth 판정·외부 URL reachability 는 하지 않는다:
+  - `package-version-changelog-mismatch`: package `version` ↔ CHANGELOG 최신 release heading(`## x.y.z — date`; `Unreleased`-only 는 "release heading 없음" warning).
+  - `roadmap-snapshot-stale`: roadmap `스냅샷: YYYY-MM-DD` ↔ 최신 release heading 날짜. 나이 규칙은 명시적 `--now YYYY-MM-DD`(+`--max-snapshot-age-days`, 기본 30)로만 — wall clock 을 절대 읽지 않아 결정성 유지.
+  - `script-doc-unimplemented-contradiction`: package 에 실존하는 namespaced script(alias + `scripts/*.mjs` basename, 정확 토큰 매칭)가 canonical 문서 같은 라인의 미구현/not implemented 문구와 충돌.
+  - `fixed-count-mismatch`: `검사 N종` ↔ validate.mjs 성공 라인(warning) · `스크립트/CLI N개` ↔ top-level `scripts/*.mjs` 파일 수(info-only, count-basis heuristic 명시).
+  - scope item 2(manifest active/planned ↔ roadmap)는 기존 `--include status-heuristic` 이 정본 — 두 include 는 compose(`include` 배열은 정렬·결정적).
+- 경계: 검사 대상은 canonical 문서 allowlist(README.md·IMPLEMENTING.md·kit README + roadmap)만 — repo-wide walk 없음, historical/archive 제외(첫 줄들의 대문자 `HISTORICAL` 마커·🗄 글리프는 기계적 skip; 강등된 IMPLEMENTING.md 가 그 예). finding 마다 `canonical_owner`(사실 보유 파일) + `fix_path`(사람이 고칠 파일) 표기, human 출력에 `[owner: …; fix: …]` + "not a gate, never auto-edited" trailer. **기본 exit 0 항상 유지(warning-first), 자동 문서 수정 0, 새 hard gate·새 artifact axis·warning-first 승격 0, resolve/confirmed 무접촉** — opt-in 입력 부재/손상·invalid `--now` 만 usage/input error exit 2.
+- tests: `doc-drift.test.mjs` 46→63 (clean false-positive fixture · 각 drift class deepEqual · historical/fenced/token-boundary FP 가드 · lib typed input error + CLI exit 0/2 · include compose 정렬 + byte determinism · 기본 실행 Phase 0 불변). COMMANDS §Generated Views 문단 + help text 갱신, next-ideas 05 Implementation note 추가.
+
 ### docs(governance) — warning-first 승격 정책 (#162 · IMP-01)
 
 - `kit-dev/warning-first-promotion-policy.md` 신설: warning-first surface 의 승격 evidence 임계 정책 + canonical surface inventory. 승격 후보 8개(test-fixtures CI step · forbidden-paths backstop · lint-gen/lint-baseline smoke · check-generated · validate 검사 13/14 · route-cross-check)는 전부 `deferred`, 관측 계기 9개(telemetry · redteam · eval · doc-drift · visual-consistency · visual-contract-bootstrap · adoption-probe · doctor · policy-draft)는 `rejected`(observation-only 영구, 재오픈 trigger 명시)로 등록. decision 상태 enum `deferred`/`eligible`/`rejected`/`promoted`, 관측·FP 기록 단위 `(surface, consumer repo, 스냅샷)`, consumer 평균 합산 금지, "경고 0 → 승격" 금지, 재검토 날짜 대신 재오픈 trigger. **정책 문서 전용 — 새 hard gate·required check·artifact 축 0, warning-first 승격 0, telemetry 형식/스크립트/CI 무변경, 모든 상태 전이는 사람 승인 decision PR 전용.** 교차링크: doc-ownership status-fact 행 + AGENTS.md + roadmap 포인터.
