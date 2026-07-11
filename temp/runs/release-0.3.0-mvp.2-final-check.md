@@ -6,7 +6,7 @@ branch: claude/v0-3-0-mvp-2-rc-810882
 base_commit: 7eb06ec
 issues: ["#171", "#172", "#173", "#174", "#175", "#176"]
 date: 2026-07-12
-verdict: GO (태그는 검증된 Release PR 병합 커밋에 사용자 승인 후 생성 — pending)
+verdict: GO (태그 v0.3.0-mvp.2 = PR #177 병합 커밋 c2e418e 에 생성됨 — 2026-07-12 pending 해소 표기)
 status: current
 ---
 
@@ -95,12 +95,16 @@ consumer 미생성 레이어 관측, expected) · doc-drift `broken-relative-lin
 | 4 | pack manifest `package_version`/`source_ref` 정합 | ✅ §3 (0.3.0-mvp.2 / release-cut commit) |
 | 5 | 실제 consumer 업그레이드 dogfood — NO-GO 조건 4종 미발생 | ✅ §5 PASS |
 | 6 | release-check `status: current` 정확히 1건 + 직전 current 강등 | ✅ 이 문서 = current, mvp.1 → historical (같은 PR) |
-| 7 | 태그는 검증된 Release PR 병합 커밋에만, 사용자 승인 후 | ⏳ pending — PR 병합 후 사람 승인 시 생성 |
+| 7 | 태그는 검증된 Release PR 병합 커밋에만, 사용자 승인 후 | ✅ (2026-07-12 갱신) 태그 `v0.3.0-mvp.2` = PR #177 병합 커밋 `c2e418e` 에 사용자 승인 후 생성·push 완료 |
 
-**판정: GO** — warning-first finding 은 §5 분류로 기록(자동 NO-GO 아님). 태그/push 는 사용자
-명시 승인 후 병합 커밋에 수행한다.
+**판정: GO** — warning-first finding 은 §5 분류로 기록(자동 NO-GO 아님). 태그/push 완료(2026-07-12 갱신):
+사용자 명시 승인 후 병합 커밋 `c2e418e` 에 태그를 생성했다.
 
-## 7. exact tag command (병합 후, 사용자 승인 시)
+## 7. exact tag command (기록용 — 실행 완료됨)
+
+> ✅ (2026-07-12 갱신) 아래 명령은 이미 실행되어 태그 `v0.3.0-mvp.2` 가 `c2e418e` 에 존재한다.
+> **다시 실행하지 말 것** — 당시 실행한 명령의 기록으로만 보존한다(실행은 checkout 전환 없이
+> `git tag -a v0.3.0-mvp.2 c2e418e -m "…" && git push origin v0.3.0-mvp.2` 동형으로 수행).
 
 ```bash
 git checkout main && git pull --ff-only
