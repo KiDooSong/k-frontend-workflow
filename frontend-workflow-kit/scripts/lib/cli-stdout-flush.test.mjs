@@ -172,6 +172,36 @@ test('source contract scanner: exit(code) is allowed only inside the fail(messag
   // 헬퍼 본문이 닫힌 **뒤의** exit(code) 는 위반 — brace-depth 로 본문 경계를 정확히 끊는다.
   const after = `${helper}\nprocess.exit(code);`;
   assert.deepEqual(collectExitOffenders(after), [{ line: 6, arg: 'code' }]);
+
+  // 회귀 가드 1(cross-body 오귀속): 헬퍼 본문에 exit(code) 가 없고, 본문이 닫힌 뒤
+  // 가까운 위치의 다른 함수 안에 exit(code) 가 있는 형태. bounded substring window
+  // 방식(구 구현)은 선언부터 창 안의 exit(code) 까지를 한 덩어리로 매칭해 진짜 닫는
+  // 중괄호를 넘어 바깥 exit 를 "헬퍼 내부"로 오인·허용했다 — brace-depth 는 위반으로 잡는다.
+  const crossBody = [
+    'function fail(message, code = 2) {',
+    '  process.stderr.write(message);',
+    '}',
+    'function main() {',
+    '  process.exit(code);',
+    '}',
+  ].join('\n');
+  assert.deepEqual(collectExitOffenders(crossBody), [{ line: 5, arg: 'code' }]);
+
+  // 회귀 가드 2(본문 길이 한계): 선언과 exit(code) 사이가 300자를 넘는 긴 본문.
+  // bounded window 방식은 헬퍼 인식에 실패해 정당한 내부 exit(code) 를 위반으로
+  // 오탐했다 — brace-depth 는 본문 길이와 무관하게 허용한다.
+  const filler = Array.from(
+    { length: 12 },
+    (_, i) => `  process.stderr.write('filler line ${i} — 충분히 긴 본문을 만들기 위한 패딩 문장이다');`,
+  );
+  const longBody = [
+    'function fail(message, code = 2) {',
+    ...filler,
+    '  process.exit(code);',
+    '}',
+  ].join('\n');
+  assert.ok(longBody.indexOf('process.exit(code)') - longBody.indexOf('{') > 300, 'fixture 는 구 구현의 300자 창을 넘어야 한다');
+  assert.deepEqual(collectExitOffenders(longBody), []);
 });
 
 test('source contract scanner: comments and strings cannot fool the scan', () => {
