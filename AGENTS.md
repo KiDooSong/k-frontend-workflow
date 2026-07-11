@@ -8,6 +8,10 @@
 - Release history and baseline: `kit-dev/CHANGELOG.md`.
 - Warning-first surface promotion policy and decision states:
   `kit-dev/warning-first-promotion-policy.md` (promotion is human-only).
+- Run evidence classification (active / historical / generated-local), retention,
+  and canonical evidence locations: `kit-dev/evidence-retention-policy.md`.
+  Release/dogfood evidence index: `temp/runs/README.md`. Root `temp/` is a
+  historical workspace — do not read it for current plans.
 - Where each fact is canonically owned: `frontend-workflow-kit/docs/reference/doc-ownership.md`.
 - `IMPLEMENTING.md` is a historical MVP-A build note — do not use it as a session
   entry point or as a source of current gate/script facts.

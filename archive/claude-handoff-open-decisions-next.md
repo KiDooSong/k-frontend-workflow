@@ -1,5 +1,11 @@
 # frontend-workflow-kit 작업 이어가기 (핸드오프)
 
+> 🗄 **HISTORICAL (2026-07-11 이동)**: 원래 경로 `temp/claude-handoff-open-decisions-next.md`.
+> `.gitignore` 의 `temp/claude-handoff*`(세션 핸드오프는 로컬 전용) 규칙과 달리 이 파일만
+> 추적되고 있어, 규칙 일치를 위해 추적 유지한 채 `archive/` 로 이동했다(이슈 #165 · IMP-04).
+> **세션 진입점으로 사용 금지** — 2026-06-13 시점 스냅샷이며, 현행 상태는
+> [kit-dev/roadmap-current.md](../kit-dev/roadmap-current.md)가 정본이다.
+
 > 스냅샷: 2026-06-13. 다음 세션(이 대화 기억 없음)이 그대로 읽고 이어가기 위한 자립형 프롬프트.
 
 ## 프로젝트

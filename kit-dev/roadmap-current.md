@@ -109,6 +109,8 @@ Review          MVP-A 에 없음 (Future Candidate).
 
 > **승격 정책:** warning-first → hard gate/required check 승격의 evidence 임계·decision 상태(`deferred`/`eligible`/`rejected`/`promoted`)는 [warning-first-promotion-policy.md](warning-first-promotion-policy.md) 가 canonical 이다(#162). 개별 후보의 승격 논의는 그 임계·절차를 따르고, 상태 전이는 사람 승인 decision PR 전용.
 
+> **evidence 보존·분류:** run/release evidence 의 분류(`active`/`historical`/`generated-local`)·canonical 위치·archive-first 보존 규칙은 [evidence-retention-policy.md](evidence-retention-policy.md) 가 canonical 이다(#165). 이 roadmap 의 evidence 링크가 `kit-dev/temp/runs/` 의 1차 인덱스이고, repo-level release/dogfood 인덱스는 [temp/runs/README.md](../temp/runs/README.md) 다.
+
 > **순차 원칙:** 병렬 구현·병렬 정본 변경을 열지 않는다. 각 항목은 PR/run report/roadmap 정리까지 끝낸 뒤 다음 항목에 착수한다. 설계 보강이 필요해도 다음 항목의 구현을 앞당기지 않는다.
 
 > **완료 처리(2026-06-16):** component-catalog phase2 첫 additive `## Default Export Candidates` 섹션은 완료. props/docgen, wrapper/default alias 확장, lifecycle status 등은 별도 future PR/OD 로 유지하며 readiness/validate/hard gate 승격 없음.

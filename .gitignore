@@ -38,6 +38,11 @@ temp/runs/figma-fidelity-001/
 # findings 는 docs/research/playwright/ 에 추적. 하니스는 로컬 재현용으로만 보관.
 temp/runs/maestro-dogfood-001/
 
+# consumer-ck 도입 probe raw(+2026-06-15 설계의도 리뷰) — consumer(ck) 코드·맥락 임베드(민감).
+# 해소 현황·결론은 temp/runs/2026-06-16/consumer-ck-adoption-resolution-status.md 에 추적.
+temp/runs/consumer-ck-ai-mobile-adoption-001.md
+temp/runs/2026-06-15/
+
 # Expo/RN 실험 샌드박스(temp/runs/<run>/app/) — 소스는 추적, 생성·빌드 산출물만 제외
 temp/runs/*/app/node_modules/
 temp/runs/*/app/.expo/
