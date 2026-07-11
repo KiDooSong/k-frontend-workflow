@@ -73,7 +73,10 @@ function main() {
     process.stderr.write(formatEvalHuman(report).join('\n') + '\n');
   }
 
-  process.exit(0);
+  // process.exit() 금지: stdout 이 pipe 일 때 버퍼 초과분(macOS pipe buffer 8KB)이
+  // flush 되기 전에 프로세스가 죽어 JSON 이 잘린다 — macos-smoke 가 실측으로 잡은 회귀.
+  // 자연 종료가 pending write 를 flush 한다. usage/input error 의 exit 2 는 그대로다.
+  process.exitCode = 0;
 }
 
 if (isCliEntry(import.meta.url)) main();
