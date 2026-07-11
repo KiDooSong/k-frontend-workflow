@@ -2,7 +2,13 @@
 
 킷 자체의 버전 관리 (템플릿/스크립트 계약 추적용).
 
-## Unreleased
+## 0.3.0-mvp.2 — 2026-07-12
+
+`v0.3.0-mvp.1` 이후 post-MVP 안정화 변경(#171~#176)의 release cut. **새 기능·새 artifact axis·warning-first→hard 승격 0** — hard gate / warning-first 경계는 `0.3.0-mvp.1` release note 의 경계가 그대로 유효하다(변경 없음). 범위: warning-first 승격 evidence 정책(#171/IMP-01) · doc-drift release-consistency opt-in(#172/IMP-02) · evidence retention/index 정책(#173/IMP-04) · packed payload CLI smoke(#174/IMP-05) · CLI stdout flush-safe 종료 + validate 인자 계약(#175) · core workflow-state/readiness CLI 인자 계약(#176). 릴리스 검증 증거: `temp/runs/release-0.3.0-mvp.2-final-check.md`.
+
+### test(distribution) — packed payload core/adoption/observation/visual CLI smoke (#166 · IMP-05)
+
+- `distribution.test.mjs` 에 packed consumer payload(`os.tmpdir()` 격리, source tree import 비의존)에 대해 공개 CLI 만 spawn 하는 smoke 계약 추가: core(state cold-start fail-soft → readiness state-부재 fail-closed exit 2 → validate cold-start warning → bootstrap 후 실차단 exit 1) · adoption(doctor/create-screen/create-input 정상 + usage error exit 2, `--date` 고정 deterministic input_id) · observation(doc-drift payload 내부 relative link 0 warning · redteam · telemetry `--list-surfaces` registry) · visual(docs-부재 structural error · contract-absent safe skip · bootstrap review-only, 계약 파일 미생성 확인) · upgrade planner 필요 파일 실존성 + `package-scripts.template.json` 전체 target 실존성. 새 hard gate·artifact axis·warning-first 승격 0 — kit-repo 릴리스 체크로만 소비.
 
 ### fix(cli) — core CLI(workflow-state·readiness) 인자 계약 fail-closed hardening
 
