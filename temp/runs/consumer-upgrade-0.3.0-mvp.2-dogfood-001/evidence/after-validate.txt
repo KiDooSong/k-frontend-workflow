@@ -1,0 +1,1 @@
+workflow:validate — OK (검사 12종 통과)

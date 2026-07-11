@@ -1,0 +1,31 @@
+{
+  "tool": "workflow:telemetry",
+  "mode": "warning-first",
+  "schema_version": 1,
+  "ok": true,
+  "surfaces": [
+    {
+      "surface_id": "route-cross-check",
+      "available": true,
+      "warning_count": 0,
+      "source_tool": "workflow:route-cross-check"
+    },
+    {
+      "surface_id": "doc-drift",
+      "available": true,
+      "warning_count": 2,
+      "source_tool": "workflow:doc-drift"
+    },
+    {
+      "surface_id": "readiness-eval",
+      "available": true,
+      "warning_count": 0,
+      "source_tool": "workflow:eval",
+      "total": 16,
+      "false_open": 0,
+      "false_closed": 0,
+      "fail_closed_leaked": 0,
+      "blocking_mismatch": 0
+    }
+  ]
+}

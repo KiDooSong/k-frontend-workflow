@@ -1,0 +1,47 @@
+$ git worktree(detached 878fd33 = pre-upgrade consumer HEAD) 에서 보수적 apply 재실행 (재현 witness)
+upgrade-vendored-kit — apply (baseline: unknown)
+  current ref : unknown
+  next ref    : bf7705ced5e90718d4a71d6f03eeb26606ad1456
+  safe-update=0 mode-update=0 new=157 conflict=29 local-modified=0 orphan=0 missing=0 unchanged=0 unknown-local=0
+  ! No installed manifest found. Treating current vendored kit as an unmanaged baseline. Differing files are reported as conflicts and require manual review. After a successful apply, future upgrades will be manifest-based.
+  applied 186 change(s); install manifest refreshed
+  plan: tools/frontend-workflow/_upgrade/upgrade-plan-bf7705ced5e9.md
+apply-exit=0
+
+$ git status --porcelain -- tools/frontend-workflow | grep '^ M' | wc -l   # tracked 파일 modified 수 (0 = local overwrite 없음)
+0
+0
+
+$ find tools/frontend-workflow/.upgrade-conflicts -name '*.incoming' | sort   # incoming 전수
+tools/frontend-workflow/.upgrade-conflicts/catalog/artifact-manifest.yaml.incoming
+tools/frontend-workflow/.upgrade-conflicts/package-lock.json.incoming
+tools/frontend-workflow/.upgrade-conflicts/package.json.incoming
+tools/frontend-workflow/.upgrade-conflicts/policies/implementation-mode-policy.yaml.incoming
+tools/frontend-workflow/.upgrade-conflicts/schemas/frontmatter.schema.json.incoming
+tools/frontend-workflow/.upgrade-conflicts/scripts/forbidden-paths.mjs.incoming
+tools/frontend-workflow/.upgrade-conflicts/scripts/lib/input-artifact.mjs.incoming
+tools/frontend-workflow/.upgrade-conflicts/scripts/lib/path-backstop.mjs.incoming
+tools/frontend-workflow/.upgrade-conflicts/scripts/lib/reconciliation-register.mjs.incoming
+tools/frontend-workflow/.upgrade-conflicts/scripts/lib/schema.mjs.incoming
+tools/frontend-workflow/.upgrade-conflicts/scripts/lib/spec.mjs.incoming
+tools/frontend-workflow/.upgrade-conflicts/scripts/lib/test-fixture.mjs.incoming
+tools/frontend-workflow/.upgrade-conflicts/scripts/lib/util.mjs.incoming
+tools/frontend-workflow/.upgrade-conflicts/scripts/readiness.mjs.incoming
+tools/frontend-workflow/.upgrade-conflicts/scripts/test-fixtures.mjs.incoming
+tools/frontend-workflow/.upgrade-conflicts/scripts/validate.mjs.incoming
+tools/frontend-workflow/.upgrade-conflicts/scripts/workflow-state.mjs.incoming
+tools/frontend-workflow/.upgrade-conflicts/skills/implement-screen/SKILL.md.incoming
+tools/frontend-workflow/.upgrade-conflicts/templates/app/navigation-map.template.md.incoming
+tools/frontend-workflow/.upgrade-conflicts/templates/domain/domain-rules.template.md.incoming
+tools/frontend-workflow/.upgrade-conflicts/templates/global/component-gap-register.template.md.incoming
+tools/frontend-workflow/.upgrade-conflicts/templates/global/conflicts.template.md.incoming
+tools/frontend-workflow/.upgrade-conflicts/templates/global/llm-rules.template.md.incoming
+tools/frontend-workflow/.upgrade-conflicts/templates/input/input-artifact.template.md.incoming
+tools/frontend-workflow/.upgrade-conflicts/templates/screen/figma-component-mapping.template.md.incoming
+tools/frontend-workflow/.upgrade-conflicts/templates/screen/screen-spec.template.md.incoming
+tools/frontend-workflow/.upgrade-conflicts/templates/work-packet/review-artifact.template.md.incoming
+tools/frontend-workflow/.upgrade-conflicts/templates/work-packet/run-report.template.md.incoming
+tools/frontend-workflow/.upgrade-conflicts/templates/work-packet/work-packet.template.md.incoming
+
+$ find ... | wc -l
+29

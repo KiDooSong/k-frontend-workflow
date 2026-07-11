@@ -10,7 +10,8 @@
 
 | 문서 | release | base commit | 날짜 | verdict | status |
 |---|---|---|---|---|---|
-| [release-0.3.0-mvp.1-final-check.md](release-0.3.0-mvp.1-final-check.md) | v0.3.0-mvp.1 | `89d6564` | 2026-07-11 | GO | **current** |
+| [release-0.3.0-mvp.2-final-check.md](release-0.3.0-mvp.2-final-check.md) | v0.3.0-mvp.2 | `7eb06ec` | 2026-07-12 | GO | **current** |
+| [release-0.3.0-mvp.1-final-check.md](release-0.3.0-mvp.1-final-check.md) | v0.3.0-mvp.1 | `89d6564` | 2026-07-11 | GO | historical |
 | [release-mvp-b-final-check.md](release-mvp-b-final-check.md) | v0.2.0-mvp-b-rc1 | `6bbe8bd` | 2026-06-14 | GO (rc1) | historical |
 
 새 release check 를 추가할 때: frontmatter(`kind: release-check` · `release` · `base_commit` ·
@@ -21,6 +22,7 @@
 
 | 항목 | 날짜 | 도입 commit | 내용 · 결과 |
 |---|---|---|---|
+| [consumer-upgrade-0.3.0-mvp.2-dogfood-001/](consumer-upgrade-0.3.0-mvp.2-dogfood-001/run-report.md) | 2026-07-12 | `bf7705c` | 실제 vendored consumer(dogfood-expo-001) 0.1.0-mvp-a(unmanaged) → 0.3.0-mvp.2 safe upgrade — planner dry-run/apply/take-incoming + before/after 검증 — **PASS** (evidence/ 17파일) |
 | [consumer-dogfood-001/](consumer-dogfood-001/run-report.md) | 2026-06-14 | `6bbe8bd` (#17) | fresh Expo 프로젝트에 킷 적용, state→readiness→packet→implement→validate 완주 — **PASS** (evidence/ 9파일) |
 | [implement-screen-001/](implement-screen-001/implement-run-report.md) | 2026-06-13 | `c6acfc2` | implement-screen 스킬 dry-run — done |
 | [reconcile-input-001/](reconcile-input-001/reconcile-run-report.md) | 2026-06-13 | `0b9e4f3` | reconcile-input dry-run (입력 5건) + LLM-after 산출물 |

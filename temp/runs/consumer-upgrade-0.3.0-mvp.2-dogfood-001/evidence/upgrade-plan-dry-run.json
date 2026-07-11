@@ -1,0 +1,1907 @@
+{
+  "ok": true,
+  "mode": "dry-run",
+  "plan": {
+    "schema_version": 1,
+    "baseline": "unknown",
+    "current": {
+      "source_ref": null
+    },
+    "next": {
+      "source_ref": "bf7705ced5e90718d4a71d6f03eeb26606ad1456",
+      "source_repo": "KiDooSong/k-frontend-workflow",
+      "package_version": "0.3.0-mvp.2"
+    },
+    "destination_hint": "tools/frontend-workflow",
+    "counts": {
+      "safe-update": 0,
+      "mode-update": 0,
+      "unchanged": 0,
+      "local-modified": 0,
+      "conflict": 29,
+      "new-file": 157,
+      "removed-upstream": 0,
+      "missing-current": 0,
+      "unknown-local": 0,
+      "total": 186
+    },
+    "files": [
+      {
+        "path": "catalog/artifact-manifest.yaml",
+        "category": "conflict",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": "0772d007d484a2dd8bbf879320485880fbaa3c1dd39a893964b128c7e06874e0",
+        "next_sha256": "e1d01943717d7a281a561b7cd96c371a74c672eaeda6996a33a784a5e4a209de",
+        "mode": "100644",
+        "planned_action": "write-incoming"
+      },
+      {
+        "path": "COMMANDS.md",
+        "category": "new-file",
+        "classification": "consumer-reference",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "912f0c0b6e0315144ca72463912322d05d97af6c22fbdbeea4fd734a7e725fa9",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "CONVENTIONS.md",
+        "category": "new-file",
+        "classification": "consumer-reference",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "9fd6f1d57a46fef032925de7f2c17bd43bca8a77686f138dcc05093eb52baae0",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "distribution-manifest.yaml",
+        "category": "new-file",
+        "classification": "consumer-reference",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "8c19a6244743afb072019a6b4a1f80c129afe308ea586ab313985e75eefca24a",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "docs/reference/ambiguity-triage.md",
+        "category": "new-file",
+        "classification": "consumer-reference",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "d0f8af1f8c3154a8da1d3d29223c1afb1a61ff7836a2d5fcb099446d26e00a64",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "docs/reference/doc-ownership.md",
+        "category": "new-file",
+        "classification": "consumer-reference",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "1f41e0ee539185e5f390eaccf28897ffed2958bd61b30328e4c343393c3ca84d",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "docs/reference/e2e-behavioral-rules.md",
+        "category": "new-file",
+        "classification": "consumer-reference",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "6cc8a98661c8b5793a554bc39890664f427db3880acd763bd7009b1023a1a98e",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "docs/reference/e2e-consumer-adoption.md",
+        "category": "new-file",
+        "classification": "consumer-reference",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "e200122e33ebab529895018c66bc96da9bcab4431004d8a7b74458828d988a40",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "docs/reference/e2e-playwright-agents.md",
+        "category": "new-file",
+        "classification": "consumer-reference",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "f71d24a022fb27fb4b6136f826aadf0183a46ef9eacfb6e9525051b79669cb52",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "docs/reference/e2e-visual-capture.md",
+        "category": "new-file",
+        "classification": "consumer-reference",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "927a44ba4559547e0bd098a3e0626a5174dfbe3b01b3786454930bc173e3e5e9",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "docs/reference/generated-files.md",
+        "category": "new-file",
+        "classification": "consumer-reference",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "c8205b81f2de0c0136b42154cbb46c2f4f4a01466f9e8b3a6bc9560c24800394",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "docs/reference/input-reconciliation.md",
+        "category": "new-file",
+        "classification": "consumer-reference",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "52db0a01926ee24fd551d09ad0da6b8bcbe20eb4b694b914de8dd89ed812392b",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "docs/reference/lint-policy-catalog.md",
+        "category": "new-file",
+        "classification": "consumer-reference",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "8ee83888e5c16852b79a3e20b555146e43984ceaaf4c2045a0a2346668486cc8",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "docs/reference/lint-policy-rollout-ratchet.md",
+        "category": "new-file",
+        "classification": "consumer-reference",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "2af31842a3fafe9e44b8e53d44e7fa7539ea3011f6604eb9fce73ddb835e866e",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "docs/reference/screen-identity.md",
+        "category": "new-file",
+        "classification": "consumer-reference",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "95aa75ee50a95ea3bc2e26586ef6e35591bd7e782cd4ae3896b87cbf743a630b",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "docs/reference/task-artifact-matrix.md",
+        "category": "new-file",
+        "classification": "consumer-reference",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "c67a7bb69830a82e7eaa1da61aa6c6c681ac81ece2aef42079730073ae19b683",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "docs/reference/upgrade-notes.md",
+        "category": "new-file",
+        "classification": "consumer-reference",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "5286bd1f7f14a1af5573757c2be99c48f375f2b4a68e2551048033cac38277e7",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "docs/reference/visual-reconciliation.md",
+        "category": "new-file",
+        "classification": "consumer-reference",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "dbbf0dd3c27e1f157711a892e8309c0466965a294e0f33051a75986c10aa066c",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "docs/reference/workflow-spine.md",
+        "category": "new-file",
+        "classification": "consumer-reference",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "b00af31764b8abf1fdb4ea4085fd72d532feb2b19753757ee0bc9d7f1fbb37de",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "docs/reference/workflow-stages/00-start-here.md",
+        "category": "new-file",
+        "classification": "consumer-reference",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "8e1c2cc8f00ff66eab18f747a8fb439890edd3ec07458f115ea7764a7d5f37f0",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "docs/reference/workflow-stages/01-source-specific-input-production.md",
+        "category": "new-file",
+        "classification": "consumer-reference",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "5878c48d6f9baf0513e7794e4e2a99281c23c08cb5773cedd3876f607106b386",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "docs/reference/workflow-stages/02-screen-identity-source-mapping.md",
+        "category": "new-file",
+        "classification": "consumer-reference",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "74f459452536ca98827e47b0da66b54ccf10b9e2ff5647a16d77ca82ddbd3d54",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "docs/reference/workflow-stages/03-create-canonical-input-artifact.md",
+        "category": "new-file",
+        "classification": "consumer-reference",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "d0319065b6f8834dc76670211db79c7885dfc5a173fbf5817c5b4646a5aa6203",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "docs/reference/workflow-stages/04-reconcile-input.md",
+        "category": "new-file",
+        "classification": "consumer-reference",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "7cc666759d78325b6190e0be4ac82e68da7a55613bc9fa2b808768be8de5aaa6",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "docs/reference/workflow-stages/05-author-workflow-contracts.md",
+        "category": "new-file",
+        "classification": "consumer-reference",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "1886fb6235adc00ca1f869e3434b9cd315f0b60e00978ce6f7fe0d90745222b9",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "docs/reference/workflow-stages/06-implement-screen-or-code.md",
+        "category": "new-file",
+        "classification": "consumer-reference",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "1669d67cf766ffe8ec91d4266ea6a78e273bd00e5296f2e22db7afe519543e15",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "docs/reference/workflow-stages/07-regenerate-derived-views.md",
+        "category": "new-file",
+        "classification": "consumer-reference",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "9a5d9abb9c62a974783ea4f2be659126fd7503a18cb4dc48633d149c85c5203c",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "docs/reference/workflow-stages/08-validate-and-report.md",
+        "category": "new-file",
+        "classification": "consumer-reference",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "b34c6be7a670a44141792aea11403533ecd955db998a364ed24a2b1085f6e134",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "docs/reference/workflow-stages/09-human-decision-gates.md",
+        "category": "new-file",
+        "classification": "consumer-reference",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "37986eec5f04553876487c774213f2b7979a17ef91cd052f525a78383ea04628",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "docs/reference/workflow-stages/10-policy-layout-tier3-changes.md",
+        "category": "new-file",
+        "classification": "consumer-reference",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "a68c79b65bc8e497b79721de142c96cb21469c5f1dfddb97eebe28b92e7f6800",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "LICENSE",
+        "category": "new-file",
+        "classification": "notice",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "1eb85fc97224598dad1852b5d6483bbcf0aa8608790dcc657a5a2a761ae9c8c6",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "package-lock.json",
+        "category": "conflict",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": "4963d124e3d52c8c2d330b02007d67c0b05740b1c203dc5054234f9da3022097",
+        "next_sha256": "a5d6f1b16dda780c8ce6d538b43a9e17b46cd7ce2df36d6978581b544a0d8549",
+        "mode": "100644",
+        "planned_action": "write-incoming"
+      },
+      {
+        "path": "package-scripts.template.json",
+        "category": "new-file",
+        "classification": "consumer-template",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "cc5bf501c986ce0bad9ec86a9b9b7c164b3ee9c32ed30d4febf0d7fdfdededa2",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "package.json",
+        "category": "conflict",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": "a2975635a3e6f949779295be825374ad4ad8b2a6ba9148a8204eb6dc859aedcf",
+        "next_sha256": "598621e8c48d8f4b966dc8854047fc02719a6a7406e336fd80c1e1ca60f37c98",
+        "mode": "100644",
+        "planned_action": "write-incoming"
+      },
+      {
+        "path": "policies/implementation-mode-policy.yaml",
+        "category": "conflict",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": "87b82511d4a9197b023e5f4179f11ff61e1ada1c3e82dc4ea9f69469a782381c",
+        "next_sha256": "0ccd7acdfd371cf6a0cbd993d3ebd7f504dcc37424641535f78db1a44062b911",
+        "mode": "100644",
+        "planned_action": "write-incoming"
+      },
+      {
+        "path": "policies/project-layout.yaml",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "67ef15f849a7c4f8523683465bafbfeceac1e20c314521ecf9bd05fb10130f67",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "presets/expo-feature.yaml",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "9bf3bb85b036ce138f2b30efa1e041d4a132fa49f6476eb6e26c68f802804fa8",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "README.md",
+        "category": "new-file",
+        "classification": "consumer-guide",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "0b4672b28bc381b5a85e170fc6e814e8a8eb3b9935b5113c4e96ad8d8862a44c",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "schemas/frontmatter.schema.json",
+        "category": "conflict",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": "b4f343463bfd4c0d2b412d0b402c805db8b77d6bf63ffadec68d38cebf6c0fb1",
+        "next_sha256": "dd07e48b0eb763fc73fda008d93927930e39b231c417b02593a349a22f54fc2f",
+        "mode": "100644",
+        "planned_action": "write-incoming"
+      },
+      {
+        "path": "schemas/lint-policy.schema.json",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "9432b4ad9952088d5941fe9305b01595c4ff424aee7f48a02a1d2327e3636113",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/adapters/codegens/manifest.json",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "ba12f5d207e1889cf9a7010a3d7a536a2a7f37671d791ca74b791ccf348d119b",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/adapters/codegens/openapi-client.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "8ce92e6e495b607f1bcd88ff2f11e2d19e89af34dc260f86aaa22e1af78f6aa9",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/adapters/routers/expo-router.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "7c3849ce231bbadfa7bb0cbfa2f74c22e4b8fdd93fd6faaf49bbcafe4055eca9",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/adapters/routers/manifest.json",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "8b26fcbf0343f40f2c997ae7a771cfd1507a0ea36d055a56875d408e17048f35",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/adoption-probe.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "5916fdba4ce174d3cd9bf70963b0953c64a83b49118639cb42a6a4c4d2fdef28",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/catalog-gen.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "9b224ba6033657843bb3c1e75d829d139e6214ff8167e0eafe422f2409f5fdcd",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/check-generated-files.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "e1869b7dde20bb774dd32940273a050a6b63758d1677bf437f078bcd730dc83d",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/create-input-artifact.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "aa5bfad9f329de00b01e3793910d3e0349d9073a134862372c987573b13cd9c2",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/create-screen.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "3c04f627da83fc37ea95f6d06451778c3ebf02de7bcb5d8804a254cf94505c23",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/doc-drift.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "30e86a15db6a66a799713ef35a108d272678163f726fb20a6f3e27d6c1d44b20",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/doctor.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "be715443a3d0e56fa12dc2d05fb4ceeac8313667fb0e368daf3ca5be837f3d14",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/forbidden-paths.mjs",
+        "category": "conflict",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": "490bd93c78fc8bc71f98226a1220c22587c459b667473a3b9684ad6085177b76",
+        "next_sha256": "c8f12a27245fd431ce244286162223da2f0193e32315143d84e77c127dbd10da",
+        "mode": "100644",
+        "planned_action": "write-incoming"
+      },
+      {
+        "path": "scripts/lib/adoption-probe.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "6f9a3c00c6d57ea6cd2b0a40d65bbb0feaf3c4995fb59c3426896f36a4de45ab",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/adoption-probe.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "9fafd37b484eeab67d99032274a0a47d010801a3538e43c56dbf8d06d3bc40f4",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/api-manifest.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "51b02dd7305480932784dfb1a3f4efdc64849ea6e2067cba26ab68311f2a5f2d",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/api-manifest.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "45757d10d183d698ce7f9662820c52f97e3bffe2e2a4f7b876dfd55d12a61236",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/catalog-gen.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "d2e0f5ca753315b845c83f65922cc63cbe17afe75e8b85be13308978aca712f6",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/catalog-gen.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "e2350092802fa98ffa632a9e642f6605b9f1b97ddc786783ba3d9f1fb3f44645",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/check-generated-files.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "88d138dbccdea4807adfe3f8349f79473e0a0779a73ef763d51b1190440d556c",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/check-generated-files.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "a2867aff9aaa6917c800b54433ff13079f81c12724a0ed1a6c89cc24aad6bb53",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/ci-telemetry-contract.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "ec2f696302fba724eb3dc4c97a34c1e5e0773eec7561e055efab5f534c15249b",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/cli-args.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "45341f8f1fc0ffd96759ac7a9f268ed40f13bbfe579959fb936418ed8182a156",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/cli-stdout-flush.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "2b652bbbb38545f3c907951a872841ae229ebea5e1db66c82adfa2e7f68dd4d4",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/codegen-core.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "50d3095dae762b6d8e9559f348c202091b338b50ca26394db8f6c9e0b27adf7c",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/codegen-core.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "9e969eb59f7be2962c5710f70f0d3b3c5b076c8c0332ad480dcf276bb6df5e56",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/doc-drift.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "6d59373a624c4d96123495929ed459630a3513c937154f5c1f28a20fd6656b7b",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/doc-drift.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "e88ea7e9c0b7e72391610917942f2eacb5955ab83292c32bc383b207d55a2016",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/doctor.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "2f2818449333ce1c20c210688546a26159cfacd29c2ae7b423ab8dd9f34182d2",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/doctor.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "bbd0b16958a8a6f81eb27cc86e5a0331053593463de227da4b4b55d9979f3343",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/glob.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "7b34606d77b3d14794a85e5cc7ccb23162b79e6a5cd8d0b2970aecfe3edf0a1f",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/input-artifact.mjs",
+        "category": "conflict",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": "589f959a732b806314f1e3ce3745c338f1d16bb1be58e91826de63acbbb58216",
+        "next_sha256": "a6c419aad9ab8aa3a3003674890dcd380f641c25adb60d75d37f6cbdb86e5e09",
+        "mode": "100644",
+        "planned_action": "write-incoming"
+      },
+      {
+        "path": "scripts/lib/input-artifact.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "cea7d9ede2315d78fb27888f81d0f4f95e1582b727f0f96d145cefcbd18cd867",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/input-producer.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "dd3ad2097fbbe13b2c62fb46c2c21184b6b98f0997ba8d117a46f821f61b79c9",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/input-producer.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "b69dac67be7c6e10f408a362648fb668db5afc0c9d71a36a4013c5d62ccb1b66",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/kit-manifest.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "cf5a002b01b8b3ead7a24966491ec643651d0ffe577065cb2800d42218f339e1",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/layer-inventory.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "890d21d3c54335c0dd82105304cfa0298fb837a1c313965016f0467270510afe",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/layer-inventory.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "68a8f2be2ccff405f2a5cc56381c65e0a2dcfab59870cbb7c416f54eae8ee4c9",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/layout-profile.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "2b722725a343e24949840e8d7d1d35647c92623b3ac7fd1a25d2e4b9a6ac1c98",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/layout-profile.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "73a26e14b8529e7289db146b8b39ff6f4712f1702182db973bc753eba7c6f819",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/lint-baseline-core.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "456e3708edd5fdaebc2b28814aa8f94a23b60118a803b6f9d4dbca38980be7a2",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/lint-baseline-core.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "ade99b7e785439b037c84bdc338f89efdb4032fb763e287b51e1c983505a8450",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/lint-gen-core.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "41a32ef8e0edfedacdcc2a25124a6af3a6a3cd8e616ae702ef7fcc9079cfa8da",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/lint-gen-core.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "2a125ca8a2af11536e1295e9c9f2c3646210ebe54c8384c31c5d9f89e4929dfc",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/nav-graph.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "28d7a76cac067463e0d9f8e652a3f61ed532fb722d7e8098246717894dada442",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/path-backstop.mjs",
+        "category": "conflict",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": "f8640cfb6c4cbf6ae033c68dcd0545094a46a307ea3a64c01ca570150b05748f",
+        "next_sha256": "63446c04a2dcb8b29ae13c374127cf72cb8446cf4a3be618b129e29448d55d07",
+        "mode": "100644",
+        "planned_action": "write-incoming"
+      },
+      {
+        "path": "scripts/lib/policy-condition.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "ab08efce57802900861800c4a8a22dfc237044c1b60d47372c4d3756ddd6552d",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/policy-condition.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "e2f19fd39f61ec3a7c4225c72c3b4ddf73f7b25787874d7adc04bfc6ba50998d",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/policy-draft.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "c3e4045604b48fac676b8369cdd415e4716324eab5e93a7a1e610a1a6c6e0c2e",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/policy-draft.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "6f22fb577b5af0de982b5449eb4c00456b6adb249ffba03e0b278334571a0d11",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/readiness-cli.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "ed17f752efa87ea44f68db5ddf2f3d3b8ea3974ff9c134bb67ed2fad72393afe",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/readiness-eval-cases.json",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "f0ad74fcd9b7e08fcc6d02e2f2e1d28c0345f8b1c1c2324c67a38c3aade7d9aa",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/readiness-eval.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "e3d29402bbcec54dc872f8e37848206766d57329a2a79fb67d4b92de7a1a32cc",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/readiness-eval.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "16207f3070c42ab0928a7c5cc2c71a03aa2c0235f11db02181bdd91aaa42f8d9",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/readiness-failopen.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "7b05b82f25bf51d4f446382b58852d4ca40f098501ab6fd0b4aff48279e9fa7f",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/readiness-redteam.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "d3aa333181282229f681f540d479a8af9b7c9c2da6704c4ba3fbdf5f7c497907",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/reconciliation-register.mjs",
+        "category": "conflict",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": "7e98f635e8e8f370f668c06b26ad1ddd3ae3683712059b66478d8a6a6131dae8",
+        "next_sha256": "375182568296bf191046a93d236846cdd71d7294775c0949e9f08feefbac11d5",
+        "mode": "100644",
+        "planned_action": "write-incoming"
+      },
+      {
+        "path": "scripts/lib/redteam-path-backstop.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "a85cf64784e23ee3b2b4ae20d1f216e84c0cfa536aef08c264c055a354299d56",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/redteam.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "d0a511d4045e7caec5a5db28199700b07ece83b3d71df35433dec49113a33652",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/redteam.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "c2385a8ba91118c1a1b84f91c2a6b62b745bf0d30248ed07639fd20246cb0d5e",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/route-core.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "595841a55c6d8f5da7db1290e36259e1dc33536a08e4911fa05f7d8a4cd0faf3",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/route-core.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "68abc55056a86c46caddba1c7f0ceaf4d3db348259dc5594fbef614c24813b78",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/route-cross-check.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "8c85b7711c420fd0160d7481426eb071c56b89fffdd82beb17e1c04d8d46763f",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/route-cross-check.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "352d9e89a340f5bb78172fd1c599395c2609d0a1c73c700d98a8b4edd8a59d10",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/route-tree.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "d7f6323ed80485905b00791a8501e6666c8e34b3e0f8ed8131eeeaa8540d8f9f",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/schema.mjs",
+        "category": "conflict",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": "e667ad35fcb61224aeeea46f63cfdc7747c23f457d2ede22ad87bb9fb4cf195a",
+        "next_sha256": "c23937220f925a14b29f6c0a2470de48c5c569b64a1fd368d24cf7f52c3a52be",
+        "mode": "100644",
+        "planned_action": "write-incoming"
+      },
+      {
+        "path": "scripts/lib/screen-scaffold.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "0ccf3094d8369e74ed0332075f5ae8f50d944b07c8dc3155c4448f05b81081e4",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/screen-scaffold.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "57068812edd95667d14765e33a5bff69078ab57d1cb92c804218a57ea5ed4d4e",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/screen-source-map.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "7a41abca76e36ca9a7be5a756480bc5c804c3fd3ba64d61cf9e441fb003eda3c",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/screen-source-map.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "4dc17775f47337c794ed5b971562e13be2b46000d8fa055e4826ebe485980a9e",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/spec.mjs",
+        "category": "conflict",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": "ed65e5a22666a3b5ca7bf658f68f97a4d783d506b494e1721620e44182125177",
+        "next_sha256": "d07d7d9793cdf6240deca493fb4c851f0b9883d44943d5c415e79306000158e5",
+        "mode": "100644",
+        "planned_action": "write-incoming"
+      },
+      {
+        "path": "scripts/lib/spec.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "c1da58bc9d7b88f7565721e61ba8baad11bcd52fab67f650aaaa3954c28afd81",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/telemetry.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "adef01738ca81f0ba2616024302741cf9e0969734b697ed121553fe48ba6b912",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/telemetry.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "ac89531f75e9d60646a4a9fb6714ee03901e248c6934eea9ec4ec6dc819d7bad",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/test-fixture.mjs",
+        "category": "conflict",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": "34972c859ba9b6d44b9b9538bb00f082159f8f01d7cb8665bef9e605343268c6",
+        "next_sha256": "bc95b718b117940e3a60dfc57a15454900bd40a1874a4f361e798c432d0d2b38",
+        "mode": "100644",
+        "planned_action": "write-incoming"
+      },
+      {
+        "path": "scripts/lib/upgrade-planner.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "f6eab17d44727483399a3daf37bda5d140f41db2af616d977e7984b2f128b992",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/util.mjs",
+        "category": "conflict",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": "602a32067d6377daf9151595cc8ae67d024f6a546daaaf7b6a1024a761a63975",
+        "next_sha256": "e777638b1a3464f586d8ec5ff6ad40c8bd27479daa1761f19600babfb5ee1ae5",
+        "mode": "100644",
+        "planned_action": "write-incoming"
+      },
+      {
+        "path": "scripts/lib/util.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "f16393cb862899db000a695c3800ef252b0f8364e2e5e1c4ca7a0a47f6ab9beb",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/validate-cli.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "8a7ac0b2ad8c26aa15cb735cf2841b3699a8b740f72321864b273ea6f2f81928",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/visual-consistency.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "149341615be43f241dd0567ddf1169b55fa5413ea2a285ee38b74f0bdf3d4058",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/visual-consistency.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "ae3312b97a4218086bbaf293a495cd306582ac09b639c5f4183f977e85e204c5",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/visual-contract-bootstrap.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "700bedb7734455c10100edd36dbfdcbd1011be00ecc71e1071ac0c9086b6a60a",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/visual-contract-bootstrap.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "02ba00d0f6defcbe96aed473b95d28759bb09d02ef61ae1077433e8b55f26ea1",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/workflow-packet.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "daf9e5d3c6189eecca5c13d4708512e44e2c6894fa8f99fcb5f3e10ac4d978fc",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/workflow-report.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "1f27aace664700aae240d624bcd929bcee2d303586119844ce127f34d2870488",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/workflow-report.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "148e829ec00698b2b18ec2d4f476d5f499fa8439c8db0befe06a847b23f4e3c1",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/workflow-run.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "49cc471a44b263b97e1b209e287708a1f3662fa6e7779bb24ff0f1a8eeb98ed8",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/workflow-run.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "f34f9df9844e5c1150e611a4b56eb447e07139f2fd33addd699abb0a3745413d",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lib/workflow-state-cli.test.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "320ef3b4a3cecbc9149f05e292253c67a394f63d6c1064e03698d5ab85b57cc4",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lint-baseline.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "9a5794b7a3384b8a74e3213b30ae964ce77c152661bba19ef5df44c82c290c03",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/lint-gen.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "df80eabd6681f77c0391182d3ca5dbac0e97e1e005818d232da49f33fc200ea9",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/nav-graph.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "7a1145f03f5cb672f1bc835b1c5d9de282006dd495931b18046c2191f445322b",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/policy-draft.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "4865b303aeef9ae1ee08150ebba9224dbb30631c4edd8bcde58da621feee4ce0",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/readiness-eval.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "2e829758f4c4abc2bbbf64cef594372345db56e9943b8930f337aa9f0bf2f08e",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/readiness.mjs",
+        "category": "conflict",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": "bab2156315d189d01a355808771e18c00600d81113b2bffd2f082e8faf756144",
+        "next_sha256": "8075a3dab591b6e2617e039a935b66478d1e497ebaf362bec38fda85eb2e4436",
+        "mode": "100644",
+        "planned_action": "write-incoming"
+      },
+      {
+        "path": "scripts/redteam.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "e01df54fbb00dd6e1d3260bb9d8f028a99f06c8220cfa1d0b3fc649f07804516",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/route-cross-check.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "a10a7258527f3f35edae861b6e7eeb6fb0c26ba1206d50a40a80963c269ce0fc",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/route-tree.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "0825c7af4c86494f73d6edc69e228efba7db40eaa6902dbc2ddaa8ee255daf50",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/telemetry.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "8204355d3b77fe8d9de3155a80d06c9e339d06bbcfefd7df6e10173f2149d442",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/test-fixtures.mjs",
+        "category": "conflict",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": "bc23e0193a7bee7c4ee75c839078e617d38a7c1b46238a26912afd90e1d0f42f",
+        "next_sha256": "1f3f9e46d87a75d4bec31a5adcaa808cb03d9c31d4d5d84a18e9daf0ab1f00a3",
+        "mode": "100644",
+        "planned_action": "write-incoming"
+      },
+      {
+        "path": "scripts/upgrade-vendored-kit.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "ee7be12111c8269c9611d77fe3d1731bca8cc83ab2ae7aecf4f60d64a465925e",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/validate.mjs",
+        "category": "conflict",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": "cc90fab4c3695526f414026f31d9ae80aa207e80e0cb606842de725390b8a1a9",
+        "next_sha256": "4ba49ef17df59285f4a8b161a00ddd808829f6f0331a0df7842dafa13efc2f68",
+        "mode": "100644",
+        "planned_action": "write-incoming"
+      },
+      {
+        "path": "scripts/visual-consistency.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "02cf5bcfb76980e6492854fef823cd9564c2a5e20fb4aa92790c2e5dcf0c9858",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/visual-contract-bootstrap.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "ca12676ca702f2a6b8537a892ee8ce034a70a09258cc7233860d34688f273193",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/workflow-packet.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "c20e416a231124782605dca61b5cd70f6a70093597d6bd536a1656765d33b44b",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/workflow-report.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "c869c22f111b3ff1a7a163460d321bd5dcb6bd528e7b9975c1b1b447481fb8ca",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/workflow-run.mjs",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "afe2ec672f4392e761a306c03fb0d44e773db67990286976bb6779f13e3df35e",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "scripts/workflow-state.mjs",
+        "category": "conflict",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": "f968cffc7eca9b02640489dfa647a9305506ec1644e32c492e80d348e45072b4",
+        "next_sha256": "b70d84c2dee60ff06a9f7a54235d6970bea6d74740042e7f5b46be096aaa17e2",
+        "mode": "100644",
+        "planned_action": "write-incoming"
+      },
+      {
+        "path": "skills/adapt-lint-pack/SKILL.md",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "94a3c0d9106c071c4e6a6f06fc90c1fa60351692341bd81bb569f624f239a470",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "skills/capture-learning/SKILL.md",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "ba5e7396c36d92c2300a26791e61b43c1af9f8f5a195a445a8b1a556160acb29",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "skills/e2e-agent/SKILL.md",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "801bf2a6bdabf0d75d0a594ee0ed61aa321c8bdbe8177dc9b6bbb545aa18ab5c",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "skills/grill-me/SKILL.md",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "74147eb6010a65957efef2b9e0f0b3ff935c1def7fc117697151b1d0f3610556",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "skills/grill-with-docs/ADR-FORMAT.md",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "f1f36cd3f8d3b6474ddd5855da4e233bfc4ae1a1c5024909ccf11871819a41b2",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "skills/grill-with-docs/CONTEXT-FORMAT.md",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "b8cc318f2a4285b530e908b6bc43901c3c5cd11100362636bbc4216639bef597",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "skills/implement-screen/SKILL.md",
+        "category": "conflict",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": "c45a081e769c5cdae842644abd8a70a544a13e1b0a4be7c433ce98504f3cc298",
+        "next_sha256": "c868901c407784db5cbd7243b976379853458ca2e6fde254b6168d196238d481",
+        "mode": "100644",
+        "planned_action": "write-incoming"
+      },
+      {
+        "path": "skills/reconcile-input/SKILL.md",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "7ded9bdb2406d811f019ab01c43a32254748ee3dd8dbfd8542ff499251e10294",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "skills/VENDOR-NOTICE.md",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "73a7684e9884b24bd982cbb950c96325a0662c25bc4fcd307ce657a7875c0f46",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "skills/visual-contract-bootstrap/SKILL.md",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "abb467447bbccbf0582d3a3032a9d05be6955325ea22adacfea64e1fa586082f",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "skills/visual-reconcile/SKILL.md",
+        "category": "new-file",
+        "classification": "consumer-runtime",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "db6811540aa2bebb11c7f03ffaac2ce542c2c4006c261d9cb2fe0a172b8d4b88",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "templates/adoption/adoption-report.template.md",
+        "category": "new-file",
+        "classification": "consumer-template",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "3fde2489879f20a445d99a4a35bbafcc72aec8ea5fceedc7549856a9b6c1e9ed",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "templates/adoption/project-layout.template.yaml",
+        "category": "new-file",
+        "classification": "consumer-template",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "224be82b43bf81166e06f20faf0e813e411b319db8a915369e551b110f9b4c3a",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "templates/adoption/testid-intake-note.template.md",
+        "category": "new-file",
+        "classification": "consumer-template",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "b484cafab694685c119beae6f700c5914461d141ce3a48da2d7560bd1a49c0d5",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "templates/adoption/tier3-gap-report.template.md",
+        "category": "new-file",
+        "classification": "consumer-template",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "e8c36b4d4474de6c82ddbc00fd9fd9883d49be30369706ff09cd209ea69d0745",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "templates/adoption/visual-spec-intake-note.template.md",
+        "category": "new-file",
+        "classification": "consumer-template",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "ef7a8b97fdf2ed80a3abb5d354eac43ca6e29698f301d4dbb76f855b8518a64f",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "templates/api/api-manifest.template.md",
+        "category": "new-file",
+        "classification": "consumer-template",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "96e2e27430185ffdebeb81c9df117cbff858c8c202c6669da1f80e5d693ff90f",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "templates/app/navigation-map.template.md",
+        "category": "conflict",
+        "classification": "consumer-template",
+        "old_sha256": null,
+        "current_sha256": "5c90e681bf242b2a84fb61ac31fad3f41975890cfae70664f131db48d7d4824c",
+        "next_sha256": "ee94198a4b0c2245146e7b2316bc70e12faa89385ee3a5decd3e589939974032",
+        "mode": "100644",
+        "planned_action": "write-incoming"
+      },
+      {
+        "path": "templates/design/visual-consistency-contract.template.md",
+        "category": "new-file",
+        "classification": "consumer-template",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "804082617dad302baca5a8d955aeccdbcc2a29f26ae4eb9514a8d55ee0a10977",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "templates/domain/domain-rules.template.md",
+        "category": "conflict",
+        "classification": "consumer-template",
+        "old_sha256": null,
+        "current_sha256": "7d5656b3fa7d61b4a74718e41a5bf334f07c405ad881cf981bf9cea1ba06202b",
+        "next_sha256": "b5ef494ef04e537cce4b49abafb77487a865982b951036dd420f17098e9162c2",
+        "mode": "100644",
+        "planned_action": "write-incoming"
+      },
+      {
+        "path": "templates/e2e/visual-capture.spec.template.ts",
+        "category": "new-file",
+        "classification": "consumer-template",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "fa08f0bf6f6ad3ea0751e29a51a2b84c4ce4ed67b3dc4fe8cafdec5783d8237a",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "templates/e2e/web-plan.template.md",
+        "category": "new-file",
+        "classification": "consumer-template",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "b62996f5fa9e6ec6ea1d0aa296a85e436cd2c7f4414dfbfad78a009de54b5fdf",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "templates/global/component-gap-register.template.md",
+        "category": "conflict",
+        "classification": "consumer-template",
+        "old_sha256": null,
+        "current_sha256": "162693650aef5d6a182291f3fd5efae17e8489ca9e2f1290e9637402d86747ec",
+        "next_sha256": "24f6f79920008dc4a02403526bdd23c9c985d530b70b96d6367d14e7e19bf593",
+        "mode": "100644",
+        "planned_action": "write-incoming"
+      },
+      {
+        "path": "templates/global/conflicts.template.md",
+        "category": "conflict",
+        "classification": "consumer-template",
+        "old_sha256": null,
+        "current_sha256": "3baad489e973e192181eceb5b194dec04288c7b2d8968e1124a73863436e57d7",
+        "next_sha256": "0bcfc0cd38c14071ed1eb29c3dcefe32b04cd91dd03ebd8f193ec2bb5738b112",
+        "mode": "100644",
+        "planned_action": "write-incoming"
+      },
+      {
+        "path": "templates/global/llm-rules.template.md",
+        "category": "conflict",
+        "classification": "consumer-template",
+        "old_sha256": null,
+        "current_sha256": "2240969e7a2da41ad88982e4859271b3bc489e56ddbff7c044f34586877e914f",
+        "next_sha256": "34d9deb2be5b523eef6ccd6970aa1d27e5aee89f7480a99b2fea9ea70f370b5f",
+        "mode": "100644",
+        "planned_action": "write-incoming"
+      },
+      {
+        "path": "templates/input/input-artifact.template.md",
+        "category": "conflict",
+        "classification": "consumer-template",
+        "old_sha256": null,
+        "current_sha256": "f96a984c3665472030f798f565e5cd1779f9659c8ef74916a4a35d5999448ac3",
+        "next_sha256": "80bf0fc8813f55a1db1a0e0c41cd7580376548a02e4c66885f4abd148ff3ce19",
+        "mode": "100644",
+        "planned_action": "write-incoming"
+      },
+      {
+        "path": "templates/input/inputs-domain-readme.template.md",
+        "category": "new-file",
+        "classification": "consumer-template",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "af86ec0d0e537ab4933556c963ea8b71bda639c0ce7c6a476d6838b74eddb3d1",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "templates/input/inputs-readme.template.md",
+        "category": "new-file",
+        "classification": "consumer-template",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "f4cdaba82e4dd06b61e61f781ba541e2d832e3828e918aaa5585805d671d2a68",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "templates/meta/lint-policy.template.yaml",
+        "category": "new-file",
+        "classification": "consumer-template",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "b9d8a19c2f3ff5865d8b91b026451f2be17c63bdc0ce6b98550738133d631366",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "templates/meta/reconciliation-register.template.md",
+        "category": "new-file",
+        "classification": "consumer-template",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "7cdbc224210f41c3be6b96a184a8c1993a59b9898f55c3ddf6f7ada576c048c8",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "templates/meta/screen-source-map.template.md",
+        "category": "new-file",
+        "classification": "consumer-template",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "70e7307b0f5400df6abf1a86e1803423c2231d02be430aa1cc5e8f2dfc5c2686",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "templates/meta/session-learnings.template.md",
+        "category": "new-file",
+        "classification": "consumer-template",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "378e47d57eeccddcc2b0b497f2a68e0eb7a9a21acbda41fde20121d093d70116",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "templates/repo/AGENTS.template.md",
+        "category": "new-file",
+        "classification": "consumer-template",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "b4d1bcda68d91b1c557da0cc5a2718a5da0fbe6bbe15e7dc6ccad1e72ed8e765",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "templates/screen/figma-component-mapping.template.draft.md",
+        "category": "new-file",
+        "classification": "consumer-template",
+        "old_sha256": null,
+        "current_sha256": null,
+        "next_sha256": "32bee1540f942a4d7b7d4842a750b009c2ed53e83f0817b4dfd42a328cd8034b",
+        "mode": "100644",
+        "planned_action": "add"
+      },
+      {
+        "path": "templates/screen/figma-component-mapping.template.md",
+        "category": "conflict",
+        "classification": "consumer-template",
+        "old_sha256": null,
+        "current_sha256": "90a9ce541554787a92b10361f22b5c6cba499cfb64698a400e699f96880745b8",
+        "next_sha256": "9fee476fcbfd0ce145226de309524f9b9b69db3b7446e94bce5101c254fb5ade",
+        "mode": "100644",
+        "planned_action": "write-incoming"
+      },
+      {
+        "path": "templates/screen/screen-spec.template.md",
+        "category": "conflict",
+        "classification": "consumer-template",
+        "old_sha256": null,
+        "current_sha256": "ece43721a26a8396307567e93da6cc49e17619f47c5677423c3205ba34407403",
+        "next_sha256": "7924d8d4caf85575c272f76afeca243cafa42ec8d15a056ad007989e122746aa",
+        "mode": "100644",
+        "planned_action": "write-incoming"
+      },
+      {
+        "path": "templates/work-packet/review-artifact.template.md",
+        "category": "conflict",
+        "classification": "consumer-template",
+        "old_sha256": null,
+        "current_sha256": "7c9d74f58e6d61cbfd4a6a6c14820c64c7221bbf46b3c7c5b85b069fa3e1d73b",
+        "next_sha256": "2798e734764794faefc9d7916e23b209c41660fb05c7cc2570d3fc6f81eeab57",
+        "mode": "100644",
+        "planned_action": "write-incoming"
+      },
+      {
+        "path": "templates/work-packet/run-report.template.md",
+        "category": "conflict",
+        "classification": "consumer-template",
+        "old_sha256": null,
+        "current_sha256": "d8c4e51beeff5b7984c9b71717a5bf2bd51a1dba6deddf89c971e497de0ef86d",
+        "next_sha256": "1fe98966844b633847469c018117856bbd999b0b061f6a051b614d01fde99512",
+        "mode": "100644",
+        "planned_action": "write-incoming"
+      },
+      {
+        "path": "templates/work-packet/work-packet.template.md",
+        "category": "conflict",
+        "classification": "consumer-template",
+        "old_sha256": null,
+        "current_sha256": "c8466b49d048afe496c2639660ac3cb953a5837fd5d5aa96c463d5cc7547d68c",
+        "next_sha256": "65fb61e05bd0bf212cb6adc38389e94e4029ae2f114c2d1ab3dda80b6463caca",
+        "mode": "100644",
+        "planned_action": "write-incoming"
+      }
+    ],
+    "migration_notes": {
+      "path": "docs/reference/upgrade-notes.md",
+      "body": "# Upgrade Notes\n\nConsumer-impacting changes when upgrading the vendored kit under\n`tools/frontend-workflow/`. The safe upgrade planner\n(`scripts/upgrade-vendored-kit.mjs`) embeds this file in every generated plan.\n\nYou do **not** need to reason in terms of \"apply up to PR N\". The planner\ncompares file hashes and tells you which files are safe to update, which are\nconflicts, and which are orphaned. Read the notes below for the *manual* steps a\nhash comparison cannot perform (new directories to create, docs to author,\ncommands to re-run). If your installed baseline is older than the next ref,\nreview every note; if it is newer, some notes will already apply.\n\nNotes are ordered newest first. \"Manual action\" means something the planner will\n**not** do for you — it never edits your `docs/frontend-workflow/**`, app source,\nor root config.\n\n---\n\n## Visual axis, telemetry, and red-team observation surfaces\n\n- `visual-consistency-contract` is a **review-only** document you create when\n  needed (`docs/frontend-workflow/design/visual-consistency-contract.md`); its\n  absence is a silent skip, never a warning. The frontmatter schema now accepts\n  `artifact_type: visual-consistency-contract`, so contracts authored from the\n  shipped template pass `workflow:validate` check 1.\n- `workflow:visual-contract-bootstrap` can draft the contract from existing\n  ScreenSpecs (optionally `--src` for import heuristics), but promotion to the\n  canonical/confirmed contract is human-only — the draft is never applied\n  automatically. With `--src` set, screens without `screen_entry` frontmatter\n  are skipped; if **no** selected screen has `screen_entry`, the report now says\n  so in `skipped_checks` instead of silently returning zero candidates.\n  Repeated local imports whose names miss the shell/logo/header/CTA regexes now\n  surface as `kind: unknown` candidates (ownership stays needs-review).\n- `workflow:visual-consistency` is **warning-first**: findings are not gates,\n  exit stays 0 unless the structure itself is broken. Do not wire it into a CI\n  hard gate. Shared component rows can declare `Catalog Status` `domain` /\n  `out-of-scope` to record components that are intentionally outside the\n  ui_primitive catalog (check 4 reports info instead of a permanent warning).\n- Telemetry visual/redteam surfaces are **opt-in observation surfaces** — they\n  record adoption/observation data and never gate or promote anything.\n- **Manual action:** after upgrading, run `npm run workflow:validate` and, if\n  you use telemetry, inspect `npm run workflow:telemetry -- --list-surfaces\n  --json` to see the available surfaces. If you maintain adapted copies of the\n  root `AGENTS.md` / `CLAUDE.md` or vendored skill copies (e.g. under\n  `.agents/`), re-sync them with the new reference docs and scripts — the\n  planner flags conflicts but does not merge your adaptations.\n\n## Grouped input artifact directories\n\n- `workflow:create-input` can now group input artifacts by domain or an explicit\n  subdir: `--group-by domain` writes `inputs/{domain}/{input_id}.md`,\n  `inputs/_multi/`, or `inputs/_unknown/`; `--input-subdir <path>` writes an\n  explicit relative subdir (`..`/absolute rejected).\n- `input_id` stays globally unique and the Reconciliation Register key stays\n  `input_id` regardless of path.\n- `README.md` / `index.md` under `inputs/**` are treated as directory guides, not\n  input artifacts; validate skips them.\n- **Manual action:** none required — flat output stays the default. Adopt grouping\n  only if your `inputs/` tree is large. See\n  [input-reconciliation.md](input-reconciliation.md).\n\n## Distribution payload cleanup\n\n- The consumer payload is an explicit allowlist defined by\n  `distribution-manifest.yaml`; only allowlisted files are vendored.\n- Dev/design/history docs are no longer shipped (they moved to the kit repo's\n  `kit-dev/`). `examples/` and `temp/` are never vendored.\n- Packed kits now include a deterministic `.kit-payload-manifest.json` with a\n  sha256 + classification per file, which powers this safe upgrade flow.\n- **Manual action:** if you previously copied the *entire* kit directory, run the\n  upgrade planner once to produce a conservative plan, then remove stale\n  `examples/`, `temp/`, and design/history/roadmap/run-report files from your\n  vendored copy. After the first managed apply, future upgrades are manifest-based.\n\n## Workflow spine and numbered stage docs\n\n- `docs/reference/workflow-spine.md` indexes numbered stage docs\n  (`workflow-stages/00-start-here.md` … `10-policy-layout-tier3-changes.md`).\n  Agents start at the spine, then read only the matching stage doc.\n- **Manual action:** point your root `AGENTS.md` / `CLAUDE.md` at\n  `docs/reference/workflow-spine.md` and `workflow-stages/00-start-here.md`. If you\n  customized `templates/repo/AGENTS.template.md`, that file may be flagged as a\n  conflict — re-apply your edits on top of the new template.\n\n## Screen identity and Screen Source Map\n\n- Source screen codes (planning `A-001`, design `J010`, Figma node ids, slugs) are\n  **aliases**, not canonical Screen IDs. The canonical mapping lives in\n  `_meta/screen-source-map.md`.\n- `workflow:create-screen` scaffolds a stub ScreenSpec once canonical identity is\n  known; it does not invent screen ids, edit navigation-map, resolve Open\n  Decisions, or promote status.\n- **Manual action:** create `_meta/screen-source-map.md` from\n  `templates/meta/screen-source-map.template.md` if you use external source codes.\n  See [screen-identity.md](screen-identity.md).\n\n## create-input producer\n\n- `workflow:create-input` turns normalized payloads into canonical\n  `inputs/{input_id}.md` files. Source-specific Figma/OpenAPI/meeting parsers stay\n  in the consumer repo. The generic producer never edits the Reconciliation\n  Register, runs reconcile, approves implementation, or promotes facts to\n  confirmed.\n- **Manual action:** none for the kit; keep your source-specific producers in the\n  consumer repo (they are not part of the payload and are never overwritten).\n\n## Route extraction hardening\n\n- Route/screen separation is enforced through ScreenSpec `route_entry` (router\n  shell) vs `screen_entry` (product screen). `readiness` `allowed_paths` /\n  `forbidden_paths` remain the real edit boundary.\n- **Manual action:** none — behavior is backward compatible. Re-run\n  `workflow:state` and `workflow:route-cross-check` after upgrading.\n\n## API contract kind support\n\n- API manifest confirmed rows can link `zod`, `ts-type`, `openapi`, or `manual`\n  contract kinds. `ts-type` is exported-type evidence (not runtime validation);\n  `unknown` is tracking-only and does not satisfy confirmed API evidence.\n- **Manual action:** none required; existing manifests keep working. Adopt the new\n  kinds when you have concrete contract evidence.\n\n---\n\n## Recommended validation after any upgrade\n\nRun from the consumer repo root once safe updates are applied and conflicts are\nresolved:\n\n```bash\nnpm run workflow:doctor\nnpm run workflow:state\nnpm run workflow:readiness\nnpm run workflow:validate\n```\n\nNone of these are hard CI gates unless a separate human decision promotes them.\n"
+    },
+    "warnings": [
+      "No installed manifest found. Treating current vendored kit as an unmanaged baseline. Differing files are reported as conflicts and require manual review. After a successful apply, future upgrades will be manifest-based."
+    ],
+    "options": {
+      "apply": false,
+      "prune": false,
+      "allowConflicts": false,
+      "forceRuntime": false,
+      "backupDir": null
+    }
+  },
+  "applied": null,
+  "plan_path": "../k-frontend-workflow/.claude/worktrees/v0-3-0-mvp-2-rc-810882/temp/runs/consumer-upgrade-0.3.0-mvp.2-dogfood-001/evidence/upgrade-plan-dry-run.md"
+}
