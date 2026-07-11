@@ -22,6 +22,7 @@ import { LayoutConfigError, loadLayoutProfile, synthesizeModePolicy } from './li
 import { covers } from './lib/path-backstop.mjs';
 // "fact OP value" 파싱은 policy-condition.mjs 단일 출처에서 온다 — validate 검사 14 와 규칙을 공유해 표류 방지.
 import { parseCondition } from './lib/policy-condition.mjs';
+import { enforceCliFlagContract } from './lib/cli-args.mjs';
 
 // fact 키별 스케일 분류
 const STATUS_SCALED = new Set([
@@ -461,8 +462,59 @@ function loadCi(flags) {
   return data || {};
 }
 
+function helpText() {
+  return `workflow:readiness - 화면별 구현 가능 모드 계산 (판정의 단일 출처)
+
+Usage:
+  node scripts/readiness.mjs [--docs <dir>] [--screen <SCREEN_ID>] [--policy <file>]
+                             [--manifest <file>] [--ci <file>] [--out <file>]
+                             [--layout <file>] [--json] [--help]
+
+Options:
+  --docs <dir>      authoring 문서 루트(<docs>/_meta/workflow-state.yaml 을 읽음). 기본: ${DEFAULTS.docs}
+  --screen <id>     특정 화면 하나만 출력 (예: --screen COUPON-001)
+  --policy <file>   정책 경로. 기본: 킷 policies/implementation-mode-policy.yaml
+  --manifest <file> artifact manifest 경로. 기본: 킷 catalog/artifact-manifest.yaml
+  --ci <file>       CI 결과 YAML (없으면 CI 게이트는 blocking 에서 제외)
+  --out <file>      결과 YAML 을 파일로도 기록
+  --layout <file>   project-layout.yaml 경로 오버라이드
+  --json            YAML 대신 결정적 JSON 을 stdout 으로 출력
+  --help            이 도움말 출력
+
+Behavior:
+  usage 오류(unknown option·값 없는 value flag·값 붙은 boolean flag·positional)는
+  state/policy/manifest 를 읽기 전에 exit 2 — 오타(--screeen·--polciy)가 전체 화면 출력이나
+  기본 policy 판정으로 조용히 fallback 하는 fail-open 을 금지한다.
+`;
+}
+
+// parseArgs 는 모든 --foo 를 그대로 flags 에 넣으므로(거부 없음) CLI 별 allowlist 로 오타를 잡는다.
+// 예: --screeen 오타가 "전체 화면 출력", --polciy 오타가 "기본 policy 판정"으로 조용히
+// 진행되는 것을 막는다(exit 2). validate.mjs(PR #175)와 같은 계약.
+const VALUE_FLAGS = new Set(['docs', 'policy', 'manifest', 'ci', 'screen', 'out', 'layout']);
+const BOOLEAN_FLAGS = new Set(['json', 'help']);
+
 function main() {
-  const { flags } = parseArgs(process.argv.slice(2));
+  const { flags, positionals } = parseArgs(process.argv.slice(2));
+  // 인자 검증은 state/policy/manifest/layout 로드보다 먼저 — usage 오류에서 판정·파일 쓰기 0.
+  const usageError = enforceCliFlagContract({
+    flags,
+    positionals,
+    valueFlags: VALUE_FLAGS,
+    booleanFlags: BOOLEAN_FLAGS,
+    tool: 'readiness',
+    helpCommand: 'node scripts/readiness.mjs',
+  });
+  if (flags.help) {
+    process.stdout.write(helpText());
+    return; // help 는 자연 종료 exit 0 (cli-stdout-flush 계약 — process.exit(0) 금지)
+  }
+  // 공백뿐인 --screen 값(--screen " ")은 allowlist(비어있지 않은 문자열)는 통과하지만 화면 ID 가
+  // 될 수 없다. 예전의 bare --screen 방어와 같은 단일 usage 경로(exit 2)로 여기서 막는다 —
+  // 아래 필터가 빈 결과 {} 로 조용히 오인되지 않게. (bare/빈 --screen= 은 helper 가 이미 거부.)
+  if (typeof flags.screen === 'string' && flags.screen.trim() === '') {
+    usageError('--screen requires a screen id value (e.g. --screen COUPON-001)');
+  }
   const docsDir = path.resolve(flags.docs || DEFAULTS.docs);
   const policyPath = path.resolve(flags.policy || DEFAULTS.policy);
   const statePath = path.join(docsDir, '_meta', 'workflow-state.yaml');
@@ -489,11 +541,7 @@ function main() {
   let result = computeReadiness({ state, policy, ci, manifest, layout });
 
   if (flags.screen !== undefined) {
-    // 값 없는 bare --screen 은 parseArgs 가 boolean true 로 둔다 — 빈 결과로 조용히 오인되지 않게 명확히 막는다.
-    if (typeof flags.screen !== 'string' || flags.screen.trim() === '') {
-      process.stderr.write('readiness: --screen 에는 화면 ID 값이 필요합니다 (예: --screen COUPON-001)\n');
-      process.exit(2);
-    }
+    // bare/빈 --screen 은 main 진입부의 인자 계약 검증에서 이미 exit 2 — 여기는 유효한 문자열만 온다.
     result = result[flags.screen] ? { [flags.screen]: result[flags.screen] } : {};
   }
 

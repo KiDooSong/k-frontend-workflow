@@ -30,6 +30,13 @@ Use `--root` when the project root is not the current working directory. Use
 `--src` when source files live outside `src/`. Use `--layout` when a custom
 `project-layout.yaml` declares Tier3/custom layer roles.
 
+`workflow:state`, `workflow:readiness`, and `workflow:validate` support `--help`
+and treat usage errors — an unknown option (e.g. a `--jsno`/`--screeen` typo), a
+value flag without a value, a value passed to a boolean flag, or a positional
+argument — as exit 2 **before** reading state or writing any file.
+`workflow:state` and `workflow:readiness` also reject an empty `--flag=` value.
+A typo never silently falls back to a default run.
+
 ## Input Artifacts
 
 ```bash
