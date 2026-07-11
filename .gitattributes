@@ -1,0 +1,24 @@
+# 저장소 전체 줄바꿈/텍스트 정규화 정책 (#164, IMP-03).
+# vendored kit 은 Markdown/YAML/JSON/MJS/TS golden 파일의 byte-level determinism 을
+# 다루므로 줄바꿈 계약을 저장소에 고정한다. checkout 은 LF 로 결정적이 된다.
+# frontend-workflow-kit/.gitattributes 는 하위 트리에 더 강한 `* text=auto eol=lf` 를
+# 이미 적용 중이며 그대로 유지된다 (안쪽 .gitattributes 가 우선).
+* text=auto
+
+.gitattributes text eol=lf
+*.md text eol=lf
+*.mjs text eol=lf
+*.js text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.sh text eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.zip binary

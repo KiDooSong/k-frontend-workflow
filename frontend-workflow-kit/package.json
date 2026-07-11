@@ -1,7 +1,7 @@
 {
   "name": "frontend-workflow-kit",
-  "version": "0.1.0-mvp-a",
-  "description": "LLM이 프론트 프로젝트를 환각 없이 진행하게 만드는 워크플로우 킷 (MVP-A: 문서 생성 + readiness 판정)",
+  "version": "0.3.0-mvp.1",
+  "description": "LLM이 프론트 프로젝트를 환각 없이 진행하게 만드는 워크플로우 킷 (state/readiness/validate 코어 + 입력 reconciliation·생성 뷰·경로 backstop + warning-first 관측 surface)",
   "type": "module",
   "private": true,
   "engines": {

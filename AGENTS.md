@@ -2,9 +2,13 @@
 
 ## Where things live
 
-- Current scope, tier boundaries, and what not to touch: `kit-dev/roadmap-current.md`.
-- Build-session kickoff and read-order: `IMPLEMENTING.md`.
+- Repository overview and entry point: root `README.md`.
+- Current scope, tier boundaries, and what not to touch: `kit-dev/roadmap-current.md`
+  (implementation-status source of truth).
+- Release history and baseline: `kit-dev/CHANGELOG.md`.
 - Where each fact is canonically owned: `frontend-workflow-kit/docs/reference/doc-ownership.md`.
+- `IMPLEMENTING.md` is a historical MVP-A build note — do not use it as a session
+  entry point or as a source of current gate/script facts.
 
 ## Codex and Claude skill compatibility
 

@@ -1,15 +1,27 @@
 # 다음 투입 아이디어 포트폴리오 — frontend-workflow-kit 리서치
 
-> 날짜: 2026-07-05 · status: draft(리서치 산출물, 게이트 아님)
+> 날짜: 2026-07-05 · status: **구현 상태 회고 인덱스** (2026-07-11 전환 — 원문은 리서치 산출물, 게이트 아님)
 > "이 킷에 다음으로 **투입할 만한** 아이디어는 무엇이고, 각각이 킷의 불변식과 정합하는가"에 대한 5장짜리 딥리서치 묶음 + 인덱스.
+
+## 구현 상태 (2026-07-11, release baseline `0.3.0-mvp.1`)
+
+이 포트폴리오의 5개 아이디어 중 **01·02·04·05 는 이미 킷에 landed** 했다. 아래 본문의 "빈 계층/미구현" 서술은 2026-07-05 리서치 시점의 스냅샷이며 현재 상태가 아니다. 현행 정본은 [kit-dev/roadmap-current.md](../../../kit-dev/roadmap-current.md) · [kit-dev/CHANGELOG.md](../../../kit-dev/CHANGELOG.md).
+
+| # | 아이디어 | 상태 (2026-07-11) | 랜딩 형태 |
+|---|---|---|---|
+| 01 | Telemetry & Promotion-Evidence Harness | ✅ **landed** | `workflow:telemetry` (+opt-in visual/adoption/redteam surface, warning-first) |
+| 02 | Eval & Calibration Harness | ✅ **landed** | `workflow:eval` (`readiness-eval.mjs`, telemetry default surface) |
+| 03 | MCP-native Gate Serving | 🔬 **열린 연구** (미구현) | 도입은 CLI 소비 마찰/에이전트별 JSON 파싱 drift 가 반복 관측될 때 별도 Open Decision |
+| 04 | Adversarial / Reward-Hacking Red-Team Suite | ✅ **landed** | `workflow:redteam` (warning-first 관측 매트릭스, 새 게이트 0) |
+| 05 | Canonical-Doc Drift Detector | ✅ **landed** | `workflow:doc-drift` (+opt-in status heuristic, info-only) |
 
 이 폴더는 **리서치 evidence** 다 — 킷의 `docs/frontend-workflow/` 산출물(screen-spec·readiness·validate 대상)이 **아니며**, 어떤 게이트도 걸지 않는다. 여기 제안된 아이디어의 실제 도입은 전부 별도 Open Decision + 사람 승인을 따른다. ([docs/research/figma-design/](../figma-design/README.md) · [docs/research/playwright/](../playwright/README.md) 와 같은 위상.)
 
 ---
 
-## 한 줄 결론
+## 한 줄 결론 (2026-07-05 리서치 시점)
 
-**이 킷은 "게이트를 만드는 능력"은 최상위 성숙도에 도달했지만, 그 게이트를 *측정·증거화·균일 소비·적대적 검증*하는 계층이 구조적으로 비어 있다.** 그래서 로드맵의 "다음 구현 후보"가 하나같이 *"telemetry/adoption 이후 승격"* 에서 멈춰 있다 — 정작 그 telemetry 를 **모을 수단이 없기 때문**이다. 아래 5개 아이디어는 새 산출물 축·새 게이트를 **하나도 만들지 않고**, 이미 있는 결정적·warning-first 도구 계열(`doctor`·`route-cross-check`·`check-generated`·`test-fixtures`)을 확장해 이 빈 계층을 채운다.
+**이 킷은 "게이트를 만드는 능력"은 최상위 성숙도에 도달했지만, 그 게이트를 *측정·증거화·균일 소비·적대적 검증*하는 계층이 구조적으로 비어 있다.** *(→ 2026-07-11 현재 이 빈 계층은 01/02/04/05 랜딩으로 채워졌다 — 위 구현 상태 표 참조. 03 소비 계층만 열린 연구로 남는다.)* 그래서 로드맵의 "다음 구현 후보"가 하나같이 *"telemetry/adoption 이후 승격"* 에서 멈춰 있다 — 정작 그 telemetry 를 **모을 수단이 없기 때문**이다. 아래 5개 아이디어는 새 산출물 축·새 게이트를 **하나도 만들지 않고**, 이미 있는 결정적·warning-first 도구 계열(`doctor`·`route-cross-check`·`check-generated`·`test-fixtures`)을 확장해 이 빈 계층을 채운다.
 
 ## 이 포트폴리오를 떠받치는 단 하나의 관찰
 

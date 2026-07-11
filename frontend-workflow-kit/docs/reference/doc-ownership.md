@@ -50,6 +50,26 @@ inline and links the rest; it does not restate the references.
 | e2e consumer adoption procedure (install / commit / ignore / run sequence + checklist) | [`e2e-consumer-adoption.md`](e2e-consumer-adoption.md) | link only; it sequences the procedure and links setup / path / rules to their homes (does not duplicate the catalog) |
 | command syntax | [`COMMANDS.md`](../../COMMANDS.md) | link only |
 
+## Implementation status / release — source of truth
+
+Kit-level **status facts** have exactly one home each. The kit-level homes
+(`kit-dev/*` rows below) live in the kit development repository's repo-root
+`kit-dev/` and are **not vendored** into the consumer payload; the per-artifact
+manifest **is** vendored. Consumer-facing docs must not restate these facts —
+link or name the home instead:
+
+| Status fact | Canonical home |
+|---|---|
+| current implementation status, tier boundaries, gate inventory, what not to build | `kit-dev/roadmap-current.md` (kit dev repo) |
+| release history, version baseline, hard-gate vs warning-first release note | `kit-dev/CHANGELOG.md` (kit dev repo) |
+| open kit-level decisions | `kit-dev/open-decisions.md` (kit dev repo) |
+| per-artifact active/planned status | [`artifact-manifest.yaml`](../../catalog/artifact-manifest.yaml) (vendored; `workflow:doc-drift` cross-checks it against the roadmap) |
+
+`IMPLEMENTING.md` (kit dev repo root) is a historical MVP-A build note, not a
+status source. If a doc in this payload appears to claim an implementation
+status that conflicts with the manifest, treat the manifest + kit-dev roadmap as
+canonical.
+
 ## The dedup rule
 
 If the same paragraph, table, or rule appears in **2+ skills/docs**, it has no

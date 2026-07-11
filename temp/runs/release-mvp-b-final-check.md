@@ -7,7 +7,13 @@ base_commit: 6bbe8bd
 dogfood_run: consumer-dogfood-001
 date: 2026-06-14
 verdict: GO (rc1)
+status: historical
 ---
+
+> ⚠ **HISTORICAL (2026-07-11 표기)**: 이 문서는 `v0.2.0-mvp-b-rc1`(base commit `6bbe8bd`, 2026-06-14) 시점의 릴리스 체크다.
+> 이후 telemetry/eval/red-team/doc-drift/visual/adoption 계층이 대량 병합되어 **현재 HEAD 의 최종 릴리스 증거가 아니다**.
+> 현행 release baseline 은 `0.3.0-mvp.1`([kit-dev/CHANGELOG.md](../../kit-dev/CHANGELOG.md))이며,
+> 최신 HEAD 검증 증거는 MVP closure tracker #167 의 MVP-05(#161)에서 별도로 생성한다.
 
 # MVP-B 릴리스 최종 체크 — `v0.2.0-mvp-b-rc1`
 
