@@ -120,3 +120,52 @@ jobs:
       - name: golden fixture regression (warning-only)
         continue-on-error: true
         run: npm run example:test
+
+  # ── 지원 계약 smoke (#160, tracker #167 MVP-04) ─────────────────────────────
+  # 아래 두 job 은 위 hard-gate job(validate-example: Ubuntu + Node 20)이 이미 hard 로 검증하는
+  # 결정적 검사(test:spec / example:validate)의 부분집합을 다른 플랫폼/Node 버전에서 반복하는
+  # "기존 hard gate 의 플랫폼/버전 확장"이다 — 새 검사 종류를 gate 로 승격하지 않는다.
+  # warning-first 도구(lint/golden-fixture/visual/telemetry/red-team)의 CI 관측 step 을 두지
+  # 않고 관측 artifact 도 수집하지 않는다 — 단 test:spec/distribution 단위·패키징 테스트가
+  # 해당 CLI 들을 "테스트 대상"으로 spawn 하는 것은 관측 surface 실행/승격이 아니다.
+  # required check(branch protection) 승격은 별도 Open Decision 전까지 하지 않는다.
+  # Windows 는 CI 미검증 — kit README §지원 환경 지원 표에 명시적 best-effort 로만 기록.
+  compat-smoke:
+    # engines(node >=20)의 "대표 최신 LTS" 축: Ubuntu + Node 24.
+    # engines 하한(Node 20)은 위 validate-example hard gate 가 그대로 검증한다.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend-workflow-kit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend-workflow-kit/package-lock.json
+      - run: npm ci
+      - run: npm run test:spec
+      - run: npm run example:validate
+
+  macos-smoke:
+    # 지원 표의 macOS 축 — #154 유형(symlink/realpath CLI entry guard, packed-kit spawn) 회귀를
+    # macOS 에서 직접 돌린다. focused 선택 근거:
+    #   - util.test.mjs: isCliEntry 단위 + symlink 경유 spawn e2e (#154 의 직접 회귀)
+    #   - distribution.test.mjs: pack allowlist + packed CLI spawn (#154 당시 macOS 에서 깨졌던 테스트)
+    #   - upgrade-planner.test.mjs: payload manifest mode/hash 비교 e2e (플랫폼 민감 — exec bit/경로)
+    #   - example:validate: 예제 문서 트리 대상 경로 처리 smoke
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: frontend-workflow-kit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend-workflow-kit/package-lock.json
+      - run: npm ci
+      - run: node --test scripts/lib/util.test.mjs scripts/lib/distribution.test.mjs scripts/lib/upgrade-planner.test.mjs
+      - run: npm run example:validate
