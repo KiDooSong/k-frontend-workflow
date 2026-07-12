@@ -1007,6 +1007,20 @@ test('a hard-linked --plan destination cannot truncate the linked file (atomic r
   assert.equal(read(currentDir, 'safe.mjs'), 'B', 'apply must copy the intact upstream content');
 });
 
+test('the plan temp file is created exclusively with an unpredictable name (source contract)', () => {
+  // The temp name is random, so a pre-planted link at it cannot be arranged in
+  // a black-box test — pin the source contract instead: exclusive create (wx)
+  // plus a random suffix inside writePlanAtomic.
+  const src = fs.readFileSync(UPGRADE_CLI, 'utf8');
+  const fnStart = src.indexOf('function writePlanAtomic');
+  assert.notEqual(fnStart, -1, 'writePlanAtomic must exist');
+  const fnBody = src.slice(fnStart, src.indexOf('\n}', fnStart));
+  assert.match(fnBody, /flag:\s*'wx'/, 'temp file must be created exclusively (wx)');
+  assert.match(fnBody, /randomBytes/, 'temp file name must be unpredictable');
+  assert.match(fnBody, /renameSync/, 'the plan must land via rename, not a follow-through write');
+  assert.doesNotMatch(fnBody, /process\.pid/, 'no predictable pid-based temp name');
+});
+
 test('CLI still fails on a bad --plan path before any apply mutation', (t) => {
   const tmp = mkTmp('rebase-badplan');
   t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));

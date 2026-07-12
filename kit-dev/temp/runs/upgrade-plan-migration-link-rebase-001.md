@@ -225,6 +225,16 @@ sound within the documented Markdown grammar")하고 High 2건 + Medium 1건을 
 
 전체 `npm test` 805 tests 798 pass 7 platform-skip.
 
+## 8.6 Codex 리뷰 라운드 6 반영 (temp file 배타 생성)
+
+라운드 6 은 라운드 5 의 최종 destination hard-link 해소를 정상 확인하고 High 1건을 추가 검출 — 해소:
+
+| 심각도 | finding | 처리 |
+|---|---|---|
+| High | temp 파일 이름이 예측 가능(`.tmp-<pid>`)하고 비배타 write — temp 경로에 미리 심어둔 hard link/symlink 를 `writeFileSync` 가 따라가/truncate 해 rename 전에 payload 오염 가능 | temp 를 `flag: 'wx'`(exclusive create) + `crypto.randomBytes` 8-byte 무작위 suffix + EEXIST retry(5회) 로 생성 — 미리 심어둔 어떤 entry 도 EEXIST 로 거부되고 따라가지 않음. write/rename 실패 시 temp cleanup. 무작위 이름 특성상 black-box 재현이 불가능하므로 source-contract 테스트(wx·randomBytes·renameSync 사용, pid 기반 이름 부재)로 고정 |
+
+전체 `npm test` 806 tests 799 pass 7 platform-skip.
+
 ## 9. 경계 준수
 
 - upgrade classification/apply/manifest/conflict/prune 의미 무변경 (기존 테스트 전부 통과로 고정).

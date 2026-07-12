@@ -14,6 +14,7 @@
 // mode-only chmods, and adds; it never overwrites locally modified files, never
 // deletes upstream-removed files (unless --prune), and only ever writes inside
 // --current.
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs, runCli, isCliEntry } from './lib/util.mjs';
@@ -143,23 +144,38 @@ function pathForms(abs) {
 }
 
 // Write the plan without ever writing THROUGH an existing directory entry:
-// write a fresh temp file, then rename it over the destination. A hard link
-// (or symlink) planted at the plan path shares/aliases another file's inode —
-// a direct writeFileSync would truncate that shared content (e.g. a payload
-// file inside --next), while rename only replaces the directory entry and
-// leaves the other name's bytes untouched.
+// create a fresh temp file EXCLUSIVELY (flag 'wx' + unpredictable suffix — a
+// hard link or symlink pre-planted at the temp name makes the open fail with
+// EEXIST instead of being followed/truncated), then rename it over the
+// destination. A hard link (or symlink) planted at the plan path itself
+// shares/aliases another file's inode — a direct writeFileSync would truncate
+// that shared content (e.g. a payload file inside --next), while rename only
+// replaces the directory entry and leaves the other name's bytes untouched.
 function writePlanAtomic(planPath, markdown) {
   fs.mkdirSync(path.dirname(planPath), { recursive: true });
-  const tmpPath = `${planPath}.tmp-${process.pid}`;
-  fs.writeFileSync(tmpPath, markdown, 'utf8');
-  try {
-    fs.renameSync(tmpPath, planPath);
-  } catch (err) {
+  let lastErr = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const tmpPath = `${planPath}.tmp-${crypto.randomBytes(8).toString('hex')}`;
     try {
-      fs.rmSync(tmpPath, { force: true });
-    } catch { /* best-effort cleanup */ }
-    throw err;
+      fs.writeFileSync(tmpPath, markdown, { encoding: 'utf8', flag: 'wx' });
+    } catch (err) {
+      if (err && err.code === 'EEXIST') {
+        lastErr = err;
+        continue;
+      }
+      throw err;
+    }
+    try {
+      fs.renameSync(tmpPath, planPath);
+      return;
+    } catch (err) {
+      try {
+        fs.rmSync(tmpPath, { force: true });
+      } catch { /* best-effort cleanup */ }
+      throw err;
+    }
   }
+  throw lastErr ?? new Error(`could not create a temporary plan file next to ${planPath}`);
 }
 
 // On --apply the plan file must survive the apply and must not corrupt its
