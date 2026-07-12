@@ -21,7 +21,11 @@ export const DEFAULTS = {
 // --- 인자 파싱 -------------------------------------------------------------
 // 지원 형식: --flag value, --flag=value, --bool
 export function parseArgs(argv) {
-  const flags = {};
+  // null-prototype: 일반 객체면 `--__proto__=x` 가 상속 setter 에 흡수돼 own property 가 안 생기고
+  // Object.keys 에서 사라진다 — allowlist 검증(cli-args.mjs)이 unknown option 을 못 보는 구멍.
+  // 파싱 결과를 있는 그대로 보존만 하며(거부는 여전히 CLI 별 allowlist 몫) 소비부는 전부
+  // property 접근·Object.keys·`in` 만 쓰므로 동작 동일.
+  const flags = Object.create(null);
   const positionals = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];

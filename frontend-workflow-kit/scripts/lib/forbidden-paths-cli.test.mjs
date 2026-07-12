@@ -68,6 +68,18 @@ test('unknown flag --enforc is exit 2 with unknown-option on stderr — never a 
   assert.equal(r.stdout, '', 'typo must not fall back to producing a violations report');
 });
 
+test('unknown flag --__proto__ is exit 2 — prototype-setter absorption must not bypass the allowlist', () => {
+  // 일반 객체 저장이면 `--__proto__=x` 가 상속 setter 에 흡수돼 Object.keys 에서 사라지고
+  // (예: `--help --__proto__=x` 가 help exit 0 으로 통과) 검증을 우회한다 — parseArgs 의
+  // null-prototype 저장으로 unknown option 경로에 잡혀야 한다(Codex 리뷰 Minor).
+  for (const args of [['--__proto__=x'], ['--help', '--__proto__=x'], ['--__proto__', 'x']]) {
+    const r = run(args);
+    assert.equal(r.status, 2, `${args.join(' ')} should exit 2`);
+    assert.match(r.stderr, /unknown option --__proto__/);
+    assert.equal(r.stdout, '', 'must not fall through to help or a normal run');
+  }
+});
+
 test('unknown flag --jsno is exit 2 — no violations JSON on stdout', () => {
   const r = run(['--jsno', '--docs', UNCLEARED_DOCS, '--diff', API_WRITE_DIFF]);
   assert.equal(r.status, 2);
