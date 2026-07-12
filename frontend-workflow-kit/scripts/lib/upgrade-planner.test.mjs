@@ -1021,6 +1021,22 @@ test('the plan temp file is created exclusively with an unpredictable name (sour
   assert.doesNotMatch(fnBody, /process\.pid/, 'no predictable pid-based temp name');
 });
 
+test('a failed plan write cleans up its temp file (failure injection via directory destination)', (t) => {
+  const tmp = mkTmp('rebase-tmp-cleanup');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const { currentDir, nextDir } = buildScenario(tmp);
+  // A DIRECTORY at the plan path: the exclusive temp write succeeds, then the
+  // rename over a directory fails — the temp file must not be left behind.
+  const planDirAsFile = path.join(tmp, 'out', 'plan.md');
+  fs.mkdirSync(planDirAsFile, { recursive: true });
+  const r = spawnSync(process.execPath, [
+    UPGRADE_CLI, '--current', currentDir, '--next', nextDir, '--plan', planDirAsFile,
+  ], { encoding: 'utf8' });
+  assert.notEqual(r.status, 0, 'rename over a directory must fail the run');
+  const leftovers = fs.readdirSync(path.join(tmp, 'out')).filter((n) => n.includes('.tmp-'));
+  assert.deepEqual(leftovers, [], 'no temp plan file may be left behind after a failed write');
+});
+
 test('CLI still fails on a bad --plan path before any apply mutation', (t) => {
   const tmp = mkTmp('rebase-badplan');
   t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));

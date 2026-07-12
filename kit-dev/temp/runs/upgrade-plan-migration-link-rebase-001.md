@@ -235,6 +235,17 @@ sound within the documented Markdown grammar")하고 High 2건 + Medium 1건을 
 
 전체 `npm test` 806 tests 799 pass 7 platform-skip.
 
+## 8.7 Codex 리뷰 라운드 7 반영 (temp cleanup)
+
+라운드 7 은 라운드 6 보안 해소를 정상 확인("A pre-existing link at the temp name is never opened or
+followed")하고 Low 1건만 검출 — 해소:
+
+| 심각도 | finding | 처리 |
+|---|---|---|
+| Low | 비-EEXIST write 실패(ENOSPC/EIO)가 partial temp 파일을 남김 — cleanup 이 rename 실패에만 걸려 있었음 | write+rename 을 단일 try 로 통합, EEXIST(남의 entry — 절대 삭제 금지)만 retry 하고 그 외 모든 실패는 temp cleanup 후 rethrow. 실패 주입 회귀 테스트: plan 경로에 디렉토리를 두어 rename 실패 유도 → 비-0 exit + `.tmp-*` 잔존 0 확인 |
+
+전체 `npm test` 807 tests 800 pass 7 platform-skip.
+
 ## 9. 경계 준수
 
 - upgrade classification/apply/manifest/conflict/prune 의미 무변경 (기존 테스트 전부 통과로 고정).

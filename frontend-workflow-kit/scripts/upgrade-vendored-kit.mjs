@@ -156,19 +156,20 @@ function writePlanAtomic(planPath, markdown) {
   let lastErr = null;
   for (let attempt = 0; attempt < 5; attempt++) {
     const tmpPath = `${planPath}.tmp-${crypto.randomBytes(8).toString('hex')}`;
+    let created = false;
     try {
       fs.writeFileSync(tmpPath, markdown, { encoding: 'utf8', flag: 'wx' });
-    } catch (err) {
-      if (err && err.code === 'EEXIST') {
-        lastErr = err;
-        continue;
-      }
-      throw err;
-    }
-    try {
+      created = true;
       fs.renameSync(tmpPath, planPath);
       return;
     } catch (err) {
+      // EEXIST from the exclusive create means the entry is NOT ours — retry a
+      // new name and never delete it. Any other failure (partial write on
+      // ENOSPC/EIO, rename failure) cleans up our temp file before rethrowing.
+      if (!created && err && err.code === 'EEXIST') {
+        lastErr = err;
+        continue;
+      }
       try {
         fs.rmSync(tmpPath, { force: true });
       } catch { /* best-effort cleanup */ }
