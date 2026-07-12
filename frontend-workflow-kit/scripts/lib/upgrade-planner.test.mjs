@@ -686,6 +686,114 @@ test('CLI default apply writes a plan whose migration links resolve from the pla
   assert.equal(JSON.stringify(out.plan).includes(tmp.split(path.sep).join('/')), false);
 });
 
+test('nested image destinations inside a link label are rebased too', (t) => {
+  const tmp = mkTmp('rebase-nested');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const { currentDir, nextDir } = buildNotesScenario(tmp, {
+    notesBody: '# Notes\n\n[![diagram](assets/diagram.png)](input-reconciliation.md)\n',
+  });
+  const plan = buildPlan({ currentDir, nextDir });
+  const md = renderPlanMarkdown(plan, { currentDir, planPath: path.join(currentDir, '_upgrade', 'p.md') });
+  assert.match(md, /\[!\[diagram\]\(\.\.\/docs\/reference\/assets\/diagram\.png\)\]\(\.\.\/docs\/reference\/input-reconciliation\.md\)/);
+});
+
+test('backslash-escaped destination notation is left exactly as written', (t) => {
+  const tmp = mkTmp('rebase-escaped-dest');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const { currentDir, nextDir } = buildNotesScenario(tmp, {
+    notesBody: '# Notes\n\nSee [hash](foo\\#bar.md) and [paren](foo\\(bar\\).md) and [ok](input-reconciliation.md).\n',
+  });
+  const plan = buildPlan({ currentDir, nextDir });
+  const md = renderPlanMarkdown(plan, { currentDir, planPath: path.join(currentDir, '_upgrade', 'p.md') });
+  assert.match(md, /\[hash\]\(foo\\#bar\.md\)/); // untouched, no note (escaped notation)
+  assert.match(md, /\[paren\]\(foo\\\(bar\\\)\.md\)/);
+  assert.equal(extractLink(md, 'ok'), '../docs/reference/input-reconciliation.md');
+  assert.doesNotMatch(md, /could not be rebased/);
+});
+
+test('angle-bracket destinations are left verbatim', (t) => {
+  const tmp = mkTmp('rebase-angle');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const { currentDir, nextDir } = buildNotesScenario(tmp, {
+    notesBody: '# Notes\n\nSee [ab](<screen-identity.md>) and [ok](input-reconciliation.md).\n',
+  });
+  const plan = buildPlan({ currentDir, nextDir });
+  const md = renderPlanMarkdown(plan, { currentDir, planPath: path.join(currentDir, '_upgrade', 'p.md') });
+  assert.match(md, /\[ab\]\(<screen-identity\.md>\)/);
+  assert.equal(extractLink(md, 'ok'), '../docs/reference/input-reconciliation.md');
+});
+
+test('percent-encoded traversal segments do not bypass the payload-root escape check', (t) => {
+  const tmp = mkTmp('rebase-pct');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const { currentDir, nextDir } = buildNotesScenario(tmp, {
+    notesBody: '# Notes\n\nSee [enc](%2e%2e/%2e%2e/%2e%2e/outside.md) and [ok](input-reconciliation.md).\n',
+  });
+  const plan = buildPlan({ currentDir, nextDir });
+  const md = renderPlanMarkdown(plan, { currentDir, planPath: path.join(currentDir, '_upgrade', 'p.md') });
+  // Encoded `..` decodes to traversal in a Markdown viewer — kept verbatim + note.
+  assert.equal(extractLink(md, 'enc'), '%2e%2e/%2e%2e/%2e%2e/outside.md');
+  assert.match(md, /could not be rebased/);
+  assert.equal(extractLink(md, 'ok'), '../docs/reference/input-reconciliation.md');
+});
+
+test('a target equal to the plan directory renders as "." (not a false cross-volume fallback)', () => {
+  const root = path.parse(process.cwd()).root;
+  const currentDir = path.join(root, 'repo', 'tools', 'frontend-workflow');
+  const { body, unresolved } = rebaseMigrationNoteLinks({
+    body: 'See [here](.#top).\n',
+    notesPath: 'docs/reference/upgrade-notes.md',
+    currentDir,
+    planPath: path.join(currentDir, 'docs', 'reference', 'plan.md'),
+  });
+  assert.equal(body, 'See [here](.#top).\n');
+  assert.deepEqual(unresolved, []);
+});
+
+test('CLI --apply refuses a --plan path colliding with apply inputs or outputs', (t) => {
+  const tmp = mkTmp('rebase-plan-collision');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const { currentDir, nextDir } = buildScenario(tmp);
+  const before = read(currentDir, 'safe.mjs');
+  const cases = [
+    { plan: path.join(nextDir, 'stray-plan.md'), re: /inside --next/, preExisting: false },
+    { plan: path.join(currentDir, 'safe.mjs'), re: /collides with a path/, preExisting: true },
+    { plan: path.join(currentDir, INSTALL_MANIFEST_NAME), re: /collides with a path/, preExisting: true },
+    { plan: path.join(currentDir, CONFLICTS_DIR_NAME, 'x.md.incoming'), re: /collides with a path/, preExisting: false },
+  ];
+  for (const { plan, re, preExisting } of cases) {
+    const wasThere = preExisting ? fs.readFileSync(plan, 'utf8') : null;
+    const r = spawnSync(process.execPath, [
+      UPGRADE_CLI, '--current', currentDir, '--next', nextDir, '--apply', '--plan', plan,
+    ], { encoding: 'utf8' });
+    assert.equal(r.status, 2, `${plan} should be refused`);
+    assert.match(r.stderr, re);
+    assert.equal(read(currentDir, 'safe.mjs'), before, 'refusal must precede any mutation');
+    if (preExisting) {
+      assert.equal(fs.readFileSync(plan, 'utf8'), wasThere, 'a colliding existing file must stay untouched');
+    } else {
+      assert.equal(fs.existsSync(plan), false, 'no plan file may be written at a colliding path');
+    }
+  }
+  const backupDir = path.join(tmp, 'backup');
+  const rb = spawnSync(process.execPath, [
+    UPGRADE_CLI, '--current', currentDir, '--next', nextDir, '--apply',
+    '--backup-dir', backupDir, '--plan', path.join(backupDir, 'plan.md'),
+  ], { encoding: 'utf8' });
+  assert.equal(rb.status, 2);
+  assert.match(rb.stderr, /inside --backup-dir/);
+  assert.equal(read(currentDir, 'safe.mjs'), before);
+
+  // A non-colliding in-current plan path stays allowed (custom _upgrade name),
+  // and dry-run --plan keeps its documented flexibility.
+  const okPlan = path.join(currentDir, '_upgrade', 'custom-plan.md');
+  const ok = spawnSync(process.execPath, [
+    UPGRADE_CLI, '--current', currentDir, '--next', nextDir, '--apply', '--plan', okPlan,
+  ], { encoding: 'utf8' });
+  assert.equal(ok.status, 0, ok.stderr);
+  assert.equal(fs.existsSync(okPlan), true);
+});
+
 test('CLI still fails on a bad --plan path before any apply mutation', (t) => {
   const tmp = mkTmp('rebase-badplan');
   t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));

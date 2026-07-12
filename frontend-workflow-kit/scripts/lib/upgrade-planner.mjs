@@ -324,7 +324,10 @@ export function buildPlan({ currentDir, nextDir, options = {} }) {
 
 // Length-preserving fence mask: fenced-block lines become spaces (same fence
 // grammar as doc-drift's stripFencedCodeBlocks, which is NOT length-preserving
-// and therefore unusable for in-place rewriting).
+// and therefore unusable for in-place rewriting). Deliberately the same Phase 0
+// grammar limits as doc-drift (no blockquote/list-indented fences, no escaped
+// backtick handling in inline spans): the rebase must agree with the checker
+// that verifies these links, and upgrade-notes never uses those constructs.
 function maskFencedCodeBlocksPreserveLength(content) {
   const lines = String(content || '').split('\n');
   const out = [];
@@ -372,11 +375,12 @@ function findClosingDelimiter(text, start, open, close) {
 }
 
 // Offsets of every inline-link destination in the masked text (same offsets as
-// the original — all masks are length-preserving). Angle-bracket destinations
-// (`[x](<dest>)`) are skipped: the current upgrade-notes contract never uses
-// them and leaving them verbatim is the conservative choice.
-function scanInlineLinkDestinations(masked) {
-  const spans = [];
+// the original — all masks are length-preserving), in ascending order. Link
+// labels are scanned recursively so a nested image (`[![d](img.png)](doc.md)`)
+// gets both destinations rebased. Angle-bracket destinations (`[x](<dest>)`)
+// are skipped: the current upgrade-notes contract never uses them and leaving
+// them verbatim is the conservative choice.
+function scanInlineLinkDestinations(masked, base = 0, spans = []) {
   for (let i = 0; i < masked.length; i++) {
     let labelStart = -1;
     if (masked[i] === '!' && masked[i + 1] === '[') labelStart = i + 1;
@@ -387,23 +391,38 @@ function scanInlineLinkDestinations(masked) {
     if (labelEnd === -1 || masked[labelEnd + 1] !== '(') continue;
     const close = findClosingDelimiter(masked, labelEnd + 2, '(', ')');
     if (close === -1) continue;
+    // Nested destinations inside the label come first positionally, keeping the
+    // collected spans ascending and non-overlapping.
+    scanInlineLinkDestinations(masked.slice(labelStart + 1, labelEnd), base + labelStart + 1, spans);
     let destStart = labelEnd + 2;
     while (destStart < close && /\s/.test(masked[destStart])) destStart++;
     let destEnd = destStart;
     while (destEnd < close && !/\s/.test(masked[destEnd])) destEnd++;
     if (destEnd > destStart && masked[destStart] !== '<') {
-      spans.push({ start: destStart, end: destEnd });
+      spans.push({ start: base + destStart, end: base + destEnd });
     }
     i = close;
   }
   return spans;
 }
 
-// External/anchor/absolute destinations are never rewritten.
+// External/anchor/absolute destinations are never rewritten. A destination
+// containing a backslash is backslash-escaped link notation (`foo\#bar.md`,
+// `foo\(bar\).md`) — splitting it at raw `#`/`?` would misread the escapes, so
+// it is left exactly as written (per the "do not touch escaped notation" rule).
 function isRebaseCandidate(dest) {
   if (!dest) return false;
+  if (dest.includes('\\')) return false;
   if (dest.startsWith('#') || dest.startsWith('/')) return false;
   return !/^[a-z][a-z0-9+.-]*:/i.test(dest);
+}
+
+function safeDecodeURIComponent(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
 }
 
 // Rewrite the relative links of an embedded migration-notes body so they resolve
@@ -441,10 +460,15 @@ export function rebaseMigrationNoteLinks({ body, notesPath, currentDir, planPath
       out += dest;
       continue;
     }
-    const payloadRel = path.posix.normalize(
-      notesDir === '.' ? filePart : `${notesDir}/${filePart}`,
+    const joinUnderNotes = (part) => path.posix.normalize(
+      notesDir === '.' ? part : `${notesDir}/${part}`,
     );
-    if (!isSafeRelPath(payloadRel)) {
+    const payloadRel = joinUnderNotes(filePart);
+    // The escape check also runs on the percent-decoded path: a Markdown viewer
+    // URL-decodes the link, so `%2e%2e/` segments would otherwise traverse out
+    // of the payload root while looking safe in their encoded form.
+    const decodedPayloadRel = joinUnderNotes(safeDecodeURIComponent(filePart));
+    if (!isSafeRelPath(payloadRel) || !isSafeRelPath(decodedPayloadRel)) {
       // Escapes the payload root — keep the original link for human review.
       unresolved.add(dest);
       out += dest;
@@ -452,14 +476,14 @@ export function rebaseMigrationNoteLinks({ body, notesPath, currentDir, planPath
     }
     const targetAbs = path.resolve(currentAbs, payloadRel);
     const rel = path.relative(planDirAbs, targetAbs);
-    if (rel === '' || path.isAbsolute(rel) || /^[a-zA-Z]:/.test(rel)) {
+    if (path.isAbsolute(rel) || /^[a-zA-Z]:/.test(rel)) {
       // No portable relative path exists (different volume) — keep the original
       // payload-relative link rather than leaking an absolute local path.
       unresolved.add(dest);
       out += dest;
       continue;
     }
-    out += toPosix(rel) + query + fragment;
+    out += (rel === '' ? '.' : toPosix(rel)) + query + fragment;
   }
   out += text.slice(last);
   return { body: out, unresolved: [...unresolved].sort((a, b) => a.localeCompare(b)) };

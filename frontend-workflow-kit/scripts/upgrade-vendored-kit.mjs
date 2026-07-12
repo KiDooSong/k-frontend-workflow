@@ -17,7 +17,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs, runCli, isCliEntry } from './lib/util.mjs';
-import { UPGRADE_DIR_NAME } from './lib/kit-manifest.mjs';
+import {
+  UPGRADE_DIR_NAME,
+  INSTALL_MANIFEST_NAME,
+  PAYLOAD_MANIFEST_NAME,
+  CONFLICTS_DIR_NAME,
+} from './lib/kit-manifest.mjs';
 import { buildPlan, renderPlanMarkdown, applyPlan, assertSafeWriteTarget } from './lib/upgrade-planner.mjs';
 
 const TOOL = 'upgrade-vendored-kit';
@@ -89,6 +94,40 @@ function sanitizeRef(ref) {
   return short.replace(/[^\w.-]+/g, '-');
 }
 
+// Posix-relative path of childAbs under parentAbs, or null when outside.
+function relInside(parentAbs, childAbs) {
+  const rel = path.relative(parentAbs, childAbs);
+  if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) return null;
+  return rel.split(path.sep).join('/');
+}
+
+// On --apply the plan file must survive the apply and must not corrupt its
+// inputs: refuse a plan path inside --next (an apply source), inside
+// --backup-dir (a backup copy could overwrite it), or colliding with anything
+// the apply writes or tracks inside --current (payload files, conflict
+// .incoming tree, install/payload manifests). Lexical, fail-closed, exit 2
+// BEFORE the plan is written and before any mutation.
+function assertPlanPathDoesNotCollide({ planPath, currentDir, nextDir, backupDir, plan }) {
+  if (relInside(nextDir, planPath) != null) {
+    fail(`--plan must not point inside --next (it would corrupt the upgrade payload): ${planPath}`);
+  }
+  if (backupDir && relInside(backupDir, planPath) != null) {
+    fail(`--plan must not point inside --backup-dir (a backup could overwrite the plan): ${planPath}`);
+  }
+  const relCur = relInside(currentDir, planPath);
+  if (relCur != null) {
+    const tracked = plan.files.some((f) => f.path === relCur);
+    if (
+      tracked
+      || relCur === INSTALL_MANIFEST_NAME
+      || relCur === PAYLOAD_MANIFEST_NAME
+      || relCur.startsWith(`${CONFLICTS_DIR_NAME}/`)
+    ) {
+      fail(`--plan collides with a path the apply writes or tracks inside --current: ${relCur}`);
+    }
+  }
+}
+
 function renderHumanSummary(plan) {
   const c = plan.counts;
   const lines = [];
@@ -144,6 +183,15 @@ function main() {
     planInsideCurrent = true;
   }
   if (planPath) {
+    if (apply) {
+      assertPlanPathDoesNotCollide({
+        planPath,
+        currentDir,
+        nextDir,
+        backupDir: options.backupDir,
+        plan,
+      });
+    }
     // The default in-kit plan path gets the same symlink containment as apply
     // (a symlinked _upgrade/ must not let the plan escape --current).
     if (planInsideCurrent) {

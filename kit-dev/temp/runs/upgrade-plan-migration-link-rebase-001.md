@@ -153,11 +153,23 @@ npm run kit:pack                                                        exit 0
 packed upgrade CLI --apply / packed doc-drift --json                    exit 0 / exit 0 (§7)
 ```
 
-신규 테스트 10건: default `_upgrade` 재배치(fragment/query 보존·external/anchor/code/escaped/fenced 불변·
+신규 테스트 16건: default `_upgrade` 재배치(fragment/query 보존·external/anchor/code/escaped/fenced/angle-bracket 불변·
 2회 render byte-identical·absolute path/timestamp 부재) · explicit `--plan` root+nested 실파일 resolve ·
-context 없는 render byte-compat · JSON plan 불변 · payload-escape 원문 유지+deterministic note ·
-win32 cross-drive lexical(원문 유지·absolute 누출 0) · CLI default apply 통합(dogfood 2건 링크 고정) ·
+context 없는 render byte-compat · JSON plan 불변 · payload-escape·percent-encoded traversal 원문 유지+deterministic note ·
+win32 cross-drive lexical(원문 유지·absolute 누출 0) · nested image 재배치 · plan-dir target `.` ·
+CLI default apply 통합(dogfood 2건 링크 고정) · `--plan` collision 거부(next/backup/current payload·manifest·incoming 전수, mutation 0) ·
 bad `--plan` fail-before-apply · doc-drift 회귀(warning 0·exit 0 계약 유지) · packed payload 재배치+packed doc-drift 0.
+
+## 8.1 Codex 리뷰 라운드 1 반영
+
+| 심각도 | finding | 처리 |
+|---|---|---|
+| High | `--apply` 시 `--plan` 이 apply 입력/출력과 충돌 가능(plan 이 manifest refresh 에 덮이거나 payload 오염) | `assertPlanPathDoesNotCollide` — `--next`/`--backup-dir` 내부, current 내부 payload/manifest/`.upgrade-conflicts` 경로를 plan 쓰기 전 exit 2 거부 + 전수 테스트 |
+| Medium | escaped destination punctuation(`\#`·`\(`)을 raw 로 분해 | backslash 포함 destination 은 원문 그대로 유지(spec 의 escaped-notation 불변 규칙) |
+| Medium | label 내 nested image 미재배치 | label 재귀 스캔으로 양쪽 destination 재배치 |
+| Medium | blockquote 내 fence 등 masking 문법 한계 | 의도적 유지 — doc-drift Phase 0 문법과 동일해야 검증기와 일관(코드 주석으로 근거 고정), upgrade-notes 계약에 해당 구문 없음 |
+| Medium | `%2e%2e/` percent-encoded traversal 이 escape 검사 우회 가능(가설) | 실검증 후 decoded path 에도 `isSafeRelPath` 적용 + 회귀 테스트 |
+| Low | target == plan dir 이 cross-volume 으로 오분류 | `rel === ''` → `.` 렌더 + 테스트 |
 
 ## 9. 경계 준수
 
