@@ -10,10 +10,48 @@ import {
   writeFile,
   isCliEntry,
 } from './lib/util.mjs';
+import { enforceCliFlagContract } from './lib/cli-args.mjs';
 import { buildNavGraph } from './lib/nav-graph.mjs';
 
+const VALUE_FLAGS = new Set(['docs', 'out']);
+const BOOLEAN_FLAGS = new Set(['json', 'help']);
+
+function printHelp() {
+  process.stdout.write(`workflow:nav-graph — generate a navigation graph from workflow documents
+
+Usage:
+  node scripts/nav-graph.mjs [--docs <dir>] [--out <file>] [--json]
+
+Options:
+  --docs <dir>  Workflow docs root (default: docs/frontend-workflow)
+  --out <file>  YAML output (default: <docs>/_meta/nav-graph.yaml)
+  --json        Print the graph model to stdout; never write an output file
+  --help        Show this help and exit without scanning or writing
+
+Boundary:
+  ScreenSpec and navigation-map inputs are read-only.
+
+Exit codes:
+  0  help or generation completed
+  2  usage or input error
+`);
+}
+
 function main() {
-  const { flags } = parseArgs(process.argv.slice(2));
+  const { flags, positionals } = parseArgs(process.argv.slice(2));
+  enforceCliFlagContract({
+    flags,
+    positionals,
+    valueFlags: VALUE_FLAGS,
+    booleanFlags: BOOLEAN_FLAGS,
+    tool: 'workflow:nav-graph',
+    helpCommand: 'node scripts/nav-graph.mjs',
+  });
+  if (flags.help) {
+    printHelp();
+    return;
+  }
+
   const docsDir = path.resolve(flags.docs || DEFAULTS.docs);
   // --out 은 단일 출력 파일. 생략 시 <docs>/_meta/nav-graph.yaml.
   const outPath = flags.out

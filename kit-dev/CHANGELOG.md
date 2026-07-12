@@ -4,6 +4,16 @@
 
 ## Unreleased
 
+### fix(cli) — generated-view strict argument contracts + route-tree import safety
+
+core CLI 인자 계약 감사([temp/runs/core-cli-argument-contract-audit-001.md](temp/runs/core-cli-argument-contract-audit-001.md))의 생성 뷰 후속 3종을 해소한다. **생성 content/semantics·adapter/core 책임·golden output·default 경로·generated-file guard·warning-first/hard-gate 상태는 무변경**이며 새 mode, gate, artifact 축, version/tag는 없다.
+
+- **변경 전 실측**: 세 CLI의 `--help`, unknown typo(`--outt`), positional, prototype-key가 exit 0으로 실제 기본 산출물을 썼다. `nav-graph --docs`/bare `--out`은 `path.resolve(true)` stack trace exit 1, `--json=false`는 JSON mode를 활성화했고, catalog의 bare value flag는 기본값 write로 fallback하며 `--json=false`/`--dry-run=false`는 각각 stdout mode를 활성화했다. `route-tree.mjs`는 import만 해도 adapter load/discover/scan/write를 실행했다.
+- **strict 계약**: 각 CLI가 공통 `parseArgs` 결과를 `enforceCliFlagContract`에 넘기고 실제 소비 allowlist를 선언한다(route-tree value `app/out/router`, boolean `help`; nav value `docs/out`, boolean `json/help`; catalog value `src/out/layout/root`, boolean `json/dry-run/help`). unknown, bare/빈 `=` value, boolean=value/뒤 값 흡수, positional, prototype-key는 stderr + exit 2이며 검증은 help/path/layout/adapter/scan/render/write보다 먼저다. scalar duplicate last-wins는 유지한다.
+- **side-effect-free help/import**: 세 `--help`는 빈 cwd에서도 exit 0, filesystem snapshot 무변경이며 목적·전체 옵션/default·exit 0/2·read-only/no-write 경계를 설명한다. syntax 오류는 help보다 먼저 exit 2. route-tree는 `isCliEntry(import.meta.url)` + top-level await를 사용해 import side effect를 제거하고 direct/symlink entry 및 expected adapter/discover exit 2, unexpected exit 1 의미를 보존한다.
+- **호환/배포**: route 기본/custom adapter TXT, nav YAML(v1/v2/stub 포함), catalog Markdown/custom layout가 기존 golden과 byte-identical이다. nav `--json`, catalog `--json`/`--dry-run` no-write 및 model/render 결과, catalog missing-src/barrel warning, duplicate last-wins가 유지된다. packed payload에서도 help/typo write-0와 세 정상 생성 경로를 source tree 밖에서 실행한다.
+- tests: `generated-views-cli.test.mjs` 신설(전 옵션 계약, filesystem snapshot, import, golden/stdout mode, duplicate) + `distribution.test.mjs` packed smoke 확장; `package.json` `test:spec`/`test`에 전용 테스트 등록, `package-scripts.template.json`은 무변경. 전체 실측/exit matrix/검증: [temp/runs/generated-views-cli-contract-001.md](temp/runs/generated-views-cli-contract-001.md).
+
 ### fix(cli) — adoption-probe strict argument contract + side-effect-free help
 
 core CLI 인자 계약 감사([temp/runs/core-cli-argument-contract-audit-001.md](temp/runs/core-cli-argument-contract-audit-001.md))의 후속 후보 ② 해소. **adoption 결과·draft 구조·visual 관측·readiness/validate 실행·policy draft·warning-first 경계는 무변경**이며 새 hard gate/required check/artifact 축은 없다.
