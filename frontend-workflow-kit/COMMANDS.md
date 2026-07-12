@@ -413,6 +413,7 @@ and is not a hard CI gate.
 ## Adoption Probe
 
 ```bash
+npm run workflow:adoption-probe -- --help
 npm run workflow:adoption-probe -- --repo apps/mobile --out temp/runs/adoption-probe-mobile-001 --id mobile-001
 npm run workflow:adoption-probe -- --repo apps/mobile --visual
 npm run workflow:adoption-probe -- --repo apps/mobile --visual --visual-domain auth --json
@@ -422,7 +423,21 @@ npm run workflow:adoption-probe -- --repo apps/mobile --visual --visual-contract
 
 Use adoption-probe for kit adoption assessment or dry-run reports. Treat its
 output as review evidence, not a CI hard gate. `--repo-root` is accepted as an
-alias for `--repo`.
+alias for `--repo`; an explicitly supplied `--repo` or `--repo-root` must already
+exist and be a directory. The default output is
+`temp/runs/adoption-probe-<id>/`, and an explicit `--out` leaf must match the
+effective `--id`.
+
+`--help` is side-effect-free: it does not scan the target, create a run or
+scratch directory, write a draft, or launch a child command. CLI syntax is
+strict before help or any filesystem work. Unknown options, positional
+arguments, bare or empty value options, and values attached to boolean options
+exit 2; boolean options (`--skip-f3`, `--visual`,
+`--skip-visual-consistency`, `--json`, `--help`) are bare flags only. These
+usage/input errors produce no probe JSON and no run directory. Exit 0 means help
+or probe generation completed; exit 2 means a usage/input/configuration error.
+Visual child-command failures keep their existing observation meaning: they are
+recorded as probe findings and do not automatically become hard failures.
 
 `--visual` (optional, off by default — default probe output is unchanged without
 it) additionally runs `workflow:visual-contract-bootstrap` against the probe

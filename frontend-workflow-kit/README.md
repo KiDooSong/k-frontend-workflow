@@ -220,7 +220,7 @@ npm run workflow:visual-consistency -- --docs docs/frontend-workflow --src src -
 
 contract 가 없으면 visual-consistency 는 조용히 skip 한다(cold start 를 막지 않음). warning 은 drift 후보 진단일 뿐 approval, readiness promotion, `confirmed` 승격, gate 가 아니다. behavior 는 여전히 ScreenSpec/Navigation Map/Open Decision 경로만 탄다. 계약 정본: [docs/reference/visual-reconciliation.md](docs/reference/visual-reconciliation.md).
 
-brownfield repo 전체 도입 진단과 함께 보려면 `workflow:adoption-probe -- --visual` 로 위 두 명령의 observation 을 probe scratch copy 에서 한 번에 관측할 수 있다 — bootstrap draft/관측 파일은 probe run dir 에만 남고, adoption report 에 요약 섹션이 추가된다(마찬가지로 draft-only·not a gate, [COMMANDS.md](COMMANDS.md) §Adoption Probe).
+brownfield repo 전체 도입 진단과 함께 보려면 `workflow:adoption-probe -- --visual` 로 위 두 명령의 observation 을 probe scratch copy 에서 한 번에 관측할 수 있다 — bootstrap draft/관측 파일은 probe run dir 에만 남고, adoption report 에 요약 섹션이 추가된다. `--help`·strict flag 문법·existing-directory `--repo` 계약은 [COMMANDS.md](COMMANDS.md) §Adoption Probe 가 정본이다(마찬가지로 draft-only·not a gate).
 
 현재 checkout 의 docs/src 를 기존 core telemetry 와 함께 관측하려면 `npm run workflow:telemetry -- --include visual --json` 으로 두 visual CLI 를 opt-in surface 로 추가할 수 있다 — 기본 telemetry surface set 은 그대로이고, visual warning 은 observation 일 뿐 gate 가 아니다([COMMANDS.md](COMMANDS.md) §Generated Views).
 
