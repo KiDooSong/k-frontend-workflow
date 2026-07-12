@@ -784,6 +784,26 @@ test('CLI --apply refuses a --plan path colliding with apply inputs or outputs',
   assert.match(rb.stderr, /inside --backup-dir/);
   assert.equal(read(currentDir, 'safe.mjs'), before);
 
+  // Exact-equality and reserved-root bypasses (Codex round 2): --plan equal to
+  // --backup-dir itself (a plan FILE there blocks backup mkdir mid-apply), the
+  // .upgrade-conflicts root itself, --next itself, and --current itself.
+  const equalityCases = [
+    { args: ['--backup-dir', backupDir, '--plan', backupDir], re: /at or inside --backup-dir/ },
+    { args: ['--plan', path.join(currentDir, CONFLICTS_DIR_NAME)], re: /collides with a path/ },
+    { args: ['--plan', nextDir], re: /at or inside --next/ },
+    { args: ['--plan', currentDir], re: /collides with a path/ },
+  ];
+  for (const { args, re } of equalityCases) {
+    const r = spawnSync(process.execPath, [
+      UPGRADE_CLI, '--current', currentDir, '--next', nextDir, '--apply', ...args,
+    ], { encoding: 'utf8' });
+    assert.equal(r.status, 2, `${args.join(' ')} should be refused`);
+    assert.match(r.stderr, re);
+    assert.equal(read(currentDir, 'safe.mjs'), before, 'refusal must precede any mutation');
+  }
+  assert.equal(fs.existsSync(backupDir), false, 'no plan file may be written at the backup root');
+  assert.equal(fs.existsSync(path.join(currentDir, CONFLICTS_DIR_NAME)), false);
+
   // A non-colliding in-current plan path stays allowed (custom _upgrade name),
   // and dry-run --plan keeps its documented flexibility.
   const okPlan = path.join(currentDir, '_upgrade', 'custom-plan.md');
@@ -792,6 +812,30 @@ test('CLI --apply refuses a --plan path colliding with apply inputs or outputs',
   ], { encoding: 'utf8' });
   assert.equal(ok.status, 0, ok.stderr);
   assert.equal(fs.existsSync(okPlan), true);
+});
+
+test('an explicit in-current --plan path refuses symlink/junction escapes (physical containment)', (t) => {
+  const tmp = mkTmp('rebase-plan-junction');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const { currentDir, nextDir } = buildScenario(tmp);
+  // _upgrade inside current is a junction/symlink pointing at the NEXT payload:
+  // a lexical check alone would let the plan write land inside --next.
+  const linkDir = path.join(currentDir, '_upgrade');
+  try {
+    fs.symlinkSync(nextDir, linkDir, process.platform === 'win32' ? 'junction' : 'dir');
+  } catch {
+    t.skip('symlink/junction creation not permitted on this platform');
+    return;
+  }
+  const before = read(currentDir, 'safe.mjs');
+  const planPath = path.join(linkDir, 'evil-plan.md');
+  const r = spawnSync(process.execPath, [
+    UPGRADE_CLI, '--current', currentDir, '--next', nextDir, '--apply', '--plan', planPath,
+  ], { encoding: 'utf8' });
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /symlink/i);
+  assert.equal(fs.existsSync(path.join(nextDir, 'evil-plan.md')), false, 'plan must not escape into --next');
+  assert.equal(read(currentDir, 'safe.mjs'), before, 'refusal must precede any mutation');
 });
 
 test('CLI still fails on a bad --plan path before any apply mutation', (t) => {
