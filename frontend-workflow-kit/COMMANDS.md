@@ -134,10 +134,12 @@ The three file-producing generated-view CLIs (`workflow:route-tree`,
 `workflow:nav-graph`, and `workflow:catalog`) validate their complete CLI syntax
 before help, path resolution, adapter/layout load, input scans, or writes. Unknown
 options, bare or empty value options, values attached to boolean options, and
-positional arguments exit 2 and write no files; scalar duplicate options retain
-their existing last-wins meaning. `--help` exits 0 without requiring `src/app`,
-workflow docs, component source, or a layout file and without creating the default
-output. `workflow:nav-graph --json` prints only the graph model, while
+positional arguments exit 2 and write no files. Every occurrence is syntax-checked,
+so an invalid occurrence cannot be hidden by a later duplicate; duplicates whose
+occurrences are all valid retain their existing last-wins meaning. `--help` exits 0
+without requiring `src/app`, workflow docs, component source, or a layout file and
+without creating the default output. `workflow:nav-graph --json` prints only the
+graph model, while
 `workflow:catalog --json` prints only the catalog model and `--dry-run` previews
 rendered Markdown; all three stdout modes write no output file. These safeguards do
 not change generated content, default paths, the route adapter boundary, barrel

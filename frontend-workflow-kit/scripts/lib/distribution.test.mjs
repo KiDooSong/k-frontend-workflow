@@ -1226,9 +1226,11 @@ test('packed payload CLI smoke: core, adoption, observation, visual (IMP-05)', a
       const help = cli(script, '--help');
       assert.equal(help.status, 0, help.stderr);
       assert.match(help.stdout, new RegExp(tool));
+      assert.match(help.stdout, /npm run workflow:/);
       const typo = cli(script, '--outt', path.join(out, 'requested-by-typo'));
       assert.equal(typo.status, 2);
       assert.match(typo.stderr, /unknown option --outt/);
+      assert.match(typo.stderr, /Try `npm run workflow:/);
       assert.equal(typo.stdout, '');
     }
     assert.equal(exists('docs/frontend-workflow/_meta/route-tree.txt', out), false);

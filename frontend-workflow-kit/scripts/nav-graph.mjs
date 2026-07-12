@@ -20,7 +20,7 @@ function printHelp() {
   process.stdout.write(`workflow:nav-graph — generate a navigation graph from workflow documents
 
 Usage:
-  node scripts/nav-graph.mjs [--docs <dir>] [--out <file>] [--json]
+  npm run workflow:nav-graph -- [--docs <dir>] [--out <file>] [--json]
 
 Options:
   --docs <dir>  Workflow docs root (default: docs/frontend-workflow)
@@ -38,14 +38,16 @@ Exit codes:
 }
 
 function main() {
-  const { flags, positionals } = parseArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  const { flags, positionals } = parseArgs(argv);
   enforceCliFlagContract({
+    argv,
     flags,
     positionals,
     valueFlags: VALUE_FLAGS,
     booleanFlags: BOOLEAN_FLAGS,
     tool: 'workflow:nav-graph',
-    helpCommand: 'node scripts/nav-graph.mjs',
+    helpCommand: 'npm run workflow:nav-graph --',
   });
   if (flags.help) {
     printHelp();

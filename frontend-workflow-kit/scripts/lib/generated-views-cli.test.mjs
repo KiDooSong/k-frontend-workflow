@@ -21,17 +21,17 @@ const SPAWN_TIMEOUT_MS = 30_000;
 const CLIS = [
   {
     name: 'route-tree', tool: 'workflow:route-tree', script: ROUTE_CLI,
-    helpPhrases: ['Usage:', '--app', '--out', '--router', '--help', 'expo-router', 'adapter discovers routes only', '0  help or generation completed', '2  usage, input, or adapter error'],
+    helpPhrases: ['Usage:', 'npm run workflow:route-tree --', '--app', '--out', '--router', '--help', 'expo-router', 'adapter discovers routes only', '0  help or generation completed', '2  usage, input, or adapter error'],
     valueFlags: ['app', 'out', 'router'], booleanFlags: ['help'], typo: 'outt', extraTypo: 'appp',
   },
   {
     name: 'nav-graph', tool: 'workflow:nav-graph', script: NAV_CLI,
-    helpPhrases: ['Usage:', '--docs', '--out', '--json', '--help', '<docs>/_meta/nav-graph.yaml', 'ScreenSpec and navigation-map inputs are read-only', 'never write an output file', '0  help or generation completed', '2  usage or input error'],
+    helpPhrases: ['Usage:', 'npm run workflow:nav-graph --', '--docs', '--out', '--json', '--help', '<docs>/_meta/nav-graph.yaml', 'ScreenSpec and navigation-map inputs are read-only', 'never write an output file', '0  help or generation completed', '2  usage or input error'],
     valueFlags: ['docs', 'out'], booleanFlags: ['json', 'help'], typo: 'outt', extraTypo: 'docss',
   },
   {
     name: 'catalog', tool: 'workflow:catalog', script: CATALOG_CLI,
-    helpPhrases: ['Usage:', '--src', '--out', '--root', '--layout', '--json', '--dry-run', '--help', 'docs/frontend-workflow/design/component-catalog.md', 'warning-first diagnostic', 'never edits live policy or manifests', '0  help, preview, or generation completed', '2  usage, input, or configuration error'],
+    helpPhrases: ['Usage:', 'npm run workflow:catalog --', '--src', '--out', '--root', '--layout', '--json', '--dry-run', '--help', 'docs/frontend-workflow/design/component-catalog.md', 'warning-first diagnostic', 'never edits live policy or manifests', '0  help, preview, or generation completed', '2  usage, input, or configuration error'],
     valueFlags: ['src', 'out', 'layout', 'root'], booleanFlags: ['json', 'dry-run', 'help'], typo: 'outt', extraTypo: 'srcs',
   },
 ];
@@ -64,7 +64,7 @@ function assertUsageFailure(result, expected, before, cwd) {
   assert.equal(result.status, 2, result.stderr);
   assert.equal(result.stdout, '');
   assert.match(result.stderr, expected);
-  assert.match(result.stderr, /Try `node scripts\/(?:route-tree|nav-graph|catalog-gen)\.mjs --help`\./);
+  assert.match(result.stderr, /Try `npm run workflow:(?:route-tree|nav-graph|catalog) -- --help`\./);
   assert.deepEqual(snapshotTree(cwd), before, 'usage failure must write zero files');
 }
 
@@ -116,6 +116,38 @@ test('every boolean flag rejects attached and absorbed values, including help sy
         assertUsageFailure(run(cli.script, args, cwd), new RegExp(`--${name} does not accept a value`), before, cwd);
       }
     }
+  }
+});
+
+test('an invalid occurrence cannot be hidden by a later valid duplicate', (t) => {
+  const cases = [
+    {
+      name: 'route-tree-empty-out',
+      cli: ROUTE_CLI,
+      args: ['--app', path.join(ROUTE_FIXTURE, 'src', 'app'), '--out=', '--out'],
+      expected: /--out requires a value/,
+      appendOutput: true,
+    },
+    {
+      name: 'nav-graph-valued-json',
+      cli: NAV_CLI,
+      args: ['--docs', path.join(NAV_FIXTURE, 'docs', 'frontend-workflow'), '--json=false', '--json'],
+      expected: /--json does not accept a value/,
+    },
+    {
+      name: 'catalog-bare-src',
+      cli: CATALOG_CLI,
+      args: ['--src', '--src', path.join(CATALOG_FIXTURE, 'src'), '--json'],
+      expected: /--src requires a value/,
+    },
+  ];
+  for (const item of cases) {
+    const cwd = makeTmp(t, `${item.name}-`);
+    const before = snapshotTree(cwd);
+    const output = path.join(cwd, 'must-not-write');
+    const args = item.appendOutput ? [...item.args, output] : item.args;
+    assertUsageFailure(run(item.cli, args, cwd), item.expected, before, cwd);
+    assert.equal(fs.existsSync(output), false);
   }
 });
 
