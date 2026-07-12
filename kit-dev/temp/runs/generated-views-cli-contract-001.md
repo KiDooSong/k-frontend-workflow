@@ -186,6 +186,7 @@ changed for this environment-only condition.
 
 - version remains `0.3.0-mvp.2`; no release/tag
 - generated content and normal invocation bytes unchanged
-- no telemetry/check-generated/workflow-run/visual CLI implementation changes
+- no telemetry/workflow-run/visual CLI implementation changes; no check-generated
+  result or gating semantics changes
 - no live policy/manifest changes
 - no new gate, required check, gate promotion, or artifact axis
