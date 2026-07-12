@@ -1216,6 +1216,32 @@ test('packed payload CLI smoke: core, adoption, observation, visual (IMP-05)', a
     assert.match(forbiddenTypo.stderr, /unknown option --enforc/);
     assert.doesNotMatch(forbiddenTypo.stderr, /workflow-state/);
     assert.equal(forbiddenTypo.stdout, '');
+
+    // adoption-probe: help/usage must not create the draft run tree, even in the payload.
+    const adoptionOut = path.join(out, 'temp', 'runs', 'adoption-probe-packed-help');
+    const adoptionHelp = cli(
+      'adoption-probe.mjs',
+      '--repo', out,
+      '--out', adoptionOut,
+      '--id', 'packed-help',
+      '--help',
+    );
+    assert.equal(adoptionHelp.status, 0, adoptionHelp.stderr);
+    assert.match(adoptionHelp.stdout, /workflow:adoption-probe/);
+    assert.equal(fs.existsSync(adoptionOut), false);
+    const adoptionTypo = cli('adoption-probe.mjs', '--repo', out, '--id', 'packed-typo', '--hlep');
+    assert.equal(adoptionTypo.status, 2);
+    assert.match(adoptionTypo.stderr, /unknown option --hlep/);
+    assert.equal(exists('temp/runs/adoption-probe-packed-typo', out), false);
+    const adoptionBooleanValue = cli(
+      'adoption-probe.mjs',
+      '--repo', out,
+      '--id', 'packed-visual-false',
+      '--visual=false',
+    );
+    assert.equal(adoptionBooleanValue.status, 2);
+    assert.match(adoptionBooleanValue.stderr, /--visual does not accept a value/);
+    assert.equal(exists('temp/runs/adoption-probe-packed-visual-false', out), false);
   });
 
   await t.test('adoption CLIs bootstrap a consumer docs tree: doctor, create-screen, create-input', () => {
@@ -1275,6 +1301,31 @@ test('packed payload CLI smoke: core, adoption, observation, visual (IMP-05)', a
       const raw = fs.readFileSync(path.join(out, rel), 'utf8');
       assert.doesNotMatch(raw, /fwk-pack-smoke-/, `${rel} must not embed the payload absolute path`);
     }
+
+    // Normal packed adoption-probe remains compatible and imports only payload files.
+    const probe = cli(
+      'adoption-probe.mjs',
+      '--repo', out,
+      '--id', 'packed-normal',
+      '--date', SMOKE_DATE,
+      '--skip-f3',
+      '--json',
+    );
+    assert.equal(probe.status, 0, probe.stderr);
+    const probeOutputs = JSON.parse(probe.stdout);
+    // macOS realpaths os.tmpdir() from /var/... to /private/var/..., so pathRef may
+    // choose either the cwd-relative or <probe-run> base. Pin the stable contract:
+    // no absolute temp path leaks, the report suffix is preserved, and the file exists.
+    const adoptionReportRef = probeOutputs.adoption_report.replace(/\\/g, '/');
+    assert.match(adoptionReportRef, /(?:^|\/)adoption-report\.md$/);
+    assert.equal(path.isAbsolute(adoptionReportRef), false);
+    assert.doesNotMatch(adoptionReportRef, /fwk-pack-smoke-/);
+    assert.equal(exists('temp/runs/adoption-probe-packed-normal/adoption-report.md', out), true);
+    const probeSummary = JSON.parse(
+      fs.readFileSync(path.join(out, 'temp', 'runs', 'adoption-probe-packed-normal', 'probe-summary.json'), 'utf8'),
+    );
+    assert.equal(probeSummary.draft_only, true);
+    assert.equal(probeSummary.invariants.hard_gate_promoted, false);
   });
 
   await t.test('core post-bootstrap: state writes meta, readiness evaluates, validate blocks (exit 1)', () => {

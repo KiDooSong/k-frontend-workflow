@@ -6,6 +6,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
   KIT_ROOT,
+  parseArgs,
   exists,
   isDir,
   readFileSafe,
@@ -14,6 +15,7 @@ import {
   loadYaml,
   yamlStringify,
 } from './util.mjs';
+import { enforceCliFlagContract } from './cli-args.mjs';
 import { writePolicyDraftArtifacts } from './policy-draft.mjs';
 import { renderBootstrapMarkdown } from './visual-contract-bootstrap.mjs';
 
@@ -1459,6 +1461,11 @@ function assertDraftOutDir(repoRoot, docsDir, srcDir, outDir, id) {
 }
 
 export function normalizeOptions(flags = {}) {
+  validateSemanticOptions(flags);
+  return normalizeValidatedOptions(flags);
+}
+
+function normalizeValidatedOptions(flags) {
   const cwd = path.resolve(flags.cwd || process.cwd());
   const repoRoot = path.resolve(flags.repo || flags['repo-root'] || process.cwd());
   const srcDir = resolveUnder(repoRoot, flags.src || 'src');
@@ -1469,11 +1476,6 @@ export function normalizeOptions(flags = {}) {
   const projectName = flags['project-name'] || packageName(repoRoot);
   const srcRel = safeRepoRel(repoRoot, srcDir, 'src');
   const visual = Boolean(flags.visual);
-  for (const key of ['visual-domain', 'visual-screen', 'visual-contract', 'skip-visual-consistency']) {
-    if (flags[key] != null && !visual) {
-      throw adoptionProbeCliError(`--${key} requires --visual`);
-    }
-  }
   return {
     cwd,
     id,
@@ -1501,7 +1503,10 @@ export function normalizeOptions(flags = {}) {
 }
 
 export function runAdoptionProbe(flags = {}) {
-  const opts = normalizeOptions(flags);
+  return runAdoptionProbeWithOptions(normalizeOptions(flags));
+}
+
+function runAdoptionProbeWithOptions(opts) {
   fs.mkdirSync(opts.outDir, { recursive: true });
   writeFile(path.join(opts.outDir, '.gitignore'), 'scratch/\nscratch-f3/\n');
 
@@ -1578,7 +1583,7 @@ export function formatProbeResult(result) {
   return lines.join('\n') + '\n';
 }
 
-const STRING_FLAGS = new Set([
+const VALUE_FLAGS = new Set([
   'repo',
   'repo-root',
   'out',
@@ -1591,6 +1596,59 @@ const STRING_FLAGS = new Set([
   'visual-screen',
   'visual-contract',
 ]);
+const BOOLEAN_FLAGS = new Set([
+  'skip-f3',
+  'visual',
+  'skip-visual-consistency',
+  'json',
+  'help',
+]);
+
+function helpText() {
+  return `workflow:adoption-probe - brownfield consumer adoption observation (draft/review-only)
+
+Purpose and boundary:
+  Observe kit adoption against a scratch copy of a brownfield consumer repository.
+  Outputs are draft/review-only. The probe never edits live docs/src/policy/CI,
+  resolves Open Decisions, promotes status to confirmed, or promotes a hard gate.
+
+Usage:
+  node scripts/adoption-probe.mjs --repo <path> [options]
+
+Target and output:
+  --repo <dir>                 Existing target repository directory
+  --repo-root <dir>            Alias for --repo (--repo keeps existing precedence)
+  --src <path>                 Source path relative to the target repo (default: src)
+  --docs <path>                Workflow docs path (default: docs/frontend-workflow)
+  --id <id>                    Probe id
+  --date <YYYY-MM-DD>          Deterministic observation date
+  --project-name <name>        Project name override
+  --out <dir>                  Output directory
+                               default: temp/runs/adoption-probe-<id>/
+                               leaf must be adoption-probe-<id>
+
+Execution options:
+  --skip-f3                    Skip the F3 scratch comparison
+  --json                       Print the existing outputs-only JSON shape
+
+Visual options (require --visual):
+  --visual                     Observe visual bootstrap/consistency in scratch
+  --visual-domain <domain>     Limit visual observation to one domain
+  --visual-screen <ID[,ID...]> Limit visual observation to screen ids
+  --visual-contract <path>     Existing visual contract location override
+  --skip-visual-consistency    Run visual bootstrap only
+
+Other:
+  --help                       Print this help without scanning, writing, or spawning
+
+Exit codes:
+  0  help or probe generation completed
+  2  usage, input, or configuration error
+
+Visual child-command failures remain probe findings and do not automatically become
+hard failures. All boolean options are bare flags and do not accept values.
+`;
+}
 
 function adoptionProbeCliError(message) {
   const err = new Error(message);
@@ -1598,10 +1656,57 @@ function adoptionProbeCliError(message) {
   return err;
 }
 
+function validateSemanticOptions(
+  flags,
+  fail = (message) => {
+    throw adoptionProbeCliError(message);
+  },
+) {
+  const visual = Boolean(flags.visual);
+  for (const key of ['visual-domain', 'visual-screen', 'visual-contract', 'skip-visual-consistency']) {
+    if (flags[key] != null && !visual) fail(`--${key} requires --visual`);
+  }
+}
+
+function validateExplicitRepoPaths(flags, fail) {
+  for (const name of ['repo', 'repo-root']) {
+    if (flags[name] === undefined) continue;
+    const target = path.resolve(flags[name]);
+    if (!exists(target)) fail(`--${name} must point to an existing directory: ${flags[name]}`);
+    if (!isDir(target)) fail(`--${name} must point to a directory: ${flags[name]}`);
+  }
+}
+
+function normalizeCliOptions(flags, fail) {
+  try {
+    return normalizeValidatedOptions(flags);
+  } catch (err) {
+    if (err && /^--out\b/.test(String(err.message || ''))) fail(err.message);
+    throw err;
+  }
+}
+
 export function cliMain(argv) {
   try {
-    const flags = parseCliArgs(argv);
-    const result = runAdoptionProbe(flags);
+    // Parse -> syntactic contract -> help -> explicit repo -> semantic options -> normalize -> run.
+    // Every usage/help path completes before date/id defaults, scans, writes, or child processes.
+    const { flags, positionals } = parseArgs(argv);
+    const usageError = enforceCliFlagContract({
+      flags,
+      positionals,
+      valueFlags: VALUE_FLAGS,
+      booleanFlags: BOOLEAN_FLAGS,
+      tool: 'workflow:adoption-probe',
+      helpCommand: 'node scripts/adoption-probe.mjs',
+    });
+    if (flags.help) {
+      process.stdout.write(helpText());
+      return;
+    }
+    validateExplicitRepoPaths(flags, usageError);
+    validateSemanticOptions(flags, usageError);
+    const opts = normalizeCliOptions(flags, usageError);
+    const result = runAdoptionProbeWithOptions(opts);
     if (flags.json) {
       const payload = displayOutputs(result.opts, result.outputs);
       // --visual일 때만 visual 요약을 추가한다 — 기본(--visual 없음) JSON 계약은 그대로 유지.
@@ -1613,35 +1718,10 @@ export function cliMain(argv) {
   } catch (err) {
     if (err && err.name === 'AdoptionProbeCliError') {
       process.stderr.write(`workflow:adoption-probe: ${err.message}\n`);
+      process.stderr.write('Try `node scripts/adoption-probe.mjs --help`.\n');
       process.exitCode = 2;
       return;
     }
     throw err;
   }
-}
-
-function parseCliArgs(argv) {
-  const flags = {};
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (!a.startsWith('--')) continue;
-    const eq = a.indexOf('=');
-    if (eq !== -1) {
-      const key = a.slice(2, eq);
-      flags[key] = a.slice(eq + 1);
-      continue;
-    }
-    const key = a.slice(2);
-    const next = argv[i + 1];
-    if (next !== undefined && !next.startsWith('--')) {
-      flags[key] = next;
-      i++;
-    } else {
-      flags[key] = true;
-    }
-  }
-  for (const key of STRING_FLAGS) {
-    if (flags[key] === true || flags[key] === '') throw adoptionProbeCliError(`--${key} requires a value`);
-  }
-  return flags;
 }

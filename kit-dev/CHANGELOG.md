@@ -4,6 +4,17 @@
 
 ## Unreleased
 
+### fix(cli) — adoption-probe strict argument contract + side-effect-free help
+
+core CLI 인자 계약 감사([temp/runs/core-cli-argument-contract-audit-001.md](temp/runs/core-cli-argument-contract-audit-001.md))의 후속 후보 ② 해소. **adoption 결과·draft 구조·visual 관측·readiness/validate 실행·policy draft·warning-first 경계는 무변경**이며 새 hard gate/required check/artifact 축은 없다.
+
+- **변경 전 실측**: `--help`·unknown `--visaul`·positional·prototype-key(`--__proto__`/`--constructor`/`--prototype`)가 모두 exit 0 실제 probe 로 진행했고, boolean 문자열(`--visual=false`/`--skip-f3=false`/`--skip-visual-consistency=false`/`--json=false`)이 truthy 로 mode 를 바꿨으며, 존재하지 않는 explicit `--repo`가 target + `temp/runs` 트리를 새로 만들었다.
+- **CLI 경계**: 자체 `parseCliArgs` clone 을 제거하고 공통 null-prototype `parseArgs` + `enforceCliFlagContract`의 adoption 전용 allowlist(value 11개, boolean 5개)를 채택. unknown/bare·빈 `=` value/boolean=value·boolean 뒤 값 흡수/positional/prototype-key 를 stderr + exit 2 로 거부하며 scalar duplicate last-wins는 유지한다. `runAdoptionProbe(flags)` programmatic API는 CLI allowlist를 강제하지 않는다.
+- **검증/쓰기 순서**: argv parse → syntax contract → `--help` → explicit repo path(existing directory) → visual sub-option semantic guard → `normalizeOptions` → probe 실행. help/usage/input/config 오류는 date/default id/package/docs/src scan, output/scratch 생성, draft 쓰기, child command보다 먼저 끝나며 probe JSON/run directory를 만들지 않는다. `--repo`/`--repo-root` alias precedence와 monorepo/custom src/docs/default output/containment 의미는 유지한다.
+- **`--help`**: brownfield scratch observation 목적, draft/review-only·live docs/src/policy/CI 무수정·사람 전용 gate 경계, 전체 target/output/execution/visual option, exit 0/2와 visual child failure의 기존 finding 의미를 문서화. 빈 cwd·package/docs/src/state 부재·존재하지 않는 syntactically valid `--repo` 동반에서도 exit 0 무쓰기; syntax 오류는 help보다 먼저 exit 2. 자연 종료(`return`)를 쓴다.
+- tests: `adoption-probe-cli.test.mjs` 신설(help filesystem snapshot/unknown+prototype/value·boolean 전수/positional 3위치/repo missing·file·existing+alias+cwd/semantic 순서/duplicate+alias precedence/programmatic API) + 기존 normal no-visual/visual compatibility 유지. distribution IMP-05 packed payload smoke 에 adoption `--help`/`--hlep`/`--visual=false` 무쓰기 계약과 정상 packed probe를 추가. `package.json` `test:spec`/`test`에 전용 테스트 등록(`package-scripts.template.json` 무변경).
+- docs/evidence: COMMANDS §Adoption Probe strict 문법·side-effect-free help·exit 계약, README 정본 링크, 감사 completion note 갱신. 실측/after matrix/호환/packed/전체 검증: [temp/runs/adoption-probe-cli-contract-001.md](temp/runs/adoption-probe-cli-contract-001.md).
+
 ### fix(upgrade) — 생성 plan 에 embed 되는 upgrade-notes 상대 링크를 plan 위치 기준으로 재배치
 
 `v0.3.0-mvp.2` 실제 consumer 업그레이드 dogfood([temp/runs/consumer-upgrade-0.3.0-mvp.2-dogfood-001/run-report.md](../temp/runs/consumer-upgrade-0.3.0-mvp.2-dogfood-001/run-report.md) §7)가 "kit 후속 후보"로 기록한 `broken-relative-link` 2건의 해소. **planner classification/apply 의미 무변경** — safe-update/conflict/local-modified 판정, manifest shape, conflict `.incoming` 처리, prune/`--allow-conflicts`/`--force-runtime` 기본값, warning-first/hard-gate 경계 전부 그대로다. 생성된 plan Markdown 의 링크 이동성만 고친다.
