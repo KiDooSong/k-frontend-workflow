@@ -14,10 +14,16 @@
 // mode-only chmods, and adds; it never overwrites locally modified files, never
 // deletes upstream-removed files (unless --prune), and only ever writes inside
 // --current.
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs, runCli, isCliEntry } from './lib/util.mjs';
-import { UPGRADE_DIR_NAME } from './lib/kit-manifest.mjs';
+import {
+  UPGRADE_DIR_NAME,
+  INSTALL_MANIFEST_NAME,
+  PAYLOAD_MANIFEST_NAME,
+  CONFLICTS_DIR_NAME,
+} from './lib/kit-manifest.mjs';
 import { buildPlan, renderPlanMarkdown, applyPlan, assertSafeWriteTarget } from './lib/upgrade-planner.mjs';
 
 const TOOL = 'upgrade-vendored-kit';
@@ -89,6 +95,147 @@ function sanitizeRef(ref) {
   return short.replace(/[^\w.-]+/g, '-');
 }
 
+// Posix-relative path of childAbs at-or-under parentAbs ('' = same path), or
+// null when outside. Only an exact `..` SEGMENT means outside — a valid child
+// name that merely starts with dots (`..foo/…`) stays inside.
+function relTo(parentAbs, childAbs) {
+  const rel = path.relative(parentAbs, childAbs);
+  if (rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) return null;
+  return rel.split(path.sep).join('/');
+}
+
+// Physical form of a path that may not exist yet: realpath the deepest existing
+// ancestor and re-attach the non-existing remainder lexically. DANGLING
+// symlinks are resolved manually (existsSync/realpath report them as absent,
+// yet writeFileSync would follow them), so an alias whose target does not exist
+// yet still maps to its true destination. Lets the plan collision guard see
+// through symlink/junction aliases of the protected roots.
+function realpathDeepest(abs, depth = 0) {
+  if (depth > 40) return abs; // symlink cycle backstop (ELOOP-like)
+  let probe = abs;
+  const suffix = [];
+  for (;;) {
+    try {
+      return path.join(fs.realpathSync(probe), ...suffix);
+    } catch { /* keep walking */ }
+    let st = null;
+    try {
+      st = fs.lstatSync(probe);
+    } catch { /* truly absent */ }
+    if (st && st.isSymbolicLink()) {
+      let target = null;
+      try {
+        target = fs.readlinkSync(probe);
+      } catch { /* fall through to parent walk */ }
+      if (target != null) {
+        return realpathDeepest(path.join(path.resolve(path.dirname(probe), target), ...suffix), depth + 1);
+      }
+    }
+    const parent = path.dirname(probe);
+    if (parent === probe) return path.join(probe, ...suffix);
+    suffix.unshift(path.basename(probe));
+    probe = parent;
+  }
+}
+
+function pathForms(abs) {
+  const real = realpathDeepest(abs);
+  return real === abs ? [abs] : [abs, real];
+}
+
+// Write the plan without ever writing THROUGH an existing directory entry:
+// create a fresh temp file EXCLUSIVELY (flag 'wx' + unpredictable suffix — a
+// hard link or symlink pre-planted at the temp name makes the open fail with
+// EEXIST instead of being followed/truncated), then rename it over the
+// destination. A hard link (or symlink) planted at the plan path itself
+// shares/aliases another file's inode — a direct writeFileSync would truncate
+// that shared content (e.g. a payload file inside --next), while rename only
+// replaces the directory entry and leaves the other name's bytes untouched.
+export function writePlanAtomic(planPath, markdown) {
+  fs.mkdirSync(path.dirname(planPath), { recursive: true });
+  let lastErr = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const tmpPath = `${planPath}.tmp-${crypto.randomBytes(8).toString('hex')}`;
+    let created = false;
+    try {
+      fs.writeFileSync(tmpPath, markdown, { encoding: 'utf8', flag: 'wx' });
+      created = true;
+      fs.renameSync(tmpPath, planPath);
+      return;
+    } catch (err) {
+      // EEXIST from the exclusive create means the entry is NOT ours — retry a
+      // new name and never delete it. Any other failure (partial write on
+      // ENOSPC/EIO, rename failure) cleans up our temp file before rethrowing.
+      if (!created && err && err.code === 'EEXIST') {
+        lastErr = err;
+        continue;
+      }
+      try {
+        fs.rmSync(tmpPath, { force: true });
+      } catch { /* best-effort cleanup */ }
+      throw err;
+    }
+  }
+  throw lastErr ?? new Error(`could not create a temporary plan file next to ${planPath}`);
+}
+
+// On --apply the plan file must survive the apply and must not corrupt its
+// inputs: refuse a plan path at or inside --next (an apply source), at or
+// inside --backup-dir (the plan file would block/collide with backup copies),
+// or colliding with anything the apply writes or tracks inside --current
+// (payload files, the conflict .incoming tree including its root, the
+// install/payload manifests, or --current itself). Fail-closed, exit 2 BEFORE
+// the plan is written and before any mutation. Every comparison runs on the
+// lexical AND physical (realpath) form of both sides, so a symlink/junction
+// alias of a protected root cannot smuggle the plan past the guard. Physical
+// containment of the plan write itself is enforced separately via
+// assertSafeWriteTarget.
+function assertPlanPathDoesNotCollide({ planPath, currentDir, nextDir, backupDir, plan }) {
+  // A plan destination that is itself an existing symlink is refused outright:
+  // writeFileSync would follow it (even when dangling), so the write target is
+  // not the path the user named.
+  try {
+    if (fs.lstatSync(planPath).isSymbolicLink()) {
+      fail(`--plan must not be a symlink (the plan write would follow it): ${planPath}`);
+    }
+  } catch (err) {
+    if (err && err.code !== 'ENOENT') throw err;
+  }
+  const planForms = pathForms(planPath);
+  for (const p of planForms) {
+    for (const n of pathForms(nextDir)) {
+      if (relTo(n, p) != null) {
+        fail(`--plan must not point at or inside --next (it would corrupt the upgrade payload): ${planPath}`);
+      }
+    }
+    for (const b of backupDir ? pathForms(backupDir) : []) {
+      // At/inside backup-dir, or an ANCESTOR of it: a plan FILE above a
+      // not-yet-created backup dir would block its mkdir mid-apply.
+      if (relTo(b, p) != null || relTo(p, b) != null) {
+        fail(`--plan must not overlap --backup-dir (it would block backup copies): ${planPath}`);
+      }
+    }
+    for (const c of pathForms(currentDir)) {
+      const relCur = relTo(c, p);
+      if (relCur == null) continue;
+      // Exact tracked path, or an ancestor of one: a plan FILE at `z` blocks
+      // apply's mkdir for a payload file `z/new.mjs` after earlier writes,
+      // leaving a partial upgrade.
+      const tracked = plan.files.some((f) => f.path === relCur || f.path.startsWith(`${relCur}/`));
+      if (
+        relCur === ''
+        || tracked
+        || relCur === INSTALL_MANIFEST_NAME
+        || relCur === PAYLOAD_MANIFEST_NAME
+        || relCur === CONFLICTS_DIR_NAME
+        || relCur.startsWith(`${CONFLICTS_DIR_NAME}/`)
+      ) {
+        fail(`--plan collides with a path the apply writes or tracks inside --current: ${relCur || planPath}`);
+      }
+    }
+  }
+}
+
 function renderHumanSummary(plan) {
   const c = plan.counts;
   const lines = [];
@@ -130,11 +277,11 @@ function main() {
   };
 
   const plan = buildPlan({ currentDir, nextDir, options });
-  const markdown = renderPlanMarkdown(plan);
 
   // Resolve where (if anywhere) to write the markdown plan, and write it BEFORE
   // mutating, so a bad --plan path fails fast instead of leaving an applied kit
-  // with no saved plan.
+  // with no saved plan. The plan path is resolved first so the render can rebase
+  // the embedded migration-note links against the plan's actual location.
   let planPath = null;
   let planInsideCurrent = false;
   if (typeof flags.plan === 'string') {
@@ -144,13 +291,27 @@ function main() {
     planInsideCurrent = true;
   }
   if (planPath) {
-    // The default in-kit plan path gets the same symlink containment as apply
-    // (a symlinked _upgrade/ must not let the plan escape --current).
-    if (planInsideCurrent) {
+    if (apply) {
+      assertPlanPathDoesNotCollide({
+        planPath,
+        currentDir,
+        nextDir,
+        backupDir: options.backupDir,
+        plan,
+      });
+    }
+    // EVERY plan path that lands inside --current (default or an explicit
+    // --plan, lexically or through a physical alias) gets the same physical
+    // symlink containment as apply — a junctioned/symlinked directory under
+    // --current (e.g. _upgrade → --next) must not let the plan write escape
+    // the kit.
+    const inCurrent = planInsideCurrent
+      || pathForms(planPath).some((p) => pathForms(currentDir).some((c) => relTo(c, p) != null));
+    if (inCurrent) {
       assertSafeWriteTarget(fs.realpathSync(currentDir), planPath, 'current vendored kit');
     }
-    fs.mkdirSync(path.dirname(planPath), { recursive: true });
-    fs.writeFileSync(planPath, markdown, 'utf8');
+    const markdown = renderPlanMarkdown(plan, { currentDir, planPath });
+    writePlanAtomic(planPath, markdown);
   }
 
   let applied = null;
