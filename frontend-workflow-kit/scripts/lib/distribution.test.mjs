@@ -1205,6 +1205,17 @@ test('packed payload CLI smoke: core, adoption, observation, visual (IMP-05)', a
     assert.match(readinessTypo.stderr, /unknown option --screeen/);
     assert.doesNotMatch(readinessTypo.stderr, /workflow-state\.yaml/);
     assert.equal(readinessTypo.stdout, '');
+    // forbidden-paths: --help 는 state/policy 없는 payload 에서도 exit 0 (인자 검증·help 가 모든 로드보다 먼저).
+    const forbiddenHelp = cli('forbidden-paths.mjs', '--help');
+    assert.equal(forbiddenHelp.status, 0, forbiddenHelp.stderr);
+    assert.match(forbiddenHelp.stdout, /workflow:forbidden-paths/);
+    assert.match(forbiddenHelp.stdout, /--enforce/);
+    // --enforc 오타는 usage 오류 exit 2 — enforcement 소실 warning-first fallback 으로 절대 내려가지 않는다.
+    const forbiddenTypo = cli('forbidden-paths.mjs', '--enforc');
+    assert.equal(forbiddenTypo.status, 2);
+    assert.match(forbiddenTypo.stderr, /unknown option --enforc/);
+    assert.doesNotMatch(forbiddenTypo.stderr, /workflow-state/);
+    assert.equal(forbiddenTypo.stdout, '');
   });
 
   await t.test('adoption CLIs bootstrap a consumer docs tree: doctor, create-screen, create-input', () => {

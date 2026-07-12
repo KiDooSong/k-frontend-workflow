@@ -2,6 +2,18 @@
 
 킷 자체의 버전 관리 (템플릿/스크립트 계약 추적용).
 
+## Unreleased
+
+### fix(cli) — forbidden-paths 인자 계약 fail-closed hardening (--enforce typo 소실 차단)
+
+core CLI 인자 계약 감사([temp/runs/core-cli-argument-contract-audit-001.md](temp/runs/core-cli-argument-contract-audit-001.md))가 후속 1순위로 기록한 `forbidden-paths` 행의 해소. **gate promotion 아님 — 기존 opt-in enforcement(`--enforce`)의 usage fail-open 수정이다.** warning-first 기본(위반도 exit 0)·`--enforce` 위반 exit 1·readiness 판정 소비·guarded surface 계산·allowed/forbidden path 의미·CI required check 전부 무변경.
+
+- **해소한 fail-open**: 공통 `parseArgs` 가 unknown flag 를 거부하지 않아 `--enforc` 오타가 조용히 무시되고, 같은 violating diff 가 exit 1 대신 warning-first exit 0 + `enforced: false` 실행으로 fallback 했다(enforcement 소실 — 변경 전 커밋 픽스처 `examples/path-backstop/diffs/case1-api-write.txt` 로 실측 재현). validate(PR #175)에서 고친 것과 동일 클래스.
+- **`forbidden-paths.mjs`**: `scripts/lib/cli-args.mjs` `enforceCliFlagContract`(PR #176 공유 helper) allowlist 검증 채택 — unknown option·bare/빈 `=` value flag(`--docs/--src/--root/--policy/--manifest/--layout/--diff/--range/--base`)·값 붙은 boolean flag(`--enforce=false`·`--json=yes`·`--staged true` 흡수 포함)·positional 을 exit 2 로 거부. 인자 검증은 state/policy/manifest/layout 로드·diff 읽기·git 실행·`computeReadiness`·stdout JSON 생성보다 먼저 — **usage 오류에서 파일·git·readiness 작업 0**. `--help` 신설(목적·warning-first/`--enforce` 경계·diff source 우선순위 `--diff > --range > --staged > --base > local`·exit 0/1/2 계약·readiness 소비 경계) — state/policy 없는 빈 디렉토리에서도 exit 0, git 실행·파일 쓰기 0, `return` 자연 종료(cli-stdout-flush 계약). 스칼라 중복 last-wins·기존 diff source 의미 무변경(테스트로 고정).
+- **`parseArgs` null-prototype 저장** (Codex 리뷰 Minor): 일반 객체 저장에서는 `--__proto__=x` 가 상속 setter 에 흡수돼 own property 가 생기지 않고 `Object.keys` 에서 사라져 allowlist 검증(`enforceCliFlagContract`·validate inline)을 우회했다(`--help --__proto__=x` 가 help exit 0 으로 통과). `Object.create(null)` 저장으로 unknown option exit 2 경로에 잡힌다 — 파싱 결과를 있는 그대로 보존만 하는 변경(strict 화 아님)이고 소비부는 전부 property 접근·`Object.keys`·`in` 만 쓰므로 다른 CLI 동작 무변경(전체 테스트로 확인).
+- tests: `forbidden-paths-cli.test.mjs` 신설 13건(help 빈 디렉토리 성공+쓰기 0/unknown `--enforc`·`--jsno`/**enforcement typo 3-way 회귀(--enforc exit 2 vs --enforce exit 1 vs no-flag warning-first exit 0 — typo 가 warning-first fallback 으로 절대 내려가지 않음을 한 테스트에서 비교 고정)**/usage 오류가 state·diff 로드 오류에 선행/value flag bare+빈 `=` 전수/boolean=value+흡수형/positional/커밋 픽스처 위반 identity·surface·reason·`would_clear` deepEqual pin/allowed-only enforce 무관 exit 0/duplicate last-wins/state 부재·malformed diff exit 2 유지) — live git 미사용, committed/temp `--diff` 픽스처만. distribution IMP-05 packed payload smoke 에 forbidden-paths `--help` exit 0 + `--enforc` exit 2 추가(source tree import 비의존). `package.json` `test:spec`/`test` 등록(`package-scripts.template.json` 미노출 유지).
+- docs: COMMANDS §Safety Checks 에 `--help` 예시 + strict usage contract(typo/unknown option exit 2, warning-first·`--enforce` 경계 유지) 명시. 감사 문서에 follow-up completion note 추가(adoption-probe·upgrade-plan link 후속은 유지).
+
 ## 0.3.0-mvp.2 — 2026-07-12
 
 `v0.3.0-mvp.1` 이후 post-MVP 안정화 변경(#171~#176)의 release cut. **새 기능·새 artifact axis·warning-first→hard 승격 0** — hard gate / warning-first 경계는 `0.3.0-mvp.1` release note 의 경계가 그대로 유효하다(변경 없음). 범위: warning-first 승격 evidence 정책(#171/IMP-01) · doc-drift release-consistency opt-in(#172/IMP-02) · evidence retention/index 정책(#173/IMP-04) · packed payload CLI smoke(#174/IMP-05) · CLI stdout flush-safe 종료 + validate 인자 계약(#175) · core workflow-state/readiness CLI 인자 계약(#176). 릴리스 검증 증거: `temp/runs/release-0.3.0-mvp.2-final-check.md`.
