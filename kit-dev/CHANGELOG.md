@@ -4,6 +4,15 @@
 
 ## Unreleased
 
+### fix(cli) — telemetry strict argument contract + ledger-write typo fail-closed
+
+core CLI 인자 계약 감사([temp/runs/core-cli-argument-contract-audit-001.md](temp/runs/core-cli-argument-contract-audit-001.md))의 telemetry 후속을 해소한다. **surface registry/선택·normalization/warning count·child fail-soft·ledger schema/version/bytes·determinism witness·`--check` warning-first·CI artifact 수집·exit 0 observation 경계는 무변경**이며 새 surface, gate, required check, artifact 축, version/tag는 없다.
+
+- **변경 전 실측**: 일반 unknown `--outt`/`--otu`/`--surfac`, positional, prototype-key가 exit 0 기본 surface 3종을 실제 실행해 JSON report를 출력했다. 특히 `--outt telemetry-ledger.json`은 요청한 ledger를 쓰지 않은 채 정상 관측으로 내려갔다. `--json=false`는 JSON mode, `--list-surfaces=false`는 registry 조기 종료를 활성화했고, 앞선 `--out=`/bare `--root`/`--json=false`가 뒤의 정상 duplicate에 가려졌다.
+- **CLI 경계**: telemetry가 raw argv + null-prototype `parseArgs` 결과를 공통 `enforceCliFlagContract`에 전달하고 실제 소비 allowlist(value 16개, boolean 6개)를 선언한다. unknown/prototype-key, bare·빈 `=` value, boolean=value·boolean 뒤 값 흡수, positional을 surface 선택/child·ingest/check read/ledger write/stdout 전에 stderr + exit 2로 거부한다. 모든 occurrence가 정상인 scalar duplicate의 last-wins는 유지한다.
+- **help/list/호환**: syntax 검증이 `--help`/`--list-surfaces`보다 먼저며 유효한 help/list는 빈 cwd에서도 child/ingest/read/write 없이 exit 0이다. 기존 `--list-surfaces` + `--out`/`--check` 금지와 visual/adoption/redteam/doc-drift semantic guard를 보존한다. 정상 default/opt-in report와 ledger shape/bytes, relative ledger path의 `--root` 기준 해소, CI warning-only artifact 호출은 무변경이다.
+- tests: `telemetry-cli.test.mjs` 신설(allowlist 전수, unknown/prototype/value·boolean/positional, ledger typo 3-way, raw invalid duplicate, valid last-wins, help/list filesystem snapshot) + `distribution.test.mjs` packed public CLI help/list/invalid/normal ledger 회귀. `package.json` `test:spec`/`test`에 전용 테스트를 등록하고 `package-scripts.template.json`은 무변경. 실측/exit matrix/호환/packed/전체 검증: [temp/runs/telemetry-cli-contract-001.md](temp/runs/telemetry-cli-contract-001.md).
+
 ### fix(cli) — generated-view strict argument contracts + route-tree import safety
 
 core CLI 인자 계약 감사([temp/runs/core-cli-argument-contract-audit-001.md](temp/runs/core-cli-argument-contract-audit-001.md))의 생성 뷰 후속 3종을 해소한다. **생성 content/semantics·adapter/core 책임·golden output·default 경로·generated-file guard·warning-first/hard-gate 상태는 무변경**이며 새 mode, gate, artifact 축, version/tag는 없다.

@@ -5,6 +5,7 @@
 // CI artifact by default and makes no promotion verdict.
 import path from 'node:path';
 import { DEFAULTS, parseArgs, isCliEntry } from './lib/util.mjs';
+import { enforceCliFlagContract } from './lib/cli-args.mjs';
 import {
   collectTelemetry,
   collectTelemetryLedger,
@@ -134,7 +135,7 @@ function hasFlag(flags, name) {
 
 function usageError(message) {
   process.stderr.write(`workflow:telemetry: ${message}\n`);
-  process.stderr.write('Run with --help for usage.\n');
+  process.stderr.write('Try `npm run workflow:telemetry -- --help`.\n');
   process.exit(2);
 }
 
@@ -168,8 +169,45 @@ const REDTEAM_FLAGS = ['redteam-include', 'redteam-case'];
 const DOC_DRIFT_FLAGS = ['doc-drift-include'];
 const KNOWN_DOC_DRIFT_INCLUDES = ['status-heuristic'];
 
+const VALUE_FLAGS = new Set([
+  'root',
+  'docs',
+  'src',
+  'out',
+  'check',
+  'determinism-runs',
+  'include',
+  'surface',
+  'visual-domain',
+  'visual-screen',
+  'visual-contract',
+  'adoption-run',
+  'adoption-summary',
+  'redteam-include',
+  'redteam-case',
+  'doc-drift-include',
+]);
+const BOOLEAN_FLAGS = new Set([
+  'json',
+  'list-surfaces',
+  'skip-visual-bootstrap',
+  'skip-visual-consistency',
+  'skip-adoption-visual',
+  'help',
+]);
+
 function main() {
-  const { flags } = parseArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  const { flags, positionals } = parseArgs(argv);
+  enforceCliFlagContract({
+    argv,
+    flags,
+    positionals,
+    valueFlags: VALUE_FLAGS,
+    booleanFlags: BOOLEAN_FLAGS,
+    tool: 'workflow:telemetry',
+    helpCommand: 'npm run workflow:telemetry --',
+  });
   if (flags.help) {
     process.stdout.write(helpText());
     return; // help 도 자연 종료(exit 0) — process.exit(0) 금지 계약(cli-stdout-flush.test.mjs)

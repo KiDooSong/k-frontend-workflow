@@ -626,7 +626,7 @@ test('CLI rejects empty ledger path values with exit 2', () => {
       '--out=',
     ], { encoding: 'utf8' });
     assert.equal(out.status, 2);
-    assert.match(out.stderr, /--out requires a file path/);
+    assert.match(out.stderr, /--out requires a value/);
 
     const check = spawnSync(process.execPath, [
       CLI,
@@ -635,7 +635,7 @@ test('CLI rejects empty ledger path values with exit 2', () => {
       '--check=',
     ], { encoding: 'utf8' });
     assert.equal(check.status, 2);
-    assert.match(check.stderr, /--check requires a file path/);
+    assert.match(check.stderr, /--check requires a value/);
   });
 });
 
@@ -650,7 +650,7 @@ test('CLI rejects missing or fractional determinism runs with exit 2', () => {
       '--determinism-runs',
     ], { encoding: 'utf8' });
     assert.equal(missing.status, 2);
-    assert.match(missing.stderr, /--determinism-runs must be a positive integer/);
+    assert.match(missing.stderr, /--determinism-runs requires a value/);
 
     const fractional = spawnSync(process.execPath, [
       CLI,
@@ -1194,7 +1194,7 @@ test('CLI rejects unknown include groups and surface ids with exit 2', () => {
 
     const bare = spawnSync(process.execPath, [CLI, '--root', root, '--include'], { encoding: 'utf8' });
     assert.equal(bare.status, 2);
-    assert.match(bare.stderr, /--include requires a group name/);
+    assert.match(bare.stderr, /--include requires a value/);
   });
 });
 
@@ -1713,7 +1713,7 @@ test('CLI rejects unknown adoption sub-flags with exit 2', () => {
       '--adoption-nope', 'x',
     ], { encoding: 'utf8' });
     assert.equal(r.status, 2);
-    assert.match(r.stderr, /unknown flag: --adoption-nope/);
+    assert.match(r.stderr, /unknown option --adoption-nope/);
   });
 });
 
@@ -1725,7 +1725,7 @@ test('unknown adoption sub-flag is rejected even on the --list-surfaces path', (
       CLI, '--root', root, '--list-surfaces', '--json', '--adoption-nope', 'x',
     ], { encoding: 'utf8' });
     assert.equal(r.status, 2, r.stdout);
-    assert.match(r.stderr, /unknown flag: --adoption-nope/);
+    assert.match(r.stderr, /unknown option --adoption-nope/);
     assert.equal(r.stdout.includes('"surfaces"'), false);
   });
 });
@@ -2039,7 +2039,7 @@ test('CLI rejects unknown redteam sub-flags with exit 2', () => {
     { encoding: 'utf8' },
   );
   assert.equal(r.status, 2, r.stdout);
-  assert.match(r.stderr, /unknown flag: --redteam-mode/);
+  assert.match(r.stderr, /unknown option --redteam-mode/);
 });
 
 test('CLI pre-validates redteam forwarding values: typos are usage errors, not unavailable surfaces', () => {
@@ -2222,7 +2222,7 @@ test('CLI rejects unknown doc-drift include features and unknown doc-drift sub-f
     { encoding: 'utf8' },
   );
   assert.equal(unknownFlag.status, 2, unknownFlag.stdout);
-  assert.match(unknownFlag.stderr, /unknown flag: --doc-drift-root/);
+  assert.match(unknownFlag.stderr, /unknown option --doc-drift-root/);
 });
 
 test('CLI --doc-drift-include status-heuristic exits 0 with info-only counts and clean output', () => {
