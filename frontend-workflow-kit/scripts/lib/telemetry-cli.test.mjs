@@ -69,16 +69,22 @@ test('filesystem snapshots include empty-directory markers', (t) => {
   assert.equal(after['dir:empty/nested/'], true);
 });
 
-test('public help option lines match the shared telemetry allowlist', (t) => {
+test('public help placeholders classify value and boolean options like the shared allowlist', (t) => {
   const root = makeRoot(t, 'telemetry-cli-help-allowlist-');
   const result = run(['--help'], root);
   assert.equal(result.status, 0, result.stderr);
   const optionsSection = result.stdout.split('\nOptions:\n')[1]?.split('\nBehavior:\n')[0] || '';
-  const advertised = [...optionsSection.matchAll(/^  --([a-z0-9-]+)(?:\s|$)/gm)]
+  const optionRows = [...optionsSection.matchAll(/^  --([a-z0-9-]+)(?:\s+(<[^>\n]+>))?/gm)];
+  const advertisedValues = optionRows
+    .filter((match) => match[2] != null)
     .map((match) => match[1])
     .sort();
-  const allowed = [...TELEMETRY_VALUE_FLAGS, ...TELEMETRY_BOOLEAN_FLAGS].sort();
-  assert.deepEqual(advertised, allowed);
+  const advertisedBooleans = optionRows
+    .filter((match) => match[2] == null)
+    .map((match) => match[1])
+    .sort();
+  assert.deepEqual(advertisedValues, [...TELEMETRY_VALUE_FLAGS].sort());
+  assert.deepEqual(advertisedBooleans, [...TELEMETRY_BOOLEAN_FLAGS].sort());
 });
 
 test('the complete telemetry allowlist accepts each option in its valid syntax before help', (t) => {

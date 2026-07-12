@@ -93,7 +93,7 @@ This distinguishes an explicit no-ledger observation from a misspelled write int
 
 - Filesystem snapshots now record every discovered directory as `dir:<root-relative-path>/`, so an otherwise empty directory created on a usage/help/list path changes the snapshot and fails the no-side-effect assertion.
 - A focused snapshot test pins nested empty-directory markers.
-- The production CLI and table-driven tests import the same `TELEMETRY_VALUE_FLAGS` / `TELEMETRY_BOOLEAN_FLAGS` Sets from `scripts/lib/telemetry-cli-args.mjs`; the public help option lines are also compared exactly with their union.
+- The production CLI and table-driven tests import the same `TELEMETRY_VALUE_FLAGS` / `TELEMETRY_BOOLEAN_FLAGS` Sets from `scripts/lib/telemetry-cli-args.mjs`; help rows with a placeholder (`<dir>`/`<file>` etc.) must exactly equal the value Set, while rows without one must exactly equal the boolean Set.
 
 ## Validation
 
