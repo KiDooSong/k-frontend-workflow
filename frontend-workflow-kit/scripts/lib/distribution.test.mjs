@@ -1313,10 +1313,13 @@ test('packed payload CLI smoke: core, adoption, observation, visual (IMP-05)', a
     );
     assert.equal(probe.status, 0, probe.stderr);
     const probeOutputs = JSON.parse(probe.stdout);
-    assert.equal(
-      probeOutputs.adoption_report,
-      './temp/runs/adoption-probe-packed-normal/adoption-report.md',
-    );
+    // macOS realpaths os.tmpdir() from /var/... to /private/var/..., so pathRef may
+    // choose either the cwd-relative or <probe-run> base. Pin the stable contract:
+    // no absolute temp path leaks, the report suffix is preserved, and the file exists.
+    const adoptionReportRef = probeOutputs.adoption_report.replace(/\\/g, '/');
+    assert.match(adoptionReportRef, /(?:^|\/)adoption-report\.md$/);
+    assert.equal(path.isAbsolute(adoptionReportRef), false);
+    assert.doesNotMatch(adoptionReportRef, /fwk-pack-smoke-/);
     assert.equal(exists('temp/runs/adoption-probe-packed-normal/adoption-report.md', out), true);
     const probeSummary = JSON.parse(
       fs.readFileSync(path.join(out, 'temp', 'runs', 'adoption-probe-packed-normal', 'probe-summary.json'), 'utf8'),
