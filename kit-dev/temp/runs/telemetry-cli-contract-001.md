@@ -34,7 +34,7 @@ The `--outt`/`--otu` rows are the primary failure: a ledger-write intent became 
 
 ## Applied contract
 
-Telemetry now passes both raw argv and the parsed `{ flags, positionals }` to the existing `enforceCliFlagContract` before help, registry creation/listing, semantic surface checks, root/path resolution, child or ingest work, check reads, ledger writes, and stdout reports.
+Telemetry now passes both raw argv and the parsed `{ flags, positionals }` to the existing `enforceCliFlagContract` before help, registry creation/listing, semantic surface checks, root/path resolution, child or ingest work, check reads, ledger writes, and stdout reports. The value/boolean sets live in `scripts/lib/telemetry-cli-args.mjs` as the single source consumed by production and tests.
 
 Exact value allowlist (16):
 
@@ -89,6 +89,12 @@ This distinguishes an explicit no-ledger observation from a misspelled write int
 - `distribution.test.mjs` packs first, then runs public payload help/list, `--outt`, `--json=false`, positional, and a normal root-relative ledger outside the source tree. Invalid paths create no ledger/report; the normal ledger parses and leaks no absolute temp path.
 - `package-scripts.template.json` and `.github/workflows/frontend-workflow-kit.yml` are byte-unchanged.
 
+## PR review follow-up
+
+- Filesystem snapshots now record every discovered directory as `dir:<root-relative-path>/`, so an otherwise empty directory created on a usage/help/list path changes the snapshot and fails the no-side-effect assertion.
+- A focused snapshot test pins nested empty-directory markers.
+- The production CLI and table-driven tests import the same `TELEMETRY_VALUE_FLAGS` / `TELEMETRY_BOOLEAN_FLAGS` Sets from `scripts/lib/telemetry-cli-args.mjs`; the public help option lines are also compared exactly with their union.
+
 ## Validation
 
 The desktop shell exposed both Windows Node and a bundled Linux Node. Final POSIX validation fixed `TMPDIR/TEMP/TMP=/tmp` so temporary file modes match Ubuntu/macOS CI rather than the inherited Windows temp mount.
@@ -96,14 +102,14 @@ The desktop shell exposed both Windows Node and a bundled Linux Node. Final POSI
 | command | result |
 |---|---|
 | `npm ci` | exit 0; 1 dependency installed, 0 vulnerabilities |
-| `node --test scripts/lib/telemetry-cli.test.mjs scripts/lib/telemetry.test.mjs scripts/lib/ci-telemetry-contract.test.mjs scripts/lib/distribution.test.mjs` | exit 0; 142/142 pass |
-| `npm test` | exit 0; fixture harness `31` total (`30` pass, `1` expected xfail), Node specs `837` pass, `1` platform skip, `0` fail |
+| `node --test scripts/lib/telemetry-cli.test.mjs scripts/lib/telemetry.test.mjs scripts/lib/ci-telemetry-contract.test.mjs scripts/lib/distribution.test.mjs` | exit 0; 144/144 pass |
+| `npm test` | exit 0; fixture harness `31` total (`30` pass, `1` expected xfail), Node specs `839` pass, `1` platform skip, `0` fail |
 | `npm run example:state` | exit 0; committed example state/inventory reproduced |
 | `npm run example:readiness` | exit 0; expected two-screen readiness report |
 | `npm run example:validate` | exit 0; `workflow:validate — OK (검사 12종 통과)` |
 | `npm run workflow:telemetry -- --list-surfaces --json` | exit 0; fixed 7-surface registry only |
 | `npm run workflow:telemetry -- --docs examples/coupon-feature/docs/frontend-workflow --out ../temp/telemetry-cli-contract-ledger.json --json` | exit 0; valid ledger, then generated-local ledger removed |
-| `npm run kit:pack` | exit 0; 190-file payload generated after removing prior dist |
+| `npm run kit:pack` | exit 0; 191-file payload generated after removing prior dist (shared telemetry allowlist module included) |
 | `git diff --check` | exit 0 |
 
 Expected PR CI jobs remain the existing unchanged jobs: Ubuntu Node 20 `validate-example`, Ubuntu Node 24 `compat-smoke`, and macOS Node 20 `macos-smoke`. This change adds no blocking telemetry step and no promotion decision.

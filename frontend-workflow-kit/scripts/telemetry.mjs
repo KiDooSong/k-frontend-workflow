@@ -6,6 +6,7 @@
 import path from 'node:path';
 import { DEFAULTS, parseArgs, isCliEntry } from './lib/util.mjs';
 import { enforceCliFlagContract } from './lib/cli-args.mjs';
+import { TELEMETRY_BOOLEAN_FLAGS, TELEMETRY_VALUE_FLAGS } from './lib/telemetry-cli-args.mjs';
 import {
   collectTelemetry,
   collectTelemetryLedger,
@@ -169,33 +170,6 @@ const REDTEAM_FLAGS = ['redteam-include', 'redteam-case'];
 const DOC_DRIFT_FLAGS = ['doc-drift-include'];
 const KNOWN_DOC_DRIFT_INCLUDES = ['status-heuristic'];
 
-const VALUE_FLAGS = new Set([
-  'root',
-  'docs',
-  'src',
-  'out',
-  'check',
-  'determinism-runs',
-  'include',
-  'surface',
-  'visual-domain',
-  'visual-screen',
-  'visual-contract',
-  'adoption-run',
-  'adoption-summary',
-  'redteam-include',
-  'redteam-case',
-  'doc-drift-include',
-]);
-const BOOLEAN_FLAGS = new Set([
-  'json',
-  'list-surfaces',
-  'skip-visual-bootstrap',
-  'skip-visual-consistency',
-  'skip-adoption-visual',
-  'help',
-]);
-
 function main() {
   const argv = process.argv.slice(2);
   const { flags, positionals } = parseArgs(argv);
@@ -203,8 +177,8 @@ function main() {
     argv,
     flags,
     positionals,
-    valueFlags: VALUE_FLAGS,
-    booleanFlags: BOOLEAN_FLAGS,
+    valueFlags: TELEMETRY_VALUE_FLAGS,
+    booleanFlags: TELEMETRY_BOOLEAN_FLAGS,
     tool: 'workflow:telemetry',
     helpCommand: 'npm run workflow:telemetry --',
   });

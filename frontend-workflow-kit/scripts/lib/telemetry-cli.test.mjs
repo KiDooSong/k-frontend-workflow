@@ -4,38 +4,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { TELEMETRY_BOOLEAN_FLAGS, TELEMETRY_VALUE_FLAGS } from './telemetry-cli-args.mjs';
 import { KIT_ROOT } from './util.mjs';
 
 const CLI = path.join(KIT_ROOT, 'scripts', 'telemetry.mjs');
 const SPAWN_TIMEOUT_MS = 30_000;
 
-const VALUE_FLAGS = [
-  'root',
-  'docs',
-  'src',
-  'out',
-  'check',
-  'determinism-runs',
-  'include',
-  'surface',
-  'visual-domain',
-  'visual-screen',
-  'visual-contract',
-  'adoption-run',
-  'adoption-summary',
-  'redteam-include',
-  'redteam-case',
-  'doc-drift-include',
-];
-
-const BOOLEAN_FLAGS = [
-  'json',
-  'list-surfaces',
-  'skip-visual-bootstrap',
-  'skip-visual-consistency',
-  'skip-adoption-visual',
-  'help',
-];
+const VALUE_FLAGS = [...TELEMETRY_VALUE_FLAGS];
+const BOOLEAN_FLAGS = [...TELEMETRY_BOOLEAN_FLAGS];
 
 function makeRoot(t, prefix = 'telemetry-cli-') {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -59,8 +35,13 @@ function snapshotTree(root) {
     const dir = stack.pop();
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) stack.push(full);
-      else snapshot[path.relative(root, full).split(path.sep).join('/')] = fs.readFileSync(full).toString('hex');
+      const rel = path.relative(root, full).split(path.sep).join('/');
+      if (entry.isDirectory()) {
+        snapshot[`dir:${rel}/`] = true;
+        stack.push(full);
+      } else {
+        snapshot[rel] = fs.readFileSync(full).toString('hex');
+      }
     }
   }
   return snapshot;
@@ -77,6 +58,28 @@ function assertUsageFailure(result, expected, root, before) {
   assert.match(result.stderr, /Try `npm run workflow:telemetry -- --help`\./);
   if (root && before) assert.deepEqual(snapshotTree(root), before, 'usage failure must not read into a write path');
 }
+
+test('filesystem snapshots include empty-directory markers', (t) => {
+  const root = makeRoot(t, 'telemetry-cli-empty-dir-snapshot-');
+  const before = snapshotTree(root);
+  fs.mkdirSync(path.join(root, 'empty', 'nested'), { recursive: true });
+  const after = snapshotTree(root);
+  assert.notDeepEqual(after, before);
+  assert.equal(after['dir:empty/'], true);
+  assert.equal(after['dir:empty/nested/'], true);
+});
+
+test('public help option lines match the shared telemetry allowlist', (t) => {
+  const root = makeRoot(t, 'telemetry-cli-help-allowlist-');
+  const result = run(['--help'], root);
+  assert.equal(result.status, 0, result.stderr);
+  const optionsSection = result.stdout.split('\nOptions:\n')[1]?.split('\nBehavior:\n')[0] || '';
+  const advertised = [...optionsSection.matchAll(/^  --([a-z0-9-]+)(?:\s|$)/gm)]
+    .map((match) => match[1])
+    .sort();
+  const allowed = [...TELEMETRY_VALUE_FLAGS, ...TELEMETRY_BOOLEAN_FLAGS].sort();
+  assert.deepEqual(advertised, allowed);
+});
 
 test('the complete telemetry allowlist accepts each option in its valid syntax before help', (t) => {
   const root = makeRoot(t, 'telemetry-cli-allowlist-');
