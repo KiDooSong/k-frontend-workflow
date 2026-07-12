@@ -4,6 +4,16 @@
 
 ## Unreleased
 
+### fix(upgrade) — 생성 plan 에 embed 되는 upgrade-notes 상대 링크를 plan 위치 기준으로 재배치
+
+`v0.3.0-mvp.2` 실제 consumer 업그레이드 dogfood([temp/runs/consumer-upgrade-0.3.0-mvp.2-dogfood-001/run-report.md](../temp/runs/consumer-upgrade-0.3.0-mvp.2-dogfood-001/run-report.md) §7)가 "kit 후속 후보"로 기록한 `broken-relative-link` 2건의 해소. **planner classification/apply 의미 무변경** — safe-update/conflict/local-modified 판정, manifest shape, conflict `.incoming` 처리, prune/`--allow-conflicts`/`--force-runtime` 기본값, warning-first/hard-gate 경계 전부 그대로다. 생성된 plan Markdown 의 링크 이동성만 고친다.
+
+- **결함**: `upgrade-vendored-kit` 이 `docs/reference/upgrade-notes.md` 원문을 plan 에 그대로 embed 하면서, `[input-reconciliation.md](input-reconciliation.md)` 류의 상대 링크가 plan 파일 위치(`<current>/_upgrade/`) 기준으로 잘못 해석돼 dogfood 의 `workflow:doc-drift` 가 2건을 `broken-relative-link` 로 보고했다.
+- **`upgrade-planner.mjs`**: `rebaseMigrationNoteLinks` 신설 + `renderPlanMarkdown(plan, {currentDir, planPath})` optional render context. 링크 재배치는 **Markdown render 시점에만** 수행 — `buildPlan()` JSON shape 와 `migration_notes.{path,body}` raw 원문은 불변이고, context 없는 `renderPlanMarkdown(plan)` 은 기존 출력과 byte-identical(기존 library 사용자 무영향). 계산은 순수 lexical: query/fragment 분리 보존 → `migration_notes.path` dirname 기준 해소 → payload root 탈출 검사(`isSafeRelPath` 재사용) → `currentDir` 아래 lexical target → plan dirname 기준 상대경로(POSIX forward slash). fenced code block/inline code span/autolink/escaped bracket 안의 링크 표기는 수정하지 않는다(doc-drift 의 length-preserving masking helper 공유 — doc-drift 자체 출력/판정 무변경). external(`https:`/`mailto:`/`data:`)·anchor-only(`#…`)·site-absolute(`/…`) 링크 불변. payload root 를 탈출하거나 portable 상대경로가 불가능한 경우(Windows cross-drive) 원문 링크를 유지하고 deterministic 리뷰 note 를 남긴다 — absolute path/file URL 을 절대 출력하지 않고 apply 도 실패시키지 않는다.
+- **`upgrade-vendored-kit.mjs`**: planPath 결정 → render(context 포함) → plan 쓰기 → apply 순서로 정리. 기존 불변식 유지 — plan 은 apply mutation 전에 쓰고, 잘못된 `--plan` 경로는 apply 전에 실패하며(테스트 추가), default in-current plan 의 symlink containment 검사와 plan 없는 dry-run 의 무쓰기 계약 그대로. `--json` 출력에 absolute 경로 신규 노출 0.
+- tests: `upgrade-planner.test.mjs` +10 (default `_upgrade` plan 재배치·fragment/query 보존·external/anchor/code/escaped/fenced 불변·2회 render byte-identical / explicit `--plan` root+nested 실파일 resolve 대조 / context 없는 render byte-compat / JSON plan 불변 / payload-escape 원문 유지+note / win32 cross-drive lexical / CLI default apply 통합(dogfood 2건 링크 fixture 고정) / bad `--plan` fail-before-apply / doc-drift 회귀 0 warning / packed payload CLI 재배치+packed doc-drift 0). 증거: [kit-dev/temp/runs/upgrade-plan-migration-link-rebase-001.md](temp/runs/upgrade-plan-migration-link-rebase-001.md).
+- docs: COMMANDS §Upgrade 에 migration note 링크가 plan 위치 기준으로 재배치됨(default `_upgrade` + explicit `--plan`) 명시.
+
 ### fix(cli) — forbidden-paths 인자 계약 fail-closed hardening (--enforce typo 소실 차단)
 
 core CLI 인자 계약 감사([temp/runs/core-cli-argument-contract-audit-001.md](temp/runs/core-cli-argument-contract-audit-001.md))가 후속 1순위로 기록한 `forbidden-paths` 행의 해소. **gate promotion 아님 — 기존 opt-in enforcement(`--enforce`)의 usage fail-open 수정이다.** warning-first 기본(위반도 exit 0)·`--enforce` 위반 exit 1·readiness 판정 소비·guarded surface 계산·allowed/forbidden path 의미·CI required check 전부 무변경.

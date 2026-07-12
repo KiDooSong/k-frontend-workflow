@@ -12,6 +12,7 @@ import {
   buildPlan,
   applyPlan,
   renderPlanMarkdown,
+  rebaseMigrationNoteLinks,
   collectMigrationNotes,
 } from './upgrade-planner.mjs';
 import {
@@ -455,6 +456,275 @@ test('migration notes shipped in next payload are surfaced in the plan', (t) => 
   assert.match(md, /Grouped inputs/);
 });
 
+// --- migration-note link rebasing (dogfood 0.3.0-mvp.2 follow-up) ----------
+// The embedded upgrade-notes body is written relative to docs/reference/, so a
+// plan generated at <current>/_upgrade/ (or an arbitrary --plan path) must
+// rebase those links to its own location — verbatim embedding produced the two
+// broken-relative-link warnings observed in the real consumer upgrade dogfood.
+
+const REBASE_NOTES_BODY = [
+  '# Upgrade Notes',
+  '',
+  'See [input](input-reconciliation.md).',
+  'See [screen](screen-identity.md#aliases).',
+  'See [query](workflow-spine.md?mode=full#start).',
+  'See [up](../nearby.md).',
+  'See [external](https://example.com/docs).',
+  'See [plain http](http://example.com/x).',
+  'See [mail](mailto:a@example.com).',
+  'See [local section](#recommended-validation).',
+  'See [site absolute](/absolute/site/path).',
+  'See [data](data:image/png;base64,AAAA).',
+  '![image](assets/example.png)',
+  'Inline code: `[code](input-reconciliation.md)`.',
+  'Escaped: \\[not-a-link](input-reconciliation.md).',
+  '',
+  '```md',
+  '[fenced](screen-identity.md)',
+  '```',
+  '',
+].join('\n');
+
+function buildNotesScenario(tmp, { notesBody = REBASE_NOTES_BODY } = {}) {
+  const currentDir = path.join(tmp, 'consumer', 'tools', 'frontend-workflow');
+  const nextDir = path.join(tmp, 'next');
+  const docs = {
+    'docs/reference/upgrade-notes.md': notesBody,
+    'docs/reference/input-reconciliation.md': '# input reconciliation\n',
+    'docs/reference/screen-identity.md': '# screen identity\n\n## aliases\n',
+    'docs/reference/workflow-spine.md': '# spine\n\n## start\n',
+  };
+  const files = [];
+  for (const [rel, body] of Object.entries(docs)) {
+    writeFile(nextDir, rel, body);
+    files.push({ path: rel, sha256: sha(body), classification: 'consumer-reference', mode: '100644' });
+  }
+  fs.mkdirSync(currentDir, { recursive: true });
+  writeFile(nextDir, PAYLOAD_MANIFEST_NAME, JSON.stringify({
+    schema_version: 1,
+    kit: { source_repo: 'O/R', source_ref: 'NEXTREF', package_version: '9.9.9' },
+    distribution_manifest_version: 1,
+    payload: { destination_hint: 'tools/frontend-workflow', files },
+  }, null, 2) + '\n');
+  return { currentDir, nextDir, consumerRoot: path.join(tmp, 'consumer') };
+}
+
+function extractLink(md, label) {
+  const m = new RegExp(`\\[${label.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}\\]\\(([^)]+)\\)`).exec(md);
+  assert.ok(m, `link [${label}] should be present in the rendered plan`);
+  return m[1];
+}
+
+test('render rebases migration-note links for the default _upgrade plan location', (t) => {
+  const tmp = mkTmp('rebase-default');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const { currentDir, nextDir } = buildNotesScenario(tmp);
+  const plan = buildPlan({ currentDir, nextDir });
+  const planPath = path.join(currentDir, '_upgrade', 'upgrade-plan-NEXTREF.md');
+  const ctx = { currentDir, planPath };
+  const md = renderPlanMarkdown(plan, ctx);
+
+  // Relative links move to the install location, keeping query/fragment.
+  assert.equal(extractLink(md, 'input'), '../docs/reference/input-reconciliation.md');
+  assert.equal(extractLink(md, 'screen'), '../docs/reference/screen-identity.md#aliases');
+  assert.equal(extractLink(md, 'query'), '../docs/reference/workflow-spine.md?mode=full#start');
+  assert.equal(extractLink(md, 'up'), '../docs/nearby.md'); // ../ against docs/reference, still in payload
+  assert.equal(extractLink(md, 'image'), '../docs/reference/assets/example.png');
+  // External, anchor-only, site-absolute, and scheme links are untouched.
+  assert.equal(extractLink(md, 'external'), 'https://example.com/docs');
+  assert.equal(extractLink(md, 'plain http'), 'http://example.com/x');
+  assert.equal(extractLink(md, 'mail'), 'mailto:a@example.com');
+  assert.equal(extractLink(md, 'local section'), '#recommended-validation');
+  assert.equal(extractLink(md, 'site absolute'), '/absolute/site/path');
+  assert.equal(extractLink(md, 'data'), 'data:image/png;base64,AAAA');
+  // Inline code, escaped brackets, and fenced blocks stay verbatim.
+  assert.match(md, /`\[code\]\(input-reconciliation\.md\)`/);
+  assert.match(md, /\\\[not-a-link\]\(input-reconciliation\.md\)/);
+  assert.match(md, /^\[fenced\]\(screen-identity\.md\)$/m);
+  // Deterministic, and no local absolute paths or timestamps leak into the plan.
+  assert.equal(md, renderPlanMarkdown(plan, ctx));
+  assert.equal(md.includes(tmp), false);
+  assert.equal(md.includes(tmp.split(path.sep).join('/')), false);
+  assert.doesNotMatch(md, /file:\/\//);
+  assert.doesNotMatch(md, /\b20\d{2}-\d{2}-\d{2}T/);
+});
+
+test('render computes links from arbitrary explicit --plan locations', (t) => {
+  const tmp = mkTmp('rebase-explicit');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const { currentDir, nextDir, consumerRoot } = buildNotesScenario(tmp);
+  const plan = buildPlan({ currentDir, nextDir });
+  // Materialize the docs under current (as an apply would) so resolution can be
+  // checked against real files, not just expected strings.
+  applyPlan({ plan, currentDir, nextDir });
+
+  const planPaths = [
+    path.join(consumerRoot, 'kit-upgrade-plan.md'),
+    path.join(consumerRoot, 'temp', 'reports', 'upgrades', 'kit-upgrade-plan.md'),
+  ];
+  for (const planPath of planPaths) {
+    const md = renderPlanMarkdown(plan, { currentDir, planPath });
+    const link = extractLink(md, 'input');
+    const resolved = path.resolve(path.dirname(planPath), link);
+    assert.equal(resolved, path.resolve(currentDir, 'docs', 'reference', 'input-reconciliation.md'));
+    assert.equal(fs.existsSync(resolved), true, `${link} should resolve to a real file from ${planPath}`);
+    const anchored = extractLink(md, 'screen');
+    assert.ok(anchored.endsWith('#aliases'));
+    assert.equal(
+      path.resolve(path.dirname(planPath), anchored.split('#')[0]),
+      path.resolve(currentDir, 'docs', 'reference', 'screen-identity.md'),
+    );
+  }
+  // Consumer-root plan gets the documented forward-slash shape.
+  const rootMd = renderPlanMarkdown(plan, { currentDir, planPath: planPaths[0] });
+  assert.equal(extractLink(rootMd, 'input'), 'tools/frontend-workflow/docs/reference/input-reconciliation.md');
+});
+
+test('render without a context stays byte-identical (raw notes body, library compat)', (t) => {
+  const tmp = mkTmp('rebase-compat');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const { currentDir, nextDir } = buildNotesScenario(tmp);
+  const plan = buildPlan({ currentDir, nextDir });
+  const md = renderPlanMarkdown(plan);
+  // Original relative links are embedded verbatim, exactly as before.
+  assert.equal(extractLink(md, 'input'), 'input-reconciliation.md');
+  assert.equal(extractLink(md, 'screen'), 'screen-identity.md#aliases');
+  assert.equal(md, renderPlanMarkdown(plan, null));
+  assert.ok(md.includes(plan.migration_notes.body.trim()));
+});
+
+test('rebasing never mutates the JSON plan: migration_notes stays raw', (t) => {
+  const tmp = mkTmp('rebase-json');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const { currentDir, nextDir } = buildNotesScenario(tmp);
+  const plan = buildPlan({ currentDir, nextDir });
+  const before = JSON.stringify(plan);
+  renderPlanMarkdown(plan, { currentDir, planPath: path.join(currentDir, '_upgrade', 'p.md') });
+  assert.equal(JSON.stringify(plan), before);
+  assert.equal(plan.migration_notes.path, 'docs/reference/upgrade-notes.md');
+  assert.equal(plan.migration_notes.body, REBASE_NOTES_BODY);
+});
+
+test('links escaping the payload root are kept verbatim with a deterministic note', (t) => {
+  const tmp = mkTmp('rebase-escape');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const { currentDir, nextDir } = buildNotesScenario(tmp, {
+    notesBody: '# Notes\n\nSee [out](../../../outside.md) and [ok](input-reconciliation.md).\n',
+  });
+  const plan = buildPlan({ currentDir, nextDir });
+  const ctx = { currentDir, planPath: path.join(currentDir, '_upgrade', 'p.md') };
+  const md = renderPlanMarkdown(plan, ctx);
+  assert.equal(extractLink(md, 'out'), '../../../outside.md'); // kept, never absolutized
+  assert.equal(extractLink(md, 'ok'), '../docs/reference/input-reconciliation.md');
+  assert.match(md, /1 relative link\(s\) could not be rebased/);
+  assert.match(md, /`\.\.\/\.\.\/\.\.\/outside\.md`/);
+  assert.equal(md, renderPlanMarkdown(plan, ctx)); // deterministic
+  assert.doesNotMatch(md, /file:\/\//);
+  assert.equal(md.includes(tmp), false);
+});
+
+test('cross-volume plan location keeps original links and leaks no absolute path (win32 lexical)', (t) => {
+  if (process.platform !== 'win32') {
+    t.skip('drive-crossing relative paths only exist on Windows');
+    return;
+  }
+  // Purely lexical — neither path needs to exist.
+  const { body, unresolved } = rebaseMigrationNoteLinks({
+    body: 'See [input](input-reconciliation.md).\n',
+    notesPath: 'docs/reference/upgrade-notes.md',
+    currentDir: 'C:\\repo\\tools\\frontend-workflow',
+    planPath: 'Q:\\plans\\kit-upgrade-plan.md',
+  });
+  assert.equal(body, 'See [input](input-reconciliation.md).\n');
+  assert.deepEqual(unresolved, ['input-reconciliation.md']);
+});
+
+test('rebaseMigrationNoteLinks is pure on the same-volume happy path', () => {
+  const { body, unresolved } = rebaseMigrationNoteLinks({
+    body: 'See [input](input-reconciliation.md) and [s](screen-identity.md#a).\n',
+    notesPath: 'docs/reference/upgrade-notes.md',
+    currentDir: path.join(path.parse(process.cwd()).root, 'repo', 'tools', 'frontend-workflow'),
+    planPath: path.join(path.parse(process.cwd()).root, 'repo', 'tools', 'frontend-workflow', '_upgrade', 'p.md'),
+  });
+  assert.equal(body, 'See [input](../docs/reference/input-reconciliation.md) and [s](../docs/reference/screen-identity.md#a).\n');
+  assert.deepEqual(unresolved, []);
+});
+
+test('CLI default apply writes a plan whose migration links resolve from the plan directory', (t) => {
+  const tmp = mkTmp('rebase-cli-apply');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const dogfoodNotes = [
+    '# Upgrade Notes',
+    '',
+    'See [input-reconciliation.md](input-reconciliation.md).',
+    'See [screen-identity.md](screen-identity.md).',
+    'See [external](https://example.com/docs).',
+    '',
+  ].join('\n');
+  const { currentDir, nextDir } = buildNotesScenario(tmp, { notesBody: dogfoodNotes });
+
+  const r = spawnSync(process.execPath, [UPGRADE_CLI, '--current', currentDir, '--next', nextDir, '--apply'], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+
+  const planPath = path.join(currentDir, '_upgrade', 'upgrade-plan-NEXTREF.md');
+  assert.equal(fs.existsSync(planPath), true, 'default apply should write the in-kit plan');
+  const md = fs.readFileSync(planPath, 'utf8');
+  // The two links observed broken in the real dogfood now point at the install.
+  assert.equal(extractLink(md, 'input-reconciliation.md'), '../docs/reference/input-reconciliation.md');
+  assert.equal(extractLink(md, 'screen-identity.md'), '../docs/reference/screen-identity.md');
+  assert.equal(extractLink(md, 'external'), 'https://example.com/docs');
+  for (const label of ['input-reconciliation.md', 'screen-identity.md']) {
+    const resolved = path.resolve(path.dirname(planPath), extractLink(md, label));
+    assert.equal(fs.existsSync(resolved), true, `${label} should resolve to an installed file`);
+  }
+  // JSON surface unchanged: raw body, no rebased links, no absolute paths.
+  const rj = spawnSync(process.execPath, [UPGRADE_CLI, '--current', currentDir, '--next', nextDir, '--json'], { encoding: 'utf8' });
+  assert.equal(rj.status, 0, rj.stderr);
+  const out = JSON.parse(rj.stdout);
+  assert.equal(out.plan.migration_notes.body, dogfoodNotes);
+  assert.equal(JSON.stringify(out.plan).includes('../docs/reference/'), false);
+  assert.equal(JSON.stringify(out.plan).includes(tmp.split(path.sep).join('/')), false);
+});
+
+test('CLI still fails on a bad --plan path before any apply mutation', (t) => {
+  const tmp = mkTmp('rebase-badplan');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const { currentDir, nextDir } = buildScenario(tmp);
+  // A FILE where the plan's parent directory must be created → mkdir fails.
+  const blocker = path.join(tmp, 'blocker');
+  fs.writeFileSync(blocker, 'not a directory', 'utf8');
+  const before = read(currentDir, 'safe.mjs');
+  const r = spawnSync(process.execPath, [
+    UPGRADE_CLI, '--current', currentDir, '--next', nextDir, '--apply', '--plan', path.join(blocker, 'plan.md'),
+  ], { encoding: 'utf8' });
+  assert.notEqual(r.status, 0);
+  assert.equal(read(currentDir, 'safe.mjs'), before, 'apply must not run when the plan cannot be written');
+  assert.equal(fs.existsSync(path.join(currentDir, CONFLICTS_DIR_NAME)), false);
+});
+
+test('doc-drift reports zero broken-relative-link findings for the rebased plan', (t) => {
+  const tmp = mkTmp('rebase-docdrift');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const dogfoodNotes = [
+    '# Upgrade Notes',
+    '',
+    'See [input-reconciliation.md](input-reconciliation.md).',
+    'See [screen-identity.md](screen-identity.md).',
+    '',
+  ].join('\n');
+  const { currentDir, nextDir } = buildNotesScenario(tmp, { notesBody: dogfoodNotes });
+  const r = spawnSync(process.execPath, [UPGRADE_CLI, '--current', currentDir, '--next', nextDir, '--apply'], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+
+  const DOC_DRIFT_CLI = path.join(KIT_ROOT, 'scripts', 'doc-drift.mjs');
+  const d = spawnSync(process.execPath, [DOC_DRIFT_CLI, '--root', currentDir, '--json'], { encoding: 'utf8' });
+  assert.equal(d.status, 0, d.stderr); // warning-first exit 0 contract untouched
+  const report = JSON.parse(d.stdout);
+  const broken = report.findings.filter((f) => f.check === 'broken-relative-link');
+  assert.deepEqual(broken, [], 'embedded migration links must not surface as broken-relative-link');
+  assert.equal(report.warning_count, 0);
+});
+
 // --- CLI integration (dry-run default, --apply, --json, --plan) ------------
 test('CLI dry-run is the default and writes nothing into current', (t) => {
   const tmp = mkTmp('cli-dry');
@@ -694,4 +964,59 @@ test('end-to-end: a vendored packed kit upgrades cleanly against itself', (t) =>
   assert.equal(plan.counts['local-modified'], 0);
   // identical copy → everything unchanged
   assert.equal(plan.counts.unchanged, plan.counts.total - plan.counts['unknown-local']);
+});
+
+function linkInstalledDependency(out, packageName) {
+  const source = path.join(KIT_ROOT, 'node_modules', packageName);
+  assert.equal(fs.existsSync(source), true, `dependency ${packageName} must be installed for packed CLI regression`);
+  const target = path.join(out, 'node_modules', packageName);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  try {
+    fs.symlinkSync(source, target, process.platform === 'win32' ? 'junction' : 'dir');
+  } catch {
+    fs.cpSync(source, target, { recursive: true });
+  }
+}
+
+test('packed payload: upgrade CLI rebases the shipped upgrade-notes links in the generated plan', (t) => {
+  const tmp = mkTmp('rebase-packed');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const nextDir = path.join(tmp, 'next');
+  const pack = spawnSync(process.execPath, [PACK_CLI, '--out', nextDir, '--json', '--source-ref', 'packedrebase1'], { cwd: KIT_ROOT, encoding: 'utf8' });
+  assert.equal(pack.status, 0, pack.stderr);
+  linkInstalledDependency(nextDir, 'yaml');
+
+  // Fresh consumer install driven by the PACKED upgrade CLI (no source-tree import).
+  const currentDir = path.join(tmp, 'consumer', 'tools', 'frontend-workflow');
+  fs.mkdirSync(currentDir, { recursive: true });
+  const r = spawnSync(process.execPath, [
+    path.join(nextDir, 'scripts', 'upgrade-vendored-kit.mjs'),
+    '--current', currentDir, '--next', nextDir, '--apply',
+  ], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+
+  const planPath = path.join(currentDir, '_upgrade', 'upgrade-plan-packedrebase1.md');
+  assert.equal(fs.existsSync(planPath), true, 'packed apply should write the default in-kit plan');
+  const md = fs.readFileSync(planPath, 'utf8');
+  // The packed payload's real upgrade-notes are embedded and rebased.
+  assert.match(md, /## Consumer migrations/);
+  assert.match(md, /\]\(\.\.\/docs\/reference\/input-reconciliation\.md\)/);
+  assert.match(md, /\]\(\.\.\/docs\/reference\/screen-identity\.md\)/);
+  assert.doesNotMatch(md, /\]\(input-reconciliation\.md\)/);
+  assert.doesNotMatch(md, /\]\(screen-identity\.md\)/);
+  for (const rel of ['../docs/reference/input-reconciliation.md', '../docs/reference/screen-identity.md']) {
+    assert.equal(fs.existsSync(path.resolve(path.dirname(planPath), rel)), true, `${rel} should exist in the installed kit`);
+  }
+
+  // The packed doc-drift CLI over the installed kit (plan included) reports no
+  // broken-relative-link for the embedded migration links.
+  const d = spawnSync(process.execPath, [
+    path.join(nextDir, 'scripts', 'doc-drift.mjs'), '--root', currentDir, '--json',
+  ], { encoding: 'utf8' });
+  assert.equal(d.status, 0, d.stderr);
+  const report = JSON.parse(d.stdout);
+  const planBroken = report.findings.filter((f) => (
+    f.check === 'broken-relative-link' && String(f.source).startsWith('_upgrade/')
+  ));
+  assert.deepEqual(planBroken, [], 'plan migration links must not be broken in the packed flow');
 });

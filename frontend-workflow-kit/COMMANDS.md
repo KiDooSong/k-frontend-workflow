@@ -402,7 +402,13 @@ automatically. An install with no `.kit-install-manifest.json` gets a
 conservative "unmanaged baseline" plan; after the first apply it becomes
 manifest-based. Consumer-impacting migration notes
 ([docs/reference/upgrade-notes.md](docs/reference/upgrade-notes.md)) are embedded in
-every plan. The tool is advisory and is not a hard CI gate.
+every plan; their relative links are rewritten at render time to point at the
+current vendored kit from the plan's actual location (both the default
+`<current>/_upgrade/` plan and an explicit `--plan` path), so they stay clickable
+after apply. External/anchor/code-span links are left as written, and a link
+that cannot be expressed as a portable relative path is kept verbatim with a
+deterministic review note (never an absolute local path). The tool is advisory
+and is not a hard CI gate.
 
 ## Adoption Probe
 

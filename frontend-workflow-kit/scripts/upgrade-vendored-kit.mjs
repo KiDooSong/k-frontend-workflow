@@ -130,11 +130,11 @@ function main() {
   };
 
   const plan = buildPlan({ currentDir, nextDir, options });
-  const markdown = renderPlanMarkdown(plan);
 
   // Resolve where (if anywhere) to write the markdown plan, and write it BEFORE
   // mutating, so a bad --plan path fails fast instead of leaving an applied kit
-  // with no saved plan.
+  // with no saved plan. The plan path is resolved first so the render can rebase
+  // the embedded migration-note links against the plan's actual location.
   let planPath = null;
   let planInsideCurrent = false;
   if (typeof flags.plan === 'string') {
@@ -149,6 +149,7 @@ function main() {
     if (planInsideCurrent) {
       assertSafeWriteTarget(fs.realpathSync(currentDir), planPath, 'current vendored kit');
     }
+    const markdown = renderPlanMarkdown(plan, { currentDir, planPath });
     fs.mkdirSync(path.dirname(planPath), { recursive: true });
     fs.writeFileSync(planPath, markdown, 'utf8');
   }

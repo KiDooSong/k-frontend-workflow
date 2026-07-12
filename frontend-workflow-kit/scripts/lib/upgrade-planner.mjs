@@ -25,7 +25,9 @@ import {
   scanPayloadFiles,
   statMode,
   isSafeRelPath,
+  toPosix,
 } from './kit-manifest.mjs';
+import { maskAutolinks, maskInlineCodeSpans } from './doc-drift.mjs';
 
 export const CATEGORIES = [
   'safe-update',
@@ -315,6 +317,154 @@ export function buildPlan({ currentDir, nextDir, options = {} }) {
   };
 }
 
+// --- migration-note link rebasing (render-time only) ------------------------
+// The JSON plan keeps migration_notes.body as the raw upgrade-notes source; only
+// the rendered markdown rewrites its relative links so they resolve from the
+// actual plan file location to the (future) install location under --current.
+
+// Length-preserving fence mask: fenced-block lines become spaces (same fence
+// grammar as doc-drift's stripFencedCodeBlocks, which is NOT length-preserving
+// and therefore unusable for in-place rewriting).
+function maskFencedCodeBlocksPreserveLength(content) {
+  const lines = String(content || '').split('\n');
+  const out = [];
+  let fence = null;
+  for (const line of lines) {
+    const marker = /^(?: {0,3})(`{3,}|~{3,})/.exec(line);
+    if (!fence && marker) {
+      fence = { char: marker[1][0], len: marker[1].length };
+      out.push(line.replace(/[^\r]/g, ' '));
+      continue;
+    }
+    if (fence) {
+      const close = new RegExp(`^(?: {0,3})${fence.char}{${fence.len},}\\s*$`).test(line);
+      if (close) fence = null;
+      out.push(line.replace(/[^\r]/g, ' '));
+      continue;
+    }
+    out.push(line);
+  }
+  return out.join('\n');
+}
+
+// `\[` is a literal bracket (odd run of preceding backslashes), not a link opener.
+function isEscapedAt(text, pos) {
+  let backslashes = 0;
+  for (let i = pos - 1; i >= 0 && text[i] === '\\'; i--) backslashes++;
+  return backslashes % 2 === 1;
+}
+
+function findClosingDelimiter(text, start, open, close) {
+  let depth = 0;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '\\') {
+      i++;
+      continue;
+    }
+    if (ch === open) depth++;
+    else if (ch === close) {
+      if (depth === 0) return i;
+      depth--;
+    }
+  }
+  return -1;
+}
+
+// Offsets of every inline-link destination in the masked text (same offsets as
+// the original — all masks are length-preserving). Angle-bracket destinations
+// (`[x](<dest>)`) are skipped: the current upgrade-notes contract never uses
+// them and leaving them verbatim is the conservative choice.
+function scanInlineLinkDestinations(masked) {
+  const spans = [];
+  for (let i = 0; i < masked.length; i++) {
+    let labelStart = -1;
+    if (masked[i] === '!' && masked[i + 1] === '[') labelStart = i + 1;
+    else if (masked[i] === '[') labelStart = i;
+    else continue;
+    if (isEscapedAt(masked, labelStart)) continue;
+    const labelEnd = findClosingDelimiter(masked, labelStart + 1, '[', ']');
+    if (labelEnd === -1 || masked[labelEnd + 1] !== '(') continue;
+    const close = findClosingDelimiter(masked, labelEnd + 2, '(', ')');
+    if (close === -1) continue;
+    let destStart = labelEnd + 2;
+    while (destStart < close && /\s/.test(masked[destStart])) destStart++;
+    let destEnd = destStart;
+    while (destEnd < close && !/\s/.test(masked[destEnd])) destEnd++;
+    if (destEnd > destStart && masked[destStart] !== '<') {
+      spans.push({ start: destStart, end: destEnd });
+    }
+    i = close;
+  }
+  return spans;
+}
+
+// External/anchor/absolute destinations are never rewritten.
+function isRebaseCandidate(dest) {
+  if (!dest) return false;
+  if (dest.startsWith('#') || dest.startsWith('/')) return false;
+  return !/^[a-z][a-z0-9+.-]*:/i.test(dest);
+}
+
+// Rewrite the relative links of an embedded migration-notes body so they resolve
+// from the plan file's directory to the target's install path under currentDir.
+// Pure and lexical: no filesystem reads, no symlink following. Links that would
+// escape the payload root, or that cannot be expressed as a portable relative
+// path (e.g. plan and current on different Windows drives), are kept verbatim
+// and reported in `unresolved` — never turned into absolute paths or file URLs.
+export function rebaseMigrationNoteLinks({ body, notesPath, currentDir, planPath }) {
+  const text = String(body ?? '');
+  const masked = maskInlineCodeSpans(maskAutolinks(maskFencedCodeBlocksPreserveLength(text)));
+  const notesDir = path.posix.dirname(toPosix(notesPath));
+  const planDirAbs = path.dirname(path.resolve(planPath));
+  const currentAbs = path.resolve(currentDir);
+  const unresolved = new Set();
+
+  let out = '';
+  let last = 0;
+  for (const { start, end } of scanInlineLinkDestinations(masked)) {
+    const dest = text.slice(start, end);
+    out += text.slice(last, start);
+    last = end;
+    if (!isRebaseCandidate(dest)) {
+      out += dest;
+      continue;
+    }
+    // Split off (and preserve verbatim) fragment then query.
+    const hashIdx = dest.indexOf('#');
+    const beforeHash = hashIdx === -1 ? dest : dest.slice(0, hashIdx);
+    const fragment = hashIdx === -1 ? '' : dest.slice(hashIdx);
+    const queryIdx = beforeHash.indexOf('?');
+    const filePart = queryIdx === -1 ? beforeHash : beforeHash.slice(0, queryIdx);
+    const query = queryIdx === -1 ? '' : beforeHash.slice(queryIdx);
+    if (!filePart) {
+      out += dest;
+      continue;
+    }
+    const payloadRel = path.posix.normalize(
+      notesDir === '.' ? filePart : `${notesDir}/${filePart}`,
+    );
+    if (!isSafeRelPath(payloadRel)) {
+      // Escapes the payload root — keep the original link for human review.
+      unresolved.add(dest);
+      out += dest;
+      continue;
+    }
+    const targetAbs = path.resolve(currentAbs, payloadRel);
+    const rel = path.relative(planDirAbs, targetAbs);
+    if (rel === '' || path.isAbsolute(rel) || /^[a-zA-Z]:/.test(rel)) {
+      // No portable relative path exists (different volume) — keep the original
+      // payload-relative link rather than leaking an absolute local path.
+      unresolved.add(dest);
+      out += dest;
+      continue;
+    }
+    out += toPosix(rel) + query + fragment;
+  }
+  out += text.slice(last);
+  return { body: out, unresolved: [...unresolved].sort((a, b) => a.localeCompare(b)) };
+}
+
 // --- markdown rendering ----------------------------------------------------
 function shortRef(ref) {
   if (!ref) return 'unknown';
@@ -338,7 +488,11 @@ const PATH_COL = { label: 'File', get: (f) => `\`${f.path}\`` };
 const CLASS_COL = { label: 'Classification', get: (f) => f.classification || '—' };
 const ACTION_COL = { label: 'Apply action', get: (f) => f.planned_action };
 
-export function renderPlanMarkdown(plan) {
+// renderContext (optional): { currentDir, planPath } — when both are set the
+// embedded migration-note relative links are rebased to resolve from the plan
+// file's actual location (see rebaseMigrationNoteLinks). Without a context the
+// output is byte-identical to the historical render (raw notes body).
+export function renderPlanMarkdown(plan, renderContext = null) {
   const byCat = (cat) => plan.files.filter((f) => f.category === cat);
   const c = plan.counts;
   const lines = [];
@@ -422,10 +576,26 @@ export function renderPlanMarkdown(plan) {
   lines.push('## Consumer migrations');
   lines.push('');
   if (plan.migration_notes) {
+    let notesBody = plan.migration_notes.body;
+    let unresolved = [];
+    if (renderContext && renderContext.currentDir && renderContext.planPath) {
+      ({ body: notesBody, unresolved } = rebaseMigrationNoteLinks({
+        body: notesBody,
+        notesPath: plan.migration_notes.path,
+        currentDir: renderContext.currentDir,
+        planPath: renderContext.planPath,
+      }));
+    }
     lines.push('> Review manually if your installed baseline is older than the next ref. '
       + 'These notes list consumer-impacting changes; not all may apply to your baseline.');
+    if (unresolved.length) {
+      lines.push('>');
+      lines.push(`> ${unresolved.length} relative link(s) could not be rebased to this plan's `
+        + `location and were kept as written (relative to \`${plan.migration_notes.path}\` in the `
+        + `next payload) — resolve manually: ${unresolved.map((l) => `\`${l}\``).join(', ')}.`);
+    }
     lines.push('');
-    lines.push(plan.migration_notes.body.trim());
+    lines.push(notesBody.trim());
     lines.push('');
   } else {
     lines.push('_No upgrade notes shipped with the next payload._');
