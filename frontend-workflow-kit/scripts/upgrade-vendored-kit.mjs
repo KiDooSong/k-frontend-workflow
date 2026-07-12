@@ -104,24 +104,37 @@ function relTo(parentAbs, childAbs) {
 }
 
 // Physical form of a path that may not exist yet: realpath the deepest existing
-// ancestor and re-attach the non-existing remainder lexically. Lets the plan
-// collision guard see through symlink/junction aliases of the protected roots.
-function realpathDeepest(abs) {
+// ancestor and re-attach the non-existing remainder lexically. DANGLING
+// symlinks are resolved manually (existsSync/realpath report them as absent,
+// yet writeFileSync would follow them), so an alias whose target does not exist
+// yet still maps to its true destination. Lets the plan collision guard see
+// through symlink/junction aliases of the protected roots.
+function realpathDeepest(abs, depth = 0) {
+  if (depth > 40) return abs; // symlink cycle backstop (ELOOP-like)
   let probe = abs;
   const suffix = [];
-  while (!fs.existsSync(probe)) {
+  for (;;) {
+    try {
+      return path.join(fs.realpathSync(probe), ...suffix);
+    } catch { /* keep walking */ }
+    let st = null;
+    try {
+      st = fs.lstatSync(probe);
+    } catch { /* truly absent */ }
+    if (st && st.isSymbolicLink()) {
+      let target = null;
+      try {
+        target = fs.readlinkSync(probe);
+      } catch { /* fall through to parent walk */ }
+      if (target != null) {
+        return realpathDeepest(path.join(path.resolve(path.dirname(probe), target), ...suffix), depth + 1);
+      }
+    }
     const parent = path.dirname(probe);
-    if (parent === probe) break;
+    if (parent === probe) return path.join(probe, ...suffix);
     suffix.unshift(path.basename(probe));
     probe = parent;
   }
-  let real;
-  try {
-    real = fs.realpathSync(probe);
-  } catch {
-    real = probe;
-  }
-  return path.join(real, ...suffix);
 }
 
 function pathForms(abs) {
@@ -141,6 +154,16 @@ function pathForms(abs) {
 // containment of the plan write itself is enforced separately via
 // assertSafeWriteTarget.
 function assertPlanPathDoesNotCollide({ planPath, currentDir, nextDir, backupDir, plan }) {
+  // A plan destination that is itself an existing symlink is refused outright:
+  // writeFileSync would follow it (even when dangling), so the write target is
+  // not the path the user named.
+  try {
+    if (fs.lstatSync(planPath).isSymbolicLink()) {
+      fail(`--plan must not be a symlink (the plan write would follow it): ${planPath}`);
+    }
+  } catch (err) {
+    if (err && err.code !== 'ENOENT') throw err;
+  }
   const planForms = pathForms(planPath);
   for (const p of planForms) {
     for (const n of pathForms(nextDir)) {
@@ -149,14 +172,19 @@ function assertPlanPathDoesNotCollide({ planPath, currentDir, nextDir, backupDir
       }
     }
     for (const b of backupDir ? pathForms(backupDir) : []) {
-      if (relTo(b, p) != null) {
-        fail(`--plan must not point at or inside --backup-dir (it would block backup copies): ${planPath}`);
+      // At/inside backup-dir, or an ANCESTOR of it: a plan FILE above a
+      // not-yet-created backup dir would block its mkdir mid-apply.
+      if (relTo(b, p) != null || relTo(p, b) != null) {
+        fail(`--plan must not overlap --backup-dir (it would block backup copies): ${planPath}`);
       }
     }
     for (const c of pathForms(currentDir)) {
       const relCur = relTo(c, p);
       if (relCur == null) continue;
-      const tracked = plan.files.some((f) => f.path === relCur);
+      // Exact tracked path, or an ancestor of one: a plan FILE at `z` blocks
+      // apply's mkdir for a payload file `z/new.mjs` after earlier writes,
+      // leaving a partial upgrade.
+      const tracked = plan.files.some((f) => f.path === relCur || f.path.startsWith(`${relCur}/`));
       if (
         relCur === ''
         || tracked

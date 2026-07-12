@@ -198,7 +198,20 @@ High 2건을 추가 검출 — 전부 해소:
 
 테스트: root alias 2건(`alias→next` stray plan · `alias→current` tracked 파일, 둘 다 exit 2·mutation 0,
 Windows junction 실검증) + 기존 `_upgrade`→next junction 테스트는 physical collision guard 가 먼저 잡는
-것을 허용하도록 메시지 매칭 확장. 전체 `npm test` 802 tests 795 pass 7 platform-skip.
+것을 허용하도록 메시지 매칭 확장.
+
+## 8.4 Codex 리뷰 라운드 4 반영 (guard 최종 정밀화)
+
+라운드 4(fresh thread)는 라운드 3 해소 2건을 정상 확인("migration-link rebasing and render context look
+sound within the documented Markdown grammar")하고 High 2건 + Medium 1건을 추가 검출 — 전부 해소:
+
+| 심각도 | finding | 처리 |
+|---|---|---|
+| High | dangling symlink 이 physical guard 우회 — `existsSync` 가 dangling link 를 absent 로 보고해 lexical 로만 판정, `writeFileSync` 는 link 를 따라가 `--next` 안에 plan 생성 | `realpathDeepest` 를 lstat/readlink 인지(dangling 수동 해소, cycle cap 40)로 강화 + plan 최종 component 가 기존 symlink 면 무조건 exit 2 거부. 회귀 테스트(POSIX file symlink 또는 Windows dangling junction parent — Windows 실검증) |
+| High | plan 경로가 apply 출력의 **ancestor** 인 경우 미검출 — plan FILE `<current>/z` 가 payload `z/new.mjs` 의 mkdir 를 mid-apply 에 차단(부분 업그레이드), 미생성 `--backup-dir` 의 ancestor 도 동형 | tracked 검사에 descendant-prefix(`f.path.startsWith(relCur+'/')`) 추가, backup 은 양방향(at/inside + ancestor) `overlap` 검사. 회귀 테스트 2건(부분 apply 0 확인) |
+| Medium | 유효한 `..foo` payload 경로가 apply containment(`assertInside`/`assertSafeWriteTarget` prefix 매칭)에서 여전히 거부됨 | 두 함수 모두 정확한 `..` segment 판정(`relEscapes`)으로 전환 — fail-closed 오거부 해소, 회귀 테스트가 `..foo.mjs` safe-update 실적용까지 확인 |
+
+전체 `npm test` 804 tests 797 pass 7 platform-skip.
 
 ## 9. 경계 준수
 

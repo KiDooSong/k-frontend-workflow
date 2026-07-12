@@ -781,14 +781,14 @@ test('CLI --apply refuses a --plan path colliding with apply inputs or outputs',
     '--backup-dir', backupDir, '--plan', path.join(backupDir, 'plan.md'),
   ], { encoding: 'utf8' });
   assert.equal(rb.status, 2);
-  assert.match(rb.stderr, /inside --backup-dir/);
+  assert.match(rb.stderr, /overlap --backup-dir/);
   assert.equal(read(currentDir, 'safe.mjs'), before);
 
   // Exact-equality and reserved-root bypasses (Codex round 2): --plan equal to
   // --backup-dir itself (a plan FILE there blocks backup mkdir mid-apply), the
   // .upgrade-conflicts root itself, --next itself, and --current itself.
   const equalityCases = [
-    { args: ['--backup-dir', backupDir, '--plan', backupDir], re: /at or inside --backup-dir/ },
+    { args: ['--backup-dir', backupDir, '--plan', backupDir], re: /overlap --backup-dir/ },
     { args: ['--plan', path.join(currentDir, CONFLICTS_DIR_NAME)], re: /collides with a path/ },
     { args: ['--plan', nextDir], re: /at or inside --next/ },
     { args: ['--plan', currentDir], re: /collides with a path/ },
@@ -814,26 +814,25 @@ test('CLI --apply refuses a --plan path colliding with apply inputs or outputs',
   assert.equal(fs.existsSync(okPlan), true);
 });
 
-test('a tracked file whose name starts with dots (..foo) cannot be clobbered via --plan', (t) => {
+test('a tracked file whose name starts with dots (..foo) cannot be clobbered via --plan, yet still applies', (t) => {
   const tmp = mkTmp('rebase-dotdot-name');
   t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
   const currentDir = path.join(tmp, 'current');
   const nextDir = path.join(tmp, 'next');
-  const body = 'DOTFILE';
   // `..foo.mjs` is a VALID payload name under isSafeRelPath (no `..` segment) —
   // a prefix-based inside/outside test would misread it as outside and skip
-  // every guard, letting the plan overwrite it.
-  writeFile(currentDir, '..foo.mjs', body);
-  writeFile(nextDir, '..foo.mjs', body);
+  // every guard, letting the plan overwrite it (or apply refuse it).
+  writeFile(currentDir, '..foo.mjs', 'A');
+  writeFile(nextDir, '..foo.mjs', 'B'); // upstream changed → safe-update
   writeFile(currentDir, INSTALL_MANIFEST_NAME, JSON.stringify({
     schema_version: 1,
     kit: { source_ref: 'OLDREF' },
-    payload: { files: [{ path: '..foo.mjs', sha256: sha(body), classification: 'consumer-runtime', mode: '100644' }] },
+    payload: { files: [{ path: '..foo.mjs', sha256: sha('A'), classification: 'consumer-runtime', mode: '100644' }] },
   }, null, 2) + '\n');
   writeFile(nextDir, PAYLOAD_MANIFEST_NAME, JSON.stringify({
     schema_version: 1,
     kit: { source_ref: 'NEXTREF' },
-    payload: { files: [{ path: '..foo.mjs', sha256: sha(body), classification: 'consumer-runtime', mode: '100644' }] },
+    payload: { files: [{ path: '..foo.mjs', sha256: sha('B'), classification: 'consumer-runtime', mode: '100644' }] },
   }, null, 2) + '\n');
 
   const r = spawnSync(process.execPath, [
@@ -842,7 +841,85 @@ test('a tracked file whose name starts with dots (..foo) cannot be clobbered via
   ], { encoding: 'utf8' });
   assert.equal(r.status, 2, r.stderr);
   assert.match(r.stderr, /collides with a path/);
-  assert.equal(read(currentDir, '..foo.mjs'), body, 'the tracked file must stay untouched');
+  assert.equal(read(currentDir, '..foo.mjs'), 'A', 'the tracked file must stay untouched');
+
+  // Without a colliding --plan, the valid dotted name must still APPLY as a
+  // normal safe-update (segment-exact containment, not prefix matching).
+  const ok = spawnSync(process.execPath, [
+    UPGRADE_CLI, '--current', currentDir, '--next', nextDir, '--apply',
+  ], { encoding: 'utf8' });
+  assert.equal(ok.status, 0, ok.stderr);
+  assert.equal(read(currentDir, '..foo.mjs'), 'B', 'safe-update must reach the dotted name');
+});
+
+test('--plan may not sit above apply outputs or the backup dir (ancestor collisions)', (t) => {
+  const tmp = mkTmp('rebase-ancestor');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const currentDir = path.join(tmp, 'current');
+  const nextDir = path.join(tmp, 'next');
+  writeFile(nextDir, 'z/new.mjs', 'N');
+  writeFile(currentDir, INSTALL_MANIFEST_NAME, JSON.stringify({
+    schema_version: 1, kit: { source_ref: 'OLDREF' }, payload: { files: [] },
+  }, null, 2) + '\n');
+  writeFile(nextDir, PAYLOAD_MANIFEST_NAME, JSON.stringify({
+    schema_version: 1,
+    kit: { source_ref: 'NEXTREF' },
+    payload: { files: [{ path: 'z/new.mjs', sha256: sha('N'), classification: 'consumer-runtime', mode: '100644' }] },
+  }, null, 2) + '\n');
+
+  // Plan as a FILE at <current>/z would block apply's mkdir for z/new.mjs.
+  const r1 = spawnSync(process.execPath, [
+    UPGRADE_CLI, '--current', currentDir, '--next', nextDir, '--apply',
+    '--plan', path.join(currentDir, 'z'),
+  ], { encoding: 'utf8' });
+  assert.equal(r1.status, 2, r1.stderr);
+  assert.match(r1.stderr, /collides with a path/);
+  assert.equal(fs.existsSync(path.join(currentDir, 'z')), false);
+  assert.equal(fs.existsSync(path.join(currentDir, 'z', 'new.mjs')), false, 'no partial apply');
+
+  // Plan as a FILE above a not-yet-created --backup-dir blocks its mkdir.
+  const r2 = spawnSync(process.execPath, [
+    UPGRADE_CLI, '--current', currentDir, '--next', nextDir, '--apply',
+    '--backup-dir', path.join(tmp, 'bk', 'sub'), '--plan', path.join(tmp, 'bk'),
+  ], { encoding: 'utf8' });
+  assert.equal(r2.status, 2, r2.stderr);
+  assert.match(r2.stderr, /overlap --backup-dir/);
+  assert.equal(fs.existsSync(path.join(tmp, 'bk')), false);
+});
+
+test('a symlink --plan destination (including dangling into --next) is refused', (t) => {
+  const tmp = mkTmp('rebase-dangling');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const { currentDir, nextDir } = buildScenario(tmp);
+  // Dangling aliases: existsSync says absent, but the eventual write would land
+  // inside --next. Two shapes: a FILE symlink as the plan itself (POSIX; needs
+  // privilege on Windows), and a dangling DIRECTORY junction as the plan's
+  // parent (works unprivileged on Windows).
+  let planPath = null;
+  const fileLink = path.join(tmp, 'plan-link.md');
+  try {
+    fs.symlinkSync(path.join(nextDir, 'stray-plan.md'), fileLink, 'file');
+    planPath = fileLink;
+  } catch { /* fall through to the dangling-junction shape */ }
+  if (!planPath) {
+    const dirLink = path.join(tmp, 'plan-dir-link');
+    try {
+      fs.symlinkSync(path.join(nextDir, 'not-yet-created'), dirLink, process.platform === 'win32' ? 'junction' : 'dir');
+    } catch {
+      t.skip('symlink/junction creation not permitted on this platform');
+      return;
+    }
+    planPath = path.join(dirLink, 'stray-plan.md');
+  }
+  const before = read(currentDir, 'safe.mjs');
+  const r = spawnSync(process.execPath, [
+    UPGRADE_CLI, '--current', currentDir, '--next', nextDir, '--apply', '--plan', planPath,
+  ], { encoding: 'utf8' });
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /must not be a symlink|at or inside --next/);
+  assert.equal(fs.existsSync(path.join(nextDir, 'stray-plan.md')), false, 'plan must not land inside --next');
+  assert.equal(fs.existsSync(path.join(nextDir, 'not-yet-created')), false, 'no directory may be created inside --next');
+  assert.equal(read(currentDir, 'safe.mjs'), before, 'refusal must precede any mutation');
 });
 
 test('a symlink/junction alias of a protected root cannot smuggle --plan past the collision guard', (t) => {

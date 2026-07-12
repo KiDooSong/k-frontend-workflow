@@ -642,10 +642,16 @@ export function renderPlanMarkdown(plan, renderContext = null) {
 }
 
 // --- apply -----------------------------------------------------------------
+// Outside test on a path.relative() result: only an exact `..` SEGMENT means
+// outside — a valid child name that merely starts with dots (`..foo`) is inside.
+function relEscapes(rel) {
+  return rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel);
+}
+
 // Lexical containment: childAbs must be strictly under parentAbs.
 function assertInside(parentAbs, childAbs, label) {
   const rel = path.relative(parentAbs, childAbs);
-  if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) {
+  if (rel === '' || relEscapes(rel)) {
     throw new Error(`refusing to write outside ${label}: ${childAbs}`);
   }
 }
@@ -665,7 +671,7 @@ export function assertSafeWriteTarget(realRoot, destAbs, label) {
   }
   const realAncestor = fs.realpathSync(probe);
   const rel = path.relative(realRoot, realAncestor);
-  if (rel.startsWith('..') || path.isAbsolute(rel)) {
+  if (relEscapes(rel)) {
     throw new Error(`refusing to write outside ${label} (symlink escape): ${destAbs}`);
   }
   try {
