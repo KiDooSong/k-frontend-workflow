@@ -142,6 +142,26 @@ function pathForms(abs) {
   return real === abs ? [abs] : [abs, real];
 }
 
+// Write the plan without ever writing THROUGH an existing directory entry:
+// write a fresh temp file, then rename it over the destination. A hard link
+// (or symlink) planted at the plan path shares/aliases another file's inode —
+// a direct writeFileSync would truncate that shared content (e.g. a payload
+// file inside --next), while rename only replaces the directory entry and
+// leaves the other name's bytes untouched.
+function writePlanAtomic(planPath, markdown) {
+  fs.mkdirSync(path.dirname(planPath), { recursive: true });
+  const tmpPath = `${planPath}.tmp-${process.pid}`;
+  fs.writeFileSync(tmpPath, markdown, 'utf8');
+  try {
+    fs.renameSync(tmpPath, planPath);
+  } catch (err) {
+    try {
+      fs.rmSync(tmpPath, { force: true });
+    } catch { /* best-effort cleanup */ }
+    throw err;
+  }
+}
+
 // On --apply the plan file must survive the apply and must not corrupt its
 // inputs: refuse a plan path at or inside --next (an apply source), at or
 // inside --backup-dir (the plan file would block/collide with backup copies),
@@ -274,8 +294,7 @@ function main() {
       assertSafeWriteTarget(fs.realpathSync(currentDir), planPath, 'current vendored kit');
     }
     const markdown = renderPlanMarkdown(plan, { currentDir, planPath });
-    fs.mkdirSync(path.dirname(planPath), { recursive: true });
-    fs.writeFileSync(planPath, markdown, 'utf8');
+    writePlanAtomic(planPath, markdown);
   }
 
   let applied = null;

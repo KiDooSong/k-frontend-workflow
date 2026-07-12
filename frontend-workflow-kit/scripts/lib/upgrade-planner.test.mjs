@@ -982,6 +982,31 @@ test('an explicit in-current --plan path refuses symlink/junction escapes (physi
   assert.equal(read(currentDir, 'safe.mjs'), before, 'refusal must precede any mutation');
 });
 
+test('a hard-linked --plan destination cannot truncate the linked file (atomic rename write)', (t) => {
+  const tmp = mkTmp('rebase-hardlink');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const { currentDir, nextDir } = buildScenario(tmp);
+  // A regular-file hard link shares the inode with next/safe.mjs — writing
+  // through it would corrupt the payload source before apply reads it.
+  const planPath = path.join(tmp, 'plan-hardlink.md');
+  try {
+    fs.linkSync(path.join(nextDir, 'safe.mjs'), planPath);
+  } catch {
+    t.skip('hard link creation not supported on this filesystem');
+    return;
+  }
+  const r = spawnSync(process.execPath, [
+    UPGRADE_CLI, '--current', currentDir, '--next', nextDir, '--apply', '--plan', planPath,
+  ], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  // The linked payload file keeps its bytes (rename replaced only the plan's
+  // directory entry), the plan is a real markdown plan, and apply used the
+  // intact payload content.
+  assert.equal(read(nextDir, 'safe.mjs'), 'B', 'payload source must not be truncated through the hard link');
+  assert.match(fs.readFileSync(planPath, 'utf8'), /# Frontend Workflow Kit Upgrade Plan/);
+  assert.equal(read(currentDir, 'safe.mjs'), 'B', 'apply must copy the intact upstream content');
+});
+
 test('CLI still fails on a bad --plan path before any apply mutation', (t) => {
   const tmp = mkTmp('rebase-badplan');
   t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));

@@ -194,7 +194,7 @@ High 2건을 추가 검출 — 전부 해소:
 | finding | 처리 |
 |---|---|
 | `relTo` 의 `startsWith('..')` 가 `..foo` 같은 **유효한** in-tree 이름을 outside 로 오판 — collision 검사·physical containment 둘 다 skip 되어 tracked 파일을 plan 으로 덮을 수 있음 | outside 판정을 정확한 `..` **segment** 로 한정(`rel === '..' \|\| rel.startsWith('..'+sep)`) + `..foo.mjs` tracked 파일 clobber 회귀 테스트(exit 2·무변조) |
-| collision guard 가 lexical 경로만 비교 — protected root(–-current/--next/--backup-dir)의 symlink/junction alias 경유 `--plan` 이 모든 검사를 우회 | `realpathDeepest`(미존재 remainder 는 lexical 재부착) 기반 physical form 을 양변에 추가해 lexical×physical 전 조합 검사; in-current 판정도 physical form 포함 | 
+| collision guard 가 lexical 경로만 비교 — protected root(–-current/--next/--backup-dir)의 symlink/junction alias 경유 `--plan` 이 모든 검사를 우회 | `realpathDeepest`(미존재 remainder 는 lexical 재부착) 기반 physical form 을 양변에 추가해 lexical×physical 전 조합 검사; in-current 판정도 physical form 포함 |
 
 테스트: root alias 2건(`alias→next` stray plan · `alias→current` tracked 파일, 둘 다 exit 2·mutation 0,
 Windows junction 실검증) + 기존 `_upgrade`→next junction 테스트는 physical collision guard 가 먼저 잡는
@@ -212,6 +212,18 @@ sound within the documented Markdown grammar")하고 High 2건 + Medium 1건을 
 | Medium | 유효한 `..foo` payload 경로가 apply containment(`assertInside`/`assertSafeWriteTarget` prefix 매칭)에서 여전히 거부됨 | 두 함수 모두 정확한 `..` segment 판정(`relEscapes`)으로 전환 — fail-closed 오거부 해소, 회귀 테스트가 `..foo.mjs` safe-update 실적용까지 확인 |
 
 전체 `npm test` 804 tests 797 pass 7 platform-skip.
+
+## 8.5 Codex 리뷰 라운드 5 반영 (hard link + whitespace)
+
+라운드 5 는 라운드 4 해소 3건(dangling symlink·ancestor collision·`..foo` apply)을 전부 정상으로
+확인하고 High 1건 + Low 1건을 추가 검출 — 전부 해소:
+
+| 심각도 | finding | 처리 |
+|---|---|---|
+| High | hard link 가 collision guard 우회 — `--plan` 이 `--next/safe.mjs` 와 inode 를 공유하는 regular-file hard link 면 symlink 검사·realpath 모두 통과하고, plan `writeFileSync` 가 공유 inode 를 truncate 해 payload 를 오염 | plan 쓰기를 atomic temp+rename(`writePlanAtomic`)으로 전환 — rename 은 directory entry 만 교체하고 기존 inode 를 절대 통과-쓰기하지 않으므로 hard link(및 symlink) 대상의 bytes 무접촉. 회귀 테스트: hard-linked plan 에서 payload bytes 불변·plan 은 정상 Markdown·apply 는 intact upstream 내용 복사(Windows NTFS hard link 실검증) |
+| Low | evidence 문서 trailing whitespace (`git diff --check`) | 제거 |
+
+전체 `npm test` 805 tests 798 pass 7 platform-skip.
 
 ## 9. 경계 준수
 
