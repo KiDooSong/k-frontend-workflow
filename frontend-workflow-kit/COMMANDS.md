@@ -103,8 +103,11 @@ npm run workflow:validate -- --enforce
 
 ```bash
 npm run workflow:route-tree
+npm run workflow:route-tree -- --help
 npm run workflow:nav-graph
+npm run workflow:nav-graph -- --help
 npm run workflow:catalog
+npm run workflow:catalog -- --help
 npm run workflow:route-cross-check
 npm run workflow:doc-drift
 npm run workflow:doc-drift -- --include status-heuristic --json
@@ -126,6 +129,20 @@ npm run workflow:check-generated
 ```
 
 These commands produce read-only metadata under `docs/frontend-workflow/_meta/`, regenerate the component catalog, compare existing metadata, or measure readiness labels. They do not approve design decisions or replace readiness/validate gates. `workflow:check-generated` is warning-first: it reports generated-file drift without overwriting files or failing on mismatches.
+
+The three file-producing generated-view CLIs (`workflow:route-tree`,
+`workflow:nav-graph`, and `workflow:catalog`) validate their complete CLI syntax
+before help, path resolution, adapter/layout load, input scans, or writes. Unknown
+options, bare or empty value options, values attached to boolean options, and
+positional arguments exit 2 and write no files; scalar duplicate options retain
+their existing last-wins meaning. `--help` exits 0 without requiring `src/app`,
+workflow docs, component source, or a layout file and without creating the default
+output. `workflow:nav-graph --json` prints only the graph model, while
+`workflow:catalog --json` prints only the catalog model and `--dry-run` previews
+rendered Markdown; all three stdout modes write no output file. These safeguards do
+not change generated content, default paths, the route adapter boundary, barrel
+warning diagnostics, generated-file guard behavior, or any warning-first/hard-gate
+state.
 
 `workflow:doc-drift` is a Phase 0 warning-first diagnostic for Markdown docs. It checks only broken/orphan relative links and dead heading anchors, skips external URL reachability and semantic drift, and always exits 0 even when it reports findings. Fenced code blocks, inline code spans, backslash-escaped brackets (`\[label](target)`), and autolinks (`<http://...>`) are ignored, so link-shaped examples in prose are never scanned as links. GitHub-style line anchors `#L12` / `#L12-L14` are treated as line references, not heading anchors (the target file's existence is still checked). Bare non-path-like bracket notation such as `[label](annotation)` is demoted to a severity-`info` finding (check `ambiguous-non-link-bracket-notation`) for manual review. Relative links that resolve outside the scan root are reported as `info` by default (check `relative-link-escapes-root`) because their targets cannot be verified under the scan root; `--escapes-root-severity warning` opts into promoting them to warnings (an invalid value exits 2). Info findings are counted in `info_count`, never in `warning_count`, and never change the exit code.
 

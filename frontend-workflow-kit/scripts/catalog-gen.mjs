@@ -8,6 +8,7 @@
 //   기본값: --src src  --out docs/frontend-workflow/design/component-catalog.md
 import path from 'node:path';
 import { parseArgs, writeFile, isDir, KIT_ROOT, runCli, projectRootOf, isCliEntry } from './lib/util.mjs';
+import { enforceCliFlagContract } from './lib/cli-args.mjs';
 import { loadLayoutProfile } from './lib/layout-profile.mjs';
 import {
   buildCatalog,
@@ -16,6 +17,34 @@ import {
   renderCatalog,
   runBarrelReconcileDiagnostic,
 } from './lib/catalog-gen.mjs';
+
+const VALUE_FLAGS = new Set(['src', 'out', 'layout', 'root']);
+const BOOLEAN_FLAGS = new Set(['json', 'dry-run', 'help']);
+
+function printHelp() {
+  process.stdout.write(`workflow:catalog — generate the component catalog from the resolved UI primitive source tree
+
+Usage:
+  node scripts/catalog-gen.mjs [--src <dir>] [--out <file>] [--root <dir>] [--layout <file>] [--json] [--dry-run]
+
+Options:
+  --src <dir>      Source root (default: src)
+  --out <file>     Markdown output (default: docs/frontend-workflow/design/component-catalog.md)
+  --root <dir>     Project root used to resolve layout role globs
+  --layout <file>  Project layout profile override
+  --json           Print the catalog model to stdout; never write an output file
+  --dry-run        Preview rendered Markdown on stdout; never write an output file
+  --help           Show this help and exit without loading layout, scanning, or writing
+
+Boundary:
+  Barrel reconciliation is a warning-first diagnostic.
+  This command never edits live policy or manifests.
+
+Exit codes:
+  0  help, preview, or generation completed
+  2  usage, input, or configuration error
+`);
+}
 
 function toPosixPath(p) {
   return p.split(path.sep).join('/');
@@ -27,7 +56,20 @@ function relativeFrom(root, abs) {
 }
 
 function main() {
-  const { flags } = parseArgs(process.argv.slice(2));
+  const { flags, positionals } = parseArgs(process.argv.slice(2));
+  enforceCliFlagContract({
+    flags,
+    positionals,
+    valueFlags: VALUE_FLAGS,
+    booleanFlags: BOOLEAN_FLAGS,
+    tool: 'workflow:catalog',
+    helpCommand: 'node scripts/catalog-gen.mjs',
+  });
+  if (flags.help) {
+    printHelp();
+    return;
+  }
+
   const src = typeof flags.src === 'string' ? flags.src : 'src';
   const outPath = path.resolve(
     typeof flags.out === 'string'

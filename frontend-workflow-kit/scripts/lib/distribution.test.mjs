@@ -1217,6 +1217,50 @@ test('packed payload CLI smoke: core, adoption, observation, visual (IMP-05)', a
     assert.doesNotMatch(forbiddenTypo.stderr, /workflow-state/);
     assert.equal(forbiddenTypo.stdout, '');
 
+    // Generated views: packed help and typos are side-effect-free before any input scan/write.
+    for (const [script, tool] of [
+      ['route-tree.mjs', 'workflow:route-tree'],
+      ['nav-graph.mjs', 'workflow:nav-graph'],
+      ['catalog-gen.mjs', 'workflow:catalog'],
+    ]) {
+      const help = cli(script, '--help');
+      assert.equal(help.status, 0, help.stderr);
+      assert.match(help.stdout, new RegExp(tool));
+      const typo = cli(script, '--outt', path.join(out, 'requested-by-typo'));
+      assert.equal(typo.status, 2);
+      assert.match(typo.stderr, /unknown option --outt/);
+      assert.equal(typo.stdout, '');
+    }
+    assert.equal(exists('docs/frontend-workflow/_meta/route-tree.txt', out), false);
+    assert.equal(exists('docs/frontend-workflow/_meta/nav-graph.yaml', out), false);
+    assert.equal(exists('docs/frontend-workflow/design/component-catalog.md', out), false);
+    assert.equal(exists('requested-by-typo', out), false);
+
+    // Each packed CLI also completes one normal fixture run without source-tree imports.
+    const generatedFixtures = path.join(out, 'temp', 'generated-view-fixtures');
+    const routeApp = path.join(generatedFixtures, 'route', 'src', 'app');
+    fs.mkdirSync(routeApp, { recursive: true });
+    fs.writeFileSync(path.join(routeApp, 'index.tsx'), 'export default function Home() { return null; }\n');
+    const routeOut = path.join(generatedFixtures, 'route-tree.txt');
+    const route = cli('route-tree.mjs', '--app', routeApp, '--out', routeOut);
+    assert.equal(route.status, 0, route.stderr);
+    assert.match(fs.readFileSync(routeOut, 'utf8'), /route: \//);
+
+    const navDocs = path.join(generatedFixtures, 'nav', 'docs', 'frontend-workflow');
+    fs.mkdirSync(navDocs, { recursive: true });
+    const navOut = path.join(generatedFixtures, 'nav-graph.yaml');
+    const nav = cli('nav-graph.mjs', '--docs', navDocs, '--out', navOut);
+    assert.equal(nav.status, 0, nav.stderr);
+    assert.match(fs.readFileSync(navOut, 'utf8'), /screens: \{\}/);
+
+    const catalogSrc = path.join(generatedFixtures, 'catalog', 'src', 'components', 'ui');
+    fs.mkdirSync(catalogSrc, { recursive: true });
+    fs.writeFileSync(path.join(catalogSrc, 'Button.tsx'), 'export function Button() { return null; }\n');
+    const catalogOut = path.join(generatedFixtures, 'component-catalog.md');
+    const catalog = cli('catalog-gen.mjs', '--src', path.join(generatedFixtures, 'catalog', 'src'), '--out', catalogOut);
+    assert.equal(catalog.status, 0, catalog.stderr);
+    assert.match(fs.readFileSync(catalogOut, 'utf8'), /\| Button \| src\/components\/ui\/Button\.tsx \|/);
+
     // adoption-probe: help/usage must not create the draft run tree, even in the payload.
     const adoptionOut = path.join(out, 'temp', 'runs', 'adoption-probe-packed-help');
     const adoptionHelp = cli(

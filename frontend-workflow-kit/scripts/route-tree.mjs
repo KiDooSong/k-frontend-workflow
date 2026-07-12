@@ -7,11 +7,50 @@
 //   기본값: --app src/app  --out docs/frontend-workflow/_meta/route-tree.txt  --router expo-router
 //   기본 expo-router 어댑터는 이전 scanAppDir 동작과 동치 → route-tree.txt 골든 byte-identical.
 import path from 'node:path';
-import { parseArgs, writeFile } from './lib/util.mjs';
+import { parseArgs, writeFile, isCliEntry } from './lib/util.mjs';
+import { enforceCliFlagContract } from './lib/cli-args.mjs';
 import { loadRouterAdapter, renderRouteTree } from './lib/route-core.mjs';
 
+const VALUE_FLAGS = new Set(['app', 'out', 'router']);
+const BOOLEAN_FLAGS = new Set(['help']);
+
+function printHelp() {
+  process.stdout.write(`workflow:route-tree — discover routes through a router adapter and render route-tree.txt
+
+Usage:
+  node scripts/route-tree.mjs [--app <dir>] [--out <file>] [--router <name|module-path>]
+
+Options:
+  --app <dir>                  Route entry directory (default: src/app)
+  --out <file>                 Output file (default: docs/frontend-workflow/_meta/route-tree.txt)
+  --router <name|module-path>  Router adapter name or module path (default: expo-router)
+  --help                       Show this help and exit without scanning or writing
+
+Boundary:
+  The adapter discovers routes only; route-core owns normalization and rendering.
+  Unknown or missing adapters remain usage/input errors.
+
+Exit codes:
+  0  help or generation completed
+  2  usage, input, or adapter error
+`);
+}
+
 async function main() {
-  const { flags } = parseArgs(process.argv.slice(2));
+  const { flags, positionals } = parseArgs(process.argv.slice(2));
+  enforceCliFlagContract({
+    flags,
+    positionals,
+    valueFlags: VALUE_FLAGS,
+    booleanFlags: BOOLEAN_FLAGS,
+    tool: 'workflow:route-tree',
+    helpCommand: 'node scripts/route-tree.mjs',
+  });
+  if (flags.help) {
+    printHelp();
+    return;
+  }
+
   const appDir = path.resolve(typeof flags.app === 'string' ? flags.app : 'src/app');
   const outFile = path.resolve(
     typeof flags.out === 'string' ? flags.out : 'docs/frontend-workflow/_meta/route-tree.txt',
@@ -56,4 +95,6 @@ async function main() {
   process.stdout.write('workflow:route-tree — ' + outFile + ' 생성 완료\n');
 }
 
-main();
+// 직접 실행될 때만 main() — import 는 adapter load/discovery/scan/write 를 수행하지 않는다.
+// top-level await 로 async main 의 expected/unexpected 오류 의미(exit 2/1)를 그대로 보존한다.
+if (isCliEntry(import.meta.url)) await main();
