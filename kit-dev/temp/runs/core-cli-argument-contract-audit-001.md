@@ -51,3 +51,10 @@
 - `test-fixtures.mjs`(`example:test`)·`pack-frontend-workflow-kit.mjs`(`kit:pack`) 는 kit-dev 전용(consumer payload 제외) — 감사 범위 밖.
 - **이번 PR 구현 대상은 `workflow-state.mjs` 와 `readiness.mjs` 로 제한**한다(가장 위험: 게이트 판정·게이트 입력 파일 쓰기). 나머지 행의 후속 후보 우선순위: ① `forbidden-paths`(`--enforc` typo 로 enforcement 소실 — fail-open), ② `adoption-probe`(`--help` 가 파일 생성), ③ 생성 뷰 3종(route-tree/nav-graph/catalog-gen) + `telemetry` 일반 unknown flag, ④ `visual-contract-bootstrap` exit 1→2 정렬, `readiness-eval`/`redteam` boolean=value 거부. 전부 별도 PR — 이번 PR 에서 대량 migration 하지 않는다.
 - 이 감사는 warning-first→hard 승격·readiness 판정 로직·policy fact·artifact axis 를 건드리지 않는 사실 분류다.
+
+## Follow-up completion notes
+
+위 Audit table 은 baseline `481b00a` 시점의 과거 사실로 보존한다. 이후 해소분은 여기에만 추기한다.
+
+- **2026-07-12 — `forbidden-paths.mjs` 행 해소** (후속 후보 ① — `--enforc` typo 로 enforcement 소실 fail-open, MED-HIGH): forbidden-paths strict argument contract PR 에서 `enforceCliFlagContract` allowlist 채택 + `--help` 신설로 unknown/bare·빈 `=` value flag/boolean=value/positional → exit 2 (검증은 state/policy/git/diff/readiness 작업보다 먼저). warning-first 기본·`--enforce` exit 1 의미·판정 로직 무변경 — gate promotion 아님. 정본 계약은 kit-dev/CHANGELOG.md Unreleased 의 fix(cli) forbidden-paths 항목. 해소 commit/PR: `fix(cli): forbidden-paths strict argument contract + --enforce typo fail-closed`.
+- 후속 후보 ② `adoption-probe`(`--help` 가 probe 실행·파일 생성)와 upgrade-plan 상대 링크 문제는 **여전히 미해소 후속**으로 유지한다(이 PR 범위 밖).

@@ -287,9 +287,17 @@ promote hard gates, or change CI by itself.
 ```bash
 npm run workflow:forbidden-paths -- --diff changes.diff --docs docs/frontend-workflow
 npm run workflow:forbidden-paths -- --diff changes.diff --docs docs/frontend-workflow --enforce
+npm run workflow:forbidden-paths -- --help
 ```
 
-Without `--enforce`, path findings are reported without failing the command.
+Without `--enforce`, path findings are reported without failing the command
+(warning-first, exit 0); `--enforce` is the opt-in promotion to exit 1 on
+violations. The argument contract is strict: unknown options (including typos
+such as `--enforc`), value flags without a value (bare or empty `--flag=`),
+boolean flags with a value (`--enforce=false`, `--json=yes`, `--staged true`),
+and positional arguments are usage errors that exit 2 before any state/policy
+load, diff read, or git command — a typo can never silently drop `--enforce`
+and fall back to a warning-first run.
 
 ## Red-Team Suite
 

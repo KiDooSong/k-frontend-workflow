@@ -18,6 +18,7 @@
 //   2  입력 오류(state/policy 부재, git 실행/ base ref 해석 실패).
 import path from 'node:path';
 import { parseArgs, DEFAULTS, KIT_ROOT, loadYaml, readFileSafe, runCli, isCliEntry } from './lib/util.mjs';
+import { enforceCliFlagContract } from './lib/cli-args.mjs';
 import { computeReadiness } from './readiness.mjs';
 import { LayoutConfigError, loadLayoutProfile } from './lib/layout-profile.mjs';
 import {
@@ -141,8 +142,66 @@ function loadYamlOrExit(p, label) {
   }
 }
 
+function helpText() {
+  return `workflow:forbidden-paths - diff 기반 forbidden_paths backstop (2차 방어선, warning-first)
+
+Usage:
+  node scripts/forbidden-paths.mjs [--docs <dir>] [--src <dir>] [--root <dir>]
+                                   [--policy <file>] [--manifest <file>] [--layout <file>]
+                                   [--diff <file> | --range <a..b> | --staged | --base <ref>]
+                                   [--enforce] [--json] [--help]
+
+Options:
+  --docs <dir>      authoring 문서 루트(<docs>/_meta/workflow-state.yaml 을 읽음). 기본: ${DEFAULTS.docs}
+  --src <dir>       인터페이스 계약상 수용(§2) — 이 게이트는 diff 만 보므로 소비하지 않음
+  --root <dir>      monorepo project-root 접두 — diff 경로에서 떼어 정책 글롭(src/**)과 정렬;
+                    live git 모드에서는 git 실행 cwd 로도 사용
+  --policy <file>   정책 경로. 기본: 킷 policies/implementation-mode-policy.yaml
+  --manifest <file> artifact manifest 경로. 기본: 킷 catalog/artifact-manifest.yaml
+  --layout <file>   project-layout.yaml 경로 오버라이드
+  --diff <file>     name-status 텍스트 파일(테스트/픽스처) — 최우선 diff source
+  --range <a..b>    live git diff range (source 우선순위: --diff > --range > --staged > --base > local)
+  --staged          live git staged 변경분
+  --base <ref>      live git base ref 대비 변경분
+  --enforce         위반 시 exit 1 로 승격 (없으면 warning-first: 위반도 exit 0 경고)
+  --json            결정적 JSON({ ok, enforced, violations, guarded_surface, screen_modes }) 출력
+  --help            이 도움말 출력
+
+Exit codes:
+  0  위반 없음 — 또는 --enforce 없는 warning-first 위반(경고로만 출력)
+  1  --enforce 인데 위반 있음
+  2  usage/입력 오류(unknown option·state/policy 부재·손상·git/base 해석 실패·손상된 diff)
+
+Behavior:
+  usage 오류(unknown option·값 없는 value flag·값 붙은 boolean flag·positional)는
+  state/policy/manifest/layout/diff/git 을 읽기 전에 exit 2 — --enforc 오타가
+  "--enforce 없는 warning-first 실행"으로 조용히 fallback 하는 fail-open 을 금지한다.
+  모드 판정은 readiness(computeReadiness) 출력을 소비만 하며 판정을 재구현하지 않는다.
+`;
+}
+
+// parseArgs 는 모든 --foo 를 그대로 flags 에 넣으므로(거부 없음) CLI 별 allowlist 로 오타를 잡는다.
+// 예: --enforc 오타가 "--enforce 없는 warning-first 실행"으로 조용히 진행되며 enforcement 가
+// 소실되는 것을 막는다(exit 2). validate(PR #175)·workflow-state/readiness(PR #176)와 같은 계약.
+const VALUE_FLAGS = new Set(['docs', 'src', 'root', 'policy', 'manifest', 'layout', 'diff', 'range', 'base']);
+const BOOLEAN_FLAGS = new Set(['staged', 'enforce', 'json', 'help']);
+
 function main() {
-  const { flags } = parseArgs(process.argv.slice(2));
+  const { flags, positionals } = parseArgs(process.argv.slice(2));
+  // 인자 검증은 state/policy/manifest/layout 로드·diff 읽기·git 실행·computeReadiness 보다
+  // 먼저 — usage 오류에서 파일·git·readiness 작업 0 (fail-closed).
+  enforceCliFlagContract({
+    flags,
+    positionals,
+    valueFlags: VALUE_FLAGS,
+    booleanFlags: BOOLEAN_FLAGS,
+    tool: 'forbidden-paths',
+    helpCommand: 'node scripts/forbidden-paths.mjs',
+  });
+  if (flags.help) {
+    process.stdout.write(helpText());
+    return; // help 는 자연 종료 exit 0 (cli-stdout-flush 계약 — process.exit(0) 금지)
+  }
 
   // --- 입력 경로 해석 (readiness 와 동일 기본값) ---
   // --src 는 인터페이스 계약상 받아두지만(§2 옵션), 이 게이트는 diff 경로를 정책 글롭과 직접 매칭하므로
