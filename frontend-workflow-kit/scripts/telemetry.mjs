@@ -5,6 +5,8 @@
 // CI artifact by default and makes no promotion verdict.
 import path from 'node:path';
 import { DEFAULTS, parseArgs, isCliEntry } from './lib/util.mjs';
+import { enforceCliFlagContract } from './lib/cli-args.mjs';
+import { TELEMETRY_BOOLEAN_FLAGS, TELEMETRY_VALUE_FLAGS } from './lib/telemetry-cli-args.mjs';
 import {
   collectTelemetry,
   collectTelemetryLedger,
@@ -134,7 +136,7 @@ function hasFlag(flags, name) {
 
 function usageError(message) {
   process.stderr.write(`workflow:telemetry: ${message}\n`);
-  process.stderr.write('Run with --help for usage.\n');
+  process.stderr.write('Try `npm run workflow:telemetry -- --help`.\n');
   process.exit(2);
 }
 
@@ -169,7 +171,17 @@ const DOC_DRIFT_FLAGS = ['doc-drift-include'];
 const KNOWN_DOC_DRIFT_INCLUDES = ['status-heuristic'];
 
 function main() {
-  const { flags } = parseArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  const { flags, positionals } = parseArgs(argv);
+  enforceCliFlagContract({
+    argv,
+    flags,
+    positionals,
+    valueFlags: TELEMETRY_VALUE_FLAGS,
+    booleanFlags: TELEMETRY_BOOLEAN_FLAGS,
+    tool: 'workflow:telemetry',
+    helpCommand: 'npm run workflow:telemetry --',
+  });
   if (flags.help) {
     process.stdout.write(helpText());
     return; // help 도 자연 종료(exit 0) — process.exit(0) 금지 계약(cli-stdout-flush.test.mjs)

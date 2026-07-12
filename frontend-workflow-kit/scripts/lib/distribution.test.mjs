@@ -1148,6 +1148,37 @@ test('packed payload CLI smoke: core, adoption, observation, visual (IMP-05)', a
     ]) {
       assert.ok(ids.includes(id), `telemetry surface registry should list ${id}`);
     }
+
+    // The packed public CLI keeps the same syntax-first telemetry contract and
+    // does not rely on source-tree imports. Help/list are no-work paths; invalid
+    // input never falls through to a report or ledger write.
+    const telemetryHelp = cli('telemetry.mjs', '--help');
+    assert.equal(telemetryHelp.status, 0, telemetryHelp.stderr);
+    assert.match(telemetryHelp.stdout, /workflow:telemetry/);
+    for (const [args, expected] of [
+      [['--outt', 'telemetry-ledger.json'], /unknown option --outt/],
+      [['--json=false'], /--json does not accept a value/],
+      [['unexpected'], /positional arguments are not supported/],
+    ]) {
+      const invalid = cli('telemetry.mjs', ...args);
+      assert.equal(invalid.status, 2, invalid.stderr);
+      assert.equal(invalid.stdout, '');
+      assert.match(invalid.stderr, expected);
+      assert.match(invalid.stderr, /Try `npm run workflow:telemetry -- --help`\./);
+    }
+    assert.equal(exists('telemetry-ledger.json', out), false);
+
+    const packedLedger = cli(
+      'telemetry.mjs',
+      '--root', out,
+      '--out', 'temp/telemetry-ledger.json',
+      '--json',
+    );
+    assert.equal(packedLedger.status, 0, packedLedger.stderr);
+    const packedLedgerReport = JSON.parse(packedLedger.stdout);
+    assert.equal(packedLedgerReport.kind, 'observation-ledger');
+    assert.equal(exists('temp/telemetry-ledger.json', out), true);
+    assert.equal(packedLedger.stdout.includes(out), false);
   });
 
   await t.test('core cold start without examples is fail-soft; readiness fails closed without state', () => {
