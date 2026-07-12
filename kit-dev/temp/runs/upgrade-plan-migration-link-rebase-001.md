@@ -246,6 +246,18 @@ followed")하고 Low 1건만 검출 — 해소:
 
 전체 `npm test` 807 tests 800 pass 7 platform-skip.
 
+## 8.8 Codex 리뷰 라운드 8 반영 (write-failure 주입 테스트)
+
+라운드 8 은 구현을 정상으로 확인("open-time EEXIST retries without deleting another entry, while
+non-EEXIST write failures and rename failures run cleanup before rethrowing")하고, 회귀 테스트가
+rename 실패 경로만 주입한다는 Low 1건만 검출 — 해소:
+
+| 심각도 | finding | 처리 |
+|---|---|---|
+| Low | 실패 주입 테스트가 rename 경로만 검증 — round-7 의 실제 회귀(비-EEXIST write 실패의 partial temp) 미검증 | `writePlanAtomic` export + fs.writeFileSync fault injection 단위 테스트: exclusive create 성공 후 PARTIAL bytes 를 남기고 ENOSPC throw → partial temp 삭제·destination 미생성·rethrow 검증 |
+
+전체 `npm test` 808 tests 801 pass 7 platform-skip.
+
 ## 9. 경계 준수
 
 - upgrade classification/apply/manifest/conflict/prune 의미 무변경 (기존 테스트 전부 통과로 고정).

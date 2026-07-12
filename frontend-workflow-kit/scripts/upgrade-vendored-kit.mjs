@@ -151,7 +151,7 @@ function pathForms(abs) {
 // shares/aliases another file's inode — a direct writeFileSync would truncate
 // that shared content (e.g. a payload file inside --next), while rename only
 // replaces the directory entry and leaves the other name's bytes untouched.
-function writePlanAtomic(planPath, markdown) {
+export function writePlanAtomic(planPath, markdown) {
   fs.mkdirSync(path.dirname(planPath), { recursive: true });
   let lastErr = null;
   for (let attempt = 0; attempt < 5; attempt++) {

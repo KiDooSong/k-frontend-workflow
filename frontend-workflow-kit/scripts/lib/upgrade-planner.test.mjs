@@ -15,6 +15,7 @@ import {
   rebaseMigrationNoteLinks,
   collectMigrationNotes,
 } from './upgrade-planner.mjs';
+import { writePlanAtomic } from '../upgrade-vendored-kit.mjs';
 import {
   PAYLOAD_MANIFEST_NAME,
   INSTALL_MANIFEST_NAME,
@@ -1035,6 +1036,36 @@ test('a failed plan write cleans up its temp file (failure injection via directo
   assert.notEqual(r.status, 0, 'rename over a directory must fail the run');
   const leftovers = fs.readdirSync(path.join(tmp, 'out')).filter((n) => n.includes('.tmp-'));
   assert.deepEqual(leftovers, [], 'no temp plan file may be left behind after a failed write');
+});
+
+test('a partial temp write (ENOSPC-style) is cleaned up before the error propagates', (t) => {
+  const tmp = mkTmp('rebase-tmp-write-fail');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const outDir = path.join(tmp, 'out');
+  const planPath = path.join(outDir, 'plan.md');
+  // Fault injection: the exclusive create succeeds and leaves PARTIAL bytes,
+  // then the write reports ENOSPC — exactly the round-7 failure path.
+  const original = fs.writeFileSync;
+  let tmpSeen = null;
+  fs.writeFileSync = (p, data, opts) => {
+    if (String(p).includes('.tmp-')) {
+      original(p, 'PARTIAL', opts);
+      tmpSeen = String(p);
+      const err = new Error('injected: no space left on device');
+      err.code = 'ENOSPC';
+      throw err;
+    }
+    return original(p, data, opts);
+  };
+  try {
+    assert.throws(() => writePlanAtomic(planPath, 'CONTENT'), /no space left/);
+  } finally {
+    fs.writeFileSync = original;
+  }
+  assert.ok(tmpSeen, 'the temp file must have been created before the injected failure');
+  assert.equal(fs.existsSync(tmpSeen), false, 'the partial temp file must be cleaned up');
+  assert.equal(fs.existsSync(planPath), false, 'no plan may appear at the destination');
+  assert.deepEqual(fs.readdirSync(outDir).filter((n) => n.includes('.tmp-')), []);
 });
 
 test('CLI still fails on a bad --plan path before any apply mutation', (t) => {
