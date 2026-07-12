@@ -95,11 +95,38 @@ function sanitizeRef(ref) {
 }
 
 // Posix-relative path of childAbs at-or-under parentAbs ('' = same path), or
-// null when outside.
+// null when outside. Only an exact `..` SEGMENT means outside — a valid child
+// name that merely starts with dots (`..foo/…`) stays inside.
 function relTo(parentAbs, childAbs) {
   const rel = path.relative(parentAbs, childAbs);
-  if (rel.startsWith('..') || path.isAbsolute(rel)) return null;
+  if (rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) return null;
   return rel.split(path.sep).join('/');
+}
+
+// Physical form of a path that may not exist yet: realpath the deepest existing
+// ancestor and re-attach the non-existing remainder lexically. Lets the plan
+// collision guard see through symlink/junction aliases of the protected roots.
+function realpathDeepest(abs) {
+  let probe = abs;
+  const suffix = [];
+  while (!fs.existsSync(probe)) {
+    const parent = path.dirname(probe);
+    if (parent === probe) break;
+    suffix.unshift(path.basename(probe));
+    probe = parent;
+  }
+  let real;
+  try {
+    real = fs.realpathSync(probe);
+  } catch {
+    real = probe;
+  }
+  return path.join(real, ...suffix);
+}
+
+function pathForms(abs) {
+  const real = realpathDeepest(abs);
+  return real === abs ? [abs] : [abs, real];
 }
 
 // On --apply the plan file must survive the apply and must not corrupt its
@@ -107,29 +134,39 @@ function relTo(parentAbs, childAbs) {
 // inside --backup-dir (the plan file would block/collide with backup copies),
 // or colliding with anything the apply writes or tracks inside --current
 // (payload files, the conflict .incoming tree including its root, the
-// install/payload manifests, or --current itself). Lexical, fail-closed,
-// exit 2 BEFORE the plan is written and before any mutation. Physical
-// (symlink/junction) containment is enforced separately for every in-current
-// plan path via assertSafeWriteTarget.
+// install/payload manifests, or --current itself). Fail-closed, exit 2 BEFORE
+// the plan is written and before any mutation. Every comparison runs on the
+// lexical AND physical (realpath) form of both sides, so a symlink/junction
+// alias of a protected root cannot smuggle the plan past the guard. Physical
+// containment of the plan write itself is enforced separately via
+// assertSafeWriteTarget.
 function assertPlanPathDoesNotCollide({ planPath, currentDir, nextDir, backupDir, plan }) {
-  if (relTo(nextDir, planPath) != null) {
-    fail(`--plan must not point at or inside --next (it would corrupt the upgrade payload): ${planPath}`);
-  }
-  if (backupDir && relTo(backupDir, planPath) != null) {
-    fail(`--plan must not point at or inside --backup-dir (it would block backup copies): ${planPath}`);
-  }
-  const relCur = relTo(currentDir, planPath);
-  if (relCur != null) {
-    const tracked = plan.files.some((f) => f.path === relCur);
-    if (
-      relCur === ''
-      || tracked
-      || relCur === INSTALL_MANIFEST_NAME
-      || relCur === PAYLOAD_MANIFEST_NAME
-      || relCur === CONFLICTS_DIR_NAME
-      || relCur.startsWith(`${CONFLICTS_DIR_NAME}/`)
-    ) {
-      fail(`--plan collides with a path the apply writes or tracks inside --current: ${relCur || planPath}`);
+  const planForms = pathForms(planPath);
+  for (const p of planForms) {
+    for (const n of pathForms(nextDir)) {
+      if (relTo(n, p) != null) {
+        fail(`--plan must not point at or inside --next (it would corrupt the upgrade payload): ${planPath}`);
+      }
+    }
+    for (const b of backupDir ? pathForms(backupDir) : []) {
+      if (relTo(b, p) != null) {
+        fail(`--plan must not point at or inside --backup-dir (it would block backup copies): ${planPath}`);
+      }
+    }
+    for (const c of pathForms(currentDir)) {
+      const relCur = relTo(c, p);
+      if (relCur == null) continue;
+      const tracked = plan.files.some((f) => f.path === relCur);
+      if (
+        relCur === ''
+        || tracked
+        || relCur === INSTALL_MANIFEST_NAME
+        || relCur === PAYLOAD_MANIFEST_NAME
+        || relCur === CONFLICTS_DIR_NAME
+        || relCur.startsWith(`${CONFLICTS_DIR_NAME}/`)
+      ) {
+        fail(`--plan collides with a path the apply writes or tracks inside --current: ${relCur || planPath}`);
+      }
     }
   }
 }
@@ -198,11 +235,14 @@ function main() {
         plan,
       });
     }
-    // EVERY plan path that lexically lands inside --current (default or an
-    // explicit --plan) gets the same physical symlink containment as apply —
-    // a junctioned/symlinked directory under --current (e.g. _upgrade → --next)
-    // must not let the plan write escape the kit.
-    if (planInsideCurrent || relTo(currentDir, planPath) != null) {
+    // EVERY plan path that lands inside --current (default or an explicit
+    // --plan, lexically or through a physical alias) gets the same physical
+    // symlink containment as apply — a junctioned/symlinked directory under
+    // --current (e.g. _upgrade → --next) must not let the plan write escape
+    // the kit.
+    const inCurrent = planInsideCurrent
+      || pathForms(planPath).some((p) => pathForms(currentDir).some((c) => relTo(c, p) != null));
+    if (inCurrent) {
       assertSafeWriteTarget(fs.realpathSync(currentDir), planPath, 'current vendored kit');
     }
     const markdown = renderPlanMarkdown(plan, { currentDir, planPath });

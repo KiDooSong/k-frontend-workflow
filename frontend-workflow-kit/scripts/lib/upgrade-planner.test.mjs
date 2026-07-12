@@ -814,6 +814,71 @@ test('CLI --apply refuses a --plan path colliding with apply inputs or outputs',
   assert.equal(fs.existsSync(okPlan), true);
 });
 
+test('a tracked file whose name starts with dots (..foo) cannot be clobbered via --plan', (t) => {
+  const tmp = mkTmp('rebase-dotdot-name');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const currentDir = path.join(tmp, 'current');
+  const nextDir = path.join(tmp, 'next');
+  const body = 'DOTFILE';
+  // `..foo.mjs` is a VALID payload name under isSafeRelPath (no `..` segment) —
+  // a prefix-based inside/outside test would misread it as outside and skip
+  // every guard, letting the plan overwrite it.
+  writeFile(currentDir, '..foo.mjs', body);
+  writeFile(nextDir, '..foo.mjs', body);
+  writeFile(currentDir, INSTALL_MANIFEST_NAME, JSON.stringify({
+    schema_version: 1,
+    kit: { source_ref: 'OLDREF' },
+    payload: { files: [{ path: '..foo.mjs', sha256: sha(body), classification: 'consumer-runtime', mode: '100644' }] },
+  }, null, 2) + '\n');
+  writeFile(nextDir, PAYLOAD_MANIFEST_NAME, JSON.stringify({
+    schema_version: 1,
+    kit: { source_ref: 'NEXTREF' },
+    payload: { files: [{ path: '..foo.mjs', sha256: sha(body), classification: 'consumer-runtime', mode: '100644' }] },
+  }, null, 2) + '\n');
+
+  const r = spawnSync(process.execPath, [
+    UPGRADE_CLI, '--current', currentDir, '--next', nextDir, '--apply',
+    '--plan', path.join(currentDir, '..foo.mjs'),
+  ], { encoding: 'utf8' });
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /collides with a path/);
+  assert.equal(read(currentDir, '..foo.mjs'), body, 'the tracked file must stay untouched');
+});
+
+test('a symlink/junction alias of a protected root cannot smuggle --plan past the collision guard', (t) => {
+  const tmp = mkTmp('rebase-root-alias');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const { currentDir, nextDir } = buildScenario(tmp);
+  const aliasNext = path.join(tmp, 'alias-next');
+  const aliasCur = path.join(tmp, 'alias-cur');
+  try {
+    fs.symlinkSync(nextDir, aliasNext, process.platform === 'win32' ? 'junction' : 'dir');
+    fs.symlinkSync(currentDir, aliasCur, process.platform === 'win32' ? 'junction' : 'dir');
+  } catch {
+    t.skip('symlink/junction creation not permitted on this platform');
+    return;
+  }
+  const before = read(currentDir, 'safe.mjs');
+
+  // Alias into --next: lexically outside every protected root, physically inside it.
+  const r1 = spawnSync(process.execPath, [
+    UPGRADE_CLI, '--current', currentDir, '--next', nextDir, '--apply',
+    '--plan', path.join(aliasNext, 'stray-plan.md'),
+  ], { encoding: 'utf8' });
+  assert.equal(r1.status, 2, r1.stderr);
+  assert.match(r1.stderr, /at or inside --next/);
+  assert.equal(fs.existsSync(path.join(nextDir, 'stray-plan.md')), false);
+
+  // Alias into --current naming a tracked payload file.
+  const r2 = spawnSync(process.execPath, [
+    UPGRADE_CLI, '--current', currentDir, '--next', nextDir, '--apply',
+    '--plan', path.join(aliasCur, 'safe.mjs'),
+  ], { encoding: 'utf8' });
+  assert.equal(r2.status, 2, r2.stderr);
+  assert.match(r2.stderr, /collides with a path/);
+  assert.equal(read(currentDir, 'safe.mjs'), before, 'refusal must precede any mutation');
+});
+
 test('an explicit in-current --plan path refuses symlink/junction escapes (physical containment)', (t) => {
   const tmp = mkTmp('rebase-plan-junction');
   t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
@@ -833,7 +898,9 @@ test('an explicit in-current --plan path refuses symlink/junction escapes (physi
     UPGRADE_CLI, '--current', currentDir, '--next', nextDir, '--apply', '--plan', planPath,
   ], { encoding: 'utf8' });
   assert.notEqual(r.status, 0);
-  assert.match(r.stderr, /symlink/i);
+  // Either guard is acceptable: the physical collision check (which sees the
+  // junction resolve into --next) or the symlink write containment.
+  assert.match(r.stderr, /at or inside --next|symlink/i);
   assert.equal(fs.existsSync(path.join(nextDir, 'evil-plan.md')), false, 'plan must not escape into --next');
   assert.equal(read(currentDir, 'safe.mjs'), before, 'refusal must precede any mutation');
 });
