@@ -87,6 +87,7 @@ temp filesystem before/after help and usage failures.
 | extra `--appp` / `--docss` / `--srcs` | 2 | 2 | 2 | requested/default outputs absent |
 | every bare or empty `--value` flag | 2 | 2 | 2 | unchanged; no path/layout/adapter/scan work |
 | every `--boolean=false` or absorbed following value | 2 | 2 | 2 | unchanged |
+| invalid occurrence followed by valid duplicate | 2 | 2 | 2 | unchanged; invalid occurrence cannot be hidden |
 | positional | 2 | 2 | 2 | unchanged |
 | `--__proto__=x` / `--constructor=x` / `--prototype=x` | 2 | 2 | 2 | unchanged |
 | route-tree import | 0 | n/a | n/a | unchanged; stdout/stderr empty |
@@ -95,8 +96,33 @@ Usage stderr matches the shared contract, for example:
 
 ```text
 workflow:route-tree: unknown option --outt
-Try `node scripts/route-tree.mjs --help`.
+Try `npm run workflow:route-tree -- --help`.
 ```
+
+All-valid scalar duplicates retain last-wins. The optional raw-argv input to the
+shared validator checks occurrence syntax only and does not replace or change
+`parseArgs` value selection.
+
+## PR review follow-up
+
+The first review pass found a first-party integration regression that green CI did
+not expose: `check-generated-files` forwarded an explicit `layoutPath` to every
+generated-view child. After the strict allowlists, route-tree and nav-graph rejected
+that unused option and returned `generator-error` while the warning-first guard
+process itself remained exit 0.
+
+`V1_REPRODUCE` now declares `forwardLayout: true` only for component-catalog.
+Route-tree continues to receive the role-resolved `--app` path from the parent, and
+nav-graph receives only `--docs`; both reproduce as `status: ok` when the parent was
+given an explicit layout. Existing component-catalog custom-layout tests prove the
+layout is still forwarded where the child consumes it.
+
+The same follow-up pins two other review cases:
+
+- mixed invalid/valid duplicates (`--out= --out valid`, `--json=false --json`,
+  `--src --src valid`) exit 2 with write 0
+- help Usage and usage-error hints use the public npm aliases that are runnable
+  from the standard consumer root
 
 ## Compatibility and golden hashes
 
@@ -115,6 +141,7 @@ models/renders. No expected or committed generated file changed.
 | catalog `--json` | parsed model deep-equal; output file absent |
 | catalog `--dry-run` | rendered Markdown byte-equal; output file absent |
 | duplicate scalar `--out first --out second` | only second path written for all three CLIs |
+| generated guard + explicit layout | route-tree/nav-graph/component-catalog remain `status: ok` |
 
 Existing route missing/unknown/version adapter errors, catalog missing-src exit 2,
 custom layout header, role resolution, barrel warnings, nav structured/stub behavior,
@@ -135,8 +162,9 @@ wrote 189 payload files; the same three packed help commands exited 0.
 |---|---|
 | `npm ci` | exit 0; 1 dependency installed, 0 vulnerabilities |
 | `node --test scripts/lib/generated-views-cli.test.mjs scripts/lib/route-core.test.mjs scripts/lib/catalog-gen.test.mjs scripts/lib/distribution.test.mjs` | exit 0; 77/77 pass |
+| review follow-up focused: generated-view/check-generated/report/run/distribution tests | exit 0; 84/84 pass |
 | `node scripts/test-fixtures.mjs` | exit 0; 31 fixtures = 30 pass, 1 expected xfail, 0 xpass/xdrift/fail |
-| `npm test` | exit 0; 826 tests = 825 pass, 1 platform-specific skip, 0 fail |
+| `npm test` | exit 0; 828 tests = 827 pass, 1 platform-specific skip, 0 fail |
 | `npm run example:state` | exit 0 |
 | `npm run example:readiness` | exit 0 |
 | `npm run example:validate` | exit 0; 12 checks pass |

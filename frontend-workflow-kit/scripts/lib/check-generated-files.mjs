@@ -192,6 +192,8 @@ function roleGlobInputDir(srcDir, layout, role) {
 //   resolveInput : --docs/--src/layout 에서 생성기 입력 디렉토리.
 //   inputFlag    : 생성기 입력 플래그.
 //   outName      : _meta 산출 파일명(scratch 출력 파일명으로도 사용).
+//   forwardLayout: 생성기 자체가 --layout 을 소비할 때만 true. route-tree 는 parent 가 layout role 로
+//                  --app 을 이미 해소하고 nav-graph 는 layout 비소비이므로 component-catalog 만 전달한다.
 // route-tree: {roles.route_entry} 파일트리 → _meta/route-tree.txt.  nav-graph: docs → _meta/nav-graph.yaml.
 // route-tree 입력 디렉토리는 {roles.route_entry} 바인딩에서 파생한다(literal <srcDir>/app 금지 — §6·§10:
 // tier2 router 경로와 같은 출처). role 글롭은 프로젝트-루트 상대(src/app)이므로 projectRootOf 로 앵커한다
@@ -220,6 +222,7 @@ export const V1_REPRODUCE = {
     resolveInput: ({ srcDir, layout }) => roleGlobInputDir(srcDir, layout, 'ui_primitive'),
     outName: 'component-catalog.md',
     committedSubdir: 'design',
+    forwardLayout: true,
   },
 };
 
@@ -472,7 +475,7 @@ export function reproduceArtifact(id, { docsDir, srcDir, layout, layoutPath, man
   ];
   const runOnce = (outFile) => {
     const args = [scriptPath, contract.inputFlag, inputDir, '--out', outFile];
-    if (layoutPath) args.push('--layout', layoutPath);
+    if (layoutPath && contract.forwardLayout) args.push('--layout', layoutPath);
     return spawnSync(process.execPath, args, { encoding: 'utf8' });
   };
 

@@ -18,7 +18,7 @@ function printHelp() {
   process.stdout.write(`workflow:route-tree — discover routes through a router adapter and render route-tree.txt
 
 Usage:
-  node scripts/route-tree.mjs [--app <dir>] [--out <file>] [--router <name|module-path>]
+  npm run workflow:route-tree -- [--app <dir>] [--out <file>] [--router <name|module-path>]
 
 Options:
   --app <dir>                  Route entry directory (default: src/app)
@@ -37,14 +37,16 @@ Exit codes:
 }
 
 async function main() {
-  const { flags, positionals } = parseArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  const { flags, positionals } = parseArgs(argv);
   enforceCliFlagContract({
+    argv,
     flags,
     positionals,
     valueFlags: VALUE_FLAGS,
     booleanFlags: BOOLEAN_FLAGS,
     tool: 'workflow:route-tree',
-    helpCommand: 'node scripts/route-tree.mjs',
+    helpCommand: 'npm run workflow:route-tree --',
   });
   if (flags.help) {
     printHelp();

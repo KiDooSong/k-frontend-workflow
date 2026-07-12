@@ -25,7 +25,7 @@ function printHelp() {
   process.stdout.write(`workflow:catalog — generate the component catalog from the resolved UI primitive source tree
 
 Usage:
-  node scripts/catalog-gen.mjs [--src <dir>] [--out <file>] [--root <dir>] [--layout <file>] [--json] [--dry-run]
+  npm run workflow:catalog -- [--src <dir>] [--out <file>] [--root <dir>] [--layout <file>] [--json] [--dry-run]
 
 Options:
   --src <dir>      Source root (default: src)
@@ -56,14 +56,16 @@ function relativeFrom(root, abs) {
 }
 
 function main() {
-  const { flags, positionals } = parseArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  const { flags, positionals } = parseArgs(argv);
   enforceCliFlagContract({
+    argv,
     flags,
     positionals,
     valueFlags: VALUE_FLAGS,
     booleanFlags: BOOLEAN_FLAGS,
     tool: 'workflow:catalog',
-    helpCommand: 'node scripts/catalog-gen.mjs',
+    helpCommand: 'npm run workflow:catalog --',
   });
   if (flags.help) {
     printHelp();

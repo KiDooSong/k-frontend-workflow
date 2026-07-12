@@ -191,6 +191,28 @@ test('reproduceArtifact: nav-graph 픽스처가 커밋본을 재현(ok)', () => 
   assert.ok(r.checks.some((c) => c.check === 'CG:content' && c.ok));
 });
 
+test('reproduceArtifact: explicit layout is not forwarded to route-tree/nav-graph children', () => {
+  const layoutPath = path.join(KIT_ROOT, 'policies', 'project-layout.yaml');
+  const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags: { layout: layoutPath } });
+  const route = reproduceArtifact('route-tree', {
+    docsDir: RT_DOCS,
+    srcDir: RT_SRC,
+    layout,
+    layoutPath,
+    manifest: MANIFEST,
+  });
+  assert.equal(route.status, 'ok', JSON.stringify(route.checks));
+
+  const nav = reproduceArtifact('nav-graph', {
+    docsDir: NG_DOCS,
+    srcDir: RT_SRC,
+    layout,
+    layoutPath,
+    manifest: MANIFEST,
+  });
+  assert.equal(nav.status, 'ok', JSON.stringify(nav.checks));
+});
+
 test('reproduceArtifact: component-catalog 픽스처가 커밋본을 재현(ok)', () => {
   // basic-ui 픽스처는 골든을 expected/ 에 두는 generated-view 관례라, check-generated 의
   // 프로젝트 레이아웃(<docsDir>/design/<file> + <srcDir>/components/ui)으로 임시 디렉토리에
