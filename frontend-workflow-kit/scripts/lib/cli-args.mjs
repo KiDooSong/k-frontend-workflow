@@ -10,7 +10,7 @@
 // allowlist 로 다시 검증한다. raw 검증은 flags 를 만들지 않는 validator 이며 정상 scalar duplicate 의
 // last-wins 결과는 parseArgs 가 그대로 소유한다:
 //   - unknown option                          → exit 2
-//   - value flag 가 bare(값 없음)/빈 값(--flag=) → exit 2
+//   - value flag 가 bare/빈 값(--flag= 또는 --flag '') → exit 2
 //   - boolean flag 에 =value / 뒤따르는 값    → exit 2
 //   - positional argument                     → exit 2
 // 스칼라 중복(last-wins)·repeatable flag 정책은 바꾸지 않되, 앞선 invalid occurrence 가 뒤의
@@ -24,7 +24,8 @@ export function enforceCliFlagContract({ argv, flags, positionals, valueFlags, b
   };
 
   // parseArgs 는 같은 이름의 마지막 값만 보존한다. raw argv 를 주는 CLI 는 occurrence 를 순서대로
-  // 검사해 `--out= --out valid`, `--json=false --json` 같은 앞선 문법 오류도 fail-closed 로 잡는다.
+  // 검사해 `--out= --out valid`, `--docs '' --docs valid`, `--json=false --json` 같은
+  // 앞선 문법 오류도 fail-closed 로 잡는다.
   // 값 소비 규칙은 parseArgs 와 동일하다: 다음 token 이 `--` 로 시작하지 않으면 value 로 소비한다.
   if (Array.isArray(argv)) {
     for (let i = 0; i < argv.length; i++) {
@@ -44,7 +45,9 @@ export function enforceCliFlagContract({ argv, flags, positionals, valueFlags, b
 
       const next = argv[i + 1];
       if (valueFlags.has(name)) {
-        if (next === undefined || next.startsWith('--')) usageError(`--${name} requires a value`);
+        if (next === undefined || next === '' || next.startsWith('--')) {
+          usageError(`--${name} requires a value`);
+        }
         i++;
       } else if (next !== undefined && !next.startsWith('--')) {
         usageError(`--${name} does not accept a value`);

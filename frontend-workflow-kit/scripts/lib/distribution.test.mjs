@@ -1225,6 +1225,16 @@ test('packed payload CLI smoke: core, adoption, observation, visual (IMP-05)', a
     assert.equal(stateTypo.status, 2);
     assert.match(stateTypo.stderr, /unknown option --jsno/);
     assert.equal(exists('docs/frontend-workflow/_meta', out), false, '--jsno must not write _meta');
+    const stateSplitEmpty = cli(
+      'workflow-state.mjs',
+      '--docs', '',
+      '--docs', path.join(out, 'docs', 'frontend-workflow'),
+      '--json',
+    );
+    assert.equal(stateSplitEmpty.status, 2);
+    assert.match(stateSplitEmpty.stderr, /--docs requires a value/);
+    assert.equal(stateSplitEmpty.stdout, '');
+    assert.equal(exists('docs/frontend-workflow/_meta', out), false, 'split empty --docs must not write _meta');
     // readiness: --help 는 workflow-state.yaml 이 아직 없어도 성공한다(인자 검증·help 가 state 로드보다 먼저).
     const readinessHelp = cli('readiness.mjs', '--help');
     assert.equal(readinessHelp.status, 0, readinessHelp.stderr);

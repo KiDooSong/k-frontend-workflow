@@ -162,6 +162,16 @@ test('an invalid boolean occurrence is not hidden by a later valid duplicate and
   });
 });
 
+test('a split-token empty value is not hidden by a later valid duplicate and precedes state/diff/git work', () => {
+  withTmpDir((root) => {
+    const r = run(['--diff', '', '--diff', 'no-such.diff', '--json'], { cwd: root });
+    assert.equal(r.status, 2);
+    assert.equal(r.stdout, '');
+    assert.match(r.stderr, /--diff requires a value/);
+    assert.doesNotMatch(r.stderr, /workflow-state|--diff 파일 없음|git/);
+  });
+});
+
 test('positional arguments are a usage error: exit 2', () => {
   const r = run(['some-positional', '--docs', UNCLEARED_DOCS, '--diff', API_WRITE_DIFF]);
   assert.equal(r.status, 2);
