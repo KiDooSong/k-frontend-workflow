@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // catalog-gen.mjs — component-catalog 생성기 CLI (읽기 전용 스캔, {roles.ui_primitive} → Markdown).
-// 정본(source of truth)은 resolvedLayout.roles.ui_primitive 파일 트리다. v1 skeleton: name/source_path/export_kind/status
-// 4필드만 내보내며, props/docgen/style 분석은 후속 phase. 기존 수동 component-catalog 를 아직
+// 정본(source of truth)은 resolvedLayout.roles.ui_primitive 파일 트리다. primary 표는
+// name/source_path/export_kind/status 4필드를 유지하고, 검증된 배럴 wrapper evidence 만 additive candidate 표로 낸다.
+// props/docgen/style 분석은 후속 phase. 기존 수동 component-catalog 를 아직
 // 대체하지 않는다(매니페스트 plip·alias·guard 등록 없음 — source-contract §6/§7, 전부 future PR).
 // 사용:
 //   node scripts/catalog-gen.mjs [--src <dir>] [--out <file>] [--layout <file>] [--json] [--dry-run]
@@ -99,9 +100,18 @@ function main() {
     typeof flags.layout === 'string' ? relativeFrom(sourceConfig.projectRoot, path.resolve(flags.layout)) : null;
   const count = model.components.length;
 
-  // phase2-1: 배럴 ↔ 카탈로그 정합성 진단 (warning-first, stderr only — 출력 파일·exit code 불변).
-  // 모든 성공 경로(--json/--dry-run/쓰기)에서 동일하게 돌며, 불일치가 없으면 아무것도 출력하지 않는다.
-  runBarrelReconcileDiagnostic({ src, layout, projectRoot, components: model.components }, process.stderr);
+  // buildCatalog 가 같은 스캔으로 계산한 배럴 ↔ 카탈로그 정합성 진단을 stderr 에 warning-first 로 낸다.
+  // 모든 성공 경로(--json/--dry-run/쓰기)에서 동일하며 exit code 는 바꾸지 않는다.
+  runBarrelReconcileDiagnostic(
+    {
+      src,
+      layout,
+      projectRoot,
+      components: model.components,
+      barrel_reconcile: model.barrel_reconcile,
+    },
+    process.stderr,
+  );
 
   // --json: 동일 모델을 stdout 으로 (헤더 없음, early-return — nav-graph.mjs:25-28 미러).
   if (flags.json) {

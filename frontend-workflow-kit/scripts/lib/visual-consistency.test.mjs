@@ -283,6 +283,36 @@ test('shared component 가 catalog 에 없음 → component-gap-candidate (기�
   );
 });
 
+test('Barrel Re-export Candidates 의 Name + Source Path 행은 component-gap-candidate 오탐을 막음', () => {
+  const catalogWithBarrelCandidate = `${SIMPLE_CATALOG}
+## Barrel Re-export Candidates
+
+| Name | Source Path | Export Kind | Status | Reason |
+| --- | --- | --- | --- | --- |
+| MarketingBanner | src/design-system/components/marketing-banner.tsx | named | candidate | wrapped_memo |
+`;
+  withTree(
+    {
+      contract:
+        CONTRACT_HEADER +
+        familiesTable(['| auth | AUTH-001 | AuthShell | - | - | - | - | draft | - |']) +
+        componentsTable([
+          '| MarketingBanner | AuthShell | auth | forbidden | shell | missing | - |',
+        ]),
+      specs: [{ domain: 'auth', slug: 'login', screenId: 'AUTH-001', mapping: 'draft' }],
+      catalog: catalogWithBarrelCandidate,
+    },
+    (docsDir) => {
+      const r = analyzeVisualConsistency({ docsDir });
+      assert.deepEqual(
+        r.findings.filter((f) => f.rule === 'component-gap-candidate'),
+        [],
+      );
+      assert.ok(!r.findings.some((f) => f.component === 'MarketingBanner'));
+    },
+  );
+});
+
 test('catalog 에 없는 component + Catalog Status 빈 값/missing → 기존대로 component-gap-candidate warning', () => {
   withTree(
     {
