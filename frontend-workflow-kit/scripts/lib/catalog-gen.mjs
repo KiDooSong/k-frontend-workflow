@@ -10,7 +10,7 @@
 //   - 파일명에서 PascalCase 컴포넌트명을 안정적으로 유도할 수 없는 basename (index, queryKeys 등)
 //   - components/ui/ 밖 파일 (features/<domain>/components·screens 등) — §1 스코프
 //
-// root 배럴 direct named re-export 는 파일 트리 안의 exact export 를 검증하는 보조 evidence 로만 사용한다.
+// root 배럴 named re-export 체인은 파일 트리 안의 exact export 를 검증하는 보조 evidence 로만 사용한다.
 // props/docgen/NativeWind/style 분석은 후속 phase (이 skeleton 의 비목표, §3).
 // 결정성 계약 (§7.4): 무타임스탬프 · plain 코드유닛 정렬 · posix 상대경로 · prettier 미사용.
 //
@@ -379,6 +379,50 @@ function resolveBarrelEntry(entry, filesByAbs) {
   return { file: matches[0] };
 }
 
+// named re-export 가 또 다른 barrel 을 가리키면 같은 이름의 re-export 만 따라 실제 선언까지 해소한다.
+// source scope 밖 모듈·별칭·star 는 기존 parser 정책대로 해소하지 않으며, 순환 체인은
+// unverified_named_export 로 fail-closed 한다. 한 barrel 이 같은 이름을 여러 경로로 re-export 하면
+// 모든 해소 결과를 반환하고 호출부의 기존 ambiguous_name 판정에 맡긴다.
+function resolveNamedExportChain(entry, filesByAbs, sourceConfig, visiting = new Set()) {
+  const resolution = resolveBarrelEntry(entry, filesByAbs);
+  if (!resolution.file) return { classified: [], reasons: [resolution.reason] };
+
+  const visitKey = `${path.resolve(resolution.file.abs)}\u0000${entry.name}`;
+  if (visiting.has(visitKey)) {
+    return { classified: [], reasons: ['unverified_named_export'] };
+  }
+
+  const classified = classifyNamedExport(
+    resolution.file.abs,
+    resolution.file.content,
+    entry.name,
+    sourceConfig,
+  );
+  if (classified) return { classified: [classified], reasons: [] };
+
+  const nextEntries = parseBarrelReexports(resolution.file.content).entries.filter(
+    (next) => next.name === entry.name,
+  );
+  if (nextEntries.length === 0) {
+    return { classified: [], reasons: ['unverified_named_export'] };
+  }
+
+  const nextVisiting = new Set(visiting);
+  nextVisiting.add(visitKey);
+  const chained = { classified: [], reasons: [] };
+  for (const nextEntry of nextEntries) {
+    const next = resolveNamedExportChain(
+      { ...nextEntry, barrel_abs: resolution.file.abs },
+      filesByAbs,
+      sourceConfig,
+      nextVisiting,
+    );
+    chained.classified.push(...next.classified);
+    chained.reasons.push(...next.reasons);
+  }
+  return chained;
+}
+
 function compareBarrelIssues(a, b) {
   for (const field of ['barrel_path', 'module_specifier', 'name', 'reason']) {
     if (a[field] !== b[field]) return a[field] < b[field] ? -1 : 1;
@@ -400,23 +444,12 @@ function deriveBarrelReexports({ evidence, sourceFiles, sourceConfig, components
   };
 
   for (const entry of evidence.entries) {
-    const resolution = resolveBarrelEntry(entry, filesByAbs);
-    if (!resolution.file) {
-      addIssue(entry, resolution.reason);
-      continue;
+    const resolution = resolveNamedExportChain(entry, filesByAbs, sourceConfig);
+    for (const reason of resolution.reasons) addIssue(entry, reason);
+    for (const classified of resolution.classified) {
+      const key = `${classified.name}\u0000${classified.source_path}`;
+      if (!resolvedByKey.has(key)) resolvedByKey.set(key, { entry, classified });
     }
-    const classified = classifyNamedExport(
-      resolution.file.abs,
-      resolution.file.content,
-      entry.name,
-      sourceConfig,
-    );
-    if (!classified) {
-      addIssue(entry, 'unverified_named_export');
-      continue;
-    }
-    const key = `${classified.name}\u0000${classified.source_path}`;
-    if (!resolvedByKey.has(key)) resolvedByKey.set(key, { entry, classified });
   }
 
   const resolved = [...resolvedByKey.values()];
@@ -600,7 +633,8 @@ export function renderCatalog(model, opts = {}) {
 // 배럴(barrel) ↔ 카탈로그 정합성 진단 + path-aware export evidence (warning-first)
 // ---------------------------------------------------------------------------
 // 정본 src/components/ui/ 루트의 배럴(index.ts|index.tsx)이 `export { X } from './X'` 로
-// re-export 하는 컴포넌트 이름과 파일워크 결과를 대조한다. plain exact export 는 primary 보조 evidence,
+// re-export 하는 컴포넌트 이름과 파일워크 결과를 대조한다. 중간 directory barrel 의 같은 이름
+// named re-export 체인도 실제 선언까지 해소한다. plain exact export 는 primary 보조 evidence,
 // wrapper 는 candidate evidence 로 쓰고, 불일치는 stderr warning 으로도 surface 한다. 파일 트리는 계속
 // canonical source scope 이며 exit code 는 바꾸지 않는다. 무의존·정적 regex 만 사용한다.
 //
