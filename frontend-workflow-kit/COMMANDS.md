@@ -34,7 +34,8 @@ Use `--root` when the project root is not the current working directory. Use
 and treat usage errors — an unknown option (e.g. a `--jsno`/`--screeen` typo), a
 value flag without a value, a value passed to a boolean flag, or a positional
 argument — as exit 2 **before** reading state or writing any file.
-`workflow:state` and `workflow:readiness` also reject an empty `--flag=` value.
+Value flags reject empty values in both attached (`--flag=`) and split-token
+(`--flag ''`) forms, even when a later valid duplicate would otherwise win.
 A typo never silently falls back to a default run.
 
 ## Input Artifacts
@@ -133,7 +134,7 @@ These commands produce read-only metadata under `docs/frontend-workflow/_meta/`,
 The three file-producing generated-view CLIs (`workflow:route-tree`,
 `workflow:nav-graph`, and `workflow:catalog`) validate their complete CLI syntax
 before help, path resolution, adapter/layout load, input scans, or writes. Unknown
-options, bare or empty value options, values attached to boolean options, and
+options, bare or empty value options (attached or split-token), values attached to boolean options, and
 positional arguments exit 2 and write no files. Every occurrence is syntax-checked,
 so an invalid occurrence cannot be hidden by a later duplicate; duplicates whose
 occurrences are all valid retain their existing last-wins meaning. `--help` exits 0
@@ -156,7 +157,7 @@ state.
 
 `workflow:telemetry` is a warning-first observation tool. By default it runs only the existing core observation surfaces: it summarizes `route-cross-check`, `doc-drift`, and `workflow:eval` warning counts through their public `--json` CLIs, records unavailable surfaces, and includes the readiness-eval blocking mismatch count. `--out` writes an explicitly requested deterministic ledger snapshot; `--check` compares current telemetry with a ledger and reports ledger drift as warning-only check data. Drift, unavailable surfaces, and findings keep the command on exit 0.
 
-Telemetry validates its complete CLI syntax before help, surface listing, path resolution, child execution, ingest reads, ledger check reads, or ledger writes. Unknown options (including prototype keys), bare or empty value options, values attached to boolean options, and positional arguments are usage errors on stderr with exit 2 and no stdout report. Every raw occurrence is checked, so a malformed occurrence cannot be hidden by a later valid duplicate; duplicates whose occurrences are all valid retain scalar last-wins behavior. In particular, an `--out` typo such as `--outt` or `--otu` never falls back to an ordinary observation run that omits the requested ledger. Valid `--help` and `--list-surfaces` remain no-work exit-0 paths; syntax errors take precedence over both, and `--list-surfaces` remains incompatible with `--out`/`--check`. These usage safeguards do not change the observation-only exit-0 contract, selected surface set, warning normalization, ledger schema/bytes, child fail-soft behavior, or CI artifact posture.
+Telemetry validates its complete CLI syntax before help, surface listing, path resolution, child execution, ingest reads, ledger check reads, or ledger writes. Unknown options (including prototype keys), bare or empty value options (attached or split-token), values attached to boolean options, and positional arguments are usage errors on stderr with exit 2 and no stdout report. Every raw occurrence is checked, so a malformed occurrence cannot be hidden by a later valid duplicate; duplicates whose occurrences are all valid retain scalar last-wins behavior. In particular, an `--out` typo such as `--outt` or `--otu` never falls back to an ordinary observation run that omits the requested ledger. Valid `--help` and `--list-surfaces` remain no-work exit-0 paths; syntax errors take precedence over both, and `--list-surfaces` remains incompatible with `--out`/`--check`. These usage safeguards do not change the observation-only exit-0 contract, selected surface set, warning normalization, ledger schema/bytes, child fail-soft behavior, or CI artifact posture.
 
 Visual surfaces are opt-in. `--include visual` (or `--surface visual-consistency` / `--surface visual-contract-bootstrap`, which add single surfaces on top of the defaults) additionally observes `workflow:visual-consistency` and `workflow:visual-contract-bootstrap` through their public `--json` output only. `--src` (default `src`), `--visual-domain`, `--visual-screen`, and `--visual-contract` are forwarded to the visual CLIs; `--skip-visual-bootstrap` / `--skip-visual-consistency` drop one of the two included visual surfaces; `--list-surfaces` prints the surface registry without running any child CLI. Telemetry never writes a visual-contract-bootstrap draft (`--out`/`--format markdown` are never forwarded) and never creates or modifies the canonical visual contract. Visual warnings/findings are observations only — not a gate, approval, readiness promotion, or `confirmed` promotion — and a missing contract, missing script, child exit 1, or invalid child JSON keeps telemetry on exit 0 (recorded as skip/unavailable). The default CI telemetry artifact does not include visual surfaces automatically; whether to add a visual telemetry CI artifact is a separate Open Decision that requires human approval first.
 
@@ -314,7 +315,7 @@ npm run workflow:forbidden-paths -- --help
 Without `--enforce`, path findings are reported without failing the command
 (warning-first, exit 0); `--enforce` is the opt-in promotion to exit 1 on
 violations. The argument contract is strict: unknown options (including typos
-such as `--enforc`), value flags without a value (bare or empty `--flag=`),
+such as `--enforc`), value flags without a value (bare, empty `--flag=`, or empty `--flag ''`),
 boolean flags with a value (`--enforce=false`, `--json=yes`, `--staged true`),
 and positional arguments are usage errors that exit 2 before any state/policy
 load, diff read, or git command — a typo can never silently drop `--enforce`
@@ -452,7 +453,7 @@ effective `--id`.
 `--help` is side-effect-free: it does not scan the target, create a run or
 scratch directory, write a draft, or launch a child command. CLI syntax is
 strict before help or any filesystem work. Unknown options, positional
-arguments, bare or empty value options, and values attached to boolean options
+arguments, bare or empty value options (attached or split-token), and values attached to boolean options
 exit 2; boolean options (`--skip-f3`, `--visual`,
 `--skip-visual-consistency`, `--json`, `--help`) are bare flags only. These
 usage/input errors produce no probe JSON and no run directory. Exit 0 means help

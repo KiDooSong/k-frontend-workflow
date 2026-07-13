@@ -63,13 +63,18 @@ test('positional arguments are a usage error: exit 2', () => {
   assert.match(r.stderr, /positional arguments are not supported/);
 });
 
-test('an empty value occurrence is not hidden by a later valid duplicate', () => {
+test('attached and split-token empty occurrences are not hidden by a later valid duplicate', () => {
   const docsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'validate-cli-duplicate-'));
   try {
-    const r = run(['--docs=', '--docs', docsDir]);
-    assert.equal(r.status, 2);
-    assert.equal(r.stdout, '');
-    assert.match(r.stderr, /--docs requires a value/);
+    for (const args of [
+      ['--docs=', '--docs', docsDir],
+      ['--docs', '', '--docs', docsDir],
+    ]) {
+      const r = run(args);
+      assert.equal(r.status, 2);
+      assert.equal(r.stdout, '');
+      assert.match(r.stderr, /--docs requires a value/);
+    }
   } finally {
     fs.rmSync(docsDir, { recursive: true, force: true });
   }

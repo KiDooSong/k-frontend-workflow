@@ -210,6 +210,7 @@ test('an invalid raw occurrence cannot be hidden by a later valid duplicate', (t
   const correct = path.join(root, 'correct.json');
   const cases = [
     { args: ['--root', root, '--out=', '--out', 'telemetry-ledger.json'], expected: /--out requires a value/ },
+    { args: ['--root', root, '--out', '', '--out', 'telemetry-ledger.json'], expected: /--out requires a value/ },
     { args: ['--root', '--root', root, '--json'], expected: /--root requires a value/ },
     { args: ['--root', root, '--json=false', '--json'], expected: /--json does not accept a value/ },
     { args: ['--root', root, '--list-surfaces=false', '--list-surfaces'], expected: /--list-surfaces does not accept a value/ },

@@ -4,6 +4,11 @@
 
 ## Unreleased
 
+### fix(cli) — reject split-token empty values before duplicate reduction
+
+- 공용 `enforceCliFlagContract`가 `--docs '' --docs valid`처럼 분리 토큰으로 전달된 빈 value occurrence도 raw argv 순서에서 exit 2로 거부한다. 뒤의 정상 duplicate가 앞선 빈 입력을 가리지 못하며, raw argv를 전달하는 validate/readiness/workflow-state/forbidden-paths/adoption-probe/generated views/telemetry와 packed payload에 동일 적용된다.
+- `parseArgs` shape·정상 non-empty scalar duplicate last-wins·단일 하이픈 시작 value·각 CLI의 판정/output/side-effect 의미는 변경하지 않았다.
+
 ### fix(cli) — validate every raw argv occurrence
 
 - `validate`의 bare/empty value flag가 기본 경로로 fallback하지 않도록 공용 strict CLI contract helper로 통일하고, readiness/workflow-state/forbidden-paths/adoption-probe의 누락된 raw argv 전달을 보완했다. 앞선 malformed duplicate는 뒤의 정상 occurrence에 가려지지 않고 exit 2이며, 모든 occurrence가 정상인 scalar duplicate는 기존처럼 last-wins다.

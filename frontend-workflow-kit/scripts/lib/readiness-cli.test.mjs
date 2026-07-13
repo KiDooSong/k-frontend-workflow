@@ -113,6 +113,16 @@ test('an invalid boolean occurrence is not hidden by a later valid duplicate and
   });
 });
 
+test('a split-token empty value is not hidden by a later valid duplicate and precedes all loads', () => {
+  withTmpDir((root) => {
+    const r = run(['--docs', '', '--docs', EXAMPLE_DOCS, '--json'], { cwd: root });
+    assert.equal(r.status, 2);
+    assert.equal(r.stdout, '');
+    assert.match(r.stderr, /--docs requires a value/);
+    assert.doesNotMatch(r.stderr, /workflow-state\.yaml|policy|manifest/);
+  });
+});
+
 test('positional arguments are a usage error: exit 2', () => {
   const r = run(['unexpected-positional', '--docs', EXAMPLE_DOCS]);
   assert.equal(r.status, 2);

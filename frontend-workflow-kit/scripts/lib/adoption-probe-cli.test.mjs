@@ -171,6 +171,18 @@ test('an invalid boolean occurrence is not hidden by a later valid duplicate and
   assert.equal(fs.existsSync(path.join(repo, 'temp')), false);
 });
 
+test('a split-token empty value is not hidden by a later valid duplicate and creates nothing', (t) => {
+  const repo = makeRepo(t, 'adoption-probe-duplicate-empty-');
+  const id = 'duplicate-empty';
+  const out = outFor(repo, id);
+  const before = snapshotTree(repo);
+  const result = run([...baseArgs(repo, id), '--repo', '', '--repo', repo]);
+  assertUsageFailure(result, '--repo', out);
+  assert.match(result.stderr, /requires a value/);
+  assert.deepEqual(snapshotTree(repo), before);
+  assert.equal(fs.existsSync(path.join(repo, 'temp')), false);
+});
+
 test('positionals at the front, middle, and end are rejected', (t) => {
   const repo = makeRepo(t, 'adoption-probe-positional-');
   const cases = [

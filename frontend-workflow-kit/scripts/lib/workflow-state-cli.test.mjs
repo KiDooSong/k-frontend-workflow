@@ -93,15 +93,17 @@ test('empty --out= must not silently fall back to the default _meta dir', () => 
   });
 });
 
-test('an empty output occurrence is not hidden by a later valid duplicate and writes nothing', () => {
+test('attached and split-token empty output occurrences are not hidden by a later valid duplicate and write nothing', () => {
   withTmpDocs(({ root, docsDir }) => {
-    const outDir = path.join(root, 'out');
-    const r = run(['--out=', '--out', outDir, '--docs', docsDir]);
-    assert.equal(r.status, 2);
-    assert.equal(r.stdout, '');
-    assert.match(r.stderr, /--out requires a value/);
-    assert.equal(fs.existsSync(path.join(docsDir, '_meta')), false);
-    assert.equal(fs.existsSync(outDir), false);
+    for (const [index, prefix] of [['attached', ['--out=']], ['split', ['--out', '']]]) {
+      const outDir = path.join(root, `out-${index}`);
+      const r = run([...prefix, '--out', outDir, '--docs', docsDir]);
+      assert.equal(r.status, 2);
+      assert.equal(r.stdout, '');
+      assert.match(r.stderr, /--out requires a value/);
+      assert.equal(fs.existsSync(path.join(docsDir, '_meta')), false);
+      assert.equal(fs.existsSync(outDir), false);
+    }
   });
 });
 

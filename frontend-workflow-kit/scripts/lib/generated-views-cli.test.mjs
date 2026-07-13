@@ -122,22 +122,22 @@ test('every boolean flag rejects attached and absorbed values, including help sy
 test('an invalid occurrence cannot be hidden by a later valid duplicate', (t) => {
   const cases = [
     {
-      name: 'route-tree-empty-out',
+      name: 'route-tree-split-empty-out',
       cli: ROUTE_CLI,
-      args: ['--app', path.join(ROUTE_FIXTURE, 'src', 'app'), '--out=', '--out'],
+      args: ['--app', path.join(ROUTE_FIXTURE, 'src', 'app'), '--out', '', '--out'],
       expected: /--out requires a value/,
       appendOutput: true,
     },
     {
-      name: 'nav-graph-valued-json',
+      name: 'nav-graph-split-empty-docs',
       cli: NAV_CLI,
-      args: ['--docs', path.join(NAV_FIXTURE, 'docs', 'frontend-workflow'), '--json=false', '--json'],
-      expected: /--json does not accept a value/,
+      args: ['--docs', '', '--docs', path.join(NAV_FIXTURE, 'docs', 'frontend-workflow'), '--json'],
+      expected: /--docs requires a value/,
     },
     {
-      name: 'catalog-bare-src',
+      name: 'catalog-split-empty-src',
       cli: CATALOG_CLI,
-      args: ['--src', '--src', path.join(CATALOG_FIXTURE, 'src'), '--json'],
+      args: ['--src', '', '--src', path.join(CATALOG_FIXTURE, 'src'), '--json'],
       expected: /--src requires a value/,
     },
   ];
