@@ -4,6 +4,17 @@
 
 ## Unreleased
 
+### fix(cli) — validate every raw argv occurrence
+
+- `validate`의 bare/empty value flag가 기본 경로로 fallback하지 않도록 공용 strict CLI contract helper로 통일하고, readiness/workflow-state/forbidden-paths/adoption-probe의 누락된 raw argv 전달을 보완했다. 앞선 malformed duplicate는 뒤의 정상 occurrence에 가려지지 않고 exit 2이며, 모든 occurrence가 정상인 scalar duplicate는 기존처럼 last-wins다.
+- 정상 invocation의 readiness 판정, workflow-state/forbidden-paths/adoption-probe 결과와 gate/output semantics는 변경하지 않았다.
+
+### fix(upgrade) — encode rebased migration-note destinations
+
+- render context에서 재배치한 migration-note destination의 generated path segment를 Markdown-safe하게 percent-encode해 공백과 `#`, `?`, 괄호 등 예약문자가 bare link 문법으로 오인되지 않게 했다. `/`와 dot segment, 원래 query/fragment는 보존하며 비정상 Unicode 인코딩 실패는 원문 유지 + deterministic unresolved로 fail-safe 처리한다.
+- plan JSON과 raw migration notes, 일반 ASCII generated path bytes, 기존 payload-root escape/percent-decoded traversal/Windows cross-volume unresolved 의미는 변경하지 않았다.
+- **PR review follow-up**: source destination의 정상 percent escape(`%20`, `%23`, UTF-8 sequence)를 filesystem path로 decode한 뒤 generated destination을 한 번만 canonical encode해 `%2520` 이중 인코딩을 막는다. malformed percent sequence는 원문 유지 + deterministic unresolved로 처리한다.
+
 ### fix(cli) — telemetry strict argument contract + ledger-write typo fail-closed
 
 core CLI 인자 계약 감사([temp/runs/core-cli-argument-contract-audit-001.md](temp/runs/core-cli-argument-contract-audit-001.md))의 telemetry 후속을 해소한다. **surface registry/선택·normalization/warning count·child fail-soft·ledger schema/version/bytes·determinism witness·`--check` warning-first·CI artifact 수집·exit 0 observation 경계는 무변경**이며 새 surface, gate, required check, artifact 축, version/tag는 없다.

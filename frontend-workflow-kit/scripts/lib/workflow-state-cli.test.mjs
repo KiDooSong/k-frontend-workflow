@@ -93,6 +93,18 @@ test('empty --out= must not silently fall back to the default _meta dir', () => 
   });
 });
 
+test('an empty output occurrence is not hidden by a later valid duplicate and writes nothing', () => {
+  withTmpDocs(({ root, docsDir }) => {
+    const outDir = path.join(root, 'out');
+    const r = run(['--out=', '--out', outDir, '--docs', docsDir]);
+    assert.equal(r.status, 2);
+    assert.equal(r.stdout, '');
+    assert.match(r.stderr, /--out requires a value/);
+    assert.equal(fs.existsSync(path.join(docsDir, '_meta')), false);
+    assert.equal(fs.existsSync(outDir), false);
+  });
+});
+
 test('boolean flag with a value is a usage error: exit 2', () => {
   const r = run(['--json=yes']);
   assert.equal(r.status, 2);

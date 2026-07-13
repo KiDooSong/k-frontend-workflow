@@ -13,6 +13,7 @@ import { spawnSync } from 'node:child_process';
 import { KIT_ROOT } from './util.mjs';
 
 const CLI = path.join(KIT_ROOT, 'scripts', 'validate.mjs');
+const VALUE_FLAGS = ['docs', 'src', 'root', 'manifest', 'schema', 'policy', 'layout'];
 // 자연 종료 회귀(잔존 핸들 hang)가 유한 실패로 떨어지게 timeout 을 건다.
 const SPAWN_TIMEOUT_MS = 30_000;
 
@@ -39,10 +40,15 @@ test('unknown flag (e.g. --enforc typo) is a usage error: exit 2, not a silent r
   assert.equal(r.stdout, '');
 });
 
-test('value flag without a value is a usage error: exit 2', () => {
-  const r = run(['--docs']);
-  assert.equal(r.status, 2);
-  assert.match(r.stderr, /--docs requires a value/);
+test('every value flag rejects bare and empty occurrences: exit 2', () => {
+  for (const name of VALUE_FLAGS) {
+    for (const bad of [`--${name}`, `--${name}=`]) {
+      const r = run([bad]);
+      assert.equal(r.status, 2, `${bad} should exit 2`);
+      assert.match(r.stderr, new RegExp(`--${name} requires a value`));
+      assert.equal(r.stdout, '');
+    }
+  }
 });
 
 test('boolean flag with a value is a usage error: exit 2', () => {
@@ -55,6 +61,41 @@ test('positional arguments are a usage error: exit 2', () => {
   const r = run(['unexpected-positional']);
   assert.equal(r.status, 2);
   assert.match(r.stderr, /positional arguments are not supported/);
+});
+
+test('an empty value occurrence is not hidden by a later valid duplicate', () => {
+  const docsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'validate-cli-duplicate-'));
+  try {
+    const r = run(['--docs=', '--docs', docsDir]);
+    assert.equal(r.status, 2);
+    assert.equal(r.stdout, '');
+    assert.match(r.stderr, /--docs requires a value/);
+  } finally {
+    fs.rmSync(docsDir, { recursive: true, force: true });
+  }
+});
+
+test('an invalid boolean occurrence is not hidden by a later valid duplicate', () => {
+  const r = run(['--json=false', '--json']);
+  assert.equal(r.status, 2);
+  assert.equal(r.stdout, '');
+  assert.match(r.stderr, /--json does not accept a value/);
+});
+
+test('valid scalar duplicates remain last-wins', () => {
+  const docsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'validate-cli-last-wins-'));
+  try {
+    const r = run([
+      '--docs', docsDir,
+      '--schema', path.join(docsDir, 'missing-schema.json'),
+      '--schema', path.join(KIT_ROOT, 'schemas', 'frontmatter.schema.json'),
+      '--json',
+    ]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(JSON.parse(r.stdout).ok, true);
+  } finally {
+    fs.rmSync(docsDir, { recursive: true, force: true });
+  }
 });
 
 test('every allowlisted flag still runs validate (empty docs → vacuous pass exit 0 with cold-start warning)', () => {

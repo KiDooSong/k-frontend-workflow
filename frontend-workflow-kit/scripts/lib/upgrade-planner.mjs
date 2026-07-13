@@ -417,11 +417,27 @@ function isRebaseCandidate(dest) {
   return !/^[a-z][a-z0-9+.-]*:/i.test(dest);
 }
 
-function safeDecodeURIComponent(value) {
+function decodeURIComponentOrNull(value) {
   try {
     return decodeURIComponent(value);
   } catch {
-    return value;
+    return null;
+  }
+}
+
+// Encode only generated filesystem path segments. Separators and lexical dot
+// segments stay readable/portable, while characters that can terminate or
+// reshape a bare Markdown destination are percent-encoded. encodeURIComponent
+// deliberately needs the RFC 3986 addendum for !'()*; it can throw for malformed
+// Unicode (for example a lone surrogate), which the caller handles fail-safe.
+function encodeMarkdownLinkPath(value) {
+  try {
+    return value.split('/').map((segment) => encodeURIComponent(segment).replace(
+      /[!'()*]/g,
+      (ch) => `%${ch.charCodeAt(0).toString(16).toUpperCase()}`,
+    )).join('/');
+  } catch {
+    return null;
   }
 }
 
@@ -464,17 +480,27 @@ export function rebaseMigrationNoteLinks({ body, notesPath, currentDir, planPath
       notesDir === '.' ? part : `${notesDir}/${part}`,
     );
     const payloadRel = joinUnderNotes(filePart);
+    const decodedFilePart = decodeURIComponentOrNull(filePart);
+    if (decodedFilePart === null) {
+      // A malformed percent escape cannot be mapped to a filesystem path
+      // deterministically. Keep the source destination for human review.
+      unresolved.add(dest);
+      out += dest;
+      continue;
+    }
     // The escape check also runs on the percent-decoded path: a Markdown viewer
     // URL-decodes the link, so `%2e%2e/` segments would otherwise traverse out
     // of the payload root while looking safe in their encoded form.
-    const decodedPayloadRel = joinUnderNotes(safeDecodeURIComponent(filePart));
+    const decodedPayloadRel = joinUnderNotes(decodedFilePart);
     if (!isSafeRelPath(payloadRel) || !isSafeRelPath(decodedPayloadRel)) {
       // Escapes the payload root — keep the original link for human review.
       unresolved.add(dest);
       out += dest;
       continue;
     }
-    const targetAbs = path.resolve(currentAbs, payloadRel);
+    // filePart is a Markdown URL destination, not a raw filesystem path. Resolve
+    // its decoded form, then encode the newly generated destination exactly once.
+    const targetAbs = path.resolve(currentAbs, decodedPayloadRel);
     const rel = path.relative(planDirAbs, targetAbs);
     if (path.isAbsolute(rel) || /^[a-zA-Z]:/.test(rel)) {
       // No portable relative path exists (different volume) — keep the original
@@ -483,7 +509,14 @@ export function rebaseMigrationNoteLinks({ body, notesPath, currentDir, planPath
       out += dest;
       continue;
     }
-    out += (rel === '' ? '.' : toPosix(rel)) + query + fragment;
+    const generatedPath = rel === '' ? '.' : toPosix(rel);
+    const renderedPath = encodeMarkdownLinkPath(generatedPath);
+    if (renderedPath === null) {
+      unresolved.add(dest);
+      out += dest;
+      continue;
+    }
+    out += renderedPath + query + fragment;
   }
   out += text.slice(last);
   return { body: out, unresolved: [...unresolved].sort((a, b) => a.localeCompare(b)) };

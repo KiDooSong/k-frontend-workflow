@@ -1692,6 +1692,7 @@ export function cliMain(argv) {
     // Every usage/help path completes before date/id defaults, scans, writes, or child processes.
     const { flags, positionals } = parseArgs(argv);
     const usageError = enforceCliFlagContract({
+      argv,
       flags,
       positionals,
       valueFlags: VALUE_FLAGS,

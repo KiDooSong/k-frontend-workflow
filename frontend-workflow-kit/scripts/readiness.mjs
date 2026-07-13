@@ -495,9 +495,11 @@ const VALUE_FLAGS = new Set(['docs', 'policy', 'manifest', 'ci', 'screen', 'out'
 const BOOLEAN_FLAGS = new Set(['json', 'help']);
 
 function main() {
-  const { flags, positionals } = parseArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  const { flags, positionals } = parseArgs(argv);
   // 인자 검증은 state/policy/manifest/layout 로드보다 먼저 — usage 오류에서 판정·파일 쓰기 0.
   const usageError = enforceCliFlagContract({
+    argv,
     flags,
     positionals,
     valueFlags: VALUE_FLAGS,

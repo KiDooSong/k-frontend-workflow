@@ -486,8 +486,11 @@ const REBASE_NOTES_BODY = [
   '',
 ].join('\n');
 
-function buildNotesScenario(tmp, { notesBody = REBASE_NOTES_BODY } = {}) {
-  const currentDir = path.join(tmp, 'consumer', 'tools', 'frontend-workflow');
+function buildNotesScenario(
+  tmp,
+  { notesBody = REBASE_NOTES_BODY, currentDir: currentDirOverride = null } = {},
+) {
+  const currentDir = currentDirOverride ?? path.join(tmp, 'consumer', 'tools', 'frontend-workflow');
   const nextDir = path.join(tmp, 'next');
   const docs = {
     'docs/reference/upgrade-notes.md': notesBody,
@@ -581,6 +584,90 @@ test('render computes links from arbitrary explicit --plan locations', (t) => {
   assert.equal(extractLink(rootMd, 'input'), 'tools/frontend-workflow/docs/reference/input-reconciliation.md');
 });
 
+test('generated destinations encode spaces in currentDir ancestors and resolve after decoding', (t) => {
+  const tmp = mkTmp('rebase-space');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const currentDir = path.join(tmp, 'My Repo', 'tools', 'frontend-workflow');
+  const { nextDir } = buildNotesScenario(tmp, { currentDir });
+  const plan = buildPlan({ currentDir, nextDir });
+  const planPath = path.join(tmp, 'plans', 'upgrade.md');
+  const md = renderPlanMarkdown(plan, { currentDir, planPath });
+  const destination = extractLink(md, 'input');
+
+  assert.match(destination, /My%20Repo/);
+  assert.equal(destination.includes(' '), false);
+  assert.equal(
+    path.resolve(path.dirname(planPath), decodeURIComponent(destination)),
+    path.resolve(currentDir, 'docs', 'reference', 'input-reconciliation.md'),
+  );
+  assert.doesNotMatch(md, /could not be rebased/);
+
+  const rebased = rebaseMigrationNoteLinks({
+    body: '[guide](input-reconciliation.md)\n',
+    notesPath: 'docs/reference/upgrade-notes.md',
+    currentDir,
+    planPath,
+  });
+  assert.deepEqual(rebased.unresolved, []);
+});
+
+test('generated destinations encode Markdown and URL reserved path characters while preserving query and fragment', (t) => {
+  const tmp = mkTmp('rebase-reserved');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const currentDir = path.join(tmp, 'My Repo (QA)#1', 'tools', 'frontend-workflow');
+  const notesBody = '# Notes\n\nSee [guide](workflow-spine.md?mode=full#start).\n';
+  const { nextDir } = buildNotesScenario(tmp, { currentDir, notesBody });
+  const planPath = path.join(tmp, 'plans', 'upgrade.md');
+  const plan = buildPlan({ currentDir, nextDir });
+  const destination = extractLink(renderPlanMarkdown(plan, { currentDir, planPath }), 'guide');
+  const pathPart = destination.slice(0, destination.indexOf('?'));
+
+  assert.match(pathPart, /My%20Repo%20%28QA%29%231/);
+  assert.equal(destination.endsWith('?mode=full#start'), true);
+  assert.equal(pathPart.includes(' '), false);
+  assert.equal(pathPart.includes('('), false);
+  assert.equal(pathPart.includes(')'), false);
+  assert.equal(pathPart.includes('#'), false);
+  assert.equal(
+    path.resolve(path.dirname(planPath), decodeURIComponent(pathPart)),
+    path.resolve(currentDir, 'docs', 'reference', 'workflow-spine.md'),
+  );
+});
+
+test('already percent-encoded source destinations resolve decoded files and are encoded exactly once', (t) => {
+  const tmp = mkTmp('rebase-preencoded');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const currentDir = path.join(tmp, 'consumer', 'tools', 'frontend-workflow');
+  const planPath = path.join(currentDir, '_upgrade', 'plan.md');
+  const files = [
+    ['space', 'My Guide.md', 'My%20Guide.md'],
+    ['hash', 'Hash#Guide.md', 'Hash%23Guide.md'],
+    ['unicode', '가이드.md', '%EA%B0%80%EC%9D%B4%EB%93%9C.md'],
+  ];
+  for (const [, filename] of files) {
+    writeFile(currentDir, `docs/reference/${filename}`, '# target\n');
+  }
+  const sourceBody = files.map(([label, , destination]) => (
+    `[${label}](${destination})`
+  )).join(' ') + '\n';
+  const { body, unresolved } = rebaseMigrationNoteLinks({
+    body: sourceBody,
+    notesPath: 'docs/reference/upgrade-notes.md',
+    currentDir,
+    planPath,
+  });
+
+  assert.deepEqual(unresolved, []);
+  for (const [label, filename, destination] of files) {
+    const rendered = extractLink(body, label);
+    assert.equal(rendered, `../docs/reference/${destination}`);
+    assert.equal(rendered.includes('%25'), false, `${label} must not be double-encoded`);
+    const resolved = path.resolve(path.dirname(planPath), decodeURIComponent(rendered));
+    assert.equal(resolved, path.resolve(currentDir, 'docs', 'reference', filename));
+    assert.equal(fs.existsSync(resolved), true);
+  }
+});
+
 test('render without a context stays byte-identical (raw notes body, library compat)', (t) => {
   const tmp = mkTmp('rebase-compat');
   t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
@@ -640,6 +727,21 @@ test('cross-volume plan location keeps original links and leaks no absolute path
   assert.deepEqual(unresolved, ['input-reconciliation.md']);
 });
 
+test('an unencodable generated path keeps the source destination and is unresolved deterministically', () => {
+  const root = path.parse(process.cwd()).root;
+  const input = {
+    body: 'See [input](input-reconciliation.md).\n',
+    notesPath: 'docs/reference/upgrade-notes.md',
+    currentDir: path.join(root, `repo-\uD800`, 'tools', 'frontend-workflow'),
+    planPath: path.join(root, 'plans', 'upgrade.md'),
+  };
+  const first = rebaseMigrationNoteLinks(input);
+  const second = rebaseMigrationNoteLinks(input);
+  assert.equal(first.body, input.body);
+  assert.deepEqual(first.unresolved, ['input-reconciliation.md']);
+  assert.deepEqual(second, first);
+});
+
 test('rebaseMigrationNoteLinks is pure on the same-volume happy path', () => {
   const { body, unresolved } = rebaseMigrationNoteLinks({
     body: 'See [input](input-reconciliation.md) and [s](screen-identity.md#a).\n',
@@ -685,6 +787,38 @@ test('CLI default apply writes a plan whose migration links resolve from the pla
   assert.equal(out.plan.migration_notes.body, dogfoodNotes);
   assert.equal(JSON.stringify(out.plan).includes('../docs/reference/'), false);
   assert.equal(JSON.stringify(out.plan).includes(tmp.split(path.sep).join('/')), false);
+});
+
+test('CLI explicit plan encodes reserved currentDir segments while JSON keeps raw notes', (t) => {
+  const tmp = mkTmp('rebase-cli-reserved');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const currentDir = path.join(tmp, 'My Repo (QA)#1', 'tools', 'frontend-workflow');
+  const notesBody = '# Upgrade Notes\n\nSee [guide](input-reconciliation.md?mode=full#start).\n';
+  const { nextDir } = buildNotesScenario(tmp, { currentDir, notesBody });
+  const planPath = path.join(tmp, 'plans', 'upgrade.md');
+
+  const applied = spawnSync(process.execPath, [
+    UPGRADE_CLI, '--current', currentDir, '--next', nextDir, '--plan', planPath, '--apply',
+  ], { encoding: 'utf8' });
+  assert.equal(applied.status, 0, applied.stderr);
+
+  const md = fs.readFileSync(planPath, 'utf8');
+  const destination = extractLink(md, 'guide');
+  const pathPart = destination.slice(0, destination.indexOf('?'));
+  assert.match(pathPart, /My%20Repo%20%28QA%29%231/);
+  assert.equal(destination.endsWith('?mode=full#start'), true);
+  assert.equal(pathPart.includes(' '), false);
+  const resolved = path.resolve(path.dirname(planPath), decodeURIComponent(pathPart));
+  assert.equal(resolved, path.resolve(currentDir, 'docs', 'reference', 'input-reconciliation.md'));
+  assert.equal(fs.existsSync(resolved), true);
+
+  const jsonRun = spawnSync(process.execPath, [
+    UPGRADE_CLI, '--current', currentDir, '--next', nextDir, '--json',
+  ], { encoding: 'utf8' });
+  assert.equal(jsonRun.status, 0, jsonRun.stderr);
+  const jsonPlan = JSON.parse(jsonRun.stdout).plan;
+  assert.equal(jsonPlan.migration_notes.body, notesBody);
+  assert.equal(JSON.stringify(jsonPlan).includes('My%20Repo'), false);
 });
 
 test('nested image destinations inside a link label are rebased too', (t) => {
@@ -736,6 +870,19 @@ test('percent-encoded traversal segments do not bypass the payload-root escape c
   assert.equal(extractLink(md, 'enc'), '%2e%2e/%2e%2e/%2e%2e/outside.md');
   assert.match(md, /could not be rebased/);
   assert.equal(extractLink(md, 'ok'), '../docs/reference/input-reconciliation.md');
+});
+
+test('malformed percent escapes stay verbatim and unresolved deterministically', () => {
+  const input = {
+    body: 'See [bad](bad%2Guide.md).\n',
+    notesPath: 'docs/reference/upgrade-notes.md',
+    currentDir: path.join(path.parse(process.cwd()).root, 'repo', 'tools', 'frontend-workflow'),
+    planPath: path.join(path.parse(process.cwd()).root, 'repo', 'plans', 'upgrade.md'),
+  };
+  const first = rebaseMigrationNoteLinks(input);
+  assert.equal(first.body, input.body);
+  assert.deepEqual(first.unresolved, ['bad%2Guide.md']);
+  assert.deepEqual(rebaseMigrationNoteLinks(input), first);
 });
 
 test('a target equal to the plan directory renders as "." (not a false cross-volume fallback)', () => {
