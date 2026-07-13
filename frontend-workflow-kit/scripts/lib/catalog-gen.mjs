@@ -382,14 +382,29 @@ function resolveBarrelEntry(entry, filesByAbs) {
 // named re-export 가 또 다른 barrel 을 가리키면 같은 이름의 re-export 만 따라 실제 선언까지 해소한다.
 // source scope 밖 모듈·별칭·star 는 기존 parser 정책대로 해소하지 않으며, 순환 체인은
 // unverified_named_export 로 fail-closed 한다. 한 barrel 이 같은 이름을 여러 경로로 re-export 하면
-// 모든 해소 결과를 반환하고 호출부의 기존 ambiguous_name 판정에 맡긴다.
+// 모든 해소 결과를 반환하고 호출부의 기존 ambiguous_name 판정에 맡긴다. 실패는 해당 체인 entry 의
+// module specifier/barrel path 를 보존한 구조화 issue 로 반환해 root entry 로 잘못 귀속하지 않는다.
+function barrelResolutionIssue(entry, reason) {
+  return {
+    name: entry.name,
+    module_specifier: entry.module_specifier,
+    barrel_path: entry.barrel_path,
+    reason,
+  };
+}
+
 function resolveNamedExportChain(entry, filesByAbs, sourceConfig, visiting = new Set()) {
   const resolution = resolveBarrelEntry(entry, filesByAbs);
-  if (!resolution.file) return { classified: [], reasons: [resolution.reason] };
+  if (!resolution.file) {
+    return { classified: [], issues: [barrelResolutionIssue(entry, resolution.reason)] };
+  }
 
   const visitKey = `${path.resolve(resolution.file.abs)}\u0000${entry.name}`;
   if (visiting.has(visitKey)) {
-    return { classified: [], reasons: ['unverified_named_export'] };
+    return {
+      classified: [],
+      issues: [barrelResolutionIssue(entry, 'unverified_named_export')],
+    };
   }
 
   const classified = classifyNamedExport(
@@ -398,27 +413,34 @@ function resolveNamedExportChain(entry, filesByAbs, sourceConfig, visiting = new
     entry.name,
     sourceConfig,
   );
-  if (classified) return { classified: [classified], reasons: [] };
+  if (classified) return { classified: [classified], issues: [] };
 
   const nextEntries = parseBarrelReexports(resolution.file.content).entries.filter(
     (next) => next.name === entry.name,
   );
   if (nextEntries.length === 0) {
-    return { classified: [], reasons: ['unverified_named_export'] };
+    return {
+      classified: [],
+      issues: [barrelResolutionIssue(entry, 'unverified_named_export')],
+    };
   }
 
   const nextVisiting = new Set(visiting);
   nextVisiting.add(visitKey);
-  const chained = { classified: [], reasons: [] };
+  const chained = { classified: [], issues: [] };
   for (const nextEntry of nextEntries) {
     const next = resolveNamedExportChain(
-      { ...nextEntry, barrel_abs: resolution.file.abs },
+      {
+        ...nextEntry,
+        barrel_abs: resolution.file.abs,
+        barrel_path: resolution.file.source_path,
+      },
       filesByAbs,
       sourceConfig,
       nextVisiting,
     );
     chained.classified.push(...next.classified);
-    chained.reasons.push(...next.reasons);
+    chained.issues.push(...next.issues);
   }
   return chained;
 }
@@ -445,7 +467,7 @@ function deriveBarrelReexports({ evidence, sourceFiles, sourceConfig, components
 
   for (const entry of evidence.entries) {
     const resolution = resolveNamedExportChain(entry, filesByAbs, sourceConfig);
-    for (const reason of resolution.reasons) addIssue(entry, reason);
+    resolutionIssues.push(...resolution.issues);
     for (const classified of resolution.classified) {
       const key = `${classified.name}\u0000${classified.source_path}`;
       if (!resolvedByKey.has(key)) resolvedByKey.set(key, { entry, classified });

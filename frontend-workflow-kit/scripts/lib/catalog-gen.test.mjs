@@ -519,6 +519,42 @@ test('buildCatalog: directory barrel named re-export 체인을 실제 선언까�
   );
 });
 
+test('buildCatalog: 중첩 chain resolution 실패는 실제 실패한 barrel entry 를 보고', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-directory-barrel-unresolved-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const ui = path.join(tmp, 'src', 'design-system', 'components');
+  const write = (rel, content) => {
+    const file = path.join(ui, rel);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, content);
+  };
+  write('panel/index.ts', "export { Panel } from './missing';\n");
+  write('index.ts', "export { Panel } from './panel';\n");
+  const layout = {
+    roleGlobs: (role) => (role === 'ui_primitive' ? ['src/design-system/components/**'] : []),
+  };
+
+  const model = buildCatalog({ src: path.join(tmp, 'src'), projectRoot: tmp, layout });
+
+  assert.deepEqual(model.barrel_reconcile.resolutionIssues, [
+    {
+      name: 'Panel',
+      module_specifier: './missing',
+      barrel_path: 'src/design-system/components/panel/index.ts',
+      reason: 'unresolved_module',
+    },
+  ]);
+  const warnings = formatBarrelWarnings(model.barrel_reconcile).join('\n');
+  assert.match(
+    warnings,
+    /unresolved_module\): Panel from \.\/missing \[src\/design-system\/components\/panel\/index\.ts\]/,
+  );
+  assert.doesNotMatch(
+    warnings,
+    /unresolved_module\): Panel from \.\/panel \[src\/design-system\/components\/index\.ts\]/,
+  );
+});
+
 test('buildCatalog: 순환 directory barrel 체인은 unverified 로 fail-closed', (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-directory-barrel-cycle-'));
   t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
@@ -541,8 +577,8 @@ test('buildCatalog: 순환 directory barrel 체인은 unverified 로 fail-closed
   assert.deepEqual(model.barrel_reconcile.resolutionIssues, [
     {
       name: 'CircularPanel',
-      module_specifier: './cycle-a',
-      barrel_path: 'src/design-system/components/index.ts',
+      module_specifier: '../cycle-a',
+      barrel_path: 'src/design-system/components/cycle-b/index.ts',
       reason: 'unverified_named_export',
     },
   ]);
