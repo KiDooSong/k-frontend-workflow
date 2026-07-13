@@ -159,6 +159,18 @@ test('every boolean flag rejects a value, including an absorbed following token'
   assert.equal(fs.existsSync(path.join(out, 'visual')), false);
 });
 
+test('an invalid boolean occurrence is not hidden by a later valid duplicate and creates nothing', (t) => {
+  const repo = makeRepo(t, 'adoption-probe-duplicate-invalid-');
+  const id = 'duplicate-invalid';
+  const out = outFor(repo, id);
+  const before = snapshotTree(repo);
+  const result = run([...baseArgs(repo, id), '--json=false', '--json']);
+  assertUsageFailure(result, '--json', out);
+  assert.match(result.stderr, /does not accept a value/);
+  assert.deepEqual(snapshotTree(repo), before);
+  assert.equal(fs.existsSync(path.join(repo, 'temp')), false);
+});
+
 test('positionals at the front, middle, and end are rejected', (t) => {
   const repo = makeRepo(t, 'adoption-probe-positional-');
   const cases = [

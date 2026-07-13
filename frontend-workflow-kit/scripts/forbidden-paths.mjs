@@ -187,10 +187,12 @@ const VALUE_FLAGS = new Set(['docs', 'src', 'root', 'policy', 'manifest', 'layou
 const BOOLEAN_FLAGS = new Set(['staged', 'enforce', 'json', 'help']);
 
 function main() {
-  const { flags, positionals } = parseArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  const { flags, positionals } = parseArgs(argv);
   // 인자 검증은 state/policy/manifest/layout 로드·diff 읽기·git 실행·computeReadiness 보다
   // 먼저 — usage 오류에서 파일·git·readiness 작업 0 (fail-closed).
   enforceCliFlagContract({
+    argv,
     flags,
     positionals,
     valueFlags: VALUE_FLAGS,

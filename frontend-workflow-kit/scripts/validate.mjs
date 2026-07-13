@@ -83,6 +83,7 @@ import { parseRouteTreeRouteTokens } from './lib/route-core.mjs';
 import { isWellFormedRequirement } from './lib/policy-condition.mjs';
 // 글롭 미니엔진·생성물 헤더 정규식은 check-generated-files 가드와 단일 출처를 공유한다(표류 방지).
 import { GENERATED_HEADER_RE, globRoot, globToRegExp } from './lib/glob.mjs';
+import { enforceCliFlagContract } from './lib/cli-args.mjs';
 
 function isLocalRef(ref) {
   if (typeof ref !== 'string') return false;
@@ -183,26 +184,23 @@ Behavior:
 `;
 }
 
-// usage 오류 exit 2 계약 — readiness-eval.mjs 의 usageError 와 동형(조용한 fail-open 금지).
-function usageError(message) {
-  process.stderr.write(`validate: ${message}\n`);
-  process.stderr.write('Try `node scripts/validate.mjs --help`.\n');
-  process.exit(2);
-}
-
 // parseArgs 는 모든 --foo 를 그대로 flags 에 넣으므로(거부 없음) CLI 별 allowlist 로 오타를 잡는다.
 // 예: --enforc 오타가 "--enforce 없는 실행"으로 조용히 진행되는 것을 막는다(exit 2).
 const VALUE_FLAGS = new Set(['docs', 'src', 'root', 'manifest', 'schema', 'policy', 'layout']);
 const BOOLEAN_FLAGS = new Set(['enforce', 'json', 'help']);
 
 function main() {
-  const { flags, positionals } = parseArgs(process.argv.slice(2));
-  for (const name of Object.keys(flags)) {
-    if (!VALUE_FLAGS.has(name) && !BOOLEAN_FLAGS.has(name)) usageError(`unknown option --${name}`);
-    if (VALUE_FLAGS.has(name) && typeof flags[name] !== 'string') usageError(`--${name} requires a value`);
-    if (BOOLEAN_FLAGS.has(name) && flags[name] !== true) usageError(`--${name} does not accept a value`);
-  }
-  if (positionals.length > 0) usageError(`positional arguments are not supported: ${positionals.join(' ')}`);
+  const argv = process.argv.slice(2);
+  const { flags, positionals } = parseArgs(argv);
+  enforceCliFlagContract({
+    argv,
+    flags,
+    positionals,
+    valueFlags: VALUE_FLAGS,
+    booleanFlags: BOOLEAN_FLAGS,
+    tool: 'validate',
+    helpCommand: 'node scripts/validate.mjs',
+  });
   if (flags.help) {
     process.stdout.write(helpText());
     return; // help 는 자연 종료 exit 0

@@ -202,9 +202,11 @@ const VALUE_FLAGS = new Set(['docs', 'src', 'root', 'date', 'out', 'layout']);
 const BOOLEAN_FLAGS = new Set(['json', 'help']);
 
 function main() {
-  const { flags, positionals } = parseArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  const { flags, positionals } = parseArgs(argv);
   // 인자 검증은 todayISO()·layout 로드·파일 탐색·파일 쓰기보다 먼저 — usage 오류에서 파일 생성/수정 0.
   enforceCliFlagContract({
+    argv,
     flags,
     positionals,
     valueFlags: VALUE_FLAGS,

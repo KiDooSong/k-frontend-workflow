@@ -152,6 +152,16 @@ test('boolean flag with a value is a usage error: exit 2 (=value and absorbed-to
   }
 });
 
+test('an invalid boolean occurrence is not hidden by a later valid duplicate and precedes state/diff/git work', () => {
+  withTmpDir((root) => {
+    const r = run(['--json=false', '--json', '--diff', 'no-such.diff'], { cwd: root });
+    assert.equal(r.status, 2);
+    assert.equal(r.stdout, '');
+    assert.match(r.stderr, /--json does not accept a value/);
+    assert.doesNotMatch(r.stderr, /workflow-state|--diff 파일 없음|git/);
+  });
+});
+
 test('positional arguments are a usage error: exit 2', () => {
   const r = run(['some-positional', '--docs', UNCLEARED_DOCS, '--diff', API_WRITE_DIFF]);
   assert.equal(r.status, 2);
