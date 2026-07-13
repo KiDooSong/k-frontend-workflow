@@ -273,13 +273,10 @@ export function classifyNamedExport(absFile, content, name, opts = {}) {
     sourcePath = posixAbs.slice(idx + 1);
   }
 
-  const src = content || '';
+  const src = stripBlockComments(content || '');
   const fnRe = new RegExp(`^\\s*export\\s+(?:async\\s+)?function\\s+${name}\\b`, 'm');
   const constRe = new RegExp(`^\\s*export\\s+const\\s+${name}\\b`, 'm');
-  if (fnRe.test(src)) {
-    return { name, source_path: sourcePath, export_kind: 'named', status: 'ok' };
-  }
-  if (!constRe.test(src)) return null;
+  if (!fnRe.test(src) && !constRe.test(src)) return null;
 
   const reason = wrappedConstReason(src, name);
   if (reason) {
@@ -442,21 +439,22 @@ function deriveBarrelReexports({ evidence, sourceFiles, sourceConfig, components
   const componentAdditions = [];
   const candidates = [];
   for (const { entry, classified } of resolved) {
+    const key = `${classified.name}\u0000${classified.source_path}`;
+    if (existing.has(key)) continue;
     if ((namesToSources.get(classified.name)?.size || 0) > 1) {
       addIssue(entry, 'ambiguous_name');
+      continue;
+    }
+    if (classified.status === 'candidate') {
+      candidates.push(classified);
       continue;
     }
     if ((sourcesToNames.get(classified.source_path)?.size || 0) > 1) {
       addIssue(entry, 'ambiguous_source');
       continue;
     }
-    const key = `${classified.name}\u0000${classified.source_path}`;
-    if (classified.status === 'candidate') {
-      candidates.push(classified);
-    } else if (!existing.has(key)) {
-      componentAdditions.push(classified);
-      existing.add(key);
-    }
+    componentAdditions.push(classified);
+    existing.add(key);
   }
 
   const uniqueCandidates = new Map();

@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import {
   buildCatalog,
   classifyComponentFile,
+  classifyNamedExport,
   classifyDefaultExportCandidate,
   renderCatalog,
   parseBarrelReexports,
@@ -78,6 +79,25 @@ test('classifyComponentFile: lowercase and kebab filenames map to PascalCase nam
   assert.match(text, /\| PrimaryButton \| src\/components\/ui\/primary-button\.tsx \| named \| ok \|/);
   assert.equal(text.includes('mismatch.tsx'), false);
   assert.equal(text.includes('index.ts'), false);
+});
+
+test('classifyNamedExport: 블록 주석의 과거 function 대신 실제 memo const 를 candidate 로 판정', () => {
+  const file = path.join(FIXTURE_UI, 'AiBottomSheet.tsx');
+  const content = `/*
+export function AiBottomSheet() {
+  return null;
+}
+*/
+
+export const AiBottomSheet = React.memo(() => null);
+`;
+  assert.deepEqual(classifyNamedExport(file, content, 'AiBottomSheet'), {
+    name: 'AiBottomSheet',
+    source_path: 'src/components/ui/AiBottomSheet.tsx',
+    export_kind: 'named',
+    status: 'candidate',
+    reason: 'wrapped_memo',
+  });
 });
 
 test('parseBarrelReexports: 상대 named re-export 의 PascalCase 이름만 수집', () => {
@@ -389,6 +409,51 @@ test('build/render/CLI: role-named plain export 는 primary, wrapper 는 barrel 
     ),
     dryRun.stdout,
   );
+});
+
+test('buildCatalog: 한 파일의 여러 public wrapper 는 source 공유와 무관하게 모두 candidate 로 표면화', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-barrel-shared-wrapper-source-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const ui = path.join(tmp, 'src', 'design-system', 'components');
+  fs.mkdirSync(ui, { recursive: true });
+  fs.writeFileSync(
+    path.join(ui, 'ai-sheets.tsx'),
+    [
+      'export const AiActionSheet = memo(() => null);',
+      'export const AiAttachSheet = forwardRef(() => null);',
+      '',
+    ].join('\n'),
+  );
+  fs.writeFileSync(
+    path.join(ui, 'index.ts'),
+    "export { AiActionSheet, AiAttachSheet } from './ai-sheets';\n",
+  );
+  const layout = {
+    roleGlobs: (role) => (role === 'ui_primitive' ? ['src/design-system/components/**'] : []),
+  };
+  const model = buildCatalog({ src: path.join(tmp, 'src'), projectRoot: tmp, layout });
+
+  assert.deepEqual(model.components, []);
+  assert.deepEqual(model.barrel_reexport_candidates, [
+    {
+      name: 'AiActionSheet',
+      source_path: 'src/design-system/components/ai-sheets.tsx',
+      export_kind: 'named',
+      status: 'candidate',
+      reason: 'wrapped_memo',
+    },
+    {
+      name: 'AiAttachSheet',
+      source_path: 'src/design-system/components/ai-sheets.tsx',
+      export_kind: 'named',
+      status: 'candidate',
+      reason: 'wrapped_forward_ref',
+    },
+  ]);
+  assert.deepEqual(model.barrel_reconcile.resolutionIssues, []);
+  const candidateSection = renderCatalog(model).split('## Barrel Re-export Candidates')[1];
+  assert.match(candidateSection, /\| AiActionSheet \|/);
+  assert.match(candidateSection, /\| AiAttachSheet \|/);
 });
 
 test('buildCatalog: unresolved/unverified/ambiguous barrel target 은 임의로 primary 승격하지 않음', (t) => {
