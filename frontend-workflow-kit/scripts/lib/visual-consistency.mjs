@@ -187,7 +187,8 @@ function collectFigmaMappings(docsDir) {
 
 // component-catalog(생성물) 의 Name 컬럼 집합. 카탈로그 파서를 새로 만들지 않고
 // 같은 Markdown 표 파서로 "Name + Source Path 헤더를 가진 표"만 집는다.
-// Components 표와 Default Export Candidates 표 모두 "카탈로그가 아는 이름"으로 센다.
+// Components, Default Export Candidates, Barrel Re-export Candidates 표를 모두
+// "카탈로그가 아는 이름"으로 센다. candidate 는 gap 오탐 방지 evidence 이며 승인/confirmed 신호가 아니다.
 function collectCatalogNames(catalogRaw) {
   const names = new Set();
   for (const t of parseTables(catalogRaw)) {

@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import {
   buildCatalog,
   classifyComponentFile,
+  classifyNamedExport,
   classifyDefaultExportCandidate,
   renderCatalog,
   parseBarrelReexports,
@@ -80,11 +81,35 @@ test('classifyComponentFile: lowercase and kebab filenames map to PascalCase nam
   assert.equal(text.includes('index.ts'), false);
 });
 
+test('classifyNamedExport: 블록 주석의 과거 function 대신 실제 memo const 를 candidate 로 판정', () => {
+  const file = path.join(FIXTURE_UI, 'AiBottomSheet.tsx');
+  const content = `/*
+export function AiBottomSheet() {
+  return null;
+}
+*/
+
+export const AiBottomSheet = React.memo(() => null);
+`;
+  assert.deepEqual(classifyNamedExport(file, content, 'AiBottomSheet'), {
+    name: 'AiBottomSheet',
+    source_path: 'src/components/ui/AiBottomSheet.tsx',
+    export_kind: 'named',
+    status: 'candidate',
+    reason: 'wrapped_memo',
+  });
+});
+
 test('parseBarrelReexports: 상대 named re-export 의 PascalCase 이름만 수집', () => {
   const r = parseBarrelReexports(
     "// barrel\nexport { Button } from './Button';\nexport { Card, Stack } from './x';\n",
   );
   assert.deepEqual([...r.names].sort(), ['Button', 'Card', 'Stack']);
+  assert.deepEqual(r.entries, [
+    { name: 'Button', module_specifier: './Button' },
+    { name: 'Card', module_specifier: './x' },
+    { name: 'Stack', module_specifier: './x' },
+  ]);
   assert.equal(r.unsupported, 0);
 });
 
@@ -222,6 +247,7 @@ test('build/render: default export 후보는 components 에 승격하지 않고 
   );
   assert.match(text, /## Default Export Candidates/);
   assert.match(text, /\| Modal \| src\/components\/ui\/Modal\.tsx \| default \| candidate \|/);
+  assert.equal(text.includes('## Barrel Re-export Candidates'), false);
 });
 
 test('build/render: default export candidates 정렬과 두-run 결정성 고정', (t) => {
@@ -240,6 +266,242 @@ test('build/render: default export candidates 정렬과 두-run 결정성 고정
     ['Alpha', 'Zeta'],
   );
   assert.equal(renderCatalog(first), renderCatalog(second));
+});
+
+test('build/render/CLI: role-named plain export 는 primary, wrapper 는 barrel candidate 로 같은 모델에 표면화', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-barrel-evidence-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const ui = path.join(tmp, 'src', 'design-system', 'components');
+  const write = (rel, content) => {
+    const file = path.join(ui, rel);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, content);
+  };
+  write('gnb-service/mobile.tsx', 'export function GnbServiceMobile() { return null; }\n');
+  write('prompt-input/container.tsx', 'export const PromptInputContainer = () => null;\n');
+  write('ai-action-sheet.tsx', 'export const AiActionSheet = memo(() => null);\n');
+  write('ai-attach-sheet.tsx', 'export const AiAttachSheet = forwardRef(() => null);\n');
+  write('ai-bottom-sheet.tsx', 'export const AiBottomSheet = React.memo(() => null);\n');
+  write('button.tsx', 'export const Button = () => null;\n');
+  write('default-only.tsx', 'export default function DefaultOnly() { return null; }\n');
+  write(
+    'index.ts',
+    [
+      "export { GnbServiceMobile } from './gnb-service/mobile';",
+      "export { PromptInputContainer } from './prompt-input/container';",
+      "export { AiActionSheet } from './ai-action-sheet';",
+      "export { AiAttachSheet } from './ai-attach-sheet';",
+      "export { AiBottomSheet } from './ai-bottom-sheet';",
+      "export { Button } from './button';",
+      '',
+    ].join('\n'),
+  );
+  fs.writeFileSync(
+    path.join(tmp, 'project-layout.yaml'),
+    ['version: 1', 'preset: expo-feature', 'roles:', '  ui_primitive: src/design-system/components/**', ''].join(
+      '\n',
+    ),
+  );
+  const layout = {
+    roleGlobs: (role) => (role === 'ui_primitive' ? ['src/design-system/components/**'] : []),
+  };
+  const args = { src: path.join(tmp, 'src'), projectRoot: tmp, layout };
+  const first = buildCatalog(args);
+  const second = buildCatalog(args);
+
+  assert.deepEqual(first, second);
+  assert.deepEqual(
+    first.components.map((c) => c.name),
+    ['Button', 'GnbServiceMobile', 'PromptInputContainer'],
+  );
+  assert.deepEqual(first.barrel_reexport_candidates, [
+    {
+      name: 'AiActionSheet',
+      source_path: 'src/design-system/components/ai-action-sheet.tsx',
+      export_kind: 'named',
+      status: 'candidate',
+      reason: 'wrapped_memo',
+    },
+    {
+      name: 'AiAttachSheet',
+      source_path: 'src/design-system/components/ai-attach-sheet.tsx',
+      export_kind: 'named',
+      status: 'candidate',
+      reason: 'wrapped_forward_ref',
+    },
+    {
+      name: 'AiBottomSheet',
+      source_path: 'src/design-system/components/ai-bottom-sheet.tsx',
+      export_kind: 'named',
+      status: 'candidate',
+      reason: 'wrapped_memo',
+    },
+  ]);
+  assert.deepEqual(first.barrel_reconcile.surfacedCandidates, [
+    'AiActionSheet',
+    'AiAttachSheet',
+    'AiBottomSheet',
+  ]);
+  assert.deepEqual(first.barrel_reconcile.missingFromBarrel, []);
+  assert.deepEqual(first.barrel_reconcile.resolutionIssues, []);
+  assert.equal(first.barrel_reexport_candidates.some((c) => c.name === 'Button'), false);
+
+  const text = renderCatalog(first);
+  assert.equal(text, renderCatalog(second));
+  assert.ok(text.indexOf('## Default Export Candidates') < text.indexOf('## Barrel Re-export Candidates'));
+  const [primaryText, candidateText] = text.split('## Barrel Re-export Candidates');
+  assert.match(primaryText, /\| GnbServiceMobile \| src\/design-system\/components\/gnb-service\/mobile\.tsx \| named \| ok \|/);
+  assert.match(primaryText, /\| PromptInputContainer \| src\/design-system\/components\/prompt-input\/container\.tsx \| named \| ok \|/);
+  for (const name of ['AiActionSheet', 'AiAttachSheet', 'AiBottomSheet']) {
+    assert.equal(primaryText.includes(`| ${name} |`), false);
+    assert.ok(candidateText.includes(`| ${name} |`));
+  }
+  for (const name of [
+    'GnbServiceMobile',
+    'PromptInputContainer',
+    'AiActionSheet',
+    'AiAttachSheet',
+    'AiBottomSheet',
+  ]) {
+    assert.equal((text.match(new RegExp(`\\b${name}\\b`, 'g')) || []).length, 1, name);
+  }
+  assert.ok(text.endsWith('\n'));
+  assert.equal(text.endsWith('\n\n'), false);
+
+  const jsonRun = spawnSync(
+    process.execPath,
+    [CLI, '--src', 'src', '--layout', 'project-layout.yaml', '--json'],
+    { cwd: tmp, encoding: 'utf8' },
+  );
+  assert.equal(jsonRun.status, 0, jsonRun.stderr);
+  const jsonModel = JSON.parse(jsonRun.stdout);
+  assert.deepEqual(
+    jsonModel.barrel_reexport_candidates.map((c) => [c.name, c.reason]),
+    [
+      ['AiActionSheet', 'wrapped_memo'],
+      ['AiAttachSheet', 'wrapped_forward_ref'],
+      ['AiBottomSheet', 'wrapped_memo'],
+    ],
+  );
+  assert.match(jsonRun.stderr, /not classified as a primary component/);
+  assert.match(jsonRun.stderr, /surfaced as a barrel re-export candidate/);
+  assert.doesNotMatch(jsonRun.stderr, /re-exported by barrel but not in catalog: Ai/);
+
+  const dryRun = spawnSync(
+    process.execPath,
+    [CLI, '--src', 'src', '--layout', 'project-layout.yaml', '--dry-run'],
+    { cwd: tmp, encoding: 'utf8' },
+  );
+  assert.equal(dryRun.status, 0, dryRun.stderr);
+  assert.match(dryRun.stdout, /## Barrel Re-export Candidates/);
+  assert.match(dryRun.stdout, /\| AiBottomSheet \|/);
+
+  const writeRun = spawnSync(
+    process.execPath,
+    [CLI, '--src', 'src', '--layout', 'project-layout.yaml'],
+    { cwd: tmp, encoding: 'utf8' },
+  );
+  assert.equal(writeRun.status, 0, writeRun.stderr);
+  assert.equal(
+    fs.readFileSync(
+      path.join(tmp, 'docs', 'frontend-workflow', 'design', 'component-catalog.md'),
+      'utf8',
+    ),
+    dryRun.stdout,
+  );
+});
+
+test('buildCatalog: 한 파일의 여러 public wrapper 는 source 공유와 무관하게 모두 candidate 로 표면화', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-barrel-shared-wrapper-source-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const ui = path.join(tmp, 'src', 'design-system', 'components');
+  fs.mkdirSync(ui, { recursive: true });
+  fs.writeFileSync(
+    path.join(ui, 'ai-sheets.tsx'),
+    [
+      'export const AiActionSheet = memo(() => null);',
+      'export const AiAttachSheet = forwardRef(() => null);',
+      '',
+    ].join('\n'),
+  );
+  fs.writeFileSync(
+    path.join(ui, 'index.ts'),
+    "export { AiActionSheet, AiAttachSheet } from './ai-sheets';\n",
+  );
+  const layout = {
+    roleGlobs: (role) => (role === 'ui_primitive' ? ['src/design-system/components/**'] : []),
+  };
+  const model = buildCatalog({ src: path.join(tmp, 'src'), projectRoot: tmp, layout });
+
+  assert.deepEqual(model.components, []);
+  assert.deepEqual(model.barrel_reexport_candidates, [
+    {
+      name: 'AiActionSheet',
+      source_path: 'src/design-system/components/ai-sheets.tsx',
+      export_kind: 'named',
+      status: 'candidate',
+      reason: 'wrapped_memo',
+    },
+    {
+      name: 'AiAttachSheet',
+      source_path: 'src/design-system/components/ai-sheets.tsx',
+      export_kind: 'named',
+      status: 'candidate',
+      reason: 'wrapped_forward_ref',
+    },
+  ]);
+  assert.deepEqual(model.barrel_reconcile.resolutionIssues, []);
+  const candidateSection = renderCatalog(model).split('## Barrel Re-export Candidates')[1];
+  assert.match(candidateSection, /\| AiActionSheet \|/);
+  assert.match(candidateSection, /\| AiAttachSheet \|/);
+});
+
+test('buildCatalog: unresolved/unverified/ambiguous barrel target 은 임의로 primary 승격하지 않음', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-barrel-ambiguous-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const ui = path.join(tmp, 'src', 'design-system', 'components');
+  fs.mkdirSync(ui, { recursive: true });
+  fs.writeFileSync(path.join(ui, 'one.tsx'), 'export function SharedPublic() { return null; }\n');
+  fs.writeFileSync(path.join(ui, 'two.tsx'), 'export function SharedPublic() { return null; }\n');
+  fs.writeFileSync(path.join(ui, 'ambiguous-target.ts'), 'export const PublicAmbiguous = 1;\n');
+  fs.writeFileSync(path.join(ui, 'ambiguous-target.tsx'), 'export const PublicAmbiguous = 2;\n');
+  fs.writeFileSync(path.join(ui, 'unverified.tsx'), 'export const OtherName = 1;\n');
+  fs.writeFileSync(
+    path.join(ui, 'multi.tsx'),
+    'export const FirstPublic = () => null;\nexport const SecondPublic = () => null;\n',
+  );
+  fs.writeFileSync(
+    path.join(ui, 'index.ts'),
+    [
+      "export { MissingPublic } from './missing';",
+      "export { SharedPublic } from './one';",
+      "export { SharedPublic } from './two';",
+      "export { PublicAmbiguous } from './ambiguous-target';",
+      "export { NotDeclared } from './unverified';",
+      "export { FirstPublic, SecondPublic } from './multi';",
+      '',
+    ].join('\n'),
+  );
+  const layout = {
+    roleGlobs: (role) => (role === 'ui_primitive' ? ['src/design-system/components/**'] : []),
+  };
+  const model = buildCatalog({ src: path.join(tmp, 'src'), projectRoot: tmp, layout });
+
+  assert.deepEqual(model.components, []);
+  assert.deepEqual(model.barrel_reexport_candidates, []);
+  assert.deepEqual(
+    [...new Set(model.barrel_reconcile.resolutionIssues.map((issue) => issue.reason))].sort(),
+    [
+      'ambiguous_module',
+      'ambiguous_name',
+      'ambiguous_source',
+      'unresolved_module',
+      'unverified_named_export',
+    ],
+  );
+  const warnings = formatBarrelWarnings(model.barrel_reconcile).join('\n');
+  assert.match(warnings, /barrel re-export not promoted \(ambiguous_module\)/);
+  assert.match(warnings, /barrel re-export not promoted \(unresolved_module\)/);
 });
 
 

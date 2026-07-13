@@ -176,6 +176,7 @@ function collectFigmaMappings(docsDir) {
 }
 
 // component-catalog 의 Name 집합 — visual-consistency 와 같은 표 시그니처(Name + Source Path)를 쓴다.
+// candidate 표의 이름도 gap 오탐 방지 evidence 로 세되 승인/confirmed 신호로 해석하지 않는다.
 function collectCatalogNames(catalogRaw) {
   const names = new Set();
   for (const t of parseTables(catalogRaw)) {
