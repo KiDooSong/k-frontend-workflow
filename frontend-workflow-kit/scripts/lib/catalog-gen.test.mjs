@@ -456,6 +456,134 @@ test('buildCatalog: 한 파일의 여러 public wrapper 는 source 공유와 무
   assert.match(candidateSection, /\| AiAttachSheet \|/);
 });
 
+test('buildCatalog: directory barrel named re-export 체인을 실제 선언까지 해소', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-directory-barrel-chain-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const ui = path.join(tmp, 'src', 'design-system', 'components');
+  const write = (rel, content) => {
+    const file = path.join(ui, rel);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, content);
+  };
+  write(
+    'ai-action-panel/AiActionPanel.tsx',
+    'export function AiActionPanel() { return null; }\n',
+  );
+  write(
+    'ai-action-panel/index.ts',
+    "export { AiActionPanel } from './AiActionPanel';\n",
+  );
+  write(
+    'ai-action-sheet/implementation.tsx',
+    'export const AiActionSheet = memo(() => null);\n',
+  );
+  write(
+    'ai-action-sheet/index.ts',
+    "export { AiActionSheet } from './implementation';\n",
+  );
+  write(
+    'index.ts',
+    [
+      "export { AiActionPanel } from './ai-action-panel';",
+      "export { AiActionSheet } from './ai-action-sheet';",
+      '',
+    ].join('\n'),
+  );
+  const layout = {
+    roleGlobs: (role) => (role === 'ui_primitive' ? ['src/design-system/components/**'] : []),
+  };
+
+  const model = buildCatalog({ src: path.join(tmp, 'src'), projectRoot: tmp, layout });
+
+  assert.deepEqual(model.components, [
+    {
+      name: 'AiActionPanel',
+      source_path: 'src/design-system/components/ai-action-panel/AiActionPanel.tsx',
+      export_kind: 'named',
+      status: 'ok',
+    },
+  ]);
+  assert.deepEqual(model.barrel_reexport_candidates, [
+    {
+      name: 'AiActionSheet',
+      source_path: 'src/design-system/components/ai-action-sheet/implementation.tsx',
+      export_kind: 'named',
+      status: 'candidate',
+      reason: 'wrapped_memo',
+    },
+  ]);
+  assert.deepEqual(model.barrel_reconcile.resolutionIssues, []);
+  assert.doesNotMatch(
+    formatBarrelWarnings(model.barrel_reconcile).join('\n'),
+    /unverified_named_export/,
+  );
+});
+
+test('buildCatalog: 중첩 chain resolution 실패는 실제 실패한 barrel entry 를 보고', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-directory-barrel-unresolved-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const ui = path.join(tmp, 'src', 'design-system', 'components');
+  const write = (rel, content) => {
+    const file = path.join(ui, rel);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, content);
+  };
+  write('panel/index.ts', "export { Panel } from './missing';\n");
+  write('index.ts', "export { Panel } from './panel';\n");
+  const layout = {
+    roleGlobs: (role) => (role === 'ui_primitive' ? ['src/design-system/components/**'] : []),
+  };
+
+  const model = buildCatalog({ src: path.join(tmp, 'src'), projectRoot: tmp, layout });
+
+  assert.deepEqual(model.barrel_reconcile.resolutionIssues, [
+    {
+      name: 'Panel',
+      module_specifier: './missing',
+      barrel_path: 'src/design-system/components/panel/index.ts',
+      reason: 'unresolved_module',
+    },
+  ]);
+  const warnings = formatBarrelWarnings(model.barrel_reconcile).join('\n');
+  assert.match(
+    warnings,
+    /unresolved_module\): Panel from \.\/missing \[src\/design-system\/components\/panel\/index\.ts\]/,
+  );
+  assert.doesNotMatch(
+    warnings,
+    /unresolved_module\): Panel from \.\/panel \[src\/design-system\/components\/index\.ts\]/,
+  );
+});
+
+test('buildCatalog: 순환 directory barrel 체인은 unverified 로 fail-closed', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-directory-barrel-cycle-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const ui = path.join(tmp, 'src', 'design-system', 'components');
+  const write = (rel, content) => {
+    const file = path.join(ui, rel);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, content);
+  };
+  write('cycle-a/index.ts', "export { CircularPanel } from '../cycle-b';\n");
+  write('cycle-b/index.ts', "export { CircularPanel } from '../cycle-a';\n");
+  write('index.ts', "export { CircularPanel } from './cycle-a';\n");
+  const layout = {
+    roleGlobs: (role) => (role === 'ui_primitive' ? ['src/design-system/components/**'] : []),
+  };
+
+  const model = buildCatalog({ src: path.join(tmp, 'src'), projectRoot: tmp, layout });
+
+  assert.deepEqual(model.components, []);
+  assert.deepEqual(model.barrel_reconcile.resolutionIssues, [
+    {
+      name: 'CircularPanel',
+      module_specifier: '../cycle-a',
+      barrel_path: 'src/design-system/components/cycle-b/index.ts',
+      reason: 'unverified_named_export',
+    },
+  ]);
+});
+
 test('buildCatalog: unresolved/unverified/ambiguous barrel target 은 임의로 primary 승격하지 않음', (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-barrel-ambiguous-'));
   t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
