@@ -6,13 +6,14 @@ This reference complements the root `AGENTS.md` or `CLAUDE.md`. The root guide t
 
 Use the spine to find the current stage, then this matrix for the secondary artifacts that stage's task touches. The "Stage Reference" section below maps common matrix tasks to spine stages.
 
-If ScreenSpec frontmatter or parsed body sections changed, run `workflow:state` before readiness/validate. This includes route/screen mapping, `api_required`, Unknowns, API Candidates, Copy Keys, and status changes.
+If ScreenSpec or shared-surface-spec frontmatter/parsed body sections changed, run `workflow:state` before readiness/validate. This includes membership, implementation paths, route/screen mapping, `api_required`, Unknowns, API Candidates, Copy Keys, and status changes.
 
 ## Matrix
 
 | Task | Read first | May update | Must run or check | Do not |
 |---|---|---|---|---|
 | Implement or edit a screen | ScreenSpec, readiness output, component catalog, domain rules, navigation map, and `figma-component-mapping.md` for visual work; for visual/Figma alignment or multi-screen visual work also [`visual-reconciliation.md`](visual-reconciliation.md) and the visual consistency contract | Only readiness `allowed_paths`; ScreenSpec only if task scope includes authoring | `workflow:state`, `workflow:readiness -- --screen <SCREEN_ID> --json`, `workflow:validate`; after visual implementation also `workflow:visual-consistency` (warning-first, not a gate); if no visual contract exists for multi-screen visual work, optionally suggest `workflow:visual-contract-bootstrap` first (review-only draft — do not auto-run to widen scope) | Edit generated files; resolve Open Decisions; edit `forbidden_paths`; treat visual-consistency warnings as approval/readiness promotion |
+| Author or implement shared surface behavior | [`shared-surfaces.md`](shared-surfaces.md), surface spec, every member ScreenSpec, domain rules, catalog/gaps, API manifest and global decisions when referenced | Surface spec when authoring; only surface readiness `allowed_paths` when implementing | `workflow:state`; `workflow:readiness -- --surface <SURFACE_ID> --json`; every member `--screen` readiness; `workflow:validate` | Put route transitions/local Open Decisions in the surface; edit member-reserved paths through `implement-screen`; widen or union member permissions |
 | Create or modify a shared/common component | Component catalog, component-gap-register, `roles.ui_primitive` layout, visual consistency contract (shared ownership rules) if present | Component code only when approved/cataloged and allowed by readiness; otherwise a component-gap proposal | If approved code lands under `roles.ui_primitive`, run `workflow:catalog`; optionally run `workflow:check-generated`; if a visual contract references the component, `workflow:visual-consistency` | Silently introduce uncataloged shared components; hand-edit `component-catalog.md`; a shared component missing from the catalog is a Component Gap proposal only |
 | Use an existing catalog component | Component catalog and ScreenSpec visual/component guidance | Allowed implementation files | If catalog appears stale, run `workflow:catalog` or report stale catalog | Invent missing catalog entries; bypass component-gap-register |
 | Add or modify a route entry | Navigation map, ScreenSpec route fields, route-tree, nav-graph | Route file only when readiness allows; ScreenSpec/frontmatter or mapping docs when route/screen mapping changes | If ScreenSpec route/frontmatter changed, run `workflow:state`; run `workflow:route-tree`; `workflow:nav-graph`; `workflow:route-cross-check` where applicable; `workflow:validate` | Assume route file path and screen file path must match |
@@ -50,6 +51,7 @@ Full index: [workflow-spine.md](workflow-spine.md); router:
 | Author/update ScreenSpec, nav, API, visual contracts | 05 |
 | Multi-screen visual/Figma batch update (`visual-reconcile`) | 03 → 04 → 05 → 06 → 08 |
 | Implement or edit a screen | 06 |
+| Author / implement a shared surface | 05 → 06 → 08 |
 | Create shared/common component | 06 → 07 |
 | Add or modify a route entry | 05/06 → 07 → 08 |
 | Regenerate generated views | 07 |

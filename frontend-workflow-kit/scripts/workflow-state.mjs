@@ -24,6 +24,10 @@ import { loadOpenDecisionRegister, resolveDecisionRefs } from './lib/open-decisi
 import { loadLayoutProfile } from './lib/layout-profile.mjs';
 import { scanLayerInventory } from './lib/layer-inventory.mjs';
 import { enforceCliFlagContract } from './lib/cli-args.mjs';
+import {
+  analyzeSharedSurfaces,
+  loadSharedSurfaceSpecs,
+} from './lib/shared-surfaces.mjs';
 
 function todayISO() {
   // 결정성: --date 로 고정 가능. 기본은 오늘 (generated_at 한 줄만 변동 허용).
@@ -41,6 +45,7 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
   const domainsRoot = path.join(docsDir, 'domains');
   const specPaths = findFiles(domainsRoot, 'screen-spec.md');
   const specs = specPaths.map((specPath) => loadScreenSpec(specPath));
+  const surfaceSpecs = loadSharedSurfaceSpecs({ docsDir });
   const register = loadOpenDecisionRegister({ docsDir });
   const localDecisionIds = new Set();
   for (const spec of specs) {
@@ -104,6 +109,167 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
     if (route) routeSeen.set(route, (routeSeen.get(route) || 0) + 1);
   }
 
+  const surfaceRecords = analyzeSharedSurfaces({
+    docsDir,
+    surfaceSpecs,
+    screenSpecs: specs,
+  });
+  const addDecision = (rows, decision) => {
+    const key = `${decision.id}\0${decision.code || ''}\0${decision.source?.path || ''}\0${decision.via?.path || ''}`;
+    if (
+      rows.some(
+        (row) =>
+          `${row.id}\0${row.code || ''}\0${row.source?.path || ''}\0${row.via?.path || ''}` === key,
+      )
+    ) {
+      return;
+    }
+    rows.push(decision);
+  };
+  const sortDecisions = (rows) =>
+    rows.sort((a, b) => {
+      const byId = String(a.id).localeCompare(String(b.id));
+      if (byId !== 0) return byId;
+      const bySource = String(a.source?.path || '').localeCompare(String(b.source?.path || ''));
+      if (bySource !== 0) return bySource;
+      return String(a.via?.path || '').localeCompare(String(b.via?.path || ''));
+    });
+
+  for (const record of surfaceRecords) {
+    const fm = record.spec.frontmatter;
+    const derived = deriveMetrics(record.spec, {
+      srcDir,
+      layout: resolvedLayout,
+      projectRoot,
+    });
+    // Shared surfaces never own local Open Decision rows. analyzeSharedSurfaces records that
+    // contract error; readiness consumes only canonical decision_refs here.
+    derived.blocking_decisions = [];
+    derived.malformed_decisions = [];
+    derived.open_decisions_count = 0;
+    derived.decision_refs = [];
+    const via = { ...record.source, surface_id: record.surface_id };
+    if (Object.prototype.hasOwnProperty.call(fm, 'decision_refs')) {
+      const refs = resolveDecisionRefs({
+        refs: fm.decision_refs,
+        registry: register,
+        referrer: fm,
+        conflictingIds: localDecisionIds,
+      });
+      derived.decision_refs = refs.resolved.map((row) => ({ ...row, via }));
+      derived.blocking_decisions = refs.blockers.map((row) => ({ ...row, via }));
+      derived.malformed_decisions = refs.malformed.map((row) => ({ ...row, via }));
+      derived.open_decisions_count = derived.blocking_decisions.length;
+    }
+    record.derived = derived;
+  }
+
+  // One canonical decision may reach one screen through exactly one referrer in the first slice.
+  // Build the whole application graph before fan-out so screen+surface and surface+surface
+  // duplication both fail closed deterministically.
+  const applications = new Map();
+  const addApplication = (screenId, decisionId, referrer) => {
+    if (typeof screenId !== 'string' || typeof decisionId !== 'string' || !decisionId) return;
+    const key = `${screenId}\0${decisionId}`;
+    const refs = applications.get(key) || [];
+    if (!refs.some((entry) => entry.key === referrer.key)) refs.push(referrer);
+    applications.set(key, refs);
+  };
+  for (const spec of specs) {
+    if (!Array.isArray(spec.frontmatter.decision_refs)) continue;
+    for (const ref of spec.frontmatter.decision_refs) {
+      addApplication(spec.frontmatter.screen_id, ref, {
+        key: `screen:${spec.path}`,
+        kind: 'screen',
+        path: spec.path,
+      });
+    }
+  }
+  for (const record of surfaceRecords) {
+    if (!Array.isArray(record.spec.frontmatter.decision_refs)) continue;
+    for (const member of record.existing_member_screens) {
+      for (const ref of record.spec.frontmatter.decision_refs) {
+        addApplication(member, ref, {
+          key: `surface:${record.source.path}`,
+          kind: 'surface',
+          record,
+          path: record.source.path,
+        });
+      }
+    }
+  }
+  for (const [key, referrers] of applications) {
+    if (referrers.length < 2) continue;
+    const [screenId, decisionId] = key.split('\0');
+    const viaPaths = referrers.map((entry) => entry.path).sort();
+    const malformed = {
+      id: decisionId,
+      blocking_mode: '(none)',
+      status: '(none)',
+      source: register.source,
+      code: 'duplicate-referrer',
+      reason: `Open Decision ${decisionId} reaches screen ${screenId} through multiple referrers: ${viaPaths.join(', ')}`,
+    };
+    if (screens[screenId]) addDecision(screens[screenId].derived.malformed_decisions, malformed);
+    for (const referrer of referrers) {
+      if (referrer.kind !== 'surface') continue;
+      const via = { ...referrer.record.source, surface_id: referrer.record.surface_id };
+      const surfaceMalformed = { ...malformed, via };
+      addDecision(referrer.record.derived.malformed_decisions, surfaceMalformed);
+      referrer.record.decision_fanout_errors.push({
+        code: 'duplicate-referrer',
+        decision_id: decisionId,
+        screen_id: screenId,
+        referrers: viaPaths,
+        message: malformed.reason,
+      });
+    }
+  }
+
+  for (const record of surfaceRecords) {
+    const duplicateKeys = new Set(
+      record.decision_fanout_errors.map(
+        (issue) => `${issue.screen_id}\0${issue.decision_id}`,
+      ),
+    );
+    for (const member of record.existing_member_screens) {
+      const screen = screens[member];
+      if (!screen) continue;
+      for (const decision of record.derived.blocking_decisions) {
+        if (duplicateKeys.has(`${member}\0${decision.id}`)) continue;
+        addDecision(screen.derived.blocking_decisions, decision);
+      }
+      for (const malformed of record.derived.malformed_decisions) {
+        addDecision(screen.derived.malformed_decisions, malformed);
+      }
+      screen.derived.open_decisions_count = screen.derived.blocking_decisions.length;
+      sortDecisions(screen.derived.blocking_decisions);
+      sortDecisions(screen.derived.malformed_decisions);
+    }
+    for (const member of record.valid_member_screens) {
+      const screen = screens[member];
+      if (!screen) continue;
+      if (!Array.isArray(screen.derived.shared_surfaces)) screen.derived.shared_surfaces = [];
+      if (!screen.derived.shared_surfaces.some((entry) => entry.source.path === record.source.path)) {
+        screen.derived.shared_surfaces.push({
+          surface_id: record.surface_id,
+          source: record.source,
+        });
+      }
+      screen.derived.shared_surfaces.sort((a, b) => {
+        const byId = String(a.surface_id).localeCompare(String(b.surface_id));
+        return byId || String(a.source.path).localeCompare(String(b.source.path));
+      });
+    }
+    sortDecisions(record.derived.decision_refs);
+    sortDecisions(record.derived.blocking_decisions);
+    sortDecisions(record.derived.malformed_decisions);
+    record.decision_fanout_errors.sort((a, b) => {
+      const byScreen = String(a.screen_id).localeCompare(String(b.screen_id));
+      return byScreen || String(a.decision_id).localeCompare(String(b.decision_id));
+    });
+  }
+
   // 정렬 (결정성)
   const sortedScreenKeys = Object.keys(screens).sort();
   const sortedScreens = {};
@@ -135,6 +301,9 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
         ...presentFacts,
         fake_hook_exists: s.derived.fake_hook_exists,
         figma_mapping_status: s.derived.figma_mapping_status,
+        ...(s.derived.shared_surfaces?.length
+          ? { shared_surfaces: s.derived.shared_surfaces }
+          : {}),
       },
     };
     if (s.route_entry) sortedScreens[k].route_entry = s.route_entry;
@@ -160,6 +329,43 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
     },
     screens: sortedScreens,
   };
+
+  if (surfaceRecords.length > 0) {
+    const surfaces = {};
+    for (const record of surfaceRecords) {
+      // Duplicate IDs intentionally collapse to one selected record, with duplicate provenance
+      // retained in identity_errors. readiness therefore fails closed for the selectable ID.
+      if (surfaces[record.surface_id]) continue;
+      const d = record.derived;
+      surfaces[record.surface_id] = {
+        status: record.status,
+        domain: record.domain,
+        member_screens: record.member_screens,
+        implementation_paths: record.implementation_paths,
+        stub: record.stub,
+        source: record.source,
+        derived: {
+          state_matrix_complete: d.state_matrix_complete,
+          interaction_matrix_complete: d.interaction_matrix_complete,
+          copy_keys_has_tbd: d.copy_keys_has_tbd,
+          tbd_count: d.tbd_count,
+          unknown_count: d.unknown_count,
+          open_decisions_count: d.open_decisions_count,
+          decision_refs: d.decision_refs,
+          blocking_decisions: d.blocking_decisions,
+          malformed_decisions: d.malformed_decisions,
+          api_confidence_min: d.api_confidence_min,
+          ...(d.api_required === false ? { api_required: false } : {}),
+          contract_errors: record.contract_errors,
+          identity_errors: record.identity_errors,
+          membership_errors: record.membership_errors,
+          path_errors: record.path_errors,
+          decision_fanout_errors: record.decision_fanout_errors,
+        },
+      };
+    }
+    state.surfaces = surfaces;
+  }
 
   // 인벤토리 + 중복 검사
   const duplicate_ids = [...idSeen.entries()].filter(([, n]) => n > 1).map(([k]) => k).sort();
@@ -200,7 +406,7 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
 }
 
 function helpText() {
-  return `workflow:state - screen-spec 집계로 _meta 상태 파일 생성 (workflow-state.yaml · screen-inventory.yaml)
+  return `workflow:state - screen/shared-surface 집계로 _meta 상태 파일 생성 (workflow-state.yaml · screen-inventory.yaml)
 
 Usage:
   node scripts/workflow-state.mjs [--docs <dir>] [--src <dir>] [--root <dir>]
@@ -268,6 +474,9 @@ function main() {
   ];
   if (exists(path.join(docsDir, 'global', 'open-decisions.md'))) {
     stateSources.push('Source:  docs/frontend-workflow/global/open-decisions.md (referenced decisions)');
+  }
+  if (state.surfaces) {
+    stateSources.push('Source:  docs/frontend-workflow/domains/**/surfaces/**/surface-spec.md');
   }
   stateSources.push('Command: npm run workflow:state');
   const stateYaml = emitGeneratedYaml(

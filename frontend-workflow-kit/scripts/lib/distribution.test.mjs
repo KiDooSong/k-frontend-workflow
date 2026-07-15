@@ -70,6 +70,7 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
     'docs/reference/generated-files.md',
     'docs/reference/input-reconciliation.md',
     'docs/reference/open-decisions.md',
+    'docs/reference/shared-surfaces.md',
     'docs/reference/lint-policy-catalog.md',
     'docs/reference/lint-policy-rollout-ratchet.md',
     'docs/reference/task-artifact-matrix.md',
@@ -98,6 +99,7 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
     'scripts/readiness-eval.mjs',
     'scripts/lib/readiness-eval-cases.json',
     'scripts/lib/open-decisions.mjs',
+    'scripts/lib/shared-surfaces.mjs',
     'scripts/validate.mjs',
     'scripts/workflow-run.mjs',
     'scripts/workflow-state.mjs',
@@ -106,6 +108,7 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
     'scripts/visual-contract-bootstrap.mjs',
     'scripts/lib/visual-contract-bootstrap.mjs',
     'skills/implement-screen/SKILL.md',
+    'skills/implement-shared-surface/SKILL.md',
     'skills/reconcile-input/SKILL.md',
     'skills/capture-learning/SKILL.md',
     'skills/visual-reconcile/SKILL.md',
@@ -116,6 +119,7 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
     'templates/repo/AGENTS.template.md',
     'templates/global/open-decision-register.template.md',
     'templates/screen/screen-spec.template.md',
+    'templates/surface/shared-surface-spec.template.md',
     'templates/meta/session-learnings.template.md',
   ]) {
     assert.equal(exists(rel, out), true, `${rel} should be packed`);
@@ -147,6 +151,10 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
   assert.equal(summary.files.includes('docs/reference/e2e-playwright-agents.md'), true);
   assert.equal(summary.files.includes('docs/reference/task-artifact-matrix.md'), true);
   assert.equal(summary.files.includes('docs/reference/generated-files.md'), true);
+  assert.equal(summary.files.includes('docs/reference/shared-surfaces.md'), true);
+  assert.equal(summary.files.includes('scripts/lib/shared-surfaces.mjs'), true);
+  assert.equal(summary.files.includes('skills/implement-shared-surface/SKILL.md'), true);
+  assert.equal(summary.files.includes('templates/surface/shared-surface-spec.template.md'), true);
   assert.equal(summary.files.includes('docs/reference/workflow-spine.md'), true);
   assert.equal(summary.files.includes('docs/reference/workflow-stages/00-start-here.md'), true);
   assert.equal(summary.files.includes('docs/reference/workflow-stages/10-policy-layout-tier3-changes.md'), true);
@@ -410,6 +418,7 @@ test('consumer agent guide and task matrix cover artifact update traps', () => {
   assert.match(guide, /generated-files\.md/);
   assert.match(guide, /npm run workflow:state/);
   assert.match(guide, /npm run workflow:readiness -- --screen <SCREEN_ID> --json/);
+  assert.match(guide, /npm run workflow:readiness -- --surface <SURFACE_ID> --json/);
   assert.match(guide, /npm run workflow:validate/);
 
   for (const term of [
@@ -423,7 +432,8 @@ test('consumer agent guide and task matrix cover artifact update traps', () => {
     assert.match(matrix, new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
 
-  assert.match(matrix, /If ScreenSpec frontmatter or parsed body sections changed, run `workflow:state`/);
+  assert.match(matrix, /If ScreenSpec or shared-surface-spec frontmatter\/parsed body sections changed, run `workflow:state`/);
+  assert.match(matrix, /Author or implement shared surface behavior[\s\S]*workflow:readiness -- --surface <SURFACE_ID> --json/);
   assert.match(matrix, /Add or modify a route entry[\s\S]*workflow:state[\s\S]*workflow:route-tree/);
   assert.match(matrix, /Close or answer Unknowns[\s\S]*workflow:state[\s\S]*workflow:validate/);
   assert.match(matrix, /Codegen outputs \| The repo's actual codegen command/);

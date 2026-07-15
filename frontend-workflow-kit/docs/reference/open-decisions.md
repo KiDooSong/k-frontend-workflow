@@ -4,7 +4,7 @@ Open Decisions are active readiness gates. A decision has exactly one canonical
 row and remains in that row after resolution. This contract supports two homes:
 
 - a decision affecting one screen stays in that ScreenSpec's `## Open Decisions` table;
-- a decision referenced by multiple screens lives in
+- a decision referenced by multiple screens or by a shared surface lives in
   `global/open-decisions.md`, the optional `open-decision-register` artifact.
 
 Both homes use the same six-column table and the same `open|resolved` lifecycle.
@@ -44,7 +44,7 @@ The body contains exactly one canonical table:
 Screen membership is never repeated in the register. Referring artifacts own
 that relation.
 
-## Referencing from a ScreenSpec
+## Referencing from a ScreenSpec or shared surface
 
 Add the optional frontmatter array to every affected ScreenSpec:
 
@@ -57,6 +57,8 @@ References are unique, non-empty strings and resolve exactly and
 case-sensitively. In this contract they resolve only to the global register;
 another ScreenSpec's local row is never a valid target. A global row may have
 zero or more current refs without producing an orphan error.
+
+A `shared-surface-spec` references the same register with `decision_refs`; it never owns a local `## Open Decisions` table. Open/malformed rows fan out to every member with canonical `source` plus surface `via` provenance. In the first slice, one decision may reach one screen through exactly one referrer: screen+surface or surface+surface duplicate application is a validation error. See [shared-surfaces.md](shared-surfaces.md).
 
 `workflow:state` exposes every resolved reference under
 `derived.decision_refs`, including rows whose status is `resolved`. An open row

@@ -25,6 +25,9 @@ description: 지정된 Screen ID를 readiness gate가 허용하는 모드와 경
 - readiness 판정을 **스스로 재구현하지 않는다** — 항상 스크립트를 실행하고 그 출력을 소비한다.
 - **`allowed_paths` 안만 수정**, **`forbidden_paths` 는 절대 수정하지 않는다.** ScreenSpec `screen_entry` 는 구현 파일 **힌트일 뿐
   권한이 아니다** — readiness 를 넓히지 않는다.
+- readiness 의 `delegated_shared_surfaces`가 예약한 경로는 broad `allowed_paths`에도 함께 보여도 수정하지 않는다.
+  해당 `surface_id`와 `npm run workflow:readiness -- --surface <SURFACE_ID> --json`을 보고
+  [implement-shared-surface](../implement-shared-surface/SKILL.md) workflow로 넘긴다.
 - 화면 identity 가 없거나 raw source 코드면 먼저 **[Stage 02](../../docs/reference/workflow-stages/02-screen-identity-source-mapping.md)** 로 푼다.
 - 관련 입력이 `not-started`/`in-progress`/`failed` 면 **멈추고** 같은 row 로 reconcile 을 끝낸다([Stage 04](../../docs/reference/workflow-stages/04-reconcile-input.md)).
 - generated 파일은 직접 수정하지 않고 스크립트로 재생성한다([generated-files.md](../../docs/reference/generated-files.md)).
@@ -41,7 +44,7 @@ description: 지정된 Screen ID를 readiness gate가 허용하는 모드와 경
    npm run workflow:readiness -- --screen <ID> --json
    ```
 3. readiness JSON 을 screen id 아래에서 읽는다: `readiness_mode`, `allowed_paths`, `forbidden_paths`, `blocking`,
-   `next_actions` (+ mode/policy/layer metadata).
+   `next_actions`, `delegated_shared_surfaces` (+ mode/policy/layer metadata).
 4. readiness 가 막으면 `blocking`·`next_actions` 를 보고하고 멈춘다.
 5. 구현 가능하면 짧은 plan 을 먼저 만든다: mode, 허용/금지 surface, source-of-truth 문서, 범위 밖으로 남기는 Unknown/Decision/Conflict/Gap.
 
@@ -62,6 +65,8 @@ component catalog + component-gap-register, Open Decisions/Conflicts/Unknowns, A
 ## 3. 모드 인지 구현
 - 항상 readiness 의 `allowed_paths`/`forbidden_paths` 를 따른다. concrete path 가 allowed 안이고 forbidden 밖일 때만 수정한다
   (`screen_entry`·`route_entry`·custom Tier3 layer 모두 동일). `src/api/**` 를 항상 금지라고 가정하지 않는다 — 현재 readiness policy 출력이 결정한다.
+- `delegated_shared_surfaces[].implementation_paths`는 member screen 작업에서 예약된 공유 코드다. screen의 더 넓은 allow glob이
+  덮더라도 forbidden precedence를 적용해 수정하지 않고 surface 전용 readiness/skill로 위임한다.
 - 모드 상한을 지킨다(`route-skeleton` → … → `api-integrated-ui`): readiness 가 구체 path 를 허용하지 않으면 early mode 에서 API/client/data layer 를 건드리지 않는다.
 - 시각 값·selector·endpoint·DTO·copy 를 **발명하지 않는다.** raw/inferred visual 값은 final 처럼 하드코딩하지 말고 허용 파일 내 TODO 또는
   Unknown/VER-/Open Decision 으로 보고한다. (시각 vs 행동 정본 규칙: [input-reconciliation.md](../../docs/reference/input-reconciliation.md) §Visual/Figma; testID: [task-artifact-matrix.md](../../docs/reference/task-artifact-matrix.md).)

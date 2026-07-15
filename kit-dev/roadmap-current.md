@@ -1,5 +1,7 @@
 # Current Roadmap
 
+> 2026-07-15 구현 갱신(#192): optional domain-scoped `shared-surface-spec`이 Tier 1에 추가됐다. `workflow:state` surface/member reverse index, #193 decision ref의 member fan-out(`source`+`via`), `workflow:readiness -- --surface`의 surface/member/policy path intersection, ordinary screen path reservation, validate identity/membership/path/interaction/API/decision/copy 검사가 구현됐다. No-surface repo는 기존 output을 유지한다. issue #195 route normalization, 새 required CI check, warning-first promotion, human-owned gate lowering은 포함하지 않는다. 릴리스/version 승격 주장은 없다.
+
 > 스냅샷: 2026-07-12 (기준 커밋 `7eb06ec` = post-MVP 안정화 PR #170~#176 이 전부 랜딩된 main HEAD, release candidate **`0.3.0-mvp.2`** — 버전/문서 정합·release cut 커밋은 그 위에 얹힌다). 2026-07-11 스냅샷(release baseline `0.3.0-mvp.1`, tracker #167) 이후 랜딩 — 전부 post-MVP 안정화이며 **새 기능·새 artifact axis·warning-first→hard 승격 0**: **support contract + 0.3.0-mvp.1 릴리스 검증 증거**(#160/#161, #170 — engines `node >=20` · CI compat/macos smoke · Windows best-effort 명시) · **warning-first 승격 evidence 임계 정책 + surface inventory**(#162/IMP-01, #171 — 승격 후보 8 전부 `deferred`, 관측 계기 9 `rejected`, 상태 전이는 사람 승인 decision PR 전용) · **doc-drift release-consistency opt-in**(#163/IMP-02, #172 — `--include release-consistency`, 기본 출력 byte-identical) · **evidence retention/index 정책**(#165/IMP-04, #173 — `kit-dev/evidence-retention-policy.md` + temp/runs 인덱스, `status: current` release check 는 항상 정확히 1건) · **packed payload CLI smoke**(#166/IMP-05, #174 — distribution.test.mjs, 공개 CLI spawn 계약) · **CLI stdout flush-safe 자연 종료 통일 + validate 인자 계약**(#175) · **core workflow-state·readiness 인자 계약 fail-closed**(#176 — unknown/invalid 인자를 파일 쓰기·판정 전에 exit 2 로 거부, `scripts/lib/cli-args.mjs` additive helper; 감사: [core-cli-argument-contract-audit-001.md](temp/runs/core-cli-argument-contract-audit-001.md)). 세부 계약은 [CHANGELOG](CHANGELOG.md) `0.3.0-mvp.2` 참조.
 > 이전 스냅샷(2026-07-11): 기준 커밋 `59a2b8d` = 2026-07-11 MVP 진단 보고서의 기준 main HEAD, release baseline **`0.3.0-mvp.1`** — MVP closure tracker #167. baseline 자체의 버전/문서 정합 커밋은 그 위에 얹힌다. 2026-07-03 스냅샷 이후 랜딩(PR #132~#156, 새 하드 게이트 승격 0) — **관측/증거 계층**: telemetry & promotion-evidence 하니스(`workflow:telemetry`, +opt-in visual/adoption/redteam surface) · eval & calibration(`workflow:eval`) · adversarial red-team suite(`workflow:redteam`, warning-first 관측 매트릭스) · canonical doc-drift detector(`workflow:doc-drift`, +opt-in status heuristic info-only) — next-ideas 01/02/04/05 가 전부 landed(03 MCP serving 만 열린 연구). **visual consistency 계층**: visual-consistency-contract artifact + `workflow:visual-consistency` + `workflow:visual-contract-bootstrap`(review-only draft) + adoption-probe `--visual` + telemetry visual surface(#144~#147). **consumer 실사용 수정**: doc-drift Phase 0 링크 오탐 축소(#150/#152) · GitLab CI telemetry artifact 매핑 문서화(#151/#155) · visual bootstrap silent no-op/consumer 실채택 관측 갭(#153/#156) · symlink 경유 CLI entry guard realpath(#154). **reconcile-input 킷 vendoring 완료**(`frontend-workflow-kit/skills/reconcile-input/SKILL.md` + manifest `skills/**` payload 포함). 이 스냅샷으로 기능 범위를 동결하고 버전·문서·검증 증거를 release baseline 으로 닫는다 — 새 기능과 warning-first→hard 승격은 tracker #167 범위 밖. 세부 계약은 [CHANGELOG](CHANGELOG.md) `0.3.0-mvp.1` 참조.
 > 이전 스냅샷(2026-07-03): 2026-06-19 스냅샷 이후 대량 랜딩(PR #85~#131, 대부분 warning-first/docs/생성물 계층 — 새 하드 게이트 승격은 개별 사람 결정으로 유지) — **Tier3 custom-layer substrate + readiness access wiring**(#85/#87/#88) · **adoption-probe**(draft-only 온보딩 진단, #86/#91) · **Tier3 policy-draft 생성기**(#89, draft/review artifact) · **adoption-compatible contracts/screen entries**(#94) · **generic input artifact producer**(#96) · **interaction matrix route extraction 하드닝**(#96/#97) · **disabled ScreenSpec state**(#104, State Matrix 6-state — breaking) · **screen identity / source map**(#105, canonical↔source alias + `create-screen`) · **workflow spine stage guides**(#106, consumer-agent 라우팅 00–10) · **grouped input artifact directories**(#107, domain/topic-aware inputs) · **safe vendored-kit upgrade planner**(#108, manifest 기반 안전 업그레이드 + symlink/traversal 하드닝) · **progressive-disclosure 문서 리팩터**(#109) · **session-learnings capture surface**(#110) · **e2e-agent 스킬**(plan/generate/verify/heal + playwright agents + path/session model + consumer adoption guide + behavioral rules + visual capture, #112~#128/#130, 선택형 evidence — ScreenSpec/readiness 게이트 아님) · **no-api-required 화면 지원**(#123/#126, no-api readiness + API backstop 게이트) · **check 4 route group 오탐 축소 + nav-graph route group resolution**(#129/#131). 세부 계약은 [CHANGELOG](CHANGELOG.md) 참조.
@@ -33,7 +35,7 @@ MVP-A 에서 코드로 강제되는 구간은 **Documents → State → Readines
 ## 산출물 축 (artifact axes)
 
 ```txt
-저작 문서        screen-spec / navigation-map / llm-rules / domain-rules
+저작 문서        screen-spec / shared-surface-spec / navigation-map / llm-rules / domain-rules
 생성 상태        _meta/workflow-state.yaml · screen-inventory.yaml
 결정             Open Decisions (readiness cap)
 입력 정합        Input Reconciliation (register · conflict · re-open)
@@ -61,6 +63,8 @@ decision_cap   열린 Open Decision 의 최저 Blocking Mode 바로 아래.
 validate       검사 12종, CI exit 0/1
 ```
 
+채택된 shared surface는 같은 policy ladder를 재사용하되 `effective_surface_mode = min(surface_fact_mode, surface_decision_cap, minimum member-screen readiness_mode)`로 계산하고 structural/membership/path ownership error를 docs-only로 고정한다. Shared implementation path는 effective policy와 모든 member base allowed/forbidden 결과의 교집합만 허용하며 ordinary screen readiness에서는 예약 forbidden path다.
+
 게이트하지 **않는** 것 (= MVP-A 자동 차단 없음):
 
 ```txt
@@ -72,13 +76,14 @@ Review          MVP-A 에 없음 (Future Candidate).
 
 ## Tier 1 — MVP-A: 구현·강제됨 (코드)
 
-- 템플릿: screen-spec(통합형+stub) · navigation-map(뼈대) · llm-rules · domain-rules · component-gap-register · conflicts
+- 템플릿: screen-spec(통합형+stub) · shared-surface-spec(선택형 non-route behavior) · navigation-map(뼈대) · llm-rules · domain-rules · component-gap-register · conflicts
 - `scripts/`: `workflow-state.mjs` · `readiness.mjs` · `validate.mjs` (+ 공유 lib: util/spec/schema)
 - `schemas/frontmatter.schema.json` · `catalog/artifact-manifest.yaml` · `policies/implementation-mode-policy.yaml`
-- `skills/implement-screen`
+- `skills/implement-screen` · `skills/implement-shared-surface`
 - Open Decisions readiness cap — 저작 규칙 + **게이트 해제는 사람-전용** 불변식 (LLM 은 open 추가/재오픈만)
 - Open Decisions **validate 형식 검사**(검사 9) — 표 컬럼·`Status` enum·`Blocking Mode` 정책 모드·전역 ID 중복 (resolved→Options 는 경고)
 - Open Decisions **canonical cross-screen reference**(#193) — optional `global/open-decisions.md` register + ScreenSpec `decision_refs`; state/readiness fan-out과 source provenance, malformed/unresolved fail-closed. 기존 결정 축의 additive 확장(새 CI/promotion 없음)
+- Shared surface behavior contract(#192) — optional same-domain `shared-surface-spec`, canonical member reverse index, non-route v2 behavior, #193 decision `source`+surface `via` fan-out, `--surface` readiness/member intersection, screen path reservation, validate hard contract. 새 inventory/CI promotion/route normalization 없음
 - golden example: `coupon-feature` (end-to-end 1회 완주)
 
 ## Tier 2 — 설계 계약 작성됨 / 코드 강제 후속
@@ -94,7 +99,7 @@ Review          MVP-A 에 없음 (Future Candidate).
 - ✅ Open Decisions validate **형식 검사** 구현됨(검사 9: 표·`Status`·`Blocking Mode`·전역 ID 중복). ✅ `forbidden_paths` 경계 backstop 구현(MVP-B Phase 0, diff 기반, warning-first — `scripts/forbidden-paths.mjs`; `--enforce` 로 하드).
 - ✅ **API Candidate ↔ contract evidence 매칭 검사 구현됨**(검사 8, 하드·exit 1): confirmed ScreenSpec 후보의 (Method, Path) → api-manifest Endpoints → Linked Contract + Contract Kind 해소까지. zod 는 기존 Linked Schema 5컬럼 레거시 표와 src/api/schemas/*.ts 런타임 export 매칭을 유지하고, ts-type 은 Source 경로의 export type/export interface 정적 evidence 를 인정한다. openapi|manual|unknown kind 는 evidence 종류 기록용 호환 경로이며, TS type evidence 를 런타임 validation 으로 주장하거나 Zod/runtime validator 를 생성하지 않는다. manifest 부재 시 옛 전역 존재검사(hasZod || hasOpenApi)로 폴백한다. 증거: [api-schema-match-001.md](../temp/runs/api-schema-match-001.md).
 - 🔶 Interaction Matrix **`Result` 컬럼 구조화 — v2 dual-read + 정밀화 구현됨**(#48 + follow-up): 선택적 `Result Type`/`Target`/`Params` 컬럼 파서 + **검사 13(warning-only)** + v2 골든 픽스처. v1 free-form Result 는 정본 유지, v2 출력 byte-identical. `Result Type` enum 은 `route|state|mutation|external|none` 으로 코드 단일 출처에 동결했고, `Result Type=route` Target 은 route-tree.txt 의 `route: <token>` 과 **EXACT** 로 경고 교차검증한다(route-tree artifact 부재 시 skip). **잔여:** 하드 게이트 승격 없음; telemetry 후 별도 decision PR 에서만 검토. 증거: [interaction-matrix-v2-dual-read-001.md](temp/runs/interaction-matrix-v2-dual-read-001.md).
-- decision-log.md 전역 이관 · deferred+Reversible+Assumptions 묶음 (open-decisions.md 후속 절). ✅ canonical 교차-화면 참조는 #193으로 구현; shared-surface 적용은 #192 후속
+- decision-log.md 전역 이관 · deferred+Reversible+Assumptions 묶음 (open-decisions.md 후속 절). ✅ canonical 교차-화면 참조는 #193, shared-surface referrer/member fan-out은 #192로 구현
 
 **Tier 2 구현:**
 - ✅ **reconcile-input 스킬** 작성·**킷 vendoring 완료** — `frontend-workflow-kit/skills/reconcile-input/SKILL.md` 존재 + `distribution-manifest.yaml` 이 `skills/**` 를 payload 에 포함(절차 가이드·코드 강제 0). 리포-로컬 `.claude/skills/reconcile-input/` 은 kit 개발 세션용 사본.

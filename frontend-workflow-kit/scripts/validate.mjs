@@ -89,6 +89,11 @@ import {
   openDecisionRowIsMalformed,
   REQUIRED_OPEN_DECISION_COLUMNS,
 } from './lib/open-decisions.mjs';
+import {
+  analyzeSharedSurfaces,
+  loadSharedSurfaceSpecs,
+  sharedSurfaceInteractionIssues,
+} from './lib/shared-surfaces.mjs';
 
 function isLocalRef(ref) {
   if (typeof ref !== 'string') return false;
@@ -113,7 +118,8 @@ function manifestPathRegex(pattern) {
   const esc = stripped.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const withVars = esc
     .replace(/\\\{domain\\\}/g, '[^/]+')
-    .replace(/\\\{screen\\\}/g, '[^/]+');
+    .replace(/\\\{screen\\\}/g, '[^/]+')
+    .replace(/\\\{surface\\\}/g, '[^/]+');
   return new RegExp('^' + withVars + '$');
 }
 
@@ -359,6 +365,32 @@ function main() {
     if (id) idCount.set(id, (idCount.get(id) || 0) + 1);
     if (route) routeCount.set(route, (routeCount.get(route) || 0) + 1);
   }
+  const surfaceSpecs = loadSharedSurfaceSpecs({ docsDir });
+  const surfaceRecords = analyzeSharedSurfaces({
+    docsDir,
+    surfaceSpecs,
+    screenSpecs: specs,
+  });
+
+  for (const record of surfaceRecords) {
+    for (const issue of record.contract_errors) {
+      if (
+        issue.code === 'local-open-decisions' ||
+        issue.code === 'interaction-v2-required' ||
+        issue.code === 'surface-route-result' ||
+        issue.code === 'invalid-surface-result-type'
+      ) {
+        continue; // checks 4/9 own these boundaries.
+      }
+      add(2, record.spec.path, issue.message);
+    }
+    for (const issue of record.membership_errors) add(3, record.spec.path, issue.message);
+    for (const issue of record.path_errors) add(3, record.spec.path, issue.message);
+    for (const issue of record.identity_errors) add(5, record.spec.path, issue.message);
+    for (const issue of sharedSurfaceInteractionIssues(record.spec)) {
+      add(4, record.spec.path, issue.message);
+    }
+  }
 
   // 검사 13 의 정밀 route 존재 확인 입력. route-tree 는 생성물이라 없거나 아직 stale 일 수 있으므로
   // 부재는 hard fail 이 아니라 advisory warning 이다. 존재하는 경우에만 `route: <token>` 을 EXACT 문자열로 비교한다.
@@ -445,7 +477,10 @@ function main() {
     return tsTypeExportCache.get(key);
   };
 
-  for (const spec of specs) {
+  const behaviorSpecs = [...specs, ...surfaceSpecs];
+  for (const spec of behaviorSpecs) {
+    const isSurface = spec.frontmatter.artifact_type === 'shared-surface-spec';
+    const contractLabel = isSurface ? 'shared-surface-spec' : 'ScreenSpec';
     const candidates = parseApiCandidates(spec.sections['api candidates']);
     if (spec.frontmatter.api_required === false) {
       const concrete = candidates.filter((it) => it.method && it.path);
@@ -453,7 +488,9 @@ function main() {
         add(
           8,
           spec.path,
-          `api_required:false 화면은 자체 API 후보를 선언할 수 없음: ${e.method} ${e.path} → 해소: upstream API 결과 설명은 Data Requirements/Notes 에 남기고 API Candidates 에서 제거하거나 api_required 를 true 로 바꾸세요.`,
+          isSurface
+            ? `api_required:false shared-surface-spec은 자체 API 후보를 선언할 수 없음: ${e.method} ${e.path} → 해소: upstream API 결과 설명은 Data Requirements/Notes 에 남기고 API Candidates 에서 제거하거나 api_required 를 true 로 바꾸세요.`
+            : `api_required:false 화면은 자체 API 후보를 선언할 수 없음: ${e.method} ${e.path} → 해소: upstream API 결과 설명은 Data Requirements/Notes 에 남기고 API Candidates 에서 제거하거나 api_required 를 true 로 바꾸세요.`,
         );
       }
       continue;
@@ -488,7 +525,7 @@ function main() {
         add(
           8,
           spec.path,
-          `confirmed API ${label} 가 api-manifest ## Endpoints 에 매칭되는 엔드포인트가 없음 → 해소: api/api-manifest.md ## Endpoints 에 ${e.method} ${e.path} 행을 추가하거나 ScreenSpec confidence 를 candidate 로 낮추세요.`,
+          `confirmed API ${label} 가 api-manifest ## Endpoints 에 매칭되는 엔드포인트가 없음 → 해소: api/api-manifest.md ## Endpoints 에 ${e.method} ${e.path} 행을 추가하거나 ${contractLabel} confidence 를 candidate 로 낮추세요.`,
         );
         continue;
       }
@@ -496,7 +533,7 @@ function main() {
         add(
           8,
           spec.path,
-          `confirmed API ${label} 의 api-manifest 엔드포인트 confidence=${m.confidence || '(빈값)'} 이라 confirmed 아님 → 해소: manifest 행의 confidence 를 confirmed 로 올리거나 ScreenSpec 을 candidate 로 낮추세요.`,
+          `confirmed API ${label} 의 api-manifest 엔드포인트 confidence=${m.confidence || '(빈값)'} 이라 confirmed 아님 → 해소: manifest 행의 confidence 를 confirmed 로 올리거나 ${contractLabel} 을 candidate 로 낮추세요.`,
         );
         continue;
       }
@@ -566,7 +603,7 @@ function main() {
         add(
           8,
           m.file,
-          `confirmed endpoint ${e.method} ${e.path} 의 Contract Kind=unknown 은 confirmed API evidence 를 만족할 수 없음 → 해소: zod|ts-type|openapi|manual 중 확인 가능한 evidence kind 로 바꾸거나 ScreenSpec confidence 를 candidate 로 낮추세요.`,
+          `confirmed endpoint ${e.method} ${e.path} 의 Contract Kind=unknown 은 confirmed API evidence 를 만족할 수 없음 → 해소: zod|ts-type|openapi|manual 중 확인 가능한 evidence kind 로 바꾸거나 ${contractLabel} confidence 를 candidate 로 낮추세요.`,
         );
         continue;
       }
@@ -651,6 +688,17 @@ function main() {
       local: true,
     });
   }
+  for (const surface of surfaceSpecs) {
+    const section = surface.sections['open decisions'];
+    if (section === undefined) continue;
+    const parsed = parseOpenDecisions(section);
+    if (parsed.rows.length === 0 && !parsed.sectionHasContent) continue;
+    add(
+      9,
+      surface.path,
+      'shared-surface-spec 은 local ## Open Decisions 표를 소유할 수 없음 → global/open-decisions.md 로 행을 옮기고 frontmatter decision_refs 로 참조하세요',
+    );
+  }
   if (decisionRegister.exists) {
     if (decisionRegister.structuralErrors.includes('invalid-frontmatter')) {
       add(9, decisionRegister.file, 'canonical open-decision-register frontmatter 가 잘못됨 → artifact_id/artifact_type=open-decision-register 및 status 를 선언하세요');
@@ -732,12 +780,46 @@ function main() {
     }
   }
 
+  const decisionApplications = new Map();
+  const addDecisionApplication = (screenId, decisionId, file, kind) => {
+    if (typeof screenId !== 'string' || typeof decisionId !== 'string' || !decisionId) return;
+    const key = `${screenId}\0${decisionId}`;
+    const rows = decisionApplications.get(key) || [];
+    const referrer = `${kind}:${file}`;
+    if (!rows.some((row) => row.referrer === referrer)) rows.push({ file, referrer });
+    decisionApplications.set(key, rows);
+  };
+  for (const spec of specs) {
+    if (!Array.isArray(spec.frontmatter.decision_refs)) continue;
+    for (const ref of spec.frontmatter.decision_refs) {
+      addDecisionApplication(spec.frontmatter.screen_id, ref, spec.path, 'screen');
+    }
+  }
+  for (const record of surfaceRecords) {
+    if (!Array.isArray(record.spec.frontmatter.decision_refs)) continue;
+    for (const member of record.existing_member_screens) {
+      for (const ref of record.spec.frontmatter.decision_refs) {
+        addDecisionApplication(member, ref, record.spec.path, 'surface');
+      }
+    }
+  }
+  for (const [key, referrers] of [...decisionApplications.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    if (referrers.length < 2) continue;
+    const [screenId, decisionId] = key.split('\0');
+    const files = referrers.map((row) => row.file).sort();
+    add(
+      9,
+      files[0],
+      `Open Decision ${decisionId} 가 screen ${screenId} 에 여러 referrer 경로로 중복 적용됨 → 첫 slice에서는 screen/surface 중 canonical referrer 하나만 유지 [locations: ${files.map((file) => toPosix(path.relative(docsDir, file))).join(', ')}]`,
+    );
+  }
+
   // 10. Copy Keys Status enum (screen-spec.template.md 의 3-state 계약).
   //     confirmed=승인 확정(사람만 승격) · draft=입력제공·미확정(또는 존재가 open decision 에 달림) · tbd=문구 자체 미정.
   //     draft·confirmed 는 copy_keys_has_tbd 를 켜지 않는다 — 오직 tbd 만(spec.mjs deriveMetrics).
   //     (tbd_count 는 Copy Keys 와 무관하게 Unknowns 의 open 행에서 나온다.)
   //     stub(본문 없음)·템플릿 placeholder({…} 키) 행은 검사하지 않는다.
-  for (const spec of specs) {
+  for (const spec of behaviorSpecs) {
     if (isStub(spec)) continue;
     for (const r of parseCopyKeys(spec.sections['copy keys']).rows) {
       if (r.key.startsWith('{')) continue; // 템플릿 placeholder 행

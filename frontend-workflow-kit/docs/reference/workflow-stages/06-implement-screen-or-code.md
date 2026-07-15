@@ -3,6 +3,7 @@
 Implement within the readiness gate's allowed mode and paths. Index:
 [`../workflow-spine.md`](../workflow-spine.md). Skill:
 [`../../../skills/implement-screen/SKILL.md`](../../../skills/implement-screen/SKILL.md).
+For shared behavior code, use [`implement-shared-surface`](../../../skills/implement-shared-surface/SKILL.md).
 
 **Enter when** code changes are requested.
 
@@ -24,6 +25,10 @@ npm run workflow:readiness -- --screen <SCREEN_ID> --json
   from a `screen_entry` hint.
 - Stay within the allowed mode (`route-skeleton` → … → `api-integrated-ui`); do not
   reach into API/data layers an early mode forbids.
+- If screen readiness exposes `delegated_shared_surfaces`, do not edit those reserved paths even when a broader screen allow glob covers them. Run `workflow:readiness -- --surface <SURFACE_ID> --json` and use the surface skill.
+
+For a shared surface, read `surface_fact_mode`, `surface_decision_cap`, `member_cap`, `member_modes`, `allowed_paths`, `forbidden_paths`, and `path_authorization`.
+Edit only the full surface/policy/member intersection. The detailed contract is [`../shared-surfaces.md`](../shared-surfaces.md).
 
 If a related input is `not-started` / `in-progress` / `failed`, finish reconcile
 first (Stage 04) — do not implement on an unreconciled input.
