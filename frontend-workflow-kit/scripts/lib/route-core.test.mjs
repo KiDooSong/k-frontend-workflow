@@ -18,7 +18,7 @@ import {
   RouterAdapterError,
   CORE_ROUTER_ADAPTER_VERSION,
 } from './route-core.mjs';
-import { scanAppDir, discover as expoDiscover } from '../adapters/routers/expo-router.mjs';
+import { computeRoute, scanAppDir, discover as expoDiscover } from '../adapters/routers/expo-router.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url)); // scripts/lib
 const KIT_ROOT = path.resolve(HERE, '..', '..'); // frontend-workflow-kit
@@ -43,6 +43,10 @@ test('S2: expo-router 경로 렌더가 커밋된 route-tree 골든과 byte-ident
   const golden = fs.readFileSync(path.join(BASIC_APP, 'expected', 'route-tree.txt'), 'utf8');
   // 골든은 LF 로 커밋돼 있고 렌더도 LF 만 쓴다(무타임스탬프) — 정규화 없이 직접 비교.
   assert.equal(text.replace(/\r\n/g, '\n'), golden.replace(/\r\n/g, '\n'));
+});
+
+test('S2: Expo app group index 는 raw group-qualified route token 을 유지한다', () => {
+  assert.equal(computeRoute(['(app)'], 'index.tsx'), '/(app)');
 });
 
 test('S3: 커스텀 {module} 어댑터를 코어가 해소·렌더 (비-expo 어댑터도 동작; CLI 헤더와 동일)', async () => {

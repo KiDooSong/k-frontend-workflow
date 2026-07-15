@@ -18,6 +18,8 @@ import {
   parseOpenDecisions,
   parseCopyKeys,
   cellRoutes,
+  isConcreteRoute,
+  isConcreteTargetRoute,
   interactionResultRoutes,
   interactionMatrixIsV2,
   interactionRowRoutes,
@@ -27,10 +29,13 @@ import {
   buildRuntimeRouteTargetIndex,
   resolveRouteTargetInScreenInventory,
   routeTargetExistsInScreenInventory,
+  routeTreeTargetExists,
   INTERACTION_V2_RESULT_TYPES,
   deriveMetrics,
 } from './spec.mjs';
 import { buildNavGraph } from './nav-graph.mjs';
+import { renderRouteTree } from './route-core.mjs';
+import { scanAppDir } from '../adapters/routers/expo-router.mjs';
 import { computeReadiness } from '../readiness.mjs';
 import { buildState } from '../workflow-state.mjs';
 import { LayoutConfigError, loadLayoutProfile } from './layout-profile.mjs';
@@ -774,6 +779,16 @@ test('P13: cellRoutes — 정상 v1/v2 route token 은 보존한다', () => {
   }
 });
 
+test('authoritative Target 전용 concrete route predicate 만 루트(`/`)를 인정한다', () => {
+  assert.equal(isConcreteRoute('/'), false, 'generic/v1 concrete route semantics stay unchanged');
+  assert.equal(isConcreteTargetRoute('/'), true, 'authoritative v2 Target may name the runtime root');
+  assert.deepEqual(interactionRowRoutes({ Result: '/' }, 'v1'), [], 'v1 free-form standalone slash stays ignored');
+  assert.deepEqual(
+    interactionRowRoutes({ Result: '홈으로 이동', 'Result Type': 'route', Target: '/' }, 'v2'),
+    ['/'],
+  );
+});
+
 test('check 4 route inventory: Expo single filesystem group stripping is narrow and unambiguous', () => {
   assert.equal(stripExpoSingleFilesystemGroups('/(auth)/reset/send-code'), '/reset/send-code');
   assert.equal(stripExpoSingleFilesystemGroups('/(auth)/users/[id]'), '/users/[id]');
@@ -792,6 +807,13 @@ test('check 4 route inventory: Expo single filesystem group stripping is narrow 
     resolveRouteTargetInScreenInventory('/reset/send-code', one, buildRuntimeRouteTargetIndex(one)),
     '/(auth)/reset/send-code',
     'resolver returns the raw ScreenSpec route for downstream graph resolution',
+  );
+
+  const consumerRoot = new Set(['/(app)/']);
+  assert.equal(
+    resolveRouteTargetInScreenInventory('/', consumerRoot, buildRuntimeRouteTargetIndex(consumerRoot)),
+    '/(app)/',
+    'existing consumer-shaped trailing-slash ScreenSpec route still resolves through the runtime index',
   );
 
   const ambiguous = new Set(['/(auth)/login', '/(marketing)/login']);
@@ -1030,6 +1052,104 @@ test('E2E: nav-graph — v2 Target group-less target resolves to the single file
     assert.deepEqual(graph.screens['RESET-SEND-CODE-001'].inbound, [
       { from: 'SOURCE-001', trigger: 'tap', route: '/reset/send-code' },
     ]);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('E2E: Expo app-group index round trip keeps raw route-tree ownership and runtime `/` evidence', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-app-group-index-round-trip-'));
+  try {
+    writeTree(root, {
+      'src/app/(app)/index.tsx': 'export default function AppIndex() { return null; }\n',
+      'src/app/source.tsx': 'export default function Source() { return null; }\n',
+      'docs/frontend-workflow/domains/d/screens/source/screen-spec.md': screenSpec({
+        artifactId: 'SOURCE-001-screen-spec',
+        screenId: 'SOURCE-001',
+        route: '/source',
+        matrix: [
+          '| User Action | Trigger | Result | Result Type | Target | Params |',
+          '|---|---|---|---|---|---|',
+          '| home | tap | 홈으로 이동 | route | / |  |',
+        ].join('\n'),
+      }),
+      'docs/frontend-workflow/domains/d/screens/app-index/screen-spec.md': screenSpec({
+        artifactId: 'APP-INDEX-001-screen-spec',
+        screenId: 'APP-INDEX-001',
+        route: '/(app)',
+        matrix: basicMatrix('stay'),
+      }),
+    });
+
+    const routeTree = renderRouteTree(scanAppDir(path.join(root, 'src', 'app')), {
+      source: 'src/app/**',
+      command: 'node scripts/route-tree.mjs --app src/app --out docs/frontend-workflow/_meta/route-tree.txt',
+    });
+    writeTree(root, { 'docs/frontend-workflow/_meta/route-tree.txt': routeTree });
+    assert.match(routeTree, /route: \/\(app\)/, 'route-tree keeps the raw group-qualified token');
+
+    const validation = runValidate(root);
+    assert.deepEqual(check4Errors(validation), [], 'check 4 resolves one raw app-group index ScreenSpec route');
+    assert.equal(
+      (validation.warnings || []).some(
+        (w) => w.check === 13 && /route-tree EXACT cross-check:.*Target \/ /.test(w.message),
+      ),
+      false,
+      'the unique raw route-tree app-group index suppresses only the spurious root warning',
+    );
+
+    const graph = buildNavGraph({ docsDir: path.join(root, 'docs', 'frontend-workflow') });
+    assert.deepEqual(graph.screens['SOURCE-001'].outbound, [
+      { to_route: '/', trigger: 'tap', action: 'home' },
+    ]);
+    assert.deepEqual(graph.routes['/'].inbound, [{ from: 'SOURCE-001', trigger: 'tap' }]);
+    assert.deepEqual(graph.screens['APP-INDEX-001'].inbound, [
+      { from: 'SOURCE-001', trigger: 'tap', route: '/' },
+    ]);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('E2E: ambiguous app-group index keeps the `/` edge but fails closed for validation and destination', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-app-group-index-ambiguous-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/domains/d/screens/source/screen-spec.md': screenSpec({
+        artifactId: 'SOURCE-001-screen-spec',
+        screenId: 'SOURCE-001',
+        route: '/source',
+        matrix: [
+          '| User Action | Trigger | Result | Result Type | Target | Params |',
+          '|---|---|---|---|---|---|',
+          '| home | tap | 홈으로 이동 | route | / |  |',
+        ].join('\n'),
+      }),
+      'docs/frontend-workflow/domains/d/screens/app-index/screen-spec.md': screenSpec({
+        artifactId: 'APP-INDEX-001-screen-spec',
+        screenId: 'APP-INDEX-001',
+        route: '/(app)',
+        matrix: basicMatrix('stay'),
+      }),
+      'docs/frontend-workflow/domains/d/screens/marketing-index/screen-spec.md': screenSpec({
+        artifactId: 'MARKETING-INDEX-001-screen-spec',
+        screenId: 'MARKETING-INDEX-001',
+        route: '/(marketing)',
+        matrix: basicMatrix('stay'),
+      }),
+    });
+
+    const errors = check4Errors(runValidate(root));
+    assert.equal(errors.length, 1);
+    assert.match(errors[0].message, /: \/$/);
+
+    const graph = buildNavGraph({ docsDir: path.join(root, 'docs', 'frontend-workflow') });
+    assert.deepEqual(graph.screens['SOURCE-001'].outbound, [
+      { to_route: '/', trigger: 'tap', action: 'home' },
+    ]);
+    assert.deepEqual(graph.routes['/'].inbound, [{ from: 'SOURCE-001', trigger: 'tap' }]);
+    assert.equal(graph.screens['APP-INDEX-001'], undefined);
+    assert.equal(graph.screens['MARKETING-INDEX-001'], undefined);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -1321,6 +1441,37 @@ test('v2 issues: 루트 Target(/) 은 route-tree 에 있으면 누락 경고 없
   const issues = interactionMatrixV2Issues(spec, { routeTreeRouteSet: new Set(['/']) });
   assert.equal(issues.some((i) => i.kind === 'route-missing-target'), false);
   assert.equal(issues.some((i) => i.kind === 'route-tree-target-missing'), false);
+});
+
+test('v2 issues: route-tree root exception is unique, group-index-only, and root-only', () => {
+  const rootSpec = specWithMatrix([
+    '| User Action | Trigger | Result | Result Type | Target |',
+    '|---|---|---|---|---|',
+    '| 홈 | tap | 홈으로 이동 | route | / |',
+  ]);
+  const missing = (routes) =>
+    interactionMatrixV2Issues(rootSpec, { routeTreeRouteSet: new Set(routes) })
+      .some((i) => i.kind === 'route-tree-target-missing');
+
+  assert.equal(routeTreeTargetExists('/', new Set(['/'])), true, 'exact root token passes');
+  assert.equal(routeTreeTargetExists('/', new Set(['/(app)'])), true, 'one raw group index maps to root');
+  assert.equal(routeTreeTargetExists('/', new Set(['/(app)/'])), true, 'consumer trailing-slash form maps to root');
+  assert.equal(missing(['/(app)']), false, 'one app-group index suppresses the root warning');
+  assert.equal(missing(['/(app)', '/(marketing)']), true, 'multiple root candidates stay ambiguous');
+  assert.equal(missing(['/(home,search)']), true, 'array groups are not stripped');
+  assert.equal(missing(['/(+auth)']), true, 'plus groups are not stripped');
+
+  const loginSpec = specWithMatrix([
+    '| User Action | Trigger | Result | Result Type | Target |',
+    '|---|---|---|---|---|',
+    '| 로그인 | tap | 로그인 이동 | route | /login |',
+  ]);
+  assert.equal(
+    interactionMatrixV2Issues(loginSpec, { routeTreeRouteSet: new Set(['/(auth)/login']) })
+      .some((i) => i.kind === 'route-tree-target-missing'),
+    true,
+    'non-root Target keeps the raw-token EXACT advisory contract',
+  );
 });
 
 test('v2 issues: route-tree 부재 시 Target 존재 확인 skip 을 advisory 로 표면화한다', () => {

@@ -537,7 +537,7 @@ export function isConcreteRoute(r) {
   return true;
 }
 
-function isConcreteTargetRoute(r) {
+export function isConcreteTargetRoute(r) {
   return r === '/' || isConcreteRoute(r);
 }
 
@@ -584,6 +584,17 @@ export function resolveRouteTargetInScreenInventory(target, routeSet, runtimeRou
 
 export function routeTargetExistsInScreenInventory(target, routeSet, runtimeRouteTargetIndex) {
   return !!resolveRouteTargetInScreenInventory(target, routeSet, runtimeRouteTargetIndex);
+}
+
+// Interaction Matrix v2 Target ↔ route-tree warning-first 교차검증 전용.
+// 일반 route 는 raw token EXACT 를 유지하고, 루트 Target(`/`)만 기존 Expo 단일 filesystem-group
+// stripping 결과가 정확히 한 route-tree token 으로 해소될 때 존재하는 것으로 본다.
+export function routeTreeTargetExists(target, routeTreeRouteSet) {
+  if (!(routeTreeRouteSet instanceof Set)) return false;
+  if (routeTreeRouteSet.has(target)) return true;
+  if (target !== '/') return false;
+  const matches = buildRuntimeRouteTargetIndex(routeTreeRouteSet).get('/');
+  return !!matches && matches.size === 1;
 }
 
 // Interaction Matrix 의 Result 컬럼에서 라우트들을 추출 (v1 free-form/backcompat helper).
@@ -641,7 +652,8 @@ export function interactionEdgeRoutes(spec) {
 }
 
 // v2 형식 점검(warning-first, 순수 함수) — validate 검사 13 이 호출한다. v1 표는 항상 빈 배열 → v1 출력 불변.
-// 절대 에러로 승격하지 않는다(하드 게이트 없음). Target 존재 검사는 route-tree.txt route token 과 EXACT 비교한다.
+// 절대 에러로 승격하지 않는다(하드 게이트 없음). Target 존재 검사는 route-tree.txt raw token 과 EXACT 비교하되,
+// 루트(`/`)만 유일한 Expo 단일 filesystem-group index token 을 기존 runtime semantics 로 인정한다.
 //   opts.routeTreeRouteSet : route-tree.txt 의 `route: <token>` 집합. 없으면 교차검증은 skip(생성 전/부재 허용).
 // 반환: [{ row, kind, message }]
 //   kind: type-empty|enum|route-missing-target|result-target-drift|route-tree-target-missing|route-tree-missing|nonroute-has-route
@@ -684,7 +696,7 @@ export function interactionMatrixV2Issues(spec, opts = {}) {
       }
       if (routeTreeRouteSet) {
         for (const r of targetRoutes) {
-          if (!routeTreeRouteSet.has(r)) {
+          if (!routeTreeTargetExists(r, routeTreeRouteSet)) {
             issues.push({
               row: rowNo,
               kind: 'route-tree-target-missing',

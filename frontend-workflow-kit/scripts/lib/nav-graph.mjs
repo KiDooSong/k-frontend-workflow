@@ -17,6 +17,7 @@ import {
   getSections,
   cellRoutes,
   isConcreteRoute,
+  isConcreteTargetRoute,
   interactionMatrixIsV2,
   interactionRowRoutes,
   interactionEdgeRoutes,
@@ -70,7 +71,7 @@ function outboundEdgesOf(spec) {
   const mode = interactionMatrixIsV2(table) ? 'v2' : 'v1';
   const edges = [];
   for (const row of table.rows) {
-    const routes = interactionRowRoutes(row, mode).filter(isConcreteRoute);
+    const routes = interactionRowRoutes(row, mode).filter(isConcreteTargetRoute);
     if (routes.length === 0) continue; // 라우트 없는 행(refetch·"status filter 변경"·비-route 타입)은 엣지 없음
     const trigger = (col(row, 'Trigger') || '').trim();
     const action = (col(row, 'User Action') || '').trim();
@@ -130,7 +131,7 @@ export function buildNavGraph({ docsDir }) {
     // 불일치는 행 순회/추출 표류 신호 → 던져서 조용한 누락을 막는다(검사 P13 과 동작 일치 보장).
     // interactionEdgeRoutes 는 v1 표에서 interactionResultRoutes 와 같은 집합을 내므로 v1 동작은 불변.
     const perRow = new Set(outbound.map((e) => e.to_route));
-    const viaHelper = new Set(interactionEdgeRoutes(spec).filter(isConcreteRoute));
+    const viaHelper = new Set(interactionEdgeRoutes(spec).filter(isConcreteTargetRoute));
     for (const r of viaHelper) {
       if (!perRow.has(r)) {
         throw new Error(

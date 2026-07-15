@@ -23,7 +23,8 @@
 //       절대 게이트 신호로 쓰지 않는다(reconciled + 자식 open == 정상 PASS). 세 축은 독립.
 //   13. Interaction Matrix v2(structured) 형식 — WARNING-ONLY (하드 게이트 아님, 검사 카운트 "12종"에 미포함).
 //       Result Type 헤더가 있는 표만 점검 → v1 표는 무발화 = v1 출력 byte-identical. 에러 승격 없음(warning-first).
-//       Result Type=route Target 은 route-tree.txt 의 route token 과 EXACT 문자열 교차검증한다(artifact 부재 시 skip).
+//       Result Type=route Target 은 route-tree.txt 의 raw route token 과 EXACT 비교한다. 단, 루트(`/`)만
+//       유일한 Expo 단일 filesystem-group index token 을 인정한다(artifact 부재 시 skip).
 //   14. Policy `requires` 구문(mode 진입 조건 "fact OP value") — WARNING-ONLY (검사 13 과 동급, "12종"에 미포함).
 //       policy.modes[*].requires 각 줄을 policy-condition.mjs 의 파서(readiness 와 단일 출처)로 검사해
 //       파싱 불가한 항목(단일 `=`·`=>`·bare 토큰·값 누락 `>=`/`<=` 등)을 저작 시점에 경고로 알린다.
@@ -393,7 +394,8 @@ function main() {
   }
 
   // 검사 13 의 정밀 route 존재 확인 입력. route-tree 는 생성물이라 없거나 아직 stale 일 수 있으므로
-  // 부재는 hard fail 이 아니라 advisory warning 이다. 존재하는 경우에만 `route: <token>` 을 EXACT 문자열로 비교한다.
+  // 부재는 hard fail 이 아니라 advisory warning 이다. 존재하는 경우 `route: <token>` raw 문자열을 비교하되,
+  // 루트 Target(`/`)만 유일한 Expo 단일 filesystem-group index token 을 기존 runtime semantics 로 인정한다.
   const routeTreeFile = path.join(docsDir, '_meta', 'route-tree.txt');
   const routeTreeExists = exists(routeTreeFile);
   const routeTreeRouteSet = routeTreeExists
@@ -836,7 +838,8 @@ function main() {
   // 13. Interaction Matrix v2(structured) 형식 — warning-first (검사 13 자체는 하드 게이트 없음).
   //     Result Type 헤더가 있는 표(v2 모드)만 점검한다 → v1 표는 무발화 = v1 validate 출력 byte-identical.
   //     enum/route 행 Target 부재/비-route 행 라우트 토큰/Result↔Target drift 를 경고로 surface.
-  //     route-tree.txt 가 있으면 Result Type=route Target 과 route token 을 EXACT 교차검증한다.
+  //     route-tree.txt 가 있으면 Result Type=route Target 과 raw route token 을 교차검증한다. 일반 route 는
+  //     EXACT 를 유지하고 루트(`/`)만 유일한 Expo 단일 filesystem-group index token 을 인정한다.
   //     route-tree.txt 가 없으면 v2 route Target 존재 시 warning 으로만 알린다(warning-first).
   for (const spec of specs) {
     for (const issue of interactionMatrixV2Issues(spec, { routeTreeRouteSet, routeTreeMissing: !routeTreeExists })) {
