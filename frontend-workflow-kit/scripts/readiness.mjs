@@ -98,6 +98,28 @@ function actionHint(factKey, screen) {
   }
 }
 
+function invalidOpenDecisionAction(decision) {
+  const id = decision.id || '(no-id)';
+  switch (decision.code) {
+    case 'missing-register':
+      return `create global/open-decisions.md with Open Decision ${id}, or remove its decision_refs entry`;
+    case 'invalid-register':
+      return `fix the canonical Open Decision register structure at ${decision.source?.path || 'global/open-decisions.md'}`;
+    case 'unresolved-ref':
+      return `add canonical Open Decision ${id} to global/open-decisions.md, or remove its decision_refs entry`;
+    case 'ambiguous-ref':
+      return `keep exactly one canonical Open Decision row for ${id}`;
+    case 'malformed-row':
+      return `fix canonical Open Decision ${id}: required fields and Status=open|resolved must be valid`;
+    case 'invalid-refs-shape':
+    case 'invalid-ref':
+    case 'duplicate-ref':
+      return `fix decision_refs for Open Decision ${id}: ${decision.reason}`;
+    default:
+      return `fix Open Decision ${id}: Status must be open|resolved and Blocking Mode must be a policy mode above docs-only`;
+  }
+}
+
 // "fact OP value" 파싱은 ./lib/policy-condition.mjs 의 parseCondition 로 이전됐다(validate 와 단일 출처).
 
 function coerceNumber(v) {
@@ -376,12 +398,13 @@ export function computeReadiness({ state, policy, ci, manifest, layout }) {
         invalid_open_decision: {
           id: bad.id || '(no-id)',
           blocking_mode: bad.blocking_mode || '(none)',
+          ...(bad.code && bad.status && bad.status !== '(none)' ? { status: bad.status } : {}),
+          ...(bad.code ? { code: bad.code } : {}),
+          ...(bad.reason ? { reason: bad.reason } : {}),
           ...(bad.source ? { source: bad.source } : {}),
         },
       });
-      nextActions.push(
-        `fix Open Decision ${bad.id || '(no-id)'}: Status must be open|resolved and Blocking Mode must be a policy mode above docs-only`,
-      );
+      nextActions.push(invalidOpenDecisionAction(bad));
     }
 
     // (1) open decision blocker: chosen 위를 막는 결정. 사람이 resolve 해야 풀린다.

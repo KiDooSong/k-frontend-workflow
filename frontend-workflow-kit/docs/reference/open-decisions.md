@@ -56,7 +56,7 @@ decision_refs:
 References are unique, non-empty strings and resolve exactly and
 case-sensitively. In this contract they resolve only to the global register;
 another ScreenSpec's local row is never a valid target. A global row may have
-zero or one current ref without producing an orphan error.
+zero or more current refs without producing an orphan error.
 
 `workflow:state` exposes every resolved reference under
 `derived.decision_refs`, including rows whose status is `resolved`. An open row

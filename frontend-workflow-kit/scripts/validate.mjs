@@ -84,7 +84,11 @@ import { isWellFormedRequirement } from './lib/policy-condition.mjs';
 // 글롭 미니엔진·생성물 헤더 정규식은 check-generated-files 가드와 단일 출처를 공유한다(표류 방지).
 import { GENERATED_HEADER_RE, globRoot, globToRegExp } from './lib/glob.mjs';
 import { enforceCliFlagContract } from './lib/cli-args.mjs';
-import { loadOpenDecisionRegister, openDecisionRowIsMalformed } from './lib/open-decisions.mjs';
+import {
+  loadOpenDecisionRegister,
+  openDecisionRowIsMalformed,
+  REQUIRED_OPEN_DECISION_COLUMNS,
+} from './lib/open-decisions.mjs';
 
 function isLocalRef(ref) {
   if (typeof ref !== 'string') return false;
@@ -574,8 +578,7 @@ function main() {
   //    decision_refs 는 global register 로만 exact/case-sensitive 해소한다.
   const policyModes =
     (policy.order && policy.order.length ? policy.order : Object.keys(policy.modes || {})) || [];
-  const REQUIRED_OD_COLS = ['ID', 'Decision Needed', 'Options', 'Blocking Mode', 'Owner', 'Status'];
-  const odIdGlobal = new Map();
+  const openDecisionOccurrences = new Map();
   const localDecisionIds = new Set();
   const decisionRegister = loadOpenDecisionRegister({ docsDir });
   // 정책을 못 읽으면(policyModes 비어있음) Blocking Mode 정책-모드 검사를 건너뛴다 — 전부 무효로 오탐 방지.
@@ -602,7 +605,7 @@ function main() {
       }
       return;
     }
-    const missingCols = REQUIRED_OD_COLS.filter((c) => !hasHeader(od.headers, c));
+    const missingCols = REQUIRED_OPEN_DECISION_COLUMNS.filter((c) => !hasHeader(od.headers, c));
     if (missingCols.length) {
       add(9, file, `Open Decisions 표 필수 컬럼 누락: ${missingCols.join(', ')}`);
     }
@@ -632,7 +635,11 @@ function main() {
       if (status === 'resolved' && !r.options) {
         warn(9, file, `Open Decision ${label}: resolved 인데 Options 에 선택값 표시 없음 (권장: '→ 선택값')`);
       }
-      if (r.id) odIdGlobal.set(r.id, (odIdGlobal.get(r.id) || 0) + 1);
+      if (r.id) {
+        const occurrences = openDecisionOccurrences.get(r.id) || [];
+        occurrences.push({ file });
+        openDecisionOccurrences.set(r.id, occurrences);
+      }
       if (local && r.id) localDecisionIds.add(r.id);
     }
   }
@@ -656,9 +663,19 @@ function main() {
     }
     validateOpenDecisionSection({ file: decisionRegister.file, section: decisionRegister.section, required: true });
   }
-  for (const [id, n] of odIdGlobal) {
-    if (n > 1) {
-      add(9, path.join(docsDir, 'domains'), `Open Decision ID 전역 중복: ${id} (${n}건) → 결정당 canonical 행 1개`);
+  for (const [id, occurrences] of openDecisionOccurrences) {
+    if (occurrences.length > 1) {
+      const files = [...new Set(occurrences.map((entry) => entry.file))].sort();
+      const includesRegister = files.includes(decisionRegister.file);
+      const diagnosticFile = includesRegister ? decisionRegister.file : path.join(docsDir, 'domains');
+      const locations = includesRegister
+        ? ` [locations: ${files.map((file) => toPosix(path.relative(docsDir, file))).join(', ')}]`
+        : '';
+      add(
+        9,
+        diagnosticFile,
+        `Open Decision ID 전역 중복: ${id} (${occurrences.length}건) → 결정당 canonical 행 1개${locations}`,
+      );
     }
   }
 

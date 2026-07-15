@@ -165,18 +165,49 @@ test('one canonical open row fans out with provenance; local lowest cap wins; re
 });
 
 test('missing targets/register and malformed/structurally invalid registers fail closed only for referring screens', () => {
-  withProject(({ docsDir, srcDir }) => {
+  withProject((project) => {
+    const { docsDir, srcDir } = project;
     writeScreen(docsDir, 'REF', { refs: ['D-MISSING'] });
     writeScreen(docsDir, 'UNRELATED');
 
     let state = buildState({ docsDir, srcDir, date: '2026-07-15' }).state;
     assert.match(state.screens.REF.derived.malformed_decisions[0].reason, /register is missing/);
+    assert.equal(state.screens.REF.derived.malformed_decisions[0].code, 'missing-register');
     assert.deepEqual(state.screens.UNRELATED.derived.malformed_decisions, []);
-    assert.equal(readinessFor(state).REF.readiness_mode, 'docs-only');
+    let readiness = readinessFor(state);
+    assert.equal(readiness.REF.readiness_mode, 'docs-only');
+    assert.equal(readiness.REF.blocking[0].invalid_open_decision.code, 'missing-register');
+    assert.match(readiness.REF.blocking[0].invalid_open_decision.reason, /register is missing/);
+    assert.match(readiness.REF.next_actions[0], /create global\/open-decisions\.md/);
 
     writeRegister(docsDir, [{ id: 'D-OTHER' }]);
     state = buildState({ docsDir, srcDir, date: '2026-07-15' }).state;
     assert.match(state.screens.REF.derived.malformed_decisions[0].reason, /reference is unresolved/);
+    assert.equal(state.screens.REF.derived.malformed_decisions[0].code, 'unresolved-ref');
+    readiness = readinessFor(state);
+    assert.match(readiness.REF.next_actions[0], /add canonical Open Decision D-MISSING/);
+
+    writeRegister(docsDir, [], {
+      body:
+        '# Broken columns\n\n## Open Decisions\n\n' +
+        '| ID | Decision Needed | Blocking Mode | Status |\n' +
+        '|---|---|---|---|\n' +
+        '| D-MISSING | Which shared empty state? | final-fixture-ui | resolved |\n',
+    });
+    state = buildState({ docsDir, srcDir, date: '2026-07-15' }).state;
+    assert.match(state.screens.REF.derived.malformed_decisions[0].reason, /missing-required-columns/);
+    readiness = readinessFor(state);
+    assert.equal(readiness.REF.readiness_mode, 'docs-only');
+    assert.equal(readiness.REF.blocking[0].invalid_open_decision.code, 'invalid-register');
+    assert.match(readiness.REF.blocking[0].invalid_open_decision.reason, /missing-required-columns/);
+    const missingColumnsReport = validateProject(project).report;
+    assert.ok(
+      missingColumnsReport.errors.some(
+        (error) =>
+          error.check === 9 &&
+          /Open Decisions 표 필수 컬럼 누락: Options, Owner/.test(error.message),
+      ),
+    );
 
     writeRegister(docsDir, [], { body: '# Broken\n\n## Open Decisions\n\n- D-MISSING in prose\n' });
     state = buildState({ docsDir, srcDir, date: '2026-07-15' }).state;
@@ -237,6 +268,17 @@ test('validate check 9 rejects missing/local-only refs, bad shapes, and duplicat
     assert.match(messages, /비어 있지 않은 문자열/);
     assert.match(messages, /decision_refs 중복: D-DUP/);
     assert.match(messages, /canonical 대상이 중복\/모호함/);
+    const duplicateErrors = report.errors.filter(
+      (error) => error.check === 9 && /Open Decision ID 전역 중복/.test(error.message),
+    );
+    assert.ok(
+      duplicateErrors.every(
+        (error) => error.file === 'docs/frontend-workflow/global/open-decisions.md',
+      ),
+    );
+    const crossDuplicate = duplicateErrors.find((error) => /D-CROSS/.test(error.message));
+    assert.match(crossDuplicate.message, /global\/open-decisions\.md/);
+    assert.match(crossDuplicate.message, /domains\/demo\/screens\/cross\/screen-spec\.md/);
   });
 
   withProject((project) => {

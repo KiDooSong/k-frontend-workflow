@@ -3,6 +3,14 @@ import { exists, readFileSafe, splitFrontmatter } from './util.mjs';
 import { getSections, hasHeader, parseOpenDecisions, parseTables } from './spec.mjs';
 
 export const OPEN_DECISION_REGISTER_RELATIVE_PATH = path.join('global', 'open-decisions.md');
+export const REQUIRED_OPEN_DECISION_COLUMNS = [
+  'ID',
+  'Decision Needed',
+  'Options',
+  'Blocking Mode',
+  'Owner',
+  'Status',
+];
 
 function toPosix(value) {
   return value.split(path.sep).join('/');
@@ -69,6 +77,12 @@ export function loadOpenDecisionRegister({ docsDir }) {
   if (sectionCount === 0) structuralErrors.push('missing-section');
   if (sectionCount > 1) structuralErrors.push('duplicate-section');
   if (sectionCount > 0 && !parsed.table) structuralErrors.push('unparsable-table');
+  if (
+    parsed.table &&
+    REQUIRED_OPEN_DECISION_COLUMNS.some((column) => !hasHeader(parsed.headers, column))
+  ) {
+    structuralErrors.push('missing-required-columns');
+  }
   if (canonicalTableCount > 1) structuralErrors.push('multiple-decision-tables');
 
   const index = new Map();
@@ -92,12 +106,13 @@ export function loadOpenDecisionRegister({ docsDir }) {
   };
 }
 
-function malformedDecision({ id, blockingMode = '(none)', status = '(none)', source, reason }) {
+function malformedDecision({ id, blockingMode = '(none)', status = '(none)', source, code, reason }) {
   return {
     id: id || '(no-id)',
     blocking_mode: blockingMode || '(none)',
     status: status || '(none)',
     ...(source ? { source } : {}),
+    ...(code ? { code } : {}),
     ...(reason ? { reason } : {}),
   };
 }
@@ -115,6 +130,7 @@ export function resolveDecisionRefs({ refs, registry, referrer = null, conflicti
       malformedDecision({
         id: '(invalid-decision-refs)',
         source,
+        code: 'invalid-refs-shape',
         reason: `decision_refs must be an array${referrer?.artifact_id ? ` (${referrer.artifact_id})` : ''}`,
       }),
     );
@@ -129,6 +145,7 @@ export function resolveDecisionRefs({ refs, registry, referrer = null, conflicti
         malformedDecision({
           id: '(invalid-decision-ref)',
           source,
+          code: 'invalid-ref',
           reason: `decision_refs[${index}] must be a non-empty string`,
         }),
       );
@@ -136,7 +153,12 @@ export function resolveDecisionRefs({ refs, registry, referrer = null, conflicti
     }
     if (seen.has(ref)) {
       malformed.push(
-        malformedDecision({ id: ref, source, reason: 'duplicate decision reference' }),
+        malformedDecision({
+          id: ref,
+          source,
+          code: 'duplicate-ref',
+          reason: 'duplicate decision reference',
+        }),
       );
       return;
     }
@@ -151,7 +173,14 @@ export function resolveDecisionRefs({ refs, registry, referrer = null, conflicti
 
   if (!registry.exists) {
     for (const id of validRefs) {
-      malformed.push(malformedDecision({ id, source, reason: 'open decision register is missing' }));
+      malformed.push(
+        malformedDecision({
+          id,
+          source,
+          code: 'missing-register',
+          reason: 'open decision register is missing',
+        }),
+      );
     }
     malformed.sort(compareByIdThenSource);
     return { resolved, blockers, malformed };
@@ -163,6 +192,7 @@ export function resolveDecisionRefs({ refs, registry, referrer = null, conflicti
         malformedDecision({
           id,
           source,
+          code: 'invalid-register',
           reason: `open decision register is structurally invalid: ${registry.structuralErrors.join(', ')}`,
         }),
       );
@@ -174,11 +204,25 @@ export function resolveDecisionRefs({ refs, registry, referrer = null, conflicti
   for (const id of validRefs) {
     const rows = registry.index.get(id) || [];
     if (rows.length === 0) {
-      malformed.push(malformedDecision({ id, source, reason: 'decision reference is unresolved' }));
+      malformed.push(
+        malformedDecision({
+          id,
+          source,
+          code: 'unresolved-ref',
+          reason: 'decision reference is unresolved',
+        }),
+      );
       continue;
     }
     if (rows.length !== 1 || conflictingIds.has(id)) {
-      malformed.push(malformedDecision({ id, source, reason: 'decision reference is ambiguous' }));
+      malformed.push(
+        malformedDecision({
+          id,
+          source,
+          code: 'ambiguous-ref',
+          reason: 'decision reference is ambiguous',
+        }),
+      );
       continue;
     }
 
@@ -190,6 +234,7 @@ export function resolveDecisionRefs({ refs, registry, referrer = null, conflicti
           blockingMode: row.blockingMode,
           status: row.status,
           source,
+          code: 'malformed-row',
           reason: 'referenced decision row is malformed',
         }),
       );
