@@ -26,7 +26,8 @@
         "api-manifest",
         "screen-source-map",
         "session-learnings",
-        "open-decision-register"
+        "open-decision-register",
+        "shared-surface-spec"
       ]
     },
     "domain": {
@@ -36,6 +37,28 @@
     "screen_id": {
       "type": "string",
       "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "surface_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "member_screens": {
+      "type": "array",
+      "minItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+      }
+    },
+    "implementation_paths": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
     },
     "route": {
       "type": "string"

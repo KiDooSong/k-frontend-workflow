@@ -1,6 +1,6 @@
 // 최소 JSON Schema 검증기. ajv 같은 무거운 의존성을 피하고,
 // frontmatter.schema.json 이 쓰는 키워드 부분집합만 지원한다:
-//   type, required, properties, items, enum, pattern, minLength, uniqueItems,
+//   type, required, properties, items, enum, pattern, minLength, minItems, uniqueItems,
 //   format(date), additionalProperties(무시)
 // 지원하지 않는 키워드는 통과시킨다 (느슨한 검증).
 
@@ -84,6 +84,9 @@ function walk(value, schema, p, errors) {
 
   if (typeOf(value) === 'array' && schema.items) {
     value.forEach((item, i) => walk(item, schema.items, `${p}[${i}]`, errors));
+  }
+  if (typeOf(value) === 'array' && Number.isInteger(schema.minItems) && value.length < schema.minItems) {
+    errors.push(`${p || '(root)'}: minItems 위반 (최소 ${schema.minItems}, 실제 ${value.length})`);
   }
   if (typeOf(value) === 'array' && schema.uniqueItems === true) {
     const seen = new Set();

@@ -117,6 +117,8 @@ function invalidOpenDecisionAction(decision) {
     case 'invalid-ref':
     case 'duplicate-ref':
       return `fix decision_refs for Open Decision ${id}: ${decision.reason}`;
+    case 'duplicate-referrer':
+      return `keep exactly one decision_refs referrer path for Open Decision ${id}: ${decision.reason}`;
     default:
       return `fix Open Decision ${id}: Status must be open|resolved and Blocking Mode must be a policy mode above docs-only`;
   }
@@ -319,7 +321,16 @@ const CI_FACTS = new Set([
   'state_coverage_complete',
 ]);
 
-export function computeReadiness({ state, policy, ci, manifest, layout }) {
+export function computeReadiness({
+  state,
+  policy,
+  ci,
+  manifest,
+  layout,
+  surfaceOnlyId,
+  exposeCaps = false,
+  skipSurfaces = false,
+}) {
   // 레이아웃 프로파일(tier1): 정책의 {roles.X} 토큰을 물리 글롭으로 펼치는 단일 출처.
   //   호출부가 주입하지 않으면 기본 프로파일(expo-feature 프리셋)을 로드 — 토큰화 이전과
   //   BYTE-동치를 보장한다(README §1.1: 경로 fact 의 단일 resolvedLayout). substituteDomain 의
@@ -373,6 +384,7 @@ export function computeReadiness({ state, policy, ci, manifest, layout }) {
         status: ref.status,
         blocking_mode: ref.blocking_mode || '(none)',
         ...(ref.source ? { source: ref.source } : {}),
+        ...(ref.via ? { via: ref.via } : {}),
         code: 'invalid-blocking-mode',
         reason: `Blocking Mode '${ref.blocking_mode}' is not present in the effective policy`,
       });
@@ -387,6 +399,7 @@ export function computeReadiness({ state, policy, ci, manifest, layout }) {
           id: dec.id,
           blocking_mode: dec.blocking_mode || '(none)',
           ...(dec.source ? { source: dec.source } : {}),
+          ...(dec.via ? { via: dec.via } : {}),
         });
         continue;
       }
@@ -416,6 +429,7 @@ export function computeReadiness({ state, policy, ci, manifest, layout }) {
           ...(bad.code ? { code: bad.code } : {}),
           ...(bad.reason ? { reason: bad.reason } : {}),
           ...(bad.source ? { source: bad.source } : {}),
+          ...(bad.via ? { via: bad.via } : {}),
         },
       });
       nextActions.push(invalidOpenDecisionAction(bad));
@@ -431,6 +445,7 @@ export function computeReadiness({ state, policy, ci, manifest, layout }) {
           blocking_mode: dec.blocking_mode,
           owner: dec.owner || null,
           ...(dec.source ? { source: dec.source } : {}),
+          ...(dec.via ? { via: dec.via } : {}),
         },
       });
       const q = dec.decision_needed ? `: ${dec.decision_needed}` : '';
@@ -494,7 +509,216 @@ export function computeReadiness({ state, policy, ci, manifest, layout }) {
       ...(facts.api_required === false ? { api_required: false } : {}),
       blocking,
       next_actions: nextActions,
+      ...(exposeCaps
+        ? {
+            __fact_mode: order[factIdx] || null,
+            __decision_cap: order[decisionCapIdx] || null,
+            __mode_order: order,
+          }
+        : {}),
     };
+  }
+
+  if (!skipSurfaces && state.surfaces && typeof state.surfaces === 'object') {
+    const syntheticScreens = {};
+    for (const [surfaceId, surface] of Object.entries(state.surfaces)) {
+      syntheticScreens[surfaceId] = {
+        status: surface.status,
+        domain: surface.domain,
+        stub: surface.stub,
+        derived: {
+          ...(surface.derived || {}),
+          // Visual mapping and fake-hook ownership remain member-screen concerns. These neutral
+          // values satisfy the shared policy facts; the independent member cap cannot be bypassed.
+          fake_hook_exists: true,
+          figma_mapping_status: 'verified',
+        },
+      };
+    }
+    const ownSurfaceResults = computeReadiness({
+      state: { global, screens: syntheticScreens },
+      policy,
+      ci,
+      manifest,
+      layout: resolvedLayout,
+      exposeCaps: true,
+      skipSurfaces: true,
+    });
+    const surfaceResults = {};
+
+    for (const [surfaceId, surface] of Object.entries(state.surfaces).sort(([a], [b]) => a.localeCompare(b))) {
+      const own = ownSurfaceResults[surfaceId];
+      if (!own) continue;
+      const effectivePolicy = effectivePolicyFor(surface.domain);
+      const modes =
+        effectivePolicy.modes && typeof effectivePolicy.modes === 'object'
+          ? effectivePolicy.modes
+          : {};
+      const order = Array.isArray(effectivePolicy.order)
+        ? effectivePolicy.order
+        : Object.keys(modes);
+      const ownIdx = Math.max(0, order.indexOf(own.readiness_mode));
+      const memberModes = (surface.member_screens || []).map((screenId) => ({
+        screen_id: screenId,
+        readiness_mode: out[screenId]?.readiness_mode || null,
+      }));
+      let memberCapIdx = order.length - 1;
+      for (const member of memberModes) {
+        const index = order.indexOf(member.readiness_mode);
+        memberCapIdx = Math.min(memberCapIdx, index < 0 ? 0 : index);
+      }
+      if (memberModes.length === 0) memberCapIdx = 0;
+
+      const d = surface.derived || {};
+      const structuralIssues = [
+        ...(d.contract_errors || []),
+        ...(d.identity_errors || []),
+        ...(d.membership_errors || []),
+        ...(d.path_errors || []),
+        ...(d.decision_fanout_errors || []),
+      ];
+      const effectiveIdx = structuralIssues.length
+        ? 0
+        : Math.max(0, Math.min(ownIdx, memberCapIdx));
+      const effectiveMode = order[effectiveIdx] || own.readiness_mode;
+      const chosen = modes[effectiveMode] || { allowed_paths: [], forbidden_paths: [] };
+      let policyAllowed = uniquePaths(
+        resolvedLayout.resolvePaths(chosen.allowed_paths || [], { domain: surface.domain }),
+      );
+      let policyForbidden = uniquePaths(
+        resolvedLayout.resolvePaths(chosen.forbidden_paths || [], { domain: surface.domain }),
+      );
+      if (d.api_required === false) {
+        ({ allowedPaths: policyAllowed, forbiddenPaths: policyForbidden } = limitNoApiEditSurfaces({
+          allowedPaths: policyAllowed,
+          forbiddenPaths: policyForbidden,
+          modes,
+          order,
+          chosenIdx: effectiveIdx,
+          layout: resolvedLayout,
+          domain: surface.domain,
+        }));
+      }
+
+      const blocking = [...own.blocking];
+      const nextActions = [...own.next_actions];
+      if (memberCapIdx < ownIdx) {
+        const limiting = memberModes
+          .filter((member) => order.indexOf(member.readiness_mode) === memberCapIdx)
+          .map((member) => member.screen_id)
+          .sort();
+        blocking.push({
+          member_screen_readiness: {
+            minimum_mode: order[memberCapIdx] || 'docs-only',
+            screens: limiting,
+          },
+        });
+        nextActions.push(
+          `raise member screen readiness above ${order[memberCapIdx] || 'docs-only'}: ${limiting.join(', ')}`,
+        );
+      }
+      for (const issue of structuralIssues) {
+        blocking.push({ shared_surface_contract: issue });
+        nextActions.push(`fix shared-surface contract: ${issue.message || issue.code}`);
+      }
+
+      const allowedPaths = [];
+      const forbiddenPaths = [];
+      const pathAuthorization = [];
+      for (const declaredPath of surface.implementation_paths || []) {
+        const causes = [];
+        if (structuralIssues.length > 0) causes.push({ kind: 'surface-contract' });
+        if (!policyAllowed.some((allowed) => covers(allowed, declaredPath))) {
+          causes.push({ kind: 'surface-policy-coverage', readiness_mode: effectiveMode });
+        }
+        if (pathTouchesAnySurface(declaredPath, policyForbidden)) {
+          causes.push({ kind: 'surface-policy-forbidden', readiness_mode: effectiveMode });
+        }
+        for (const member of memberModes) {
+          const memberResult = out[member.screen_id];
+          if (!memberResult) {
+            causes.push({ kind: 'missing-member-readiness', screen_id: member.screen_id });
+            continue;
+          }
+          if (!memberResult.allowed_paths.some((allowed) => covers(allowed, declaredPath))) {
+            causes.push({
+              kind: 'member-policy-coverage',
+              screen_id: member.screen_id,
+              readiness_mode: memberResult.readiness_mode,
+            });
+          }
+          if (pathTouchesAnySurface(declaredPath, memberResult.forbidden_paths)) {
+            causes.push({
+              kind: 'member-policy-forbidden',
+              screen_id: member.screen_id,
+              readiness_mode: memberResult.readiness_mode,
+            });
+          }
+        }
+        if (causes.length === 0) allowedPaths.push(declaredPath);
+        else {
+          forbiddenPaths.push(declaredPath);
+          blocking.push({ shared_surface_path: { path: declaredPath, causes } });
+          nextActions.push(`resolve shared-surface path authorization for ${declaredPath}`);
+        }
+        pathAuthorization.push({ path: declaredPath, allowed: causes.length === 0, causes });
+      }
+      if ((surface.implementation_paths || []).length === 0) {
+        nextActions.push('declare narrow implementation_paths before editing shared code');
+      }
+
+      const limitingMembers = memberModes
+        .filter((member) => order.indexOf(member.readiness_mode) === memberCapIdx)
+        .map((member) => member.screen_id)
+        .sort();
+      surfaceResults[surfaceId] = {
+        readiness_mode: effectiveMode,
+        surface_fact_mode: own.__fact_mode,
+        surface_decision_cap: own.__decision_cap,
+        member_cap: order[memberCapIdx] || 'docs-only',
+        member_modes: memberModes,
+        limiting_members: limitingMembers,
+        next_mode: effectiveIdx < order.length - 1 ? order[effectiveIdx + 1] : null,
+        allowed_paths: uniquePaths(allowedPaths),
+        forbidden_paths: uniquePaths(forbiddenPaths),
+        path_authorization: pathAuthorization,
+        ...(d.api_required === false ? { api_required: false } : {}),
+        blocking,
+        next_actions: uniquePaths(nextActions),
+      };
+    }
+
+    // Ordinary screen authorization must reserve every declared surface path. Broad screen
+    // allowed globs remain visible, but forbidden paths take precedence and delegation is explicit.
+    for (const [surfaceId, surface] of Object.entries(state.surfaces).sort(([a], [b]) => a.localeCompare(b))) {
+      for (const screenId of surface.member_screens || []) {
+        const screenResult = out[screenId];
+        if (!screenResult) continue;
+        screenResult.forbidden_paths = uniquePaths([
+          ...screenResult.forbidden_paths,
+          ...(surface.implementation_paths || []),
+        ]);
+        if (!Array.isArray(screenResult.delegated_shared_surfaces)) {
+          screenResult.delegated_shared_surfaces = [];
+        }
+        screenResult.delegated_shared_surfaces.push({
+          surface_id: surfaceId,
+          implementation_paths: surface.implementation_paths || [],
+          source: surface.source,
+        });
+        screenResult.delegated_shared_surfaces.sort((a, b) =>
+          String(a.surface_id).localeCompare(String(b.surface_id)),
+        );
+      }
+    }
+
+    if (surfaceOnlyId !== undefined) {
+      return surfaceResults[surfaceOnlyId]
+        ? { [surfaceOnlyId]: surfaceResults[surfaceOnlyId] }
+        : {};
+    }
+  } else if (surfaceOnlyId !== undefined) {
+    return {};
   }
   return out;
 }
@@ -506,16 +730,17 @@ function loadCi(flags) {
 }
 
 function helpText() {
-  return `workflow:readiness - 화면별 구현 가능 모드 계산 (판정의 단일 출처)
+  return `workflow:readiness - 화면별 구현 모드 / 공유 surface 구현 교집합 계산 (판정의 단일 출처)
 
 Usage:
-  node scripts/readiness.mjs [--docs <dir>] [--screen <SCREEN_ID>] [--policy <file>]
+  node scripts/readiness.mjs [--docs <dir>] [--screen <SCREEN_ID> | --surface <SURFACE_ID>] [--policy <file>]
                              [--manifest <file>] [--ci <file>] [--out <file>]
                              [--layout <file>] [--json] [--help]
 
 Options:
   --docs <dir>      authoring 문서 루트(<docs>/_meta/workflow-state.yaml 을 읽음). 기본: ${DEFAULTS.docs}
   --screen <id>     특정 화면 하나만 출력 (예: --screen COUPON-001)
+  --surface <id>    특정 공유 surface 하나만 출력 (예: --surface CHAT-COMPOSER)
   --policy <file>   정책 경로. 기본: 킷 policies/implementation-mode-policy.yaml
   --manifest <file> artifact manifest 경로. 기본: 킷 catalog/artifact-manifest.yaml
   --ci <file>       CI 결과 YAML (없으면 CI 게이트는 blocking 에서 제외)
@@ -534,7 +759,7 @@ Behavior:
 // parseArgs 는 모든 --foo 를 그대로 flags 에 넣으므로(거부 없음) CLI 별 allowlist 로 오타를 잡는다.
 // 예: --screeen 오타가 "전체 화면 출력", --polciy 오타가 "기본 policy 판정"으로 조용히
 // 진행되는 것을 막는다(exit 2). validate.mjs(PR #175)와 같은 계약.
-const VALUE_FLAGS = new Set(['docs', 'policy', 'manifest', 'ci', 'screen', 'out', 'layout']);
+const VALUE_FLAGS = new Set(['docs', 'policy', 'manifest', 'ci', 'screen', 'surface', 'out', 'layout']);
 const BOOLEAN_FLAGS = new Set(['json', 'help']);
 
 function main() {
@@ -550,15 +775,27 @@ function main() {
     tool: 'readiness',
     helpCommand: 'node scripts/readiness.mjs',
   });
-  if (flags.help) {
-    process.stdout.write(helpText());
-    return; // help 는 자연 종료 exit 0 (cli-stdout-flush 계약 — process.exit(0) 금지)
-  }
   // 공백뿐인 --screen 값(--screen " ")은 allowlist(비어있지 않은 문자열)는 통과하지만 화면 ID 가
   // 될 수 없다. 예전의 bare --screen 방어와 같은 단일 usage 경로(exit 2)로 여기서 막는다 —
   // 아래 필터가 빈 결과 {} 로 조용히 오인되지 않게. (bare/빈 --screen= 은 helper 가 이미 거부.)
   if (typeof flags.screen === 'string' && flags.screen.trim() === '') {
     usageError('--screen requires a screen id value (e.g. --screen COUPON-001)');
+  }
+  if (typeof flags.surface === 'string' && flags.surface.trim() === '') {
+    usageError('--surface requires a surface id value (e.g. --surface CHAT-COMPOSER)');
+  }
+  if (
+    typeof flags.surface === 'string' &&
+    !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(flags.surface)
+  ) {
+    usageError('--surface requires a canonical surface id (letters, numbers, _ or -)');
+  }
+  if (flags.screen !== undefined && flags.surface !== undefined) {
+    usageError('--screen and --surface are mutually exclusive');
+  }
+  if (flags.help) {
+    process.stdout.write(helpText());
+    return; // help 는 자연 종료 exit 0 (cli-stdout-flush 계약 — process.exit(0) 금지)
   }
   const docsDir = path.resolve(flags.docs || DEFAULTS.docs);
   const policyPath = path.resolve(flags.policy || DEFAULTS.policy);
@@ -583,7 +820,14 @@ function main() {
   // 레이아웃 프로파일(tier1): role→glob 단일 출처. --layout 으로 project-layout.yaml 경로 오버라이드.
   const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags });
 
-  let result = computeReadiness({ state, policy, ci, manifest, layout });
+  let result = computeReadiness({
+    state,
+    policy,
+    ci,
+    manifest,
+    layout,
+    surfaceOnlyId: flags.surface,
+  });
 
   if (flags.screen !== undefined) {
     // bare/빈 --screen 은 main 진입부의 인자 계약 검증에서 이미 exit 2 — 여기는 유효한 문자열만 온다.
