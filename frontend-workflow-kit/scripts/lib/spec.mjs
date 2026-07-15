@@ -575,25 +575,34 @@ export function buildRuntimeRouteTargetIndex(routes) {
   return index;
 }
 
-function verifiedExpoIndexOwnsRoute(route, expoIndexRouteSet) {
-  if (!(expoIndexRouteSet instanceof Set)) return false;
-  if (expoIndexRouteSet.has(route)) return true;
-  return route !== '/' && route.endsWith('/') && expoIndexRouteSet.has(route.slice(0, -1));
+function screenRouteRepresentsRawOwner(route, rawOwner) {
+  if (route === rawOwner) return true;
+  return rawOwner !== '/' && route.endsWith('/') && route.slice(0, -1) === rawOwner;
+}
+
+function screenRoutesRepresentingRawOwner(routes, rawOwner) {
+  return [...(routes || [])]
+    .filter((route) => screenRouteRepresentsRawOwner(route, rawOwner))
+    .sort();
 }
 
 export function resolveRouteTargetInScreenInventory(target, routeSet, runtimeRouteTargetIndex, opts = {}) {
+  if (target === '/') {
+    // 목적 화면 선택은 두 단계다. 먼저 검사 13과 같은 전체 route-tree resolution이 유일해야 하고,
+    // 그 유일 raw owner를 표현하는 ScreenSpec route도 정확히 하나여야 한다. ScreenSpec∩route-tree의
+    // 교집합 크기만 보면 문서화되지 않은 두 번째 tree owner를 놓치므로 반드시 순서를 지킨다.
+    const treeResolution = opts.routeTreeResolution;
+    if (!treeResolution || treeResolution.status === 'missing') {
+      // route-tree 부재/stale은 exact ScreenSpec `/` 직접 일치까지 막지 않는다. group alias만 fail-closed.
+      return routeSet && routeSet.has('/') ? '/' : null;
+    }
+    if (treeResolution.status === 'ambiguous') return null;
+    const screenMatches = screenRoutesRepresentingRawOwner(routeSet, treeResolution.matches[0]);
+    return screenMatches.length === 1 ? screenMatches[0] : null;
+  }
   if (routeSet && routeSet.has(target)) return target;
   const matches = runtimeRouteTargetIndex?.get(target);
   if (!matches) return null;
-  if (target === '/') {
-    // 목적 화면 선택은 raw 후보 수가 아니라 verified Expo index 소유권을 먼저 적용한 뒤 유일성을 본다.
-    // 따라서 verified `/(app)` + literal `/(legacy)` 조합은 app 화면으로 해소하지만, verified 후보가
-    // 0개 또는 2개 이상이면 선택하지 않는다. 비루트 #131 semantics 는 아래에서 그대로 유지한다.
-    const verifiedMatches = [...matches]
-      .filter((route) => verifiedExpoIndexOwnsRoute(route, opts.expoIndexRouteSet))
-      .sort();
-    return verifiedMatches.length === 1 ? verifiedMatches[0] : null;
-  }
   if (matches.size !== 1) return null;
   return [...matches][0];
 }
@@ -610,19 +619,32 @@ export function routeTargetExistsInScreenInventory(target, routeSet, runtimeRout
 }
 
 // Interaction Matrix v2 Target ↔ route-tree warning-first 교차검증 전용.
-// 일반 route 는 raw token EXACT 를 유지하고, 루트 Target(`/`)만 기본 Expo route-tree 의 실제 index.*
-// 노드로 검증된 route 중 기존 single-filesystem-group stripping 결과가 유일할 때 인정한다.
+// 일반 route 는 raw token EXACT 를 유지한다. 루트 Target(`/`)은 exact owner와 기본 Expo route-tree의
+// 실제 index.* 노드로 검증된 group owner를 함께 모아 전체 runtime owner가 유일할 때만 인정한다.
 export function resolveRouteTreeTarget(target, routeTreeRouteSet, opts = {}) {
   if (!(routeTreeRouteSet instanceof Set)) return { status: 'missing', matches: [] };
-  if (routeTreeRouteSet.has(target)) return { status: 'exact', matches: [target] };
-  if (target !== '/' || !(opts.expoIndexRouteSet instanceof Set)) {
-    return { status: 'missing', matches: [] };
+  if (target !== '/') {
+    return routeTreeRouteSet.has(target)
+      ? { status: 'exact', matches: [target] }
+      : { status: 'missing', matches: [] };
   }
-  const matches = [...(buildRuntimeRouteTargetIndex(opts.expoIndexRouteSet).get('/') || [])]
-    .filter((route) => routeTreeRouteSet.has(route))
-    .sort();
-  if (matches.length === 1) return { status: 'unique-runtime-match', matches };
-  if (matches.length > 1) return { status: 'ambiguous', matches };
+
+  // 루트는 exact `/` owner와 verified Expo group-index owner를 모두 모은 뒤 전체 유일성을 판정한다.
+  // exact를 먼저 반환하면 `/` + `/(app)` 충돌을 숨기므로 두 종류를 같은 owner 집합에서 비교한다.
+  const matches = new Set();
+  if (routeTreeRouteSet.has('/')) matches.add('/');
+  if (opts.expoIndexRouteSet instanceof Set) {
+    for (const route of buildRuntimeRouteTargetIndex(opts.expoIndexRouteSet).get('/') || []) {
+      if (routeTreeRouteSet.has(route)) matches.add(route);
+    }
+  }
+  const sortedMatches = [...matches].sort();
+  if (sortedMatches.length === 1) {
+    return sortedMatches[0] === '/'
+      ? { status: 'exact', matches: sortedMatches }
+      : { status: 'unique-runtime-match', matches: sortedMatches };
+  }
+  if (sortedMatches.length > 1) return { status: 'ambiguous', matches: sortedMatches };
   return { status: 'missing', matches: [] };
 }
 
@@ -690,9 +712,10 @@ export function interactionEdgeRoutes(spec) {
 // 루트(`/`)만 기본 Expo 헤더 + 실제 index.* 노드로 검증된 유일한 filesystem-group token 을 인정한다.
 //   opts.routeTreeRouteSet : route-tree.txt 의 `route: <token>` 집합. 없으면 교차검증은 skip(생성 전/부재 허용).
 //   opts.routeTreeExpoIndexRouteSet : 기본 Expo route-tree 의 실제 index.* 노드가 소유한 raw route 집합.
+//   opts.screenRouteSet : ScreenSpec raw route 집합. 유일 tree owner의 ScreenSpec 표현 모호성 경고에 사용.
 // 반환: [{ row, kind, message }]
 //   kind: type-empty|enum|route-missing-target|result-target-drift|route-tree-target-missing|
-//         route-tree-target-ambiguous|route-tree-missing|nonroute-has-route
+//         route-tree-target-ambiguous|route-tree-target-screen-ambiguous|route-tree-missing|nonroute-has-route
 export function interactionMatrixV2Issues(spec, opts = {}) {
   const table = parseTable(spec.sections['interaction matrix']);
   if (!interactionMatrixIsV2(table)) return [];
@@ -747,6 +770,18 @@ export function interactionMatrixV2Issues(spec, opts = {}) {
               kind: 'route-tree-target-missing',
               message: `route-tree EXACT cross-check: Result Type=route Target ${r} 가 route-tree.txt route token 에 없음 (${label}) — warning-first`,
             });
+          } else if (r === '/' && opts.screenRouteSet instanceof Set) {
+            const screenMatches = screenRoutesRepresentingRawOwner(
+              opts.screenRouteSet,
+              resolution.matches[0],
+            );
+            if (screenMatches.length > 1) {
+              issues.push({
+                row: rowNo,
+                kind: 'route-tree-target-screen-ambiguous',
+                message: `route-tree root runtime cross-check: verified owner ${resolution.matches[0]} 에 대응하는 ScreenSpec route 가 복수임 (${screenMatches.join(', ')}; ${label}) — warning-first`,
+              });
+            }
           }
         }
       } else if (routeTreeMissing && targetRoutes.length > 0 && !routeTreeMissingWarned) {

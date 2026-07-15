@@ -823,7 +823,9 @@ test('check 4 route inventory: Expo single filesystem group stripping is narrow 
   );
   assert.equal(
     resolveRouteTargetInScreenInventory('/', consumerRoot, buildRuntimeRouteTargetIndex(consumerRoot), {
-      expoIndexRouteSet: new Set(['/(app)']),
+      routeTreeResolution: resolveRouteTreeTarget('/', new Set(['/(app)']), {
+        expoIndexRouteSet: new Set(['/(app)']),
+      }),
     }),
     '/(app)/',
     'consumer trailing-slash ScreenSpec route resolves when the raw Expo index token is verified',
@@ -838,7 +840,9 @@ test('check 4 route inventory: Expo single filesystem group stripping is narrow 
   );
   assert.equal(
     resolveRouteTargetInScreenInventory('/', mixedRoot, mixedRootIndex, {
-      expoIndexRouteSet: new Set(['/(app)']),
+      routeTreeResolution: resolveRouteTreeTarget('/', new Set(['/(app)', '/(legacy)']), {
+        expoIndexRouteSet: new Set(['/(app)']),
+      }),
     }),
     '/(app)',
     'destination uniqueness is calculated after filtering out literal group-shaped routes',
@@ -1313,7 +1317,7 @@ test('E2E P2: one verified root wins after literal candidates are filtered', () 
   }
 });
 
-test('E2E: ambiguous verified app-group indexes stay warning-first and select no destination', () => {
+test('E2E P1: undocumented second tree owner keeps provenance ambiguous and selects no destination', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-app-group-index-ambiguous-'));
   try {
     writeTree(root, {
@@ -1335,16 +1339,12 @@ test('E2E: ambiguous verified app-group indexes stay warning-first and select no
         route: '/(app)',
         matrix: basicMatrix('stay'),
       }),
-      'docs/frontend-workflow/domains/d/screens/marketing-index/screen-spec.md': screenSpec({
-        artifactId: 'MARKETING-INDEX-001-screen-spec',
-        screenId: 'MARKETING-INDEX-001',
-        route: '/(marketing)',
-        matrix: basicMatrix('stay'),
-      }),
     });
 
     const routeTree = renderRouteTree(scanAppDir(path.join(root, 'src', 'app')));
     writeTree(root, { 'docs/frontend-workflow/_meta/route-tree.txt': routeTree });
+    assert.match(routeTree, /route: \/\(app\)/);
+    assert.match(routeTree, /route: \/\(marketing\)/);
     const validation = runValidate(root);
     assert.deepEqual(
       check4Errors(validation),
@@ -1365,7 +1365,60 @@ test('E2E: ambiguous verified app-group indexes stay warning-first and select no
     ]);
     assert.deepEqual(graph.routes['/'].inbound, [{ from: 'SOURCE-001', trigger: 'tap' }]);
     assert.equal(graph.screens['APP-INDEX-001'], undefined);
-    assert.equal(graph.screens['MARKETING-INDEX-001'], undefined);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('E2E P2: one tree owner with raw and trailing-slash ScreenSpecs warns and selects neither', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-app-group-index-screen-ambiguous-'));
+  try {
+    writeTree(root, {
+      'src/app/(app)/index.tsx': 'export default function AppIndex() { return null; }\n',
+      'docs/frontend-workflow/domains/d/screens/source/screen-spec.md': screenSpec({
+        artifactId: 'SOURCE-001-screen-spec',
+        screenId: 'SOURCE-001',
+        route: '/source',
+        matrix: [
+          '| User Action | Trigger | Result | Result Type | Target | Params |',
+          '|---|---|---|---|---|---|',
+          '| home | tap | 홈으로 이동 | route | / |  |',
+        ].join('\n'),
+      }),
+      'docs/frontend-workflow/domains/d/screens/app-raw/screen-spec.md': screenSpec({
+        artifactId: 'APP-RAW-001-screen-spec',
+        screenId: 'APP-RAW-001',
+        route: '/(app)',
+        matrix: basicMatrix('stay'),
+      }),
+      'docs/frontend-workflow/domains/d/screens/app-trailing/screen-spec.md': screenSpec({
+        artifactId: 'APP-TRAILING-001-screen-spec',
+        screenId: 'APP-TRAILING-001',
+        route: '/(app)/',
+        matrix: basicMatrix('stay'),
+      }),
+    });
+
+    const routeTree = renderRouteTree(scanAppDir(path.join(root, 'src', 'app')));
+    writeTree(root, { 'docs/frontend-workflow/_meta/route-tree.txt': routeTree });
+
+    const validation = runValidate(root);
+    assert.deepEqual(check4Errors(validation), [], 'inventory candidate keeps check 4 green');
+    assert.equal(
+      (validation.errors || []).some((e) => e.check === 5),
+      false,
+      'raw route strings are distinct, so check 5 does not own this ambiguity',
+    );
+    const screenAmbiguity = (validation.warnings || []).find(
+      (w) => w.check === 13 && /ScreenSpec route 가 복수임/.test(w.message),
+    );
+    assert.ok(screenAmbiguity, 'check 13 surfaces multiple ScreenSpec representations of one owner');
+    assert.match(screenAmbiguity.message, /\/\(app\), \/\(app\)\//);
+
+    const graph = buildNavGraph({ docsDir: path.join(root, 'docs', 'frontend-workflow') });
+    assert.deepEqual(graph.routes['/'].inbound, [{ from: 'SOURCE-001', trigger: 'tap' }]);
+    assert.equal(graph.screens['APP-RAW-001'], undefined);
+    assert.equal(graph.screens['APP-TRAILING-001'], undefined);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -1706,6 +1759,22 @@ test('v2 issues: route-tree root exception is unique, group-index-only, and root
   ).find((i) => i.kind === 'route-tree-target-ambiguous');
   assert.ok(ambiguousIssue, 'multiple verified root candidates get an ambiguity diagnostic');
   assert.match(ambiguousIssue.message, /\/\(app\), \/\(marketing\)/);
+
+  assert.deepEqual(
+    resolveRouteTreeTarget('/', new Set(['/', '/(app)']), {
+      expoIndexRouteSet: new Set(['/(app)']),
+    }),
+    { status: 'ambiguous', matches: ['/', '/(app)'] },
+    'exact and verified group root owners participate in the same whole-tree ambiguity check',
+  );
+
+  const screenAmbiguousIssue = interactionMatrixV2Issues(rootSpec, {
+    routeTreeRouteSet: new Set(['/(app)']),
+    routeTreeExpoIndexRouteSet: new Set(['/(app)']),
+    screenRouteSet: new Set(['/(app)', '/(app)/']),
+  }).find((i) => i.kind === 'route-tree-target-screen-ambiguous');
+  assert.ok(screenAmbiguousIssue, 'one owner with multiple ScreenSpec representations gets a warning');
+  assert.match(screenAmbiguousIssue.message, /\/\(app\), \/\(app\)\//);
 
   assert.equal(
     issues(['/(home,search)'], ['/(home,search)']).some((i) => i.kind === 'route-tree-target-missing'),

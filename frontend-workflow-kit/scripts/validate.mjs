@@ -843,12 +843,14 @@ function main() {
   //     Result Type 헤더가 있는 표(v2 모드)만 점검한다 → v1 표는 무발화 = v1 validate 출력 byte-identical.
   //     enum/route 행 Target 부재/비-route 행 라우트 토큰/Result↔Target drift 를 경고로 surface.
   //     route-tree.txt 가 있으면 Result Type=route Target 과 raw route token 을 교차검증한다. 일반 route 는
-  //     EXACT 를 유지하고 루트(`/`)만 verified Expo group-directory index token 을 인정한다.
+  //     EXACT 를 유지하고 루트(`/`)만 verified Expo group-directory index token 을 인정한다. 유일 owner를
+  //     raw/trailing-slash ScreenSpec이 함께 표현하는 경우도 warning으로 후보를 표면화한다.
   //     route-tree.txt 가 없으면 v2 route Target 존재 시 warning 으로만 알린다(warning-first).
   for (const spec of specs) {
     for (const issue of interactionMatrixV2Issues(spec, {
       routeTreeRouteSet,
       routeTreeExpoIndexRouteSet,
+      screenRouteSet: routeSet,
       routeTreeMissing: !routeTreeExists,
     })) {
       warn(13, spec.path, issue.message);

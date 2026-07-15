@@ -22,10 +22,11 @@ import {
   interactionRowRoutes,
   interactionEdgeRoutes,
   buildRuntimeRouteTargetIndex,
+  resolveRouteTreeTarget,
   resolveRouteTargetInScreenInventory,
 } from './spec.mjs';
 import { findFiles, readFileSafe } from './util.mjs';
-import { parseExpoIndexRouteTokens } from './route-core.mjs';
+import { parseExpoIndexRouteTokens, parseRouteTreeRouteTokens } from './route-core.mjs';
 
 export { cellRoutes, isConcreteRoute }; // 하위호환 재노출(이전 nav-graph export 소비자 보호)
 
@@ -101,8 +102,8 @@ function outboundKey(e) {
 //   - 모든 outbound 엣지 S->R 은 routes[R].inbound 에 {from:S, trigger} 를 무조건 추가한다.
 //   - R 이 어떤 로드된 화면의 fm.route 와 EXACT 문자열 일치하거나, Expo 단일 filesystem group 을 제외한
 //     런타임 URL 이 단일 ScreenSpec route 로 해소되면 그 화면 D 로 해소한다(비루트는 검사 4 와 동일).
-//     루트(`/`) alias 는 기본 Expo route-tree 의 실제 group-directory index.* 증거로 후보를 먼저 필터링하고
-//     verified 후보가 유일할 때만 선택한다. 검사 4의 inventory-only hard gate와 의도적으로 분리한다.
+//     루트(`/`) alias 는 전체 route-tree의 verified owner가 먼저 유일하고, 그 owner를 표현하는 ScreenSpec도
+//     정확히 하나일 때만 선택한다. 검사 4의 inventory-only hard gate와 의도적으로 분리한다.
 //     해소되고 D!==S 면 screens[D].inbound 에 {from:S, trigger, route:R} 추가.
 //   - navigation-map 의 라우트는 routes 레지스트리에 시드만 한다(엣지 생성 아님).
 export function buildNavGraph({ docsDir }) {
@@ -111,7 +112,7 @@ export function buildNavGraph({ docsDir }) {
 
   // 1) 모든 spec 로드 + (id, route, outbound 엣지) 수집. route->screenId 해소 맵 구성.
   const loaded = [];
-  const routeToScreen = new Map(); // fm.route(raw) -> screenId. 목적지 해소는 검사 4 와 같은 helper 를 쓴다.
+  const routeToScreen = new Map(); // fm.route(raw) -> screenId. 비루트는 검사 4 semantics, 루트는 two-stage 해소.
   const routeSet = new Set();
   for (const specPath of specPaths) {
     const spec = loadScreenSpec(specPath);
@@ -151,9 +152,14 @@ export function buildNavGraph({ docsDir }) {
   const ensureScreen = (id) => (screens[id] ||= { inbound: [], outbound: [] });
   const ensureRoute = (r) => (routes[r] ||= { inbound: [] });
   const runtimeRouteTargetIndex = buildRuntimeRouteTargetIndex(routeSet);
-  const expoIndexRouteSet = parseExpoIndexRouteTokens(
-    readFileSafe(path.join(docsDir, '_meta', 'route-tree.txt')),
-  );
+  const routeTreeText = readFileSafe(path.join(docsDir, '_meta', 'route-tree.txt'));
+  const routeTreeRouteSet = parseRouteTreeRouteTokens(routeTreeText);
+  const expoIndexRouteSet = parseExpoIndexRouteTokens(routeTreeText);
+  // 검사 13과 같은 전체 tree owner 집합으로 root ambiguity를 먼저 확정한다. ScreenSpec과의 교집합은
+  // 그 다음 단계에서만 계산해, 아직 문서화되지 않은 두 번째 tree owner를 놓치지 않는다.
+  const rootRouteTreeResolution = resolveRouteTreeTarget('/', routeTreeRouteSet, {
+    expoIndexRouteSet,
+  });
 
   // 2) navigation-map 라우트 시드 — 알려진 라우트가 미참조라도 routes[] 에 등장하게.
   const navMapText = readFileSafe(path.join(docsDir, 'app', 'navigation-map.md'));
@@ -170,9 +176,9 @@ export function buildNavGraph({ docsDir }) {
       });
       // route inbound: 무조건 기록.
       ensureRoute(e.to_route).inbound.push({ from: s.id, trigger: e.trigger });
-      // 목적 화면 해소: 검사 4 와 같은 route target semantics + 자기 자신 아님.
+      // 목적 화면 해소: 비루트는 검사 4와 같은 runtime semantics, 루트는 위 two-stage resolution + 자기 자신 아님.
       const destRoute = resolveRouteTargetInScreenInventory(e.to_route, routeSet, runtimeRouteTargetIndex, {
-        expoIndexRouteSet,
+        routeTreeResolution: e.to_route === '/' ? rootRouteTreeResolution : null,
       });
       const dest = destRoute ? routeToScreen.get(destRoute) : null;
       if (dest && dest !== s.id) {
