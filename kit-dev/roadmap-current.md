@@ -78,6 +78,7 @@ Review          MVP-A 에 없음 (Future Candidate).
 - `skills/implement-screen`
 - Open Decisions readiness cap — 저작 규칙 + **게이트 해제는 사람-전용** 불변식 (LLM 은 open 추가/재오픈만)
 - Open Decisions **validate 형식 검사**(검사 9) — 표 컬럼·`Status` enum·`Blocking Mode` 정책 모드·전역 ID 중복 (resolved→Options 는 경고)
+- Open Decisions **canonical cross-screen reference**(#193) — optional `global/open-decisions.md` register + ScreenSpec `decision_refs`; state/readiness fan-out과 source provenance, malformed/unresolved fail-closed. 기존 결정 축의 additive 확장(새 CI/promotion 없음)
 - golden example: `coupon-feature` (end-to-end 1회 완주)
 
 ## Tier 2 — 설계 계약 작성됨 / 코드 강제 후속
@@ -93,7 +94,7 @@ Review          MVP-A 에 없음 (Future Candidate).
 - ✅ Open Decisions validate **형식 검사** 구현됨(검사 9: 표·`Status`·`Blocking Mode`·전역 ID 중복). ✅ `forbidden_paths` 경계 backstop 구현(MVP-B Phase 0, diff 기반, warning-first — `scripts/forbidden-paths.mjs`; `--enforce` 로 하드).
 - ✅ **API Candidate ↔ contract evidence 매칭 검사 구현됨**(검사 8, 하드·exit 1): confirmed ScreenSpec 후보의 (Method, Path) → api-manifest Endpoints → Linked Contract + Contract Kind 해소까지. zod 는 기존 Linked Schema 5컬럼 레거시 표와 src/api/schemas/*.ts 런타임 export 매칭을 유지하고, ts-type 은 Source 경로의 export type/export interface 정적 evidence 를 인정한다. openapi|manual|unknown kind 는 evidence 종류 기록용 호환 경로이며, TS type evidence 를 런타임 validation 으로 주장하거나 Zod/runtime validator 를 생성하지 않는다. manifest 부재 시 옛 전역 존재검사(hasZod || hasOpenApi)로 폴백한다. 증거: [api-schema-match-001.md](../temp/runs/api-schema-match-001.md).
 - 🔶 Interaction Matrix **`Result` 컬럼 구조화 — v2 dual-read + 정밀화 구현됨**(#48 + follow-up): 선택적 `Result Type`/`Target`/`Params` 컬럼 파서 + **검사 13(warning-only)** + v2 골든 픽스처. v1 free-form Result 는 정본 유지, v2 출력 byte-identical. `Result Type` enum 은 `route|state|mutation|external|none` 으로 코드 단일 출처에 동결했고, `Result Type=route` Target 은 route-tree.txt 의 `route: <token>` 과 **EXACT** 로 경고 교차검증한다(route-tree artifact 부재 시 skip). **잔여:** 하드 게이트 승격 없음; telemetry 후 별도 decision PR 에서만 검토. 증거: [interaction-matrix-v2-dual-read-001.md](temp/runs/interaction-matrix-v2-dual-read-001.md).
-- decision-log.md 전역 이관 · deferred+Reversible+Assumptions 묶음 · 교차-화면 참조 (open-decisions.md 후속 절)
+- decision-log.md 전역 이관 · deferred+Reversible+Assumptions 묶음 (open-decisions.md 후속 절). ✅ canonical 교차-화면 참조는 #193으로 구현; shared-surface 적용은 #192 후속
 
 **Tier 2 구현:**
 - ✅ **reconcile-input 스킬** 작성·**킷 vendoring 완료** — `frontend-workflow-kit/skills/reconcile-input/SKILL.md` 존재 + `distribution-manifest.yaml` 이 `skills/**` 를 payload 에 포함(절차 가이드·코드 강제 0). 리포-로컬 `.claude/skills/reconcile-input/` 은 kit 개발 세션용 사본.

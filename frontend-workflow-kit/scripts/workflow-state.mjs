@@ -19,7 +19,8 @@ import {
   projectRootOf,
   isCliEntry,
 } from './lib/util.mjs';
-import { loadScreenSpec, deriveMetrics, isStub } from './lib/spec.mjs';
+import { loadScreenSpec, deriveMetrics, isStub, parseOpenDecisions } from './lib/spec.mjs';
+import { loadOpenDecisionRegister, resolveDecisionRefs } from './lib/open-decisions.mjs';
 import { loadLayoutProfile } from './lib/layout-profile.mjs';
 import { scanLayerInventory } from './lib/layer-inventory.mjs';
 import { enforceCliFlagContract } from './lib/cli-args.mjs';
@@ -39,14 +40,22 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
   const resolvedLayout = layout || loadLayoutProfile({ kitRoot: KIT_ROOT });
   const domainsRoot = path.join(docsDir, 'domains');
   const specPaths = findFiles(domainsRoot, 'screen-spec.md');
+  const specs = specPaths.map((specPath) => loadScreenSpec(specPath));
+  const register = loadOpenDecisionRegister({ docsDir });
+  const localDecisionIds = new Set();
+  for (const spec of specs) {
+    for (const row of parseOpenDecisions(spec.sections['open decisions']).rows) {
+      if (row.id) localDecisionIds.add(row.id);
+    }
+  }
 
   const screens = {};
   const inventory = [];
   const idSeen = new Map();
   const routeSeen = new Map();
 
-  for (const specPath of specPaths) {
-    const spec = loadScreenSpec(specPath);
+  for (const spec of specs) {
+    const specPath = spec.path;
     const fm = spec.frontmatter;
     const id = fm.screen_id || fm.artifact_id || path.basename(path.dirname(specPath));
     const domain = fm.domain || null;
@@ -56,6 +65,24 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
     const status = fm.status || 'draft';
 
     const derived = deriveMetrics(spec, { srcDir, layout: resolvedLayout, projectRoot });
+    if (Object.prototype.hasOwnProperty.call(fm, 'decision_refs')) {
+      const refs = resolveDecisionRefs({
+        refs: fm.decision_refs,
+        registry: register,
+        referrer: fm,
+        conflictingIds: localDecisionIds,
+      });
+      if (refs.resolved.length > 0) derived.decision_refs = refs.resolved;
+      if (refs.blockers.length > 0) {
+        derived.blocking_decisions.push(...refs.blockers);
+        derived.blocking_decisions.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+      }
+      if (refs.malformed.length > 0) {
+        derived.malformed_decisions.push(...refs.malformed);
+        derived.malformed_decisions.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+      }
+      derived.open_decisions_count = derived.blocking_decisions.length;
+    }
 
     screens[id] = {
       status,
@@ -100,6 +127,7 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
         tbd_count: s.derived.tbd_count,
         unknown_count: s.derived.unknown_count,
         open_decisions_count: s.derived.open_decisions_count,
+        ...(s.derived.decision_refs?.length ? { decision_refs: s.derived.decision_refs } : {}),
         blocking_decisions: s.derived.blocking_decisions,
         malformed_decisions: s.derived.malformed_decisions,
         api_confidence_min: s.derived.api_confidence_min,
@@ -234,12 +262,16 @@ function main() {
     return;
   }
 
-  const stateYaml = emitGeneratedYaml(
-    [
+  const stateSources = [
       'GENERATED FILE — DO NOT EDIT',
       'Source:  docs/frontend-workflow/domains/**/screen-spec.md (frontmatter + 본문)',
-      'Command: npm run workflow:state',
-    ],
+  ];
+  if (exists(path.join(docsDir, 'global', 'open-decisions.md'))) {
+    stateSources.push('Source:  docs/frontend-workflow/global/open-decisions.md (referenced decisions)');
+  }
+  stateSources.push('Command: npm run workflow:state');
+  const stateYaml = emitGeneratedYaml(
+    stateSources,
     state,
   );
   const invYaml = emitGeneratedYaml(

@@ -84,6 +84,7 @@ import { isWellFormedRequirement } from './lib/policy-condition.mjs';
 // 글롭 미니엔진·생성물 헤더 정규식은 check-generated-files 가드와 단일 출처를 공유한다(표류 방지).
 import { GENERATED_HEADER_RE, globRoot, globToRegExp } from './lib/glob.mjs';
 import { enforceCliFlagContract } from './lib/cli-args.mjs';
+import { loadOpenDecisionRegister, openDecisionRowIsMalformed } from './lib/open-decisions.mjs';
 
 function isLocalRef(ref) {
   if (typeof ref !== 'string') return false;
@@ -568,68 +569,149 @@ function main() {
     }
   }
 
-  // 9. Open Decisions 형식 검사 (open-decisions.md "Validate 통합")
-  //    표 필수 컬럼 · Status enum(open|resolved) · Blocking Mode 정책 모드 · 전역 ID 중복.
-  //    resolved→Options 선택값은 약한 권장이라 경고. (forbidden_paths backstop 은 diff 기반 후속)
+  // 9. Open Decisions 형식 + canonical register/reference 검사.
+  //    기존 ScreenSpec-local 표와 optional global register 가 같은 6컬럼 parser/행 규칙을 공유한다.
+  //    decision_refs 는 global register 로만 exact/case-sensitive 해소한다.
   const policyModes =
     (policy.order && policy.order.length ? policy.order : Object.keys(policy.modes || {})) || [];
   const REQUIRED_OD_COLS = ['ID', 'Decision Needed', 'Options', 'Blocking Mode', 'Owner', 'Status'];
-  const odIdGlobal = new Map(); // 전역 ID 집계 (화면 간 중복 검사)
+  const odIdGlobal = new Map();
+  const localDecisionIds = new Set();
+  const decisionRegister = loadOpenDecisionRegister({ docsDir });
   // 정책을 못 읽으면(policyModes 비어있음) Blocking Mode 정책-모드 검사를 건너뛴다 — 전부 무효로 오탐 방지.
   // 단 Open Decisions 가 실제로 있으면 조용히 넘기지 않고 경고로 surface 한다(설정 오류 신호).
-  if (policyModes.length === 0 && specs.some((s) => s.sections['open decisions'] !== undefined)) {
+  if (policyModes.length === 0 && (decisionRegister.exists || specs.some((s) => s.sections['open decisions'] !== undefined))) {
     warn(9, path.join(docsDir, 'domains'), '정책을 로드하지 못해 Open Decisions 의 Blocking Mode 정책-모드 검사를 건너뜀 — policy 경로를 확인하세요');
   }
-  for (const spec of specs) {
-    const section = spec.sections['open decisions'];
-    if (section === undefined) continue;
+
+  function validateOpenDecisionSection({ file, section, required = false, local = false }) {
+    if (section === undefined) {
+      if (required) {
+        add(9, file, 'canonical open-decision-register 에 ## Open Decisions 섹션이 없음');
+      }
+      return;
+    }
     const od = parseOpenDecisions(section);
     if (!od.table) {
-      if (od.sectionHasContent) {
+      if (required || od.sectionHasContent) {
         add(
           9,
-          spec.path,
+          file,
           'Open Decisions 섹션에 내용이 있으나 파싱 가능한 표가 없음 → 해소: 템플릿의 6컬럼 표(| ID | Decision Needed | Options | Blocking Mode | Owner | Status |) 형식을 사용하세요',
         );
       }
-      continue;
+      return;
     }
     const missingCols = REQUIRED_OD_COLS.filter((c) => !hasHeader(od.headers, c));
     if (missingCols.length) {
-      add(9, spec.path, `Open Decisions 표 필수 컬럼 누락: ${missingCols.join(', ')}`);
+      add(9, file, `Open Decisions 표 필수 컬럼 누락: ${missingCols.join(', ')}`);
     }
     for (const r of od.rows) {
       const label = r.id || '(no-id)';
       const status = r.status.toLowerCase();
       if (!r.id) {
-        add(9, spec.path, `Open Decision 행에 ID 누락 (Decision: ${r.decisionNeeded || '?'}) → 해소: 전역 유일한 D-xxx ID 부여`);
+        add(9, file, `Open Decision 행에 ID 누락 (Decision: ${r.decisionNeeded || '?'}) → 해소: 전역 유일한 D-xxx ID 부여`);
       }
       if (!r.decisionNeeded) {
-        add(9, spec.path, `Open Decision ${label}: Decision Needed 누락 (필수) → 해소: 결정해야 하는 질문 작성`);
+        add(9, file, `Open Decision ${label}: Decision Needed 누락 (필수) → 해소: 결정해야 하는 질문 작성`);
       }
       if (status !== 'open' && status !== 'resolved') {
-        add(9, spec.path, `Open Decision ${label}: Status 는 open|resolved 여야 함 (현재: ${r.status || '(빈값)'})`);
+        add(9, file, `Open Decision ${label}: Status 는 open|resolved 여야 함 (현재: ${r.status || '(빈값)'})`);
       }
       if (r.blockingMode) {
         if (policyModes.length && !policyModes.includes(r.blockingMode)) {
-          add(9, spec.path, `Open Decision ${label}: Blocking Mode '${r.blockingMode}' 가 정책 모드가 아님 → 해소: ${policyModes.join(' / ')} 중 하나`);
+          add(9, file, `Open Decision ${label}: Blocking Mode '${r.blockingMode}' 가 정책 모드가 아님 → 해소: ${policyModes.join(' / ')} 중 하나`);
         } else if (status === 'open' && policyModes.length && policyModes.indexOf(r.blockingMode) === 0) {
-          add(9, spec.path, `Open Decision ${label}: Blocking Mode '${r.blockingMode}' 는 floor(docs-only)라 막을 수 없음 → 해소: 그 위 모드 지정`);
+          add(9, file, `Open Decision ${label}: Blocking Mode '${r.blockingMode}' 는 floor(docs-only)라 막을 수 없음 → 해소: 그 위 모드 지정`);
         }
       } else {
         // Blocking Mode 는 전 행 필수 (open-decisions.md 필드표). resolved 도 canonical 행에 유지하며,
         // 재오픈 시 게이트가 즉시 동작하도록 한다.
-        add(9, spec.path, `Open Decision ${label}: Blocking Mode 누락 (필수) → 해소: 막을 최소 모드 지정`);
+        add(9, file, `Open Decision ${label}: Blocking Mode 누락 (필수) → 해소: 막을 최소 모드 지정`);
       }
       if (status === 'resolved' && !r.options) {
-        warn(9, spec.path, `Open Decision ${label}: resolved 인데 Options 에 선택값 표시 없음 (권장: '→ 선택값')`);
+        warn(9, file, `Open Decision ${label}: resolved 인데 Options 에 선택값 표시 없음 (권장: '→ 선택값')`);
       }
       if (r.id) odIdGlobal.set(r.id, (odIdGlobal.get(r.id) || 0) + 1);
+      if (local && r.id) localDecisionIds.add(r.id);
     }
+  }
+
+  for (const spec of specs) {
+    validateOpenDecisionSection({
+      file: spec.path,
+      section: spec.sections['open decisions'],
+      local: true,
+    });
+  }
+  if (decisionRegister.exists) {
+    if (decisionRegister.structuralErrors.includes('invalid-frontmatter')) {
+      add(9, decisionRegister.file, 'canonical open-decision-register frontmatter 가 잘못됨 → artifact_id/artifact_type=open-decision-register 및 status 를 선언하세요');
+    }
+    if (decisionRegister.structuralErrors.includes('duplicate-section')) {
+      add(9, decisionRegister.file, 'canonical open-decision-register 에 ## Open Decisions 섹션이 2개 이상 있음 → canonical 표는 정확히 1개여야 함');
+    }
+    if (decisionRegister.structuralErrors.includes('multiple-decision-tables')) {
+      add(9, decisionRegister.file, 'canonical open-decision-register 의 ## Open Decisions 섹션에 canonical 표가 2개 이상 있음 → 6컬럼 표 하나로 합치세요');
+    }
+    validateOpenDecisionSection({ file: decisionRegister.file, section: decisionRegister.section, required: true });
   }
   for (const [id, n] of odIdGlobal) {
     if (n > 1) {
       add(9, path.join(docsDir, 'domains'), `Open Decision ID 전역 중복: ${id} (${n}건) → 결정당 canonical 행 1개`);
+    }
+  }
+
+  // decision_refs 는 schema 검사 1에 더해 semantic resolution 을 방어적으로 다시 확인한다.
+  // ScreenSpec path는 artifact_type 자체가 손상돼 docs 수집에서 빠져도 fail-open 하지 않게 포함한다.
+  const decisionRefDocs = new Map(docs.map(({ file, fm }) => [file, { file, fm }]));
+  for (const spec of specs) {
+    if (Object.prototype.hasOwnProperty.call(spec.frontmatter, 'decision_refs')) {
+      decisionRefDocs.set(spec.path, { file: spec.path, fm: spec.frontmatter });
+    }
+  }
+  for (const { file, fm } of decisionRefDocs.values()) {
+    if (!Object.prototype.hasOwnProperty.call(fm, 'decision_refs')) continue;
+    if (!Array.isArray(fm.decision_refs)) {
+      add(9, file, 'decision_refs 는 unique non-empty string 배열이어야 함');
+      continue;
+    }
+    const seenRefs = new Set();
+    const validRefs = [];
+    fm.decision_refs.forEach((ref, index) => {
+      if (typeof ref !== 'string' || ref.trim().length === 0) {
+        add(9, file, `decision_refs[${index}] 는 비어 있지 않은 문자열이어야 함`);
+        return;
+      }
+      if (seenRefs.has(ref)) {
+        add(9, file, `decision_refs 중복: ${ref} → 같은 ID는 한 번만 선언`);
+        return;
+      }
+      seenRefs.add(ref);
+      validRefs.push(ref);
+    });
+    if (validRefs.length === 0) continue;
+    if (!decisionRegister.exists) {
+      add(9, file, 'decision_refs 가 있으나 global/open-decisions.md canonical register 가 없음 → register 를 생성하거나 참조를 제거하세요');
+      continue;
+    }
+    if (decisionRegister.structuralErrors.length > 0) {
+      add(9, file, `decision_refs 를 해소할 canonical register 구조가 잘못됨: ${decisionRegister.structuralErrors.join(', ')}`);
+      continue;
+    }
+    for (const ref of validRefs) {
+      const rows = decisionRegister.index.get(ref) || [];
+      if (rows.length === 0) {
+        if (localDecisionIds.has(ref)) {
+          add(9, file, `decision_refs '${ref}' 는 ScreenSpec-local 결정만 가리킴 → global/open-decisions.md 의 canonical 행만 참조할 수 있음`);
+        } else {
+          add(9, file, `decision_refs '${ref}' 대상이 global/open-decisions.md 에 없음`);
+        }
+      } else if (rows.length > 1 || localDecisionIds.has(ref)) {
+        add(9, file, `decision_refs '${ref}' canonical 대상이 중복/모호함 → 프로젝트 전역 canonical 행 1개만 유지`);
+      } else if (openDecisionRowIsMalformed(rows[0])) {
+        add(9, file, `decision_refs '${ref}' 대상 행이 malformed라 해소할 수 없음`);
+      }
     }
   }
 

@@ -4,6 +4,13 @@
 
 ## Unreleased
 
+### feat(open-decisions) — canonical cross-screen references and readiness fan-out (#193)
+
+- optional authoring artifact `open-decision-register`(`docs/frontend-workflow/global/open-decisions.md`)와 packed template/reference를 추가하고, ScreenSpec 공통 frontmatter `decision_refs`를 unique non-empty string 배열로 정의했다. local/global 행은 기존 6컬럼 parser와 검사 9를 공유하며 ID는 프로젝트 전역에서 하나의 canonical 행만 허용한다.
+- 공용 `open-decisions.mjs` resolver가 custom `--docs` 기준 canonical source를 보존해 참조를 해소한다. `workflow:state`는 resolved 포함 `derived.decision_refs`를 선택적으로 노출하고 open 참조는 기존 `blocking_decisions`에 합친다. `workflow:readiness`의 `min(fact_mode, decision_cap)` 알고리즘은 그대로이며 referenced blocker의 `source`만 보존한다.
+- 누락 register/target, local-only target, scalar·빈 값·중복 ref, malformed/중복/구조 손상 register는 참조 화면만 fail-closed(`malformed_decisions` → docs-only)한다. register/ref가 없는 local-only repository의 state/readiness/validate 출력은 기존 byte 계약을 유지한다.
+- 검사 9를 global register 구조·local/global ID 중복·reference semantic resolution까지 확장했다. shared-surface identity/membership/readiness(#192), decision-log/history, 자동 migration, gate lowering, warning-first/CI promotion은 포함하지 않는다.
+
 ### fix(cli) — reject split-token empty values before duplicate reduction
 
 - 공용 `enforceCliFlagContract`가 `--docs '' --docs valid`처럼 분리 토큰으로 전달된 빈 value occurrence도 raw argv 순서에서 exit 2로 거부한다. 뒤의 정상 duplicate가 앞선 빈 입력을 가리지 못하며, raw argv를 전달하는 validate/readiness/workflow-state/forbidden-paths/adoption-probe/generated views/telemetry와 packed payload에 동일 적용된다.

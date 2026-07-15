@@ -347,7 +347,11 @@ export function computeReadiness({ state, policy, ci, manifest, layout }) {
       if (bmIdx <= 0) {
         // bmIdx<0: 정책에 없는 값(오타). bmIdx==0: docs-only(floor)는 막을 수 없음(무의미).
         // 둘 다 해석 불가 → 조용히 무시하지 않고 invalid 로 surface 한다.
-        invalidDecisions.push({ id: dec.id, blocking_mode: dec.blocking_mode || '(none)' });
+        invalidDecisions.push({
+          id: dec.id,
+          blocking_mode: dec.blocking_mode || '(none)',
+          ...(dec.source ? { source: dec.source } : {}),
+        });
         continue;
       }
       decisionCapIdx = Math.min(decisionCapIdx, bmIdx - 1);
@@ -372,6 +376,7 @@ export function computeReadiness({ state, policy, ci, manifest, layout }) {
         invalid_open_decision: {
           id: bad.id || '(no-id)',
           blocking_mode: bad.blocking_mode || '(none)',
+          ...(bad.source ? { source: bad.source } : {}),
         },
       });
       nextActions.push(
@@ -388,6 +393,7 @@ export function computeReadiness({ state, policy, ci, manifest, layout }) {
           id: dec.id,
           blocking_mode: dec.blocking_mode,
           owner: dec.owner || null,
+          ...(dec.source ? { source: dec.source } : {}),
         },
       });
       const q = dec.decision_needed ? `: ${dec.decision_needed}` : '';
