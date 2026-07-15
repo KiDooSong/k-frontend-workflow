@@ -179,3 +179,21 @@ export function parseRouteTreeRouteTokens(text) {
   }
   return routes;
 }
+
+// 기존 route-tree bytes 안에서만 확인 가능한 좁은 Expo provenance:
+//   1) 기본 expo-router 생성 헤더이고(custom --router 아님),
+//   2) 실제 `index.<expo ext>` 파일 노드가 소유한 raw route token 인 경우.
+// 반환 집합은 모든 Expo index route 를 담고, 호출자가 기존 single-filesystem-group runtime
+// semantics 로 `/` 후보만 다시 좁힌다. `(app).tsx` 같은 괄호 이름 파일은 index 노드가 아니므로 제외된다.
+export function parseExpoIndexRouteTokens(text) {
+  const routes = new Set();
+  if (!text) return routes;
+  const source = /^# Source: src\/app\/\*\*$/m.test(text);
+  const command = /^# Command: node scripts\/route-tree\.mjs --app(?:\s|$)/m.test(text);
+  if (!source || !command) return routes;
+  for (const line of String(text).split(/\r?\n/)) {
+    const m = /(?:^|[├└]─ )index\.(?:tsx|ts|jsx|js)\s+route:\s*([^\s]+)/.exec(line);
+    if (m) routes.add(m[1]);
+  }
+  return routes;
+}

@@ -25,6 +25,7 @@ import {
   resolveRouteTargetInScreenInventory,
 } from './spec.mjs';
 import { findFiles, readFileSafe } from './util.mjs';
+import { parseExpoIndexRouteTokens } from './route-core.mjs';
 
 export { cellRoutes, isConcreteRoute }; // 하위호환 재노출(이전 nav-graph export 소비자 보호)
 
@@ -100,6 +101,7 @@ function outboundKey(e) {
 //   - 모든 outbound 엣지 S->R 은 routes[R].inbound 에 {from:S, trigger} 를 무조건 추가한다.
 //   - R 이 어떤 로드된 화면의 fm.route 와 EXACT 문자열 일치하거나, Expo 단일 filesystem group 을 제외한
 //     런타임 URL 이 단일 ScreenSpec route 로 해소되면 그 화면 D 로 해소한다(검사 4 와 동일).
+//     단, 루트(`/`) alias 는 기본 Expo route-tree 의 실제 group-directory index.* 증거가 있어야 한다.
 //     해소되고 D!==S 면 screens[D].inbound 에 {from:S, trigger, route:R} 추가.
 //   - navigation-map 의 라우트는 routes 레지스트리에 시드만 한다(엣지 생성 아님).
 export function buildNavGraph({ docsDir }) {
@@ -148,6 +150,9 @@ export function buildNavGraph({ docsDir }) {
   const ensureScreen = (id) => (screens[id] ||= { inbound: [], outbound: [] });
   const ensureRoute = (r) => (routes[r] ||= { inbound: [] });
   const runtimeRouteTargetIndex = buildRuntimeRouteTargetIndex(routeSet);
+  const expoIndexRouteSet = parseExpoIndexRouteTokens(
+    readFileSafe(path.join(docsDir, '_meta', 'route-tree.txt')),
+  );
 
   // 2) navigation-map 라우트 시드 — 알려진 라우트가 미참조라도 routes[] 에 등장하게.
   const navMapText = readFileSafe(path.join(docsDir, 'app', 'navigation-map.md'));
@@ -165,7 +170,9 @@ export function buildNavGraph({ docsDir }) {
       // route inbound: 무조건 기록.
       ensureRoute(e.to_route).inbound.push({ from: s.id, trigger: e.trigger });
       // 목적 화면 해소: 검사 4 와 같은 route target semantics + 자기 자신 아님.
-      const destRoute = resolveRouteTargetInScreenInventory(e.to_route, routeSet, runtimeRouteTargetIndex);
+      const destRoute = resolveRouteTargetInScreenInventory(e.to_route, routeSet, runtimeRouteTargetIndex, {
+        expoIndexRouteSet,
+      });
       const dest = destRoute ? routeToScreen.get(destRoute) : null;
       if (dest && dest !== s.id) {
         ensureScreen(dest).inbound.push({ from: s.id, trigger: e.trigger, route: e.to_route });

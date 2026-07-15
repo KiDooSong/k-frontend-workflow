@@ -575,26 +575,47 @@ export function buildRuntimeRouteTargetIndex(routes) {
   return index;
 }
 
-export function resolveRouteTargetInScreenInventory(target, routeSet, runtimeRouteTargetIndex) {
+function verifiedExpoIndexOwnsRoute(route, expoIndexRouteSet) {
+  if (!(expoIndexRouteSet instanceof Set)) return false;
+  if (expoIndexRouteSet.has(route)) return true;
+  return route !== '/' && route.endsWith('/') && expoIndexRouteSet.has(route.slice(0, -1));
+}
+
+export function resolveRouteTargetInScreenInventory(target, routeSet, runtimeRouteTargetIndex, opts = {}) {
   if (routeSet && routeSet.has(target)) return target;
   const matches = runtimeRouteTargetIndex?.get(target);
   if (!matches || matches.size !== 1) return null;
-  return [...matches][0];
+  const match = [...matches][0];
+  // 루트 alias 는 raw token 만으로 Expo group-directory index 인지 알 수 없다. 기본 Expo route-tree 의
+  // 실제 index.* 노드가 같은 raw route 를 소유한다는 증거가 있을 때만 허용한다. 비루트 #131 semantics 는 유지.
+  if (target === '/' && !verifiedExpoIndexOwnsRoute(match, opts.expoIndexRouteSet)) return null;
+  return match;
 }
 
-export function routeTargetExistsInScreenInventory(target, routeSet, runtimeRouteTargetIndex) {
-  return !!resolveRouteTargetInScreenInventory(target, routeSet, runtimeRouteTargetIndex);
+export function routeTargetExistsInScreenInventory(target, routeSet, runtimeRouteTargetIndex, opts = {}) {
+  return !!resolveRouteTargetInScreenInventory(target, routeSet, runtimeRouteTargetIndex, opts);
 }
 
 // Interaction Matrix v2 Target ↔ route-tree warning-first 교차검증 전용.
-// 일반 route 는 raw token EXACT 를 유지하고, 루트 Target(`/`)만 기존 Expo 단일 filesystem-group
-// stripping 결과가 정확히 한 route-tree token 으로 해소될 때 존재하는 것으로 본다.
-export function routeTreeTargetExists(target, routeTreeRouteSet) {
-  if (!(routeTreeRouteSet instanceof Set)) return false;
-  if (routeTreeRouteSet.has(target)) return true;
-  if (target !== '/') return false;
-  const matches = buildRuntimeRouteTargetIndex(routeTreeRouteSet).get('/');
-  return !!matches && matches.size === 1;
+// 일반 route 는 raw token EXACT 를 유지하고, 루트 Target(`/`)만 기본 Expo route-tree 의 실제 index.*
+// 노드로 검증된 route 중 기존 single-filesystem-group stripping 결과가 유일할 때 인정한다.
+export function resolveRouteTreeTarget(target, routeTreeRouteSet, opts = {}) {
+  if (!(routeTreeRouteSet instanceof Set)) return { status: 'missing', matches: [] };
+  if (routeTreeRouteSet.has(target)) return { status: 'exact', matches: [target] };
+  if (target !== '/' || !(opts.expoIndexRouteSet instanceof Set)) {
+    return { status: 'missing', matches: [] };
+  }
+  const matches = [...(buildRuntimeRouteTargetIndex(opts.expoIndexRouteSet).get('/') || [])]
+    .filter((route) => routeTreeRouteSet.has(route))
+    .sort();
+  if (matches.length === 1) return { status: 'unique-runtime-match', matches };
+  if (matches.length > 1) return { status: 'ambiguous', matches };
+  return { status: 'missing', matches: [] };
+}
+
+export function routeTreeTargetExists(target, routeTreeRouteSet, opts = {}) {
+  const status = resolveRouteTreeTarget(target, routeTreeRouteSet, opts).status;
+  return status === 'exact' || status === 'unique-runtime-match';
 }
 
 // Interaction Matrix 의 Result 컬럼에서 라우트들을 추출 (v1 free-form/backcompat helper).
@@ -653,10 +674,12 @@ export function interactionEdgeRoutes(spec) {
 
 // v2 형식 점검(warning-first, 순수 함수) — validate 검사 13 이 호출한다. v1 표는 항상 빈 배열 → v1 출력 불변.
 // 절대 에러로 승격하지 않는다(하드 게이트 없음). Target 존재 검사는 route-tree.txt raw token 과 EXACT 비교하되,
-// 루트(`/`)만 유일한 Expo 단일 filesystem-group index token 을 기존 runtime semantics 로 인정한다.
+// 루트(`/`)만 기본 Expo 헤더 + 실제 index.* 노드로 검증된 유일한 filesystem-group token 을 인정한다.
 //   opts.routeTreeRouteSet : route-tree.txt 의 `route: <token>` 집합. 없으면 교차검증은 skip(생성 전/부재 허용).
+//   opts.routeTreeExpoIndexRouteSet : 기본 Expo route-tree 의 실제 index.* 노드가 소유한 raw route 집합.
 // 반환: [{ row, kind, message }]
-//   kind: type-empty|enum|route-missing-target|result-target-drift|route-tree-target-missing|route-tree-missing|nonroute-has-route
+//   kind: type-empty|enum|route-missing-target|result-target-drift|route-tree-target-missing|
+//         route-tree-target-ambiguous|route-tree-missing|nonroute-has-route
 export function interactionMatrixV2Issues(spec, opts = {}) {
   const table = parseTable(spec.sections['interaction matrix']);
   if (!interactionMatrixIsV2(table)) return [];
@@ -696,7 +719,16 @@ export function interactionMatrixV2Issues(spec, opts = {}) {
       }
       if (routeTreeRouteSet) {
         for (const r of targetRoutes) {
-          if (!routeTreeTargetExists(r, routeTreeRouteSet)) {
+          const resolution = resolveRouteTreeTarget(r, routeTreeRouteSet, {
+            expoIndexRouteSet: opts.routeTreeExpoIndexRouteSet,
+          });
+          if (resolution.status === 'ambiguous') {
+            issues.push({
+              row: rowNo,
+              kind: 'route-tree-target-ambiguous',
+              message: `route-tree root runtime cross-check: Result Type=route Target ${r} 가 복수 Expo group-index token 과 대응함 (${resolution.matches.join(', ')}; ${label}) — warning-first`,
+            });
+          } else if (resolution.status === 'missing') {
             issues.push({
               row: rowNo,
               kind: 'route-tree-target-missing',

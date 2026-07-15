@@ -6,8 +6,8 @@
 
 ### fix(routes) — preserve app-group-index root targets across generated views (#195)
 
-- Interaction Matrix v2의 authoritative runtime Target `/`을 target-aware concrete route로 공유해 nav-graph의 source outbound·route inbound evidence가 더 이상 누락되지 않게 했다. 유일한 ScreenSpec raw Expo single-group index route(`/(app)` 또는 기존 consumer form `/(app)/`)가 있으면 해당 destination screen inbound도 authored `/` evidence를 보존해 해소하며, 복수 후보는 route-level edge만 남기고 목적 화면을 선택하지 않는다.
-- validate의 warning-first Target ↔ route-tree 검사는 일반 route의 raw-token EXACT 계약을 유지하면서, 루트 `/`에 한해서만 유일한 single filesystem-group index raw token을 인정한다. route-tree/ScreenSpec raw token, standalone route-cross-check EXACT, array/plus group 제외, shared-surface·policy·CI promotion·release version은 변경하지 않았다.
+- Interaction Matrix v2의 authoritative runtime Target `/`을 target-aware concrete route로 공유해 nav-graph의 source outbound·route inbound evidence가 더 이상 누락되지 않게 했다. 유일한 ScreenSpec raw Expo single-group index route(`/(app)` 또는 기존 consumer form `/(app)/`)가 있고 기본 Expo route-tree의 실제 group-directory `index.*` 증거가 같은 raw token을 소유할 때만 destination screen inbound를 authored `/` evidence로 해소한다. 복수·미검증 후보는 route-level edge만 남기고 목적 화면을 선택하지 않는다.
+- validate의 warning-first Target ↔ route-tree 검사는 일반 route의 raw-token EXACT 계약을 유지하면서, 루트 `/`에 한해서만 기본 Expo 헤더 + 실제 `index.*` 노드로 검증된 유일한 single filesystem-group index token을 인정한다. custom adapter literal `/(app)`과 `src/app/(app).tsx`는 alias로 보지 않고, 복수 verified 후보는 missing 대신 ambiguity와 후보를 경고한다. route-tree/ScreenSpec raw token, standalone route-cross-check EXACT, array/plus group 제외, shared-surface·policy·CI promotion·release version은 변경하지 않았다.
 
 ### feat(shared-surfaces) — first-class shared behavior contract (#192)
 

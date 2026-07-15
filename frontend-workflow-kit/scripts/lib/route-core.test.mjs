@@ -14,6 +14,7 @@ import {
   loadRouterAdapter,
   renderRouteTree,
   normalizeRouteTree,
+  parseExpoIndexRouteTokens,
   parseRouteTreeRouteTokens,
   RouterAdapterError,
   CORE_ROUTER_ADAPTER_VERSION,
@@ -47,6 +48,40 @@ test('S2: expo-router 경로 렌더가 커밋된 route-tree 골든과 byte-ident
 
 test('S2: Expo app group index 는 raw group-qualified route token 을 유지한다', () => {
   assert.equal(computeRoute(['(app)'], 'index.tsx'), '/(app)');
+  assert.equal(computeRoute([], '(app).tsx'), '/(app)', 'raw token alone cannot prove group-index provenance');
+});
+
+test('S2: Expo group-index evidence requires the default Expo header and an actual index file node', () => {
+  const groupIndexTree = renderRouteTree([
+    {
+      name: '(app)',
+      isDir: true,
+      children: [{ name: 'index.tsx', isDir: false, route: '/(app)' }],
+    },
+  ]);
+  assert.deepEqual([...parseExpoIndexRouteTokens(groupIndexTree)], ['/(app)']);
+
+  const parenthesizedFileTree = renderRouteTree([
+    { name: '(app).tsx', isDir: false, route: '/(app)' },
+  ]);
+  assert.deepEqual(
+    [...parseExpoIndexRouteTokens(parenthesizedFileTree)],
+    [],
+    'a literal parenthesized filename is not an Expo group-directory index',
+  );
+
+  const customTree = renderRouteTree(
+    [{ name: 'index.tsx', isDir: false, route: '/(app)' }],
+    {
+      source: 'router-adapter: examples/router-adapter/literal.mjs',
+      command: 'node scripts/route-tree.mjs --router examples/router-adapter/literal.mjs --out docs/frontend-workflow/_meta/route-tree.txt',
+    },
+  );
+  assert.deepEqual(
+    [...parseExpoIndexRouteTokens(customTree)],
+    [],
+    'custom adapter literal routes do not inherit Expo pathless-group semantics',
+  );
 });
 
 test('S3: 커스텀 {module} 어댑터를 코어가 해소·렌더 (비-expo 어댑터도 동작; CLI 헤더와 동일)', async () => {

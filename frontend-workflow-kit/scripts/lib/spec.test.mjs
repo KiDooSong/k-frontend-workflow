@@ -29,6 +29,7 @@ import {
   buildRuntimeRouteTargetIndex,
   resolveRouteTargetInScreenInventory,
   routeTargetExistsInScreenInventory,
+  resolveRouteTreeTarget,
   routeTreeTargetExists,
   INTERACTION_V2_RESULT_TYPES,
   deriveMetrics,
@@ -812,8 +813,15 @@ test('check 4 route inventory: Expo single filesystem group stripping is narrow 
   const consumerRoot = new Set(['/(app)/']);
   assert.equal(
     resolveRouteTargetInScreenInventory('/', consumerRoot, buildRuntimeRouteTargetIndex(consumerRoot)),
+    null,
+    'root aliases fail closed without verified Expo index evidence',
+  );
+  assert.equal(
+    resolveRouteTargetInScreenInventory('/', consumerRoot, buildRuntimeRouteTargetIndex(consumerRoot), {
+      expoIndexRouteSet: new Set(['/(app)']),
+    }),
     '/(app)/',
-    'existing consumer-shaped trailing-slash ScreenSpec route still resolves through the runtime index',
+    'consumer trailing-slash ScreenSpec route resolves when the raw Expo index token is verified',
   );
 
   const ambiguous = new Set(['/(auth)/login', '/(marketing)/login']);
@@ -1111,10 +1119,86 @@ test('E2E: Expo app-group index round trip keeps raw route-tree ownership and ru
   }
 });
 
+test('E2E P2: group-shaped raw tokens without verified Expo directory-index evidence stay literal', async (t) => {
+  const cases = [
+    {
+      name: 'default Expo src/app/(app).tsx is not a group-directory index',
+      buildRouteTree(root) {
+        writeTree(root, {
+          'src/app/(app).tsx': 'export default function ParenthesizedFile() { return null; }\n',
+        });
+        return renderRouteTree(scanAppDir(path.join(root, 'src', 'app')));
+      },
+    },
+    {
+      name: 'custom adapter literal /(app) does not inherit Expo semantics',
+      buildRouteTree() {
+        return renderRouteTree(
+          [{ name: 'index.tsx', isDir: false, route: '/(app)' }],
+          {
+            source: 'router-adapter: examples/router-adapter/literal.mjs',
+            command: 'node scripts/route-tree.mjs --router examples/router-adapter/literal.mjs --out docs/frontend-workflow/_meta/route-tree.txt',
+          },
+        );
+      },
+    },
+  ];
+
+  for (const item of cases) {
+    await t.test(item.name, () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-app-group-index-unverified-'));
+      try {
+        writeTree(root, {
+          'docs/frontend-workflow/domains/d/screens/source/screen-spec.md': screenSpec({
+            artifactId: 'SOURCE-001-screen-spec',
+            screenId: 'SOURCE-001',
+            route: '/source',
+            matrix: [
+              '| User Action | Trigger | Result | Result Type | Target | Params |',
+              '|---|---|---|---|---|---|',
+              '| home | tap | 홈으로 이동 | route | / |  |',
+            ].join('\n'),
+          }),
+          'docs/frontend-workflow/domains/d/screens/app-literal/screen-spec.md': screenSpec({
+            artifactId: 'APP-LITERAL-001-screen-spec',
+            screenId: 'APP-LITERAL-001',
+            route: '/(app)',
+            matrix: basicMatrix('stay'),
+          }),
+        });
+        const routeTree = item.buildRouteTree(root);
+        writeTree(root, { 'docs/frontend-workflow/_meta/route-tree.txt': routeTree });
+        assert.match(routeTree, /route: \/\(app\)/, 'the ambiguous raw token is present');
+
+        const validation = runValidate(root);
+        assert.equal(check4Errors(validation).length, 1, 'check 4 does not accept an unverified root alias');
+        assert.equal(
+          (validation.warnings || []).some(
+            (w) => w.check === 13 && /route-tree EXACT cross-check:.*Target \/ /.test(w.message),
+          ),
+          true,
+          'check 13 keeps the warning for an unverified literal token',
+        );
+
+        const graph = buildNavGraph({ docsDir: path.join(root, 'docs', 'frontend-workflow') });
+        assert.deepEqual(graph.screens['SOURCE-001'].outbound, [
+          { to_route: '/', trigger: 'tap', action: 'home' },
+        ]);
+        assert.deepEqual(graph.routes['/'].inbound, [{ from: 'SOURCE-001', trigger: 'tap' }]);
+        assert.equal(graph.screens['APP-LITERAL-001'], undefined, 'no destination screen is selected');
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
 test('E2E: ambiguous app-group index keeps the `/` edge but fails closed for validation and destination', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-app-group-index-ambiguous-'));
   try {
     writeTree(root, {
+      'src/app/(app)/index.tsx': 'export default function AppIndex() { return null; }\n',
+      'src/app/(marketing)/index.tsx': 'export default function MarketingIndex() { return null; }\n',
       'docs/frontend-workflow/domains/d/screens/source/screen-spec.md': screenSpec({
         artifactId: 'SOURCE-001-screen-spec',
         screenId: 'SOURCE-001',
@@ -1139,9 +1223,19 @@ test('E2E: ambiguous app-group index keeps the `/` edge but fails closed for val
       }),
     });
 
-    const errors = check4Errors(runValidate(root));
+    const routeTree = renderRouteTree(scanAppDir(path.join(root, 'src', 'app')));
+    writeTree(root, { 'docs/frontend-workflow/_meta/route-tree.txt': routeTree });
+    const validation = runValidate(root);
+    const errors = check4Errors(validation);
     assert.equal(errors.length, 1);
     assert.match(errors[0].message, /: \/$/);
+    assert.equal(
+      (validation.warnings || []).some(
+        (w) => w.check === 13 && /복수 Expo group-index token/.test(w.message),
+      ),
+      true,
+      'check 13 reports ambiguity instead of claiming the target token is absent',
+    );
 
     const graph = buildNavGraph({ docsDir: path.join(root, 'docs', 'frontend-workflow') });
     assert.deepEqual(graph.screens['SOURCE-001'].outbound, [
@@ -1449,17 +1543,58 @@ test('v2 issues: route-tree root exception is unique, group-index-only, and root
     '|---|---|---|---|---|',
     '| 홈 | tap | 홈으로 이동 | route | / |',
   ]);
-  const missing = (routes) =>
-    interactionMatrixV2Issues(rootSpec, { routeTreeRouteSet: new Set(routes) })
-      .some((i) => i.kind === 'route-tree-target-missing');
+  const issues = (routes, expoIndexRoutes = []) =>
+    interactionMatrixV2Issues(rootSpec, {
+      routeTreeRouteSet: new Set(routes),
+      routeTreeExpoIndexRouteSet: new Set(expoIndexRoutes),
+    });
 
   assert.equal(routeTreeTargetExists('/', new Set(['/'])), true, 'exact root token passes');
-  assert.equal(routeTreeTargetExists('/', new Set(['/(app)'])), true, 'one raw group index maps to root');
-  assert.equal(routeTreeTargetExists('/', new Set(['/(app)/'])), true, 'consumer trailing-slash form maps to root');
-  assert.equal(missing(['/(app)']), false, 'one app-group index suppresses the root warning');
-  assert.equal(missing(['/(app)', '/(marketing)']), true, 'multiple root candidates stay ambiguous');
-  assert.equal(missing(['/(home,search)']), true, 'array groups are not stripped');
-  assert.equal(missing(['/(+auth)']), true, 'plus groups are not stripped');
+  assert.equal(
+    routeTreeTargetExists('/', new Set(['/(app)'])),
+    false,
+    'raw group-shaped token alone is not enough evidence',
+  );
+  assert.equal(
+    routeTreeTargetExists('/', new Set(['/(app)']), { expoIndexRouteSet: new Set(['/(app)']) }),
+    true,
+    'one verified default-Expo index route maps to root',
+  );
+  assert.equal(
+    issues(['/(app)']).some((i) => i.kind === 'route-tree-target-missing'),
+    true,
+    'custom/literal raw token keeps the warning without Expo index evidence',
+  );
+  assert.equal(
+    issues(['/(app)'], ['/(app)']).some((i) => i.kind === 'route-tree-target-missing'),
+    false,
+    'one verified app-group index suppresses the root warning',
+  );
+
+  const ambiguous = resolveRouteTreeTarget('/', new Set(['/(app)', '/(marketing)']), {
+    expoIndexRouteSet: new Set(['/(app)', '/(marketing)']),
+  });
+  assert.deepEqual(ambiguous, {
+    status: 'ambiguous',
+    matches: ['/(app)', '/(marketing)'],
+  });
+  const ambiguousIssue = issues(
+    ['/(app)', '/(marketing)'],
+    ['/(app)', '/(marketing)'],
+  ).find((i) => i.kind === 'route-tree-target-ambiguous');
+  assert.ok(ambiguousIssue, 'multiple verified root candidates get an ambiguity diagnostic');
+  assert.match(ambiguousIssue.message, /\/\(app\), \/\(marketing\)/);
+
+  assert.equal(
+    issues(['/(home,search)'], ['/(home,search)']).some((i) => i.kind === 'route-tree-target-missing'),
+    true,
+    'array groups are not stripped',
+  );
+  assert.equal(
+    issues(['/(+auth)'], ['/(+auth)']).some((i) => i.kind === 'route-tree-target-missing'),
+    true,
+    'plus groups are not stripped',
+  );
 
   const loginSpec = specWithMatrix([
     '| User Action | Trigger | Result | Result Type | Target |',
