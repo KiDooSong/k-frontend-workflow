@@ -26,7 +26,7 @@ last_reviewed: "{YYYY-MM-DD}"
 - 디자인 값을 추측하지 않는다. 모르면 TODO 주석으로 남긴다.
 - 새 공통 컴포넌트가 필요하면 구현하지 말고 Component Gap Register(global/component-gap-register.md)에 제안만 남긴다.
 - 모르는 내용(사실 확인)은 해당 ScreenSpec 의 Unknowns 섹션에 남긴다.
-- 입력만으로 정해지지 않고 산출물 형태를 바꾸는 선택(정책/UX/API 방향)은 임의로 고르지 않는다. 해당 ScreenSpec 의 Open Decisions 섹션에 `open` 행으로 남기고(Blocking Mode 는 보수적으로 — 애매하면 한 단계 낮게), 그 모드 미만까지만 구현하고 멈춘다.
+- 입력만으로 정해지지 않고 산출물 형태를 바꾸는 선택(정책/UX/API 방향)은 임의로 고르지 않는다. 한 화면만 영향받으면 해당 ScreenSpec Open Decisions에, 여러 화면이 공유하면 global/open-decisions.md의 canonical 행 하나 + 각 ScreenSpec `decision_refs`에 `open`으로 남긴다(Blocking Mode 는 보수적으로 — 애매하면 한 단계 낮게). 그 모드 미만까지만 구현하고 멈춘다.
 - 게이트를 푸는 전이는 사람만 한다. Open Decision 을 `resolved` 로 닫거나, status 를 confirmed 로 승격하거나, conflict 를 닫는 것은 사람 몫이다. LLM 은 blocker 를 **올리기만** 한다 — `open` 행 추가, 그리고 새 입력이 기존 `resolved` 결정과 충돌하면 그 결정을 `resolved → open` 으로 재오픈(이전 값은 conflicts 에 보존). 어떤 게이트도 스스로 내리지 않는다(재-resolve 도 사람만).
 
 ## 충돌 시 우선순위

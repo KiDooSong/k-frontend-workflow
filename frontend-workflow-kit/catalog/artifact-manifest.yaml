@@ -87,6 +87,19 @@ artifacts:
       - artifact_type
       - status
 
+  # 여러 화면이 같은 결정을 공유할 때 사용하는 선택적 canonical register.
+  # ScreenSpec decision_refs 가 이 문서의 행만 exact/case-sensitive ID 로 참조한다.
+  # 행은 기존 6컬럼 Open Decisions parser/검사 9/readiness cap 을 그대로 사용한다.
+  open-decision-register:
+    kind: authoring
+    scope: global
+    path: docs/frontend-workflow/global/open-decisions.md
+    template: templates/global/open-decision-register.template.md
+    required_frontmatter:
+      - artifact_id
+      - artifact_type
+      - status
+
   # 막힘 기록용 전역 레지스터 — LLM 이 추측 대신 여기에 남긴다 (llm-rules 가 가리킨다).
   # "필요할 때 생성"하는 문서라 항상 존재하지는 않는다. validate 는 존재하는 인스턴스만 검사한다.
   component-gap-register:
@@ -199,6 +212,7 @@ artifacts:
     command: npm run workflow:state
     source:
       - docs/frontend-workflow/domains/**/screen-spec.md
+      - docs/frontend-workflow/global/open-decisions.md
     do_not_edit: true
     status: active
     mvp: A

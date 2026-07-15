@@ -20,6 +20,9 @@ to 06/07.
 - **component gap register** (`global/component-gap-register.md`) — propose `G-xxx`
   `open` for missing shared components.
 - **Open Decisions / Unknowns** — raise them here; do not close them (Stage 09).
+  Keep single-screen rows local; put a cross-screen row in the optional global
+  register and reference it from each affected ScreenSpec. See
+  [`../open-decisions.md`](../open-decisions.md).
 
 ## ScreenSpec authoring after identity
 

@@ -98,6 +98,30 @@ function actionHint(factKey, screen) {
   }
 }
 
+function invalidOpenDecisionAction(decision) {
+  const id = decision.id || '(no-id)';
+  switch (decision.code) {
+    case 'missing-register':
+      return `create global/open-decisions.md with Open Decision ${id}, or remove its decision_refs entry`;
+    case 'invalid-register':
+      return `fix the canonical Open Decision register structure at ${decision.source?.path || 'global/open-decisions.md'}`;
+    case 'unresolved-ref':
+      return `add canonical Open Decision ${id} to global/open-decisions.md, or remove its decision_refs entry`;
+    case 'ambiguous-ref':
+      return `keep exactly one canonical Open Decision row for ${id}`;
+    case 'malformed-row':
+      return `fix canonical Open Decision ${id}: required fields and Status=open|resolved must be valid`;
+    case 'invalid-blocking-mode':
+      return `fix Open Decision ${id}: ${decision.reason}`;
+    case 'invalid-refs-shape':
+    case 'invalid-ref':
+    case 'duplicate-ref':
+      return `fix decision_refs for Open Decision ${id}: ${decision.reason}`;
+    default:
+      return `fix Open Decision ${id}: Status must be open|resolved and Blocking Mode must be a policy mode above docs-only`;
+  }
+}
+
 // "fact OP value" 파싱은 ./lib/policy-condition.mjs 의 parseCondition 로 이전됐다(validate 와 단일 출처).
 
 function coerceNumber(v) {
@@ -341,13 +365,29 @@ export function computeReadiness({ state, policy, ci, manifest, layout }) {
     // readiness_mode = min(fact_mode, decision_cap) 로 다운그레이드한다 (open-decisions.md).
     const decisions = (screen.derived && screen.derived.blocking_decisions) || [];
     const invalidDecisions = [...((screen.derived && screen.derived.malformed_decisions) || [])];
+    const decisionRefs = (screen.derived && screen.derived.decision_refs) || [];
+    for (const ref of decisionRefs) {
+      if (ref.status !== 'resolved' || order.includes(ref.blocking_mode)) continue;
+      invalidDecisions.push({
+        id: ref.id,
+        status: ref.status,
+        blocking_mode: ref.blocking_mode || '(none)',
+        ...(ref.source ? { source: ref.source } : {}),
+        code: 'invalid-blocking-mode',
+        reason: `Blocking Mode '${ref.blocking_mode}' is not present in the effective policy`,
+      });
+    }
     let decisionCapIdx = order.length - 1;
     for (const dec of decisions) {
       const bmIdx = order.indexOf(dec.blocking_mode);
       if (bmIdx <= 0) {
         // bmIdx<0: 정책에 없는 값(오타). bmIdx==0: docs-only(floor)는 막을 수 없음(무의미).
         // 둘 다 해석 불가 → 조용히 무시하지 않고 invalid 로 surface 한다.
-        invalidDecisions.push({ id: dec.id, blocking_mode: dec.blocking_mode || '(none)' });
+        invalidDecisions.push({
+          id: dec.id,
+          blocking_mode: dec.blocking_mode || '(none)',
+          ...(dec.source ? { source: dec.source } : {}),
+        });
         continue;
       }
       decisionCapIdx = Math.min(decisionCapIdx, bmIdx - 1);
@@ -372,11 +412,13 @@ export function computeReadiness({ state, policy, ci, manifest, layout }) {
         invalid_open_decision: {
           id: bad.id || '(no-id)',
           blocking_mode: bad.blocking_mode || '(none)',
+          ...(bad.code && bad.status && bad.status !== '(none)' ? { status: bad.status } : {}),
+          ...(bad.code ? { code: bad.code } : {}),
+          ...(bad.reason ? { reason: bad.reason } : {}),
+          ...(bad.source ? { source: bad.source } : {}),
         },
       });
-      nextActions.push(
-        `fix Open Decision ${bad.id || '(no-id)'}: Status must be open|resolved and Blocking Mode must be a policy mode above docs-only`,
-      );
+      nextActions.push(invalidOpenDecisionAction(bad));
     }
 
     // (1) open decision blocker: chosen 위를 막는 결정. 사람이 resolve 해야 풀린다.
@@ -388,6 +430,7 @@ export function computeReadiness({ state, policy, ci, manifest, layout }) {
           id: dec.id,
           blocking_mode: dec.blocking_mode,
           owner: dec.owner || null,
+          ...(dec.source ? { source: dec.source } : {}),
         },
       });
       const q = dec.decision_needed ? `: ${dec.decision_needed}` : '';

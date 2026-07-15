@@ -1,6 +1,7 @@
 // 최소 JSON Schema 검증기. ajv 같은 무거운 의존성을 피하고,
 // frontmatter.schema.json 이 쓰는 키워드 부분집합만 지원한다:
-//   type, required, properties, items, enum, pattern, format(date), additionalProperties(무시)
+//   type, required, properties, items, enum, pattern, minLength, uniqueItems,
+//   format(date), additionalProperties(무시)
 // 지원하지 않는 키워드는 통과시킨다 (느슨한 검증).
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -54,6 +55,10 @@ function walk(value, schema, p, errors) {
     }
   }
 
+  if (Number.isInteger(schema.minLength) && typeof value === 'string' && value.length < schema.minLength) {
+    errors.push(`${p || '(root)'}: minLength 위반 (최소 ${schema.minLength}, 실제 ${value.length})`);
+  }
+
   if (schema.format === 'date' && typeof value === 'string') {
     if (!isRealDate(value)) {
       errors.push(`${p}: date 형식 아님 (유효한 YYYY-MM-DD): ${JSON.stringify(value)}`);
@@ -79,5 +84,13 @@ function walk(value, schema, p, errors) {
 
   if (typeOf(value) === 'array' && schema.items) {
     value.forEach((item, i) => walk(item, schema.items, `${p}[${i}]`, errors));
+  }
+  if (typeOf(value) === 'array' && schema.uniqueItems === true) {
+    const seen = new Set();
+    value.forEach((item, i) => {
+      const key = JSON.stringify(item);
+      if (seen.has(key)) errors.push(`${p}[${i}]: uniqueItems 위반 (중복 값 ${key})`);
+      else seen.add(key);
+    });
   }
 }

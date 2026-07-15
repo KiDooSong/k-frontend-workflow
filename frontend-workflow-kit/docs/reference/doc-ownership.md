@@ -35,6 +35,7 @@ inline and links the rest; it does not restate the references.
 | classification types | [`input-reconciliation.md`](input-reconciliation.md) §Classification | link only |
 | conflict vs gate (Open Decision) | [`input-reconciliation.md`](input-reconciliation.md) §Conflict Handling | short reminder only |
 | ambiguity → Unknown / Open Decision / stop | [`ambiguity-triage.md`](ambiguity-triage.md) | short reminder only |
+| local/global Open Decision ownership, `decision_refs`, readiness fan-out, human-only transitions | [`open-decisions.md`](open-decisions.md) | link; keep gate-raising-only inline |
 | screen source aliases / canonical identity | [`screen-identity.md`](screen-identity.md) (Stage 02) | link from source / reconcile / implement |
 | implement `allowed_paths` / `forbidden_paths` | readiness output + [Stage 06](workflow-stages/06-implement-screen-or-code.md) | state the invariant only |
 | visual vs behavior split | [`input-reconciliation.md`](input-reconciliation.md) §Visual/Figma + [`figma-component-mapping.template.md`](../../templates/screen/figma-component-mapping.template.md) | short reminder only |
