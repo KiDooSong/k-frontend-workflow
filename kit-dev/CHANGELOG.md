@@ -4,12 +4,19 @@
 
 ## Unreleased
 
+### feat(shared-surfaces) — first-class shared behavior contract (#192)
+
+- optional domain-scoped `shared-surface-spec` artifact, canonical template/reference, manifest/schema(`minItems`) and packed `implement-shared-surface` skill을 추가했다. Surface는 최소 2개 same-domain canonical Screen ID와 uniform non-route behavior를 소유하며 v2 Interaction Matrix의 `route`, local Open Decisions, unsafe/overlapping implementation ownership을 hard reject한다.
+- `workflow:state`는 adopted repo에만 sorted `surfaces`와 member reverse index를 additive하게 생성한다. #193 resolver를 재사용해 resolved ref도 보존하고 open/malformed ref를 모든 member에 canonical `source` + surface `via` provenance로 fan-out하며, 한 screen에 여러 referrer가 같은 decision을 적용하면 fail-closed한다. No-surface state/readiness/validate/nav output은 기존 byte 계약을 유지한다.
+- `workflow:readiness -- --surface <SURFACE_ID> --json`을 strict/mutually-exclusive CLI로 추가했다. 기존 policy ladder를 재사용해 `min(surface_fact_mode, surface_decision_cap, member_cap)`을 계산하고 declared implementation path를 policy + 모든 member base readiness의 교집합에서만 허용한다. Ordinary screen readiness는 surface path를 `forbidden_paths`에 예약하고 delegation metadata를 노출한다.
+- validate 검사 2/3/4/5/8/9/10에 identity/membership/path, non-route v2 interaction, API/Copy parity, canonical decision fan-out을 통합했다. issue #195의 `/`/group-index normalization, nav-graph/route-tree semantics, warning-first/required CI promotion, human-owned gate lowering은 포함하지 않는다.
+
 ### feat(open-decisions) — canonical cross-screen references and readiness fan-out (#193)
 
 - optional authoring artifact `open-decision-register`(`docs/frontend-workflow/global/open-decisions.md`)와 packed template/reference를 추가하고, ScreenSpec 공통 frontmatter `decision_refs`를 unique non-empty string 배열로 정의했다. local/global 행은 기존 6컬럼 parser와 검사 9를 공유하며 ID는 프로젝트 전역에서 하나의 canonical 행만 허용한다.
 - 공용 `open-decisions.mjs` resolver가 custom `--docs` 기준 canonical source를 보존해 참조를 해소한다. `workflow:state`는 resolved 포함 `derived.decision_refs`를 선택적으로 노출하고 open 참조는 기존 `blocking_decisions`에 합친다. `workflow:readiness`의 `min(fact_mode, decision_cap)` 알고리즘은 그대로이며 referenced blocker의 `source`만 보존한다.
 - 누락 register/target, local-only target, scalar·빈 값·중복 ref, malformed/중복/구조 손상 register는 참조 화면만 fail-closed(`malformed_decisions` → docs-only)한다. register/ref가 없는 local-only repository의 state/readiness/validate 출력은 기존 byte 계약을 유지한다.
-- 검사 9를 global register 구조·local/global ID 중복·reference semantic resolution까지 확장했다. shared-surface identity/membership/readiness(#192), decision-log/history, 자동 migration, gate lowering, warning-first/CI promotion은 포함하지 않는다.
+- 검사 9를 global register 구조·local/global ID 중복·reference semantic resolution까지 확장했다. 이 #193 slice 자체에는 shared-surface identity/membership/readiness(#192), decision-log/history, 자동 migration, gate lowering, warning-first/CI promotion을 포함하지 않았고, #192 surface referrer 적용은 위 후속 항목에서 별도로 추가됐다.
 
 ### fix(cli) — reject split-token empty values before duplicate reduction
 

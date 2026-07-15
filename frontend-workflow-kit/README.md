@@ -132,6 +132,7 @@ docs/frontend-workflow/
 
 - `tools/frontend-workflow/templates/app/navigation-map.template.md`
 - `tools/frontend-workflow/templates/screen/screen-spec.template.md`
+- optional shared behavior: `tools/frontend-workflow/templates/surface/shared-surface-spec.template.md`
 - 필요 시 `templates/repo/`, `templates/global/`, `templates/domain/`, `templates/api/`, `templates/meta/`, `templates/input/`
 
 입력/reconcile flow를 쓰기 시작하면 `_meta/reconciliation-register.md`도 만든다.
@@ -206,6 +207,15 @@ npm run workflow:validate
 ```
 
 관련 입력이 `not-started`, `in-progress`, `failed` 상태면 구현 전에 reconcile을 끝내거나 같은 row로 재개한다. 구현은 readiness가 허용한 파일에만 하며, generated files, Open Decision resolve, Unknown close, Component Gap accept, live policy replacement는 사람이 명시하지 않으면 하지 않는다. 작업 중 어떤 artifact를 함께 갱신해야 할지 애매하면 [docs/reference/task-artifact-matrix.md](docs/reference/task-artifact-matrix.md)를 확인한다.
+
+둘 이상의 same-domain 화면에 합성되는 non-route 공통 동작은 optional `shared-surface-spec`으로 모델링한다. Screen readiness가 `delegated_shared_surfaces`를 노출하면 그 예약 경로를 화면 작업으로 수정하지 않고 surface 전용 절차를 따른다.
+
+```bash
+npm run workflow:state
+npm run workflow:readiness -- --surface <SURFACE_ID> --json
+```
+
+계약과 migration은 [shared-surfaces.md](docs/reference/shared-surfaces.md), 실행 절차는 `skills/implement-shared-surface/SKILL.md`가 정본이다.
 
 ## Multi-Screen Visual Reconciliation
 

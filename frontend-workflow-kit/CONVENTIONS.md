@@ -87,6 +87,12 @@ Do not infer one from the other when a project uses custom roots or generated
 routes. Use `workflow:route-tree`, `workflow:nav-graph`, and
 `workflow:route-cross-check` as read-only evidence.
 
+## Shared Non-Route Surfaces
+
+Uniform behavior composed into two or more same-domain screens may use `shared-surface-spec`. It is not a screen/component-catalog/visual contract and does not own route transitions.
+Membership is canonical only in surface frontmatter. Shared code authority comes from `workflow:readiness -- --surface <SURFACE_ID> --json`, the intersection of surface policy and every member's base readiness.
+Ordinary screen readiness reserves those paths in `forbidden_paths`. Full rules: [docs/reference/shared-surfaces.md](docs/reference/shared-surfaces.md).
+
 ## Screen Identity And Source Map
 
 Canonical screen identity (`screen_id`, `route`, `domain`, screen-spec path) is workflow-owned.

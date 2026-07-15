@@ -11,13 +11,15 @@ The session-end stage. Index: [`../workflow-spine.md`](../workflow-spine.md).
 Run the smallest relevant checks first, then always:
 
 ```bash
-npm run workflow:state        # if ScreenSpec frontmatter / body sections changed
+npm run workflow:state        # if ScreenSpec/shared-surface frontmatter or parsed body changed
 npm run workflow:validate
 ```
 
 Add `workflow:check-generated` (advisory) when route, nav, catalog, codegen, lint,
 policy, or layout sources changed. `validate` pass is structural integrity, not
 product approval.
+
+For adopted shared-surface work, also re-run `workflow:readiness -- --surface <SURFACE_ID> --json` and every member's `--screen` readiness; report limiting member modes and delegated/forbidden paths.
 
 ## Optional web E2E evidence
 

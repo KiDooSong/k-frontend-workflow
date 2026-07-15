@@ -36,8 +36,9 @@ inline and links the rest; it does not restate the references.
 | conflict vs gate (Open Decision) | [`input-reconciliation.md`](input-reconciliation.md) §Conflict Handling | short reminder only |
 | ambiguity → Unknown / Open Decision / stop | [`ambiguity-triage.md`](ambiguity-triage.md) | short reminder only |
 | local/global Open Decision ownership, `decision_refs`, readiness fan-out, human-only transitions | [`open-decisions.md`](open-decisions.md) | link; keep gate-raising-only inline |
+| shared non-route behavior, canonical membership, implementation path reservation, surface readiness | [`shared-surfaces.md`](shared-surfaces.md) | link; keep delegated-path prohibition inline |
 | screen source aliases / canonical identity | [`screen-identity.md`](screen-identity.md) (Stage 02) | link from source / reconcile / implement |
-| implement `allowed_paths` / `forbidden_paths` | readiness output + [Stage 06](workflow-stages/06-implement-screen-or-code.md) | state the invariant only |
+| implement `allowed_paths` / `forbidden_paths` / delegated shared paths | readiness output + [Stage 06](workflow-stages/06-implement-screen-or-code.md) | state the invariant only |
 | visual vs behavior split | [`input-reconciliation.md`](input-reconciliation.md) §Visual/Figma + [`figma-component-mapping.template.md`](../../templates/screen/figma-component-mapping.template.md) | short reminder only |
 | cross-screen visual consistency / visual contract / shell ownership / `workflow:visual-consistency` | [`visual-reconciliation.md`](visual-reconciliation.md) + [`visual-consistency-contract.template.md`](../../templates/design/visual-consistency-contract.template.md) | link only; keep "warning-first, not a gate/approval" inline |
 | visual contract bootstrap / adoption draft / `workflow:visual-contract-bootstrap` | [`visual-reconciliation.md`](visual-reconciliation.md) §Bootstrap / adoption | link only; keep "review-only draft, never overwrites the existing contract" inline |

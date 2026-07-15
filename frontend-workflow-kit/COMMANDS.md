@@ -13,8 +13,8 @@ npm run workflow:readiness
 npm run workflow:validate
 ```
 
-- `workflow:state` reads `docs/frontend-workflow/` and writes `_meta/workflow-state.yaml` plus `_meta/screen-inventory.yaml`.
-- `workflow:readiness` computes the highest allowed implementation mode per screen and reports allowed/forbidden paths.
+- `workflow:state` reads `docs/frontend-workflow/` and writes `_meta/workflow-state.yaml` plus `_meta/screen-inventory.yaml`; adopted shared surfaces appear additively only in workflow state.
+- `workflow:readiness` computes the highest allowed implementation mode per screen and reports allowed/forbidden paths; `--surface` computes the shared-code intersection for one adopted surface.
 - `workflow:validate` checks frontmatter, manifests, routes, approval metadata, API candidates, input artifacts, and Reconciliation Register structure.
 
 Useful options:
@@ -22,6 +22,7 @@ Useful options:
 ```bash
 npm run workflow:state -- --docs docs/frontend-workflow --src src
 npm run workflow:readiness -- --screen COUPON-001 --json
+npm run workflow:readiness -- --surface CHAT-COMPOSER --json
 npm run workflow:validate -- --json
 npm run workflow:doctor -- --root apps/mobile --src apps/mobile/src
 ```
@@ -37,6 +38,10 @@ argument — as exit 2 **before** reading state or writing any file.
 Value flags reject empty values in both attached (`--flag=`) and split-token
 (`--flag ''`) forms, even when a later valid duplicate would otherwise win.
 A typo never silently falls back to a default run.
+
+`--screen` and `--surface` are mutually exclusive. `--surface` accepts one canonical Surface ID and returns the same keyed-filter shape as `--screen`.
+Its mode is the minimum of surface facts, surface decision cap, and all member screen modes; code paths are the policy/member intersection only.
+See [shared-surfaces.md](docs/reference/shared-surfaces.md).
 
 ## Input Artifacts
 

@@ -19,9 +19,9 @@ human ask — an agent does not perform them on its own initiative:
 - replace live policy or promote a hard CI gate (see [10](10-policy-layout-tier3-changes.md)),
 - re-resolve a reopened decision/conflict.
 
-The same rule applies to ScreenSpec-local rows and canonical cross-screen rows.
+The same rule applies to ScreenSpec-local rows and canonical cross-screen rows referenced by ScreenSpecs or shared surfaces. Shared surfaces never own local rows.
 For global ownership, reference fan-out, and migration, see
-[`../open-decisions.md`](../open-decisions.md).
+[`../open-decisions.md`](../open-decisions.md) and [`../shared-surfaces.md`](../shared-surfaces.md).
 
 What an agent *may* do without a human: add an `open` decision/conflict/unknown/gap,
 reopen a resolved decision (raising the gate), link evidence to an Unknown while

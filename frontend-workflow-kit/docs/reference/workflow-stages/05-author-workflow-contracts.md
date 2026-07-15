@@ -4,7 +4,7 @@ Author or update the workflow contracts once identity is known. Index:
 [`../workflow-spine.md`](../workflow-spine.md). Secondary updates:
 [`../task-artifact-matrix.md`](../task-artifact-matrix.md).
 
-**Enter when** ScreenSpec / nav / API / visual / docs need authoring.
+**Enter when** ScreenSpec / shared surface / nav / API / visual / docs need authoring.
 
 **Skip this stage when** the contracts for the target are already current. Then go
 to 06/07.
@@ -12,6 +12,7 @@ to 06/07.
 ## What this stage covers
 
 - **ScreenSpec** writing / updating — the behavior source of truth.
+- **shared-surface-spec** — uniform non-route behavior composed into two or more same-domain canonical screens. Membership lives only in surface frontmatter; route transitions stay in member ScreenSpecs. See [`../shared-surfaces.md`](../shared-surfaces.md).
 - **Navigation map** (`app/navigation-map.md`) edges and route targets.
 - **API manifest** (`api/api-manifest.md`) candidates and confirmed contract evidence.
 - **figma-component-mapping** (`figma-component-mapping.md`) — visual mapping, kept
@@ -21,7 +22,7 @@ to 06/07.
   `open` for missing shared components.
 - **Open Decisions / Unknowns** — raise them here; do not close them (Stage 09).
   Keep single-screen rows local; put a cross-screen row in the optional global
-  register and reference it from each affected ScreenSpec. See
+  register and reference it from each affected ScreenSpec or shared surface. A surface never owns a local decision table. See
   [`../open-decisions.md`](../open-decisions.md).
 
 ## ScreenSpec authoring after identity
@@ -59,4 +60,4 @@ This is where a ScreenSpec is authored **after identity is known** (Stage 02).
 | [08 Validate and report](08-validate-and-report.md) | docs-only authoring — run `workflow:state` then validate |
 
 If ScreenSpec frontmatter or parsed body sections changed, run `workflow:state`
-before readiness/validate.
+before readiness/validate. The same trigger applies to a shared-surface-spec; then run `workflow:readiness -- --surface <SURFACE_ID> --json` and readiness for every member.
