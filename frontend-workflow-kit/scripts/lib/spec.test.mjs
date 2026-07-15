@@ -812,9 +812,14 @@ test('check 4 route inventory: Expo single filesystem group stripping is narrow 
 
   const consumerRoot = new Set(['/(app)/']);
   assert.equal(
+    routeTargetExistsInScreenInventory('/', consumerRoot, buildRuntimeRouteTargetIndex(consumerRoot)),
+    true,
+    'check 4 sees a root inventory candidate without consulting generated route-tree provenance',
+  );
+  assert.equal(
     resolveRouteTargetInScreenInventory('/', consumerRoot, buildRuntimeRouteTargetIndex(consumerRoot)),
     null,
-    'root aliases fail closed without verified Expo index evidence',
+    'destination resolution still fails closed without verified Expo index evidence',
   );
   assert.equal(
     resolveRouteTargetInScreenInventory('/', consumerRoot, buildRuntimeRouteTargetIndex(consumerRoot), {
@@ -822,6 +827,21 @@ test('check 4 route inventory: Expo single filesystem group stripping is narrow 
     }),
     '/(app)/',
     'consumer trailing-slash ScreenSpec route resolves when the raw Expo index token is verified',
+  );
+
+  const mixedRoot = new Set(['/(app)', '/(legacy)']);
+  const mixedRootIndex = buildRuntimeRouteTargetIndex(mixedRoot);
+  assert.equal(
+    routeTargetExistsInScreenInventory('/', mixedRoot, mixedRootIndex),
+    true,
+    'check 4 only asks whether root has an inventory candidate',
+  );
+  assert.equal(
+    resolveRouteTargetInScreenInventory('/', mixedRoot, mixedRootIndex, {
+      expoIndexRouteSet: new Set(['/(app)']),
+    }),
+    '/(app)',
+    'destination uniqueness is calculated after filtering out literal group-shaped routes',
   );
 
   const ambiguous = new Set(['/(auth)/login', '/(marketing)/login']);
@@ -1119,6 +1139,46 @@ test('E2E: Expo app-group index round trip keeps raw route-tree ownership and ru
   }
 });
 
+test('E2E P1: missing route-tree keeps root inventory hard-gate green and provenance advisory', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-app-group-index-no-route-tree-'));
+  try {
+    writeTree(root, {
+      'docs/frontend-workflow/domains/d/screens/source/screen-spec.md': screenSpec({
+        artifactId: 'SOURCE-001-screen-spec',
+        screenId: 'SOURCE-001',
+        route: '/source',
+        matrix: [
+          '| User Action | Trigger | Result | Result Type | Target | Params |',
+          '|---|---|---|---|---|---|',
+          '| home | tap | 홈으로 이동 | route | / |  |',
+        ].join('\n'),
+      }),
+      'docs/frontend-workflow/domains/d/screens/app-index/screen-spec.md': screenSpec({
+        artifactId: 'APP-INDEX-001-screen-spec',
+        screenId: 'APP-INDEX-001',
+        route: '/(app)',
+        matrix: basicMatrix('stay'),
+      }),
+    });
+
+    const validation = runValidate(root);
+    assert.deepEqual(check4Errors(validation), [], 'generated route-tree absence is not a check 4 hard error');
+    assert.equal(
+      (validation.warnings || []).some(
+        (w) => w.check === 13 && /route-tree EXACT cross-check skipped/.test(w.message),
+      ),
+      true,
+      'missing provenance remains a check 13 advisory',
+    );
+
+    const graph = buildNavGraph({ docsDir: path.join(root, 'docs', 'frontend-workflow') });
+    assert.deepEqual(graph.routes['/'].inbound, [{ from: 'SOURCE-001', trigger: 'tap' }]);
+    assert.equal(graph.screens['APP-INDEX-001'], undefined, 'destination selection stays fail-closed');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('E2E P2: group-shaped raw tokens without verified Expo directory-index evidence stay literal', async (t) => {
   const cases = [
     {
@@ -1171,7 +1231,11 @@ test('E2E P2: group-shaped raw tokens without verified Expo directory-index evid
         assert.match(routeTree, /route: \/\(app\)/, 'the ambiguous raw token is present');
 
         const validation = runValidate(root);
-        assert.equal(check4Errors(validation).length, 1, 'check 4 does not accept an unverified root alias');
+        assert.deepEqual(
+          check4Errors(validation),
+          [],
+          'check 4 validates ScreenSpec inventory without promoting provenance to a hard gate',
+        );
         assert.equal(
           (validation.warnings || []).some(
             (w) => w.check === 13 && /route-tree EXACT cross-check:.*Target \/ /.test(w.message),
@@ -1193,7 +1257,63 @@ test('E2E P2: group-shaped raw tokens without verified Expo directory-index evid
   }
 });
 
-test('E2E: ambiguous app-group index keeps the `/` edge but fails closed for validation and destination', () => {
+test('E2E P2: one verified root wins after literal candidates are filtered', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-app-group-index-mixed-provenance-'));
+  try {
+    writeTree(root, {
+      'src/app/(app)/index.tsx': 'export default function AppIndex() { return null; }\n',
+      'src/app/(legacy).tsx': 'export default function LegacyLiteral() { return null; }\n',
+      'docs/frontend-workflow/domains/d/screens/source/screen-spec.md': screenSpec({
+        artifactId: 'SOURCE-001-screen-spec',
+        screenId: 'SOURCE-001',
+        route: '/source',
+        matrix: [
+          '| User Action | Trigger | Result | Result Type | Target | Params |',
+          '|---|---|---|---|---|---|',
+          '| home | tap | 홈으로 이동 | route | / |  |',
+        ].join('\n'),
+      }),
+      'docs/frontend-workflow/domains/d/screens/app-index/screen-spec.md': screenSpec({
+        artifactId: 'APP-INDEX-001-screen-spec',
+        screenId: 'APP-INDEX-001',
+        route: '/(app)',
+        matrix: basicMatrix('stay'),
+      }),
+      'docs/frontend-workflow/domains/d/screens/legacy-literal/screen-spec.md': screenSpec({
+        artifactId: 'LEGACY-LITERAL-001-screen-spec',
+        screenId: 'LEGACY-LITERAL-001',
+        route: '/(legacy)',
+        matrix: basicMatrix('stay'),
+      }),
+    });
+
+    const routeTree = renderRouteTree(scanAppDir(path.join(root, 'src', 'app')));
+    writeTree(root, { 'docs/frontend-workflow/_meta/route-tree.txt': routeTree });
+    assert.match(routeTree, /route: \/\(app\)/);
+    assert.match(routeTree, /route: \/\(legacy\)/);
+
+    const validation = runValidate(root);
+    assert.deepEqual(check4Errors(validation), [], 'root inventory exists independently of provenance');
+    assert.equal(
+      (validation.warnings || []).some(
+        (w) => w.check === 13 && /Target \/ /.test(w.message),
+      ),
+      false,
+      'check 13 sees one verified root after excluding the literal token',
+    );
+
+    const graph = buildNavGraph({ docsDir: path.join(root, 'docs', 'frontend-workflow') });
+    assert.deepEqual(graph.routes['/'].inbound, [{ from: 'SOURCE-001', trigger: 'tap' }]);
+    assert.deepEqual(graph.screens['APP-INDEX-001'].inbound, [
+      { from: 'SOURCE-001', trigger: 'tap', route: '/' },
+    ]);
+    assert.equal(graph.screens['LEGACY-LITERAL-001'], undefined);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('E2E: ambiguous verified app-group indexes stay warning-first and select no destination', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-app-group-index-ambiguous-'));
   try {
     writeTree(root, {
@@ -1226,9 +1346,11 @@ test('E2E: ambiguous app-group index keeps the `/` edge but fails closed for val
     const routeTree = renderRouteTree(scanAppDir(path.join(root, 'src', 'app')));
     writeTree(root, { 'docs/frontend-workflow/_meta/route-tree.txt': routeTree });
     const validation = runValidate(root);
-    const errors = check4Errors(validation);
-    assert.equal(errors.length, 1);
-    assert.match(errors[0].message, /: \/$/);
+    assert.deepEqual(
+      check4Errors(validation),
+      [],
+      'verified ambiguity is not promoted from check 13 warning into the check 4 hard gate',
+    );
     assert.equal(
       (validation.warnings || []).some(
         (w) => w.check === 13 && /복수 Expo group-index token/.test(w.message),

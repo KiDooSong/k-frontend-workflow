@@ -584,16 +584,29 @@ function verifiedExpoIndexOwnsRoute(route, expoIndexRouteSet) {
 export function resolveRouteTargetInScreenInventory(target, routeSet, runtimeRouteTargetIndex, opts = {}) {
   if (routeSet && routeSet.has(target)) return target;
   const matches = runtimeRouteTargetIndex?.get(target);
-  if (!matches || matches.size !== 1) return null;
-  const match = [...matches][0];
-  // 루트 alias 는 raw token 만으로 Expo group-directory index 인지 알 수 없다. 기본 Expo route-tree 의
-  // 실제 index.* 노드가 같은 raw route 를 소유한다는 증거가 있을 때만 허용한다. 비루트 #131 semantics 는 유지.
-  if (target === '/' && !verifiedExpoIndexOwnsRoute(match, opts.expoIndexRouteSet)) return null;
-  return match;
+  if (!matches) return null;
+  if (target === '/') {
+    // 목적 화면 선택은 raw 후보 수가 아니라 verified Expo index 소유권을 먼저 적용한 뒤 유일성을 본다.
+    // 따라서 verified `/(app)` + literal `/(legacy)` 조합은 app 화면으로 해소하지만, verified 후보가
+    // 0개 또는 2개 이상이면 선택하지 않는다. 비루트 #131 semantics 는 아래에서 그대로 유지한다.
+    const verifiedMatches = [...matches]
+      .filter((route) => verifiedExpoIndexOwnsRoute(route, opts.expoIndexRouteSet))
+      .sort();
+    return verifiedMatches.length === 1 ? verifiedMatches[0] : null;
+  }
+  if (matches.size !== 1) return null;
+  return [...matches][0];
 }
 
-export function routeTargetExistsInScreenInventory(target, routeSet, runtimeRouteTargetIndex, opts = {}) {
-  return !!resolveRouteTargetInScreenInventory(target, routeSet, runtimeRouteTargetIndex, opts);
+// 검사 4 전용 inventory 존재 판정. route-tree 는 generated/stale 가능 artifact 이므로 hard gate 입력이 아니다.
+// 루트(`/`)는 하나 이상의 raw single-group ScreenSpec 후보가 있으면 inventory 에 존재한다. 그 후보의
+// provenance/ambiguity 는 검사 13 warning, 목적 화면의 유일한 선택은 위 resolver 가 각각 담당한다.
+export function routeTargetExistsInScreenInventory(target, routeSet, runtimeRouteTargetIndex) {
+  if (routeSet && routeSet.has(target)) return true;
+  const matches = runtimeRouteTargetIndex?.get(target);
+  if (!matches || matches.size === 0) return false;
+  if (target === '/') return true;
+  return matches.size === 1;
 }
 
 // Interaction Matrix v2 Target ↔ route-tree warning-first 교차검증 전용.

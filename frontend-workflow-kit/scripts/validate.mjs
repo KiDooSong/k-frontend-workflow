@@ -414,13 +414,13 @@ function main() {
   //    명시적 비-route v2 행(state/mutation/external/none)의 Result prose 는 하드 게이트 입력이 아니다.
   //    Expo Router 의 일반 filesystem group `(auth)` 는 런타임 URL 에 나타나지 않으므로, raw route
   //    `/(auth)/login` 이 group-less Target `/login` 과 단일하게 대응할 때만 통과시킨다.
+  //    루트(`/`)는 raw single-group ScreenSpec 후보의 존재만 확인한다. generated/stale 가능 route-tree 의
+  //    provenance·모호성은 검사 13 warning, destination 선택은 nav-graph 가 별도로 fail-closed 한다.
   const runtimeRouteTargetIndex = buildRuntimeRouteTargetIndex(routeSet);
   for (const spec of specs) {
     const targets = interactionEdgeRoutes(spec);
     for (const t of targets) {
-      if (!routeTargetExistsInScreenInventory(t, routeSet, runtimeRouteTargetIndex, {
-        expoIndexRouteSet: routeTreeExpoIndexRouteSet,
-      })) {
+      if (!routeTargetExistsInScreenInventory(t, routeSet, runtimeRouteTargetIndex)) {
         add(4, spec.path, `Interaction Matrix 이동 대상 route 가 화면에 없음: ${t}`);
       }
     }

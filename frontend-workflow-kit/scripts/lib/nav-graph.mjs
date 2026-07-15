@@ -100,8 +100,9 @@ function outboundKey(e) {
 //   - 이동/outbound 엣지는 SOURCE 화면 자신의 Interaction Matrix Result 컬럼에서만 나온다.
 //   - 모든 outbound 엣지 S->R 은 routes[R].inbound 에 {from:S, trigger} 를 무조건 추가한다.
 //   - R 이 어떤 로드된 화면의 fm.route 와 EXACT 문자열 일치하거나, Expo 단일 filesystem group 을 제외한
-//     런타임 URL 이 단일 ScreenSpec route 로 해소되면 그 화면 D 로 해소한다(검사 4 와 동일).
-//     단, 루트(`/`) alias 는 기본 Expo route-tree 의 실제 group-directory index.* 증거가 있어야 한다.
+//     런타임 URL 이 단일 ScreenSpec route 로 해소되면 그 화면 D 로 해소한다(비루트는 검사 4 와 동일).
+//     루트(`/`) alias 는 기본 Expo route-tree 의 실제 group-directory index.* 증거로 후보를 먼저 필터링하고
+//     verified 후보가 유일할 때만 선택한다. 검사 4의 inventory-only hard gate와 의도적으로 분리한다.
 //     해소되고 D!==S 면 screens[D].inbound 에 {from:S, trigger, route:R} 추가.
 //   - navigation-map 의 라우트는 routes 레지스트리에 시드만 한다(엣지 생성 아님).
 export function buildNavGraph({ docsDir }) {
