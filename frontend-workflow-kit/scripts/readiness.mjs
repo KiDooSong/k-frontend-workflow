@@ -111,6 +111,8 @@ function invalidOpenDecisionAction(decision) {
       return `keep exactly one canonical Open Decision row for ${id}`;
     case 'malformed-row':
       return `fix canonical Open Decision ${id}: required fields and Status=open|resolved must be valid`;
+    case 'invalid-blocking-mode':
+      return `fix Open Decision ${id}: ${decision.reason}`;
     case 'invalid-refs-shape':
     case 'invalid-ref':
     case 'duplicate-ref':
@@ -363,6 +365,18 @@ export function computeReadiness({ state, policy, ci, manifest, layout }) {
     // readiness_mode = min(fact_mode, decision_cap) 로 다운그레이드한다 (open-decisions.md).
     const decisions = (screen.derived && screen.derived.blocking_decisions) || [];
     const invalidDecisions = [...((screen.derived && screen.derived.malformed_decisions) || [])];
+    const decisionRefs = (screen.derived && screen.derived.decision_refs) || [];
+    for (const ref of decisionRefs) {
+      if (ref.status !== 'resolved' || order.includes(ref.blocking_mode)) continue;
+      invalidDecisions.push({
+        id: ref.id,
+        status: ref.status,
+        blocking_mode: ref.blocking_mode || '(none)',
+        ...(ref.source ? { source: ref.source } : {}),
+        code: 'invalid-blocking-mode',
+        reason: `Blocking Mode '${ref.blocking_mode}' is not present in the effective policy`,
+      });
+    }
     let decisionCapIdx = order.length - 1;
     for (const dec of decisions) {
       const bmIdx = order.indexOf(dec.blocking_mode);

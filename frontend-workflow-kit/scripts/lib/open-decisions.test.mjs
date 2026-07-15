@@ -164,6 +164,44 @@ test('one canonical open row fans out with provenance; local lowest cap wins; re
   });
 });
 
+test('resolved canonical ref with a mode outside the effective policy fails closed in readiness', () => {
+  withProject((project) => {
+    writeRegister(project.docsDir, [
+      { id: 'D-BAD-MODE', mode: 'typo-mode', status: 'resolved' },
+    ]);
+    writeScreen(project.docsDir, 'REF', { refs: ['D-BAD-MODE'] });
+
+    const state = buildState({
+      docsDir: project.docsDir,
+      srcDir: project.srcDir,
+      date: '2026-07-15',
+    }).state;
+    assert.equal(state.screens.REF.derived.decision_refs[0].status, 'resolved');
+
+    const { report } = validateProject(project);
+    assert.ok(
+      report.errors.some(
+        (error) =>
+          error.check === 9 &&
+          /Blocking Mode 'typo-mode' 가 정책 모드가 아님/.test(error.message),
+      ),
+    );
+
+    const readiness = readinessFor(state).REF;
+    assert.equal(readiness.readiness_mode, 'docs-only');
+    const invalid = readiness.blocking[0].invalid_open_decision;
+    assert.deepEqual(invalid.source, {
+      artifact_id: 'open-decision-register',
+      artifact_type: 'open-decision-register',
+      path: 'global/open-decisions.md',
+    });
+    assert.equal(invalid.status, 'resolved');
+    assert.equal(invalid.code, 'invalid-blocking-mode');
+    assert.match(invalid.reason, /typo-mode.*effective policy/);
+    assert.match(readiness.next_actions[0], /typo-mode.*effective policy/);
+  });
+});
+
 test('missing targets/register and malformed/structurally invalid registers fail closed only for referring screens', () => {
   withProject((project) => {
     const { docsDir, srcDir } = project;

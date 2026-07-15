@@ -6,8 +6,6 @@
 //   P13: interactionResultRoutes 가 후행 구두점·쿼리·외부 URL 을 라우트로 오인 (검사 4 오탐).
 // 실행: npm run test:spec  (또는 node --test scripts/lib/spec.test.mjs)
 import { test } from 'node:test';
-// package.json keeps an explicit test-file list; load the focused #193 contract suite here.
-import './open-decisions.test.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
