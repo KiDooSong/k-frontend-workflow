@@ -1,0 +1,834 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { buildState } from '../workflow-state.mjs';
+import { computeReadiness } from '../readiness.mjs';
+import { implementationPathIssues } from './shared-surfaces.mjs';
+import { validateSchema } from './schema.mjs';
+import { DEFAULTS, KIT_ROOT, loadYaml } from './util.mjs';
+
+const VALIDATE = path.join(KIT_ROOT, 'scripts', 'validate.mjs');
+const STATE = path.join(KIT_ROOT, 'scripts', 'workflow-state.mjs');
+const READINESS = path.join(KIT_ROOT, 'scripts', 'readiness.mjs');
+
+function withProject(fn) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'shared-surfaces-'));
+  const docsDir = path.join(root, 'docs', 'frontend-workflow');
+  const srcDir = path.join(root, 'src');
+  fs.mkdirSync(docsDir, { recursive: true });
+  fs.mkdirSync(srcDir, { recursive: true });
+  try {
+    return fn({ root, docsDir, srcDir });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function yamlList(key, values) {
+  if (values === undefined) return '';
+  if (!Array.isArray(values)) return `${key}: ${values}\n`;
+  return `${key}:\n${values.map((value) => `  - ${JSON.stringify(value)}`).join('\n')}\n`;
+}
+
+function writeScreen(
+  docsDir,
+  id,
+  { domain = 'chat', refs, routeEntry, screenEntry, body = '' } = {},
+) {
+  const dir = path.join(docsDir, 'domains', domain, 'screens', id.toLowerCase());
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'screen-spec.md'),
+    `---\n` +
+      `artifact_id: ${id}-screen-spec\n` +
+      `artifact_type: screen-spec\n` +
+      `domain: ${domain}\n` +
+      `screen_id: ${id}\n` +
+      `route: /${id.toLowerCase()}\n` +
+      (routeEntry ? `route_entry: ${routeEntry}\n` : '') +
+      (screenEntry ? `screen_entry: ${screenEntry}\n` : '') +
+      yamlList('decision_refs', refs) +
+      `status: draft\n` +
+      `---\n` +
+      body,
+    'utf8',
+  );
+}
+
+const VALID_SURFACE_BODY = `
+# Shared composer
+
+## Purpose
+Uniform composer behavior.
+
+## Host Contract
+| Direction | Name | Meaning | Required |
+|---|---|---|---|
+| input | draftText | Initial draft | no |
+| output | onSubmit | Normalized submit intent | yes |
+
+## State Matrix
+| State | Condition | UI |
+|---|---|---|
+| loading | loading | spinner |
+| empty | empty | prompt |
+| error | error | retry |
+| success | ready | composer |
+| disabled | disabled | disabled composer |
+| refreshing | refreshing | spinner |
+
+## Interaction Matrix
+| User Action | Trigger | Result | Result Type | Target | Params | Analytics Event |
+|---|---|---|---|---|---|---|
+| Type | input | draft changes | state | draft | - | - |
+
+## Mutation Matrix
+없음
+
+## Data Requirements
+- none
+
+## API Candidates
+없음
+
+## Copy Keys
+| Key | 문구 | Status |
+|---|---|---|
+| composer.placeholder | Message | draft |
+
+## Accessibility
+- labelled input
+
+## Acceptance Criteria
+- [ ] submits the same normalized intent
+
+## Unknowns
+없음
+`;
+
+function writeSurface(
+  docsDir,
+  id,
+  {
+    domain = 'chat',
+    slug = id.toLowerCase(),
+    members = ['CHAT-A', 'CHAT-B'],
+    paths = ['src/features/chat/components/composer/**'],
+    refs,
+    body = VALID_SURFACE_BODY,
+    extraFrontmatter = '',
+  } = {},
+) {
+  const dir = path.join(docsDir, 'domains', domain, 'surfaces', slug);
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, 'surface-spec.md');
+  fs.writeFileSync(
+    file,
+    `---\n` +
+      `artifact_id: ${id}-shared-surface-spec\n` +
+      `artifact_type: shared-surface-spec\n` +
+      `domain: ${domain}\n` +
+      `surface_id: ${id}\n` +
+      yamlList('member_screens', members) +
+      (paths === null ? '' : yamlList('implementation_paths', paths)) +
+      yamlList('decision_refs', refs) +
+      extraFrontmatter +
+      `status: draft\n` +
+      `---\n` +
+      body,
+    'utf8',
+  );
+  return file;
+}
+
+function writeRegister(docsDir, rows) {
+  const file = path.join(docsDir, 'global', 'open-decisions.md');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(
+    file,
+    `---\nartifact_id: open-decision-register\nartifact_type: open-decision-register\nstatus: draft\n---\n\n` +
+      `# Decisions\n\n## Open Decisions\n\n` +
+      `| ID | Decision Needed | Options | Blocking Mode | Owner | Status |\n` +
+      `|---|---|---|---|---|---|\n` +
+      rows
+        .map(
+          (row) =>
+            `| ${row.id} | ${row.question || 'Choose behavior'} | A / B | ${row.mode || 'final-fixture-ui'} | PM | ${row.status || 'open'} |`,
+        )
+        .join('\n') +
+      `\n`,
+    'utf8',
+  );
+}
+
+function fullyReady(state) {
+  state.global.navigation_map_status = 'confirmed';
+  state.global.component_catalog_generated = true;
+  state.global.stub_screen_specs_count = Object.keys(state.screens).length;
+  for (const screen of Object.values(state.screens)) {
+    screen.status = 'confirmed';
+    screen.stub = false;
+    Object.assign(screen.derived, {
+      state_matrix_complete: true,
+      interaction_matrix_complete: true,
+      api_confidence_min: 'confirmed',
+      fake_hook_exists: true,
+      figma_mapping_status: 'confirmed',
+    });
+  }
+  for (const surface of Object.values(state.surfaces || {})) {
+    surface.status = 'confirmed';
+    surface.stub = false;
+    Object.assign(surface.derived, {
+      state_matrix_complete: true,
+      interaction_matrix_complete: true,
+      api_confidence_min: 'confirmed',
+    });
+  }
+  return state;
+}
+
+const CI = {
+  ci_lint: 'pass',
+  ci_schema_validation: 'pass',
+  state_coverage_complete: true,
+  llm_semantic_review: 'pass',
+};
+
+function readinessFor(state, surfaceOnlyId) {
+  return computeReadiness({
+    state: fullyReady(state),
+    policy: loadYaml(DEFAULTS.policy),
+    manifest: loadYaml(DEFAULTS.manifest),
+    ci: CI,
+    surfaceOnlyId,
+  });
+}
+
+function validateProject({ root, docsDir, srcDir }) {
+  const result = spawnSync(
+    process.execPath,
+    [
+      VALIDATE,
+      '--docs',
+      docsDir,
+      '--src',
+      srcDir,
+      '--root',
+      root,
+      '--manifest',
+      DEFAULTS.manifest,
+      '--schema',
+      DEFAULTS.schema,
+      '--policy',
+      DEFAULTS.policy,
+      '--json',
+    ],
+    { encoding: 'utf8', timeout: 30_000 },
+  );
+  assert.ok(result.stdout, result.stderr);
+  return { result, report: JSON.parse(result.stdout) };
+}
+
+test('valid two-screen surface is additive in state and reserves shared code from member screen readiness', () => {
+  withProject(({ docsDir, srcDir }) => {
+    writeScreen(docsDir, 'CHAT-A');
+    writeScreen(docsDir, 'CHAT-B');
+    writeSurface(docsDir, 'CHAT-COMPOSER');
+
+    const { state, inventory } = buildState({ docsDir, srcDir, date: '2026-07-15' });
+    const surface = state.surfaces['CHAT-COMPOSER'];
+    assert.deepEqual(surface.member_screens, ['CHAT-A', 'CHAT-B']);
+    assert.deepEqual(surface.implementation_paths, [
+      'src/features/chat/components/composer/**',
+    ]);
+    assert.equal(surface.derived.state_matrix_complete, true);
+    assert.equal(surface.derived.interaction_matrix_complete, true);
+    assert.deepEqual(surface.derived.membership_errors, []);
+    assert.deepEqual(surface.derived.path_errors, []);
+    assert.equal(surface.source.path, 'domains/chat/surfaces/chat-composer/surface-spec.md');
+    assert.deepEqual(
+      state.screens['CHAT-A'].derived.shared_surfaces.map((row) => row.surface_id),
+      ['CHAT-COMPOSER'],
+    );
+    assert.equal(inventory.screens.some((row) => row.id === 'CHAT-COMPOSER'), false);
+
+    const screenReadiness = readinessFor(state);
+    assert.equal(screenReadiness['CHAT-A'].readiness_mode, 'production-ready');
+    assert.ok(
+      screenReadiness['CHAT-A'].allowed_paths.includes('src/**'),
+      'broad member allow remains visible',
+    );
+    assert.ok(
+      screenReadiness['CHAT-A'].forbidden_paths.includes(
+        'src/features/chat/components/composer/**',
+      ),
+    );
+    assert.equal(
+      screenReadiness['CHAT-A'].delegated_shared_surfaces[0].surface_id,
+      'CHAT-COMPOSER',
+    );
+
+    const surfaceReadiness = readinessFor(state, 'CHAT-COMPOSER')['CHAT-COMPOSER'];
+    assert.equal(surfaceReadiness.readiness_mode, 'production-ready');
+    assert.equal(surfaceReadiness.surface_fact_mode, 'production-ready');
+    assert.equal(surfaceReadiness.member_cap, 'production-ready');
+    assert.deepEqual(surfaceReadiness.allowed_paths, [
+      'src/features/chat/components/composer/**',
+    ]);
+    assert.deepEqual(surfaceReadiness.forbidden_paths, []);
+  });
+});
+
+test('three-screen surface decision refs preserve canonical source + surface via and fan out malformed refs fail-closed', () => {
+  withProject(({ docsDir, srcDir }) => {
+    writeScreen(docsDir, 'CHAT-A');
+    writeScreen(docsDir, 'CHAT-B');
+    writeScreen(docsDir, 'CHAT-C');
+    writeRegister(docsDir, [
+      { id: 'D-OPEN' },
+      { id: 'D-DONE', status: 'resolved' },
+    ]);
+    writeSurface(docsDir, 'CHAT-COMPOSER', {
+      members: ['CHAT-A', 'CHAT-B', 'CHAT-C'],
+      refs: ['D-OPEN', 'D-DONE'],
+    });
+
+    let state = buildState({ docsDir, srcDir, date: '2026-07-15' }).state;
+    const surface = state.surfaces['CHAT-COMPOSER'];
+    const canonical = {
+      artifact_id: 'open-decision-register',
+      artifact_type: 'open-decision-register',
+      path: 'global/open-decisions.md',
+    };
+    const via = {
+      artifact_id: 'CHAT-COMPOSER-shared-surface-spec',
+      artifact_type: 'shared-surface-spec',
+      surface_id: 'CHAT-COMPOSER',
+      path: 'domains/chat/surfaces/chat-composer/surface-spec.md',
+    };
+    assert.deepEqual(surface.derived.decision_refs.map((row) => row.id), [
+      'D-DONE',
+      'D-OPEN',
+    ]);
+    assert.equal(surface.derived.decision_refs[0].status, 'resolved');
+    assert.deepEqual(surface.derived.decision_refs[0].source, canonical);
+    assert.deepEqual(surface.derived.decision_refs[0].via, via);
+    for (const id of ['CHAT-A', 'CHAT-B', 'CHAT-C']) {
+      assert.deepEqual(state.screens[id].derived.blocking_decisions[0].source, canonical);
+      assert.deepEqual(state.screens[id].derived.blocking_decisions[0].via, via);
+    }
+    const readiness = readinessFor(state, 'CHAT-COMPOSER')['CHAT-COMPOSER'];
+    assert.equal(readiness.readiness_mode, 'rough-fixture-ui');
+    assert.deepEqual(readiness.blocking[0].open_decision.via, via);
+
+    writeSurface(docsDir, 'CHAT-COMPOSER', {
+      members: ['CHAT-A', 'CHAT-B', 'CHAT-C'],
+      refs: ['D-MISSING'],
+    });
+    state = buildState({ docsDir, srcDir, date: '2026-07-15' }).state;
+    for (const id of ['CHAT-A', 'CHAT-B', 'CHAT-C']) {
+      assert.equal(state.screens[id].derived.malformed_decisions[0].code, 'unresolved-ref');
+      assert.equal(readinessFor(state)[id].readiness_mode, 'docs-only');
+    }
+    assert.equal(
+      readinessFor(state, 'CHAT-COMPOSER')['CHAT-COMPOSER'].readiness_mode,
+      'docs-only',
+    );
+  });
+});
+
+test('malformed and ambiguous canonical decision refs fail every surface member closed', () => {
+  for (const scenario of [
+    {
+      name: 'malformed',
+      rows: [{ id: 'D-BAD', status: 'invalid' }],
+      expectedCode: 'malformed-row',
+    },
+    {
+      name: 'ambiguous',
+      rows: [{ id: 'D-DUP' }, { id: 'D-DUP' }],
+      expectedCode: 'ambiguous-ref',
+    },
+  ]) {
+    withProject(({ docsDir, srcDir }) => {
+      for (const id of ['CHAT-A', 'CHAT-B', 'CHAT-C']) writeScreen(docsDir, id);
+      writeRegister(docsDir, scenario.rows);
+      const ref = scenario.rows[0].id;
+      writeSurface(docsDir, `SURFACE-${scenario.name.toUpperCase()}`, {
+        members: ['CHAT-A', 'CHAT-B', 'CHAT-C'],
+        refs: [ref],
+      });
+
+      const state = buildState({ docsDir, srcDir, date: '2026-07-15' }).state;
+      for (const id of ['CHAT-A', 'CHAT-B', 'CHAT-C']) {
+        assert.ok(
+          state.screens[id].derived.malformed_decisions.some(
+            (row) => row.id === ref && row.code === scenario.expectedCode,
+          ),
+          `${scenario.name} ref must fan out to ${id}`,
+        );
+        assert.equal(readinessFor(state)[id].readiness_mode, 'docs-only');
+      }
+      assert.equal(
+        readinessFor(state, `SURFACE-${scenario.name.toUpperCase()}`)[
+          `SURFACE-${scenario.name.toUpperCase()}`
+        ].readiness_mode,
+        'docs-only',
+      );
+    });
+  }
+});
+
+test('membership, identity, traversal, broad wildcard, member entry and surface overlap errors are deterministic and fail closed', () => {
+  withProject((project) => {
+    writeScreen(project.docsDir, 'CHAT-A', {
+      screenEntry: 'src/features/chat/components/composer/Composer.tsx',
+    });
+    writeScreen(project.docsDir, 'OTHER', { domain: 'other' });
+    writeSurface(project.docsDir, 'BAD-SURFACE', {
+      members: ['CHAT-A', 'CHAT-A', 'MISSING', 'OTHER'],
+      paths: [
+        '../escape/**',
+        'src/**',
+        'src/features/chat/components/composer/**',
+      ],
+    });
+    writeSurface(project.docsDir, 'OVERLAP', {
+      members: ['CHAT-A', 'OTHER'],
+      paths: ['src/features/chat/components/composer/field/**'],
+    });
+    writeSurface(project.docsDir, 'ONE-MEMBER', {
+      members: ['CHAT-A'],
+      paths: ['src/features/chat/components/single/**'],
+    });
+
+    const state = buildState({
+      docsDir: project.docsDir,
+      srcDir: project.srcDir,
+      date: '2026-07-15',
+    }).state;
+    const bad = state.surfaces['BAD-SURFACE'].derived;
+    const membershipCodes = bad.membership_errors.map((issue) => issue.code);
+    assert.ok(membershipCodes.includes('duplicate-member'));
+    assert.ok(membershipCodes.includes('missing-member'));
+    assert.ok(membershipCodes.includes('cross-domain-member'));
+    assert.ok(
+      state.surfaces['ONE-MEMBER'].derived.membership_errors.some(
+        (issue) => issue.code === 'too-few-members',
+      ),
+    );
+    const pathCodes = bad.path_errors.map((issue) => issue.code);
+    assert.ok(pathCodes.includes('unsafe-path-segment'));
+    assert.ok(pathCodes.includes('broad-wildcard'));
+    assert.ok(pathCodes.includes('member-entry-overlap'));
+    assert.ok(pathCodes.includes('surface-path-overlap'));
+    assert.equal(
+      readinessFor(state, 'BAD-SURFACE')['BAD-SURFACE'].readiness_mode,
+      'docs-only',
+    );
+    assert.equal(
+      readinessFor(state, 'ONE-MEMBER')['ONE-MEMBER'].readiness_mode,
+      'docs-only',
+    );
+
+    const { result, report } = validateProject(project);
+    assert.equal(result.status, 1);
+    const messages = report.errors.filter((entry) => [3, 5].includes(entry.check)).map((entry) => entry.message).join('\n');
+    assert.match(messages, /duplicate Screen ID/);
+    assert.match(messages, /does not exist/);
+    assert.match(messages, /belongs to domain other/);
+    assert.match(messages, /unsafe\/hidden segment/);
+    assert.match(messages, /too broad/);
+    assert.match(messages, /overlaps member/);
+    assert.match(messages, /overlaps surface/);
+  });
+});
+
+test('duplicate surface IDs and screen/route/nesting identity fields are rejected', () => {
+  withProject((project) => {
+    writeScreen(project.docsDir, 'CHAT-A');
+    writeScreen(project.docsDir, 'CHAT-B');
+    writeSurface(project.docsDir, 'DUP-SURFACE', {
+      slug: 'first',
+      paths: ['src/features/chat/components/first/**'],
+      extraFrontmatter: 'route: /not-a-screen\nscreen_id: CHAT-A\nmember_surfaces: [OTHER]\n',
+    });
+    writeSurface(project.docsDir, 'DUP-SURFACE', {
+      slug: 'second',
+      paths: ['src/features/chat/components/second/**'],
+    });
+    const state = buildState({
+      docsDir: project.docsDir,
+      srcDir: project.srcDir,
+      date: '2026-07-15',
+    }).state;
+    assert.ok(
+      state.surfaces['DUP-SURFACE'].derived.identity_errors.some(
+        (issue) => issue.code === 'duplicate-surface-id',
+      ),
+    );
+    assert.equal(
+      readinessFor(state, 'DUP-SURFACE')['DUP-SURFACE'].readiness_mode,
+      'docs-only',
+    );
+    const { report } = validateProject(project);
+    assert.ok(
+      report.errors.some(
+        (entry) => entry.check === 5 && /surface_id is globally duplicated/.test(entry.message),
+      ),
+    );
+    assert.ok(
+      report.errors.filter((entry) => entry.check === 2).some(
+        (entry) => /must not declare (route|screen_id|member_surfaces)/.test(entry.message),
+      ),
+    );
+  });
+});
+
+test('multiple non-overlapping surfaces per screen work; duplicate fan-out through screen/surface or two surfaces is rejected', () => {
+  withProject((project) => {
+    writeScreen(project.docsDir, 'CHAT-A', { refs: ['D-SHARED'] });
+    writeScreen(project.docsDir, 'CHAT-B');
+    writeRegister(project.docsDir, [{ id: 'D-SHARED' }]);
+    writeSurface(project.docsDir, 'COMPOSER', {
+      paths: ['src/features/chat/components/composer/**'],
+      refs: ['D-SHARED'],
+    });
+    writeSurface(project.docsDir, 'ATTACHMENTS', {
+      paths: ['src/features/chat/components/attachments/**'],
+      refs: ['D-SHARED'],
+    });
+
+    const state = buildState({
+      docsDir: project.docsDir,
+      srcDir: project.srcDir,
+      date: '2026-07-15',
+    }).state;
+    assert.deepEqual(
+      state.screens['CHAT-A'].derived.shared_surfaces.map((entry) => entry.surface_id),
+      ['ATTACHMENTS', 'COMPOSER'],
+    );
+    assert.ok(
+      state.screens['CHAT-A'].derived.malformed_decisions.some(
+        (row) => row.code === 'duplicate-referrer',
+      ),
+    );
+    assert.equal(readinessFor(state)['CHAT-A'].readiness_mode, 'docs-only');
+    const { report } = validateProject(project);
+    assert.ok(
+      report.errors.some(
+        (entry) => entry.check === 9 && /여러 referrer 경로로 중복 적용/.test(entry.message),
+      ),
+    );
+  });
+
+  withProject((project) => {
+    writeScreen(project.docsDir, 'CHAT-A');
+    writeScreen(project.docsDir, 'CHAT-B');
+    writeRegister(project.docsDir, [{ id: 'D-SURFACES' }]);
+    writeSurface(project.docsDir, 'COMPOSER', {
+      paths: ['src/features/chat/components/composer/**'],
+      refs: ['D-SURFACES'],
+    });
+    writeSurface(project.docsDir, 'ATTACHMENTS', {
+      paths: ['src/features/chat/components/attachments/**'],
+      refs: ['D-SURFACES'],
+    });
+    const state = buildState({
+      docsDir: project.docsDir,
+      srcDir: project.srcDir,
+      date: '2026-07-15',
+    }).state;
+    assert.deepEqual(state.surfaces.COMPOSER.derived.path_errors, []);
+    assert.deepEqual(state.surfaces.ATTACHMENTS.derived.path_errors, []);
+    for (const surfaceId of ['COMPOSER', 'ATTACHMENTS']) {
+      assert.ok(
+        state.surfaces[surfaceId].derived.decision_fanout_errors.some(
+          (issue) => issue.code === 'duplicate-referrer',
+        ),
+      );
+    }
+    assert.equal(readinessFor(state)['CHAT-A'].readiness_mode, 'docs-only');
+    const { report } = validateProject(project);
+    assert.ok(
+      report.errors.some(
+        (entry) => entry.check === 9 && /여러 referrer 경로로 중복 적용/.test(entry.message),
+      ),
+    );
+  });
+});
+
+test('absent implementation_paths is documentation-valid but grants no code path', () => {
+  withProject(({ docsDir, srcDir }) => {
+    writeScreen(docsDir, 'CHAT-A');
+    writeScreen(docsDir, 'CHAT-B');
+    writeSurface(docsDir, 'DOCS-ONLY-SURFACE', { paths: null });
+    const state = buildState({ docsDir, srcDir, date: '2026-07-15' }).state;
+    const result = readinessFor(state, 'DOCS-ONLY-SURFACE')['DOCS-ONLY-SURFACE'];
+    assert.deepEqual(result.allowed_paths, []);
+    assert.deepEqual(result.forbidden_paths, []);
+    assert.ok(result.next_actions.some((action) => /declare narrow implementation_paths/.test(action)));
+  });
+});
+
+test('surface mode is capped by the least-ready member and declared paths require every member policy intersection', () => {
+  withProject(({ docsDir, srcDir }) => {
+    writeScreen(docsDir, 'CHAT-A');
+    writeScreen(docsDir, 'CHAT-B');
+    writeSurface(docsDir, 'CHAT-COMPOSER');
+    const state = fullyReady(buildState({ docsDir, srcDir, date: '2026-07-15' }).state);
+    state.screens['CHAT-B'].status = 'draft';
+    state.screens['CHAT-B'].stub = true;
+    state.screens['CHAT-B'].derived.fake_hook_exists = false;
+    const result = computeReadiness({
+      state,
+      policy: loadYaml(DEFAULTS.policy),
+      manifest: loadYaml(DEFAULTS.manifest),
+      ci: CI,
+      surfaceOnlyId: 'CHAT-COMPOSER',
+    })['CHAT-COMPOSER'];
+    assert.equal(result.surface_fact_mode, 'production-ready');
+    assert.equal(result.member_cap, 'screen-skeleton');
+    assert.equal(result.readiness_mode, 'screen-skeleton');
+    assert.deepEqual(result.limiting_members, ['CHAT-B']);
+    assert.deepEqual(result.allowed_paths, []);
+    assert.deepEqual(result.forbidden_paths, ['src/features/chat/components/composer/**']);
+    assert.ok(
+      result.path_authorization[0].causes.some(
+        (cause) => cause.kind === 'member-policy-coverage' && cause.screen_id === 'CHAT-B',
+      ),
+    );
+  });
+});
+
+test('surface validation reuses API/Copy checks and hard-rejects v1, route rows, and local Open Decisions', () => {
+  withProject((project) => {
+    writeScreen(project.docsDir, 'CHAT-A');
+    writeScreen(project.docsDir, 'CHAT-B');
+    const invalidBody = `
+# Invalid
+
+## Purpose
+Authored.
+
+## Interaction Matrix
+| User Action | Trigger | Result | Result Type | Target | Params | Analytics Event |
+|---|---|---|---|---|---|---|
+| Open | click | navigate | route | /chat-a | - | - |
+
+## API Candidates
+- GET /messages (confidence: confirmed)
+
+## Copy Keys
+| Key | 문구 | Status |
+|---|---|---|
+| composer.bad | Bad | invented |
+
+## Open Decisions
+| ID | Decision Needed | Options | Blocking Mode | Owner | Status |
+|---|---|---|---|---|---|
+| D-LOCAL | Choose | A / B | final-fixture-ui | PM | open |
+`;
+    writeSurface(project.docsDir, 'INVALID-SURFACE', { body: invalidBody });
+    const { report } = validateProject(project);
+    const errors = report.errors;
+    assert.ok(errors.some((entry) => entry.check === 4 && /Result Type=route/.test(entry.message)));
+    assert.ok(errors.some((entry) => entry.check === 8 && /confirmed API/.test(entry.message)));
+    assert.ok(errors.some((entry) => entry.check === 9 && /local ## Open Decisions/.test(entry.message)));
+    assert.ok(errors.some((entry) => entry.check === 10 && /invented/.test(entry.message)));
+  });
+
+  withProject((project) => {
+    writeScreen(project.docsDir, 'CHAT-A');
+    writeScreen(project.docsDir, 'CHAT-B');
+    writeSurface(project.docsDir, 'V1-SURFACE', {
+      body: `\n# V1\n\n## Purpose\nAuthored.\n\n## Interaction Matrix\n| User Action | Trigger | Result | Analytics Event |\n|---|---|---|---|\n| Type | input | draft | - |\n`,
+    });
+    const { report } = validateProject(project);
+    assert.ok(
+      report.errors.some(
+        (entry) => entry.check === 4 && /must use v2 columns/.test(entry.message),
+      ),
+    );
+  });
+});
+
+test('frontmatter schema minItems and path syntax helpers enforce the surface contract', () => {
+  const schema = JSON.parse(fs.readFileSync(DEFAULTS.schema, 'utf8'));
+  const base = {
+    artifact_id: 'COMPOSER-shared-surface-spec',
+    artifact_type: 'shared-surface-spec',
+    surface_id: 'COMPOSER',
+    member_screens: ['CHAT-A'],
+    status: 'draft',
+  };
+  assert.ok(validateSchema(base, schema).some((message) => /minItems/.test(message)));
+  assert.deepEqual(
+    validateSchema({ ...base, member_screens: ['CHAT-A', 'CHAT-B'] }, schema),
+    [],
+  );
+  assert.equal(implementationPathIssues('src/features/chat/composer/**').length, 0);
+  assert.ok(implementationPathIssues('/tmp/composer/**').length > 0);
+  assert.ok(implementationPathIssues('src/**').some((issue) => issue.code === 'broad-wildcard'));
+  assert.ok(
+    implementationPathIssues('docs/frontend-workflow/_meta/**').some(
+      (issue) => issue.code === 'workflow-output-path',
+    ),
+  );
+});
+
+test('--surface CLI is strict, mutually exclusive, help-before-I/O, and returns keyed output', () => {
+  const help = spawnSync(process.execPath, [READINESS, '--help'], {
+    encoding: 'utf8',
+    timeout: 30_000,
+  });
+  assert.equal(help.status, 0);
+  assert.match(help.stdout, /--surface <id>/);
+
+  for (const args of [
+    ['--surface', ' '],
+    ['--surface', 'bad/id'],
+    ['--screen', 'CHAT-A', '--surface', 'COMPOSER'],
+  ]) {
+    const result = spawnSync(process.execPath, [READINESS, ...args], {
+      encoding: 'utf8',
+      timeout: 30_000,
+    });
+    assert.equal(result.status, 2, `${args.join(' ')}\n${result.stdout}\n${result.stderr}`);
+    assert.doesNotMatch(result.stderr, /workflow-state.*없음/);
+  }
+
+  withProject(({ docsDir, srcDir }) => {
+    writeScreen(docsDir, 'CHAT-A');
+    writeScreen(docsDir, 'CHAT-B');
+    writeSurface(docsDir, 'COMPOSER');
+    const stateResult = spawnSync(
+      process.execPath,
+      [STATE, '--docs', docsDir, '--src', srcDir, '--date', '2026-07-15'],
+      { encoding: 'utf8', timeout: 30_000 },
+    );
+    assert.equal(stateResult.status, 0, stateResult.stderr);
+    const readiness = spawnSync(
+      process.execPath,
+      [READINESS, '--docs', docsDir, '--surface', 'COMPOSER', '--json'],
+      { encoding: 'utf8', timeout: 30_000 },
+    );
+    assert.equal(readiness.status, 0, readiness.stderr);
+    assert.deepEqual(Object.keys(JSON.parse(readiness.stdout)), ['COMPOSER']);
+  });
+});
+
+test('custom docs, src, root, and layout stay aligned across surface state, readiness, and validate CLIs', () => {
+  withProject(({ root, docsDir, srcDir }) => {
+    writeScreen(docsDir, 'CHAT-A');
+    writeScreen(docsDir, 'CHAT-B');
+    writeSurface(docsDir, 'CUSTOM-COMPOSER', {
+      paths: ['src/shared/chat/composer/**'],
+    });
+    const layoutPath = path.join(root, 'project-layout.yaml');
+    fs.writeFileSync(
+      layoutPath,
+      `version: 1\npreset: expo-feature\nroles:\n  domain_component: src/shared/{domain}/**\n`,
+      'utf8',
+    );
+
+    const stateResult = spawnSync(
+      process.execPath,
+      [
+        STATE,
+        '--docs',
+        docsDir,
+        '--src',
+        srcDir,
+        '--root',
+        root,
+        '--layout',
+        layoutPath,
+        '--date',
+        '2026-07-15',
+      ],
+      { encoding: 'utf8', timeout: 30_000 },
+    );
+    assert.equal(stateResult.status, 0, stateResult.stderr);
+
+    const readiness = spawnSync(
+      process.execPath,
+      [
+        READINESS,
+        '--docs',
+        docsDir,
+        '--layout',
+        layoutPath,
+        '--surface',
+        'CUSTOM-COMPOSER',
+        '--json',
+      ],
+      { encoding: 'utf8', timeout: 30_000 },
+    );
+    assert.equal(readiness.status, 0, readiness.stderr);
+    const readinessJson = JSON.parse(readiness.stdout)['CUSTOM-COMPOSER'];
+    assert.deepEqual(readinessJson.forbidden_paths, ['src/shared/chat/composer/**']);
+    assert.equal(readinessJson.path_authorization[0].path, 'src/shared/chat/composer/**');
+
+    const validation = spawnSync(
+      process.execPath,
+      [
+        VALIDATE,
+        '--docs',
+        docsDir,
+        '--src',
+        srcDir,
+        '--root',
+        root,
+        '--layout',
+        layoutPath,
+        '--manifest',
+        DEFAULTS.manifest,
+        '--schema',
+        DEFAULTS.schema,
+        '--policy',
+        DEFAULTS.policy,
+        '--json',
+      ],
+      { encoding: 'utf8', timeout: 30_000 },
+    );
+    assert.ok([0, 1].includes(validation.status), validation.stderr);
+    const report = JSON.parse(validation.stdout);
+    assert.equal(
+      report.errors.some((entry) => /CUSTOM-COMPOSER|src\/shared\/chat\/composer/.test(entry.message)),
+      false,
+    );
+  });
+});
+
+test('a repository with no surface keeps the state shape free of surfaces and screen delegation fields', () => {
+  withProject(({ docsDir, srcDir }) => {
+    writeScreen(docsDir, 'CHAT-A');
+    const state = buildState({ docsDir, srcDir, date: '2026-07-15' }).state;
+    assert.equal(Object.prototype.hasOwnProperty.call(state, 'surfaces'), false);
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(
+        state.screens['CHAT-A'].derived,
+        'shared_surfaces',
+      ),
+      false,
+    );
+    const readiness = computeReadiness({
+      state,
+      policy: loadYaml(DEFAULTS.policy),
+      manifest: loadYaml(DEFAULTS.manifest),
+      ci: {},
+    });
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(
+        readiness['CHAT-A'],
+        'delegated_shared_surfaces',
+      ),
+      false,
+    );
+  });
+});
