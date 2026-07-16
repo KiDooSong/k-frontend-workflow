@@ -33,6 +33,8 @@ import {
   routeTreeTargetExists,
   INTERACTION_V2_RESULT_TYPES,
   deriveMetrics,
+  screenIdCandidateOf,
+  publicScreenKeyOf,
 } from './spec.mjs';
 import { buildNavGraph } from './nav-graph.mjs';
 import { renderRouteTree } from './route-core.mjs';
@@ -112,6 +114,31 @@ function specWithStateMatrix(states) {
 function check4Errors(result) {
   return (result.errors || []).filter((e) => e.check === 4);
 }
+
+test('screen identity fallback preserves present falsy values and skips only missing or empty values', () => {
+  const spec = (frontmatter) => ({
+    frontmatter,
+    path: path.join('/repo', 'docs', 'domains', 'chat', 'screens', 'path-fallback', 'screen-spec.md'),
+  });
+  const cases = [
+    { frontmatter: { screen_id: 0, artifact_id: 'artifact' }, candidate: 0, key: '0' },
+    { frontmatter: { screen_id: false, artifact_id: 'artifact' }, candidate: false, key: 'false' },
+    { frontmatter: { screen_id: '', artifact_id: 'artifact' }, candidate: 'artifact', key: 'artifact' },
+    { frontmatter: { screen_id: null, artifact_id: 'artifact' }, candidate: 'artifact', key: 'artifact' },
+    { frontmatter: { artifact_id: 'artifact' }, candidate: 'artifact', key: 'artifact' },
+    { frontmatter: { screen_id: '', artifact_id: 0 }, candidate: 0, key: '0' },
+    { frontmatter: { screen_id: null, artifact_id: false }, candidate: false, key: 'false' },
+    { frontmatter: { screen_id: '', artifact_id: '' }, candidate: 'path-fallback', key: 'path-fallback' },
+    { frontmatter: { screen_id: null, artifact_id: null }, candidate: 'path-fallback', key: 'path-fallback' },
+    { frontmatter: {}, candidate: 'path-fallback', key: 'path-fallback' },
+  ];
+
+  for (const scenario of cases) {
+    const candidate = screenIdCandidateOf(spec(scenario.frontmatter));
+    assert.equal(candidate, scenario.candidate);
+    assert.equal(publicScreenKeyOf(spec(scenario.frontmatter)), scenario.key);
+  }
+});
 
 test('deriveMetrics: old five states are incomplete because disabled is separate from loading', () => {
   const derived = deriveMetrics(

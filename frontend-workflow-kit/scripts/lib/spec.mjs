@@ -210,9 +210,15 @@ export function loadScreenSpec(specPath) {
 // workflow-state의 public screens object와 모든 identity consumer가 공유하는 fallback
 // namespace. raw candidate는 inventory provenance를 보존하고 key는 plain-object property
 // coercion을 그대로 따른다.
+function hasIdentityCandidate(value) {
+  return value !== undefined && value !== null && value !== '';
+}
+
 export function screenIdCandidateOf(spec) {
   const fm = spec.frontmatter;
-  return fm.screen_id || fm.artifact_id || path.basename(path.dirname(spec.path));
+  if (hasIdentityCandidate(fm.screen_id)) return fm.screen_id;
+  if (hasIdentityCandidate(fm.artifact_id)) return fm.artifact_id;
+  return path.basename(path.dirname(spec.path));
 }
 
 export function publicScreenKeyOf(spec) {

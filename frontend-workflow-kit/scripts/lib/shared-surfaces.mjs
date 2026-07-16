@@ -53,8 +53,14 @@ export function loadSharedSurfaceSpecs({ docsDir }) {
   );
 }
 
+function ownershipPathKey(value) {
+  return path.posix.normalize(String(value).replace(/\\/g, '/'));
+}
+
 export function pathsOverlap(left, right) {
-  return covers(left, right) || covers(right, left);
+  const leftKey = ownershipPathKey(left);
+  const rightKey = ownershipPathKey(right);
+  return covers(leftKey, rightKey) || covers(rightKey, leftKey);
 }
 
 export function implementationPathIssues(value) {

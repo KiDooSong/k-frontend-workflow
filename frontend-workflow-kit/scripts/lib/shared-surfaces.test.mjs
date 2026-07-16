@@ -496,6 +496,153 @@ test('screen identity uses the serialized property key for state duplicates and 
   });
 });
 
+test('present-falsy screen identities collide with canonical public keys and fail surfaces closed', () => {
+  for (const scenario of [
+    {
+      name: 'zero',
+      rawValue: 0,
+      rawYaml: '0',
+      canonicalYaml: '"0"',
+      publicKey: '0',
+      rawType: 'number',
+    },
+    {
+      name: 'false',
+      rawValue: false,
+      rawYaml: 'false',
+      canonicalYaml: '"false"',
+      publicKey: 'false',
+      rawType: 'boolean',
+    },
+  ]) {
+    withProject((project) => {
+      writeScreen(project.docsDir, scenario.publicKey, {
+        slug: `a-${scenario.name}-invalid`,
+        artifactId: `${scenario.name}-invalid-screen-spec`,
+        screenIdYaml: scenario.rawYaml,
+        route: `/${scenario.name}-invalid`,
+      });
+      writeScreen(project.docsDir, scenario.publicKey, {
+        slug: `z-${scenario.name}-valid`,
+        artifactId: `${scenario.name}-valid-screen-spec`,
+        screenIdYaml: scenario.canonicalYaml,
+        route: `/${scenario.name}-valid`,
+      });
+      writeScreen(project.docsDir, 'CHAT-B');
+      const surfaceId = `SCREEN-ID-${scenario.name.toUpperCase()}-COLLISION`;
+      const declaredPath = `src/features/chat/components/${scenario.name}-collision/**`;
+      writeSurface(project.docsDir, surfaceId, {
+        members: [scenario.publicKey, 'CHAT-B'],
+        paths: [declaredPath],
+      });
+
+      const { state, inventory } = buildState({
+        docsDir: project.docsDir,
+        srcDir: project.srcDir,
+        date: '2026-07-16',
+      });
+      assert.deepEqual(inventory.checks.duplicate_ids, [scenario.publicKey]);
+      const collisionRows = inventory.screens.filter(
+        (row) => String(row.id) === scenario.publicKey,
+      );
+      assert.equal(collisionRows.length, 2);
+      assert.deepEqual(
+        collisionRows.map((row) => typeof row.id).sort(),
+        [scenario.rawType, 'string'].sort(),
+      );
+      assert.ok(collisionRows.some((row) => row.id === scenario.rawValue));
+      assert.ok(collisionRows.some((row) => row.id === scenario.publicKey));
+
+      assert.deepEqual(
+        state.surfaces[surfaceId].derived.membership_errors.find(
+          (issue) => issue.code === 'ambiguous-member',
+        ),
+        {
+          code: 'ambiguous-member',
+          message: `member screen identity is duplicated: ${scenario.publicKey}`,
+          screen_id: scenario.publicKey,
+        },
+      );
+      const readiness = readinessFor(state, surfaceId)[surfaceId];
+      assert.equal(readiness.readiness_mode, 'docs-only');
+      assert.deepEqual(readiness.allowed_paths, []);
+      assert.deepEqual(readiness.forbidden_paths, [declaredPath]);
+
+      const { result, report } = validateProject(project);
+      assert.equal(result.status, 1);
+      const messages = report.errors
+        .filter((entry) => [3, 5].includes(entry.check))
+        .map((entry) => entry.message)
+        .join('\n');
+      assert.match(
+        messages,
+        new RegExp(`member screen identity is duplicated: ${scenario.publicKey}`),
+      );
+      assert.match(
+        messages,
+        new RegExp(`screen_id 중복: ${scenario.publicKey} \\(2건\\)`),
+      );
+    });
+  }
+});
+
+test('singleton present-falsy screen identities cannot satisfy canonical surface members', () => {
+  for (const scenario of [
+    { name: 'zero', rawYaml: '0', publicKey: '0' },
+    { name: 'false', rawYaml: 'false', publicKey: 'false' },
+  ]) {
+    withProject((project) => {
+      const slug = `${scenario.name}-only`;
+      writeScreen(project.docsDir, scenario.publicKey, {
+        slug,
+        artifactId: `${scenario.name}-only-screen-spec`,
+        screenIdYaml: scenario.rawYaml,
+        route: `/${scenario.name}-only`,
+      });
+      writeScreen(project.docsDir, 'CHAT-B');
+      const surfaceId = `MALFORMED-${scenario.name.toUpperCase()}-MEMBER`;
+      const declaredPath = `src/features/chat/components/${scenario.name}-member/**`;
+      writeSurface(project.docsDir, surfaceId, {
+        members: [scenario.publicKey, 'CHAT-B'],
+        paths: [declaredPath],
+      });
+
+      const { state, inventory } = buildState({
+        docsDir: project.docsDir,
+        srcDir: project.srcDir,
+        date: '2026-07-16',
+      });
+      assert.deepEqual(inventory.checks.duplicate_ids, []);
+      assert.deepEqual(
+        state.surfaces[surfaceId].derived.membership_errors.find(
+          (issue) => issue.code === 'invalid-member-screen-id',
+        ),
+        {
+          code: 'invalid-member-screen-id',
+          message: `member screen identity is not a canonical string: ${scenario.publicKey}`,
+          screen_id: scenario.publicKey,
+          locations: [`domains/chat/screens/${slug}/screen-spec.md`],
+        },
+      );
+      const readiness = readinessFor(state, surfaceId)[surfaceId];
+      assert.equal(readiness.readiness_mode, 'docs-only');
+      assert.deepEqual(readiness.allowed_paths, []);
+      assert.deepEqual(readiness.forbidden_paths, [declaredPath]);
+
+      const { result, report } = validateProject(project);
+      assert.equal(result.status, 1);
+      assert.ok(
+        report.errors.some(
+          (entry) =>
+            entry.check === 3 &&
+            entry.message ===
+              `member screen identity is not a canonical string: ${scenario.publicKey}`,
+        ),
+      );
+    });
+  }
+});
+
 test('a singleton non-string screen ID cannot satisfy a canonical surface member', () => {
   withProject((project) => {
     writeScreen(project.docsDir, '1', {
@@ -931,6 +1078,125 @@ test('same-domain and cross-domain non-member ScreenSpec entries are global owne
       .join('\n');
     assert.match(overlapMessages, /overlaps non-member screen CHAT-C route_entry/);
     assert.match(overlapMessages, /overlaps non-member screen OTHER screen_entry/);
+  });
+});
+
+test('non-member entry ownership compares lexical repository-path equivalents and preserves raw provenance', () => {
+  for (const scenario of [
+    {
+      name: 'dot-prefix',
+      option: 'routeEntry',
+      entryKind: 'route_entry',
+      entryPath: './src/features/x/Foo.tsx',
+    },
+    {
+      name: 'backslash',
+      option: 'screenEntry',
+      entryKind: 'screen_entry',
+      entryPath: String.raw`src\features\x\Foo.tsx`,
+    },
+    {
+      name: 'dot-segment',
+      option: 'routeEntry',
+      entryKind: 'route_entry',
+      entryPath: 'src/features/x/../x/Foo.tsx',
+    },
+  ]) {
+    withProject((project) => {
+      writeScreen(project.docsDir, 'CHAT-A');
+      writeScreen(project.docsDir, 'CHAT-B');
+      writeScreen(project.docsDir, 'CHAT-C', {
+        [scenario.option]: scenario.entryPath,
+      });
+      const surfaceId = `ENTRY-${scenario.name.toUpperCase()}-OVERLAP`;
+      const implementationPath = 'src/features/x/**';
+      writeSurface(project.docsDir, surfaceId, { paths: [implementationPath] });
+
+      const state = buildState({
+        docsDir: project.docsDir,
+        srcDir: project.srcDir,
+        date: '2026-07-16',
+      }).state;
+      const expectedMessage =
+        `implementation path ${implementationPath} overlaps non-member screen CHAT-C ` +
+        `${scenario.entryKind}: ${scenario.entryPath}`;
+      assert.deepEqual(
+        state.surfaces[surfaceId].derived.path_errors.find(
+          (issue) => issue.code === 'non-member-entry-overlap',
+        ),
+        {
+          code: 'non-member-entry-overlap',
+          message: expectedMessage,
+          path: implementationPath,
+          screen_id: 'CHAT-C',
+          screen_domain: 'chat',
+          entry_kind: scenario.entryKind,
+          entry_path: scenario.entryPath,
+          screen_spec_path: 'domains/chat/screens/chat-c/screen-spec.md',
+        },
+      );
+      assert.deepEqual(state.surfaces[surfaceId].member_screens, ['CHAT-A', 'CHAT-B']);
+
+      const readiness = readinessFor(state, surfaceId)[surfaceId];
+      assert.equal(readiness.readiness_mode, 'docs-only');
+      assert.deepEqual(readiness.allowed_paths, []);
+      assert.deepEqual(readiness.forbidden_paths, [implementationPath]);
+      assert.equal(
+        Object.hasOwn(state.screens['CHAT-C'].derived, 'shared_surfaces'),
+        false,
+      );
+      assert.equal(
+        Object.hasOwn(readinessFor(state)['CHAT-C'], 'delegated_shared_surfaces'),
+        false,
+      );
+
+      const { result, report } = validateProject(project);
+      assert.equal(result.status, 1);
+      assert.ok(
+        report.errors.some(
+          (entry) => entry.check === 3 && entry.message === expectedMessage,
+        ),
+      );
+    });
+  }
+});
+
+test('member entry ownership uses the same lexical comparison and retains authored diagnostics', () => {
+  withProject((project) => {
+    const entryPath = 'src/features/x/../x/Member.tsx';
+    const implementationPath = 'src/features/x/**';
+    writeScreen(project.docsDir, 'CHAT-A', { screenEntry: entryPath });
+    writeScreen(project.docsDir, 'CHAT-B');
+    writeSurface(project.docsDir, 'MEMBER-LEXICAL-OVERLAP', {
+      paths: [implementationPath],
+    });
+
+    const state = buildState({
+      docsDir: project.docsDir,
+      srcDir: project.srcDir,
+      date: '2026-07-16',
+    }).state;
+    assert.deepEqual(
+      state.surfaces['MEMBER-LEXICAL-OVERLAP'].derived.path_errors.find(
+        (issue) => issue.code === 'member-entry-overlap',
+      ),
+      {
+        code: 'member-entry-overlap',
+        message:
+          `implementation path ${implementationPath} overlaps member CHAT-A ` +
+          `screen_entry: ${entryPath}`,
+        path: implementationPath,
+        screen_id: 'CHAT-A',
+        entry_kind: 'screen_entry',
+        entry_path: entryPath,
+      },
+    );
+    const readiness = readinessFor(state, 'MEMBER-LEXICAL-OVERLAP')[
+      'MEMBER-LEXICAL-OVERLAP'
+    ];
+    assert.equal(readiness.readiness_mode, 'docs-only');
+    assert.deepEqual(readiness.allowed_paths, []);
+    assert.deepEqual(readiness.forbidden_paths, [implementationPath]);
   });
 });
 

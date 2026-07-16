@@ -4,6 +4,11 @@
 
 ## Unreleased
 
+### fix(shared-surfaces) — close falsy identity and lexical entry-path gaps (#200)
+
+- Screen identity fallback이 `undefined`, `null`, 빈 문자열만 다음 후보로 넘기고 present-falsy `0`/`false`는 raw provenance로 보존한다. 공개 plain-object key coercion은 기존처럼 `String(candidate)`를 사용하므로 numeric/boolean ID와 canonical string ID가 같은 키에서 duplicate로 수렴하고, shared-surface membership/readiness/validate가 각각 `ambiguous-member` 또는 `invalid-member-screen-id`로 fail-closed한다. 정상 string, prototype-named ID, empty/missing fallback, no-surface 공개 shape는 변경하지 않았다.
+- shared-surface ownership overlap 비교에서만 ScreenSpec `route_entry`/`screen_entry`의 backslash, redundant `./`/separator, lexical dot segment를 POSIX key로 정규화한다. 진단 message와 `entry_path`, state/inventory에는 raw authored 값을 유지하며 기존 `member-entry-overlap`/`non-member-entry-overlap` 코드와 canonical-path 진단 bytes, membership/delegation, 전역 path helper/schema/gate/version은 변경하지 않았다.
+
 ### fix(shared-surfaces) — harden prototype-named IDs and global entry ownership (#198)
 
 - `workflow:state`와 readiness의 user-controlled screen/surface ID 사전을 `Map` 기반으로 바꾸고 공개 반환·YAML/JSON 직렬화 경계에서 `Object.fromEntries` plain object를 생성한다. Screen과 Surface Map/grouping 키를 공개 object property key로 먼저 정규화해 numeric `1`과 string `"1"`처럼 직렬화 시 충돌하는 malformed/valid ID의 duplicate provenance를 보존한다. Screen 공개 키의 `screen_id → artifact_id → path basename` fallback을 state/shared-surface/validate 공용 helper로 통일한다. 따라서 canonical ID와 같은 fallback 키를 가진 malformed ScreenSpec은 `ambiguous-member`, fallback/non-string 레코드만 있는 경우는 `invalid-member-screen-id`로 preflight를 fail-closed하며 inventory/validate 중복 진단도 같은 namespace를 쓴다. Surface 충돌은 결정적 첫 레코드와 `duplicate-surface-id`를 유지한다. `constructor`, `toString` 같은 schema-valid ID와 malformed `__proto__`도 own record로 유지하며 no-surface 출력 shape를 보존한다. 존재하지 않는 prototype 이름의 `--screen`/`--surface` 조회는 inherited phantom record 없이 빈 결과를 반환한다.
