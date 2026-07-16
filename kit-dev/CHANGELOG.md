@@ -7,7 +7,7 @@
 ### fix(shared-surfaces) — close falsy identity and lexical entry-path gaps (#200)
 
 - Screen identity fallback이 `undefined`, `null`, 빈 문자열만 다음 후보로 넘기고 present-falsy `0`/`false`는 raw provenance로 보존한다. 공개 plain-object key coercion은 기존처럼 `String(candidate)`를 사용하므로 numeric/boolean ID와 canonical string ID가 같은 키에서 duplicate로 수렴하고, shared-surface membership/readiness/validate가 각각 `ambiguous-member` 또는 `invalid-member-screen-id`로 fail-closed한다. 정상 string, prototype-named ID, empty/missing fallback, no-surface 공개 shape는 변경하지 않았다.
-- shared-surface ownership overlap 비교에서만 ScreenSpec `route_entry`/`screen_entry`의 backslash, redundant `./`/separator, lexical dot segment를 POSIX key로 정규화한다. 진단 message와 `entry_path`, state/inventory에는 raw authored 값을 유지하며 기존 `member-entry-overlap`/`non-member-entry-overlap` 코드와 canonical-path 진단 bytes, membership/delegation, 전역 path helper/schema/gate/version은 변경하지 않았다.
+- shared-surface ownership overlap 비교에서만 ScreenSpec `route_entry`/`screen_entry`를 project root에 resolve한 뒤 root 내부 경로를 repository-relative POSIX key로 변환한다. root 내부 absolute path와 root 밖으로 나갔다가 같은 root로 다시 들어오는 lexical traversal, backslash, redundant `./`/separator, lexical dot segment가 같은 소유권 key로 수렴한다. root 외부 entry는 기존 `invalid-path`, Windows drive/UNC absolute representation은 기존 `absolute-or-nonportable-path` 구조 오류로 fail-closed한다. 진단 message와 `entry_path`, state/inventory에는 raw authored 값을 유지하며 기존 `member-entry-overlap`/`non-member-entry-overlap` 코드와 canonical-path 진단 bytes, membership/delegation, 전역 path helper/schema/gate/version은 변경하지 않았다.
 
 ### fix(shared-surfaces) — harden prototype-named IDs and global entry ownership (#198)
 

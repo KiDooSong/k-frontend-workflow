@@ -1087,39 +1087,59 @@ test('non-member entry ownership compares lexical repository-path equivalents an
       name: 'dot-prefix',
       option: 'routeEntry',
       entryKind: 'route_entry',
-      entryPath: './src/features/x/Foo.tsx',
+      entryPath: () => './src/features/x/Foo.tsx',
     },
     {
       name: 'backslash',
       option: 'screenEntry',
       entryKind: 'screen_entry',
-      entryPath: String.raw`src\features\x\Foo.tsx`,
+      entryPath: () => String.raw`src\features\x\Foo.tsx`,
     },
     {
       name: 'dot-segment',
       option: 'routeEntry',
       entryKind: 'route_entry',
-      entryPath: 'src/features/x/../x/Foo.tsx',
+      entryPath: () => 'src/features/x/../x/Foo.tsx',
+    },
+    {
+      name: 'repeated-separator',
+      option: 'screenEntry',
+      entryKind: 'screen_entry',
+      entryPath: () => 'src//features/x/Foo.tsx',
+    },
+    {
+      name: 'absolute-inside-root',
+      option: 'screenEntry',
+      entryKind: 'screen_entry',
+      entryPath: (project) => path.join(project.root, 'src', 'features', 'x', 'Foo.tsx'),
+    },
+    {
+      name: 'traversal-reentry',
+      option: 'routeEntry',
+      entryKind: 'route_entry',
+      entryPath: (project) =>
+        `../${path.basename(project.root)}/src/features/x/Foo.tsx`,
     },
   ]) {
     withProject((project) => {
+      const entryPath = scenario.entryPath(project);
       writeScreen(project.docsDir, 'CHAT-A');
       writeScreen(project.docsDir, 'CHAT-B');
       writeScreen(project.docsDir, 'CHAT-C', {
-        [scenario.option]: scenario.entryPath,
+        [scenario.option]: entryPath,
       });
       const surfaceId = `ENTRY-${scenario.name.toUpperCase()}-OVERLAP`;
       const implementationPath = 'src/features/x/**';
       writeSurface(project.docsDir, surfaceId, { paths: [implementationPath] });
 
-      const state = buildState({
+      const { state, inventory } = buildState({
         docsDir: project.docsDir,
         srcDir: project.srcDir,
         date: '2026-07-16',
-      }).state;
+      });
       const expectedMessage =
         `implementation path ${implementationPath} overlaps non-member screen CHAT-C ` +
-        `${scenario.entryKind}: ${scenario.entryPath}`;
+        `${scenario.entryKind}: ${entryPath}`;
       assert.deepEqual(
         state.surfaces[surfaceId].derived.path_errors.find(
           (issue) => issue.code === 'non-member-entry-overlap',
@@ -1131,9 +1151,13 @@ test('non-member entry ownership compares lexical repository-path equivalents an
           screen_id: 'CHAT-C',
           screen_domain: 'chat',
           entry_kind: scenario.entryKind,
-          entry_path: scenario.entryPath,
+          entry_path: entryPath,
           screen_spec_path: 'domains/chat/screens/chat-c/screen-spec.md',
         },
+      );
+      assert.equal(
+        inventory.screens.find((row) => row.id === 'CHAT-C')[scenario.entryKind],
+        entryPath,
       );
       assert.deepEqual(state.surfaces[surfaceId].member_screens, ['CHAT-A', 'CHAT-B']);
 
@@ -1149,6 +1173,89 @@ test('non-member entry ownership compares lexical repository-path equivalents an
         Object.hasOwn(readinessFor(state)['CHAT-C'], 'delegated_shared_surfaces'),
         false,
       );
+
+      const { result, report } = validateProject(project);
+      assert.equal(result.status, 1);
+      assert.ok(
+        report.errors.some(
+          (entry) => entry.check === 3 && entry.message === expectedMessage,
+        ),
+      );
+    });
+  }
+});
+
+test('entry ownership fails closed for project-external and nonportable absolute paths', () => {
+  for (const scenario of [
+    {
+      name: 'absolute-outside-root',
+      entryPath: (project) =>
+        path.join(path.dirname(project.root), 'outside-project', 'Foo.tsx'),
+      code: 'invalid-path',
+      message: (entryPath) =>
+        `ScreenSpec screen_entry must resolve inside project root: ${entryPath}`,
+    },
+    {
+      name: 'windows-drive',
+      entryPath: () => String.raw`C:\work\repo\src\features\x\Foo.tsx`,
+      code: 'absolute-or-nonportable-path',
+      message: (entryPath) =>
+        `ScreenSpec screen_entry uses a nonportable absolute path: ${entryPath}`,
+    },
+    {
+      name: 'windows-unc',
+      entryPath: () => String.raw`\\server\share\repo\src\features\x\Foo.tsx`,
+      code: 'absolute-or-nonportable-path',
+      message: (entryPath) =>
+        `ScreenSpec screen_entry uses a nonportable absolute path: ${entryPath}`,
+    },
+  ]) {
+    withProject((project) => {
+      const entryPath = scenario.entryPath(project);
+      const implementationPath = 'src/features/x/**';
+      const surfaceId = `ENTRY-${scenario.name.toUpperCase()}-INVALID`;
+      writeScreen(project.docsDir, 'CHAT-A');
+      writeScreen(project.docsDir, 'CHAT-B');
+      writeScreen(project.docsDir, 'CHAT-C', { screenEntry: entryPath });
+      writeSurface(project.docsDir, surfaceId, { paths: [implementationPath] });
+
+      const { state, inventory } = buildState({
+        docsDir: project.docsDir,
+        srcDir: project.srcDir,
+        date: '2026-07-16',
+      });
+      const expectedMessage = scenario.message(entryPath);
+      assert.deepEqual(
+        state.surfaces[surfaceId].derived.path_errors.find(
+          (issue) => issue.code === scenario.code,
+        ),
+        {
+          code: scenario.code,
+          message: expectedMessage,
+          screen_id: 'CHAT-C',
+          screen_domain: 'chat',
+          entry_kind: 'screen_entry',
+          entry_path: entryPath,
+          screen_spec_path: 'domains/chat/screens/chat-c/screen-spec.md',
+        },
+      );
+      assert.equal(
+        state.surfaces[surfaceId].derived.path_errors.some(
+          (issue) =>
+            issue.code === 'member-entry-overlap' ||
+            issue.code === 'non-member-entry-overlap',
+        ),
+        false,
+      );
+      assert.equal(
+        inventory.screens.find((row) => row.id === 'CHAT-C').screen_entry,
+        entryPath,
+      );
+
+      const readiness = readinessFor(state, surfaceId)[surfaceId];
+      assert.equal(readiness.readiness_mode, 'docs-only');
+      assert.deepEqual(readiness.allowed_paths, []);
+      assert.deepEqual(readiness.forbidden_paths, [implementationPath]);
 
       const { result, report } = validateProject(project);
       assert.equal(result.status, 1);

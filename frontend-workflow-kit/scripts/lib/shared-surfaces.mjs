@@ -53,14 +53,35 @@ export function loadSharedSurfaceSpecs({ docsDir }) {
   );
 }
 
-function ownershipPathKey(value) {
+function lexicalPathKey(value) {
   return path.posix.normalize(String(value).replace(/\\/g, '/'));
 }
 
 export function pathsOverlap(left, right) {
-  const leftKey = ownershipPathKey(left);
-  const rightKey = ownershipPathKey(right);
+  const leftKey = lexicalPathKey(left);
+  const rightKey = lexicalPathKey(right);
   return covers(leftKey, rightKey) || covers(rightKey, leftKey);
+}
+
+function ownershipPathKey(projectRoot, value) {
+  const normalized = String(value).replace(/\\/g, '/');
+  if (/^[A-Za-z]:\//.test(normalized) || normalized.startsWith('//')) {
+    return { key: null, issue: 'nonportable-absolute' };
+  }
+
+  const root = path.resolve(projectRoot);
+  const resolved = path.isAbsolute(normalized)
+    ? path.resolve(normalized)
+    : path.resolve(root, normalized);
+  const relative = path.relative(root, resolved);
+  if (
+    relative === '..' ||
+    relative.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relative)
+  ) {
+    return { key: null, issue: 'outside-project-root' };
+  }
+  return { key: lexicalPathKey(toPosix(relative)), issue: null };
 }
 
 export function implementationPathIssues(value) {
@@ -125,7 +146,7 @@ function screenIndexOf(screenSpecs) {
   return index;
 }
 
-function screenEntryOwners(docsDir, screenSpecs) {
+function screenEntryOwners(docsDir, projectRoot, screenSpecs) {
   const owners = [];
   for (const spec of screenSpecs) {
     const rawScreenId = spec.frontmatter.screen_id;
@@ -143,6 +164,7 @@ function screenEntryOwners(docsDir, screenSpecs) {
       ['screen_entry', spec.frontmatter.screen_entry],
     ]) {
       if (typeof entryPath !== 'string' || !entryPath) continue;
+      const ownership = ownershipPathKey(projectRoot, entryPath);
       owners.push({
         spec,
         screen_id: screenId,
@@ -150,10 +172,34 @@ function screenEntryOwners(docsDir, screenSpecs) {
         screen_spec_path: screenSpecPath,
         entry_kind: entryKind,
         entry_path: entryPath,
+        entry_path_key: ownership.key,
+        entry_path_issue: ownership.issue,
       });
     }
   }
   return owners;
+}
+
+function entryPathIssue(owner) {
+  const fields = {
+    screen_id: owner.screen_id,
+    screen_domain: owner.screen_domain,
+    entry_kind: owner.entry_kind,
+    entry_path: owner.entry_path,
+    screen_spec_path: owner.screen_spec_path,
+  };
+  if (owner.entry_path_issue === 'nonportable-absolute') {
+    return error(
+      'absolute-or-nonportable-path',
+      `ScreenSpec ${owner.entry_kind} uses a nonportable absolute path: ${owner.entry_path}`,
+      fields,
+    );
+  }
+  return error(
+    'invalid-path',
+    `ScreenSpec ${owner.entry_kind} must resolve inside project root: ${owner.entry_path}`,
+    fields,
+  );
 }
 
 function canonicalPathIssue(docsDir, spec) {
@@ -189,13 +235,14 @@ function localDecisionIssue(spec) {
   );
 }
 
-export function analyzeSharedSurfaces({ docsDir, surfaceSpecs, screenSpecs }) {
+export function analyzeSharedSurfaces({ docsDir, projectRoot, surfaceSpecs, screenSpecs }) {
   const specs = surfaceSpecs || loadSharedSurfaceSpecs({ docsDir });
   const allScreenSpecs = screenSpecs || [];
   const screensById = screenIndexOf(allScreenSpecs);
+  const ownershipRoot = projectRoot || path.resolve(docsDir, '..', '..');
   // Physical project paths are a global ownership namespace, independent of ScreenSpec domain or
   // surface membership. Index every route/screen entry once and classify the relationship below.
-  const entryOwners = screenEntryOwners(docsDir, allScreenSpecs);
+  const entryOwners = screenEntryOwners(docsDir, ownershipRoot, allScreenSpecs);
   const records = [];
 
   for (const spec of specs) {
@@ -349,9 +396,16 @@ export function analyzeSharedSurfaces({ docsDir, surfaceSpecs, screenSpecs }) {
     }
 
     const memberRecordPaths = new Set(memberRecords.map((member) => member.path));
+    if (implementationPaths.length > 0) {
+      for (const owner of entryOwners) {
+        if (owner.entry_path_issue) pathErrors.push(entryPathIssue(owner));
+      }
+    }
     for (const implementationPath of implementationPaths) {
       for (const owner of entryOwners) {
-        if (!pathsOverlap(implementationPath, owner.entry_path)) continue;
+        if (!owner.entry_path_key || !pathsOverlap(implementationPath, owner.entry_path_key)) {
+          continue;
+        }
         if (memberRecordPaths.has(owner.spec.path)) {
           // Preserve the existing member diagnostic contract exactly for resolved members.
           pathErrors.push(

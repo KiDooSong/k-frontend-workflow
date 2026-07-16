@@ -370,6 +370,7 @@ function main() {
   const surfaceSpecs = loadSharedSurfaceSpecs({ docsDir });
   const surfaceRecords = analyzeSharedSurfaces({
     docsDir,
+    projectRoot,
     surfaceSpecs,
     screenSpecs: specs,
   });
