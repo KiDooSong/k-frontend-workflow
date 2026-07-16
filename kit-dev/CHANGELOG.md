@@ -4,6 +4,11 @@
 
 ## Unreleased
 
+### fix(shared-surfaces) — harden prototype-named IDs and global entry ownership (#198)
+
+- `workflow:state`와 readiness의 user-controlled screen/surface ID 사전을 `Map` 기반으로 바꾸고 공개 반환·YAML/JSON 직렬화 경계에서 `Object.fromEntries` plain object를 생성한다. `constructor`, `toString` 같은 schema-valid ID와 malformed `__proto__`도 own record로 보존하며, duplicate surface의 결정적 첫 레코드·`duplicate-surface-id` fail-closed와 no-surface 출력 shape를 유지한다. 존재하지 않는 prototype 이름의 `--screen`/`--surface` 조회는 inherited phantom record 없이 빈 결과를 반환한다.
+- shared surface `implementation_paths`를 domain과 무관하게 모든 ScreenSpec의 `route_entry`/`screen_entry`와 대조한다. 기존 member 충돌은 `member-entry-overlap` 계약을 유지하고 비멤버 충돌은 provenance를 포함한 `non-member-entry-overlap`을 `path_errors`에 추가해 기존 readiness 구조 오류 경로로 `docs-only` 처리한다. 비멤버 자동 편입/delegation, schema blacklist, artifact/policy mode/gate/release version은 추가하지 않았다.
+
 ### fix(routes) — preserve app-group-index root targets across generated views (#195)
 
 - Interaction Matrix v2의 authoritative runtime Target `/`을 target-aware concrete route로 공유해 nav-graph의 source outbound·route inbound evidence가 더 이상 누락되지 않게 했다. nav-graph는 검사 13과 같은 전체 route-tree owner resolution이 먼저 유일한지 확인하고, 그 raw owner를 표현하는 ScreenSpec route도 정확히 하나일 때만 destination inbound를 해소한다. literal 후보는 verified owner 선택을 막지 않지만, 문서화되지 않은 추가 tree owner나 raw/trailing-slash 복수 표현이 있으면 route-level edge만 남긴다.

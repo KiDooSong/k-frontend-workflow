@@ -283,6 +283,100 @@ test('valid two-screen surface is additive in state and reserves shared code fro
   });
 });
 
+test('prototype-named screen and surface IDs remain own state/readiness records with plain-object output', () => {
+  for (const surfaceId of ['constructor', 'toString']) {
+    withProject(({ docsDir, srcDir }) => {
+      const memberA = surfaceId === 'constructor' ? 'constructor' : 'CHAT-A';
+      writeScreen(docsDir, memberA);
+      writeScreen(docsDir, 'CHAT-B');
+      writeSurface(docsDir, surfaceId, {
+        members: [memberA, 'CHAT-B'],
+        paths: [`src/features/chat/components/${surfaceId.toLowerCase()}/**`],
+      });
+
+      const state = buildState({ docsDir, srcDir, date: '2026-07-15' }).state;
+      assert.equal(Object.getPrototypeOf(state.screens), Object.prototype);
+      assert.equal(Object.getPrototypeOf(state.surfaces), Object.prototype);
+      assert.equal(Object.hasOwn(state.screens, memberA), true);
+      assert.equal(Object.hasOwn(state.surfaces, surfaceId), true);
+      assert.equal(state.surfaces[surfaceId].source.path.includes(`/${surfaceId.toLowerCase()}/`), true);
+
+      const screenReadiness = readinessFor(state);
+      assert.equal(Object.getPrototypeOf(screenReadiness), Object.prototype);
+      assert.equal(Object.hasOwn(screenReadiness, memberA), true);
+      assert.equal(screenReadiness[memberA].readiness_mode, 'production-ready');
+
+      const surfaceReadiness = readinessFor(state, surfaceId);
+      assert.equal(Object.getPrototypeOf(surfaceReadiness), Object.prototype);
+      assert.equal(Object.hasOwn(surfaceReadiness, surfaceId), true);
+      assert.equal(surfaceReadiness[surfaceId].readiness_mode, 'production-ready');
+      assert.deepEqual(surfaceReadiness[surfaceId].allowed_paths, [
+        `src/features/chat/components/${surfaceId.toLowerCase()}/**`,
+      ]);
+    });
+  }
+});
+
+test('duplicate and malformed prototype-sensitive surface IDs stay deterministic and fail closed', () => {
+  withProject(({ docsDir, srcDir }) => {
+    writeScreen(docsDir, 'CHAT-A');
+    writeScreen(docsDir, 'CHAT-B');
+    writeSurface(docsDir, 'constructor', {
+      slug: 'first',
+      paths: ['src/features/chat/components/first/**'],
+    });
+    writeSurface(docsDir, 'constructor', {
+      slug: 'second',
+      paths: ['src/features/chat/components/second/**'],
+    });
+
+    const state = buildState({ docsDir, srcDir, date: '2026-07-15' }).state;
+    assert.equal(Object.hasOwn(state.surfaces, 'constructor'), true);
+    assert.deepEqual(state.surfaces.constructor.implementation_paths, [
+      'src/features/chat/components/first/**',
+    ]);
+    assert.equal(state.surfaces.constructor.source.path.includes('/first/'), true);
+    assert.ok(
+      state.surfaces.constructor.derived.identity_errors.some(
+        (issue) => issue.code === 'duplicate-surface-id',
+      ),
+    );
+    assert.equal(
+      readinessFor(state, 'constructor').constructor.readiness_mode,
+      'docs-only',
+    );
+  });
+
+  withProject(({ docsDir, srcDir }) => {
+    writeScreen(docsDir, 'CHAT-A');
+    writeScreen(docsDir, 'CHAT-B');
+    writeSurface(docsDir, '__proto__');
+
+    const state = buildState({ docsDir, srcDir, date: '2026-07-15' }).state;
+    assert.equal(Object.getPrototypeOf(state.surfaces), Object.prototype);
+    assert.equal(Object.hasOwn(state.surfaces, '__proto__'), true);
+    assert.ok(
+      state.surfaces.__proto__.derived.contract_errors.some(
+        (issue) => issue.code === 'invalid-surface-id',
+      ),
+    );
+    const readiness = readinessFor(state, '__proto__');
+    assert.equal(Object.getPrototypeOf(readiness), Object.prototype);
+    assert.equal(Object.hasOwn(readiness, '__proto__'), true);
+    assert.equal(readiness.__proto__.readiness_mode, 'docs-only');
+  });
+});
+
+test('an absent prototype-named --surface selector never resolves an inherited phantom record', () => {
+  withProject(({ docsDir, srcDir }) => {
+    writeScreen(docsDir, 'CHAT-A');
+    writeScreen(docsDir, 'CHAT-B');
+    writeSurface(docsDir, 'COMPOSER');
+    const state = buildState({ docsDir, srcDir, date: '2026-07-15' }).state;
+    assert.deepEqual(readinessFor(state, 'constructor'), {});
+  });
+});
+
 test('three-screen surface decision refs preserve canonical source + surface via and fan out malformed refs fail-closed', () => {
   withProject(({ docsDir, srcDir }) => {
     writeScreen(docsDir, 'CHAT-A');
@@ -426,6 +520,18 @@ test('membership, identity, traversal, broad wildcard, member entry and surface 
     assert.ok(pathCodes.includes('broad-wildcard'));
     assert.ok(pathCodes.includes('member-entry-overlap'));
     assert.ok(pathCodes.includes('surface-path-overlap'));
+    assert.deepEqual(
+      bad.path_errors.find((issue) => issue.code === 'member-entry-overlap'),
+      {
+        code: 'member-entry-overlap',
+        message:
+          'implementation path src/features/chat/components/composer/** overlaps member CHAT-A screen_entry: src/features/chat/components/composer/Composer.tsx',
+        path: 'src/features/chat/components/composer/**',
+        screen_id: 'CHAT-A',
+        entry_kind: 'screen_entry',
+        entry_path: 'src/features/chat/components/composer/Composer.tsx',
+      },
+    );
     assert.equal(
       readinessFor(state, 'BAD-SURFACE')['BAD-SURFACE'].readiness_mode,
       'docs-only',
@@ -445,6 +551,97 @@ test('membership, identity, traversal, broad wildcard, member entry and surface 
     assert.match(messages, /too broad/);
     assert.match(messages, /overlaps member/);
     assert.match(messages, /overlaps surface/);
+  });
+});
+
+test('same-domain and cross-domain non-member ScreenSpec entries are global ownership errors', () => {
+  withProject((project) => {
+    writeScreen(project.docsDir, 'CHAT-A');
+    writeScreen(project.docsDir, 'CHAT-B');
+    writeScreen(project.docsDir, 'CHAT-C', {
+      routeEntry: 'src/features/chat/components/composer/index.tsx',
+    });
+    writeScreen(project.docsDir, 'OTHER', {
+      domain: 'other',
+      screenEntry: 'src/features/chat/components/cross-domain/OtherScreen.tsx',
+    });
+    writeSurface(project.docsDir, 'SAME-DOMAIN-OVERLAP', {
+      paths: ['src/features/chat/components/composer/**'],
+    });
+    writeSurface(project.docsDir, 'CROSS-DOMAIN-OVERLAP', {
+      paths: ['src/features/chat/components/cross-domain/**'],
+    });
+
+    const state = buildState({
+      docsDir: project.docsDir,
+      srcDir: project.srcDir,
+      date: '2026-07-15',
+    }).state;
+    const sameDomain = state.surfaces['SAME-DOMAIN-OVERLAP'];
+    assert.deepEqual(
+      sameDomain.derived.path_errors.find(
+        (issue) => issue.code === 'non-member-entry-overlap',
+      ),
+      {
+        code: 'non-member-entry-overlap',
+        message:
+          'implementation path src/features/chat/components/composer/** overlaps non-member screen CHAT-C route_entry: src/features/chat/components/composer/index.tsx',
+        path: 'src/features/chat/components/composer/**',
+        screen_id: 'CHAT-C',
+        screen_domain: 'chat',
+        entry_kind: 'route_entry',
+        entry_path: 'src/features/chat/components/composer/index.tsx',
+        screen_spec_path: 'domains/chat/screens/chat-c/screen-spec.md',
+      },
+    );
+    assert.deepEqual(sameDomain.member_screens, ['CHAT-A', 'CHAT-B']);
+
+    const crossDomain = state.surfaces['CROSS-DOMAIN-OVERLAP'];
+    assert.deepEqual(
+      crossDomain.derived.path_errors.find(
+        (issue) => issue.code === 'non-member-entry-overlap',
+      ),
+      {
+        code: 'non-member-entry-overlap',
+        message:
+          'implementation path src/features/chat/components/cross-domain/** overlaps non-member screen OTHER screen_entry: src/features/chat/components/cross-domain/OtherScreen.tsx',
+        path: 'src/features/chat/components/cross-domain/**',
+        screen_id: 'OTHER',
+        screen_domain: 'other',
+        entry_kind: 'screen_entry',
+        entry_path: 'src/features/chat/components/cross-domain/OtherScreen.tsx',
+        screen_spec_path: 'domains/other/screens/other/screen-spec.md',
+      },
+    );
+    assert.deepEqual(crossDomain.member_screens, ['CHAT-A', 'CHAT-B']);
+
+    for (const surfaceId of ['SAME-DOMAIN-OVERLAP', 'CROSS-DOMAIN-OVERLAP']) {
+      const readiness = readinessFor(state, surfaceId)[surfaceId];
+      assert.equal(readiness.readiness_mode, 'docs-only');
+      assert.deepEqual(readiness.allowed_paths, []);
+      assert.deepEqual(readiness.forbidden_paths, state.surfaces[surfaceId].implementation_paths);
+    }
+
+    const screenReadiness = readinessFor(state);
+    for (const nonMember of ['CHAT-C', 'OTHER']) {
+      assert.equal(
+        Object.hasOwn(state.screens[nonMember].derived, 'shared_surfaces'),
+        false,
+      );
+      assert.equal(
+        Object.hasOwn(screenReadiness[nonMember], 'delegated_shared_surfaces'),
+        false,
+      );
+    }
+
+    const { result, report } = validateProject(project);
+    assert.equal(result.status, 1);
+    const overlapMessages = report.errors
+      .filter((entry) => entry.check === 3)
+      .map((entry) => entry.message)
+      .join('\n');
+    assert.match(overlapMessages, /overlaps non-member screen CHAT-C route_entry/);
+    assert.match(overlapMessages, /overlaps non-member screen OTHER screen_entry/);
   });
 });
 
@@ -719,6 +916,55 @@ test('--surface CLI is strict, mutually exclusive, help-before-I/O, and returns 
     );
     assert.equal(readiness.status, 0, readiness.stderr);
     assert.deepEqual(Object.keys(JSON.parse(readiness.stdout)), ['COMPOSER']);
+
+    const missingPrototypeName = spawnSync(
+      process.execPath,
+      [READINESS, '--docs', docsDir, '--surface', 'constructor', '--json'],
+      { encoding: 'utf8', timeout: 30_000 },
+    );
+    assert.equal(missingPrototypeName.status, 0, missingPrototypeName.stderr);
+    assert.deepEqual(JSON.parse(missingPrototypeName.stdout), {});
+
+    const missingPrototypeScreen = spawnSync(
+      process.execPath,
+      [READINESS, '--docs', docsDir, '--screen', 'constructor', '--json'],
+      { encoding: 'utf8', timeout: 30_000 },
+    );
+    assert.equal(missingPrototypeScreen.status, 0, missingPrototypeScreen.stderr);
+    assert.deepEqual(JSON.parse(missingPrototypeScreen.stdout), {});
+  });
+});
+
+test('CLI state YAML to readiness JSON round-trip preserves a constructor surface own record', () => {
+  withProject(({ docsDir, srcDir }) => {
+    writeScreen(docsDir, 'CHAT-A');
+    writeScreen(docsDir, 'CHAT-B');
+    writeSurface(docsDir, 'constructor');
+
+    const stateResult = spawnSync(
+      process.execPath,
+      [STATE, '--docs', docsDir, '--src', srcDir, '--date', '2026-07-15'],
+      { encoding: 'utf8', timeout: 30_000 },
+    );
+    assert.equal(stateResult.status, 0, stateResult.stderr);
+    const generatedState = loadYaml(
+      path.join(docsDir, '_meta', 'workflow-state.yaml'),
+    );
+    assert.equal(Object.hasOwn(generatedState.surfaces, 'constructor'), true);
+
+    const readiness = spawnSync(
+      process.execPath,
+      [READINESS, '--docs', docsDir, '--surface', 'constructor', '--json'],
+      { encoding: 'utf8', timeout: 30_000 },
+    );
+    assert.equal(readiness.status, 0, readiness.stderr);
+    const result = JSON.parse(readiness.stdout);
+    assert.equal(Object.hasOwn(result, 'constructor'), true);
+    assert.equal(result.constructor.readiness_mode, 'docs-only');
+    assert.deepEqual(result.constructor.member_modes.map((row) => row.screen_id), [
+      'CHAT-A',
+      'CHAT-B',
+    ]);
   });
 });
 

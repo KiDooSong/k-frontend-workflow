@@ -115,6 +115,36 @@ function screenIndexOf(screenSpecs) {
   return index;
 }
 
+function screenEntryOwners(docsDir, screenSpecs) {
+  const owners = [];
+  for (const spec of screenSpecs) {
+    const screenId =
+      typeof spec.frontmatter.screen_id === 'string' && spec.frontmatter.screen_id
+        ? spec.frontmatter.screen_id
+        : null;
+    const screenDomain =
+      typeof spec.frontmatter.domain === 'string' && spec.frontmatter.domain
+        ? spec.frontmatter.domain
+        : null;
+    const screenSpecPath = toPosix(path.relative(docsDir, spec.path));
+    for (const [entryKind, entryPath] of [
+      ['route_entry', spec.frontmatter.route_entry],
+      ['screen_entry', spec.frontmatter.screen_entry],
+    ]) {
+      if (typeof entryPath !== 'string' || !entryPath) continue;
+      owners.push({
+        spec,
+        screen_id: screenId,
+        screen_domain: screenDomain,
+        screen_spec_path: screenSpecPath,
+        entry_kind: entryKind,
+        entry_path: entryPath,
+      });
+    }
+  }
+  return owners;
+}
+
 function canonicalPathIssue(docsDir, spec) {
   const rel = toPosix(path.relative(docsDir, spec.path));
   const parts = rel.split('/');
@@ -150,7 +180,11 @@ function localDecisionIssue(spec) {
 
 export function analyzeSharedSurfaces({ docsDir, surfaceSpecs, screenSpecs }) {
   const specs = surfaceSpecs || loadSharedSurfaceSpecs({ docsDir });
-  const screensById = screenIndexOf(screenSpecs || []);
+  const allScreenSpecs = screenSpecs || [];
+  const screensById = screenIndexOf(allScreenSpecs);
+  // Physical project paths are a global ownership namespace, independent of ScreenSpec domain or
+  // surface membership. Index every route/screen entry once and classify the relationship below.
+  const entryOwners = screenEntryOwners(docsDir, allScreenSpecs);
   const records = [];
 
   for (const spec of specs) {
@@ -284,27 +318,41 @@ export function analyzeSharedSurfaces({ docsDir, surfaceSpecs, screenSpecs }) {
       }
     }
 
+    const memberRecordPaths = new Set(memberRecords.map((member) => member.path));
     for (const implementationPath of implementationPaths) {
-      for (const member of memberRecords) {
-        for (const [kind, entry] of [
-          ['route_entry', member.frontmatter.route_entry],
-          ['screen_entry', member.frontmatter.screen_entry],
-        ]) {
-          if (typeof entry === 'string' && entry && pathsOverlap(implementationPath, entry)) {
-            pathErrors.push(
-              error(
-                'member-entry-overlap',
-                `implementation path ${implementationPath} overlaps member ${member.frontmatter.screen_id} ${kind}: ${entry}`,
-                {
-                  path: implementationPath,
-                  screen_id: member.frontmatter.screen_id,
-                  entry_kind: kind,
-                  entry_path: entry,
-                },
-              ),
-            );
-          }
+      for (const owner of entryOwners) {
+        if (!pathsOverlap(implementationPath, owner.entry_path)) continue;
+        if (memberRecordPaths.has(owner.spec.path)) {
+          // Preserve the existing member diagnostic contract exactly for resolved members.
+          pathErrors.push(
+            error(
+              'member-entry-overlap',
+              `implementation path ${implementationPath} overlaps member ${owner.screen_id} ${owner.entry_kind}: ${owner.entry_path}`,
+              {
+                path: implementationPath,
+                screen_id: owner.screen_id,
+                entry_kind: owner.entry_kind,
+                entry_path: owner.entry_path,
+              },
+            ),
+          );
+          continue;
         }
+        const ownerLabel = owner.screen_id || `(missing; ${owner.screen_spec_path})`;
+        pathErrors.push(
+          error(
+            'non-member-entry-overlap',
+            `implementation path ${implementationPath} overlaps non-member screen ${ownerLabel} ${owner.entry_kind}: ${owner.entry_path}`,
+            {
+              path: implementationPath,
+              screen_id: owner.screen_id,
+              screen_domain: owner.screen_domain,
+              entry_kind: owner.entry_kind,
+              entry_path: owner.entry_path,
+              screen_spec_path: owner.screen_spec_path,
+            },
+          ),
+        );
       }
     }
 
