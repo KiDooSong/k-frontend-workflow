@@ -8,6 +8,7 @@ import { loadScreenSpec } from './spec.mjs';
 import { parseRouteTreeRouteTokens } from './route-core.mjs';
 import { CONTRACT_KINDS, parseManifestEndpoints } from './api-manifest.mjs';
 import { collectScreenSourceMapFindings } from './screen-source-map.mjs';
+import { analyzeScreenLifecycles } from './screen-lifecycle.mjs';
 
 function toPosix(p) {
   return String(p).split(path.sep).join('/').replace(/\\/g, '/');
@@ -70,10 +71,12 @@ function collectRouteScreenMappingFindings({ docsDir, projectRoot }) {
   const findings = [];
   if (!docsDir || !isDir(docsDir)) return findings;
   const specPaths = findFiles(path.join(docsDir, 'domains'), 'screen-spec.md');
+  const specs = specPaths.map((specPath) => loadScreenSpec(specPath));
+  const { liveSpecs } = analyzeScreenLifecycles({ specs, docsDir });
   const routeToSpecs = new Map();
   let explicitMappingHints = 0;
-  for (const specPath of specPaths) {
-    const spec = loadScreenSpec(specPath);
+  for (const spec of liveSpecs) {
+    const specPath = spec.path;
     const fm = spec.frontmatter || {};
     const screenId = fm.screen_id || fm.artifact_id || path.basename(path.dirname(specPath));
     const route = typeof fm.route === 'string' && fm.route ? fm.route : null;

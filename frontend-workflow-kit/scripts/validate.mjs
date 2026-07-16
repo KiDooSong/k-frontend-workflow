@@ -96,6 +96,7 @@ import {
   loadSharedSurfaceSpecs,
   sharedSurfaceInteractionIssues,
 } from './lib/shared-surfaces.mjs';
+import { analyzeScreenLifecycles } from './lib/screen-lifecycle.mjs';
 
 function isLocalRef(ref) {
   if (typeof ref !== 'string') return false;
@@ -320,6 +321,14 @@ function main() {
         add(2, file, `잘못된 경로: ${fm.artifact_type} 는 ${mEntry.path} 패턴이어야 함 (실제 docs 상대경로: ${rel})`);
       }
     }
+    if (
+      fm.artifact_type !== 'screen-spec' &&
+      ['screen_lifecycle', 'absorbed_into', 'absorbed_at'].some((field) =>
+        Object.prototype.hasOwnProperty.call(fm, field),
+      )
+    ) {
+      add(2, file, 'screen_lifecycle/absorbed_into/absorbed_at 은 ScreenSpec 전용 frontmatter');
+    }
 
     // 3a. depends_on 대상 존재 (manifest 키면 concrete 경로의 파일 존재까지 확인)
     if (Array.isArray(fm.depends_on)) {
@@ -357,21 +366,34 @@ function main() {
   const routeSet = new Set();
   const idCount = new Map();
   const routeCount = new Map();
-  const specs = [];
-  for (const p of specPaths) {
-    const spec = loadScreenSpec(p);
-    specs.push(spec);
-    const route = spec.frontmatter.route;
-    if (route) routeSet.add(route);
+  const specs = specPaths.map((p) => loadScreenSpec(p));
+  const screenLifecycle = analyzeScreenLifecycles({ specs, docsDir });
+  const liveSpecs = screenLifecycle.liveSpecs;
+  const absorbedSpecPaths = new Set(
+    screenLifecycle.absorbedRecords.map((record) => record.spec.path),
+  );
+  for (const spec of specs) {
     const screenKey = publicScreenKeyOf(spec);
     idCount.set(screenKey, (idCount.get(screenKey) || 0) + 1);
+  }
+  for (const spec of liveSpecs) {
+    const route = spec.frontmatter.route;
+    if (route) routeSet.add(route);
     if (route) routeCount.set(route, (routeCount.get(route) || 0) + 1);
+  }
+  for (const record of screenLifecycle.invalidRecords) {
+    for (const issue of record.errors) {
+      if (issue.check === 2 || issue.check === 3) {
+        add(issue.check, record.spec.path, issue.message);
+      }
+    }
   }
   const surfaceSpecs = loadSharedSurfaceSpecs({ docsDir });
   const surfaceRecords = analyzeSharedSurfaces({
     docsDir,
     surfaceSpecs,
     screenSpecs: specs,
+    screenLifecycle,
   });
 
   for (const record of surfaceRecords) {
@@ -418,7 +440,7 @@ function main() {
   //    루트(`/`)는 raw single-group ScreenSpec 후보의 존재만 확인한다. generated/stale 가능 route-tree 의
   //    provenance·모호성은 검사 13 warning, destination 선택은 nav-graph 가 별도로 fail-closed 한다.
   const runtimeRouteTargetIndex = buildRuntimeRouteTargetIndex(routeSet);
-  for (const spec of specs) {
+  for (const spec of liveSpecs) {
     const targets = interactionEdgeRoutes(spec);
     for (const t of targets) {
       if (!routeTargetExistsInScreenInventory(t, routeSet, runtimeRouteTargetIndex)) {
@@ -431,7 +453,7 @@ function main() {
   //     stub(frontmatter만)에는 본문이 없으므로 검사 대상이 아니다.
   const screenSpecGenSections =
     (manifest.artifacts || {})['screen-spec']?.generated_sections || [];
-  for (const spec of specs) {
+  for (const spec of liveSpecs) {
     if (isStub(spec)) continue;
     for (const sec of screenSpecGenSections) {
       const gen = sec.generator;
@@ -484,7 +506,7 @@ function main() {
     return tsTypeExportCache.get(key);
   };
 
-  const behaviorSpecs = [...specs, ...surfaceSpecs];
+  const behaviorSpecs = [...liveSpecs, ...surfaceSpecs];
   for (const spec of behaviorSpecs) {
     const isSurface = spec.frontmatter.artifact_type === 'shared-surface-spec';
     const contractLabel = isSurface ? 'shared-surface-spec' : 'ScreenSpec';
@@ -627,7 +649,7 @@ function main() {
   const decisionRegister = loadOpenDecisionRegister({ docsDir });
   // 정책을 못 읽으면(policyModes 비어있음) Blocking Mode 정책-모드 검사를 건너뛴다 — 전부 무효로 오탐 방지.
   // 단 Open Decisions 가 실제로 있으면 조용히 넘기지 않고 경고로 surface 한다(설정 오류 신호).
-  if (policyModes.length === 0 && (decisionRegister.exists || specs.some((s) => s.sections['open decisions'] !== undefined))) {
+  if (policyModes.length === 0 && (decisionRegister.exists || liveSpecs.some((s) => s.sections['open decisions'] !== undefined))) {
     warn(9, path.join(docsDir, 'domains'), '정책을 로드하지 못해 Open Decisions 의 Blocking Mode 정책-모드 검사를 건너뜀 — policy 경로를 확인하세요');
   }
 
@@ -688,7 +710,7 @@ function main() {
     }
   }
 
-  for (const spec of specs) {
+  for (const spec of liveSpecs) {
     validateOpenDecisionSection({
       file: spec.path,
       section: spec.sections['open decisions'],
@@ -736,8 +758,12 @@ function main() {
 
   // decision_refs 는 schema 검사 1에 더해 semantic resolution 을 방어적으로 다시 확인한다.
   // ScreenSpec path는 artifact_type 자체가 손상돼 docs 수집에서 빠져도 fail-open 하지 않게 포함한다.
-  const decisionRefDocs = new Map(docs.map(({ file, fm }) => [file, { file, fm }]));
-  for (const spec of specs) {
+  const decisionRefDocs = new Map(
+    docs
+      .filter(({ file }) => !absorbedSpecPaths.has(file))
+      .map(({ file, fm }) => [file, { file, fm }]),
+  );
+  for (const spec of liveSpecs) {
     if (Object.prototype.hasOwnProperty.call(spec.frontmatter, 'decision_refs')) {
       decisionRefDocs.set(spec.path, { file: spec.path, fm: spec.frontmatter });
     }
@@ -802,7 +828,7 @@ function main() {
     if (!rows.some((row) => row.referrer === referrer)) rows.push({ file, referrer });
     decisionApplications.set(key, rows);
   };
-  for (const spec of specs) {
+  for (const spec of liveSpecs) {
     if (!Array.isArray(spec.frontmatter.decision_refs)) continue;
     for (const ref of spec.frontmatter.decision_refs) {
       addDecisionApplication(spec.frontmatter.screen_id, ref, spec.path, 'screen');
@@ -853,7 +879,7 @@ function main() {
   //     EXACT 를 유지하고 루트(`/`)만 verified Expo group-directory index token 을 인정한다. 유일 owner를
   //     raw/trailing-slash ScreenSpec이 함께 표현하는 경우도 warning으로 후보를 표면화한다.
   //     route-tree.txt 가 없으면 v2 route Target 존재 시 warning 으로만 알린다(warning-first).
-  for (const spec of specs) {
+  for (const spec of liveSpecs) {
     for (const issue of interactionMatrixV2Issues(spec, {
       routeTreeRouteSet,
       routeTreeExpoIndexRouteSet,

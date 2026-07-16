@@ -21,6 +21,8 @@ npm run workflow:readiness -- --screen <SCREEN_ID> --json
 - Read `readiness_mode`, `allowed_paths`, `forbidden_paths`, `blocking`,
   `next_actions` under the screen id.
 - If readiness blocks, report `blocking` + `next_actions` and stop.
+- If readiness returns `readiness_applicable: false` for an absorbed screen, do not author or
+  implement that source; use the canonical `absorbed_into` target ([contract](../screen-lifecycle.md)).
 - **Edit `allowed_paths` only.** Never edit `forbidden_paths`. Never widen scope
   from a `screen_entry` hint.
 - Stay within the allowed mode (`route-skeleton` → … → `api-integrated-ui`); do not

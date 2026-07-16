@@ -26,6 +26,7 @@
 import path from 'node:path';
 import { findFiles, readFileSafe, exists, isDir, splitFrontmatter } from './util.mjs';
 import { loadScreenSpec, parseCopyKeys, parseTables, col, hasHeader } from './spec.mjs';
+import { analyzeScreenLifecycles } from './screen-lifecycle.mjs';
 import {
   parseVisualContract,
   findsAdhocPositioning,
@@ -144,8 +145,12 @@ function resolveRelativeImport(entryAbs, specifier) {
 // --- 산출물 수집 -------------------------------------------------------------
 function collectScreens(docsDir) {
   const byId = new Map();
-  for (const p of findFiles(path.join(docsDir, 'domains'), 'screen-spec.md')) {
-    const spec = loadScreenSpec(p);
+  const specs = findFiles(path.join(docsDir, 'domains'), 'screen-spec.md').map((p) =>
+    loadScreenSpec(p),
+  );
+  const { liveSpecs } = analyzeScreenLifecycles({ specs, docsDir });
+  for (const spec of liveSpecs) {
+    const p = spec.path;
     const id = spec.frontmatter && spec.frontmatter.screen_id;
     if (typeof id !== 'string' || !id) continue;
     byId.set(id, {

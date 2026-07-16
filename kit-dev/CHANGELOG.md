@@ -4,6 +4,13 @@
 
 ## Unreleased
 
+### fix(screen-lifecycle) — exclude valid absorbed ScreenSpecs from live workflow surfaces (#203)
+
+- ScreenSpec 문서 `status`와 독립적인 optional `screen_lifecycle: active|absorbed` 계약을 추가했다. 기본값은 active이며 valid absorbed는 unique active canonical `absorbed_into`를 직접 가리키고 optional real-date `absorbed_at`을 보존한다. prose tombstone·missing route/entry로 상태를 추론하지 않고 `status: absorbed`도 만들지 않는다.
+- 공용 lifecycle analyzer가 source/target canonical identity, missing/self/duplicate target, absorbed chain/cycle, invalid enum/date와 mixed active fields를 결정적으로 검사한다. Valid absorbed만 live set에서 제외하며 malformed 선언은 `workflow-state.screens`에 남겨 lifecycle blocker + readiness `docs-only`/빈 `allowed_paths`로 fail-closed한다. 새 validate 번호 없이 schema=검사 1, 구조=검사 2, target graph=검사 3에 배치하고 전체 ID duplicate/confirmed approval 검사는 유지한다.
+- `workflow-state`는 active-only `screens`/`stub_screen_specs_count`와 optional `absorbed_screens` redirect registry를 생성하고, inventory는 모든 파일을 보존하되 route duplicate/layer telemetry는 live 기준으로 계산한다. readiness aggregate는 active만 포함하며 direct absorbed 조회는 `readiness_applicable:false`와 canonical target을 반환한다.
+- nav-graph, route-cross-check, doctor route/entry mapping, shared-surface membership/path ownership, visual consistency/bootstrap가 같은 helper의 live partition을 사용한다. No-marker fixtures에는 optional key/default field를 출력하지 않아 기존 state/inventory/readiness/generated-view bytes를 유지하며 새 lifecycle/consumer regression suite를 package test 목록에 포함했다. Gate/CI promotion, release/version, Issue #202 reconciliation 범위는 변경하지 않았다.
+
 ### fix(shared-surfaces) — harden prototype-named IDs and global entry ownership (#198)
 
 - `workflow:state`와 readiness의 user-controlled screen/surface ID 사전을 `Map` 기반으로 바꾸고 공개 반환·YAML/JSON 직렬화 경계에서 `Object.fromEntries` plain object를 생성한다. Screen과 Surface Map/grouping 키를 공개 object property key로 먼저 정규화해 numeric `1`과 string `"1"`처럼 직렬화 시 충돌하는 malformed/valid ID의 duplicate provenance를 보존한다. Screen 공개 키의 `screen_id → artifact_id → path basename` fallback을 state/shared-surface/validate 공용 helper로 통일한다. 따라서 canonical ID와 같은 fallback 키를 가진 malformed ScreenSpec은 `ambiguous-member`, fallback/non-string 레코드만 있는 경우는 `invalid-member-screen-id`로 preflight를 fail-closed하며 inventory/validate 중복 진단도 같은 namespace를 쓴다. Surface 충돌은 결정적 첫 레코드와 `duplicate-surface-id`를 유지한다. `constructor`, `toString` 같은 schema-valid ID와 malformed `__proto__`도 own record로 유지하며 no-surface 출력 shape를 보존한다. 존재하지 않는 prototype 이름의 `--screen`/`--surface` 조회는 inherited phantom record 없이 빈 결과를 반환한다.

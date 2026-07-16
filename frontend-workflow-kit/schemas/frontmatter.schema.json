@@ -38,6 +38,18 @@
       "type": "string",
       "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
     },
+    "screen_lifecycle": {
+      "type": "string",
+      "enum": ["active", "absorbed"]
+    },
+    "absorbed_into": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "absorbed_at": {
+      "type": "string",
+      "format": "date"
+    },
     "surface_id": {
       "type": "string",
       "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
