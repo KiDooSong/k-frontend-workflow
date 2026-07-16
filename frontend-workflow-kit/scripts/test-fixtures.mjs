@@ -57,6 +57,7 @@ const NAV_GRAPH_SCRIPT = path.join(KIT_ROOT, 'scripts', 'nav-graph.mjs');
 const COMPONENT_CATALOG_ROOT = path.join(EXAMPLES, 'component-catalog');
 const CATALOG_GEN_SCRIPT = path.join(KIT_ROOT, 'scripts', 'catalog-gen.mjs');
 const IMPLEMENT_SCREEN_SKILL = path.join(KIT_ROOT, 'skills', 'implement-screen', 'SKILL.md');
+const IMPLEMENT_SHARED_SURFACE_SKILL = path.join(KIT_ROOT, 'skills', 'implement-shared-surface', 'SKILL.md');
 
 // input-reconciliation golden(expected-llm-after) 의 stage=llm-after manifest.
 // 검사 대상 ID·기대 상태(올리기만 불변식). golden 의 실제 파일에서 확인한 값:
@@ -328,7 +329,10 @@ function buildFixtures() {
       { label: 'readiness', snippet: '`allowed_paths`' },
       { label: 'readiness', snippet: '`forbidden_paths`' },
       { label: 'reconcile', snippet: 'Reconciliation Register' },
-      { label: 'roots', snippet: '`--docs`, `--src`, `--root`, `--layout`' },
+      { label: 'state-options', snippet: '`workflow:state`: `--docs`, `--src`, `--root`, `--layout`' },
+      { label: 'readiness-options', snippet: '`workflow:readiness`: `--docs`, `--layout`, `--policy`, `--manifest`, `--ci`' },
+      { label: 'validate-options', snippet: '`workflow:validate`: `--docs`, `--src`, `--root`, `--layout`, `--policy`, `--manifest`' },
+      { label: 'unsupported-options', snippet: '지원하지 않는 옵션을 다른 CLI에 그대로 전달하지 않는다' },
       { label: 'visual', snippet: '`figma-component-mapping.md`' },
       { label: 'testid', snippet: 'testID' },
       { label: 'tier3', snippet: 'custom Tier3 layer' },
@@ -342,6 +346,28 @@ function buildFixtures() {
     mustNotContain: [
       { label: 'stale-fake-hook-only', snippet: '`useXxx` fake hook 만 사용한다' },
       { label: 'stale-src-api-forbidden', snippet: '`src/api` 등 forbidden 경로는 건드리지 않는다' },
+      { label: 'stale-all-cli-options', snippet: '**모든** state/readiness/validate 명령에 같은 기준으로 전달한다' },
+    ],
+  });
+
+  fixtures.push({
+    id: 'implement-shared-surface:skill-contract',
+    kind: 'skill-contract',
+    expectVerdict: 'pass',
+    file: IMPLEMENT_SHARED_SURFACE_SKILL,
+    mustContain: [
+      { label: 'state-options', snippet: '`workflow:state`: `--docs`, `--src`, `--root`, `--layout`' },
+      { label: 'readiness-options', snippet: '`workflow:readiness`: `--docs`, `--layout`, `--policy`, `--manifest`, `--ci`' },
+      { label: 'validate-options', snippet: '`workflow:validate`: `--docs`, `--src`, `--root`, `--layout`, `--policy`, `--manifest`' },
+      { label: 'unsupported-options', snippet: '지원하지 않는 옵션을 다른 CLI에 그대로 전달하지 않는다' },
+      { label: 'path-authorization', snippet: '`path_authorization.allowed`가 `true`가 아니다' },
+      { label: 'intermediate-open-decision', snippet: '`open_decision`이나 `member_screen_readiness`가 상위 모드만 제한' },
+      { label: 'intermediate-mode', snippet: '`readiness_mode` 범위 안에서 진행' },
+      { label: 'entry-overlap', snippet: '`member-entry-overlap`과 `non-member-entry-overlap`' },
+    ],
+    mustNotContain: [
+      { label: 'stale-all-cli-options', snippet: '모든 member readiness 명령에 일관되게 전달한다' },
+      { label: 'stale-any-blocker-stop', snippet: 'structural/membership/path/decision/member blocker가 있거나' },
     ],
   });
 

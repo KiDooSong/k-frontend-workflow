@@ -12,8 +12,11 @@ description: canonical Surface ID를 shared-surface readiness와 모든 member s
 ## 입력
 
 - canonical Surface ID가 필수다. prose 이름/컴포넌트 파일명만 있으면 `surface_id`를 추측하지 말고 canonical artifact를 확인한다.
-- repo가 제공한 `--docs`, `--src`, `--root`, `--layout`, `--policy`, `--manifest`, `--ci` 기준은 state/readiness/validate와
-  모든 member readiness 명령에 일관되게 전달한다.
+- repo가 제공한 기준 옵션은 각 CLI가 지원하는 부분집합으로 투영한다.
+  - `workflow:state`: `--docs`, `--src`, `--root`, `--layout`
+  - `workflow:readiness`: `--docs`, `--layout`, `--policy`, `--manifest`, `--ci` (surface와 모든 member)
+  - `workflow:validate`: `--docs`, `--src`, `--root`, `--layout`, `--policy`, `--manifest`와 제공된 경우 `--schema`
+  지원하지 않는 옵션을 다른 CLI에 그대로 전달하지 않는다.
 
 ## 불변식
 
@@ -27,15 +30,22 @@ description: canonical Surface ID를 shared-surface readiness와 모든 member s
 
 ## 1. Preflight
 
-1. 같은 기준 옵션으로 상태와 surface readiness를 실행한다.
+1. 위 CLI별 지원 부분집합으로 상태와 surface readiness를 실행한다.
    ```bash
    npm run workflow:state
    npm run workflow:readiness -- --surface <SURFACE_ID> --json
    ```
 2. keyed 결과에서 `surface_fact_mode`, `surface_decision_cap`, `member_cap`, `member_modes`, `limiting_members`,
    `allowed_paths`, `forbidden_paths`, `path_authorization`, `blocking`, `next_actions`를 읽는다.
-3. structural/membership/path/decision/member blocker가 있거나 목표 파일이 allowed 교집합 밖이면 멈추고 blocker와 next action을 보고한다.
-   특히 `member-entry-overlap`과 `non-member-entry-overlap`은 어떤 ScreenSpec entry의 전역 물리 소유권과 충돌한 것이므로
+3. 목표 concrete path의 권한은 `allowed_paths`, `forbidden_paths`, 그 경로를 덮는 `path_authorization` 항목만으로 판정한다.
+   다음 경우에만 멈추고 관련 blocker와 next action을 보고한다.
+   - 목표 경로가 `allowed_paths`에 포함되지 않는다.
+   - 목표 경로를 덮는 `path_authorization.allowed`가 `true`가 아니다.
+   - 목표 경로가 `forbidden_paths`와 겹친다.
+   - `shared_surface_contract` 또는 `shared_surface_path` 오류가 현재 작업 경로를 차단한다.
+   `open_decision`이나 `member_screen_readiness`가 상위 모드만 제한하고 현재 경로가 허용된 경우에는 현재
+   `readiness_mode` 범위 안에서 진행하고, blocker와 next action을 상위 모드의 남은 과제로 보고한다.
+   `member-entry-overlap`과 `non-member-entry-overlap`은 ScreenSpec entry의 전역 물리 소유권 충돌이므로
    surface membership/delegation 변경으로 우회하지 않는다.
 4. 각 member에 대해 ordinary readiness도 읽어 surface가 계산한 member cap과 현재 상태를 확인한다.
    ```bash
