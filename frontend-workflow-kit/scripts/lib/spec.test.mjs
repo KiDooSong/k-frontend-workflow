@@ -140,6 +140,40 @@ test('screen identity fallback preserves present falsy values and skips only mis
   }
 });
 
+test('nav graph uses the public Screen key for present-falsy identity collisions', (t) => {
+  for (const scenario of [
+    { name: 'zero', rawYaml: '0', stringYaml: '"0"', publicKey: '0' },
+    { name: 'false', rawYaml: 'false', stringYaml: '"false"', publicKey: 'false' },
+  ]) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), `nav-falsy-${scenario.name}-`));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const prefix = 'docs/frontend-workflow/domains/d/screens';
+    writeTree(root, {
+      [`${prefix}/a-invalid/screen-spec.md`]: screenSpec({
+        artifactId: `malformed-${scenario.name}-screen-spec`,
+        screenId: scenario.rawYaml,
+        route: `/${scenario.name}-invalid`,
+        matrix: basicMatrix(`/${scenario.name}-target-a`),
+      }),
+      [`${prefix}/z-valid/screen-spec.md`]: screenSpec({
+        artifactId: `canonical-${scenario.name}-screen-spec`,
+        screenId: scenario.stringYaml,
+        route: `/${scenario.name}-valid`,
+        matrix: basicMatrix(`/${scenario.name}-target-z`),
+      }),
+    });
+
+    const graph = buildNavGraph({
+      docsDir: path.join(root, 'docs', 'frontend-workflow'),
+    });
+    assert.deepEqual(Object.keys(graph.screens), [scenario.publicKey]);
+    assert.deepEqual(
+      graph.screens[scenario.publicKey].outbound.map((edge) => edge.to_route),
+      [`/${scenario.name}-target-a`, `/${scenario.name}-target-z`],
+    );
+  }
+});
+
 test('deriveMetrics: old five states are incomplete because disabled is separate from loading', () => {
   const derived = deriveMetrics(
     specWithStateMatrix(['loading', 'empty', 'error', 'success', 'refreshing']),

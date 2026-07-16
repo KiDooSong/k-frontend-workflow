@@ -436,6 +436,86 @@ test('surface duplicate selection uses the serialized property key for numeric a
   });
 });
 
+test('present-falsy surface IDs collide with canonical public keys and fail closed', () => {
+  for (const scenario of [
+    { name: 'zero', rawYaml: '0', publicKey: '0' },
+    { name: 'false', rawYaml: 'false', publicKey: 'false' },
+  ]) {
+    withProject((project) => {
+      writeScreen(project.docsDir, 'CHAT-A');
+      writeScreen(project.docsDir, 'CHAT-B');
+      const invalidSlug = `a-${scenario.name}-invalid`;
+      const validSlug = `z-${scenario.name}-valid`;
+      const invalidPath = `src/features/chat/components/${scenario.name}-invalid/**`;
+      writeSurface(project.docsDir, `malformed-${scenario.name}-surface`, {
+        slug: invalidSlug,
+        surfaceIdYaml: scenario.rawYaml,
+        paths: [invalidPath],
+      });
+      writeSurface(project.docsDir, `canonical-${scenario.name}-surface`, {
+        slug: validSlug,
+        surfaceIdYaml: JSON.stringify(scenario.publicKey),
+        paths: [`src/features/chat/components/${scenario.name}-valid/**`],
+      });
+
+      const state = buildState({
+        docsDir: project.docsDir,
+        srcDir: project.srcDir,
+        date: '2026-07-16',
+      }).state;
+      assert.deepEqual(Object.keys(state.surfaces), [scenario.publicKey]);
+      const selected = state.surfaces[scenario.publicKey];
+      assert.equal(selected.source.path.includes(`/${invalidSlug}/`), true);
+      assert.deepEqual(selected.implementation_paths, [invalidPath]);
+      assert.deepEqual(
+        selected.derived.contract_errors.find(
+          (issue) => issue.code === 'invalid-surface-id',
+        ),
+        {
+          code: 'invalid-surface-id',
+          message: `surface_id must be a canonical ID: ${scenario.publicKey}`,
+        },
+      );
+      assert.deepEqual(
+        selected.derived.identity_errors.find(
+          (issue) => issue.code === 'duplicate-surface-id',
+        ),
+        {
+          code: 'duplicate-surface-id',
+          message: `surface_id is globally duplicated: ${scenario.publicKey}`,
+          surface_id: scenario.publicKey,
+          locations: [
+            `domains/chat/surfaces/${invalidSlug}/surface-spec.md`,
+            `domains/chat/surfaces/${validSlug}/surface-spec.md`,
+          ],
+        },
+      );
+
+      const readiness = readinessFor(state, scenario.publicKey)[scenario.publicKey];
+      assert.equal(readiness.readiness_mode, 'docs-only');
+      assert.deepEqual(readiness.allowed_paths, []);
+      assert.deepEqual(readiness.forbidden_paths, [invalidPath]);
+
+      const { result, report } = validateProject(project);
+      assert.equal(result.status, 1);
+      assert.ok(
+        report.errors.some(
+          (entry) =>
+            entry.check === 2 &&
+            entry.message === `surface_id must be a canonical ID: ${scenario.publicKey}`,
+        ),
+      );
+      assert.ok(
+        report.errors.some(
+          (entry) =>
+            entry.check === 5 &&
+            entry.message === `surface_id is globally duplicated: ${scenario.publicKey}`,
+        ),
+      );
+    });
+  }
+});
+
 test('screen identity uses the serialized property key for state duplicates and surface membership', () => {
   withProject((project) => {
     writeScreen(project.docsDir, '1', {
@@ -1107,19 +1187,6 @@ test('non-member entry ownership compares lexical repository-path equivalents an
       entryKind: 'screen_entry',
       entryPath: () => 'src//features/x/Foo.tsx',
     },
-    {
-      name: 'absolute-inside-root',
-      option: 'screenEntry',
-      entryKind: 'screen_entry',
-      entryPath: (project) => path.join(project.root, 'src', 'features', 'x', 'Foo.tsx'),
-    },
-    {
-      name: 'traversal-reentry',
-      option: 'routeEntry',
-      entryKind: 'route_entry',
-      entryPath: (project) =>
-        `../${path.basename(project.root)}/src/features/x/Foo.tsx`,
-    },
   ]) {
     withProject((project) => {
       const entryPath = scenario.entryPath(project);
@@ -1185,15 +1252,31 @@ test('non-member entry ownership compares lexical repository-path equivalents an
   }
 });
 
-test('entry ownership fails closed for project-external and nonportable absolute paths', () => {
+test('entry ownership rejects checkout-dependent absolute and escaping relative paths', () => {
   for (const scenario of [
+    {
+      name: 'absolute-inside-root',
+      entryPath: (project) =>
+        path.join(project.root, 'src', 'features', 'x', 'Foo.tsx'),
+      code: 'absolute-or-nonportable-path',
+      message: (entryPath) =>
+        `ScreenSpec screen_entry uses a nonportable absolute path: ${entryPath}`,
+    },
     {
       name: 'absolute-outside-root',
       entryPath: (project) =>
         path.join(path.dirname(project.root), 'outside-project', 'Foo.tsx'),
+      code: 'absolute-or-nonportable-path',
+      message: (entryPath) =>
+        `ScreenSpec screen_entry uses a nonportable absolute path: ${entryPath}`,
+    },
+    {
+      name: 'traversal-reentry',
+      entryPath: (project) =>
+        `../${path.basename(project.root)}/src/features/x/Foo.tsx`,
       code: 'invalid-path',
       message: (entryPath) =>
-        `ScreenSpec screen_entry must resolve inside project root: ${entryPath}`,
+        `ScreenSpec screen_entry must remain project-relative after normalization: ${entryPath}`,
     },
     {
       name: 'windows-drive',

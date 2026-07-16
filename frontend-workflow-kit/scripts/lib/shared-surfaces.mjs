@@ -3,6 +3,7 @@ import { findFiles } from './util.mjs';
 import {
   col,
   interactionMatrixIsV2,
+  hasIdentityCandidate,
   isStub,
   loadScreenSpec,
   parseOpenDecisions,
@@ -63,25 +64,17 @@ export function pathsOverlap(left, right) {
   return covers(leftKey, rightKey) || covers(rightKey, leftKey);
 }
 
-function ownershipPathKey(projectRoot, value) {
+function ownershipPathKey(value) {
   const normalized = String(value).replace(/\\/g, '/');
-  if (/^[A-Za-z]:\//.test(normalized) || normalized.startsWith('//')) {
+  if (path.posix.isAbsolute(normalized) || /^[A-Za-z]:\//.test(normalized)) {
     return { key: null, issue: 'nonportable-absolute' };
   }
 
-  const root = path.resolve(projectRoot);
-  const resolved = path.isAbsolute(normalized)
-    ? path.resolve(normalized)
-    : path.resolve(root, normalized);
-  const relative = path.relative(root, resolved);
-  if (
-    relative === '..' ||
-    relative.startsWith(`..${path.sep}`) ||
-    path.isAbsolute(relative)
-  ) {
+  const key = lexicalPathKey(normalized);
+  if (key === '..' || key.startsWith('../')) {
     return { key: null, issue: 'outside-project-root' };
   }
-  return { key: lexicalPathKey(toPosix(relative)), issue: null };
+  return { key, issue: null };
 }
 
 export function implementationPathIssues(value) {
@@ -146,7 +139,7 @@ function screenIndexOf(screenSpecs) {
   return index;
 }
 
-function screenEntryOwners(docsDir, projectRoot, screenSpecs) {
+function screenEntryOwners(docsDir, screenSpecs) {
   const owners = [];
   for (const spec of screenSpecs) {
     const rawScreenId = spec.frontmatter.screen_id;
@@ -164,7 +157,7 @@ function screenEntryOwners(docsDir, projectRoot, screenSpecs) {
       ['screen_entry', spec.frontmatter.screen_entry],
     ]) {
       if (typeof entryPath !== 'string' || !entryPath) continue;
-      const ownership = ownershipPathKey(projectRoot, entryPath);
+      const ownership = ownershipPathKey(entryPath);
       owners.push({
         spec,
         screen_id: screenId,
@@ -197,9 +190,16 @@ function entryPathIssue(owner) {
   }
   return error(
     'invalid-path',
-    `ScreenSpec ${owner.entry_kind} must resolve inside project root: ${owner.entry_path}`,
+    `ScreenSpec ${owner.entry_kind} must remain project-relative after normalization: ${owner.entry_path}`,
     fields,
   );
+}
+
+function surfaceIdCandidateOf(spec) {
+  const fm = spec.frontmatter;
+  if (hasIdentityCandidate(fm.surface_id)) return fm.surface_id;
+  if (hasIdentityCandidate(fm.artifact_id)) return fm.artifact_id;
+  return path.basename(path.dirname(spec.path));
 }
 
 function canonicalPathIssue(docsDir, spec) {
@@ -235,20 +235,18 @@ function localDecisionIssue(spec) {
   );
 }
 
-export function analyzeSharedSurfaces({ docsDir, projectRoot, surfaceSpecs, screenSpecs }) {
+export function analyzeSharedSurfaces({ docsDir, surfaceSpecs, screenSpecs }) {
   const specs = surfaceSpecs || loadSharedSurfaceSpecs({ docsDir });
   const allScreenSpecs = screenSpecs || [];
   const screensById = screenIndexOf(allScreenSpecs);
-  const ownershipRoot = projectRoot || path.resolve(docsDir, '..', '..');
   // Physical project paths are a global ownership namespace, independent of ScreenSpec domain or
   // surface membership. Index every route/screen entry once and classify the relationship below.
-  const entryOwners = screenEntryOwners(docsDir, ownershipRoot, allScreenSpecs);
+  const entryOwners = screenEntryOwners(docsDir, allScreenSpecs);
   const records = [];
 
   for (const spec of specs) {
     const fm = spec.frontmatter;
-    const surfaceId =
-      fm.surface_id || fm.artifact_id || path.basename(path.dirname(spec.path));
+    const surfaceId = surfaceIdCandidateOf(spec);
     const source = sharedSurfaceSource(docsDir, spec);
     const contractErrors = [];
     const membershipErrors = [];
@@ -271,7 +269,12 @@ export function analyzeSharedSurfaces({ docsDir, projectRoot, surfaceSpecs, scre
       !CANONICAL_ID_PATTERN.test(fm.surface_id)
     ) {
       contractErrors.push(
-        error('invalid-surface-id', `surface_id must be a canonical ID: ${fm.surface_id || '(missing)'}`),
+        error(
+          'invalid-surface-id',
+          `surface_id must be a canonical ID: ${
+            hasIdentityCandidate(fm.surface_id) ? String(fm.surface_id) : '(missing)'
+          }`,
+        ),
       );
     }
     if (fm.artifact_type !== SHARED_SURFACE_ARTIFACT_TYPE) {

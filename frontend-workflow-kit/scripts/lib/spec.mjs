@@ -210,7 +210,7 @@ export function loadScreenSpec(specPath) {
 // workflow-state의 public screens object와 모든 identity consumer가 공유하는 fallback
 // namespace. raw candidate는 inventory provenance를 보존하고 key는 plain-object property
 // coercion을 그대로 따른다.
-function hasIdentityCandidate(value) {
+export function hasIdentityCandidate(value) {
   return value !== undefined && value !== null && value !== '';
 }
 

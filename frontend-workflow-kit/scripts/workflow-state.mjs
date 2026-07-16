@@ -49,7 +49,6 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
   // 출처에서 파생하도록 주입한다. 호출부가 주지 않으면 기본 프로파일(expo-feature)을 로드 —
   // 토큰화 이전과 BYTE-동치(README §1.1).
   const resolvedLayout = layout || loadLayoutProfile({ kitRoot: KIT_ROOT });
-  const ownershipProjectRoot = path.resolve(projectRoot || projectRootOf(srcDir));
   const domainsRoot = path.join(docsDir, 'domains');
   const specPaths = findFiles(domainsRoot, 'screen-spec.md');
   const specs = specPaths.map((specPath) => loadScreenSpec(specPath));
@@ -124,7 +123,6 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
 
   const surfaceRecords = analyzeSharedSurfaces({
     docsDir,
-    projectRoot: ownershipProjectRoot,
     surfaceSpecs,
     screenSpecs: specs,
   });
