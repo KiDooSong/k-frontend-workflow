@@ -17,8 +17,11 @@ description: 지정된 Screen ID를 readiness gate가 허용하는 모드와 경
 
 ## 입력
 - 대상 Screen ID (예: `COUPON-001`). 없으면 사용자에게 묻는다.
-- (선택) project root/docs/src/layout/policy 옵션. 사용자나 repo 가 `--docs`, `--src`, `--root`, `--layout`, policy path 를 제공하면
-  **모든** state/readiness/validate 명령에 같은 기준으로 전달한다. monorepo 에서 `src` 가 repo root 에 있다고 가정하지 않는다.
+- (선택) repo가 제공한 기준 옵션은 각 CLI가 지원하는 부분집합으로 투영한다.
+  - `workflow:state`: `--docs`, `--src`, `--root`, `--layout`
+  - `workflow:readiness`: `--docs`, `--layout`, `--policy`, `--manifest`, `--ci`
+  - `workflow:validate`: `--docs`, `--src`, `--root`, `--layout`, `--policy`, `--manifest`와 제공된 경우 `--schema`
+  지원하지 않는 옵션을 다른 CLI에 그대로 전달하지 않는다. monorepo 에서 `src` 가 repo root 에 있다고 가정하지 않는다.
   route/screen/API 관례는 [CONVENTIONS.md](../../CONVENTIONS.md).
 
 ## 핵심 불변식
@@ -38,7 +41,7 @@ description: 지정된 Screen ID를 readiness gate가 허용하는 모드와 경
 1. 대상 화면 관련 Reconciliation Register 를 확인한다. 관련 input 이 `not-started`/`in-progress`/`failed` 면 멈추고, 같은 `input_id`
    row 로 reconcile 을 시작/재개하라고 보고한다([Stage 04](../../docs/reference/workflow-stages/04-reconcile-input.md)).
    `reconciled` 가 만든 Open Decision/Conflict/Unknown 은 직접 닫지 않는다 — readiness 가 판단하게 둔다.
-2. 상태와 readiness 를 실행한다(필요한 repo 는 같은 project/docs/src/layout/policy 옵션을 붙인다):
+2. 상태와 readiness 를 실행한다(위 CLI별 지원 부분집합을 붙인다):
    ```bash
    npm run workflow:state
    npm run workflow:readiness -- --screen <ID> --json

@@ -19,7 +19,14 @@ import {
   projectRootOf,
   isCliEntry,
 } from './lib/util.mjs';
-import { loadScreenSpec, deriveMetrics, isStub, parseOpenDecisions } from './lib/spec.mjs';
+import {
+  loadScreenSpec,
+  deriveMetrics,
+  isStub,
+  parseOpenDecisions,
+  publicScreenKeyOf,
+  screenIdCandidateOf,
+} from './lib/spec.mjs';
 import { loadOpenDecisionRegister, resolveDecisionRefs } from './lib/open-decisions.mjs';
 import { loadLayoutProfile } from './lib/layout-profile.mjs';
 import { scanLayerInventory } from './lib/layer-inventory.mjs';
@@ -54,7 +61,9 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
     }
   }
 
-  const screens = {};
+  // Screen IDs are user-controlled artifact identifiers. Keep the internal index detached from
+  // Object.prototype; convert it to the public plain-object shape only at the serialization edge.
+  const screens = new Map();
   const inventory = [];
   const idSeen = new Map();
   const routeSeen = new Map();
@@ -62,7 +71,10 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
   for (const spec of specs) {
     const specPath = spec.path;
     const fm = spec.frontmatter;
-    const id = fm.screen_id || fm.artifact_id || path.basename(path.dirname(specPath));
+    const id = screenIdCandidateOf(spec);
+    // Normalize before selection/grouping using the same property-key coercion as the public
+    // Object.fromEntries boundary. Malformed numeric IDs must collide with their string form.
+    const screenKey = publicScreenKeyOf(spec);
     const domain = fm.domain || null;
     const route = fm.route || null;
     const routeEntry = fm.route_entry || null;
@@ -89,7 +101,7 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
       derived.open_decisions_count = derived.blocking_decisions.length;
     }
 
-    screens[id] = {
+    screens.set(screenKey, {
       status,
       domain,
       route,
@@ -97,7 +109,7 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
       screen_entry: screenEntry,
       stub: isStub(spec),
       derived,
-    };
+    });
 
     const inventoryRow = { id, domain, route, status };
     if (routeEntry) inventoryRow.route_entry = routeEntry;
@@ -105,7 +117,7 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
     inventory.push(inventoryRow);
 
     // 중복 추적
-    if (id) idSeen.set(id, (idSeen.get(id) || 0) + 1);
+    idSeen.set(screenKey, (idSeen.get(screenKey) || 0) + 1);
     if (route) routeSeen.set(route, (routeSeen.get(route) || 0) + 1);
   }
 
@@ -169,8 +181,14 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
   // duplication both fail closed deterministically.
   const applications = new Map();
   const addApplication = (screenId, decisionId, referrer) => {
-    if (typeof screenId !== 'string' || typeof decisionId !== 'string' || !decisionId) return;
-    const key = `${screenId}\0${decisionId}`;
+    if (
+      screenId === undefined ||
+      screenId === null ||
+      screenId === '' ||
+      typeof decisionId !== 'string' ||
+      !decisionId
+    ) return;
+    const key = `${String(screenId)}\0${decisionId}`;
     const refs = applications.get(key) || [];
     if (!refs.some((entry) => entry.key === referrer.key)) refs.push(referrer);
     applications.set(key, refs);
@@ -210,7 +228,9 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
       code: 'duplicate-referrer',
       reason: `Open Decision ${decisionId} reaches screen ${screenId} through multiple referrers: ${viaPaths.join(', ')}`,
     };
-    if (screens[screenId]) addDecision(screens[screenId].derived.malformed_decisions, malformed);
+    if (screens.has(screenId)) {
+      addDecision(screens.get(screenId).derived.malformed_decisions, malformed);
+    }
     for (const referrer of referrers) {
       if (referrer.kind !== 'surface') continue;
       const via = { ...referrer.record.source, surface_id: referrer.record.surface_id };
@@ -233,7 +253,7 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
       ),
     );
     for (const member of record.existing_member_screens) {
-      const screen = screens[member];
+      const screen = screens.get(member);
       if (!screen) continue;
       for (const decision of record.derived.blocking_decisions) {
         if (duplicateKeys.has(`${member}\0${decision.id}`)) continue;
@@ -247,7 +267,7 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
       sortDecisions(screen.derived.malformed_decisions);
     }
     for (const member of record.valid_member_screens) {
-      const screen = screens[member];
+      const screen = screens.get(member);
       if (!screen) continue;
       if (!Array.isArray(screen.derived.shared_surfaces)) screen.derived.shared_surfaces = [];
       if (!screen.derived.shared_surfaces.some((entry) => entry.source.path === record.source.path)) {
@@ -271,17 +291,17 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
   }
 
   // 정렬 (결정성)
-  const sortedScreenKeys = Object.keys(screens).sort();
-  const sortedScreens = {};
+  const sortedScreenKeys = [...screens.keys()].sort();
+  const sortedScreens = new Map();
   for (const k of sortedScreenKeys) {
-    const s = screens[k];
+    const s = screens.get(k);
     const presentFacts = Object.fromEntries(
       Object.entries(s.derived)
         .filter(([key, value]) => /_present$/.test(key) && typeof value === 'boolean')
         .sort(([a], [b]) => a.localeCompare(b)),
     );
     // 키 순서 고정
-    sortedScreens[k] = {
+    const sortedScreen = {
       status: s.status,
       domain: s.domain,
       route: s.route,
@@ -306,8 +326,9 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
           : {}),
       },
     };
-    if (s.route_entry) sortedScreens[k].route_entry = s.route_entry;
-    if (s.screen_entry) sortedScreens[k].screen_entry = s.screen_entry;
+    if (s.route_entry) sortedScreen.route_entry = s.route_entry;
+    if (s.screen_entry) sortedScreen.screen_entry = s.screen_entry;
+    sortedScreens.set(k, sortedScreen);
   }
 
   // 전역 사실
@@ -327,17 +348,19 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
       component_catalog_generated: componentCatalogGenerated,
       stub_screen_specs_count: specPaths.length,
     },
-    screens: sortedScreens,
+    screens: Object.fromEntries(sortedScreens),
   };
 
   if (surfaceRecords.length > 0) {
-    const surfaces = {};
+    const surfaces = new Map();
     for (const record of surfaceRecords) {
       // Duplicate IDs intentionally collapse to one selected record, with duplicate provenance
       // retained in identity_errors. readiness therefore fails closed for the selectable ID.
-      if (surfaces[record.surface_id]) continue;
+      // Normalize before selection using the same property-key coercion as Object.fromEntries.
+      const surfaceKey = String(record.surface_id);
+      if (surfaces.has(surfaceKey)) continue;
       const d = record.derived;
-      surfaces[record.surface_id] = {
+      surfaces.set(surfaceKey, {
         status: record.status,
         domain: record.domain,
         member_screens: record.member_screens,
@@ -362,9 +385,9 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
           path_errors: record.path_errors,
           decision_fanout_errors: record.decision_fanout_errors,
         },
-      };
+      });
     }
-    state.surfaces = surfaces;
+    state.surfaces = Object.fromEntries(surfaces);
   }
 
   // 인벤토리 + 중복 검사

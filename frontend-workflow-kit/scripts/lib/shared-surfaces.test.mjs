@@ -36,18 +36,29 @@ function yamlList(key, values) {
 function writeScreen(
   docsDir,
   id,
-  { domain = 'chat', refs, routeEntry, screenEntry, body = '' } = {},
+  {
+    domain = 'chat',
+    refs,
+    routeEntry,
+    screenEntry,
+    body = '',
+    slug = String(id).toLowerCase(),
+    artifactId = `${id}-screen-spec`,
+    screenIdYaml = String(id),
+    omitScreenId = false,
+    route = `/${String(id).toLowerCase()}`,
+  } = {},
 ) {
-  const dir = path.join(docsDir, 'domains', domain, 'screens', id.toLowerCase());
+  const dir = path.join(docsDir, 'domains', domain, 'screens', slug);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(
     path.join(dir, 'screen-spec.md'),
     `---\n` +
-      `artifact_id: ${id}-screen-spec\n` +
+      `artifact_id: ${artifactId}\n` +
       `artifact_type: screen-spec\n` +
       `domain: ${domain}\n` +
-      `screen_id: ${id}\n` +
-      `route: /${id.toLowerCase()}\n` +
+      (omitScreenId ? '' : `screen_id: ${screenIdYaml}\n`) +
+      `route: ${route}\n` +
       (routeEntry ? `route_entry: ${routeEntry}\n` : '') +
       (screenEntry ? `screen_entry: ${screenEntry}\n` : '') +
       yamlList('decision_refs', refs) +
@@ -120,6 +131,7 @@ function writeSurface(
     refs,
     body = VALID_SURFACE_BODY,
     extraFrontmatter = '',
+    surfaceIdYaml = String(id),
   } = {},
 ) {
   const dir = path.join(docsDir, 'domains', domain, 'surfaces', slug);
@@ -131,7 +143,7 @@ function writeSurface(
       `artifact_id: ${id}-shared-surface-spec\n` +
       `artifact_type: shared-surface-spec\n` +
       `domain: ${domain}\n` +
-      `surface_id: ${id}\n` +
+      `surface_id: ${surfaceIdYaml}\n` +
       yamlList('member_screens', members) +
       (paths === null ? '' : yamlList('implementation_paths', paths)) +
       yamlList('decision_refs', refs) +
@@ -283,6 +295,377 @@ test('valid two-screen surface is additive in state and reserves shared code fro
   });
 });
 
+test('prototype-named screen and surface IDs remain own state/readiness records with plain-object output', () => {
+  for (const surfaceId of ['constructor', 'toString']) {
+    withProject(({ docsDir, srcDir }) => {
+      const memberA = surfaceId === 'constructor' ? 'constructor' : 'CHAT-A';
+      writeScreen(docsDir, memberA);
+      writeScreen(docsDir, 'CHAT-B');
+      writeSurface(docsDir, surfaceId, {
+        members: [memberA, 'CHAT-B'],
+        paths: [`src/features/chat/components/${surfaceId.toLowerCase()}/**`],
+      });
+
+      const state = buildState({ docsDir, srcDir, date: '2026-07-15' }).state;
+      assert.equal(Object.getPrototypeOf(state.screens), Object.prototype);
+      assert.equal(Object.getPrototypeOf(state.surfaces), Object.prototype);
+      assert.equal(Object.hasOwn(state.screens, memberA), true);
+      assert.equal(Object.hasOwn(state.surfaces, surfaceId), true);
+      assert.equal(state.surfaces[surfaceId].source.path.includes(`/${surfaceId.toLowerCase()}/`), true);
+
+      const screenReadiness = readinessFor(state);
+      assert.equal(Object.getPrototypeOf(screenReadiness), Object.prototype);
+      assert.equal(Object.hasOwn(screenReadiness, memberA), true);
+      assert.equal(screenReadiness[memberA].readiness_mode, 'production-ready');
+
+      const surfaceReadiness = readinessFor(state, surfaceId);
+      assert.equal(Object.getPrototypeOf(surfaceReadiness), Object.prototype);
+      assert.equal(Object.hasOwn(surfaceReadiness, surfaceId), true);
+      assert.equal(surfaceReadiness[surfaceId].readiness_mode, 'production-ready');
+      assert.deepEqual(surfaceReadiness[surfaceId].allowed_paths, [
+        `src/features/chat/components/${surfaceId.toLowerCase()}/**`,
+      ]);
+    });
+  }
+});
+
+test('duplicate and malformed prototype-sensitive surface IDs stay deterministic and fail closed', () => {
+  withProject(({ docsDir, srcDir }) => {
+    writeScreen(docsDir, 'CHAT-A');
+    writeScreen(docsDir, 'CHAT-B');
+    writeSurface(docsDir, 'constructor', {
+      slug: 'first',
+      paths: ['src/features/chat/components/first/**'],
+    });
+    writeSurface(docsDir, 'constructor', {
+      slug: 'second',
+      paths: ['src/features/chat/components/second/**'],
+    });
+
+    const state = buildState({ docsDir, srcDir, date: '2026-07-15' }).state;
+    assert.equal(Object.hasOwn(state.surfaces, 'constructor'), true);
+    assert.deepEqual(state.surfaces.constructor.implementation_paths, [
+      'src/features/chat/components/first/**',
+    ]);
+    assert.equal(state.surfaces.constructor.source.path.includes('/first/'), true);
+    assert.ok(
+      state.surfaces.constructor.derived.identity_errors.some(
+        (issue) => issue.code === 'duplicate-surface-id',
+      ),
+    );
+    assert.equal(
+      readinessFor(state, 'constructor').constructor.readiness_mode,
+      'docs-only',
+    );
+  });
+
+  withProject(({ docsDir, srcDir }) => {
+    writeScreen(docsDir, 'CHAT-A');
+    writeScreen(docsDir, 'CHAT-B');
+    writeSurface(docsDir, '__proto__');
+
+    const state = buildState({ docsDir, srcDir, date: '2026-07-15' }).state;
+    assert.equal(Object.getPrototypeOf(state.surfaces), Object.prototype);
+    assert.equal(Object.hasOwn(state.surfaces, '__proto__'), true);
+    assert.ok(
+      state.surfaces.__proto__.derived.contract_errors.some(
+        (issue) => issue.code === 'invalid-surface-id',
+      ),
+    );
+    const readiness = readinessFor(state, '__proto__');
+    assert.equal(Object.getPrototypeOf(readiness), Object.prototype);
+    assert.equal(Object.hasOwn(readiness, '__proto__'), true);
+    assert.equal(readiness.__proto__.readiness_mode, 'docs-only');
+  });
+});
+
+test('surface duplicate selection uses the serialized property key for numeric and string IDs', () => {
+  withProject(({ docsDir, srcDir }) => {
+    writeScreen(docsDir, 'CHAT-A');
+    writeScreen(docsDir, 'CHAT-B');
+    writeSurface(docsDir, '1', {
+      slug: 'a-invalid',
+      surfaceIdYaml: '1',
+      paths: ['src/features/chat/components/numeric-id/**'],
+    });
+    writeSurface(docsDir, '1', {
+      slug: 'z-valid',
+      surfaceIdYaml: '"1"',
+      paths: ['src/features/chat/components/string-id/**'],
+    });
+
+    const state = buildState({ docsDir, srcDir, date: '2026-07-15' }).state;
+    assert.deepEqual(Object.keys(state.surfaces), ['1']);
+    const selected = state.surfaces['1'];
+    assert.equal(selected.source.path.includes('/a-invalid/'), true);
+    assert.deepEqual(selected.implementation_paths, [
+      'src/features/chat/components/numeric-id/**',
+    ]);
+    assert.ok(
+      selected.derived.contract_errors.some(
+        (issue) => issue.code === 'invalid-surface-id',
+      ),
+    );
+    assert.deepEqual(
+      selected.derived.identity_errors.find(
+        (issue) => issue.code === 'duplicate-surface-id',
+      ),
+      {
+        code: 'duplicate-surface-id',
+        message: 'surface_id is globally duplicated: 1',
+        surface_id: '1',
+        locations: [
+          'domains/chat/surfaces/a-invalid/surface-spec.md',
+          'domains/chat/surfaces/z-valid/surface-spec.md',
+        ],
+      },
+    );
+    assert.equal(
+      selected.derived.path_errors.some(
+        (issue) => issue.code === 'surface-path-overlap',
+      ),
+      false,
+    );
+
+    const readiness = readinessFor(state, '1')['1'];
+    assert.equal(readiness.readiness_mode, 'docs-only');
+    assert.deepEqual(readiness.allowed_paths, []);
+    assert.deepEqual(readiness.forbidden_paths, [
+      'src/features/chat/components/numeric-id/**',
+    ]);
+  });
+});
+
+test('screen identity uses the serialized property key for state duplicates and surface membership', () => {
+  withProject((project) => {
+    writeScreen(project.docsDir, '1', {
+      slug: 'a-invalid',
+      artifactId: 'numeric-one-screen-spec',
+      screenIdYaml: '1',
+      route: '/numeric-one',
+    });
+    writeScreen(project.docsDir, '1', {
+      slug: 'z-valid',
+      artifactId: 'string-one-screen-spec',
+      screenIdYaml: '"1"',
+      route: '/string-one',
+    });
+    writeScreen(project.docsDir, 'CHAT-B');
+    writeSurface(project.docsDir, 'SCREEN-ID-COLLISION', {
+      members: ['1', 'CHAT-B'],
+      paths: ['src/features/chat/components/screen-id-collision/**'],
+    });
+
+    const { state, inventory } = buildState({
+      docsDir: project.docsDir,
+      srcDir: project.srcDir,
+      date: '2026-07-16',
+    });
+    assert.deepEqual(Object.keys(state.screens), ['1', 'CHAT-B']);
+    assert.equal(state.screens['1'].route, '/string-one');
+    assert.deepEqual(inventory.checks.duplicate_ids, ['1']);
+    const collisionRows = inventory.screens.filter((row) => String(row.id) === '1');
+    assert.equal(collisionRows.length, 2);
+    assert.deepEqual(collisionRows.map((row) => typeof row.id).sort(), ['number', 'string']);
+    assert.deepEqual(collisionRows.map((row) => row.route).sort(), ['/numeric-one', '/string-one']);
+
+    const surface = state.surfaces['SCREEN-ID-COLLISION'];
+    assert.deepEqual(
+      surface.derived.membership_errors.find((issue) => issue.code === 'ambiguous-member'),
+      {
+        code: 'ambiguous-member',
+        message: 'member screen identity is duplicated: 1',
+        screen_id: '1',
+      },
+    );
+    const readiness = readinessFor(state, 'SCREEN-ID-COLLISION')['SCREEN-ID-COLLISION'];
+    assert.equal(readiness.readiness_mode, 'docs-only');
+    assert.deepEqual(readiness.allowed_paths, []);
+    assert.deepEqual(readiness.forbidden_paths, [
+      'src/features/chat/components/screen-id-collision/**',
+    ]);
+
+    const { result, report } = validateProject(project);
+    assert.equal(result.status, 1);
+    const messages = report.errors
+      .filter((entry) => [3, 5].includes(entry.check))
+      .map((entry) => entry.message)
+      .join('\n');
+    assert.match(messages, /member screen identity is duplicated: 1/);
+    assert.match(messages, /screen_id 중복: 1 \(2건\)/);
+  });
+});
+
+test('a singleton non-string screen ID cannot satisfy a canonical surface member', () => {
+  withProject((project) => {
+    writeScreen(project.docsDir, '1', {
+      slug: 'numeric-only',
+      artifactId: 'numeric-only-screen-spec',
+      screenIdYaml: '1',
+      route: '/numeric-only',
+    });
+    writeScreen(project.docsDir, 'CHAT-B');
+    writeSurface(project.docsDir, 'MALFORMED-MEMBER', {
+      members: ['1', 'CHAT-B'],
+      paths: ['src/features/chat/components/malformed-member/**'],
+    });
+
+    const { state, inventory } = buildState({
+      docsDir: project.docsDir,
+      srcDir: project.srcDir,
+      date: '2026-07-16',
+    });
+    assert.equal(Object.hasOwn(state.screens, '1'), true);
+    assert.deepEqual(inventory.checks.duplicate_ids, []);
+    assert.deepEqual(
+      state.surfaces['MALFORMED-MEMBER'].derived.membership_errors.find(
+        (issue) => issue.code === 'invalid-member-screen-id',
+      ),
+      {
+        code: 'invalid-member-screen-id',
+        message: 'member screen identity is not a canonical string: 1',
+        screen_id: '1',
+        locations: ['domains/chat/screens/numeric-only/screen-spec.md'],
+      },
+    );
+
+    const readiness = readinessFor(state, 'MALFORMED-MEMBER')['MALFORMED-MEMBER'];
+    assert.equal(readiness.readiness_mode, 'docs-only');
+    assert.deepEqual(readiness.allowed_paths, []);
+    assert.deepEqual(readiness.forbidden_paths, [
+      'src/features/chat/components/malformed-member/**',
+    ]);
+
+    const { result, report } = validateProject(project);
+    assert.equal(result.status, 1);
+    assert.ok(
+      report.errors.some(
+        (entry) =>
+          entry.check === 3 &&
+          entry.message === 'member screen identity is not a canonical string: 1',
+      ),
+    );
+  });
+
+  withProject(({ docsDir, srcDir }) => {
+    writeScreen(docsDir, '1', {
+      slug: 'string-only',
+      artifactId: 'string-only-screen-spec',
+      screenIdYaml: '"1"',
+      route: '/string-only',
+    });
+    writeScreen(docsDir, 'CHAT-B');
+    writeSurface(docsDir, 'CANONICAL-MEMBER', {
+      members: ['1', 'CHAT-B'],
+      paths: ['src/features/chat/components/canonical-member/**'],
+    });
+
+    const state = buildState({ docsDir, srcDir, date: '2026-07-16' }).state;
+    assert.deepEqual(state.surfaces['CANONICAL-MEMBER'].derived.membership_errors, []);
+    const readiness = readinessFor(state, 'CANONICAL-MEMBER')['CANONICAL-MEMBER'];
+    assert.equal(readiness.readiness_mode, 'production-ready');
+    assert.deepEqual(readiness.allowed_paths, [
+      'src/features/chat/components/canonical-member/**',
+    ]);
+  });
+});
+
+test('surface membership uses the same fallback Screen key namespace as workflow state', () => {
+  withProject((project) => {
+    writeScreen(project.docsDir, 'CHAT-A', {
+      slug: 'a-valid',
+      artifactId: 'valid-chat-a-spec',
+      route: '/valid-chat-a',
+    });
+    writeScreen(project.docsDir, 'fallback', {
+      slug: 'z-malformed',
+      artifactId: 'CHAT-A',
+      omitScreenId: true,
+      route: '/malformed-chat-a',
+    });
+    writeScreen(project.docsDir, 'CHAT-B');
+    writeSurface(project.docsDir, 'FALLBACK-COLLISION', {
+      members: ['CHAT-A', 'CHAT-B'],
+      paths: ['src/features/chat/components/fallback-collision/**'],
+    });
+
+    const { state, inventory } = buildState({
+      docsDir: project.docsDir,
+      srcDir: project.srcDir,
+      date: '2026-07-16',
+    });
+    assert.equal(state.screens['CHAT-A'].route, '/malformed-chat-a');
+    assert.deepEqual(inventory.checks.duplicate_ids, ['CHAT-A']);
+    assert.deepEqual(
+      state.surfaces['FALLBACK-COLLISION'].derived.membership_errors.find(
+        (issue) => issue.code === 'ambiguous-member',
+      ),
+      {
+        code: 'ambiguous-member',
+        message: 'member screen identity is duplicated: CHAT-A',
+        screen_id: 'CHAT-A',
+      },
+    );
+
+    const readiness = readinessFor(state, 'FALLBACK-COLLISION')['FALLBACK-COLLISION'];
+    assert.equal(readiness.readiness_mode, 'docs-only');
+    assert.deepEqual(readiness.allowed_paths, []);
+    assert.deepEqual(readiness.forbidden_paths, [
+      'src/features/chat/components/fallback-collision/**',
+    ]);
+
+    const { result, report } = validateProject(project);
+    assert.equal(result.status, 1);
+    const messages = report.errors
+      .filter((entry) => [3, 5].includes(entry.check))
+      .map((entry) => entry.message)
+      .join('\n');
+    assert.match(messages, /member screen identity is duplicated: CHAT-A/);
+    assert.match(messages, /screen_id 중복: CHAT-A \(2건\)/);
+  });
+
+  withProject(({ docsDir, srcDir }) => {
+    writeScreen(docsDir, 'fallback', {
+      slug: 'fallback-only',
+      artifactId: 'CHAT-A',
+      omitScreenId: true,
+      route: '/fallback-only',
+    });
+    writeScreen(docsDir, 'CHAT-B');
+    writeSurface(docsDir, 'FALLBACK-ONLY', {
+      members: ['CHAT-A', 'CHAT-B'],
+      paths: ['src/features/chat/components/fallback-only/**'],
+    });
+
+    const state = buildState({ docsDir, srcDir, date: '2026-07-16' }).state;
+    assert.equal(Object.hasOwn(state.screens, 'CHAT-A'), true);
+    assert.deepEqual(
+      state.surfaces['FALLBACK-ONLY'].derived.membership_errors.find(
+        (issue) => issue.code === 'invalid-member-screen-id',
+      ),
+      {
+        code: 'invalid-member-screen-id',
+        message: 'member screen identity is not a canonical string: CHAT-A',
+        screen_id: 'CHAT-A',
+        locations: ['domains/chat/screens/fallback-only/screen-spec.md'],
+      },
+    );
+    const readiness = readinessFor(state, 'FALLBACK-ONLY')['FALLBACK-ONLY'];
+    assert.equal(readiness.readiness_mode, 'docs-only');
+    assert.deepEqual(readiness.allowed_paths, []);
+  });
+});
+
+test('an absent prototype-named --surface selector never resolves an inherited phantom record', () => {
+  withProject(({ docsDir, srcDir }) => {
+    writeScreen(docsDir, 'CHAT-A');
+    writeScreen(docsDir, 'CHAT-B');
+    writeSurface(docsDir, 'COMPOSER');
+    const state = buildState({ docsDir, srcDir, date: '2026-07-15' }).state;
+    assert.deepEqual(readinessFor(state, 'constructor'), {});
+  });
+});
+
 test('three-screen surface decision refs preserve canonical source + surface via and fan out malformed refs fail-closed', () => {
   withProject(({ docsDir, srcDir }) => {
     writeScreen(docsDir, 'CHAT-A');
@@ -426,6 +809,18 @@ test('membership, identity, traversal, broad wildcard, member entry and surface 
     assert.ok(pathCodes.includes('broad-wildcard'));
     assert.ok(pathCodes.includes('member-entry-overlap'));
     assert.ok(pathCodes.includes('surface-path-overlap'));
+    assert.deepEqual(
+      bad.path_errors.find((issue) => issue.code === 'member-entry-overlap'),
+      {
+        code: 'member-entry-overlap',
+        message:
+          'implementation path src/features/chat/components/composer/** overlaps member CHAT-A screen_entry: src/features/chat/components/composer/Composer.tsx',
+        path: 'src/features/chat/components/composer/**',
+        screen_id: 'CHAT-A',
+        entry_kind: 'screen_entry',
+        entry_path: 'src/features/chat/components/composer/Composer.tsx',
+      },
+    );
     assert.equal(
       readinessFor(state, 'BAD-SURFACE')['BAD-SURFACE'].readiness_mode,
       'docs-only',
@@ -445,6 +840,97 @@ test('membership, identity, traversal, broad wildcard, member entry and surface 
     assert.match(messages, /too broad/);
     assert.match(messages, /overlaps member/);
     assert.match(messages, /overlaps surface/);
+  });
+});
+
+test('same-domain and cross-domain non-member ScreenSpec entries are global ownership errors', () => {
+  withProject((project) => {
+    writeScreen(project.docsDir, 'CHAT-A');
+    writeScreen(project.docsDir, 'CHAT-B');
+    writeScreen(project.docsDir, 'CHAT-C', {
+      routeEntry: 'src/features/chat/components/composer/index.tsx',
+    });
+    writeScreen(project.docsDir, 'OTHER', {
+      domain: 'other',
+      screenEntry: 'src/features/chat/components/cross-domain/OtherScreen.tsx',
+    });
+    writeSurface(project.docsDir, 'SAME-DOMAIN-OVERLAP', {
+      paths: ['src/features/chat/components/composer/**'],
+    });
+    writeSurface(project.docsDir, 'CROSS-DOMAIN-OVERLAP', {
+      paths: ['src/features/chat/components/cross-domain/**'],
+    });
+
+    const state = buildState({
+      docsDir: project.docsDir,
+      srcDir: project.srcDir,
+      date: '2026-07-15',
+    }).state;
+    const sameDomain = state.surfaces['SAME-DOMAIN-OVERLAP'];
+    assert.deepEqual(
+      sameDomain.derived.path_errors.find(
+        (issue) => issue.code === 'non-member-entry-overlap',
+      ),
+      {
+        code: 'non-member-entry-overlap',
+        message:
+          'implementation path src/features/chat/components/composer/** overlaps non-member screen CHAT-C route_entry: src/features/chat/components/composer/index.tsx',
+        path: 'src/features/chat/components/composer/**',
+        screen_id: 'CHAT-C',
+        screen_domain: 'chat',
+        entry_kind: 'route_entry',
+        entry_path: 'src/features/chat/components/composer/index.tsx',
+        screen_spec_path: 'domains/chat/screens/chat-c/screen-spec.md',
+      },
+    );
+    assert.deepEqual(sameDomain.member_screens, ['CHAT-A', 'CHAT-B']);
+
+    const crossDomain = state.surfaces['CROSS-DOMAIN-OVERLAP'];
+    assert.deepEqual(
+      crossDomain.derived.path_errors.find(
+        (issue) => issue.code === 'non-member-entry-overlap',
+      ),
+      {
+        code: 'non-member-entry-overlap',
+        message:
+          'implementation path src/features/chat/components/cross-domain/** overlaps non-member screen OTHER screen_entry: src/features/chat/components/cross-domain/OtherScreen.tsx',
+        path: 'src/features/chat/components/cross-domain/**',
+        screen_id: 'OTHER',
+        screen_domain: 'other',
+        entry_kind: 'screen_entry',
+        entry_path: 'src/features/chat/components/cross-domain/OtherScreen.tsx',
+        screen_spec_path: 'domains/other/screens/other/screen-spec.md',
+      },
+    );
+    assert.deepEqual(crossDomain.member_screens, ['CHAT-A', 'CHAT-B']);
+
+    for (const surfaceId of ['SAME-DOMAIN-OVERLAP', 'CROSS-DOMAIN-OVERLAP']) {
+      const readiness = readinessFor(state, surfaceId)[surfaceId];
+      assert.equal(readiness.readiness_mode, 'docs-only');
+      assert.deepEqual(readiness.allowed_paths, []);
+      assert.deepEqual(readiness.forbidden_paths, state.surfaces[surfaceId].implementation_paths);
+    }
+
+    const screenReadiness = readinessFor(state);
+    for (const nonMember of ['CHAT-C', 'OTHER']) {
+      assert.equal(
+        Object.hasOwn(state.screens[nonMember].derived, 'shared_surfaces'),
+        false,
+      );
+      assert.equal(
+        Object.hasOwn(screenReadiness[nonMember], 'delegated_shared_surfaces'),
+        false,
+      );
+    }
+
+    const { result, report } = validateProject(project);
+    assert.equal(result.status, 1);
+    const overlapMessages = report.errors
+      .filter((entry) => entry.check === 3)
+      .map((entry) => entry.message)
+      .join('\n');
+    assert.match(overlapMessages, /overlaps non-member screen CHAT-C route_entry/);
+    assert.match(overlapMessages, /overlaps non-member screen OTHER screen_entry/);
   });
 });
 
@@ -719,6 +1205,55 @@ test('--surface CLI is strict, mutually exclusive, help-before-I/O, and returns 
     );
     assert.equal(readiness.status, 0, readiness.stderr);
     assert.deepEqual(Object.keys(JSON.parse(readiness.stdout)), ['COMPOSER']);
+
+    const missingPrototypeName = spawnSync(
+      process.execPath,
+      [READINESS, '--docs', docsDir, '--surface', 'constructor', '--json'],
+      { encoding: 'utf8', timeout: 30_000 },
+    );
+    assert.equal(missingPrototypeName.status, 0, missingPrototypeName.stderr);
+    assert.deepEqual(JSON.parse(missingPrototypeName.stdout), {});
+
+    const missingPrototypeScreen = spawnSync(
+      process.execPath,
+      [READINESS, '--docs', docsDir, '--screen', 'constructor', '--json'],
+      { encoding: 'utf8', timeout: 30_000 },
+    );
+    assert.equal(missingPrototypeScreen.status, 0, missingPrototypeScreen.stderr);
+    assert.deepEqual(JSON.parse(missingPrototypeScreen.stdout), {});
+  });
+});
+
+test('CLI state YAML to readiness JSON round-trip preserves a constructor surface own record', () => {
+  withProject(({ docsDir, srcDir }) => {
+    writeScreen(docsDir, 'CHAT-A');
+    writeScreen(docsDir, 'CHAT-B');
+    writeSurface(docsDir, 'constructor');
+
+    const stateResult = spawnSync(
+      process.execPath,
+      [STATE, '--docs', docsDir, '--src', srcDir, '--date', '2026-07-15'],
+      { encoding: 'utf8', timeout: 30_000 },
+    );
+    assert.equal(stateResult.status, 0, stateResult.stderr);
+    const generatedState = loadYaml(
+      path.join(docsDir, '_meta', 'workflow-state.yaml'),
+    );
+    assert.equal(Object.hasOwn(generatedState.surfaces, 'constructor'), true);
+
+    const readiness = spawnSync(
+      process.execPath,
+      [READINESS, '--docs', docsDir, '--surface', 'constructor', '--json'],
+      { encoding: 'utf8', timeout: 30_000 },
+    );
+    assert.equal(readiness.status, 0, readiness.stderr);
+    const result = JSON.parse(readiness.stdout);
+    assert.equal(Object.hasOwn(result, 'constructor'), true);
+    assert.equal(result.constructor.readiness_mode, 'docs-only');
+    assert.deepEqual(result.constructor.member_modes.map((row) => row.screen_id), [
+      'CHAT-A',
+      'CHAT-B',
+    ]);
   });
 });
 

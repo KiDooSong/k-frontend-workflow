@@ -207,6 +207,18 @@ export function loadScreenSpec(specPath) {
   };
 }
 
+// workflow-state의 public screens object와 모든 identity consumer가 공유하는 fallback
+// namespace. raw candidate는 inventory provenance를 보존하고 key는 plain-object property
+// coercion을 그대로 따른다.
+export function screenIdCandidateOf(spec) {
+  const fm = spec.frontmatter;
+  return fm.screen_id || fm.artifact_id || path.basename(path.dirname(spec.path));
+}
+
+export function publicScreenKeyOf(spec) {
+  return String(screenIdCandidateOf(spec));
+}
+
 // stub 판정에서 제외하는 blocker/register 섹션.
 // 결정·미확정만 남긴 화면은 본문을 쓴 게 아니므로 여전히 stub 이다.
 const NON_CONTENT_SECTIONS = new Set(['open decisions', 'unknowns']);

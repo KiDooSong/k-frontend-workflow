@@ -349,7 +349,9 @@ export function computeReadiness({
   const ciProvided = ci && Object.keys(ci).length > 0;
   const screenSpecTemplate =
     manifest?.artifacts?.['screen-spec']?.template || 'templates/screen/screen-spec.template.md';
-  const out = {};
+  // Screen IDs are user-controlled. Keep keyed readiness state in Map instances so inherited
+  // Object.prototype names cannot become phantom records or suppress real records.
+  const out = new Map();
 
   for (const [id, screen] of Object.entries(state.screens || {})) {
     const facts = buildFacts(screen, global, ci);
@@ -499,7 +501,7 @@ export function computeReadiness({
       }));
     }
 
-    out[id] = {
+    out.set(id, {
       readiness_mode: chosenName,
       next_mode: chosenIdx < order.length - 1 ? order[chosenIdx + 1] : null,
       // 정책 글롭의 {roles.X} 펼침 + per-screen {domain} 치환을 한 번에(§5). 리터럴/blanket
@@ -516,13 +518,13 @@ export function computeReadiness({
             __mode_order: order,
           }
         : {}),
-    };
+    });
   }
 
   if (!skipSurfaces && state.surfaces && typeof state.surfaces === 'object') {
-    const syntheticScreens = {};
+    const syntheticScreens = new Map();
     for (const [surfaceId, surface] of Object.entries(state.surfaces)) {
-      syntheticScreens[surfaceId] = {
+      syntheticScreens.set(surfaceId, {
         status: surface.status,
         domain: surface.domain,
         stub: surface.stub,
@@ -533,21 +535,25 @@ export function computeReadiness({
           fake_hook_exists: true,
           figma_mapping_status: 'verified',
         },
-      };
+      });
     }
-    const ownSurfaceResults = computeReadiness({
-      state: { global, screens: syntheticScreens },
-      policy,
-      ci,
-      manifest,
-      layout: resolvedLayout,
-      exposeCaps: true,
-      skipSurfaces: true,
-    });
-    const surfaceResults = {};
+    const ownSurfaceResults = new Map(
+      Object.entries(
+        computeReadiness({
+          state: { global, screens: Object.fromEntries(syntheticScreens) },
+          policy,
+          ci,
+          manifest,
+          layout: resolvedLayout,
+          exposeCaps: true,
+          skipSurfaces: true,
+        }),
+      ),
+    );
+    const surfaceResults = new Map();
 
     for (const [surfaceId, surface] of Object.entries(state.surfaces).sort(([a], [b]) => a.localeCompare(b))) {
-      const own = ownSurfaceResults[surfaceId];
+      const own = ownSurfaceResults.get(surfaceId);
       if (!own) continue;
       const effectivePolicy = effectivePolicyFor(surface.domain);
       const modes =
@@ -560,7 +566,7 @@ export function computeReadiness({
       const ownIdx = Math.max(0, order.indexOf(own.readiness_mode));
       const memberModes = (surface.member_screens || []).map((screenId) => ({
         screen_id: screenId,
-        readiness_mode: out[screenId]?.readiness_mode || null,
+        readiness_mode: out.get(screenId)?.readiness_mode || null,
       }));
       let memberCapIdx = order.length - 1;
       for (const member of memberModes) {
@@ -635,7 +641,7 @@ export function computeReadiness({
           causes.push({ kind: 'surface-policy-forbidden', readiness_mode: effectiveMode });
         }
         for (const member of memberModes) {
-          const memberResult = out[member.screen_id];
+          const memberResult = out.get(member.screen_id);
           if (!memberResult) {
             causes.push({ kind: 'missing-member-readiness', screen_id: member.screen_id });
             continue;
@@ -671,7 +677,7 @@ export function computeReadiness({
         .filter((member) => order.indexOf(member.readiness_mode) === memberCapIdx)
         .map((member) => member.screen_id)
         .sort();
-      surfaceResults[surfaceId] = {
+      surfaceResults.set(surfaceId, {
         readiness_mode: effectiveMode,
         surface_fact_mode: own.__fact_mode,
         surface_decision_cap: own.__decision_cap,
@@ -685,14 +691,14 @@ export function computeReadiness({
         ...(d.api_required === false ? { api_required: false } : {}),
         blocking,
         next_actions: uniquePaths(nextActions),
-      };
+      });
     }
 
     // Ordinary screen authorization must reserve every declared surface path. Broad screen
     // allowed globs remain visible, but forbidden paths take precedence and delegation is explicit.
     for (const [surfaceId, surface] of Object.entries(state.surfaces).sort(([a], [b]) => a.localeCompare(b))) {
       for (const screenId of surface.member_screens || []) {
-        const screenResult = out[screenId];
+        const screenResult = out.get(screenId);
         if (!screenResult) continue;
         screenResult.forbidden_paths = uniquePaths([
           ...screenResult.forbidden_paths,
@@ -713,14 +719,14 @@ export function computeReadiness({
     }
 
     if (surfaceOnlyId !== undefined) {
-      return surfaceResults[surfaceOnlyId]
-        ? { [surfaceOnlyId]: surfaceResults[surfaceOnlyId] }
+      return surfaceResults.has(surfaceOnlyId)
+        ? Object.fromEntries([[surfaceOnlyId, surfaceResults.get(surfaceOnlyId)]])
         : {};
     }
   } else if (surfaceOnlyId !== undefined) {
     return {};
   }
-  return out;
+  return Object.fromEntries(out);
 }
 
 function loadCi(flags) {
@@ -831,7 +837,9 @@ function main() {
 
   if (flags.screen !== undefined) {
     // bare/빈 --screen 은 main 진입부의 인자 계약 검증에서 이미 exit 2 — 여기는 유효한 문자열만 온다.
-    result = result[flags.screen] ? { [flags.screen]: result[flags.screen] } : {};
+    result = Object.hasOwn(result, flags.screen)
+      ? Object.fromEntries([[flags.screen, result[flags.screen]]])
+      : {};
   }
 
   if (flags.json) {

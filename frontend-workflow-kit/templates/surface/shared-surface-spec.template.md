@@ -7,6 +7,7 @@ member_screens:
   - "{SCREEN_ID_1}"
   - "{SCREEN_ID_2}"
 # 선택: exact project-relative path 또는 하나의 좁은 terminal /** 패턴만 허용한다.
+# domain/member 여부와 무관하게 어떤 ScreenSpec의 route_entry/screen_entry와도 겹치면 안 된다.
 # 이 선언 자체는 구현 권한이 아니다. surface/member readiness와 policy 교집합만 허용된다.
 # implementation_paths:
 #   - src/features/{domain}/components/{surface}/**

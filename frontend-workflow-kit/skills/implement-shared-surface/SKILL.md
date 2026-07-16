@@ -12,27 +12,41 @@ description: canonical Surface ID를 shared-surface readiness와 모든 member s
 ## 입력
 
 - canonical Surface ID가 필수다. prose 이름/컴포넌트 파일명만 있으면 `surface_id`를 추측하지 말고 canonical artifact를 확인한다.
-- repo가 제공한 `--docs`, `--src`, `--root`, `--layout`, `--policy`, `--manifest`, `--ci` 기준은 state/readiness/validate와
-  모든 member readiness 명령에 일관되게 전달한다.
+- repo가 제공한 기준 옵션은 각 CLI가 지원하는 부분집합으로 투영한다.
+  - `workflow:state`: `--docs`, `--src`, `--root`, `--layout`
+  - `workflow:readiness`: `--docs`, `--layout`, `--policy`, `--manifest`, `--ci` (surface와 모든 member)
+  - `workflow:validate`: `--docs`, `--src`, `--root`, `--layout`, `--policy`, `--manifest`와 제공된 경우 `--schema`
+  지원하지 않는 옵션을 다른 CLI에 그대로 전달하지 않는다.
 
 ## 불변식
 
 - 판정은 직접 재구현하지 않고 `workflow:state`와 `workflow:readiness -- --surface <ID> --json`만 소비한다.
 - surface readiness의 `allowed_paths`만 수정한다. `forbidden_paths`와 `path_authorization.allowed=false` 경로는 절대 수정하지 않는다.
+- `implementation_paths`는 전역 물리 경로 소유권이다. domain/member 여부와 무관하게 어떤 ScreenSpec의
+  `route_entry`/`screen_entry`와도 겹치면 안 되며, 비멤버를 자동 member로 추가하거나 delegation을 부여하지 않는다.
 - ScreenSpec은 route/Entry Points/route transition을 계속 소유한다. shared surface에서 route edge를 만들거나 nav-graph에 주입하지 않는다.
 - generated 파일, Open Decision resolve, Unknown close, Component Gap accept, `confirmed` 승격, API/copy/design 값 발명,
   live policy 교체, CI/hard-gate 승격을 하지 않는다.
 
 ## 1. Preflight
 
-1. 같은 기준 옵션으로 상태와 surface readiness를 실행한다.
+1. 위 CLI별 지원 부분집합으로 상태와 surface readiness를 실행한다.
    ```bash
    npm run workflow:state
    npm run workflow:readiness -- --surface <SURFACE_ID> --json
    ```
 2. keyed 결과에서 `surface_fact_mode`, `surface_decision_cap`, `member_cap`, `member_modes`, `limiting_members`,
    `allowed_paths`, `forbidden_paths`, `path_authorization`, `blocking`, `next_actions`를 읽는다.
-3. structural/membership/path/decision/member blocker가 있거나 목표 파일이 allowed 교집합 밖이면 멈추고 blocker와 next action을 보고한다.
+3. 목표 concrete path의 권한은 `allowed_paths`, `forbidden_paths`, 그 경로를 덮는 `path_authorization` 항목만으로 판정한다.
+   다음 경우에만 멈추고 관련 blocker와 next action을 보고한다.
+   - 목표 경로가 `allowed_paths`에 포함되지 않는다.
+   - 목표 경로를 덮는 `path_authorization.allowed`가 `true`가 아니다.
+   - 목표 경로가 `forbidden_paths`와 겹친다.
+   - `shared_surface_contract` 또는 `shared_surface_path` 오류가 현재 작업 경로를 차단한다.
+   `open_decision`이나 `member_screen_readiness`가 상위 모드만 제한하고 현재 경로가 허용된 경우에는 현재
+   `readiness_mode` 범위 안에서 진행하고, blocker와 next action을 상위 모드의 남은 과제로 보고한다.
+   `member-entry-overlap`과 `non-member-entry-overlap`은 ScreenSpec entry의 전역 물리 소유권 충돌이므로
+   surface membership/delegation 변경으로 우회하지 않는다.
 4. 각 member에 대해 ordinary readiness도 읽어 surface가 계산한 member cap과 현재 상태를 확인한다.
    ```bash
    npm run workflow:readiness -- --screen <MEMBER_SCREEN_ID> --json
@@ -44,6 +58,7 @@ description: canonical Surface ID를 shared-surface readiness와 모든 member s
 
 - canonical `domains/{domain}/surfaces/{surface}/surface-spec.md`
 - 모든 `member_screens`의 ScreenSpec
+- 목표 `implementation_paths`와 겹치는 `route_entry`/`screen_entry`를 가진 모든 ScreenSpec(같은/cross-domain 비멤버 포함)
 - domain rules, component catalog와 gap register
 - API Candidates가 있으면 api-manifest/contract evidence
 - `decision_refs`가 있으면 `global/open-decisions.md`

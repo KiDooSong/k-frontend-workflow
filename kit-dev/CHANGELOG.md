@@ -4,6 +4,12 @@
 
 ## Unreleased
 
+### fix(shared-surfaces) — harden prototype-named IDs and global entry ownership (#198)
+
+- `workflow:state`와 readiness의 user-controlled screen/surface ID 사전을 `Map` 기반으로 바꾸고 공개 반환·YAML/JSON 직렬화 경계에서 `Object.fromEntries` plain object를 생성한다. Screen과 Surface Map/grouping 키를 공개 object property key로 먼저 정규화해 numeric `1`과 string `"1"`처럼 직렬화 시 충돌하는 malformed/valid ID의 duplicate provenance를 보존한다. Screen 공개 키의 `screen_id → artifact_id → path basename` fallback을 state/shared-surface/validate 공용 helper로 통일한다. 따라서 canonical ID와 같은 fallback 키를 가진 malformed ScreenSpec은 `ambiguous-member`, fallback/non-string 레코드만 있는 경우는 `invalid-member-screen-id`로 preflight를 fail-closed하며 inventory/validate 중복 진단도 같은 namespace를 쓴다. Surface 충돌은 결정적 첫 레코드와 `duplicate-surface-id`를 유지한다. `constructor`, `toString` 같은 schema-valid ID와 malformed `__proto__`도 own record로 유지하며 no-surface 출력 shape를 보존한다. 존재하지 않는 prototype 이름의 `--screen`/`--surface` 조회는 inherited phantom record 없이 빈 결과를 반환한다.
+- shared surface `implementation_paths`를 domain과 무관하게 모든 ScreenSpec의 `route_entry`/`screen_entry`와 대조한다. 기존 member 충돌은 `member-entry-overlap` 계약을 유지하고 비멤버 충돌은 provenance를 포함한 `non-member-entry-overlap`을 `path_errors`에 추가해 기존 readiness 구조 오류 경로로 `docs-only` 처리한다. 비멤버 자동 편입/delegation, schema blacklist, artifact/policy mode/gate/release version은 추가하지 않았다.
+- `implement-shared-surface`와 sibling `implement-screen`이 repo 기준 옵션을 각 CLI의 실제 allowlist 부분집합으로 투영해 unknown option exit 2를 피한다. Surface preflight는 blocker 존재만으로 중단하지 않고 목표 경로의 `allowed_paths`/`forbidden_paths`/`path_authorization`을 권한 기준으로 소비하므로, `open_decision`이나 `member_screen_readiness`가 상위 모드만 제한할 때 현재 `readiness_mode`에서 명시적으로 허용된 작업은 진행하고 남은 blocker를 상위 모드 과제로 보고한다.
+
 ### fix(routes) — preserve app-group-index root targets across generated views (#195)
 
 - Interaction Matrix v2의 authoritative runtime Target `/`을 target-aware concrete route로 공유해 nav-graph의 source outbound·route inbound evidence가 더 이상 누락되지 않게 했다. nav-graph는 검사 13과 같은 전체 route-tree owner resolution이 먼저 유일한지 확인하고, 그 raw owner를 표현하는 ScreenSpec route도 정확히 하나일 때만 destination inbound를 해소한다. literal 후보는 verified owner 선택을 막지 않지만, 문서화되지 않은 추가 tree owner나 raw/trailing-slash 복수 표현이 있으면 route-level edge만 남긴다.

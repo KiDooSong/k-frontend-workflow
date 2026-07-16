@@ -7,11 +7,13 @@ import {
   loadScreenSpec,
   parseOpenDecisions,
   parseTable,
+  publicScreenKeyOf,
 } from './spec.mjs';
 import { covers, toPosix } from './path-backstop.mjs';
 
 export const SHARED_SURFACE_ARTIFACT_TYPE = 'shared-surface-spec';
 export const SHARED_SURFACE_RESULT_TYPES = Object.freeze(['state', 'mutation', 'external', 'none']);
+const CANONICAL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 export const SHARED_SURFACE_FORBIDDEN_IDENTITY_FIELDS = Object.freeze([
   'route',
   'screen_id',
@@ -106,13 +108,46 @@ export function implementationPathIssues(value) {
 function screenIndexOf(screenSpecs) {
   const index = new Map();
   for (const spec of screenSpecs) {
-    const id = spec.frontmatter.screen_id;
-    if (!id) continue;
-    const rows = index.get(id) || [];
+    // Match the public workflow-state property namespace for collision detection. Member adoption
+    // separately verifies the original ID is a canonical string, so normalization cannot promote
+    // a singleton malformed ID into a valid identity.
+    const screenKey = publicScreenKeyOf(spec);
+    const rows = index.get(screenKey) || [];
     rows.push(spec);
-    index.set(id, rows);
+    index.set(screenKey, rows);
   }
   return index;
+}
+
+function screenEntryOwners(docsDir, screenSpecs) {
+  const owners = [];
+  for (const spec of screenSpecs) {
+    const rawScreenId = spec.frontmatter.screen_id;
+    const screenId =
+      rawScreenId === undefined || rawScreenId === null || rawScreenId === ''
+        ? null
+        : String(rawScreenId);
+    const screenDomain =
+      typeof spec.frontmatter.domain === 'string' && spec.frontmatter.domain
+        ? spec.frontmatter.domain
+        : null;
+    const screenSpecPath = toPosix(path.relative(docsDir, spec.path));
+    for (const [entryKind, entryPath] of [
+      ['route_entry', spec.frontmatter.route_entry],
+      ['screen_entry', spec.frontmatter.screen_entry],
+    ]) {
+      if (typeof entryPath !== 'string' || !entryPath) continue;
+      owners.push({
+        spec,
+        screen_id: screenId,
+        screen_domain: screenDomain,
+        screen_spec_path: screenSpecPath,
+        entry_kind: entryKind,
+        entry_path: entryPath,
+      });
+    }
+  }
+  return owners;
 }
 
 function canonicalPathIssue(docsDir, spec) {
@@ -150,7 +185,11 @@ function localDecisionIssue(spec) {
 
 export function analyzeSharedSurfaces({ docsDir, surfaceSpecs, screenSpecs }) {
   const specs = surfaceSpecs || loadSharedSurfaceSpecs({ docsDir });
-  const screensById = screenIndexOf(screenSpecs || []);
+  const allScreenSpecs = screenSpecs || [];
+  const screensById = screenIndexOf(allScreenSpecs);
+  // Physical project paths are a global ownership namespace, independent of ScreenSpec domain or
+  // surface membership. Index every route/screen entry once and classify the relationship below.
+  const entryOwners = screenEntryOwners(docsDir, allScreenSpecs);
   const records = [];
 
   for (const spec of specs) {
@@ -176,7 +215,7 @@ export function analyzeSharedSurfaces({ docsDir, surfaceSpecs, screenSpecs }) {
     }
     if (
       typeof fm.surface_id !== 'string' ||
-      !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(fm.surface_id)
+      !CANONICAL_ID_PATTERN.test(fm.surface_id)
     ) {
       contractErrors.push(
         error('invalid-surface-id', `surface_id must be a canonical ID: ${fm.surface_id || '(missing)'}`),
@@ -241,13 +280,32 @@ export function analyzeSharedSurfaces({ docsDir, surfaceSpecs, screenSpecs }) {
         );
         continue;
       }
+      const canonicalMatches = matches.filter(
+        (candidate) =>
+          typeof candidate.frontmatter.screen_id === 'string' &&
+          candidate.frontmatter.screen_id === member &&
+          CANONICAL_ID_PATTERN.test(candidate.frontmatter.screen_id),
+      );
+      if (canonicalMatches.length === 0) {
+        membershipErrors.push(
+          error(
+            'invalid-member-screen-id',
+            `member screen identity is not a canonical string: ${member}`,
+            {
+              screen_id: member,
+              locations: matches.map((candidate) => toPosix(path.relative(docsDir, candidate.path))).sort(),
+            },
+          ),
+        );
+        continue;
+      }
       if (matches.length > 1) {
         membershipErrors.push(
           error('ambiguous-member', `member screen identity is duplicated: ${member}`, { screen_id: member }),
         );
         continue;
       }
-      const screen = matches[0];
+      const screen = canonicalMatches[0];
       memberRecords.push(screen);
       if (screen.frontmatter.domain !== fm.domain) {
         membershipErrors.push(
@@ -284,27 +342,41 @@ export function analyzeSharedSurfaces({ docsDir, surfaceSpecs, screenSpecs }) {
       }
     }
 
+    const memberRecordPaths = new Set(memberRecords.map((member) => member.path));
     for (const implementationPath of implementationPaths) {
-      for (const member of memberRecords) {
-        for (const [kind, entry] of [
-          ['route_entry', member.frontmatter.route_entry],
-          ['screen_entry', member.frontmatter.screen_entry],
-        ]) {
-          if (typeof entry === 'string' && entry && pathsOverlap(implementationPath, entry)) {
-            pathErrors.push(
-              error(
-                'member-entry-overlap',
-                `implementation path ${implementationPath} overlaps member ${member.frontmatter.screen_id} ${kind}: ${entry}`,
-                {
-                  path: implementationPath,
-                  screen_id: member.frontmatter.screen_id,
-                  entry_kind: kind,
-                  entry_path: entry,
-                },
-              ),
-            );
-          }
+      for (const owner of entryOwners) {
+        if (!pathsOverlap(implementationPath, owner.entry_path)) continue;
+        if (memberRecordPaths.has(owner.spec.path)) {
+          // Preserve the existing member diagnostic contract exactly for resolved members.
+          pathErrors.push(
+            error(
+              'member-entry-overlap',
+              `implementation path ${implementationPath} overlaps member ${owner.screen_id} ${owner.entry_kind}: ${owner.entry_path}`,
+              {
+                path: implementationPath,
+                screen_id: owner.screen_id,
+                entry_kind: owner.entry_kind,
+                entry_path: owner.entry_path,
+              },
+            ),
+          );
+          continue;
         }
+        const ownerLabel = owner.screen_id || `(missing; ${owner.screen_spec_path})`;
+        pathErrors.push(
+          error(
+            'non-member-entry-overlap',
+            `implementation path ${implementationPath} overlaps non-member screen ${ownerLabel} ${owner.entry_kind}: ${owner.entry_path}`,
+            {
+              path: implementationPath,
+              screen_id: owner.screen_id,
+              screen_domain: owner.screen_domain,
+              entry_kind: owner.entry_kind,
+              entry_path: owner.entry_path,
+              screen_spec_path: owner.screen_spec_path,
+            },
+          ),
+        );
       }
     }
 
@@ -316,7 +388,10 @@ export function analyzeSharedSurfaces({ docsDir, surfaceSpecs, screenSpecs }) {
       domain: fm.domain || null,
       member_screens: uniqueSorted(memberScreens),
       existing_member_screens: uniqueSorted(
-        memberRecords.map((member) => member.frontmatter.screen_id).filter(Boolean),
+        memberRecords
+          .map((member) => member.frontmatter.screen_id)
+          .filter((screenId) => screenId !== undefined && screenId !== null && screenId !== '')
+          .map(String),
       ),
       valid_member_screens: uniqueSorted(validMembers),
       implementation_paths: uniqueSorted(implementationPaths),
@@ -331,9 +406,12 @@ export function analyzeSharedSurfaces({ docsDir, surfaceSpecs, screenSpecs }) {
 
   const byId = new Map();
   for (const record of records) {
-    const rows = byId.get(record.surface_id) || [];
+    // Group by the public plain-object property key so malformed non-string IDs cannot evade
+    // duplicate provenance and then collide later at Object.fromEntries serialization.
+    const surfaceKey = String(record.surface_id);
+    const rows = byId.get(surfaceKey) || [];
     rows.push(record);
-    byId.set(record.surface_id, rows);
+    byId.set(surfaceKey, rows);
   }
   for (const [surfaceId, group] of byId) {
     if (group.length < 2) continue;
