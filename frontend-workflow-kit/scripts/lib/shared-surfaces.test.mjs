@@ -45,6 +45,7 @@ function writeScreen(
     slug = String(id).toLowerCase(),
     artifactId = `${id}-screen-spec`,
     screenIdYaml = String(id),
+    omitScreenId = false,
     route = `/${String(id).toLowerCase()}`,
   } = {},
 ) {
@@ -56,7 +57,7 @@ function writeScreen(
       `artifact_id: ${artifactId}\n` +
       `artifact_type: screen-spec\n` +
       `domain: ${domain}\n` +
-      `screen_id: ${screenIdYaml}\n` +
+      (omitScreenId ? '' : `screen_id: ${screenIdYaml}\n`) +
       `route: ${route}\n` +
       (routeEntry ? `route_entry: ${routeEntry}\n` : '') +
       (screenEntry ? `screen_entry: ${screenEntry}\n` : '') +
@@ -566,6 +567,92 @@ test('a singleton non-string screen ID cannot satisfy a canonical surface member
     assert.deepEqual(readiness.allowed_paths, [
       'src/features/chat/components/canonical-member/**',
     ]);
+  });
+});
+
+test('surface membership uses the same fallback Screen key namespace as workflow state', () => {
+  withProject((project) => {
+    writeScreen(project.docsDir, 'CHAT-A', {
+      slug: 'a-valid',
+      artifactId: 'valid-chat-a-spec',
+      route: '/valid-chat-a',
+    });
+    writeScreen(project.docsDir, 'fallback', {
+      slug: 'z-malformed',
+      artifactId: 'CHAT-A',
+      omitScreenId: true,
+      route: '/malformed-chat-a',
+    });
+    writeScreen(project.docsDir, 'CHAT-B');
+    writeSurface(project.docsDir, 'FALLBACK-COLLISION', {
+      members: ['CHAT-A', 'CHAT-B'],
+      paths: ['src/features/chat/components/fallback-collision/**'],
+    });
+
+    const { state, inventory } = buildState({
+      docsDir: project.docsDir,
+      srcDir: project.srcDir,
+      date: '2026-07-16',
+    });
+    assert.equal(state.screens['CHAT-A'].route, '/malformed-chat-a');
+    assert.deepEqual(inventory.checks.duplicate_ids, ['CHAT-A']);
+    assert.deepEqual(
+      state.surfaces['FALLBACK-COLLISION'].derived.membership_errors.find(
+        (issue) => issue.code === 'ambiguous-member',
+      ),
+      {
+        code: 'ambiguous-member',
+        message: 'member screen identity is duplicated: CHAT-A',
+        screen_id: 'CHAT-A',
+      },
+    );
+
+    const readiness = readinessFor(state, 'FALLBACK-COLLISION')['FALLBACK-COLLISION'];
+    assert.equal(readiness.readiness_mode, 'docs-only');
+    assert.deepEqual(readiness.allowed_paths, []);
+    assert.deepEqual(readiness.forbidden_paths, [
+      'src/features/chat/components/fallback-collision/**',
+    ]);
+
+    const { result, report } = validateProject(project);
+    assert.equal(result.status, 1);
+    const messages = report.errors
+      .filter((entry) => [3, 5].includes(entry.check))
+      .map((entry) => entry.message)
+      .join('\n');
+    assert.match(messages, /member screen identity is duplicated: CHAT-A/);
+    assert.match(messages, /screen_id 중복: CHAT-A \(2건\)/);
+  });
+
+  withProject(({ docsDir, srcDir }) => {
+    writeScreen(docsDir, 'fallback', {
+      slug: 'fallback-only',
+      artifactId: 'CHAT-A',
+      omitScreenId: true,
+      route: '/fallback-only',
+    });
+    writeScreen(docsDir, 'CHAT-B');
+    writeSurface(docsDir, 'FALLBACK-ONLY', {
+      members: ['CHAT-A', 'CHAT-B'],
+      paths: ['src/features/chat/components/fallback-only/**'],
+    });
+
+    const state = buildState({ docsDir, srcDir, date: '2026-07-16' }).state;
+    assert.equal(Object.hasOwn(state.screens, 'CHAT-A'), true);
+    assert.deepEqual(
+      state.surfaces['FALLBACK-ONLY'].derived.membership_errors.find(
+        (issue) => issue.code === 'invalid-member-screen-id',
+      ),
+      {
+        code: 'invalid-member-screen-id',
+        message: 'member screen identity is not a canonical string: CHAT-A',
+        screen_id: 'CHAT-A',
+        locations: ['domains/chat/screens/fallback-only/screen-spec.md'],
+      },
+    );
+    const readiness = readinessFor(state, 'FALLBACK-ONLY')['FALLBACK-ONLY'];
+    assert.equal(readiness.readiness_mode, 'docs-only');
+    assert.deepEqual(readiness.allowed_paths, []);
   });
 });
 

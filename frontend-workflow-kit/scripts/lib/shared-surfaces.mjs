@@ -7,6 +7,7 @@ import {
   loadScreenSpec,
   parseOpenDecisions,
   parseTable,
+  publicScreenKeyOf,
 } from './spec.mjs';
 import { covers, toPosix } from './path-backstop.mjs';
 
@@ -107,12 +108,10 @@ export function implementationPathIssues(value) {
 function screenIndexOf(screenSpecs) {
   const index = new Map();
   for (const spec of screenSpecs) {
-    const id = spec.frontmatter.screen_id;
-    if (!id) continue;
     // Match the public workflow-state property namespace for collision detection. Member adoption
     // separately verifies the original ID is a canonical string, so normalization cannot promote
     // a singleton malformed ID into a valid identity.
-    const screenKey = String(id);
+    const screenKey = publicScreenKeyOf(spec);
     const rows = index.get(screenKey) || [];
     rows.push(spec);
     index.set(screenKey, rows);

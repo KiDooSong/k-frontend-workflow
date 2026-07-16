@@ -19,7 +19,14 @@ import {
   projectRootOf,
   isCliEntry,
 } from './lib/util.mjs';
-import { loadScreenSpec, deriveMetrics, isStub, parseOpenDecisions } from './lib/spec.mjs';
+import {
+  loadScreenSpec,
+  deriveMetrics,
+  isStub,
+  parseOpenDecisions,
+  publicScreenKeyOf,
+  screenIdCandidateOf,
+} from './lib/spec.mjs';
 import { loadOpenDecisionRegister, resolveDecisionRefs } from './lib/open-decisions.mjs';
 import { loadLayoutProfile } from './lib/layout-profile.mjs';
 import { scanLayerInventory } from './lib/layer-inventory.mjs';
@@ -64,10 +71,10 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
   for (const spec of specs) {
     const specPath = spec.path;
     const fm = spec.frontmatter;
-    const id = fm.screen_id || fm.artifact_id || path.basename(path.dirname(specPath));
+    const id = screenIdCandidateOf(spec);
     // Normalize before selection/grouping using the same property-key coercion as the public
     // Object.fromEntries boundary. Malformed numeric IDs must collide with their string form.
-    const screenKey = String(id);
+    const screenKey = publicScreenKeyOf(spec);
     const domain = fm.domain || null;
     const route = fm.route || null;
     const routeEntry = fm.route_entry || null;
@@ -110,7 +117,7 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
     inventory.push(inventoryRow);
 
     // 중복 추적
-    if (id) idSeen.set(screenKey, (idSeen.get(screenKey) || 0) + 1);
+    idSeen.set(screenKey, (idSeen.get(screenKey) || 0) + 1);
     if (route) routeSeen.set(route, (routeSeen.get(route) || 0) + 1);
   }
 

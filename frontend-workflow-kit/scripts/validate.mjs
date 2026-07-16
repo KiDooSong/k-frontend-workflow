@@ -64,6 +64,7 @@ import {
   COPY_KEYS_STATUS_VALUES,
   hasHeader,
   isStub,
+  publicScreenKeyOf,
 } from './lib/spec.mjs';
 import { collectInputArtifacts, validateInputArtifacts } from './lib/input-artifact.mjs';
 import {
@@ -360,13 +361,10 @@ function main() {
   for (const p of specPaths) {
     const spec = loadScreenSpec(p);
     specs.push(spec);
-    const id = spec.frontmatter.screen_id;
     const route = spec.frontmatter.route;
     if (route) routeSet.add(route);
-    if (id) {
-      const screenKey = String(id);
-      idCount.set(screenKey, (idCount.get(screenKey) || 0) + 1);
-    }
+    const screenKey = publicScreenKeyOf(spec);
+    idCount.set(screenKey, (idCount.get(screenKey) || 0) + 1);
     if (route) routeCount.set(route, (routeCount.get(route) || 0) + 1);
   }
   const surfaceSpecs = loadSharedSurfaceSpecs({ docsDir });
