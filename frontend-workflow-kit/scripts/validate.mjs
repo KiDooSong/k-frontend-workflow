@@ -363,7 +363,10 @@ function main() {
     const id = spec.frontmatter.screen_id;
     const route = spec.frontmatter.route;
     if (route) routeSet.add(route);
-    if (id) idCount.set(id, (idCount.get(id) || 0) + 1);
+    if (id) {
+      const screenKey = String(id);
+      idCount.set(screenKey, (idCount.get(screenKey) || 0) + 1);
+    }
     if (route) routeCount.set(route, (routeCount.get(route) || 0) + 1);
   }
   const surfaceSpecs = loadSharedSurfaceSpecs({ docsDir });
@@ -788,8 +791,14 @@ function main() {
 
   const decisionApplications = new Map();
   const addDecisionApplication = (screenId, decisionId, file, kind) => {
-    if (typeof screenId !== 'string' || typeof decisionId !== 'string' || !decisionId) return;
-    const key = `${screenId}\0${decisionId}`;
+    if (
+      screenId === undefined ||
+      screenId === null ||
+      screenId === '' ||
+      typeof decisionId !== 'string' ||
+      !decisionId
+    ) return;
+    const key = `${String(screenId)}\0${decisionId}`;
     const rows = decisionApplications.get(key) || [];
     const referrer = `${kind}:${file}`;
     if (!rows.some((row) => row.referrer === referrer)) rows.push({ file, referrer });

@@ -108,9 +108,12 @@ function screenIndexOf(screenSpecs) {
   for (const spec of screenSpecs) {
     const id = spec.frontmatter.screen_id;
     if (!id) continue;
-    const rows = index.get(id) || [];
+    // Match the public workflow-state property namespace. Otherwise numeric 1 and string "1"
+    // evade ambiguous-member detection before colliding at serialization.
+    const screenKey = String(id);
+    const rows = index.get(screenKey) || [];
     rows.push(spec);
-    index.set(id, rows);
+    index.set(screenKey, rows);
   }
   return index;
 }
@@ -118,10 +121,11 @@ function screenIndexOf(screenSpecs) {
 function screenEntryOwners(docsDir, screenSpecs) {
   const owners = [];
   for (const spec of screenSpecs) {
+    const rawScreenId = spec.frontmatter.screen_id;
     const screenId =
-      typeof spec.frontmatter.screen_id === 'string' && spec.frontmatter.screen_id
-        ? spec.frontmatter.screen_id
-        : null;
+      rawScreenId === undefined || rawScreenId === null || rawScreenId === ''
+        ? null
+        : String(rawScreenId);
     const screenDomain =
       typeof spec.frontmatter.domain === 'string' && spec.frontmatter.domain
         ? spec.frontmatter.domain
@@ -364,7 +368,10 @@ export function analyzeSharedSurfaces({ docsDir, surfaceSpecs, screenSpecs }) {
       domain: fm.domain || null,
       member_screens: uniqueSorted(memberScreens),
       existing_member_screens: uniqueSorted(
-        memberRecords.map((member) => member.frontmatter.screen_id).filter(Boolean),
+        memberRecords
+          .map((member) => member.frontmatter.screen_id)
+          .filter((screenId) => screenId !== undefined && screenId !== null && screenId !== '')
+          .map(String),
       ),
       valid_member_screens: uniqueSorted(validMembers),
       implementation_paths: uniqueSorted(implementationPaths),

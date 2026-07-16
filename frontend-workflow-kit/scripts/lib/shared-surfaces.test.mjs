@@ -36,18 +36,28 @@ function yamlList(key, values) {
 function writeScreen(
   docsDir,
   id,
-  { domain = 'chat', refs, routeEntry, screenEntry, body = '' } = {},
+  {
+    domain = 'chat',
+    refs,
+    routeEntry,
+    screenEntry,
+    body = '',
+    slug = String(id).toLowerCase(),
+    artifactId = `${id}-screen-spec`,
+    screenIdYaml = String(id),
+    route = `/${String(id).toLowerCase()}`,
+  } = {},
 ) {
-  const dir = path.join(docsDir, 'domains', domain, 'screens', id.toLowerCase());
+  const dir = path.join(docsDir, 'domains', domain, 'screens', slug);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(
     path.join(dir, 'screen-spec.md'),
     `---\n` +
-      `artifact_id: ${id}-screen-spec\n` +
+      `artifact_id: ${artifactId}\n` +
       `artifact_type: screen-spec\n` +
       `domain: ${domain}\n` +
-      `screen_id: ${id}\n` +
-      `route: /${id.toLowerCase()}\n` +
+      `screen_id: ${screenIdYaml}\n` +
+      `route: ${route}\n` +
       (routeEntry ? `route_entry: ${routeEntry}\n` : '') +
       (screenEntry ? `screen_entry: ${screenEntry}\n` : '') +
       yamlList('decision_refs', refs) +
@@ -422,6 +432,66 @@ test('surface duplicate selection uses the serialized property key for numeric a
     assert.deepEqual(readiness.forbidden_paths, [
       'src/features/chat/components/numeric-id/**',
     ]);
+  });
+});
+
+test('screen identity uses the serialized property key for state duplicates and surface membership', () => {
+  withProject((project) => {
+    writeScreen(project.docsDir, '1', {
+      slug: 'a-invalid',
+      artifactId: 'numeric-one-screen-spec',
+      screenIdYaml: '1',
+      route: '/numeric-one',
+    });
+    writeScreen(project.docsDir, '1', {
+      slug: 'z-valid',
+      artifactId: 'string-one-screen-spec',
+      screenIdYaml: '"1"',
+      route: '/string-one',
+    });
+    writeScreen(project.docsDir, 'CHAT-B');
+    writeSurface(project.docsDir, 'SCREEN-ID-COLLISION', {
+      members: ['1', 'CHAT-B'],
+      paths: ['src/features/chat/components/screen-id-collision/**'],
+    });
+
+    const { state, inventory } = buildState({
+      docsDir: project.docsDir,
+      srcDir: project.srcDir,
+      date: '2026-07-16',
+    });
+    assert.deepEqual(Object.keys(state.screens), ['1', 'CHAT-B']);
+    assert.equal(state.screens['1'].route, '/string-one');
+    assert.deepEqual(inventory.checks.duplicate_ids, ['1']);
+    const collisionRows = inventory.screens.filter((row) => String(row.id) === '1');
+    assert.equal(collisionRows.length, 2);
+    assert.deepEqual(collisionRows.map((row) => typeof row.id).sort(), ['number', 'string']);
+    assert.deepEqual(collisionRows.map((row) => row.route).sort(), ['/numeric-one', '/string-one']);
+
+    const surface = state.surfaces['SCREEN-ID-COLLISION'];
+    assert.deepEqual(
+      surface.derived.membership_errors.find((issue) => issue.code === 'ambiguous-member'),
+      {
+        code: 'ambiguous-member',
+        message: 'member screen identity is duplicated: 1',
+        screen_id: '1',
+      },
+    );
+    const readiness = readinessFor(state, 'SCREEN-ID-COLLISION')['SCREEN-ID-COLLISION'];
+    assert.equal(readiness.readiness_mode, 'docs-only');
+    assert.deepEqual(readiness.allowed_paths, []);
+    assert.deepEqual(readiness.forbidden_paths, [
+      'src/features/chat/components/screen-id-collision/**',
+    ]);
+
+    const { result, report } = validateProject(project);
+    assert.equal(result.status, 1);
+    const messages = report.errors
+      .filter((entry) => [3, 5].includes(entry.check))
+      .map((entry) => entry.message)
+      .join('\n');
+    assert.match(messages, /member screen identity is duplicated: 1/);
+    assert.match(messages, /screen_id 중복: 1 \(2건\)/);
   });
 });
 

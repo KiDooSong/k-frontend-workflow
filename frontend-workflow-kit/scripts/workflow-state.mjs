@@ -65,6 +65,9 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
     const specPath = spec.path;
     const fm = spec.frontmatter;
     const id = fm.screen_id || fm.artifact_id || path.basename(path.dirname(specPath));
+    // Normalize before selection/grouping using the same property-key coercion as the public
+    // Object.fromEntries boundary. Malformed numeric IDs must collide with their string form.
+    const screenKey = String(id);
     const domain = fm.domain || null;
     const route = fm.route || null;
     const routeEntry = fm.route_entry || null;
@@ -91,7 +94,7 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
       derived.open_decisions_count = derived.blocking_decisions.length;
     }
 
-    screens.set(id, {
+    screens.set(screenKey, {
       status,
       domain,
       route,
@@ -107,7 +110,7 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
     inventory.push(inventoryRow);
 
     // 중복 추적
-    if (id) idSeen.set(id, (idSeen.get(id) || 0) + 1);
+    if (id) idSeen.set(screenKey, (idSeen.get(screenKey) || 0) + 1);
     if (route) routeSeen.set(route, (routeSeen.get(route) || 0) + 1);
   }
 
@@ -171,8 +174,14 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
   // duplication both fail closed deterministically.
   const applications = new Map();
   const addApplication = (screenId, decisionId, referrer) => {
-    if (typeof screenId !== 'string' || typeof decisionId !== 'string' || !decisionId) return;
-    const key = `${screenId}\0${decisionId}`;
+    if (
+      screenId === undefined ||
+      screenId === null ||
+      screenId === '' ||
+      typeof decisionId !== 'string' ||
+      !decisionId
+    ) return;
+    const key = `${String(screenId)}\0${decisionId}`;
     const refs = applications.get(key) || [];
     if (!refs.some((entry) => entry.key === referrer.key)) refs.push(referrer);
     applications.set(key, refs);
