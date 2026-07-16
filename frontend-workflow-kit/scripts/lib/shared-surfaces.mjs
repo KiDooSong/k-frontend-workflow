@@ -12,6 +12,7 @@ import { covers, toPosix } from './path-backstop.mjs';
 
 export const SHARED_SURFACE_ARTIFACT_TYPE = 'shared-surface-spec';
 export const SHARED_SURFACE_RESULT_TYPES = Object.freeze(['state', 'mutation', 'external', 'none']);
+const CANONICAL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 export const SHARED_SURFACE_FORBIDDEN_IDENTITY_FIELDS = Object.freeze([
   'route',
   'screen_id',
@@ -108,8 +109,9 @@ function screenIndexOf(screenSpecs) {
   for (const spec of screenSpecs) {
     const id = spec.frontmatter.screen_id;
     if (!id) continue;
-    // Match the public workflow-state property namespace. Otherwise numeric 1 and string "1"
-    // evade ambiguous-member detection before colliding at serialization.
+    // Match the public workflow-state property namespace for collision detection. Member adoption
+    // separately verifies the original ID is a canonical string, so normalization cannot promote
+    // a singleton malformed ID into a valid identity.
     const screenKey = String(id);
     const rows = index.get(screenKey) || [];
     rows.push(spec);
@@ -214,7 +216,7 @@ export function analyzeSharedSurfaces({ docsDir, surfaceSpecs, screenSpecs }) {
     }
     if (
       typeof fm.surface_id !== 'string' ||
-      !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(fm.surface_id)
+      !CANONICAL_ID_PATTERN.test(fm.surface_id)
     ) {
       contractErrors.push(
         error('invalid-surface-id', `surface_id must be a canonical ID: ${fm.surface_id || '(missing)'}`),
@@ -279,13 +281,32 @@ export function analyzeSharedSurfaces({ docsDir, surfaceSpecs, screenSpecs }) {
         );
         continue;
       }
+      const canonicalMatches = matches.filter(
+        (candidate) =>
+          typeof candidate.frontmatter.screen_id === 'string' &&
+          candidate.frontmatter.screen_id === member &&
+          CANONICAL_ID_PATTERN.test(candidate.frontmatter.screen_id),
+      );
+      if (canonicalMatches.length === 0) {
+        membershipErrors.push(
+          error(
+            'invalid-member-screen-id',
+            `member screen identity is not a canonical string: ${member}`,
+            {
+              screen_id: member,
+              locations: matches.map((candidate) => toPosix(path.relative(docsDir, candidate.path))).sort(),
+            },
+          ),
+        );
+        continue;
+      }
       if (matches.length > 1) {
         membershipErrors.push(
           error('ambiguous-member', `member screen identity is duplicated: ${member}`, { screen_id: member }),
         );
         continue;
       }
-      const screen = matches[0];
+      const screen = canonicalMatches[0];
       memberRecords.push(screen);
       if (screen.frontmatter.domain !== fm.domain) {
         membershipErrors.push(

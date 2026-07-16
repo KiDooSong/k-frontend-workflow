@@ -495,6 +495,80 @@ test('screen identity uses the serialized property key for state duplicates and 
   });
 });
 
+test('a singleton non-string screen ID cannot satisfy a canonical surface member', () => {
+  withProject((project) => {
+    writeScreen(project.docsDir, '1', {
+      slug: 'numeric-only',
+      artifactId: 'numeric-only-screen-spec',
+      screenIdYaml: '1',
+      route: '/numeric-only',
+    });
+    writeScreen(project.docsDir, 'CHAT-B');
+    writeSurface(project.docsDir, 'MALFORMED-MEMBER', {
+      members: ['1', 'CHAT-B'],
+      paths: ['src/features/chat/components/malformed-member/**'],
+    });
+
+    const { state, inventory } = buildState({
+      docsDir: project.docsDir,
+      srcDir: project.srcDir,
+      date: '2026-07-16',
+    });
+    assert.equal(Object.hasOwn(state.screens, '1'), true);
+    assert.deepEqual(inventory.checks.duplicate_ids, []);
+    assert.deepEqual(
+      state.surfaces['MALFORMED-MEMBER'].derived.membership_errors.find(
+        (issue) => issue.code === 'invalid-member-screen-id',
+      ),
+      {
+        code: 'invalid-member-screen-id',
+        message: 'member screen identity is not a canonical string: 1',
+        screen_id: '1',
+        locations: ['domains/chat/screens/numeric-only/screen-spec.md'],
+      },
+    );
+
+    const readiness = readinessFor(state, 'MALFORMED-MEMBER')['MALFORMED-MEMBER'];
+    assert.equal(readiness.readiness_mode, 'docs-only');
+    assert.deepEqual(readiness.allowed_paths, []);
+    assert.deepEqual(readiness.forbidden_paths, [
+      'src/features/chat/components/malformed-member/**',
+    ]);
+
+    const { result, report } = validateProject(project);
+    assert.equal(result.status, 1);
+    assert.ok(
+      report.errors.some(
+        (entry) =>
+          entry.check === 3 &&
+          entry.message === 'member screen identity is not a canonical string: 1',
+      ),
+    );
+  });
+
+  withProject(({ docsDir, srcDir }) => {
+    writeScreen(docsDir, '1', {
+      slug: 'string-only',
+      artifactId: 'string-only-screen-spec',
+      screenIdYaml: '"1"',
+      route: '/string-only',
+    });
+    writeScreen(docsDir, 'CHAT-B');
+    writeSurface(docsDir, 'CANONICAL-MEMBER', {
+      members: ['1', 'CHAT-B'],
+      paths: ['src/features/chat/components/canonical-member/**'],
+    });
+
+    const state = buildState({ docsDir, srcDir, date: '2026-07-16' }).state;
+    assert.deepEqual(state.surfaces['CANONICAL-MEMBER'].derived.membership_errors, []);
+    const readiness = readinessFor(state, 'CANONICAL-MEMBER')['CANONICAL-MEMBER'];
+    assert.equal(readiness.readiness_mode, 'production-ready');
+    assert.deepEqual(readiness.allowed_paths, [
+      'src/features/chat/components/canonical-member/**',
+    ]);
+  });
+});
+
 test('an absent prototype-named --surface selector never resolves an inherited phantom record', () => {
   withProject(({ docsDir, srcDir }) => {
     writeScreen(docsDir, 'CHAT-A');
