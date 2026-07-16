@@ -379,9 +379,12 @@ export function analyzeSharedSurfaces({ docsDir, surfaceSpecs, screenSpecs }) {
 
   const byId = new Map();
   for (const record of records) {
-    const rows = byId.get(record.surface_id) || [];
+    // Group by the public plain-object property key so malformed non-string IDs cannot evade
+    // duplicate provenance and then collide later at Object.fromEntries serialization.
+    const surfaceKey = String(record.surface_id);
+    const rows = byId.get(surfaceKey) || [];
     rows.push(record);
-    byId.set(record.surface_id, rows);
+    byId.set(surfaceKey, rows);
   }
   for (const [surfaceId, group] of byId) {
     if (group.length < 2) continue;

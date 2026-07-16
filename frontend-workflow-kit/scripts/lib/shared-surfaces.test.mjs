@@ -120,6 +120,7 @@ function writeSurface(
     refs,
     body = VALID_SURFACE_BODY,
     extraFrontmatter = '',
+    surfaceIdYaml = String(id),
   } = {},
 ) {
   const dir = path.join(docsDir, 'domains', domain, 'surfaces', slug);
@@ -131,7 +132,7 @@ function writeSurface(
       `artifact_id: ${id}-shared-surface-spec\n` +
       `artifact_type: shared-surface-spec\n` +
       `domain: ${domain}\n` +
-      `surface_id: ${id}\n` +
+      `surface_id: ${surfaceIdYaml}\n` +
       yamlList('member_screens', members) +
       (paths === null ? '' : yamlList('implementation_paths', paths)) +
       yamlList('decision_refs', refs) +
@@ -364,6 +365,63 @@ test('duplicate and malformed prototype-sensitive surface IDs stay deterministic
     assert.equal(Object.getPrototypeOf(readiness), Object.prototype);
     assert.equal(Object.hasOwn(readiness, '__proto__'), true);
     assert.equal(readiness.__proto__.readiness_mode, 'docs-only');
+  });
+});
+
+test('surface duplicate selection uses the serialized property key for numeric and string IDs', () => {
+  withProject(({ docsDir, srcDir }) => {
+    writeScreen(docsDir, 'CHAT-A');
+    writeScreen(docsDir, 'CHAT-B');
+    writeSurface(docsDir, '1', {
+      slug: 'a-invalid',
+      surfaceIdYaml: '1',
+      paths: ['src/features/chat/components/numeric-id/**'],
+    });
+    writeSurface(docsDir, '1', {
+      slug: 'z-valid',
+      surfaceIdYaml: '"1"',
+      paths: ['src/features/chat/components/string-id/**'],
+    });
+
+    const state = buildState({ docsDir, srcDir, date: '2026-07-15' }).state;
+    assert.deepEqual(Object.keys(state.surfaces), ['1']);
+    const selected = state.surfaces['1'];
+    assert.equal(selected.source.path.includes('/a-invalid/'), true);
+    assert.deepEqual(selected.implementation_paths, [
+      'src/features/chat/components/numeric-id/**',
+    ]);
+    assert.ok(
+      selected.derived.contract_errors.some(
+        (issue) => issue.code === 'invalid-surface-id',
+      ),
+    );
+    assert.deepEqual(
+      selected.derived.identity_errors.find(
+        (issue) => issue.code === 'duplicate-surface-id',
+      ),
+      {
+        code: 'duplicate-surface-id',
+        message: 'surface_id is globally duplicated: 1',
+        surface_id: '1',
+        locations: [
+          'domains/chat/surfaces/a-invalid/surface-spec.md',
+          'domains/chat/surfaces/z-valid/surface-spec.md',
+        ],
+      },
+    );
+    assert.equal(
+      selected.derived.path_errors.some(
+        (issue) => issue.code === 'surface-path-overlap',
+      ),
+      false,
+    );
+
+    const readiness = readinessFor(state, '1')['1'];
+    assert.equal(readiness.readiness_mode, 'docs-only');
+    assert.deepEqual(readiness.allowed_paths, []);
+    assert.deepEqual(readiness.forbidden_paths, [
+      'src/features/chat/components/numeric-id/**',
+    ]);
   });
 });
 

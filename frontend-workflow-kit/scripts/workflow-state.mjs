@@ -340,9 +340,11 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
     for (const record of surfaceRecords) {
       // Duplicate IDs intentionally collapse to one selected record, with duplicate provenance
       // retained in identity_errors. readiness therefore fails closed for the selectable ID.
-      if (surfaces.has(record.surface_id)) continue;
+      // Normalize before selection using the same property-key coercion as Object.fromEntries.
+      const surfaceKey = String(record.surface_id);
+      if (surfaces.has(surfaceKey)) continue;
       const d = record.derived;
-      surfaces.set(record.surface_id, {
+      surfaces.set(surfaceKey, {
         status: record.status,
         domain: record.domain,
         member_screens: record.member_screens,

@@ -6,7 +6,7 @@
 
 ### fix(shared-surfaces) — harden prototype-named IDs and global entry ownership (#198)
 
-- `workflow:state`와 readiness의 user-controlled screen/surface ID 사전을 `Map` 기반으로 바꾸고 공개 반환·YAML/JSON 직렬화 경계에서 `Object.fromEntries` plain object를 생성한다. `constructor`, `toString` 같은 schema-valid ID와 malformed `__proto__`도 own record로 보존하며, duplicate surface의 결정적 첫 레코드·`duplicate-surface-id` fail-closed와 no-surface 출력 shape를 유지한다. 존재하지 않는 prototype 이름의 `--screen`/`--surface` 조회는 inherited phantom record 없이 빈 결과를 반환한다.
+- `workflow:state`와 readiness의 user-controlled screen/surface ID 사전을 `Map` 기반으로 바꾸고 공개 반환·YAML/JSON 직렬화 경계에서 `Object.fromEntries` plain object를 생성한다. Surface Map/grouping 키는 공개 object property key로 먼저 정규화해 numeric `1`과 string `"1"`처럼 직렬화 시 충돌하는 malformed/valid ID도 결정적 첫 레코드와 오류 provenance를 보존한다. `constructor`, `toString` 같은 schema-valid ID와 malformed `__proto__`도 own record로 유지하며, `duplicate-surface-id` fail-closed와 no-surface 출력 shape를 유지한다. 존재하지 않는 prototype 이름의 `--screen`/`--surface` 조회는 inherited phantom record 없이 빈 결과를 반환한다.
 - shared surface `implementation_paths`를 domain과 무관하게 모든 ScreenSpec의 `route_entry`/`screen_entry`와 대조한다. 기존 member 충돌은 `member-entry-overlap` 계약을 유지하고 비멤버 충돌은 provenance를 포함한 `non-member-entry-overlap`을 `path_errors`에 추가해 기존 readiness 구조 오류 경로로 `docs-only` 처리한다. 비멤버 자동 편입/delegation, schema blacklist, artifact/policy mode/gate/release version은 추가하지 않았다.
 
 ### fix(routes) — preserve app-group-index root targets across generated views (#195)
