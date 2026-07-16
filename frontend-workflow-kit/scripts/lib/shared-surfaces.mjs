@@ -15,6 +15,7 @@ import { covers, toPosix } from './path-backstop.mjs';
 export const SHARED_SURFACE_ARTIFACT_TYPE = 'shared-surface-spec';
 export const SHARED_SURFACE_RESULT_TYPES = Object.freeze(['state', 'mutation', 'external', 'none']);
 const CANONICAL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+const WINDOWS_DRIVE_PREFIX_PATTERN = /^[A-Za-z]:/;
 export const SHARED_SURFACE_FORBIDDEN_IDENTITY_FIELDS = Object.freeze([
   'route',
   'screen_id',
@@ -66,8 +67,11 @@ export function pathsOverlap(left, right) {
 
 function ownershipPathKey(value) {
   const normalized = String(value).replace(/\\/g, '/');
-  if (path.posix.isAbsolute(normalized) || /^[A-Za-z]:\//.test(normalized)) {
-    return { key: null, issue: 'nonportable-absolute' };
+  if (
+    path.posix.isAbsolute(normalized) ||
+    WINDOWS_DRIVE_PREFIX_PATTERN.test(normalized)
+  ) {
+    return { key: null, issue: 'absolute-or-nonportable' };
   }
 
   const key = lexicalPathKey(normalized);
@@ -88,7 +92,7 @@ export function implementationPathIssues(value) {
   const issues = [];
   if (
     normalized.startsWith('/') ||
-    /^[A-Za-z]:\//.test(normalized) ||
+    WINDOWS_DRIVE_PREFIX_PATTERN.test(normalized) ||
     value.includes('\\')
   ) {
     issues.push(error('absolute-or-nonportable-path', `implementation path must be project-relative POSIX: ${value}`));
@@ -181,10 +185,10 @@ function entryPathIssue(owner) {
     entry_path: owner.entry_path,
     screen_spec_path: owner.screen_spec_path,
   };
-  if (owner.entry_path_issue === 'nonportable-absolute') {
+  if (owner.entry_path_issue === 'absolute-or-nonportable') {
     return error(
       'absolute-or-nonportable-path',
-      `ScreenSpec ${owner.entry_kind} uses a nonportable absolute path: ${owner.entry_path}`,
+      `ScreenSpec ${owner.entry_kind} uses an absolute or nonportable path: ${owner.entry_path}`,
       fields,
     );
   }

@@ -1260,7 +1260,7 @@ test('entry ownership rejects checkout-dependent absolute and escaping relative 
         path.join(project.root, 'src', 'features', 'x', 'Foo.tsx'),
       code: 'absolute-or-nonportable-path',
       message: (entryPath) =>
-        `ScreenSpec screen_entry uses a nonportable absolute path: ${entryPath}`,
+        `ScreenSpec screen_entry uses an absolute or nonportable path: ${entryPath}`,
     },
     {
       name: 'absolute-outside-root',
@@ -1268,7 +1268,7 @@ test('entry ownership rejects checkout-dependent absolute and escaping relative 
         path.join(path.dirname(project.root), 'outside-project', 'Foo.tsx'),
       code: 'absolute-or-nonportable-path',
       message: (entryPath) =>
-        `ScreenSpec screen_entry uses a nonportable absolute path: ${entryPath}`,
+        `ScreenSpec screen_entry uses an absolute or nonportable path: ${entryPath}`,
     },
     {
       name: 'traversal-reentry',
@@ -1283,14 +1283,28 @@ test('entry ownership rejects checkout-dependent absolute and escaping relative 
       entryPath: () => String.raw`C:\work\repo\src\features\x\Foo.tsx`,
       code: 'absolute-or-nonportable-path',
       message: (entryPath) =>
-        `ScreenSpec screen_entry uses a nonportable absolute path: ${entryPath}`,
+        `ScreenSpec screen_entry uses an absolute or nonportable path: ${entryPath}`,
+    },
+    {
+      name: 'windows-drive-relative',
+      entryPath: () => String.raw`C:src\features\x\Foo.tsx`,
+      code: 'absolute-or-nonportable-path',
+      message: (entryPath) =>
+        `ScreenSpec screen_entry uses an absolute or nonportable path: ${entryPath}`,
+    },
+    {
+      name: 'windows-drive-relative-traversal',
+      entryPath: () => String.raw`c:..\outside\Foo.tsx`,
+      code: 'absolute-or-nonportable-path',
+      message: (entryPath) =>
+        `ScreenSpec screen_entry uses an absolute or nonportable path: ${entryPath}`,
     },
     {
       name: 'windows-unc',
       entryPath: () => String.raw`\\server\share\repo\src\features\x\Foo.tsx`,
       code: 'absolute-or-nonportable-path',
       message: (entryPath) =>
-        `ScreenSpec screen_entry uses a nonportable absolute path: ${entryPath}`,
+        `ScreenSpec screen_entry uses an absolute or nonportable path: ${entryPath}`,
     },
   ]) {
     withProject((project) => {
@@ -1615,6 +1629,16 @@ test('frontmatter schema minItems and path syntax helpers enforce the surface co
   );
   assert.equal(implementationPathIssues('src/features/chat/composer/**').length, 0);
   assert.ok(implementationPathIssues('/tmp/composer/**').length > 0);
+  for (const driveRelativePath of [
+    'C:src/features/x/**',
+    'c:../outside/**',
+  ]) {
+    assert.ok(
+      implementationPathIssues(driveRelativePath).some(
+        (issue) => issue.code === 'absolute-or-nonportable-path',
+      ),
+    );
+  }
   assert.ok(implementationPathIssues('src/**').some((issue) => issue.code === 'broad-wildcard'));
   assert.ok(
     implementationPathIssues('docs/frontend-workflow/_meta/**').some(
