@@ -23,7 +23,8 @@
 //       절대 게이트 신호로 쓰지 않는다(reconciled + 자식 open == 정상 PASS). 세 축은 독립.
 //   13. Interaction Matrix v2(structured) 형식 — WARNING-ONLY (하드 게이트 아님, 검사 카운트 "12종"에 미포함).
 //       Result Type 헤더가 있는 표만 점검 → v1 표는 무발화 = v1 출력 byte-identical. 에러 승격 없음(warning-first).
-//       Result Type=route Target 은 route-tree.txt 의 route token 과 EXACT 문자열 교차검증한다(artifact 부재 시 skip).
+//       Result Type=route Target 은 route-tree.txt 의 raw route token 과 EXACT 비교한다. 단, 루트(`/`)만
+//       기본 Expo 헤더 + 실제 index.* 노드로 검증된 유일한 single filesystem-group token 을 인정한다.
 //   14. Policy `requires` 구문(mode 진입 조건 "fact OP value") — WARNING-ONLY (검사 13 과 동급, "12종"에 미포함).
 //       policy.modes[*].requires 각 줄을 policy-condition.mjs 의 파서(readiness 와 단일 출처)로 검사해
 //       파싱 불가한 항목(단일 `=`·`=>`·bare 토큰·값 누락 `>=`/`<=` 등)을 저작 시점에 경고로 알린다.
@@ -78,7 +79,7 @@ import {
   isContractUnset,
   normEndpoint,
 } from './lib/api-manifest.mjs';
-import { parseRouteTreeRouteTokens } from './lib/route-core.mjs';
+import { parseExpoIndexRouteTokens, parseRouteTreeRouteTokens } from './lib/route-core.mjs';
 // policy `requires` 파싱 술어 — readiness.mjs 와 단일 출처를 공유해 검사 14 와 런타임 게이트가 표류하지 않게 한다.
 import { isWellFormedRequirement } from './lib/policy-condition.mjs';
 // 글롭 미니엔진·생성물 헤더 정규식은 check-generated-files 가드와 단일 출처를 공유한다(표류 방지).
@@ -393,12 +394,15 @@ function main() {
   }
 
   // 검사 13 의 정밀 route 존재 확인 입력. route-tree 는 생성물이라 없거나 아직 stale 일 수 있으므로
-  // 부재는 hard fail 이 아니라 advisory warning 이다. 존재하는 경우에만 `route: <token>` 을 EXACT 문자열로 비교한다.
+  // 부재는 hard fail 이 아니라 advisory warning 이다. 존재하는 경우 `route: <token>` raw 문자열을 비교하되,
+  // 루트 Target(`/`)만 기본 Expo 헤더 + 실제 index.* 노드로 검증된 유일한 group token 을 인정한다.
   const routeTreeFile = path.join(docsDir, '_meta', 'route-tree.txt');
   const routeTreeExists = exists(routeTreeFile);
-  const routeTreeRouteSet = routeTreeExists
-    ? parseRouteTreeRouteTokens(readFileSafe(routeTreeFile))
-    : null;
+  const routeTreeText = routeTreeExists ? readFileSafe(routeTreeFile) : null;
+  const routeTreeRouteSet = routeTreeExists ? parseRouteTreeRouteTokens(routeTreeText) : null;
+  // 루트(`/`) alias 에만 쓰는 provenance. 기본 expo-router 헤더 + 실제 index.* 파일 노드가 모두
+  // 확인돼야 채워지며, custom router 또는 `(app).tsx` literal file 은 빈 집합으로 fail-closed 한다.
+  const routeTreeExpoIndexRouteSet = parseExpoIndexRouteTokens(routeTreeText);
 
   // 5. 중복
   for (const [id, n] of idCount) if (n > 1) add(5, path.join(docsDir, 'domains'), `screen_id 중복: ${id} (${n}건)`);
@@ -410,6 +414,8 @@ function main() {
   //    명시적 비-route v2 행(state/mutation/external/none)의 Result prose 는 하드 게이트 입력이 아니다.
   //    Expo Router 의 일반 filesystem group `(auth)` 는 런타임 URL 에 나타나지 않으므로, raw route
   //    `/(auth)/login` 이 group-less Target `/login` 과 단일하게 대응할 때만 통과시킨다.
+  //    루트(`/`)는 raw single-group ScreenSpec 후보의 존재만 확인한다. generated/stale 가능 route-tree 의
+  //    provenance·모호성은 검사 13 warning, destination 선택은 nav-graph 가 별도로 fail-closed 한다.
   const runtimeRouteTargetIndex = buildRuntimeRouteTargetIndex(routeSet);
   for (const spec of specs) {
     const targets = interactionEdgeRoutes(spec);
@@ -836,10 +842,17 @@ function main() {
   // 13. Interaction Matrix v2(structured) 형식 — warning-first (검사 13 자체는 하드 게이트 없음).
   //     Result Type 헤더가 있는 표(v2 모드)만 점검한다 → v1 표는 무발화 = v1 validate 출력 byte-identical.
   //     enum/route 행 Target 부재/비-route 행 라우트 토큰/Result↔Target drift 를 경고로 surface.
-  //     route-tree.txt 가 있으면 Result Type=route Target 과 route token 을 EXACT 교차검증한다.
+  //     route-tree.txt 가 있으면 Result Type=route Target 과 raw route token 을 교차검증한다. 일반 route 는
+  //     EXACT 를 유지하고 루트(`/`)만 verified Expo group-directory index token 을 인정한다. 유일 owner를
+  //     raw/trailing-slash ScreenSpec이 함께 표현하는 경우도 warning으로 후보를 표면화한다.
   //     route-tree.txt 가 없으면 v2 route Target 존재 시 warning 으로만 알린다(warning-first).
   for (const spec of specs) {
-    for (const issue of interactionMatrixV2Issues(spec, { routeTreeRouteSet, routeTreeMissing: !routeTreeExists })) {
+    for (const issue of interactionMatrixV2Issues(spec, {
+      routeTreeRouteSet,
+      routeTreeExpoIndexRouteSet,
+      screenRouteSet: routeSet,
+      routeTreeMissing: !routeTreeExists,
+    })) {
       warn(13, spec.path, issue.message);
     }
   }

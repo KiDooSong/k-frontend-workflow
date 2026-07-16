@@ -537,7 +537,7 @@ export function isConcreteRoute(r) {
   return true;
 }
 
-function isConcreteTargetRoute(r) {
+export function isConcreteTargetRoute(r) {
   return r === '/' || isConcreteRoute(r);
 }
 
@@ -575,15 +575,82 @@ export function buildRuntimeRouteTargetIndex(routes) {
   return index;
 }
 
-export function resolveRouteTargetInScreenInventory(target, routeSet, runtimeRouteTargetIndex) {
+function screenRouteRepresentsRawOwner(route, rawOwner) {
+  if (route === rawOwner) return true;
+  return rawOwner !== '/' && route.endsWith('/') && route.slice(0, -1) === rawOwner;
+}
+
+function screenRoutesRepresentingRawOwner(routes, rawOwner) {
+  return [...(routes || [])]
+    .filter((route) => screenRouteRepresentsRawOwner(route, rawOwner))
+    .sort();
+}
+
+export function resolveRouteTargetInScreenInventory(target, routeSet, runtimeRouteTargetIndex, opts = {}) {
+  if (target === '/') {
+    // 목적 화면 선택은 두 단계다. 먼저 검사 13과 같은 전체 route-tree resolution이 유일해야 하고,
+    // 그 유일 raw owner를 표현하는 ScreenSpec route도 정확히 하나여야 한다. ScreenSpec∩route-tree의
+    // 교집합 크기만 보면 문서화되지 않은 두 번째 tree owner를 놓치므로 반드시 순서를 지킨다.
+    const treeResolution = opts.routeTreeResolution;
+    if (!treeResolution || treeResolution.status === 'missing') {
+      // route-tree 부재/stale은 exact ScreenSpec `/` 직접 일치까지 막지 않는다. group alias만 fail-closed.
+      return routeSet && routeSet.has('/') ? '/' : null;
+    }
+    if (treeResolution.status === 'ambiguous') return null;
+    const screenMatches = screenRoutesRepresentingRawOwner(routeSet, treeResolution.matches[0]);
+    return screenMatches.length === 1 ? screenMatches[0] : null;
+  }
   if (routeSet && routeSet.has(target)) return target;
   const matches = runtimeRouteTargetIndex?.get(target);
-  if (!matches || matches.size !== 1) return null;
+  if (!matches) return null;
+  if (matches.size !== 1) return null;
   return [...matches][0];
 }
 
+// 검사 4 전용 inventory 존재 판정. route-tree 는 generated/stale 가능 artifact 이므로 hard gate 입력이 아니다.
+// 루트(`/`)는 하나 이상의 raw single-group ScreenSpec 후보가 있으면 inventory 에 존재한다. 그 후보의
+// provenance/ambiguity 는 검사 13 warning, 목적 화면의 유일한 선택은 위 resolver 가 각각 담당한다.
 export function routeTargetExistsInScreenInventory(target, routeSet, runtimeRouteTargetIndex) {
-  return !!resolveRouteTargetInScreenInventory(target, routeSet, runtimeRouteTargetIndex);
+  if (routeSet && routeSet.has(target)) return true;
+  const matches = runtimeRouteTargetIndex?.get(target);
+  if (!matches || matches.size === 0) return false;
+  if (target === '/') return true;
+  return matches.size === 1;
+}
+
+// Interaction Matrix v2 Target ↔ route-tree warning-first 교차검증 전용.
+// 일반 route 는 raw token EXACT 를 유지한다. 루트 Target(`/`)은 exact owner와 기본 Expo route-tree의
+// 실제 index.* 노드로 검증된 group owner를 함께 모아 전체 runtime owner가 유일할 때만 인정한다.
+export function resolveRouteTreeTarget(target, routeTreeRouteSet, opts = {}) {
+  if (!(routeTreeRouteSet instanceof Set)) return { status: 'missing', matches: [] };
+  if (target !== '/') {
+    return routeTreeRouteSet.has(target)
+      ? { status: 'exact', matches: [target] }
+      : { status: 'missing', matches: [] };
+  }
+
+  // 루트는 exact `/` owner와 verified Expo group-index owner를 모두 모은 뒤 전체 유일성을 판정한다.
+  // exact를 먼저 반환하면 `/` + `/(app)` 충돌을 숨기므로 두 종류를 같은 owner 집합에서 비교한다.
+  const matches = new Set();
+  if (routeTreeRouteSet.has('/')) matches.add('/');
+  if (opts.expoIndexRouteSet instanceof Set) {
+    for (const route of buildRuntimeRouteTargetIndex(opts.expoIndexRouteSet).get('/') || []) {
+      if (routeTreeRouteSet.has(route)) matches.add(route);
+    }
+  }
+  const sortedMatches = [...matches].sort();
+  if (sortedMatches.length === 1) {
+    return sortedMatches[0] === '/'
+      ? { status: 'exact', matches: sortedMatches }
+      : { status: 'unique-runtime-match', matches: sortedMatches };
+  }
+  if (sortedMatches.length > 1) return { status: 'ambiguous', matches: sortedMatches };
+  return { status: 'missing', matches: [] };
+}
+
+export function routeTreeTargetExists(target, routeTreeRouteSet, opts = {}) {
+  const status = resolveRouteTreeTarget(target, routeTreeRouteSet, opts).status;
+  return status === 'exact' || status === 'unique-runtime-match';
 }
 
 // Interaction Matrix 의 Result 컬럼에서 라우트들을 추출 (v1 free-form/backcompat helper).
@@ -641,10 +708,14 @@ export function interactionEdgeRoutes(spec) {
 }
 
 // v2 형식 점검(warning-first, 순수 함수) — validate 검사 13 이 호출한다. v1 표는 항상 빈 배열 → v1 출력 불변.
-// 절대 에러로 승격하지 않는다(하드 게이트 없음). Target 존재 검사는 route-tree.txt route token 과 EXACT 비교한다.
+// 절대 에러로 승격하지 않는다(하드 게이트 없음). Target 존재 검사는 route-tree.txt raw token 과 EXACT 비교하되,
+// 루트(`/`)만 기본 Expo 헤더 + 실제 index.* 노드로 검증된 유일한 filesystem-group token 을 인정한다.
 //   opts.routeTreeRouteSet : route-tree.txt 의 `route: <token>` 집합. 없으면 교차검증은 skip(생성 전/부재 허용).
+//   opts.routeTreeExpoIndexRouteSet : 기본 Expo route-tree 의 실제 index.* 노드가 소유한 raw route 집합.
+//   opts.screenRouteSet : ScreenSpec raw route 집합. 유일 tree owner의 ScreenSpec 표현 모호성 경고에 사용.
 // 반환: [{ row, kind, message }]
-//   kind: type-empty|enum|route-missing-target|result-target-drift|route-tree-target-missing|route-tree-missing|nonroute-has-route
+//   kind: type-empty|enum|route-missing-target|result-target-drift|route-tree-target-missing|
+//         route-tree-target-ambiguous|route-tree-target-screen-ambiguous|route-tree-missing|nonroute-has-route
 export function interactionMatrixV2Issues(spec, opts = {}) {
   const table = parseTable(spec.sections['interaction matrix']);
   if (!interactionMatrixIsV2(table)) return [];
@@ -684,12 +755,33 @@ export function interactionMatrixV2Issues(spec, opts = {}) {
       }
       if (routeTreeRouteSet) {
         for (const r of targetRoutes) {
-          if (!routeTreeRouteSet.has(r)) {
+          const resolution = resolveRouteTreeTarget(r, routeTreeRouteSet, {
+            expoIndexRouteSet: opts.routeTreeExpoIndexRouteSet,
+          });
+          if (resolution.status === 'ambiguous') {
+            issues.push({
+              row: rowNo,
+              kind: 'route-tree-target-ambiguous',
+              message: `route-tree root runtime cross-check: Result Type=route Target ${r} 가 복수 runtime root owner token 과 대응함 (${resolution.matches.join(', ')}; ${label}) — warning-first`,
+            });
+          } else if (resolution.status === 'missing') {
             issues.push({
               row: rowNo,
               kind: 'route-tree-target-missing',
               message: `route-tree EXACT cross-check: Result Type=route Target ${r} 가 route-tree.txt route token 에 없음 (${label}) — warning-first`,
             });
+          } else if (r === '/' && opts.screenRouteSet instanceof Set) {
+            const screenMatches = screenRoutesRepresentingRawOwner(
+              opts.screenRouteSet,
+              resolution.matches[0],
+            );
+            if (screenMatches.length > 1) {
+              issues.push({
+                row: rowNo,
+                kind: 'route-tree-target-screen-ambiguous',
+                message: `route-tree root runtime cross-check: verified owner ${resolution.matches[0]} 에 대응하는 ScreenSpec route 가 복수임 (${screenMatches.join(', ')}; ${label}) — warning-first`,
+              });
+            }
           }
         }
       } else if (routeTreeMissing && targetRoutes.length > 0 && !routeTreeMissingWarned) {

@@ -4,6 +4,11 @@
 
 ## Unreleased
 
+### fix(routes) — preserve app-group-index root targets across generated views (#195)
+
+- Interaction Matrix v2의 authoritative runtime Target `/`을 target-aware concrete route로 공유해 nav-graph의 source outbound·route inbound evidence가 더 이상 누락되지 않게 했다. nav-graph는 검사 13과 같은 전체 route-tree owner resolution이 먼저 유일한지 확인하고, 그 raw owner를 표현하는 ScreenSpec route도 정확히 하나일 때만 destination inbound를 해소한다. literal 후보는 verified owner 선택을 막지 않지만, 문서화되지 않은 추가 tree owner나 raw/trailing-slash 복수 표현이 있으면 route-level edge만 남긴다.
+- validate 검사 4는 ScreenSpec inventory 후보 존재만 hard gate로 유지하고 generated/stale 가능 route-tree provenance를 입력으로 사용하지 않는다. warning-first 검사 13은 일반 route의 raw-token EXACT 계약을 유지하면서, 루트 `/`에 한해서만 기본 Expo 헤더 + 실제 `index.*` 노드로 검증된 전체 owner를 비교한다. custom adapter literal `/(app)`과 `src/app/(app).tsx`는 alias로 보지 않고, 복수 verified owner와 유일 owner의 복수 ScreenSpec 표현(`/(app)`, `/(app)/`)을 각각 후보 목록과 함께 경고한다. route-tree 부재·stale은 기존처럼 hard fail로 승격하지 않으며, standalone route-cross-check EXACT, array/plus group 제외, shared-surface·policy·CI promotion·release version은 변경하지 않았다.
+
 ### feat(shared-surfaces) — first-class shared behavior contract (#192)
 
 - optional domain-scoped `shared-surface-spec` artifact, canonical template/reference, manifest/schema(`minItems`) and packed `implement-shared-surface` skill을 추가했다. Surface는 최소 2개 same-domain canonical Screen ID와 uniform non-route behavior를 소유하며 v2 Interaction Matrix의 `route`, local Open Decisions, unsafe/overlapping implementation ownership을 hard reject한다.
