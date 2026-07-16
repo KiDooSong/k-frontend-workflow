@@ -762,7 +762,7 @@ export function interactionMatrixV2Issues(spec, opts = {}) {
             issues.push({
               row: rowNo,
               kind: 'route-tree-target-ambiguous',
-              message: `route-tree root runtime cross-check: Result Type=route Target ${r} 가 복수 Expo group-index token 과 대응함 (${resolution.matches.join(', ')}; ${label}) — warning-first`,
+              message: `route-tree root runtime cross-check: Result Type=route Target ${r} 가 복수 runtime root owner token 과 대응함 (${resolution.matches.join(', ')}; ${label}) — warning-first`,
             });
           } else if (resolution.status === 'missing') {
             issues.push({

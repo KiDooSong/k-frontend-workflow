@@ -1353,7 +1353,7 @@ test('E2E P1: undocumented second tree owner keeps provenance ambiguous and sele
     );
     assert.equal(
       (validation.warnings || []).some(
-        (w) => w.check === 13 && /복수 Expo group-index token/.test(w.message),
+        (w) => w.check === 13 && /복수 runtime root owner token/.test(w.message),
       ),
       true,
       'check 13 reports ambiguity instead of claiming the target token is absent',
@@ -1767,6 +1767,11 @@ test('v2 issues: route-tree root exception is unique, group-index-only, and root
     { status: 'ambiguous', matches: ['/', '/(app)'] },
     'exact and verified group root owners participate in the same whole-tree ambiguity check',
   );
+  const exactAndGroupIssue = issues(['/', '/(app)'], ['/(app)'])
+    .find((i) => i.kind === 'route-tree-target-ambiguous');
+  assert.ok(exactAndGroupIssue, 'exact and verified group root owners get an ambiguity diagnostic');
+  assert.match(exactAndGroupIssue.message, /복수 runtime root owner token/);
+  assert.match(exactAndGroupIssue.message, /\/, \/\(app\)/);
 
   const screenAmbiguousIssue = interactionMatrixV2Issues(rootSpec, {
     routeTreeRouteSet: new Set(['/(app)']),
