@@ -17,7 +17,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { parseArgs, DEFAULTS, KIT_ROOT, readFileSafe, writeFile, yamlParse, runCli, isCliEntry } from './lib/util.mjs';
-import { buildPacketModel, renderPacketMarkdown, renderJsonEnvelope } from './lib/workflow-packet.mjs';
+import {
+  buildPacketModel,
+  isAbsorbedReadinessEntry,
+  renderPacketMarkdown,
+  renderJsonEnvelope,
+} from './lib/workflow-packet.mjs';
 import { loadLayoutProfile } from './lib/layout-profile.mjs';
 
 const SELF_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -63,6 +68,7 @@ function pickEntry(data, screen) {
   if (data && typeof data === 'object') {
     if (data[screen] && typeof data[screen] === 'object') return data[screen];
     if (typeof data.readiness_mode === 'string') return data; // 단일 엔트리로 저장된 파일
+    if (data.readiness_applicable === false || data.readiness_mode === null) return data;
   }
   return null;
 }
@@ -70,12 +76,34 @@ function pickEntry(data, screen) {
 // 파싱은 되지만 형식이 깨진 readiness 엔트리(배열 자리에 비배열 등)를 fail-closed 로 거른다.
 // 정규화/재계산 없음 — exit 2 로 멈춰 spread/iterate/join 의 미처리 TypeError(=exit 1)를 차단한다.
 function validateEntry(entry, screen) {
+  const lifecycleShaped =
+    entry.readiness_applicable === false ||
+    entry.screen_lifecycle === 'absorbed' ||
+    entry.readiness_mode === null;
+  if (lifecycleShaped && !isAbsorbedReadinessEntry(entry)) {
+    fail(
+      `readiness entry '${screen}' 의 absorbed sentinel 계약이 불완전함 — ` +
+        'readiness_applicable=false, screen_lifecycle=absorbed, readiness_mode=null, absorbed_into(string) 필요',
+    );
+  }
   if (typeof entry.readiness_mode !== 'string' || entry.readiness_mode.trim() === '') {
-    fail(`readiness entry '${screen}' 에 readiness_mode(string) 가 없음 — 손상된 readiness 출력`);
+    if (!isAbsorbedReadinessEntry(entry)) {
+      fail(`readiness entry '${screen}' 에 readiness_mode(string) 가 없음 — 손상된 readiness 출력`);
+    }
   }
   for (const k of ['allowed_paths', 'forbidden_paths', 'blocking', 'next_actions']) {
     if (entry[k] != null && !Array.isArray(entry[k])) {
       fail(`readiness entry '${screen}' 의 ${k} 가 배열이 아님 — 손상된 readiness 출력`);
+    }
+  }
+  if (isAbsorbedReadinessEntry(entry)) {
+    for (const k of ['allowed_paths', 'forbidden_paths', 'blocking']) {
+      if ((entry[k] || []).length > 0) {
+        fail(`readiness entry '${screen}' 의 absorbed ${k} 가 비어 있지 않음 — non-executable 계약 위반`);
+      }
+    }
+    if (entry.absorbed_at != null && typeof entry.absorbed_at !== 'string') {
+      fail(`readiness entry '${screen}' 의 absorbed_at 이 문자열이 아님 — 손상된 readiness 출력`);
     }
   }
 }

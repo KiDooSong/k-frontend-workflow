@@ -10,6 +10,7 @@
 // 어휘 가드: 'verdict'/'approve'/'blocked' 를 능동 판정 용어로 쓰지 않는다 — HALT_*/Open Decision/Safe To Proceed? 를 쓴다.
 
 export const STATES = {
+  HALT_NOT_APPLICABLE: 'HALT_NOT_APPLICABLE',
   HALT_AMBIGUITY: 'HALT_AMBIGUITY',
   HALT_READY_FOR_WORK: 'HALT_READY_FOR_WORK',
   DONE_PENDING_REVIEW: 'DONE_PENDING_REVIEW',
@@ -18,6 +19,7 @@ export const STATES = {
 
 // 각 상태의 exit code. 정상 auto-stop(HALT_AMBIGUITY/READY/DONE) = 0, 도구 오류만 2. exit 1 은 절대 쓰지 않는다.
 export const STATE_EXIT = {
+  HALT_NOT_APPLICABLE: 0,
   HALT_AMBIGUITY: 0,
   HALT_READY_FOR_WORK: 0,
   DONE_PENDING_REVIEW: 0,
@@ -25,6 +27,7 @@ export const STATE_EXIT = {
 };
 
 export const STATE_HEADLINE = {
+  HALT_NOT_APPLICABLE: 'absorbed source — 실행 비적용, canonical target 안내 후 정상 중단',
   HALT_AMBIGUITY: '애매함 미해결 — runner 가 구현 전 스스로 멈춤 (auto-stop · 기본 경로)',
   HALT_READY_FOR_WORK: '게이트 깨끗 · packet 발급 — 사람/지정 구현자 판단 대기 (구현 허가 아님)',
   DONE_PENDING_REVIEW: 'Run Report 생성 완료 — 사람 리뷰 대기 (green ≠ 승인)',
@@ -48,12 +51,26 @@ export function toPosix(p) {
 // 하나라도 미해결이면 HALT_AMBIGUITY(기본 경로). 재계산 0 — 봉투 필드만 읽는다(packet renderJsonEnvelope).
 export function isPacketClean(env) {
   if (!env || typeof env !== 'object') return false;
+  if (isAbsorbedPacket(env)) return false;
   return (
     env.over_ceiling === false &&
     env.mode_known === true &&
     env.blocking_count === 0 && // 엄격 비교 — null/false/""/[]/"0" 같은 손상값은 0 으로 강제변환하지 않고 fail-closed(HALT_AMBIGUITY).
     Array.isArray(env.d_cand) && env.d_cand.length === 0 &&
     Array.isArray(env.u_cand) && env.u_cand.length === 0
+  );
+}
+
+export function isAbsorbedPacket(env) {
+  return (
+    env != null &&
+    typeof env === 'object' &&
+    env.readiness_applicable === false &&
+    env.screen_lifecycle === 'absorbed' &&
+    env.readiness_mode === null &&
+    typeof env.absorbed_into === 'string' &&
+    env.absorbed_into.trim() !== '' &&
+    env.non_executable === true
   );
 }
 
@@ -107,6 +124,10 @@ export function buildRunModel(opts) {
     headline: STATE_HEADLINE[state] || state,
     readiness_mode: packet ? packet.readiness_mode : null,
     next_mode: packet ? packet.next_mode : null,
+    readiness_applicable: packet?.readiness_applicable ?? null,
+    screen_lifecycle: packet?.screen_lifecycle ?? null,
+    absorbed_into: packet?.absorbed_into ?? null,
+    absorbed_at: packet?.absorbed_at ?? null,
     // packet 봉투값을 verbatim 으로 옮긴다(강제변환 없음 — 손상 타입은 그대로 드러나게). 판정은 isPacketClean 이 이미 끝냈다.
     over_ceiling: packet ? packet.over_ceiling : null,
     mode_known: packet ? packet.mode_known : null,
@@ -120,6 +141,10 @@ export function buildRunModel(opts) {
     report_blockers: report ? report.blockers || null : null,
     review_summary: report ? report.review_summary || null : null,
     reason,
+    next_action:
+      state === STATES.HALT_NOT_APPLICABLE && packet
+        ? `stop without implementation; canonical screen is ${packet.absorbed_into} (do not auto-switch scope)`
+        : null,
     paths: {
       packet: paths.packet || null,
       report: paths.report || null,
@@ -141,7 +166,15 @@ function renderFrontmatter(m) {
     `run_id: ${q(m.run_id)}`,
     `screen: ${q(m.screen)}`,
     `requested_mode: ${q(m.requested_mode)}`,
-    `readiness_mode: ${q(m.readiness_mode || 'unknown')}`,
+    `readiness_mode: ${q(m.state === STATES.HALT_NOT_APPLICABLE ? '' : m.readiness_mode || 'unknown')}`,
+    ...(m.state === STATES.HALT_NOT_APPLICABLE
+      ? [
+          'readiness_applicable: false',
+          `screen_lifecycle: ${q(m.screen_lifecycle)}`,
+          `absorbed_into: ${q(m.absorbed_into)}`,
+          ...(m.absorbed_at ? [`absorbed_at: ${q(m.absorbed_at)}`] : []),
+        ]
+      : []),
     `date: ${q(m.created_at)}`,
     `generated_by: ${q(m.generated_by)}`,
     '---',
@@ -150,7 +183,11 @@ function renderFrontmatter(m) {
 
 function renderStateTable(m) {
   const head = '| 상태 | 의미 | exit |\n|---|---|---|';
-  const rows = STATE_ORDER.map((s) => {
+  const states =
+    m.state === STATES.HALT_NOT_APPLICABLE
+      ? [STATES.HALT_NOT_APPLICABLE, ...STATE_ORDER]
+      : STATE_ORDER;
+  const rows = states.map((s) => {
     const mark = s === m.state ? '▶ ' : '';
     return `| ${mark}\`${s}\` | ${cell(STATE_HEADLINE[s])} | ${STATE_EXIT[s]} |`;
   });
@@ -159,7 +196,12 @@ function renderStateTable(m) {
 
 function renderWhy(m) {
   const out = [];
-  if (m.state === STATES.HALT_AMBIGUITY) {
+  if (m.state === STATES.HALT_NOT_APPLICABLE) {
+    out.push(
+      `screen \`${cell(m.screen)}\` 은 valid absorbed provenance 이므로 authoring/implementation readiness가 적용되지 않는다. ` +
+        `canonical active screen은 \`${cell(m.absorbed_into)}\` 이다. runner는 범위를 자동 전환하지 않고 source/target을 알린 뒤 정상 중단했다.`,
+    );
+  } else if (m.state === STATES.HALT_AMBIGUITY) {
     out.push('runner 가 구현 전 스스로 멈췄다 (게이트가 막은 게 아니라 **runner 가 안 나아간 것**). 아래 후보를 사람이 검토/resolve 후 `npm run workflow:readiness` 재실행 → packet 재발급 → 재진입:');
     for (const r of m.ambiguity_reasons) out.push(`- ${r}`);
   } else if (m.state === STATES.HALT_READY_FOR_WORK) {
@@ -177,6 +219,16 @@ function renderSignals(m) {
   const out = [];
   out.push('| 항목 | 값 |');
   out.push('|---|---|');
+  if (m.state === STATES.HALT_NOT_APPLICABLE) {
+    out.push('| readiness_applicable | `false` |');
+    out.push(`| screen_lifecycle | \`${cell(m.screen_lifecycle)}\` |`);
+    out.push('| readiness_mode | `null` |');
+    out.push(`| absorbed_into | \`${cell(m.absorbed_into)}\` |`);
+    if (m.absorbed_at) out.push(`| absorbed_at | \`${cell(m.absorbed_at)}\` |`);
+    out.push('');
+    out.push('> canonical target은 redirect hint다. runner는 target으로 자동 전환하거나 구현 범위를 승인하지 않는다.');
+    return out.join('\n');
+  }
   out.push(`| readiness_mode | \`${cell(m.readiness_mode || '—')}\` |`);
   out.push(`| next_mode | ${m.next_mode ? '`' + cell(m.next_mode) + '`' : '— (최상위/미상)'} |`);
   out.push(`| requested_mode | \`${cell(m.requested_mode)}\`${m.over_ceiling ? ' — ⚠ 천장 초과' : ''} |`);
@@ -210,6 +262,9 @@ function renderEvidence(m) {
 }
 
 function renderNextAction(m) {
+  if (m.state === STATES.HALT_NOT_APPLICABLE) {
+    return `- source \`${cell(m.screen)}\`에는 작업하지 않는다. target 작업이 필요하면 사람이 \`${cell(m.absorbed_into)}\`를 명시해 별도 실행을 시작한다.`;
+  }
   if (m.state === STATES.HALT_AMBIGUITY) {
     return '- 위 D-cand/U-cand 를 사람이 resolve/triage (LLM/runner 는 닫지 못함) → `npm run workflow:readiness` 재실행 → packet 재발급 → `workflow:run` 재진입.';
   }
@@ -240,7 +295,11 @@ export function renderStatusMarkdown(m) {
   out.push(`- 게이트 단일 출처: \`${cell(m.readiness_source || '—')}\` (readiness 출력 — 재계산 0)`);
   out.push('- ⚠ 이 상태는 auto-stop 결과다 — exit code·HALT 어느 것도 merge gate 가 아니다 (차단 권한은 Open Decision readiness cap + 사람).');
   out.push('');
-  out.push('## State (이 PR: 4-state auto-stop — IMPLEMENT/auto-fix 전이 없음)');
+  out.push(
+    m.state === STATES.HALT_NOT_APPLICABLE
+      ? '## State (lifecycle non-executable auto-stop — IMPLEMENT/auto-fix/target-switch 전이 없음)'
+      : '## State (이 PR: 4-state auto-stop — IMPLEMENT/auto-fix 전이 없음)',
+  );
   out.push(renderStateTable(m));
   out.push('');
   out.push('## Why');
@@ -280,6 +339,15 @@ export function renderJsonEnvelope(m) {
     exit: m.exit,
     readiness_mode: m.readiness_mode,
     next_mode: m.next_mode,
+    ...(m.state === STATES.HALT_NOT_APPLICABLE
+      ? {
+          readiness_applicable: false,
+          screen_lifecycle: m.screen_lifecycle,
+          absorbed_into: m.absorbed_into,
+          ...(m.absorbed_at ? { absorbed_at: m.absorbed_at } : {}),
+          next_action: m.next_action,
+        }
+      : {}),
     over_ceiling: m.over_ceiling,
     mode_known: m.mode_known,
     blocking_count: m.blocking_count,
@@ -292,6 +360,9 @@ export function renderJsonEnvelope(m) {
     report: m.paths.report ? toPosix(m.paths.report) : null,
     status_out: m.paths.status ? toPosix(m.paths.status) : null,
     reason: m.reason || null,
-    note: 'auto-stop status — HALT 은 종료 상태이지 게이트/머지차단 아님; exit 0 = 정상 auto-stop(HALT_AMBIGUITY/READY/DONE), 2 = 도구 오류. exit 1 미사용.',
+    note:
+      m.state === STATES.HALT_NOT_APPLICABLE
+        ? 'normal auto-stop — absorbed source is non-executable; canonical target is reported but scope is not switched automatically.'
+        : 'auto-stop status — HALT 은 종료 상태이지 게이트/머지차단 아님; exit 0 = 정상 auto-stop(HALT_AMBIGUITY/READY/DONE), 2 = 도구 오류. exit 1 미사용.',
   };
 }

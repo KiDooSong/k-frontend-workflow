@@ -74,12 +74,15 @@ function exceptionsTable(rows) {
 // spec: { domain, slug, screenId, route?, entry?, copyKeys?, mapping? (status string) }
 function specMd(s) {
   const entryLine = s.entry ? `screen_entry: "${s.entry}"\n` : '';
+  const lifecycleLines = s.screenLifecycle
+    ? `screen_lifecycle: ${s.screenLifecycle}\nabsorbed_into: ${s.absorbedInto}\n`
+    : '';
   const copy = s.copyKeys
     ? `\n## Copy Keys\n| Key | 문구 | Status |\n|---|---|---|\n${s.copyKeys
         .map((r) => `| ${r.key} | ${r.copy} | ${r.status} |`)
         .join('\n')}\n`
     : '';
-  return `---\nartifact_id: "${s.screenId}-screen-spec"\nartifact_type: screen-spec\ndomain: "${s.domain}"\nscreen_id: "${s.screenId}"\nroute: "${s.route || '/x'}"\n${entryLine}status: draft\n---\n\n# ScreenSpec\n\n## Purpose\n샘플\n${copy}`;
+  return `---\nartifact_id: "${s.screenId}-screen-spec"\nartifact_type: screen-spec\ndomain: "${s.domain}"\nscreen_id: "${s.screenId}"\nroute: "${s.route || '/x'}"\n${entryLine}${lifecycleLines}status: draft\n---\n\n# ScreenSpec\n\n## Purpose\n샘플\n${copy}`;
 }
 
 // makeTree: 임시 프로젝트 루트를 세운다. 반환 { tmp, docsDir, srcDir }.
@@ -576,6 +579,56 @@ test('Visual Exceptions 행에 Reason/Decision ID 누락 → exception-hygiene w
       const hy = r.findings.filter((f) => f.rule === 'exception-hygiene');
       assert.equal(hy.length, 1); // 유효 행(D-2)은 경고 아님
       assert.match(hy[0].message, /Reason · Decision ID/);
+    },
+  );
+});
+
+test('absorbed-only exception and family component rules are excluded from aggregate and direct screen scope', () => {
+  withTree(
+    {
+      contract:
+        CONTRACT_HEADER +
+        familiesTable([
+          '| Active | AUTH-NEW | AuthShell | - | - | - | - | draft | - |',
+          '| Legacy | OLD-AUTH | LegacyShell | - | - | - | - | draft | - |',
+        ]) +
+        componentsTable([
+          '| LegacyLogo | LegacyShell | Legacy | forbidden | shell | missing | - |',
+        ]) +
+        exceptionsTable([
+          '| OLD-AUTH | legacy logo exception | - | - | open |',
+        ]),
+      specs: [
+        { domain: 'auth', slug: 'auth-new', screenId: 'AUTH-NEW', mapping: 'draft' },
+        {
+          domain: 'auth',
+          slug: 'old-auth',
+          screenId: 'OLD-AUTH',
+          screenLifecycle: 'absorbed',
+          absorbedInto: 'AUTH-NEW',
+          mapping: 'draft',
+        },
+      ],
+      catalog: SIMPLE_CATALOG,
+    },
+    (docsDir) => {
+      for (const options of [{}, { screen: 'OLD-AUTH' }]) {
+        const report = analyzeVisualConsistency({ docsDir, ...options });
+        assert.equal(
+          report.findings.some(
+            (finding) =>
+              finding.rule === 'exception-hygiene' && finding.screen_id === 'OLD-AUTH',
+          ),
+          false,
+        );
+        assert.equal(
+          report.findings.some(
+            (finding) =>
+              finding.rule === 'component-gap-candidate' && finding.component === 'LegacyLogo',
+          ),
+          false,
+        );
+      }
     },
   );
 });

@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 
 // 킷 루트: scripts/lib/ → scripts/ → kit-root.
 const KIT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const PACKET_SCRIPT = path.join(KIT_ROOT, 'scripts', 'workflow-packet.mjs');
 const RUN_SCRIPT = path.join(KIT_ROOT, 'scripts', 'workflow-run.mjs');
 const COUPON_DOCS = path.join(KIT_ROOT, 'examples', 'coupon-feature', 'docs', 'frontend-workflow');
 const CUSTOM_LAYOUT = path.join(
@@ -49,6 +50,41 @@ function buildCleanDocs() {
   return { dir, docs: path.join(dir, 'docs', 'frontend-workflow') };
 }
 
+function buildAbsorbedDocs() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wf-run-absorbed-'));
+  const docs = path.join(dir, 'docs', 'frontend-workflow');
+  const metaDir = path.join(docs, '_meta');
+  fs.mkdirSync(metaDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(metaDir, 'workflow-state.yaml'),
+    `generated_at: "2026-07-17"
+global:
+  navigation_map_status: missing
+  component_catalog_generated: false
+  stub_screen_specs_count: 1
+screens:
+  AUTH-NEW:
+    status: draft
+    domain: auth
+    route: /auth/new
+    stub: true
+    derived: {}
+absorbed_screens:
+  OLD-AUTH:
+    status: confirmed
+    domain: auth
+    route: /auth/old
+    screen_lifecycle: absorbed
+    absorbed_into: AUTH-NEW
+    absorbed_at: "2026-07-15"
+    source:
+      path: domains/auth/screens/old-auth/screen-spec.md
+`,
+    'utf8',
+  );
+  return { dir, docs };
+}
+
 // workflow:run 을 서브프로세스로 실행한다(throw 없이 { code, stdout } 정규화). cwd=KIT_ROOT 로 고정해
 // 상대 라벨/해소를 결정적으로 만든다(스크립트 자체 경로 해소는 cwd 와 독립 — SELF_DIR 기반).
 function runRun(args) {
@@ -59,6 +95,21 @@ function runRun(args) {
     return { code: 0, stdout };
   } catch (e) {
     return { code: e && e.status != null ? e.status : null, stdout: e && e.stdout ? String(e.stdout) : '' };
+  }
+}
+
+function runPacket(args) {
+  try {
+    const stdout = execFileSync(process.execPath, [PACKET_SCRIPT, ...args], {
+      cwd: KIT_ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return { code: 0, stdout, stderr: '' };
+  } catch (e) {
+    return {
+      code: e && e.status != null ? e.status : null,
+      stdout: e && e.stdout ? String(e.stdout) : '',
+      stderr: e && e.stderr ? String(e.stderr) : '',
+    };
   }
 }
 
@@ -77,6 +128,44 @@ function readPacket(packetPath) {
 function mkOut() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'wf-run-layout-'));
 }
+
+test('absorbed readiness is a normal non-executable packet/run halt with canonical target', () => {
+  const { dir, docs } = buildAbsorbedDocs();
+  const out = path.join(dir, 'run-artifacts');
+  try {
+    const packetResult = runPacket([
+      '--screen', 'OLD-AUTH', '--requested-mode', 'docs-only',
+      '--docs', docs, '--date', '2026-07-17', '--json',
+    ]);
+    assert.equal(packetResult.code, 0, packetResult.stderr || packetResult.stdout);
+    const packet = JSON.parse(packetResult.stdout);
+    assert.equal(packet.readiness_applicable, false);
+    assert.equal(packet.screen_lifecycle, 'absorbed');
+    assert.equal(packet.readiness_mode, null);
+    assert.equal(packet.absorbed_into, 'AUTH-NEW');
+    assert.equal(packet.non_executable, true);
+
+    const runResult = runRun([
+      '--screen', 'OLD-AUTH', '--requested-mode', 'docs-only',
+      '--docs', docs, '--date', '2026-07-17', '--out', out, '--json',
+    ]);
+    assert.equal(runResult.code, 0, runResult.stdout);
+    const run = JSON.parse(runResult.stdout);
+    assert.equal(run.state, 'HALT_NOT_APPLICABLE');
+    assert.notEqual(run.state, 'HALT_TOOL_ERROR');
+    assert.equal(run.readiness_applicable, false);
+    assert.equal(run.screen_lifecycle, 'absorbed');
+    assert.equal(run.readiness_mode, null);
+    assert.equal(run.absorbed_into, 'AUTH-NEW');
+    assert.match(run.next_action, /AUTH-NEW/);
+    assert.equal(fs.existsSync(path.join(out, 'run-report.md')), false);
+    const packetMarkdown = fs.readFileSync(path.join(out, 'work-packet.md'), 'utf8');
+    assert.match(packetMarkdown, /Non-executable Work Packet: OLD-AUTH → AUTH-NEW/);
+    assert.match(packetMarkdown, /자동 전환해 실행하지 말고/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test('custom --layout: work-packet.md readiness_source 에 --layout <absPath> 보존(split-brain 차단)', () => {
   const out = mkOut();

@@ -54,6 +54,9 @@ Invalid 선언은 화면을 숨기지 않는다. 해당 ScreenSpec은 active 집
 - `--screen <absorbed-id>` 직접 조회는 `readiness_applicable: false`, null mode, 빈
   `allowed_paths`와 `absorbed_into`를 반환한다. source tombstone을 저작·구현하지 말고 canonical
   target을 사용한다.
+- `workflow:packet`은 이 direct lookup을 손상된 입력이 아닌 정상 non-executable 결과로 보존하고,
+  `workflow:run`은 `HALT_NOT_APPLICABLE`(exit 0)로 중단한다. 둘 다 canonical target을 안내만 하며
+  target으로 자동 전환하거나 같은 요청의 구현 범위를 넓히지 않는다.
 - shared surface membership, route/nav/doctor mapping, visual diagnostics와 current path ownership도
   같은 live-screen 판정을 사용한다.
 

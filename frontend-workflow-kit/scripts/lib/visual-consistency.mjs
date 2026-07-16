@@ -370,7 +370,8 @@ export function analyzeVisualConsistency({ docsDir, srcDir, contractPath, domain
   }
   const selectedScreenIds = new Set(families.flatMap((f) => f.screens));
   const screenInScope = (id) =>
-    screenFilter ? screenFilter.has(id) : domain ? selectedScreenIds.has(id) : true;
+    !absorbedIds.has(id) &&
+    (screenFilter ? screenFilter.has(id) : domain ? selectedScreenIds.has(id) : true);
   const selectedFamilyNames = new Set(families.map((f) => f.family));
 
   // --- 검사 2: contract member ↔ ScreenSpec screen_id (screen-not-found = warning;
@@ -427,7 +428,6 @@ export function analyzeVisualConsistency({ docsDir, srcDir, contractPath, domain
   const componentsInScope = contract.components.filter(
     (c) =>
       c.applies_to_families.length === 0 ||
-      !screenFilter && !domain ||
       c.applies_to_families.some((fam) => selectedFamilyNames.has(fam)),
   );
   if (!exists(catalogFile)) {

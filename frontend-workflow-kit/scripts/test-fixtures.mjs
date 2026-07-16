@@ -328,6 +328,8 @@ function buildFixtures() {
     mustContain: [
       { label: 'readiness', snippet: '`allowed_paths`' },
       { label: 'readiness', snippet: '`forbidden_paths`' },
+      { label: 'readiness-applicable', snippet: '`readiness_applicable`' },
+      { label: 'absorbed-stop', snippet: '`readiness_applicable: false`' },
       { label: 'reconcile', snippet: 'Reconciliation Register' },
       { label: 'state-options', snippet: '`workflow:state`: `--docs`, `--src`, `--root`, `--layout`' },
       { label: 'readiness-options', snippet: '`workflow:readiness`: `--docs`, `--layout`, `--policy`, `--manifest`, `--ci`' },

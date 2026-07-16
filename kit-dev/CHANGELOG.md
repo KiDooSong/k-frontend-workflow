@@ -10,6 +10,7 @@
 - 공용 lifecycle analyzer가 source/target canonical identity, missing/self/duplicate target, absorbed chain/cycle, invalid enum/date와 mixed active fields를 결정적으로 검사한다. Valid absorbed만 live set에서 제외하며 malformed 선언은 `workflow-state.screens`에 남겨 lifecycle blocker + readiness `docs-only`/빈 `allowed_paths`로 fail-closed한다. 새 validate 번호 없이 schema=검사 1, 구조=검사 2, target graph=검사 3에 배치하고 전체 ID duplicate/confirmed approval 검사는 유지한다.
 - `workflow-state`는 active-only `screens`/`stub_screen_specs_count`와 optional `absorbed_screens` redirect registry를 생성하고, inventory는 모든 파일을 보존하되 route duplicate/layer telemetry는 live 기준으로 계산한다. readiness aggregate는 active만 포함하며 direct absorbed 조회는 `readiness_applicable:false`와 canonical target을 반환한다.
 - nav-graph, route-cross-check, doctor route/entry mapping, shared-surface membership/path ownership, visual consistency/bootstrap가 같은 helper의 live partition을 사용한다. No-marker fixtures에는 optional key/default field를 출력하지 않아 기존 state/inventory/readiness/generated-view bytes를 유지하며 새 lifecycle/consumer regression suite를 package test 목록에 포함했다. Gate/CI promotion, release/version, Issue #202 reconciliation 범위는 변경하지 않았다.
+- Direct absorbed readiness를 `workflow:packet`이 정상 non-executable 봉투로 보존하고 `workflow:run`이 canonical target 자동 전환 없이 `HALT_NOT_APPLICABLE`(exit 0)로 중단하도록 연결했다. implement-screen도 `blocking`보다 `readiness_applicable:false`를 먼저 확인한다. visual-consistency는 absorbed-only exception과 active member가 없는 family-scoped component rule까지 제외한다.
 
 ### fix(shared-surfaces) — harden prototype-named IDs and global entry ownership (#198)
 
