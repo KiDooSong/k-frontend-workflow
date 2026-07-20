@@ -38,6 +38,15 @@
 - 하지 않은 것(설계 §14): 검사 11 `captured_at` RFC3339 hard 승격과 figma-component-mapping `M-xxx`/
   `## Mapping Provenance`(202-B), 자연어 routing heuristic·stale Result warning(202-C), CI required check
   승격, 새 readiness fact/implementation mode/artifact axis.
+- 재리뷰 후속으로 validator fail-open 5건을 fail-closed 로 닫았다: ① register frontmatter YAML 파싱
+  실패는 v1/v2 공통 검사 12 항상-에러(빈 fm 이 contract 판정을 v1 로 기울여 v2 검사를 조용히 끄는 경로
+  차단), ② reject 의 `input:` target 은 자기 Input ID 만 허용(RR-REF-011), ③ D-/C-/U-/G- child row 해소를
+  canonical 가족 표(섹션 slug·표 signature·register artifact_type)로 한정 — Notes/예시 ID 표로는 해소되지
+  않고 타 가족 표는 RR-REF-009, ④ RFC3339 를 Date.parse 정규화에 기대지 않고 달력 구성요소로 검증
+  (`2026-02-30`·`T24:00:00` 거부)하고 `Captured At=inherit` 로 해소된 input `captured_at` 에도 같은 hard
+  계약 적용(RP-004), structured cutoff 비교도 공유 parser 로 통일, ⑤ 중복 `artifact_id` target 은 owner
+  결정 불가로 해소 거부(RR-REF-012). 추가로 structured 행의 빈 `Result` 는 warning, 빈 `Supersedes` 는
+  hard(RR-SCHEMA-016), evidence bullet index 는 1-based(`/00` 문법 위반)로 조였다.
 
 ### fix(shared-surfaces) — close falsy identity and lexical entry-path gaps (#200)
 

@@ -30,6 +30,7 @@ import { RECONCILE_STATUS_VALUES } from './reconciliation-register.mjs';
 import { INHERIT, SOURCE_UNIT_VALUES, isRfc3339, parseRfc3339 } from './provenance.mjs';
 import {
   resolveArtifact,
+  isDuplicateArtifactId,
   artifactHasSection,
   sectionRowKeyExists,
   resolveChildRow,
@@ -233,11 +234,14 @@ export function parseTargetRef(token) {
 }
 
 // evidence 토큰: input:<input_id>#<section-slug>[/<bullet-index>] (설계 §5.7).
+// bullet index 는 1-based(01, 02...) — `/00` 은 어떤 bullet 도 가리킬 수 없으므로 문법 위반이다.
 export function parseEvidenceRef(token) {
   const t = String(token || '').trim();
   const m = /^input:([A-Za-z0-9][A-Za-z0-9._-]*)#([a-z0-9][a-z0-9-]*)(?:\/(\d+))?$/.exec(t);
   if (!m) return null;
-  return { inputId: m[1], section: m[2], bulletIndex: m[3] ? Number(m[3]) : null, raw: t };
+  const bulletIndex = m[3] ? Number(m[3]) : null;
+  if (bulletIndex !== null && bulletIndex < 1) return null;
+  return { inputId: m[1], section: m[2], bulletIndex, raw: t };
 }
 
 // 세미콜론 구분 typed ref 목록 셀 (Touched Artifacts / Created Items). '-' = 빈 목록.
@@ -431,12 +435,14 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
     const hasItems = (itemsByInput.get(inputId) || []).length > 0;
     let structuredByTime = false;
     if (contract.structuredSinceMs !== null) {
+      // cutoff 비교는 공유 parser(parseRfc3339)만 쓴다 — raw Date.parse 는 타임존 없는 local
+      // timestamp 를 실행 환경에 따라 다르게 해석하므로 결정적 게이트 입력이 될 수 없다.
       const capturedAt = input.fm?.captured_at;
-      const capturedMs = typeof capturedAt === 'string' ? Date.parse(capturedAt.trim()) : NaN;
-      if (Number.isNaN(capturedMs)) {
+      const capturedMs = typeof capturedAt === 'string' ? parseRfc3339(capturedAt) : null;
+      if (capturedMs === null) {
         if (!hasItems) {
           warn(
-            `RP-102: '${inputId}' 의 captured_at ('${capturedAt ?? ''}') 을 파싱할 수 없어 legacy(summary-only) 로 취급 — RFC3339 권장`,
+            `RP-102: '${inputId}' 의 captured_at ('${capturedAt ?? ''}') 이 RFC3339(with timezone) 가 아니라 legacy(summary-only) 로 취급 — 형식을 고치면 structured 판정에 들어갑니다`,
           );
         }
       } else {
@@ -497,14 +503,13 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
       createdRefs.push(ref);
     }
 
-    // Result — 초기 rollout warning-first (설계 §5.2).
+    // Result — 초기 rollout warning-first (설계 §5.2). 빈 셀도 canonical code 가 아니므로 경고한다.
     const result = row.result;
-    if (result && !RESULT_VALUES.includes(result)) {
+    if (!result || !RESULT_VALUES.includes(result)) {
       warn(
-        `RR-SCHEMA-102: '${inputId}' summary Result '${result}' 는 canonical code 가 아님 (기대 ${RESULT_VALUES.join('|')}) — 초기 rollout warning-first`,
+        `RR-SCHEMA-102: '${inputId}' summary Result '${result || '(빈값)'}' 는 canonical code 가 아님 (기대 ${RESULT_VALUES.join('|')}) — 초기 rollout warning-first`,
       );
     } else if (
-      result &&
       RECONCILE_STATUS_VALUES.includes(row.reconcileStatus) &&
       !(RESULT_BY_STATUS[row.reconcileStatus] || []).includes(result)
     ) {
@@ -513,9 +518,11 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
       );
     }
 
-    // Supersedes — '-' 또는 존재하는 input_id (설계 §5.2).
+    // Supersedes — '-' 또는 존재하는 input_id (설계 §5.2). 빈 셀은 문법 위반(hard) — 대체 안 함은 '-' 로 명시.
     const sup = row.supersedes;
-    if (sup && sup !== '-' && !knownInputIds.has(sup)) {
+    if (!sup) {
+      add(`RR-SCHEMA-016: '${inputId}' summary Supersedes 가 비어 있음 — '-'(대체 없음) 또는 존재하는 input_id 를 쓰세요`);
+    } else if (sup !== '-' && !knownInputIds.has(sup)) {
       add(`RR-REF-010: '${inputId}' summary Supersedes '${sup}' 가 존재하는 input_id 로 해소되지 않음`);
     }
 
@@ -583,7 +590,11 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
         add(`RR-SCHEMA-014: ${label} 의 Target '${row.target}' 문법 위반 (artifact:<id>[#sec[/row]] | decision:D-x@owner | ... | input:<id> | -)`);
       } else if (target.kind === 'artifact') {
         const rec = resolveArtifact(targetIndex, target.artifactId);
-        if (!rec) {
+        if (isDuplicateArtifactId(targetIndex, target.artifactId)) {
+          add(
+            `RR-REF-012: ${label} 의 target artifact '${target.artifactId}' 가 여러 문서에 중복 선언돼 owner 를 결정할 수 없음 — artifact_id 를 전역 유일하게 만드세요`,
+          );
+        } else if (!rec) {
           add(`RR-REF-006: ${label} 의 target artifact '${target.artifactId}' 가 실제 문서(artifact_id)로 해소되지 않음`);
         } else {
           if (target.section && !artifactHasSection(rec, target.section)) {
@@ -596,7 +607,11 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
         }
       } else if (target.kind !== 'none' && target.kind !== 'input') {
         const rec = resolveArtifact(targetIndex, target.ownerArtifactId);
-        if (!rec) {
+        if (isDuplicateArtifactId(targetIndex, target.ownerArtifactId)) {
+          add(
+            `RR-REF-012: ${label} 의 target owner artifact '${target.ownerArtifactId}' 가 여러 문서에 중복 선언돼 owner 를 결정할 수 없음 — artifact_id 를 전역 유일하게 만드세요`,
+          );
+        } else if (!rec) {
           add(
             `RR-REF-006: ${label} 의 target owner artifact '${target.ownerArtifactId}' 가 실제 문서(artifact_id)로 해소되지 않음`,
           );
@@ -612,8 +627,16 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
         } else if (!bodyHasToken(rec, target.rowId)) {
           add(`RR-REF-008: ${label} 의 target '${target.rowId}' 토큰이 '${target.ownerArtifactId}' 문서 본문에 없음`);
         }
-      } else if (target.kind === 'input' && !knownInputIds.has(target.inputId)) {
-        add(`RR-REF-006: ${label} 의 target input '${target.inputId}' 가 해소되지 않음`);
+      } else if (target.kind === 'input') {
+        // input target 은 reject item 이 "원 input(자기 자신)" 을 가리키는 용도다 — 다른 입력을
+        // 가리키면 기각 기록이 엉뚱한 입력에 걸린다(routing matrix: `-` 또는 원 input).
+        if (row.inputId && target.inputId !== row.inputId) {
+          add(
+            `RR-REF-011: ${label} 의 target input '${target.inputId}' 은 이 item 의 Input ID('${row.inputId}')와 같아야 함 (reject 의 원 input 전용)`,
+          );
+        } else if (!knownInputIds.has(target.inputId)) {
+          add(`RR-REF-006: ${label} 의 target input '${target.inputId}' 가 해소되지 않음`);
+        }
       }
     }
 
@@ -653,8 +676,17 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
     if (row.sourceRef === INHERIT && inputFm && (typeof inputFm.source_ref !== 'string' || inputFm.source_ref.trim() === '')) {
       add(`RP-003: ${label} 의 Source Ref=inherit 인데 input '${row.inputId}' frontmatter 에 source_ref 가 없음`);
     }
-    if (row.capturedAt === INHERIT && inputFm && (typeof inputFm.captured_at !== 'string' || inputFm.captured_at.trim() === '')) {
-      add(`RP-003: ${label} 의 Captured At=inherit 인데 input '${row.inputId}' frontmatter 에 captured_at 가 없음`);
+    if (row.capturedAt === INHERIT && inputFm) {
+      if (typeof inputFm.captured_at !== 'string' || inputFm.captured_at.trim() === '') {
+        add(`RP-003: ${label} 의 Captured At=inherit 인데 input '${row.inputId}' frontmatter 에 captured_at 가 없음`);
+      } else if (!isRfc3339(inputFm.captured_at)) {
+        // inherit 는 상속값을 이 item 의 provenance 로 채택하는 선언이다 — 해소된 값도 같은 RFC3339
+        // 계약을 통과해야 한다(검사 11 전체의 형식 hard 승격은 202-B 지만, v2 item 이 상속을 선택한
+        // 순간 그 timestamp 는 이미 v2 hard contract 의 입력이다).
+        add(
+          `RP-004: ${label} 의 Captured At=inherit 인데 input '${row.inputId}' 의 captured_at ('${inputFm.captured_at}') 이 RFC3339(with timezone) 가 아님`,
+        );
+      }
     }
 
     // 중복 (Input ID, Item, Effect, Target) 금지 (설계 §8.1).
@@ -705,9 +737,12 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
         add(`RR-ROUTE-002: ${label} — Basis=${basis} 에 허용되지 않는 조합: Effect=${row.effect} + Target=${target.raw} (허용: ${combos})`);
         continue;
       }
-      // visual-evidence: 시각 허용 target 규칙 (설계 §6.1).
+      // visual-evidence: 시각 허용 target 규칙 (설계 §6.1). 중복 artifact_id 는 RR-REF-012 가 이미
+      // 해소 불가로 보고했으므로 첫 문서 기준의 routing 판정을 하지 않는다.
       if (basis === 'visual-evidence' && target.kind === 'artifact') {
-        const rec = resolveArtifact(targetIndex, target.artifactId);
+        const rec = isDuplicateArtifactId(targetIndex, target.artifactId)
+          ? null
+          : resolveArtifact(targetIndex, target.artifactId);
         if (rec) {
           const type = rec.fm?.artifact_type;
           if (VISUAL_ALLOWED_ARTIFACT_TYPES.has(type)) {
@@ -731,7 +766,9 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
       }
       // scope-unclear: canonical screen identity 해소 전 screen-level write 금지 (설계 §6.2).
       if (basis === 'scope-unclear' && target.kind === 'artifact') {
-        const rec = resolveArtifact(targetIndex, target.artifactId);
+        const rec = isDuplicateArtifactId(targetIndex, target.artifactId)
+          ? null
+          : resolveArtifact(targetIndex, target.artifactId);
         if (rec) {
           const fm = rec.fm || {};
           const screenLevel =

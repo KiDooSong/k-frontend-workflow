@@ -5,12 +5,16 @@
 // 재귀 walk 를 반복하지 않는다(설계 §11.2). 본문은 여기서 파일별로 1회만 다시 읽는다.
 //
 // 인덱스가 답하는 질문:
-//   - artifact:<artifact_id>            가 실제 문서로 해소되는가
+//   - artifact:<artifact_id>            가 실제 문서로 해소되는가 (중복 선언이면 해소 불가로 본다)
 //   - artifact:<id>#<section-slug>      의 섹션이 존재하는가 (h2 제목 slug)
 //   - artifact:<id>#<sec>/<row-key>     의 row-key 가 그 섹션 표에 보이는가 (warning-first)
-//   - decision:D-x@<owner> 등 child row ID 가 owner 문서의 표에서 해소되는가
-//   - target kind 와 row 가 사는 섹션 가족(open decisions/unknowns/conflicts)이 모순되지 않는가
+//   - decision:D-x@<owner> 등 child row ID 가 owner 문서의 **canonical 가족 표**에서 해소되는가
+//   - target kind 와 row 가 사는 표 가족(decision/unknown/conflict/gap)이 모순되지 않는가
 //   - INV-/VER- 토큰이 owner 문서 본문에 존재하는가 (canonical register 없는 축은 note 기반)
+//
+// child row 는 ID 헤더만 보고 수집하지 않는다 — Notes/예시/migration 표에 인용된 D-/C- ID 가
+// canonical 행처럼 해소되는 fail-open 을 막기 위해, 표의 "가족"을 canonical signature 로 판정하고
+// 가족이 판정된 표의 행만 후보로 등록한다.
 import { readFileSafe, splitFrontmatter } from './util.mjs';
 import { parseTables, hasHeader, col } from './spec.mjs';
 
@@ -23,19 +27,36 @@ export function slugifySectionTitle(title) {
     .replace(/^-+|-+$/g, '');
 }
 
-// child row ID 가 사는 섹션의 "가족" — kind ↔ section 모순 검사용.
-// 여기 없는 섹션(예: component-gap-register 의 h1 직속 표)은 가족 판정을 하지 않는다(모순 아님).
+// child row 가족 판정 — canonical 신호만 인정한다.
+//   1) canonical 섹션 slug: open-decisions / unknowns / conflicts / gaps·component-gap-register
+//   2) 표 signature: Open Decisions(ID+Blocking Mode) / Unknowns(ID+Question)
+//   3) 문서 artifact_type: conflicts / component-gap-register (h1 직속 표를 가진 global register)
+// 어느 신호에도 안 걸리는 ID 표(Notes 참조 표 등)는 family=null → child 후보로 등록하지 않는다.
 const SECTION_FAMILY = {
   'open-decisions': 'decision',
   unknowns: 'unknown',
   conflicts: 'conflict',
+  gaps: 'gap',
+  'component-gap-register': 'gap',
 };
+const ARTIFACT_TYPE_FAMILY = {
+  conflicts: 'conflict',
+  'component-gap-register': 'gap',
+};
+
+function tableFamily({ sectionSlug, table, artifactType }) {
+  if (SECTION_FAMILY[sectionSlug]) return SECTION_FAMILY[sectionSlug];
+  if (hasHeader(table.headers, 'Blocking Mode')) return 'decision';
+  if (hasHeader(table.headers, 'Question')) return 'unknown';
+  if (ARTIFACT_TYPE_FAMILY[artifactType]) return ARTIFACT_TYPE_FAMILY[artifactType];
+  return null;
+}
 
 // 문서 본문 하나를 인덱싱한다.
 //   sections   Map(slug → { title, text })  ("" slug = h2 이전 preamble)
-//   rows       Map(rowId → [{ sectionSlug }])  (ID 헤더를 가진 모든 표의 ID 컬럼)
+//   rows       Map(rowId → [{ sectionSlug, family }])  (가족이 판정된 canonical 표의 ID 컬럼만)
 //   rowKeys    Map(sectionSlug → Set(첫 셀 원문))  (#section/<row-key> warning 해소용)
-function indexDocBody(body) {
+function indexDocBody(body, artifactType) {
   const sections = new Map();
   const lines = String(body || '').split(/\r?\n/);
   let currentTitle = '';
@@ -64,6 +85,7 @@ function indexDocBody(body) {
   for (const [slug, sec] of sections) {
     const tables = parseTables(sec.text);
     for (const table of tables) {
+      const family = tableFamily({ sectionSlug: slug, table, artifactType });
       const firstHeader = table.headers[0];
       for (const r of table.rows) {
         // row-key 해소: 첫 셀 원문(예: "`M-001` · Auth frame / node `1:234`", "Offline").
@@ -72,12 +94,12 @@ function indexDocBody(body) {
           if (!rowKeys.has(slug)) rowKeys.set(slug, new Set());
           rowKeys.get(slug).add(firstCell);
         }
-        // child row ID: ID 헤더를 가진 표만.
-        if (hasHeader(table.headers, 'ID')) {
+        // child row ID: 가족이 판정된 canonical 표만 후보다 (임의 ID 참조 표는 제외 — fail-closed).
+        if (family && hasHeader(table.headers, 'ID')) {
           const id = String(col(r, 'ID') || '').trim();
           if (id && !id.startsWith('{')) {
             if (!rows.has(id)) rows.set(id, []);
-            rows.get(id).push({ sectionSlug: slug });
+            rows.get(id).push({ sectionSlug: slug, family });
           }
         }
       }
@@ -86,25 +108,35 @@ function indexDocBody(body) {
   return { sections, rows, rowKeys };
 }
 
-// docs([{file, fm}]) → { artifacts: Map(artifact_id → record) }.
+// docs([{file, fm}]) → { artifacts: Map(artifact_id → record), duplicates: Set(artifact_id) }.
 // record = { file, fm, body, sections, rows, rowKeys }.
-// artifact_id 중복은 검사 5/9 소관이므로 여기선 첫 문서를 유지한다(결정적: docs 는 정렬된 walk 순).
+// 같은 artifact_id 가 2개 이상 선언되면 어느 문서가 owner 인지 결정할 수 없다 — 첫 문서를 보존하되
+// duplicates 에 모아 v2 validator 가 해소 불가(hard error)로 보고한다(경로 정렬 의존 방지).
 export function buildReconciliationTargetIndex({ docs = [] }) {
   const artifacts = new Map();
+  const duplicates = new Set();
   for (const { file, fm } of docs) {
     const id = fm?.artifact_id;
     if (typeof id !== 'string' || id.trim() === '') continue;
-    if (artifacts.has(id)) continue;
+    if (artifacts.has(id)) {
+      duplicates.add(id);
+      continue;
+    }
     const { body } = splitFrontmatter(readFileSafe(file));
-    const indexed = indexDocBody(body);
+    const indexed = indexDocBody(body, fm?.artifact_type);
     artifacts.set(id, { file, fm, body, ...indexed });
   }
-  return { artifacts };
+  return { artifacts, duplicates };
 }
 
-// artifact_id 해소. 없으면 null.
+// artifact_id 해소. 없으면 null. (중복 여부는 isDuplicateArtifactId 로 별도 판정 — 호출부가 먼저 본다.)
 export function resolveArtifact(index, artifactId) {
   return index?.artifacts?.get(artifactId) || null;
+}
+
+// artifact_id 가 중복 선언돼 owner 를 결정할 수 없는가.
+export function isDuplicateArtifactId(index, artifactId) {
+  return !!index?.duplicates?.has(artifactId);
 }
 
 // artifact 문서에 해당 section slug 가 있는가.
@@ -124,21 +156,16 @@ export function sectionRowKeyExists(record, sectionSlug, rowKey) {
   return false;
 }
 
-// child row ID(D-/C-/U-/G-)가 owner 문서에서 해소되는가.
+// child row ID(D-/C-/U-/G-)가 owner 문서의 canonical 가족 표에서 해소되는가.
 //   { found: bool, familyMismatch: bool }
-// familyMismatch: ID 가 알려진 가족 섹션(open decisions/unknowns/conflicts)에서만 발견됐고
-// 그 가족이 target kind 와 다를 때 true (예: decision:U-001 이 unknowns 표에서만 발견).
+// - target kind 와 같은 가족 표에 있으면 found.
+// - 다른 가족 표에서만 발견되면 familyMismatch (예: decision 표에만 있는 C-xxx 를 conflict 로 참조).
+// - 가족 미판정 표(Notes 참조 표 등)의 ID 는 후보가 아니므로 not found 다.
 export function resolveChildRow(record, rowId, targetKind) {
   const hits = record?.rows?.get(rowId) || [];
   if (hits.length === 0) return { found: false, familyMismatch: false };
-  let sawKnownFamily = false;
-  for (const hit of hits) {
-    const family = SECTION_FAMILY[hit.sectionSlug];
-    if (!family) return { found: true, familyMismatch: false }; // 가족 미상 섹션 → 모순 판정 안 함
-    sawKnownFamily = true;
-    if (family === targetKind) return { found: true, familyMismatch: false };
-  }
-  return { found: true, familyMismatch: sawKnownFamily };
+  if (hits.some((hit) => hit.family === targetKind)) return { found: true, familyMismatch: false };
+  return { found: true, familyMismatch: true };
 }
 
 // INV-/VER- 처럼 canonical 표가 없는 축: owner 문서 본문에 ID 토큰이 존재하는가.

@@ -43,17 +43,19 @@ function cell(row, name) {
 }
 
 // register 파일을 파싱한다.
-//   { exists, table, rows, fm, body }
+//   { exists, table, rows, fm, body, fmParseError }
 //   - exists=false 면 검사 12 는 NO-OP (초기/선택적 도입 — input-reconciliation.md "초기에는 hard fail 이 아니라").
 //   - rows: [{ inputId, source, classification, reconcileStatus, result, touched, created, supersedes }]
 //     created(Touched/Created Items)는 원문 문자열 그대로 — HARD RULE 2 에 따라 주석을 파싱하지 않는다.
 //   - fm/body: Reconciliation Contract 버전 판정(reconciliation_contract 필드)과 v2 의
 //     `## Reconciliation Items` 표 파싱에 쓴다(reconciliation-items.mjs). v1 검사는 둘을 읽지 않는다.
+//   - fmParseError: frontmatter YAML 파싱 실패 사유. 이때 fm 은 빈 객체가 되므로 contract 판정이
+//     v1 로 기울어 v2 검사가 통째로 꺼진다 — 판정 전에 fail-closed 해야 하는 구조 결함 신호다.
 export function parseReconciliationRegister(registerFile) {
   if (!registerFile || !exists(registerFile)) {
-    return { exists: false, table: null, rows: [], fm: {}, body: '' };
+    return { exists: false, table: null, rows: [], fm: {}, body: '', fmParseError: null };
   }
-  const { data: fm, body } = splitFrontmatter(readFileSafe(registerFile));
+  const { data: fm, body, parseError: fmParseError } = splitFrontmatter(readFileSafe(registerFile));
   const table = parseTable(body); // register 는 본문의 첫 마크다운 표
   const rows = [];
   if (table) {
@@ -70,7 +72,7 @@ export function parseReconciliationRegister(registerFile) {
       });
     }
   }
-  return { exists: true, table, rows, fm: fm || {}, body };
+  return { exists: true, table, rows, fm: fm || {}, body, fmParseError: fmParseError || null };
 }
 
 // register 검증(검사 12).
@@ -92,6 +94,17 @@ export function validateReconciliationRegister({ register, inputArtifacts = [], 
   //   in-progress(중단)/failed/enum/중복/컬럼누락 같은 '망가지거나 끊긴' 상태는 enforce 와 무관하게 항상 에러.
   //   (warning-first 결정 #1 — input-reconciliation.md "초기에는 hard fail 이 아니라" + Lane B backstop 정합.)
   const flagUnprocessed = enforce ? add : warn;
+
+  // frontmatter YAML 파싱 실패는 구조 결함이라 항상 에러다(fail-closed). fm 이 빈 객체로 떨어지면
+  // Reconciliation Contract 판정이 v1 로 기울어, v2 register 의 오타 하나로 items/routing/reference/
+  // provenance 검사가 통째로 조용히 꺼진다. _meta/ 는 일반 frontmatter 검사(검사 1) 대상도 아니므로
+  // 여기서 잡지 않으면 아무도 잡지 않는다. 본문 표 검사는 계속 진행한다(진단 병행 표면화).
+  if (register.fmParseError) {
+    add(
+      registerFile,
+      `register frontmatter YAML 파싱 실패: ${register.fmParseError} → 해소: frontmatter 를 고치세요 (파싱 실패 상태에서는 reconciliation_contract 판정이 불가해 v2 검사가 비활성화됩니다)`,
+    );
+  }
 
   // register 파일은 있는데 8컬럼 표 자체가 파싱되지 않으면 구조 결함 — 행 검사 불가, 여기서 끝낸다.
   if (!register.table) {
