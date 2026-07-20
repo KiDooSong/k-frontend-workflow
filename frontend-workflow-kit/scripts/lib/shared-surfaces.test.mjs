@@ -1187,6 +1187,20 @@ test('non-member entry ownership compares lexical repository-path equivalents an
       entryKind: 'screen_entry',
       entryPath: () => 'src//features/x/Foo.tsx',
     },
+    {
+      name: 'trailing-repeated-separator-exact',
+      option: 'screenEntry',
+      entryKind: 'screen_entry',
+      entryPath: () => 'src//features/x/Foo.tsx//',
+      implementationPath: 'src/features/x/Foo.tsx',
+    },
+    {
+      name: 'trailing-backslash-exact',
+      option: 'screenEntry',
+      entryKind: 'screen_entry',
+      entryPath: () => String.raw`src\features\x\Foo.tsx${'\\'}`,
+      implementationPath: 'src/features/x/Foo.tsx',
+    },
   ]) {
     withProject((project) => {
       const entryPath = scenario.entryPath(project);
@@ -1196,7 +1210,7 @@ test('non-member entry ownership compares lexical repository-path equivalents an
         [scenario.option]: entryPath,
       });
       const surfaceId = `ENTRY-${scenario.name.toUpperCase()}-OVERLAP`;
-      const implementationPath = 'src/features/x/**';
+      const implementationPath = scenario.implementationPath || 'src/features/x/**';
       writeSurface(project.docsDir, surfaceId, { paths: [implementationPath] });
 
       const { state, inventory } = buildState({

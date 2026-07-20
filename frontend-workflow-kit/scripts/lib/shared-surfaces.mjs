@@ -56,7 +56,8 @@ export function loadSharedSurfaceSpecs({ docsDir }) {
 }
 
 function lexicalPathKey(value) {
-  return path.posix.normalize(String(value).replace(/\\/g, '/'));
+  const normalized = path.posix.normalize(String(value).replace(/\\/g, '/'));
+  return normalized === '/' ? normalized : normalized.replace(/\/+$/, '');
 }
 
 export function pathsOverlap(left, right) {
