@@ -94,7 +94,8 @@ Windows drive-absolute/drive-relative 및 UNC representation은 모두 `absolute
 `..` 또는 `../`로 시작하는 relative traversal은 `invalid-path` 구조 오류로 fail-closed한다. root를 벗어나지 않는 backslash,
 redundant `./`/separator(경로 끝 separator 포함), lexical dot segment는 repository-relative POSIX key로 수렴한다. 이 과정은 filesystem
 resolve/`realpath`나 case folding을 하지 않는다. 비교 key는 내부에서만 사용하며 state, inventory와 진단의 `entry_path`에는
-저자가 작성한 raw 값을 그대로 보존한다. 같은 drive-prefix 규칙은 surface `implementation_paths`에도 적용한다.
+저자가 작성한 raw 값을 그대로 보존한다. absolute/drive 판정은 lexical normalization 후의 key에 적용해 `./`나 dot segment로
+nonportable prefix를 가릴 수 없게 한다. 같은 drive-prefix 규칙은 surface `implementation_paths`에도 적용한다.
 
 선언은 권한이 아니다. path가 허용되려면 다음 전체 교집합을 만족해야 한다.
 

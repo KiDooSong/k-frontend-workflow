@@ -67,15 +67,14 @@ export function pathsOverlap(left, right) {
 }
 
 function ownershipPathKey(value) {
-  const normalized = String(value).replace(/\\/g, '/');
+  const key = lexicalPathKey(value);
   if (
-    path.posix.isAbsolute(normalized) ||
-    WINDOWS_DRIVE_PREFIX_PATTERN.test(normalized)
+    path.posix.isAbsolute(key) ||
+    WINDOWS_DRIVE_PREFIX_PATTERN.test(key)
   ) {
     return { key: null, issue: 'absolute-or-nonportable' };
   }
 
-  const key = lexicalPathKey(normalized);
   if (key === '..' || key.startsWith('../')) {
     return { key: null, issue: 'outside-project-root' };
   }
