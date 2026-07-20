@@ -166,7 +166,9 @@ function renderFrontmatter(m) {
     `run_id: ${q(m.run_id)}`,
     `screen: ${q(m.screen)}`,
     `requested_mode: ${q(m.requested_mode)}`,
-    `readiness_mode: ${q(m.state === STATES.HALT_NOT_APPLICABLE ? '' : m.readiness_mode || 'unknown')}`,
+    m.state === STATES.HALT_NOT_APPLICABLE
+      ? 'readiness_mode: null'
+      : `readiness_mode: ${q(m.readiness_mode || 'unknown')}`,
     ...(m.state === STATES.HALT_NOT_APPLICABLE
       ? [
           'readiness_applicable: false',

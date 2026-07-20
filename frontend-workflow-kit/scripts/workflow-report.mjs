@@ -17,7 +17,8 @@
 //  - git diff(name-status)   → --diff <file> 로 받아 ADDED/MODIFIED/REMOVED 표면화
 //  - packet frontmatter/body → readiness_source · blocking · next_actions 그대로 인용
 //
-// exit: 0 = Run Report 생성 성공 (수집한 도구 결과가 fail 이어도 0 — fail 은 evidence 로 기록).
+// exit: 0 = Run Report 생성 성공, 또는 lifecycle non-applicable packet의 정상 no-report 중단
+//           (수집한 도구 결과가 fail 이어도 0 — fail 은 evidence 로 기록).
 //       2 = 도구 오류 (packet 없음/파싱 실패, --diff/--review 파일 없음, --out 쓰기 실패 등).
 //       exit 1 을 gate 의미로 쓰지 않는다.
 import path from 'node:path';
@@ -66,6 +67,38 @@ function optStr(flags, name) {
     fail(`--${name} 에는 값이 필요합니다 (예: --${name} <value>)`);
   }
   return v.trim();
+}
+
+function isNonApplicablePacket(fm) {
+  return (
+    fm != null &&
+    typeof fm === 'object' &&
+    fm.readiness_applicable === false &&
+    fm.screen_lifecycle === 'absorbed' &&
+    fm.readiness_mode === null &&
+    typeof fm.target_screen === 'string' &&
+    fm.target_screen.trim() !== '' &&
+    typeof fm.absorbed_into === 'string' &&
+    fm.absorbed_into.trim() !== '' &&
+    typeof fm.readiness_source === 'string' &&
+    fm.readiness_source.trim() !== ''
+  );
+}
+
+function renderNoReportEnvelope(fm) {
+  return {
+    packet_id: typeof fm.packet_id === 'string' ? fm.packet_id : null,
+    target_screen: fm.target_screen,
+    requested_mode: typeof fm.requested_mode === 'string' ? fm.requested_mode : null,
+    readiness_mode: null,
+    readiness_applicable: false,
+    screen_lifecycle: 'absorbed',
+    absorbed_into: fm.absorbed_into,
+    report_applicable: false,
+    out: null,
+    next_action: `stop without Run Report; canonical screen is ${fm.absorbed_into} (do not auto-switch scope)`,
+    note: 'non-executable absorbed packet — normal no-report result, not malformed input',
+  };
 }
 
 function isoToday() {
@@ -240,7 +273,8 @@ function main() {
     process.stdout.write(
       'workflow:report — Work Packet 실행 evidence 를 수집해 Run Report 초안을 만든다 (evidence bundle, 게이트 아님).\n' +
         '필수: --packet <path>\n' +
-        '선택: --out <path> --docs <dir> --src <dir> --layout <path> --diff <name-status.txt> --review <path> --skip-tests --json --date YYYY-MM-DD --seq NNN\n',
+        '선택: --out <path> --docs <dir> --src <dir> --layout <path> --diff <name-status.txt> --review <path> --skip-tests --json --date YYYY-MM-DD --seq NNN\n' +
+        'lifecycle: readiness_applicable=false absorbed packet은 report를 만들지 않고 정상 no-report(exit 0)로 종료.\n',
     );
     return; // help 도 자연 종료(exit 0) — process.exit(0) 금지 계약(cli-stdout-flush.test.mjs)
   }
@@ -263,6 +297,23 @@ function main() {
   const { data: fm, body, hasFrontmatter, parseError } = splitFrontmatter(packetRaw);
   if (!hasFrontmatter) fail(`packet 에 frontmatter(---) 없음 — Work Packet 형식 아님: ${relToCwd(packetPath)}`);
   if (parseError) fail(`packet frontmatter YAML 파싱 실패: ${relToCwd(packetPath)} — ${parseError}`);
+  if (fm.readiness_applicable === false) {
+    if (!isNonApplicablePacket(fm)) {
+      fail(
+        `packet lifecycle sentinel 손상 — readiness_applicable=false 는 screen_lifecycle=absorbed, readiness_mode=null, target_screen/absorbed_into/readiness_source 문자열이 필요: ${relToCwd(packetPath)}`,
+      );
+    }
+    const envelope = renderNoReportEnvelope(fm);
+    if (flags.json) {
+      process.stdout.write(JSON.stringify(envelope, null, 2) + '\n');
+    } else {
+      process.stdout.write(
+        `workflow:report: no report for absorbed source ${fm.target_screen}; canonical screen is ${fm.absorbed_into} (normal stop, scope not auto-switched)\n`,
+      );
+    }
+    process.exitCode = 0;
+    return;
+  }
   for (const k of ['target_screen', 'readiness_mode', 'readiness_source']) {
     if (typeof fm[k] !== 'string' || fm[k].trim() === '') {
       fail(`packet frontmatter 에 ${k}(string) 없음 — Work Packet 형식 아님: ${relToCwd(packetPath)}`);

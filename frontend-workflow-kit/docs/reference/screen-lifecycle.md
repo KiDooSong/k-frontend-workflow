@@ -21,6 +21,8 @@ absorbed_at: 2026-07-15
 ```
 
 - `absorbed_into`는 source와 다른, 전역에서 하나뿐인 active canonical Screen ID여야 한다.
+- absorbed source 자신의 public Screen ID도 전역에서 하나뿐이어야 한다. 같은 ID의 absorbed/absorbed
+  또는 active/absorbed 선언이 공존하면 충돌한 모든 레코드를 invalid로 남긴다.
 - absorbed screen을 다시 가리키는 chain/cycle은 허용하지 않는다. 최종 active target을 직접 가리킨다.
 - `absorbed_at`은 선택이며, 존재하면 실제 달력 날짜인 `YYYY-MM-DD`다.
 - active ScreenSpec에 `absorbed_into`나 `absorbed_at`를 남기지 않는다.
@@ -35,6 +37,10 @@ ownership은 주장하지 않는다.
 분석기는 전체 ScreenSpec의 public Screen ID namespace에서 target을 해소한다. source/target
 identity가 canonical 문자열이 아니거나, target이 누락·중복·self-reference·absorbed 상태이면
 선언은 invalid다.
+
+absorbed source ID가 중복되면 path 순서에 따라 canonical target 하나를 고르지 않는다. 충돌한
+모든 source 레코드에 `ambiguous-absorption-source`를 기록해 `workflow-state`의 duplicate-key
+선택 결과와 무관하게 direct readiness가 fail-closed하도록 한다.
 
 Invalid 선언은 화면을 숨기지 않는다. 해당 ScreenSpec은 active 집합에 남고 lifecycle error가
 `workflow-state`에 기록되며 readiness는 `docs-only`, `allowed_paths: []`로 fail-closed한다.
@@ -56,9 +62,16 @@ Invalid 선언은 화면을 숨기지 않는다. 해당 ScreenSpec은 active 집
   target을 사용한다.
 - `workflow:packet`은 이 direct lookup을 손상된 입력이 아닌 정상 non-executable 결과로 보존하고,
   `workflow:run`은 `HALT_NOT_APPLICABLE`(exit 0)로 중단한다. 둘 다 canonical target을 안내만 하며
-  target으로 자동 전환하거나 같은 요청의 구현 범위를 넓히지 않는다.
+  target으로 자동 전환하거나 같은 요청의 구현 범위를 넓히지 않는다. JSON과 Markdown YAML은
+  모두 `readiness_mode: null`을 보존한다.
+- `workflow:report`에 non-executable packet을 직접 전달해도 손상된 Work Packet으로 취급하지 않는다.
+  evidence 수집과 Run Report 생성을 건너뛰고 `report_applicable: false`인 정상 no-report(exit 0)로
+  중단하며 canonical target을 안내만 한다.
 - shared surface membership, route/nav/doctor mapping, visual diagnostics와 current path ownership도
   같은 live-screen 판정을 사용한다.
+- visual component rule은 알려진 absorbed-only family에만 연결되면 제외한다. 반면 어떤 contract
+  family에도 없는 `Applies To Families` 값은 aggregate에서 `unknown-component-family` 경고로
+  표면화하고 기존 catalog 진단도 유지한다.
 
 Lifecycle marker가 없는 저장소에는 optional 키나 active 기본 필드를 추가하지 않으므로 기존
 state/inventory/readiness/generated-view bytes가 유지된다.

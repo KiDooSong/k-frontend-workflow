@@ -633,6 +633,50 @@ test('absorbed-only exception and family component rules are excluded from aggre
   );
 });
 
+test('unknown or case-mismatched component family references stay visible in aggregate diagnostics', () => {
+  withTree(
+    {
+      contract:
+        CONTRACT_HEADER +
+        familiesTable([
+          '| Auth Flow | AUTH-001 | AuthShell | - | - | - | - | draft | - |',
+        ]) +
+        componentsTable([
+          '| CaseLogo | AuthShell | auth flow | forbidden | shell | missing | - |',
+          '| GhostLogo | AuthShell | Missing Family | allowed | shell | out-of-scope | - |',
+        ]),
+      specs: [{ domain: 'auth', slug: 'login', screenId: 'AUTH-001', mapping: 'draft' }],
+      catalog: SIMPLE_CATALOG,
+    },
+    (docsDir) => {
+      const report = analyzeVisualConsistency({ docsDir });
+      const unknown = report.findings.filter(
+        (finding) => finding.rule === 'unknown-component-family',
+      );
+      assert.deepEqual(
+        unknown.map((finding) => [finding.component, finding.family]),
+        [
+          ['CaseLogo', 'auth flow'],
+          ['GhostLogo', 'Missing Family'],
+        ],
+      );
+      assert.ok(
+        report.findings.some(
+          (finding) =>
+            finding.rule === 'component-gap-candidate' && finding.component === 'CaseLogo',
+        ),
+      );
+      assert.ok(
+        report.findings.some(
+          (finding) =>
+            finding.rule === 'component-catalog-out-of-scope' &&
+            finding.component === 'GhostLogo',
+        ),
+      );
+    },
+  );
+});
+
 // --- 검사 8: copy drift advisory ------------------------------------------------
 
 test('Copy Keys 있는 화면의 hardcoded JSX 텍스트 → hardcoded-copy-candidate info', () => {

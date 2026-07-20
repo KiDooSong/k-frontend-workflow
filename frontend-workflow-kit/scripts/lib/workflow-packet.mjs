@@ -304,7 +304,9 @@ function renderFrontmatter(m) {
     `target_screen: ${q(m.target_screen)}`,
     `domain: ${q(m.domain || 'unknown')}`,
     `requested_mode: ${q(m.requested_mode)}`,
-    `readiness_mode: ${q(m.readiness_mode)}`,
+    m.readiness_applicable === false
+      ? 'readiness_mode: null'
+      : `readiness_mode: ${q(m.readiness_mode)}`,
     ...(m.readiness_applicable === false
       ? [
           'readiness_applicable: false',

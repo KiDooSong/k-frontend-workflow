@@ -143,3 +143,47 @@ test('--help 에 --layout <path> 가 노출된다', () => {
   assert.equal(r.code, 0);
   assert.match(r.stdout, /--layout <path>/, 'help text 에 --layout <path> 가 있어야 한다');
 });
+
+test('non-applicable packet is a lifecycle-aware no-report result instead of malformed input', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wf-report-absorbed-'));
+  const packet = path.join(dir, 'work-packet.md');
+  const out = path.join(dir, 'run-report.md');
+  fs.writeFileSync(
+    packet,
+    `---
+packet_id: "WP-OLD-AUTH-absorbed-001"
+packet_type: "work-packet"
+status: "draft"
+target_screen: "OLD-AUTH"
+domain: "auth"
+requested_mode: "docs-only"
+readiness_mode: null
+readiness_applicable: false
+screen_lifecycle: "absorbed"
+absorbed_into: "AUTH-NEW"
+readiness_source: "node scripts/readiness.mjs --screen OLD-AUTH --json"
+created_at: "2026-07-20"
+owner: "workflow:packet"
+generated_by: "workflow:packet"
+---
+
+# Non-executable Work Packet: OLD-AUTH → AUTH-NEW
+`,
+    'utf8',
+  );
+  try {
+    const r = run(REPORT_SCRIPT, ['--packet', packet, '--out', out, '--json']);
+    assert.equal(r.code, 0, r.stdout);
+    const envelope = JSON.parse(r.stdout);
+    assert.equal(envelope.report_applicable, false);
+    assert.equal(envelope.readiness_applicable, false);
+    assert.equal(envelope.screen_lifecycle, 'absorbed');
+    assert.equal(envelope.readiness_mode, null);
+    assert.equal(envelope.target_screen, 'OLD-AUTH');
+    assert.equal(envelope.absorbed_into, 'AUTH-NEW');
+    assert.match(envelope.next_action, /AUTH-NEW/);
+    assert.equal(fs.existsSync(out), false, 'non-applicable packet은 Run Report를 쓰지 않아야 한다');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

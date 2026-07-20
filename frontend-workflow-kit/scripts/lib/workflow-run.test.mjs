@@ -16,6 +16,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { splitFrontmatter } from './util.mjs';
 
 // 킷 루트: scripts/lib/ → scripts/ → kit-root.
 const KIT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -160,8 +161,17 @@ test('absorbed readiness is a normal non-executable packet/run halt with canonic
     assert.match(run.next_action, /AUTH-NEW/);
     assert.equal(fs.existsSync(path.join(out, 'run-report.md')), false);
     const packetMarkdown = fs.readFileSync(path.join(out, 'work-packet.md'), 'utf8');
+    const packetFrontmatter = splitFrontmatter(packetMarkdown);
+    assert.equal(packetFrontmatter.parseError, undefined);
+    assert.equal(packetFrontmatter.data.readiness_mode, null);
+    assert.equal(packetFrontmatter.data.readiness_applicable, false);
     assert.match(packetMarkdown, /Non-executable Work Packet: OLD-AUTH → AUTH-NEW/);
     assert.match(packetMarkdown, /자동 전환해 실행하지 말고/);
+    const statusMarkdown = fs.readFileSync(out + '.md', 'utf8');
+    const statusFrontmatter = splitFrontmatter(statusMarkdown);
+    assert.equal(statusFrontmatter.parseError, undefined);
+    assert.equal(statusFrontmatter.data.readiness_mode, null);
+    assert.equal(statusFrontmatter.data.readiness_applicable, false);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

@@ -355,6 +355,7 @@ export function analyzeVisualConsistency({ docsDir, srcDir, contractPath, domain
   //     콤마 목록은 bootstrap --screen 과 scope 를 맞추기 위한 확장이다 — 단일 ID 동작은 불변.
   const screenFilterIds = splitScreenIds(screen);
   const screenFilter = screenFilterIds.length ? new Set(screenFilterIds) : null;
+  const allFamilyNames = new Set(contract.families.map((family) => family.family));
   let families = contract.families
     .map((family) => ({
       ...family,
@@ -425,11 +426,31 @@ export function analyzeVisualConsistency({ docsDir, srcDir, contractPath, domain
 
   // --- 검사 4: Shared Component Rules ↔ component catalog (component-gap 후보 보고만).
   const catalogFile = path.join(docsDir, 'design', 'component-catalog.md');
-  const componentsInScope = contract.components.filter(
-    (c) =>
-      c.applies_to_families.length === 0 ||
-      c.applies_to_families.some((fam) => selectedFamilyNames.has(fam)),
-  );
+  const aggregateScope = !screenFilter && !domain;
+  const componentsInScope = contract.components.filter((c) => {
+    if (c.applies_to_families.length === 0) return true;
+    if (c.applies_to_families.some((fam) => selectedFamilyNames.has(fam))) return true;
+    // Known-but-unselected families include absorbed-only families and explicit screen/domain
+    // exclusions. Unknown references are malformed contract evidence, so an aggregate run must
+    // keep the component in catalog diagnostics instead of silently filtering it out.
+    return aggregateScope && c.applies_to_families.some((fam) => !allFamilyNames.has(fam));
+  });
+  for (const c of componentsInScope) {
+    const unknownFamilies = [
+      ...new Set(c.applies_to_families.filter((fam) => !allFamilyNames.has(fam))),
+    ].sort(compareText);
+    for (const family of unknownFamilies) {
+      findings.push({
+        severity: 'warning',
+        rule: 'unknown-component-family',
+        component: c.component,
+        family,
+        message:
+          `contract 의 shared component '${c.component}' 가 존재하지 않는 family '${family}' 를 참조함 — ` +
+          '대소문자/오타 또는 Screen Families 누락을 확인하세요 (aggregate catalog 진단은 유지).',
+      });
+    }
+  }
   if (!exists(catalogFile)) {
     skippedChecks.push({
       rule: 'component-gap-candidate',

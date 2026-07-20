@@ -124,6 +124,47 @@ test('duplicate and noncanonical target identities are rejected in the public ke
   assert.ok(codes(noncanonical.bySpec.get(noncanonicalSource)).includes('noncanonical-absorption-target'));
 });
 
+test('duplicate absorbed source identities with different targets fail closed for every source record', () => {
+  const targetA = fakeSpec('AUTH-A');
+  const targetB = fakeSpec('AUTH-B');
+  const sourceA = fakeSpec(
+    'OLD-AUTH',
+    { screen_lifecycle: 'absorbed', absorbed_into: 'AUTH-A' },
+    'old-auth-a',
+  );
+  const sourceB = fakeSpec(
+    'OLD-AUTH',
+    { screen_lifecycle: 'absorbed', absorbed_into: 'AUTH-B' },
+    'old-auth-b',
+  );
+  const result = analyze([sourceA, sourceB, targetA, targetB]);
+
+  for (const source of [sourceA, sourceB]) {
+    assert.ok(codes(result.bySpec.get(source)).includes('ambiguous-absorption-source'));
+    assert.equal(result.bySpec.get(source).valid, false);
+    assert.ok(result.liveSpecs.includes(source));
+  }
+  assert.equal(result.absorbedRecords.length, 0);
+});
+
+test('active and absorbed records sharing one source identity both fail closed', () => {
+  const target = fakeSpec('AUTH-A');
+  const active = fakeSpec('OLD-AUTH', {}, 'old-auth-active');
+  const absorbed = fakeSpec(
+    'OLD-AUTH',
+    { screen_lifecycle: 'absorbed', absorbed_into: 'AUTH-A' },
+    'old-auth-absorbed',
+  );
+  const result = analyze([active, absorbed, target]);
+
+  for (const source of [active, absorbed]) {
+    assert.ok(codes(result.bySpec.get(source)).includes('ambiguous-absorption-source'));
+    assert.equal(result.bySpec.get(source).valid, false);
+    assert.ok(result.liveSpecs.includes(source));
+  }
+  assert.equal(result.absorbedRecords.length, 0);
+});
+
 test('absorbed target chains and cycles are rejected deterministically', () => {
   const active = fakeSpec('C');
   const middle = fakeSpec('B', { screen_lifecycle: 'absorbed', absorbed_into: 'C' });
@@ -176,8 +217,7 @@ test('prototype-named canonical Screen IDs are handled as ordinary Map keys', ()
   assert.deepEqual(result.liveSpecs, [target]);
 });
 
-function writeScreen(docsDir, id, frontmatter = {}, body = '') {
-  const slug = id.toLowerCase();
+function writeScreenAt(docsDir, slug, id, frontmatter = {}, body = '') {
   const dir = path.join(docsDir, 'domains', 'auth', 'screens', slug);
   fs.mkdirSync(dir, { recursive: true });
   const fm = {
@@ -193,6 +233,10 @@ function writeScreen(docsDir, id, frontmatter = {}, body = '') {
     .map(([key, value]) => `${key}: ${value}`)
     .join('\n');
   fs.writeFileSync(path.join(dir, 'screen-spec.md'), `---\n${yaml}\n---\n${body}`, 'utf8');
+}
+
+function writeScreen(docsDir, id, frontmatter = {}, body = '') {
+  writeScreenAt(docsDir, id.toLowerCase(), id, frontmatter, body);
 }
 
 const TEST_LAYOUT = {
@@ -362,6 +406,97 @@ test('malformed absorption stays in state and readiness fails closed with no all
   assert.equal(readiness.BROKEN.readiness_mode, 'docs-only');
   assert.deepEqual(readiness.BROKEN.allowed_paths, []);
   assert.equal(readiness.BROKEN.blocking[0].invalid_screen_lifecycle.code, 'missing-absorption-target');
+});
+
+test('workflow state does not select one redirect from duplicate absorbed source identities', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'screen-lifecycle-duplicate-absorbed-'));
+  const docsDir = path.join(root, 'docs', 'frontend-workflow');
+  writeScreen(docsDir, 'AUTH-A');
+  writeScreen(docsDir, 'AUTH-B');
+  writeScreenAt(docsDir, 'old-auth-a', 'OLD-AUTH', {
+    screen_lifecycle: 'absorbed',
+    absorbed_into: 'AUTH-A',
+  });
+  writeScreenAt(docsDir, 'old-auth-b', 'OLD-AUTH', {
+    screen_lifecycle: 'absorbed',
+    absorbed_into: 'AUTH-B',
+  });
+
+  const { state } = buildState({
+    docsDir,
+    srcDir: null,
+    projectRoot: root,
+    date: '2026-07-20',
+    layout: TEST_LAYOUT,
+  });
+  assert.equal(state.absorbed_screens, undefined);
+  assert.ok(
+    state.screens['OLD-AUTH'].derived.lifecycle_errors.some(
+      (error) => error.code === 'ambiguous-absorption-source',
+    ),
+  );
+  assert.deepEqual(
+    state.screens['OLD-AUTH'].derived.lifecycle_errors.find(
+      (error) => error.code === 'ambiguous-absorption-source',
+    ).locations,
+    [
+      'domains/auth/screens/old-auth-a/screen-spec.md',
+      'domains/auth/screens/old-auth-b/screen-spec.md',
+    ],
+  );
+  const readiness = computeReadiness({
+    state,
+    policy: TEST_POLICY,
+    ci: {},
+    manifest: {},
+    layout: TEST_LAYOUT,
+    screenOnlyId: 'OLD-AUTH',
+  });
+  assert.notEqual(readiness['OLD-AUTH'].readiness_applicable, false);
+  assert.deepEqual(readiness['OLD-AUTH'].allowed_paths, []);
+  assert.equal(
+    readiness['OLD-AUTH'].blocking[0].invalid_screen_lifecycle.code,
+    'ambiguous-absorption-source',
+  );
+});
+
+test('workflow state fails closed for an active and absorbed source identity collision', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'screen-lifecycle-active-absorbed-'));
+  const docsDir = path.join(root, 'docs', 'frontend-workflow');
+  writeScreen(docsDir, 'AUTH-A');
+  writeScreenAt(docsDir, 'old-auth-active', 'OLD-AUTH');
+  writeScreenAt(docsDir, 'old-auth-absorbed', 'OLD-AUTH', {
+    screen_lifecycle: 'absorbed',
+    absorbed_into: 'AUTH-A',
+  });
+
+  const { state } = buildState({
+    docsDir,
+    srcDir: null,
+    projectRoot: root,
+    date: '2026-07-20',
+    layout: TEST_LAYOUT,
+  });
+  assert.equal(state.absorbed_screens, undefined);
+  assert.ok(
+    state.screens['OLD-AUTH'].derived.lifecycle_errors.some(
+      (error) => error.code === 'ambiguous-absorption-source',
+    ),
+  );
+  const readiness = computeReadiness({
+    state,
+    policy: TEST_POLICY,
+    ci: {},
+    manifest: {},
+    layout: TEST_LAYOUT,
+    screenOnlyId: 'OLD-AUTH',
+  });
+  assert.notEqual(readiness['OLD-AUTH'].readiness_applicable, false);
+  assert.deepEqual(readiness['OLD-AUTH'].allowed_paths, []);
+  assert.equal(
+    readiness['OLD-AUTH'].blocking[0].invalid_screen_lifecycle.code,
+    'ambiguous-absorption-source',
+  );
 });
 
 test('no-marker state omits lifecycle output keys', () => {

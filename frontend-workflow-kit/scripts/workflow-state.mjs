@@ -123,6 +123,7 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
         message: issue.message,
         ...(issue.field ? { field: issue.field } : {}),
         ...(issue.absorbed_into ? { absorbed_into: issue.absorbed_into } : {}),
+        ...(issue.locations ? { locations: issue.locations } : {}),
         source: lifecycleRecord.source,
       }));
     }

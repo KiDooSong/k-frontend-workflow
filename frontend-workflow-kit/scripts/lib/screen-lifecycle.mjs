@@ -91,6 +91,25 @@ export function analyzeScreenLifecycles({ specs, docsDir }) {
     bySpec.set(record.spec, record);
   }
 
+  // An absorbed source is a direct-lookup redirect key, so that public key must identify exactly
+  // one source record. Mark every colliding record (including an active/absorbed collision) invalid:
+  // workflow-state intentionally collapses duplicate public keys, and whichever record wins that
+  // deterministic selection must retain the lifecycle blocker instead of exposing one redirect.
+  for (const [publicKey, sources] of byPublicKey) {
+    if (sources.length <= 1 || !sources.some((source) => source.lifecycle === 'absorbed')) continue;
+    const locations = sources.map((source) => source.source.path).sort();
+    for (const source of sources) {
+      source.errors.push(
+        lifecycleError(
+          'ambiguous-absorption-source',
+          `absorbed source is duplicated in the public Screen ID namespace: ${String(publicKey)}`,
+          3,
+          { locations },
+        ),
+      );
+    }
+  }
+
   for (const record of records) {
     const fm = record.spec.frontmatter || {};
     const lifecycle = record.lifecycle;
