@@ -841,6 +841,160 @@ test('v2 hard: evidence bullet index 는 1-based — /00 은 문법 위반 (RR-S
   assert.ok(hasCode(r.errors, 'RR-SCHEMA-015'));
 });
 
+test('v2 hard: frontmatter envelope/top-level type 오류도 v1 downgrade 없이 검사 12 hard error', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'recon-fm-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const writeRegister = (name, content) => {
+    const p = path.join(root, name);
+    fs.writeFileSync(p, content, 'utf8');
+    return p;
+  };
+  const summary = [...SUMMARY_HEADER, ...DEFAULT_SUMMARY_ROWS].join('\n');
+
+  // (a) 닫는 --- 누락 — 전체 원문이 body 로 흘러 Summary 표만 v1 검사되던 경로.
+  const noClose = parseReconciliationRegister(
+    writeRegister(
+      'no-close.md',
+      ['---', 'reconciliation_contract: 2', 'review_profile: reconcile-stage04-v1', '', summary, ''].join('\n'),
+    ),
+  );
+  assert.ok(noClose.fmStructuralError?.includes('종료 구분자'));
+
+  // (b) top-level sequence — v2 선언이 리스트 항목 안에 "숨는" 경우.
+  const sequence = parseReconciliationRegister(
+    writeRegister(
+      'sequence.md',
+      ['---', '- reconciliation_contract: 2', '- review_profile: reconcile-stage04-v1', '---', '', summary, ''].join('\n'),
+    ),
+  );
+  assert.ok(sequence.fmStructuralError?.includes('mapping 이 아님'));
+
+  // (c) top-level scalar.
+  const scalar = parseReconciliationRegister(
+    writeRegister('scalar.md', ['---', 'just a string', '---', '', summary, ''].join('\n')),
+  );
+  assert.ok(scalar.fmStructuralError?.includes('mapping 이 아님'));
+
+  // 세 경우 모두 v1 lifecycle 검사가 hard error 로 fail-closed 한다.
+  for (const register of [noClose, sequence, scalar]) {
+    const v1 = validateReconciliationRegister({
+      register,
+      inputArtifacts: [],
+      registerFile: path.join(root, 'x.md'),
+    });
+    assert.ok(v1.errors.some((e) => e.message.includes('frontmatter 구조 오류')));
+  }
+
+  // (d) 정상 mapping 은 구조 오류가 아니다.
+  const ok = parseReconciliationRegister(
+    writeRegister('ok.md', ['---', 'title: Register', '---', '', summary, ''].join('\n')),
+  );
+  assert.equal(ok.fmStructuralError, null);
+  // frontmatter 가 아예 없는(--- 로 시작하지 않는) legacy 파일은 기존 v1 동작 유지.
+  const bare = parseReconciliationRegister(writeRegister('bare.md', `${summary}\n`));
+  assert.equal(bare.fmStructuralError, null);
+  assert.equal(bare.fmParseError, null);
+});
+
+test('v2 hard: canonical 위치 밖의 canonical-looking 표로는 child 가 해소되지 않음', (t) => {
+  // (a) Notes 에 full decision signature(ID/Status/Blocking Mode) 예시 표 — decision family 아님.
+  const decisionWithNotesTable =
+    DECISION_DOC +
+    '\n## Notes\n\n| ID | Status | Blocking Mode |\n|---|---|---|\n| D-999 | open | final-fixture-ui |\n';
+  const a = runV2(t, {
+    files: { 'global/open-decisions.md': decisionWithNotesTable },
+    itemRows: [
+      ...DEFAULT_ITEM_ROWS.slice(0, 3),
+      DEFAULT_ITEM_ROWS[3].replace('decision:D-204@open-decision-register', 'decision:D-999@open-decision-register'),
+    ],
+    summaryRows: [
+      DEFAULT_SUMMARY_ROWS[0],
+      DEFAULT_SUMMARY_ROWS[1].replace('decision:D-204@open-decision-register', 'decision:D-999@open-decision-register'),
+    ],
+  });
+  assert.ok(hasCode(a.errors, 'RR-REF-008'));
+  assert.equal(hasCode(a.errors, 'RR-REF-009'), false);
+
+  // (b) artifact_type=conflicts 문서의 Notes ID+Status 표 — preamble 이 아니므로 conflict family 아님.
+  const conflictsWithNotesTable =
+    CONFLICTS_DOC + '\n## Notes\n\n| ID | Status |\n|---|---|\n| C-999 | open |\n';
+  const b = runV2(t, {
+    files: { 'global/conflicts.md': conflictsWithNotesTable },
+    itemRows: [
+      ...DEFAULT_ITEM_ROWS.slice(0, 2),
+      DEFAULT_ITEM_ROWS[2].replace('conflict:C-001@conflicts', 'conflict:C-999@conflicts'),
+      DEFAULT_ITEM_ROWS[3],
+    ],
+    summaryRows: [
+      DEFAULT_SUMMARY_ROWS[0],
+      DEFAULT_SUMMARY_ROWS[1].replace('conflict:C-001@conflicts', 'conflict:C-999@conflicts'),
+    ],
+  });
+  assert.ok(hasCode(b.errors, 'RR-REF-008'));
+
+  // (c) gap register 의 Notes G-xxx 표 — artifact_type fallback 은 h1 직속(preamble)에만 적용.
+  const gapWithNotesTable = GAP_DOC + '\n## Notes\n\n| ID | Status |\n|---|---|\n| G-777 | open |\n';
+  const c = runV2(t, {
+    files: { 'global/component-gap-register.md': gapWithNotesTable },
+    itemRows: [
+      DEFAULT_ITEM_ROWS[0],
+      DEFAULT_ITEM_ROWS[1].replace('gap:G-001@component-gap-register', 'gap:G-777@component-gap-register'),
+      ...DEFAULT_ITEM_ROWS.slice(2),
+    ],
+    summaryRows: [
+      DEFAULT_SUMMARY_ROWS[0].replace('gap:G-001@component-gap-register', 'gap:G-777@component-gap-register'),
+      DEFAULT_SUMMARY_ROWS[1],
+    ],
+  });
+  assert.ok(hasCode(c.errors, 'RR-REF-008'));
+
+  // (d) `## Open Decisions` 섹션 안이라도 fenced code block 의 full-signature 표는 후보가 아니다.
+  const decisionWithFencedTable = DECISION_DOC.replace(
+    '| D-204 | 로그인 성공 후 이동 위치 | home / returnTo | final-fixture-ui | PM | open |',
+    '| D-204 | 로그인 성공 후 이동 위치 | home / returnTo | final-fixture-ui | PM | open |\n\n```md\n| ID | Status | Blocking Mode |\n|---|---|---|\n| D-888 | open | final-fixture-ui |\n```',
+  );
+  const d = runV2(t, {
+    files: { 'global/open-decisions.md': decisionWithFencedTable },
+    itemRows: [
+      ...DEFAULT_ITEM_ROWS.slice(0, 3),
+      DEFAULT_ITEM_ROWS[3].replace('decision:D-204@open-decision-register', 'decision:D-888@open-decision-register'),
+    ],
+    summaryRows: [
+      DEFAULT_SUMMARY_ROWS[0],
+      DEFAULT_SUMMARY_ROWS[1].replace('decision:D-204@open-decision-register', 'decision:D-888@open-decision-register'),
+    ],
+  });
+  assert.ok(hasCode(d.errors, 'RR-REF-008'));
+});
+
+test('v2 hard: Reconciliation Items 섹션의 두 번째 표는 검증 우회가 아니라 RR-SCHEMA-017', (t) => {
+  // 두 번째 full-signature 표에 금지 effect(resolve)와 미등록 item 을 숨긴다 — 첫 표만 읽으면 전부 invisible.
+  const r = runV2(t, {
+    itemRows: [
+      ...DEFAULT_ITEM_ROWS,
+      '',
+      '추가 항목:',
+      '',
+      ...ITEMS_HEADER,
+      '| IN-20260720-meeting-001 | 03 | decision-answer | resolves-decision | resolve | decision:D-204@open-decision-register | input:IN-20260720-meeting-001#extracted-facts | inherit | statement | inherit |',
+    ],
+  });
+  assert.ok(hasCode(r.errors, 'RR-SCHEMA-017'));
+
+  // fenced code block 안의 예시 표는 개수에 세지 않는다 — 정상 register 는 계속 통과.
+  const fenced = runV2(t, {
+    itemRows: [
+      ...DEFAULT_ITEM_ROWS,
+      '',
+      '```md',
+      ...ITEMS_HEADER,
+      '| {IN-...} | {01} | {basis} | {classification} | {effect} | {target} | {evidence} | {ref} | {unit} | {at} |',
+      '```',
+    ],
+  });
+  assert.deepEqual(messages(fenced.errors), []);
+});
+
 // ── warning-only ─────────────────────────────────────────────────────────────
 
 test('v2 warning: annotation·Result 어휘·권고 조합·bullet index·row-key·n/a (에러 아님)', (t) => {

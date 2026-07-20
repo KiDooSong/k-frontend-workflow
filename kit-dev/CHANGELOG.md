@@ -38,6 +38,13 @@
 - 하지 않은 것(설계 §14): 검사 11 `captured_at` RFC3339 hard 승격과 figma-component-mapping `M-xxx`/
   `## Mapping Provenance`(202-B), 자연어 routing heuristic·stale Result warning(202-C), CI required check
   승격, 새 readiness fact/implementation mode/artifact axis.
+- 2차 재리뷰 후속으로 남은 우회 경로 3건을 닫았다: ① frontmatter envelope 손상(닫는 `---` 누락)과
+  top-level non-mapping(sequence/scalar/null)도 YAML 예외와 동일하게 검사 12 항상-에러(`---` 로 시작하지
+  않는 frontmatter-없는 legacy 파일만 v1 유지), ② child row canonical 판정을 "위치+signature AND" 로
+  좁힘 — decision 은 `## Open Decisions` 의 ID+Status+Blocking Mode 첫 표만, conflicts/gap 의
+  `artifact_type` fallback 은 h1 직속(preamble) 표로 한정, fenced code block 내부 표는 후보/개수에서 제외,
+  ③ `## Reconciliation Items` 섹션의 표는 정확히 1개(RR-SCHEMA-017) — 두 번째 표에 숨은 effect 행이
+  검증을 벗어나는 경로 차단.
 - 재리뷰 후속으로 validator fail-open 5건을 fail-closed 로 닫았다: ① register frontmatter YAML 파싱
   실패는 v1/v2 공통 검사 12 항상-에러(빈 fm 이 contract 판정을 v1 로 기울여 v2 검사를 조용히 끄는 경로
   차단), ② reject 의 `input:` target 은 자기 Input ID 만 허용(RR-REF-011), ③ D-/C-/U-/G- child row 해소를

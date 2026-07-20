@@ -36,6 +36,7 @@ import {
   resolveChildRow,
   bodyHasToken,
   slugifySectionTitle,
+  stripFencedCodeBlocks,
 } from './reconciliation-target-index.mjs';
 
 export const RECONCILIATION_CONTRACT_V2 = 2;
@@ -257,17 +258,26 @@ function splitRefList(cell) {
 // ── items 표 파싱 ─────────────────────────────────────────────────────────────
 
 // register 본문에서 `## Reconciliation Items` 표를 파싱한다.
-//   { sectionExists, table, missingCols, rows }
-//   rows: [{ inputId, item, basis, classification, effect, target, evidence, sourceRef, sourceUnit, capturedAt, line }]
+//   { sectionExists, tableCount, table, missingCols, rows }
+//   rows: [{ inputId, item, basis, classification, effect, target, evidence, sourceRef, sourceUnit, capturedAt }]
+// 섹션의 canonical 표는 **정확히 1개**다 — 두 번째 표(중복 full-signature 든, header 가 어긋난
+// 추가 표든)에 담긴 effect 행은 첫 표만 읽는 파서에서 통째로 검증을 벗어나므로, 표 개수 자체를
+// 계약으로 노출하고(validator 가 RR-SCHEMA-017 로 fail-closed) 행은 단일 표일 때만 파싱한다.
+// fenced code block 안의 예시 표는 개수/행 어느 쪽에도 세지 않는다.
 export function parseReconciliationItems(body) {
   const sections = getSections(String(body || ''));
   const sectionText = sections[ITEMS_SECTION_KEY];
   if (sectionText === undefined) {
-    return { sectionExists: false, table: null, missingCols: [], rows: [] };
+    return { sectionExists: false, tableCount: 0, table: null, missingCols: [], rows: [] };
   }
-  const tables = parseTables(sectionText);
-  const table = tables.length ? tables[0] : null;
-  if (!table) return { sectionExists: true, table: null, missingCols: [], rows: [] };
+  const tables = parseTables(stripFencedCodeBlocks(sectionText));
+  if (tables.length === 0) {
+    return { sectionExists: true, tableCount: 0, table: null, missingCols: [], rows: [] };
+  }
+  const table = tables[0];
+  if (tables.length > 1) {
+    return { sectionExists: true, tableCount: tables.length, table, missingCols: [], rows: [] };
+  }
   const missingCols = REQUIRED_ITEM_COLS.filter((c) => !hasHeader(table.headers, c));
   const rows = [];
   for (const r of table.rows) {
@@ -286,7 +296,7 @@ export function parseReconciliationItems(body) {
     const allEmpty = Object.values(row).every((v) => v === '');
     if (!allEmpty) rows.push(row);
   }
-  return { sectionExists: true, table, missingCols, rows };
+  return { sectionExists: true, tableCount: 1, table, missingCols, rows };
 }
 
 // ── routing matrix (설계 §6) ──────────────────────────────────────────────────
@@ -405,10 +415,17 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
         REQUIRED_ITEM_COLS.join(' | ') +
         ' |)를 두세요 (입력 전이면 헤더만)',
     );
+  } else if (items.tableCount > 1) {
+    // 두 번째 표의 행은 어떤 검사도 받지 않고 "기록된 것처럼" 보이게 된다 — canonical detail 이
+    // Items 라는 계약에서 이것은 검증 우회 경로이므로 개수 자체를 hard 로 막는다.
+    add(
+      `RR-SCHEMA-017: Reconciliation Items 섹션에 표가 ${items.tableCount}개 — canonical 10컬럼 표 1개만 두세요 (추가 행은 같은 표에 이어 쓰고, 예시는 code fence 로 감싸세요)`,
+    );
   } else if (items.missingCols.length) {
     add(`RR-SCHEMA-005: Reconciliation Items 표 필수 컬럼 누락: ${items.missingCols.join(', ')}`);
   }
-  const itemRowsUsable = items.sectionExists && items.table && items.missingCols.length === 0;
+  const itemRowsUsable =
+    items.sectionExists && items.table && items.tableCount === 1 && items.missingCols.length === 0;
 
   // --- summary 행 분류: structured vs legacy (structured_since 기준, 설계 §5.1·§16) ---
   const summaryByInput = new Map();

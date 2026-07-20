@@ -14,7 +14,7 @@
 // 이 모듈은 순수하다 — { errors:[{file,message}], warnings:[{file,message}] } 를 반환하고
 // file 은 항상 절대경로다. validate.mjs 가 add()/warn() 으로 상대화한다.
 // 표 파싱은 spec.mjs 의 parseTable 을 재사용한다(register 는 본문의 첫 마크다운 표).
-import { splitFrontmatter, readFileSafe, exists } from './util.mjs';
+import { splitFrontmatter, readFileSafe, exists, yamlParse } from './util.mjs';
 import { parseTable, hasHeader } from './spec.mjs';
 
 // reconcile 행위의 라이프사이클. 자식 항목 rollup 도, 입력 frontmatter 의 status 도 아니다.
@@ -43,19 +43,48 @@ function cell(row, name) {
 }
 
 // register 파일을 파싱한다.
-//   { exists, table, rows, fm, body, fmParseError }
+//   { exists, table, rows, fm, body, fmParseError, fmStructuralError }
 //   - exists=false 면 검사 12 는 NO-OP (초기/선택적 도입 — input-reconciliation.md "초기에는 hard fail 이 아니라").
 //   - rows: [{ inputId, source, classification, reconcileStatus, result, touched, created, supersedes }]
 //     created(Touched/Created Items)는 원문 문자열 그대로 — HARD RULE 2 에 따라 주석을 파싱하지 않는다.
 //   - fm/body: Reconciliation Contract 버전 판정(reconciliation_contract 필드)과 v2 의
 //     `## Reconciliation Items` 표 파싱에 쓴다(reconciliation-items.mjs). v1 검사는 둘을 읽지 않는다.
-//   - fmParseError: frontmatter YAML 파싱 실패 사유. 이때 fm 은 빈 객체가 되므로 contract 판정이
-//     v1 로 기울어 v2 검사가 통째로 꺼진다 — 판정 전에 fail-closed 해야 하는 구조 결함 신호다.
+//   - fmParseError: frontmatter YAML 파싱 실패 사유(예외). fmStructuralError: envelope 손상(닫는 ---
+//     누락) 또는 top-level 이 mapping 이 아님(sequence/scalar/null). 어느 쪽이든 fm 이 빈/무의미한
+//     값으로 떨어져 contract 판정이 v1 로 기울고 v2 검사가 통째로 꺼진다 — 판정 전에 fail-closed
+//     해야 하는 구조 결함 신호다. `---` 로 시작하지 않는 파일(frontmatter 자체가 없음)만 기존
+//     v1 동작을 유지한다.
 export function parseReconciliationRegister(registerFile) {
   if (!registerFile || !exists(registerFile)) {
-    return { exists: false, table: null, rows: [], fm: {}, body: '', fmParseError: null };
+    return { exists: false, table: null, rows: [], fm: {}, body: '', fmParseError: null, fmStructuralError: null };
   }
-  const { data: fm, body, parseError: fmParseError } = splitFrontmatter(readFileSafe(registerFile));
+  const raw = readFileSafe(registerFile);
+  const { data, body, hasFrontmatter, parseError: fmParseError } = splitFrontmatter(raw);
+  let fm = data;
+  let fmStructuralError = null;
+  const startsWithMarker = /^﻿?---\r?\n/.test(raw ?? '');
+  if (startsWithMarker && !hasFrontmatter) {
+    // 시작 구분자는 있는데 splitFrontmatter 가 envelope 을 못 닫음 — 전체 원문이 body 로 흘러
+    // Summary 표만 파싱되고 frontmatter(=contract 선언)는 통째로 증발하는 경로.
+    fmStructuralError = 'frontmatter 종료 구분자(---) 누락 — envelope 손상';
+  } else if (hasFrontmatter && !fmParseError) {
+    // splitFrontmatter 는 non-mapping(top-level sequence/scalar)과 null 을 그대로/빈객체로 돌려주므로
+    // 원문 블록을 다시 파싱해 top-level 이 plain mapping 인지 명시 검증한다. sequence 안에
+    // `- reconciliation_contract: 2` 처럼 v2 선언이 "숨는" 경우가 v1 downgrade 로 새는 것을 막는다.
+    const block = /^﻿?---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(raw)?.[1] ?? '';
+    let parsed = null;
+    try {
+      parsed = yamlParse(block);
+    } catch {
+      // splitFrontmatter 의 fmParseError 경로가 이미 다룸 — 여기 도달하지 않는 것이 정상.
+    }
+    const isMapping = parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed);
+    if (!isMapping) {
+      const kind = parsed === null ? 'null/빈값' : Array.isArray(parsed) ? 'sequence' : typeof parsed;
+      fmStructuralError = `frontmatter top-level 이 mapping 이 아님 (${kind})`;
+      fm = {};
+    }
+  }
   const table = parseTable(body); // register 는 본문의 첫 마크다운 표
   const rows = [];
   if (table) {
@@ -72,7 +101,15 @@ export function parseReconciliationRegister(registerFile) {
       });
     }
   }
-  return { exists: true, table, rows, fm: fm || {}, body, fmParseError: fmParseError || null };
+  return {
+    exists: true,
+    table,
+    rows,
+    fm: fm || {},
+    body,
+    fmParseError: fmParseError || null,
+    fmStructuralError,
+  };
 }
 
 // register 검증(검사 12).
@@ -103,6 +140,14 @@ export function validateReconciliationRegister({ register, inputArtifacts = [], 
     add(
       registerFile,
       `register frontmatter YAML 파싱 실패: ${register.fmParseError} → 해소: frontmatter 를 고치세요 (파싱 실패 상태에서는 reconciliation_contract 판정이 불가해 v2 검사가 비활성화됩니다)`,
+    );
+  }
+  // envelope 손상(닫는 --- 누락)·top-level non-mapping 도 같은 계열의 downgrade 경로다 — YAML 예외는
+  // 없지만 contract 선언이 body 로 새거나(sequence 항목 안에 숨음) 통째로 증발한다. 항상 에러.
+  if (register.fmStructuralError) {
+    add(
+      registerFile,
+      `register frontmatter 구조 오류: ${register.fmStructuralError} → 해소: '---' 로 감싼 top-level mapping frontmatter 로 고치세요 (이 상태에서는 reconciliation_contract 판정이 불가해 v2 검사가 비활성화됩니다)`,
     );
   }
 

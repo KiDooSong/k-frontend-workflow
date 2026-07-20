@@ -27,29 +27,59 @@ export function slugifySectionTitle(title) {
     .replace(/^-+|-+$/g, '');
 }
 
-// child row 가족 판정 — canonical 신호만 인정한다.
-//   1) canonical 섹션 slug: open-decisions / unknowns / conflicts / gaps·component-gap-register
-//   2) 표 signature: Open Decisions(ID+Blocking Mode) / Unknowns(ID+Question)
-//   3) 문서 artifact_type: conflicts / component-gap-register (h1 직속 표를 가진 global register)
-// 어느 신호에도 안 걸리는 ID 표(Notes 참조 표 등)는 family=null → child 후보로 등록하지 않는다.
-const SECTION_FAMILY = {
-  'open-decisions': 'decision',
-  unknowns: 'unknown',
-  conflicts: 'conflict',
-  gaps: 'gap',
-  'component-gap-register': 'gap',
-};
-const ARTIFACT_TYPE_FAMILY = {
-  conflicts: 'conflict',
-  'component-gap-register': 'gap',
+// child row 가족 판정 — canonical **위치 + 표 signature 의 AND** 만 인정한다.
+// 섹션 slug 하나로 섹션 내 모든 표를 신뢰하거나, signature 만으로 임의 섹션(Notes 등)의 표를
+// 신뢰하면, canonical 처럼 생긴 예시/참조 표가 실제 target 으로 해소되는 fail-open 이 된다.
+//   decision : `## Open Decisions` 섹션 안에서 ID+Status+Blocking Mode signature 를 만족하는 첫 표
+//              (parseOpenDecisions 의 canonical 선택 규칙과 동일).
+//   unknown  : `## Unknowns` 섹션 안의 ID+Question signature 첫 표.
+//   conflict : `## Conflicts` 섹션, 또는 artifact_type=conflicts 문서의 h1 직속(preamble) —
+//              ID+Status signature 첫 표.
+//   gap      : `## Gaps`/`## Component Gap Register` 섹션, 또는 artifact_type=component-gap-register
+//              문서의 h1 직속(preamble) — ID+Status signature 첫 표.
+// canonical 위치가 아니거나 signature 가 어긋나는 ID 표(Notes 참조 표·예시 표)는 후보가 아니다.
+const FAMILY_SIGNATURES = {
+  decision: ['ID', 'Status', 'Blocking Mode'],
+  unknown: ['ID', 'Question'],
+  conflict: ['ID', 'Status'],
+  gap: ['ID', 'Status'],
 };
 
-function tableFamily({ sectionSlug, table, artifactType }) {
-  if (SECTION_FAMILY[sectionSlug]) return SECTION_FAMILY[sectionSlug];
-  if (hasHeader(table.headers, 'Blocking Mode')) return 'decision';
-  if (hasHeader(table.headers, 'Question')) return 'unknown';
-  if (ARTIFACT_TYPE_FAMILY[artifactType]) return ARTIFACT_TYPE_FAMILY[artifactType];
-  return null;
+// (sectionSlug, artifactType) → 이 위치가 canonical 홈인 family 목록.
+function canonicalFamiliesAt(sectionSlug, artifactType) {
+  const families = [];
+  if (sectionSlug === 'open-decisions') families.push('decision');
+  if (sectionSlug === 'unknowns') families.push('unknown');
+  if (sectionSlug === 'conflicts') families.push('conflict');
+  if (sectionSlug === 'gaps' || sectionSlug === 'component-gap-register') families.push('gap');
+  if (sectionSlug === '') {
+    // h1 직속 표를 가진 global register 템플릿 — artifact_type 으로만, preamble 로만 한정한다.
+    if (artifactType === 'conflicts') families.push('conflict');
+    if (artifactType === 'component-gap-register') families.push('gap');
+  }
+  return families;
+}
+
+// fenced code block(``` / ~~~) 내부를 제거한다 — parseTables 는 fence 를 모르므로 코드 블록 안의
+// canonical-looking 예시 표가 child 후보/표 개수 판정에 끼는 것을 여기서 차단한다.
+export function stripFencedCodeBlocks(text) {
+  const out = [];
+  let fence = null;
+  for (const line of String(text || '').split(/\r?\n/)) {
+    const m = /^\s*(`{3,}|~{3,})/.exec(line);
+    if (m) {
+      if (fence === null) {
+        fence = m[1][0];
+        continue;
+      }
+      if (m[1][0] === fence) {
+        fence = null;
+        continue;
+      }
+    }
+    if (fence === null) out.push(line);
+  }
+  return out.join('\n');
 }
 
 // 문서 본문 하나를 인덱싱한다.
@@ -83,9 +113,9 @@ function indexDocBody(body, artifactType) {
   const rows = new Map();
   const rowKeys = new Map();
   for (const [slug, sec] of sections) {
-    const tables = parseTables(sec.text);
+    // fence 내부 표는 예시/문서화다 — row-key·child 후보 어느 쪽에도 넣지 않는다.
+    const tables = parseTables(stripFencedCodeBlocks(sec.text));
     for (const table of tables) {
-      const family = tableFamily({ sectionSlug: slug, table, artifactType });
       const firstHeader = table.headers[0];
       for (const r of table.rows) {
         // row-key 해소: 첫 셀 원문(예: "`M-001` · Auth frame / node `1:234`", "Offline").
@@ -94,13 +124,18 @@ function indexDocBody(body, artifactType) {
           if (!rowKeys.has(slug)) rowKeys.set(slug, new Set());
           rowKeys.get(slug).add(firstCell);
         }
-        // child row ID: 가족이 판정된 canonical 표만 후보다 (임의 ID 참조 표는 제외 — fail-closed).
-        if (family && hasHeader(table.headers, 'ID')) {
-          const id = String(col(r, 'ID') || '').trim();
-          if (id && !id.startsWith('{')) {
-            if (!rows.has(id)) rows.set(id, []);
-            rows.get(id).push({ sectionSlug: slug, family });
-          }
+      }
+    }
+    // child row 후보: 이 위치를 canonical 홈으로 갖는 family 별로, signature 를 만족하는 **첫 표만**
+    // 선택한다(parseOpenDecisions 의 canonical 선택과 동형). 같은 섹션의 나머지 표는 예시/범례다.
+    for (const family of canonicalFamiliesAt(slug, artifactType)) {
+      const canonical = tables.find((t) => FAMILY_SIGNATURES[family].every((c) => hasHeader(t.headers, c)));
+      if (!canonical) continue;
+      for (const r of canonical.rows) {
+        const id = String(col(r, 'ID') || '').trim();
+        if (id && !id.startsWith('{')) {
+          if (!rows.has(id)) rows.set(id, []);
+          rows.get(id).push({ sectionSlug: slug, family });
         }
       }
     }
