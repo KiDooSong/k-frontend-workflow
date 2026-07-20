@@ -21,8 +21,9 @@ absorbed_at: 2026-07-15
 ```
 
 - `absorbed_into`는 source와 다른, 전역에서 하나뿐인 active canonical Screen ID여야 한다.
-- absorbed source 자신의 public Screen ID도 전역에서 하나뿐이어야 한다. 같은 ID의 absorbed/absorbed
-  또는 active/absorbed 선언이 공존하면 충돌한 모든 레코드를 invalid로 남긴다.
+- lifecycle metadata(`screen_lifecycle`, `absorbed_into`, `absorbed_at`)가 있는 source의 public Screen
+  ID도 전역에서 하나뿐이어야 한다. 같은 ID의 absorbed/absorbed, active/absorbed, malformed/clean
+  선언이 공존하면 충돌한 모든 레코드를 invalid로 남긴다.
 - absorbed screen을 다시 가리키는 chain/cycle은 허용하지 않는다. 최종 active target을 직접 가리킨다.
 - `absorbed_at`은 선택이며, 존재하면 실제 달력 날짜인 `YYYY-MM-DD`다.
 - active ScreenSpec에 `absorbed_into`나 `absorbed_at`를 남기지 않는다.
@@ -38,9 +39,11 @@ ownership은 주장하지 않는다.
 identity가 canonical 문자열이 아니거나, target이 누락·중복·self-reference·absorbed 상태이면
 선언은 invalid다.
 
-absorbed source ID가 중복되면 path 순서에 따라 canonical target 하나를 고르지 않는다. 충돌한
-모든 source 레코드에 `ambiguous-absorption-source`를 기록해 `workflow-state`의 duplicate-key
-선택 결과와 무관하게 direct readiness가 fail-closed하도록 한다.
+lifecycle metadata나 lifecycle error가 있는 source ID가 중복되면 path 순서에 따라 clean record나
+canonical target 하나를 고르지 않는다. 충돌한 모든 source 레코드에
+`ambiguous-absorption-source`를 기록해 `workflow-state`의 duplicate-key 선택 결과와 무관하게
+direct readiness가 fail-closed하도록 한다. lifecycle marker/field가 전혀 없는 legacy duplicate는
+기존 전체 ID inventory 진단을 유지하며 이 lifecycle blocker를 추가하지 않는다.
 
 Invalid 선언은 화면을 숨기지 않는다. 해당 ScreenSpec은 active 집합에 남고 lifecycle error가
 `workflow-state`에 기록되며 readiness는 `docs-only`, `allowed_paths: []`로 fail-closed한다.

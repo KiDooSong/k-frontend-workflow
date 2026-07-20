@@ -165,6 +165,31 @@ test('active and absorbed records sharing one source identity both fail closed',
   assert.equal(result.absorbedRecords.length, 0);
 });
 
+test('malformed lifecycle concerns propagate ambiguity to every duplicate source record', () => {
+  const invalidEnum = fakeSpec('OLD-ENUM', { screen_lifecycle: 'gone' }, 'old-enum-broken');
+  const enumClean = fakeSpec('OLD-ENUM', {}, 'old-enum-clean');
+  const enumResult = analyze([invalidEnum, enumClean]);
+  assert.ok(codes(enumResult.bySpec.get(invalidEnum)).includes('invalid-screen-lifecycle'));
+  for (const source of [invalidEnum, enumClean]) {
+    assert.ok(codes(enumResult.bySpec.get(source)).includes('ambiguous-absorption-source'));
+  }
+
+  const mixed = fakeSpec('OLD-MIXED', { absorbed_into: 'AUTH-A' }, 'old-mixed-broken');
+  const mixedClean = fakeSpec('OLD-MIXED', {}, 'old-mixed-clean');
+  const mixedResult = analyze([mixed, mixedClean]);
+  assert.ok(codes(mixedResult.bySpec.get(mixed)).includes('active-with-absorbed-field'));
+  for (const source of [mixed, mixedClean]) {
+    assert.ok(codes(mixedResult.bySpec.get(source)).includes('ambiguous-absorption-source'));
+  }
+
+  const legacyA = fakeSpec('LEGACY-DUP', {}, 'legacy-a');
+  const legacyB = fakeSpec('LEGACY-DUP', {}, 'legacy-b');
+  const legacyResult = analyze([legacyA, legacyB]);
+  for (const source of [legacyA, legacyB]) {
+    assert.equal(codes(legacyResult.bySpec.get(source)).includes('ambiguous-absorption-source'), false);
+  }
+});
+
 test('absorbed target chains and cycles are rejected deterministically', () => {
   const active = fakeSpec('C');
   const middle = fakeSpec('B', { screen_lifecycle: 'absorbed', absorbed_into: 'C' });
@@ -497,6 +522,63 @@ test('workflow state fails closed for an active and absorbed source identity col
     readiness['OLD-AUTH'].blocking[0].invalid_screen_lifecycle.code,
     'ambiguous-absorption-source',
   );
+});
+
+test('malformed lifecycle duplicates stay fail-closed in both filesystem path orders', () => {
+  const cases = [
+    { name: 'invalid-enum', frontmatter: { screen_lifecycle: 'gone' } },
+    { name: 'active-with-absorbed-field', frontmatter: { absorbed_into: 'AUTH-A' } },
+  ];
+  for (const concern of cases) {
+    for (const cleanLast of [true, false]) {
+      const root = fs.mkdtempSync(
+        path.join(os.tmpdir(), `screen-lifecycle-${concern.name}-${cleanLast ? 'clean-last' : 'clean-first'}-`),
+      );
+      try {
+        const docsDir = path.join(root, 'docs', 'frontend-workflow');
+        writeScreen(docsDir, 'AUTH-A');
+        writeScreenAt(
+          docsDir,
+          cleanLast ? 'a-broken' : 'z-broken',
+          'OLD-AUTH',
+          concern.frontmatter,
+        );
+        writeScreenAt(docsDir, cleanLast ? 'z-clean' : 'a-clean', 'OLD-AUTH');
+
+        const { state } = buildState({
+          docsDir,
+          srcDir: null,
+          projectRoot: root,
+          date: '2026-07-20',
+          layout: TEST_LAYOUT,
+        });
+        assert.ok(
+          state.screens['OLD-AUTH'].derived.lifecycle_errors.some(
+            (error) => error.code === 'ambiguous-absorption-source',
+          ),
+          `${concern.name}/${cleanLast ? 'clean-last' : 'clean-first'} must retain ambiguity`,
+        );
+        const readiness = computeReadiness({
+          state,
+          policy: TEST_POLICY,
+          ci: {},
+          manifest: {},
+          layout: TEST_LAYOUT,
+          screenOnlyId: 'OLD-AUTH',
+        });
+        assert.equal(readiness['OLD-AUTH'].readiness_mode, 'docs-only');
+        assert.deepEqual(readiness['OLD-AUTH'].allowed_paths, []);
+        assert.ok(
+          readiness['OLD-AUTH'].blocking.some(
+            (blocker) =>
+              blocker.invalid_screen_lifecycle?.code === 'ambiguous-absorption-source',
+          ),
+        );
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    }
+  }
 });
 
 test('no-marker state omits lifecycle output keys', () => {

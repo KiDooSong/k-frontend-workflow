@@ -91,25 +91,6 @@ export function analyzeScreenLifecycles({ specs, docsDir }) {
     bySpec.set(record.spec, record);
   }
 
-  // An absorbed source is a direct-lookup redirect key, so that public key must identify exactly
-  // one source record. Mark every colliding record (including an active/absorbed collision) invalid:
-  // workflow-state intentionally collapses duplicate public keys, and whichever record wins that
-  // deterministic selection must retain the lifecycle blocker instead of exposing one redirect.
-  for (const [publicKey, sources] of byPublicKey) {
-    if (sources.length <= 1 || !sources.some((source) => source.lifecycle === 'absorbed')) continue;
-    const locations = sources.map((source) => source.source.path).sort();
-    for (const source of sources) {
-      source.errors.push(
-        lifecycleError(
-          'ambiguous-absorption-source',
-          `absorbed source is duplicated in the public Screen ID namespace: ${String(publicKey)}`,
-          3,
-          { locations },
-        ),
-      );
-    }
-  }
-
   for (const record of records) {
     const fm = record.spec.frontmatter || {};
     const lifecycle = record.lifecycle;
@@ -175,6 +156,36 @@ export function analyzeScreenLifecycles({ specs, docsDir }) {
           'invalid-absorbed-into',
           `absorbed_into must be a canonical Screen ID string (actual: ${JSON.stringify(fm.absorbed_into)})`,
           1,
+        ),
+      );
+    }
+  }
+
+  // A lifecycle-bearing source participates in direct lookup semantics, so its public key must
+  // identify exactly one source record. Run this after the per-record syntax/shape checks: malformed
+  // enum values and active records carrying absorbed-only fields are lifecycle concerns too. Mark
+  // every colliding record so workflow-state's deterministic Map selection cannot hide the blocker.
+  for (const [publicKey, sources] of byPublicKey) {
+    if (sources.length <= 1) continue;
+    const hasLifecycleConcern = sources.some((source) => {
+      const fm = source.spec.frontmatter || {};
+      return (
+        hasOwn(fm, 'screen_lifecycle') ||
+        hasOwn(fm, 'absorbed_into') ||
+        hasOwn(fm, 'absorbed_at') ||
+        source.errors.length > 0
+      );
+    });
+    if (!hasLifecycleConcern) continue;
+
+    const locations = sources.map((source) => source.source.path).sort();
+    for (const source of sources) {
+      source.errors.push(
+        lifecycleError(
+          'ambiguous-absorption-source',
+          `lifecycle-bearing source is duplicated in the public Screen ID namespace: ${String(publicKey)}`,
+          3,
+          { locations },
         ),
       );
     }
