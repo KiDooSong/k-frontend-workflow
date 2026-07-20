@@ -19,6 +19,9 @@ Add `workflow:check-generated` (advisory) when route, nav, catalog, codegen, lin
 policy, or layout sources changed. `validate` pass is structural integrity, not
 product approval.
 
+When ScreenSpec lifecycle changed, confirm the active-only aggregate and the absorbed source's
+direct readiness redirect described in [`screen-lifecycle.md`](../screen-lifecycle.md).
+
 For adopted shared-surface work, also re-run `workflow:readiness -- --surface <SURFACE_ID> --json` and every member's `--screen` readiness; report limiting member modes and delegated/forbidden paths.
 
 ## Optional web E2E evidence

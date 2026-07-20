@@ -8,7 +8,8 @@
 //  - HALT 은 종료 상태이지 게이트가 아니다 — 어떤 HALT 도 머지를 차단하지 않는다(차단은 Open Decision readiness cap + 사람).
 //  - Ambiguity / Safe To Proceed? 를 파싱해 exit 1 로 내지 않는다. review 결과를 merge approval/check 에 배선하지 않는다.
 //
-// 상태기계 (이 PR: 4상태, IMPLEMENT/auto-fix 전이 없음):
+// 상태기계 (기존 4상태 + absorbed lifecycle 비적용 정상 중단, IMPLEMENT/auto-fix 전이 없음):
+//  - HALT_NOT_APPLICABLE valid absorbed source → canonical target 안내 후 scope 자동 전환 없이 정지. exit 0.
 //  - HALT_AMBIGUITY      packet 봉투가 안 깨끗(over_ceiling·!mode_known·미해결 Open Decision/Unknown) → 구현 전 정지(기본 경로). exit 0.
 //  - HALT_READY_FOR_WORK 게이트 깨끗 + report 없음 → 사람/지정 구현자 판단 대기(구현 허가 아님). exit 0.
 //  - DONE_PENDING_REVIEW 게이트 깨끗 + --diff(외부 구현 evidence) → report 생성 → 사람 리뷰 대기. exit 0.
@@ -24,6 +25,7 @@ import { parseArgs, writeFile, readFileSafe, yamlParse, DEFAULTS, isCliEntry } f
 import {
   STATES,
   STATE_EXIT,
+  isAbsorbedPacket,
   isPacketClean,
   buildRunModel,
   renderStatusMarkdown,
@@ -117,7 +119,7 @@ function main() {
         '필수: --screen <ID> --requested-mode <mode>\n' +
         '선택: --out <dir> --docs <dir> --src <dir> --readiness <path> --policy <path> --manifest <path> --layout <path> --domain <name>\n' +
         '       --diff <name-status.txt> --review <path> --skip-tests --json --date YYYY-MM-DD --seq NNN --owner <name>\n' +
-        '상태: HALT_AMBIGUITY | HALT_READY_FOR_WORK | DONE_PENDING_REVIEW (exit 0) · HALT_TOOL_ERROR (exit 2)\n',
+        '상태: HALT_NOT_APPLICABLE | HALT_AMBIGUITY | HALT_READY_FOR_WORK | DONE_PENDING_REVIEW (exit 0) · HALT_TOOL_ERROR (exit 2)\n',
     );
     return; // help 도 자연 종료(exit 0) — process.exit(0) 금지 계약(cli-stdout-flush.test.mjs)
   }
@@ -221,6 +223,13 @@ function main() {
     return;
   }
   const packet = pk.json;
+
+  // Valid absorbed direct-readiness는 손상/도구 오류가 아니라 정상 non-executable lifecycle 결과다.
+  // canonical target은 안내만 하고 자동으로 screen/scope를 바꿔 실행하지 않는다.
+  if (isAbsorbedPacket(packet)) {
+    finalize(STATES.HALT_NOT_APPLICABLE, { packet });
+    return;
+  }
 
   // 2) --requested-mode 가 알려진 모드인지 대조 (봉투 mode_known 은 readiness 모드 기준이라 미지/오타 requested 모드를 못 잡음).
   const modeOrder = loadModeOrder(policy);

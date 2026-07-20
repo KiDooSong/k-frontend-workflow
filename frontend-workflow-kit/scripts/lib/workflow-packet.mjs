@@ -113,6 +113,18 @@ export function classifyBlocking(entry) {
   return { decisions, invalidDecisions, facts };
 }
 
+export function isAbsorbedReadinessEntry(entry) {
+  return (
+    entry != null &&
+    typeof entry === 'object' &&
+    entry.readiness_applicable === false &&
+    entry.screen_lifecycle === 'absorbed' &&
+    entry.readiness_mode === null &&
+    typeof entry.absorbed_into === 'string' &&
+    entry.absorbed_into.trim() !== ''
+  );
+}
+
 // requested_mode vs readiness_mode 위치 비교. order 는 policy.order(모드 사다리) — readiness 재계산 아님,
 // 순수 "사다리 위치" 비교일 뿐(천장·경로는 readiness 출력에서 옴).
 export function compareModes(order, requested, readiness) {
@@ -170,6 +182,44 @@ export function buildPacketModel(opts) {
   // 레이아웃 프로파일(tier1): MODE_HINTS 경로 카피를 role 글롭에서 생성한다. 호출부가 주지 않으면
   // 기본 프로파일(expo-feature) 로드 — 토큰화 이전과 BYTE-동치(README §1.1).
   const resolvedLayout = layout || loadLayoutProfile({ kitRoot: KIT_ROOT });
+
+  if (isAbsorbedReadinessEntry(entry)) {
+    return {
+      packet_id: `WP-${screen}-absorbed-${seq}`,
+      packet_type: 'work-packet',
+      status: 'draft',
+      target_screen: screen,
+      domain: opts.domain || null,
+      requested_mode: requestedMode,
+      readiness_applicable: false,
+      screen_lifecycle: 'absorbed',
+      readiness_mode: null,
+      next_mode: null,
+      absorbed_into: entry.absorbed_into,
+      absorbed_at: typeof entry.absorbed_at === 'string' ? entry.absorbed_at : null,
+      readiness_source: readinessSource,
+      created_at: date,
+      owner,
+      generated_by: 'workflow:packet (PR2 draft generator)',
+      allowed_paths: entry.allowed_paths || [],
+      forbidden_paths: entry.forbidden_paths || [],
+      blocking: classifyBlocking(entry),
+      next_actions: entry.next_actions || [],
+      order,
+      has: Array.isArray(order) && order.length > 0,
+      rIdx: -1,
+      qIdx: Array.isArray(order) ? order.indexOf(requestedMode) : -1,
+      modeKnown: false,
+      requestedKnown: Array.isArray(order) && order.includes(requestedMode),
+      overCeiling: false,
+      ambiguityRows: [],
+      warnings: [],
+      modeHint: null,
+      apiClientGlob: null,
+      ambiguityLink,
+      non_executable: true,
+    };
+  }
 
   const readinessMode = entry.readiness_mode || '(unknown)';
   const nextMode = entry.next_mode || null;
@@ -254,13 +304,60 @@ function renderFrontmatter(m) {
     `target_screen: ${q(m.target_screen)}`,
     `domain: ${q(m.domain || 'unknown')}`,
     `requested_mode: ${q(m.requested_mode)}`,
-    `readiness_mode: ${q(m.readiness_mode)}`,
+    m.readiness_applicable === false
+      ? 'readiness_mode: null'
+      : `readiness_mode: ${q(m.readiness_mode)}`,
+    ...(m.readiness_applicable === false
+      ? [
+          'readiness_applicable: false',
+          `screen_lifecycle: ${q(m.screen_lifecycle)}`,
+          `absorbed_into: ${q(m.absorbed_into)}`,
+          ...(m.absorbed_at ? [`absorbed_at: ${q(m.absorbed_at)}`] : []),
+        ]
+      : []),
     `readiness_source: ${q(m.readiness_source)}`,
     `created_at: ${q(m.created_at)}`,
     `owner: ${q(m.owner)}`,
     `generated_by: ${q(m.generated_by)}`,
     '---',
   ].join('\n');
+}
+
+function renderAbsorbedPacketMarkdown(m) {
+  const out = [];
+  out.push(renderFrontmatter(m));
+  out.push('');
+  out.push('<!--');
+  out.push('  정상 ScreenSpec lifecycle 결과: source 는 absorbed provenance 이며 실행 대상이 아니다.');
+  out.push('  canonical target 으로 자동 전환하거나 새 구현 범위를 승인하지 않는다.');
+  out.push('-->');
+  out.push('');
+  out.push(`# Non-executable Work Packet: ${m.target_screen} → ${m.absorbed_into}`);
+  out.push('');
+  out.push('## Lifecycle Redirect');
+  out.push(`- source screen: \`${cell(m.target_screen)}\``);
+  out.push('- `readiness_applicable: false`');
+  out.push('- `screen_lifecycle: absorbed`');
+  out.push(`- canonical active screen: \`${cell(m.absorbed_into)}\``);
+  if (m.absorbed_at) out.push(`- absorbed_at: \`${cell(m.absorbed_at)}\``);
+  out.push('');
+  out.push('이 결과는 손상된 readiness나 도구 오류가 아니다. source ScreenSpec에는 authoring/implementation을 수행하지 않는다.');
+  out.push('canonical target으로 자동 전환해 실행하지 말고, source와 target을 보고한 뒤 이 실행을 정상 중단한다.');
+  out.push('');
+  out.push('## Allowed Paths');
+  out.push(renderPathsBlock(m.allowed_paths, '# none — absorbed source is non-executable'));
+  out.push('');
+  out.push('## Forbidden Paths');
+  out.push(renderPathsBlock(m.forbidden_paths, '# none — no implementation scope is authorized'));
+  out.push('');
+  out.push('## Next Actions');
+  if (m.next_actions.length) {
+    for (const action of m.next_actions) out.push(`- ${action}`);
+  } else {
+    out.push(`- use canonical screen ${m.absorbed_into}; do not author or implement the absorbed ScreenSpec`);
+  }
+  out.push('- target 작업이 필요하면 사람이 명시적으로 canonical Screen ID를 대상으로 새 실행을 시작한다.');
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').replace(/\s+$/, '') + '\n';
 }
 
 function renderPathsBlock(paths, emptyNote) {
@@ -338,6 +435,8 @@ function renderWarnings(m) {
 }
 
 export function renderPacketMarkdown(m) {
+  if (m.readiness_applicable === false) return renderAbsorbedPacketMarkdown(m);
+
   const ceilingEvidence =
     `readiness 출력 기준 천장 = \`${m.readiness_mode}\`, next_mode = ${m.next_mode ? '`' + m.next_mode + '`' : '— (최상위)'}. ` +
     `상위 진행은 아래 Blocking Items 가 cap (Open Decision ${m.blocking.decisions.length}건 · 미충족 fact ${m.blocking.facts.length}건). 이 표는 소비물이며 재유도하지 않는다.`;
@@ -456,6 +555,33 @@ export function renderPacketMarkdown(m) {
 }
 
 export function renderJsonEnvelope(m) {
+  if (m.readiness_applicable === false) {
+    return {
+      packet_id: m.packet_id,
+      target_screen: m.target_screen,
+      domain: m.domain,
+      requested_mode: m.requested_mode,
+      readiness_applicable: false,
+      screen_lifecycle: m.screen_lifecycle,
+      readiness_mode: null,
+      next_mode: null,
+      absorbed_into: m.absorbed_into,
+      ...(m.absorbed_at ? { absorbed_at: m.absorbed_at } : {}),
+      allowed_paths: m.allowed_paths,
+      forbidden_paths: m.forbidden_paths,
+      non_executable: true,
+      over_ceiling: false,
+      mode_known: false,
+      readiness_source: m.readiness_source,
+      out: m.out || null,
+      blocking_count: 0,
+      d_cand: [],
+      u_cand: [],
+      next_actions: m.next_actions,
+      safe_to_proceed: 'not applicable — absorbed source is non-executable; canonical target is a redirect hint, not an automatic scope switch',
+      warnings: m.warnings,
+    };
+  }
   return {
     packet_id: m.packet_id,
     target_screen: m.target_screen,

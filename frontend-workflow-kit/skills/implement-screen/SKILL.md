@@ -46,10 +46,14 @@ description: 지정된 Screen ID를 readiness gate가 허용하는 모드와 경
    npm run workflow:state
    npm run workflow:readiness -- --screen <ID> --json
    ```
-3. readiness JSON 을 screen id 아래에서 읽는다: `readiness_mode`, `allowed_paths`, `forbidden_paths`, `blocking`,
-   `next_actions`, `delegated_shared_surfaces` (+ mode/policy/layer metadata).
-4. readiness 가 막으면 `blocking`·`next_actions` 를 보고하고 멈춘다.
-5. 구현 가능하면 짧은 plan 을 먼저 만든다: mode, 허용/금지 surface, source-of-truth 문서, 범위 밖으로 남기는 Unknown/Decision/Conflict/Gap.
+3. readiness JSON 을 screen id 아래에서 읽는다: `readiness_applicable`, `screen_lifecycle`, `absorbed_into`,
+   `readiness_mode`, `allowed_paths`, `forbidden_paths`, `blocking`, `next_actions`, `delegated_shared_surfaces`
+   (+ mode/policy/layer metadata).
+4. `readiness_applicable: false`이면 `blocking`보다 먼저 확인한다. absorbed source에는 authoring/implementation을 하지 않고,
+   source ID와 canonical `absorbed_into` target을 보고한 뒤 멈춘다([screen-lifecycle.md](../../docs/reference/screen-lifecycle.md)).
+   target으로 자동 전환하거나 같은 요청의 범위를 넓혀 재실행하지 않는다.
+5. 그 외 readiness 가 막으면 `blocking`·`next_actions` 를 보고하고 멈춘다.
+6. 구현 가능하면 짧은 plan 을 먼저 만든다: mode, 허용/금지 surface, source-of-truth 문서, 범위 밖으로 남기는 Unknown/Decision/Conflict/Gap.
 
 ## 2. 컨텍스트 로드 (대상 화면/도메인만)
 필요한 산출물만 읽는다(다른 도메인 문서를 넓게 로드하지 않는다): ScreenSpec, domain rules/flows, navigation map,

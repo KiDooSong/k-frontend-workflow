@@ -81,6 +81,7 @@ Review          MVP-A 에 없음 (Future Candidate).
 - `schemas/frontmatter.schema.json` · `catalog/artifact-manifest.yaml` · `policies/implementation-mode-policy.yaml`
 - `skills/implement-screen` · `skills/implement-shared-surface`
 - Open Decisions readiness cap — 저작 규칙 + **게이트 해제는 사람-전용** 불변식 (LLM 은 open 추가/재오픈만)
+- ScreenSpec lifecycle(#203) — 문서 `status`와 current screen existence를 분리한 optional `screen_lifecycle: active|absorbed`; valid absorbed는 active-only state/readiness/nav/route/shared/visual 집계에서 제외하되 inventory/`absorbed_screens` provenance와 direct canonical redirect를 보존하고, malformed 선언은 live set 유지 + docs-only로 fail-closed. 기존 검사 1/2/3/5/7에 통합하며 새 gate/CI promotion 없음.
 - Open Decisions **validate 형식 검사**(검사 9) — 표 컬럼·`Status` enum·`Blocking Mode` 정책 모드·전역 ID 중복 (resolved→Options 는 경고)
 - Open Decisions **canonical cross-screen reference**(#193) — optional `global/open-decisions.md` register + ScreenSpec `decision_refs`; state/readiness fan-out과 source provenance, malformed/unresolved fail-closed. 기존 결정 축의 additive 확장(새 CI/promotion 없음)
 - Shared surface behavior contract(#192) — optional same-domain `shared-surface-spec`, canonical member reverse index, non-route v2 behavior, #193 decision `source`+surface `via` fan-out, `--surface` readiness/member intersection, screen path reservation, validate hard contract. 새 inventory/CI promotion/route normalization 없음
