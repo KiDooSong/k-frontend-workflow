@@ -67,7 +67,15 @@ export function pathsOverlap(left, right) {
 }
 
 function ownershipPathKey(value) {
-  const key = lexicalPathKey(value);
+  const separated = String(value).replace(/\\/g, '/');
+  const hasDriveSegment = separated
+    .split('/')
+    .some((segment) => WINDOWS_DRIVE_PREFIX_PATTERN.test(segment));
+  if (path.posix.isAbsolute(separated) || hasDriveSegment) {
+    return { key: null, issue: 'absolute-or-nonportable' };
+  }
+
+  const key = lexicalPathKey(separated);
   if (
     path.posix.isAbsolute(key) ||
     WINDOWS_DRIVE_PREFIX_PATTERN.test(key)

@@ -1335,6 +1335,27 @@ test('entry ownership rejects checkout-dependent absolute and escaping relative 
         `ScreenSpec screen_entry uses an absolute or nonportable path: ${entryPath}`,
     },
     {
+      name: 'windows-drive-absolute-segment-reduction',
+      entryPath: () => String.raw`C:\..\outside\Foo.tsx`,
+      code: 'absolute-or-nonportable-path',
+      message: (entryPath) =>
+        `ScreenSpec screen_entry uses an absolute or nonportable path: ${entryPath}`,
+    },
+    {
+      name: 'windows-drive-relative-segment-reduction',
+      entryPath: () => String.raw`C:temp\..\outside\Foo.tsx`,
+      code: 'absolute-or-nonportable-path',
+      message: (entryPath) =>
+        `ScreenSpec screen_entry uses an absolute or nonportable path: ${entryPath}`,
+    },
+    {
+      name: 'dot-prefix-windows-drive-segment-reduction',
+      entryPath: () => String.raw`./C:\..\outside\Foo.tsx`,
+      code: 'absolute-or-nonportable-path',
+      message: (entryPath) =>
+        `ScreenSpec screen_entry uses an absolute or nonportable path: ${entryPath}`,
+    },
+    {
       name: 'windows-unc',
       entryPath: () => String.raw`\\server\share\repo\src\features\x\Foo.tsx`,
       code: 'absolute-or-nonportable-path',
