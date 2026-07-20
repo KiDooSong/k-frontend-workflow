@@ -327,6 +327,7 @@ export function computeReadiness({
   ci,
   manifest,
   layout,
+  screenOnlyId,
   surfaceOnlyId,
   exposeCaps = false,
   skipSurfaces = false,
@@ -378,6 +379,7 @@ export function computeReadiness({
     // readiness_mode = min(fact_mode, decision_cap) 로 다운그레이드한다 (open-decisions.md).
     const decisions = (screen.derived && screen.derived.blocking_decisions) || [];
     const invalidDecisions = [...((screen.derived && screen.derived.malformed_decisions) || [])];
+    const lifecycleErrors = [...((screen.derived && screen.derived.lifecycle_errors) || [])];
     const decisionRefs = (screen.derived && screen.derived.decision_refs) || [];
     for (const ref of decisionRefs) {
       if (ref.status !== 'resolved' || order.includes(ref.blocking_mode)) continue;
@@ -409,7 +411,7 @@ export function computeReadiness({
     }
     // fail-closed: 해석 불가한 Open Decision 이 하나라도 있으면 docs-only 로 고정한다.
     // (validate 형식검사가 후속이라 live gate 인 readiness 가 보수적으로 막는다)
-    if (invalidDecisions.length > 0) decisionCapIdx = 0;
+    if (invalidDecisions.length > 0 || lifecycleErrors.length > 0) decisionCapIdx = 0;
 
     const chosenIdx = Math.max(0, Math.min(factIdx, decisionCapIdx));
     const chosenName = order[chosenIdx];
@@ -421,7 +423,24 @@ export function computeReadiness({
     const nextActions = [];
     const seen = new Set();
 
-    // (0) invalid open decision: 해석 불가한 행. 고치기 전엔 docs-only 로 막힌다.
+    // (0) invalid ScreenSpec lifecycle: malformed absorption must stay visible but may not
+    // authorize implementation. The lifecycle helper supplies deterministic provenance.
+    for (const issue of lifecycleErrors) {
+      blocking.push({
+        invalid_screen_lifecycle: {
+          code: issue.code || 'invalid-screen-lifecycle',
+          ...(issue.message ? { message: issue.message } : {}),
+          ...(issue.field ? { field: issue.field } : {}),
+          ...(issue.absorbed_into ? { absorbed_into: issue.absorbed_into } : {}),
+          ...(issue.source ? { source: issue.source } : {}),
+        },
+      });
+    }
+    if (lifecycleErrors.length > 0) {
+      nextActions.push('fix ScreenSpec lifecycle declaration before authoring or implementation');
+    }
+
+    // (1) invalid open decision: 해석 불가한 행. 고치기 전엔 docs-only 로 막힌다.
     for (const bad of invalidDecisions) {
       blocking.push({
         invalid_open_decision: {
@@ -437,7 +456,7 @@ export function computeReadiness({
       nextActions.push(invalidOpenDecisionAction(bad));
     }
 
-    // (1) open decision blocker: chosen 위를 막는 결정. 사람이 resolve 해야 풀린다.
+    // (2) open decision blocker: chosen 위를 막는 결정. 사람이 resolve 해야 풀린다.
     for (const dec of decisions) {
       const bmIdx = order.indexOf(dec.blocking_mode);
       if (bmIdx < 0 || bmIdx <= chosenIdx) continue; // 잘못된 모드/이하 차단은 제외
@@ -454,7 +473,7 @@ export function computeReadiness({
       nextActions.push(`resolve decision ${dec.id}${q}`);
     }
 
-    // (2) fact blocker: fact_mode 위 모드들의 미충족 조건.
+    // (3) fact blocker: fact_mode 위 모드들의 미충족 조건.
     // (chosen..fact_mode 사이 모드는 사실은 통과하므로 decision 만 막는다)
     for (let i = factIdx + 1; i < order.length; i++) {
       const mode = modes[order[i]];
@@ -489,6 +508,7 @@ export function computeReadiness({
     let forbiddenPaths = uniquePaths(resolvedLayout.resolvePaths(chosen.forbidden_paths || [], {
       domain: screen.domain,
     }));
+    if (lifecycleErrors.length > 0) allowedPaths = [];
     if (facts.api_required === false) {
       ({ allowedPaths, forbiddenPaths } = limitNoApiEditSurfaces({
         allowedPaths,
@@ -726,7 +746,37 @@ export function computeReadiness({
   } else if (surfaceOnlyId !== undefined) {
     return {};
   }
-  return Object.fromEntries(out);
+  const screenResults = Object.fromEntries(out);
+  if (screenOnlyId !== undefined) {
+    if (Object.hasOwn(screenResults, screenOnlyId)) {
+      return Object.fromEntries([[screenOnlyId, screenResults[screenOnlyId]]]);
+    }
+    const absorbedScreens = state.absorbed_screens;
+    if (absorbedScreens && Object.hasOwn(absorbedScreens, screenOnlyId)) {
+      const absorbed = absorbedScreens[screenOnlyId] || {};
+      return Object.fromEntries([
+        [
+          screenOnlyId,
+          {
+            readiness_mode: null,
+            next_mode: null,
+            readiness_applicable: false,
+            screen_lifecycle: 'absorbed',
+            absorbed_into: absorbed.absorbed_into,
+            ...(absorbed.absorbed_at ? { absorbed_at: absorbed.absorbed_at } : {}),
+            allowed_paths: [],
+            forbidden_paths: [],
+            blocking: [],
+            next_actions: [
+              `use canonical screen ${absorbed.absorbed_into}; do not author or implement the absorbed ScreenSpec`,
+            ],
+          },
+        ],
+      ]);
+    }
+    return {};
+  }
+  return screenResults;
 }
 
 function loadCi(flags) {
@@ -832,15 +882,9 @@ function main() {
     ci,
     manifest,
     layout,
+    screenOnlyId: flags.screen,
     surfaceOnlyId: flags.surface,
   });
-
-  if (flags.screen !== undefined) {
-    // bare/빈 --screen 은 main 진입부의 인자 계약 검증에서 이미 exit 2 — 여기는 유효한 문자열만 온다.
-    result = Object.hasOwn(result, flags.screen)
-      ? Object.fromEntries([[flags.screen, result[flags.screen]]])
-      : {};
-  }
 
   if (flags.json) {
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');

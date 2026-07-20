@@ -35,6 +35,7 @@ import {
   analyzeSharedSurfaces,
   loadSharedSurfaceSpecs,
 } from './lib/shared-surfaces.mjs';
+import { analyzeScreenLifecycles } from './lib/screen-lifecycle.mjs';
 
 function todayISO() {
   // 결정성: --date 로 고정 가능. 기본은 오늘 (generated_at 한 줄만 변동 허용).
@@ -52,10 +53,13 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
   const domainsRoot = path.join(docsDir, 'domains');
   const specPaths = findFiles(domainsRoot, 'screen-spec.md');
   const specs = specPaths.map((specPath) => loadScreenSpec(specPath));
+  const screenLifecycle = analyzeScreenLifecycles({ specs, docsDir });
+  const liveSpecs = screenLifecycle.liveSpecs;
+  const liveSpecSet = new Set(liveSpecs);
   const surfaceSpecs = loadSharedSurfaceSpecs({ docsDir });
   const register = loadOpenDecisionRegister({ docsDir });
   const localDecisionIds = new Set();
-  for (const spec of specs) {
+  for (const spec of liveSpecs) {
     for (const row of parseOpenDecisions(spec.sections['open decisions']).rows) {
       if (row.id) localDecisionIds.add(row.id);
     }
@@ -65,13 +69,43 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
   // Object.prototype; convert it to the public plain-object shape only at the serialization edge.
   const screens = new Map();
   const inventory = [];
+  const liveInventory = [];
   const idSeen = new Map();
   const routeSeen = new Map();
 
   for (const spec of specs) {
-    const specPath = spec.path;
     const fm = spec.frontmatter;
     const id = screenIdCandidateOf(spec);
+    const screenKey = publicScreenKeyOf(spec);
+    const domain = fm.domain || null;
+    const route = fm.route || null;
+    const routeEntry = fm.route_entry || null;
+    const screenEntry = fm.screen_entry || null;
+    const status = fm.status || 'draft';
+    const lifecycleRecord = screenLifecycle.bySpec.get(spec);
+
+    const inventoryRow = { id, domain, route, status };
+    if (routeEntry) inventoryRow.route_entry = routeEntry;
+    if (screenEntry) inventoryRow.screen_entry = screenEntry;
+    if (lifecycleRecord?.lifecycle === 'absorbed') {
+      inventoryRow.screen_lifecycle = 'absorbed';
+      if (lifecycleRecord.absorbed_into !== undefined) {
+        inventoryRow.absorbed_into = lifecycleRecord.absorbed_into;
+      }
+      if (lifecycleRecord.absorbed_at !== undefined) {
+        inventoryRow.absorbed_at = lifecycleRecord.absorbed_at;
+      }
+    }
+    inventory.push(inventoryRow);
+    if (liveSpecSet.has(spec)) liveInventory.push(inventoryRow);
+
+    // ID는 provenance 전체 namespace, route는 current live namespace에서 중복을 추적한다.
+    idSeen.set(screenKey, (idSeen.get(screenKey) || 0) + 1);
+    if (liveSpecSet.has(spec) && route) routeSeen.set(route, (routeSeen.get(route) || 0) + 1);
+  }
+
+  for (const spec of liveSpecs) {
+    const fm = spec.frontmatter;
     // Normalize before selection/grouping using the same property-key coercion as the public
     // Object.fromEntries boundary. Malformed numeric IDs must collide with their string form.
     const screenKey = publicScreenKeyOf(spec);
@@ -82,6 +116,17 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
     const status = fm.status || 'draft';
 
     const derived = deriveMetrics(spec, { srcDir, layout: resolvedLayout, projectRoot });
+    const lifecycleRecord = screenLifecycle.bySpec.get(spec);
+    if (lifecycleRecord?.errors.length) {
+      derived.lifecycle_errors = lifecycleRecord.errors.map((issue) => ({
+        code: issue.code,
+        message: issue.message,
+        ...(issue.field ? { field: issue.field } : {}),
+        ...(issue.absorbed_into ? { absorbed_into: issue.absorbed_into } : {}),
+        ...(issue.locations ? { locations: issue.locations } : {}),
+        source: lifecycleRecord.source,
+      }));
+    }
     if (Object.prototype.hasOwnProperty.call(fm, 'decision_refs')) {
       const refs = resolveDecisionRefs({
         refs: fm.decision_refs,
@@ -110,21 +155,13 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
       stub: isStub(spec),
       derived,
     });
-
-    const inventoryRow = { id, domain, route, status };
-    if (routeEntry) inventoryRow.route_entry = routeEntry;
-    if (screenEntry) inventoryRow.screen_entry = screenEntry;
-    inventory.push(inventoryRow);
-
-    // 중복 추적
-    idSeen.set(screenKey, (idSeen.get(screenKey) || 0) + 1);
-    if (route) routeSeen.set(route, (routeSeen.get(route) || 0) + 1);
   }
 
   const surfaceRecords = analyzeSharedSurfaces({
     docsDir,
     surfaceSpecs,
     screenSpecs: specs,
+    screenLifecycle,
   });
   const addDecision = (rows, decision) => {
     const key = `${decision.id}\0${decision.code || ''}\0${decision.source?.path || ''}\0${decision.via?.path || ''}`;
@@ -193,7 +230,7 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
     if (!refs.some((entry) => entry.key === referrer.key)) refs.push(referrer);
     applications.set(key, refs);
   };
-  for (const spec of specs) {
+  for (const spec of liveSpecs) {
     if (!Array.isArray(spec.frontmatter.decision_refs)) continue;
     for (const ref of spec.frontmatter.decision_refs) {
       addApplication(spec.frontmatter.screen_id, ref, {
@@ -316,6 +353,9 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
         ...(s.derived.decision_refs?.length ? { decision_refs: s.derived.decision_refs } : {}),
         blocking_decisions: s.derived.blocking_decisions,
         malformed_decisions: s.derived.malformed_decisions,
+        ...(s.derived.lifecycle_errors?.length
+          ? { lifecycle_errors: s.derived.lifecycle_errors }
+          : {}),
         api_confidence_min: s.derived.api_confidence_min,
         ...(s.derived.api_required === false ? { api_required: false } : {}),
         ...presentFacts,
@@ -346,10 +386,30 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
     global: {
       navigation_map_status: navStatus,
       component_catalog_generated: componentCatalogGenerated,
-      stub_screen_specs_count: specPaths.length,
+      stub_screen_specs_count: liveSpecs.length,
     },
     screens: Object.fromEntries(sortedScreens),
   };
+
+  if (screenLifecycle.absorbedRecords.length > 0) {
+    const absorbedScreens = new Map();
+    for (const record of screenLifecycle.absorbedRecords) {
+      const fm = record.spec.frontmatter || {};
+      const row = {
+        status: fm.status || 'draft',
+        domain: fm.domain || null,
+        route: fm.route || null,
+        screen_lifecycle: 'absorbed',
+        absorbed_into: record.absorbed_into,
+        ...(record.absorbed_at ? { absorbed_at: record.absorbed_at } : {}),
+        source: record.source,
+      };
+      absorbedScreens.set(record.screen_id, row);
+    }
+    state.absorbed_screens = Object.fromEntries(
+      [...absorbedScreens.entries()].sort(([a], [b]) => String(a).localeCompare(String(b))),
+    );
+  }
 
   if (surfaceRecords.length > 0) {
     const surfaces = new Map();
@@ -408,6 +468,11 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
       };
       if (s.route_entry) row.route_entry = s.route_entry;
       if (s.screen_entry) row.screen_entry = s.screen_entry;
+      if (s.screen_lifecycle === 'absorbed') {
+        row.screen_lifecycle = 'absorbed';
+        if (s.absorbed_into !== undefined) row.absorbed_into = s.absorbed_into;
+        if (s.absorbed_at !== undefined) row.absorbed_at = s.absorbed_at;
+      }
       return row;
     }),
     checks: {
@@ -421,7 +486,7 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
         projectRoot: projectRoot || path.dirname(srcDir),
         srcDir,
         layout: resolvedLayout,
-        screens: inventory,
+        screens: liveInventory,
       })
     : null;
 

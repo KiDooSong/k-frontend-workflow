@@ -33,6 +33,7 @@ import path from 'node:path';
 import { findFiles, readFileSafe, exists } from './util.mjs';
 import { loadScreenSpec } from './spec.mjs';
 import { parseRouteTreeRouteTokens } from './route-core.mjs';
+import { analyzeScreenLifecycles } from './screen-lifecycle.mjs';
 
 // 표시용 경로 — fromDir 상대 posix(\→/). 절대 머신경로를 출력에 흘리지 않는다(결정성).
 function relPosix(fromDir, absPath) {
@@ -45,13 +46,15 @@ function compareText(a, b) {
 }
 
 // docsDir 아래 screen-spec frontmatter `route` 를 수집한다(validate.mjs:262-275 와 동일 식).
-//   반환: { count, routeToFiles }  — count 는 screen-spec.md 파일 수(0 이면 skip 신호),
+//   반환: { count, routeToFiles }  — count 는 live screen-spec 수(0 이면 skip 신호),
 //   routeToFiles 는 route -> [docsDir-상대 posix 파일경로] (route 없는 spec 은 미등록).
 function collectSpecRoutes(docsDir) {
   const specPaths = findFiles(path.join(docsDir, 'domains'), 'screen-spec.md');
+  const specs = specPaths.map((p) => loadScreenSpec(p));
+  const { liveSpecs } = analyzeScreenLifecycles({ specs, docsDir });
   const routeToFiles = new Map();
-  for (const p of specPaths) {
-    const spec = loadScreenSpec(p);
+  for (const spec of liveSpecs) {
+    const p = spec.path;
     const route = spec.frontmatter && spec.frontmatter.route;
     if (typeof route !== 'string' || route === '') continue; // route 없는 stub 등은 대조 대상 아님
     const rel = relPosix(docsDir, p);
@@ -59,7 +62,7 @@ function collectSpecRoutes(docsDir) {
     if (!files.includes(rel)) files.push(rel);
     routeToFiles.set(route, files);
   }
-  return { count: specPaths.length, routeToFiles };
+  return { count: liveSpecs.length, routeToFiles };
 }
 
 // 산출물 2개를 읽어 EXACT 양방향 대조한다(부작용 없음 — 읽기만). 반환은 그대로 JSON 직렬화 가능
@@ -87,7 +90,7 @@ export function analyzeRouteCrossCheck({ docsDir }) {
   if (!routeTreeFound || screenSpecCount === 0) {
     const reason = !routeTreeFound
       ? `route-tree.txt 없음: ${base.route_tree} (아직 생성 전이거나 미커밋 — warning-first skip)`
-      : 'screen-spec 0건 (domains/**/screen-spec.md 없음 — warning-first skip)';
+      : 'live screen-spec 0건 (active 화면 없음 — warning-first skip)';
     return {
       ...base,
       skipped: true,

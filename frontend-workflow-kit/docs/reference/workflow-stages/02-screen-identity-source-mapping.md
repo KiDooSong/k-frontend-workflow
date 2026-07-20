@@ -27,6 +27,9 @@ never a `screen_id`. **Do not invent a canonical screen ID from a Figma/planning
 code.** Mapping is recorded in the Screen Source Map, which is the single source of
 truth.
 
+기존 화면이 active canonical sibling에 흡수된 경우에는 새 identity를 만들지 말고
+[`screen lifecycle`](../screen-lifecycle.md)의 `absorbed_into` 계약을 따른다.
+
 ## Read these first
 
 - [`../screen-identity.md`](../screen-identity.md) — the canonical-vs-alias contract.

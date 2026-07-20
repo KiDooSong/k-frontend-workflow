@@ -125,6 +125,14 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
     assert.equal(exists(rel, out), true, `${rel} should be packed`);
   }
 
+  const packedImplementScreen = fs.readFileSync(
+    path.join(out, 'skills', 'implement-screen', 'SKILL.md'),
+    'utf8',
+  );
+  assert.match(packedImplementScreen, /`readiness_applicable`/);
+  assert.match(packedImplementScreen, /`readiness_applicable: false`/);
+  assert.match(packedImplementScreen, /blocking.*보다 먼저/);
+
   for (const rel of [
     'examples',
     'temp',

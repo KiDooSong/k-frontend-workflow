@@ -20,6 +20,7 @@
 import path from 'node:path';
 import { findFiles, readFileSafe, exists, isDir, splitFrontmatter } from './util.mjs';
 import { loadScreenSpec, parseTables, parseCopyKeys, col, hasHeader } from './spec.mjs';
+import { analyzeScreenLifecycles } from './screen-lifecycle.mjs';
 
 // 표시용 경로 — fromDir 상대 posix(\→/). 절대 머신경로를 출력에 흘리지 않는다(결정성).
 function relPosix(fromDir, absPath) {
@@ -155,8 +156,13 @@ export function parseVisualContract(raw) {
 // docsDir 아래 screen-spec / figma-component-mapping 을 수집한다 (route-cross-check 수집식 미러).
 function collectScreens(docsDir) {
   const byId = new Map();
-  for (const p of findFiles(path.join(docsDir, 'domains'), 'screen-spec.md')) {
-    const spec = loadScreenSpec(p);
+  const specs = findFiles(path.join(docsDir, 'domains'), 'screen-spec.md').map((p) =>
+    loadScreenSpec(p),
+  );
+  const lifecycle = analyzeScreenLifecycles({ specs, docsDir });
+  const { liveSpecs } = lifecycle;
+  for (const spec of liveSpecs) {
+    const p = spec.path;
     const id = spec.frontmatter && spec.frontmatter.screen_id;
     if (typeof id !== 'string' || !id) continue;
     byId.set(id, {
@@ -168,7 +174,10 @@ function collectScreens(docsDir) {
       file: relPosix(docsDir, p),
     });
   }
-  return byId;
+  return {
+    byId,
+    absorbedIds: new Set(lifecycle.absorbedRecords.map((record) => record.screen_id)),
+  };
 }
 
 function collectFigmaMappings(docsDir) {
@@ -339,14 +348,20 @@ export function analyzeVisualConsistency({ docsDir, srcDir, contractPath, domain
     return finalize(base, findings, [], skippedChecks);
   }
 
-  const screens = collectScreens(docsDir);
+  const { byId: screens, absorbedIds } = collectScreens(docsDir);
   const mappings = collectFigmaMappings(docsDir);
 
   // --- 선택 필터: --screen(콤마 목록 허용) / --domain 은 family 멤버십 기준으로 범위를 좁힌다.
   //     콤마 목록은 bootstrap --screen 과 scope 를 맞추기 위한 확장이다 — 단일 ID 동작은 불변.
   const screenFilterIds = splitScreenIds(screen);
   const screenFilter = screenFilterIds.length ? new Set(screenFilterIds) : null;
-  let families = contract.families;
+  const allFamilyNames = new Set(contract.families.map((family) => family.family));
+  let families = contract.families
+    .map((family) => ({
+      ...family,
+      screens: family.screens.filter((id) => !absorbedIds.has(id)),
+    }))
+    .filter((family) => family.screens.length > 0);
   if (screenFilter) {
     families = families.filter((f) => f.screens.some((id) => screenFilter.has(id)));
   } else if (domain) {
@@ -356,7 +371,8 @@ export function analyzeVisualConsistency({ docsDir, srcDir, contractPath, domain
   }
   const selectedScreenIds = new Set(families.flatMap((f) => f.screens));
   const screenInScope = (id) =>
-    screenFilter ? screenFilter.has(id) : domain ? selectedScreenIds.has(id) : true;
+    !absorbedIds.has(id) &&
+    (screenFilter ? screenFilter.has(id) : domain ? selectedScreenIds.has(id) : true);
   const selectedFamilyNames = new Set(families.map((f) => f.family));
 
   // --- 검사 2: contract member ↔ ScreenSpec screen_id (screen-not-found = warning;
@@ -410,12 +426,31 @@ export function analyzeVisualConsistency({ docsDir, srcDir, contractPath, domain
 
   // --- 검사 4: Shared Component Rules ↔ component catalog (component-gap 후보 보고만).
   const catalogFile = path.join(docsDir, 'design', 'component-catalog.md');
-  const componentsInScope = contract.components.filter(
-    (c) =>
-      c.applies_to_families.length === 0 ||
-      !screenFilter && !domain ||
-      c.applies_to_families.some((fam) => selectedFamilyNames.has(fam)),
-  );
+  const aggregateScope = !screenFilter && !domain;
+  const componentsInScope = contract.components.filter((c) => {
+    if (c.applies_to_families.length === 0) return true;
+    if (c.applies_to_families.some((fam) => selectedFamilyNames.has(fam))) return true;
+    // Known-but-unselected families include absorbed-only families and explicit screen/domain
+    // exclusions. Unknown references are malformed contract evidence, so an aggregate run must
+    // keep the component in catalog diagnostics instead of silently filtering it out.
+    return aggregateScope && c.applies_to_families.some((fam) => !allFamilyNames.has(fam));
+  });
+  for (const c of componentsInScope) {
+    const unknownFamilies = [
+      ...new Set(c.applies_to_families.filter((fam) => !allFamilyNames.has(fam))),
+    ].sort(compareText);
+    for (const family of unknownFamilies) {
+      findings.push({
+        severity: 'warning',
+        rule: 'unknown-component-family',
+        component: c.component,
+        family,
+        message:
+          `contract 의 shared component '${c.component}' 가 존재하지 않는 family '${family}' 를 참조함 — ` +
+          '대소문자/오타 또는 Screen Families 누락을 확인하세요 (aggregate catalog 진단은 유지).',
+      });
+    }
+  }
   if (!exists(catalogFile)) {
     skippedChecks.push({
       rule: 'component-gap-candidate',

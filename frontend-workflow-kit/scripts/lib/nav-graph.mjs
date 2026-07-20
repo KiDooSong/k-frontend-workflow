@@ -28,6 +28,7 @@ import {
 } from './spec.mjs';
 import { findFiles, readFileSafe } from './util.mjs';
 import { parseExpoIndexRouteTokens, parseRouteTreeRouteTokens } from './route-core.mjs';
+import { analyzeScreenLifecycles } from './screen-lifecycle.mjs';
 
 export { cellRoutes, isConcreteRoute }; // 하위호환 재노출(이전 nav-graph export 소비자 보호)
 
@@ -104,13 +105,14 @@ function outboundKey(e) {
 export function buildNavGraph({ docsDir }) {
   const domainsRoot = path.join(docsDir, 'domains');
   const specPaths = findFiles(domainsRoot, 'screen-spec.md');
+  const allSpecs = specPaths.map((specPath) => loadScreenSpec(specPath));
+  const { liveSpecs } = analyzeScreenLifecycles({ specs: allSpecs, docsDir });
 
-  // 1) 모든 spec 로드 + (id, route, outbound 엣지) 수집. route->screenId 해소 맵 구성.
+  // 1) valid absorbed를 제외한 live spec의 (id, route, outbound 엣지) 수집.
   const loaded = [];
   const routeToScreen = new Map(); // fm.route(raw) -> screenId. 비루트는 검사 4 semantics, 루트는 two-stage 해소.
   const routeSet = new Set();
-  for (const specPath of specPaths) {
-    const spec = loadScreenSpec(specPath);
+  for (const spec of liveSpecs) {
     const id = publicScreenKeyOf(spec);
     const route = (spec.frontmatter && spec.frontmatter.route) || null;
 

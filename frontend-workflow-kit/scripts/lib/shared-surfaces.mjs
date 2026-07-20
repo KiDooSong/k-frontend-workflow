@@ -11,6 +11,7 @@ import {
   publicScreenKeyOf,
 } from './spec.mjs';
 import { covers, toPosix } from './path-backstop.mjs';
+import { analyzeScreenLifecycles } from './screen-lifecycle.mjs';
 
 export const SHARED_SURFACE_ARTIFACT_TYPE = 'shared-surface-spec';
 export const SHARED_SURFACE_RESULT_TYPES = Object.freeze(['state', 'mutation', 'external', 'none']);
@@ -247,13 +248,14 @@ function localDecisionIssue(spec) {
   );
 }
 
-export function analyzeSharedSurfaces({ docsDir, surfaceSpecs, screenSpecs }) {
+export function analyzeSharedSurfaces({ docsDir, surfaceSpecs, screenSpecs, screenLifecycle }) {
   const specs = surfaceSpecs || loadSharedSurfaceSpecs({ docsDir });
   const allScreenSpecs = screenSpecs || [];
+  const lifecycle = screenLifecycle || analyzeScreenLifecycles({ specs: allScreenSpecs, docsDir });
   const screensById = screenIndexOf(allScreenSpecs);
   // Physical project paths are a global ownership namespace, independent of ScreenSpec domain or
-  // surface membership. Index every route/screen entry once and classify the relationship below.
-  const entryOwners = screenEntryOwners(docsDir, allScreenSpecs);
+  // surface membership. Valid absorbed entries are provenance, not current path owners.
+  const entryOwners = screenEntryOwners(docsDir, lifecycle.liveSpecs);
   const records = [];
 
   for (const spec of specs) {
@@ -374,6 +376,23 @@ export function analyzeSharedSurfaces({ docsDir, surfaceSpecs, screenSpecs }) {
         continue;
       }
       const screen = canonicalMatches[0];
+      const screenLifecycleRecord = lifecycle.bySpec.get(screen);
+      if (
+        screenLifecycleRecord?.valid &&
+        screenLifecycleRecord.lifecycle === 'absorbed'
+      ) {
+        membershipErrors.push(
+          error(
+            'absorbed-member',
+            `member screen ${member} is absorbed; use canonical active screen ${screenLifecycleRecord.absorbed_into}`,
+            {
+              screen_id: member,
+              absorbed_into: screenLifecycleRecord.absorbed_into,
+            },
+          ),
+        );
+        continue;
+      }
       memberRecords.push(screen);
       if (screen.frontmatter.domain !== fm.domain) {
         membershipErrors.push(
