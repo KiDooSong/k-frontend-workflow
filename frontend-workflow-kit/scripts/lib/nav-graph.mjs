@@ -24,6 +24,7 @@ import {
   buildRuntimeRouteTargetIndex,
   resolveRouteTreeTarget,
   resolveRouteTargetInScreenInventory,
+  publicScreenKeyOf,
 } from './spec.mjs';
 import { findFiles, readFileSafe } from './util.mjs';
 import { parseExpoIndexRouteTokens, parseRouteTreeRouteTokens } from './route-core.mjs';
@@ -56,12 +57,6 @@ export function parseNavigationMapRoutes(navMapText) {
     }
   }
   return routes;
-}
-
-// 한 spec 의 screenId 를 도출한다 — workflow-state.mjs 의 fallback 체인과 동일(대시보드와 노드 id 일치).
-function screenIdOf(spec, specPath) {
-  const fm = spec.frontmatter || {};
-  return fm.screen_id || fm.artifact_id || path.basename(path.dirname(specPath));
 }
 
 // 한 spec 의 outbound 이동 엣지를 도출한다. Interaction Matrix 행을 직접 재순회한다
@@ -118,8 +113,7 @@ export function buildNavGraph({ docsDir }) {
   const routeToScreen = new Map(); // fm.route(raw) -> screenId. 비루트는 검사 4 semantics, 루트는 two-stage 해소.
   const routeSet = new Set();
   for (const spec of liveSpecs) {
-    const specPath = spec.path;
-    const id = screenIdOf(spec, specPath);
+    const id = publicScreenKeyOf(spec);
     const route = (spec.frontmatter && spec.frontmatter.route) || null;
 
     // route->screenId 등록은 stub 여부와 무관하게 먼저 한다. stub(frontmatter 만 있는 발견 단계 화면)도

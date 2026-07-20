@@ -115,12 +115,12 @@ test('duplicate and noncanonical target identities are rejected in the public ke
     codes(booleanDuplicate.bySpec.get(booleanSource)).includes('ambiguous-absorption-target'),
   );
 
-  const fallback = fakeSpec(false, { artifact_id: 'TARGET' }, 'fallback');
+  const presentFalsy = fakeSpec(false, { artifact_id: 'TARGET' }, 'present-falsy');
   const noncanonicalSource = fakeSpec('SOURCE-2', {
     screen_lifecycle: 'absorbed',
-    absorbed_into: 'TARGET',
+    absorbed_into: 'false',
   });
-  const noncanonical = analyze([noncanonicalSource, fallback]);
+  const noncanonical = analyze([noncanonicalSource, presentFalsy]);
   assert.ok(codes(noncanonical.bySpec.get(noncanonicalSource)).includes('noncanonical-absorption-target'));
 });
 

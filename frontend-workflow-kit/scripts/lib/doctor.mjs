@@ -4,7 +4,7 @@ import { isDir, walkFiles, exists, findFiles, readFileSafe } from './util.mjs';
 import { globRoot, globToRegExp } from './glob.mjs';
 import { BUILT_IN_LAYER_ROLES } from './layer-inventory.mjs';
 import { buildPolicyDraft } from './policy-draft.mjs';
-import { loadScreenSpec } from './spec.mjs';
+import { loadScreenSpec, screenIdCandidateOf } from './spec.mjs';
 import { parseRouteTreeRouteTokens } from './route-core.mjs';
 import { CONTRACT_KINDS, parseManifestEndpoints } from './api-manifest.mjs';
 import { collectScreenSourceMapFindings } from './screen-source-map.mjs';
@@ -78,7 +78,7 @@ function collectRouteScreenMappingFindings({ docsDir, projectRoot }) {
   for (const spec of liveSpecs) {
     const specPath = spec.path;
     const fm = spec.frontmatter || {};
-    const screenId = fm.screen_id || fm.artifact_id || path.basename(path.dirname(specPath));
+    const screenId = screenIdCandidateOf(spec);
     const route = typeof fm.route === 'string' && fm.route ? fm.route : null;
     if (route) {
       const list = routeToSpecs.get(route) || [];

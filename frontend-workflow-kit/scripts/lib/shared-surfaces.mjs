@@ -3,6 +3,7 @@ import { findFiles } from './util.mjs';
 import {
   col,
   interactionMatrixIsV2,
+  hasIdentityCandidate,
   isStub,
   loadScreenSpec,
   parseOpenDecisions,
@@ -15,6 +16,7 @@ import { analyzeScreenLifecycles } from './screen-lifecycle.mjs';
 export const SHARED_SURFACE_ARTIFACT_TYPE = 'shared-surface-spec';
 export const SHARED_SURFACE_RESULT_TYPES = Object.freeze(['state', 'mutation', 'external', 'none']);
 const CANONICAL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+const WINDOWS_DRIVE_PREFIX_PATTERN = /^[A-Za-z]:/;
 export const SHARED_SURFACE_FORBIDDEN_IDENTITY_FIELDS = Object.freeze([
   'route',
   'screen_id',
@@ -54,8 +56,38 @@ export function loadSharedSurfaceSpecs({ docsDir }) {
   );
 }
 
+function lexicalPathKey(value) {
+  const normalized = path.posix.normalize(String(value).replace(/\\/g, '/'));
+  return normalized === '/' ? normalized : normalized.replace(/\/+$/, '');
+}
+
 export function pathsOverlap(left, right) {
-  return covers(left, right) || covers(right, left);
+  const leftKey = lexicalPathKey(left);
+  const rightKey = lexicalPathKey(right);
+  return covers(leftKey, rightKey) || covers(rightKey, leftKey);
+}
+
+function ownershipPathKey(value) {
+  const separated = String(value).replace(/\\/g, '/');
+  const hasDriveSegment = separated
+    .split('/')
+    .some((segment) => WINDOWS_DRIVE_PREFIX_PATTERN.test(segment));
+  if (path.posix.isAbsolute(separated) || hasDriveSegment) {
+    return { key: null, issue: 'absolute-or-nonportable' };
+  }
+
+  const key = lexicalPathKey(separated);
+  if (
+    path.posix.isAbsolute(key) ||
+    WINDOWS_DRIVE_PREFIX_PATTERN.test(key)
+  ) {
+    return { key: null, issue: 'absolute-or-nonportable' };
+  }
+
+  if (key === '..' || key.startsWith('../')) {
+    return { key: null, issue: 'outside-project-root' };
+  }
+  return { key, issue: null };
 }
 
 export function implementationPathIssues(value) {
@@ -69,7 +101,7 @@ export function implementationPathIssues(value) {
   const issues = [];
   if (
     normalized.startsWith('/') ||
-    /^[A-Za-z]:\//.test(normalized) ||
+    WINDOWS_DRIVE_PREFIX_PATTERN.test(normalized) ||
     value.includes('\\')
   ) {
     issues.push(error('absolute-or-nonportable-path', `implementation path must be project-relative POSIX: ${value}`));
@@ -138,6 +170,7 @@ function screenEntryOwners(docsDir, screenSpecs) {
       ['screen_entry', spec.frontmatter.screen_entry],
     ]) {
       if (typeof entryPath !== 'string' || !entryPath) continue;
+      const ownership = ownershipPathKey(entryPath);
       owners.push({
         spec,
         screen_id: screenId,
@@ -145,10 +178,41 @@ function screenEntryOwners(docsDir, screenSpecs) {
         screen_spec_path: screenSpecPath,
         entry_kind: entryKind,
         entry_path: entryPath,
+        entry_path_key: ownership.key,
+        entry_path_issue: ownership.issue,
       });
     }
   }
   return owners;
+}
+
+function entryPathIssue(owner) {
+  const fields = {
+    screen_id: owner.screen_id,
+    screen_domain: owner.screen_domain,
+    entry_kind: owner.entry_kind,
+    entry_path: owner.entry_path,
+    screen_spec_path: owner.screen_spec_path,
+  };
+  if (owner.entry_path_issue === 'absolute-or-nonportable') {
+    return error(
+      'absolute-or-nonportable-path',
+      `ScreenSpec ${owner.entry_kind} uses an absolute or nonportable path: ${owner.entry_path}`,
+      fields,
+    );
+  }
+  return error(
+    'invalid-path',
+    `ScreenSpec ${owner.entry_kind} must remain project-relative after normalization: ${owner.entry_path}`,
+    fields,
+  );
+}
+
+function surfaceIdCandidateOf(spec) {
+  const fm = spec.frontmatter;
+  if (hasIdentityCandidate(fm.surface_id)) return fm.surface_id;
+  if (hasIdentityCandidate(fm.artifact_id)) return fm.artifact_id;
+  return path.basename(path.dirname(spec.path));
 }
 
 function canonicalPathIssue(docsDir, spec) {
@@ -196,8 +260,7 @@ export function analyzeSharedSurfaces({ docsDir, surfaceSpecs, screenSpecs, scre
 
   for (const spec of specs) {
     const fm = spec.frontmatter;
-    const surfaceId =
-      fm.surface_id || fm.artifact_id || path.basename(path.dirname(spec.path));
+    const surfaceId = surfaceIdCandidateOf(spec);
     const source = sharedSurfaceSource(docsDir, spec);
     const contractErrors = [];
     const membershipErrors = [];
@@ -220,7 +283,12 @@ export function analyzeSharedSurfaces({ docsDir, surfaceSpecs, screenSpecs, scre
       !CANONICAL_ID_PATTERN.test(fm.surface_id)
     ) {
       contractErrors.push(
-        error('invalid-surface-id', `surface_id must be a canonical ID: ${fm.surface_id || '(missing)'}`),
+        error(
+          'invalid-surface-id',
+          `surface_id must be a canonical ID: ${
+            hasIdentityCandidate(fm.surface_id) ? String(fm.surface_id) : '(missing)'
+          }`,
+        ),
       );
     }
     if (fm.artifact_type !== SHARED_SURFACE_ARTIFACT_TYPE) {
@@ -362,9 +430,16 @@ export function analyzeSharedSurfaces({ docsDir, surfaceSpecs, screenSpecs, scre
     }
 
     const memberRecordPaths = new Set(memberRecords.map((member) => member.path));
+    if (implementationPaths.length > 0) {
+      for (const owner of entryOwners) {
+        if (owner.entry_path_issue) pathErrors.push(entryPathIssue(owner));
+      }
+    }
     for (const implementationPath of implementationPaths) {
       for (const owner of entryOwners) {
-        if (!pathsOverlap(implementationPath, owner.entry_path)) continue;
+        if (!owner.entry_path_key || !pathsOverlap(implementationPath, owner.entry_path_key)) {
+          continue;
+        }
         if (memberRecordPaths.has(owner.spec.path)) {
           // Preserve the existing member diagnostic contract exactly for resolved members.
           pathErrors.push(

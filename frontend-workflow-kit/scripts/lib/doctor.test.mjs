@@ -225,6 +225,59 @@ test('collectDoctorFindings: route-tree route without ScreenSpec mapping is warn
   assert.equal(gap.route, '/profile');
 });
 
+test('collectDoctorFindings: mapping diagnostics preserve present-falsy Screen IDs', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'doctor-falsy-screen-id-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const docsDir = path.join(tmp, 'docs', 'frontend-workflow');
+  for (const scenario of [
+    { slug: 'zero', rawYaml: '0' },
+    { slug: 'false', rawYaml: 'false' },
+  ]) {
+    const screenDir = path.join(
+      docsDir,
+      'domains',
+      'profile',
+      'screens',
+      scenario.slug,
+    );
+    fs.mkdirSync(screenDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(screenDir, 'screen-spec.md'),
+      [
+        '---',
+        `artifact_id: ${scenario.slug}-screen-spec`,
+        'artifact_type: screen-spec',
+        'domain: profile',
+        `screen_id: ${scenario.rawYaml}`,
+        `route: /${scenario.slug}`,
+        `screen_entry: src/features/profile/${scenario.slug}/Missing.tsx`,
+        'status: draft',
+        '---',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+  }
+
+  const findings = collectDoctorFindings({
+    projectRoot: tmp,
+    docsDir,
+    layout: { roles: {}, layers: [] },
+  });
+  const missing = findings.filter(
+    (finding) => finding.check === 'route-screen-mapping-entry-missing',
+  );
+  assert.equal(missing.length, 2);
+  assert.deepEqual(
+    missing
+      .map((finding) => finding.screen_id)
+      .sort((a, b) => String(a).localeCompare(String(b))),
+    [0, false],
+  );
+  assert.ok(missing.some((finding) => /ScreenSpec false declares/.test(finding.message)));
+  assert.ok(missing.some((finding) => /ScreenSpec 0 declares/.test(finding.message)));
+});
+
 test('collectDoctorFindings: explicit separated route_entry and screen_entry are supported without path-shape warning', (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'doctor-route-screen-separated-'));
   t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));

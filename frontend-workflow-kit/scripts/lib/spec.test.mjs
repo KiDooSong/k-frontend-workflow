@@ -33,6 +33,8 @@ import {
   routeTreeTargetExists,
   INTERACTION_V2_RESULT_TYPES,
   deriveMetrics,
+  screenIdCandidateOf,
+  publicScreenKeyOf,
 } from './spec.mjs';
 import { buildNavGraph } from './nav-graph.mjs';
 import { renderRouteTree } from './route-core.mjs';
@@ -112,6 +114,65 @@ function specWithStateMatrix(states) {
 function check4Errors(result) {
   return (result.errors || []).filter((e) => e.check === 4);
 }
+
+test('screen identity fallback preserves present falsy values and skips only missing or empty values', () => {
+  const spec = (frontmatter) => ({
+    frontmatter,
+    path: path.join('/repo', 'docs', 'domains', 'chat', 'screens', 'path-fallback', 'screen-spec.md'),
+  });
+  const cases = [
+    { frontmatter: { screen_id: 0, artifact_id: 'artifact' }, candidate: 0, key: '0' },
+    { frontmatter: { screen_id: false, artifact_id: 'artifact' }, candidate: false, key: 'false' },
+    { frontmatter: { screen_id: '', artifact_id: 'artifact' }, candidate: 'artifact', key: 'artifact' },
+    { frontmatter: { screen_id: null, artifact_id: 'artifact' }, candidate: 'artifact', key: 'artifact' },
+    { frontmatter: { artifact_id: 'artifact' }, candidate: 'artifact', key: 'artifact' },
+    { frontmatter: { screen_id: '', artifact_id: 0 }, candidate: 0, key: '0' },
+    { frontmatter: { screen_id: null, artifact_id: false }, candidate: false, key: 'false' },
+    { frontmatter: { screen_id: '', artifact_id: '' }, candidate: 'path-fallback', key: 'path-fallback' },
+    { frontmatter: { screen_id: null, artifact_id: null }, candidate: 'path-fallback', key: 'path-fallback' },
+    { frontmatter: {}, candidate: 'path-fallback', key: 'path-fallback' },
+  ];
+
+  for (const scenario of cases) {
+    const candidate = screenIdCandidateOf(spec(scenario.frontmatter));
+    assert.equal(candidate, scenario.candidate);
+    assert.equal(publicScreenKeyOf(spec(scenario.frontmatter)), scenario.key);
+  }
+});
+
+test('nav graph uses the public Screen key for present-falsy identity collisions', (t) => {
+  for (const scenario of [
+    { name: 'zero', rawYaml: '0', stringYaml: '"0"', publicKey: '0' },
+    { name: 'false', rawYaml: 'false', stringYaml: '"false"', publicKey: 'false' },
+  ]) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), `nav-falsy-${scenario.name}-`));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const prefix = 'docs/frontend-workflow/domains/d/screens';
+    writeTree(root, {
+      [`${prefix}/a-invalid/screen-spec.md`]: screenSpec({
+        artifactId: `malformed-${scenario.name}-screen-spec`,
+        screenId: scenario.rawYaml,
+        route: `/${scenario.name}-invalid`,
+        matrix: basicMatrix(`/${scenario.name}-target-a`),
+      }),
+      [`${prefix}/z-valid/screen-spec.md`]: screenSpec({
+        artifactId: `canonical-${scenario.name}-screen-spec`,
+        screenId: scenario.stringYaml,
+        route: `/${scenario.name}-valid`,
+        matrix: basicMatrix(`/${scenario.name}-target-z`),
+      }),
+    });
+
+    const graph = buildNavGraph({
+      docsDir: path.join(root, 'docs', 'frontend-workflow'),
+    });
+    assert.deepEqual(Object.keys(graph.screens), [scenario.publicKey]);
+    assert.deepEqual(
+      graph.screens[scenario.publicKey].outbound.map((edge) => edge.to_route),
+      [`/${scenario.name}-target-a`, `/${scenario.name}-target-z`],
+    );
+  }
+});
 
 test('deriveMetrics: old five states are incomplete because disabled is separate from loading', () => {
   const derived = deriveMetrics(

@@ -4,6 +4,12 @@
 
 ## Unreleased
 
+### fix(shared-surfaces) — close falsy identity and lexical entry-path gaps (#200)
+
+- Screen identity fallback이 `undefined`, `null`, 빈 문자열만 다음 후보로 넘기고 present-falsy `0`/`false`는 raw provenance로 보존한다. 공개 plain-object key coercion은 기존처럼 `String(candidate)`를 사용하므로 numeric/boolean ID와 canonical string ID가 같은 키에서 duplicate로 수렴하고, shared-surface membership/readiness/validate가 각각 `ambiguous-member` 또는 `invalid-member-screen-id`로 fail-closed한다. 정상 string, prototype-named ID, empty/missing fallback, no-surface 공개 shape는 변경하지 않았다.
+- shared-surface ownership overlap 비교에서 ScreenSpec `route_entry`/`screen_entry`는 checkout-independent project-relative 경로만 허용한다. POSIX absolute, Windows drive-absolute/drive-relative와 UNC representation은 separator만 통일한 authored segments와 lexical normalization 후의 key에서 모두 판정해 `./`나 dot segment로 prefix를 가리거나 `..` reduction으로 drive segment를 제거할 수 없게 하고 기존 `absolute-or-nonportable-path`로 fail-closed한다. POSIX normalize 결과가 root를 벗어나는 relative traversal은 기존 `invalid-path` 구조 오류로 처리하며, 같은 drive-prefix 검사를 surface `implementation_paths`에도 적용한다. root를 벗어나지 않는 backslash, redundant `./`/separator(경로 끝 separator 포함), lexical dot segment는 repository-relative POSIX key로 수렴한다. 진단 `entry_path`와 state/inventory에는 raw authored 값을 유지하며 기존 `member-entry-overlap`/`non-member-entry-overlap` 코드와 canonical-path 진단 bytes, membership/delegation, 전역 path helper/schema/gate/version은 변경하지 않았다.
+- Screen identity fallback helper를 nav-graph와 doctor mapping diagnostics까지 공유해 `screen_id: 0`/`false`가 workflow-state와 다른 artifact fallback node/label로 갈라지지 않게 했다. Surface identity도 같은 present-candidate 규칙을 사용하므로 numeric/boolean falsy ID와 canonical string ID가 duplicate provenance로 수렴하고 readiness/validate가 fail-closed하며, `invalid-surface-id` 진단은 raw `0`/`false`를 `(missing)`으로 오표시하지 않는다.
+
 ### fix(screen-lifecycle) — exclude valid absorbed ScreenSpecs from live workflow surfaces (#203)
 
 - ScreenSpec 문서 `status`와 독립적인 optional `screen_lifecycle: active|absorbed` 계약을 추가했다. 기본값은 active이며 valid absorbed는 unique active canonical `absorbed_into`를 직접 가리키고 optional real-date `absorbed_at`을 보존한다. prose tombstone·missing route/entry로 상태를 추론하지 않고 `status: absorbed`도 만들지 않는다.
