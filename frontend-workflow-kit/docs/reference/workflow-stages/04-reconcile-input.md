@@ -70,3 +70,15 @@ is **not** where canonical screen identity is invented.
 When done, set the row to `reconciled` and fill `Result` / `Touched Artifacts` /
 `Created Items`. A child decision left `open` does not block marking reconcile
 `reconciled` — readiness handles that gate.
+
+## Contract v2 registers and review
+
+If the register frontmatter declares `reconciliation_contract: 2`, also author the
+`## Reconciliation Items` effect rows alongside the summary row — grammar, routing
+matrix, and provenance floor live in
+[`../input-reconciliation.md`](../input-reconciliation.md#reconciliation-contract-v2-opt-in).
+Review of this stage's output follows `review_profile: reconcile-stage04-v1`
+([`../reconcile-review-rubric.md`](../reconcile-review-rubric.md)): reviewers check
+routing / source backing / gate-raising boundary / scope only, submit all required
+findings in one round, and stop when the stop condition is met — final fidelity of
+provisional artifacts is not a pass condition here.

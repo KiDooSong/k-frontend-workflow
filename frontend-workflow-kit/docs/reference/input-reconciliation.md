@@ -303,6 +303,109 @@ docs/frontend-workflow/_meta/reconciliation-register.md
 
 팀이 input/reconcile flow 를 쓰기 시작하면 `templates/meta/reconciliation-register.template.md` 의 8컬럼 스키마로 register 를 만든다. register 가 도입된 뒤부터 check 12 는 구조와 상태를 검사한다.
 
+## Reconciliation Contract v2 (opt-in)
+
+register frontmatter 에 `reconciliation_contract: 2` 를 선언하면 check 12 가 **구조화 계약(v2)** 을 추가로
+강제한다. 필드가 없으면 v1 동작(위 8컬럼 검사)이 byte-compatible 하게 유지된다. v2 의 목적은 #202 가 지적한
+세 곱셈 인자(기계 강제 0 × 정밀도 바닥 0 × 잠정물 최종-fidelity 리뷰)를 줄이는 것이다.
+
+핵심 문장: **정적 validator 는 선언된 구조와 참조를 강제하고, reviewer 는 diff 에서 권한 경계를 확인한다.
+자유서술의 의미를 hard gate 로 추측하지 않는다.**
+
+### v2 Frontmatter
+
+```yaml
+reconciliation_contract: 2            # v2 parser/check 활성화 (없으면 v1)
+review_profile: reconcile-stage04-v1  # reviewer 범위·stop rule — reconcile-review-rubric.md
+structured_since: "2026-07-20T00:00:00+09:00"  # 이 시각 이후 capture 된 입력은 item 표 필수 (RFC3339)
+```
+
+`structured_since` **이전**에 capture 된 입력은 summary-only legacy 로 남는다 — 기존 행을 한 번에 backfill
+하지 않아도 된다. backfill 은 선택이며, 과거 source 가 불명확하면 정밀도를 발명하지 않는다
+(`Source Unit=document|statement` 같은 확인 가능한 최소 단위만).
+
+### v2 Summary 문법 (기존 8컬럼 헤더는 불변)
+
+structured 행(= `structured_since` 이후 입력, 또는 item 행을 가진 입력)의 셀 문법:
+
+| 컬럼 | v2 문법 |
+|---|---|
+| `Classification` | `<classification>[×N] + ...` (예: `simple-update×2 + conflict`). 괄호 annotation 은 warning-first — annotation 은 item 표에 둔다 |
+| `Result` | canonical code: `pending` `accepted` `rejected` `pending-user-decision` `delegated` `no-change` `mixed` `failed` (초기 rollout warning-first) |
+| `Touched Artifacts` | 세미콜론 구분 `artifact:<artifact_id>[#section]` |
+| `Created Items` | 세미콜론 구분 typed target ref. **`(open)` 류 현재 상태 주석 금지** — 상태의 단일 출처는 대상 표 |
+| `Supersedes` | `-` 또는 존재하는 `input_id` |
+
+### `## Reconciliation Items` 표 (10컬럼)
+
+입력 1개가 만든 item N개의 **effect 단위** 기록이다. 같은 item 의 여러 effect 는 같은 `Item` ID 를 쓴다
+(예: resolved decision 충돌 → `C-001 create-open` + `D-204 reopen` 두 행). canonical detail 은 Items 이고
+Summary 는 그 projection 이다.
+
+```md
+| Input ID | Item | Basis | Classification | Effect | Target | Evidence | Source Ref | Source Unit | Captured At |
+```
+
+- `Item`: input-scoped 2자리 ID(`01`, `02`...). Classification 개수는 unique `(Input ID, Item)` 로 센다.
+- `Basis` enum: `compatible-fact` `visual-evidence` `unknown-answer` `decision-answer` `new-choice`
+  `component-missing` `verification-gap` `input-input-conflict` `resolved-decision-conflict` `scope-unclear` `reject`.
+- `Effect` enum: `update` `create` `create-open` `reopen` `link-evidence` `record` `reject`.
+  **`resolve`/`close`/`accept`/`confirm`/`implement` 는 의도적으로 없다** — machine record 차원의
+  gate-raising-only 경계다. effect 는 reconcile 시점의 **역사적 행위**이며, 나중에 사람이 target 을 다시
+  닫아도 기록을 바꾸지 않는다 (validator 도 target 의 현재 status 를 hard 하게 요구하지 않는다).
+- `Target` 문법: `artifact:<artifact_id>[#<section-slug>[/<row-key>]]` 또는
+  `decision:D-x@<owner-artifact-id>` (unknown/conflict/gap/investigation/verification 동형), reject 는 `-`/`input:<id>`.
+  owner artifact 를 필수로 해 U-/INV-/VER- 의 화면별 중복 모호성을 없앤다.
+- `Evidence` 문법: `input:<input_id>#<section-slug>[/NN]` — section 존재는 hard, bullet index 해소는 warning-first.
+- `Source Ref`/`Captured At`: `inherit` 면 input frontmatter 의 `source_ref`/`captured_at` 을 상속.
+  `Source Unit` 은 item 마다 명시(enum: `document` `statement` `record` `instance` `node` `frame` `token`
+  `screenshot` `measurement` `aggregate` `n/a`) — "카드 12개"가 Figma instance 수면 `instance`, API record 수면
+  `record` 다. 이 구분이 정밀도 바닥이다. `n/a` 는 reject/procedural item 전용(warning-first).
+
+### Routing matrix (hard)
+
+선언된 `Basis` 에 대해 validator 가 hard 로 검사하는 조합:
+
+| Basis | Classification | 필수/허용 Effect·Target |
+|---|---|---|
+| `compatible-fact` | `simple-update` | `update\|create` + `artifact:*` |
+| `visual-evidence` | `simple-update` | `update\|create` + visual 허용 대상만 (아래) |
+| `unknown-answer` | `resolves-unknown` | `link-evidence` + `unknown:*` |
+| `decision-answer` | `resolves-decision` | `link-evidence` + `decision:*` |
+| `new-choice` | `new-decision` | `create-open` + `decision:*` |
+| `component-missing` | `component-gap` | `create-open` + `gap:*` |
+| `verification-gap` | `investigation-needed` | `create-open\|record` + `investigation:*\|verification:*` (필수 1+); blocking 이면 `decision:*` `create-open` 추가 허용 |
+| `input-input-conflict` | `conflict` | `create-open\|record` + `conflict:*` (필수 1+); 구현 선택을 가르면 `decision:*` `create-open` 추가 허용 |
+| `resolved-decision-conflict` | `conflict` | 같은 Item 에 `conflict:* create-open` **과** `decision:* reopen` 둘 다 필수 |
+| `scope-unclear` | `scope-unclear` | `unknown:*`/`decision:*`; **screen-level artifact write 금지** (identity 해소 전) |
+| `reject` | `reject-input` | `reject` + `-` 또는 `input:<id>` |
+
+visual-evidence 허용 target: `figma-component-mapping` · `visual-consistency-contract` ·
+`component-gap-register` · ScreenSpec 의 `#ui-sections`/`#notes`/`#sources`. ScreenSpec 의
+`interaction-matrix`/`state-matrix`/`data-requirements`/`api-candidates`/`acceptance-criteria` 와
+Navigation Map·Domain Rules 는 hard error — Figma 입력이 behavior 충돌을 **발견**했다면 별도 item 을
+`new-choice`/`resolved-decision-conflict` 로 기록한다(visual item 이 behavior 를 확정하지 않는다).
+
+### Summary ↔ Items 일치 (hard)
+
+- `Classification` multiset = unique `(Input ID, Item)` 의 classification 개수 (validator 가 canonical order 제안).
+- `Created Items` = effect 가 `create`/`create-open`/`reopen`/`link-evidence`/`record` 인 target 집합 (exact).
+- `Touched Artifacts` = 모든 effect target 의 owner artifact 집합 (artifact id 수준 exact; section detail 차이는 warning).
+
+### 진단 prefix 와 --enforce
+
+v2 진단 메시지는 stable prefix 를 갖는다: `RR-SCHEMA-*`(구조·문법) `RR-ITEM-*`(item/projection)
+`RR-REF-*`(참조 해소) `RR-ROUTE-*`(routing) `RP-*`(provenance) — `*-1xx`/`RP-1xx` 는 warning.
+v2 의 deterministic 오류는 `--enforce` 와 무관하게 **항상 에러**다. 반대로 v2 warning 과 자연어 semantic
+heuristic(202-C 후속, warning-only)은 `--enforce` 로도 hard 승격하지 않는다 — 승격은 별도 사람 승인이다.
+
+### Migration
+
+1. 기존 8컬럼 표는 유지한다. frontmatter 에 v2 필드와 현재 시각의 `structured_since` 를 추가한다.
+2. 과거 입력은 summary-only legacy 로 둔다. 이후 capture 된 입력부터 item 표를 작성한다.
+3. 신규 consumer 는 새 템플릿으로 즉시 v2 를 쓴다.
+4. 픽스처: `examples/reconciliation-validation/v2-pass|v2-fail`. 리뷰 계약: [reconcile-review-rubric.md](reconcile-review-rubric.md).
+
 ## Reconciliation Flow
 
 새 입력이 들어오면 코드 변경 전에 다음 흐름을 탄다. **register 를 문서 수정보다 먼저 쓰는 것**이 핵심이다(아래 register-first 참고).
@@ -471,7 +574,9 @@ hard gate / CI not promoted
 
 ### Reconcile-input review rubric
 
-reconcile-input 결과를 리뷰할 때는 아래 항목을 통과 기준으로 본다.
+Stage 04 리뷰의 canonical contract(필수 범위·severity·finding 일괄 제출·stop condition)는
+[reconcile-review-rubric.md](reconcile-review-rubric.md) (`review_profile: reconcile-stage04-v1`) 가 소유한다.
+아래 표는 reconcile-input 실행 결과의 self-check 요약이다.
 
 | 항목 | Pass 기준 |
 |---|---|

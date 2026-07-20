@@ -121,3 +121,28 @@ register 표가 필수 컬럼을 빠뜨린 경우. `Input ID | Reconcile Status`
 - 계약: `../../docs/reference/input-reconciliation.md` (Reconciliation Register 스키마 / status vs Reconcile Status 3축 / register-first).
 - 실제 8컬럼 register 형태: `../input-reconciliation/expected-llm-after/docs/frontend-workflow/_meta/reconciliation-register.md`.
 - Check 11(input frontmatter) 전용 픽스처: `../input-validation/`.
+
+## v2-pass/ · v2-fail/ — Reconciliation Contract v2 (opt-in, 검사 12 확장)
+
+frontmatter `reconciliation_contract: 2` 를 선언한 register 의 v2 검사(`## Reconciliation Items` effect 표 ·
+summary projection · typed target/evidence 해소 · routing matrix · item provenance)를 시연한다.
+계약: `../../docs/reference/input-reconciliation.md` §Reconciliation Contract v2 / 리뷰 프로필:
+`../../docs/reference/reconcile-review-rubric.md`.
+
+```bash
+# v2 PASS — exit 0 기대 (multiset/typed ref/reopen 페어/inherit 전부 해소)
+node scripts/validate.mjs --docs examples/reconciliation-validation/v2-pass/docs/frontend-workflow
+
+# v2 FAIL — exit 1 기대 (대표 hard failure 11건 — 픽스처 register 의 메모 참조)
+node scripts/validate.mjs --docs examples/reconciliation-validation/v2-fail/docs/frontend-workflow
+```
+
+- **v1 트리들은 그대로다.** `reconciliation_contract` 필드가 없는 register(pass/·fail/ 등)는 v2 검사가 완전
+  무발화(byte-compatible)임을 위 트리들이 계속 입증한다.
+- `v2-fail/` 의 기대 에러 목록(RR-ITEM-005 multiset · RR-ITEM-006/007 projection · RR-SCHEMA-008 상태 주석 ·
+  RR-REF-008 target row 미해소 · RR-ROUTE-003 reopen 페어 · RR-ROUTE-004 visual 누출 · RP-001/002 provenance)은
+  픽스처 register 상단 메모에 고정돼 있다.
+- v2 의 deterministic 오류는 `--enforce` 와 무관하게 항상 에러다. warning(RR-*-1xx/RP-1xx: annotation ·
+  Result 어휘 · bullet index · row-key · n/a)은 `--enforce` 로도 hard 승격하지 않는다.
+- 자연어 의미 추정(Unknown 문구가 conflict 처럼 보임 등)은 v2 에서도 검사하지 않는다 — 202-C 의
+  warning-only 후보이며 promotion 은 별도 사람 승인이다.

@@ -43,15 +43,17 @@ function cell(row, name) {
 }
 
 // register 파일을 파싱한다.
-//   { exists, table, rows }
+//   { exists, table, rows, fm, body }
 //   - exists=false 면 검사 12 는 NO-OP (초기/선택적 도입 — input-reconciliation.md "초기에는 hard fail 이 아니라").
 //   - rows: [{ inputId, source, classification, reconcileStatus, result, touched, created, supersedes }]
 //     created(Touched/Created Items)는 원문 문자열 그대로 — HARD RULE 2 에 따라 주석을 파싱하지 않는다.
+//   - fm/body: Reconciliation Contract 버전 판정(reconciliation_contract 필드)과 v2 의
+//     `## Reconciliation Items` 표 파싱에 쓴다(reconciliation-items.mjs). v1 검사는 둘을 읽지 않는다.
 export function parseReconciliationRegister(registerFile) {
   if (!registerFile || !exists(registerFile)) {
-    return { exists: false, table: null, rows: [] };
+    return { exists: false, table: null, rows: [], fm: {}, body: '' };
   }
-  const { body } = splitFrontmatter(readFileSafe(registerFile));
+  const { data: fm, body } = splitFrontmatter(readFileSafe(registerFile));
   const table = parseTable(body); // register 는 본문의 첫 마크다운 표
   const rows = [];
   if (table) {
@@ -68,7 +70,7 @@ export function parseReconciliationRegister(registerFile) {
       });
     }
   }
-  return { exists: true, table, rows };
+  return { exists: true, table, rows, fm: fm || {}, body };
 }
 
 // register 검증(검사 12).

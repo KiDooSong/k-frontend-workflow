@@ -4,6 +4,41 @@
 
 ## Unreleased
 
+### feat(reconciliation) — Reconciliation Contract v2 + 검사 12 구조 강제 + Stage 04 review profile (#202, slice A)
+
+- Reconciliation Register 에 **opt-in Contract v2** 를 추가했다. frontmatter `reconciliation_contract: 2` +
+  `review_profile: reconcile-stage04-v1` + `structured_since`(RFC3339) 를 선언한 register 만 새 검사가 켜지고,
+  필드가 없는 v1 register 와 기존 fixture 출력은 byte-compatible 하다(새 warning 도 없음). 새 numbered check
+  없이 **검사 12 를 확장**했으며 진단 메시지에 stable prefix(RR-SCHEMA/RR-ITEM/RR-REF/RR-ROUTE/RP, warning 은
+  `*-1xx`)를 부여했다 — JSON output shape 는 불변.
+- v2 register 는 기존 8컬럼 summary 표를 유지하고 같은 문서에 `## Reconciliation Items` 10컬럼 effect 표를
+  추가한다(canonical detail=Items, Summary=projection). hard 검사: summary Classification multiset ↔ unique
+  `(Input ID, Item)` 개수 일치 · Created Items(creating effects)/Touched Artifacts(owner set) exact projection ·
+  typed target(`artifact:<id>[#sec[/row]]` / `decision:D-x@owner` 계열)·evidence(`input:<id>#section[/NN]`) 참조
+  해소(문서·섹션·D-/C-/U-/G- row·INV-/VER- 토큰) · 선언된 Basis 의 routing matrix(basis↔classification↔
+  effect/target 허용 행렬, `resolved-decision-conflict` 는 conflict create-open + decision reopen 페어 필수,
+  visual-evidence 의 behavior section 누출·scope-unclear 의 screen-level write 금지) · item provenance
+  필수값(Source Unit enum, `inherit`/RFC3339 Captured At, inherit 해소). effect 어휘에 resolve/close/accept/
+  confirm 은 의도적으로 없다(gate-raising-only 경계). deterministic v2 오류는 `--enforce` 와 무관하게 항상
+  에러, v2 warning(annotation·Result 어휘·bullet index·row-key·n/a)은 `--enforce` 로도 승격하지 않는다.
+  자연어 semantic heuristic 은 이번 slice 에 없다(202-C 후속, warning-only + 사람 승인 promotion).
+- `structured_since` 이후 capture 된 입력만 item 표가 필수다 — 과거 행은 summary-only legacy 로 남고 v2
+  grammar/projection 검사를 받지 않는다(backfill 선택, 정밀도 발명 금지). effect 는 역사적 행위 기록이라
+  target 의 **현재** status 를 hard 로 요구하지 않는다(stale 대조는 202-C warning 후보). actor-sensitive
+  hard rule(현재 resolved 를 LLM 침범으로 단정)도 만들지 않았다 — diff 의 gate-lowering 확인은 reviewer 몫.
+- Stage 04 리뷰 계약을 canonical 화했다: 신규 `docs/reference/reconcile-review-rubric.md`
+  (`reconcile-stage04-v1` — 필수 검토 범위 5종/최종-fidelity 요구 금지 목록/severity/finding 일괄 제출/stop
+  condition). reconcile-input skill 에 Review Contract 절과 v2 item 저작 절차(Source Unit 선택 규칙 포함)를
+  추가했고, Stage 04 문서·doc-ownership·input-reconciliation §Contract v2·register 템플릿(v2 생성)을 갱신했다.
+- 구현: `scripts/lib/provenance.mjs`(RFC3339/Source Unit/inherit 단일 출처 — 202-B 에서 검사 11·figma mapping
+  재사용 예정) + `scripts/lib/reconciliation-target-index.mjs`(validate 가 이미 수집한 docs 재사용, 추가 walk
+  없음) + `scripts/lib/reconciliation-items.mjs`(v2 순수 검사). 테스트: `reconciliation-items.test.mjs`
+  33건(v2 pass/hard/warning + v1 compat fixture 스냅샷) · `examples/reconciliation-validation/v2-pass|v2-fail`
+  픽스처 · distribution payload 에 rubric 문서 포함 검증 · reconcile-input skill-contract fixture.
+- 하지 않은 것(설계 §14): 검사 11 `captured_at` RFC3339 hard 승격과 figma-component-mapping `M-xxx`/
+  `## Mapping Provenance`(202-B), 자연어 routing heuristic·stale Result warning(202-C), CI required check
+  승격, 새 readiness fact/implementation mode/artifact axis.
+
 ### fix(shared-surfaces) — close falsy identity and lexical entry-path gaps (#200)
 
 - Screen identity fallback이 `undefined`, `null`, 빈 문자열만 다음 후보로 넘기고 present-falsy `0`/`false`는 raw provenance로 보존한다. 공개 plain-object key coercion은 기존처럼 `String(candidate)`를 사용하므로 numeric/boolean ID와 canonical string ID가 같은 키에서 duplicate로 수렴하고, shared-surface membership/readiness/validate가 각각 `ambiguous-member` 또는 `invalid-member-screen-id`로 fail-closed한다. 정상 string, prototype-named ID, empty/missing fallback, no-surface 공개 shape는 변경하지 않았다.
