@@ -49,7 +49,8 @@ export function getSections(body) {
 // 마크다운 표의 한 행을 셀 배열로 분리한다.
 // 셀 안의 escaped pipe(`\|`, 마크다운 리터럴 파이프)는 컬럼 구분자가 아니므로 보호한다 —
 // 보호하지 않으면 Status·Blocking Mode 같은 오른쪽 컬럼이 한 칸씩 밀려 게이트 신호가 오염된다.
-function splitRow(line) {
+// export: reconciliation-target-index 의 strict table parser 가 같은 escaped-pipe 규약을 공유한다.
+export function splitRow(line) {
   return line
     .replace(/^\s*\|/, '') // 표의 선행 파이프 (escape 대상 아님)
     .replace(/(?<!\\)\|\s*$/, '') // 후행 파이프 (escaped pipe 는 보존)

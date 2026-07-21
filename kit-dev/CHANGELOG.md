@@ -38,6 +38,14 @@
 - 하지 않은 것(설계 §14): 검사 11 `captured_at` RFC3339 hard 승격과 figma-component-mapping `M-xxx`/
   `## Mapping Provenance`(202-B), 자연어 routing heuristic·stale Result warning(202-C), CI required check
   승격, 새 readiness fact/implementation mode/artifact axis.
+- 4차 재리뷰 후속: v2 가 소비하는 마크다운을 "렌더링되는 canonical 구조"로 고정했다. ① fence/HTML
+  주석을 순차 2-pass 가 아닌 **단일 state machine** 으로 처리 — 주석 안의 fence marker 가 주석 종료
+  뒤 실제 내용(중복 Items heading 포함)을 삼키던 경로 차단, ② v2 전용 canonical Summary 파서 추가 —
+  non-content 제거 + strict 파서 후 8컬럼 signature 표 정확히 1개(RR-SCHEMA-019), v1 파서가 고른 첫
+  표와 불일치(fence 예시가 canonical 을 가림)면 RR-SCHEMA-020. v1 출력은 불변(v2 opt-in 추가 검사),
+  ③ hard-contract 전용 strict 표 파서(`parseStrictTables`) — 표 줄 indentation 0~3칸(4칸+/tab 은
+  indented code 로 제외), 구분자 셀마다 hyphen 최소 1개 + header 와 셀 수 일치. target index·Items·
+  v2 Summary 가 공유하며 escaped-pipe 규약은 spec.mjs `splitRow` 재수출로 단일 출처 유지.
 - 3차 재리뷰 후속: ① `## Reconciliation Items` **heading 도 정확히 1개**(RR-SCHEMA-018) — heading-키
   파서(getSections)가 중복 heading 에서 앞 섹션을 덮어써 첫 섹션의 표가 검증을 벗어나던 경로를
   occurrence-보존 분리기로 차단, ② markdown 전처리를 section 분리 **이전**으로 이동 — fence/HTML 주석

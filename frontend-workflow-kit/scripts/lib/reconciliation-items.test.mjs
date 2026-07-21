@@ -257,8 +257,8 @@ function runV2(t, overrides = {}) {
     '',
     '# Reconciliation Register',
     '',
-    ...SUMMARY_HEADER,
-    ...summaryRows,
+    overrides.summaryPrefix || '',
+    ...(overrides.omitSummaryTable ? [] : [...SUMMARY_HEADER, ...summaryRows]),
     '',
     itemsSection,
     '',
@@ -1086,6 +1086,102 @@ test('v2 hard: fence 안의 heading 으로 만든 가짜 evidence 섹션은 해�
     ],
   });
   assert.ok(hasCode(r.errors, 'RR-REF-005'));
+});
+
+test('markdown 전처리: 주석 안의 fence marker 는 이후 실제 내용을 삼키지 않음 (state machine)', () => {
+  // 순차 2-pass(fence→comment)면 주석 안의 ``` 가 fence opener 로 오인돼 --> 뒤 내용이 통째로 사라진다.
+  const text = ['앞 내용', '<!--', '```md', '-->', '## Reconciliation Items', '| a |', '뒤 내용'].join('\n');
+  const cleaned = stripNonContent(text);
+  assert.ok(cleaned.includes('앞 내용'));
+  assert.ok(cleaned.includes('## Reconciliation Items')); // 주석 종료 뒤 내용은 살아 있어야 한다
+  assert.ok(cleaned.includes('뒤 내용'));
+  assert.ok(!cleaned.includes('```md'));
+
+  // 인라인 주석 + 주석 종료 뒤 나머지 재처리.
+  assert.ok(stripNonContent('a <!-- x --> b').includes('a  b'));
+  const tail = stripNonContent(['<!-- 열림', '--> ```md', '| 표 |', '```'].join('\n'));
+  assert.ok(!tail.includes('| 표 |')); // --> 뒤의 fence opener 는 유효 — 내부 표 제거
+});
+
+test('v2 hard: 주석 안 fence marker 로 중복 Items heading 을 숨길 수 없음 (RR-SCHEMA-018)', (t) => {
+  const r = runV2(t, {
+    registerExtra: [
+      '<!--',
+      '```md',
+      '-->',
+      '## Reconciliation Items',
+      '',
+      ...ITEMS_HEADER,
+      '| IN-20260720-meeting-001 | 99 | decision-answer | resolves-decision | resolve | decision:D-204@open-decision-register | input:IN-20260720-meeting-001#summary | inherit | statement | inherit |',
+      '',
+    ].join('\n'),
+  });
+  assert.ok(hasCode(r.errors, 'RR-SCHEMA-018'));
+});
+
+test('v2 hard: canonical Summary 표 부재/중복은 RR-SCHEMA-019', (t) => {
+  // fence 안의 8컬럼 예시만 있고 실제 Summary 가 없음.
+  const fencedOnly = runV2(t, {
+    omitSummaryTable: true,
+    summaryPrefix: ['```md', ...SUMMARY_HEADER, DEFAULT_SUMMARY_ROWS[0], '```'].join('\n'),
+    itemRows: [],
+  });
+  assert.ok(hasCode(fencedOnly.errors, 'RR-SCHEMA-019'));
+
+  // top-level 8컬럼 표가 2개.
+  const duplicated = runV2(t, {
+    summaryPrefix: [...SUMMARY_HEADER, DEFAULT_SUMMARY_ROWS[0]].join('\n') + '\n',
+  });
+  assert.ok(hasCode(duplicated.errors, 'RR-SCHEMA-019'));
+});
+
+test('v2 hard: fence 안 Summary 가 canonical 을 가리면 RR-SCHEMA-020, 주석 안 예시는 무해', (t) => {
+  // fenced 예시 표가 raw body 의 "첫 파이프 표"가 되어 v1 파서가 그것을 읽는 경우 — canonical(실제 표)과
+  // 불일치를 hard 로 표면화한다.
+  const masked = runV2(t, {
+    summaryPrefix: [
+      '```md',
+      ...SUMMARY_HEADER,
+      '| IN-20260720-figma-001 | figma | simple-update | reconciled | accepted | - | - | - |',
+      '```',
+    ].join('\n'),
+  });
+  assert.ok(hasCode(masked.errors, 'RR-SCHEMA-020'));
+
+  // HTML 주석 안의 Summary 예시는 v1/v2 어느 파서에도 보이지 않는다 — 정상 통과.
+  const commented = runV2(t, {
+    summaryPrefix: ['<!--', ...SUMMARY_HEADER, '| IN-X | figma | simple-update | reconciled | accepted | - | - | - |', '-->'].join('\n'),
+  });
+  assert.deepEqual(messages(commented.errors), []);
+});
+
+test('v2 hard: indented code 표·malformed 구분자는 canonical 표가 아님', (t) => {
+  // 4칸 들여쓴 Items 표 — 렌더링상 code block 이므로 표로 인정하지 않는다 → 표 없음(RR-SCHEMA-004).
+  const indentedItems = runV2(t, {
+    itemsHeader: ITEMS_HEADER.map((l) => `    ${l}`),
+    itemRows: DEFAULT_ITEM_ROWS.map((l) => `    ${l}`),
+  });
+  assert.ok(hasCode(indentedItems.errors, 'RR-SCHEMA-004'));
+
+  // hyphen 없는 구분자(| | | ... |)는 delimiter 가 아니다.
+  const noHyphen = runV2(t, {
+    itemsHeader: [ITEMS_HEADER[0], '| ' + Array(10).fill(' ').join(' | ') + ' |'],
+  });
+  assert.ok(hasCode(noHyphen.errors, 'RR-SCHEMA-004'));
+
+  // header(10칸) ↔ delimiter(9칸) 칸 수 불일치도 표가 아니다.
+  const mismatched = runV2(t, {
+    itemsHeader: [ITEMS_HEADER[0], `|${Array(9).fill('---').join('|')}|`],
+  });
+  assert.ok(hasCode(mismatched.errors, 'RR-SCHEMA-004'));
+
+  // 4칸 들여쓴 Open Decisions 예시 표는 canonical decision row 가 아니다 → D-204 미해소.
+  const indentedDecisions = DECISION_DOC.replace(
+    '| ID | Decision Needed | Options | Blocking Mode | Owner | Status |\n|---|---|---|---|---|---|\n| D-204 | 로그인 성공 후 이동 위치 | home / returnTo | final-fixture-ui | PM | open |',
+    '    | ID | Decision Needed | Options | Blocking Mode | Owner | Status |\n    |---|---|---|---|---|---|\n    | D-204 | 로그인 성공 후 이동 위치 | home / returnTo | final-fixture-ui | PM | open |',
+  );
+  const r = runV2(t, { files: { 'global/open-decisions.md': indentedDecisions } });
+  assert.ok(hasCode(r.errors, 'RR-REF-008'));
 });
 
 // ── warning-only ─────────────────────────────────────────────────────────────

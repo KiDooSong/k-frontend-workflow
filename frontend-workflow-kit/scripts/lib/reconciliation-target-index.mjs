@@ -16,7 +16,7 @@
 // canonical 행처럼 해소되는 fail-open 을 막기 위해, 표의 "가족"을 canonical signature 로 판정하고
 // 가족이 판정된 표의 행만 후보로 등록한다.
 import { readFileSafe, splitFrontmatter } from './util.mjs';
-import { parseTables, hasHeader, col } from './spec.mjs';
+import { hasHeader, col, splitRow } from './spec.mjs';
 
 // h2 제목 → section slug. "## UI Sections" → "ui-sections", "## Component Mapping" → "component-mapping".
 export function slugifySectionTitle(title) {
@@ -60,39 +60,121 @@ function canonicalFamiliesAt(sectionSlug, artifactType) {
   return families;
 }
 
-// fenced code block(``` / ~~~) 내부를 제거한다 — parseTables 는 fence 를 모르므로 코드 블록 안의
-// canonical-looking 예시 표가 child 후보/표 개수 판정에 끼는 것을 여기서 차단한다.
-// fence 상태는 {char, length} 로 추적한다: closing fence 는 같은 문자이면서 opening 길이 **이상**의
-// run 만으로 이뤄진 줄만 인정한다(CommonMark) — 4-backtick fence 안에서 3-backtick 예시를 보여주는
-// 일반적인 문서 패턴에서 내부 fence 가 outer fence 를 닫아버리는 오판을 막는다.
-export function stripFencedCodeBlocks(text) {
+// section/child-row/표 판정 전에 non-content(fenced code block 내부 + HTML 주석)를 제거한 본문.
+// getSections 류의 heading 분리와 표 파서는 fence/주석을 모르므로, fence 안의 `## Open Decisions`
+// 같은 예시 heading·표가 실제 canonical 구조를 만드는 fail-open 을 여기서 차단한다.
+//
+// fence 와 주석은 순차 2-pass 가 아니라 **단일 state machine** 으로 처리한다 — 순차 적용은 어느
+// 순서든 뚫린다(예: HTML 주석 안의 ``` 를 fence opener 로 오인해, 주석이 끝난 뒤의 실제 내용을
+// fence 내부로 삼켜버림). 상태 우선순위:
+//   normal  : 주석 시작(<!--) → comment / 유효 fence 시작 → fence / 그 외 출력
+//   comment : fence marker 무시. --> 만 주석을 닫고, 같은 줄의 나머지는 normal 로 재처리.
+//   fence   : 주석 marker 무시. 같은 문자·opening 길이 이상의 run 만으로 된 줄만 fence 를 닫는다
+//             (CommonMark — 4-backtick fence 안의 3-backtick 예시가 outer 를 닫지 못하게 {char,length} 추적).
+// fence marker 는 CommonMark 대로 선행 공백 0~3칸까지만 인정한다(4칸+/tab 은 indented code 의 리터럴).
+export function stripNonContent(text) {
   const out = [];
-  let fence = null; // { char, length }
-  for (const line of String(text || '').split(/\r?\n/)) {
-    if (fence === null) {
-      const open = /^\s*(`{3,}|~{3,})/.exec(line);
-      if (open) {
-        fence = { char: open[1][0], length: open[1].length };
-        continue;
+  let fence = null; // { char, length } | null
+  let inComment = false;
+
+  // normal 상태에서 한 줄을 처리한다: 인라인 주석 제거 → fence opener 판정 → 출력.
+  // 반환: 출력할 문자열(null 이면 출력 없음). 상태 전이는 클로저의 fence/inComment 로 반영.
+  const processNormal = (line) => {
+    let rest = line;
+    let emitted = '';
+    for (;;) {
+      const start = rest.indexOf('<!--');
+      if (start === -1) {
+        emitted += rest;
+        break;
       }
-      out.push(line);
-    } else {
-      const close = /^\s*(`{3,}|~{3,})\s*$/.exec(line);
+      const end = rest.indexOf('-->', start + 4);
+      if (end === -1) {
+        emitted += rest.slice(0, start);
+        inComment = true;
+        break;
+      }
+      rest = rest.slice(0, start) + rest.slice(end + 3); // 같은 줄에서 닫힌 주석은 span 만 제거
+    }
+    if (inComment) return emitted; // 주석이 줄을 넘김 — 주석 앞부분만 출력
+    const open = /^ {0,3}(`{3,}|~{3,})/.exec(emitted);
+    if (open) {
+      fence = { char: open[1][0], length: open[1].length };
+      return null; // opening fence 줄은 출력하지 않는다 (info string 포함)
+    }
+    return emitted;
+  };
+
+  for (const line of String(text || '').split(/\r?\n/)) {
+    if (fence !== null) {
+      const close = /^ {0,3}(`{3,}|~{3,})\s*$/.exec(line);
       if (close && close[1][0] === fence.char && close[1].length >= fence.length) {
         fence = null;
       }
-      // fence 내부(닫는 줄 포함)는 전부 버린다.
+      continue; // fence 내부(닫는 줄 포함)는 전부 버린다 — 주석 marker 도 리터럴
     }
+    if (inComment) {
+      const end = line.indexOf('-->');
+      if (end === -1) continue; // 주석 내부 — fence marker 무시
+      inComment = false;
+      const emitted = processNormal(line.slice(end + 3)); // 주석 뒤 나머지는 normal 로 재처리
+      if (emitted !== null) out.push(emitted);
+      continue;
+    }
+    const emitted = processNormal(line);
+    if (emitted !== null) out.push(emitted);
   }
   return out.join('\n');
 }
 
-// section/child-row 판정 전에 non-content(fence 내부 + HTML 주석)를 제거한 본문.
-// getSections 류의 heading 분리는 fence/주석을 모르므로, fence 안의 `## Open Decisions` 같은
-// 예시 heading 이 실제 canonical 섹션을 만들어 그 안의 표가 해소되는 fail-open 을 여기서 차단한다.
-// 순서는 fence → 주석: fence 안의 주석 마커는 리터럴이라 fence 제거가 먼저다.
-export function stripNonContent(text) {
-  return stripFencedCodeBlocks(text).replace(/<!--[\s\S]*?-->/g, '');
+// (하위호환 별칭 — 테스트/유닛 사용처. 주석 미포함 입력이면 stripNonContent 와 동일하게 동작한다.)
+export function stripFencedCodeBlocks(text) {
+  return stripNonContent(text);
+}
+
+// hard-contract 전용 strict 마크다운 표 파서 — parseTables(spec.mjs)는 모든 줄을 trim 한 뒤 `|`
+// 시작 여부만 보므로 indented code block(4칸+/tab)의 예시 표를 실제 표로 승격시키고, 구분자 줄도
+// hyphen 없는 `| | |` 를 허용한다. v2 hard 계약이 소비하는 표는 여기서 다음을 요구한다:
+//   - 표 줄의 선행 indentation 0~3칸(spaces)만 허용 — tab/4칸+ 는 indented code 로 제외(블록 종료)
+//   - 두 번째 줄은 구분자: 셀마다 `:?-+:?` (hyphen 최소 1개), 셀 수 = header 셀 수
+// 데이터 행의 셀 부족은 기존 규약대로 '' 패딩된다(빈 필수 셀은 각 검사기가 fail-closed 로 잡는다).
+// 입력은 stripNonContent 를 거친 본문이어야 한다.
+export function parseStrictTables(text) {
+  const blocks = [];
+  let cur = [];
+  const flush = () => {
+    if (cur.length) blocks.push(cur);
+    cur = [];
+  };
+  for (const raw of String(text || '').split(/\r?\n/)) {
+    if (/^ {0,3}\|/.test(raw) && !/^\s*$/.test(raw) && !raw.startsWith('\t')) {
+      cur.push(raw.trim());
+    } else {
+      flush(); // indented-code 줄(4칸+/tab 시작) 포함 비-표 라인 → 현재 표 블록 종료
+    }
+  }
+  flush();
+
+  const tables = [];
+  for (const tableLines of blocks) {
+    if (tableLines.length < 2) continue;
+    const headers = splitRow(tableLines[0]);
+    const delimiterCells = splitRow(tableLines[1]);
+    const delimiterValid =
+      delimiterCells.length === headers.length && delimiterCells.every((c) => /^:?-+:?$/.test(c));
+    if (!delimiterValid) continue;
+    const rows = [];
+    for (let i = 2; i < tableLines.length; i++) {
+      const cells = splitRow(tableLines[i]);
+      const row = {};
+      headers.forEach((h, idx) => {
+        row[h] = (cells[idx] ?? '').trim();
+      });
+      rows.push(row);
+    }
+    tables.push({ headers, rows, rowCount: rows.length });
+  }
+  return tables;
 }
 
 // heading 발생 순서를 보존하는 섹션 분리 — getSections(spec.mjs)는 같은 heading 을 만나면 이전
@@ -147,8 +229,8 @@ function indexDocBody(body, artifactType) {
   const rows = new Map();
   const rowKeys = new Map();
   for (const [slug, sec] of sections) {
-    // fence/주석은 위에서 이미 제거됐다.
-    const tables = parseTables(sec.text);
+    // fence/주석은 위에서 이미 제거됐고, indented code/느슨한 구분자는 strict parser 가 거른다.
+    const tables = parseStrictTables(sec.text);
     for (const table of tables) {
       const firstHeader = table.headers[0];
       for (const r of table.rows) {

@@ -349,8 +349,16 @@ Summary 는 그 projection 이다.
 **실제 `## Reconciliation Items` heading 은 정확히 1개, 그 섹션 안의 실제 표도 정확히 1개**다 —
 중복 heading 은 heading-키 파서에서 앞 섹션을 덮어쓰고, 두 번째 표는 첫 표만 읽는 파서에서 행이
 통째로 검증을 벗어나므로 둘 다 hard error 다. 추가 행은 같은 표에 이어 쓰고, 예시는 fenced code
-block 으로 감싼다. fence(````` ``` `````·`~~~`, 길이 추적)와 HTML 주석 안의 heading·표는 섹션 분리
-**이전**에 제거되므로 섹션도 표도 evidence 근거도 만들지 못한다.
+block 으로 감싼다. **canonical 8컬럼 Summary 표도 v2 에서는 정확히 1개**여야 하며(부재/중복 hard),
+v1 파서가 고른 첫 표와 canonical 표가 다르면(fence 예시가 앞서 있는 경우) 그것도 hard error 다.
+
+v2 가 소비하는 마크다운은 **렌더링되는 canonical 구조**만 인정한다:
+
+- fence(````` ``` `````·`~~~`)와 HTML 주석은 **단일 state machine** 으로 섹션 분리 이전에 제거된다
+  (주석 안의 fence marker 는 리터럴, fence 안의 주석 marker 도 리터럴, closing fence 는 같은 문자·
+  opening 길이 이상). fence/주석 안의 heading·표는 섹션도 표도 evidence 근거도 만들지 못한다.
+- 표 줄의 선행 indentation 은 0~3칸만 허용 — 4칸+/tab 은 indented code 라 표가 아니다.
+- 구분자 줄은 셀마다 hyphen 최소 1개(`:?-+:?`)와 header 와 같은 셀 수를 요구한다.
 
 - `Item`: input-scoped 2자리 ID(`01`, `02`...). Classification 개수는 unique `(Input ID, Item)` 로 센다.
 - `Basis` enum: `compatible-fact` `visual-evidence` `unknown-answer` `decision-answer` `new-choice`

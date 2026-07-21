@@ -25,8 +25,8 @@
 // 이 모듈은 순수하다 — { errors:[{file,message}], warnings:[{file,message}] } 를 반환하고
 // file 은 항상 절대경로다. validate.mjs 가 add()/warn() 으로 상대화한다.
 import { readFileSafe, splitFrontmatter } from './util.mjs';
-import { parseTables, hasHeader, col } from './spec.mjs';
-import { RECONCILE_STATUS_VALUES } from './reconciliation-register.mjs';
+import { hasHeader, col } from './spec.mjs';
+import { RECONCILE_STATUS_VALUES, REQUIRED_REGISTER_COLS } from './reconciliation-register.mjs';
 import { INHERIT, SOURCE_UNIT_VALUES, isRfc3339, parseRfc3339 } from './provenance.mjs';
 import {
   resolveArtifact,
@@ -37,6 +37,7 @@ import {
   bodyHasToken,
   stripNonContent,
   splitSectionOccurrences,
+  parseStrictTables,
 } from './reconciliation-target-index.mjs';
 
 export const RECONCILIATION_CONTRACT_V2 = 2;
@@ -276,7 +277,7 @@ export function parseReconciliationItems(body) {
   if (occurrences.length > 1) {
     return { sectionExists: true, sectionCount: occurrences.length, tableCount: 0, table: null, missingCols: [], rows: [] };
   }
-  const tables = parseTables(occurrences[0].text);
+  const tables = parseStrictTables(occurrences[0].text);
   if (tables.length === 0) {
     return { sectionExists: true, sectionCount: 1, tableCount: 0, table: null, missingCols: [], rows: [] };
   }
@@ -451,9 +452,46 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
     items.tableCount === 1 &&
     items.missingCols.length === 0;
 
+  // --- canonical Summary 표 (v2 전용 파싱) ---
+  // v1 파서(parseTable)는 raw body 의 "첫 파이프 표"를 Summary 로 삼는다 — fence 안의 8컬럼 예시나
+  // indented code 예시가 앞서 있으면 그 가짜 표가 canonical 이 되고 실제 표는 무시된다. v2 는
+  // non-content 제거 + strict 파서 후 8컬럼 signature 표가 **정확히 1개**임을 요구하고(RR-SCHEMA-019),
+  // v1 파서가 고른 표와 내용이 일치하는지도 대조한다(RR-SCHEMA-020 — 불일치면 v1 lifecycle 검사가
+  // 가짜 표를 읽고 있다는 뜻). v1 출력은 건드리지 않는다(byte-compatible — v2 opt-in 에서만 추가 검사).
+  const cleanBody = stripNonContent(register.body || '');
+  const normalizeSummaryRow = (r) => ({
+    inputId: (col(r, 'Input ID') || '').trim(),
+    source: (col(r, 'Source') || '').trim(),
+    classification: (col(r, 'Classification') || '').trim(),
+    reconcileStatus: (col(r, 'Reconcile Status') || '').trim(),
+    result: (col(r, 'Result') || '').trim(),
+    touched: (col(r, 'Touched Artifacts') || '').trim(),
+    created: (col(r, 'Created Items') || '').trim(),
+    supersedes: (col(r, 'Supersedes') || '').trim(),
+  });
+  const summaryTables = parseStrictTables(cleanBody).filter((t) =>
+    REQUIRED_REGISTER_COLS.every((c) => hasHeader(t.headers, c)),
+  );
+  if (summaryTables.length !== 1) {
+    add(
+      `RR-SCHEMA-019: canonical 8컬럼 Summary 표는 정확히 1개여야 함 (현재 ${summaryTables.length}개 — fence/주석/indented code 안의 예시 표는 세지 않음)`,
+    );
+    return { errors, warnings }; // Summary 없이는 행 단위 검사가 전부 무의미 — 구조부터 고친다
+  }
+  const summaryRows = summaryTables[0].rows.map(normalizeSummaryRow);
+  const rowsFingerprint = (rows) =>
+    JSON.stringify(
+      rows.map((r) => [r.inputId, r.source, r.classification, r.reconcileStatus, r.result, r.touched, r.created, r.supersedes]),
+    );
+  if (rowsFingerprint(summaryRows) !== rowsFingerprint(register.rows)) {
+    add(
+      'RR-SCHEMA-020: v1 파서가 선택한 첫 표가 canonical Summary 표와 일치하지 않음 — fence/indented 예시 표가 Summary 앞에 있으면 lifecycle 검사가 가짜 표를 읽습니다 → 예시를 canonical Summary 뒤로 옮기거나 fence 밖 표를 제거하세요',
+    );
+  }
+
   // --- summary 행 분류: structured vs legacy (structured_since 기준, 설계 §5.1·§16) ---
   const summaryByInput = new Map();
-  for (const row of register.rows) {
+  for (const row of summaryRows) {
     if (!row.inputId) continue;
     if (!summaryByInput.has(row.inputId)) summaryByInput.set(row.inputId, row); // 중복은 v1 검사가 에러
   }
