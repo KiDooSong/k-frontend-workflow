@@ -38,6 +38,14 @@
 - 하지 않은 것(설계 §14): 검사 11 `captured_at` RFC3339 hard 승격과 figma-component-mapping `M-xxx`/
   `## Mapping Provenance`(202-B), 자연어 routing heuristic·stale Result warning(202-C), CI required check
   승격, 새 readiness fact/implementation mode/artifact axis.
+- 9차 재리뷰 후속: ① CommonMark HTML block 진입을 다시 정밀화 — type 7은 열린 paragraph를
+  interrupt하지 못하도록 paragraph 상태와 complete-tag 문법을 추적하고, type 1은 space/tab/EOL/`>`,
+  type 6은 여기에 정확한 `/>`만 tag-name 경계로 인정한다. 따라서 paragraph 직후 `<custom-tag>`와
+  `<div/x`·`<pre/x` 뒤의 실제 중복 Items heading/금지 effect가 scanner에서 삭제되지 않는다.
+  ② INV-/VER- visible prose parser는 backslash-escaped 괄호와 `<...>` link destination을 별도 mode로
+  소비하고, reference definition을 여러 줄 label·colon·optional line ending·destination·여러 줄 title
+  구조로 파싱한다. top-level뿐 아니라 blockquote/list container의 렌더링되지 않는 definition도
+  제거하되 plain-text ID와 열린 paragraph 안의 definition-looking text는 계속 hard reference 근거다.
 - 8차 재리뷰 후속: ① raw HTML type 6/7 진입 조건을 CommonMark 대로 좁힘 — type 6 은 block tag
   allowlist + 경계, type 7 은 완결된 단독 태그 줄만. autolink(`<https://…>`)·불완전 태그(`<x`)가
   html block 으로 오인돼 뒤의 보이는 중복 Items heading/금지 effect 를 삼키던 경로 차단

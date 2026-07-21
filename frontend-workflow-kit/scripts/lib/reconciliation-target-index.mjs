@@ -90,6 +90,7 @@ export function stripNonContent(text) {
   const out = [];
   let fence = null; // { char, length } | null
   let block = null; // { endsAt: (line)=>bool, consumeEndLine: bool } | null
+  let paragraphOpen = false;
 
   for (const line of String(text || '').split(/\r?\n/)) {
     if (fence !== null) {
@@ -106,25 +107,45 @@ export function stripNonContent(text) {
       continue;
     }
     // --- normal: html block opener 판정 (구체적 문법 → 일반 순) ---
-    const opener = matchHtmlBlockOpener(line);
+    // CommonMark type 7 은 열린 paragraph 를 interrupt할 수 없다. type 1~6 은 interrupt할 수 있으므로
+    // 항상 판정하되, type 7 만 명확한 block boundary 에서 활성화한다.
+    const opener = matchHtmlBlockOpener(line, !paragraphOpen);
     if (opener) {
       if (!opener.endsOnOpeningLine) block = opener;
+      paragraphOpen = false;
       continue; // opening 줄은 (같은 줄에 닫혀도) 통째로 block — 출력하지 않는다
     }
     const open = /^ {0,3}(`{3,}|~{3,})/.exec(line);
     if (open) {
       fence = { char: open[1][0], length: open[1].length };
+      paragraphOpen = false;
       continue; // opening fence 줄(info string 포함)은 출력하지 않는다
     }
     // 줄 중간의 같은-줄 닫힌 주석은 inline span 만 제거. 닫히지 않은 중간 `<!--` 는 리터럴 유지.
-    out.push(line.replace(/<!--[\s\S]*?-->/g, ''));
+    const visibleLine = line.replace(/<!--[\s\S]*?-->/g, '');
+    out.push(visibleLine);
+    if (/^\s*$/.test(visibleLine) || isParagraphClosingBlockLine(line, paragraphOpen)) {
+      paragraphOpen = false;
+    } else if (paragraphOpen || !/^(?: {4,}|\t)/.test(line)) {
+      // boundary 의 indented code 는 paragraph 를 열지 않는다. 이미 열린 paragraph 의 들여쓰기는
+      // lazy/continuation text 일 수 있으므로 열린 상태를 유지한다.
+      paragraphOpen = true;
+    }
   }
   return out.join('\n');
 }
 
+// paragraph 를 interrupt하고 그 줄에서 끝나는 block. 이 최소 상태는 type 7 판정에만 쓰며,
+// canonical contract가 소비하는 top-level ATX heading/setext/thematic-break 경계를 보존한다.
+function isParagraphClosingBlockLine(line, paragraphWasOpen) {
+  if (/^ {0,3}#{1,6}(?:[ \t]+|$)/.test(line)) return true;
+  if (paragraphWasOpen && /^ {0,3}(?:=+|-+)[ \t]*$/.test(line)) return true;
+  return /^ {0,3}(?:(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|(?:-[ \t]*){3,})$/.test(line);
+}
+
 // 줄이 raw HTML block 을 여는지 판정하고, 해당 type 의 종료 조건을 돌려준다.
 // 반환: { endsAt, consumeEndLine, endsOnOpeningLine } | null
-function matchHtmlBlockOpener(line) {
+function matchHtmlBlockOpener(line, allowType7 = true) {
   const mk = (endsAt, endsOnOpeningLine, consumeEndLine = true) => ({
     endsAt,
     consumeEndLine,
@@ -143,18 +164,18 @@ function matchHtmlBlockOpener(line) {
   if (/^ {0,3}<\?/.test(line)) {
     return mk((l) => l.includes('?>'), line.includes('?>'));
   }
-  if (/^ {0,3}<(?:pre|script|style|textarea)(?=[\s/>]|$)/i.test(line)) {
+  if (/^ {0,3}<(?:pre|script|style|textarea)(?=[ \t]|$|>)/i.test(line)) {
     const closeRe = /<\/(?:pre|script|style|textarea)>/i;
     return mk((l) => closeRe.test(l), closeRe.test(line));
   }
-  // type 6 — CommonMark block tag allowlist + 경계(공백/>//>/EOL). `<` 로 시작한다고 전부 block 으로
+  // type 6 — CommonMark block tag allowlist + exact 경계(space/tab/EOL/>//>). `<` 로 시작한다고 전부 block 으로
   // 보면 autolink(`<https://…>`)나 불완전 태그(`<x`)가 뒤의 보이는 heading/표까지 삼킨다(fail-open).
   if (TYPE6_OPEN_RE.test(line)) {
     return mk((l) => /^\s*$/.test(l), false, false);
   }
   // type 7 — 완결된 open/closing tag 하나가 줄 전체를 차지할 때만. autolink·이메일 autolink·
   // 불완전 태그·태그 뒤에 내용이 이어지는 줄은 block 이 아니라 인라인이 있는 문단 줄이다.
-  if (/^ {0,3}<\/?[a-zA-Z][a-zA-Z0-9-]*(?:\s+[^<>]*)?\/?>\s*$/.test(line)) {
+  if (allowType7 && (TYPE7_OPEN_RE.test(line) || TYPE7_CLOSE_RE.test(line))) {
     return mk((l) => /^\s*$/.test(l), false, false);
   }
   return null;
@@ -162,8 +183,21 @@ function matchHtmlBlockOpener(line) {
 
 // CommonMark type 6 block tag allowlist (spec §4.6).
 const TYPE6_TAGS =
-  'address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|section|source|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul';
-const TYPE6_OPEN_RE = new RegExp(`^ {0,3}</?(?:${TYPE6_TAGS})(?=[\\s/>]|$)`, 'i');
+  'address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul';
+const TYPE6_OPEN_RE = new RegExp(`^ {0,3}</?(?:${TYPE6_TAGS})(?=[ \\t]|$|>|/>)`, 'i');
+
+// CommonMark complete open/closing tag grammar (single-line type 7 start condition). Invalid attribute
+// names/values must remain visible source, otherwise a malformed tag could hide a following hard-gate row.
+const HTML_TAG_NAME = '[A-Za-z][A-Za-z0-9-]*';
+const HTML_ATTR_NAME = '[A-Za-z_:][A-Za-z0-9_.:-]*';
+const HTML_UNQUOTED_ATTR_VALUE = '[^ \\t"\'=<>\\x60]+';
+const HTML_ATTR_VALUE = `(?:${HTML_UNQUOTED_ATTR_VALUE}|'[^']*'|"[^"]*")`;
+const HTML_ATTRIBUTE = `[ \\t]+${HTML_ATTR_NAME}(?:[ \\t]*=[ \\t]*${HTML_ATTR_VALUE})?`;
+const TYPE7_OPEN_RE = new RegExp(
+  `^ {0,3}<(?!(?:pre|script|style|textarea)(?=[ \\t]|/?>))${HTML_TAG_NAME}(?:${HTML_ATTRIBUTE})*[ \\t]*/?>[ \\t]*$`,
+  'i',
+);
+const TYPE7_CLOSE_RE = new RegExp(`^ {0,3}</${HTML_TAG_NAME}[ \\t]*>[ \\t]*$`, 'i');
 
 // (하위호환 별칭 — 테스트/유닛 사용처. 주석 미포함 입력이면 stripNonContent 와 동일하게 동작한다.)
 export function stripFencedCodeBlocks(text) {
@@ -214,6 +248,201 @@ export function stripInlineCodeSpans(text) {
   return out;
 }
 
+// CommonMark link reference definition 은 렌더링되지 않는다. 한 줄 정규식으로 지우면 destination 이
+// 다음 줄에 있는 정의와 blockquote/list container 안의 정의 label 이 visible prose 로 샌다.
+// 여기서는 label + colon, 최대 한 번의 line ending, destination, optional title 을 한 구조로 확인한
+// 뒤 정의에 속한 원본 줄만 비운다(줄 수는 보존해 뒤 단계의 block 경계를 바꾸지 않는다).
+function stripReferenceDefinitions(text) {
+  const lines = String(text || '').split('\n');
+  const removed = new Set();
+  let paragraphOpen = false;
+
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const explicitContainer = /^ {0,3}(?:>|(?:[-+*]|\d{1,9}[.)])[ \t]+)/.test(lines[lineIndex]);
+    const definition = !paragraphOpen || explicitContainer ? matchReferenceDefinitionAt(lines, lineIndex) : null;
+    if (definition) {
+      for (let i = lineIndex; i <= definition.endLine; i += 1) removed.add(i);
+      paragraphOpen = false;
+      lineIndex = definition.endLine;
+      continue;
+    }
+
+    if (/^\s*$/.test(lines[lineIndex]) || isParagraphClosingBlockLine(lines[lineIndex], paragraphOpen)) {
+      paragraphOpen = false;
+    } else if (paragraphOpen || !/^(?: {4,}|\t)/.test(lines[lineIndex])) {
+      paragraphOpen = true;
+    }
+  }
+
+  return lines.map((line, index) => (removed.has(index) ? '' : line)).join('\n');
+}
+
+// up to 3 spaces + nested blockquote markers + optional list marker 를 벗겨 container content 시작을
+// 찾는다. list continuation 은 다음 줄에서 marker 대신 indentation 을 쓰므로 continuation helper 는
+// 같은 blockquote prefix 만 제거하고 destination scanner 가 남은 horizontal space 를 소비한다.
+function stripReferenceContainerPrefix(line, allowListMarker) {
+  const s = String(line || '');
+  let i = 0;
+  const skipIndent = () => {
+    let count = 0;
+    while (count < 3 && s[i] === ' ') {
+      i += 1;
+      count += 1;
+    }
+  };
+
+  skipIndent();
+  while (s[i] === '>') {
+    i += 1;
+    if (s[i] === ' ' || s[i] === '\t') i += 1;
+    skipIndent();
+  }
+  if (allowListMarker) {
+    const marker = /^(?:[-+*]|\d{1,9}[.)])(?:[ \t]+)/.exec(s.slice(i));
+    if (marker) i += marker[0].length;
+  }
+  return s.slice(i);
+}
+
+function stripReferenceContinuationPrefix(line) {
+  return stripReferenceContainerPrefix(line, false);
+}
+
+function matchReferenceDefinitionAt(lines, startLine) {
+  let lineIndex = startLine;
+  let content = stripReferenceContainerPrefix(lines[lineIndex], true);
+  if (content[0] !== '[') return null;
+  let column = 1;
+  let labelLength = 0;
+  let remainder = null;
+
+  while (lineIndex < lines.length && labelLength <= 999) {
+    while (column < content.length && labelLength <= 999) {
+      if (content[column] === '\\' && column + 1 < content.length) {
+        column += 2;
+        labelLength += 1;
+        continue;
+      }
+      if (content[column] === ']' && content[column + 1] === ':') {
+        if (labelLength === 0) return null;
+        remainder = content.slice(column + 2);
+        break;
+      }
+      column += 1;
+      labelLength += 1;
+    }
+    if (remainder !== null) break;
+    lineIndex += 1;
+    if (lineIndex >= lines.length || /^\s*$/.test(lines[lineIndex])) return null;
+    content = stripReferenceContinuationPrefix(lines[lineIndex]);
+    column = 0;
+    labelLength += 1; // line ending도 label 길이에 포함
+  }
+  if (remainder === null || labelLength > 999) return null;
+
+  let destinationLine = lineIndex;
+  let destinationContent = remainder;
+  if (destinationContent.trim() === '') {
+    destinationLine += 1;
+    if (destinationLine >= lines.length || /^\s*$/.test(lines[destinationLine])) return null;
+    destinationContent = stripReferenceContinuationPrefix(lines[destinationLine]);
+  }
+
+  const destination = scanReferenceDestination(destinationContent);
+  if (!destination) return null;
+  const afterDestination = destinationContent.slice(destination.end);
+  if (afterDestination !== '' && !/^[ \t]/.test(afterDestination)) return null;
+
+  if (afterDestination.trim() !== '') {
+    const titleStart = destinationContent.length - afterDestination.length + afterDestination.search(/\S/);
+    const title = scanReferenceTitle(lines, destinationLine, titleStart, destinationContent);
+    return title ? { endLine: title.endLine } : null;
+  }
+
+  // title 은 destination 다음 줄에서 시작할 수도 있다. 유효한 title이 아니면 그 줄은 별도 visible
+  // block이고 definition 자체는 title 없이 유효하다(CommonMark example 210).
+  const possibleTitleLine = destinationLine + 1;
+  if (possibleTitleLine < lines.length && !/^\s*$/.test(lines[possibleTitleLine])) {
+    const possibleTitle = stripReferenceContinuationPrefix(lines[possibleTitleLine]);
+    const titleColumn = possibleTitle.search(/\S/);
+    if (titleColumn !== -1 && /["'(]/.test(possibleTitle[titleColumn])) {
+      const title = scanReferenceTitle(lines, possibleTitleLine, titleColumn, possibleTitle);
+      if (title) return { endLine: title.endLine };
+    }
+  }
+  return { endLine: destinationLine };
+}
+
+// destination prefix 를 파싱하고 바로 뒤 offset 을 반환한다. `<...>` form 에서는 escaped `>`를,
+// bare form 에서는 backslash-escaped 괄호와 balanced parentheses 를 구조 문자에서 제외한다.
+function scanReferenceDestination(line) {
+  const s = String(line || '');
+  let i = 0;
+  while (s[i] === ' ' || s[i] === '\t') i += 1;
+  if (i >= s.length) return null;
+
+  if (s[i] === '<') {
+    i += 1;
+    while (i < s.length) {
+      if (s[i] === '\\' && i + 1 < s.length) {
+        i += 2;
+        continue;
+      }
+      if (s[i] === '<') return null;
+      if (s[i] === '>') return { end: i + 1 };
+      i += 1;
+    }
+    return null;
+  }
+
+  const start = i;
+  let depth = 0;
+  while (i < s.length && s[i] !== ' ' && s[i] !== '\t') {
+    if (s[i] === '\\' && i + 1 < s.length) {
+      i += 2;
+      continue;
+    }
+    if (s[i] === '(') {
+      depth += 1;
+      if (depth > 32) return null;
+    } else if (s[i] === ')') {
+      if (depth === 0) return null;
+      depth -= 1;
+    } else if (/^[\u0000-\u001f\u007f]$/.test(s[i])) {
+      return null;
+    }
+    i += 1;
+  }
+  return i > start && depth === 0 ? { end: i } : null;
+}
+
+function scanReferenceTitle(lines, startLine, startColumn, startContent) {
+  let lineIndex = startLine;
+  let content = startContent;
+  const opener = content[startColumn];
+  const closer = opener === '(' ? ')' : opener;
+  if (opener !== '"' && opener !== "'" && opener !== '(') return null;
+  let column = startColumn + 1;
+
+  while (lineIndex < lines.length) {
+    while (column < content.length) {
+      if (content[column] === '\\' && column + 1 < content.length) {
+        column += 2;
+        continue;
+      }
+      if (content[column] === closer) {
+        return content.slice(column + 1).trim() === '' ? { endLine: lineIndex } : null;
+      }
+      column += 1;
+    }
+    lineIndex += 1;
+    if (lineIndex >= lines.length || /^\s*$/.test(lines[lineIndex])) return null;
+    content = stripReferenceContinuationPrefix(lines[lineIndex]);
+    column = 0;
+  }
+  return null;
+}
+
 // INV-/VER- 토큰 존재 검사용 "visible prose" 추출 — contentBody(fence/주석/HTML block 제거 후)에서
 // 렌더링되지 않거나 code 인 source 영역을 추가로 제외한다:
 //   - indented code 줄(4칸+/tab)
@@ -224,20 +453,58 @@ export function stripInlineCodeSpans(text) {
 //     값의 ID 는 visible prose 가 아니다 (내부 텍스트는 유지)
 // code example·URL·attribute 안의 언급만으로 canonical target 이 해소되면 안 된다(fail-closed).
 export function toProseBody(contentBody) {
-  const withoutBlocks = String(contentBody || '')
+  const withoutBlocks = stripReferenceDefinitions(contentBody)
     .split('\n')
     .filter((l) => !/^(?: {4,}|\t)/.test(l))
-    .filter((l) => !/^ {0,3}\[[^\]]*\]:\s*\S/.test(l))
     .join('\n');
-  return stripLinkDestinations(stripInlineCodeSpans(withoutBlocks))
-    .replace(/\]\[[^\]\n]*\]/g, ']') // reference-style label(`[text][INV-001]`·`![alt][INV-001]`) 제거 — text/alt 는 유지
+  return stripReferenceLinkLabels(stripLinkDestinations(stripInlineCodeSpans(withoutBlocks)))
     .replace(/<\/?[a-zA-Z][^<>\n]*>/g, ' '); // inline HTML tag/attribute · autolink 제거
+}
+
+// full/collapsed reference link 의 두 번째 label은 렌더링되지 않는다. label 안의 escaped/nested bracket과
+// line ending을 statefully 소비하되 shortcut reference(`[INV-001]`)의 visible text는 그대로 둔다.
+function stripReferenceLinkLabels(text) {
+  const s = String(text || '');
+  let out = '';
+  let i = 0;
+  while (i < s.length) {
+    if (s[i] === ']' && s[i + 1] === '[') {
+      let depth = 1;
+      let j = i + 2;
+      let closed = false;
+      while (j < s.length) {
+        if (s[j] === '\\' && j + 1 < s.length) {
+          j += 2;
+          continue;
+        }
+        if (s[j] === '\n' && /^\s*$/.test(s.slice(s.lastIndexOf('\n', j - 1) + 1, j))) break;
+        if (s[j] === '[') depth += 1;
+        else if (s[j] === ']') {
+          depth -= 1;
+          if (depth === 0) {
+            closed = true;
+            break;
+          }
+        }
+        j += 1;
+      }
+      if (closed) {
+        out += ']';
+        i = j + 1;
+        continue;
+      }
+    }
+    out += s[i];
+    i += 1;
+  }
+  return out;
 }
 
 // inline link/image destination(`](…)`)을 balanced parentheses 로 제거한다 — 단발 정규식은
 // `](https://x/a(b)/INV-001)` 처럼 괄호가 중첩된 destination 에서 첫 `)` 까지만 지워 ID 가 새어
-// 나온다. `](` 를 만나면 괄호 깊이를 추적해 대응하는 `)` 까지 소비하고 link text 의 `]` 만 남긴다
-// (줄바꿈을 만나면 destination 이 아니므로 원문 유지).
+// 나온다. backslash-escaped 괄호는 깊이에서 제외하고, `<...>` destination 안의 괄호는 별도 mode 로
+// 소비한다. `](` 를 만나면 대응하는 outer `)` 까지 소비하고 link text 의 `]` 만 남긴다
+// (줄바꿈을 만나면 이 narrow scanner 의 destination 이 아니므로 원문 유지).
 function stripLinkDestinations(text) {
   const s = String(text || '');
   let out = '';
@@ -247,7 +514,50 @@ function stripLinkDestinations(text) {
       let depth = 1;
       let j = i + 2;
       let closed = false;
+      let destinationStarted = false;
+      let destinationEnded = false;
+      let inAngleDestination = false;
+      let titleQuote = null;
       while (j < s.length && s[j] !== '\n') {
+        if (s[j] === '\\' && j + 1 < s.length) {
+          j += 2;
+          continue;
+        }
+        if (titleQuote !== null) {
+          if (s[j] === titleQuote) titleQuote = null;
+          j += 1;
+          continue;
+        }
+        if (inAngleDestination) {
+          if (s[j] === '>') {
+            inAngleDestination = false;
+            destinationEnded = true;
+          }
+          j += 1;
+          continue;
+        }
+        if (!destinationStarted) {
+          if (s[j] === ' ' || s[j] === '\t') {
+            j += 1;
+            continue;
+          }
+          if (s[j] === '<') {
+            destinationStarted = true;
+            inAngleDestination = true;
+            j += 1;
+            continue;
+          }
+          destinationStarted = true;
+        } else if (!destinationEnded && depth === 1 && (s[j] === ' ' || s[j] === '\t')) {
+          destinationEnded = true;
+          j += 1;
+          continue;
+        } else if (destinationEnded && (s[j] === '"' || s[j] === "'")) {
+          titleQuote = s[j];
+          j += 1;
+          continue;
+        }
+
         if (s[j] === '(') depth += 1;
         else if (s[j] === ')') {
           depth -= 1;
