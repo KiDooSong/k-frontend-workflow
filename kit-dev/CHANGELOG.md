@@ -38,6 +38,13 @@
 - 하지 않은 것(설계 §14): 검사 11 `captured_at` RFC3339 hard 승격과 figma-component-mapping `M-xxx`/
   `## Mapping Provenance`(202-B), 자연어 routing heuristic·stale Result warning(202-C), CI required check
   승격, 새 readiness fact/implementation mode/artifact axis.
+- 8차 재리뷰 후속: ① raw HTML type 6/7 진입 조건을 CommonMark 대로 좁힘 — type 6 은 block tag
+  allowlist + 경계, type 7 은 완결된 단독 태그 줄만. autolink(`<https://…>`)·불완전 태그(`<x`)가
+  html block 으로 오인돼 뒤의 보이는 중복 Items heading/금지 effect 를 삼키던 경로 차단
+  (`<!foo` declaration 은 spec 대로 `>` 줄까지 — HTML bogus-comment 렌더링과 일치), ② visible prose
+  변환에서 reference-style label(`[text][INV-001]`·`![alt][INV-001]`)을 제거하고 link destination 을
+  balanced-paren stateful 스캐너로 소비(`(a(b)/INV-001)` 중첩 괄호 유출 차단). shortcut reference
+  `[INV-001]` 은 링크 text 가 곧 ID 라 visible 로 유지.
 - 7차 재리뷰 후속: ① raw HTML block 종료 조건을 CommonMark type 별로 분리 — `<? … ?>`(PI)·
   `<![CDATA[ … ]]>`(blank line 무시)·`<!DECL … >`(같은 줄 닫힘) 각각 추적해, PI/CDATA 안의 숨은 표가
   canonical 로 승격되거나 `<!DOCTYPE html>` 이 뒤의 보이는 중복 heading/표를 삼키던 양방향 fail-open

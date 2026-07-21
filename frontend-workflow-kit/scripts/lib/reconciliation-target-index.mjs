@@ -147,12 +147,23 @@ function matchHtmlBlockOpener(line) {
     const closeRe = /<\/(?:pre|script|style|textarea)>/i;
     return mk((l) => closeRe.test(l), closeRe.test(line));
   }
-  if (/^ {0,3}<[a-zA-Z/]/.test(line)) {
-    // type 6/7 — blank line 까지. blank line 자체는 block 밖이므로 소비하지 않는다.
+  // type 6 — CommonMark block tag allowlist + 경계(공백/>//>/EOL). `<` 로 시작한다고 전부 block 으로
+  // 보면 autolink(`<https://…>`)나 불완전 태그(`<x`)가 뒤의 보이는 heading/표까지 삼킨다(fail-open).
+  if (TYPE6_OPEN_RE.test(line)) {
+    return mk((l) => /^\s*$/.test(l), false, false);
+  }
+  // type 7 — 완결된 open/closing tag 하나가 줄 전체를 차지할 때만. autolink·이메일 autolink·
+  // 불완전 태그·태그 뒤에 내용이 이어지는 줄은 block 이 아니라 인라인이 있는 문단 줄이다.
+  if (/^ {0,3}<\/?[a-zA-Z][a-zA-Z0-9-]*(?:\s+[^<>]*)?\/?>\s*$/.test(line)) {
     return mk((l) => /^\s*$/.test(l), false, false);
   }
   return null;
 }
+
+// CommonMark type 6 block tag allowlist (spec §4.6).
+const TYPE6_TAGS =
+  'address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|section|source|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul';
+const TYPE6_OPEN_RE = new RegExp(`^ {0,3}</?(?:${TYPE6_TAGS})(?=[\\s/>]|$)`, 'i');
 
 // (하위호환 별칭 — 테스트/유닛 사용처. 주석 미포함 입력이면 stripNonContent 와 동일하게 동작한다.)
 export function stripFencedCodeBlocks(text) {
@@ -218,9 +229,45 @@ export function toProseBody(contentBody) {
     .filter((l) => !/^(?: {4,}|\t)/.test(l))
     .filter((l) => !/^ {0,3}\[[^\]]*\]:\s*\S/.test(l))
     .join('\n');
-  return stripInlineCodeSpans(withoutBlocks)
-    .replace(/\]\([^)\n]*\)/g, ']') // link/image destination 제거 (text 는 유지)
+  return stripLinkDestinations(stripInlineCodeSpans(withoutBlocks))
+    .replace(/\]\[[^\]\n]*\]/g, ']') // reference-style label(`[text][INV-001]`·`![alt][INV-001]`) 제거 — text/alt 는 유지
     .replace(/<\/?[a-zA-Z][^<>\n]*>/g, ' '); // inline HTML tag/attribute · autolink 제거
+}
+
+// inline link/image destination(`](…)`)을 balanced parentheses 로 제거한다 — 단발 정규식은
+// `](https://x/a(b)/INV-001)` 처럼 괄호가 중첩된 destination 에서 첫 `)` 까지만 지워 ID 가 새어
+// 나온다. `](` 를 만나면 괄호 깊이를 추적해 대응하는 `)` 까지 소비하고 link text 의 `]` 만 남긴다
+// (줄바꿈을 만나면 destination 이 아니므로 원문 유지).
+function stripLinkDestinations(text) {
+  const s = String(text || '');
+  let out = '';
+  let i = 0;
+  while (i < s.length) {
+    if (s[i] === ']' && s[i + 1] === '(') {
+      let depth = 1;
+      let j = i + 2;
+      let closed = false;
+      while (j < s.length && s[j] !== '\n') {
+        if (s[j] === '(') depth += 1;
+        else if (s[j] === ')') {
+          depth -= 1;
+          if (depth === 0) {
+            closed = true;
+            break;
+          }
+        }
+        j += 1;
+      }
+      if (closed) {
+        out += ']';
+        i = j + 1;
+        continue;
+      }
+    }
+    out += s[i];
+    i += 1;
+  }
+  return out;
 }
 
 // 헤더 정규화(대소문자/공백 무시 — hasHeader/col 과 같은 규약)와 canonical 헤더 배열 exact 비교.
