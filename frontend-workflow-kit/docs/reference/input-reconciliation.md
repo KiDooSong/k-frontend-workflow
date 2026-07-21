@@ -355,19 +355,25 @@ v1 파서가 고른 첫 표와 canonical 표가 다르면(fence 예시가 앞서
 v2 가 소비하는 마크다운은 **좁은 canonical authoring profile** 만 인정한다 — 이 register 는 kit 이
 저작하는 기계 지향 산출물이라, 임의 마크다운 렌더링을 흉내내는 대신 결정적 프로파일을 계약으로 둔다:
 
-- fence(````` ``` `````·`~~~`)·HTML 주석 block·raw HTML block(`<pre|script|style|textarea>`)은
-  **단일 state machine** 으로 섹션 분리 이전에 제거된다. block 진입/종료는 CommonMark 블록 규칙을
-  따른다: 주석은 `<!--` 로 **시작하는 줄**(≤3칸)에서만 열리고(따라서 inline code `` `<!--` `` 나
-  escape `\<!--` 는 주석이 아니다), 종료 조건을 만족한 줄은 **통째로** block 에 속한다(주석 종료
-  뒤 tail 로 fence/heading/표를 합성하지 않음). closing fence 는 같은 문자·opening 길이 이상.
-  이들 내부의 heading·표는 섹션도 표도 evidence 근거도 만들지 못한다.
+- fence(````` ``` `````·`~~~`)·HTML 주석 block·raw HTML block 은 **단일 state machine** 으로 섹션
+  분리 이전에 제거된다. block 진입/종료는 CommonMark 블록 규칙을 따른다: 주석은 `<!--` 로 **시작하는
+  줄**(≤3칸)에서만 열리고(따라서 inline code `` `<!--` `` 나 escape `\<!--` 는 주석이 아니다), 종료
+  조건을 만족한 줄은 **통째로** block 에 속한다(주석 종료 뒤 tail 로 fence/heading/표를 합성하지
+  않음). closing fence 는 같은 문자·opening 길이 이상. raw HTML 은 `<pre|script|style|textarea>` 는
+  닫는 태그 줄까지, **그 외 모든 block-level HTML(`<div>`·`<table>`·`<details>`·닫는 태그 등)은
+  blank line 까지** 통째로 non-content 다 — 지원하지 않는 HTML container 내부를 마크다운으로
+  재해석하지 않는다. 이들 내부의 heading·표는 섹션도 표도 evidence 근거도 만들지 못한다.
 - **canonical 표는 column 0 의 top-level 표만** 인정한다 — 들여쓴 표 줄(list 안 code example 의
   continuation, indented code)은 표가 아니다.
 - 구분자 줄은 셀마다 hyphen 최소 1개(`:?-+:?`)와 header 와 같은 셀 수를 요구한다.
+- **Summary/Items 의 header 는 canonical 컬럼 배열과 exact 일치**(개수·중복·누락·추가·순서)해야
+  한다 — 중복 header 는 행에서 뒤 셀이 앞 셀을 덮어써 status/effect 를 가릴 수 있다. D-/C-/U-/G-
+  canonical 표도 중복 header 를 가지면 신뢰하지 않는다.
 - H2 heading 은 CommonMark 대로 선행 공백 0~3칸까지 **인식**한다 — 들여쓴 실제 heading 도 중복
   개수 검사(hard)에 포함된다.
-- INV-/VER- 토큰 존재 검사는 code(fence/indented/inline span)·HTML·주석을 제외한 visible prose 만
-  본다 — 근거 언급은 backtick 없이 plain text 로 적는다.
+- INV-/VER- 토큰 존재 검사는 code(fence/indented/inline span — span 은 여러 줄·긴 delimiter 포함
+  stateful 로 소비)·HTML·주석을 제외한 visible prose 만 본다 — 근거 언급은 backtick 없이 plain
+  text 로 적는다.
 
 - `Item`: input-scoped 2자리 ID(`01`, `02`...). Classification 개수는 unique `(Input ID, Item)` 로 센다.
 - `Basis` enum: `compatible-fact` `visual-evidence` `unknown-answer` `decision-answer` `new-choice`

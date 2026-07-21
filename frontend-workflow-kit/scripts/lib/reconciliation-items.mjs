@@ -25,7 +25,7 @@
 // 이 모듈은 순수하다 — { errors:[{file,message}], warnings:[{file,message}] } 를 반환하고
 // file 은 항상 절대경로다. validate.mjs 가 add()/warn() 으로 상대화한다.
 import { readFileSafe, splitFrontmatter } from './util.mjs';
-import { hasHeader, col } from './spec.mjs';
+import { col } from './spec.mjs';
 import { RECONCILE_STATUS_VALUES, REQUIRED_REGISTER_COLS } from './reconciliation-register.mjs';
 import { INHERIT, SOURCE_UNIT_VALUES, isRfc3339, parseRfc3339 } from './provenance.mjs';
 import {
@@ -38,6 +38,7 @@ import {
   stripNonContent,
   splitSectionOccurrences,
   parseStrictTables,
+  describeHeaderMismatch,
 } from './reconciliation-target-index.mjs';
 
 export const RECONCILIATION_CONTRACT_V2 = 2;
@@ -272,20 +273,25 @@ export function parseReconciliationItems(body) {
     (occ) => occ.slug === ITEMS_SECTION_SLUG,
   );
   if (occurrences.length === 0) {
-    return { sectionExists: false, sectionCount: 0, tableCount: 0, table: null, missingCols: [], rows: [] };
+    return { sectionExists: false, sectionCount: 0, tableCount: 0, table: null, headerIssue: null, rows: [] };
   }
   if (occurrences.length > 1) {
-    return { sectionExists: true, sectionCount: occurrences.length, tableCount: 0, table: null, missingCols: [], rows: [] };
+    return { sectionExists: true, sectionCount: occurrences.length, tableCount: 0, table: null, headerIssue: null, rows: [] };
   }
   const tables = parseStrictTables(occurrences[0].text);
   if (tables.length === 0) {
-    return { sectionExists: true, sectionCount: 1, tableCount: 0, table: null, missingCols: [], rows: [] };
+    return { sectionExists: true, sectionCount: 1, tableCount: 0, table: null, headerIssue: null, rows: [] };
   }
   const table = tables[0];
   if (tables.length > 1) {
-    return { sectionExists: true, sectionCount: 1, tableCount: tables.length, table, missingCols: [], rows: [] };
+    return { sectionExists: true, sectionCount: 1, tableCount: tables.length, table, headerIssue: null, rows: [] };
   }
-  const missingCols = REQUIRED_ITEM_COLS.filter((c) => !hasHeader(table.headers, c));
+  // header 는 canonical 10컬럼과 **exact 일치**(개수·중복·누락·추가·순서)해야 한다 — 같은 header 가
+  // 중복되면 행 object 에서 뒤 셀이 앞 셀을 덮어써 금지 effect 등이 검증에서 사라진다(fail-open).
+  const headerIssue = describeHeaderMismatch(table, REQUIRED_ITEM_COLS);
+  if (headerIssue) {
+    return { sectionExists: true, sectionCount: 1, tableCount: 1, table, headerIssue, rows: [] };
+  }
   const rows = [];
   for (const r of table.rows) {
     const row = {
@@ -303,7 +309,7 @@ export function parseReconciliationItems(body) {
     const allEmpty = Object.values(row).every((v) => v === '');
     if (!allEmpty) rows.push(row);
   }
-  return { sectionExists: true, sectionCount: 1, tableCount: 1, table, missingCols, rows };
+  return { sectionExists: true, sectionCount: 1, tableCount: 1, table, headerIssue: null, rows };
 }
 
 // ── routing matrix (설계 §6) ──────────────────────────────────────────────────
@@ -442,15 +448,17 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
     add(
       `RR-SCHEMA-017: Reconciliation Items 섹션에 표가 ${items.tableCount}개 — canonical 10컬럼 표 1개만 두세요 (추가 행은 같은 표에 이어 쓰고, 예시는 code fence 로 감싸세요)`,
     );
-  } else if (items.missingCols.length) {
-    add(`RR-SCHEMA-005: Reconciliation Items 표 필수 컬럼 누락: ${items.missingCols.join(', ')}`);
+  } else if (items.headerIssue) {
+    add(
+      `RR-SCHEMA-005: Reconciliation Items 표 header 가 canonical 10컬럼과 불일치 (${items.headerIssue}) — 정확히 | ${REQUIRED_ITEM_COLS.join(' | ')} | 순서·구성이어야 함`,
+    );
   }
   const itemRowsUsable =
     items.sectionExists &&
     items.sectionCount === 1 &&
     items.table &&
     items.tableCount === 1 &&
-    items.missingCols.length === 0;
+    !items.headerIssue;
 
   // --- canonical Summary 표 (v2 전용 파싱) ---
   // v1 파서(parseTable)는 raw body 의 "첫 파이프 표"를 Summary 로 삼는다 — fence 안의 8컬럼 예시나
@@ -469,12 +477,14 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
     created: (col(r, 'Created Items') || '').trim(),
     supersedes: (col(r, 'Supersedes') || '').trim(),
   });
-  const summaryTables = parseStrictTables(cleanBody).filter((t) =>
-    REQUIRED_REGISTER_COLS.every((c) => hasHeader(t.headers, c)),
+  // canonical Summary 표는 8컬럼 header 와 **exact 일치**(개수·중복·누락·추가·순서)해야 한다 —
+  // 중복 header 는 행 object 에서 뒤 셀이 앞 셀을 덮어써 Reconcile Status 등 lifecycle 신호를 가린다.
+  const summaryTables = parseStrictTables(cleanBody).filter(
+    (t) => describeHeaderMismatch(t, REQUIRED_REGISTER_COLS) === null,
   );
   if (summaryTables.length !== 1) {
     add(
-      `RR-SCHEMA-019: canonical 8컬럼 Summary 표는 정확히 1개여야 함 (현재 ${summaryTables.length}개 — fence/주석/indented code 안의 예시 표는 세지 않음)`,
+      `RR-SCHEMA-019: canonical Summary 표(정확히 8컬럼: | ${REQUIRED_REGISTER_COLS.join(' | ')} |)는 정확히 1개여야 함 (현재 ${summaryTables.length}개 — 중복/추가 header 표와 fence/주석/indented code 안의 예시는 세지 않음)`,
     );
     return { errors, warnings }; // Summary 없이는 행 단위 검사가 전부 무의미 — 구조부터 고친다
   }

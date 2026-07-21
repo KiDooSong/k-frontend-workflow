@@ -1229,6 +1229,107 @@ test('v2 hard: INV-/VER- 토큰은 code example 언급만으로 해소되지 않
   assert.deepEqual(messages(pass.errors), []);
 });
 
+test('v2 hard: 중복/추가 header 로 status·effect 를 덮어쓸 수 없음 (exact header 계약)', (t) => {
+  // Items: 앞에 중복 Effect 컬럼을 붙여 금지 effect(resolve)를 뒤 셀로 덮어쓰는 공격 — exact 10컬럼
+  // 계약 위반이므로 RR-SCHEMA-005 로 fail-closed (조용히 통과 금지).
+  const dupItems = runV2(t, {
+    itemsHeader: [
+      '| Effect | Input ID | Item | Basis | Classification | Effect | Target | Evidence | Source Ref | Source Unit | Captured At |',
+      `|${Array(11).fill('---').join('|')}|`,
+    ],
+    itemRows: [
+      '| resolve | IN-20260720-figma-001 | 01 | compatible-fact | simple-update | update | artifact:component-gap-register | input:IN-20260720-figma-001#summary | inherit | statement | inherit |',
+    ],
+  });
+  assert.ok(hasCode(dupItems.errors, 'RR-SCHEMA-005'));
+
+  // Summary: 앞에 중복 Reconcile Status 컬럼을 붙여 failed 를 reconciled 로 덮어쓰는 공격 —
+  // exact 8컬럼이 아니므로 canonical Summary 로 인정되지 않는다 → RR-SCHEMA-019.
+  const dupSummary = runV2(t, {
+    omitSummaryTable: true,
+    summaryPrefix: [
+      '| Reconcile Status | Input ID | Source | Classification | Reconcile Status | Result | Touched Artifacts | Created Items | Supersedes |',
+      `|${Array(9).fill('---').join('|')}|`,
+      '| failed | IN-20260720-figma-001 | figma | simple-update | reconciled | accepted | artifact:component-gap-register | - | - |',
+    ].join('\n'),
+    itemRows: [],
+  });
+  assert.ok(hasCode(dupSummary.errors, 'RR-SCHEMA-019'));
+
+  // 컬럼 순서 위반도 exact 계약 위반이다.
+  const reordered = runV2(t, {
+    itemsHeader: [
+      '| Item | Input ID | Basis | Classification | Effect | Target | Evidence | Source Ref | Source Unit | Captured At |',
+      `|${Array(10).fill('---').join('|')}|`,
+    ],
+    itemRows: [],
+  });
+  assert.ok(hasCode(reordered.errors, 'RR-SCHEMA-005'));
+
+  // D/C/U/G canonical 표도 중복 signature header 면 신뢰하지 않는다 → D-204 미해소.
+  const dupIdDecisions = DECISION_DOC.replace(
+    '| ID | Decision Needed | Options | Blocking Mode | Owner | Status |\n|---|---|---|---|---|---|\n| D-204 | 로그인 성공 후 이동 위치 | home / returnTo | final-fixture-ui | PM | open |',
+    '| ID | Decision Needed | Options | Blocking Mode | Owner | Status | ID |\n|---|---|---|---|---|---|---|\n| D-204 | 로그인 성공 후 이동 위치 | home / returnTo | final-fixture-ui | PM | open | D-204 |',
+  );
+  const dupChild = runV2(t, { files: { 'global/open-decisions.md': dupIdDecisions } });
+  assert.ok(hasCode(dupChild.errors, 'RR-REF-008'));
+});
+
+test('v2 hard: 여러 줄/긴 delimiter inline code span 의 INV 토큰은 근거가 아님', (t) => {
+  const invItem =
+    '| IN-20260720-meeting-001 | 02 | verification-gap | investigation-needed | create-open | investigation:INV-001@COUPON-001-screen-spec | input:IN-20260720-meeting-001#extracted-facts | inherit | statement | inherit |';
+  const summaryWithInv = [
+    DEFAULT_SUMMARY_ROWS[0],
+    DEFAULT_SUMMARY_ROWS[1]
+      .replace('| conflict |', '| conflict + investigation-needed |')
+      .replace('conflict:C-001@conflicts;', 'conflict:C-001@conflicts; investigation:INV-001@COUPON-001-screen-spec;')
+      .replace('artifact:conflicts;', 'artifact:conflicts; artifact:COUPON-001-screen-spec;'),
+  ];
+
+  // 여러 줄에 걸친 code span 내부의 INV-001.
+  const multiline = SCREEN_SPEC_DOC + '\n## Notes\n\nExample only: `do not use\nINV-001`\n';
+  const failMultiline = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': multiline },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.ok(hasCode(failMultiline.errors, 'RR-REF-008'));
+
+  // 긴 delimiter(``...``) 안의 짧은 run 을 포함한 span 내부의 INV-001.
+  const longDelimiter = SCREEN_SPEC_DOC + '\n## Notes\n\n``INV-001 `example` `` 는 예시다.\n';
+  const failLong = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': longDelimiter },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.ok(hasCode(failLong.errors, 'RR-REF-008'));
+});
+
+test('v2: <div>/<table>/<details> raw HTML block 안의 표는 canonical 이 아님', (t) => {
+  // stripNonContent 단위: 지원하지 않는 block-level HTML 은 blank line 까지 통째로 non-content.
+  const div = stripNonContent(['<div>', '| ID | Status | Blocking Mode |', '|---|---|---|', '| D-432 | open | final-fixture-ui |', '</div>', '', '뒤 내용'].join('\n'));
+  assert.ok(!div.includes('D-432'));
+  assert.ok(div.includes('뒤 내용'));
+  const tableTag = stripNonContent(['<table>', '| IN-X | 셀 |', '</table>', '', '뒤'].join('\n'));
+  assert.ok(!tableTag.includes('IN-X'));
+  const details = stripNonContent(['<details>', '| IN-Y | 셀 |', '</details>', '', '뒤'].join('\n'));
+  assert.ok(!details.includes('IN-Y'));
+
+  // register 통합: <div> 안의 8컬럼 예시는 canonical Summary 개수에 세지 않는다.
+  const exampleAfter = runV2(t, {
+    registerExtra: ['<div>', ...SUMMARY_HEADER, '| IN-X | figma | simple-update | reconciled | accepted | - | - | - |', '</div>', ''].join('\n'),
+  });
+  assert.deepEqual(messages(exampleAfter.errors), []);
+
+  // <div> 안의 표만 있고 실제 Summary 가 없으면 canonical 부재 → RR-SCHEMA-019.
+  const divOnly = runV2(t, {
+    omitSummaryTable: true,
+    summaryPrefix: ['<div>', ...SUMMARY_HEADER, DEFAULT_SUMMARY_ROWS[0], '</div>'].join('\n'),
+    itemRows: [],
+  });
+  assert.ok(hasCode(divOnly.errors, 'RR-SCHEMA-019'));
+});
+
 // ── warning-only ─────────────────────────────────────────────────────────────
 
 test('v2 hard: 주석 안 fence marker 로 중복 Items heading 을 숨길 수 없음 (RR-SCHEMA-018)', (t) => {
@@ -1481,7 +1582,7 @@ test('parseReconciliationItems: 섹션/표/행 파싱', () => {
   ].join('\n');
   const parsed = parseReconciliationItems(body);
   assert.equal(parsed.sectionExists, true);
-  assert.deepEqual(parsed.missingCols, []);
+  assert.equal(parsed.headerIssue, null);
   assert.equal(parsed.rows.length, 4);
   assert.equal(parsed.rows[0].item, '01');
   assert.equal(parsed.rows[3].effect, 'reopen');

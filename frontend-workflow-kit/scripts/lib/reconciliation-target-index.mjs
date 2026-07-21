@@ -81,7 +81,8 @@ export function stripNonContent(text) {
   const out = [];
   let fence = null; // { char, length } | null
   let inComment = false;
-  let inHtmlBlock = false;
+  let inHtmlBlock = false; // <pre|script|style|textarea> — 닫는 태그 줄까지
+  let inHtmlUntilBlank = false; // 그 외 raw HTML block — blank line 까지 (CommonMark type 6/7)
 
   for (const line of String(text || '').split(/\r?\n/)) {
     if (fence !== null) {
@@ -97,6 +98,13 @@ export function stripNonContent(text) {
       if (/<\/(?:pre|script|style|textarea)>/i.test(line)) inHtmlBlock = false;
       continue; // 종료 줄 포함 통째로 소비
     }
+    if (inHtmlUntilBlank) {
+      if (/^\s*$/.test(line)) {
+        inHtmlUntilBlank = false;
+        out.push(line); // blank line 은 block 의 일부가 아니다 (CommonMark type 6/7 종료 조건)
+      }
+      continue;
+    }
     // --- normal ---
     if (/^ {0,3}<!--/.test(line)) {
       if (!line.includes('-->', line.indexOf('<!--') + 4)) inComment = true;
@@ -104,6 +112,13 @@ export function stripNonContent(text) {
     }
     if (/^ {0,3}<(?:pre|script|style|textarea)(?=[\s/>]|$)/i.test(line)) {
       if (!/<\/(?:pre|script|style|textarea)>/i.test(line)) inHtmlBlock = true;
+      continue;
+    }
+    // 그 외 raw HTML block(`<div>`·`<table>`·`<details>`·닫는 태그·`<!DOCTYPE` 등) — CommonMark
+    // type 6/7 대로 blank line 까지 통째로 소비한다. `<div>` 안의 pipe 줄이 top-level canonical 표로
+    // 재해석되는 fail-open 을 막는다(지원하지 않는 HTML container 내부는 전부 non-content).
+    if (/^ {0,3}<[a-zA-Z!/]/.test(line)) {
+      inHtmlUntilBlank = true;
       continue;
     }
     const open = /^ {0,3}(`{3,}|~{3,})/.exec(line);
@@ -120,6 +135,78 @@ export function stripNonContent(text) {
 // (하위호환 별칭 — 테스트/유닛 사용처. 주석 미포함 입력이면 stripNonContent 와 동일하게 동작한다.)
 export function stripFencedCodeBlocks(text) {
   return stripNonContent(text);
+}
+
+// inline code span 제거 — stateful scanner. 줄 단위 정규식은 여러 줄에 걸친 span(`a\nINV-001`)과
+// 긴 delimiter 안의 짧은 run(``INV-001 `x` ``)을 놓친다. CommonMark 대로 opening run 과 **정확히
+// 같은 길이**의 closing run 까지를 span 으로 소비하고(내부의 더 짧거나 긴 run 은 리터럴),
+// closing 이 없으면 backtick run 자체를 리터럴로 남긴다. span 내용은 공백 하나로 치환한다.
+export function stripInlineCodeSpans(text) {
+  const s = String(text || '');
+  let out = '';
+  let i = 0;
+  while (i < s.length) {
+    if (s[i] !== '`') {
+      out += s[i];
+      i += 1;
+      continue;
+    }
+    let j = i;
+    while (j < s.length && s[j] === '`') j += 1;
+    const runLen = j - i;
+    // 같은 길이의 closing run 탐색.
+    let k = j;
+    let closeEnd = -1;
+    while (k < s.length) {
+      if (s[k] !== '`') {
+        k += 1;
+        continue;
+      }
+      let m = k;
+      while (m < s.length && s[m] === '`') m += 1;
+      if (m - k === runLen) {
+        closeEnd = m;
+        break;
+      }
+      k = m; // 길이가 다른 run 은 span 내부 리터럴
+    }
+    if (closeEnd === -1) {
+      out += s.slice(i, j); // 닫히지 않은 run 은 리터럴
+      i = j;
+    } else {
+      out += ' ';
+      i = closeEnd;
+    }
+  }
+  return out;
+}
+
+// 헤더 정규화(대소문자/공백 무시 — hasHeader/col 과 같은 규약)와 canonical 헤더 배열 exact 비교.
+// strict 표의 행은 header 문자열을 object key 로 저장하므로, 같은 header 가 중복되면 뒤 셀이 앞
+// 셀을 **덮어쓴다** — canonical 표는 중복/추가/누락/순서 위반 없이 정확히 일치해야 한다.
+export function normalizedTableHeaders(table) {
+  return (table?.headers || []).map((h) => String(h).toLowerCase().replace(/\s+/g, ''));
+}
+
+export function tableHeadersAreUnique(table) {
+  const norm = normalizedTableHeaders(table);
+  return new Set(norm).size === norm.length;
+}
+
+// canonical 헤더 배열과의 exact 일치 여부. 불일치면 사람이 읽을 사유 문자열, 일치면 null.
+export function describeHeaderMismatch(table, canonicalCols) {
+  const actual = normalizedTableHeaders(table);
+  const expected = canonicalCols.map((h) => String(h).toLowerCase().replace(/\s+/g, ''));
+  if (actual.length === expected.length && actual.every((h, i) => h === expected[i])) return null;
+  const problems = [];
+  if (actual.length !== expected.length) problems.push(`컬럼 수 ${actual.length} ≠ ${expected.length}`);
+  if (new Set(actual).size !== actual.length) problems.push('중복 header 존재');
+  const missing = expected.filter((h) => !actual.includes(h));
+  const extra = actual.filter((h) => !expected.includes(h));
+  if (missing.length) problems.push(`누락: ${missing.join(', ')}`);
+  if (extra.length) problems.push(`추가: ${extra.join(', ')}`);
+  if (!problems.length) problems.push('canonical 순서 불일치');
+  return problems.join(' / ');
 }
 
 // hard-contract 전용 strict 마크다운 표 파서 — parseTables(spec.mjs)는 모든 줄을 trim 한 뒤 `|`
@@ -211,11 +298,12 @@ function indexDocBody(body, artifactType) {
   const contentBody = stripNonContent(body);
   // INV-/VER- 토큰 존재 검사용 prose 본문: fence/주석/HTML block 에 더해 indented code 줄(4칸+/tab)과
   // inline code span 도 제외한다 — code example 안의 언급만으로 canonical target 이 해소되면 안 된다.
-  const proseBody = contentBody
-    .split('\n')
-    .filter((l) => !/^(?: {4,}|\t)/.test(l))
-    .map((l) => l.replace(/(`+)(?:(?!`).)*?\1/g, ' '))
-    .join('\n');
+  const proseBody = stripInlineCodeSpans(
+    contentBody
+      .split('\n')
+      .filter((l) => !/^(?: {4,}|\t)/.test(l))
+      .join('\n'),
+  );
   const sections = new Map();
   for (const occ of splitSectionOccurrences(contentBody)) {
     // 같은 slug 섹션이 중복되면 텍스트를 이어붙인다 (해소 검사에는 존재 여부가 중요).
@@ -244,8 +332,11 @@ function indexDocBody(body, artifactType) {
     }
     // child row 후보: 이 위치를 canonical 홈으로 갖는 family 별로, signature 를 만족하는 **첫 표만**
     // 선택한다(parseOpenDecisions 의 canonical 선택과 동형). 같은 섹션의 나머지 표는 예시/범례다.
+    // 중복 header 를 가진 표는 셀이 덮어써져 신뢰할 수 없으므로 canonical 후보에서 제외한다(fail-closed).
     for (const family of canonicalFamiliesAt(slug, artifactType)) {
-      const canonical = tables.find((t) => FAMILY_SIGNATURES[family].every((c) => hasHeader(t.headers, c)));
+      const canonical = tables.find(
+        (t) => tableHeadersAreUnique(t) && FAMILY_SIGNATURES[family].every((c) => hasHeader(t.headers, c)),
+      );
       if (!canonical) continue;
       for (const r of canonical.rows) {
         const id = String(col(r, 'ID') || '').trim();

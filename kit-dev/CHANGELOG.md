@@ -38,6 +38,13 @@
 - 하지 않은 것(설계 §14): 검사 11 `captured_at` RFC3339 hard 승격과 figma-component-mapping `M-xxx`/
   `## Mapping Provenance`(202-B), 자연어 routing heuristic·stale Result warning(202-C), CI required check
   승격, 새 readiness fact/implementation mode/artifact axis.
+- 6차 재리뷰 후속: ① Summary/Items header 를 canonical 배열과 **exact 비교**(개수·중복·누락·추가·
+  순서) — 중복 header 로 행 object 에서 `Reconcile Status=failed`/`Effect=resolve` 를 뒤 셀로 덮어쓰던
+  경로 차단(D-/C-/U-/G- canonical 표도 중복 header 면 불신), ② inline code span 제거를 stateful
+  scanner 로 교체 — 여러 줄 span(`a\nINV-001`)·긴 delimiter(``INV `x` ``) 안의 INV-/VER- 토큰 유출
+  차단(closing 은 opening 과 정확히 같은 길이의 run), ③ `<pre|script|style|textarea>` 외의 모든
+  block-level raw HTML(`<div>`·`<table>`·`<details>` 등)을 CommonMark type 6/7 대로 blank line 까지
+  non-content 로 소비 — 지원하지 않는 HTML container 내부 표가 canonical 로 승격되던 경로 차단.
 - 5차 재리뷰 후속: 부분 line-scanner 를 "렌더링 흉내"로 쓰지 않도록 v2 마크다운 소비를 **좁은
   canonical authoring profile** 로 고정했다. ① HTML 주석/raw HTML block(`<pre|script|style|textarea>`)은
   CommonMark 블록 규칙대로 `<!--`/tag 로 **시작하는 줄**에서만 열리고 종료 줄을 통째로 소비 —
