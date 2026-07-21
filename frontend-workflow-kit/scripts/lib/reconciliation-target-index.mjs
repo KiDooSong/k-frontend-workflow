@@ -62,43 +62,56 @@ function canonicalFamiliesAt(sectionSlug, artifactType) {
 
 // fenced code block(``` / ~~~) 내부를 제거한다 — parseTables 는 fence 를 모르므로 코드 블록 안의
 // canonical-looking 예시 표가 child 후보/표 개수 판정에 끼는 것을 여기서 차단한다.
+// fence 상태는 {char, length} 로 추적한다: closing fence 는 같은 문자이면서 opening 길이 **이상**의
+// run 만으로 이뤄진 줄만 인정한다(CommonMark) — 4-backtick fence 안에서 3-backtick 예시를 보여주는
+// 일반적인 문서 패턴에서 내부 fence 가 outer fence 를 닫아버리는 오판을 막는다.
 export function stripFencedCodeBlocks(text) {
   const out = [];
-  let fence = null;
+  let fence = null; // { char, length }
   for (const line of String(text || '').split(/\r?\n/)) {
-    const m = /^\s*(`{3,}|~{3,})/.exec(line);
-    if (m) {
-      if (fence === null) {
-        fence = m[1][0];
+    if (fence === null) {
+      const open = /^\s*(`{3,}|~{3,})/.exec(line);
+      if (open) {
+        fence = { char: open[1][0], length: open[1].length };
         continue;
       }
-      if (m[1][0] === fence) {
+      out.push(line);
+    } else {
+      const close = /^\s*(`{3,}|~{3,})\s*$/.exec(line);
+      if (close && close[1][0] === fence.char && close[1].length >= fence.length) {
         fence = null;
-        continue;
       }
+      // fence 내부(닫는 줄 포함)는 전부 버린다.
     }
-    if (fence === null) out.push(line);
   }
   return out.join('\n');
 }
 
-// 문서 본문 하나를 인덱싱한다.
-//   sections   Map(slug → { title, text })  ("" slug = h2 이전 preamble)
-//   rows       Map(rowId → [{ sectionSlug, family }])  (가족이 판정된 canonical 표의 ID 컬럼만)
-//   rowKeys    Map(sectionSlug → Set(첫 셀 원문))  (#section/<row-key> warning 해소용)
-function indexDocBody(body, artifactType) {
-  const sections = new Map();
-  const lines = String(body || '').split(/\r?\n/);
+// section/child-row 판정 전에 non-content(fence 내부 + HTML 주석)를 제거한 본문.
+// getSections 류의 heading 분리는 fence/주석을 모르므로, fence 안의 `## Open Decisions` 같은
+// 예시 heading 이 실제 canonical 섹션을 만들어 그 안의 표가 해소되는 fail-open 을 여기서 차단한다.
+// 순서는 fence → 주석: fence 안의 주석 마커는 리터럴이라 fence 제거가 먼저다.
+export function stripNonContent(text) {
+  return stripFencedCodeBlocks(text).replace(/<!--[\s\S]*?-->/g, '');
+}
+
+// heading 발생 순서를 보존하는 섹션 분리 — getSections(spec.mjs)는 같은 heading 을 만나면 이전
+// 섹션을 덮어써 "중복 canonical 섹션의 첫 표"가 검증에서 사라진다. 여기서는 occurrence 배열을
+// 돌려줘 호출부가 중복 자체를 계약 위반으로 볼 수 있게 한다. 입력은 stripNonContent 를 거친
+// 본문이어야 한다(fence/주석 안의 heading 은 섹션이 아니다).
+//   [{ title, slug, text }]  (첫 h2 이전 preamble 은 slug '' 로 포함)
+export function splitSectionOccurrences(cleanText) {
+  const occurrences = [];
   let currentTitle = '';
   let buf = [];
   const flush = () => {
-    const slug = currentTitle ? slugifySectionTitle(currentTitle) : '';
-    // 같은 slug 섹션이 중복되면 텍스트를 이어붙인다 (해소 검사에는 존재 여부가 중요).
-    const prev = sections.get(slug);
-    const text = buf.join('\n');
-    sections.set(slug, { title: currentTitle, text: prev ? `${prev.text}\n${text}` : text });
+    occurrences.push({
+      title: currentTitle,
+      slug: currentTitle ? slugifySectionTitle(currentTitle) : '',
+      text: buf.join('\n'),
+    });
   };
-  for (const line of lines) {
+  for (const line of String(cleanText || '').split(/\r?\n/)) {
     const m = /^##\s+(.+?)\s*$/.exec(line);
     if (m) {
       flush();
@@ -109,12 +122,33 @@ function indexDocBody(body, artifactType) {
     }
   }
   flush();
+  return occurrences;
+}
+
+// 문서 본문 하나를 인덱싱한다.
+//   contentBody non-content(fence/주석) 제거 후 본문 — INV-/VER- 토큰 존재 검사도 이것을 쓴다
+//   sections   Map(slug → { title, text })  ("" slug = h2 이전 preamble)
+//   rows       Map(rowId → [{ sectionSlug, family }])  (가족이 판정된 canonical 표의 ID 컬럼만)
+//   rowKeys    Map(sectionSlug → Set(첫 셀 원문))  (#section/<row-key> warning 해소용)
+// section 분리는 반드시 stripNonContent **이후**에 한다 — fence 안의 `## Open Decisions` heading 이
+// 실제 섹션을 만들면 closing fence 가 고아가 되어 fence 내부 표가 canonical 행으로 해소된다.
+function indexDocBody(body, artifactType) {
+  const contentBody = stripNonContent(body);
+  const sections = new Map();
+  for (const occ of splitSectionOccurrences(contentBody)) {
+    // 같은 slug 섹션이 중복되면 텍스트를 이어붙인다 (해소 검사에는 존재 여부가 중요).
+    const prev = sections.get(occ.slug);
+    sections.set(occ.slug, {
+      title: occ.title,
+      text: prev ? `${prev.text}\n${occ.text}` : occ.text,
+    });
+  }
 
   const rows = new Map();
   const rowKeys = new Map();
   for (const [slug, sec] of sections) {
-    // fence 내부 표는 예시/문서화다 — row-key·child 후보 어느 쪽에도 넣지 않는다.
-    const tables = parseTables(stripFencedCodeBlocks(sec.text));
+    // fence/주석은 위에서 이미 제거됐다.
+    const tables = parseTables(sec.text);
     for (const table of tables) {
       const firstHeader = table.headers[0];
       for (const r of table.rows) {
@@ -140,11 +174,11 @@ function indexDocBody(body, artifactType) {
       }
     }
   }
-  return { sections, rows, rowKeys };
+  return { contentBody, sections, rows, rowKeys };
 }
 
 // docs([{file, fm}]) → { artifacts: Map(artifact_id → record), duplicates: Set(artifact_id) }.
-// record = { file, fm, body, sections, rows, rowKeys }.
+// record = { file, fm, body, contentBody, sections, rows, rowKeys }.
 // 같은 artifact_id 가 2개 이상 선언되면 어느 문서가 owner 인지 결정할 수 없다 — 첫 문서를 보존하되
 // duplicates 에 모아 v2 validator 가 해소 불가(hard error)로 보고한다(경로 정렬 의존 방지).
 export function buildReconciliationTargetIndex({ docs = [] }) {
@@ -204,8 +238,10 @@ export function resolveChildRow(record, rowId, targetKind) {
 }
 
 // INV-/VER- 처럼 canonical 표가 없는 축: owner 문서 본문에 ID 토큰이 존재하는가.
+// fence/주석 안의 언급은 근거가 아니다 — non-content 제거 후 본문(contentBody)만 본다.
 export function bodyHasToken(record, token) {
-  if (!record?.body || !token) return false;
+  const haystack = record?.contentBody ?? record?.body;
+  if (!haystack || !token) return false;
   const esc = String(token).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`(^|[^A-Za-z0-9-])${esc}([^A-Za-z0-9-]|$)`).test(record.body);
+  return new RegExp(`(^|[^A-Za-z0-9-])${esc}([^A-Za-z0-9-]|$)`).test(haystack);
 }

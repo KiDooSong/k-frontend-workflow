@@ -16,7 +16,11 @@ import { isRfc3339 } from './provenance.mjs';
 import { splitFrontmatter, readFileSafe } from './util.mjs';
 import { collectInputArtifacts } from './input-artifact.mjs';
 import { parseReconciliationRegister, validateReconciliationRegister } from './reconciliation-register.mjs';
-import { buildReconciliationTargetIndex } from './reconciliation-target-index.mjs';
+import {
+  buildReconciliationTargetIndex,
+  stripFencedCodeBlocks,
+  stripNonContent,
+} from './reconciliation-target-index.mjs';
 import {
   parseRegisterContract,
   parseSummaryClassification,
@@ -258,6 +262,7 @@ function runV2(t, overrides = {}) {
     '',
     itemsSection,
     '',
+    overrides.registerExtra || '',
   ].join('\n');
   const registerFile = write('_meta/reconciliation-register.md', registerContent);
 
@@ -993,6 +998,94 @@ test('v2 hard: Reconciliation Items 섹션의 두 번째 표는 검증 우회가
     ],
   });
   assert.deepEqual(messages(fenced.errors), []);
+});
+
+test('markdown 전처리: fence 는 {char,length} 로 추적하고 주석/fence 안의 heading 은 섹션이 아님', () => {
+  // 4-backtick outer fence 안의 3-backtick 예시 — 내부 fence 가 outer 를 닫으면 표가 노출된다.
+  const nested = ['````md', '```', '| ID | Status | Blocking Mode |', '|---|---|---|', '| D-777 | open | final-fixture-ui |', '````', '뒤 내용'].join('\n');
+  const strippedNested = stripFencedCodeBlocks(nested);
+  assert.ok(!strippedNested.includes('D-777'));
+  assert.ok(strippedNested.includes('뒤 내용'));
+
+  // fence 안의 heading 이 실제 섹션으로 승격되지 않는다 (stripNonContent 가 section 분리보다 먼저).
+  const fencedHeading = ['## Notes', '', '```md', '## Open Decisions', '', '| ID | Status | Blocking Mode |', '|---|---|---|', '| D-999 | open | final-fixture-ui |', '```', ''].join('\n');
+  const cleaned = stripNonContent(fencedHeading);
+  assert.ok(!cleaned.includes('## Open Decisions'));
+  assert.ok(!cleaned.includes('D-999'));
+
+  // HTML 주석 안의 heading/표도 non-content 다.
+  const commented = ['## Notes', '<!--', '## Open Decisions', '| ID | Status | Blocking Mode |', '|---|---|---|', '| D-666 | open | final-fixture-ui |', '-->'].join('\n');
+  assert.ok(!stripNonContent(commented).includes('D-666'));
+});
+
+test('v2 hard: fence 안의 `## Open Decisions` heading 은 canonical 섹션을 만들지 않음 (RR-REF-008)', (t) => {
+  // 리뷰 시나리오: Notes 의 fenced 예시가 heading 을 포함 — section 분리가 fence 를 모르면
+  // closing fence 가 고아가 되어 D-999 가 실제 open-decisions 섹션 행으로 해소된다.
+  const decisionWithFencedHeading =
+    DECISION_DOC +
+    '\n## Notes\n\n```md\n## Open Decisions\n\n| ID | Status | Blocking Mode |\n|---|---|---|\n| D-999 | open | final-fixture-ui |\n```\n';
+  const r = runV2(t, {
+    files: { 'global/open-decisions.md': decisionWithFencedHeading },
+    itemRows: [
+      ...DEFAULT_ITEM_ROWS.slice(0, 3),
+      DEFAULT_ITEM_ROWS[3].replace('decision:D-204@open-decision-register', 'decision:D-999@open-decision-register'),
+    ],
+    summaryRows: [
+      DEFAULT_SUMMARY_ROWS[0],
+      DEFAULT_SUMMARY_ROWS[1].replace('decision:D-204@open-decision-register', 'decision:D-999@open-decision-register'),
+    ],
+  });
+  assert.ok(hasCode(r.errors, 'RR-REF-008'));
+
+  // 같은 문서의 진짜 canonical 행(D-204)은 계속 해소된다.
+  const sane = runV2(t, { files: { 'global/open-decisions.md': decisionWithFencedHeading } });
+  assert.deepEqual(messages(sane.errors), []);
+});
+
+test('v2 hard: 중복 `## Reconciliation Items` heading 은 첫 표 은닉이 아니라 RR-SCHEMA-018', (t) => {
+  // getSections 는 중복 heading 에서 앞 섹션을 덮어쓴다 — 금지 effect(resolve)가 든 두 번째 섹션을
+  // 붙여도(또는 반대 순서여도) heading 개수 자체로 fail-closed 해야 한다.
+  const r = runV2(t, {
+    registerExtra: [
+      '## Reconciliation Items',
+      '',
+      ...ITEMS_HEADER,
+      '| IN-20260720-meeting-001 | 99 | decision-answer | resolves-decision | resolve | decision:D-204@open-decision-register | input:IN-20260720-meeting-001#summary | inherit | statement | inherit |',
+      '',
+    ].join('\n'),
+  });
+  assert.ok(hasCode(r.errors, 'RR-SCHEMA-018'));
+});
+
+test('v2: fence 안의 `## Reconciliation Items` 예시는 섹션/표 개수에 세지 않음', (t) => {
+  const r = runV2(t, {
+    registerExtra: [
+      '## 메모',
+      '',
+      '```md',
+      '## Reconciliation Items',
+      '',
+      ...ITEMS_HEADER,
+      '| {IN-...} | {01} | {basis} | {classification} | {effect} | {target} | {evidence} | {ref} | {unit} | {at} |',
+      '```',
+      '',
+    ].join('\n'),
+  });
+  assert.equal(hasCode(r.errors, 'RR-SCHEMA-018'), false);
+  assert.equal(hasCode(r.errors, 'RR-SCHEMA-017'), false);
+  assert.deepEqual(messages(r.errors), []);
+});
+
+test('v2 hard: fence 안의 heading 으로 만든 가짜 evidence 섹션은 해소되지 않음 (RR-REF-005)', (t) => {
+  const inputWithFencedSection = FIGMA_INPUT + '\n```md\n## Ghost Section\n- fake bullet\n```\n';
+  const r = runV2(t, {
+    files: { 'inputs/IN-20260720-figma-001.md': inputWithFencedSection },
+    itemRows: [
+      DEFAULT_ITEM_ROWS[0].replace('#extracted-facts/01', '#ghost-section/01'),
+      ...DEFAULT_ITEM_ROWS.slice(1),
+    ],
+  });
+  assert.ok(hasCode(r.errors, 'RR-REF-005'));
 });
 
 // ── warning-only ─────────────────────────────────────────────────────────────

@@ -346,9 +346,11 @@ Summary 는 그 projection 이다.
 | Input ID | Item | Basis | Classification | Effect | Target | Evidence | Source Ref | Source Unit | Captured At |
 ```
 
-이 섹션의 canonical 표는 **정확히 1개**다 — 두 번째 표(중복 표든, header 가 어긋난 추가 표든)는 첫 표만
-읽는 파서에서 행이 통째로 검증을 벗어나므로 hard error 다. 추가 행은 같은 표에 이어 쓰고, 예시는
-fenced code block 으로 감싼다(fence 안의 표는 개수/행 어느 쪽에도 세지 않는다).
+**실제 `## Reconciliation Items` heading 은 정확히 1개, 그 섹션 안의 실제 표도 정확히 1개**다 —
+중복 heading 은 heading-키 파서에서 앞 섹션을 덮어쓰고, 두 번째 표는 첫 표만 읽는 파서에서 행이
+통째로 검증을 벗어나므로 둘 다 hard error 다. 추가 행은 같은 표에 이어 쓰고, 예시는 fenced code
+block 으로 감싼다. fence(````` ``` `````·`~~~`, 길이 추적)와 HTML 주석 안의 heading·표는 섹션 분리
+**이전**에 제거되므로 섹션도 표도 evidence 근거도 만들지 못한다.
 
 - `Item`: input-scoped 2자리 ID(`01`, `02`...). Classification 개수는 unique `(Input ID, Item)` 로 센다.
 - `Basis` enum: `compatible-fact` `visual-evidence` `unknown-answer` `decision-answer` `new-choice`

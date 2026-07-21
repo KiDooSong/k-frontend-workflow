@@ -38,6 +38,15 @@
 - 하지 않은 것(설계 §14): 검사 11 `captured_at` RFC3339 hard 승격과 figma-component-mapping `M-xxx`/
   `## Mapping Provenance`(202-B), 자연어 routing heuristic·stale Result warning(202-C), CI required check
   승격, 새 readiness fact/implementation mode/artifact axis.
+- 3차 재리뷰 후속: ① `## Reconciliation Items` **heading 도 정확히 1개**(RR-SCHEMA-018) — heading-키
+  파서(getSections)가 중복 heading 에서 앞 섹션을 덮어써 첫 섹션의 표가 검증을 벗어나던 경로를
+  occurrence-보존 분리기로 차단, ② markdown 전처리를 section 분리 **이전**으로 이동 — fence/HTML 주석
+  안의 `## Open Decisions`·`## Reconciliation Items` heading 이 실제 canonical 섹션(및 가짜 evidence
+  섹션)을 만들던 경로 차단, fence 는 {char,length} 추적(closing 은 같은 문자·opening 길이 이상의
+  run 만)으로 4-backtick fence 안 3-backtick 예시 오판 제거. target index·Items parser·input evidence
+  parser 가 같은 토크나이저(stripNonContent/splitSectionOccurrences)를 공유하고 INV-/VER- 토큰 존재
+  검사도 non-content 제거 후 본문만 본다. (재리뷰가 지적한 `yamlParse` import 는 util.mjs 의 기존
+  `export { yamlParse, yamlStringify }` 재수출로 유효함을 확인 — 코드 변경 없음.)
 - 2차 재리뷰 후속으로 남은 우회 경로 3건을 닫았다: ① frontmatter envelope 손상(닫는 `---` 누락)과
   top-level non-mapping(sequence/scalar/null)도 YAML 예외와 동일하게 검사 12 항상-에러(`---` 로 시작하지
   않는 frontmatter-없는 legacy 파일만 v1 유지), ② child row canonical 판정을 "위치+signature AND" 로
