@@ -38,6 +38,12 @@
 - 하지 않은 것(설계 §14): 검사 11 `captured_at` RFC3339 hard 승격과 figma-component-mapping `M-xxx`/
   `## Mapping Provenance`(202-B), 자연어 routing heuristic·stale Result warning(202-C), CI required check
   승격, 새 readiness fact/implementation mode/artifact axis.
+- 7차 재리뷰 후속: ① raw HTML block 종료 조건을 CommonMark type 별로 분리 — `<? … ?>`(PI)·
+  `<![CDATA[ … ]]>`(blank line 무시)·`<!DECL … >`(같은 줄 닫힘) 각각 추적해, PI/CDATA 안의 숨은 표가
+  canonical 로 승격되거나 `<!DOCTYPE html>` 이 뒤의 보이는 중복 heading/표를 삼키던 양방향 fail-open
+  차단, ② INV-/VER- visible prose 검사에서 link/image destination·reference definition·inline HTML
+  tag/attribute·autolink 를 추가로 제외 — URL/attribute 안의 ID 만으로 target 이 해소되던 경로 차단
+  (link text 의 언급은 계속 유효).
 - 6차 재리뷰 후속: ① Summary/Items header 를 canonical 배열과 **exact 비교**(개수·중복·누락·추가·
   순서) — 중복 header 로 행 object 에서 `Reconcile Status=failed`/`Effect=resolve` 를 뒤 셀로 덮어쓰던
   경로 차단(D-/C-/U-/G- canonical 표도 중복 header 면 불신), ② inline code span 제거를 stateful

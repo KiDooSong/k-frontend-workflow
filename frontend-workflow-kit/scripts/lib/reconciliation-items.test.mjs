@@ -1229,6 +1229,87 @@ test('v2 hard: INV-/VER- 토큰은 code example 언급만으로 해소되지 않
   assert.deepEqual(messages(pass.errors), []);
 });
 
+test('markdown 전처리: PI/CDATA/declaration 은 각자의 CommonMark 종료 조건을 따름', () => {
+  // <? … ?> processing instruction — 내부 표는 non-content, ?> 뒤 내용은 살아 있다.
+  const pi = stripNonContent(['<?xml', '| IN-P | 셀 |', '?>', '뒤 내용'].join('\n'));
+  assert.ok(!pi.includes('IN-P'));
+  assert.ok(pi.includes('뒤 내용'));
+
+  // <![CDATA[ … ]]> — blank line 이 있어도 ]]> 까지 계속 non-content 다.
+  const cdata = stripNonContent(['<![CDATA[', '', '| IN-C | 셀 |', ']]>', '뒤'].join('\n'));
+  assert.ok(!cdata.includes('IN-C'));
+  assert.ok(cdata.includes('뒤'));
+
+  // <!DOCTYPE html> 은 같은 줄의 > 로 닫힌다 — 다음 줄의 보이는 heading/표를 삼키지 않는다.
+  const doctype = stripNonContent(['<!DOCTYPE html>', '## Reconciliation Items', '| 표 |'].join('\n'));
+  assert.ok(doctype.includes('## Reconciliation Items'));
+  assert.ok(doctype.includes('| 표 |'));
+});
+
+test('v2 hard: PI/CDATA 안의 표는 canonical 이 아니고, DOCTYPE 은 보이는 중복 heading 을 못 숨김', (t) => {
+  // <?xml … ?> 안의 10컬럼 표만 있으면 canonical Items 표가 없다 → RR-SCHEMA-004.
+  const piItems = runV2(t, {
+    itemsHeader: [],
+    itemRows: ['<?xml', ...ITEMS_HEADER, DEFAULT_ITEM_ROWS[0], '?>'],
+  });
+  assert.ok(hasCode(piItems.errors, 'RR-SCHEMA-004'));
+
+  // blank line 을 포함한 CDATA 안의 8컬럼 표는 canonical Summary 가 아니다 → RR-SCHEMA-019.
+  const cdataSummary = runV2(t, {
+    omitSummaryTable: true,
+    summaryPrefix: ['<![CDATA[', '', ...SUMMARY_HEADER, DEFAULT_SUMMARY_ROWS[0], ']]>'].join('\n'),
+    itemRows: [],
+  });
+  assert.ok(hasCode(cdataSummary.errors, 'RR-SCHEMA-019'));
+
+  // <!DOCTYPE html> 은 같은 줄에서 닫히므로 바로 뒤의 실제 중복 Items heading 이 보인다 → RR-SCHEMA-018.
+  const doctypeDup = runV2(t, {
+    registerExtra: [
+      '<!DOCTYPE html>',
+      '## Reconciliation Items',
+      ...ITEMS_HEADER,
+      '| IN-20260720-meeting-001 | 99 | decision-answer | resolves-decision | resolve | decision:D-204@open-decision-register | input:IN-20260720-meeting-001#summary | inherit | statement | inherit |',
+      '',
+    ].join('\n'),
+  });
+  assert.ok(hasCode(doctypeDup.errors, 'RR-SCHEMA-018'));
+});
+
+test('v2 hard: 링크 URL·reference definition·HTML attribute 의 INV 토큰은 visible prose 가 아님', (t) => {
+  const invItem =
+    '| IN-20260720-meeting-001 | 02 | verification-gap | investigation-needed | create-open | investigation:INV-001@COUPON-001-screen-spec | input:IN-20260720-meeting-001#extracted-facts | inherit | statement | inherit |';
+  const summaryWithInv = [
+    DEFAULT_SUMMARY_ROWS[0],
+    DEFAULT_SUMMARY_ROWS[1]
+      .replace('| conflict |', '| conflict + investigation-needed |')
+      .replace('conflict:C-001@conflicts;', 'conflict:C-001@conflicts; investigation:INV-001@COUPON-001-screen-spec;')
+      .replace('artifact:conflicts;', 'artifact:conflicts; artifact:COUPON-001-screen-spec;'),
+  ];
+  const cases = [
+    '[조사 문서](https://example.test/INV-001)', // link destination 에만 존재
+    '[probe]: https://example.test/INV-001', // reference definition (렌더링되지 않음)
+    '추가 정보는 <span data-ref="INV-001">여기</span>를 참고한다.', // HTML attribute 에만 존재
+  ];
+  for (const noteLine of cases) {
+    const doc = SCREEN_SPEC_DOC + `\n## Notes\n\n${noteLine}\n`;
+    const r = runV2(t, {
+      files: { 'domains/coupons/screens/coupon-list/screen-spec.md': doc },
+      itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+      summaryRows: summaryWithInv,
+    });
+    assert.ok(hasCode(r.errors, 'RR-REF-008'), `not failed for: ${noteLine}`);
+  }
+
+  // link TEXT 의 언급은 visible prose 다 — 해소된다.
+  const positive = SCREEN_SPEC_DOC + '\n## Notes\n\n[INV-001 조사 문서](https://example.test/doc)\n';
+  const pass = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': positive },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.deepEqual(messages(pass.errors), []);
+});
+
 test('v2 hard: 중복/추가 header 로 status·effect 를 덮어쓸 수 없음 (exact header 계약)', (t) => {
   // Items: 앞에 중복 Effect 컬럼을 붙여 금지 effect(resolve)를 뒤 셀로 덮어쓰는 공격 — exact 10컬럼
   // 계약 위반이므로 RR-SCHEMA-005 로 fail-closed (조용히 통과 금지).

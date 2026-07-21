@@ -71,18 +71,25 @@ function canonicalFamiliesAt(sectionSlug, artifactType) {
 //             `` `<!--` `` 나 escape `\<!--` 가 주석 시작으로 오인되지 않는다.
 //             `<pre|script|style|textarea` 로 시작하는 줄은 raw HTML block 을 연다.
 //             유효 fence opener(선행 공백 ≤3칸 — 4칸+/tab·list marker 뒤는 리터럴)는 fence 를 연다.
-//   comment : fence marker 무시. `-->` 를 포함한 줄에서 닫히며 **그 줄 전체를 소비한다** —
-//             주석 종료 뒤 tail 로 새 block marker(fence/heading/표)를 합성하지 않는다(CommonMark
+//   comment : fence marker 무시. 종료 조건을 만족한 줄에서 닫히며 **그 줄 전체를 소비한다** —
+//             종료 뒤 tail 로 새 block marker(fence/heading/표)를 합성하지 않는다(CommonMark
 //             html block 은 종료 조건을 만족한 줄까지 통째로 block 에 속한다).
-//   html    : `</pre|script|style|textarea>` 를 포함한 줄에서 닫히며 그 줄 전체를 소비한다.
 //   fence   : 주석/HTML marker 무시. 같은 문자·opening 길이 이상의 run 만으로 된 줄만 fence 를 닫는다
 //             ({char,length} 추적 — 4-backtick fence 안의 3-backtick 예시가 outer 를 닫지 못한다).
+//
+// raw HTML block 은 CommonMark type 별 **종료 조건을 분리**해 추적한다 — 하나(blank line)로 합치면
+// 양방향 fail-open 이 된다(`<![CDATA[` 안의 blank line 뒤 표가 노출되거나, 같은 줄에 닫히는
+// `<!DOCTYPE html>` 이 뒤의 보이는 heading/표까지 삼킴):
+//   type 2  <!--        …  -->  포함 줄까지
+//   type 5  <![CDATA[   …  ]]>  포함 줄까지
+//   type 4  <!LETTER    …  >    포함 줄까지 (declaration)
+//   type 3  <?          …  ?>   포함 줄까지 (processing instruction)
+//   type 1  <pre|script|style|textarea … 닫는 태그 포함 줄까지
+//   type 6/7  그 외 <tag / </tag …  blank line 까지 (blank line 자체는 block 밖)
 export function stripNonContent(text) {
   const out = [];
   let fence = null; // { char, length } | null
-  let inComment = false;
-  let inHtmlBlock = false; // <pre|script|style|textarea> — 닫는 태그 줄까지
-  let inHtmlUntilBlank = false; // 그 외 raw HTML block — blank line 까지 (CommonMark type 6/7)
+  let block = null; // { endsAt: (line)=>bool, consumeEndLine: bool } | null
 
   for (const line of String(text || '').split(/\r?\n/)) {
     if (fence !== null) {
@@ -90,36 +97,19 @@ export function stripNonContent(text) {
       if (close && close[1][0] === fence.char && close[1].length >= fence.length) fence = null;
       continue; // fence 내부(닫는 줄 포함)는 전부 버린다
     }
-    if (inComment) {
-      if (line.includes('-->')) inComment = false;
-      continue; // 종료 줄 포함 통째로 소비 — tail 재처리 금지
-    }
-    if (inHtmlBlock) {
-      if (/<\/(?:pre|script|style|textarea)>/i.test(line)) inHtmlBlock = false;
-      continue; // 종료 줄 포함 통째로 소비
-    }
-    if (inHtmlUntilBlank) {
-      if (/^\s*$/.test(line)) {
-        inHtmlUntilBlank = false;
-        out.push(line); // blank line 은 block 의 일부가 아니다 (CommonMark type 6/7 종료 조건)
+    if (block !== null) {
+      if (block.endsAt(line)) {
+        const consume = block.consumeEndLine;
+        block = null;
+        if (!consume) out.push(line); // type 6/7 의 blank line 은 block 의 일부가 아니다
       }
       continue;
     }
-    // --- normal ---
-    if (/^ {0,3}<!--/.test(line)) {
-      if (!line.includes('-->', line.indexOf('<!--') + 4)) inComment = true;
-      continue; // 같은 줄에 닫혀도 그 줄 전체가 html block — 출력하지 않는다
-    }
-    if (/^ {0,3}<(?:pre|script|style|textarea)(?=[\s/>]|$)/i.test(line)) {
-      if (!/<\/(?:pre|script|style|textarea)>/i.test(line)) inHtmlBlock = true;
-      continue;
-    }
-    // 그 외 raw HTML block(`<div>`·`<table>`·`<details>`·닫는 태그·`<!DOCTYPE` 등) — CommonMark
-    // type 6/7 대로 blank line 까지 통째로 소비한다. `<div>` 안의 pipe 줄이 top-level canonical 표로
-    // 재해석되는 fail-open 을 막는다(지원하지 않는 HTML container 내부는 전부 non-content).
-    if (/^ {0,3}<[a-zA-Z!/]/.test(line)) {
-      inHtmlUntilBlank = true;
-      continue;
+    // --- normal: html block opener 판정 (구체적 문법 → 일반 순) ---
+    const opener = matchHtmlBlockOpener(line);
+    if (opener) {
+      if (!opener.endsOnOpeningLine) block = opener;
+      continue; // opening 줄은 (같은 줄에 닫혀도) 통째로 block — 출력하지 않는다
     }
     const open = /^ {0,3}(`{3,}|~{3,})/.exec(line);
     if (open) {
@@ -130,6 +120,38 @@ export function stripNonContent(text) {
     out.push(line.replace(/<!--[\s\S]*?-->/g, ''));
   }
   return out.join('\n');
+}
+
+// 줄이 raw HTML block 을 여는지 판정하고, 해당 type 의 종료 조건을 돌려준다.
+// 반환: { endsAt, consumeEndLine, endsOnOpeningLine } | null
+function matchHtmlBlockOpener(line) {
+  const mk = (endsAt, endsOnOpeningLine, consumeEndLine = true) => ({
+    endsAt,
+    consumeEndLine,
+    endsOnOpeningLine,
+  });
+  if (/^ {0,3}<!--/.test(line)) {
+    return mk((l) => l.includes('-->'), line.includes('-->', line.indexOf('<!--') + 4));
+  }
+  if (/^ {0,3}<!\[CDATA\[/i.test(line)) {
+    return mk((l) => l.includes(']]>'), line.includes(']]>'));
+  }
+  if (/^ {0,3}<![a-zA-Z]/.test(line)) {
+    // declaration (<!DOCTYPE …>) — 같은 줄의 `>` 로 닫히는 경우가 일반적이다.
+    return mk((l) => l.includes('>'), line.includes('>', line.indexOf('<!') + 2));
+  }
+  if (/^ {0,3}<\?/.test(line)) {
+    return mk((l) => l.includes('?>'), line.includes('?>'));
+  }
+  if (/^ {0,3}<(?:pre|script|style|textarea)(?=[\s/>]|$)/i.test(line)) {
+    const closeRe = /<\/(?:pre|script|style|textarea)>/i;
+    return mk((l) => closeRe.test(l), closeRe.test(line));
+  }
+  if (/^ {0,3}<[a-zA-Z/]/.test(line)) {
+    // type 6/7 — blank line 까지. blank line 자체는 block 밖이므로 소비하지 않는다.
+    return mk((l) => /^\s*$/.test(l), false, false);
+  }
+  return null;
 }
 
 // (하위호환 별칭 — 테스트/유닛 사용처. 주석 미포함 입력이면 stripNonContent 와 동일하게 동작한다.)
@@ -179,6 +201,26 @@ export function stripInlineCodeSpans(text) {
     }
   }
   return out;
+}
+
+// INV-/VER- 토큰 존재 검사용 "visible prose" 추출 — contentBody(fence/주석/HTML block 제거 후)에서
+// 렌더링되지 않거나 code 인 source 영역을 추가로 제외한다:
+//   - indented code 줄(4칸+/tab)
+//   - reference definition 줄(`[label]: url`) — 렌더링되지 않는다
+//   - inline code span (여러 줄·긴 delimiter 포함 stateful)
+//   - inline link/image 의 destination(`](url)`) — link text 는 유지한다
+//   - inline HTML tag/attribute(`<span data-ref="…">`)와 autolink(`<scheme:…>`) — 태그 안 attribute
+//     값의 ID 는 visible prose 가 아니다 (내부 텍스트는 유지)
+// code example·URL·attribute 안의 언급만으로 canonical target 이 해소되면 안 된다(fail-closed).
+export function toProseBody(contentBody) {
+  const withoutBlocks = String(contentBody || '')
+    .split('\n')
+    .filter((l) => !/^(?: {4,}|\t)/.test(l))
+    .filter((l) => !/^ {0,3}\[[^\]]*\]:\s*\S/.test(l))
+    .join('\n');
+  return stripInlineCodeSpans(withoutBlocks)
+    .replace(/\]\([^)\n]*\)/g, ']') // link/image destination 제거 (text 는 유지)
+    .replace(/<\/?[a-zA-Z][^<>\n]*>/g, ' '); // inline HTML tag/attribute · autolink 제거
 }
 
 // 헤더 정규화(대소문자/공백 무시 — hasHeader/col 과 같은 규약)와 canonical 헤더 배열 exact 비교.
@@ -296,14 +338,7 @@ export function splitSectionOccurrences(cleanText) {
 // 실제 섹션을 만들면 closing fence 가 고아가 되어 fence 내부 표가 canonical 행으로 해소된다.
 function indexDocBody(body, artifactType) {
   const contentBody = stripNonContent(body);
-  // INV-/VER- 토큰 존재 검사용 prose 본문: fence/주석/HTML block 에 더해 indented code 줄(4칸+/tab)과
-  // inline code span 도 제외한다 — code example 안의 언급만으로 canonical target 이 해소되면 안 된다.
-  const proseBody = stripInlineCodeSpans(
-    contentBody
-      .split('\n')
-      .filter((l) => !/^(?: {4,}|\t)/.test(l))
-      .join('\n'),
-  );
+  const proseBody = toProseBody(contentBody);
   const sections = new Map();
   for (const occ of splitSectionOccurrences(contentBody)) {
     // 같은 slug 섹션이 중복되면 텍스트를 이어붙인다 (해소 검사에는 존재 여부가 중요).
