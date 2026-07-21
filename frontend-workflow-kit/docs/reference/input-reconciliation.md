@@ -352,13 +352,22 @@ Summary 는 그 projection 이다.
 block 으로 감싼다. **canonical 8컬럼 Summary 표도 v2 에서는 정확히 1개**여야 하며(부재/중복 hard),
 v1 파서가 고른 첫 표와 canonical 표가 다르면(fence 예시가 앞서 있는 경우) 그것도 hard error 다.
 
-v2 가 소비하는 마크다운은 **렌더링되는 canonical 구조**만 인정한다:
+v2 가 소비하는 마크다운은 **좁은 canonical authoring profile** 만 인정한다 — 이 register 는 kit 이
+저작하는 기계 지향 산출물이라, 임의 마크다운 렌더링을 흉내내는 대신 결정적 프로파일을 계약으로 둔다:
 
-- fence(````` ``` `````·`~~~`)와 HTML 주석은 **단일 state machine** 으로 섹션 분리 이전에 제거된다
-  (주석 안의 fence marker 는 리터럴, fence 안의 주석 marker 도 리터럴, closing fence 는 같은 문자·
-  opening 길이 이상). fence/주석 안의 heading·표는 섹션도 표도 evidence 근거도 만들지 못한다.
-- 표 줄의 선행 indentation 은 0~3칸만 허용 — 4칸+/tab 은 indented code 라 표가 아니다.
+- fence(````` ``` `````·`~~~`)·HTML 주석 block·raw HTML block(`<pre|script|style|textarea>`)은
+  **단일 state machine** 으로 섹션 분리 이전에 제거된다. block 진입/종료는 CommonMark 블록 규칙을
+  따른다: 주석은 `<!--` 로 **시작하는 줄**(≤3칸)에서만 열리고(따라서 inline code `` `<!--` `` 나
+  escape `\<!--` 는 주석이 아니다), 종료 조건을 만족한 줄은 **통째로** block 에 속한다(주석 종료
+  뒤 tail 로 fence/heading/표를 합성하지 않음). closing fence 는 같은 문자·opening 길이 이상.
+  이들 내부의 heading·표는 섹션도 표도 evidence 근거도 만들지 못한다.
+- **canonical 표는 column 0 의 top-level 표만** 인정한다 — 들여쓴 표 줄(list 안 code example 의
+  continuation, indented code)은 표가 아니다.
 - 구분자 줄은 셀마다 hyphen 최소 1개(`:?-+:?`)와 header 와 같은 셀 수를 요구한다.
+- H2 heading 은 CommonMark 대로 선행 공백 0~3칸까지 **인식**한다 — 들여쓴 실제 heading 도 중복
+  개수 검사(hard)에 포함된다.
+- INV-/VER- 토큰 존재 검사는 code(fence/indented/inline span)·HTML·주석을 제외한 visible prose 만
+  본다 — 근거 언급은 backtick 없이 plain text 로 적는다.
 
 - `Item`: input-scoped 2자리 ID(`01`, `02`...). Classification 개수는 unique `(Input ID, Item)` 로 센다.
 - `Basis` enum: `compatible-fact` `visual-evidence` `unknown-answer` `decision-answer` `new-choice`

@@ -60,69 +60,59 @@ function canonicalFamiliesAt(sectionSlug, artifactType) {
   return families;
 }
 
-// section/child-row/표 판정 전에 non-content(fenced code block 내부 + HTML 주석)를 제거한 본문.
-// getSections 류의 heading 분리와 표 파서는 fence/주석을 모르므로, fence 안의 `## Open Decisions`
-// 같은 예시 heading·표가 실제 canonical 구조를 만드는 fail-open 을 여기서 차단한다.
+// section/child-row/표 판정 전에 non-content(fenced code block·HTML 주석 block·raw HTML block 내부)를
+// 제거한 본문. getSections 류의 heading 분리와 표 파서는 이들을 모르므로, fence/주석/<pre> 안의
+// `## Open Decisions` 같은 예시 heading·표가 실제 canonical 구조를 만드는 fail-open 을 여기서 차단한다.
 //
-// fence 와 주석은 순차 2-pass 가 아니라 **단일 state machine** 으로 처리한다 — 순차 적용은 어느
-// 순서든 뚫린다(예: HTML 주석 안의 ``` 를 fence opener 로 오인해, 주석이 끝난 뒤의 실제 내용을
-// fence 내부로 삼켜버림). 상태 우선순위:
-//   normal  : 주석 시작(<!--) → comment / 유효 fence 시작 → fence / 그 외 출력
-//   comment : fence marker 무시. --> 만 주석을 닫고, 같은 줄의 나머지는 normal 로 재처리.
-//   fence   : 주석 marker 무시. 같은 문자·opening 길이 이상의 run 만으로 된 줄만 fence 를 닫는다
-//             (CommonMark — 4-backtick fence 안의 3-backtick 예시가 outer 를 닫지 못하게 {char,length} 추적).
-// fence marker 는 CommonMark 대로 선행 공백 0~3칸까지만 인정한다(4칸+/tab 은 indented code 의 리터럴).
+// 순차 2-pass 가 아니라 **단일 state machine** 이며, block 진입/종료는 CommonMark 블록 규칙을 따른다:
+//   normal  : `<!--` 로 **시작하는 줄**(선행 공백 ≤3칸)만 HTML 주석 block 을 연다 — 같은 줄에 `-->` 가
+//             있으면 그 줄 전체를 소비하고 끝난다. 줄 중간의 `<!-- ... -->` 는 inline span 만 제거하고,
+//             줄 중간의 닫히지 않은 `<!--` 는 리터럴이다(comment 상태로 가지 않음). 따라서 inline code
+//             `` `<!--` `` 나 escape `\<!--` 가 주석 시작으로 오인되지 않는다.
+//             `<pre|script|style|textarea` 로 시작하는 줄은 raw HTML block 을 연다.
+//             유효 fence opener(선행 공백 ≤3칸 — 4칸+/tab·list marker 뒤는 리터럴)는 fence 를 연다.
+//   comment : fence marker 무시. `-->` 를 포함한 줄에서 닫히며 **그 줄 전체를 소비한다** —
+//             주석 종료 뒤 tail 로 새 block marker(fence/heading/표)를 합성하지 않는다(CommonMark
+//             html block 은 종료 조건을 만족한 줄까지 통째로 block 에 속한다).
+//   html    : `</pre|script|style|textarea>` 를 포함한 줄에서 닫히며 그 줄 전체를 소비한다.
+//   fence   : 주석/HTML marker 무시. 같은 문자·opening 길이 이상의 run 만으로 된 줄만 fence 를 닫는다
+//             ({char,length} 추적 — 4-backtick fence 안의 3-backtick 예시가 outer 를 닫지 못한다).
 export function stripNonContent(text) {
   const out = [];
   let fence = null; // { char, length } | null
   let inComment = false;
-
-  // normal 상태에서 한 줄을 처리한다: 인라인 주석 제거 → fence opener 판정 → 출력.
-  // 반환: 출력할 문자열(null 이면 출력 없음). 상태 전이는 클로저의 fence/inComment 로 반영.
-  const processNormal = (line) => {
-    let rest = line;
-    let emitted = '';
-    for (;;) {
-      const start = rest.indexOf('<!--');
-      if (start === -1) {
-        emitted += rest;
-        break;
-      }
-      const end = rest.indexOf('-->', start + 4);
-      if (end === -1) {
-        emitted += rest.slice(0, start);
-        inComment = true;
-        break;
-      }
-      rest = rest.slice(0, start) + rest.slice(end + 3); // 같은 줄에서 닫힌 주석은 span 만 제거
-    }
-    if (inComment) return emitted; // 주석이 줄을 넘김 — 주석 앞부분만 출력
-    const open = /^ {0,3}(`{3,}|~{3,})/.exec(emitted);
-    if (open) {
-      fence = { char: open[1][0], length: open[1].length };
-      return null; // opening fence 줄은 출력하지 않는다 (info string 포함)
-    }
-    return emitted;
-  };
+  let inHtmlBlock = false;
 
   for (const line of String(text || '').split(/\r?\n/)) {
     if (fence !== null) {
       const close = /^ {0,3}(`{3,}|~{3,})\s*$/.exec(line);
-      if (close && close[1][0] === fence.char && close[1].length >= fence.length) {
-        fence = null;
-      }
-      continue; // fence 내부(닫는 줄 포함)는 전부 버린다 — 주석 marker 도 리터럴
+      if (close && close[1][0] === fence.char && close[1].length >= fence.length) fence = null;
+      continue; // fence 내부(닫는 줄 포함)는 전부 버린다
     }
     if (inComment) {
-      const end = line.indexOf('-->');
-      if (end === -1) continue; // 주석 내부 — fence marker 무시
-      inComment = false;
-      const emitted = processNormal(line.slice(end + 3)); // 주석 뒤 나머지는 normal 로 재처리
-      if (emitted !== null) out.push(emitted);
+      if (line.includes('-->')) inComment = false;
+      continue; // 종료 줄 포함 통째로 소비 — tail 재처리 금지
+    }
+    if (inHtmlBlock) {
+      if (/<\/(?:pre|script|style|textarea)>/i.test(line)) inHtmlBlock = false;
+      continue; // 종료 줄 포함 통째로 소비
+    }
+    // --- normal ---
+    if (/^ {0,3}<!--/.test(line)) {
+      if (!line.includes('-->', line.indexOf('<!--') + 4)) inComment = true;
+      continue; // 같은 줄에 닫혀도 그 줄 전체가 html block — 출력하지 않는다
+    }
+    if (/^ {0,3}<(?:pre|script|style|textarea)(?=[\s/>]|$)/i.test(line)) {
+      if (!/<\/(?:pre|script|style|textarea)>/i.test(line)) inHtmlBlock = true;
       continue;
     }
-    const emitted = processNormal(line);
-    if (emitted !== null) out.push(emitted);
+    const open = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+    if (open) {
+      fence = { char: open[1][0], length: open[1].length };
+      continue; // opening fence 줄(info string 포함)은 출력하지 않는다
+    }
+    // 줄 중간의 같은-줄 닫힌 주석은 inline span 만 제거. 닫히지 않은 중간 `<!--` 는 리터럴 유지.
+    out.push(line.replace(/<!--[\s\S]*?-->/g, ''));
   }
   return out.join('\n');
 }
@@ -135,7 +125,8 @@ export function stripFencedCodeBlocks(text) {
 // hard-contract 전용 strict 마크다운 표 파서 — parseTables(spec.mjs)는 모든 줄을 trim 한 뒤 `|`
 // 시작 여부만 보므로 indented code block(4칸+/tab)의 예시 표를 실제 표로 승격시키고, 구분자 줄도
 // hyphen 없는 `| | |` 를 허용한다. v2 hard 계약이 소비하는 표는 여기서 다음을 요구한다:
-//   - 표 줄의 선행 indentation 0~3칸(spaces)만 허용 — tab/4칸+ 는 indented code 로 제외(블록 종료)
+//   - 표 줄은 **column 0 의 top-level 표만** 인정 — 들여쓴 줄(list 내부 fence 의 continuation,
+//     indented code 예시 등)은 표가 아니다(fail-closed: canonical 표는 column 0 에 저작한다는 계약)
 //   - 두 번째 줄은 구분자: 셀마다 `:?-+:?` (hyphen 최소 1개), 셀 수 = header 셀 수
 // 데이터 행의 셀 부족은 기존 규약대로 '' 패딩된다(빈 필수 셀은 각 검사기가 fail-closed 로 잡는다).
 // 입력은 stripNonContent 를 거친 본문이어야 한다.
@@ -147,10 +138,10 @@ export function parseStrictTables(text) {
     cur = [];
   };
   for (const raw of String(text || '').split(/\r?\n/)) {
-    if (/^ {0,3}\|/.test(raw) && !/^\s*$/.test(raw) && !raw.startsWith('\t')) {
+    if (raw.startsWith('|')) {
       cur.push(raw.trim());
     } else {
-      flush(); // indented-code 줄(4칸+/tab 시작) 포함 비-표 라인 → 현재 표 블록 종료
+      flush(); // 들여쓴 표 줄 포함 비-표 라인 → 현재 표 블록 종료
     }
   }
   flush();
@@ -194,7 +185,9 @@ export function splitSectionOccurrences(cleanText) {
     });
   };
   for (const line of String(cleanText || '').split(/\r?\n/)) {
-    const m = /^##\s+(.+?)\s*$/.exec(line);
+    // ATX heading 은 선행 공백 0~3칸까지 실제 H2 로 렌더링된다(CommonMark) — column 0 만 보면
+    // `  ## Reconciliation Items` 처럼 들여쓴 실제 heading 이 개수 검사(중복 hard)에서 빠진다.
+    const m = /^ {0,3}##\s+(.+?)\s*$/.exec(line);
     if (m) {
       flush();
       currentTitle = m[1].trim();
@@ -216,6 +209,13 @@ export function splitSectionOccurrences(cleanText) {
 // 실제 섹션을 만들면 closing fence 가 고아가 되어 fence 내부 표가 canonical 행으로 해소된다.
 function indexDocBody(body, artifactType) {
   const contentBody = stripNonContent(body);
+  // INV-/VER- 토큰 존재 검사용 prose 본문: fence/주석/HTML block 에 더해 indented code 줄(4칸+/tab)과
+  // inline code span 도 제외한다 — code example 안의 언급만으로 canonical target 이 해소되면 안 된다.
+  const proseBody = contentBody
+    .split('\n')
+    .filter((l) => !/^(?: {4,}|\t)/.test(l))
+    .map((l) => l.replace(/(`+)(?:(?!`).)*?\1/g, ' '))
+    .join('\n');
   const sections = new Map();
   for (const occ of splitSectionOccurrences(contentBody)) {
     // 같은 slug 섹션이 중복되면 텍스트를 이어붙인다 (해소 검사에는 존재 여부가 중요).
@@ -256,11 +256,11 @@ function indexDocBody(body, artifactType) {
       }
     }
   }
-  return { contentBody, sections, rows, rowKeys };
+  return { contentBody, proseBody, sections, rows, rowKeys };
 }
 
 // docs([{file, fm}]) → { artifacts: Map(artifact_id → record), duplicates: Set(artifact_id) }.
-// record = { file, fm, body, contentBody, sections, rows, rowKeys }.
+// record = { file, fm, body, contentBody, proseBody, sections, rows, rowKeys }.
 // 같은 artifact_id 가 2개 이상 선언되면 어느 문서가 owner 인지 결정할 수 없다 — 첫 문서를 보존하되
 // duplicates 에 모아 v2 validator 가 해소 불가(hard error)로 보고한다(경로 정렬 의존 방지).
 export function buildReconciliationTargetIndex({ docs = [] }) {
@@ -320,9 +320,10 @@ export function resolveChildRow(record, rowId, targetKind) {
 }
 
 // INV-/VER- 처럼 canonical 표가 없는 축: owner 문서 본문에 ID 토큰이 존재하는가.
-// fence/주석 안의 언급은 근거가 아니다 — non-content 제거 후 본문(contentBody)만 본다.
+// code(fence/indented/inline span)·HTML·주석 안의 언급은 근거가 아니다 — visible prose 만 본다
+// (proseBody). backtick 으로 감싼 ID 는 해소되지 않으므로 근거 언급은 plain text 로 적는다.
 export function bodyHasToken(record, token) {
-  const haystack = record?.contentBody ?? record?.body;
+  const haystack = record?.proseBody ?? record?.contentBody ?? record?.body;
   if (!haystack || !token) return false;
   const esc = String(token).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`(^|[^A-Za-z0-9-])${esc}([^A-Za-z0-9-]|$)`).test(haystack);

@@ -38,6 +38,16 @@
 - 하지 않은 것(설계 §14): 검사 11 `captured_at` RFC3339 hard 승격과 figma-component-mapping `M-xxx`/
   `## Mapping Provenance`(202-B), 자연어 routing heuristic·stale Result warning(202-C), CI required check
   승격, 새 readiness fact/implementation mode/artifact axis.
+- 5차 재리뷰 후속: 부분 line-scanner 를 "렌더링 흉내"로 쓰지 않도록 v2 마크다운 소비를 **좁은
+  canonical authoring profile** 로 고정했다. ① HTML 주석/raw HTML block(`<pre|script|style|textarea>`)은
+  CommonMark 블록 규칙대로 `<!--`/tag 로 **시작하는 줄**에서만 열리고 종료 줄을 통째로 소비 —
+  inline code `` `<!--` ``·escape `\<!--` 오인과 "주석 종료 tail 로 fence/heading 합성" 경로 제거,
+  ② canonical 표는 column 0 top-level 만(list 안 fence 의 2칸 continuation 예시 표가 Summary/Items/
+  child row 로 승격되던 경로 차단), ③ H2 heading 은 0~3칸 indent 까지 인식해 들여쓴 실제 중복
+  heading 도 RR-SCHEMA-018 에 포함, ④ INV-/VER- 토큰 검색은 code(fence/indented/inline span)·HTML·
+  주석 제외 prose 만 사용. 회귀: inline-code comment marker 사이 중복 Items, escaped literal,
+  same-line 주석 뒤 marker, list-fenced Summary/Items/Open Decisions, `<pre>` 안 canonical-looking
+  표, 들여쓴 중복 heading, code-only INV 언급.
 - 4차 재리뷰 후속: v2 가 소비하는 마크다운을 "렌더링되는 canonical 구조"로 고정했다. ① fence/HTML
   주석을 순차 2-pass 가 아닌 **단일 state machine** 으로 처리 — 주석 안의 fence marker 가 주석 종료
   뒤 실제 내용(중복 Items heading 포함)을 삼키던 경로 차단, ② v2 전용 canonical Summary 파서 추가 —

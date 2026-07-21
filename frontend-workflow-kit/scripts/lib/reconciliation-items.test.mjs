@@ -1097,11 +1097,139 @@ test('markdown 전처리: 주석 안의 fence marker 는 이후 실제 내용을
   assert.ok(cleaned.includes('뒤 내용'));
   assert.ok(!cleaned.includes('```md'));
 
-  // 인라인 주석 + 주석 종료 뒤 나머지 재처리.
+  // 줄 중간의 같은-줄 닫힌 주석은 inline span 만 제거.
   assert.ok(stripNonContent('a <!-- x --> b').includes('a  b'));
+  // 주석 종료 줄은 통째로 block 에 속한다(CommonMark) — tail 로 새 fence/heading 을 합성하지 않는다.
   const tail = stripNonContent(['<!-- 열림', '--> ```md', '| 표 |', '```'].join('\n'));
-  assert.ok(!tail.includes('| 표 |')); // --> 뒤의 fence opener 는 유효 — 내부 표 제거
+  assert.ok(tail.includes('| 표 |')); // `--> ```md` 는 주석 종료 줄이지 fence opener 가 아니다
 });
+
+test('markdown 전처리: inline code/escape 의 comment marker 와 same-line html block', () => {
+  // inline code 안의 `<!--` 는 주석 시작이 아니다 — 줄이 <!-- 로 시작할 때만 block comment.
+  const inlineCode = ['`<!--`', '', '## Reconciliation Items', '| 표 |', '', '`-->`'].join('\n');
+  const cleaned = stripNonContent(inlineCode);
+  assert.ok(cleaned.includes('## Reconciliation Items'));
+  assert.ok(cleaned.includes('| 표 |'));
+
+  // backslash-escape 리터럴도 주석 시작이 아니다.
+  assert.ok(stripNonContent('\\<!--\n내용').includes('내용'));
+
+  // <!-- 로 시작해 같은 줄에 닫히는 줄은 통째로 html block — 뒤의 ## / 표 marker 를 합성하지 않는다.
+  const sameLine = stripNonContent('<!-- x --> ## Fake Heading\n<!-- y --> | 가짜 표 |');
+  assert.ok(!sameLine.includes('## Fake Heading'));
+  assert.ok(!sameLine.includes('| 가짜 표 |'));
+
+  // raw HTML <pre> block 안의 canonical-looking 표는 내용이 아니다.
+  const pre = stripNonContent(['<pre>', '| ID | Status | Blocking Mode |', '|---|---|---|', '| D-321 | open | final-fixture-ui |', '</pre>'].join('\n'));
+  assert.ok(!pre.includes('D-321'));
+});
+
+test('v2 hard: inline code `<!--`/`-->` 사이의 visible 중복 Items heading 은 숨겨지지 않음 (RR-SCHEMA-018)', (t) => {
+  const r = runV2(t, {
+    registerExtra: [
+      '`<!--`',
+      '',
+      '## Reconciliation Items',
+      '',
+      ...ITEMS_HEADER,
+      '| IN-20260720-meeting-001 | 99 | decision-answer | resolves-decision | resolve | decision:D-204@open-decision-register | input:IN-20260720-meeting-001#summary | inherit | statement | inherit |',
+      '',
+      '`-->`',
+      '',
+    ].join('\n'),
+  });
+  assert.ok(hasCode(r.errors, 'RR-SCHEMA-018'));
+});
+
+test('v2 hard: 1~3칸 들여쓴 실제 H2 도 heading 개수에 포함 (RR-SCHEMA-018)', (t) => {
+  const r = runV2(t, {
+    registerExtra: [
+      '## Notes',
+      '',
+      '  ## Reconciliation Items',
+      '',
+      ...ITEMS_HEADER,
+      '| IN-20260720-meeting-001 | 99 | decision-answer | resolves-decision | resolve | decision:D-204@open-decision-register | input:IN-20260720-meeting-001#summary | inherit | statement | inherit |',
+      '',
+    ].join('\n'),
+  });
+  assert.ok(hasCode(r.errors, 'RR-SCHEMA-018'));
+});
+
+test('v2 hard: list 안 fence 의 code example 표는 canonical 이 아님 (column 0 계약)', (t) => {
+  const listFencedItems = [
+    '- ```md',
+    '  | Input ID | Item | Basis | Classification | Effect | Target | Evidence | Source Ref | Source Unit | Captured At |',
+    '  |-|-|-|-|-|-|-|-|-|-|',
+    '  | IN-20260720-figma-001 | 01 | compatible-fact | simple-update | update | artifact:component-gap-register | input:IN-20260720-figma-001#summary | inherit | statement | inherit |',
+    '  ```',
+  ];
+  // Items 섹션에 list-fenced 예시만 있으면 canonical 표가 없다 → RR-SCHEMA-004.
+  const itemsOnly = runV2(t, { itemsHeader: [], itemRows: listFencedItems });
+  assert.ok(hasCode(itemsOnly.errors, 'RR-SCHEMA-004'));
+
+  // list-fenced 8컬럼 예시만으로는 canonical Summary 가 되지 않는다 → RR-SCHEMA-019.
+  const summaryOnly = runV2(t, {
+    omitSummaryTable: true,
+    summaryPrefix: ['- ```md', ...SUMMARY_HEADER.map((l) => `  ${l}`), `  ${DEFAULT_SUMMARY_ROWS[0]}`, '  ```'].join('\n'),
+    itemRows: [],
+  });
+  assert.ok(hasCode(summaryOnly.errors, 'RR-SCHEMA-019'));
+
+  // list-fenced Open Decisions 표로는 D-204 가 해소되지 않는다 → RR-REF-008.
+  const listFencedDecisions = DECISION_DOC.replace(
+    '| ID | Decision Needed | Options | Blocking Mode | Owner | Status |\n|---|---|---|---|---|---|\n| D-204 | 로그인 성공 후 이동 위치 | home / returnTo | final-fixture-ui | PM | open |',
+    [
+      '- ```md',
+      '  | ID | Decision Needed | Options | Blocking Mode | Owner | Status |',
+      '  |---|---|---|---|---|---|',
+      '  | D-204 | 로그인 성공 후 이동 위치 | home / returnTo | final-fixture-ui | PM | open |',
+      '  ```',
+    ].join('\n'),
+  );
+  const decisions = runV2(t, { files: { 'global/open-decisions.md': listFencedDecisions } });
+  assert.ok(hasCode(decisions.errors, 'RR-REF-008'));
+});
+
+test('v2: <pre> 안의 canonical-looking Summary 예시는 canonical 개수에 세지 않음', (t) => {
+  const r = runV2(t, {
+    registerExtra: ['<pre>', ...SUMMARY_HEADER, '| IN-X | figma | simple-update | reconciled | accepted | - | - | - |', '</pre>', ''].join('\n'),
+  });
+  assert.equal(hasCode(r.errors, 'RR-SCHEMA-019'), false);
+  assert.deepEqual(messages(r.errors), []);
+});
+
+test('v2 hard: INV-/VER- 토큰은 code example 언급만으로 해소되지 않음', (t) => {
+  const invItem =
+    '| IN-20260720-meeting-001 | 02 | verification-gap | investigation-needed | create-open | investigation:INV-001@COUPON-001-screen-spec | input:IN-20260720-meeting-001#extracted-facts | inherit | statement | inherit |';
+  const summaryWithInv = [
+    DEFAULT_SUMMARY_ROWS[0],
+    DEFAULT_SUMMARY_ROWS[1]
+      .replace('| conflict |', '| conflict + investigation-needed |')
+      .replace('conflict:C-001@conflicts;', 'conflict:C-001@conflicts; investigation:INV-001@COUPON-001-screen-spec;')
+      .replace('artifact:conflicts;', 'artifact:conflicts; artifact:COUPON-001-screen-spec;'),
+  ];
+
+  // indented code 안에만 INV-001 이 있는 owner → 해소 실패.
+  const codeOnly = SCREEN_SPEC_DOC + '\n## Notes\n\n    INV-001\n';
+  const fail = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': codeOnly },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.ok(hasCode(fail.errors, 'RR-REF-008'));
+
+  // 같은 언급이 plain prose 면 해소된다.
+  const prose = SCREEN_SPEC_DOC + '\n## Notes\n\n- INV-001 조사 예정 (D-204 재오픈 관련)\n';
+  const pass = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': prose },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.deepEqual(messages(pass.errors), []);
+});
+
+// ── warning-only ─────────────────────────────────────────────────────────────
 
 test('v2 hard: 주석 안 fence marker 로 중복 Items heading 을 숨길 수 없음 (RR-SCHEMA-018)', (t) => {
   const r = runV2(t, {
