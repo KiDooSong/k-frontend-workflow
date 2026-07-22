@@ -21,6 +21,15 @@ const NON_VISIBLE_TYPES = new Set([
   'inlineCode',
 ]);
 
+// GFM 문법이 root table을 만들더라도 reconciliation canonical 표로 승격하려면
+// 앞 문단과 명시적으로 분리돼야 한다. 이 block들은 빈 줄 없이도 그 경계를 만든다.
+const EXPLICIT_TABLE_BOUNDARY_TYPES = new Set([
+  'code',
+  'heading',
+  'html',
+  'thematicBreak',
+]);
+
 // micromark 4.x는 CommonMark type-1의 tag-name 경계와 달리 `<pre/>`도 HTML flow로 연다.
 // 같은 UTF-16 길이의 sentinel로 slash만 바꿔 AST position을 유지하면서 이 비표준 opener를 막는다.
 const SELF_CLOSING_LITERAL_SENTINEL = '\uE000';
@@ -165,6 +174,25 @@ function definitionLabels(tree) {
   return labels;
 }
 
+function isUrlOnlyAutolink(node, context) {
+  if (node.type !== 'link') return false;
+  const range = sourceRange(node);
+  if (!range) return false;
+
+  const sourceForm = context.source.slice(range.start, range.end);
+  if (sourceForm.startsWith('<') && sourceForm.endsWith('>')) return true;
+
+  // GFM literal autolink는 link와 단일 text child의 source range가 같다. 명시적
+  // `[visible text](destination)` link는 range가 다르므로 visible text를 보존한다.
+  const [onlyChild] = node.children || [];
+  const childRange = node.children?.length === 1 ? sourceRange(onlyChild) : null;
+  return (
+    onlyChild?.type === 'text' &&
+    childRange?.start === range.start &&
+    childRange?.end === range.end
+  );
+}
+
 function visibleText(node, context) {
   if (
     (node.type === 'linkReference' || node.type === 'imageReference') &&
@@ -173,6 +201,9 @@ function visibleText(node, context) {
     const range = sourceRange(node);
     return range ? context.source.slice(range.start, range.end) : '';
   }
+  // URL-only autolink 안의 INV-/VER-는 링크 목적지와 마찬가지로 reconciliation
+  // 근거가 아니다. 명시적으로 저작한 Markdown link text만 visible evidence로 남긴다.
+  if (isUrlOnlyAutolink(node, context)) return '';
   if (NON_VISIBLE_TYPES.has(node.type)) return '';
   if (node.type === 'text') return restoreParserSentinels(node.value);
   if (node.type === 'break') return '\n';
@@ -223,8 +254,22 @@ function tableFromNode(node) {
   return { headers, rows, rowCount: rows.length };
 }
 
-function rootTable(source, node) {
+function sourceGapHasBlankLine(source, previousNode, node) {
+  const previousRange = sourceRange(previousNode);
+  const range = sourceRange(node);
+  if (!previousRange || !range) return false;
+  return /\r?\n[\t ]*\r?\n/.test(source.slice(previousRange.end, range.start));
+}
+
+function tableHasExplicitBlockBoundary(source, node, previousNode) {
+  if (!previousNode) return true;
+  if (EXPLICIT_TABLE_BOUNDARY_TYPES.has(previousNode.type)) return true;
+  return sourceGapHasBlankLine(source, previousNode, node);
+}
+
+function rootTable(source, node, previousNode) {
   if (node.type !== 'table' || !tableStartsWithColumnZeroPipe(source, node)) return null;
+  if (!tableHasExplicitBlockBoundary(source, node, previousNode)) return null;
   return tableFromNode(node);
 }
 
@@ -248,11 +293,15 @@ function sectionOccurrences(source, tree) {
       title: current.title,
       slug: current.slug,
       text: source.slice(current.contentStart, current.contentEnd),
-      tables: current.nodes.map((node) => rootTable(source, node)).filter(Boolean),
+      tables: current.nodes
+        .map(({ node, previousNode }) => rootTable(source, node, previousNode))
+        .filter(Boolean),
     });
   };
 
-  for (const node of tree.children || []) {
+  const rootChildren = tree.children || [];
+  for (let index = 0; index < rootChildren.length; index += 1) {
+    const node = rootChildren[index];
     if (node.type === 'heading' && node.depth === 2) {
       const headingStart = node.position?.start?.offset ?? source.length;
       flush(headingStart);
@@ -266,7 +315,7 @@ function sectionOccurrences(source, tree) {
       };
       continue;
     }
-    current.nodes.push(node);
+    current.nodes.push({ node, previousNode: rootChildren[index - 1] || null });
   }
   flush(source.length);
   return occurrences;
@@ -309,7 +358,10 @@ export function toProseBody(text) {
 export function parseStrictTables(text) {
   const source = String(text || '');
   const tree = parseTree(source);
-  return (tree.children || []).map((node) => rootTable(source, node)).filter(Boolean);
+  const rootChildren = tree.children || [];
+  return rootChildren
+    .map((node, index) => rootTable(source, node, rootChildren[index - 1] || null))
+    .filter(Boolean);
 }
 
 export function splitSectionOccurrences(text) {
