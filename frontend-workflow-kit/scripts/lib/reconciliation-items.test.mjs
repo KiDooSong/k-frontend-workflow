@@ -1522,7 +1522,12 @@ test('v2 hard: link/reference source 의 INV 토큰은 visible prose 가 아님'
     '![설명][INV-001]\n\n[INV-001]: https://example.test/img.png', // image reference label
     '[INV-001]:\n  https://example.test/investigation', // destination 이 다음 줄인 definition
     '> [INV-001]:\n>   https://example.test/investigation', // blockquote 내부 definition
+    '설명 paragraph\n> [INV-001]: /url', // blockquote가 paragraph를 끊고 definition을 포함
     '- [INV-001]:\n    https://example.test/investigation', // list 내부 definition
+    '[조사 문서][INV-001]\n\n- outer\n\n    [INV-001]: /url', // list content-relative 2칸 definition
+    '[조사 문서][INV-001]\n\n10. outer\n\n    [INV-001]: /url', // ordered item content-relative 0칸
+    '[조사 문서][INV-001]\n\n- outer\n  - inner\n\n      [INV-001]: /url', // nested item relative 2칸
+    '[조사 문서][INV-001]\n\n- outer\nlazy continuation\n\n    [INV-001]: /url', // lazy paragraph 뒤에도 item 유지
     ...EMPTY_CONTAINER_MARKERS.map(
       (marker) => `${marker}\n[INV-001]: https://example.test/investigation`,
     ), // 빈 container 다음 definition도 렌더링되지 않음
@@ -1538,6 +1543,17 @@ test('v2 hard: link/reference source 의 INV 토큰은 visible prose 가 아님'
     });
     assert.ok(hasCode(r.errors, 'RR-REF-008'), `not failed for: ${note}`);
   }
+
+  // list content indent를 제거한 뒤에도 4칸이면 실제 indented code다. definition으로 과수집하면
+  // unresolved reference의 visible INV-001을 지워 false reject가 된다.
+  const listCode = SCREEN_SPEC_DOC +
+    '\n## Notes\n\n[조사 문서][INV-001]\n\n- outer\n\n      [INV-001]: /url\n';
+  const listCodePass = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': listCode },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.deepEqual(messages(listCodePass.errors), []);
 
   // shortcut reference `[INV-001]` 는 링크 text 자체가 INV-001 로 렌더링된다 — visible, 해소된다.
   const shortcut = SCREEN_SPEC_DOC + '\n## Notes\n\n[INV-001] 참고\n\n[INV-001]: https://example.test/doc\n';
@@ -1575,6 +1591,44 @@ test('v2 hard: link/reference source 의 INV 토큰은 visible prose 가 아님'
     summaryRows: summaryWithInv,
   });
   assert.deepEqual(messages(emptyItemPass.errors), []);
+});
+
+test('v2 hard: reference label은 source escape를 보존하고 Unicode case fold로 비교함', (t) => {
+  const invItem =
+    '| IN-20260720-meeting-001 | 02 | verification-gap | investigation-needed | create-open | investigation:INV-001@COUPON-001-screen-spec | input:IN-20260720-meeting-001#extracted-facts | inherit | statement | inherit |';
+  const summaryWithInv = [
+    DEFAULT_SUMMARY_ROWS[0],
+    DEFAULT_SUMMARY_ROWS[1]
+      .replace('| conflict |', '| conflict + investigation-needed |')
+      .replace('conflict:C-001@conflicts;', 'conflict:C-001@conflicts; investigation:INV-001@COUPON-001-screen-spec;')
+      .replace('artifact:conflicts;', 'artifact:conflicts; artifact:COUPON-001-screen-spec;'),
+  ];
+  const runWithNotes = (notes) =>
+    runV2(t, {
+      files: {
+        'domains/coupons/screens/coupon-list/screen-spec.md':
+          SCREEN_SPEC_DOC + `\n## Notes\n\n${notes}\n`,
+      },
+      itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+      summaryRows: summaryWithInv,
+    });
+
+  // Example 545: source label escape는 definition과 불일치한다. literal 렌더에서 escape만
+  // 사라진 INV-001은 visible prose이므로 hard reference를 만족한다.
+  const escapedMismatch = runWithNotes(
+    String.raw`[details][INV\-001]` + '\n\n[INV-001]: /url',
+  );
+  assert.deepEqual(messages(escapedMismatch.errors), []);
+
+  // Example 540: ẞ와 SS는 Unicode case fold로 일치한다. 두 번째 label은 렌더링되지 않으므로
+  // INV-001을 visible evidence로 사용할 수 없다.
+  const unicodeFold = runWithNotes('[details][INV-001ẞ]\n\n[INV-001SS]: /url');
+  assert.ok(hasCode(unicodeFold.errors, 'RR-REF-008'));
+
+  // Unicode default fold에서 dotless ı와 ASCII I는 같지 않다. lower→upper 같은 근사로
+  // 과도하게 해소하면 visible label을 지우는 false reject가 된다.
+  const dotlessMismatch = runWithNotes('[details][INV-001ı]\n\n[INV-001I]: /url');
+  assert.deepEqual(messages(dotlessMismatch.errors), []);
 });
 
 test('v2 hard: 미해소 reference label 은 literal visible prose 로 보존함', (t) => {

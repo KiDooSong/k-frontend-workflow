@@ -296,13 +296,20 @@ export function stripInlineCodeSpans(text) {
 // 뒤 정의에 속한 원본 줄만 비운다(줄 수는 보존해 뒤 단계의 block 경계를 바꾸지 않는다).
 function stripReferenceDefinitions(text) {
   const lines = String(text || '').split('\n');
+  const definitionLines = buildReferenceDefinitionLines(lines);
   const removed = new Set();
   const labels = new Set();
   let paragraphOpen = false;
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
-    const explicitContainer = /^ {0,3}(?:>|(?:[-+*]|\d{1,9}[.)])[ \t]+)/.test(lines[lineIndex]);
-    const definition = !paragraphOpen || explicitContainer ? matchReferenceDefinitionAt(lines, lineIndex) : null;
+    const line = definitionLines[lineIndex];
+    const explicitContainer = [lines[lineIndex], line].some((candidate) =>
+      /^ {0,3}(?:>|(?:[-+*]|\d{1,9}[.)])[ \t]+)/.test(candidate),
+    );
+    const definition =
+      !paragraphOpen || explicitContainer
+        ? matchReferenceDefinitionAt(definitionLines, lineIndex)
+        : null;
     if (definition) {
       for (let i = lineIndex; i <= definition.endLine; i += 1) removed.add(i);
       labels.add(definition.label);
@@ -311,13 +318,186 @@ function stripReferenceDefinitions(text) {
       continue;
     }
 
-    paragraphOpen = nextParagraphOpen(lines[lineIndex], lines[lineIndex], paragraphOpen);
+    paragraphOpen = nextParagraphOpen(line, line, paragraphOpen);
   }
 
   return {
     text: lines.map((line, index) => (removed.has(index) ? '' : line)).join('\n'),
     labels,
   };
+}
+
+// list item continuation 의 raw indentation 을 container content 기준으로 상대화한다. 예를 들어
+// `- outer\n\n    [ref]: /url` 의 definition 줄은 raw 4칸이지만 list content indent 2칸을
+// 제거하면 2칸 definition 이다(CommonMark example 218의 container-global definition 계약).
+// raw 줄 자체는 보존하고 parser view 만 상대화해 indented-code 오판과 source mutation을 분리한다.
+function buildReferenceDefinitionLines(lines) {
+  const out = [];
+  let quoteDepth = 0;
+  let listContentIndents = [];
+  let previousBlank = true;
+
+  for (const rawLine of lines) {
+    const quote = stripReferenceBlockquotePrefix(rawLine);
+    if (quote.depth !== quoteDepth) {
+      quoteDepth = quote.depth;
+      listContentIndents = [];
+      previousBlank = true;
+    }
+
+    const content = quote.content;
+    if (/^\s*$/.test(content)) {
+      out.push(content);
+      previousBlank = true;
+      continue; // blank line은 현재 list item을 끝내지 않는다.
+    }
+
+    const rawIndent = leadingIndentColumns(content);
+    const activeIndent =
+      listContentIndents.length > 0
+        ? listContentIndents[listContentIndents.length - 1]
+        : 0;
+    const lazyContinuation =
+      activeIndent > 0 &&
+      rawIndent < activeIndent &&
+      !previousBlank &&
+      listItemContentIndents(content).length === 0 &&
+      !isParagraphClosingBlockLine(content, true);
+    if (!lazyContinuation) {
+      while (
+        listContentIndents.length > 0 &&
+        rawIndent < listContentIndents[listContentIndents.length - 1]
+      ) {
+        listContentIndents.pop();
+      }
+    }
+
+    const baseIndent =
+      listContentIndents.length > 0
+        ? listContentIndents[listContentIndents.length - 1]
+        : 0;
+    const relative = stripIndentColumns(content, baseIndent);
+    out.push(relative);
+
+    for (const relativeIndent of listItemContentIndents(relative)) {
+      const absoluteIndent = baseIndent + relativeIndent;
+      if (
+        listContentIndents.length === 0 ||
+        absoluteIndent > listContentIndents[listContentIndents.length - 1]
+      ) {
+        listContentIndents.push(absoluteIndent);
+      }
+    }
+    previousBlank = false;
+  }
+
+  return out;
+}
+
+function stripReferenceBlockquotePrefix(line) {
+  const s = String(line || '');
+  let i = 0;
+  let depth = 0;
+  while (i < s.length) {
+    let marker = i;
+    let indent = 0;
+    while (indent < 3 && s[marker] === ' ') {
+      marker += 1;
+      indent += 1;
+    }
+    if (s[marker] !== '>') break;
+    i = marker + 1;
+    if (s[i] === ' ' || s[i] === '\t') i += 1;
+    depth += 1;
+  }
+  return { depth, content: s.slice(i) };
+}
+
+function leadingIndentColumns(line) {
+  const s = String(line || '');
+  let column = 0;
+  for (const char of s) {
+    if (char === ' ') {
+      column += 1;
+    } else if (char === '\t') {
+      column += 4 - (column % 4);
+    } else {
+      break;
+    }
+  }
+  return column;
+}
+
+function stripIndentColumns(line, columns) {
+  const s = String(line || '');
+  let i = 0;
+  let column = 0;
+  while (i < s.length && column < columns) {
+    if (s[i] === ' ') {
+      column += 1;
+      i += 1;
+    } else if (s[i] === '\t') {
+      const next = column + 4 - (column % 4);
+      i += 1;
+      if (next > columns) return ' '.repeat(next - columns) + s.slice(i);
+      column = next;
+    } else {
+      break;
+    }
+  }
+  return column === columns ? s.slice(i) : s;
+}
+
+// 한 줄에 연속된 list marker(`- - text`)까지 읽어 각 item의 content indentation을 반환한다.
+// marker 뒤 1~4칸은 전부 padding, 5칸 이상이면 첫 칸만 padding이라는 CommonMark 규칙을 따른다.
+function listItemContentIndents(line) {
+  const s = String(line || '');
+  const indents = [];
+  let i = 0;
+  let column = 0;
+
+  while (i < s.length) {
+    let markerIndex = i;
+    let markerColumn = column;
+    let indent = 0;
+    while (indent < 3 && s[markerIndex] === ' ') {
+      markerIndex += 1;
+      markerColumn += 1;
+      indent += 1;
+    }
+
+    const marker = /^(?:[-+*]|\d{1,9}[.)])/.exec(s.slice(markerIndex));
+    if (!marker) break;
+    const afterMarker = markerIndex + marker[0].length;
+    if (afterMarker < s.length && s[afterMarker] !== ' ' && s[afterMarker] !== '\t') break;
+
+    const afterMarkerColumn = markerColumn + marker[0].length;
+    if (afterMarker === s.length) {
+      indents.push(afterMarkerColumn + 1);
+      break;
+    }
+
+    let wsIndex = afterMarker;
+    let wsColumn = afterMarkerColumn;
+    while (wsIndex < s.length && (s[wsIndex] === ' ' || s[wsIndex] === '\t')) {
+      if (s[wsIndex] === ' ') wsColumn += 1;
+      else wsColumn += 4 - (wsColumn % 4);
+      wsIndex += 1;
+    }
+    const whitespaceColumns = wsColumn - afterMarkerColumn;
+    const padding = whitespaceColumns <= 4 ? whitespaceColumns : 1;
+    indents.push(afterMarkerColumn + padding);
+
+    if (whitespaceColumns <= 4) {
+      i = wsIndex;
+      column = wsColumn;
+    } else {
+      i = afterMarker + 1;
+      column = afterMarkerColumn + 1;
+    }
+  }
+
+  return indents;
 }
 
 // up to 3 spaces + 반복되는 blockquote/list container marker 를 벗겨 content 시작을 찾는다.
@@ -432,11 +612,63 @@ function matchReferenceDefinitionAt(lines, startLine) {
 }
 
 function normalizeReferenceLabel(label) {
-  return String(label || '')
-    .replace(/\\([\s\S])/g, '$1')
-    .trim()
-    .replace(/[ \t\r\n]+/g, ' ')
-    .toLowerCase();
+  return unicodeCaseFold(String(label || ''))
+    // CommonMark matching은 parsed inline이 아니라 source label을 fold한다. 따라서 `\\-`의
+    // backslash는 여기서 보존한다(example 545).
+    .replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, '')
+    .replace(/[ \t\r\n]+/g, ' ');
+}
+
+// JS에는 caseFold API가 없다. lower-case 결과를 기준으로, upper-case가 다문자로 확장되는 문자는
+// 그 expansion을 다시 lower-case하고(ß→ss, ligature→문자열), simple lower와 case fold가 다른
+// 단일문자 예외와 Cherokee uppercase-fold 범위를 보정한다. dotless ı처럼 Unicode fold상 I와
+// 같지 않은 문자를 무차별 upper-case하지 않는다.
+const CASE_FOLD_SINGLE_OVERRIDES = new Map([
+  ['µ', 'μ'],
+  ['ſ', 's'],
+  ['ͅ', 'ι'],
+  ['ς', 'σ'],
+  ['ϐ', 'β'],
+  ['ϑ', 'θ'],
+  ['ϕ', 'φ'],
+  ['ϖ', 'π'],
+  ['ϰ', 'κ'],
+  ['ϱ', 'ρ'],
+  ['ϵ', 'ε'],
+  ['ᲀ', 'в'],
+  ['ᲁ', 'д'],
+  ['ᲂ', 'о'],
+  ['ᲃ', 'с'],
+  ['ᲄ', 'т'],
+  ['ᲅ', 'т'],
+  ['ᲆ', 'ъ'],
+  ['ᲇ', 'ѣ'],
+  ['ᲈ', 'ꙋ'],
+  ['ẛ', 'ṡ'],
+  ['ι', 'ι'],
+]);
+
+function unicodeCaseFold(value) {
+  let out = '';
+  for (const char of String(value || '').toLowerCase()) {
+    const code = char.codePointAt(0);
+    if (code >= 0xab70 && code <= 0xabbf) {
+      out += String.fromCodePoint(code - 0x97d0); // Cherokee small → uppercase fold
+      continue;
+    }
+    if (code >= 0x13f8 && code <= 0x13fd) {
+      out += String.fromCodePoint(code - 0x8); // Cherokee small supplement
+      continue;
+    }
+    const override = CASE_FOLD_SINGLE_OVERRIDES.get(char);
+    if (override !== undefined) {
+      out += override;
+      continue;
+    }
+    const upper = char.toUpperCase();
+    out += [...upper].length > 1 ? upper.toLowerCase() : char;
+  }
+  return out;
 }
 
 // destination prefix 를 파싱하고 바로 뒤 offset 을 반환한다. `<...>` form 에서는 escaped `>`를,
@@ -524,11 +756,27 @@ export function toProseBody(contentBody) {
     .split('\n')
     .filter((l) => !/^(?: {4,}|\t)/.test(l))
     .join('\n');
-  return stripReferenceLinkLabels(
-    stripLinkDestinations(stripInlineCodeSpans(withoutBlocks)),
-    definitions.labels,
+  return decodeVisibleBackslashEscapes(
+    stripReferenceLinkLabels(
+      stripLinkDestinations(stripInlineCodeSpans(withoutBlocks)),
+      definitions.labels,
+    ),
   )
     .replace(/<\/?[a-zA-Z][^<>\n]*>/g, ' '); // inline HTML tag/attribute · autolink 제거
+}
+
+// label 해소 판정은 source escape를 보존한 채 끝낸 뒤, 실제 visible prose에서만 ASCII punctuation
+// backslash escape를 해제한다. 그래야 `[INV\\-001]` mismatch가 literal `INV-001`로 보인다.
+function decodeVisibleBackslashEscapes(text) {
+  return String(text || '').replace(/\\([\s\S])/g, (match, char) => {
+    const code = char.codePointAt(0);
+    const punctuation =
+      (code >= 0x21 && code <= 0x2f) ||
+      (code >= 0x3a && code <= 0x40) ||
+      (code >= 0x5b && code <= 0x60) ||
+      (code >= 0x7b && code <= 0x7e);
+    return punctuation ? char : match;
+  });
 }
 
 // 해소된 full/collapsed reference link 의 두 번째 label만 렌더링되지 않는다. 정의가 없는
