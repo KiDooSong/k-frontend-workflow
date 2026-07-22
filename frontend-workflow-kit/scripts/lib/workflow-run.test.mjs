@@ -32,6 +32,7 @@ const REL_CUSTOM_LAYOUT = path.relative(KIT_ROOT, CUSTOM_LAYOUT);
 const PATHBACKSTOP_STATE = path.join(
   KIT_ROOT, 'examples', 'path-backstop', 'docs', 'frontend-workflow', '_meta', 'workflow-state.yaml',
 );
+const STALE_REPORT_SENTINEL = 'STALE REPORT FROM PREVIOUS INVOCATION';
 
 function toPosix(p) {
   return String(p).split(path.sep).join('/');
@@ -93,9 +94,13 @@ function runRun(args) {
     const stdout = execFileSync(process.execPath, [RUN_SCRIPT, ...args], {
       cwd: KIT_ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
     });
-    return { code: 0, stdout };
+    return { code: 0, stdout, stderr: '' };
   } catch (e) {
-    return { code: e && e.status != null ? e.status : null, stdout: e && e.stdout ? String(e.stdout) : '' };
+    return {
+      code: e && e.status != null ? e.status : null,
+      stdout: e && e.stdout ? String(e.stdout) : '',
+      stderr: e && e.stderr ? String(e.stderr) : '',
+    };
   }
 }
 
@@ -130,7 +135,7 @@ function mkOut() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'wf-run-layout-'));
 }
 
-test('absorbed readiness is a normal non-executable packet/run halt with canonical target', () => {
+test('stale report + absorbed readiness: HALT_NOT_APPLICABLE removes previous report', () => {
   const { dir, docs } = buildAbsorbedDocs();
   const out = path.join(dir, 'run-artifacts');
   try {
@@ -146,6 +151,9 @@ test('absorbed readiness is a normal non-executable packet/run halt with canonic
     assert.equal(packet.absorbed_into, 'AUTH-NEW');
     assert.equal(packet.non_executable, true);
 
+    fs.mkdirSync(out, { recursive: true });
+    fs.writeFileSync(path.join(out, 'run-report.md'), STALE_REPORT_SENTINEL, 'utf8');
+
     const runResult = runRun([
       '--screen', 'OLD-AUTH', '--requested-mode', 'docs-only',
       '--docs', docs, '--date', '2026-07-17', '--out', out, '--json',
@@ -159,7 +167,8 @@ test('absorbed readiness is a normal non-executable packet/run halt with canonic
     assert.equal(run.readiness_mode, null);
     assert.equal(run.absorbed_into, 'AUTH-NEW');
     assert.match(run.next_action, /AUTH-NEW/);
-    assert.equal(fs.existsSync(path.join(out, 'run-report.md')), false);
+    assert.equal(run.report, null);
+    assert.equal(fs.existsSync(path.join(out, 'run-report.md')), false, 'stale Run Report가 제거돼야 한다');
     const packetMarkdown = fs.readFileSync(path.join(out, 'work-packet.md'), 'utf8');
     const packetFrontmatter = splitFrontmatter(packetMarkdown);
     assert.equal(packetFrontmatter.parseError, undefined);
@@ -172,6 +181,89 @@ test('absorbed readiness is a normal non-executable packet/run halt with canonic
     assert.equal(statusFrontmatter.parseError, undefined);
     assert.equal(statusFrontmatter.data.readiness_mode, null);
     assert.equal(statusFrontmatter.data.readiness_applicable, false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('stale report + ambiguous packet: HALT_AMBIGUITY removes previous report', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wf-run-stale-ambiguity-'));
+  const out = path.join(dir, 'run-artifacts');
+  const report = path.join(out, 'run-report.md');
+  try {
+    fs.mkdirSync(out, { recursive: true });
+    fs.writeFileSync(report, STALE_REPORT_SENTINEL, 'utf8');
+    const r = runRun([
+      '--screen', 'COUPON-001', '--requested-mode', 'rough-fixture-ui',
+      '--docs', COUPON_DOCS, '--out', out, '--json',
+    ]);
+    assert.equal(r.code, 0, r.stderr || r.stdout);
+    const envelope = JSON.parse(r.stdout);
+    assert.equal(envelope.state, 'HALT_AMBIGUITY');
+    assert.equal(envelope.report, null);
+    assert.equal(fs.existsSync(report), false, 'stale Run Report가 제거돼야 한다');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('stale report + clean packet without --diff: HALT_READY_FOR_WORK removes previous report', () => {
+  const { dir, docs } = buildCleanDocs();
+  const out = path.join(dir, 'run-artifacts');
+  const report = path.join(out, 'run-report.md');
+  try {
+    fs.mkdirSync(out, { recursive: true });
+    fs.writeFileSync(report, STALE_REPORT_SENTINEL, 'utf8');
+    const r = runRun([
+      '--screen', 'AUTH-001', '--requested-mode', 'final-fixture-ui',
+      '--docs', docs, '--out', out, '--json',
+    ]);
+    assert.equal(r.code, 0, r.stderr || r.stdout);
+    const envelope = JSON.parse(r.stdout);
+    assert.equal(envelope.state, 'HALT_READY_FOR_WORK');
+    assert.equal(envelope.report, null);
+    assert.equal(fs.existsSync(report), false, 'stale Run Report가 제거돼야 한다');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('stale report + child tool failure: HALT_TOOL_ERROR removes previous report', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wf-run-stale-tool-error-'));
+  const out = path.join(dir, 'run-artifacts');
+  const report = path.join(out, 'run-report.md');
+  const missingLayout = path.join(dir, 'missing-layout.yaml');
+  try {
+    fs.mkdirSync(out, { recursive: true });
+    fs.writeFileSync(report, STALE_REPORT_SENTINEL, 'utf8');
+    const r = runRun([
+      '--screen', 'COUPON-001', '--requested-mode', 'rough-fixture-ui',
+      '--docs', COUPON_DOCS, '--layout', missingLayout, '--out', out, '--json',
+    ]);
+    assert.equal(r.code, 2, r.stderr || r.stdout);
+    const envelope = JSON.parse(r.stdout);
+    assert.equal(envelope.state, 'HALT_TOOL_ERROR');
+    assert.equal(envelope.report, null);
+    assert.equal(fs.existsSync(report), false, 'tool error에서도 stale Run Report가 제거돼야 한다');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('no-report cleanup failure: exit 2 before success output and does not recursively delete directory', () => {
+  const { dir, docs } = buildCleanDocs();
+  const out = path.join(dir, 'run-artifacts');
+  const reportDir = path.join(out, 'run-report.md');
+  try {
+    fs.mkdirSync(reportDir, { recursive: true });
+    const r = runRun([
+      '--screen', 'AUTH-001', '--requested-mode', 'final-fixture-ui',
+      '--docs', docs, '--out', out, '--json',
+    ]);
+    assert.equal(r.code, 2, r.stderr || r.stdout);
+    assert.equal(r.stdout, '', 'cleanup 실패 전에 no-report 성공 JSON을 출력하면 안 된다');
+    assert.equal(fs.statSync(reportDir).isDirectory(), true, 'destination 디렉터리를 재귀 삭제하면 안 된다');
+    assert.equal(fs.existsSync(out + '.md'), false, 'cleanup 실패 전에 status markdown을 쓰면 안 된다');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -249,6 +341,7 @@ test('clean packet + --diff + custom --layout: DONE_PENDING_REVIEW · run-report
   try {
     const diff = path.join(dir, 'diff.txt');
     fs.writeFileSync(diff, 'A\tsrc/features/auth/screens/Login.tsx\n', 'utf8');
+    fs.writeFileSync(path.join(out, 'run-report.md'), STALE_REPORT_SENTINEL, 'utf8');
     // 상대 --layout 으로 넘겨 run 의 path.resolve(보고-child 방향)까지 동시에 고정한다.
     const r = runRun([
       '--screen', 'AUTH-001', '--requested-mode', 'final-fixture-ui',
@@ -259,6 +352,7 @@ test('clean packet + --diff + custom --layout: DONE_PENDING_REVIEW · run-report
     const reportMd = path.join(out, 'run-report.md');
     assert.ok(fs.existsSync(reportMd), 'run-report.md 가 생성돼야 한다');
     const raw = fs.readFileSync(reportMd, 'utf8');
+    assert.doesNotMatch(raw, new RegExp(STALE_REPORT_SENTINEL), '이전 report sentinel이 현재 report에 남으면 안 된다');
     const expectedAbs = toPosix(path.resolve(KIT_ROOT, REL_CUSTOM_LAYOUT));
     // report child 가 leaf 로 --layout 을 전달했는지 + run 이 절대경로로 넘겼는지 동시 witness.
     // (reportArgs.push('--layout', layoutResolved) 가 사라지면 이 줄에서 --layout 이 빠져 실패한다.)

@@ -67,6 +67,18 @@ export function exists(p) {
   }
 }
 
+// 정확한 destination 하나만 제거한다. 선행 존재검사를 두지 않아 TOCTOU 창을 만들지 않고,
+// unlink 이므로 symlink target이나 디렉터리 트리를 따라가지 않는다.
+export function removeFileIfExists(file) {
+  try {
+    fs.unlinkSync(file);
+    return true;
+  } catch (err) {
+    if (err && err.code === 'ENOENT') return false;
+    throw err;
+  }
+}
+
 export function isDir(p) {
   try {
     return fs.statSync(p).isDirectory();

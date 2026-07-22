@@ -24,7 +24,15 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { parseArgs, DEFAULTS, readFileSafe, writeFile, splitFrontmatter, isCliEntry } from './lib/util.mjs';
+import {
+  parseArgs,
+  DEFAULTS,
+  readFileSafe,
+  writeFile,
+  removeFileIfExists,
+  splitFrontmatter,
+  isCliEntry,
+} from './lib/util.mjs';
 import {
   extractSection,
   extractFencedTxt,
@@ -289,6 +297,7 @@ function main() {
   const skipTests = !!flags['skip-tests'];
   const date = optStr(flags, 'date') ?? isoToday();
   const seq = optStr(flags, 'seq') ?? '001';
+  const outPath = outFlag ? path.resolve(outFlag) : null;
 
   // 1) packet 읽기 + 파싱 (입력 오류는 exit 2).
   const packetPath = path.resolve(packetFlag);
@@ -302,6 +311,13 @@ function main() {
       fail(
         `packet lifecycle sentinel 손상 — readiness_applicable=false 는 screen_lifecycle=absorbed, readiness_mode=null, target_screen/absorbed_into/readiness_source 문자열이 필요: ${relToCwd(packetPath)}`,
       );
+    }
+    if (outPath) {
+      try {
+        removeFileIfExists(outPath);
+      } catch (e) {
+        fail(`기존 Run Report 제거 실패 "${relToCwd(outPath)}": ${e.message}`);
+      }
     }
     const envelope = renderNoReportEnvelope(fm);
     if (flags.json) {
@@ -370,7 +386,6 @@ function main() {
   const checkgen = collectCheckGenerated(docs, src, layoutResolved);
 
   // 6) 모델 빌드 + 렌더.
-  const outPath = outFlag ? path.resolve(outFlag) : null;
   const model = buildReportModel({
     packet: { frontmatter: fm, body, allowedPaths, forbiddenPaths, blockingRaw, nextActions, snapshot },
     paths: {

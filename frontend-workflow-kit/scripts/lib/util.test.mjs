@@ -11,7 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { isCliEntry } from './util.mjs';
+import { isCliEntry, removeFileIfExists } from './util.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const UTIL_PATH = path.join(HERE, 'util.mjs');
@@ -38,6 +38,49 @@ function symlinkDirOrSkip(t, target, linkPath) {
     throw e;
   }
 }
+
+function symlinkFileOrSkip(t, target, linkPath) {
+  try {
+    fs.symlinkSync(target, linkPath, 'file');
+    return true;
+  } catch (e) {
+    if (['EACCES', 'EPERM', 'ENOSYS', 'ENOTSUP'].includes(e && e.code)) {
+      t.skip(`symlink unavailable on this platform: ${e.code}`);
+      return false;
+    }
+    throw e;
+  }
+}
+
+test('removeFileIfExists: missing path is a no-op and regular file is removed', (t) => {
+  const dir = tmpdir(t);
+  const file = path.join(dir, 'run-report.md');
+  assert.equal(removeFileIfExists(file), false);
+  fs.writeFileSync(file, 'stale');
+  assert.equal(removeFileIfExists(file), true);
+  assert.equal(fs.existsSync(file), false);
+});
+
+test('removeFileIfExists: symlink itself is removed without following its target', (t) => {
+  const dir = tmpdir(t);
+  const target = path.join(dir, 'target.md');
+  const link = path.join(dir, 'run-report.md');
+  fs.writeFileSync(target, 'keep target');
+  if (!symlinkFileOrSkip(t, target, link)) return;
+  assert.equal(removeFileIfExists(link), true);
+  assert.equal(fs.existsSync(link), false);
+  assert.equal(fs.readFileSync(target, 'utf8'), 'keep target');
+});
+
+test('removeFileIfExists: directory removal fails and leaves the tree intact', (t) => {
+  const dir = tmpdir(t);
+  const destination = path.join(dir, 'run-report.md');
+  const child = path.join(destination, 'child.txt');
+  fs.mkdirSync(destination);
+  fs.writeFileSync(child, 'keep child');
+  assert.throws(() => removeFileIfExists(destination));
+  assert.equal(fs.readFileSync(child, 'utf8'), 'keep child');
+});
 
 test('isCliEntry: argv[1] 이 스크립트 경로 그대로면 true', (t) => {
   const dir = tmpdir(t);

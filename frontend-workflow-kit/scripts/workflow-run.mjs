@@ -21,7 +21,15 @@ import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { parseArgs, writeFile, readFileSafe, yamlParse, DEFAULTS, isCliEntry } from './lib/util.mjs';
+import {
+  parseArgs,
+  writeFile,
+  readFileSafe,
+  removeFileIfExists,
+  yamlParse,
+  DEFAULTS,
+  isCliEntry,
+} from './lib/util.mjs';
 import {
   STATES,
   STATE_EXIT,
@@ -164,6 +172,15 @@ function main() {
 
   // 상태 확정 → 모델 빌드 → 상태 파일 쓰기/출력 → exit.
   const finalize = (state, { packet = null, report = null, reason = null, requestedKnown = true } = {}) => {
+    // --out 재사용 시 현재 invocation 이 report 를 만들지 않은 모든 종료 상태에서 이전 evidence 를 무효화한다.
+    // 모델/status/stdout 보다 먼저 수행해 cleanup 실패가 no-report 성공 결과와 함께 노출되지 않게 한다.
+    if (outDirResolved && report == null) {
+      try {
+        removeFileIfExists(reportPath);
+      } catch (e) {
+        fail(`기존 Run Report 제거 실패 "${relToCwd(reportPath)}": ${e.message}`);
+      }
+    }
     const model = buildRunModel({
       screen,
       requestedMode,

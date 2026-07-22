@@ -35,9 +35,13 @@ function run(script, args) {
     const stdout = execFileSync(process.execPath, [script, ...args], {
       cwd: KIT_ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
     });
-    return { code: 0, stdout };
+    return { code: 0, stdout, stderr: '' };
   } catch (e) {
-    return { code: e && e.status != null ? e.status : null, stdout: e && e.stdout ? String(e.stdout) : '' };
+    return {
+      code: e && e.status != null ? e.status : null,
+      stdout: e && e.stdout ? String(e.stdout) : '',
+      stderr: e && e.stderr ? String(e.stderr) : '',
+    };
   }
 }
 
@@ -72,6 +76,32 @@ function invocationLine(reportMd, scriptName) {
 
 function readReport(reportMd) {
   return fs.readFileSync(reportMd, 'utf8');
+}
+
+function writeAbsorbedPacket(packet) {
+  fs.writeFileSync(
+    packet,
+    `---
+packet_id: "WP-OLD-AUTH-absorbed-001"
+packet_type: "work-packet"
+status: "draft"
+target_screen: "OLD-AUTH"
+domain: "auth"
+requested_mode: "docs-only"
+readiness_mode: null
+readiness_applicable: false
+screen_lifecycle: "absorbed"
+absorbed_into: "AUTH-NEW"
+readiness_source: "node scripts/readiness.mjs --screen OLD-AUTH --json"
+created_at: "2026-07-20"
+owner: "workflow:packet"
+generated_by: "workflow:packet"
+---
+
+# Non-executable Work Packet: OLD-AUTH → AUTH-NEW
+`,
+    'utf8',
+  );
 }
 
 test('custom --layout: validate/forbidden/check-generated invocation 에 --layout 전달(split-brain 차단)', () => {
@@ -144,36 +174,15 @@ test('--help 에 --layout <path> 가 노출된다', () => {
   assert.match(r.stdout, /--layout <path>/, 'help text 에 --layout <path> 가 있어야 한다');
 });
 
-test('non-applicable packet is a lifecycle-aware no-report result instead of malformed input', () => {
+test('non-applicable packet removes stale --out and missing destination remains a normal no-op', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wf-report-absorbed-'));
   const packet = path.join(dir, 'work-packet.md');
   const out = path.join(dir, 'run-report.md');
-  fs.writeFileSync(
-    packet,
-    `---
-packet_id: "WP-OLD-AUTH-absorbed-001"
-packet_type: "work-packet"
-status: "draft"
-target_screen: "OLD-AUTH"
-domain: "auth"
-requested_mode: "docs-only"
-readiness_mode: null
-readiness_applicable: false
-screen_lifecycle: "absorbed"
-absorbed_into: "AUTH-NEW"
-readiness_source: "node scripts/readiness.mjs --screen OLD-AUTH --json"
-created_at: "2026-07-20"
-owner: "workflow:packet"
-generated_by: "workflow:packet"
----
-
-# Non-executable Work Packet: OLD-AUTH → AUTH-NEW
-`,
-    'utf8',
-  );
+  writeAbsorbedPacket(packet);
+  fs.writeFileSync(out, 'STALE REPORT FROM PREVIOUS INVOCATION', 'utf8');
   try {
     const r = run(REPORT_SCRIPT, ['--packet', packet, '--out', out, '--json']);
-    assert.equal(r.code, 0, r.stdout);
+    assert.equal(r.code, 0, r.stderr || r.stdout);
     const envelope = JSON.parse(r.stdout);
     assert.equal(envelope.report_applicable, false);
     assert.equal(envelope.readiness_applicable, false);
@@ -182,7 +191,31 @@ generated_by: "workflow:packet"
     assert.equal(envelope.target_screen, 'OLD-AUTH');
     assert.equal(envelope.absorbed_into, 'AUTH-NEW');
     assert.match(envelope.next_action, /AUTH-NEW/);
-    assert.equal(fs.existsSync(out), false, 'non-applicable packet은 Run Report를 쓰지 않아야 한다');
+    assert.equal(envelope.out, null);
+    assert.equal(fs.existsSync(out), false, 'non-applicable packet은 stale Run Report를 제거해야 한다');
+
+    const missingDestination = run(REPORT_SCRIPT, ['--packet', packet, '--out', out, '--json']);
+    assert.equal(missingDestination.code, 0, missingDestination.stderr || missingDestination.stdout);
+    const missingEnvelope = JSON.parse(missingDestination.stdout);
+    assert.equal(missingEnvelope.report_applicable, false);
+    assert.equal(missingEnvelope.out, null);
+    assert.equal(fs.existsSync(out), false, '이미 없는 destination은 정상 no-op이어야 한다');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('non-applicable cleanup failure exits 2 before success envelope and preserves destination directory', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wf-report-cleanup-failure-'));
+  const packet = path.join(dir, 'work-packet.md');
+  const out = path.join(dir, 'run-report.md');
+  writeAbsorbedPacket(packet);
+  fs.mkdirSync(out);
+  try {
+    const r = run(REPORT_SCRIPT, ['--packet', packet, '--out', out, '--json']);
+    assert.equal(r.code, 2, r.stderr || r.stdout);
+    assert.equal(r.stdout, '', 'cleanup 실패 전에 no-report 성공 envelope를 출력하면 안 된다');
+    assert.equal(fs.statSync(out).isDirectory(), true, 'destination 디렉터리를 재귀 삭제하면 안 된다');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
