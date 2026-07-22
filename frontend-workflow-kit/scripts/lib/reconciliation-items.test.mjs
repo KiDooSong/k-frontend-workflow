@@ -1536,10 +1536,13 @@ test('v2 hard: link/reference source 의 INV 토큰은 visible prose 가 아님'
     '[조사 문서][INV-001]\n\n- context\n\n  <!-- -->\n\n    [INV-001]: /url', // list-internal HTML block 뒤 outer definition
     '[조사 문서][INV-001]\n\n-   context\n\n    <!-- -->\n\n    [INV-001]: /url', // content indent 4인 item의 HTML block 뒤 definition
     '- ~~~markdown\n  INV-001\n  ~~~', // list child fenced code
+    '- ~~~markdown\n  before\n\n  INV-001\n  ~~~', // list fence 안 unindented blank line
     '> ~~~markdown\n> INV-001\n> ~~~', // blockquote child fenced code
+    '> - ~~~markdown\n>   INV-001\n>   ~~~', // blockquote + list child fenced code
     '- - ~~~markdown\n    INV-001\n    ~~~', // nested-list child fenced code
     '10. context\n\n    ~~~markdown\n    INV-001\n    ~~~', // content indent 4인 list continuation fence
     '1. context\n2. ~~~markdown\n   INV-001\n   ~~~', // 기존 ordered list의 sibling fence
+    '- paragraph\n- <custom-tag>\n  INV-001', // 새 sibling item의 type-7 HTML block
     '[조사 문서][INV-001]\n\n- outer\n  - inner\n\n      [INV-001]: /url', // nested item relative 2칸
     '[조사 문서][INV-001]\n\n- outer\nlazy continuation\n\n    [INV-001]: /url', // lazy paragraph 뒤에도 item 유지
     ...EMPTY_CONTAINER_MARKERS.map(
@@ -1590,6 +1593,27 @@ test('v2 hard: link/reference source 의 INV 토큰은 visible prose 가 아님'
     summaryRows: summaryWithInv,
   });
   assert.deepEqual(messages(orderedFenceContinuationPass.errors), []);
+
+  // 닫히지 않은 blockquote fence는 quote container가 끝나는 줄에서 함께 끝난다. 밖의 INV-001을
+  // fence content로 계속 삼키면 visible evidence를 잃는다.
+  const quoteFenceExit = SCREEN_SPEC_DOC +
+    '\n## Notes\n\n> ~~~markdown\n> hidden\nINV-001 is visible\n';
+  const quoteFenceExitPass = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': quoteFenceExit },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.deepEqual(messages(quoteFenceExitPass.errors), []);
+
+  // HTML block도 고유 종료 문자열보다 enclosing blockquote가 먼저 끝나면 그 지점에서 끝난다.
+  const quoteHtmlExit = SCREEN_SPEC_DOC +
+    '\n## Notes\n\n> <!--\nINV-001 is visible\n-->\n';
+  const quoteHtmlExitPass = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': quoteHtmlExit },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.deepEqual(messages(quoteHtmlExitPass.errors), []);
 
   // start number 1은 실제로 paragraph를 끊고 list child definition을 만든다.
   const orderedInterrupt = SCREEN_SPEC_DOC +
@@ -1687,6 +1711,17 @@ test('v2 hard: link/reference source 의 INV 토큰은 visible prose 가 아님'
     summaryRows: summaryWithInv,
   });
   assert.deepEqual(messages(orderedCodePass.errors), []);
+
+  // top-level blockquote는 앞선 list 밖에서 시작한다. 해당 HTML barrier가 이전 list stack을
+  // 보존하면 마지막 top-level indented code를 list-relative definition으로 오인한다.
+  const topLevelQuoteBarrier = SCREEN_SPEC_DOC +
+    '\n## Notes\n\n[details][INV-001]\n\n- context\n\n> <!-- -->\n\n    [INV-001]: /url\n';
+  const topLevelQuoteBarrierPass = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': topLevelQuoteBarrier },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.deepEqual(messages(topLevelQuoteBarrierPass.errors), []);
 
   // shortcut reference `[INV-001]` 는 링크 text 자체가 INV-001 로 렌더링된다 — visible, 해소된다.
   const shortcut = SCREEN_SPEC_DOC + '\n## Notes\n\n[INV-001] 참고\n\n[INV-001]: https://example.test/doc\n';
