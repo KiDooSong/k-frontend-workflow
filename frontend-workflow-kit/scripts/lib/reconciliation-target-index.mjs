@@ -87,7 +87,12 @@ function canonicalFamiliesAt(sectionSlug, artifactType) {
 //   type 1  <pre|script|style|textarea … 닫는 태그 포함 줄까지
 //   type 6/7  그 외 <tag / </tag …  blank line 까지 (blank line 자체는 block 밖)
 export function stripNonContent(text) {
+  return stripNonContentDetailed(text).text;
+}
+
+function stripNonContentDetailed(text) {
   const out = [];
+  const barrierBeforeLines = new Set();
   let fence = null; // { char, length } | null
   let block = null; // { endsAt: (line)=>bool, consumeEndLine: bool } | null
   let paragraphOpen = false;
@@ -111,6 +116,7 @@ export function stripNonContent(text) {
     // 항상 판정하되, type 7 만 명확한 block boundary 에서 활성화한다.
     const opener = matchHtmlBlockOpener(line, !paragraphOpen);
     if (opener) {
+      barrierBeforeLines.add(out.length);
       if (!opener.endsOnOpeningLine) block = opener;
       paragraphOpen = false;
       continue; // opening 줄은 (같은 줄에 닫혀도) 통째로 block — 출력하지 않는다
@@ -118,6 +124,7 @@ export function stripNonContent(text) {
     const open = /^ {0,3}(`{3,}|~{3,})/.exec(line);
     const info = open ? line.slice(open[0].length) : '';
     if (open && (open[1][0] !== '`' || !info.includes('`'))) {
+      barrierBeforeLines.add(out.length);
       fence = { char: open[1][0], length: open[1].length };
       paragraphOpen = false;
       continue; // opening fence 줄(info string 포함)은 출력하지 않는다
@@ -127,7 +134,7 @@ export function stripNonContent(text) {
     out.push(visibleLine);
     paragraphOpen = nextParagraphOpen(line, visibleLine, paragraphOpen);
   }
-  return out.join('\n');
+  return { text: out.join('\n'), barrierBeforeLines };
 }
 
 // paragraph 를 interrupt하고 그 줄에서 끝나는 block. 이 최소 상태는 type 7 진입과 strict table의
@@ -294,40 +301,44 @@ export function stripInlineCodeSpans(text) {
 // 다음 줄에 있는 정의와 blockquote/list container 안의 정의 label 이 visible prose 로 샌다.
 // 여기서는 label + colon, 최대 한 번의 line ending, destination, optional title 을 한 구조로 확인한
 // 뒤 정의에 속한 원본 줄만 비운다(줄 수는 보존해 뒤 단계의 block 경계를 바꾸지 않는다).
-function stripReferenceDefinitions(text) {
+function stripReferenceDefinitions(text, barrierBeforeLines = new Set()) {
   const lines = String(text || '').split('\n');
   const ignoredListStarts = new Set();
-  let definitionLines = [];
-  let scan = null;
-
-  // list marker가 실제로 container를 여는지는 이전 paragraph 상태에 달려 있다. 우선 parser
-  // view를 만들고, paragraph를 interrupt하지 못한 marker를 제외해 다시 만드는 fixed point로
-  // 이후 continuation indentation까지 같은 container 해석을 사용한다.
-  for (let attempt = 0; attempt <= lines.length; attempt += 1) {
+  const parse = () => {
     const siblingListStarts = new Set();
     const blockquoteStarts = new Set();
-    definitionLines = buildReferenceDefinitionLines(
+    const listDependencies = new Map();
+    const definitionLines = buildReferenceDefinitionLines(
       lines,
       ignoredListStarts,
       siblingListStarts,
       blockquoteStarts,
+      barrierBeforeLines,
+      listDependencies,
     );
-    scan = scanReferenceDefinitions(
+    const scan = scanReferenceDefinitions(
       lines,
       definitionLines,
       siblingListStarts,
       blockquoteStarts,
+      barrierBeforeLines,
     );
-    let changed = false;
-    for (const lineIndex of scan.rejectedListStarts) {
-      if (!ignoredListStarts.has(lineIndex)) {
-        ignoredListStarts.add(lineIndex);
-        changed = true;
-      }
-    }
-    if (!changed) break;
-  }
+    return { definitionLines, scan, listDependencies };
+  };
 
+  // 첫 parser view에서 paragraph를 interrupt하지 못한 list root를 찾고, 그 root에서 파생된
+  // 형제·하위 marker를 dependency로 한 번에 제외한다. 이후 view는 한 번만 재구성하므로 연속
+  // `2.`, `3.` ... 입력도 문서 길이만큼 반복 scan하지 않는다.
+  let parsed = parse();
+  for (const rejected of parsed.scan.rejectedListStarts) ignoredListStarts.add(rejected);
+  for (const [lineIndex, dependencies] of parsed.listDependencies) {
+    if ([...dependencies].some((dependency) => parsed.scan.rejectedListStarts.has(dependency))) {
+      ignoredListStarts.add(lineIndex);
+    }
+  }
+  if (ignoredListStarts.size > 0) parsed = parse();
+
+  const { definitionLines, scan } = parsed;
   const { removed, labels } = scan;
   const contentLines = definitionLines.map((line, index) =>
     removed.has(index) ? '' : stripReferenceBlockquotePrefix(line).content,
@@ -345,6 +356,7 @@ function scanReferenceDefinitions(
   definitionLines,
   siblingListStarts,
   blockquoteStarts,
+  barrierBeforeLines,
 ) {
   const removed = new Set();
   const labels = new Set();
@@ -352,6 +364,7 @@ function scanReferenceDefinitions(
   let paragraphOpen = false;
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    if (barrierBeforeLines.has(lineIndex)) paragraphOpen = false;
     const line = definitionLines[lineIndex];
     const container = inspectReferenceContainerTransition(
       lines[lineIndex],
@@ -436,23 +449,47 @@ function buildReferenceDefinitionLines(
   ignoredListStarts = new Set(),
   siblingListStarts = new Set(),
   blockquoteStarts = new Set(),
+  barrierBeforeLines = new Set(),
+  listDependencies = new Map(),
 ) {
   const out = [];
   let quoteDepth = 0;
-  let listContentIndents = [];
-  let listMarkerIndents = [];
+  let listStack = [];
   let previousContainerQuoteDepth = 0;
   let previousBlank = true;
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
-    const rawLine = lines[lineIndex];
-    const quote = stripReferenceBlockquotePrefix(rawLine);
-    if (quote.depth !== quoteDepth) {
-      quoteDepth = quote.depth;
-      listContentIndents = [];
-      listMarkerIndents = [];
+    if (barrierBeforeLines.has(lineIndex)) {
+      quoteDepth = 0;
+      listStack = [];
+      previousContainerQuoteDepth = 0;
       previousBlank = true;
     }
+
+    const rawLine = lines[lineIndex];
+    const quote = stripReferenceBlockquotePrefix(rawLine);
+    if (quote.depth > quoteDepth) {
+      // list item 안에서 시작한 quote는 outer list를 유지한다. quote marker가 active content
+      // indent보다 바깥에 있으면 그 list는 이미 끝난 것이므로 해당 depth의 stack만 닫는다.
+      while (
+        listStack.length > 0 &&
+        listStack[listStack.length - 1].quoteDepth === quoteDepth &&
+        listStack[listStack.length - 1].contentIndent > quote.markerIndent
+      ) {
+        listStack.pop();
+      }
+      previousBlank = true;
+    } else if (quote.depth < quoteDepth) {
+      // nested quote에서 연 list만 닫고, quote 바깥의 outer list container는 보존한다.
+      while (
+        listStack.length > 0 &&
+        listStack[listStack.length - 1].quoteDepth > quote.depth
+      ) {
+        listStack.pop();
+      }
+      previousBlank = true;
+    }
+    quoteDepth = quote.depth;
 
     const content = quote.content;
     if (/^\s*$/.test(content)) {
@@ -462,18 +499,24 @@ function buildReferenceDefinitionLines(
     }
 
     const rawIndent = leadingIndentColumns(content);
-    const rawListItems = listItemDescriptors(content);
-    if (
-      !ignoredListStarts.has(lineIndex) &&
-      rawListItems.length > 0 &&
-      listMarkerIndents.includes(rawListItems[0].markerIndent)
-    ) {
+    const rawListItems = isParagraphClosingBlockLine(content, false)
+      ? []
+      : listItemDescriptors(content);
+    const siblingEntry = [...listStack]
+      .reverse()
+      .find(
+        (entry) =>
+          entry.quoteDepth === quoteDepth &&
+          rawListItems.length > 0 &&
+          entry.markerIndent === rawListItems[0].markerIndent,
+      );
+    if (!ignoredListStarts.has(lineIndex) && siblingEntry) {
       siblingListStarts.add(lineIndex);
     }
-    const activeIndent =
-      listContentIndents.length > 0
-        ? listContentIndents[listContentIndents.length - 1]
-        : 0;
+    let activeEntry = [...listStack]
+      .reverse()
+      .find((entry) => entry.quoteDepth === quoteDepth);
+    const activeIndent = activeEntry?.contentIndent || 0;
     const lazyContinuation =
       activeIndent > 0 &&
       rawIndent < activeIndent &&
@@ -482,18 +525,18 @@ function buildReferenceDefinitionLines(
       !isParagraphClosingBlockLine(content, true);
     if (!lazyContinuation) {
       while (
-        listContentIndents.length > 0 &&
-        rawIndent < listContentIndents[listContentIndents.length - 1]
+        listStack.length > 0 &&
+        listStack[listStack.length - 1].quoteDepth === quoteDepth &&
+        rawIndent < listStack[listStack.length - 1].contentIndent
       ) {
-        listContentIndents.pop();
-        listMarkerIndents.pop();
+        listStack.pop();
       }
     }
 
-    const baseIndent =
-      listContentIndents.length > 0
-        ? listContentIndents[listContentIndents.length - 1]
-        : 0;
+    activeEntry = [...listStack]
+      .reverse()
+      .find((entry) => entry.quoteDepth === quoteDepth);
+    const baseIndent = activeEntry?.contentIndent || 0;
     const relative = stripIndentColumns(content, baseIndent);
     out.push(relative);
 
@@ -503,17 +546,31 @@ function buildReferenceDefinitionLines(
     }
     previousContainerQuoteDepth = containerQuoteDepth;
 
-    const listIndents = ignoredListStarts.has(lineIndex)
+    const listIndents =
+      ignoredListStarts.has(lineIndex) || isParagraphClosingBlockLine(relative, false)
       ? []
       : listItemDescriptors(relative);
+    const parentDependencies = new Set(
+      listStack.flatMap((entry) => [...entry.dependencies]),
+    );
+    const lineDependencies = siblingEntry
+      ? new Set(siblingEntry.dependencies)
+      : new Set([...parentDependencies, lineIndex]);
+    if (listIndents.length > 0) listDependencies.set(lineIndex, lineDependencies);
     for (const listIndent of listIndents) {
       const absoluteIndent = baseIndent + listIndent.contentIndent;
       if (
-        listContentIndents.length === 0 ||
-        absoluteIndent > listContentIndents[listContentIndents.length - 1]
+        !activeEntry ||
+        absoluteIndent > activeEntry.contentIndent
       ) {
-        listContentIndents.push(absoluteIndent);
-        listMarkerIndents.push(baseIndent + listIndent.markerIndent);
+        const entry = {
+          contentIndent: absoluteIndent,
+          markerIndent: baseIndent + listIndent.markerIndent,
+          quoteDepth,
+          dependencies: lineDependencies,
+        };
+        listStack.push(entry);
+        activeEntry = entry;
       }
     }
     previousBlank = false;
@@ -555,6 +612,7 @@ function stripReferenceBlockquotePrefix(line) {
   const s = String(line || '');
   let i = 0;
   let depth = 0;
+  let markerIndent = 0;
   while (i < s.length) {
     let marker = i;
     let indent = 0;
@@ -563,11 +621,12 @@ function stripReferenceBlockquotePrefix(line) {
       indent += 1;
     }
     if (s[marker] !== '>') break;
+    if (depth === 0) markerIndent = indent;
     i = marker + 1;
     if (s[i] === ' ' || s[i] === '\t') i += 1;
     depth += 1;
   }
-  return { depth, content: s.slice(i) };
+  return { depth, content: s.slice(i), markerIndent };
 }
 
 function leadingIndentColumns(line) {
@@ -736,6 +795,7 @@ function matchReferenceDefinitionAt(lines, startLine) {
   }
   if (remainder === null || labelLength > 999) return null;
   const label = normalizeReferenceLabel(labelText);
+  if (label === '') return null; // CommonMark example 551/552: whitespace-only label은 invalid
   const matched = (endLine) => ({ endLine, label });
 
   let destinationLine = lineIndex;
@@ -910,8 +970,8 @@ function scanReferenceTitle(lines, startLine, startColumn, startContent) {
 //   - inline HTML tag/attribute(`<span data-ref="…">`)와 autolink(`<scheme:…>`) — 태그 안 attribute
 //     값의 ID 는 visible prose 가 아니다 (내부 텍스트는 유지)
 // code example·URL·attribute 안의 언급만으로 canonical target 이 해소되면 안 된다(fail-closed).
-export function toProseBody(contentBody) {
-  const definitions = stripReferenceDefinitions(contentBody);
+export function toProseBody(contentBody, barrierBeforeLines = new Set()) {
+  const definitions = stripReferenceDefinitions(contentBody, barrierBeforeLines);
   const withoutBlocks = definitions.text
     .split('\n')
     .filter((_, index) => !/^(?: {4,}|\t)/.test(definitions.contentLines[index] || ''))
@@ -1263,8 +1323,9 @@ export function splitSectionOccurrences(cleanText) {
 // section 분리는 반드시 stripNonContent **이후**에 한다 — fence 안의 `## Open Decisions` heading 이
 // 실제 섹션을 만들면 closing fence 가 고아가 되어 fence 내부 표가 canonical 행으로 해소된다.
 function indexDocBody(body, artifactType) {
-  const contentBody = stripNonContent(body);
-  const proseBody = toProseBody(contentBody);
+  const stripped = stripNonContentDetailed(body);
+  const contentBody = stripped.text;
+  const proseBody = toProseBody(contentBody, stripped.barrierBeforeLines);
   const sections = new Map();
   for (const occ of splitSectionOccurrences(contentBody)) {
     // 같은 slug 섹션이 중복되면 텍스트를 이어붙인다 (해소 검사에는 존재 여부가 중요).

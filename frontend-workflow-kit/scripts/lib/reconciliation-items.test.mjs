@@ -21,6 +21,7 @@ import {
   parseStrictTables,
   stripFencedCodeBlocks,
   stripNonContent,
+  toProseBody,
 } from './reconciliation-target-index.mjs';
 import {
   parseRegisterContract,
@@ -1526,6 +1527,7 @@ test('v2 hard: link/reference source 의 INV 토큰은 visible prose 가 아님'
     '- [INV-001]:\n    https://example.test/investigation', // list 내부 definition
     '[조사 문서][INV-001]\n\n- # heading\n  [INV-001]: /url', // list child heading 뒤 definition
     '[조사 문서][INV-001]\n\n-   paragraph\n    > [INV-001]: /url', // content indent 4인 list 내부 blockquote definition
+    '[조사 문서][INV-001]\n\n- outer\n\n  > quote\n\n    [INV-001]: /url', // nested quote 종료 뒤 outer list definition
     '[조사 문서][INV-001]\n\n- outer\n\n    [INV-001]: /url', // list content-relative 2칸 definition
     '[조사 문서][INV-001]\n\n10. outer\n\n    [INV-001]: /url', // ordered item content-relative 0칸
     '[조사 문서][INV-001]\n\n1. context\n2. [INV-001]: /url', // 기존 list의 start=2 형제 item
@@ -1622,6 +1624,39 @@ test('v2 hard: link/reference source 의 INV 토큰은 visible prose 가 아님'
   });
   assert.deepEqual(messages(invalidBracketLabelPass.errors), []);
 
+  // thematic break는 list item stack을 열지 않는다. 마지막 raw 4칸은 top-level code이고,
+  // 미해소 reference label의 INV-001은 visible evidence로 남는다.
+  const thematicBreak = SCREEN_SPEC_DOC +
+    '\n## Notes\n\n[details][INV-001]\n\n- - -\n\n    [INV-001]: /url\n';
+  const thematicBreakPass = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': thematicBreak },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.deepEqual(messages(thematicBreakPass.errors), []);
+
+  // whitespace-only label은 invalid라 첫 줄이 paragraph를 열고, 다음 definition-looking 줄도
+  // visible continuation이다(CommonMark examples 551/552).
+  const whitespaceLabel = SCREEN_SPEC_DOC +
+    '\n## Notes\n\n[details][INV-001]\n\n[ ]: /url\n[INV-001]: /url\n';
+  const whitespaceLabelPass = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': whitespaceLabel },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.deepEqual(messages(whitespaceLabelPass.errors), []);
+
+  // HTML block은 list와 뒤 indented code 사이의 구조적 barrier다. 제거 후에도 barrier를
+  // 보존해야 code 안의 INV-001이 hard-reference evidence로 승격되지 않는다(example 309).
+  const commentBarrier = SCREEN_SPEC_DOC +
+    '\n## Notes\n\n- context\n\n<!-- -->\n\n    INV-001\n';
+  const commentBarrierFail = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': commentBarrier },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.ok(hasCode(commentBarrierFail.errors, 'RR-REF-008'));
+
   // shortcut reference `[INV-001]` 는 링크 text 자체가 INV-001 로 렌더링된다 — visible, 해소된다.
   const shortcut = SCREEN_SPEC_DOC + '\n## Notes\n\n[INV-001] 참고\n\n[INV-001]: https://example.test/doc\n';
   const pass = runV2(t, {
@@ -1703,6 +1738,20 @@ test('v2 hard: reference label은 source escape를 보존하고 Unicode case fol
     String.raw`[details][foo\[INV-001]` + '\n\n' + String.raw`[foo\[INV-001]: /url`,
   );
   assert.ok(hasCode(escapedBracket.errors, 'RR-REF-008'));
+});
+
+test('reference container scan: 연속 non-interrupting ordered marker를 선형 시간에 처리함', () => {
+  const markerCount = 2000;
+  const body = [
+    'paragraph',
+    ...Array.from({ length: markerCount }, (_, index) => `${index + 2}. continuation`),
+  ].join('\n');
+  const startedAt = performance.now();
+  const prose = toProseBody(body);
+  const elapsed = performance.now() - startedAt;
+
+  assert.ok(prose.includes(`${markerCount + 1}. continuation`));
+  assert.ok(elapsed < 500, `ordered marker scan took ${elapsed.toFixed(1)}ms`);
 });
 
 test('v2 hard: 미해소 reference label 은 literal visible prose 로 보존함', (t) => {
