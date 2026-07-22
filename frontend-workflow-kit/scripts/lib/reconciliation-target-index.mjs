@@ -91,17 +91,24 @@ export function stripNonContent(text) {
 }
 
 function stripNonContentDetailed(text) {
+  const sourceLines = String(text || '').split(/\r?\n/);
+  const { parserLines, siblingListStarts } = buildContainerParserView(sourceLines);
   const out = [];
-  const barrierBeforeLines = new Set();
-  let fence = null; // { char, length } | null
+  const barrierBeforeLines = new Map();
+  let fence = null; // { char, length, containerSteps } | null
   let block = null; // { endsAt: (line)=>bool, consumeEndLine: bool } | null
   let paragraphOpen = false;
 
-  for (const line of String(text || '').split(/\r?\n/)) {
+  for (let lineIndex = 0; lineIndex < sourceLines.length; lineIndex += 1) {
+    const line = sourceLines[lineIndex];
     if (fence !== null) {
-      const close = /^ {0,3}(`{3,}|~{3,})\s*$/.exec(line);
-      if (close && close[1][0] === fence.char && close[1].length >= fence.length) fence = null;
-      continue; // fence 내부(닫는 줄 포함)는 전부 버린다
+      const childLine = stripExplicitContainerContinuation(line, fence.containerSteps);
+      if (childLine !== null) {
+        const close = /^ {0,3}(`{3,}|~{3,})\s*$/.exec(childLine);
+        if (close && close[1][0] === fence.char && close[1].length >= fence.length) fence = null;
+        continue; // 같은 container의 fence 내부(닫는 줄 포함)는 전부 버린다
+      }
+      fence = null; // container가 먼저 끝나면 현재 줄은 fence 밖에서 다시 판정한다.
     }
     if (block !== null) {
       if (block.endsAt(line)) {
@@ -114,18 +121,38 @@ function stripNonContentDetailed(text) {
     // --- normal: html block opener 판정 (구체적 문법 → 일반 순) ---
     // CommonMark type 7 은 열린 paragraph 를 interrupt할 수 없다. type 1~6 은 interrupt할 수 있으므로
     // 항상 판정하되, type 7 만 명확한 block boundary 에서 활성화한다.
-    const opener = matchHtmlBlockOpener(line, !paragraphOpen);
+    const explicit = inspectExplicitContainerLine(line);
+    const parserExplicit = inspectExplicitContainerLine(parserLines[lineIndex]);
+    const containerCanInterrupt =
+      parserExplicit.containerSteps.length === 0 ||
+      !paragraphOpen ||
+      siblingListStarts.has(lineIndex) ||
+      parserExplicit.startsWithBlockquote ||
+      parserExplicit.firstList?.kind === 'bullet' ||
+      parserExplicit.firstList?.startNumber === 1;
+    const blockLine = containerCanInterrupt
+      ? parserExplicit.childLine
+      : parserLines[lineIndex];
+    const opener = matchHtmlBlockOpener(blockLine, !paragraphOpen);
     if (opener) {
-      barrierBeforeLines.add(out.length);
+      recordNonContentBarrier(barrierBeforeLines, out.length, explicit.scope);
       if (!opener.endsOnOpeningLine) block = opener;
       paragraphOpen = false;
       continue; // opening 줄은 (같은 줄에 닫혀도) 통째로 block — 출력하지 않는다
     }
-    const open = /^ {0,3}(`{3,}|~{3,})/.exec(line);
-    const info = open ? line.slice(open[0].length) : '';
+    const open = /^ {0,3}(`{3,}|~{3,})/.exec(blockLine);
+    const info = open ? blockLine.slice(open[0].length) : '';
     if (open && (open[1][0] !== '`' || !info.includes('`'))) {
-      barrierBeforeLines.add(out.length);
-      fence = { char: open[1][0], length: open[1].length };
+      recordNonContentBarrier(barrierBeforeLines, out.length, explicit.scope);
+      fence = {
+        char: open[1][0],
+        length: open[1].length,
+        containerSteps: parserContainerStepsForRawLine(
+          line,
+          parserLines[lineIndex],
+          parserExplicit.containerSteps,
+        ),
+      };
       paragraphOpen = false;
       continue; // opening fence 줄(info string 포함)은 출력하지 않는다
     }
@@ -135,6 +162,178 @@ function stripNonContentDetailed(text) {
     paragraphOpen = nextParagraphOpen(line, visibleLine, paragraphOpen);
   }
   return { text: out.join('\n'), barrierBeforeLines };
+}
+
+// reference-definition parser와 같은 list/container view를 non-content scanner에서도 공유한다.
+// 첫 view가 열린 paragraph 뒤의 `2.`를 list로 가정했으면 그 root와 파생 marker를 한 번에 제외해
+// 다시 만든다. 그래야 continuation처럼 보이는 후속 `~~~`를 가짜 list-relative fence로 숨기지 않는다.
+function buildContainerParserView(lines) {
+  const ignoredListStarts = new Set();
+  const build = () => {
+    const siblingListStarts = new Set();
+    const blockquoteStarts = new Set();
+    const listDependencies = new Map();
+    const parserLines = buildReferenceDefinitionLines(
+      lines,
+      ignoredListStarts,
+      siblingListStarts,
+      blockquoteStarts,
+      new Map(),
+      listDependencies,
+    );
+    const scan = scanReferenceDefinitions(
+      lines,
+      parserLines,
+      siblingListStarts,
+      blockquoteStarts,
+      new Map(),
+    );
+    return { parserLines, siblingListStarts, listDependencies, scan };
+  };
+
+  let parsed = build();
+  for (const rejected of parsed.scan.rejectedListStarts) ignoredListStarts.add(rejected);
+  for (const [lineIndex, dependencies] of parsed.listDependencies) {
+    if ([...dependencies].some((dependency) => parsed.scan.rejectedListStarts.has(dependency))) {
+      ignoredListStarts.add(lineIndex);
+    }
+  }
+  if (ignoredListStarts.size > 0) parsed = build();
+  return parsed;
+}
+
+// parser view가 active list indentation을 이미 제거한 continuation이면 그 차이도 fence의
+// continuation prefix에 포함한다. `10. item` 아래 raw 4-space fence의 closing 줄도 같은
+// container 안에서 닫혀야 하며, raw 기준 4-space indented code로 남아서는 안 된다.
+function parserContainerStepsForRawLine(rawLine, parserLine, explicitSteps) {
+  const removedIndent = Math.max(
+    0,
+    leadingIndentColumns(rawLine) - leadingIndentColumns(parserLine),
+  );
+  return [
+    ...(removedIndent > 0 ? [{ type: 'list', contentIndent: removedIndent }] : []),
+    ...explicitSteps,
+  ];
+}
+
+function recordNonContentBarrier(barriers, lineIndex, scope) {
+  const previous = barriers.get(lineIndex);
+  if (
+    !previous ||
+    scope.quoteDepth < previous.quoteDepth ||
+    (scope.quoteDepth === previous.quoteDepth && scope.contentIndent < previous.contentIndent)
+  ) {
+    barriers.set(lineIndex, scope);
+  }
+}
+
+// 같은 줄의 blockquote/list marker를 순서대로 소비해 child block과 continuation 규칙을 만든다.
+// fence/HTML block은 container 안에도 올 수 있으므로 raw column-0 regex만으로 판정하면 안 된다.
+function inspectExplicitContainerLine(line) {
+  const s = String(line || '');
+  const containerSteps = [];
+  let i = 0;
+  let regionColumn = 0;
+  let containerBaseColumn = 0;
+  let quoteDepth = 0;
+  let startsWithBlockquote = false;
+  let firstList = null;
+
+  while (i < s.length) {
+    let markerIndex = i;
+    let markerColumn = regionColumn;
+    let indent = 0;
+    while (indent < 3 && s[markerIndex] === ' ') {
+      markerIndex += 1;
+      markerColumn += 1;
+      indent += 1;
+    }
+
+    if (s[markerIndex] === '>') {
+      containerSteps.push({ type: 'quote' });
+      startsWithBlockquote = true;
+      quoteDepth += 1;
+      i = markerIndex + 1;
+      if (s[i] === ' ' || s[i] === '\t') i += 1;
+      regionColumn = 0;
+      containerBaseColumn = 0;
+      continue;
+    }
+
+    const marker = /^(?:([-+*])|(\d{1,9})([.)]))/.exec(s.slice(markerIndex));
+    if (!marker) break;
+    const afterMarker = markerIndex + marker[0].length;
+    if (afterMarker < s.length && s[afterMarker] !== ' ' && s[afterMarker] !== '\t') break;
+
+    const kind = marker[1] ? 'bullet' : 'ordered';
+    const descriptor = {
+      kind,
+      delimiter: marker[1] || marker[3],
+      startNumber: kind === 'ordered' ? Number(marker[2]) : null,
+    };
+    if (!firstList) firstList = descriptor;
+
+    const afterMarkerColumn = markerColumn + marker[0].length;
+    let contentIndent = afterMarkerColumn + 1;
+    if (afterMarker === s.length) {
+      i = afterMarker;
+    } else {
+      let whitespaceIndex = afterMarker;
+      let whitespaceColumn = afterMarkerColumn;
+      while (
+        whitespaceIndex < s.length &&
+        (s[whitespaceIndex] === ' ' || s[whitespaceIndex] === '\t')
+      ) {
+        if (s[whitespaceIndex] === ' ') whitespaceColumn += 1;
+        else whitespaceColumn += 4 - (whitespaceColumn % 4);
+        whitespaceIndex += 1;
+      }
+      const whitespaceColumns = whitespaceColumn - afterMarkerColumn;
+      const padding = whitespaceColumns <= 4 ? whitespaceColumns : 1;
+      contentIndent = afterMarkerColumn + padding;
+      i = whitespaceColumns <= 4 ? whitespaceIndex : afterMarker + 1;
+    }
+    containerSteps.push({
+      type: 'list',
+      contentIndent: contentIndent - containerBaseColumn,
+    });
+    regionColumn = contentIndent;
+    containerBaseColumn = contentIndent;
+  }
+
+  const hasContainer = containerSteps.length > 0;
+  return {
+    childLine: hasContainer ? s.slice(i) : s,
+    containerSteps,
+    startsWithBlockquote,
+    firstList,
+    scope: {
+      quoteDepth,
+      contentIndent: hasContainer ? regionColumn : leadingIndentColumns(s),
+    },
+  };
+}
+
+function stripExplicitContainerContinuation(line, containerSteps) {
+  let content = String(line || '');
+  for (const step of containerSteps) {
+    if (step.type === 'quote') {
+      let i = 0;
+      let spaces = 0;
+      while (spaces < 3 && content[i] === ' ') {
+        i += 1;
+        spaces += 1;
+      }
+      if (content[i] !== '>') return null;
+      i += 1;
+      if (content[i] === ' ' || content[i] === '\t') i += 1;
+      content = content.slice(i);
+      continue;
+    }
+    if (leadingIndentColumns(content) < step.contentIndent) return null;
+    content = stripIndentColumns(content, step.contentIndent);
+  }
+  return content;
 }
 
 // paragraph 를 interrupt하고 그 줄에서 끝나는 block. 이 최소 상태는 type 7 진입과 strict table의
@@ -301,7 +500,7 @@ export function stripInlineCodeSpans(text) {
 // 다음 줄에 있는 정의와 blockquote/list container 안의 정의 label 이 visible prose 로 샌다.
 // 여기서는 label + colon, 최대 한 번의 line ending, destination, optional title 을 한 구조로 확인한
 // 뒤 정의에 속한 원본 줄만 비운다(줄 수는 보존해 뒤 단계의 block 경계를 바꾸지 않는다).
-function stripReferenceDefinitions(text, barrierBeforeLines = new Set()) {
+function stripReferenceDefinitions(text, barrierBeforeLines = new Map()) {
   const lines = String(text || '').split('\n');
   const ignoredListStarts = new Set();
   const parse = () => {
@@ -425,8 +624,9 @@ function inspectReferenceContainerTransition(
   const emptyContainer = inspectEmptyContainerLine(source);
   const listCanInterrupt =
     listMarker !== null &&
-    emptyContainer === null &&
-    (isSiblingListStart || listMarker[1] !== undefined || Number(listMarker[2]) === 1);
+    (isSiblingListStart ||
+      (emptyContainer === null &&
+        (listMarker[1] !== undefined || Number(listMarker[2]) === 1)));
   const interruptsParagraph =
     !paragraphWasOpen || startsWithBlockquote || listCanInterrupt;
 
@@ -449,7 +649,7 @@ function buildReferenceDefinitionLines(
   ignoredListStarts = new Set(),
   siblingListStarts = new Set(),
   blockquoteStarts = new Set(),
-  barrierBeforeLines = new Set(),
+  barrierBeforeLines = new Map(),
   listDependencies = new Map(),
 ) {
   const out = [];
@@ -460,9 +660,15 @@ function buildReferenceDefinitionLines(
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
     if (barrierBeforeLines.has(lineIndex)) {
-      quoteDepth = 0;
-      listStack = [];
-      previousContainerQuoteDepth = 0;
+      const barrier = barrierBeforeLines.get(lineIndex);
+      listStack = listStack.filter(
+        (entry) =>
+          entry.quoteDepth < barrier.quoteDepth ||
+          (entry.quoteDepth === barrier.quoteDepth &&
+            entry.contentIndent <= barrier.contentIndent),
+      );
+      quoteDepth = barrier.quoteDepth;
+      previousContainerQuoteDepth = barrier.quoteDepth;
       previousBlank = true;
     }
 
@@ -508,7 +714,11 @@ function buildReferenceDefinitionLines(
         (entry) =>
           entry.quoteDepth === quoteDepth &&
           rawListItems.length > 0 &&
-          entry.markerIndent === rawListItems[0].markerIndent,
+          rawListItems[0].markerIndent >= entry.baseIndent &&
+          rawListItems[0].markerIndent <= entry.baseIndent + 3 &&
+          rawListItems[0].markerIndent < entry.contentIndent &&
+          entry.kind === rawListItems[0].kind &&
+          entry.delimiter === rawListItems[0].delimiter,
       );
     if (!ignoredListStarts.has(lineIndex) && siblingEntry) {
       siblingListStarts.add(lineIndex);
@@ -564,8 +774,11 @@ function buildReferenceDefinitionLines(
         absoluteIndent > activeEntry.contentIndent
       ) {
         const entry = {
+          baseIndent,
           contentIndent: absoluteIndent,
           markerIndent: baseIndent + listIndent.markerIndent,
+          kind: listIndent.kind,
+          delimiter: listIndent.delimiter,
           quoteDepth,
           dependencies: lineDependencies,
         };
@@ -682,14 +895,19 @@ function listItemDescriptors(line) {
       indent += 1;
     }
 
-    const marker = /^(?:[-+*]|\d{1,9}[.)])/.exec(s.slice(markerIndex));
+    const marker = /^(?:([-+*])|(\d{1,9})([.)]))/.exec(s.slice(markerIndex));
     if (!marker) break;
     const afterMarker = markerIndex + marker[0].length;
     if (afterMarker < s.length && s[afterMarker] !== ' ' && s[afterMarker] !== '\t') break;
 
     const afterMarkerColumn = markerColumn + marker[0].length;
     if (afterMarker === s.length) {
-      items.push({ markerIndent: markerColumn, contentIndent: afterMarkerColumn + 1 });
+      items.push({
+        markerIndent: markerColumn,
+        contentIndent: afterMarkerColumn + 1,
+        kind: marker[1] ? 'bullet' : 'ordered',
+        delimiter: marker[1] || marker[3],
+      });
       break;
     }
 
@@ -702,7 +920,12 @@ function listItemDescriptors(line) {
     }
     const whitespaceColumns = wsColumn - afterMarkerColumn;
     const padding = whitespaceColumns <= 4 ? whitespaceColumns : 1;
-    items.push({ markerIndent: markerColumn, contentIndent: afterMarkerColumn + padding });
+    items.push({
+      markerIndent: markerColumn,
+      contentIndent: afterMarkerColumn + padding,
+      kind: marker[1] ? 'bullet' : 'ordered',
+      delimiter: marker[1] || marker[3],
+    });
 
     if (whitespaceColumns <= 4) {
       i = wsIndex;
@@ -970,7 +1193,7 @@ function scanReferenceTitle(lines, startLine, startColumn, startContent) {
 //   - inline HTML tag/attribute(`<span data-ref="…">`)와 autolink(`<scheme:…>`) — 태그 안 attribute
 //     값의 ID 는 visible prose 가 아니다 (내부 텍스트는 유지)
 // code example·URL·attribute 안의 언급만으로 canonical target 이 해소되면 안 된다(fail-closed).
-export function toProseBody(contentBody, barrierBeforeLines = new Set()) {
+export function toProseBody(contentBody, barrierBeforeLines = new Map()) {
   const definitions = stripReferenceDefinitions(contentBody, barrierBeforeLines);
   const withoutBlocks = definitions.text
     .split('\n')

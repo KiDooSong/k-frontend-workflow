@@ -1531,6 +1531,15 @@ test('v2 hard: link/reference source 의 INV 토큰은 visible prose 가 아님'
     '[조사 문서][INV-001]\n\n- outer\n\n    [INV-001]: /url', // list content-relative 2칸 definition
     '[조사 문서][INV-001]\n\n10. outer\n\n    [INV-001]: /url', // ordered item content-relative 0칸
     '[조사 문서][INV-001]\n\n1. context\n2. [INV-001]: /url', // 기존 list의 start=2 형제 item
+    '[조사 문서][INV-001]\n\n1. paragraph\n  2. [INV-001]: /url', // marker indent가 다른 ordered sibling
+    '[조사 문서][INV-001]\n\n1. paragraph\n  2.\n     [INV-001]: /url', // 빈 ordered sibling의 child definition
+    '[조사 문서][INV-001]\n\n- context\n\n  <!-- -->\n\n    [INV-001]: /url', // list-internal HTML block 뒤 outer definition
+    '[조사 문서][INV-001]\n\n-   context\n\n    <!-- -->\n\n    [INV-001]: /url', // content indent 4인 item의 HTML block 뒤 definition
+    '- ~~~markdown\n  INV-001\n  ~~~', // list child fenced code
+    '> ~~~markdown\n> INV-001\n> ~~~', // blockquote child fenced code
+    '- - ~~~markdown\n    INV-001\n    ~~~', // nested-list child fenced code
+    '10. context\n\n    ~~~markdown\n    INV-001\n    ~~~', // content indent 4인 list continuation fence
+    '1. context\n2. ~~~markdown\n   INV-001\n   ~~~', // 기존 ordered list의 sibling fence
     '[조사 문서][INV-001]\n\n- outer\n  - inner\n\n      [INV-001]: /url', // nested item relative 2칸
     '[조사 문서][INV-001]\n\n- outer\nlazy continuation\n\n    [INV-001]: /url', // lazy paragraph 뒤에도 item 유지
     ...EMPTY_CONTAINER_MARKERS.map(
@@ -1570,6 +1579,17 @@ test('v2 hard: link/reference source 의 INV 토큰은 visible prose 가 아님'
     summaryRows: summaryWithInv,
   });
   assert.deepEqual(messages(orderedContinuationPass.errors), []);
+
+  // 열린 paragraph 뒤의 `2. ~~~`는 새 list/fence opener가 아니다. 뒤의 INV-001은 visible
+  // paragraph continuation이므로 container-relative fence 탐색이 이를 숨기면 안 된다.
+  const orderedFenceContinuation = SCREEN_SPEC_DOC +
+    '\n## Notes\n\nparagraph\n2. ~~~markdown\n   INV-001\n   ~~~\n';
+  const orderedFenceContinuationPass = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': orderedFenceContinuation },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.deepEqual(messages(orderedFenceContinuationPass.errors), []);
 
   // start number 1은 실제로 paragraph를 끊고 list child definition을 만든다.
   const orderedInterrupt = SCREEN_SPEC_DOC +
@@ -1656,6 +1676,17 @@ test('v2 hard: link/reference source 의 INV 토큰은 visible prose 가 아님'
     summaryRows: summaryWithInv,
   });
   assert.ok(hasCode(commentBarrierFail.errors, 'RR-REF-008'));
+
+  // 4칸 들여쓴 ordered marker는 sibling이 아니라 top-level indented code다(example 313).
+  // 미해소 reference label은 literal로 보이고 code 안의 definition-looking source는 제외된다.
+  const orderedCode = SCREEN_SPEC_DOC +
+    '\n## Notes\n\n[details][INV-001]\n\n1. paragraph\n\n  2. sibling\n\n    3. [INV-001]: /url\n';
+  const orderedCodePass = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': orderedCode },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.deepEqual(messages(orderedCodePass.errors), []);
 
   // shortcut reference `[INV-001]` 는 링크 text 자체가 INV-001 로 렌더링된다 — visible, 해소된다.
   const shortcut = SCREEN_SPEC_DOC + '\n## Notes\n\n[INV-001] 참고\n\n[INV-001]: https://example.test/doc\n';
