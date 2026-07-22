@@ -38,6 +38,12 @@
 - 하지 않은 것(설계 §14): 검사 11 `captured_at` RFC3339 hard 승격과 figma-component-mapping `M-xxx`/
   `## Mapping Provenance`(202-B), 자연어 routing heuristic·stale Result warning(202-C), CI required check
   승격, 새 readiness fact/implementation mode/artifact axis.
+- 11차 재리뷰 후속: strict table parser가 column-0 pipe 여부뿐 아니라 공유 paragraph/block-boundary
+  상태를 추적한다. non-empty bullet/ordered item·blockquote paragraph 뒤의 unindented pipe source는
+  GFM lazy continuation text라 canonical 표로 시작하지 못하고, blank line/heading 뒤의 실제 top-level
+  표만 수집한다. 같은 parser를 쓰는 Items·Summary·D/C/U/G child target·row-key가 함께 fail-closed하며,
+  v1 첫 표 대조 진단도 container lazy 예시를 명시한다. empty container 판정은 marker-only 중첩
+  (`> -`·`- >`·`>>`)까지 일반화해 뒤의 type 7 HTML block과 reference definition 경계를 보존한다.
 - 10차 재리뷰 후속: ① type 7 HTML block과 reference definition이 공유하는 paragraph 전이를
   container-aware하게 보강했다. 빈 list item(`-`·`+`·`*`·`1.`·`1)`)은 열린 paragraph를 interrupt하지
   않지만 block boundary에서는 container로, 빈 blockquote(`>`)는 interrupt 가능한 container로 추적한다.

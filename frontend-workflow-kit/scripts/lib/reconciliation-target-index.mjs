@@ -129,8 +129,9 @@ export function stripNonContent(text) {
   return out.join('\n');
 }
 
-// paragraph 를 interrupt하고 그 줄에서 끝나는 block. 이 최소 상태는 type 7 판정에만 쓰며,
-// canonical contract가 소비하는 top-level ATX heading/setext/thematic-break 경계를 보존한다.
+// paragraph 를 interrupt하고 그 줄에서 끝나는 block. 이 최소 상태는 type 7 진입과 strict table의
+// top-level boundary 판정이 공유하며, canonical contract가 소비하는 ATX heading/setext/thematic-break
+// 경계를 보존한다.
 function isParagraphClosingBlockLine(line, paragraphWasOpen) {
   if (/^ {0,3}#{1,6}(?:[ \t]+|$)/.test(line)) return true;
   if (paragraphWasOpen && /^ {0,3}(?:=+|-+)[ \t]*$/.test(line)) return true;
@@ -143,11 +144,44 @@ function isParagraphClosingBlockLine(line, paragraphWasOpen) {
 // 뒤의 type 7 block/definition을 visible 구조로 재해석하게 된다.
 function nextParagraphOpen(line, visibleLine, paragraphWasOpen) {
   if (/^\s*$/.test(visibleLine) || isParagraphClosingBlockLine(line, paragraphWasOpen)) return false;
-  if (/^ {0,3}>[ \t]*$/.test(line)) return false;
-  if (!paragraphWasOpen && /^ {0,3}(?:[-+*]|\d{1,9}[.)])[ \t]*$/.test(line)) return false;
+  const emptyContainer = inspectEmptyContainerLine(line);
+  if (emptyContainer && (!paragraphWasOpen || emptyContainer.startsWithBlockquote)) return false;
   // boundary 의 indented code 는 paragraph 를 열지 않는다. 이미 열린 paragraph 의 들여쓰기는
   // lazy/continuation text 일 수 있으므로 열린 상태를 유지한다.
   return paragraphWasOpen || !/^(?: {4,}|\t)/.test(line);
+}
+
+// container marker만 중첩된 줄인지 판정한다. `> -`, `- >`, `>>` 같은 줄에는 paragraph content가
+// 없으므로 block boundary에서 paragraph를 열면 안 된다. list marker 뒤의 horizontal whitespace와
+// blockquote marker의 optional 한 칸을 소비하며, 실제 text가 하나라도 남으면 null이다.
+function inspectEmptyContainerLine(line) {
+  const s = String(line || '');
+  let i = 0;
+  let indent = 0;
+  while (indent < 3 && s[i] === ' ') {
+    i += 1;
+    indent += 1;
+  }
+  let sawContainer = false;
+  let startsWithBlockquote = false;
+
+  while (i < s.length) {
+    if (s[i] === '>') {
+      if (!sawContainer) startsWithBlockquote = true;
+      sawContainer = true;
+      i += 1;
+      if (s[i] === ' ' || s[i] === '\t') i += 1;
+      while (s[i] === ' ' || s[i] === '\t') i += 1;
+      continue;
+    }
+    const marker = /^(?:[-+*]|\d{1,9}[.)])(?=[ \t]|$)/.exec(s.slice(i));
+    if (!marker) break;
+    sawContainer = true;
+    i += marker[0].length;
+    while (s[i] === ' ' || s[i] === '\t') i += 1;
+  }
+
+  return sawContainer && i === s.length ? { startsWithBlockquote } : null;
 }
 
 // 줄이 raw HTML block 을 여는지 판정하고, 해당 type 의 종료 조건을 돌려준다.
@@ -669,46 +703,54 @@ export function describeHeaderMismatch(table, canonicalCols) {
 // hard-contract 전용 strict 마크다운 표 파서 — parseTables(spec.mjs)는 모든 줄을 trim 한 뒤 `|`
 // 시작 여부만 보므로 indented code block(4칸+/tab)의 예시 표를 실제 표로 승격시키고, 구분자 줄도
 // hyphen 없는 `| | |` 를 허용한다. v2 hard 계약이 소비하는 표는 여기서 다음을 요구한다:
-//   - 표 줄은 **column 0 의 top-level 표만** 인정 — 들여쓴 줄(list 내부 fence 의 continuation,
-//     indented code 예시 등)은 표가 아니다(fail-closed: canonical 표는 column 0 에 저작한다는 계약)
+//   - 표 줄은 **column 0 의 top-level 표만** 인정 — 들여쓴 줄뿐 아니라 열린 list/blockquote paragraph의
+//     unindented lazy continuation도 표가 아니다. 공유 paragraph 상태에서 명확한 block boundary일 때만
+//     pipe block을 시작한다(fail-closed: canonical 표는 top-level block으로 저작한다는 계약).
 //   - 두 번째 줄은 구분자: 셀마다 `:?-+:?` (hyphen 최소 1개), 셀 수 = header 셀 수
 // 데이터 행의 셀 부족은 기존 규약대로 '' 패딩된다(빈 필수 셀은 각 검사기가 fail-closed 로 잡는다).
 // 입력은 stripNonContent 를 거친 본문이어야 한다.
 export function parseStrictTables(text) {
-  const blocks = [];
   let cur = [];
+  let paragraphOpen = false;
+  const tables = [];
   const flush = () => {
-    if (cur.length) blocks.push(cur);
+    if (!cur.length) return;
+    const headers = splitRow(cur[0]);
+    const delimiterCells = cur.length > 1 ? splitRow(cur[1]) : [];
+    const delimiterValid =
+      delimiterCells.length === headers.length && delimiterCells.every((c) => /^:?-+:?$/.test(c));
+    if (delimiterValid) {
+      const rows = [];
+      for (let i = 2; i < cur.length; i++) {
+        const cells = splitRow(cur[i]);
+        const row = {};
+        headers.forEach((h, idx) => {
+          row[h] = (cells[idx] ?? '').trim();
+        });
+        rows.push(row);
+      }
+      tables.push({ headers, rows, rowCount: rows.length });
+      paragraphOpen = false;
+    } else {
+      // delimiter가 아니면 이 pipe source는 일반 paragraph text다. 다음 column-0 pipe 줄도 blank/block
+      // boundary 전에는 새 table candidate가 될 수 없다.
+      paragraphOpen = true;
+    }
     cur = [];
   };
   for (const raw of String(text || '').split(/\r?\n/)) {
-    if (raw.startsWith('|')) {
+    if (cur.length && raw.startsWith('|')) {
       cur.push(raw.trim());
-    } else {
-      flush(); // 들여쓴 표 줄 포함 비-표 라인 → 현재 표 블록 종료
+      continue;
     }
+    flush();
+    if (raw.startsWith('|') && !paragraphOpen) {
+      cur.push(raw.trim());
+      continue;
+    }
+    paragraphOpen = nextParagraphOpen(raw, raw, paragraphOpen);
   }
   flush();
-
-  const tables = [];
-  for (const tableLines of blocks) {
-    if (tableLines.length < 2) continue;
-    const headers = splitRow(tableLines[0]);
-    const delimiterCells = splitRow(tableLines[1]);
-    const delimiterValid =
-      delimiterCells.length === headers.length && delimiterCells.every((c) => /^:?-+:?$/.test(c));
-    if (!delimiterValid) continue;
-    const rows = [];
-    for (let i = 2; i < tableLines.length; i++) {
-      const cells = splitRow(tableLines[i]);
-      const row = {};
-      headers.forEach((h, idx) => {
-        row[h] = (cells[idx] ?? '').trim();
-      });
-      rows.push(row);
-    }
-    tables.push({ headers, rows, rowCount: rows.length });
-  }
   return tables;
 }
 

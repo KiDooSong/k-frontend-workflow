@@ -462,7 +462,8 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
 
   // --- canonical Summary 표 (v2 전용 파싱) ---
   // v1 파서(parseTable)는 raw body 의 "첫 파이프 표"를 Summary 로 삼는다 — fence 안의 8컬럼 예시나
-  // indented code 예시가 앞서 있으면 그 가짜 표가 canonical 이 되고 실제 표는 무시된다. v2 는
+  // indented code나 list/blockquote lazy paragraph 예시가 앞서 있으면 그 가짜 표가 canonical 이 되고
+  // 실제 표는 무시된다. v2 는
   // non-content 제거 + strict 파서 후 8컬럼 signature 표가 **정확히 1개**임을 요구하고(RR-SCHEMA-019),
   // v1 파서가 고른 표와 내용이 일치하는지도 대조한다(RR-SCHEMA-020 — 불일치면 v1 lifecycle 검사가
   // 가짜 표를 읽고 있다는 뜻). v1 출력은 건드리지 않는다(byte-compatible — v2 opt-in 에서만 추가 검사).
@@ -484,7 +485,7 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
   );
   if (summaryTables.length !== 1) {
     add(
-      `RR-SCHEMA-019: canonical Summary 표(정확히 8컬럼: | ${REQUIRED_REGISTER_COLS.join(' | ')} |)는 정확히 1개여야 함 (현재 ${summaryTables.length}개 — 중복/추가 header 표와 fence/주석/indented code 안의 예시는 세지 않음)`,
+      `RR-SCHEMA-019: canonical Summary 표(정확히 8컬럼: | ${REQUIRED_REGISTER_COLS.join(' | ')} |)는 정확히 1개여야 함 (현재 ${summaryTables.length}개 — 중복/추가 header 표와 fence/주석/indented code/container lazy paragraph 안의 예시는 세지 않음)`,
     );
     return { errors, warnings }; // Summary 없이는 행 단위 검사가 전부 무의미 — 구조부터 고친다
   }
@@ -495,7 +496,7 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
     );
   if (rowsFingerprint(summaryRows) !== rowsFingerprint(register.rows)) {
     add(
-      'RR-SCHEMA-020: v1 파서가 선택한 첫 표가 canonical Summary 표와 일치하지 않음 — fence/indented 예시 표가 Summary 앞에 있으면 lifecycle 검사가 가짜 표를 읽습니다 → 예시를 canonical Summary 뒤로 옮기거나 fence 밖 표를 제거하세요',
+      'RR-SCHEMA-020: v1 파서가 선택한 첫 표가 canonical Summary 표와 일치하지 않음 — fence/indented/container lazy 예시 표가 Summary 앞에 있으면 lifecycle 검사가 가짜 표를 읽습니다 → 예시를 canonical Summary 뒤로 옮기거나 non-content로 감싸세요',
     );
   }
 

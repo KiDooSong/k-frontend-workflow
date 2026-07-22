@@ -18,6 +18,7 @@ import { collectInputArtifacts } from './input-artifact.mjs';
 import { parseReconciliationRegister, validateReconciliationRegister } from './reconciliation-register.mjs';
 import {
   buildReconciliationTargetIndex,
+  parseStrictTables,
   stripFencedCodeBlocks,
   stripNonContent,
 } from './reconciliation-target-index.mjs';
@@ -54,6 +55,8 @@ const ITEMS_HEADER = [
   '| Input ID | Item | Basis | Classification | Effect | Target | Evidence | Source Ref | Source Unit | Captured At |',
   '|---|---|---|---|---|---|---|---|---|---|',
 ];
+
+const EMPTY_CONTAINER_MARKERS = ['-', '+', '*', '1.', '1)', '>', '> -', '- >', '>>'];
 
 const DEFAULT_SUMMARY_ROWS = [
   '| IN-20260720-figma-001 | figma | simple-update + component-gap | reconciled | accepted | artifact:COUPON-001-figma-component-mapping; artifact:component-gap-register | artifact:COUPON-001-figma-component-mapping#component-mapping/M-001; gap:G-001@component-gap-register | - |',
@@ -1354,7 +1357,7 @@ test('markdown 전처리: HTML type 1/6 exact 경계와 type 7 paragraph 조건�
 });
 
 test('markdown 전처리: 빈 container marker 뒤 type 7 block을 paragraph로 오인하지 않음', () => {
-  for (const marker of ['-', '+', '*', '1.', '1)', '>']) {
+  for (const marker of EMPTY_CONTAINER_MARKERS) {
     const cleaned = stripNonContent(
       [marker, '<custom-tag>', ...ITEMS_HEADER, '| IN-A | 01 | hidden | row | update | - | - | - | - | - |', '', '뒤'].join('\n'),
     );
@@ -1393,13 +1396,50 @@ test('v2 hard: inline/type-boundary HTML 뒤의 중복 Items heading 은 숨겨�
 });
 
 test('v2 hard: 빈 container 뒤 type 7 hidden Items 표는 canonical 표가 아님', (t) => {
-  for (const marker of ['-', '+', '*', '1.', '1)', '>']) {
+  for (const marker of EMPTY_CONTAINER_MARKERS) {
     const hiddenOnly = runV2(t, {
       itemsHeader: [],
       itemRows: [marker, '<custom-tag>', ...ITEMS_HEADER, ...DEFAULT_ITEM_ROWS, ''],
     });
     assert.ok(hasCode(hiddenOnly.errors, 'RR-SCHEMA-004'), `hidden table accepted after ${marker}`);
   }
+});
+
+test('strict table parser: list/blockquote paragraph의 lazy pipe block은 top-level 표가 아님', () => {
+  for (const opener of ['- 아래는 설명용 예시', '1. 아래는 설명용 예시', '> 아래는 설명용 예시']) {
+    const pseudo = parseStrictTables([opener, ...ITEMS_HEADER, DEFAULT_ITEM_ROWS[0]].join('\n'));
+    assert.equal(pseudo.length, 0, `lazy pseudo-table accepted after: ${opener}`);
+  }
+
+  // blank line이 container paragraph를 닫은 뒤의 column-0 표는 실제 top-level block이다.
+  const topLevelAfterList = parseStrictTables(
+    ['- 설명', '', ...ITEMS_HEADER, DEFAULT_ITEM_ROWS[0]].join('\n'),
+  );
+  assert.equal(topLevelAfterList.length, 1);
+});
+
+test('v2 hard: lazy container pseudo-table은 Items·Summary·child canonical 표가 아님', (t) => {
+  // non-empty bullet item paragraph의 unindented pipe source만 Items에 둔다 — 실제 table 부재.
+  const lazyItems = runV2(t, {
+    itemsHeader: [],
+    itemRows: ['- 아래는 설명용 예시', ...ITEMS_HEADER, ...DEFAULT_ITEM_ROWS],
+  });
+  assert.ok(hasCode(lazyItems.errors, 'RR-SCHEMA-004'));
+
+  // ordered item paragraph 안의 8컬럼 pipe source도 canonical Summary가 아니다.
+  const lazySummary = runV2(t, {
+    omitSummaryTable: true,
+    summaryPrefix: ['1. 아래는 설명용 예시', ...SUMMARY_HEADER, ...DEFAULT_SUMMARY_ROWS].join('\n'),
+  });
+  assert.ok(hasCode(lazySummary.errors, 'RR-SCHEMA-019'));
+
+  // blockquote paragraph의 lazy pipe source로 D-204를 해소할 수 없다.
+  const lazyDecision = DECISION_DOC.replace(
+    '| ID | Decision Needed | Options | Blocking Mode | Owner | Status |',
+    '> 아래는 설명용 예시\n| ID | Decision Needed | Options | Blocking Mode | Owner | Status |',
+  );
+  const unresolvedChild = runV2(t, { files: { 'global/open-decisions.md': lazyDecision } });
+  assert.ok(hasCode(unresolvedChild.errors, 'RR-REF-008'));
 });
 
 test('v2 hard: link/reference source 의 INV 토큰은 visible prose 가 아님', (t) => {
@@ -1424,7 +1464,7 @@ test('v2 hard: link/reference source 의 INV 토큰은 visible prose 가 아님'
     '[INV-001]:\n  https://example.test/investigation', // destination 이 다음 줄인 definition
     '> [INV-001]:\n>   https://example.test/investigation', // blockquote 내부 definition
     '- [INV-001]:\n    https://example.test/investigation', // list 내부 definition
-    ...['-', '+', '*', '1.', '1)', '>'].map(
+    ...EMPTY_CONTAINER_MARKERS.map(
       (marker) => `${marker}\n[INV-001]: https://example.test/investigation`,
     ), // 빈 container 다음 definition도 렌더링되지 않음
     '[\nINV-001\n]: https://example.test/investigation', // 여러 줄 label
