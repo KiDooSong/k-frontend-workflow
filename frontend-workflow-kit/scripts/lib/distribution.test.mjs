@@ -26,6 +26,13 @@ function linkInstalledDependency(out, packageName) {
   }
 }
 
+function linkInstalledDependencies(out) {
+  const packageJson = JSON.parse(fs.readFileSync(path.join(KIT_ROOT, 'package.json'), 'utf8'));
+  for (const packageName of Object.keys(packageJson.dependencies || {}).sort()) {
+    linkInstalledDependency(out, packageName);
+  }
+}
+
 function walkPackedDocs(root, relDirs) {
   const out = [];
   for (const relDir of relDirs) {
@@ -280,7 +287,7 @@ test('packed eval and telemetry run with bundled default readiness cases', (t) =
     encoding: 'utf8',
   });
   assert.equal(pack.status, 0, pack.stderr);
-  linkInstalledDependency(out, 'yaml');
+  linkInstalledDependencies(out);
 
   const evalRun = spawnSync(process.execPath, [path.join(out, 'scripts', 'readiness-eval.mjs'), '--json'], {
     cwd: out,
@@ -1085,7 +1092,7 @@ test('packed payload CLI smoke: core, adoption, observation, visual (IMP-05)', a
     encoding: 'utf8',
   });
   assert.equal(pack.status, 0, pack.stderr);
-  linkInstalledDependency(out, 'yaml');
+  linkInstalledDependencies(out);
 
   const cli = (script, ...args) =>
     spawnSync(process.execPath, [path.join(out, 'scripts', script), ...args], {

@@ -17,6 +17,7 @@ import { splitFrontmatter, readFileSafe } from './util.mjs';
 import { collectInputArtifacts } from './input-artifact.mjs';
 import { parseReconciliationRegister, validateReconciliationRegister } from './reconciliation-register.mjs';
 import {
+  bodyHasToken,
   buildReconciliationTargetIndex,
   parseStrictTables,
   stripFencedCodeBlocks,
@@ -1818,6 +1819,96 @@ test('reference container scan: 연속 non-interrupting ordered marker를 선형
 
   assert.ok(prose.includes(`${markerCount + 1}. continuation`));
   assert.ok(elapsed < 500, `ordered marker scan took ${elapsed.toFixed(1)}ms`);
+});
+
+test('AST conformance matrix: container path × leaf type × close/exit × blank indentation', () => {
+  const cases = [
+    {
+      name: 'root fenced code',
+      markdown: ['~~~markdown', 'INV-001', '~~~'].join('\n'),
+      expected: false,
+    },
+    {
+      name: 'list fence with indentation-free blank line',
+      markdown: ['- ~~~markdown', '  before', '', '  INV-001', '  ~~~'].join('\n'),
+      expected: false,
+    },
+    {
+      name: 'quote → list fence',
+      markdown: ['> - ~~~markdown', '>   INV-001', '>   ~~~'].join('\n'),
+      expected: false,
+    },
+    {
+      name: 'list → quote fence then visible list continuation',
+      markdown: [
+        '- outer',
+        '',
+        '  > ~~~markdown',
+        '  > hidden',
+        '  > ~~~',
+        '',
+        '  INV-001 is visible after the quote fence.',
+      ].join('\n'),
+      expected: true,
+    },
+    {
+      name: 'unclosed quote fence ends at quote exit (CommonMark example 128)',
+      markdown: ['> ~~~', '> hidden', '', 'INV-001 is visible'].join('\n'),
+      expected: true,
+    },
+    {
+      name: 'unclosed quote HTML ends at quote exit',
+      markdown: ['> <!--', 'INV-001 is visible', '-->'].join('\n'),
+      expected: true,
+    },
+    {
+      name: 'list opener containing removed HTML retains its definition child',
+      markdown: [
+        '[details][INV-001]',
+        '',
+        '10. <!-- -->',
+        '',
+        '    [INV-001]: /url',
+      ].join('\n'),
+      expected: false,
+    },
+    {
+      name: 'definition in list → quote container is document-global (CommonMark example 218)',
+      markdown: [
+        '[details][INV-001]',
+        '',
+        '- outer',
+        '',
+        '  > [INV-001]: /url',
+      ].join('\n'),
+      expected: false,
+    },
+    {
+      name: 'top-level indented code',
+      markdown: ['context', '', '    INV-001'].join('\n'),
+      expected: false,
+    },
+    {
+      name: 'list-relative visible continuation',
+      markdown: ['10. context', '', '    INV-001 is visible'].join('\n'),
+      expected: true,
+    },
+    {
+      name: 'resolved image destination is hidden while alt text remains visible',
+      markdown: '![INV-001](https://example.test/hidden-token)',
+      expected: true,
+    },
+    {
+      name: 'Unicode-overmatched image reference remains literal visible source',
+      markdown: ['![details][INV-001ı]', '', '[INV-001I]: /url'].join('\n'),
+      expected: true,
+    },
+  ];
+
+  for (const { name, markdown, expected } of cases) {
+    const record = { proseBody: toProseBody(markdown) };
+    assert.equal(bodyHasToken(record, 'INV-001'), expected, name);
+  }
 });
 
 test('v2 hard: 미해소 reference label 은 literal visible prose 로 보존함', (t) => {
