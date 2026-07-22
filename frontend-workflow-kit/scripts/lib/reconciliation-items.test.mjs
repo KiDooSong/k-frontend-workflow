@@ -1525,8 +1525,10 @@ test('v2 hard: link/reference source 의 INV 토큰은 visible prose 가 아님'
     '설명 paragraph\n> [INV-001]: /url', // blockquote가 paragraph를 끊고 definition을 포함
     '- [INV-001]:\n    https://example.test/investigation', // list 내부 definition
     '[조사 문서][INV-001]\n\n- # heading\n  [INV-001]: /url', // list child heading 뒤 definition
+    '[조사 문서][INV-001]\n\n-   paragraph\n    > [INV-001]: /url', // content indent 4인 list 내부 blockquote definition
     '[조사 문서][INV-001]\n\n- outer\n\n    [INV-001]: /url', // list content-relative 2칸 definition
     '[조사 문서][INV-001]\n\n10. outer\n\n    [INV-001]: /url', // ordered item content-relative 0칸
+    '[조사 문서][INV-001]\n\n1. context\n2. [INV-001]: /url', // 기존 list의 start=2 형제 item
     '[조사 문서][INV-001]\n\n- outer\n  - inner\n\n      [INV-001]: /url', // nested item relative 2칸
     '[조사 문서][INV-001]\n\n- outer\nlazy continuation\n\n    [INV-001]: /url', // lazy paragraph 뒤에도 item 유지
     ...EMPTY_CONTAINER_MARKERS.map(
@@ -1576,6 +1578,49 @@ test('v2 hard: link/reference source 의 INV 토큰은 visible prose 가 아님'
     summaryRows: summaryWithInv,
   });
   assert.ok(hasCode(orderedInterruptFail.errors, 'RR-REF-008'));
+
+  // paragraph를 interrupt하지 못한 `2.`는 list stack도 열지 않는다. 따라서 뒤 raw 4칸은
+  // top-level indented code이고, 미해소 reference label의 INV-001은 visible evidence로 남는다.
+  const falseOrderedList = SCREEN_SPEC_DOC +
+    '\n## Notes\n\n[조사 문서][INV-001]\n\nparagraph\n2. continuation\n\n    [INV-001]: /url\n';
+  const falseOrderedListPass = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': falseOrderedList },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.deepEqual(messages(falseOrderedListPass.errors), []);
+
+  // 같은 list-internal blockquote의 다음 source line은 새 container interrupt가 아니다.
+  // 열린 paragraph 안의 definition-looking text이므로 INV-001이 실제로 렌더링된다.
+  const continuedListQuote = SCREEN_SPEC_DOC +
+    '\n## Notes\n\n[조사 문서][INV-001]\n\n- > paragraph\n  > [INV-001]: /url\n';
+  const continuedListQuotePass = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': continuedListQuote },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.deepEqual(messages(continuedListQuotePass.errors), []);
+
+  // ordered item의 content indent 4칸을 제거하면 column 0 visible paragraph다.
+  const listRelativeParagraph = SCREEN_SPEC_DOC +
+    '\n## Notes\n\n10. context\n\n    INV-001 is visible\n';
+  const listRelativeParagraphPass = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': listRelativeParagraph },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.deepEqual(messages(listRelativeParagraphPass.errors), []);
+
+  // unescaped bracket가 들어간 label은 definition/reference label 문법이 아니다. source 전체가
+  // literal로 렌더링되므로 내부 INV-001을 visible evidence로 보존해야 한다.
+  const invalidBracketLabel = SCREEN_SPEC_DOC +
+    '\n## Notes\n\n[details][foo[INV-001]]\n\n[foo[INV-001]]: /url\n';
+  const invalidBracketLabelPass = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': invalidBracketLabel },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.deepEqual(messages(invalidBracketLabelPass.errors), []);
 
   // shortcut reference `[INV-001]` 는 링크 text 자체가 INV-001 로 렌더링된다 — visible, 해소된다.
   const shortcut = SCREEN_SPEC_DOC + '\n## Notes\n\n[INV-001] 참고\n\n[INV-001]: https://example.test/doc\n';
@@ -1651,6 +1696,13 @@ test('v2 hard: reference label은 source escape를 보존하고 Unicode case fol
   // 과도하게 해소하면 visible label을 지우는 false reject가 된다.
   const dotlessMismatch = runWithNotes('[details][INV-001ı]\n\n[INV-001I]: /url');
   assert.deepEqual(messages(dotlessMismatch.errors), []);
+
+  // escaped `[`는 label source 안에서 유효하다. unescaped bracket 거부가 이 정상 label까지
+  // literal로 남기면 non-visible INV-001이 hard reference를 우회한다.
+  const escapedBracket = runWithNotes(
+    String.raw`[details][foo\[INV-001]` + '\n\n' + String.raw`[foo\[INV-001]: /url`,
+  );
+  assert.ok(hasCode(escapedBracket.errors, 'RR-REF-008'));
 });
 
 test('v2 hard: 미해소 reference label 은 literal visible prose 로 보존함', (t) => {

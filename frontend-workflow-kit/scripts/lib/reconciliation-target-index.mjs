@@ -296,9 +296,59 @@ export function stripInlineCodeSpans(text) {
 // 뒤 정의에 속한 원본 줄만 비운다(줄 수는 보존해 뒤 단계의 block 경계를 바꾸지 않는다).
 function stripReferenceDefinitions(text) {
   const lines = String(text || '').split('\n');
-  const definitionLines = buildReferenceDefinitionLines(lines);
+  const ignoredListStarts = new Set();
+  let definitionLines = [];
+  let scan = null;
+
+  // list marker가 실제로 container를 여는지는 이전 paragraph 상태에 달려 있다. 우선 parser
+  // view를 만들고, paragraph를 interrupt하지 못한 marker를 제외해 다시 만드는 fixed point로
+  // 이후 continuation indentation까지 같은 container 해석을 사용한다.
+  for (let attempt = 0; attempt <= lines.length; attempt += 1) {
+    const siblingListStarts = new Set();
+    const blockquoteStarts = new Set();
+    definitionLines = buildReferenceDefinitionLines(
+      lines,
+      ignoredListStarts,
+      siblingListStarts,
+      blockquoteStarts,
+    );
+    scan = scanReferenceDefinitions(
+      lines,
+      definitionLines,
+      siblingListStarts,
+      blockquoteStarts,
+    );
+    let changed = false;
+    for (const lineIndex of scan.rejectedListStarts) {
+      if (!ignoredListStarts.has(lineIndex)) {
+        ignoredListStarts.add(lineIndex);
+        changed = true;
+      }
+    }
+    if (!changed) break;
+  }
+
+  const { removed, labels } = scan;
+  const contentLines = definitionLines.map((line, index) =>
+    removed.has(index) ? '' : stripReferenceBlockquotePrefix(line).content,
+  );
+
+  return {
+    text: lines.map((line, index) => (removed.has(index) ? '' : line)).join('\n'),
+    labels,
+    contentLines,
+  };
+}
+
+function scanReferenceDefinitions(
+  lines,
+  definitionLines,
+  siblingListStarts,
+  blockquoteStarts,
+) {
   const removed = new Set();
   const labels = new Set();
+  const rejectedListStarts = new Set();
   let paragraphOpen = false;
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
@@ -307,6 +357,8 @@ function stripReferenceDefinitions(text) {
       lines[lineIndex],
       line,
       paragraphOpen,
+      siblingListStarts.has(lineIndex),
+      blockquoteStarts.has(lineIndex),
     );
     const definition =
       !paragraphOpen || container.interruptsParagraph
@@ -320,6 +372,8 @@ function stripReferenceDefinitions(text) {
       continue;
     }
 
+    if (container.rejectsListStart) rejectedListStarts.add(lineIndex);
+
     paragraphOpen = nextParagraphOpen(
       container.childLine,
       container.childLine,
@@ -328,37 +382,45 @@ function stripReferenceDefinitions(text) {
   }
 
   return {
-    text: lines.map((line, index) => (removed.has(index) ? '' : line)).join('\n'),
+    removed,
     labels,
+    rejectedListStarts,
   };
 }
 
 // paragraph 상태는 container marker 자체가 아니라 그 marker를 소비한 child block으로 전이한다.
 // 다만 열린 paragraph를 끊을 수 없는 list marker는 container로 소비하지 않는다. 특히 첫 ordered
 // list marker는 start number가 1일 때만 paragraph를 interrupt할 수 있다(CommonMark list rule #1).
-function inspectReferenceContainerTransition(rawLine, line, paragraphWasOpen) {
+function inspectReferenceContainerTransition(
+  _rawLine,
+  line,
+  paragraphWasOpen,
+  isSiblingListStart,
+  startsWithBlockquote,
+) {
   const source = String(line || '');
-  const startsWithBlockquote = /^ {0,3}>/.test(String(rawLine || ''));
   const listMarker = /^ {0,3}(?:([-+*])|(\d{1,9})[.)])(?=[ \t]|$)/.exec(source);
   if (!startsWithBlockquote && !listMarker) {
-    return { interruptsParagraph: false, childLine: source };
+    return { interruptsParagraph: false, rejectsListStart: false, childLine: source };
   }
 
   // thematic break는 list marker보다 우선한다. child list로 소비하지 않고 기존 block 판정에 맡긴다.
   if (isParagraphClosingBlockLine(source, paragraphWasOpen)) {
-    return { interruptsParagraph: false, childLine: source };
+    return { interruptsParagraph: false, rejectsListStart: false, childLine: source };
   }
 
   const emptyContainer = inspectEmptyContainerLine(source);
   const listCanInterrupt =
     listMarker !== null &&
     emptyContainer === null &&
-    (listMarker[1] !== undefined || Number(listMarker[2]) === 1);
+    (isSiblingListStart || listMarker[1] !== undefined || Number(listMarker[2]) === 1);
   const interruptsParagraph =
     !paragraphWasOpen || startsWithBlockquote || listCanInterrupt;
 
   return {
     interruptsParagraph,
+    rejectsListStart:
+      paragraphWasOpen && !startsWithBlockquote && listMarker !== null && !listCanInterrupt,
     childLine: interruptsParagraph
       ? stripReferenceContainerPrefix(source, true)
       : source,
@@ -369,17 +431,26 @@ function inspectReferenceContainerTransition(rawLine, line, paragraphWasOpen) {
 // `- outer\n\n    [ref]: /url` 의 definition 줄은 raw 4칸이지만 list content indent 2칸을
 // 제거하면 2칸 definition 이다(CommonMark example 218의 container-global definition 계약).
 // raw 줄 자체는 보존하고 parser view 만 상대화해 indented-code 오판과 source mutation을 분리한다.
-function buildReferenceDefinitionLines(lines) {
+function buildReferenceDefinitionLines(
+  lines,
+  ignoredListStarts = new Set(),
+  siblingListStarts = new Set(),
+  blockquoteStarts = new Set(),
+) {
   const out = [];
   let quoteDepth = 0;
   let listContentIndents = [];
+  let listMarkerIndents = [];
+  let previousContainerQuoteDepth = 0;
   let previousBlank = true;
 
-  for (const rawLine of lines) {
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const rawLine = lines[lineIndex];
     const quote = stripReferenceBlockquotePrefix(rawLine);
     if (quote.depth !== quoteDepth) {
       quoteDepth = quote.depth;
       listContentIndents = [];
+      listMarkerIndents = [];
       previousBlank = true;
     }
 
@@ -391,6 +462,14 @@ function buildReferenceDefinitionLines(lines) {
     }
 
     const rawIndent = leadingIndentColumns(content);
+    const rawListItems = listItemDescriptors(content);
+    if (
+      !ignoredListStarts.has(lineIndex) &&
+      rawListItems.length > 0 &&
+      listMarkerIndents.includes(rawListItems[0].markerIndent)
+    ) {
+      siblingListStarts.add(lineIndex);
+    }
     const activeIndent =
       listContentIndents.length > 0
         ? listContentIndents[listContentIndents.length - 1]
@@ -399,7 +478,7 @@ function buildReferenceDefinitionLines(lines) {
       activeIndent > 0 &&
       rawIndent < activeIndent &&
       !previousBlank &&
-      listItemContentIndents(content).length === 0 &&
+      rawListItems.length === 0 &&
       !isParagraphClosingBlockLine(content, true);
     if (!lazyContinuation) {
       while (
@@ -407,6 +486,7 @@ function buildReferenceDefinitionLines(lines) {
         rawIndent < listContentIndents[listContentIndents.length - 1]
       ) {
         listContentIndents.pop();
+        listMarkerIndents.pop();
       }
     }
 
@@ -417,19 +497,58 @@ function buildReferenceDefinitionLines(lines) {
     const relative = stripIndentColumns(content, baseIndent);
     out.push(relative);
 
-    for (const relativeIndent of listItemContentIndents(relative)) {
-      const absoluteIndent = baseIndent + relativeIndent;
+    const containerQuoteDepth = quote.depth + countReferenceBlockquoteMarkers(relative);
+    if (containerQuoteDepth > previousContainerQuoteDepth) {
+      blockquoteStarts.add(lineIndex);
+    }
+    previousContainerQuoteDepth = containerQuoteDepth;
+
+    const listIndents = ignoredListStarts.has(lineIndex)
+      ? []
+      : listItemDescriptors(relative);
+    for (const listIndent of listIndents) {
+      const absoluteIndent = baseIndent + listIndent.contentIndent;
       if (
         listContentIndents.length === 0 ||
         absoluteIndent > listContentIndents[listContentIndents.length - 1]
       ) {
         listContentIndents.push(absoluteIndent);
+        listMarkerIndents.push(baseIndent + listIndent.markerIndent);
       }
     }
     previousBlank = false;
   }
 
   return out;
+}
+
+function countReferenceBlockquoteMarkers(line) {
+  const s = String(line || '');
+  let i = 0;
+  let count = 0;
+  const skipIndent = () => {
+    let spaces = 0;
+    while (spaces < 3 && s[i] === ' ') {
+      i += 1;
+      spaces += 1;
+    }
+  };
+
+  skipIndent();
+  while (i < s.length) {
+    if (s[i] === '>') {
+      count += 1;
+      i += 1;
+      if (s[i] === ' ' || s[i] === '\t') i += 1;
+      skipIndent();
+      continue;
+    }
+    const marker = /^(?:[-+*]|\d{1,9}[.)])(?:[ \t]+)/.exec(s.slice(i));
+    if (!marker) break;
+    i += marker[0].length;
+    skipIndent();
+  }
+  return count;
 }
 
 function stripReferenceBlockquotePrefix(line) {
@@ -488,9 +607,9 @@ function stripIndentColumns(line, columns) {
 
 // 한 줄에 연속된 list marker(`- - text`)까지 읽어 각 item의 content indentation을 반환한다.
 // marker 뒤 1~4칸은 전부 padding, 5칸 이상이면 첫 칸만 padding이라는 CommonMark 규칙을 따른다.
-function listItemContentIndents(line) {
+function listItemDescriptors(line) {
   const s = String(line || '');
-  const indents = [];
+  const items = [];
   let i = 0;
   let column = 0;
 
@@ -511,7 +630,7 @@ function listItemContentIndents(line) {
 
     const afterMarkerColumn = markerColumn + marker[0].length;
     if (afterMarker === s.length) {
-      indents.push(afterMarkerColumn + 1);
+      items.push({ markerIndent: markerColumn, contentIndent: afterMarkerColumn + 1 });
       break;
     }
 
@@ -524,7 +643,7 @@ function listItemContentIndents(line) {
     }
     const whitespaceColumns = wsColumn - afterMarkerColumn;
     const padding = whitespaceColumns <= 4 ? whitespaceColumns : 1;
-    indents.push(afterMarkerColumn + padding);
+    items.push({ markerIndent: markerColumn, contentIndent: afterMarkerColumn + padding });
 
     if (whitespaceColumns <= 4) {
       i = wsIndex;
@@ -535,7 +654,7 @@ function listItemContentIndents(line) {
     }
   }
 
-  return indents;
+  return items;
 }
 
 // up to 3 spaces + 반복되는 blockquote/list container marker 를 벗겨 content 시작을 찾는다.
@@ -595,8 +714,11 @@ function matchReferenceDefinitionAt(lines, startLine) {
         labelLength += 1;
         continue;
       }
-      if (content[column] === ']' && content[column + 1] === ':') {
-        if (labelLength === 0) return null;
+      // CommonMark link label에는 unescaped bracket가 들어갈 수 없다. 첫 `]`가 `]:`로
+      // definition을 닫지 않거나 중간에 `[`가 나오면 이 source는 visible text다.
+      if (content[column] === '[') return null;
+      if (content[column] === ']') {
+        if (content[column + 1] !== ':' || labelLength === 0) return null;
         remainder = content.slice(column + 2);
         break;
       }
@@ -792,7 +914,7 @@ export function toProseBody(contentBody) {
   const definitions = stripReferenceDefinitions(contentBody);
   const withoutBlocks = definitions.text
     .split('\n')
-    .filter((l) => !/^(?: {4,}|\t)/.test(l))
+    .filter((_, index) => !/^(?: {4,}|\t)/.test(definitions.contentLines[index] || ''))
     .join('\n');
   return decodeVisibleBackslashEscapes(
     stripReferenceLinkLabels(
@@ -819,7 +941,7 @@ function decodeVisibleBackslashEscapes(text) {
 
 // 해소된 full/collapsed reference link 의 두 번째 label만 렌더링되지 않는다. 정의가 없는
 // `[details][INV-001]` 는 source 전체가 literal 로 렌더링되므로 두 번째 label을 보존한다.
-// label 안의 escaped/nested bracket과 line ending을 statefully 소비하되 shortcut reference
+// label 안의 escaped bracket과 line ending을 statefully 소비하되 shortcut reference
 // (`[INV-001]`)의 visible text는 그대로 둔다.
 function stripReferenceLinkLabels(text, definitionLabels) {
   const s = String(text || '');
@@ -827,26 +949,26 @@ function stripReferenceLinkLabels(text, definitionLabels) {
   let i = 0;
   while (i < s.length) {
     if (s[i] === ']' && s[i + 1] === '[') {
-      let depth = 1;
       let j = i + 2;
       let closed = false;
+      let invalid = false;
       while (j < s.length) {
         if (s[j] === '\\' && j + 1 < s.length) {
           j += 2;
           continue;
         }
         if (s[j] === '\n' && /^\s*$/.test(s.slice(s.lastIndexOf('\n', j - 1) + 1, j))) break;
-        if (s[j] === '[') depth += 1;
-        else if (s[j] === ']') {
-          depth -= 1;
-          if (depth === 0) {
-            closed = true;
-            break;
-          }
+        if (s[j] === '[') {
+          invalid = true;
+          break;
+        }
+        if (s[j] === ']') {
+          closed = true;
+          break;
         }
         j += 1;
       }
-      if (closed) {
+      if (closed && !invalid) {
         const secondLabel = s.slice(i + 2, j);
         const firstOpen = findMatchingOpeningBracket(s, i);
         const firstLabel = firstOpen === -1 ? '' : s.slice(firstOpen + 1, i);
