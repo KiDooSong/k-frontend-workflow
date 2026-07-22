@@ -64,6 +64,9 @@ Register에서 같은 `input_id` 행을 먼저 찾고 `Reconcile Status` 에 따
 9. 사용자 결정 후 문서를 업데이트한다 (게이트 내림은 사람이).
 10. register 행을 `reconciled` 로 바꾸고 `Result`·`Touched Artifacts`·`Created Items` 를 채운다.
     자식 decision 이 `open` 이어도 reconcile 자체는 끝 — 그 차단은 readiness 가 담당한다.
+    **Contract v2 register**(frontmatter `reconciliation_contract: 2`)면 summary 와 함께 `## Reconciliation Items`
+    item/effect 행을 쓴다 — 문법·routing matrix·provenance(Source Unit 은 실제 세는 단위: `instance`/`node`/`record` 등,
+    input 값과 같으면 `inherit`)는 [input-reconciliation.md §Contract v2](../../docs/reference/input-reconciliation.md#reconciliation-contract-v2-opt-in) 가 정본.
 11. task-artifact matrix 로 2차 산출물을 재확인한 뒤 `workflow:state` → `workflow:readiness` → `workflow:validate` 를 실행해 보고한다.
 12. Tier3/layout/policy migration 입력을 건드렸으면 `workflow:policy-draft -- --out <review-output-dir>` 로 review-only 산출물을
     만든다(live policy 교체 아님). 자세히: [Stage 10](../../docs/reference/workflow-stages/10-policy-layout-tier3-changes.md).
@@ -80,6 +83,15 @@ Register에서 같은 `input_id` 행을 먼저 찾고 `Reconcile Status` 에 따
 
 핵심 경계(상세는 위 링크): 시각 매핑은 figma mapping 에·행동은 ScreenSpec 에 — **visual 증거는 behavior 정본을 바꾸지 않는다**;
 selector/testID 는 evidence 일 뿐 naming `confirmed` 승격 금지; Tier3 는 draft/review 만, live policy 교체·CI 승격 금지.
+
+## Review Contract (Stage 04)
+
+리뷰는 `review_profile: reconcile-stage04-v1` — 정본: [reconcile-review-rubric.md](../../docs/reference/reconcile-review-rubric.md).
+- reviewer 는 routing·source backing·gate-raising 경계·scope·validate 해소만 필수로 보고(잠정 candidate 에 최종
+  fidelity 요구 금지), 필수 finding 을 **한 라운드에 일괄 제출**하며 Info 를 pass blocker 로 쓰지 않는다.
+- **stop condition**: validate hard errors 0 · Critical/Major 0 · gate-lowering diff 0 · provenance floor 충족 ·
+  남은 불확실성이 open D/U/C/G/INV/VER 로 표현 · scope 밖(code/tests/generated/live policy/CI) 변경 0.
+- 최종 응답에 review profile 과 stop condition 충족 근거(validate 결과·open item 목록)를 보고한다.
 
 ## 필요할 때 읽는 문서
 - 분류·copy keys·conflict·retry·check 12 전체: [input-reconciliation.md](../../docs/reference/input-reconciliation.md)

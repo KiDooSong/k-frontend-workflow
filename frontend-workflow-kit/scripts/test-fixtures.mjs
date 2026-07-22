@@ -58,6 +58,7 @@ const COMPONENT_CATALOG_ROOT = path.join(EXAMPLES, 'component-catalog');
 const CATALOG_GEN_SCRIPT = path.join(KIT_ROOT, 'scripts', 'catalog-gen.mjs');
 const IMPLEMENT_SCREEN_SKILL = path.join(KIT_ROOT, 'skills', 'implement-screen', 'SKILL.md');
 const IMPLEMENT_SHARED_SURFACE_SKILL = path.join(KIT_ROOT, 'skills', 'implement-shared-surface', 'SKILL.md');
+const RECONCILE_INPUT_SKILL = path.join(KIT_ROOT, 'skills', 'reconcile-input', 'SKILL.md');
 
 // input-reconciliation golden(expected-llm-after) 의 stage=llm-after manifest.
 // 검사 대상 ID·기대 상태(올리기만 불변식). golden 의 실제 파일에서 확인한 값:
@@ -370,6 +371,29 @@ function buildFixtures() {
     mustNotContain: [
       { label: 'stale-all-cli-options', snippet: '모든 member readiness 명령에 일관되게 전달한다' },
       { label: 'stale-any-blocker-stop', snippet: 'structural/membership/path/decision/member blocker가 있거나' },
+    ],
+  });
+
+  // reconcile-input skill — Stage 04 review profile/stop condition/batch finding 포인터가
+  // 스킬 본문에서 사라지지 않는지 확인한다 (#202 — 설계 §15.6 skill contract test).
+  fixtures.push({
+    id: 'reconcile-input:skill-contract',
+    kind: 'skill-contract',
+    expectVerdict: 'pass',
+    file: RECONCILE_INPUT_SKILL,
+    mustContain: [
+      { label: 'review-profile', snippet: 'reconcile-stage04-v1' },
+      { label: 'review-rubric-doc', snippet: 'reconcile-review-rubric.md' },
+      { label: 'batch-finding', snippet: '한 라운드에 일괄 제출' },
+      { label: 'stop-condition', snippet: 'stop condition' },
+      { label: 'contract-v2', snippet: 'reconciliation_contract: 2' },
+      { label: 'items-table', snippet: '## Reconciliation Items' },
+      { label: 'register-first', snippet: 'register-first' },
+      { label: 'gate-raising-only', snippet: 'gate raising only' },
+    ],
+    mustNotContain: [
+      // human-final 상태를 Stage 04 candidate 의 pass 조건으로 되돌리는 표현 금지.
+      { label: 'stale-final-fidelity', snippet: 'pixel-perfect 여부를 리뷰 통과 조건' },
     ],
   });
 

@@ -4,6 +4,126 @@
 
 ## Unreleased
 
+### feat(reconciliation) — Reconciliation Contract v2 + 검사 12 구조 강제 + Stage 04 review profile (#202, slice A)
+
+- Reconciliation Register 에 **opt-in Contract v2** 를 추가했다. frontmatter `reconciliation_contract: 2` +
+  `review_profile: reconcile-stage04-v1` + `structured_since`(RFC3339) 를 선언한 register 만 새 검사가 켜지고,
+  필드가 없는 v1 register 와 기존 fixture 출력은 byte-compatible 하다(새 warning 도 없음). 새 numbered check
+  없이 **검사 12 를 확장**했으며 진단 메시지에 stable prefix(RR-SCHEMA/RR-ITEM/RR-REF/RR-ROUTE/RP, warning 은
+  `*-1xx`)를 부여했다 — JSON output shape 는 불변.
+- v2 register 는 기존 8컬럼 summary 표를 유지하고 같은 문서에 `## Reconciliation Items` 10컬럼 effect 표를
+  추가한다(canonical detail=Items, Summary=projection). hard 검사: summary Classification multiset ↔ unique
+  `(Input ID, Item)` 개수 일치 · Created Items(creating effects)/Touched Artifacts(owner set) exact projection ·
+  typed target(`artifact:<id>[#sec[/row]]` / `decision:D-x@owner` 계열)·evidence(`input:<id>#section[/NN]`) 참조
+  해소(문서·섹션·D-/C-/U-/G- row·INV-/VER- 토큰) · 선언된 Basis 의 routing matrix(basis↔classification↔
+  effect/target 허용 행렬, `resolved-decision-conflict` 는 conflict create-open + decision reopen 페어 필수,
+  visual-evidence 의 behavior section 누출·scope-unclear 의 screen-level write 금지) · item provenance
+  필수값(Source Unit enum, `inherit`/RFC3339 Captured At, inherit 해소). effect 어휘에 resolve/close/accept/
+  confirm 은 의도적으로 없다(gate-raising-only 경계). deterministic v2 오류는 `--enforce` 와 무관하게 항상
+  에러, v2 warning(annotation·Result 어휘·bullet index·row-key·n/a)은 `--enforce` 로도 승격하지 않는다.
+  자연어 semantic heuristic 은 이번 slice 에 없다(202-C 후속, warning-only + 사람 승인 promotion).
+- `structured_since` 이후 capture 된 입력만 item 표가 필수다 — 과거 행은 summary-only legacy 로 남고 v2
+  grammar/projection 검사를 받지 않는다(backfill 선택, 정밀도 발명 금지). effect 는 역사적 행위 기록이라
+  target 의 **현재** status 를 hard 로 요구하지 않는다(stale 대조는 202-C warning 후보). actor-sensitive
+  hard rule(현재 resolved 를 LLM 침범으로 단정)도 만들지 않았다 — diff 의 gate-lowering 확인은 reviewer 몫.
+- Stage 04 리뷰 계약을 canonical 화했다: 신규 `docs/reference/reconcile-review-rubric.md`
+  (`reconcile-stage04-v1` — 필수 검토 범위 5종/최종-fidelity 요구 금지 목록/severity/finding 일괄 제출/stop
+  condition). reconcile-input skill 에 Review Contract 절과 v2 item 저작 절차(Source Unit 선택 규칙 포함)를
+  추가했고, Stage 04 문서·doc-ownership·input-reconciliation §Contract v2·register 템플릿(v2 생성)을 갱신했다.
+- 구현: `scripts/lib/provenance.mjs`(RFC3339/Source Unit/inherit 단일 출처 — 202-B 에서 검사 11·figma mapping
+  재사용 예정) + `scripts/lib/reconciliation-target-index.mjs`(validate 가 이미 수집한 docs 재사용, 추가 walk
+  없음) + `scripts/lib/reconciliation-items.mjs`(v2 순수 검사). 테스트: `reconciliation-items.test.mjs`
+  33건(v2 pass/hard/warning + v1 compat fixture 스냅샷) · `examples/reconciliation-validation/v2-pass|v2-fail`
+  픽스처 · distribution payload 에 rubric 문서 포함 검증 · reconcile-input skill-contract fixture.
+- 하지 않은 것(설계 §14): 검사 11 `captured_at` RFC3339 hard 승격과 figma-component-mapping `M-xxx`/
+  `## Mapping Provenance`(202-B), 자연어 routing heuristic·stale Result warning(202-C), CI required check
+  승격, 새 readiness fact/implementation mode/artifact axis.
+- 11차 재리뷰 후속: strict table parser가 column-0 pipe 여부뿐 아니라 공유 paragraph/block-boundary
+  상태를 추적한다. non-empty bullet/ordered item·blockquote paragraph 뒤의 unindented pipe source는
+  GFM lazy continuation text라 canonical 표로 시작하지 못하고, blank line/heading 뒤의 실제 top-level
+  표만 수집한다. 같은 parser를 쓰는 Items·Summary·D/C/U/G child target·row-key가 함께 fail-closed하며,
+  v1 첫 표 대조 진단도 container lazy 예시를 명시한다. empty container 판정은 marker-only 중첩
+  (`> -`·`- >`·`>>`)까지 일반화해 뒤의 type 7 HTML block과 reference definition 경계를 보존한다.
+- 10차 재리뷰 후속: ① type 7 HTML block과 reference definition이 공유하는 paragraph 전이를
+  container-aware하게 보강했다. 빈 list item(`-`·`+`·`*`·`1.`·`1)`)은 열린 paragraph를 interrupt하지
+  않지만 block boundary에서는 container로, 빈 blockquote(`>`)는 interrupt 가능한 container로 추적한다.
+  따라서 빈 marker 뒤 type 7 block의 숨은 Items 표가 canonical 표로 승격되거나, 렌더링되지 않는
+  reference definition의 INV-/VER- ID가 visible prose로 새지 않는다. ② inline link tail을
+  destination·title·구분 whitespace 구조로 분리해 각 구성요소 사이 최대 한 번의 line ending과 blank-line
+  없는 여러 줄 title을 소비한다. 다음 줄 destination 또는 다음 줄 title에만 있는 INV-/VER- ID로 hard
+  reference를 해소할 수 없다.
+- 9차 재리뷰 후속: ① CommonMark HTML block 진입을 다시 정밀화 — type 7은 열린 paragraph를
+  interrupt하지 못하도록 paragraph 상태와 complete-tag 문법을 추적하고, type 1은 space/tab/EOL/`>`,
+  type 6은 여기에 정확한 `/>`만 tag-name 경계로 인정한다. 따라서 paragraph 직후 `<custom-tag>`와
+  `<div/x`·`<pre/x` 뒤의 실제 중복 Items heading/금지 effect가 scanner에서 삭제되지 않는다.
+  ② INV-/VER- visible prose parser는 backslash-escaped 괄호와 `<...>` link destination을 별도 mode로
+  소비하고, reference definition을 여러 줄 label·colon·optional line ending·destination·여러 줄 title
+  구조로 파싱한다. top-level뿐 아니라 blockquote/list container의 렌더링되지 않는 definition도
+  제거하되 plain-text ID와 열린 paragraph 안의 definition-looking text는 계속 hard reference 근거다.
+- 8차 재리뷰 후속: ① raw HTML type 6/7 진입 조건을 CommonMark 대로 좁힘 — type 6 은 block tag
+  allowlist + 경계, type 7 은 완결된 단독 태그 줄만. autolink(`<https://…>`)·불완전 태그(`<x`)가
+  html block 으로 오인돼 뒤의 보이는 중복 Items heading/금지 effect 를 삼키던 경로 차단
+  (`<!foo` declaration 은 spec 대로 `>` 줄까지 — HTML bogus-comment 렌더링과 일치), ② visible prose
+  변환에서 reference-style label(`[text][INV-001]`·`![alt][INV-001]`)을 제거하고 link destination 을
+  balanced-paren stateful 스캐너로 소비(`(a(b)/INV-001)` 중첩 괄호 유출 차단). shortcut reference
+  `[INV-001]` 은 링크 text 가 곧 ID 라 visible 로 유지.
+- 7차 재리뷰 후속: ① raw HTML block 종료 조건을 CommonMark type 별로 분리 — `<? … ?>`(PI)·
+  `<![CDATA[ … ]]>`(blank line 무시)·`<!DECL … >`(같은 줄 닫힘) 각각 추적해, PI/CDATA 안의 숨은 표가
+  canonical 로 승격되거나 `<!DOCTYPE html>` 이 뒤의 보이는 중복 heading/표를 삼키던 양방향 fail-open
+  차단, ② INV-/VER- visible prose 검사에서 link/image destination·reference definition·inline HTML
+  tag/attribute·autolink 를 추가로 제외 — URL/attribute 안의 ID 만으로 target 이 해소되던 경로 차단
+  (link text 의 언급은 계속 유효).
+- 6차 재리뷰 후속: ① Summary/Items header 를 canonical 배열과 **exact 비교**(개수·중복·누락·추가·
+  순서) — 중복 header 로 행 object 에서 `Reconcile Status=failed`/`Effect=resolve` 를 뒤 셀로 덮어쓰던
+  경로 차단(D-/C-/U-/G- canonical 표도 중복 header 면 불신), ② inline code span 제거를 stateful
+  scanner 로 교체 — 여러 줄 span(`a\nINV-001`)·긴 delimiter(``INV `x` ``) 안의 INV-/VER- 토큰 유출
+  차단(closing 은 opening 과 정확히 같은 길이의 run), ③ `<pre|script|style|textarea>` 외의 모든
+  block-level raw HTML(`<div>`·`<table>`·`<details>` 등)을 CommonMark type 6/7 대로 blank line 까지
+  non-content 로 소비 — 지원하지 않는 HTML container 내부 표가 canonical 로 승격되던 경로 차단.
+- 5차 재리뷰 후속: 부분 line-scanner 를 "렌더링 흉내"로 쓰지 않도록 v2 마크다운 소비를 **좁은
+  canonical authoring profile** 로 고정했다. ① HTML 주석/raw HTML block(`<pre|script|style|textarea>`)은
+  CommonMark 블록 규칙대로 `<!--`/tag 로 **시작하는 줄**에서만 열리고 종료 줄을 통째로 소비 —
+  inline code `` `<!--` ``·escape `\<!--` 오인과 "주석 종료 tail 로 fence/heading 합성" 경로 제거,
+  ② canonical 표는 column 0 top-level 만(list 안 fence 의 2칸 continuation 예시 표가 Summary/Items/
+  child row 로 승격되던 경로 차단), ③ H2 heading 은 0~3칸 indent 까지 인식해 들여쓴 실제 중복
+  heading 도 RR-SCHEMA-018 에 포함, ④ INV-/VER- 토큰 검색은 code(fence/indented/inline span)·HTML·
+  주석 제외 prose 만 사용. 회귀: inline-code comment marker 사이 중복 Items, escaped literal,
+  same-line 주석 뒤 marker, list-fenced Summary/Items/Open Decisions, `<pre>` 안 canonical-looking
+  표, 들여쓴 중복 heading, code-only INV 언급.
+- 4차 재리뷰 후속: v2 가 소비하는 마크다운을 "렌더링되는 canonical 구조"로 고정했다. ① fence/HTML
+  주석을 순차 2-pass 가 아닌 **단일 state machine** 으로 처리 — 주석 안의 fence marker 가 주석 종료
+  뒤 실제 내용(중복 Items heading 포함)을 삼키던 경로 차단, ② v2 전용 canonical Summary 파서 추가 —
+  non-content 제거 + strict 파서 후 8컬럼 signature 표 정확히 1개(RR-SCHEMA-019), v1 파서가 고른 첫
+  표와 불일치(fence 예시가 canonical 을 가림)면 RR-SCHEMA-020. v1 출력은 불변(v2 opt-in 추가 검사),
+  ③ hard-contract 전용 strict 표 파서(`parseStrictTables`) — 표 줄 indentation 0~3칸(4칸+/tab 은
+  indented code 로 제외), 구분자 셀마다 hyphen 최소 1개 + header 와 셀 수 일치. target index·Items·
+  v2 Summary 가 공유하며 escaped-pipe 규약은 spec.mjs `splitRow` 재수출로 단일 출처 유지.
+- 3차 재리뷰 후속: ① `## Reconciliation Items` **heading 도 정확히 1개**(RR-SCHEMA-018) — heading-키
+  파서(getSections)가 중복 heading 에서 앞 섹션을 덮어써 첫 섹션의 표가 검증을 벗어나던 경로를
+  occurrence-보존 분리기로 차단, ② markdown 전처리를 section 분리 **이전**으로 이동 — fence/HTML 주석
+  안의 `## Open Decisions`·`## Reconciliation Items` heading 이 실제 canonical 섹션(및 가짜 evidence
+  섹션)을 만들던 경로 차단, fence 는 {char,length} 추적(closing 은 같은 문자·opening 길이 이상의
+  run 만)으로 4-backtick fence 안 3-backtick 예시 오판 제거. target index·Items parser·input evidence
+  parser 가 같은 토크나이저(stripNonContent/splitSectionOccurrences)를 공유하고 INV-/VER- 토큰 존재
+  검사도 non-content 제거 후 본문만 본다. (재리뷰가 지적한 `yamlParse` import 는 util.mjs 의 기존
+  `export { yamlParse, yamlStringify }` 재수출로 유효함을 확인 — 코드 변경 없음.)
+- 2차 재리뷰 후속으로 남은 우회 경로 3건을 닫았다: ① frontmatter envelope 손상(닫는 `---` 누락)과
+  top-level non-mapping(sequence/scalar/null)도 YAML 예외와 동일하게 검사 12 항상-에러(`---` 로 시작하지
+  않는 frontmatter-없는 legacy 파일만 v1 유지), ② child row canonical 판정을 "위치+signature AND" 로
+  좁힘 — decision 은 `## Open Decisions` 의 ID+Status+Blocking Mode 첫 표만, conflicts/gap 의
+  `artifact_type` fallback 은 h1 직속(preamble) 표로 한정, fenced code block 내부 표는 후보/개수에서 제외,
+  ③ `## Reconciliation Items` 섹션의 표는 정확히 1개(RR-SCHEMA-017) — 두 번째 표에 숨은 effect 행이
+  검증을 벗어나는 경로 차단.
+- 재리뷰 후속으로 validator fail-open 5건을 fail-closed 로 닫았다: ① register frontmatter YAML 파싱
+  실패는 v1/v2 공통 검사 12 항상-에러(빈 fm 이 contract 판정을 v1 로 기울여 v2 검사를 조용히 끄는 경로
+  차단), ② reject 의 `input:` target 은 자기 Input ID 만 허용(RR-REF-011), ③ D-/C-/U-/G- child row 해소를
+  canonical 가족 표(섹션 slug·표 signature·register artifact_type)로 한정 — Notes/예시 ID 표로는 해소되지
+  않고 타 가족 표는 RR-REF-009, ④ RFC3339 를 Date.parse 정규화에 기대지 않고 달력 구성요소로 검증
+  (`2026-02-30`·`T24:00:00` 거부)하고 `Captured At=inherit` 로 해소된 input `captured_at` 에도 같은 hard
+  계약 적용(RP-004), structured cutoff 비교도 공유 parser 로 통일, ⑤ 중복 `artifact_id` target 은 owner
+  결정 불가로 해소 거부(RR-REF-012). 추가로 structured 행의 빈 `Result` 는 warning, 빈 `Supersedes` 는
+  hard(RR-SCHEMA-016), evidence bullet index 는 1-based(`/00` 문법 위반)로 조였다.
+
 ### fix(shared-surfaces) — close falsy identity and lexical entry-path gaps (#200)
 
 - Screen identity fallback이 `undefined`, `null`, 빈 문자열만 다음 후보로 넘기고 present-falsy `0`/`false`는 raw provenance로 보존한다. 공개 plain-object key coercion은 기존처럼 `String(candidate)`를 사용하므로 numeric/boolean ID와 canonical string ID가 같은 키에서 duplicate로 수렴하고, shared-surface membership/readiness/validate가 각각 `ambiguous-member` 또는 `invalid-member-screen-id`로 fail-closed한다. 정상 string, prototype-named ID, empty/missing fallback, no-surface 공개 shape는 변경하지 않았다.

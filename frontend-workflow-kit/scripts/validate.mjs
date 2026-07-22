@@ -17,6 +17,10 @@
 //       inputs/ 디렉토리가 없으면 NO-OP.
 //   12. Reconciliation Register(_meta/reconciliation-register.md) — Reconcile Status enum·in-progress/failed·중복 행·
 //       8컬럼 스키마·inputs↔register 미처리 교차검사. register 파일이 없으면 NO-OP(초기/선택적 도입).
+//       + Contract v2 확장(frontmatter `reconciliation_contract: 2` opt-in): `## Reconciliation Items`
+//       effect 표·summary projection·typed target/evidence 참조 해소·routing matrix·item provenance 를
+//       hard 로 검사한다(reconciliation-items.mjs — 메시지 prefix RR-SCHEMA/RR-ITEM/RR-REF/RR-ROUTE/RP).
+//       v1 register(필드 없음)는 기존 출력 byte-compatible. 자연어 의미 추정은 v2 에서도 hard 가 아니다.
 //       ※ "미처리(reconcile 미완)" = register 행 없음 + Reconcile Status=not-started 는 기본 경고(warning-first),
 //         --enforce 플래그로 에러 승격. in-progress(중단)/failed/enum/중복/컬럼누락 같은 망가짐·중단 상태는 항상 에러.
 //       ★ HARD RULE: 오직 Reconcile Status 만 본다 — 자식 항목(D-/C-/U-/G-) open/closed 와 Created Items 의 (open) 주석은
@@ -71,6 +75,10 @@ import {
   parseReconciliationRegister,
   validateReconciliationRegister,
 } from './lib/reconciliation-register.mjs';
+// Reconciliation Contract v2 (opt-in) — 검사 12 확장. frontmatter `reconciliation_contract: 2` 일 때만
+// 활성화되고, v1 register 출력은 byte-compatible 하게 유지한다 (input-reconciliation.md §Contract v2).
+import { parseRegisterContract, validateReconciliationV2 } from './lib/reconciliation-items.mjs';
+import { buildReconciliationTargetIndex } from './lib/reconciliation-target-index.mjs';
 import {
   buildEndpointIndex,
   collectSchemaExports,
@@ -930,6 +938,19 @@ function main() {
   const registerResult = validateReconciliationRegister({ register, inputArtifacts, registerFile, enforce: !!flags.enforce });
   for (const e of registerResult.errors) add(12, e.file, e.message);
   for (const w of registerResult.warnings) warn(12, w.file, w.message);
+
+  //   검사 12 확장 — Reconciliation Contract v2 (frontmatter `reconciliation_contract: 2` opt-in).
+  //   `## Reconciliation Items` effect 표 · summary projection · typed target/evidence 해소 ·
+  //   routing matrix · item provenance 필수값을 hard 로 본다. 자연어 heuristic 은 여기 없다(202-C,
+  //   warning-only 로도 아직 미구현). deterministic v2 오류는 --enforce 와 무관하게 항상 에러이고,
+  //   v2 warning(RR-*-1xx/RP-1xx)은 --enforce 로도 hard 승격하지 않는다. target index 는 이미 수집한
+  //   docs 를 재사용한다(재귀 walk 반복 없음). v1 register 면 이 블록은 아무 출력도 내지 않는다.
+  if (register.exists && parseRegisterContract(register.fm).version !== 1) {
+    const targetIndex = buildReconciliationTargetIndex({ docs });
+    const v2Result = validateReconciliationV2({ register, registerFile, inputArtifacts, targetIndex });
+    for (const e of v2Result.errors) add(12, e.file, e.message);
+    for (const w of v2Result.warnings) warn(12, w.file, w.message);
+  }
 
   // --- 14. Policy `requires` 구문 검사 (warning-first, 하드 게이트 아님) ---
   //   이미 로드된 policy(라인 위)/policyPath 를 재사용한다 — 재로딩 없음. 손상/부재 정책은 이미 exit 2 로
