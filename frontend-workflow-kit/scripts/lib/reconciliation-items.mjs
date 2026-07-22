@@ -612,6 +612,8 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
     const sup = row.supersedes;
     if (!sup) {
       add(`RR-SCHEMA-016: '${inputId}' summary Supersedes 가 비어 있음 — '-'(대체 없음) 또는 존재하는 input_id 를 쓰세요`);
+    } else if (sup === inputId) {
+      add(`RR-REF-010: '${inputId}' summary Supersedes 가 자기 자신을 가리킴 — 이전 input_id 여야 함`);
     } else if (sup !== '-' && !knownInputIds.has(sup)) {
       add(`RR-REF-010: '${inputId}' summary Supersedes '${sup}' 가 존재하는 input_id 로 해소되지 않음`);
     }

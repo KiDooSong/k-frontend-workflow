@@ -116,7 +116,8 @@ export function stripNonContent(text) {
       continue; // opening 줄은 (같은 줄에 닫혀도) 통째로 block — 출력하지 않는다
     }
     const open = /^ {0,3}(`{3,}|~{3,})/.exec(line);
-    if (open) {
+    const info = open ? line.slice(open[0].length) : '';
+    if (open && (open[1][0] !== '`' || !info.includes('`'))) {
       fence = { char: open[1][0], length: open[1].length };
       paragraphOpen = false;
       continue; // opening fence 줄(info string 포함)은 출력하지 않는다
@@ -296,6 +297,7 @@ export function stripInlineCodeSpans(text) {
 function stripReferenceDefinitions(text) {
   const lines = String(text || '').split('\n');
   const removed = new Set();
+  const labels = new Set();
   let paragraphOpen = false;
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
@@ -303,6 +305,7 @@ function stripReferenceDefinitions(text) {
     const definition = !paragraphOpen || explicitContainer ? matchReferenceDefinitionAt(lines, lineIndex) : null;
     if (definition) {
       for (let i = lineIndex; i <= definition.endLine; i += 1) removed.add(i);
+      labels.add(definition.label);
       paragraphOpen = false;
       lineIndex = definition.endLine;
       continue;
@@ -311,12 +314,16 @@ function stripReferenceDefinitions(text) {
     paragraphOpen = nextParagraphOpen(lines[lineIndex], lines[lineIndex], paragraphOpen);
   }
 
-  return lines.map((line, index) => (removed.has(index) ? '' : line)).join('\n');
+  return {
+    text: lines.map((line, index) => (removed.has(index) ? '' : line)).join('\n'),
+    labels,
+  };
 }
 
-// up to 3 spaces + nested blockquote markers + optional list marker 를 벗겨 container content 시작을
-// 찾는다. list continuation 은 다음 줄에서 marker 대신 indentation 을 쓰므로 continuation helper 는
-// 같은 blockquote prefix 만 제거하고 destination scanner 가 남은 horizontal space 를 소비한다.
+// up to 3 spaces + 반복되는 blockquote/list container marker 를 벗겨 content 시작을 찾는다.
+// nested list 안의 reference definition도 렌더링되지 않으므로 첫 marker에서 멈추면 안 된다.
+// list continuation 은 다음 줄에서 marker 대신 indentation 을 쓰므로 continuation helper 는
+// blockquote prefix 만 제거하고 destination scanner 가 남은 horizontal space 를 소비한다.
 function stripReferenceContainerPrefix(line, allowListMarker) {
   const s = String(line || '');
   let i = 0;
@@ -329,14 +336,22 @@ function stripReferenceContainerPrefix(line, allowListMarker) {
   };
 
   skipIndent();
-  while (s[i] === '>') {
-    i += 1;
-    if (s[i] === ' ' || s[i] === '\t') i += 1;
-    skipIndent();
-  }
-  if (allowListMarker) {
-    const marker = /^(?:[-+*]|\d{1,9}[.)])(?:[ \t]+)/.exec(s.slice(i));
-    if (marker) i += marker[0].length;
+  while (i < s.length) {
+    if (s[i] === '>') {
+      i += 1;
+      if (s[i] === ' ' || s[i] === '\t') i += 1;
+      skipIndent();
+      continue;
+    }
+    if (allowListMarker) {
+      const marker = /^(?:[-+*]|\d{1,9}[.)])(?:[ \t]+)/.exec(s.slice(i));
+      if (marker) {
+        i += marker[0].length;
+        skipIndent();
+        continue;
+      }
+    }
+    break;
   }
   return s.slice(i);
 }
@@ -351,11 +366,13 @@ function matchReferenceDefinitionAt(lines, startLine) {
   if (content[0] !== '[') return null;
   let column = 1;
   let labelLength = 0;
+  let labelText = '';
   let remainder = null;
 
   while (lineIndex < lines.length && labelLength <= 999) {
     while (column < content.length && labelLength <= 999) {
       if (content[column] === '\\' && column + 1 < content.length) {
+        labelText += content.slice(column, column + 2);
         column += 2;
         labelLength += 1;
         continue;
@@ -365,6 +382,7 @@ function matchReferenceDefinitionAt(lines, startLine) {
         remainder = content.slice(column + 2);
         break;
       }
+      labelText += content[column];
       column += 1;
       labelLength += 1;
     }
@@ -373,9 +391,12 @@ function matchReferenceDefinitionAt(lines, startLine) {
     if (lineIndex >= lines.length || /^\s*$/.test(lines[lineIndex])) return null;
     content = stripReferenceContinuationPrefix(lines[lineIndex]);
     column = 0;
+    labelText += '\n';
     labelLength += 1; // line ending도 label 길이에 포함
   }
   if (remainder === null || labelLength > 999) return null;
+  const label = normalizeReferenceLabel(labelText);
+  const matched = (endLine) => ({ endLine, label });
 
   let destinationLine = lineIndex;
   let destinationContent = remainder;
@@ -393,7 +414,7 @@ function matchReferenceDefinitionAt(lines, startLine) {
   if (afterDestination.trim() !== '') {
     const titleStart = destinationContent.length - afterDestination.length + afterDestination.search(/\S/);
     const title = scanReferenceTitle(lines, destinationLine, titleStart, destinationContent);
-    return title ? { endLine: title.endLine } : null;
+    return title ? matched(title.endLine) : null;
   }
 
   // title 은 destination 다음 줄에서 시작할 수도 있다. 유효한 title이 아니면 그 줄은 별도 visible
@@ -404,10 +425,18 @@ function matchReferenceDefinitionAt(lines, startLine) {
     const titleColumn = possibleTitle.search(/\S/);
     if (titleColumn !== -1 && /["'(]/.test(possibleTitle[titleColumn])) {
       const title = scanReferenceTitle(lines, possibleTitleLine, titleColumn, possibleTitle);
-      if (title) return { endLine: title.endLine };
+      if (title) return matched(title.endLine);
     }
   }
-  return { endLine: destinationLine };
+  return matched(destinationLine);
+}
+
+function normalizeReferenceLabel(label) {
+  return String(label || '')
+    .replace(/\\([\s\S])/g, '$1')
+    .trim()
+    .replace(/[ \t\r\n]+/g, ' ')
+    .toLowerCase();
 }
 
 // destination prefix 를 파싱하고 바로 뒤 offset 을 반환한다. `<...>` form 에서는 escaped `>`를,
@@ -490,17 +519,23 @@ function scanReferenceTitle(lines, startLine, startColumn, startContent) {
 //     값의 ID 는 visible prose 가 아니다 (내부 텍스트는 유지)
 // code example·URL·attribute 안의 언급만으로 canonical target 이 해소되면 안 된다(fail-closed).
 export function toProseBody(contentBody) {
-  const withoutBlocks = stripReferenceDefinitions(contentBody)
+  const definitions = stripReferenceDefinitions(contentBody);
+  const withoutBlocks = definitions.text
     .split('\n')
     .filter((l) => !/^(?: {4,}|\t)/.test(l))
     .join('\n');
-  return stripReferenceLinkLabels(stripLinkDestinations(stripInlineCodeSpans(withoutBlocks)))
+  return stripReferenceLinkLabels(
+    stripLinkDestinations(stripInlineCodeSpans(withoutBlocks)),
+    definitions.labels,
+  )
     .replace(/<\/?[a-zA-Z][^<>\n]*>/g, ' '); // inline HTML tag/attribute · autolink 제거
 }
 
-// full/collapsed reference link 의 두 번째 label은 렌더링되지 않는다. label 안의 escaped/nested bracket과
-// line ending을 statefully 소비하되 shortcut reference(`[INV-001]`)의 visible text는 그대로 둔다.
-function stripReferenceLinkLabels(text) {
+// 해소된 full/collapsed reference link 의 두 번째 label만 렌더링되지 않는다. 정의가 없는
+// `[details][INV-001]` 는 source 전체가 literal 로 렌더링되므로 두 번째 label을 보존한다.
+// label 안의 escaped/nested bracket과 line ending을 statefully 소비하되 shortcut reference
+// (`[INV-001]`)의 visible text는 그대로 둔다.
+function stripReferenceLinkLabels(text, definitionLabels) {
   const s = String(text || '');
   let out = '';
   let i = 0;
@@ -526,15 +561,41 @@ function stripReferenceLinkLabels(text) {
         j += 1;
       }
       if (closed) {
-        out += ']';
-        i = j + 1;
-        continue;
+        const secondLabel = s.slice(i + 2, j);
+        const firstOpen = findMatchingOpeningBracket(s, i);
+        const firstLabel = firstOpen === -1 ? '' : s.slice(firstOpen + 1, i);
+        const resolvedLabel = secondLabel === '' ? firstLabel : secondLabel;
+        if (firstOpen !== -1 && definitionLabels.has(normalizeReferenceLabel(resolvedLabel))) {
+          out += ']';
+          i = j + 1;
+          continue;
+        }
       }
     }
     out += s[i];
     i += 1;
   }
   return out;
+}
+
+function findMatchingOpeningBracket(text, closingIndex) {
+  let depth = 0;
+  for (let i = closingIndex - 1; i >= 0; i -= 1) {
+    if (isBackslashEscaped(text, i)) continue;
+    if (text[i] === ']') {
+      depth += 1;
+    } else if (text[i] === '[') {
+      if (depth === 0) return i;
+      depth -= 1;
+    }
+  }
+  return -1;
+}
+
+function isBackslashEscaped(text, index) {
+  let slashes = 0;
+  for (let i = index - 1; i >= 0 && text[i] === '\\'; i -= 1) slashes += 1;
+  return slashes % 2 === 1;
 }
 
 // inline link/image destination(`](…)`)과 title을 구조로 제거한다 — 단발 정규식은 중첩/escaped 괄호,
