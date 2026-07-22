@@ -38,6 +38,14 @@
 - 하지 않은 것(설계 §14): 검사 11 `captured_at` RFC3339 hard 승격과 figma-component-mapping `M-xxx`/
   `## Mapping Provenance`(202-B), 자연어 routing heuristic·stale Result warning(202-C), CI required check
   승격, 새 readiness fact/implementation mode/artifact axis.
+- 10차 재리뷰 후속: ① type 7 HTML block과 reference definition이 공유하는 paragraph 전이를
+  container-aware하게 보강했다. 빈 list item(`-`·`+`·`*`·`1.`·`1)`)은 열린 paragraph를 interrupt하지
+  않지만 block boundary에서는 container로, 빈 blockquote(`>`)는 interrupt 가능한 container로 추적한다.
+  따라서 빈 marker 뒤 type 7 block의 숨은 Items 표가 canonical 표로 승격되거나, 렌더링되지 않는
+  reference definition의 INV-/VER- ID가 visible prose로 새지 않는다. ② inline link tail을
+  destination·title·구분 whitespace 구조로 분리해 각 구성요소 사이 최대 한 번의 line ending과 blank-line
+  없는 여러 줄 title을 소비한다. 다음 줄 destination 또는 다음 줄 title에만 있는 INV-/VER- ID로 hard
+  reference를 해소할 수 없다.
 - 9차 재리뷰 후속: ① CommonMark HTML block 진입을 다시 정밀화 — type 7은 열린 paragraph를
   interrupt하지 못하도록 paragraph 상태와 complete-tag 문법을 추적하고, type 1은 space/tab/EOL/`>`,
   type 6은 여기에 정확한 `/>`만 tag-name 경계로 인정한다. 따라서 paragraph 직후 `<custom-tag>`와

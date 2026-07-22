@@ -124,13 +124,7 @@ export function stripNonContent(text) {
     // 줄 중간의 같은-줄 닫힌 주석은 inline span 만 제거. 닫히지 않은 중간 `<!--` 는 리터럴 유지.
     const visibleLine = line.replace(/<!--[\s\S]*?-->/g, '');
     out.push(visibleLine);
-    if (/^\s*$/.test(visibleLine) || isParagraphClosingBlockLine(line, paragraphOpen)) {
-      paragraphOpen = false;
-    } else if (paragraphOpen || !/^(?: {4,}|\t)/.test(line)) {
-      // boundary 의 indented code 는 paragraph 를 열지 않는다. 이미 열린 paragraph 의 들여쓰기는
-      // lazy/continuation text 일 수 있으므로 열린 상태를 유지한다.
-      paragraphOpen = true;
-    }
+    paragraphOpen = nextParagraphOpen(line, visibleLine, paragraphOpen);
   }
   return out.join('\n');
 }
@@ -141,6 +135,19 @@ function isParagraphClosingBlockLine(line, paragraphWasOpen) {
   if (/^ {0,3}#{1,6}(?:[ \t]+|$)/.test(line)) return true;
   if (paragraphWasOpen && /^ {0,3}(?:=+|-+)[ \t]*$/.test(line)) return true;
   return /^ {0,3}(?:(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|(?:-[ \t]*){3,})$/.test(line);
+}
+
+// type 7 HTML block과 reference definition이 공유하는 최소 paragraph 상태 전이. 빈 blockquote는
+// paragraph를 interrupt할 수 있고, 빈 list item은 block boundary에서는 container지만 열린 paragraph를
+// interrupt하지 못한다(CommonMark examples 239/245, 281~285). 이 줄들을 일반 text로 열어 버리면 바로
+// 뒤의 type 7 block/definition을 visible 구조로 재해석하게 된다.
+function nextParagraphOpen(line, visibleLine, paragraphWasOpen) {
+  if (/^\s*$/.test(visibleLine) || isParagraphClosingBlockLine(line, paragraphWasOpen)) return false;
+  if (/^ {0,3}>[ \t]*$/.test(line)) return false;
+  if (!paragraphWasOpen && /^ {0,3}(?:[-+*]|\d{1,9}[.)])[ \t]*$/.test(line)) return false;
+  // boundary 의 indented code 는 paragraph 를 열지 않는다. 이미 열린 paragraph 의 들여쓰기는
+  // lazy/continuation text 일 수 있으므로 열린 상태를 유지한다.
+  return paragraphWasOpen || !/^(?: {4,}|\t)/.test(line);
 }
 
 // 줄이 raw HTML block 을 여는지 판정하고, 해당 type 의 종료 조건을 돌려준다.
@@ -267,11 +274,7 @@ function stripReferenceDefinitions(text) {
       continue;
     }
 
-    if (/^\s*$/.test(lines[lineIndex]) || isParagraphClosingBlockLine(lines[lineIndex], paragraphOpen)) {
-      paragraphOpen = false;
-    } else if (paragraphOpen || !/^(?: {4,}|\t)/.test(lines[lineIndex])) {
-      paragraphOpen = true;
-    }
+    paragraphOpen = nextParagraphOpen(lines[lineIndex], lines[lineIndex], paragraphOpen);
   }
 
   return lines.map((line, index) => (removed.has(index) ? '' : line)).join('\n');
@@ -500,77 +503,20 @@ function stripReferenceLinkLabels(text) {
   return out;
 }
 
-// inline link/image destination(`](…)`)을 balanced parentheses 로 제거한다 — 단발 정규식은
-// `](https://x/a(b)/INV-001)` 처럼 괄호가 중첩된 destination 에서 첫 `)` 까지만 지워 ID 가 새어
-// 나온다. backslash-escaped 괄호는 깊이에서 제외하고, `<...>` destination 안의 괄호는 별도 mode 로
-// 소비한다. `](` 를 만나면 대응하는 outer `)` 까지 소비하고 link text 의 `]` 만 남긴다
-// (줄바꿈을 만나면 이 narrow scanner 의 destination 이 아니므로 원문 유지).
+// inline link/image destination(`](…)`)과 title을 구조로 제거한다 — 단발 정규식은 중첩/escaped 괄호,
+// `<...>` destination, destination/title 사이 line ending에서 ID를 source에 남긴다. CommonMark inline
+// link의 각 구성요소 사이에는 space/tab과 최대 한 번의 line ending이 허용되고 title 자체도 blank line
+// 없이 여러 줄일 수 있다. 유효한 tail 전체만 소비하고 link text의 `]`는 남긴다.
 function stripLinkDestinations(text) {
   const s = String(text || '');
   let out = '';
   let i = 0;
   while (i < s.length) {
     if (s[i] === ']' && s[i + 1] === '(') {
-      let depth = 1;
-      let j = i + 2;
-      let closed = false;
-      let destinationStarted = false;
-      let destinationEnded = false;
-      let inAngleDestination = false;
-      let titleQuote = null;
-      while (j < s.length && s[j] !== '\n') {
-        if (s[j] === '\\' && j + 1 < s.length) {
-          j += 2;
-          continue;
-        }
-        if (titleQuote !== null) {
-          if (s[j] === titleQuote) titleQuote = null;
-          j += 1;
-          continue;
-        }
-        if (inAngleDestination) {
-          if (s[j] === '>') {
-            inAngleDestination = false;
-            destinationEnded = true;
-          }
-          j += 1;
-          continue;
-        }
-        if (!destinationStarted) {
-          if (s[j] === ' ' || s[j] === '\t') {
-            j += 1;
-            continue;
-          }
-          if (s[j] === '<') {
-            destinationStarted = true;
-            inAngleDestination = true;
-            j += 1;
-            continue;
-          }
-          destinationStarted = true;
-        } else if (!destinationEnded && depth === 1 && (s[j] === ' ' || s[j] === '\t')) {
-          destinationEnded = true;
-          j += 1;
-          continue;
-        } else if (destinationEnded && (s[j] === '"' || s[j] === "'")) {
-          titleQuote = s[j];
-          j += 1;
-          continue;
-        }
-
-        if (s[j] === '(') depth += 1;
-        else if (s[j] === ')') {
-          depth -= 1;
-          if (depth === 0) {
-            closed = true;
-            break;
-          }
-        }
-        j += 1;
-      }
-      if (closed) {
+      const end = scanInlineLinkTail(s, i + 2);
+      if (end !== null) {
         out += ']';
-        i = j + 1;
+        i = end;
         continue;
       }
     }
@@ -578,6 +524,118 @@ function stripLinkDestinations(text) {
     i += 1;
   }
   return out;
+}
+
+function scanInlineLinkTail(s, start) {
+  const leading = scanInlineLinkWhitespace(s, start);
+  if (!leading) return null;
+  let i = leading.end;
+  if (s[i] === ')') return i + 1; // empty destination
+
+  const destination = scanInlineLinkDestination(s, i);
+  if (!destination) return null;
+  i = destination.end;
+
+  const between = scanInlineLinkWhitespace(s, i);
+  if (!between) return null;
+  i = between.end;
+  if (s[i] === ')') return i + 1;
+
+  // destination과 title은 최소 하나의 space/tab/line ending으로 분리되어야 한다.
+  if (!between.consumed) return null;
+  const title = scanInlineLinkTitle(s, i);
+  if (!title) return null;
+  const trailing = scanInlineLinkWhitespace(s, title.end);
+  if (!trailing || s[trailing.end] !== ')') return null;
+  return trailing.end + 1;
+}
+
+function scanInlineLinkWhitespace(s, start) {
+  let i = start;
+  let lineEndings = 0;
+  while (i < s.length) {
+    if (s[i] === ' ' || s[i] === '\t') {
+      i += 1;
+      continue;
+    }
+    if (s[i] === '\n' || s[i] === '\r') {
+      lineEndings += 1;
+      if (lineEndings > 1) return null;
+      if (s[i] === '\r' && s[i + 1] === '\n') i += 2;
+      else i += 1;
+      continue;
+    }
+    break;
+  }
+  return { end: i, consumed: i > start };
+}
+
+function scanInlineLinkDestination(s, start) {
+  if (s[start] === '<') {
+    let i = start + 1;
+    while (i < s.length) {
+      if (s[i] === '\n' || s[i] === '\r' || s[i] === '<') return null;
+      if (s[i] === '\\' && i + 1 < s.length) {
+        if (s[i + 1] === '\n' || s[i + 1] === '\r') return null;
+        i += 2;
+        continue;
+      }
+      if (s[i] === '>') return { end: i + 1 };
+      i += 1;
+    }
+    return null;
+  }
+
+  let i = start;
+  let depth = 0;
+  while (i < s.length && s[i] !== ' ' && s[i] !== '\t' && s[i] !== '\n' && s[i] !== '\r') {
+    if (s[i] === '\\' && i + 1 < s.length) {
+      if (s[i + 1] === '\n' || s[i + 1] === '\r') return null;
+      i += 2;
+      continue;
+    }
+    if (s[i] === '(') depth += 1;
+    else if (s[i] === ')') {
+      if (depth === 0) break; // inline link를 닫는 outer `)`
+      depth -= 1;
+    } else if (/^[\u0000-\u001f\u007f]$/.test(s[i])) {
+      return null;
+    }
+    i += 1;
+  }
+  return i > start && depth === 0 ? { end: i } : null;
+}
+
+function scanInlineLinkTitle(s, start) {
+  const opener = s[start];
+  const closer = opener === '(' ? ')' : opener;
+  if (opener !== '"' && opener !== "'" && opener !== '(') return null;
+  let i = start + 1;
+
+  while (i < s.length) {
+    if (s[i] === '\\' && i + 1 < s.length) {
+      // line ending은 backslash escape 대상 punctuation이 아니다. 다음 loop에서 그대로 검사해야
+      // `\\\n\n`이 title 안 blank line을 가리는 일을 막는다.
+      if (s[i + 1] === '\n' || s[i + 1] === '\r') {
+        i += 1;
+        continue;
+      }
+      i += 2;
+      continue;
+    }
+    if (opener === '(' && s[i] === '(') return null; // parenthesized title의 괄호는 escape 필수
+    if (s[i] === closer) return { end: i + 1 };
+    if (s[i] === '\n' || s[i] === '\r') {
+      if (s[i] === '\r' && s[i + 1] === '\n') i += 2;
+      else i += 1;
+      let next = i;
+      while (s[next] === ' ' || s[next] === '\t') next += 1;
+      if (s[next] === '\n' || s[next] === '\r') return null; // title에는 blank line 금지
+      continue;
+    }
+    i += 1;
+  }
+  return null;
 }
 
 // 헤더 정규화(대소문자/공백 무시 — hasHeader/col 과 같은 규약)와 canonical 헤더 배열 exact 비교.
