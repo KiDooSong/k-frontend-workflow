@@ -303,11 +303,13 @@ function stripReferenceDefinitions(text) {
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
     const line = definitionLines[lineIndex];
-    const explicitContainer = [lines[lineIndex], line].some((candidate) =>
-      /^ {0,3}(?:>|(?:[-+*]|\d{1,9}[.)])[ \t]+)/.test(candidate),
+    const container = inspectReferenceContainerTransition(
+      lines[lineIndex],
+      line,
+      paragraphOpen,
     );
     const definition =
-      !paragraphOpen || explicitContainer
+      !paragraphOpen || container.interruptsParagraph
         ? matchReferenceDefinitionAt(definitionLines, lineIndex)
         : null;
     if (definition) {
@@ -318,12 +320,48 @@ function stripReferenceDefinitions(text) {
       continue;
     }
 
-    paragraphOpen = nextParagraphOpen(line, line, paragraphOpen);
+    paragraphOpen = nextParagraphOpen(
+      container.childLine,
+      container.childLine,
+      container.interruptsParagraph ? false : paragraphOpen,
+    );
   }
 
   return {
     text: lines.map((line, index) => (removed.has(index) ? '' : line)).join('\n'),
     labels,
+  };
+}
+
+// paragraph 상태는 container marker 자체가 아니라 그 marker를 소비한 child block으로 전이한다.
+// 다만 열린 paragraph를 끊을 수 없는 list marker는 container로 소비하지 않는다. 특히 첫 ordered
+// list marker는 start number가 1일 때만 paragraph를 interrupt할 수 있다(CommonMark list rule #1).
+function inspectReferenceContainerTransition(rawLine, line, paragraphWasOpen) {
+  const source = String(line || '');
+  const startsWithBlockquote = /^ {0,3}>/.test(String(rawLine || ''));
+  const listMarker = /^ {0,3}(?:([-+*])|(\d{1,9})[.)])(?=[ \t]|$)/.exec(source);
+  if (!startsWithBlockquote && !listMarker) {
+    return { interruptsParagraph: false, childLine: source };
+  }
+
+  // thematic break는 list marker보다 우선한다. child list로 소비하지 않고 기존 block 판정에 맡긴다.
+  if (isParagraphClosingBlockLine(source, paragraphWasOpen)) {
+    return { interruptsParagraph: false, childLine: source };
+  }
+
+  const emptyContainer = inspectEmptyContainerLine(source);
+  const listCanInterrupt =
+    listMarker !== null &&
+    emptyContainer === null &&
+    (listMarker[1] !== undefined || Number(listMarker[2]) === 1);
+  const interruptsParagraph =
+    !paragraphWasOpen || startsWithBlockquote || listCanInterrupt;
+
+  return {
+    interruptsParagraph,
+    childLine: interruptsParagraph
+      ? stripReferenceContainerPrefix(source, true)
+      : source,
   };
 }
 

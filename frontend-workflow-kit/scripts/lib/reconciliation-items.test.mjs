@@ -1524,6 +1524,7 @@ test('v2 hard: link/reference source 의 INV 토큰은 visible prose 가 아님'
     '> [INV-001]:\n>   https://example.test/investigation', // blockquote 내부 definition
     '설명 paragraph\n> [INV-001]: /url', // blockquote가 paragraph를 끊고 definition을 포함
     '- [INV-001]:\n    https://example.test/investigation', // list 내부 definition
+    '[조사 문서][INV-001]\n\n- # heading\n  [INV-001]: /url', // list child heading 뒤 definition
     '[조사 문서][INV-001]\n\n- outer\n\n    [INV-001]: /url', // list content-relative 2칸 definition
     '[조사 문서][INV-001]\n\n10. outer\n\n    [INV-001]: /url', // ordered item content-relative 0칸
     '[조사 문서][INV-001]\n\n- outer\n  - inner\n\n      [INV-001]: /url', // nested item relative 2칸
@@ -1554,6 +1555,27 @@ test('v2 hard: link/reference source 의 INV 토큰은 visible prose 가 아님'
     summaryRows: summaryWithInv,
   });
   assert.deepEqual(messages(listCodePass.errors), []);
+
+  // 열린 paragraph를 interrupt하는 첫 ordered list는 start number 1만 허용된다. `2.` source는
+  // list/definition이 아니라 visible paragraph continuation이므로 INV-001 근거로 남아야 한다.
+  const orderedContinuation = SCREEN_SPEC_DOC +
+    '\n## Notes\n\nparagraph\n2. [INV-001]: /url\n';
+  const orderedContinuationPass = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': orderedContinuation },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.deepEqual(messages(orderedContinuationPass.errors), []);
+
+  // start number 1은 실제로 paragraph를 끊고 list child definition을 만든다.
+  const orderedInterrupt = SCREEN_SPEC_DOC +
+    '\n## Notes\n\nparagraph\n1. [INV-001]: /url\n';
+  const orderedInterruptFail = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': orderedInterrupt },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.ok(hasCode(orderedInterruptFail.errors, 'RR-REF-008'));
 
   // shortcut reference `[INV-001]` 는 링크 text 자체가 INV-001 로 렌더링된다 — visible, 해소된다.
   const shortcut = SCREEN_SPEC_DOC + '\n## Notes\n\n[INV-001] 참고\n\n[INV-001]: https://example.test/doc\n';
