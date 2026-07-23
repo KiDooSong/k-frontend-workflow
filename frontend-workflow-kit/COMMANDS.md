@@ -326,6 +326,12 @@ and positional arguments are usage errors that exit 2 before any state/policy
 load, diff read, or git command — a typo can never silently drop `--enforce`
 and fall back to a warning-first run.
 
+For ScreenSpec API Candidates v2, this command consumes per-screen effective
+readiness paths and candidate provenance. A deferred/conflicted Slice Path remains a
+violation even when another screen is API-integrated; a confirmed active Slice Path
+passes only when its owning screen has reached `api-integrated-ui`. See
+[`docs/reference/api-candidate-deferral.md`](docs/reference/api-candidate-deferral.md).
+
 ## Red-Team Suite
 
 ```bash

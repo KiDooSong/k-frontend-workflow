@@ -23,7 +23,7 @@ export { GitError, DiffParseError };
 // 경로를 항상 forward-slash 로 정규화 (Windows 대응). validate.mjs L51 의 toPosix 미러
 // (그 함수는 export 되지 않으므로 여기서 동일 구현을 둔다).
 export function toPosix(p) {
-  return String(p).split(path.sep).join('/');
+  return String(p).split(path.sep).join('/').replace(/\\/g, '/');
 }
 
 // glob → RegExp. validate.mjs 의 manifestPathRegex 는 재사용 불가다:
@@ -56,6 +56,18 @@ export function globToRegex(glob) {
 // glob 매칭 헬퍼: F(파일 경로)가 glob 에 매칭되는가. 둘 다 posix 정규화 후 비교.
 export function globMatches(glob, file) {
   return globToRegex(glob).test(toPosix(file));
+}
+
+// Effective file authorization shared by readiness consumers and the diff backstop.
+// A matching forbidden glob always wins over any matching allowed glob.
+export function pathAuthorization(file, allowedPaths = [], forbiddenPaths = []) {
+  const allowedBy = (allowedPaths || []).filter((glob) => globMatches(glob, file));
+  const forbiddenBy = (forbiddenPaths || []).filter((glob) => globMatches(glob, file));
+  return {
+    allowed: allowedBy.length > 0 && forbiddenBy.length === 0,
+    allowed_by: allowedBy,
+    forbidden_by: forbiddenBy,
+  };
 }
 
 // --- guarded surface 파생 (정책에서) -------------------------------------

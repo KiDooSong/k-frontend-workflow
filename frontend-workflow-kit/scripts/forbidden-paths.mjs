@@ -30,6 +30,7 @@ import {
   gitChangedRecords,
   stripRoot,
   globMatches,
+  pathAuthorization,
   GitError,
   DiffParseError,
 } from './lib/path-backstop.mjs';
@@ -92,8 +93,124 @@ function optionalApiClientSurfaces(layout, domains = []) {
   return out;
 }
 
+function optionalRoleSurfaces(layout, role, domains = []) {
+  const out = [];
+  const seen = new Set();
+  const contexts = [{}, ...domains.map((domain) => ({ domain }))];
+  for (const ctx of contexts) {
+    let resolved;
+    try {
+      resolved = layout.resolvePaths([`{roles.${role}}`], ctx);
+    } catch (err) {
+      if (err instanceof LayoutConfigError && /정의되지 않은 role|undefined role/i.test(String(err.message || ''))) {
+        continue;
+      }
+      throw err;
+    }
+    for (const surface of resolved || []) {
+      if (seen.has(surface)) continue;
+      seen.add(surface);
+      out.push(surface);
+    }
+  }
+  return out;
+}
+
 function surfaceTouchesAny(surface, surfaces) {
   return (surfaces || []).some((candidate) => covers(surface, candidate) || covers(candidate, surface));
+}
+
+function candidateClaims(readinessOutput) {
+  const active = [];
+  const denied = [];
+  const seen = new Set();
+  const add = (bucket, row) => {
+    if (!row || !row.path) return;
+    const key = `${row.kind}\0${row.screen_id}\0${row.endpoint}\0${row.path}\0${row.tracking || ''}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    bucket.push(row);
+  };
+  for (const [screenId, entry] of Object.entries(readinessOutput || {})) {
+    const auth = entry.api_candidate_authorization;
+    if (!auth || auth.contract_version !== 2) continue;
+    for (const row of auth.actionable || []) add(active, { ...row, kind: 'active', screen_id: row.screen_id || screenId });
+    for (const row of auth.deferred || []) add(denied, { ...row, kind: 'deferred', screen_id: row.screen_id || screenId });
+    for (const conflict of auth.conflicts || []) {
+      for (const owner of conflict.owners || []) {
+        add(denied, {
+          kind: 'conflict',
+          screen_id: owner.screen_id || screenId,
+          endpoint: owner.endpoint || '? ?',
+          gate: owner.gate || null,
+          tracking: owner.tracking || null,
+          path: owner.path || conflict.path,
+          conflicting_path: owner.path === conflict.path ? conflict.conflicting_path : conflict.path,
+        });
+      }
+    }
+  }
+  return { active, denied };
+}
+
+function matchingClaims(claims, file) {
+  return (claims || []).filter((claim) => globMatches(claim.path, file));
+}
+
+function screenReachesApiIntegrated(entry, order) {
+  const threshold = order.indexOf('api-integrated-ui');
+  const actual = order.indexOf(entry.readiness_mode);
+  return threshold >= 0 && actual >= threshold;
+}
+
+function screenAuthorizesApiFile(file, screenId, entry, order, activeClaims, options = {}) {
+  if (!entry || entry.api_required === false) return false;
+  const authz = pathAuthorization(file, entry.allowed_paths || [], entry.forbidden_paths || []);
+  if (!authz.allowed) return false;
+  const contract = entry.api_candidate_authorization;
+  if (!contract || contract.contract_version !== 2) {
+    // Legacy screens retain their effective broad role authorization, but they cannot stand in
+    // for the explicit owner of a v2 active claim.
+    return options.requireExplicitClaim !== true;
+  }
+  if (!screenReachesApiIntegrated(entry, order)) return false;
+  return matchingClaims(activeClaims, file).some((claim) => claim.screen_id === screenId);
+}
+
+function anyScreenAuthorizesApiFile(file, readinessOutput, order, activeClaims, options = {}) {
+  return Object.entries(readinessOutput || {}).some(([screenId, entry]) =>
+    screenAuthorizesApiFile(file, screenId, entry, order, activeClaims, options),
+  );
+}
+
+function describeCandidateViolation(claim, file) {
+  const tracking = claim.tracking ? `, tracking=${claim.tracking}` : '';
+  const conflict = claim.conflicting_path ? `, conflicts-with=${claim.conflicting_path}` : '';
+  return {
+    reason:
+      `API candidate ${claim.kind} slice '${claim.path}' denies ${file} ` +
+      `(screen=${claim.screen_id}, endpoint=${claim.endpoint}${tracking}${conflict})`,
+    would_clear:
+      claim.kind === 'deferred'
+        ? `resolve tracking and change the candidate to an explicit confirmed active slice before editing`
+        : `resolve cross-screen candidate path ownership before editing`,
+  };
+}
+
+function describeUnownedCandidateViolation(file, matches) {
+  const owners = matches
+    .map(
+      (claim) =>
+        `${claim.screen_id}:${claim.endpoint}` +
+        (claim.tracking ? ` tracking=${claim.tracking}` : ''),
+    )
+    .join(', ');
+  return {
+    reason: matches.length
+      ? `API candidate active slice '${file}' has no owning screen at api-integrated-ui with effective allowed_paths (${owners})`
+      : `API-related path '${file}' is not authorized by any screen's effective allowed_paths/forbidden_paths candidate model`,
+    would_clear: `declare one valid confirmed active Slice Path and reach api-integrated-ui, or use a legacy screen contract`,
+  };
 }
 
 // 위반 1건의 reason / would_clear 문구를 만든다(설계 §4 출력 규약).
@@ -248,6 +365,29 @@ function main() {
   const domains = domainsFromState(state);
   const guardedSurface = layout.materializeGuardedSurface(resolvedPolicy, domains);
   const apiClientSurfaces = optionalApiClientSurfaces(layout, domains);
+  const claims = candidateClaims(readinessOutput);
+  const hasV2CandidateContract = Object.values(readinessOutput).some(
+    (entry) => entry?.api_candidate_authorization?.contract_version === 2,
+  );
+  const integratedV2Domains = [
+    ...new Set(
+      Object.entries(readinessOutput)
+        .filter(
+          ([, entry]) =>
+            entry?.api_candidate_authorization?.contract_version === 2 &&
+            screenReachesApiIntegrated(entry, order),
+        )
+        .map(([screenId]) => state.screens?.[screenId]?.domain)
+        .filter((domain) => domain != null && domain !== ''),
+    ),
+  ].sort();
+  const integratedV2ApiSurfaces =
+    integratedV2Domains.length === 0
+      ? []
+      : [
+          ...optionalRoleSurfaces(layout, 'hook', integratedV2Domains),
+          ...optionalApiClientSurfaces(layout, integratedV2Domains),
+        ];
 
   // --- diff source 결정 → 상태 인식 record (우선순위: §3) ---
   let records;
@@ -292,11 +432,65 @@ function main() {
       // --root strip → posix 정규화 (root 없으면 정규화만)
       const F = stripRoot(wp, rootRel);
       if (seenFiles.has(F)) continue; // 같은 파일 중복 방지(여러 record가 같은 새 경로를 줄 일은 드묾)
+      const deniedClaims = matchingClaims(claims.denied, F);
+      if (deniedClaims.length > 0) {
+        seenFiles.add(F);
+        const claim = deniedClaims[0];
+        const { reason, would_clear } = describeCandidateViolation(claim, F);
+        violations.push({
+          file: F,
+          change: changeLabel(record),
+          surface: claim.path,
+          reason,
+          would_clear,
+          candidate: claim,
+        });
+        continue;
+      }
+      const activeClaims = matchingClaims(claims.active, F);
       // F 가 매칭되는 guarded surface 를 모두 모아 '가장 좁은(구체적인)' 것으로 판정한다.
       // (설계 §4/§8: 겹치는 surface 는 파일별 최협 매칭. 현재 MVP 정책엔 겹침이 없어 보통 1개지만,
       //  surface 가 늘어도 배열 순서 의존[find]을 없애 broader-cleared 가 narrower-uncleared 를 가리지 못하게.)
       const matched = guardedSurface.filter((g) => globMatches(g, F));
-      if (matched.length === 0) continue; // (c) 공유/무관 경로 — 감시 대상 아님
+      const touchesIntegratedV2ApiSurface = integratedV2ApiSurfaces.some((surface) =>
+        globMatches(surface, F),
+      );
+      if (
+        matched.length === 0 &&
+        activeClaims.length === 0 &&
+        !touchesIntegratedV2ApiSurface
+      ) continue; // (c) 공유/무관 경로 — 감시 대상 아님
+      if (activeClaims.length > 0) {
+        if (
+          anyScreenAuthorizesApiFile(F, readinessOutput, order, claims.active, {
+            requireExplicitClaim: true,
+          })
+        ) continue;
+        seenFiles.add(F);
+        const { reason, would_clear } = describeUnownedCandidateViolation(F, activeClaims);
+        violations.push({
+          file: F,
+          change: changeLabel(record),
+          surface: activeClaims[0].path,
+          reason,
+          would_clear,
+          candidate: activeClaims[0],
+        });
+        continue;
+      }
+      if (matched.length === 0 && touchesIntegratedV2ApiSurface) {
+        if (anyScreenAuthorizesApiFile(F, readinessOutput, order, claims.active)) continue;
+        seenFiles.add(F);
+        const { reason, would_clear } = describeUnownedCandidateViolation(F, []);
+        violations.push({
+          file: F,
+          change: changeLabel(record),
+          surface: integratedV2ApiSurfaces.find((entry) => globMatches(entry, F)),
+          reason,
+          would_clear,
+        });
+        continue;
+      }
       const surface = matched.sort(
         (a, b) => b.replace(/\*+/g, '').length - a.replace(/\*+/g, '').length || a.localeCompare(b),
       )[0];
@@ -305,9 +499,20 @@ function main() {
       // 위반이 됐다). expo 의 global 표면(src/api/**)은 threshold 가 동일해 byte-동치.
       const threshold = guardedSurface.thresholdOf(surface);
       const clearanceOptions = { requireApiRequired: surfaceTouchesAny(surface, apiClientSurfaces) };
-      if (isClearedAt(threshold, readinessOutput, order, clearanceOptions)) continue; // (b) 프로젝트가 레이어 열 자격 도달 — 침묵
+      if (
+        clearanceOptions.requireApiRequired === true &&
+        hasV2CandidateContract &&
+        anyScreenAuthorizesApiFile(F, readinessOutput, order, claims.active)
+      ) continue;
+      if (
+        (clearanceOptions.requireApiRequired !== true || !hasV2CandidateContract) &&
+        isClearedAt(threshold, readinessOutput, order, clearanceOptions)
+      ) continue; // (b) non-API guarded surface의 기존 project-level 동작 유지
       seenFiles.add(F);
-      const { reason, would_clear } = describeViolation(surface, threshold, resolvedPolicy, readinessOutput, clearanceOptions);
+      const { reason, would_clear } =
+        clearanceOptions.requireApiRequired === true && hasV2CandidateContract
+          ? describeUnownedCandidateViolation(F, [])
+          : describeViolation(surface, threshold, resolvedPolicy, readinessOutput, clearanceOptions);
       violations.push({ file: F, change: changeLabel(record), surface, reason, would_clear });
     }
   }
@@ -329,6 +534,9 @@ function main() {
           violations,
           guarded_surface: guardedSurface,
           screen_modes: screenModes,
+          ...(claims.active.length || claims.denied.length
+            ? { api_candidate_claims: claims }
+            : {}),
         },
         null,
         2,

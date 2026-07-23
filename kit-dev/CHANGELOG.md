@@ -4,6 +4,29 @@
 
 ## Unreleased
 
+### feat(readiness) — per-API candidate deferral + slice ownership (#210)
+
+- ScreenSpec `## API Candidates`에 opt-in structured v2 표
+  (`Method|Path|Confidence|Gate|Tracking|Slice Paths`)를 추가했다. legacy bullet은 모두 active로
+  dual-read하며 기존 state/readiness 출력과 broad role 권한을 byte-compatible하게 유지한다.
+- v2는 `api_confidence_min`(전체 telemetry)을 보존하면서
+  `api_actionable_confidence_min`·`api_actionable_candidates_count`·
+  `api_candidate_deferrals_valid`를 분리한다. 모든 candidate가 resolved layout의 hook/API-client 안쪽
+  좁은 Slice Paths를 가져야 하며 deferred는 open Unknown 또는 `issue:#N` tracking을 요구한다.
+  all-deferred, malformed tracking/path/table, `confirmed+deferred`, active/deferred 및 cross-screen
+  ownership overlap은 live `api-integrated-ui`를 fail-closed한다.
+- v2 screen의 `api-integrated-ui` allowed_paths는 confirmed active slices로 좁히고 deferred/conflict
+  paths는 모든 screen의 effective forbidden_paths에 보존한다(forbidden 우선). Work Packet/Run Report
+  Markdown·JSON은 endpoint/tracking/owner provenance를 재유도 없이 전달한다.
+- `workflow:forbidden-paths`의 API-related 판정을 project-level `isClearedAt()`에서 화면별 effective
+  allowed/forbidden + candidate ownership으로 바꿨다. 다른 legacy/api-integrated screen이 있어도
+  deferred diff는 `--enforce`에서 차단되고 active owned slice는 통과한다. non-API guarded surface의
+  기존 project-level 동작과 warning-first/`--enforce` exit 계약은 유지한다.
+- validate 검사 15는 v2 표/enum/tracking/path/ownership을 warning-only로 조기경보한다. legacy 문서는
+  무발화하며 hard gate/CI required check 승격은 없다. 설계·migration·known limits:
+  `kit-dev/docs/design/drafts/per-api-candidate-deferral.md`; consumer 계약:
+  `docs/reference/api-candidate-deferral.md`.
+
 ### feat(reconciliation) — Reconciliation Contract v2 + 검사 12 구조 강제 + Stage 04 review profile (#202, slice A)
 
 - Reconciliation Register 에 **opt-in Contract v2** 를 추가했다. frontmatter `reconciliation_contract: 2` +

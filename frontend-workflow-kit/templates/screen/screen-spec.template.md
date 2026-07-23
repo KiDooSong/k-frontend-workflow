@@ -96,7 +96,10 @@ last_reviewed: "{YYYY-MM-DD}"
 ## API Candidates
 <!-- "- METHOD /path (confidence: unknown|candidate|confirmed)" 형식. 추측 금지.
      자체 API 호출이 없는 result/transition 화면은 frontmatter 에 api_required:false 를 추가하고,
-     이 섹션에는 "없음 — upstream 화면의 API 결과/route params 를 표시" 처럼 prose 로 명시한다. -->
+     이 섹션에는 "없음 — upstream 화면의 API 결과/route params 를 표시" 처럼 prose 로 명시한다.
+     일부 candidate 를 deferred 하면서 도착한 계약만 배선해야 하면 불릿을 모두 지우고
+     docs/reference/api-candidate-deferral.md 의 v2 표(Method|Path|Confidence|Gate|Tracking|Slice Paths)를 쓴다.
+     v2 는 모든 행(active 포함)에 좁은 Slice Paths 가 필요하며 legacy 불릿과 섞지 않는다. -->
 - {METHOD} {/path} (confidence: candidate)
 
 ## Copy Keys

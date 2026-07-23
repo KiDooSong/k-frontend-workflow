@@ -69,6 +69,8 @@ last_reviewed: "{YYYY-MM-DD}"
 - {공통 데이터 요구}
 
 ## API Candidates
+<!-- 기본은 legacy active 불릿. per-candidate deferred 가 필요하면 legacy 불릿을 모두 지우고
+     docs/reference/api-candidate-deferral.md 의 v2 표를 사용한다. -->
 - {METHOD} {/path} (confidence: candidate)
 
 ## Copy Keys

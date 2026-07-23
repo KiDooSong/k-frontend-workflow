@@ -48,6 +48,7 @@ inline and links the rest; it does not restate the references.
 | component gap rules (proposal-only) | [`component-gap-register.template.md`](../../templates/global/component-gap-register.template.md) + [`task-artifact-matrix.md`](task-artifact-matrix.md) | short reminder only |
 | policy draft vs live policy | [Stage 10](workflow-stages/10-policy-layout-tier3-changes.md) + [`CONVENTIONS.md`](../../CONVENTIONS.md) §Tier3 + [`input-reconciliation.md`](input-reconciliation.md) §Tier3 | short reminder only |
 | route / screen / API conventions | [`CONVENTIONS.md`](../../CONVENTIONS.md) | link only |
+| per-candidate API deferral, v2 Tracking/Slice Paths, candidate path ownership | [`api-candidate-deferral.md`](api-candidate-deferral.md) | link; keep only “deferred paths remain forbidden” inline |
 | optional web E2E evidence | [Stage 08](workflow-stages/08-validate-and-report.md) + [`e2e-agent`](../../skills/e2e-agent/SKILL.md) | keep non-gating boundary inline; link the rest |
 | e2e behavioral rules (assertion / locator / coverage) | [`e2e-behavioral-rules.md`](e2e-behavioral-rules.md) | keep "assert app state not browser artifacts; scope rows by container testid+id" inline; link the catalog + examples |
 | e2e visual capture / Expo Web screenshot evidence | [`e2e-visual-capture.md`](e2e-visual-capture.md) | keep only critical non-gating/native-boundary invariants inline; link the capture matrix and runtime details |
