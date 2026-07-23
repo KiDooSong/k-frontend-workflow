@@ -202,8 +202,10 @@ function visibleText(node, context) {
     return range ? context.source.slice(range.start, range.end) : '';
   }
   // URL-only autolink 안의 INV-/VER-는 링크 목적지와 마찬가지로 reconciliation
-  // 근거가 아니다. 명시적으로 저작한 Markdown link text만 visible evidence로 남긴다.
-  if (isUrlOnlyAutolink(node, context)) return '';
+  // 근거가 아니다. 제거 지점에는 공백을 남겨 양옆 text가 새 INV-/VER- ID로 합성되지 않게 한다.
+  if (isUrlOnlyAutolink(node, context)) return ' ';
+  // inline code도 hard-reference 근거에서 제외하지만, 양옆 prose의 token boundary는 보존한다.
+  if (node.type === 'inlineCode') return ' ';
   if (NON_VISIBLE_TYPES.has(node.type)) return '';
   if (node.type === 'text') return restoreParserSentinels(node.value);
   if (node.type === 'break') return '\n';
@@ -232,7 +234,13 @@ function lineEndOffset(source, offset) {
 function tableStartsWithColumnZeroPipe(source, node) {
   const start = node?.position?.start?.offset;
   const end = node?.position?.end?.offset;
-  if (!Number.isInteger(start) || !Number.isInteger(end)) return false;
+  if (
+    !Number.isInteger(start) ||
+    !Number.isInteger(end) ||
+    node?.position?.start?.column !== 1
+  ) {
+    return false;
+  }
   return source
     .slice(start, end)
     .split(/\r?\n/)
@@ -261,9 +269,16 @@ function sourceGapHasBlankLine(source, previousNode, node) {
   return /\r?\n[\t ]*\r?\n/.test(source.slice(previousRange.end, range.start));
 }
 
+function isEmptyContainerNode(node) {
+  if (!['blockquote', 'list', 'listItem'].includes(node?.type)) return false;
+  const children = node.children || [];
+  return children.length === 0 || children.every((child) => isEmptyContainerNode(child));
+}
+
 function tableHasExplicitBlockBoundary(source, node, previousNode) {
   if (!previousNode) return true;
   if (EXPLICIT_TABLE_BOUNDARY_TYPES.has(previousNode.type)) return true;
+  if (isEmptyContainerNode(previousNode)) return true;
   return sourceGapHasBlankLine(source, previousNode, node);
 }
 
