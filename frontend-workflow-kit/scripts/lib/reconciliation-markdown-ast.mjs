@@ -202,15 +202,25 @@ function visibleText(node, context) {
     return range ? context.source.slice(range.start, range.end) : '';
   }
   // URL-only autolink 안의 INV-/VER-는 링크 목적지와 마찬가지로 reconciliation
-  // 근거가 아니다. 명시적으로 저작한 Markdown link text만 visible evidence로 남긴다.
-  if (isUrlOnlyAutolink(node, context)) return '';
+  // 근거가 아니다. 제거 지점에는 공백을 남겨 양옆 text가 새 INV-/VER- ID로 합성되지 않게 한다.
+  if (isUrlOnlyAutolink(node, context)) return ' ';
+  // inline code도 hard-reference 근거에서 제외하지만, 양옆 prose의 token boundary는 보존한다.
+  if (node.type === 'inlineCode') return ' ';
+  // raw inline HTML은 markup/attribute 자체가 근거가 아니며, <br> 같은 렌더링 경계를
+  // 빈 문자열로 지우면 양옆 text가 새 ID로 합성된다. 모든 omitted HTML 경계를 보존한다.
+  if (node.type === 'html') return ' ';
   if (NON_VISIBLE_TYPES.has(node.type)) return '';
   if (node.type === 'text') return restoreParserSentinels(node.value);
   if (node.type === 'break') return '\n';
   if (node.type === 'image' || node.type === 'imageReference') {
-    return restoreParserSentinels(node.alt);
+    // 빈 alt image도 inline 위치를 차지한다. 완전히 지우면 양옆 text가 새 ID로 합성된다.
+    return restoreParserSentinels(node.alt) || ' ';
   }
-  if (!node.children?.length) return '';
+  if (!node.children?.length) {
+    // destination/definition은 근거가 아니지만 빈 link 자체의 token boundary는 보존한다.
+    if (node.type === 'link' || node.type === 'linkReference') return ' ';
+    return '';
+  }
   const separator = BLOCK_TEXT_TYPES.has(node.type) ? '\n' : '';
   return node.children.map((child) => visibleText(child, context)).filter(Boolean).join(separator);
 }
@@ -225,17 +235,25 @@ function cellText(node) {
 }
 
 function lineEndOffset(source, offset) {
-  const lf = source.indexOf('\n', offset);
-  return lf === -1 ? source.length : lf + 1;
+  const lineEnding = /\r\n?|\n/.exec(source.slice(offset));
+  return lineEnding
+    ? offset + lineEnding.index + lineEnding[0].length
+    : source.length;
 }
 
 function tableStartsWithColumnZeroPipe(source, node) {
   const start = node?.position?.start?.offset;
   const end = node?.position?.end?.offset;
-  if (!Number.isInteger(start) || !Number.isInteger(end)) return false;
+  if (
+    !Number.isInteger(start) ||
+    !Number.isInteger(end) ||
+    node?.position?.start?.column !== 1
+  ) {
+    return false;
+  }
   return source
     .slice(start, end)
-    .split(/\r?\n/)
+    .split(/\r\n?|\n/)
     .every((line) => line.startsWith('|'));
 }
 
@@ -258,12 +276,21 @@ function sourceGapHasBlankLine(source, previousNode, node) {
   const previousRange = sourceRange(previousNode);
   const range = sourceRange(node);
   if (!previousRange || !range) return false;
-  return /\r?\n[\t ]*\r?\n/.test(source.slice(previousRange.end, range.start));
+  return /(?:\r\n?|\n)[\t ]*(?:\r\n?|\n)/.test(
+    source.slice(previousRange.end, range.start),
+  );
+}
+
+function isEmptyContainerNode(node) {
+  if (!['blockquote', 'list', 'listItem'].includes(node?.type)) return false;
+  const children = node.children || [];
+  return children.length === 0 || children.every((child) => isEmptyContainerNode(child));
 }
 
 function tableHasExplicitBlockBoundary(source, node, previousNode) {
   if (!previousNode) return true;
   if (EXPLICIT_TABLE_BOUNDARY_TYPES.has(previousNode.type)) return true;
+  if (isEmptyContainerNode(previousNode)) return true;
   return sourceGapHasBlankLine(source, previousNode, node);
 }
 

@@ -20,6 +20,7 @@ import {
   bodyHasToken,
   buildReconciliationTargetIndex,
   parseStrictTables,
+  splitSectionOccurrences,
   stripFencedCodeBlocks,
   stripNonContent,
   toProseBody,
@@ -1306,6 +1307,13 @@ test('v2 hard: 링크 URL·autolink·reference definition·HTML attribute 의 IN
     '[조사 문서](https://example.test/INV-001)', // link destination 에만 존재
     '<https://example.test/INV-001>', // CommonMark angle autolink의 URL-only text
     'https://example.test/INV-001', // GFM literal autolink의 URL-only text
+    'INV`example`-001', // 제외된 inline code 양옆 text가 새 ID로 합성되면 안 됨
+    'INV<https://example.test/x>-001', // 제외된 autolink 양옆도 token boundary를 유지
+    'INV<br>-001', // omitted inline HTML의 렌더링 경계도 ID 합성을 막음
+    'INV![](image.png)-001', // 빈 image alt를 지워 양옆 text를 합성하면 안 됨
+    'INV[](https://example.test)-001', // 빈 link children도 token boundary를 유지
+    'INV![][image]-001\n\n[image]: image.png', // resolved 빈 image reference
+    'INV[][link]-001\n\n[link]: https://example.test', // resolved 빈 link reference
     '[probe]: https://example.test/INV-001', // reference definition (렌더링되지 않음)
     '추가 정보는 <span data-ref="INV-001">여기</span>를 참고한다.', // HTML attribute 에만 존재
   ];
@@ -1498,6 +1506,45 @@ test('strict table parser: canonical 표는 앞 문단과 명시적 block bounda
   assert.equal(afterHeading.length, 1);
 });
 
+test('strict table parser: 첫 행도 column 0이어야 하고 빈 container는 명시적 경계임', () => {
+  for (const indent of [' ', '  ', '   ']) {
+    const headerIndented = parseStrictTables(
+      [`${indent}${ITEMS_HEADER[0]}`, ITEMS_HEADER[1], DEFAULT_ITEM_ROWS[0]].join('\n'),
+    );
+    assert.equal(headerIndented.length, 0, `${indent.length}-space header accepted`);
+  }
+
+  for (const marker of EMPTY_CONTAINER_MARKERS) {
+    const afterEmptyContainer = parseStrictTables(
+      [marker, ...ITEMS_HEADER, DEFAULT_ITEM_ROWS[0]].join('\n'),
+    );
+    assert.equal(afterEmptyContainer.length, 1, `table rejected after empty ${marker}`);
+  }
+
+  const bareCrTable = parseStrictTables(
+    [ITEMS_HEADER[0], ITEMS_HEADER[1], DEFAULT_ITEM_ROWS[0]].join('\r'),
+  );
+  assert.equal(bareCrTable.length, 1);
+
+  const bareCrIndentedRows = parseStrictTables(
+    [ITEMS_HEADER[0], `   ${ITEMS_HEADER[1]}`, `   ${DEFAULT_ITEM_ROWS[0]}`].join('\r'),
+  );
+  assert.equal(bareCrIndentedRows.length, 0);
+
+  const bareCrBlankBoundary = parseStrictTables(
+    ['설명 문단', '', ITEMS_HEADER[0], ITEMS_HEADER[1], DEFAULT_ITEM_ROWS[0]].join('\r'),
+  );
+  assert.equal(bareCrBlankBoundary.length, 1);
+});
+
+test('markdown AST: bare CR도 section과 physical line 경계로 처리', () => {
+  const sections = splitSectionOccurrences('## First\rfirst\r## Second\rsecond');
+  assert.equal(sections[1].title, 'First');
+  assert.equal(sections[1].text, 'first\r');
+  assert.equal(sections[2].title, 'Second');
+  assert.equal(sections[2].text, 'second');
+});
+
 test('v2 hard: 문단에 바로 붙은 Summary·Items·child 표는 canonical 표가 아님', (t) => {
   const adjacentSummary = runV2(t, { summaryPrefix: '설명 문단' });
   assert.ok(hasCode(adjacentSummary.errors, 'RR-SCHEMA-019'));
@@ -1513,6 +1560,60 @@ test('v2 hard: 문단에 바로 붙은 Summary·Items·child 표는 canonical �
     files: { 'global/open-decisions.md': adjacentDecision },
   });
   assert.ok(hasCode(unresolvedChild.errors, 'RR-REF-008'));
+});
+
+test('v2 hard: 첫 행만 들여쓴 Summary·Items·child 표는 canonical 표가 아님', (t) => {
+  const indentedSummary = runV2(t, {
+    omitSummaryTable: true,
+    summaryPrefix: [`   ${SUMMARY_HEADER[0]}`, SUMMARY_HEADER[1], ...DEFAULT_SUMMARY_ROWS].join('\n'),
+    itemRows: [],
+  });
+  assert.ok(hasCode(indentedSummary.errors, 'RR-SCHEMA-019'));
+
+  const indentedItems = runV2(t, {
+    itemsHeader: [`   ${ITEMS_HEADER[0]}`, ITEMS_HEADER[1]],
+  });
+  assert.ok(hasCode(indentedItems.errors, 'RR-SCHEMA-004'));
+
+  const indentedDecision = DECISION_DOC.replace(
+    '| ID | Decision Needed | Options | Blocking Mode | Owner | Status |',
+    '   | ID | Decision Needed | Options | Blocking Mode | Owner | Status |',
+  );
+  const unresolvedChild = runV2(t, {
+    files: { 'global/open-decisions.md': indentedDecision },
+  });
+  assert.ok(hasCode(unresolvedChild.errors, 'RR-REF-008'));
+});
+
+test('v2 hard: bare CR 뒤 들여쓴 Items delimiter/data 행은 canonical 표가 아님', (t) => {
+  const bareCrItems = runV2(t, {
+    itemsHeader: [
+      [
+        ITEMS_HEADER[0],
+        `   ${ITEMS_HEADER[1]}`,
+        ...DEFAULT_ITEM_ROWS.map((row) => `   ${row}`),
+      ].join('\r'),
+    ],
+    itemRows: [],
+  });
+  assert.ok(hasCode(bareCrItems.errors, 'RR-SCHEMA-004'));
+});
+
+test('v2 pass: 빈 container 직후 Summary·Items·child root 표를 명시적 경계로 인정', (t) => {
+  const afterEmptySummary = runV2(t, { summaryPrefix: '>' });
+  assert.deepEqual(messages(afterEmptySummary.errors), []);
+
+  const afterEmptyItems = runV2(t, { itemsHeader: ['-', ...ITEMS_HEADER] });
+  assert.deepEqual(messages(afterEmptyItems.errors), []);
+
+  const afterEmptyDecision = DECISION_DOC.replace(
+    '| ID | Decision Needed | Options | Blocking Mode | Owner | Status |',
+    '1.\n| ID | Decision Needed | Options | Blocking Mode | Owner | Status |',
+  );
+  const resolvedChild = runV2(t, {
+    files: { 'global/open-decisions.md': afterEmptyDecision },
+  });
+  assert.deepEqual(messages(resolvedChild.errors), []);
 });
 
 test('v2 hard: lazy container pseudo-table은 Items·Summary·child canonical 표가 아님', (t) => {
@@ -1933,6 +2034,26 @@ test('AST conformance matrix: container path × leaf type × close/exit × blank
       name: 'resolved image destination is hidden while alt text remains visible',
       markdown: '![INV-001](https://example.test/hidden-token)',
       expected: true,
+    },
+    {
+      name: 'empty inline image preserves token boundary',
+      markdown: 'INV![](image.png)-001',
+      expected: false,
+    },
+    {
+      name: 'empty inline link preserves token boundary',
+      markdown: 'INV[](https://example.test)-001',
+      expected: false,
+    },
+    {
+      name: 'resolved empty image reference preserves token boundary',
+      markdown: ['INV![][image]-001', '', '[image]: image.png'].join('\n'),
+      expected: false,
+    },
+    {
+      name: 'resolved empty link reference preserves token boundary',
+      markdown: ['INV[][link]-001', '', '[link]: https://example.test'].join('\n'),
+      expected: false,
     },
     {
       name: 'Unicode-overmatched image reference remains literal visible source',
