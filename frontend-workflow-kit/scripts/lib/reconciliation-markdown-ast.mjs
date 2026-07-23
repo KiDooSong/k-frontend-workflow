@@ -206,6 +206,9 @@ function visibleText(node, context) {
   if (isUrlOnlyAutolink(node, context)) return ' ';
   // inline code도 hard-reference 근거에서 제외하지만, 양옆 prose의 token boundary는 보존한다.
   if (node.type === 'inlineCode') return ' ';
+  // raw inline HTML은 markup/attribute 자체가 근거가 아니며, <br> 같은 렌더링 경계를
+  // 빈 문자열로 지우면 양옆 text가 새 ID로 합성된다. 모든 omitted HTML 경계를 보존한다.
+  if (node.type === 'html') return ' ';
   if (NON_VISIBLE_TYPES.has(node.type)) return '';
   if (node.type === 'text') return restoreParserSentinels(node.value);
   if (node.type === 'break') return '\n';
@@ -227,8 +230,10 @@ function cellText(node) {
 }
 
 function lineEndOffset(source, offset) {
-  const lf = source.indexOf('\n', offset);
-  return lf === -1 ? source.length : lf + 1;
+  const lineEnding = /\r\n?|\n/.exec(source.slice(offset));
+  return lineEnding
+    ? offset + lineEnding.index + lineEnding[0].length
+    : source.length;
 }
 
 function tableStartsWithColumnZeroPipe(source, node) {
@@ -243,7 +248,7 @@ function tableStartsWithColumnZeroPipe(source, node) {
   }
   return source
     .slice(start, end)
-    .split(/\r?\n/)
+    .split(/\r\n?|\n/)
     .every((line) => line.startsWith('|'));
 }
 
@@ -266,7 +271,9 @@ function sourceGapHasBlankLine(source, previousNode, node) {
   const previousRange = sourceRange(previousNode);
   const range = sourceRange(node);
   if (!previousRange || !range) return false;
-  return /\r?\n[\t ]*\r?\n/.test(source.slice(previousRange.end, range.start));
+  return /(?:\r\n?|\n)[\t ]*(?:\r\n?|\n)/.test(
+    source.slice(previousRange.end, range.start),
+  );
 }
 
 function isEmptyContainerNode(node) {
