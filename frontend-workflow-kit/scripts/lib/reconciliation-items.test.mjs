@@ -1506,6 +1506,29 @@ test('strict table parser: canonical 표는 앞 문단과 명시적 block bounda
   assert.equal(afterHeading.length, 1);
 });
 
+test('strict table parser: single CRLF is not a blank line and physical EOLs stay atomic', () => {
+  for (const [name, eol] of [
+    ['LF', '\n'],
+    ['CRLF', '\r\n'],
+    ['bare CR', '\r'],
+  ]) {
+    const adjacent = parseStrictTables(
+      ['설명 문단', ...ITEMS_HEADER, DEFAULT_ITEM_ROWS[0]].join(eol),
+    );
+    assert.equal(adjacent.length, 0, `single ${name} accepted as a blank line`);
+
+    const afterBlank = parseStrictTables(
+      `설명 문단${eol} \t${eol}${[...ITEMS_HEADER, DEFAULT_ITEM_ROWS[0]].join(eol)}`,
+    );
+    assert.equal(afterBlank.length, 1, `${name} physical blank line rejected`);
+  }
+
+  const afterMixedBlank = parseStrictTables(
+    `설명 문단\r\n\t\n${[...ITEMS_HEADER, DEFAULT_ITEM_ROWS[0]].join('\r\n')}`,
+  );
+  assert.equal(afterMixedBlank.length, 1);
+});
+
 test('strict table parser: 첫 행도 column 0이어야 하고 빈 container는 명시적 경계임', () => {
   for (const indent of [' ', '  ', '   ']) {
     const headerIndented = parseStrictTables(
@@ -1555,6 +1578,29 @@ test('v2 hard: 문단에 바로 붙은 Summary·Items·child 표는 canonical �
   const adjacentDecision = DECISION_DOC.replace(
     '| ID | Decision Needed | Options | Blocking Mode | Owner | Status |',
     '설명 문단\n| ID | Decision Needed | Options | Blocking Mode | Owner | Status |',
+  );
+  const unresolvedChild = runV2(t, {
+    files: { 'global/open-decisions.md': adjacentDecision },
+  });
+  assert.ok(hasCode(unresolvedChild.errors, 'RR-REF-008'));
+});
+
+test('v2 hard: single CRLF is not a blank line before Summary·Items·child tables', (t) => {
+  const adjacentSummary = runV2(t, {
+    omitSummaryTable: true,
+    summaryPrefix: ['설명 문단', ...SUMMARY_HEADER, ...DEFAULT_SUMMARY_ROWS].join('\r\n'),
+    itemRows: [],
+  });
+  assert.ok(hasCode(adjacentSummary.errors, 'RR-SCHEMA-019'));
+
+  const adjacentItems = runV2(t, {
+    itemsHeader: [['설명 문단', ...ITEMS_HEADER].join('\r\n')],
+  });
+  assert.ok(hasCode(adjacentItems.errors, 'RR-SCHEMA-004'));
+
+  const adjacentDecision = DECISION_DOC.replace(
+    '| ID | Decision Needed | Options | Blocking Mode | Owner | Status |',
+    '설명 문단\r\n| ID | Decision Needed | Options | Blocking Mode | Owner | Status |',
   );
   const unresolvedChild = runV2(t, {
     files: { 'global/open-decisions.md': adjacentDecision },

@@ -276,9 +276,10 @@ function sourceGapHasBlankLine(source, previousNode, node) {
   const previousRange = sourceRange(previousNode);
   const range = sourceRange(node);
   if (!previousRange || !range) return false;
-  return /(?:\r\n?|\n)[\t ]*(?:\r\n?|\n)/.test(
-    source.slice(previousRange.end, range.start),
-  );
+  const normalizedGap = source
+    .slice(previousRange.end, range.start)
+    .replace(/\r\n|\r|\n/g, '\n');
+  return /\n[\t ]*\n/.test(normalizedGap);
 }
 
 function isEmptyContainerNode(node) {
