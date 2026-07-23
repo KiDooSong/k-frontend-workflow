@@ -1310,6 +1310,10 @@ test('v2 hard: 링크 URL·autolink·reference definition·HTML attribute 의 IN
     'INV`example`-001', // 제외된 inline code 양옆 text가 새 ID로 합성되면 안 됨
     'INV<https://example.test/x>-001', // 제외된 autolink 양옆도 token boundary를 유지
     'INV<br>-001', // omitted inline HTML의 렌더링 경계도 ID 합성을 막음
+    'INV![](image.png)-001', // 빈 image alt를 지워 양옆 text를 합성하면 안 됨
+    'INV[](https://example.test)-001', // 빈 link children도 token boundary를 유지
+    'INV![][image]-001\n\n[image]: image.png', // resolved 빈 image reference
+    'INV[][link]-001\n\n[link]: https://example.test', // resolved 빈 link reference
     '[probe]: https://example.test/INV-001', // reference definition (렌더링되지 않음)
     '추가 정보는 <span data-ref="INV-001">여기</span>를 참고한다.', // HTML attribute 에만 존재
   ];
@@ -2030,6 +2034,26 @@ test('AST conformance matrix: container path × leaf type × close/exit × blank
       name: 'resolved image destination is hidden while alt text remains visible',
       markdown: '![INV-001](https://example.test/hidden-token)',
       expected: true,
+    },
+    {
+      name: 'empty inline image preserves token boundary',
+      markdown: 'INV![](image.png)-001',
+      expected: false,
+    },
+    {
+      name: 'empty inline link preserves token boundary',
+      markdown: 'INV[](https://example.test)-001',
+      expected: false,
+    },
+    {
+      name: 'resolved empty image reference preserves token boundary',
+      markdown: ['INV![][image]-001', '', '[image]: image.png'].join('\n'),
+      expected: false,
+    },
+    {
+      name: 'resolved empty link reference preserves token boundary',
+      markdown: ['INV[][link]-001', '', '[link]: https://example.test'].join('\n'),
+      expected: false,
     },
     {
       name: 'Unicode-overmatched image reference remains literal visible source',

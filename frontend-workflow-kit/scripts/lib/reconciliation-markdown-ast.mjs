@@ -213,9 +213,14 @@ function visibleText(node, context) {
   if (node.type === 'text') return restoreParserSentinels(node.value);
   if (node.type === 'break') return '\n';
   if (node.type === 'image' || node.type === 'imageReference') {
-    return restoreParserSentinels(node.alt);
+    // 빈 alt image도 inline 위치를 차지한다. 완전히 지우면 양옆 text가 새 ID로 합성된다.
+    return restoreParserSentinels(node.alt) || ' ';
   }
-  if (!node.children?.length) return '';
+  if (!node.children?.length) {
+    // destination/definition은 근거가 아니지만 빈 link 자체의 token boundary는 보존한다.
+    if (node.type === 'link' || node.type === 'linkReference') return ' ';
+    return '';
+  }
   const separator = BLOCK_TEXT_TYPES.has(node.type) ? '\n' : '';
   return node.children.map((child) => visibleText(child, context)).filter(Boolean).join(separator);
 }
