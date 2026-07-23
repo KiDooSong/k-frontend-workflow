@@ -17,10 +17,12 @@ import { splitFrontmatter, readFileSafe } from './util.mjs';
 import { collectInputArtifacts } from './input-artifact.mjs';
 import { parseReconciliationRegister, validateReconciliationRegister } from './reconciliation-register.mjs';
 import {
+  bodyHasToken,
   buildReconciliationTargetIndex,
   parseStrictTables,
   stripFencedCodeBlocks,
   stripNonContent,
+  toProseBody,
 } from './reconciliation-target-index.mjs';
 import {
   parseRegisterContract,
@@ -839,6 +841,18 @@ test('v2: Result 빈값은 warning, Supersedes 빈값은 hard (RR-SCHEMA-102/016
   assert.ok(messages(r.warnings).some((m) => m.startsWith('RR-SCHEMA-102:') && m.includes('(빈값)')));
 });
 
+test('v2 hard: Summary Supersedes 는 자기 Input ID 를 가리킬 수 없음 (RR-REF-010)', (t) => {
+  const inputId = 'IN-20260720-figma-001';
+  const r = runV2(t, {
+    summaryRows: [
+      DEFAULT_SUMMARY_ROWS[0].replace(/\| - \|$/, `| ${inputId} |`),
+      DEFAULT_SUMMARY_ROWS[1],
+    ],
+  });
+  assert.ok(hasCode(r.errors, 'RR-REF-010'));
+  assert.ok(messages(r.errors).some((m) => m.includes('자기 자신')));
+});
+
 test('v2 hard: evidence bullet index 는 1-based — /00 은 문법 위반 (RR-SCHEMA-015)', (t) => {
   const r = runV2(t, {
     itemRows: [
@@ -1278,7 +1292,7 @@ test('v2 hard: PI/CDATA 안의 표는 canonical 이 아니고, DOCTYPE 은 보�
   assert.ok(hasCode(doctypeDup.errors, 'RR-SCHEMA-018'));
 });
 
-test('v2 hard: 링크 URL·reference definition·HTML attribute 의 INV 토큰은 visible prose 가 아님', (t) => {
+test('v2 hard: 링크 URL·autolink·reference definition·HTML attribute 의 INV 토큰은 visible prose 가 아님', (t) => {
   const invItem =
     '| IN-20260720-meeting-001 | 02 | verification-gap | investigation-needed | create-open | investigation:INV-001@COUPON-001-screen-spec | input:IN-20260720-meeting-001#extracted-facts | inherit | statement | inherit |';
   const summaryWithInv = [
@@ -1290,6 +1304,8 @@ test('v2 hard: 링크 URL·reference definition·HTML attribute 의 INV 토큰�
   ];
   const cases = [
     '[조사 문서](https://example.test/INV-001)', // link destination 에만 존재
+    '<https://example.test/INV-001>', // CommonMark angle autolink의 URL-only text
+    'https://example.test/INV-001', // GFM literal autolink의 URL-only text
     '[probe]: https://example.test/INV-001', // reference definition (렌더링되지 않음)
     '추가 정보는 <span data-ref="INV-001">여기</span>를 참고한다.', // HTML attribute 에만 존재
   ];
@@ -1311,6 +1327,53 @@ test('v2 hard: 링크 URL·reference definition·HTML attribute 의 INV 토큰�
     summaryRows: summaryWithInv,
   });
   assert.deepEqual(messages(pass.errors), []);
+});
+
+test('v2 hard: 중첩 list 안 reference definition 은 visible INV 근거가 아님', (t) => {
+  const invItem =
+    '| IN-20260720-meeting-001 | 02 | verification-gap | investigation-needed | create-open | investigation:INV-001@COUPON-001-screen-spec | input:IN-20260720-meeting-001#extracted-facts | inherit | statement | inherit |';
+  const summaryWithInv = [
+    DEFAULT_SUMMARY_ROWS[0],
+    DEFAULT_SUMMARY_ROWS[1]
+      .replace('| conflict |', '| conflict + investigation-needed |')
+      .replace('conflict:C-001@conflicts;', 'conflict:C-001@conflicts; investigation:INV-001@COUPON-001-screen-spec;')
+      .replace('artifact:conflicts;', 'artifact:conflicts; artifact:COUPON-001-screen-spec;'),
+  ];
+  const doc =
+    SCREEN_SPEC_DOC +
+    '\n## Notes\n\n- - [INV-001]: https://example.test/investigation\n';
+  const r = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': doc },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.ok(hasCode(r.errors, 'RR-REF-008'));
+});
+
+test('v2 hard: backtick 포함 info string 은 backtick fence 를 열지 못함', (t) => {
+  const tick = '`';
+  const r = runV2(t, {
+    registerExtra: [
+      tick.repeat(3) + 'markdown' + tick + 'invalid',
+      '## Reconciliation Items',
+      ...ITEMS_HEADER,
+      DEFAULT_ITEM_ROWS[0],
+      tick.repeat(3),
+    ].join('\n'),
+  });
+  assert.ok(hasCode(r.errors, 'RR-SCHEMA-018'));
+
+  // tilde fence info string에는 backtick이 허용된다 — 내부 duplicate heading 은 계속 숨긴다.
+  const tilde = runV2(t, {
+    registerExtra: [
+      '~~~markdown' + tick + 'valid',
+      '## Reconciliation Items',
+      ...ITEMS_HEADER,
+      DEFAULT_ITEM_ROWS[0],
+      '~~~',
+    ].join('\n'),
+  });
+  assert.equal(hasCode(tilde.errors, 'RR-SCHEMA-018'), false);
 });
 
 test('markdown 전처리: HTML type 1/6 exact 경계와 type 7 paragraph 조건을 지킴', () => {
@@ -1418,6 +1481,40 @@ test('strict table parser: list/blockquote paragraph의 lazy pipe block은 top-l
   assert.equal(topLevelAfterList.length, 1);
 });
 
+test('strict table parser: canonical 표는 앞 문단과 명시적 block boundary로 분리돼야 함', () => {
+  const adjacent = parseStrictTables(
+    ['설명 문단', ...ITEMS_HEADER, DEFAULT_ITEM_ROWS[0]].join('\n'),
+  );
+  assert.equal(adjacent.length, 0);
+
+  const afterBlank = parseStrictTables(
+    ['설명 문단', '', ...ITEMS_HEADER, DEFAULT_ITEM_ROWS[0]].join('\n'),
+  );
+  assert.equal(afterBlank.length, 1);
+
+  const afterHeading = parseStrictTables(
+    ['## Reconciliation Items', ...ITEMS_HEADER, DEFAULT_ITEM_ROWS[0]].join('\n'),
+  );
+  assert.equal(afterHeading.length, 1);
+});
+
+test('v2 hard: 문단에 바로 붙은 Summary·Items·child 표는 canonical 표가 아님', (t) => {
+  const adjacentSummary = runV2(t, { summaryPrefix: '설명 문단' });
+  assert.ok(hasCode(adjacentSummary.errors, 'RR-SCHEMA-019'));
+
+  const adjacentItems = runV2(t, { itemsHeader: ['설명 문단', ...ITEMS_HEADER] });
+  assert.ok(hasCode(adjacentItems.errors, 'RR-SCHEMA-004'));
+
+  const adjacentDecision = DECISION_DOC.replace(
+    '| ID | Decision Needed | Options | Blocking Mode | Owner | Status |',
+    '설명 문단\n| ID | Decision Needed | Options | Blocking Mode | Owner | Status |',
+  );
+  const unresolvedChild = runV2(t, {
+    files: { 'global/open-decisions.md': adjacentDecision },
+  });
+  assert.ok(hasCode(unresolvedChild.errors, 'RR-REF-008'));
+});
+
 test('v2 hard: lazy container pseudo-table은 Items·Summary·child canonical 표가 아님', (t) => {
   // non-empty bullet item paragraph의 unindented pipe source만 Items에 둔다 — 실제 table 부재.
   const lazyItems = runV2(t, {
@@ -1463,7 +1560,28 @@ test('v2 hard: link/reference source 의 INV 토큰은 visible prose 가 아님'
     '![설명][INV-001]\n\n[INV-001]: https://example.test/img.png', // image reference label
     '[INV-001]:\n  https://example.test/investigation', // destination 이 다음 줄인 definition
     '> [INV-001]:\n>   https://example.test/investigation', // blockquote 내부 definition
+    '설명 paragraph\n> [INV-001]: /url', // blockquote가 paragraph를 끊고 definition을 포함
     '- [INV-001]:\n    https://example.test/investigation', // list 내부 definition
+    '[조사 문서][INV-001]\n\n- # heading\n  [INV-001]: /url', // list child heading 뒤 definition
+    '[조사 문서][INV-001]\n\n-   paragraph\n    > [INV-001]: /url', // content indent 4인 list 내부 blockquote definition
+    '[조사 문서][INV-001]\n\n- outer\n\n  > quote\n\n    [INV-001]: /url', // nested quote 종료 뒤 outer list definition
+    '[조사 문서][INV-001]\n\n- outer\n\n    [INV-001]: /url', // list content-relative 2칸 definition
+    '[조사 문서][INV-001]\n\n10. outer\n\n    [INV-001]: /url', // ordered item content-relative 0칸
+    '[조사 문서][INV-001]\n\n1. context\n2. [INV-001]: /url', // 기존 list의 start=2 형제 item
+    '[조사 문서][INV-001]\n\n1. paragraph\n  2. [INV-001]: /url', // marker indent가 다른 ordered sibling
+    '[조사 문서][INV-001]\n\n1. paragraph\n  2.\n     [INV-001]: /url', // 빈 ordered sibling의 child definition
+    '[조사 문서][INV-001]\n\n- context\n\n  <!-- -->\n\n    [INV-001]: /url', // list-internal HTML block 뒤 outer definition
+    '[조사 문서][INV-001]\n\n-   context\n\n    <!-- -->\n\n    [INV-001]: /url', // content indent 4인 item의 HTML block 뒤 definition
+    '- ~~~markdown\n  INV-001\n  ~~~', // list child fenced code
+    '- ~~~markdown\n  before\n\n  INV-001\n  ~~~', // list fence 안 unindented blank line
+    '> ~~~markdown\n> INV-001\n> ~~~', // blockquote child fenced code
+    '> - ~~~markdown\n>   INV-001\n>   ~~~', // blockquote + list child fenced code
+    '- - ~~~markdown\n    INV-001\n    ~~~', // nested-list child fenced code
+    '10. context\n\n    ~~~markdown\n    INV-001\n    ~~~', // content indent 4인 list continuation fence
+    '1. context\n2. ~~~markdown\n   INV-001\n   ~~~', // 기존 ordered list의 sibling fence
+    '- paragraph\n- <custom-tag>\n  INV-001', // 새 sibling item의 type-7 HTML block
+    '[조사 문서][INV-001]\n\n- outer\n  - inner\n\n      [INV-001]: /url', // nested item relative 2칸
+    '[조사 문서][INV-001]\n\n- outer\nlazy continuation\n\n    [INV-001]: /url', // lazy paragraph 뒤에도 item 유지
     ...EMPTY_CONTAINER_MARKERS.map(
       (marker) => `${marker}\n[INV-001]: https://example.test/investigation`,
     ), // 빈 container 다음 definition도 렌더링되지 않음
@@ -1479,6 +1597,168 @@ test('v2 hard: link/reference source 의 INV 토큰은 visible prose 가 아님'
     });
     assert.ok(hasCode(r.errors, 'RR-REF-008'), `not failed for: ${note}`);
   }
+
+  // list content indent를 제거한 뒤에도 4칸이면 실제 indented code다. definition으로 과수집하면
+  // unresolved reference의 visible INV-001을 지워 false reject가 된다.
+  const listCode = SCREEN_SPEC_DOC +
+    '\n## Notes\n\n[조사 문서][INV-001]\n\n- outer\n\n      [INV-001]: /url\n';
+  const listCodePass = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': listCode },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.deepEqual(messages(listCodePass.errors), []);
+
+  // 열린 paragraph를 interrupt하는 첫 ordered list는 start number 1만 허용된다. `2.` source는
+  // list/definition이 아니라 visible paragraph continuation이므로 INV-001 근거로 남아야 한다.
+  const orderedContinuation = SCREEN_SPEC_DOC +
+    '\n## Notes\n\nparagraph\n2. [INV-001]: /url\n';
+  const orderedContinuationPass = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': orderedContinuation },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.deepEqual(messages(orderedContinuationPass.errors), []);
+
+  // 열린 paragraph 뒤의 `2. ~~~`는 새 list/fence opener가 아니다. 뒤의 INV-001은 visible
+  // paragraph continuation이므로 container-relative fence 탐색이 이를 숨기면 안 된다.
+  const orderedFenceContinuation = SCREEN_SPEC_DOC +
+    '\n## Notes\n\nparagraph\n2. ~~~markdown\n   INV-001\n   ~~~\n';
+  const orderedFenceContinuationPass = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': orderedFenceContinuation },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.deepEqual(messages(orderedFenceContinuationPass.errors), []);
+
+  // 닫히지 않은 blockquote fence는 quote container가 끝나는 줄에서 함께 끝난다. 밖의 INV-001을
+  // fence content로 계속 삼키면 visible evidence를 잃는다.
+  const quoteFenceExit = SCREEN_SPEC_DOC +
+    '\n## Notes\n\n> ~~~markdown\n> hidden\nINV-001 is visible\n';
+  const quoteFenceExitPass = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': quoteFenceExit },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.deepEqual(messages(quoteFenceExitPass.errors), []);
+
+  // HTML block도 고유 종료 문자열보다 enclosing blockquote가 먼저 끝나면 그 지점에서 끝난다.
+  const quoteHtmlExit = SCREEN_SPEC_DOC +
+    '\n## Notes\n\n> <!--\nINV-001 is visible\n-->\n';
+  const quoteHtmlExitPass = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': quoteHtmlExit },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.deepEqual(messages(quoteHtmlExitPass.errors), []);
+
+  // start number 1은 실제로 paragraph를 끊고 list child definition을 만든다.
+  const orderedInterrupt = SCREEN_SPEC_DOC +
+    '\n## Notes\n\nparagraph\n1. [INV-001]: /url\n';
+  const orderedInterruptFail = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': orderedInterrupt },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.ok(hasCode(orderedInterruptFail.errors, 'RR-REF-008'));
+
+  // paragraph를 interrupt하지 못한 `2.`는 list stack도 열지 않는다. 따라서 뒤 raw 4칸은
+  // top-level indented code이고, 미해소 reference label의 INV-001은 visible evidence로 남는다.
+  const falseOrderedList = SCREEN_SPEC_DOC +
+    '\n## Notes\n\n[조사 문서][INV-001]\n\nparagraph\n2. continuation\n\n    [INV-001]: /url\n';
+  const falseOrderedListPass = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': falseOrderedList },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.deepEqual(messages(falseOrderedListPass.errors), []);
+
+  // 같은 list-internal blockquote의 다음 source line은 새 container interrupt가 아니다.
+  // 열린 paragraph 안의 definition-looking text이므로 INV-001이 실제로 렌더링된다.
+  const continuedListQuote = SCREEN_SPEC_DOC +
+    '\n## Notes\n\n[조사 문서][INV-001]\n\n- > paragraph\n  > [INV-001]: /url\n';
+  const continuedListQuotePass = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': continuedListQuote },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.deepEqual(messages(continuedListQuotePass.errors), []);
+
+  // ordered item의 content indent 4칸을 제거하면 column 0 visible paragraph다.
+  const listRelativeParagraph = SCREEN_SPEC_DOC +
+    '\n## Notes\n\n10. context\n\n    INV-001 is visible\n';
+  const listRelativeParagraphPass = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': listRelativeParagraph },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.deepEqual(messages(listRelativeParagraphPass.errors), []);
+
+  // unescaped bracket가 들어간 label은 definition/reference label 문법이 아니다. source 전체가
+  // literal로 렌더링되므로 내부 INV-001을 visible evidence로 보존해야 한다.
+  const invalidBracketLabel = SCREEN_SPEC_DOC +
+    '\n## Notes\n\n[details][foo[INV-001]]\n\n[foo[INV-001]]: /url\n';
+  const invalidBracketLabelPass = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': invalidBracketLabel },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.deepEqual(messages(invalidBracketLabelPass.errors), []);
+
+  // thematic break는 list item stack을 열지 않는다. 마지막 raw 4칸은 top-level code이고,
+  // 미해소 reference label의 INV-001은 visible evidence로 남는다.
+  const thematicBreak = SCREEN_SPEC_DOC +
+    '\n## Notes\n\n[details][INV-001]\n\n- - -\n\n    [INV-001]: /url\n';
+  const thematicBreakPass = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': thematicBreak },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.deepEqual(messages(thematicBreakPass.errors), []);
+
+  // whitespace-only label은 invalid라 첫 줄이 paragraph를 열고, 다음 definition-looking 줄도
+  // visible continuation이다(CommonMark examples 551/552).
+  const whitespaceLabel = SCREEN_SPEC_DOC +
+    '\n## Notes\n\n[details][INV-001]\n\n[ ]: /url\n[INV-001]: /url\n';
+  const whitespaceLabelPass = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': whitespaceLabel },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.deepEqual(messages(whitespaceLabelPass.errors), []);
+
+  // HTML block은 list와 뒤 indented code 사이의 구조적 barrier다. 제거 후에도 barrier를
+  // 보존해야 code 안의 INV-001이 hard-reference evidence로 승격되지 않는다(example 309).
+  const commentBarrier = SCREEN_SPEC_DOC +
+    '\n## Notes\n\n- context\n\n<!-- -->\n\n    INV-001\n';
+  const commentBarrierFail = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': commentBarrier },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.ok(hasCode(commentBarrierFail.errors, 'RR-REF-008'));
+
+  // 4칸 들여쓴 ordered marker는 sibling이 아니라 top-level indented code다(example 313).
+  // 미해소 reference label은 literal로 보이고 code 안의 definition-looking source는 제외된다.
+  const orderedCode = SCREEN_SPEC_DOC +
+    '\n## Notes\n\n[details][INV-001]\n\n1. paragraph\n\n  2. sibling\n\n    3. [INV-001]: /url\n';
+  const orderedCodePass = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': orderedCode },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.deepEqual(messages(orderedCodePass.errors), []);
+
+  // top-level blockquote는 앞선 list 밖에서 시작한다. 해당 HTML barrier가 이전 list stack을
+  // 보존하면 마지막 top-level indented code를 list-relative definition으로 오인한다.
+  const topLevelQuoteBarrier = SCREEN_SPEC_DOC +
+    '\n## Notes\n\n[details][INV-001]\n\n- context\n\n> <!-- -->\n\n    [INV-001]: /url\n';
+  const topLevelQuoteBarrierPass = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': topLevelQuoteBarrier },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.deepEqual(messages(topLevelQuoteBarrierPass.errors), []);
 
   // shortcut reference `[INV-001]` 는 링크 text 자체가 INV-001 로 렌더링된다 — visible, 해소된다.
   const shortcut = SCREEN_SPEC_DOC + '\n## Notes\n\n[INV-001] 참고\n\n[INV-001]: https://example.test/doc\n';
@@ -1516,6 +1796,188 @@ test('v2 hard: link/reference source 의 INV 토큰은 visible prose 가 아님'
     summaryRows: summaryWithInv,
   });
   assert.deepEqual(messages(emptyItemPass.errors), []);
+});
+
+test('v2 hard: reference label은 source escape를 보존하고 Unicode case fold로 비교함', (t) => {
+  const invItem =
+    '| IN-20260720-meeting-001 | 02 | verification-gap | investigation-needed | create-open | investigation:INV-001@COUPON-001-screen-spec | input:IN-20260720-meeting-001#extracted-facts | inherit | statement | inherit |';
+  const summaryWithInv = [
+    DEFAULT_SUMMARY_ROWS[0],
+    DEFAULT_SUMMARY_ROWS[1]
+      .replace('| conflict |', '| conflict + investigation-needed |')
+      .replace('conflict:C-001@conflicts;', 'conflict:C-001@conflicts; investigation:INV-001@COUPON-001-screen-spec;')
+      .replace('artifact:conflicts;', 'artifact:conflicts; artifact:COUPON-001-screen-spec;'),
+  ];
+  const runWithNotes = (notes) =>
+    runV2(t, {
+      files: {
+        'domains/coupons/screens/coupon-list/screen-spec.md':
+          SCREEN_SPEC_DOC + `\n## Notes\n\n${notes}\n`,
+      },
+      itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+      summaryRows: summaryWithInv,
+    });
+
+  // Example 545: source label escape는 definition과 불일치한다. literal 렌더에서 escape만
+  // 사라진 INV-001은 visible prose이므로 hard reference를 만족한다.
+  const escapedMismatch = runWithNotes(
+    String.raw`[details][INV\-001]` + '\n\n[INV-001]: /url',
+  );
+  assert.deepEqual(messages(escapedMismatch.errors), []);
+
+  // Example 540: ẞ와 SS는 Unicode case fold로 일치한다. 두 번째 label은 렌더링되지 않으므로
+  // INV-001을 visible evidence로 사용할 수 없다.
+  const unicodeFold = runWithNotes('[details][INV-001ẞ]\n\n[INV-001SS]: /url');
+  assert.ok(hasCode(unicodeFold.errors, 'RR-REF-008'));
+
+  // Unicode default fold에서 dotless ı와 ASCII I는 같지 않다. lower→upper 같은 근사로
+  // 과도하게 해소하면 visible label을 지우는 false reject가 된다.
+  const dotlessMismatch = runWithNotes('[details][INV-001ı]\n\n[INV-001I]: /url');
+  assert.deepEqual(messages(dotlessMismatch.errors), []);
+
+  // escaped `[`는 label source 안에서 유효하다. unescaped bracket 거부가 이 정상 label까지
+  // literal로 남기면 non-visible INV-001이 hard reference를 우회한다.
+  const escapedBracket = runWithNotes(
+    String.raw`[details][foo\[INV-001]` + '\n\n' + String.raw`[foo\[INV-001]: /url`,
+  );
+  assert.ok(hasCode(escapedBracket.errors, 'RR-REF-008'));
+});
+
+test('reference container scan: 연속 non-interrupting ordered marker를 선형 시간에 처리함', () => {
+  const markerCount = 2000;
+  const body = [
+    'paragraph',
+    ...Array.from({ length: markerCount }, (_, index) => `${index + 2}. continuation`),
+  ].join('\n');
+  const startedAt = performance.now();
+  const prose = toProseBody(body);
+  const elapsed = performance.now() - startedAt;
+
+  assert.ok(prose.includes(`${markerCount + 1}. continuation`));
+  assert.ok(elapsed < 500, `ordered marker scan took ${elapsed.toFixed(1)}ms`);
+});
+
+test('AST conformance matrix: container path × leaf type × close/exit × blank indentation', () => {
+  const cases = [
+    {
+      name: 'root fenced code',
+      markdown: ['~~~markdown', 'INV-001', '~~~'].join('\n'),
+      expected: false,
+    },
+    {
+      name: 'list fence with indentation-free blank line',
+      markdown: ['- ~~~markdown', '  before', '', '  INV-001', '  ~~~'].join('\n'),
+      expected: false,
+    },
+    {
+      name: 'quote → list fence',
+      markdown: ['> - ~~~markdown', '>   INV-001', '>   ~~~'].join('\n'),
+      expected: false,
+    },
+    {
+      name: 'list → quote fence then visible list continuation',
+      markdown: [
+        '- outer',
+        '',
+        '  > ~~~markdown',
+        '  > hidden',
+        '  > ~~~',
+        '',
+        '  INV-001 is visible after the quote fence.',
+      ].join('\n'),
+      expected: true,
+    },
+    {
+      name: 'unclosed quote fence ends at quote exit (CommonMark example 128)',
+      markdown: ['> ~~~', '> hidden', '', 'INV-001 is visible'].join('\n'),
+      expected: true,
+    },
+    {
+      name: 'unclosed quote HTML ends at quote exit',
+      markdown: ['> <!--', 'INV-001 is visible', '-->'].join('\n'),
+      expected: true,
+    },
+    {
+      name: 'list opener containing removed HTML retains its definition child',
+      markdown: [
+        '[details][INV-001]',
+        '',
+        '10. <!-- -->',
+        '',
+        '    [INV-001]: /url',
+      ].join('\n'),
+      expected: false,
+    },
+    {
+      name: 'definition in list → quote container is document-global (CommonMark example 218)',
+      markdown: [
+        '[details][INV-001]',
+        '',
+        '- outer',
+        '',
+        '  > [INV-001]: /url',
+      ].join('\n'),
+      expected: false,
+    },
+    {
+      name: 'top-level indented code',
+      markdown: ['context', '', '    INV-001'].join('\n'),
+      expected: false,
+    },
+    {
+      name: 'list-relative visible continuation',
+      markdown: ['10. context', '', '    INV-001 is visible'].join('\n'),
+      expected: true,
+    },
+    {
+      name: 'resolved image destination is hidden while alt text remains visible',
+      markdown: '![INV-001](https://example.test/hidden-token)',
+      expected: true,
+    },
+    {
+      name: 'Unicode-overmatched image reference remains literal visible source',
+      markdown: ['![details][INV-001ı]', '', '[INV-001I]: /url'].join('\n'),
+      expected: true,
+    },
+  ];
+
+  for (const { name, markdown, expected } of cases) {
+    const record = { proseBody: toProseBody(markdown) };
+    assert.equal(bodyHasToken(record, 'INV-001'), expected, name);
+  }
+});
+
+test('v2 hard: 미해소 reference label 은 literal visible prose 로 보존함', (t) => {
+  const invItem =
+    '| IN-20260720-meeting-001 | 02 | verification-gap | investigation-needed | create-open | investigation:INV-001@COUPON-001-screen-spec | input:IN-20260720-meeting-001#extracted-facts | inherit | statement | inherit |';
+  const summaryWithInv = [
+    DEFAULT_SUMMARY_ROWS[0],
+    DEFAULT_SUMMARY_ROWS[1]
+      .replace('| conflict |', '| conflict + investigation-needed |')
+      .replace('conflict:C-001@conflicts;', 'conflict:C-001@conflicts; investigation:INV-001@COUPON-001-screen-spec;')
+      .replace('artifact:conflicts;', 'artifact:conflicts; artifact:COUPON-001-screen-spec;'),
+  ];
+
+  const unresolved = runV2(t, {
+    files: {
+      'domains/coupons/screens/coupon-list/screen-spec.md':
+        SCREEN_SPEC_DOC + '\n## Notes\n\n[details][INV-001]\n',
+    },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.deepEqual(messages(unresolved.errors), []);
+
+  const resolved = runV2(t, {
+    files: {
+      'domains/coupons/screens/coupon-list/screen-spec.md':
+        SCREEN_SPEC_DOC +
+        '\n## Notes\n\n[details][INV-001]\n\n[INV-001]: https://example.test/investigation\n',
+    },
+    itemRows: [...DEFAULT_ITEM_ROWS, invItem],
+    summaryRows: summaryWithInv,
+  });
+  assert.ok(hasCode(resolved.errors, 'RR-REF-008'));
 });
 
 test('v2 hard: 중복/추가 header 로 status·effect 를 덮어쓸 수 없음 (exact header 계약)', (t) => {
