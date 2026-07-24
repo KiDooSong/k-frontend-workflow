@@ -9,7 +9,9 @@
 # 사용 가능한 fact 키:
 #   전역:  stub_screen_specs_count, navigation_map_status, component_catalog_generated
   #   화면:  screen_spec_status, screen_spec_authored, fake_hook_exists, figma_mapping_status,
-  #          api_required, api_confidence_min, state_matrix_complete, interaction_matrix_complete
+  #          api_required, api_confidence_min, api_actionable_confidence_min,
+  #          api_actionable_candidates_count, api_candidate_deferrals_valid,
+  #          state_matrix_complete, interaction_matrix_complete
 #          (screen_spec_authored: stub=false 일 때 true. 본문이 작성됐는지)
 #   CI:    ci_lint, ci_schema_validation, state_coverage_complete, llm_semantic_review
 #          (로컬에 CI 결과가 없으면 미충족으로 본다)
@@ -82,7 +84,9 @@ modes:
 
   api-integrated-ui:
     requires:
-      - api_confidence_min == confirmed
+      - api_actionable_confidence_min == confirmed
+      - api_actionable_candidates_count > 0
+      - api_candidate_deferrals_valid == true
       - state_matrix_complete == true
     allowed_paths:
       - "{roles.hook}" # hook 내부 교체

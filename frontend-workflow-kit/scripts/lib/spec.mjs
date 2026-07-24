@@ -325,7 +325,8 @@ export function deriveMetrics(spec, opts = {}) {
   // api_required:false 는 upstream 화면이 받은 결과를 표시만 하는 result/transition 화면용 명시 마커다.
   // API 후보 누락(null)과 의도적 무API를 workflow-state 에서 구분할 수 있게 별도 fact 로 보존한다.
   const apiRequired = spec.frontmatter.api_required !== false;
-  const apiConfidenceMin = apiRequired ? minApiConfidence(sections['api candidates']) : null;
+  const apiCandidateContract = analyzeApiCandidateContract(spec, { layout, domain });
+  const apiConfidenceMin = apiRequired ? apiCandidateContract.api_confidence_min : null;
 
   // layer presence facts: declared layers with fact: dir_has_files derive <role>_present.
   // fake_hook_exists remains the legacy readiness input and keeps the old .ts/.tsx-only guard behavior.
@@ -375,6 +376,17 @@ export function deriveMetrics(spec, opts = {}) {
     blocking_decisions: blockingDecisions,
     malformed_decisions: malformedDecisions,
     api_confidence_min: apiConfidenceMin,
+    ...(apiCandidateContract.version === 2
+      ? {
+          api_candidate_contract_version: 2,
+          api_actionable_confidence_min: apiCandidateContract.api_actionable_confidence_min,
+          api_actionable_candidates_count: apiCandidateContract.api_actionable_candidates_count,
+          api_candidate_deferrals_valid: apiCandidateContract.valid,
+          api_actionable_candidates: apiCandidateContract.actionable_candidates,
+          api_deferred_candidates: apiCandidateContract.deferred_candidates,
+          api_candidate_contract_issues: apiCandidateContract.issues,
+        }
+      : {}),
     ...(apiRequired === false ? { api_required: false } : {}),
     ...layerPresenceFacts,
     fake_hook_exists: fakeHookExists,
@@ -386,7 +398,19 @@ export function deriveMetrics(spec, opts = {}) {
 // raw·confidence 는 기존 계약 그대로(minApiConfidence/deriveMetrics 가 confidence 만 읽으므로 readiness 불변).
 // method/path 는 검사 8(엔드포인트 매칭)용으로만 추가하며, 미인식 시 null.
 const API_CANDIDATE_RE = /\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE|CONNECT)\b\s+(\/[^\s()]+)/i;
-export function parseApiCandidates(sectionText) {
+const API_CANDIDATE_V2_COLUMNS = ['Method', 'Path', 'Confidence', 'Gate', 'Tracking', 'Slice Paths'];
+const API_CANDIDATE_V2_HINT_COLUMNS = new Set(
+  API_CANDIDATE_V2_COLUMNS.map((name) => name.toLowerCase().replace(/\s+/g, '')),
+);
+const API_GATE_VALUES = ['active', 'deferred'];
+const ISSUE_TRACKING_RE = /^issue:#([1-9][0-9]*)$/;
+const UNKNOWN_TRACKING_RE = /^unknown:(U-[A-Za-z0-9][A-Za-z0-9_-]*)$/;
+
+function normalizedHeader(name) {
+  return String(name || '').toLowerCase().replace(/\s+/g, '');
+}
+
+function parseLegacyApiCandidates(sectionText) {
   if (!sectionText) return [];
   const clean = stripComments(sectionText);
   const out = [];
@@ -402,22 +426,389 @@ export function parseApiCandidates(sectionText) {
       confidence: conf,
       method: em ? em[1].toUpperCase() : null,
       path: em ? em[2] : null,
+      gate: 'active',
+      tracking: null,
+      slice_paths: [],
+      contract_version: 1,
     });
   }
   return out;
 }
 
-function minApiConfidence(sectionText) {
-  const items = parseApiCandidates(sectionText);
+function candidateTables(sectionText) {
+  return parseTables(sectionText).filter((table) =>
+    table.headers.some((header) => API_CANDIDATE_V2_HINT_COLUMNS.has(normalizedHeader(header))),
+  );
+}
+
+function parseV2Candidates(table) {
+  const out = [];
+  for (const row of table.rows) {
+    const method = String(col(row, 'Method') || '').trim().toUpperCase();
+    const endpointPath = String(col(row, 'Path') || '').trim();
+    const confidence = String(col(row, 'Confidence') || '').trim().toLowerCase();
+    const gateRaw = String(col(row, 'Gate') || '').trim().toLowerCase();
+    const gate = gateRaw || 'active';
+    const tracking = String(col(row, 'Tracking') || '').trim();
+    const slicePathsRaw = String(col(row, 'Slice Paths') || '').trim();
+    if (!method && !endpointPath && !confidence && !gateRaw && !tracking && !slicePathsRaw) continue;
+    out.push({
+      raw: `${method || '?'} ${endpointPath || '?'}`,
+      method: method || null,
+      path: endpointPath || null,
+      confidence: confidence || 'unknown',
+      gate,
+      tracking: tracking || null,
+      slice_paths: slicePathsRaw
+        ? slicePathsRaw.split(';').map((entry) => entry.trim())
+        : [],
+      contract_version: 2,
+    });
+  }
+  return out;
+}
+
+// Public compatibility parser. A structured v2 table is opt-in; otherwise every legacy bullet
+// remains active and keeps the exact confidence/method/path behavior used by validate check 8.
+export function parseApiCandidates(sectionText) {
+  const tables = candidateTables(sectionText);
+  if (tables.length > 0) return tables.flatMap(parseV2Candidates);
+  return parseLegacyApiCandidates(sectionText);
+}
+
+function minCandidateConfidence(items, { invalidAsUnknown = false } = {}) {
   if (items.length === 0) return null;
   let min = null;
   for (const it of items) {
-    if (!CONFIDENCE_ORDER.includes(it.confidence)) continue;
-    if (min === null || confidenceRank(it.confidence) < confidenceRank(min)) {
-      min = it.confidence;
+    if (!CONFIDENCE_ORDER.includes(it.confidence) && !invalidAsUnknown) continue;
+    const confidence = CONFIDENCE_ORDER.includes(it.confidence) ? it.confidence : 'unknown';
+    if (min === null || confidenceRank(confidence) < confidenceRank(min)) {
+      min = confidence;
     }
   }
   return min;
+}
+
+function unknownStatusIndex(sectionText) {
+  const table = parseTable(sectionText);
+  const out = new Map();
+  if (!table) return out;
+  for (const row of table.rows) {
+    const id = String(col(row, 'ID') || '').trim();
+    const status = String(col(row, 'Status') || '').trim().toLowerCase();
+    if (id) out.set(id, status);
+  }
+  return out;
+}
+
+function pathSyntaxIssue(candidatePath) {
+  if (!candidatePath) return 'Slice Paths entry is empty';
+  if (/^[A-Za-z]:[\\/]/.test(candidatePath)) return 'drive-absolute path is forbidden';
+  if (candidatePath.startsWith('/') || candidatePath.startsWith('\\')) return 'absolute path is forbidden';
+  if (candidatePath.includes('\\')) return 'backslash separator is forbidden; author project-root paths with /';
+  const segments = candidatePath.split('/');
+  if (segments.some((segment) => segment === '')) return 'empty path segment is forbidden';
+  if (segments.some((segment) => segment === '..')) return '.. traversal is forbidden';
+  if (candidatePath === 'src/**') return 'blanket src/** is forbidden';
+  const literalPrefix = candidatePath.endsWith('/**')
+    ? candidatePath.slice(0, -3)
+    : candidatePath;
+  if (/[*?[\]{}]/.test(literalPrefix)) {
+    return 'only exact paths or a terminal /** glob are supported';
+  }
+  return null;
+}
+
+function resolvedApiCandidateSurfaces(layout, domain) {
+  if (!layout || typeof layout.resolvePaths !== 'function') return [];
+  const out = [];
+  for (const token of ['{roles.hook}', '{roles.api_client}']) {
+    try {
+      out.push(...layout.resolvePaths([token], { domain }));
+    } catch (err) {
+      // api_client is optional in some custom layouts. An undefined role is handled by the other
+      // candidate surface when present; unrelated layout errors remain fail-closed.
+      const message = String(err && err.message ? err.message : '');
+      if (/정의되지 않은 role|undefined role/i.test(message)) continue;
+      throw err;
+    }
+  }
+  return [...new Set(out)];
+}
+
+function pathInsideCandidateSurface(candidatePath, surfaces) {
+  return surfaces.some((surface) => {
+    if (surface === candidatePath) {
+      // v2 must narrow broad role globs. A file-bound role may still be owned exactly.
+      return !String(surface).includes('*');
+    }
+    if (surface.endsWith('/**')) {
+      return candidatePath.startsWith(surface.slice(0, -2));
+    }
+    return false;
+  });
+}
+
+function ownershipOverlaps(left, right) {
+  if (left === right) return true;
+  const prefixOf = (glob, other) =>
+    glob.endsWith('/**') && other.startsWith(glob.slice(0, -2));
+  return prefixOf(left, right) || prefixOf(right, left);
+}
+
+function issue(code, message, candidate = null, candidatePath = null) {
+  return {
+    code,
+    message,
+    ...(candidate
+      ? {
+          endpoint: `${candidate.method || '?'} ${candidate.path || '?'}`,
+          gate: candidate.gate,
+          tracking: candidate.tracking,
+        }
+      : {}),
+    ...(candidatePath ? { path: candidatePath } : {}),
+  };
+}
+
+// Structured v2 authoring analysis. This is the single source consumed by state/readiness and
+// validate warning 15; malformed v2 stays warning-first in validate but live readiness sees
+// valid=false and therefore cannot enter api-integrated-ui.
+export function analyzeApiCandidateContract(spec, { layout, domain } = {}) {
+  const sectionText = spec.sections?.['api candidates'];
+  const tables = candidateTables(sectionText);
+  if (tables.length === 0) {
+    const candidates = parseLegacyApiCandidates(sectionText);
+    return {
+      version: 1,
+      valid: true,
+      candidates,
+      actionable_candidates: candidates,
+      deferred_candidates: [],
+      api_confidence_min: minCandidateConfidence(candidates),
+      api_actionable_confidence_min: minCandidateConfidence(candidates),
+      api_actionable_candidates_count: candidates.length,
+      issues: [],
+    };
+  }
+
+  const contractIssues = [];
+  if (tables.length !== 1) {
+    contractIssues.push(
+      issue(
+        'API-V2-TABLE-COUNT',
+        `API Candidates v2 table must appear exactly once (found ${tables.length})`,
+      ),
+    );
+  }
+  for (const [tableIndex, table] of tables.entries()) {
+    const normalized = table.headers.map(normalizedHeader);
+    for (const column of API_CANDIDATE_V2_COLUMNS) {
+      const key = normalizedHeader(column);
+      const count = normalized.filter((header) => header === key).length;
+      if (count !== 1) {
+        contractIssues.push(
+          issue(
+            count === 0 ? 'API-V2-COLUMN-MISSING' : 'API-V2-COLUMN-DUPLICATE',
+            `API Candidates v2 table ${tableIndex + 1} column '${column}' must appear exactly once (found ${count})`,
+          ),
+        );
+      }
+    }
+  }
+
+  // A duplicate table keeps the contract invalid, but every recoverable row still contributes
+  // provenance. Otherwise a later deferred path disappears and a legacy broad grant can reopen it.
+  const candidates = tables.flatMap(parseV2Candidates);
+  const unknowns = unknownStatusIndex(spec.sections?.unknowns);
+  const surfaces = resolvedApiCandidateSurfaces(layout, domain ?? spec.frontmatter?.domain);
+  const actionable = [];
+  const deferred = [];
+
+  if (
+    spec.frontmatter?.api_required === false &&
+    candidates.some((candidate) => candidate.method && candidate.path)
+  ) {
+    contractIssues.push(
+      issue(
+        'API-V2-NO-API-CONFLICT',
+        'api_required:false conflicts with concrete API Candidates v2 rows; provenance remains deny-only',
+      ),
+    );
+  }
+
+  for (const candidate of candidates) {
+    let candidateValid = true;
+    if (!candidate.method || !API_CANDIDATE_RE.test(`${candidate.method} ${candidate.path || ''}`)) {
+      contractIssues.push(issue('API-V2-ENDPOINT', 'Method/Path must form a concrete API endpoint', candidate));
+      candidateValid = false;
+    }
+    if (!CONFIDENCE_ORDER.includes(candidate.confidence)) {
+      contractIssues.push(
+        issue(
+          'API-V2-CONFIDENCE',
+          `Confidence must be ${CONFIDENCE_ORDER.join('|')} (found '${candidate.confidence || '(empty)'}')`,
+          candidate,
+        ),
+      );
+      candidateValid = false;
+    }
+    if (!API_GATE_VALUES.includes(candidate.gate)) {
+      contractIssues.push(
+        issue(
+          'API-V2-GATE',
+          `Gate must be ${API_GATE_VALUES.join('|')} or blank(active) (found '${candidate.gate}')`,
+          candidate,
+        ),
+      );
+      candidateValid = false;
+    }
+    if (candidate.gate === 'deferred' && candidate.confidence === 'confirmed') {
+      contractIssues.push(
+        issue('API-V2-DEFERRED-CONFIRMED', 'confirmed + deferred is contradictory', candidate),
+      );
+      candidateValid = false;
+    }
+    if (candidate.slice_paths.length === 0) {
+      contractIssues.push(
+        issue('API-V2-SLICE-MISSING', 'Every v2 candidate must declare Slice Paths', candidate),
+      );
+      candidateValid = false;
+    }
+    const safeSlicePaths = [];
+    for (const slicePath of candidate.slice_paths) {
+      const syntax = pathSyntaxIssue(slicePath);
+      if (syntax) {
+        contractIssues.push(issue('API-V2-SLICE-SYNTAX', syntax, candidate, slicePath));
+        candidateValid = false;
+        continue;
+      }
+      if (!pathInsideCandidateSurface(slicePath, surfaces)) {
+        contractIssues.push(
+          issue(
+            'API-V2-SLICE-SURFACE',
+            `Slice Path must be strictly inside resolved hook/api_client surfaces (${surfaces.join(', ') || 'none'})`,
+            candidate,
+            slicePath,
+          ),
+        );
+        candidateValid = false;
+        continue;
+      }
+      safeSlicePaths.push(slicePath);
+    }
+    candidate.safe_slice_paths = safeSlicePaths;
+
+    if (candidate.gate === 'deferred') {
+      const unknownMatch = UNKNOWN_TRACKING_RE.exec(candidate.tracking || '');
+      const issueMatch = ISSUE_TRACKING_RE.exec(candidate.tracking || '');
+      if (!unknownMatch && !issueMatch) {
+        contractIssues.push(
+          issue(
+            'API-V2-TRACKING',
+            'Deferred candidate Tracking must be unknown:U-... or issue:#123',
+            candidate,
+          ),
+        );
+        candidateValid = false;
+      } else if (unknownMatch && unknowns.get(unknownMatch[1]) !== 'open') {
+        contractIssues.push(
+          issue(
+            'API-V2-TRACKING-UNKNOWN',
+            `Tracking ${candidate.tracking} must resolve to an open Unknown in the same ScreenSpec`,
+            candidate,
+          ),
+        );
+        candidateValid = false;
+      }
+      deferred.push({ ...candidate, valid: candidateValid });
+    } else if (candidate.gate === 'active') {
+      if (candidateValid) actionable.push({ ...candidate, valid: true });
+      else if (safeSlicePaths.length > 0) {
+        deferred.push({ ...candidate, valid: false, restriction_reason: 'invalid-active-row' });
+      }
+    } else if (safeSlicePaths.length > 0) {
+      deferred.push({ ...candidate, valid: false, restriction_reason: 'invalid-gate' });
+    }
+  }
+
+  const activePaths = actionable.flatMap((candidate) => candidate.safe_slice_paths);
+  const deferredPaths = deferred.flatMap((candidate) => candidate.safe_slice_paths);
+  for (const activePath of activePaths) {
+    for (const deferredPath of deferredPaths) {
+      if (!ownershipOverlaps(activePath, deferredPath)) continue;
+      contractIssues.push(
+        issue(
+          'API-V2-OWNERSHIP-CONFLICT',
+          `active/deferred Slice Paths overlap: '${activePath}' <> '${deferredPath}'`,
+          null,
+          deferredPath,
+        ),
+      );
+    }
+  }
+
+  const valid = contractIssues.length === 0;
+  return {
+    version: 2,
+    valid,
+    candidates,
+    actionable_candidates: actionable,
+    deferred_candidates: deferred,
+    api_confidence_min: minCandidateConfidence(candidates, { invalidAsUnknown: true }),
+    api_actionable_confidence_min: minCandidateConfidence(actionable, { invalidAsUnknown: true }),
+    api_actionable_candidates_count: actionable.length,
+    issues: contractIssues,
+  };
+}
+
+// Cross-screen ownership is project-scoped. Any overlapping explicit v2 slice owned by different
+// screens is a conflict (active/active, active/deferred, or deferred/deferred) and must be denied
+// until authors select one owner or split the paths.
+export function findApiCandidateOwnershipConflicts(screenEntries) {
+  const claims = [];
+  for (const [screenId, screen] of screenEntries || []) {
+    const derived = screen?.derived || {};
+    if (derived.api_candidate_contract_version !== 2) continue;
+    for (const candidate of [
+      ...(derived.api_actionable_candidates || []),
+      ...(derived.api_deferred_candidates || []),
+    ]) {
+      for (const candidatePath of candidate.safe_slice_paths || []) {
+        claims.push({
+          screen_id: screenId,
+          endpoint: `${candidate.method || '?'} ${candidate.path || '?'}`,
+          gate: candidate.gate,
+          tracking: candidate.tracking,
+          path: candidatePath,
+        });
+      }
+    }
+  }
+
+  const conflicts = new Map();
+  for (let i = 0; i < claims.length; i++) {
+    for (let j = i + 1; j < claims.length; j++) {
+      const left = claims[i];
+      const right = claims[j];
+      if (left.screen_id === right.screen_id || !ownershipOverlaps(left.path, right.path)) continue;
+      const row = {
+        code: 'API-V2-CROSS-SCREEN-OWNERSHIP',
+        path: left.path,
+        conflicting_path: right.path,
+        owners: [left, right],
+        message:
+          `API candidate Slice Paths overlap across screens: ` +
+          `${left.screen_id} '${left.path}' <> ${right.screen_id} '${right.path}'`,
+      };
+      for (const owner of [left.screen_id, right.screen_id]) {
+        const rows = conflicts.get(owner) || [];
+        rows.push(row);
+        conflicts.set(owner, rows);
+      }
+    }
+  }
+  return conflicts;
 }
 
 // --- Interaction Matrix 라우트 추출 (단일 출처) + v2 구조화(dual-read) ----------------------

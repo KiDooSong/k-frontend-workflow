@@ -44,6 +44,7 @@ test('--help prints usage to stdout and exits 0 — even without workflow-state.
     assert.match(r.stdout, /workflow:readiness/);
     assert.match(r.stdout, /Usage:/);
     assert.match(r.stdout, /--screen/);
+    assert.match(r.stdout, /--path/);
     assert.doesNotMatch(r.stdout, /readiness_mode:/);
   });
 });
@@ -73,7 +74,7 @@ test('usage errors surface before the missing-state input error (argument valida
 });
 
 test('value flag without a value (bare or empty --flag=) is a usage error: exit 2', () => {
-  for (const flag of ['--screen', '--policy', '--ci', '--layout', '--docs', '--manifest', '--out']) {
+  for (const flag of ['--screen', '--path', '--policy', '--ci', '--layout', '--docs', '--manifest', '--out']) {
     // 인자 검증이 모든 로드보다 앞서므로 flag 단독 실행으로 충분하다(state 부재와 무관).
     for (const form of [[flag], [`${flag}=`]]) {
       const r = run(form);
@@ -95,6 +96,27 @@ test('--screen with a whitespace-only value is a usage error: exit 2 (single usa
   assert.equal(r.status, 2);
   assert.match(r.stderr, /--screen requires a screen id value/);
   assert.equal(r.stdout, '');
+});
+
+test('--path requires --screen and returns the shared file-level authorization result', () => {
+  const missingScreen = run(['--path', 'README.md', '--docs', EXAMPLE_DOCS]);
+  assert.equal(missingScreen.status, 2);
+  assert.match(missingScreen.stderr, /--path requires --screen/);
+
+  const r = run([
+    '--docs',
+    EXAMPLE_DOCS,
+    '--screen',
+    'COUPON-001',
+    '--path',
+    'README.md',
+    '--json',
+  ]);
+  assert.equal(r.status, 0, r.stderr);
+  const entry = JSON.parse(r.stdout)['COUPON-001'];
+  assert.equal(entry.path_authorization.file, 'README.md');
+  assert.equal(entry.path_authorization.allowed, false);
+  assert.match(entry.path_authorization.reason, /outside allowed_paths|forbidden_paths/);
 });
 
 test('boolean flag with a value is a usage error: exit 2', () => {

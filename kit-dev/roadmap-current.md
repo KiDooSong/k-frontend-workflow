@@ -1,5 +1,20 @@
 # Current Roadmap
 
+> 2026-07-24 구현 갱신(#210): ScreenSpec `## API Candidates` optional structured v2
+> (`Method|Path|Confidence|Gate|Tracking|Slice Paths`)와 per-candidate slice ownership이
+> 랜딩했다. legacy bullet-only 화면은 기존 state/readiness 출력과 broad role 권한을 유지한다.
+> v2는 전체 `api_confidence_min`과 actionable min/count를 분리하고, 모든 candidate에 좁은
+> hook/API-client Slice Paths를 요구한다. deferred/conflict paths는 project-wide effective
+> `forbidden_paths`에 보존되며 `api-integrated-ui` allowed_paths는 confirmed active slice 합집합으로
+> 좁혀진다. Slice Paths는 exact/terminal `/**`만 허용하고, 복수 표와 `api_required:false`
+> concrete v2도 recoverable deny provenance를 유지한다.
+> `workflow:readiness -- --screen <ID> --path <path>`와 `workflow:forbidden-paths`는 같은 파일 권한 helper를 소비해 production-ready
+> forward 단계와 사후 diff 단계가 동일하게 active owner/unowned API path를 판정한다.
+> `workflow:forbidden-paths`는 API 관련 diff를 화면별 effective authorization과 endpoint/
+> tracking/owner provenance로 판정해 다른 api-integrated 화면의 broad clearance 우회를 막는다.
+> authoring 검사 15는 warning-first이며 hard promotion/required CI 승격은 없다. 설계:
+> [per-api-candidate-deferral](docs/design/drafts/per-api-candidate-deferral.md).
+
 > 2026-07-20 구현 갱신(#202 slice A): Reconciliation Register **Contract v2 (opt-in)** 가 검사 12 확장으로 랜딩했다. frontmatter `reconciliation_contract: 2` 선언 시 `## Reconciliation Items` effect 표·summary projection·typed target/evidence 참조 해소·routing matrix·item provenance 필수값을 hard 로 검사하고(진단 prefix RR-SCHEMA/RR-ITEM/RR-REF/RR-ROUTE/RP), v1 register 와 기존 출력은 byte-compatible 하다. Stage 04 리뷰 계약은 신규 canonical `docs/reference/reconcile-review-rubric.md`(`review_profile: reconcile-stage04-v1` — 필수 범위/severity/finding 일괄 제출/stop condition)가 소유하며 reconcile-input skill 이 이를 가리킨다. 자연어 semantic heuristic·stale Result 대조(#202-C)와 검사 11 `captured_at` RFC3339·figma mapping `M-xxx`/Mapping Provenance(#202-B)는 후속 slice 다. 새 numbered check·CI required check 승격·새 artifact axis 는 없다. 설계: [issue-202-reconciliation-contract-v2](docs/design/drafts/issue-202-reconciliation-contract-v2.md).
 
 > 2026-07-15 구현 갱신(#192): optional domain-scoped `shared-surface-spec`이 Tier 1에 추가됐다. `workflow:state` surface/member reverse index, #193 decision ref의 member fan-out(`source`+`via`), `workflow:readiness -- --surface`의 surface/member/policy path intersection, ordinary screen path reservation, validate identity/membership/path/interaction/API/decision/copy 검사가 구현됐다. No-surface repo는 기존 output을 유지한다. issue #195 route normalization, 새 required CI check, warning-first promotion, human-owned gate lowering은 포함하지 않는다. 릴리스/version 승격 주장은 없다.

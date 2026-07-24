@@ -17,6 +17,29 @@ or root config.
 
 ---
 
+## Per-candidate API deferral and Slice Paths
+
+- Existing ScreenSpec API candidate bullets remain active and need no migration.
+- Screens that need partial API wiring may opt into the six-column v2 table
+  (`Method|Path|Confidence|Gate|Tracking|Slice Paths`). Every v2 row needs narrow
+  hook/API-client Slice Paths using an exact path or terminal `/**`; arbitrary
+  globs are invalid. Deferred rows also need an open local Unknown or `issue:#N`.
+- V2 `api-integrated-ui` output is intentionally narrower. Regenerate state and
+  readiness before reusing an existing Work Packet. Deferred/conflicted paths remain
+  forbidden even if another legacy screen has broad API integration authority.
+- For every concrete implementation path, run
+  `workflow:readiness -- --screen <ID> --path <path> --json` and require
+  `path_authorization.allowed:true`. This file check is required at
+  `production-ready` and prevents another screen from borrowing an explicit active
+  claim. Duplicate v2 tables remain invalid but all recoverable rows stay deny-only;
+  `api_required:false` also preserves authored v2 provenance without granting API authority.
+- Validate check 15 is warning-only; the live readiness and
+  `workflow:forbidden-paths --enforce` paths fail closed.
+- **Manual action:** none for legacy screens. For v2 adoption, follow
+  [api-candidate-deferral.md](api-candidate-deferral.md), then run state,
+  readiness plus representative `--path` checks, validate, and a representative
+  forbidden-paths diff.
+
 ## Visual axis, telemetry, and red-team observation surfaces
 
 - `visual-consistency-contract` is a **review-only** document you create when

@@ -19,7 +19,11 @@ import {
   isCliEntry,
 } from './lib/util.mjs';
 import { LayoutConfigError, loadLayoutProfile, synthesizeModePolicy } from './lib/layout-profile.mjs';
-import { covers } from './lib/path-backstop.mjs';
+import {
+  collectApiCandidateClaims,
+  covers,
+  readinessPathAuthorization,
+} from './lib/path-backstop.mjs';
 // "fact OP value" 파싱은 policy-condition.mjs 단일 출처에서 온다 — validate 검사 14 와 규칙을 공유해 표류 방지.
 import { parseCondition } from './lib/policy-condition.mjs';
 import { enforceCliFlagContract } from './lib/cli-args.mjs';
@@ -30,7 +34,7 @@ const STATUS_SCALED = new Set([
   'screen_spec_status',
   'figma_mapping_status',
 ]);
-const CONFIDENCE_SCALED = new Set(['api_confidence_min']);
+const CONFIDENCE_SCALED = new Set(['api_confidence_min', 'api_actionable_confidence_min']);
 
 // 사람이 읽는 blocking 키와 next_action 힌트
 const FRIENDLY = {
@@ -42,6 +46,9 @@ const FRIENDLY = {
   fake_hook_exists: 'fake_hook',
   figma_mapping_status: 'figma_mapping',
   api_confidence_min: 'api_confidence',
+  api_actionable_confidence_min: 'api_confidence',
+  api_actionable_candidates_count: 'api_actionable_candidates',
+  api_candidate_deferrals_valid: 'api_candidate_deferrals',
   api_required: 'api_required',
   state_matrix_complete: 'state_matrix',
   interaction_matrix_complete: 'interaction_matrix',
@@ -56,12 +63,17 @@ function actionHint(factKey, screen) {
   switch (factKey) {
     case 'figma_mapping_status':
       return 'create figma-component-mapping (status >= draft)';
-    case 'api_confidence_min': {
+    case 'api_confidence_min':
+    case 'api_actionable_confidence_min': {
       const n = d.tbd_count || 0;
       return n > 0
         ? `confirm API (resolve ${n} open unknown(s))`
         : 'confirm API candidates';
     }
+    case 'api_actionable_candidates_count':
+      return 'activate at least one valid API candidate or keep API integration closed';
+    case 'api_candidate_deferrals_valid':
+      return 'fix API Candidates v2 tracking, slice paths, and ownership conflicts';
     case 'api_required':
       return 'skip API integration for this no-API-required screen';
     case 'screen_spec_status':
@@ -131,8 +143,15 @@ function coerceNumber(v) {
   return Number.isNaN(n) ? null : n;
 }
 
-function noApiSatisfiesConfidenceGate(cond, facts) {
-  if (cond.key !== 'api_confidence_min' || facts.api_required !== false) return false;
+function noApiSatisfiesApiGate(cond, facts) {
+  if (facts.api_required !== false) return false;
+  if (cond.key === 'api_candidate_deferrals_valid') {
+    return cond.op === '==' && cond.rhs === 'true';
+  }
+  if (cond.key === 'api_actionable_candidates_count') {
+    return cond.op === '>' && Number(cond.rhs) === 0;
+  }
+  if (!['api_confidence_min', 'api_actionable_confidence_min'].includes(cond.key)) return false;
   if (cond.op === '==') return cond.rhs === 'confirmed';
   if (cond.op === '>=') return confidenceRank('confirmed') >= confidenceRank(cond.rhs);
   return false;
@@ -143,7 +162,7 @@ function evalCondition(cond, facts) {
   const { key, op, rhs } = cond;
   const actual = facts[key];
 
-  if (noApiSatisfiesConfidenceGate(cond, facts)) return true;
+  if (noApiSatisfiesApiGate(cond, facts)) return true;
 
   if (op === '==') {
     if (rhs === 'true') return actual === true;
@@ -200,6 +219,7 @@ function compare(op, a, b) {
 function buildFacts(screen, global, ci) {
   const d = screen.derived || {};
   const apiRequired = d.api_required !== false;
+  const v2 = d.api_candidate_contract_version === 2;
   const rolePresenceFacts = Object.fromEntries(
     Object.entries(d).filter(([key, value]) => /_present$/.test(key) && typeof value === 'boolean'),
   );
@@ -218,6 +238,17 @@ function buildFacts(screen, global, ci) {
     figma_mapping_status: d.figma_mapping_status,
     api_required: apiRequired,
     api_confidence_min: d.api_confidence_min,
+    // Legacy state files do not serialize the new v2 facts. Derive compatibility values from
+    // api_confidence_min so legacy bullet-only readiness remains byte-compatible.
+    api_actionable_confidence_min: v2
+      ? d.api_actionable_confidence_min
+      : d.api_confidence_min,
+    api_actionable_candidates_count: v2
+      ? d.api_actionable_candidates_count
+      : d.api_confidence_min == null
+        ? 0
+        : 1,
+    api_candidate_deferrals_valid: v2 ? d.api_candidate_deferrals_valid === true : true,
     state_matrix_complete: d.state_matrix_complete,
     interaction_matrix_complete: d.interaction_matrix_complete,
     tbd_count: d.tbd_count,
@@ -286,6 +317,136 @@ function optionalApiClientSurfaces(layout, domain) {
   }
 }
 
+function optionalRoleSurfaces(layout, role, domain) {
+  try {
+    return uniquePaths(layout.resolvePaths([`{roles.${role}}`], { domain }));
+  } catch (err) {
+    if (err instanceof LayoutConfigError && /정의되지 않은 role|undefined role/i.test(String(err.message || ''))) {
+      return [];
+    }
+    throw err;
+  }
+}
+
+function candidateApiSurfaces(layout, domain) {
+  return uniquePaths([
+    ...optionalRoleSurfaces(layout, 'hook', domain),
+    ...optionalRoleSurfaces(layout, 'api_client', domain),
+  ]);
+}
+
+function candidateProvenance(screenId, candidate, pathEntry, kind) {
+  return {
+    kind,
+    screen_id: screenId,
+    endpoint: `${candidate.method || '?'} ${candidate.path || '?'}`,
+    confidence: candidate.confidence || null,
+    gate: candidate.gate || null,
+    tracking: candidate.tracking || null,
+    path: pathEntry,
+  };
+}
+
+function projectCandidateRestrictions(state) {
+  const out = [];
+  const seen = new Set();
+  const add = (row) => {
+    const key = `${row.kind}\0${row.screen_id}\0${row.endpoint}\0${row.path}\0${row.tracking || ''}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(row);
+  };
+  for (const [screenId, screen] of Object.entries(state.screens || {})) {
+    const d = screen.derived || {};
+    for (const candidate of d.api_deferred_candidates || []) {
+      for (const pathEntry of candidate.safe_slice_paths || []) {
+        add(candidateProvenance(screenId, candidate, pathEntry, 'deferred'));
+      }
+    }
+    for (const conflict of d.api_candidate_ownership_conflicts || []) {
+      for (const owner of conflict.owners || []) {
+        add({
+          kind: 'conflict',
+          screen_id: owner.screen_id || screenId,
+          endpoint: owner.endpoint || '? ?',
+          confidence: null,
+          gate: owner.gate || null,
+          tracking: owner.tracking || null,
+          path: owner.path || conflict.path,
+          conflicting_path: owner.path === conflict.path ? conflict.conflicting_path : conflict.path,
+        });
+      }
+    }
+  }
+  return out.sort((a, b) => {
+    const byPath = String(a.path).localeCompare(String(b.path));
+    if (byPath !== 0) return byPath;
+    return String(a.screen_id).localeCompare(String(b.screen_id));
+  });
+}
+
+function candidateAuthorizationFor(screenId, screen, layout) {
+  const d = screen.derived || {};
+  if (d.api_candidate_contract_version !== 2) return null;
+  const actionable = [];
+  const deferred = [];
+  for (const candidate of d.api_actionable_candidates || []) {
+    for (const pathEntry of candidate.safe_slice_paths || []) {
+      actionable.push(candidateProvenance(screenId, candidate, pathEntry, 'active'));
+    }
+  }
+  for (const candidate of d.api_deferred_candidates || []) {
+    for (const pathEntry of candidate.safe_slice_paths || []) {
+      deferred.push(candidateProvenance(screenId, candidate, pathEntry, 'deferred'));
+    }
+  }
+  return {
+    contract_version: 2,
+    valid: d.api_candidate_deferrals_valid === true,
+    actionable,
+    deferred,
+    conflicts: d.api_candidate_ownership_conflicts || [],
+    issues: d.api_candidate_contract_issues || [],
+    enforced_surfaces: candidateApiSurfaces(layout, screen.domain),
+    file_check_required: true,
+  };
+}
+
+function applyCandidatePathAccess({
+  screenId,
+  screen,
+  chosenName,
+  allowedPaths,
+  forbiddenPaths,
+  layout,
+  restrictions,
+}) {
+  const authorization = candidateAuthorizationFor(screenId, screen, layout);
+  const restrictionPaths = restrictions.map((entry) => entry.path).filter(Boolean);
+  let nextAllowed = allowedPaths;
+  let nextForbidden = uniquePaths([...forbiddenPaths, ...restrictionPaths]);
+
+  if (
+    authorization &&
+    screen.derived?.api_required !== false &&
+    chosenName === 'api-integrated-ui'
+  ) {
+    const apiSurfaces = candidateApiSurfaces(layout, screen.domain);
+    const nonApiAllowed = removeTouchedSurfaces(nextAllowed, apiSurfaces);
+    const activePaths = authorization.valid
+      ? authorization.actionable.map((entry) => entry.path)
+      : [];
+    nextAllowed = uniquePaths([...nonApiAllowed, ...activePaths]);
+    nextForbidden = uniquePaths([
+      ...nextForbidden,
+      ...authorization.deferred.map((entry) => entry.path),
+      ...authorization.conflicts.flatMap((entry) => [entry.path, entry.conflicting_path]).filter(Boolean),
+    ]);
+  }
+
+  return { allowedPaths: nextAllowed, forbiddenPaths: nextForbidden, authorization };
+}
+
 function cumulativeNonApiAllowedPaths({ modes, order, chosenIdx, layout, domain, apiSurfaces }) {
   const paths = [];
   for (let i = 1; i <= chosenIdx; i++) {
@@ -350,6 +511,7 @@ export function computeReadiness({
   const ciProvided = ci && Object.keys(ci).length > 0;
   const screenSpecTemplate =
     manifest?.artifacts?.['screen-spec']?.template || 'templates/screen/screen-spec.template.md';
+  const candidateRestrictions = projectCandidateRestrictions(state);
   // Screen IDs are user-controlled. Keep keyed readiness state in Map instances so inherited
   // Object.prototype names cannot become phantom records or suppress real records.
   const out = new Map();
@@ -494,10 +656,17 @@ export function computeReadiness({
           continue;
         }
         if (CI_FACTS.has(cond.key) && !ciProvided) continue;
-        if (cond.key === 'api_confidence_min' && facts.api_required === false) continue;
-        if (seen.has(cond.key)) continue;
-        seen.add(cond.key);
-        const friendly = FRIENDLY[cond.key] || cond.key;
+        if (
+          ['api_confidence_min', 'api_actionable_confidence_min', 'api_actionable_candidates_count', 'api_candidate_deferrals_valid'].includes(cond.key) &&
+          facts.api_required === false
+        ) continue;
+        const friendly =
+          cond.key === 'api_actionable_candidates_count' &&
+          screen.derived?.api_candidate_contract_version !== 2
+            ? 'api_confidence'
+            : FRIENDLY[cond.key] || cond.key;
+        if (seen.has(friendly)) continue;
+        seen.add(friendly);
         const current = facts[cond.key];
         blocking.push({ [friendly]: current === null ? 'missing' : current });
         nextActions.push(actionHint(cond.key, screenCtx));
@@ -520,6 +689,17 @@ export function computeReadiness({
         domain: screen.domain,
       }));
     }
+    const candidateAccess = applyCandidatePathAccess({
+      screenId: id,
+      screen,
+      chosenName,
+      allowedPaths,
+      forbiddenPaths,
+      layout: resolvedLayout,
+      restrictions: candidateRestrictions,
+    });
+    allowedPaths = candidateAccess.allowedPaths;
+    forbiddenPaths = candidateAccess.forbiddenPaths;
 
     out.set(id, {
       readiness_mode: chosenName,
@@ -529,6 +709,9 @@ export function computeReadiness({
       allowed_paths: allowedPaths,
       forbidden_paths: forbiddenPaths,
       ...(facts.api_required === false ? { api_required: false } : {}),
+      ...(candidateAccess.authorization
+        ? { api_candidate_authorization: candidateAccess.authorization }
+        : {}),
       blocking,
       next_actions: nextActions,
       ...(exposeCaps
@@ -789,13 +972,14 @@ function helpText() {
   return `workflow:readiness - 화면별 구현 모드 / 공유 surface 구현 교집합 계산 (판정의 단일 출처)
 
 Usage:
-  node scripts/readiness.mjs [--docs <dir>] [--screen <SCREEN_ID> | --surface <SURFACE_ID>] [--policy <file>]
+  node scripts/readiness.mjs [--docs <dir>] [--screen <SCREEN_ID> [--path <project-relative-path>] | --surface <SURFACE_ID>] [--policy <file>]
                              [--manifest <file>] [--ci <file>] [--out <file>]
                              [--layout <file>] [--json] [--help]
 
 Options:
   --docs <dir>      authoring 문서 루트(<docs>/_meta/workflow-state.yaml 을 읽음). 기본: ${DEFAULTS.docs}
   --screen <id>     특정 화면 하나만 출력 (예: --screen COUPON-001)
+  --path <path>     --screen의 concrete path를 candidate-aware 파일 권한으로 판정
   --surface <id>    특정 공유 surface 하나만 출력 (예: --surface CHAT-COMPOSER)
   --policy <file>   정책 경로. 기본: 킷 policies/implementation-mode-policy.yaml
   --manifest <file> artifact manifest 경로. 기본: 킷 catalog/artifact-manifest.yaml
@@ -815,7 +999,17 @@ Behavior:
 // parseArgs 는 모든 --foo 를 그대로 flags 에 넣으므로(거부 없음) CLI 별 allowlist 로 오타를 잡는다.
 // 예: --screeen 오타가 "전체 화면 출력", --polciy 오타가 "기본 policy 판정"으로 조용히
 // 진행되는 것을 막는다(exit 2). validate.mjs(PR #175)와 같은 계약.
-const VALUE_FLAGS = new Set(['docs', 'policy', 'manifest', 'ci', 'screen', 'surface', 'out', 'layout']);
+const VALUE_FLAGS = new Set([
+  'docs',
+  'policy',
+  'manifest',
+  'ci',
+  'screen',
+  'path',
+  'surface',
+  'out',
+  'layout',
+]);
 const BOOLEAN_FLAGS = new Set(['json', 'help']);
 
 function main() {
@@ -840,6 +1034,9 @@ function main() {
   if (typeof flags.surface === 'string' && flags.surface.trim() === '') {
     usageError('--surface requires a surface id value (e.g. --surface CHAT-COMPOSER)');
   }
+  if (typeof flags.path === 'string' && flags.path.trim() === '') {
+    usageError('--path requires a project-relative path value');
+  }
   if (
     typeof flags.surface === 'string' &&
     !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(flags.surface)
@@ -848,6 +1045,9 @@ function main() {
   }
   if (flags.screen !== undefined && flags.surface !== undefined) {
     usageError('--screen and --surface are mutually exclusive');
+  }
+  if (flags.path !== undefined && flags.screen === undefined) {
+    usageError('--path requires --screen <SCREEN_ID>');
   }
   if (flags.help) {
     process.stdout.write(helpText());
@@ -876,15 +1076,33 @@ function main() {
   // 레이아웃 프로파일(tier1): role→glob 단일 출처. --layout 으로 project-layout.yaml 경로 오버라이드.
   const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags });
 
-  let result = computeReadiness({
+  const fullResult = computeReadiness({
     state,
     policy,
     ci,
     manifest,
     layout,
-    screenOnlyId: flags.screen,
+    screenOnlyId: flags.path === undefined ? flags.screen : undefined,
     surfaceOnlyId: flags.surface,
   });
+  let result = fullResult;
+  if (flags.path !== undefined) {
+    const entry = fullResult[flags.screen];
+    result = entry
+      ? {
+          [flags.screen]: {
+            ...entry,
+            path_authorization: readinessPathAuthorization({
+              file: flags.path,
+              screenId: flags.screen,
+              entry,
+              modeOrder: policy.order || Object.keys(policy.modes || {}),
+              claims: collectApiCandidateClaims(fullResult),
+            }),
+          },
+        }
+      : {};
+  }
 
   if (flags.json) {
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');

@@ -69,6 +69,9 @@ last_reviewed: "{YYYY-MM-DD}"
 - {공통 데이터 요구}
 
 ## API Candidates
+<!-- 기본은 legacy active 불릿. per-candidate deferred 가 필요하면 legacy 불릿을 모두 지우고
+     docs/reference/api-candidate-deferral.md 의 v2 표를 사용한다. Slice Paths는 exact path 또는
+     terminal /**만 허용하며 모든 candidate-like 표는 정확히 하나여야 한다. -->
 - {METHOD} {/path} (confidence: candidate)
 
 ## Copy Keys
