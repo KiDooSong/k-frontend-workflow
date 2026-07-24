@@ -376,7 +376,7 @@ export function deriveMetrics(spec, opts = {}) {
     blocking_decisions: blockingDecisions,
     malformed_decisions: malformedDecisions,
     api_confidence_min: apiConfidenceMin,
-    ...(apiRequired && apiCandidateContract.version === 2
+    ...(apiCandidateContract.version === 2
       ? {
           api_candidate_contract_version: 2,
           api_actionable_confidence_min: apiCandidateContract.api_actionable_confidence_min,
@@ -472,14 +472,15 @@ function parseV2Candidates(table) {
 // remains active and keeps the exact confidence/method/path behavior used by validate check 8.
 export function parseApiCandidates(sectionText) {
   const tables = candidateTables(sectionText);
-  if (tables.length > 0) return parseV2Candidates(tables[0]);
+  if (tables.length > 0) return tables.flatMap(parseV2Candidates);
   return parseLegacyApiCandidates(sectionText);
 }
 
-function minCandidateConfidence(items) {
+function minCandidateConfidence(items, { invalidAsUnknown = false } = {}) {
   if (items.length === 0) return null;
   let min = null;
   for (const it of items) {
+    if (!CONFIDENCE_ORDER.includes(it.confidence) && !invalidAsUnknown) continue;
     const confidence = CONFIDENCE_ORDER.includes(it.confidence) ? it.confidence : 'unknown';
     if (min === null || confidenceRank(confidence) < confidenceRank(min)) {
       min = confidence;
@@ -509,6 +510,12 @@ function pathSyntaxIssue(candidatePath) {
   if (segments.some((segment) => segment === '')) return 'empty path segment is forbidden';
   if (segments.some((segment) => segment === '..')) return '.. traversal is forbidden';
   if (candidatePath === 'src/**') return 'blanket src/** is forbidden';
+  const literalPrefix = candidatePath.endsWith('/**')
+    ? candidatePath.slice(0, -3)
+    : candidatePath;
+  if (/[*?[\]{}]/.test(literalPrefix)) {
+    return 'only exact paths or a terminal /** glob are supported';
+  }
   return null;
 }
 
@@ -594,26 +601,41 @@ export function analyzeApiCandidateContract(spec, { layout, domain } = {}) {
       ),
     );
   }
-  const table = tables[0];
-  const normalized = table.headers.map(normalizedHeader);
-  for (const column of API_CANDIDATE_V2_COLUMNS) {
-    const key = normalizedHeader(column);
-    const count = normalized.filter((header) => header === key).length;
-    if (count !== 1) {
-      contractIssues.push(
-        issue(
-          count === 0 ? 'API-V2-COLUMN-MISSING' : 'API-V2-COLUMN-DUPLICATE',
-          `API Candidates v2 column '${column}' must appear exactly once (found ${count})`,
-        ),
-      );
+  for (const [tableIndex, table] of tables.entries()) {
+    const normalized = table.headers.map(normalizedHeader);
+    for (const column of API_CANDIDATE_V2_COLUMNS) {
+      const key = normalizedHeader(column);
+      const count = normalized.filter((header) => header === key).length;
+      if (count !== 1) {
+        contractIssues.push(
+          issue(
+            count === 0 ? 'API-V2-COLUMN-MISSING' : 'API-V2-COLUMN-DUPLICATE',
+            `API Candidates v2 table ${tableIndex + 1} column '${column}' must appear exactly once (found ${count})`,
+          ),
+        );
+      }
     }
   }
 
-  const candidates = parseV2Candidates(table);
+  // A duplicate table keeps the contract invalid, but every recoverable row still contributes
+  // provenance. Otherwise a later deferred path disappears and a legacy broad grant can reopen it.
+  const candidates = tables.flatMap(parseV2Candidates);
   const unknowns = unknownStatusIndex(spec.sections?.unknowns);
   const surfaces = resolvedApiCandidateSurfaces(layout, domain ?? spec.frontmatter?.domain);
   const actionable = [];
   const deferred = [];
+
+  if (
+    spec.frontmatter?.api_required === false &&
+    candidates.some((candidate) => candidate.method && candidate.path)
+  ) {
+    contractIssues.push(
+      issue(
+        'API-V2-NO-API-CONFLICT',
+        'api_required:false conflicts with concrete API Candidates v2 rows; provenance remains deny-only',
+      ),
+    );
+  }
 
   for (const candidate of candidates) {
     let candidateValid = true;
@@ -733,8 +755,8 @@ export function analyzeApiCandidateContract(spec, { layout, domain } = {}) {
     candidates,
     actionable_candidates: actionable,
     deferred_candidates: deferred,
-    api_confidence_min: minCandidateConfidence(candidates),
-    api_actionable_confidence_min: minCandidateConfidence(actionable),
+    api_confidence_min: minCandidateConfidence(candidates, { invalidAsUnknown: true }),
+    api_actionable_confidence_min: minCandidateConfidence(actionable, { invalidAsUnknown: true }),
     api_actionable_candidates_count: actionable.length,
     issues: contractIssues,
   };

@@ -70,6 +70,164 @@ export function pathAuthorization(file, allowedPaths = [], forbiddenPaths = []) 
   };
 }
 
+// Candidate provenance is emitted per screen, but authorization is project-scoped: explicit
+// deferred/conflict claims deny every screen, while an active claim belongs only to its owner.
+export function collectApiCandidateClaims(readinessOutput) {
+  const active = [];
+  const denied = [];
+  const seen = new Set();
+  const add = (bucket, row) => {
+    if (!row || !row.path) return;
+    const key = `${row.kind}\0${row.screen_id}\0${row.endpoint}\0${row.path}\0${row.tracking || ''}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    bucket.push(row);
+  };
+  for (const [screenId, entry] of Object.entries(readinessOutput || {})) {
+    const auth = entry?.api_candidate_authorization;
+    if (!auth || auth.contract_version !== 2) continue;
+    for (const row of auth.actionable || []) {
+      add(active, { ...row, kind: 'active', screen_id: row.screen_id || screenId });
+    }
+    for (const row of auth.deferred || []) {
+      add(denied, { ...row, kind: 'deferred', screen_id: row.screen_id || screenId });
+    }
+    for (const conflict of auth.conflicts || []) {
+      for (const owner of conflict.owners || []) {
+        add(denied, {
+          kind: 'conflict',
+          screen_id: owner.screen_id || screenId,
+          endpoint: owner.endpoint || '? ?',
+          gate: owner.gate || null,
+          tracking: owner.tracking || null,
+          path: owner.path || conflict.path,
+          conflicting_path:
+            owner.path === conflict.path ? conflict.conflicting_path : conflict.path,
+        });
+      }
+    }
+  }
+  return { active, denied };
+}
+
+function claimsMatching(claims, file) {
+  return (claims || []).filter((claim) => globMatches(claim.path, file));
+}
+
+function reachesApiIntegration(entry, modeOrder) {
+  const order = modeOrder || [];
+  const threshold = order.indexOf('api-integrated-ui');
+  const actual = order.indexOf(entry?.readiness_mode);
+  return threshold >= 0 && actual >= threshold;
+}
+
+// File-level readiness authorization used by both the forward implement-screen preflight
+// (`workflow:readiness --screen ... --path ...`) and the diff backstop.
+//
+// The plain glob envelope remains authoritative for non-candidate paths. Candidate rules then
+// narrow it: deny claims always win, active claims require their explicit owner to have reached
+// API integration, and an integrated v2 screen may edit only claimed paths inside its resolved
+// hook/API-client surfaces (including at production-ready where allowed_paths can contain src/**).
+export function readinessPathAuthorization({
+  file,
+  screenId,
+  entry,
+  modeOrder = [],
+  claims = { active: [], denied: [] },
+}) {
+  const normalizedFile = toPosix(file);
+  if (!entry) {
+    return {
+      allowed: false,
+      file: normalizedFile,
+      screen_id: screenId,
+      reason: 'screen readiness entry is missing',
+      allowed_by: [],
+      forbidden_by: [],
+      candidate_matches: [],
+    };
+  }
+
+  const base = pathAuthorization(
+    normalizedFile,
+    entry.allowed_paths || [],
+    entry.forbidden_paths || [],
+  );
+  const deniedMatches = claimsMatching(claims.denied, normalizedFile);
+  if (deniedMatches.length > 0) {
+    return {
+      ...base,
+      allowed: false,
+      file: normalizedFile,
+      screen_id: screenId,
+      reason: 'matching deferred/conflict candidate claim',
+      candidate_matches: deniedMatches,
+    };
+  }
+  if (!base.allowed) {
+    return {
+      ...base,
+      allowed: false,
+      file: normalizedFile,
+      screen_id: screenId,
+      reason:
+        base.forbidden_by.length > 0
+          ? 'matching forbidden_paths takes precedence'
+          : 'path is outside allowed_paths',
+      candidate_matches: [],
+    };
+  }
+
+  const activeMatches = claimsMatching(claims.active, normalizedFile);
+  const integrated = reachesApiIntegration(entry, modeOrder);
+  if (activeMatches.length > 0) {
+    const owned = activeMatches.filter((claim) => claim.screen_id === screenId);
+    const allowed =
+      entry.api_required !== false &&
+      integrated &&
+      owned.length > 0;
+    return {
+      ...base,
+      allowed,
+      file: normalizedFile,
+      screen_id: screenId,
+      reason: allowed
+        ? 'explicit active candidate claim owned by an API-integrated screen'
+        : 'explicit active candidate claim requires its owning screen at api-integrated-ui or above',
+      candidate_matches: activeMatches,
+    };
+  }
+
+  const authorization = entry.api_candidate_authorization;
+  const enforcedSurfaces =
+    authorization?.contract_version === 2 && integrated
+      ? authorization.enforced_surfaces || []
+      : [];
+  const enforcedBy = enforcedSurfaces.filter((surface) =>
+    globMatches(surface, normalizedFile),
+  );
+  if (enforcedBy.length > 0) {
+    return {
+      ...base,
+      allowed: false,
+      file: normalizedFile,
+      screen_id: screenId,
+      reason: 'integrated v2 API surface requires an explicit active candidate claim',
+      candidate_matches: [],
+      candidate_surface_by: enforcedBy,
+    };
+  }
+
+  return {
+    ...base,
+    allowed: true,
+    file: normalizedFile,
+    screen_id: screenId,
+    reason: 'allowed by effective readiness paths',
+    candidate_matches: [],
+  };
+}
+
 // --- guarded surface 파생 (정책에서) -------------------------------------
 // classify(forbidden glob):
 //   domain-scoped   : "{domain}" 포함 → 파일→화면 attribution 필요. MVP 제외.

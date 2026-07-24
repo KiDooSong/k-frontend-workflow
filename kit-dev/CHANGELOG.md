@@ -15,6 +15,10 @@
   좁은 Slice Paths를 가져야 하며 deferred는 open Unknown 또는 `issue:#N` tracking을 요구한다.
   all-deferred, malformed tracking/path/table, `confirmed+deferred`, active/deferred 및 cross-screen
   ownership overlap은 live `api-integrated-ui`를 fail-closed한다.
+- Slice Paths 문법을 exact path 또는 terminal `/**`로 한정해 arbitrary glob overlap
+  fail-open을 제거했다. 복수 v2 표는 invalid로 유지하되 모든 표의 recoverable provenance를
+  수집하며, `api_required:false`도 v2 deferred/conflict provenance를 state/readiness에서
+  버리지 않는다. legacy invalid confidence의 min 집계는 기존처럼 무시해 byte compatibility를 유지한다.
 - v2 screen의 `api-integrated-ui` allowed_paths는 confirmed active slices로 좁히고 deferred/conflict
   paths는 모든 screen의 effective forbidden_paths에 보존한다(forbidden 우선). Work Packet/Run Report
   Markdown·JSON은 endpoint/tracking/owner provenance를 재유도 없이 전달한다.
@@ -22,6 +26,10 @@
   allowed/forbidden + candidate ownership으로 바꿨다. 다른 legacy/api-integrated screen이 있어도
   deferred diff는 `--enforce`에서 차단되고 active owned slice는 통과한다. non-API guarded surface의
   기존 project-level 동작과 warning-first/`--enforce` exit 계약은 유지한다.
+- `workflow:readiness -- --screen <ID> --path <path> --json` 파일 판정을 추가하고
+  `readinessPathAuthorization()`을 diff backstop과 공유한다. 따라서 `production-ready`의
+  `src/**` envelope에서도 unowned v2 API path는 forward 단계에서 차단되고, explicit active
+  claim은 소유 화면이 API integration에 도달하기 전 다른 legacy 화면이 빌릴 수 없다.
 - validate 검사 15는 v2 표/enum/tracking/path/ownership을 warning-only로 조기경보한다. legacy 문서는
   무발화하며 hard gate/CI required check 승격은 없다. 설계·migration·known limits:
   `kit-dev/docs/design/drafts/per-api-candidate-deferral.md`; consumer 계약:

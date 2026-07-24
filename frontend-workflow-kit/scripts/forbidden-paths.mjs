@@ -30,7 +30,8 @@ import {
   gitChangedRecords,
   stripRoot,
   globMatches,
-  pathAuthorization,
+  collectApiCandidateClaims,
+  readinessPathAuthorization,
   GitError,
   DiffParseError,
 } from './lib/path-backstop.mjs';
@@ -120,39 +121,6 @@ function surfaceTouchesAny(surface, surfaces) {
   return (surfaces || []).some((candidate) => covers(surface, candidate) || covers(candidate, surface));
 }
 
-function candidateClaims(readinessOutput) {
-  const active = [];
-  const denied = [];
-  const seen = new Set();
-  const add = (bucket, row) => {
-    if (!row || !row.path) return;
-    const key = `${row.kind}\0${row.screen_id}\0${row.endpoint}\0${row.path}\0${row.tracking || ''}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    bucket.push(row);
-  };
-  for (const [screenId, entry] of Object.entries(readinessOutput || {})) {
-    const auth = entry.api_candidate_authorization;
-    if (!auth || auth.contract_version !== 2) continue;
-    for (const row of auth.actionable || []) add(active, { ...row, kind: 'active', screen_id: row.screen_id || screenId });
-    for (const row of auth.deferred || []) add(denied, { ...row, kind: 'deferred', screen_id: row.screen_id || screenId });
-    for (const conflict of auth.conflicts || []) {
-      for (const owner of conflict.owners || []) {
-        add(denied, {
-          kind: 'conflict',
-          screen_id: owner.screen_id || screenId,
-          endpoint: owner.endpoint || '? ?',
-          gate: owner.gate || null,
-          tracking: owner.tracking || null,
-          path: owner.path || conflict.path,
-          conflicting_path: owner.path === conflict.path ? conflict.conflicting_path : conflict.path,
-        });
-      }
-    }
-  }
-  return { active, denied };
-}
-
 function matchingClaims(claims, file) {
   return (claims || []).filter((claim) => globMatches(claim.path, file));
 }
@@ -163,23 +131,19 @@ function screenReachesApiIntegrated(entry, order) {
   return threshold >= 0 && actual >= threshold;
 }
 
-function screenAuthorizesApiFile(file, screenId, entry, order, activeClaims, options = {}) {
-  if (!entry || entry.api_required === false) return false;
-  const authz = pathAuthorization(file, entry.allowed_paths || [], entry.forbidden_paths || []);
-  if (!authz.allowed) return false;
-  const contract = entry.api_candidate_authorization;
-  if (!contract || contract.contract_version !== 2) {
-    // Legacy screens retain their effective broad role authorization, but they cannot stand in
-    // for the explicit owner of a v2 active claim.
-    return options.requireExplicitClaim !== true;
-  }
-  if (!screenReachesApiIntegrated(entry, order)) return false;
-  return matchingClaims(activeClaims, file).some((claim) => claim.screen_id === screenId);
+function screenAuthorizesApiFile(file, screenId, entry, order, claims) {
+  return readinessPathAuthorization({
+    file,
+    screenId,
+    entry,
+    modeOrder: order,
+    claims,
+  }).allowed;
 }
 
-function anyScreenAuthorizesApiFile(file, readinessOutput, order, activeClaims, options = {}) {
+function anyScreenAuthorizesApiFile(file, readinessOutput, order, claims) {
   return Object.entries(readinessOutput || {}).some(([screenId, entry]) =>
-    screenAuthorizesApiFile(file, screenId, entry, order, activeClaims, options),
+    screenAuthorizesApiFile(file, screenId, entry, order, claims),
   );
 }
 
@@ -365,7 +329,7 @@ function main() {
   const domains = domainsFromState(state);
   const guardedSurface = layout.materializeGuardedSurface(resolvedPolicy, domains);
   const apiClientSurfaces = optionalApiClientSurfaces(layout, domains);
-  const claims = candidateClaims(readinessOutput);
+  const claims = collectApiCandidateClaims(readinessOutput);
   const hasV2CandidateContract = Object.values(readinessOutput).some(
     (entry) => entry?.api_candidate_authorization?.contract_version === 2,
   );
@@ -461,11 +425,7 @@ function main() {
         !touchesIntegratedV2ApiSurface
       ) continue; // (c) 공유/무관 경로 — 감시 대상 아님
       if (activeClaims.length > 0) {
-        if (
-          anyScreenAuthorizesApiFile(F, readinessOutput, order, claims.active, {
-            requireExplicitClaim: true,
-          })
-        ) continue;
+        if (anyScreenAuthorizesApiFile(F, readinessOutput, order, claims)) continue;
         seenFiles.add(F);
         const { reason, would_clear } = describeUnownedCandidateViolation(F, activeClaims);
         violations.push({
@@ -479,7 +439,7 @@ function main() {
         continue;
       }
       if (matched.length === 0 && touchesIntegratedV2ApiSurface) {
-        if (anyScreenAuthorizesApiFile(F, readinessOutput, order, claims.active)) continue;
+        if (anyScreenAuthorizesApiFile(F, readinessOutput, order, claims)) continue;
         seenFiles.add(F);
         const { reason, would_clear } = describeUnownedCandidateViolation(F, []);
         violations.push({
@@ -502,7 +462,7 @@ function main() {
       if (
         clearanceOptions.requireApiRequired === true &&
         hasV2CandidateContract &&
-        anyScreenAuthorizesApiFile(F, readinessOutput, order, claims.active)
+        anyScreenAuthorizesApiFile(F, readinessOutput, order, claims)
       ) continue;
       if (
         (clearanceOptions.requireApiRequired !== true || !hasV2CandidateContract) &&

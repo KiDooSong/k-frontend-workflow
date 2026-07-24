@@ -14,7 +14,7 @@ npm run workflow:validate
 ```
 
 - `workflow:state` reads `docs/frontend-workflow/` and writes `_meta/workflow-state.yaml` plus `_meta/screen-inventory.yaml`; adopted shared surfaces appear additively only in workflow state.
-- `workflow:readiness` computes the highest allowed implementation mode per screen and reports allowed/forbidden paths; `--surface` computes the shared-code intersection for one adopted surface.
+- `workflow:readiness` computes the highest allowed implementation mode per screen and reports allowed/forbidden paths; `--surface` computes the shared-code intersection for one adopted surface. With `--screen`, `--path` runs the same candidate-aware file authorization used by the diff backstop.
 - `workflow:validate` checks frontmatter, manifests, routes, approval metadata, API candidates, input artifacts, and Reconciliation Register structure.
 
 Useful options:
@@ -22,6 +22,7 @@ Useful options:
 ```bash
 npm run workflow:state -- --docs docs/frontend-workflow --src src
 npm run workflow:readiness -- --screen COUPON-001 --json
+npm run workflow:readiness -- --screen COUPON-001 --path src/api/coupons/list.ts --json
 npm run workflow:readiness -- --surface CHAT-COMPOSER --json
 npm run workflow:validate -- --json
 npm run workflow:doctor -- --root apps/mobile --src apps/mobile/src
@@ -39,7 +40,10 @@ Value flags reject empty values in both attached (`--flag=`) and split-token
 (`--flag ''`) forms, even when a later valid duplicate would otherwise win.
 A typo never silently falls back to a default run.
 
-`--screen` and `--surface` are mutually exclusive. `--surface` accepts one canonical Surface ID and returns the same keyed-filter shape as `--screen`.
+`--screen` and `--surface` are mutually exclusive. `--path` requires `--screen` and adds
+`path_authorization` for that project-relative concrete path. Require `allowed: true` before
+editing; this remains mandatory at `production-ready`, where a broad `src/**` envelope alone
+does not grant an unowned v2 hook/API-client path. `--surface` accepts one canonical Surface ID and returns the same keyed-filter shape as `--screen`.
 Its mode is the minimum of surface facts, surface decision cap, and all member screen modes; code paths are the policy/member intersection only.
 See [shared-surfaces.md](docs/reference/shared-surfaces.md).
 

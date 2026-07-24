@@ -19,7 +19,11 @@ import {
   isCliEntry,
 } from './lib/util.mjs';
 import { LayoutConfigError, loadLayoutProfile, synthesizeModePolicy } from './lib/layout-profile.mjs';
-import { covers } from './lib/path-backstop.mjs';
+import {
+  collectApiCandidateClaims,
+  covers,
+  readinessPathAuthorization,
+} from './lib/path-backstop.mjs';
 // "fact OP value" 파싱은 policy-condition.mjs 단일 출처에서 온다 — validate 검사 14 와 규칙을 공유해 표류 방지.
 import { parseCondition } from './lib/policy-condition.mjs';
 import { enforceCliFlagContract } from './lib/cli-args.mjs';
@@ -381,7 +385,7 @@ function projectCandidateRestrictions(state) {
   });
 }
 
-function candidateAuthorizationFor(screenId, screen) {
+function candidateAuthorizationFor(screenId, screen, layout) {
   const d = screen.derived || {};
   if (d.api_candidate_contract_version !== 2) return null;
   const actionable = [];
@@ -403,6 +407,8 @@ function candidateAuthorizationFor(screenId, screen) {
     deferred,
     conflicts: d.api_candidate_ownership_conflicts || [],
     issues: d.api_candidate_contract_issues || [],
+    enforced_surfaces: candidateApiSurfaces(layout, screen.domain),
+    file_check_required: true,
   };
 }
 
@@ -415,12 +421,16 @@ function applyCandidatePathAccess({
   layout,
   restrictions,
 }) {
-  const authorization = candidateAuthorizationFor(screenId, screen);
+  const authorization = candidateAuthorizationFor(screenId, screen, layout);
   const restrictionPaths = restrictions.map((entry) => entry.path).filter(Boolean);
   let nextAllowed = allowedPaths;
   let nextForbidden = uniquePaths([...forbiddenPaths, ...restrictionPaths]);
 
-  if (authorization && chosenName === 'api-integrated-ui') {
+  if (
+    authorization &&
+    screen.derived?.api_required !== false &&
+    chosenName === 'api-integrated-ui'
+  ) {
     const apiSurfaces = candidateApiSurfaces(layout, screen.domain);
     const nonApiAllowed = removeTouchedSurfaces(nextAllowed, apiSurfaces);
     const activePaths = authorization.valid
@@ -962,13 +972,14 @@ function helpText() {
   return `workflow:readiness - 화면별 구현 모드 / 공유 surface 구현 교집합 계산 (판정의 단일 출처)
 
 Usage:
-  node scripts/readiness.mjs [--docs <dir>] [--screen <SCREEN_ID> | --surface <SURFACE_ID>] [--policy <file>]
+  node scripts/readiness.mjs [--docs <dir>] [--screen <SCREEN_ID> [--path <project-relative-path>] | --surface <SURFACE_ID>] [--policy <file>]
                              [--manifest <file>] [--ci <file>] [--out <file>]
                              [--layout <file>] [--json] [--help]
 
 Options:
   --docs <dir>      authoring 문서 루트(<docs>/_meta/workflow-state.yaml 을 읽음). 기본: ${DEFAULTS.docs}
   --screen <id>     특정 화면 하나만 출력 (예: --screen COUPON-001)
+  --path <path>     --screen의 concrete path를 candidate-aware 파일 권한으로 판정
   --surface <id>    특정 공유 surface 하나만 출력 (예: --surface CHAT-COMPOSER)
   --policy <file>   정책 경로. 기본: 킷 policies/implementation-mode-policy.yaml
   --manifest <file> artifact manifest 경로. 기본: 킷 catalog/artifact-manifest.yaml
@@ -988,7 +999,17 @@ Behavior:
 // parseArgs 는 모든 --foo 를 그대로 flags 에 넣으므로(거부 없음) CLI 별 allowlist 로 오타를 잡는다.
 // 예: --screeen 오타가 "전체 화면 출력", --polciy 오타가 "기본 policy 판정"으로 조용히
 // 진행되는 것을 막는다(exit 2). validate.mjs(PR #175)와 같은 계약.
-const VALUE_FLAGS = new Set(['docs', 'policy', 'manifest', 'ci', 'screen', 'surface', 'out', 'layout']);
+const VALUE_FLAGS = new Set([
+  'docs',
+  'policy',
+  'manifest',
+  'ci',
+  'screen',
+  'path',
+  'surface',
+  'out',
+  'layout',
+]);
 const BOOLEAN_FLAGS = new Set(['json', 'help']);
 
 function main() {
@@ -1013,6 +1034,9 @@ function main() {
   if (typeof flags.surface === 'string' && flags.surface.trim() === '') {
     usageError('--surface requires a surface id value (e.g. --surface CHAT-COMPOSER)');
   }
+  if (typeof flags.path === 'string' && flags.path.trim() === '') {
+    usageError('--path requires a project-relative path value');
+  }
   if (
     typeof flags.surface === 'string' &&
     !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(flags.surface)
@@ -1021,6 +1045,9 @@ function main() {
   }
   if (flags.screen !== undefined && flags.surface !== undefined) {
     usageError('--screen and --surface are mutually exclusive');
+  }
+  if (flags.path !== undefined && flags.screen === undefined) {
+    usageError('--path requires --screen <SCREEN_ID>');
   }
   if (flags.help) {
     process.stdout.write(helpText());
@@ -1049,15 +1076,33 @@ function main() {
   // 레이아웃 프로파일(tier1): role→glob 단일 출처. --layout 으로 project-layout.yaml 경로 오버라이드.
   const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags });
 
-  let result = computeReadiness({
+  const fullResult = computeReadiness({
     state,
     policy,
     ci,
     manifest,
     layout,
-    screenOnlyId: flags.screen,
+    screenOnlyId: flags.path === undefined ? flags.screen : undefined,
     surfaceOnlyId: flags.surface,
   });
+  let result = fullResult;
+  if (flags.path !== undefined) {
+    const entry = fullResult[flags.screen];
+    result = entry
+      ? {
+          [flags.screen]: {
+            ...entry,
+            path_authorization: readinessPathAuthorization({
+              file: flags.path,
+              screenId: flags.screen,
+              entry,
+              modeOrder: policy.order || Object.keys(policy.modes || {}),
+              claims: collectApiCandidateClaims(fullResult),
+            }),
+          },
+        }
+      : {};
+  }
 
   if (flags.json) {
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');

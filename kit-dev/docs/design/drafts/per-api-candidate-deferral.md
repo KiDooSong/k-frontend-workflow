@@ -60,6 +60,9 @@ Slice Paths:
 
 - use `/`, remain project-root-relative, and contain no absolute/drive prefix,
   empty segment, `..`, or blanket `src/**`;
+- use either an exact path or a terminal `/**` subtree glob. Arbitrary glob forms
+  (`*.ts`, `foo*`, middle `**`, `?`, character classes, braces) are invalid so
+  overlap detection remains sound and fail-closed;
 - must be strictly narrower than a broad resolved `{roles.hook}` or
   `{roles.api_client}` surface; an exact file-bound role may be owned;
 - are checked after domain/layout overrides are resolved;
@@ -73,6 +76,14 @@ forbidden until ownership is made disjoint.
 Explicit deferred/conflict paths are projected into every screen's effective
 `forbidden_paths`. This prevents a different legacy screen's broad allowance from
 silently clearing an explicitly deferred slice.
+
+If duplicate candidate-like tables are authored, the contract is invalid but all
+recoverable rows from every table still contribute deny/ownership provenance. An
+invalid table count cannot make a later deferred path disappear.
+
+Concrete v2 rows under `api_required:false` are contradictory and never grant that
+screen API authority. Their provenance remains in state/readiness so deferred paths
+and cross-screen conflicts still deny project-wide.
 
 ## Facts And Mode
 
@@ -114,9 +125,22 @@ provenance.
 Work Packet and Run Report Markdown/JSON copy that block and the narrowed
 allowed/forbidden paths without re-deriving them.
 
+At every mode, concrete pre-edit checks call:
+
+```bash
+npm run workflow:readiness -- --screen <SCREEN_ID> --path <path> --json
+```
+
+This delegates to the same pure `readinessPathAuthorization()` helper as the diff
+backstop. At `production-ready`, `src/**` remains the broad non-API policy envelope,
+but an integrated v2 hook/API-client path requires an explicit active claim owned by
+that screen. Active claims also remain unavailable to other legacy/v2 screens until
+their explicit owner reaches API integration.
+
 ## Diff Backstop
 
-`workflow:forbidden-paths` consumes `computeReadiness()` output file by file:
+`workflow:forbidden-paths` consumes `computeReadiness()` output file by file through
+the same `readinessPathAuthorization()` helper used by `workflow:readiness --path`:
 
 1. a matching deferred/conflict claim is always a violation;
 2. an explicit active claim passes only when its owning screen is at or above
@@ -130,8 +154,9 @@ Reasons name candidate endpoint, tracking reference, owner screen, and conflict
 provenance. Rename/copy inspect only the new path. Windows separators are converted
 before matching.
 
-The pure `pathAuthorization()` helper is the single forbidden-over-allowed rule
-used by the backstop.
+The pure `pathAuthorization()` helper owns forbidden-over-allowed precedence;
+`readinessPathAuthorization()` layers project candidate ownership onto that same
+base result.
 
 ## Validator Boundary
 
@@ -141,6 +166,7 @@ Validate check 15 is warning-only for:
 - invalid Gate/Confidence and `confirmed + deferred`;
 - missing, unresolved, or closed-Unknown Tracking;
 - missing, unsafe, broad, or out-of-layout Slice Paths;
+- concrete v2 rows under `api_required:false` (provenance retained deny-only);
 - active/deferred and cross-screen ownership overlap.
 
 Legacy bullet-only documents emit no check-15 warning. Check 15 does not become a
@@ -167,11 +193,12 @@ present, it is the contract and bullets are not an additional authorization sour
 
 - Legacy screens intentionally retain broad authorization for backward
   compatibility. They may authorize unowned API-client paths, but never override an
-  explicit v2 deferred/conflict path.
+  explicit v2 active/deferred/conflict path.
 - V2 narrowing is materialized directly in `allowed_paths` at
-  `api-integrated-ui`. At `production-ready`, broad non-API policy paths cannot be
-  subtracted with the current glob-only output shape; the diff backstop therefore
-  enforces v2 active ownership for API-related files at that mode.
+  `api-integrated-ui`. At `production-ready`, glob arrays alone cannot express
+  `src/**` minus API surfaces plus active slices, so every concrete pre-edit path
+  must consume the additive `path_authorization` result. The implement-screen
+  contract requires this check; the backstop uses the same helper.
 - A malformed row with no safe, recoverable Slice Path cannot project an exact
   project-wide forbidden path. Its owning screen still fails the live API gate and
   check 15 surfaces the defect.

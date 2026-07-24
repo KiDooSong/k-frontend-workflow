@@ -25,6 +25,12 @@ npm run workflow:readiness -- --screen <SCREEN_ID> --json
   implement that source; use the canonical `absorbed_into` target ([contract](../screen-lifecycle.md)).
 - **Edit `allowed_paths` only.** Never edit `forbidden_paths`. Never widen scope
   from a `screen_entry` hint.
+- Before editing each concrete path, run
+  `npm run workflow:readiness -- --screen <SCREEN_ID> --path <project-relative-path> --json`
+  and require `path_authorization.allowed: true`. This shared file-level helper keeps the
+  forward check aligned with `workflow:forbidden-paths`: explicit active candidate paths require
+  their API-integrated owner, and integrated v2 hook/API-client surfaces reject unowned paths
+  even at `production-ready`.
 - Stay within the allowed mode (`route-skeleton` → … → `api-integrated-ui`); do not
   reach into API/data layers an early mode forbids.
 - If screen readiness exposes `delegated_shared_surfaces`, do not edit those reserved paths even when a broader screen allow glob covers them. Run `workflow:readiness -- --surface <SURFACE_ID> --json` and use the surface skill.

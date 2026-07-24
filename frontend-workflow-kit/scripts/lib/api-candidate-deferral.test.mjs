@@ -12,8 +12,9 @@ import {
   getSections,
 } from './spec.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
-import { KIT_ROOT } from './util.mjs';
+import { KIT_ROOT, yamlStringify } from './util.mjs';
 import { computeReadiness } from '../readiness.mjs';
+import { buildState } from '../workflow-state.mjs';
 import {
   buildPacketModel,
   renderJsonEnvelope as renderPacketJson,
@@ -24,6 +25,10 @@ import {
   renderJsonEnvelope as renderReportJson,
   renderReportMarkdown,
 } from './workflow-report.mjs';
+import {
+  collectApiCandidateClaims,
+  readinessPathAuthorization,
+} from './path-backstop.mjs';
 
 const layout = loadLayoutProfile({ kitRoot: KIT_ROOT });
 
@@ -143,6 +148,27 @@ test('legacy bullet-only contract keeps readiness output byte-compatible', () =>
   });
   const after = computeReadiness({ state, policy: policyV2, ci: {}, manifest: {}, layout });
   assert.deepEqual(after, before);
+});
+
+test('legacy invalid confidence keeps the pre-v2 min aggregation behavior', () => {
+  const mixed = derivedFor(
+    makeSpec(
+      [
+        '- GET /confirmed (confidence: confirmed)',
+        '- GET /typo (confidence: typo)',
+      ].join('\n'),
+    ),
+  );
+  assert.equal(mixed.api_confidence_min, 'confirmed');
+
+  const invalidOnly = derivedFor(
+    makeSpec('- GET /typo (confidence: typo)'),
+  );
+  assert.equal(invalidOnly.api_confidence_min, null);
+  assert.equal(
+    Object.hasOwn(invalidOnly, 'api_candidate_contract_version'),
+    false,
+  );
 });
 
 test('four confirmed active candidates plus one deferred candidate reaches api-integrated with narrow paths', () => {
@@ -301,6 +327,341 @@ test('v2 columns and candidate table count are warning-first diagnostics but liv
     { layout, domain: 'create' },
   );
   assert.ok(duplicated.issues.some((entry) => entry.code === 'API-V2-TABLE-COUNT'));
+});
+
+test('duplicate v2 tables retain later deferred provenance and deny legacy broad authorization', () => {
+  const spec = makeSpec(
+    [
+      v2Table([
+        ['GET', '/live', 'confirmed', 'active', '-', 'src/api/create/live/**'],
+      ]),
+      '',
+      v2Table([
+        ['GET', '/stock', 'candidate', 'deferred', 'issue:#210', 'src/api/create/stock/**'],
+      ]),
+    ].join('\n'),
+  );
+  const derived = derivedFor(spec);
+  assert.equal(derived.api_candidate_deferrals_valid, false);
+  assert.equal(derived.api_deferred_candidates.length, 1);
+  assert.equal(
+    derived.api_deferred_candidates[0].safe_slice_paths[0],
+    'src/api/create/stock/**',
+  );
+
+  const legacy = derivedFor(
+    makeSpec('- GET /legacy (confidence: confirmed)', '', 'legacy'),
+  );
+  const readiness = computeReadiness({
+    state: {
+      global: {},
+      screens: {
+        V2: { status: 'confirmed', domain: 'create', stub: false, derived },
+        LEGACY: { status: 'confirmed', domain: 'legacy', stub: false, derived: legacy },
+      },
+    },
+    policy: policyV2,
+    ci: {},
+    manifest: {},
+    layout,
+  });
+  assert.ok(readiness.LEGACY.forbidden_paths.includes('src/api/create/stock/**'));
+  const authorization = readinessPathAuthorization({
+    file: 'src/api/create/stock/client.ts',
+    screenId: 'LEGACY',
+    entry: readiness.LEGACY,
+    modeOrder: policyV2.order,
+    claims: collectApiCandidateClaims(readiness),
+  });
+  assert.equal(authorization.allowed, false);
+  assert.equal(
+    authorization.candidate_matches[0].tracking,
+    'issue:#210',
+  );
+});
+
+test('slice path grammar rejects non-terminal globs before overlap authorization', () => {
+  for (const slicePath of [
+    'src/api/shared/*.ts',
+    'src/api/shared/foo*',
+    'src/api/**/client.ts',
+  ]) {
+    const contract = analyzeApiCandidateContract(
+      makeSpec(
+        v2Table([
+          ['GET', '/wild', 'confirmed', 'active', '-', slicePath],
+          ['GET', '/literal', 'confirmed', 'active', '-', 'src/api/shared/foo.ts'],
+        ]),
+      ),
+      { layout, domain: 'create' },
+    );
+    assert.equal(contract.valid, false, slicePath);
+    assert.ok(
+      contract.issues.some(
+        (entry) =>
+          entry.code === 'API-V2-SLICE-SYNTAX' &&
+          entry.path === slicePath,
+      ),
+      slicePath,
+    );
+    assert.equal(
+      contract.actionable_candidates.some((entry) =>
+        entry.safe_slice_paths.includes(slicePath),
+      ),
+      false,
+      slicePath,
+    );
+  }
+});
+
+test('production-ready forward authorization still requires owned active API slices', (t) => {
+  const spec = makeSpec(
+    v2Table([
+      ['GET', '/live', 'confirmed', 'active', '-', 'src/api/create/live/**'],
+    ]),
+  );
+  const productionPolicy = structuredClone(policyV2);
+  productionPolicy.order.push('production-ready');
+  productionPolicy.modes['production-ready'] = {
+    requires: ['ci_lint == pass'],
+    allowed_paths: ['src/**'],
+    forbidden_paths: [],
+  };
+  const state = {
+    global: {},
+    screens: {
+      V2: {
+        status: 'confirmed',
+        domain: 'create',
+        stub: false,
+        derived: derivedFor(spec),
+      },
+    },
+  };
+  const readiness = computeReadiness({
+    state,
+    policy: productionPolicy,
+    ci: { ci_lint: 'pass' },
+    manifest: {},
+    layout,
+  });
+  const entry = readiness.V2;
+  const claims = collectApiCandidateClaims(readiness);
+  assert.equal(entry.readiness_mode, 'production-ready');
+  assert.ok(entry.allowed_paths.includes('src/**'));
+  assert.equal(
+    readinessPathAuthorization({
+      file: 'src/api/create/live/client.ts',
+      screenId: 'V2',
+      entry,
+      modeOrder: productionPolicy.order,
+      claims,
+    }).allowed,
+    true,
+  );
+  const unowned = readinessPathAuthorization({
+    file: 'src/api/create/unowned.ts',
+    screenId: 'V2',
+    entry,
+    modeOrder: productionPolicy.order,
+    claims,
+  });
+  assert.equal(unowned.allowed, false);
+  assert.match(unowned.reason, /requires an explicit active candidate claim/);
+
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'api-candidate-forward-path-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const docs = path.join(root, 'docs', 'frontend-workflow');
+  const meta = path.join(docs, '_meta');
+  fs.mkdirSync(meta, { recursive: true });
+  fs.writeFileSync(
+    path.join(meta, 'workflow-state.yaml'),
+    yamlStringify(state),
+    'utf8',
+  );
+  const policyPath = path.join(root, 'policy.yaml');
+  fs.writeFileSync(policyPath, yamlStringify(productionPolicy), 'utf8');
+  const ciPath = path.join(root, 'ci.yaml');
+  fs.writeFileSync(ciPath, 'ci_lint: pass\n', 'utf8');
+  const result = spawnSync(
+    process.execPath,
+    [
+      path.join(KIT_ROOT, 'scripts', 'readiness.mjs'),
+      '--docs',
+      docs,
+      '--policy',
+      policyPath,
+      '--ci',
+      ciPath,
+      '--screen',
+      'V2',
+      '--path',
+      'src/api/create/unowned.ts',
+      '--json',
+    ],
+    { cwd: root, encoding: 'utf8' },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(
+    JSON.parse(result.stdout).V2.path_authorization.allowed,
+    false,
+  );
+});
+
+test('forward authorization does not let legacy broad paths replace an unready active owner', () => {
+  const v2 = derivedFor(
+    makeSpec(
+      v2Table([
+        ['GET', '/live', 'confirmed', 'active', '-', 'src/api/create/live/**'],
+      ]),
+    ),
+  );
+  v2.state_matrix_complete = false;
+  const legacy = derivedFor(
+    makeSpec('- GET /legacy (confidence: confirmed)', '', 'legacy'),
+  );
+  const readiness = computeReadiness({
+    state: {
+      global: {},
+      screens: {
+        V2: { status: 'confirmed', domain: 'create', stub: false, derived: v2 },
+        LEGACY: { status: 'confirmed', domain: 'legacy', stub: false, derived: legacy },
+      },
+    },
+    policy: policyV2,
+    ci: {},
+    manifest: {},
+    layout,
+  });
+  assert.notEqual(readiness.V2.readiness_mode, 'api-integrated-ui');
+  assert.equal(readiness.LEGACY.readiness_mode, 'api-integrated-ui');
+  const authorization = readinessPathAuthorization({
+    file: 'src/api/create/live/client.ts',
+    screenId: 'LEGACY',
+    entry: readiness.LEGACY,
+    modeOrder: policyV2.order,
+    claims: collectApiCandidateClaims(readiness),
+  });
+  assert.equal(authorization.allowed, false);
+  assert.match(authorization.reason, /requires its owning screen/);
+});
+
+test('api_required:false preserves v2 deny provenance and cross-screen ownership evidence', (t) => {
+  const noApiSpec = makeSpec(
+    v2Table([
+      ['GET', '/stock', 'candidate', 'deferred', 'issue:#210', 'src/api/create/stock/**'],
+    ]),
+  );
+  noApiSpec.frontmatter.api_required = false;
+  const noApi = derivedFor(noApiSpec);
+  assert.equal(noApi.api_required, false);
+  assert.equal(noApi.api_candidate_contract_version, 2);
+  assert.equal(noApi.api_deferred_candidates.length, 1);
+  assert.equal(noApi.api_candidate_deferrals_valid, false);
+  assert.ok(
+    noApi.api_candidate_contract_issues.some(
+      (entry) => entry.code === 'API-V2-NO-API-CONFLICT',
+    ),
+  );
+
+  const other = derivedFor(
+    makeSpec(
+      v2Table([
+        ['GET', '/other', 'confirmed', 'active', '-', 'src/api/create/stock/client.ts'],
+      ]),
+    ),
+  );
+  const conflicts = findApiCandidateOwnershipConflicts(
+    new Map([
+      ['NO-API', { derived: noApi }],
+      ['OTHER', { derived: other }],
+    ]),
+  );
+  assert.equal(conflicts.get('NO-API').length, 1);
+  assert.equal(conflicts.get('OTHER').length, 1);
+
+  const legacy = derivedFor(
+    makeSpec('- GET /legacy (confidence: confirmed)', '', 'legacy'),
+  );
+  const readiness = computeReadiness({
+    state: {
+      global: {},
+      screens: {
+        'NO-API': { status: 'confirmed', domain: 'create', stub: false, derived: noApi },
+        LEGACY: { status: 'confirmed', domain: 'legacy', stub: false, derived: legacy },
+      },
+    },
+    policy: policyV2,
+    ci: {},
+    manifest: {},
+    layout,
+  });
+  assert.equal(readiness['NO-API'].api_required, false);
+  assert.ok(
+    readiness['NO-API'].api_candidate_authorization.issues.some(
+      (entry) => entry.code === 'API-V2-NO-API-CONFLICT',
+    ),
+  );
+  assert.ok(readiness.LEGACY.forbidden_paths.includes('src/api/create/stock/**'));
+  assert.equal(
+    readinessPathAuthorization({
+      file: 'src/api/create/stock/client.ts',
+      screenId: 'LEGACY',
+      entry: readiness.LEGACY,
+      modeOrder: policyV2.order,
+      claims: collectApiCandidateClaims(readiness),
+    }).allowed,
+    false,
+  );
+
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'api-candidate-no-api-state-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const docs = path.join(root, 'docs', 'frontend-workflow');
+  const screenDir = path.join(docs, 'domains', 'create', 'screens', 'no-api');
+  fs.mkdirSync(screenDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(screenDir, 'screen-spec.md'),
+    [
+      '---',
+      'artifact_id: NO-API-screen-spec',
+      'artifact_type: screen-spec',
+      'domain: create',
+      'screen_id: NO-API',
+      'route: /no-api',
+      'status: confirmed',
+      'api_required: false',
+      '---',
+      '# No API',
+      '## State Matrix',
+      '| State | Trigger | UI | User Action |',
+      '|---|---|---|---|',
+      ...['loading', 'empty', 'error', 'success', 'disabled', 'refreshing'].map(
+        (stateName) => `| ${stateName} | x | x | x |`,
+      ),
+      '## API Candidates',
+      v2Table([
+        ['GET', '/stock', 'candidate', 'deferred', 'issue:#210', 'src/api/create/stock/**'],
+      ]),
+      '## Unknowns',
+      '| ID | Question | Status |',
+      '|---|---|---|',
+      '| U-STOCK | pending | open |',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  const serialized = buildState({
+    docsDir: docs,
+    srcDir: path.join(root, 'src'),
+    date: '2026-07-24',
+    layout,
+    projectRoot: root,
+  });
+  assert.equal(serialized.state.screens['NO-API'].derived.api_candidate_contract_version, 2);
+  assert.equal(
+    serialized.state.screens['NO-API'].derived.api_deferred_candidates[0].safe_slice_paths[0],
+    'src/api/create/stock/**',
+  );
 });
 
 test('validate check 15 reports malformed v2 as warning-only while legacy stays silent', (t) => {
