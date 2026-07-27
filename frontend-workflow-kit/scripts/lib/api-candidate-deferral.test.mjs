@@ -595,6 +595,108 @@ test('recovered aliases conflict cross-screen and deny the canonical file to bro
   }
 });
 
+test('duplicate Slice Paths columns keep every cell as deny provenance', () => {
+  const stock = 'src/api/create/stock/**';
+  const other = 'src/api/create/other/**';
+  const headers = ['Method', 'Path', 'Confidence', 'Gate', 'Tracking', 'Slice Paths', 'Slice Paths'];
+  const derived = derivedFor(
+    makeSpec(
+      v2Table(
+        [['GET', '/stock', 'candidate', 'deferred', 'issue:#210', stock, other]],
+        headers,
+      ),
+    ),
+  );
+  assert.equal(derived.api_candidate_deferrals_valid, false);
+  assert.ok(
+    derived.api_candidate_contract_issues.some(
+      (entry) => entry.code === 'API-V2-COLUMN-DUPLICATE',
+    ),
+  );
+  // row 객체 덮어쓰기로 첫 번째 컬럼 값이 사라지면 안 된다 — 두 셀 모두 deny provenance.
+  assert.deepEqual(
+    derived.api_deferred_candidates[0].safe_slice_paths.sort(),
+    [other, stock].sort(),
+  );
+
+  const legacy = derivedFor(
+    makeSpec('- GET /legacy (confidence: confirmed)', '', 'legacy'),
+  );
+  const readiness = computeReadiness({
+    state: {
+      global: {},
+      screens: {
+        DUP: { status: 'confirmed', domain: 'create', stub: false, derived },
+        LEGACY: { status: 'confirmed', domain: 'legacy', stub: false, derived: legacy },
+      },
+    },
+    policy: policyV2,
+    ci: {},
+    manifest: {},
+    layout,
+  });
+  assert.equal(readiness.LEGACY.readiness_mode, 'api-integrated-ui');
+  assert.ok(readiness.LEGACY.forbidden_paths.includes(stock));
+  assert.ok(readiness.LEGACY.forbidden_paths.includes(other));
+  const claims = collectApiCandidateClaims(readiness);
+  for (const file of ['src/api/create/stock/client.ts', 'src/api/create/other/client.ts']) {
+    const authorization = readinessPathAuthorization({
+      file,
+      screenId: 'LEGACY',
+      entry: readiness.LEGACY,
+      modeOrder: policyV2.order,
+      claims,
+    });
+    assert.equal(authorization.allowed, false, file);
+    assert.equal(authorization.candidate_matches.length, 1, file);
+  }
+});
+
+test('duplicate Slice Paths columns tolerate empty cells and case variants and compose with alias recovery', () => {
+  const stock = 'src/api/create/stock/**';
+  // 리뷰 사례 1: 두 번째 컬럼이 비어 있어도 첫 번째 값이 살아남는다.
+  const secondEmpty = analyzeApiCandidateContract(
+    makeSpec(
+      v2Table(
+        [['GET', '/stock', 'candidate', 'deferred', 'issue:#210', stock, '']],
+        ['Method', 'Path', 'Confidence', 'Gate', 'Tracking', 'Slice Paths', 'Slice Paths'],
+      ),
+    ),
+    { layout, domain: 'create' },
+  );
+  assert.equal(secondEmpty.valid, false);
+  assert.deepEqual(secondEmpty.deferred_candidates[0].safe_slice_paths, [stock]);
+
+  // 리뷰 사례 2: case-variant 중복에서 첫 컬럼이 비어 있어도 col() 첫 일치(빈 값)에 가려지지 않는다.
+  const caseVariant = analyzeApiCandidateContract(
+    makeSpec(
+      v2Table(
+        [['GET', '/stock', 'candidate', 'deferred', 'issue:#210', '', stock]],
+        ['Method', 'Path', 'Confidence', 'Gate', 'Tracking', 'Slice Paths', 'slice paths'],
+      ),
+    ),
+    { layout, domain: 'create' },
+  );
+  assert.equal(caseVariant.valid, false);
+  assert.deepEqual(caseVariant.deferred_candidates[0].safe_slice_paths, [stock]);
+
+  // 중복 컬럼의 non-canonical alias 도 표준 canonical recovery 를 그대로 탄다.
+  const aliasInDuplicate = analyzeApiCandidateContract(
+    makeSpec(
+      v2Table(
+        [['GET', '/stock', 'candidate', 'deferred', 'issue:#210', stock, 'src/api/create/./other/**']],
+        ['Method', 'Path', 'Confidence', 'Gate', 'Tracking', 'Slice Paths', 'Slice Paths'],
+      ),
+    ),
+    { layout, domain: 'create' },
+  );
+  assert.equal(aliasInDuplicate.valid, false);
+  assert.deepEqual(
+    aliasInDuplicate.deferred_candidates[0].safe_slice_paths.sort(),
+    ['src/api/create/other/**', stock].sort(),
+  );
+});
+
 test('absolute, drive-absolute, and root-escaping aliases stay unrecovered', () => {
   for (const alias of [
     '/src/api/shared/stock/**',

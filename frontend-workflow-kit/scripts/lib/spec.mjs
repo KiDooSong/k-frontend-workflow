@@ -85,6 +85,7 @@ export function parseTables(sectionText) {
     if (!/^\|?[\s:|-]+\|?$/.test(tableLines[1])) continue;
     const headers = splitRow(tableLines[0]);
     const rows = [];
+    const cellRows = [];
     for (let i = 2; i < tableLines.length; i++) {
       const cells = splitRow(tableLines[i]);
       const row = {};
@@ -92,8 +93,12 @@ export function parseTables(sectionText) {
         row[h] = (cells[idx] ?? '').trim();
       });
       rows.push(row);
+      cellRows.push(cells);
     }
-    tables.push({ headers, rows, rowCount: rows.length });
+    // cell_rows: 헤더 인덱스별 원본 셀 보존. row 객체는 중복 헤더에서 뒤 셀이 앞 셀을
+    // 덮어쓰므로(호환성 유지), 중복 컬럼의 값을 잃지 않아야 하는 소비자(v2 candidate 파서)는
+    // 이 배열을 읽는다.
+    tables.push({ headers, rows, cell_rows: cellRows, rowCount: rows.length });
   }
   return tables;
 }
@@ -443,15 +448,32 @@ function candidateTables(sectionText) {
 }
 
 function parseV2Candidates(table) {
+  // 중복 `Slice Paths` 컬럼(정확 중복은 row 객체 덮어쓰기, case-variant 는 col() 첫 일치)에서
+  // 명시적 경로가 파서 단계에서 사라지면, contract 는 duplicate 진단으로 invalid 여도 그 경로가
+  // 모든 deny provenance 판정에서 존재하지 않게 된다(fail-open). 컬럼이 둘 이상이면 원본
+  // cell_rows 에서 모든 해당 인덱스의 셀을 합쳐 어떤 값도 잃지 않는다.
+  const slicePathsKey = normalizedHeader('Slice Paths');
+  const slicePathsIdxs = table.headers
+    .map((header, idx) => (normalizedHeader(header) === slicePathsKey ? idx : -1))
+    .filter((idx) => idx >= 0);
   const out = [];
-  for (const row of table.rows) {
+  for (const [rowIndex, row] of table.rows.entries()) {
     const method = String(col(row, 'Method') || '').trim().toUpperCase();
     const endpointPath = String(col(row, 'Path') || '').trim();
     const confidence = String(col(row, 'Confidence') || '').trim().toLowerCase();
     const gateRaw = String(col(row, 'Gate') || '').trim().toLowerCase();
     const gate = gateRaw || 'active';
     const tracking = String(col(row, 'Tracking') || '').trim();
-    const slicePathsRaw = String(col(row, 'Slice Paths') || '').trim();
+    const slicePathsRaw =
+      slicePathsIdxs.length > 1
+        ? [
+            ...new Set(
+              slicePathsIdxs
+                .map((idx) => String((table.cell_rows?.[rowIndex] || [])[idx] ?? '').trim())
+                .filter(Boolean),
+            ),
+          ].join(';')
+        : String(col(row, 'Slice Paths') || '').trim();
     if (!method && !endpointPath && !confidence && !gateRaw && !tracking && !slicePathsRaw) continue;
     out.push({
       raw: `${method || '?'} ${endpointPath || '?'}`,

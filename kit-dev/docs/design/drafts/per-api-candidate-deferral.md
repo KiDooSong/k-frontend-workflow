@@ -85,7 +85,13 @@ silently clearing an explicitly deferred slice.
 
 If duplicate candidate-like tables are authored, the contract is invalid but all
 recoverable rows from every table still contribute deny/ownership provenance. An
-invalid table count cannot make a later deferred path disappear.
+invalid table count cannot make a later deferred path disappear. The same holds
+for duplicate `Slice Paths` columns inside one table: the parser keeps every
+row's original cells (`cell_rows`), so the candidate parser merges all duplicate
+Slice Paths cells — exact duplicates that would overwrite each other in the row
+object and case variants hidden behind the first `col()` match alike — and every
+safe path stays deny-only provenance while the duplicate-column diagnostic keeps
+the contract invalid.
 
 Concrete v2 rows under `api_required:false` are contradictory and never grant that
 screen API authority. Their provenance remains in state/readiness so deferred paths
@@ -227,6 +233,8 @@ present, it is the contract and bullets are not an additional authorization sour
 Focused regressions cover legacy compatibility, four-active/one-deferred readiness,
 all-deferred and malformed fail-closed behavior, layout overrides, same/cross-screen
 overlap (including `.`, empty-segment, `..`, and backslash aliases),
-non-canonical `--path`/helper rejection, active/deferred canonical diffs, legacy
+non-canonical `--path`/helper rejection, duplicate `Slice Paths` column cell
+preservation (empty cells, case variants, alias recovery composition),
+active/deferred canonical diffs, legacy
 cross-screen bypass prevention, intentionally allowed truly-unclaimed legacy paths,
 Work Packet/Run Report provenance, Windows separators, and rename/copy handling.

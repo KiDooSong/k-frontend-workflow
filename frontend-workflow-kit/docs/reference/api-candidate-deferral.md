@@ -64,7 +64,10 @@ legacy screen has broad API integration authority.
 
 More than one candidate-like table is invalid. Readiness still recovers every safe
 path from every table as deny/ownership provenance; a deferred path in a later table
-cannot disappear behind the table-count diagnostic.
+cannot disappear behind the table-count diagnostic. Duplicate `Slice Paths` columns
+in one table are likewise invalid, but every cell from every duplicate column is
+still parsed and merged, so an explicit path cannot disappear behind the
+duplicate-column diagnostic either.
 
 `api_required:false` never grants API integration. If concrete v2 rows are authored
 anyway, their provenance and cross-screen conflicts remain visible and deny-only

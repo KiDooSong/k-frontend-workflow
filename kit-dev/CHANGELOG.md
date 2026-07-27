@@ -19,7 +19,9 @@
   fail-open을 제거했다. non-canonical 저작(`.` segment·빈 segment·in-tree `..`·backslash)은 invalid로
   거부하되, 진단 종류와 무관하게 안전하게 canonicalize 가능한 경로는 deny-only provenance로 보존해
   same/cross-screen conflict와 canonical diff를 차단한다(absolute/drive·root escape는 복구하지 않음).
-  복수 v2 표는 invalid로 유지하되 모든 표의 recoverable provenance를 수집하며,
+  복수 v2 표는 invalid로 유지하되 모든 표의 recoverable provenance를 수집하며, 중복 `Slice Paths`
+  컬럼도 invalid이되 원본 cell(`cell_rows`)을 보존·병합해 어떤 명시적 경로도 duplicate-column
+  진단 뒤로 사라지지 않는다.
   `api_required:false`도 v2 deferred/conflict provenance를 state/readiness에서 버리지 않는다.
   legacy invalid confidence의 min 집계는 기존처럼 무시해 byte compatibility를 유지한다.
 - v2 screen의 `api-integrated-ui` allowed_paths는 confirmed active slices로 좁히고 deferred/conflict
