@@ -26,6 +26,7 @@ import {
   parseOpenDecisions,
   publicScreenKeyOf,
   screenIdCandidateOf,
+  findApiCandidateOwnershipConflicts,
 } from './lib/spec.mjs';
 import { loadOpenDecisionRegister, resolveDecisionRefs } from './lib/open-decisions.mjs';
 import { loadLayoutProfile } from './lib/layout-profile.mjs';
@@ -327,6 +328,20 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
     });
   }
 
+  // Candidate slice ownership is project-scoped. Cross-screen overlaps fail closed and the same
+  // provenance is serialized for readiness, validate, and the diff backstop.
+  const apiOwnershipConflicts = findApiCandidateOwnershipConflicts(screens);
+  for (const [screenId, conflicts] of apiOwnershipConflicts) {
+    const screen = screens.get(screenId);
+    if (!screen) continue;
+    screen.derived.api_candidate_deferrals_valid = false;
+    screen.derived.api_candidate_ownership_conflicts = conflicts;
+    screen.derived.api_candidate_contract_issues = [
+      ...(screen.derived.api_candidate_contract_issues || []),
+      ...conflicts,
+    ];
+  }
+
   // 정렬 (결정성)
   const sortedScreenKeys = [...screens.keys()].sort();
   const sortedScreens = new Map();
@@ -357,6 +372,20 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
           ? { lifecycle_errors: s.derived.lifecycle_errors }
           : {}),
         api_confidence_min: s.derived.api_confidence_min,
+        ...(s.derived.api_candidate_contract_version === 2
+          ? {
+              api_candidate_contract_version: 2,
+              api_actionable_confidence_min: s.derived.api_actionable_confidence_min,
+              api_actionable_candidates_count: s.derived.api_actionable_candidates_count,
+              api_candidate_deferrals_valid: s.derived.api_candidate_deferrals_valid,
+              api_actionable_candidates: s.derived.api_actionable_candidates,
+              api_deferred_candidates: s.derived.api_deferred_candidates,
+              api_candidate_contract_issues: s.derived.api_candidate_contract_issues,
+              ...(s.derived.api_candidate_ownership_conflicts?.length
+                ? { api_candidate_ownership_conflicts: s.derived.api_candidate_ownership_conflicts }
+                : {}),
+            }
+          : {}),
         ...(s.derived.api_required === false ? { api_required: false } : {}),
         ...presentFacts,
         fake_hook_exists: s.derived.fake_hook_exists,
@@ -438,6 +467,17 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
           blocking_decisions: d.blocking_decisions,
           malformed_decisions: d.malformed_decisions,
           api_confidence_min: d.api_confidence_min,
+          ...(d.api_candidate_contract_version === 2
+            ? {
+                api_candidate_contract_version: 2,
+                api_actionable_confidence_min: d.api_actionable_confidence_min,
+                api_actionable_candidates_count: d.api_actionable_candidates_count,
+                api_candidate_deferrals_valid: d.api_candidate_deferrals_valid,
+                api_actionable_candidates: d.api_actionable_candidates,
+                api_deferred_candidates: d.api_deferred_candidates,
+                api_candidate_contract_issues: d.api_candidate_contract_issues,
+              }
+            : {}),
           ...(d.api_required === false ? { api_required: false } : {}),
           contract_errors: record.contract_errors,
           identity_errors: record.identity_errors,

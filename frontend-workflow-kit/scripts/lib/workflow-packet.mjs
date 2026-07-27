@@ -203,6 +203,7 @@ export function buildPacketModel(opts) {
       generated_by: 'workflow:packet (PR2 draft generator)',
       allowed_paths: entry.allowed_paths || [],
       forbidden_paths: entry.forbidden_paths || [],
+      api_candidate_authorization: null,
       blocking: classifyBlocking(entry),
       next_actions: entry.next_actions || [],
       order,
@@ -280,6 +281,7 @@ export function buildPacketModel(opts) {
     generated_by: 'workflow:packet (PR2 draft generator)',
     allowed_paths: entry.allowed_paths || [],
     forbidden_paths: entry.forbidden_paths || [],
+    api_candidate_authorization: entry.api_candidate_authorization || null,
     blocking,
     next_actions: entry.next_actions || [],
     order,
@@ -491,6 +493,14 @@ export function renderPacketMarkdown(m) {
   out.push('<!-- readiness 출력의 forbidden_paths 를 그대로 복사. 경계 검증은 validate 가 아니라 diff 로 본다. -->');
   out.push(renderPathsBlock(m.forbidden_paths, '# (readiness 출력에 forbidden_paths 없음)'));
   out.push('');
+  if (m.api_candidate_authorization) {
+    out.push('## API Candidate Authorization');
+    out.push('<!-- readiness 출력의 candidate→slice provenance 그대로. 이 packet 에서 재유도/승격하지 않는다. -->');
+    out.push('```json');
+    out.push(JSON.stringify(m.api_candidate_authorization, null, 2));
+    out.push('```');
+    out.push('');
+  }
   out.push('## Blocking Items');
   out.push('<!-- "푸는" 목록이 아니라 "닫지 말 것" 목록. 게이트 해제(resolve/close/confirm)는 모두 사람. -->');
   out.push(renderBlockingItems(m));
@@ -592,6 +602,13 @@ export function renderJsonEnvelope(m) {
     over_ceiling: !!m.overCeiling,
     mode_known: !!m.modeKnown,
     readiness_source: m.readiness_source,
+    ...(m.api_candidate_authorization
+      ? {
+          allowed_paths: m.allowed_paths,
+          forbidden_paths: m.forbidden_paths,
+          api_candidate_authorization: m.api_candidate_authorization,
+        }
+      : {}),
     out: m.out || null,
     blocking_count: m.blocking.decisions.length + m.blocking.invalidDecisions.length + m.blocking.facts.length,
     d_cand: [...m.blocking.decisions, ...m.blocking.invalidDecisions].map((d) => d.id),

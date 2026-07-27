@@ -63,6 +63,17 @@ export function extractFencedTxt(sectionText) {
     .filter((l) => l.trim() && !l.trim().startsWith('#'));
 }
 
+export function extractFencedJson(sectionText) {
+  if (sectionText == null) return null;
+  const match = /```json\r?\n([\s\S]*?)```/.exec(sectionText);
+  if (!match) return null;
+  try {
+    return JSON.parse(match[1]);
+  } catch {
+    return null;
+  }
+}
+
 // Readiness Snapshot 표에서 next_mode / 천장 근거를 best-effort 로 읽는다 (재계산 아님, 표면화).
 export function extractReadinessSnapshot(body) {
   const sec = extractSection(body, 'Readiness Snapshot') || '';
@@ -163,7 +174,7 @@ export function parseFindings(reviewBody) {
 // 모든 입력은 이미 파싱/수집된 값(순수). 여기서 표시용 파생값만 계산한다.
 export function buildReportModel(opts) {
   const {
-    packet = {}, // { frontmatter, body, allowedPaths, forbiddenPaths, blockingRaw, nextActions, snapshot }
+    packet = {}, // { frontmatter, body, allowedPaths, forbiddenPaths, candidateAuthorization, blockingRaw, nextActions, snapshot }
     paths = {}, // { packetRel, outRel, docs, src, diffRel, reviewRel }
     diff = null, // parseNameStatus 결과 또는 null(미제공)
     diffProvided = false,
@@ -215,6 +226,7 @@ export function buildReportModel(opts) {
     review_rel: paths.reviewRel || null,
     allowed_paths: packet.allowedPaths || [],
     forbidden_paths: packet.forbiddenPaths || [],
+    api_candidate_authorization: packet.candidateAuthorization || null,
     blocking_raw: packet.blockingRaw || '',
     blocking_summary: blockingSummary,
     next_actions: packet.nextActions || [],
@@ -525,6 +537,13 @@ export function renderReportMarkdown(m) {
   out.push('### Forbidden Paths (packet 인용)');
   out.push(renderPathsBlock(m.forbidden_paths.map(toPosix), '# (packet 에 forbidden_paths 없음)'));
   out.push('');
+  if (m.api_candidate_authorization) {
+    out.push('### API Candidate Authorization (packet 인용)');
+    out.push('```json');
+    out.push(JSON.stringify(m.api_candidate_authorization, null, 2));
+    out.push('```');
+    out.push('');
+  }
   out.push('## Files Changed');
   out.push('<!-- 실제 변경 파일(diff 기준). allowed_paths 안에 있는지는 사람/Review 가 교차 검증. -->');
   out.push(renderFilesChanged(m));
@@ -580,6 +599,13 @@ export function renderJsonEnvelope(m) {
     readiness_mode: m.readiness_mode,
     next_mode: m.next_mode,
     readiness_source: m.readiness_source,
+    ...(m.api_candidate_authorization
+      ? {
+          allowed_paths: m.allowed_paths,
+          forbidden_paths: m.forbidden_paths,
+          api_candidate_authorization: m.api_candidate_authorization,
+        }
+      : {}),
     out: m.out_rel || null,
     diff_provided: m.diff_provided,
     diff: m.diff ? { added: m.diff.added.length, modified: m.diff.modified.length, removed: m.diff.removed.length, renamed: m.diff.renamed.length, empty: m.diff.empty } : null,

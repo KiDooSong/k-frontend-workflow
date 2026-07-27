@@ -26,8 +26,9 @@ description: 지정된 Screen ID를 readiness gate가 허용하는 모드와 경
 
 ## 핵심 불변식
 - readiness 판정을 **스스로 재구현하지 않는다** — 항상 스크립트를 실행하고 그 출력을 소비한다.
-- **`allowed_paths` 안만 수정**, **`forbidden_paths` 는 절대 수정하지 않는다.** ScreenSpec `screen_entry` 는 구현 파일 **힌트일 뿐
-  권한이 아니다** — readiness 를 넓히지 않는다.
+- **`allowed_paths` 안만 수정**, **`forbidden_paths` 는 절대 수정하지 않는다.** concrete 변경 경로마다
+  `workflow:readiness -- --screen <ID> --path <path> --json`의 `path_authorization.allowed:true`를 확인한다.
+  이 판정은 production-ready에서도 v2 소유권을 강제한다. `screen_entry`는 힌트일 뿐 권한이 아니다.
 - readiness 의 `delegated_shared_surfaces`가 예약한 경로는 broad `allowed_paths`에도 함께 보여도 수정하지 않는다.
   해당 `surface_id`와 `npm run workflow:readiness -- --surface <SURFACE_ID> --json`을 보고
   [implement-shared-surface](../implement-shared-surface/SKILL.md) workflow로 넘긴다.
@@ -36,7 +37,6 @@ description: 지정된 Screen ID를 readiness gate가 허용하는 모드와 경
 - generated 파일은 직접 수정하지 않고 스크립트로 재생성한다([generated-files.md](../../docs/reference/generated-files.md)).
 - readiness/validate pass 를 design/product approval 로 보고하지 않는다.
 - Open Decision resolve, Unknown close, Component Gap accept, `confirmed` 승격, live policy 교체, CI/pre-edit hard gate 승격을 하지 않는다.
-
 ## 1. Preflight (readiness 우선)
 1. 대상 화면 관련 Reconciliation Register 를 확인한다. 관련 input 이 `not-started`/`in-progress`/`failed` 면 멈추고, 같은 `input_id`
    row 로 reconcile 을 시작/재개하라고 보고한다([Stage 04](../../docs/reference/workflow-stages/04-reconcile-input.md)).
@@ -48,13 +48,18 @@ description: 지정된 Screen ID를 readiness gate가 허용하는 모드와 경
    ```
 3. readiness JSON 을 screen id 아래에서 읽는다: `readiness_applicable`, `screen_lifecycle`, `absorbed_into`,
    `readiness_mode`, `allowed_paths`, `forbidden_paths`, `blocking`, `next_actions`, `delegated_shared_surfaces`
-   (+ mode/policy/layer metadata).
+   (+ `api_candidate_authorization`, mode/policy/layer metadata).
 4. `readiness_applicable: false`이면 `blocking`보다 먼저 확인한다. absorbed source에는 authoring/implementation을 하지 않고,
    source ID와 canonical `absorbed_into` target을 보고한 뒤 멈춘다([screen-lifecycle.md](../../docs/reference/screen-lifecycle.md)).
    target으로 자동 전환하거나 같은 요청의 범위를 넓혀 재실행하지 않는다.
 5. 그 외 readiness 가 막으면 `blocking`·`next_actions` 를 보고하고 멈춘다.
-6. 구현 가능하면 짧은 plan 을 먼저 만든다: mode, 허용/금지 surface, source-of-truth 문서, 범위 밖으로 남기는 Unknown/Decision/Conflict/Gap.
-
+6. 구현 가능하면 mode, 허용/금지 surface, concrete 변경 경로, 정본과 범위 밖 Unknown/Decision/Conflict/Gap을
+   담은 짧은 plan을 만든다. 각 concrete 경로는 수정 전에:
+   ```bash
+   npm run workflow:readiness -- --screen <ID> --path <project-relative-path> --json
+   ```
+   `path_authorization.allowed`가 `true`가 아니면 수정하지 않는다. active v2 claim은 소유 화면이
+   `api-integrated-ui` 이상이어야 하며, integrated v2 hook/API-client의 unowned 경로는 production-ready에서도 금지한다.
 ## 2. 컨텍스트 로드 (대상 화면/도메인만)
 필요한 산출물만 읽는다(다른 도메인 문서를 넓게 로드하지 않는다): ScreenSpec, domain rules/flows, navigation map,
 component catalog + component-gap-register, Open Decisions/Conflicts/Unknowns, API manifest(해당 시), state/readiness 출력.
@@ -68,10 +73,10 @@ component catalog + component-gap-register, Open Decisions/Conflicts/Unknowns, A
   ([visual-contract-bootstrap](../visual-contract-bootstrap/SKILL.md), review-only)을 **제안만** 할 수 있다 —
   이 스킬이 bootstrap 을 자동 실행해 scope 를 넓히지는 않는다.
 - 2차 산출물 판단은 [task-artifact-matrix.md](../../docs/reference/task-artifact-matrix.md).
-
 ## 3. 모드 인지 구현
-- 항상 readiness 의 `allowed_paths`/`forbidden_paths` 를 따른다. concrete path 가 allowed 안이고 forbidden 밖일 때만 수정한다
-  (`screen_entry`·`route_entry`·custom Tier3 layer 모두 동일). `src/api/**` 를 항상 금지라고 가정하지 않는다 — 현재 readiness policy 출력이 결정한다.
+- readiness의 `allowed_paths`/`forbidden_paths`와 concrete `--path` 판정을 함께 따른다. allowed 안이고 forbidden
+  밖이며 `path_authorization.allowed:true`일 때만 수정한다(`screen_entry`·`route_entry`·custom Tier3 layer 동일).
+  `src/api/**` 를 항상 금지라고 가정하지 않는다. 현재 policy와 candidate-aware 파일 판정이 함께 결정한다.
 - `delegated_shared_surfaces[].implementation_paths`는 member screen 작업에서 예약된 공유 코드다. screen의 더 넓은 allow glob이
   덮더라도 forbidden precedence를 적용해 수정하지 않고 surface 전용 readiness/skill로 위임한다.
 - 모드 상한을 지킨다(`route-skeleton` → … → `api-integrated-ui`): readiness 가 구체 path 를 허용하지 않으면 early mode 에서 API/client/data layer 를 건드리지 않는다.
@@ -83,7 +88,6 @@ component catalog + component-gap-register, Open Decisions/Conflicts/Unknowns, A
   shell-owned 로 선언한 logo/header/CTA 를 화면 파일에 ad-hoc 으로 넣지 않는다(계약: [visual-reconciliation.md](../../docs/reference/visual-reconciliation.md)).
   shared 표면 수정도 readiness `allowed_paths` 안일 때만 한다.
 - Figma 가 ScreenSpec 또는 resolved decision 과 충돌하면 멈추고 reconcile/conflict/Open Decision 으로 올린다.
-
 ## 4. 검증 / 핸드오프
 구현 뒤 가장 작은 관련 lint/test 를 먼저 돌리고, 그리고 항상:
 ```bash
@@ -99,7 +103,6 @@ visual/Figma 정렬 구현이었다면 추가로 `npm run workflow:visual-consis
 [generated-files.md](../../docs/reference/generated-files.md) 로 확인한다(예: `roles.ui_primitive` 변경→`workflow:catalog`,
 route/nav 변경→`workflow:route-tree`·`workflow:nav-graph`·route cross-check, policy/Tier3 변경→`workflow:policy-draft`).
 generated 파일이 stale 해 보이면 직접 고치지 말고 advisory `workflow:check-generated` 또는 generated-files 의 명령으로 재생성한다.
-
 최종 보고에 포함한다:
 - 변경 파일
 - readiness mode before/after (의미 있을 때)

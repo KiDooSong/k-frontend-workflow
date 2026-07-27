@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// validate.mjs — 하드 게이트 검사 12종(exit code 0/1 로 CI 게이트). + 검사 13(Interaction Matrix v2 구조)은 warning-first 로 게이트가 아니다.
+// validate.mjs — 하드 게이트 검사 12종(exit code 0/1 로 CI 게이트). + 검사 13~15는 warning-first 로 게이트가 아니다.
 //   출처: 검사 1~8 = impl §8 / 검사 9~12 = open-decisions.md · input-reconciliation.md (아래 각 항목 참조).
 //   1. frontmatter ↔ frontmatter.schema.json
 //   2. artifact-manifest 기준 필수 frontmatter 누락
@@ -34,6 +34,8 @@
 //       파싱 불가한 항목(단일 `=`·`=>`·bare 토큰·값 누락 `>=`/`<=` 등)을 저작 시점에 경고로 알린다.
 //       requires 가 리스트가 아니면(스칼라/매핑) 그것도 경고한다. 런타임 fail-closed(#135)와
 //       대칭인 저작-시점 조기경보 — 하드 게이트 아님(warning→hard 승격은 별도 사람 결정).
+//   15. API Candidates v2 표/Tracking/Slice Paths/ownership — WARNING-ONLY. Legacy bullet-only
+//       ScreenSpec은 무발화한다. 런타임 readiness와 forbidden-paths는 같은 분석 결과를 fail-closed로 소비한다.
 //   ※ Preflight cold-start(warning-only): 저작 artifact(artifact_type frontmatter) 0건이면 validate 가 막을
 //      대상이 없어 vacuously green(exit 0)으로 통과한다 — 갓 도입한 프로젝트의 fail-open. 게이트(exit code)는
 //      건드리지 않고 경고로만 표면화한다(정상 최소 부트스트랩은 stub 도 artifact_type 을 가져 발화 안 함).
@@ -69,6 +71,8 @@ import {
   hasHeader,
   isStub,
   publicScreenKeyOf,
+  analyzeApiCandidateContract,
+  findApiCandidateOwnershipConflicts,
 } from './lib/spec.mjs';
 import { collectInputArtifacts, validateInputArtifacts } from './lib/input-artifact.mjs';
 import {
@@ -982,6 +986,49 @@ function main() {
           `→ 해소: 단일 '='(→ '=='), '=>'(→ '>='), 연산자/값 없는 bare 토큰을 고치세요. ` +
           `(런타임 readiness 는 이 항목을 fail-closed 로 막습니다)`,
       );
+    }
+  }
+
+  // --- 15. API Candidates v2 authoring contract (warning-first) ---
+  // Runtime authority is stricter: malformed tracking/path/shape and ownership conflicts keep
+  // api_candidate_deferrals_valid=false, so api-integrated-ui cannot open even though this
+  // authoring validator deliberately remains warning-only.
+  const apiCandidateScreenEntries = new Map();
+  const specByScreenId = new Map();
+  for (const spec of liveSpecs) {
+    const contract = analyzeApiCandidateContract(spec, {
+      layout,
+      domain: spec.frontmatter.domain,
+    });
+    for (const candidateIssue of contract.issues) {
+      warn(15, spec.path, `${candidateIssue.code}: ${candidateIssue.message}`);
+    }
+    if (contract.version === 2) {
+      const screenId = publicScreenKeyOf(spec);
+      specByScreenId.set(screenId, spec);
+      apiCandidateScreenEntries.set(screenId, {
+        derived: {
+          api_candidate_contract_version: 2,
+          api_actionable_candidates: contract.actionable_candidates,
+          api_deferred_candidates: contract.deferred_candidates,
+        },
+      });
+    }
+  }
+  for (const spec of surfaceSpecs) {
+    const contract = analyzeApiCandidateContract(spec, {
+      layout,
+      domain: spec.frontmatter.domain,
+    });
+    for (const candidateIssue of contract.issues) {
+      warn(15, spec.path, `${candidateIssue.code}: ${candidateIssue.message}`);
+    }
+  }
+  for (const [screenId, conflicts] of findApiCandidateOwnershipConflicts(apiCandidateScreenEntries)) {
+    const spec = specByScreenId.get(screenId);
+    if (!spec) continue;
+    for (const conflict of conflicts) {
+      warn(15, spec.path, `${conflict.code}: ${conflict.message}`);
     }
   }
 

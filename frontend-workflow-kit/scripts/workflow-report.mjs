@@ -36,6 +36,7 @@ import {
 import {
   extractSection,
   extractFencedTxt,
+  extractFencedJson,
   extractReadinessSnapshot,
   extractNextActions,
   docsFromReadinessSource,
@@ -337,6 +338,9 @@ function main() {
   }
   const allowedPaths = extractFencedTxt(extractSection(body, 'Allowed Paths'));
   const forbiddenPaths = extractFencedTxt(extractSection(body, 'Forbidden Paths'));
+  const candidateAuthorization = extractFencedJson(
+    extractSection(body, 'API Candidate Authorization'),
+  );
   const blockingRaw = extractSection(body, 'Blocking Items') || '';
   const nextActions = extractNextActions(body);
   const snapshot = extractReadinessSnapshot(body);
@@ -387,7 +391,16 @@ function main() {
 
   // 6) 모델 빌드 + 렌더.
   const model = buildReportModel({
-    packet: { frontmatter: fm, body, allowedPaths, forbiddenPaths, blockingRaw, nextActions, snapshot },
+    packet: {
+      frontmatter: fm,
+      body,
+      allowedPaths,
+      forbiddenPaths,
+      candidateAuthorization,
+      blockingRaw,
+      nextActions,
+      snapshot,
+    },
     paths: {
       packetRel: relToCwd(packetPath),
       outRel: outPath ? relToCwd(outPath) : null,

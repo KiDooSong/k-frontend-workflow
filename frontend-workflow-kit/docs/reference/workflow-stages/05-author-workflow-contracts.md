@@ -35,6 +35,10 @@ This is where a ScreenSpec is authored **after identity is known** (Stage 02).
   frontmatter `api_required: false` and write the API Candidates section as prose
   such as `없음 — upstream 화면의 API 결과/route params 를 표시`. Do not add a fake
   confirmed endpoint.
+- When only some API contracts are actionable, use the opt-in structured v2 table
+  and assign every row a narrow Slice Path. A deferred row needs open-Unknown or
+  issue tracking and does not authorize its code slice. See
+  [`../api-candidate-deferral.md`](../api-candidate-deferral.md).
 - For a **brand-new screen**, Stage 02 / `workflow:create-screen` may have created a
   **stub** (canonical frontmatter only). Stage 05 fills the body, or — when facts
   are still missing — records open decisions / unknowns instead of guessing.

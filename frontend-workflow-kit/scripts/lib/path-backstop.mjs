@@ -23,7 +23,50 @@ export { GitError, DiffParseError };
 // 경로를 항상 forward-slash 로 정규화 (Windows 대응). validate.mjs L51 의 toPosix 미러
 // (그 함수는 export 되지 않으므로 여기서 동일 구현을 둔다).
 export function toPosix(p) {
-  return String(p).split(path.sep).join('/');
+  return String(p).split(path.sep).join('/').replace(/\\/g, '/');
+}
+
+// 안전한 canonical project-relative 경로 산출 — authoring recovery(spec.mjs)와 runtime
+// concrete-path 검증(readinessPathAuthorization / readiness CLI --path)이 같은 규칙을 공유한다.
+// absolute/drive/UNC 입력은 project-relative target 자체를 신뢰할 수 없으므로 null(복구 불가).
+// 그 외에는 separator 를 / 로 통일해 posix-normalize 하고, 프로젝트 루트를 벗어나면 null.
+export function canonicalProjectRelativePath(input) {
+  const raw = String(input ?? '').trim();
+  if (raw === '') return null;
+  if (/^[A-Za-z]:[\\/]/.test(raw)) return null;
+  if (raw.startsWith('/') || raw.startsWith('\\')) return null;
+  const canonical = path.posix.normalize(toPosix(raw));
+  if (canonical === '' || canonical === '.' || canonical === '..') return null;
+  if (canonical.startsWith('../') || canonical.startsWith('/')) return null;
+  return canonical;
+}
+
+// runtime concrete file path 진단 — `--path` preflight 와 모든 library 소비자가 공유한다.
+// slice-path 저작 문법(terminal /** 허용)과 달리 판정 대상은 항상 "실제 파일 하나"다.
+// non-canonical 입력은 active claim glob 에 raw 문자열로는 매칭되면서 실제로는 slice 밖의
+// 파일을 가리킬 수 있으므로, canonicalize 해서 통과시키지 않고 fail-closed 로 거부한다
+// (호출부가 canonical 경로로 재시도). `[`/`]`/`{`/`}` 는 이 kit 글롭 방언(globToRegex)에서
+// 리터럴이고 Next.js 라우트 파일명(`src/app/[id]/page.tsx`)에 실제로 쓰이므로 거부하지
+// 않는다. `*`/`?` 는 concrete 파일 이름에 나타날 수 없는 패턴 문자로 보고 거부한다.
+export function concretePathIssue(input) {
+  const raw = String(input ?? '');
+  if (raw.trim() === '') return 'path is empty';
+  if (/^[A-Za-z]:[\\/]/.test(raw)) return 'drive-absolute path is forbidden';
+  if (raw.startsWith('/') || raw.startsWith('\\')) return 'absolute path is forbidden';
+  if (raw.includes('\\')) {
+    return 'backslash separator is forbidden; use a project-relative path with /';
+  }
+  if (/[*?]/.test(raw)) return 'glob patterns are forbidden; pass one concrete file path';
+  const segments = raw.split('/');
+  if (segments[segments.length - 1] === '') {
+    return 'trailing slash (directory form) is forbidden';
+  }
+  if (segments.some((segment) => segment === '')) return 'empty path segment is forbidden';
+  if (segments.some((segment) => segment === '.' || segment === '..')) {
+    return '`.`/`..` segments are forbidden';
+  }
+  if (path.posix.normalize(raw) !== raw) return 'path must be canonical';
+  return null;
 }
 
 // glob → RegExp. validate.mjs 의 manifestPathRegex 는 재사용 불가다:
@@ -56,6 +99,190 @@ export function globToRegex(glob) {
 // glob 매칭 헬퍼: F(파일 경로)가 glob 에 매칭되는가. 둘 다 posix 정규화 후 비교.
 export function globMatches(glob, file) {
   return globToRegex(glob).test(toPosix(file));
+}
+
+// Effective file authorization shared by readiness consumers and the diff backstop.
+// A matching forbidden glob always wins over any matching allowed glob.
+export function pathAuthorization(file, allowedPaths = [], forbiddenPaths = []) {
+  const allowedBy = (allowedPaths || []).filter((glob) => globMatches(glob, file));
+  const forbiddenBy = (forbiddenPaths || []).filter((glob) => globMatches(glob, file));
+  return {
+    allowed: allowedBy.length > 0 && forbiddenBy.length === 0,
+    allowed_by: allowedBy,
+    forbidden_by: forbiddenBy,
+  };
+}
+
+// Candidate provenance is emitted per screen, but authorization is project-scoped: explicit
+// deferred/conflict claims deny every screen, while an active claim belongs only to its owner.
+export function collectApiCandidateClaims(readinessOutput) {
+  const active = [];
+  const denied = [];
+  const seen = new Set();
+  const add = (bucket, row) => {
+    if (!row || !row.path) return;
+    const key = `${row.kind}\0${row.screen_id}\0${row.endpoint}\0${row.path}\0${row.tracking || ''}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    bucket.push(row);
+  };
+  for (const [screenId, entry] of Object.entries(readinessOutput || {})) {
+    const auth = entry?.api_candidate_authorization;
+    if (!auth || auth.contract_version !== 2) continue;
+    for (const row of auth.actionable || []) {
+      add(active, { ...row, kind: 'active', screen_id: row.screen_id || screenId });
+    }
+    for (const row of auth.deferred || []) {
+      add(denied, { ...row, kind: 'deferred', screen_id: row.screen_id || screenId });
+    }
+    for (const conflict of auth.conflicts || []) {
+      for (const owner of conflict.owners || []) {
+        add(denied, {
+          kind: 'conflict',
+          screen_id: owner.screen_id || screenId,
+          endpoint: owner.endpoint || '? ?',
+          gate: owner.gate || null,
+          tracking: owner.tracking || null,
+          path: owner.path || conflict.path,
+          conflicting_path:
+            owner.path === conflict.path ? conflict.conflicting_path : conflict.path,
+        });
+      }
+    }
+  }
+  return { active, denied };
+}
+
+function claimsMatching(claims, file) {
+  return (claims || []).filter((claim) => globMatches(claim.path, file));
+}
+
+function reachesApiIntegration(entry, modeOrder) {
+  const order = modeOrder || [];
+  const threshold = order.indexOf('api-integrated-ui');
+  const actual = order.indexOf(entry?.readiness_mode);
+  return threshold >= 0 && actual >= threshold;
+}
+
+// File-level readiness authorization used by both the forward implement-screen preflight
+// (`workflow:readiness --screen ... --path ...`) and the diff backstop.
+//
+// The plain glob envelope remains authoritative for non-candidate paths. Candidate rules then
+// narrow it: deny claims always win, active claims require their explicit owner to have reached
+// API integration, and an integrated v2 screen may edit only claimed paths inside its resolved
+// hook/API-client surfaces (including at production-ready where allowed_paths can contain src/**).
+export function readinessPathAuthorization({
+  file,
+  screenId,
+  entry,
+  modeOrder = [],
+  claims = { active: [], denied: [] },
+}) {
+  const normalizedFile = toPosix(file);
+  // 입력 canonicality 는 helper 진입점에서 강제한다 — CLI 만 검사하면 다른 library 소비자가
+  // non-canonical 입력(`live/../unowned.ts` 등)으로 active glob 을 raw-매칭시켜 우회할 수 있다.
+  const concreteIssue = concretePathIssue(file);
+  if (concreteIssue) {
+    return {
+      allowed: false,
+      file: normalizedFile,
+      screen_id: screenId,
+      reason: `non-canonical concrete path is fail-closed: ${concreteIssue}`,
+      allowed_by: [],
+      forbidden_by: [],
+      candidate_matches: [],
+    };
+  }
+  if (!entry) {
+    return {
+      allowed: false,
+      file: normalizedFile,
+      screen_id: screenId,
+      reason: 'screen readiness entry is missing',
+      allowed_by: [],
+      forbidden_by: [],
+      candidate_matches: [],
+    };
+  }
+
+  const base = pathAuthorization(
+    normalizedFile,
+    entry.allowed_paths || [],
+    entry.forbidden_paths || [],
+  );
+  const deniedMatches = claimsMatching(claims.denied, normalizedFile);
+  if (deniedMatches.length > 0) {
+    return {
+      ...base,
+      allowed: false,
+      file: normalizedFile,
+      screen_id: screenId,
+      reason: 'matching deferred/conflict candidate claim',
+      candidate_matches: deniedMatches,
+    };
+  }
+  if (!base.allowed) {
+    return {
+      ...base,
+      allowed: false,
+      file: normalizedFile,
+      screen_id: screenId,
+      reason:
+        base.forbidden_by.length > 0
+          ? 'matching forbidden_paths takes precedence'
+          : 'path is outside allowed_paths',
+      candidate_matches: [],
+    };
+  }
+
+  const activeMatches = claimsMatching(claims.active, normalizedFile);
+  const integrated = reachesApiIntegration(entry, modeOrder);
+  if (activeMatches.length > 0) {
+    const owned = activeMatches.filter((claim) => claim.screen_id === screenId);
+    const allowed =
+      entry.api_required !== false &&
+      integrated &&
+      owned.length > 0;
+    return {
+      ...base,
+      allowed,
+      file: normalizedFile,
+      screen_id: screenId,
+      reason: allowed
+        ? 'explicit active candidate claim owned by an API-integrated screen'
+        : 'explicit active candidate claim requires its owning screen at api-integrated-ui or above',
+      candidate_matches: activeMatches,
+    };
+  }
+
+  const authorization = entry.api_candidate_authorization;
+  const enforcedSurfaces =
+    authorization?.contract_version === 2 && integrated
+      ? authorization.enforced_surfaces || []
+      : [];
+  const enforcedBy = enforcedSurfaces.filter((surface) =>
+    globMatches(surface, normalizedFile),
+  );
+  if (enforcedBy.length > 0) {
+    return {
+      ...base,
+      allowed: false,
+      file: normalizedFile,
+      screen_id: screenId,
+      reason: 'integrated v2 API surface requires an explicit active candidate claim',
+      candidate_matches: [],
+      candidate_surface_by: enforcedBy,
+    };
+  }
+
+  return {
+    ...base,
+    allowed: true,
+    file: normalizedFile,
+    screen_id: screenId,
+    reason: 'allowed by effective readiness paths',
+    candidate_matches: [],
+  };
 }
 
 // --- guarded surface 파생 (정책에서) -------------------------------------
