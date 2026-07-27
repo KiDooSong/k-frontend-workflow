@@ -157,6 +157,20 @@ function claimsMatching(claims, file) {
   return (claims || []).filter((claim) => globMatches(claim.path, file));
 }
 
+// Slice Path → surface 분류 (#211). resolved {roles.hook}/{roles.api_client} 표면(도메인/레이아웃
+// 오버라이드 해소 후)을 받아, 그 slice 가 어느 surface 에 '전부' 속하는지 판정한다.
+//   'hook'       : hook 표면 안, api-client 표면 밖 → fixture 모드에서 owner 가 편집 가능한 seam.
+//   'api-client' : api-client 표면 안, hook 표면 밖 → api-integrated 전에는 항상 잠김.
+//   null         : 두 표면에 동시에 속하거나 어느 쪽에도 속하지 않음 → fail-closed(integration 게이트 유지).
+// readiness 가 candidate provenance 에 저장하고, readinessPathAuthorization 이 소비한다 —
+// forward --path 와 diff backstop 이 같은 분류를 공유한다(판정 복제 금지).
+export function candidateSurfaceKind(pathEntry, { hookSurfaces = [], apiClientSurfaces = [] } = {}) {
+  const inHook = (hookSurfaces || []).some((surface) => covers(surface, pathEntry));
+  const inApiClient = (apiClientSurfaces || []).some((surface) => covers(surface, pathEntry));
+  if (inHook === inApiClient) return null; // ambiguous(둘 다) / 미포함(둘 다 아님) → fail-closed
+  return inHook ? 'hook' : 'api-client';
+}
+
 function reachesApiIntegration(entry, modeOrder) {
   const order = modeOrder || [];
   const threshold = order.indexOf('api-integrated-ui');
@@ -168,9 +182,12 @@ function reachesApiIntegration(entry, modeOrder) {
 // (`workflow:readiness --screen ... --path ...`) and the diff backstop.
 //
 // The plain glob envelope remains authoritative for non-candidate paths. Candidate rules then
-// narrow it: deny claims always win, active claims require their explicit owner to have reached
-// API integration, and an integrated v2 screen may edit only claimed paths inside its resolved
-// hook/API-client surfaces (including at production-ready where allowed_paths can contain src/**).
+// narrow it: deny claims always win; an active claim passes for its explicit owner either when the
+// owner has reached API integration, or (#211) below integration when the claim is wholly inside
+// the resolved hook surface (surface_kind === 'hook') and the base fixture-mode envelope already
+// allows the file — the API-client surface stays integration-gated. An integrated v2 screen may
+// edit only claimed paths inside its resolved hook/API-client surfaces (including at
+// production-ready where allowed_paths can contain src/**).
 export function readinessPathAuthorization({
   file,
   screenId,
@@ -239,17 +256,26 @@ export function readinessPathAuthorization({
   const integrated = reachesApiIntegration(entry, modeOrder);
   if (activeMatches.length > 0) {
     const owned = activeMatches.filter((claim) => claim.screen_id === screenId);
+    // Fixture-mode hook seam (#211): owning screen 의 active claim 이 '전부' resolved hook
+    // surface 안(surface_kind === 'hook')이면 API integration 이전에도 base envelope(rough/
+    // final 의 {roles.hook} allow)이 이미 통과한 이 파일을 fixture seam 으로 편집할 수 있다.
+    // api-client surface·ambiguous·미분류(surface_kind 부재) claim 은 기존 #213 규칙 그대로
+    // integration 게이트에 잠긴다(fail-closed).
+    const ownedFixtureHook =
+      owned.length > 0 && owned.every((claim) => claim.surface_kind === 'hook');
     const allowed =
       entry.api_required !== false &&
-      integrated &&
-      owned.length > 0;
+      owned.length > 0 &&
+      (integrated || ownedFixtureHook);
     return {
       ...base,
       allowed,
       file: normalizedFile,
       screen_id: screenId,
       reason: allowed
-        ? 'explicit active candidate claim owned by an API-integrated screen'
+        ? integrated
+          ? 'explicit active candidate claim owned by an API-integrated screen'
+          : 'explicit active hook claim owned by this screen within its fixture-mode allowed paths'
         : 'explicit active candidate claim requires its owning screen at api-integrated-ui or above',
       candidate_matches: activeMatches,
     };

@@ -20,6 +20,7 @@ import {
 } from './lib/util.mjs';
 import { LayoutConfigError, loadLayoutProfile, synthesizeModePolicy } from './lib/layout-profile.mjs';
 import {
+  candidateSurfaceKind,
   collectApiCandidateClaims,
   concretePathIssue,
   covers,
@@ -336,7 +337,7 @@ function candidateApiSurfaces(layout, domain) {
   ]);
 }
 
-function candidateProvenance(screenId, candidate, pathEntry, kind) {
+function candidateProvenance(screenId, candidate, pathEntry, kind, surfaces) {
   return {
     kind,
     screen_id: screenId,
@@ -345,6 +346,11 @@ function candidateProvenance(screenId, candidate, pathEntry, kind) {
     gate: candidate.gate || null,
     tracking: candidate.tracking || null,
     path: pathEntry,
+    // surface_kind (#211): resolved hook/api-client surface 분류를 provenance 에 보존한다.
+    // 'hook' 만 fixture 모드 seam 으로 열리고, 'api-client'/null(ambiguous·미포함)은 fail-closed.
+    ...(surfaces
+      ? { surface_kind: candidateSurfaceKind(pathEntry, surfaces) }
+      : {}),
   };
 }
 
@@ -389,16 +395,21 @@ function projectCandidateRestrictions(state) {
 function candidateAuthorizationFor(screenId, screen, layout) {
   const d = screen.derived || {};
   if (d.api_candidate_contract_version !== 2) return null;
+  // surface_kind 분류 입력: 도메인/레이아웃 오버라이드 해소 후의 실제 resolved 표면(#211).
+  const surfaces = {
+    hookSurfaces: optionalRoleSurfaces(layout, 'hook', screen.domain),
+    apiClientSurfaces: optionalRoleSurfaces(layout, 'api_client', screen.domain),
+  };
   const actionable = [];
   const deferred = [];
   for (const candidate of d.api_actionable_candidates || []) {
     for (const pathEntry of candidate.safe_slice_paths || []) {
-      actionable.push(candidateProvenance(screenId, candidate, pathEntry, 'active'));
+      actionable.push(candidateProvenance(screenId, candidate, pathEntry, 'active', surfaces));
     }
   }
   for (const candidate of d.api_deferred_candidates || []) {
     for (const pathEntry of candidate.safe_slice_paths || []) {
-      deferred.push(candidateProvenance(screenId, candidate, pathEntry, 'deferred'));
+      deferred.push(candidateProvenance(screenId, candidate, pathEntry, 'deferred', surfaces));
     }
   }
   return {

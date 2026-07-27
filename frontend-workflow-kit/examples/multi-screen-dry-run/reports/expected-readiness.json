@@ -8,10 +8,10 @@
         "component_catalog": false
       },
       {
-        "fake_hook": false
+        "figma_mapping": "missing"
       },
       {
-        "figma_mapping": "missing"
+        "fake_hook": false
       },
       {
         "api_confidence": "candidate"
@@ -23,8 +23,8 @@
     ],
     "next_actions": [
       "create docs/frontend-workflow/design/component-catalog.md manually (catalog-gen is MVP-C)",
-      "add fake hook at src/features/auth/hooks/",
       "create figma-component-mapping (status >= draft)",
+      "add fake hook at src/features/auth/hooks/",
       "confirm API candidates"
     ],
     "next_mode": "rough-fixture-ui",
@@ -53,13 +53,13 @@
         "component_catalog": false
       },
       {
-        "fake_hook": false
-      },
-      {
         "screen_spec_status": "draft"
       },
       {
         "figma_mapping": "missing"
+      },
+      {
+        "fake_hook": false
       },
       {
         "api_confidence": "candidate"
@@ -73,9 +73,9 @@
       "resolve decision D-001: 만료 쿠폰을 목록에 노출할 것인가?",
       "resolve decision D-003: 쿠폰 목록 페이지네이션 방식은?",
       "create docs/frontend-workflow/design/component-catalog.md manually (catalog-gen is MVP-C)",
-      "add fake hook at src/features/coupons/hooks/",
       "raise screen-spec status (confirmed requires human approval metadata)",
       "create figma-component-mapping (status >= draft)",
+      "add fake hook at src/features/coupons/hooks/",
       "confirm API (resolve 1 open unknown(s))"
     ],
     "next_mode": "rough-fixture-ui",
@@ -93,13 +93,13 @@
         "component_catalog": false
       },
       {
-        "fake_hook": false
-      },
-      {
         "screen_spec_status": "draft"
       },
       {
         "figma_mapping": "missing"
+      },
+      {
+        "fake_hook": false
       },
       {
         "api_confidence": "missing"
@@ -115,9 +115,9 @@
     "next_actions": [
       "write the ScreenSpec body using templates/screen/screen-spec.template.md (stub has frontmatter only)",
       "create docs/frontend-workflow/design/component-catalog.md manually (catalog-gen is MVP-C)",
-      "add fake hook at src/features/coupons/hooks/",
       "raise screen-spec status (confirmed requires human approval metadata)",
       "create figma-component-mapping (status >= draft)",
+      "add fake hook at src/features/coupons/hooks/",
       "confirm API candidates",
       "complete State Matrix (loading/empty/error/success/disabled/refreshing)"
     ],
@@ -140,13 +140,13 @@
         "component_catalog": false
       },
       {
-        "fake_hook": false
-      },
-      {
         "screen_spec_status": "draft"
       },
       {
         "figma_mapping": "missing"
+      },
+      {
+        "fake_hook": false
       },
       {
         "api_confidence": "unknown"
@@ -159,9 +159,9 @@
     "next_actions": [
       "resolve decision D-101: 홈 대시보드 위젯 구성/우선순위(쿠폰 요약·공지·추천)",
       "create docs/frontend-workflow/design/component-catalog.md manually (catalog-gen is MVP-C)",
-      "add fake hook at src/features/home/hooks/",
       "raise screen-spec status (confirmed requires human approval metadata)",
       "create figma-component-mapping (status >= draft)",
+      "add fake hook at src/features/home/hooks/",
       "confirm API (resolve 1 open unknown(s))"
     ],
     "next_mode": "rough-fixture-ui",
@@ -183,13 +183,13 @@
         "component_catalog": false
       },
       {
-        "fake_hook": false
-      },
-      {
         "screen_spec_status": "draft"
       },
       {
         "figma_mapping": "missing"
+      },
+      {
+        "fake_hook": false
       },
       {
         "api_confidence": "candidate"
@@ -202,9 +202,9 @@
     "next_actions": [
       "resolve decision D-401: 공지를 독립 화면으로 둘지 홈 섹션으로 흡수할지",
       "create docs/frontend-workflow/design/component-catalog.md manually (catalog-gen is MVP-C)",
-      "add fake hook at src/features/notices/hooks/",
       "raise screen-spec status (confirmed requires human approval metadata)",
       "create figma-component-mapping (status >= draft)",
+      "add fake hook at src/features/notices/hooks/",
       "confirm API (resolve 1 open unknown(s))"
     ],
     "next_mode": "screen-skeleton",
@@ -226,13 +226,13 @@
         "component_catalog": false
       },
       {
-        "fake_hook": false
-      },
-      {
         "screen_spec_status": "draft"
       },
       {
         "figma_mapping": "missing"
+      },
+      {
+        "fake_hook": false
       },
       {
         "api_confidence": "unknown"
@@ -244,9 +244,9 @@
     "next_actions": [
       "resolve decision D-301: 프로필 편집 범위/필드 확정(닉네임·이메일·아바타·비밀번호 변경 포함 여부)",
       "create docs/frontend-workflow/design/component-catalog.md manually (catalog-gen is MVP-C)",
-      "add fake hook at src/features/profile/hooks/",
       "raise screen-spec status (confirmed requires human approval metadata)",
       "create figma-component-mapping (status >= draft)",
+      "add fake hook at src/features/profile/hooks/",
       "confirm API (resolve 1 open unknown(s))"
     ],
     "next_mode": "route-skeleton",

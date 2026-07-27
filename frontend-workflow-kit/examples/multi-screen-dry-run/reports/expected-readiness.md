@@ -4,17 +4,17 @@
 > 1. **실측** — `npm run workflow:readiness` 의 실제 출력(2026-06-13 검증됨).
 > 2. **Target (design intent)** — 별도 implement-screen 세션이 fake hook·생성된 catalog·figma mapping·승인을 추가한 뒤 도달할 목표.
 >
-> md-only 게이트 천장은 **screen-skeleton** 이다: `src/` 가 없어 `fake_hook_exists=false`, catalog 가 `.snapshot.md` 라 `component_catalog_generated=false` → `rough-fixture-ui` 이상은 사실(fact)로 도달 불가. 그 아래로 Open Decision 이 일부 화면을 더 낮춘다.
+> md-only 게이트 천장은 **screen-skeleton** 이다: catalog 가 `.snapshot.md` 라 `component_catalog_generated=false` → `rough-fixture-ui` 이상은 사실(fact)로 도달 불가. (`src/` 가 없어 `fake_hook_exists=false` 이기도 하지만, #211 이후 이 fact 는 rough 진입이 아니라 `final-fixture-ui` 승격 전제다.) 그 아래로 Open Decision 이 일부 화면을 더 낮춘다.
 
 ## 1) 실측 — md-only 게이트 출력 (검증됨)
 
 `node scripts/workflow-state.mjs --docs examples/multi-screen-dry-run/docs/frontend-workflow --src examples/multi-screen-dry-run/__no_src__ --date 2026-06-13` → `readiness`:
 
-> `__no_src__` 는 **의도적으로 존재하지 않는** md-only src placeholder 다 (copy-paste 해 그대로 실행 가능). 디렉토리가 없으니 `fake_hook_exists=false` → fact 천장이 screen-skeleton 에 걸린다. 자세한 규약은 README "md-only src placeholder" 참고.
+> `__no_src__` 는 **의도적으로 존재하지 않는** md-only src placeholder 다 (copy-paste 해 그대로 실행 가능). 디렉토리가 없으니 `fake_hook_exists=false`(→ final 승격 차단)이고, fact 천장은 `component_catalog_generated=false` 로 screen-skeleton 에 걸린다. 자세한 규약은 README "md-only src placeholder" 참고.
 
 | Screen ID | readiness_mode | next_mode | 게이트 근거 |
 |---|---|---|---|
-| AUTH-001 | screen-skeleton | rough-fixture-ui | open decision 없음. rough 는 component_catalog/fake_hook 부재로 막힘 |
+| AUTH-001 | screen-skeleton | rough-fixture-ui | open decision 없음. rough 는 component_catalog 부재로 막힘(fake_hook 부재는 final 승격 차단) |
 | HOME-001 | screen-skeleton | rough-fixture-ui | D-101(blocking rough-fixture-ui) → decision_cap = screen-skeleton |
 | COUPON-001 | screen-skeleton | rough-fixture-ui | D-001(final)·D-003(api-integrated) cap 은 더 높음 → fact 천장 screen-skeleton 이 결정 |
 | COUPON-002 | screen-skeleton | rough-fixture-ui | stub(본문 미작성)이라 authored=false. status draft 라 screen-skeleton 까지 |
@@ -31,9 +31,9 @@ implement-screen 세션이 전제(fake hook·catalog 생성·figma mapping·승�
 |---|---|---|---|
 | AUTH-001 | form | final-fixture-ui | status confirmed(이미 충족) + figma-mapping(draft+) + catalog 생성 |
 | HOME-001 | dashboard | screen-skeleton | D-101 open → rough 이상 차단. 골격까지 |
-| COUPON-001 | list | rough-fixture-ui | catalog+fake_hook 갖추면 rough. D-001(final)이 그 위를 막음 |
+| COUPON-001 | list | rough-fixture-ui | catalog 갖추면 rough(fake hook 은 rough 에서 생성). D-001(final)이 그 위를 막음 |
 | COUPON-002 | detail | screen-skeleton | stub → 본문 작성 전까지 골격까지 |
 | PROFILE-001 | form | docs-only | D-301(route-skeleton) 차단 → 문서까지만 |
-| NOTICE-001 | list | rough-fixture-ui | D-401 해결(독립 화면) 후 catalog+fake_hook 갖추면 rough |
+| NOTICE-001 | list | rough-fixture-ui | D-401 해결(독립 화면) 후 catalog 갖추면 rough(fake hook 은 rough 에서 생성) |
 
 > 실측 ≠ target 인 화면(AUTH-001, COUPON-001, NOTICE-001)이 바로 implement-screen 이 코드/도면을 더해 끌어올릴 대상이다. md-only 단계에서는 모두 screen-skeleton 이하다.

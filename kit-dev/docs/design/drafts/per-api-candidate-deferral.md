@@ -4,6 +4,12 @@ Status: implemented draft
 Issue: #210
 Date: 2026-07-24
 
+> Amendment (#211, `fixture-hook-mode-ladder.md`): the "active claims pass only at
+> api-integrated-ui" rule below is refined by `surface_kind` — an owned active claim
+> wholly inside the resolved `{roles.hook}` surface is additionally editable by its
+> owner at the fixture modes, within the base envelope. All deny rules (deferred,
+> conflict, non-owner, api-client surface, `api_required:false`) are unchanged.
+
 ## Problem
 
 The legacy `## API Candidates` bullet grammar has screen-wide confidence only.

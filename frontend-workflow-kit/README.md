@@ -262,7 +262,7 @@ policy draft나 migration guide가 만들어져도 hard gate, CI required check,
 ## Troubleshooting
 
 - `validate`가 navigation-map 의존성으로 실패하면 `app/navigation-map.md`를 먼저 만든다.
-- `rough-fixture-ui` 이상으로 올라가지 않으면 screen hook/source path와 `--src`/`--layout`을 확인한다.
+- `final-fixture-ui` 이상으로 올라가지 않으면 screen hook/source path와 `--src`/`--layout`을 확인한다(`fake_hook_exists` 는 final 승격 전제 — fixture hook 은 `rough-fixture-ui` 에서 먼저 만든다).
 - monorepo에서 파일을 못 찾으면 모든 workflow 명령에 같은 `--root`, `--src`, `--docs`, `--layout` 값을 넘긴다.
 - check 12가 row 없음으로 경고/에러를 보고하면 Reconciliation Register에 해당 `input_id` row를 먼저 만들고 `in-progress`로 시작한다.
 - check 12가 기존 row의 `not-started`/`in-progress`/`failed` 상태를 보고하면 새 row를 만들지 말고 같은 row를 재개하며, severity 규칙은 [input-reconciliation.md](docs/reference/input-reconciliation.md)를 본다.
