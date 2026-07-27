@@ -59,14 +59,16 @@ Deferred rows require either:
 Slice Paths:
 
 - use `/`, remain project-root-relative, and contain no absolute/drive prefix,
-  empty segment, `..`, or blanket `src/**`;
+  empty segment, `.`/`..`, or blanket `src/**`;
 - use either an exact path or a terminal `/**` subtree glob. Arbitrary glob forms
   (`*.ts`, `foo*`, middle `**`, `?`, character classes, braces) are invalid so
   overlap detection remains sound and fail-closed;
 - must be strictly narrower than a broad resolved `{roles.hook}` or
   `{roles.api_client}` surface; an exact file-bound role may be owned;
 - are checked after domain/layout overrides are resolved;
-- are not silently rewritten into another location.
+- are canonical. Non-canonical authoring is invalid; when normalization is safely
+  recoverable, only the canonical deny/ownership provenance is retained so an
+  explicit deferred alias cannot disappear.
 
 Forbidden wins over allowed. Active/deferred overlap within one ScreenSpec is a
 conflict. Any overlap between explicit v2 claims from different screens is also a
@@ -193,7 +195,8 @@ present, it is the contract and bullets are not an additional authorization sour
 
 - Legacy screens intentionally retain broad authorization for backward
   compatibility. They may authorize unowned API-client paths, but never override an
-  explicit v2 active/deferred/conflict path.
+  explicit v2 active/deferred/conflict path. This includes a canonical deny path
+  recovered from invalid non-canonical authoring.
 - V2 narrowing is materialized directly in `allowed_paths` at
   `api-integrated-ui`. At `production-ready`, glob arrays alone cannot express
   `src/**` minus API surfaces plus active slices, so every concrete pre-edit path
@@ -213,5 +216,6 @@ present, it is the contract and bullets are not an additional authorization sour
 
 Focused regressions cover legacy compatibility, four-active/one-deferred readiness,
 all-deferred and malformed fail-closed behavior, layout overrides, same/cross-screen
-overlap, active/deferred diffs, legacy cross-screen bypass prevention, Work
-Packet/Run Report provenance, Windows separators, and rename/copy handling.
+overlap (including `.` aliases), active/deferred canonical diffs, legacy
+cross-screen bypass prevention, intentionally allowed truly-unclaimed legacy paths,
+Work Packet/Run Report provenance, Windows separators, and rename/copy handling.

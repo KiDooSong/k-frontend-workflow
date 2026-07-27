@@ -128,8 +128,9 @@ ScreenSpec `## API Candidates` legacy bullets remain active and backward
 compatible. For partial contract arrival, the optional v2 table records
 `Gate`/`Tracking`/`Slice Paths`; a deferred endpoint does not open its hook/API
 client slice, and explicit deferred paths override broad legacy allowances.
-Slice Paths are exact paths or terminal `/**` subtrees only. Before editing a
-concrete path, run `workflow:readiness -- --screen <ID> --path <path> --json`;
+Slice Paths are canonical exact paths or terminal `/**` subtrees only; `.`/`..`
+segments and arbitrary globs are invalid. Before editing a concrete path, run
+`workflow:readiness -- --screen <ID> --path <path> --json`;
 the candidate-aware result remains authoritative above `api-integrated-ui`,
 including `production-ready`.
 The complete authoring and path-ownership contract is

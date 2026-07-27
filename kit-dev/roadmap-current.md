@@ -7,11 +7,14 @@
 > hook/API-client Slice Paths를 요구한다. deferred/conflict paths는 project-wide effective
 > `forbidden_paths`에 보존되며 `api-integrated-ui` allowed_paths는 confirmed active slice 합집합으로
 > 좁혀진다. Slice Paths는 exact/terminal `/**`만 허용하고, 복수 표와 `api_required:false`
-> concrete v2도 recoverable deny provenance를 유지한다.
+> concrete v2도 recoverable deny provenance를 유지한다. `.` segment 같은 non-canonical
+> Slice Path는 invalid이며 안전한 canonical form을 deny-only로 보존해 동일/교차 화면 ownership과
+> canonical diff를 fail-closed한다.
 > `workflow:readiness -- --screen <ID> --path <path>`와 `workflow:forbidden-paths`는 같은 파일 권한 helper를 소비해 production-ready
 > forward 단계와 사후 diff 단계가 동일하게 active owner/unowned API path를 판정한다.
 > `workflow:forbidden-paths`는 API 관련 diff를 화면별 effective authorization과 endpoint/
-> tracking/owner provenance로 판정해 다른 api-integrated 화면의 broad clearance 우회를 막는다.
+> tracking/owner provenance로 판정해 explicit v2 claim의 broad clearance 우회를 막는다.
+> explicit claim이 없는 API-client path의 legacy broad 호환성은 의도적으로 유지한다.
 > authoring 검사 15는 warning-first이며 hard promotion/required CI 승격은 없다. 설계:
 > [per-api-candidate-deferral](docs/design/drafts/per-api-candidate-deferral.md).
 

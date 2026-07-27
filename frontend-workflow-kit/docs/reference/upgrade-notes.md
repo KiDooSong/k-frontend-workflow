@@ -22,8 +22,10 @@ or root config.
 - Existing ScreenSpec API candidate bullets remain active and need no migration.
 - Screens that need partial API wiring may opt into the six-column v2 table
   (`Method|Path|Confidence|Gate|Tracking|Slice Paths`). Every v2 row needs narrow
-  hook/API-client Slice Paths using an exact path or terminal `/**`; arbitrary
-  globs are invalid. Deferred rows also need an open local Unknown or `issue:#N`.
+  hook/API-client Slice Paths using a canonical exact path or terminal `/**`;
+  `.`/`..` segments and arbitrary globs are invalid. Safely canonicalizable invalid
+  paths remain deny-only provenance. Deferred rows also need an open local Unknown
+  or `issue:#N`.
 - V2 `api-integrated-ui` output is intentionally narrower. Regenerate state and
   readiness before reusing an existing Work Packet. Deferred/conflicted paths remain
   forbidden even if another legacy screen has broad API integration authority.
@@ -33,6 +35,8 @@ or root config.
   `production-ready` and prevents another screen from borrowing an explicit active
   claim. Duplicate v2 tables remain invalid but all recoverable rows stay deny-only;
   `api_required:false` also preserves authored v2 provenance without granting API authority.
+- Legacy broad compatibility still permits truly unclaimed API-client paths; it
+  cannot override an explicit v2 active/deferred/conflict path.
 - Validate check 15 is warning-only; the live readiness and
   `workflow:forbidden-paths --enforce` paths fail closed.
 - **Manual action:** none for legacy screens. For v2 adoption, follow

@@ -414,6 +414,81 @@ test('slice path grammar rejects non-terminal globs before overlap authorization
   }
 });
 
+test('non-canonical dot segments fail authoring and retain canonical same-screen deny ownership', () => {
+  const alias = 'src/api/shared/./stock/**';
+  const canonical = 'src/api/shared/stock/**';
+  const contract = analyzeApiCandidateContract(
+    makeSpec(
+      v2Table([
+        ['GET', '/stock/live', 'confirmed', 'active', '-', canonical],
+        ['GET', '/stock/pending', 'candidate', 'deferred', 'issue:#210', alias],
+      ]),
+    ),
+    { layout, domain: 'create' },
+  );
+
+  assert.equal(contract.valid, false);
+  assert.ok(
+    contract.issues.some(
+      (entry) =>
+        entry.code === 'API-V2-SLICE-SYNTAX' &&
+        entry.path === alias &&
+        /canonical project-relative path/.test(entry.message),
+    ),
+  );
+  assert.deepEqual(
+    contract.deferred_candidates[0].safe_slice_paths,
+    [canonical],
+  );
+  assert.ok(
+    contract.issues.some(
+      (entry) =>
+        entry.code === 'API-V2-OWNERSHIP-CONFLICT' &&
+        entry.path === canonical,
+    ),
+  );
+});
+
+test('non-canonical deferred alias conflicts with a canonical active owner across screens', () => {
+  const canonical = 'src/api/shared/stock/**';
+  const deferred = derivedFor(
+    makeSpec(
+      v2Table([
+        [
+          'GET',
+          '/stock/pending',
+          'candidate',
+          'deferred',
+          'issue:#210',
+          'src/api/shared/./stock/**',
+        ],
+      ]),
+    ),
+  );
+  const active = derivedFor(
+    makeSpec(
+      v2Table([
+        ['GET', '/stock/live', 'confirmed', 'active', '-', canonical],
+      ]),
+    ),
+  );
+
+  assert.deepEqual(
+    deferred.api_deferred_candidates[0].safe_slice_paths,
+    [canonical],
+  );
+  const conflicts = findApiCandidateOwnershipConflicts(
+    new Map([
+      ['SCREEN-A', { derived: deferred }],
+      ['SCREEN-B', { derived: active }],
+    ]),
+  );
+  assert.equal(conflicts.get('SCREEN-A').length, 1);
+  assert.equal(conflicts.get('SCREEN-B').length, 1);
+  assert.equal(conflicts.get('SCREEN-A')[0].path, canonical);
+  assert.equal(conflicts.get('SCREEN-A')[0].conflicting_path, canonical);
+});
+
 test('production-ready forward authorization still requires owned active API slices', (t) => {
   const spec = makeSpec(
     v2Table([

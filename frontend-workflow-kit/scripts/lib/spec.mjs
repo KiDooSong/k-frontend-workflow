@@ -501,6 +501,9 @@ function unknownStatusIndex(sectionText) {
   return out;
 }
 
+const NON_CANONICAL_SLICE_PATH_MESSAGE =
+  'Slice Path must be a canonical project-relative path';
+
 function pathSyntaxIssue(candidatePath) {
   if (!candidatePath) return 'Slice Paths entry is empty';
   if (/^[A-Za-z]:[\\/]/.test(candidatePath)) return 'drive-absolute path is forbidden';
@@ -509,6 +512,9 @@ function pathSyntaxIssue(candidatePath) {
   const segments = candidatePath.split('/');
   if (segments.some((segment) => segment === '')) return 'empty path segment is forbidden';
   if (segments.some((segment) => segment === '..')) return '.. traversal is forbidden';
+  if (path.posix.normalize(candidatePath) !== candidatePath) {
+    return NON_CANONICAL_SLICE_PATH_MESSAGE;
+  }
   if (candidatePath === 'src/**') return 'blanket src/** is forbidden';
   const literalPrefix = candidatePath.endsWith('/**')
     ? candidatePath.slice(0, -3)
@@ -681,6 +687,17 @@ export function analyzeApiCandidateContract(spec, { layout, domain } = {}) {
       if (syntax) {
         contractIssues.push(issue('API-V2-SLICE-SYNTAX', syntax, candidate, slicePath));
         candidateValid = false;
+        // Reject non-canonical authoring, but retain a safely canonicalized restriction so a
+        // deferred `foo/./bar/**` claim cannot disappear and be reopened by `foo/bar/**`.
+        const canonicalPath = path.posix.normalize(slicePath);
+        if (
+          syntax === NON_CANONICAL_SLICE_PATH_MESSAGE &&
+          pathSyntaxIssue(canonicalPath) === null &&
+          pathInsideCandidateSurface(canonicalPath, surfaces) &&
+          !safeSlicePaths.includes(canonicalPath)
+        ) {
+          safeSlicePaths.push(canonicalPath);
+        }
         continue;
       }
       if (!pathInsideCandidateSurface(slicePath, surfaces)) {

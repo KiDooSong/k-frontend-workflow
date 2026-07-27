@@ -39,12 +39,19 @@ the complete authorization contract.
 
 ## Slice Path Rules
 
-Each path must be strictly inside the resolved hook or API-client role for the
-screen's domain/layout. Use `/`; do not use absolute/drive paths, `..`, empty
-segments, backslashes, or blanket `src/**`. A broad role glob such as the whole
-`src/api/**` is not a valid v2 slice. Arbitrary glob forms (`*.ts`, `foo*`,
-`**/client.ts`, `?`, character classes, brace patterns) are rejected so ownership
-overlap is sound for the supported exact/terminal-`/**` grammar.
+Each path must be canonical and strictly inside the resolved hook or API-client
+role for the screen's domain/layout. Use `/`; do not use absolute/drive paths,
+`.`/`..`, empty segments, backslashes, or blanket `src/**`. For example,
+`src/api/shared/./stock/**` is invalid; author `src/api/shared/stock/**`. A broad
+role glob such as the whole `src/api/**` is not a valid v2 slice. Arbitrary glob
+forms (`*.ts`, `foo*`, `**/client.ts`, `?`, character classes, brace patterns) are
+rejected so ownership overlap is sound for the supported exact/terminal-`/**`
+grammar.
+
+A safely canonicalizable non-canonical path remains an authoring error, but its
+canonical form is retained as deny-only provenance. This lets same-screen and
+cross-screen ownership checks, readiness, and the diff backstop block the actual
+canonical file instead of dropping an explicitly deferred claim.
 
 Forbidden wins over allowed. Active/deferred overlap and cross-screen explicit
 ownership overlap fail closed. A deferred path remains forbidden even when another
@@ -80,6 +87,11 @@ Require `path_authorization.allowed: true`. This check is still required at
 `production-ready`: its broad `src/**` policy envelope does not authorize an
 unowned v2 hook/API-client path, and another legacy screen cannot replace the
 explicit owner of an active claim.
+
+This v2 ownership rule does not revoke legacy compatibility. A legacy screen may
+still authorize a truly unclaimed API-client path through its historical broad
+allowance. It can never override a path covered by an explicit v2
+active/deferred/conflict claim.
 
 Validate check 15 reports v2 authoring defects as warnings. The warning surface is
 not a hard-gate promotion; readiness remains the fail-closed live gate.

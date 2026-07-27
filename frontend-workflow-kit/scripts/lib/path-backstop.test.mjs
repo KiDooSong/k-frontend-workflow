@@ -149,13 +149,47 @@ test('legacy broad authorization cannot replace an active v2 slice owner below a
   assert.match(result.json.violations[0].reason, /tracking=-/);
 });
 
-test('an integrated v2 contract denies an unowned hook path', (t) => {
+test('an integrated v2 contract denies an unowned hook path without a legacy allowance', (t) => {
   const state = stateFixture();
   delete state.screens.LEGACY;
   const result = runBackstop(t, 'M\tsrc/features/create/hooks/useUnowned.ts\n', state);
   assert.equal(result.status, 1, result.stderr);
   assert.equal(result.json.ok, false);
   assert.match(result.json.violations[0].reason, /not authorized/);
+});
+
+test('legacy broad compatibility permits a truly unclaimed API-client path', (t) => {
+  const result = runBackstop(t, 'M\tsrc/api/unowned/client.ts\n');
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.json.ok, true);
+});
+
+test('non-canonical deferred alias blocks the canonical file from another active owner', (t) => {
+  const state = stateFixture();
+  const aliasDeferred = state.screens.V2.derived.api_deferred_candidates[0];
+  aliasDeferred.slice_paths = ['src/api/./stock/**'];
+  aliasDeferred.safe_slice_paths = ['src/api/stock/**'];
+  aliasDeferred.valid = false;
+
+  const otherDerived = screenDerived({ v2: true });
+  otherDerived.api_confidence_min = 'confirmed';
+  otherDerived.api_actionable_candidates = [
+    candidate('GET', '/stock/live', 'active', '-', 'src/api/stock/**'),
+  ];
+  otherDerived.api_deferred_candidates = [];
+  state.screens.OTHER = {
+    status: 'confirmed',
+    domain: 'other',
+    route: '/other',
+    stub: false,
+    derived: otherDerived,
+  };
+
+  const result = runBackstop(t, 'M\tsrc/api/stock/client.ts\n', state);
+  assert.equal(result.status, 1, result.stderr);
+  assert.equal(result.json.ok, false);
+  assert.equal(result.json.violations[0].candidate.screen_id, 'V2');
+  assert.equal(result.json.violations[0].candidate.path, 'src/api/stock/**');
 });
 
 test('legacy-only hook behavior stays outside the historical guarded surface', (t) => {
