@@ -21,6 +21,7 @@ import {
 import { LayoutConfigError, loadLayoutProfile, synthesizeModePolicy } from './lib/layout-profile.mjs';
 import {
   collectApiCandidateClaims,
+  concretePathIssue,
   covers,
   readinessPathAuthorization,
 } from './lib/path-backstop.mjs';
@@ -1036,6 +1037,17 @@ function main() {
   }
   if (typeof flags.path === 'string' && flags.path.trim() === '') {
     usageError('--path requires a project-relative path value');
+  }
+  // --path 는 canonical concrete file path 만 받는다. non-canonical 입력(`..`/빈 segment/
+  // backslash/glob)은 active claim glob 에 raw-매칭되어 실제 대상 파일과 어긋난 판정을 만들 수
+  // 있으므로, helper 의 fail-closed deny 에 앞서 usage 오류(exit 2)로 명확히 거부한다.
+  if (typeof flags.path === 'string' && flags.path.trim() !== '') {
+    const pathIssue = concretePathIssue(flags.path);
+    if (pathIssue) {
+      usageError(
+        `--path requires a canonical concrete project-relative path (${pathIssue}): '${flags.path}'`,
+      );
+    }
   }
   if (
     typeof flags.surface === 'string' &&

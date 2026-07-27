@@ -119,6 +119,27 @@ test('--path requires --screen and returns the shared file-level authorization r
   assert.match(entry.path_authorization.reason, /outside allowed_paths|forbidden_paths/);
 });
 
+test('--path rejects non-canonical concrete paths with exit 2 before any evaluation', () => {
+  for (const badPath of [
+    'src/api/create/live/../unowned.ts',
+    'src/api/create/live//../unowned.ts',
+    'src\\api\\create\\live\\..\\unowned.ts',
+    'src/api/create/live/**',
+    'src/api/create/',
+    '/src/api/create/unowned.ts',
+    'C:\\src\\api\\create\\unowned.ts',
+  ]) {
+    const r = run(['--screen', 'COUPON-001', '--path', badPath, '--docs', EXAMPLE_DOCS]);
+    assert.equal(r.status, 2, `${badPath}: ${r.stderr}`);
+    assert.match(
+      r.stderr,
+      /--path requires a canonical concrete project-relative path/,
+      badPath,
+    );
+    assert.equal(r.stdout, '', 'non-canonical --path must not print an authorization result');
+  }
+});
+
 test('boolean flag with a value is a usage error: exit 2', () => {
   const r = run(['--json=yes', '--docs', EXAMPLE_DOCS]);
   assert.equal(r.status, 2);

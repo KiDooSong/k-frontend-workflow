@@ -26,6 +26,49 @@ export function toPosix(p) {
   return String(p).split(path.sep).join('/').replace(/\\/g, '/');
 }
 
+// 안전한 canonical project-relative 경로 산출 — authoring recovery(spec.mjs)와 runtime
+// concrete-path 검증(readinessPathAuthorization / readiness CLI --path)이 같은 규칙을 공유한다.
+// absolute/drive/UNC 입력은 project-relative target 자체를 신뢰할 수 없으므로 null(복구 불가).
+// 그 외에는 separator 를 / 로 통일해 posix-normalize 하고, 프로젝트 루트를 벗어나면 null.
+export function canonicalProjectRelativePath(input) {
+  const raw = String(input ?? '').trim();
+  if (raw === '') return null;
+  if (/^[A-Za-z]:[\\/]/.test(raw)) return null;
+  if (raw.startsWith('/') || raw.startsWith('\\')) return null;
+  const canonical = path.posix.normalize(toPosix(raw));
+  if (canonical === '' || canonical === '.' || canonical === '..') return null;
+  if (canonical.startsWith('../') || canonical.startsWith('/')) return null;
+  return canonical;
+}
+
+// runtime concrete file path 진단 — `--path` preflight 와 모든 library 소비자가 공유한다.
+// slice-path 저작 문법(terminal /** 허용)과 달리 판정 대상은 항상 "실제 파일 하나"다.
+// non-canonical 입력은 active claim glob 에 raw 문자열로는 매칭되면서 실제로는 slice 밖의
+// 파일을 가리킬 수 있으므로, canonicalize 해서 통과시키지 않고 fail-closed 로 거부한다
+// (호출부가 canonical 경로로 재시도). `[`/`]`/`{`/`}` 는 이 kit 글롭 방언(globToRegex)에서
+// 리터럴이고 Next.js 라우트 파일명(`src/app/[id]/page.tsx`)에 실제로 쓰이므로 거부하지
+// 않는다. `*`/`?` 는 concrete 파일 이름에 나타날 수 없는 패턴 문자로 보고 거부한다.
+export function concretePathIssue(input) {
+  const raw = String(input ?? '');
+  if (raw.trim() === '') return 'path is empty';
+  if (/^[A-Za-z]:[\\/]/.test(raw)) return 'drive-absolute path is forbidden';
+  if (raw.startsWith('/') || raw.startsWith('\\')) return 'absolute path is forbidden';
+  if (raw.includes('\\')) {
+    return 'backslash separator is forbidden; use a project-relative path with /';
+  }
+  if (/[*?]/.test(raw)) return 'glob patterns are forbidden; pass one concrete file path';
+  const segments = raw.split('/');
+  if (segments[segments.length - 1] === '') {
+    return 'trailing slash (directory form) is forbidden';
+  }
+  if (segments.some((segment) => segment === '')) return 'empty path segment is forbidden';
+  if (segments.some((segment) => segment === '.' || segment === '..')) {
+    return '`.`/`..` segments are forbidden';
+  }
+  if (path.posix.normalize(raw) !== raw) return 'path must be canonical';
+  return null;
+}
+
 // glob → RegExp. validate.mjs 의 manifestPathRegex 는 재사용 불가다:
 // 그 함수는 정규식 메타문자를 *전부* escape 해 `*` 를 리터럴로 만든다.
 // 여기서는 정책 글롭의 `**`/`*` 를 실제 와일드카드로 해석한다.
@@ -136,6 +179,20 @@ export function readinessPathAuthorization({
   claims = { active: [], denied: [] },
 }) {
   const normalizedFile = toPosix(file);
+  // 입력 canonicality 는 helper 진입점에서 강제한다 — CLI 만 검사하면 다른 library 소비자가
+  // non-canonical 입력(`live/../unowned.ts` 등)으로 active glob 을 raw-매칭시켜 우회할 수 있다.
+  const concreteIssue = concretePathIssue(file);
+  if (concreteIssue) {
+    return {
+      allowed: false,
+      file: normalizedFile,
+      screen_id: screenId,
+      reason: `non-canonical concrete path is fail-closed: ${concreteIssue}`,
+      allowed_by: [],
+      forbidden_by: [],
+      candidate_matches: [],
+    };
+  }
   if (!entry) {
     return {
       allowed: false,

@@ -489,6 +489,131 @@ test('non-canonical deferred alias conflicts with a canonical active owner acros
   assert.equal(conflicts.get('SCREEN-A')[0].conflicting_path, canonical);
 });
 
+// 진단 종류(빈 segment / `..` / backslash)와 무관하게, 신뢰 가능한 canonical target 이 있는
+// alias 는 전부 deny-only provenance 로 남아야 한다 — `.` alias 만 복구하던 회귀 방지.
+const RECOVERABLE_ALIASES = [
+  'src/api/shared//stock/**',
+  'src/api/shared/live/../stock/**',
+  'src\\api\\shared\\stock\\**',
+];
+
+test('empty-segment, dot-dot, and backslash aliases keep canonical same-screen deny ownership', () => {
+  const canonical = 'src/api/shared/stock/**';
+  for (const alias of RECOVERABLE_ALIASES) {
+    const contract = analyzeApiCandidateContract(
+      makeSpec(
+        v2Table([
+          ['GET', '/stock/live', 'confirmed', 'active', '-', canonical],
+          ['GET', '/stock/pending', 'candidate', 'deferred', 'issue:#210', alias],
+        ]),
+      ),
+      { layout, domain: 'create' },
+    );
+    assert.equal(contract.valid, false, alias);
+    assert.ok(
+      contract.issues.some(
+        (entry) => entry.code === 'API-V2-SLICE-SYNTAX' && entry.path === alias,
+      ),
+      alias,
+    );
+    assert.deepEqual(
+      contract.deferred_candidates[0].safe_slice_paths,
+      [canonical],
+      alias,
+    );
+    assert.ok(
+      contract.issues.some(
+        (entry) =>
+          entry.code === 'API-V2-OWNERSHIP-CONFLICT' && entry.path === canonical,
+      ),
+      alias,
+    );
+  }
+});
+
+test('recovered aliases conflict cross-screen and deny the canonical file to broad screens', () => {
+  const canonical = 'src/api/shared/stock/**';
+  for (const alias of RECOVERABLE_ALIASES) {
+    const deferred = derivedFor(
+      makeSpec(
+        v2Table([
+          ['GET', '/stock/pending', 'candidate', 'deferred', 'issue:#210', alias],
+        ]),
+      ),
+    );
+    assert.deepEqual(
+      deferred.api_deferred_candidates[0].safe_slice_paths,
+      [canonical],
+      alias,
+    );
+    const active = derivedFor(
+      makeSpec(
+        v2Table([
+          ['GET', '/stock/live', 'confirmed', 'active', '-', canonical],
+        ]),
+      ),
+    );
+    const conflicts = findApiCandidateOwnershipConflicts(
+      new Map([
+        ['SCREEN-A', { derived: deferred }],
+        ['SCREEN-B', { derived: active }],
+      ]),
+    );
+    assert.equal(conflicts.get('SCREEN-A').length, 1, alias);
+    assert.equal(conflicts.get('SCREEN-B').length, 1, alias);
+    assert.equal(conflicts.get('SCREEN-A')[0].path, canonical, alias);
+
+    // 리뷰 시나리오: SCREEN-A(alias deferred)가 contract invalid 여도, canonical 파일은
+    // 다른 broad(legacy) 화면의 clearance 로 다시 열리면 안 된다.
+    const legacy = derivedFor(
+      makeSpec('- GET /legacy (confidence: confirmed)', '', 'legacy'),
+    );
+    const readiness = computeReadiness({
+      state: {
+        global: {},
+        screens: {
+          'SCREEN-A': { status: 'confirmed', domain: 'create', stub: false, derived: deferred },
+          LEGACY: { status: 'confirmed', domain: 'legacy', stub: false, derived: legacy },
+        },
+      },
+      policy: policyV2,
+      ci: {},
+      manifest: {},
+      layout,
+    });
+    assert.equal(readiness.LEGACY.readiness_mode, 'api-integrated-ui', alias);
+    assert.ok(readiness.LEGACY.forbidden_paths.includes(canonical), alias);
+    const authorization = readinessPathAuthorization({
+      file: 'src/api/shared/stock/client.ts',
+      screenId: 'LEGACY',
+      entry: readiness.LEGACY,
+      modeOrder: policyV2.order,
+      claims: collectApiCandidateClaims(readiness),
+    });
+    assert.equal(authorization.allowed, false, alias);
+    assert.equal(authorization.candidate_matches[0].path, canonical, alias);
+  }
+});
+
+test('absolute, drive-absolute, and root-escaping aliases stay unrecovered', () => {
+  for (const alias of [
+    '/src/api/shared/stock/**',
+    'C:\\src\\api\\shared\\stock\\**',
+    '../src/api/shared/stock/**',
+  ]) {
+    const contract = analyzeApiCandidateContract(
+      makeSpec(
+        v2Table([
+          ['GET', '/stock/pending', 'candidate', 'deferred', 'issue:#210', alias],
+        ]),
+      ),
+      { layout, domain: 'create' },
+    );
+    assert.equal(contract.valid, false, alias);
+    assert.deepEqual(contract.deferred_candidates[0].safe_slice_paths, [], alias);
+  }
+});
+
 test('production-ready forward authorization still requires owned active API slices', (t) => {
   const spec = makeSpec(
     v2Table([

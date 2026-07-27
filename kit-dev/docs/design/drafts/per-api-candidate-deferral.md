@@ -68,7 +68,11 @@ Slice Paths:
 - are checked after domain/layout overrides are resolved;
 - are canonical. Non-canonical authoring is invalid; when normalization is safely
   recoverable, only the canonical deny/ownership provenance is retained so an
-  explicit deferred alias cannot disappear.
+  explicit deferred alias cannot disappear. Recovery keys on whether a trustworthy
+  canonical project-relative target exists, not on which diagnostic fired: `.`
+  segments, empty segments, in-tree `..` hops, and backslash separators all keep
+  their canonical deny claim, while absolute/drive paths and root escapes are
+  never recovered.
 
 Forbidden wins over allowed. Active/deferred overlap within one ScreenSpec is a
 conflict. Any overlap between explicit v2 claims from different screens is also a
@@ -134,7 +138,13 @@ npm run workflow:readiness -- --screen <SCREEN_ID> --path <path> --json
 ```
 
 This delegates to the same pure `readinessPathAuthorization()` helper as the diff
-backstop. At `production-ready`, `src/**` remains the broad non-API policy envelope,
+backstop. `--path` accepts only a canonical concrete file path: absolute/drive
+paths, `.`/`..` or empty segments, backslashes, trailing slashes, and `*`/`?`
+patterns exit 2 at the CLI, and the helper itself fail-closes any non-canonical
+input so no library consumer can raw-match an active claim glob against a query
+whose real filesystem target lies outside the slice. Literal `[]`/`{}` remain
+valid file-name characters (Next.js route files) in this kit's glob dialect.
+At `production-ready`, `src/**` remains the broad non-API policy envelope,
 but an integrated v2 hook/API-client path requires an explicit active claim owned by
 that screen. Active claims also remain unavailable to other legacy/v2 screens until
 their explicit owner reaches API integration.
@@ -216,6 +226,7 @@ present, it is the contract and bullets are not an additional authorization sour
 
 Focused regressions cover legacy compatibility, four-active/one-deferred readiness,
 all-deferred and malformed fail-closed behavior, layout overrides, same/cross-screen
-overlap (including `.` aliases), active/deferred canonical diffs, legacy
+overlap (including `.`, empty-segment, `..`, and backslash aliases),
+non-canonical `--path`/helper rejection, active/deferred canonical diffs, legacy
 cross-screen bypass prevention, intentionally allowed truly-unclaimed legacy paths,
 Work Packet/Run Report provenance, Windows separators, and rename/copy handling.

@@ -49,9 +49,14 @@ rejected so ownership overlap is sound for the supported exact/terminal-`/**`
 grammar.
 
 A safely canonicalizable non-canonical path remains an authoring error, but its
-canonical form is retained as deny-only provenance. This lets same-screen and
-cross-screen ownership checks, readiness, and the diff backstop block the actual
-canonical file instead of dropping an explicitly deferred claim.
+canonical form is retained as deny-only provenance. Recovery does not depend on
+which diagnostic fired: `.` segments, empty segments (`src/api/shared//stock/**`),
+in-tree `..` hops (`src/api/shared/live/../stock/**`), and backslash separators
+(`src\api\shared\stock\**`) all keep their canonical deny claim. This lets
+same-screen and cross-screen ownership checks, readiness, and the diff backstop
+block the actual canonical file instead of dropping an explicitly deferred claim.
+Absolute/drive paths and paths escaping the project root have no trustworthy
+project-relative target and are never recovered.
 
 Forbidden wins over allowed. Active/deferred overlap and cross-screen explicit
 ownership overlap fail closed. A deferred path remains forbidden even when another
@@ -87,6 +92,15 @@ Require `path_authorization.allowed: true`. This check is still required at
 `production-ready`: its broad `src/**` policy envelope does not authorize an
 unowned v2 hook/API-client path, and another legacy screen cannot replace the
 explicit owner of an active claim.
+
+`--path` accepts only a canonical concrete project-relative file path. Absolute or
+drive paths, `.`/`..` or empty segments, backslash separators, trailing slashes,
+and `*`/`?` glob patterns are rejected with exit 2 — a non-canonical query could
+raw-match an active claim glob while the real filesystem target sits outside the
+slice. The shared library helper enforces the same rule and fail-closes any
+non-canonical input, so every consumer judges the actual canonical file. Literal
+`[]`/`{}` are allowed: they are route-file name characters
+(`src/app/[id]/page.tsx`), not wildcards, in this kit's glob dialect.
 
 This v2 ownership rule does not revoke legacy compatibility. A legacy screen may
 still authorize a truly unclaimed API-client path through its historical broad

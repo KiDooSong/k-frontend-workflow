@@ -11,6 +11,7 @@ import {
   projectRootOf,
 } from './util.mjs';
 import { layerHasFiles, TYPESCRIPT_FACT_EXTS } from './layer-inventory.mjs';
+import { canonicalProjectRelativePath } from './path-backstop.mjs';
 
 const REQUIRED_STATES = ['loading', 'empty', 'error', 'success', 'disabled', 'refreshing'];
 // HTML 주석 제거 (표/섹션 감지를 방해하지 않도록)
@@ -688,10 +689,14 @@ export function analyzeApiCandidateContract(spec, { layout, domain } = {}) {
         contractIssues.push(issue('API-V2-SLICE-SYNTAX', syntax, candidate, slicePath));
         candidateValid = false;
         // Reject non-canonical authoring, but retain a safely canonicalized restriction so a
-        // deferred `foo/./bar/**` claim cannot disappear and be reopened by `foo/bar/**`.
-        const canonicalPath = path.posix.normalize(slicePath);
+        // deferred claim cannot disappear and be reopened by its canonical form. Recovery is
+        // keyed on whether a trustworthy canonical target exists — not on which diagnostic
+        // fired — so `foo/./bar/**`, `foo//bar/**`, `foo/x/../bar/**`, and backslash-authored
+        // aliases all keep deny-only provenance. Absolute/drive inputs have no trustworthy
+        // project-relative target and stay unrecovered.
+        const canonicalPath = canonicalProjectRelativePath(slicePath);
         if (
-          syntax === NON_CANONICAL_SLICE_PATH_MESSAGE &&
+          canonicalPath !== null &&
           pathSyntaxIssue(canonicalPath) === null &&
           pathInsideCandidateSurface(canonicalPath, surfaces) &&
           !safeSlicePaths.includes(canonicalPath)

@@ -16,8 +16,9 @@
   all-deferred, malformed tracking/path/table, `confirmed+deferred`, active/deferred 및 cross-screen
   ownership overlap은 live `api-integrated-ui`를 fail-closed한다.
 - Slice Paths 문법을 exact path 또는 terminal `/**`로 한정해 arbitrary glob overlap
-  fail-open을 제거했다. `.` segment 등 non-canonical 저작은 invalid로 거부하되 안전하게 canonicalize
-  가능한 경로는 deny-only provenance로 보존해 same/cross-screen conflict와 canonical diff를 차단한다.
+  fail-open을 제거했다. non-canonical 저작(`.` segment·빈 segment·in-tree `..`·backslash)은 invalid로
+  거부하되, 진단 종류와 무관하게 안전하게 canonicalize 가능한 경로는 deny-only provenance로 보존해
+  same/cross-screen conflict와 canonical diff를 차단한다(absolute/drive·root escape는 복구하지 않음).
   복수 v2 표는 invalid로 유지하되 모든 표의 recoverable provenance를 수집하며,
   `api_required:false`도 v2 deferred/conflict provenance를 state/readiness에서 버리지 않는다.
   legacy invalid confidence의 min 집계는 기존처럼 무시해 byte compatibility를 유지한다.
@@ -33,6 +34,10 @@
   `readinessPathAuthorization()`을 diff backstop과 공유한다. 따라서 `production-ready`의
   `src/**` envelope에서도 unowned v2 API path는 forward 단계에서 차단되고, explicit active
   claim은 소유 화면이 API integration에 도달하기 전 다른 legacy 화면이 빌릴 수 없다.
+  `--path`는 canonical concrete file path만 받는다 — absolute/drive·`.`/`..`·빈 segment·backslash·
+  trailing slash·`*`/`?` glob은 CLI에서 exit 2, helper 진입점에서도 fail-closed로 거부해
+  non-canonical 질의가 active claim glob에 raw-매칭되는 우회를 없앴다(리터럴 `[]`/`{}`는
+  Next.js 라우트 파일명 문자로 허용).
 - validate 검사 15는 v2 표/enum/tracking/path/ownership을 warning-only로 조기경보한다. legacy 문서는
   무발화하며 hard gate/CI required check 승격은 없다. 설계·migration·known limits:
   `kit-dev/docs/design/drafts/per-api-candidate-deferral.md`; consumer 계약:

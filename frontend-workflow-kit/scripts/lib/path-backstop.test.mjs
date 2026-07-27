@@ -7,8 +7,11 @@ import { spawnSync } from 'node:child_process';
 
 import { KIT_ROOT, yamlStringify } from './util.mjs';
 import {
+  canonicalProjectRelativePath,
+  concretePathIssue,
   parseNameStatusText,
   pathAuthorization,
+  readinessPathAuthorization,
   writePathsOf,
 } from './path-backstop.mjs';
 
@@ -220,6 +223,91 @@ test('Windows separators normalize before deferred path matching', (t) => {
   const result = runBackstop(t, 'M\tsrc\\api\\stock\\client.ts\n');
   assert.equal(result.status, 1, result.stderr);
   assert.equal(result.json.violations[0].file, 'src/api/stock/client.ts');
+});
+
+test('concretePathIssue accepts canonical files (bracket route names included) and rejects the rest', () => {
+  assert.equal(concretePathIssue('src/api/create/live/client.ts'), null);
+  assert.equal(concretePathIssue('src/app/[id]/page.tsx'), null);
+  assert.equal(concretePathIssue('README.md'), null);
+  assert.match(concretePathIssue(''), /empty/);
+  assert.match(concretePathIssue('/etc/passwd'), /absolute/);
+  assert.match(concretePathIssue('C:/src/x.ts'), /drive-absolute/);
+  assert.match(concretePathIssue('src\\api\\x.ts'), /backslash/);
+  assert.match(concretePathIssue('src/api/*.ts'), /glob/);
+  assert.match(concretePathIssue('src/api/x?.ts'), /glob/);
+  assert.match(concretePathIssue('src/api//x.ts'), /empty path segment/);
+  assert.match(concretePathIssue('src/api/../x.ts'), /segments are forbidden/);
+  assert.match(concretePathIssue('src/api/./x.ts'), /segments are forbidden/);
+  assert.match(concretePathIssue('src/api/'), /trailing slash/);
+});
+
+test('canonicalProjectRelativePath recovers alias forms but never a root escape', () => {
+  assert.equal(
+    canonicalProjectRelativePath('src/api/shared//stock/**'),
+    'src/api/shared/stock/**',
+  );
+  assert.equal(
+    canonicalProjectRelativePath('src/api/shared/live/../stock/**'),
+    'src/api/shared/stock/**',
+  );
+  assert.equal(
+    canonicalProjectRelativePath('src\\api\\shared\\stock\\**'),
+    'src/api/shared/stock/**',
+  );
+  assert.equal(
+    canonicalProjectRelativePath('src/api/shared/./stock/**'),
+    'src/api/shared/stock/**',
+  );
+  assert.equal(canonicalProjectRelativePath('/src/api/x.ts'), null);
+  assert.equal(canonicalProjectRelativePath('C:\\src\\x.ts'), null);
+  assert.equal(canonicalProjectRelativePath('../x.ts'), null);
+  assert.equal(canonicalProjectRelativePath('src/..'), null);
+  assert.equal(canonicalProjectRelativePath(''), null);
+});
+
+test('readinessPathAuthorization fail-closes non-canonical concrete paths despite matching claims', () => {
+  const entry = {
+    readiness_mode: 'api-integrated-ui',
+    api_required: true,
+    allowed_paths: ['src/**'],
+    forbidden_paths: [],
+  };
+  const claims = {
+    active: [
+      {
+        kind: 'active',
+        screen_id: 'V2',
+        endpoint: 'GET /live',
+        gate: 'active',
+        tracking: null,
+        path: 'src/api/create/live/**',
+      },
+    ],
+    denied: [],
+  };
+  const modeOrder = ['docs-only', 'api-integrated-ui'];
+  for (const file of [
+    'src/api/create/live/../unowned.ts',
+    'src/api/create/live//../unowned.ts',
+    'src\\api\\create\\live\\..\\unowned.ts',
+    'src/api/create/live/**',
+  ]) {
+    const result = readinessPathAuthorization({ file, screenId: 'V2', entry, modeOrder, claims });
+    assert.equal(result.allowed, false, file);
+    assert.match(result.reason, /non-canonical concrete path/, file);
+    assert.deepEqual(result.candidate_matches, [], file);
+  }
+  // canonical 형태의 실제 owned slice 파일은 그대로 허용된다(회귀 방지 positive control).
+  assert.equal(
+    readinessPathAuthorization({
+      file: 'src/api/create/live/client.ts',
+      screenId: 'V2',
+      entry,
+      modeOrder,
+      claims,
+    }).allowed,
+    true,
+  );
 });
 
 test('name-status parser keeps rename/copy write-path semantics', () => {
