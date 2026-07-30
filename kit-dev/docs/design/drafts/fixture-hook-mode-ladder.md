@@ -66,7 +66,8 @@ allowed = base.allowed
         ∧ api_candidate_authorization.valid == true
         ∧ owned(이 화면의 claim)
         ∧ ( owner 가 api-integrated-ui 이상
-          ∨ owned claim 전부 surface_kind === 'hook'  # fixture seam (#211)
+          ∨ (owner 가 rough-fixture-ui 이상
+             ∧ owned claim 전부 surface_kind === 'hook')  # fixture seam (#211)
           )
 ```
 
@@ -94,8 +95,10 @@ forward pre-edit(`workflow:readiness --screen … --path …`)와 diff backstop
 (`workflow:forbidden-paths`)은 동일한 `readinessPathAuthorization()` 을 소비한다.
 surface_kind 는 readiness 가 provenance 에 한 번 계산해 싣고, 두 소비자는 재판정하지
 않는다. 거부 진단도 같은 판정 결과를 따라 non-owner(owning screen 컨텍스트), invalid
-contract(계약 issue 수정), owned hook(rough-fixture-ui), API-client/null(api-integrated-ui)로
-분리한다. Work Packet / Run Report 는 effective allowed/forbidden paths 와
+contract(계약 issue 수정), 실제 rough 미도달 hook(rough-fixture-ui), API-client/null
+(api-integrated-ui), base envelope 거부로 분리한다. 특히 delegated shared surface는 surface
+readiness와 implement-shared-surface로 라우팅하고, diff backstop은 owner에 대해 얻은 forward
+authorization의 reason/would_clear를 그대로 사용한다. Work Packet / Run Report 는 effective allowed/forbidden paths 와
 `api_candidate_authorization` 블록(surface_kind 포함)을 인용만 한다.
 
 ### D4. 레이아웃 판정

@@ -110,9 +110,12 @@ function screenEntry({ status = 'draft', domain = 'create', derived }) {
   return { status, domain, route: `/${domain}`, stub: false, derived };
 }
 
-function readinessOf(screens, { ci = {}, selectedLayout = layout, selectedPolicy = policy } = {}) {
+function readinessOf(
+  screens,
+  { ci = {}, selectedLayout = layout, selectedPolicy = policy, surfaces } = {},
+) {
   return computeReadiness({
-    state: { global: GLOBAL, screens },
+    state: { global: GLOBAL, screens, ...(surfaces ? { surfaces } : {}) },
     policy: selectedPolicy,
     ci,
     manifest: {},
@@ -819,11 +822,103 @@ test('forbidden-paths diagnostics distinguish the hook threshold from an invalid
     screenEntry({ status: 'draft', derived: invalidDerived }),
     HOOK_SLICE,
   );
-  assert.match(invalidViolation.reason, /invalid API Candidates v2 contract/);
+  assert.match(invalidViolation.reason, /API Candidates v2 contract is invalid/);
   assert.match(
     invalidViolation.would_clear,
     /fix the reported API Candidates v2 contract issues/,
   );
+});
+
+
+test('delegated shared hook reservation preserves forward/backstop surface remediation', (t) => {
+  const derived = derivedFor(v2ActiveSpec({ stateMatrix: false }));
+  derived.fake_hook_exists = true;
+  derived.figma_mapping_status = 'draft';
+  derived.state_matrix_complete = false;
+  const screens = {
+    'CREATE-ATTACH': screenEntry({ status: 'confirmed', derived }),
+  };
+  const surfaceId = 'CREATE-ATTACHMENTS-HOOK';
+  const surfaces = {
+    [surfaceId]: {
+      status: 'confirmed',
+      domain: 'create',
+      stub: false,
+      member_screens: ['CREATE-ATTACH'],
+      implementation_paths: [HOOK_SLICE],
+      source: {
+        path: 'domains/create/surfaces/create-attachments-hook/surface-spec.md',
+      },
+      derived: {
+        api_required: false,
+        state_matrix_complete: false,
+        interaction_matrix_complete: true,
+        blocking_decisions: [],
+        malformed_decisions: [],
+        lifecycle_errors: [],
+        decision_refs: [],
+        contract_errors: [],
+        identity_errors: [],
+        membership_errors: [],
+        path_errors: [],
+        decision_fanout_errors: [],
+      },
+    },
+  };
+
+  const readiness = readinessOf(screens, { surfaces });
+  const entry = readiness['CREATE-ATTACH'];
+  assert.equal(entry.readiness_mode, 'final-fixture-ui');
+  assert.equal(entry.delegated_shared_surfaces[0].surface_id, surfaceId);
+  assert.ok(entry.forbidden_paths.includes(HOOK_SLICE));
+
+  const forward = authorize(readiness, 'CREATE-ATTACH', HOOK_SLICE);
+  assert.equal(forward.allowed, false);
+  assert.match(forward.reason, /delegated to shared surface CREATE-ATTACHMENTS-HOOK/);
+  assert.doesNotMatch(forward.reason, /rough-fixture-ui/);
+  assert.match(forward.would_clear, /workflow:readiness -- --surface CREATE-ATTACHMENTS-HOOK/);
+  assert.match(forward.would_clear, /implement-shared-surface/);
+
+  const surfaceReadiness = computeReadiness({
+    state: { global: GLOBAL, screens, surfaces },
+    policy,
+    ci: {},
+    manifest: {},
+    layout,
+    surfaceOnlyId: surfaceId,
+  })[surfaceId];
+  assert.equal(surfaceReadiness.readiness_mode, 'final-fixture-ui');
+  assert.ok(surfaceReadiness.allowed_paths.includes(HOOK_SLICE));
+  assert.equal(
+    surfaceReadiness.path_authorization.find((row) => row.path === HOOK_SLICE).allowed,
+    true,
+  );
+
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fixture-hook-shared-delegation-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const docs = path.join(root, 'docs', 'frontend-workflow');
+  fs.mkdirSync(path.join(docs, '_meta'), { recursive: true });
+  fs.writeFileSync(
+    path.join(docs, '_meta', 'workflow-state.yaml'),
+    yamlStringify({
+      generated_at: '2026-07-30',
+      global: GLOBAL,
+      screens,
+      surfaces,
+    }),
+    'utf8',
+  );
+  const diffPath = path.join(root, 'changes.diff');
+  fs.writeFileSync(diffPath, `M\t${HOOK_SLICE}\n`, 'utf8');
+  const backstop = spawnSync(
+    process.execPath,
+    [FORBIDDEN_CLI, '--docs', docs, '--diff', diffPath, '--enforce', '--json'],
+    { cwd: root, encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS },
+  );
+  assert.equal(backstop.status, 1, backstop.stderr);
+  const violation = JSON.parse(backstop.stdout).violations[0];
+  assert.equal(violation.reason, forward.reason);
+  assert.equal(violation.would_clear, forward.would_clear);
 });
 
 // --- 사다리 순서·warning-first 의미 불변 ----------------------------------------------

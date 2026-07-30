@@ -18,6 +18,13 @@
   `rough-fixture-ui`, API-client/null은 `api-integrated-ui`를 실제 해소 조건으로 안내한다.
 - consumer `COMMANDS.md`·API candidate reference·upgrade notes를 새 seam에 맞췄고,
   업그레이드 후 readiness 및 Work Packet/Run Report 재생성 절차를 명시했다.
+- packed `implement-screen` skill과 canonical Stage 06도 valid active hook의 rough/final seam,
+  API-client/null integration gate, concrete `path_authorization.allowed:true` 최종 권한으로 정렬했다.
+  fixture hook seam은 `confirmed` confidence를 별도 요구하지 않으며 confirmed actionable
+  confidence는 API-integrated 승격 게이트에 남는다.
+- 이미 fixture mode인 owned hook이 shared-surface reservation/custom forbidden으로 base 거부될
+  때 rough 승격으로 오진하지 않는다. delegated surface는 surface readiness/skill로 라우팅하고,
+  diff backstop은 owner의 forward reason/would_clear를 재사용한다.
 
 ### feat(readiness) — per-API candidate deferral + slice ownership (#210)
 

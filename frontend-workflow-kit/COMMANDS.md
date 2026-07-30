@@ -332,7 +332,7 @@ and fall back to a warning-first run.
 
 For ScreenSpec API Candidates v2, this command consumes per-screen effective
 readiness paths and candidate provenance. Deferred/conflicted claims always remain
-violations. A **valid** confirmed active hook Slice Path may pass for its owning screen
+violations. A **valid active hook** Slice Path may pass for its owning screen
 at `rough-fixture-ui` / `final-fixture-ui` when the resolved `{roles.hook}` envelope
 allows it. Active API-client or unclassified claims remain closed until the owner
 reaches `api-integrated-ui`; invalid contracts, `api_required:false`, and non-owner

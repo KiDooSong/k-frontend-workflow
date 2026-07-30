@@ -27,10 +27,14 @@ npm run workflow:readiness -- --screen <SCREEN_ID> --json
   from a `screen_entry` hint.
 - Before editing each concrete path, run
   `npm run workflow:readiness -- --screen <SCREEN_ID> --path <project-relative-path> --json`
-  and require `path_authorization.allowed: true`. This shared file-level helper keeps the
-  forward check aligned with `workflow:forbidden-paths`: explicit active candidate paths require
-  their API-integrated owner, and integrated v2 hook/API-client surfaces reject unowned paths
-  even at `production-ready`.
+  and require `path_authorization.allowed: true`; that concrete result is the final authority.
+  The shared helper keeps the forward check aligned with `workflow:forbidden-paths`:
+  - **valid active hook claim** — editable by its owning screen at `rough-fixture-ui` /
+    `final-fixture-ui` when the effective envelope allows the path;
+  - **active API-client / `surface_kind:null`** — requires its owning screen at
+    `api-integrated-ui` or above;
+  - **invalid contract / deferred / conflict / non-owner / `api_required:false`** — always denied.
+  Integrated v2 hook/API-client surfaces reject unowned paths even at `production-ready`.
 - Stay within the allowed mode (`route-skeleton` → … → `api-integrated-ui`); do not
   reach into API/data layers an early mode forbids.
 - If screen readiness exposes `delegated_shared_surfaces`, do not edit those reserved paths even when a broader screen allow glob covers them. Run `workflow:readiness -- --surface <SURFACE_ID> --json` and use the surface skill.

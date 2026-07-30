@@ -171,11 +171,60 @@ export function candidateSurfaceKind(pathEntry, { hookSurfaces = [], apiClientSu
   return inHook ? 'hook' : 'api-client';
 }
 
-function reachesApiIntegration(entry, modeOrder) {
+function reachesMode(entry, modeOrder, targetMode) {
   const order = modeOrder || [];
-  const threshold = order.indexOf('api-integrated-ui');
+  const threshold = order.indexOf(targetMode);
   const actual = order.indexOf(entry?.readiness_mode);
   return threshold >= 0 && actual >= threshold;
+}
+
+function reachesApiIntegration(entry, modeOrder) {
+  return reachesMode(entry, modeOrder, 'api-integrated-ui');
+}
+
+function reachesRoughFixture(entry, modeOrder) {
+  return reachesMode(entry, modeOrder, 'rough-fixture-ui');
+}
+
+function delegatedSharedSurfaceForFile(entry, file) {
+  return (entry?.delegated_shared_surfaces || [])
+    .filter((surface) =>
+      (surface.implementation_paths || []).some((implementationPath) =>
+        globMatches(implementationPath, file),
+      ),
+    )
+    .sort((a, b) => String(a.surface_id).localeCompare(String(b.surface_id)))[0] || null;
+}
+
+function basePathDenial(entry, file, base) {
+  const delegated = delegatedSharedSurfaceForFile(entry, file);
+  if (delegated) {
+    return {
+      kind: 'delegated-shared-surface',
+      reason:
+        `path is delegated to shared surface ${delegated.surface_id}; ` +
+        `screen-scoped editing is forbidden`,
+      would_clear:
+        `run workflow:readiness -- --surface ${delegated.surface_id} --json and use ` +
+        `implement-shared-surface`,
+    };
+  }
+  if (base.forbidden_by.length > 0) {
+    return {
+      kind: 'forbidden',
+      reason: 'matching forbidden_paths takes precedence',
+      would_clear:
+        'use the owning workflow or change the approved effective readiness envelope; ' +
+        'never bypass forbidden_paths',
+    };
+  }
+  return {
+    kind: 'outside-allowed',
+    reason: 'path is outside allowed_paths',
+    would_clear:
+      'raise the owning readiness context or change the approved policy until the path is ' +
+      'inside effective allowed_paths',
+  };
 }
 
 // File-level readiness authorization used by both the forward implement-screen preflight
@@ -227,10 +276,7 @@ export function readinessPathAuthorization({
     entry.allowed_paths || [],
     entry.forbidden_paths || [],
   );
-  const baseDenialReason =
-    base.forbidden_by.length > 0
-      ? 'matching forbidden_paths takes precedence'
-      : 'path is outside allowed_paths';
+  const baseDenial = basePathDenial(entry, normalizedFile, base);
   const deniedMatches = claimsMatching(claims.denied, normalizedFile);
   if (deniedMatches.length > 0) {
     return {
@@ -245,18 +291,18 @@ export function readinessPathAuthorization({
 
   const activeMatches = claimsMatching(claims.active, normalizedFile);
   const integrated = reachesApiIntegration(entry, modeOrder);
+  const roughReady = reachesRoughFixture(entry, modeOrder);
   if (activeMatches.length > 0) {
     const owned = activeMatches.filter((claim) => claim.screen_id === screenId);
     const authorization = entry.api_candidate_authorization;
     const contractValid =
       authorization?.contract_version === 2 && authorization.valid === true;
-    // Fixture-mode hook seam (#211): only a valid v2 contract may open an owning active
-    // hook claim below API integration. The base envelope still applies, so rough/final
-    // {roles.hook} access is required and forbidden_paths continues to win.
-    const ownedFixtureHook =
-      contractValid &&
-      owned.length > 0 &&
-      owned.every((claim) => claim.surface_kind === 'hook');
+    const hookOnly =
+      owned.length > 0 && owned.every((claim) => claim.surface_kind === 'hook');
+    // Fixture-mode hook seam (#211): a valid owning hook claim opens only after the
+    // owning screen actually reaches rough-fixture-ui, and only while the effective
+    // base envelope permits the concrete path.
+    const ownedFixtureHook = contractValid && hookOnly && roughReady;
     const allowed =
       base.allowed &&
       entry.api_required !== false &&
@@ -267,7 +313,16 @@ export function readinessPathAuthorization({
       ...new Set(activeMatches.map((claim) => claim.screen_id).filter(Boolean)),
     ];
     const ownerLabel = ownerIds.length > 0 ? ownerIds.join(', ') : '(unknown)';
+    const ownerDetails = activeMatches
+      .map(
+        (claim) =>
+          `${claim.screen_id}:${claim.endpoint}` +
+          (claim.tracking ? ` tracking=${claim.tracking}` : ''),
+      )
+      .join(', ');
+    const ownerContext = ownerDetails ? ` (owners=${ownerDetails})` : '';
     let reason;
+    let wouldClear;
     if (allowed) {
       reason = integrated
         ? 'explicit active candidate claim owned by an API-integrated screen'
@@ -276,20 +331,36 @@ export function readinessPathAuthorization({
       reason =
         `explicit active candidate claim requires its owning screen; it is owned by another ` +
         `screen (${ownerLabel}), so use the owning screen`;
+      wouldClear = `switch to the owning screen context: ${ownerLabel}`;
     } else if (!contractValid) {
       reason = 'API Candidates v2 contract is invalid; fix the reported contract issues';
+      wouldClear = 'fix the reported API Candidates v2 contract issues';
     } else if (entry.api_required === false) {
       reason = 'screen declares api_required:false and cannot authorize explicit API candidate claims';
-    } else if (!integrated && ownedFixtureHook) {
+      wouldClear =
+        'remove the contradictory active claim or record a human-approved API requirement decision';
+    } else if (hookOnly && !roughReady) {
       reason =
-        'explicit active hook claim requires its owning screen at rough-fixture-ui or above ' +
+        'explicit active hook slice requires its owning screen at rough-fixture-ui or above ' +
         'within effective allowed_paths';
+      wouldClear = 'raise the owning screen to rough-fixture-ui or above';
+    } else if (!base.allowed) {
+      reason = baseDenial.reason + ownerContext;
+      wouldClear = baseDenial.would_clear;
+      if (!hookOnly && !integrated) {
+        reason +=
+          '; active API-client or unclassified claims also require the owning screen at ' +
+          'api-integrated-ui or above';
+        wouldClear += '; then reach api-integrated-ui or above';
+      }
     } else if (!integrated) {
       reason =
         'explicit active API-client or unclassified candidate claim requires its owning screen ' +
         'at api-integrated-ui or above';
+      wouldClear = 'raise the owning screen to api-integrated-ui or above';
     } else {
-      reason = baseDenialReason;
+      reason = baseDenial.reason + ownerContext;
+      wouldClear = baseDenial.would_clear;
     }
     return {
       ...base,
@@ -297,6 +368,7 @@ export function readinessPathAuthorization({
       file: normalizedFile,
       screen_id: screenId,
       reason,
+      ...(wouldClear ? { would_clear: wouldClear } : {}),
       candidate_matches: activeMatches,
     };
   }
@@ -307,7 +379,8 @@ export function readinessPathAuthorization({
       allowed: false,
       file: normalizedFile,
       screen_id: screenId,
-      reason: baseDenialReason,
+      reason: baseDenial.reason,
+      ...(baseDenial.would_clear ? { would_clear: baseDenial.would_clear } : {}),
       candidate_matches: [],
     };
   }
