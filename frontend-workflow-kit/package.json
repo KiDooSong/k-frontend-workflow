@@ -33,7 +33,7 @@
     "workflow:doc-drift": "node scripts/doc-drift.mjs",
     "workflow:eval": "node scripts/readiness-eval.mjs",
     "workflow:redteam": "node scripts/redteam.mjs",
-    "workflow:telemetry": "node scripts/telemetry.mjs",
+    "workflow:telemetry": "node ../.github/scripts/pr214_telemetry_wrapper.mjs",
     "workflow:packet": "node scripts/workflow-packet.mjs",
     "workflow:report": "node scripts/workflow-report.mjs",
     "workflow:run": "node scripts/workflow-run.mjs",
