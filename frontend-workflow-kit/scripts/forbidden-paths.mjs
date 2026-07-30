@@ -131,19 +131,30 @@ function screenReachesApiIntegrated(entry, order) {
   return threshold >= 0 && actual >= threshold;
 }
 
-function screenAuthorizesApiFile(file, screenId, entry, order, claims) {
-  return readinessPathAuthorization({
-    file,
-    screenId,
-    entry,
-    modeOrder: order,
-    claims,
-  }).allowed;
+function screenApiFileAuthorization(file, screenId, entry, order, claims) {
+  return {
+    screen_id: screenId,
+    authorization: readinessPathAuthorization({
+      file,
+      screenId,
+      entry,
+      modeOrder: order,
+      claims,
+    }),
+  };
+}
+
+function apiFileAuthorizationResults(file, readinessOutput, order, claims) {
+  return Object.entries(readinessOutput || {})
+    .sort(([a], [b]) => String(a).localeCompare(String(b)))
+    .map(([screenId, entry]) =>
+      screenApiFileAuthorization(file, screenId, entry, order, claims),
+    );
 }
 
 function anyScreenAuthorizesApiFile(file, readinessOutput, order, claims) {
-  return Object.entries(readinessOutput || {}).some(([screenId, entry]) =>
-    screenAuthorizesApiFile(file, screenId, entry, order, claims),
+  return apiFileAuthorizationResults(file, readinessOutput, order, claims).some(
+    (result) => result.authorization.allowed,
   );
 }
 
@@ -156,25 +167,39 @@ function describeCandidateViolation(claim, file) {
       `(screen=${claim.screen_id}, endpoint=${claim.endpoint}${tracking}${conflict})`,
     would_clear:
       claim.kind === 'deferred'
-        ? `resolve tracking and change the candidate to an explicit confirmed active slice before editing`
+        ? `resolve tracking and change the candidate to a valid active slice before editing; API integration still requires confirmed actionable confidence`
         : `resolve cross-screen candidate path ownership before editing`,
   };
 }
 
-function describeUnownedCandidateViolation(file, matches) {
-  const owners = matches
-    .map(
-      (claim) =>
-        `${claim.screen_id}:${claim.endpoint}` +
-        (claim.tracking ? ` tracking=${claim.tracking}` : ''),
-    )
-    .join(', ');
+function describeUnownedCandidateViolation(file) {
   return {
-    reason: matches.length
-      ? `API candidate active slice '${file}' has no owning screen at api-integrated-ui with effective allowed_paths (${owners})`
-      : `API-related path '${file}' is not authorized by any screen's effective allowed_paths/forbidden_paths candidate model`,
-    would_clear: `declare one valid confirmed active Slice Path and reach api-integrated-ui, or use a legacy screen contract`,
+    reason:
+      `API-related path '${file}' is not authorized by any screen's effective ` +
+      `allowed_paths/forbidden_paths candidate model`,
+    would_clear:
+      `declare one valid active Slice Path on its owning screen; hook slices may clear at ` +
+      `rough-fixture-ui, while API integration still requires confirmed actionable confidence`,
   };
+}
+
+function describeActiveCandidateViolation(file, matches, authorizationResults) {
+  const ownerIds = [
+    ...new Set(matches.map((claim) => claim.screen_id).filter(Boolean)),
+  ].sort((a, b) => String(a).localeCompare(String(b)));
+  const ownerResults = authorizationResults.filter((result) =>
+    ownerIds.includes(result.screen_id),
+  );
+  const deniedOwner = ownerResults.find((result) => !result.authorization.allowed);
+  if (deniedOwner) {
+    return {
+      reason: deniedOwner.authorization.reason,
+      would_clear:
+        deniedOwner.authorization.would_clear ||
+        `use the owning screen context ${deniedOwner.screen_id} and satisfy its effective paths`,
+    };
+  }
+  return describeUnownedCandidateViolation(file);
 }
 
 // 위반 1건의 reason / would_clear 문구를 만든다(설계 §4 출력 규약).
@@ -425,9 +450,19 @@ function main() {
         !touchesIntegratedV2ApiSurface
       ) continue; // (c) 공유/무관 경로 — 감시 대상 아님
       if (activeClaims.length > 0) {
-        if (anyScreenAuthorizesApiFile(F, readinessOutput, order, claims)) continue;
+        const authorizationResults = apiFileAuthorizationResults(
+          F,
+          readinessOutput,
+          order,
+          claims,
+        );
+        if (authorizationResults.some((result) => result.authorization.allowed)) continue;
         seenFiles.add(F);
-        const { reason, would_clear } = describeUnownedCandidateViolation(F, activeClaims);
+        const { reason, would_clear } = describeActiveCandidateViolation(
+          F,
+          activeClaims,
+          authorizationResults,
+        );
         violations.push({
           file: F,
           change: changeLabel(record),
@@ -441,7 +476,7 @@ function main() {
       if (matched.length === 0 && touchesIntegratedV2ApiSurface) {
         if (anyScreenAuthorizesApiFile(F, readinessOutput, order, claims)) continue;
         seenFiles.add(F);
-        const { reason, would_clear } = describeUnownedCandidateViolation(F, []);
+        const { reason, would_clear } = describeUnownedCandidateViolation(F);
         violations.push({
           file: F,
           change: changeLabel(record),
@@ -471,7 +506,7 @@ function main() {
       seenFiles.add(F);
       const { reason, would_clear } =
         clearanceOptions.requireApiRequired === true && hasV2CandidateContract
-          ? describeUnownedCandidateViolation(F, [])
+          ? describeUnownedCandidateViolation(F)
           : describeViolation(surface, threshold, resolvedPolicy, readinessOutput, clearanceOptions);
       violations.push({ file: F, change: changeLabel(record), surface, reason, would_clear });
     }

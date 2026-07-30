@@ -58,12 +58,13 @@ modes:
       - "{roles.api_client}"
       - openapi.yaml # blanket guard — 리터럴 유지(role 아님)
 
+  # screen UI 와 fixture fake hook 을 '처음 생성'하는 단계. fake_hook_exists 는 진입 전제가
+  # 아니라 final-fixture-ui 승격 전제다(#211) — greenfield 도메인(훅 0개)의 bootstrap 순환 제거.
   rough-fixture-ui:
     requires:
       - screen_spec_status >= draft
       - screen_spec_authored == true # stub(frontmatter만)에는 full UI 금지 — "ScreenSpec 먼저" 강제
       - component_catalog_generated == true
-      - fake_hook_exists == true
     allowed_paths:
       - "{roles.screen}"
       - "{roles.domain_component}"
@@ -72,13 +73,17 @@ modes:
       - "{roles.api_client}"
       - openapi.yaml # blanket guard — 리터럴 유지(role 아님)
 
+  # 화면과 fixture hook 의 최종 상태·계약을 정렬하는 단계. fixture hook 이 계약 위치({roles.hook})에
+  # 이미 존재해야 승격한다(#211 — rough 에서 이동). API client/openapi 는 계속 금지.
   final-fixture-ui:
     requires:
       - screen_spec_status >= confirmed
       - figma_mapping_status >= draft
+      - fake_hook_exists == true
     allowed_paths:
       - "{roles.screen}"
       - "{roles.domain_component}"
+      - "{roles.hook}"
     forbidden_paths:
       - "{roles.api_client}"
 

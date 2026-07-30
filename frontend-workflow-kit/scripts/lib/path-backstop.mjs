@@ -157,20 +157,86 @@ function claimsMatching(claims, file) {
   return (claims || []).filter((claim) => globMatches(claim.path, file));
 }
 
-function reachesApiIntegration(entry, modeOrder) {
+// Slice Path → surface 분류 (#211). resolved {roles.hook}/{roles.api_client} 표면(도메인/레이아웃
+// 오버라이드 해소 후)을 받아, 그 slice 가 어느 surface 에 '전부' 속하는지 판정한다.
+//   'hook'       : hook 표면 안, api-client 표면 밖 → fixture 모드에서 owner 가 편집 가능한 seam.
+//   'api-client' : api-client 표면 안, hook 표면 밖 → api-integrated 전에는 항상 잠김.
+//   null         : 두 표면에 동시에 속하거나 어느 쪽에도 속하지 않음 → fail-closed(integration 게이트 유지).
+// readiness 가 candidate provenance 에 저장하고, readinessPathAuthorization 이 소비한다 —
+// forward --path 와 diff backstop 이 같은 분류를 공유한다(판정 복제 금지).
+export function candidateSurfaceKind(pathEntry, { hookSurfaces = [], apiClientSurfaces = [] } = {}) {
+  const inHook = (hookSurfaces || []).some((surface) => covers(surface, pathEntry));
+  const inApiClient = (apiClientSurfaces || []).some((surface) => covers(surface, pathEntry));
+  if (inHook === inApiClient) return null; // ambiguous(둘 다) / 미포함(둘 다 아님) → fail-closed
+  return inHook ? 'hook' : 'api-client';
+}
+
+function reachesMode(entry, modeOrder, targetMode) {
   const order = modeOrder || [];
-  const threshold = order.indexOf('api-integrated-ui');
+  const threshold = order.indexOf(targetMode);
   const actual = order.indexOf(entry?.readiness_mode);
   return threshold >= 0 && actual >= threshold;
+}
+
+function reachesApiIntegration(entry, modeOrder) {
+  return reachesMode(entry, modeOrder, 'api-integrated-ui');
+}
+
+function reachesRoughFixture(entry, modeOrder) {
+  return reachesMode(entry, modeOrder, 'rough-fixture-ui');
+}
+
+function delegatedSharedSurfaceForFile(entry, file) {
+  return (entry?.delegated_shared_surfaces || [])
+    .filter((surface) =>
+      (surface.implementation_paths || []).some((implementationPath) =>
+        globMatches(implementationPath, file),
+      ),
+    )
+    .sort((a, b) => String(a.surface_id).localeCompare(String(b.surface_id)))[0] || null;
+}
+
+function basePathDenial(entry, file, base) {
+  const delegated = delegatedSharedSurfaceForFile(entry, file);
+  if (delegated) {
+    return {
+      kind: 'delegated-shared-surface',
+      reason:
+        `path is delegated to shared surface ${delegated.surface_id}; ` +
+        `screen-scoped editing is forbidden`,
+      would_clear:
+        `run workflow:readiness -- --surface ${delegated.surface_id} --json and use ` +
+        `implement-shared-surface`,
+    };
+  }
+  if (base.forbidden_by.length > 0) {
+    return {
+      kind: 'forbidden',
+      reason: 'matching forbidden_paths takes precedence',
+      would_clear:
+        'use the owning workflow or change the approved effective readiness envelope; ' +
+        'never bypass forbidden_paths',
+    };
+  }
+  return {
+    kind: 'outside-allowed',
+    reason: 'path is outside allowed_paths',
+    would_clear:
+      'raise the owning readiness context or change the approved policy until the path is ' +
+      'inside effective allowed_paths',
+  };
 }
 
 // File-level readiness authorization used by both the forward implement-screen preflight
 // (`workflow:readiness --screen ... --path ...`) and the diff backstop.
 //
 // The plain glob envelope remains authoritative for non-candidate paths. Candidate rules then
-// narrow it: deny claims always win, active claims require their explicit owner to have reached
-// API integration, and an integrated v2 screen may edit only claimed paths inside its resolved
-// hook/API-client surfaces (including at production-ready where allowed_paths can contain src/**).
+// narrow it: deny claims always win; an active claim passes for its explicit owner either when the
+// owner has reached API integration, or (#211) below integration when the claim is wholly inside
+// the resolved hook surface (surface_kind === 'hook') and the base fixture-mode envelope already
+// allows the file — the API-client surface stays integration-gated. An integrated v2 screen may
+// edit only claimed paths inside its resolved hook/API-client surfaces (including at
+// production-ready where allowed_paths can contain src/**).
 export function readinessPathAuthorization({
   file,
   screenId,
@@ -210,6 +276,7 @@ export function readinessPathAuthorization({
     entry.allowed_paths || [],
     entry.forbidden_paths || [],
   );
+  const baseDenial = basePathDenial(entry, normalizedFile, base);
   const deniedMatches = claimsMatching(claims.denied, normalizedFile);
   if (deniedMatches.length > 0) {
     return {
@@ -221,37 +288,100 @@ export function readinessPathAuthorization({
       candidate_matches: deniedMatches,
     };
   }
+
+  const activeMatches = claimsMatching(claims.active, normalizedFile);
+  const integrated = reachesApiIntegration(entry, modeOrder);
+  const roughReady = reachesRoughFixture(entry, modeOrder);
+  if (activeMatches.length > 0) {
+    const owned = activeMatches.filter((claim) => claim.screen_id === screenId);
+    const authorization = entry.api_candidate_authorization;
+    const contractValid =
+      authorization?.contract_version === 2 && authorization.valid === true;
+    const hookOnly =
+      owned.length > 0 && owned.every((claim) => claim.surface_kind === 'hook');
+    // Fixture-mode hook seam (#211): a valid owning hook claim opens only after the
+    // owning screen actually reaches rough-fixture-ui, and only while the effective
+    // base envelope permits the concrete path.
+    const ownedFixtureHook = contractValid && hookOnly && roughReady;
+    const allowed =
+      base.allowed &&
+      entry.api_required !== false &&
+      contractValid &&
+      owned.length > 0 &&
+      (integrated || ownedFixtureHook);
+    const ownerIds = [
+      ...new Set(activeMatches.map((claim) => claim.screen_id).filter(Boolean)),
+    ];
+    const ownerLabel = ownerIds.length > 0 ? ownerIds.join(', ') : '(unknown)';
+    const ownerDetails = activeMatches
+      .map(
+        (claim) =>
+          `${claim.screen_id}:${claim.endpoint}` +
+          (claim.tracking ? ` tracking=${claim.tracking}` : ''),
+      )
+      .join(', ');
+    const ownerContext = ownerDetails ? ` (owners=${ownerDetails})` : '';
+    let reason;
+    let wouldClear;
+    if (allowed) {
+      reason = integrated
+        ? 'explicit active candidate claim owned by an API-integrated screen'
+        : 'explicit active hook claim owned by this screen within its fixture-mode allowed paths';
+    } else if (owned.length === 0) {
+      reason =
+        `explicit active candidate claim requires its owning screen; it is owned by another ` +
+        `screen (${ownerLabel}), so use the owning screen`;
+      wouldClear = `switch to the owning screen context: ${ownerLabel}`;
+    } else if (!contractValid) {
+      reason = 'API Candidates v2 contract is invalid; fix the reported contract issues';
+      wouldClear = 'fix the reported API Candidates v2 contract issues';
+    } else if (entry.api_required === false) {
+      reason = 'screen declares api_required:false and cannot authorize explicit API candidate claims';
+      wouldClear =
+        'remove the contradictory active claim or record a human-approved API requirement decision';
+    } else if (hookOnly && !roughReady) {
+      reason =
+        'explicit active hook slice requires its owning screen at rough-fixture-ui or above ' +
+        'within effective allowed_paths';
+      wouldClear = 'raise the owning screen to rough-fixture-ui or above';
+    } else if (!base.allowed) {
+      reason = baseDenial.reason + ownerContext;
+      wouldClear = baseDenial.would_clear;
+      if (!hookOnly && !integrated) {
+        reason +=
+          '; active API-client or unclassified claims also require the owning screen at ' +
+          'api-integrated-ui or above';
+        wouldClear += '; then reach api-integrated-ui or above';
+      }
+    } else if (!integrated) {
+      reason =
+        'explicit active API-client or unclassified candidate claim requires its owning screen ' +
+        'at api-integrated-ui or above';
+      wouldClear = 'raise the owning screen to api-integrated-ui or above';
+    } else {
+      reason = baseDenial.reason + ownerContext;
+      wouldClear = baseDenial.would_clear;
+    }
+    return {
+      ...base,
+      allowed,
+      file: normalizedFile,
+      screen_id: screenId,
+      reason,
+      ...(wouldClear ? { would_clear: wouldClear } : {}),
+      candidate_matches: activeMatches,
+    };
+  }
+
   if (!base.allowed) {
     return {
       ...base,
       allowed: false,
       file: normalizedFile,
       screen_id: screenId,
-      reason:
-        base.forbidden_by.length > 0
-          ? 'matching forbidden_paths takes precedence'
-          : 'path is outside allowed_paths',
+      reason: baseDenial.reason,
+      ...(baseDenial.would_clear ? { would_clear: baseDenial.would_clear } : {}),
       candidate_matches: [],
-    };
-  }
-
-  const activeMatches = claimsMatching(claims.active, normalizedFile);
-  const integrated = reachesApiIntegration(entry, modeOrder);
-  if (activeMatches.length > 0) {
-    const owned = activeMatches.filter((claim) => claim.screen_id === screenId);
-    const allowed =
-      entry.api_required !== false &&
-      integrated &&
-      owned.length > 0;
-    return {
-      ...base,
-      allowed,
-      file: normalizedFile,
-      screen_id: screenId,
-      reason: allowed
-        ? 'explicit active candidate claim owned by an API-integrated screen'
-        : 'explicit active candidate claim requires its owning screen at api-integrated-ui or above',
-      candidate_matches: activeMatches,
     };
   }
 

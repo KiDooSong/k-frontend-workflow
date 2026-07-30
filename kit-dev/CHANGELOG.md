@@ -4,6 +4,28 @@
 
 ## Unreleased
 
+### feat(policy) — fixture-hook mode ladder + contract-valid candidate seam (#211)
+
+- `fake_hook_exists` 승격 전제를 rough에서 final로 옮겨 greenfield 화면이
+  `rough-fixture-ui`에서 첫 fixture fake hook을 만들 수 있게 했고,
+  `final-fixture-ui`에 `{roles.hook}` 권한을 추가해 화면/훅 계약 정렬을 지원한다.
+- resolved layout 기준 `surface_kind`를 공유해 valid active hook claim은 owner의
+  rough/final fixture envelope에서 허용하되, API-client/null·deferred/conflict·non-owner·
+  `api_required:false`는 기존처럼 닫는다. 전체 v2 contract가 invalid이면 actionable
+  provenance가 남아 있어도 positive fixture/API authorization을 만들지 않는다.
+- forward `--path`와 diff backstop 진단을 ownership/contract/surface-aware하게 분리했다.
+  non-owner는 owning screen 컨텍스트, invalid contract는 보고된 issue 수정, hook은
+  `rough-fixture-ui`, API-client/null은 `api-integrated-ui`를 실제 해소 조건으로 안내한다.
+- consumer `COMMANDS.md`·API candidate reference·upgrade notes를 새 seam에 맞췄고,
+  업그레이드 후 readiness 및 Work Packet/Run Report 재생성 절차를 명시했다.
+- packed `implement-screen` skill과 canonical Stage 06도 valid active hook의 rough/final seam,
+  API-client/null integration gate, concrete `path_authorization.allowed:true` 최종 권한으로 정렬했다.
+  fixture hook seam은 `confirmed` confidence를 별도 요구하지 않으며 confirmed actionable
+  confidence는 API-integrated 승격 게이트에 남는다.
+- 이미 fixture mode인 owned hook이 shared-surface reservation/custom forbidden으로 base 거부될
+  때 rough 승격으로 오진하지 않는다. delegated surface는 surface readiness/skill로 라우팅하고,
+  diff backstop은 owner의 forward reason/would_clear를 재사용한다.
+
 ### feat(readiness) — per-API candidate deferral + slice ownership (#210)
 
 - ScreenSpec `## API Candidates`에 opt-in structured v2 표

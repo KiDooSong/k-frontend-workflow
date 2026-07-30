@@ -269,6 +269,7 @@ test('readinessPathAuthorization fail-closes non-canonical concrete paths despit
   const entry = {
     readiness_mode: 'api-integrated-ui',
     api_required: true,
+    api_candidate_authorization: { contract_version: 2, valid: true },
     allowed_paths: ['src/**'],
     forbidden_paths: [],
   };

@@ -63,7 +63,11 @@ function rawLiteralExpoPolicy() {
         forbidden_paths: ['src/api/**', 'openapi.yaml'],
       },
       'final-fixture-ui': {
-        allowed_paths: ['src/features/{domain}/screens/**', 'src/features/{domain}/components/**'],
+        allowed_paths: [
+          'src/features/{domain}/screens/**',
+          'src/features/{domain}/components/**',
+          'src/features/{domain}/hooks/**',
+        ],
         forbidden_paths: ['src/api/**'],
       },
       'api-integrated-ui': {
@@ -108,7 +112,7 @@ function tokenizedExpoPolicy() {
         forbidden_paths: ['{roles.api_client}', 'openapi.yaml'],
       },
       'final-fixture-ui': {
-        allowed_paths: ['{roles.screen}', '{roles.domain_component}'],
+        allowed_paths: ['{roles.screen}', '{roles.domain_component}', '{roles.hook}'],
         forbidden_paths: ['{roles.api_client}'],
       },
       'api-integrated-ui': {
@@ -162,7 +166,7 @@ test('layers: expo-feature exposes current layer/access declarations', () => {
         role: 'hook',
         glob: 'src/features/{domain}/hooks/**',
         fact: 'dir_has_files',
-        access: { allow: ['rough-fixture-ui', 'api-integrated-ui'], forbid: [] },
+        access: { allow: ['rough-fixture-ui', 'final-fixture-ui', 'api-integrated-ui'], forbid: [] },
       },
       {
         role: 'api_client',

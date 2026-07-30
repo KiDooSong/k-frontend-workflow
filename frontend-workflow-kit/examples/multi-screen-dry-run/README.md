@@ -46,7 +46,7 @@ fake hook·생성 카탈로그·figma 매핑·사람 승인을 더했을 때 도
 
 이 fixture 는 코드가 없다 — `src/` 도, 진짜 생성된 카탈로그도 없다(`*.snapshot.md` 만 있음).
 그래서 `readiness_mode = min(fact_mode, decision_cap)` 에서 **fact_mode 천장이 모든 화면 `screen-skeleton`** 이다
-(`fake_hook_exists = false`, `component_catalog_generated = false` → rough-fixture-ui 이상은 사실만으로는 닿을 수 없음).
+(`component_catalog_generated = false` → rough-fixture-ui 이상은 사실만으로는 닿을 수 없음. `fake_hook_exists = false` 는 #211 이후 rough 진입이 아니라 final-fixture-ui 승격을 막는다).
 여기에 Open Decision 이 일부 화면을 `decision_cap` 으로 더 아래로 끌어내린다.
 
 - AUTH-001: D-204 resolved → 안 막음. fact 천장에 걸려 **screen-skeleton**. (target final-fixture-ui)
@@ -65,5 +65,5 @@ target(design intent) 과 게이트 출력(actual)은 항상 라벨을 붙여 �
 
 - **이 경로는 일부러 존재하지 않는다.** md-only fixture 라 `src/` 트리가 없고, 앞으로도 만들지 않는다(코드 미생성 원칙).
 - `<...>` 같은 꺾쇠 placeholder 대신 **실제 경로 모양의 placeholder** 를 쓰는 이유는, 명령을 그대로 **copy-paste 해서 실행**할 수 있게 하기 위해서다. 꺾쇠는 셸에서 리다이렉션으로 해석되거나 그대로 복사하면 깨진다.
-- `workflow-state.mjs` 는 이 경로가 없으면 단순히 `fake_hook_exists = false` 로 본다(에러 아님). 그래서 md-only fact 천장이 `screen-skeleton` 에 걸리고, 이 fixture 가 검증하려는 값이 그대로 재현된다.
+- `workflow-state.mjs` 는 이 경로가 없으면 단순히 `fake_hook_exists = false` 로 본다(에러 아님). md-only fact 천장은 `component_catalog_generated = false` 로 `screen-skeleton` 에 걸리고, 이 fixture 가 검증하려는 값이 그대로 재현된다.
 - 즉 `__no_src__` 는 "여기엔 src 가 없음을 명시하는, 실행 가능한 빈 자리표"다. 다른 이름으로 바꿔도 (존재하지 않기만 하면) 결과는 같지만, kit 전체가 이 한 가지 철자로 통일돼 있다.

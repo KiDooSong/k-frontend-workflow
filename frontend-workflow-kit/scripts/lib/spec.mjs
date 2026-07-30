@@ -336,6 +336,9 @@ export function deriveMetrics(spec, opts = {}) {
 
   // layer presence facts: declared layers with fact: dir_has_files derive <role>_present.
   // fake_hook_exists remains the legacy readiness input and keeps the old .ts/.tsx-only guard behavior.
+  // Coarse scope (#211): 이 fact 는 해당 도메인의 resolved {roles.hook} 디렉터리 단위다 —
+  // "이 화면의 fake hook 존재"가 아니라 domain role 디렉터리에 TS 파일이 하나라도 있는지다.
+  // 화면-정밀 ownership 은 API Candidates v2 hook Slice Path claim 이 담당한다.
   const layerPresenceFacts = {};
   let effectiveLayers = [];
   if (srcDir && domain && layout) {

@@ -17,6 +17,24 @@ or root config.
 
 ---
 
+## Fixture hook bootstrap and active hook Slice Paths (#211)
+
+- `rough-fixture-ui` no longer requires `fake_hook_exists == true`; it is now the
+  stage where a greenfield screen may create its first fixture fake hook.
+- `final-fixture-ui` now requires the fixture hook to exist and allows
+  `{roles.hook}` so the screen/hook contract can be aligned before API integration.
+- A **valid** v2 active hook claim is editable only by its owning screen at
+  `rough-fixture-ui` / `final-fixture-ui`, within effective allowed paths. Active
+  API-client or `surface_kind:null` claims still require `api-integrated-ui`.
+  Deferred/conflicted claims, non-owner checks, `api_required:false`, and every
+  invalid v2 contract remain fail-closed.
+- **Manual action:** after applying the upgrade, rerun `workflow:state` and
+  `workflow:readiness`. Regenerate any existing Work Packet and Run Report from the
+  new readiness output; do not reuse their previous path envelope. Run representative
+  `workflow:readiness -- --screen <ID> --path <path> --json` checks for hook and
+  API-client paths, then run `workflow:validate` and a representative
+  `workflow:forbidden-paths -- --diff <name-status-file> --enforce --json` check.
+
 ## Per-candidate API deferral and Slice Paths
 
 - Existing ScreenSpec API candidate bullets remain active and need no migration.

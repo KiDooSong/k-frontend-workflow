@@ -39,7 +39,7 @@ layers:
     glob: src/features/{domain}/hooks/**
     fact: dir_has_files
     access:
-      allow: [rough-fixture-ui, api-integrated-ui]
+      allow: [rough-fixture-ui, final-fixture-ui, api-integrated-ui]
       forbid: []
   - role: api_client
     glob: src/api/**

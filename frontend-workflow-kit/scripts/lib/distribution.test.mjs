@@ -141,6 +141,51 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
   assert.match(packedImplementScreen, /`readiness_applicable: false`/);
   assert.match(packedImplementScreen, /blocking.*보다 먼저/);
 
+  const packedStage06 = fs.readFileSync(
+    path.join(out, 'docs', 'reference', 'workflow-stages', '06-implement-screen-or-code.md'),
+    'utf8',
+  );
+  for (const [label, content] of [
+    ['implement-screen skill', packedImplementScreen],
+    ['Stage 06', packedStage06],
+  ]) {
+    assert.match(content, /valid active hook claim/i, `${label}: hook seam contract`);
+    assert.match(
+      content,
+      /rough-fixture-ui[\s\S]{0,160}final-fixture-ui/i,
+      `${label}: rough/final hook modes`,
+    );
+    assert.match(
+      content,
+      /active API-client[\s\S]{0,160}surface_kind:null[\s\S]{0,160}api-integrated-ui/i,
+      `${label}: API-client/null integration gate`,
+    );
+    assert.match(
+      content,
+      /invalid contract[\s\S]{0,180}deferred[\s\S]{0,180}conflict[\s\S]{0,180}non-owner[\s\S]{0,180}api_required:false/i,
+      `${label}: always-denied cases`,
+    );
+    assert.match(
+      content,
+      /path_authorization\.allowed:\s*true/i,
+      `${label}: concrete authorization is final`,
+    );
+    assert.doesNotMatch(
+      content,
+      /active v2 claim[\s\S]{0,180}api-integrated-ui 이상이어야/i,
+      `${label}: stale all-active integration invariant`,
+    );
+    assert.doesNotMatch(
+      content,
+      /explicit active candidate paths require[\s\S]{0,100}API-integrated owner/i,
+      `${label}: stale Stage 06 invariant`,
+    );
+  }
+
+  const packedCommands = fs.readFileSync(path.join(out, 'COMMANDS.md'), 'utf8');
+  assert.match(packedCommands, /valid active hook/i);
+  assert.doesNotMatch(packedCommands, /confirmed active hook/i);
+
   for (const rel of [
     'examples',
     'temp',

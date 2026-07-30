@@ -58,8 +58,8 @@ description: 지정된 Screen ID를 readiness gate가 허용하는 모드와 경
    ```bash
    npm run workflow:readiness -- --screen <ID> --path <project-relative-path> --json
    ```
-   `path_authorization.allowed`가 `true`가 아니면 수정하지 않는다. active v2 claim은 소유 화면이
-   `api-integrated-ui` 이상이어야 하며, integrated v2 hook/API-client의 unowned 경로는 production-ready에서도 금지한다.
+    concrete `path_authorization.allowed:true`가 최종 권한이다. **valid active hook claim**은 owning screen의 `rough-fixture-ui`/`final-fixture-ui`에서 effective envelope가 허용할 때만 편집한다.
+    **active API-client / `surface_kind:null`**은 owner의 `api-integrated-ui` 이상이 필요하고, **invalid contract / deferred / conflict / non-owner / `api_required:false`**는 항상 거부한다; unowned v2 path는 `production-ready`에서도 금지한다.
 ## 2. 컨텍스트 로드 (대상 화면/도메인만)
 필요한 산출물만 읽는다(다른 도메인 문서를 넓게 로드하지 않는다): ScreenSpec, domain rules/flows, navigation map,
 component catalog + component-gap-register, Open Decisions/Conflicts/Unknowns, API manifest(해당 시), state/readiness 출력.

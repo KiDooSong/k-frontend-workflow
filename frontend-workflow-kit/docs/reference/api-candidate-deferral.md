@@ -80,9 +80,37 @@ a complete State Matrix, and a valid deferral/ownership contract. Its API-relate
 `allowed_paths` are the active Slice Paths only; deferred/conflicted paths appear in
 `forbidden_paths`.
 
+Each claim path also carries `surface_kind` in its readiness provenance: `hook` when
+the path lies wholly inside the resolved `{roles.hook}` surface, `api-client` for the
+resolved `{roles.api_client}` surface, and `null` when it belongs to both or neither
+(fail-closed). Classification always uses the resolved layout roles after
+domain/layout overrides — never a literal directory name.
+
+### Fixture-mode hook seam (Issue #211)
+
+Below `api-integrated-ui`, an explicit **active hook claim** (`surface_kind: hook`)
+is editable by its owning screen at `rough-fixture-ui` / `final-fixture-ui` only when
+the complete API Candidates v2 contract is valid, and only within the base
+fixture-mode envelope (`{roles.hook}` allowed; forbidden still wins). This lets a
+screen create and align its fixture fake hook at the contract location before API
+integration without allowing malformed v2 authoring to grant positive authority.
+Everything else keeps the stricter gate:
+
+- an active **API-client** claim stays closed until its owning screen reaches
+  `api-integrated-ui` (the base fixture-mode policy also forbids `{roles.api_client}`);
+- ambiguous/unclassified (`surface_kind: null`) claims stay integration-gated;
+- deferred and conflicted claims stay denied at every mode;
+- any invalid v2 contract (including duplicate tables/columns or malformed tracking)
+  keeps every active claim closed even when recoverable provenance is retained;
+- a claim never opens for a screen that does not own it, and `api_required:false`
+  never opens any claim;
+- hook paths with no explicit claim keep the plain policy behavior, so a greenfield
+  domain can bootstrap its first fake hook at `rough-fixture-ui`.
+
 `workflow:forbidden-paths` consumes the same effective readiness authorization.
-With `--enforce`, a deferred/conflicted diff exits 1, while a valid active slice
-owned by an API-integrated screen passes.
+With `--enforce`, a deferred/conflicted or invalid-contract diff exits 1. A valid
+active hook slice can pass for its owner at rough/final, while API-client or
+unclassified slices still require the owner at `api-integrated-ui`.
 
 Before editing a concrete path, use the same file-level authorization in the
 forward workflow:

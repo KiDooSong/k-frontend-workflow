@@ -1123,6 +1123,9 @@ test('Work Packet and Run Report JSON/Markdown preserve narrow paths and trackin
   assert.match(packetMarkdown, /unknown:U-DEFER/);
   assert.deepEqual(packetJson.allowed_paths, ['src/api/create/active.ts']);
   assert.equal(packetJson.api_candidate_authorization.deferred[0].tracking, 'unknown:U-DEFER');
+  // surface_kind provenance (#211) — packet 이 재판정 없이 readiness 블록을 그대로 인용한다.
+  assert.equal(packetJson.api_candidate_authorization.actionable[0].surface_kind, 'api-client');
+  assert.equal(packetJson.api_candidate_authorization.deferred[0].surface_kind, 'api-client');
 
   const reportModel = buildReportModel({
     packet: {
@@ -1150,4 +1153,6 @@ test('Work Packet and Run Report JSON/Markdown preserve narrow paths and trackin
   assert.match(reportMarkdown, /unknown:U-DEFER/);
   assert.deepEqual(reportJson.allowed_paths, ['src/api/create/active.ts']);
   assert.equal(reportJson.api_candidate_authorization.deferred[0].tracking, 'unknown:U-DEFER');
+  assert.equal(reportJson.api_candidate_authorization.actionable[0].surface_kind, 'api-client');
+  assert.equal(reportJson.api_candidate_authorization.deferred[0].surface_kind, 'api-client');
 });
