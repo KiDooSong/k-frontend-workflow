@@ -161,7 +161,7 @@ function describeCandidateViolation(claim, file) {
   };
 }
 
-function describeUnownedCandidateViolation(file, matches) {
+function describeUnownedCandidateViolation(file, matches, readinessOutput = {}) {
   const owners = matches
     .map(
       (claim) =>
@@ -169,11 +169,67 @@ function describeUnownedCandidateViolation(file, matches) {
         (claim.tracking ? ` tracking=${claim.tracking}` : ''),
     )
     .join(', ');
+  const ownerIds = [
+    ...new Set(matches.map((claim) => claim.screen_id).filter(Boolean)),
+  ];
+
+  if (matches.length > 0) {
+    const invalidOwners = ownerIds.filter((ownerId) => {
+      const authorization = readinessOutput[ownerId]?.api_candidate_authorization;
+      return authorization?.contract_version === 2 && authorization.valid !== true;
+    });
+    if (invalidOwners.length > 0) {
+      return {
+        reason:
+          `API candidate active slice '${file}' is owned by an invalid API Candidates v2 ` +
+          `contract (${owners})`,
+        would_clear:
+          `fix the reported API Candidates v2 contract issues for owning screen(s): ` +
+          invalidOwners.join(', '),
+      };
+    }
+
+    const noApiOwners = ownerIds.filter(
+      (ownerId) => readinessOutput[ownerId]?.api_required === false,
+    );
+    if (noApiOwners.length > 0) {
+      return {
+        reason:
+          `API candidate active slice '${file}' is owned by api_required:false screen(s) ` +
+          `(${owners})`,
+        would_clear:
+          `remove the contradictory active claim or make a human-approved API requirement ` +
+          `decision for: ${noApiOwners.join(', ')}`,
+      };
+    }
+
+    if (matches.every((claim) => claim.surface_kind === 'hook')) {
+      return {
+        reason:
+          `API candidate active hook slice '${file}' has no owning screen at ` +
+          `rough-fixture-ui with effective allowed_paths (${owners})`,
+        would_clear:
+          `raise owning screen(s) ${ownerIds.join(', ')} to rough-fixture-ui or above and ` +
+          `keep the hook path inside effective allowed_paths`,
+      };
+    }
+
+    return {
+      reason:
+        `API candidate active API-client or unclassified slice '${file}' has no owning ` +
+        `screen at api-integrated-ui with effective allowed_paths (${owners})`,
+      would_clear:
+        `raise owning screen(s) ${ownerIds.join(', ')} to api-integrated-ui or above`,
+    };
+  }
+
   return {
-    reason: matches.length
-      ? `API candidate active slice '${file}' has no owning screen at api-integrated-ui with effective allowed_paths (${owners})`
-      : `API-related path '${file}' is not authorized by any screen's effective allowed_paths/forbidden_paths candidate model`,
-    would_clear: `declare one valid confirmed active Slice Path and reach api-integrated-ui, or use a legacy screen contract`,
+    reason:
+      `API-related path '${file}' is not authorized by any screen's effective ` +
+      `allowed_paths/forbidden_paths candidate model`,
+    would_clear:
+      `declare one valid confirmed active Slice Path on its owning screen; hook slices clear ` +
+      `at rough-fixture-ui, API-client/unclassified slices at api-integrated-ui`,
   };
 }
 
@@ -427,7 +483,7 @@ function main() {
       if (activeClaims.length > 0) {
         if (anyScreenAuthorizesApiFile(F, readinessOutput, order, claims)) continue;
         seenFiles.add(F);
-        const { reason, would_clear } = describeUnownedCandidateViolation(F, activeClaims);
+        const { reason, would_clear } = describeUnownedCandidateViolation(F, activeClaims, readinessOutput);
         violations.push({
           file: F,
           change: changeLabel(record),
@@ -441,7 +497,7 @@ function main() {
       if (matched.length === 0 && touchesIntegratedV2ApiSurface) {
         if (anyScreenAuthorizesApiFile(F, readinessOutput, order, claims)) continue;
         seenFiles.add(F);
-        const { reason, would_clear } = describeUnownedCandidateViolation(F, []);
+        const { reason, would_clear } = describeUnownedCandidateViolation(F, [], readinessOutput);
         violations.push({
           file: F,
           change: changeLabel(record),

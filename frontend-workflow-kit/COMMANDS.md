@@ -331,9 +331,12 @@ load, diff read, or git command — a typo can never silently drop `--enforce`
 and fall back to a warning-first run.
 
 For ScreenSpec API Candidates v2, this command consumes per-screen effective
-readiness paths and candidate provenance. A deferred/conflicted Slice Path remains a
-violation even when another screen is API-integrated; a confirmed active Slice Path
-passes only when its owning screen has reached `api-integrated-ui`. See
+readiness paths and candidate provenance. Deferred/conflicted claims always remain
+violations. A **valid** confirmed active hook Slice Path may pass for its owning screen
+at `rough-fixture-ui` / `final-fixture-ui` when the resolved `{roles.hook}` envelope
+allows it. Active API-client or unclassified claims remain closed until the owner
+reaches `api-integrated-ui`; invalid contracts, `api_required:false`, and non-owner
+screens never gain authority. See
 [`docs/reference/api-candidate-deferral.md`](docs/reference/api-candidate-deferral.md).
 
 ## Red-Team Suite

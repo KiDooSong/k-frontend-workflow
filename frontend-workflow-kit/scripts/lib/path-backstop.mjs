@@ -227,6 +227,10 @@ export function readinessPathAuthorization({
     entry.allowed_paths || [],
     entry.forbidden_paths || [],
   );
+  const baseDenialReason =
+    base.forbidden_by.length > 0
+      ? 'matching forbidden_paths takes precedence'
+      : 'path is outside allowed_paths';
   const deniedMatches = claimsMatching(claims.denied, normalizedFile);
   if (deniedMatches.length > 0) {
     return {
@@ -238,46 +242,73 @@ export function readinessPathAuthorization({
       candidate_matches: deniedMatches,
     };
   }
+
+  const activeMatches = claimsMatching(claims.active, normalizedFile);
+  const integrated = reachesApiIntegration(entry, modeOrder);
+  if (activeMatches.length > 0) {
+    const owned = activeMatches.filter((claim) => claim.screen_id === screenId);
+    const authorization = entry.api_candidate_authorization;
+    const contractValid =
+      authorization?.contract_version === 2 && authorization.valid === true;
+    // Fixture-mode hook seam (#211): only a valid v2 contract may open an owning active
+    // hook claim below API integration. The base envelope still applies, so rough/final
+    // {roles.hook} access is required and forbidden_paths continues to win.
+    const ownedFixtureHook =
+      contractValid &&
+      owned.length > 0 &&
+      owned.every((claim) => claim.surface_kind === 'hook');
+    const allowed =
+      base.allowed &&
+      entry.api_required !== false &&
+      contractValid &&
+      owned.length > 0 &&
+      (integrated || ownedFixtureHook);
+    const ownerIds = [
+      ...new Set(activeMatches.map((claim) => claim.screen_id).filter(Boolean)),
+    ];
+    const ownerLabel = ownerIds.length > 0 ? ownerIds.join(', ') : '(unknown)';
+    let reason;
+    if (allowed) {
+      reason = integrated
+        ? 'explicit active candidate claim owned by an API-integrated screen'
+        : 'explicit active hook claim owned by this screen within its fixture-mode allowed paths';
+    } else if (owned.length === 0) {
+      reason =
+        `explicit active candidate claim requires its owning screen; it is owned by another ` +
+        `screen (${ownerLabel}), so use the owning screen`;
+    } else if (!contractValid) {
+      reason = 'API Candidates v2 contract is invalid; fix the reported contract issues';
+    } else if (entry.api_required === false) {
+      reason = 'screen declares api_required:false and cannot authorize explicit API candidate claims';
+    } else if (!integrated && ownedFixtureHook) {
+      reason =
+        'explicit active hook claim requires its owning screen at rough-fixture-ui or above ' +
+        'within effective allowed_paths';
+    } else if (!integrated) {
+      reason =
+        'explicit active API-client or unclassified candidate claim requires its owning screen ' +
+        'at api-integrated-ui or above';
+    } else {
+      reason = baseDenialReason;
+    }
+    return {
+      ...base,
+      allowed,
+      file: normalizedFile,
+      screen_id: screenId,
+      reason,
+      candidate_matches: activeMatches,
+    };
+  }
+
   if (!base.allowed) {
     return {
       ...base,
       allowed: false,
       file: normalizedFile,
       screen_id: screenId,
-      reason:
-        base.forbidden_by.length > 0
-          ? 'matching forbidden_paths takes precedence'
-          : 'path is outside allowed_paths',
+      reason: baseDenialReason,
       candidate_matches: [],
-    };
-  }
-
-  const activeMatches = claimsMatching(claims.active, normalizedFile);
-  const integrated = reachesApiIntegration(entry, modeOrder);
-  if (activeMatches.length > 0) {
-    const owned = activeMatches.filter((claim) => claim.screen_id === screenId);
-    // Fixture-mode hook seam (#211): owning screen 의 active claim 이 '전부' resolved hook
-    // surface 안(surface_kind === 'hook')이면 API integration 이전에도 base envelope(rough/
-    // final 의 {roles.hook} allow)이 이미 통과한 이 파일을 fixture seam 으로 편집할 수 있다.
-    // api-client surface·ambiguous·미분류(surface_kind 부재) claim 은 기존 #213 규칙 그대로
-    // integration 게이트에 잠긴다(fail-closed).
-    const ownedFixtureHook =
-      owned.length > 0 && owned.every((claim) => claim.surface_kind === 'hook');
-    const allowed =
-      entry.api_required !== false &&
-      owned.length > 0 &&
-      (integrated || ownedFixtureHook);
-    return {
-      ...base,
-      allowed,
-      file: normalizedFile,
-      screen_id: screenId,
-      reason: allowed
-        ? integrated
-          ? 'explicit active candidate claim owned by an API-integrated screen'
-          : 'explicit active hook claim owned by this screen within its fixture-mode allowed paths'
-        : 'explicit active candidate claim requires its owning screen at api-integrated-ui or above',
-      candidate_matches: activeMatches,
     };
   }
 

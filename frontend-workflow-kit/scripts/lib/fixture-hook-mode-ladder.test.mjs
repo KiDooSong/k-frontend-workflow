@@ -87,8 +87,10 @@ function makeSpec(apiSection, { domain = 'create', unknownRows = '| U-DEFER | co
   };
 }
 
-function v2Table(rows) {
-  const headers = ['Method', 'Path', 'Confidence', 'Gate', 'Tracking', 'Slice Paths'];
+function v2Table(
+  rows,
+  headers = ['Method', 'Path', 'Confidence', 'Gate', 'Tracking', 'Slice Paths'],
+) {
   return [
     `| ${headers.join(' | ')} |`,
     `|${headers.map(() => '---').join('|')}|`,
@@ -230,6 +232,114 @@ test('final-fixture-ui: owning screen keeps hook-slice editing while API-client 
   assert.equal(apiClient.allowed, false);
 });
 
+test('invalid v2 contracts never open an active hook claim at rough/final fixture modes', () => {
+  const duplicateSliceHeaders = [
+    'Method',
+    'Path',
+    'Confidence',
+    'Gate',
+    'Tracking',
+    'Slice Paths',
+    'Slice Paths',
+  ];
+  const cases = [
+    {
+      name: 'duplicate v2 tables',
+      code: 'API-V2-TABLE-COUNT',
+      spec: makeSpec(
+        [
+          v2Table([
+            ['GET', '/create/attachments', 'confirmed', 'active', '-', HOOK_SLICE],
+          ]),
+          '',
+          v2Table([
+            [
+              'GET',
+              '/create/other',
+              'confirmed',
+              'active',
+              '-',
+              'src/api/create/other/**',
+            ],
+          ]),
+        ].join('\n'),
+      ),
+    },
+    {
+      name: 'duplicate Slice Paths columns',
+      code: 'API-V2-COLUMN-DUPLICATE',
+      spec: makeSpec(
+        v2Table(
+          [
+            [
+              'GET',
+              '/create/attachments',
+              'confirmed',
+              'active',
+              '-',
+              HOOK_SLICE,
+              'src/api/create/duplicate/**',
+            ],
+          ],
+          duplicateSliceHeaders,
+        ),
+      ),
+    },
+    {
+      name: 'malformed tracking on another row',
+      code: 'API-V2-TRACKING',
+      spec: makeSpec(
+        v2Table([
+          ['GET', '/create/attachments', 'confirmed', 'active', '-', HOOK_SLICE],
+          [
+            'GET',
+            '/create/pending',
+            'candidate',
+            'deferred',
+            '',
+            'src/api/create/pending/**',
+          ],
+        ]),
+      ),
+    },
+  ];
+
+  for (const row of cases) {
+    const parsed = derivedFor(row.spec);
+    assert.equal(parsed.api_candidate_deferrals_valid, false, row.name);
+    assert.ok(
+      parsed.api_candidate_contract_issues.some((issue) => issue.code === row.code),
+      row.name,
+    );
+    assert.ok(
+      parsed.api_actionable_candidates.some((candidate) =>
+        candidate.safe_slice_paths.includes(HOOK_SLICE),
+      ),
+      `${row.name}: active hook provenance should remain actionable for diagnostics`,
+    );
+
+    for (const mode of ['rough-fixture-ui', 'final-fixture-ui']) {
+      const derived = structuredClone(parsed);
+      let status = 'draft';
+      if (mode === 'final-fixture-ui') {
+        status = 'confirmed';
+        derived.fake_hook_exists = true;
+        derived.figma_mapping_status = 'draft';
+        derived.state_matrix_complete = false;
+      }
+      const readiness = readinessOf({
+        'CREATE-ATTACH': screenEntry({ status, derived }),
+      });
+      const entry = readiness['CREATE-ATTACH'];
+      assert.equal(entry.readiness_mode, mode, `${row.name}: ${mode}`);
+      assert.equal(entry.api_candidate_authorization.valid, false, row.name);
+      const hook = authorize(readiness, 'CREATE-ATTACH', HOOK_SLICE);
+      assert.equal(hook.allowed, false, `${row.name}: ${mode}`);
+      assert.match(hook.reason, /API Candidates v2 contract is invalid/, row.name);
+    }
+  }
+});
+
 test('below rough-fixture-ui the base envelope still denies an owned active hook claim', () => {
   const derived = derivedFor(v2ActiveSpec());
   const readiness = readinessOf({
@@ -238,7 +348,15 @@ test('below rough-fixture-ui the base envelope still denies an owned active hook
   assert.equal(readiness['CREATE-ATTACH'].readiness_mode, 'screen-skeleton');
   const hook = authorize(readiness, 'CREATE-ATTACH', HOOK_SLICE);
   assert.equal(hook.allowed, false);
-  assert.match(hook.reason, /outside allowed_paths|forbidden_paths/);
+  assert.match(hook.reason, /rough-fixture-ui/);
+
+  const apiClient = authorize(
+    readiness,
+    'CREATE-ATTACH',
+    'src/api/create/attachments/client.ts',
+  );
+  assert.equal(apiClient.allowed, false);
+  assert.match(apiClient.reason, /api-integrated-ui/);
 });
 
 test('another screen (legacy broad or sibling) cannot open an active hook claim it does not own', () => {
@@ -256,7 +374,9 @@ test('another screen (legacy broad or sibling) cannot open an active hook claim 
   assert.equal(readiness.LEGACY.readiness_mode, 'production-ready');
   const viaLegacy = authorize(readiness, 'LEGACY', HOOK_SLICE);
   assert.equal(viaLegacy.allowed, false);
-  assert.match(viaLegacy.reason, /owning screen/);
+  assert.match(viaLegacy.reason, /requires its owning screen/);
+  assert.match(viaLegacy.reason, /owned by another screen/);
+  assert.match(viaLegacy.reason, /CREATE-ATTACH/);
 });
 
 // --- deferred / conflict claim 은 모든 모드에서 거부 -----------------------------------
@@ -597,10 +717,14 @@ test('forward --path and forbidden-paths diff backstop agree on fixture-mode hoo
 
   const cases = [
     { file: HOOK_SLICE, allowed: true },
-    { file: 'src/api/create/attachments/client.ts', allowed: false },
-    { file: DEFERRED_HOOK_SLICE, allowed: false },
+    {
+      file: 'src/api/create/attachments/client.ts',
+      allowed: false,
+      wouldClear: /api-integrated-ui/,
+    },
+    { file: DEFERRED_HOOK_SLICE, allowed: false, wouldClear: /resolve tracking/ },
   ];
-  for (const { file, allowed } of cases) {
+  for (const { file, allowed, wouldClear } of cases) {
     const forward = spawnSync(
       process.execPath,
       [READINESS_CLI, '--docs', docs, '--screen', 'CREATE-ATTACH', '--path', file, '--json'],
@@ -623,8 +747,83 @@ test('forward --path and forbidden-paths diff backstop agree on fixture-mode hoo
     assert.equal(backstop.status, allowed ? 0 : 1, `backstop ${file}: ${backstop.stderr}`);
     const json = JSON.parse(backstop.stdout);
     assert.equal(json.ok, allowed, `backstop ${file}`);
-    if (!allowed) assert.equal(json.violations[0].file, file);
+    if (!allowed) {
+      assert.equal(json.violations[0].file, file);
+      if (wouldClear) assert.match(json.violations[0].would_clear, wouldClear);
+    }
   }
+});
+
+test('forbidden-paths diagnostics distinguish the hook threshold from an invalid contract', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fixture-hook-diagnostics-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const docs = path.join(root, 'docs', 'frontend-workflow');
+  fs.mkdirSync(path.join(docs, '_meta'), { recursive: true });
+  const diffPath = path.join(root, 'changes.diff');
+
+  const runBackstop = (screen, file) => {
+    fs.writeFileSync(
+      path.join(docs, '_meta', 'workflow-state.yaml'),
+      yamlStringify({
+        generated_at: '2026-07-30',
+        global: GLOBAL,
+        screens: { 'CREATE-ATTACH': screen },
+      }),
+      'utf8',
+    );
+    fs.writeFileSync(diffPath, `M\t${file}\n`, 'utf8');
+    const result = spawnSync(
+      process.execPath,
+      [FORBIDDEN_CLI, '--docs', docs, '--diff', diffPath, '--enforce', '--json'],
+      { cwd: root, encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS },
+    );
+    assert.equal(result.status, 1, result.stderr);
+    const json = JSON.parse(result.stdout);
+    assert.equal(json.ok, false);
+    return json.violations[0];
+  };
+
+  const belowRough = {
+    status: 'draft',
+    domain: 'create',
+    route: '/create',
+    stub: true,
+    derived: derivedFor(v2ActiveSpec()),
+  };
+  const hookViolation = runBackstop(belowRough, HOOK_SLICE);
+  assert.match(hookViolation.reason, /active hook slice/);
+  assert.match(hookViolation.would_clear, /rough-fixture-ui/);
+
+  const invalidDerived = derivedFor(
+    makeSpec(
+      [
+        v2Table([
+          ['GET', '/create/attachments', 'confirmed', 'active', '-', HOOK_SLICE],
+        ]),
+        '',
+        v2Table([
+          [
+            'GET',
+            '/create/other',
+            'confirmed',
+            'active',
+            '-',
+            'src/api/create/other/**',
+          ],
+        ]),
+      ].join('\n'),
+    ),
+  );
+  assert.equal(invalidDerived.api_candidate_deferrals_valid, false);
+  const invalidViolation = runBackstop(
+    screenEntry({ status: 'draft', derived: invalidDerived }),
+    HOOK_SLICE,
+  );
+  assert.match(invalidViolation.reason, /invalid API Candidates v2 contract/);
+  assert.match(
+    invalidViolation.would_clear,
+    /fix the reported API Candidates v2 contract issues/,
+  );
 });
 
 // --- 사다리 순서·warning-first 의미 불변 ----------------------------------------------

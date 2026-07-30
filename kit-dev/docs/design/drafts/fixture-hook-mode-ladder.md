@@ -60,20 +60,25 @@ Before/after:
 - 판정은 `readinessPathAuthorization()` 한 곳에서 수행한다. active claim 규칙:
 
 ```txt
-allowed = api_required !== false
+allowed = base.allowed
+        ∧ api_required !== false
+        ∧ contract_version == 2
+        ∧ api_candidate_authorization.valid == true
         ∧ owned(이 화면의 claim)
         ∧ ( owner 가 api-integrated-ui 이상
           ∨ owned claim 전부 surface_kind === 'hook'  # fixture seam (#211)
           )
 ```
 
-base envelope(forbidden wins over allowed)가 이 판정보다 먼저 적용된다. 따라서:
+malformed v2 계약은 actionable provenance 를 진단용으로 보존하더라도 positive
+권한을 만들지 않는다. base envelope(forbidden wins over allowed)도 계속 적용된다. 따라서:
 
 | claim | rough/final | api-integrated 이상 |
 |---|---|---|
 | owned active **hook** claim | base allow(fixture 모드의 {roles.hook}) 범위에서 허용 | #213 규칙(owner integrated) 유지 |
 | owned active **API-client** claim | 거부 (base forbidden + integration 게이트) | #213 규칙 유지 |
 | active claim (다른 화면 소유) | 거부 | 거부 (owner 만) |
+| invalid v2 contract 의 active claim | **거부** | **거부** |
 | deferred / conflict claim | **모든 모드에서 거부** | **모든 모드에서 거부** |
 | explicit claim 없는 hook 경로 | base policy 범위에서 greenfield bootstrap 허용 | integrated v2 표면은 explicit claim 요구(#213) |
 | API-client 경로 (claim 없음) | base forbidden 으로 거부 | legacy broad 호환만(#213) |
@@ -88,7 +93,9 @@ deferral/table/검사 15 계약 무변경.
 forward pre-edit(`workflow:readiness --screen … --path …`)와 diff backstop
 (`workflow:forbidden-paths`)은 동일한 `readinessPathAuthorization()` 을 소비한다.
 surface_kind 는 readiness 가 provenance 에 한 번 계산해 싣고, 두 소비자는 재판정하지
-않는다. Work Packet / Run Report 는 effective allowed/forbidden paths 와
+않는다. 거부 진단도 같은 판정 결과를 따라 non-owner(owning screen 컨텍스트), invalid
+contract(계약 issue 수정), owned hook(rough-fixture-ui), API-client/null(api-integrated-ui)로
+분리한다. Work Packet / Run Report 는 effective allowed/forbidden paths 와
 `api_candidate_authorization` 블록(surface_kind 포함)을 인용만 한다.
 
 ### D4. 레이아웃 판정
@@ -139,9 +146,10 @@ fixture fake hook 은 api-integrated 단계의 "화면 불변" 계약을 성립�
 
 - 회귀 A/B 재현 + 사다리 매트릭스: `scripts/lib/fixture-hook-mode-ladder.test.mjs`
   (greenfield bootstrap·CLI `--path`, owned hook vs API-client slice, 모든 모드의
-  deferred/conflict deny, 타 화면 차단, final/api-integrated 도달 계약, custom
-  layout·domain override·ambiguous surface_kind, no-API 회귀, Work Packet provenance,
-  forward `--path` ↔ diff backstop 동일 판정, mode order·warning-first 불변).
+  deferred/conflict deny, invalid v2 contract fail-closed, ownership/surface-aware
+  reason·would_clear, final/api-integrated 도달 계약, custom layout·domain override·
+  ambiguous surface_kind, no-API 회귀, Work Packet provenance, forward `--path` ↔ diff
+  backstop 동일 판정, mode order·warning-first 불변).
 - 기존 PR #213 회귀 스위트(`api-candidate-deferral.test.mjs`, `path-backstop.test.mjs`,
   `redteam-path-backstop.test.mjs`)는 무수정 통과 — deferral/ownership 불변식 유지 증거.
 - expo preset layers ↔ live policy byte-parity(`layout-profile.test.mjs`)와 L2 골든
