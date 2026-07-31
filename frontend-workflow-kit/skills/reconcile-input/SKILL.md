@@ -12,7 +12,6 @@ description: 외부 입력 스킬이 저장한 새 입력 결과물(input_id 보
 [Stage 04 doc](../../docs/reference/workflow-stages/04-reconcile-input.md), 전체 계약은
 [input-reconciliation.md](../../docs/reference/input-reconciliation.md). 어떤 사실이 어느 문서에 사는지는
 [doc-ownership.md](../../docs/reference/doc-ownership.md) 를 본다.
-
 ## 언제 쓰나
 - 사용자가 "입력 반영", "reconcile input", "이 입력 맞춰줘"를 요청할 때.
 - 새 Figma/기획/API/회의록/QA 입력 결과물(`IN-*.md`)을 기존 문서에 반영해야 할 때.
@@ -22,7 +21,6 @@ description: 외부 입력 스킬이 저장한 새 입력 결과물(input_id 보
   없으면 사용자에게 묻는다. 매칭 키는 경로가 아니라 **`input_id`** 이고, inputs/ 는 재귀 스캔한다.
   `inputs/README.md`·`index.md` 는 입력 결과물이 아니다.
 - (선택) 대상 screen/domain.
-
 ## 핵심 불변식
 - **register-first**: 어떤 문서 수정보다 **먼저** register에 행을 쓴다(없으면 생성).
 - **gate raising only**: open 추가 / `resolved→open` 재오픈, Conflict·Unknown·Gap·INV-/VER- 생성까지만.
@@ -35,7 +33,8 @@ description: 외부 입력 스킬이 저장한 새 입력 결과물(input_id 보
   [flow-shaped/domain-level routing](../../docs/reference/input-reconciliation.md#flow-shaped--domain-level-input)에 따라 reconcile 할 수 있다.
 - `input_id` 는 불변. 내용이 바뀌면 같은 id 를 덮어쓰지 말고 **새 id + supersedes**.
 - 세 status 축은 별개 라이프사이클: 입력 frontmatter `status` ≠ register `Reconcile Status` ≠ 자식 항목(D-/C-/U-/G-/INV-/VER-).
-
+- **confidence ≠ fidelity**: confidence=내용 확신도, `input_contract: 2` fidelity=원본→input 전사/대조. fidelity로 confidence/status/readiness를 바꾸지 않으며 raw source 수집은 consumer producer 소관.
+- 새/opt-in Figma mapping은 `provenance_contract: 1` + 모든 `` `M-xxx` · `` key + 모든 5컬럼 provenance row를 **같은 edit**에서 쓴다(contract-only 금지).
 ## 같은 input_id 재시도 (register row 재사용)
 Register에서 같은 `input_id` 행을 먼저 찾고 `Reconcile Status` 에 따라 처리한다 — **새 행을 늘리지 않는다**:
 - `reconciled` → **멈춘다.** 같은 입력은 이미 처리됐다. 재처리는 새 `input_id` + `supersedes`.
@@ -62,13 +61,14 @@ Register에서 같은 `input_id` 행을 먼저 찾고 `Reconcile Status` 에 따
 8. decision/conflict 는 **멈추고** 선택지를 제시한다. `resolved` 와 충돌하면 Conflict 에 이전 값을 남기고 그 decision 을
    `open` 으로 재오픈. 검증이 필요하면 INV-/VER- + 막을 화면에 Open Decision. 카탈로그에 없는 공통 컴포넌트는 Gap `G-xxx open` **제안만**.
 9. 사용자 결정 후 문서를 업데이트한다 (게이트 내림은 사람이).
-10. register 행을 `reconciled` 로 바꾸고 `Result`·`Touched Artifacts`·`Created Items` 를 채운다.
+10. 새/opt-in Figma mapping은 기존 4컬럼 header와 M-key↔Mapping Provenance 1:1을 원자적으로 완성한다. `instance`=Figma instance, `record`=API/domain record; 불명확한 Source/Evidence는 발명하지 않고 open item으로 남긴다.
+11. register 행을 `reconciled` 로 바꾸고 `Result`·`Touched Artifacts`·`Created Items` 를 채운다.
     자식 decision 이 `open` 이어도 reconcile 자체는 끝 — 그 차단은 readiness 가 담당한다.
     **Contract v2 register**(frontmatter `reconciliation_contract: 2`)면 summary 와 함께 `## Reconciliation Items`
     item/effect 행을 쓴다 — 문법·routing matrix·provenance(Source Unit 은 실제 세는 단위: `instance`/`node`/`record` 등,
     input 값과 같으면 `inherit`)는 [input-reconciliation.md §Contract v2](../../docs/reference/input-reconciliation.md#reconciliation-contract-v2-opt-in) 가 정본.
-11. task-artifact matrix 로 2차 산출물을 재확인한 뒤 `workflow:state` → `workflow:readiness` → `workflow:validate` 를 실행해 보고한다.
-12. Tier3/layout/policy migration 입력을 건드렸으면 `workflow:policy-draft -- --out <review-output-dir>` 로 review-only 산출물을
+12. task-artifact matrix 로 2차 산출물을 재확인한 뒤 `workflow:state` → `workflow:readiness` → `workflow:validate` 를 실행해 보고한다.
+13. Tier3/layout/policy migration 입력을 건드렸으면 `workflow:policy-draft -- --out <review-output-dir>` 로 review-only 산출물을
     만든다(live policy 교체 아님). 자세히: [Stage 10](../../docs/reference/workflow-stages/10-policy-layout-tier3-changes.md).
 
 ## 입력 종류별 라우팅 (요약 — 상세는 링크)
@@ -116,3 +116,4 @@ npm run workflow:policy-draft -- --out <review-output-dir>
 - 같은 `input_id` 덮어쓰기 (새 id + supersedes).
 - reconciliation 전 코드 변경 / production code·tests·generated files 직접 수정.
 - live `policies/implementation-mode-policy.yaml` 교체, CI / pre-edit hook enforcement 승격.
+- fidelity를 confidence로 해석하거나, Mapping Provenance를 근거로 resolve/close/accept/confirmed 승격.

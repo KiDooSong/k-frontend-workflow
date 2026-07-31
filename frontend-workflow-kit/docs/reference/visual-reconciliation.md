@@ -67,6 +67,22 @@ consistency** 를 다룬다 — "이 화면이 맞게 구현됐나"가 아니라
 8. **구현은 implement-screen 또는 사람 지시로 넘긴다** — 이 흐름 자체는 readiness
    경계를 우회하지 않는다.
 
+### Per-row Figma Mapping Provenance
+
+새 `figma-component-mapping.md`는 canonical template의 `provenance_contract: 1`을 사용한다.
+기존 Component Mapping 4컬럼 header는 유지하고 모든 data row 첫 셀에 `` `M-xxx` · `` key를 붙인 뒤,
+5컬럼 `## Mapping Provenance`에서 Source Ref / Source Unit / Captured At / Evidence를 1:1로 연결한다.
+
+- 새 mapping을 만들거나 legacy mapping을 opt-in할 때 contract field, 모든 M-key, 모든 provenance row를 **같은 edit**에서 작성한다.
+- `instance`는 Figma component instance, `record`는 API/domain record다. source pointer에서 자동 추론하지 않는다.
+- `Source Ref=inherit`/`Captured At=inherit`은 같은 행의 input Evidence에서 해소한다. direct Source Ref + inherited timestamp도 허용한다.
+- `## Provenance`의 ✔T/✔M/◎/▱/⚠ marker legend는 값/토큰 설명이며 machine `## Mapping Provenance`와 별개다.
+- raw Figma 수집·node 존재 확인은 consumer source-specific producer 소관이며 kit validator는 네트워크 호출을 하지 않는다.
+- MP-0xx는 validate check 12 hard, MP-1xx는 warning-first이고 `--enforce`로 승격하지 않는다. Reconciliation Register 유무/버전과 독립적으로 실행된다.
+
+정본: [figma-component-mapping.template.md](../../templates/screen/figma-component-mapping.template.md),
+[input-reconciliation.md](input-reconciliation.md#figma-mapping-provenance-contract-v1).
+
 ## Cross-screen visual contract
 
 `visual-consistency-contract` (기본 경로

@@ -7,6 +7,7 @@ status: draft             # 라이프사이클: missing|draft|review|confirmed|i
 sources:
   - { type: figma, ref: "{figma frame ref}" }   # 프레임 ref 단일 출처(메타). 비표준 figma_frame_ref 필드 금지 — ref 는 여기와 본문 Frame 절에만. 모달/오버레이는 줄 추가.
 last_reviewed: "{YYYY-MM-DD}"
+provenance_contract: 1     # Mapping Provenance Contract v1. 모든 M-ID + provenance 행을 같은 edit에서 작성.
 # status: confirmed 로 승격할 때만 사람이 추가 (LLM 승격 금지):
 #   approved_by / approved_at / decision_id
 #
@@ -17,8 +18,10 @@ last_reviewed: "{YYYY-MM-DD}"
 
 <!--
   이 문서는 Figma 프레임/노드 → UI 요소 → 카탈로그 컴포넌트의 **시각 매핑**을 담는다.
-  ── 필수 베이스라인: `## Component Mapping`(4컬럼) + `## Notes`. figma_mapping_status 는 이 문서의 존재만 본다.
-  ── 옵션 섹션(opt-in): `## Provenance`·`## Visual Spec`·`## Data Corrections`·`## Assets`·`## Gaps / Open`·`## Cross-links`
+  ── 필수 베이스라인: `## Component Mapping`(기존 4컬럼) + `## Mapping Provenance`(5컬럼) + `## Notes`.
+       `provenance_contract: 1` opt-in 문서는 모든 Component Mapping 행에 M-xxx key와 1:1 provenance 행을 갖는다.
+       figma_mapping_status 는 여전히 이 문서의 존재/라이프사이클만 본다.
+  ── 옵션 섹션: `## Provenance`·`## Visual Spec`·`## Data Corrections`·`## Assets`·`## Gaps / Open`·`## Cross-links`
        및 `## Frame` 확장 필드. 시각 값을 계약으로 고정하려는 화면만 채운다. 비우면 통째로 생략 가능 — 게이트가 요구하지 않는다.
 
   경계 (반드시 지킨다):
@@ -29,7 +32,9 @@ last_reviewed: "{YYYY-MM-DD}"
   - 어떤 요소의 **존재 여부**가 open decision 에 달려 있으면 (예: 탭 분리가 D-xxx 에 달림) 비고/Notes 에 명시 —
     그 decision 이 닫히기 전엔 후보 시각안이다.
   - 비표준 frontmatter 필드(figma_frame_ref 등) 금지. 프레임 ref 는 frontmatter `sources` 와 아래 `## Frame` 절에만.
-  - `## Component Mapping` 표 헤더는 바꾸지 않는다(기존 파서·계약 보존).
+  - `## Component Mapping` 표 헤더는 바꾸지 않는다(기존 4컬럼 보존). 첫 셀 맨 앞에 `` `M-001` · `` key를 붙인다.
+  - `## Mapping Provenance`는 정확한 5컬럼 machine contract다. `## Provenance`의 ✔T/✔M marker legend와 별개이며 둘은 공존한다.
+  - Source Unit의 `instance`는 Figma component instance, `record`는 API/domain data record를 뜻한다. source pointer에서 자동 추론하지 않는다.
 
   [킷 core 는 시각 값을 수집하지 않는다]
   이 문서는 외부에서 수집된 시각 값을 *받아 적는* 표준 계약일 뿐이다.
@@ -52,7 +57,18 @@ last_reviewed: "{YYYY-MM-DD}"
 ## Component Mapping
 | Figma Frame / Node | UI 요소 | 매핑 컴포넌트 | 비고 |
 |---|---|---|---|
-| {frame} / {Node} | {UI 요소} | {features/{domain}/components/Xxx 또는 components/ui/Xxx} | {variant/props … · 카탈로그 미보유면 (G-xxx)} |
+| `M-001` · {frame} / {Node} | {UI 요소} | {features/{domain}/components/Xxx 또는 components/ui/Xxx} | {variant/props … · 카탈로그 미보유면 (G-xxx)} |
+
+## Mapping Provenance
+| Mapping Key | Source Ref | Source Unit | Captured At | Evidence |
+|---|---|---|---|---|
+| M-001 | {figma://file/.../node/... 또는 inherit} | {instance|node|frame|token|measurement|...} | {RFC3339+timezone 또는 inherit} | input:{input_id}#extracted-facts/01 |
+
+<!--
+  Mapping Key ↔ Mapping Provenance는 완전한 1:1이다. Source Ref=inherit/Captured At=inherit은 같은 행 Evidence가
+  가리키는 canonical input의 source_ref/captured_at을 상속한다. Evidence는 1-based bullet ref이며 /00은 금지.
+  기존 문서를 opt-in할 때 provenance_contract만 먼저 추가하지 말고 모든 M-ID와 모든 provenance 행을 한 번에 추가한다.
+-->
 
 ## Notes
 - {시각 매핑 보충 메모. 비즈니스 분류·동작은 적지 않는다 — ScreenSpec 의 State/Interaction Matrix 가 단일 출처.}

@@ -60,6 +60,7 @@ The output must satisfy all of:
   `input_id`; `input_id` is globally unique across subdirectories),
 - canonical frontmatter (`input_id`, `input_type`, `source_type`, `source_ref`,
   `captured_at`, `captured_by`, `status`, `affected_domains`, `affected_screens`),
+- `captured_at` is a hard RFC3339-with-timezone value for every v1/v2 input (`IP-001`),
 - **no** deprecated `suggested_scope` (use `affected_domains` / `affected_screens`),
 - **no** frontmatter `summary` (the body `## Summary` section is canonical),
 - body sections in the expected order (see the template),
@@ -70,14 +71,33 @@ Single source for the shape:
 Optional `source_screen_refs` render as a `## Source Screen Refs` section (absent →
 no section, byte-stable) and do not change frontmatter.
 
+
+### Optional Input Fidelity v2
+
+Use `input_contract: 2` only through `--from-json`/`--from-yaml` structured payloads. It records
+raw-source extraction and verification independently from `confidence`:
+
+```yaml
+input_contract: 2
+fidelity:
+  extraction: vision-verbatim
+  verification: verified
+  verified_against: raw_artifact:planning/login-crop.png
+  unreadable_count: 0
+```
+
+The producer hard-rejects invalid v2 shape/ref/inheritance before writing; check 11 reports IF-1xx
+warning-first for manually authored files. It never invents defaults or changes confidence/status/readiness.
+Flat CLI flags continue to create v1 artifacts.
+
 ## Validation
 
 ```bash
 npm run workflow:validate
 ```
 
-Run `workflow:validate`, or at least the input artifact validation (check 11),
-before moving on.
+Run `workflow:validate`, or at least the input artifact validation (check 11), before moving on.
+`--enforce` does not promote IF-1xx fidelity warnings; `IP-001` timestamp errors are always hard.
 
 ## This stage does not
 

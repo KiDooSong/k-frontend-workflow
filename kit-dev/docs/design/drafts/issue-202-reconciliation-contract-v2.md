@@ -1,6 +1,16 @@
 # Issue #202 설계 — Reconciliation Contract v2
 
-> 상태: proposal / discussion draft  
+## Implementation status (2026-07-31)
+
+- PR #205가 Reconciliation Contract v2 + Stage 04 review profile을 구현했다.
+- Issue #202-B + #209 통합 slice가 검사 11 `captured_at` RFC3339 hard, Input Fidelity Contract v2,
+  `provenance_contract: 1` Mapping Provenance를 구현한다. 구현 세부·producer/validator severity·migration은
+  [`input-provenance-fidelity-contract.md`](input-provenance-fidelity-contract.md)가 소유한다.
+- 이 문서의 Mapping Provenance §10 구조(M-key·5컬럼 표·Source Unit/Evidence)는 계속 canonical이다.
+- #202-C semantic/stale warning과 dogfood evidence는 잔여다.
+
+
+> 상태: partially implemented / #202-C·dogfood discussion draft
 > 기준 저장소: `KiDooSong/k-frontend-workflow`  
 > 기준 브랜치: `main` (`fa9fc6b` 확인 시점)  
 > 대상 이슈: `#202 reconcile 계약 불변식이 validate 미강제 → LLM 리뷰 O(n) 라운드 팽창`  
@@ -81,7 +91,7 @@ canonical input artifact는 이미 다음 값을 필수로 가진다.
 - `captured_by`
 - `input_id`
 
-그러나 현재 검사 11은 `captured_at`이 비어 있지 않은지만 보고 RFC3339 형식은 검사하지 않는다. 또한 입력 전체의 출처는 알 수 있지만, 개별 reconciliation item이 어느 node/frame/record/instance에 근거했는지는 알 수 없다.
+PR #205 시점 검사 11은 `captured_at`이 비어 있지 않은지만 봤다. 202-B 구현부터 모든 canonical input의 `captured_at`을 RFC3339 with timezone으로 hard 검사한다. 또한 입력 전체의 출처는 알 수 있지만, 개별 reconciliation item이 어느 node/frame/record/instance에 근거했는지는 알 수 없다.
 
 ### 1.3 현재 Figma mapping provenance
 
@@ -1036,7 +1046,9 @@ Stop condition after fixes
 rollout:
 
 - v2/new mapping에 hard
-- legacy input timestamp는 첫 릴리스 warning-first 후 승격 여부 판단
+- 모든 canonical input timestamp는 opt-in과 무관하게 검사 11 `IP-001` hard
+- 정상 timestamp를 가진 v1 input은 fidelity 무발화; invalid legacy timestamp는 의도적으로 새 hard error
+- Input Fidelity v2는 별도 `input_contract: 2` opt-in, validator warning-first / producer hard
 
 ### PR 202-C — Heuristic warnings + dogfood evidence
 
@@ -1133,7 +1145,7 @@ structured_since: <adoption timestamp>
 2. frontmatter에 v2 필드와 현재 시각의 `structured_since`를 추가한다.
 3. 과거 input은 summary-only legacy로 둔다.
 4. 이후 capture된 input부터 item table을 작성한다.
-5. 기존 Figma mapping은 다음 reconcile 때 `provenance_contract: 1`로 승격한다.
+5. 기존 Figma mapping은 자동 backfill하지 않는다. opt-in할 때 `provenance_contract: 1` + 모든 M-key + 모든 Mapping Provenance 행을 한 edit에서 원자적으로 추가한다.
 
 ### 16.3 기존 과거 행 backfill
 

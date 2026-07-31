@@ -62,9 +62,12 @@ function parseProducerArgs(argv) {
       cliError(`--${key} does not accept a value; use bare --${key} to enable it`);
     }
     let value = eq === -1 ? undefined : arg.slice(eq + 1);
+    if (eq !== -1 && VALUE_FLAGS.has(key) && value === '') {
+      cliError(`--${key} requires a non-empty value`);
+    }
     if (value === undefined && VALUE_FLAGS.has(key)) {
       const next = argv[i + 1];
-      if (next === undefined || next.startsWith('--')) cliError(`--${key} requires a value`);
+      if (next === undefined || next === '' || next.startsWith('--')) cliError(`--${key} requires a value`);
       value = next;
       i++;
     } else if (value === undefined) {

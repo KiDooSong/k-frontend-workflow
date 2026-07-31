@@ -56,9 +56,25 @@ npm run workflow:create-input -- --docs docs/frontend-workflow --source planning
 
 `workflow:create-input` turns normalized payloads into canonical
 `inputs/{input_id}.md` files. Source-specific Figma/OpenAPI/meeting parsers live
-in the consumer repo. The generic producer does not update the Reconciliation
-Register, run `reconcile-input`, approve implementation, or promote facts to
-confirmed.
+in the consumer repo. Every `captured_at` must be RFC3339 with timezone; invalid
+caller values are rejected before input ID generation or writing. The generic
+producer does not update the Reconciliation Register, run `reconcile-input`,
+approve implementation, or promote facts to confirmed.
+
+Input Fidelity v2 is structured-payload-only; no individual fidelity CLI flags are exposed:
+
+```yaml
+input_contract: 2
+fidelity:
+  extraction: vision-verbatim
+  verification: verified
+  verified_against: raw_artifact:planning/login-crop.png
+  unreadable_count: 0
+```
+
+Use this through `--from-json` or `--from-yaml`. The producer hard-rejects malformed v2
+payloads and inheritance before writing. Flat flags continue to emit v1 inputs. Fidelity is
+independent of confidence/status/readiness; the producer never infers defaults.
 
 For large repos, group inputs by domain (flat output stays the default):
 
@@ -96,15 +112,17 @@ Decisions, or promote status to confirmed. Reference:
 
 ## Reconciliation Validation
 
-Validate check 12 is active only after
-`docs/frontend-workflow/_meta/reconciliation-register.md` exists.
+The Reconciliation Register portion of check 12 is active only after
+`docs/frontend-workflow/_meta/reconciliation-register.md` exists. Independently,
+any `figma-component-mapping` with `provenance_contract: 1` is always checked by check 12.
 
 ```bash
 npm run workflow:validate
 npm run workflow:validate -- --enforce
 ```
 
-- Register absent: check 12 is NO-OP.
+- Register absent: register coverage/structure is NO-OP, but opted-in Mapping Provenance still runs.
+- Mapping Provenance: existing 4-column Component Mapping + anchored `M-xxx` keys + exact 5-column provenance table; MP-0xx is always hard, MP-1xx is not promoted by `--enforce`.
 - Register row missing and `Reconcile Status=not-started`: warning by default, error with `--enforce`.
 - `in-progress`, `failed`, invalid enum, duplicate Input ID, and missing required columns: always errors.
 - `reconciled`: passes even when Created Items point at open decisions/gaps/unknowns.

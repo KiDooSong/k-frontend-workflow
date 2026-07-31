@@ -4,6 +4,8 @@
 import { readFileSafe, splitFrontmatter } from './util.mjs';
 import { hasHeader, col } from './spec.mjs';
 import {
+  describeHeaderMismatch,
+  normalizedTableHeaders,
   parseReconciliationMarkdown,
   parseStrictTables,
   slugifySectionTitle,
@@ -11,16 +13,20 @@ import {
   stripFencedCodeBlocks,
   stripInlineCodeSpans,
   stripNonContent,
+  tableHeadersAreUnique,
   toProseBody,
 } from './reconciliation-markdown-ast.mjs';
 
 export {
+  describeHeaderMismatch,
+  normalizedTableHeaders,
   parseStrictTables,
   slugifySectionTitle,
   splitSectionOccurrences,
   stripFencedCodeBlocks,
   stripInlineCodeSpans,
   stripNonContent,
+  tableHeadersAreUnique,
   toProseBody,
 };
 
@@ -44,33 +50,6 @@ function canonicalFamiliesAt(sectionSlug, artifactType) {
     if (artifactType === 'component-gap-register') families.push('gap');
   }
   return families;
-}
-
-// 헤더 정규화(대소문자/공백 무시 — hasHeader/col과 같은 규약)와 canonical 헤더 배열 exact 비교.
-export function normalizedTableHeaders(table) {
-  return (table?.headers || []).map((header) => String(header).toLowerCase().replace(/\s+/g, ''));
-}
-
-export function tableHeadersAreUnique(table) {
-  const normalized = normalizedTableHeaders(table);
-  return new Set(normalized).size === normalized.length;
-}
-
-export function describeHeaderMismatch(table, canonicalCols) {
-  const actual = normalizedTableHeaders(table);
-  const expected = canonicalCols.map((header) => String(header).toLowerCase().replace(/\s+/g, ''));
-  if (actual.length === expected.length && actual.every((header, index) => header === expected[index])) {
-    return null;
-  }
-  const problems = [];
-  if (actual.length !== expected.length) problems.push(`컬럼 수 ${actual.length} ≠ ${expected.length}`);
-  if (new Set(actual).size !== actual.length) problems.push('중복 header 존재');
-  const missing = expected.filter((header) => !actual.includes(header));
-  const extra = actual.filter((header) => !expected.includes(header));
-  if (missing.length) problems.push(`누락: ${missing.join(', ')}`);
-  if (extra.length) problems.push(`추가: ${extra.join(', ')}`);
-  if (!problems.length) problems.push('canonical 순서 불일치');
-  return problems.join(' / ');
 }
 
 // 문서의 heading/table/definition/visible prose를 하나의 AST에서 함께 추출한다.

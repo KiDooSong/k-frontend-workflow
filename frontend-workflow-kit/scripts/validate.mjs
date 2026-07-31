@@ -13,7 +13,8 @@
 //      ※ forbidden_paths 경계 backstop 은 diff 기반(후속) — 트리 스캔은 공유 src/api 에 오탐. open-decisions.md "Validate 통합" 참조.
 //   10. Copy Keys Status enum (confirmed|draft|tbd) — screen-spec.template.md 의 3-state 계약. stub·placeholder 행은 제외.
 //   11. 입력 결과물(inputs/*.md) frontmatter — 정본 입력 스키마(input-reconciliation.md Input Result Contract).
-//       required 9필드·input_id 형식/전역중복·supersedes 해소·enum; suggested_scope·summary 는 경고(deprecated alias).
+//       required 9필드·input_id 형식/전역중복·supersedes 해소·enum + 모든 captured_at RFC3339+timezone hard(IP).
+//       opt-in input_contract:2 fidelity는 IF warning-first(--enforce 승격 없음); suggested_scope·summary 는 deprecated 경고.
 //       inputs/ 디렉토리가 없으면 NO-OP.
 //   12. Reconciliation Register(_meta/reconciliation-register.md) — Reconcile Status enum·in-progress/failed·중복 행·
 //       8컬럼 스키마·inputs↔register 미처리 교차검사. register 파일이 없으면 NO-OP(초기/선택적 도입).
@@ -21,6 +22,8 @@
 //       effect 표·summary projection·typed target/evidence 참조 해소·routing matrix·item provenance 를
 //       hard 로 검사한다(reconciliation-items.mjs — 메시지 prefix RR-SCHEMA/RR-ITEM/RR-REF/RR-ROUTE/RP).
 //       v1 register(필드 없음)는 기존 출력 byte-compatible. 자연어 의미 추정은 v2 에서도 hard 가 아니다.
+//       + figma-component-mapping `provenance_contract: 1` opt-in은 register와 독립적으로 M-key/5컬럼
+//       Mapping Provenance/evidence/source-unit/timestamp를 hard+warning-first로 검사한다(MP-*).
 //       ※ "미처리(reconcile 미완)" = register 행 없음 + Reconcile Status=not-started 는 기본 경고(warning-first),
 //         --enforce 플래그로 에러 승격. in-progress(중단)/failed/enum/중복/컬럼누락 같은 망가짐·중단 상태는 항상 에러.
 //       ★ HARD RULE: 오직 Reconcile Status 만 본다 — 자식 항목(D-/C-/U-/G-) open/closed 와 Created Items 의 (open) 주석은
@@ -83,6 +86,7 @@ import {
 // 활성화되고, v1 register 출력은 byte-compatible 하게 유지한다 (input-reconciliation.md §Contract v2).
 import { parseRegisterContract, validateReconciliationV2 } from './lib/reconciliation-items.mjs';
 import { buildReconciliationTargetIndex } from './lib/reconciliation-target-index.mjs';
+import { validateMappingProvenance } from './lib/mapping-provenance.mjs';
 import {
   buildEndpointIndex,
   collectSchemaExports,
@@ -955,6 +959,12 @@ function main() {
     for (const e of v2Result.errors) add(12, e.file, e.message);
     for (const w of v2Result.warnings) warn(12, w.file, w.message);
   }
+
+  // Mapping Provenance Contract v1은 Reconciliation Register/version과 독립적인 check 12 확장이다.
+  // 이미 수집한 docs/inputArtifacts만 전달하며 추가 recursive walk를 만들지 않는다.
+  const mappingResult = validateMappingProvenance({ docs, inputArtifacts });
+  for (const e of mappingResult.errors) add(12, e.file, e.message);
+  for (const w of mappingResult.warnings) warn(12, w.file, w.message);
 
   // --- 14. Policy `requires` 구문 검사 (warning-first, 하드 게이트 아님) ---
   //   이미 로드된 policy(라인 위)/policyPath 를 재사용한다 — 재로딩 없음. 손상/부재 정책은 이미 exit 2 로

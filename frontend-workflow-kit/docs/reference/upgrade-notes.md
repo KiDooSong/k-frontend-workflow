@@ -17,6 +17,28 @@ or root config.
 
 ---
 
+## Input timestamp, fidelity, and Figma Mapping Provenance (#202-B, #209)
+
+- Every canonical input now has a hard `captured_at` contract: valid RFC3339 with an explicit
+  timezone (`Z` or `±HH:MM`). Date-only/local timestamps and impossible calendar/time values now
+  fail check 11 with `IP-001`; the producer rejects them before input ID generation or writing.
+- Existing inputs with valid timestamps need no edit. **Manual action:** find and convert invalid legacy
+  timestamps before running the upgraded validator. This is independent of optional fidelity v2.
+- Input Fidelity is opt-in with `input_contract: 2`. Existing v1 inputs stay silent. New v2 inputs should
+  be produced through `--from-json`/`--from-yaml`; the producer hard-rejects malformed payloads while
+  validator IF-1xx findings remain warning-first and are not promoted by `--enforce`. Fidelity does not
+  alter confidence, input status, Reconcile Status, or readiness.
+- New `figma-component-mapping` files from the shipped template use `provenance_contract: 1`. Legacy
+  mapping docs remain silent and are not automatically migrated. To opt one in, make one atomic edit:
+  add the contract field, add a canonical `` `M-xxx` · `` key to every 4-column Component Mapping row,
+  and add exactly one matching row to the 5-column `## Mapping Provenance` table. Do not add only the
+  contract field.
+- Mapping validation runs as check 12 even when no Reconciliation Register exists (and with either v1
+  or v2 register). MP-0xx is hard; MP-1xx stays warning-first under `--enforce`. The generic
+  `## Provenance` marker legend remains a separate, non-machine section.
+- **Manual action:** after vendoring, run `workflow:validate`; repair IP errors first, then opt in only
+  mappings whose source/evidence/unit/timestamp can be stated without invention.
+
 ## Fixture hook bootstrap and active hook Slice Paths (#211)
 
 - `rough-fixture-ui` no longer requires `fake_hook_exists == true`; it is now the

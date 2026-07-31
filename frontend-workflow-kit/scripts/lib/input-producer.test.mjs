@@ -608,3 +608,168 @@ test('CLI --input-subdir rejects path traversal before writing', (t) => {
   assert.match(res.stderr, /input subdir must not contain/);
   assert.equal(fs.existsSync(path.join(docs, 'inputs')), false);
 });
+
+test('producer rejects invalid caller captured_at before input_id generation or filesystem side effects', (t) => {
+  const dir = path.join(tmpdir(t), 'inputs');
+  for (const captured_at of [
+    '2026-07-30',
+    '2026-07-30T10:00:00',
+    '2025-02-29T10:00:00Z',
+    '2026-07-30T24:00:00Z',
+  ]) {
+    assert.throws(
+      () => writeInputArtifact(payload({ captured_at }), { inputsDir: dir }),
+      /captured_at must be a valid RFC3339 timestamp with timezone/,
+    );
+    assert.equal(fs.existsSync(dir), false);
+  }
+});
+
+test('CLI rejects empty --captured-at and an earlier malformed duplicate before writing', (t) => {
+  const docs = path.join(tmpdir(t), 'docs', 'frontend-workflow');
+  const baseArgs = [
+    CLI, '--docs', docs, '--input-type', 'planning', '--source-type', 'planning-doc',
+    '--source-ref', 'planning://note', '--captured-by', 'producer-test', '--domain', 'auth',
+    '--screen', 'AUTH-001', '--dry-run', '--json',
+  ];
+  for (const extra of [
+    ['--captured-at='],
+    ['--captured-at=', '--captured-at', '2026-07-30T10:00:00+09:00'],
+  ]) {
+    const res = spawnSync(process.execPath, [...baseArgs, ...extra], { encoding: 'utf8' });
+    assert.equal(res.status, 2);
+    assert.match(res.stderr, /captured-at.*requires a non-empty value/);
+    assert.equal(fs.existsSync(path.join(docs, 'inputs')), false);
+  }
+});
+
+test('JSON/YAML producer payloads round-trip Input Fidelity v2 as numeric YAML without changing confidence', (t) => {
+  const root = tmpdir(t);
+  const docs = path.join(root, 'docs', 'frontend-workflow');
+  const basePayload = payload({
+    input_type: 'planning',
+    source_type: 'planning-doc',
+    source: 'planning',
+    source_ref: 'planning/login',
+    captured_at: '2026-07-30T10:00:00+09:00',
+    raw_artifacts: ['planning/login-crop.png'],
+    input_contract: 2,
+    fidelity: {
+      extraction: 'vision-verbatim',
+      verification: 'verified',
+      verified_against: 'raw_artifact:planning/login-crop.png',
+      unreadable_count: 0,
+    },
+    confidence: 'candidate',
+  });
+  const jsonFile = path.join(root, 'input.json');
+  const yamlFile = path.join(root, 'input.yaml');
+  write(jsonFile, JSON.stringify(basePayload, null, 2));
+  write(yamlFile, [
+    'input_type: planning',
+    'source_type: planning-doc',
+    'source: planning',
+    'source_ref: planning/login',
+    'captured_at: 2026-07-30T10:00:00+09:00',
+    'captured_by: producer-test',
+    'affected_domains: [auth]',
+    'affected_screens: [AUTH-001]',
+    'raw_artifacts: [planning/login-crop.png]',
+    'input_contract: 2',
+    'fidelity:',
+    '  extraction: vision-verbatim',
+    '  verification: verified',
+    '  verified_against: raw_artifact:planning/login-crop.png',
+    '  unreadable_count: 0',
+    'confidence: candidate',
+  ].join('\n'));
+
+  for (const [flag, file] of [['--from-json', jsonFile], ['--from-yaml', yamlFile]]) {
+    const res = spawnSync(process.execPath, [CLI, '--docs', docs, flag, file, '--dry-run', '--json'], {
+      encoding: 'utf8',
+    });
+    assert.equal(res.status, 0, res.stderr);
+    const body = JSON.parse(res.stdout);
+    const parsed = splitFrontmatter(body.artifact_text);
+    assert.equal(parsed.data.input_contract, 2);
+    assert.equal(typeof parsed.data.input_contract, 'number');
+    assert.equal(parsed.data.fidelity.unreadable_count, 0);
+    assert.equal(typeof parsed.data.fidelity.unreadable_count, 'number');
+    assert.equal(parsed.data.fidelity.extraction, 'vision-verbatim');
+    assert.equal(parsed.data.confidence, 'candidate');
+  }
+});
+
+test('producer rejects fidelity without input_contract and inherited targets that are missing or v1', (t) => {
+  const dir = path.join(tmpdir(t), 'inputs');
+  assert.throws(
+    () => writeInputArtifact(payload({ fidelity: { extraction: 'direct-text' } }), { inputsDir: dir, dryRun: true }),
+    /IF-100/,
+  );
+
+  const inheritedPayload = (target) => payload({
+    source: 'figma',
+    input_contract: 2,
+    fidelity: {
+      extraction: 'inherited',
+      verification: 'inherited',
+      verified_against: `input:${target}`,
+      unreadable_count: 0,
+    },
+  });
+  assert.throws(
+    () => writeInputArtifact(inheritedPayload('IN-20260625-figma-999'), { inputsDir: dir, dryRun: true }),
+    /IF-115/,
+  );
+
+  write(path.join(dir, 'IN-20260625-figma-001.md'), [
+    '---',
+    'input_id: "IN-20260625-figma-001"',
+    'input_type: "figma"',
+    'source_type: "figma"',
+    'source_ref: "figma://file/node"',
+    'captured_at: "2026-06-25T10:00:00+09:00"',
+    'captured_by: "legacy"',
+    'status: "captured"',
+    'affected_domains: ["auth"]',
+    'affected_screens: ["AUTH-001"]',
+    '---',
+    '## Summary',
+    'legacy',
+  ].join('\n'));
+  assert.throws(
+    () => writeInputArtifact(inheritedPayload('IN-20260625-figma-001'), { inputsDir: dir, date: '2026-06-26', dryRun: true }),
+    /IF-118/,
+  );
+});
+
+test('producer accepts inherited fidelity only when chain reaches verified v2 evidence', (t) => {
+  const dir = path.join(tmpdir(t), 'inputs');
+  const terminal = writeInputArtifact(payload({
+    source: 'figma',
+    input_id: 'IN-20260625-figma-001',
+    raw_artifacts: ['raw.png'],
+    input_contract: 2,
+    fidelity: {
+      extraction: 'vision-verbatim',
+      verification: 'verified',
+      verified_against: 'raw_artifact:raw.png',
+      unreadable_count: 0,
+    },
+  }), { inputsDir: dir });
+  assert.equal(terminal.wrote, true);
+
+  const inherited = writeInputArtifact(payload({
+    source: 'figma',
+    input_id: 'IN-20260625-figma-002',
+    input_contract: 2,
+    fidelity: {
+      extraction: 'inherited',
+      verification: 'inherited',
+      verified_against: 'input:IN-20260625-figma-001',
+      unreadable_count: 0,
+    },
+  }), { inputsDir: dir, dryRun: true });
+  assert.equal(inherited.wrote, false);
+  assert.match(inherited.text, /input_contract: 2/);
+});

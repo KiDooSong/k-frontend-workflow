@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { loadYaml } from './util.mjs';
+import { loadYaml, splitFrontmatter } from './util.mjs';
 
 const KIT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PACK_CLI = path.join(KIT_ROOT, 'scripts', 'pack-frontend-workflow-kit.mjs');
@@ -103,6 +103,11 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
     'presets/expo-feature.yaml',
     'schemas/frontmatter.schema.json',
     'scripts/create-input-artifact.mjs',
+    'scripts/lib/provenance.mjs',
+    'scripts/lib/input-fidelity.mjs',
+    'scripts/lib/input-artifact.mjs',
+    'scripts/lib/input-producer.mjs',
+    'scripts/lib/mapping-provenance.mjs',
     'scripts/readiness.mjs',
     'scripts/readiness-eval.mjs',
     'scripts/lib/readiness-eval-cases.json',
@@ -126,7 +131,9 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
     'templates/e2e/web-plan.template.md',
     'templates/repo/AGENTS.template.md',
     'templates/global/open-decision-register.template.md',
+    'templates/input/input-artifact.template.md',
     'templates/screen/screen-spec.template.md',
+    'templates/screen/figma-component-mapping.template.md',
     'templates/surface/shared-surface-spec.template.md',
     'templates/meta/session-learnings.template.md',
   ]) {
@@ -214,6 +221,11 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
   assert.equal(summary.files.includes('docs/reference/generated-files.md'), true);
   assert.equal(summary.files.includes('docs/reference/shared-surfaces.md'), true);
   assert.equal(summary.files.includes('scripts/lib/shared-surfaces.mjs'), true);
+  assert.equal(summary.files.includes('scripts/lib/provenance.mjs'), true);
+  assert.equal(summary.files.includes('scripts/lib/input-fidelity.mjs'), true);
+  assert.equal(summary.files.includes('scripts/lib/mapping-provenance.mjs'), true);
+  assert.equal(summary.files.includes('templates/input/input-artifact.template.md'), true);
+  assert.equal(summary.files.includes('templates/screen/figma-component-mapping.template.md'), true);
   assert.equal(summary.files.includes('skills/implement-shared-surface/SKILL.md'), true);
   assert.equal(summary.files.includes('templates/surface/shared-surface-spec.template.md'), true);
   assert.equal(summary.files.includes('docs/reference/workflow-spine.md'), true);
@@ -1579,4 +1591,160 @@ test('optional skill surfaces have no broken relative links', () => {
       );
     }
   }
+});
+
+test('packed input fidelity and Mapping Provenance contracts execute without a register', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-pack-provenance-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const out = path.join(tmp, 'frontend-workflow-kit');
+  const project = path.join(tmp, 'consumer');
+  const docs = path.join(project, 'docs', 'frontend-workflow');
+  const src = path.join(project, 'src');
+  fs.mkdirSync(src, { recursive: true });
+
+  const pack = spawnSync(process.execPath, [PACK_CLI, '--out', out, '--json'], {
+    cwd: KIT_ROOT,
+    encoding: 'utf8',
+  });
+  assert.equal(pack.status, 0, pack.stderr);
+  linkInstalledDependencies(out);
+
+  const run = (script, ...args) => spawnSync(
+    process.execPath,
+    [path.join(out, 'scripts', script), ...args],
+    { cwd: project, encoding: 'utf8' },
+  );
+  const writeJson = (name, value) => {
+    const file = path.join(project, name);
+    fs.writeFileSync(file, JSON.stringify(value, null, 2));
+    return file;
+  };
+  const basePayload = (id) => ({
+    input_id: id,
+    input_type: 'planning',
+    source_type: 'planning-doc',
+    source_ref: 'planning/login',
+    captured_at: '2026-07-30T10:00:00+09:00',
+    captured_by: 'packed-smoke',
+    affected_domains: ['auth'],
+    affected_screens: ['AUTH-001'],
+    summary: 'Packed provenance smoke.',
+    extracted_facts: ['Primary CTA exists.'],
+  });
+
+  const v1Id = 'IN-20260730-planning-001';
+  const v1 = run('create-input-artifact.mjs', '--docs', docs, '--from-json', writeJson('v1.json', basePayload(v1Id)), '--json');
+  assert.equal(v1.status, 0, v1.stderr);
+  const v1Text = fs.readFileSync(path.join(docs, 'inputs', `${v1Id}.md`), 'utf8');
+  assert.doesNotMatch(v1Text, /input_contract:/);
+
+  const v2Id = 'IN-20260730-planning-002';
+  const v2Payload = {
+    ...basePayload(v2Id),
+    raw_artifacts: ['planning/login-crop.png'],
+    input_contract: 2,
+    fidelity: {
+      extraction: 'vision-verbatim',
+      verification: 'verified',
+      verified_against: 'raw_artifact:planning/login-crop.png',
+      unreadable_count: 0,
+    },
+  };
+  const v2 = run('create-input-artifact.mjs', '--docs', docs, '--from-json', writeJson('v2.json', v2Payload), '--json');
+  assert.equal(v2.status, 0, v2.stderr);
+  const v2Fm = splitFrontmatter(fs.readFileSync(path.join(docs, 'inputs', `${v2Id}.md`), 'utf8')).data;
+  assert.equal(v2Fm.input_contract, 2);
+  assert.equal(typeof v2Fm.input_contract, 'number');
+  assert.equal(v2Fm.fidelity.unreadable_count, 0);
+  assert.equal(typeof v2Fm.fidelity.unreadable_count, 'number');
+
+  const invalidId = 'IN-20260730-planning-003';
+  const invalid = run(
+    'create-input-artifact.mjs',
+    '--docs', docs,
+    '--from-json', writeJson('invalid.json', { ...basePayload(invalidId), captured_at: '2026-07-30' }),
+    '--json',
+  );
+  assert.equal(invalid.status, 2);
+  assert.match(invalid.stderr, /RFC3339/);
+  assert.equal(fs.existsSync(path.join(docs, 'inputs', `${invalidId}.md`)), false);
+
+  // Manually authored malformed fidelity stays warning-first, including under --enforce.
+  fs.writeFileSync(path.join(docs, 'inputs', `${invalidId}.md`), [
+    '---',
+    `input_id: "${invalidId}"`,
+    'input_type: "planning"',
+    'source_type: "planning-doc"',
+    'source_ref: "planning/other"',
+    'captured_at: "2026-07-30T11:00:00+09:00"',
+    'captured_by: "manual"',
+    'status: "captured"',
+    'affected_domains: ["auth"]',
+    'affected_screens: ["AUTH-001"]',
+    'input_contract: 2',
+    'fidelity:',
+    '  extraction: "direct-text"',
+    '  verification: "unverified"',
+    '  unreadable_count: "1"',
+    'confidence: "candidate"',
+    'supersedes: null',
+    '---',
+    '',
+    '## Extracted Facts',
+    '- warning-only fidelity',
+  ].join('\n'));
+
+  const mappingFile = path.join(docs, 'domains', 'auth', 'screens', 'login', 'figma-component-mapping.md');
+  fs.mkdirSync(path.dirname(mappingFile), { recursive: true });
+  const mapping = (sourceUnit = 'instance', provenanceRow = true) => [
+    '---',
+    'artifact_id: "AUTH-001-figma-component-mapping"',
+    'artifact_type: figma-component-mapping',
+    'domain: "auth"',
+    'screen_id: "AUTH-001"',
+    'status: draft',
+    'sources:',
+    '  - { type: figma, ref: "figma://file/abc/frame/10:20" }',
+    'last_reviewed: "2026-07-30"',
+    'provenance_contract: 1',
+    '---',
+    '',
+    '## Frame',
+    '- figma://file/abc/frame/10:20',
+    '',
+    '## Component Mapping',
+    '| Figma Frame / Node | UI 요소 | 매핑 컴포넌트 | 비고 |',
+    '|---|---|---|---|',
+    '| `M-001` · Login / node `1:234` | CTA | components/ui/Button | primary |',
+    '',
+    '## Mapping Provenance',
+    '| Mapping Key | Source Ref | Source Unit | Captured At | Evidence |',
+    '|---|---|---|---|---|',
+    ...(provenanceRow ? [`| M-001 | figma://file/abc/node/1:234 | ${sourceUnit} | inherit | input:${v2Id}#extracted-facts/01 |`] : []),
+    '',
+    '## Provenance',
+    '- `✔M` marker legend only; not the machine table.',
+    '',
+    '## Notes',
+    '- visual only',
+  ].join('\n');
+
+  fs.writeFileSync(mappingFile, mapping());
+  const pass = run('validate.mjs', '--docs', docs, '--src', src, '--json');
+  assert.equal(pass.status, 0, pass.stderr);
+  const passBody = JSON.parse(pass.stdout);
+  assert.equal(passBody.errors.some((entry) => /MP-/.test(entry.message)), false);
+  assert.equal(passBody.warnings.some((entry) => /IF-107/.test(entry.message)), true);
+
+  fs.writeFileSync(mappingFile, mapping('n/a'));
+  const warning = run('validate.mjs', '--docs', docs, '--src', src, '--enforce', '--json');
+  assert.equal(warning.status, 0, warning.stderr);
+  const warningBody = JSON.parse(warning.stdout);
+  assert.equal(warningBody.warnings.some((entry) => /IF-107/.test(entry.message)), true);
+  assert.equal(warningBody.warnings.some((entry) => /MP-102/.test(entry.message)), true);
+
+  fs.writeFileSync(mappingFile, mapping('instance', false));
+  const fail = run('validate.mjs', '--docs', docs, '--src', src, '--json');
+  assert.equal(fail.status, 1, fail.stderr);
+  assert.equal(JSON.parse(fail.stdout).errors.some((entry) => entry.check === 12 && /MP-012/.test(entry.message)), true);
 });

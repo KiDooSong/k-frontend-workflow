@@ -1,3 +1,6 @@
+import { readFileSafe, splitFrontmatter } from './util.mjs';
+import { parseReconciliationMarkdown } from './reconciliation-markdown-ast.mjs';
+
 // Provenance 공통 파서 — RFC3339 timestamp · Source Unit enum · inherit 토큰의 단일 출처.
 // 계약: input-reconciliation.md "Reconciliation Contract v2" §Provenance.
 // 소비처(현재): 검사 12 v2 item 표(reconciliation-items.mjs)의 Captured At / Source Unit / structured_since.
@@ -61,4 +64,108 @@ export function isRfc3339(value) {
 export function parseRfc3339(value) {
   if (!isRfc3339(value)) return null;
   return Date.parse(String(value).trim());
+}
+
+
+// Shared input evidence grammar. Reconciliation Items and Mapping Provenance must
+// never drift into separate regexes. Bullet indices are 1-based; `/00` is invalid.
+export function parseInputEvidenceRef(token) {
+  const text = String(token || '').trim();
+  const match = /^input:([A-Za-z0-9][A-Za-z0-9._-]*)#([a-z0-9][a-z0-9-]*)(?:\/(\d+))?$/.exec(text);
+  if (!match) return null;
+  const bulletIndex = match[3] ? Number(match[3]) : null;
+  if (bulletIndex !== null && bulletIndex < 1) return null;
+  return {
+    inputId: match[1],
+    section: match[2],
+    bulletIndex,
+    raw: text,
+  };
+}
+
+// Preserve every occurrence of an input_id. Consumers must distinguish a unique
+// target from an ambiguous duplicate instead of silently taking the first file.
+export function buildInputArtifactIndex(inputArtifacts = []) {
+  const byId = new Map();
+  for (const artifact of inputArtifacts || []) {
+    if (!artifact || artifact.parseError) continue;
+    const id = artifact.fm?.input_id;
+    if (typeof id !== 'string' || id.trim() === '') continue;
+    if (!byId.has(id)) byId.set(id, []);
+    byId.get(id).push(artifact);
+  }
+  return {
+    byId,
+    sectionCache: new Map(),
+  };
+}
+
+export function resolveInputArtifact(index, inputId) {
+  const matches = index?.byId?.get(inputId) || [];
+  if (matches.length === 0) return { status: 'missing', artifact: null, artifacts: [] };
+  if (matches.length > 1) return { status: 'ambiguous', artifact: null, artifacts: matches };
+  return { status: 'ok', artifact: matches[0], artifacts: matches };
+}
+
+function inputArtifactBody(artifact) {
+  if (typeof artifact?.body === 'string') return artifact.body;
+  if (!artifact?.file) return '';
+  return splitFrontmatter(readFileSafe(artifact.file)).body || '';
+}
+
+// H2 section slug -> actual Markdown list item count. Parsing is AST-backed, so
+// fenced code, HTML comments, and blockquote-contained fake headings/tables do not
+// create canonical evidence sections. Duplicate real H2 slugs are combined, which
+// preserves the existing Reconciliation Items behavior.
+export function inputSectionIndex(index, artifact) {
+  if (!artifact) return null;
+  const cacheKey = artifact.file || artifact;
+  if (index?.sectionCache?.has(cacheKey)) return index.sectionCache.get(cacheKey);
+  const sections = new Map();
+  for (const occurrence of parseReconciliationMarkdown(inputArtifactBody(artifact)).occurrences) {
+    if (!occurrence.slug) continue;
+    sections.set(
+      occurrence.slug,
+      (sections.get(occurrence.slug) || 0) + (occurrence.bulletCount || 0),
+    );
+  }
+  if (index?.sectionCache) index.sectionCache.set(cacheKey, sections);
+  return sections;
+}
+
+// Resolve the shared evidence pointer without imposing caller-specific severity.
+// Callers translate status to RR-REF/MP diagnostics and keep the shared grammar,
+// duplicate handling, section semantics, and bullet count aligned.
+export function resolveInputEvidence(index, token) {
+  const ref = parseInputEvidenceRef(token);
+  if (!ref) return { status: 'invalid', ref: null, artifact: null, sections: null, bulletCount: null };
+  const resolution = resolveInputArtifact(index, ref.inputId);
+  if (resolution.status !== 'ok') {
+    return {
+      status: resolution.status === 'ambiguous' ? 'ambiguous-input' : 'missing-input',
+      ref,
+      artifact: null,
+      artifacts: resolution.artifacts,
+      sections: null,
+      bulletCount: null,
+    };
+  }
+  const sections = inputSectionIndex(index, resolution.artifact);
+  if (!sections?.has(ref.section)) {
+    return {
+      status: 'missing-section',
+      ref,
+      artifact: resolution.artifact,
+      sections,
+      bulletCount: null,
+    };
+  }
+  const bulletCount = sections.get(ref.section) || 0;
+  return {
+    status: ref.bulletIndex !== null && ref.bulletIndex > bulletCount ? 'bullet-out-of-range' : 'ok',
+    ref,
+    artifact: resolution.artifact,
+    sections,
+    bulletCount,
+  };
 }

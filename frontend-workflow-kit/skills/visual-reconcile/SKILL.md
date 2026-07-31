@@ -17,14 +17,16 @@ shared shell/logo/header/CTA ownership 이 화면별 ad-hoc patch 로 흩어지�
 
 ## 핵심 불변식
 
-- **raw Figma 를 직접 해석하는 스킬이 아니다.** raw source 수집/해석은 consumer 의
-  source-specific producer(Stage 01) 소관이다.
+- **raw Figma 를 직접 해석하는 스킬이 아니다.** raw source 수집/해석·node 실재 확인은 consumer 의
+  source-specific producer(Stage 01) 소관이다. fidelity를 `source_type`에서 추론하지 않는다.
 - visual/Figma 입력은 behavior 의 단일 출처가 아니다 — behavior 변경은 ScreenSpec /
   Navigation Map / Open Decision 경로만 탄다.
 - 카탈로그에 없는 shared component 는 Component Gap `G-xxx open` **제안만** 한다.
 - visual exception 은 Reason + decision_id/reference 없이는 남기지 않는다 (silent pass 금지).
 - 구현은 implement-screen 경로(readiness `allowed_paths`)를 우회하지 않는다.
 - 게이트를 올리는 방향(Open Decision 추가/재오픈, Conflict/Unknown/Gap 기록)만 한다.
+- 새 mapping을 만들거나 legacy mapping을 opt-in할 때 `provenance_contract: 1`, 모든 anchored M-key, 모든 5컬럼 Mapping Provenance 행을 같은 edit에서 작성한다. 기존 4컬럼 Component Mapping header는 바꾸지 않는다.
+- `instance`는 Figma component instance, `record`는 API/domain record다. confidence와 fidelity/provenance를 섞지 않고 자동 resolve/confirm/accept하지 않는다.
 
 ## 1. Preflight
 
@@ -61,7 +63,7 @@ conflict with resolved/confirmed source · investigation-needed · scope-unclear
 
 ## 4. Update rules
 
-- **visual-only fact** → 해당 화면 `figma-component-mapping.md`, 또는 cross-screen
+- **visual-only fact** → 해당 화면 `figma-component-mapping.md`. 새/opted-in mapping이면 M-key↔Mapping Provenance 1:1을 원자적으로 완성한다. 또는 cross-screen
   ownership 이면 visual consistency contract.
 - **behavior 변경** → ScreenSpec / Navigation Map / Open Decision 경로 (Figma 가 암시해도
   behavior 로 확정하지 않는다).
@@ -107,4 +109,4 @@ npm run workflow:validate
 제안한 component gaps · 생성/재오픈한 Open Decisions/Unknowns/Conflicts ·
 visual consistency findings 요약 · 실행한 검증 명령/결과 ·
 **의도적으로 하지 않은 일**: approval, confirmed 승격, hard gate/CI 승격,
-Component Gap accept, Open Decision resolve.
+Component Gap accept, Open Decision resolve, fidelity 기반 confidence 변경.
