@@ -78,6 +78,13 @@ function parseProducerArgs(argv) {
       if (!flags[key]) flags[key] = [];
       flags[key].push(value);
     } else {
+      // captured_at participates in identity/date derivation and has a fail-closed
+      // occurrence contract: an earlier malformed value must never disappear behind
+      // a later valid scalar duplicate. Other scalar flags keep their existing
+      // last-wins compatibility semantics.
+      if (key === 'captured-at' && Object.prototype.hasOwnProperty.call(flags, key)) {
+        cliError('--captured-at may only be provided once');
+      }
       flags[key] = value;
     }
   }

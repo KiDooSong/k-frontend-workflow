@@ -6,10 +6,14 @@ import {
   parseReconciliationMarkdown,
 } from './reconciliation-markdown-ast.mjs';
 import {
+  FIGMA_PRECISION_SOURCE_UNITS,
   INHERIT,
   SOURCE_UNIT_VALUES,
   buildInputArtifactIndex,
+  inspectFigmaSourcePrecision,
   isRfc3339,
+  parseFigmaSourcePointer,
+  resolveEffectiveSourceRef,
   resolveInputEvidence,
 } from './provenance.mjs';
 
@@ -80,13 +84,6 @@ function provenanceKey(cell) {
   return unwrapped;
 }
 
-function explicitFigmaPointer(value) {
-  if (typeof value !== 'string') return null;
-  const match = /^figma:\/\/file\/([^/\s]+)(?:\/(node|frame)\/([^/\s?#]+))?/.exec(value.trim());
-  if (!match) return null;
-  return { file: match[1], axis: match[2] || null, id: match[3] || null, raw: value.trim() };
-}
-
 function explicitSourcePointers(fm, parsed) {
   const values = [];
   if (Array.isArray(fm?.sources)) {
@@ -97,11 +94,11 @@ function explicitSourcePointers(fm, parsed) {
   for (const occurrence of sectionOccurrences(parsed, 'frame')) {
     values.push(...(occurrence.text.match(/figma:\/\/file\/[^\s|)`]+/g) || []));
   }
-  return values.map(explicitFigmaPointer).filter(Boolean);
+  return values.map(parseFigmaSourcePointer).filter(Boolean);
 }
 
 function contradictionMessage(sourceRef, explicitPointers) {
-  const direct = explicitFigmaPointer(sourceRef);
+  const direct = parseFigmaSourcePointer(sourceRef);
   if (!direct || explicitPointers.length === 0) return null;
   const fileKeys = [...new Set(explicitPointers.map((pointer) => pointer.file))];
   if (fileKeys.length === 1 && fileKeys[0] !== direct.file) {
@@ -230,25 +227,44 @@ function validateOptedInMapping({ doc, inputIndex }) {
         }
       }
 
+      let effectiveSourceRef = null;
       if (sourceRef) {
         if (sourceRef === INHERIT) {
-          const inherited = evidence.artifact?.fm?.source_ref;
-          if (typeof inherited !== 'string' || inherited.trim() === '') {
+          effectiveSourceRef = resolveEffectiveSourceRef(sourceRef, evidence.artifact);
+          if (!effectiveSourceRef) {
             add(`MP-015: ${key} Source Ref=inherit인데 Evidence input의 source_ref를 해소할 수 없음`);
           }
         } else if (sourceRef.startsWith('input:')) {
           add(`MP-015: ${key} Source Ref에 input: evidence를 넣을 수 없음 — Evidence 열로 이동하세요`);
         } else {
-          const contradiction = contradictionMessage(sourceRef, explicitPointers);
-          if (contradiction) warn(contradiction);
+          effectiveSourceRef = resolveEffectiveSourceRef(sourceRef, evidence.artifact);
         }
       }
 
-      if (sourceUnit) {
-        if (!SOURCE_UNIT_VALUES.includes(sourceUnit)) {
-          add(`MP-016: ${key} Source Unit enum 위반: '${sourceUnit}' (기대 ${SOURCE_UNIT_VALUES.join('|')})`);
-        } else if (sourceUnit === 'n/a') {
-          warn(`MP-102: ${key} Mapping Provenance의 Source Unit=n/a는 정밀도 바닥을 제공하지 못함 (warning-first)`);
+      const sourceUnitValid = sourceUnit && SOURCE_UNIT_VALUES.includes(sourceUnit);
+      if (sourceUnit && !sourceUnitValid) {
+        add(`MP-016: ${key} Source Unit enum 위반: '${sourceUnit}' (기대 ${SOURCE_UNIT_VALUES.join('|')})`);
+      }
+
+      // Mapping Provenance is a Figma row contract, not a generic provenance bag.
+      // Resolve inherit first, then require every accepted Source Unit to retain an
+      // explicit file + node/frame anchor. document/statement/n/a are enum values
+      // elsewhere but cannot satisfy this context's precision floor.
+      if (sourceUnitValid && effectiveSourceRef) {
+        const precision = inspectFigmaSourcePrecision({ sourceRef: effectiveSourceRef, sourceUnit });
+        if (!precision.ok) {
+          if (precision.reason === 'coarse-unit') {
+            add(
+              `MP-018: ${key} Figma Mapping precision floor 위반: Source Unit='${sourceUnit}'은 node/frame 귀속을 제공하지 못함 — ${FIGMA_PRECISION_SOURCE_UNITS.join('|')} 중 실제 단위를 명시하고 canonical Figma pointer를 사용하세요`,
+            );
+          } else if (precision.reason === 'missing-anchor') {
+            add(
+              `MP-018: ${key} Figma Mapping precision floor 위반: effective Source Ref '${effectiveSourceRef}'에 file + node/frame 식별자가 없음 (기대 figma://file/<file>/(node|frame)/<id>)`,
+            );
+          }
+        } else {
+          const contradiction = contradictionMessage(effectiveSourceRef, explicitPointers);
+          if (contradiction) warn(contradiction);
         }
       }
 

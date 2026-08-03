@@ -3,8 +3,8 @@ import { parseReconciliationMarkdown } from './reconciliation-markdown-ast.mjs';
 
 // Provenance 공통 파서 — RFC3339 timestamp · Source Unit enum · inherit 토큰의 단일 출처.
 // 계약: input-reconciliation.md "Reconciliation Contract v2" §Provenance.
-// 소비처(현재): 검사 12 v2 item 표(reconciliation-items.mjs)의 Captured At / Source Unit / structured_since.
-// 소비처(후속 202-B): 검사 11 input `captured_at` 형식, figma-component-mapping `## Mapping Provenance`.
+// 소비처: 검사 11 input `captured_at`, 검사 12 v2 item 표, figma-component-mapping
+// `## Mapping Provenance`의 timestamp / Source Unit / effective source precision.
 // 여기 두는 이유: 세 소비처가 같은 형식 판정을 공유해 표류하지 않게 한다(설계 §9.1).
 
 // item 셀에서 input-level 값(frontmatter source_ref/captured_at) 상속을 뜻하는 토큰.
@@ -64,6 +64,55 @@ export function isRfc3339(value) {
 export function parseRfc3339(value) {
   if (!isRfc3339(value)) return null;
   return Date.parse(String(value).trim());
+}
+
+// Figma/node precision floor shared by Mapping Provenance and visual-evidence
+// reconciliation items. SOURCE_UNIT_VALUES remains the enum single source; this
+// policy only decides which enum values are sufficiently precise in a Figma
+// context. Every accepted unit must still be anchored to an explicit file plus
+// node/frame identifier — unit is never inferred from the pointer.
+const FIGMA_PRECISION_COARSE_UNITS = new Set(['document', 'statement', 'n/a']);
+export const FIGMA_PRECISION_SOURCE_UNITS = SOURCE_UNIT_VALUES.filter(
+  (value) => !FIGMA_PRECISION_COARSE_UNITS.has(value),
+);
+const FIGMA_SOURCE_POINTER_RE = /^figma:\/\/file\/([^/\s?#]+)\/(node|frame)\/([^/\s?#]+)$/;
+
+export function parseFigmaSourcePointer(value) {
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  const match = FIGMA_SOURCE_POINTER_RE.exec(text);
+  if (!match) return null;
+  return {
+    file: match[1],
+    axis: match[2],
+    id: match[3],
+    raw: text,
+  };
+}
+
+export function resolveEffectiveSourceRef(sourceRef, evidenceArtifact) {
+  if (typeof sourceRef !== 'string') return null;
+  const text = sourceRef.trim();
+  if (!text) return null;
+  if (text !== INHERIT) return text;
+  const inherited = evidenceArtifact?.fm?.source_ref;
+  return typeof inherited === 'string' && inherited.trim() !== '' ? inherited.trim() : null;
+}
+
+export function inspectFigmaSourcePrecision({ sourceRef, sourceUnit } = {}) {
+  const unit = typeof sourceUnit === 'string' ? sourceUnit.trim() : '';
+  const ref = typeof sourceRef === 'string' ? sourceRef.trim() : '';
+  if (!SOURCE_UNIT_VALUES.includes(unit)) {
+    return { ok: false, reason: 'invalid-unit', pointer: null, sourceRef: ref, sourceUnit: unit };
+  }
+  if (FIGMA_PRECISION_COARSE_UNITS.has(unit)) {
+    return { ok: false, reason: 'coarse-unit', pointer: null, sourceRef: ref, sourceUnit: unit };
+  }
+  const pointer = parseFigmaSourcePointer(ref);
+  if (!pointer) {
+    return { ok: false, reason: 'missing-anchor', pointer: null, sourceRef: ref, sourceUnit: unit };
+  }
+  return { ok: true, reason: null, pointer, sourceRef: ref, sourceUnit: unit };
 }
 
 

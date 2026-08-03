@@ -122,7 +122,7 @@ npm run workflow:validate -- --enforce
 ```
 
 - Register absent: register coverage/structure is NO-OP, but opted-in Mapping Provenance still runs.
-- Mapping Provenance: existing 4-column Component Mapping + anchored `M-xxx` keys + exact 5-column provenance table; MP-0xx is always hard, MP-1xx is not promoted by `--enforce`.
+- Mapping Provenance: existing 4-column Component Mapping + anchored `M-xxx` keys + exact 5-column provenance table. The resolved effective Source Ref must identify a Figma file plus node/frame; coarse/non-Figma provenance is MP hard. MP-1xx is not promoted by `--enforce`.
 - Register row missing and `Reconcile Status=not-started`: warning by default, error with `--enforce`.
 - `in-progress`, `failed`, invalid enum, duplicate Input ID, and missing required columns: always errors.
 - `reconciled`: passes even when Created Items point at open decisions/gaps/unknowns.

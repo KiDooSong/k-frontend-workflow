@@ -191,6 +191,11 @@ verified_against: input:<input_id>
 - v2 필드만 deterministic nested block으로 추가한다.
 - `input_contract`와 `unreadable_count`는 숫자로 렌더된다.
 - dry-run과 실제 write가 같은 검증을 사용한다.
+- `--overwrite`는 candidate local shape만 보지 않는다. 변경 전 전체 input universe와 candidate를
+  반영한 변경 후 universe의 IF issue set을 비교하고, candidate 또는 reverse dependent에 **새로 생긴**
+  issue를 write 전에 hard reject한다. candidate가 v1로 내려가도 기존 v2 inherited chain이 그 ID를
+  참조할 수 있으므로 overwrite delta 검사는 contract version과 무관하게 실행한다.
+- 기존 unrelated IF warning은 before/after에 같은 fingerprint로 남으면 overwrite를 막지 않는다.
 
 ## 5. Shared input evidence/index helper
 
@@ -224,6 +229,10 @@ Reconciliation Items와 Mapping Provenance는 이 helper를 공유한다. duplic
 - mapping version이 없으면 완전 무발화한다.
 - version이 명시됐지만 malformed/unsupported이면 MP hard다.
 - `Source Ref=inherit`와 `Captured At=inherit`은 같은 행 Evidence input에서 각각 해소한다.
+- direct/inherited를 먼저 해소한 effective Source Ref는 canonical
+  `figma://file/<file>/(node|frame)/<id>`로 file과 node/frame을 모두 식별해야 한다.
+- `document`/`statement`/`n/a`는 mapping precision floor를 충족하지 못해 MP hard다. 다른 Source Unit도
+  pointer에서 자동 추론하지 않고 저자가 실제 단위를 명시하되 같은 canonical Figma anchor와 결합한다.
 - direct Source Ref + inherited timestamp 조합을 허용한다.
 - Evidence input missing/duplicate/section missing은 hard, bullet out-of-range는 MP warning이다.
 - explicit Figma file/frame token의 명백한 모순만 conservative warning으로 낸다. fuzzy guess와 network 검증은 하지 않는다.
@@ -238,6 +247,9 @@ Reconciliation Items와 Mapping Provenance는 이 helper를 공유한다. duplic
 3. 기존 prose caveat는 구조화 필드로 옮기되, 원문 사실 설명 자체가 필요하면 body에도 유지할 수 있다.
 4. inheritance를 사용할 때 target chain이 unique v2 verified terminal로 끝나는지 확인한다.
 5. confidence/status를 자동 변경하지 않는다.
+6. verified terminal을 overwrite할 때는 reverse dependent까지 producer가 재검증한다. v2→v1 또는
+   verified→unverified downgrade로 새 IF issue가 생기면 write가 거부되므로 새 input ID/supersedes 또는
+   dependent chain의 명시적 재작성으로 이행한다.
 
 ### 7.2 Mapping
 

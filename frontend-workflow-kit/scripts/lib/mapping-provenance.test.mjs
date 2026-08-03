@@ -239,13 +239,57 @@ test('Source Ref, Source Unit, Captured At share provenance rules and conservati
   const nA = fixture(t, {
     provenanceRows: ['| M-001 | figma://file/abc/node/1:234 | n/a | inherit | input:IN-20260730-figma-001#extracted-facts/01 |'],
   });
-  assert.match(nA.validate().warnings.map((w) => w.message).join('\n'), /MP-102/);
+  assert.match(nA.validate().errors.map((e) => e.message).join('\n'), /MP-018/);
 
   const mismatch = fixture(t, {
     sourceRef: 'figma://file/source-file/frame/10:20',
     provenanceRows: ['| M-001 | figma://file/other-file/node/1:234 | instance | inherit | input:IN-20260730-figma-001#extracted-facts/01 |'],
   });
   assert.match(mismatch.validate().warnings.map((w) => w.message).join('\n'), /MP-103/);
+});
+
+test('Mapping precision floor resolves effective Source Ref and requires a Figma file + node/frame anchor', (t) => {
+  for (const [sourceRef, sourceUnit] of [
+    ['planning://login-note', 'document'],
+    ['planning://login-note', 'instance'],
+    ['figma://file/abc', 'node'],
+    ['figma://file/abc/node/1:234', 'statement'],
+    ['figma://file/abc/node/1:234', 'n/a'],
+  ]) {
+    const f = fixture(t, {
+      provenanceRows: [
+        `| M-001 | ${sourceRef} | ${sourceUnit} | inherit | input:IN-20260730-figma-001#extracted-facts/01 |`,
+      ],
+    });
+    assert.match(f.validate().errors.map((e) => e.message).join('\n'), /MP-018/, `${sourceRef} + ${sourceUnit}`);
+  }
+
+  for (const inheritedRef of ['planning://login-note', 'api://contracts/login']) {
+    const inherited = fixture(t, {
+      provenanceRows: [
+        '| M-001 | inherit | instance | inherit | input:IN-20260730-figma-001#extracted-facts/01 |',
+      ],
+    }, { sourceRef: inheritedRef });
+    assert.match(inherited.validate().errors.map((e) => e.message).join('\n'), /MP-018/);
+  }
+
+  for (const [sourceUnit, sourceRef] of [
+    ['instance', 'figma://file/abc/node/1:234'],
+    ['node', 'figma://file/abc/node/1:234'],
+    ['frame', 'figma://file/abc/frame/10:20'],
+    ['record', 'figma://file/abc/node/1:234'],
+    ['token', 'figma://file/abc/node/1:234'],
+    ['screenshot', 'figma://file/abc/frame/10:20'],
+    ['measurement', 'figma://file/abc/node/1:234'],
+    ['aggregate', 'figma://file/abc/frame/10:20'],
+  ]) {
+    const f = fixture(t, {
+      provenanceRows: [
+        `| M-001 | ${sourceRef} | ${sourceUnit} | inherit | input:IN-20260730-figma-001#extracted-facts/01 |`,
+      ],
+    });
+    assert.equal(f.validate().errors.some((e) => /MP-018/.test(e.message)), false, sourceUnit);
+  }
 });
 
 test('validate check 12 runs opted-in mapping without any reconciliation register', (t) => {

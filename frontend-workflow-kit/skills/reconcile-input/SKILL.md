@@ -61,12 +61,12 @@ Register에서 같은 `input_id` 행을 먼저 찾고 `Reconcile Status` 에 따
 8. decision/conflict 는 **멈추고** 선택지를 제시한다. `resolved` 와 충돌하면 Conflict 에 이전 값을 남기고 그 decision 을
    `open` 으로 재오픈. 검증이 필요하면 INV-/VER- + 막을 화면에 Open Decision. 카탈로그에 없는 공통 컴포넌트는 Gap `G-xxx open` **제안만**.
 9. 사용자 결정 후 문서를 업데이트한다 (게이트 내림은 사람이).
-10. 새/opt-in Figma mapping은 기존 4컬럼 header와 M-key↔Mapping Provenance 1:1을 원자적으로 완성한다. `instance`=Figma instance, `record`=API/domain record; 불명확한 Source/Evidence는 발명하지 않고 open item으로 남긴다.
+10. 새/opt-in Figma mapping은 기존 4컬럼 header와 M-key↔Mapping Provenance 1:1을 원자적으로 완성한다. direct/inherited effective Source Ref는 canonical Figma file + node/frame anchor여야 하며 planning/API/file-only ref나 `document`/`statement`/`n/a`로 대신하지 않는다. `instance`=Figma instance, `record`=API/domain record; 불명확한 Source/Evidence는 발명하지 않고 open item으로 남긴다.
 11. register 행을 `reconciled` 로 바꾸고 `Result`·`Touched Artifacts`·`Created Items` 를 채운다.
     자식 decision 이 `open` 이어도 reconcile 자체는 끝 — 그 차단은 readiness 가 담당한다.
     **Contract v2 register**(frontmatter `reconciliation_contract: 2`)면 summary 와 함께 `## Reconciliation Items`
     item/effect 행을 쓴다 — 문법·routing matrix·provenance(Source Unit 은 실제 세는 단위: `instance`/`node`/`record` 등,
-    input 값과 같으면 `inherit`)는 [input-reconciliation.md §Contract v2](../../docs/reference/input-reconciliation.md#reconciliation-contract-v2-opt-in) 가 정본.
+    input 값과 같으면 `inherit`)는 [input-reconciliation.md §Contract v2](../../docs/reference/input-reconciliation.md#reconciliation-contract-v2-opt-in) 가 정본. `Basis=visual-evidence`는 effective Source Ref의 canonical Figma file + node/frame anchor가 hard floor다.
 12. task-artifact matrix 로 2차 산출물을 재확인한 뒤 `workflow:state` → `workflow:readiness` → `workflow:validate` 를 실행해 보고한다.
 13. Tier3/layout/policy migration 입력을 건드렸으면 `workflow:policy-draft -- --out <review-output-dir>` 로 review-only 산출물을
     만든다(live policy 교체 아님). 자세히: [Stage 10](../../docs/reference/workflow-stages/10-policy-layout-tier3-changes.md).

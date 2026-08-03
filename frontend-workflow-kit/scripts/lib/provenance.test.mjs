@@ -5,8 +5,11 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   buildInputArtifactIndex,
+  inspectFigmaSourcePrecision,
   isRfc3339,
+  parseFigmaSourcePointer,
   parseInputEvidenceRef,
+  resolveEffectiveSourceRef,
   resolveInputArtifact,
   resolveInputEvidence,
 } from './provenance.mjs';
@@ -61,6 +64,29 @@ test('shared RFC3339 parser accepts timezone variants and rejects normalized-inv
     null,
     123,
   ]) assert.equal(isRfc3339(value), false, String(value));
+});
+
+test('shared Figma precision helper requires explicit file plus node/frame and keeps unit authoring explicit', () => {
+  assert.deepEqual(parseFigmaSourcePointer('figma://file/abc/node/1:234'), {
+    file: 'abc', axis: 'node', id: '1:234', raw: 'figma://file/abc/node/1:234',
+  });
+  assert.equal(parseFigmaSourcePointer('figma://file/abc'), null);
+  assert.equal(parseFigmaSourcePointer('planning://login'), null);
+
+  assert.equal(inspectFigmaSourcePrecision({
+    sourceRef: 'figma://file/abc/node/1:234', sourceUnit: 'instance',
+  }).ok, true);
+  assert.equal(inspectFigmaSourcePrecision({
+    sourceRef: 'figma://file/abc/node/1:234', sourceUnit: 'record',
+  }).ok, true, 'record remains explicit but must retain a Figma anchor in mapping/visual contexts');
+  assert.equal(inspectFigmaSourcePrecision({
+    sourceRef: 'figma://file/abc/node/1:234', sourceUnit: 'document',
+  }).reason, 'coarse-unit');
+  assert.equal(inspectFigmaSourcePrecision({
+    sourceRef: 'figma://file/abc', sourceUnit: 'node',
+  }).reason, 'missing-anchor');
+  assert.equal(resolveEffectiveSourceRef('inherit', { fm: { source_ref: 'figma://file/abc/frame/10:20' } }), 'figma://file/abc/frame/10:20');
+  assert.equal(resolveEffectiveSourceRef('inherit', { fm: { source_ref: 'planning://login' } }), 'planning://login');
 });
 
 test('shared evidence grammar is 1-based and preserves canonical tokens', () => {

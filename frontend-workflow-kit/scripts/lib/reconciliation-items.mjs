@@ -27,12 +27,15 @@
 import { col } from './spec.mjs';
 import { RECONCILE_STATUS_VALUES, REQUIRED_REGISTER_COLS } from './reconciliation-register.mjs';
 import {
+  FIGMA_PRECISION_SOURCE_UNITS,
   INHERIT,
   SOURCE_UNIT_VALUES,
   buildInputArtifactIndex,
+  inspectFigmaSourcePrecision,
   isRfc3339,
   parseInputEvidenceRef,
   parseRfc3339,
+  resolveEffectiveSourceRef,
   resolveInputEvidence,
 } from './provenance.mjs';
 import {
@@ -735,18 +738,49 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
     }
 
     // Provenance 필수값 (item 표는 신규 계약이라 처음부터 hard — 설계 D4·§9).
-    if (row.sourceUnit && !SOURCE_UNIT_VALUES.includes(row.sourceUnit)) {
+    const sourceUnitValid = row.sourceUnit && SOURCE_UNIT_VALUES.includes(row.sourceUnit);
+    if (row.sourceUnit && !sourceUnitValid) {
       add(`RP-001: ${label} 의 Source Unit enum 위반: '${row.sourceUnit}' (기대 ${SOURCE_UNIT_VALUES.join('|')})`);
-    } else if (row.sourceUnit === 'n/a' && row.effect && row.effect !== 'reject') {
+    } else if (
+      row.sourceUnit === 'n/a' &&
+      row.basis !== 'visual-evidence' &&
+      row.effect &&
+      row.effect !== 'reject'
+    ) {
       warn(`RP-101: ${label} 의 Source Unit=n/a 는 reject 또는 source 없는 procedural item 전용 (현재 Effect=${row.effect})`);
     }
     if (row.capturedAt && row.capturedAt !== INHERIT && !isRfc3339(row.capturedAt)) {
       add(`RP-002: ${label} 의 Captured At '${row.capturedAt}' 은 '${INHERIT}' 또는 RFC3339(with timezone) 여야 함`);
     }
-    const inputFm = inputsById.get(row.inputId)?.fm;
+    const inputArtifact = inputsById.get(row.inputId);
+    const inputFm = inputArtifact?.fm;
     if (row.sourceRef === INHERIT && inputFm && (typeof inputFm.source_ref !== 'string' || inputFm.source_ref.trim() === '')) {
       add(`RP-003: ${label} 의 Source Ref=inherit 인데 input '${row.inputId}' frontmatter 에 source_ref 가 없음`);
     }
+
+    // visual-evidence is explicitly a Figma/node-based basis. Resolve inherit
+    // before judging precision, then require a canonical file + node/frame anchor.
+    // document/statement/n/a remain valid enum values in other reconciliation
+    // contexts but cannot satisfy the visual precision floor.
+    const effectiveSourceRef = resolveEffectiveSourceRef(row.sourceRef, inputArtifact);
+    if (row.basis === 'visual-evidence' && sourceUnitValid && effectiveSourceRef) {
+      const precision = inspectFigmaSourcePrecision({
+        sourceRef: effectiveSourceRef,
+        sourceUnit: row.sourceUnit,
+      });
+      if (!precision.ok) {
+        if (precision.reason === 'coarse-unit') {
+          add(
+            `RP-005: ${label} visual-evidence precision floor 위반: Source Unit='${row.sourceUnit}'은 node/frame 귀속을 제공하지 못함 — ${FIGMA_PRECISION_SOURCE_UNITS.join('|')} 중 실제 단위와 canonical Figma pointer를 명시하세요`,
+          );
+        } else if (precision.reason === 'missing-anchor') {
+          add(
+            `RP-005: ${label} visual-evidence precision floor 위반: effective Source Ref '${effectiveSourceRef}'에 file + node/frame 식별자가 없음 (기대 figma://file/<file>/(node|frame)/<id>)`,
+          );
+        }
+      }
+    }
+
     if (row.capturedAt === INHERIT && inputFm) {
       if (typeof inputFm.captured_at !== 'string' || inputFm.captured_at.trim() === '') {
         add(`RP-003: ${label} 의 Captured At=inherit 인데 input '${row.inputId}' frontmatter 에 captured_at 가 없음`);

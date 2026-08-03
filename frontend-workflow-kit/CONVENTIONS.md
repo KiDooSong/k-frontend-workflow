@@ -151,6 +151,8 @@ records extraction/verification fidelity independently from confidence and is au
 from explicit JSON/YAML payload values; it never changes status/readiness. New or explicitly
 opted-in Figma mappings use `provenance_contract: 1`, keep the existing 4-column Component
 Mapping header, and add every anchored M-key plus its 5-column Mapping Provenance row atomically.
+The effective direct/inherited Source Ref must retain a canonical Figma file + node/frame anchor;
+planning/API/file-only refs and coarse `document`/`statement`/`n/a` units do not satisfy the floor.
 Raw source collection remains consumer-owned; agents do not resolve/confirm/accept from these fields.
 
 ## Tier3 Layers

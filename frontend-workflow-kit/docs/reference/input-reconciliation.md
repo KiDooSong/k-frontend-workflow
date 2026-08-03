@@ -445,7 +445,11 @@ v2 가 소비하는 마크다운은 **좁은 canonical authoring profile** 만 �
   inherit 로 해소된 `captured_at` 도 이 item 의 provenance 이므로 RFC3339 계약을 hard 로 통과해야 한다.
   `Source Unit` 은 item 마다 명시(enum: `document` `statement` `record` `instance` `node` `frame` `token`
   `screenshot` `measurement` `aggregate` `n/a`) — "카드 12개"가 Figma instance 수면 `instance`, API record 수면
-  `record` 다. 이 구분이 정밀도 바닥이다. `n/a` 는 reject/procedural item 전용(warning-first).
+  `record` 다. 이 구분이 정밀도 바닥이다. `n/a` 는 일반 item 에서 reject/procedural 전용 warning-first다.
+- `Basis=visual-evidence` 는 더 강한 hard floor를 가진다. direct/inherited를 먼저 해소한 effective
+  `Source Ref`가 `figma://file/<file>/(node|frame)/<id>` 형태로 file과 node/frame을 모두 식별해야 하며,
+  `document`/`statement`/`n/a`만으로는 통과하지 않는다(`RP-005`). 다른 enum unit도 pointer에서 자동
+  추론하지 않고 저자가 실제 단위를 명시하되, 같은 canonical Figma anchor와 결합해야 한다.
 
 ### Routing matrix (hard)
 
@@ -595,7 +599,10 @@ implementation-mode-policy.migration.md
 - Source Ref/Captured At의 `inherit`은 같은 행 Evidence input에서 해소한다. direct Source Ref + inherited timestamp도 허용한다.
 - Evidence는 Reconciliation Items와 같은 grammar/AST/index를 쓴다. missing/ambiguous input·missing section·`/00`은 hard,
   out-of-range bullet은 warning-first다.
-- `instance`는 Figma component instance, `record`는 API/domain data record다. pointer에서 자동 추론하지 않는다.
+- direct/inherited를 해소한 effective Source Ref는 반드시
+  `figma://file/<file>/(node|frame)/<id>` 형태로 file과 node/frame을 식별해야 한다. `document`/`statement`/`n/a`는
+  mapping precision floor를 충족하지 못해 `MP-018` hard다. `instance`는 Figma component instance,
+  `record`는 API/domain data record이며 다른 허용 enum과 마찬가지로 pointer에서 자동 추론하지 않는다.
 - generic `## Provenance`의 ✔T/✔M marker legend는 별도 설명 섹션이며 machine table로 오인하지 않는다.
 - Mapping 검사는 Reconciliation Register가 없거나 v1/v2여도 독립적으로 실행된다.
 - 기존 mapping opt-in은 `provenance_contract` + 모든 M-key + 모든 provenance row를 한 edit에서 원자적으로 추가한다.

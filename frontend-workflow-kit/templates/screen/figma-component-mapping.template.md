@@ -34,6 +34,8 @@ provenance_contract: 1     # Mapping Provenance Contract v1. 모든 M-ID + prove
   - 비표준 frontmatter 필드(figma_frame_ref 등) 금지. 프레임 ref 는 frontmatter `sources` 와 아래 `## Frame` 절에만.
   - `## Component Mapping` 표 헤더는 바꾸지 않는다(기존 4컬럼 보존). 첫 셀 맨 앞에 `` `M-001` · `` key를 붙인다.
   - `## Mapping Provenance`는 정확한 5컬럼 machine contract다. `## Provenance`의 ✔T/✔M marker legend와 별개이며 둘은 공존한다.
+  - direct/inherited를 해소한 effective Source Ref는 `figma://file/<file>/(node|frame)/<id>`로 file과 node/frame을 모두 식별해야 한다.
+    planning/API ref, file-only ref, `document`/`statement`/`n/a`는 Mapping Provenance precision floor를 충족하지 못한다.
   - Source Unit의 `instance`는 Figma component instance, `record`는 API/domain data record를 뜻한다. source pointer에서 자동 추론하지 않는다.
 
   [킷 core 는 시각 값을 수집하지 않는다]
@@ -62,11 +64,12 @@ provenance_contract: 1     # Mapping Provenance Contract v1. 모든 M-ID + prove
 ## Mapping Provenance
 | Mapping Key | Source Ref | Source Unit | Captured At | Evidence |
 |---|---|---|---|---|
-| M-001 | {figma://file/.../node/... 또는 inherit} | {instance|node|frame|token|measurement|...} | {RFC3339+timezone 또는 inherit} | input:{input_id}#extracted-facts/01 |
+| M-001 | {figma://file/<file>/(node|frame)/<id> 또는 inherit} | {instance|node|frame|record|token|measurement|...} | {RFC3339+timezone 또는 inherit} | input:{input_id}#extracted-facts/01 |
 
 <!--
   Mapping Key ↔ Mapping Provenance는 완전한 1:1이다. Source Ref=inherit/Captured At=inherit은 같은 행 Evidence가
-  가리키는 canonical input의 source_ref/captured_at을 상속한다. Evidence는 1-based bullet ref이며 /00은 금지.
+  가리키는 canonical input의 source_ref/captured_at을 상속한다. 상속 후 effective Source Ref도 canonical Figma
+  file + node/frame anchor여야 한다. Evidence는 1-based bullet ref이며 /00은 금지.
   기존 문서를 opt-in할 때 provenance_contract만 먼저 추가하지 말고 모든 M-ID와 모든 provenance 행을 한 번에 추가한다.
 -->
 

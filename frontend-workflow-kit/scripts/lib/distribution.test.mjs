@@ -1737,11 +1737,11 @@ test('packed input fidelity and Mapping Provenance contracts execute without a r
   assert.equal(passBody.warnings.some((entry) => /IF-107/.test(entry.message)), true);
 
   fs.writeFileSync(mappingFile, mapping('n/a'));
-  const warning = run('validate.mjs', '--docs', docs, '--src', src, '--enforce', '--json');
-  assert.equal(warning.status, 0, warning.stderr);
-  const warningBody = JSON.parse(warning.stdout);
-  assert.equal(warningBody.warnings.some((entry) => /IF-107/.test(entry.message)), true);
-  assert.equal(warningBody.warnings.some((entry) => /MP-102/.test(entry.message)), true);
+  const precisionFail = run('validate.mjs', '--docs', docs, '--src', src, '--enforce', '--json');
+  assert.equal(precisionFail.status, 1, precisionFail.stderr);
+  const precisionBody = JSON.parse(precisionFail.stdout);
+  assert.equal(precisionBody.warnings.some((entry) => /IF-107/.test(entry.message)), true);
+  assert.equal(precisionBody.errors.some((entry) => entry.check === 12 && /MP-018/.test(entry.message)), true);
 
   fs.writeFileSync(mappingFile, mapping('instance', false));
   const fail = run('validate.mjs', '--docs', docs, '--src', src, '--json');

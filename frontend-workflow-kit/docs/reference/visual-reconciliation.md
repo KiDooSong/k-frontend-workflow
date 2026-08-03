@@ -74,7 +74,10 @@ consistency** 를 다룬다 — "이 화면이 맞게 구현됐나"가 아니라
 5컬럼 `## Mapping Provenance`에서 Source Ref / Source Unit / Captured At / Evidence를 1:1로 연결한다.
 
 - 새 mapping을 만들거나 legacy mapping을 opt-in할 때 contract field, 모든 M-key, 모든 provenance row를 **같은 edit**에서 작성한다.
-- `instance`는 Figma component instance, `record`는 API/domain record다. source pointer에서 자동 추론하지 않는다.
+- direct/inherited를 해소한 effective Source Ref는 canonical
+  `figma://file/<file>/(node|frame)/<id>`로 file과 node/frame을 모두 식별해야 한다. planning/API ref,
+  file-only ref, `document`/`statement`/`n/a`는 MP hard다.
+- `instance`는 Figma component instance, `record`는 API/domain record다. source pointer에서 단위를 자동 추론하지 않는다.
 - `Source Ref=inherit`/`Captured At=inherit`은 같은 행의 input Evidence에서 해소한다. direct Source Ref + inherited timestamp도 허용한다.
 - `## Provenance`의 ✔T/✔M/◎/▱/⚠ marker legend는 값/토큰 설명이며 machine `## Mapping Provenance`와 별개다.
 - raw Figma 수집·node 존재 확인은 consumer source-specific producer 소관이며 kit validator는 네트워크 호출을 하지 않는다.

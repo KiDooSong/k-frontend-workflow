@@ -28,6 +28,9 @@ or root config.
   be produced through `--from-json`/`--from-yaml`; the producer hard-rejects malformed payloads while
   validator IF-1xx findings remain warning-first and are not promoted by `--enforce`. Fidelity does not
   alter confidence, input status, Reconcile Status, or readiness.
+- `--overwrite` now protects the existing inheritance graph: it compares before/after IF findings and
+  rejects a v2→v1 or verified→unverified replacement when that change newly breaks any reverse dependent.
+  Pre-existing unrelated IF warnings do not block a safe overwrite.
 - New `figma-component-mapping` files from the shipped template use `provenance_contract: 1`. Legacy
   mapping docs remain silent and are not automatically migrated. To opt one in, make one atomic edit:
   add the contract field, add a canonical `` `M-xxx` · `` key to every 4-column Component Mapping row,
@@ -36,6 +39,9 @@ or root config.
 - Mapping validation runs as check 12 even when no Reconciliation Register exists (and with either v1
   or v2 register). MP-0xx is hard; MP-1xx stays warning-first under `--enforce`. The generic
   `## Provenance` marker legend remains a separate, non-machine section.
+- Mapping and `Basis=visual-evidence` provenance resolve `inherit` first, then require an effective
+  `figma://file/<file>/(node|frame)/<id>` anchor. Planning/API/file-only refs and coarse
+  `document`/`statement`/`n/a` units do not satisfy the precision floor.
 - **Manual action:** after vendoring, run `workflow:validate`; repair IP errors first, then opt in only
   mappings whose source/evidence/unit/timestamp can be stated without invention.
 

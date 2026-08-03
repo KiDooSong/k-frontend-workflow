@@ -625,7 +625,7 @@ test('producer rejects invalid caller captured_at before input_id generation or 
   }
 });
 
-test('CLI rejects empty --captured-at and an earlier malformed duplicate before writing', (t) => {
+test('CLI rejects empty --captured-at before writing', (t) => {
   const docs = path.join(tmpdir(t), 'docs', 'frontend-workflow');
   const baseArgs = [
     CLI, '--docs', docs, '--input-type', 'planning', '--source-type', 'planning-doc',
@@ -639,6 +639,24 @@ test('CLI rejects empty --captured-at and an earlier malformed duplicate before 
     const res = spawnSync(process.execPath, [...baseArgs, ...extra], { encoding: 'utf8' });
     assert.equal(res.status, 2);
     assert.match(res.stderr, /captured-at.*requires a non-empty value/);
+    assert.equal(fs.existsSync(path.join(docs, 'inputs')), false);
+  }
+});
+
+test('CLI rejects non-empty duplicate --captured-at so an earlier malformed occurrence cannot be hidden', (t) => {
+  const docs = path.join(tmpdir(t), 'docs', 'frontend-workflow');
+  const baseArgs = [
+    CLI, '--docs', docs, '--input-type', 'planning', '--source-type', 'planning-doc',
+    '--source-ref', 'planning://note', '--captured-by', 'producer-test', '--domain', 'auth',
+    '--screen', 'AUTH-001', '--dry-run', '--json',
+  ];
+  for (const extra of [
+    ['--captured-at', '2026-07-30', '--captured-at', '2026-07-30T10:00:00+09:00'],
+    ['--captured-at=2026-07-30', '--captured-at=2026-07-30T10:00:00+09:00'],
+  ]) {
+    const res = spawnSync(process.execPath, [...baseArgs, ...extra], { encoding: 'utf8' });
+    assert.equal(res.status, 2);
+    assert.match(res.stderr, /--captured-at may only be provided once/);
     assert.equal(fs.existsSync(path.join(docs, 'inputs')), false);
   }
 });
@@ -772,4 +790,163 @@ test('producer accepts inherited fidelity only when chain reaches verified v2 ev
   }), { inputsDir: dir, dryRun: true });
   assert.equal(inherited.wrote, false);
   assert.match(inherited.text, /input_contract: 2/);
+});
+
+test('overwrite rejects downgrading a verified v2 terminal when an inherited dependent would break', (t) => {
+  const dir = path.join(tmpdir(t, 'input-producer-overwrite-v2-'), 'inputs');
+  const terminalId = 'IN-20260625-figma-001';
+  const dependentId = 'IN-20260625-figma-002';
+  writeInputArtifact(payload({
+    source: 'figma',
+    input_id: terminalId,
+    raw_artifacts: ['raw.png'],
+    input_contract: 2,
+    fidelity: {
+      extraction: 'vision-verbatim',
+      verification: 'verified',
+      verified_against: 'raw_artifact:raw.png',
+      unreadable_count: 0,
+    },
+  }), { inputsDir: dir });
+  writeInputArtifact(payload({
+    source: 'figma',
+    input_id: dependentId,
+    input_contract: 2,
+    fidelity: {
+      extraction: 'inherited',
+      verification: 'inherited',
+      verified_against: `input:${terminalId}`,
+      unreadable_count: 0,
+    },
+  }), { inputsDir: dir });
+
+  const terminalFile = path.join(dir, `${terminalId}.md`);
+  const before = fs.readFileSync(terminalFile, 'utf8');
+  assert.throws(
+    () => writeInputArtifact(payload({
+      source: 'figma',
+      input_id: terminalId,
+      input_contract: 2,
+      fidelity: {
+        extraction: 'direct-text',
+        verification: 'unverified',
+        unreadable_count: 0,
+      },
+    }), { inputsDir: dir, overwrite: true }),
+    /Input Fidelity overwrite would introduce new issues:[\s\S]*IF-119/,
+  );
+  assert.equal(fs.readFileSync(terminalFile, 'utf8'), before, 'rejected overwrite must not modify terminal');
+});
+
+test('overwrite rejects replacing a verified v2 terminal with v1 when inherited dependents exist', (t) => {
+  const dir = path.join(tmpdir(t, 'input-producer-overwrite-v1-'), 'inputs');
+  const terminalId = 'IN-20260625-figma-001';
+  const dependentId = 'IN-20260625-figma-002';
+  writeInputArtifact(payload({
+    source: 'figma', input_id: terminalId, raw_artifacts: ['raw.png'], input_contract: 2,
+    fidelity: {
+      extraction: 'structured-source', verification: 'verified',
+      verified_against: 'raw_artifact:raw.png', unreadable_count: 0,
+    },
+  }), { inputsDir: dir });
+  writeInputArtifact(payload({
+    source: 'figma', input_id: dependentId, input_contract: 2,
+    fidelity: {
+      extraction: 'inherited', verification: 'inherited',
+      verified_against: `input:${terminalId}`, unreadable_count: 0,
+    },
+  }), { inputsDir: dir });
+
+  const terminalFile = path.join(dir, `${terminalId}.md`);
+  const before = fs.readFileSync(terminalFile, 'utf8');
+  assert.throws(
+    () => writeInputArtifact(payload({ source: 'figma', input_id: terminalId }), {
+      inputsDir: dir,
+      overwrite: true,
+    }),
+    /Input Fidelity overwrite would introduce new issues:[\s\S]*IF-118/,
+  );
+  assert.equal(fs.readFileSync(terminalFile, 'utf8'), before);
+});
+
+test('overwrite rejects a terminal change that newly breaks every reverse dependent in a multi-hop chain', (t) => {
+  const dir = path.join(tmpdir(t, 'input-producer-overwrite-chain-'), 'inputs');
+  const ids = [
+    'IN-20260625-figma-001',
+    'IN-20260625-figma-002',
+    'IN-20260625-figma-003',
+  ];
+  writeInputArtifact(payload({
+    source: 'figma', input_id: ids[0], raw_artifacts: ['raw.png'], input_contract: 2,
+    fidelity: {
+      extraction: 'vision-verbatim', verification: 'verified',
+      verified_against: 'raw_artifact:raw.png', unreadable_count: 0,
+    },
+  }), { inputsDir: dir });
+  for (let index = 1; index < ids.length; index += 1) {
+    writeInputArtifact(payload({
+      source: 'figma', input_id: ids[index], input_contract: 2,
+      fidelity: {
+        extraction: 'inherited', verification: 'inherited',
+        verified_against: `input:${ids[index - 1]}`, unreadable_count: 0,
+      },
+    }), { inputsDir: dir });
+  }
+
+  assert.throws(
+    () => writeInputArtifact(payload({
+      source: 'figma', input_id: ids[0], input_contract: 2,
+      fidelity: {
+        extraction: 'manual-transcription', verification: 'unverified', unreadable_count: 0,
+      },
+    }), { inputsDir: dir, overwrite: true }),
+    (error) => {
+      assert.match(error.message, /IF-119/);
+      assert.match(error.message, /IN-20260625-figma-002\.md/);
+      assert.match(error.message, /IN-20260625-figma-003\.md/);
+      return true;
+    },
+  );
+});
+
+test('overwrite delta ignores pre-existing unrelated fidelity warnings', (t) => {
+  const dir = path.join(tmpdir(t, 'input-producer-overwrite-delta-'), 'inputs');
+  const unrelatedId = 'IN-20260625-figma-001';
+  const candidateId = 'IN-20260625-figma-002';
+
+  // Hand-author a pre-existing warning that the producer did not create. The
+  // overwrite guard must compare before/after issue sets rather than treating
+  // every repository warning as a blocker.
+  write(path.join(dir, `${unrelatedId}.md`), [
+    '---',
+    `input_id: "${unrelatedId}"`,
+    'input_type: "figma"',
+    'source_type: "figma"',
+    'source_ref: "figma://file/abc/node/1:234"',
+    'captured_at: "2026-06-25T10:00:00+09:00"',
+    'captured_by: "fixture"',
+    'status: "captured"',
+    'affected_domains: ["auth"]',
+    'affected_screens: ["AUTH-001"]',
+    'input_contract: 2',
+    'fidelity:',
+    '  extraction: direct-text',
+    '  verification: verified',
+    '  unreadable_count: 0',
+    '---',
+    '',
+    '## Extracted Facts',
+    '- pre-existing malformed fidelity',
+    '',
+  ].join('\n'));
+  writeInputArtifact(payload({ source: 'figma', input_id: candidateId }), { inputsDir: dir });
+
+  const result = writeInputArtifact(payload({
+    source: 'figma',
+    input_id: candidateId,
+    summary: 'Safe v1 overwrite despite unrelated existing warning.',
+  }), { inputsDir: dir, overwrite: true });
+
+  assert.equal(result.wrote, true);
+  assert.match(fs.readFileSync(path.join(dir, `${candidateId}.md`), 'utf8'), /Safe v1 overwrite/);
 });

@@ -12,10 +12,15 @@
 - opt-in `input_contract: 2` Input Fidelity Contract를 추가했다. `confidence`와 독립적으로
   extraction/verification/verified_against/unreadable_count를 구조화하며, validator는 IF-1xx warning-first,
   producer는 JSON/YAML payload write-time hard다. inherited chain은 missing/self/duplicate/v1/malformed/cycle/
-  non-verified terminal을 fail-closed한다. 기존 v1 producer output과 valid v1 fidelity 진단은 그대로다.
+  non-verified terminal을 fail-closed한다. overwrite는 candidate version과 무관하게 before/after 전체 issue
+  delta를 비교해 reverse dependent에 새 IF issue가 생기는 v2→v1·verified→unverified 변경도 write 전에 막는다.
+  기존 unrelated warning은 delta가 아니므로 안전한 overwrite를 막지 않는다. 기존 v1 producer output과
+  valid v1 fidelity 진단은 그대로다.
 - `provenance_contract: 1` Figma Mapping Provenance를 check 12에 추가했다. 기존 Component Mapping 4컬럼은
   유지하고 첫 셀의 `M-xxx` key와 5컬럼 `## Mapping Provenance`를 1:1로 강제한다. Source Ref/Unit/
-  Captured At/Evidence를 분리하고 `record`/`instance` 의미를 고정했다. legacy mapping은 무발화하며,
+  Captured At/Evidence를 분리하고 `record`/`instance` 의미를 고정했다. direct/inherited effective Source Ref는
+  canonical Figma file + node/frame anchor여야 하며 planning/API/file-only ref와 `document`/`statement`/`n/a`는
+  MP hard다. `Basis=visual-evidence` item에도 같은 floor를 RP hard로 적용한다. legacy mapping은 무발화하며,
   opted-in MP-0xx는 hard, MP-1xx는 `--enforce`로 승격하지 않는다. Register 없음/v1/v2와 독립적으로 실행한다.
 - Reconciliation Items와 Mapping Provenance가 duplicate-preserving input index, CommonMark/GFM section resolver,
   input Evidence grammar를 공유한다. packed template/skills/reference와 migration note를 같은 계약으로 갱신했다.

@@ -744,8 +744,10 @@ input evidence section pointer 존재
 Figma/node-based item의 추가 최소 조건:
 
 ```txt
-Source Unit=node|instance|frame 중 하나
-+ Source Ref에 node/frame 식별 가능한 토큰 존재
+direct/inherited를 해소한 effective Source Ref가
+figma://file/<file>/(node|frame)/<id> 로 file + node/frame을 식별
++ Source Unit=document|statement|n/a 금지
++ 나머지 enum 중 실제 단위를 저자가 명시 (pointer에서 unit 자동 추론 금지)
 ```
 
 숫자 집계 item의 추가 최소 조건:
@@ -798,6 +800,9 @@ provenance_contract: 1
 - 모든 key에 provenance row 정확히 1개
 - orphan provenance row 금지
 - Source Unit·timestamp·Evidence 형식 검사
+- direct/inherited effective Source Ref가 canonical Figma file + node/frame anchor인지 hard 검사
+- `document`/`statement`/`n/a`는 mapping precision floor를 충족하지 못하므로 hard 거부
+- 다른 Source Unit도 pointer에서 추론하지 않고 실제 단위를 명시하되 같은 Figma anchor와 결합
 - frontmatter `sources`/`## Frame`과 source ref의 파일/frame 축이 명백히 모순되면 warning
 
 ### 10.4 records-vs-instances 예시
@@ -1152,7 +1157,8 @@ structured_since: <adoption timestamp>
 선택 사항이다. backfill할 경우 실제 과거 source가 불명확하면 정밀도를 발명하지 않는다.
 
 - `Source Ref=inherit`가 가능하면 사용
-- `Source Unit=document|statement`처럼 확인 가능한 최소 단위 사용
+- non-visual legacy item은 `Source Unit=document|statement`처럼 확인 가능한 최소 단위를 사용할 수 있다
+- `Basis=visual-evidence` 또는 opted-in Figma Mapping은 canonical Figma file + node/frame anchor가 없으면 backfill하지 않는다
 - 확인 불가한 node/instance를 추측하지 않음
 - `legacy-unavailable` 같은 escape hatch를 hard 통과용으로 만들지 않음
 
@@ -1218,8 +1224,9 @@ backfill 불가 행은 `structured_since` 이전 legacy로 남긴다.
 
 완화:
 
-- Figma/node/count 계열에는 Source Unit별 추가 규칙
-- reviewer는 source precision floor만 확인하되 명백히 더 구체적인 source가 있는데 `document`로 뭉개면 Major로 판단 가능
+- Figma mapping과 `Basis=visual-evidence`에는 effective Source Ref + Source Unit 조합의 hard 규칙 적용
+- planning/API/file-only ref 및 `document`/`statement`/`n/a`로 Figma 귀속을 가장하는 것을 validator가 거부
+- reviewer는 hard floor 이후의 과도한 정밀화만 요구하지 않는다
 - 무한 정밀화는 금지
 
 ---

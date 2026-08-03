@@ -26,6 +26,7 @@ shared shell/logo/header/CTA ownership 이 화면별 ad-hoc patch 로 흩어지�
 - 구현은 implement-screen 경로(readiness `allowed_paths`)를 우회하지 않는다.
 - 게이트를 올리는 방향(Open Decision 추가/재오픈, Conflict/Unknown/Gap 기록)만 한다.
 - 새 mapping을 만들거나 legacy mapping을 opt-in할 때 `provenance_contract: 1`, 모든 anchored M-key, 모든 5컬럼 Mapping Provenance 행을 같은 edit에서 작성한다. 기존 4컬럼 Component Mapping header는 바꾸지 않는다.
+- direct/inherited effective Source Ref는 canonical Figma file + node/frame anchor여야 한다. planning/API/file-only ref와 `document`/`statement`/`n/a`는 mapping 근거로 통과시키지 않는다.
 - `instance`는 Figma component instance, `record`는 API/domain record다. confidence와 fidelity/provenance를 섞지 않고 자동 resolve/confirm/accept하지 않는다.
 
 ## 1. Preflight

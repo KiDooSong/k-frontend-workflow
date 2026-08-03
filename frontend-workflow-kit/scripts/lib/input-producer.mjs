@@ -449,10 +449,14 @@ export function writeInputArtifact(payload, options = {}) {
   }
 
   // Resolve inherited fidelity against the same recursive input universe used by
-  // validate check 11. Replace the overwritten file with the candidate so cycles
-  // and duplicate targets are evaluated exactly as they will be after the write.
-  if (artifact.frontmatter.input_contract === 2) {
-    const existingArtifacts = collectInputArtifacts(inputsDir)
+  // validate check 11. For a new v2 artifact, reject its own unresolved chain. For
+  // overwrite, compare the entire before/after universe even when the candidate is
+  // v1: replacing a verified terminal can newly break reverse dependents, and those
+  // issues are attributed to the dependent artifact rather than the candidate.
+  if (options.overwrite || artifact.frontmatter.input_contract === 2) {
+    const existingArtifacts = collectInputArtifacts(inputsDir);
+    const beforeIssues = collectInputFidelityIssues(existingArtifacts).issues;
+    const postWriteArtifacts = existingArtifacts
       .filter((entry) => !(options.overwrite && path.resolve(entry.file) === outputPathResolved));
     const candidate = {
       file: outputPath,
@@ -460,11 +464,32 @@ export function writeInputArtifact(payload, options = {}) {
       hasFrontmatter: true,
       parseError: undefined,
     };
-    const fidelityIssues = collectInputFidelityIssues([...existingArtifacts, candidate]).issues
-      .filter((issue) => issue.artifact === candidate);
+    const afterIssues = collectInputFidelityIssues([...postWriteArtifacts, candidate]).issues;
+
+    let fidelityIssues;
+    if (options.overwrite) {
+      const fingerprint = (issue) => {
+        const file = issue.file || issue.artifact?.file || '';
+        return `${path.resolve(file)}\u0000${issue.message}`;
+      };
+      const beforeFingerprints = new Set(beforeIssues.map(fingerprint));
+      fidelityIssues = afterIssues.filter((issue) => !beforeFingerprints.has(fingerprint(issue)));
+    } else {
+      fidelityIssues = afterIssues.filter((issue) => issue.artifact === candidate);
+    }
+
     if (fidelityIssues.length) {
+      const heading = options.overwrite
+        ? 'Input Fidelity overwrite would introduce new issues:'
+        : 'Input Fidelity Contract v2 invalid:';
       throw new InputProducerError(
-        ['Input Fidelity Contract v2 invalid:', ...fidelityIssues.map((issue) => issue.message)].join('\n'),
+        [
+          heading,
+          ...fidelityIssues.map((issue) => {
+            const file = issue.file ? path.relative(inputsDir, issue.file) || path.basename(issue.file) : '(candidate)';
+            return `${file}: ${issue.message}`;
+          }),
+        ].join('\n'),
       );
     }
   }
