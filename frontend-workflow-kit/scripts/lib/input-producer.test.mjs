@@ -833,7 +833,7 @@ test('overwrite rejects downgrading a verified v2 terminal when an inherited dep
         unreadable_count: 0,
       },
     }), { inputsDir: dir, overwrite: true }),
-    /Input Fidelity overwrite would introduce new issues:[\s\S]*IF-119/,
+    /Input Fidelity overwrite invalid:[\s\S]*IF-119/,
   );
   assert.equal(fs.readFileSync(terminalFile, 'utf8'), before, 'rejected overwrite must not modify terminal');
 });
@@ -864,7 +864,7 @@ test('overwrite rejects replacing a verified v2 terminal with v1 when inherited 
       inputsDir: dir,
       overwrite: true,
     }),
-    /Input Fidelity overwrite would introduce new issues:[\s\S]*IF-118/,
+    /Input Fidelity overwrite invalid:[\s\S]*IF-118/,
   );
   assert.equal(fs.readFileSync(terminalFile, 'utf8'), before);
 });
@@ -907,6 +907,76 @@ test('overwrite rejects a terminal change that newly breaks every reverse depend
       return true;
     },
   );
+});
+
+test('overwrite always rejects pre-existing candidate inheritance issues even when fingerprints are unchanged', (t) => {
+  for (const scenario of [
+    {
+      name: 'missing target',
+      target: 'IN-20260625-figma-999',
+      diagnostic: /IF-115/,
+    },
+    {
+      name: 'self reference',
+      target: 'IN-20260625-figma-001',
+      diagnostic: /IF-116/,
+    },
+  ]) {
+    const dir = path.join(tmpdir(t, `input-producer-overwrite-existing-${scenario.name.replace(/\s+/g, '-')}-`), 'inputs');
+    const candidateId = 'IN-20260625-figma-001';
+    const candidateFile = path.join(dir, `${candidateId}.md`);
+
+    // Hand-author a warning-first v2 artifact that predates producer hardening.
+    // Rewriting the same invalid chain must not pass merely because file+message
+    // fingerprints are identical before and after the overwrite.
+    write(candidateFile, [
+      '---',
+      `input_id: "${candidateId}"`,
+      'input_type: "figma"',
+      'source_type: "figma"',
+      'source_ref: "figma://file/abc/node/1:234"',
+      'captured_at: "2026-06-25T10:00:00+09:00"',
+      'captured_by: "legacy-writer"',
+      'status: "captured"',
+      'affected_domains: ["auth"]',
+      'affected_screens: ["AUTH-001"]',
+      'input_contract: 2',
+      'fidelity:',
+      '  extraction: inherited',
+      '  verification: inherited',
+      `  verified_against: "input:${scenario.target}"`,
+      '  unreadable_count: 0',
+      '---',
+      '',
+      '## Summary',
+      'Pre-existing invalid inherited fidelity.',
+      '',
+    ].join('\n'));
+    const before = fs.readFileSync(candidateFile, 'utf8');
+
+    assert.throws(
+      () => writeInputArtifact(payload({
+        source: 'figma',
+        input_id: candidateId,
+        summary: `Attempted overwrite retaining ${scenario.name}.`,
+        input_contract: 2,
+        fidelity: {
+          extraction: 'inherited',
+          verification: 'inherited',
+          verified_against: `input:${scenario.target}`,
+          unreadable_count: 0,
+        },
+      }), { inputsDir: dir, overwrite: true }),
+      (error) => {
+        assert.match(error.message, /Input Fidelity overwrite invalid:/);
+        assert.match(error.message, scenario.diagnostic);
+        assert.match(error.message, new RegExp(`${candidateId}\\.md`));
+        return true;
+      },
+      scenario.name,
+    );
+    assert.equal(fs.readFileSync(candidateFile, 'utf8'), before, `${scenario.name}: rejected overwrite must be byte unchanged`);
+  }
 });
 
 test('overwrite delta ignores pre-existing unrelated fidelity warnings', (t) => {

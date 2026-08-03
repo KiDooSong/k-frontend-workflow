@@ -473,14 +473,30 @@ export function writeInputArtifact(payload, options = {}) {
         return `${path.resolve(file)}\u0000${issue.message}`;
       };
       const beforeFingerprints = new Set(beforeIssues.map(fingerprint));
-      fidelityIssues = afterIssues.filter((issue) => !beforeFingerprints.has(fingerprint(issue)));
+
+      // The candidate is producer-authored now, so every after-state issue on it
+      // is a hard reject even when the same warning already existed in the manually
+      // authored file. Delta semantics apply only to other artifacts, preserving
+      // tolerance for unrelated pre-existing warnings while still protecting
+      // reverse dependents newly broken by this overwrite.
+      const candidateIssues = afterIssues.filter((issue) => issue.artifact === candidate);
+      const newlyIntroducedDependentIssues = afterIssues.filter(
+        (issue) => issue.artifact !== candidate && !beforeFingerprints.has(fingerprint(issue)),
+      );
+      const seen = new Set();
+      fidelityIssues = [...candidateIssues, ...newlyIntroducedDependentIssues].filter((issue) => {
+        const key = fingerprint(issue);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
     } else {
       fidelityIssues = afterIssues.filter((issue) => issue.artifact === candidate);
     }
 
     if (fidelityIssues.length) {
       const heading = options.overwrite
-        ? 'Input Fidelity overwrite would introduce new issues:'
+        ? 'Input Fidelity overwrite invalid:'
         : 'Input Fidelity Contract v2 invalid:';
       throw new InputProducerError(
         [
