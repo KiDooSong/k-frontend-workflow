@@ -4,7 +4,7 @@ input_id: "IN-{YYYYMMDD}-{source}-{NNN}"   # required·불변·전역유일. 멱
 input_type: "{planning|figma|visual-spec|api|meeting|qa|testid|architecture|policy-migration|user-note}"     # required. normalized category(입력 성격 라벨)
 source_type: "{planning-doc|figma|visual-spec|api-doc|meeting|qa|qa-automation|testid|architecture|policy-migration|user-note}"   # required. concrete source adapter/type(원천 종류)
 source_ref: "{원본 링크 또는 파일 경로}"   # required. 추적용 원천 포인터
-captured_at: "{YYYY-MM-DD}T00:00:00+09:00"   # required. 입력을 수집한 시점
+captured_at: "{YYYY-MM-DD}T00:00:00+09:00"   # required. RFC3339 + timezone hard 계약(Z/±HH:MM). date-only/local datetime 금지.
 captured_by: "{입력 스킬 이름}"             # required. 어떤 입력 스킬이 저장했는지
 status: "captured"                          # required. 입력 *자체*의 상태. ★ Reconciliation Register 의 Reconcile Status 와 다르다(별개 라이프사이클).
 affected_domains: ["{domain}"]              # required. 관련 도메인 (canonical scope 필드)
@@ -12,7 +12,14 @@ affected_screens: ["{SCREEN_ID}"]           # required. 관련 화면 (canonical
 # --- optional ---
 confidence: "{unknown|candidate|confirmed}"  # optional(recommended). 입력의 확신도. candidate 가 기본. confirmed 라도 LLM 이 문서를 confirmed 로 올리진 않는다.
 supersedes: null                            # optional. 같은 원천의 이전 input_id 를 대체할 때만(입력↔입력 축. 결정값 번복 아님).
-raw_artifacts: []                           # optional. 원본 첨부(스크린샷·export 등) 경로/URL 목록. 없으면 생략 가능.
+raw_artifacts: []                           # optional. 원본 첨부(스크린샷·export 등) authored pointer 목록. 없으면 생략 가능.
+# --- optional Input Fidelity Contract v2 (confidence와 독립; JSON/YAML producer payload로 opt-in) ---
+# input_contract: 2
+# fidelity:
+#   extraction: "{direct-text|vision-verbatim|structured-source|manual-transcription|inherited}"
+#   verification: "{unverified|verified|inherited|not-applicable}"
+#   verified_against: "raw_artifact:{raw_artifacts의 exact pointer}"  # verified일 때. inherited는 input:{input_id}; 그 외 생략.
+#   unreadable_count: 0                                               # 0 이상의 실제 정수. 문자열 숫자 금지.
 # deprecated alias (읽기 호환만 — 새로 쓰지 말 것):
 #   suggested_scope.domains/screens → affected_domains/affected_screens
 #   frontmatter summary             → 아래 body 의 ## Summary 섹션이 정본
@@ -37,10 +44,12 @@ raw_artifacts: []                           # optional. 원본 첨부(스크린�
   - 이 입력은 일반 **authoring 산출물**이 아니다. `artifact_type` 을 쓰지 않으며,
     frontmatter.schema.json 의 authoring enum 에도 넣지 않는다.
   - 대신 `workflow:validate` 검사 11 이 `inputs/*.md` 를 별도로 읽어 입력 frontmatter 계약을 검증한다.
-    필수 필드, `input_id` 형식/중복, `input_type`·`source_type` enum, affected scope, `supersedes`,
-    deprecated alias(`suggested_scope`, frontmatter `summary`)가 대상이다.
+    필수 필드, `captured_at` RFC3339+timezone hard 계약, `input_id` 형식/중복, `input_type`·`source_type` enum,
+    affected scope, `supersedes`, opt-in `input_contract: 2` fidelity warning-first, deprecated alias(`suggested_scope`, frontmatter `summary`)가 대상이다.
   - Reconciliation Register 가 있으면 검사 12 가 같은 `input_id` 목록과 register 행을 대조한다.
     row 없음과 `not-started` 는 기본 경고이며 `--enforce` 에서 에러가 되고, `in-progress`/`failed`/enum/중복/필수 컬럼 누락은 항상 에러다. 상세는 docs/reference/input-reconciliation.md 를 따른다.
+  - `confidence`는 내용/의사결정 확신도이고, `fidelity`는 원본→input 전사·대조 상태이며, provenance는 source pointer/unit/timestamp/evidence다.
+    서로 자동 승격·강등하지 않고 status/readiness에도 자동 영향이 없다.
   - validate 는 입력의 출처 진실성이나 reconcile 완료를 대신 증명하지 않는다. `workflow:create-input` 도 acceptance,
     confirmed 승격, 구현 허가를 의미하지 않는다. Reconciliation 은 별도 단계다.
 
@@ -54,7 +63,8 @@ raw_artifacts: []                           # optional. 원본 첨부(스크린�
   작성 규칙:
   - frontmatter 값은 따옴표로 감싼다(YAML parser-safe). placeholder {X} 는 실제 값으로 치환.
   - 범위는 canonical 필드 affected_domains/affected_screens 로 쓴다. suggested_scope(중첩)·frontmatter summary 는 deprecated alias 라 새로 쓰지 않는다(요약은 body ## Summary 가 정본).
-  - source-specific producer 는 raw source 를 normalized payload 로 변환한 뒤 generic producer 에 위임한다. generic producer 는 Reconciliation Register 를 직접 수정하지 않는다.
+  - source-specific producer 는 raw source 를 normalized payload 로 변환한 뒤 generic producer 에 위임한다. raw source 수집·네트워크 검증은 consumer 소관이다.
+  - fidelity v2는 `--from-json`/`--from-yaml` structured payload로만 opt-in한다. flat CLI는 v1을 유지하며 producer가 extraction/verification/count를 추론하지 않는다. generic producer 는 Reconciliation Register 를 직접 수정하지 않는다.
   - 입력은 "사실 수집"만 한다 — 결정을 내리거나(resolve), confirmed 로 올리거나, 코드를 만들지 않는다. 그건 reconcile-input·사람 몫.
 -->
 

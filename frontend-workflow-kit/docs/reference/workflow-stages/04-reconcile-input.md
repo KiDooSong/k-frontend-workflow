@@ -82,3 +82,11 @@ Review of this stage's output follows `review_profile: reconcile-stage04-v1`
 routing / source backing / gate-raising boundary / scope only, submit all required
 findings in one round, and stop when the stop condition is met — final fidelity of
 provisional artifacts is not a pass condition here.
+
+
+When Stage 04 creates a new Figma mapping or explicitly opts a legacy mapping in, write
+`provenance_contract: 1`, every Component Mapping `` `M-xxx` · `` key, and every matching
+5-column Mapping Provenance row in the **same edit**. Do not add only the contract field.
+Source Unit uses the shared enum (`instance` = Figma component instance, `record` = API/domain record);
+Evidence uses the same input ref grammar as Reconciliation Items. Raw source collection remains
+consumer-owned. This does not authorize resolve/confirm/accept or raise confidence.

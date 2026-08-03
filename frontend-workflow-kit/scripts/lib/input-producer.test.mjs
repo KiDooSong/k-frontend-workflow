@@ -608,3 +608,415 @@ test('CLI --input-subdir rejects path traversal before writing', (t) => {
   assert.match(res.stderr, /input subdir must not contain/);
   assert.equal(fs.existsSync(path.join(docs, 'inputs')), false);
 });
+
+test('producer rejects invalid caller captured_at before input_id generation or filesystem side effects', (t) => {
+  const dir = path.join(tmpdir(t), 'inputs');
+  for (const captured_at of [
+    '2026-07-30',
+    '2026-07-30T10:00:00',
+    '2025-02-29T10:00:00Z',
+    '2026-07-30T24:00:00Z',
+  ]) {
+    assert.throws(
+      () => writeInputArtifact(payload({ captured_at }), { inputsDir: dir }),
+      /captured_at must be a valid RFC3339 timestamp with timezone/,
+    );
+    assert.equal(fs.existsSync(dir), false);
+  }
+});
+
+test('CLI rejects empty --captured-at before writing', (t) => {
+  const docs = path.join(tmpdir(t), 'docs', 'frontend-workflow');
+  const baseArgs = [
+    CLI, '--docs', docs, '--input-type', 'planning', '--source-type', 'planning-doc',
+    '--source-ref', 'planning://note', '--captured-by', 'producer-test', '--domain', 'auth',
+    '--screen', 'AUTH-001', '--dry-run', '--json',
+  ];
+  for (const extra of [
+    ['--captured-at='],
+    ['--captured-at=', '--captured-at', '2026-07-30T10:00:00+09:00'],
+  ]) {
+    const res = spawnSync(process.execPath, [...baseArgs, ...extra], { encoding: 'utf8' });
+    assert.equal(res.status, 2);
+    assert.match(res.stderr, /captured-at.*requires a non-empty value/);
+    assert.equal(fs.existsSync(path.join(docs, 'inputs')), false);
+  }
+});
+
+test('CLI rejects non-empty duplicate --captured-at so an earlier malformed occurrence cannot be hidden', (t) => {
+  const docs = path.join(tmpdir(t), 'docs', 'frontend-workflow');
+  const baseArgs = [
+    CLI, '--docs', docs, '--input-type', 'planning', '--source-type', 'planning-doc',
+    '--source-ref', 'planning://note', '--captured-by', 'producer-test', '--domain', 'auth',
+    '--screen', 'AUTH-001', '--dry-run', '--json',
+  ];
+  for (const extra of [
+    ['--captured-at', '2026-07-30', '--captured-at', '2026-07-30T10:00:00+09:00'],
+    ['--captured-at=2026-07-30', '--captured-at=2026-07-30T10:00:00+09:00'],
+  ]) {
+    const res = spawnSync(process.execPath, [...baseArgs, ...extra], { encoding: 'utf8' });
+    assert.equal(res.status, 2);
+    assert.match(res.stderr, /--captured-at may only be provided once/);
+    assert.equal(fs.existsSync(path.join(docs, 'inputs')), false);
+  }
+});
+
+test('JSON/YAML producer payloads round-trip Input Fidelity v2 as numeric YAML without changing confidence', (t) => {
+  const root = tmpdir(t);
+  const docs = path.join(root, 'docs', 'frontend-workflow');
+  const basePayload = payload({
+    input_type: 'planning',
+    source_type: 'planning-doc',
+    source: 'planning',
+    source_ref: 'planning/login',
+    captured_at: '2026-07-30T10:00:00+09:00',
+    raw_artifacts: ['planning/login-crop.png'],
+    input_contract: 2,
+    fidelity: {
+      extraction: 'vision-verbatim',
+      verification: 'verified',
+      verified_against: 'raw_artifact:planning/login-crop.png',
+      unreadable_count: 0,
+    },
+    confidence: 'candidate',
+  });
+  const jsonFile = path.join(root, 'input.json');
+  const yamlFile = path.join(root, 'input.yaml');
+  write(jsonFile, JSON.stringify(basePayload, null, 2));
+  write(yamlFile, [
+    'input_type: planning',
+    'source_type: planning-doc',
+    'source: planning',
+    'source_ref: planning/login',
+    'captured_at: 2026-07-30T10:00:00+09:00',
+    'captured_by: producer-test',
+    'affected_domains: [auth]',
+    'affected_screens: [AUTH-001]',
+    'raw_artifacts: [planning/login-crop.png]',
+    'input_contract: 2',
+    'fidelity:',
+    '  extraction: vision-verbatim',
+    '  verification: verified',
+    '  verified_against: raw_artifact:planning/login-crop.png',
+    '  unreadable_count: 0',
+    'confidence: candidate',
+  ].join('\n'));
+
+  for (const [flag, file] of [['--from-json', jsonFile], ['--from-yaml', yamlFile]]) {
+    const res = spawnSync(process.execPath, [CLI, '--docs', docs, flag, file, '--dry-run', '--json'], {
+      encoding: 'utf8',
+    });
+    assert.equal(res.status, 0, res.stderr);
+    const body = JSON.parse(res.stdout);
+    const parsed = splitFrontmatter(body.artifact_text);
+    assert.equal(parsed.data.input_contract, 2);
+    assert.equal(typeof parsed.data.input_contract, 'number');
+    assert.equal(parsed.data.fidelity.unreadable_count, 0);
+    assert.equal(typeof parsed.data.fidelity.unreadable_count, 'number');
+    assert.equal(parsed.data.fidelity.extraction, 'vision-verbatim');
+    assert.equal(parsed.data.confidence, 'candidate');
+  }
+});
+
+test('producer rejects fidelity without input_contract and inherited targets that are missing or v1', (t) => {
+  const dir = path.join(tmpdir(t), 'inputs');
+  assert.throws(
+    () => writeInputArtifact(payload({ fidelity: { extraction: 'direct-text' } }), { inputsDir: dir, dryRun: true }),
+    /IF-100/,
+  );
+
+  const inheritedPayload = (target) => payload({
+    source: 'figma',
+    input_contract: 2,
+    fidelity: {
+      extraction: 'inherited',
+      verification: 'inherited',
+      verified_against: `input:${target}`,
+      unreadable_count: 0,
+    },
+  });
+  assert.throws(
+    () => writeInputArtifact(inheritedPayload('IN-20260625-figma-999'), { inputsDir: dir, dryRun: true }),
+    /IF-115/,
+  );
+
+  write(path.join(dir, 'IN-20260625-figma-001.md'), [
+    '---',
+    'input_id: "IN-20260625-figma-001"',
+    'input_type: "figma"',
+    'source_type: "figma"',
+    'source_ref: "figma://file/node"',
+    'captured_at: "2026-06-25T10:00:00+09:00"',
+    'captured_by: "legacy"',
+    'status: "captured"',
+    'affected_domains: ["auth"]',
+    'affected_screens: ["AUTH-001"]',
+    '---',
+    '## Summary',
+    'legacy',
+  ].join('\n'));
+  assert.throws(
+    () => writeInputArtifact(inheritedPayload('IN-20260625-figma-001'), { inputsDir: dir, date: '2026-06-26', dryRun: true }),
+    /IF-118/,
+  );
+});
+
+test('producer accepts inherited fidelity only when chain reaches verified v2 evidence', (t) => {
+  const dir = path.join(tmpdir(t), 'inputs');
+  const terminal = writeInputArtifact(payload({
+    source: 'figma',
+    input_id: 'IN-20260625-figma-001',
+    raw_artifacts: ['raw.png'],
+    input_contract: 2,
+    fidelity: {
+      extraction: 'vision-verbatim',
+      verification: 'verified',
+      verified_against: 'raw_artifact:raw.png',
+      unreadable_count: 0,
+    },
+  }), { inputsDir: dir });
+  assert.equal(terminal.wrote, true);
+
+  const inherited = writeInputArtifact(payload({
+    source: 'figma',
+    input_id: 'IN-20260625-figma-002',
+    input_contract: 2,
+    fidelity: {
+      extraction: 'inherited',
+      verification: 'inherited',
+      verified_against: 'input:IN-20260625-figma-001',
+      unreadable_count: 0,
+    },
+  }), { inputsDir: dir, dryRun: true });
+  assert.equal(inherited.wrote, false);
+  assert.match(inherited.text, /input_contract: 2/);
+});
+
+test('overwrite rejects downgrading a verified v2 terminal when an inherited dependent would break', (t) => {
+  const dir = path.join(tmpdir(t, 'input-producer-overwrite-v2-'), 'inputs');
+  const terminalId = 'IN-20260625-figma-001';
+  const dependentId = 'IN-20260625-figma-002';
+  writeInputArtifact(payload({
+    source: 'figma',
+    input_id: terminalId,
+    raw_artifacts: ['raw.png'],
+    input_contract: 2,
+    fidelity: {
+      extraction: 'vision-verbatim',
+      verification: 'verified',
+      verified_against: 'raw_artifact:raw.png',
+      unreadable_count: 0,
+    },
+  }), { inputsDir: dir });
+  writeInputArtifact(payload({
+    source: 'figma',
+    input_id: dependentId,
+    input_contract: 2,
+    fidelity: {
+      extraction: 'inherited',
+      verification: 'inherited',
+      verified_against: `input:${terminalId}`,
+      unreadable_count: 0,
+    },
+  }), { inputsDir: dir });
+
+  const terminalFile = path.join(dir, `${terminalId}.md`);
+  const before = fs.readFileSync(terminalFile, 'utf8');
+  assert.throws(
+    () => writeInputArtifact(payload({
+      source: 'figma',
+      input_id: terminalId,
+      input_contract: 2,
+      fidelity: {
+        extraction: 'direct-text',
+        verification: 'unverified',
+        unreadable_count: 0,
+      },
+    }), { inputsDir: dir, overwrite: true }),
+    /Input Fidelity overwrite invalid:[\s\S]*IF-119/,
+  );
+  assert.equal(fs.readFileSync(terminalFile, 'utf8'), before, 'rejected overwrite must not modify terminal');
+});
+
+test('overwrite rejects replacing a verified v2 terminal with v1 when inherited dependents exist', (t) => {
+  const dir = path.join(tmpdir(t, 'input-producer-overwrite-v1-'), 'inputs');
+  const terminalId = 'IN-20260625-figma-001';
+  const dependentId = 'IN-20260625-figma-002';
+  writeInputArtifact(payload({
+    source: 'figma', input_id: terminalId, raw_artifacts: ['raw.png'], input_contract: 2,
+    fidelity: {
+      extraction: 'structured-source', verification: 'verified',
+      verified_against: 'raw_artifact:raw.png', unreadable_count: 0,
+    },
+  }), { inputsDir: dir });
+  writeInputArtifact(payload({
+    source: 'figma', input_id: dependentId, input_contract: 2,
+    fidelity: {
+      extraction: 'inherited', verification: 'inherited',
+      verified_against: `input:${terminalId}`, unreadable_count: 0,
+    },
+  }), { inputsDir: dir });
+
+  const terminalFile = path.join(dir, `${terminalId}.md`);
+  const before = fs.readFileSync(terminalFile, 'utf8');
+  assert.throws(
+    () => writeInputArtifact(payload({ source: 'figma', input_id: terminalId }), {
+      inputsDir: dir,
+      overwrite: true,
+    }),
+    /Input Fidelity overwrite invalid:[\s\S]*IF-118/,
+  );
+  assert.equal(fs.readFileSync(terminalFile, 'utf8'), before);
+});
+
+test('overwrite rejects a terminal change that newly breaks every reverse dependent in a multi-hop chain', (t) => {
+  const dir = path.join(tmpdir(t, 'input-producer-overwrite-chain-'), 'inputs');
+  const ids = [
+    'IN-20260625-figma-001',
+    'IN-20260625-figma-002',
+    'IN-20260625-figma-003',
+  ];
+  writeInputArtifact(payload({
+    source: 'figma', input_id: ids[0], raw_artifacts: ['raw.png'], input_contract: 2,
+    fidelity: {
+      extraction: 'vision-verbatim', verification: 'verified',
+      verified_against: 'raw_artifact:raw.png', unreadable_count: 0,
+    },
+  }), { inputsDir: dir });
+  for (let index = 1; index < ids.length; index += 1) {
+    writeInputArtifact(payload({
+      source: 'figma', input_id: ids[index], input_contract: 2,
+      fidelity: {
+        extraction: 'inherited', verification: 'inherited',
+        verified_against: `input:${ids[index - 1]}`, unreadable_count: 0,
+      },
+    }), { inputsDir: dir });
+  }
+
+  assert.throws(
+    () => writeInputArtifact(payload({
+      source: 'figma', input_id: ids[0], input_contract: 2,
+      fidelity: {
+        extraction: 'manual-transcription', verification: 'unverified', unreadable_count: 0,
+      },
+    }), { inputsDir: dir, overwrite: true }),
+    (error) => {
+      assert.match(error.message, /IF-119/);
+      assert.match(error.message, /IN-20260625-figma-002\.md/);
+      assert.match(error.message, /IN-20260625-figma-003\.md/);
+      return true;
+    },
+  );
+});
+
+test('overwrite always rejects pre-existing candidate inheritance issues even when fingerprints are unchanged', (t) => {
+  for (const scenario of [
+    {
+      name: 'missing target',
+      target: 'IN-20260625-figma-999',
+      diagnostic: /IF-115/,
+    },
+    {
+      name: 'self reference',
+      target: 'IN-20260625-figma-001',
+      diagnostic: /IF-116/,
+    },
+  ]) {
+    const dir = path.join(tmpdir(t, `input-producer-overwrite-existing-${scenario.name.replace(/\s+/g, '-')}-`), 'inputs');
+    const candidateId = 'IN-20260625-figma-001';
+    const candidateFile = path.join(dir, `${candidateId}.md`);
+
+    // Hand-author a warning-first v2 artifact that predates producer hardening.
+    // Rewriting the same invalid chain must not pass merely because file+message
+    // fingerprints are identical before and after the overwrite.
+    write(candidateFile, [
+      '---',
+      `input_id: "${candidateId}"`,
+      'input_type: "figma"',
+      'source_type: "figma"',
+      'source_ref: "figma://file/abc/node/1:234"',
+      'captured_at: "2026-06-25T10:00:00+09:00"',
+      'captured_by: "legacy-writer"',
+      'status: "captured"',
+      'affected_domains: ["auth"]',
+      'affected_screens: ["AUTH-001"]',
+      'input_contract: 2',
+      'fidelity:',
+      '  extraction: inherited',
+      '  verification: inherited',
+      `  verified_against: "input:${scenario.target}"`,
+      '  unreadable_count: 0',
+      '---',
+      '',
+      '## Summary',
+      'Pre-existing invalid inherited fidelity.',
+      '',
+    ].join('\n'));
+    const before = fs.readFileSync(candidateFile, 'utf8');
+
+    assert.throws(
+      () => writeInputArtifact(payload({
+        source: 'figma',
+        input_id: candidateId,
+        summary: `Attempted overwrite retaining ${scenario.name}.`,
+        input_contract: 2,
+        fidelity: {
+          extraction: 'inherited',
+          verification: 'inherited',
+          verified_against: `input:${scenario.target}`,
+          unreadable_count: 0,
+        },
+      }), { inputsDir: dir, overwrite: true }),
+      (error) => {
+        assert.match(error.message, /Input Fidelity overwrite invalid:/);
+        assert.match(error.message, scenario.diagnostic);
+        assert.match(error.message, new RegExp(`${candidateId}\\.md`));
+        return true;
+      },
+      scenario.name,
+    );
+    assert.equal(fs.readFileSync(candidateFile, 'utf8'), before, `${scenario.name}: rejected overwrite must be byte unchanged`);
+  }
+});
+
+test('overwrite delta ignores pre-existing unrelated fidelity warnings', (t) => {
+  const dir = path.join(tmpdir(t, 'input-producer-overwrite-delta-'), 'inputs');
+  const unrelatedId = 'IN-20260625-figma-001';
+  const candidateId = 'IN-20260625-figma-002';
+
+  // Hand-author a pre-existing warning that the producer did not create. The
+  // overwrite guard must compare before/after issue sets rather than treating
+  // every repository warning as a blocker.
+  write(path.join(dir, `${unrelatedId}.md`), [
+    '---',
+    `input_id: "${unrelatedId}"`,
+    'input_type: "figma"',
+    'source_type: "figma"',
+    'source_ref: "figma://file/abc/node/1:234"',
+    'captured_at: "2026-06-25T10:00:00+09:00"',
+    'captured_by: "fixture"',
+    'status: "captured"',
+    'affected_domains: ["auth"]',
+    'affected_screens: ["AUTH-001"]',
+    'input_contract: 2',
+    'fidelity:',
+    '  extraction: direct-text',
+    '  verification: verified',
+    '  unreadable_count: 0',
+    '---',
+    '',
+    '## Extracted Facts',
+    '- pre-existing malformed fidelity',
+    '',
+  ].join('\n'));
+  writeInputArtifact(payload({ source: 'figma', input_id: candidateId }), { inputsDir: dir });
+
+  const result = writeInputArtifact(payload({
+    source: 'figma',
+    input_id: candidateId,
+    summary: 'Safe v1 overwrite despite unrelated existing warning.',
+  }), { inputsDir: dir, overwrite: true });
+
+  assert.equal(result.wrote, true);
+  assert.match(fs.readFileSync(path.join(dir, `${candidateId}.md`), 'utf8'), /Safe v1 overwrite/);
+});

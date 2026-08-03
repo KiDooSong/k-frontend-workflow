@@ -146,6 +146,15 @@ One `input_id` has one canonical Reconciliation Register row. Retrying the same
 input updates that row; a new `input_id` is only for changed input content or a
 new source snapshot.
 
+All canonical inputs use RFC3339-with-timezone `captured_at`. Optional `input_contract: 2`
+records extraction/verification fidelity independently from confidence and is authored only
+from explicit JSON/YAML payload values; it never changes status/readiness. New or explicitly
+opted-in Figma mappings use `provenance_contract: 1`, keep the existing 4-column Component
+Mapping header, and add every anchored M-key plus its 5-column Mapping Provenance row atomically.
+The effective direct/inherited Source Ref must retain a canonical Figma file + node/frame anchor;
+planning/API/file-only refs and coarse `document`/`statement`/`n/a` units do not satisfy the floor.
+Raw source collection remains consumer-owned; agents do not resolve/confirm/accept from these fields.
+
 ## Tier3 Layers
 
 Tier3 layers are supported through `project-layout.yaml`, not by editing

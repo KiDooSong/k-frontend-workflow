@@ -142,7 +142,7 @@ mkdir -p docs/frontend-workflow/_meta
 cp tools/frontend-workflow/templates/meta/reconciliation-register.template.md docs/frontend-workflow/_meta/reconciliation-register.md
 ```
 
-register가 없으면 validate check 12는 의도적으로 NO-OP다. cold start와 점진 도입을 위한 동작이며, check 11은 `inputs/*.md` frontmatter를 계속 검사한다. register를 도입한 뒤부터 check 12가 8컬럼 구조와 input↔register 상태를 검사한다.
+register가 없으면 validate check 12의 **register 구조/coverage 부분**은 의도적으로 NO-OP다. cold start와 점진 도입을 위한 동작이며, check 11은 `inputs/**` frontmatter와 모든 `captured_at` RFC3339 hard 계약을 계속 검사한다. 단, `provenance_contract: 1` Figma mapping은 register 유무와 무관하게 check 12가 검사한다. register를 도입한 뒤부터 8컬럼 구조와 input↔register 상태 검사도 추가된다.
 
 ## Project Layout
 
@@ -172,9 +172,9 @@ source-specific producer
 npm run workflow:create-input -- --docs docs/frontend-workflow --from-json input.json
 ```
 
-`workflow:create-input`은 `inputs/{input_id}.md`만 만든다. Reconciliation Register 수정, confirmed 승격, acceptance, 구현 허가는 별도 단계다. register retry, check 12 severity, status 축 구분은 [docs/reference/input-reconciliation.md](docs/reference/input-reconciliation.md)가 정본이다.
+`workflow:create-input`은 `inputs/{input_id}.md`만 만든다. 모든 `captured_at`은 RFC3339+timezone hard 계약이며, optional `input_contract: 2` fidelity는 explicit JSON/YAML payload에서만 opt-in한다(validator IF warning-first, producer hard; confidence/status/readiness와 독립). Reconciliation Register 수정, confirmed 승격, acceptance, 구현 허가는 별도 단계다. register retry, check 11/12 severity, status 축 구분은 [docs/reference/input-reconciliation.md](docs/reference/input-reconciliation.md)가 정본이다.
 
-빠른 참조 — check 12 severity: register 없음=NO-OP, row 없음·`not-started`=경고(`--enforce`에서 에러), `in-progress`·`failed`·enum 위반·duplicate Input ID·required column 누락=항상 에러, `reconciled`=Created Items에 open decision/gap/unknown이 있어도 통과.
+빠른 참조 — check 12 register severity: register 없음=register 부분 NO-OP, row 없음·`not-started`=경고(`--enforce`에서 에러), `in-progress`·`failed`·enum 위반·duplicate Input ID·required column 누락=항상 에러, `reconciled`=Created Items에 open decision/gap/unknown이 있어도 통과. 별도로 `provenance_contract: 1` mapping의 MP-0xx는 register 없이도 hard, MP-1xx는 `--enforce`로 승격하지 않는다.
 
 ## Screen Identity And New Screens
 
@@ -220,6 +220,8 @@ npm run workflow:readiness -- --surface <SURFACE_ID> --json
 ## Multi-Screen Visual Reconciliation
 
 여러 화면에 걸친 Figma/visual spec/design 업데이트("로고/레이아웃 공통 정리", "Figma 일괄 반영")는 `skills/visual-reconcile/SKILL.md` 절차를 따른다. 공통 shell/logo/header/CTA ownership 은 화면별 ad-hoc patch 가 아니라 visual consistency contract(`docs/frontend-workflow/design/visual-consistency-contract.md`, 템플릿: `templates/design/visual-consistency-contract.template.md`)로 정리하고, 구현 후 warning-first 검사를 돌린다.
+
+새 `figma-component-mapping` template은 `provenance_contract: 1`을 사용한다. 기존 4컬럼 Component Mapping의 각 행 첫 셀에 `` `M-xxx` · `` key를 두고 5컬럼 `## Mapping Provenance`와 1:1로 연결한다. legacy mapping은 무발화하며 자동 backfill하지 않는다; opt-in 시 contract + 모든 key + 모든 provenance row를 같은 edit에서 추가한다. `instance`는 Figma component instance, `record`는 API/domain record다.
 
 contract 가 아직 없는(또는 빈약한) repo 는 **optional first step** 으로 bootstrap 을 먼저 돌려 screen family / shared ownership 후보 초안을 뽑을 수 있다(`skills/visual-contract-bootstrap/SKILL.md`). 출력은 review-only draft 다 — 기존 contract 를 절대 overwrite 하지 않고, 사람이 승인한 rows 만 canonical contract 에 반영한다.
 

@@ -24,10 +24,20 @@
 //
 // 이 모듈은 순수하다 — { errors:[{file,message}], warnings:[{file,message}] } 를 반환하고
 // file 은 항상 절대경로다. validate.mjs 가 add()/warn() 으로 상대화한다.
-import { readFileSafe, splitFrontmatter } from './util.mjs';
 import { col } from './spec.mjs';
 import { RECONCILE_STATUS_VALUES, REQUIRED_REGISTER_COLS } from './reconciliation-register.mjs';
-import { INHERIT, SOURCE_UNIT_VALUES, isRfc3339, parseRfc3339 } from './provenance.mjs';
+import {
+  FIGMA_PRECISION_SOURCE_UNITS,
+  INHERIT,
+  SOURCE_UNIT_VALUES,
+  buildInputArtifactIndex,
+  inspectFigmaSourcePrecision,
+  isRfc3339,
+  parseInputEvidenceRef,
+  parseRfc3339,
+  resolveEffectiveSourceRef,
+  resolveInputEvidence,
+} from './provenance.mjs';
 import {
   resolveArtifact,
   isDuplicateArtifactId,
@@ -236,16 +246,9 @@ export function parseTargetRef(token) {
   return null;
 }
 
-// evidence 토큰: input:<input_id>#<section-slug>[/<bullet-index>] (설계 §5.7).
-// bullet index 는 1-based(01, 02...) — `/00` 은 어떤 bullet 도 가리킬 수 없으므로 문법 위반이다.
-export function parseEvidenceRef(token) {
-  const t = String(token || '').trim();
-  const m = /^input:([A-Za-z0-9][A-Za-z0-9._-]*)#([a-z0-9][a-z0-9-]*)(?:\/(\d+))?$/.exec(t);
-  if (!m) return null;
-  const bulletIndex = m[3] ? Number(m[3]) : null;
-  if (bulletIndex !== null && bulletIndex < 1) return null;
-  return { inputId: m[1], section: m[2], bulletIndex, raw: t };
-}
+// Compatibility export: the grammar now lives in provenance.mjs so Mapping Provenance
+// and Reconciliation Items cannot drift.
+export const parseEvidenceRef = parseInputEvidenceRef;
 
 // 세미콜론 구분 typed ref 목록 셀 (Touched Artifacts / Created Items). '-' = 빈 목록.
 function splitRefList(cell) {
@@ -392,35 +395,13 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
   if (contract.version !== 2) return { errors, warnings };
 
   // --- 입력 인덱스 (검사 11 과 동일 수집 결과 공유) ---
+  // duplicate input_id는 first-wins하지 않는다. unique target만 inputsById에 노출하고,
+  // Evidence는 shared resolver가 missing/ambiguous/section/bullet을 구분한다.
+  const inputIndex = buildInputArtifactIndex(inputArtifacts);
   const inputsById = new Map();
-  for (const a of inputArtifacts) {
-    if (a.parseError) continue;
-    const id = a.fm?.input_id;
-    if (typeof id === 'string' && id.trim() !== '' && !inputsById.has(id)) inputsById.set(id, a);
+  for (const [inputId, matches] of inputIndex.byId) {
+    if (matches.length === 1) inputsById.set(inputId, matches[0]);
   }
-  // evidence 섹션 해소용 입력 본문 인덱스 (lazy — 참조된 입력만 읽는다).
-  const inputSectionCache = new Map();
-  const inputSectionsOf = (inputId) => {
-    if (inputSectionCache.has(inputId)) return inputSectionCache.get(inputId);
-    const a = inputsById.get(inputId);
-    let value = null;
-    if (a) {
-      const { body } = splitFrontmatter(readFileSafe(a.file));
-      const slugs = new Map(); // slug → bullet count
-      // fence/주석 안의 heading 으로 "존재하지 않는 evidence 섹션"이 만들어지지 않게, 여기서도
-      // stripNonContent → occurrence 분리 순서를 지킨다. 중복 slug 는 bullet 수를 합산한다.
-      for (const occ of splitSectionOccurrences(stripNonContent(String(body || '')))) {
-        if (!occ.slug) continue; // h2 이전 preamble 은 섹션이 아니다
-        const bullets = occ.text
-          .split(/\r?\n/)
-          .filter((l) => /^\s*(?:[-*]|\d+[.)])\s+/.test(l)).length;
-        slugs.set(occ.slug, (slugs.get(occ.slug) || 0) + bullets);
-      }
-      value = slugs;
-    }
-    inputSectionCache.set(inputId, value);
-    return value;
-  };
 
   // --- items 표 (v2 필수 구조) ---
   const items = parseReconciliationItems(register.body || '');
@@ -732,42 +713,74 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
       }
     }
 
-    // Evidence grammar + 같은 input + 섹션 존재(hard) / bullet index(warning) (설계 §5.7).
+    // Evidence grammar + 같은 input + unique input/섹션 존재(hard) / bullet index(warning).
     if (row.evidence) {
-      const ev = parseEvidenceRef(row.evidence);
-      if (!ev) {
+      const evidence = resolveInputEvidence(inputIndex, row.evidence);
+      const ev = evidence.ref;
+      if (evidence.status === 'invalid') {
         add(`RR-SCHEMA-015: ${label} 의 Evidence '${row.evidence}' 문법 위반 (input:<input_id>#<section-slug>[/NN])`);
       } else {
         if (row.inputId && ev.inputId !== row.inputId) {
           add(`RR-REF-004: ${label} 의 Evidence 가 다른 입력(${ev.inputId})을 가리킴 — 같은 Input ID 여야 함`);
         }
-        const sections = inputSectionsOf(ev.inputId);
-        if (sections) {
-          if (!sections.has(ev.section)) {
-            add(`RR-REF-005: ${label} 의 Evidence section '#${ev.section}' 이 input '${ev.inputId}' 문서에 없음`);
-          } else if (ev.bulletIndex !== null && ev.bulletIndex > (sections.get(ev.section) || 0)) {
-            warn(
-              `RR-REF-101: ${label} 의 Evidence bullet index '/${String(ev.bulletIndex).padStart(2, '0')}' 가 '#${ev.section}' 의 bullet 수(${sections.get(ev.section) || 0})를 넘음 (warning-first)`,
-            );
-          }
+        if (evidence.status === 'missing-input') {
+          add(`RR-REF-003: ${label} 의 Evidence input '${ev.inputId}' 가 inputs/ 의 input artifact 로 해소되지 않음`);
+        } else if (evidence.status === 'ambiguous-input') {
+          add(`RR-REF-013: ${label} 의 Evidence input '${ev.inputId}' 가 중복 input_id라 모호함`);
+        } else if (evidence.status === 'missing-section') {
+          add(`RR-REF-005: ${label} 의 Evidence section '#${ev.section}' 이 input '${ev.inputId}' 문서에 없음`);
+        } else if (evidence.status === 'bullet-out-of-range') {
+          warn(
+            `RR-REF-101: ${label} 의 Evidence bullet index '/${String(ev.bulletIndex).padStart(2, '0')}' 가 '#${ev.section}' 의 bullet 수(${evidence.bulletCount})를 넘음 (warning-first)`,
+          );
         }
-        // input 자체가 해소 안 되는 경우는 RR-REF-003 이 이미 가리킨다.
       }
     }
 
     // Provenance 필수값 (item 표는 신규 계약이라 처음부터 hard — 설계 D4·§9).
-    if (row.sourceUnit && !SOURCE_UNIT_VALUES.includes(row.sourceUnit)) {
+    const sourceUnitValid = row.sourceUnit && SOURCE_UNIT_VALUES.includes(row.sourceUnit);
+    if (row.sourceUnit && !sourceUnitValid) {
       add(`RP-001: ${label} 의 Source Unit enum 위반: '${row.sourceUnit}' (기대 ${SOURCE_UNIT_VALUES.join('|')})`);
-    } else if (row.sourceUnit === 'n/a' && row.effect && row.effect !== 'reject') {
+    } else if (
+      row.sourceUnit === 'n/a' &&
+      row.basis !== 'visual-evidence' &&
+      row.effect &&
+      row.effect !== 'reject'
+    ) {
       warn(`RP-101: ${label} 의 Source Unit=n/a 는 reject 또는 source 없는 procedural item 전용 (현재 Effect=${row.effect})`);
     }
     if (row.capturedAt && row.capturedAt !== INHERIT && !isRfc3339(row.capturedAt)) {
       add(`RP-002: ${label} 의 Captured At '${row.capturedAt}' 은 '${INHERIT}' 또는 RFC3339(with timezone) 여야 함`);
     }
-    const inputFm = inputsById.get(row.inputId)?.fm;
+    const inputArtifact = inputsById.get(row.inputId);
+    const inputFm = inputArtifact?.fm;
     if (row.sourceRef === INHERIT && inputFm && (typeof inputFm.source_ref !== 'string' || inputFm.source_ref.trim() === '')) {
       add(`RP-003: ${label} 의 Source Ref=inherit 인데 input '${row.inputId}' frontmatter 에 source_ref 가 없음`);
     }
+
+    // visual-evidence is explicitly a Figma/node-based basis. Resolve inherit
+    // before judging precision, then require a canonical file + node/frame anchor.
+    // document/statement/n/a remain valid enum values in other reconciliation
+    // contexts but cannot satisfy the visual precision floor.
+    const effectiveSourceRef = resolveEffectiveSourceRef(row.sourceRef, inputArtifact);
+    if (row.basis === 'visual-evidence' && sourceUnitValid && effectiveSourceRef) {
+      const precision = inspectFigmaSourcePrecision({
+        sourceRef: effectiveSourceRef,
+        sourceUnit: row.sourceUnit,
+      });
+      if (!precision.ok) {
+        if (precision.reason === 'coarse-unit') {
+          add(
+            `RP-005: ${label} visual-evidence precision floor 위반: Source Unit='${row.sourceUnit}'은 node/frame 귀속을 제공하지 못함 — ${FIGMA_PRECISION_SOURCE_UNITS.join('|')} 중 실제 단위와 canonical Figma pointer를 명시하세요`,
+          );
+        } else if (precision.reason === 'missing-anchor') {
+          add(
+            `RP-005: ${label} visual-evidence precision floor 위반: effective Source Ref '${effectiveSourceRef}'에 file + node/frame 식별자가 없음 (기대 figma://file/<file>/(node|frame)/<id>)`,
+          );
+        }
+      }
+    }
+
     if (row.capturedAt === INHERIT && inputFm) {
       if (typeof inputFm.captured_at !== 'string' || inputFm.captured_at.trim() === '') {
         add(`RP-003: ${label} 의 Captured At=inherit 인데 input '${row.inputId}' frontmatter 에 captured_at 가 없음`);

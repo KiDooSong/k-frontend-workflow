@@ -8,6 +8,8 @@
 // splitFrontmatter/walkFiles/exists 등은 util.mjs 를 재사용한다(중복 구현 금지).
 import path from 'node:path';
 import { splitFrontmatter, readFileSafe, walkFiles, isDir } from './util.mjs';
+import { isRfc3339 } from './provenance.mjs';
+import { validateInputFidelityArtifacts } from './input-fidelity.mjs';
 
 // input_id 형식: IN-{YYYYMMDD}-{source}-{NNN}. source 토큰은 하나 이상의 영소문자/숫자 세그먼트(하이픈 연결),
 // seq 는 3자리 이상 숫자. (input-reconciliation.md: "IN-{날짜}-{source}-{seq}")
@@ -168,6 +170,15 @@ export function validateInputArtifacts(artifacts) {
       }
     }
 
+    // --- captured_at hard provenance floor (#202-B) ---
+    // required 필드의 '존재'와 별개로 실제 RFC3339+timezone·달력 구성요소를 공유 parser로 검증한다.
+    if (!isRfc3339(fm.captured_at)) {
+      add(
+        file,
+        `IP-001: captured_at must be a valid RFC3339 timestamp with timezone (현재 ${JSON.stringify(fm.captured_at ?? null)}; 예: "2026-07-30T10:00:00+09:00")`,
+      );
+    }
+
     // --- input_type / source_type enum ---
     if (!isEmptyValue(fm.input_type) && !INPUT_TYPE_VALUES.includes(fm.input_type)) {
       add(file, `input_type enum 위반: '${fm.input_type}' (기대 ${INPUT_TYPE_VALUES.join('|')})`);
@@ -209,6 +220,11 @@ export function validateInputArtifacts(artifacts) {
       }
     }
   }
+
+  // Input Fidelity Contract v2는 명시적 opt-in만 보고 warning-first로 검사한다.
+  // --enforce 승격 여부는 validate.mjs의 기존 check-12 미처리 경로와 무관하며, 여기서는 항상 warning이다.
+  const fidelityResult = validateInputFidelityArtifacts(artifacts);
+  for (const issue of fidelityResult.warnings) warnings.push(issue);
 
   return { errors, warnings };
 }

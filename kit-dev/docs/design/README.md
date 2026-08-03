@@ -11,7 +11,8 @@ final/    합의가 끝나 정본으로 승격된 설계. (아직 없음)
 
 ## Drafts
 
-- [Reconciliation Contract v2 (#202)](drafts/issue-202-reconciliation-contract-v2.md) — Register v2(opt-in) item/effect 표 + 검사 12 구조 강제 + provenance floor + Stage 04 review profile. slice A 구현 랜딩, B(provenance 확장)/C(heuristic warning) 후속.
+- [Reconciliation Contract v2 (#202)](drafts/issue-202-reconciliation-contract-v2.md) — Register v2 item/effect/routing + Stage 04 review profile + Mapping Provenance 구조 정본. slice A와 B 구현, C(semantic/stale warning)·dogfood 후속.
+- [Input Provenance / Fidelity Contract](drafts/input-provenance-fidelity-contract.md) — 검사 11 `captured_at` hard rollout, `input_contract: 2` fidelity, shared input Evidence/index, producer/validator severity와 migration 구현 정본.
 - [Customizable Architecture](drafts/customizable-architecture/README.md) — Tier 1 layout profile 과 Tier 2 router adapter 설계.
 - [Follow-up Quarantine and Role Expansion](drafts/follow-up-quarantine-and-role-expansion.md) — 작업 중 발견되는 후속 격리와 architecture role 확장 기준.
 - [Visual Spec 정식화](drafts/visual-spec-formalization.md) — figma-component-mapping 에 화면별 시각 계약(`## Visual Spec`) 강화. 수집기는 킷 core 밖, warning-first, 새 축 아님.

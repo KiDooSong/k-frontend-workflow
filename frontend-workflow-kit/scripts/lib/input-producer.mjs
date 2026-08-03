@@ -8,7 +8,13 @@ import {
   INPUT_ID_PATTERN,
   INPUT_TYPE_VALUES,
   SOURCE_TYPE_VALUES,
+  collectInputArtifacts,
 } from './input-artifact.mjs';
+import {
+  collectInputFidelityIssues,
+  normalizeProducerInputFidelity,
+} from './input-fidelity.mjs';
+import { isRfc3339 } from './provenance.mjs';
 import { exists, isDir, readFileSafe, splitFrontmatter, walkFiles, yamlParse } from './util.mjs';
 
 export class InputProducerError extends Error {
@@ -209,9 +215,28 @@ export function buildInputArtifact(payload, options = {}) {
   const sourceType = requireString(merged, 'source_type', errors);
   const sourceRef = requireString(merged, 'source_ref', errors);
   const capturedBy = requireString(merged, 'captured_by', errors);
-  const capturedAt = typeof merged.captured_at === 'string' && merged.captured_at.trim() !== ''
-    ? merged.captured_at.trim()
-    : defaultCapturedAt({ date: options.date, now: options.now });
+
+  const capturedAtProvided = Object.prototype.hasOwnProperty.call(merged, 'captured_at');
+  let capturedAt;
+  if (capturedAtProvided) {
+    if (typeof merged.captured_at !== 'string' || merged.captured_at.trim() === '') {
+      errors.push('IP-001: captured_at must be a non-empty RFC3339 timestamp with timezone');
+      capturedAt = '';
+    } else {
+      capturedAt = merged.captured_at.trim();
+      if (!isRfc3339(capturedAt)) {
+        errors.push(
+          `IP-001: captured_at must be a valid RFC3339 timestamp with timezone (received ${JSON.stringify(merged.captured_at)})`,
+        );
+      }
+    }
+  } else {
+    capturedAt = defaultCapturedAt({ date: options.date, now: options.now });
+    if (!isRfc3339(capturedAt)) {
+      errors.push(`IP-001: generated captured_at is not valid RFC3339 with timezone: ${capturedAt}`);
+    }
+  }
+
   const affectedDomains = asArray(merged.affected_domains);
   const affectedScreens = asArray(merged.affected_screens);
   const rawArtifacts = asArray(merged.raw_artifacts);
@@ -227,6 +252,13 @@ export function buildInputArtifact(payload, options = {}) {
   validateEnum(inputType, 'input_type', INPUT_TYPE_VALUES, errors);
   validateEnum(sourceType, 'source_type', SOURCE_TYPE_VALUES, errors);
   validateEnum(confidence, 'confidence', INPUT_CONFIDENCE_VALUES, errors);
+
+  const fidelityResult = normalizeProducerInputFidelity(merged);
+  errors.push(...fidelityResult.issues);
+
+  // Invalid caller timestamps and malformed v2 fidelity must fail before input_id
+  // generation/scanning, so no derived identity is created from untrusted metadata.
+  if (errors.length) throw new InputProducerError(errors.join('\n'));
 
   const sourceForId = merged.source || sourceType || inputType;
   const inputId = typeof merged.input_id === 'string' && merged.input_id.trim() !== ''
@@ -265,6 +297,7 @@ export function buildInputArtifact(payload, options = {}) {
     supersedes,
   };
   if (rawArtifacts.length) frontmatter.raw_artifacts = rawArtifacts;
+  Object.assign(frontmatter, fidelityResult.fields);
 
   return {
     input_id: inputId,
@@ -290,6 +323,8 @@ function renderSourceScreenRef(ref) {
 
 function yamlScalar(value) {
   if (value === null) return 'null';
+  if (typeof value === 'number') return String(value);
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
   if (Array.isArray(value)) return `[${value.map((item) => yamlScalar(String(item))).join(', ')}]`;
   return JSON.stringify(String(value));
 }
@@ -314,10 +349,23 @@ export function renderInputArtifact(artifact) {
     'confidence',
     'supersedes',
     'raw_artifacts',
+    'input_contract',
+    'fidelity',
   ];
-  const frontmatterLines = fmOrder
-    .filter((key) => Object.prototype.hasOwnProperty.call(artifact.frontmatter, key))
-    .map((key) => `${key}: ${yamlScalar(artifact.frontmatter[key])}`);
+  const frontmatterLines = [];
+  for (const key of fmOrder) {
+    if (!Object.prototype.hasOwnProperty.call(artifact.frontmatter, key)) continue;
+    if (key !== 'fidelity') {
+      frontmatterLines.push(`${key}: ${yamlScalar(artifact.frontmatter[key])}`);
+      continue;
+    }
+    const fidelity = artifact.frontmatter.fidelity;
+    frontmatterLines.push('fidelity:');
+    for (const nestedKey of ['extraction', 'verification', 'verified_against', 'unreadable_count']) {
+      if (!Object.prototype.hasOwnProperty.call(fidelity, nestedKey)) continue;
+      frontmatterLines.push(`  ${nestedKey}: ${yamlScalar(fidelity[nestedKey])}`);
+    }
+  }
 
   return [
     '---',
@@ -398,6 +446,68 @@ export function writeInputArtifact(payload, options = {}) {
     throw new InputProducerError(
       `input_id already exists in inputs: ${artifact.input_id}\nCreate a new input_id and set supersedes to ${artifact.input_id}; only the same output file may be overwritten with --overwrite.`,
     );
+  }
+
+  // Resolve inherited fidelity against the same recursive input universe used by
+  // validate check 11. For a new v2 artifact, reject its own unresolved chain. For
+  // overwrite, compare the entire before/after universe even when the candidate is
+  // v1: replacing a verified terminal can newly break reverse dependents, and those
+  // issues are attributed to the dependent artifact rather than the candidate.
+  if (options.overwrite || artifact.frontmatter.input_contract === 2) {
+    const existingArtifacts = collectInputArtifacts(inputsDir);
+    const beforeIssues = collectInputFidelityIssues(existingArtifacts).issues;
+    const postWriteArtifacts = existingArtifacts
+      .filter((entry) => !(options.overwrite && path.resolve(entry.file) === outputPathResolved));
+    const candidate = {
+      file: outputPath,
+      fm: artifact.frontmatter,
+      hasFrontmatter: true,
+      parseError: undefined,
+    };
+    const afterIssues = collectInputFidelityIssues([...postWriteArtifacts, candidate]).issues;
+
+    let fidelityIssues;
+    if (options.overwrite) {
+      const fingerprint = (issue) => {
+        const file = issue.file || issue.artifact?.file || '';
+        return `${path.resolve(file)}\u0000${issue.message}`;
+      };
+      const beforeFingerprints = new Set(beforeIssues.map(fingerprint));
+
+      // The candidate is producer-authored now, so every after-state issue on it
+      // is a hard reject even when the same warning already existed in the manually
+      // authored file. Delta semantics apply only to other artifacts, preserving
+      // tolerance for unrelated pre-existing warnings while still protecting
+      // reverse dependents newly broken by this overwrite.
+      const candidateIssues = afterIssues.filter((issue) => issue.artifact === candidate);
+      const newlyIntroducedDependentIssues = afterIssues.filter(
+        (issue) => issue.artifact !== candidate && !beforeFingerprints.has(fingerprint(issue)),
+      );
+      const seen = new Set();
+      fidelityIssues = [...candidateIssues, ...newlyIntroducedDependentIssues].filter((issue) => {
+        const key = fingerprint(issue);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    } else {
+      fidelityIssues = afterIssues.filter((issue) => issue.artifact === candidate);
+    }
+
+    if (fidelityIssues.length) {
+      const heading = options.overwrite
+        ? 'Input Fidelity overwrite invalid:'
+        : 'Input Fidelity Contract v2 invalid:';
+      throw new InputProducerError(
+        [
+          heading,
+          ...fidelityIssues.map((issue) => {
+            const file = issue.file ? path.relative(inputsDir, issue.file) || path.basename(issue.file) : '(candidate)';
+            return `${file}: ${issue.message}`;
+          }),
+        ].join('\n'),
+      );
+    }
   }
 
   const text = renderInputArtifact(artifact);

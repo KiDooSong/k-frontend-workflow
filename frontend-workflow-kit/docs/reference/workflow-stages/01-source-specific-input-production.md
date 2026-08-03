@@ -64,7 +64,8 @@ A producer payload (or producer-set facts) typically carries:
 ```txt
 source_type            # concrete adapter/type: figma | planning-doc | api-doc | qa | testid | ...
 source_ref             # link or path to the original source
-captured_at            # when the source was captured
+captured_at            # RFC3339 with timezone; date-only/local datetime is invalid
+input_contract/fidelity # optional v2: extraction/verification/evidence/unreadable_count (structured JSON/YAML only)
 captured_by            # which local producer/skill captured it
 raw_artifacts          # optional pointers to screenshots/exports (refs, not copies)
 source_screen_refs     # source aliases as evidence (planning ids, design ids, node ids, route hints)
@@ -91,6 +92,9 @@ as canonical identity:
 - **Do not invent canonical screen IDs.** A planning code (`A-001`) or design code
   (`J010`) is a source alias, not a `screen_id`. Mapping is Stage 02's job and the
   Screen Source Map's single source of truth.
+- **Do not conflate confidence with fidelity.** Confidence is content certainty; fidelity is raw-source transcription/verification.
+  Never infer extraction/verification/count from `source_type`; only emit `input_contract: 2` when the producer has explicit values.
+- **Raw source collection and verification remain consumer-owned.** The kit does not fetch Figma nodes/files or prove raw pointers exist.
 - **If source screen aliases are present, pass them forward to Stage 02** as
   `source_screen_refs` (or in `extracted_facts`) so identity can be resolved.
 

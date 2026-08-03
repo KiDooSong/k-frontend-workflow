@@ -42,6 +42,35 @@ export function slugifySectionTitle(title) {
     .replace(/^-+|-+$/g, '');
 }
 
+// Canonical Markdown table header helpers. They live with the AST parser so every
+// consumer (reconciliation, mapping provenance, future structured sections) uses
+// the same case/whitespace normalization and exact-order rule.
+export function normalizedTableHeaders(table) {
+  return (table?.headers || []).map((header) => String(header).toLowerCase().replace(/\s+/g, ''));
+}
+
+export function tableHeadersAreUnique(table) {
+  const normalized = normalizedTableHeaders(table);
+  return new Set(normalized).size === normalized.length;
+}
+
+export function describeHeaderMismatch(table, canonicalCols) {
+  const actual = normalizedTableHeaders(table);
+  const expected = canonicalCols.map((header) => String(header).toLowerCase().replace(/\s+/g, ''));
+  if (actual.length === expected.length && actual.every((header, index) => header === expected[index])) {
+    return null;
+  }
+  const problems = [];
+  if (actual.length !== expected.length) problems.push(`컬럼 수 ${actual.length} ≠ ${expected.length}`);
+  if (new Set(actual).size !== actual.length) problems.push('중복 header 존재');
+  const missing = expected.filter((header) => !actual.includes(header));
+  const extra = actual.filter((header) => !expected.includes(header));
+  if (missing.length) problems.push(`누락: ${missing.join(', ')}`);
+  if (extra.length) problems.push(`추가: ${extra.join(', ')}`);
+  if (!problems.length) problems.push('canonical 순서 불일치');
+  return problems.join(' / ');
+}
+
 function parseTree(text) {
   const parserSource = String(text || '').replace(
     /<(pre|script|style|textarea)\/>/gi,
@@ -317,10 +346,17 @@ function sectionOccurrences(source, tree) {
 
   const flush = (endOffset) => {
     current.contentEnd = endOffset;
+    let bulletCount = 0;
+    for (const { node } of current.nodes) {
+      walk(node, (child) => {
+        if (child.type === 'listItem') bulletCount += 1;
+      });
+    }
     occurrences.push({
       title: current.title,
       slug: current.slug,
       text: source.slice(current.contentStart, current.contentEnd),
+      bulletCount,
       tables: current.nodes
         .map(({ node, previousNode }) => rootTable(source, node, previousNode))
         .filter(Boolean),

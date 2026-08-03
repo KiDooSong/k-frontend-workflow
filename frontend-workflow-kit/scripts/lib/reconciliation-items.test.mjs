@@ -2373,11 +2373,39 @@ test('v2 warning: annotation·Result 어휘·권고 조합·bullet index·row-ke
   assert.ok(r.errors.length >= 0); // r 은 참조용 (RR-ITEM-006 발화 여부와 무관)
 });
 
-test('v2 warning: Source Unit=n/a 는 reject 전용 (RP-101)', (t) => {
+test('v2 hard: visual-evidence Source Ref/Unit must meet the Figma precision floor (RP-005)', (t) => {
+  for (const row of [
+    DEFAULT_ITEM_ROWS[0].replace('figma://file/abc/node/1:234 | instance', 'planning://login-note | document'),
+    DEFAULT_ITEM_ROWS[0].replace('figma://file/abc/node/1:234 | instance', 'api://contracts/login | record'),
+    DEFAULT_ITEM_ROWS[0].replace('figma://file/abc/node/1:234 | instance', 'figma://file/abc | node'),
+    DEFAULT_ITEM_ROWS[0].replace('| instance |', '| n/a |'),
+  ]) {
+    const r = runV2(t, { itemRows: [row, ...DEFAULT_ITEM_ROWS.slice(1)] });
+    assert.ok(hasCode(r.errors, 'RP-005'));
+  }
+
+  const inheritedPlanning = runV2(t, {
+    files: {
+      'inputs/IN-20260720-figma-001.md': FIGMA_INPUT.replace(
+        'source_ref: "figma://file/abc"',
+        'source_ref: "planning://login-note"',
+      ),
+    },
+    itemRows: [
+      DEFAULT_ITEM_ROWS[0].replace('figma://file/abc/node/1:234 | instance', 'inherit | instance'),
+      ...DEFAULT_ITEM_ROWS.slice(1),
+    ],
+  });
+  assert.ok(hasCode(inheritedPlanning.errors, 'RP-005'));
+});
+
+test('v2 warning: non-visual Source Unit=n/a remains reject/procedural-only advisory (RP-101)', (t) => {
   const r = runV2(t, {
     itemRows: [
-      DEFAULT_ITEM_ROWS[0].replace('| instance |', '| n/a |'),
-      ...DEFAULT_ITEM_ROWS.slice(1),
+      DEFAULT_ITEM_ROWS[0],
+      DEFAULT_ITEM_ROWS[1],
+      DEFAULT_ITEM_ROWS[2].replace('| statement |', '| n/a |'),
+      DEFAULT_ITEM_ROWS[3],
     ],
   });
   assert.deepEqual(messages(r.errors), []);

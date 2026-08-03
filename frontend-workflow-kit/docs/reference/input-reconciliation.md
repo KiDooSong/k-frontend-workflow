@@ -185,7 +185,7 @@ input_id: "IN-20260613-figma-001"            # 전역 유일·불변. 멱등성�
 input_type: "figma"                          # normalized category: planning | figma | visual-spec | api | meeting | qa | testid | architecture | policy-migration | user-note
 source_type: "figma"                         # concrete source adapter/type: planning-doc | figma | visual-spec | api-doc | meeting | qa | qa-automation | testid | architecture | policy-migration | user-note
 source_ref: "figma-planning/coupon-list-12-v2"   # 원본 링크 또는 파일 경로
-captured_at: "2026-06-13T00:00:00+09:00"     # 수집 시점
+captured_at: "2026-06-13T00:00:00+09:00"     # 수집 시점. RFC3339+timezone hard(Z/±HH:MM)
 captured_by: "sample-figma-input-skill"      # 저장한 입력 스킬
 status: "captured"                           # 입력 자체의 상태 (≠ Reconcile Status — 아래 참조)
 affected_domains: ["coupons"]                # 관련 도메인 (canonical scope 필드)
@@ -206,7 +206,7 @@ raw_artifacts: []                            # optional: 원본 첨부(스크린
 | `input_type` | **required** | normalized category(사람이 읽는 분류 라벨): `planning`/`figma`/`visual-spec`/`api`/`meeting`/`qa`/`testid`/`architecture`/`policy-migration`/`user-note` |
 | `source_type` | **required** | concrete source adapter/type: `planning-doc`/`figma`/`visual-spec`/`api-doc`/`meeting`/`qa`/`qa-automation`/`testid`/`architecture`/`policy-migration`/`user-note` |
 | `source_ref` | **required** | 원본 링크 또는 파일 경로 |
-| `captured_at` | **required** | 입력을 수집한 시점 |
+| `captured_at` | **required** | 입력을 수집한 시점. 모든 v1/v2 input에 RFC3339 with timezone hard(`IP-001`); date-only/local datetime/invalid calendar 금지 |
 | `captured_by` | **required** | 어떤 입력 스킬이 저장했는지 |
 | `status` | **required** | **입력 자체의 상태**(예: `captured`). register 의 `Reconcile Status` 와 다르다 — 아래 참조 |
 | `affected_domains` / `affected_screens` | **required** | **canonical scope 필드**(관련 도메인/화면) |
@@ -242,6 +242,38 @@ input_id 는 한 번 발급하면 불변이다.
 ```
 
 이 규칙이 없으면 같은 id 에 다른 내용이 실려 "이미 처리한 입력"으로 잘못 스킵된다. id 형식은 충돌을 줄이려 `IN-{날짜}-{source}-{seq}` 처럼 source 를 끼우는 것을 권장한다.
+
+### Input Fidelity Contract v2 (opt-in)
+
+`confidence`는 입력 내용·의사결정의 확신도이고, `fidelity`는 원본→canonical input 전사·대조 상태다.
+provenance(`source_ref`/source unit/`captured_at`/Evidence)와도 책임이 다르며 서로 자동 승격·강등하지 않는다.
+
+```yaml
+input_contract: 2
+fidelity:
+  extraction: vision-verbatim
+  verification: verified
+  verified_against: raw_artifact:planning/login-crop.png
+  unreadable_count: 0
+```
+
+- `input_contract`가 없으면 v1이며 fidelity 관련 출력은 0건이다. 수동 문서에 `fidelity`만 있어도 v2로 추론하지 않는다.
+- writer는 숫자 `2`, reader는 숫자 2와 정확한 문자열 `"2"`만 허용한다.
+- `fidelity`는 mapping이고 필수 key는 `extraction`·`verification`·`unreadable_count`; `verified_against`는 조건부다.
+- extraction: `direct-text|vision-verbatim|structured-source|manual-transcription|inherited`.
+- verification: `unverified|verified|inherited|not-applicable`.
+- `unreadable_count`는 0 이상의 실제 정수다. 문자열 숫자/소수/null/boolean을 coercion하지 않는다.
+- `verified`는 `raw_artifact:<pointer>`가 필수이고 pointer는 현재 `raw_artifacts` 배열의 exact string이어야 한다.
+- `inherited`는 extraction도 inherited이며 `input:<input_id>`를 가리킨다. target은 inputs/**에서 unique v2 fidelity로
+  해소되고 chain은 cycle 없이 well-formed `verified` terminal에 도달해야 한다. duplicate ID를 first-wins하지 않는다.
+- `unverified|not-applicable`에서는 `verified_against`를 생략하거나 null로 둔다.
+- validator check 11의 IF-1xx는 warning-first이며 `--enforce`로 hard 승격하지 않는다.
+- generic producer는 `--from-json`/`--from-yaml` structured payload에서만 v2를 opt-in하며 invalid payload를 write 전에 hard reject한다.
+  flat CLI는 v1을 유지하고 extraction/verification/count를 추론하지 않는다.
+- fidelity가 confidence, input `status`, Reconcile Status, readiness를 자동 변경하지 않는다.
+
+모든 input의 `captured_at` RFC3339 hard는 이 opt-in과 독립이다. 정상 timestamp의 v1 input은 유지되지만
+invalid legacy timestamp는 이번 계약부터 `IP-001` hard error다. 상세 migration은 [upgrade-notes.md](upgrade-notes.md).
 
 ### `status` vs `Reconcile Status` — 세 가지 다른 축
 
@@ -413,7 +445,11 @@ v2 가 소비하는 마크다운은 **좁은 canonical authoring profile** 만 �
   inherit 로 해소된 `captured_at` 도 이 item 의 provenance 이므로 RFC3339 계약을 hard 로 통과해야 한다.
   `Source Unit` 은 item 마다 명시(enum: `document` `statement` `record` `instance` `node` `frame` `token`
   `screenshot` `measurement` `aggregate` `n/a`) — "카드 12개"가 Figma instance 수면 `instance`, API record 수면
-  `record` 다. 이 구분이 정밀도 바닥이다. `n/a` 는 reject/procedural item 전용(warning-first).
+  `record` 다. 이 구분이 정밀도 바닥이다. `n/a` 는 일반 item 에서 reject/procedural 전용 warning-first다.
+- `Basis=visual-evidence` 는 더 강한 hard floor를 가진다. direct/inherited를 먼저 해소한 effective
+  `Source Ref`가 `figma://file/<file>/(node|frame)/<id>` 형태로 file과 node/frame을 모두 식별해야 하며,
+  `document`/`statement`/`n/a`만으로는 통과하지 않는다(`RP-005`). 다른 enum unit도 pointer에서 자동
+  추론하지 않고 저자가 실제 단위를 명시하되, 같은 canonical Figma anchor와 결합해야 한다.
 
 ### Routing matrix (hard)
 
@@ -545,6 +581,33 @@ implementation-mode-policy.migration.md
 ```
 
 예: `IN-planning-001` 이 상태 탭 라벨(사용 가능/사용 완료/만료)을 제공하지만 탭의 존재가 `D-001`(open)에 달려 있으면, 라벨 Copy Keys 는 `draft` 로 둔다. 사람이 `D-001` 을 separate-tab 으로 닫으며 `confirmed` 로 승격한다. (3-state 정의의 단일 출처는 `templates/screen/screen-spec.template.md` 의 Copy Keys 주석.)
+
+### Figma Mapping Provenance Contract v1
+
+새 `figma-component-mapping`은 frontmatter `provenance_contract: 1`로 opt-in한다. 기존 4컬럼
+`## Component Mapping` header는 바꾸지 않고 첫 셀 맨 앞에 `` `M-001` · `` key를 붙이며,
+정확한 5컬럼 `## Mapping Provenance`와 완전한 1:1 관계를 만든다.
+
+```md
+| Mapping Key | Source Ref | Source Unit | Captured At | Evidence |
+|---|---|---|---|---|
+| M-001 | figma://file/abc/node/1:234 | instance | inherit | input:IN-...#extracted-facts/01 |
+```
+
+- `provenance_contract`가 없으면 legacy mapping이며 M-key/Mapping Provenance 진단은 0건이다.
+- opted-in MP-0xx는 check 12 hard, MP-1xx는 warning-first이고 `--enforce`로 승격하지 않는다.
+- Source Ref/Captured At의 `inherit`은 같은 행 Evidence input에서 해소한다. direct Source Ref + inherited timestamp도 허용한다.
+- Evidence는 Reconciliation Items와 같은 grammar/AST/index를 쓴다. missing/ambiguous input·missing section·`/00`은 hard,
+  out-of-range bullet은 warning-first다.
+- direct/inherited를 해소한 effective Source Ref는 반드시
+  `figma://file/<file>/(node|frame)/<id>` 형태로 file과 node/frame을 식별해야 한다. `document`/`statement`/`n/a`는
+  mapping precision floor를 충족하지 못해 `MP-018` hard다. `instance`는 Figma component instance,
+  `record`는 API/domain data record이며 다른 허용 enum과 마찬가지로 pointer에서 자동 추론하지 않는다.
+- generic `## Provenance`의 ✔T/✔M marker legend는 별도 설명 섹션이며 machine table로 오인하지 않는다.
+- Mapping 검사는 Reconciliation Register가 없거나 v1/v2여도 독립적으로 실행된다.
+- 기존 mapping opt-in은 `provenance_contract` + 모든 M-key + 모든 provenance row를 한 edit에서 원자적으로 추가한다.
+
+정본 template: [figma-component-mapping.template.md](../../templates/screen/figma-component-mapping.template.md).
 
 ### figma·디자인 입력의 두 산출 축
 
