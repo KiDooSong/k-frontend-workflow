@@ -3,7 +3,7 @@
 > 실행일: 2026-08-03
 > 범위: `RR-ROUTE-101`, `RR-STALE-101/102/103` 중 bounded corpus에서 재현 가능한 routing/stale positive와 negative controls
 > baseline: `533d2a69a1cc3b4831b2ebbef7ff0a313ca4c4fe` (PR #216 merge commit)
-> treatment implementation commit: `ae67b5ee8fc4889ad7ecc1e8c763c018b352d7d8`
+> treatment implementation commit: `3199f3f8706a86306c8bdaeb96d5e979f5064e0a`
 > evidence bundle: [`issue-202-reconciliation-dogfood-001/`](issue-202-reconciliation-dogfood-001/)
 > verdict: **PASS — 두 source-backed in-scope finding을 round 0에 표면화, FP 0, bounded-oracle missed 0; hard promotion 없음**
 
@@ -59,7 +59,7 @@ Baseline와 treatment는 **동일한 before corpus**를 읽는다. 교정은 별
 
 ```bash
 git worktree add /tmp/kfw-202-baseline 533d2a69a1cc3b4831b2ebbef7ff0a313ca4c4fe
-git worktree add /tmp/kfw-202-treatment ae67b5ee8fc4889ad7ecc1e8c763c018b352d7d8
+git worktree add /tmp/kfw-202-treatment 3199f3f8706a86306c8bdaeb96d5e979f5064e0a
 (
   cd /tmp/kfw-202-baseline/frontend-workflow-kit
   npm ci
