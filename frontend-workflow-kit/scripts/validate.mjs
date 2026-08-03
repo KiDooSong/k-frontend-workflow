@@ -949,10 +949,12 @@ function main() {
 
   //   검사 12 확장 — Reconciliation Contract v2 (frontmatter `reconciliation_contract: 2` opt-in).
   //   `## Reconciliation Items` effect 표 · summary projection · typed target/evidence 해소 ·
-  //   routing matrix · item provenance 필수값을 hard 로 본다. 자연어 heuristic 은 여기 없다(202-C,
-  //   warning-only 로도 아직 미구현). deterministic v2 오류는 --enforce 와 무관하게 항상 에러이고,
-  //   v2 warning(RR-*-1xx/RP-1xx)은 --enforce 로도 hard 승격하지 않는다. target index 는 이미 수집한
-  //   docs 를 재사용한다(재귀 walk 반복 없음). v1 register 면 이 블록은 아무 출력도 내지 않는다.
+  //   routing matrix · item provenance 필수값은 hard 다. 그 뒤 RR-ROUTE-101과 Decision 전용
+  //   RR-STALE-101/102/103은 같은 structured rows, input AST/evidence index, target index를 재사용하는
+  //   advisory warning이다. 이 자연어/현재-status heuristic은 --enforce로 승격하지 않고 actor,
+  //   historical Effect, Result 대체값을 추론하지 않는다. deterministic v2 오류는 --enforce와
+  //   무관하게 항상 에러이고 다른 v2 warning(RR-*-1xx/RP-1xx)도 hard 승격하지 않는다.
+  //   추가 recursive walk/AST parse는 없으며 v1 register면 이 블록은 아무 출력도 내지 않는다.
   if (register.exists && parseRegisterContract(register.fm).version !== 1) {
     const targetIndex = buildReconciliationTargetIndex({ docs });
     const v2Result = validateReconciliationV2({ register, registerFile, inputArtifacts, targetIndex });

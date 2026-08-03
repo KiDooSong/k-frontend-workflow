@@ -21,6 +21,21 @@ reviewer (이 프로필)            diff 에서 권한 경계(gate-raising)와 �
 침범"으로 단정하지 않는다 — 금지 전이(resolve/close/accept/confirm) 여부는 **diff** 에서 확인한다.
 v2 effect 어휘에 그 단어들이 없다는 것은 machine record 차원의 경계일 뿐, 실제 diff 확인은 reviewer 몫이다.
 
+### 202-C warning을 읽는 법
+
+검사 12의 `RR-ROUTE-101`과 `RR-STALE-101/102/103`은 **자동 수정 명령이 아니라 재검토 신호**다.
+
+- `RR-ROUTE-101`: exact Evidence가 실제 input↔input 충돌인지 확인한다. 맞을 때만 Basis/Classification/Conflict
+  target finding으로 올리고, warning만 보고 C-/Decision을 만들거나 Unknown을 닫지 않는다.
+- `RR-STALE-101/102/103`: typed Decision target과 현재 canonical `open|resolved`를 확인한다. historical Effect를
+  다시 쓰거나 상태 변경 actor를 추론하지 않고, replacement Result도 reviewer가 증거에 따라 판단한다.
+- 각 warning은 `TP`(실제 drift), `FP`(현재 기록이 의도적), `Non-evaluable`(source/status 모호) 중 하나로 판정한다.
+  이번 analyzer 범위의 drift를 warning 없이 사람이 발견하면 `Missed`로 기록한다.
+- warning이 존재한다는 사실만으로 pass를 막지 않는다. 확인된 Critical/Major finding이 pass를 막고, FP/Non-evaluable은
+  근거와 함께 batch finding에 한 번 기록한다. 모든 analyzer warning은 같은 round의 다른 필수 finding과 함께 제출한다.
+
+validator나 reviewer는 warning을 근거로 문서를 자동 mutate하지 않는다. `--enforce`도 이 warning을 error로 승격하지 않는다.
+
 ## 필수 검토 범위 (이것만 pass 조건이다)
 
 1. **Source backing** — item 마다 Evidence·Source Ref·Source Unit·Captured At 이 최소 바닥
@@ -34,8 +49,9 @@ v2 effect 어휘에 그 단어들이 없다는 것은 machine record 차원의 �
 4. **Scope** — visual evidence 가 behavior 정본(Interaction/State Matrix, Data Requirements, API Candidates,
    Acceptance Criteria, Navigation Map edge, Domain Rules)을 확정하지 않았는가. raw source token 으로
    canonical Screen ID 를 발명하지 않았는가. code/tests/generated/live policy/CI 를 수정하지 않았는가.
-5. **Completeness** — `workflow:validate` 가 잡는 summary/item/ref 오류가 모두 해소됐는가. 남은 불확실성이
-   open D-/U-/C-/G-/INV-/VER- 또는 명시적 `Result` 로 표현됐는가.
+5. **Completeness** — `workflow:validate` 가 잡는 summary/item/ref 오류가 모두 해소됐는가. 202-C warning은
+   TP/FP/Non-evaluable로 판정됐는가. 남은 불확실성이 open D-/U-/C-/G-/INV-/VER- 또는 명시적 `Result` 로
+   표현됐는가.
 
 ## Pass 조건으로 요구하면 안 되는 것
 

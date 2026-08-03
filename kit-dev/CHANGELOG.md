@@ -4,6 +4,30 @@
 
 ## Unreleased
 
+### feat(reconciliation) — warning-only semantic drift analyzers (#202-C)
+
+- 검사 12의 Contract v2 advisory 단계에 `RR-ROUTE-101`을 추가했다. trusted
+  `scope-unclear/scope-unclear` + `unknown:*` item의 exact `/NN` Evidence에서 distinct canonical input 2개 이상과
+  강한 Korean/English conflict marker가 함께 보일 때만 경고한다. 질문·불확실성·부정·약한 표현과 malformed/ambiguous
+  evidence/target은 억제하며 item당 1건으로 dedupe한다.
+- Decision-only stale Result warning `RR-STALE-101/102/103`을 추가했다: pending-user-decision인데 Decision target이
+  없거나 모두 resolved인 경우, accepted/no-change인데 open Decision이 있는 경우다. canonical Decision의 exact
+  `Status=open|resolved`만 신뢰하고 duplicate/missing/invalid/관련 hard-invalid 구조에서는 무발화한다. historical Effect,
+  actor, Conflict/Gap/Unknown/INV-/VER- roll-up, replacement Result는 추론하지 않는다.
+- shared Markdown AST가 exact evidence bullet의 visible prose를 additive하게 제공한다. 기존 section/bullet resolution과
+  cache를 재사용하고 code/HTML/comment/link·image destination/autolink/definition을 제외하며 nested parent에 child text를
+  중복하지 않는다. target index의 child hit에는 read-only status metadata를 additive하게 보존했다.
+- 새 진단은 기존 v2 warning 뒤에 deterministic append되고 public JSON shape `{check,file,message}`와 check 12를
+  유지한다. v1은 완전 무발화하며 `--enforce`도 error/exit code/CI/readiness gate로 승격하지 않는다.
+- historical/reproducible dogfood bundle을 `kit-dev/temp/runs/issue-202-reconciliation-dogfood-001.md`에 추가했다.
+  PR #216 baseline과 PR #217 treatment를 같은 frozen v2 corpus에서 비교해 source-backed finding 2건을 round 0에
+  표면화했고(TP 2, FP 0, bounded missed 0), batch review replay의 stop round가 2 → 1로 줄었다. routing positive는
+  maintainer가 기록한 LRN-0017 consumer finding의 익명 구조 재현이고 stale Result positive는 tracked
+  `reconcile-input-001` S5/`reconcile-input-002` correction replay다. private 11-round corpus 전체를 1 round로
+  재현했다는 주장은 하지 않는다. scoped acceptance가 완료되어 PR #217은 `Closes #202`로 연결한다.
+- visual behavior keyword heuristic은 기존 `RR-ROUTE-004` hard boundary와 precision evidence 부재 때문에 이번
+  slice에서 제외했다. 모든 새 diagnostic은 warning-only이며 hard/CI/readiness promotion은 별도 사람 결정이다.
+
 ### feat(provenance) — input fidelity + Figma mapping provenance (#202-B, #209)
 
 - 검사 11이 모든 canonical input의 `captured_at`을 shared `isRfc3339()`로 hard 검증한다(`IP-001`).

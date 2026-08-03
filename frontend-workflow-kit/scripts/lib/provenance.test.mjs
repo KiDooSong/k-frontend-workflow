@@ -5,6 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   buildInputArtifactIndex,
+  inputSectionDetails,
+  inputSectionIndex,
   inspectFigmaSourcePrecision,
   isRfc3339,
   parseFigmaSourcePointer,
@@ -125,4 +127,41 @@ test('input index preserves duplicate ids and evidence resolution ignores fake f
   const dupIndex = buildInputArtifactIndex([loadInputArtifact(first), loadInputArtifact(second)]);
   assert.equal(resolveInputArtifact(dupIndex, id).status, 'ambiguous');
   assert.equal(resolveInputEvidence(dupIndex, `input:${id}#extracted-facts/01`).status, 'ambiguous-input');
+});
+
+
+test('exact evidence text is additive, section-only stays non-semantic, and one AST cache is reused', (t) => {
+  const root = tmpdir(t);
+  const id = 'IN-20260803-meeting-001';
+  const file = writeInput(root, id, [
+    '## Extracted Facts',
+    '- parent IN-20260802-planning-001 충돌',
+    '  - child [IN-20260801-policy-001 conflicts with](https://example.test/hidden-conflict)',
+    '- inline `IN-20260801-code-001 충돌` omitted',
+  ].join('\n'));
+  const artifact = loadInputArtifact(file);
+  const index = buildInputArtifactIndex([artifact]);
+
+  const sections = inputSectionIndex(index, artifact);
+  assert.equal(sections.get('extracted-facts'), 3);
+  assert.equal(index.sectionCache.size, 1);
+  assert.equal(index.sectionDetailsCache.size, 1);
+
+  const sectionOnly = resolveInputEvidence(index, `input:${id}#extracted-facts`);
+  assert.equal(sectionOnly.status, 'ok');
+  assert.equal(sectionOnly.bulletCount, 3);
+  assert.equal(sectionOnly.evidenceText, null);
+
+  const parent = resolveInputEvidence(index, `input:${id}#extracted-facts/01`);
+  const child = resolveInputEvidence(index, `input:${id}#extracted-facts/02`);
+  const inline = resolveInputEvidence(index, `input:${id}#extracted-facts/03`);
+  assert.equal(parent.evidenceText, 'parent IN-20260802-planning-001 충돌');
+  assert.equal(child.evidenceText, 'child IN-20260801-policy-001 conflicts with');
+  assert.equal(inline.evidenceText, 'inline omitted');
+  assert.ok(!parent.evidenceText.includes('child'));
+
+  const details = inputSectionDetails(index, artifact);
+  assert.equal(details.sections, sections);
+  assert.equal(index.sectionCache.size, 1);
+  assert.equal(index.sectionDetailsCache.size, 1);
 });

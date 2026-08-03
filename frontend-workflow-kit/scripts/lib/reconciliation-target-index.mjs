@@ -88,8 +88,16 @@ function indexDocBody(body, artifactType) {
       for (const row of canonical.rows) {
         const id = String(col(row, 'ID') || '').trim();
         if (!id || id.startsWith('{')) continue;
+        const statusRaw = String(col(row, 'Status') || '').trim();
+        const normalizedStatus = statusRaw === 'open' || statusRaw === 'resolved' ? statusRaw : null;
         if (!rows.has(id)) rows.set(id, []);
-        rows.get(id).push({ sectionSlug: slug, family });
+        rows.get(id).push({
+          sectionSlug: slug,
+          family,
+          statusRaw,
+          normalizedStatus,
+          statusKnown: normalizedStatus !== null,
+        });
       }
     }
 
@@ -150,9 +158,42 @@ export function sectionRowKeyExists(record, sectionSlug, rowKey) {
 // child row ID가 owner 문서의 canonical 가족 표에서 해소되는지 판정한다.
 export function resolveChildRow(record, rowId, targetKind) {
   const hits = record?.rows?.get(rowId) || [];
-  if (hits.length === 0) return { found: false, familyMismatch: false };
-  if (hits.some((hit) => hit.family === targetKind)) return { found: true, familyMismatch: false };
-  return { found: true, familyMismatch: true };
+  if (hits.length === 0) {
+    return {
+      found: false,
+      familyMismatch: false,
+      ambiguous: false,
+      family: null,
+      sectionSlug: null,
+      statusRaw: null,
+      normalizedStatus: null,
+      statusKnown: false,
+    };
+  }
+  const matching = hits.filter((hit) => hit.family === targetKind);
+  if (matching.length === 0) {
+    return {
+      found: true,
+      familyMismatch: true,
+      ambiguous: false,
+      family: null,
+      sectionSlug: null,
+      statusRaw: null,
+      normalizedStatus: null,
+      statusKnown: false,
+    };
+  }
+  const [hit] = matching;
+  return {
+    found: true,
+    familyMismatch: false,
+    ambiguous: matching.length > 1,
+    family: hit.family,
+    sectionSlug: hit.sectionSlug,
+    statusRaw: hit.statusRaw,
+    normalizedStatus: hit.normalizedStatus,
+    statusKnown: matching.length === 1 && hit.statusKnown,
+  };
 }
 
 // INV-/VER-처럼 canonical 표가 없는 축은 rendered visible prose에 plain token이 있어야 해소된다.

@@ -43,7 +43,6 @@ Register에서 같은 `input_id` 행을 먼저 찾고 `Reconcile Status` 에 따
 - `not-started` → 같은 행을 `in-progress` 로 이동한다.
 - 없음 → 새 행을 `in-progress` 로 **먼저** 쓴다(문서 수정 전).
 - invalid enum / duplicate row / missing column → 먼저 register 구조를 수리한다.
-
 전체 retry·check 12 severity·8컬럼 스키마: [input-reconciliation.md](../../docs/reference/input-reconciliation.md) /
 템플릿 [reconciliation-register.template.md](../../templates/meta/reconciliation-register.template.md).
 
@@ -68,9 +67,10 @@ Register에서 같은 `input_id` 행을 먼저 찾고 `Reconcile Status` 에 따
     item/effect 행을 쓴다 — 문법·routing matrix·provenance(Source Unit 은 실제 세는 단위: `instance`/`node`/`record` 등,
     input 값과 같으면 `inherit`)는 [input-reconciliation.md §Contract v2](../../docs/reference/input-reconciliation.md#reconciliation-contract-v2-opt-in) 가 정본. `Basis=visual-evidence`는 effective Source Ref의 canonical Figma file + node/frame anchor가 hard floor다.
 12. task-artifact matrix 로 2차 산출물을 재확인한 뒤 `workflow:state` → `workflow:readiness` → `workflow:validate` 를 실행해 보고한다.
+    Contract v2의 `RR-ROUTE-101`·`RR-STALE-101/102/103`은 자동 수정 명령이 아니다. exact Evidence/Decision status를 TP/FP/Non-evaluable로 판정하고 TP만 같은 review batch에 올린다.
+    warning만으로 C-/Decision 생성, Unknown/Decision close, historical Effect rewrite, Result 변경을 하지 않으며 `--enforce`도 승격하지 않는다.
 13. Tier3/layout/policy migration 입력을 건드렸으면 `workflow:policy-draft -- --out <review-output-dir>` 로 review-only 산출물을
     만든다(live policy 교체 아님). 자세히: [Stage 10](../../docs/reference/workflow-stages/10-policy-layout-tier3-changes.md).
-
 ## 입력 종류별 라우팅 (요약 — 상세는 링크)
 | 입력 종류 | 1차 산출물 | 상세 (정본) |
 |---|---|---|
@@ -91,7 +91,7 @@ selector/testID 는 evidence 일 뿐 naming `confirmed` 승격 금지; Tier3 는
   fidelity 요구 금지), 필수 finding 을 **한 라운드에 일괄 제출**하며 Info 를 pass blocker 로 쓰지 않는다.
 - **stop condition**: validate hard errors 0 · Critical/Major 0 · gate-lowering diff 0 · provenance floor 충족 ·
   남은 불확실성이 open D/U/C/G/INV/VER 로 표현 · scope 밖(code/tests/generated/live policy/CI) 변경 0.
-- 최종 응답에 review profile 과 stop condition 충족 근거(validate 결과·open item 목록)를 보고한다.
+- 최종 응답에 stop 근거, 202-C warning별 TP/FP/Non-evaluable, 사람이 추가로 찾은 in-scope Missed를 보고한다. warning 자체는 blocker가 아니며 확인된 Critical/Major finding만 blocker다.
 
 ## 필요할 때 읽는 문서
 - 분류·copy keys·conflict·retry·check 12 전체: [input-reconciliation.md](../../docs/reference/input-reconciliation.md)

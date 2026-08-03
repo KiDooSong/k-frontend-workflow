@@ -440,7 +440,11 @@ v2 가 소비하는 마크다운은 **좁은 canonical authoring profile** 만 �
   h1 직속 표)의 ID+Status 표. Notes/예시 표·fenced code block 안의 표에 인용된 ID 로는 해소되지
   않는다. `artifact_id` 가 중복 선언된 대상은 owner 를 결정할 수 없어 해소 불가(hard)다.
 - `Evidence` 문법: `input:<input_id>#<section-slug>[/NN]` (NN 은 1-based: `01`, `02`...) —
-  section 존재는 hard, bullet index 해소는 warning-first.
+  section 존재는 hard, bullet index 범위 초과는 warning-first. 202-C semantic analyzer는 `/NN`이 있는 exact bullet만
+  읽고 section-only pointer는 의미 추정에 사용하지 않는다. bullet prose는 같은 shared Markdown AST에서 추출하며
+  fenced/indented/inline code, HTML comment/tag/attribute, link/image destination, URL-only autolink, reference definition은
+  제외하고 visible link text와 일반 prose만 유지한다. nested list는 1-based pre-order이며 부모 bullet에 child text를
+  중복 합성하지 않는다.
 - `Source Ref`/`Captured At`: `inherit` 면 input frontmatter 의 `source_ref`/`captured_at` 을 상속.
   inherit 로 해소된 `captured_at` 도 이 item 의 provenance 이므로 RFC3339 계약을 hard 로 통과해야 한다.
   `Source Unit` 은 item 마다 명시(enum: `document` `statement` `record` `instance` `node` `frame` `token`
@@ -481,6 +485,31 @@ Navigation Map·Domain Rules 는 hard error — Figma 입력이 behavior 충돌�
 - `Created Items` = effect 가 `create`/`create-open`/`reopen`/`link-evidence`/`record` 인 target 집합 (exact).
 - `Touched Artifacts` = 모든 effect target 의 owner artifact 집합 (artifact id 수준 exact; section detail 차이는 warning).
 
+### Warning-only semantic drift analyzers (202-C)
+
+Contract v2의 deterministic 검사가 끝난 뒤, 기존 warning 뒤에 다음 검사 12 warning을 append한다. warning object는
+계속 `{ "check": 12, "file": "...", "message": "..." }`이며 새 공개 필드는 없다. v1 register에서는 완전 무발화한다.
+
+- `RR-ROUTE-101`: trusted `scope-unclear/scope-unclear` item이 `unknown:*` target을 갖고, exact `/NN` Evidence의
+  visible prose에서 Evidence input을 포함한 distinct canonical `IN-*` input이 2개 이상이며 affirmative conflict marker가
+  발견된 경우. Korean marker는 `충돌`, `상충`, `양립 불가`, `양립할 수 없`, `서로 모순`,
+  `동시에 만족할 수 없`; English marker는 `conflict`, `conflicts with`, `contradict`, `contradicts`,
+  `contradictory`, `mutually exclusive`, `incompatible`, `cannot both`다. 질문·불확실성·명시적 부정과
+  `different`/`mismatch`/`vs`/`불일치` 같은 약한 표현은 억제한다. reviewer는 실제 input↔input 충돌인지와
+  Basis/Classification/Conflict target만 재검토하며 validator는 rewrite/create/close하지 않는다.
+- `RR-STALE-101`: canonical `Result=pending-user-decision`인데 해당 input의 trusted item에 `decision:*` target이 0개.
+- `RR-STALE-102`: `Result=pending-user-decision`이고 모든 typed Decision target이 unique하게 해소되며 현재
+  `Status=resolved`.
+- `RR-STALE-103`: `Result=accepted|no-change`이고 trusted Decision target 중 현재 `Status=open`이 1개 이상.
+
+Stale analyzer는 canonical Decision family의 exact `Status=open|resolved`만 읽는다. duplicate owner/Decision row, family
+mismatch, missing/invalid Status, malformed target, 해당 input의 관련 hard-invalid item이 있으면 무발화한다.
+Conflict/Gap/Unknown/INV-/VER-를 Result에 roll-up하지 않고, historical `Effect`를 current status에 맞춰 바꾸거나
+상태 변경 actor를 추론하지 않는다. `RR-STALE-*`는 replacement Result를 자동 추천하지 않는다.
+
+선언된 `Basis=visual-evidence`가 behavior target을 수정하면 기존 `RR-ROUTE-004` hard rule이 소유한다. 자유서술
+visual keyword warning은 초기 202-C 범위가 아니며, 별도 precision evidence가 생기기 전까지 추가하지 않는다.
+
 ### 진단 prefix 와 --enforce
 
 v2 진단 메시지는 stable prefix 를 갖는다: `RR-SCHEMA-*`(구조·문법) `RR-ITEM-*`(item/projection)
@@ -489,8 +518,9 @@ register frontmatter 의 YAML 파싱 실패·envelope 손상(닫는 `---` 누락
 (sequence/scalar/null)은 v1/v2 공통으로 검사 12 의 **항상-에러**다 — fm 이 빈/무의미한 값으로
 떨어지면 contract 판정이 v1 로 기울어 v2 검사가 조용히 꺼지므로, 판정 전에 fail-closed 한다.
 (`---` 로 시작하지 않는 frontmatter-없는 legacy 파일만 기존 v1 동작을 유지한다.)
-v2 의 deterministic 오류는 `--enforce` 와 무관하게 **항상 에러**다. 반대로 v2 warning 과 자연어 semantic
-heuristic(202-C 후속, warning-only)은 `--enforce` 로도 hard 승격하지 않는다 — 승격은 별도 사람 승인이다.
+v2 의 deterministic 오류는 `--enforce` 와 무관하게 **항상 에러**다. 반대로 v2 warning과 202-C semantic
+heuristic(`RR-ROUTE-101`, `RR-STALE-101/102/103`)은 `--enforce` 로도 hard 승격하지 않는다. warning-only
+fixture는 기본/`--enforce` 모두 exit 0이며, hard/CI/readiness 승격은 별도 사람 승인이다.
 
 ### Migration
 

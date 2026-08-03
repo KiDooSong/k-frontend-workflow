@@ -1,5 +1,15 @@
 # Current Roadmap
 
+> 2026-08-03 구현·evidence 갱신(#202-C): 검사 12 advisory 단계에 `RR-ROUTE-101`과 Decision 기반
+> `RR-STALE-101/102/103`을 추가했다. exact `/NN` AST-visible evidence와 canonical Decision
+> `Status=open|resolved`만 사용하며 v1은 완전 무발화, public JSON shape/check 12/기존 warning 순서를 유지하고
+> `--enforce`·CI·readiness로 승격하지 않는다. [historical/reproducible dogfood](temp/runs/issue-202-reconciliation-dogfood-001.md)는
+> PR #216 baseline과 PR #217 treatment를 같은 frozen v2 corpus에 적용해 source-backed finding 2건을 round 0에
+> 표면화했다(TP 2, FP 0, bounded missed 0, stop round 2 → 1). routing case는 maintainer가 기록한 private-consumer
+> LRN-0017 finding의 익명 구조 재현이고 stale case는 tracked reconcile-input dry-run의 실제 S5 replay다. 이는 전체
+> 11라운드 세션을 1라운드로 줄였다는 주장이 아니며 hard promotion 근거도 아니다. 202-A/B/C scoped acceptance가
+> 완료되어 PR #217은 `Closes #202`; 향후 precision gap은 별도 follow-up으로 관리한다.
+
 > 2026-07-31 구현 갱신(#202-B + #209): 모든 canonical input `captured_at`이 검사 11 `IP-001` RFC3339+timezone hard 계약을 통과해야 하며 producer도 write 전에 같은 parser로 거부한다. opt-in `input_contract: 2`는 confidence와 독립된 fidelity(extraction/verification/evidence/unreadable count)를 구조화한다; validator IF-1xx는 warning-first, JSON/YAML producer는 hard다. `provenance_contract: 1` figma mapping은 기존 4컬럼 Component Mapping의 M-key와 5컬럼 Mapping Provenance를 check 12에서 1:1 hard 검증하고, legacy mapping은 무발화한다. Mapping 검사는 register 없음/v1/v2와 독립적이다. shared AST/evidence/input index를 Reconciliation Items와 재사용하며 새 numbered check/readiness fact/CI 승격은 없다. #202-C semantic/stale warning과 dogfood evidence는 잔여다. 설계: [input-provenance-fidelity-contract](docs/design/drafts/input-provenance-fidelity-contract.md).
 
 > 2026-07-24 구현 갱신(#210): ScreenSpec `## API Candidates` optional structured v2
