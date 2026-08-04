@@ -8,6 +8,9 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: write
+
 jobs:
   validate-example:
     runs-on: ubuntu-latest
@@ -169,3 +172,35 @@ jobs:
       - run: npm ci
       - run: node --test scripts/lib/util.test.mjs scripts/lib/distribution.test.mjs scripts/lib/upgrade-planner.test.mjs
       - run: npm run example:validate
+
+  apply-pr217-review-fixes:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.number == 217 &&
+      github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/issue-202c-reconciliation-warnings
+          fetch-depth: 0
+      - name: Apply reviewed precision/evidence corrections and remove transfer machinery
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .codex/apply-pr217-review-fixes.py
+          git diff --check
+          (
+            cd frontend-workflow-kit
+            npm ci
+            node --test scripts/lib/reconciliation-warnings.test.mjs scripts/lib/reconciliation-items.test.mjs
+          )
+          git fetch origin main
+          git checkout origin/main -- .github/workflows/frontend-workflow-kit.yml
+          git rm -f .github/workflows/codex-pr217-doc-fixes.yml
+          git rm -r .codex
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(reconciliation): address semantic warning review findings"
+          git push origin "HEAD:codex/issue-202c-reconciliation-warnings"
