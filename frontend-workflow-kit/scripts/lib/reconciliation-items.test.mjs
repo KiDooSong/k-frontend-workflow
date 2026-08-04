@@ -2576,6 +2576,90 @@ test('RR-ROUTE-101: out-of-range and duplicate input keep structural diagnostics
   assert.equal(warningMessagesByCode(duplicate, 'RR-ROUTE-101').length, 0);
 });
 
+
+test('RR-ROUTE-101: same-input Summary hard diagnostics suppress locally; unrelated Summary errors do not', (t) => {
+  const facts = ['- 기존 IN-20260720-figma-001 정책과 충돌한다.'];
+  const assertSuppressed = (name, result, code) => {
+    assert.ok(hasCode(result.errors, code), `${name}: expected ${code}`);
+    assert.equal(warningMessagesByCode(result, 'RR-ROUTE-101').length, 0, name);
+  };
+
+  assertSuppressed(
+    'RR-SCHEMA-006',
+    runScopeUnknown(t, facts, {
+      summaryRows: [
+        DEFAULT_SUMMARY_ROWS[0],
+        SCOPE_UNKNOWN_SUMMARY.replace('| scope-unclear |', '| scope-unclear + invalid-classification |'),
+      ],
+    }),
+    'RR-SCHEMA-006',
+  );
+
+  assertSuppressed(
+    'RR-ITEM-005',
+    runScopeUnknown(t, facts, {
+      summaryRows: [
+        DEFAULT_SUMMARY_ROWS[0],
+        SCOPE_UNKNOWN_SUMMARY.replace('| scope-unclear |', '| simple-update |'),
+      ],
+    }),
+    'RR-ITEM-005',
+  );
+
+  const screenWithSecondUnknown = SCREEN_SPEC_DOC.replace(
+    '| U-001 | 페이지 크기 | open |',
+    '| U-001 | 페이지 크기 | open |\n| U-002 | 정렬 기준 | open |',
+  );
+  assertSuppressed(
+    'RR-ITEM-006',
+    runScopeUnknown(t, facts, {
+      files: {
+        'domains/coupons/screens/coupon-list/screen-spec.md': screenWithSecondUnknown,
+      },
+      summaryRows: [
+        DEFAULT_SUMMARY_ROWS[0],
+        SCOPE_UNKNOWN_SUMMARY.replace(
+          'unknown:U-001@COUPON-001-screen-spec',
+          'unknown:U-001@COUPON-001-screen-spec; unknown:U-002@COUPON-001-screen-spec',
+        ),
+      ],
+    }),
+    'RR-ITEM-006',
+  );
+
+  assertSuppressed(
+    'RR-ITEM-007',
+    runScopeUnknown(t, facts, {
+      summaryRows: [
+        DEFAULT_SUMMARY_ROWS[0],
+        SCOPE_UNKNOWN_SUMMARY.replace(
+          'artifact:COUPON-001-screen-spec',
+          'artifact:open-decision-register',
+        ),
+      ],
+    }),
+    'RR-ITEM-007',
+  );
+
+  const duplicateSummary = runScopeUnknown(t, facts, {
+    summaryRows: [DEFAULT_SUMMARY_ROWS[0], SCOPE_UNKNOWN_SUMMARY, SCOPE_UNKNOWN_SUMMARY],
+  });
+  assert.equal(warningMessagesByCode(duplicateSummary, 'RR-ROUTE-101').length, 0);
+
+  const unrelatedSummaryError = runScopeUnknown(t, facts, {
+    summaryRows: [
+      DEFAULT_SUMMARY_ROWS[0].replace(
+        'simple-update + component-gap',
+        'simple-update + invalid-classification',
+      ),
+      SCOPE_UNKNOWN_SUMMARY,
+    ],
+  });
+  assert.ok(hasCode(unrelatedSummaryError.errors, 'RR-SCHEMA-006'));
+  assert.equal(warningMessagesByCode(unrelatedSummaryError, 'RR-ROUTE-101').length, 1);
+});
+
+
 test('RR-STALE-101/102/103: Decision-only current status comparison emits exact warning family', (t) => {
   const noDecision = runV2(t, {
     summaryRows: [

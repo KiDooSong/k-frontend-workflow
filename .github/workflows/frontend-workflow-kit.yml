@@ -1,40 +1,171 @@
 name: frontend-workflow-kit
 
+# MVP-A 게이트: 킷이 자기 golden example(coupon-feature)을 CI 에서 계속 검증한다.
+#   - 생성기(state)가 커밋된 _meta 산출물을 재현하는지 (멱등성 불변식 #7)
+#   - validate 12종이 통과하는지 (exit 0/1 게이트)
 on:
+  push:
+    branches: [main]
   pull_request:
 
-permissions:
-  contents: write
-
 jobs:
-  apply-pr217-review-fixes:
-    if: >-
-      github.event.pull_request.number == 217 &&
-      github.actor != 'github-actions[bot]'
+  validate-example:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend-workflow-kit
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          ref: codex/issue-202c-reconciliation-warnings
-          fetch-depth: 0
-      - name: Apply reviewed precision/evidence corrections and remove transfer machinery
-        shell: bash
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend-workflow-kit/package-lock.json
+
+      - run: npm ci
+
+      # lint-pack PR-5 smoke CI — warning-first(비차단).
+      #   - npm ci 이후 hard gate 들보다 먼저 실행해, 뒤쪽 validate/idempotency 실패와 무관하게
+      #     smoke 신호를 남긴다.
+      #   - lint-gen 은 예제 fixture 의 generated config drift 만 확인한다. manifest status 는 planned 유지.
+      #   - lint-baseline 은 ratchet report 를 JSON 으로 남기되 --enforce 를 쓰지 않는다.
+      #   - hard gate/required check 승격은 observed telemetry/brownfield dogfood 와 별도 Open Decision 전까지 금지.
+      - name: lint-pack generated config drift (warning-only)
+        continue-on-error: true
+        run: npm run workflow:lint-gen -- --check
+
+      - name: lint-pack ratchet baseline (warning-only)
+        continue-on-error: true
+        run: npm run workflow:lint-baseline -- --json
+
+      # 생성기 실행 (파일을 쓴다 → 커밋본과 어긋나면 아래 diff 단계에서 잡힌다)
+      - run: npm run example:state
+      - run: npm run example:readiness
+
+      # telemetry artifact accumulation — observation-only(비차단).
+      #   - example _meta 생성 뒤 실행해 route/doc/eval 관측이 현재 예제 문서 상태를 보게 한다.
+      #   - 아래 idempotency/validate 게이트와 분리되어 있으며, 원장은 승격 판단 재료일 뿐 판정이 아니다.
+      - name: telemetry observation ledger (warning-only)
+        continue-on-error: true
         run: |
-          set -euo pipefail
-          sed -i "/assert.ok(duplicateSummary.errors.length > 0);/d" .codex/apply-pr217-review-fixes.py
-          python3 .codex/apply-pr217-review-fixes.py
-          git diff --check
-          (
-            cd frontend-workflow-kit
-            npm ci
-            node --test scripts/lib/reconciliation-warnings.test.mjs scripts/lib/reconciliation-items.test.mjs
-          )
-          git fetch origin main
-          git checkout origin/main -- .github/workflows/frontend-workflow-kit.yml
-          git rm -f .github/workflows/codex-pr217-doc-fixes.yml
-          git rm -r -f .codex
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "fix(reconciliation): address semantic warning review findings"
-          git push origin "HEAD:codex/issue-202c-reconciliation-warnings"
+          mkdir -p "$RUNNER_TEMP/frontend-workflow-telemetry"
+
+          set +e
+          npm --silent run workflow:telemetry -- \
+            --docs examples/coupon-feature/docs/frontend-workflow \
+            --out "$RUNNER_TEMP/frontend-workflow-telemetry/telemetry-ledger.json"
+          ledger_status=$?
+
+          npm --silent run workflow:telemetry -- \
+            --docs examples/coupon-feature/docs/frontend-workflow \
+            --json > "$RUNNER_TEMP/frontend-workflow-telemetry/telemetry-report.json"
+          report_status=$?
+
+          if [ "$ledger_status" -ne 0 ]; then
+            echo "::warning::telemetry ledger collection exited with status $ledger_status"
+          fi
+          if [ "$report_status" -ne 0 ]; then
+            echo "::warning::telemetry report collection exited with status $report_status"
+          fi
+          exit 0
+
+      - name: summarize telemetry artifact files (warning-only)
+        if: always()
+        continue-on-error: true
+        run: |
+          for file in \
+            "$RUNNER_TEMP/frontend-workflow-telemetry/telemetry-ledger.json" \
+            "$RUNNER_TEMP/frontend-workflow-telemetry/telemetry-report.json"
+          do
+            if [ ! -s "$file" ]; then
+              echo "::warning::telemetry artifact file is missing or empty: $file"
+            else
+              wc -c "$file"
+            fi
+          done
+
+      - name: upload telemetry observation artifacts
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-workflow-telemetry-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/frontend-workflow-telemetry/telemetry-ledger.json
+            ${{ runner.temp }}/frontend-workflow-telemetry/telemetry-report.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      # 멱등성 게이트: 생성된 _meta 가 커밋된 것과 다르면 실패.
+      # 이게 빠지면 "스크립트가 돈다"만 증명할 뿐 "커밋된 출력을 재현한다"는 증명하지 못한다.
+      - name: assert generated docs match committed (idempotency)
+        run: |
+          if ! git diff --exit-code -- examples/coupon-feature/docs/frontend-workflow/_meta; then
+            echo "::error::생성기 출력이 커밋된 _meta 산출물과 다릅니다. 'npm run example:state' 후 변경분을 커밋하세요."
+            exit 1
+          fi
+
+      # 진짜 검사 게이트 (검사 12종, exit 0/1)
+      - run: npm run example:validate
+
+      # 파서 회귀 (게이트 신호 파싱: 표 병합/escaped pipe) — 결정적 단위 테스트 하드 게이트.
+      #   parseTable/parseOpenDecisions 의 fail-open/신호오염 회귀를 막는다 (warning-first 아님).
+      - run: npm run test:spec
+
+      # golden fixture 회귀 하니스 (test-fixtures.mjs) — warning-first(비차단).
+      #   - actions/checkout 가 repo 전체를 받고, KIT_ROOT 는 파일상대(import.meta.url) 라
+      #     working-directory=frontend-workflow-kit 에서도 repo-root temp/runs fixture 를 해석한다.
+      #   - continue-on-error: 결과는 로그에 보이되 job 은 깨지 않는다. 신뢰(FP율) 확인 후
+      #     별도 PR 로 gating(continue-on-error 제거) 승격 — 보드 §0/§7 warning-first 하드룰.
+      - name: golden fixture regression (warning-only)
+        continue-on-error: true
+        run: npm run example:test
+
+  # ── 지원 계약 smoke (#160, tracker #167 MVP-04) ─────────────────────────────
+  # 아래 두 job 은 위 hard-gate job(validate-example: Ubuntu + Node 20)이 이미 hard 로 검증하는
+  # 결정적 검사(test:spec / example:validate)의 부분집합을 다른 플랫폼/Node 버전에서 반복하는
+  # "기존 hard gate 의 플랫폼/버전 확장"이다 — 새 검사 종류를 gate 로 승격하지 않는다.
+  # warning-first 도구(lint/golden-fixture/visual/telemetry/red-team)의 CI 관측 step 을 두지
+  # 않고 관측 artifact 도 수집하지 않는다 — 단 test:spec/distribution 단위·패키징 테스트가
+  # 해당 CLI 들을 "테스트 대상"으로 spawn 하는 것은 관측 surface 실행/승격이 아니다.
+  # required check(branch protection) 승격은 별도 Open Decision 전까지 하지 않는다.
+  # Windows 는 CI 미검증 — kit README §지원 환경 지원 표에 명시적 best-effort 로만 기록.
+  compat-smoke:
+    # engines(node >=20)의 "대표 최신 LTS" 축: Ubuntu + Node 24.
+    # engines 하한(Node 20)은 위 validate-example hard gate 가 그대로 검증한다.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend-workflow-kit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend-workflow-kit/package-lock.json
+      - run: npm ci
+      - run: npm run test:spec
+      - run: npm run example:validate
+
+  macos-smoke:
+    # 지원 표의 macOS 축 — #154 유형(symlink/realpath CLI entry guard, packed-kit spawn) 회귀를
+    # macOS 에서 직접 돌린다. focused 선택 근거:
+    #   - util.test.mjs: isCliEntry 단위 + symlink 경유 spawn e2e (#154 의 직접 회귀)
+    #   - distribution.test.mjs: pack allowlist + packed CLI spawn (#154 당시 macOS 에서 깨졌던 테스트)
+    #   - upgrade-planner.test.mjs: payload manifest mode/hash 비교 e2e (플랫폼 민감 — exec bit/경로)
+    #   - example:validate: 예제 문서 트리 대상 경로 처리 smoke
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: frontend-workflow-kit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend-workflow-kit/package-lock.json
+      - run: npm ci
+      - run: node --test scripts/lib/util.test.mjs scripts/lib/distribution.test.mjs scripts/lib/upgrade-planner.test.mjs
+      - run: npm run example:validate

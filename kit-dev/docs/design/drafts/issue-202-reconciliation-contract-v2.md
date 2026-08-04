@@ -1,6 +1,6 @@
 # Issue #202 설계 — Reconciliation Contract v2
 
-## Implementation status (2026-08-03)
+## Implementation status (2026-08-04)
 
 - 작업 시작 `main` SHA는 `533d2a69a1cc3b4831b2ebbef7ff0a313ca4c4fe`이며, PR #216 merge commit과 동일하다.
 - PR #205/#207/#208/#212로 Reconciliation Contract v2 구조·참조·routing hard enforcement,
@@ -8,28 +8,32 @@
 - PR #216(`533d2a69a1cc3b4831b2ebbef7ff0a313ca4c4fe`)으로 202-B provenance floor가 완료됐고
   Issue #209는 closed다. `input_contract: 2`, `reconciliation_contract: 2`,
   `provenance_contract: 1`은 계속 독립 계약이다.
-- PR #217 candidate는 202-C를 `RR-ROUTE-101`과 Decision 기반
-  `RR-STALE-101/102/103` 두 analyzer 축으로 고정한다. 모두 검사 12 warning이며 `--enforce`로 승격되지 않는다.
+- PR #217은 202-C 구현 범위를 `RR-ROUTE-101`과 Decision 기반 `RR-STALE-101/102/103`으로 고정한다.
+  모두 검사 12 warning이며 `--enforce`로 승격되지 않는다.
+- review follow-up에서 `RR-ROUTE-101` precision을 강화했다. input token은 검사 11의 shared
+  `INPUT_ID_PATTERN`을 사용하고 shared input index에서 unique하게 해소되는 ID만 센다. 파일명·URL·noncanonical
+  lookalike는 배제하며, 같은 input의 `summaryTrust`가 false면 candidate-local suppress한다. marker polarity는
+  local clause에서 질문·불확실성·marker별 부정을 판정한다.
 - visual behavior leakage keyword warning은 초기 202-C에서 제외한다. 선언된
   `Basis=visual-evidence`의 behavior target은 이미 `RR-ROUTE-004` hard rule이 소유하고, 자유서술 keyword만으로
   추가 warning을 낼 정밀도 근거가 아직 없다. 별도 고정밀 누락이 dogfood에서 확인될 때 follow-up으로만 검토한다.
-- historical/reproducible dogfood는 [`issue-202-reconciliation-dogfood-001.md`](../../temp/runs/issue-202-reconciliation-dogfood-001.md)에 고정했다.
-  PR #216 baseline과 PR #217 treatment를 같은 frozen v2 corpus에 적용해 source-backed finding 2건을 round 0에서
-  표면화했고, bounded 판정은 TP 2 / FP 0 / missed 0, stop round는 2 → 1이었다. routing positive는 private consumer
-  원문 복사가 아니라 maintainer가 기록한 LRN-0017 finding의 익명 구조 재현이며, stale Result positive는 tracked
-  `reconcile-input-001` S5와 `reconcile-input-002` correction의 v2 replay다.
-- 이 증거는 private consumer의 전체 11라운드를 동일 corpus로 1라운드에 끝냈다는 주장이 아니다. 이번 두 analyzer가
-  소유하는 finding family만 first validate로 이동했음을 입증한다. hard/CI/readiness promotion은 여전히 별도 사람 승인이다.
-- 202-A/B/C와 scoped evidence acceptance가 완료됐으므로 PR #217은 `Closes #202`로 연결한다. 향후 live corpus에서
-  새 precision gap이 발견되면 #202를 소급 확장하지 않고 별도 follow-up으로 기록한다.
+- [`issue-202-reconciliation-dogfood-001.md`](../../temp/runs/issue-202-reconciliation-dogfood-001.md)는
+  implementation/model replay로 유지한다. tracked `reconcile-input-001` S5와 `reconcile-input-002` correction을
+  옮긴 stale Result 사례만 real historical upstream TP로 평가 가능하다. routing 사례는 detector 조건을 안 뒤 작성한
+  **synthetic structural positive**이며 실제 historical/live TP, real-corpus FP/missed, 실제 review-round 감소의 증거가 아니다.
+- 현재 연결된 저장소에서 이 workflow를 vendored한 consumer checkout과 privacy-safe historical Stage 04 corpus를
+  식별하지 못했다. 따라서 실제 routing sample의 baseline/treatment, 독립 human TP/FP/missed, 실제 batch finding과
+  stop round 비교가 남아 있다.
+- PR #217의 기본 연결은 `Refs #202`이고 Issue #202는 open으로 유지한다. hard/CI/readiness promotion은 여전히
+  별도 사람 승인이다.
 
-> 상태: 202-A/202-B/202-C 완료 · historical/reproducible dogfood PASS · PR #217 closes #202
+> 상태: 202-C implementation 및 precision review fix 완료 · actual consumer dogfood evidence 대기 · Issue #202 open
 > 기준 저장소: `KiDooSong/k-frontend-workflow`
 > 작업 시작 브랜치: `main` (`533d2a69a1cc3b4831b2ebbef7ff0a313ca4c4fe`)
 > 역사적 초기 확인점: `fa9fc6b`(현재 기준 SHA가 아님)
 > 대상 이슈: `#202 reconcile 계약 불변식이 validate 미강제 → LLM 리뷰 O(n) 라운드 팽창`
 > 제안 위치: `kit-dev/docs/design/drafts/issue-202-reconciliation-contract-v2.md`
-> 최초 작성일: 2026-07-20 · 현재 확인일: 2026-08-03
+> 최초 작성일: 2026-07-20 · 현재 확인일: 2026-08-04
 
 ---
 
@@ -717,9 +721,9 @@ visual behavior leakage keyword warning은 이 slice에서 제외한다. 선언�
 |---|---|
 | Stable code | `RR-ROUTE-101` message prefix |
 | Candidate input | v2 structured input의 `scope-unclear/scope-unclear` item group + `unknown:*` target |
-| Input data | 이미 파싱된 Summary/Items group, shared input index, exact `/NN` AST-visible Evidence text, target index |
-| Positive condition | trusted group·unknown target·exact bullet + distinct canonical input 2개 이상 + affirmative marker |
-| Suppression | 질문/불확실성/부정/약한 표현, section-only/out-of-range, duplicate input/owner/row, 관련 hard-invalid 구조, 이미 conflict basis |
+| Input data | 이미 파싱된 Summary/Items group, 검사 11과 공유하는 `INPUT_ID_PATTERN`, shared input index, exact `/NN` AST-visible Evidence text, target index |
+| Positive condition | 같은 input의 trusted Summary·group·unknown target·exact bullet + index에서 unique하게 해소되는 distinct canonical input 2개 이상 + affirmative marker |
+| Suppression | marker-local 질문/불확실성/부정/약한 표현, URL·파일명·noncanonical input lookalike, section-only/out-of-range, duplicate/missing input·owner·row, 같은 input의 untrusted Summary/item projection, 이미 conflict basis |
 | Evidence provenance | message에 input/item, unknown target, exact Evidence pointer, distinct input refs, 대표 marker |
 | Dedupe key | `RR-ROUTE-101 + Input ID + Item ID` |
 | Known false positive | 문장이 강한 충돌 표현을 쓰지만 실제로는 reviewer가 의도적으로 Unknown으로 보존한 경우 |
@@ -1161,10 +1165,12 @@ rollout:
 - Decision 외 child status roll-up, historical Effect rewrite/actor 추론, 자동 Result 추천
 - warning hard promotion, CI/readiness 승격, 새 numbered check
 
-초기 기본 연결은 `Refs #202`였으나, PR #217은 maintainer-source-backed historical finding을 익명 frozen corpus로
-재현해 baseline/treatment, TP/FP/missed, batch finding, stop condition을 기록했다. 따라서 scoped acceptance 기준에서는
-`Closes #202`로 전환한다. 이 evidence는 새 blind live-consumer review가 아니며 전체 11라운드의 1라운드 수렴을 주장하지
-않는다. warning hard/CI/readiness promotion은 언제나 별도 사람 승인이다.
+기본 연결은 `Refs #202`다. PR #217의 frozen bundle은 warning-only 구현과 동일-corpus validator output을
+재현하는 model replay다. stale Result 사례는 tracked upstream historical finding으로 TP 판정이 가능하지만, routing 사례는
+heuristic 조건을 안 뒤 만든 synthetic structural positive여서 실제 historical/live routing TP·real-corpus FP/missed·실제
+review-round 감소를 입증하지 못한다. privacy-safe consumer corpus의 baseline/treatment와 독립 human 판정, 실제 batch
+finding/stop condition 기록이 추가될 때까지 Issue #202는 open으로 유지한다. warning hard/CI/readiness promotion은
+언제나 별도 사람 승인이다.
 
 ---
 

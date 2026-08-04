@@ -6,10 +6,13 @@
 
 ### feat(reconciliation) — warning-only semantic drift analyzers (#202-C)
 
-- 검사 12의 Contract v2 advisory 단계에 `RR-ROUTE-101`을 추가했다. trusted
-  `scope-unclear/scope-unclear` + `unknown:*` item의 exact `/NN` Evidence에서 distinct canonical input 2개 이상과
-  강한 Korean/English conflict marker가 함께 보일 때만 경고한다. 질문·불확실성·부정·약한 표현과 malformed/ambiguous
-  evidence/target은 억제하며 item당 1건으로 dedupe한다.
+- 검사 12의 Contract v2 advisory 단계에 `RR-ROUTE-101`을 추가했다. 같은 input의 Summary와 item projection이
+  trusted인 `scope-unclear/scope-unclear` + `unknown:*` candidate만 보며, exact `/NN` Evidence의 visible prose에서
+  검사 11과 공유하는 `INPUT_ID_PATTERN`을 통과하고 shared input index에서 unique하게 해소되는 distinct input 2개 이상과
+  강한 Korean/English conflict marker가 함께 있을 때만 경고한다. URL·파일 경로·`{input_id}.md`·대문자/짧은 sequence·
+  underscore/dot suffix lookalike는 세지 않는다. 질문·불확실성·marker별 부정은 local clause에서 억제해 unrelated clause의
+  negation이 valid marker를 숨기지 않게 했고, 같은 input Summary hard-invalid는 candidate-local suppress한다.
+  malformed/ambiguous evidence/target도 억제하며 item당 1건으로 dedupe한다.
 - Decision-only stale Result warning `RR-STALE-101/102/103`을 추가했다: pending-user-decision인데 Decision target이
   없거나 모두 resolved인 경우, accepted/no-change인데 open Decision이 있는 경우다. canonical Decision의 exact
   `Status=open|resolved`만 신뢰하고 duplicate/missing/invalid/관련 hard-invalid 구조에서는 무발화한다. historical Effect,
@@ -19,12 +22,12 @@
   중복하지 않는다. target index의 child hit에는 read-only status metadata를 additive하게 보존했다.
 - 새 진단은 기존 v2 warning 뒤에 deterministic append되고 public JSON shape `{check,file,message}`와 check 12를
   유지한다. v1은 완전 무발화하며 `--enforce`도 error/exit code/CI/readiness gate로 승격하지 않는다.
-- historical/reproducible dogfood bundle을 `kit-dev/temp/runs/issue-202-reconciliation-dogfood-001.md`에 추가했다.
-  PR #216 baseline과 PR #217 treatment를 같은 frozen v2 corpus에서 비교해 source-backed finding 2건을 round 0에
-  표면화했고(TP 2, FP 0, bounded missed 0), batch review replay의 stop round가 2 → 1로 줄었다. routing positive는
-  maintainer가 기록한 LRN-0017 consumer finding의 익명 구조 재현이고 stale Result positive는 tracked
-  `reconcile-input-001` S5/`reconcile-input-002` correction replay다. private 11-round corpus 전체를 1 round로
-  재현했다는 주장은 하지 않는다. scoped acceptance가 완료되어 PR #217은 `Closes #202`로 연결한다.
+- `kit-dev/temp/runs/issue-202-reconciliation-dogfood-001.md`의 frozen bundle은 implementation/model replay로
+  재분류했다. stale Result 사례는 tracked `reconcile-input-001` S5/`reconcile-input-002` correction에서 온 real
+  historical upstream TP다. routing 사례와 negative controls는 heuristic 조건을 안 뒤 만든 synthetic structural
+  positive/control이므로 실제 routing TP·real-corpus FP/missed·실제 stop-round 감소로 세지 않는다. 저장된 `2 → 1`은
+  modeled replay일 뿐이며, privacy-safe consumer corpus의 baseline/treatment, 독립 human 판정, 실제 batch finding과
+  stop condition이 남아 있다. 따라서 PR #217은 `Refs #202`이고 Issue #202는 open으로 유지한다.
 - visual behavior keyword heuristic은 기존 `RR-ROUTE-004` hard boundary와 precision evidence 부재 때문에 이번
   slice에서 제외했다. 모든 새 diagnostic은 warning-only이며 hard/CI/readiness promotion은 별도 사람 결정이다.
 
