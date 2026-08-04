@@ -4,13 +4,17 @@ on:
   push:
     branches:
       - codex/issue-202c-reconciliation-warnings
+  pull_request:
+    types: [synchronize]
 
 permissions:
   contents: write
 
 jobs:
   apply:
-    if: github.actor != 'github-actions[bot]'
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      (github.event_name == 'push' || github.event.pull_request.head.ref == 'codex/issue-202c-reconciliation-warnings')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
