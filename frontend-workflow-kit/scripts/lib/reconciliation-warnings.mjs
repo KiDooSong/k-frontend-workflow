@@ -4,6 +4,7 @@
 // - hard structure/reference/routing validation remains in reconciliation-items.mjs.
 // - this module only emits advisory *-1xx messages from already parsed/indexed views.
 // - no warning changes exit status, --enforce behavior, document state, or child status.
+import { INPUT_ID_PATTERN } from './input-artifact.mjs';
 import { resolveInputEvidence } from './provenance.mjs';
 import {
   artifactHasSection,
@@ -20,29 +21,139 @@ export const RECONCILIATION_WARNING_CODES = [
 ];
 
 const AFFIRMATIVE_CONFLICT_MARKERS = [
-  { label: '충돌', pattern: /충돌/u },
-  { label: '상충', pattern: /상충/u },
-  { label: '양립 불가', pattern: /양립\s*불가/u },
-  { label: '양립할 수 없', pattern: /양립할\s+수\s+없/u },
-  { label: '서로 모순', pattern: /서로\s+모순/u },
-  { label: '동시에 만족할 수 없', pattern: /동시에\s+만족할\s+수\s+없/u },
-  { label: 'conflict', pattern: /\bconflict\b/iu },
-  { label: 'conflicts with', pattern: /\bconflicts\s+with\b/iu },
-  { label: 'contradict', pattern: /\bcontradict\b/iu },
-  { label: 'contradicts', pattern: /\bcontradicts\b/iu },
-  { label: 'contradictory', pattern: /\bcontradictory\b/iu },
-  { label: 'mutually exclusive', pattern: /\bmutually\s+exclusive\b/iu },
-  { label: 'incompatible', pattern: /\bincompatible\b/iu },
-  { label: 'cannot both', pattern: /\bcannot\s+both\b/iu },
+  {
+    label: '충돌',
+    pattern: /충돌/u,
+    negations: [
+      /충돌\s*(?:아님|아니)/u,
+      /충돌하지\s*않/u,
+    ],
+  },
+  {
+    label: '상충',
+    pattern: /상충/u,
+    negations: [
+      /상충\s*(?:아님|아니)/u,
+      /상충하지\s*않/u,
+    ],
+  },
+  {
+    label: '양립 불가',
+    pattern: /양립\s*불가/u,
+    negations: [
+      /양립\s*불가하지\s*않/u,
+      /양립\s*불가한\s*것은\s*아니/u,
+      /양립\s*불가가\s*아니/u,
+      /양립\s*가능/u,
+    ],
+  },
+  {
+    label: '양립할 수 없',
+    pattern: /양립할\s+수\s+없/u,
+    negations: [
+      /양립할\s+수\s+없(?:는\s*것은\s*아니|지는\s*않)/u,
+      /양립할\s+수\s+있/u,
+    ],
+  },
+  {
+    label: '서로 모순',
+    pattern: /서로\s+모순/u,
+    negations: [
+      /(?:서로\s+)?모순되지\s*않/u,
+      /(?:서로\s+)?모순(?:이|은|는)?\s*아니/u,
+      /(?:서로\s+)?모순\s*아님/u,
+    ],
+  },
+  {
+    label: '동시에 만족할 수 없',
+    pattern: /동시에\s+만족할\s+수\s+없/u,
+    negations: [
+      /동시에\s+만족할\s+수\s+없(?:는\s*것은\s*아니|지는\s*않)/u,
+      /동시에\s+만족할\s+수\s+있/u,
+    ],
+  },
+  {
+    label: 'conflict',
+    pattern: /\bconflict\b/iu,
+    negations: [
+      /\bno\s+conflict\b/iu,
+      /\bnot\s+(?:a\s+|in\s+)?conflict\b/iu,
+      /\b(?:do|does|did)\s+not\s+conflict\b/iu,
+      /\b(?:do|does|did)n['’]t\s+conflict\b/iu,
+      /\bwithout\s+conflict\b/iu,
+    ],
+  },
+  {
+    label: 'conflicts with',
+    pattern: /\bconflicts\s+with\b/iu,
+    negations: [
+      /\bdoes\s+not\s+conflict\s+with\b/iu,
+      /\bdoesn['’]t\s+conflict\s+with\b/iu,
+      /\bnot\s+conflicts?\s+with\b/iu,
+    ],
+  },
+  {
+    label: 'contradict',
+    pattern: /\bcontradict\b/iu,
+    negations: [
+      /\b(?:do|does|did)\s+not\s+contradict\b/iu,
+      /\b(?:do|does|did)n['’]t\s+contradict\b/iu,
+      /\bnot\s+contradict\b/iu,
+    ],
+  },
+  {
+    label: 'contradicts',
+    pattern: /\bcontradicts\b/iu,
+    negations: [
+      /\bdoes\s+not\s+contradict\b/iu,
+      /\bdoesn['’]t\s+contradict\b/iu,
+      /\bnot\s+contradicts\b/iu,
+    ],
+  },
+  {
+    label: 'contradictory',
+    pattern: /\bcontradictory\b/iu,
+    negations: [
+      /\bnot\s+contradictory\b/iu,
+      /\b(?:is|are|was|were)\s+not\s+contradictory\b/iu,
+      /\b(?:is|are|was|were)n['’]t\s+contradictory\b/iu,
+    ],
+  },
+  {
+    label: 'mutually exclusive',
+    pattern: /\bmutually\s+exclusive\b/iu,
+    negations: [
+      /\bnot\s+mutually\s+exclusive\b/iu,
+      /\b(?:is|are|was|were)\s+not\s+mutually\s+exclusive\b/iu,
+      /\b(?:is|are|was|were)n['’]t\s+mutually\s+exclusive\b/iu,
+    ],
+  },
+  {
+    label: 'incompatible',
+    pattern: /\bincompatible\b/iu,
+    negations: [
+      /\bnot\s+incompatible\b/iu,
+      /\b(?:is|are|was|were)\s+not\s+incompatible\b/iu,
+      /\b(?:is|are|was|were)n['’]t\s+incompatible\b/iu,
+    ],
+  },
+  {
+    label: 'cannot both',
+    pattern: /\bcannot\s+both\b/iu,
+    negations: [
+      /\bnot\s+(?:true\s+)?that\b.{0,32}\bcannot\s+both\b/iu,
+    ],
+  },
 ];
 
 const QUESTION_PATTERNS = [
   /[?？]/u,
-  /충돌\s*여부/u,
-  /충돌인지/u,
-  /상충하는지/u,
+  /충돌\s*(?:여부|인지|하는지|하는가)/u,
+  /상충(?:하는지|하는가|되는지|되는가)/u,
+  /모순(?:인지|인가|되는지|되는가)/u,
+  /양립\s*(?:불가|할\s+수\s+없)(?:한지|한가|는지|는가)/u,
   /\bwhether\b/iu,
-  /\bis\s+this\s+a\s+conflict\b/iu,
+  /^\s*(?:are|is|do|does|did|can|could|would|should|was|were)\b/iu,
 ];
 const UNCERTAINTY_PATTERNS = [
   /가능성/u,
@@ -53,18 +164,6 @@ const UNCERTAINTY_PATTERNS = [
   /\bmay\b/iu,
   /\bmight\b/iu,
 ];
-const NEGATION_PATTERNS = [
-  /충돌\s*아님/u,
-  /충돌하지\s*않/u,
-  /상충하지\s*않/u,
-  /양립\s*가능/u,
-  /\bno\s+conflict\b/iu,
-  /\bnot\s+a\s+conflict\b/iu,
-  /\bdo\s+not\s+conflict\b/iu,
-  /\bdoes\s+not\s+conflict\b/iu,
-  /\bdo(?:es)?n['’]t\s+conflict\b/iu,
-  /\bcompatible\b/iu,
-];
 
 function stableCompare(a, b) {
   return a < b ? -1 : a > b ? 1 : 0;
@@ -74,25 +173,94 @@ function normalizedProse(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
+function markerOccurrences(text, pattern) {
+  const flags = pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`;
+  const matcher = new RegExp(pattern.source, flags);
+  const matches = [];
+  let match;
+  while ((match = matcher.exec(text)) !== null) {
+    matches.push({ index: match.index, text: match[0] });
+    if (match[0] === '') matcher.lastIndex += 1;
+  }
+  return matches;
+}
+
+function clauseAroundMarker(text, markerStart, markerEnd) {
+  let left = 0;
+  let right = text.length;
+  const boundaries = /[.!?。！？;\n]+|,\s*(?:but|however|yet)\b|\b(?:but|however|yet)\b|(?:하지만|그러나|반면)/giu;
+  let match;
+  while ((match = boundaries.exec(text)) !== null) {
+    const boundaryEnd = match.index + match[0].length;
+    if (boundaryEnd <= markerStart) {
+      left = boundaryEnd;
+      continue;
+    }
+    if (match.index >= markerEnd) {
+      right = boundaryEnd;
+      break;
+    }
+  }
+  return { text: text.slice(left, right).trim(), start: left };
+}
+
+function markerPolarityContext(clause, markerStart, markerLength) {
+  const localStart = Math.max(0, markerStart - clause.start);
+  return clause.text.slice(
+    Math.max(0, localStart - 32),
+    Math.min(clause.text.length, localStart + markerLength + 40),
+  );
+}
+
 export function matchAffirmativeConflictMarker(value) {
   const text = normalizedProse(value);
   if (!text) return null;
-  if ([...QUESTION_PATTERNS, ...UNCERTAINTY_PATTERNS, ...NEGATION_PATTERNS].some((pattern) => pattern.test(text))) {
-    return null;
-  }
   for (const marker of AFFIRMATIVE_CONFLICT_MARKERS) {
-    if (marker.pattern.test(text)) return marker.label;
+    for (const occurrence of markerOccurrences(text, marker.pattern)) {
+      const clause = clauseAroundMarker(text, occurrence.index, occurrence.index + occurrence.text.length);
+      if ([...QUESTION_PATTERNS, ...UNCERTAINTY_PATTERNS].some((pattern) => pattern.test(clause.text))) {
+        continue;
+      }
+      const polarityContext = markerPolarityContext(clause, occurrence.index, occurrence.text.length);
+      if (marker.negations.some((pattern) => pattern.test(polarityContext))) continue;
+      return marker.label;
+    }
   }
   return null;
+}
+
+function occurrenceLooksPathLike(text, start, end) {
+  const before = text[start - 1] || '';
+  const after = text[end] || '';
+  if (before === '/' || before === '\\' || after === '/' || after === '\\') return true;
+  if (after === '.' && /[A-Za-z0-9_-]/u.test(text[end + 1] || '')) return true;
+
+  let segmentStart = start;
+  while (segmentStart > 0 && !/\s/u.test(text[segmentStart - 1])) segmentStart -= 1;
+  let segmentEnd = end;
+  while (segmentEnd < text.length && !/\s/u.test(text[segmentEnd])) segmentEnd += 1;
+  const segment = text.slice(segmentStart, segmentEnd);
+  return /(?:https?:\/\/|www\.)/iu.test(segment);
 }
 
 export function extractCanonicalInputIds(value) {
   const text = String(value || '');
   const ids = new Set();
-  const pattern = /(^|[^A-Za-z0-9._-])(IN-[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*)(?=$|[^A-Za-z0-9._-])/g;
+  const candidates = /(^|[^A-Za-z0-9._-])(IN-[A-Za-z0-9._-]+)/g;
   let match;
-  while ((match = pattern.exec(text)) !== null) ids.add(match[2]);
+  while ((match = candidates.exec(text)) !== null) {
+    const candidate = match[2].replace(/\.+$/u, '');
+    const start = match.index + match[1].length;
+    const end = start + candidate.length;
+    if (!INPUT_ID_PATTERN.test(candidate)) continue;
+    if (occurrenceLooksPathLike(text, start, end)) continue;
+    ids.add(candidate);
+  }
   return [...ids].sort(stableCompare);
+}
+
+function inputIdResolvesUniquely(inputIndex, inputId) {
+  return (inputIndex?.byId?.get(inputId) || []).length === 1;
 }
 
 function entryTrustworthy(entry) {
@@ -141,13 +309,16 @@ function findConflictEvidence(entries, inputIndex) {
       evidence.status !== 'ok' ||
       evidence.ref?.bulletIndex === null ||
       evidence.ref?.inputId !== row.inputId ||
+      !INPUT_ID_PATTERN.test(evidence.ref?.inputId || '') ||
+      !inputIdResolvesUniquely(inputIndex, evidence.ref?.inputId) ||
       typeof evidence.evidenceText !== 'string'
     ) {
       continue;
     }
     const marker = matchAffirmativeConflictMarker(evidence.evidenceText);
     if (!marker) continue;
-    const explicitIds = extractCanonicalInputIds(evidence.evidenceText);
+    const explicitIds = extractCanonicalInputIds(evidence.evidenceText)
+      .filter((inputId) => inputIdResolvesUniquely(inputIndex, inputId));
     const orderedIds = [
       evidence.ref.inputId,
       ...explicitIds.filter((id) => id !== evidence.ref.inputId),
@@ -168,13 +339,27 @@ function findConflictEvidence(entries, inputIndex) {
   return candidates[0] || null;
 }
 
-function routeWarningCandidates({ groups, groupTrust, inputIndex, targetIndex, structuredInputs, summaryOrder }) {
+function routeWarningCandidates({
+  groups,
+  groupTrust,
+  summaryTrust,
+  inputIndex,
+  targetIndex,
+  structuredInputs,
+  summaryOrder,
+}) {
   const candidates = [];
   for (const [key, entries] of groups || []) {
     const separator = key.indexOf('\0');
     const inputId = separator >= 0 ? key.slice(0, separator) : '';
     const itemId = separator >= 0 ? key.slice(separator + 1) : '';
-    if (!structuredInputs?.has(inputId) || groupTrust?.get(key) !== true) continue;
+    if (
+      !structuredInputs?.has(inputId) ||
+      groupTrust?.get(key) !== true ||
+      summaryTrust?.get(inputId) !== true
+    ) {
+      continue;
+    }
     if (!entries.length || entries.some((entry) => !entryTrustworthy(entry))) continue;
     if (entries.some((entry) => entry.row.basis !== 'scope-unclear' || entry.row.classification !== 'scope-unclear')) {
       continue;
@@ -342,7 +527,15 @@ export function analyzeReconciliationWarnings({
   });
 
   const candidates = [
-    ...routeWarningCandidates({ groups, groupTrust, inputIndex, targetIndex, structuredInputs, summaryOrder }),
+    ...routeWarningCandidates({
+      groups,
+      groupTrust,
+      summaryTrust,
+      inputIndex,
+      targetIndex,
+      structuredInputs,
+      summaryOrder,
+    }),
     ...staleWarningCandidates({
       summaryRows,
       structuredInputs,
