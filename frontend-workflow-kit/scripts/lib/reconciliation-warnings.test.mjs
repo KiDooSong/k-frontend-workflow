@@ -9,6 +9,7 @@ import {
 
 const CURRENT_INPUT_ID = 'IN-20260803-meeting-001';
 const OTHER_INPUT_ID = 'IN-20260731-planning-003';
+const THIRD_INPUT_ID = 'IN-20260801-policy-004';
 const UNRELATED_INPUT_ID = 'IN-20260803-qa-002';
 const GROUP_KEY = `${CURRENT_INPUT_ID}\0${'01'}`;
 
@@ -52,12 +53,14 @@ function routeWarnings({
   unrelatedSummaryTrust = true,
   includeOtherInput = true,
   duplicateOtherInput = false,
+  extraArtifacts = [],
 } = {}) {
   const artifacts = [inputArtifact(CURRENT_INPUT_ID, [evidenceText])];
   if (includeOtherInput) {
     artifacts.push(inputArtifact(OTHER_INPUT_ID, ['control']));
     if (duplicateOtherInput) artifacts.push(inputArtifact(OTHER_INPUT_ID, ['duplicate control']));
   }
+  artifacts.push(...extraArtifacts);
   const inputIndex = buildInputArtifactIndex(artifacts);
   const target = {
     kind: 'unknown',
@@ -125,6 +128,14 @@ test('RR-ROUTE-101 suppresses questions, uncertainty, marker-specific negation, 
     '두 조건은 양립 불가하지 않다',
     '두 조건은 양립 불가한 것은 아니다',
     '두 입력이 서로 모순되는가',
+    '두 입력은 충돌이 아니다',
+    '두 입력은 충돌은 아니다',
+    '두 입력은 충돌하지는 않는다',
+    '두 입력은 충돌 없음',
+    '두 입력의 상충 여부를 확인한다',
+    '두 조건의 양립 불가 여부를 확인한다',
+    'A와 B가 충돌할 수 있다',
+    'A와 B가 상충할 수 있다',
     'there may be a conflict',
     'possibly conflicts with',
     'whether A conflicts with B',
@@ -132,6 +143,10 @@ test('RR-ROUTE-101 suppresses questions, uncertainty, marker-specific negation, 
     'A and B do not conflict',
     "A and B don't conflict",
     "A and B doesn’t conflict",
+    "A and B aren't in conflict",
+    "A and B isn't a conflict",
+    'A and B are conflict-free',
+    'A and B are no-conflict',
     'A does not contradict B',
     "A doesn't contradict B",
     'A and B are not contradictory',
@@ -139,8 +154,16 @@ test('RR-ROUTE-101 suppresses questions, uncertainty, marker-specific negation, 
     "A and B aren't mutually exclusive",
     'A and B are not incompatible',
     "A and B aren't incompatible",
+    'A and B are not necessarily incompatible',
     'Are A and B incompatible',
     'Do A and B contradict each other',
+    'Q: Are A and B incompatible',
+    'Check if A and B conflict',
+    'Determine whether A and B are incompatible',
+    'This could conflict with B',
+    'A can conflict with B',
+    'A appears to conflict with B',
+    'A seems to contradict B',
     'A and B are compatible',
     'A differs from B',
     'A mismatch B',
@@ -159,6 +182,10 @@ test('RR-ROUTE-101 polarity is marker-local across contrast clauses', () => {
     matchAffirmativeConflictMarker('A and B are not incompatible; however, B contradicts C.'),
     'contradicts',
   );
+  assert.equal(
+    matchAffirmativeConflictMarker('A could replace B, but B conflicts with C.'),
+    'conflicts with',
+  );
 });
 
 test('canonical input extraction reuses the exact input contract and rejects path/suffix lookalikes', () => {
@@ -171,6 +198,15 @@ test('canonical input extraction reuses the exact input contract and rejects pat
   for (const text of [
     `inputs/${CURRENT_INPUT_ID}.md`,
     `https://example.test/inputs/${CURRENT_INPUT_ID}`,
+    `GET /compare?input=${CURRENT_INPUT_ID}`,
+    `?source=${CURRENT_INPUT_ID}`,
+    `&source=${CURRENT_INPUT_ID}`,
+    `foo/bar=${CURRENT_INPUT_ID}`,
+    `./path/${CURRENT_INPUT_ID}`,
+    `../path/${CURRENT_INPUT_ID}`,
+    `file:${CURRENT_INPUT_ID}`,
+    `urn:input:${CURRENT_INPUT_ID}`,
+    `input=${CURRENT_INPUT_ID}`,
     'IN-A',
     'IN-20260803-MEETING-001',
     'IN-20260803-meeting-01',
@@ -204,13 +240,57 @@ test('RR-ROUTE-101 requires a second unique indexed canonical input', () => {
   );
 });
 
-test('RR-ROUTE-101 does not turn the current input filename or URL into a second input', () => {
+test('RR-ROUTE-101 fails closed when any explicit canonical input is missing or ambiguous', () => {
+  assert.equal(
+    routeWarnings({
+      evidenceText: `${OTHER_INPUT_ID}과 ${THIRD_INPUT_ID}가 충돌한다.`,
+      extraArtifacts: [
+        inputArtifact(THIRD_INPUT_ID, ['first duplicate']),
+        inputArtifact(THIRD_INPUT_ID, ['second duplicate']),
+      ],
+    }).length,
+    0,
+    'unique second ID plus duplicate third ID must suppress the entire candidate',
+  );
+
+  assert.equal(
+    routeWarnings({
+      evidenceText: `${OTHER_INPUT_ID}과 ${THIRD_INPUT_ID}가 충돌한다.`,
+    }).length,
+    0,
+    'unique second ID plus missing third ID must suppress the entire candidate',
+  );
+
+  assert.equal(
+    routeWarnings({
+      evidenceText: `${OTHER_INPUT_ID}과 IN-20260801-policy-999가 충돌한다.`,
+    }).length,
+    0,
+    'a canonical-looking typo plus a valid ID must suppress the entire candidate',
+  );
+
+  assert.equal(
+    routeWarnings({
+      evidenceText: `${OTHER_INPUT_ID}과 ${THIRD_INPUT_ID}가 충돌한다.`,
+      extraArtifacts: [inputArtifact(THIRD_INPUT_ID, ['unique third input'])],
+    }).length,
+    1,
+    'the existing positive remains when every explicit ID resolves uniquely',
+  );
+});
+
+test('RR-ROUTE-101 does not turn filenames, relative paths, queries, or URIs into a second input', () => {
   for (const evidenceText of [
     `inputs/${CURRENT_INPUT_ID}.md 내부의 두 설명은 서로 충돌한다.`,
     `https://example.test/inputs/${CURRENT_INPUT_ID} 설명과 충돌한다.`,
+    `GET /compare?input=${OTHER_INPUT_ID} 응답과 현재 정책은 충돌한다.`,
+    `?source=${OTHER_INPUT_ID} 값과 현재 정책은 충돌한다.`,
+    `foo/bar=${OTHER_INPUT_ID} 값과 현재 정책은 충돌한다.`,
+    `file:${OTHER_INPUT_ID} 값과 현재 정책은 충돌한다.`,
+    `urn:input:${OTHER_INPUT_ID} 값과 현재 정책은 충돌한다.`,
   ]) {
     assert.equal(
-      routeWarnings({ evidenceText, includeOtherInput: false }).length,
+      routeWarnings({ evidenceText, includeOtherInput: evidenceText.includes(OTHER_INPUT_ID) }).length,
       0,
       evidenceText,
     );
