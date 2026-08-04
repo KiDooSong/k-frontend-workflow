@@ -2492,7 +2492,7 @@ test('RR-ROUTE-101: affirmative exact bullet surfaces one deterministic warning 
 test('RR-ROUTE-101: English markers and multiple explicit inputs remain one warning per item', (t) => {
   for (const facts of [
     ['- IN-20260720-figma-001 conflicts with this captured meeting policy.'],
-    ['- IN-20260720-figma-001 and IN-20260601-planning-001 are mutually exclusive.'],
+    ['- IN-20260720-figma-001 and IN-20260720-meeting-001 are mutually exclusive.'],
   ]) {
     const result = runScopeUnknown(t, facts);
     assert.deepEqual(messages(result.errors), []);
