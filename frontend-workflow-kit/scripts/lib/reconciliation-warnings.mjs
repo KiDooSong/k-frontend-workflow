@@ -25,25 +25,27 @@ const AFFIRMATIVE_CONFLICT_MARKERS = [
     label: '충돌',
     pattern: /충돌/u,
     negations: [
-      /충돌\s*(?:아님|아니)/u,
-      /충돌하지\s*않/u,
+      /충돌\s*(?:이|은|는|도)?\s*(?:아님|아니)/u,
+      /충돌하지(?:는|도)?\s*않/u,
+      /충돌\s*(?:이|은|는|도)?\s*없(?:음|다|는)/u,
     ],
   },
   {
     label: '상충',
     pattern: /상충/u,
     negations: [
-      /상충\s*(?:아님|아니)/u,
-      /상충하지\s*않/u,
+      /상충\s*(?:이|은|는|도)?\s*(?:아님|아니)/u,
+      /상충하지(?:는|도)?\s*않/u,
+      /상충\s*(?:이|은|는|도)?\s*없(?:음|다|는)/u,
     ],
   },
   {
     label: '양립 불가',
     pattern: /양립\s*불가/u,
     negations: [
-      /양립\s*불가하지\s*않/u,
+      /양립\s*불가하지(?:는|도)?\s*않/u,
       /양립\s*불가한\s*것은\s*아니/u,
-      /양립\s*불가가\s*아니/u,
+      /양립\s*불가\s*(?:가|는|은)?\s*아니/u,
       /양립\s*가능/u,
     ],
   },
@@ -59,9 +61,9 @@ const AFFIRMATIVE_CONFLICT_MARKERS = [
     label: '서로 모순',
     pattern: /서로\s+모순/u,
     negations: [
-      /(?:서로\s+)?모순되지\s*않/u,
-      /(?:서로\s+)?모순(?:이|은|는)?\s*아니/u,
-      /(?:서로\s+)?모순\s*아님/u,
+      /(?:서로\s+)?모순되지(?:는|도)?\s*않/u,
+      /(?:서로\s+)?모순\s*(?:이|은|는|도)?\s*아니/u,
+      /(?:서로\s+)?모순\s*(?:이|은|는|도)?\s*없(?:음|다|는)/u,
     ],
   },
   {
@@ -76,8 +78,10 @@ const AFFIRMATIVE_CONFLICT_MARKERS = [
     label: 'conflict',
     pattern: /\bconflict\b/iu,
     negations: [
-      /\bno\s+conflict\b/iu,
-      /\bnot\s+(?:a\s+|in\s+)?conflict\b/iu,
+      /\b(?:no[-\s]?conflict|conflict[-\s]?free)\b/iu,
+      /\bnot\s+(?:necessarily\s+)?(?:a\s+|in\s+)?conflict\b/iu,
+      /\b(?:is|are|was|were)\s+not\s+(?:necessarily\s+)?(?:a\s+|in\s+)?conflict\b/iu,
+      /\b(?:is|are|was|were)n['’]t\s+(?:necessarily\s+)?(?:a\s+|in\s+)?conflict\b/iu,
       /\b(?:do|does|did)\s+not\s+conflict\b/iu,
       /\b(?:do|does|did)n['’]t\s+conflict\b/iu,
       /\bwithout\s+conflict\b/iu,
@@ -89,7 +93,7 @@ const AFFIRMATIVE_CONFLICT_MARKERS = [
     negations: [
       /\bdoes\s+not\s+conflict\s+with\b/iu,
       /\bdoesn['’]t\s+conflict\s+with\b/iu,
-      /\bnot\s+conflicts?\s+with\b/iu,
+      /\bnot\s+(?:necessarily\s+)?conflicts?\s+with\b/iu,
     ],
   },
   {
@@ -98,7 +102,7 @@ const AFFIRMATIVE_CONFLICT_MARKERS = [
     negations: [
       /\b(?:do|does|did)\s+not\s+contradict\b/iu,
       /\b(?:do|does|did)n['’]t\s+contradict\b/iu,
-      /\bnot\s+contradict\b/iu,
+      /\bnot\s+(?:necessarily\s+)?contradict\b/iu,
     ],
   },
   {
@@ -107,34 +111,34 @@ const AFFIRMATIVE_CONFLICT_MARKERS = [
     negations: [
       /\bdoes\s+not\s+contradict\b/iu,
       /\bdoesn['’]t\s+contradict\b/iu,
-      /\bnot\s+contradicts\b/iu,
+      /\bnot\s+(?:necessarily\s+)?contradicts\b/iu,
     ],
   },
   {
     label: 'contradictory',
     pattern: /\bcontradictory\b/iu,
     negations: [
-      /\bnot\s+contradictory\b/iu,
-      /\b(?:is|are|was|were)\s+not\s+contradictory\b/iu,
-      /\b(?:is|are|was|were)n['’]t\s+contradictory\b/iu,
+      /\bnot\s+(?:necessarily\s+)?contradictory\b/iu,
+      /\b(?:is|are|was|were)\s+not\s+(?:necessarily\s+)?contradictory\b/iu,
+      /\b(?:is|are|was|were)n['’]t\s+(?:necessarily\s+)?contradictory\b/iu,
     ],
   },
   {
     label: 'mutually exclusive',
     pattern: /\bmutually\s+exclusive\b/iu,
     negations: [
-      /\bnot\s+mutually\s+exclusive\b/iu,
-      /\b(?:is|are|was|were)\s+not\s+mutually\s+exclusive\b/iu,
-      /\b(?:is|are|was|were)n['’]t\s+mutually\s+exclusive\b/iu,
+      /\bnot\s+(?:necessarily\s+)?mutually\s+exclusive\b/iu,
+      /\b(?:is|are|was|were)\s+not\s+(?:necessarily\s+)?mutually\s+exclusive\b/iu,
+      /\b(?:is|are|was|were)n['’]t\s+(?:necessarily\s+)?mutually\s+exclusive\b/iu,
     ],
   },
   {
     label: 'incompatible',
     pattern: /\bincompatible\b/iu,
     negations: [
-      /\bnot\s+incompatible\b/iu,
-      /\b(?:is|are|was|were)\s+not\s+incompatible\b/iu,
-      /\b(?:is|are|was|were)n['’]t\s+incompatible\b/iu,
+      /\bnot\s+(?:necessarily\s+)?incompatible\b/iu,
+      /\b(?:is|are|was|were)\s+not\s+(?:necessarily\s+)?incompatible\b/iu,
+      /\b(?:is|are|was|were)n['’]t\s+(?:necessarily\s+)?incompatible\b/iu,
     ],
   },
   {
@@ -148,21 +152,21 @@ const AFFIRMATIVE_CONFLICT_MARKERS = [
 
 const QUESTION_PATTERNS = [
   /[?？]/u,
-  /충돌\s*(?:여부|인지|하는지|하는가)/u,
-  /상충(?:하는지|하는가|되는지|되는가)/u,
-  /모순(?:인지|인가|되는지|되는가)/u,
-  /양립\s*(?:불가|할\s+수\s+없)(?:한지|한가|는지|는가)/u,
+  /(?:충돌|상충|모순|양립\s*불가)\s*(?:여부|인지|하는지|하는가|되는지|되는가)/u,
+  /양립할\s+수\s+없(?:는지|는가)/u,
   /\bwhether\b/iu,
-  /^\s*(?:are|is|do|does|did|can|could|would|should|was|were)\b/iu,
+  /\b(?:check|determine|verify|confirm|assess|test|find\s+out)\s+(?:whether|if)\b/iu,
+  /^\s*(?:q(?:uestion)?\s*[:：-]\s*)?(?:are|is|do|does|did|can|could|would|should|was|were)\b/iu,
 ];
 const UNCERTAINTY_PATTERNS = [
   /가능성/u,
   /아마/u,
   /추정/u,
-  /\b(?:possible|possibly)\b/iu,
-  /\bpotentially\b/iu,
-  /\bmay\b/iu,
-  /\bmight\b/iu,
+  /(?:충돌|상충|모순|양립\s*불가)(?:할|일)?\s*수\s*있/u,
+  /\b(?:possible|possibly|potentially|apparently|likely)\b/iu,
+  /\b(?:may|might)\b/iu,
+  /\b(?:can|could)\s+(?:potentially\s+)?(?:conflict|contradict)\b/iu,
+  /\b(?:appears?|seems?)\s+to\s+(?:conflict|contradict)\b/iu,
 ];
 
 function stableCompare(a, b) {
@@ -207,8 +211,8 @@ function clauseAroundMarker(text, markerStart, markerEnd) {
 function markerPolarityContext(clause, markerStart, markerLength) {
   const localStart = Math.max(0, markerStart - clause.start);
   return clause.text.slice(
-    Math.max(0, localStart - 32),
-    Math.min(clause.text.length, localStart + markerLength + 40),
+    Math.max(0, localStart - 40),
+    Math.min(clause.text.length, localStart + markerLength + 56),
   );
 }
 
@@ -229,18 +233,38 @@ export function matchAffirmativeConflictMarker(value) {
   return null;
 }
 
+function nonWhitespaceSegment(text, start, end) {
+  let segmentStart = start;
+  while (segmentStart > 0 && !/\s/u.test(text[segmentStart - 1])) segmentStart -= 1;
+  let segmentEnd = end;
+  while (segmentEnd < text.length && !/\s/u.test(text[segmentEnd])) segmentEnd += 1;
+  return {
+    segment: text.slice(segmentStart, segmentEnd),
+    localStart: start - segmentStart,
+    localEnd: end - segmentStart,
+  };
+}
+
 function occurrenceLooksPathLike(text, start, end) {
   const before = text[start - 1] || '';
   const after = text[end] || '';
   if (before === '/' || before === '\\' || after === '/' || after === '\\') return true;
   if (after === '.' && /[A-Za-z0-9_-]/u.test(text[end + 1] || '')) return true;
 
-  let segmentStart = start;
-  while (segmentStart > 0 && !/\s/u.test(text[segmentStart - 1])) segmentStart -= 1;
-  let segmentEnd = end;
-  while (segmentEnd < text.length && !/\s/u.test(text[segmentEnd])) segmentEnd += 1;
-  const segment = text.slice(segmentStart, segmentEnd);
-  return /(?:https?:\/\/|www\.)/iu.test(segment);
+  const { segment, localStart, localEnd } = nonWhitespaceSegment(text, start, end);
+  const prefix = segment.slice(0, localStart);
+  const suffix = segment.slice(localEnd);
+
+  // Precision-first: a canonical-looking ID inside a path, URI, query pair,
+  // key/value token, or filename is not prose evidence about another input.
+  if (/[\\/]/u.test(segment)) return true;
+  if (/(?:^|[^A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*:/u.test(prefix)) return true;
+  if (/^[?&]/u.test(segment)) return true;
+  if (/(?:^|[?&])[^\s=&#?]+=/u.test(prefix)) return true;
+  if (/^[^\s=]+=/u.test(prefix)) return true;
+  if (/^\.[A-Za-z0-9_-]+/u.test(suffix)) return true;
+  if (/^[?&][^\s=&#?]+=/u.test(suffix)) return true;
+  return false;
 }
 
 export function extractCanonicalInputIds(value) {
@@ -317,8 +341,10 @@ function findConflictEvidence(entries, inputIndex) {
     }
     const marker = matchAffirmativeConflictMarker(evidence.evidenceText);
     if (!marker) continue;
-    const explicitIds = extractCanonicalInputIds(evidence.evidenceText)
-      .filter((inputId) => inputIdResolvesUniquely(inputIndex, inputId));
+    const explicitIds = extractCanonicalInputIds(evidence.evidenceText);
+    if (explicitIds.some((inputId) => !inputIdResolvesUniquely(inputIndex, inputId))) {
+      continue;
+    }
     const orderedIds = [
       evidence.ref.inputId,
       ...explicitIds.filter((id) => id !== evidence.ref.inputId),
