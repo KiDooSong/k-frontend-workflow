@@ -2,6 +2,8 @@
 
 Canonical report: [`../issue-202-reconciliation-dogfood-001.md`](../issue-202-reconciliation-dogfood-001.md)
 
+Review-fix tree witness: `05200f61a15a8a27f49ac4267e4cf2063eb2cc8e` (precision tests, evidence reclassification, and temporary workflow cleanup).
+
 - `corpus-before/`: frozen implementation candidates and controls
 - `corpus-after/`: corrected states used to verify warning silence
 - `outputs/`: PR #216 baseline and stored treatment-snapshot JSON outputs
