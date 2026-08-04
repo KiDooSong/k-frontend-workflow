@@ -1,0 +1,46 @@
+name: pr217-integration-fixture-fix
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: >-
+      github.event.pull_request.number == 217 &&
+      github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/issue-202c-reconciliation-warnings
+          fetch-depth: 0
+      - name: Keep the multi-input positive fixture fully indexed
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('frontend-workflow-kit/scripts/lib/reconciliation-items.test.mjs')
+          text = path.read_text(encoding='utf-8')
+          old = "['- IN-20260720-figma-001 and IN-20260601-planning-001 are mutually exclusive.'],"
+          new = "['- IN-20260720-figma-001 and IN-20260720-meeting-001 are mutually exclusive.'],"
+          if text.count(old) != 1:
+              raise SystemExit(f'expected exactly one integration fixture occurrence, got {text.count(old)}')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+          git diff --check
+          (
+            cd frontend-workflow-kit
+            npm ci
+            node --test scripts/lib/reconciliation-warnings.test.mjs scripts/lib/reconciliation-items.test.mjs
+          )
+          git rm .github/workflows/pr217-integration-fixture-fix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "test(reconciliation): keep route positive inputs uniquely indexed"
+          git push origin "HEAD:codex/issue-202c-reconciliation-warnings"
