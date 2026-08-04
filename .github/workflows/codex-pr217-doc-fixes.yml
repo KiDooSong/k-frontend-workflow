@@ -1,0 +1,182 @@
+name: codex-pr217-doc-fixes
+
+on:
+  push:
+    branches:
+      - codex/issue-202c-reconciliation-warnings
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/issue-202c-reconciliation-warnings
+          fetch-depth: 0
+      - name: Align precision and evidence claims with review
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          def sub_once(path, pattern, replacement, *, flags=0):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              updated, count = re.subn(pattern, replacement, text, count=1, flags=flags)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one replacement, got {count}')
+              p.write_text(updated, encoding='utf-8')
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one exact block, got {count}')
+              p.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          sub_once(
+              'frontend-workflow-kit/docs/reference/input-reconciliation.md',
+              r"- `RR-ROUTE-101`: trusted `scope-unclear/scope-unclear` item.*?validator는 rewrite/create/close하지 않는다\.",
+              """- `RR-ROUTE-101`: 같은 input의 Summary projection과 item group이 모두 trusted인
+  `scope-unclear/scope-unclear` item이 `unknown:*` target을 갖고, exact `/NN` Evidence의 visible prose에서
+  Evidence input을 포함한 distinct canonical input이 2개 이상이며 affirmative conflict marker가 발견된 경우다.
+  input token은 검사 11과 같은 shared `INPUT_ID_PATTERN`
+  (`IN-{YYYYMMDD}-{lowercase-source}-{NNN+}`)을 통과해야 하고, Evidence pointer와 visible prose의 각 input ID가
+  shared input index에서 정확히 한 artifact로 해소돼야 한다. URL·파일 경로·`{input_id}.md`·대문자 source·짧은
+  sequence·underscore/dot suffix 같은 lookalike는 source로 세지 않는다. Korean marker는 `충돌`, `상충`,
+  `양립 불가`, `양립할 수 없`, `서로 모순`, `동시에 만족할 수 없`; English marker는 `conflict`,
+  `conflicts with`, `contradict`, `contradicts`, `contradictory`, `mutually exclusive`, `incompatible`,
+  `cannot both`다. 질문·불확실성·명시적 부정은 marker가 놓인 local clause에서 판정하므로, 다른 clause의
+  unrelated negation은 실제 affirmative marker를 숨기지 않는다. `different`/`mismatch`/`vs`/`불일치` 같은
+  약한 표현은 억제한다. 같은 input의 untrusted Summary는 candidate-local suppress하지만, 다른 input의 hard error로
+  모든 analyzer를 전역 disable하지 않는다. reviewer는 실제 input↔input 충돌인지와
+  Basis/Classification/Conflict target만 재검토하며 validator는 rewrite/create/close하지 않는다.""",
+              flags=re.S,
+          )
+
+          sub_once(
+              'kit-dev/docs/design/drafts/issue-202-reconciliation-contract-v2.md',
+              r"## Implementation status \(2026-08-03\)\n.*?> 최초 작성일: 2026-07-20 · 현재 확인일: 2026-08-03\n",
+              """## Implementation status (2026-08-04)
+
+- 작업 시작 `main` SHA는 `533d2a69a1cc3b4831b2ebbef7ff0a313ca4c4fe`이며, PR #216 merge commit과 동일하다.
+- PR #205/#207/#208/#212로 Reconciliation Contract v2 구조·참조·routing hard enforcement,
+  Stage 04 `reconcile-stage04-v1`, Markdown AST hardening, CRLF 회귀 수정이 완료됐다.
+- PR #216(`533d2a69a1cc3b4831b2ebbef7ff0a313ca4c4fe`)으로 202-B provenance floor가 완료됐고
+  Issue #209는 closed다. `input_contract: 2`, `reconciliation_contract: 2`,
+  `provenance_contract: 1`은 계속 독립 계약이다.
+- PR #217은 202-C 구현 범위를 `RR-ROUTE-101`과 Decision 기반 `RR-STALE-101/102/103`으로 고정한다.
+  모두 검사 12 warning이며 `--enforce`로 승격되지 않는다.
+- review follow-up에서 `RR-ROUTE-101` precision을 강화했다. input token은 검사 11의 shared
+  `INPUT_ID_PATTERN`을 사용하고 shared input index에서 unique하게 해소되는 ID만 센다. 파일명·URL·noncanonical
+  lookalike는 배제하며, 같은 input의 `summaryTrust`가 false면 candidate-local suppress한다. marker polarity는
+  local clause에서 질문·불확실성·marker별 부정을 판정한다.
+- visual behavior leakage keyword warning은 초기 202-C에서 제외한다. 선언된
+  `Basis=visual-evidence`의 behavior target은 이미 `RR-ROUTE-004` hard rule이 소유하고, 자유서술 keyword만으로
+  추가 warning을 낼 정밀도 근거가 아직 없다. 별도 고정밀 누락이 dogfood에서 확인될 때 follow-up으로만 검토한다.
+- [`issue-202-reconciliation-dogfood-001.md`](../../temp/runs/issue-202-reconciliation-dogfood-001.md)는
+  implementation/model replay로 유지한다. tracked `reconcile-input-001` S5와 `reconcile-input-002` correction을
+  옮긴 stale Result 사례만 real historical upstream TP로 평가 가능하다. routing 사례는 detector 조건을 안 뒤 작성한
+  **synthetic structural positive**이며 실제 historical/live TP, real-corpus FP/missed, 실제 review-round 감소의 증거가 아니다.
+- 현재 연결된 저장소에서 이 workflow를 vendored한 consumer checkout과 privacy-safe historical Stage 04 corpus를
+  식별하지 못했다. 따라서 실제 routing sample의 baseline/treatment, 독립 human TP/FP/missed, 실제 batch finding과
+  stop round 비교가 남아 있다.
+- PR #217의 기본 연결은 `Refs #202`이고 Issue #202는 open으로 유지한다. hard/CI/readiness promotion은 여전히
+  별도 사람 승인이다.
+
+> 상태: 202-C implementation 및 precision review fix 완료 · actual consumer dogfood evidence 대기 · Issue #202 open
+> 기준 저장소: `KiDooSong/k-frontend-workflow`
+> 작업 시작 브랜치: `main` (`533d2a69a1cc3b4831b2ebbef7ff0a313ca4c4fe`)
+> 역사적 초기 확인점: `fa9fc6b`(현재 기준 SHA가 아님)
+> 대상 이슈: `#202 reconcile 계약 불변식이 validate 미강제 → LLM 리뷰 O(n) 라운드 팽창`
+> 제안 위치: `kit-dev/docs/design/drafts/issue-202-reconciliation-contract-v2.md`
+> 최초 작성일: 2026-07-20 · 현재 확인일: 2026-08-04
+""",
+              flags=re.S,
+          )
+
+          replace_once(
+              'kit-dev/docs/design/drafts/issue-202-reconciliation-contract-v2.md',
+              """| Input data | 이미 파싱된 Summary/Items group, shared input index, exact `/NN` AST-visible Evidence text, target index |
+| Positive condition | trusted group·unknown target·exact bullet + distinct canonical input 2개 이상 + affirmative marker |
+| Suppression | 질문/불확실성/부정/약한 표현, section-only/out-of-range, duplicate input/owner/row, 관련 hard-invalid 구조, 이미 conflict basis |""",
+              """| Input data | 이미 파싱된 Summary/Items group, 검사 11과 공유하는 `INPUT_ID_PATTERN`, shared input index, exact `/NN` AST-visible Evidence text, target index |
+| Positive condition | 같은 input의 trusted Summary·group·unknown target·exact bullet + index에서 unique하게 해소되는 distinct canonical input 2개 이상 + affirmative marker |
+| Suppression | marker-local 질문/불확실성/부정/약한 표현, URL·파일명·noncanonical input lookalike, section-only/out-of-range, duplicate/missing input·owner·row, 같은 input의 untrusted Summary/item projection, 이미 conflict basis |""",
+          )
+
+          sub_once(
+              'kit-dev/docs/design/drafts/issue-202-reconciliation-contract-v2.md',
+              r"초기 기본 연결은 `Refs #202`였으나, PR #217은 maintainer-source-backed historical finding을.*?warning hard/CI/readiness promotion은 언제나 별도 사람 승인이다\.",
+              """기본 연결은 `Refs #202`다. PR #217의 frozen bundle은 warning-only 구현과 동일-corpus validator output을
+재현하는 model replay다. stale Result 사례는 tracked upstream historical finding으로 TP 판정이 가능하지만, routing 사례는
+heuristic 조건을 안 뒤 만든 synthetic structural positive여서 실제 historical/live routing TP·real-corpus FP/missed·실제
+review-round 감소를 입증하지 못한다. privacy-safe consumer corpus의 baseline/treatment와 독립 human 판정, 실제 batch
+finding/stop condition 기록이 추가될 때까지 Issue #202는 open으로 유지한다. warning hard/CI/readiness promotion은
+언제나 별도 사람 승인이다.""",
+              flags=re.S,
+          )
+
+          sub_once(
+              'kit-dev/CHANGELOG.md',
+              r"- 검사 12의 Contract v2 advisory 단계에 `RR-ROUTE-101`을 추가했다\..*?item당 1건으로 dedupe한다\.",
+              """- 검사 12의 Contract v2 advisory 단계에 `RR-ROUTE-101`을 추가했다. 같은 input의 Summary와 item projection이
+  trusted인 `scope-unclear/scope-unclear` + `unknown:*` candidate만 보며, exact `/NN` Evidence의 visible prose에서
+  검사 11과 공유하는 `INPUT_ID_PATTERN`을 통과하고 shared input index에서 unique하게 해소되는 distinct input 2개 이상과
+  강한 Korean/English conflict marker가 함께 있을 때만 경고한다. URL·파일 경로·`{input_id}.md`·대문자/짧은 sequence·
+  underscore/dot suffix lookalike는 세지 않는다. 질문·불확실성·marker별 부정은 local clause에서 억제해 unrelated clause의
+  negation이 valid marker를 숨기지 않게 했고, 같은 input Summary hard-invalid는 candidate-local suppress한다.
+  malformed/ambiguous evidence/target도 억제하며 item당 1건으로 dedupe한다.""",
+              flags=re.S,
+          )
+
+          sub_once(
+              'kit-dev/CHANGELOG.md',
+              r"- historical/reproducible dogfood bundle을 `kit-dev/temp/runs/issue-202-reconciliation-dogfood-001\.md`에 추가했다\..*?scoped acceptance가 완료되어 PR #217은 `Closes #202`로 연결한다\.",
+              """- `kit-dev/temp/runs/issue-202-reconciliation-dogfood-001.md`의 frozen bundle은 implementation/model replay로
+  재분류했다. stale Result 사례는 tracked `reconcile-input-001` S5/`reconcile-input-002` correction에서 온 real
+  historical upstream TP다. routing 사례와 negative controls는 heuristic 조건을 안 뒤 만든 synthetic structural
+  positive/control이므로 실제 routing TP·real-corpus FP/missed·실제 stop-round 감소로 세지 않는다. 저장된 `2 → 1`은
+  modeled replay일 뿐이며, privacy-safe consumer corpus의 baseline/treatment, 독립 human 판정, 실제 batch finding과
+  stop condition이 남아 있다. 따라서 PR #217은 `Refs #202`이고 Issue #202는 open으로 유지한다.""",
+              flags=re.S,
+          )
+
+          sub_once(
+              'kit-dev/roadmap-current.md',
+              r"# Current Roadmap\n\n> 2026-08-03.*?\n\n(?=> 2026-07-31 구현 갱신)",
+              """# Current Roadmap
+
+> 2026-08-04 review follow-up(#202-C): 검사 12 advisory 단계의 `RR-ROUTE-101`과 Decision 기반
+> `RR-STALE-101/102/103` 구현은 유지한다. `RR-ROUTE-101`은 검사 11의 shared `INPUT_ID_PATTERN`과 input index의
+> unique resolution을 사용해 파일명·URL·noncanonical lookalike를 배제하고, 같은 input의 `summaryTrust`를 요구하며,
+> 질문·불확실성·marker별 부정을 local clause에서 판정한다. v1 complete silence, public JSON shape/check 12/기존 warning
+> order, `--enforce` 비승격은 그대로다. [frozen replay](temp/runs/issue-202-reconciliation-dogfood-001.md)의 stale 사례는
+> tracked upstream historical TP지만 routing 사례와 controls는 detector-shaped synthetic data다. 저장된 `2 → 1`은
+> modeled stop-round일 뿐 실제 consumer review-round 감소나 real-corpus FP/missed를 입증하지 않는다. privacy-safe
+> historical/live routing corpus의 baseline/treatment와 독립 human TP/FP/missed, 실제 batch finding/stop condition이
+> 추가될 때까지 PR #217은 `Refs #202`, Issue #202는 open이다. hard/CI/readiness promotion은 별도 사람 결정이다.
+
+""",
+              flags=re.S,
+          )
+          PY
+          git diff --check
+          git diff -- frontend-workflow-kit/docs/reference/input-reconciliation.md \
+            kit-dev/docs/design/drafts/issue-202-reconciliation-contract-v2.md \
+            kit-dev/CHANGELOG.md kit-dev/roadmap-current.md
+          git rm .github/workflows/codex-pr217-doc-fixes.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend-workflow-kit/docs/reference/input-reconciliation.md \
+            kit-dev/docs/design/drafts/issue-202-reconciliation-contract-v2.md \
+            kit-dev/CHANGELOG.md kit-dev/roadmap-current.md
+          git commit -m "docs(reconciliation): keep issue 202 open pending actual dogfood"
+          git push origin "HEAD:codex/issue-202c-reconciliation-warnings"
