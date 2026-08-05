@@ -23,6 +23,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.codex/pr217-coordination-fix.py')
+          text = path.read_text(encoding='utf-8')
+          old = """  `cannot both`다. 질문·불확실성·명시적 부정은 marker가 놓인 local clause에서 판정하므로, 다른 clause의
+            unrelated negation은 실제 affirmative marker를 숨기지 않는다. `different`/`mismatch`/`vs`/`불일치` 같은
+            약한 표현은 억제한다."""
+          new = """  `cannot both`다. 질문·가정·불확실성·명시적 부정은 marker가 놓인 local clause에서 판정하므로 다른 clause의
+            unrelated negation/modality는 실제 affirmative marker를 숨기지 않는다. `different`/`mismatch`/`vs`/`불일치` 같은
+            약한 표현은 억제한다."""
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one canonical applicator literal, got {text.count(old)}')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
           python3 .codex/pr217-coordination-fix.py
           git diff --check
           (
