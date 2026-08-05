@@ -41,7 +41,7 @@ jobs:
             node --test scripts/lib/reconciliation-warnings.test.mjs scripts/lib/reconciliation-items.test.mjs
           )
           git rm .github/workflows/pr217-clause-coupling-fix.yml
-          git rm -r .codex
+          git rm -r -f .codex
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
