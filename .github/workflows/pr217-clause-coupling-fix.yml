@@ -23,6 +23,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.codex/pr217-clause-fix.py')
+          text = path.read_text(encoding='utf-8')
+          old = "re.subn(pattern, replacement, text, count=1, flags=flags)"
+          new = "re.subn(pattern, lambda _match: replacement, text, count=1, flags=flags)"
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one subn call, got {text.count(old)}')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
           python3 .codex/pr217-clause-fix.py
           git diff --check
           (
