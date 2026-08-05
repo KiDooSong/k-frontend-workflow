@@ -2,9 +2,12 @@
 
 Canonical report: [`../issue-202-reconciliation-dogfood-001.md`](../issue-202-reconciliation-dogfood-001.md)
 
-Review-fix tree witness: `05200f61a15a8a27f49ac4267e4cf2063eb2cc8e` (summary trust, evidence reclassification, and temporary workflow cleanup).
+Witness sequence:
 
-Route-precision follow-up witness: `40e6e58ba9b9e2aac292c3635cdd0ac0377321fd` (fail-closed missing/ambiguous visible input IDs, whole-segment relative path/query/URI exclusion, broader marker-local polarity regressions, and uniquely indexed integration positive).
+- initial precision review fix: `cd269fc98b48db9ab0fb039c003dd2efd3bdac42`
+- prior route-precision witness: `40e6e58ba9b9e2aac292c3635cdd0ac0377321fd`
+- current clause-coupled route-precision implementation/tests witness: `b1624bcd4fab8e291b99176afba3f2a11a00a6f4`
+- reviewed implementation HEAD: `b1624bcd4fab8e291b99176afba3f2a11a00a6f4`; later evidence-metadata-only commits do not alter analyzer/tests
 
 - `corpus-before/`: frozen implementation candidates and controls
 - `corpus-after/`: corrected states used to verify warning silence
