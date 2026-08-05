@@ -6,8 +6,9 @@ Witness sequence:
 
 - initial precision review fix: `cd269fc98b48db9ab0fb039c003dd2efd3bdac42`
 - prior route-precision witness: `40e6e58ba9b9e2aac292c3635cdd0ac0377321fd`
-- current clause-coupled route-precision implementation/tests witness: `b1624bcd4fab8e291b99176afba3f2a11a00a6f4`
-- reviewed implementation HEAD: `b1624bcd4fab8e291b99176afba3f2a11a00a6f4`; later evidence-metadata-only commits do not alter analyzer/tests
+- prior clause-coupled route-precision witness: `b1624bcd4fab8e291b99176afba3f2a11a00a6f4`
+- current coordination-boundary/epistemic precision implementation/tests witness: `3de27895de4eadaed64329e115dccc9b40b96c48`
+- reviewed implementation HEAD: `3de27895de4eadaed64329e115dccc9b40b96c48`; later evidence-metadata-only commits do not alter analyzer/tests
 
 - `corpus-before/`: frozen implementation candidates and controls
 - `corpus-after/`: corrected states used to verify warning silence
