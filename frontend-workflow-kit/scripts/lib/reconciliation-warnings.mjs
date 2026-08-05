@@ -155,7 +155,7 @@ const QUESTION_PATTERNS = [
   /(?:충돌|상충|모순|양립\s*불가)\s*(?:여부|인지|하는지|하는가|되는지|되는가)/u,
   /양립할\s+수\s+없(?:는지|는가)/u,
   /\bwhether\b/iu,
-  /\b(?:check|determine|verify|confirm|assess|test|find\s+out)\s+(?:whether|if)\b/iu,
+  /\b(?:check|determine|verify|confirm|assess|test|find\s+out|wonder|ask|inquire|investigate)\b.{0,48}\b(?:whether|if)\b/iu,
   /^\s*(?:q(?:uestion)?\s*[:：-]\s*)?(?:are|is|do|does|did|can|could|would|should|was|were)\b/iu,
 ];
 const UNCERTAINTY_PATTERNS = [
@@ -163,10 +163,21 @@ const UNCERTAINTY_PATTERNS = [
   /아마/u,
   /추정/u,
   /(?:충돌|상충|모순|양립\s*불가)(?:할|일)?\s*수\s*있/u,
+  /(?:충돌|상충|모순|양립\s*불가)(?:할|일)?지도\s*모른/u,
   /\b(?:possible|possibly|potentially|apparently|likely)\b/iu,
-  /\b(?:may|might)\b/iu,
+  /\b(?:may|might|would)\b/iu,
   /\b(?:can|could)\s+(?:potentially\s+)?(?:conflict|contradict)\b/iu,
+  /\b(?:can|could)\s+be\s+(?:incompatible|contradictory|mutually\s+exclusive)\b/iu,
+  /\b(?:appears?|seems?)\s+(?:to\s+be\s+)?(?:incompatible|contradictory|mutually\s+exclusive)\b/iu,
   /\b(?:appears?|seems?)\s+to\s+(?:conflict|contradict)\b/iu,
+];
+const COMMON_DENIAL_PATTERNS = [
+  /\bnot\s+true\s+that\b/iu,
+  /\b(?:cannot|can['’]t|could\s+not|couldn['’]t)\s+(?:say|claim|conclude|assert|determine)\s+(?:that\s+)?/iu,
+  /(?:충돌|상충|모순|양립\s*불가)(?:한|한다고|이라고)?\s*것은\s*아니/u,
+  /(?:충돌|상충|모순|양립\s*불가).{0,24}(?:단정|말|주장|결론).{0,16}(?:할|내릴)\s*수\s*없/u,
+  /(?:충돌|상충|모순|양립\s*불가).{0,24}보기\s*어렵/u,
+  /(?:서로\s+)?모순이라고\s*할\s*수\s*없/u,
 ];
 
 function stableCompare(a, b) {
@@ -205,7 +216,7 @@ function clauseAroundMarker(text, markerStart, markerEnd) {
       break;
     }
   }
-  return { text: text.slice(left, right).trim(), start: left };
+  return { text: text.slice(left, right).trim(), start: left, end: right };
 }
 
 function markerPolarityContext(clause, markerStart, markerLength) {
@@ -216,21 +227,57 @@ function markerPolarityContext(clause, markerStart, markerLength) {
   );
 }
 
-export function matchAffirmativeConflictMarker(value) {
+export function findAffirmativeConflictClauses(value) {
   const text = normalizedProse(value);
-  if (!text) return null;
-  for (const marker of AFFIRMATIVE_CONFLICT_MARKERS) {
+  if (!text) return [];
+
+  const occurrences = [];
+  AFFIRMATIVE_CONFLICT_MARKERS.forEach((marker, markerOrder) => {
     for (const occurrence of markerOccurrences(text, marker.pattern)) {
-      const clause = clauseAroundMarker(text, occurrence.index, occurrence.index + occurrence.text.length);
-      if ([...QUESTION_PATTERNS, ...UNCERTAINTY_PATTERNS].some((pattern) => pattern.test(clause.text))) {
-        continue;
-      }
-      const polarityContext = markerPolarityContext(clause, occurrence.index, occurrence.text.length);
-      if (marker.negations.some((pattern) => pattern.test(polarityContext))) continue;
-      return marker.label;
+      occurrences.push({ marker, markerOrder, ...occurrence });
     }
+  });
+  occurrences.sort(
+    (a, b) =>
+      a.index - b.index ||
+      a.markerOrder - b.markerOrder ||
+      stableCompare(a.text, b.text),
+  );
+
+  const candidates = [];
+  for (const occurrence of occurrences) {
+    const { marker } = occurrence;
+    const clause = clauseAroundMarker(
+      text,
+      occurrence.index,
+      occurrence.index + occurrence.text.length,
+    );
+    if (
+      [...QUESTION_PATTERNS, ...UNCERTAINTY_PATTERNS, ...COMMON_DENIAL_PATTERNS]
+        .some((pattern) => pattern.test(clause.text))
+    ) {
+      continue;
+    }
+    const polarityContext = markerPolarityContext(
+      clause,
+      occurrence.index,
+      occurrence.text.length,
+    );
+    if (marker.negations.some((pattern) => pattern.test(polarityContext))) continue;
+    candidates.push({
+      label: marker.label,
+      clauseText: clause.text,
+      clauseStart: clause.start,
+      clauseEnd: clause.end,
+      markerStart: occurrence.index,
+      markerEnd: occurrence.index + occurrence.text.length,
+    });
   }
-  return null;
+  return candidates;
+}
+
+export function matchAffirmativeConflictMarker(value) {
+  return findAffirmativeConflictClauses(value)[0]?.label || null;
 }
 
 function nonWhitespaceSegment(text, start, end) {
@@ -339,26 +386,40 @@ function findConflictEvidence(entries, inputIndex) {
     ) {
       continue;
     }
-    const marker = matchAffirmativeConflictMarker(evidence.evidenceText);
-    if (!marker) continue;
-    const explicitIds = extractCanonicalInputIds(evidence.evidenceText);
-    if (explicitIds.some((inputId) => !inputIdResolvesUniquely(inputIndex, inputId))) {
+    // Preserve the prior fail-closed boundary for the whole exact bullet: a
+    // canonical-looking input that is missing or ambiguous suppresses this evidence.
+    const allExplicitIds = extractCanonicalInputIds(evidence.evidenceText);
+    if (allExplicitIds.some((inputId) => !inputIdResolvesUniquely(inputIndex, inputId))) {
       continue;
     }
-    const orderedIds = [
-      evidence.ref.inputId,
-      ...explicitIds.filter((id) => id !== evidence.ref.inputId),
-    ];
-    if (new Set(orderedIds).size < 2) continue;
-    candidates.push({
-      evidencePointer: evidence.ref.raw,
-      inputIds: [...new Set(orderedIds)],
-      marker,
-    });
+
+    // The semantic relation is clause-local. Do not combine an input named in one
+    // sentence/semicolon clause with an unrelated conflict marker in another.
+    for (const markerCandidate of findAffirmativeConflictClauses(evidence.evidenceText)) {
+      const explicitIds = extractCanonicalInputIds(markerCandidate.clauseText);
+      if (explicitIds.some((inputId) => !inputIdResolvesUniquely(inputIndex, inputId))) {
+        continue;
+      }
+      const orderedIds = [
+        evidence.ref.inputId,
+        ...explicitIds.filter((id) => id !== evidence.ref.inputId),
+      ];
+      if (new Set(orderedIds).size < 2) continue;
+      candidates.push({
+        evidencePointer: evidence.ref.raw,
+        inputIds: [...new Set(orderedIds)],
+        marker: markerCandidate.label,
+        clauseStart: markerCandidate.clauseStart,
+        markerStart: markerCandidate.markerStart,
+      });
+      break;
+    }
   }
   candidates.sort(
     (a, b) =>
       stableCompare(a.evidencePointer, b.evidencePointer) ||
+      a.clauseStart - b.clauseStart ||
+      a.markerStart - b.markerStart ||
       stableCompare(a.marker, b.marker) ||
       stableCompare(a.inputIds.join('\0'), b.inputIds.join('\0')),
   );

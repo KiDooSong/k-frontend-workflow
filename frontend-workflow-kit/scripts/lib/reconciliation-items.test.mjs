@@ -2533,6 +2533,9 @@ test('RR-ROUTE-101: proper conflict routing, weak/question/negative/non-visible 
     ['- IN-20260720-figma-001 A/B 옵션 중 하나를 선택해야 한다.'],
     ['- 기존 IN-20260720-figma-001 정책과 충돌하는지 확인 필요?'],
     ['- 기존 IN-20260720-figma-001 정책과 충돌하지 않음.'],
+    ['- 관련 입력은 IN-20260720-figma-001이다. 화면 내부 옵션 두 개는 서로 충돌한다.'],
+    ['- IN-20260720-figma-001은 현재 정책과 동일하다. 별도 UI 옵션 두 개는 양립 불가다.'],
+    ['- IN-20260720-figma-001을 참고한다; 로컬 캐시와 서버 캐시는 서로 모순이다.'],
     ['- `IN-20260720-figma-001 충돌`은 코드 예시다.'],
     ['- 코드 예시:', '  ```txt', '  IN-20260720-figma-001 충돌', '  ```'],
     ['- [IN-20260720-figma-001 정책](https://example.test/conflict)을 확인한다.'],
@@ -2543,6 +2546,13 @@ test('RR-ROUTE-101: proper conflict routing, weak/question/negative/non-visible 
     const result = runScopeUnknown(t, facts);
     assert.equal(warningMessagesByCode(result, 'RR-ROUTE-101').length, 0, facts.join(' / '));
   }
+
+  const laterValidClause = runScopeUnknown(t, [
+    '- IN-20260720-figma-001와 충돌한 것은 아니다. 그러나 IN-20260720-figma-001와 명백히 상충한다.',
+  ]);
+  const laterWarnings = warningMessagesByCode(laterValidClause, 'RR-ROUTE-101');
+  assert.equal(laterWarnings.length, 1);
+  assert.match(laterWarnings[0], /marker '상충'/);
 
   const sectionOnly = runScopeUnknown(t, ['- 기존 IN-20260720-figma-001 정책과 충돌한다.'], {
     itemRows: [

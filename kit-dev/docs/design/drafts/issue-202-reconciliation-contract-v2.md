@@ -11,9 +11,11 @@
 - PR #217은 202-C 구현 범위를 `RR-ROUTE-101`과 Decision 기반 `RR-STALE-101/102/103`으로 고정한다.
   모두 검사 12 warning이며 `--enforce`로 승격되지 않는다.
 - review follow-up에서 `RR-ROUTE-101` precision을 강화했다. input token은 검사 11의 shared
-  `INPUT_ID_PATTERN`을 사용하고 shared input index에서 unique하게 해소되는 ID만 센다. 파일명·URL·noncanonical
-  lookalike는 배제하며, 같은 input의 `summaryTrust`가 false면 candidate-local suppress한다. marker polarity는
-  local clause에서 질문·불확실성·marker별 부정을 판정한다.
+  `INPUT_ID_PATTERN`을 사용하고 shared input index에서 unique하게 해소되는 ID만 센다. 파일명·path/query/URI·
+  noncanonical lookalike는 배제하며, 같은 input의 `summaryTrust`가 false면 candidate-local suppress한다. bullet의
+  canonical-looking ID 하나라도 missing/duplicate이면 fail-closed하고, marker 후보와 explicit other input ID는 같은
+  local clause에 있어야 한다. marker 후보는 source order로 평가하며 질문·가정·불확실성·공통/marker별 부정을
+  clause-local로 판정한다.
 - visual behavior leakage keyword warning은 초기 202-C에서 제외한다. 선언된
   `Basis=visual-evidence`의 behavior target은 이미 `RR-ROUTE-004` hard rule이 소유하고, 자유서술 keyword만으로
   추가 warning을 낼 정밀도 근거가 아직 없다. 별도 고정밀 누락이 dogfood에서 확인될 때 follow-up으로만 검토한다.
@@ -703,10 +705,13 @@ Decision 외 child family, `delegated`, `rejected`, `failed`, `mixed`, historica
 초기 202-C의 자연어 analyzer는 `RR-ROUTE-101` 하나다.
 
 - candidate는 `Basis=scope-unclear` + `Classification=scope-unclear` + 신뢰 가능한 `unknown:*` target이 있는 v2 item group이다.
-- `/NN` exact Evidence bullet의 AST-visible prose에서 Evidence input ID와 별도의 canonical `IN-*` token을 합쳐
-  distinct input 2개 이상이어야 한다. section-only pointer는 분석하지 않는다.
-- Korean/English affirmative conflict marker allowlist 중 하나가 필요하다. 질문·불확실성·명시적 부정, 약한 표현
-  (`different`, `mismatch`, `vs`, `불일치`, `선택`, `TBD`)은 억제한다.
+- `/NN` exact Evidence bullet에서 affirmative marker candidate를 source order로 찾고, marker가 있는 **같은
+  local clause**의 canonical `IN-*` token만 관계 input으로 사용한다. Evidence pointer input과 clause-local explicit
+  input을 합친 distinct input이 2개 이상이어야 한다. 다른 문장/semicolon clause의 ID와 marker를 결합하지 않는다.
+  bullet 전체의 canonical-looking input 중 하나라도 missing/duplicate이면 evidence를 fail-closed suppress하며,
+  section-only pointer는 분석하지 않는다.
+- Korean/English affirmative conflict marker allowlist 중 하나가 필요하다. 질문·가정·불확실성·명시적 부정, 약한 표현
+  (`different`, `mismatch`, `vs`, `불일치`, `선택`, `TBD`)은 marker-local clause에서 억제한다.
 - code, raw HTML/comment/attribute, link destination, URL-only autolink, definition, image destination의 token/marker는 세지 않는다.
 - warning은 Basis/Classification/Conflict target을 **재검토하라**는 신호일 뿐 자동 rewrite/create/close/Result 변경을 하지 않는다.
 
@@ -722,12 +727,12 @@ visual behavior leakage keyword warning은 이 slice에서 제외한다. 선언�
 | Stable code | `RR-ROUTE-101` message prefix |
 | Candidate input | v2 structured input의 `scope-unclear/scope-unclear` item group + `unknown:*` target |
 | Input data | 이미 파싱된 Summary/Items group, 검사 11과 공유하는 `INPUT_ID_PATTERN`, shared input index, exact `/NN` AST-visible Evidence text, target index |
-| Positive condition | 같은 input의 trusted Summary·group·unknown target·exact bullet + index에서 unique하게 해소되는 distinct canonical input 2개 이상 + affirmative marker |
-| Suppression | marker-local 질문/불확실성/부정/약한 표현, URL·파일명·noncanonical input lookalike, section-only/out-of-range, duplicate/missing input·owner·row, 같은 input의 untrusted Summary/item projection, 이미 conflict basis |
-| Evidence provenance | message에 input/item, unknown target, exact Evidence pointer, distinct input refs, 대표 marker |
+| Positive condition | 같은 input의 trusted Summary·group·unknown target·exact bullet + source-order상 첫 fully-qualified marker clause + 그 clause의 unique explicit other input ID + Evidence pointer input |
+| Suppression | marker와 input ID가 서로 다른 문장/semicolon clause, marker-local 질문/가정/불확실성/부정/약한 표현, URL·파일명·path/query/URI·noncanonical input lookalike, bullet 내 duplicate/missing canonical input, section-only/out-of-range, duplicate/missing owner·row, 같은 input의 untrusted Summary/item projection, 이미 conflict basis |
+| Evidence provenance | message에 input/item, unknown target, exact Evidence pointer, 선택된 clause의 distinct input refs와 대표 marker |
 | Dedupe key | `RR-ROUTE-101 + Input ID + Item ID` |
-| Known false positive | 문장이 강한 충돌 표현을 쓰지만 실제로는 reviewer가 의도적으로 Unknown으로 보존한 경우 |
-| Known false negative | 완곡한 충돌 표현, canonical IN-ID가 없는 대명사/별칭, 여러 bullet에 분산된 근거 |
+| Known false positive | 같은 clause의 강한 충돌 표현이 실제로는 input 관계가 아니라 reviewer가 의도적으로 Unknown으로 보존한 경우 |
+| Known false negative | 완곡한 충돌 표현, canonical IN-ID가 없는 대명사/별칭, 여러 bullet/문장에 분산된 관계, punctuation 없이 합쳐진 복합 prose |
 | Reviewer action | 실제 input↔input 충돌인지 확인하고 Basis/Classification/Conflict target을 재검토 |
 | Automatic action | none |
 | Hard promotion | 이번 PR에서 금지; 별도 사람 승인 필요 |
@@ -1212,8 +1217,9 @@ finding/stop condition 기록이 추가될 때까지 Issue #202는 open으로 �
 ### 15.4 warning-only
 
 - exact `/NN` visible bullet: nested ordering·parent/child 비중복, code/HTML/comment/link destination/autolink/definition/image destination 제외, visible link text 보존
-- `RR-ROUTE-101` Korean/English affirmative positives, multi-effect/marker dedupe
-- 질문·불확실성·부정·약한 표현, single input, split bullets, section-only/out-of-range, duplicate input, proper conflict basis 무발화
+- `RR-ROUTE-101` Korean/English affirmative positives, multi-effect/marker dedupe, source-order first fully-qualified clause
+- marker와 ID가 다른 sentence/semicolon clause인 same-bullet negative, 질문·가정·불확실성·부정·약한 표현,
+  single input, split bullets, section-only/out-of-range, duplicate input, proper conflict basis 무발화
 - `RR-STALE-101`: pending-user-decision + Decision 0
 - `RR-STALE-102`: pending-user-decision + 모든 Decision resolved
 - `RR-STALE-103`: accepted/no-change + open Decision
@@ -1368,9 +1374,12 @@ Issue #202는 다음이 충족될 때 닫을 수 있다.
 - [x] reviewer는 필수 finding을 한 번에 제출하고 Info를 pass blocker로 쓰지 않는다.
 - [x] gate-lowering·code/generated/live policy/CI 변경은 reviewer Critical로 차단한다.
 - [x] `RR-ROUTE-101`과 Decision 기반 `RR-STALE-101/102/103` precision fixtures·호환성 검사가 통과한다.
-- [x] 실제/historical source-backed finding을 익명 frozen corpus로 고정하고 baseline과 treatment를 같은 corpus에서 비교한다.
-- [x] maintainer-source-backed oracle로 TP/FP/missed를 판정하고 `reconcile-stage04-v1` batch finding/stop condition replay를 기록한다.
-- [x] LRN-0017과 동일 finding family의 round-0 조기 표면화 및 bounded stop-round 2 → 1 evidence가 있다(전체 11 → 1 주장은 하지 않음).
+- [x] tracked stale Result historical finding 1건을 익명 frozen corpus로 고정하고 baseline/treatment replay를 기록한다.
+- [x] routing detector-shaped synthetic implementation positive와 synthetic controls를 고정한다(실제 TP/FP evidence로 세지 않음).
+- [ ] detector 조건을 보고 작성하지 않은 historical/live routing TP를 확보한다.
+- [ ] 실제 routing corpus의 FP와 missed in-scope finding을 human oracle로 판정한다.
+- [ ] analyzer 작성과 독립된 human reviewer 판정을 기록한다.
+- [ ] 실제 `reconcile-stage04-v1` batch finding/stop condition을 사용한 baseline/treatment review-round 또는 first-round finding 개선을 기록한다.
 
 ---
 

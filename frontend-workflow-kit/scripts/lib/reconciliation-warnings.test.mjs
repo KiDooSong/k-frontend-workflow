@@ -4,6 +4,7 @@ import { buildInputArtifactIndex } from './provenance.mjs';
 import {
   analyzeReconciliationWarnings,
   extractCanonicalInputIds,
+  findAffirmativeConflictClauses,
   matchAffirmativeConflictMarker,
 } from './reconciliation-warnings.mjs';
 
@@ -136,9 +137,15 @@ test('RR-ROUTE-101 suppresses questions, uncertainty, marker-specific negation, 
     '두 조건의 양립 불가 여부를 확인한다',
     'A와 B가 충돌할 수 있다',
     'A와 B가 상충할 수 있다',
+    'A와 B가 충돌할지도 모른다',
+    'A와 B가 충돌한 것은 아니다',
+    'A와 B가 상충한다고 단정할 수 없다',
+    'A와 B가 서로 모순이라고 할 수 없다',
     'there may be a conflict',
     'possibly conflicts with',
     'whether A conflicts with B',
+    'I wonder if A conflicts with B',
+    'It is not true that A conflicts with B',
     'this is not a conflict',
     'A and B do not conflict',
     "A and B don't conflict",
@@ -161,7 +168,10 @@ test('RR-ROUTE-101 suppresses questions, uncertainty, marker-specific negation, 
     'Check if A and B conflict',
     'Determine whether A and B are incompatible',
     'This could conflict with B',
+    'A would conflict with B',
     'A can conflict with B',
+    'A could be incompatible with B',
+    'A appears incompatible with B',
     'A appears to conflict with B',
     'A seems to contradict B',
     'A and B are compatible',
@@ -186,6 +196,61 @@ test('RR-ROUTE-101 polarity is marker-local across contrast clauses', () => {
     matchAffirmativeConflictMarker('A could replace B, but B conflicts with C.'),
     'conflicts with',
   );
+  assert.equal(
+    matchAffirmativeConflictMarker('A may replace B, but B conflicts with C.'),
+    'conflicts with',
+  );
+  assert.equal(
+    matchAffirmativeConflictMarker('A와 B는 충돌할지도 모른다. 그러나 B와 C는 명백히 충돌한다.'),
+    '충돌',
+  );
+});
+
+test('RR-ROUTE-101 marker candidates preserve source-ordered clause metadata', () => {
+  const candidates = findAffirmativeConflictClauses(
+    `로컬 옵션은 충돌한다. ${OTHER_INPUT_ID} 정책과 상충한다.`,
+  );
+  assert.deepEqual(candidates.map((candidate) => candidate.label), ['충돌', '상충']);
+  assert.equal(candidates[0].clauseText, '로컬 옵션은 충돌한다.');
+  assert.equal(candidates[1].clauseText, `${OTHER_INPUT_ID} 정책과 상충한다.`);
+  assert.ok(candidates[0].clauseStart < candidates[1].clauseStart);
+  assert.ok(candidates[0].clauseEnd <= candidates[1].clauseStart);
+});
+
+test('RR-ROUTE-101 couples the marker and explicit input IDs to the same clause', () => {
+  for (const evidenceText of [
+    `관련 입력은 ${OTHER_INPUT_ID}이다. 화면 내부 옵션 두 개는 서로 충돌한다.`,
+    `${OTHER_INPUT_ID}은 현재 정책과 동일하다. 별도의 두 UI 옵션은 양립 불가다.`,
+    `${OTHER_INPUT_ID}을 참고한다; 로컬 캐시와 서버 캐시는 서로 모순이다.`,
+  ]) {
+    assert.equal(routeWarnings({ evidenceText }).length, 0, evidenceText);
+  }
+
+  assert.equal(
+    routeWarnings({ evidenceText: `기존 ${OTHER_INPUT_ID} 정책과 충돌한다.` }).length,
+    1,
+  );
+  assert.equal(
+    routeWarnings({
+      evidenceText: `${OTHER_INPUT_ID}과 ${THIRD_INPUT_ID}가 같은 clause에서 서로 충돌한다.`,
+      extraArtifacts: [inputArtifact(THIRD_INPUT_ID, ['unique third input'])],
+    }).length,
+    1,
+  );
+
+  const laterValid = routeWarnings({
+    evidenceText:
+      `${OTHER_INPUT_ID}와 충돌한 것은 아니다. ` +
+      `그러나 ${OTHER_INPUT_ID}와 명백히 상충한다.`,
+  });
+  assert.equal(laterValid.length, 1);
+  assert.match(laterValid[0], /marker '상충'/);
+
+  const firstSatisfying = routeWarnings({
+    evidenceText: `로컬 옵션은 충돌한다. ${OTHER_INPUT_ID} 정책과 상충한다.`,
+  });
+  assert.equal(firstSatisfying.length, 1);
+  assert.match(firstSatisfying[0], /marker '상충'/);
 });
 
 test('canonical input extraction reuses the exact input contract and rejects path/suffix lookalikes', () => {

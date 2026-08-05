@@ -491,16 +491,18 @@ Contract v2의 deterministic 검사가 끝난 뒤, 기존 warning 뒤에 다음 
 계속 `{ "check": 12, "file": "...", "message": "..." }`이며 새 공개 필드는 없다. v1 register에서는 완전 무발화한다.
 
 - `RR-ROUTE-101`: 같은 input의 Summary projection과 item group이 모두 trusted인
-  `scope-unclear/scope-unclear` item이 `unknown:*` target을 갖고, exact `/NN` Evidence의 visible prose에서
-  Evidence input을 포함한 distinct canonical input이 2개 이상이며 affirmative conflict marker가 발견된 경우다.
+  `scope-unclear/scope-unclear` item이 `unknown:*` target을 갖고, exact `/NN` Evidence에서 affirmative marker와
+  explicit other input ID가 **같은 local clause**에 있을 때만 후보가 된다. marker 후보는 source order로 평가하고,
+  조건을 모두 만족하는 첫 clause를 사용한다. Evidence pointer input과 그 clause의 canonical input ID를 합친 distinct
+  set이 2개 이상이어야 한다. bullet 전체에서 canonical-looking ID 하나라도 shared input index에 missing/duplicate이면
+  evidence 자체를 fail-closed suppress하며, 다른 문장에 있는 ID와 marker를 관계로 합성하지 않는다.
   input token은 검사 11과 같은 shared `INPUT_ID_PATTERN`
-  (`IN-{YYYYMMDD}-{lowercase-source}-{NNN+}`)을 통과해야 하고, Evidence pointer와 visible prose의 각 input ID가
-  shared input index에서 정확히 한 artifact로 해소돼야 한다. URL·파일 경로·`{input_id}.md`·대문자 source·짧은
-  sequence·underscore/dot suffix 같은 lookalike는 source로 세지 않는다. Korean marker는 `충돌`, `상충`,
-  `양립 불가`, `양립할 수 없`, `서로 모순`, `동시에 만족할 수 없`; English marker는 `conflict`,
+  (`IN-{YYYYMMDD}-{lowercase-source}-{NNN+}`)을 통과해야 한다. URL·파일 경로·query·URI·`{input_id}.md`·대문자
+  source·짧은 sequence·underscore/dot suffix 같은 lookalike는 source로 세지 않는다. Korean marker는 `충돌`,
+  `상충`, `양립 불가`, `양립할 수 없`, `서로 모순`, `동시에 만족할 수 없`; English marker는 `conflict`,
   `conflicts with`, `contradict`, `contradicts`, `contradictory`, `mutually exclusive`, `incompatible`,
-  `cannot both`다. 질문·불확실성·명시적 부정은 marker가 놓인 local clause에서 판정하므로, 다른 clause의
-  unrelated negation은 실제 affirmative marker를 숨기지 않는다. `different`/`mismatch`/`vs`/`불일치` 같은
+  `cannot both`다. 질문·가정·불확실성·명시적 부정은 marker가 놓인 local clause에서 판정하므로 다른 clause의
+  unrelated negation/modality는 실제 affirmative marker를 숨기지 않는다. `different`/`mismatch`/`vs`/`불일치` 같은
   약한 표현은 억제한다. 같은 input의 untrusted Summary는 candidate-local suppress하지만, 다른 input의 hard error로
   모든 analyzer를 전역 disable하지 않는다. reviewer는 실제 input↔input 충돌인지와
   Basis/Classification/Conflict target만 재검토하며 validator는 rewrite/create/close하지 않는다.
