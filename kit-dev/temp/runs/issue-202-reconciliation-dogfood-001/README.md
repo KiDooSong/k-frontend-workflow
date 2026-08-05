@@ -8,6 +8,7 @@ Witness sequence:
 - prior route-precision witness: `40e6e58ba9b9e2aac292c3635cdd0ac0377321fd`
 - prior clause-coupled route-precision witness: `b1624bcd4fab8e291b99176afba3f2a11a00a6f4`
 - current coordination-boundary/epistemic precision implementation/tests witness: `3de27895de4eadaed64329e115dccc9b40b96c48`
+- evidence metadata synchronization: `1f5f0d7b4e139f9e75c6eeee4ccac0fb800d7e48`
 - reviewed implementation HEAD: `3de27895de4eadaed64329e115dccc9b40b96c48`; later evidence-metadata-only commits do not alter analyzer/tests
 
 - `corpus-before/`: frozen implementation candidates and controls
