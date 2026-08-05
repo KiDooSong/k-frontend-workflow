@@ -1,11 +1,14 @@
 # Issue #202-C implementation replay — warning-only semantic drift analyzers
 
 > 최초 실행일: 2026-08-03
-> review correction: 2026-08-04
+> review correction: 2026-08-05
 > 범위: `RR-ROUTE-101`, `RR-STALE-101/102/103`의 frozen-corpus validator replay
 > baseline: `533d2a69a1cc3b4831b2ebbef7ff0a313ca4c4fe` (PR #216 merge commit)
-> stored treatment snapshot: `3199f3f8706a86306c8bdaeb96d5e979f5064e0a`
-> precision-fix implementation/tests: `cd269fc98b48db9ab0fb039c003dd2efd3bdac42`
+> stored treatment output snapshot: `3199f3f8706a86306c8bdaeb96d5e979f5064e0a`
+> initial precision review fix: `cd269fc98b48db9ab0fb039c003dd2efd3bdac42`
+> prior route-precision witness: `40e6e58ba9b9e2aac292c3635cdd0ac0377321fd`
+> current clause-coupled route-precision implementation/tests witness: `b1624bcd4fab8e291b99176afba3f2a11a00a6f4`
+> reviewed implementation HEAD: `b1624bcd4fab8e291b99176afba3f2a11a00a6f4` (subsequent evidence-metadata-only commits do not alter analyzer/tests)
 > evidence bundle: [`issue-202-reconciliation-dogfood-001/`](issue-202-reconciliation-dogfood-001/)
 > status: **PARTIAL — implementation/model replay. Stale Result historical TP 1건은 평가 가능하지만 routing acceptance evidence와 실제 review-round 비교는 미완료**
 
