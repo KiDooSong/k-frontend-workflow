@@ -155,6 +155,7 @@ const QUESTION_PATTERNS = [
   /(?:충돌|상충|모순|양립\s*불가)\s*(?:여부|인지|하는지|하는가|되는지|되는가)/u,
   /양립할\s+수\s+없(?:는지|는가)/u,
   /\bwhether\b/iu,
+  /\b(?:unclear|unknown|undetermined)\b.{0,48}\b(?:whether|if)\b/iu,
   /\b(?:check|determine|verify|confirm|assess|test|find\s+out|wonder|ask|inquire|investigate)\b.{0,48}\b(?:whether|if)\b/iu,
   /^\s*(?:q(?:uestion)?\s*[:：-]\s*)?(?:are|is|do|does|did|can|could|would|should|was|were)\b/iu,
 ];
@@ -162,10 +163,13 @@ const UNCERTAINTY_PATTERNS = [
   /가능성/u,
   /아마/u,
   /추정/u,
+  /(?:불명확|확실하지\s*않|판단하기\s*어렵)/u,
   /(?:충돌|상충|모순|양립\s*불가)(?:할|일)?\s*수\s*있/u,
+  /(?:충돌|상충|모순|양립\s*불가)(?:할|일)?\s*수도\s*있/u,
   /(?:충돌|상충|모순|양립\s*불가)(?:할|일)?지도\s*모른/u,
-  /\b(?:possible|possibly|potentially|apparently|likely)\b/iu,
+  /\b(?:possible|possibly|potentially|apparently|likely|probably|presumably|allegedly)\b/iu,
   /\b(?:may|might|would)\b/iu,
+  /\b(?:unlikely|not\s+known)\s+to\b/iu,
   /\b(?:can|could)\s+(?:potentially\s+)?(?:conflict|contradict)\b/iu,
   /\b(?:can|could)\s+be\s+(?:incompatible|contradictory|mutually\s+exclusive)\b/iu,
   /\b(?:appears?|seems?)\s+(?:to\s+be\s+)?(?:incompatible|contradictory|mutually\s+exclusive)\b/iu,
@@ -173,9 +177,13 @@ const UNCERTAINTY_PATTERNS = [
 ];
 const COMMON_DENIAL_PATTERNS = [
   /\bnot\s+true\s+that\b/iu,
+  /\bno\s+(?:evidence|proof|indication)\s+(?:that|of)\b/iu,
   /\b(?:cannot|can['’]t|could\s+not|couldn['’]t)\s+(?:say|claim|conclude|assert|determine)\s+(?:that\s+)?/iu,
+  /(?:근거|증거)\s*(?:가|는|도)?\s*없/u,
   /(?:충돌|상충|모순|양립\s*불가)(?:한|한다고|이라고)?\s*것은\s*아니/u,
   /(?:충돌|상충|모순|양립\s*불가).{0,24}(?:단정|말|주장|결론).{0,16}(?:할|내릴)\s*수\s*없/u,
+  /(?:충돌|상충|모순|양립\s*불가).{0,24}(?:보|볼)\s*수\s*없/u,
+  /(?:충돌|상충|모순|양립\s*불가)\s*(?:이|은|는)?\s*아닌\s*것으로\s*보/u,
   /(?:충돌|상충|모순|양립\s*불가).{0,24}보기\s*어렵/u,
   /(?:서로\s+)?모순이라고\s*할\s*수\s*없/u,
 ];
@@ -203,7 +211,18 @@ function markerOccurrences(text, pattern) {
 function clauseAroundMarker(text, markerStart, markerEnd) {
   let left = 0;
   let right = text.length;
-  const boundaries = /[.!?。！？;\n]+|,\s*(?:but|however|yet)\b|\b(?:but|however|yet)\b|(?:하지만|그러나|반면)/giu;
+  // Precision-first relation boundaries. Keep plain `and`/`와` inside a
+  // relation, but stop at high-confidence independent-clause coordination.
+  const boundaries = new RegExp(
+    [
+      String.raw`[.!?。！？;\n]+`,
+      String.raw`,\s*(?:but|however|yet|while|whereas|although|though)\b`,
+      String.raw`\b(?:but|however|yet)\b`,
+      String.raw`(?:하지만|그러나|반면|한편|반대로|그와\s+별개로)`,
+      String.raw`(?:동일하|같|일치하|호환되|부합하|참고하|참조하|따르|관련되|기반하|유지되)(?:고|며|지만),?\s*`,
+    ].join('|'),
+    'giu',
+  );
   let match;
   while ((match = boundaries.exec(text)) !== null) {
     const boundaryEnd = match.index + match[0].length;

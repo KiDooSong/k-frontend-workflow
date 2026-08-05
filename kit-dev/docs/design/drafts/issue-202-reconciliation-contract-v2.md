@@ -14,8 +14,10 @@
   `INPUT_ID_PATTERN`을 사용하고 shared input index에서 unique하게 해소되는 ID만 센다. 파일명·path/query/URI·
   noncanonical lookalike는 배제하며, 같은 input의 `summaryTrust`가 false면 candidate-local suppress한다. bullet의
   canonical-looking ID 하나라도 missing/duplicate이면 fail-closed하고, marker 후보와 explicit other input ID는 같은
-  local clause에 있어야 한다. marker 후보는 source order로 평가하며 질문·가정·불확실성·공통/marker별 부정을
-  clause-local로 판정한다.
+  high-confidence relation clause에 있어야 한다. sentence/semicolon뿐 아니라 `, while|whereas|although|though`,
+  `한편|반대로|그와 별개로`, `동일하고,`/`참고하며` 같은 중립 서술 coordination을 경계로 보며 plain `and`/`와`는
+  관계 내부에 유지한다. marker 후보는 source order로 평가하며 질문·증거 부재·가정·불확실성·추정·공통/marker별
+  부정을 clause-local로 판정한다.
 - visual behavior leakage keyword warning은 초기 202-C에서 제외한다. 선언된
   `Basis=visual-evidence`의 behavior target은 이미 `RR-ROUTE-004` hard rule이 소유하고, 자유서술 keyword만으로
   추가 warning을 낼 정밀도 근거가 아직 없다. 별도 고정밀 누락이 dogfood에서 확인될 때 follow-up으로만 검토한다.
@@ -706,12 +708,13 @@ Decision 외 child family, `delegated`, `rejected`, `failed`, `mixed`, historica
 
 - candidate는 `Basis=scope-unclear` + `Classification=scope-unclear` + 신뢰 가능한 `unknown:*` target이 있는 v2 item group이다.
 - `/NN` exact Evidence bullet에서 affirmative marker candidate를 source order로 찾고, marker가 있는 **같은
-  local clause**의 canonical `IN-*` token만 관계 input으로 사용한다. Evidence pointer input과 clause-local explicit
-  input을 합친 distinct input이 2개 이상이어야 한다. 다른 문장/semicolon clause의 ID와 marker를 결합하지 않는다.
-  bullet 전체의 canonical-looking input 중 하나라도 missing/duplicate이면 evidence를 fail-closed suppress하며,
-  section-only pointer는 분석하지 않는다.
-- Korean/English affirmative conflict marker allowlist 중 하나가 필요하다. 질문·가정·불확실성·명시적 부정, 약한 표현
-  (`different`, `mismatch`, `vs`, `불일치`, `선택`, `TBD`)은 marker-local clause에서 억제한다.
+  high-confidence relation clause**의 canonical `IN-*` token만 관계 input으로 사용한다. Evidence pointer input과
+  clause-local explicit input을 합친 distinct input이 2개 이상이어야 한다. sentence/semicolon과 함께
+  `, while|whereas|although|though`, `한편|반대로|그와 별개로`, `동일하고,`/`참고하며` 같은 중립 서술
+  coordination을 경계로 보며, plain `and`/`와`는 관계 내부에 유지한다. bullet 전체의 canonical-looking input 중
+  하나라도 missing/duplicate이면 evidence를 fail-closed suppress하며 section-only pointer는 분석하지 않는다.
+- Korean/English affirmative conflict marker allowlist 중 하나가 필요하다. 질문·증거 부재·가정·불확실성·추정·
+  명시적 부정, 약한 표현(`different`, `mismatch`, `vs`, `불일치`, `선택`, `TBD`)은 marker-local clause에서 억제한다.
 - code, raw HTML/comment/attribute, link destination, URL-only autolink, definition, image destination의 token/marker는 세지 않는다.
 - warning은 Basis/Classification/Conflict target을 **재검토하라**는 신호일 뿐 자동 rewrite/create/close/Result 변경을 하지 않는다.
 
@@ -728,7 +731,7 @@ visual behavior leakage keyword warning은 이 slice에서 제외한다. 선언�
 | Candidate input | v2 structured input의 `scope-unclear/scope-unclear` item group + `unknown:*` target |
 | Input data | 이미 파싱된 Summary/Items group, 검사 11과 공유하는 `INPUT_ID_PATTERN`, shared input index, exact `/NN` AST-visible Evidence text, target index |
 | Positive condition | 같은 input의 trusted Summary·group·unknown target·exact bullet + source-order상 첫 fully-qualified marker clause + 그 clause의 unique explicit other input ID + Evidence pointer input |
-| Suppression | marker와 input ID가 서로 다른 문장/semicolon clause, marker-local 질문/가정/불확실성/부정/약한 표현, URL·파일명·path/query/URI·noncanonical input lookalike, bullet 내 duplicate/missing canonical input, section-only/out-of-range, duplicate/missing owner·row, 같은 input의 untrusted Summary/item projection, 이미 conflict basis |
+| Suppression | marker와 input ID가 서로 다른 sentence/semicolon/high-confidence coordination clause(`, while|whereas|although|though`, `한편|반대로|그와 별개로`, 중립 서술 연결형), marker-local 질문/증거 부재/가정/불확실성/추정/부정/약한 표현, URL·파일명·path/query/URI·noncanonical input lookalike, bullet 내 duplicate/missing canonical input, section-only/out-of-range, duplicate/missing owner·row, 같은 input의 untrusted Summary/item projection, 이미 conflict basis |
 | Evidence provenance | message에 input/item, unknown target, exact Evidence pointer, 선택된 clause의 distinct input refs와 대표 marker |
 | Dedupe key | `RR-ROUTE-101 + Input ID + Item ID` |
 | Known false positive | 같은 clause의 강한 충돌 표현이 실제로는 input 관계가 아니라 reviewer가 의도적으로 Unknown으로 보존한 경우 |

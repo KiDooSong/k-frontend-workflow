@@ -138,6 +138,13 @@ test('RR-ROUTE-101 suppresses questions, uncertainty, marker-specific negation, 
     'A와 B가 충돌할 수 있다',
     'A와 B가 상충할 수 있다',
     'A와 B가 충돌할지도 모른다',
+    'A와 B가 충돌할 수도 있다',
+    'A와 B가 충돌한다고 볼 수 없다',
+    'A와 B는 충돌이 아닌 것으로 보인다',
+    'A와 B가 충돌한다는 근거는 없다',
+    'A와 B가 충돌하는지는 불명확하다',
+    'A와 B가 충돌하는지는 확실하지 않다',
+    'A와 B가 충돌하는지 판단하기 어렵다',
     'A와 B가 충돌한 것은 아니다',
     'A와 B가 상충한다고 단정할 수 없다',
     'A와 B가 서로 모순이라고 할 수 없다',
@@ -145,7 +152,12 @@ test('RR-ROUTE-101 suppresses questions, uncertainty, marker-specific negation, 
     'possibly conflicts with',
     'whether A conflicts with B',
     'I wonder if A conflicts with B',
+    'It is unclear if A conflicts with B',
     'It is not true that A conflicts with B',
+    'There is no evidence that A conflicts with B',
+    'A probably conflicts with B',
+    'A is unlikely to conflict with B',
+    'A is not known to conflict with B',
     'this is not a conflict',
     'A and B do not conflict',
     "A and B don't conflict",
@@ -251,6 +263,34 @@ test('RR-ROUTE-101 couples the marker and explicit input IDs to the same clause'
   });
   assert.equal(firstSatisfying.length, 1);
   assert.match(firstSatisfying[0], /marker '상충'/);
+});
+
+test('RR-ROUTE-101 isolates high-confidence coordination boundaries without breaking direct conjunctions', () => {
+  for (const evidenceText of [
+    `${OTHER_INPUT_ID}은 현재 정책과 동일하고, 별도 UI 옵션 두 개는 서로 충돌한다.`,
+    `${OTHER_INPUT_ID}를 참고하며 별도 UI 옵션 두 개는 서로 충돌한다.`,
+    `${OTHER_INPUT_ID} is compatible with the current policy, while the two local UI options conflict.`,
+    `${OTHER_INPUT_ID} is compatible, whereas the local cache options conflict.`,
+    `${OTHER_INPUT_ID} is compatible, although the local cache options conflict.`,
+    `${OTHER_INPUT_ID} is compatible, though the local cache options conflict.`,
+    `${OTHER_INPUT_ID}은 현재 정책과 동일하다. 한편 별도 UI 옵션 두 개는 서로 충돌한다.`,
+    `${OTHER_INPUT_ID}은 현재 정책과 동일하다. 반대로 별도 UI 옵션 두 개는 서로 충돌한다.`,
+    `${OTHER_INPUT_ID}은 현재 정책과 동일하다. 그와 별개로 별도 UI 옵션 두 개는 서로 충돌한다.`,
+  ]) {
+    assert.equal(routeWarnings({ evidenceText }).length, 0, evidenceText);
+  }
+
+  assert.equal(
+    routeWarnings({
+      evidenceText: `${OTHER_INPUT_ID} and ${THIRD_INPUT_ID} conflict.`,
+      extraArtifacts: [inputArtifact(THIRD_INPUT_ID, ['unique third input'])],
+    }).length,
+    1,
+  );
+  assert.equal(
+    routeWarnings({ evidenceText: `기존 ${OTHER_INPUT_ID} 정책과 충돌한다.` }).length,
+    1,
+  );
 });
 
 test('canonical input extraction reuses the exact input contract and rejects path/suffix lookalikes', () => {

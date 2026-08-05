@@ -10,8 +10,10 @@
   trusted인 `scope-unclear/scope-unclear` + `unknown:*` candidate만 보며, exact `/NN` Evidence의 visible prose에서
   검사 11과 공유하는 `INPUT_ID_PATTERN`을 통과하고 shared input index에서 unique하게 해소되는 distinct input 2개 이상과
   강한 Korean/English conflict marker가 함께 있을 때만 경고한다. URL·파일 경로·`{input_id}.md`·대문자/짧은 sequence·
-  underscore/dot suffix lookalike는 세지 않는다. 질문·불확실성·marker별 부정은 local clause에서 억제해 unrelated clause의
-  negation이 valid marker를 숨기지 않게 했고, 같은 input Summary hard-invalid는 candidate-local suppress한다.
+  underscore/dot suffix lookalike는 세지 않는다. marker와 explicit other input ID는 같은 high-confidence relation
+  clause에 있어야 하며 sentence/semicolon, `, while|whereas|although|though`, Korean 독립 연결어와 중립 서술
+  연결형을 경계로 사용한다. 질문·증거 부재·가정·불확실성·추정·marker별 부정은 local clause에서 억제해 unrelated
+  clause의 polarity가 valid marker를 숨기지 않게 했고, 같은 input Summary hard-invalid는 candidate-local suppress한다.
   malformed/ambiguous evidence/target도 억제하며 item당 1건으로 dedupe한다.
 - Decision-only stale Result warning `RR-STALE-101/102/103`을 추가했다: pending-user-decision인데 Decision target이
   없거나 모두 resolved인 경우, accepted/no-change인데 open Decision이 있는 경우다. canonical Decision의 exact

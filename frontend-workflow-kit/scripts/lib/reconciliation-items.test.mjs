@@ -2493,6 +2493,7 @@ test('RR-ROUTE-101: English markers and multiple explicit inputs remain one warn
   for (const facts of [
     ['- IN-20260720-figma-001 conflicts with this captured meeting policy.'],
     ['- IN-20260720-figma-001 and IN-20260720-meeting-001 are mutually exclusive.'],
+    ['- IN-20260720-figma-001 and IN-20260720-meeting-001 conflict.'],
   ]) {
     const result = runScopeUnknown(t, facts);
     assert.deepEqual(messages(result.errors), []);
@@ -2536,6 +2537,18 @@ test('RR-ROUTE-101: proper conflict routing, weak/question/negative/non-visible 
     ['- 관련 입력은 IN-20260720-figma-001이다. 화면 내부 옵션 두 개는 서로 충돌한다.'],
     ['- IN-20260720-figma-001은 현재 정책과 동일하다. 별도 UI 옵션 두 개는 양립 불가다.'],
     ['- IN-20260720-figma-001을 참고한다; 로컬 캐시와 서버 캐시는 서로 모순이다.'],
+    ['- IN-20260720-figma-001은 현재 정책과 동일하고, 별도 UI 옵션 두 개는 서로 충돌한다.'],
+    ['- IN-20260720-figma-001을 참고하며 별도 UI 옵션 두 개는 서로 충돌한다.'],
+    ['- IN-20260720-figma-001 is compatible with the current policy, while the two local UI options conflict.'],
+    ['- IN-20260720-figma-001 is compatible, whereas the local cache options conflict.'],
+    ['- IN-20260720-figma-001와 충돌한다는 근거는 없다.'],
+    ['- IN-20260720-figma-001와 충돌할 수도 있다.'],
+    ['- IN-20260720-figma-001와 충돌한다고 볼 수 없다.'],
+    ['- IN-20260720-figma-001는 충돌이 아닌 것으로 보인다.'],
+    ['- There is no evidence that IN-20260720-figma-001 conflicts with this input.'],
+    ['- It is unclear if IN-20260720-figma-001 conflicts with this input.'],
+    ['- IN-20260720-figma-001 probably conflicts with this input.'],
+    ['- IN-20260720-figma-001 is unlikely to conflict with this input.'],
     ['- `IN-20260720-figma-001 충돌`은 코드 예시다.'],
     ['- 코드 예시:', '  ```txt', '  IN-20260720-figma-001 충돌', '  ```'],
     ['- [IN-20260720-figma-001 정책](https://example.test/conflict)을 확인한다.'],

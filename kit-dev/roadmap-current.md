@@ -2,8 +2,10 @@
 
 > 2026-08-04 review follow-up(#202-C): 검사 12 advisory 단계의 `RR-ROUTE-101`과 Decision 기반
 > `RR-STALE-101/102/103` 구현은 유지한다. `RR-ROUTE-101`은 검사 11의 shared `INPUT_ID_PATTERN`과 input index의
-> unique resolution을 사용해 파일명·URL·noncanonical lookalike를 배제하고, 같은 input의 `summaryTrust`를 요구하며,
-> 질문·불확실성·marker별 부정을 local clause에서 판정한다. v1 complete silence, public JSON shape/check 12/기존 warning
+> unique resolution을 사용해 파일명·URL·noncanonical lookalike를 배제하고, 같은 input의 `summaryTrust`를 요구한다.
+> marker와 explicit other input ID는 같은 high-confidence relation clause에 있어야 하며 sentence/semicolon,
+> `, while|whereas|although|though`, Korean 독립 연결어와 중립 서술 연결형을 경계로 사용한다. 질문·증거 부재·
+> 가정·불확실성·추정·marker별 부정은 local clause에서 판정한다. v1 complete silence, public JSON shape/check 12/기존 warning
 > order, `--enforce` 비승격은 그대로다. [frozen replay](temp/runs/issue-202-reconciliation-dogfood-001.md)의 stale 사례는
 > tracked upstream historical TP지만 routing 사례와 controls는 detector-shaped synthetic data다. 저장된 `2 → 1`은
 > modeled stop-round일 뿐 실제 consumer review-round 감소나 real-corpus FP/missed를 입증하지 않는다. privacy-safe
