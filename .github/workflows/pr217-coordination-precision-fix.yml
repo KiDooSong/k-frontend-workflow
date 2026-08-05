@@ -1,0 +1,349 @@
+name: pr217-coordination-precision-fix
+
+on:
+  push:
+    branches:
+      - codex/issue-202c-reconciliation-warnings
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/issue-202c-reconciliation-warnings
+          fetch-depth: 0
+
+      - name: Apply coordination-boundary and epistemic precision fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one replacement, got {count}')
+              p.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          warnings = 'frontend-workflow-kit/scripts/lib/reconciliation-warnings.mjs'
+          warning_tests = 'frontend-workflow-kit/scripts/lib/reconciliation-warnings.test.mjs'
+          integration_tests = 'frontend-workflow-kit/scripts/lib/reconciliation-items.test.mjs'
+          canonical = 'frontend-workflow-kit/docs/reference/input-reconciliation.md'
+          design = 'kit-dev/docs/design/drafts/issue-202-reconciliation-contract-v2.md'
+          changelog = 'kit-dev/CHANGELOG.md'
+          roadmap = 'kit-dev/roadmap-current.md'
+
+          replace_once(
+              warnings,
+              r'''const QUESTION_PATTERNS = [
+  /[?？]/u,
+  /(?:충돌|상충|모순|양립\s*불가)\s*(?:여부|인지|하는지|하는가|되는지|되는가)/u,
+  /양립할\s+수\s+없(?:는지|는가)/u,
+  /\bwhether\b/iu,
+  /\b(?:check|determine|verify|confirm|assess|test|find\s+out|wonder|ask|inquire|investigate)\b.{0,48}\b(?:whether|if)\b/iu,
+  /^\s*(?:q(?:uestion)?\s*[:：-]\s*)?(?:are|is|do|does|did|can|could|would|should|was|were)\b/iu,
+];
+const UNCERTAINTY_PATTERNS = [
+  /가능성/u,
+  /아마/u,
+  /추정/u,
+  /(?:충돌|상충|모순|양립\s*불가)(?:할|일)?\s*수\s*있/u,
+  /(?:충돌|상충|모순|양립\s*불가)(?:할|일)?지도\s*모른/u,
+  /\b(?:possible|possibly|potentially|apparently|likely)\b/iu,
+  /\b(?:may|might|would)\b/iu,
+  /\b(?:can|could)\s+(?:potentially\s+)?(?:conflict|contradict)\b/iu,
+  /\b(?:can|could)\s+be\s+(?:incompatible|contradictory|mutually\s+exclusive)\b/iu,
+  /\b(?:appears?|seems?)\s+(?:to\s+be\s+)?(?:incompatible|contradictory|mutually\s+exclusive)\b/iu,
+  /\b(?:appears?|seems?)\s+to\s+(?:conflict|contradict)\b/iu,
+];
+const COMMON_DENIAL_PATTERNS = [
+  /\bnot\s+true\s+that\b/iu,
+  /\b(?:cannot|can['’]t|could\s+not|couldn['’]t)\s+(?:say|claim|conclude|assert|determine)\s+(?:that\s+)?/iu,
+  /(?:충돌|상충|모순|양립\s*불가)(?:한|한다고|이라고)?\s*것은\s*아니/u,
+  /(?:충돌|상충|모순|양립\s*불가).{0,24}(?:단정|말|주장|결론).{0,16}(?:할|내릴)\s*수\s*없/u,
+  /(?:충돌|상충|모순|양립\s*불가).{0,24}보기\s*어렵/u,
+  /(?:서로\s+)?모순이라고\s*할\s*수\s*없/u,
+];''',
+              r'''const QUESTION_PATTERNS = [
+  /[?？]/u,
+  /(?:충돌|상충|모순|양립\s*불가)\s*(?:여부|인지|하는지|하는가|되는지|되는가)/u,
+  /양립할\s+수\s+없(?:는지|는가)/u,
+  /\bwhether\b/iu,
+  /\b(?:unclear|unknown|undetermined)\b.{0,48}\b(?:whether|if)\b/iu,
+  /\b(?:check|determine|verify|confirm|assess|test|find\s+out|wonder|ask|inquire|investigate)\b.{0,48}\b(?:whether|if)\b/iu,
+  /^\s*(?:q(?:uestion)?\s*[:：-]\s*)?(?:are|is|do|does|did|can|could|would|should|was|were)\b/iu,
+];
+const UNCERTAINTY_PATTERNS = [
+  /가능성/u,
+  /아마/u,
+  /추정/u,
+  /(?:불명확|확실하지\s*않|판단하기\s*어렵)/u,
+  /(?:충돌|상충|모순|양립\s*불가)(?:할|일)?\s*수\s*있/u,
+  /(?:충돌|상충|모순|양립\s*불가)(?:할|일)?\s*수도\s*있/u,
+  /(?:충돌|상충|모순|양립\s*불가)(?:할|일)?지도\s*모른/u,
+  /\b(?:possible|possibly|potentially|apparently|likely|probably|presumably|allegedly)\b/iu,
+  /\b(?:may|might|would)\b/iu,
+  /\b(?:unlikely|not\s+known)\s+to\b/iu,
+  /\b(?:can|could)\s+(?:potentially\s+)?(?:conflict|contradict)\b/iu,
+  /\b(?:can|could)\s+be\s+(?:incompatible|contradictory|mutually\s+exclusive)\b/iu,
+  /\b(?:appears?|seems?)\s+(?:to\s+be\s+)?(?:incompatible|contradictory|mutually\s+exclusive)\b/iu,
+  /\b(?:appears?|seems?)\s+to\s+(?:conflict|contradict)\b/iu,
+];
+const COMMON_DENIAL_PATTERNS = [
+  /\bnot\s+true\s+that\b/iu,
+  /\bno\s+(?:evidence|proof|indication)\s+(?:that|of)\b/iu,
+  /\b(?:cannot|can['’]t|could\s+not|couldn['’]t)\s+(?:say|claim|conclude|assert|determine)\s+(?:that\s+)?/iu,
+  /(?:근거|증거)\s*(?:가|는|도)?\s*없/u,
+  /(?:충돌|상충|모순|양립\s*불가)(?:한|한다고|이라고)?\s*것은\s*아니/u,
+  /(?:충돌|상충|모순|양립\s*불가).{0,24}(?:단정|말|주장|결론).{0,16}(?:할|내릴)\s*수\s*없/u,
+  /(?:충돌|상충|모순|양립\s*불가).{0,24}(?:보|볼)\s*수\s*없/u,
+  /(?:충돌|상충|모순|양립\s*불가)\s*(?:이|은|는)?\s*아닌\s*것으로\s*보/u,
+  /(?:충돌|상충|모순|양립\s*불가).{0,24}보기\s*어렵/u,
+  /(?:서로\s+)?모순이라고\s*할\s*수\s*없/u,
+];''',
+          )
+
+          replace_once(
+              warnings,
+              "  const boundaries = /[.!?。！？;\\n]+|,\\s*(?:but|however|yet)\\b|\\b(?:but|however|yet)\\b|(?:하지만|그러나|반면)/giu;",
+              r'''  // Precision-first relation boundaries. Keep plain `and`/`와` inside a
+  // relation, but stop at high-confidence independent-clause coordination.
+  const boundaries = new RegExp(
+    [
+      String.raw`[.!?。！？;\n]+`,
+      String.raw`,\s*(?:but|however|yet|while|whereas|although|though)\b`,
+      String.raw`\b(?:but|however|yet)\b`,
+      String.raw`(?:하지만|그러나|반면|한편|반대로|그와\s+별개로)`,
+      String.raw`(?:동일하|같|일치하|호환되|부합하|참고하|참조하|따르|관련되|기반하|유지되)(?:고|며|지만),?\s*`,
+    ].join('|'),
+    'giu',
+  );''',
+          )
+
+          replace_once(
+              warning_tests,
+              """    'A와 B가 충돌할지도 모른다',
+    'A와 B가 충돌한 것은 아니다',""",
+              """    'A와 B가 충돌할지도 모른다',
+    'A와 B가 충돌할 수도 있다',
+    'A와 B가 충돌한다고 볼 수 없다',
+    'A와 B는 충돌이 아닌 것으로 보인다',
+    'A와 B가 충돌한다는 근거는 없다',
+    'A와 B가 충돌하는지는 불명확하다',
+    'A와 B가 충돌하는지는 확실하지 않다',
+    'A와 B가 충돌하는지 판단하기 어렵다',
+    'A와 B가 충돌한 것은 아니다',""",
+          )
+
+          replace_once(
+              warning_tests,
+              """    'I wonder if A conflicts with B',
+    'It is not true that A conflicts with B',
+    'this is not a conflict',""",
+              """    'I wonder if A conflicts with B',
+    'It is unclear if A conflicts with B',
+    'It is not true that A conflicts with B',
+    'There is no evidence that A conflicts with B',
+    'A probably conflicts with B',
+    'A is unlikely to conflict with B',
+    'A is not known to conflict with B',
+    'this is not a conflict',""",
+          )
+
+          replace_once(
+              warning_tests,
+              """test('canonical input extraction reuses the exact input contract and rejects path/suffix lookalikes', () => {""",
+              """test('RR-ROUTE-101 isolates high-confidence coordination boundaries without breaking direct conjunctions', () => {
+  for (const evidenceText of [
+    `${OTHER_INPUT_ID}은 현재 정책과 동일하고, 별도 UI 옵션 두 개는 서로 충돌한다.`,
+    `${OTHER_INPUT_ID}를 참고하며 별도 UI 옵션 두 개는 서로 충돌한다.`,
+    `${OTHER_INPUT_ID} is compatible with the current policy, while the two local UI options conflict.`,
+    `${OTHER_INPUT_ID} is compatible, whereas the local cache options conflict.`,
+    `${OTHER_INPUT_ID} is compatible, although the local cache options conflict.`,
+    `${OTHER_INPUT_ID} is compatible, though the local cache options conflict.`,
+    `${OTHER_INPUT_ID}은 현재 정책과 동일하다. 한편 별도 UI 옵션 두 개는 서로 충돌한다.`,
+    `${OTHER_INPUT_ID}은 현재 정책과 동일하다. 반대로 별도 UI 옵션 두 개는 서로 충돌한다.`,
+    `${OTHER_INPUT_ID}은 현재 정책과 동일하다. 그와 별개로 별도 UI 옵션 두 개는 서로 충돌한다.`,
+  ]) {
+    assert.equal(routeWarnings({ evidenceText }).length, 0, evidenceText);
+  }
+
+  assert.equal(
+    routeWarnings({
+      evidenceText: `${OTHER_INPUT_ID} and ${THIRD_INPUT_ID} conflict.`,
+      extraArtifacts: [inputArtifact(THIRD_INPUT_ID, ['unique third input'])],
+    }).length,
+    1,
+  );
+  assert.equal(
+    routeWarnings({ evidenceText: `기존 ${OTHER_INPUT_ID} 정책과 충돌한다.` }).length,
+    1,
+  );
+});
+
+test('canonical input extraction reuses the exact input contract and rejects path/suffix lookalikes', () => {""",
+          )
+
+          replace_once(
+              integration_tests,
+              """    ['- IN-20260720-figma-001 conflicts with this captured meeting policy.'],
+    ['- IN-20260720-figma-001 and IN-20260720-meeting-001 are mutually exclusive.'],""",
+              """    ['- IN-20260720-figma-001 conflicts with this captured meeting policy.'],
+    ['- IN-20260720-figma-001 and IN-20260720-meeting-001 are mutually exclusive.'],
+    ['- IN-20260720-figma-001 and IN-20260720-meeting-001 conflict.'],""",
+          )
+
+          replace_once(
+              integration_tests,
+              """    ['- IN-20260720-figma-001을 참고한다; 로컬 캐시와 서버 캐시는 서로 모순이다.'],
+    ['- `IN-20260720-figma-001 충돌`은 코드 예시다.'],""",
+              """    ['- IN-20260720-figma-001을 참고한다; 로컬 캐시와 서버 캐시는 서로 모순이다.'],
+    ['- IN-20260720-figma-001은 현재 정책과 동일하고, 별도 UI 옵션 두 개는 서로 충돌한다.'],
+    ['- IN-20260720-figma-001을 참고하며 별도 UI 옵션 두 개는 서로 충돌한다.'],
+    ['- IN-20260720-figma-001 is compatible with the current policy, while the two local UI options conflict.'],
+    ['- IN-20260720-figma-001 is compatible, whereas the local cache options conflict.'],
+    ['- IN-20260720-figma-001와 충돌한다는 근거는 없다.'],
+    ['- IN-20260720-figma-001와 충돌할 수도 있다.'],
+    ['- IN-20260720-figma-001와 충돌한다고 볼 수 없다.'],
+    ['- IN-20260720-figma-001는 충돌이 아닌 것으로 보인다.'],
+    ['- There is no evidence that IN-20260720-figma-001 conflicts with this input.'],
+    ['- It is unclear if IN-20260720-figma-001 conflicts with this input.'],
+    ['- IN-20260720-figma-001 probably conflicts with this input.'],
+    ['- IN-20260720-figma-001 is unlikely to conflict with this input.'],
+    ['- `IN-20260720-figma-001 충돌`은 코드 예시다.'],""",
+          )
+
+          replace_once(
+              canonical,
+              """  `cannot both`다. 질문·불확실성·명시적 부정은 marker가 놓인 local clause에서 판정하므로, 다른 clause의
+  unrelated negation은 실제 affirmative marker를 숨기지 않는다. `different`/`mismatch`/`vs`/`불일치` 같은
+  약한 표현은 억제한다.""",
+              """  `cannot both`다. marker와 explicit other input ID는 같은 high-confidence relation clause에 있어야 한다.
+  sentence/semicolon 외에도 `, while|whereas|although|though`, `한편|반대로|그와 별개로`,
+  `동일하고,`/`참고하며` 같은 중립 서술 연결형을 경계로 보되 plain `and`/`와`는 관계 내부에 유지한다.
+  질문·증거 부재·가정·불확실성·추정·명시적 부정은 marker가 놓인 local clause에서 판정하므로, 다른 clause의
+  unrelated polarity는 실제 affirmative marker를 숨기지 않는다. `different`/`mismatch`/`vs`/`불일치` 같은
+  약한 표현은 억제한다.""",
+          )
+
+          replace_once(
+              design,
+              """  canonical-looking ID 하나라도 missing/duplicate이면 fail-closed하고, marker 후보와 explicit other input ID는 같은
+  local clause에 있어야 한다. marker 후보는 source order로 평가하며 질문·가정·불확실성·공통/marker별 부정을
+  clause-local로 판정한다.""",
+              """  canonical-looking ID 하나라도 missing/duplicate이면 fail-closed하고, marker 후보와 explicit other input ID는 같은
+  high-confidence relation clause에 있어야 한다. sentence/semicolon뿐 아니라 `, while|whereas|although|though`,
+  `한편|반대로|그와 별개로`, `동일하고,`/`참고하며` 같은 중립 서술 coordination을 경계로 보며 plain `and`/`와`는
+  관계 내부에 유지한다. marker 후보는 source order로 평가하며 질문·증거 부재·가정·불확실성·추정·공통/marker별
+  부정을 clause-local로 판정한다.""",
+          )
+
+          replace_once(
+              design,
+              """- `/NN` exact Evidence bullet에서 affirmative marker candidate를 source order로 찾고, marker가 있는 **같은
+  local clause**의 canonical `IN-*` token만 관계 input으로 사용한다. Evidence pointer input과 clause-local explicit
+  input을 합친 distinct input이 2개 이상이어야 한다. 다른 문장/semicolon clause의 ID와 marker를 결합하지 않는다.
+  bullet 전체의 canonical-looking input 중 하나라도 missing/duplicate이면 evidence를 fail-closed suppress하며,
+  section-only pointer는 분석하지 않는다.
+- Korean/English affirmative conflict marker allowlist 중 하나가 필요하다. 질문·가정·불확실성·명시적 부정, 약한 표현
+  (`different`, `mismatch`, `vs`, `불일치`, `선택`, `TBD`)은 marker-local clause에서 억제한다.""",
+              """- `/NN` exact Evidence bullet에서 affirmative marker candidate를 source order로 찾고, marker가 있는 **같은
+  high-confidence relation clause**의 canonical `IN-*` token만 관계 input으로 사용한다. Evidence pointer input과
+  clause-local explicit input을 합친 distinct input이 2개 이상이어야 한다. sentence/semicolon과 함께
+  `, while|whereas|although|though`, `한편|반대로|그와 별개로`, `동일하고,`/`참고하며` 같은 중립 서술
+  coordination을 경계로 보며, plain `and`/`와`는 관계 내부에 유지한다. bullet 전체의 canonical-looking input 중
+  하나라도 missing/duplicate이면 evidence를 fail-closed suppress하며 section-only pointer는 분석하지 않는다.
+- Korean/English affirmative conflict marker allowlist 중 하나가 필요하다. 질문·증거 부재·가정·불확실성·추정·
+  명시적 부정, 약한 표현(`different`, `mismatch`, `vs`, `불일치`, `선택`, `TBD`)은 marker-local clause에서 억제한다.""",
+          )
+
+          replace_once(
+              design,
+              """| Suppression | marker와 input ID가 서로 다른 문장/semicolon clause, marker-local 질문/가정/불확실성/부정/약한 표현, URL·파일명·path/query/URI·noncanonical input lookalike, bullet 내 duplicate/missing canonical input, section-only/out-of-range, duplicate/missing owner·row, 같은 input의 untrusted Summary/item projection, 이미 conflict basis |""",
+              """| Suppression | marker와 input ID가 서로 다른 sentence/semicolon/high-confidence coordination clause(`, while|whereas|although|though`, `한편|반대로|그와 별개로`, 중립 서술 연결형), marker-local 질문/증거 부재/가정/불확실성/추정/부정/약한 표현, URL·파일명·path/query/URI·noncanonical input lookalike, bullet 내 duplicate/missing canonical input, section-only/out-of-range, duplicate/missing owner·row, 같은 input의 untrusted Summary/item projection, 이미 conflict basis |""",
+          )
+
+          replace_once(
+              changelog,
+              """  underscore/dot suffix lookalike는 세지 않는다. 질문·불확실성·marker별 부정은 local clause에서 억제해 unrelated clause의
+  negation이 valid marker를 숨기지 않게 했고, 같은 input Summary hard-invalid는 candidate-local suppress한다.""",
+              """  underscore/dot suffix lookalike는 세지 않는다. marker와 explicit other input ID는 같은 high-confidence relation
+  clause에 있어야 하며 sentence/semicolon, `, while|whereas|although|though`, Korean 독립 연결어와 중립 서술
+  연결형을 경계로 사용한다. 질문·증거 부재·가정·불확실성·추정·marker별 부정은 local clause에서 억제해 unrelated
+  clause의 polarity가 valid marker를 숨기지 않게 했고, 같은 input Summary hard-invalid는 candidate-local suppress한다.""",
+          )
+
+          replace_once(
+              roadmap,
+              """> unique resolution을 사용해 파일명·URL·noncanonical lookalike를 배제하고, 같은 input의 `summaryTrust`를 요구하며,
+> 질문·불확실성·marker별 부정을 local clause에서 판정한다.""",
+              """> unique resolution을 사용해 파일명·URL·noncanonical lookalike를 배제하고, 같은 input의 `summaryTrust`를 요구한다.
+> marker와 explicit other input ID는 같은 high-confidence relation clause에 있어야 하며 sentence/semicolon,
+> `, while|whereas|although|though`, Korean 독립 연결어와 중립 서술 연결형을 경계로 사용한다. 질문·증거 부재·
+> 가정·불확실성·추정·marker별 부정은 local clause에서 판정한다.""",
+          )
+          PY
+
+          git diff --check
+          (
+            cd frontend-workflow-kit
+            npm ci
+            node --test scripts/lib/reconciliation-warnings.test.mjs scripts/lib/reconciliation-items.test.mjs
+          )
+
+          git rm -f .github/workflows/pr217-coordination-precision-fix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend-workflow-kit/scripts/lib/reconciliation-warnings.mjs \
+            frontend-workflow-kit/scripts/lib/reconciliation-warnings.test.mjs \
+            frontend-workflow-kit/scripts/lib/reconciliation-items.test.mjs \
+            frontend-workflow-kit/docs/reference/input-reconciliation.md \
+            kit-dev/docs/design/drafts/issue-202-reconciliation-contract-v2.md \
+            kit-dev/CHANGELOG.md kit-dev/roadmap-current.md \
+            .github/workflows/pr217-coordination-precision-fix.yml
+          git commit -m "fix(reconciliation): isolate coordinated route relations"
+          IMPLEMENTATION_SHA="$(git rev-parse HEAD)"
+
+          IMPLEMENTATION_SHA="$IMPLEMENTATION_SHA" python3 - <<'PY'
+          from pathlib import Path
+          import os
+
+          sha = os.environ['IMPLEMENTATION_SHA']
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one witness replacement, got {count}')
+              p.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          report = 'kit-dev/temp/runs/issue-202-reconciliation-dogfood-001.md'
+          readme = 'kit-dev/temp/runs/issue-202-reconciliation-dogfood-001/README.md'
+
+          replace_once(
+              report,
+              "> current clause-coupled route-precision implementation/tests witness: `b1624bcd4fab8e291b99176afba3f2a11a00a6f4`\n> reviewed implementation HEAD: `b1624bcd4fab8e291b99176afba3f2a11a00a6f4` (subsequent evidence-metadata-only commits do not alter analyzer/tests)",
+              "> prior clause-coupled route-precision witness: `b1624bcd4fab8e291b99176afba3f2a11a00a6f4`\n> current coordination/epistemic precision implementation/tests witness: `" + sha + "`\n> reviewed implementation HEAD: `" + sha + "` (subsequent evidence-metadata-only commits do not alter analyzer/tests)",
+          )
+          replace_once(
+              readme,
+              "- current clause-coupled route-precision implementation/tests witness: `b1624bcd4fab8e291b99176afba3f2a11a00a6f4`\n- reviewed implementation HEAD: `b1624bcd4fab8e291b99176afba3f2a11a00a6f4`; later evidence-metadata-only commits do not alter analyzer/tests",
+              "- prior clause-coupled route-precision witness: `b1624bcd4fab8e291b99176afba3f2a11a00a6f4`\n- current coordination/epistemic precision implementation/tests witness: `" + sha + "`\n- reviewed implementation HEAD: `" + sha + "`; later evidence-metadata-only commits do not alter analyzer/tests",
+          )
+          PY
+
+          git diff --check
+          git add kit-dev/temp/runs/issue-202-reconciliation-dogfood-001.md \
+            kit-dev/temp/runs/issue-202-reconciliation-dogfood-001/README.md
+          git commit -m "docs(dogfood): record coordination precision witness"
+          git push origin "HEAD:codex/issue-202c-reconciliation-warnings"
