@@ -14,9 +14,11 @@
   `INPUT_ID_PATTERN`을 사용하고 shared input index에서 unique하게 해소되는 ID만 센다. 파일명·path/query/URI·
   noncanonical lookalike는 배제하며, 같은 input의 `summaryTrust`가 false면 candidate-local suppress한다. bullet의
   canonical-looking ID 하나라도 missing/duplicate이면 fail-closed하고, marker 후보와 explicit other input ID는 같은
-  high-confidence relation clause에 있어야 한다. sentence/semicolon뿐 아니라 `, while|whereas|although|though`,
-  `한편|반대로|그와 별개로`, `동일하고,`/`참고하며` 같은 중립 서술 coordination을 경계로 보며 plain `and`/`와`는
-  관계 내부에 유지한다. marker 후보는 source order로 평가하며 질문·증거 부재·가정·불확실성·추정·공통/marker별
+  high-confidence relation clause에 있어야 한다. sentence/semicolon뿐 아니라 선행·후치·무쉼표
+  `while|whereas|although|though`, `, and`, `한편|반대로|그와 별개로`,
+  `동일하고|동일하나|동일하면서|동일한데|참고하며|참고하면서|참고하는데` 같은 중립 서술 coordination을
+  경계로 보며 plain `and`/`와`는 관계 내부에 유지한다. marker 후보는 source order로 평가하며 질문·증거 부족·
+  가정·불확실성·추정·공통/marker별
   부정을 clause-local로 판정한다.
 - visual behavior leakage keyword warning은 초기 202-C에서 제외한다. 선언된
   `Basis=visual-evidence`의 behavior target은 이미 `RR-ROUTE-004` hard rule이 소유하고, 자유서술 keyword만으로

@@ -156,6 +156,7 @@ const QUESTION_PATTERNS = [
   /양립할\s+수\s+없(?:는지|는가)/u,
   /\bwhether\b/iu,
   /\b(?:unclear|unknown|undetermined)\b.{0,48}\b(?:whether|if)\b/iu,
+  /\bnot\s+clear\b.{0,48}\b(?:whether|if)\b/iu,
   /\b(?:check|determine|verify|confirm|assess|test|find\s+out|wonder|ask|inquire|investigate)\b.{0,48}\b(?:whether|if)\b/iu,
   /^\s*(?:q(?:uestion)?\s*[:：-]\s*)?(?:are|is|do|does|did|can|could|would|should|was|were)\b/iu,
 ];
@@ -163,11 +164,11 @@ const UNCERTAINTY_PATTERNS = [
   /가능성/u,
   /아마/u,
   /추정/u,
-  /(?:불명확|확실하지\s*않|판단하기\s*어렵)/u,
+  /(?:불명확|명확하지\s*않|확실하지\s*않|판단하기\s*어렵|추측)/u,
   /(?:충돌|상충|모순|양립\s*불가)(?:할|일)?\s*수\s*있/u,
   /(?:충돌|상충|모순|양립\s*불가)(?:할|일)?\s*수도\s*있/u,
   /(?:충돌|상충|모순|양립\s*불가)(?:할|일)?지도\s*모른/u,
-  /\b(?:possible|possibly|potentially|apparently|likely|probably|presumably|allegedly)\b/iu,
+  /\b(?:possible|possibly|potentially|apparently|likely|probably|presumably|allegedly|supposedly|reportedly)\b/iu,
   /\b(?:may|might|would)\b/iu,
   /\b(?:unlikely|not\s+known)\s+to\b/iu,
   /\b(?:can|could)\s+(?:potentially\s+)?(?:conflict|contradict)\b/iu,
@@ -178,8 +179,10 @@ const UNCERTAINTY_PATTERNS = [
 const COMMON_DENIAL_PATTERNS = [
   /\bnot\s+true\s+that\b/iu,
   /\bno\s+(?:evidence|proof|indication)\s+(?:that|of)\b/iu,
+  /\b(?:insufficient|little|weak)\s+(?:evidence|proof|indication)\s+(?:that|of)\b/iu,
   /\b(?:cannot|can['’]t|could\s+not|couldn['’]t)\s+(?:say|claim|conclude|assert|determine)\s+(?:that\s+)?/iu,
   /(?:근거|증거)\s*(?:가|는|도)?\s*없/u,
+  /(?:근거|증거).{0,16}(?:부족|충분하지\s*않)/u,
   /(?:충돌|상충|모순|양립\s*불가)(?:한|한다고|이라고)?\s*것은\s*아니/u,
   /(?:충돌|상충|모순|양립\s*불가).{0,24}(?:단정|말|주장|결론).{0,16}(?:할|내릴)\s*수\s*없/u,
   /(?:충돌|상충|모순|양립\s*불가).{0,24}(?:보|볼)\s*수\s*없/u,
@@ -208,30 +211,78 @@ function markerOccurrences(text, pattern) {
   return matches;
 }
 
+function relationBoundaries(text) {
+  const boundaries = [];
+  const addMatches = (pattern, kind) => {
+    const flags = pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`;
+    const matcher = new RegExp(pattern.source, flags);
+    let match;
+    while ((match = matcher.exec(text)) !== null) {
+      boundaries.push({
+        start: match.index,
+        end: match.index + match[0].length,
+        kind,
+      });
+      if (match[0] === '') matcher.lastIndex += 1;
+    }
+  };
+
+  addMatches(/[.!?。！？;\n]+/gu, 'punctuation');
+  addMatches(/,\s*(?:and|but|however|yet|while|whereas|although|though)\b/giu, 'coordination');
+  addMatches(/\b(?:but|however|yet|while|whereas|although|though)\b/giu, 'coordination');
+  addMatches(/(?:하지만|그러나|반면|한편|반대로|그와\s+별개로)/gu, 'coordination');
+  addMatches(
+    /(?:동일하|같|일치하|호환되|부합하|참고하|참조하|따르|관련되|기반하|유지되)(?:고|며|지만|나|으나|면서|으면서),?\s*/gu,
+    'coordination',
+  );
+  addMatches(
+    /(?:동일한데|같은데|참고하는데|참조하는데|따르는데|관련되는데|기반하는데|유지되는데),?\s*/gu,
+    'coordination',
+  );
+
+  // A sentence-leading subordinate connector has two relation boundaries:
+  // the connector itself and the comma closing its subordinate span. The
+  // second boundary makes marker selection symmetric on both sides.
+  const leading = /^\s*(?:while|whereas|although|though)\b[^,;.!?。！？]{0,160},\s*/iu.exec(text);
+  if (leading) {
+    const commaOffset = leading[0].lastIndexOf(',');
+    if (commaOffset >= 0) {
+      boundaries.push({
+        start: leading.index + commaOffset,
+        end: leading.index + leading[0].length,
+        kind: 'coordination',
+      });
+    }
+  }
+
+  boundaries.sort(
+    (a, b) =>
+      a.start - b.start ||
+      a.end - b.end ||
+      stableCompare(a.kind, b.kind),
+  );
+  return boundaries.filter(
+    (boundary, index) =>
+      index === 0 ||
+      boundary.start !== boundaries[index - 1].start ||
+      boundary.end !== boundaries[index - 1].end ||
+      boundary.kind !== boundaries[index - 1].kind,
+  );
+}
+
 function clauseAroundMarker(text, markerStart, markerEnd) {
   let left = 0;
   let right = text.length;
-  // Precision-first relation boundaries. Keep plain `and`/`와` inside a
-  // relation, but stop at high-confidence independent-clause coordination.
-  const boundaries = new RegExp(
-    [
-      String.raw`[.!?。！？;\n]+`,
-      String.raw`,\s*(?:but|however|yet|while|whereas|although|though)\b`,
-      String.raw`\b(?:but|however|yet)\b`,
-      String.raw`(?:하지만|그러나|반면|한편|반대로|그와\s+별개로)`,
-      String.raw`(?:동일하|같|일치하|호환되|부합하|참고하|참조하|따르|관련되|기반하|유지되)(?:고|며|지만),?\s*`,
-    ].join('|'),
-    'giu',
-  );
-  let match;
-  while ((match = boundaries.exec(text)) !== null) {
-    const boundaryEnd = match.index + match[0].length;
-    if (boundaryEnd <= markerStart) {
-      left = boundaryEnd;
+  for (const boundary of relationBoundaries(text)) {
+    if (boundary.end <= markerStart) {
+      left = Math.max(left, boundary.end);
       continue;
     }
-    if (match.index >= markerEnd) {
-      right = boundaryEnd;
+    if (boundary.start >= markerEnd) {
+      right = Math.min(
+        right,
+        boundary.kind === 'punctuation' ? boundary.end : boundary.start,
+      );
       break;
     }
   }

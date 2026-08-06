@@ -502,9 +502,10 @@ Contract v2의 deterministic 검사가 끝난 뒤, 기존 warning 뒤에 다음 
   `상충`, `양립 불가`, `양립할 수 없`, `서로 모순`, `동시에 만족할 수 없`; English marker는 `conflict`,
   `conflicts with`, `contradict`, `contradicts`, `contradictory`, `mutually exclusive`, `incompatible`,
   `cannot both`다. marker와 explicit other input ID는 같은 high-confidence relation clause에 있어야 한다.
-  sentence/semicolon 외에도 `, while|whereas|although|though`, `한편|반대로|그와 별개로`,
-  `동일하고,`/`참고하며` 같은 중립 서술 연결형을 경계로 보되 plain `and`/`와`는 관계 내부에 유지한다.
-  질문·증거 부재·가정·불확실성·추정·명시적 부정은 marker가 놓인 local clause에서 판정하므로, 다른 clause의
+  sentence/semicolon 외에도 선행·후치·무쉼표 `while|whereas|although|though`, `, and`,
+  `한편|반대로|그와 별개로`, `동일하고|동일하나|동일하면서|동일한데|참고하며|참고하면서|참고하는데` 같은
+  high-confidence coordination을 경계로 보되 plain `and`/`와`는 관계 내부에 유지한다. 질문·증거 부족·
+  가정·불확실성·추정·명시적 부정은 marker가 놓인 local clause에서 판정하므로, 다른 clause의
   unrelated polarity는 실제 affirmative marker를 숨기지 않는다. `different`/`mismatch`/`vs`/`불일치` 같은
   약한 표현은 억제한다. 같은 input의 untrusted Summary는 candidate-local suppress하지만, 다른 input의 hard error로
   모든 analyzer를 전역 disable하지 않는다. reviewer는 실제 input↔input 충돌인지와
