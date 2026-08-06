@@ -23,6 +23,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          script = Path('.codex/pr217-structured-semantic-fix.py')
+          text = script.read_text(encoding='utf-8')
+          old = 'updated, count = re.subn(pattern, replacement, text, count=1, flags=flags)'
+          new = 'updated, count = re.subn(pattern, lambda _match: replacement, text, count=1, flags=flags)'
+          if old not in text:
+              raise SystemExit('applicator replacement line not found')
+          script.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
           python3 .codex/pr217-structured-semantic-fix.py
           git diff --check
           (
