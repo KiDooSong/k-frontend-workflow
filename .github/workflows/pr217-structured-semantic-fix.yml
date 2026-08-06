@@ -1,0 +1,39 @@
+name: pr217-structured-semantic-fix
+
+on:
+  push:
+    branches:
+      - codex/issue-202c-reconciliation-warnings
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/issue-202c-reconciliation-warnings
+          fetch-depth: 0
+
+      - name: Apply structured-token masking and relation-span review fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .codex/pr217-structured-semantic-fix.py
+          git diff --check
+          (
+            cd frontend-workflow-kit
+            npm ci
+            node --test scripts/lib/reconciliation-warnings.test.mjs scripts/lib/reconciliation-items.test.mjs
+          )
+          git rm -f .github/workflows/pr217-structured-semantic-fix.yml
+          git rm -r -f .codex
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(reconciliation): mask structured tokens in route semantics"
+          git push origin "HEAD:codex/issue-202c-reconciliation-warnings"
