@@ -44,6 +44,26 @@ jobs:
           script.write_text(text, encoding='utf-8')
           PY
           python3 .codex/pr217-structured-semantic-fix.py
+          python3 - <<'PY'
+          from pathlib import Path
+          file = Path('frontend-workflow-kit/scripts/lib/reconciliation-items.test.mjs')
+          text = file.read_text(encoding='utf-8')
+          replacements = [
+              (
+                  'IN-20260720-figma-001, IN-20260601-planning-001, and this input conflict.',
+                  'IN-20260720-figma-001, IN-20260720-meeting-001, and this input conflict.',
+              ),
+              (
+                  'IN-20260720-figma-001, IN-20260601-planning-001, and IN-20260720-meeting-001 are mutually exclusive.',
+                  'IN-20260720-figma-001, IN-20260720-meeting-001, and current input are mutually exclusive.',
+              ),
+          ]
+          for old, new in replacements:
+              if old not in text:
+                  raise SystemExit(f'integration fixture target not found: {old}')
+              text = text.replace(old, new, 1)
+          file.write_text(text, encoding='utf-8')
+          PY
           git diff --check
           (
             cd frontend-workflow-kit
