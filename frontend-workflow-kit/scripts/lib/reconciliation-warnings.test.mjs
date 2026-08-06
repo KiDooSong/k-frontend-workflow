@@ -11,6 +11,9 @@ import {
 const CURRENT_INPUT_ID = 'IN-20260803-meeting-001';
 const OTHER_INPUT_ID = 'IN-20260731-planning-003';
 const THIRD_INPUT_ID = 'IN-20260801-policy-004';
+const CONFLICT_SOURCE_INPUT_ID = 'IN-20260731-conflict-003';
+const WHILE_SOURCE_INPUT_ID = 'IN-20260731-while-003';
+const MAY_SOURCE_INPUT_ID = 'IN-20260731-may-003';
 const UNRELATED_INPUT_ID = 'IN-20260803-qa-002';
 const GROUP_KEY = `${CURRENT_INPUT_ID}\0${'01'}`;
 
@@ -297,6 +300,9 @@ test('RR-ROUTE-101 isolates high-confidence coordination boundaries without brea
     `${OTHER_INPUT_ID}은 현재 정책과 동일하다. 한편 별도 UI 옵션 두 개는 서로 충돌한다.`,
     `${OTHER_INPUT_ID}은 현재 정책과 동일하다. 반대로 별도 UI 옵션 두 개는 서로 충돌한다.`,
     `${OTHER_INPUT_ID}은 현재 정책과 동일하다. 그와 별개로 별도 UI 옵션 두 개는 서로 충돌한다.`,
+    `Context. While ${OTHER_INPUT_ID} is compatible, the two local UI options conflict.`,
+    `Context; Although ${OTHER_INPUT_ID} is compatible, the two local UI options conflict.`,
+    `첫 사실이다. Whereas ${OTHER_INPUT_ID} is compatible, the cache options conflict.`,
   ]) {
     assert.equal(routeWarnings({ evidenceText }).length, 0, evidenceText);
   }
@@ -312,6 +318,59 @@ test('RR-ROUTE-101 isolates high-confidence coordination boundaries without brea
     routeWarnings({ evidenceText: `기존 ${OTHER_INPUT_ID} 정책과 충돌한다.` }).length,
     1,
   );
+  assert.equal(
+    routeWarnings({ evidenceText: `Context. ${OTHER_INPUT_ID} conflicts with this input.` }).length,
+    1,
+  );
+  assert.equal(
+    routeWarnings({
+      evidenceText: `${OTHER_INPUT_ID}, ${THIRD_INPUT_ID}, and this input conflict.`,
+      extraArtifacts: [inputArtifact(THIRD_INPUT_ID, ['unique third input'])],
+    }).length,
+    1,
+  );
+  assert.equal(
+    routeWarnings({
+      evidenceText:
+        `${OTHER_INPUT_ID}, ${THIRD_INPUT_ID}, and ${CURRENT_INPUT_ID} are mutually exclusive.`,
+      extraArtifacts: [inputArtifact(THIRD_INPUT_ID, ['unique third input'])],
+    }).length,
+    1,
+  );
+});
+
+test('RR-ROUTE-101 masks identifiers and structured tokens before semantic analysis', () => {
+  assert.equal(
+    routeWarnings({
+      evidenceText: `기존 ${CONFLICT_SOURCE_INPUT_ID} 문서를 참고한다.`,
+      includeOtherInput: false,
+      extraArtifacts: [inputArtifact(CONFLICT_SOURCE_INPUT_ID, ['identifier marker control'])],
+    }).length,
+    0,
+  );
+
+  for (const evidenceText of [
+    `${OTHER_INPUT_ID}은 /api/conflict 엔드포인트를 사용한다.`,
+    `${OTHER_INPUT_ID}의 mode=conflict 값을 확인한다.`,
+  ]) {
+    assert.equal(routeWarnings({ evidenceText }).length, 0, evidenceText);
+  }
+
+  for (const inputId of [
+    CONFLICT_SOURCE_INPUT_ID,
+    WHILE_SOURCE_INPUT_ID,
+    MAY_SOURCE_INPUT_ID,
+  ]) {
+    assert.equal(
+      routeWarnings({
+        evidenceText: `${inputId} conflicts with this input.`,
+        includeOtherInput: false,
+        extraArtifacts: [inputArtifact(inputId, ['structured token positive'])],
+      }).length,
+      1,
+      inputId,
+    );
+  }
 });
 
 test('canonical input extraction reuses the exact input contract and rejects path/suffix lookalikes', () => {

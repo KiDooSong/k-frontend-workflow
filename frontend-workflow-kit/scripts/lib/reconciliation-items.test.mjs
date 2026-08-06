@@ -2545,6 +2545,11 @@ test('RR-ROUTE-101: proper conflict routing, weak/question/negative/non-visible 
     ['- Although IN-20260720-figma-001 is compatible, the two local UI options conflict.'],
     ['- IN-20260720-figma-001 is compatible while the two local UI options conflict.'],
     ['- IN-20260720-figma-001 is compatible, and the two local UI options conflict.'],
+    ['- Context. While IN-20260720-figma-001 is compatible, the two local UI options conflict.'],
+    ['- Context; Although IN-20260720-figma-001 is compatible, the two local UI options conflict.'],
+    ['- 첫 사실이다. Whereas IN-20260720-figma-001 is compatible, the cache options conflict.'],
+    ['- IN-20260720-figma-001은 /api/conflict 엔드포인트를 사용한다.'],
+    ['- IN-20260720-figma-001의 mode=conflict 값을 확인한다.'],
     ['- IN-20260720-figma-001은 현재 정책과 동일하나 별도 UI 옵션 두 개는 서로 충돌한다.'],
     ['- IN-20260720-figma-001은 현재 정책과 동일하면서 별도 UI 옵션 두 개는 서로 충돌한다.'],
     ['- IN-20260720-figma-001은 현재 정책과 동일한데 별도 UI 옵션 두 개는 서로 충돌한다.'],
@@ -2579,6 +2584,15 @@ test('RR-ROUTE-101: proper conflict routing, weak/question/negative/non-visible 
   const laterWarnings = warningMessagesByCode(laterValidClause, 'RR-ROUTE-101');
   assert.equal(laterWarnings.length, 1);
   assert.match(laterWarnings[0], /marker '상충'/);
+
+  for (const facts of [
+    ['- Context. IN-20260720-figma-001 conflicts with this input.'],
+    ['- IN-20260720-figma-001, IN-20260720-meeting-001, and this input conflict.'],
+    ['- IN-20260720-figma-001, IN-20260720-meeting-001, and current input are mutually exclusive.'],
+  ]) {
+    const result = runScopeUnknown(t, facts);
+    assert.equal(warningMessagesByCode(result, 'RR-ROUTE-101').length, 1, facts.join(' / '));
+  }
 
   const sectionOnly = runScopeUnknown(t, ['- 기존 IN-20260720-figma-001 정책과 충돌한다.'], {
     itemRows: [

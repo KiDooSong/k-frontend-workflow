@@ -211,13 +211,101 @@ function markerOccurrences(text, pattern) {
   return matches;
 }
 
-function relationBoundaries(text) {
+function inputIdentifierSpans(text) {
+  const spans = [];
+  const candidates = /(^|[^A-Za-z0-9._-])(IN-[A-Za-z0-9._-]+)/g;
+  let match;
+  while ((match = candidates.exec(text)) !== null) {
+    const token = match[2].replace(/\.+$/u, '');
+    if (!token) continue;
+    const start = match.index + match[1].length;
+    spans.push({ start, end: start + token.length, kind: 'input-id' });
+  }
+  return spans;
+}
+
+function structuredTokenSpans(text) {
+  const spans = [];
+  const tokens = /\S+/gu;
+  let match;
+  while ((match = tokens.exec(text)) !== null) {
+    const segment = match[0];
+    let left = 0;
+    let right = segment.length;
+    while (left < right && /[([{<"'`]/u.test(segment[left])) left += 1;
+    while (right > left && /[)\]}>"'`,.!?;:。！？；，]/u.test(segment[right - 1])) right -= 1;
+    const core = segment.slice(left, right);
+    if (!core) continue;
+    const structured =
+      /[\\/]/u.test(core) ||
+      /^[A-Za-z][A-Za-z0-9+.-]*:[^\s]+$/u.test(core) ||
+      /^[?&][^\s=&#?]+=/u.test(core) ||
+      /(?:^|[?&])[^\s=&#?]+=/u.test(core) ||
+      /^[^\s=]+=[^\s=]+$/u.test(core) ||
+      /\.[A-Za-z0-9_-]{1,16}(?:[?#].*)?$/u.test(core);
+    if (!structured) continue;
+    spans.push({
+      start: match.index + left,
+      end: match.index + right,
+      kind: 'structured-token',
+    });
+  }
+  return spans;
+}
+
+function semanticAnalysisText(text) {
+  const chars = text.split('');
+  const spans = [...inputIdentifierSpans(text), ...structuredTokenSpans(text)]
+    .sort((a, b) => a.start - b.start || b.end - a.end || stableCompare(a.kind, b.kind));
+  for (const span of spans) {
+    for (let index = span.start; index < span.end; index += 1) {
+      if (!/\s/u.test(chars[index])) chars[index] = ' ';
+    }
+  }
+  return chars.join('');
+}
+
+function canonicalInputStartsAt(text, start) {
+  const whitespace = /^\s*/u.exec(text.slice(start))?.[0].length || 0;
+  const tokenStart = start + whitespace;
+  const match = /^IN-[A-Za-z0-9._-]+/u.exec(text.slice(tokenStart));
+  if (!match) return false;
+  return INPUT_ID_PATTERN.test(match[0].replace(/\.+$/u, ''));
+}
+
+function currentInputDeicticStartsAt(text, start) {
+  const whitespace = /^\s*/u.exec(text.slice(start))?.[0].length || 0;
+  return /^(?:(?:the\s+)?(?:current|this)\s+input|this\s+reconciliation\s+input|현재\s*입력|이\s*입력)(?=$|[\s,.;!?。！？])/iu
+    .test(text.slice(start + whitespace));
+}
+
+function sentenceStartBefore(text, offset) {
+  let start = 0;
+  const boundaries = /[.!?。！？;]+/gu;
+  let match;
+  while ((match = boundaries.exec(text.slice(0, offset))) !== null) {
+    start = match.index + match[0].length;
+  }
+  return start;
+}
+
+function commaAndIsSerialInputList(text, commaStart, connectorEnd) {
+  const left = text.slice(sentenceStartBefore(text, commaStart), commaStart);
+  if (extractCanonicalInputIds(left).length < 2) return false;
+  const residue = semanticAnalysisText(left)
+    .replace(/\b(?:and|or)\b/giu, '')
+    .replace(/[\s,]+/gu, '');
+  if (residue) return false;
+  return canonicalInputStartsAt(text, connectorEnd) || currentInputDeicticStartsAt(text, connectorEnd);
+}
+
+function relationBoundaries(text, semanticText) {
   const boundaries = [];
   const addMatches = (pattern, kind) => {
     const flags = pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`;
     const matcher = new RegExp(pattern.source, flags);
     let match;
-    while ((match = matcher.exec(text)) !== null) {
+    while ((match = matcher.exec(semanticText)) !== null) {
       boundaries.push({
         start: match.index,
         end: match.index + match[0].length,
@@ -228,8 +316,18 @@ function relationBoundaries(text) {
   };
 
   addMatches(/[.!?。！？;\n]+/gu, 'punctuation');
-  addMatches(/,\s*(?:and|but|however|yet|while|whereas|although|though)\b/giu, 'coordination');
+  addMatches(/,\s*(?:but|however|yet|while|whereas|although|though)\b/giu, 'coordination');
   addMatches(/\b(?:but|however|yet|while|whereas|although|though)\b/giu, 'coordination');
+
+  const commaAnd = /,\s*and\b/giu;
+  let commaAndMatch;
+  while ((commaAndMatch = commaAnd.exec(semanticText)) !== null) {
+    const end = commaAndMatch.index + commaAndMatch[0].length;
+    if (!commaAndIsSerialInputList(text, commaAndMatch.index, end)) {
+      boundaries.push({ start: commaAndMatch.index, end, kind: 'coordination' });
+    }
+  }
+
   addMatches(/(?:하지만|그러나|반면|한편|반대로|그와\s+별개로)/gu, 'coordination');
   addMatches(
     /(?:동일하|같|일치하|호환되|부합하|참고하|참조하|따르|관련되|기반하|유지되)(?:고|며|지만|나|으나|면서|으면서),?\s*/gu,
@@ -240,19 +338,28 @@ function relationBoundaries(text) {
     'coordination',
   );
 
-  // A sentence-leading subordinate connector has two relation boundaries:
-  // the connector itself and the comma closing its subordinate span. The
-  // second boundary makes marker selection symmetric on both sides.
-  const leading = /^\s*(?:while|whereas|although|though)\b[^,;.!?。！？]{0,160},\s*/iu.exec(text);
-  if (leading) {
+  // Apply the leading-subordinate closing-comma rule independently inside
+  // every sentence/semicolon span, not only at the beginning of the bullet.
+  const spans = [];
+  let spanStart = 0;
+  const sentenceEnd = /[.!?。！？;]+/gu;
+  let sentenceMatch;
+  while ((sentenceMatch = sentenceEnd.exec(semanticText)) !== null) {
+    spans.push({ start: spanStart, end: sentenceMatch.index });
+    spanStart = sentenceMatch.index + sentenceMatch[0].length;
+  }
+  spans.push({ start: spanStart, end: semanticText.length });
+  for (const span of spans) {
+    const segment = semanticText.slice(span.start, span.end);
+    const leading = /^\s*(?:while|whereas|although|though)\b[^,]{0,160},\s*/iu.exec(segment);
+    if (!leading) continue;
     const commaOffset = leading[0].lastIndexOf(',');
-    if (commaOffset >= 0) {
-      boundaries.push({
-        start: leading.index + commaOffset,
-        end: leading.index + leading[0].length,
-        kind: 'coordination',
-      });
-    }
+    if (commaOffset < 0) continue;
+    boundaries.push({
+      start: span.start + commaOffset,
+      end: span.start + leading[0].length,
+      kind: 'coordination',
+    });
   }
 
   boundaries.sort(
@@ -270,10 +377,10 @@ function relationBoundaries(text) {
   );
 }
 
-function clauseAroundMarker(text, markerStart, markerEnd) {
+function clauseAroundMarker(text, semanticText, markerStart, markerEnd) {
   let left = 0;
   let right = text.length;
-  for (const boundary of relationBoundaries(text)) {
+  for (const boundary of relationBoundaries(text, semanticText)) {
     if (boundary.end <= markerStart) {
       left = Math.max(left, boundary.end);
       continue;
@@ -286,24 +393,32 @@ function clauseAroundMarker(text, markerStart, markerEnd) {
       break;
     }
   }
-  return { text: text.slice(left, right).trim(), start: left, end: right };
+  while (left < right && /\s/u.test(text[left])) left += 1;
+  while (right > left && /\s/u.test(text[right - 1])) right -= 1;
+  return {
+    text: text.slice(left, right),
+    semanticText: semanticText.slice(left, right),
+    start: left,
+    end: right,
+  };
 }
 
 function markerPolarityContext(clause, markerStart, markerLength) {
   const localStart = Math.max(0, markerStart - clause.start);
-  return clause.text.slice(
+  return clause.semanticText.slice(
     Math.max(0, localStart - 40),
-    Math.min(clause.text.length, localStart + markerLength + 56),
+    Math.min(clause.semanticText.length, localStart + markerLength + 56),
   );
 }
 
 export function findAffirmativeConflictClauses(value) {
   const text = normalizedProse(value);
   if (!text) return [];
+  const semanticText = semanticAnalysisText(text);
 
   const occurrences = [];
   AFFIRMATIVE_CONFLICT_MARKERS.forEach((marker, markerOrder) => {
-    for (const occurrence of markerOccurrences(text, marker.pattern)) {
+    for (const occurrence of markerOccurrences(semanticText, marker.pattern)) {
       occurrences.push({ marker, markerOrder, ...occurrence });
     }
   });
@@ -319,12 +434,13 @@ export function findAffirmativeConflictClauses(value) {
     const { marker } = occurrence;
     const clause = clauseAroundMarker(
       text,
+      semanticText,
       occurrence.index,
       occurrence.index + occurrence.text.length,
     );
     if (
       [...QUESTION_PATTERNS, ...UNCERTAINTY_PATTERNS, ...COMMON_DENIAL_PATTERNS]
-        .some((pattern) => pattern.test(clause.text))
+        .some((pattern) => pattern.test(clause.semanticText))
     ) {
       continue;
     }
