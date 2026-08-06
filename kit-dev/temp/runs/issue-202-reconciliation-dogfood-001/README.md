@@ -11,6 +11,7 @@ Witness sequence:
 - prior symmetric leading-coordination/epistemic implementation/tests witness: `9cc8ba3a368a705001c6f15cd81803cb54e477ed`
 - current structured-token semantic-view/relation-span implementation/tests witness: `fae71c31c136349a0e15a8425e1992a44906dcbc`
 - report witness synchronization: `b63132ca5189edbace3ca6b8829347d196def214`
+- structured semantic documentation synchronization: `24254a52843402ae6ebc5c53d675417f31603eca`
 - reviewed implementation HEAD: `fae71c31c136349a0e15a8425e1992a44906dcbc`; subsequent documentation/metadata-only commits do not alter analyzer/tests
 
 - `corpus-before/`: frozen implementation candidates and controls
