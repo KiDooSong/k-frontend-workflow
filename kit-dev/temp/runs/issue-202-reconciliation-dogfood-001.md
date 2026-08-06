@@ -9,8 +9,9 @@
 > prior route-precision witness: `40e6e58ba9b9e2aac292c3635cdd0ac0377321fd`
 > prior clause-coupled route-precision witness: `b1624bcd4fab8e291b99176afba3f2a11a00a6f4`
 > prior coordination-boundary/epistemic precision implementation/tests witness: `3de27895de4eadaed64329e115dccc9b40b96c48`
-> current symmetric leading-coordination/epistemic implementation/tests witness: `9cc8ba3a368a705001c6f15cd81803cb54e477ed`
-> reviewed implementation HEAD: `9cc8ba3a368a705001c6f15cd81803cb54e477ed` (subsequent evidence-metadata-only commits do not alter analyzer/tests)
+> prior symmetric leading-coordination/epistemic implementation/tests witness: `9cc8ba3a368a705001c6f15cd81803cb54e477ed`
+> current structured-token semantic-view/relation-span implementation/tests witness: `fae71c31c136349a0e15a8425e1992a44906dcbc`
+> reviewed implementation HEAD: `fae71c31c136349a0e15a8425e1992a44906dcbc` (subsequent documentation/metadata-only commits do not alter analyzer/tests)
 > evidence bundle: [`issue-202-reconciliation-dogfood-001/`](issue-202-reconciliation-dogfood-001/)
 > status: **PARTIAL — implementation/model replay. Stale Result historical TP 1건은 평가 가능하지만 routing acceptance evidence와 실제 review-round 비교는 미완료**
 
