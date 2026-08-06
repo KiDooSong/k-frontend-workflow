@@ -1,15 +1,16 @@
 # Issue #202-C implementation replay — warning-only semantic drift analyzers
 
 > 최초 실행일: 2026-08-03
-> review correction: 2026-08-05
+> review correction: 2026-08-06
 > 범위: `RR-ROUTE-101`, `RR-STALE-101/102/103`의 frozen-corpus validator replay
 > baseline: `533d2a69a1cc3b4831b2ebbef7ff0a313ca4c4fe` (PR #216 merge commit)
 > stored treatment output snapshot: `3199f3f8706a86306c8bdaeb96d5e979f5064e0a`
 > initial precision review fix: `cd269fc98b48db9ab0fb039c003dd2efd3bdac42`
 > prior route-precision witness: `40e6e58ba9b9e2aac292c3635cdd0ac0377321fd`
 > prior clause-coupled route-precision witness: `b1624bcd4fab8e291b99176afba3f2a11a00a6f4`
-> current coordination-boundary/epistemic precision implementation/tests witness: `3de27895de4eadaed64329e115dccc9b40b96c48`
-> reviewed implementation HEAD: `3de27895de4eadaed64329e115dccc9b40b96c48` (subsequent evidence-metadata-only commits do not alter analyzer/tests)
+> prior coordination-boundary/epistemic precision implementation/tests witness: `3de27895de4eadaed64329e115dccc9b40b96c48`
+> current symmetric leading-coordination/epistemic implementation/tests witness: `9cc8ba3a368a705001c6f15cd81803cb54e477ed`
+> reviewed implementation HEAD: `9cc8ba3a368a705001c6f15cd81803cb54e477ed` (subsequent evidence-metadata-only commits do not alter analyzer/tests)
 > evidence bundle: [`issue-202-reconciliation-dogfood-001/`](issue-202-reconciliation-dogfood-001/)
 > status: **PARTIAL — implementation/model replay. Stale Result historical TP 1건은 평가 가능하지만 routing acceptance evidence와 실제 review-round 비교는 미완료**
 
