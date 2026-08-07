@@ -183,16 +183,63 @@ export function loadYaml(p) {
   return yamlParse(raw);
 }
 
+const LEGACY_WORKFLOW_STATE_MAX_ALIAS_COUNT = 10_000;
+
+function isAliasLimitError(err) {
+  return String(err && err.message ? err.message : err).startsWith('Excessive alias count ');
+}
+
+function isLegacyGeneratedWorkflowState(p, raw, err) {
+  if (path.basename(p) !== 'workflow-state.yaml') return false;
+  if (
+    !raw.startsWith('# GENERATED FILE — DO NOT EDIT\n') &&
+    !raw.startsWith('# GENERATED FILE — DO NOT EDIT\r\n')
+  ) {
+    return false;
+  }
+  const header = raw.slice(0, 4096);
+  if (!/(?:^|\r?\n)# Command: npm run workflow:state\r?(?:\n|$)/.test(header)) return false;
+  return isAliasLimitError(err);
+}
+
+function exitYamlParseError(p, label, tool, err) {
+  const message = err && err.message ? err.message : String(err);
+  process.stderr.write(`${tool}: ${label} YAML 파싱 실패 — ${p}\n  ${message}\n`);
+  process.exit(2);
+}
+
 // 손상된(파싱 실패) YAML 설정 파일을 exit 2(입력 오류)로 우아하게 처리한다.
 // 부재(파일 없음)는 loadYaml 이 null 을 돌려주므로 호출부가 별도 처리 — 여기선 "손상"만 잡는다.
-// forbidden-paths.mjs 가 먼저 쓰던 패턴을 공유화: readiness/validate 도 같은 exit 2 계약을 따른다
-// (이전엔 손상 설정에서 stack trace + exit 1 로 새, 도구마다 exit code 가 갈리던 비대칭을 해소).
+// 사용자 지정 policy/manifest/config 는 항상 yaml 기본 alias 보호(maxAliasCount=100)를 유지한다.
 export function loadYamlOrExit(p, label, tool = 'workflow') {
   try {
     return loadYaml(p);
   } catch (err) {
-    process.stderr.write(`${tool}: ${label} YAML 파싱 실패 — ${p}\n  ${err.message}\n`);
-    process.exit(2);
+    exitYamlParseError(p, label, tool, err);
+  }
+}
+
+// 과거 workflow:state emitter 가 만든 generated state 전용 호환 loader.
+// 호출자가 state boundary 를 명시적으로 선택해야만 fallback 하며, 위조 가능한 주석을 신뢰 근거로
+// 삼지 않는다. 헤더/명령은 legacy 형식 확인일 뿐이고 alias expansion 은 유한 상한으로 제한한다.
+export function loadGeneratedWorkflowStateOrExit(
+  p,
+  label = 'workflow-state',
+  tool = 'workflow',
+) {
+  try {
+    return loadYaml(p);
+  } catch (err) {
+    let parseError = err;
+    const raw = readFileSafe(p);
+    if (raw != null && isLegacyGeneratedWorkflowState(p, raw, err)) {
+      try {
+        return yamlParse(raw, { maxAliasCount: LEGACY_WORKFLOW_STATE_MAX_ALIAS_COUNT });
+      } catch (retryErr) {
+        parseError = retryErr;
+      }
+    }
+    exitYamlParseError(p, label, tool, parseError);
   }
 }
 
@@ -266,7 +313,9 @@ export function confidenceRank(c) {
 // 생성물 헤더 + 본문. 키 순서는 호출부가 제어하므로 sortMapEntries 는 쓰지 않는다.
 export function emitGeneratedYaml(headerLines, obj) {
   const header = headerLines.map((l) => (l ? `# ${l}` : '#')).join('\n');
-  const body = yamlStringify(obj, { lineWidth: 0 });
+  // 반복 provenance 객체를 anchor/alias 로 접으면 기본 parser(maxAliasCount=100)가 큰 프로젝트의
+  // 생성물을 거부할 수 있다. 생성 뷰는 명시적으로 전개해 사람이 읽기 쉽고 self-readable 하게 둔다.
+  const body = yamlStringify(obj, { lineWidth: 0, aliasDuplicateObjects: false });
   return `${header}\n${body}`;
 }
 

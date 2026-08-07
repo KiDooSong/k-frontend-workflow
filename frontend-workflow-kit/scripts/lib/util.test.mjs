@@ -11,7 +11,15 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { isCliEntry, removeFileIfExists } from './util.mjs';
+import {
+  emitGeneratedYaml,
+  isCliEntry,
+  loadGeneratedWorkflowStateOrExit,
+  loadYaml,
+  loadYamlOrExit,
+  removeFileIfExists,
+  yamlParse,
+} from './util.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const UTIL_PATH = path.join(HERE, 'util.mjs');
@@ -21,6 +29,36 @@ function tmpdir(t) {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-util-')));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   return dir;
+}
+
+function aliasHeavyWorkflowState(aliasCount = 101) {
+  return [
+    '# GENERATED FILE — DO NOT EDIT',
+    '# Command: npm run workflow:state',
+    'generated_at: 2026-08-07',
+    'global: {}',
+    'screens: {}',
+    'legacy:',
+    '  source: &source',
+    '    path: docs/frontend-workflow/domains/example/screen-spec.md',
+    '  copies:',
+    ...Array.from({ length: aliasCount }, () => '    - *source'),
+    '',
+  ].join('\n');
+}
+
+function nestedAliasBomb(width = 101) {
+  return [
+    '# GENERATED FILE — DO NOT EDIT',
+    '# Command: npm run workflow:state',
+    'generated_at: 2026-08-07',
+    'global: {}',
+    'screens: {}',
+    `leaf: &leaf [${Array.from({ length: width }, () => '0').join(', ')}]`,
+    `branch: &branch [${Array.from({ length: width }, () => '*leaf').join(', ')}]`,
+    `bomb: [${Array.from({ length: width }, () => '*branch').join(', ')}]`,
+    '',
+  ].join('\n');
 }
 
 // 디렉토리 symlink 생성 — win32 은 junction 을 쓰고(distribution.test.mjs 와 동일), symlink 자체가
@@ -51,6 +89,71 @@ function symlinkFileOrSkip(t, target, linkPath) {
     throw e;
   }
 }
+
+test('emitGeneratedYaml: repeated objects are expanded without YAML anchors or aliases', () => {
+  const shared = {
+    path: 'docs/frontend-workflow/domains/example/screen-spec.md',
+    line: 12,
+  };
+  const raw = emitGeneratedYaml(
+    ['GENERATED FILE — DO NOT EDIT'],
+    { sources: Array.from({ length: 120 }, () => shared) },
+  );
+
+  assert.doesNotMatch(raw, /&a\d+\b|\*a\d+\b/);
+  const parsed = yamlParse(raw);
+  assert.equal(parsed.sources.length, 120);
+  assert.deepEqual(parsed.sources[0], shared);
+});
+
+test('loadGeneratedWorkflowStateOrExit: legacy generated state above the default alias limit is readable', (t) => {
+  const dir = tmpdir(t);
+  const file = path.join(dir, 'workflow-state.yaml');
+  fs.writeFileSync(file, aliasHeavyWorkflowState(442), 'utf8');
+
+  assert.throws(() => loadYaml(file), /Excessive alias count/);
+  const state = loadGeneratedWorkflowStateOrExit(file, 'workflow-state', 'readiness');
+  assert.equal(state.legacy.copies.length, 442);
+  assert.deepEqual(state.legacy.copies[0], state.legacy.source);
+});
+
+test('loadYamlOrExit: policy/manifest named workflow-state.yaml cannot opt into the state fallback', (t) => {
+  const dir = tmpdir(t);
+  const file = path.join(dir, 'workflow-state.yaml');
+  fs.writeFileSync(file, aliasHeavyWorkflowState(), 'utf8');
+
+  for (const label of ['policy', 'manifest']) {
+    const script = [
+      `import { loadYamlOrExit } from ${JSON.stringify(pathToFileURL(UTIL_PATH).href)};`,
+      `loadYamlOrExit(${JSON.stringify(file)}, ${JSON.stringify(label)}, 'test');`,
+    ].join('\n');
+    const r = spawnSync(process.execPath, ['--input-type=module', '--eval', script], {
+      encoding: 'utf8',
+    });
+    assert.equal(r.status, 2, `${label} should keep the default alias limit`);
+    assert.equal(r.stdout, '');
+    assert.match(r.stderr, new RegExp(`test: ${label} YAML 파싱 실패`));
+    assert.match(r.stderr, /Excessive alias count/);
+  }
+});
+
+test('loadGeneratedWorkflowStateOrExit: nested alias expansion above the finite legacy cap is rejected', (t) => {
+  const dir = tmpdir(t);
+  const file = path.join(dir, 'workflow-state.yaml');
+  fs.writeFileSync(file, nestedAliasBomb(), 'utf8');
+  const script = [
+    `import { loadGeneratedWorkflowStateOrExit } from ${JSON.stringify(pathToFileURL(UTIL_PATH).href)};`,
+    `loadGeneratedWorkflowStateOrExit(${JSON.stringify(file)}, 'workflow-state', 'readiness');`,
+  ].join('\n');
+
+  const r = spawnSync(process.execPath, ['--input-type=module', '--eval', script], {
+    encoding: 'utf8',
+  });
+  assert.equal(r.status, 2);
+  assert.equal(r.stdout, '');
+  assert.match(r.stderr, /readiness: workflow-state YAML 파싱 실패/);
+  assert.match(r.stderr, /Excessive alias count/);
+});
 
 test('removeFileIfExists: missing path is a no-op and regular file is removed', (t) => {
   const dir = tmpdir(t);

@@ -41,6 +41,43 @@ function withTmpDir(fn) {
   }
 }
 
+function aliasHeavyWorkflowState(aliasCount = 442) {
+  return [
+    '# GENERATED FILE — DO NOT EDIT',
+    '# Command: npm run workflow:state',
+    'generated_at: 2026-08-07',
+    'global:',
+    '  navigation_map_status: missing',
+    '  component_catalog_generated: false',
+    '  stub_screen_specs_count: 0',
+    'screens: {}',
+    'legacy:',
+    '  source: &source',
+    '    path: docs/frontend-workflow/domains/example/screen-spec.md',
+    '  copies:',
+    ...Array.from({ length: aliasCount }, () => '    - *source'),
+    '',
+  ].join('\n');
+}
+
+test('forbidden-paths accepts legacy alias-heavy workflow-state through the shared state loader', () => {
+  withTmpDir((root) => {
+    const docs = path.join(root, 'docs', 'frontend-workflow');
+    const meta = path.join(docs, '_meta');
+    fs.mkdirSync(meta, { recursive: true });
+    fs.writeFileSync(path.join(meta, 'workflow-state.yaml'), aliasHeavyWorkflowState(), 'utf8');
+    const diff = path.join(root, 'safe.diff');
+    fs.writeFileSync(diff, 'M\tREADME.md\n', 'utf8');
+
+    const r = run(['--docs', docs, '--diff', diff, '--json']);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stderr, '');
+    const result = JSON.parse(r.stdout);
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.violations, []);
+  });
+});
+
 test('--help prints usage to stdout and exits 0 — even in an empty dir without state/policy, without git, without writes', () => {
   withTmpDir((root) => {
     // cwd 를 빈 임시 디렉토리로: 기본 docs 경로에 state 가 없고 git repo 도 아니지만 help 는 성공해야 한다.

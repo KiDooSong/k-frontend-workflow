@@ -9,6 +9,7 @@ import {
   parseArgs,
   DEFAULTS,
   KIT_ROOT,
+  loadGeneratedWorkflowStateOrExit,
   loadYaml,
   loadYamlOrExit,
   statusRank,
@@ -1080,7 +1081,7 @@ function main() {
   const policyPath = path.resolve(flags.policy || DEFAULTS.policy);
   const statePath = path.join(docsDir, '_meta', 'workflow-state.yaml');
 
-  const state = loadYamlOrExit(statePath, 'workflow-state', 'readiness');
+  const state = loadGeneratedWorkflowStateOrExit(statePath, 'workflow-state', 'readiness');
   if (!state) {
     process.stderr.write(
       `readiness: ${path.relative(process.cwd(), statePath)} 없음. 먼저 \`npm run workflow:state\` 실행.\n`,
