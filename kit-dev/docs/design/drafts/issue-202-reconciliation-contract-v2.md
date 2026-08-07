@@ -1,27 +1,55 @@
 # Issue #202 설계 — Reconciliation Contract v2
 
-## Implementation status (2026-07-31)
+## Implementation status (2026-08-04)
 
-- PR #205가 Reconciliation Contract v2 + Stage 04 review profile을 구현했다.
-- Issue #202-B + #209 통합 slice가 검사 11 `captured_at` RFC3339 hard, Input Fidelity Contract v2,
-  `provenance_contract: 1` Mapping Provenance를 구현한다. 구현 세부·producer/validator severity·migration은
-  [`input-provenance-fidelity-contract.md`](input-provenance-fidelity-contract.md)가 소유한다.
-- 이 문서의 Mapping Provenance §10 구조(M-key·5컬럼 표·Source Unit/Evidence)는 계속 canonical이다.
-- #202-C semantic/stale warning과 dogfood evidence는 잔여다.
+- 작업 시작 `main` SHA는 `533d2a69a1cc3b4831b2ebbef7ff0a313ca4c4fe`이며, PR #216 merge commit과 동일하다.
+- PR #205/#207/#208/#212로 Reconciliation Contract v2 구조·참조·routing hard enforcement,
+  Stage 04 `reconcile-stage04-v1`, Markdown AST hardening, CRLF 회귀 수정이 완료됐다.
+- PR #216(`533d2a69a1cc3b4831b2ebbef7ff0a313ca4c4fe`)으로 202-B provenance floor가 완료됐고
+  Issue #209는 closed다. `input_contract: 2`, `reconciliation_contract: 2`,
+  `provenance_contract: 1`은 계속 독립 계약이다.
+- PR #217은 202-C 구현 범위를 `RR-ROUTE-101`과 Decision 기반 `RR-STALE-101/102/103`으로 고정한다.
+  모두 검사 12 warning이며 `--enforce`로 승격되지 않는다.
+- review follow-up에서 `RR-ROUTE-101` precision을 강화했다. input token은 검사 11의 shared
+  `INPUT_ID_PATTERN`을 사용하고 shared input index에서 unique하게 해소되는 ID만 센다. 파일명·path/query/URI·
+  noncanonical lookalike는 배제하며, 같은 input의 `summaryTrust`가 false면 candidate-local suppress한다. bullet의
+  canonical-looking ID 하나라도 missing/duplicate이면 fail-closed하고, marker 후보와 explicit other input ID는 같은
+  high-confidence relation clause에 있어야 한다. 자연어 분석 전 canonical/noncanonical `IN-*` identifier와
+  URL·path·URI·key=value·filename structured token span을 same-length 공백으로 mask한다. marker·polarity·
+  coordination은 semantic view만 읽고 input 추출과 warning provenance는 원문 offset을 유지한다. 따라서 input ID source의
+  `conflict|while|may`, `/api/conflict`, `mode=conflict`는 자연어 marker·boundary·modality로 해석하지 않는다.
+  sentence/semicolon의 각 span마다 선행 `while|whereas|although|though ... ,` closing comma를 처리하고 후치·무쉼표
+  coordination도 경계로 본다. `, and`는 독립절이면 분리하되 canonical input serial list 뒤에 canonical input 또는
+  `this/current input`이 오는 관계는 보존한다. 한국어 중립 서술 coordination도 경계로 유지한다. marker 후보는 source
+  order로 평가하며 질문·증거 부족·가정·불확실성·추정·공통/marker별 부정을 clause-local로 판정한다.
+- visual behavior leakage keyword warning은 초기 202-C에서 제외한다. 선언된
+  `Basis=visual-evidence`의 behavior target은 이미 `RR-ROUTE-004` hard rule이 소유하고, 자유서술 keyword만으로
+  추가 warning을 낼 정밀도 근거가 아직 없다. 별도 고정밀 누락이 dogfood에서 확인될 때 follow-up으로만 검토한다.
+- [`issue-202-reconciliation-dogfood-001.md`](../../temp/runs/issue-202-reconciliation-dogfood-001.md)는
+  implementation/model replay로 유지한다. tracked `reconcile-input-001` S5와 `reconcile-input-002` correction을
+  옮긴 stale Result 사례만 real historical upstream TP로 평가 가능하다. routing 사례는 detector 조건을 안 뒤 작성한
+  **synthetic structural positive**이며 실제 historical/live TP, real-corpus FP/missed, 실제 review-round 감소의 증거가 아니다.
+- 현재 연결된 저장소에서 이 workflow를 vendored한 consumer checkout과 privacy-safe historical Stage 04 corpus를
+  식별하지 못했다. 따라서 실제 routing sample의 baseline/treatment, 독립 human TP/FP/missed, 실제 batch finding과
+  stop round 비교가 남아 있다.
+- PR #217의 기본 연결은 `Refs #202`이고 Issue #202는 open으로 유지한다. hard/CI/readiness promotion은 여전히
+  별도 사람 승인이다.
 
-
-> 상태: partially implemented / #202-C·dogfood discussion draft
-> 기준 저장소: `KiDooSong/k-frontend-workflow`  
-> 기준 브랜치: `main` (`fa9fc6b` 확인 시점)  
-> 대상 이슈: `#202 reconcile 계약 불변식이 validate 미강제 → LLM 리뷰 O(n) 라운드 팽창`  
-> 제안 위치: `kit-dev/docs/design/drafts/issue-202-reconciliation-contract-v2.md`  
-> 작성일: 2026-07-20
+> 상태: 202-C implementation 및 precision review fix 완료 · actual consumer dogfood evidence 대기 · Issue #202 open
+> 기준 저장소: `KiDooSong/k-frontend-workflow`
+> 작업 시작 브랜치: `main` (`533d2a69a1cc3b4831b2ebbef7ff0a313ca4c4fe`)
+> 역사적 초기 확인점: `fa9fc6b`(현재 기준 SHA가 아님)
+> 대상 이슈: `#202 reconcile 계약 불변식이 validate 미강제 → LLM 리뷰 O(n) 라운드 팽창`
+> 제안 위치: `kit-dev/docs/design/drafts/issue-202-reconciliation-contract-v2.md`
+> 최초 작성일: 2026-07-20 · 현재 확인일: 2026-08-04
 
 ---
 
-## 0. 결론 요약
+## 0. 원 설계 결론 요약 (2026-07-20, historical)
 
-이 작업은 **별도 설계가 필요하다.** 이유는 #202가 단순 검사 한두 개가 아니라 다음 세 계약을 동시에 바꾸기 때문이다.
+> 이 절부터 §20까지는 원 설계의 결정 근거와 계약을 보존한다. 구현 완료 여부와 현재 잔여 범위는 위 `Implementation status`가 정본이다.
+
+이 작업은 **별도 설계가 필요했다.** 이유는 #202가 단순 검사 한두 개가 아니라 다음 세 계약을 동시에 바꾸기 때문이다.
 
 1. `Reconciliation Register`의 자유서술 셀을 기계 검증 가능한 구조로 진화시켜야 한다.
 2. 입력 단위 provenance와 항목·매핑 단위 provenance 사이의 최소 정밀도 바닥을 정해야 한다.
@@ -36,7 +64,7 @@
 - 항목 provenance는 canonical input의 `source_ref`·`captured_at`을 기본 상속하고, `source_unit`과 더 정밀한 `source_ref`가 필요한 경우에만 항목별 override 한다.
 - `figma-component-mapping`의 기존 4컬럼 `## Component Mapping` 헤더는 바꾸지 않는다. 행에 안정 키를 추가하고 별도 `## Mapping Provenance` 표로 정밀도를 보강한다.
 - `review_profile: reconcile-stage04-v1`을 명시하고, 리뷰어는 **routing·source backing·gate-raising 경계**만 필수 검토한다. 최종 pixel/token/copy fidelity는 이 프로필의 pass 조건이 아니다.
-- 구현은 `A(구조 검사) + C(리뷰 프로필)`을 먼저, `B(provenance floor)`를 다음 PR로 분리한다.
+- 실제 구현 이력은 202-A 구조/리뷰(`#205`), parser hardening(`#207/#208/#212`), 202-B provenance(`#216`), 202-C warning candidate(`#217`) 순서다.
 
 이 설계의 핵심 문장은 다음이다.
 
@@ -44,11 +72,11 @@
 
 ---
 
-## 1. 현재 상태와 문제 경계
+## 1. 원 설계 당시 상태와 문제 경계 (historical baseline)
 
-### 1.1 현재 Register 계약
+### 1.1 PR #205 이전 Register 계약
 
-현재 정본은 다음 파일들이다.
+원 설계 당시 정본 후보는 다음 파일들이었다.
 
 - `frontend-workflow-kit/docs/reference/input-reconciliation.md`
 - `frontend-workflow-kit/templates/meta/reconciliation-register.template.md`
@@ -56,13 +84,13 @@
 - `frontend-workflow-kit/scripts/validate.mjs` 검사 12
 - `frontend-workflow-kit/skills/reconcile-input/SKILL.md`
 
-현재 Register는 입력당 canonical 행 1개인 8컬럼 표다.
+당시 Register는 입력당 canonical 행 1개인 8컬럼 표였다.
 
 ```md
 | Input ID | Source | Classification | Reconcile Status | Result | Touched Artifacts | Created Items | Supersedes |
 ```
 
-현재 검사 12가 기계적으로 확인하는 범위는 다음뿐이다.
+당시 검사 12가 기계적으로 확인하던 범위는 다음뿐이었다.
 
 - 필수 8컬럼 존재
 - `Input ID` 중복
@@ -70,7 +98,7 @@
 - `in-progress`·`failed` 상태
 - input artifact에는 있으나 Register 행이 없는 미처리 입력
 
-현재 구현은 의도적으로 다음을 하지 않는다.
+당시 구현은 의도적으로 다음을 하지 않았다.
 
 - `Classification` 셀 파싱
 - `Result` 어휘 파싱
@@ -80,9 +108,9 @@
 - Unknown·Conflict·Gap·Decision 라우팅 일치 확인
 - provenance 정밀도 확인
 
-특히 현재 코드의 hard rule은 `Created Items`의 `(open)` 같은 주석을 파싱하지 않고, 자식 항목 상태가 Register의 `Reconcile Status`를 움직이지 않게 하는 것이다. 이 원칙은 v2에서도 보존해야 한다.
+특히 당시 코드의 hard rule은 `Created Items`의 `(open)` 같은 주석을 파싱하지 않고, 자식 항목 상태가 Register의 `Reconcile Status`를 움직이지 않게 하는 것이다. 이 원칙은 v2에서도 보존해야 한다.
 
-### 1.2 현재 Input provenance
+### 1.2 PR #216 이전 Input provenance
 
 canonical input artifact는 이미 다음 값을 필수로 가진다.
 
@@ -91,11 +119,11 @@ canonical input artifact는 이미 다음 값을 필수로 가진다.
 - `captured_by`
 - `input_id`
 
-PR #205 시점 검사 11은 `captured_at`이 비어 있지 않은지만 봤다. 202-B 구현부터 모든 canonical input의 `captured_at`을 RFC3339 with timezone으로 hard 검사한다. 또한 입력 전체의 출처는 알 수 있지만, 개별 reconciliation item이 어느 node/frame/record/instance에 근거했는지는 알 수 없다.
+PR #205 시점 검사 11은 `captured_at`이 비어 있지 않은지만 봤다. PR #216의 202-B 구현으로 모든 canonical input의 `captured_at`은 RFC3339 with timezone hard 검사를 받고, item 단위 provenance floor도 추가됐다. 이 문단은 그 구현 전 문제를 기록한다.
 
-### 1.3 현재 Figma mapping provenance
+### 1.3 PR #216 이전 Figma mapping provenance
 
-`figma-component-mapping` 템플릿에는 다음이 이미 존재한다.
+원 설계 당시 `figma-component-mapping` 템플릿에는 다음이 존재했다.
 
 - frontmatter `sources`
 - `## Frame`
@@ -110,7 +138,7 @@ PR #205 시점 검사 11은 `captured_at`이 비어 있지 않은지만 봤다. 
 - `records`인지 `instances`인지 같은 단위가 기계적으로 선언되지 않는다.
 - `captured_at`의 형식을 검사하지 않는다.
 
-### 1.4 현재 review rubric
+### 1.4 PR #205 이전 review rubric
 
 `temp/evaluations/reconcile-input-rubric.md`에는 LLM 단계와 human-final 단계를 구분하는 유용한 평가표가 있다. 특히 다음 원칙이 명확하다.
 
@@ -119,7 +147,7 @@ PR #205 시점 검사 11은 `captured_at`이 비어 있지 않은지만 봤다. 
 - `expected-llm-after`와 human-final인 `expected-after`를 혼동하면 안 된다.
 - simple-update 누락보다 gate-lowering 침범이 더 심각하다.
 
-하지만 이 파일은 `temp/` 평가 증거이며 consumer가 읽는 canonical review contract가 아니다. 현재 `reconcile-input` skill에도 reviewer의 정지 조건과 finding 일괄 제출 규칙은 없다.
+하지만 당시 이 파일은 `temp/` 평가 증거였고 consumer가 읽는 canonical review contract가 아니었다. PR #205에서 canonical rubric과 `reconcile-input`의 stop/batch 규칙이 추가됐다.
 
 ---
 
@@ -645,14 +673,16 @@ simple-update×2 + conflict
 
 ### 7.4 Result consistency
 
-1차 rollout에서는 warning-first다.
+202-C의 첫 rollout은 **Decision family만** 현재 status와 대조한다. 모든 규칙은 warning-only다.
 
-- `pending-user-decision`인데 관련 decision target이 하나도 없음
-- `accepted`인데 이 input이 생성/재오픈한 decision이 현재 모두 open
-- `delegated`인데 INV-/VER- target이 없음
-- `rejected`인데 non-reject effect가 존재
+- `RR-STALE-101`: `Result=pending-user-decision`인데 canonical item target에 `decision:*`가 0개
+- `RR-STALE-102`: `Result=pending-user-decision`이고 관련 Decision target이 모두 unique하게 해소되며 현재 모두 `resolved`
+- `RR-STALE-103`: `Result=accepted|no-change`이고 신뢰 가능한 Decision target 중 현재 `open`이 1개 이상
 
-현재 child status는 역사적 effect와 다를 수 있으므로 hard error로 만들지 않는다.
+Decision status는 canonical `## Open Decisions`의 exact `Status=open|resolved`만 신뢰한다. duplicate owner/row, family mismatch,
+missing/invalid Status, malformed target 또는 관련 item hard 오류가 있으면 candidate를 억제한다. Conflict/Gap/Unknown/INV-/VER-의
+current status는 Result roll-up에 사용하지 않는다. 현재 child status는 역사적 Effect와 다를 수 있으므로 Effect를 고치거나
+actor를 추론하지 않으며, 어떤 Result로 바꿀지도 자동 추천하지 않는다.
 
 ---
 
@@ -671,24 +701,99 @@ simple-update×2 + conflict
 
 ### 8.2 Stale warning checks
 
-- Summary `Result=pending-user-decision`인데 관련 decision이 모두 resolved
-- Summary `Result=accepted|rejected`인데 관련 Conflict가 open으로 남아 있음
-- decision reopen과 연결된 Conflict 중 한쪽만 resolved
-- item target은 존재하지만 해당 input id/source evidence가 대상 row 본문에서 사라짐
-- `Touched Artifacts`는 item에 있지만 실제 문서에 input source/ref 흔적이 전혀 없음
-
-마지막 두 항목은 문서별 표준 provenance 칸이 없는 경우 false positive가 날 수 있으므로 warning-first다.
+초기 202-C는 Decision target의 현재 status만 읽는다. 구현 코드는 `RR-STALE-101/102/103`이며 조건은 §7.4와 같다.
+Decision 외 child family, `delegated`, `rejected`, `failed`, `mixed`, historical Effect와 current status의 비교는 의도적으로
+다루지 않는다. 관련 input의 item 구조 또는 Decision status를 신뢰할 수 없으면 무발화하며, 다른 input/artifact의 오류는
+독립 candidate를 전역 disable하지 않는다.
 
 ### 8.3 자연어 routing heuristic
 
-다음은 warning-only 후보다.
+초기 202-C의 자연어 analyzer는 `RR-ROUTE-101` 하나다.
 
-- Unknown row에 서로 다른 두 input id 또는 `A/B`, `vs`, `상호배타`, `충돌` 패턴이 같이 있음
-- visual mapping Notes에 routing/filter/sorting/API behavior 키워드가 있음
-- conflict item이 있는데 Conflict row가 없고 Unknown만 존재
-- `resolved-decision-conflict` basis인데 current target decision이 한 번도 reopen된 흔적이 없음
+- candidate는 `Basis=scope-unclear` + `Classification=scope-unclear` + 신뢰 가능한 `unknown:*` target이 있는 v2 item group이다.
+- `/NN` exact Evidence bullet에서 affirmative marker candidate를 source order로 찾고, marker가 있는 **같은
+  high-confidence relation clause**의 canonical `IN-*` token만 관계 input으로 사용한다. Evidence pointer input과
+  clause-local explicit input을 합친 distinct input이 2개 이상이어야 한다. sentence/semicolon과 함께
+  `, while|whereas|although|though`, `한편|반대로|그와 별개로`, `동일하고,`/`참고하며` 같은 중립 서술
+  coordination을 경계로 보며, plain `and`/`와`는 관계 내부에 유지한다. bullet 전체의 canonical-looking input 중
+  하나라도 missing/duplicate이면 evidence를 fail-closed suppress하며 section-only pointer는 분석하지 않는다.
+- Korean/English affirmative conflict marker allowlist 중 하나가 필요하다. 질문·증거 부재·가정·불확실성·추정·
+  명시적 부정, 약한 표현(`different`, `mismatch`, `vs`, `불일치`, `선택`, `TBD`)은 marker-local clause에서 억제한다.
+- code, raw HTML/comment/attribute, link destination, URL-only autolink, definition, image destination의 token/marker는 세지 않는다.
+- warning은 Basis/Classification/Conflict target을 **재검토하라**는 신호일 뿐 자동 rewrite/create/close/Result 변경을 하지 않는다.
 
-이 heuristic은 hard gate 또는 `--enforce` 승격 대상이 아니다. false-positive evidence가 충분히 쌓인 뒤 별도 사람 승인으로만 승격한다.
+visual behavior leakage keyword warning은 이 slice에서 제외한다. 선언된 target 위반은 이미 `RR-ROUTE-004` hard가 담당하며,
+자유서술 keyword warning의 precision은 dogfood evidence가 없다. 모든 semantic heuristic의 hard promotion은 별도 사람 승인이다.
+
+### 8.4 202-C precision tables
+
+#### RR-ROUTE-101
+
+| 항목 | 내용 |
+|---|---|
+| Stable code | `RR-ROUTE-101` message prefix |
+| Candidate input | v2 structured input의 `scope-unclear/scope-unclear` item group + `unknown:*` target |
+| Input data | 이미 파싱된 Summary/Items group, 검사 11과 공유하는 `INPUT_ID_PATTERN`, shared input index, exact `/NN` AST-visible Evidence text, target index |
+| Positive condition | 같은 input의 trusted Summary·group·unknown target·exact bullet + source-order상 첫 fully-qualified marker clause + 그 clause의 unique explicit other input ID + Evidence pointer input |
+| Suppression | marker와 input ID가 서로 다른 sentence/semicolon/high-confidence coordination clause(`, while|whereas|although|though`, `한편|반대로|그와 별개로`, 중립 서술 연결형), marker-local 질문/증거 부재/가정/불확실성/추정/부정/약한 표현, URL·파일명·path/query/URI·noncanonical input lookalike, bullet 내 duplicate/missing canonical input, section-only/out-of-range, duplicate/missing owner·row, 같은 input의 untrusted Summary/item projection, 이미 conflict basis |
+| Evidence provenance | message에 input/item, unknown target, exact Evidence pointer, 선택된 clause의 distinct input refs와 대표 marker |
+| Dedupe key | `RR-ROUTE-101 + Input ID + Item ID` |
+| Known false positive | 같은 clause의 강한 충돌 표현이 실제로는 input 관계가 아니라 reviewer가 의도적으로 Unknown으로 보존한 경우 |
+| Known false negative | 완곡한 충돌 표현, canonical IN-ID가 없는 대명사/별칭, 여러 bullet/문장에 분산된 관계, punctuation 없이 합쳐진 복합 prose |
+| Reviewer action | 실제 input↔input 충돌인지 확인하고 Basis/Classification/Conflict target을 재검토 |
+| Automatic action | none |
+| Hard promotion | 이번 PR에서 금지; 별도 사람 승인 필요 |
+
+#### RR-STALE-101
+
+| 항목 | 내용 |
+|---|---|
+| Stable code | `RR-STALE-101` message prefix |
+| Candidate input | v2 structured input의 canonical Summary `Result=pending-user-decision` |
+| Input data | canonical Summary row와 해당 input의 parsed Reconciliation Items |
+| Positive condition | 관련 item 구조가 trusted이고 `decision:*` target이 0개 |
+| Suppression | duplicate Summary/input, item 없음/관련 hard-invalid item, noncanonical Result, v1 |
+| Evidence provenance | message에 Input ID와 현재 Result 및 decision target 부재 |
+| Dedupe key | `RR-STALE-101 + Input ID` |
+| Known false positive | 외부 결정 시스템을 의도적으로 사용하지만 typed Decision target을 두지 않은 consumer |
+| Known false negative | malformed item이 decision 의도를 담아 candidate가 정밀도 위해 억제된 경우 |
+| Reviewer action | 누락된 Decision target인지 stale Summary Result인지 검토 |
+| Automatic action | none; Decision 생성/Result 변경 금지 |
+| Hard promotion | 이번 PR에서 금지; 별도 사람 승인 필요 |
+
+#### RR-STALE-102
+
+| 항목 | 내용 |
+|---|---|
+| Stable code | `RR-STALE-102` message prefix |
+| Candidate input | v2 structured input의 canonical Summary `Result=pending-user-decision` |
+| Input data | item에서 계산한 typed Decision target set + target index의 canonical Decision Status |
+| Positive condition | Decision 1개 이상, 모두 unique 해소, status 모두 known, 현재 모두 `resolved` |
+| Suppression | 하나라도 `open`, duplicate/ambiguous/family mismatch, Status missing/invalid, 관련 hard-invalid item, v1 |
+| Evidence provenance | message에 Input ID와 정렬된 Decision target 목록 |
+| Dedupe key | `RR-STALE-102 + Input ID` |
+| Known false positive | resolved Decision 이후에도 별도의 사람 승인 절차를 Result가 포괄하는 consumer 관례 |
+| Known false negative | Conflict/Gap/Unknown 상태 때문에 stale하지만 Decision-only 범위에서 보이지 않는 경우 |
+| Reviewer action | Decision resolve 이후 Summary Result가 갱신되지 않았는지 검토 |
+| Automatic action | none; replacement Result 추천/Effect 수정 금지 |
+| Hard promotion | 이번 PR에서 금지; 별도 사람 승인 필요 |
+
+#### RR-STALE-103
+
+| 항목 | 내용 |
+|---|---|
+| Stable code | `RR-STALE-103` message prefix |
+| Candidate input | v2 structured input의 canonical Summary `Result=accepted|no-change` |
+| Input data | item에서 계산한 typed Decision target set + target index의 canonical Decision Status |
+| Positive condition | Decision 1개 이상, 모든 status trusted, 현재 `open` target 1개 이상 |
+| Suppression | `delegated|mixed|rejected|failed|pending|pending-user-decision`, 모두 resolved, unknown/ambiguous status, 관련 hard-invalid item, v1 |
+| Evidence provenance | message에 Input ID, 현재 Result, 정렬된 open Decision target 목록 |
+| Dedupe key | `RR-STALE-103 + Input ID` |
+| Known false positive | accepted/no-change가 입력 반영 결과만 뜻하고 open Decision은 별도 축이라는 명시적 consumer 관례 |
+| Known false negative | Decision 외 child 상태만 stale한 경우; 이번 slice는 roll-up하지 않음 |
+| Reviewer action | accepted/no-change가 의도인지, pending-user-decision 또는 mixed 검토가 필요한지 사람이 판단 |
+| Automatic action | none; Result/Decision/Effect 변경 금지 |
+| Hard promotion | 이번 PR에서 금지; 별도 사람 승인 필요 |
 
 ---
 
@@ -1055,20 +1160,29 @@ rollout:
 - 정상 timestamp를 가진 v1 input은 fidelity 무발화; invalid legacy timestamp는 의도적으로 새 hard error
 - Input Fidelity v2는 별도 `input_contract: 2` opt-in, validator warning-first / producer hard
 
-### PR 202-C — Heuristic warnings + dogfood evidence
+### PR 202-C — Warning-only semantic drift analyzers + dogfood evidence
 
-범위:
+구현 범위:
 
-- possible-conflict-routed-as-unknown
-- visual behavior leakage keyword warning
-- stale Result/child status warning
-- reconcile fixture/dogfood에서 review round 수와 false positive 측정
+- `RR-ROUTE-101`: explicit input↔input conflict evidence가 `scope-unclear` + Unknown으로 라우팅된 고확률 candidate
+- `RR-STALE-101/102/103`: Decision target 유무 및 현재 `open|resolved`와 Summary Result의 stale candidate
+- exact `/NN` Evidence visible text를 shared Markdown AST/cache에서 제공
+- target index에 read-only Decision status metadata를 additive하게 제공
+- synthetic/adversarial precision fixture, warning-only/`--enforce`/JSON/v1 compatibility 검증
+- 가능한 consumer corpus에서 baseline/treatment, TP/FP/missed, round 0/stop round 비교
 
-주의:
+명시적 제외:
 
-- warning-first 유지
-- CI required check 승격 없음
-- promotion은 별도 사람 승인
+- visual behavior leakage keyword warning(`RR-ROUTE-004`가 선언된 target hard boundary를 이미 소유; keyword precision evidence 없음)
+- Decision 외 child status roll-up, historical Effect rewrite/actor 추론, 자동 Result 추천
+- warning hard promotion, CI/readiness 승격, 새 numbered check
+
+기본 연결은 `Refs #202`다. PR #217의 frozen bundle은 warning-only 구현과 동일-corpus validator output을
+재현하는 model replay다. stale Result 사례는 tracked upstream historical finding으로 TP 판정이 가능하지만, routing 사례는
+heuristic 조건을 안 뒤 만든 synthetic structural positive여서 실제 historical/live routing TP·real-corpus FP/missed·실제
+review-round 감소를 입증하지 못한다. privacy-safe consumer corpus의 baseline/treatment와 독립 human 판정, 실제 batch
+finding/stop condition 기록이 추가될 때까지 Issue #202는 open으로 유지한다. warning hard/CI/readiness promotion은
+언제나 별도 사람 승인이다.
 
 ---
 
@@ -1109,10 +1223,17 @@ rollout:
 
 ### 15.4 warning-only
 
-- Unknown prose가 A/B conflict처럼 보임
-- pending-user-decision인데 현재 decision resolved
-- section pointer는 있으나 bullet index가 해소되지 않음
-- legacy noncanonical Result spelling
+- exact `/NN` visible bullet: nested ordering·parent/child 비중복, code/HTML/comment/link destination/autolink/definition/image destination 제외, visible link text 보존
+- `RR-ROUTE-101` Korean/English affirmative positives, multi-effect/marker dedupe, source-order first fully-qualified clause
+- marker와 ID가 다른 sentence/semicolon clause인 same-bullet negative, 질문·가정·불확실성·부정·약한 표현,
+  single input, split bullets, section-only/out-of-range, duplicate input, proper conflict basis 무발화
+- `RR-STALE-101`: pending-user-decision + Decision 0
+- `RR-STALE-102`: pending-user-decision + 모든 Decision resolved
+- `RR-STALE-103`: accepted/no-change + open Decision
+- open Decision, resolved accepted, delegated/mixed/rejected/failed, duplicate owner/row, missing/invalid Status, unrelated child family 무발화
+- historical Effect는 현재 status에 맞춰 rewrite하지 않음
+- warning-only 기본/`--enforce` exit 0, warning object shape `{check,file,message}` 유지, 기존 warning 뒤 append
+- v1 완전 무발화와 기존 v2-pass 0 warning/기존 v2-fail 출력 호환
 
 ### 15.5 Figma mapping
 
@@ -1247,19 +1368,25 @@ backfill 불가 행은 `structured_since` 이전 legacy로 남긴다.
 
 Issue #202는 다음이 충족될 때 닫을 수 있다.
 
-- [ ] 신규 register template가 v2 contract를 생성한다.
-- [ ] v1 consumer는 opt-in 전 기존 validate 결과가 유지된다.
-- [ ] v2에서 Classification multiset과 item effects가 일치하지 않으면 hard fail한다.
-- [ ] Created Items/Touched Artifacts typed ref가 실제 artifact/row로 해소되지 않으면 hard fail한다.
-- [ ] declared routing basis와 classification/effect/target 조합이 틀리면 hard fail한다.
-- [ ] 자연어 의미 추정은 warning-only이며 `--enforce`에도 hard 승격되지 않는다.
-- [ ] input/item/mapping provenance가 RFC3339·source unit·source ref 계약을 가진다.
-- [ ] Figma mapping의 기존 4컬럼 header와 readiness fact 의미는 유지된다.
-- [ ] static validate가 human action을 LLM action으로 오판하지 않는다.
-- [ ] canonical review profile이 Stage 04 candidate의 review 범위와 stop condition을 정의한다.
-- [ ] reviewer는 필수 finding을 한 번에 제출하고 Info를 pass blocker로 쓰지 않는다.
-- [ ] gate-lowering·code/generated/live policy/CI 변경은 reviewer Critical로 차단한다.
-- [ ] dogfood에서 기존 10~20 라운드 계열 finding의 대부분이 첫 validate 또는 첫 review round에 일괄 표면화된다.
+- [x] 신규 register template가 v2 contract를 생성한다.
+- [x] v1 consumer는 opt-in 전 기존 validate 결과가 유지된다.
+- [x] v2에서 Classification multiset과 item effects가 일치하지 않으면 hard fail한다.
+- [x] Created Items/Touched Artifacts typed ref가 실제 artifact/row로 해소되지 않으면 hard fail한다.
+- [x] declared routing basis와 classification/effect/target 조합이 틀리면 hard fail한다.
+- [x] 자연어 의미 추정은 warning-only이며 `--enforce`에도 hard 승격되지 않는다.
+- [x] input/item/mapping provenance가 RFC3339·source unit·source ref 계약을 가진다.
+- [x] Figma mapping의 기존 4컬럼 header와 readiness fact 의미는 유지된다.
+- [x] static validate가 human action을 LLM action으로 오판하지 않는다.
+- [x] canonical review profile이 Stage 04 candidate의 review 범위와 stop condition을 정의한다.
+- [x] reviewer는 필수 finding을 한 번에 제출하고 Info를 pass blocker로 쓰지 않는다.
+- [x] gate-lowering·code/generated/live policy/CI 변경은 reviewer Critical로 차단한다.
+- [x] `RR-ROUTE-101`과 Decision 기반 `RR-STALE-101/102/103` precision fixtures·호환성 검사가 통과한다.
+- [x] tracked stale Result historical finding 1건을 익명 frozen corpus로 고정하고 baseline/treatment replay를 기록한다.
+- [x] routing detector-shaped synthetic implementation positive와 synthetic controls를 고정한다(실제 TP/FP evidence로 세지 않음).
+- [ ] detector 조건을 보고 작성하지 않은 historical/live routing TP를 확보한다.
+- [ ] 실제 routing corpus의 FP와 missed in-scope finding을 human oracle로 판정한다.
+- [ ] analyzer 작성과 독립된 human reviewer 판정을 기록한다.
+- [ ] 실제 `reconcile-stage04-v1` batch finding/stop condition을 사용한 baseline/treatment review-round 또는 first-round finding 개선을 기록한다.
 
 ---
 

@@ -50,6 +50,7 @@ import {
   parseStrictTables,
   describeHeaderMismatch,
 } from './reconciliation-target-index.mjs';
+import { analyzeReconciliationWarnings } from './reconciliation-warnings.mjs';
 
 export const RECONCILIATION_CONTRACT_V2 = 2;
 export const REVIEW_PROFILE_STAGE04 = 'reconcile-stage04-v1';
@@ -483,10 +484,14 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
 
   // --- summary 행 분류: structured vs legacy (structured_since 기준, 설계 §5.1·§16) ---
   const summaryByInput = new Map();
+  const summaryCounts = new Map();
+  const summaryTrust = new Map(); // input-local hard structure/projection trust for advisory analyzers
   for (const row of summaryRows) {
     if (!row.inputId) continue;
+    summaryCounts.set(row.inputId, (summaryCounts.get(row.inputId) || 0) + 1);
     if (!summaryByInput.has(row.inputId)) summaryByInput.set(row.inputId, row); // 중복은 v1 검사가 에러
   }
+  for (const [inputId, count] of summaryCounts) summaryTrust.set(inputId, count === 1);
   const itemsByInput = new Map();
   if (itemRowsUsable) {
     for (const row of items.rows) {
@@ -501,6 +506,7 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
     const input = inputsById.get(inputId);
     if (!input) {
       add(`RR-REF-001: summary Input ID '${inputId}' 가 inputs/ 의 input artifact 로 해소되지 않음`);
+      summaryTrust.set(inputId, false);
       continue;
     }
     const hasItems = (itemsByInput.get(inputId) || []).length > 0;
@@ -534,6 +540,7 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
   for (const inputId of structuredInputs) {
     const row = summaryByInput.get(inputId);
     if (!row) continue;
+    const summaryErrorStart = errors.length;
 
     const cls = parseSummaryClassification(row.classification);
     for (const e of cls.errors) {
@@ -600,14 +607,22 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
     }
 
     summaryParsed.set(inputId, { classification: cls.entries, touchedRefs, createdRefs });
+    summaryTrust.set(
+      inputId,
+      summaryTrust.get(inputId) === true &&
+        RECONCILE_STATUS_VALUES.includes(row.reconcileStatus) &&
+        errors.length === summaryErrorStart,
+    );
   }
 
   if (!itemRowsUsable) return { errors, warnings }; // 표 구조가 없으면 행 검사 불가 — 여기서 끝
 
   // --- item/effect 행 검사 ---
-  const groups = new Map(); // `${inputId}\0${item}` → { rows: [{row, target(parsed)|null}] }
+  const groups = new Map(); // `${inputId}\0${item}` → [{row, target(parsed)|null, rowHardValid}]
+  const groupTrust = new Map();
   const effectDupSeen = new Set();
   for (const row of items.rows) {
+    const rowErrorStart = errors.length;
     const label = `item ${row.inputId || '(no-input)'}#${row.item || '?'}`;
 
     // 필수 셀 (10컬럼 전부 계약 필수 — 설계 §5.3).
@@ -806,12 +821,13 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
     if (row.inputId && row.item) {
       const key = `${row.inputId} ${row.item}`;
       if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push({ row, target });
+      groups.get(key).push({ row, target, rowHardValid: errors.length === rowErrorStart });
     }
   }
 
   // --- item group 검사: Basis/Classification 일관성 + routing matrix ---
   for (const [key, entries] of groups) {
+    const groupErrorStart = errors.length;
     const [inputId, itemId] = key.split(' ');
     const label = `item ${inputId}#${itemId}`;
     const bases = [...new Set(entries.map((e) => e.row.basis).filter(Boolean))];
@@ -904,10 +920,15 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
         );
       }
     }
+    groupTrust.set(
+      key,
+      entries.every((entry) => entry.rowHardValid) && errors.length === groupErrorStart,
+    );
   }
 
   // --- summary ↔ items projection (설계 §7) ---
   for (const [inputId, parsed] of summaryParsed) {
+    const projectionErrorStart = errors.length;
     const rows = itemsByInput.get(inputId) || [];
     if (rows.length === 0) continue; // structured-no-items 는 RR-ITEM-001 이 이미 보고
 
@@ -977,6 +998,23 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
         }
       }
     }
+    if (errors.length !== projectionErrorStart) summaryTrust.set(inputId, false);
+  }
+
+  // Advisory analyzers run only after deterministic v2 diagnostics. Their own
+  // deterministic order is appended after existing warnings; they never mutate
+  // the public warning object shape or participate in --enforce promotion.
+  for (const message of analyzeReconciliationWarnings({
+    summaryRows,
+    structuredInputs,
+    groups,
+    groupTrust,
+    itemsByInput,
+    summaryTrust,
+    inputIndex,
+    targetIndex,
+  })) {
+    warn(message);
   }
 
   return { errors, warnings };

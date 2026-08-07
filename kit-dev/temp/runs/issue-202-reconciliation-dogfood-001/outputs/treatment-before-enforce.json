@@ -1,0 +1,17 @@
+{
+  "ok": true,
+  "count": 0,
+  "errors": [],
+  "warnings": [
+    {
+      "check": 12,
+      "file": "docs/frontend-workflow/_meta/reconciliation-register.md",
+      "message": "RR-STALE-103: input IN-20260613-api-001 Summary Result=accepted while open Decision target(s) remain [decision:D-003@open-decision-register]; reviewer: confirm whether accepted/no-change is intentional and review whether pending-user-decision or mixed is needed (no automatic rewrite)"
+    },
+    {
+      "check": 12,
+      "file": "docs/frontend-workflow/_meta/reconciliation-register.md",
+      "message": "RR-ROUTE-101: item IN-20260803-meeting-101#01 may be an input-input conflict routed as scope-unclear/scope-unclear — unknown target(s) [unknown:U-901@open-decision-register]; evidence input:IN-20260803-meeting-101#extracted-facts/01 matched inputs [IN-20260803-meeting-101, IN-20260719-planning-003] and marker '충돌'; reviewer: recheck Basis/Classification/Conflict target (no automatic rewrite)"
+    }
+  ]
+}

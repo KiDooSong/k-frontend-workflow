@@ -222,7 +222,9 @@ function isUrlOnlyAutolink(node, context) {
   );
 }
 
-function visibleText(node, context) {
+function visibleText(node, context, options = {}) {
+  const { omitNestedLists = false, root = true } = options;
+  if (omitNestedLists && !root && (node.type === 'list' || node.type === 'listItem')) return '';
   if (
     (node.type === 'linkReference' || node.type === 'imageReference') &&
     !context.definitions.has(normalizeReferenceLabel(node.label ?? node.identifier))
@@ -251,7 +253,10 @@ function visibleText(node, context) {
     return '';
   }
   const separator = BLOCK_TEXT_TYPES.has(node.type) ? '\n' : '';
-  return node.children.map((child) => visibleText(child, context)).filter(Boolean).join(separator);
+  return node.children
+    .map((child) => visibleText(child, context, { omitNestedLists, root: false }))
+    .filter(Boolean)
+    .join(separator);
 }
 
 function cellText(node) {
@@ -334,7 +339,15 @@ function headingText(node) {
   return (node.children || []).map(cellText).join('').trim();
 }
 
-function sectionOccurrences(source, tree) {
+function normalizeVisibleBulletText(value) {
+  return String(value || '')
+    .replace(/[\t ]+/g, ' ')
+    .replace(/\s*\n\s*/g, ' ')
+    .trim();
+}
+
+function sectionOccurrences(source, tree, suppliedContext = null) {
+  const context = suppliedContext || { source, definitions: definitionLabels(tree) };
   const occurrences = [];
   let current = {
     title: '',
@@ -346,17 +359,23 @@ function sectionOccurrences(source, tree) {
 
   const flush = (endOffset) => {
     current.contentEnd = endOffset;
-    let bulletCount = 0;
+    const bulletTexts = [];
     for (const { node } of current.nodes) {
       walk(node, (child) => {
-        if (child.type === 'listItem') bulletCount += 1;
+        if (child.type !== 'listItem') return;
+        bulletTexts.push(
+          normalizeVisibleBulletText(
+            visibleText(child, context, { omitNestedLists: true, root: true }),
+          ),
+        );
       });
     }
     occurrences.push({
       title: current.title,
       slug: current.slug,
       text: source.slice(current.contentStart, current.contentEnd),
-      bulletCount,
+      bulletCount: bulletTexts.length,
+      bulletTexts,
       tables: current.nodes
         .map(({ node, previousNode }) => rootTable(source, node, previousNode))
         .filter(Boolean),
@@ -393,7 +412,7 @@ export function parseReconciliationMarkdown(text) {
   return {
     contentBody: removeRangesPreservingLines(source, nonContentRanges(tree)),
     proseBody: visibleText(tree, context),
-    occurrences: sectionOccurrences(source, tree),
+    occurrences: sectionOccurrences(source, tree, context),
   };
 }
 
@@ -430,7 +449,9 @@ export function parseStrictTables(text) {
 
 export function splitSectionOccurrences(text) {
   const source = String(text || '');
-  return sectionOccurrences(source, parseTree(source)).map(({ title, slug, text: sectionText }) => ({
+  const tree = parseTree(source);
+  const context = { source, definitions: definitionLabels(tree) };
+  return sectionOccurrences(source, tree, context).map(({ title, slug, text: sectionText }) => ({
     title,
     slug,
     text: sectionText,

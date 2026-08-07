@@ -132,6 +132,7 @@ affected_screens: ["COUPON-001"]
 const MAPPING_DOC = `---
 artifact_id: "COUPON-001-figma-component-mapping"
 artifact_type: figma-component-mapping
+domain: coupons
 screen_id: "COUPON-001"
 status: draft
 ---
@@ -191,11 +192,18 @@ status: draft
 const SCREEN_SPEC_DOC = `---
 artifact_id: "COUPON-001-screen-spec"
 artifact_type: screen-spec
+domain: coupons
 screen_id: "COUPON-001"
+route: /coupons
 status: draft
 ---
 
 # ScreenSpec
+
+## Entry Points
+<!-- GENERATED:START nav-graph -->
+<!-- DO NOT EDIT MANUALLY. Generated from Navigation Map and inbound Interaction Matrix route edges. -->
+<!-- GENERATED:END nav-graph -->
 
 ## UI Sections
 1. Header
@@ -214,6 +222,7 @@ status: draft
 const DOMAIN_RULES_DOC = `---
 artifact_id: "coupons-domain-rules"
 artifact_type: domain-rules
+domain: coupons
 status: draft
 ---
 
@@ -2427,6 +2436,490 @@ test('v2 pass: reject item 은 target - 와 Source Unit n/a 허용', (t) => {
   });
   assert.deepEqual(messages(r.errors), []);
   assert.deepEqual(messages(r.warnings), []);
+});
+
+
+// ── 202-C warning-only semantic drift analyzers ──────────────────────────────
+
+const SCOPE_UNKNOWN_SUMMARY =
+  '| IN-20260720-meeting-001 | meeting | scope-unclear | reconciled | delegated | artifact:COUPON-001-screen-spec | unknown:U-001@COUPON-001-screen-spec | - |';
+const SCOPE_UNKNOWN_ROW =
+  '| IN-20260720-meeting-001 | 01 | scope-unclear | scope-unclear | create-open | unknown:U-001@COUPON-001-screen-spec | input:IN-20260720-meeting-001#extracted-facts/01 | inherit | statement | inherit |';
+const SCOPE_UNKNOWN_LINK_ROW = SCOPE_UNKNOWN_ROW.replace('| create-open |', '| link-evidence |');
+const DECISION_D204_OPEN_ROW =
+  '| D-204 | 로그인 성공 후 이동 위치 | home / returnTo | final-fixture-ui | PM | open |';
+
+function meetingInputWithFacts(lines) {
+  return MEETING_INPUT.replace(
+    '- returnTo 우선 정책 요구 (기존 D-204 resolved 와 충돌)',
+    lines.join('\n'),
+  );
+}
+
+function runScopeUnknown(t, facts, overrides = {}) {
+  return runV2(t, {
+    files: {
+      'inputs/IN-20260720-meeting-001.md': meetingInputWithFacts(facts),
+      ...(overrides.files || {}),
+    },
+    summaryRows: overrides.summaryRows || [DEFAULT_SUMMARY_ROWS[0], SCOPE_UNKNOWN_SUMMARY],
+    itemRows: overrides.itemRows || [DEFAULT_ITEM_ROWS[0], DEFAULT_ITEM_ROWS[1], SCOPE_UNKNOWN_ROW],
+  });
+}
+
+function warningMessagesByCode(result, code) {
+  return messages(result.warnings).filter((message) => message.startsWith(`${code}:`));
+}
+
+test('RR-ROUTE-101: affirmative exact bullet surfaces one deterministic warning with review evidence', (t) => {
+  const result = runScopeUnknown(
+    t,
+    ['- 기존 IN-20260720-figma-001 정책과 충돌하며 서로 모순이다.'],
+    { itemRows: [DEFAULT_ITEM_ROWS[0], DEFAULT_ITEM_ROWS[1], SCOPE_UNKNOWN_ROW, SCOPE_UNKNOWN_LINK_ROW] },
+  );
+  assert.deepEqual(messages(result.errors), []);
+  const found = warningMessagesByCode(result, 'RR-ROUTE-101');
+  assert.equal(found.length, 1);
+  assert.match(found[0], /item IN-20260720-meeting-001#01/);
+  assert.match(found[0], /scope-unclear\/scope-unclear/);
+  assert.match(found[0], /unknown:U-001@COUPON-001-screen-spec/);
+  assert.match(found[0], /input:IN-20260720-meeting-001#extracted-facts\/01/);
+  assert.match(found[0], /IN-20260720-meeting-001, IN-20260720-figma-001/);
+  assert.match(found[0], /marker '충돌'/);
+  assert.match(found[0], /no automatic rewrite/);
+});
+
+test('RR-ROUTE-101: English markers and multiple explicit inputs remain one warning per item', (t) => {
+  for (const facts of [
+    ['- IN-20260720-figma-001 conflicts with this captured meeting policy.'],
+    ['- IN-20260720-figma-001 and IN-20260720-meeting-001 are mutually exclusive.'],
+    ['- IN-20260720-figma-001 and IN-20260720-meeting-001 conflict.'],
+  ]) {
+    const result = runScopeUnknown(t, facts);
+    assert.deepEqual(messages(result.errors), []);
+    assert.equal(warningMessagesByCode(result, 'RR-ROUTE-101').length, 1);
+  }
+});
+
+test('RR-ROUTE-101: proper conflict routing, weak/question/negative/non-visible evidence, split bullets, and section-only refs suppress', (t) => {
+  const proper = runV2(t, {
+    files: {
+      'inputs/IN-20260720-meeting-001.md': meetingInputWithFacts([
+        '- 기존 IN-20260720-figma-001 정책과 충돌한다.',
+      ]),
+    },
+    summaryRows: [
+      DEFAULT_SUMMARY_ROWS[0],
+      '| IN-20260720-meeting-001 | meeting | conflict | reconciled | delegated | artifact:conflicts | conflict:C-001@conflicts | - |',
+    ],
+    itemRows: [
+      DEFAULT_ITEM_ROWS[0],
+      DEFAULT_ITEM_ROWS[1],
+      '| IN-20260720-meeting-001 | 01 | input-input-conflict | conflict | create-open | conflict:C-001@conflicts | input:IN-20260720-meeting-001#extracted-facts/01 | inherit | statement | inherit |',
+    ],
+  });
+  assert.equal(warningMessagesByCode(proper, 'RR-ROUTE-101').length, 0);
+
+  const resolvedDecision = runV2(t, {
+    files: {
+      'inputs/IN-20260720-meeting-001.md': meetingInputWithFacts([
+        '- 기존 IN-20260720-figma-001 정책과 충돌한다.',
+      ]),
+    },
+  });
+  assert.equal(warningMessagesByCode(resolvedDecision, 'RR-ROUTE-101').length, 0);
+
+  const negatives = [
+    ['- 기존 IN-20260720-figma-001 정책과 다르다.'],
+    ['- IN-20260720-figma-001 A/B 옵션 중 하나를 선택해야 한다.'],
+    ['- 기존 IN-20260720-figma-001 정책과 충돌하는지 확인 필요?'],
+    ['- 기존 IN-20260720-figma-001 정책과 충돌하지 않음.'],
+    ['- 관련 입력은 IN-20260720-figma-001이다. 화면 내부 옵션 두 개는 서로 충돌한다.'],
+    ['- IN-20260720-figma-001은 현재 정책과 동일하다. 별도 UI 옵션 두 개는 양립 불가다.'],
+    ['- IN-20260720-figma-001을 참고한다; 로컬 캐시와 서버 캐시는 서로 모순이다.'],
+    ['- IN-20260720-figma-001은 현재 정책과 동일하고, 별도 UI 옵션 두 개는 서로 충돌한다.'],
+    ['- IN-20260720-figma-001을 참고하며 별도 UI 옵션 두 개는 서로 충돌한다.'],
+    ['- IN-20260720-figma-001 is compatible with the current policy, while the two local UI options conflict.'],
+    ['- IN-20260720-figma-001 is compatible, whereas the local cache options conflict.'],
+    ['- While IN-20260720-figma-001 is compatible, the two local UI options conflict.'],
+    ['- Although IN-20260720-figma-001 is compatible, the two local UI options conflict.'],
+    ['- IN-20260720-figma-001 is compatible while the two local UI options conflict.'],
+    ['- IN-20260720-figma-001 is compatible, and the two local UI options conflict.'],
+    ['- Context. While IN-20260720-figma-001 is compatible, the two local UI options conflict.'],
+    ['- Context; Although IN-20260720-figma-001 is compatible, the two local UI options conflict.'],
+    ['- 첫 사실이다. Whereas IN-20260720-figma-001 is compatible, the cache options conflict.'],
+    ['- IN-20260720-figma-001은 /api/conflict 엔드포인트를 사용한다.'],
+    ['- IN-20260720-figma-001의 mode=conflict 값을 확인한다.'],
+    ['- IN-20260720-figma-001은 현재 정책과 동일하나 별도 UI 옵션 두 개는 서로 충돌한다.'],
+    ['- IN-20260720-figma-001은 현재 정책과 동일하면서 별도 UI 옵션 두 개는 서로 충돌한다.'],
+    ['- IN-20260720-figma-001은 현재 정책과 동일한데 별도 UI 옵션 두 개는 서로 충돌한다.'],
+    ['- IN-20260720-figma-001와 충돌한다는 근거는 없다.'],
+    ['- IN-20260720-figma-001와 충돌한다는 근거가 부족하다.'],
+    ['- IN-20260720-figma-001와 충돌한다고 추측된다.'],
+    ['- IN-20260720-figma-001와 충돌할 수도 있다.'],
+    ['- IN-20260720-figma-001와 충돌한다고 볼 수 없다.'],
+    ['- IN-20260720-figma-001는 충돌이 아닌 것으로 보인다.'],
+    ['- There is no evidence that IN-20260720-figma-001 conflicts with this input.'],
+    ['- There is insufficient evidence that IN-20260720-figma-001 conflicts with this input.'],
+    ['- There is little evidence that IN-20260720-figma-001 conflicts with this input.'],
+    ['- It is unclear if IN-20260720-figma-001 conflicts with this input.'],
+    ['- It is not clear if IN-20260720-figma-001 conflicts with this input.'],
+    ['- IN-20260720-figma-001 probably conflicts with this input.'],
+    ['- IN-20260720-figma-001 reportedly conflicts with this input.'],
+    ['- IN-20260720-figma-001 is unlikely to conflict with this input.'],
+    ['- `IN-20260720-figma-001 충돌`은 코드 예시다.'],
+    ['- 코드 예시:', '  ```txt', '  IN-20260720-figma-001 충돌', '  ```'],
+    ['- [IN-20260720-figma-001 정책](https://example.test/conflict)을 확인한다.'],
+    ['- <span data-note="IN-20260720-figma-001 충돌">정보 부족</span>'],
+    ['- 충돌한다.', '- IN-20260720-figma-001은 다음 bullet에만 있다.'],
+  ];
+  for (const facts of negatives) {
+    const result = runScopeUnknown(t, facts);
+    assert.equal(warningMessagesByCode(result, 'RR-ROUTE-101').length, 0, facts.join(' / '));
+  }
+
+  const laterValidClause = runScopeUnknown(t, [
+    '- IN-20260720-figma-001와 충돌한 것은 아니다. 그러나 IN-20260720-figma-001와 명백히 상충한다.',
+  ]);
+  const laterWarnings = warningMessagesByCode(laterValidClause, 'RR-ROUTE-101');
+  assert.equal(laterWarnings.length, 1);
+  assert.match(laterWarnings[0], /marker '상충'/);
+
+  for (const facts of [
+    ['- Context. IN-20260720-figma-001 conflicts with this input.'],
+    ['- IN-20260720-figma-001, IN-20260720-meeting-001, and this input conflict.'],
+    ['- IN-20260720-figma-001, IN-20260720-meeting-001, and current input are mutually exclusive.'],
+  ]) {
+    const result = runScopeUnknown(t, facts);
+    assert.equal(warningMessagesByCode(result, 'RR-ROUTE-101').length, 1, facts.join(' / '));
+  }
+
+  const sectionOnly = runScopeUnknown(t, ['- 기존 IN-20260720-figma-001 정책과 충돌한다.'], {
+    itemRows: [
+      DEFAULT_ITEM_ROWS[0],
+      DEFAULT_ITEM_ROWS[1],
+      SCOPE_UNKNOWN_ROW.replace('#extracted-facts/01', '#extracted-facts'),
+    ],
+  });
+  assert.equal(warningMessagesByCode(sectionOnly, 'RR-ROUTE-101').length, 0);
+});
+
+test('RR-ROUTE-101: out-of-range and duplicate input keep structural diagnostics but suppress semantic warning', (t) => {
+  const outOfRange = runScopeUnknown(t, ['- 기존 IN-20260720-figma-001 정책과 충돌한다.'], {
+    itemRows: [
+      DEFAULT_ITEM_ROWS[0],
+      DEFAULT_ITEM_ROWS[1],
+      SCOPE_UNKNOWN_ROW.replace('/01', '/09'),
+    ],
+  });
+  assert.ok(hasCode(outOfRange.warnings, 'RR-REF-101'));
+  assert.equal(warningMessagesByCode(outOfRange, 'RR-ROUTE-101').length, 0);
+
+  const duplicate = runScopeUnknown(t, ['- 기존 IN-20260720-figma-001 정책과 충돌한다.'], {
+    files: {
+      'inputs/duplicate/IN-20260720-meeting-001.md': meetingInputWithFacts([
+        '- 기존 IN-20260720-figma-001 정책과 충돌한다.',
+      ]),
+    },
+  });
+  assert.ok(hasCode(duplicate.errors, 'RR-REF-001') || hasCode(duplicate.errors, 'RR-REF-003'));
+  assert.equal(warningMessagesByCode(duplicate, 'RR-ROUTE-101').length, 0);
+});
+
+
+test('RR-ROUTE-101: same-input Summary hard diagnostics suppress locally; unrelated Summary errors do not', (t) => {
+  const facts = ['- 기존 IN-20260720-figma-001 정책과 충돌한다.'];
+  const assertSuppressed = (name, result, code) => {
+    assert.ok(hasCode(result.errors, code), `${name}: expected ${code}`);
+    assert.equal(warningMessagesByCode(result, 'RR-ROUTE-101').length, 0, name);
+  };
+
+  assertSuppressed(
+    'RR-SCHEMA-006',
+    runScopeUnknown(t, facts, {
+      summaryRows: [
+        DEFAULT_SUMMARY_ROWS[0],
+        SCOPE_UNKNOWN_SUMMARY.replace('| scope-unclear |', '| scope-unclear + invalid-classification |'),
+      ],
+    }),
+    'RR-SCHEMA-006',
+  );
+
+  assertSuppressed(
+    'RR-ITEM-005',
+    runScopeUnknown(t, facts, {
+      summaryRows: [
+        DEFAULT_SUMMARY_ROWS[0],
+        SCOPE_UNKNOWN_SUMMARY.replace('| scope-unclear |', '| simple-update |'),
+      ],
+    }),
+    'RR-ITEM-005',
+  );
+
+  const screenWithSecondUnknown = SCREEN_SPEC_DOC.replace(
+    '| U-001 | 페이지 크기 | open |',
+    '| U-001 | 페이지 크기 | open |\n| U-002 | 정렬 기준 | open |',
+  );
+  assertSuppressed(
+    'RR-ITEM-006',
+    runScopeUnknown(t, facts, {
+      files: {
+        'domains/coupons/screens/coupon-list/screen-spec.md': screenWithSecondUnknown,
+      },
+      summaryRows: [
+        DEFAULT_SUMMARY_ROWS[0],
+        SCOPE_UNKNOWN_SUMMARY.replace(
+          'unknown:U-001@COUPON-001-screen-spec',
+          'unknown:U-001@COUPON-001-screen-spec; unknown:U-002@COUPON-001-screen-spec',
+        ),
+      ],
+    }),
+    'RR-ITEM-006',
+  );
+
+  assertSuppressed(
+    'RR-ITEM-007',
+    runScopeUnknown(t, facts, {
+      summaryRows: [
+        DEFAULT_SUMMARY_ROWS[0],
+        SCOPE_UNKNOWN_SUMMARY.replace(
+          'artifact:COUPON-001-screen-spec',
+          'artifact:open-decision-register',
+        ),
+      ],
+    }),
+    'RR-ITEM-007',
+  );
+
+  const duplicateSummary = runScopeUnknown(t, facts, {
+    summaryRows: [DEFAULT_SUMMARY_ROWS[0], SCOPE_UNKNOWN_SUMMARY, SCOPE_UNKNOWN_SUMMARY],
+  });
+  assert.equal(warningMessagesByCode(duplicateSummary, 'RR-ROUTE-101').length, 0);
+
+  const unrelatedSummaryError = runScopeUnknown(t, facts, {
+    summaryRows: [
+      DEFAULT_SUMMARY_ROWS[0].replace(
+        'simple-update + component-gap',
+        'simple-update + invalid-classification',
+      ),
+      SCOPE_UNKNOWN_SUMMARY,
+    ],
+  });
+  assert.ok(hasCode(unrelatedSummaryError.errors, 'RR-SCHEMA-006'));
+  assert.equal(warningMessagesByCode(unrelatedSummaryError, 'RR-ROUTE-101').length, 1);
+});
+
+
+test('RR-STALE-101/102/103: Decision-only current status comparison emits exact warning family', (t) => {
+  const noDecision = runV2(t, {
+    summaryRows: [
+      DEFAULT_SUMMARY_ROWS[0].replace('| accepted |', '| pending-user-decision |'),
+      DEFAULT_SUMMARY_ROWS[1],
+    ],
+  });
+  assert.equal(warningMessagesByCode(noDecision, 'RR-STALE-101').length, 1);
+
+  const resolved = runV2(t, {
+    files: {
+      'global/open-decisions.md': DECISION_DOC.replace(DECISION_D204_OPEN_ROW, DECISION_D204_OPEN_ROW.replace('| open |', '| resolved |')),
+    },
+  });
+  assert.equal(warningMessagesByCode(resolved, 'RR-STALE-102').length, 1);
+  assert.ok(
+    messages(resolved.warnings).every((message) => !/historical Effect|Effect=reopen|rewrite.*reopen/i.test(message)),
+  );
+
+  for (const resultCode of ['accepted', 'no-change']) {
+    const open = runV2(t, {
+      summaryRows: [
+        DEFAULT_SUMMARY_ROWS[0],
+        DEFAULT_SUMMARY_ROWS[1].replace('| pending-user-decision |', `| ${resultCode} |`),
+      ],
+    });
+    assert.equal(warningMessagesByCode(open, 'RR-STALE-103').length, 1, resultCode);
+  }
+});
+
+test('RR-STALE-102 dedupes multiple resolved Decision targets to one input warning', (t) => {
+  const d205 = '| D-205 | 추가 정책 | keep / change | final-fixture-ui | PM | resolved |';
+  const decisionDoc = DECISION_DOC
+    .replace(DECISION_D204_OPEN_ROW, DECISION_D204_OPEN_ROW.replace('| open |', '| resolved |'))
+    .replace(DECISION_D204_OPEN_ROW.replace('| open |', '| resolved |'), `${DECISION_D204_OPEN_ROW.replace('| open |', '| resolved |')}\n${d205}`);
+  const result = runV2(t, {
+    files: { 'global/open-decisions.md': decisionDoc },
+    summaryRows: [
+      DEFAULT_SUMMARY_ROWS[0],
+      DEFAULT_SUMMARY_ROWS[1].replace(
+        'decision:D-204@open-decision-register',
+        'decision:D-204@open-decision-register; decision:D-205@open-decision-register',
+      ),
+    ],
+    itemRows: [
+      ...DEFAULT_ITEM_ROWS,
+      DEFAULT_ITEM_ROWS[3].replace('decision:D-204@open-decision-register', 'decision:D-205@open-decision-register'),
+    ],
+  });
+  assert.deepEqual(messages(result.errors), []);
+  const warnings = warningMessagesByCode(result, 'RR-STALE-102');
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /decision:D-204@open-decision-register, decision:D-205@open-decision-register/);
+});
+
+test('RR-STALE suppression: open/current results, unsupported Results, duplicate/invalid Decision status, and unrelated child families', (t) => {
+  const noWarningCases = [
+    {},
+    {
+      files: {
+        'global/open-decisions.md': DECISION_DOC.replace(DECISION_D204_OPEN_ROW, DECISION_D204_OPEN_ROW.replace('| open |', '| resolved |')),
+      },
+      summaryRows: [
+        DEFAULT_SUMMARY_ROWS[0],
+        DEFAULT_SUMMARY_ROWS[1].replace('| pending-user-decision |', '| accepted |'),
+      ],
+    },
+    {
+      summaryRows: [DEFAULT_SUMMARY_ROWS[0], DEFAULT_SUMMARY_ROWS[1].replace('| pending-user-decision |', '| delegated |')],
+    },
+    {
+      summaryRows: [DEFAULT_SUMMARY_ROWS[0], DEFAULT_SUMMARY_ROWS[1].replace('| pending-user-decision |', '| mixed |')],
+    },
+    {
+      summaryRows: [DEFAULT_SUMMARY_ROWS[0], DEFAULT_SUMMARY_ROWS[1].replace('| pending-user-decision |', '| rejected |')],
+    },
+  ];
+  for (const overrides of noWarningCases) {
+    const result = runV2(t, overrides);
+    assert.ok(messages(result.warnings).every((message) => !message.startsWith('RR-STALE-')), JSON.stringify(overrides));
+  }
+
+  const failed = runV2(t, {
+    summaryRows: [DEFAULT_SUMMARY_ROWS[0], DEFAULT_SUMMARY_ROWS[1].replace('| pending-user-decision |', '| failed |')],
+  });
+  assert.ok(hasCode(failed.warnings, 'RR-SCHEMA-103'));
+  assert.ok(messages(failed.warnings).every((message) => !message.startsWith('RR-STALE-')));
+
+  const duplicateOwner = runV2(t, { files: { 'global/open-decisions-duplicate.md': DECISION_DOC } });
+  assert.ok(hasCode(duplicateOwner.errors, 'RR-REF-012'));
+  assert.ok(messages(duplicateOwner.warnings).every((message) => !message.startsWith('RR-STALE-')));
+
+  const duplicateRow = runV2(t, {
+    files: {
+      'global/open-decisions.md': DECISION_DOC.replace(DECISION_D204_OPEN_ROW, `${DECISION_D204_OPEN_ROW}\n${DECISION_D204_OPEN_ROW}`),
+    },
+  });
+  assert.ok(messages(duplicateRow.warnings).every((message) => !message.startsWith('RR-STALE-')));
+
+  const invalidStatus = runV2(t, {
+    files: {
+      'global/open-decisions.md': DECISION_DOC.replace(DECISION_D204_OPEN_ROW, DECISION_D204_OPEN_ROW.replace('| open |', '| closed |')),
+    },
+  });
+  assert.ok(messages(invalidStatus.warnings).every((message) => !message.startsWith('RR-STALE-')));
+
+  const missingStatusColumn = runV2(t, {
+    files: {
+      'global/open-decisions.md': DECISION_DOC
+        .replace('| ID | Decision Needed | Options | Blocking Mode | Owner | Status |', '| ID | Decision Needed | Options | Blocking Mode | Owner |')
+        .replace('|---|---|---|---|---|---|', '|---|---|---|---|---|')
+        .replace(DECISION_D204_OPEN_ROW, '| D-204 | 로그인 성공 후 이동 위치 | home / returnTo | final-fixture-ui | PM |'),
+    },
+  });
+  assert.ok(hasCode(missingStatusColumn.errors, 'RR-REF-008'));
+  assert.ok(messages(missingStatusColumn.warnings).every((message) => !message.startsWith('RR-STALE-')));
+
+  const missingMappingId = 'missing-figma-mapping';
+  const invalidRelevantItem = runV2(t, {
+    summaryRows: [
+      DEFAULT_SUMMARY_ROWS[0]
+        .replaceAll('COUPON-001-figma-component-mapping', missingMappingId)
+        .replace('| accepted |', '| pending-user-decision |'),
+      DEFAULT_SUMMARY_ROWS[1],
+    ],
+    itemRows: [
+      DEFAULT_ITEM_ROWS[0].replace('COUPON-001-figma-component-mapping', missingMappingId),
+      ...DEFAULT_ITEM_ROWS.slice(1),
+    ],
+  });
+  assert.ok(hasCode(invalidRelevantItem.errors, 'RR-REF-006'));
+  assert.ok(messages(invalidRelevantItem.warnings).every((message) => !message.startsWith('RR-STALE-101:')));
+
+  const unknownOnly = runScopeUnknown(t, ['- 정보 부족이며 IN-20260720-figma-001을 참고한다.']);
+  assert.ok(messages(unknownOnly.warnings).every((message) => !message.startsWith('RR-STALE-')));
+});
+
+test('RR-STALE candidate trust is input-local: related summary hard errors suppress, unrelated errors do not', (t) => {
+  const relatedProjectionError = runV2(t, {
+    summaryRows: [
+      DEFAULT_SUMMARY_ROWS[0]
+        .replace('| accepted |', '| pending-user-decision |')
+        .replace('artifact:component-gap-register |', 'artifact:component-gap-register; artifact:missing-extra |'),
+      DEFAULT_SUMMARY_ROWS[1],
+    ],
+  });
+  assert.ok(hasCode(relatedProjectionError.errors, 'RR-ITEM-007'));
+  assert.equal(warningMessagesByCode(relatedProjectionError, 'RR-STALE-101').length, 0);
+
+  const unrelatedProjectionError = runV2(t, {
+    files: {
+      'global/open-decisions.md': DECISION_DOC.replace(
+        DECISION_D204_OPEN_ROW,
+        DECISION_D204_OPEN_ROW.replace('| open |', '| resolved |'),
+      ),
+    },
+    summaryRows: [
+      DEFAULT_SUMMARY_ROWS[0].replace(
+        'artifact:component-gap-register |',
+        'artifact:component-gap-register; artifact:missing-extra |',
+      ),
+      DEFAULT_SUMMARY_ROWS[1],
+    ],
+  });
+  assert.ok(hasCode(unrelatedProjectionError.errors, 'RR-ITEM-007'));
+  assert.equal(warningMessagesByCode(unrelatedProjectionError, 'RR-STALE-102').length, 1);
+});
+
+test('202-C warnings stay check 12 warnings under --enforce, preserve JSON shape/order, and exit 0', (t) => {
+  const result = runV2(t, {
+    summaryRows: [
+      DEFAULT_SUMMARY_ROWS[0]
+        .replace('artifact:component-gap-register', 'artifact:component-gap-register#notes')
+        .replace('| accepted |', '| pending-user-decision |'),
+      DEFAULT_SUMMARY_ROWS[1],
+    ],
+  });
+  assert.deepEqual(messages(result.errors), []);
+
+  const run = (extraArgs = []) => {
+    try {
+      return JSON.parse(execFileSync(
+        process.execPath,
+        [VALIDATE, '--docs', result.docsDir, '--json', ...extraArgs],
+        { encoding: 'utf8', cwd: KIT_ROOT },
+      ));
+    } catch (error) {
+      if (typeof error.stdout !== 'string' || error.stdout === '') throw error;
+      return JSON.parse(error.stdout);
+    }
+  };
+  const baseline = run();
+  const enforced = run(['--enforce']);
+  assert.equal(baseline.ok, true, JSON.stringify(baseline, null, 2));
+  assert.equal(baseline.count, 0);
+  assert.deepEqual(baseline.errors, []);
+  assert.deepEqual(enforced.errors, []);
+  assert.equal(enforced.count, 0);
+  assert.deepEqual(enforced.warnings, baseline.warnings);
+
+  const oldIndex = baseline.warnings.findIndex((warning) => warning.message.startsWith('RR-ITEM-101:'));
+  const newIndex = baseline.warnings.findIndex((warning) => warning.message.startsWith('RR-STALE-101:'));
+  assert.ok(oldIndex >= 0 && newIndex > oldIndex, JSON.stringify(baseline.warnings, null, 2));
+  for (const warning of baseline.warnings.filter((entry) => entry.message.startsWith('RR-STALE-'))) {
+    assert.equal(warning.check, 12);
+    assert.deepEqual(Object.keys(warning).sort(), ['check', 'file', 'message']);
+    assert.equal('code' in warning, false);
+    assert.equal('input_id' in warning, false);
+    assert.equal('item_id' in warning, false);
+  }
 });
 
 // ── v1 compatibility (기존 fixture 출력 유지) ─────────────────────────────────

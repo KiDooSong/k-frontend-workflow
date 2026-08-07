@@ -146,6 +146,7 @@ export function buildInputArtifactIndex(inputArtifacts = []) {
   return {
     byId,
     sectionCache: new Map(),
+    sectionDetailsCache: new Map(),
   };
 }
 
@@ -162,24 +163,42 @@ function inputArtifactBody(artifact) {
   return splitFrontmatter(readFileSafe(artifact.file)).body || '';
 }
 
-// H2 section slug -> actual Markdown list item count. Parsing is AST-backed, so
-// fenced code, HTML comments, and blockquote-contained fake headings/tables do not
-// create canonical evidence sections. Duplicate real H2 slugs are combined, which
-// preserves the existing Reconciliation Items behavior.
+// H2 section slug -> actual Markdown list item count + exact visible bullet prose.
+// One shared AST parse populates both views. Fenced/indented code, HTML comments,
+// raw HTML attributes, link destinations, URL-only autolinks, definitions, and image
+// destinations do not become evidence text. Duplicate real H2 slugs are concatenated
+// in source order, preserving the existing aggregate bullet-count behavior.
+export function inputSectionDetails(index, artifact) {
+  if (!artifact) return null;
+  const cacheKey = artifact.file || artifact;
+  if (index?.sectionDetailsCache?.has(cacheKey)) return index.sectionDetailsCache.get(cacheKey);
+
+  const sections = new Map();
+  const bulletTexts = new Map();
+  for (const occurrence of parseReconciliationMarkdown(inputArtifactBody(artifact)).occurrences) {
+    if (!occurrence.slug) continue;
+    const existingTexts = bulletTexts.get(occurrence.slug) || [];
+    const occurrenceTexts = Array.isArray(occurrence.bulletTexts) ? occurrence.bulletTexts : [];
+    const combinedTexts = [...existingTexts, ...occurrenceTexts];
+    bulletTexts.set(occurrence.slug, combinedTexts);
+    sections.set(occurrence.slug, combinedTexts.length);
+  }
+
+  const details = { sections, bulletTexts };
+  if (index) {
+    if (!index.sectionCache) index.sectionCache = new Map();
+    if (!index.sectionDetailsCache) index.sectionDetailsCache = new Map();
+    index.sectionCache.set(cacheKey, sections);
+    index.sectionDetailsCache.set(cacheKey, details);
+  }
+  return details;
+}
+
 export function inputSectionIndex(index, artifact) {
   if (!artifact) return null;
   const cacheKey = artifact.file || artifact;
   if (index?.sectionCache?.has(cacheKey)) return index.sectionCache.get(cacheKey);
-  const sections = new Map();
-  for (const occurrence of parseReconciliationMarkdown(inputArtifactBody(artifact)).occurrences) {
-    if (!occurrence.slug) continue;
-    sections.set(
-      occurrence.slug,
-      (sections.get(occurrence.slug) || 0) + (occurrence.bulletCount || 0),
-    );
-  }
-  if (index?.sectionCache) index.sectionCache.set(cacheKey, sections);
-  return sections;
+  return inputSectionDetails(index, artifact)?.sections || null;
 }
 
 // Resolve the shared evidence pointer without imposing caller-specific severity.
@@ -187,7 +206,18 @@ export function inputSectionIndex(index, artifact) {
 // duplicate handling, section semantics, and bullet count aligned.
 export function resolveInputEvidence(index, token) {
   const ref = parseInputEvidenceRef(token);
-  if (!ref) return { status: 'invalid', ref: null, artifact: null, sections: null, bulletCount: null };
+  if (!ref) {
+    return {
+      status: 'invalid',
+      ref: null,
+      artifact: null,
+      sections: null,
+      bulletCount: null,
+      bulletTexts: null,
+      bulletIndex: null,
+      evidenceText: null,
+    };
+  }
   const resolution = resolveInputArtifact(index, ref.inputId);
   if (resolution.status !== 'ok') {
     return {
@@ -197,9 +227,13 @@ export function resolveInputEvidence(index, token) {
       artifacts: resolution.artifacts,
       sections: null,
       bulletCount: null,
+      bulletTexts: null,
+      bulletIndex: ref.bulletIndex,
+      evidenceText: null,
     };
   }
-  const sections = inputSectionIndex(index, resolution.artifact);
+  const details = inputSectionDetails(index, resolution.artifact);
+  const sections = details?.sections || null;
   if (!sections?.has(ref.section)) {
     return {
       status: 'missing-section',
@@ -207,14 +241,26 @@ export function resolveInputEvidence(index, token) {
       artifact: resolution.artifact,
       sections,
       bulletCount: null,
+      bulletTexts: null,
+      bulletIndex: ref.bulletIndex,
+      evidenceText: null,
     };
   }
+  const bulletTexts = details.bulletTexts.get(ref.section) || [];
   const bulletCount = sections.get(ref.section) || 0;
+  const status =
+    ref.bulletIndex !== null && ref.bulletIndex > bulletCount ? 'bullet-out-of-range' : 'ok';
   return {
-    status: ref.bulletIndex !== null && ref.bulletIndex > bulletCount ? 'bullet-out-of-range' : 'ok',
+    status,
     ref,
     artifact: resolution.artifact,
     sections,
     bulletCount,
+    bulletTexts,
+    bulletIndex: ref.bulletIndex,
+    evidenceText:
+      status === 'ok' && ref.bulletIndex !== null
+        ? bulletTexts[ref.bulletIndex - 1] ?? ''
+        : null,
   };
 }
