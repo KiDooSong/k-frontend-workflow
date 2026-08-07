@@ -17,7 +17,16 @@
 //   1  --enforce 인데 위반 있음.
 //   2  입력 오류(state/policy 부재, git 실행/ base ref 해석 실패).
 import path from 'node:path';
-import { parseArgs, DEFAULTS, KIT_ROOT, loadYaml, readFileSafe, runCli, isCliEntry } from './lib/util.mjs';
+import {
+  parseArgs,
+  DEFAULTS,
+  KIT_ROOT,
+  loadGeneratedWorkflowStateOrExit,
+  loadYaml,
+  readFileSafe,
+  runCli,
+  isCliEntry,
+} from './lib/util.mjs';
 import { enforceCliFlagContract } from './lib/cli-args.mjs';
 import { computeReadiness } from './readiness.mjs';
 import { LayoutConfigError, loadLayoutProfile } from './lib/layout-profile.mjs';
@@ -319,7 +328,11 @@ function main() {
   const statePath = path.join(docsDir, '_meta', 'workflow-state.yaml');
 
   // --- state / policy 로드 (부재 시 exit 2; YAML 손상 시에도 exit 2 — 둘 다 입력 오류) ---
-  const state = loadYamlOrExit(statePath, 'workflow-state');
+  const state = loadGeneratedWorkflowStateOrExit(
+    statePath,
+    'workflow-state',
+    'forbidden-paths',
+  );
   if (!state) {
     process.stderr.write(
       `forbidden-paths: ${statePath} 없음. 먼저 \`npm run workflow:state\` 실행하거나 --docs 를 확인하세요.\n`,

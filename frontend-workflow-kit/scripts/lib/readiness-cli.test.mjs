@@ -35,6 +35,53 @@ function withTmpDir(fn) {
   }
 }
 
+function aliasHeavyWorkflowState(aliasCount = 442) {
+  return [
+    '# GENERATED FILE — DO NOT EDIT',
+    '# Command: npm run workflow:state',
+    'generated_at: 2026-08-07',
+    'global:',
+    '  navigation_map_status: missing',
+    '  component_catalog_generated: false',
+    '  stub_screen_specs_count: 0',
+    'screens: {}',
+    'legacy:',
+    '  source: &source',
+    '    path: docs/frontend-workflow/domains/example/screen-spec.md',
+    '  copies:',
+    ...Array.from({ length: aliasCount }, () => '    - *source'),
+    '',
+  ].join('\n');
+}
+
+test('readiness uses the bounded generated-state loader for legacy alias-heavy workflow-state', () => {
+  withTmpDir((root) => {
+    const docs = path.join(root, 'docs', 'frontend-workflow');
+    const meta = path.join(docs, '_meta');
+    fs.mkdirSync(meta, { recursive: true });
+    fs.writeFileSync(path.join(meta, 'workflow-state.yaml'), aliasHeavyWorkflowState(), 'utf8');
+
+    const r = run(['--docs', docs, '--json']);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stderr, '');
+    assert.deepEqual(JSON.parse(r.stdout), {});
+  });
+});
+
+test('readiness policy/manifest overrides named workflow-state.yaml keep the default alias limit', () => {
+  withTmpDir((root) => {
+    const spoofed = path.join(root, 'workflow-state.yaml');
+    fs.writeFileSync(spoofed, aliasHeavyWorkflowState(), 'utf8');
+    for (const [flag, label] of [['--policy', 'policy'], ['--manifest', 'manifest']]) {
+      const r = run(['--docs', EXAMPLE_DOCS, flag, spoofed, '--json']);
+      assert.equal(r.status, 2, `${flag} must not receive generated-state recovery`);
+      assert.equal(r.stdout, '');
+      assert.match(r.stderr, new RegExp(`readiness: ${label} YAML 파싱 실패`));
+      assert.match(r.stderr, /Excessive alias count/);
+    }
+  });
+});
+
 test('--help prints usage to stdout and exits 0 — even without workflow-state.yaml (validation precedes state load)', () => {
   withTmpDir((root) => {
     // cwd 를 빈 디렉토리로: 기본 docs 경로에 state 파일이 없어도 help 는 성공해야 한다.
