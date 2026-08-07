@@ -183,6 +183,17 @@ export function loadYaml(p) {
   return yamlParse(raw);
 }
 
+function isLegacyGeneratedWorkflowState(p, raw, err) {
+  if (path.basename(p) !== 'workflow-state.yaml') return false;
+  if (
+    !raw.startsWith('# GENERATED FILE — DO NOT EDIT\n') &&
+    !raw.startsWith('# GENERATED FILE — DO NOT EDIT\r\n')
+  ) {
+    return false;
+  }
+  return String(err && err.message ? err.message : err).startsWith('Excessive alias count ');
+}
+
 // 손상된(파싱 실패) YAML 설정 파일을 exit 2(입력 오류)로 우아하게 처리한다.
 // 부재(파일 없음)는 loadYaml 이 null 을 돌려주므로 호출부가 별도 처리 — 여기선 "손상"만 잡는다.
 // forbidden-paths.mjs 가 먼저 쓰던 패턴을 공유화: readiness/validate 도 같은 exit 2 계약을 따른다
@@ -191,7 +202,19 @@ export function loadYamlOrExit(p, label, tool = 'workflow') {
   try {
     return loadYaml(p);
   } catch (err) {
-    process.stderr.write(`${tool}: ${label} YAML 파싱 실패 — ${p}\n  ${err.message}\n`);
+    let parseError = err;
+    // 과거 emitter 는 동일 객체를 anchor/alias 로 접어 workflow-state 를 만들었고, 화면 수가 커지면
+    // yaml 기본 maxAliasCount=100 을 넘어 readiness 가 자기 생성물을 거부했다. 일반 설정의 alias
+    // 보호는 유지하고, 정확한 생성물 헤더+파일명이 확인된 legacy workflow-state 만 제한 없이 재시도한다.
+    const raw = readFileSafe(p);
+    if (raw != null && isLegacyGeneratedWorkflowState(p, raw, err)) {
+      try {
+        return yamlParse(raw, { maxAliasCount: -1 });
+      } catch (retryErr) {
+        parseError = retryErr;
+      }
+    }
+    process.stderr.write(`${tool}: ${label} YAML 파싱 실패 — ${p}\n  ${parseError.message}\n`);
     process.exit(2);
   }
 }
@@ -266,7 +289,9 @@ export function confidenceRank(c) {
 // 생성물 헤더 + 본문. 키 순서는 호출부가 제어하므로 sortMapEntries 는 쓰지 않는다.
 export function emitGeneratedYaml(headerLines, obj) {
   const header = headerLines.map((l) => (l ? `# ${l}` : '#')).join('\n');
-  const body = yamlStringify(obj, { lineWidth: 0 });
+  // 반복 provenance 객체를 anchor/alias 로 접으면 기본 parser(maxAliasCount=100)가 큰 프로젝트의
+  // 생성물을 거부할 수 있다. 생성 뷰는 명시적으로 전개해 사람이 읽기 쉽고 self-readable 하게 둔다.
+  const body = yamlStringify(obj, { lineWidth: 0, aliasDuplicateObjects: false });
   return `${header}\n${body}`;
 }
 
