@@ -24,7 +24,7 @@
 //
 // 이 모듈은 순수하다 — { errors:[{file,message}], warnings:[{file,message}] } 를 반환하고
 // file 은 항상 절대경로다. validate.mjs 가 add()/warn() 으로 상대화한다.
-import { col } from './spec.mjs';
+import { col, parseTable } from './spec.mjs';
 import { RECONCILE_STATUS_VALUES, REQUIRED_REGISTER_COLS } from './reconciliation-register.mjs';
 import {
   FIGMA_PRECISION_SOURCE_UNITS,
@@ -476,9 +476,15 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
     JSON.stringify(
       rows.map((r) => [r.inputId, r.source, r.classification, r.reconcileStatus, r.result, r.touched, r.created, r.supersedes]),
     );
-  if (rowsFingerprint(summaryRows) !== rowsFingerprint(register.rows)) {
+  // Strict AST cells expose rendered text (for example `[label](dest)` becomes `label`), while the
+  // compatibility v1 parser intentionally preserves raw inline Markdown. RR-SCHEMA-020 is about
+  // whether both parsers selected the same source table, not whether their cell projections match.
+  // Reparse the canonical table's exact source bytes with the v1 parser before comparing fingerprints.
+  const canonicalV1Table = parseTable(summaryTables[0].sourceText || '');
+  const canonicalV1Rows = (canonicalV1Table?.rows || []).map(normalizeSummaryRow);
+  if (rowsFingerprint(canonicalV1Rows) !== rowsFingerprint(register.rows)) {
     add(
-      'RR-SCHEMA-020: v1 파서가 선택한 첫 표가 canonical Summary 표와 일치하지 않음 — fence/indented/container lazy 예시 표가 Summary 앞에 있으면 lifecycle 검사가 가짜 표를 읽습니다 → 예시를 canonical Summary 뒤로 옮기거나 non-content로 감싸세요',
+      'RR-SCHEMA-020: v1 파서가 선택한 첫 raw pipe 표가 canonical Summary source 표와 일치하지 않음 — Summary 앞의 fence/indented/container lazy 예시 표를 canonical Summary 뒤로 옮기거나 non-content로 감싸세요',
     );
   }
 
