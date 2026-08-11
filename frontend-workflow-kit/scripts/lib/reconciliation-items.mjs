@@ -471,18 +471,18 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
     );
     return { errors, warnings }; // Summary 없이는 행 단위 검사가 전부 무의미 — 구조부터 고친다
   }
-  const summaryRows = summaryTables[0].rows.map(normalizeSummaryRow);
   const rowsFingerprint = (rows) =>
     JSON.stringify(
       rows.map((r) => [r.inputId, r.source, r.classification, r.reconcileStatus, r.result, r.touched, r.created, r.supersedes]),
     );
-  // Strict AST cells expose rendered text (for example `[label](dest)` becomes `label`), while the
-  // compatibility v1 parser intentionally preserves raw inline Markdown. RR-SCHEMA-020 is about
-  // whether both parsers selected the same source table, not whether their cell projections match.
-  // Reparse the canonical table's exact source bytes with the v1 parser before comparing fingerprints.
+  // Strict AST selects the canonical source table and enforces its structure, but rendered cell text
+  // cannot be the v2 grammar input: Markdown wrappers such as links, images, or emphasis would collapse
+  // to their visible text and could turn invalid raw syntax into a valid typed ref. Reparse the exact
+  // canonical source bytes with the v1 raw-cell parser and use that single projection for both the
+  // RR-SCHEMA-020 source-table comparison and all downstream structured grammar/projection checks.
   const canonicalV1Table = parseTable(summaryTables[0].sourceText || '');
-  const canonicalV1Rows = (canonicalV1Table?.rows || []).map(normalizeSummaryRow);
-  if (rowsFingerprint(canonicalV1Rows) !== rowsFingerprint(register.rows)) {
+  const summaryRows = (canonicalV1Table?.rows || []).map(normalizeSummaryRow);
+  if (rowsFingerprint(summaryRows) !== rowsFingerprint(register.rows)) {
     add(
       'RR-SCHEMA-020: v1 파서가 선택한 첫 raw pipe 표가 canonical Summary source 표와 일치하지 않음 — Summary 앞의 fence/indented/container lazy 예시 표를 canonical Summary 뒤로 옮기거나 non-content로 감싸세요',
     );
