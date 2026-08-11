@@ -38,6 +38,13 @@ const KIT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 const VALIDATE = path.join(KIT_ROOT, 'scripts', 'validate.mjs');
 const RECON_EXAMPLES = path.join(KIT_ROOT, 'examples', 'reconciliation-validation');
 
+test('source hygiene: reconciliation-items.mjs contains no raw NUL bytes', () => {
+  const sourceBytes = fs.readFileSync(
+    new URL('./reconciliation-items.mjs', import.meta.url),
+  );
+  assert.equal(sourceBytes.includes(0), false);
+});
+
 // ── fixture builder ──────────────────────────────────────────────────────────
 
 const DEFAULT_FRONTMATTER = [

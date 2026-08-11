@@ -55,6 +55,8 @@ import { analyzeReconciliationWarnings } from './reconciliation-warnings.mjs';
 export const RECONCILIATION_CONTRACT_V2 = 2;
 export const REVIEW_PROFILE_STAGE04 = 'reconcile-stage04-v1';
 
+const KEY_SEP = '\u0000';
+
 // classification enum — input-reconciliation.md §Classification 과 동일 어휘.
 export const CLASSIFICATION_VALUES = [
   'simple-update',
@@ -817,7 +819,7 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
 
     // 중복 (Input ID, Item, Effect, Target) 금지 (설계 §8.1).
     if (row.inputId && row.item && row.effect && row.target) {
-      const dupKey = [row.inputId, row.item, row.effect, row.target].join(' ');
+      const dupKey = [row.inputId, row.item, row.effect, row.target].join(KEY_SEP);
       if (effectDupSeen.has(dupKey)) {
         add(`RR-ITEM-004: 중복 effect 행: (${row.inputId}, ${row.item}, ${row.effect}, ${row.target})`);
       }
@@ -825,7 +827,7 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
     }
 
     if (row.inputId && row.item) {
-      const key = `${row.inputId} ${row.item}`;
+      const key = `${row.inputId}${KEY_SEP}${row.item}`;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push({ row, target, rowHardValid: errors.length === rowErrorStart });
     }
@@ -834,7 +836,7 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
   // --- item group 검사: Basis/Classification 일관성 + routing matrix ---
   for (const [key, entries] of groups) {
     const groupErrorStart = errors.length;
-    const [inputId, itemId] = key.split(' ');
+    const [inputId, itemId] = key.split(KEY_SEP);
     const label = `item ${inputId}#${itemId}`;
     const bases = [...new Set(entries.map((e) => e.row.basis).filter(Boolean))];
     const classifications = [...new Set(entries.map((e) => e.row.classification).filter(Boolean))];
