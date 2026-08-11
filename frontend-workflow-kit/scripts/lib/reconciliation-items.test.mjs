@@ -2291,6 +2291,67 @@ test('v2 hard: canonical Summary 표 부재/중복은 RR-SCHEMA-019', (t) => {
   assert.ok(hasCode(duplicated.errors, 'RR-SCHEMA-019'));
 });
 
+test('v2 pass: structured_since 이전 legacy Summary 링크는 RR-SCHEMA-020을 만들지 않음', (t) => {
+  const r = runV2(t, {
+    files: { 'inputs/IN-20260601-planning-001.md': LEGACY_INPUT },
+    summaryRows: [
+      ...DEFAULT_SUMMARY_ROWS,
+      '| IN-20260601-planning-001 | [planning](planning/source.md) | legacy-note | reconciled | legacy-result | [legacy artifact](../domains/coupons/legacy.md) | [legacy decision](../global/open-decisions.md#d-001) | - |',
+    ],
+  });
+
+  assert.equal(hasCode(r.errors, 'RR-SCHEMA-020'), false);
+  assert.equal(hasCode(r.errors, 'RR-SCHEMA-006'), false);
+  assert.equal(hasCode(r.errors, 'RR-SCHEMA-007'), false);
+  assert.equal(hasCode(r.errors, 'RR-SCHEMA-008'), false);
+  assert.equal(hasCode(r.warnings, 'RR-SCHEMA-102'), false);
+  assert.deepEqual(messages(r.errors), []);
+  assert.deepEqual(messages(r.warnings), []);
+});
+
+test('v2 hard: structured Summary Markdown wrapper는 raw typed-ref grammar를 우회하지 못함', (t) => {
+  const cases = [
+    {
+      label: 'Touched Artifacts link',
+      row: DEFAULT_SUMMARY_ROWS[0].replace(
+        'artifact:COUPON-001-figma-component-mapping;',
+        '[artifact:COUPON-001-figma-component-mapping](legacy.md);',
+      ),
+      code: 'RR-SCHEMA-007',
+    },
+    {
+      label: 'Created Items link',
+      row: DEFAULT_SUMMARY_ROWS[0].replace(
+        'gap:G-001@component-gap-register',
+        '[gap:G-001@component-gap-register](legacy.md)',
+      ),
+      code: 'RR-SCHEMA-008',
+    },
+    {
+      label: 'Classification emphasis',
+      row: DEFAULT_SUMMARY_ROWS[0].replace(
+        'simple-update + component-gap',
+        '**simple-update** + component-gap',
+      ),
+      code: 'RR-SCHEMA-006',
+    },
+    {
+      label: 'Touched Artifacts image alt',
+      row: DEFAULT_SUMMARY_ROWS[0].replace(
+        'artifact:COUPON-001-figma-component-mapping;',
+        '![artifact:COUPON-001-figma-component-mapping](legacy.png);',
+      ),
+      code: 'RR-SCHEMA-007',
+    },
+  ];
+
+  for (const { label, row, code } of cases) {
+    const r = runV2(t, { summaryRows: [row, DEFAULT_SUMMARY_ROWS[1]] });
+    assert.equal(hasCode(r.errors, 'RR-SCHEMA-020'), false, label);
+    assert.equal(hasCode(r.errors, code), true, label);
+  }
+});
+
 test('v2 hard: fence 안 Summary 가 canonical 을 가리면 RR-SCHEMA-020, 주석 안 예시는 무해', (t) => {
   // fenced 예시 표가 raw body 의 "첫 파이프 표"가 되어 v1 파서가 그것을 읽는 경우 — canonical(실제 표)과
   // 불일치를 hard 로 표면화한다.

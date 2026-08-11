@@ -24,7 +24,7 @@
 //
 // 이 모듈은 순수하다 — { errors:[{file,message}], warnings:[{file,message}] } 를 반환하고
 // file 은 항상 절대경로다. validate.mjs 가 add()/warn() 으로 상대화한다.
-import { col } from './spec.mjs';
+import { col, parseTable } from './spec.mjs';
 import { RECONCILE_STATUS_VALUES, REQUIRED_REGISTER_COLS } from './reconciliation-register.mjs';
 import {
   FIGMA_PRECISION_SOURCE_UNITS,
@@ -471,14 +471,20 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
     );
     return { errors, warnings }; // Summary 없이는 행 단위 검사가 전부 무의미 — 구조부터 고친다
   }
-  const summaryRows = summaryTables[0].rows.map(normalizeSummaryRow);
   const rowsFingerprint = (rows) =>
     JSON.stringify(
       rows.map((r) => [r.inputId, r.source, r.classification, r.reconcileStatus, r.result, r.touched, r.created, r.supersedes]),
     );
+  // Strict AST selects the canonical source table and enforces its structure, but rendered cell text
+  // cannot be the v2 grammar input: Markdown wrappers such as links, images, or emphasis would collapse
+  // to their visible text and could turn invalid raw syntax into a valid typed ref. Reparse the exact
+  // canonical source bytes with the v1 raw-cell parser and use that single projection for both the
+  // RR-SCHEMA-020 source-table comparison and all downstream structured grammar/projection checks.
+  const canonicalV1Table = parseTable(summaryTables[0].sourceText || '');
+  const summaryRows = (canonicalV1Table?.rows || []).map(normalizeSummaryRow);
   if (rowsFingerprint(summaryRows) !== rowsFingerprint(register.rows)) {
     add(
-      'RR-SCHEMA-020: v1 파서가 선택한 첫 표가 canonical Summary 표와 일치하지 않음 — fence/indented/container lazy 예시 표가 Summary 앞에 있으면 lifecycle 검사가 가짜 표를 읽습니다 → 예시를 canonical Summary 뒤로 옮기거나 non-content로 감싸세요',
+      'RR-SCHEMA-020: v1 파서가 선택한 첫 raw pipe 표가 canonical Summary source 표와 일치하지 않음 — Summary 앞의 fence/indented/container lazy 예시 표를 canonical Summary 뒤로 옮기거나 non-content로 감싸세요',
     );
   }
 

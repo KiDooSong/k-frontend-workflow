@@ -291,7 +291,7 @@ function tableStartsWithColumnZeroPipe(source, node) {
     .every((line) => line.startsWith('|'));
 }
 
-function tableFromNode(node) {
+function tableFromNode(source, node) {
   const [headerRow, ...dataRows] = node.children || [];
   if (!headerRow) return null;
   const headers = (headerRow.children || []).map((cell) => cellText(cell).trim());
@@ -303,7 +303,13 @@ function tableFromNode(node) {
     });
     return row;
   });
-  return { headers, rows, rowCount: rows.length };
+  const range = sourceRange(node);
+  return {
+    headers,
+    rows,
+    rowCount: rows.length,
+    sourceText: range ? source.slice(range.start, range.end) : '',
+  };
 }
 
 function sourceGapHasBlankLine(source, previousNode, node) {
@@ -332,7 +338,7 @@ function tableHasExplicitBlockBoundary(source, node, previousNode) {
 function rootTable(source, node, previousNode) {
   if (node.type !== 'table' || !tableStartsWithColumnZeroPipe(source, node)) return null;
   if (!tableHasExplicitBlockBoundary(source, node, previousNode)) return null;
-  return tableFromNode(node);
+  return tableFromNode(source, node);
 }
 
 function headingText(node) {
