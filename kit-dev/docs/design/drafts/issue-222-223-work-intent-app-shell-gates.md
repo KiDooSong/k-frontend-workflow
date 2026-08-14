@@ -1,6 +1,6 @@
 # Issue #222/#223 설계 — Work Intent와 App Shell Gate
 
-Status: accepted design draft; fourth review amendment applied; implementation not started
+Status: accepted design draft; fifth review amendment applied; implementation not started
 Issues: #222, #223
 Date: 2026-08-14
 Baseline: `49a3a31029293eae3fd6765f75e2b5520f939a93` (`main`, PR #225 merge 이후)
@@ -18,7 +18,10 @@ Implementation order: #222 → #223
 > source-alias scope resolution, current unsuperseded input leaf를 확정했다.
 > 네 번째 amendment는 supersession의 시간·source-lineage trust, capability용
 > Screen Source Map hard trust, dedicated app-shell route-host root, optional target-root
-> resolver와 기존 undefined-role fail-closed 경계를 확정한다.
+> resolver와 기존 undefined-role fail-closed 경계를 확정했다.
+> 다섯 번째 amendment는 resolved visual target의 current evidence, lineage transition,
+> relation-local Screen Source Map authorization, app-shell `api-client` root의
+> required-on-use lazy resolution을 확정한다.
 
 ---
 
@@ -43,34 +46,41 @@ shell 코드를 우회할 수 있다.
 2. 진행 상태와 별도로 explicit work intent를 도입한다.
 3. 첫 public intent는 screen-only `visual-refresh`다.
 4. `visual-refresh`는 `--input <INPUT_ID>`와 hard-trusted evidence가 필수다.
-5. evidence는 Reconciliation Contract v2 trust뿐 아니라 Input Result Contract
-   per-input hard trust도 통과해야 한다.
-6. raw/source alias는 capability용 hard-trusted Screen Source Map relation을 거쳐야 한다.
-7. selected input은 trusted supersession graph의 current unsuperseded leaf여야 한다.
-8. supersession edge는 strictly later `captured_at`과 exact same source lineage를 요구한다.
-9. source lineage는 `source_ref`에서 추측하지 않고 additive `source_lineage` key로
-   source-specific producer가 명시한다.
-10. 모든 deny는 provenance-bearing claim으로 보존한다.
-11. `visual-refresh`가 waive할 수 있는 것은 exact canonical work-step deny뿐이다.
-12. `visual-refresh`는 screen/domain-component만 여는 독립 최소 권한 envelope다.
-13. `app-shell-spec`을 선택적 1급 implementation target으로 도입한다.
-14. shell `implementation_paths`는 `path + kind` typed declaration이다.
-15. typed declaration은 ownership/semantic 분류일 뿐 물리 권한이 아니다.
-16. shell positive authority는 typed declaration과 policy/layout-owned kind root의
+5. evidence는 Input Result Contract와 Reconciliation Contract v2를 모두 통과한다.
+6. raw/source alias는 capability 전용 Screen Source Map analyzer를 거친다.
+7. selected input은 trusted supersession component의 current leaf여야 한다.
+8. supersession edge는 strictly-later timestamp와 same logical source lineage가 필수다.
+9. graph leaf만으로는 충분하지 않다. Selected input은 resolved visual target의 현재
+   authored provenance에 포함되고 selected screen의 current visual revision이어야 한다.
+10. 더 최신 trusted visual item이 target provenance에 반영되지 않았으면 target을
+    stale로 보고 어떤 input에도 positive permission을 주지 않는다.
+11. lineage-free legacy input이나 source 이동은 cross-lineage supersession edge를
+    발명하지 않고 explicit lineage transition + current target provenance 갱신으로 처리한다.
+12. Screen Source Map은 global structural trust와 alias relation trust를 분리한다.
+    정상 `split|ambiguous` relation은 해당 alias만 non-authorizing이며 unrelated
+    `confirmed|merged` relation을 닫지 않는다.
+13. 모든 deny는 provenance-bearing claim으로 보존한다.
+14. `visual-refresh`가 waive할 수 있는 것은 exact canonical work-step deny뿐이다.
+15. `visual-refresh`는 screen/domain-component만 여는 독립 최소 권한 envelope다.
+16. `app-shell-spec`을 선택적 1급 implementation target으로 도입한다.
+17. shell `implementation_paths`는 `path + kind` typed declaration이다.
+18. typed declaration은 semantic ownership일 뿐 physical authority를 스스로 만들지 않는다.
+19. shell positive authority는 policy-owned target root, layout binding, maturity profile의
     교집합에서만 나온다.
-17. `route-host`는 broad `{roles.route_entry}`를 재사용하지 않고 exact-file 전용 optional
-    `{roles.app_shell_route_host}`를 사용한다.
-18. optional shell roots는 target-profile 전용 lazy resolver로 해소한다. 기존
-    `resolvePaths`/`requireRole`의 undefined-role fail-closed 의미는 바꾸지 않는다.
-19. API Candidate owner를 `{target_type, target_id}`로 일반화한다.
-20. `api_required:false` shell은 API maturity에 도달해도 route/shell host 권한을
-    유지하는 `no-api-host` profile을 사용한다.
-21. malformed이지만 안전하게 canonicalize 가능한 shell path는 positive authority를
+20. `route-host`는 broad `route_entry`를 재사용하지 않고 exact-file
+    `app_shell_route_host`를 사용한다.
+21. optional shell roots와 required-on-use `api-client` root는 target-profile 전용 lazy
+    resolver로 실제 declaration/candidate가 소비할 때만 해소한다.
+22. 일반 `resolvePaths`/`requireRole`의 undefined-role fail-closed 의미는 유지한다.
+23. API Candidate owner를 `{target_type, target_id}`로 일반화한다.
+24. `api_required:false` shell은 API maturity에서도 root-bound host 권한을 유지하는
+    `no-api-host` profile을 사용한다.
+25. malformed이지만 안전하게 canonicalize 가능한 shell path는 positive authority를
     만들지 않고 project-wide deny-only reservation으로 남긴다.
-22. 기존 6-column Open Decision register와 `decision_refs`를 재사용한다.
-23. screen/shared surface/app shell/generated/API candidate가 하나의 전역 물리 경로
+26. 기존 6-column Open Decision register와 `decision_refs`를 재사용한다.
+27. screen/shared surface/app shell/generated/API candidate가 하나의 전역 물리 경로
     namespace를 사용하고 deny가 항상 우선한다.
-24. 구현은 #222와 #223을 별도 PR로 나눈다. #223은 #222 substrate를 소비하되
+28. 구현은 #222와 #223을 별도 PR로 나눈다. #223은 #222 substrate를 소비하되
     #222 의미를 다시 설계하지 않는다.
 
 추가 사용자 결정 없이 권장안으로 설계를 확정한다.
@@ -101,7 +111,7 @@ decision_cap   = open/malformed Open Decision이 허용하는 최고 mode
 readiness_mode = min(fact_mode, decision_cap)
 ```
 
-`production-ready`의 CI/review 사실은 시각 입력 도착 여부와 독립적이다.
+`production-ready`의 CI/review 사실은 시각 입력 도착과 독립적이다.
 `readiness_mode`는 작업 요청의 종류가 아니라 현재 성숙도와 decision ceiling이다.
 
 ### 2.2 Current path authorization
@@ -128,12 +138,8 @@ public contract를 유지한 채 내부를 실제 API로 교체하는 동안 화
 ### 2.3 Current deny provenance loss
 
 현재 mode YAML deny와 Tier3 `layers[].access.forbid`는 최종적으로 같은
-`forbidden_paths: string[]`에 합쳐진다. 합쳐진 뒤에는 다음을 구분할 수 없다.
-
-- canonical mode가 작업 단계 보호를 위해 만든 screen deny
-- consumer Tier3 architecture가 추가한 safety deny
-- literal custom policy deny
-- generated/candidate/other-owner reservation
+`forbidden_paths: string[]`에 합쳐진다. 합쳐진 뒤에는 canonical mode의 work-step
+screen deny와 consumer Tier3/custom safety deny를 구분할 수 없다.
 
 따라서 path 문자열을 삭제하는 방식의 intent override는 금지한다. 구현은 path
 resolution 전에 deny origin을 claim으로 보존해야 한다.
@@ -153,236 +159,161 @@ resolution 전에 deny origin을 claim으로 보존해야 한다.
 - optional `confidence` enum
 
 이 결과는 Reconciliation Contract v2의 RR/RP diagnostics와 별개다. Reconciliation
-Item이 explicit provenance를 가졌더라도 input artifact 자체가 hard-invalid이면 그
-artifact는 code authorization evidence가 될 수 없다.
+Item이 explicit provenance를 가졌더라도 input artifact 자체가 hard-invalid이면 code
+authorization evidence가 될 수 없다.
 
 ### 2.5 Reconciliation Contract v2 trust
 
 현재 v2 validator는 deterministic hard diagnostics와 advisory warnings를 계산한다.
-내부적으로 canonical Summary trust와 `(Input ID, Item)` group trust를 사용하지만,
-public 반환은 `{ errors, warnings }`다.
+Readiness는 `workflow:validate` 선행 성공을 가정할 수 없으므로 별도 Markdown 부분
+parser를 만들지 않고 기존 v2 분석을 trust-producing pure analyzer로 추출한다.
 
-Readiness는 `workflow:validate` 선행 성공을 가정할 수 없다. 따라서 intent evidence를
-위한 별도 Markdown 부분 parser는 금지하고, 기존 v2 분석을 trust-producing pure
-analyzer로 추출한다.
+### 2.6 Current target provenance boundary
 
-### 2.6 Screen Source Map current boundary
+Reconciliation Item의 `Effect`는 reconcile 시점의 역사적 행위다. 과거 item이
+hard-valid하다는 사실은 target artifact가 지금도 해당 input을 current visual source로
+가리킨다는 뜻이 아니다.
+
+현재 repository에는 다음 current authored provenance surface가 이미 있거나 추가할 수 있다.
+
+- Figma mapping: `## Mapping Provenance`의 `Evidence`
+- Visual consistency family: `Screen Families` row의 `Evidence`
+- ScreenSpec visual section: first implementation slice에서 추가하는 optional
+  `## Visual Evidence` exact table
+
+`visual-refresh`는 historical item만이 아니라 이 current authored provenance를 함께
+검증해야 한다.
+
+### 2.7 Screen Source Map boundary
 
 `screen-source-map.md`는 planning/design/Figma alias를 canonical Screen ID에 연결하는
-optional register다. 현재 parser는 `Canonical Screen ID`와 `Mapping Status`가 있는 첫
-표를 고르고, doctor는 warning-first 진단을 낸다.
+optional register다. General doctor는 warning-first다. Capability use에는 exact
+frontmatter/table/header와 row/alias index를 검증하는 별도 analyzer가 필요하다.
 
-이 parser/doctor contract는 cold-start 관측 surface로는 적절하지만 code capability
-정본으로는 충분하지 않다. 다음이 현재 hard contract가 아니다.
+정상적인 `split|ambiguous`는 map 구조 오류가 아니다. 해당 alias relation이 code
+authority를 만들 수 없다는 뜻이다. 따라서 global structure trust와 alias-local
+authorization state를 분리해야 한다.
 
-- canonical frontmatter parse/identity
-- exact 10-column table header
-- duplicate heading/table/header 방지
-- canonical row identity uniqueness
-- capability alias uniqueness
-- canonical Screen ID와 source alias namespace collision
+### 2.8 Supersession and lineage boundary
 
-따라서 general doctor는 유지하되, raw/source alias를 `visual-refresh` capability에 쓸
-때만 별도의 strict analyzer를 사용한다.
+Input artifact와 Reconciliation Register Summary는 `supersedes` 관계를 표현한다.
+Capability-specific graph는 cycle/branch/parity뿐 아니라 timestamp와 source lineage를
+검사한다. 그러나 explicit edge가 없는 더 최신 same-target input은 graph에서 발견되지
+않는다. 그러므로 graph current leaf와 target-current visual revision은 별도 조건이다.
 
-### 2.7 Supersession current boundary
+`source_ref`는 개별 capture pointer이고 stable replacement stream이 아니다. Additive
+`source_lineage`는 source-specific producer가 제공하는 opaque logical stream key다.
 
-Input artifact와 Reconciliation Register Summary는 모두 `supersedes` 관계를 표현한다.
-현재 Input Result Contract는 target 존재와 self-reference를 검사하지만 다음은 검사하지
-않는다.
-
-- successor의 `captured_at`이 predecessor보다 실제로 늦은가
-- successor와 predecessor가 같은 source lineage인가
-- cross-source input이 잘못 supersede하는가
-
-따라서 acyclic/current-leaf만으로는 오래된 input이 최신 leaf가 되는 역전 graph를 막지
-못한다. Capability-specific supersession trust에 timestamp와 lineage를 추가한다.
-
-### 2.8 Source lineage boundary
-
-`source_ref`는 개별 capture의 evidence pointer다. Figma node/frame, 문서 section,
-회의 recording 등 더 정밀한 위치를 포함할 수 있고 revision마다 달라질 수 있다.
-Generic kit가 `source_ref` 문자열에서 stable lineage를 추측하면 source별 의미를
-재발명하게 된다.
-
-따라서 additive optional frontmatter `source_lineage`를 도입한다. 일반 input validity와
-no-intent 동작에는 필수가 아니지만, supersession edge가 visual capability freshness에
-사용될 때는 양 endpoint에 필수다.
-
-### 2.9 Visual family parsing boundary
-
-현재 visual-consistency parser는 `Screen Families` 표의 `Family`와 `Member Screens`를
-실제로 파싱할 수 있다. generic reconciliation target index의 row-key 해소만으로는
-family row가 target screen을 포함하는지 증명하지 못한다.
-
-따라서 visual contract를 intent evidence로 사용할 때 strict family-membership resolver를
-추가한다.
-
-### 2.10 Layout resolver fail-closed boundary
+### 2.9 Layout resolver boundary
 
 현재 `layout-profile.mjs`의 `requireRole()`과 `resolvePaths()`는 undefined `{roles.X}`를
-`LayoutConfigError`로 처리한다. Undefined forbidden role을 조용히 `[]`로 만들면 deny가
-사라져 권한이 넓어질 수 있기 때문에 이 의미는 유지해야 한다.
+`LayoutConfigError`로 처리한다. Undefined forbidden role을 `[]`로 만들면 deny가
+사라지므로 이 의미는 유지한다.
 
-반면 optional app-shell roots는 미채택 consumer에서 존재하지 않는 것이 정상이다.
-Optional slot을 일반 `resolvePaths()`에 그대로 넣으면 app-shell authoring만 한 repo가
-exit 2가 되고, `requireRole()`을 전역 완화하면 기존 fail-closed invariant가 깨진다.
-따라서 target-profile optional root만을 위한 별도 lazy resolver가 필요하다.
+App-shell target roots는 adoption과 kind 사용 여부에 따라 없을 수 있다. 이 root만
+별도 lazy resolver가 처리하며 일반 layout resolver를 완화하지 않는다.
 
-### 2.11 Route-entry boundary
+### 2.10 Route-entry boundary
 
-기본 Expo layout의 `{roles.route_entry}`는 `src/app/**` 전체를 가리킨다. 이를 app-shell
-`route-host` ceiling으로 재사용하면 일반 화면 route 파일까지 shell positive authority
-후보가 된다.
+기본 Expo `{roles.route_entry}`는 `src/app/**` 전체다. 이를 app-shell `route-host`
+ceiling으로 재사용하면 일반 화면 route까지 shell 권한 후보가 된다. App shell route
+host에는 exact-file `app_shell_route_host`를 사용한다.
 
-App shell route host는 root layout/provider/router boundary여야 하므로 별도의 exact-file
-optional role을 사용한다.
+### 2.11 Shared surfaces
 
-### 2.12 Shared surfaces
+`shared-surface-spec`은 domain, 최소 2 member, member cap, decision fan-out을 전제로
+한다. 선언은 권한이 아니다. Declared path가 policy와 member screen들의 교집합을
+통과해야만 positive permission을 만든다. App shell도 target-specific kind root를
+통과해야 한다.
 
-`shared-surface-spec`은 다음 의미를 가진다.
+### 2.12 Open Decisions
 
-- 같은 domain의 canonical screen 최소 2개
-- 명시적 `member_screens`
-- member screen minimum readiness cap
-- decision member fan-out
-- non-route uniform behavior
-- narrow `implementation_paths`
+Canonical global home은 `docs/frontend-workflow/global/open-decisions.md`이며 기존
+6-column schema와 human-only `open → resolved` transition을 유지한다. `decision_refs`가
+target scope를 소유한다.
 
-선언은 권한이 아니다. Declared path가 policy와 모든 member screen의 교집합을
-통과해야만 positive permission을 만든다. App shell도 같은 원칙을 사용하되 member
-intersection 대신 target-specific kind root를 사용한다.
+### 2.13 Current API Candidate owner boundary
 
-### 2.13 Open Decisions
+현재 API Candidate v2 positive authorization과 conflict collection은 주로 ScreenSpec과
+`screen_id`에 맞춰져 있다. Domainless app shell에는 generic owner identity와 typed
+hook/API-client parent가 필요하다.
 
-Canonical global home은 `docs/frontend-workflow/global/open-decisions.md`이고 row schema는
-다음 6개 column이다.
+### 2.14 Existing fixes and remaining gap
 
-```text
-ID | Decision Needed | Options | Blocking Mode | Owner | Status
-```
-
-`decision_refs`가 target과 row의 관계를 소유한다. Global row는 zero-ref여도 valid하고,
-referrer가 없으면 어떤 target도 막지 않는다. `open → resolved`는 사람 전용이다.
-
-### 2.14 Current API Candidate owner boundary
-
-현재 API Candidate v2의 positive authorization과 conflict collection은 주로
-ScreenSpec과 `screen_id`에 맞춰져 있다. Domain과 screen identity가 없는 app shell에는
-그 규칙을 그대로 적용할 수 없다.
-
-### 2.15 Existing fixes and remaining gaps
-
-- #124는 `api_required:false` 화면의 non-API path 잠금을 해소했다.
+- #124는 `api_required:false` screen의 non-API path 잠금을 해소했다.
 - #210은 API Candidate v2 per-slice deferral과 ownership을 만들었다.
-- #211은 fixture mode에서 owned hook slice를 열면서 API mode의 screen 불변을 유지했다.
+- #211은 fixture mode의 owned hook slice와 API mode의 screen 불변을 양립시켰다.
 - #222는 maturity와 작업 종류를 분리하는 authorization 축이 없는 문제다.
 - #223은 shell target/path/decision owner가 없는 문제다.
-- App shell에는 #124와 대칭인 no-API host preservation이 필요하다.
-- Typed shell path에는 shared-surface와 대칭인 외부 physical authorization ceiling이
-  필요하다.
 
 ---
 
 ## 3. Reproduced Failure Modes
 
-### 3.1 #222 — mature screen에 visual 작업 권한이 없음
-
-공개 kit 기준으로 다음을 확인했다.
+### 3.1 #222 — mature screen visual work
 
 1. 선택된 mode 하나가 base path envelope를 소유한다.
 2. `final-fixture-ui`에서는 screen/domain-component/hook이 열릴 수 있다.
 3. `api-integrated-ui`에서는 hook/API-client가 열리고 screen이 forbidden이다.
-4. 별도 visual task profile이 없다.
-5. Open Decision을 reopen해 mode를 낮추면 maturity와 gate provenance를 거짓으로 만든다.
-6. evidence 없는 `--intent`는 API 배선 작업의 screen deny 우회 capability가 된다.
-7. flattened deny path에서 `{roles.screen}`을 삭제하면 Tier3/custom deny를 함께
-   삭제할 수 있다.
-8. RR/RP trust만 보면 Input Result Contract-invalid artifact가 evidence가 될 수 있다.
-9. raw source alias를 canonical ID exact match로만 검사하면 reconciliation에서 identity가
-   확정된 정상 input을 영구적으로 막는다.
-10. superseded input을 막지 않으면 stale visual input이 reusable bearer capability가 된다.
-11. timestamp가 역전된 edge도 current leaf를 만들 수 있다.
-12. API/meeting 등 다른 source lineage가 visual input을 supersede할 수 있다.
-13. loose Screen Source Map parser를 권한 정본으로 재사용하면 duplicate header/table이나
-    namespace collision에 따라 alias relation이 달라질 수 있다.
+4. evidence 없는 `--intent`는 API wiring 작업의 screen deny 우회 capability가 된다.
+5. RR/RP trust만 보면 Input Result Contract-invalid artifact가 evidence가 될 수 있다.
+6. raw alias canonicalization이 없으면 정상 identity reconciliation을 영구 차단한다.
+7. superseded input을 막지 않으면 stale input이 bearer capability가 된다.
+8. graph leaf만 확인하면 explicit `supersedes`가 없는 더 최신 same-target input을 놓친다.
+9. 과거 item target이 current artifact provenance에서 사라졌어도 historical row만으로
+   permission을 얻을 수 있다.
 
-따라서 work intent, source evidence, input/result trust, identity scope resolution,
-supersession time/lineage freshness, map capability trust, deny provenance가 함께 필요하다.
+따라서 intent, input/reconciliation trust, scope, graph freshness, target-current
+provenance와 deny claim이 모두 필요하다.
 
-### 3.2 #223 — shell decision과 path owner가 없음
+### 3.2 #223 — app shell gate and ownership
 
-공개 kit 기준으로 다음을 확인했다.
-
-1. `navigation-map`은 route topology 정본이지만 implementation target이 아니다.
-2. `visual-consistency-contract`는 visual ownership 정본이지만 readiness hard gate가 아니다.
-3. `shared-surface-spec`은 domain/member/member-cap/fan-out을 전제로 한다.
-4. global register의 zero-ref row는 target을 막지 않는다.
-5. state에 app shell index가 없다.
-6. ordinary screen에는 global shell path를 예약할 owner가 없다.
-7. 기본 layout role에는 app-shell host가 없다.
-8. screen-centric candidate owner는 domainless shell candidate를 표현하지 못한다.
-9. malformed shell declaration을 positive index에서 제거하면 `src/**`가 우회한다.
-10. no-API shell이 API maturity에 도달하면 host와 candidate가 모두 닫힐 수 있다.
-11. typed `kind`를 artifact만 믿으면 `src/api/**`, `package.json`, 다른 domain path를
-    `shell-host`로 표기해 새 물리 권한을 만들 수 있다.
-12. `route-host → {roles.route_entry}`를 쓰면 일반 `src/app/*.tsx` route가 shell authority
-    후보가 된다.
-13. optional shell role lookup을 일반 resolver로 완화하면 existing forbidden-role typo가
-    조용히 사라질 수 있다.
-
-Typed declaration은 semantic/ownership claim이어야 하며 policy/layout-owned root보다
-넓은 physical authority를 만들 수 없어야 한다.
+1. navigation-map은 route topology 정본이지만 implementation target이 아니다.
+2. visual-consistency-contract는 visual policy 정본이지만 readiness hard gate가 아니다.
+3. shared surface를 global 특례로 확장하면 member/cap/fan-out 의미가 흐려진다.
+4. typed path declaration만 믿으면 `src/api/**`, `package.json`, ordinary route를
+   shell-host/route-host라고 적어 새 physical authority를 만들 수 있다.
+5. malformed shell declaration을 index에서 제거하면 broad `src/**`가 우회한다.
+6. no-API shell이 API maturity에 도달하면 host와 candidate가 모두 닫힐 수 있다.
+7. optional/required role을 eager resolve하면 no-shell/no-API custom layout을 깨뜨리고,
+   전역 resolver를 완화하면 기존 fail-closed invariant를 깨뜨린다.
 
 ---
 
 ## 4. Goals
 
 - readiness maturity와 현재 작업 종류의 권한을 분리한다.
-- hard-trusted current visual input에 바인딩된 refresh만 허용한다.
-- API 배선 작업 중 screen 불변을 tool-level invariant로 유지한다.
-- intent가 waive할 수 있는 deny와 절대 보존할 deny를 provenance로 구분한다.
+- hard-trusted current visual evidence에 바인딩된 refresh만 허용한다.
+- historical input을 재사용 가능한 bearer capability로 만들지 않는다.
+- API wiring 중 screen 불변을 tool-level invariant로 유지한다.
 - app shell을 route-less/global 1급 implementation target으로 만든다.
-- shell path kind를 author가 명시하되 physical authority는 policy/layout이 소유한다.
-- app-shell route host를 일반 screen route surface와 분리한다.
-- optional shell role 부재를 target-local unbound로 처리하면서 기존 undefined-role
-  fail-closed invariant는 보존한다.
-- shell API Candidate를 generic target owner 모델에 연결한다.
-- no-API shell이 API maturity에서 host path를 잃지 않게 한다.
-- malformed shell owner가 다른 target의 authority를 넓히지 않게 한다.
-- raw/source alias input scope가 hard-trusted map을 통해 canonical screen에 해소되게 한다.
-- superseded input과 역전/cross-lineage edge가 visual intent token으로 재사용되지 않게 한다.
-- shell Open Decision이 해당 shell만 cap하도록 한다.
-- no-adoption/no-intent repository의 기존 동작을 유지한다.
-- #222와 #223 구현을 독립 리뷰 가능한 PR로 분리한다.
+- shell declaration은 semantic owner가 되되 physical authority는 policy/layout이 소유한다.
+- no-API shell host authority를 API maturity에서도 보존한다.
+- malformed owner가 다른 target의 authority를 넓히지 않게 한다.
+- shell Open Decision이 shell만 cap하도록 한다.
+- no-intent/no-shell compatibility를 보존한다.
+- #222와 #223 구현을 독립 PR로 분리한다.
 
 ---
 
 ## 5. Non-goals
 
-- `readiness_mode` order 변경
-- 새 scalar mode 삽입
+- mode order 변경 또는 scalar `visual-refresh` mode 추가
 - reached-mode path union
-- timestamp/source type만으로 intent 자동 추론
-- evidence 없는 trusted override 또는 bypass flag
-- path 문자열만 비교해 safety deny 삭제
-- v1/summary-only register를 visual intent authority로 사용
-- visual-consistency, Screen Source Map doctor를 global hard CI gate로 승격
-- app-shell-spec declaration만으로 임의 물리 root 생성
-- `{roles.route_entry}` 전체를 app-shell route authority로 사용
-- default Expo preset에 broad app-shell root 자동 주입
-- undefined ordinary role을 조용히 빈 배열로 처리
-- `source_ref` 문자열 heuristic으로 lineage 추론
-- superseded input fallback
-- #224 decision-log/history 계약
-- Open Decision table column 추가
-- shared surface global scope 확장
+- timestamp/file name만으로 intent 자동 추론
+- evidence bypass flag
+- path 문자열 기반 deny 삭제
+- v1/summary-only register를 capability evidence로 사용
+- doctor/visual warning 전체를 global hard CI로 승격
+- app-shell declaration만으로 arbitrary physical root 생성
+- broad default shell host/route root 제공
+- cross-lineage supersession edge를 자동 추론
+- historical input file 수정/backfill 강요
+- #224 decision-log 계약
+- Open Decision table column 변경
 - consumer migration 자동 실행
-- Open Decision resolve 또는 `confirmed` 승격
-- warning-first surface의 hard/required CI promotion
-- 새 required CI check
-- generic app-surface abstraction
-- release/version/tag 변경
+- Open Decision resolve/confirmed promotion
+- dependency/release/version/tag 변경
 
 ---
 
@@ -390,32 +321,25 @@ Typed declaration은 semantic/ownership claim이어야 하며 policy/layout-owne
 
 | Term | Meaning |
 |---|---|
-| maturity | 사실과 decision cap이 허용하는 기계적 진행 상태 |
+| maturity | 사실과 decision cap이 허용하는 진행 상태 |
 | work intent | 호출자가 명시하는 현재 작업 종류 |
-| intent evidence | intent capability를 허용하는 canonical input/reconciliation provenance |
+| intent evidence | code capability를 허용하는 trusted current provenance |
 | input artifact trust | Input Result Contract hard validity |
-| register trust | v2 register global structure hard validity |
-| input reconciliation trust | selected input summary/projection/ref hard validity |
-| group trust | selected `(Input ID, Item)` effect group hard validity |
-| map capability trust | Screen Source Map을 code capability relation에 사용할 수 있는 hard trust |
-| scope resolution | affected screen token을 canonical screen relation으로 해소한 결과 |
-| source lineage | 같은 upstream source revision family를 나타내는 explicit opaque key |
-| current input leaf | trusted supersession component에서 newer successor가 없는 input |
-| authorization profile | target와 intent에 따른 독립 path envelope |
-| implementation target | screen, shared surface, app shell처럼 path owner가 될 수 있는 대상 |
-| typed path declaration | shell 내부 semantic kind와 narrow ownership claim |
-| kind root | policy가 kind에 연결하고 layout이 물리 glob으로 해소하는 authority ceiling |
-| optional target root | target-profile 전용으로 missing이 정상인 lazy-resolved role slot |
-| root binding | declared path가 해당 kind root에 완전히 포함되는 관계 |
-| route-host root | exact shell layout/provider/router host 파일의 optional role binding |
-| deny claim | path, authored token, origin, class, overrideability를 보존한 구조화 deny |
-| waived claim | exact intent predicate로 무시됐으나 provenance에 남는 deny |
-| safety deny | intent가 override할 수 없는 Tier3/generated/ownership/candidate deny |
+| reconciliation trust | Contract v2 register/input/group/projection hard validity |
+| visual target key | exact current visual provenance row를 식별하는 normalized key |
+| current evidence set | current target artifact가 지금 참조하는 input IDs |
+| screen visual revision | selected screen current evidence set의 최신 trusted timestamp |
+| target-provenance stale | 더 최신 trusted item이 있으나 current target provenance에 반영되지 않은 상태 |
+| source lineage | source-specific producer가 발급한 logical replacement stream key |
+| lineage transition | legacy unset 또는 source move를 새 current target provenance로 전환하는 audit record |
+| map structure trust | Screen Source Map global frontmatter/table structural trust |
+| alias relation state | authorizing, acknowledged-non-authorizing, conflicting 중 하나 |
+| deny claim | path, authored token, origin, class, overrideability를 보존한 deny |
+| typed path declaration | app shell semantic kind와 narrow reservation claim |
+| kind root | policy target profile이 layout role로 해소하는 physical ceiling |
+| required-on-use root | 해당 kind declaration/candidate가 실제 존재할 때만 필수인 root |
 | deny-only ownership | positive authority 없이 다른 target만 차단하는 recoverable claim |
-| target-scoped decision | referrer target만 cap하는 Open Decision |
-| candidate owner | `{target_type, target_id}` API Candidate identity |
-| subordinate slice | 같은 target의 typed hook/API-client root 안의 narrower candidate |
-| no-API host envelope | API maturity에서도 no-API shell host authority를 유지하는 profile |
+| no-API host envelope | no-API shell이 API maturity에서도 host를 유지하는 profile |
 
 ---
 
@@ -423,36 +347,29 @@ Typed declaration은 semantic/ownership claim이어야 하며 policy/layout-owne
 
 1. `readiness_mode = min(fact_mode, decision_cap)`을 유지한다.
 2. 권한을 얻기 위해 mode를 낮추지 않는다.
-3. intent는 호출자가 명시하며 자동 추론하지 않는다.
-4. `visual-refresh`는 `--input`과 hard-trusted evidence 없이는 permission 0이다.
-5. selected input은 Input Result Contract와 Reconciliation Contract v2를 모두 통과한다.
-6. raw/source alias는 hard-trusted Screen Source Map relation 없이는 scope를 만들지 않는다.
-7. Screen Source Map의 canonical/alias namespace collision은 fail closed한다.
-8. selected input은 trusted supersession graph의 current leaf다.
-9. every supersession edge는 successor timestamp가 strictly later다.
-10. every supersession edge는 exact same `source_type`과 exact same `source_lineage`다.
-11. `source_lineage`는 `source_ref`에서 추론하지 않는다.
-12. Reconciliation Item의 허용 effect는 실제 enum `update|create`다.
-13. intent는 base allowed path 누적 합집합이 아니다.
-14. deny는 origin을 가진 claim으로 판정한다.
-15. `claim.authored_path`가 canonical field다.
-16. same path의 non-waivable claim 하나라도 남으면 deny한다.
-17. Tier3/custom/generated/other-owner/candidate deny는 waive하지 않는다.
-18. forward check와 diff backstop은 같은 trust와 authorization helper를 소비한다.
-19. Work Packet/Run Report는 provenance를 재계산하지 않는다.
-20. generated ownership을 어떤 target도 우회하지 못한다.
-21. shell typed declaration은 물리 권한을 스스로 만들지 않는다.
-22. shell positive authority는 policy/layout-owned kind root 안에서만 가능하다.
-23. app-shell route-host는 exact optional `app_shell_route_host` root만 사용한다.
-24. missing optional target root는 target-local unbound이며 readiness exit 0/permission 0이다.
-25. existing mode policy/forbidden/ordinary role의 undefined token은 계속 LayoutConfigError다.
-26. no-shell repository는 optional shell role을 resolve하지 않는다.
-27. malformed owner declaration이 다른 target의 authority를 넓히지 않는다.
-28. app shell decision은 unrelated target에 fan-out하지 않는다.
-29. shared-surface member/cap/fan-out 의미는 유지한다.
-30. `api_required:false` target은 candidate authority를 얻지 않는다.
-31. no-API shell은 API maturity에서 host authority를 잃지 않는다.
-32. intent 없는 기존 실행은 기존 의미와 호환된다.
+3. Intent는 explicit하며 evidence bypass가 없다.
+4. Input Result Contract와 Reconciliation v2 hard trust를 모두 요구한다.
+5. Selected input은 trusted graph leaf이자 current visual revision evidence여야 한다.
+6. Historical reconciliation item만으로 permission을 만들지 않는다.
+7. Current target provenance가 selected input을 참조하지 않으면 deny한다.
+8. 더 최신 trusted same-screen visual item이 provenance에 반영되지 않으면 모두 deny한다.
+9. Cross-lineage/legacy transition은 graph edge를 발명하지 않고 current provenance로 처리한다.
+10. Source alias는 authorizing map relation 없이는 scope를 만들지 않는다.
+11. Normal split/ambiguous alias는 relation-local non-authorizing이며 unrelated relation을 닫지 않는다.
+12. Intent는 base allowed union이 아니다.
+13. Deny는 claim 단위로 판정한다.
+14. Same path에 non-waivable claim 하나라도 남으면 deny한다.
+15. Tier3/custom/generated/other-owner/candidate deny는 waive하지 않는다.
+16. Forward와 backstop은 동일 helper/context를 소비한다.
+17. Packet/Report는 provenance를 재계산하지 않는다.
+18. Shell declaration은 physical authority를 스스로 만들지 않는다.
+19. Positive shell authority는 trusted root binding 안에서만 가능하다.
+20. `route-host`는 exact `app_shell_route_host` 안에서만 가능하다.
+21. Optional/required-on-use roots는 target-profile에서 lazy resolve한다.
+22. Ordinary undefined role은 계속 LayoutConfigError다.
+23. Malformed owner declaration이 다른 target 권한을 넓히지 않는다.
+24. No-API shell은 host를 유지하지만 hook/API/candidate authority를 얻지 않는다.
+25. Intent 없는 기존 실행은 호환된다.
 
 ---
 
@@ -460,35 +377,25 @@ Typed declaration은 semantic/ownership claim이어야 하며 policy/layout-owne
 
 | Option | Decision | Reason |
 |---|---|---|
-| reached-mode allowed union | reject | task kind와 API screen invariant를 구분하지 못함 |
-| API mode screen forbid 제거 | reject | 모든 API 배선 작업에 screen mutation을 엶 |
-| scalar `visual-refresh` mode | reject | maturity와 intent를 다시 혼합 |
-| Open Decision reopen | reject | 실제 maturity와 provenance를 왜곡 |
-| evidence 없는 explicit intent | reject | caller 규율만 남음 |
-| RR 부분 parser | reject | validate/readiness drift |
-| Input Result Contract message 재파싱 | reject | 문자열 diagnostic에 권한 로직 종속 |
-| shared pure analyzers | adopt | validate와 readiness가 동일 hard contract 소비 |
-| loose Screen Source Map parser reuse | reject | header/table/namespace ambiguity |
-| strict capability analyzer | adopt | doctor를 승격하지 않고 권한 relation만 fail closed |
-| current leaf only, no time/lineage | reject | reversed/cross-source edge가 stale leaf 생성 |
-| explicit `source_lineage` + strict time | adopt | source-specific stable identity와 freshness 분리 |
-| infer lineage from `source_ref` | reject | revision pointer/adapter grammar를 generic kit가 재발명 |
-| flattened deny 삭제 | reject | Tier3/custom deny 손실 |
-| provenance deny claim | adopt | origin/waiver deterministic |
-| shell kind를 경로명에서 추론 | reject | unknown layer fail-open |
-| typed shell declaration alone | reject | artifact가 임의 physical authority 생성 |
-| typed declaration ∩ kind root | adopt | semantic ownership과 policy authority 분리 |
-| route-host → `{roles.route_entry}` | reject | broad `src/app/**`가 일반 route를 shell에 개방 |
-| exact optional `app_shell_route_host` | adopt | root layout/provider 파일만 명시적 채택 |
-| globally optionalize undefined roles | reject | existing forbidden typo가 권한 확대 |
-| target-profile-only optional resolver | adopt | missing shell root와 ordinary fail-closed를 분리 |
-| malformed shell path drop | reject | other target broad allow 우회 |
-| deny-only recovery | adopt | privilege expansion 없이 보수적 reservation |
-| shared-surface global scope | reject | member semantics 훼손 |
+| reached-mode allowed union | reject | task kind와 API screen invariant 구분 불가 |
+| API mode screen forbid 제거 | reject | 모든 API wiring에 screen mutation 개방 |
+| scalar visual-refresh mode | reject | maturity와 task kind 재혼합 |
+| evidence 없는 explicit intent | reject | caller discipline만 남음 |
+| historical item trust only | reject | current target provenance를 증명하지 못함 |
+| graph leaf only | reject | missing supersedes/cross-lineage newer input을 놓침 |
+| target-current provenance + revision index | adopt | authored current source와 later item drift를 함께 검사 |
+| input files lineage backfill | reject | input immutability 위반 |
+| lineage transition record + current provenance | adopt | legacy/source move를 append-only로 처리 |
+| global duplicate-alias failure | reject | valid split가 unrelated alias capability까지 닫음 |
+| structure trust + relation-local state | adopt | blast radius 최소화 |
+| typed shell declaration alone | reject | arbitrary physical authority 생성 |
+| declaration ∩ kind root | adopt | semantic owner와 policy authority 분리 |
+| route-host → route_entry | reject | ordinary route까지 broad authority |
+| exact app_shell_route_host | adopt | host boundary만 명시적으로 개방 |
+| eager required api_client root | reject | no-API/custom layout을 불필요하게 깨뜨림 |
+| required-on-use lazy root | adopt | 실제 API surface 사용 때만 fail closed |
+| shared-surface global scope | reject | member/cap/fan-out 의미 훼손 |
 | dedicated app-shell-spec | adopt | narrow target identity와 gate |
-| generic app-surface first slice | reject | 현재 요구보다 과도한 일반화 |
-| navigation-map target 승격 | reject | route truth와 mutable ownership 결합 |
-| Open Decision schema 확장 | reject | `decision_refs`로 target scope 표현 가능 |
 
 ---
 
@@ -498,74 +405,54 @@ Typed declaration은 semantic/ownership claim이어야 하며 policy/layout-owne
 
 ```text
 fact_idx       = target fact profile이 연속으로 만족하는 최고 mode index
-decision_idx   = target에 적용된 open decision의 최저 Blocking Mode index - 1
+decision_idx   = target open decision의 최저 Blocking Mode index - 1
 readiness_idx  = min(fact_idx, decision_idx)
 readiness_mode = order[readiness_idx]
 ```
 
 Malformed lifecycle/decision/policy/target contract는 fail closed한다.
 
-### 9.2 Base output ownership
+### 9.2 Base output
 
-Intent가 있어도 다음은 base maturity를 뜻한다.
+Intent가 있어도 top-level `readiness_mode`, `next_mode`, `allowed_paths`,
+`forbidden_paths`, `blocking`, `next_actions`는 base maturity 의미를 유지한다.
+Intent 결과는 별도 `work_intent`에 둔다.
 
-```text
-readiness_mode
-next_mode
-allowed_paths
-forbidden_paths
-blocking
-next_actions
-```
-
-`visual-refresh` 때문에 `readiness_mode`를 낮추거나 거짓 출력하지 않는다.
-
-### 9.3 Decision levels
+### 9.3 Intent prerequisite
 
 ```text
 intent_prerequisite_pass =
-  fact_idx >= required_idx
-  AND decision_cap_idx >= required_idx
-  AND target structural state valid
+  fact_idx >= index(final-fixture-ui)
+  AND decision_cap_idx >= index(final-fixture-ui)
+  AND target lifecycle/structure valid
 ```
 
-`final-fixture-ui` blocker는 visual refresh를 막는다. API integration만 막는 상위 blocker는
-final-level visual work를 불필요하게 막지 않는다.
+Final-level blocker는 visual refresh를 막고 API-only higher blocker는 불필요하게 막지 않는다.
 
-### 9.4 Effective path profile is separate
+### 9.4 Effective path profile
 
-동일 mode라도 target facts에 따라 effective profile이 달라질 수 있다.
-`api_required:false` app shell의 `no-api-host`가 대표 사례다.
+Maturity와 effective path profile은 별도다. `api_required:false` app shell은
+`api-integrated-ui|production-ready`에서도 `no-api-host` profile을 사용할 수 있다.
 
 ---
 
-## 10. Decision D2 — Explicit Work Intent와 Evidence Trust
+## 10. Decision D2 — Explicit Work Intent와 Current Evidence Trust
 
 ### 10.1 Public contract
 
-```text
---screen <SCREEN_ID>
---intent visual-refresh
---input <INPUT_ID>
+```bash
+npm run workflow:readiness -- \
+  --screen CREATE-ATTACH \
+  --intent visual-refresh \
+  --input IN-20260814-figma-003 \
+  --path src/features/create/screens/CreateAttachScreen.tsx \
+  --json
 ```
 
-첫 slice에서 intent는 screen target에만 허용한다.
+First slice에서 `visual-refresh`는 screen selector에만 허용한다. Figma mapping 존재,
+최근 timestamp, filename, current mode만으로 자동 활성화하지 않는다.
 
-### 10.2 No inference and no bypass
-
-다음은 intent를 자동 활성화하지 않는다.
-
-- Figma mapping 존재
-- 최근 timestamp
-- source type/file name
-- current mode
-- caller assertion만 존재
-
-Evidence bypass flag/config/environment variable은 없다.
-
-### 10.3 Input Result Contract analyzer
-
-기존 `validateInputArtifacts()`의 순수 로직을 다음 analyzer로 분리한다.
+### 10.2 Input Result Contract analyzer
 
 ```text
 analyzeInputArtifacts(artifacts) -> {
@@ -580,45 +467,23 @@ analyzeInputArtifacts(artifacts) -> {
 }
 ```
 
-`validateInputArtifacts()`는 analyzer 결과를 기존 `{errors,warnings}` shape/order로
-투영한다.
+`input_artifact_trusted=true`는 현재 검사 11 hard contract 전체가 통과할 때만 가능하다.
+`validateInputArtifacts()`는 analyzer 결과를 기존 diagnostics shape/order로 투영한다.
+Readiness는 message 문자열을 재파싱하지 않는다.
 
-Per-input trust 예시:
+Additive optional fields:
 
 ```yaml
-by_input_id:
-  IN-20260811-figma-003:
-    input_artifact_trusted: true
-    hard_error_codes: []
-    captured_at: "2026-08-11T10:00:00+09:00"
-    source_type: figma
-    source_lineage: figma://file/abc123
-    effective_scope:
-      affected_domains: [create]
-      affected_screens:
-        - raw:design/J010
-    supersedes: IN-20260801-figma-001
+source_lineage: figma-screen://file/abc123/CREATE-ATTACH
+lineage_transition:
+  from_input: IN-20260701-figma-001
+  reason: legacy-lineage-adoption   # legacy-lineage-adoption | source-move
 ```
 
-`input_artifact_trusted=true`는 현재 검사 11 hard contract 전체가 통과할 때만 가능하다.
+`source_lineage`와 `lineage_transition`은 capability freshness용이다. 일반 no-intent input
+validity를 소급해 깨지 않는다.
 
-- frontmatter
-- required 9 fields
-- `input_id` format/uniqueness
-- `captured_at`
-- `input_type`/`source_type`
-- effective scopes
-- `supersedes` existence/self-reference
-- `confidence` enum when present
-
-Deprecated aliases와 filename mismatch 같은 existing warnings는 trust를 낮추지 않는다.
-Input Fidelity v2 warning-first 진단도 capability trust를 자동 차단하지 않는다.
-
-`source_lineage`는 additive optional field다. 일반 input validity와 no-intent repository에는
-필수가 아니다. 다만 §10.13 supersession edge가 capability freshness에 사용되면 양 endpoint
-모두에 필수다.
-
-### 10.4 Reconciliation Contract v2 analyzer
+### 10.3 Reconciliation Contract v2 analyzer
 
 ```text
 analyzeReconciliationContractV2(...) -> {
@@ -628,352 +493,329 @@ analyzeReconciliationContractV2(...) -> {
     register_trusted,
     summaries_by_input,
     groups_by_key,
-    projection_by_input
+    projection_by_input,
+    visual_items
   }
 }
 ```
 
-Validate adapter는 기존 public diagnostics를 유지한다.
-
-### 10.5 Register trust
-
-다음 전체가 hard-valid해야 한다.
-
-- `reconciliation_contract: 2`
-- review profile 및 structured timestamp
-- canonical Summary 정확히 1개, exact 8 columns
-- Reconciliation Items heading/table 정확히 1개
-- exact 10 columns
-- v1 parser와 canonical source mismatch 없음
-- register-wide RR-SCHEMA hard error 0
-
-### 10.6 Selected input reconciliation trust
-
-```text
-reconciliation_input_trusted(input) =
-  register_trusted
-  AND unique Summary row
-  AND Reconcile Status == reconciled
-  AND summary grammar/ref trusted
-  AND projection trusted
-  AND selected group trusted
-  AND selected-input RR-SCHEMA/RR-ITEM/RR-REF/RR-ROUTE/RP hard error 0
-```
-
-다른 input에만 귀속된 hard error는 selected input을 자동 차단하지 않는다.
-
-### 10.7 Selected visual group semantics
+Register, selected summary, selected group, projection, refs/routing/provenance가 hard-valid해야
+한다. Selected visual group은 다음을 만족한다.
 
 ```text
 group_trusted == true
 Basis == visual-evidence
 Classification == simple-update
-all Effect ∈ { update, create }
+all Effect ∈ {update, create}
 at least one effect row
 ```
 
-Summary status가 reconciliation 완료를 소유하고, item Effect는 역사적 행위를 소유한다.
-
-### 10.8 Screen-precise target relations
-
-허용 relation:
-
-A. selected ScreenSpec의 visual-allowed section
-B. selected screen_id와 exact 일치하는 sibling Figma mapping
-C. exact unique visual `Screen Families` row whose `Member Screens` contains selected screen
-
-Whole artifact/section, unrelated family, component-gap-only target은 capability evidence로
-불충분하다.
-
-### 10.9 Strict visual-family resolver
+### 10.4 Strict Screen Source Map capability analyzer
 
 ```text
-unique visual contract artifact
-AND artifact_type == visual-consistency-contract
-AND exactly one canonical Screen Families table
-AND exact Family row key
-AND exactly one matching row
-AND valid unique Member Screens
-AND selected active Screen ID exact member
-```
-
-Failure는 readiness intent만 `applicable:false`로 만든다.
-
-### 10.10 Screen Source Map capability analyzer
-
-General `parseScreenSourceMap()`/doctor contract를 바꾸지 않고 별도의 analyzer를 둔다.
-
-```text
-analyzeScreenSourceMapCapability({
-  mapFile,
-  raw,
-  activeScreens
-}) -> {
-  map_trusted,
-  rows,
-  alias_index,
+analyzeScreenSourceMapCapability({mapFile, raw, activeScreens}) -> {
+  structure_trusted,
   canonical_index,
-  namespace_collisions,
+  alias_index,
+  namespace_index,
   diagnostics
 }
 ```
 
-Canonical location:
+`structure_trusted=true` 조건:
+
+- canonical `_meta/screen-source-map.md`
+- parseable frontmatter
+- `artifact_id: screen-source-map`
+- `artifact_type: screen-source-map`
+- exactly one canonical table
+- exact unique 10-column header
+- unique Canonical Screen ID row
+- each row's ScreenSpec path/route/status structurally valid
+
+Canonical header:
 
 ```text
-docs/frontend-workflow/_meta/screen-source-map.md
+Canonical Screen ID | Domain | Route | ScreenSpec Path | Planning IDs |
+Design IDs | Figma Node IDs | Source Inputs | Mapping Status | Decision / Notes
 ```
 
-Canonical frontmatter:
+`Source Inputs`는 provenance이며 screen alias index에는 넣지 않는다.
 
-```yaml
----
-artifact_id: screen-source-map
-artifact_type: screen-source-map
-status: draft
-last_reviewed: "2026-08-14"
----
-```
+### 10.5 Relation-local alias states
 
-`map_trusted=true`는 다음 전체를 만족할 때만 가능하다.
+Alias key는 namespace를 포함한다.
 
 ```text
-canonical path exactly one
-frontmatter exists and parses
-artifact_id == screen-source-map
-artifact_type == screen-source-map
-status is a valid document lifecycle value
-non-content stripped before table selection
-exactly one canonical mapping table
-header exactly equals canonical 10 columns in order
-no missing/extra/duplicate header
-Canonical Screen ID row value nonempty and unique
-all capability aliases parse deterministically
-no duplicate alias relation across canonical rows
-no canonical Screen ID ↔ source alias namespace collision
+planning:<token>
+design:<token>
+figma-node:<token>
 ```
 
-Canonical 10-column header:
+각 alias는 다음 state 중 하나다.
 
 ```text
-Canonical Screen ID
-Domain
-Route
-ScreenSpec Path
-Planning IDs
-Design IDs
-Figma Node IDs
-Source Inputs
-Mapping Status
-Decision / Notes
+authorizing
+acknowledged-non-authorizing
+conflicting
 ```
 
-Alias index는 capability scope에 사용하는 column만 source kind와 함께 index한다.
+Rules:
+
+- exactly one `confirmed|merged` canonical relation → `authorizing`
+- multiple rows and every row status is `split|ambiguous` →
+  `acknowledged-non-authorizing`
+- one-canonical `candidate|deprecated|split|ambiguous` →
+  `acknowledged-non-authorizing`
+- multiple different canonical rows with any `confirmed|merged`, or mixed contradictory states →
+  `conflicting`
+- duplicate alias within one row → `conflicting`
+
+A relation-local non-authorizing/conflicting alias does not set global structure trust false.
+Unrelated authorizing aliases remain usable.
+
+Canonical-ID ↔ source-alias collision is token-local:
 
 ```text
-planning:<token>    ← Planning IDs
-design:<token>      ← Design IDs
-figma-node:<token>  ← Figma Node IDs
+canonical token C exists
+AND C is source alias for another canonical screen
+→ namespace_index[C] = conflicting
+→ direct canonical and legacy alias interpretation of C both denied
 ```
 
-`Source Inputs`는 screen alias namespace가 아니므로 affected-screen resolution에 쓰지 않는다.
+Other tokens remain usable.
 
-Row-level capability trust:
+### 10.6 Scope resolution
 
-- Canonical Screen ID가 active ScreenSpec에 unique하게 해소
-- `ScreenSpec Path`가 있으면 해당 active spec path와 exact 일치
-- `Route`가 양쪽에 있으면 ScreenSpec route와 exact 일치
-- Mapping Status가 enum
-- alias token이 한 row 안에서도 중복되지 않음
+Effective `affected_screens` uses canonical field first, then valid deprecated alias.
 
-`confirmed|merged` one-canonical row만 positive scope relation을 만든다.
-`candidate|ambiguous|split|deprecated`는 permission 0이다.
-
-#### Namespace collision
-
-Canonical namespace는 active ScreenSpec IDs와 canonical map row IDs의 합집합이다.
-Source alias token 문자열이 canonical namespace의 어떤 ID와도 같으면 collision이다.
-Same row 여부와 무관하게 capability에 사용할 수 없다.
-
-예:
+- active canonical Screen ID exact match → direct relation, unless namespace collision
+- `raw:planning/...`, `raw:design/...`, `raw:figma-node/...` → matching alias namespace only
+- legacy unprefixed alias → exact token search; multiple namespaces/canonical rows is ambiguous
 
 ```text
-active canonical: AUTH-001
-alias design:AUTH-001 → AUTH-002
+scope_allows(screen) =
+  direct canonical relation
+  OR authorizing source-map relation
 ```
 
-`AUTH-001`을 direct canonical로 우선하지 않고 `canonical-alias-namespace-collision`으로
-fail closed한다. Collision token은 canonical input token과 legacy alias token 양쪽에서
-permission 0이다.
+Trusted exact visual target relation remains separately required. Raw token itself never grants
+permission.
 
-Map global structure가 untrusted하면 raw/legacy alias resolution은 전부 disabled다.
-Map과 무관한 direct canonical token은 canonical ScreenSpec relation을 사용할 수 있지만,
-deterministically recovered namespace collision token은 예외적으로 deny한다.
+### 10.7 Visual target keys
 
-### 10.11 Scope resolution
-
-Input의 effective `affected_screens`는 canonical field를 우선하고, 기존
-`suggested_scope.screens` alias가 Input Result Contract상 유효한 경우 그 값을 사용한다.
-
-각 token은 다음으로 분류한다.
+Every selected visual effect row must resolve to an exact capability target key.
 
 ```text
-canonical-screen
-raw-source-alias
-legacy-source-alias
-invalid
+mapping:<artifact_id>/<mapping-key>
+visual-family:<artifact_id>/<family-key>
+screen-visual:<screen-spec-artifact-id>/<section-slug>
 ```
 
-#### Direct canonical scope
+Capability precision:
 
-Token이 active ScreenSpec canonical ID와 exact 일치하고 capability analyzer가 동일 token에
-namespace collision을 보고하지 않으면 해당 screen relation을 만든다.
+- Figma mapping target must include exact Mapping Key (`M-...`). Whole artifact/section is
+  insufficient for capability, although it may remain valid general reconciliation routing.
+- Visual family target must include exact Family row key.
+- ScreenSpec target must include one of the visual-allowed sections and have a matching current
+  Visual Evidence row.
 
-#### Raw source alias scope
+### 10.8 Current authored provenance contracts
 
-권장 grammar:
+#### A. Figma mapping
+
+Current evidence comes from exact `## Mapping Provenance` row.
 
 ```text
-raw:planning/<source-id>
-raw:design/<source-id>
-raw:figma-node/<node-id>
+Mapping Key == target mapping key
+Evidence is a valid input evidence ref
+Evidence input == selected input
+Source Ref/Unit/Captured At row remains hard-valid
 ```
 
-Raw alias는 `map_trusted=true`일 때만 해소한다.
+If multiple Mapping Provenance rows exist for one Mapping Key, target is ambiguous and denied.
 
-Legacy unprefixed alias는 backward compatibility를 위해 모든 capability alias namespace에
-exact match를 시도한다. 정확히 한 source-kind/one-canonical relation일 때만 허용한다.
-여러 alias column 또는 여러 canonical row에 매치되면 ambiguous다.
+#### B. Visual family
+
+Current evidence comes from exact `Screen Families` row `Evidence` cell. Capability grammar is a
+semicolon-separated list of canonical `input:<input_id>[#section[/bullet]]` refs. Placeholder,
+free prose, unresolved or duplicate refs make that family relation non-authorizing.
+
+The row must uniquely contain selected screen in `Member Screens` and selected input in its current
+evidence set.
+
+#### C. ScreenSpec visual section
+
+First implementation slice adds an optional exact table. Without it, ScreenSpec visual section may
+remain a valid reconciliation target but cannot by itself authorize `visual-refresh`.
+
+```markdown
+## Visual Evidence
+
+| Section | Evidence | Captured At | Status |
+|---|---|---|---|
+| ui-sections | input:IN-...#extracted-facts/01 | inherit | current |
+```
+
+Contract:
+
+- exact header and one table
+- Section is a visual-allowed ScreenSpec section slug
+- one `current` row per section
+- Evidence resolves to canonical input
+- Captured At is RFC3339 or `inherit`
+- duplicate current row or unresolved evidence → relation denied
+
+This table is capability-specific provenance. It does not make ScreenSpec the Figma visual detail
+source or alter behavior ownership.
+
+### 10.9 Current evidence set and screen visual revision
+
+For selected screen, collect all current authored provenance refs from exact target keys that
+resolve to that screen.
 
 ```text
-scope_allows(selected_screen) =
-  selected screen in direct canonical relations
-  OR selected screen in hard-trusted source-map relations
+current_evidence_set(screen) =
+  active mapping provenance inputs
+  ∪ current visual-family row inputs for families containing screen
+  ∪ current ScreenSpec Visual Evidence inputs
 ```
 
-Trusted exact reconciliation target relation은 계속 필수지만 raw alias의 authoritative map을
-대체하지 않는다. Raw token 자체는 권한을 만들지 않는다.
-
-Malformed/empty scope는 input artifact trust false 또는 capability scope false다.
-
-### 10.12 Source lineage contract
-
-Additive input frontmatter:
-
-```yaml
-source_lineage: figma://file/abc123
-```
-
-`source_lineage`는 source-specific producer가 소유하는 opaque stable identifier다.
-Generic kit는 trim 외 정규화·추론을 하지 않고 exact equality로 비교한다.
-
-권장 source별 의미:
-
-| Source type | Recommended lineage key |
-|---|---|
-| figma | stable file key, node/frame/revision 제외: `figma://file/<file-key>` |
-| planning-doc | stable document ID: `planning://document/<doc-id>` |
-| visual-spec | stable artifact/document ID: `visual-spec://document/<id>` |
-| meeting | 동일 회의 thread/series를 실제로 대체할 때만 stable series ID |
-| api-doc | stable API document/version family ID |
-| qa/testid | 동일 capture stream의 stable producer key가 있을 때만 사용 |
-
-다음은 lineage source로 금지한다.
-
-- `input_id` prefix
-- `captured_by`
-- `affected_domains`
-- file name heuristic
-- `source_ref`에서 suffix/node/version을 임의 제거한 값
-
-`source_ref`는 evidence pointer이며 lineage fallback으로 사용하지 않는다.
-
-Supersession edge가 visual capability component에 존재할 때:
+Every referenced input must be unique and Input Result Contract-trusted. Its effective timestamp is
+that input's `captured_at`; target row timestamps cannot override input identity freshness.
 
 ```text
-both endpoints source_lineage nonempty
-AND successor.source_type == predecessor.source_type
-AND successor.source_lineage == predecessor.source_lineage
+current_visual_revision_at(screen) =
+  max(captured_at of current_evidence_set(screen))
 ```
 
-Cross-source correction은 `supersedes`로 연결하지 않고 Reconciliation Item에서 conflict,
-compatible fact, link-evidence 등 기존 routing으로 합성한다.
-
-### 10.13 Supersession analyzer
-
-Input artifact trust와 v2 Summary trust를 사용해 graph를 만든다.
+Selected input must satisfy:
 
 ```text
-edge successor -> predecessor
+selected input ∈ current_evidence_set(screen)
+AND selected input captured_at == current_visual_revision_at(screen)
+AND selected target key explicitly references selected input
+```
+
+Multiple inputs at the same maximum timestamp are allowed only when all are current refs and their
+exact target keys are non-conflicting. Same target key with different equal-time inputs is
+ambiguous and denied.
+
+This coarse screen revision is intentional: `visual-refresh` opens the screen/domain-component
+surface, so an older visual input cannot unlock the whole screen merely because one old mapping row
+still exists.
+
+### 10.10 Later trusted item drift detection
+
+Build an index from all Input Result-trusted and Reconciliation-trusted visual groups.
+
+```text
+latest_trusted_item_at(screen) =
+  max(effective input captured_at for trusted visual items resolving to screen)
+```
+
+If:
+
+```text
+latest_trusted_item_at(screen) > current_visual_revision_at(screen)
+```
+
+then the target artifacts have not incorporated the newest trusted visual evidence.
+
+```text
+target_provenance_state = stale
+intent permission = 0 for every input
+next action = reconcile/update current visual target provenance
+```
+
+This catches a later same-target input with missing `supersedes`, a source move to another lineage,
+and a new visual item whose artifact provenance was not updated.
+
+### 10.11 Supersession graph trust
+
+Graph edge:
+
+```text
+successor -> predecessor
 where successor.frontmatter.supersedes == predecessor.input_id
 ```
 
-Summary `Supersedes`의 `-`/empty는 null로 normalize한다.
-
-Every edge trust:
+Every edge used for capability must satisfy:
 
 ```text
-successor and predecessor input artifacts unique and trusted
-frontmatter supersedes == Summary Supersedes
-successor.captured_at and predecessor.captured_at parse by shared RFC3339 parser
-successor.captured_at_epoch > predecessor.captured_at_epoch
+successor.captured_at > predecessor.captured_at
 successor.source_type == predecessor.source_type
-successor.source_lineage nonempty
-predecessor.source_lineage nonempty
 successor.source_lineage == predecessor.source_lineage
 ```
 
-Equal timestamp와 reversed timestamp는 hard-untrusted다. Input ID의 날짜/sequence는
-freshness 근거로 사용하지 않는다.
-
-Component trust:
+`source_lineage` is a logical replacement stream, not merely a source container. Recommended Figma
+shape includes stable source-screen identity:
 
 ```text
-every edge trusted
-every referenced predecessor exists
-no self edge
-acyclic
-each predecessor has at most one direct successor
-no branch ambiguity
+figma-screen://file/<file-key>/<stable-source-screen-key>
 ```
 
-Selected input eligibility:
+A bare file key is too coarse because one Figma file may contain independent screen streams.
+Generic kit never derives lineage from `source_ref`, file name, input ID or `captured_by`.
 
-```text
-selected input is in trusted graph component
-AND selected input has no successor
-AND selected input itself is input_artifact_trusted
-AND selected input reconciliation is trusted/reconciled
+Component trust also requires unique nodes, frontmatter/Summary parity, no self edge, acyclic graph,
+and at most one direct successor per predecessor.
+
+Graph leaf is necessary but not sufficient; §10.9–10.10 current target checks are also required.
+
+### 10.12 Legacy lineage adoption and source move
+
+Input artifacts are immutable. Do not backfill `source_lineage` into a historical input.
+Do not create cross-lineage or missing-lineage `supersedes` edges merely to retire an old token.
+
+Use an append-only transition on the new input:
+
+```yaml
+source_lineage: figma-screen://file/new-file/CREATE-ATTACH
+lineage_transition:
+  from_input: IN-OLD
+  reason: source-move   # or legacy-lineage-adoption
 ```
 
-Single isolated input에는 lineage field가 필수가 아니다. Supersession edge가 하나라도 있는
-component는 모든 edge endpoint에 lineage를 요구한다.
+Transition contract:
 
-Successor가 존재하면 predecessor fallback은 상태와 무관하게 거부한다.
+- `from_input` exists and is older
+- new input is Input Result/Reconciliation trusted
+- both inputs resolve to the same canonical screen
+- new input has exact current target provenance under §10.8
+- new input is current screen revision under §10.9
+- `lineage_transition` is audit provenance, not a graph edge and not an authority source by itself
 
-- successor `reconciled` → current leaf 사용
-- successor `not-started|in-progress|failed` 또는 Summary 없음 → predecessor fallback 금지,
-  `reconcile latest superseding input <ID>`
-- successor artifact hard-invalid → component untrusted, predecessor fallback 금지
-- reversed/equal timestamp → component untrusted
-- missing/mismatched lineage → component untrusted
-- cycle/branch/parity mismatch → fail closed
+Effects:
 
-### 10.14 Final intent evidence formula
+- historical lineage-free or old-lineage input becomes non-current because current target
+  provenance/revision moved to the new input
+- old input cannot be used as fallback
+- subsequent captures in the new lineage may use normal `supersedes`
+
+This avoids permanent migration deadlock while preserving strict same-lineage graph edges.
+
+### 10.13 Final evidence formula
 
 ```text
 intent_evidence_valid =
   selected_input.input_artifact_trusted
   AND selected_input.reconciliation_input_trusted
   AND selected_visual_group_trusted
-  AND selected_visual_target_relation_valid
   AND scope_allows(selected_screen)
-  AND screen_source_map_relation_trusted_when_used
+  AND selected_target_key_trusted
+  AND selected_input_referenced_by_current_target
+  AND selected_input_is_current_screen_revision
+  AND target_provenance_state == current
   AND supersession_component_trusted
-  AND selected_input_is_current_leaf
+  AND selected_input_is_graph_leaf_or_isolated
 ```
 
-### 10.15 Authorization context
+Isolated input may omit lineage, but still must be current target evidence and current screen
+revision. Therefore an old isolated input cannot remain reusable after a later target-current input
+appears.
+
+### 10.14 Authorization context
 
 ```yaml
 authorization_context:
@@ -981,25 +823,20 @@ authorization_context:
   target_id: CREATE-ATTACH
   work_intent: visual-refresh
   evidence:
-    input_id: IN-20260811-figma-003
+    input_id: IN-20260814-figma-003
     input_artifact_trusted: true
     reconciliation_trusted: true
-    current_leaf: true
-    captured_at: "2026-08-11T10:00:00+09:00"
-    source_type: figma
-    source_lineage: figma://file/abc123
+    graph_leaf: true
+    target_provenance_state: current
+    current_visual_revision_at: "2026-08-14T10:00:00+09:00"
+    target_keys:
+      - key: mapping:CREATE-ATTACH-figma-component-mapping/M-012
+        current_evidence: input:IN-20260814-figma-003#extracted-facts/02
     scope_resolution:
       kind: source-map
-      map_trusted: true
-      source_kind: design
-      source_token: J010
+      alias: design:J010
+      relation_state: authorizing
       canonical_screen_id: CREATE-ATTACH
-      mapping_status: confirmed
-      source: _meta/screen-source-map.md
-    item_groups:
-      - item_id: RI-VISUAL-003
-        effects: [update]
-        group_trusted: true
 ```
 
 ---
@@ -1034,41 +871,24 @@ deny_claim:
     - visual-refresh
 ```
 
-`authored_path`는 top-level canonical field다.
+`authored_path`는 claim top-level canonical field다.
 
-### 11.3 Claim sources
-
-```text
-mode-policy
-tier3-layer
-custom-policy
-intent-profile
-shared-surface-reservation
-app-shell-reservation
-screen-entry-reservation
-generated-output
-api-candidate
-lifecycle
-open-decision
-target-contract
-```
-
-### 11.4 Exact waiver
+### 11.3 Exact waiver predicate
 
 ```text
 waivableByVisualRefresh(claim) =
-  source.kind == mode-policy
-  AND source.field == forbidden_paths
-  AND source.mode == api-integrated-ui
+  claim.source.kind == mode-policy
+  AND claim.source.field == forbidden_paths
+  AND claim.source.mode == api-integrated-ui
   AND claim.authored_path == "{roles.screen}"
-  AND source.role == screen
-  AND deny_class == work-step-boundary
-  AND overrideable_by contains visual-refresh
+  AND claim.source.role == screen
+  AND claim.deny_class == work-step-boundary
+  AND claim.overrideable_by contains visual-refresh
 ```
 
-Actual claim object를 테스트하며 projected string을 사용하지 않는다.
+Projected string이 아니라 actual claim object를 테스트한다.
 
-### 11.5 Positive envelope
+### 11.4 Positive envelope
 
 ```text
 intent candidates =
@@ -1076,9 +896,10 @@ intent candidates =
   ∪ resolve({roles.domain_component})
 ```
 
-Hook/API-client/candidate/delegated/generated/other-owner paths는 deny claim이다.
+Hook/API-client, candidate, delegated shared, valid/deny-only shell reservation, generated,
+other-owner paths는 non-waivable deny claim이다.
 
-### 11.6 Formula
+### 11.5 Formula
 
 ```text
 matching_claims = all matching deny claims
@@ -1091,27 +912,16 @@ allowed =
   AND active_denies is empty
 ```
 
-### 11.7 Output
+### 11.6 Output stability
 
-```yaml
-work_intent:
-  name: visual-refresh
-  input_id: IN-20260811-figma-003
-  applicable: true
-  required_mode: final-fixture-ui
-  allowed_paths:
-    - src/features/create/screens/**
-    - src/features/create/components/**
-  waived_claims:
-    - deny:mode-policy:api-integrated-ui:screen:0
-  active_deny_claims: []
-```
+Top-level base path arrays를 intent-specific 값으로 교체하거나 합치지 않는다. No-intent
+output에는 `work_intent` key를 추가하지 않는다.
 
 ---
 
 ## 12. Decision D4 — App Shell Artifact Model과 Physical Roots
 
-### 12.1 Artifact
+### 12.1 Artifact and identity
 
 ```text
 docs/frontend-workflow/app/shells/{shell}/shell-spec.md
@@ -1119,45 +929,13 @@ artifact_type: app-shell-spec
 shell_id: MAIN-SHELL
 ```
 
-여러 shell을 허용하되 identity/path는 disjoint해야 한다.
+Required frontmatter: `artifact_id`, `artifact_type`, `shell_id`, `status`.
+Optional: `implementation_paths`, `decision_refs`, `api_required`, sources/dependencies/review.
 
-### 12.2 Frontmatter
+Forbidden identity: `domain`, `member_screens`, `screen_id`, `route`, `route_entry`,
+`screen_entry`, `surface_refs`, `member_surfaces`.
 
-Required:
-
-```text
-artifact_id
-artifact_type
-shell_id
-status
-```
-
-Optional:
-
-```text
-implementation_paths
-decision_refs
-api_required
-sources
-depends_on
-last_reviewed
-approval metadata
-```
-
-Forbidden:
-
-```text
-domain
-member_screens
-screen_id
-route
-route_entry
-screen_entry
-surface_refs
-member_surfaces
-```
-
-### 12.3 Typed declarations
+### 12.2 Typed declarations
 
 ```yaml
 implementation_paths:
@@ -1171,107 +949,43 @@ implementation_paths:
     kind: api-client
 ```
 
-Allowed kinds:
+Allowed kinds: `route-host|shell-host|hook|api-client`.
+Typed declaration owns semantic kind and narrow reservation provenance, not physical permission.
 
-```text
-route-host
-shell-host
-hook
-api-client
-```
-
-Typed declaration owns semantic kind and reservation provenance. It does not by itself grant
-physical edit authority.
-
-### 12.4 Kind-specific path grammar
-
-- `route-host`: exact project-relative file only. Glob/subtree ownership is forbidden.
-- `shell-host`: exact path or narrow terminal `/**`.
-- `hook`: exact path or narrow terminal `/**`.
-- `api-client`: exact path or narrow terminal `/**`, candidate slice는 더 좁아야 함.
-
-모든 kind에서 absolute/drive/UNC/root escape/arbitrary wildcard/blanket root를 금지한다.
-
-### 12.5 Policy-owned target profile
-
-Kind→root mapping은 kit policy-owned이며 shell-spec이 작성하지 않는다.
+### 12.3 Target-profile root slots
 
 ```yaml
 target_profiles:
   app-shell-v1:
-    optional_path_roots:
+    path_roots:
       route-host:
         role: app_shell_route_host
         binding: exact-file
+        presence: optional
+        resolution: on-declaration
       shell-host:
         role: app_shell_host
         binding: covered
+        presence: optional
+        resolution: on-declaration
       hook:
         role: app_shell_hook
         binding: covered
-    required_path_roots:
+        presence: optional
+        resolution: on-declaration-or-candidate
       api-client:
         role: api_client
         binding: covered
+        presence: required-on-use
+        resolution: on-declaration-or-candidate
 ```
 
-`route-host`는 `{roles.route_entry}`를 재사용하지 않는다.
+`required-on-use` means the role is mandatory only when an app-shell API-client declaration or
+candidate actually consumes that kind. It does not mean every app shell must resolve `api_client`.
 
-### 12.6 Optional target-root resolver
+### 12.4 Layout bindings
 
-정확한 helper 이름은 구현 관례에 맞출 수 있지만 의미는 다음으로 고정한다.
-
-```text
-resolveOptionalTargetRoot({
-  layout,
-  role,
-  target_profile,
-  kind,
-  domain: null
-}) -> {
-  bound: boolean,
-  globs: string[],
-  reason: null | "optional-role-missing"
-}
-```
-
-허용 boundary:
-
-```text
-role ∈ {
-  app_shell_route_host,
-  app_shell_host,
-  app_shell_hook
-}
-AND caller is app-shell target-profile root binding
-```
-
-Missing optional role은 throw하지 않고 `bound:false, globs:[]`를 반환한다. 해당 kind entry는
-positive permission 0이며 shell readiness/result에 `kind-root-unbound`를 남긴다.
-
-다음은 절대 바꾸지 않는다.
-
-```text
-layout.resolvePaths(...)
-requireRole(...)
-ordinary mode policy role tokens
-forbidden_paths role tokens
-Tier3 built-in role tokens
-screen/shared/candidate role resolution
-```
-
-이 surface에서 undefined role은 계속 `LayoutConfigError`이며 CLI/config error exit 2다.
-
-Optional resolver는 lazy하다.
-
-- app-shell artifact가 없으면 호출하지 않는다.
-- app-shell artifact가 있어도 해당 kind declaration이 없으면 그 optional role을 해소하지 않는다.
-- no-shell repository는 new optional role 부재 때문에 state/readiness가 달라지지 않는다.
-- `api_client`는 required slot이므로 undefined이면 기존 `LayoutConfigError`다.
-
-### 12.7 Layout-owned role bindings
-
-`project-layout.yaml` example:
+Consumer example:
 
 ```yaml
 roles:
@@ -1282,210 +996,100 @@ roles:
     - src/components/app-shell/host/**
   app_shell_hook:
     - src/features/app-shell-runtime/hooks/**
+  api_client:
+    - src/api/**
 ```
 
-Rules:
+`app_shell_route_host` accepts exact files only. `src/app/**` or terminal `/**` is invalid.
+Default Expo preset does not synthesize broad shell roles.
 
-- New three roles are optional and default Expo preset has no binding.
-- `app_shell_route_host` values are exact files only; terminal `/**`도 금지한다.
-- route host file name을 `_layout.tsx`로 전역 hardcode하지 않는다. Consumer router의 actual
-  host boundary를 exact list로 채택한다.
-- `app_shell_host`/`app_shell_hook`은 narrow role roots다.
-- Role root는 project-relative, canonical, representable해야 한다.
-- `src/**`, `src/app/**`, project root, `docs/**`, package-level blanket은 금지한다.
-
-### 12.8 Root safety
-
-App-shell target-profile roots between kinds must be disjoint after canonical resolution.
+### 12.5 Target-profile root resolver
 
 ```text
-app_shell_route_host
-app_shell_host
-app_shell_hook
-api_client
+resolveTargetProfileRoot({layout, profile, kind, usage}) -> {
+  state: unused | bound | optional-unbound | required-on-use-unbound | invalid,
+  globs,
+  role,
+  reason
+}
 ```
 
-`app_shell_route_host`는 existing broad `route_entry` surface의 subset일 수 있지만,
-`route_entry`는 shell positive root로 사용되지 않는다. Global ownership index가 actual
-ScreenSpec `route_entry` claim과의 conflict를 별도로 검사한다.
+Resolver invocation is lazy.
 
-### 12.9 Root binding
+- no app-shell artifact → no target-root lookup
+- no declaration/candidate of a kind → state `unused`, no role lookup
+- optional kind used but role missing → `optional-unbound`, permission 0, readiness exit 0
+- api-client declaration/candidate used but role missing → `required-on-use-unbound`,
+  target contract error + permission 0; readiness keyed result remains fail-closed
+- ordinary mode/forbidden/screen/shared/candidate role resolution continues to use existing
+  `resolvePaths`/`requireRole` and throws LayoutConfigError for undefined role
+
+A no-API shell with route/shell-host only never resolves `api_client`.
+
+### 12.6 Root binding
 
 ```text
 root_binding(entry) =
-  exactly one resolved root of entry.kind authorizes entry.path
-  AND no root of a different app-shell kind overlaps entry.path
+  exactly one resolved root of entry.kind fully covers entry.path
+  AND no different-kind root overlaps entry.path
 ```
 
-Kind-specific authorization:
+States:
 
-```text
-route-host:
-  entry.path exactly equals one app_shell_route_host exact file
+- zero root → kind-root-unbound
+- multiple distinct roots → kind-root-ambiguous
+- different-kind overlap → kind-contradiction
+- valid unique root → positive authority candidate
 
-shell-host/hook/api-client:
-  exactly one same-kind root fully covers entry.path
-```
+### 12.7 Invalid declarations
 
-Cases:
+Hard-invalid:
 
-- zero matching roots → `kind-root-unbound`
-- multiple matching roots after canonical dedupe → `kind-root-ambiguous`
-- different-kind sensitive root overlap → `kind-contradiction`
-- valid unique binding → positive authority candidate
-
-### 12.10 Route-host boundary
-
-App-shell route host는 router layout/provider boundary다. 일반 screen route는 아니다.
-
-```text
-src/app/_layout.tsx
-```
-
-can be accepted only when exact `app_shell_route_host` binding exists.
-
-```text
-src/app/orders.tsx
-```
-
-is denied unless it is explicitly listed as an app-shell route host root. First slice guidance is
-not to list ordinary route files. Presence/absence of a ScreenSpec does not expand the root.
-
-Therefore:
-
-- ordinary route without ScreenSpec cannot be adopted merely because it is under `src/app/**`.
-- existing screen `route_entry` always conflicts through global ownership.
-- broad route-entry policy root does not grant shell ownership.
-
-### 12.11 Declaration versus authority
-
-```text
-typed declaration
-  = semantic classification + narrow ownership reservation
-
-positive physical authority
-  = trusted typed declaration
-  ∩ resolved policy/layout kind root
-  ∩ maturity path-kind profile
-  - active deny claims
-```
-
-Examples:
-
-```yaml
-- path: src/api/app-shell/**
-  kind: shell-host
-```
-
-→ `api-client` contradiction, permission 0, recoverable deny-only.
-
-```yaml
-- path: package.json
-  kind: shell-host
-```
-
-→ shell-host root unbound, permission 0, recoverable deny-only.
-
-```yaml
-- path: src/app/orders.tsx
-  kind: route-host
-```
-
-→ absent exact `app_shell_route_host` binding, permission 0, recoverable deny-only.
-
-```yaml
-- path: src/features/payments/components/**
-  kind: shell-host
-```
-
-→ cannot acquire ownership unless an explicit adopted `app_shell_host` root covers it, and remains
-subject to other-owner reservation.
-
-### 12.12 Invalid typed entries
-
-Hard-invalid cases:
-
-- string-only entry
-- missing/non-string path
-- missing/unknown kind
+- string-only/missing path or kind
+- unknown kind
 - duplicate/overlap
 - unsafe/noncanonical/broad path
-- missing/ambiguous root binding
+- missing/ambiguous required-on-use root
 - kind contradiction
 - cross-owner conflict
 
-Shell positive permission becomes 0. Recoverable path stays deny-only under §15.
+Recoverable narrow path remains deny-only under §15.
 
-Missing optional role itself is not a global layout usage error. It is a target-local unbound
-binding. `workflow:validate` may report a hard app-shell authorization defect, while
-`workflow:readiness --app-shell` returns keyed output/exit 0 with permission 0.
-
-### 12.13 Body ownership
-
-Canonical sections:
-
-```text
-Purpose
-Host Contract
-State Matrix
-Interaction Matrix
-Navigation References
-Visual Ownership
-Implementation Boundary
-API Candidates
-Acceptance Criteria
-Unknowns
-```
-
-Local Open Decisions table is forbidden.
-
-### 12.14 Fact profile
+### 12.8 Fact profile
 
 | Mode | Target-specific minimum |
 |---|---|
-| docs-only | artifact parse result only |
-| route-skeleton | valid identity/status/navigation map + trusted root-bound route-host when code path requested |
+| docs-only | artifact parse only |
+| route-skeleton | valid identity/status/nav reference |
 | screen-skeleton | core sections + nonempty trusted root-bound host paths |
 | rough-fixture-ui | state/non-route interaction complete |
 | final-fixture-ui | confirmed + Visual Ownership complete |
 | api-integrated-ui | no-API special case or valid actionable candidate |
 | production-ready | existing CI/schema/state/review facts |
 
-### 12.15 Normal path envelope
+### 12.9 Normal path envelope
 
 | Mode | Positive kinds |
 |---|---|
 | docs-only | none |
-| route-skeleton | exact root-bound route-host |
+| route-skeleton | root-bound route-host |
 | screen-skeleton | root-bound route-host/shell-host |
-| rough/final | host kinds + valid owned active hook candidate slices |
+| rough/final | host kinds + valid owned active hook slices |
 | api-integrated | valid owned active hook/API-client slices; host frozen |
-| production-ready | root-bound host + valid active slices; unowned hook/API denied |
+| production-ready | root-bound host + valid active slices; unowned API surfaces denied |
 
-### 12.16 No-API profile
+### 12.10 No-API profile
 
 ```text
 if api_required == false and readiness >= api-integrated-ui:
   effective_path_profile = no-api-host
 ```
 
-Allowed:
+Allowed: valid root-bound route-host/shell-host.
+Denied: all hook/API-client/candidate plus generated/Tier3/custom/other-owner/contract claims.
 
-```text
-exact root-bound route-host
-root-bound shell-host
-```
-
-Denied:
-
-```text
-all typed hook
-all typed api-client
-all candidate paths
-all generated/Tier3/custom/other-owner/contract denies
-```
-
-This profile remains at production-ready.
+No-API shell with no API entry/candidate does not resolve `api_client`; custom layout without that
+role remains valid for host readiness.
 
 ---
 
@@ -1499,70 +1103,50 @@ owner:
   target_id: CREATE-ATTACH | CHAT-COMPOSER | MAIN-SHELL
 ```
 
-Existing `screen_id` may remain a compatibility alias.
+Existing `screen_id` may remain compatibility alias.
 
 ### 13.2 Surface resolution
 
 - screen: existing domain/layout hook/API-client roles
-- app-shell: exactly one trusted root-bound typed hook/API-client entry
-- shared-surface: existing parser plus generic conflict participation
-
-An unbound or contradictory shell typed entry cannot classify a positive candidate.
+- shared-surface: existing parser + generic conflict index
+- app-shell hook: trusted root-bound typed hook parent
+- app-shell API client: trusted root-bound typed api-client parent; this usage triggers
+  required-on-use `api_client` resolution
 
 ### 13.3 Tracking
 
-`unknown:U-...` resolves in the same owner artifact:
-
-```text
-screen → ScreenSpec
-shared-surface → surface-spec
-app-shell → shell-spec
-```
+`unknown:U-...` resolves in the same owner artifact.
 
 ### 13.4 Positive authority
 
 ```text
 same owner
 contract valid
-confirmed
-active
-slice fully within exactly one trusted typed hook/API-client entry
-matching kind root
+confirmed + active
+slice fully in one trusted typed parent
+kind/root matches
 no conflict
 api_required != false
 ```
 
 ### 13.5 Deny-only candidate provenance
 
-Deferred, invalid, outside declaration, root-unbound, kind mismatch, conflict, and no-API
-candidate paths preserve recoverable project-wide deny-only claims.
-
-### 13.6 Conflict matrix
-
-All target kind pairs participate. Only same-owner valid subordinate candidate is exempt from
-parent-path conflict.
+Deferred, invalid, outside declaration, root-unbound, required-on-use-unbound, kind mismatch,
+cross-target conflict, and no-API candidate paths preserve recoverable project-wide deny claims.
 
 ---
 
 ## 14. Decision D6 — Target-scoped Open Decisions
 
-### 14.1 Reuse
-
-- global six-column register
+- canonical six-column global register reused
 - app-shell `decision_refs`
-- `open|resolved`
-- human-only resolve
-- existing Blocking Mode names
+- `open|resolved`; human-only resolve
+- missing/ambiguous/malformed ref caps only that shell
+- resolved ref remains provenance
+- shell decision does not fan out to unrelated screens/shared member cap
+- zero-ref global row remains valid and non-blocking
 
-### 14.2 Scope
-
-Open shell decision caps only that shell's mode/path/next actions. It does not fan out to
-screens, shared-surface member cap, or another shell unless separately referenced.
-
-### 14.3 Malformed cases
-
-Missing/ambiguous/malformed ref/register caps the shell at docs-only. Resolved refs remain
-provenance. Duplicate shell identity never first-wins.
+`Blocking Mode` uses the same mode order against app-shell fact profile.
 
 ---
 
@@ -1584,53 +1168,37 @@ A. trusted typed + root-bound → normal ownership and positive candidate
 B. invalid but safely canonicalizable → deny-only ambiguous shell ownership
 C. no trustworthy project-relative target → no physical claim + hard error
 
-### 15.3 Recoverable cases
+Recoverable includes missing kind, root-unbound, required-on-use-unbound, kind contradiction,
+duplicate/overlap, duplicate identity and safe aliases. Absolute/drive/UNC/root escape/arbitrary
+wildcard/blanket/missing path are nonrecoverable.
 
-- missing/unknown kind with narrow path
-- optional root missing / root-unbound / kind contradiction with narrow path
-- ordinary route declared route-host without exact root
-- duplicate/overlap
-- duplicate shell identity
-- safely canonicalizable separator/dot/in-tree aliases
-
-Nonrecoverable:
-
-- absolute/drive/UNC
-- root escape
-- arbitrary/middle wildcard
-- blanket root
-- missing/non-string path
-
-### 15.4 Deny-only claim
+### 15.3 Deny-only claim
 
 ```yaml
 deny_claim:
   claim_id: deny:ambiguous-app-shell:MAIN-SHELL:0
-  path: src/app/orders.tsx
-  authored_path: src/app/orders.tsx
+  path: src/api/app-shell/**
+  authored_path: src/api/app-shell/**
   deny_class: ambiguous-owner
   source:
     kind: app-shell-reservation
     shell_id: MAIN-SHELL
-    contract_valid: false
-    reason: kind-root-unbound
+    reason: required-on-use-root-unbound
   overrideable_by: []
   owner:
     target_type: app-shell
     target_id: MAIN-SHELL
 ```
 
-### 15.5 Projection
+### 15.4 Projection and precedence
 
-Valid and deny-only shell reservations are projected to every screen/shared/other-shell
-authorization. Broad `src/**` cannot bypass them.
-
-### 15.6 Positive formula
+Valid and deny-only shell reservations project to every screen/shared/other-shell context.
+Broad `src/**` cannot bypass them.
 
 ```text
 authorized(file) =
-  target/profile positive match
-  AND root binding valid
+  positive target/profile match
+  AND valid root binding
   AND no active ownership/generated/candidate/contract deny
 ```
 
@@ -1638,54 +1206,22 @@ authorized(file) =
 
 ## 16. Public CLI Contract
 
-### 16.1 Selectors
+Selectors:
 
 ```text
---screen
---surface
---app-shell
+--screen <SCREEN_ID>
+--surface <SURFACE_ID>
+--app-shell <SHELL_ID>
 ```
 
 Mutually exclusive.
 
-### 16.2 Visual refresh
+Visual intent requires `--screen`, `--intent visual-refresh`, `--input`. Unknown/blank intent,
+intent without input, input without intent, selector conflicts, malformed IDs or noncanonical
+`--path` are exit 2.
 
-```bash
-npm run workflow:readiness -- \
-  --screen CREATE-ATTACH \
-  --intent visual-refresh \
-  --input IN-20260811-figma-003 \
-  --path src/features/create/screens/CreateAttachScreen.tsx \
-  --json
-```
-
-### 16.3 Shell
-
-```bash
-npm run workflow:readiness -- \
-  --app-shell MAIN-SHELL \
-  --path src/components/app-shell/host/Header.tsx \
-  --json
-```
-
-### 16.4 Usage errors
-
-Exit 2 before state load:
-
-- invalid/blank intent
-- intent without input
-- input without intent
-- malformed input ID
-- intent without screen
-- intent with surface/shell
-- selector conflicts
-- invalid shell ID
-- path without supported selector
-- noncanonical concrete path
-- required ordinary role/config resolution failure
-
-Evidence/map/scope/supersession failure and missing optional shell root are keyed denial or
-`applicable:false`, exit 0 for readiness.
+Evidence/currentness/root failure is a keyed `applicable:false` or path denial with exit 0 for
+readiness. Existing ordinary undefined layout role remains configuration error/exit 2.
 
 ---
 
@@ -1693,7 +1229,7 @@ Evidence/map/scope/supersession failure and missing optional shell root are keye
 
 ### 17.1 App shells
 
-Only emit `app_shells` when adopted.
+Emit `app_shells` only when adopted.
 
 ```yaml
 app_shells:
@@ -1704,60 +1240,50 @@ app_shells:
       - path: src/app/_layout.tsx
         kind: route-host
         root_binding:
+          state: bound
           role: app_shell_route_host
           root: src/app/_layout.tsx
-          valid: true
       - path: src/components/app-shell/host/**
         kind: shell-host
         root_binding:
+          state: bound
           role: app_shell_host
           root: src/components/app-shell/host/**
-          valid: true
-    ownership_claims:
-      - path: src/app/_layout.tsx
-        owner_state: valid
-    derived:
-      contract_errors: []
-      path_errors: []
-      decision_refs: []
+    target_root_states:
+      api-client:
+        state: unused
+    ownership_claims: []
+    deny_only_ownership: []
 ```
 
-### 17.2 Missing optional root
+Invalid recoverable record retains deny-only claims. Duplicate identity never first-wins.
+
+### 17.2 Evidence indexes
+
+Readiness may load analyzers directly. If state serializes current evidence or trust indexes, it
+must include deterministic source hashes and reject stale generated trust when inputs/register/
+target artifacts differ.
+
+Recommended additive summary:
 
 ```yaml
-app_shells:
-  MAIN-SHELL:
-    readiness_mode: docs-only
-    implementation_paths:
-      - path: src/app/_layout.tsx
-        kind: route-host
-        root_binding:
-          role: app_shell_route_host
-          valid: false
-          reason: optional-role-missing
-    deny_only_ownership:
-      - path: src/app/_layout.tsx
-        reason: kind-root-unbound
+visual_evidence:
+  CREATE-ATTACH:
+    current_revision_at: "2026-08-14T10:00:00+09:00"
+    current_inputs: [IN-20260814-figma-003]
+    provenance_state: current
 ```
 
-Readiness exits 0 and grants no positive path. Existing global layout resolver is not relaxed.
+### 17.3 Determinism
 
-### 17.3 Input trust indexes
-
-State need not serialize all internal analyzer details. Readiness may load analyzers directly.
-If serialized for report reuse, values must be deterministic and carry source/version hashes;
-stale generated trust cannot be accepted without matching input/register/map sources.
-
-### 17.4 Determinism
-
-Sort shell IDs, source paths, claims, graph nodes, alias indexes, collision diagnostics, and
-trust results. Existing screen/surface shape remains additive-compatible.
+Sort target IDs, source paths, target keys, input IDs, claims and diagnostics. Existing
+`screens`/`surfaces` shapes remain additive-compatible.
 
 ---
 
 ## 18. Readiness JSON/YAML Contract
 
-### 18.1 Valid visual intent
+### 18.1 Valid current visual intent
 
 ```json
 {
@@ -1765,23 +1291,18 @@ trust results. Existing screen/surface shape remains additive-compatible.
     "readiness_mode": "api-integrated-ui",
     "work_intent": {
       "name": "visual-refresh",
-      "input_id": "IN-20260811-figma-003",
+      "input_id": "IN-20260814-figma-003",
       "applicable": true,
       "evidence": {
         "input_artifact_trusted": true,
         "reconciliation_trusted": true,
-        "current_leaf": true,
-        "captured_at": "2026-08-11T10:00:00+09:00",
-        "source_lineage": "figma://file/abc123",
-        "scope_relation": {
-          "kind": "source-map",
-          "map_trusted": true,
-          "source_kind": "design",
-          "source_token": "J010",
-          "screen_id": "CREATE-ATTACH",
-          "mapping_status": "confirmed"
-        },
-        "item_ids": ["RI-VISUAL-003"]
+        "graph_leaf": true,
+        "current_target": true,
+        "current_visual_revision_at": "2026-08-14T10:00:00+09:00",
+        "target_provenance_state": "current",
+        "target_keys": [
+          "mapping:CREATE-ATTACH-figma-component-mapping/M-012"
+        ]
       },
       "allowed_paths": [
         "src/features/create/screens/**",
@@ -1795,102 +1316,72 @@ trust results. Existing screen/surface shape remains additive-compatible.
 }
 ```
 
-### 18.2 Reversed supersession edge
+### 18.2 Historical input not current
 
 ```json
 {
   "CREATE-ATTACH": {
     "work_intent": {
       "name": "visual-refresh",
-      "input_id": "IN-20260801-figma-002",
+      "input_id": "IN-OLD",
       "applicable": false,
       "evidence": {
-        "current_leaf": false,
-        "supersession_component_trusted": false,
-        "hard_error_codes": ["supersession-timestamp-not-later"],
-        "edge": {
-          "successor": "IN-20260801-figma-002",
-          "predecessor": "IN-20260814-figma-001"
-        }
+        "graph_leaf": true,
+        "current_target": false,
+        "current_visual_revision_at": "2026-08-14T10:00:00+09:00",
+        "selected_captured_at": "2026-08-01T10:00:00+09:00"
       },
-      "allowed_paths": []
-    }
-  }
-}
-```
-
-### 18.3 Cross-lineage supersession
-
-```json
-{
-  "work_intent": {
-    "name": "visual-refresh",
-    "applicable": false,
-    "evidence": {
-      "supersession_component_trusted": false,
-      "hard_error_codes": ["supersession-source-lineage-mismatch"]
-    },
-    "allowed_paths": []
-  }
-}
-```
-
-### 18.4 Untrusted Screen Source Map
-
-```json
-{
-  "work_intent": {
-    "name": "visual-refresh",
-    "applicable": false,
-    "evidence": {
-      "scope_relation": {
-        "kind": "source-map",
-        "map_trusted": false,
-        "hard_error_codes": [
-          "screen-source-map-duplicate-header",
-          "screen-source-map-namespace-collision"
-        ]
-      }
-    },
-    "allowed_paths": []
-  }
-}
-```
-
-### 18.5 Missing app-shell route root
-
-```json
-{
-  "MAIN-SHELL": {
-    "target_type": "app-shell",
-    "readiness_mode": "docs-only",
-    "path_authorization": {
-      "file": "src/app/_layout.tsx",
-      "allowed": false,
-      "owner_state": "deny-only",
-      "causes": [
-        {
-          "kind": "kind-root-unbound",
-          "role": "app_shell_route_host",
-          "optional_role_missing": true
-        }
+      "next_actions": [
+        "use current visual evidence input IN-NEW"
       ]
     }
   }
 }
 ```
 
-### 18.6 Existing policy undefined role
+### 18.3 Target provenance stale
 
-This remains a configuration error, not keyed shell denial.
-
-```text
-layout-profile: undefined ordinary role
-→ LayoutConfigError
-→ CLI exit 2
+```json
+{
+  "CREATE-ATTACH": {
+    "work_intent": {
+      "name": "visual-refresh",
+      "input_id": "IN-NEW",
+      "applicable": false,
+      "evidence": {
+        "target_provenance_state": "stale",
+        "latest_trusted_item_at": "2026-08-14T11:00:00+09:00",
+        "current_visual_revision_at": "2026-08-14T10:00:00+09:00"
+      },
+      "next_actions": [
+        "update current mapping/family/ScreenSpec visual provenance"
+      ]
+    }
+  }
+}
 ```
 
-### 18.7 No-API shell
+### 18.4 Relation-local split map
+
+```json
+{
+  "screen_source_map_capability": {
+    "structure_trusted": true,
+    "relations": {
+      "design:J010": {
+        "state": "acknowledged-non-authorizing",
+        "reason": "split"
+      },
+      "design:K020": {
+        "state": "authorizing",
+        "canonical_screen_id": "SCREEN-C"
+      }
+    }
+  }
+}
+```
+
+### 18.5 No-API shell without api_client role
 
 ```json
 {
@@ -1898,22 +1389,37 @@ layout-profile: undefined ordinary role
     "api_required": false,
     "readiness_mode": "api-integrated-ui",
     "effective_path_profile": "no-api-host",
+    "target_root_states": {
+      "api-client": {"state": "unused"}
+    },
     "allowed_paths": [
       "src/app/_layout.tsx",
       "src/components/app-shell/host/**"
-    ],
-    "forbidden_paths": [
-      "src/features/app-shell-runtime/hooks/**",
-      "src/api/app-shell/**"
     ]
   }
 }
 ```
 
-### 18.8 Field stability
+### 18.6 Used API kind with missing root
 
-No-intent output omits work intent. No-shell repo omits shell keys. Existing path fields remain
-base semantics. Ordering is deterministic.
+```json
+{
+  "MAIN-SHELL": {
+    "allowed_paths": [],
+    "path_authorization": [
+      {
+        "path": "src/api/app-shell/**",
+        "kind": "api-client",
+        "allowed": false,
+        "causes": [
+          {"kind": "required-on-use-root-unbound", "role": "api_client"}
+        ],
+        "owner_state": "deny-only"
+      }
+    ]
+  }
+}
+```
 
 ---
 
@@ -1921,97 +1427,64 @@ base semantics. Ordering is deterministic.
 
 ### 19.1 Shared analyzers
 
-Implement pure analyzers for:
+Pure analyzers:
 
 - Input Result Contract
 - Reconciliation Contract v2
-- strict visual family relation
-- strict Screen Source Map capability relation
-- supersession graph with timestamp/lineage trust
+- Screen Source Map structure + relation-local capability
+- strict visual family
+- current target provenance and screen visual revision
+- supersession graph and lineage transition
 - app-shell typed paths/root binding
-- optional target-root resolution
 - ownership/deny claims
 
-Validate adapters retain existing public diagnostic shapes and warning-first boundaries.
+Validate adapters preserve existing public diagnostics and warning-first boundaries.
 
-### 19.2 Screen Source Map capability boundary
-
-General doctor remains warning-first. Capability analyzer hard trust is consumed only when a map
-relation is used for code authorization.
-
-At minimum test actual raw table objects, not rendered projections, for:
-
-- exact frontmatter
-- exact unique 10-column header
-- duplicate table/header
-- duplicate canonical row
-- duplicate/ambiguous alias
-- canonical-ID/source-alias namespace collision
-
-### 19.3 Optional root boundary
-
-Target-profile optional root lookup never changes the semantics of `layout.resolvePaths()` or
-`requireRole()`.
+### 19.2 Authorization order
 
 ```text
-optional app-shell slot missing
-→ target binding invalid
-→ keyed readiness exit 0, permission 0
-
-ordinary policy/forbidden role missing
-→ LayoutConfigError
-→ exit 2
-```
-
-No-shell repository never invokes optional shell root lookup.
-
-### 19.4 Authorization order
-
-```text
-1 concrete canonicality
+1 concrete path canonicality
 2 target/lifecycle/contract validity
 3 input artifact trust
 4 reconciliation trust
-5 visual target relation
-6 Screen Source Map capability trust when used
-7 scope resolution
-8 supersession timestamp/lineage/current leaf
-9 intent prerequisite or base readiness
-10 optional/required shell root resolution
-11 shell root binding / no-API profile
-12 positive profile match
-13 ownership/generated/candidate denies
-14 claim waiver
-15 remaining deny precedence
-16 structured provenance
+5 scope relation
+6 exact visual target key
+7 current target provenance
+8 current screen visual revision / stale-target check
+9 supersession graph leaf/transition trust
+10 intent prerequisite or base readiness
+11 target-root lazy resolution
+12 no-API profile selection
+13 positive profile match
+14 ownership/generated/candidate denies
+15 claim waiver
+16 remaining deny precedence
+17 structured provenance
 ```
 
-### 19.5 Diff backstop
+### 19.3 Diff backstop
 
-Forward and diff consume the same context. Visual backstop requires `--input`; shell backstop
-uses the same optional resolver, exact route roots, root bindings, and deny-only reservations.
+Forward and diff consume the same authorization context. `workflow:forbidden-paths` visual context
+requires `--input`; app-shell context uses the same lazy root states and deny-only reservations.
 
-### 19.6 Work Packet / Run Report
+### 19.4 Packet/Report
 
-Copy:
+Copy, never recompute:
 
-- input artifact trust
-- reconciliation trust
-- map trust and namespace diagnostics
+- input/reconciliation trust
 - scope relation
-- source lineage
-- supersession timestamp/lineage/current leaf
-- selected item groups
-- optional root presence/root binding
-- waived and active deny claims
+- target keys/current evidence refs
+- current visual revision and stale-target state
+- graph leaf/lineage transition
+- target root states/bindings
+- waived/active deny claims
 - owner state
 
-Never recompute.
+### 19.5 Warning-first boundary
 
-### 19.7 Warning-first boundary
-
-General doctor/visual warnings remain warning-first. Strict capability resolvers only deny use as
-authorization evidence. Existing warning-first checks are not promoted to required CI.
+General Screen Source Map doctor and visual-consistency diagnostics remain warning-first.
+Capability analyzers only deny their use as authorization evidence; they do not globally promote
+those commands to hard required CI.
 
 ---
 
@@ -2019,20 +1492,21 @@ authorization evidence. Existing warning-first checks are not promoted to requir
 
 | Surface | Follow-up |
 |---|---|
-| input artifact/reference | additive `source_lineage` semantics and producer ownership |
-| input reconciliation | v2 trust and supersession parity |
-| screen identity | hard-trusted source-map capability relation/namespace rules |
-| project layout | optional `app_shell_route_host`/`app_shell_host`/`app_shell_hook` roles |
-| implementation policy | app-shell target profile and optional/required root slots |
-| layout-profile code | target-only optional resolver; ordinary fail-closed unchanged |
-| app-shell reference | typed declarations, exact route roots, no-API, recovery |
-| open decisions | shell referrer scope |
+| input result contract | analyzer trust, source_lineage, lineage_transition |
+| input reconciliation | v2 trust, visual target keys, currentness index |
+| figma mapping | exact Mapping Provenance current evidence semantics |
+| visual consistency | family Evidence input-ref grammar |
+| ScreenSpec | optional exact Visual Evidence table |
+| screen identity | structure/relation-local source-map capability |
+| project layout | shell route/host/hook roles and lazy resolver |
+| implementation policy | target-profile root presence/resolution |
+| app-shell reference | typed paths, roots, no-API, recovery |
+| Open Decisions | shell referrer scope |
 | shared surfaces | shell reservation separation |
-| visual reconciliation | current evidence-bound visual-refresh |
 | Stage 05/06/08 | author, implement, validate/report |
 | commands | intent/input/shell examples |
-| implement-screen | current trusted input only |
-| implement-app-shell | readiness/root-bound path only |
+| implement-screen | current evidence only; read current target artifacts |
+| implement-app-shell | root-bound readiness only |
 
 ---
 
@@ -2041,29 +1515,23 @@ authorization evidence. Existing warning-first checks are not promoted to requir
 | Case | Required behavior |
 |---|---|
 | no intent | current screen behavior |
-| v1/summary-only register | intent permission 0 |
-| input artifact hard-invalid | intent permission 0 |
-| isolated input without source_lineage | allowed if otherwise trusted; no supersession edge |
-| supersession edge missing lineage | component untrusted, intent permission 0 |
-| later same-lineage successor | graph trusted candidate |
-| reversed/equal timestamp | graph untrusted |
-| cross-source/cross-lineage supersession | graph untrusted |
-| raw alias + trusted confirmed/merged map | may establish scope |
-| malformed/frontmatter-less/duplicate map | no alias capability |
-| canonical/alias namespace collision | collision token denied |
-| selected input superseded | no permission |
-| newer input incomplete | old fallback forbidden |
-| no Screen Source Map and canonical affected screen | direct relation works |
-| no app-shell | no optional root resolution; no new required key/file |
-| shell route root absent | authoring possible, route permission 0, exit 0 |
-| shell host/hook root absent | authoring possible, corresponding permission 0, exit 0 |
-| existing ordinary policy undefined role | unchanged LayoutConfigError/exit 2 |
-| valid exact app_shell_route_host binding | route-host permission possible |
-| ordinary src/app route | cannot gain shell authority from route_entry broad root |
-| shell kind contradiction | permission 0 + deny-only |
-| no-API shell | host preserved, hook/API denied |
-| shared surface | existing member/cap/fan-out semantics |
-| old state reader | ignores additive shell keys |
+| v1/summary-only | visual intent permission 0 |
+| input artifact hard-invalid | permission 0 |
+| current trusted input | may authorize |
+| graph leaf but not current target evidence | permission 0 |
+| later trusted item not reflected in target | all inputs permission 0 until provenance update |
+| legacy lineage-free isolated current input | allowed if current revision |
+| lineage-free input followed by transition input | old denied; new may authorize |
+| cross-lineage source move | no cross-lineage graph edge; current provenance transitions |
+| acknowledged split alias + unrelated confirmed alias | confirmed alias remains authorizing |
+| conflicting alias token | only that token denied |
+| no source map + direct canonical scope | works unless token collision is known |
+| no app-shell | no new required key/file/root lookup |
+| no-API host shell without api_client role | host readiness works |
+| API-client kind used without api_client role | target-local fail closed/deny-only |
+| ordinary undefined policy role | existing LayoutConfigError |
+| missing optional shell role | target-local permission 0 |
+| old state reader | ignores additive keys |
 | warning-first surfaces | no automatic promotion |
 
 No new required CI check, dependency, release/version/tag.
@@ -2074,80 +1542,81 @@ No new required CI check, dependency, release/version/tag.
 
 ### 22.1 #222
 
-1. Create canonical input.
+1. Create immutable canonical input.
 2. Ensure Input Result Contract hard-valid.
-3. For a revision intended to supersede another capture, emit stable `source_lineage` on both
-   generations and ensure strictly later `captured_at`.
-4. Reconcile under Contract v2.
-5. Ensure input is current trusted supersession leaf.
-6. Resolve scope through canonical ID or hard-trusted source map.
-7. Run readiness with `--intent` and `--input`.
-8. Check each concrete path.
-9. Validate and report provenance.
+3. Use logical `source_lineage` for new replacement streams.
+4. Reconcile under Contract v2 with exact visual target key.
+5. Update current mapping/family/ScreenSpec visual provenance in the same reconciliation change.
+6. Resolve scope through canonical ID or authorizing source-map relation.
+7. Ensure selected input is graph leaf/isolated and current screen visual revision.
+8. Run readiness with `--intent` + `--input` and concrete paths.
+9. Run validate/backstop and copy provenance to report.
 
-Old superseded input is never fallback. Existing supersession chains without lineage remain valid
-for historical documentation but cannot authorize visual-refresh until re-captured/reconciled with
-an explicit trusted lineage; generic kit does not invent the missing value.
+Legacy lineage-free predecessor:
+
+- do not edit old input
+- create new lineage-bearing input
+- set `lineage_transition.from_input` and reason
+- do not create an invalid missing-lineage supersession edge
+- update current target provenance to new input
+- old input becomes non-current and cannot authorize
+
+Source move uses the same process with reason `source-move`.
 
 ### 22.2 #223
 
-1. Preserve decision rows.
+1. Preserve existing decision rows.
 2. Add app-shell-spec draft.
-3. Add exact `app_shell_route_host` files and narrow host/hook role bindings as needed.
-4. Declare typed paths within those roots.
-5. Link decision refs.
-6. Regenerate state.
-7. Check shell/screen/shared paths.
-8. Validate and run backstop.
+3. Add exact/covered shell role bindings only for used kinds.
+4. Declare typed paths inside roots.
+5. No-API host-only shell need not define/resolve `api_client`.
+6. Link decision refs and regenerate state.
+7. Check shell/screen/shared concrete paths.
+8. Validate and run target-aware backstop.
 
-Do not bind `app_shell_route_host` to `src/app/**`. Enumerate actual root layout/provider files.
-String-only or outside-root paths are not auto-inferred; recoverable invalid paths remain deny-only
-until fixed.
+Malformed recoverable paths remain deny-only until fixed.
 
 ---
 
 ## 23. Implementation Slices
 
-### 23.1 Slice A — #222
+### 23.1 Slice A — Issue #222
 
 Scope:
 
-- Input Result Contract analyzer trust
-- additive source lineage parsing/provenance
-- Reconciliation v2 analyzer trust
-- strict visual-family resolver
-- strict Screen Source Map capability analyzer
-- namespace collision index
-- supersession timestamp/lineage/current leaf
-- deny claim provenance/waiver
-- evidence-bound visual-refresh
-- CLI intent/input
-- forward/backstop parity
-- packet/report provenance
+- Input Result Contract trust analyzer
+- Reconciliation v2 trust analyzer
+- visual target key resolver
+- Figma mapping/family/ScreenSpec current provenance resolvers
+- current screen visual revision and stale-target index
+- strict Screen Source Map structure + relation states
+- supersession graph/source lineage/lineage transition
+- deny claims and evidence-bound visual-refresh
+- CLI/backstop/packet/report parity
 
-Excludes app-shell artifact and #224.
+Explicit exclusions: app-shell artifact/parser/schema/template, shared-surface semantic changes,
+#224 decision-log.
 
 Acceptance:
 
 - no-intent compatibility
-- hard-valid current input only
-- canonical or hard-trusted authoritative scope only
-- stale/reversed/equal/cross-lineage input denied
+- hard-valid current target evidence only
+- old graph leaf not current target is denied
+- later trusted unprojected item blocks all authorization
+- canonical or authorizing alias scope only
 - screen/domain-component only
 - Tier3/candidate/delegated/generated denied
 
-### 23.2 Slice B — #223
+### 23.2 Slice B — Issue #223
 
 Depends on Slice A authorization substrate.
 
 Scope:
 
-- app-shell template/schema/manifest
-- target profile optional/required kind roots
-- exact optional `app_shell_route_host`
-- optional target-root resolver
-- existing resolver fail-closed preservation
-- typed path/root analyzer
+- app-shell artifact/template/schema/manifest
+- target-profile root slots and lazy resolver
+- exact app_shell_route_host, optional host/hook, required-on-use api_client
+- typed path/root binding
 - no-API host envelope
 - generic candidate owner
 - valid/deny-only ownership index
@@ -2157,13 +1626,10 @@ Scope:
 Acceptance:
 
 - declaration alone creates no physical authority
-- broad route_entry never grants shell route ownership
-- ordinary route cannot become shell host without exact root binding
-- missing optional role is keyed permission 0/exit 0
-- ordinary undefined role remains LayoutConfigError/exit 2
+- no-API host-only custom layout works without api_client role
+- used API kind without root fails closed
 - outside-root/contradictory paths denied and reserved
-- valid root-bound paths mode-gated
-- no-API host preserved
+- ordinary undefined role behavior unchanged
 - unrelated target cannot edit shell path
 
 ### 23.3 No Slice 0
@@ -2178,24 +1644,23 @@ Shared helpers ship with Slice A behavior; no abstraction-only PR.
 
 | Area | Expected files |
 |---|---|
-| input | `scripts/lib/input-artifact.mjs`, producer/template/reference as needed, tests |
-| reconciliation | `scripts/lib/reconciliation-items.mjs`, tests |
-| identity | `scripts/lib/screen-source-map.mjs` or strict capability helper |
-| visual | `scripts/lib/visual-consistency.mjs` or strict helper |
+| input | `scripts/lib/input-artifact.mjs`, producer/schema/template/tests |
+| reconciliation | `scripts/lib/reconciliation-items.mjs`, target/provenance helpers/tests |
+| current evidence | mapping-provenance, visual-consistency, ScreenSpec visual-evidence helper |
+| identity | `screen-source-map.mjs` strict capability analyzer/tests |
 | core | readiness/path authorization |
 | backstop | forbidden-paths |
 | execution | packet/report |
-| docs/skills | implement-screen, Stage 06/08, commands |
+| docs/skills | input/visual references, implement-screen, Stage 06/08, commands |
 
 ### Slice B
 
 | Area | Expected files |
 |---|---|
-| layout/policy | project-layout profile/schema, implementation target profile |
-| resolver | layout-profile optional-target-root helper and tests |
+| layout/policy | project-layout schema/profile, target root slots/resolver |
 | artifact | app-shell template/schema/manifest/reference/skill |
 | analyzer/state | shell analyzer, workflow-state |
-| authorization | root binding, ownership, readiness |
+| authorization | root binding, no-API, ownership/readiness |
 | candidate | generic owner/tracking/conflict |
 | validate/backstop | structural/root/ownership checks |
 | distribution | pack/upgrade tests |
@@ -2210,143 +1675,149 @@ Shared helpers ship with Slice A behavior; no abstraction-only PR.
 | # | Regression |
 |---|---|
 | 1 | no intent keeps API screen forbidden |
-| 2 | valid current trusted visual input opens screen/domain component only |
+| 2 | valid current trusted input opens screen/domain component only |
 | 3 | invalid intent/input CLI combinations exit 2 |
-| 4 | v1/summary-only register denied |
+| 4 | v1/summary-only denied |
 | 5 | malformed Summary/Items denied |
 | 6 | RR/RP hard-invalid selected group denied |
 | 7 | Effect outside update/create denied |
 | 8 | projection mismatch denied |
 | 9 | unrelated input RR error isolated |
 | 10 | invalid input_type/source_type denied |
-| 11 | missing captured_by/status/affected_domains denied |
-| 12 | invalid captured_at denied despite explicit item Captured At |
-| 13 | invalid input supersedes reference denied |
+| 11 | missing required input field denied |
+| 12 | invalid captured_at denied despite item timestamp |
+| 13 | invalid supersedes reference denied |
 | 14 | duplicate input_id denied |
 | 15 | direct canonical affected screen accepted |
-| 16 | canonical affected screens excluding selected denied |
-| 17 | raw design alias + trusted confirmed map + exact target accepted |
-| 18 | raw alias + trusted merged unique one-canonical map accepted |
-| 19 | raw alias candidate/ambiguous/split denied |
-| 20 | raw alias missing map denied |
-| 21 | map frontmatter missing/malformed/wrong artifact identity denied for alias capability |
-| 22 | map canonical table missing or duplicate denied |
-| 23 | map exact 10-column header mismatch/extra/duplicate denied |
-| 24 | duplicate Canonical Screen ID row denied |
-| 25 | duplicate alias relation denied |
-| 26 | canonical Screen ID also source alias of another row → collision token denied |
-| 27 | malformed/empty scope denied |
-| 28 | exact ScreenSpec visual section accepted |
-| 29 | sibling mapping screen mismatch denied |
-| 30 | exact visual family member accepted |
-| 31 | whole visual artifact/section denied |
-| 32 | duplicate/malformed family denied |
-| 33 | superseded trusted input denied |
-| 34 | latest trusted leaf accepted |
-| 35 | latest input not-started/in-progress/failed blocks old fallback |
-| 36 | newer hard-invalid input blocks old fallback |
-| 37 | supersession cycle denied |
-| 38 | supersession branch denied |
-| 39 | Summary/frontmatter supersedes mismatch denied |
-| 40 | reversed captured_at edge denied |
-| 41 | equal captured_at edge denied |
-| 42 | same source_type but different source_lineage denied |
-| 43 | cross-source_type supersession denied |
-| 44 | missing source_lineage on an edge denied |
-| 45 | valid strictly later same-lineage successor accepted |
-| 46 | source_ref similarity alone does not establish lineage |
-| 47 | isolated trusted input without lineage accepted when no edge exists |
-| 48 | final-level decision blocks intent |
-| 49 | API-only higher blocker does not block final visual work |
-| 50 | absorbed/malformed lifecycle denied |
-| 51 | delegated/shared/shell reservation denied |
-| 52 | candidate paths denied |
-| 53 | actual claim authored_path waiver succeeds |
-| 54 | same-path Tier3 claim remains deny |
-| 55 | custom layout retains claim origin |
-| 56 | forward/backstop same evidence/map/lineage/result |
-| 57 | packet/report copies trust/map/lineage/leaf/claims |
-| 58 | legacy no-intent fixtures compatible |
+| 16 | canonical scope excluding selected denied |
+| 17 | raw alias + authorizing confirmed relation accepted |
+| 18 | raw alias + one-canonical merged relation accepted |
+| 19 | candidate alias non-authorizing |
+| 20 | acknowledged split alias non-authorizing |
+| 21 | acknowledged ambiguous alias non-authorizing |
+| 22 | split alias does not close unrelated confirmed alias |
+| 23 | conflicting confirmed alias token denied only locally |
+| 24 | canonical-ID/alias collision token denied |
+| 25 | malformed map structure denies alias capability globally |
+| 26 | duplicate canonical row makes structure untrusted |
+| 27 | exact mapping key current Evidence accepted |
+| 28 | mapping whole artifact/section insufficient |
+| 29 | duplicate Mapping Provenance key denied |
+| 30 | exact family row current Evidence accepted |
+| 31 | family free-prose/unresolved Evidence denied |
+| 32 | exact ScreenSpec visual section + current Visual Evidence accepted |
+| 33 | ScreenSpec visual section without current pointer denied |
+| 34 | selected input absent from current target provenance denied |
+| 35 | selected input referenced but older than screen current revision denied |
+| 36 | later same-target input without supersedes denies old input |
+| 37 | same screen moved to new lineage denies old input |
+| 38 | later trusted item absent from target provenance makes target stale |
+| 39 | stale target denies both old and new until provenance update |
+| 40 | equal-time same target conflicting inputs denied |
+| 41 | equal-time disjoint current target inputs deterministic |
+| 42 | superseded trusted input denied |
+| 43 | latest same-lineage trusted leaf accepted |
+| 44 | latest incomplete input blocks old fallback |
+| 45 | reversed timestamp edge denied |
+| 46 | equal timestamp edge denied |
+| 47 | cross-source edge denied |
+| 48 | same source_type different lineage edge denied |
+| 49 | missing endpoint lineage edge denied |
+| 50 | lineage key includes logical source-screen stream, not bare file inference |
+| 51 | isolated lineage-free input current target accepted |
+| 52 | legacy lineage transition updates target and denies old |
+| 53 | cross-lineage source-move transition denies old without invalid edge |
+| 54 | transition record alone without current target update denied |
+| 55 | cycle denied |
+| 56 | branch denied |
+| 57 | Summary/frontmatter supersedes mismatch denied |
+| 58 | final-level decision blocks intent |
+| 59 | API-only higher blocker does not block final visual work |
+| 60 | absorbed/malformed lifecycle denied |
+| 61 | delegated/shared/shell reservations denied |
+| 62 | candidate paths denied |
+| 63 | exact deny claim waiver succeeds |
+| 64 | same-path Tier3 deny remains active |
+| 65 | forward/backstop use same currentness/map/claims |
+| 66 | packet/report copies target currentness and transition provenance |
+| 67 | legacy no-intent fixtures compatible |
 
 ### 25.2 #223
 
 | # | Regression |
 |---|---|
-| 1 | no app-shell artifact no-op and optional roots are not resolved |
+| 1 | no app-shell artifact no-op and no root lookup |
 | 2 | valid identity/state deterministic |
 | 3 | shell decision caps shell only |
 | 4 | malformed decision fails shell only |
 | 5 | local Open Decisions rejected |
 | 6 | forbidden identity fields rejected |
 | 7 | string-only/missing kind denied |
-| 8 | missing app_shell_route_host role → route entry unbound, permission 0, readiness exit 0 |
-| 9 | explicit exact root layout/provider file accepted as route-host |
-| 10 | `src/app/orders.tsx` denied despite broad route_entry role |
-| 11 | route file without ScreenSpec cannot acquire shell authority |
-| 12 | existing ScreenSpec route_entry conflicts even when exact shell root is configured |
-| 13 | app_shell_route_host subtree/broad glob binding rejected |
-| 14 | shell-host with explicit app_shell_host root accepted |
-| 15 | missing app_shell_host role gives permission 0/exit 0 |
-| 16 | missing app_shell_hook role gives hook permission 0/exit 0 |
-| 17 | unrelated existing policy references undefined role → LayoutConfigError/exit 2 |
-| 18 | no-shell repo missing optional roles remains byte/semantic compatible |
-| 19 | `src/api/**` declared shell-host is contradiction/deny-only |
-| 20 | `package.json` declared shell-host unbound/deny-only |
-| 21 | another domain component cannot be acquired by declaration |
-| 22 | distinct app-shell kind roots overlap → target profile invalid |
-| 23 | broad app-shell host/hook role root rejected |
-| 24 | valid active same-shell candidate reaches API mode |
-| 25 | candidate requires trusted root-bound hook/API entry |
-| 26 | outside/wrong-kind/root-unbound candidate denied |
-| 27 | cross-target candidate overlap denied |
-| 28 | deferred/invalid candidate deny-only |
-| 29 | no-API candidate authority 0 |
-| 30 | no-API API maturity preserves exact root-bound route/shell host |
-| 31 | no-API denies all hook/API/candidate |
-| 32 | no-API production-ready still denies hook/API |
-| 33 | shell-screen entry overlap denied |
-| 34 | shell-shared overlap denied |
-| 35 | shell-shell overlap denied |
-| 36 | valid shell path reserved from other targets |
-| 37 | missing-kind path permission 0 and globally reserved |
-| 38 | optional-role-missing path permission 0 and globally reserved |
-| 39 | ordinary route declared shell route-host remains deny-only until fixed |
-| 40 | safely canonicalizable alias deny-only |
-| 41 | kind contradiction recoverable path deny-only |
-| 42 | absolute/drive/UNC/root escape no physical claim |
-| 43 | duplicate identity preserves all recoverable denies |
-| 44 | overlapping entries preserve deny-only |
-| 45 | production-ready `src/**` cannot bypass |
-| 46 | empty paths authoring valid, permission 0 |
-| 47 | Tier3 deny overrides valid root binding |
-| 48 | selector/ID errors exit 2 |
-| 49 | deterministic state/readiness |
-| 50 | forward/backstop parity for optional roots/route boundary/no-API/recovery |
-| 51 | distribution includes new payload |
+| 8 | exact app_shell_route_host accepted |
+| 9 | ordinary route file route-host denied |
+| 10 | route file without ScreenSpec not adopted by declaration |
+| 11 | existing ScreenSpec route_entry conflict denied |
+| 12 | broad app_shell_route_host root rejected |
+| 13 | explicit app_shell_host root accepted |
+| 14 | missing app_shell_route_host gives permission 0/exit 0 |
+| 15 | missing app_shell_host gives permission 0/exit 0 |
+| 16 | missing app_shell_hook gives permission 0/exit 0 |
+| 17 | no-API host-only layout without api_client role works |
+| 18 | unused api-client slot does not resolve role |
+| 19 | API-client declaration triggers required-on-use resolution |
+| 20 | API Candidate triggers required-on-use resolution |
+| 21 | used API kind + missing api_client gives permission 0/deny-only |
+| 22 | ordinary policy undefined role remains LayoutConfigError/exit 2 |
+| 23 | src/api declared shell-host contradiction/deny-only |
+| 24 | package.json shell-host unbound/deny-only |
+| 25 | another domain path cannot be acquired by declaration |
+| 26 | overlapping kind roots invalid |
+| 27 | broad host/hook roots rejected |
+| 28 | valid same-shell candidate reaches API mode |
+| 29 | candidate needs trusted root-bound parent |
+| 30 | outside/wrong-kind/root-unbound candidate denied |
+| 31 | required-on-use-unbound candidate deny-only |
+| 32 | cross-target candidate conflict denied |
+| 33 | deferred/invalid candidate deny-only |
+| 34 | no-API candidate authority 0 |
+| 35 | no-API API maturity preserves route/shell host |
+| 36 | no-API denies hook/API/candidates |
+| 37 | no-API production-ready still denies API surfaces |
+| 38 | shell-screen overlap denied |
+| 39 | shell-shared overlap denied |
+| 40 | shell-shell overlap denied |
+| 41 | valid shell path reserved from other targets |
+| 42 | missing-kind path permission 0 and globally reserved |
+| 43 | safely canonicalizable alias deny-only |
+| 44 | absolute/drive/UNC/root escape no physical claim |
+| 45 | duplicate identity preserves recoverable denies |
+| 46 | overlapping entries preserve deny-only |
+| 47 | production `src/**` cannot bypass |
+| 48 | empty paths authoring valid, permission 0 |
+| 49 | Tier3 deny overrides valid root binding |
+| 50 | selector/ID errors exit 2 |
+| 51 | deterministic state/readiness/root states |
+| 52 | forward/backstop parity for lazy roots/no-API/recovery |
+| 53 | distribution includes all active payload |
 
-Implementation PRs also run existing fixture-hook, candidate deferral, shared-surface, Open
-Decision, layout-profile fail-closed, readiness fail-open/redteam, path-backstop, distribution,
-and upgrade regressions.
+Implementation PRs also run existing fixture-hook, API deferral, shared-surface, Open Decision,
+readiness fail-open/redteam, path-backstop, distribution and upgrade regressions.
 
 ---
 
 ## 26. Risks / Known Limits
 
-1. Contextless diff cannot infer intended target; explicit owner path remains conservative.
-2. Trust analyzers must preserve public diagnostic ordering.
-3. Strict source-map/family resolvers are capability gates, not global hard promotion.
-4. Map global trust is conservative: one structural defect disables raw alias capability until fixed.
-5. Canonical/alias namespace collision denies the token instead of selecting a precedence.
-6. `source_lineage` is explicit producer-owned metadata; generic kit cannot recover missing lineage.
-7. Historical supersession chains without lineage cannot authorize visual-refresh without a new
-   trustworthy capture; no value is invented.
-8. Strict timestamp ordering rejects equal-time batch captures as supersession. Such inputs should
-   be independent or use distinct later capture timestamps.
-9. Deny-only recovery can temporarily lock malformed paths.
-10. Optional app-shell roots require explicit consumer adoption.
-11. Exact route-host root enumeration adds migration work but prevents broad route ownership.
-12. Shell visual-refresh remains future scope.
-13. Design-only CI does not prove new behavior.
+1. Current screen revision is intentionally coarse because the intent opens whole screen paths.
+2. Current target provenance requires template/parser additions and migration for capability use.
+3. General mapping/family doctors remain warning-first; capability use is stricter.
+4. `lineage_transition` is audit provenance, not a replacement for current target update.
+5. A stale target blocks all inputs until reconciliation updates authored provenance.
+6. Acknowledged split/ambiguous relation remains non-authorizing in first slice.
+7. Required-on-use api-client missing is target-local fail closed; implementation must not silently
+   weaken ordinary layout role errors.
+8. Deny-only recovery may temporarily lock malformed paths.
+9. Contextless diff cannot infer intended target and remains conservative.
+10. Design-only CI does not prove new behavior.
 
 ---
 
@@ -2356,32 +1827,28 @@ and upgrade regressions.
 |---|---|
 | D1 | readiness maturity formula/order 유지 |
 | D2 | screen-only visual-refresh requires `--input` |
-| D3 | Input Result Contract analyzer trust required |
-| D4 | Reconciliation v2 analyzer trust required |
-| D5 | exact visual target relation required |
-| D6 | Screen Source Map has separate capability hard trust |
-| D7 | canonical/alias namespace collision fails closed |
-| D8 | canonical/direct or hard-trusted source-map scope required |
-| D9 | selected input must be current trusted supersession leaf |
-| D10 | supersession edge requires strictly later captured_at |
-| D11 | supersession edge requires exact same source_type/source_lineage |
-| D12 | source_lineage is explicit producer-owned metadata, not inferred from source_ref |
-| D13 | deny claim top-level authored_path and exact waiver |
-| D14 | visual profile is screen/domain-component only |
-| D15 | dedicated optional app-shell-spec |
-| D16 | typed shell declaration does not self-grant authority |
-| D17 | policy target profile + layout role roots own physical ceiling |
-| D18 | route-host uses exact optional app_shell_route_host, not route_entry |
-| D19 | optional target-root resolver is lazy and target-local |
-| D20 | ordinary undefined role keeps LayoutConfigError fail-closed |
-| D21 | optional app_shell roles have no broad defaults |
-| D22 | generic API Candidate owner |
-| D23 | no-API shell uses no-api-host profile |
-| D24 | recoverable invalid shell path remains deny-only |
-| D25 | six-column Open Decision schema reused |
-| D26 | global physical ownership namespace |
-| D27 | #222 implemented before #223 |
-| D28 | no-intent/no-shell compatibility preserved |
+| D3 | Input Result Contract and Reconciliation v2 trust required |
+| D4 | exact target key and current authored provenance required |
+| D5 | selected input must be current screen visual revision |
+| D6 | later unprojected trusted item marks target stale |
+| D7 | source lineage is logical replacement stream |
+| D8 | legacy/source move uses transition + current provenance, not invalid graph edge |
+| D9 | source-map structure trust and relation-local states separated |
+| D10 | acknowledged split/ambiguous does not poison unrelated aliases |
+| D11 | deny claim top-level authored_path and exact waiver |
+| D12 | visual profile is screen/domain-component only |
+| D13 | dedicated optional app-shell-spec |
+| D14 | typed declaration does not self-grant authority |
+| D15 | exact optional app_shell_route_host |
+| D16 | optional and required-on-use roots resolve lazily |
+| D17 | ordinary undefined role fail-closed preserved |
+| D18 | generic API Candidate owner |
+| D19 | no-API shell uses no-api-host profile |
+| D20 | recoverable invalid shell path remains deny-only |
+| D21 | six-column Open Decision schema reused |
+| D22 | global physical ownership namespace |
+| D23 | #222 before #223 |
+| D24 | no-intent/no-shell compatibility preserved |
 
 ---
 
@@ -2397,50 +1864,45 @@ Implementation naming만 남는다.
 
 다음은 별도 설계 변경 없이는 허용되지 않는다.
 
-- evidence bypass
-- stale/superseded input fallback
-- reversed/equal/cross-lineage supersession acceptance
-- `source_ref` heuristic lineage
-- raw alias without hard-trusted relation
-- Screen Source Map loose parser를 capability에 직접 사용
-- namespace collision precedence 선택
+- historical input bearer capability
+- graph leaf만으로 current 판단
+- current target provenance bypass
+- stale target에서 old fallback
+- cross-lineage supersession edge 추론
+- split relation 때문에 unrelated alias 전체 차단
 - shell declaration-only physical authority
-- route_entry broad root를 route-host에 재사용
-- global undefined-role relaxation
-- default broad shell root
+- route-host broad route_entry reuse
+- eager unused api_client resolution
+- ordinary undefined-role fail-closed 완화
 - no-API hook/API authority
 - malformed reservation 제거
 - Open Decision schema 변경
-- generic app-surface expansion
 
 Baseline에서 재검증한 계약:
 
-- readiness/policy/layout
-- `LayoutConfigError`/`requireRole` fail-closed
-- Input Result Contract
-- Reconciliation Contract v2
-- Screen Source Map template/parser/status model
-- visual family parser
-- candidate/path backstop
-- shared surface/Open Decisions
-- distribution boundaries
-- #124/#210/#211
+- readiness/policy/layout and undefined-role behavior
+- Input Result Contract and immutable input flow
+- Reconciliation Contract v2 routing/provenance
+- Mapping Provenance current Evidence
+- Visual Consistency Screen Families Evidence
+- Screen Source Map parser/doctor and split semantics
+- shared surface/Open Decisions/candidate/path backstop
+- #124/#210/#211 boundaries
 
 정적 검증:
 
 - 28 numbered H2 sections
-- balanced fences
+- balanced Markdown fences
 - unique H2 headings
 - JSON/YAML examples parseable
-- independent #222/#223 matrices
+- independent #222/#223 acceptance matrices
 - #221/#224 non-interference
 - existing Open Decision schema/human transition preserved
 - no-intent/no-shell compatibility
-- strict Screen Source Map capability trust
-- timestamp/source-lineage supersession trust
-- policy-owned shell roots
-- exact optional route-host role
-- optional resolver/ordinary fail-closed separation
+- target-current visual evidence and revision
+- append-only lineage transition
+- relation-local split/ambiguous handling
+- required-on-use api-client root
 - no-API host preservation
 - deny-only malformed recovery
 - `claim.authored_path` consistency
