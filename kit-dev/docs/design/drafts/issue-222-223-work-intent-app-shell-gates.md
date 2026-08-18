@@ -701,19 +701,34 @@ Optional exact table:
 - canonical ref set, no duplicates
 - missing table means ScreenSpec target cannot authorize capability
 
-### 10.10 Exact effect-to-current binding
+### 10.10 Exact effect-to-authored-record binding
 
-For every selected keyed effect:
+For every selected keyed effect, the canonical ref must bind to exactly one current authored
+record of the same key.
 
 ```text
 selected_effect.evidence_ref
   ∈ active_record(selected_effect.target_key).evidence_refs
+  XOR
+selected_effect.evidence_ref
+  ∈ retirement_tombstone(selected_effect.target_key).evidence_refs
 ```
 
-Mapping은 equality다. Family-member/ScreenSpec은 exact set membership이다.
+`XOR` is exact-key state exclusivity, not boolean text matching:
+
+- mapping/family-member/ScreenSpec active operation binds to the active record
+- retirement operation binds to the retirement tombstone
+- active record and tombstone for one exact key cannot coexist
+- no record or both records → invalid
+
+Mapping active binding is equality. Family-member/ScreenSpec active binding and retirement binding
+are exact canonical set membership.
 
 Selected group의 selected screen에 해소되는 모든 effect가 binding을 통과해야 한다.
 한 row만 맞는다고 mismatched row를 숨기지 않는다.
+
+This section defines authored-record binding only. Latest-event and authority semantics are applied
+by §10.16; a historical tombstone ref is not automatically an operation.
 
 ### 10.11 Trusted keyed effect ledger
 
@@ -1702,7 +1717,7 @@ Stage 06 output validation:
 - resulting screen ledger must remain current
 
 Code semantic removal is reviewed against operation keys and cited code anchors. First slice does not
-claim perfect AST-to-Figma-key inference.
+claim perfect AST-to-design-key inference.
 
 ### 19.5 Packet/Report
 
