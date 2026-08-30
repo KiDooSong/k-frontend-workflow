@@ -446,4 +446,6 @@ Issue #223 waits for a separate implemented and verified #222 PR.
 
 No app-shell artifact, root, maturity, Candidate owner, decision, or ownership contract.
 
+Normative scope remains Issue #222 only.
+
 No Issue #223 state, body, comment, or follow-up issue is changed.
