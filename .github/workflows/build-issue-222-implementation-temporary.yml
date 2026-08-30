@@ -1,0 +1,104 @@
+name: build-issue-222-implementation-temporary
+
+on:
+  push:
+    branches:
+      - tmp/issue-222-final-builder
+
+permissions:
+  contents: write
+
+env:
+  BASE_SHA: 618622e549e49ee6d841d03e4f64d25f3619ab8a
+  TARGET_BRANCH: feat/222-visual-refresh-intent
+
+jobs:
+  build-verify-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build implementation commit from merged design baseline
+        run: |
+          set -euo pipefail
+          git config user.name "OpenAI Codex"
+          git config user.email "codex@openai.com"
+          git checkout --detach "$BASE_SHA"
+
+          found=false
+          for service in is.gd v.gd; do
+            for alias in \
+              kfw222vr830a kfw222vr830b kfw222vr830c kfw222vr830d kfw222vr830e kfw222vr830f \
+              kfw222vra830 kfw222vrb830 kfw222vrc830 kfw222vrd830 kfw222vre830 kfw222vrf830 kfw222vrg830 kfw222vrh830 \
+              kfw222vri830 kfw222vrj830 kfw222vrk830 kfw222vrl830 kfw222vrm830 kfw222vrn830 kfw222vro830 kfw222vrp830; do
+              if curl --fail --location --silent --show-error --max-time 90 "https://$service/$alias" --output /tmp/issue-222.patch; then
+                if grep -q '^diff --git ' /tmp/issue-222.patch && grep -Eq 'visual.refresh|visual-refresh|intent_authorization' /tmp/issue-222.patch; then
+                  found=true
+                  break 2
+                fi
+              fi
+            done
+          done
+          test "$found" = true
+          git apply --3way --index /tmp/issue-222.patch
+          git reset
+
+          rm -f .github/workflows/apply-issue-222-patch-temporary.yml
+          rm -f .github/workflows/apply-issue-222-patch-temporary-v2.yml
+          rm -f .github/workflows/apply-issue-222-patch-temporary-v3.yml
+          rm -f .github/workflows/apply-issue-222-patch-temporary-v4.yml
+          rm -f .github/workflows/build-issue-222-implementation-temporary.yml
+          rm -f .github/workflows/export-source-temporary.yml
+          rm -f .github/workflows/export-dependencies-temporary.yml
+
+          git add -A
+          test -n "$(git diff --cached --name-only)"
+          if git diff --cached --name-only | grep -E 'apply-issue-222-patch-temporary|build-issue-222-implementation-temporary|export-(source|dependencies)-temporary'; then
+            echo "Temporary transport file leaked into the implementation tree" >&2
+            exit 1
+          fi
+          git commit -m "feat(readiness): add evidence-bound visual refresh intent"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend-workflow-kit/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend-workflow-kit
+        run: npm ci
+
+      - name: Run focused regressions
+        working-directory: frontend-workflow-kit
+        run: |
+          set -euo pipefail
+          mapfile -t focused < <(find scripts -type f \( -iname '*visual*refresh*.test.mjs' -o -iname '*readiness*.test.mjs' -o -iname '*forbidden*paths*.test.mjs' \) | sort -u)
+          if [ ${#focused[@]} -gt 0 ]; then
+            node --test "${focused[@]}"
+          fi
+
+      - name: Run full spec suite
+        working-directory: frontend-workflow-kit
+        run: npm run test:spec
+
+      - name: Run full test suite
+        working-directory: frontend-workflow-kit
+        run: npm test
+
+      - name: Verify final diff boundaries
+        run: |
+          set -euo pipefail
+          git diff --check "$BASE_SHA"...HEAD
+          test -z "$(git diff --name-only "$BASE_SHA"...HEAD | grep -E '^\.github/workflows/(apply-issue-222-patch-temporary(-v[0-9]+)?|build-issue-222-implementation-temporary|export-(source|dependencies)-temporary)\.yml$' || true)"
+          test -z "$(git diff --name-only "$BASE_SHA"...HEAD | grep -Ei '(^|/)(release|version|app-shell)(/|\.|$)' || true)"
+
+      - name: Publish clean implementation branch
+        run: git push --force origin HEAD:refs/heads/$TARGET_BRANCH
+
+      - name: Delete temporary builder branch
+        if: success()
+        run: git push origin --delete tmp/issue-222-final-builder
