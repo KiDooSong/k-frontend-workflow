@@ -1,0 +1,190 @@
+name: PR230 staged model fallback
+
+on:
+  push:
+    branches:
+      - tmp/pr230-staged-model-fallback-20260904
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  models: read
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      TARGET_BRANCH: feat/222-evidence-bound-visual-refresh-v1
+      COMMENT_ID: "5538090011"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/222-evidence-bound-visual-refresh-v1
+          fetch-depth: 0
+
+      - name: Skip when another repair already landed
+        id: gate
+        run: |
+          subject=$(git log -1 --format=%s)
+          if [[ "$subject" == 'fix(visual-refresh): wire shipped workflow authority boundaries' ]]; then
+            echo 'skip=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'skip=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.skip != 'true'
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend-workflow-kit/package-lock.json
+
+      - name: Install dependencies
+        if: steps.gate.outputs.skip != 'true'
+        working-directory: frontend-workflow-kit
+        run: npm ci
+
+      - name: Generate staged production patches with GitHub Models
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          cat > /tmp/staged_repair.py <<'PY'
+          import json, os, pathlib, re, subprocess, sys, time, urllib.request, urllib.error
+
+          ROOT=pathlib.Path.cwd()
+          TOKEN=os.environ['GITHUB_TOKEN']
+          ENDPOINT='https://models.github.ai/inference/chat/completions'
+          MODELS=['openai/gpt-4.1','openai/gpt-4.1-mini','openai/gpt-5-mini']
+
+          REVIEW='''PR #230 has five remaining P1 defects. Preserve ordinary/no-intent behavior and all existing safety semantics. No temporary files in the target diff. The five requirements are:
+          1) shipped implement-screen must explicitly invoke visual-refresh and propagate audit-only intent/input/path/source tree/destination tree/diff selector through packet/run/report; packet consumes top-level intent_authorization; report re-runs visual backstop with original --staged/--range/--base; add consumer-chain E2E.
+          2) explicit --policy/--manifest/--layout/--ci must be byte-identical between source and destination and their changed records must fail closed; add staged CI and policy self-grant regressions.
+          3) forward generated ownership must additionally observe current worktree generated headers as deny-only facts; add worktree-only marker regression.
+          4) owner index must compare confined physical identities and retain ../, redundant separator, symlink/root-escape and case aliases as invalid/co-owner blockers; add Linux and macOS focused coverage and run the macOS focused test in macos-smoke.
+          5) reject forward when docs equals/contains src or any implementation-role root before overlay, exit 2; add dirty fake-hook overlap regression.'''
+
+          def run(cmd,cwd=ROOT,timeout=900):
+            p=subprocess.run(cmd,cwd=cwd,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=timeout)
+            return p.returncode,p.stdout
+
+          def collect(paths,limit=155000):
+            out=[]; used=0
+            for raw in paths:
+              p=ROOT/raw
+              if not p.exists(): continue
+              text=p.read_text(encoding='utf-8',errors='replace')
+              block=f'\n===== FILE {raw} =====\n{text}\n'
+              if used+len(block)>limit:
+                remaining=max(0,limit-used)
+                block=block[:remaining]
+              out.append(block); used+=len(block)
+              if used>=limit: break
+            return ''.join(out)
+
+          def ask(label,instruction,paths,extra=''):
+            source=collect(paths)
+            user=f'''{REVIEW}\n\nCurrent stage: {label}\n{instruction}\n\nRead the included current repository files. Return ONLY one apply-ready unified git diff in a ```diff fence. Make real production edits and deterministic tests; do not explain.\n{extra}\n{source}'''
+            last=[]
+            for model in MODELS:
+              payload={'model':model,'messages':[{'role':'system','content':'You are a senior JavaScript repository maintainer. Output an apply-ready unified diff only.'},{'role':'user','content':user}],'temperature':0.1,'max_tokens':16000}
+              req=urllib.request.Request(ENDPOINT,data=json.dumps(payload).encode(),headers={'Authorization':f'Bearer {TOKEN}','Content-Type':'application/json','Accept':'application/json'},method='POST')
+              try:
+                with urllib.request.urlopen(req,timeout=360) as r: data=json.loads(r.read().decode())
+                content=(data.get('choices') or [{}])[0].get('message',{}).get('content','')
+                m=re.search(r'```(?:diff|patch)\s*\n(.*?)```',content,re.S)
+                patch=m.group(1) if m else content
+                if 'diff --git ' not in patch:
+                  last.append(f'{model}: no diff: {content[:500]}'); continue
+                proc=subprocess.run(['git','apply','--whitespace=fix','-'],cwd=ROOT,input=patch,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+                if proc.returncode==0:
+                  print(f'applied {label} with {model}')
+                  return
+                last.append(f'{model}: apply failed: {proc.stdout[-1500:]}')
+              except Exception as e:
+                last.append(f'{model}: {type(e).__name__}: {e}')
+            raise RuntimeError(label+' failed\n'+'\n'.join(last))
+
+          visual=[
+            'frontend-workflow-kit/scripts/lib/visual-refresh-resources.mjs',
+            'frontend-workflow-kit/scripts/lib/visual-refresh-runtime.mjs',
+            'frontend-workflow-kit/scripts/lib/visual-refresh-authority.mjs',
+            'frontend-workflow-kit/scripts/lib/visual-refresh-cli.mjs',
+            'frontend-workflow-kit/scripts/lib/visual-refresh-git.mjs',
+            'frontend-workflow-kit/scripts/lib/generated-ownership.mjs',
+            'frontend-workflow-kit/scripts/lib/visual-refresh.test.mjs',
+            'frontend-workflow-kit/scripts/lib/visual-refresh-boundary.test.mjs',
+          ]
+          workflow=[
+            'frontend-workflow-kit/skills/implement-screen/SKILL.md',
+            'frontend-workflow-kit/package.json',
+            'frontend-workflow-kit/scripts/workflow-packet.mjs',
+            'frontend-workflow-kit/scripts/workflow-report.mjs',
+            'frontend-workflow-kit/scripts/workflow-run.mjs',
+            'frontend-workflow-kit/scripts/lib/workflow-packet.mjs',
+            'frontend-workflow-kit/scripts/lib/workflow-report.mjs',
+            'frontend-workflow-kit/scripts/lib/workflow-run.mjs',
+            'frontend-workflow-kit/scripts/lib/workflow-packet.test.mjs',
+            'frontend-workflow-kit/scripts/lib/workflow-report.test.mjs',
+            'frontend-workflow-kit/scripts/lib/workflow-run.test.mjs',
+            'frontend-workflow-kit/scripts/lib/visual-refresh-cli.mjs',
+            'frontend-workflow-kit/scripts/lib/visual-refresh-runtime.mjs',
+          ]
+          mac=[
+            'frontend-workflow-kit/scripts/lib/visual-refresh-runtime.mjs',
+            'frontend-workflow-kit/scripts/lib/visual-refresh-authority.mjs',
+            'frontend-workflow-kit/scripts/lib/visual-refresh-boundary.test.mjs',
+            '.github/workflows/frontend-workflow-kit.yml',
+          ]
+
+          ask('snapshot resources, generated deny-only observation, and docs/source overlap',
+              'Implement requirements 2, 3, and 5 completely. Preserve source/destination positive authority separation. Add focused regressions in the existing visual test files.',visual)
+          ask('physical owner identity',
+              'Implement requirement 4 completely using confined physical target identity. Invalid/noncanonical declarations must remain blockers rather than disappear. Add Linux lexical/symlink tests and a platform-guarded macOS case-alias test, and wire only that focused test into macos-smoke.',mac)
+          ask('shipped workflow propagation',
+              'Implement requirement 1 end-to-end. Reuse existing packet/report/run conventions. Audit fields never grant authority; report must recompute from the original immutable selector. Add CLI/consumer-chain tests and update implement-screen instructions.',workflow)
+
+          # First focused feedback repair, if needed.
+          focused=['node','--test','scripts/lib/visual-refresh.test.mjs','scripts/lib/visual-refresh-boundary.test.mjs','scripts/lib/workflow-packet.test.mjs','scripts/lib/workflow-report.test.mjs','scripts/lib/workflow-run.test.mjs']
+          code,log=run(focused,cwd=ROOT/'frontend-workflow-kit',timeout=1200)
+          if code:
+            diff=run(['git','diff'],timeout=120)[1]
+            extra='\nFOCUSED TEST FAILURE:\n'+log[-30000:]+'\nCURRENT DIFF:\n'+diff[-70000:]
+            ask('focused failure repair','Repair the implementation so the focused tests pass without weakening assertions.',visual+workflow+mac,extra)
+          PY
+          python /tmp/staged_repair.py
+
+      - name: Final verification and push
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          cd frontend-workflow-kit
+          node --test \
+            scripts/lib/visual-refresh.test.mjs \
+            scripts/lib/visual-refresh-boundary.test.mjs \
+            scripts/lib/workflow-packet.test.mjs \
+            scripts/lib/workflow-report.test.mjs \
+            scripts/lib/workflow-run.test.mjs
+          npm run test:spec
+          npm test
+          cd ..
+          git diff --check
+          test -n "$(git status --short)"
+          if git status --short | grep -E '^.. (\.github/workflows/pr230-|kit-dev/temp/|\.github/visual-refresh-fix/)'; then exit 1; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          before=$(git rev-parse HEAD)
+          git add .github/workflows/frontend-workflow-kit.yml frontend-workflow-kit
+          git commit -m 'fix(visual-refresh): wire shipped workflow authority boundaries'
+          after=$(git rev-parse HEAD)
+          git push origin "HEAD:$TARGET_BRANCH"
+          gh api --method PATCH "repos/$REPO/issues/comments/$COMMENT_ID" -f body="PR #230 staged-model fallback가 남은 5개 P1 수정과 focused/spec/full/diffcheck를 통과해 $after 에 push했습니다. 최종 표준 CI 확인 중입니다."
+
+      - name: Record failure without pushing unverified changes
+        if: failure() && steps.gate.outputs.skip != 'true'
+        run: |
+          gh api --method PATCH "repos/$REPO/issues/comments/$COMMENT_ID" -f body="PR #230 staged-model fallback도 push 전 검증에서 실패했습니다. 검증되지 않은 변경은 target branch에 push하지 않았습니다. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
