@@ -1,0 +1,209 @@
+name: PR230 conditional Aider fallback
+
+on:
+  push:
+    branches:
+      - tmp/pr230-aider-fallback-20260904
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  models: read
+
+jobs:
+  fallback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      TARGET_BRANCH: feat/222-evidence-bound-visual-refresh-v1
+      COMMENT_ID: "5538090011"
+      OPENAI_API_KEY: ${{ github.token }}
+      OPENAI_API_BASE: https://models.github.ai/inference
+    steps:
+      - name: Wait for primary/controller outcome
+        id: gate
+        run: |
+          set -euo pipefail
+          outcome='pending'
+          body=''
+          for _ in $(seq 1 270); do
+            body=$(gh api "repos/$REPO/issues/comments/$COMMENT_ID" --jq '.body')
+            if [[ "$body" == PR\ \#230\ 후속\ 수정\ 완료\ 및\ 검증\ 성공.* ]]; then
+              outcome='success'
+              break
+            fi
+            if [[ "$body" == *'failure'* || "$body" == *'timeout'* || "$body" == *'수동 확인 필요'* || "$body" == *'성공하지 않았습니다'* ]]; then
+              outcome='failure'
+              break
+            fi
+            sleep 20
+          done
+          echo "outcome=$outcome" >> "$GITHUB_OUTPUT"
+          echo "$body"
+
+      - name: Stop when primary repair succeeded
+        if: steps.gate.outputs.outcome == 'success'
+        run: echo 'Primary repair and final CI already succeeded; fallback not required.'
+
+      - name: Check out target PR branch
+        if: steps.gate.outputs.outcome != 'success'
+        uses: actions/checkout@v4
+        with:
+          ref: feat/222-evidence-bound-visual-refresh-v1
+          fetch-depth: 0
+
+      - name: Set up Node
+        if: steps.gate.outputs.outcome != 'success'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend-workflow-kit/package-lock.json
+
+      - name: Install project and Aider
+        if: steps.gate.outputs.outcome != 'success'
+        run: |
+          cd frontend-workflow-kit
+          npm ci
+          cd ..
+          python -m pip install --upgrade pip
+          python -m pip install 'aider-chat>=0.80.0'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+      - name: Run alternative autonomous repair
+        if: steps.gate.outputs.outcome != 'success'
+        run: |
+          cat > /tmp/task.md <<'EOF'
+          Fix PR #230's five remaining P1 review findings in this checked-out repository. Inspect real code and make production-quality edits; do not merely explain. Preserve all ordinary/no-intent behavior and do not weaken tests.
+
+          1. Wire the shipped `frontend-workflow-kit/skills/implement-screen/SKILL.md` visual-refresh branch through readiness, workflow:packet, workflow:run, workflow:report, and visual backstop. Carry audit-only intent, selected input id, authorized/checked path, immutable source/destination tree IDs, and original diff selector/kind. Packet must consume top-level `intent_authorization`; report must re-evaluate visual authority using the original `--staged`, `--range`, or `--base`, never snapshotless `--diff`. Add implement-screen -> readiness -> packet -> run/report -> backstop E2E.
+          2. Explicit `--policy`, `--manifest`, `--layout`, and `--ci` may not self-grant in the same diff. Preserve paths and require source/destination bytes identical for positive authority; reject changed/add/delete/rename authority-resource records. Add staged CI and policy self-grant regressions.
+          3. Forward generated ownership must observe current worktree markers as deny-only facts, in addition to source/destination snapshot markers. Add worktree-only `GENERATED FILE — DO NOT EDIT` regression.
+          4. Physical owner index must collect every declaration and compare confined physical targets. Noncanonical `../`, redundant separator, symlink/root escape, and case aliases must be fail-closed blockers. Add Linux alias/symlink tests and a macOS case-insensitive focused test, and run that focused test in macos-smoke.
+          5. Reject visual forward when docs equals/contains src or contains any implementation-role root, before overlay, exit 2. Add docs-ancestor-of-src dirty fake-hook regression.
+
+          Required final verification: focused visual/workflow tests, `npm run test:spec`, `npm test`, and `git diff --check`. Do not add temporary workflows or payload files to the target branch.
+          EOF
+
+          files=(
+            .github/workflows/frontend-workflow-kit.yml
+            frontend-workflow-kit/package.json
+            frontend-workflow-kit/skills/implement-screen/SKILL.md
+            frontend-workflow-kit/scripts/workflow-packet.mjs
+            frontend-workflow-kit/scripts/workflow-report.mjs
+            frontend-workflow-kit/scripts/workflow-run.mjs
+            frontend-workflow-kit/scripts/lib/workflow-packet.mjs
+            frontend-workflow-kit/scripts/lib/workflow-report.mjs
+            frontend-workflow-kit/scripts/lib/workflow-run.mjs
+            frontend-workflow-kit/scripts/lib/visual-refresh-authority.mjs
+            frontend-workflow-kit/scripts/lib/visual-refresh-runtime.mjs
+            frontend-workflow-kit/scripts/lib/visual-refresh-cli.mjs
+            frontend-workflow-kit/scripts/lib/visual-refresh-git.mjs
+            frontend-workflow-kit/scripts/lib/visual-refresh-resources.mjs
+            frontend-workflow-kit/scripts/lib/generated-ownership.mjs
+            frontend-workflow-kit/scripts/lib/visual-refresh.test.mjs
+            frontend-workflow-kit/scripts/lib/visual-refresh-boundary.test.mjs
+          )
+          existing=()
+          for f in "${files[@]}"; do [[ -e "$f" ]] && existing+=("$f"); done
+
+          run_aider() {
+            local model="$1"
+            aider \
+              --model "$model" \
+              --yes-always \
+              --auto-commits false \
+              --dirty-commits false \
+              --attribute-author false \
+              --attribute-committer false \
+              --message-file /tmp/task.md \
+              "${existing[@]}"
+          }
+
+          run_aider openai/openai/gpt-4.1 || \
+            run_aider openai/openai/gpt-4.1-mini || \
+            run_aider openai/openai/gpt-5-mini
+
+      - name: Verify, repair once from failures, and push
+        if: steps.gate.outputs.outcome != 'success'
+        env:
+          OPENAI_API_KEY: ${{ github.token }}
+          OPENAI_API_BASE: https://models.github.ai/inference
+        run: |
+          set +e
+          cd frontend-workflow-kit
+          node --test \
+            scripts/lib/visual-refresh.test.mjs \
+            scripts/lib/visual-refresh-boundary.test.mjs \
+            scripts/lib/workflow-packet.test.mjs \
+            scripts/lib/workflow-report.test.mjs \
+            scripts/lib/workflow-run.test.mjs > /tmp/focused.log 2>&1
+          focused=$?
+          npm run test:spec > /tmp/spec.log 2>&1
+          spec=$?
+          npm test > /tmp/full.log 2>&1
+          full=$?
+          cd ..
+          git diff --check > /tmp/diffcheck.log 2>&1
+          diffcheck=$?
+          set -e
+
+          if (( focused || spec || full || diffcheck )); then
+            {
+              echo 'The first repair attempt failed verification. Fix the real implementation and tests; do not weaken assertions.'
+              echo
+              echo 'Focused tail:'; tail -n 180 /tmp/focused.log
+              echo
+              echo 'Spec tail:'; tail -n 180 /tmp/spec.log
+              echo
+              echo 'Full tail:'; tail -n 180 /tmp/full.log
+              echo
+              echo 'Diff-check:'; cat /tmp/diffcheck.log
+              echo
+              echo 'Current diff:'; git diff --stat; git diff -- frontend-workflow-kit .github/workflows/frontend-workflow-kit.yml | tail -n 1200
+            } > /tmp/repair2.md
+            aider \
+              --model openai/openai/gpt-4.1 \
+              --yes-always --auto-commits false --dirty-commits false \
+              --attribute-author false --attribute-committer false \
+              --message-file /tmp/repair2.md \
+              .github/workflows/frontend-workflow-kit.yml frontend-workflow-kit
+          fi
+
+          cd frontend-workflow-kit
+          node --test \
+            scripts/lib/visual-refresh.test.mjs \
+            scripts/lib/visual-refresh-boundary.test.mjs \
+            scripts/lib/workflow-packet.test.mjs \
+            scripts/lib/workflow-report.test.mjs \
+            scripts/lib/workflow-run.test.mjs
+          npm run test:spec
+          npm test
+          cd ..
+          git diff --check
+
+          test -n "$(git status --short)"
+          if git status --short | grep -E '^.. (\.github/workflows/pr230-|kit-dev/temp/|\.github/visual-refresh-fix/)'; then
+            echo 'temporary worker files detected in target diff'
+            exit 1
+          fi
+
+          before=$(git rev-parse HEAD)
+          git add .github/workflows/frontend-workflow-kit.yml frontend-workflow-kit
+          git commit -m 'fix(visual-refresh): wire shipped workflow authority boundaries'
+          after=$(git rev-parse HEAD)
+          git push origin "HEAD:$TARGET_BRANCH"
+          gh api --method PATCH "repos/$REPO/issues/comments/$COMMENT_ID" \
+            -f body="PR #230 Aider fallback가 남은 P1 수정과 focused/spec/full/diffcheck 검증을 완료해 $after 에 push했습니다. 최종 표준 CI를 확인 중입니다."
+
+      - name: Record fallback failure
+        if: failure() && steps.gate.outputs.outcome != 'success'
+        run: |
+          gh api --method PATCH "repos/$REPO/issues/comments/$COMMENT_ID" \
+            -f body="PR #230 primary worker와 Aider fallback이 모두 push 전 검증에서 실패했습니다. 검증되지 않은 변경은 target branch에 push하지 않았습니다. Fallback run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
