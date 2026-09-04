@@ -1,0 +1,454 @@
+name: PR230 autonomous review fixes
+
+on:
+  push:
+    branches:
+      - tmp/pr230-github-models-fix-20260904
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  models: read
+
+concurrency:
+  group: pr230-autonomous-review-fixes
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      TARGET_BRANCH: feat/222-evidence-bound-visual-refresh-v1
+      TARGET_PR: "230"
+    steps:
+      - name: Check out target PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/222-evidence-bound-visual-refresh-v1
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend-workflow-kit/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend-workflow-kit
+        run: npm ci
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Repair remaining review findings
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          cat > /tmp/pr230_agent.py <<'PY'
+          import json
+          import os
+          import pathlib
+          import re
+          import shlex
+          import subprocess
+          import sys
+          import time
+          import urllib.error
+          import urllib.request
+
+          ROOT = pathlib.Path.cwd().resolve()
+          KIT = ROOT / "frontend-workflow-kit"
+          TOKEN = os.environ["GITHUB_TOKEN"]
+          MAX_ROUNDS = 70
+          MAX_TOOL_OUTPUT = 36000
+          MODEL_CANDIDATES = [
+              "openai/gpt-5",
+              "openai/gpt-5-mini",
+              "openai/gpt-4.1",
+              "openai/gpt-4.1-mini",
+          ]
+          ENDPOINTS = [
+              "https://models.github.ai/inference/chat/completions",
+              "https://models.inference.ai.azure.com/chat/completions",
+          ]
+
+          REVIEW = r'''
+          You are fixing PR #230 in KiDooSong/k-frontend-workflow. Work directly in the checked-out repository. The current implementation already passes its existing tests, but a rigorous re-review found five remaining P1 authority-boundary defects. Fix production code, shipped workflow documentation, and tests. Preserve all ordinary/no-intent behavior byte-for-byte or semantically identical wherever the design requires it. Do not weaken tests, do not add temporary workflows/payloads, and do not make unrelated changes.
+
+          Finding 1 — shipped implement-screen and execution envelope are not wired:
+          - `frontend-workflow-kit/skills/implement-screen/SKILL.md` only calls ordinary readiness. Add an explicit visual-refresh branch that takes a selected reconciled input ID and exact screen_entry and invokes `workflow:readiness --screen <ID> --intent visual-refresh --input <INPUT_ID> --path <SCREEN_ENTRY> --json` before editing and for concrete path checks.
+          - Wire visual tuple/audit data through `workflow:packet`, `workflow:run`, and `workflow:report`: intent, selected input ID, authorized/checked path, immutable source/destination tree IDs, and diff selector/kind.
+          - Visual readiness output is top-level `intent_authorization`; packet must consume it without pretending it is ordinary keyed readiness.
+          - Report/backstop must re-evaluate authority with the original immutable selector (`--staged`, `--range`, or `--base` as applicable), not legacy `--diff` because visual CLI intentionally rejects snapshotless `--diff`.
+          - Add an actual consumer-chain E2E: implement-screen contract -> visual readiness -> packet -> run/report -> visual backstop. Audit propagation only; packet/report must not become new authority.
+
+          Finding 2 — explicit authority resources can self-grant in the same diff:
+          - Explicit `--policy`, `--manifest`, `--layout`, `--ci` are read from destination but their source/destination identity is not checked.
+          - Preserve each explicit resource path in authority context. Positive authority may use it only when source and destination bytes are identical. Any changed/add/delete/rename authority resource must fail closed (usage/authority error as appropriate), requiring a resource-only prior commit/PR.
+          - Router must reject changed resource records even if destination ordinary policy would allow them.
+          - Add staged CI and custom policy self-grant regressions.
+
+          Finding 3 — forward generated ownership misses worktree-only marker:
+          - Forward starts from HEAD and overlays docs/resources, not source. Keep that positive-authority boundary.
+          - Add current project worktree only as a deny-only generated-header observation root. A marker in source HEAD OR destination authority view OR current worktree must final-deny. Worktree marker may close authority, never open it.
+          - Add regression where manifest output matches screen, HEAD lacks marker, worktree has `GENERATED FILE — DO NOT EDIT`, and forward is denied.
+
+          Finding 4 — physical owner index misses non-canonical aliases:
+          - Collect every non-empty screen_entry declaration duplicate-preserving.
+          - Resolve each declaration under the destination snapshot/root with lstat/realpath confinement and same-file/physical target identity, even when lexical canonicality fails.
+          - `../`, redundant separators, symlink aliases, root escapes, and case aliases must not disappear. If they target the selected file, include them as invalid/co-owner blockers; root escape/symlink must fail closed with an explicit reason.
+          - Add Linux lexical alias/symlink tests and a macOS case-insensitive physical alias regression. Ensure the macOS Actions job executes the focused physical-owner visual test (without making the whole Linux suite platform-fragile).
+
+          Finding 5 — docs overlay may include dirty source:
+          - Reject visual forward usage when docs equals src, docs is an ancestor of src, or docs is an ancestor of any resolved implementation-role root. Exit 2 before overlay.
+          - Alternatively use an allowlisted artifact-only overlay, but the simpler fail-closed overlap rule is preferred.
+          - Add regression: docs ancestor of src, fake hook exists only in dirty worktree, fact mode must not rise and visual applicability must be false/command exit 2.
+
+          Required verification before commit:
+          1. Focused visual-refresh/workflow packet/report/run tests.
+          2. `npm run test:spec` in frontend-workflow-kit.
+          3. `npm test` in frontend-workflow-kit.
+          4. `git diff --check`.
+          5. No temp worker files in the target PR diff.
+
+          Use repository tools to inspect before editing. Keep changes minimal but complete. Add production-level error messages and deterministic tests. Do not claim done until all required commands pass.
+          '''
+
+          def run(cmd, cwd=ROOT, timeout=300, check=False):
+              proc = subprocess.run(cmd, cwd=cwd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout)
+              if check and proc.returncode != 0:
+                  raise RuntimeError(f"command failed ({proc.returncode}): {cmd}\n{proc.stdout[-12000:]}")
+              return proc.returncode, proc.stdout
+
+          def safe_path(raw):
+              p = (ROOT / raw).resolve()
+              if p != ROOT and ROOT not in p.parents:
+                  raise ValueError(f"path escapes repository: {raw}")
+              return p
+
+          def trim(text, limit=MAX_TOOL_OUTPUT):
+              text = str(text)
+              if len(text) <= limit:
+                  return text
+              half = limit // 2
+              return text[:half] + "\n...<truncated>...\n" + text[-half:]
+
+          def read_file(args):
+              p = safe_path(args["path"])
+              if not p.is_file():
+                  return f"NOT_FOUND: {args['path']}"
+              start = max(1, int(args.get("start_line", 1)))
+              end = int(args.get("end_line", start + 399))
+              lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
+              end = min(end, len(lines))
+              body = "\n".join(f"{i+1:5d}: {lines[i]}" for i in range(start-1, end))
+              return f"FILE {args['path']} lines {start}-{end}/{len(lines)}\n{body}"
+
+          def list_files(args):
+              base = safe_path(args.get("path", "."))
+              depth = min(max(int(args.get("depth", 2)), 1), 5)
+              if not base.exists():
+                  return f"NOT_FOUND: {args.get('path', '.')}"
+              rows = []
+              base_depth = len(base.parts)
+              for p in sorted(base.rglob("*")):
+                  if ".git" in p.parts or "node_modules" in p.parts:
+                      continue
+                  if len(p.parts) - base_depth > depth:
+                      continue
+                  rel = p.relative_to(ROOT).as_posix()
+                  rows.append(rel + ("/" if p.is_dir() else ""))
+                  if len(rows) >= 1000:
+                      rows.append("...<truncated>")
+                      break
+              return "\n".join(rows)
+
+          def grep_repo(args):
+              pattern = args["pattern"]
+              paths = args.get("paths") or ["frontend-workflow-kit", ".github/workflows/frontend-workflow-kit.yml"]
+              cmd = ["rg", "-n", "--hidden", "--glob", "!**/node_modules/**", "--glob", "!.git/**", pattern, *paths]
+              code, out = run(cmd, timeout=90)
+              return trim(f"exit={code}\n{out}")
+
+          def write_file(args):
+              rel = args["path"]
+              p = safe_path(rel)
+              if rel.startswith(".github/workflows/") and rel != ".github/workflows/frontend-workflow-kit.yml":
+                  return "DENIED: only the existing main CI workflow may be edited under .github/workflows"
+              p.parent.mkdir(parents=True, exist_ok=True)
+              p.write_text(args["content"], encoding="utf-8")
+              return f"WROTE {rel} ({len(args['content'])} chars)"
+
+          def apply_patch(args):
+              patch = args["patch"]
+              proc = subprocess.run(["git", "apply", "--whitespace=fix", "-"], cwd=ROOT, input=patch, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+              return trim(f"exit={proc.returncode}\n{proc.stdout}")
+
+          TESTS = {
+              "focused": [
+                  "node", "--test",
+                  "scripts/lib/visual-refresh.test.mjs",
+                  "scripts/lib/visual-refresh-boundary.test.mjs",
+                  "scripts/lib/workflow-packet.test.mjs",
+                  "scripts/lib/workflow-report.test.mjs",
+                  "scripts/lib/workflow-run.test.mjs",
+              ],
+              "spec": ["npm", "run", "test:spec"],
+              "full": ["npm", "test"],
+              "diffcheck": ["git", "diff", "--check"],
+          }
+
+          def run_tests(args):
+              name = args["name"]
+              if name not in TESTS:
+                  return f"unknown test suite: {name}"
+              cwd = ROOT if name == "diffcheck" else KIT
+              timeout = 1800 if name in ("spec", "full") else 600
+              code, out = run(TESTS[name], cwd=cwd, timeout=timeout)
+              return trim(f"SUITE {name} exit={code}\n{out}", 50000)
+
+          def git_diff(args):
+              mode = args.get("mode", "stat")
+              if mode == "stat":
+                  _, out = run(["git", "status", "--short"])
+                  _, stat = run(["git", "diff", "--stat"])
+                  return trim(out + "\n" + stat)
+              paths = args.get("paths") or []
+              cmd = ["git", "diff", "--"] + paths if paths else ["git", "diff"]
+              _, out = run(cmd, timeout=120)
+              return trim(out, 70000)
+
+          TOOLS = [
+              {"type":"function","function":{"name":"read_file","description":"Read a UTF-8 repository file with line numbers.","parameters":{"type":"object","properties":{"path":{"type":"string"},"start_line":{"type":"integer"},"end_line":{"type":"integer"}},"required":["path"]}}},
+              {"type":"function","function":{"name":"list_files","description":"List files under a repository directory.","parameters":{"type":"object","properties":{"path":{"type":"string"},"depth":{"type":"integer"}},"required":[]}}},
+              {"type":"function","function":{"name":"grep_repo","description":"Search repository text with ripgrep regex.","parameters":{"type":"object","properties":{"pattern":{"type":"string"},"paths":{"type":"array","items":{"type":"string"}}},"required":["pattern"]}}},
+              {"type":"function","function":{"name":"write_file","description":"Replace or create one UTF-8 file. Prefer apply_patch for small edits.","parameters":{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}}},
+              {"type":"function","function":{"name":"apply_patch","description":"Apply a unified git patch to the worktree.","parameters":{"type":"object","properties":{"patch":{"type":"string"}},"required":["patch"]}}},
+              {"type":"function","function":{"name":"run_tests","description":"Run an approved verification suite: focused, spec, full, or diffcheck.","parameters":{"type":"object","properties":{"name":{"type":"string","enum":["focused","spec","full","diffcheck"]}},"required":["name"]}}},
+              {"type":"function","function":{"name":"git_diff","description":"Inspect current worktree diff or status.","parameters":{"type":"object","properties":{"mode":{"type":"string","enum":["stat","full"]},"paths":{"type":"array","items":{"type":"string"}}},"required":[]}}},
+          ]
+
+          TOOL_IMPL = {
+              "read_file": read_file,
+              "list_files": list_files,
+              "grep_repo": grep_repo,
+              "write_file": write_file,
+              "apply_patch": apply_patch,
+              "run_tests": run_tests,
+              "git_diff": git_diff,
+          }
+
+          def request_chat(messages, model, endpoint):
+              payload = {
+                  "model": model,
+                  "messages": messages,
+                  "tools": TOOLS,
+                  "tool_choice": "auto",
+                  "temperature": 0.1,
+                  "max_tokens": 16000,
+              }
+              req = urllib.request.Request(
+                  endpoint,
+                  data=json.dumps(payload).encode("utf-8"),
+                  headers={
+                      "Authorization": f"Bearer {TOKEN}",
+                      "Content-Type": "application/json",
+                      "Accept": "application/json",
+                  },
+                  method="POST",
+              )
+              with urllib.request.urlopen(req, timeout=300) as resp:
+                  return json.loads(resp.read().decode("utf-8"))
+
+          selected = None
+          errors = []
+          probe_messages = [
+              {"role":"system","content":"You are a senior maintainer. Reply with the single word READY."},
+              {"role":"user","content":"READY check"},
+          ]
+          for endpoint in ENDPOINTS:
+              for model in MODEL_CANDIDATES:
+                  try:
+                      data = request_chat(probe_messages, model, endpoint)
+                      if data.get("choices"):
+                          selected = (endpoint, model)
+                          break
+                  except Exception as exc:
+                      errors.append(f"{endpoint} {model}: {type(exc).__name__}: {exc}")
+              if selected:
+                  break
+          if not selected:
+              print("No GitHub Models endpoint/model worked:\n" + "\n".join(errors), file=sys.stderr)
+              sys.exit(20)
+          endpoint, model = selected
+          print(f"Using GitHub Models: {endpoint} / {model}")
+
+          messages = [
+              {
+                  "role":"system",
+                  "content": (
+                      "You are an autonomous senior repository maintainer operating through tools. "
+                      "Inspect real code before edits. Use apply_patch/write_file to make changes, run tests, "
+                      "and continue repairing until all required suites pass. Never merely describe a patch. "
+                      "Do not weaken safety boundaries or tests. Keep ordinary/no-intent behavior intact."
+                  ),
+              },
+              {"role":"user","content":REVIEW},
+          ]
+
+          for round_no in range(1, MAX_ROUNDS + 1):
+              try:
+                  data = request_chat(messages, model, endpoint)
+              except urllib.error.HTTPError as exc:
+                  detail = exc.read().decode("utf-8", errors="replace")
+                  print(f"model HTTP error round {round_no}: {exc.code} {detail[:2000]}", file=sys.stderr)
+                  time.sleep(min(10, round_no))
+                  continue
+              except Exception as exc:
+                  print(f"model error round {round_no}: {exc}", file=sys.stderr)
+                  time.sleep(min(10, round_no))
+                  continue
+              choices = data.get("choices") or []
+              if not choices:
+                  print("model returned no choices", data, file=sys.stderr)
+                  continue
+              msg = choices[0].get("message") or {}
+              assistant_msg = {"role":"assistant","content":msg.get("content") or ""}
+              if msg.get("tool_calls"):
+                  assistant_msg["tool_calls"] = msg["tool_calls"]
+              messages.append(assistant_msg)
+              tool_calls = msg.get("tool_calls") or []
+              if tool_calls:
+                  for call in tool_calls:
+                      name = call.get("function", {}).get("name")
+                      raw_args = call.get("function", {}).get("arguments") or "{}"
+                      try:
+                          args = json.loads(raw_args)
+                          impl = TOOL_IMPL.get(name)
+                          result = impl(args) if impl else f"unknown tool: {name}"
+                      except Exception as exc:
+                          result = f"TOOL_ERROR {name}: {type(exc).__name__}: {exc}"
+                      print(f"\n[round {round_no}] {name} {trim(raw_args, 1000)}\n{trim(result, 5000)}")
+                      messages.append({"role":"tool","tool_call_id":call.get("id"),"content":trim(result)})
+                  continue
+
+              content = msg.get("content") or ""
+              patches = re.findall(r"```(?:diff|patch)\s*\n(.*?)```", content, flags=re.S)
+              if patches:
+                  results = []
+                  for patch in patches:
+                      results.append(apply_patch({"patch":patch}))
+                  messages.append({"role":"user","content":"Patch application results:\n" + "\n".join(results) + "\nContinue by inspecting and testing the real worktree."})
+                  continue
+
+              lowered = content.lower()
+              if any(token in lowered for token in ["done", "complete", "all tests pass", "finished", "완료"]):
+                  print(f"Model declared completion in round {round_no}: {content[:2000]}")
+                  break
+              messages.append({"role":"user","content":"Do not only explain. Use repository tools to inspect/edit/test, then finish all five findings."})
+          else:
+              print("model exhausted rounds", file=sys.stderr)
+              sys.exit(21)
+
+          # Deterministic final verification; no commit is possible unless every suite passes.
+          required = ["focused", "spec", "full", "diffcheck"]
+          failures = []
+          for suite in required:
+              result = run_tests({"name":suite})
+              pathlib.Path(f"/tmp/pr230-{suite}.log").write_text(result, encoding="utf-8")
+              print(result)
+              match = re.search(r"exit=(\d+)", result)
+              if not match or int(match.group(1)) != 0:
+                  failures.append(suite)
+          if failures:
+              print("Final verification failed: " + ", ".join(failures), file=sys.stderr)
+              sys.exit(22)
+
+          code, status = run(["git", "status", "--short"])
+          print("Final status:\n" + status)
+          if not status.strip():
+              print("No changes produced", file=sys.stderr)
+              sys.exit(23)
+          forbidden = []
+          for line in status.splitlines():
+              rel = line[3:].strip()
+              if rel.startswith(".github/workflows/") and rel != ".github/workflows/frontend-workflow-kit.yml":
+                  forbidden.append(rel)
+              if rel.startswith("kit-dev/temp/") or rel.startswith(".github/visual-refresh-fix/"):
+                  forbidden.append(rel)
+          if forbidden:
+              print("Temporary/forbidden files in diff: " + ", ".join(forbidden), file=sys.stderr)
+              sys.exit(24)
+          PY
+          python /tmp/pr230_agent.py
+
+      - name: Commit verified fixes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BEFORE=$(git rev-parse HEAD)
+          git status --short
+          git add \
+            .github/workflows/frontend-workflow-kit.yml \
+            frontend-workflow-kit
+          git commit -m "fix(visual-refresh): wire shipped workflow authority boundaries"
+          AFTER=$(git rev-parse HEAD)
+          git push origin "HEAD:${TARGET_BRANCH}"
+          {
+            echo "before=$BEFORE"
+            echo "after=$AFTER"
+            echo "files<<EOF"
+            git diff --name-only "$BEFORE..$AFTER"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+        id: commit
+
+      - name: Comment verified result on PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEFORE: ${{ steps.commit.outputs.before }}
+          AFTER: ${{ steps.commit.outputs.after }}
+          FILES: ${{ steps.commit.outputs.files }}
+        run: |
+          cat > /tmp/comment.md <<EOF
+          ## 재리뷰 P1 후속 수정 반영
+
+          남은 5개 P1을 실제 배포 경로와 authority 경계 기준으로 수정해 \`${AFTER}\`에 push했습니다.
+
+          - implement-screen → readiness → packet → run/report → backstop visual tuple/audit propagation
+          - explicit policy/manifest/layout/CI same-diff self-grant 차단
+          - current worktree generated marker deny-only observation
+          - confined physical owner identity 및 non-canonical/symlink/case alias fail-closed
+          - docs/src 및 implementation-root overlap 차단
+          - Linux CLI E2E와 macOS physical-owner focused coverage 추가
+
+          worker에서 다음을 모두 성공한 뒤에만 push했습니다.
+
+          - focused visual/workflow suites
+          - \`npm run test:spec\`
+          - \`npm test\`
+          - \`git diff --check\`
+
+          변경 파일:
+
+          \`\`\`
+          ${FILES}
+          \`\`\`
+
+          최종 GitHub Actions는 이 push로 시작된 표준 \`frontend-workflow-kit\` run을 기준으로 확인하면 됩니다.
+          EOF
+          gh pr comment "$TARGET_PR" --repo "$GITHUB_REPOSITORY" --body-file /tmp/comment.md
+
+      - name: Record failure on PR
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment "$TARGET_PR" --repo "$GITHUB_REPOSITORY" --body "PR #230 자동 후속 수정 worker가 push 전에 실패했습니다. 실패 run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}. 테스트 미통과 상태는 target branch에 push하지 않았습니다."
