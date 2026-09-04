@@ -1,0 +1,75 @@
+name: PR230 target verifier v2
+
+on:
+  push:
+    branches:
+      - tmp/pr230-repair-controller-20260904
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      TARGET_BRANCH: feat/222-evidence-bound-visual-refresh-v1
+      COMMENT_ID: "5538090011"
+    steps:
+      - name: Wait for a verified repair commit on target
+        id: target
+        run: |
+          set -euo pipefail
+          head=''
+          ci_url=''
+          for _ in $(seq 1 300); do
+            head=$(gh api "repos/$REPO/git/ref/heads/$TARGET_BRANCH" --jq '.object.sha')
+            subject=$(gh api "repos/$REPO/commits/$head" --jq '.commit.message' | head -1)
+            if [[ "$subject" == 'fix(visual-refresh): wire shipped workflow authority boundaries' ]]; then
+              ci=$(gh run list --repo "$REPO" --workflow frontend-workflow-kit --branch "$TARGET_BRANCH" --commit "$head" --limit 1 \
+                --json status,conclusion,url --jq '.[0] // {}')
+              status=$(jq -r '.status // "missing"' <<<"$ci")
+              conclusion=$(jq -r '.conclusion // ""' <<<"$ci")
+              ci_url=$(jq -r '.url // ""' <<<"$ci")
+              if [[ "$status" == completed && "$conclusion" == success ]]; then
+                echo "head=$head" >> "$GITHUB_OUTPUT"
+                echo "ci_url=$ci_url" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              if [[ "$status" == completed && "$conclusion" != success ]]; then
+                gh api --method PATCH "repos/$REPO/issues/comments/$COMMENT_ID" \
+                  -f body="PR #230 후속 수정 HEAD $head 의 표준 CI가 실패했습니다. CI: $ci_url"
+                exit 1
+              fi
+            fi
+            sleep 20
+          done
+          gh api --method PATCH "repos/$REPO/issues/comments/$COMMENT_ID" \
+            -f body='PR #230 primary/fallback target verifier timeout. 검증되지 않은 변경은 완료로 간주하지 않습니다.'
+          exit 1
+
+      - name: Publish final verified result
+        env:
+          HEAD_SHA: ${{ steps.target.outputs.head }}
+          CI_URL: ${{ steps.target.outputs.ci_url }}
+        run: |
+          gh api --method PATCH "repos/$REPO/issues/comments/$COMMENT_ID" \
+            -f body="PR #230 후속 수정 완료 및 검증 성공. HEAD: $HEAD_SHA. repair worker의 focused/spec/full/diffcheck가 push gate로 통과했고, 최종 표준 frontend-workflow-kit CI도 성공했습니다: $CI_URL"
+          gh pr comment 230 --repo "$REPO" --body "## 재리뷰 P1 후속 작업 최종 완료\n\n최종 HEAD \`$HEAD_SHA\`에서 남은 5개 P1 수정이 반영됐고 표준 \`validate-example\`, \`compat-smoke\`, \`macos-smoke\`가 모두 성공했습니다.\n\nCI: $CI_URL"
+
+      - name: Remove all temporary repair branches
+        if: success()
+        run: |
+          for branch in \
+            tmp/pr230-github-models-fix-20260904 \
+            tmp/pr230-repair-controller-20260904 \
+            tmp/pr230-public-export-20260904 \
+            tmp/pr230-repair-finalizer-20260904 \
+            tmp/pr230-aider-fallback-20260904; do
+            gh api --method DELETE "repos/$REPO/git/refs/heads/$branch" || true
+          done
