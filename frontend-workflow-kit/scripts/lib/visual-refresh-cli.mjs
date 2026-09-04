@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { parseArgs, yamlStringify } from './util.mjs';
+import { DEFAULTS, parseArgs, yamlStringify } from './util.mjs';
 import {
   canonicalAuthorityPath,
   evaluateVisualRefreshAuthority,
@@ -129,6 +129,98 @@ function emit(result, flags) {
   }
 }
 
+function absoluteFrom(root, relative) {
+  return path.join(root, ...String(relative).split('/'));
+}
+
+function assertCopySourceConfined(projectRoot, source) {
+  const realRoot = fs.realpathSync(projectRoot);
+  const stat = fs.lstatSync(source);
+  if (stat.isSymbolicLink()) {
+    throw new VisualRefreshError(
+      `forward authority view는 symlink를 읽지 않음: ${path.relative(projectRoot, source)}`,
+    );
+  }
+  const real = fs.realpathSync(source);
+  if (real !== realRoot && !real.startsWith(`${realRoot}${path.sep}`)) {
+    throw new VisualRefreshError(
+      `forward authority source가 --root 밖으로 이탈함: ${path.relative(projectRoot, source)}`,
+    );
+  }
+}
+
+function overlayAuthorityPath(projectRoot, destinationRoot, relative) {
+  const source = absoluteFrom(projectRoot, relative);
+  const destination = absoluteFrom(destinationRoot, relative);
+  fs.rmSync(destination, { recursive: true, force: true });
+  if (!fs.existsSync(source)) return;
+  assertCopySourceConfined(projectRoot, source);
+  fs.mkdirSync(path.dirname(destination), { recursive: true });
+  fs.cpSync(source, destination, {
+    recursive: true,
+    dereference: false,
+    filter(current) {
+      assertCopySourceConfined(projectRoot, current);
+      return true;
+    },
+  });
+}
+
+// Forward inspection uses current authority documents, but never current source files. Start from
+// HEAD^{tree} and overlay only docs plus explicit authority-resource overrides. This prevents a
+// dirty --src or screen edit from manufacturing the readiness fact that would authorize itself.
+function materializeForwardAuthorityView(repository, sourceTree, options) {
+  const destination = materializeGitTree({
+    repositoryRoot: repository.repositoryRoot,
+    projectPrefix: repository.projectPrefix,
+    tree: sourceTree,
+  });
+  const overlays = new Set([options.docs || DEFAULTS.docs]);
+  for (const key of ['policy', 'manifest', 'layout', 'ci']) {
+    if (options[key]) overlays.add(options[key]);
+  }
+  for (const relative of overlays) {
+    overlayAuthorityPath(repository.projectRoot, destination.root, relative);
+  }
+  return destination;
+}
+
+function isCurrentRegularFile(projectRoot, relative) {
+  try {
+    const absolute = absoluteFrom(projectRoot, relative);
+    const stat = fs.lstatSync(absolute);
+    if (!stat.isFile() || stat.isSymbolicLink()) return false;
+    const realRoot = fs.realpathSync(projectRoot);
+    const real = fs.realpathSync(absolute);
+    return real.startsWith(`${realRoot}${path.sep}`);
+  } catch {
+    return false;
+  }
+}
+
+function applyForwardFileIdentity(result, projectRoot) {
+  const intent = result?.intent_authorization;
+  const authorizedPath = intent?.authorized_path;
+  if (!intent?.applicable || !authorizedPath || isCurrentRegularFile(projectRoot, authorizedPath)) {
+    return result;
+  }
+  result.intent_authorization = {
+    ...intent,
+    applicable: false,
+    reasons: [
+      ...(intent.reasons || []),
+      {
+        code: 'VR-SCREEN-009',
+        message: 'current forward view의 authorized screen_entry가 existing regular file이 아님',
+      },
+    ],
+  };
+  if (result.path_authorization) {
+    result.path_authorization = { ...result.path_authorization, allowed: false };
+  }
+  return result;
+}
+
 export function runVisualReadinessCli(argv = process.argv.slice(2)) {
   const tuple = parseTuple(argv, 'readiness');
   const repository = resolveRepositoryContext(tuple.root || process.cwd());
@@ -151,25 +243,34 @@ export function runVisualReadinessCli(argv = process.argv.slice(2)) {
     process.exitCode = 0;
     return output;
   }
+  const destination = materializeForwardAuthorityView(
+    repository,
+    source.source_tree,
+    tuple.options,
+  );
   try {
-    const output = evaluateVisualRefreshAuthority({
-      sourceRoot: source.materialized.root,
-      destinationRoot: repository.projectRoot,
-      selectedScreen: tuple.screen,
-      selectedInputId: tuple.input,
-      checkedPath: tuple.checkedPath,
-      options: tuple.options,
-      snapshot: {
-        source_tree: source.source_tree,
-        destination_tree: source.destination_tree,
-        diff_kind: source.diff_kind,
-      },
-    });
+    const output = applyForwardFileIdentity(
+      evaluateVisualRefreshAuthority({
+        sourceRoot: source.materialized.root,
+        destinationRoot: destination.root,
+        selectedScreen: tuple.screen,
+        selectedInputId: tuple.input,
+        checkedPath: tuple.checkedPath,
+        options: tuple.options,
+        snapshot: {
+          source_tree: source.source_tree,
+          destination_tree: source.destination_tree,
+          diff_kind: source.diff_kind,
+        },
+      }),
+      repository.projectRoot,
+    );
     emit(output, tuple.flags);
     process.exitCode = 0;
     return output;
   } finally {
     source.materialized.cleanup();
+    destination.cleanup();
   }
 }
 
