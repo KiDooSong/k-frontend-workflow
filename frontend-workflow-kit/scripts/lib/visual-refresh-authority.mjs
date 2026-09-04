@@ -42,7 +42,8 @@ const FINAL_VISUAL_MODE = 'final-fixture-ui';
 const REGISTER_RELATIVE = '_meta/reconciliation-register.md';
 const MAPPING_ARTIFACT_TYPE = 'figma-component-mapping';
 const MAPPING_SECTION = 'component-mapping';
-const MAPPING_PROVENANCE_SECTION = 'mapping-provenance';
+const MAPPING_SECTION_KEY = 'component mapping';
+const MAPPING_PROVENANCE_SECTION_KEY = 'mapping provenance';
 
 export class VisualRefreshError extends Error {
   constructor(message) {
@@ -98,7 +99,7 @@ export function canonicalAuthorityPath(raw, label = 'path') {
   if (path.posix.isAbsolute(slash) || /^[A-Za-z]:\//.test(slash)) {
     throw new VisualRefreshError(`${label}는 절대경로일 수 없음: ${raw}`);
   }
-  if (/[?*\[\]{}!]/.test(slash)) {
+  if (/[?*]/.test(slash)) {
     throw new VisualRefreshError(`${label}는 글롭이 아닌 구체 경로여야 함: ${raw}`);
   }
   const normalized = path.posix.normalize(slash);
@@ -678,8 +679,8 @@ function registerMappingEvidenceAuthority({
   }
 
   const sections = getSections(mapping.body || '');
-  const componentRows = rowsFor(sections[MAPPING_SECTION]);
-  const provenanceRows = rowsFor(sections[MAPPING_PROVENANCE_SECTION]);
+  const componentRows = rowsFor(sections[MAPPING_SECTION_KEY]);
+  const provenanceRows = rowsFor(sections[MAPPING_PROVENANCE_SECTION_KEY]);
   const componentMatches = componentRows.filter((row) => mappingKey(row) === target.rowKey);
   const provenanceMatches = provenanceRows.filter(
     (row) => text(col(row, 'Mapping Key')) === target.rowKey,
@@ -811,7 +812,7 @@ function snapshotResources(root, options) {
 
 function freshReadiness(root, selectedScreen, options) {
   const resources = snapshotResources(root, options);
-  const state = buildState({
+  const { state } = buildState({
     docsDir: resources.docsDir,
     srcDir: resources.srcDir,
     date: '1970-01-01',

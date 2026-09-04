@@ -67,6 +67,13 @@ export function hasHead(repositoryRoot) {
   }
 }
 
+function resolveCommit(repositoryRoot, ref) {
+  return requireGitValue(
+    text(['rev-parse', '--verify', `${ref}^{commit}`], repositoryRoot),
+    `commit '${ref}'`,
+  );
+}
+
 export function resolveTree(repositoryRoot, ref) {
   return requireGitValue(
     text(['rev-parse', '--verify', `${ref}^{tree}`], repositoryRoot),
@@ -74,16 +81,19 @@ export function resolveTree(repositoryRoot, ref) {
   );
 }
 
-function mergeBase(repositoryRoot, left, right) {
+function mergeBase(repositoryRoot, leftCommit, rightCommit) {
   return requireGitValue(
-    text(['merge-base', left, right], repositoryRoot),
-    `merge-base ${left} ${right}`,
+    text(['merge-base', leftCommit, rightCommit], repositoryRoot),
+    `merge-base ${leftCommit} ${rightCommit}`,
   );
 }
 
-function diffRecords(repositoryRoot, source, destination) {
+function diffRecords(repositoryRoot, sourceTree, destinationTree) {
   return parseNameStatusZ(
-    git(['diff', '--name-status', '-M', '-z', source, destination], repositoryRoot),
+    git(
+      ['diff', '--name-status', '-M', '-z', sourceTree, destinationTree],
+      repositoryRoot,
+    ),
   );
 }
 
@@ -102,12 +112,19 @@ function parseRange(range) {
   );
 }
 
-// One resolver owns both the name-status records and the two immutable trees. Callers must not
-// re-resolve either half independently: doing so could validate evidence against a different
-// snapshot than the operations being authorized.
-export function resolveVisualDiffContext({ repositoryRoot, staged = false, range, base } = {}) {
-  const modes = [staged === true, typeof range === 'string', typeof base === 'string'].filter(Boolean)
-    .length;
+// One resolver owns both name/status records and immutable tree identities. Every
+// symbolic ref/index is resolved exactly once; records are then computed only from
+// the captured tree OIDs. `afterTreesResolved` is a test seam used to prove that a
+// moving ref or index cannot change the record set after the snapshot is fixed.
+export function resolveVisualDiffContext({
+  repositoryRoot,
+  staged = false,
+  range,
+  base,
+  afterTreesResolved,
+} = {}) {
+  const modes = [staged === true, typeof range === 'string', typeof base === 'string']
+    .filter(Boolean).length;
   if (modes > 1) {
     throw new VisualRefreshGitError('--staged, --range, --base는 동시에 사용할 수 없음');
   }
@@ -115,45 +132,40 @@ export function resolveVisualDiffContext({ repositoryRoot, staged = false, range
     throw new VisualRefreshGitError('visual-refresh backstop은 HEAD가 없는 저장소에서 실행할 수 없음');
   }
 
+  const headCommit = resolveCommit(repositoryRoot, 'HEAD');
   let sourceCommit;
-  let destinationRef;
+  let destinationCommit = null;
   let sourceTree;
   let destinationTree;
-  let records;
+  let destinationRef = null;
   let diffKind;
 
   if (staged) {
-    sourceCommit = requireGitValue(
-      text(['rev-parse', '--verify', 'HEAD^{commit}'], repositoryRoot),
-      'HEAD commit',
-    );
-    sourceTree = resolveTree(repositoryRoot, 'HEAD');
+    sourceCommit = headCommit;
+    sourceTree = resolveTree(repositoryRoot, sourceCommit);
     destinationTree = requireGitValue(text(['write-tree'], repositoryRoot), 'index tree');
-    records = parseNameStatusZ(
-      git(['diff', '--cached', '--name-status', '-M', '-z'], repositoryRoot),
-    );
+    destinationRef = 'INDEX';
     diffKind = 'staged';
   } else if (typeof range === 'string') {
     const parsed = parseRange(range);
+    const leftCommit = resolveCommit(repositoryRoot, parsed.left);
+    destinationCommit = resolveCommit(repositoryRoot, parsed.right);
     destinationRef = parsed.right;
     if (parsed.operator === '...') {
-      sourceCommit = mergeBase(repositoryRoot, parsed.left, parsed.right);
-      sourceTree = resolveTree(repositoryRoot, sourceCommit);
-      destinationTree = resolveTree(repositoryRoot, parsed.right);
-      records = diffRecords(repositoryRoot, sourceCommit, parsed.right);
+      sourceCommit = mergeBase(repositoryRoot, leftCommit, destinationCommit);
       diffKind = 'range-three-dot';
     } else {
-      sourceCommit = parsed.left;
-      sourceTree = resolveTree(repositoryRoot, parsed.left);
-      destinationTree = resolveTree(repositoryRoot, parsed.right);
-      records = diffRecords(repositoryRoot, parsed.left, parsed.right);
+      sourceCommit = leftCommit;
       diffKind = 'range-two-dot';
     }
-  } else if (typeof base === 'string') {
-    sourceCommit = mergeBase(repositoryRoot, base, 'HEAD');
     sourceTree = resolveTree(repositoryRoot, sourceCommit);
-    destinationTree = resolveTree(repositoryRoot, 'HEAD');
-    records = diffRecords(repositoryRoot, sourceCommit, 'HEAD');
+    destinationTree = resolveTree(repositoryRoot, destinationCommit);
+  } else if (typeof base === 'string') {
+    const baseCommit = resolveCommit(repositoryRoot, base);
+    destinationCommit = headCommit;
+    sourceCommit = mergeBase(repositoryRoot, baseCommit, destinationCommit);
+    sourceTree = resolveTree(repositoryRoot, sourceCommit);
+    destinationTree = resolveTree(repositoryRoot, destinationCommit);
     destinationRef = 'HEAD';
     diffKind = 'base-merge-base';
   } else {
@@ -164,20 +176,33 @@ export function resolveVisualDiffContext({ repositoryRoot, staged = false, range
       throw new VisualRefreshGitError(error.message);
     }
     const defaultRef = `origin/${defaultBranch}`;
-    sourceCommit = mergeBase(repositoryRoot, 'HEAD', defaultRef);
+    const defaultCommit = resolveCommit(repositoryRoot, defaultRef);
+    destinationCommit = headCommit;
+    sourceCommit = mergeBase(repositoryRoot, destinationCommit, defaultCommit);
     sourceTree = resolveTree(repositoryRoot, sourceCommit);
-    destinationTree = resolveTree(repositoryRoot, 'HEAD');
-    records = diffRecords(repositoryRoot, sourceCommit, 'HEAD');
+    destinationTree = resolveTree(repositoryRoot, destinationCommit);
     destinationRef = 'HEAD';
     diffKind = 'default-branch-merge-base';
   }
+
+  if (typeof afterTreesResolved === 'function') {
+    afterTreesResolved({
+      source_tree: sourceTree,
+      destination_tree: destinationTree,
+      source_commit: sourceCommit,
+      destination_commit: destinationCommit,
+      diff_kind: diffKind,
+    });
+  }
+  const records = diffRecords(repositoryRoot, sourceTree, destinationTree);
 
   return {
     records,
     source_tree: sourceTree,
     destination_tree: destinationTree,
     source_commit: sourceCommit,
-    destination_ref: destinationRef || null,
+    destination_commit: destinationCommit,
+    destination_ref: destinationRef,
     diff_kind: diffKind,
   };
 }
@@ -212,7 +237,8 @@ export function materializeGitTree({ repositoryRoot, projectPrefix = '', tree })
 
 export function sourceHeadContext({ repositoryRoot, projectPrefix = '' }) {
   if (!hasHead(repositoryRoot)) return null;
-  const sourceTree = resolveTree(repositoryRoot, 'HEAD');
+  const sourceCommit = resolveCommit(repositoryRoot, 'HEAD');
+  const sourceTree = resolveTree(repositoryRoot, sourceCommit);
   const materialized = materializeGitTree({
     repositoryRoot,
     projectPrefix,
@@ -221,6 +247,7 @@ export function sourceHeadContext({ repositoryRoot, projectPrefix = '' }) {
   return {
     source_tree: sourceTree,
     destination_tree: 'WORKTREE',
+    source_commit: sourceCommit,
     diff_kind: 'worktree-forward',
     materialized,
   };

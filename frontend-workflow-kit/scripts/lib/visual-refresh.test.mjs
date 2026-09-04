@@ -51,7 +51,7 @@ function roleLayout() {
 function apiStageEntry(overrides = {}) {
   return {
     readiness_mode: 'api-integrated-ui',
-    allowed_paths: ['src/features/shop/screens/**'],
+    allowed_paths: ['src/features/shop/hooks/**', 'src/api/**'],
     forbidden_paths: ['src/features/shop/screens/**'],
     delegated_shared_surfaces: [],
     __mode_order: [
@@ -79,7 +79,9 @@ function routingAuthority(overrides = {}) {
       screen_spec_path:
         'docs/frontend-workflow/domains/shop/screens/shop/screen-spec.md',
       visual_path_authorization: { allowed: true },
-      generated_patterns: [],
+      generated_entries: [],
+      generated_roots: [],
+      candidate_claims: { active: [], denied: [] },
       selected_screen: 'SHOP-HOME',
       readiness: {
         readiness_mode: 'final-fixture-ui',
@@ -180,6 +182,21 @@ test('only the canonical built-in API-stage screen deny may be waived', () => {
     layout: roleLayout(),
     domain: 'shop',
     generated: null,
+    claims: { active: [], denied: [] },
+    logicalRules: [
+      {
+        rule_id: 'policy:api-integrated-ui:deny:0:0',
+        source: 'bundled:policies/implementation-mode-policy.yaml',
+        authored_path: '{roles.screen}',
+        resolved_path: 'src/features/shop/screens/**',
+        disposition: 'deny',
+        origin: 'implementation-mode-policy',
+        scope: 'screen',
+        mode: 'api-integrated-ui',
+        role: 'screen',
+        waivable_visual_refresh_api_stage_screen_deny: true,
+      },
+    ],
   };
 
   const builtIn = visualImplementationAuthorization({
@@ -280,7 +297,7 @@ test('visual record router grants exact screen M and narrow authority authoring 
   assert.ok(unclassified.violations.some((entry) => entry.code === 'VR-BACKSTOP-007'));
 });
 
-test('existing selected input and generated outputs remain final denies', () => {
+test('existing selected input and generated outputs remain final denies', (t) => {
   const existing = route(
     [
       {
@@ -293,15 +310,25 @@ test('existing selected input and generated outputs remain final denies', () => 
   );
   assert.ok(existing.violations.some((entry) => entry.code === 'VR-BACKSTOP-005'));
 
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'visual-refresh-generated-test-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const generatedPath = path.join(root, 'src', 'features', 'shop', 'screens', 'ShopScreen.tsx');
+  fs.mkdirSync(path.dirname(generatedPath), { recursive: true });
+  fs.writeFileSync(generatedPath, '// GENERATED FILE - DO NOT EDIT\n', 'utf8');
   const generated = route(
     [{ status: 'M', path: 'src/features/shop/screens/ShopScreen.tsx', raw: 'M' }],
     routingAuthority({
-      generated_patterns: [
+      generated_entries: [
         {
+          owner_id: 'generated:generated-screen:0',
           artifact_id: 'generated-screen',
-          path: 'src/features/shop/screens/ShopScreen.tsx',
+          pattern: 'src/features/shop/screens/ShopScreen.tsx',
+          status: 'active',
+          do_not_edit: true,
+          origin: 'artifact-manifest+generated-header',
         },
       ],
+      generated_roots: [{ kind: 'destination', root }],
     }),
   );
   assert.ok(generated.violations.some((entry) => entry.code === 'VR-BACKSTOP-003'));

@@ -15,6 +15,7 @@ import {
   sourceHeadContext,
   VisualRefreshGitError,
 } from './visual-refresh-git.mjs';
+import { assertSnapshotPath, VisualRefreshResourceError } from './visual-refresh-resources.mjs';
 
 function own(object, key) {
   return Object.prototype.hasOwnProperty.call(object || {}, key);
@@ -152,9 +153,17 @@ function assertCopySourceConfined(projectRoot, source) {
 function overlayAuthorityPath(projectRoot, destinationRoot, relative) {
   const source = absoluteFrom(projectRoot, relative);
   const destination = absoluteFrom(destinationRoot, relative);
-  fs.rmSync(destination, { recursive: true, force: true });
-  if (!fs.existsSync(source)) return;
+  if (!fs.existsSync(source)) {
+    fs.rmSync(destination, { recursive: true, force: true });
+    return;
+  }
+  const sourceStat = fs.lstatSync(source);
+  assertSnapshotPath(projectRoot, relative, {
+    label: 'forward authority source',
+    type: sourceStat.isDirectory() ? 'directory' : 'file',
+  });
   assertCopySourceConfined(projectRoot, source);
+  fs.rmSync(destination, { recursive: true, force: true });
   fs.mkdirSync(path.dirname(destination), { recursive: true });
   fs.cpSync(source, destination, {
     recursive: true,
@@ -360,7 +369,10 @@ export function runVisualCliSafely(fn, toolName) {
   try {
     return fn();
   } catch (error) {
-    const known = error instanceof VisualRefreshError || error instanceof VisualRefreshGitError;
+    const known =
+      error instanceof VisualRefreshError ||
+      error instanceof VisualRefreshGitError ||
+      error instanceof VisualRefreshResourceError;
     const message = known
       ? error.message
       : `${error?.name || 'Error'}: ${error?.message || String(error)}`;
