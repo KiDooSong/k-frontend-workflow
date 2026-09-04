@@ -1,0 +1,33 @@
+name: Export PR230 workspace
+
+on:
+  push:
+    branches:
+      - tmp/pr230-workspace-export-20260904
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend-workflow-kit/package-lock.json
+      - name: Install dependencies
+        working-directory: frontend-workflow-kit
+        run: npm ci
+      - name: Package workspace
+        run: tar --exclude=.git -czf /tmp/pr230-workspace.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pr230-workspace
+          path: /tmp/pr230-workspace.tar.gz
+          if-no-files-found: error
+          retention-days: 1
