@@ -1,0 +1,60 @@
+name: PR230 state probe
+
+on:
+  push:
+    branches:
+      - tmp/pr230-state-probe-20260904
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      TARGET_BRANCH: feat/222-evidence-bound-visual-refresh-v1
+      EXPECTED_SUBJECT: 'fix(visual-refresh): wire shipped workflow authority boundaries'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: tmp/pr230-state-probe-20260904
+      - name: Probe target and write deterministic markers
+        run: |
+          set -euo pipefail
+          mkdir -p .github/pr230-state-probe
+          rm -f .github/pr230-state-probe/*
+          head=$(gh api "repos/$REPO/git/ref/heads/$TARGET_BRANCH" --jq '.object.sha')
+          subject=$(gh api "repos/$REPO/commits/$head" --jq '.commit.message' | head -1)
+          printf '%s\n' "$head" > .github/pr230-state-probe/head.txt
+          printf '%s\n' "$subject" > .github/pr230-state-probe/subject.txt
+          if [[ "$subject" == "$EXPECTED_SUBJECT" ]]; then
+            touch .github/pr230-state-probe/repair-landed.txt
+            ci=''
+            for _ in $(seq 1 120); do
+              ci=$(gh run list --repo "$REPO" --workflow frontend-workflow-kit --branch "$TARGET_BRANCH" --commit "$head" --limit 1 --json status,conclusion,url,databaseId --jq '.[0] // {}')
+              status=$(jq -r '.status // "missing"' <<<"$ci")
+              if [[ "$status" == completed || "$status" == missing ]]; then break; fi
+              sleep 15
+            done
+            printf '%s\n' "$ci" > .github/pr230-state-probe/ci.json
+            status=$(jq -r '.status // "missing"' <<<"$ci")
+            conclusion=$(jq -r '.conclusion // ""' <<<"$ci")
+            if [[ "$status" == completed && "$conclusion" == success ]]; then
+              touch .github/pr230-state-probe/ci-success.txt
+            elif [[ "$status" == completed ]]; then
+              touch .github/pr230-state-probe/ci-failed.txt
+            else
+              touch .github/pr230-state-probe/ci-missing-or-running.txt
+            fi
+          else
+            touch .github/pr230-state-probe/repair-not-landed.txt
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/pr230-state-probe
+          git commit -m 'chore: record PR230 repair probe state'
+          git push origin HEAD:tmp/pr230-state-probe-20260904
