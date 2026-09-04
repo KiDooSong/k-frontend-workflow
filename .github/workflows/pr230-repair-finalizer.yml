@@ -1,0 +1,74 @@
+name: PR230 repair finalizer
+
+on:
+  push:
+    branches:
+      - tmp/pr230-repair-finalizer-20260904
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      COMMENT_ID: "5538090011"
+      TARGET_BRANCH: feat/222-evidence-bound-visual-refresh-v1
+    steps:
+      - name: Wait for independently verified controller result
+        run: |
+          set -euo pipefail
+          body=''
+          for _ in $(seq 1 240); do
+            body=$(gh api "repos/$REPO/issues/comments/$COMMENT_ID" --jq '.body')
+            if [[ "$body" == PR\ \#230\ 후속\ 수정\ 완료\ 및\ 검증\ 성공.* ]]; then
+              break
+            fi
+            if [[ "$body" == *'failure'* || "$body" == *'timeout'* || "$body" == *'수동 확인 필요'* || "$body" == *'성공하지 않았습니다'* ]]; then
+              echo "$body"
+              exit 1
+            fi
+            sleep 20
+          done
+          if [[ "$body" != PR\ \#230\ 후속\ 수정\ 완료\ 및\ 검증\ 성공.* ]]; then
+            echo "controller success marker timeout: $body"
+            exit 1
+          fi
+
+      - name: Confirm target tree and standard checks one more time
+        id: confirm
+        run: |
+          set -euo pipefail
+          head=$(gh api "repos/$REPO/git/ref/heads/$TARGET_BRANCH" --jq '.object.sha')
+          subject=$(gh api "repos/$REPO/commits/$head" --jq '.commit.message' | head -1)
+          [[ "$subject" == 'fix(visual-refresh): wire shipped workflow authority boundaries' ]]
+          ci=$(gh run list --repo "$REPO" --workflow frontend-workflow-kit --branch "$TARGET_BRANCH" --commit "$head" --limit 1 \
+            --json status,conclusion,url,databaseId --jq '.[0]')
+          [[ "$(jq -r '.status' <<<"$ci")" == completed ]]
+          [[ "$(jq -r '.conclusion' <<<"$ci")" == success ]]
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+          echo "ci_url=$(jq -r '.url' <<<"$ci")" >> "$GITHUB_OUTPUT"
+
+      - name: Post final authoritative PR comment
+        env:
+          HEAD_SHA: ${{ steps.confirm.outputs.head }}
+          CI_URL: ${{ steps.confirm.outputs.ci_url }}
+        run: |
+          gh pr comment 230 --repo "$REPO" --body "## 재리뷰 P1 후속 작업 최종 완료\n\n최종 HEAD \`$HEAD_SHA\`에서 남은 5개 P1 수정이 반영됐고, worker의 focused/spec/full/diffcheck와 최종 표준 \`validate-example\`, \`compat-smoke\`, \`macos-smoke\`가 모두 성공했습니다.\n\n최종 CI: $CI_URL\n\n임시 worker/controller 브랜치는 정리합니다."
+
+      - name: Remove temporary branches
+        if: success()
+        run: |
+          for branch in \
+            tmp/pr230-github-models-fix-20260904 \
+            tmp/pr230-repair-controller-20260904 \
+            tmp/pr230-public-export-20260904 \
+            tmp/pr230-repair-finalizer-20260904; do
+            gh api --method DELETE "repos/$REPO/git/refs/heads/$branch" || true
+          done
