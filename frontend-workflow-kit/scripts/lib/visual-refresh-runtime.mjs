@@ -2,12 +2,20 @@ import path from 'node:path';
 import { walkFiles } from './util.mjs';
 import { loadScreenSpec } from './spec.mjs';
 import {
+  canonicalAuthorityPath as canonicalAuthorityPathCore,
   evaluateVisualRefreshAuthority as evaluateCore,
   routeVisualBackstopRecords as routeCore,
 } from './visual-refresh-authority.mjs';
 import { stripProjectPrefix } from './visual-refresh-git.mjs';
 
 export * from './visual-refresh-authority.mjs';
+
+export function canonicalAuthorityPath(raw, label = 'path') {
+  if (typeof raw === 'string' && raw.includes('\\')) {
+    throw new Error(`${label}는 POSIX canonical 경로여야 하며 backslash를 사용할 수 없음: ${raw}`);
+  }
+  return canonicalAuthorityPathCore(raw, label);
+}
 
 function toPosix(value) {
   return String(value).split(path.sep).join('/');
