@@ -40,6 +40,28 @@ function rejectUnknown(flags, allowed) {
   }
 }
 
+function sameOrAncestor(parent, child) {
+  return parent === child || child.startsWith(`${parent}/`);
+}
+
+function assertAuthorityOverlaySeparation(options) {
+  const docs = options.docs || DEFAULTS.docs;
+  const src = options.src || DEFAULTS.src;
+  if (sameOrAncestor(docs, src) || sameOrAncestor(src, docs)) {
+    throw new VisualRefreshError(
+      `visual-refresh forward authority에서 --docs와 --src는 겹칠 수 없음: docs=${docs}, src=${src}`,
+    );
+  }
+  for (const key of ['policy', 'manifest', 'layout', 'ci']) {
+    const resource = options[key];
+    if (resource && sameOrAncestor(src, resource)) {
+      throw new VisualRefreshError(
+        `--${key} authority resource는 --src 내부에 둘 수 없음: ${resource}`,
+      );
+    }
+  }
+}
+
 function parseTuple(argv, kind) {
   const { flags, positionals } = parseArgs(argv);
   if (positionals.length) {
@@ -91,6 +113,7 @@ function parseTuple(argv, kind) {
   for (const [name, value] of Object.entries(options)) {
     if (value !== undefined) canonicalAuthorityPath(value, `--${name}`);
   }
+  assertAuthorityOverlaySeparation(options);
   const checkedPath = optionalString(flags, 'path');
   if (checkedPath !== undefined) canonicalAuthorityPath(checkedPath, '--path');
   if (kind === 'backstop' && checkedPath === undefined) {
@@ -262,6 +285,7 @@ export function runVisualReadinessCli(argv = process.argv.slice(2)) {
       evaluateVisualRefreshAuthority({
         sourceRoot: source.materialized.root,
         destinationRoot: destination.root,
+        observationRoot: repository.projectRoot,
         selectedScreen: tuple.screen,
         selectedInputId: tuple.input,
         checkedPath: tuple.checkedPath,
