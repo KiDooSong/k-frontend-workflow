@@ -136,6 +136,24 @@ function parseTuple(argv, kind) {
 
 function publicResult(result) {
   const { _context, ...publicFields } = result;
+  if (_context && publicFields.intent_authorization?.intent === VISUAL_REFRESH_INTENT) {
+    const snapshot = publicFields.intent_authorization.snapshot || {};
+    publicFields.visual_refresh_audit = {
+      intent: VISUAL_REFRESH_INTENT,
+      selected_screen: _context.selected_screen || null,
+      input_id: publicFields.intent_authorization.input_id || null,
+      authorized_path:
+        _context.authorized_path || publicFields.intent_authorization.authorized_path || null,
+      checked_path:
+        publicFields.path_authorization?.checked_path ||
+        publicFields.intent_authorization.checked_path ||
+        null,
+      source_tree: snapshot.source_tree || null,
+      destination_tree: snapshot.destination_tree || null,
+      diff_kind: snapshot.diff_kind || null,
+      readiness_entry: _context.readiness || null,
+    };
+  }
   return publicFields;
 }
 
