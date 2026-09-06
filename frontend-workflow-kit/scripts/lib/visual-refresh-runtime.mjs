@@ -35,6 +35,11 @@ function text(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function outside(root, target) {
+  const relative = path.relative(root, target);
+  return relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative);
+}
+
 export function canonicalAuthorityPath(raw, label = 'path') {
   if (typeof raw !== 'string' || raw.trim() === '') {
     throw new core.VisualRefreshError(`${label}는 비어 있지 않은 worktree-relative 경로여야 함`);
@@ -180,32 +185,82 @@ function screenSpecs(docsDir) {
     .map((file) => loadScreenSpec(file));
 }
 
-function declarationFor(record, authorizedPath) {
-  const raw = text(record?.spec?.frontmatter?.screen_entry);
-  if (!raw) return false;
-  try {
-    return canonicalAuthorityPath(raw, 'ScreenSpec screen_entry') === authorizedPath;
-  } catch {
-    return raw === authorizedPath;
+function physicalDeclaration(root, raw, authorizedPath) {
+  const value = text(raw);
+  if (!value) return { matches: false, issue: 'empty declaration' };
+  if (value.includes('\0') || path.isAbsolute(value)) {
+    return { matches: false, issue: 'invalid absolute/NUL declaration' };
   }
+
+  const absoluteRoot = path.resolve(root);
+  const candidate = path.resolve(absoluteRoot, ...value.replace(/\\/g, '/').split('/'));
+  const authorized = path.resolve(absoluteRoot, ...authorizedPath.split('/'));
+  if (outside(absoluteRoot, candidate)) {
+    return { matches: false, issue: 'declaration escapes snapshot root' };
+  }
+
+  let candidateReal = null;
+  let authorizedReal = null;
+  try {
+    candidateReal = fs.realpathSync(candidate);
+  } catch {
+    // Missing/invalid declarations remain lexical-only observations.
+  }
+  try {
+    authorizedReal = fs.realpathSync(authorized);
+  } catch {
+    // The authority core separately requires an existing regular authorized file.
+  }
+
+  const physicalMatch =
+    candidateReal != null && authorizedReal != null && candidateReal === authorizedReal;
+  const lexicalMatch = candidate === authorized;
+  if (!physicalMatch && !lexicalMatch) return { matches: false, issue: null };
+
+  let issue = null;
+  try {
+    canonicalAuthorityPath(value, 'ScreenSpec screen_entry');
+  } catch (error) {
+    issue = error.message;
+  }
+  if (physicalMatch && candidate !== authorized) {
+    issue = issue || 'non-canonical/case/symlink alias resolves to authorized screen_entry';
+  }
+  return {
+    matches: true,
+    issue,
+    declared_path: value,
+    physical_path: candidateReal ? toPosix(candidateReal) : null,
+  };
 }
 
 function physicalOwnerSnapshot(root, docsRelative, selectedScreen, authorizedPath, snapshotKind) {
   const docsDir = path.join(root, ...docsRelative.split('/'));
   const specs = screenSpecs(docsDir);
   const lifecycle = analyzeScreenLifecycles({ specs, docsDir });
-  const declarations = lifecycle.records.filter((record) =>
-    declarationFor(record, authorizedPath),
-  );
-  const records = declarations.map((record) => ({
+  const declarations = lifecycle.records
+    .map((record) => ({
+      record,
+      declaration: physicalDeclaration(
+        root,
+        record?.spec?.frontmatter?.screen_entry,
+        authorizedPath,
+      ),
+    }))
+    .filter((entry) => entry.declaration.matches);
+  const records = declarations.map(({ record, declaration }) => ({
     screen_id: record.screen_id ?? null,
     lifecycle: record.lifecycle ?? null,
     valid: record.valid === true,
     source: record.source,
+    declared_path: declaration.declared_path,
+    physical_path: declaration.physical_path,
+    owner_issue: declaration.issue,
     errors: record.errors || [],
   }));
   const validSelected = declarations.filter(
-    (record) =>
+    ({ record, declaration }) =>
+      declaration.issue == null &&
       record.valid === true &&
       record.lifecycle === 'active' &&
       record.screen_id === selectedScreen &&
@@ -281,15 +336,22 @@ function computeFullReadiness(destinationRoot, selectedScreen, prepared) {
   };
 }
 
-function generatedRoots(sourceRoot, destinationRoot) {
+function generatedRoots(sourceRoot, destinationRoot, observationRoot) {
   return [
     { kind: 'destination', root: destinationRoot },
     { kind: 'source', root: sourceRoot },
+    ...(observationRoot
+      ? [{ kind: 'current-worktree-deny-only', root: observationRoot }]
+      : []),
   ];
 }
 
-function hasReason(reasons, code) {
-  return reasons.some((entry) => entry?.code === code);
+function explicitAuthorityResourcePaths(options = {}) {
+  return [...new Set(
+    ['policy', 'manifest', 'layout', 'ci']
+      .map((key) => options?.[key])
+      .filter((value) => typeof value === 'string' && value.trim() !== ''),
+  )].sort();
 }
 
 // The authority core owns input/reconciliation/mapping/supersession validation. This
@@ -331,7 +393,11 @@ export function evaluateVisualRefreshAuthority(options) {
   const generatedEntries = collectGeneratedOwnershipEntries(prepared.meta.manifest, {
     docsRelative: prepared.meta.docsRelative,
   });
-  const roots = generatedRoots(options.sourceRoot, options.destinationRoot);
+  const roots = generatedRoots(
+    options.sourceRoot,
+    options.destinationRoot,
+    options.observationRoot,
+  );
   const generatedOwner = resolveGeneratedOwnership({
     file: intent.authorized_path,
     entries: generatedEntries,
@@ -425,6 +491,7 @@ export function evaluateVisualRefreshAuthority(options) {
     logical_path_rules: rules,
     generated_entries: generatedEntries,
     generated_roots: roots,
+    authority_resource_paths: explicitAuthorityResourcePaths(options.options),
     visual_path_authorization: exactPathAuthorization,
     screen_spec_path: selectedScreenSpecPath(
       options.destinationRoot,
@@ -484,6 +551,7 @@ export function routeVisualBackstopRecords({ records, authority, projectPrefix =
     register: context.register_path,
     mapping: context.mapping_path,
   };
+  const immutableAuthorityResources = new Set(context.authority_resource_paths || []);
   const violations = [];
 
   for (const rawRecord of records || []) {
@@ -499,6 +567,24 @@ export function routeVisualBackstopRecords({ records, authority, projectPrefix =
       continue;
     }
     const paths = recordPaths(record);
+
+    // Explicit authority-bearing resources must be immutable across a visual diff.
+    // Changing policy/manifest/layout/CI in the same diff would let destination facts
+    // manufacture the permission that approves themselves or the screen change.
+    const changedAuthorityResources = paths.filter((file) => immutableAuthorityResources.has(file));
+    if (changedAuthorityResources.length) {
+      for (const file of changedAuthorityResources) {
+        violations.push(
+          violation(
+            file,
+            record,
+            'VR-BACKSTOP-012',
+            'explicit visual authority resource is immutable in the same visual-refresh diff; land it separately first',
+          ),
+        );
+      }
+      continue;
+    }
 
     // Generated ownership is final, but only the shared manifest-output + header
     // result may classify a concrete file as generated.
