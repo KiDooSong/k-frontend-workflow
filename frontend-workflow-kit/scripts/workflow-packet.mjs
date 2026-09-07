@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 // workflow:packet — readiness 출력을 소비해 Work Packet 초안(markdown)을 생성하는 봉투(execution envelope).
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { parseArgs, DEFAULTS, KIT_ROOT, readFileSafe, writeFile, yamlParse, runCli, isCliEntry } from './lib/util.mjs';
+import { enforceCliFlagContract } from './lib/cli-args.mjs';
 import {
   buildPacketModel,
   isAbsorbedReadinessEntry,
@@ -34,6 +36,30 @@ function optStr(flags, name) {
 }
 function toPosix(p) { return String(p).replace(/\\/g, '/'); }
 function isoToday() { return new Date().toISOString().slice(0, 10); }
+function outside(root, target) {
+  const relative = path.relative(root, target);
+  return relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative);
+}
+function hasVisualCliSurface(flags) {
+  return ['intent', 'input', 'path', 'root', 'ci']
+    .some((key) => Object.prototype.hasOwnProperty.call(flags, key));
+}
+function resolveProjectRoot(rootFlag) {
+  const candidate = path.resolve(process.cwd(), rootFlag || '.');
+  try {
+    const stat = fs.statSync(candidate);
+    if (!stat.isDirectory()) fail(`--root는 directory여야 함: ${rootFlag}`);
+    return fs.realpathSync(candidate);
+  } catch (error) {
+    fail(`--root를 해석할 수 없음: ${rootFlag || '.'} (${error?.code || error?.message || error})`);
+  }
+}
+function visualRelative(value, root) {
+  if (!value) return undefined;
+  const absolute = path.isAbsolute(value) ? path.resolve(value) : path.resolve(root, value);
+  if (outside(root, absolute)) fail(`visual-refresh 경로가 --root 밖임: ${value}`);
+  return toPosix(path.relative(root, absolute));
+}
 
 function pickEntry(data, screen) {
   if (data && typeof data === 'object') {
@@ -73,29 +99,19 @@ function parseReadinessFile(p) {
   try { return yamlParse(t); } catch (e) { fail(`readiness 파일 파싱 실패 (JSON·YAML 둘 다): ${toPosix(p)} — ${e.message}`); }
 }
 
-function visualRelative(value, root) {
-  if (!value) return undefined;
-  if (!path.isAbsolute(value)) return toPosix(value);
-  const base = path.resolve(root || process.cwd());
-  const rel = path.relative(base, path.resolve(value));
-  if (rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) fail(`visual-refresh 경로가 --root 밖임: ${value}`);
-  return toPosix(rel);
-}
-
 function runReadinessSubprocess({ screen, docs, src, policy, manifest, layout, ci, intent, input, checkedPath, root }) {
   let args;
   if (intent) {
     if (intent !== VISUAL_REFRESH_INTENT) fail(`지원하지 않는 --intent: ${intent}`);
     if (!input) fail('visual-refresh packet은 --input <INPUT_ID>가 필요함');
-    args = [READINESS_SCRIPT, '--screen', screen, '--intent', intent, '--input', input, '--json'];
-    if (checkedPath) args.push('--path', visualRelative(checkedPath, root));
-    if (root) args.push('--root', root);
-    if (docs) args.push('--docs', visualRelative(docs, root));
-    if (src) args.push('--src', visualRelative(src, root));
-    if (policy) args.push('--policy', visualRelative(policy, root));
-    if (manifest) args.push('--manifest', visualRelative(manifest, root));
-    if (layout) args.push('--layout', visualRelative(layout, root));
-    if (ci) args.push('--ci', visualRelative(ci, root));
+    args = [READINESS_SCRIPT, '--screen', screen, '--intent', intent, '--input', input, '--json', '--root', root];
+    if (checkedPath) args.push('--path', checkedPath);
+    if (docs) args.push('--docs', docs);
+    if (src) args.push('--src', src);
+    if (policy) args.push('--policy', policy);
+    if (manifest) args.push('--manifest', manifest);
+    if (layout) args.push('--layout', layout);
+    if (ci) args.push('--ci', ci);
   } else {
     args = [READINESS_SCRIPT, '--docs', docs, '--screen', screen, '--json'];
     if (policy) args.push('--policy', policy);
@@ -155,7 +171,23 @@ function injectVisualAuditFrontmatter(markdown, audit) {
 }
 
 function main() {
-  const { flags } = parseArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  const parsed = parseArgs(argv);
+  if (hasVisualCliSurface(parsed.flags)) {
+    enforceCliFlagContract({
+      argv,
+      flags: parsed.flags,
+      positionals: parsed.positionals,
+      valueFlags: new Set([
+        'screen', 'requested-mode', 'readiness', 'docs', 'src', 'policy', 'manifest', 'out',
+        'domain', 'layout', 'ci', 'intent', 'input', 'path', 'root', 'date', 'owner', 'seq',
+      ]),
+      booleanFlags: new Set(['h', 'help', 'json']),
+      tool: 'workflow:packet',
+      helpCommand: 'npm run workflow:packet --',
+    });
+  }
+  const { flags } = parsed;
   if (flags.help || flags.h) {
     process.stdout.write(
       'workflow:packet — readiness 출력을 복사해 Work Packet 초안(markdown)을 만든다.\n' +
@@ -185,23 +217,36 @@ function main() {
 
   if (intentFlag && intentFlag !== VISUAL_REFRESH_INTENT) fail(`지원하지 않는 --intent: ${intentFlag}`);
   if (intentFlag && !inputFlag) fail('visual-refresh packet은 --input <INPUT_ID>가 필요함');
-  if ((inputFlag || pathFlag) && !intentFlag) fail('--input/--path는 --intent visual-refresh와 함께 사용해야 함');
+  if ((inputFlag || pathFlag || rootFlag || ciFlag) && !intentFlag) fail('--input/--path/--root/--ci는 --intent visual-refresh와 함께 사용해야 함');
 
-  const policyPath = policyFlag ? path.resolve(policyFlag) : DEFAULTS.policy;
-  const manifestPath = manifestFlag ? path.resolve(manifestFlag) : DEFAULTS.manifest;
+  const visual = intentFlag === VISUAL_REFRESH_INTENT;
+  const rootResolved = visual ? resolveProjectRoot(rootFlag) : null;
+  const docsVisual = visual && docsFlag ? visualRelative(docsFlag, rootResolved) : docsFlag;
+  const srcVisual = visual && srcFlag ? visualRelative(srcFlag, rootResolved) : srcFlag;
+  const policyVisual = visual && policyFlag ? visualRelative(policyFlag, rootResolved) : policyFlag;
+  const manifestVisual = visual && manifestFlag ? visualRelative(manifestFlag, rootResolved) : manifestFlag;
+  const layoutVisual = visual && layoutFlag ? visualRelative(layoutFlag, rootResolved) : layoutFlag;
+  const ciVisual = visual && ciFlag ? visualRelative(ciFlag, rootResolved) : ciFlag;
+
+  const policyPath = visual && policyVisual
+    ? path.join(rootResolved, ...policyVisual.split('/'))
+    : policyFlag ? path.resolve(policyFlag) : DEFAULTS.policy;
+  const manifestPath = visual && manifestVisual
+    ? path.join(rootResolved, ...manifestVisual.split('/'))
+    : manifestFlag ? path.resolve(manifestFlag) : DEFAULTS.manifest;
   let data;
   let readinessSource;
   if (readinessFlag) {
     const p = path.resolve(readinessFlag);
     data = parseReadinessFile(p);
     readinessSource = toPosix(path.relative(process.cwd(), p)) || readinessFlag;
-  } else if (intentFlag) {
+  } else if (visual) {
     data = runReadinessSubprocess({
-      screen, docs: docsFlag, src: srcFlag, policy: policyFlag, manifest: manifestFlag,
-      layout: layoutFlag, ci: ciFlag, intent: intentFlag, input: inputFlag,
-      checkedPath: pathFlag, root: rootFlag,
+      screen, docs: docsVisual, src: srcVisual, policy: policyVisual, manifest: manifestVisual,
+      layout: layoutVisual, ci: ciVisual, intent: intentFlag, input: inputFlag,
+      checkedPath: pathFlag, root: rootResolved,
     });
-    readinessSource = `readiness.mjs --screen ${screen} --intent ${intentFlag} --input ${inputFlag}${pathFlag ? ` --path ${pathFlag}` : ''}${rootFlag ? ` --root ${rootFlag}` : ''} --json (computed ${date})`;
+    readinessSource = `readiness.mjs --screen ${screen} --intent ${intentFlag} --input ${inputFlag}${pathFlag ? ` --path ${pathFlag}` : ''} --root ${rootResolved} --json (computed ${date})`;
   } else {
     const docs = docsFlag ? path.resolve(docsFlag) : path.resolve(DEFAULTS.docs);
     const layoutPath = layoutFlag ? path.resolve(layoutFlag) : null;
@@ -218,7 +263,10 @@ function main() {
   const order = loadOrder(policyPath);
   const outPath = outFlag ? path.resolve(outFlag) : null;
   const ambiguityLink = outPath ? toPosix(path.relative(path.dirname(outPath), AMBIGUITY_DOC)) : toPosix(path.relative(process.cwd(), AMBIGUITY_DOC));
-  const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags });
+  const layoutFlags = visual && layoutVisual
+    ? { layout: path.join(rootResolved, ...layoutVisual.split('/')) }
+    : flags;
+  const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags: layoutFlags });
   const model = buildPacketModel({ entry, screen, requestedMode, domain: domainFlag, readinessSource, order, date, owner, seq, ambiguityLink, layout });
   if (audit && !audit.authority_applicable) {
     model.warnings = [...(model.warnings || []), `visual-refresh authority inapplicable — ${audit.reasons.map((r) => r.code || r.message).join(', ') || 'readiness authority reasons'}`];
@@ -235,8 +283,8 @@ function main() {
   } else if (!outPath) process.stdout.write(md);
   else {
     const over = model.overCeiling ? ' — ⚠ requested>readiness (경고만, exit 0)' : '';
-    const visual = audit ? `, visual=${audit.authority_applicable ? 'applicable' : 'inapplicable'}` : '';
-    process.stdout.write(`workflow:packet: wrote ${model.out} (readiness_mode=${model.readiness_mode}, requested=${model.requested_mode}${over}${visual})\n`);
+    const visualLabel = audit ? `, visual=${audit.authority_applicable ? 'applicable' : 'inapplicable'}` : '';
+    process.stdout.write(`workflow:packet: wrote ${model.out} (readiness_mode=${model.readiness_mode}, requested=${model.requested_mode}${over}${visualLabel})\n`);
   }
   process.exitCode = 0;
 }
