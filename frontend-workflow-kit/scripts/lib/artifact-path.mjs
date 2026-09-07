@@ -112,6 +112,7 @@ export function resolveManifestFiles(root, raw, options = {}) {
   const label = options.label || 'manifest output';
   const segments = pattern.split('/');
   const matcher = globToRegExp(pattern);
+  const dynamicPattern = /[*?{]/.test(pattern);
   const files = new Set();
   const visited = new Set();
   function visit(relative, index) {
@@ -121,8 +122,10 @@ export function resolveManifestFiles(root, raw, options = {}) {
     const absolute = relative ? path.join(root, ...relative.split('/')) : root;
     if (index === segments.length) {
       if (relative && matcher.test(relative)) {
-        const ref = canonicalRepositoryPath(root, relative, { label, type: 'file' });
-        if (ref.exists) files.add(ref.absolute);
+        // Globs enumerate regular files, as the original walkFiles consumer did.
+        // A directory matching '*.ts' or trailing '**' is not itself an output.
+        const ref = canonicalRepositoryPath(root, relative, { label, type: dynamicPattern ? null : 'file' });
+        if (ref.exists && fs.lstatSync(ref.absolute).isFile()) files.add(ref.absolute);
       }
       return;
     }
