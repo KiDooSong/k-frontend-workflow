@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 // visual-refresh Run Report collector. Packet audit is transport-only; forbidden-paths
 // re-evaluates authority from the selected Git snapshot before evidence is recorded.
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import {
   parseArgs, readFileSafe, writeFile, splitFrontmatter, isCliEntry,
 } from './lib/util.mjs';
+import { enforceCliFlagContract } from './lib/cli-args.mjs';
 
 const SELF_DIR = path.dirname(fileURLToPath(import.meta.url));
 const FORBIDDEN_SCRIPT = path.join(SELF_DIR, 'forbidden-paths.mjs');
@@ -29,15 +31,27 @@ function opt(flags, name) {
 }
 function toPosix(value) { return String(value).replace(/\\/g, '/'); }
 function isoToday() { return new Date().toISOString().slice(0, 10); }
-function relativeForVisual(value, root) {
-  if (!value) return undefined;
-  if (!path.isAbsolute(value)) return toPosix(value);
-  const base = path.resolve(root || process.cwd());
-  const relative = path.relative(base, path.resolve(value));
-  if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
-    fail(`visual authority resource가 --root 밖임: ${value}`);
+function outside(root, target) {
+  const relative = path.relative(root, target);
+  return relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative);
+}
+function resolveProjectRoot(rootFlag, callerCwd) {
+  const candidate = path.resolve(callerCwd, rootFlag || '.');
+  try {
+    const stat = fs.statSync(candidate);
+    if (!stat.isDirectory()) fail(`--root는 directory여야 함: ${rootFlag}`);
+    return fs.realpathSync(candidate);
+  } catch (error) {
+    fail(`--root를 해석할 수 없음: ${rootFlag || '.'} (${error?.code || error?.message || error})`);
   }
-  return toPosix(relative);
+}
+function relativeForVisual(value, root, callerCwd) {
+  if (!value) return undefined;
+  const absolute = path.isAbsolute(value)
+    ? path.resolve(value)
+    : path.resolve(root, value);
+  if (outside(root, absolute)) fail(`visual authority resource가 --root 밖임: ${value}`);
+  return toPosix(path.relative(root, absolute));
 }
 function runCapture(script, args, cwd) {
   try {
@@ -51,24 +65,15 @@ function runCapture(script, args, cwd) {
     };
   }
 }
-function collectNameStatus(root, { staged, range, base }) {
-  const args = ['diff', '--name-status', '-M'];
-  if (staged) args.push('--cached');
-  else if (range) args.push(range);
-  else if (base) args.push(base, 'HEAD');
-  try {
-    return execFileSync('git', args, { cwd: root || process.cwd(), encoding: 'utf8' });
-  } catch (error) {
-    return '';
+function displayChangedRecord(record) {
+  if (record?.status?.[0] === 'R' || record?.status?.[0] === 'C') {
+    return {
+      status: record.status,
+      old_path: record.oldPath || null,
+      new_path: record.newPath || null,
+    };
   }
-}
-function parseNameStatus(text) {
-  return String(text || '').split(/\r?\n/).filter(Boolean).map((line) => {
-    const parts = line.split('\t');
-    const status = parts[0] || '?';
-    if (status[0] === 'R' || status[0] === 'C') return { status, old_path: parts[1] || null, new_path: parts[2] || null };
-    return { status, path: parts[1] || null };
-  });
+  return { status: record?.status || '?', path: record?.path || null };
 }
 function q(value) { return JSON.stringify(value == null ? '' : String(value)); }
 function renderMarkdown(model) {
@@ -109,6 +114,7 @@ function renderMarkdown(model) {
     `- invocation exit: ${model.forbidden.exit_code == null ? '—' : model.forbidden.exit_code}`,
     `- violations: ${model.forbidden.violations.length}`,
     ...model.forbidden.violations.map((v) => `  - ${v.code || 'violation'}: ${v.file || '(authority)'} — ${v.reason || ''}`),
+    ...(model.forbidden.error ? [`- error: ${model.forbidden.error}`] : []),
     '',
     '## Next Action',
     '- Human review remains required. This report is evidence, not approval.',
@@ -117,7 +123,21 @@ function renderMarkdown(model) {
 }
 
 function main() {
-  const { flags } = parseArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  const parsed = parseArgs(argv);
+  enforceCliFlagContract({
+    argv,
+    flags: parsed.flags,
+    positionals: parsed.positionals,
+    valueFlags: new Set([
+      'packet', 'intent', 'input', 'path', 'out', 'root', 'docs', 'src', 'policy',
+      'manifest', 'layout', 'ci', 'range', 'base', 'review', 'date', 'seq',
+    ]),
+    booleanFlags: new Set(['h', 'help', 'json', 'staged', 'skip-tests']),
+    tool: 'workflow:report',
+    helpCommand: 'npm run workflow:report --',
+  });
+  const { flags } = parsed;
   if (flags.help || flags.h) {
     process.stdout.write('workflow:report visual-refresh — --packet <path> --intent visual-refresh --input <ID> --path <SCREEN_ENTRY> [--staged|--range <A..B>|--base <ref>]\n');
     return;
@@ -128,7 +148,7 @@ function main() {
   const checkedPath = req(flags, 'path');
   if (intent !== VISUAL_REFRESH_INTENT) fail(`지원하지 않는 --intent: ${intent}`);
   const outFlag = opt(flags, 'out');
-  const root = opt(flags, 'root');
+  const rootFlag = opt(flags, 'root');
   const docs = opt(flags, 'docs');
   const src = opt(flags, 'src');
   const policy = opt(flags, 'policy');
@@ -143,14 +163,15 @@ function main() {
   const seq = opt(flags, 'seq') || '001';
   const snapshotCount = Number(staged) + Number(Boolean(range)) + Number(Boolean(base));
   if (snapshotCount !== 1) fail('visual-refresh report는 --staged/--range/--base 중 정확히 하나가 필요함');
-  if (flags.diff !== undefined) fail('visual-refresh report는 --diff(name-status only)를 지원하지 않음');
 
-  const packetPath = path.resolve(packetFlag);
+  const callerCwd = process.cwd();
+  const root = resolveProjectRoot(rootFlag, callerCwd);
+  const packetPath = path.resolve(callerCwd, packetFlag);
   const raw = readFileSafe(packetPath);
   if (raw == null) fail(`packet 파일 없음: ${packetFlag}`);
-  const parsed = splitFrontmatter(raw);
-  if (!parsed.hasFrontmatter || parsed.parseError) fail(`packet frontmatter 파싱 실패: ${packetFlag}`);
-  const fm = parsed.data || {};
+  const parsedPacket = splitFrontmatter(raw);
+  if (!parsedPacket.hasFrontmatter || parsedPacket.parseError) fail(`packet frontmatter 파싱 실패: ${packetFlag}`);
+  const fm = parsedPacket.data || {};
   if (fm.visual_intent !== VISUAL_REFRESH_INTENT) fail('packet이 visual-refresh audit packet이 아님');
   if (fm.visual_authority_applicable !== true) fail('packet의 visual authority가 applicable:true가 아님');
   if (fm.visual_input_id !== input) fail(`packet visual_input_id mismatch: ${fm.visual_input_id || '—'} != ${input}`);
@@ -159,15 +180,17 @@ function main() {
   }
   if (typeof fm.target_screen !== 'string' || !fm.target_screen) fail('packet target_screen 없음');
 
-  const forbiddenArgs = ['--json', '--screen', fm.target_screen, '--intent', VISUAL_REFRESH_INTENT, '--input', input, '--path', checkedPath];
-  if (root) forbiddenArgs.push('--root', root);
+  const forbiddenArgs = [
+    '--json', '--screen', fm.target_screen, '--intent', VISUAL_REFRESH_INTENT,
+    '--input', input, '--path', checkedPath, '--root', '.',
+  ];
   for (const [name, value] of [['docs', docs], ['src', src], ['policy', policy], ['manifest', manifest], ['layout', layout], ['ci', ci]]) {
-    if (value) forbiddenArgs.push(`--${name}`, relativeForVisual(value, root));
+    if (value) forbiddenArgs.push(`--${name}`, relativeForVisual(value, root, callerCwd));
   }
   if (staged) forbiddenArgs.push('--staged');
   if (range) forbiddenArgs.push('--range', range);
   if (base) forbiddenArgs.push('--base', base);
-  const captured = runCapture(FORBIDDEN_SCRIPT, forbiddenArgs, root || process.cwd());
+  const captured = runCapture(FORBIDDEN_SCRIPT, forbiddenArgs, root);
   let forbiddenJson = null;
   try { forbiddenJson = captured.stdout.trim() ? JSON.parse(captured.stdout) : null; } catch {}
   const forbidden = forbiddenJson ? {
@@ -175,13 +198,14 @@ function main() {
     ok: !!forbiddenJson.ok,
     exit_code: captured.code,
     violations: Array.isArray(forbiddenJson.violations) ? forbiddenJson.violations : [],
+    changed_records: Array.isArray(forbiddenJson.changed_records) ? forbiddenJson.changed_records : [],
     diff_context: forbiddenJson.diff_context || {},
   } : {
-    status: 'error', ok: null, exit_code: captured.code, violations: [], diff_context: {},
+    status: 'error', ok: null, exit_code: captured.code, violations: [], changed_records: [], diff_context: {},
     error: (captured.stderr || 'no JSON output').trim().slice(0, 800),
   };
 
-  const changed = parseNameStatus(collectNameStatus(root, { staged, range, base }));
+  const changed = forbidden.changed_records.map(displayChangedRecord);
   const model = {
     run_id: `RR-${fm.target_screen}-${fm.readiness_mode || 'visual'}-${seq}`,
     packet_id: fm.packet_id || '(packet)',
@@ -203,7 +227,7 @@ function main() {
     },
   };
   const markdown = renderMarkdown(model);
-  const outPath = outFlag ? path.resolve(outFlag) : null;
+  const outPath = outFlag ? path.resolve(callerCwd, outFlag) : null;
   if (outPath) writeFile(outPath, markdown);
   const envelope = {
     run_id: model.run_id,
@@ -211,7 +235,7 @@ function main() {
     target_screen: model.target_screen,
     readiness_mode: model.readiness_mode,
     report_applicable: true,
-    out: outPath ? toPosix(path.relative(process.cwd(), outPath)) : null,
+    out: outPath ? toPosix(path.relative(callerCwd, outPath)) : null,
     visual_refresh: model.visual_refresh,
     changed_files: changed,
     forbidden,
