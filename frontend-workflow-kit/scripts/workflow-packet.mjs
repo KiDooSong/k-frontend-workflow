@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { parseArgs, DEFAULTS, KIT_ROOT, readFileSafe, writeFile, yamlParse, runCli, isCliEntry } from './lib/util.mjs';
 import { enforceCliFlagContract } from './lib/cli-args.mjs';
+import { captureWorkflowJson } from './lib/workflow-json-capture.mjs';
 import {
   buildPacketModel,
   isAbsorbedReadinessEntry,
@@ -14,7 +15,7 @@ import {
 } from './lib/workflow-packet.mjs';
 import { loadLayoutProfile } from './lib/layout-profile.mjs';
 import {
-  visualAuditFromReadiness, visualPreworkIssues, injectVisualAuditFrontmatter,
+  visualAuditFromReadiness, visualPreworkIssues, injectVisualAuditFrontmatter, visualStopPacket,
 } from './lib/visual-refresh-transport.mjs';
 
 const SELF_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -115,12 +116,21 @@ function runReadinessSubprocess({ screen, docs, src, policy, manifest, layout, c
     if (manifest) args.push('--manifest', manifest);
     if (layout) args.push('--layout', layout);
     if (ci) args.push('--ci', ci);
+    const result = captureWorkflowJson(READINESS_SCRIPT, args.slice(1));
+    if (result.code !== 0 || !result.json) {
+      if (result.capture_error) {
+        process.stdout.write(JSON.stringify({ tool_error: result.capture_error }) + '\n');
+      }
+      fail(`readiness 서브프로세스 실패 (exit=${result.code}): ${result.stderr}`);
+    }
+    return result.json;
   } else {
     args = [READINESS_SCRIPT, '--docs', docs, '--screen', screen, '--json'];
     if (policy) args.push('--policy', policy);
     if (manifest) args.push('--manifest', manifest);
     if (layout) args.push('--layout', layout);
   }
+  // Preserve no-intent subprocess behavior.
   let out;
   try { out = execFileSync(process.execPath, args, { encoding: 'utf8' }); }
   catch (e) {
@@ -145,16 +155,13 @@ function main() {
   const parsed = parseArgs(argv);
   if (hasVisualCliSurface(parsed.flags)) {
     enforceCliFlagContract({
-      argv,
-      flags: parsed.flags,
-      positionals: parsed.positionals,
+      argv, flags: parsed.flags, positionals: parsed.positionals,
       valueFlags: new Set([
         'screen', 'requested-mode', 'readiness', 'docs', 'src', 'policy', 'manifest', 'out',
         'domain', 'layout', 'ci', 'intent', 'input', 'path', 'root', 'date', 'owner', 'seq',
       ]),
       booleanFlags: new Set(['h', 'help', 'json']),
-      tool: 'workflow:packet',
-      helpCommand: 'npm run workflow:packet --',
+      tool: 'workflow:packet', helpCommand: 'npm run workflow:packet --',
     });
   }
   const { flags } = parsed;
@@ -228,23 +235,34 @@ function main() {
     readinessSource = `readiness.mjs --docs ${docsLabel} --screen ${screen}${layoutLabel} --json (computed ${date})`;
   }
 
+  const audit = visualAuditFromReadiness(data);
+  if (visual && !audit) fail('visual-refresh readiness 출력에 authority audit가 없음');
+  const outPath = outFlag ? path.resolve(outFlag) : null;
+  // A valid negative evaluator result may have no readiness_entry/_context. Do
+  // not turn missing evidence or HEAD into a malformed-tool-output failure.
+  if (visual && data.intent_authorization.applicable === false) {
+    const stop = visualStopPacket({ audit, screen, requestedMode, readinessSource, date, seq });
+    if (outPath) {
+      try { writeFile(outPath, stop.markdown); }
+      catch (error) { fail(`--out 쓰기 실패: ${error.message}`); }
+      stop.envelope.out = toPosix(path.relative(process.cwd(), outPath));
+    }
+    if (flags.json) process.stdout.write(JSON.stringify(stop.envelope, null, 2) + '\n');
+    else if (!outPath) process.stdout.write(stop.markdown);
+    else process.stdout.write(`workflow:packet: visual authority inapplicable — ${stop.envelope.out}\n`);
+    process.exitCode = 0;
+    return;
+  }
   const entry = pickEntry(data, screen);
   if (!entry) fail(`screen '${screen}' 을 readiness 출력에서 찾지 못함 (사용 가능: ${Object.keys(data || {}).join(', ') || '없음'})`);
   validateEntry(entry, screen);
-  const audit = visualAuditFromReadiness(data);
-  if (visual && !audit) fail('visual-refresh readiness 출력에 authority audit가 없음');
   const issues = visual ? visualPreworkIssues(audit, { screen, input: inputFlag, checkedPath: pathFlag }) : [];
   const order = loadOrder(policyPath);
-  const outPath = outFlag ? path.resolve(outFlag) : null;
   const ambiguityLink = outPath ? toPosix(path.relative(path.dirname(outPath), AMBIGUITY_DOC)) : toPosix(path.relative(process.cwd(), AMBIGUITY_DOC));
-  const layoutFlags = visual && layoutVisual
-    ? { layout: path.join(rootResolved, ...layoutVisual.split('/')) }
-    : flags;
+  const layoutFlags = visual && layoutVisual ? { layout: path.join(rootResolved, ...layoutVisual.split('/')) } : flags;
   const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags: layoutFlags });
   const model = buildPacketModel({ entry, screen, requestedMode, domain: domainFlag, readinessSource, order, date, owner, seq, ambiguityLink, layout });
-  if (issues.length) {
-    model.warnings = [...(model.warnings || []), ...issues.map((issue) => `visual-refresh pre-work stop — ${issue}`)];
-  }
+  if (issues.length) model.warnings = [...(model.warnings || []), ...issues.map((issue) => `visual-refresh pre-work stop — ${issue}`)];
   const md = injectVisualAuditFrontmatter(renderPacketMarkdown(model), audit);
   if (outPath) {
     try { writeFile(outPath, md); } catch (e) { fail(`--out 쓰기 실패 "${toPosix(outPath)}": ${e.message}`); }
