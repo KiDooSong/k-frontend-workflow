@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { DEFAULTS, parseArgs, yamlStringify } from './util.mjs';
+import { DEFAULTS, KIT_ROOT, parseArgs, yamlStringify } from './util.mjs';
+import { enforceCliFlagContract } from './cli-args.mjs';
+import { loadLayoutProfile } from './layout-profile.mjs';
 import {
   canonicalAuthorityPath,
   evaluateVisualRefreshAuthority,
@@ -13,6 +15,7 @@ import {
   resolveRepositoryContext,
   resolveVisualDiffContext,
   sourceHeadContext,
+  stripProjectPrefix,
   VisualRefreshGitError,
 } from './visual-refresh-git.mjs';
 import { assertSnapshotPath, VisualRefreshResourceError } from './visual-refresh-resources.mjs';
@@ -33,18 +36,101 @@ function optionalString(flags, name) {
   return own(flags, name) ? requireString(flags, name) : undefined;
 }
 
-function rejectUnknown(flags, allowed) {
-  const unknown = Object.keys(flags).filter((key) => !allowed.has(key));
-  if (unknown.length) {
-    throw new VisualRefreshError(`알 수 없는 옵션: ${unknown.map((key) => `--${key}`).join(', ')}`);
-  }
+function toPosix(value) {
+  return String(value).split(path.sep).join('/');
+}
+
+function outside(root, target) {
+  const relative = path.relative(root, target);
+  return relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative);
 }
 
 function sameOrAncestor(parent, child) {
   return parent === child || child.startsWith(`${parent}/`);
 }
 
-function assertAuthorityOverlaySeparation(options) {
+function canonicalPhysicalRelative(
+  projectRoot,
+  raw,
+  { label, required = false, type = null } = {},
+) {
+  const relative = canonicalAuthorityPath(raw, label);
+  const absoluteRoot = fs.realpathSync(projectRoot);
+  const lexical = path.resolve(absoluteRoot, ...relative.split('/'));
+  if (outside(absoluteRoot, lexical)) {
+    throw new VisualRefreshError(`${label}가 --root 밖으로 이탈함: ${relative}`);
+  }
+  let stat;
+  try {
+    stat = fs.lstatSync(lexical);
+  } catch (error) {
+    if (!required && error?.code === 'ENOENT') return relative;
+    throw new VisualRefreshError(`${label}를 읽을 수 없음: ${relative} (${error?.code || error?.message || error})`);
+  }
+  if (stat.isSymbolicLink()) {
+    throw new VisualRefreshError(`${label}는 symlink/junction을 사용할 수 없음: ${relative}`);
+  }
+  if (type === 'file' && !stat.isFile()) {
+    throw new VisualRefreshError(`${label}는 regular file이어야 함: ${relative}`);
+  }
+  if (type === 'directory' && !stat.isDirectory()) {
+    throw new VisualRefreshError(`${label}는 directory여야 함: ${relative}`);
+  }
+  const real = fs.realpathSync(lexical);
+  if (outside(absoluteRoot, real)) {
+    throw new VisualRefreshError(`${label}의 physical path가 --root 밖으로 이탈함: ${relative}`);
+  }
+  const canonical = toPosix(path.relative(absoluteRoot, real));
+  if (canonical !== relative) {
+    throw new VisualRefreshError(
+      `${label} spelling이 repository physical path와 다름: ${relative} -> ${canonical}`,
+    );
+  }
+  return canonical;
+}
+
+function patternStaticRoot(raw) {
+  const segments = toPosix(raw).split('/').filter(Boolean);
+  const fixed = [];
+  for (const segment of segments) {
+    if (/[{}*?\[\]]/.test(segment)) break;
+    fixed.push(segment);
+  }
+  return fixed.join('/');
+}
+
+function values(value) {
+  if (value == null) return [];
+  return Array.isArray(value) ? value : [value];
+}
+
+function implementationRoots(layout) {
+  const roots = new Set();
+  const addPattern = (pattern) => {
+    const root = patternStaticRoot(pattern);
+    if (root) roots.add(root);
+  };
+  const addRoles = (roles) => {
+    for (const value of Object.values(roles || {})) {
+      for (const pattern of values(value)) addPattern(pattern);
+    }
+  };
+  const addLayers = (layers) => {
+    for (const layer of layers || []) {
+      for (const pattern of values(layer?.glob)) addPattern(pattern);
+    }
+  };
+
+  addRoles(layout?.roles);
+  addLayers(layout?.layers);
+  for (const domain of Object.keys(layout?.domains || {})) {
+    if (typeof layout.rolesFor === 'function') addRoles(layout.rolesFor(domain));
+    if (typeof layout.layersFor === 'function') addLayers(layout.layersFor(domain));
+  }
+  return [...roots].sort();
+}
+
+function assertAuthorityOverlaySeparation(options, layout) {
   const docs = options.docs || DEFAULTS.docs;
   const src = options.src || DEFAULTS.src;
   if (sameOrAncestor(docs, src) || sameOrAncestor(src, docs)) {
@@ -52,43 +138,75 @@ function assertAuthorityOverlaySeparation(options) {
       `visual-refresh forward authority에서 --docs와 --src는 겹칠 수 없음: docs=${docs}, src=${src}`,
     );
   }
+
+  const implementation = new Set([src, ...implementationRoots(layout)]);
+  for (const root of implementation) {
+    if (sameOrAncestor(docs, root) || sameOrAncestor(root, docs)) {
+      throw new VisualRefreshError(
+        `visual-refresh authority docs overlay가 implementation role/layer root와 겹침: docs=${docs}, implementation=${root}`,
+      );
+    }
+  }
   for (const key of ['policy', 'manifest', 'layout', 'ci']) {
     const resource = options[key];
-    if (resource && sameOrAncestor(src, resource)) {
-      throw new VisualRefreshError(
-        `--${key} authority resource는 --src 내부에 둘 수 없음: ${resource}`,
-      );
+    if (!resource) continue;
+    for (const root of implementation) {
+      if (sameOrAncestor(root, resource) || sameOrAncestor(resource, root)) {
+        throw new VisualRefreshError(
+          `--${key} authority resource는 implementation role/layer root와 분리돼야 함: resource=${resource}, implementation=${root}`,
+        );
+      }
     }
   }
 }
 
+function normalizeTupleForRepository(tuple, repository) {
+  const projectRoot = repository.projectRoot;
+  const options = {
+    docs: tuple.options.docs
+      ? canonicalPhysicalRelative(projectRoot, tuple.options.docs, { label: '--docs', type: 'directory' })
+      : undefined,
+    src: tuple.options.src
+      ? canonicalPhysicalRelative(projectRoot, tuple.options.src, { label: '--src', type: 'directory' })
+      : undefined,
+  };
+  for (const key of ['policy', 'manifest', 'layout', 'ci']) {
+    if (tuple.options[key]) {
+      options[key] = canonicalPhysicalRelative(projectRoot, tuple.options[key], {
+        label: `--${key}`,
+        type: 'file',
+        required: true,
+      });
+    }
+  }
+
+  const layoutFlags = options.layout
+    ? { layout: path.join(projectRoot, ...options.layout.split('/')) }
+    : {};
+  const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags: layoutFlags });
+  assertAuthorityOverlaySeparation(options, layout);
+  return { ...tuple, options };
+}
+
 function parseTuple(argv, kind) {
   const { flags, positionals } = parseArgs(argv);
-  if (positionals.length) {
-    throw new VisualRefreshError(`알 수 없는 positional argument: ${positionals.join(' ')}`);
-  }
-  const common = new Set([
-    'h',
-    'help',
-    'json',
-    'screen',
-    'path',
-    'docs',
-    'src',
-    'policy',
-    'manifest',
-    'layout',
-    'ci',
-    'out',
-    'root',
-    'intent',
-    'input',
+  const commonValues = new Set([
+    'screen', 'path', 'docs', 'src', 'policy', 'manifest', 'layout', 'ci', 'out', 'root', 'intent', 'input',
   ]);
-  const allowed =
-    kind === 'backstop'
-      ? new Set([...common, 'staged', 'range', 'base', 'enforce', 'diff'])
-      : common;
-  rejectUnknown(flags, allowed);
+  const valueFlags = kind === 'backstop'
+    ? new Set([...commonValues, 'range', 'base', 'diff'])
+    : commonValues;
+  const booleanFlags = kind === 'backstop'
+    ? new Set(['h', 'help', 'json', 'staged', 'enforce'])
+    : new Set(['h', 'help', 'json']);
+  enforceCliFlagContract({
+    argv,
+    flags,
+    positionals,
+    valueFlags,
+    booleanFlags,
+    tool: kind === 'backstop' ? 'forbidden-paths' : 'readiness',
+  });
 
   const intent = requireString(flags, 'intent');
   if (intent !== VISUAL_REFRESH_INTENT) {
@@ -113,16 +231,10 @@ function parseTuple(argv, kind) {
   for (const [name, value] of Object.entries(options)) {
     if (value !== undefined) canonicalAuthorityPath(value, `--${name}`);
   }
-  assertAuthorityOverlaySeparation(options);
   const checkedPath = optionalString(flags, 'path');
   if (checkedPath !== undefined) canonicalAuthorityPath(checkedPath, '--path');
   if (kind === 'backstop' && checkedPath === undefined) {
     throw new VisualRefreshError('visual-refresh backstop은 --path가 필수임');
-  }
-  for (const booleanFlag of kind === 'backstop' ? ['staged', 'enforce', 'json'] : ['json']) {
-    if (own(flags, booleanFlag) && flags[booleanFlag] !== true) {
-      throw new VisualRefreshError(`--${booleanFlag}는 값을 받지 않는 boolean flag임`);
-    }
   }
   return {
     flags,
@@ -272,8 +384,9 @@ function applyForwardFileIdentity(result, projectRoot) {
 }
 
 export function runVisualReadinessCli(argv = process.argv.slice(2)) {
-  const tuple = parseTuple(argv, 'readiness');
+  let tuple = parseTuple(argv, 'readiness');
   const repository = resolveRepositoryContext(tuple.root || process.cwd());
+  tuple = normalizeTupleForRepository(tuple, repository);
   const source = sourceHeadContext(repository);
   if (!source) {
     const output = {
@@ -335,9 +448,25 @@ function authorityViolation(authority) {
   };
 }
 
+function normalizeChangedRecords(records, projectPrefix) {
+  const normalized = [];
+  for (const record of records || []) {
+    if (record?.status === 'R' || record?.status === 'C') {
+      const oldPath = stripProjectPrefix(record.oldPath, projectPrefix);
+      const newPath = stripProjectPrefix(record.newPath, projectPrefix);
+      if (oldPath != null && newPath != null) normalized.push({ ...record, oldPath, newPath });
+      continue;
+    }
+    const file = stripProjectPrefix(record?.path, projectPrefix);
+    if (file != null) normalized.push({ ...record, path: file });
+  }
+  return normalized;
+}
+
 export function runVisualForbiddenPathsCli(argv = process.argv.slice(2)) {
-  const tuple = parseTuple(argv, 'backstop');
+  let tuple = parseTuple(argv, 'backstop');
   const repository = resolveRepositoryContext(tuple.root || process.cwd());
+  tuple = normalizeTupleForRepository(tuple, repository);
   const diff = resolveVisualDiffContext({
     repositoryRoot: repository.repositoryRoot,
     staged: tuple.flags.staged === true,
@@ -392,6 +521,7 @@ export function runVisualForbiddenPathsCli(argv = process.argv.slice(2)) {
         ? { path_authorization: authority.path_authorization }
         : {}),
       violations,
+      changed_records: normalizeChangedRecords(diff.records, repository.projectPrefix),
       diff_context: {
         source_tree: diff.source_tree,
         destination_tree: diff.destination_tree,
