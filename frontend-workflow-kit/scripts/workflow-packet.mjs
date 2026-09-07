@@ -13,6 +13,9 @@ import {
   renderJsonEnvelope,
 } from './lib/workflow-packet.mjs';
 import { loadLayoutProfile } from './lib/layout-profile.mjs';
+import {
+  visualAuditFromReadiness, visualPreworkIssues, injectVisualAuditFrontmatter,
+} from './lib/visual-refresh-transport.mjs';
 
 const SELF_DIR = path.dirname(fileURLToPath(import.meta.url));
 const READINESS_SCRIPT = path.join(SELF_DIR, 'readiness.mjs');
@@ -137,39 +140,6 @@ function loadOrder(policyPath) {
   } catch (e) { fail(`policy YAML 파싱 실패: ${toPosix(policyPath)} — ${e.message}`); }
 }
 
-function q(value) { return JSON.stringify(value == null ? '' : String(value)); }
-function visualAudit(data) {
-  if (!data?.intent_authorization || data.intent_authorization.intent !== VISUAL_REFRESH_INTENT) return null;
-  const auth = data.intent_authorization;
-  const audit = data.visual_refresh_audit || {};
-  const snapshot = auth.snapshot || {};
-  return {
-    intent: VISUAL_REFRESH_INTENT,
-    authority_applicable: auth.applicable === true,
-    input_id: auth.input_id || audit.input_id || null,
-    authorized_path: auth.authorized_path || audit.authorized_path || null,
-    checked_path: audit.checked_path || auth.checked_path || null,
-    source_tree: audit.source_tree || snapshot.source_tree || null,
-    destination_tree: audit.destination_tree || snapshot.destination_tree || null,
-    diff_kind: audit.diff_kind || snapshot.diff_kind || null,
-    reasons: Array.isArray(auth.reasons) ? auth.reasons : [],
-  };
-}
-function injectVisualAuditFrontmatter(markdown, audit) {
-  if (!audit) return markdown;
-  const lines = [
-    `visual_intent: ${q(audit.intent)}`,
-    `visual_authority_applicable: ${audit.authority_applicable ? 'true' : 'false'}`,
-    `visual_input_id: ${q(audit.input_id)}`,
-    `visual_authorized_path: ${q(audit.authorized_path)}`,
-    `visual_checked_path: ${q(audit.checked_path)}`,
-    `visual_source_tree: ${q(audit.source_tree)}`,
-    `visual_destination_tree: ${q(audit.destination_tree)}`,
-    `visual_diff_kind: ${q(audit.diff_kind)}`,
-  ];
-  return markdown.replace(/^---\n/, `---\n${lines.join('\n')}\n`);
-}
-
 function main() {
   const argv = process.argv.slice(2);
   const parsed = parseArgs(argv);
@@ -192,7 +162,8 @@ function main() {
     process.stdout.write(
       'workflow:packet — readiness 출력을 복사해 Work Packet 초안(markdown)을 만든다.\n' +
       '옵션: --screen <ID> --requested-mode <mode> [--readiness <path>] [--docs <dir>] [--policy <path>] [--manifest <path>] [--out <path>] [--json]\n' +
-      'visual: --intent visual-refresh --input <INPUT_ID> --path <SCREEN_ENTRY> [--root <project>] [--src <dir>] [--ci <path>]\n'
+      'visual: --intent visual-refresh --input <INPUT_ID> --path <SCREEN_ENTRY> [--root <project>] [--src <dir>] [--ci <path>]\n' +
+      'visual-refresh에서는 --readiness override를 지원하지 않으며 현재 readiness를 반드시 실행한다.\n'
     );
     return;
   }
@@ -216,10 +187,11 @@ function main() {
   const seq = optStr(flags, 'seq') ?? '001';
 
   if (intentFlag && intentFlag !== VISUAL_REFRESH_INTENT) fail(`지원하지 않는 --intent: ${intentFlag}`);
-  if (intentFlag && !inputFlag) fail('visual-refresh packet은 --input <INPUT_ID>가 필요함');
+  if (intentFlag && (!inputFlag || !pathFlag)) fail('visual-refresh packet은 --input <INPUT_ID>와 --path <SCREEN_ENTRY>가 필요함');
   if ((inputFlag || pathFlag || rootFlag || ciFlag) && !intentFlag) fail('--input/--path/--root/--ci는 --intent visual-refresh와 함께 사용해야 함');
 
   const visual = intentFlag === VISUAL_REFRESH_INTENT;
+  if (visual && readinessFlag) fail('visual-refresh에서는 --readiness override를 사용할 수 없음; 현재 authority를 다시 평가해야 함');
   const rootResolved = visual ? resolveProjectRoot(rootFlag) : null;
   const docsVisual = visual && docsFlag ? visualRelative(docsFlag, rootResolved) : docsFlag;
   const srcVisual = visual && srcFlag ? visualRelative(srcFlag, rootResolved) : srcFlag;
@@ -259,7 +231,9 @@ function main() {
   const entry = pickEntry(data, screen);
   if (!entry) fail(`screen '${screen}' 을 readiness 출력에서 찾지 못함 (사용 가능: ${Object.keys(data || {}).join(', ') || '없음'})`);
   validateEntry(entry, screen);
-  const audit = visualAudit(data);
+  const audit = visualAuditFromReadiness(data);
+  if (visual && !audit) fail('visual-refresh readiness 출력에 authority audit가 없음');
+  const issues = visual ? visualPreworkIssues(audit, { screen, input: inputFlag, checkedPath: pathFlag }) : [];
   const order = loadOrder(policyPath);
   const outPath = outFlag ? path.resolve(outFlag) : null;
   const ambiguityLink = outPath ? toPosix(path.relative(path.dirname(outPath), AMBIGUITY_DOC)) : toPosix(path.relative(process.cwd(), AMBIGUITY_DOC));
@@ -268,8 +242,8 @@ function main() {
     : flags;
   const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags: layoutFlags });
   const model = buildPacketModel({ entry, screen, requestedMode, domain: domainFlag, readinessSource, order, date, owner, seq, ambiguityLink, layout });
-  if (audit && !audit.authority_applicable) {
-    model.warnings = [...(model.warnings || []), `visual-refresh authority inapplicable — ${audit.reasons.map((r) => r.code || r.message).join(', ') || 'readiness authority reasons'}`];
+  if (issues.length) {
+    model.warnings = [...(model.warnings || []), ...issues.map((issue) => `visual-refresh pre-work stop — ${issue}`)];
   }
   const md = injectVisualAuditFrontmatter(renderPacketMarkdown(model), audit);
   if (outPath) {
@@ -283,7 +257,7 @@ function main() {
   } else if (!outPath) process.stdout.write(md);
   else {
     const over = model.overCeiling ? ' — ⚠ requested>readiness (경고만, exit 0)' : '';
-    const visualLabel = audit ? `, visual=${audit.authority_applicable ? 'applicable' : 'inapplicable'}` : '';
+    const visualLabel = audit ? `, visual=${audit.authority_applicable ? 'applicable' : 'inapplicable'}, path_allowed=${audit.path_allowed}` : '';
     process.stdout.write(`workflow:packet: wrote ${model.out} (readiness_mode=${model.readiness_mode}, requested=${model.requested_mode}${over}${visualLabel})\n`);
   }
   process.exitCode = 0;
