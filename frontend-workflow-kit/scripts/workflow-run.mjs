@@ -13,6 +13,7 @@ import {
   STATES, STATE_EXIT, isAbsorbedPacket, isPacketClean, buildRunModel,
   renderStatusMarkdown, renderJsonEnvelope, toPosix,
 } from './lib/workflow-run.mjs';
+import { visualPreworkIssues, appendVisualPreworkStatus } from './lib/visual-refresh-transport.mjs';
 
 const SELF_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PACKET_SCRIPT = path.join(SELF_DIR, 'workflow-packet.mjs');
@@ -92,6 +93,9 @@ function appendVisualStatus(markdown, report) {
     lines.push(`  - ${violation.code || 'violation'}: ${violation.file || '(authority)'} — ${violation.reason || ''}`);
   }
   if (forbidden.error) lines.push(`- tool error: ${forbidden.error}`);
+  if (report.review_evidence) {
+    lines.push('', '### Review Evidence (advisory)', '```json', JSON.stringify(report.review_evidence, null, 2), '```');
+  }
   return markdown.replace('\n## Artifacts\n', `\n${lines.join('\n')}\n\n## Artifacts\n`);
 }
 
@@ -120,7 +124,8 @@ function main() {
       '필수: --screen <ID> --requested-mode <mode>\n' +
       '선택: --out <dir> --docs <dir> --src <dir> --readiness <path> --policy <path> --manifest <path> --layout <path> --domain <name>\n' +
       '       --diff <name-status.txt> --review <path> --skip-tests --json --date YYYY-MM-DD --seq NNN --owner <name>\n' +
-      'visual: --intent visual-refresh --input <INPUT_ID> --path <SCREEN_ENTRY> [--root <project>] [--ci <path>] [--staged|--range <A..B>|--base <ref>]\n'
+      'visual: --intent visual-refresh --input <INPUT_ID> --path <SCREEN_ENTRY> [--root <project>] [--ci <path>] [--staged|--range <A..B>|--base <ref>]\n' +
+      'visual-refresh에서는 --readiness override를 지원하지 않으며 현재 concrete path authorization을 요구한다.\n'
     );
     return;
   }
@@ -156,6 +161,7 @@ function main() {
   if (!visual && (input || checkedPath || staged || range || base || ci || root)) {
     fail('--input/--path/--staged/--range/--base/--ci/--root는 --intent visual-refresh와 함께 사용해야 함');
   }
+  if (visual && readiness) fail('visual-refresh에서는 --readiness override를 사용할 수 없음; 현재 authority를 다시 평가해야 함');
   if (visual && diff) fail('visual-refresh run은 --diff(name-status only)를 지원하지 않음; --staged/--range/--base를 사용하세요');
   const snapshotCount = Number(staged) + Number(Boolean(range)) + Number(Boolean(base));
   if (visual && snapshotCount > 1) fail('visual-refresh snapshot source는 --staged/--range/--base 중 하나만 선택해야 함');
@@ -175,8 +181,10 @@ function main() {
     : policy;
 
   const outDirResolved = outDir ? path.resolve(outDir) : null;
-  const packetPath = outDirResolved ? path.join(outDirResolved, 'work-packet.md') : path.join(os.tmpdir(), `workflow-run-${seq}-work-packet.md`);
-  const reportPath = outDirResolved ? path.join(outDirResolved, 'run-report.md') : path.join(os.tmpdir(), `workflow-run-${seq}-run-report.md`);
+  // Concurrent no--out visual runs must not overwrite each other's audit packet.
+  const scratch = visual && !outDirResolved ? fs.mkdtempSync(path.join(os.tmpdir(), 'workflow-visual-run-')) : null;
+  const packetPath = outDirResolved ? path.join(outDirResolved, 'work-packet.md') : scratch ? path.join(scratch, 'work-packet.md') : path.join(os.tmpdir(), `workflow-run-${seq}-work-packet.md`);
+  const reportPath = outDirResolved ? path.join(outDirResolved, 'run-report.md') : scratch ? path.join(scratch, 'run-report.md') : path.join(os.tmpdir(), `workflow-run-${seq}-run-report.md`);
   let statusPath = null;
   if (outDirResolved) {
     const name = path.basename(outDirResolved);
@@ -198,14 +206,23 @@ function main() {
       reason, date, seq, requestedKnown,
     });
     let md = renderStatusMarkdown(model);
+    if (visual && packet?.visual_refresh) {
+      md = appendVisualPreworkStatus(md, packet.visual_refresh, visualPreworkIssues(packet.visual_refresh, { screen, input, checkedPath }));
+    }
     md = appendVisualStatus(md, report);
     if (statusPath) { try { writeFile(statusPath, md); } catch (e) { fail(`--out 상태 파일 쓰기 실패 "${relToCwd(statusPath)}": ${e.message}`); } }
+    if (scratch) fs.rmSync(scratch, { recursive: true, force: true });
     if (flags.json) {
       const envelope = renderJsonEnvelope(model);
+      if (visual && packet?.visual_refresh) {
+        envelope.visual_prework = packet.visual_refresh;
+        envelope.visual_refresh = packet.visual_refresh;
+      }
       if (report?.visual_refresh) {
-        envelope.visual_refresh = report.visual_refresh;
+        envelope.visual_refresh = { ...packet?.visual_refresh, ...report.visual_refresh };
         envelope.forbidden = report.forbidden || null;
         envelope.changed_files = Array.isArray(report.changed_files) ? report.changed_files : [];
+        if (report.review_evidence) envelope.review_evidence = report.review_evidence;
       }
       process.stdout.write(JSON.stringify(envelope, null, 2) + '\n');
     } else if (!statusPath) process.stdout.write(md);
@@ -239,8 +256,9 @@ function main() {
 
   const modeOrder = loadModeOrder(policyResolved);
   const requestedKnown = modeOrder.length === 0 ? true : modeOrder.includes(requestedMode);
-  if (visual && packet.visual_refresh?.authority_applicable !== true) {
-    finalize(STATES.HALT_AMBIGUITY, { packet, requestedKnown, reason: 'visual-refresh authority is not applicable' });
+  const preworkIssues = visual ? visualPreworkIssues(packet.visual_refresh, { screen, input, checkedPath }) : [];
+  if (preworkIssues.length) {
+    finalize(STATES.HALT_AMBIGUITY, { packet, requestedKnown, reason: `visual-refresh pre-work authorization denied: ${preworkIssues.join('; ')}` });
     return;
   }
   if (!isPacketClean(packet) || !requestedKnown) { finalize(STATES.HALT_AMBIGUITY, { packet, requestedKnown }); return; }
