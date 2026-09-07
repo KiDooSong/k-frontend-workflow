@@ -99,8 +99,8 @@ import {
 import { parseExpoIndexRouteTokens, parseRouteTreeRouteTokens } from './lib/route-core.mjs';
 // policy `requires` 파싱 술어 — readiness.mjs 와 단일 출처를 공유해 검사 14 와 런타임 게이트가 표류하지 않게 한다.
 import { isWellFormedRequirement } from './lib/policy-condition.mjs';
-// 글롭 미니엔진·생성물 헤더 정규식은 check-generated-files 가드와 단일 출처를 공유한다(표류 방지).
-import { GENERATED_HEADER_RE, globRoot, globToRegExp } from './lib/glob.mjs';
+// Check 6 and visual ownership share canonical manifest-path resolution.
+import { generatedHeaderIssues } from './lib/generated-header-check.mjs';
 import { enforceCliFlagContract } from './lib/cli-args.mjs';
 import {
   loadOpenDecisionRegister,
@@ -142,48 +142,14 @@ function manifestPathRegex(pattern) {
   return new RegExp('^' + withVars + '$');
 }
 
-// GENERATED_HEADER_RE·globRoot·globToRegExp 는 ./lib/glob.mjs 단일 출처에서 import.
-const GENERATED_HEADER_HINT_RE = /GENERATED FILE/i;
-
-function resolveManifestPath(pattern, { docsDir, projectRoot }) {
-  const normalized = String(pattern).replace(/\\/g, '/');
-  if (normalized.startsWith('docs/frontend-workflow/')) {
-    return path.join(docsDir, normalized.replace(/^docs\/frontend-workflow\//, ''));
-  }
-  return path.join(projectRoot, normalized);
-}
-
-function manifestOutputs(entry) {
-  if (!Array.isArray(entry.outputs)) return [];
-  return entry.outputs
-    .map((output) => {
-      if (typeof output === 'string') return output;
-      if (output && typeof output === 'object' && typeof output.path === 'string') return output.path;
-      return null;
-    })
-    .filter(Boolean);
-}
-
-function generatedOutputFiles(pattern, { projectRoot }) {
-  const normalized = String(pattern).replace(/\\/g, '/');
-  const rootRel = globRoot(normalized);
-  const matcher = globToRegExp(normalized);
-  const rootAbs = rootRel ? path.join(projectRoot, ...rootRel.split('/')) : projectRoot;
-  return walkFiles(rootAbs)
-    .filter((file) => {
-      const rel = toPosix(path.relative(projectRoot, file));
-      return matcher.test(rel);
-    });
-}
-
 // depends_on 대상이 실제로 존재하는지. manifest 키면 concrete 경로(placeholder 없음)일 때 파일 존재 요구.
 function dependencyResolves(dep, { knownArtifactIds, manifest, docsDir }) {
-  if (knownArtifactIds.has(dep)) return true; // 로드된 문서의 artifact_id → 파일 존재함
+  if (knownArtifactIds.has(dep)) return true;
   const entry = (manifest.artifacts || {})[dep];
-  if (!entry) return false; // 알 수 없는 대상
+  if (!entry) return false;
   const p = entry.path || '';
   const hasPlaceholder = /[{*]/.test(p);
-  if (hasPlaceholder) return true; // 어느 인스턴스인지 특정 불가 — 관대하게 통과
+  if (hasPlaceholder) return true;
   const rel = p.replace(/^docs\/frontend-workflow\//, '');
   return exists(path.join(docsDir, rel));
 }
@@ -233,7 +199,7 @@ function main() {
   });
   if (flags.help) {
     process.stdout.write(helpText());
-    return; // help 는 자연 종료 exit 0
+    return;
   }
   const docsDir = path.resolve(flags.docs || DEFAULTS.docs);
   const srcDir = path.resolve(flags.src || DEFAULTS.src);
@@ -278,7 +244,6 @@ function main() {
   const errors = [];
   const add = (check, file, message) =>
     errors.push({ check, file: toPosix(path.relative(projectRoot, file)), message });
-  // 경고: exit code 에 영향 없는 약한 권장(현재 resolved→Options 선택값). open-decisions.md 의 "약하게 시작".
   const warnings = [];
   const warn = (check, file, message) =>
     warnings.push({ check, file: toPosix(path.relative(projectRoot, file)), message });
@@ -291,21 +256,15 @@ function main() {
   for (const f of mdFiles) {
     const { data, hasFrontmatter, parseError } = splitFrontmatter(readFileSafe(f));
     if (parseError) add(1, f, `frontmatter YAML 파싱 실패: ${parseError}`);
-    if (!hasFrontmatter || !data.artifact_type) continue; // 규칙 문서가 아님
+    if (!hasFrontmatter || !data.artifact_type) continue;
     docs.push({ file: f, fm: data });
   }
 
   // 콜드스타트 fail-open 가드 (warning-first): 저작된 artifact 문서가 0건이면 막을 대상이 없어
   // vacuously green(exit 0)으로 통과한다 — 갓 도입한 프로젝트가 "통과=됐다"로 오인하는 fail-open.
   // 게이트(exit code)는 건드리지 않고 경고만 띄워 LLM/사람이 부트스트랩 미완을 인지하게 한다.
-  // 정상 최소 부트스트랩(navigation-map + screen-spec stub)은 artifact_type frontmatter 를 가지므로
-  // docs.length>=1 이라 발화하지 않는다(open-decisions.md "약하게 시작" 계열의 추가 신호).
-  // 알려진 한계: artifact_type 은 있으나 placeholder({SCREEN_ID} 등)만 든 미편집 stub 은 docs.length>=1 이라
-  // 이 경고로는 안 잡힌다 — "본문 미작성"은 isStub/screen-skeleton 모드 파생이 별도로 신호한다.
+  // 정상 최소 부트스트랩(navigation-map + screen-spec stub)은 artifact_type 을 가지므로 무발화.
   if (docs.length === 0) {
-    // check 라벨은 숫자 검사(1~13)와 달리 문자열 'cold-start' — 번호 매겨진 구조 검사가 아닌 preflight
-    // 신호라 의도적이다(check-generated-files 의 문자열 라벨 선례와 동형). --json 의 check 계약은
-    // number | 'cold-start' 이며, 현재 warnings 를 숫자 check 로 거르는 소비자는 없다.
     warn(
       'cold-start',
       docsDir,
@@ -319,10 +278,7 @@ function main() {
 
   // --- 검사 1, 2, 3(depends_on/sources), 7 ---
   for (const { file, fm } of docs) {
-    // 1. 스키마
     for (const e of validateSchema(fm, schema)) add(1, file, e);
-
-    // 2. manifest 필수 frontmatter + 잘못된 경로 (impl §4: 누락 frontmatter / 잘못된 경로)
     const mEntry = (manifest.artifacts || {})[fm.artifact_type];
     if (mEntry?.required_frontmatter) {
       for (const key of mEntry.required_frontmatter) {
@@ -345,12 +301,9 @@ function main() {
     ) {
       add(2, file, 'screen_lifecycle/absorbed_into/absorbed_at 은 ScreenSpec 전용 frontmatter');
     }
-
-    // 3a. depends_on 대상 존재 (manifest 키면 concrete 경로의 파일 존재까지 확인)
     if (Array.isArray(fm.depends_on)) {
       for (const dep of fm.depends_on) {
         if (!dependencyResolves(dep, { knownArtifactIds, manifest, docsDir })) {
-          // 다음 행동 힌트: manifest 에 등록된 산출물이면 어디서 만들지 알려준다.
           const entry = (manifest.artifacts || {})[dep];
           const hint = entry?.template
             ? ` → 해소: ${entry.template} 를 복사해 ${entry.path} 에 생성하세요`
@@ -359,7 +312,6 @@ function main() {
         }
       }
     }
-    // 3b. sources 로컬 파일 존재
     if (Array.isArray(fm.sources)) {
       for (const s of fm.sources) {
         const ref = s?.ref;
@@ -368,8 +320,6 @@ function main() {
         }
       }
     }
-
-    // 7. confirmed 승인 메타데이터 (IMPLEMENTING §4 #6: approved_by/at/decision_id)
     if (fm.status === 'confirmed') {
       if (!fm.approved_by) add(7, file, 'status=confirmed 인데 approved_by 누락');
       if (!fm.approved_at) add(7, file, 'status=confirmed 인데 approved_at 누락');
@@ -399,19 +349,11 @@ function main() {
   }
   for (const record of screenLifecycle.invalidRecords) {
     for (const issue of record.errors) {
-      if (issue.check === 2 || issue.check === 3) {
-        add(issue.check, record.spec.path, issue.message);
-      }
+      if (issue.check === 2 || issue.check === 3) add(issue.check, record.spec.path, issue.message);
     }
   }
   const surfaceSpecs = loadSharedSurfaceSpecs({ docsDir });
-  const surfaceRecords = analyzeSharedSurfaces({
-    docsDir,
-    surfaceSpecs,
-    screenSpecs: specs,
-    screenLifecycle,
-  });
-
+  const surfaceRecords = analyzeSharedSurfaces({ docsDir, surfaceSpecs, screenSpecs: specs, screenLifecycle });
   for (const record of surfaceRecords) {
     for (const issue of record.contract_errors) {
       if (
@@ -419,42 +361,28 @@ function main() {
         issue.code === 'interaction-v2-required' ||
         issue.code === 'surface-route-result' ||
         issue.code === 'invalid-surface-result-type'
-      ) {
-        continue; // checks 4/9 own these boundaries.
-      }
+      ) continue;
       add(2, record.spec.path, issue.message);
     }
     for (const issue of record.membership_errors) add(3, record.spec.path, issue.message);
     for (const issue of record.path_errors) add(3, record.spec.path, issue.message);
     for (const issue of record.identity_errors) add(5, record.spec.path, issue.message);
-    for (const issue of sharedSurfaceInteractionIssues(record.spec)) {
-      add(4, record.spec.path, issue.message);
-    }
+    for (const issue of sharedSurfaceInteractionIssues(record.spec)) add(4, record.spec.path, issue.message);
   }
 
-  // 검사 13 의 정밀 route 존재 확인 입력. route-tree 는 생성물이라 없거나 아직 stale 일 수 있으므로
-  // 부재는 hard fail 이 아니라 advisory warning 이다. 존재하는 경우 `route: <token>` raw 문자열을 비교하되,
-  // 루트 Target(`/`)만 기본 Expo 헤더 + 실제 index.* 노드로 검증된 유일한 group token 을 인정한다.
+  // 검사 13 의 정밀 route 존재 확인 입력. generated/stale route-tree 는 advisory 다.
   const routeTreeFile = path.join(docsDir, '_meta', 'route-tree.txt');
   const routeTreeExists = exists(routeTreeFile);
   const routeTreeText = routeTreeExists ? readFileSafe(routeTreeFile) : null;
   const routeTreeRouteSet = routeTreeExists ? parseRouteTreeRouteTokens(routeTreeText) : null;
-  // 루트(`/`) alias 에만 쓰는 provenance. 기본 expo-router 헤더 + 실제 index.* 파일 노드가 모두
-  // 확인돼야 채워지며, custom router 또는 `(app).tsx` literal file 은 빈 집합으로 fail-closed 한다.
   const routeTreeExpoIndexRouteSet = parseExpoIndexRouteTokens(routeTreeText);
 
-  // 5. 중복
   for (const [id, n] of idCount) if (n > 1) add(5, path.join(docsDir, 'domains'), `screen_id 중복: ${id} (${n}건)`);
   for (const [r, n] of routeCount)
     if (n > 1) add(5, path.join(docsDir, 'domains'), `route 중복: ${r} (${n}건)`);
 
-  // 4. Interaction Matrix route target 이 inventory(route 집합)에 있는지
-  //    v1 표는 free-form Result 를 읽고, v2 표는 Result Type=route 행의 Target 을 읽는다.
-  //    명시적 비-route v2 행(state/mutation/external/none)의 Result prose 는 하드 게이트 입력이 아니다.
-  //    Expo Router 의 일반 filesystem group `(auth)` 는 런타임 URL 에 나타나지 않으므로, raw route
-  //    `/(auth)/login` 이 group-less Target `/login` 과 단일하게 대응할 때만 통과시킨다.
-  //    루트(`/`)는 raw single-group ScreenSpec 후보의 존재만 확인한다. generated/stale 가능 route-tree 의
-  //    provenance·모호성은 검사 13 warning, destination 선택은 nav-graph 가 별도로 fail-closed 한다.
+  // 4. Interaction Matrix route target 이 inventory(route 집합)에 있는지.
+  // v2의 명시적 비-route prose 는 입력이 아니며 Expo group-less alias는 유일 해소만 인정한다.
   const runtimeRouteTargetIndex = buildRuntimeRouteTargetIndex(routeSet);
   for (const spec of liveSpecs) {
     const targets = interactionEdgeRoutes(spec);
@@ -465,52 +393,31 @@ function main() {
     }
   }
 
-  // 6b. generated_sections 마커 무결성 (authored screen-spec 의 Entry Points GENERATED:START/END)
-  //     stub(frontmatter만)에는 본문이 없으므로 검사 대상이 아니다.
-  const screenSpecGenSections =
-    (manifest.artifacts || {})['screen-spec']?.generated_sections || [];
+  // 6b. authored ScreenSpec generated-section START/END 무결성. stub은 비적용.
+  const screenSpecGenSections = (manifest.artifacts || {})['screen-spec']?.generated_sections || [];
   for (const spec of liveSpecs) {
     if (isStub(spec)) continue;
     for (const sec of screenSpecGenSections) {
       const gen = sec.generator;
-      // START/END 모두 generator 이름까지 일치해야 하고, START 가 END 보다 앞서야 한다.
       const startM = new RegExp(`GENERATED:START\\s+${gen}\\b`).exec(spec.body);
       const endM = new RegExp(`GENERATED:END\\s+${gen}\\b`).exec(spec.body);
       if (!startM || !endM || startM.index >= endM.index) {
-        add(
-          6,
-          spec.path,
-          `generated section 마커 부재/훼손/순서오류: ${sec.name} (GENERATED:START ${gen} … GENERATED:END ${gen})`,
-        );
+        add(6, spec.path, `generated section 마커 부재/훼손/순서오류: ${sec.name} (GENERATED:START ${gen} … GENERATED:END ${gen})`);
       }
     }
   }
 
-  // 8. API Candidates(confirmed) ↔ contract evidence 매칭 (제안서 옵션 C: api-manifest ## Endpoints 가 canonical).
-  //    각 confirmed ScreenSpec 후보의 (Method, Path) → api-manifest endpoint → Linked Contract 해소.
-  //    - Linked Schema 레거시 컬럼은 zod 런타임 export 로 계속 해소한다.
-  //    - Contract Kind=ts-type 은 Source 경로의 export type/interface 정적 evidence 로만 인정한다.
-  //      TS type evidence 는 런타임 validation evidence 가 아니다.
-  //    - manifest 부재 시: 현행 전역 존재검사(hasZod||hasOpenApi)로 폴백(엄격 모드로 깨지 않음).
-  //    - confirmed 0건 화면은 무발화(candidate 전용 화면의 옛 동작·readiness 불변).
-  //    - api_required:false 화면은 자체 API 후보를 요구하지 않는다. 단 실제 Method/Path 후보가
-  //      같이 있으면 no-API 선언과 충돌하므로 에러로 잡는다.
+  // 8. Confirmed API → canonical endpoint → linked contract. TS type evidence is
+  // static evidence, not runtime validation. Legacy manifests retain the fallback.
   const schemasDir = path.resolve(projectRoot, layout.roleToDir('api_schema'));
   const hasZod = dirHasFiles(schemasDir, ['.ts']);
-  const hasOpenApi =
-    exists(path.join(projectRoot, 'openapi.yaml')) ||
-    exists(path.join(projectRoot, 'openapi.yml'));
-  const manifestFiles = docs
-    .filter((d) => d.fm.artifact_type === 'api-manifest')
-    .map((d) => d.file);
+  const hasOpenApi = exists(path.join(projectRoot, 'openapi.yaml')) || exists(path.join(projectRoot, 'openapi.yml'));
+  const manifestFiles = docs.filter((d) => d.fm.artifact_type === 'api-manifest').map((d) => d.file);
   const endpoints = manifestFiles.length ? buildEndpointIndex(manifestFiles) : null;
   const endpointIndex = endpoints ? endpoints.index : null;
-  // canonical 출처(api-manifest)에 같은 (Method,Path) 가 서로 다른 contract/source/confidence 로 중복 선언되면
-  // 매칭이 행 순서에 의존(모순)하므로 에러로 surface 한다(동일 중복 행은 무시).
   for (const c of endpoints ? endpoints.conflicts : []) {
     add(
-      8,
-      c.file,
+      8, c.file,
       `api-manifest ## Endpoints 의 ${c.key} 가 충돌 중복 선언됨 (Linked Contract '${c.prev.linkedContract || '(빈값)'}'/${c.prev.contractKind || '(kind 없음)'} vs '${c.next.linkedContract || '(빈값)'}'/${c.next.contractKind || '(kind 없음)'}, Source '${c.prev.source || '(빈값)'}' vs '${c.next.source || '(빈값)'}', confidence '${c.prev.confidence || '(빈값)'}' vs '${c.next.confidence || '(빈값)'}') → 해소: (Method,Path) 당 canonical 행 1개만 남기세요.`,
     );
   }
@@ -531,8 +438,7 @@ function main() {
       const concrete = candidates.filter((it) => it.method && it.path);
       for (const e of concrete) {
         add(
-          8,
-          spec.path,
+          8, spec.path,
           isSurface
             ? `api_required:false shared-surface-spec은 자체 API 후보를 선언할 수 없음: ${e.method} ${e.path} → 해소: upstream API 결과 설명은 Data Requirements/Notes 에 남기고 API Candidates 에서 제거하거나 api_required 를 true 로 바꾸세요.`
             : `api_required:false 화면은 자체 API 후보를 선언할 수 없음: ${e.method} ${e.path} → 해소: upstream API 결과 설명은 Data Requirements/Notes 에 남기고 API Candidates 에서 제거하거나 api_required 를 true 로 바꾸세요.`,
@@ -540,50 +446,30 @@ function main() {
       }
       continue;
     }
-    const confirmed = candidates.filter(
-      (it) => it.confidence === 'confirmed',
-    );
-    if (confirmed.length === 0) continue; // candidate/unknown 전용 → 무발화(옛 동작 유지)
+    const confirmed = candidates.filter((it) => it.confidence === 'confirmed');
+    if (confirmed.length === 0) continue;
     if (!endpointIndex) {
-      // 폴백: api-manifest 부재 → 현행 전역 존재검사
       if (!hasZod && !hasOpenApi) {
-        add(
-          8,
-          spec.path,
-          `confirmed API ${confirmed.length}건인데 zod 스키마(src/api/schemas/*.ts)/OpenAPI 부재 (api-manifest 부재 → 전역 존재검사 폴백)`,
-        );
+        add(8, spec.path, `confirmed API ${confirmed.length}건인데 zod 스키마(src/api/schemas/*.ts)/OpenAPI 부재 (api-manifest 부재 → 전역 존재검사 폴백)`);
       }
       continue;
     }
     for (const e of confirmed) {
       const label = `${e.method || '?'} ${e.path || e.raw}`;
       if (!e.method || !e.path) {
-        add(
-          8,
-          spec.path,
-          `confirmed API 후보의 Method/Path 를 파싱할 수 없음: "${e.raw}" → 해소: "- GET /path (confidence: confirmed)" 형식으로 작성하세요.`,
-        );
+        add(8, spec.path, `confirmed API 후보의 Method/Path 를 파싱할 수 없음: "${e.raw}" → 해소: "- GET /path (confidence: confirmed)" 형식으로 작성하세요.`);
         continue;
       }
       const m = endpointIndex.get(normEndpoint(e.method, e.path));
       if (!m) {
-        add(
-          8,
-          spec.path,
-          `confirmed API ${label} 가 api-manifest ## Endpoints 에 매칭되는 엔드포인트가 없음 → 해소: api/api-manifest.md ## Endpoints 에 ${e.method} ${e.path} 행을 추가하거나 ${contractLabel} confidence 를 candidate 로 낮추세요.`,
-        );
+        add(8, spec.path, `confirmed API ${label} 가 api-manifest ## Endpoints 에 매칭되는 엔드포인트가 없음 → 해소: api/api-manifest.md ## Endpoints 에 ${e.method} ${e.path} 행을 추가하거나 ${contractLabel} confidence 를 candidate 로 낮추세요.`);
         continue;
       }
       if (m.confidence !== 'confirmed') {
-        add(
-          8,
-          spec.path,
-          `confirmed API ${label} 의 api-manifest 엔드포인트 confidence=${m.confidence || '(빈값)'} 이라 confirmed 아님 → 해소: manifest 행의 confidence 를 confirmed 로 올리거나 ${contractLabel} 을 candidate 로 낮추세요.`,
-        );
+        add(8, spec.path, `confirmed API ${label} 의 api-manifest 엔드포인트 confidence=${m.confidence || '(빈값)'} 이라 confirmed 아님 → 해소: manifest 행의 confidence 를 confirmed 로 올리거나 ${contractLabel} 을 candidate 로 낮추세요.`);
         continue;
       }
       if (isContractUnset(m.linkedContract)) {
-        // 컬럼 자체 부재(레거시 형식)와 셀 빈칸/TBD 를 구분 — 전자는 표에서 없는 칸을 찾게 만드는 혼란을 막는다.
         const detail =
           m.hasLinkedSchemaCol === false && m.hasLinkedContractCol === false
             ? `## Endpoints 표에 Linked Schema 컬럼이 없음(레거시 형식) → 해소: api-manifest 를 Method|Path|Confidence|Linked Contract|Contract Kind|Source 형식으로 맞추고(templates/api/api-manifest.template.md 참조) Linked Contract 에 실제 contract 이름을 기입하세요.`
@@ -592,117 +478,69 @@ function main() {
         continue;
       }
       if (m.contractKindOmitted) {
-        add(
-          8,
-          m.file,
-          `confirmed endpoint ${e.method} ${e.path} 의 Contract Kind 가 비어있음 → 해소: ${CONTRACT_KINDS.join('|')} 중 하나를 기입하세요. 기존 Linked Schema 5컬럼 레거시 표는 zod 로 자동 추론됩니다.`,
-        );
+        add(8, m.file, `confirmed endpoint ${e.method} ${e.path} 의 Contract Kind 가 비어있음 → 해소: ${CONTRACT_KINDS.join('|')} 중 하나를 기입하세요. 기존 Linked Schema 5컬럼 레거시 표는 zod 로 자동 추론됩니다.`);
         continue;
       }
       if (!CONTRACT_KINDS.includes(m.contractKind)) {
-        add(
-          8,
-          m.file,
-          `confirmed endpoint ${e.method} ${e.path} 의 Contract Kind='${m.contractKind || '(빈값)'}' 는 지원되지 않음 → 해소: ${CONTRACT_KINDS.join('|')} 중 하나를 사용하세요.`,
-        );
+        add(8, m.file, `confirmed endpoint ${e.method} ${e.path} 의 Contract Kind='${m.contractKind || '(빈값)'}' 는 지원되지 않음 → 해소: ${CONTRACT_KINDS.join('|')} 중 하나를 사용하세요.`);
         continue;
       }
       if (m.contractKind === 'zod') {
         if (!schemaExports.has(m.linkedContract)) {
-          add(
-            8,
-            m.file,
-            `confirmed endpoint ${e.method} ${e.path} 의 zod contract=${m.linkedContract} 가 src/api/schemas/*.ts 런타임 export 에서 발견되지 않음 → 해소: zod 스키마 export 를 추가하거나 Linked Contract/Linked Schema 를 올바른 export 이름으로 수정하세요.`,
-          );
+          add(8, m.file, `confirmed endpoint ${e.method} ${e.path} 의 zod contract=${m.linkedContract} 가 src/api/schemas/*.ts 런타임 export 에서 발견되지 않음 → 해소: zod 스키마 export 를 추가하거나 Linked Contract/Linked Schema 를 올바른 export 이름으로 수정하세요.`);
           continue;
         }
       } else if (m.contractKind === 'ts-type') {
         const typeExports = tsTypeExportsFor(m.source);
         if (!typeExports.has(m.linkedContract)) {
-          add(
-            8,
-            m.file,
-            `confirmed endpoint ${e.method} ${e.path} 의 ts-type contract=${m.linkedContract} 가 Source=${m.source || '(빈값)'} 의 export type/interface 에서 발견되지 않음 → 해소: Source 경로에 export type 또는 export interface 를 추가하거나 Linked Contract 를 수정하세요. TS type evidence 는 런타임 validation evidence 가 아닙니다.`,
-          );
+          add(8, m.file, `confirmed endpoint ${e.method} ${e.path} 의 ts-type contract=${m.linkedContract} 가 Source=${m.source || '(빈값)'} 의 export type/interface 에서 발견되지 않음 → 해소: Source 경로에 export type 또는 export interface 를 추가하거나 Linked Contract 를 수정하세요. TS type evidence 는 런타임 validation evidence 가 아닙니다.`);
           continue;
         }
       } else if (m.contractKind === 'openapi') {
         if (!contractSourceHasText(m.source, projectRoot, m.linkedContract, ['.yaml', '.yml', '.json'])) {
-          add(
-            8,
-            m.file,
-            `confirmed endpoint ${e.method} ${e.path} 의 openapi contract=${m.linkedContract} 가 Source=${m.source || '(빈값)'} 의 project-local OpenAPI 파일(.yaml/.yml/.json)에서 발견되지 않음 → 해소: Source 를 프로젝트 내부 OpenAPI 파일로 지정하고 Linked Contract 이름을 포함시키세요.`,
-          );
+          add(8, m.file, `confirmed endpoint ${e.method} ${e.path} 의 openapi contract=${m.linkedContract} 가 Source=${m.source || '(빈값)'} 의 project-local OpenAPI 파일(.yaml/.yml/.json)에서 발견되지 않음 → 해소: Source 를 프로젝트 내부 OpenAPI 파일로 지정하고 Linked Contract 이름을 포함시키세요.`);
           continue;
         }
       } else if (m.contractKind === 'manual') {
         if (!contractSourceHasText(m.source, projectRoot, m.linkedContract, ['.md', '.txt', '.yaml', '.yml', '.json'])) {
-          add(
-            8,
-            m.file,
-            `confirmed endpoint ${e.method} ${e.path} 의 manual contract=${m.linkedContract} 가 Source=${m.source || '(빈값)'} 의 project-local manual evidence 파일에서 발견되지 않음 → 해소: Source 를 프로젝트 내부 문서/스펙 파일로 지정하고 Linked Contract 이름을 포함시키세요.`,
-          );
+          add(8, m.file, `confirmed endpoint ${e.method} ${e.path} 의 manual contract=${m.linkedContract} 가 Source=${m.source || '(빈값)'} 의 project-local manual evidence 파일에서 발견되지 않음 → 해소: Source 를 프로젝트 내부 문서/스펙 파일로 지정하고 Linked Contract 이름을 포함시키세요.`);
           continue;
         }
       } else if (m.contractKind === 'unknown') {
-        add(
-          8,
-          m.file,
-          `confirmed endpoint ${e.method} ${e.path} 의 Contract Kind=unknown 은 confirmed API evidence 를 만족할 수 없음 → 해소: zod|ts-type|openapi|manual 중 확인 가능한 evidence kind 로 바꾸거나 ${contractLabel} confidence 를 candidate 로 낮추세요.`,
-        );
+        add(8, m.file, `confirmed endpoint ${e.method} ${e.path} 의 Contract Kind=unknown 은 confirmed API evidence 를 만족할 수 없음 → 해소: zod|ts-type|openapi|manual 중 확인 가능한 evidence kind 로 바꾸거나 ${contractLabel} confidence 를 candidate 로 낮추세요.`);
         continue;
       }
     }
   }
 
   // 9. Open Decisions 형식 + canonical register/reference 검사.
-  //    기존 ScreenSpec-local 표와 optional global register 가 같은 6컬럼 parser/행 규칙을 공유한다.
-  //    decision_refs 는 global register 로만 exact/case-sensitive 해소한다.
-  const policyModes =
-    (policy.order && policy.order.length ? policy.order : Object.keys(policy.modes || {})) || [];
+  const policyModes = (policy.order && policy.order.length ? policy.order : Object.keys(policy.modes || {})) || [];
   const openDecisionOccurrences = new Map();
   const localDecisionIds = new Set();
   const decisionRegister = loadOpenDecisionRegister({ docsDir });
-  // 정책을 못 읽으면(policyModes 비어있음) Blocking Mode 정책-모드 검사를 건너뛴다 — 전부 무효로 오탐 방지.
-  // 단 Open Decisions 가 실제로 있으면 조용히 넘기지 않고 경고로 surface 한다(설정 오류 신호).
   if (policyModes.length === 0 && (decisionRegister.exists || liveSpecs.some((s) => s.sections['open decisions'] !== undefined))) {
     warn(9, path.join(docsDir, 'domains'), '정책을 로드하지 못해 Open Decisions 의 Blocking Mode 정책-모드 검사를 건너뜀 — policy 경로를 확인하세요');
   }
-
   function validateOpenDecisionSection({ file, section, required = false, local = false }) {
     if (section === undefined) {
-      if (required) {
-        add(9, file, 'canonical open-decision-register 에 ## Open Decisions 섹션이 없음');
-      }
+      if (required) add(9, file, 'canonical open-decision-register 에 ## Open Decisions 섹션이 없음');
       return;
     }
     const od = parseOpenDecisions(section);
     if (!od.table) {
       if (required || od.sectionHasContent) {
-        add(
-          9,
-          file,
-          'Open Decisions 섹션에 내용이 있으나 파싱 가능한 표가 없음 → 해소: 템플릿의 6컬럼 표(| ID | Decision Needed | Options | Blocking Mode | Owner | Status |) 형식을 사용하세요',
-        );
+        add(9, file, 'Open Decisions 섹션에 내용이 있으나 파싱 가능한 표가 없음 → 해소: 템플릿의 6컬럼 표(| ID | Decision Needed | Options | Blocking Mode | Owner | Status |) 형식을 사용하세요');
       }
       return;
     }
     const missingCols = REQUIRED_OPEN_DECISION_COLUMNS.filter((c) => !hasHeader(od.headers, c));
-    if (missingCols.length) {
-      add(9, file, `Open Decisions 표 필수 컬럼 누락: ${missingCols.join(', ')}`);
-    }
+    if (missingCols.length) add(9, file, `Open Decisions 표 필수 컬럼 누락: ${missingCols.join(', ')}`);
     for (const r of od.rows) {
       const label = r.id || '(no-id)';
       const status = r.status.toLowerCase();
-      if (!r.id) {
-        add(9, file, `Open Decision 행에 ID 누락 (Decision: ${r.decisionNeeded || '?'}) → 해소: 전역 유일한 D-xxx ID 부여`);
-      }
-      if (!r.decisionNeeded) {
-        add(9, file, `Open Decision ${label}: Decision Needed 누락 (필수) → 해소: 결정해야 하는 질문 작성`);
-      }
-      if (status !== 'open' && status !== 'resolved') {
-        add(9, file, `Open Decision ${label}: Status 는 open|resolved 여야 함 (현재: ${r.status || '(빈값)'})`);
-      }
+      if (!r.id) add(9, file, `Open Decision 행에 ID 누락 (Decision: ${r.decisionNeeded || '?'}) → 해소: 전역 유일한 D-xxx ID 부여`);
+      if (!r.decisionNeeded) add(9, file, `Open Decision ${label}: Decision Needed 누락 (필수) → 해소: 결정해야 하는 질문 작성`);
+      if (status !== 'open' && status !== 'resolved') add(9, file, `Open Decision ${label}: Status 는 open|resolved 여야 함 (현재: ${r.status || '(빈값)'})`);
       if (r.blockingMode) {
         if (policyModes.length && !policyModes.includes(r.blockingMode)) {
           add(9, file, `Open Decision ${label}: Blocking Mode '${r.blockingMode}' 가 정책 모드가 아님 → 해소: ${policyModes.join(' / ')} 중 하나`);
@@ -710,13 +548,9 @@ function main() {
           add(9, file, `Open Decision ${label}: Blocking Mode '${r.blockingMode}' 는 floor(docs-only)라 막을 수 없음 → 해소: 그 위 모드 지정`);
         }
       } else {
-        // Blocking Mode 는 전 행 필수 (open-decisions.md 필드표). resolved 도 canonical 행에 유지하며,
-        // 재오픈 시 게이트가 즉시 동작하도록 한다.
         add(9, file, `Open Decision ${label}: Blocking Mode 누락 (필수) → 해소: 막을 최소 모드 지정`);
       }
-      if (status === 'resolved' && !r.options) {
-        warn(9, file, `Open Decision ${label}: resolved 인데 Options 에 선택값 표시 없음 (권장: '→ 선택값')`);
-      }
+      if (status === 'resolved' && !r.options) warn(9, file, `Open Decision ${label}: resolved 인데 Options 에 선택값 표시 없음 (권장: '→ 선택값')`);
       if (r.id) {
         const occurrences = openDecisionOccurrences.get(r.id) || [];
         occurrences.push({ file });
@@ -725,35 +559,20 @@ function main() {
       if (local && r.id) localDecisionIds.add(r.id);
     }
   }
-
   for (const spec of liveSpecs) {
-    validateOpenDecisionSection({
-      file: spec.path,
-      section: spec.sections['open decisions'],
-      local: true,
-    });
+    validateOpenDecisionSection({ file: spec.path, section: spec.sections['open decisions'], local: true });
   }
   for (const surface of surfaceSpecs) {
     const section = surface.sections['open decisions'];
     if (section === undefined) continue;
     const parsed = parseOpenDecisions(section);
     if (parsed.rows.length === 0 && !parsed.sectionHasContent) continue;
-    add(
-      9,
-      surface.path,
-      'shared-surface-spec 은 local ## Open Decisions 표를 소유할 수 없음 → global/open-decisions.md 로 행을 옮기고 frontmatter decision_refs 로 참조하세요',
-    );
+    add(9, surface.path, 'shared-surface-spec 은 local ## Open Decisions 표를 소유할 수 없음 → global/open-decisions.md 로 행을 옮기고 frontmatter decision_refs 로 참조하세요');
   }
   if (decisionRegister.exists) {
-    if (decisionRegister.structuralErrors.includes('invalid-frontmatter')) {
-      add(9, decisionRegister.file, 'canonical open-decision-register frontmatter 가 잘못됨 → artifact_id/artifact_type=open-decision-register 및 status 를 선언하세요');
-    }
-    if (decisionRegister.structuralErrors.includes('duplicate-section')) {
-      add(9, decisionRegister.file, 'canonical open-decision-register 에 ## Open Decisions 섹션이 2개 이상 있음 → canonical 표는 정확히 1개여야 함');
-    }
-    if (decisionRegister.structuralErrors.includes('multiple-decision-tables')) {
-      add(9, decisionRegister.file, 'canonical open-decision-register 의 ## Open Decisions 섹션에 canonical 표가 2개 이상 있음 → 6컬럼 표 하나로 합치세요');
-    }
+    if (decisionRegister.structuralErrors.includes('invalid-frontmatter')) add(9, decisionRegister.file, 'canonical open-decision-register frontmatter 가 잘못됨 → artifact_id/artifact_type=open-decision-register 및 status 를 선언하세요');
+    if (decisionRegister.structuralErrors.includes('duplicate-section')) add(9, decisionRegister.file, 'canonical open-decision-register 에 ## Open Decisions 섹션이 2개 이상 있음 → canonical 표는 정확히 1개여야 함');
+    if (decisionRegister.structuralErrors.includes('multiple-decision-tables')) add(9, decisionRegister.file, 'canonical open-decision-register 의 ## Open Decisions 섹션에 canonical 표가 2개 이상 있음 → 6컬럼 표 하나로 합치세요');
     validateOpenDecisionSection({ file: decisionRegister.file, section: decisionRegister.section, required: true });
   }
   for (const [id, occurrences] of openDecisionOccurrences) {
@@ -761,28 +580,17 @@ function main() {
       const files = [...new Set(occurrences.map((entry) => entry.file))].sort();
       const includesRegister = files.includes(decisionRegister.file);
       const diagnosticFile = includesRegister ? decisionRegister.file : path.join(docsDir, 'domains');
-      const locations = includesRegister
-        ? ` [locations: ${files.map((file) => toPosix(path.relative(docsDir, file))).join(', ')}]`
-        : '';
-      add(
-        9,
-        diagnosticFile,
-        `Open Decision ID 전역 중복: ${id} (${occurrences.length}건) → 결정당 canonical 행 1개${locations}`,
-      );
+      const locations = includesRegister ? ` [locations: ${files.map((file) => toPosix(path.relative(docsDir, file))).join(', ')}]` : '';
+      add(9, diagnosticFile, `Open Decision ID 전역 중복: ${id} (${occurrences.length}건) → 결정당 canonical 행 1개${locations}`);
     }
   }
 
-  // decision_refs 는 schema 검사 1에 더해 semantic resolution 을 방어적으로 다시 확인한다.
-  // ScreenSpec path는 artifact_type 자체가 손상돼 docs 수집에서 빠져도 fail-open 하지 않게 포함한다.
+  // Include malformed ScreenSpec artifact_type paths when resolving decision_refs.
   const decisionRefDocs = new Map(
-    docs
-      .filter(({ file }) => !absorbedSpecPaths.has(file))
-      .map(({ file, fm }) => [file, { file, fm }]),
+    docs.filter(({ file }) => !absorbedSpecPaths.has(file)).map(({ file, fm }) => [file, { file, fm }]),
   );
   for (const spec of liveSpecs) {
-    if (Object.prototype.hasOwnProperty.call(spec.frontmatter, 'decision_refs')) {
-      decisionRefDocs.set(spec.path, { file: spec.path, fm: spec.frontmatter });
-    }
+    if (Object.prototype.hasOwnProperty.call(spec.frontmatter, 'decision_refs')) decisionRefDocs.set(spec.path, { file: spec.path, fm: spec.frontmatter });
   }
   for (const { file, fm } of decisionRefDocs.values()) {
     if (!Object.prototype.hasOwnProperty.call(fm, 'decision_refs')) continue;
@@ -816,11 +624,8 @@ function main() {
     for (const ref of validRefs) {
       const rows = decisionRegister.index.get(ref) || [];
       if (rows.length === 0) {
-        if (localDecisionIds.has(ref)) {
-          add(9, file, `decision_refs '${ref}' 는 ScreenSpec-local 결정만 가리킴 → global/open-decisions.md 의 canonical 행만 참조할 수 있음`);
-        } else {
-          add(9, file, `decision_refs '${ref}' 대상이 global/open-decisions.md 에 없음`);
-        }
+        if (localDecisionIds.has(ref)) add(9, file, `decision_refs '${ref}' 는 ScreenSpec-local 결정만 가리킴 → global/open-decisions.md 의 canonical 행만 참조할 수 있음`);
+        else add(9, file, `decision_refs '${ref}' 대상이 global/open-decisions.md 에 없음`);
       } else if (rows.length > 1 || localDecisionIds.has(ref)) {
         add(9, file, `decision_refs '${ref}' canonical 대상이 중복/모호함 → 프로젝트 전역 canonical 행 1개만 유지`);
       } else if (openDecisionRowIsMalformed(rows[0])) {
@@ -831,13 +636,7 @@ function main() {
 
   const decisionApplications = new Map();
   const addDecisionApplication = (screenId, decisionId, file, kind) => {
-    if (
-      screenId === undefined ||
-      screenId === null ||
-      screenId === '' ||
-      typeof decisionId !== 'string' ||
-      !decisionId
-    ) return;
+    if (screenId === undefined || screenId === null || screenId === '' || typeof decisionId !== 'string' || !decisionId) return;
     const key = `${String(screenId)}\0${decisionId}`;
     const rows = decisionApplications.get(key) || [];
     const referrer = `${kind}:${file}`;
@@ -846,142 +645,69 @@ function main() {
   };
   for (const spec of liveSpecs) {
     if (!Array.isArray(spec.frontmatter.decision_refs)) continue;
-    for (const ref of spec.frontmatter.decision_refs) {
-      addDecisionApplication(spec.frontmatter.screen_id, ref, spec.path, 'screen');
-    }
+    for (const ref of spec.frontmatter.decision_refs) addDecisionApplication(spec.frontmatter.screen_id, ref, spec.path, 'screen');
   }
   for (const record of surfaceRecords) {
     if (!Array.isArray(record.spec.frontmatter.decision_refs)) continue;
     for (const member of record.existing_member_screens) {
-      for (const ref of record.spec.frontmatter.decision_refs) {
-        addDecisionApplication(member, ref, record.spec.path, 'surface');
-      }
+      for (const ref of record.spec.frontmatter.decision_refs) addDecisionApplication(member, ref, record.spec.path, 'surface');
     }
   }
   for (const [key, referrers] of [...decisionApplications.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     if (referrers.length < 2) continue;
     const [screenId, decisionId] = key.split('\0');
     const files = referrers.map((row) => row.file).sort();
-    add(
-      9,
-      files[0],
-      `Open Decision ${decisionId} 가 screen ${screenId} 에 여러 referrer 경로로 중복 적용됨 → 첫 slice에서는 screen/surface 중 canonical referrer 하나만 유지 [locations: ${files.map((file) => toPosix(path.relative(docsDir, file))).join(', ')}]`,
-    );
+    add(9, files[0], `Open Decision ${decisionId} 가 screen ${screenId} 에 여러 referrer 경로로 중복 적용됨 → 첫 slice에서는 screen/surface 중 canonical referrer 하나만 유지 [locations: ${files.map((file) => toPosix(path.relative(docsDir, file))).join(', ')}]`);
   }
 
-  // 10. Copy Keys Status enum (screen-spec.template.md 의 3-state 계약).
-  //     confirmed=승인 확정(사람만 승격) · draft=입력제공·미확정(또는 존재가 open decision 에 달림) · tbd=문구 자체 미정.
-  //     draft·confirmed 는 copy_keys_has_tbd 를 켜지 않는다 — 오직 tbd 만(spec.mjs deriveMetrics).
-  //     (tbd_count 는 Copy Keys 와 무관하게 Unknowns 의 open 행에서 나온다.)
-  //     stub(본문 없음)·템플릿 placeholder({…} 키) 행은 검사하지 않는다.
+  // 10. Copy Keys Status enum; stub/template rows are not concrete authoring.
   for (const spec of behaviorSpecs) {
     if (isStub(spec)) continue;
     for (const r of parseCopyKeys(spec.sections['copy keys']).rows) {
-      if (r.key.startsWith('{')) continue; // 템플릿 placeholder 행
-      if (!COPY_KEYS_STATUS_VALUES.includes(r.status)) {
-        add(
-          10,
-          spec.path,
-          `Copy Keys '${r.key || '(no-key)'}': Status 는 ${COPY_KEYS_STATUS_VALUES.join('|')} 여야 함 (현재: ${r.status || '(빈값)'})`,
-        );
-      }
+      if (r.key.startsWith('{')) continue;
+      if (!COPY_KEYS_STATUS_VALUES.includes(r.status)) add(10, spec.path, `Copy Keys '${r.key || '(no-key)'}': Status 는 ${COPY_KEYS_STATUS_VALUES.join('|')} 여야 함 (현재: ${r.status || '(빈값)'})`);
     }
   }
 
-  // 13. Interaction Matrix v2(structured) 형식 — warning-first (검사 13 자체는 하드 게이트 없음).
-  //     Result Type 헤더가 있는 표(v2 모드)만 점검한다 → v1 표는 무발화 = v1 validate 출력 byte-identical.
-  //     enum/route 행 Target 부재/비-route 행 라우트 토큰/Result↔Target drift 를 경고로 surface.
-  //     route-tree.txt 가 있으면 Result Type=route Target 과 raw route token 을 교차검증한다. 일반 route 는
-  //     EXACT 를 유지하고 루트(`/`)만 verified Expo group-directory index token 을 인정한다. 유일 owner를
-  //     raw/trailing-slash ScreenSpec이 함께 표현하는 경우도 warning으로 후보를 표면화한다.
-  //     route-tree.txt 가 없으면 v2 route Target 존재 시 warning 으로만 알린다(warning-first).
+  // 13. Structured Interaction Matrix v2 remains warning-first, with no promotion.
   for (const spec of liveSpecs) {
     for (const issue of interactionMatrixV2Issues(spec, {
-      routeTreeRouteSet,
-      routeTreeExpoIndexRouteSet,
-      screenRouteSet: routeSet,
-      routeTreeMissing: !routeTreeExists,
-    })) {
-      warn(13, spec.path, issue.message);
-    }
+      routeTreeRouteSet, routeTreeExpoIndexRouteSet, screenRouteSet: routeSet, routeTreeMissing: !routeTreeExists,
+    })) warn(13, spec.path, issue.message);
   }
 
   // --- 6. do_not_edit 생성물 헤더/마커 무결성 ---
-  for (const [name, entry] of Object.entries(manifest.artifacts || {})) {
-    if (entry.kind !== 'generated' || entry.do_not_edit !== true) continue;
-    const generatedPaths = [];
-    if (typeof entry.path === 'string' && entry.path) {
-      generatedPaths.push({ file: resolveManifestPath(entry.path, { docsDir, projectRoot }), requireHeader: true });
-    }
-    for (const pattern of manifestOutputs(entry)) {
-      for (const file of generatedOutputFiles(pattern, { projectRoot })) {
-        generatedPaths.push({ file, requireHeader: false });
-      }
-    }
-    for (const { file, requireHeader } of generatedPaths) {
-      if (!exists(file)) continue; // 아직 생성 전이면 건너뜀
-      const head = (readFileSafe(file) || '').slice(0, 400);
-      if (!requireHeader && !GENERATED_HEADER_HINT_RE.test(head)) continue;
-      if (!GENERATED_HEADER_RE.test(head)) {
-        add(6, file, `생성물(${name})의 GENERATED 헤더 훼손/부재`);
-      }
-    }
+  // Invalid internal manifest paths cannot be accepted here and ignored by the
+  // visual final deny. Both consumers use artifact-path.mjs; status never waives ownership.
+  for (const issue of generatedHeaderIssues(manifest, { projectRoot, docsDir, manifestPath })) {
+    add(6, issue.file, issue.message);
   }
 
-  // --- 11·12. 입력 결과물 + Reconciliation Register (input-reconciliation.md) ---
-  //   입력 결과물은 artifact_type 이 없어 일반 authoring walk 를 안 타므로(검사 1~10 이 통째로 스킵)
-  //   inputs/ 를 명시 경로로 한 번만 수집해 검사 11(입력 frontmatter)과 검사 12(register 교차검사)에 공유한다.
-  //   inputs/ 가 없으면 collectInputArtifacts 가 빈 배열을 줘 두 검사 모두 NO-OP.
+  // --- 11·12. 입력 결과물 + Reconciliation Register ---
   const inputArtifacts = collectInputArtifacts(path.join(docsDir, 'inputs'));
-
-  // 11. 입력 결과물 frontmatter (정본 입력 스키마). lib 는 절대경로를 주므로 add/warn 으로 상대화한다.
   const inputResult = validateInputArtifacts(inputArtifacts);
   for (const e of inputResult.errors) add(11, e.file, e.message);
   for (const w of inputResult.warnings) warn(11, w.file, w.message);
-
-  // 12. Reconciliation Register. _meta/ 는 일반 walk 에서 제외되므로 이 파일만 콕 집어 읽는다.
-  //   register 파일이 없으면 NO-OP(초기/선택적 도입). 검사 11 과 같은 inputArtifacts 로 미처리 교차검사.
   const registerFile = path.join(docsDir, '_meta', 'reconciliation-register.md');
   const register = parseReconciliationRegister(registerFile);
   const registerResult = validateReconciliationRegister({ register, inputArtifacts, registerFile, enforce: !!flags.enforce });
   for (const e of registerResult.errors) add(12, e.file, e.message);
   for (const w of registerResult.warnings) warn(12, w.file, w.message);
-
-  //   검사 12 확장 — Reconciliation Contract v2 (frontmatter `reconciliation_contract: 2` opt-in).
-  //   `## Reconciliation Items` effect 표 · summary projection · typed target/evidence 해소 ·
-  //   routing matrix · item provenance 필수값은 hard 다. 그 뒤 RR-ROUTE-101과 Decision 전용
-  //   RR-STALE-101/102/103은 같은 structured rows, input AST/evidence index, target index를 재사용하는
-  //   advisory warning이다. 이 자연어/현재-status heuristic은 --enforce로 승격하지 않고 actor,
-  //   historical Effect, Result 대체값을 추론하지 않는다. deterministic v2 오류는 --enforce와
-  //   무관하게 항상 에러이고 다른 v2 warning(RR-*-1xx/RP-1xx)도 hard 승격하지 않는다.
-  //   추가 recursive walk/AST parse는 없으며 v1 register면 이 블록은 아무 출력도 내지 않는다.
+  // Contract v2 hard structure and advisory semantic warnings retain separate authority.
   if (register.exists && parseRegisterContract(register.fm).version !== 1) {
     const targetIndex = buildReconciliationTargetIndex({ docs });
     const v2Result = validateReconciliationV2({ register, registerFile, inputArtifacts, targetIndex });
     for (const e of v2Result.errors) add(12, e.file, e.message);
     for (const w of v2Result.warnings) warn(12, w.file, w.message);
   }
-
-  // Mapping Provenance Contract v1은 Reconciliation Register/version과 독립적인 check 12 확장이다.
-  // 이미 수집한 docs/inputArtifacts만 전달하며 추가 recursive walk를 만들지 않는다.
   const mappingResult = validateMappingProvenance({ docs, inputArtifacts });
   for (const e of mappingResult.errors) add(12, e.file, e.message);
   for (const w of mappingResult.warnings) warn(12, w.file, w.message);
 
-  // --- 14. Policy `requires` 구문 검사 (warning-first, 하드 게이트 아님) ---
-  //   이미 로드된 policy(라인 위)/policyPath 를 재사용한다 — 재로딩 없음. 손상/부재 정책은 이미 exit 2 로
-  //   fail-closed 됐으므로 이 경로는 well-formed 매핑을 전제한다. 각 mode 의 requires 문자열을 파서
-  //   단일 출처(policy-condition.mjs, readiness 와 공유)로 검사해 malformed 를 저작 시점에 경고로 surface.
-  //   런타임(readiness.mjs)은 malformed 를 fail-closed 로 막지만(#135), 여기서는 저작자가 정책 파일을
-  //   저장할 때 바로 알아채게 하는 조기경보다. exit code 불변(경고만) — 하드 승격은 별도 사람 결정.
+  // --- 14. Policy requires syntax remains warning-first ---
   for (const [modeName, mode] of Object.entries(policy.modes || {})) {
-    // requires 는 리스트여야 한다. 스칼라/매핑으로 잘못 쓰면(`requires: "ci_lint == pass"`) 런타임
-    //   readiness 는 문자열을 문자 단위로 순회해 모드를 영구 fail-closed 시키지만, 그 신호가 저작 시점엔
-    //   보이지 않는다 — 여기서 명시 경고로 대칭을 맞춘다(리스트 부재/빈 배열은 정상, 무발화).
     if (mode?.requires != null && !Array.isArray(mode.requires)) {
-      warn(
-        14,
-        policyPath,
+      warn(14, policyPath,
         `mode '${modeName}' 의 requires 가 리스트(YAML 시퀀스)가 아님: ${JSON.stringify(mode.requires)} ` +
           `→ 해소: '- "fact OP value"' 형태의 리스트로 작성하세요. ` +
           `(런타임 readiness 는 리스트가 아닌 requires 를 fail-closed 로 막습니다)`,
@@ -991,9 +717,7 @@ function main() {
     for (const req of requires) {
       if (isWellFormedRequirement(req)) continue;
       const raw = typeof req === 'string' ? req : JSON.stringify(req);
-      warn(
-        14,
-        policyPath,
+      warn(14, policyPath,
         `mode '${modeName}' 의 requires 항목이 'fact OP value'(OP ∈ >= <= == > <) 형식이 아님: ${JSON.stringify(raw)} ` +
           `→ 해소: 단일 '='(→ '=='), '=>'(→ '>='), 연산자/값 없는 bare 토큰을 고치세요. ` +
           `(런타임 readiness 는 이 항목을 fail-closed 로 막습니다)`,
@@ -1002,72 +726,42 @@ function main() {
   }
 
   // --- 15. API Candidates v2 authoring contract (warning-first) ---
-  // Runtime authority is stricter: malformed tracking/path/shape and ownership conflicts keep
-  // api_candidate_deferrals_valid=false, so api-integrated-ui cannot open even though this
-  // authoring validator deliberately remains warning-only.
   const apiCandidateScreenEntries = new Map();
   const specByScreenId = new Map();
   for (const spec of liveSpecs) {
-    const contract = analyzeApiCandidateContract(spec, {
-      layout,
-      domain: spec.frontmatter.domain,
-    });
-    for (const candidateIssue of contract.issues) {
-      warn(15, spec.path, `${candidateIssue.code}: ${candidateIssue.message}`);
-    }
+    const contract = analyzeApiCandidateContract(spec, { layout, domain: spec.frontmatter.domain });
+    for (const candidateIssue of contract.issues) warn(15, spec.path, `${candidateIssue.code}: ${candidateIssue.message}`);
     if (contract.version === 2) {
       const screenId = publicScreenKeyOf(spec);
       specByScreenId.set(screenId, spec);
       apiCandidateScreenEntries.set(screenId, {
-        derived: {
-          api_candidate_contract_version: 2,
-          api_actionable_candidates: contract.actionable_candidates,
-          api_deferred_candidates: contract.deferred_candidates,
-        },
+        derived: { api_candidate_contract_version: 2, api_actionable_candidates: contract.actionable_candidates, api_deferred_candidates: contract.deferred_candidates },
       });
     }
   }
   for (const spec of surfaceSpecs) {
-    const contract = analyzeApiCandidateContract(spec, {
-      layout,
-      domain: spec.frontmatter.domain,
-    });
-    for (const candidateIssue of contract.issues) {
-      warn(15, spec.path, `${candidateIssue.code}: ${candidateIssue.message}`);
-    }
+    const contract = analyzeApiCandidateContract(spec, { layout, domain: spec.frontmatter.domain });
+    for (const candidateIssue of contract.issues) warn(15, spec.path, `${candidateIssue.code}: ${candidateIssue.message}`);
   }
   for (const [screenId, conflicts] of findApiCandidateOwnershipConflicts(apiCandidateScreenEntries)) {
     const spec = specByScreenId.get(screenId);
     if (!spec) continue;
-    for (const conflict of conflicts) {
-      warn(15, spec.path, `${conflict.code}: ${conflict.message}`);
-    }
+    for (const conflict of conflicts) warn(15, spec.path, `${conflict.code}: ${conflict.message}`);
   }
 
   // --- 결과 출력 ---
   if (flags.json) {
-    process.stdout.write(
-      JSON.stringify({ ok: errors.length === 0, count: errors.length, errors, warnings }, null, 2) +
-        '\n',
-    );
+    process.stdout.write(JSON.stringify({ ok: errors.length === 0, count: errors.length, errors, warnings }, null, 2) + '\n');
   } else {
-    if (errors.length === 0) {
-      process.stdout.write('workflow:validate — OK (검사 12종 통과)\n');
-    } else {
+    if (errors.length === 0) process.stdout.write('workflow:validate — OK (검사 12종 통과)\n');
+    else {
       process.stdout.write(`workflow:validate — ${errors.length} 건 위반\n`);
-      for (const e of errors) {
-        process.stdout.write(`  [검사 ${e.check}] ${e.file}: ${e.message}\n`);
-      }
+      for (const e of errors) process.stdout.write(`  [검사 ${e.check}] ${e.file}: ${e.message}\n`);
     }
-    for (const w of warnings) {
-      process.stdout.write(`  [경고 ${w.check}] ${w.file}: ${w.message}\n`);
-    }
+    for (const w of warnings) process.stdout.write(`  [경고 ${w.check}] ${w.file}: ${w.message}\n`);
   }
-  // process.exit() 금지: stdout 이 pipe 면 8KB(macOS pipe buffer) 초과분이 flush 되기 전에
-  // 프로세스가 죽어 JSON 이 잘린다 — readiness-eval.mjs 와 같은 flush-safe 자연 종료 계약.
+  // Flush-safe natural exit preserves large stdout JSON on macOS pipes.
   process.exitCode = errors.length === 0 ? 0 : 1;
 }
 
-// 직접 실행될 때만 main()
-// runCli: 레이아웃 설정 오류(미정의 role·부재 --layout)를 exit 2 로 surface(stack trace+exit 1 차단).
 if (isCliEntry(import.meta.url)) runCli(main, 'validate');
