@@ -3,33 +3,12 @@ import path from 'node:path';
 
 import { GENERATED_HEADER_RE, globToRegExp } from './glob.mjs';
 import { readFileSafe } from './util.mjs';
+import {
+  canonicalManifestPattern, canonicalRepositoryPath, manifestGeneratedPaths, resolveManifestFiles,
+} from './artifact-path.mjs';
 
-function toPosix(value) {
-  return String(value).split(path.sep).join('/');
-}
-
-function manifestOutputs(entry) {
-  if (!Array.isArray(entry?.outputs)) return [];
-  return entry.outputs
-    .map((output) => {
-      if (typeof output === 'string') return output;
-      return typeof output?.path === 'string' ? output.path : null;
-    })
-    .filter(Boolean);
-}
-
-function remapDocs(pattern, docsRelative) {
-  const raw = String(pattern).replace(/\\/g, '/');
-  const canonical = 'docs/frontend-workflow/';
-  return raw.startsWith(canonical)
-    ? `${docsRelative}/${raw.slice(canonical.length)}`
-    : raw;
-}
-
-// Common generated ownership contract: every manifest-declared generated/do-not-edit
-// output is owned when the concrete regular file also carries the canonical
-// GENERATED/DO NOT EDIT marker. status describes generator availability only; a
-// planned generator never turns an existing generated file into a human-editable one.
+// Shared selector with validate check 6. status is generator availability, and
+// generated:true is descriptive metadata, not permission to shed do_not_edit.
 export function collectGeneratedOwnershipEntries(
   manifest,
   { docsRelative = 'docs/frontend-workflow' } = {},
@@ -40,19 +19,12 @@ export function collectGeneratedOwnershipEntries(
   const entries = [];
   for (const artifactId of Object.keys(artifacts).sort()) {
     const artifact = artifacts[artifactId] || {};
-    if (
-      artifact.kind !== 'generated' ||
-      artifact.generated !== true ||
-      artifact.do_not_edit !== true
-    ) {
-      continue;
-    }
-    const patterns = [artifact.path, ...manifestOutputs(artifact)].filter(Boolean);
-    for (const [index, pattern] of patterns.entries()) {
+    if (artifact.kind !== 'generated' || artifact.do_not_edit !== true) continue;
+    for (const [index, output] of manifestGeneratedPaths(artifact, artifactId).entries()) {
       entries.push({
         owner_id: `generated:${artifactId}:${index}`,
         artifact_id: artifactId,
-        pattern: remapDocs(pattern, docsRelative),
+        pattern: canonicalManifestPattern(output.raw, { docsRelative, label: output.label }),
         status: artifact.status || null,
         do_not_edit: true,
         origin: 'artifact-manifest+generated-header',
@@ -73,23 +45,27 @@ export function hasGeneratedOwnershipHeader(absolutePath) {
   }
 }
 
-function concreteFile(root, file) {
-  return path.join(root, ...String(file).split('/'));
-}
-
 export function resolveGeneratedOwnership({ file, entries = [], roots = [] } = {}) {
-  const normalized = toPosix(file);
-  const matching = entries.filter((entry) => globToRegExp(entry.pattern).test(normalized));
+  // Validate declarations BEFORE matching the requested file. Otherwise an alias
+  // fails the string match and silently removes the generated final deny.
+  for (const entry of entries) {
+    canonicalManifestPattern(entry.pattern);
+    for (const rootEntry of roots) {
+      const root = typeof rootEntry === 'string' ? rootEntry : rootEntry?.root;
+      if (root) resolveManifestFiles(root, entry.pattern, { label: entry.owner_id || 'generated output' });
+    }
+  }
+  const matching = entries.filter((entry) => globToRegExp(entry.pattern).test(file));
   const owners = [];
   for (const entry of matching) {
     for (const rootEntry of roots) {
       const root = typeof rootEntry === 'string' ? rootEntry : rootEntry?.root;
       if (!root) continue;
-      const absolute = concreteFile(root, normalized);
-      if (!hasGeneratedOwnershipHeader(absolute)) continue;
+      const ref = canonicalRepositoryPath(root, file, { label: 'generated concrete file', type: 'file' });
+      if (!ref.exists || !hasGeneratedOwnershipHeader(ref.absolute)) continue;
       owners.push({
         ...entry,
-        file: normalized,
+        file,
         matched_pattern: entry.pattern,
         snapshot: typeof rootEntry === 'string' ? 'snapshot' : rootEntry.kind || 'snapshot',
       });
@@ -98,9 +74,5 @@ export function resolveGeneratedOwnership({ file, entries = [], roots = [] } = {
   }
   if (owners.length === 0) return null;
   owners.sort((left, right) => left.owner_id.localeCompare(right.owner_id));
-  return {
-    ...owners[0],
-    ambiguous: owners.length > 1,
-    owners,
-  };
+  return { ...owners[0], ambiguous: owners.length > 1, owners };
 }
