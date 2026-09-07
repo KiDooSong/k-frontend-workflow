@@ -26,9 +26,10 @@ function remapDocs(pattern, docsRelative) {
     : raw;
 }
 
-// Common generated ownership contract: an active manifest output is only owned when
-// the concrete regular file also carries the canonical GENERATED/DO NOT EDIT marker.
-// This keeps broad codegen output globs from claiming human-authored files.
+// Common generated ownership contract: every manifest-declared generated/do-not-edit
+// output is owned when the concrete regular file also carries the canonical
+// GENERATED/DO NOT EDIT marker. status describes generator availability only; a
+// planned generator never turns an existing generated file into a human-editable one.
 export function collectGeneratedOwnershipEntries(
   manifest,
   { docsRelative = 'docs/frontend-workflow' } = {},
@@ -42,8 +43,7 @@ export function collectGeneratedOwnershipEntries(
     if (
       artifact.kind !== 'generated' ||
       artifact.generated !== true ||
-      artifact.do_not_edit !== true ||
-      artifact.status !== 'active'
+      artifact.do_not_edit !== true
     ) {
       continue;
     }
@@ -53,7 +53,7 @@ export function collectGeneratedOwnershipEntries(
         owner_id: `generated:${artifactId}:${index}`,
         artifact_id: artifactId,
         pattern: remapDocs(pattern, docsRelative),
-        status: artifact.status,
+        status: artifact.status || null,
         do_not_edit: true,
         origin: 'artifact-manifest+generated-header',
       });
