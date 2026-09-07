@@ -40,6 +40,21 @@ function run(script, args, cwd) {
     timeout: SPAWN_TIMEOUT,
   });
 }
+function requireCaseAlias(t, root, canonical, alias) {
+  let samePhysical = false;
+  try {
+    const first = fs.statSync(path.join(root, canonical), { bigint: true });
+    const second = fs.statSync(path.join(root, alias), { bigint: true });
+    samePhysical = first.dev === second.dev && first.ino === second.ino;
+  } catch {}
+  // Do not use realpath string equality to decide whether to skip: the behavior
+  // under test is precisely that case aliases can identify one file differently.
+  if (process.platform === 'darwin' && process.env.CI) {
+    assert.equal(samePhysical, true, 'macOS CI must exercise case-insensitive identity, not silently skip it');
+  }
+  if (!samePhysical) t.skip('requires a case-insensitive filesystem');
+  return samePhysical;
+}
 function stateRows() {
   return ['loading', 'empty', 'error', 'success', 'disabled', 'refreshing']
     .map((state) => `| ${state} | fixture | ${state} UI | none |`)
@@ -248,19 +263,35 @@ test('non-canonical .. screen_entry alias is a physical co-owner blocker', (t) =
 test('case-only screen_entry alias is a physical co-owner blocker on case-insensitive filesystems', (t) => {
   const alias = 'src/features/shop/screens/shopscreen.tsx';
   const root = createFixture(t, { aliasPath: alias });
-  let samePhysical = false;
-  try {
-    samePhysical = fs.realpathSync(path.join(root, ...alias.split('/'))) === fs.realpathSync(path.join(root, ...SCREEN_PATH.split('/')));
-  } catch {}
-  if (!samePhysical) {
-    t.skip('requires a case-insensitive filesystem (covered by macOS smoke)');
-    return;
-  }
+  if (!requireCaseAlias(t, root, SCREEN_PATH, alias)) return;
   const result = run(READINESS, visualArgs(root), root);
   assert.equal(result.status, 0, result.stderr || result.stdout);
   const json = JSON.parse(result.stdout);
   assert.equal(json.intent_authorization.applicable, false, result.stdout);
   assert.ok(json.intent_authorization.reasons.some((entry) => entry.code === 'VR-SCREEN-010'), result.stdout);
+  write(root, SCREEN_PATH, 'export const ShopScreen = () => "refreshed";\n');
+  git(root, 'add', SCREEN_PATH);
+  const staged = run(BACKSTOP, [...visualArgs(root), '--staged', '--enforce'], root);
+  assert.equal(staged.status, 1, staged.stderr || staged.stdout);
+  const stagedJson = JSON.parse(staged.stdout);
+  assert.ok(stagedJson.intent_authorization.reasons.some((entry) => entry.code === 'VR-SCREEN-010'), staged.stdout);
+});
+
+test('inode-verified case-only policy and docs aliases cannot bypass forward or staged authority', (t) => {
+  const root = createFixture(t, { explicitResources: true });
+  if (!requireCaseAlias(t, root, 'config/policy.yaml', 'Config/Policy.yaml')) return;
+  const resources = ['--policy', 'config/policy.yaml', '--manifest', 'config/manifest.yaml', '--layout', 'config/layout.yaml'];
+  for (const alias of [['--policy', 'Config/Policy.yaml'], ['--docs', 'Docs/frontend-workflow']]) {
+    const forward = run(READINESS, [...visualArgs(root), ...resources, ...alias], root);
+    assert.equal(forward.status, 2, forward.stdout);
+    assert.match(forward.stderr, /spelling.*physical path/);
+  }
+  write(root, SCREEN_PATH, 'export const ShopScreen = () => "refresh";\n');
+  fs.appendFileSync(path.join(root, 'config/policy.yaml'), '\n# changed authority\n');
+  git(root, 'add', SCREEN_PATH, 'config/policy.yaml');
+  const staged = run(BACKSTOP, [...visualArgs(root), ...resources, '--policy', 'Config/Policy.yaml', '--staged', '--enforce'], root);
+  assert.equal(staged.status, 2, staged.stdout);
+  assert.match(staged.stderr, /spelling.*physical path/);
 });
 
 test('forward rejects docs/src overlap before dirty source can enter the authority overlay', (t) => {
@@ -316,7 +347,7 @@ test('visual packet -> staged report -> run preserves audit and re-evaluates bac
 
 test('shipped implement-screen documents the visual tuple and staged backstop path', () => {
   const skill = fs.readFileSync(SKILL, 'utf8');
-  for (const token of ['--intent visual-refresh', '--input <INPUT_ID>', 'workflow:run', '--staged', 'visual_authority_applicable']) {
+  for (const token of ['--intent visual-refresh', '--input <INPUT_ID>', 'workflow:run', '--staged', 'visual_authority_applicable', 'visual_prework.path_allowed:true', '--readiness', 'HALT_TOOL_ERROR']) {
     assert.ok(skill.includes(token), `implement-screen missing ${token}`);
   }
 });
