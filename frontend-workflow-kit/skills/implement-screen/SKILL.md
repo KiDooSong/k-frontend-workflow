@@ -49,7 +49,9 @@ npm run workflow:run -- \
   --screen <ID> --requested-mode <READINESS_MODE> \
   --intent visual-refresh --input <INPUT_ID> --path <SCREEN_ENTRY> --json
 ```
-`HALT_READY_FOR_WORK`일 때만 구현 후보 상태다. Packet의 `visual_authority_applicable`, selected input/path/tree ID는 audit-only이고 최종 권한은 구현 snapshot에서 backstop이 재계산한다.
+`HALT_READY_FOR_WORK`일 때만 구현 후보 상태다. `visual_prework.path_allowed:true`와 요청한 screen/input/authorized_path/checked_path의 exact 일치를 함께 확인한다. intent 적용 가능만으로 path 허용을 추정하지 않는다.
+Packet의 `visual_authority_applicable`, `visual_path_allowed`, selected input/path/tree ID는 audit-only다. 거부·불일치는 `HALT_AMBIGUITY`이며, 최종 권한은 구현 snapshot에서 backstop이 재계산한다.
+visual Packet/Run에서는 `--readiness` 저장 파일 override가 금지된다. 현재 readiness를 실행하고, 이전 Packet/JSON을 새 path의 권한으로 재사용하지 않는다.
 
 ## 2. 컨텍스트 / 구현
 대상 화면·도메인의 ScreenSpec, domain rules/flows, navigation map, component catalog/gap, Open Decisions/Conflicts/Unknowns, API manifest와 필요한 reconcile 산출물만 읽는다.
@@ -78,6 +80,8 @@ npm run workflow:run -- \
   --intent visual-refresh --input <INPUT_ID> --path <SCREEN_ENTRY> \
   --staged --json
 ```
+`forbidden.status:error`는 `HALT_TOOL_ERROR`다. `forbidden.ok:false`의 violations와 snapshot을 보고하며, `DONE_PENDING_REVIEW`나 exit 0을 경계 통과·승인으로 읽지 않는다.
+선택적 `--review <path>`는 실제 review 파일의 metadata/findings를 advisory evidence로 운반한다. 누락 파일은 입력 오류이며 review가 권한을 열지는 않는다.
 visual이면 필요 시 `workflow:visual-consistency -- --docs <docsDir> --src <srcDir> --json`도 실행한다. 이는 warning-first evidence다.
 최종 보고에는 변경 파일, readiness mode, visual이면 Input ID/exact path/snapshot kind/backstop 결과, validation, 남은 Decision/Unknown/Conflict/Gap, 의도적으로 하지 않은 일을 적는다.
 
