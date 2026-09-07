@@ -24,7 +24,6 @@ export function visualAuditFromReadiness(data) {
 }
 
 // Check the copied decision, never infer it from intent applicability or broad paths.
-// Wrong concrete paths are normal denied results, not malformed evaluator output.
 export function visualPreworkIssues(audit, { screen, input, checkedPath }) {
   if (!audit) return ['visual-refresh audit is unavailable'];
   const issues = [];
@@ -33,7 +32,10 @@ export function visualPreworkIssues(audit, { screen, input, checkedPath }) {
   if (audit.input_id !== input) issues.push('selected input does not match --input');
   if (audit.authorized_path !== checkedPath) issues.push('authorized path does not match --path');
   if (audit.checked_path !== checkedPath) issues.push('checked path does not match --path');
-  if (audit.authority_applicable !== true) issues.push('visual-refresh authority is not applicable');
+  if (audit.authority_applicable !== true) {
+    issues.push('visual-refresh authority is not applicable');
+    for (const reason of audit.reasons || []) issues.push(`${reason.code || 'authority'}: ${reason.message || ''}`);
+  }
   if (audit.path_allowed !== true || audit.path_authorization?.allowed !== true ||
       audit.path_authorization?.checked_path !== checkedPath) {
     issues.push(audit.path_reason || 'concrete visual path authorization is not allowed');
@@ -61,13 +63,50 @@ export function injectVisualAuditFrontmatter(markdown, audit) {
   return markdown.replace(/^---\n/, `---\n${lines.join('\n')}\n`);
 }
 
+// A normal negative result can precede construction of a readiness entry. Keep it
+// as a non-executable packet, not an absorbed sentinel or an invented mode/cap.
+export function visualStopPacket({ audit, screen, requestedMode, readinessSource, date, seq = '001' }) {
+  const envelope = {
+    packet_id: `WP-${screen}-${requestedMode}-${seq}`,
+    target_screen: screen,
+    requested_mode: requestedMode,
+    readiness_mode: null,
+    readiness_source: readinessSource,
+    packet_applicable: false,
+    non_executable: true,
+    mode_known: false,
+    over_ceiling: null,
+    blocking_count: 0,
+    d_cand: [],
+    u_cand: [],
+    visual_refresh: audit,
+    out: null,
+    note: 'normal visual authority inapplicability; no readiness mode or execution permission was produced',
+  };
+  const q = JSON.stringify;
+  const markdown = injectVisualAuditFrontmatter([
+    '---',
+    `packet_id: ${q(envelope.packet_id)}`,
+    `target_screen: ${q(screen)}`,
+    `requested_mode: ${q(requestedMode)}`,
+    'readiness_mode: null',
+    `readiness_source: ${q(readinessSource)}`,
+    'packet_applicable: false',
+    'non_executable: true',
+    `date: ${q(date)}`,
+    '---', '',
+    '# Visual pre-work stop', '',
+    'No executable Work Packet was issued. Original authority reasons:',
+    '```json', JSON.stringify(audit, null, 2), '```', '',
+  ].join('\n'), audit);
+  return { envelope, markdown };
+}
+
 export function appendVisualPreworkStatus(markdown, audit, issues = []) {
   if (!audit) return markdown;
   const lines = [
     '## Visual Pre-work (current readiness decision; audit-only)',
-    '```json',
-    JSON.stringify(audit, null, 2),
-    '```',
+    '```json', JSON.stringify(audit, null, 2), '```',
     ...(issues.length ? ['Pre-work stop reasons:', ...issues.map((issue) => `- ${issue}`)] : []),
     'This copied decision is not a reusable grant. Post-work authority is independently evaluated from the selected snapshot.',
   ];
