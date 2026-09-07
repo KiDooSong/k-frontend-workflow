@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { DEFAULTS, KIT_ROOT, parseArgs, yamlStringify } from './util.mjs';
+import { DEFAULTS, parseArgs, yamlStringify } from './util.mjs';
 import { enforceCliFlagContract } from './cli-args.mjs';
-import { loadLayoutProfile } from './layout-profile.mjs';
+import { normalizeVisualAuthorityTuple } from './visual-refresh-boundary-paths.mjs';
 import {
   canonicalAuthorityPath,
   evaluateVisualRefreshAuthority,
@@ -34,158 +34,6 @@ function requireString(flags, name) {
 
 function optionalString(flags, name) {
   return own(flags, name) ? requireString(flags, name) : undefined;
-}
-
-function toPosix(value) {
-  return String(value).split(path.sep).join('/');
-}
-
-function outside(root, target) {
-  const relative = path.relative(root, target);
-  return relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative);
-}
-
-function sameOrAncestor(parent, child) {
-  return parent === child || child.startsWith(`${parent}/`);
-}
-
-function canonicalPhysicalRelative(
-  projectRoot,
-  raw,
-  { label, required = false, type = null } = {},
-) {
-  const relative = canonicalAuthorityPath(raw, label);
-  const absoluteRoot = fs.realpathSync(projectRoot);
-  const lexical = path.resolve(absoluteRoot, ...relative.split('/'));
-  if (outside(absoluteRoot, lexical)) {
-    throw new VisualRefreshError(`${label}가 --root 밖으로 이탈함: ${relative}`);
-  }
-  let stat;
-  try {
-    stat = fs.lstatSync(lexical);
-  } catch (error) {
-    if (!required && error?.code === 'ENOENT') return relative;
-    throw new VisualRefreshError(`${label}를 읽을 수 없음: ${relative} (${error?.code || error?.message || error})`);
-  }
-  if (stat.isSymbolicLink()) {
-    throw new VisualRefreshError(`${label}는 symlink/junction을 사용할 수 없음: ${relative}`);
-  }
-  if (type === 'file' && !stat.isFile()) {
-    throw new VisualRefreshError(`${label}는 regular file이어야 함: ${relative}`);
-  }
-  if (type === 'directory' && !stat.isDirectory()) {
-    throw new VisualRefreshError(`${label}는 directory여야 함: ${relative}`);
-  }
-  const real = fs.realpathSync(lexical);
-  if (outside(absoluteRoot, real)) {
-    throw new VisualRefreshError(`${label}의 physical path가 --root 밖으로 이탈함: ${relative}`);
-  }
-  const canonical = toPosix(path.relative(absoluteRoot, real));
-  if (canonical !== relative) {
-    throw new VisualRefreshError(
-      `${label} spelling이 repository physical path와 다름: ${relative} -> ${canonical}`,
-    );
-  }
-  return canonical;
-}
-
-function patternStaticRoot(raw) {
-  const segments = toPosix(raw).split('/').filter(Boolean);
-  const fixed = [];
-  for (const segment of segments) {
-    if (/[{}*?\[\]]/.test(segment)) break;
-    fixed.push(segment);
-  }
-  return fixed.join('/');
-}
-
-function values(value) {
-  if (value == null) return [];
-  return Array.isArray(value) ? value : [value];
-}
-
-function implementationRoots(layout) {
-  const roots = new Set();
-  const addPattern = (pattern) => {
-    const root = patternStaticRoot(pattern);
-    if (root) roots.add(root);
-  };
-  const addRoles = (roles) => {
-    for (const value of Object.values(roles || {})) {
-      for (const pattern of values(value)) addPattern(pattern);
-    }
-  };
-  const addLayers = (layers) => {
-    for (const layer of layers || []) {
-      for (const pattern of values(layer?.glob)) addPattern(pattern);
-    }
-  };
-
-  addRoles(layout?.roles);
-  addLayers(layout?.layers);
-  for (const domain of Object.keys(layout?.domains || {})) {
-    if (typeof layout.rolesFor === 'function') addRoles(layout.rolesFor(domain));
-    if (typeof layout.layersFor === 'function') addLayers(layout.layersFor(domain));
-  }
-  return [...roots].sort();
-}
-
-function assertAuthorityOverlaySeparation(options, layout) {
-  const docs = options.docs || DEFAULTS.docs;
-  const src = options.src || DEFAULTS.src;
-  if (sameOrAncestor(docs, src) || sameOrAncestor(src, docs)) {
-    throw new VisualRefreshError(
-      `visual-refresh forward authority에서 --docs와 --src는 겹칠 수 없음: docs=${docs}, src=${src}`,
-    );
-  }
-
-  const implementation = new Set([src, ...implementationRoots(layout)]);
-  for (const root of implementation) {
-    if (sameOrAncestor(docs, root) || sameOrAncestor(root, docs)) {
-      throw new VisualRefreshError(
-        `visual-refresh authority docs overlay가 implementation role/layer root와 겹침: docs=${docs}, implementation=${root}`,
-      );
-    }
-  }
-  for (const key of ['policy', 'manifest', 'layout', 'ci']) {
-    const resource = options[key];
-    if (!resource) continue;
-    for (const root of implementation) {
-      if (sameOrAncestor(root, resource) || sameOrAncestor(resource, root)) {
-        throw new VisualRefreshError(
-          `--${key} authority resource는 implementation role/layer root와 분리돼야 함: resource=${resource}, implementation=${root}`,
-        );
-      }
-    }
-  }
-}
-
-function normalizeTupleForRepository(tuple, repository) {
-  const projectRoot = repository.projectRoot;
-  const options = {
-    docs: tuple.options.docs
-      ? canonicalPhysicalRelative(projectRoot, tuple.options.docs, { label: '--docs', type: 'directory' })
-      : undefined,
-    src: tuple.options.src
-      ? canonicalPhysicalRelative(projectRoot, tuple.options.src, { label: '--src', type: 'directory' })
-      : undefined,
-  };
-  for (const key of ['policy', 'manifest', 'layout', 'ci']) {
-    if (tuple.options[key]) {
-      options[key] = canonicalPhysicalRelative(projectRoot, tuple.options[key], {
-        label: `--${key}`,
-        type: 'file',
-        required: true,
-      });
-    }
-  }
-
-  const layoutFlags = options.layout
-    ? { layout: path.join(projectRoot, ...options.layout.split('/')) }
-    : {};
-  const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags: layoutFlags });
-  assertAuthorityOverlaySeparation(options, layout);
-  return { ...tuple, options };
 }
 
 function parseTuple(argv, kind) {
@@ -228,6 +76,8 @@ function parseTuple(argv, kind) {
     layout: optionalString(flags, 'layout'),
     ci: optionalString(flags, 'ci'),
   };
+  // Syntax is checked before Git I/O. Physical identity is checked in the view
+  // actually supplying authority: current authoring for forward, B for backstop.
   for (const [name, value] of Object.entries(options)) {
     if (value !== undefined) canonicalAuthorityPath(value, `--${name}`);
   }
@@ -250,6 +100,7 @@ function publicResult(result) {
   const { _context, ...publicFields } = result;
   if (_context && publicFields.intent_authorization?.intent === VISUAL_REFRESH_INTENT) {
     const snapshot = publicFields.intent_authorization.snapshot || {};
+    const decision = publicFields.path_authorization || null;
     publicFields.visual_refresh_audit = {
       intent: VISUAL_REFRESH_INTENT,
       selected_screen: _context.selected_screen || null,
@@ -257,9 +108,11 @@ function publicResult(result) {
       authorized_path:
         _context.authorized_path || publicFields.intent_authorization.authorized_path || null,
       checked_path:
-        publicFields.path_authorization?.checked_path ||
-        publicFields.intent_authorization.checked_path ||
-        null,
+        decision?.checked_path || publicFields.intent_authorization.checked_path || null,
+      path_allowed: decision?.allowed === true,
+      path_reason: decision?.reason ?? null,
+      path_grant: decision?.grant ?? null,
+      path_authorization: decision,
       source_tree: snapshot.source_tree || null,
       destination_tree: snapshot.destination_tree || null,
       diff_kind: snapshot.diff_kind || null,
@@ -328,23 +181,28 @@ function overlayAuthorityPath(projectRoot, destinationRoot, relative) {
   });
 }
 
-// Forward inspection uses current authority documents, but never current source files. Start from
-// HEAD^{tree} and overlay only docs plus explicit authority-resource overrides. This prevents a
-// dirty --src or screen edit from manufacturing the readiness fact that would authorize itself.
+// Forward uses current authoring but never current implementation facts. The
+// resolved role/layer boundary is checked both before copying and in the resulting
+// authority view, so a changing layout cannot bypass the overlay guard.
 function materializeForwardAuthorityView(repository, sourceTree, options) {
   const destination = materializeGitTree({
     repositoryRoot: repository.repositoryRoot,
     projectPrefix: repository.projectPrefix,
     tree: sourceTree,
   });
-  const overlays = new Set([options.docs || DEFAULTS.docs]);
-  for (const key of ['policy', 'manifest', 'layout', 'ci']) {
-    if (options[key]) overlays.add(options[key]);
+  try {
+    const overlays = new Set([options.docs || DEFAULTS.docs]);
+    for (const key of ['policy', 'manifest', 'layout', 'ci']) {
+      if (options[key]) overlays.add(options[key]);
+    }
+    for (const relative of overlays) {
+      overlayAuthorityPath(repository.projectRoot, destination.root, relative);
+    }
+    return destination;
+  } catch (error) {
+    destination.cleanup();
+    throw error;
   }
-  for (const relative of overlays) {
-    overlayAuthorityPath(repository.projectRoot, destination.root, relative);
-  }
-  return destination;
 }
 
 function isCurrentRegularFile(projectRoot, relative) {
@@ -386,7 +244,6 @@ function applyForwardFileIdentity(result, projectRoot) {
 export function runVisualReadinessCli(argv = process.argv.slice(2)) {
   let tuple = parseTuple(argv, 'readiness');
   const repository = resolveRepositoryContext(tuple.root || process.cwd());
-  tuple = normalizeTupleForRepository(tuple, repository);
   const source = sourceHeadContext(repository);
   if (!source) {
     const output = {
@@ -394,24 +251,22 @@ export function runVisualReadinessCli(argv = process.argv.slice(2)) {
         intent: VISUAL_REFRESH_INTENT,
         input_id: tuple.input,
         applicable: false,
-        reasons: [
-          {
-            code: 'VR-GIT-001',
-            message: 'HEAD가 없어 source authority context를 만들 수 없음',
-          },
-        ],
+        reasons: [{ code: 'VR-GIT-001', message: 'HEAD가 없어 source authority context를 만들 수 없음' }],
       },
     };
     emit(output, tuple.flags);
     process.exitCode = 0;
     return output;
   }
-  const destination = materializeForwardAuthorityView(
-    repository,
-    source.source_tree,
-    tuple.options,
-  );
+  let destination;
   try {
+    tuple = normalizeVisualAuthorityTuple(tuple, {
+      authorityRoot: repository.projectRoot, sourceRoot: source.materialized.root,
+    });
+    destination = materializeForwardAuthorityView(repository, source.source_tree, tuple.options);
+    tuple = normalizeVisualAuthorityTuple(tuple, {
+      authorityRoot: destination.root, sourceRoot: source.materialized.root,
+    });
     const output = applyForwardFileIdentity(
       evaluateVisualRefreshAuthority({
         sourceRoot: source.materialized.root,
@@ -434,7 +289,7 @@ export function runVisualReadinessCli(argv = process.argv.slice(2)) {
     return output;
   } finally {
     source.materialized.cleanup();
-    destination.cleanup();
+    destination?.cleanup();
   }
 }
 
@@ -466,7 +321,6 @@ function normalizeChangedRecords(records, projectPrefix) {
 export function runVisualForbiddenPathsCli(argv = process.argv.slice(2)) {
   let tuple = parseTuple(argv, 'backstop');
   const repository = resolveRepositoryContext(tuple.root || process.cwd());
-  tuple = normalizeTupleForRepository(tuple, repository);
   const diff = resolveVisualDiffContext({
     repositoryRoot: repository.repositoryRoot,
     staged: tuple.flags.staged === true,
@@ -478,12 +332,18 @@ export function runVisualForbiddenPathsCli(argv = process.argv.slice(2)) {
     projectPrefix: repository.projectPrefix,
     tree: diff.source_tree,
   });
-  const destination = materializeGitTree({
-    repositoryRoot: repository.repositoryRoot,
-    projectPrefix: repository.projectPrefix,
-    tree: diff.destination_tree,
-  });
+  let destination;
   try {
+    destination = materializeGitTree({
+      repositoryRoot: repository.repositoryRoot,
+      projectPrefix: repository.projectPrefix,
+      tree: diff.destination_tree,
+    });
+    // A/B authority is independent of the current checkout's resource existence,
+    // spelling, symlinks or bytes. Only the captured destination supplies resources.
+    tuple = normalizeVisualAuthorityTuple(tuple, {
+      authorityRoot: destination.root, sourceRoot: source.root,
+    });
     const authority = evaluateVisualRefreshAuthority({
       sourceRoot: source.root,
       destinationRoot: destination.root,
@@ -517,9 +377,7 @@ export function runVisualForbiddenPathsCli(argv = process.argv.slice(2)) {
       ok: violations.length === 0,
       enforced,
       intent_authorization: authority.intent_authorization,
-      ...(authority.path_authorization
-        ? { path_authorization: authority.path_authorization }
-        : {}),
+      ...(authority.path_authorization ? { path_authorization: authority.path_authorization } : {}),
       violations,
       changed_records: normalizeChangedRecords(diff.records, repository.projectPrefix),
       diff_context: {
@@ -533,7 +391,7 @@ export function runVisualForbiddenPathsCli(argv = process.argv.slice(2)) {
     return output;
   } finally {
     source.cleanup();
-    destination.cleanup();
+    destination?.cleanup();
   }
 }
 
