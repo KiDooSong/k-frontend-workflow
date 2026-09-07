@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import path from 'node:path';
 
 import { GENERATED_HEADER_RE, globToRegExp } from './glob.mjs';
 import { readFileSafe } from './util.mjs';
@@ -46,6 +45,15 @@ export function hasGeneratedOwnershipHeader(absolutePath) {
 }
 
 export function resolveGeneratedOwnership({ file, entries = [], roots = [] } = {}) {
+  // Runtime calls this for the selected stable screen BEFORE any exact-path
+  // grant. Check that target even when no generated pattern matches it. Thus a
+  // selected declaration cannot authorize its own case/intermediate-symlink
+  // alias: source and destination must both use the same canonical `file` value.
+  // Missing files remain absence; the authority core owns existence/lifecycle.
+  for (const rootEntry of roots) {
+    const root = typeof rootEntry === 'string' ? rootEntry : rootEntry?.root;
+    if (root) canonicalRepositoryPath(root, file, { label: 'visual concrete ownership target', type: 'file' });
+  }
   // Validate declarations BEFORE matching the requested file. Otherwise an alias
   // fails the string match and silently removes the generated final deny.
   for (const entry of entries) {
