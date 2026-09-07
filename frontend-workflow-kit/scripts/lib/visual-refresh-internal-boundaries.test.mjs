@@ -195,11 +195,14 @@ function assertManifestRejected(repo, project) {
   const args = [...tuple(project), '--manifest', 'config/manifest.yaml'];
   const forward = run('readiness', args, repo);
   assert.equal(forward.status, 2, forward.stdout);
-  assert.match(forward.stderr, /manifest|generated:|repository|symlink|segment|spelling/);
+  // All invalid spellings must name the declaration being rejected. Specific
+  // wording differs correctly for absolute, backslash, dot and physical aliases.
+  assert.match(forward.stderr, /review-generated-screen/);
   write(project, ENTRY, HEADER + 'export const ShopScreen = () => "changed";\n');
   git(repo, 'add', path.relative(repo, path.join(project, ENTRY)));
   const backstop = run('backstop', [...args, '--staged', '--enforce'], repo);
   assert.equal(backstop.status, 2, backstop.stdout);
+  assert.match(backstop.stderr, /review-generated-screen/);
   const validation = json(run('validate', [
     '--root', project, '--docs', path.join(project, DOCS), '--src', path.join(project, 'src'),
     '--manifest', path.join(project, 'config/manifest.yaml'), '--json',
@@ -302,6 +305,16 @@ test('canonical path resolver retains concrete dynamic-route bracket and brace f
     assert.equal(canonicalRepositoryPath(root, file, { required: true, type: 'file' }).relative, file);
   }
   assert.equal(resolveManifestFiles(root, 'src/[slug].tsx').length, 1);
+});
+
+test('valid wildcard outputs enumerate files rather than mistaking directories for outputs', (t) => {
+  const root = temporary(t);
+  const files = ['src/a.ts', 'src/nested/b.ts', 'src/nested/folder.ts/c.ts'];
+  for (const file of files) write(root, file, 'export {};\n');
+  const relative = (pattern) => resolveManifestFiles(root, pattern).map((file) => path.relative(root, file).split(path.sep).join('/'));
+  assert.deepEqual(relative('src/**'), files);
+  assert.deepEqual(relative('src/*.ts'), ['src/a.ts']);
+  assert.deepEqual(relative('src/{domain}/*.ts'), ['src/nested/b.ts']);
 });
 
 for (const kind of ['missing-input', 'missing-screen', 'no-head', 'invalid-screen-identity']) {
