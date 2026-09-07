@@ -212,8 +212,26 @@ function physicalDeclaration(root, raw, authorizedPath) {
     // The authority core separately requires an existing regular authorized file.
   }
 
+  // realpath may preserve a caller's case spelling even when both names refer to
+  // one case-insensitive filesystem entry. Confined dev/inode identity supplies a
+  // deny-only co-owner observation; an alias is never promoted to a valid owner.
+  let sameFileIdentity = false;
+  if (candidateReal != null && authorizedReal != null) {
+    try {
+      const realRoot = fs.realpathSync(absoluteRoot);
+      if (!outside(realRoot, candidateReal) && !outside(realRoot, authorizedReal)) {
+        const candidateStat = fs.statSync(candidate, { bigint: true });
+        const authorizedStat = fs.statSync(authorized, { bigint: true });
+        sameFileIdentity = candidateStat.isFile() && authorizedStat.isFile() &&
+          candidateStat.dev === authorizedStat.dev && candidateStat.ino === authorizedStat.ino;
+      }
+    } catch {
+      // Missing/unreadable files cannot create a positive identity match.
+    }
+  }
   const physicalMatch =
-    candidateReal != null && authorizedReal != null && candidateReal === authorizedReal;
+    candidateReal != null && authorizedReal != null &&
+    (candidateReal === authorizedReal || sameFileIdentity);
   const lexicalMatch = candidate === authorized;
   if (!physicalMatch && !lexicalMatch) return { matches: false, issue: null };
 
