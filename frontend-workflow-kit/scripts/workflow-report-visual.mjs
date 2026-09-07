@@ -79,8 +79,16 @@ function loadReview(reviewFlag, callerCwd) {
   if (raw == null) fail(`--review 파일 없음: ${reviewFlag}`);
   const parsed = splitFrontmatter(raw);
   if (parsed.parseError) fail(`--review frontmatter 파싱 실패: ${reviewFlag} — ${parsed.parseError}`);
+  let source;
+  try {
+    // /var and /private/var may name the same macOS temporary directory. Use the
+    // same physical basis for caller-relative audit labels regardless of spelling.
+    source = toPosix(path.relative(fs.realpathSync(callerCwd), fs.realpathSync(file)));
+  } catch (error) {
+    fail(`--review 경로 해석 실패: ${reviewFlag} — ${error.message}`);
+  }
   return {
-    source: toPosix(path.relative(callerCwd, file)),
+    source,
     frontmatter: parsed.data || {},
     findings: parseFindings(parsed.body),
   };
