@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // workflow:run — workflow:packet(+report)를 엮어 auto-stop 상태를 내는 orchestrator.
+import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -7,6 +8,7 @@ import { execFileSync } from 'node:child_process';
 import {
   parseArgs, writeFile, readFileSafe, removeFileIfExists, yamlParse, DEFAULTS, isCliEntry,
 } from './lib/util.mjs';
+import { enforceCliFlagContract } from './lib/cli-args.mjs';
 import {
   STATES, STATE_EXIT, isAbsorbedPacket, isPacketClean, buildRunModel,
   renderStatusMarkdown, renderJsonEnvelope, toPosix,
@@ -31,6 +33,26 @@ function optStr(flags, name) {
 }
 function isoToday() { return new Date().toISOString().slice(0, 10); }
 function relToCwd(p) { return toPosix(path.relative(process.cwd(), p)) || toPosix(p); }
+function outside(root, target) {
+  const relative = path.relative(root, target);
+  return relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative);
+}
+function resolveProjectRoot(rootFlag) {
+  const candidate = path.resolve(process.cwd(), rootFlag || '.');
+  try {
+    const stat = fs.statSync(candidate);
+    if (!stat.isDirectory()) fail(`--root는 directory여야 함: ${rootFlag}`);
+    return fs.realpathSync(candidate);
+  } catch (error) {
+    fail(`--root를 해석할 수 없음: ${rootFlag || '.'} (${error?.code || error?.message || error})`);
+  }
+}
+function visualRelative(value, root) {
+  if (!value) return undefined;
+  const absolute = path.isAbsolute(value) ? path.resolve(value) : path.resolve(root, value);
+  if (outside(root, absolute)) fail(`visual-refresh 경로가 --root 밖임: ${value}`);
+  return toPosix(path.relative(root, absolute));
+}
 function loadModeOrder(policyFlag) {
   const p = policyFlag ? path.resolve(policyFlag) : DEFAULTS.policy;
   const raw = readFileSafe(p);
@@ -50,9 +72,48 @@ function runJson(scriptPath, args) {
   if (stdout.trim()) { try { json = JSON.parse(stdout); } catch { json = null; } }
   return { code, stdout, stderr, json };
 }
+function hasVisualCliSurface(flags) {
+  return ['intent', 'input', 'path', 'root', 'ci', 'staged', 'range', 'base']
+    .some((key) => Object.prototype.hasOwnProperty.call(flags, key));
+}
+function appendVisualStatus(markdown, report) {
+  if (!report?.visual_refresh) return markdown;
+  const forbidden = report.forbidden || {};
+  const changed = Array.isArray(report.changed_files) ? report.changed_files : [];
+  const lines = [
+    '## Visual Backstop (Run Report transport)',
+    `- input: \`${report.visual_refresh.input_id || '—'}\``,
+    `- authorized path: \`${report.visual_refresh.authorized_path || '—'}\``,
+    `- snapshot: \`${report.visual_refresh.backstop_source_tree || '—'}\` → \`${report.visual_refresh.backstop_destination_tree || '—'}\` (${report.visual_refresh.backstop_diff_kind || '—'})`,
+    `- forbidden status: \`${forbidden.status || 'unknown'}\` · ok=${forbidden.ok == null ? 'unknown' : forbidden.ok} · violations=${Array.isArray(forbidden.violations) ? forbidden.violations.length : 0}`,
+    `- changed records: ${changed.length}`,
+  ];
+  for (const violation of forbidden.violations || []) {
+    lines.push(`  - ${violation.code || 'violation'}: ${violation.file || '(authority)'} — ${violation.reason || ''}`);
+  }
+  if (forbidden.error) lines.push(`- tool error: ${forbidden.error}`);
+  return markdown.replace('\n## Artifacts\n', `\n${lines.join('\n')}\n\n## Artifacts\n`);
+}
 
 function main() {
-  const { flags } = parseArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  const parsed = parseArgs(argv);
+  if (hasVisualCliSurface(parsed.flags)) {
+    enforceCliFlagContract({
+      argv,
+      flags: parsed.flags,
+      positionals: parsed.positionals,
+      valueFlags: new Set([
+        'screen', 'requested-mode', 'out', 'docs', 'src', 'readiness', 'policy', 'manifest',
+        'layout', 'domain', 'diff', 'review', 'intent', 'input', 'path', 'root', 'range',
+        'base', 'ci', 'date', 'seq', 'owner',
+      ]),
+      booleanFlags: new Set(['h', 'help', 'skip-tests', 'json', 'staged']),
+      tool: 'workflow:run',
+      helpCommand: 'npm run workflow:run --',
+    });
+  }
+  const { flags } = parsed;
   if (flags.help || flags.h) {
     process.stdout.write(
       'workflow:run — workflow:packet(+report)를 엮어 auto-stop 상태를 낸다.\n' +
@@ -99,8 +160,21 @@ function main() {
   const snapshotCount = Number(staged) + Number(Boolean(range)) + Number(Boolean(base));
   if (visual && snapshotCount > 1) fail('visual-refresh snapshot source는 --staged/--range/--base 중 하나만 선택해야 함');
 
+  const rootResolved = visual ? resolveProjectRoot(root) : null;
+  const visualDocs = visual && docs ? visualRelative(docs, rootResolved) : docs;
+  const visualSrc = visual && src ? visualRelative(src, rootResolved) : src;
+  const visualPolicy = visual && policy ? visualRelative(policy, rootResolved) : policy;
+  const visualManifest = visual && manifest ? visualRelative(manifest, rootResolved) : manifest;
+  const visualLayout = visual && layout ? visualRelative(layout, rootResolved) : layout;
+  const visualCi = visual && ci ? visualRelative(ci, rootResolved) : ci;
+  const layoutResolved = visual
+    ? (visualLayout ? path.join(rootResolved, ...visualLayout.split('/')) : null)
+    : (layout ? path.resolve(layout) : null);
+  const policyResolved = visual && visualPolicy
+    ? path.join(rootResolved, ...visualPolicy.split('/'))
+    : policy;
+
   const outDirResolved = outDir ? path.resolve(outDir) : null;
-  const layoutResolved = layout ? path.resolve(layout) : null;
   const packetPath = outDirResolved ? path.join(outDirResolved, 'work-packet.md') : path.join(os.tmpdir(), `workflow-run-${seq}-work-packet.md`);
   const reportPath = outDirResolved ? path.join(outDirResolved, 'run-report.md') : path.join(os.tmpdir(), `workflow-run-${seq}-run-report.md`);
   let statusPath = null;
@@ -119,31 +193,38 @@ function main() {
         packet: packet && outDirResolved ? relToCwd(packetPath) : null,
         report: report && outDirResolved ? relToCwd(reportPath) : null,
         status: statusPath ? relToCwd(statusPath) : null,
-        docs,
+        docs: visual ? visualDocs : docs,
       },
       reason, date, seq, requestedKnown,
     });
-    const md = renderStatusMarkdown(model);
+    let md = renderStatusMarkdown(model);
+    md = appendVisualStatus(md, report);
     if (statusPath) { try { writeFile(statusPath, md); } catch (e) { fail(`--out 상태 파일 쓰기 실패 "${relToCwd(statusPath)}": ${e.message}`); } }
-    if (flags.json) process.stdout.write(JSON.stringify(renderJsonEnvelope(model), null, 2) + '\n');
-    else if (!statusPath) process.stdout.write(md);
+    if (flags.json) {
+      const envelope = renderJsonEnvelope(model);
+      if (report?.visual_refresh) {
+        envelope.visual_refresh = report.visual_refresh;
+        envelope.forbidden = report.forbidden || null;
+        envelope.changed_files = Array.isArray(report.changed_files) ? report.changed_files : [];
+      }
+      process.stdout.write(JSON.stringify(envelope, null, 2) + '\n');
+    } else if (!statusPath) process.stdout.write(md);
     else process.stdout.write(`workflow:run: ${state} (exit ${STATE_EXIT[state]}) — ${relToCwd(statusPath)} · packet=${model.paths.packet || '—'} · report=${model.paths.report || '—'}\n`);
     process.exitCode = STATE_EXIT[state];
   };
 
   const packetArgs = ['--screen', screen, '--requested-mode', requestedMode, '--out', packetPath, '--json'];
   if (readiness) packetArgs.push('--readiness', readiness);
-  if (docs) packetArgs.push('--docs', docs);
-  if (src && visual) packetArgs.push('--src', src);
-  if (policy) packetArgs.push('--policy', policy);
-  if (manifest) packetArgs.push('--manifest', manifest);
-  if (layoutResolved) packetArgs.push('--layout', layoutResolved);
+  if (visualDocs) packetArgs.push('--docs', visualDocs);
+  if (visualSrc && visual) packetArgs.push('--src', visualSrc);
+  if (visualPolicy) packetArgs.push('--policy', visualPolicy);
+  if (visualManifest) packetArgs.push('--manifest', visualManifest);
+  if (layoutResolved) packetArgs.push('--layout', visual ? visualLayout : layoutResolved);
   if (domain) packetArgs.push('--domain', domain);
   if (owner) packetArgs.push('--owner', owner);
   if (visual) {
-    packetArgs.push('--intent', intent, '--input', input, '--path', checkedPath);
-    if (root) packetArgs.push('--root', root);
-    if (ci) packetArgs.push('--ci', ci);
+    packetArgs.push('--intent', intent, '--input', input, '--path', checkedPath, '--root', rootResolved);
+    if (visualCi) packetArgs.push('--ci', visualCi);
   }
   packetArgs.push('--date', date, '--seq', seq);
 
@@ -156,7 +237,7 @@ function main() {
   const packet = pk.json;
   if (isAbsorbedPacket(packet)) { finalize(STATES.HALT_NOT_APPLICABLE, { packet }); return; }
 
-  const modeOrder = loadModeOrder(policy);
+  const modeOrder = loadModeOrder(policyResolved);
   const requestedKnown = modeOrder.length === 0 ? true : modeOrder.includes(requestedMode);
   if (visual && packet.visual_refresh?.authority_applicable !== true) {
     finalize(STATES.HALT_AMBIGUITY, { packet, requestedKnown, reason: 'visual-refresh authority is not applicable' });
@@ -169,17 +250,16 @@ function main() {
 
   const reportArgs = ['--packet', packetPath, '--out', reportPath, '--json'];
   if (!visual) reportArgs.push('--diff', diff);
-  if (docs) reportArgs.push('--docs', docs);
-  if (src) reportArgs.push('--src', src);
-  if (layoutResolved) reportArgs.push('--layout', layoutResolved);
+  if (visual ? visualDocs : docs) reportArgs.push('--docs', visual ? visualDocs : docs);
+  if (visual ? visualSrc : src) reportArgs.push('--src', visual ? visualSrc : src);
+  if (layoutResolved) reportArgs.push('--layout', visual ? visualLayout : layoutResolved);
   if (review) reportArgs.push('--review', review);
   if (skipTests) reportArgs.push('--skip-tests');
   if (visual) {
-    reportArgs.push('--intent', intent, '--input', input, '--path', checkedPath);
-    if (root) reportArgs.push('--root', root);
-    if (policy) reportArgs.push('--policy', policy);
-    if (manifest) reportArgs.push('--manifest', manifest);
-    if (ci) reportArgs.push('--ci', ci);
+    reportArgs.push('--intent', intent, '--input', input, '--path', checkedPath, '--root', rootResolved);
+    if (visualPolicy) reportArgs.push('--policy', visualPolicy);
+    if (visualManifest) reportArgs.push('--manifest', visualManifest);
+    if (visualCi) reportArgs.push('--ci', visualCi);
     if (staged) reportArgs.push('--staged');
     if (range) reportArgs.push('--range', range);
     if (base) reportArgs.push('--base', base);
@@ -192,7 +272,17 @@ function main() {
     finalize(STATES.HALT_TOOL_ERROR, { packet, reason: `workflow:report 실패: ${why}` });
     return;
   }
-  finalize(STATES.DONE_PENDING_REVIEW, { packet, report: rp.json });
+  if (visual && rp.json.forbidden?.status === 'error') {
+    const detail = rp.json.forbidden?.error || `backstop exit=${rp.json.forbidden?.exit_code ?? '?'}`;
+    finalize(STATES.HALT_TOOL_ERROR, {
+      packet,
+      report: rp.json,
+      requestedKnown,
+      reason: `visual backstop 실행 오류: ${detail}`,
+    });
+    return;
+  }
+  finalize(STATES.DONE_PENDING_REVIEW, { packet, report: rp.json, requestedKnown });
 }
 
 if (isCliEntry(import.meta.url)) main();
