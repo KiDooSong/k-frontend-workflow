@@ -115,9 +115,8 @@ jobs:
       - run: npm run example:validate
 
   macos-smoke:
-    # macOS focused smoke keeps the historical platform-sensitive tests and also runs
-    # visual-refresh physical-owner/resource/orchestration regressions so case-insensitive
-    # aliases are exercised on the platform where they can resolve to the same physical file.
+    # Case-only declarations must be exercised on a case-insensitive filesystem.
+    # The internal suite also runs actual >1 MiB visual JSON and cross-root audit.
     runs-on: macos-latest
     defaults:
       run:
@@ -130,5 +129,5 @@ jobs:
           cache: npm
           cache-dependency-path: frontend-workflow-kit/package-lock.json
       - run: npm ci
-      - run: node --test scripts/lib/util.test.mjs scripts/lib/distribution.test.mjs scripts/lib/upgrade-planner.test.mjs scripts/lib/visual-refresh-followup.test.mjs scripts/lib/visual-refresh-orchestration.test.mjs
+      - run: node --test scripts/lib/util.test.mjs scripts/lib/distribution.test.mjs scripts/lib/upgrade-planner.test.mjs scripts/lib/visual-refresh-followup.test.mjs scripts/lib/visual-refresh-orchestration.test.mjs scripts/lib/visual-refresh-internal-boundaries.test.mjs
       - run: npm run example:validate
