@@ -81,3 +81,32 @@ consume these records without issuing a second diff or dropping outside-root
 entries. `Files Changed` marks outside-root records explicitly; it must not say
 "none observed" merely because every changed path was outside the project.
 An unavailable backstop record set is reported as unavailable, not an empty diff.
+
+## Raw Git names and object snapshots
+
+Git `-z` names are not user-entered operating-system paths. The visual resolver
+never replaces backslashes, removes a leading `./`, trims, case-folds, or
+Unicode-normalizes a repository name. Prefix removal matches only the original
+`/` boundary. Unsupported names in captured trees or diff endpoints (including
+literal backslashes, control characters, wildcard filenames, and non-UTF-8 names)
+produce an explicit exit 2 before authorization. Rename/copy checks cover both
+endpoints. No repaired name can inherit another file's exact-screen grant.
+
+Snapshot materialization uses `ls-tree -r -t -z --full-tree` and raw OID-addressed
+`cat-file --batch`, not `read-tree`/`checkout-index`. Blob bytes are binary and
+hash-verified against their original OID. Replacement objects are disabled.
+Current `.gitattributes`, smudge/textconv filters, `core.autocrlf`, EOL conversion,
+and working-tree encoding do not rewrite the authority snapshot. Git reads keep
+the 128 MiB per-invocation buffer bound; overflow aborts and removes the partial
+snapshot rather than evaluating partial data.
+
+Modes are preserved from the Git tree: `100644`/`100755` become regular files,
+`120000` becomes an actual symlink (created last, never followed while writing),
+and `160000` remains an opaque gitlink directory. Unsupported symlink creation or
+physical filename collisions fail closed, never falling back to regular files.
+The visual CLI independently checks the selected screen's original entry in
+both snapshots: only regular blob modes may proceed. `git_screen_entries` records
+the original tree, path, mode, type and object ID; a nonregular entry adds final
+deny `VR-GIT-002` even if its materialized file appears regular. Forward retains
+the documented authoring-doc overlay, but the screen's original Git mode cannot
+be promoted by current worktree facts.

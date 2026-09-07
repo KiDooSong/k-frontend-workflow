@@ -1,36 +1,20 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
 import { parseNameStatusZ, resolveDefaultBranch } from './path-backstop.mjs';
+import {
+  runVisualGit as git,
+  materializeRawGitTree,
+  requireGitRepositoryPath,
+  decodeGitUtf8,
+  VisualRefreshGitError,
+} from './visual-refresh-git-objects.mjs';
 
-const MAX_GIT_BUFFER = 128 * 1024 * 1024;
-
-export class VisualRefreshGitError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = 'VisualRefreshGitError';
-  }
-}
+export { VisualRefreshGitError };
+export const materializeGitTree = materializeRawGitTree;
 
 function toPosix(value) {
+  // This is an OS-generated path.relative result, never a Git -z filename.
   return String(value).split(path.sep).join('/');
-}
-
-function git(args, cwd, options = {}) {
-  try {
-    return execFileSync('git', args, {
-      cwd,
-      encoding: options.encoding ?? 'buffer',
-      maxBuffer: MAX_GIT_BUFFER,
-      env: { ...process.env, ...(options.env || {}) },
-      stdio: options.stdio,
-    });
-  } catch (error) {
-    const stderr = error?.stderr ? String(error.stderr).trim() : '';
-    const detail = stderr || error?.message || 'unknown git error';
-    throw new VisualRefreshGitError(`git ${args.join(' ')} 실패: ${detail}`);
-  }
 }
 
 function text(args, cwd, options = {}) {
@@ -51,11 +35,8 @@ export function resolveRepositoryContext(projectRoot = process.cwd()) {
   if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
     throw new VisualRefreshGitError(`--root가 Git 저장소 밖임: ${root}`);
   }
-  return {
-    repositoryRoot,
-    projectRoot: root,
-    projectPrefix: relative ? toPosix(relative) : '',
-  };
+  const projectPrefix = relative ? requireGitRepositoryPath(toPosix(relative), 'project prefix') : '';
+  return { repositoryRoot, projectRoot: root, projectPrefix };
 }
 
 export function hasHead(repositoryRoot) {
@@ -89,12 +70,19 @@ function mergeBase(repositoryRoot, leftCommit, rightCommit) {
 }
 
 function diffRecords(repositoryRoot, sourceTree, destinationTree) {
-  return parseNameStatusZ(
-    git(
-      ['diff', '--name-status', '-M', '-z', sourceTree, destinationTree],
-      repositoryRoot,
-    ),
+  const raw = git(
+    ['diff', '--no-ext-diff', '--no-textconv', '--name-status', '-M', '-z', sourceTree, destinationTree],
+    repositoryRoot,
   );
+  const records = parseNameStatusZ(decodeGitUtf8(raw, 'Git diff -z'));
+  // Reject unsupported original names before materializing/evaluating authority.
+  // This covers BOTH endpoints of renames/copies, not only the write endpoint.
+  for (const record of records) {
+    const paths = record.status === 'R' || record.status === 'C'
+      ? [record.oldPath, record.newPath] : [record.path];
+    for (const file of paths) requireGitRepositoryPath(file, 'Git diff record');
+  }
+  return records;
 }
 
 function parseRange(range) {
@@ -207,43 +195,11 @@ export function resolveVisualDiffContext({
   };
 }
 
-export function materializeGitTree({ repositoryRoot, projectPrefix = '', tree }) {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'workflow-visual-refresh-tree-'));
-  const indexPath = path.join(tempRoot, '.git-index');
-  const checkoutRoot = path.join(tempRoot, 'checkout');
-  fs.mkdirSync(checkoutRoot, { recursive: true });
-  const env = { GIT_INDEX_FILE: indexPath };
-  try {
-    git(['read-tree', tree], repositoryRoot, { env });
-    git(
-      ['checkout-index', '--all', '--force', `--prefix=${checkoutRoot}${path.sep}`],
-      repositoryRoot,
-      { env },
-    );
-  } catch (error) {
-    fs.rmSync(tempRoot, { recursive: true, force: true });
-    throw error;
-  }
-  const materializedProjectRoot = projectPrefix
-    ? path.join(checkoutRoot, ...projectPrefix.split('/'))
-    : checkoutRoot;
-  return {
-    root: materializedProjectRoot,
-    cleanup() {
-      fs.rmSync(tempRoot, { recursive: true, force: true });
-    },
-  };
-}
-
 export function sourceHeadContext({ repositoryRoot, projectPrefix = '' }) {
   if (!hasHead(repositoryRoot)) return null;
   const sourceCommit = resolveCommit(repositoryRoot, 'HEAD');
   const sourceTree = resolveTree(repositoryRoot, sourceCommit);
-  const materialized = materializeGitTree({
-    repositoryRoot,
-    projectPrefix,
-    tree: sourceTree,
-  });
+  const materialized = materializeGitTree({ repositoryRoot, projectPrefix, tree: sourceTree });
   return {
     source_tree: sourceTree,
     destination_tree: 'WORKTREE',
@@ -254,9 +210,10 @@ export function sourceHeadContext({ repositoryRoot, projectPrefix = '' }) {
 }
 
 export function stripProjectPrefix(file, projectPrefix) {
-  const normalized = String(file || '').replace(/\\/g, '/').replace(/^\.\//, '');
-  if (!projectPrefix) return normalized;
-  if (normalized === projectPrefix) return '';
-  if (!normalized.startsWith(`${projectPrefix}/`)) return null;
-  return normalized.slice(projectPrefix.length + 1);
+  const original = requireGitRepositoryPath(file);
+  if (!projectPrefix) return original;
+  requireGitRepositoryPath(projectPrefix, 'project prefix');
+  if (original === projectPrefix) return '';
+  if (!original.startsWith(`${projectPrefix}/`)) return null;
+  return original.slice(projectPrefix.length + 1);
 }

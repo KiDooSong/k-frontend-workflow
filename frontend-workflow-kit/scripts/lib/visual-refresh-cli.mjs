@@ -5,6 +5,7 @@ import { enforceCliFlagContract } from './cli-args.mjs';
 import { normalizeVisualAuthorityTuple } from './visual-refresh-boundary-paths.mjs';
 import { ArtifactPathError } from './artifact-path.mjs';
 import { visualChangedRecords } from './visual-refresh-records.mjs';
+import { bindVisualGitScreenIdentity } from './visual-refresh-git-objects.mjs';
 import {
   canonicalAuthorityPath,
   evaluateVisualRefreshAuthority,
@@ -183,13 +184,16 @@ export function runVisualReadinessCli(argv = process.argv.slice(2)) {
     tuple = normalizeVisualAuthorityTuple(tuple, { authorityRoot: repository.projectRoot, sourceRoot: source.materialized.root });
     destination = materializeForwardAuthorityView(repository, source.source_tree, tuple.options);
     tuple = normalizeVisualAuthorityTuple(tuple, { authorityRoot: destination.root, sourceRoot: source.materialized.root });
-    const output = applyForwardFileIdentity(evaluateVisualRefreshAuthority({
+    const evaluated = evaluateVisualRefreshAuthority({
       sourceRoot: source.materialized.root, destinationRoot: destination.root,
       observationRoot: repository.projectRoot,
       selectedScreen: tuple.screen, selectedInputId: tuple.input, checkedPath: tuple.checkedPath,
       options: tuple.options,
       snapshot: { source_tree: source.source_tree, destination_tree: source.destination_tree, diff_kind: source.diff_kind },
-    }), repository.projectRoot);
+    });
+    const output = applyForwardFileIdentity(
+      bindVisualGitScreenIdentity(evaluated, source.materialized, destination), repository.projectRoot,
+    );
     emit(output, tuple.flags, tuple);
     process.exitCode = 0;
     return output;
@@ -216,12 +220,12 @@ export function runVisualForbiddenPathsCli(argv = process.argv.slice(2)) {
     destination = materializeGitTree({ repositoryRoot: repository.repositoryRoot, projectPrefix: repository.projectPrefix, tree: diff.destination_tree });
     // Historical A/B resource identity must not depend on current checkout C.
     tuple = normalizeVisualAuthorityTuple(tuple, { authorityRoot: destination.root, sourceRoot: source.root });
-    const authority = evaluateVisualRefreshAuthority({
+    const authority = bindVisualGitScreenIdentity(evaluateVisualRefreshAuthority({
       sourceRoot: source.root, destinationRoot: destination.root,
       selectedScreen: tuple.screen, selectedInputId: tuple.input, checkedPath: tuple.checkedPath,
       options: tuple.options,
       snapshot: { source_tree: diff.source_tree, destination_tree: diff.destination_tree, diff_kind: diff.diff_kind },
-    });
+    }), source, destination);
     const violations = authority.intent_authorization.applicable
       ? routeVisualBackstopRecords({ records: diff.records, authority, projectPrefix: repository.projectPrefix }).violations
       : [authorityViolation(authority)];
