@@ -4,12 +4,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFileSync } from 'node:child_process';
 import {
   parseArgs, readFileSafe, writeFile, splitFrontmatter, isCliEntry,
 } from './lib/util.mjs';
 import { enforceCliFlagContract } from './lib/cli-args.mjs';
 import { parseFindings } from './lib/workflow-report.mjs';
+import { captureWorkflowJson, WORKFLOW_JSON_MAX_BYTES } from './lib/workflow-json-capture.mjs';
+import { displayVisualChangedRecord } from './lib/visual-refresh-records.mjs';
 
 const SELF_DIR = path.dirname(fileURLToPath(import.meta.url));
 const FORBIDDEN_SCRIPT = path.join(SELF_DIR, 'forbidden-paths.mjs');
@@ -52,28 +53,9 @@ function relativeForVisual(value, root) {
   if (outside(root, absolute)) fail(`visual authority resource가 --root 밖임: ${value}`);
   return toPosix(path.relative(root, absolute));
 }
-function runCapture(script, args, cwd) {
-  try {
-    const stdout = execFileSync(process.execPath, [script, ...args], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-    return { code: 0, stdout, stderr: '' };
-  } catch (error) {
-    return {
-      code: error?.status ?? null,
-      stdout: error?.stdout ? String(error.stdout) : '',
-      stderr: error?.stderr ? String(error.stderr) : error?.message || String(error),
-    };
-  }
-}
-function displayChangedRecord(record) {
-  if (record?.status?.[0] === 'R' || record?.status?.[0] === 'C') {
-    return { status: record.status, old_path: record.oldPath || null, new_path: record.newPath || null };
-  }
-  return { status: record?.status || '?', path: record?.path || null };
-}
 function loadReview(reviewFlag, callerCwd) {
   if (!reviewFlag) return null;
-  // Match the legacy collector's caller-relative file semantics and findings parser.
-  // Review metadata remains advisory; it never changes visual authorization.
+  // Caller-relative review evidence is advisory, never an authority input.
   const file = path.resolve(callerCwd, reviewFlag);
   const raw = readFileSafe(file);
   if (raw == null) fail(`--review 파일 없음: ${reviewFlag}`);
@@ -81,17 +63,11 @@ function loadReview(reviewFlag, callerCwd) {
   if (parsed.parseError) fail(`--review frontmatter 파싱 실패: ${reviewFlag} — ${parsed.parseError}`);
   let source;
   try {
-    // /var and /private/var may name the same macOS temporary directory. Use the
-    // same physical basis for caller-relative audit labels regardless of spelling.
     source = toPosix(path.relative(fs.realpathSync(callerCwd), fs.realpathSync(file)));
   } catch (error) {
     fail(`--review 경로 해석 실패: ${reviewFlag} — ${error.message}`);
   }
-  return {
-    source,
-    frontmatter: parsed.data || {},
-    findings: parseFindings(parsed.body),
-  };
+  return { source, frontmatter: parsed.data || {}, findings: parseFindings(parsed.body) };
 }
 function q(value) { return JSON.stringify(value == null ? '' : String(value)); }
 function renderMarkdown(model) {
@@ -112,22 +88,20 @@ function renderMarkdown(model) {
     `visual_backstop_diff_kind: ${q(model.visual_refresh.backstop_diff_kind)}`,
     `date: ${q(model.date)}`,
     'generated_by: "workflow:report visual-refresh collector"',
-    '---',
-    '',
-    `# Run Report: ${model.target_screen} visual-refresh`,
-    '',
+    '---', '',
+    `# Run Report: ${model.target_screen} visual-refresh`, '',
     '## Authority Audit',
     `- selected input: \`${model.visual_refresh.input_id}\``,
     `- authorized path: \`${model.visual_refresh.authorized_path}\``,
     `- packet snapshot: \`${model.visual_refresh.packet_source_tree || '—'}\` → \`${model.visual_refresh.packet_destination_tree || '—'}\` (${model.visual_refresh.packet_diff_kind || '—'})`,
     `- backstop snapshot: \`${model.visual_refresh.backstop_source_tree || '—'}\` → \`${model.visual_refresh.backstop_destination_tree || '—'}\` (${model.visual_refresh.backstop_diff_kind || '—'})`,
-    '- Packet fields are audit-only. The backstop result below is independently recomputed from the selected Git snapshot.',
-    '',
+    '- Packet fields are audit-only. The backstop result below is independently recomputed from the selected Git snapshot.', '',
     '## Files Changed',
     ...(model.forbidden.status === 'error'
       ? ['- unavailable: backstop did not produce snapshot records']
-      : model.changed.length ? model.changed.map((entry) => `- \`${entry.path || `${entry.old_path} -> ${entry.new_path}`}\` — ${entry.status}`) : ['- (none observed)']),
-    '',
+      : model.changed.length ? model.changed.map((entry) =>
+        `- \`${entry.path || `${entry.old_path} -> ${entry.new_path}`}\` — ${entry.status}${entry.outside_selected_root ? ' [outside selected root]' : ''}`)
+        : ['- (none observed)']), '',
     '## Forbidden Paths Evidence',
     `- status: ${model.forbidden.status}`,
     `- ok: ${model.forbidden.ok == null ? 'unknown' : String(model.forbidden.ok)}`,
@@ -135,12 +109,9 @@ function renderMarkdown(model) {
     `- violations: ${model.forbidden.violations.length}`,
     ...model.forbidden.violations.map((v) => `  - ${v.code || 'violation'}: ${v.file || '(authority)'} — ${v.reason || ''}`),
     ...(model.forbidden.error ? [`- error: ${model.forbidden.error}`] : []),
-    '',
+    ...(model.forbidden.capture_error ? ['```json', JSON.stringify(model.forbidden.capture_error, null, 2), '```'] : []), '',
     '## Review Evidence (advisory — not authorization)',
-    ...(model.review
-      ? ['```json', JSON.stringify(model.review, null, 2), '```']
-      : ['- not provided (--review)']),
-    '',
+    ...(model.review ? ['```json', JSON.stringify(model.review, null, 2), '```'] : ['- not provided (--review)']), '',
     '## Next Action',
     '- Human review remains required. This report is evidence, not approval.',
   ];
@@ -151,16 +122,13 @@ function main() {
   const argv = process.argv.slice(2);
   const parsed = parseArgs(argv);
   enforceCliFlagContract({
-    argv,
-    flags: parsed.flags,
-    positionals: parsed.positionals,
+    argv, flags: parsed.flags, positionals: parsed.positionals,
     valueFlags: new Set([
       'packet', 'intent', 'input', 'path', 'out', 'root', 'docs', 'src', 'policy',
       'manifest', 'layout', 'ci', 'range', 'base', 'review', 'date', 'seq',
     ]),
     booleanFlags: new Set(['h', 'help', 'json', 'staged', 'skip-tests']),
-    tool: 'workflow:report',
-    helpCommand: 'npm run workflow:report --',
+    tool: 'workflow:report', helpCommand: 'npm run workflow:report --',
   });
   const { flags } = parsed;
   if (flags.help || flags.h) {
@@ -201,55 +169,41 @@ function main() {
   if (fm.visual_authority_applicable !== true) fail('packet의 visual authority가 applicable:true가 아님');
   if (fm.visual_path_allowed !== true) fail('packet의 concrete visual path가 allowed:true가 아님; 현재 packet을 재발급하세요');
   if (fm.visual_input_id !== input) fail(`packet visual_input_id mismatch: ${fm.visual_input_id || '—'} != ${input}`);
-  if (fm.visual_authorized_path !== checkedPath || fm.visual_checked_path !== checkedPath) {
-    fail('packet visual authorized/checked path가 현재 --path와 일치하지 않음');
-  }
+  if (fm.visual_authorized_path !== checkedPath || fm.visual_checked_path !== checkedPath) fail('packet visual authorized/checked path가 현재 --path와 일치하지 않음');
   if (typeof fm.target_screen !== 'string' || !fm.target_screen) fail('packet target_screen 없음');
   if (fm.visual_selected_screen !== fm.target_screen) fail('packet visual selected screen이 target_screen과 일치하지 않음');
   const review = loadReview(reviewFlag, callerCwd);
 
-  const forbiddenArgs = [
-    '--json', '--screen', fm.target_screen, '--intent', VISUAL_REFRESH_INTENT,
-    '--input', input, '--path', checkedPath, '--root', '.',
-  ];
+  const forbiddenArgs = ['--json', '--screen', fm.target_screen, '--intent', VISUAL_REFRESH_INTENT, '--input', input, '--path', checkedPath, '--root', '.'];
   for (const [name, value] of [['docs', docs], ['src', src], ['policy', policy], ['manifest', manifest], ['layout', layout], ['ci', ci]]) {
     if (value) forbiddenArgs.push(`--${name}`, relativeForVisual(value, root));
   }
   if (staged) forbiddenArgs.push('--staged');
   if (range) forbiddenArgs.push('--range', range);
   if (base) forbiddenArgs.push('--base', base);
-  const captured = runCapture(FORBIDDEN_SCRIPT, forbiddenArgs, root);
-  let forbiddenJson = null;
-  try { forbiddenJson = captured.stdout.trim() ? JSON.parse(captured.stdout) : null; } catch {}
+  const captured = captureWorkflowJson(FORBIDDEN_SCRIPT, forbiddenArgs, { cwd: root });
+  const forbiddenJson = captured.json;
   const validResult = captured.code === 0 && typeof forbiddenJson?.ok === 'boolean' &&
     Array.isArray(forbiddenJson.violations) && Array.isArray(forbiddenJson.changed_records) &&
     typeof forbiddenJson.diff_context?.source_tree === 'string' &&
     typeof forbiddenJson.diff_context?.destination_tree === 'string';
   const forbidden = validResult ? {
-    status: forbiddenJson.ok ? 'pass' : 'fail',
-    ok: forbiddenJson.ok,
-    exit_code: captured.code,
-    violations: forbiddenJson.violations,
-    changed_records: forbiddenJson.changed_records,
-    diff_context: forbiddenJson.diff_context,
+    status: forbiddenJson.ok ? 'pass' : 'fail', ok: forbiddenJson.ok,
+    exit_code: captured.code, violations: forbiddenJson.violations,
+    changed_records: forbiddenJson.changed_records, diff_context: forbiddenJson.diff_context,
   } : {
     status: 'error', ok: null, exit_code: captured.code, violations: [], changed_records: [], diff_context: {},
     error: (captured.stderr || 'no valid backstop JSON output').trim().slice(0, 800),
+    ...(captured.capture_error ? { capture_error: captured.capture_error } : {}),
   };
 
-  const changed = forbidden.changed_records.map(displayChangedRecord);
+  const changed = forbidden.changed_records.map(displayVisualChangedRecord);
   const model = {
     run_id: `RR-${fm.target_screen}-${fm.readiness_mode || 'visual'}-${seq}`,
-    packet_id: fm.packet_id || '(packet)',
-    target_screen: fm.target_screen,
-    readiness_mode: fm.readiness_mode || null,
-    date,
-    review,
-    changed,
-    forbidden,
+    packet_id: fm.packet_id || '(packet)', target_screen: fm.target_screen,
+    readiness_mode: fm.readiness_mode || null, date, review, changed, forbidden,
     visual_refresh: {
-      input_id: input,
-      authorized_path: checkedPath,
+      input_id: input, authorized_path: checkedPath,
       packet_source_tree: fm.visual_source_tree || null,
       packet_destination_tree: fm.visual_destination_tree || null,
       packet_diff_kind: fm.visual_diff_kind || null,
@@ -265,17 +219,12 @@ function main() {
     catch (error) { fail(`--out 쓰기 실패: ${outFlag} — ${error.message}`); }
   }
   const envelope = {
-    run_id: model.run_id,
-    packet_id: model.packet_id,
-    target_screen: model.target_screen,
-    readiness_mode: model.readiness_mode,
-    report_applicable: true,
+    run_id: model.run_id, packet_id: model.packet_id, target_screen: model.target_screen,
+    readiness_mode: model.readiness_mode, report_applicable: true,
     out: outPath ? toPosix(path.relative(callerCwd, outPath)) : null,
-    visual_refresh: model.visual_refresh,
-    changed_files: changed,
-    forbidden,
-    review_evidence: review,
-    review_summary: review?.frontmatter?.review_summary || null,
+    visual_refresh: model.visual_refresh, changed_files: changed, forbidden,
+    json_transport_limit_bytes: WORKFLOW_JSON_MAX_BYTES,
+    review_evidence: review, review_summary: review?.frontmatter?.review_summary || null,
     note: forbidden.status === 'error'
       ? 'visual-refresh backstop could not be evaluated; tool error evidence, not authorization'
       : 'visual-refresh authority re-evaluated by forbidden-paths from the selected Git snapshot; report remains evidence-only',
