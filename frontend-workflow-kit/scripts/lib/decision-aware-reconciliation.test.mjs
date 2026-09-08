@@ -37,7 +37,7 @@ function fixture(t, { global = false, open = false, fact } = {}) {
   const decisionId = global ? 'D-GLOBAL-227' : 'D-LOCAL-227';
   const decisionOwner = global ? 'open-decision-register' : SCREEN_ARTIFACT;
   const decisionPath = global ? 'global/open-decisions.md' : SCREEN_PATH;
-  const selected = open ? 'guest entry / blocking prompt (not selected)' : 'chosen: non-blocking guest entry / blocking prompt';
+  const selected = open ? 'guest entry / blocking prompt (not selected)' : 'chosen: non-blocking guest entry';
   const row = `| ${decisionId} | Guest entry on AUTH-227 mobile v2 | ${selected} | final-fixture-ui | PM | ${open ? 'open' : 'resolved'} |`;
   write(SCREEN_PATH, `---\nartifact_id: ${SCREEN_ARTIFACT}\nartifact_type: screen-spec\ndomain: demo\nscreen_id: ${SCREEN}\nroute: /auth\nstatus: draft\n${global ? `decision_refs:\n  - ${decisionId}\n` : ''}---\n\n# Auth\n\n## Purpose\n\nGuest entry on mobile v2.\n\n## Unknowns\n\n| ID | Question | Status |\n|---|---|---|\n| U-227 | Which loading copy is appropriate? | open |\n\n## Open Decisions\n\n${DECISION_HEADER}\n${global ? '' : row}\n\n## Notes\n\n- Scope: AUTH-227, mobile v2.\n`);
   if (global) write(decisionPath, `---\nartifact_id: open-decision-register\nartifact_type: open-decision-register\nstatus: draft\n---\n\n# Shared decisions\n\n## Open Decisions\n\n${DECISION_HEADER}\n${row}\n`);

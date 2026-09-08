@@ -93,7 +93,7 @@ description: 외부 입력 스킬이 저장한 새 입력 결과물(input_id 보
 - testID naming 을 confirmed 로 올리거나 CI/E2E hard gate 로 승격하지 않는다.
 
 ## Tier3 layout / policy migration 규칙
-- 새 layer, role glob, access boundary 입력은 `project-layout.yaml`, `layers:` 선언, layer inventory, readiness output, policy draft, migration guide 를 함께 대조한다.
+- 새 layer, role glob, access boundary 입력은 `project-layout.yaml`, layer inventory, readiness output, policy draft, migration guide 를 함께 대조한다.
 - layer access 변경 제안은 사용자 명시가 없으면 draft/review artifact 만 갱신한다.
 - live policy 또는 resolved architecture decision 과 충돌하면 Conflict 를 기록하고 Open Decision 을 재오픈/생성한다. 필요하면 migration guide/draft notes 에 반영한다.
 - `policies/implementation-mode-policy.yaml` 을 replace 하지 않는다.
