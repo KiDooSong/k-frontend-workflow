@@ -26,6 +26,7 @@ import openApiClientAdapter from '../adapters/codegens/openapi-client.mjs';
 import { normalizeGeneratedViewText, toPosix } from './test-fixture.mjs';
 // 글롭 미니엔진·생성물 헤더 정규식은 validate(검사 6)와 단일 출처를 공유한다(표류 방지).
 import { GENERATED_HEADER_RE, globRoot, globToRegExp } from './glob.mjs';
+import { hasGeneratedOwnershipHeader } from './generated-ownership.mjs';
 import { catalogCommandSrcForGlobs } from './catalog-gen.mjs';
 
 // v1 가드 대상 allowlist — whole-file generated artifact: route-tree·nav-graph·component-catalog.
@@ -157,8 +158,7 @@ function codegenOutputPatternsFromManifest(manifest, id) {
 }
 
 function hasGeneratedHeader(absPath) {
-  const head = (readFileSafe(absPath) || '').slice(0, 400);
-  return GENERATED_HEADER_RE.test(head);
+  return hasGeneratedOwnershipHeader(absPath);
 }
 
 // 표시/메시지용 경로 — cwd 상대 posix(머신 종속 절대경로를 출력에 흘리지 않음).
