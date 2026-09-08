@@ -44,6 +44,11 @@ validator나 reviewer는 warning을 근거로 문서를 자동 mutate하지 않�
    그러나 바닥을 넘는 무한 정밀화 요구는 금지다.
 2. **Routing** — Basis 와 Classification 이 맞는가. Conflict/Unknown/Decision/Gap/INV-/VER- 가 올바른
    축으로 갔는가 (예: 입력↔입력 상호배타는 Unknown 이 아니라 Conflict).
+   새 선택/충돌/컴포넌트 누락 판정 전 [결정 대조](input-reconciliation.md#decision-aware-preclassification)의
+   Unknowns·Open Decisions·global `decision_refs`·현재 정본·관련 이력을 확인했는가. 실제 값·scope·현재 유효성으로
+   구현 드리프트, 본문 밖의 답, 의도적 미제공, 진짜 새 충돌, 다른 범위/대체된 기록, 원래 open U-/D- 답을 구분했는가.
+   `resolved` 문자열이나 읽기 순서만으로 권위를 정하지 않았는가. Notes 근거 보강은 실제 artifact `update`와 일치하며
+   가짜 update / `simple-update + link-evidence`가 없는가. 근거 부족은 추측 대신 기존 불확실성 경로에 남겼는가.
 3. **Gate-raising boundary** — diff 에서 LLM 이 resolve/close/accept/confirm/`confirmed` 승격을 수행하지
    않았는가. resolved decision 과의 충돌 시 Conflict 기록(이전 값 보존) + decision reopen 이 **함께** 있는가.
 4. **Scope** — visual evidence 가 behavior 정본(Interaction/State Matrix, Data Requirements, API Candidates,
@@ -63,6 +68,10 @@ validator나 reviewer는 warning을 근거로 문서를 자동 mutate하지 않�
 - 스타일·표현만 다른 비기능적 rewrite
 - human-final 상태(`expected-after` 계열)를 LLM-after candidate 에 요구 —
   채점/비교 기준은 항상 **LLM 단독 출력**(`expected-llm-after` 계열)이다.
+
+문구/링크 회귀와 정적 synthetic fixture는 지침의 존재 및 저작된 출력의 상태·typed ref·routing·projection을 검사한다.
+이를 실제 LLM의 결정 탐색/분류 실행, 소비자 dogfood, 리뷰 라운드 감소 증거로 보고하지 않는다.
+실제 에이전트 dry-run과 사람 평가의 실행 여부·결과는 따로 기록한다.
 
 ## Severity
 

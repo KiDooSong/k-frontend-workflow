@@ -51,6 +51,25 @@ is **not** where canonical screen identity is invented.
   human-confirmation or explicit `workflow:create-screen`. See
   [`../screen-identity.md`](../screen-identity.md).
 
+## Before classification — scoped decisions
+
+After register-first and scope/identity checks, follow the
+[decision comparison procedure](../input-reconciliation.md#decision-aware-preclassification)
+for each fact: relevant ScreenSpec `## Unknowns` / `## Open Decisions` and global
+canonical rows reached by `decision_refs`, then current body / Domain Rules / Copy
+Keys, then relevant decision history and linked evidence (including superseding
+records). Verify the actual choice, scope, and current validity: **read order is
+not authority order**. Producer hints and manual inputs follow the same check.
+
+An implementation not following an existing decision, a rule recorded outside the
+body, and intentional absence are not automatically new decisions or component
+gaps. Record useful evidence as an actual document update; hand implementation
+follow-up to 05/06, not code edits here. A genuinely conflicting new requirement
+still requires same-item Conflict `create-open` plus Decision `reopen`, preserving
+the old value. Originally open U-/D- answers retain their `link-evidence` route and
+status. Do not invent updates, require a history file, or silently choose between
+inconsistent authorities; see the linked procedure for uncertainty handling.
+
 ## What reconcile may and may not do
 
 - May: simple source-backed doc updates; add Open Decisions / Conflicts / Unknowns
