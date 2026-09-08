@@ -54,11 +54,8 @@ Register에서 같은 `input_id` 행을 먼저 찾고 `Reconcile Status` 에 따
 4. `affected_screens` 가 canonical id 가 아니라 raw source 코드, `raw:flow/...`, 미존재 화면이면 screen-level write 는 **멈추고 Stage 02** 로 식별을 푼다
    ([screen-identity.md](../../docs/reference/screen-identity.md)). 다만 flow-shaped/domain-level 입력 전체가 failed 인 것은 아니다.
    source-backed domain/app-level facts 는 [input-reconciliation.md](../../docs/reference/input-reconciliation.md#flow-shaped--domain-level-input) 의 라우팅 표에 따라 계속 reconcile 할 수 있다.
-5. 분류 전에 [결정 대조 절차](../../docs/reference/input-reconciliation.md#decision-aware-preclassification)를 수행한다.
-   관련 ScreenSpec의 `## Unknowns`·`## Open Decisions`와 `decision_refs`의 global canonical 행 → 현재 본문·Domain Rules·Copy Keys → 관련 ID/주제의 결정 이력과 연결 근거를 읽는다.
-   실제 결정값·적용 scope·현재 유효성을 확인한다. **읽기 순서는 권위 순서가 아니다.** 대체·범위 변경은 후속 기록까지 확인하며 로그 전체 정독이나 필수 로그 신설을 요구하지 않는다.
-6. classification 을 만든다 (입력 1개 → item 여러 개 가능). 분류 정의: [input-reconciliation.md](../../docs/reference/input-reconciliation.md) §Classification.
-   기존 결정 미준수(구현 드리프트)·본문 밖의 답·의도적 미제공을 새 선택/충돌/컴포넌트 누락과 구분한다. `expected_reconciliation`은 힌트이며 수동 입력에도 같은 대조를 적용한다.
+5. 분류 전 [결정 대조 절차](../../docs/reference/input-reconciliation.md#decision-aware-preclassification)로 관련 Unknowns/Open Decisions·global `decision_refs`·현재 정본·연결 이력을 확인한다. 실제 결정값·scope·현재 유효성을 대조하며 **읽기 순서는 권위 순서가 아니다**.
+6. [분류 정의](../../docs/reference/input-reconciliation.md)로 사실별 item을 분류한다. 구현 드리프트·본문 밖의 답·의도적 미제공을 새 선택/충돌/컴포넌트 누락과 구분하며, `expected_reconciliation`은 힌트다. 수동 입력도 같은 대조를 적용한다.
 7. 자동 반영 가능한 `simple-update` 만 문서에 반영한다. 근거 note를 실제 추가했다면 해당 artifact의 `update`로 기록하고, 가짜 update나 `simple-update + link-evidence`를 만들지 않는다.
 8. decision/conflict 는 **멈추고** 선택지를 제시한다. 현재 유효한 `resolved` 결정과 실제 충돌하면 같은 item에 Conflict `create-open`(이전 값 보존)과 해당 Decision `reopen`을 함께 기록한다.
    검증이 필요하면 INV-/VER- + 막을 화면에 Open Decision. 카탈로그에 없는 공통 컴포넌트는 Gap `G-xxx open` **제안만**.
