@@ -110,3 +110,12 @@ the original tree, path, mode, type and object ID; a nonregular entry adds final
 deny `VR-GIT-002` even if its materialized file appears regular. Forward retains
 the documented authoring-doc overlay, but the screen's original Git mode cannot
 be promoted by current worktree facts.
+
+## Gitlink change completeness
+
+The visual tree-to-tree diff explicitly uses `--ignore-submodules=none`.
+`diff.ignoreSubmodules`, `submodule.<name>.ignore`, and dirty current `.gitmodules`
+settings cannot hide a gitlink OID change recorded in the captured trees.
+This does not initialize submodules or inspect their dirty worktrees. Outside-root
+gitlink changes remain `VR-BACKSTOP-002` violations even alongside an allowed
+screen modification, and Report/Run preserve those records and denial evidence.

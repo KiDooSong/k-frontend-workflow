@@ -70,8 +70,10 @@ function mergeBase(repositoryRoot, leftCommit, rightCommit) {
 }
 
 function diffRecords(repositoryRoot, sourceTree, destinationTree) {
+  // Fixed trees include gitlink OID changes regardless of live ignore settings
+  // in config or .gitmodules. This does not inspect submodule dirty worktrees.
   const raw = git(
-    ['diff', '--no-ext-diff', '--no-textconv', '--name-status', '-M', '-z', sourceTree, destinationTree],
+    ['diff', '--no-ext-diff', '--no-textconv', '--ignore-submodules=none', '--name-status', '-M', '-z', sourceTree, destinationTree],
     repositoryRoot,
   );
   const records = parseNameStatusZ(decodeGitUtf8(raw, 'Git diff -z'));

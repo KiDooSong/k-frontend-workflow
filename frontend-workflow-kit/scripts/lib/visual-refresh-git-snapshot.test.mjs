@@ -354,3 +354,121 @@ for (const mode of ['120000', '160000']) {
     if (staged.stdout) assert.equal(JSON.parse(staged.stdout).ok, false);
   });
 }
+
+// A gitlink is part of the captured superproject tree. None of these cases
+// initializes a submodule, fetches its URL, or examines its dirty worktree.
+for (const ignoreSource of ['diff.ignoreSubmodules', 'submodule.vendor.ignore', 'dirty .gitmodules']) {
+  for (const screenModified of [false, true]) {
+    test(`visual gitlink records survive ${ignoreSource} (${screenModified ? 'screen M + outside gitlink M' : 'outside gitlink M only'})`, async (t) => {
+      const { resolveVisualDiffContext } = await import('./visual-refresh-git.mjs');
+      const { repo, project } = fixture(t, { prefix: 'apps/mobile' });
+      const vendor = 'packages/other/vendor';
+      const repositoryScreen = `apps/mobile/${ENTRY}`;
+      const oldOid = git(repo, 'rev-parse', 'HEAD');
+      const newOid = git(repo, 'commit-tree', git(repo, 'rev-parse', 'HEAD^{tree}'), '-p', oldOid, '-m', 'vendor v2');
+      assert.notEqual(oldOid, newOid);
+      const modules = `[submodule "vendor"]\n\tpath = ${vendor}\n\turl = ./vendor-fixture\n`;
+      write(repo, '.gitmodules', modules);
+      git(repo, 'add', '.gitmodules');
+      setMode(repo, vendor, '160000', oldOid);
+      git(repo, 'commit', '-m', 'source with opaque gitlink');
+      const a = git(repo, 'rev-parse', 'HEAD');
+      const sourceTree = git(repo, 'rev-parse', 'HEAD^{tree}');
+      const screenBefore = fs.readFileSync(path.join(project, ENTRY));
+      const packet = path.join(repo, 'audit', 'work-packet.md');
+      const packetJson = json(cli('workflow-packet', [...tuple(project), ...MODE, '--out', packet], repo));
+      assert.equal(packetJson.visual_refresh.path_allowed, true);
+
+      setMode(repo, vendor, '160000', newOid);
+      if (screenModified) {
+        write(project, ENTRY, 'export const ShopScreen = () => "refresh";\n');
+        git(repo, 'add', repositoryScreen);
+      }
+      const destinationTree = git(repo, 'write-tree');
+      // Keep HEAD=A and index=B while also naming that exact B in a commit range.
+      const b = git(repo, 'commit-tree', destinationTree, '-p', a, '-m', 'B with gitlink update');
+      const expectedRecords = [
+        ...(screenModified ? [{ status: 'M', path: repositoryScreen, raw: 'M' }] : []),
+        { status: 'M', path: vendor, raw: 'M' },
+      ];
+      assert.equal(git(repo, 'ls-tree', sourceTree, '--', vendor), `160000 commit ${oldOid}\t${vendor}`);
+      assert.equal(git(repo, 'ls-tree', destinationTree, '--', vendor), `160000 commit ${newOid}\t${vendor}`);
+      assert.deepEqual(resolveVisualDiffContext({ repositoryRoot: repo, staged: true }).records, expectedRecords);
+
+      if (ignoreSource === 'dirty .gitmodules') write(repo, '.gitmodules', modules + '\tignore = all\n');
+      else git(repo, 'config', '--local', ignoreSource, 'all');
+      // Positive reproduction control: the old collector really does lose the
+      // record under this setting; an ineffective fixture must not pass the test.
+      const hidden = git(repo, '--no-replace-objects', 'diff', '--no-ext-diff', '--no-textconv',
+        '--name-status', '-M', '-z', sourceTree, destinationTree);
+      assert.equal(hidden.includes(vendor), false, hidden);
+      assert.equal(hidden.includes(repositoryScreen), screenModified, hidden);
+      assert.equal(git(repo, 'diff', '--cached', '--name-only', '--', '.gitmodules'), '');
+
+      for (const [label, selector, resolverOptions] of [
+        ['staged', ['--staged'], { staged: true }],
+        ['range', ['--range', `${a}..${b}`], { range: `${a}..${b}` }],
+      ]) {
+        const resolved = resolveVisualDiffContext({ repositoryRoot: repo, ...resolverOptions });
+        assert.equal(resolved.source_tree, sourceTree);
+        assert.equal(resolved.destination_tree, destinationTree);
+        assert.deepEqual(resolved.records, expectedRecords);
+        const result = cli('forbidden-paths', [...tuple(project), ...selector, '--enforce'], repo);
+        assert.equal(result.status, 1, result.stderr || result.stdout);
+        const backstop = JSON.parse(result.stdout);
+        // A real positive authority is required: this must not pass simply because
+        // another readiness failure denied everything before the outside router.
+        assert.equal(backstop.intent_authorization.applicable, true, result.stdout);
+        assert.equal(backstop.path_authorization.allowed, true, result.stdout);
+        assert.equal(backstop.ok, false);
+        assert.equal(backstop.violations.length, 1);
+        assert.equal(backstop.violations[0].code, 'VR-BACKSTOP-002');
+        assert.equal(backstop.violations[0].file, vendor);
+        assert.deepEqual(backstop.changed_records.map((record) => record.repository_record), expectedRecords);
+        const outside = backstop.changed_records.find((record) => record.repository_path === vendor);
+        assert.equal(outside.project_path, null);
+        assert.equal(outside.outside_selected_root, true);
+        assert.equal(backstop.diff_context.source_tree, sourceTree);
+        assert.equal(backstop.diff_context.destination_tree, destinationTree);
+
+        const reportPath = path.join(repo, 'audit', `${label}-report.md`);
+        const report = json(cli('workflow-report', [
+          '--packet', packet, '--intent', 'visual-refresh', '--input', INPUT, '--path', ENTRY,
+          '--root', project, ...selector, '--out', reportPath, '--json',
+        ], repo));
+        assert.equal(report.forbidden.status, 'fail');
+        assert.equal(report.forbidden.ok, false);
+        assert.deepEqual(report.forbidden.violations, backstop.violations);
+        assert.deepEqual(report.forbidden.changed_records, backstop.changed_records);
+        assert.deepEqual(report.changed_files, backstop.changed_records);
+        assert.deepEqual(report.forbidden.diff_context, backstop.diff_context);
+        const markdown = fs.readFileSync(reportPath, 'utf8');
+        const changedSection = markdown.split('## Files Changed\n')[1]?.split('\n## ')[0];
+        assert.ok(changedSection?.includes(vendor), markdown);
+        assert.equal(changedSection.includes('(none observed)'), false);
+
+        const runDir = path.join(repo, 'audit', `${label}-run`);
+        const output = json(cli('workflow-run', [...tuple(project), ...MODE, ...selector, '--out', runDir], repo));
+        // Preserve the existing evidence-only Run policy: a complete report is
+        // not an approval. Its negative backstop evidence must remain observable.
+        assert.equal(output.state, 'DONE_PENDING_REVIEW');
+        assert.equal(output.visual_prework.path_allowed, true);
+        assert.equal(output.forbidden.status, 'fail');
+        assert.equal(output.forbidden.ok, false);
+        assert.deepEqual(output.forbidden.violations, backstop.violations);
+        assert.deepEqual(output.forbidden.changed_records, backstop.changed_records);
+        assert.deepEqual(output.changed_files, report.changed_files);
+        assert.deepEqual(output.forbidden.diff_context, backstop.diff_context);
+        assert.ok(fs.readFileSync(runDir + '.md', 'utf8').includes(vendor));
+      }
+      assert.equal(git(repo, 'rev-parse', 'HEAD^{tree}'), sourceTree);
+      assert.equal(git(repo, 'write-tree'), destinationTree);
+      if (!screenModified) assert.deepEqual(fs.readFileSync(path.join(project, ENTRY)), screenBefore);
+      // The three-dot selector uses the same collector, with the same A/B trees.
+      const threeDot = resolveVisualDiffContext({ repositoryRoot: repo, range: `${a}...${b}` });
+      assert.equal(threeDot.source_tree, sourceTree);
+      assert.equal(threeDot.destination_tree, destinationTree);
+      assert.deepEqual(threeDot.records, expectedRecords);
+    });
+  }
+}
