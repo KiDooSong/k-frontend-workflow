@@ -554,3 +554,90 @@ test('concrete visual paths allow dynamic-route brackets and braces but still re
   assert.throws(() => canonicalAuthorityPath('app/*/page.tsx'), /glob|concrete|canonical/);
   assert.throws(() => canonicalAuthorityPath('app/?/page.tsx'), /glob|concrete|canonical/);
 });
+
+// Issue #232 P14-P17: reuse the real Git/CLI authority fixture above, not a
+// synthetic applicable/allowed boolean. Authoring fixtures are not consumer dogfood.
+const PARTIAL_REGISTER = 'docs/frontend-workflow/_meta/reconciliation-register.md';
+
+function assertVisualReason(result, code, exit) {
+  assert.equal(result.status, exit, result.stderr || result.stdout);
+  const json = JSON.parse(result.stdout);
+  assert.equal(json.intent_authorization.applicable, false, result.stdout);
+  assert.ok(json.intent_authorization.reasons.some((entry) => entry.code === code), result.stdout);
+  assert.notEqual(json.path_authorization?.allowed, true, result.stdout);
+  if (exit === 1) assert.equal(json.ok, false, result.stdout);
+}
+
+for (const result of ['pending', 'accepted']) {
+  test(`P14: selected partial + ${result} is denied in real forward and staged backstop`, (t) => {
+    const root = createAuthorityFixture(t);
+    const baseline = run(READINESS, visualArgs(root), root);
+    assert.equal(baseline.status, 0, baseline.stderr);
+    assert.equal(JSON.parse(baseline.stdout).intent_authorization.applicable, true, baseline.stdout);
+    write(root, PARTIAL_REGISTER, registerArtifact().replace('| reconciled | accepted |', `| partially-reconciled | ${result} |`));
+    assertVisualReason(run(READINESS, visualArgs(root), root), 'VR-RR-005', 0);
+    write(root, SCREEN_PATH, 'export const ShopScreen = () => "partial must not authorize";\n');
+    git(root, 'add', PARTIAL_REGISTER, SCREEN_PATH);
+    assertVisualReason(run(BACKSTOP, [...visualArgs(root), '--staged', '--enforce'], root), 'VR-RR-005', 1);
+  });
+}
+
+test('P15: unrelated valid partial does not globally block an eligible visual input', (t) => {
+  const root = createAuthorityFixture(t);
+  const other = 'IN-20260909-qa-232';
+  const summaryRow = `| ${other} | qa | simple-update | partially-reconciled | pending | artifact:other-rules | - | - |`;
+  const itemRow = `| ${other} | 01 | compatible-fact | simple-update | update | artifact:other-rules#notes | input:${other}#extracted-facts/01 | inherit | statement | inherit |`;
+  write(root, `docs/frontend-workflow/inputs/other/${other}.md`, `---\ninput_id: ${other}\ninput_type: qa\nsource_type: qa\nsource_ref: fixture://partial/other\ncaptured_at: "2026-09-09T09:00:00+09:00"\ncaptured_by: synthetic-fixture-author\nstatus: captured\naffected_domains: [other]\naffected_screens: []\nsupersedes: null\n---\n\n## Extracted Facts\n\n- Keep the existing other-domain rule.\n- Review the remaining other-domain note.\n`);
+  write(root, 'docs/frontend-workflow/domains/other/domain-rules.md', `---\nartifact_id: other-rules\nartifact_type: domain-rules\ndomain: other\nstatus: draft\n---\n\n## Notes\n\n- Keep the existing rule; evidence input:${other}#extracted-facts/01.\n`);
+  const register = registerArtifact().replace('\n\n## Reconciliation Items', `\n${summaryRow}\n\n## Reconciliation Items`) +
+    `${itemRow}\n\n## Partial Reconciliation Notes\n\n### ${other}\n\n- 처리: /01, Item 01, other-rules Notes.\n- 미처리: input:${other}#extracted-facts/02.\n- 이유: 회차 범위 분리.\n- 재개: 원본과 누적 Items를 대조하고 같은 행을 in-progress로 이동한다.\n- 담당/연결 작업: 미정.\n`;
+  write(root, PARTIAL_REGISTER, register);
+  git(root, 'add', '.');
+  git(root, 'commit', '-m', 'unrelated consistent partial checkpoint');
+  const forward = run(READINESS, visualArgs(root), root);
+  assert.equal(forward.status, 0, forward.stderr || forward.stdout);
+  assert.equal(JSON.parse(forward.stdout).intent_authorization.applicable, true, forward.stdout);
+  assert.equal(JSON.parse(forward.stdout).path_authorization.allowed, true, forward.stdout);
+  write(root, SCREEN_PATH, 'export const ShopScreen = () => "eligible visual refresh";\n');
+  git(root, 'add', SCREEN_PATH);
+  const backstop = run(BACKSTOP, [...visualArgs(root), '--staged', '--enforce'], root);
+  assert.equal(backstop.status, 0, backstop.stderr || backstop.stdout);
+  assert.equal(JSON.parse(backstop.stdout).ok, true, backstop.stdout);
+  // A global structural defect is NOT protected by the unrelated-input rule.
+  write(root, PARTIAL_REGISTER, register.replace('\n\n## Reconciliation Items', `\n${summaryRow}\n\n## Reconciliation Items`));
+  assertVisualReason(run(READINESS, visualArgs(root), root), 'VR-RR-002', 0);
+  git(root, 'add', PARTIAL_REGISTER);
+  assertVisualReason(run(BACKSTOP, [...visualArgs(root), '--staged', '--enforce'], root), 'VR-RR-002', 1);
+});
+
+test('P16: fully reconciled multi-item input still fails exact single-item authority', (t) => {
+  const root = createAuthorityFixture(t);
+  write(root, `docs/frontend-workflow/inputs/shop/${INPUT_ID}.md`, inputArtifact() + '- The secondary shop card padding is 8px.\n');
+  const mapping = mappingArtifact().replace('\n\n## Mapping Provenance', '\n| `M-002` · Shop / node `1:235` | Secondary card | components/ui/Card | padding refresh |\n\n## Mapping Provenance') +
+    `| M-002 | figma://file/shop/node/1:235 | instance | inherit | input:${INPUT_ID}#extracted-facts/02 |\n`;
+  write(root, 'docs/frontend-workflow/domains/shop/screens/shop-home/figma-component-mapping.md', mapping);
+  write(root, PARTIAL_REGISTER, registerArtifact().replace('| simple-update | reconciled |', '| simple-update×2 | reconciled |') +
+    `| ${INPUT_ID} | 02 | visual-evidence | simple-update | update | artifact:${SCREEN_ID}-figma-component-mapping#component-mapping/M-002 | input:${INPUT_ID}#extracted-facts/02 | figma://file/shop/node/1:235 | instance | inherit |\n`);
+  git(root, 'add', '.');
+  git(root, 'commit', '-m', 'complete multi-item authoring fixture');
+  assertVisualReason(run(READINESS, visualArgs(root), root), 'VR-RR-008', 0);
+  write(root, SCREEN_PATH, 'export const ShopScreen = () => "multi-item is not authorized";\n');
+  git(root, 'add', SCREEN_PATH);
+  assertVisualReason(run(BACKSTOP, [...visualArgs(root), '--staged', '--enforce'], root), 'VR-RR-008', 1);
+});
+
+test('P17: register-only partial status leaves real no-intent mode and path permissions unchanged', (t) => {
+  const root = createAuthorityFixture(t);
+  const args = ['--root', root, '--screen', SCREEN_ID, '--path', SCREEN_PATH, '--json'];
+  const before = run(READINESS, args, root);
+  assert.equal(before.status, 0, before.stderr || before.stdout);
+  write(root, PARTIAL_REGISTER, registerArtifact().replace('| reconciled | accepted |', '| partially-reconciled | pending |'));
+  const after = run(READINESS, args, root);
+  assert.equal(after.status, 0, after.stderr || after.stdout);
+  const a = JSON.parse(before.stdout);
+  const b = JSON.parse(after.stdout);
+  for (const key of ['readiness_mode', 'allowed_paths', 'forbidden_paths', 'path_authorization']) {
+    assert.ok(Object.hasOwn(a, key), `missing no-intent field: ${key}`);
+    assert.deepEqual(b[key], a[key], key);
+  }
+});
