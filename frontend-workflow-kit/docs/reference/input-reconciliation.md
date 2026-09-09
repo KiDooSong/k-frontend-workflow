@@ -21,12 +21,14 @@ source-specific producer
 → docs/frontend-workflow/inputs/{input_id}.md
 
 reconcile-input
-→ 입력 결과물을 읽음
+→ 입력 결과물과 기존 register 행·누적 Items·재개 메모를 읽음
+→ 같은 Summary 행을 in-progress로 생성/재개 (문서 수정 전)
 → 기존 산출물과 대조
 → 업데이트 / Unknown / Open Decision / Conflict 로 분류
-→ Reconciliation Register 에 처리 이력·결과 기록
-→ 사람 결정 후 문서 업데이트
-→ workflow:state / readiness / validate
+→ Reconciliation Register 에 실제 처리 이력·누적 projection 기록
+→ 미처리 범위가 남으면 partially-reconciled / 전체 라우팅 완료면 reconciled
+→ workflow:state / readiness / validate 와 이번 회차 리뷰
+→ 사람 결정 후 문서 업데이트 (별도 사람-전용 게이트 내림)
 ```
 
 ## 목적
@@ -90,7 +92,7 @@ node tools/frontend-workflow/scripts/create-input-artifact.mjs \
   --from-json input.json
 ```
 
-또는 `--from-yaml input.yaml` 을 사용할 수 있다. Producer 는 `input_id` 를 `IN-{YYYYMMDD}-{source}-{NNN}` 로 생성하고, 같은 id 파일 덮어쓰기를 기본으로 거부한다. 내용이 바뀌면 새 입력을 만들고 `supersedes` 로 이전 `input_id` 를 연결한다.
+또는 `--from-yaml input.yaml` 을 사용할 수 있다. Producer 는 `input_id` 를 `IN-{YYYYMMDD}-{source}-{NNN}` 로 생성하고, 같은 id 파일 덮어쓰기를 기본으로 거부한다. 내용이 바뀌면 새 입력을 만들고 `supersedes` 로 이전 `input_id` 를 연결한다. 변경되지 않은 snapshot의 처리 회차만 나누는 경우에는 새 입력을 만들지 않고 [partial checkpoint](#partial-reconciliation-checkpoints)로 같은 행을 재개한다.
 
 ### Grouped Input Directories (대규모 레포 옵션)
 
@@ -170,9 +172,13 @@ Flowchart-like facts routing:
 ```txt
 workflow:create-input
 → workflow:validate
-→ reconcile-input
+→ reconcile-input (미처리 범위는 partial로 인계 / 전체 라우팅 완료면 reconciled)
 → workflow:state / workflow:readiness / workflow:validate
 ```
+
+screen identity 관련 불확실성까지 모두 분류·라우팅하고 사람 확인만 남았다면 `reconciled`다.
+아직 검토·라우팅하지 않은 범위를 남겼을 때만 [partial checkpoint](#partial-reconciliation-checkpoints)를 쓴다.
+raw token이나 자식 open 상태만으로 입력 전체를 partial/failed로 재해석하지 않는다.
 
 ## Input Result Contract
 
@@ -239,6 +245,7 @@ required 중 `input_id` 가 특히 핵심이다 — 멱등성·역추적·supers
 input_id 는 한 번 발급하면 불변이다.
 입력 내용이 바뀌면 같은 id 를 덮어쓰지 않고 새 input_id 를 발급한다.
 새 입력은 supersedes 로 이전 input_id 를 가리킨다.
+변경되지 않은 snapshot의 회차 분할은 새 input_id/supersedes 없이 같은 Summary 행에서 재개한다.
 ```
 
 이 규칙이 없으면 같은 id 에 다른 내용이 실려 "이미 처리한 입력"으로 잘못 스킵된다. id 형식은 충돌을 줄이려 `IN-{날짜}-{source}-{seq}` 처럼 source 를 끼우는 것을 권장한다.
@@ -281,19 +288,20 @@ invalid legacy timestamp는 이번 계약부터 `IP-001` hard error다. 상세 m
 
 ```txt
 입력 artifact 의 status   (입력 frontmatter)                       입력을 수집/적재했는가.   값: captured (등 입력 수집 상태)
-Reconcile Status          (Reconciliation Register)                그 입력을 reconcile 했는가. 값: not-started → in-progress → reconciled / failed
+Reconcile Status          (Reconciliation Register)                그 입력을 reconcile 했는가. 값: not-started → in-progress → partially-reconciled / reconciled / failed
+부분 회차 재개             (같은 Summary 행)                       partially-reconciled → in-progress → 다음 checkpoint 또는 전체 완료
 자식 항목 open|resolved    (Open Decisions·Conflicts·Unknowns·Gap)  그 입력이 만든 결정/충돌이 닫혔는가.
 ```
 
 - **입력 `status`** 는 입력 결과물 *자체*의 상태다. reconcile 행위와 무관하다 — 입력 스킬이 적재를 끝냈으면 `captured` 다. 입력 스킬이 쓰며, reconcile-input 은 이 값을 바꾸지 않는다.
-- **`Reconcile Status`** 는 reconcile **행위**의 상태다(register 가 단일 출처). 그 입력을 reconcile 했는지만 본다.
+- **`Reconcile Status`** 는 reconcile **행위**의 상태다(register 가 단일 출처). 그 입력을 reconcile 했는지, 아직 reconcile하지 않은 범위가 남았는지를 구분한다.
 - **자식 항목 상태** 는 그 입력이 만든 `D-`/`C-`/`U-`/`G-` 가 닫혔는지다. 각 레지스터가 단일 출처다.
 
 세 축은 독립이다. 예: 입력 `status=captured` + `Reconcile Status=reconciled` + 자식 `D-001=open` 은 "입력 적재 완료 / reconcile 완료 / 사람 결정만 대기"라는 **정상** 상태다. 이 조합을 "미처리"로 보면 안 된다 — 미처리 감지는 오직 `Reconcile Status` 만 본다(아래 "Code Change Gate").
 
 ## Reconciliation Register
 
-입력의 처리 이력과 결과를 한곳에 남기는 **살아있는 레지스터**다. `Unknowns`·`Open Decisions`·`Conflicts` 와 같은 mutable-status 표 가족이다(행은 지우지 않고 Reconcile Status·Result 만 갱신한다). 엄밀한 append-only 불변 기록은 후속 `decision-log`/ADR 의 몫이고, 이 레지스터는 그보다 가볍다.
+입력의 처리 이력과 결과를 한곳에 남기는 **살아있는 레지스터**다. `Unknowns`·`Open Decisions`·`Conflicts` 와 같은 mutable-status 표 가족이다(행은 지우지 않고 Reconcile Status·Result·누적 Summary를 갱신한다). 엄밀한 append-only 불변 기록은 후속 `decision-log`/ADR 의 몫이고, 이 레지스터는 그보다 가볍다.
 
 저장 위치 (입력 원문은 `inputs/`, register 는 처리 이력용 **meta-register** 라 `_meta/` 에 둔다 — `validate.mjs` 가 `_meta/` 를 authoring 검사에서 제외하므로 register 가 artifact_type 검사에 걸리지 않는다):
 
@@ -316,11 +324,11 @@ docs/frontend-workflow/_meta/reconciliation-register.md
 |---|---|
 | Input ID | 입력 결과물의 `input_id`. 레지스터의 키. 입력당 canonical 행 1개 |
 | Source | `source_type` 요약 |
-| Classification | 이 입력이 만든 분류 **목록**(입력 1개가 여럿일 수 있다. 예: `conflict + new-decision`) |
-| Reconcile Status | **reconcile 행위의 라이프사이클**: `not-started` → `in-progress` → `reconciled` / `failed`. 자식 항목 상태의 rollup 이 아니며, 입력 frontmatter 의 `status` 와도 별개다(위 "status vs Reconcile Status") |
-| Result | 처리 결과/대기 어휘: `accepted` / `rejected` / `delegated` / `pending user decision` / `conflict-created` 등. reject-input 의 사유도 여기 적는다 |
-| Touched Artifacts | 이 입력이 수정한 문서(ScreenSpec 등) |
-| Created Items | 이 입력이 만든/재오픈한 레지스터 항목(`C-…`, `D-…`, `U-…`, `G-…`, `INV-…`, `VER-…`). 링크만 남긴다 |
+| Classification | 이 입력이 만든 분류 **목록**(입력 1개가 여럿일 수 있다. 예: `conflict + new-decision`). 여러 회차의 누적 Items에서 계산 |
+| Reconcile Status | **reconcile 행위의 라이프사이클**: `not-started` → `in-progress` → `partially-reconciled` / `reconciled` / `failed`. partial은 같은 행에서 `in-progress`로 재개한다. 자식 항목 상태의 rollup 이 아니며, 입력 frontmatter 의 `status` 와도 별개다(위 "status vs Reconcile Status") |
+| Result | 처리 결과/대기 어휘: `accepted` / `rejected` / `delegated` / `pending user decision` / `conflict-created` 등. reject-input 의 사유도 여기 적는다. v2 partial은 `pending` 권장 |
+| Touched Artifacts | 이 입력이 수정한 문서(ScreenSpec 등). 회차별 덮어쓰기 대신 누적 projection |
+| Created Items | 이 입력이 만든/재오픈한 레지스터 항목(`C-…`, `D-…`, `U-…`, `G-…`, `INV-…`, `VER-…`). 누적 링크만 남긴다 |
 | Supersedes | 이 입력이 대체하는 **이전 입력**의 id (입력↔입력 축) |
 
 세 가지를 명확히 한다.
@@ -328,6 +336,99 @@ docs/frontend-workflow/_meta/reconciliation-register.md
 - **`Reconcile Status` 는 reconcile 행위의 상태지 자식 항목의 rollup 이 아니다.** 입력이 만든 C-001/D-001 이 아직 open 이어도 reconcile 자체는 `reconciled` 일 수 있다(정상). "입력을 처리했는가"와 "그 입력이 만든 결정/충돌이 다 닫혔는가"는 **다른 라이프사이클**이다. 이 둘을 한 칸에 섞으면 결정 대기 입력이 "미처리"로 오탐된다.
 - **자식 item 의 open/closed 는 각 레지스터(Open Decisions·Conflicts·Unknowns)가 단일 출처다.** register 에 다시 적지 않는다(이중 기재 → 로그가 현실과 어긋난다). register 는 "이 입력을 reconcile 해서 이런 항목을 만들었다"만 기록한다.
 - **`Supersedes` 는 입력↔입력 축만** 쓴다. 결정값 번복(decision supersede)은 여기 적지 않는다 — 후속 `decision-log` 의 몫이다. 두 축을 한 칼럼에 섞으면 이력 추적이 흐려진다.
+
+## Partial Reconciliation Checkpoints
+
+`partially-reconciled`는 **이번 회차의 실제 문서 작업과 effect 기록은 일관되게 마무리했지만,
+동일 입력에 아직 검토·분류·라우팅하지 않은 범위가 남은 정상 checkpoint**다. v1/v2 모두 사용하며,
+새 frontmatter opt-in, progress 표, Pending Axes 컬럼, axis 자동 추론 또는 orchestration은 추가하지 않는다.
+아무 범위도 처리하지 않았다면 partial로 꾸미지 않는다. 미시작/실제 중단/실패는 기존 상태 의미를 따른다.
+**모든 범위를 라우팅하고 사람 결정만 남은 경우는 `reconciled`**다. 자식 open 상태만으로 partial로 바꾸지 않는다.
+
+| 상태 | 기본 validate | `--enforce` | 다음 회차 |
+|---|---|---|---|
+| 행 없음 | warning | error | register-first로 새 행 생성 |
+| `not-started` | warning | error | 같은 행을 `in-progress`로 이동 |
+| `in-progress` | error | error | 같은 행을 이어서 수리/처리 |
+| `failed` | error | error | 실패 사유와 잔여 범위 메모를 보존하고 같은 행에서 재개 |
+| `partially-reconciled` | warning | warning | 원문·누적 Items·재개 메모·현재 문서 확인 후 같은 행을 `in-progress`로 이동 |
+| `reconciled` | 정상 | 정상 | **중단**. 실제 내용/새 snapshot 변화만 새 입력 + supersedes |
+| invalid enum / duplicate / 구조 오류 | error | error | 먼저 구조 수리 |
+
+`RR-LIFECYCLE-101`은 입력 ID, `Partial Reconciliation Notes` 위치와 같은 행 재개 안내를 담는다.
+Result와 무관하게 발화하며 `flagUnprocessed`의 enforce 승격 대상이 아니다. pure validator의 `{file, message}`와
+check 12의 `{check, file, message}` 형태는 그대로다. lifecycle warning은 전체 validation 성공 선언이 아니므로
+partial에서도 구조·duplicate·invalid input·target/evidence·routing·projection·provenance hard 오류를 면제하지 않는다.
+v2는 `partially-reconciled / pending`을 권장한다. `partial + accepted`도 lifecycle 경고와 기존 Result 조합 경고를
+유지하며 권한을 얻지 못한다. Result enum/warning-first 및 v1 자유서술은 바뀌지 않는다.
+
+### 재개 메모와 누적 기록
+
+`_meta/reconciliation-register.md`의 canonical Summary 및 Items **뒤**에 `## Partial Reconciliation Notes`를
+두고 input ID별로 작성한다. 처리한 범위와 근거, 미처리 원문 pointer, 중단 이유, 다음 행동, 담당/연결 작업을
+남긴다. 담당이 정해지지 않았으면 미정이라고 적고 임의 배정하지 않는다. 이슈 댓글은 추가 포인터일 뿐 유일한
+재개 장소가 아니다. 메모는 immutable input의 전체 범위를 대신하는 정본이 아니며 누적 Items와 함께 대조한다.
+
+합성 메모 예시(완전한 실행 fixture가 아님):
+
+```md
+## Partial Reconciliation Notes
+
+### IN-20260909-api-001
+
+- 처리: Extracted Facts/03을 SAMPLE-001 ScreenSpec Notes에 반영. 누적 Item 01 참조.
+- 미처리: input:IN-20260909-api-001#extracted-facts/01 및 /02는 아직 reconcile하지 않음.
+- 이유: 관련 문서의 다른 편집 작업과 겹쳐 이번 회차에서 건드리지 않음.
+- 재개: 편집 상태·원문·누적 Items를 확인하고 같은 Summary 행을 in-progress로 이동한 뒤 남은 범위에 decision-aware preclassification 수행.
+- 담당/연결 작업: 미정. 다음 reconcile 담당자가 작업 시작 시 확인.
+```
+
+메모의 의미/pointer/전체 fact coverage를 새 parser나 정규식 hard schema로 검증하지 않는다. 충실성은
+[Stage 04 reviewer](reconcile-review-rubric.md#partial-checkpoint-review--회차-종료와-입력-전체-완료)가 확인한다.
+메모 없음, 범위 불명, 완료 effect 재수행은 reviewer가 정상 checkpoint로 승인하지 않는 P20 반례다.
+메모 자체의 수정은 register 유지보수이므로 가짜 product artifact `update`나 register `artifact:*` target을 만들지 않는다.
+
+- Summary는 입력당 계속 **한 행**이고 같은 snapshot의 input_id·입력 bytes·supersedes는 유지한다.
+- 기존 Item ID/실제 effect는 삭제·재번호화·현재 자식 상태에 맞춘 rewrite 없이 보존한다. 새 논리 item은
+  사용하지 않은 input-scoped 2자리 ID를 쓴다. 이미 끝난 effect를 새 ID로 다시 기록/수행하지 않는다.
+- 새로 수행한 effect만 같은 Items 표에 추가한다. Summary는 **모든 회차의 누적 Items projection**이다.
+  마지막 회차의 Classification/Touched/Created만 덮어쓰지 않는다.
+- 미처리 축에는 가짜 `record`/`update`/`link-evidence`나 임의 분류를 만들지 않는다. Items는 수행 이력이지
+  전체 입력 계획표가 아니다. `simple-update + link-evidence` 금지와 원래 open U-/D- answer 경로는 그대로다.
+- 이미 인지한 진짜 충돌은 메모에 숨기지 않고 기존 gate-raising을 수행한다. resolved-decision conflict의
+  Conflict `create-open` + Decision `reopen`은 **같은 회차·같은 Item**으로 완결해야 하며 반쪽 checkpoint는 안 된다.
+- v2의 structured item/target/evidence/provenance는 partial에도 필수다. `structured_since` 이전 legacy 면제와
+  기존 8/10컬럼은 유지하며 불필요한 backfill을 요구하지 않는다.
+
+### 시작·부분 종료·전체 종료
+
+1. 같은 input_id의 canonical row부터 읽는다. partial이면 immutable input·누적 Items·해당 재개 메모·현재 문서를
+   대조해 이미 끝난 effect와 미처리 범위를 구분한다. 문서 수정 **전** 같은 Summary 행을 `in-progress`로 바꾼다.
+2. 이번 범위에도 [decision-aware preclassification](#decision-aware-preclassification)을 적용한다.
+   실제 문서 변경, 필요한 gate-raising, 완결된 effect group과 전체 누적 Summary projection을 맞춘다.
+3. 미처리 범위가 남으면 메모를 갱신하고 `partially-reconciled / pending`으로 정상 부분 종료한다.
+   `workflow:state` → `workflow:readiness` → `workflow:validate`와 기존 review stop 조건을 적용한다.
+   hard errors 0, Critical/Major 0, gate-lowering diff 0, provenance floor와 scope 조건을 완화하지 않는다.
+4. 최종 보고는 **이번 범위 종료 / 입력 전체 미완료 / 다음 범위**를 구분한다. partial을 accepted/입력 전체 완료로
+   보고하지 않는다. 재개 메모가 없거나 잔여 범위·다음 행동이 불명확하면 reviewer는 정상 checkpoint로 통과시키지 않는다.
+5. 모든 입력 범위를 분류·라우팅했다면 같은 행을 `reconciled`와 적절한 기존 Result로 마무리한다.
+   자식 Open Decision 해결을 기다리지 않는다. 메모를 현재 미처리 없음으로 갱신하거나 과거 기록임을 구분하고,
+   D-/U-를 자동 resolve하거나 미수행 effect를 발명하지 않는다. 이후 동일 입력 재실행은 기존 stop 규칙을 따른다.
+
+과거 일부 처리 행을 우회로 `reconciled`라고 적었다면 **명시적인 유지보수/사람 확인** 아래 원문과 기존 effect를
+대조해 같은 행의 partial 표시와 메모를 복구할 수 있다. 입력 bytes/ID/supersedes/기존 effect를 바꾸거나
+모든 reconciled 행을 자동 강등하지 않는다. 새 enum을 지원하는 런타임 업그레이드가 먼저다.
+상세: [upgrade-notes.md](upgrade-notes.md#partial-reconciliation-checkpoints-232).
+
+partial warning-only는 **미처리 범위의 구현 허가도 전역 deny도 아니다**. 일반 구현은 현재 canonical 계약과 기존
+state/readiness/path guard가 판단한다. 필요한 게이트는 Notes가 아닌 canonical Open Decision이다.
+`visual-refresh`는 selected input의 정확한 **`reconciled + accepted`** 및 **single-item** 등 기존 조건을 유지한다.
+partial + pending/accepted 모두 `VR-RR-005`로 거부하며, 완전 reconciled multi-item도 `VR-RR-008`로 거부한다.
+무관한 정상 partial은 다른 적격 input을 전역 차단하지 않지만 기존 global structural error 방어는 유지한다.
+상태 변경으로 snapshot/ownership/supersession/generated/candidate/custom-policy deny를 우회하지 않는다.
+
+문구/링크 회귀와 synthetic fixture는 선언된 구조·projection·권한을 검증할 뿐, LLM이 자연어 범위를 올바르게
+분할하거나 재개했다는 실증이 아니다. 실제 consumer/agent dogfood는 실행 여부와 결과를 별도로 보고한다.
 
 ## Bootstrap Behavior
 
@@ -338,7 +439,7 @@ docs/frontend-workflow/_meta/reconciliation-register.md
 ## Reconciliation Contract v2 (opt-in)
 
 register frontmatter 에 `reconciliation_contract: 2` 를 선언하면 check 12 가 **구조화 계약(v2)** 을 추가로
-강제한다. 필드가 없으면 v1 동작(위 8컬럼 검사)이 byte-compatible 하게 유지된다. v2 의 목적은 #202 가 지적한
+강제한다. 필드가 없으면 기존 상태의 v1 동작(위 8컬럼 검사)이 byte-compatible 하게 유지된다. v2 의 목적은 #202 가 지적한
 세 곱셈 인자(기계 강제 0 × 정밀도 바닥 0 × 잠정물 최종-fidelity 리뷰)를 줄이는 것이다.
 
 핵심 문장: **정적 validator 는 선언된 구조와 참조를 강제하고, reviewer 는 diff 에서 권한 경계를 확인한다.
@@ -368,11 +469,14 @@ structured 행(= `structured_since` 이후 입력, 또는 item 행을 가진 입
 | `Created Items` | 세미콜론 구분 typed target ref. **`(open)` 류 현재 상태 주석 금지** — 상태의 단일 출처는 대상 표 |
 | `Supersedes` | `-` 또는 존재하는 `input_id` (빈 셀 금지 — 대체 없음은 `-` 로 명시) |
 
+`Reconcile Status=partially-reconciled`에는 `Result=pending`을 권장한다. 다른 Result의 기존 warning-first
+정책을 hard로 바꾸지 않으며, partial + accepted도 lifecycle 경고를 유지하고 visual 권한을 얻지 못한다.
+
 ### `## Reconciliation Items` 표 (10컬럼)
 
-입력 1개가 만든 item N개의 **effect 단위** 기록이다. 같은 item 의 여러 effect 는 같은 `Item` ID 를 쓴다
-(예: resolved decision 충돌 → `C-001 create-open` + `D-204 reopen` 두 행). canonical detail 은 Items 이고
-Summary 는 그 projection 이다.
+입력 1개가 만든 item N개의 **실제 수행한 effect 단위 누적 기록**이다. 같은 item 의 여러 effect 는 같은 `Item` ID 를 쓴다
+(예: resolved decision 충돌 → `C-001 create-open` + `D-204 reopen` 두 행을 같은 회차에 완결). canonical detail 은 Items 이고
+Summary 는 모든 회차의 누적 projection 이다. 미처리 계획이나 가짜 effect를 Items에 넣지 않는다.
 
 ```md
 | Input ID | Item | Basis | Classification | Effect | Target | Evidence | Source Ref | Source Unit | Captured At |
@@ -469,7 +573,7 @@ v2 가 소비하는 마크다운은 **좁은 canonical authoring profile** 만 �
 | `component-missing` | `component-gap` | `create-open` + `gap:*` |
 | `verification-gap` | `investigation-needed` | `create-open\|record` + `investigation:*\|verification:*` (필수 1+); blocking 이면 `decision:*` `create-open` 추가 허용 |
 | `input-input-conflict` | `conflict` | `create-open\|record` + `conflict:*` (필수 1+); 구현 선택을 가르면 `decision:*` `create-open` 추가 허용 |
-| `resolved-decision-conflict` | `conflict` | 같은 Item 에 `conflict:* create-open` **과** `decision:* reopen` 둘 다 필수 |
+| `resolved-decision-conflict` | `conflict` | 같은 Item 에 `conflict:* create-open` **과** `decision:* reopen` 둘 다 필수. 같은 회차에 완결하며 partial로 쌍을 나누지 않음 |
 | `scope-unclear` | `scope-unclear` | `unknown:*`/`decision:*`; **screen-level artifact write 금지** (identity 해소 전) |
 | `reject` | `reject-input` | `reject` + `-` 또는 `input:<id>` |
 
@@ -480,6 +584,8 @@ Navigation Map·Domain Rules 는 hard error — Figma 입력이 behavior 충돌�
 `new-choice`/`resolved-decision-conflict` 로 기록한다(visual item 이 behavior 를 확정하지 않는다).
 
 ### Summary ↔ Items 일치 (hard)
+
+아래 집합은 **모든 회차의 누적 Items** 기준이다. 마지막 회차만으로 Summary를 덮어쓰거나 과거 effect를 지우지 않는다.
 
 - `Classification` multiset = unique `(Input ID, Item)` 의 classification 개수 (validator 가 canonical order 제안).
 - `Created Items` = effect 가 `create`/`create-open`/`reopen`/`link-evidence`/`record` 인 target 집합 (exact).
@@ -538,6 +644,7 @@ register frontmatter 의 YAML 파싱 실패·envelope 손상(닫는 `---` 누락
 v2 의 deterministic 오류는 `--enforce` 와 무관하게 **항상 에러**다. 반대로 v2 warning과 202-C semantic
 heuristic(`RR-ROUTE-101`, `RR-STALE-101/102/103`)은 `--enforce` 로도 hard 승격하지 않는다. warning-only
 fixture는 기본/`--enforce` 모두 exit 0이며, hard/CI/readiness 승격은 별도 사람 승인이다.
+v1/v2 공통 partial의 `RR-LIFECYCLE-101`도 기본/`--enforce` 모두 warning이며 Result 오저작으로 숨길 수 없다.
 
 ### Migration
 
@@ -546,36 +653,42 @@ fixture는 기본/`--enforce` 모두 exit 0이며, hard/CI/readiness 승격은 �
 3. 신규 consumer 는 새 템플릿으로 즉시 v2 를 쓴다.
 4. 픽스처: `examples/reconciliation-validation/v2-pass|v2-fail`. 리뷰 계약: [reconcile-review-rubric.md](reconcile-review-rubric.md).
 
+partial 사용을 위해 v1을 v2로 바꾸거나 과거 행을 일괄 backfill할 필요는 없다. 새 상태를 지원하는 킷 코드와
+지침을 먼저 업그레이드한 뒤 사용한다. 기존 잘못된 완료 표시의 정정은 [checkpoint 복구](#partial-reconciliation-checkpoints)를 따른다.
+
 ## Reconciliation Flow
 
-새 입력이 들어오면 코드 변경 전에 다음 흐름을 탄다. **register 를 문서 수정보다 먼저 쓰는 것**이 핵심이다(아래 register-first 참고).
+새 입력이나 partial 입력의 남은 범위를 처리할 때 코드 변경 전에 다음 흐름을 탄다. **register 를 문서 수정보다 먼저 쓰는 것**이 핵심이다(아래 register-first 참고).
 
 ```txt
 1.  입력 결과물 경로와 input_id 를 받는다.
 2.  Register 에 같은 input_id 행이 있으면 상태별로 처리한다.
-      - `reconciled`: 멈춘다. 같은 입력은 이미 처리됐다. 다시 처리하려면 새 input_id + supersedes 를 만든다.
+      - `reconciled`: 멈춘다. 같은 입력은 이미 처리됐다. 실제 내용/새 snapshot 변화만 새 input_id + supersedes 를 만든다.
+      - `partially-reconciled`: immutable input·누적 Items·해당 Partial Reconciliation Notes·현재 문서를 읽고 남은 범위를 확인한 뒤 같은 Summary 행을 `in-progress`로 이동한다. 완료 effect는 반복하지 않는다.
       - `in-progress`: 새 행을 추가하지 말고 그 행을 이어서 처리한다.
-      - `failed`: 새 행을 만들지 않는다. 기존 행을 재사용하고 retry 중에는 `in-progress` 로 두며, 이전 실패 사유는 Result 에 보존하거나 retry note 로 이어 붙인다.
+      - `failed`: 새 행을 만들지 않는다. 기존 행을 재사용하고 retry 중에는 `in-progress` 로 두며, 이전 실패 사유는 Result 에 보존하거나 retry note 로 이어 붙인다. 잔여 범위 메모도 보존한다.
       - `not-started`: 기존 행을 재사용하고 `in-progress` 로 이동한다.
       - enum 위반, duplicate row, required column 누락: 먼저 register 구조를 고친다.
 3.  행이 없으면 Register 에 행을 먼저 쓴다 (Reconcile Status: `in-progress`).   ← 어떤 문서 수정보다 먼저.
 4.  입력 요약(body `## Summary`)과 범위(`affected_domains`/`affected_screens`, 구 `suggested_scope`)를 읽는다.
 5.  관련 기존 산출물을 찾는다.
-6.  아래 Decision-aware preclassification 절차로 실제 결정값·scope·현재 유효성을 대조한다.
-7.  변경 유형을 분류한다 (입력 1개가 여러 분류일 수 있다).
-8.  사용자 결정이 필요한 경우 멈추고 선택지를 제시한다.
-9.  결정 결과에 따라 문서를 업데이트한다.
+6.  아래 Decision-aware preclassification 절차로 실제 결정값·scope·현재 유효성을 대조한다. partial의 미처리 범위에도 동일 적용한다.
+7.  이번에 처리하는 사실의 변경 유형을 분류한다 (입력 1개가 여러 분류일 수 있다). 미처리 계획을 fake effect로 기록하지 않는다.
+8.  사용자 결정이 필요한 경우 해당 선택을 멈추고 선택지를 제시한다. 전체 라우팅 완료를 위해 사람 결정의 해결까지 기다리지는 않는다.
+9.  허용되는 문서 업데이트와 gate-raising을 수행한다. 게이트 내림은 별도 사람 결정 후에만 한다.
       - 입력 vs 입력 충돌이면 Conflicts 에 기록한다 (그 자체로는 gate 아님 — 구현 형태를 가르면 Open Decision 도 함께 올린다).
-      - resolved 결정에 도전하는 입력이면 Conflicts 에 이전 값을 남기고 해당 Open Decision 을 재오픈한다.
+      - resolved 결정에 도전하는 입력이면 Conflicts 에 이전 값을 남기고 해당 Open Decision 을 같은 회차/같은 Item에서 재오픈한다.
       - Unknown 의 답을 제공하는 입력이면 출처와 근거를 기존 Unknown 에 연결하되 Status 는 `open` 으로 둔다 (`resolved` 는 사람 전용).
       - 검증 없이는 결정 불가면 Investigation/Verification 을 만들고(INV-/VER-), 막을 화면에 Open Decision 을 올린다 (investigation·Unknown 단독은 게이트가 아니다 — 게이트는 Open Decision).
       - 카탈로그에 없는 공통 컴포넌트가 필요하면 Component Gap Register 에 `G-xxx` 를 `open` 으로 제안한다 (제안만 — accept 는 사람, 직접 생성 금지).
-10. Register 행을 `reconciled` 로 바꾸고 Result·Touched Artifacts·Created Items 를 채운다.
-      자식 decision 이 열려 있어도 reconcile 자체는 끝난 것이다 (그 차단은 readiness 가 담당).
-11. workflow:state → workflow:readiness → workflow:validate 를 실행한다.
+10. 기존 Item ID/effect를 보존하고 새 실제 effect를 누적해 Summary Classification·Touched Artifacts·Created Items를 전체 누적 projection으로 맞춘다.
+      - 미처리 범위가 남으면 Partial Reconciliation Notes를 갱신하고 같은 행을 `partially-reconciled` / `pending`으로 종료한다.
+      - 모든 범위를 분류·라우팅했다면 같은 행을 `reconciled`와 적절한 Result로 마무리한다. 자식 decision open은 partial 사유가 아니다.
+11. workflow:state → workflow:readiness → workflow:validate 및 이번 회차 리뷰를 수행한다. hard errors/Critical/Major/raise-only/provenance/scope 조건은 그대로다.
+      이번 범위 종료 / 입력 전체 미완료 / 다음 범위를 구분해 보고한다. 메모 없음·범위 불명·완료 effect 재수행은 reviewer가 거부한다.
       Tier3/layout/policy-migration 입력을 다뤘다면 `npm run workflow:policy-draft -- --out <review-output-dir>`처럼
       review-only 출력 디렉터리를 명시해 policy-draft 생성 결과를 보고한다. 이 출력은 live policy 교체가 아니다.
-12. readiness 가 허용한 범위에서만 개발한다.
+12. 일반 구현은 현재 canonical 계약과 기존 readiness/path 권한이 허용한 범위에서만 한다. partial warning만으로 미처리 범위를 구현하지 않는다.
 ```
 
 관련 기존 산출물:
@@ -649,7 +762,8 @@ implementation-mode-policy.migration.md
 
 ## Classification
 
-새 입력은 다음 중 하나 **이상**으로 분류한다.
+새 입력에서 이번에 처리하는 사실은 다음 중 하나 **이상**으로 분류한다. partial의 미처리 범위를 추측해 분류하거나
+이를 위한 가짜 effect를 만들지 않는다. 전체 입력 완료는 모든 범위를 실제로 분류·라우팅한 뒤에만 기록한다.
 
 | Type | Meaning | Action |
 |---|---|---|
@@ -801,7 +915,9 @@ Stage 04 리뷰의 canonical contract(필수 범위·severity·finding 일괄 �
 | gate raising only | Open Decision 추가/재오픈, Conflict, Unknown, Gap, INV/VER 생성까지만 했다. resolve/close/confirmed/gap accept 는 없다 |
 | no code/generated edits | production code, tests, generated files 를 직접 수정하지 않았다 |
 | no live promotion | live implementation policy replacement, CI/hard gate promotion, pre-edit hook enforcement 가 없다 |
-| idempotency | 같은 `input_id` 재실행 시 register 의 `reconciled` 행으로 멈출 수 있다. 내용 변경은 새 id + `supersedes` 다 |
+| idempotency | 정상 `reconciled` 재실행은 중단하고 `partially-reconciled`는 원문·누적 Items·재개 메모를 읽어 같은 행을 in-progress로 재개한다. 새 id + supersedes는 실제 내용/새 snapshot 변화에만 쓴다 |
+| checkpoint | 실제 수행 effect와 누적 Summary가 일치하고 Partial Reconciliation Notes에 처리 근거·미처리 원문 pointer·이유·다음 행동·담당/연결 작업이 있다. 이번 범위 종료와 입력 전체 미완료를 구분하며 기존 hard/Critical/Major/raise-only/provenance/scope 조건을 유지한다 |
+| whole-input completion | 모든 범위 분류·라우팅 완료일 때만 같은 행을 reconciled로 마무리한다. 자식 open만으로 partial을 만들거나 D-/U-를 자동 resolve하지 않는다 |
 
 ## Screen Identity And New Screens
 
@@ -954,7 +1070,7 @@ LLM 은 conflict 를 open 으로 올리기만 한다.
 | IN-20260613-meeting-001 | meeting | conflict (decision reopen) | reconciled | pending user decision | COUPON-001 | C-001, D-001(reopened) | - |
 ```
 
-reconcile 행위는 끝났으므로 `Reconcile Status=reconciled`. 자식 D-001 이 open 이라 `Result=pending user decision` — 이 조합이 "처리는 됐고 사람 결정만 남았다"를 정확히 표현한다. 이전 모델처럼 `Status=open` 으로 두면 "미처리 입력"으로 오탐돼 코드 게이트가 계속 막혔다.
+이 예시는 모든 입력 범위를 분류·라우팅했으므로 `Reconcile Status=reconciled`. 자식 D-001 이 open 이라 `Result=pending user decision` — 이 조합이 "처리는 됐고 사람 결정만 남았다"를 정확히 표현한다. 자식 open만으로 partial로 바꾸지 않는다. 이전 모델처럼 `Status=open` 으로 두면 "미처리 입력"으로 오탐돼 코드 게이트가 계속 막혔다.
 
 **4) 사람이 재심 후 결정한다.** 새 입력을 채택하면:
 
@@ -970,13 +1086,14 @@ reconcile 행위는 끝났으므로 `Reconcile Status=reconciled`. 자식 D-001 
 
 ## Code Change Gate
 
-새 입력이 들어온 뒤에는 코드 변경 전에 reconciliation 을 거쳐야 한다.
+새 입력이 들어온 뒤에는 코드 변경 전에 해당 범위의 reconciliation 을 거쳐야 한다.
 
 ```txt
 input result exists (input_id 보유)
-→ reconcile input  (register pending → 문서 수정 → register reconciled)
+→ reconcile input  (register in-progress → 문서 수정·누적 effect → partial checkpoint 또는 전체 reconciled)
 → workflow:state
 → workflow:readiness
+→ current canonical contracts + existing path authorization for the requested scope
 → code change within allowed_paths
 → workflow:validate
 ```
@@ -990,13 +1107,19 @@ register 파일이 없으면 check 12 는 NO-OP 이다. register 가 있으면 i
 - `Reconcile Status=not-started`: 미시작. 기본 경고, `--enforce` 에서 에러.
 - `Reconcile Status=in-progress`: 이전 실행 중단. 항상 에러.
 - `Reconcile Status=failed`: reconcile 실패. 항상 에러.
+- `Reconcile Status=partially-reconciled`: 정상 부분 checkpoint, 미처리 범위는 Partial Reconciliation Notes에서 재개. 기본/`--enforce` 모두 RR-LIFECYCLE-101 warning.
 - invalid enum / duplicate Input ID / required column 누락: 항상 에러.
 
 Reconcile Status=reconciled 면 자식 decision 이 open 이어도 "미처리"가 아니다.
 그 open decision 의 차단은 readiness 다운그레이드가 이미 담당한다 (register 가 중복 차단하지 않는다).
 ```
 
-validate check 12 는 mixed severity 다. register 파일이 없으면 의도적으로 NO-OP 이고, register 가 있으면 row 없음과 `Reconcile Status=not-started` 만 기본 경고이며 `--enforce` 에서 에러가 된다. `in-progress`, `failed`, invalid enum, duplicate Input ID, missing required columns 는 항상 에러다. 입력 결과물 frontmatter 는 check 11 이 검사한다.
+validate check 12 는 mixed severity 다. register 파일이 없으면 의도적으로 NO-OP 이고, register 가 있으면 row 없음과 `Reconcile Status=not-started` 는 기본 경고이며 `--enforce` 에서 에러가 된다. `in-progress`, `failed`, invalid enum, duplicate Input ID, missing required columns 는 항상 에러다. `partially-reconciled` 경고는 `--enforce`에서도 승격하지 않으며 다른 오류를 면제하지 않는다. 입력 결과물 frontmatter 는 check 11 이 검사한다.
+
+partial warning-only는 미처리 범위의 구현 허가가 아니다. 이미 처리한 범위도 현재 canonical 계약과 기존
+readiness/path 권한을 따로 확인한다. 일반 no-intent의 mode/allowed/forbidden paths는 register 상태만으로 바꾸지 않는다.
+`visual-refresh`는 selected input의 정확한 `reconciled + accepted`와 single-item 등 기존 요건을 유지하므로
+partial + accepted도 `VR-RR-005`로 거부한다. Notes는 Open Decision 게이트를 대체하지 않는다.
 
 ## Skill Shape
 
@@ -1009,7 +1132,7 @@ reconcile-input
 입력:
 
 ```txt
-- input result path
+- input result path (새 입력 또는 기존 partial 입력의 남은 범위)
 - optional target screen/domain
 ```
 
@@ -1017,25 +1140,28 @@ reconcile-input
 
 ```txt
 1.  입력 결과물을 읽고 input_id 를 확인한다.
-2.  Register 에 같은 input_id 행이 있는지 확인한다. `reconciled` 는 멈추고, `in-progress` 는 이어서 처리하고, `failed` 는 같은 행을 `in-progress` 로 재개하며 실패 사유를 Result 에 보존하고, `not-started` 는 같은 행을 `in-progress` 로 이동한다. enum/중복/컬럼 오류는 먼저 register 구조를 고친다.
+2.  Register 에 같은 input_id 행이 있는지 확인한다. 정상 `reconciled` 는 멈춘다. `partially-reconciled` 는 immutable input·누적 Items·Partial Reconciliation Notes·현재 문서를 대조한 뒤 같은 행을 `in-progress`로 재개한다. 완료 effect는 반복하지 않는다.
+      `in-progress` 는 이어서 처리하고, `failed` 는 같은 행을 `in-progress` 로 재개하며 실패 사유와 잔여 메모를 보존하고, `not-started` 는 같은 행을 `in-progress` 로 이동한다. enum/중복/컬럼 오류는 먼저 register 구조를 고친다.
 3.  행이 없을 때만 Register 에 새 행을 먼저 쓴다 (Reconcile Status: `in-progress`).   ← 어떤 문서 수정보다 먼저.
 4.  `affected_domains`/`affected_screens`(구 `suggested_scope`) 를 기준으로 관련 산출물을 연다.
-5.  Decision-aware preclassification 절차로 실제 결정값·scope·현재 유효성을 확인한다.
-6.  classification 을 만든다 (입력 1개 → item N개 가능).
+5.  Decision-aware preclassification 절차로 이번 미처리 범위의 실제 결정값·scope·현재 유효성을 확인한다.
+6.  실제 처리하는 사실의 classification 을 만든다 (입력 1개 → item N개 가능). 미처리 계획은 가짜 effect로 넣지 않는다.
 7.  자동 반영 가능한 simple-update 만 문서에 반영한다.
 8.  decision/conflict 는 사용자에게 선택지를 제시한다.
-      - resolved 결정과 충돌하면 Conflict 에 이전 값을 남기고 해당 decision 을 open 으로 재오픈한다.
+      - resolved 결정과 충돌하면 Conflict 에 이전 값을 남기고 해당 decision 을 같은 회차/같은 Item에서 open 으로 재오픈한다.
       - Unknown 의 답을 제공하면 출처와 근거를 기존 Unknown 에 연결하되 Status 는 `open` 으로 둔다 (`resolved` 는 사람 전용).
       - 검증 없이는 결정 불가면 Investigation/Verification 을 만들고 막을 화면에 Open Decision 을 올린다 (Unknown 단독은 게이트 아님).
       - 카탈로그에 없는 공통 컴포넌트가 필요하면 Component Gap Register 에 `G-xxx` 를 `open` 으로 제안한다 (accept 는 사람).
-9.  사용자 결정 후 문서를 업데이트한다.
-10. Register 행을 `reconciled` 로 바꾸고 Result·Touched Artifacts·Created Items 를 채운다 (자식 decision 이 open 이어도 reconcile 은 끝).
-11. workflow:state/readiness/validate 결과를 보고한다.
+9.  게이트 내림이 필요한 문서 업데이트는 사람 결정 후에만 한다. 전체 라우팅 완료를 위해 사람 결정 해결까지 기다리지 않는다.
+10. 기존 Item ID/effect를 보존하고 새 실제 effect를 누적해 Summary를 전체 누적 projection으로 갱신한다.
+      미처리 범위가 남으면 메모와 함께 같은 행을 `partially-reconciled / pending`으로 종료한다. 모든 범위 라우팅 완료면 `reconciled`와 적절한 Result로 마무리한다. 자식 decision open은 partial 사유가 아니다.
+11. workflow:state/readiness/validate와 이번 회차 리뷰 결과를 보고한다. 이번 범위 종료 / 입력 전체 미완료 / 다음 범위를 구분한다.
+      메모가 없거나 미처리 범위가 불명확하면 정상 checkpoint로 승인하지 않는다. 기존 hard/Critical/Major/raise-only/provenance/scope 조건은 그대로다.
       layout/policy migration 입력이면 `npm run workflow:policy-draft -- --out <review-output-dir>`처럼
       review-only 출력 디렉터리를 명시해 policy-draft 생성 결과도 보고한다.
 ```
 
-**register-first 가 핵심이다.** 문서부터 고치고 register 를 나중에 쓰면, 중간에 세션이 끊겼을 때 "처리 중이었음"을 알 수 없어 재실행이 같은 수정을 중복한다. pending 행을 먼저 남기면 중단돼도 미완 상태가 보인다.
+**register-first 가 핵심이다.** 문서부터 고치고 register 를 나중에 쓰면, 중간에 세션이 끊겼을 때 "처리 중이었음"을 알 수 없어 재실행이 같은 수정을 중복한다. in-progress 행을 먼저 남기고 실제 회차가 일관되게 끝난 뒤에만 partial checkpoint를 쓰면 불완전 중단과 정상 부분 종료를 구분할 수 있다. 변경되지 않은 snapshot에 회차용 새 input_id/supersedes를 발급하지 않는다.
 
 금지:
 
@@ -1049,7 +1175,7 @@ reconcile-input
 - Gap 을 직접 accept 하거나 새 공통 컴포넌트를 직접 만들기   (제안=`open` 만, accept 는 사람)
 - 충돌을 조용히 덮어쓰기
 - Owner만 보고 사용자 판단 가능성을 배제하기
-- 입력을 수정하려고 같은 input_id 를 덮어쓰기   (새 id + supersedes)
+- 입력을 수정하려고 같은 input_id 를 덮어쓰기   (실제 내용 변경은 새 id + supersedes, 회차 분할은 같은 id)
 - reconciliation 전 코드 변경
 - production code / tests / generated files 직접 수정
 - live `policies/implementation-mode-policy.yaml` 교체
@@ -1095,9 +1221,13 @@ source-specific producer
 → normalized payload
 → workflow:create-input
 → docs/frontend-workflow/inputs/{input_id}.md
-→ reconcile-input
-→ workflow:state / workflow:readiness / workflow:validate
-→ implementation within readiness allowed_paths
+→ reconcile-input (기존 partial도 원문·누적 Items·재개 메모를 읽고 같은 행을 in-progress로 재개)
+→ 실제 effect 누적 + Summary projection
+→ 미처리 범위가 남으면 partially-reconciled / 전체 라우팅 완료면 reconciled
+→ workflow:state / workflow:readiness / workflow:validate + 이번 회차 리뷰
+→ 이번 범위 종료 / 입력 전체 미완료 / 다음 범위를 구분해 보고
+→ implementation only under current canonical contracts and existing readiness/path permissions
 ```
 
-Keep one canonical register row per input_id. Retry updates that row; changed input content or a new source snapshot gets a new input_id with supersedes.
+Keep one canonical register row per input_id. Retry updates that row; changed input content or a new source snapshot gets a new input_id with supersedes. Unchanged snapshots never get a new input_id/supersedes merely to split rounds.
+A partial checkpoint retains cumulative Item IDs/effects and actionable `Partial Reconciliation Notes`; it is not whole-input completion or implementation authority. Fully routed input with open child decisions remains `reconciled`, and normal retries of that completed input stop.

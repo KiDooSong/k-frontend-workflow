@@ -107,6 +107,7 @@ export const RESULT_VALUES = [
 const RESULT_BY_STATUS = {
   'not-started': ['pending'],
   'in-progress': ['pending'],
+  'partially-reconciled': ['pending'],
   failed: ['failed'],
   reconciled: ['accepted', 'rejected', 'pending-user-decision', 'delegated', 'no-change', 'mixed'],
 };

@@ -18,7 +18,7 @@ import { splitFrontmatter, readFileSafe, exists, yamlParse } from './util.mjs';
 import { parseTable, hasHeader } from './spec.mjs';
 
 // reconcile 행위의 라이프사이클. 자식 항목 rollup 도, 입력 frontmatter 의 status 도 아니다.
-export const RECONCILE_STATUS_VALUES = ['not-started', 'in-progress', 'reconciled', 'failed'];
+export const RECONCILE_STATUS_VALUES = ['not-started', 'in-progress', 'reconciled', 'failed', 'partially-reconciled'];
 
 // 계약 스키마의 필수 8컬럼 (input-reconciliation.md "Reconciliation Register" 표).
 export const REQUIRED_REGISTER_COLS = [
@@ -219,6 +219,13 @@ export function validateReconciliationRegister({ register, inputArtifacts = [], 
         add(registerFile, `${id}: Reconcile Status=failed (reconcile 실패)`);
       } else if (status === 'not-started') {
         flagUnprocessed(registerFile, `${id}: Reconcile Status=not-started (아직 reconcile 시작 전)`);
+      } else if (status === 'partially-reconciled') {
+        // A consistent checkpoint is advisory even under --enforce, regardless of Result.
+        // Do not route through flagUnprocessed or bypass structural/v2 validation.
+        warn(
+          registerFile,
+          `RR-LIFECYCLE-101: '${id}' Reconcile Status=partially-reconciled — 일부 범위의 reconciliation이 남아 있습니다. register의 Partial Reconciliation Notes에서 해당 입력 재개 메모를 확인하고 같은 행을 in-progress로 재개하세요. 변경되지 않은 snapshot에 새 input_id/supersedes를 만들지 마세요.`,
+        );
       }
       // status === 'reconciled' 는 PASS — 자식 decision/Created Items 가 open 이어도 무조건 통과(HARD RULE 1·2).
     }
