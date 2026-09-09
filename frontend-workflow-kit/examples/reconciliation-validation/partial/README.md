@@ -2,7 +2,7 @@
 
 These are synthetic authoring fixtures, not a consumer dogfood run and not proof that an agent understands natural-language coverage. Runtime files are created, changed between rounds, parsed and validated by `scripts/lib/reconciliation-partial.test.mjs`. Visual authority uses the existing real Git/CLI helpers in `scripts/lib/visual-refresh-boundary.test.mjs`, not mocked applicable/allowed booleans.
 
-This implementation checkpoint is **not the complete #232 authoring rollout**. The existing skill, Stage 04, canonical reference, rubric, register template and upgrade instructions still need synchronized lifecycle guidance (P19). Keep the implementation PR as `Refs #232` until those surfaces and the requested checkout verification are complete. Test definitions below are not an execution report; the PR records the actual commands and results.
+P19 authoring guidance is wired through the [canonical protocol](../../../docs/reference/input-reconciliation.md#partial-reconciliation-checkpoints), [Stage 04](../../../docs/reference/workflow-stages/04-reconcile-input.md), [deployed skill](../../../skills/reconcile-input/SKILL.md), repository-local skill, [rubric](../../../docs/reference/reconcile-review-rubric.md), [template](../../../templates/meta/reconciliation-register.template.md) and [upgrade notes](../../../docs/reference/upgrade-notes.md#partial-reconciliation-checkpoints-232). The P19 tests check these surfaces and repeated procedures without relaxing the existing distribution/router or decision-aware tests. Test definitions below are not an execution report; the PR records actual commands, CI results and unexecuted verification. Keep `Refs #232` while any required completion/verification criterion remains unmet.
 
 ## Intended checkpoint protocol
 
@@ -28,7 +28,7 @@ Upgrade the runtime **before** using the new enum. Do not backfill all v1/v2 row
 | P02 | P01 with enforce: lifecycle warning remains advisory. |
 | P03 | v2 partial + pending + actual fixture update, refs and projection. |
 | P04 | P03 with enforce and unchanged public warning object shape. |
-| P05 | Invalid Target/Evidence/cells/projection/provenance, duplicate effect and missing structured Items remain hard. |
+| P05 | Invalid Target/Evidence/cells/projection/provenance, duplicate effect and missing structured Items remain hard. Mutations must actually change fixture bytes before checking the exact existing diagnostic. |
 | P06 | Malformed YAML/input, duplicate input/Summary, missing header and invalid status remain hard. |
 | P07 | in-progress and failed remain hard in v1/v2, default/enforce. |
 | P08 | Missing row and not-started preserve default-warning/enforce-error. |
@@ -42,8 +42,8 @@ Upgrade the runtime **before** using the new enum. Do not backfill all v1/v2 row
 | P16 | Fully reconciled multi-item visual input still fails VR-RR-008 in forward/backstop. |
 | P17 | Register-only status change leaves actual no-intent readiness_mode/allowed_paths/forbidden_paths unchanged. No visual-only JSON field is assumed. |
 | P18 | Pre-structured_since summary-only exemption and existing v1 corpus do not gain unrelated partial warnings. |
-| P19 | **Outstanding:** align all distributed/local authoring surfaces and add their consistency regression. Existing distribution/router <=120 regression is not relaxed. |
-| P20 | Missing prose notes remain outside the parser's hard schema; reviewer counterexamples below, not an automated semantic completeness claim. |
+| P19 | Seven authoring surfaces, exact severity matrix, both skill/Stage04 retry branches, reference Flow/Code Change Gate/Skill Shape/Consumer Summary, Notes ordering/fields, canonical links, old completed stop, authority boundary and deployed raw.split('\n').length <=120. Existing distribution and #231 tests remain unchanged. |
+| P20 | Missing prose notes remain outside the parser's hard schema; reviewer counterexamples below and in the rubric, not an automated semantic completeness claim. |
 
 ## P20 reviewer counterexamples
 
