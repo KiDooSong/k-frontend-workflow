@@ -39,6 +39,14 @@ This is where a ScreenSpec is authored **after identity is known** (Stage 02).
   and assign every row a narrow Slice Path. A deferred row needs open-Unknown or
   issue tracking and does not authorize its code slice. See
   [`../api-candidate-deferral.md`](../api-candidate-deferral.md).
+- With a v2 table, a legacy `- METHOD /path` bullet cannot add an API candidate.
+  Check 15 `API-V2-LEGACY-UNREPRESENTED` identifies ignored declarations and their
+  original file lines, warning-only even with `--enforce`. Author a real candidate
+  in the table with narrow Slice Paths and appropriate Gate/Tracking; do not
+  auto-insert or promote it. Move historical/not-adopted references to a separate
+  `## API Candidate History` H2 or explanatory prose. Matching method/path notes
+  for active or deferred rows are allowed. See the
+  [mixed-authoring diagnostic](../api-candidate-deferral.md#mixed-authoring-diagnostic-warning-only).
 - For a **brand-new screen**, Stage 02 / `workflow:create-screen` may have created a
   **stub** (canonical frontmatter only). Stage 05 fills the body, or — when facts
   are still missing — records open decisions / unknowns instead of guessing.
