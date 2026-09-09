@@ -5,100 +5,90 @@ description: 외부 입력 스킬이 저장한 새 입력 결과물(input_id 보
 
 # reconcile-input
 
-새 입력 결과물(`input_id` 보유)을 기존 산출물과 대조해 분류하고, 처리 이력을 Reconciliation Register에 남긴다.
+새 입력 또는 기존 partial 입력의 남은 범위를 대조하고 처리 이력을 남긴다.
 **충돌을 조용히 해결하지 않는다** — LLM은 게이트를 올리기만 하고, 게이트는 Open Decision(readiness)이 건다.
-
-이 스킬은 [workflow spine](../../docs/reference/workflow-spine.md) 의 **Stage 04** 다. 운영 절차 정본은
+이 스킬은 [workflow spine](../../docs/reference/workflow-spine.md)의 **Stage 04**다. 운영 절차 정본은
 [Stage 04 doc](../../docs/reference/workflow-stages/04-reconcile-input.md), 전체 계약은
-[input-reconciliation.md](../../docs/reference/input-reconciliation.md). 어떤 사실이 어느 문서에 사는지는
-[doc-ownership.md](../../docs/reference/doc-ownership.md) 를 본다.
-## 언제 쓰나
-- 사용자가 "입력 반영", "reconcile input", "이 입력 맞춰줘"를 요청할 때.
-- 새 Figma/기획/API/회의록/QA 입력 결과물(`IN-*.md`)을 기존 문서에 반영해야 할 때.
+[input-reconciliation.md](../../docs/reference/input-reconciliation.md), 사실의 소유권은 [doc-ownership.md](../../docs/reference/doc-ownership.md)다.
 
 ## 입력
-- 입력 결과물 경로 (`docs/frontend-workflow/inputs/{input_id}.md`, 또는 그룹 하위 `inputs/{domain}/{input_id}.md`).
-  없으면 사용자에게 묻는다. 매칭 키는 경로가 아니라 **`input_id`** 이고, inputs/ 는 재귀 스캔한다.
-  `inputs/README.md`·`index.md` 는 입력 결과물이 아니다.
-- (선택) 대상 screen/domain.
+- 새 입력 또는 재개할 입력 결과물 경로(`inputs/{input_id}.md` 또는 그룹 하위 경로). 없으면 사용자에게 묻는다.
+  매칭 키는 경로가 아니라 **`input_id`**이며 inputs/는 재귀 스캔한다. `README.md`·`index.md`는 입력이 아니다.
+- (선택) 대상 screen/domain. 세션 분할만을 위해 새 입력을 만들지 않는다.
+
 ## 핵심 불변식
-- **register-first**: 어떤 문서 수정보다 **먼저** register에 행을 쓴다(없으면 생성).
+- **register-first**: 어떤 문서 수정보다 **먼저** 같은 Summary 행을 `in-progress`로 생성/재개한다.
 - **gate raising only**: open 추가 / `resolved→open` 재오픈, Conflict·Unknown·Gap·INV-/VER- 생성까지만.
-  resolve / close / accept / `confirmed` 승격은 **사람** 전용.
-- **코드·테스트·생성 파일을 직접 수정하지 않는다.** 입력은 문서·레지스터·리뷰 draft 로만 반영한다.
-- **canonical 화면 identity는 워크플로우가 소유**하고 source 코드(planning/design/node id)는 alias 다.
-  reconcile-input 은 source 코드나 `raw:flow/...` 로 canonical Screen ID 를 발명하지 않는다. raw token 이면
-  screen-level write 를 멈추고 **[Stage 02](../../docs/reference/workflow-stages/02-screen-identity-source-mapping.md)** 로
-  screen identity 를 보낸다. 입력 전체를 failed 로 취급하지 말고, source-backed domain/app-level facts 는
-  [flow-shaped/domain-level routing](../../docs/reference/input-reconciliation.md#flow-shaped--domain-level-input)에 따라 reconcile 할 수 있다.
-- `input_id` 는 불변. 내용이 바뀌면 같은 id 를 덮어쓰지 말고 **새 id + supersedes**.
-- 세 status 축은 별개 라이프사이클: 입력 frontmatter `status` ≠ register `Reconcile Status` ≠ 자식 항목(D-/C-/U-/G-/INV-/VER-).
-- **confidence ≠ fidelity**: confidence=내용 확신도, `input_contract: 2` fidelity=원본→input 전사/대조. fidelity로 confidence/status/readiness를 바꾸지 않으며 raw source 수집은 consumer producer 소관.
-- 새/opt-in Figma mapping은 `provenance_contract: 1` + 모든 `` `M-xxx` · `` key + 모든 5컬럼 provenance row를 **같은 edit**에서 쓴다(contract-only 금지).
+  resolve / close / accept / `confirmed` 승격은 **사람** 전용. 코드·테스트·생성 파일은 직접 수정하지 않는다.
+- **canonical 화면 identity는 워크플로우가 소유**하고 source 코드는 alias다. canonical Screen ID 를 발명하지 않는다.
+  raw 코드·`raw:flow/...`는 screen-level write를 멈추고 [Stage 02](../../docs/reference/workflow-stages/02-screen-identity-source-mapping.md)로 보낸다.
+  입력 전체를 failed로 취급하지 말고 source-backed domain/app facts는 [flow routing](../../docs/reference/input-reconciliation.md#flow-shaped--domain-level-input)을 따른다.
+- `input_id`·입력 bytes·`supersedes`는 회차 간 유지한다. **실제 내용/새 snapshot 변화**만 새 id + supersedes다.
+- 세 status 축은 별개: 입력 frontmatter `status` ≠ register `Reconcile Status` ≠ 자식 D-/C-/U-/G-/INV-/VER- 상태.
+- **confidence ≠ fidelity**: fidelity는 전사/대조 상태이며 confidence/status/readiness를 바꾸지 않는다. raw 수집은 consumer 소관이다.
+- 새/opt-in Figma mapping은 `provenance_contract: 1` + 모든 M-key + 모든 5컬럼 provenance row를 **같은 edit**에서 완성한다.
+
 ## 같은 input_id 재시도 (register row 재사용)
-Register에서 같은 `input_id` 행을 먼저 찾고 `Reconcile Status` 에 따라 처리한다 — **새 행을 늘리지 않는다**:
-- `reconciled` → **멈춘다.** 같은 입력은 이미 처리됐다. 재처리는 새 `input_id` + `supersedes`.
-- `in-progress` → **그 행을 이어서** 처리한다.
-- `failed` → 새 행을 만들지 않는다. 같은 행을 `in-progress` 로 재개하고 이전 실패 사유를 `Result` 에 보존한다.
+Register에서 같은 `input_id`를 먼저 찾는다. **새 행을 늘리지 않는다**:
+- `reconciled` → **멈춘다.** 전체 입력 처리 완료다. 실제 내용/새 snapshot 변화만 새 `input_id` + `supersedes`.
+- `partially-reconciled` → immutable input·누적 Items·현재 문서·해당 입력의 `Partial Reconciliation Notes`를 읽고 미처리 범위를 확인한 뒤 **같은 Summary 행을 `in-progress`로 이동**한다. 완료 effect는 반복하지 않는다.
+- `in-progress` → **그 행을 이어서** 수리/처리한다.
+- `failed` → 새 행을 만들지 않는다. 같은 행을 `in-progress`로 재개하고 이전 실패 사유를 Result 또는 retry note에, 잔여 범위를 재개 메모에 보존한다.
 - `not-started` → 같은 행을 `in-progress` 로 이동한다.
-- 없음 → 새 행을 `in-progress` 로 **먼저** 쓴다(문서 수정 전).
-- invalid enum / duplicate row / missing column → 먼저 register 구조를 수리한다.
-전체 retry·check 12 severity·8컬럼 스키마: [input-reconciliation.md](../../docs/reference/input-reconciliation.md) /
-템플릿 [reconciliation-register.template.md](../../templates/meta/reconciliation-register.template.md).
+- 없음 → 새 행을 `in-progress`로 **먼저** 쓴다. invalid enum / duplicate row / missing column → 먼저 구조를 수리한다.
+과거 잘못된 완료 표시는 [명시적 유지보수/사람 확인](../../docs/reference/upgrade-notes.md#partial-reconciliation-checkpoints-232)으로만 정정한다. 정상 stop을 해제하지 않는다.
 
 ## 절차 (register-first)
-1. 입력 결과물을 읽고 canonical frontmatter 와 `input_id` 를 확인한다(멱등성·역추적 키).
-2. 위 "같은 input_id 재시도" 표대로 register 행을 만들거나 재개한다 — **어떤 문서 수정보다 먼저**.
-3. `affected_domains`/`affected_screens`(구 `suggested_scope`) 기준으로 관련 산출물만 연다.
-   종류별 1차 산출물은 아래 라우팅 표, 2차 산출물은 [task-artifact-matrix.md](../../docs/reference/task-artifact-matrix.md).
-4. `affected_screens` 가 canonical id 가 아니라 raw source 코드, `raw:flow/...`, 미존재 화면이면 screen-level write 는 **멈추고 Stage 02** 로 식별을 푼다
-   ([screen-identity.md](../../docs/reference/screen-identity.md)). 다만 flow-shaped/domain-level 입력 전체가 failed 인 것은 아니다.
-   source-backed domain/app-level facts 는 [input-reconciliation.md](../../docs/reference/input-reconciliation.md#flow-shaped--domain-level-input) 의 라우팅 표에 따라 계속 reconcile 할 수 있다.
-5. 분류 전 [결정 대조 절차](../../docs/reference/input-reconciliation.md#decision-aware-preclassification)로 관련 Unknowns/Open Decisions·global `decision_refs`·현재 정본·연결 이력을 확인한다. 실제 결정값·scope·현재 유효성을 대조하며 **읽기 순서는 권위 순서가 아니다**.
-6. [분류 정의](../../docs/reference/input-reconciliation.md)로 사실별 item을 분류한다. 구현 드리프트·본문 밖의 답·의도적 미제공을 새 선택/충돌/컴포넌트 누락과 구분하며, `expected_reconciliation`은 힌트다. 수동 입력도 같은 대조를 적용한다.
-7. 자동 반영 가능한 `simple-update` 만 문서에 반영한다. 근거 note를 실제 추가했다면 해당 artifact의 `update`로 기록하고, 가짜 update나 `simple-update + link-evidence`를 만들지 않는다.
-8. decision/conflict 는 **멈추고** 선택지를 제시한다. 현재 유효한 `resolved` 결정과 실제 충돌하면 같은 item에 Conflict `create-open`(이전 값 보존)과 해당 Decision `reopen`을 함께 기록한다.
-   검증이 필요하면 INV-/VER- + 막을 화면에 Open Decision. 카탈로그에 없는 공통 컴포넌트는 Gap `G-xxx open` **제안만**.
-9. 사용자 결정 후 문서를 업데이트한다 (게이트 내림은 사람이).
-10. 새/opt-in Figma mapping은 기존 4컬럼 header와 M-key↔Mapping Provenance 1:1을 원자적으로 완성한다. direct/inherited effective Source Ref는 canonical Figma file + node/frame anchor여야 하며 planning/API/file-only ref나 `document`/`statement`/`n/a`로 대신하지 않는다. `instance`=Figma instance, `record`=API/domain record; 불명확한 Source/Evidence는 발명하지 않고 open item으로 남긴다.
-11. register 행을 `reconciled` 로 바꾸고 `Result`·`Touched Artifacts`·`Created Items` 를 채운다.
-    자식 decision 이 `open` 이어도 reconcile 자체는 끝 — 그 차단은 readiness 가 담당한다.
-    **Contract v2 register**(frontmatter `reconciliation_contract: 2`)면 summary 와 함께 `## Reconciliation Items`
-    item/effect 행을 쓴다 — 문법·routing matrix·provenance(Source Unit 은 실제 세는 단위: `instance`/`node`/`record` 등,
-    input 값과 같으면 `inherit`)는 [input-reconciliation.md §Contract v2](../../docs/reference/input-reconciliation.md#reconciliation-contract-v2-opt-in) 가 정본. `Basis=visual-evidence`는 effective Source Ref의 canonical Figma file + node/frame anchor가 hard floor다.
-12. task-artifact matrix 로 2차 산출물을 재확인한 뒤 `workflow:state` → `workflow:readiness` → `workflow:validate` 를 실행해 보고한다.
-    Contract v2의 `RR-ROUTE-101`·`RR-STALE-101/102/103`은 자동 수정 명령이 아니다. exact Evidence/Decision status를 TP/FP/Non-evaluable로 판정하고 TP만 같은 review batch에 올린다.
-    warning만으로 C-/Decision 생성, Unknown/Decision close, historical Effect rewrite, Result 변경을 하지 않으며 `--enforce`도 승격하지 않는다.
-13. Tier3/layout/policy migration 입력을 건드렸으면 `workflow:policy-draft -- --out <review-output-dir>` 로 review-only 산출물을
-    만든다(live policy 교체 아님). 자세히: [Stage 10](../../docs/reference/workflow-stages/10-policy-layout-tier3-changes.md).
-## 입력 종류별 라우팅 (요약 — 상세는 링크)
-| 입력 종류 | 1차 산출물 | 상세 (정본) |
-|---|---|---|
-| planning / meeting / user-note | ScreenSpec, Navigation Map, Domain Rules, Open Decisions/Conflicts/Unknowns | [input-reconciliation.md](../../docs/reference/input-reconciliation.md) §Classification |
-| flow-shaped / domain-level | Domain Rules, Navigation Map(app-level only), API manifest, ScreenSpec Interaction Matrix(after identity) | [input-reconciliation.md](../../docs/reference/input-reconciliation.md) §Flow-shaped / domain-level input |
-| api | API manifest/OpenAPI, ScreenSpec Data/API, Domain Rules | [CONVENTIONS.md](../../CONVENTIONS.md) §API |
-| figma / visual-spec | `figma-component-mapping.md`, Component Catalog/Gap, Open Decisions | [input-reconciliation.md](../../docs/reference/input-reconciliation.md) §Visual/Figma |
-| qa / testid | testID intake note 또는 ScreenSpec Accessibility/Acceptance, INV-/VER- | [input-reconciliation.md](../../docs/reference/input-reconciliation.md) §testID |
-| architecture / policy / Tier3 | `project-layout.yaml`, readiness output, policy draft, migration guide | [Stage 10](../../docs/reference/workflow-stages/10-policy-layout-tier3-changes.md) |
+1. 입력 결과물의 canonical frontmatter와 `input_id`를 확인하고 위 retry 규칙으로 같은 행을 생성/재개한다.
+2. `affected_domains`/`affected_screens`(구 `suggested_scope`)로 관련 산출물만 연다. identity 미해결은 Stage 02로 보낸다.
+3. 분류 전 [결정 대조 절차](../../docs/reference/input-reconciliation.md#decision-aware-preclassification)로 관련 Unknowns/Open Decisions·global `decision_refs`·현재 정본·연결 이력을 확인한다.
+   실제 결정값·scope·현재 유효성을 대조하며 **읽기 순서는 권위 순서가 아니다**. partial의 미처리 범위와 수동 입력도 동일하다.
+4. 이번 처리 사실을 분류한다. 구현 드리프트·본문 밖의 답·의도적 미제공을 새 선택/충돌/컴포넌트 누락과 구분한다. `expected_reconciliation`은 힌트다.
+5. 허용되는 `simple-update`만 문서에 반영한다. 실제 근거 note 추가는 해당 artifact의 `update`이며 가짜 update / `simple-update + link-evidence`는 금지다.
+   원래 open U-/D- 답은 기존 unknown-answer/decision-answer의 `link-evidence`로 연결하고 Status는 open으로 둔다.
+6. decision/conflict의 제품 선택은 멈추고 선택지를 제시한다. 유효한 resolved 결정과 실제 충돌하면 이전 값을 보존하고 Conflict `create-open` + Decision `reopen`을 **같은 회차·같은 Item**으로 완결한다.
+   이미 확인한 충돌을 partial 메모로 숨기지 않는다. 검증 필요는 INV-/VER- + 필요한 Open Decision, 카탈로그 누락은 G-xxx open **제안만**이다.
+7. 게이트 내림이 필요한 문서 변경은 사람 결정 후에만 한다. 전체 라우팅 완료를 위해 사람 결정 해결까지 기다리지는 않는다.
+8. 새/opt-in mapping은 기존 4컬럼과 `` `M-xxx` · `` key↔Mapping Provenance 1:1을 원자적으로 완성한다.
+   effective Source Ref는 canonical Figma file + node/frame anchor다. planning/API/file-only나 document/statement/n/a로 대체하지 않는다. instance=Figma instance, record=API/domain record다.
+9. v2는 같은 10컬럼 `Reconciliation Items`에 새 **실제 effect만 누적**한다. 기존 Item ID/effect를 보존하고 삭제·재번호화·현재 자식 상태에 맞춘 rewrite·재수행을 하지 않는다.
+   Summary Classification·Touched Artifacts·Created Items는 **모든 회차의 누적 projection**이다. 미처리 축에 가짜 record/update/link-evidence나 임의 분류를 만들지 않는다.
+10. 아래 종료 분기로 같은 Summary 행의 상태와 Result를 갱신한다. v1/v2·8/10컬럼·structured_since legacy 면제는 그대로다.
+11. [task-artifact matrix](../../docs/reference/task-artifact-matrix.md)로 2차 산출물을 확인하고 `workflow:state` → `workflow:readiness` → `workflow:validate` 및 이번 회차 리뷰를 수행한다.
+    RR-ROUTE-101·RR-STALE-101/102/103은 TP/FP/Non-evaluable로 판정하고 TP만 같은 review batch에 올린다. warning만으로 생성/close/Effect rewrite/Result 변경을 하지 않으며 `--enforce`도 승격하지 않는다.
+12. Tier3/layout/policy migration은 `workflow:policy-draft -- --out <review-output-dir>`로 review-only 산출물만 만든다. live 교체가 아니다([Stage 10](../../docs/reference/workflow-stages/10-policy-layout-tier3-changes.md)).
 
-핵심 경계(상세는 위 링크): 시각 매핑은 figma mapping 에·행동은 ScreenSpec 에 — **visual 증거는 behavior 정본을 바꾸지 않는다**;
-selector/testID 는 evidence 일 뿐 naming `confirmed` 승격 금지; Tier3 는 draft/review 만, live policy 교체·CI 승격 금지.
+## 부분 종료 / 전체 종료
+상세: [partial checkpoint protocol](../../docs/reference/input-reconciliation.md#partial-reconciliation-checkpoints), [register template](../../templates/meta/reconciliation-register.template.md).
+- **부분 종료**: 실제 처리 범위의 문서 작업·gate-raising·effect group을 일관되게 끝낸 뒤 `partially-reconciled`로 둔다. v2 Result는 `pending` 권장, 기존 Result warning/v1 자유서술 유지.
+- canonical Summary/Items **뒤** `## Partial Reconciliation Notes`의 입력별 메모에 처리 범위·근거, 미처리 원문 pointer, 중단 이유, 다음 행동, 담당/연결 작업(미정이면 명시)을 남긴다.
+  원문·누적 Items와 대조하며 댓글만을 유일한 재개 장소로 쓰지 않는다. 메모 수정 자체에 가짜 product artifact update를 만들지 않는다.
+- **전체 종료**: 모든 범위를 분류·라우팅했을 때만 `reconciled`와 적절한 기존 Result로 마무리한다. 자식 decision이 `open`이라는 이유만으로 partial로 바꾸지 않는다.
+  현재 잔여 범위 없음 또는 과거 메모임을 명확히 한다. 전체 완료를 위해 D-/U-를 자동 resolve하지 않는다.
+- 아무 범위도 처리하지 않았거나 실제 작업이 중단/실패했다면 partial로 꾸미지 않는다. `in-progress`/`failed`/구조 오류는 항상 hard다.
+  행 없음/`not-started`는 기본 warning·enforce error이며, partial의 `RR-LIFECYCLE-101`은 기본 및 `--enforce` 모두 warning-only다. 다른 오류를 면제하지 않는다.
+- partial warning-only는 미처리 범위의 **구현 허가가 아니다**. 일반 구현은 현재 canonical 계약·기존 readiness/path 권한을 따르고 Notes는 Open Decision 게이트를 대체하지 않는다.
+  visual-refresh는 selected input의 정확한 `reconciled + accepted` 및 single-item 조건을 유지한다. partial + accepted도 VR-RR-005 거부이며 무관한 정상 partial로 전역 deny를 만들지 않는다.
+
+## 입력 종류별 라우팅 (상세는 정본)
+| 입력 종류 | 1차 산출물 | 상세 |
+|---|---|---|
+| planning / meeting / user-note | ScreenSpec, Navigation Map, Domain Rules, D/C/U | [input-reconciliation.md](../../docs/reference/input-reconciliation.md) |
+| flow-shaped / domain-level | Domain Rules, app-level Navigation Map, API; identity 확인 후 ScreenSpec | [flow routing](../../docs/reference/input-reconciliation.md#flow-shaped--domain-level-input) |
+| api | API manifest/OpenAPI, ScreenSpec Data/API, Domain Rules | [CONVENTIONS.md](../../CONVENTIONS.md) |
+| figma / visual-spec | figma mapping, Component Catalog/Gap, Open Decisions | [visual contract](../../docs/reference/input-reconciliation.md#visualfigma-입력--visual-spec-과-behavior-분리) |
+| qa / testid | intake/Accessibility/Acceptance, INV-/VER- | [input-reconciliation.md](../../docs/reference/input-reconciliation.md) |
+| architecture / policy / Tier3 | layout, readiness, policy draft, migration guide | [Stage 10](../../docs/reference/workflow-stages/10-policy-layout-tier3-changes.md) |
+시각 증거는 behavior 정본을 바꾸지 않는다. selector/testID는 evidence이며 naming confirmed 승격 금지다.
 
 ## Review Contract (Stage 04)
-
-리뷰는 `review_profile: reconcile-stage04-v1` — 정본: [reconcile-review-rubric.md](../../docs/reference/reconcile-review-rubric.md).
-- reviewer 는 routing·source backing·gate-raising 경계·scope·validate 해소만 필수로 보고(잠정 candidate 에 최종
-  fidelity 요구 금지), 필수 finding 을 **한 라운드에 일괄 제출**하며 Info 를 pass blocker 로 쓰지 않는다.
-- **stop condition**: validate hard errors 0 · Critical/Major 0 · gate-lowering diff 0 · provenance floor 충족 ·
-  남은 불확실성이 open D/U/C/G/INV/VER 로 표현 · scope 밖(code/tests/generated/live policy/CI) 변경 0.
-- 최종 응답에 stop 근거, 202-C warning별 TP/FP/Non-evaluable, 사람이 추가로 찾은 in-scope Missed를 보고한다. warning 자체는 blocker가 아니며 확인된 Critical/Major finding만 blocker다.
-
-## 필요할 때 읽는 문서
-- 분류·copy keys·conflict·retry·check 12 전체: [input-reconciliation.md](../../docs/reference/input-reconciliation.md)
-- 화면 식별: [screen-identity.md](../../docs/reference/screen-identity.md) / [Stage 02](../../docs/reference/workflow-stages/02-screen-identity-source-mapping.md)
-- 시각 vs 행동: [input-reconciliation.md](../../docs/reference/input-reconciliation.md) §Visual/Figma + [figma-component-mapping.template.md](../../templates/screen/figma-component-mapping.template.md)
-- 컴포넌트 갭(proposal-only): [component-gap-register.template.md](../../templates/global/component-gap-register.template.md) + [task-artifact-matrix.md](../../docs/reference/task-artifact-matrix.md)
-- Unknown vs Open Decision 판단: [ambiguity-triage.md](../../docs/reference/ambiguity-triage.md)
+리뷰 정본: [reconcile-review-rubric.md](../../docs/reference/reconcile-review-rubric.md), `review_profile: reconcile-stage04-v1`.
+- routing·source backing·raise-only·scope·checkpoint completeness를 검토한다. 잠정 candidate의 최종 fidelity는 요구하지 않는다.
+  필수 finding은 **한 라운드에 일괄 제출**하고 Info는 pass blocker로 쓰지 않는다.
+- **stop condition**: validate hard errors 0 · Critical/Major 0 · gate-lowering diff 0 · provenance floor 충족 · 이번 범위 불확실성의 open D/U/C/G/INV/VER 표현 · scope 밖 변경 0.
+- 메모 부재·미처리 범위 불명·완료 effect 재수행은 reviewer가 정상 checkpoint로 승인하지 않는다(P20). Notes 의미를 새 자연어 parser로 검사하지 않는다.
+- 최종 보고: **이번 범위 종료 / 입력 전체 미완료 / 다음 범위**, stop 근거, 202-C warning별 TP/FP/Non-evaluable 및 in-scope Missed를 구분한다. partial을 전체 accepted/완료로 보고하지 않는다.
+  정적 fixture/문구 검사를 실제 LLM 범위 분할·재개 또는 consumer dogfood 실행으로 주장하지 않는다.
 
 ## 최종 검증
 ```bash
@@ -110,10 +100,6 @@ npm run workflow:policy-draft -- --out <review-output-dir>
 ```
 
 ## 금지
-- `resolved` 결정 재-resolve, Unknown `resolved` 닫기, Gap accept, `confirmed` 승격 (전부 사람-전용).
-- 이전 결정 값을 Conflict 기록 없이 조용히 덮어쓰기 / 입력 문구를 Copy Keys 에 `confirmed` 로 올리기(`draft` 까지만).
-- source 코드로 canonical Screen ID 발명 (매핑=Screen Source Map, 생성=사람-확인 또는 `workflow:create-screen`).
-- 같은 `input_id` 덮어쓰기 (새 id + supersedes).
-- reconciliation 전 코드 변경 / production code·tests·generated files 직접 수정.
-- live `policies/implementation-mode-policy.yaml` 교체, CI / pre-edit hook enforcement 승격.
-- fidelity를 confidence로 해석하거나, Mapping Provenance를 근거로 resolve/close/accept/confirmed 승격.
+- resolved 재-resolve, Unknown close, Gap accept, confirmed 승격, 이전 결정값의 조용한 덮어쓰기(모두 사람-전용 경계).
+- 입력 카피를 Copy Keys confirmed로 올리기(draft만), source 코드로 canonical Screen ID 발명, 같은 input_id 덮어쓰기.
+- production code/tests/generated 직접 수정, live policy 교체, CI/pre-edit hook enforcement 승격, fidelity로 confidence/상태 승격.
