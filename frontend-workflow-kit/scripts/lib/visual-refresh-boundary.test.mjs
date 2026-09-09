@@ -26,6 +26,7 @@ import {
   readPinnedBundledResource,
 } from './visual-refresh-resources.mjs';
 import { KIT_ROOT, yamlParse, yamlStringify } from './util.mjs';
+import { collectInputArtifacts, validateInputArtifacts } from './input-artifact.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const READINESS = path.join(KIT_ROOT, 'scripts', 'readiness.mjs');
@@ -587,11 +588,16 @@ test('P15: unrelated valid partial does not globally block an eligible visual in
   const other = 'IN-20260909-qa-232';
   const summaryRow = `| ${other} | qa | simple-update | partially-reconciled | pending | artifact:other-rules | - | - |`;
   const itemRow = `| ${other} | 01 | compatible-fact | simple-update | update | artifact:other-rules#notes | input:${other}#extracted-facts/01 | inherit | statement | inherit |`;
-  write(root, `docs/frontend-workflow/inputs/other/${other}.md`, `---\ninput_id: ${other}\ninput_type: qa\nsource_type: qa\nsource_ref: fixture://partial/other\ncaptured_at: "2026-09-09T09:00:00+09:00"\ncaptured_by: synthetic-fixture-author\nstatus: captured\naffected_domains: [other]\naffected_screens: []\nsupersedes: null\n---\n\n## Extracted Facts\n\n- Keep the existing other-domain rule.\n- Review the remaining other-domain note.\n`);
+  write(root, `docs/frontend-workflow/inputs/other/${other}.md`, `---\ninput_id: ${other}\ninput_type: qa\nsource_type: qa\nsource_ref: fixture://partial/other\ncaptured_at: "2026-09-09T09:00:00+09:00"\ncaptured_by: synthetic-fixture-author\nstatus: captured\naffected_domains: [other]\naffected_screens: [OTHER-001]\nsupersedes: null\n---\n\n## Extracted Facts\n\n- Keep the existing other-domain rule.\n- Review the remaining other-domain note.\n`);
   write(root, 'docs/frontend-workflow/domains/other/domain-rules.md', `---\nartifact_id: other-rules\nartifact_type: domain-rules\ndomain: other\nstatus: draft\n---\n\n## Notes\n\n- Keep the existing rule; evidence input:${other}#extracted-facts/01.\n`);
   const register = registerArtifact().replace('\n\n## Reconciliation Items', `\n${summaryRow}\n\n## Reconciliation Items`) +
     `${itemRow}\n\n## Partial Reconciliation Notes\n\n### ${other}\n\n- 처리: /01, Item 01, other-rules Notes.\n- 미처리: input:${other}#extracted-facts/02.\n- 이유: 회차 범위 분리.\n- 재개: 원본과 누적 Items를 대조하고 같은 행을 in-progress로 이동한다.\n- 담당/연결 작업: 미정.\n`;
   write(root, PARTIAL_REGISTER, register);
+  // Prove the positive fixture is valid before authority's input-local filtering.
+  const inputArtifacts = collectInputArtifacts(path.join(root, 'docs', 'frontend-workflow', 'inputs'));
+  assert.deepEqual(inputArtifacts.map((input) => input.fm.input_id).sort(), [INPUT_ID, other].sort());
+  assert.deepEqual(validateInputArtifacts(inputArtifacts).errors, [],
+    'P15 requires canonical inputs before checking visual authority isolation');
   git(root, 'add', '.');
   git(root, 'commit', '-m', 'unrelated consistent partial checkpoint');
   const forward = run(READINESS, visualArgs(root), root);
