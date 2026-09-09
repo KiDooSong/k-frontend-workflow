@@ -34,8 +34,42 @@ Opt in by replacing the section with exactly one six-column table:
   subtree globs. Every row needs them, including active rows.
 - Deferred confidence is `unknown|candidate`; `confirmed + deferred` is invalid.
 
-Do not mix legacy bullets with the table. When a candidate-like table exists, it is
-the complete authorization contract.
+When a candidate-like table exists, it is the complete authorization contract.
+Legacy bullets cannot add candidates to that table; matching endpoint explanations
+are allowed. See the mixed-authoring diagnostic below.
+
+## Mixed-authoring diagnostic (warning-only)
+
+Validate check 15 emits `API-V2-LEGACY-UNREPRESENTED` when a literal legacy
+`- METHOD /path ...` list item in the selected `## API Candidates` section names
+an endpoint absent from the actual v2 table candidates. Method is normalized by the
+existing parser; path is exact. The same method/path is allowed as an explanation
+for either an active or deferred row. A different method is a different candidate.
+Repeated declarations produce one warning per method/path, listing **all original
+1-based file lines**, including frontmatter and earlier generated sections.
+
+This is advisory in both default and `--enforce` validation. Public warning JSON
+remains `{check,file,message}`; the message contains file, source lines, endpoint
+and remediation. It is not added to `contract.issues`, does not invalidate a valid
+contract, and does not change candidates, derived facts, readiness mode or
+allowed/forbidden paths. Existing malformed-v2 diagnostics and check-8 hard errors
+still apply independently; this warning never enables legacy fallback.
+
+Only actual dash-list items starting with a literal endpoint are observed. Fenced,
+indented and inline-code examples, HTML comments/blocks, blockquotes, ordinary
+prose and endpoint mentions in other H2 sections do not declare candidates.
+There is no natural-language "historical" or "not adopted" suppression inside a
+candidate declaration, and no same-section history marker. Put explicit history or
+rejected proposals under a separate `## API Candidate History` H2 (not an H3 under
+API Candidates), or use explanatory prose such as `- Reference: GET /old ...`.
+This authoring distinction is deterministic, not an inference about the text.
+
+For a real candidate, the **author** must add a v2 row with narrow Slice Paths and
+appropriate Gate/Tracking, retaining the normal approval rules. For reference-only
+material, move it out of candidate-declaration form. The diagnostic never inserts
+a row, promotes active/confirmed, or grants paths. Legacy-only documents require no
+migration and retain their existing parser behavior. The authoring entry point is
+[Stage 05](workflow-stages/05-author-workflow-contracts.md).
 
 ## Slice Path Rules
 

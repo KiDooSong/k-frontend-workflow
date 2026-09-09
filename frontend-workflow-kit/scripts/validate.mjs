@@ -113,6 +113,7 @@ import {
   sharedSurfaceInteractionIssues,
 } from './lib/shared-surfaces.mjs';
 import { analyzeScreenLifecycles } from './lib/screen-lifecycle.mjs';
+import { diagnoseUnrepresentedLegacyApiCandidates } from './lib/api-candidate-diagnostics.mjs';
 
 function isLocalRef(ref) {
   if (typeof ref !== 'string') return false;
@@ -261,7 +262,7 @@ function main() {
   }
 
   // 콜드스타트 fail-open 가드 (warning-first): 저작된 artifact 문서가 0건이면 막을 대상이 없어
-  // vacuously green(exit 0)으로 통과한다 — 갓 도입한 프로젝트가 "통과=됐다"로 오인하는 fail-open.
+  // vacuously green(exit 0)으로 통과한다 — 갓 도입한 프로젝트의 "통과=됐다"로 오인하는 fail-open.
   // 게이트(exit code)는 건드리지 않고 경고만 띄워 LLM/사람이 부트스트랩 미완을 인지하게 한다.
   // 정상 최소 부트스트랩(navigation-map + screen-spec stub)은 artifact_type 을 가지므로 무발화.
   if (docs.length === 0) {
@@ -731,6 +732,11 @@ function main() {
   for (const spec of liveSpecs) {
     const contract = analyzeApiCandidateContract(spec, { layout, domain: spec.frontmatter.domain });
     for (const candidateIssue of contract.issues) warn(15, spec.path, `${candidateIssue.code}: ${candidateIssue.message}`);
+    // Advisory only, including --enforce: never append these to contract.issues.
+    for (const finding of diagnoseUnrepresentedLegacyApiCandidates({
+      source: readFileSafe(spec.path), contract,
+      file: toPosix(path.relative(projectRoot, spec.path)),
+    })) warn(15, spec.path, finding.message);
     if (contract.version === 2) {
       const screenId = publicScreenKeyOf(spec);
       specByScreenId.set(screenId, spec);
@@ -742,6 +748,11 @@ function main() {
   for (const spec of surfaceSpecs) {
     const contract = analyzeApiCandidateContract(spec, { layout, domain: spec.frontmatter.domain });
     for (const candidateIssue of contract.issues) warn(15, spec.path, `${candidateIssue.code}: ${candidateIssue.message}`);
+    // Advisory only, including --enforce: never append these to contract.issues.
+    for (const finding of diagnoseUnrepresentedLegacyApiCandidates({
+      source: readFileSafe(spec.path), contract,
+      file: toPosix(path.relative(projectRoot, spec.path)),
+    })) warn(15, spec.path, finding.message);
   }
   for (const [screenId, conflicts] of findApiCandidateOwnershipConflicts(apiCandidateScreenEntries)) {
     const spec = specByScreenId.get(screenId);
