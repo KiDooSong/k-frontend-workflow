@@ -628,18 +628,35 @@ test('P16: fully reconciled multi-item input still fails exact single-item autho
 
 test('P17: register-only partial status leaves real no-intent mode and path permissions unchanged', (t) => {
   const root = createAuthorityFixture(t);
-  const args = ['--root', root, '--screen', SCREEN_ID, '--path', SCREEN_PATH, '--json'];
+  const docs = path.join(root, 'docs', 'frontend-workflow');
+  const stateFile = path.join(docs, '_meta', 'workflow-state.yaml');
+  const generateState = () => {
+    const result = run(path.join(KIT_ROOT, 'scripts', 'workflow-state.mjs'), [
+      '--root', root, '--docs', docs, '--src', path.join(root, 'src'), '--date', '2026-09-09',
+    ], root);
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    return fs.readFileSync(stateFile, 'utf8');
+  };
+  // The no-intent CLI reads generated state, accepts --docs (not --root), and
+  // returns entries keyed by screen ID. Rebuild state on both sides so this is
+  // not a comparison of two reads of the same stale generated file.
+  const stateBefore = generateState();
+  const args = ['--docs', docs, '--screen', SCREEN_ID, '--path', SCREEN_PATH, '--json'];
   const before = run(READINESS, args, root);
   assert.equal(before.status, 0, before.stderr || before.stdout);
+  const a = JSON.parse(before.stdout)[SCREEN_ID];
+  assert.ok(a, before.stdout);
+  assert.equal(a.readiness_mode, 'api-integrated-ui', before.stdout);
+  assert.equal(a.path_authorization.allowed, false, before.stdout);
   write(root, PARTIAL_REGISTER, registerArtifact().replace('| reconciled | accepted |', '| partially-reconciled | pending |'));
+  assert.equal(generateState(), stateBefore, 'register lifecycle must not change generated readiness facts');
   const after = run(READINESS, args, root);
   assert.equal(after.status, 0, after.stderr || after.stdout);
-  const a = JSON.parse(before.stdout);
-  const b = JSON.parse(after.stdout);
-  // The legacy no-intent JSON contract exposes policy path sets, not the
-  // visual-intent-only path_authorization field. Compare the real public sets.
-  for (const key of ['readiness_mode', 'allowed_paths', 'forbidden_paths']) {
+  const b = JSON.parse(after.stdout)[SCREEN_ID];
+  assert.ok(b, after.stdout);
+  for (const key of ['readiness_mode', 'allowed_paths', 'forbidden_paths', 'path_authorization']) {
     assert.ok(Object.hasOwn(a, key), `missing no-intent field: ${key}`);
     assert.deepEqual(b[key], a[key], key);
   }
+  assert.deepEqual(JSON.parse(after.stdout), JSON.parse(before.stdout));
 });
