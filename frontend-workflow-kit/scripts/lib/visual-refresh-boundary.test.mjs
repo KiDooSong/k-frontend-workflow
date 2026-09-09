@@ -636,7 +636,9 @@ test('P17: register-only partial status leaves real no-intent mode and path perm
   assert.equal(after.status, 0, after.stderr || after.stdout);
   const a = JSON.parse(before.stdout);
   const b = JSON.parse(after.stdout);
-  for (const key of ['readiness_mode', 'allowed_paths', 'forbidden_paths', 'path_authorization']) {
+  // The legacy no-intent JSON contract exposes policy path sets, not the
+  // visual-intent-only path_authorization field. Compare the real public sets.
+  for (const key of ['readiness_mode', 'allowed_paths', 'forbidden_paths']) {
     assert.ok(Object.hasOwn(a, key), `missing no-intent field: ${key}`);
     assert.deepEqual(b[key], a[key], key);
   }
