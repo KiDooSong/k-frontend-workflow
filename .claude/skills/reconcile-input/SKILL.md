@@ -44,11 +44,15 @@ description: 외부 입력 스킬이 저장한 새 입력 결과물(input_id 보
    - 없음 → 다음 단계.
 3. 행이 없을 때만 Register에 행을 먼저 쓴다 (`Reconcile Status: in-progress`). ← 문서 수정보다 먼저. 파일이 없으면 아래 스키마로 생성.
 4. `affected_domains`/`affected_screens`(구 `suggested_scope` — deprecated read-compat) 기준으로 관련 산출물을 연다. 위 라우팅 표에 따라 visual/testID/Tier3 산출물도 포함한다.
-5. 기존 `confirmed` 문서·`resolved` 결정과 충돌하는지 대조한다.
+   사실별 canonical screen/domain과 적용 조건을 먼저 확인한다. raw source 코드는 canonical ID가 아니며, 화면 식별이 미해결이면 [screen-identity.md](../../../frontend-workflow-kit/docs/reference/screen-identity.md)의 Stage 02 경계를 따른다.
+5. 분류 전에 [결정 대조 절차](../../../frontend-workflow-kit/docs/reference/input-reconciliation.md#decision-aware-preclassification)를 수행한다.
+   관련 ScreenSpec의 `## Unknowns`·`## Open Decisions`와 `decision_refs`의 global canonical 행 → 현재 본문·Domain Rules·Copy Keys → 관련 ID/주제의 결정 이력과 연결 근거를 읽는다.
+   실제 결정값·적용 scope·현재 유효성을 확인한다. **읽기 순서는 권위 순서가 아니다.** 대체·범위 변경은 후속 기록까지 확인하며 로그 전체 정독이나 필수 로그 신설을 요구하지 않는다.
 6. classification을 만든다 (입력 1개 → item 여러 개 가능). 아래 분류표 참조.
-7. 자동 반영 가능한 `simple-update`만 문서에 반영한다.
+   기존 결정 미준수(구현 드리프트)·본문 밖의 답·의도적 미제공을 새 선택/충돌/컴포넌트 누락과 구분한다. `expected_reconciliation`은 힌트이며 수동 입력에도 같은 대조를 적용한다.
+7. 자동 반영 가능한 `simple-update`만 문서에 반영한다. 근거 note를 실제 추가했다면 해당 artifact의 `update`로 기록하고, 가짜 update나 `simple-update + link-evidence`를 만들지 않는다.
 8. decision/conflict는 **멈추고** 사용자에게 선택지를 제시한다.
-   - `resolved` 결정과 충돌 → Conflicts에 이전 값을 남기고(A=새 입력, B=기존 결정) 해당 Open Decision을 `open`으로 재오픈한다.
+   - 현재 유효한 `resolved` 결정과 실제 충돌 → 같은 item에 Conflict `create-open`(A=새 입력, B=이전 값 보존)과 해당 Decision `reopen`을 함께 기록한다.
    - 검증 없이는 결정 불가 → Investigation/Verification(`INV-`/`VER-`)을 만들고 막을 화면에 Open Decision을 올린다 (Unknown 단독은 게이트 아님).
    - 카탈로그에 없는 공통 컴포넌트 필요 → Component Gap Register에 `G-xxx`를 `open`으로 제안한다 (제안만 — accept는 사람).
 9. 사용자 결정 후 문서를 업데이트한다 (게이트 내림은 사람이).
@@ -107,6 +111,7 @@ description: 외부 입력 스킬이 저장한 새 입력 결과물(input_id 보
 - `Result`: `accepted` / `rejected` / `delegated` / `pending user decision` / `conflict-created` …
 - `Created Items`: `C-…`/`D-…`/`U-…`/`G-…`/`INV-…`/`VER-…` **링크만**. 자식 open/closed는 각 레지스터가 단일 출처.
 - `Supersedes`: **입력↔입력 축만** (결정값 번복 아님 — decision-log의 몫).
+- v2 register는 [Contract v2](../../../frontend-workflow-kit/docs/reference/input-reconciliation.md#reconciliation-contract-v2-opt-in)의 Items·typed ref·Summary projection을 함께 기록한다. 원래 open U-/D- 답은 기존 `link-evidence` 경로로 연결하며 상태를 내리지 않는다.
 
 ## 금지
 - `resolved` 결정 재-resolve / 임의 변경 (재오픈=`open`으로 올리기는 가능, 재-resolve는 사람만).

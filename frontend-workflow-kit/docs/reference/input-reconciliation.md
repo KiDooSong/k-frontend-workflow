@@ -561,7 +561,7 @@ fixture는 기본/`--enforce` 모두 exit 0이며, hard/CI/readiness 승격은 �
 3.  행이 없으면 Register 에 행을 먼저 쓴다 (Reconcile Status: `in-progress`).   ← 어떤 문서 수정보다 먼저.
 4.  입력 요약(body `## Summary`)과 범위(`affected_domains`/`affected_screens`, 구 `suggested_scope`)를 읽는다.
 5.  관련 기존 산출물을 찾는다.
-6.  기존 confirmed/resolved 결정과 충돌하는지 대조한다.
+6.  아래 Decision-aware preclassification 절차로 실제 결정값·scope·현재 유효성을 대조한다.
 7.  변경 유형을 분류한다 (입력 1개가 여러 분류일 수 있다).
 8.  사용자 결정이 필요한 경우 멈추고 선택지를 제시한다.
 9.  결정 결과에 따라 문서를 업데이트한다.
@@ -598,6 +598,54 @@ readiness output
 implementation-mode-policy.draft.yaml
 implementation-mode-policy.migration.md
 ```
+
+## Decision-aware preclassification
+
+새 선택·충돌·컴포넌트 누락으로 판정하기 전에, 사실별 canonical screen/domain과 플랫폼·버전·조건의 scope를
+먼저 제한한다. register-first·재시도·identity 규칙은 그대로다. 다른 화면의 동명 ID나 다른 scope의 기록을
+같은 근거로 취급하지 않는다. producer의 `expected_reconciliation`은 힌트이며 수동 입력에도 같은 확인을 한다.
+
+최소 탐색 순서:
+
+1. 관련 ScreenSpec의 `## Unknowns`와 **`## Open Decisions`**, `decision_refs`가 가리키는
+   `global/open-decisions.md`의 canonical 행을 읽는다. 참조 해소는 [open-decisions.md](open-decisions.md)를
+   따르며, 새 `## Decisions` 표나 다른 화면의 local 행을 global 참조 대상으로 만들지 않는다.
+2. 현재 ScreenSpec 본문, 관련 Domain Rules와 Copy Keys의 실제 요구·적용 조건을 대조한다.
+3. 관련 결정 ID/주제의 기존 이력과 명시적으로 연결된 보조 근거를 확인한다. 번복·범위 축소·대체가 있으면
+   후속 기록까지 읽는다. 본문 누락·의도적 미제공·변경 이력이 관련된 new-decision/conflict 판정을 이력 확인
+   없이 확정하지 않는다. 관련 ID/주제로 좁혀 읽으며 매 입력마다 전역 로그 전체나 모든 화면을 정독하지 않는다.
+
+**읽기 순서는 권위 순서가 아니다.** `Status=resolved`만으로 실제 답/선택을 알 수 없으므로 결정값·근거·scope·
+현재 유효성을 확인한다. 다른 범위 또는 이미 대체된 기록은 현재 권위가 아니다. 정본과 이력의 유효성이
+불명확하면 한쪽을 자동으로 덮어쓰지 말고 기존 Unknown/INV-/VER- 경로로 불확실성을 드러낸다. 구현 선택을
+실제로 막아야 할 때만 Open Decision을 사용한다. 로그 부재만으로 new-decision이나 전역 게이트를 만들지 않는다.
+다른 정본으로 답이 충분하면 판정할 수 있다. 소비자의 기존 이력 형식을 읽되 새 필수 파일·스키마·파서·Drift Ledger를
+요구하지 않는다. 이는 decision-log 계약을 선행 구현하는 절차가 아니다.
+
+| 확인된 상황 | 처리 경계 |
+|---|---|
+| 현재 결정과 요구는 같지만 구현이 따르지 않음 | 구현 드리프트와 문서 누락을 구분하고 실제 근거·후속 작업을 적합한 Notes 등에 기록한다. 새 제품 선택이 아니므로 새 D-/C-/G-나 resolved 재오픈을 만들지 않는다. 구현 확인/수정은 Stage 05/06으로 넘긴다. |
+| 답이 resolved U-/D- 또는 이력에 있고 본문에만 없음 | 답의 범위·유효성·근거를 확인하고 필요한 문서 보강을 한다. 본문에 없다는 이유만으로 new-decision을 만들지 않는다. |
+| 기능/전용 카피 미제공이 현재 결정의 준수 | 의도된 동작으로 다룬다. 가짜 결함/conflict나 Copy Key를 발명하지 않고 기존 Copy Key 상태를 유지한다. |
+| 새 요구가 현재 유효한 resolved 결정과 실제로 반대 | 같은 item에 Conflict create-open + 해당 Decision reopen을 기록하고 이전 값·새 근거를 보존한다. 기존 결정 보호를 이유로 진짜 충돌을 숨기지 않는다. |
+| 다른 scope 또는 대체된 역사 기록 | 현재 범위의 유효한 정본을 찾거나 필요한 불확실성을 표시한다. 오래된 resolved 문자열만으로 현재 분류를 확정하지 않는다. |
+| 원래 open U-/D- 질문에 대한 새 답 | 기존 unknown-answer/resolves-unknown 또는 decision-answer/resolves-decision의 link-evidence 경로를 유지하고 상태는 open으로 둔다. simple-update로 일괄 전환하거나 자동 resolve하지 않는다. |
+
+기록은 위 [v2 routing matrix](#routing-matrix-hard)를 그대로 따른다. 구현 드리프트/이미 결정됨은 설명이지
+새 Basis/Classification/Effect가 아니다. 일반적인 `gap` classification도 없으며 `component-gap`은 카탈로그 누락이다.
+기존 Notes에 새 입력 근거를 **실제로 추가**했다면 `compatible-fact / simple-update / update`와
+`artifact:<실제 artifact_id>#notes`로 기록한다. Evidence는 입력 포인터, Summary는 실제 Effect/Target의 projection과
+일치해야 한다. **`simple-update + link-evidence`는 허용되지 않는다.** 원래 open U-/D- 답의 근거 연결과 혼동하지 않는다.
+
+제품 동작이 그대로인 것과 문서 근거를 추가한 것은 다르다. 완전 무변경을 통과시키려고 가짜 `update`/새 문서를
+만들거나 no-op 어휘를 확장하지 않는다. Result와 Effect는 실제 변경에 맞게 기록한다. 근거가 부족한 구현 보고는
+확인된 결함이 아니라 보고된/추가 검증이 필요한 드리프트로 적는다. 자동 resolve/close/accept/confirm/implement,
+문서 status/confidence 또는 Copy Key 승격은 없다. Stage 04 소비자 실행에서는 코드·테스트·생성물을 고치지 않는다.
+
+킷 저장소의 `examples/reconciliation-validation/decision-aware/README.md`는 T1–T8 synthetic 검토 행렬이고,
+`scripts/lib/decision-aware-reconciliation.test.mjs`는 대표 저작 결과를 현재 validator/state/readiness로 검사한다.
+문구/링크 검사와 정적 fixture는 실제 LLM 탐색·분류 실행이나 소비자 dogfood 증거가 아니다. 실제 에이전트 dry-run과
+사람 평가는 실행한 경우에만 따로 보고하며 human-final을 expected-llm-after로 사용하지 않는다.
 
 ## Classification
 
@@ -972,7 +1020,7 @@ reconcile-input
 2.  Register 에 같은 input_id 행이 있는지 확인한다. `reconciled` 는 멈추고, `in-progress` 는 이어서 처리하고, `failed` 는 같은 행을 `in-progress` 로 재개하며 실패 사유를 Result 에 보존하고, `not-started` 는 같은 행을 `in-progress` 로 이동한다. enum/중복/컬럼 오류는 먼저 register 구조를 고친다.
 3.  행이 없을 때만 Register 에 새 행을 먼저 쓴다 (Reconcile Status: `in-progress`).   ← 어떤 문서 수정보다 먼저.
 4.  `affected_domains`/`affected_screens`(구 `suggested_scope`) 를 기준으로 관련 산출물을 연다.
-5.  기존 confirmed/resolved 결정과 충돌 여부를 확인한다.
+5.  Decision-aware preclassification 절차로 실제 결정값·scope·현재 유효성을 확인한다.
 6.  classification 을 만든다 (입력 1개 → item N개 가능).
 7.  자동 반영 가능한 simple-update 만 문서에 반영한다.
 8.  decision/conflict 는 사용자에게 선택지를 제시한다.

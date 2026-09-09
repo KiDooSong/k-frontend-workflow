@@ -54,11 +54,11 @@ Register에서 같은 `input_id` 행을 먼저 찾고 `Reconcile Status` 에 따
 4. `affected_screens` 가 canonical id 가 아니라 raw source 코드, `raw:flow/...`, 미존재 화면이면 screen-level write 는 **멈추고 Stage 02** 로 식별을 푼다
    ([screen-identity.md](../../docs/reference/screen-identity.md)). 다만 flow-shaped/domain-level 입력 전체가 failed 인 것은 아니다.
    source-backed domain/app-level facts 는 [input-reconciliation.md](../../docs/reference/input-reconciliation.md#flow-shaped--domain-level-input) 의 라우팅 표에 따라 계속 reconcile 할 수 있다.
-5. 기존 `confirmed` 문서·`resolved` 결정과 충돌하는지 대조한다.
-6. classification 을 만든다 (입력 1개 → item 여러 개 가능). 분류 정의: [input-reconciliation.md](../../docs/reference/input-reconciliation.md) §Classification.
-7. 자동 반영 가능한 `simple-update` 만 문서에 반영한다.
-8. decision/conflict 는 **멈추고** 선택지를 제시한다. `resolved` 와 충돌하면 Conflict 에 이전 값을 남기고 그 decision 을
-   `open` 으로 재오픈. 검증이 필요하면 INV-/VER- + 막을 화면에 Open Decision. 카탈로그에 없는 공통 컴포넌트는 Gap `G-xxx open` **제안만**.
+5. 분류 전 [결정 대조 절차](../../docs/reference/input-reconciliation.md#decision-aware-preclassification)로 관련 Unknowns/Open Decisions·global `decision_refs`·현재 정본·연결 이력을 확인한다. 실제 결정값·scope·현재 유효성을 대조하며 **읽기 순서는 권위 순서가 아니다**.
+6. [분류 정의](../../docs/reference/input-reconciliation.md)로 사실별 item을 분류한다. 구현 드리프트·본문 밖의 답·의도적 미제공을 새 선택/충돌/컴포넌트 누락과 구분하며, `expected_reconciliation`은 힌트다. 수동 입력도 같은 대조를 적용한다.
+7. 자동 반영 가능한 `simple-update` 만 문서에 반영한다. 근거 note를 실제 추가했다면 해당 artifact의 `update`로 기록하고, 가짜 update나 `simple-update + link-evidence`를 만들지 않는다.
+8. decision/conflict 는 **멈추고** 선택지를 제시한다. 현재 유효한 `resolved` 결정과 실제 충돌하면 같은 item에 Conflict `create-open`(이전 값 보존)과 해당 Decision `reopen`을 함께 기록한다.
+   검증이 필요하면 INV-/VER- + 막을 화면에 Open Decision. 카탈로그에 없는 공통 컴포넌트는 Gap `G-xxx open` **제안만**.
 9. 사용자 결정 후 문서를 업데이트한다 (게이트 내림은 사람이).
 10. 새/opt-in Figma mapping은 기존 4컬럼 header와 M-key↔Mapping Provenance 1:1을 원자적으로 완성한다. direct/inherited effective Source Ref는 canonical Figma file + node/frame anchor여야 하며 planning/API/file-only ref나 `document`/`statement`/`n/a`로 대신하지 않는다. `instance`=Figma instance, `record`=API/domain record; 불명확한 Source/Evidence는 발명하지 않고 open item으로 남긴다.
 11. register 행을 `reconciled` 로 바꾸고 `Result`·`Touched Artifacts`·`Created Items` 를 채운다.
