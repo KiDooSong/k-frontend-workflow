@@ -1,5 +1,5 @@
-// Issue #232 P01-P13/P18 and the P20 parser-boundary counterexample. These are real file/parser/validator/CLI fixtures,
-// not evidence that an agent understands natural-language coverage or resume notes.
+// Issue #232 P01-P13/P18-P20. Real file/parser/validator/CLI fixtures and guidance
+// regressions, not evidence that an agent understands scope or resume-note prose.
 // P14-P17 reuse the existing Git/CLI helpers in visual-refresh-boundary.test.mjs.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -161,7 +161,7 @@ for (const version of [1, 2]) {
 const hardMutations = [
   ['Target', (s) => s.replace(`artifact:${OWNER}#notes`, 'artifact:missing#notes'), 'RR-REF-006:'],
   ['Evidence', (s) => s.replace(`#extracted-facts/03 |`, '#missing/03 |'), 'RR-REF-005:'],
-  ['required cell', (s) => s.replace('| inherit | statement | inherit |', '|  | statement | inherit |'), 'RR-SCHEMA-014:'],
+  ['required cell', (s) => s.replace('| inherit | statement | inherit |', '|  | statement | inherit |'), 'RR-SCHEMA-009:'],
   ['Classification projection', (s) => s.replace('| simple-update | partially-reconciled |', '| simple-update×2 | partially-reconciled |'), 'RR-ITEM-005:'],
   ['Touched projection', (s) => s.replace(`| artifact:${OWNER} | - | - |`, '| - | - | - |'), 'RR-ITEM-007:'],
   ['Created projection', (s) => s.replace(`| artifact:${OWNER} | - | - |`, `| artifact:${OWNER} | unknown:U-232@${OWNER} | - |`), 'RR-ITEM-006:'],
@@ -350,4 +350,125 @@ test('P20: missing prose Notes remains reviewer-rejected, not a new natural-lang
 test('partial regression is explicitly included in both test scripts', () => {
   const { scripts } = JSON.parse(fs.readFileSync(path.join(KIT_ROOT, 'package.json'), 'utf8'));
   for (const name of ['test', 'test:spec']) assert.equal(scripts[name].split('scripts/lib/reconciliation-partial.test.mjs').length - 1, 1);
+});
+
+// P19 deliberately tests the shipped authoring instructions, NOT input/Notes
+// semantics. No production prose parser or new input coverage gate is added.
+const GUIDE_PATHS = {
+  skill: 'skills/reconcile-input/SKILL.md',
+  local: '../.claude/skills/reconcile-input/SKILL.md',
+  stage: 'docs/reference/workflow-stages/04-reconcile-input.md',
+  reference: 'docs/reference/input-reconciliation.md',
+  rubric: 'docs/reference/reconcile-review-rubric.md',
+  template: 'templates/meta/reconciliation-register.template.md',
+  upgrade: 'docs/reference/upgrade-notes.md',
+};
+const readGuide = (name) => fs.readFileSync(path.resolve(KIT_ROOT, GUIDE_PATHS[name]), 'utf8');
+
+function guideSection(text, heading) {
+  const marker = `\n## ${heading}\n`;
+  const start = text.indexOf(marker);
+  assert.ok(start >= 0, `missing guide section: ${heading}`);
+  const bodyStart = start + marker.length;
+  const end = text.indexOf('\n## ', bodyStart);
+  return text.slice(bodyStart, end < 0 ? undefined : end);
+}
+
+test('P19: all seven authoring surfaces describe partial state, Notes, resume, Result and severity', () => {
+  for (const name of Object.keys(GUIDE_PATHS)) {
+    const text = readGuide(name);
+    for (const token of [PARTIAL, 'Partial Reconciliation Notes', 'in-progress', 'reconciled', 'pending', 'RR-LIFECYCLE-101', '--enforce']) {
+      assert.ok(text.includes(token), `${name}: missing ${token}`);
+    }
+  }
+});
+
+test('P19: runtime severity matrix and every repeated procedure preserve the checkpoint/full completion fork', () => {
+  const text = readGuide('reference');
+  const matrix = guideSection(text, 'Partial Reconciliation Checkpoints');
+  const expected = new Map([
+    ['행 없음', ['warning', 'error']], ['not-started', ['warning', 'error']],
+    ['in-progress', ['error', 'error']], ['failed', ['error', 'error']],
+    [PARTIAL, ['warning', 'warning']], ['reconciled', ['정상', '정상']],
+  ]);
+  for (const line of matrix.split('\n').filter((line) => line.startsWith('| '))) {
+    const cells = line.split('|').slice(1, -1).map((cell) => cell.trim().replaceAll('`', ''));
+    if (!expected.has(cells[0])) continue;
+    assert.deepEqual(cells.slice(1, 3), expected.get(cells[0]), cells[0]);
+    expected.delete(cells[0]);
+  }
+  assert.equal(expected.size, 0, 'every lifecycle row is documented');
+  for (const heading of ['Reconciliation Flow', 'Code Change Gate', 'Skill Shape', 'Consumer Summary']) {
+    const section = guideSection(text, heading);
+    for (const token of [PARTIAL, 'in-progress', 'reconciled']) assert.ok(section.includes(token), `${heading}: ${token}`);
+    assert.match(section, /누적|cumulative/i, heading);
+    assert.match(section, /미처리|incomplete|unhandled/i, heading);
+  }
+});
+
+test('P19: both skills and Stage 04 keep an actionable same-row resume and normal completed stop', () => {
+  for (const name of ['skill', 'local', 'stage']) {
+    const text = readGuide(name);
+    const resume = text.split('\n').find((line) => line.includes('`partially-reconciled`') && /in-progress/.test(line));
+    assert.ok(resume, `${name}: partial resume branch`);
+    for (const pattern of [/immutable input/, /누적 Items|cumulative Items/, /Partial Reconciliation Notes/, /같은 Summary 행|same Summary row/]) {
+      assert.match(resume, pattern, name);
+    }
+    const stop = text.split('\n').find((line) => line.includes('`reconciled`') && /멈춘다|\*\*Stop/.test(line));
+    assert.ok(stop, `${name}: ordinary reconciled retry still stops`);
+    assert.match(text, /reconciled \+ accepted/);
+    assert.match(text, /single-item/);
+    assert.match(text, /VR-RR-005/);
+    assert.match(text, /입력 전체 미완료|whole input incomplete/);
+  }
+});
+
+test('P19: checkpoint links resolve to canonical protocol while deployed router stays at most 120 raw lines', () => {
+  const canonical = path.resolve(KIT_ROOT, GUIDE_PATHS.reference);
+  for (const name of ['skill', 'local', 'stage', 'rubric', 'upgrade']) {
+    const file = path.resolve(KIT_ROOT, GUIDE_PATHS[name]);
+    const text = readGuide(name);
+    const links = [...text.matchAll(/\]\(([^)]+)#partial-reconciliation-checkpoints\)/g)];
+    assert.ok(links.length > 0, `${name}: link to the canonical checkpoint protocol`);
+    for (const match of links) assert.equal(path.resolve(path.dirname(file), match[1]), canonical);
+  }
+  assert.ok(readGuide('skill').split('\n').length <= 120, 'existing raw router ceiling must not be raised');
+  assert.match(readGuide('upgrade'), /^## Partial Reconciliation Checkpoints \(#232\)$/m);
+  // Preserve the existing #231 discovery route, not just partial prose.
+  for (const name of ['skill', 'local', 'stage', 'rubric']) {
+    const text = readGuide(name);
+    for (const token of ['Unknowns', 'Open Decisions', 'decision_refs', '#decision-aware-preclassification']) {
+      assert.ok(text.includes(token), `${name}: decision-aware ${token}`);
+    }
+  }
+});
+
+test('P19/P20: unchanged 8/10-column template places actionable Notes after Items and reviewer rejects prose counterexamples', () => {
+  const template = readGuide('template');
+  const headers = template.split('\n').filter((line) => line.startsWith('| Input ID |'));
+  assert.deepEqual(headers, [itemLine(REQUIRED_REGISTER_COLS), itemLine(REQUIRED_ITEM_COLS)]);
+  const itemSection = template.indexOf('\n## Reconciliation Items\n');
+  const notesSection = template.indexOf('\n## Partial Reconciliation Notes\n');
+  assert.ok(itemSection >= 0 && notesSection > itemSection);
+  const notes = guideSection(template, 'Partial Reconciliation Notes');
+  assert.match(notes, /^### \{input_id\}$/m);
+  for (const label of ['처리', '미처리', '이유', '재개', '담당/연결 작업']) {
+    assert.ok(notes.includes(`- ${label}:`), `resume note field ${label}`);
+  }
+  for (const name of ['reference', 'rubric']) {
+    const text = readGuide(name);
+    assert.match(text, /자연어 parser|새 parser/);
+    assert.match(text, /완료 effect 재수행|완료 effect를/);
+  }
+  const rubric = readGuide('rubric');
+  for (const id of ['P20-a:', 'P20-b:', 'P20-c:']) {
+    const row = rubric.split('\n').find((line) => line.includes(id));
+    assert.ok(row, id);
+    assert.match(row, /Major \/ CHANGES_REQUIRED/, id);
+  }
+  assert.match(rubric, /hard errors 0/);
+  assert.match(rubric, /Critical\/Major 0/);
+  assert.match(rubric, /gate-lowering diff 0/);
+  assert.match(readGuide('upgrade'), /Upgrade the runtime first/);
+  assert.match(readGuide('upgrade'), /explicit maintenance\/human confirmation/);
 });
