@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { fromMarkdown } from 'mdast-util-from-markdown';
 import {
   analyzeApiCandidateContract, deriveMetrics, loadScreenSpec, parseApiCandidates,
 } from './spec.mjs';
@@ -91,8 +92,8 @@ const nonDeclarations = {
   'HTML block': '<pre>\n- GET /example\n</pre>',
   'blockquote': '> - GET /example',
   'inline-code declaration': '- `GET /example`',
-  'multiline inline code': '`example\n- GET /example\nend`',
-  'link definition title': '[example]: /reference "title\n- GET /example\nend"',
+  'multiline inline code': '`example\n    - GET /example\nend`',
+  'link definition title': '[example]: /reference "title\n    - GET /example\nend"',
   'paragraph': 'GET /example is described here.',
   'explanatory bullet': '- See GET /example for historical context.',
   'escaped dash': '\\- GET /example',
@@ -102,7 +103,34 @@ const nonDeclarations = {
 };
 for (const [name, fragment] of Object.entries(nonDeclarations)) {
   test(`does not diagnose ${name}`, (t) => {
+    // Verify the negative premise with the actual Markdown parser. A column-zero
+    // dash interrupts these constructs into a real list, so it is not an example.
+    if (name === 'multiline inline code') {
+      const tree = fromMarkdown(fragment);
+      assert.deepEqual(tree.children.map((node) => node.type), ['paragraph']);
+      assert.deepEqual(tree.children[0].children.map((node) => node.type), ['inlineCode']);
+    }
+    if (name === 'link definition title') {
+      const tree = fromMarkdown(fragment);
+      assert.deepEqual(tree.children.map((node) => node.type), ['definition']);
+      assert.ok(tree.children[0].title.includes('- GET /example'));
+    }
     assert.deepEqual(observe(t, sourceFor(`${table}\n\n${fragment}`)).findings, []);
+  });
+}
+
+for (const [name, fragment] of [
+  ['interrupted inline-code prose', '`example\n- GET /example\nend`'],
+  ['interrupted reference definition', '[example]: /reference "title\n- GET /example\nend"'],
+]) {
+  test(`${name} does not hide a real candidate list item`, (t) => {
+    assert.ok(fromMarkdown(fragment).children.some((node) => node.type === 'list'));
+    const source = sourceFor(`${table}\n\n${fragment}`);
+    const { findings } = observe(t, source);
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0].method, 'GET');
+    assert.equal(findings[0].path, '/example');
+    assert.equal(findings[0].line, source.split('\n').indexOf('- GET /example') + 1);
   });
 }
 
