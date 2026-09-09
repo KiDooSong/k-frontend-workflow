@@ -83,6 +83,79 @@ test('identity is exact method/path, independent of active/deferred and confiden
   assert.ok(findings[0].message.includes(`source lines: ${expected.join(', ')}`));
 });
 
+const methodLeadingNotes = [
+  '- GET 요청 예시: GET /example (참고용)',
+  '- GET 요청 예시: `GET /example`',
+  '- get request example: get /example',
+  '- GET / is shorthand for GET /example',
+  '- GET (/context) refers to GET /example',
+  '- GET `/example` is only an inline-code example',
+];
+
+for (const eol of ['\n', '\r\n']) {
+  test(`review P2: method-leading prose is not an endpoint-leading declaration (${JSON.stringify(eol)})`, (t) => {
+    // These notes are real list items; only the endpoint-leading condition excludes them.
+    for (const note of methodLeadingNotes) {
+      assert.equal(fromMarkdown(note).children[0].type, 'list');
+      const source = sourceFor(`${table}\n\n${note}`).replace(/\n/g, eol);
+      const { contract, findings } = observe(t, source);
+      assert.equal(contract.valid, true);
+      assert.deepEqual(findings, [], note);
+    }
+    for (const genuine of ['- GET /missing (confidence: confirmed)', '- get\t/missing(confidence: candidate)']) {
+      const source = sourceFor(`${table}\n\n${methodLeadingNotes.join('\n')}\n\n${genuine}`).replace(/\n/g, eol);
+      const { findings } = observe(t, source);
+      assert.equal(findings.length, 1);
+      assert.equal(findings[0].method, 'GET');
+      assert.equal(findings[0].path, '/missing');
+      assert.deepEqual(findings[0].lines, [source.split(/\r?\n/).indexOf(genuine) + 1]);
+    }
+  });
+
+  test(`review P2: complete comments preserve identity and original declaration positions (${JSON.stringify(eol)})`, (t) => {
+    const comments = [
+      '<!-- 한 줄 주석 -->',
+      '<!--\n  설명을 위한 주석\n  -->',
+      '<!--\n\n  문단 경계를 포함한 주석\n  -->',
+      '<!--\n  - GET /hidden-in-comment\n  -->',
+      '<!-- first --><!--\n  second\n  -->',
+    ];
+    const control = observe(t, sourceFor(table).replace(/\n/g, eol));
+    for (const comment of comments) {
+      for (const endpoint of ['/live', '/pending']) {
+        const note = `- GET ${endpoint}${comment} (confidence: confirmed)`;
+        // The whole legacy range is the identity oracle, not its truncated first line.
+        const parsed = parseApiCandidates(note.replace(/\n/g, eol));
+        assert.deepEqual(parsed.map(({ method, path }) => [method, path]), [['GET', endpoint]]);
+        const source = sourceFor(`${table}\n\n${note}`).replace(/\n/g, eol);
+        const observed = observe(t, source);
+        assert.deepEqual(observed.contract, control.contract);
+        assert.deepEqual(observed.findings, [], note);
+      }
+    }
+    // Comments are deleted, not replaced with whitespace that would truncate a path.
+    const joined = '- GET /li<!--\n  internal path comment\n  -->ve (confidence: candidate)';
+    assert.equal(parseApiCandidates(joined)[0].path, '/live');
+    assert.deepEqual(observe(t, sourceFor(`${table}\n\n${joined}`).replace(/\n/g, eol)).findings, []);
+
+    const first = '- GET /missing<!--';
+    const last = '- get /missing (confidence: candidate)';
+    const source = ('\uFEFF' + sourceFor([
+      table, '', joined, '', first, '  주석 내부', '  --> (confidence: confirmed)', '', last,
+    ].join('\n'))).replace(/\n/g, eol);
+    const { findings } = observe(t, source);
+    const lines = source.split(/\r?\n/);
+    const expected = [lines.indexOf(first) + 1, lines.indexOf(last) + 1];
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0].method, 'GET');
+    assert.equal(findings[0].path, '/missing');
+    assert.equal(findings[0].line, expected[0]);
+    assert.deepEqual(findings[0].lines, expected);
+    assert.ok(findings[0].message.includes(`screen-spec.md:${expected[0]}`));
+    assert.ok(findings[0].message.includes(`source lines: ${expected.join(', ')}`));
+  });
+}
+
 const nonDeclarations = {
   'backtick fence': '```md\n- GET /example\n```',
   'tilde fence': '~~~md\n- GET /example\n~~~',
@@ -313,3 +386,61 @@ test('existing hard errors and malformed-v2 diagnostics survive in default and e
   }
   assert.deepEqual(authority(fixture), negativeAuthority);
 });
+
+for (const eol of ['\n', '\r\n']) {
+  test(`review P2 full CLI: prose/comment controls stay silent and real declarations retain locations (${JSON.stringify(eol)})`, (t) => {
+    const fixture = fullFixture(t);
+    const sourceWith = (notes) => replaceSection(fixture.source, 'API Candidates', `${fullTable}\n\n${notes}`).replace(/\n/g, eol);
+    fs.writeFileSync(fixture.file, sourceWith(''));
+    const flagsList = [[], ['--enforce']];
+    const controls = flagsList.map((flags) => validate(fixture, flags));
+    for (const result of controls) {
+      assert.equal(result.status, 0, JSON.stringify(result.output));
+      assert.deepEqual(result.output.errors, []);
+      assert.equal(result.output.warnings.some((w) => w.message.startsWith(CODE)), false);
+    }
+    const before = authority(fixture);
+    assert.equal(before.derived.api_candidate_deferrals_valid, true);
+    assert.equal(before.readiness[screenId].readiness_mode, 'api-integrated-ui');
+    assert.deepEqual(before.paths.map((entry) => entry.allowed), [true, false, false]);
+
+    const notes = [
+      ...methodLeadingNotes,
+      '- GET /coupons<!-- one-line --> (confidence: confirmed)',
+      '- GET /coupons<!--\n  설명을 위한 주석\n  --> (confidence: confirmed)',
+      '- GET /pending<!--\n  deferred 설명\n  --> (confidence: candidate)',
+    ].join('\n\n');
+    const negativeSource = sourceWith(notes);
+    fs.writeFileSync(fixture.file, negativeSource);
+    for (const [index, flags] of flagsList.entries()) {
+      assert.deepEqual(validate(fixture, flags), controls[index]);
+    }
+    assert.deepEqual(authority(fixture), before);
+    assert.equal(fs.readFileSync(fixture.file, 'utf8'), negativeSource);
+
+    const first = '- POST /unrepresented<!--';
+    const positiveSource = sourceWith(`${notes}\n\n${first}\n  누락 후보 주석\n  --> (confidence: confirmed)\n\n${missing}`);
+    fs.writeFileSync(fixture.file, positiveSource);
+    const lines = positiveSource.split(/\r?\n/);
+    const expected = [lines.indexOf(first) + 1, lines.indexOf(missing) + 1];
+    assert.ok(expected.every((line) => line > 0));
+    for (const [index, flags] of flagsList.entries()) {
+      const result = validate(fixture, flags);
+      assert.equal(result.status, 0, JSON.stringify(result.output));
+      assert.equal(result.output.ok, true);
+      assert.equal(result.output.count, controls[index].output.count);
+      assert.deepEqual(result.output.errors, controls[index].output.errors);
+      const warnings = result.output.warnings.filter((w) => w.message.startsWith(CODE));
+      assert.equal(warnings.length, 1);
+      assert.deepEqual(Object.keys(warnings[0]).sort(), ['check', 'file', 'message']);
+      assert.equal(warnings[0].check, 15);
+      assert.equal(warnings[0].file, relSpec);
+      assert.ok(warnings[0].message.includes(`${relSpec}:${expected[0]}`));
+      assert.ok(warnings[0].message.includes(`source lines: ${expected.join(', ')}`));
+      assert.match(warnings[0].message, /POST \/unrepresented —/);
+      assert.deepEqual(result.output.warnings.filter((w) => !w.message.startsWith(CODE)), controls[index].output.warnings);
+    }
+    assert.deepEqual(authority(fixture), before);
+    assert.equal(fs.readFileSync(fixture.file, 'utf8'), positiveSource);
+  });
+}

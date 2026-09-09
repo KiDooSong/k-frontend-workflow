@@ -55,21 +55,49 @@ export function diagnoseUnrepresentedLegacyApiCandidates({ source, contract, fil
       const index = node.position.start.line - 1;
       if (sectionLines.has(index)) {
         const text = rawLines[index].slice(node.position.start.column - 1);
-        if (/^-[\t ]+/.test(text)) declarationLines.push({ text, line: index + lineOffset + 1 });
+        if (/^-[\t ]+/.test(text)) {
+          declarationLines.push({ offset: node.position.start.offset, line: index + lineOffset + 1 });
+        }
       }
     }
     for (const child of node.children || []) visit(child);
   }
   visit(tree);
 
+  // Apply the legacy stripComments rule to complete ranges BEFORE taking a line.
+  // Deleting (not blanking) the whole comment preserves endpoint concatenation.
+  // The AST and H2 scope still use original source; project only declaration offsets
+  // into this observation copy, retaining the original list-item line for messages.
+  const commentRanges = [];
+  const observationSource = scopedBody.replace(/<!--[\s\S]*?-->/g, (comment, start) => {
+    commentRanges.push({ start, end: start + comment.length });
+    return '';
+  });
+  let commentIndex = 0;
+  let removedLength = 0;
   const unrepresented = new Map();
-  for (const { text, line } of declarationLines) {
+  // AST traversal emits declarations in source order, so each range is visited once.
+  for (const { offset, line } of declarationLines) {
+    while (commentIndex < commentRanges.length && commentRanges[commentIndex].end <= offset) {
+      const range = commentRanges[commentIndex++];
+      removedLength += range.end - range.start;
+    }
+    // A comment spanning Markdown blocks can contain an apparent list item.
+    if (commentIndex < commentRanges.length && commentRanges[commentIndex].start <= offset) continue;
+    const start = offset - removedLength;
+    const end = observationSource.indexOf('\n', start);
+    const text = observationSource.slice(start, end < 0 ? undefined : end);
     // Reuse the unchanged legacy method/path normalization on a single bullet.
     const candidate = parseApiCandidates(text)[0];
     if (!candidate?.method || !candidate.path) continue;
-    // Only a literal endpoint-leading declaration, not '- See GET /x for context'.
-    const firstToken = candidate.raw.split(/\s+/)[0].toUpperCase();
-    if (firstToken !== candidate.method) continue;
+    // Both the method and the parser's exact endpoint must start the declaration.
+    // A leading GET alone cannot make 'GET request example: GET /x' a declaration.
+    // Reuse the parsed path rather than introducing another endpoint grammar.
+    const leading = /^(\S+)\s+/.exec(candidate.raw);
+    if (
+      !leading || leading[1].toUpperCase() !== candidate.method ||
+      !candidate.raw.slice(leading[0].length).startsWith(candidate.path)
+    ) continue;
     const key = endpointKey(candidate);
     if (represented.has(key)) continue; // Gate and confidence do not affect identity.
     if (!unrepresented.has(key)) {
