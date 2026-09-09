@@ -93,7 +93,7 @@ function actionHint(factKey, screen) {
       return `add fake hook at ${hint}/`;
     }
     case 'component_catalog_generated':
-      return 'create docs/frontend-workflow/design/component-catalog.md manually (catalog-gen is MVP-C)';
+      return 'run npm run workflow:catalog from the consumer repo root (see tools/frontend-workflow/docs/reference/generated-files.md; for custom paths/layout, run npm run workflow:catalog -- --help)';
     case 'state_matrix_complete':
       return 'complete State Matrix (loading/empty/error/success/disabled/refreshing)';
     case 'navigation_map_status':

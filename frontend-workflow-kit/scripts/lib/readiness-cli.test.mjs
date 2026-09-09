@@ -12,6 +12,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { KIT_ROOT, DEFAULTS, loadYaml, yamlStringify } from './util.mjs';
 import { computeReadiness } from '../readiness.mjs';
+import { readinessPathAuthorization } from './path-backstop.mjs';
 
 const CLI = path.join(KIT_ROOT, 'scripts', 'readiness.mjs');
 const EXAMPLE_DOCS = path.join(KIT_ROOT, 'examples', 'coupon-feature', 'docs', 'frontend-workflow');
@@ -275,4 +276,216 @@ test('a --screen value starting with a single hyphen is consumed as a value (par
   const r = run(['--docs', EXAMPLE_DOCS, '--screen', '-none', '--json']);
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual(JSON.parse(r.stdout), {}, 'unknown screen id filters to an empty result');
+});
+
+// #236: only the catalog action text changes. Pin the complete default-policy result,
+// not just agreement between two callers of the same implementation.
+const CATALOG_HINT = 'run npm run workflow:catalog from the consumer repo root (see tools/frontend-workflow/docs/reference/generated-files.md; for custom paths/layout, run npm run workflow:catalog -- --help)';
+const CATALOG_MODE_ORDER = [
+  'docs-only', 'route-skeleton', 'screen-skeleton', 'rough-fixture-ui',
+  'final-fixture-ui', 'api-integrated-ui', 'production-ready',
+];
+const CATALOG_CI = {
+  ci_lint: 'fail', ci_schema_validation: 'pass',
+  state_coverage_complete: true, llm_semantic_review: 'pass',
+};
+
+function catalogGuidanceState(generated) {
+  return {
+    global: {
+      stub_screen_specs_count: 1,
+      navigation_map_status: 'draft',
+      component_catalog_generated: generated,
+    },
+    screens: {
+      'CATALOG-001': {
+        domain: 'catalog', status: 'confirmed', stub: false,
+        derived: {
+          fake_hook_exists: true, figma_mapping_status: 'draft',
+          api_confidence_min: 'confirmed', state_matrix_complete: true,
+          blocking_decisions: [{
+            id: 'D-CATALOG', blocking_mode: 'final-fixture-ui',
+            owner: 'human', decision_needed: 'review fixture',
+          }],
+        },
+      },
+    },
+    absorbed_screens: { 'CATALOG-OLD': { absorbed_into: 'CATALOG-001' } },
+  };
+}
+
+function expectedCatalogGuidance(generated, ciProvided = true) {
+  return {
+    readiness_mode: generated ? 'rough-fixture-ui' : 'screen-skeleton',
+    next_mode: generated ? 'final-fixture-ui' : 'rough-fixture-ui',
+    allowed_paths: [
+      'src/features/catalog/screens/**',
+      ...(generated ? ['src/features/catalog/components/**', 'src/features/catalog/hooks/**'] : []),
+    ],
+    forbidden_paths: ['src/api/**', 'openapi.yaml'],
+    blocking: [
+      { open_decision: { id: 'D-CATALOG', blocking_mode: 'final-fixture-ui', owner: 'human' } },
+      ...(generated ? [] : [{ component_catalog: false }]),
+      ...(ciProvided ? [{ ci_lint: 'fail' }] : []),
+    ],
+    next_actions: [
+      'resolve decision D-CATALOG: review fixture',
+      ...(generated ? [] : [CATALOG_HINT]),
+      ...(ciProvided ? ['pass CI: lint'] : []),
+    ],
+  };
+}
+
+test('catalog guidance preserves default-policy modes, decision cap, blocking and unrelated actions', () => {
+  for (const generated of [false, true]) {
+    for (const ciProvided of [false, true]) {
+      const input = {
+        state: catalogGuidanceState(generated), policy: loadYaml(DEFAULTS.policy),
+        manifest: loadYaml(DEFAULTS.manifest), ci: ciProvided ? { ...CATALOG_CI } : {},
+      };
+      const before = structuredClone(input);
+      const expected = expectedCatalogGuidance(generated, ciProvided);
+      assert.deepEqual(computeReadiness(input), { 'CATALOG-001': expected });
+      assert.deepEqual(computeReadiness({ ...input, exposeCaps: true }), {
+        'CATALOG-001': {
+          ...expected,
+          __fact_mode: generated ? 'api-integrated-ui' : 'screen-skeleton',
+          __decision_cap: 'rough-fixture-ui',
+          __mode_order: CATALOG_MODE_ORDER,
+        },
+      });
+      assert.deepEqual(computeReadiness({ ...input, screenOnlyId: 'CATALOG-OLD' }), {
+        'CATALOG-OLD': {
+          readiness_mode: null, next_mode: null, readiness_applicable: false,
+          screen_lifecycle: 'absorbed', absorbed_into: 'CATALOG-001',
+          allowed_paths: [], forbidden_paths: [], blocking: [],
+          next_actions: ['use canonical screen CATALOG-001; do not author or implement the absorbed ScreenSpec'],
+        },
+      });
+      assert.deepEqual(input, before, 'guidance must not mutate facts, policy, decisions or CI');
+    }
+  }
+});
+
+function catalogWorkspaceSnapshot(root) {
+  const files = {};
+  function visit(dir) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const file = path.join(dir, entry.name);
+      if (entry.isDirectory()) visit(file);
+      else files[path.relative(root, file)] = fs.readFileSync(file).toString('hex');
+    }
+  }
+  visit(root);
+  return files;
+}
+
+test('public readiness CLI shows catalog remediation without writing files or granting catalog/API access', () => {
+  withTmpDir((root) => {
+    // Non-default docs root must not invent a catalog --docs flag or a new path authority.
+    const docs = path.join(root, 'guide', 'workflow');
+    const stateFile = path.join(docs, '_meta', 'workflow-state.yaml');
+    const catalogFile = path.join(docs, 'design', 'component-catalog.md');
+    const defaultCatalog = path.join(root, 'docs', 'frontend-workflow', 'design', 'component-catalog.md');
+    const ciFile = path.join(root, 'ci.yaml');
+    fs.mkdirSync(path.dirname(stateFile), { recursive: true });
+    fs.writeFileSync(ciFile, yamlStringify(CATALOG_CI));
+    const args = [
+      '--docs', docs, '--screen', 'CATALOG-001', '--ci', ciFile,
+      '--policy', DEFAULTS.policy, '--manifest', DEFAULTS.manifest,
+      '--layout', path.join(KIT_ROOT, 'policies', 'project-layout.yaml'),
+    ];
+    for (const generated of [false, true]) {
+      fs.writeFileSync(stateFile, yamlStringify(catalogGuidanceState(generated)));
+      if (generated) {
+        fs.mkdirSync(path.dirname(catalogFile), { recursive: true });
+        fs.writeFileSync(catalogFile, '<!-- GENERATED FILE — DO NOT EDIT -->\nexisting catalog\n');
+      }
+      const before = catalogWorkspaceSnapshot(root);
+      const expected = expectedCatalogGuidance(generated);
+      const json = run([...args, '--json'], { cwd: root });
+      const yaml = run(args, { cwd: root });
+      for (const result of [json, yaml]) {
+        assert.equal(result.status, 0, result.stderr);
+        assert.equal(result.stderr, '');
+        assert.doesNotMatch(result.stdout, /manually|catalog-gen is MVP-C|--docs/);
+        assert.equal(result.stdout.includes(CATALOG_HINT), !generated);
+      }
+      assert.equal(json.stdout, JSON.stringify({ 'CATALOG-001': expected }, null, 2) + '\n');
+      assert.equal(yaml.stdout, yamlStringify({ 'CATALOG-001': expected }, { lineWidth: 0 }));
+
+      for (const [file, allowed] of [
+        ['src/features/catalog/screens/Catalog.tsx', true],
+        ['src/api/catalog.ts', false],
+        ['docs/frontend-workflow/design/component-catalog.md', false],
+      ]) {
+        const result = run([...args, '--path', file, '--json'], { cwd: root });
+        assert.equal(result.status, 0, result.stderr);
+        assert.equal(result.stderr, '');
+        const pathAuthorization = readinessPathAuthorization({
+          file, screenId: 'CATALOG-001', entry: expected,
+          modeOrder: CATALOG_MODE_ORDER, claims: [],
+        });
+        assert.equal(pathAuthorization.allowed, allowed, file);
+        assert.deepEqual(JSON.parse(result.stdout), {
+          'CATALOG-001': { ...expected, path_authorization: pathAuthorization },
+        });
+      }
+      assert.deepEqual(catalogWorkspaceSnapshot(root), before, 'readiness must not generate or overwrite files');
+      assert.equal(fs.existsSync(catalogFile), generated);
+      assert.equal(fs.existsSync(defaultCatalog), false);
+    }
+  });
+});
+
+test('the catalog command in readiness guidance runs from a consumer root with supported custom-path options', () => {
+  withTmpDir((root) => {
+    const template = JSON.parse(fs.readFileSync(path.join(KIT_ROOT, 'package-scripts.template.json'), 'utf8'));
+    assert.equal(template.scripts['workflow:catalog'], 'node tools/frontend-workflow/scripts/catalog-gen.mjs');
+    fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ private: true, scripts: template.scripts }));
+    fs.mkdirSync(path.join(root, 'tools'), { recursive: true });
+    fs.symlinkSync(KIT_ROOT, path.join(root, 'tools', 'frontend-workflow'), process.platform === 'win32' ? 'junction' : 'dir');
+    const invoke = (args = []) => spawnSync(
+      process.platform === 'win32' ? 'npm.cmd' : 'npm',
+      ['--silent', 'run', 'workflow:catalog', ...args],
+      { cwd: root, encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS, shell: process.platform === 'win32' },
+    );
+    const output = path.join(root, 'docs', 'frontend-workflow', 'design', 'component-catalog.md');
+    const reference = 'tools/frontend-workflow/docs/reference/generated-files.md';
+    assert.ok(CATALOG_HINT.includes(reference));
+    assert.match(fs.readFileSync(path.join(root, reference), 'utf8'), /npm run workflow:catalog/);
+    const help = invoke(['--', '--help']);
+    assert.equal(help.status, 0, help.stderr);
+    for (const flag of ['--src', '--out', '--root', '--layout']) assert.ok(help.stdout.includes(flag));
+    assert.doesNotMatch(help.stdout, /--docs/);
+    assert.equal(fs.existsSync(output), false);
+
+    fs.mkdirSync(path.join(root, 'src', 'components', 'ui'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'src', 'components', 'ui', 'Button.tsx'), 'export function Button() { return null; }\n');
+    const generated = invoke();
+    assert.equal(generated.status, 0, generated.stderr);
+    const original = fs.readFileSync(output, 'utf8');
+    assert.match(original, /Button/);
+    assert.match(original, /GENERATED/);
+
+    const invalid = invoke(['--', '--docs', 'guide/workflow']);
+    assert.equal(invalid.status, 2, invalid.stderr);
+    assert.match(invalid.stderr, /unknown option --docs/);
+    assert.equal(fs.readFileSync(output, 'utf8'), original);
+
+    fs.mkdirSync(path.join(root, 'client', 'atoms'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'client', 'atoms', 'Badge.tsx'), 'export function Badge() { return null; }\n');
+    fs.writeFileSync(path.join(root, 'layout.yaml'), yamlStringify({
+      version: 1, preset: 'expo-feature', roles: { ui_primitive: 'client/atoms/**' },
+    }));
+    const custom = invoke([
+      '--', '--src', 'client', '--out', 'guide/workflow/design/component-catalog.md',
+      '--root', '.', '--layout', 'layout.yaml',
+    ]);
+    assert.equal(custom.status, 0, custom.stderr);
+    const customCatalog = fs.readFileSync(path.join(root, 'guide', 'workflow', 'design', 'component-catalog.md'), 'utf8');
+    assert.match(customCatalog, /Badge/);
+    assert.doesNotMatch(customCatalog, /Button/);
+    assert.equal(fs.readFileSync(output, 'utf8'), original, 'custom --out must leave the default output unchanged');
+  });
 });
