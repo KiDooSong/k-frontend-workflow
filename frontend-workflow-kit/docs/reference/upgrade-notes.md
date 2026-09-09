@@ -17,6 +17,56 @@ or root config.
 
 ---
 
+## Partial Reconciliation Checkpoints (#232)
+
+- **Upgrade the runtime first**, before writing `partially-reconciled`: older kits
+  reject the new enum. It is supported in both v1/v2 registers without a new opt-in.
+  Existing valid rows need no bulk edit, v1-to-v2 conversion or backfill. The exact
+  8-column Summary, 10-column Items and `structured_since` legacy exemption remain.
+- `RR-LIFECYCLE-101` is warning-only by default and under `--enforce`, independently
+  of Result. Existing `in-progress`/`failed`/structural hard errors and no-row /
+  `not-started` enforce promotion are unchanged. Partial v2 recommends `Result=pending`;
+  existing Result warnings and v1 free text remain. Partial + accepted cannot hide
+  the lifecycle warning or grant visual-refresh authority.
+- **Manual action:** synchronize adapted local/deployed `reconcile-input` skills,
+  [Stage 04](workflow-stages/04-reconcile-input.md),
+  [the canonical protocol](input-reconciliation.md#partial-reconciliation-checkpoints),
+  [review rubric](reconcile-review-rubric.md), and
+  [register template](../../templates/meta/reconciliation-register.template.md).
+  Review planner conflicts and preserve local adaptations; do not overwrite user
+  changes. Keep the deployed router's existing 120-line ceiling.
+- A partial checkpoint ends **the current round, not the whole input**. Preserve
+  immutable input bytes/`input_id`/`supersedes`, one Summary row and existing Item IDs /
+  historical effects. Append only new actual effects; Summary is the projection of
+  **all rounds' cumulative Items**. Do not replay completed effects or create fake
+  effects for unhandled scope or Notes-only maintenance.
+- Add `## Partial Reconciliation Notes` after canonical Summary/Items, grouped by
+  input ID: handled scope/evidence, unhandled original pointers, stop reason, next
+  action and owner/linked work (explicitly unknown if unassigned). Resume by reading
+  original input, cumulative Items, current docs and notes, then change the **same
+  Summary row to `in-progress`** before target edits. Apply decision-aware
+  preclassification to the remaining scope. Notes are authoring/reviewer guidance,
+  not a new natural-language parser or coverage schema.
+- Fully classified/routed input remains `reconciled` even with open child decisions.
+  Normal retries of `reconciled` inputs still **stop**. For a historical row falsely
+  marked complete, explicit maintenance/human confirmation may recover partial status
+  and actionable notes **only after comparing the original input and existing effects**.
+  Keep input bytes/ID/supersedes/effects unchanged. Never automatically downgrade
+  all completed rows or use child-open status as the reason. The upgrade planner
+  does not correct consumer records, and this kit change does not edit consumer originals.
+- Partial is neither implementation permission for unhandled scope nor a global deny
+  for unrelated work. Existing canonical Open Decisions remain the gate; general
+  no-intent readiness/path permissions are unchanged. Visual-refresh still requires
+  the selected input's exact `reconciled + accepted` and single-item conditions:
+  partial + pending/accepted is denied (`VR-RR-005`), and fully reconciled multi-item
+  input remains denied (`VR-RR-008`). Snapshot/ownership/supersession/generated/
+  candidate/custom-policy safeguards are not relaxed.
+- After authoring each checkpoint, run state → readiness → validate and the same
+  hard-error/Critical/Major/raise-only/provenance/scope review checks. Report current
+  scope finished / whole input incomplete / next scope separately. Reviewers reject
+  missing/unclear resume notes and replayed effects even when static validation passes.
+  Synthetic fixtures do not prove LLM scope understanding or live consumer dogfood.
+
 ## Input timestamp, fidelity, and Figma Mapping Provenance (#202-B, #209)
 
 - Every canonical input now has a hard `captured_at` contract: valid RFC3339 with an explicit
@@ -98,8 +148,8 @@ or root config.
   `artifact_type: visual-consistency-contract`, so contracts authored from the
   shipped template pass `workflow:validate` check 1.
 - `workflow:visual-contract-bootstrap` can draft the contract from existing
-  ScreenSpecs (optionally `--src` for import heuristics), but promotion to the
-  canonical/confirmed contract is human-only — the draft is never applied
+  ScreenSpecs (optionally `--src` for import heuristics) and
+  promotion to the canonical/confirmed contract is human-only — the draft is never applied
   automatically. With `--src` set, screens without `screen_entry` frontmatter
   are skipped; if **no** selected screen has `screen_entry`, the report now says
   so in `skipped_checks` instead of silently returning zero candidates.
@@ -149,7 +199,7 @@ or root config.
 ## Workflow spine and numbered stage docs
 
 - `docs/reference/workflow-spine.md` indexes numbered stage docs
-  (`workflow-stages/00-start-here.md` … `10-policy-layout-tier3-changes.md`).
+  (`workflow-stages/00-start-here.md` … `10-workflow-policy-layout-tier3-changes.md`).
   Agents start at the spine, then read only the matching stage doc.
 - **Manual action:** point your root `AGENTS.md` / `CLAUDE.md` at
   `docs/reference/workflow-spine.md` and `workflow-stages/00-start-here.md`. If you
