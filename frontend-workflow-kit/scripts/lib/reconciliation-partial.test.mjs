@@ -145,6 +145,7 @@ for (const version of [1, 2]) {
       { cwd: KIT_ROOT, encoding: 'utf8', timeout: 30_000 });
       assert.equal(run.status, 0, run.stderr || run.stdout);
       const json = JSON.parse(run.stdout);
+      assert.deepEqual(Object.keys(json).sort(), ['count', 'errors', 'ok', 'warnings']);
       assert.equal(json.ok, true);
       assert.equal(json.count, 0);
       const warnings = json.warnings.filter((entry) => entry.message.startsWith(PREFIX));
@@ -160,7 +161,7 @@ for (const version of [1, 2]) {
 const hardMutations = [
   ['Target', (s) => s.replace(`artifact:${OWNER}#notes`, 'artifact:missing#notes'), 'RR-REF-006:'],
   ['Evidence', (s) => s.replace(`#extracted-facts/03 |`, '#missing/03 |'), 'RR-REF-005:'],
-  ['required cell', (s) => s.replace('| inherit | statement | inherit |', '|  | statement | inherit |'), 'RR-SCHEMA-009:'],
+  ['required cell', (s) => s.replace('| inherit | statement | inherit |', '|  | statement | inherit |'), 'RR-SCHEMA-014:'],
   ['Classification projection', (s) => s.replace('| simple-update | partially-reconciled |', '| simple-update×2 | partially-reconciled |'), 'RR-ITEM-005:'],
   ['Touched projection', (s) => s.replace(`| artifact:${OWNER} | - | - |`, '| - | - | - |'), 'RR-ITEM-007:'],
   ['Created projection', (s) => s.replace(`| artifact:${OWNER} | - | - |`, `| artifact:${OWNER} | unknown:U-232@${OWNER} | - |`), 'RR-ITEM-006:'],
@@ -174,7 +175,10 @@ for (const [label, mutate, prefix] of hardMutations) {
     const f = fixture(t);
     firstCheckpoint(f);
     assertCheckpoint(f);
-    f.write(REGISTER, mutate(f.read(REGISTER)));
+    const before = f.read(REGISTER);
+    const after = mutate(before);
+    assert.notEqual(after, before, `${label}: mutation must change the fixture before checking its diagnostic`);
+    f.write(REGISTER, after);
     for (const enforce of [false, true]) {
       const result = check(f, enforce);
       assert.ok(result.errors.some((entry) => entry.message.startsWith(prefix)), JSON.stringify(result.errors));
