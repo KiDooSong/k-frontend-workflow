@@ -45,7 +45,7 @@ captured_at: "2026-09-09T09:00:00+09:00"
 captured_by: synthetic-fixture-author
 status: captured
 affected_domains: [demo]
-affected_screens: []
+affected_screens: [DEMO-001]
 supersedes: null
 ---
 
@@ -156,6 +156,33 @@ for (const version of [1, 2]) {
       assert.equal(path.isAbsolute(warnings[0].file), false);
     });
   }
+}
+
+// The positive fixture must satisfy the existing input contract. An empty scope
+// is deliberately invalid, not a partial-checkpoint exemption (CI regression).
+for (const version of [1, 2]) {
+  test(`P05/P06: v${version} partial retains the empty affected_screens hard error in validator and CLI`, (t) => {
+    const f = fixture(t, { version });
+    firstCheckpoint(f);
+    assertCheckpoint(f, true);
+    const invalid = f.inputBytes.replace('affected_screens: [DEMO-001]', 'affected_screens: []');
+    assert.notEqual(invalid, f.inputBytes);
+    f.write(INPUT_PATH, invalid);
+    const message = '필수 frontmatter 누락: affected_screens (정본 입력 스키마)';
+    for (const enforce of [false, true]) {
+      const result = check(f, enforce);
+      assert.deepEqual(result.errors.map((entry) => entry.message), [message]);
+      assert.equal(result.warnings.filter((entry) => entry.message.startsWith(PREFIX)).length, 1);
+      const run = spawnSync(process.execPath, [path.join(KIT_ROOT, 'scripts/validate.mjs'), '--root', f.root,
+        '--docs', f.docs, '--src', path.join(f.root, 'src'), '--json', ...(enforce ? ['--enforce'] : [])],
+      { cwd: KIT_ROOT, encoding: 'utf8', timeout: 30_000 });
+      assert.equal(run.status, 1, run.stderr || run.stdout);
+      const json = JSON.parse(run.stdout);
+      assert.equal(json.ok, false);
+      assert.ok(json.errors.some((entry) => entry.check === 11 && entry.message === message));
+      assert.equal(json.warnings.filter((entry) => entry.check === 12 && entry.message.startsWith(PREFIX)).length, 1);
+    }
+  });
 }
 
 const hardMutations = [
