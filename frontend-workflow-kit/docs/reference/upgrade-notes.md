@@ -148,8 +148,8 @@ or root config.
   `artifact_type: visual-consistency-contract`, so contracts authored from the
   shipped template pass `workflow:validate` check 1.
 - `workflow:visual-contract-bootstrap` can draft the contract from existing
-  ScreenSpecs (optionally `--src` for import heuristics) and
-  promotion to the canonical/confirmed contract is human-only — the draft is never applied
+  ScreenSpecs (optionally `--src` for import heuristics), but promotion to the
+  canonical/confirmed contract is human-only — the draft is never applied
   automatically. With `--src` set, screens without `screen_entry` frontmatter
   are skipped; if **no** selected screen has `screen_entry`, the report now says
   so in `skipped_checks` instead of silently returning zero candidates.
@@ -199,7 +199,7 @@ or root config.
 ## Workflow spine and numbered stage docs
 
 - `docs/reference/workflow-spine.md` indexes numbered stage docs
-  (`workflow-stages/00-start-here.md` … `10-workflow-policy-layout-tier3-changes.md`).
+  (`workflow-stages/00-start-here.md` … `10-policy-layout-tier3-changes.md`).
   Agents start at the spine, then read only the matching stage doc.
 - **Manual action:** point your root `AGENTS.md` / `CLAUDE.md` at
   `docs/reference/workflow-spine.md` and `workflow-stages/00-start-here.md`. If you
