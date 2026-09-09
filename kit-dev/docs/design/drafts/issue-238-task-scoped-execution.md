@@ -4,6 +4,7 @@
 - 추적: [#238](https://github.com/KiDooSong/k-frontend-workflow/issues/238), 상위 [#239](https://github.com/KiDooSong/k-frontend-workflow/issues/239)
 - 조사 기준: `90d9a10e1f41d24be08317bb683934d06ad0fae6` (PR #235 반영 main)
 - 작성일: 2026-09-10
+- R1 재대조: `d7eb9335fa3bc47bf4b09634b28297542570c398` (A/PR #240 머지). 이번 수정은 아래 세 계약과 수용 사례만 보완한다.
 - 사용자 요구: #238의 12개 선택 및 Q1/Q2/Q10 보충. 이 문서의 기술 선택은 별도 리뷰 대상이다.
 - 경계: B는 이 파일만 추가한다. 아래 YAML/JSON/CLI는 **C/D에서 구현할 제안**이지 현재 지원 기능이 아니다.
 
@@ -194,7 +195,8 @@ API client/hook claim은 기존 API Candidates v2의 Slice Paths에서 가져오
 `behavior`에서 API를 사용할 때도 같은 배열이 필요하고 `api_required:false`와의 충돌은 거부한다.
 
 sources가 비어 있는 기존 정본 기반 작업도 가능하다. 외부 입력을 지우고 이 경로로 전환하는 우회는 아니다.
-시작 요청에서 지정한 input과 해당 정본의 현재 source refs를 근거 집합에 포함하며 미처리 의존을 숨기지 않는다.
+시작 입력은 §9.1의 필수 `origin_inputs`로 전달한다. unit.sources 및 해당 정본의 현재 source refs와 함께
+해소하며, 아직 정본에 연결되지 않은 시작 입력도 누락하지 않는다. `sources: []`는 이 의존을 지우는 값이 아니다.
 참조한 canonical artifact의 status/승인 범위/값은 현물에서 읽고 unit에 별도의 confirmed 상태를 저장하지 않는다.
 
 ### 5.3 결정의 범위 — 미선언은 보수적으로 적용
@@ -222,9 +224,9 @@ decision_work_scopes:
 - known_units는 현재 unit ID/kind/의존 집합과 일치해야 한다. 뒤에 unit을 추가해 blocks 목록에 없는 권한을 얻지 못한다.
 - blocks는 known_units의 부분집합이다. 빈 배열은 이 owner의 scoped 작업을 막지 않는다는 **명시적인 사람 판단**이다.
   empty/missing/unknown을 같은 값으로 처리하지 않는다. agent가 binding을 자동 채택해 권한을 넓히지 않는다.
-- basis_digest는 canonical OD의 ID/질문/선택지/Blocking Mode, 현재 관련 Conflict refs와 내용,
-  owner/referrer graph, unit ID/kind/contracts/isolation 관계를 key-sorted UTF-8 stable JSON으로 만든 sha256이다.
-  참조 집합이나 의미를 담은 내용이 바뀌면 binding은 stale이다. digest 생성 자체는 사람의 확인을 대신하지 않는다.
+- basis_digest는 §5.4의 **scope-basis-v1 전체 투영**에 대한 sha256이다. API/source/host 선택과 해소된 근거를
+  포함하며 일부 unit 필드만 골라 해시하지 않는다. 적용 범위가 바뀌면 binding은 stale이다. 새 digest나 coverage
+  receipt를 자동 생성해 이전 approval_ref에 붙이는 것으로 사람의 범위 재확인을 대신하지 않는다.
 - resolved 여부는 기존 canonical Status에서 읽는다. **reopen은 binding을 반드시 실효**시킨다. Stage 04의
   reopen 처리 및 신구 snapshot 전이 검사에 binding 제거를 포함한다. 옛 scope를 그대로 둔 reopen diff는 통과시키지
   않는다. 재확인 없이 binding을 복구하는 diff는 gate-lowering 위반이며 actual diff와 승인 근거를 리뷰한다.
@@ -234,6 +236,48 @@ decision_work_scopes:
 Unknown의 새 상태 enum은 만들지 않는다. 미확인 사실이 selected contracts에 필요하면 해당 unit은 미준비다.
 관계 범위와 명시적 isolation이 채택돼 있으면 시각적 외형만 만들 수 있다. 관계를 판단할 수 없으면 묶어서 질문한다.
 
+### 5.4 결정 범위 해시의 입력과 정규화
+
+`scope-basis-v1`은 저장 권한 필드를 늘리는 것이 아니라 `basis_digest`의 계산 규약 이름이다.
+입력은 binding의 owner에 있는 **모든 known unit**과 그 단위가 실제 참조하는 아래 값이다.
+선택한 실행 target 일부만 투영해, 같은 binding의 다른 unit 변경을 숨기지 않는다.
+
+| 투영 | 반드시 포함하는 값 |
+|---|---|
+| 결정과 적용 관계 | canonical OD ID/질문/선택지/Blocking Mode, 관련 Conflict의 typed ref와 내용, owner/referrer/member graph, known_units와 blocks |
+| 각 unit | ID, kind, contracts, isolation의 decisions/disabled_units/exposure 전체, api_candidates의 method/path, sources의 input_id/items/source_refs, surface의 host_units 및 §8.2.1 host_visual_evidence의 mapping_ref/m_keys |
+| 해소된 선택 근거 | 선택 API Candidate 행 전체(Confidence/Gate/Tracking/Slice Paths 포함), 선택 source anchor 본문과 해당 Item group의 effect, 선택 contract 내용, host-unit의 같은 투영과 선택 mapping/provenance 행 |
+| 소유 경계 | owner의 exact entry/선언 private_paths/test_paths/surface implementation_paths와 유효한 role 상한·명시 deny. 근거의 canonical 소유자와 경로도 포함 |
+
+계산은 **schema 검증 → unique 참조 해소 → 범위 투영 → 정규화 → sha256** 순서다.
+unknown key/kind, 중복 selector, 미해소 참조는 해시에서 건너뛰지 않고 오류다.
+선언에 없는 API 선택은 빈 배열, surface 전용 연결은 비surface에서 빈 object, 미지정 isolation은 null로
+정규화하는 것처럼 **유효하게 생략 가능한 필드만** 고정 기본값을 쓴다. 잘못된 null/빈 필수값을 기본값으로 고치지 않는다.
+
+정규화 객체는 `basis_version: 1`을 포함한다. object key는 UTF-8 byte 순으로 재귀 정렬하고 compact JSON으로 직렬화한다.
+known_units/blocks/contracts/API 선택/source 선택/M-key 등 **집합인 배열**은 각 원소의 정규화 JSON byte 순으로 정렬한다.
+중복은 정렬 전에 거부한다. 표의 셀 순서와 문서 본문의 순서처럼 의미 있는 순서는 보존한다. method/path와 typed ref는
+기존 parser의 canonical identity를 사용하고 경로를 느슨하게 보정하거나 case-insensitive 매칭으로 해소하지 않는다.
+
+내용 투영은 전체 저장소나 모든 문서의 raw hash가 아니다. 일반 `artifact:…#section`은 unique하게 해소한 해당
+section(하위 heading 포함)의 본문을 LF로 통일해 포함한다. ref에 section이 없으면 그 artifact 본문 전체가 범위다.
+그 artifact의 ID/type/domain/owner/status 및 실제 해소에 사용한 sources/approval/decision refs도 포함하되,
+무관한 last_reviewed·보고 시각·그 밖 section은 포함하지 않는다. 본문에서 추가 typed 근거를 참조하면 실제 사용되는
+범위까지 같은 방식으로 해소한다. 순환은 방문한 canonical ref로 유한하게 색인하고, 미해소 참조를 생략하지 않는다.
+
+명시적으로 행을 고른 경우에는 선택 범위를 유지한다. source는 input의 식별·fidelity/source metadata와 선택 anchor
+본문·effect group을, API는 endpoint와 그에 해당하는 typed candidate 행을 포함한다. surface mapping 선택은
+M-key의 4컬럼 mapping 셀과 대응 5컬럼 provenance 셀 및 inherited 값을 해소한 source anchor를 포함한다.
+§8.2.1에서 참조하는 host unit의 선언·선택값도 포함하므로 같은 host unit ID 뒤의 범위 변경이 감춰지지 않는다.
+같은 mapping section이 별도 contracts에도 전체 범위로 지정됐다면 **넓은 참조가 실제 범위**다. M-key 선택을 이유로
+그 별도 의존을 제거하지 않는다. 무관한 파일/미참조 section/미선택 행만의 수정은 scope 해시를 바꾸지 않는다.
+
+input 원본 bytes 또는 contract 파일 전체에 대한 §7의 receipt hash와 이 **사람 확인 범위 해시**는 별개다.
+원본 변경 때문에 coverage를 재검토하더라도 scope 투영이 같으면 그것만으로 사람 재승인을 요구하지 않는다.
+반대로 ID/ref가 같아도 API endpoint·source item/anchor·host 연결·선택 내용이 달라지면 새 범위 확인이 필요하다.
+binding 자신의 approval_ref/basis_digest는 자기참조에서 제외한다. 참조 artifact의 승인 범위는 위 투영을 따르고,
+기존 canonical Status/reopen 처리는 §5.3을 그대로 유지한다.
+
 ## 6. 작업별 predicate와 미완성 기능 격리
 
 | kind | 필요한 근거 | 허용되는 작업 | 금지하는 추론 |
@@ -242,8 +286,10 @@ Unknown의 새 상태 enum은 만들지 않는다. 미확인 사실이 selected 
 | api-contract | 선택 API v2의 confirmed active 계약, slice ownership, 실제 schema/manifest 근거 | client/순수 adapter/계약 test. UI·업무 동작 연결은 하지 않음 | API 존재만으로 동작 명세나 loading/error UX를 발명 |
 | behavior | selected behavior의 confirmed canonical 계약, 필요한 state/interaction/data/copy 근거, API 사용 시 해당 계약 | 알려진 UI 상태·hook·client 연결. 최종 Figma 없이 기존/임시 UI 사용 가능 | 본문 존재나 OD 0건을 완전한 명세로 간주 |
 
-visual 근거의 구체 바닥은 canonical Figma file+node/source anchor, 대상 mapping의 `provenance_contract: 1`,
-M-key와 provenance row의 일대일 정합, 대상 owner와의 일치다. 기존 provenance/input-fidelity helper를 재사용하되
+screen visual의 구체 바닥은 canonical Figma file+node/source anchor, non-deprecated mapping의
+`provenance_contract: 1`, M-key/provenance row 일대일 정합, mapping.screen_id/domain과 **해당 screen**의 일치다.
+surface visual은 surface_id를 mapping.screen_id와 비교하지 않고 §8.2.1의 **모든 host 근거 집계**를 사용한다.
+기존 provenance/input-fidelity helper를 재사용하되
 final-fixture mode나 v1 single-file 전제를 이 분기에 복사하지 않는다. 선택 부분이 unreadable이면 그 부분의 허가는
 보류한다. 원본 대조가 미검증인 부분은 기존 fidelity 계약에 따라 별도로 표시하고 pixel 정합 완료로 주장하지 않는다.
 visual의 hook은 fixture/표시용 변경만이며 API-client 또는 종류 불명 API claim을 열지 않는다. active hook claim의
@@ -286,7 +332,7 @@ producer 전체를 이전할 필요는 없지만 해당 input/owner의 새 경�
    artifact/owner로 연결돼야 한다. 새 ID로 effect를 반복하거나 권한 획득용의 가짜 simple-update를 쓰지 않는다.
 4. 이번 source units와 남은 다른 범위를 구분한다. **Item 존재만으로 관련 미처리가 없음을 입증할 수 없다**.
 5. 이 의미적 coverage 확인은 기존 Stage 04 review 출력에 작은 structured attachment로 남긴다. 모든 reconcile/PR의
-   의무가 아니라 partial-input에서 새 scoped 허가를 사용하는 경우만 필요하다.
+   의무가 아니라 partial-input의 새 scoped 허가 또는 아래 origin 관계의 별도 확인이 필요한 경우에만 붙인다.
 6. reconciled 입력의 Result도 제품 승인이 아니다. 남은 open decision은 §5의 적용 범위로 판단한다.
 
 attachment 필수 키는 `version:1`, `owner`, `unit`, `input_id`, `item_ids`, `source_refs`, `input_sha256`,
@@ -296,7 +342,9 @@ attachment 필수 키는 `version:1`, `owner`, `unit`, `input_id`, `item_ids`, `
 
 hash 규약: input_sha256은 원본 bytes, effects_sha256은 selected Item group의 모든 기존 effect 필드를 정렬한
 canonical JSON, contracts_sha256은 선택 계약들의 canonical 경로와 raw bytes sha256의 정렬된 매핑이다.
-source_refs/item_ids/owner/unit도 attachment와 unit 선언 사이에서 일치해야 한다. missing 값을 빈 문자열로 대체하지 않는다.
+source_refs/item_ids/owner/unit도 attachment와 unit의 유효 source 선택(선언 또는 selected contract에서 해소한 연결)
+사이에서 일치해야 한다. 아래 no-effect-on-unit은 검토한 routing 근거를 가리키며 구현 source로 편입하지 않는다.
+missing 값을 빈 문자열로 대체하지 않는다.
 review path는 consumer가 실제 사용한 report 위치다. 예제의 `_meta/reviews/`는 새 필수 디렉터리가 아니다.
 
 receipt는 source/routing의 리뷰 증거이지 사람의 제품 판단/결정 범위 변경 승인이 아니다. agent reviewer도 기존
@@ -309,6 +357,30 @@ attachment 부재는 **이 scoped 신청**의 미준비이며 무관한 screen/�
 사용한다. `reconciled + pending` 또는 `partially-reconciled + pending|accepted`는 unit coverage attachment까지
 요구한다. 그 밖의 Result는 자동 허가하지 않고 기존 분류·미결 처리 후 재신청한다. 이는 input 전체 승인 정책을
 바꾸는 것이 아니다. 기존 visual-refresh는 계속 reconciled+accepted를 요구하며 partial+accepted도 통과시키지 않는다.
+
+### 시작 입력의 처리 관계
+
+§9.1 origin_inputs는 unit.sources와 canonical source refs의 **합집합에 추가하는 필수 검토 의존**이다.
+선택 작업에 필요한 source 범위가 기존 Items/정본에 연결되고 위 수용 상태와 coverage 조건을 충족해야 한다.
+`origin-input-unreconciled`는 유효한 시작 입력을 읽었지만 이 연결·검토가 아직 없다는 실행 미준비 사유다.
+새 IN-NEW가 정본에 연결되지 않았고 unit.sources도 비어 있다면, 옛 정본이나 오래된 receipt만으로 ready를 반환하지 않는다.
+
+이미 해당 관계를 검토한 위의 coverage attachment는 재사용한다. 시작 범위가 아직 설명되지 않거나 다른 작업만에
+영향이 있어 별도 routing 확인이 필요하면 같은 `work-coverage` fence에 `origin_source_refs`와 `origin_relation`을 붙인다.
+전자는 해당 origin 항목의 source_refs와 정확히 같고, 후자는 `covered-for-unit | no-effect-on-unit` 두 값뿐이다.
+입력 전체가 지정된 빈 origin_source_refs는 전체 인입을 보존한다는 뜻이며, attachment 자체의 source_refs/item_ids는
+이번 작업과의 관계를 확인한 비어 있지 않은 실제 근거다. 빈 값으로 기존 provenance floor를 우회하지 않는다.
+
+`covered-for-unit`은 선택 source/effect가 unit.sources 또는 selected canonical contract의 현재 source 연결로
+실제 해소되어야 한다. 표식만 추가해서 연결을 대체할 수 없다. `no-effect-on-unit`은 이번 원문 범위의 routing을
+검토해 selected unit에 영향이 없음을 확인한 경우다. 기존 typed Item/effect와 검토 근거를 보존하고 해당 단위에
+미결 의존·Conflict가 있거나 관계를 확인하지 못하면 사용할 수 없다. 범위 분류의 의미적 정확성은 Stage 04 reviewer의
+책임이며 parser가 증명하지 않는다. caller의 제외 목록은 받지 않는다. 이 기록이 OD scope 변경/사람 승인을 대체하지도 않는다.
+두 경우 모두 원본·effect·contract hash를 현재 값으로 검사하며, no-effect 기록의 effect는 routing 근거에만 사용한다.
+다른 domain 화면의 미처리를 지울 필요는 없지만, 이번 단위와의 관계를 아직 확인하지 않은 origin은 계속 미준비다.
+
+이 추가 관계 수용은 D의 scoped 분기다. C current도 origin을 보존·해소하지만 새 partial/no-effect receipt 권한을
+사용하지 않는다. 기존 정본/source 연결과 완료된 reconcile 근거로 설명할 수 없는 origin은 실행 전 모호함으로 남긴다.
 
 ## 8. 경로·shared·변경 종류
 
@@ -343,6 +415,53 @@ surface unit에는 `host_units: {<member_screen_id>: <host_unit_id>}` 연결을 
 ordinary screen의 delegated deny를 아무 곳에서나 제거하는 예외가 아니다. surface identity/membership/실제
 소유 경로가 확인된 surface 평가에서만 이 base envelope를 사용하며 다른 surface 예약·명시 deny는 유지한다.
 
+### 8.2.1 surface visual 근거는 host mapping에서 집계한다
+
+**새 surface 전용 Figma artifact는 만들지 않는다.** surface unit.kind=visual일 때만
+`host_visual_evidence`를 필수로 선언한다. key는 canonical member Screen ID이고 각 값은 하나의
+`mapping_ref: artifact:<id>#component-mapping`과 비어 있지 않은 고유 `m_keys` 배열이다.
+다른 kind에는 이 필드를 허용하지 않는다. 다음은 surface unit 내부의 연결 예이며 새 mapping 소유권 선언이 아니다.
+
+```yaml
+host_units:
+  CHAT-001: composer-layout
+  CHAT-002: composer-layout
+host_visual_evidence:
+  CHAT-001:
+    mapping_ref: artifact:CHAT-001-figma-component-mapping#component-mapping
+    m_keys: [M-001]
+  CHAT-002:
+    mapping_ref: artifact:CHAT-002-figma-component-mapping#component-mapping
+    m_keys: [M-007, M-008]
+```
+
+1. surface의 현재 membership과 host_units/host_visual_evidence의 key 집합이 **정확히 일치**해야 한다.
+   누락·추가 비member·중복 key를 거부한다. 같은 문자열의 surface_id를 screen_id로 만들어 넣지 않는다.
+2. 채택 host의 host_units 값은 그 screen에 실제 존재하는 visual unit으로 해소한다. mapping_ref는 그 host unit의
+   contracts에 포함돼야 한다. 다른 screen의 동명 unit을 참조하거나 behavior unit을 빌려 쓰면 거부한다.
+   미채택 host의 legacy-current는 §8.2의 실제 legacy member base envelope 허가를 유지하면서, 아래 동일 mapping
+   검사를 추가한다. mapping이 있다고 legacy의 경로 거부를 해제하거나 미채택 host에 가상 unit을 만들지 않는다.
+3. 각 mapping_ref는 기존 **screen 소유** artifact다. mapping.screen_id는 그 member, domain은 surface/member의
+   domain과 일치해야 하며 §6의 non-deprecated/provenance 조건과 모든 M-key 일대일 정합을 통과해야 한다.
+   지정 M-key는 mapping 행과 provenance 행에 각각 정확히 한 번 존재해야 한다. 다른 host의 mapping으로 대체하지 않는다.
+4. 선택 mapping 행의 매핑 컴포넌트는 기존 선언/카탈로그의 concrete 구현 경로로 unique 해소되고 surface의
+   implementation_paths 안에 있어야 한다. 명칭 유사성·전역 카탈로그 존재·host 화면 전체 mapping을 근거로 삼지 않는다.
+   실제 경로로 해소되지 않으면 `surface-visual-evidence-unresolved`로 보고한다. 새 파일은 승인된 concrete 경로
+   선언으로 연결할 수 있지만, 소유 경로 자체를 이 mapping에서 새로 만들지는 않는다.
+5. 선택 행의 input Evidence/source anchor는 surface 단위와 각 host에서 실제 사용되는 source 의존에 포함한다.
+   채택 host의 unit.sources/coverage와 surface의 sources/coverage를 모두 대조한다. 미채택 host도 mapping Evidence를
+   surface 평가의 근거에서 빠뜨리지 않는다. §7의 부분 처리·origin 관계·hash 규약은 각 owner/unit과 실제 Item target을
+   기준으로 적용한다. host receipt 하나를 owner만 바꿔 surface receipt로 사용하거나 반대로 쓰지 않는다.
+6. 집계 결과는 `(surface, surface-unit, member, host-unit-or-legacy-current, mapping-ref, M-key)`로 출처를 유지한다.
+   **surface visual predicate는 유효한 surface 소유권과 위 모든 member 근거의 AND**이며 별도 surface_id mapping을
+   요구하지 않는다. mapping의 외부 Figma file/node가 host마다 다른 것은 정상일 수 있고, 문자열이 같다고 요구하지 않는다.
+   의미상 같은 shared 부분인지와 시각 충돌은 기존 source/reconcile review에서 확인한다. host 사이에 충돌한 값은
+   기존 승인 계약/명시 예외로 해소돼야 하며 첫 host·최신 host·다수결로 선택하지 않는다. 해소 근거가 없으면 보류한다.
+
+host_units/host_visual_evidence의 selector 및 해소한 host-unit/mapping/provenance/source 내용은 §5.4 scope 투영에,
+실제 읽은 파일은 §10 snapshot에 포함한다. 선택 또는 근거가 바뀌면 관련 binding/coverage를 재평가한다.
+이 집계는 기존 visual-refresh의 VR-MAP-003 screen identity 검사를 약화하지 않으며 #223 global shell 지원도 아니다.
+
 ### 8.3 초기 변경 범위
 
 scoped source 구현은 regular file의 `M`, `A`만 지원한다. 새 path도 부모 디렉터리 실체·symlink·case alias를 검사한다.
@@ -357,12 +476,19 @@ copy/rename/delete/type/mode-change/submodule은 초기 버전에서 거부한�
 
 새 `--work <request.json>`을 readiness/packet/run/report/forbidden-paths에서 공통 사용한다.
 `--intent`/`--input`/`--path`/`--surface`/`--screen`/`--requested-mode`/저장 readiness override와는 동시에 쓸 수 없다.
-owner/mode/path는 request에 모은다. unknown option/schema는 exit 2다. root/docs/src/policy/manifest/layout/ci는
+owner/mode/path와 시작 입력 origin_inputs는 request에 모은다. unknown option/schema는 exit 2다.
+root/docs/src/policy/manifest/layout/ci는
 각 CLI가 실제 지원하는 명시 resource 옵션을 쓰고 같은 project-relative 해석과 resource 집합을 자식 command에 전달한다.
 
 ```json
 {
   "version": 1,
+  "origin_inputs": [
+    {
+      "input_id": "IN-20260910-visual-spec-001",
+      "source_refs": ["input:IN-20260910-visual-spec-001#extracted-facts/01"]
+    }
+  ],
   "requests": [
     {
       "owner": "screen:RESULT-001",
@@ -377,6 +503,27 @@ owner/mode/path는 request에 모은다. unknown option/schema는 exit 2다. roo
 }
 ```
 
+top-level 필수 키는 version/origin_inputs/requests다. `origin_inputs`는 시작 요청에서 받은 입력을 보존하는
+배열이며 **권한이나 제외 선택이 아니다**. 외부 입력이 없는 정본 기반 요청만 명시적 `[]`를 쓴다. 필드 누락/null은 오류다.
+각 원소는 위 예처럼 input_id와 source_refs 두 키만 갖는다. input_id는 기존 index에서 unique 해소되는 canonical ID,
+source_refs는 그 input의 고유 typed anchor 배열이다. 사용자가 원문의 좁은 범위를 지정하지 않았으면 `[]`로
+input 전체 지정을 보존한다. 이는 해당 input이 무관함/처리 완료라는 뜻도, 전체 domain을 먼저 구현하라는 뜻도 아니다.
+다른 input의 anchor·중복 ID/ref·미해소 input은 입력/수집 오류(exit 2)다. canonical input을 아직 만들지 않았다면
+Stage 03을 먼저 수행하며 request 생성기가 ID나 처리 완료를 발명하지 않는다.
+
+request → readiness → packet/run → report/backstop의 **모든 호출과 저장 봉투에 동일한 origin_inputs를 전달**한다.
+자식 요청이나 shared host subrequest를 만들 때도 상위 origin 집합을 버리지 않는다. unit.sources/canonical refs와의
+합집합을 만들되 provenance상 시작 입력/단위 연결/정본 연결을 구분한다. 현재 input bytes/hash는 도구가 해소하며
+caller가 준 pass/ignored 값은 받지 않는다. 새 input이 unit과 연결되지 않은 경우는 §7처럼 미준비로 보고한다.
+
+정규화한 전체 request(origin_inputs 포함)의 `request_digest`와 해소한 origin 원본 hash를 snapshot/packet에 남긴다.
+정규화는 §5.4의 집합·key 규칙을 사용하되 request의 유효 필드 전체를 포함하고 승인 scope digest와는 구별한다.
+report/backstop은 같은 request와 baseline 문맥을 다시 읽고 비교한다. origin 삭제·교체·범위 축소·원본 변경은
+이전 packet/receipt로 계속하지 않고 새 요청/authoring checkpoint에서 재평가한다. 실제 사용자 범위 변경과 근거를
+보고하며 기존 origin을 조용히 덜어내지 않는다. request 파일도 §10에서 before/after를 대조하는 read set에 속한다.
+처음부터 작성자가 입력을 거짓으로 누락한 `[]`인지는 저장소만으로 알 수 없다. 초기 요청 캡처와 리뷰의 책임이며,
+CLI의 schema 검사나 digest가 사용자 대화의 완전성을 증명한다고 주장하지 않는다.
+
 C는 같은 schema의 `authority:current`만 구현한다. 이 경우 unit/coverage_reports는 지정 금지이고,
 비어 있지 않은 requested_mode가 필수이며 모든 target은 현재 existing helper의 허가와 일치해야 한다.
 D에서 scoped를 추가하며 그 경우 unit은 필수, requested_mode는 금지한다. 빈 requests/targets, 중복 JSON key,
@@ -390,9 +537,11 @@ JSON 순서가 권위 순서는 아니다. unit/canonical owner graph에서 필�
 
 ### 9.2 출력과 상태
 
-work 분기 JSON은 work_contract:1, snapshot, requests, ready, errors, denials, future_requirements,
+work 분기 JSON은 work_contract:1, snapshot, request_digest, origin_inputs, requests, ready, errors, denials, future_requirements,
 required_reviews를 갖는다. request별 owner/unit, path별 bool/reasons, 사용 근거를 제시한다.
-필요한 legacy summary는 legacy_readiness에 그대로 담으며 count를 고치거나 기존 blocking에서 항목을 삭제하지 않는다.
+origin_inputs와 해소 결과는 report/backstop까지 같은 provenance로 운반한다. snapshot은 origin별 canonical path와
+원본 hash도 담고 현재 값으로 재검사한다. 필요한 legacy summary는 legacy_readiness에 그대로 담으며 count를 고치거나
+기존 blocking에서 항목을 삭제하지 않는다.
 ready는 구현 후보 준비 상태일 뿐 품질·제품 승인이 아니다. advisory 검증 부족을 몰래 path 허가로 바꾸지 않는다.
 
 | 조건 | work run 결과 | exit |
@@ -532,9 +681,21 @@ C/D 세분화는 리뷰 가능한 일관성 단위로만 한다. D 규모상 분
 | W26 | 큰 input checkpoint 후 다음 세션 | 같은 input/누적 Items 재사용, 완료 effect 재수행 없음 |
 | W27 | 입력 3종 도착 순서 6개, 동일 유효 facts로 수렴 | 최종 permit 집합 동일. 실제 supersession/decision 차이는 별도 |
 | W28 | opt-in 철회/downgrade로 legacy 권한이 확대됨 | 조용한 rollback 중단, 명시적인 경계 복원 필요 |
+| W29 | unit ID/contracts 동일, api_candidates endpoint만 변경 | scope digest 변경; 이전 binding/approval_ref 재사용 불가 |
+| W30 | unit ID/contracts 동일, sources의 input/item/anchor만 변경 | scope digest 변경; 새 coverage receipt로 사람 scope 확인을 대체 못 함 |
+| W31 | host_units 연결/host unit의 범위/host_visual_evidence M-key만 변경 | 해당 binding stale; 동명 unit/ref로 이전 확인 재사용 불가 |
+| W32 | 미참조 section/파일만 수정 또는 selector 집합 순서만 변경 | scope digest 동일; source 원본 변경의 receipt 재검증과 사람 재승인을 구분 |
+| W33 | origin IN-NEW 미연결, sources: []와 옛 정본/receipt만 존재 | current/scoped 모두 origin을 보존하며 ready 아님; 조용한 baseline 전환 금지 |
+| W34 | origin 누락/null/중복/미해소/다른 input anchor 또는 자식 전달 누락 | schema/수집 오류; 저장 봉투·현재 request 불일치는 재평가 전 계속 불가 |
+| W35 | origin을 현재 단위와 연결해 정상 reconcile·coverage 완료 | 같은 origin을 모든 출력/사후 검사에 보존하고, 나머지 권한 조건 충족 시 후보 ready |
+| W36 | origin의 no-effect-on-unit routing 확인/미확인 | D의 검토 근거·현재 hash가 유효한 경우만 무관함 인정; caller 제외나 OD 면제 없음 |
+| W37 | 두 member의 valid visual host unit + 자기 mapping/M-key + 표면 소유 경로 | surface_id mapping을 만들지 않고 집계 AND 성공; 각 host 출처 보존 |
+| W38 | 비member mapping/틀린 host-unit/누락 host/M-key/다른 소유 컴포넌트 | surface visual 거부; 유효한 다른 host 하나로 대체 불가 |
+| W39 | 두 host 시각 충돌 또는 선택 mapping/provenance 변경 | 충돌 미해소 시 보류; 변경 근거와 관련 digest/coverage 재평가 |
+| W40 | legacy-current host의 mapping은 유효하지만 member base path는 deny | surface visual도 deny; mapping 존재로 legacy host cap 우회 불가 |
 
 W16/W25/W26의 의미와 실운용은 정적 fixture만으로 증명하지 않는다. 구조 테스트와 실제 agent/사람 리뷰를 구별한다.
-C에는 W01-W04, D에는 관련 전체 구조/CLI/Git 회귀와 v1 suite가 필요하다. macOS case-insensitive 검증은 기존 smoke에
+C에는 W01-W04와 W33-W35의 current 입력 전달 경로, D에는 관련 전체 구조/CLI/Git 회귀와 v1 suite가 필요하다. macOS case-insensitive 검증은 기존 smoke에
 관련 test를 포함하되 새로운 required status로 승격하는 것과는 별개다.
 
 ## 14. 요구사항 추적과 설계 리뷰 종료
@@ -566,5 +727,6 @@ E에서는 디자인 선행/API 선행/partial 재개/실행 불가 사례의 �
 재작업/시간을 기록한다. 웹에서 얻을 수 없는 token 수나 독립 비교는 N/A다. 비교에는 같은 입력·시작 상태·동등한
 도구 조건을 쓰고 과거 추정이나 synthetic green을 실측으로 변환하지 않는다.
 
+R1은 scope-basis 선택값/내용 투영, origin 입력 보존, host mapping 집계의 세 계약과 W29-W40을 보완했다.
 이 설계는 미구현이며 현재 권한을 바꾸지 않는다. B merge는 설계 채택이고 C/D 실행·검증은 별도 PR이다.
 #238은 D까지의 완료 조건을 충족하기 전에는 open을 유지한다. A/#236/PR #240 리뷰·구현에는 간섭하지 않는다.
