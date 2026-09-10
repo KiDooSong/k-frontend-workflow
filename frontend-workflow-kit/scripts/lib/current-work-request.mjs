@@ -31,12 +31,44 @@ export function strictJson(raw, label = 'JSON') {
   } catch (error) { throw new CurrentWorkError(`${label}: ${error.message}`); }
   return value;
 }
+export const CURRENT_WORK_INPUT_LIMIT = 16 * 1024 * 1024;
+
+// Open once: a pathname replacement cannot swap the object between stat and read.
+// NONBLOCK lets us reject a FIFO without waiting for a writer. Only regular files
+// are supported, and at most limit + 1 bytes are read, even if fstat underreports
+// the length or a concurrent writer grows the file. Never decode an oversized input.
+export function readCurrentBytes(file, label = 'input') {
+  let fd;
+  try {
+    fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK | (fs.constants.O_NOFOLLOW || 0));
+    const before = fs.fstatSync(fd);
+    if (!before.isFile()) throw new CurrentWorkError(`${label}: regular file required`);
+    if (before.size > CURRENT_WORK_INPUT_LIMIT) throw new CurrentWorkError(`${label}: exceeds 16 MiB input limit`);
+    const chunks = [];
+    let length = 0;
+    while (length <= CURRENT_WORK_INPUT_LIMIT) {
+      const chunk = Buffer.alloc(Math.min(64 * 1024, CURRENT_WORK_INPUT_LIMIT + 1 - length));
+      const count = fs.readSync(fd, chunk, 0, chunk.length, null);
+      if (count === 0) break;
+      chunks.push(chunk.subarray(0, count));
+      length += count;
+    }
+    if (length > CURRENT_WORK_INPUT_LIMIT) throw new CurrentWorkError(`${label}: exceeds 16 MiB input limit`);
+    const after = fs.fstatSync(fd);
+    if (before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs) {
+      throw new CurrentWorkError(`${label}: file changed while reading; retry from a stable input`);
+    }
+    const raw = Buffer.concat(chunks, length);
+    return raw;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
 export function readJson(file, label = 'JSON') {
-  const size = fs.statSync(file).size;
-  if (size > 16 * 1024 * 1024) throw new CurrentWorkError(`${label}: exceeds 16 MiB input limit`);
-  const raw = fs.readFileSync(file);
+  const raw = readCurrentBytes(file, label);
   return { raw, value: strictJson(decodeGitUtf8(raw, label), label) };
 }
+
 function object(value, keys, label) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new CurrentWorkError(`${label}: object required`);
   for (const key of Object.keys(value)) if (!keys.includes(key)) throw new CurrentWorkError(`${label}: unknown field ${key}`);
