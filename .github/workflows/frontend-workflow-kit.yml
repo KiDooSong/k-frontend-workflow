@@ -22,6 +22,24 @@ jobs:
 
       - run: npm ci
 
+      # Reproducible source snapshot for independent CLI/packed verification.
+      # No credentials, .git configuration, or new required status is exported.
+      - name: archive verification source (advisory)
+        continue-on-error: true
+        run: |
+          git -C "$GITHUB_WORKSPACE" archive --format=tar --prefix=repository/ HEAD > "$RUNNER_TEMP/workflow-verification-source.tar"
+          git -C "$GITHUB_WORKSPACE" rev-parse HEAD HEAD^{tree} > "$RUNNER_TEMP/workflow-verification-source.txt"
+
+      - name: upload verification source (advisory)
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: workflow-verification-source-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/workflow-verification-source.tar
+            ${{ runner.temp }}/workflow-verification-source.txt
+          retention-days: 3
+
       - name: lint-pack generated config drift (warning-only)
         continue-on-error: true
         run: npm run workflow:lint-gen -- --check
