@@ -22,13 +22,14 @@ jobs:
 
       - run: npm ci
 
-      # Reproducible source snapshot for independent CLI/packed verification.
+      # Reproducible source and lockfile-installed dependencies for offline CLI verification.
       # No credentials, .git configuration, or new required status is exported.
       - name: archive verification source (advisory)
         continue-on-error: true
         run: |
           git -C "$GITHUB_WORKSPACE" archive --format=tar --prefix=repository/ HEAD > "$RUNNER_TEMP/workflow-verification-source.tar"
           git -C "$GITHUB_WORKSPACE" rev-parse HEAD HEAD^{tree} > "$RUNNER_TEMP/workflow-verification-source.txt"
+          tar -C "$GITHUB_WORKSPACE/frontend-workflow-kit" -cf "$RUNNER_TEMP/workflow-verification-dependencies.tar" node_modules
 
       - name: upload verification source (advisory)
         continue-on-error: true
@@ -38,6 +39,7 @@ jobs:
           path: |
             ${{ runner.temp }}/workflow-verification-source.tar
             ${{ runner.temp }}/workflow-verification-source.txt
+            ${{ runner.temp }}/workflow-verification-dependencies.tar
           retention-days: 3
 
       - name: lint-pack generated config drift (warning-only)
