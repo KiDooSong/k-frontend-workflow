@@ -96,3 +96,77 @@ test('P1 unmerged index is an explicit tool error and is not rewritten', (t) => 
   assert.equal(result.status, 2); assert.match(result.stderr, /unmerged/);
   assert.deepEqual(fs.readFileSync(f.index), beforeIndex);
 });
+
+function packetFixture(t) {
+  const f = fixture(t);
+  for (const name of ['policy', 'manifest', 'layout']) fs.copyFileSync(path.join(f.root, `config/${name}.yaml`), path.join(f.root, `config/${name}-copy.yaml`));
+  fs.writeFileSync(path.join(f.root, 'config/ci.yaml'), '{}\n');
+  fs.cpSync(path.join(f.root, 'docs'), path.join(f.root, 'docs-copy'), { recursive: true });
+  fs.cpSync(path.join(f.root, 'src'), path.join(f.root, 'src-copy'), { recursive: true });
+  const twin = path.join(f.root, 'apps/twin');
+  fs.mkdirSync(twin, { recursive: true });
+  for (const dir of ['docs', 'src', 'config']) fs.cpSync(path.join(f.root, dir), path.join(twin, dir), { recursive: true });
+  f.git(['add', '-A']); f.git(['commit', '-qm', 'alternate resources in the same baseline']);
+  const packet = path.join(f.temp, 'packet.md');
+  body(f.cli('workflow-packet', ['--out', packet]), 0);
+  fs.appendFileSync(f.target, '\n// requested change\n');
+  return { ...f, packet, twin };
+}
+
+test('P1 packet/report rejects every resource selector change, including added/removed CI and project prefix', (t) => {
+  const f = packetFixture(t);
+  const original = body(f.cli('workflow-report', ['--packet', f.packet]), 0);
+  assert.equal(original.backstop.ok, true);
+  for (const [flag, value] of [['policy', 'config/policy-copy.yaml'], ['manifest', 'config/manifest-copy.yaml'], ['layout', 'config/layout-copy.yaml'], ['docs', 'docs-copy/frontend-workflow'], ['src', 'src-copy'], ['ci', 'config/ci.yaml'], ['root', f.twin]]) {
+    const out = path.join(f.temp, `must-not-write-${flag}.md`);
+    const result = f.cli('workflow-report', ['--packet', f.packet, `--${flag}`, value, '--out', out]);
+    assert.equal(result.status, 2, `${flag}: ${result.stderr || result.stdout}`);
+    assert.match(result.stderr, /project\/resource context/);
+    assert.equal(fs.existsSync(out), false);
+  }
+  const withCi = path.join(f.temp, 'with-ci.md');
+  body(f.cli('workflow-packet', ['--ci', 'config/ci.yaml', '--out', withCi]), 0);
+  assert.equal(f.cli('workflow-report', ['--packet', withCi]).status, 2);
+});
+
+test('P1 denied packet cannot become allowed by choosing a different policy in the same tree', async (t) => {
+  const { parse, stringify } = await import('yaml');
+  const f = fixture(t);
+  const p = path.join(f.root, 'config/policy.yaml');
+  const normal = fs.readFileSync(p, 'utf8');
+  fs.writeFileSync(path.join(f.root, 'config/normal.yaml'), normal);
+  const policy = parse(normal);
+  for (const mode of Object.values(policy.modes)) mode.forbidden_paths = [...(mode.forbidden_paths || []), TARGET];
+  fs.writeFileSync(p, stringify(policy));
+  f.git(['add', 'config']); f.git(['commit', '-qm', 'deny and allow policies coexist']);
+  const packet = path.join(f.temp, 'denied.md');
+  const denied = body(f.cli('workflow-packet', ['--out', packet]), 0);
+  assert.equal(denied.ready, false);
+  fs.appendFileSync(f.target, '\n// implementation\n');
+  const control = body(f.cli('workflow-report', ['--packet', packet]), 0);
+  assert.equal(control.ready, false); assert.equal(control.backstop.ok, false);
+  const changed = f.cli('workflow-report', ['--packet', packet, '--policy', 'config/normal.yaml']);
+  assert.equal(changed.status, 2); assert.match(changed.stderr, /project\/resource context/);
+});
+
+test('P1 packet identity includes resource kind/path/mode/OID and rejects missing or duplicate context', (t) => {
+  const f = packetFixture(t);
+  const raw = fs.readFileSync(f.packet, 'utf8');
+  const pattern = /(## Machine Envelope\s*\n```json\s*\n)([\s\S]*?)(\n```)/;
+  for (const change of [
+    v => delete v.snapshot.project_prefix,
+    v => delete v.snapshot.resources,
+    v => v.snapshot.resources.push(v.snapshot.resources[0]),
+    v => v.snapshot.resources[0].mode = '100755',
+    v => v.snapshot.resources[0].oid = '0'.repeat(40),
+    v => v.snapshot.resources[0].path = 'elsewhere',
+    v => v.snapshot.resources[0].kind = 'unexpected',
+  ]) {
+    const value = JSON.parse(pattern.exec(raw)[2]); change(value);
+    fs.writeFileSync(f.packet, raw.replace(pattern, (_, before, _json, after) => before + JSON.stringify(value) + after));
+    assert.equal(f.cli('workflow-report', ['--packet', f.packet]).status, 2);
+  }
+  const value = JSON.parse(pattern.exec(raw)[2]); value.snapshot.resources.reverse();
+  fs.writeFileSync(f.packet, raw.replace(pattern, (_, before, _json, after) => before + JSON.stringify(value) + after));
+  assert.equal(body(f.cli('workflow-report', ['--packet', f.packet]), 0).backstop.ok, true);
+});

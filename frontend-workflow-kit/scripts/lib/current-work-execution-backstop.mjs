@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { parseNameStatusZ, readinessPathAuthorization } from './path-backstop.mjs';
-import { readJson, normalizeWorkRequest, digest, hashBytes, ownerParts, byteCompare } from './current-work-request.mjs';
+import { readJson, normalizeWorkRequest, digest, hashBytes, ownerParts, byteCompare, canonicalJson } from './current-work-request.mjs';
 import { captureCurrentIndex, snapshotRecords } from './current-work-snapshot.mjs';
 import { runVisualGit, decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import {
@@ -239,10 +239,32 @@ export function parseCurrentPacket(file) {
   if (value.work_contract !== 1 || value.packet_type !== 'current-work') throw new CurrentWorkExecutionError('packet: unsupported current work contract');
   return value;
 }
+function resourceContext(snapshot) {
+  if (typeof snapshot?.project_prefix !== 'string' || !Array.isArray(snapshot.resources)) {
+    throw new CurrentWorkExecutionError('packet: missing project/resource context; create a new preflight');
+  }
+  const kinds = new Set();
+  const resources = snapshot.resources.map((resource) => {
+    const keys = resource && typeof resource === 'object' ? Object.keys(resource).sort() : [];
+    if (keys.join(',') !== 'kind,mode,oid,path' || typeof resource.kind !== 'string' ||
+        typeof resource.path !== 'string' || !['docs', 'src', 'policy', 'manifest', 'layout', 'ci'].includes(resource.kind) || kinds.has(resource.kind)) {
+      throw new CurrentWorkExecutionError('packet: malformed or duplicate resource context');
+    }
+    kinds.add(resource.kind);
+    return resource;
+  }).sort((a, b) => byteCompare(a.kind, b.kind));
+  for (const kind of ['docs', 'src', 'policy', 'manifest', 'layout']) {
+    if (!kinds.has(kind)) throw new CurrentWorkExecutionError(`packet: missing ${kind} resource context`);
+  }
+  return canonicalJson({ project_prefix: snapshot.project_prefix, resources, work_request_path: snapshot.work_request?.path });
+}
 export function assertPacketMatches(preflight, packet) {
   if (packet.request_digest !== preflight.request_digest) throw new CurrentWorkExecutionError('packet: request digest changed since packet creation');
   if (packet.snapshot?.commit !== preflight.snapshot.commit || packet.snapshot?.tree !== preflight.snapshot.tree) {
     throw new CurrentWorkExecutionError('packet: Git baseline changed since packet creation');
+  }
+  if (resourceContext(packet.snapshot) !== resourceContext(preflight.snapshot)) {
+    throw new CurrentWorkExecutionError('packet: project/resource context changed; create a new preflight/checkpoint');
   }
   if (packet.snapshot?.work_request?.hash !== preflight.snapshot.work_request.hash) {
     throw new CurrentWorkExecutionError('packet: work request bytes changed since packet creation');
