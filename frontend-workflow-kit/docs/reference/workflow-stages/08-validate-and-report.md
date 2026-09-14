@@ -24,6 +24,23 @@ direct readiness redirect described in [`screen-lifecycle.md`](../screen-lifecyc
 
 For adopted shared-surface work, also re-run `workflow:readiness -- --surface <SURFACE_ID> --json` and every member's `--screen` readiness; report limiting member modes and delegated/forbidden paths.
 
+## Current-work report/backstop
+
+Stage 06에서 `--work`를 사용했다면 [current-work reference](../current-work.md)에 따라 같은
+request/origin/resource를 report/backstop까지 유지한다. Packet의 stored allow 값은 audit-only이고,
+실제 구현 snapshot에서 request raw hash, origin raw hash, baseline authority, concrete path helper,
+전체 Git diff를 다시 확인한다.
+
+```bash
+npm run workflow:forbidden-paths -- --work .workflow/current-work.json --json
+npm run workflow:report -- --work .workflow/current-work.json --packet temp/current-work-packet.md --json
+npm run workflow:run -- --work .workflow/current-work.json --json
+```
+
+`forbidden-paths`는 기본 advisory이고 `--enforce` 위반만 exit 1이다. `DONE_PENDING_REVIEW`, report
+생성, exit 0은 승인이나 위반 없음의 대체 신호가 아니다. 실행한 검증, 실패/미실행 검증, 남은
+Decision/Unknown/Conflict를 구분해 handoff한다.
+
 ## Optional web E2E evidence
 
 When the user asks for web E2E, Playwright, web verification, test generation, or

@@ -26,7 +26,8 @@ description: 지정된 Screen ID를 readiness gate가 허용하는 모드와 경
    ```
 3. JSON의 `readiness_applicable`를 `blocking`보다 먼저 본다. `readiness_applicable: false`이면 absorbed source에 구현하지 않고 `absorbed_into`를 보고한 뒤 멈춘다. target으로 자동 전환하지 않는다.
 4. 그 외 blocking이 있으면 `blocking`·`next_actions`를 보고하고 멈춘다.
-5. 일반 concrete 경로는 수정 직전 다시 확인한다:
+5. 사용자의 한 요청에 여러 concrete target/origin이 있고 모두 **현재 권한 안에서** 실행할 작업이면, [current work execution](../../docs/reference/current-work.md)의 `authority: current` request를 agent가 조립해 `readiness → packet/run → backstop/report`에 같은 `--work`를 전달할 수 있다. 사람에게 매번 JSON 수작업 승인을 요구하지 않는다. `scoped`/unit/coverage receipt는 C 범위가 아니며 새 권한이 필요하면 기존 authoring/사람 확인으로 돌아간다.
+6. 일반 concrete 경로는 수정 직전 다시 확인한다:
    ```bash
    npm run workflow:readiness -- --screen <ID> --path <project-relative-path> --json
    ```

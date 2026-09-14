@@ -45,6 +45,18 @@ Edit only the full surface/policy/member intersection. The detailed contract is 
 If a related input is `not-started` / `in-progress` / `failed`, finish reconcile
 first (Stage 04) — do not implement on an unreconciled input.
 
+## Current-work branch
+
+한 사용자 작업에 여러 origin/target이 있고 **기존 current 권한 안에서만** 구현하려면
+[current-work reference](../current-work.md)의 `--work` 봉투를 사용한다. agent가 canonical
+input/owner/target에서 request를 조립하고 readiness, packet/run, report/backstop에 같은 request와
+resource 옵션을 전달한다. `requested_mode`는 실제 current ceiling 이하여야 하고 모든 concrete
+path가 기존 helper에서 허가돼야 한다. denied request를 버리거나 낮은 mode의 path를 합쳐 ready로
+만들지 않는다.
+
+`authority: scoped`, work unit, partial/no-effect coverage receipt로 새 권한을 여는 것은 이 단계의
+current 분기가 아니다. 그런 저작이 필요하면 기존 Stage 04/05 및 사람 소유 checkpoint로 돌아간다.
+
 ## Shared component midstream
 
 If you need a shared/common component while implementing:

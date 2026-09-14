@@ -9,6 +9,7 @@ import {
   parseArgs, writeFile, readFileSafe, removeFileIfExists, yamlParse, DEFAULTS, isCliEntry,
 } from './lib/util.mjs';
 import { enforceCliFlagContract } from './lib/cli-args.mjs';
+import { runCurrentWorkCliSafely } from './lib/current-work-cli.mjs';
 import { captureWorkflowJson, WORKFLOW_JSON_MAX_BYTES } from './lib/workflow-json-capture.mjs';
 import {
   STATES, STATE_EXIT, isAbsorbedPacket, isPacketClean, buildRunModel,
@@ -101,6 +102,10 @@ function appendVisualStatus(markdown, report) {
 function main() {
   const argv = process.argv.slice(2);
   const parsed = parseArgs(argv);
+  if (Object.prototype.hasOwnProperty.call(parsed.flags, 'work')) {
+    runCurrentWorkCliSafely('run', argv);
+    return;
+  }
   if (hasVisualCliSurface(parsed.flags)) {
     enforceCliFlagContract({
       argv, flags: parsed.flags, positionals: parsed.positionals,
