@@ -60,10 +60,40 @@ export function captureCurrentIndex(repositoryRoot) {
   // Resolve index entries once, then compute BOTH records and evidence from these
   // immutable OIDs. write-tree operates only on an independent temporary index.
   const { raw, entries } = indexEntries(repositoryRoot);
-  const tree = indexTree(repositoryRoot, raw);
+  return snapshotView(repositoryRoot, indexTree(repositoryRoot, raw), entries);
+}
+
+export function createCurrentSnapshot(repositoryRoot, entries) {
+  const raw = Buffer.from([...entries].sort(([a], [b]) => Buffer.compare(Buffer.from(a), Buffer.from(b)))
+    .map(([name, { mode, oid }]) => {
+      requireGitRepositoryPath(name, 'current snapshot path');
+      if (!MODES.has(mode) || !OID.test(oid)) throw new Error('current snapshot: invalid entry');
+      return `${mode} ${oid} 0\t${name}\0`;
+    }).join(''));
+  return snapshotView(repositoryRoot, indexTree(repositoryRoot, raw), entries);
+}
+
+export function captureCurrentTree(repositoryRoot, tree) {
+  if (!OID.test(tree)) throw new Error('current snapshot: exact tree OID required');
+  const text = decodeGitUtf8(runVisualGit(['ls-tree', '-r', '-z', '--full-tree', tree], repositoryRoot), 'current tree');
+  if (text && !text.endsWith('\0')) throw new Error('current tree: unterminated entry');
+  const entries = new Map();
+  for (const record of text ? text.slice(0, -1).split('\0') : []) {
+    const tab = record.indexOf('\t');
+    const [mode, type, oid, extra] = record.slice(0, tab).split(' ');
+    const name = requireGitRepositoryPath(record.slice(tab + 1), 'current tree path');
+    if (tab < 0 || extra !== undefined || !MODES.has(mode) || !OID.test(oid) ||
+        type !== (mode === '160000' ? 'commit' : 'blob') || entries.has(name)) throw new Error('current tree: invalid entry');
+    entries.set(name, { mode, oid });
+  }
+  return snapshotView(repositoryRoot, tree, entries);
+}
+
+function snapshotView(repositoryRoot, tree, entries) {
   const cache = new Map();
   return {
     tree,
+    entries: new Map(entries),
     evidence(name) {
       requireGitRepositoryPath(name, 'current index evidence');
       if (cache.has(name)) return cache.get(name);

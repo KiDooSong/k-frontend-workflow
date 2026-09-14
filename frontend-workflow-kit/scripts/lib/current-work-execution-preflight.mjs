@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { currentAuthorityReadSet } from './current-work-integrity.mjs';
 import path from 'node:path';
 import { DEFAULTS, KIT_ROOT } from './util.mjs';
 import { computeReadiness } from '../readiness-legacy.mjs';
@@ -199,6 +200,7 @@ export function prepareCurrentWork({ work, root, docs, src, policy, manifest, la
       tree: identity.tree,
       project_prefix: ctx.projectPrefix || '',
       resources: resourceRecords.sort((a, b) => byteCompare(a.kind, b.kind)),
+      authority_read_set: currentAuthorityReadSet({ resources, inputArtifacts, baselineRoot, baselineKitRoot, layoutData, snapshot }),
       work_request: {
         hash: hashBytes(parsed.raw),
         path: outside(projectRoot, workPath) ? null : projectRelative(projectRoot, workPath, 'work request'),

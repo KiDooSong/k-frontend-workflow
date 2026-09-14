@@ -170,3 +170,131 @@ test('P1 packet identity includes resource kind/path/mode/OID and rejects missin
   fs.writeFileSync(f.packet, raw.replace(pattern, (_, before, _json, after) => before + JSON.stringify(value) + after));
   assert.equal(body(f.cli('workflow-report', ['--packet', f.packet]), 0).backstop.ok, true);
 });
+
+function authorityFixture(t) {
+  const f = fixture(t);
+  const input = 'docs/frontend-workflow/inputs/IN-20260720-figma-001.md';
+  fs.mkdirSync(path.dirname(path.join(f.root, input)), { recursive: true });
+  fs.copyFileSync(path.join(KIT, 'examples/reconciliation-validation/v2-pass', input), path.join(f.root, input));
+  const register = 'docs/frontend-workflow/_meta/reconciliation-register.md';
+  fs.writeFileSync(path.join(f.root, register), '---\nkind: meta-register\n---\n\n| Input ID | Source | Classification | Reconcile Status | Result | Touched Artifacts | Created Items | Supersedes |\n|---|---|---|---|---|---|---|---|\n| IN-20260720-figma-001 | figma | simple-update | reconciled | accepted | COUPON-001 screen-spec | - | - |\n');
+  fs.writeFileSync(path.join(f.root, 'config/ci.yaml'), '{}\n');
+  f.args.push('--ci', 'config/ci.yaml');
+  const request = JSON.parse(fs.readFileSync(f.work));
+  request.origin_inputs = [{ input_id: 'IN-20260720-figma-001', source_refs: [] }];
+  fs.writeFileSync(f.work, JSON.stringify(request));
+  f.git(['add', '-A']); f.git(['commit', '-qm', 'canonical origin and CI baseline']);
+  fs.appendFileSync(f.target, '\n// implementation\n');
+  return { ...f, input, register };
+}
+for (const flag of ['assume-unchanged', 'skip-worktree']) {
+  test(`P1-3 ${flag}: every consumed authority file is checked directly; user index is unchanged`, (t) => {
+    const f = authorityFixture(t);
+    const names = ['config/policy.yaml', 'config/manifest.yaml', 'config/layout.yaml', 'config/ci.yaml',
+      'docs/frontend-workflow/_meta/workflow-state.yaml', f.register, f.input];
+    for (const name of names) {
+      const file = path.join(f.root, name), original = fs.readFileSync(file);
+      f.git(['update-index', `--${flag}`, name]);
+      fs.appendFileSync(file, '\n');
+      assert.equal(String(f.git(['diff', '--name-only', 'HEAD'])).includes(name), false, `fixture must hide ${name}`);
+      const before = fs.readFileSync(f.index);
+      const result = body(f.cli('forbidden-paths', ['--enforce']), 1);
+      assert.ok(result.violations.some((v) => v.code === 'CW-GIT-AUTHORITY-CHANGED' && v.path === name), name);
+      const check = result.snapshot.authority_checks.find((c) => c.path === name);
+      assert.equal(check.ok, false); assert.notEqual(check.hash, check.after.hash);
+      assert.deepEqual(fs.readFileSync(f.index), before);
+      fs.writeFileSync(file, original);
+      assert.equal(body(f.cli('forbidden-paths', ['--enforce']), 0).ok, true);
+      f.git(['update-index', `--no-${flag}`, name]);
+    }
+  });
+  test(`P1-3 ${flag}: hidden requested work and unrequested cross-root files are not omitted`, (t) => {
+    const f = fixture(t, { prefix: 'apps/mobile' });
+    const other = 'src/unrequested.ts', outside = 'outside.txt';
+    fs.writeFileSync(path.join(f.root, other), 'before\n'); fs.writeFileSync(path.join(f.repo, outside), 'before\n');
+    f.git(['add', '-A']); f.git(['commit', '-qm', 'extra tracked files']);
+    const names = [f.repositoryPath, `apps/mobile/${other}`, outside];
+    f.git(['update-index', `--${flag}`, ...names]);
+    fs.appendFileSync(f.target, '\n// hidden requested change\n');
+    const first = body(f.cli('forbidden-paths', ['--enforce']), 0);
+    assert.equal(first.ok, true); assert.equal(first.changed_records[0].status, 'M');
+    assert.equal(first.changed_records[0].evidence.hash, hash(fs.readFileSync(f.target)));
+    fs.appendFileSync(path.join(f.root, other), 'after\n'); fs.appendFileSync(path.join(f.repo, outside), 'after\n');
+    assert.equal(String(f.git(['diff', '--name-only', 'HEAD'])), '');
+    const before = fs.readFileSync(f.index);
+    const result = body(f.cli('forbidden-paths', ['--enforce']), 1);
+    assert.ok(result.violations.some((v) => v.code === 'CW-GIT-UNREQUESTED' && v.path === other));
+    assert.ok(result.violations.some((v) => v.code === 'CW-GIT-OUTSIDE-ROOT'));
+    assert.deepEqual(fs.readFileSync(f.index), before);
+  });
+}
+
+test('P1-3 staged authority follows index only; report/run retain detected hidden worktree violations', (t) => {
+  const f = authorityFixture(t), policy = path.join(f.root, 'config/policy.yaml');
+  const original = fs.readFileSync(policy), changed = Buffer.concat([original, Buffer.from('\n')]);
+  const packet = path.join(f.temp, 'packet.md');
+  body(f.cli('workflow-packet', ['--out', packet]), 0);
+  f.git(['add', f.repositoryPath]);
+  const oid = String(f.git(['hash-object', '-w', '--stdin'], changed)).trim();
+  f.git(['update-index', '--cacheinfo', `100644,${oid},config/policy.yaml`]);
+  const before = fs.readFileSync(f.index);
+  assert.equal(body(f.cli(), 1).snapshot.authority_checks.find((c) => c.path === 'config/policy.yaml').after.hash, hash(changed));
+  assert.equal(body(f.cli('forbidden-paths', ['--enforce']), 0).ok, true);
+  f.git(['update-index', '--cacheinfo', `100644,${String(f.git(['rev-parse', 'HEAD:config/policy.yaml'])).trim()},config/policy.yaml`]);
+  f.git(['update-index', '--assume-unchanged', 'config/policy.yaml']);
+  fs.writeFileSync(policy, changed);
+  const index = fs.readFileSync(f.index);
+  assert.equal(body(f.cli('workflow-report', ['--packet', packet]), 0).backstop.ok, false);
+  assert.equal(body(f.cli('workflow-run', []), 0).backstop.ok, false);
+  assert.equal(body(f.cli('forbidden-paths', []), 0).ok, false); // advisory still exits zero
+  assert.equal(body(f.cli(), 0).ok, true); // worktree authority must not contaminate index verdict
+  assert.deepEqual(fs.readFileSync(f.index), index);
+  assert.ok(before.length > 0);
+});
+
+test('P1-3 ignored new inputs and absent optional register cannot escape read-set/inventory checks', (t) => {
+  const f = fixture(t), input = 'docs/frontend-workflow/inputs/IN-20260914-user-note-001.md';
+  const register = 'docs/frontend-workflow/_meta/reconciliation-register.md';
+  if (fs.existsSync(path.join(f.root, register))) {
+    fs.unlinkSync(path.join(f.root, register)); f.git(['add', register]); f.git(['commit', '-qm', 'no optional register']);
+  }
+  fs.writeFileSync(path.join(f.repo, '.git/info/exclude'), `${input}\n${register}\n`);
+  fs.mkdirSync(path.dirname(path.join(f.root, input)), { recursive: true });
+  fs.writeFileSync(path.join(f.root, input), 'new uncaptured input\n');
+  fs.writeFileSync(path.join(f.root, register), 'new register\n');
+  fs.appendFileSync(f.target, '\n// implementation\n');
+  assert.equal(String(f.git(['ls-files', '--others', '--exclude-standard'])), '');
+  const result = body(f.cli('forbidden-paths', ['--enforce']), 1);
+  for (const name of [input, register]) assert.ok(result.snapshot.authority_checks.some((c) => c.path === name && !c.ok), name);
+});
+
+test('P1-3 hidden executable changes, deletions and symlink ancestors use raw filesystem identity', { skip: process.platform === 'win32' }, (t) => {
+  const f = fixture(t);
+  f.git(['config', 'core.filemode', 'false']);
+  f.git(['update-index', '--skip-worktree', f.repositoryPath]);
+  fs.chmodSync(f.target, 0o755);
+  const mode = body(f.cli('forbidden-paths', ['--enforce']), 1);
+  assert.ok(mode.violations.some((v) => v.code === 'CW-GIT-MODE'));
+  const request = JSON.parse(fs.readFileSync(f.work)); request.requests[0].targets[0].change = 'D';
+  fs.writeFileSync(f.work, JSON.stringify(request)); fs.unlinkSync(f.target);
+  assert.equal(body(f.cli('forbidden-paths', ['--enforce']), 0).ok, true);
+  fs.renameSync(path.join(f.root, 'config'), path.join(f.temp, 'config'));
+  fs.symlinkSync(path.join(f.temp, 'config'), path.join(f.root, 'config'));
+  const result = f.cli('forbidden-paths', ['--enforce']);
+  assert.equal(result.status, 2); assert.match(result.stderr, /non-directory ancestor/);
+});
+
+test('P1-3 ignored dirty gitlinks fail explicitly without refreshing the user index', (t) => {
+  const f = fixture(t), sub = path.join(f.temp, 'sub');
+  fs.mkdirSync(sub);
+  const git = (args) => execFileSync('git', args, { cwd: sub, stdio: ['pipe', 'pipe', 'pipe'] });
+  git(['init', '-q']); git(['config', 'user.name', 'test']); git(['config', 'user.email', 'test@example.com']);
+  fs.writeFileSync(path.join(sub, 'file'), 'before\n'); git(['add', '.']); git(['commit', '-qm', 'sub baseline']);
+  f.git(['-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', sub, 'dep']);
+  f.git(['commit', '-qm', 'gitlink baseline']); f.git(['config', 'submodule.dep.ignore', 'all']);
+  execFileSync('git', ['update-index', '--assume-unchanged', 'file'], { cwd: path.join(f.root, 'dep') });
+  fs.appendFileSync(path.join(f.root, 'dep/file'), 'dirty\n'); fs.appendFileSync(f.target, '\n// implementation\n');
+  const before = fs.readFileSync(f.index), result = f.cli('forbidden-paths', ['--enforce']);
+  assert.equal(result.status, 2); assert.match(result.stderr, /dirty submodule/);
+  assert.deepEqual(fs.readFileSync(f.index), before);
+});

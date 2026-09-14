@@ -1,30 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
-import { parseNameStatusZ, readinessPathAuthorization } from './path-backstop.mjs';
+import { readinessPathAuthorization } from './path-backstop.mjs';
 import { readJson, normalizeWorkRequest, digest, hashBytes, ownerParts, byteCompare, canonicalJson } from './current-work-request.mjs';
 import { captureCurrentIndex, snapshotRecords } from './current-work-snapshot.mjs';
-import { runVisualGit, decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
+import { captureCurrentWorktree, verifyCurrentAuthority } from './current-work-integrity.mjs';
 import {
   CurrentWorkExecutionError, REGULAR_MODES, AUTHORITY_BASENAMES, posix, stable, generatedOwner,
   screenDomain, effectiveOrder, exactSurfaceAuthorization,
 } from './current-work-execution-core.mjs';
 
-function actualGitRecords(context, { staged = false } = {}) {
-  const args = ['diff'];
-  if (staged) args.push('--cached');
-  args.push('--no-ext-diff', '--no-textconv', '--ignore-submodules=none', '--name-status', '-M', '-z', 'HEAD');
-  const tracked = parseNameStatusZ(decodeGitUtf8(runVisualGit(args, context.repositoryRoot), 'current worktree diff'));
-  if (staged) return tracked;
-  const untrackedRaw = decodeGitUtf8(
-    runVisualGit(['ls-files', '--others', '--exclude-standard', '-z'], context.repositoryRoot),
-    'current untracked paths',
-  );
-  const untracked = untrackedRaw.split('\0').filter(Boolean).map((repositoryPath) => ({ status: 'A', path: repositoryPath, raw: 'A', untracked: true }));
-  const keyed = new Map();
-  for (const record of [...tracked, ...untracked]) keyed.set(recordKey(record), record);
-  return [...keyed.values()].sort((a, b) => byteCompare(recordKey(a), recordKey(b)));
-}
 function recordKey(record) {
   return record.status === 'R' || record.status === 'C'
     ? `${record.status}:${record.oldPath}->${record.newPath}` : `${record.status}:${record.path}`;
@@ -49,18 +33,6 @@ function requestedTargetMap(preflight) {
     }
   }
   return map;
-}
-function currentFileEvidence(projectRoot, relative) {
-  const absolute = path.join(projectRoot, ...relative.split('/'));
-  try {
-    const stat = fs.lstatSync(absolute);
-    if (!stat.isFile()) return { kind: stat.isSymbolicLink() ? 'symlink' : 'non-file', mode: stat.mode & 0o777, hash: null };
-    const raw = fs.readFileSync(absolute);
-    return { kind: 'file', mode: stat.mode & 0o777, hash: `sha256:${createHash('sha256').update(raw).digest('hex')}` };
-  } catch (error) {
-    if (error.code === 'ENOENT') return { kind: 'missing', mode: null, hash: null };
-    return { kind: 'error', mode: null, hash: null, error: error.message };
-  }
 }
 function authorityPaths(preflight) {
   const paths = new Set(preflight.snapshot.resources.map((r) => r.path));
@@ -112,21 +84,22 @@ export function evaluateCurrentGit(preflight, { staged = false } = {}) {
     throw new CurrentWorkExecutionError(`work request recheck failed: ${error.message}`);
   }
 
-  const destination = staged ? captureCurrentIndex(context.repositoryRoot) : null;
-  const evidenceCache = new Map();
-  const evidenceFor = (relative) => {
-    if (!evidenceCache.has(relative)) evidenceCache.set(relative, destination
-      ? destination.evidence(context.projectPrefix ? `${context.projectPrefix}/${relative}` : relative)
-      : currentFileEvidence(context.projectRoot, relative));
-    return evidenceCache.get(relative);
-  };
-  const rawRecords = destination
-    ? snapshotRecords(context.repositoryRoot, preflight.snapshot.tree, destination.tree)
-    : actualGitRecords(context, { staged });
+  const repositoryPath = (name) => context.projectPrefix ? `${context.projectPrefix}/${name}` : name;
+  const docs = preflight.snapshot.resources.find((r) => r.kind === 'docs').path;
+  const destination = staged ? captureCurrentIndex(context.repositoryRoot) : captureCurrentWorktree(context.repositoryRoot, preflight.snapshot.tree, {
+    extraFiles: preflight.snapshot.authority_read_set.filter((r) => r.source === 'project').map((r) => repositoryPath(r.path)),
+    inputRoots: [repositoryPath(`${docs}/inputs`)],
+  });
+  const evidenceFor = (relative) => destination.evidence(repositoryPath(relative));
+  const authorityChecks = verifyCurrentAuthority(preflight, destination);
+  const rawRecords = snapshotRecords(context.repositoryRoot, preflight.snapshot.tree, destination.tree);
   const records = rawRecords.map((record) => projectRecord(record, context.projectPrefix));
   const targets = requestedTargetMap(preflight);
   const authority = authorityPaths(preflight);
-  const violations = [];
+  const violations = authorityChecks.filter((check) => !check.ok).map((check) => ({
+    code: 'CW-GIT-AUTHORITY-CHANGED', path: check.path, source: check.source,
+    message: 'consumed authority bytes/mode or input inventory changed in destination; start a new authoring checkpoint',
+  }));
   const observed = [];
 
   for (const record of records) {
@@ -198,7 +171,8 @@ export function evaluateCurrentGit(preflight, { staged = false } = {}) {
       source_commit: preflight.snapshot.commit,
       source_tree: preflight.snapshot.tree,
       destination: staged ? 'index' : 'worktree',
-      ...(destination ? { destination_tree: destination.tree } : {}),
+      destination_tree: destination.tree,
+      authority_checks: authorityChecks,
       diff_kind: staged ? 'HEAD..index' : 'HEAD..worktree',
     },
     changed_records: observed,
@@ -256,7 +230,7 @@ function resourceContext(snapshot) {
   for (const kind of ['docs', 'src', 'policy', 'manifest', 'layout']) {
     if (!kinds.has(kind)) throw new CurrentWorkExecutionError(`packet: missing ${kind} resource context`);
   }
-  return canonicalJson({ project_prefix: snapshot.project_prefix, resources, work_request_path: snapshot.work_request?.path });
+  return canonicalJson({ project_prefix: snapshot.project_prefix, resources, authority_read_set: snapshot.authority_read_set, work_request_path: snapshot.work_request?.path });
 }
 export function assertPacketMatches(preflight, packet) {
   if (packet.request_digest !== preflight.request_digest) throw new CurrentWorkExecutionError('packet: request digest changed since packet creation');
