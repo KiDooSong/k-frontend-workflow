@@ -71,6 +71,20 @@ function gitModeOfEvidence(evidence) {
   return (evidence.mode & 0o111) ? '100755' : '100644';
 }
 
+// Only the exact newly-created, unchanged request can be transport rather than
+// implementation. Never exempt a directory, an existing source, a selected target,
+// or an authority dependency. The normal raw/digest recheck still runs first.
+function isExecutionInput(record, preflight, evidence) {
+  const name = preflight.snapshot.work_request.path;
+  return Boolean(name && record.status === 'A' && record.projectPath === name &&
+    !preflight._context.snapshot.entry(name) && evidence?.kind === 'file' &&
+    evidence.hash === preflight.snapshot.work_request.hash &&
+    !preflight.requests.some(r => r.targets.some(t => t.path === name)) &&
+    !preflight.snapshot.authority_read_set.some(r => r.source === 'project' && r.path === name) &&
+    !AUTHORITY_BASENAMES.has(path.posix.basename(name)) &&
+    !generatedOwner(name, preflight._context.generated || []));
+}
+
 export function evaluateCurrentGit(preflight, { staged = false } = {}) {
   const context = preflight._context;
   try {
@@ -106,7 +120,12 @@ export function evaluateCurrentGit(preflight, { staged = false } = {}) {
     const writePath = record.status === 'R' || record.status === 'C' ? record.newProjectPath : record.projectPath;
     const oldPath = record.status === 'R' || record.status === 'C' ? record.oldProjectPath : null;
     const relevant = writePath !== null || oldPath !== null;
-    observed.push({ ...record, ...(writePath ? { evidence: evidenceFor(writePath) } : {}) });
+    const captured = { ...record, ...(writePath ? { evidence: evidenceFor(writePath) } : {}) };
+    if (isExecutionInput(record, preflight, captured.evidence)) {
+      observed.push({ ...captured, classification: 'execution-input' });
+      continue;
+    }
+    observed.push(captured);
     if (!relevant) {
       violations.push({ code: 'CW-GIT-OUTSIDE-ROOT', record: recordKey(record), message: 'changed path is outside selected project root' });
       continue;
@@ -176,6 +195,8 @@ export function evaluateCurrentGit(preflight, { staged = false } = {}) {
       diff_kind: staged ? 'HEAD..index' : 'HEAD..worktree',
     },
     changed_records: observed,
+    execution_input_records: observed.filter(r => r.classification === 'execution-input'),
+    implementation_records: observed.filter(r => r.classification !== 'execution-input'),
     violations,
     ok: violations.length === 0 && preflight.ready,
   };

@@ -140,6 +140,8 @@ export function runCurrentWorkCli(tool, argv) {
         origin_inputs: publicValue.origin_inputs,
         requests: publicValue.requests,
         changed_records: git.changed_records,
+        execution_input_records: git.execution_input_records,
+        implementation_records: git.implementation_records,
         violations: git.violations,
         ok: git.ok,
         snapshot: git.snapshot,
@@ -173,7 +175,7 @@ export function runCurrentWorkCli(tool, argv) {
       else if (!preflight.ready) state = 'HALT_AMBIGUITY';
       else {
         const observed = evaluateCurrentGit(preflight);
-        if (observed.changed_records.length === 0) {
+        if (observed.implementation_records.length === 0) {
           git = null;
           state = 'HALT_READY_FOR_WORK';
         } else {
@@ -186,7 +188,7 @@ export function runCurrentWorkCli(tool, argv) {
       if (outDir) {
         fs.mkdirSync(outDir, { recursive: true });
         writeFile(path.join(outDir, 'work-packet.md'), renderCurrentPacketMarkdown(preflight));
-        if (git && git.changed_records.length) writeFile(path.join(outDir, 'run-report.md'), renderCurrentReportMarkdown(preflight, git));
+        if (git && git.implementation_records.length) writeFile(path.join(outDir, 'run-report.md'), renderCurrentReportMarkdown(preflight, git));
         writeFile(`${outDir}.md`, renderRunStatus(status));
       }
       process.stdout.write(flags.json ? JSON.stringify(status, null, 2) + '\n' : outDir ? `workflow:run: ${state} — ${path.relative(process.cwd(), `${outDir}.md`) || `${outDir}.md`}\n` : renderRunStatus(status));

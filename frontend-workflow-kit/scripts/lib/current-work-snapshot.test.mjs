@@ -298,3 +298,6 @@ test('P1-3 ignored dirty gitlinks fail explicitly without refreshing the user in
   assert.equal(result.status, 2); assert.match(result.stderr, /dirty submodule/);
   assert.deepEqual(fs.readFileSync(f.index), before);
 });
+
+// Keep review regressions in the existing test/test:spec and macOS entry point.
+import './current-work-review.test.mjs';
