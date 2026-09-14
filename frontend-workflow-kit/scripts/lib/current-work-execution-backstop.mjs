@@ -3,6 +3,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { parseNameStatusZ, readinessPathAuthorization } from './path-backstop.mjs';
 import { readJson, normalizeWorkRequest, digest, hashBytes, ownerParts, byteCompare } from './current-work-request.mjs';
+import { captureCurrentIndex, snapshotRecords } from './current-work-snapshot.mjs';
 import { runVisualGit, decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import {
   CurrentWorkExecutionError, REGULAR_MODES, AUTHORITY_BASENAMES, posix, stable, generatedOwner,
@@ -111,7 +112,17 @@ export function evaluateCurrentGit(preflight, { staged = false } = {}) {
     throw new CurrentWorkExecutionError(`work request recheck failed: ${error.message}`);
   }
 
-  const rawRecords = actualGitRecords(context, { staged });
+  const destination = staged ? captureCurrentIndex(context.repositoryRoot) : null;
+  const evidenceCache = new Map();
+  const evidenceFor = (relative) => {
+    if (!evidenceCache.has(relative)) evidenceCache.set(relative, destination
+      ? destination.evidence(context.projectPrefix ? `${context.projectPrefix}/${relative}` : relative)
+      : currentFileEvidence(context.projectRoot, relative));
+    return evidenceCache.get(relative);
+  };
+  const rawRecords = destination
+    ? snapshotRecords(context.repositoryRoot, preflight.snapshot.tree, destination.tree)
+    : actualGitRecords(context, { staged });
   const records = rawRecords.map((record) => projectRecord(record, context.projectPrefix));
   const targets = requestedTargetMap(preflight);
   const authority = authorityPaths(preflight);
@@ -122,7 +133,7 @@ export function evaluateCurrentGit(preflight, { staged = false } = {}) {
     const writePath = record.status === 'R' || record.status === 'C' ? record.newProjectPath : record.projectPath;
     const oldPath = record.status === 'R' || record.status === 'C' ? record.oldProjectPath : null;
     const relevant = writePath !== null || oldPath !== null;
-    observed.push({ ...record, ...(writePath ? { evidence: currentFileEvidence(context.projectRoot, writePath) } : {}) });
+    observed.push({ ...record, ...(writePath ? { evidence: evidenceFor(writePath) } : {}) });
     if (!relevant) {
       violations.push({ code: 'CW-GIT-OUTSIDE-ROOT', record: recordKey(record), message: 'changed path is outside selected project root' });
       continue;
@@ -160,7 +171,7 @@ export function evaluateCurrentGit(preflight, { staged = false } = {}) {
         }
       }
     }
-    const evidence = writePath ? currentFileEvidence(context.projectRoot, writePath) : null;
+    const evidence = writePath ? evidenceFor(writePath) : null;
     if (evidence && !['file', 'missing'].includes(evidence.kind)) {
       violations.push({ code: 'CW-GIT-TYPE', path: writePath, kind: evidence.kind, message: 'changed target must remain a regular file or an intentional deletion' });
     }
@@ -187,6 +198,7 @@ export function evaluateCurrentGit(preflight, { staged = false } = {}) {
       source_commit: preflight.snapshot.commit,
       source_tree: preflight.snapshot.tree,
       destination: staged ? 'index' : 'worktree',
+      ...(destination ? { destination_tree: destination.tree } : {}),
       diff_kind: staged ? 'HEAD..index' : 'HEAD..worktree',
     },
     changed_records: observed,
