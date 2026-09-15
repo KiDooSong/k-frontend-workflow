@@ -103,10 +103,13 @@ export function evaluateCurrentGit(preflight, { staged = false } = {}) {
   const destination = staged ? captureCurrentIndex(context.repositoryRoot) : captureCurrentWorktree(context.repositoryRoot, preflight.snapshot.tree, {
     extraFiles: preflight.snapshot.authority_read_set.filter((r) => r.source === 'project').map((r) => repositoryPath(r.path)),
     inputRoots: [repositoryPath(`${docs}/inputs`)],
+    artifactRoots: preflight.snapshot.authority_read_set.filter(r => r.source === 'artifact-index').map(r => repositoryPath(r.path)),
   });
   const evidenceFor = (relative) => destination.evidence(repositoryPath(relative));
   const authorityChecks = verifyCurrentAuthority(preflight, destination);
-  const rawRecords = snapshotRecords(context.repositoryRoot, preflight.snapshot.tree, destination.tree);
+  const copyPaths = preflight.requests.flatMap(request => request.targets)
+    .filter(target => target.change === 'C').map(target => repositoryPath(target.path));
+  const rawRecords = snapshotRecords(context.repositoryRoot, preflight.snapshot.tree, destination.tree, { copyPaths });
   const records = rawRecords.map((record) => projectRecord(record, context.projectPrefix));
   const targets = requestedTargetMap(preflight);
   const authority = authorityPaths(preflight);

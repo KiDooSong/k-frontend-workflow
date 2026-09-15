@@ -8,7 +8,8 @@ import { collectApiCandidateClaims, globMatches, parseNameStatusZ, readinessPath
 import { collectInputArtifacts, validateInputArtifacts } from './input-artifact.mjs';
 import { buildInputArtifactIndex, resolveInputArtifact, resolveInputEvidence } from './provenance.mjs';
 import { parseReconciliationRegister } from './reconciliation-register.mjs';
-import { parseReconciliationItems } from './reconciliation-items.mjs';
+import { parseReconciliationItems, parseTargetRef } from './reconciliation-items.mjs';
+import { resolveArtifact, isDuplicateArtifactId, artifactHasSection, resolveChildRow } from './reconciliation-target-index.mjs';
 import { discoverArtifacts } from './check-generated-files.mjs';
 import { readJson, normalizeWorkRequest, digest, hashBytes, ownerParts, byteCompare } from './current-work-request.mjs';
 import { materializeRawGitTree, requireGitRepositoryPath, runVisualGit, decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
@@ -111,7 +112,7 @@ export function selectedInputErrors(validation, resolution) {
 }
 export function artifactProjectPath(snapshotRoot, artifact) { return posix(path.relative(snapshotRoot, artifact.file)); }
 export function inputHash(artifact) { return hashBytes(fs.readFileSync(artifact.file)); }
-export function relatedToOwner(artifact, parts, state, items) {
+export function relatedToOwner(artifact, parts, state, items, targetIndex) {
   const screens = Array.isArray(artifact.fm?.affected_screens)
     ? artifact.fm.affected_screens
     : Array.isArray(artifact.fm?.suggested_scope?.screens) ? artifact.fm.suggested_scope.screens : [];
@@ -120,9 +121,21 @@ export function relatedToOwner(artifact, parts, state, items) {
     const members = state.surfaces?.[parts.id]?.member_screens || [];
     if (members.some((id) => screens.includes(id))) return true;
   }
-  const needle = parts.id;
-  return (items || []).some((row) => row.inputId === artifact.fm?.input_id &&
-    [row.target, row.sourceRef].some((v) => typeof v === 'string' && v.includes(needle)));
+  return (items || []).some((row) => {
+    if (row.inputId !== artifact.fm?.input_id) return false;
+    const ref = parseTargetRef(row.target);
+    const id = ref?.artifactId || ref?.ownerArtifactId;
+    if (!id || isDuplicateArtifactId(targetIndex, id)) return false;
+    const resolved = resolveArtifact(targetIndex, id);
+    if (!resolved) return false;
+    if (ref.kind === 'artifact' && ref.section && !artifactHasSection(resolved, ref.section)) return false;
+    if (ref.ownerArtifactId && !resolveChildRow(resolved, ref.rowId, ref.kind).found) return false;
+    const ownerId = resolved.fm?.[parts.kind === 'screen' ? 'screen_id' : 'surface_id'];
+    const domain = screenDomain(state, parts);
+    // Artifact IDs and external Source Refs are not owner identifiers. Alias
+    // artifact IDs are valid, but their resolved typed owner must match exactly.
+    return ownerId === parts.id && (domain == null || resolved.fm.domain === domain);
+  });
 }
 export function generatedPatterns(manifest, docsRelative) {
   const out = [];

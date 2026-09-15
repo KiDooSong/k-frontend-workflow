@@ -8,7 +8,7 @@ import { collectApiCandidateClaims, readinessPathAuthorization } from './path-ba
 import { collectInputArtifacts, validateInputArtifacts } from './input-artifact.mjs';
 import { buildInputArtifactIndex, resolveInputArtifact, resolveInputEvidence } from './provenance.mjs';
 import { parseReconciliationRegister } from './reconciliation-register.mjs';
-import { parseReconciliationItems } from './reconciliation-items.mjs';
+import { validateCurrentReconciliation } from './current-work-reconciliation.mjs';
 import { readJson, normalizeWorkRequest, digest, hashBytes, ownerParts, byteCompare } from './current-work-request.mjs';
 import { materializeRawGitTree } from './visual-refresh-git-objects.mjs';
 import {
@@ -134,13 +134,9 @@ export function prepareCurrentWork({ work, root, docs, src, policy, manifest, la
     const inputIndex = buildInputArtifactIndex(inputArtifacts);
     const registerFile = path.join(baselineRoot, ...registerRel.split('/'));
     const register = parseReconciliationRegister(registerFile);
-    if (register.fmParseError || register.fmStructuralError) {
-      throw new CurrentWorkExecutionError(`reconciliation register: ${register.fmParseError || register.fmStructuralError}`);
-    }
-    const itemTable = Number(register.fm?.reconciliation_contract) === 2 ? parseReconciliationItems(register.body) : null;
-    if (itemTable && (itemTable.sectionCount !== 1 || itemTable.tableCount !== 1 || itemTable.headerIssue)) {
-      throw new CurrentWorkExecutionError('reconciliation register: invalid v2 Reconciliation Items structure');
-    }
+    const reconciliation = validateCurrentReconciliation({ register, registerFile, inputArtifacts,
+      docsRoot: resources.docs.baseline, baselineRoot });
+    const { itemTable, targetIndex, artifactFiles } = reconciliation;
     const originInputs = [];
     for (const origin of request.origin_inputs) {
       const resolution = resolveInputArtifact(inputIndex, origin.input_id);
@@ -165,7 +161,7 @@ export function prepareCurrentWork({ work, root, docs, src, policy, manifest, la
       if (!row || row.reconcileStatus !== 'reconciled') {
         originDenials.push({ code: 'CW-ORIGIN-UNRECONCILED', input_id: origin.input_id, status: row?.reconcileStatus || 'missing-row', message: 'C requires completed reconciliation; partial/no-effect receipt acceptance belongs to D' });
       }
-      const relatedOwners = requests.filter((entry) => relatedToOwner(artifact, ownerParts(entry.owner), state, itemTable?.rows || []))
+      const relatedOwners = requests.filter((entry) => relatedToOwner(artifact, ownerParts(entry.owner), state, itemTable?.rows || [], targetIndex))
         .map((entry) => entry.owner);
       if (requests.length && relatedOwners.length === 0) {
         originDenials.push({ code: 'CW-ORIGIN-UNCONNECTED', input_id: origin.input_id, message: 'origin cannot be explained by the selected current owner(s) in canonical scope/reconciliation evidence' });
@@ -200,7 +196,7 @@ export function prepareCurrentWork({ work, root, docs, src, policy, manifest, la
       tree: identity.tree,
       project_prefix: ctx.projectPrefix || '',
       resources: resourceRecords.sort((a, b) => byteCompare(a.kind, b.kind)),
-      authority_read_set: currentAuthorityReadSet({ resources, inputArtifacts, baselineRoot, baselineKitRoot, layoutData, snapshot }),
+      authority_read_set: currentAuthorityReadSet({ resources, inputArtifacts, artifactFiles, baselineRoot, baselineKitRoot, layoutData, snapshot }),
       work_request: {
         hash: hashBytes(parsed.raw),
         path: outside(projectRoot, workPath) ? null : projectRelative(projectRoot, workPath, 'work request'),
@@ -218,6 +214,7 @@ export function prepareCurrentWork({ work, root, docs, src, policy, manifest, la
       errors,
       denials,
       future_requirements: future,
+      reconciliation_warnings: reconciliation.warnings,
       required_reviews: [],
       legacy_readiness: Object.fromEntries(requests.map((entry) => [entry.owner, entry.legacy_readiness || null])),
       all_absorbed: absorbedCount === requests.length && requests.length > 0,

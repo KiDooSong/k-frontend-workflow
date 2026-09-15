@@ -43,17 +43,29 @@ function indexTree(repositoryRoot, raw) {
   }
 }
 
-export function snapshotRecords(repositoryRoot, sourceTree, destinationTree) {
-  const records = parseNameStatusZ(decodeGitUtf8(runVisualGit([
-    'diff', '--no-ext-diff', '--no-textconv', '--ignore-submodules=none',
-    '--name-status', '-M', '-z', sourceTree, destinationTree,
-  ], repositoryRoot), 'current snapshot diff'));
-  for (const record of records) {
-    for (const name of record.status === 'R' || record.status === 'C' ? [record.oldPath, record.newPath] : [record.path]) {
-      requireGitRepositoryPath(name, 'current snapshot diff path');
+export function snapshotRecords(repositoryRoot, sourceTree, destinationTree, { copyPaths = [] } = {}) {
+  const selectedCopies = new Set(copyPaths.map(name => requireGitRepositoryPath(name, 'current copy target')));
+  const read = (copyOptions) => {
+    const records = parseNameStatusZ(decodeGitUtf8(runVisualGit([
+      'diff', '--no-ext-diff', '--no-textconv', '--ignore-submodules=none',
+      '--name-status', '-M', ...copyOptions, '-z', sourceTree, destinationTree,
+    ], repositoryRoot), 'current snapshot diff'));
+    for (const record of records) {
+      for (const name of record.status === 'R' || record.status === 'C' ? [record.oldPath, record.newPath] : [record.path]) {
+        requireGitRepositoryPath(name, 'current snapshot diff path');
+      }
     }
-  }
-  return records;
+    return records;
+  };
+  const records = read([]);
+  if (!selectedCopies.size) return records;
+  // Git must prove an actual copy, including from an unchanged source. Preserve
+  // the complete ordinary diff; refine only A records explicitly requested as C.
+  // Enabling copies must not relabel mixed A requests or drop source changes.
+  const copies = new Map(read(['-C', '--find-copies-harder'])
+    .filter(record => record.status === 'C' && selectedCopies.has(record.newPath))
+    .map(record => [record.newPath, record]));
+  return records.map(record => record.status === 'A' && copies.has(record.path) ? copies.get(record.path) : record);
 }
 
 export function captureCurrentIndex(repositoryRoot) {

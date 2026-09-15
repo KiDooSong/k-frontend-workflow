@@ -49,20 +49,23 @@ function readRaw(file, before) {
     return Buffer.concat(chunks, length);
   } finally { fs.closeSync(fd); }
 }
-function inputNames(root, name) {
+function inputNames(root, name, { artifactIndex = false } = {}) {
   const out = [];
   function visit(relative) {
     const file = exactPath(root, relative), s = stat(file);
     if (!s) return;
     if (s.isSymbolicLink()) throw new Error(`current input scan: symlink is not a canonical input: ${relative}`);
-    if (s.isDirectory()) for (const child of fs.readdirSync(file)) visit(`${relative}/${child}`);
-    else if (relative.endsWith('.md') && !isInputDirGuideFile(relative)) out.push(relative);
+    if (s.isDirectory()) {
+      for (const child of fs.readdirSync(file)) {
+        if (!artifactIndex || child !== '_meta') visit(`${relative}/${child}`);
+      }
+    } else if (relative.endsWith('.md') && (artifactIndex || !isInputDirGuideFile(relative))) out.push(relative);
   }
   visit(name);
   return out.sort(byteCompare);
 }
 
-export function captureCurrentWorktree(repositoryRoot, sourceTree, { extraFiles = [], inputRoots = [], ancestors = [] } = {}) {
+export function captureCurrentWorktree(repositoryRoot, sourceTree, { extraFiles = [], inputRoots = [], artifactRoots = [], ancestors = [] } = {}) {
   const realRoot = fs.realpathSync(repositoryRoot);
   if (ancestors.includes(realRoot)) throw new Error('current worktree: recursive submodule root');
   const baseline = captureCurrentTree(repositoryRoot, sourceTree);
@@ -72,7 +75,8 @@ export function captureCurrentWorktree(repositoryRoot, sourceTree, { extraFiles 
       'ls-files', '--others', '--exclude-standard', '-z'], repositoryRoot), 'current untracked paths');
     if (raw && !raw.endsWith('\0')) throw new Error('current untracked paths: unterminated entry');
     return [...new Set([...baseline.entries.keys(), ...index.entries.keys(), ...extraFiles,
-      ...(raw ? raw.slice(0, -1).split('\0') : []), ...inputRoots.flatMap((root) => inputNames(repositoryRoot, root))])].sort(byteCompare);
+      ...(raw ? raw.slice(0, -1).split('\0') : []), ...inputRoots.flatMap((root) => inputNames(repositoryRoot, root)),
+      ...artifactRoots.flatMap((root) => inputNames(repositoryRoot, root, { artifactIndex: true }))])].sort(byteCompare);
   };
   const names = discover(), entries = new Map(), observations = new Map();
   for (const name of names) {
@@ -115,13 +119,18 @@ export function captureCurrentWorktree(repositoryRoot, sourceTree, { extraFiles 
   return { ...createCurrentSnapshot(repositoryRoot, entries), observed_index_tree: index.tree };
 }
 
-export function currentAuthorityReadSet({ resources, inputArtifacts, baselineRoot, baselineKitRoot, layoutData, snapshot }) {
+export function currentAuthorityReadSet({ resources, inputArtifacts, artifactFiles = null, baselineRoot, baselineKitRoot, layoutData, snapshot }) {
   const files = new Set(Object.entries(resources).filter(([kind, r]) => r && !['docs', 'src'].includes(kind)).map(([, r]) => r.relative));
   const docs = resources.docs.relative;
   files.add(`${docs}/_meta/workflow-state.yaml`);
   files.add(`${docs}/_meta/reconciliation-register.md`); // absence is also a dependency
   for (const artifact of inputArtifacts) files.add(posix(path.relative(baselineRoot, artifact.file)));
   const records = [];
+  if (artifactFiles !== null) {
+    const names = artifactFiles.map(file => posix(path.relative(baselineRoot, file))).sort(byteCompare);
+    for (const name of names) files.add(name);
+    records.push({ source: 'artifact-index', path: docs, kind: 'inventory', git_mode: null, hash: hashBytes(canonicalJson(names)) });
+  }
   if (layoutData.preset) {
     const name = requireGitRepositoryPath(`presets/${layoutData.preset}.yaml`, 'current preset');
     const file = path.join(baselineKitRoot, name);
@@ -151,7 +160,14 @@ export function verifyCurrentAuthority(preflight, destination) {
   const prefix = preflight.snapshot.project_prefix;
   const repositoryPath = (name) => prefix ? `${prefix}/${name}` : name;
   const checks = records.map((before) => {
-    const after = before.source === 'kit' ? kitEvidence(before.path) : destination.evidence(repositoryPath(before.path));
+    let after;
+    if (before.source === 'artifact-index') {
+      const root = repositoryPath(before.path) + '/';
+      const names = [...destination.entries.keys()].filter(name => name.startsWith(root) &&
+        name.endsWith('.md') && !name.slice(root.length).split('/').includes('_meta'))
+        .map(name => prefix ? name.slice(prefix.length + 1) : name).sort(byteCompare);
+      after = { kind: 'inventory', git_mode: null, hash: hashBytes(canonicalJson(names)) };
+    } else after = before.source === 'kit' ? kitEvidence(before.path) : destination.evidence(repositoryPath(before.path));
     return { ...before, after: { kind: after.kind, git_mode: after.git_mode, hash: after.hash },
       ok: before.kind === after.kind && before.git_mode === after.git_mode && before.hash === after.hash };
   });
