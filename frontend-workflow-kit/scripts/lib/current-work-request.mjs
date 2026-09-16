@@ -88,12 +88,10 @@ export function ownerParts(owner) {
   const i = owner.indexOf(':');
   return { kind: owner.slice(0, i), id: owner.slice(i + 1) };
 }
-export function normalizeWorkRequest(value) {
-  object(value, ['version', 'origin_inputs', 'requests'], 'work request');
-  if (value.version !== 1) throw new CurrentWorkError('work request: version must be integer 1');
-  array(value.origin_inputs, 'origin_inputs');
-  array(value.requests, 'requests', true);
-  const origins = value.origin_inputs.map((origin) => {
+// Shared syntax only: these helpers do not resolve evidence or grant authority.
+export function normalizeWorkOrigins(value) {
+  array(value, 'origin_inputs');
+  const origins = value.map((origin) => {
     object(origin, ['input_id', 'source_refs'], 'origin');
     if (typeof origin.input_id !== 'string' || !INPUT_ID_PATTERN.test(origin.input_id)) throw new CurrentWorkError('origin: invalid canonical input_id');
     array(origin.source_refs, 'origin.source_refs');
@@ -107,6 +105,26 @@ export function normalizeWorkRequest(value) {
     return { input_id: origin.input_id, source_refs: refs.sort(byteCompare) };
   });
   unique(origins.map((o) => o.input_id), 'origin_inputs');
+  return origins.sort((a, b) => byteCompare(a.input_id, b.input_id));
+}
+export function normalizeWorkTargets(value) {
+  array(value, 'targets', true);
+  const targets = value.map((target) => {
+    object(target, ['path', 'change'], 'target');
+    requireGitRepositoryPath(target.path, 'work target');
+    if (target.path.trim() !== target.path) throw new CurrentWorkError('work target: surrounding whitespace forbidden');
+    if (!['A', 'M', 'D', 'R', 'C', 'T'].includes(target.change)) throw new CurrentWorkError('target.change: expected A/M/D/R/C/T');
+    return { path: target.path, change: target.change };
+  });
+  unique(targets.map((t) => t.path), 'targets');
+  return targets.sort((a, b) => byteCompare(a.path, b.path));
+}
+export function normalizeWorkRequest(value) {
+  object(value, ['version', 'origin_inputs', 'requests'], 'work request');
+  if (value.version !== 1) throw new CurrentWorkError('work request: version must be integer 1');
+  array(value.origin_inputs, 'origin_inputs');
+  array(value.requests, 'requests', true);
+  const origins = normalizeWorkOrigins(value.origin_inputs);
   const requests = value.requests.map((request) => {
     if (request?.authority !== 'current') throw new CurrentWorkError('C supports authority:current only; scoped is not implemented');
     object(request, ['owner', 'authority', 'requested_mode', 'targets'], 'current request');
@@ -114,17 +132,9 @@ export function normalizeWorkRequest(value) {
     if (typeof request.requested_mode !== 'string' || !request.requested_mode || request.requested_mode.trim() !== request.requested_mode) {
       throw new CurrentWorkError('requested_mode: nonempty canonical string required');
     }
-    array(request.targets, 'targets', true);
-    const targets = request.targets.map((target) => {
-      object(target, ['path', 'change'], 'target');
-      requireGitRepositoryPath(target.path, 'work target');
-      if (target.path.trim() !== target.path) throw new CurrentWorkError('work target: surrounding whitespace forbidden');
-      if (!['A', 'M', 'D', 'R', 'C', 'T'].includes(target.change)) throw new CurrentWorkError('target.change: expected A/M/D/R/C/T');
-      return { path: target.path, change: target.change };
-    });
-    unique(targets.map((t) => t.path), 'targets');
+    const targets = normalizeWorkTargets(request.targets);
     return { owner: request.owner, authority: 'current', requested_mode: request.requested_mode,
-      targets: targets.sort((a, b) => byteCompare(a.path, b.path)) };
+      targets };
   });
   unique(requests.map((r) => r.owner), 'requests.owner');
   const changes = new Map();
