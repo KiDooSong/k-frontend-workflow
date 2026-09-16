@@ -3,7 +3,7 @@
 // predicates, fallback guards, and the same Git backstop are implemented.
 import { parseDocument } from 'yaml';
 import { own, ownerParts, canonicalJson, byteCompare, normalizeWorkOrigins } from './current-work-request.mjs';
-import { parseTargetRef, REVIEW_PROFILE_STAGE04 } from './reconciliation-items.mjs';
+import { isReconciliationItemId, parseTargetRef, REVIEW_PROFILE_STAGE04 } from './reconciliation-items.mjs';
 import {
   ScopedWorkContractError, workObject, workText, workUnitId, workSet, workPath, workVersion,
 } from './scoped-work-request.mjs';
@@ -50,10 +50,14 @@ function apiSelector(value) {
   // The actual v2 row including Gate/Tracking/Slice Paths must be resolved later.
   return { method, path: apiPath };
 }
+function itemId(value) {
+  if (!isReconciliationItemId(value)) fail('Item ID: expected exactly two digits (e.g. 01)');
+  return value;
+}
 function sourceSelection(value) {
   workObject(value, ['input_id', 'items', 'source_refs'], [], 'unit source');
   const input = normalizeWorkOrigins([{ input_id: value.input_id, source_refs: value.source_refs }])[0];
-  const items = workSet(value.items, (v) => workText(v, 'Item ID'), 'source.items', true);
+  const items = workSet(value.items, itemId, 'source.items', true);
   if (!input.source_refs.length) fail('source.source_refs: nonempty array required');
   return { input_id: input.input_id, items, source_refs: input.source_refs };
 }
@@ -197,7 +201,7 @@ export function parseWorkCoverageReceipt(value) {
   if (!input.source_refs.length) fail('work-coverage: nonempty source_refs required');
   const receipt = {
     version: 1, owner: owner(value.owner), unit: workUnitId(value.unit), input_id: input.input_id,
-    item_ids: workSet(value.item_ids, (v) => workText(v, 'Item ID'), 'item_ids', true), source_refs: input.source_refs,
+    item_ids: workSet(value.item_ids, itemId, 'item_ids', true), source_refs: input.source_refs,
     input_sha256: workDigest(value.input_sha256, 'input_sha256'), effects_sha256: workDigest(value.effects_sha256, 'effects_sha256'),
     contracts_sha256: workDigest(value.contracts_sha256, 'contracts_sha256'),
     review_scope: enumValue(value.review_scope, [REVIEW_PROFILE_STAGE04], 'review_scope'),

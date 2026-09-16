@@ -187,6 +187,12 @@ export function parseRegisterContract(fm) {
 
 // ── grammar parsers ──────────────────────────────────────────────────────────
 
+// Shared Item ID syntax for v2 rows and scoped source/coverage selectors.
+// Do not coerce, trim, or pad selectors; reference existence is a separate check.
+export function isReconciliationItemId(value) {
+  return typeof value === 'string' && value.length === 2 && /^\d{2}$/.test(value);
+}
+
 // summary Classification 셀: `<classification>[×N] + <classification>[×N] ...`
 //   { entries: Map(name → count), hasAnnotation, errors: [message-fragment] }
 export function parseSummaryClassification(cell) {
@@ -652,7 +658,7 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
       add(`RR-SCHEMA-009: ${label} 행의 필수 셀 빈값: ${missing.join(', ')}`);
     }
 
-    if (row.item && !/^\d{2}$/.test(row.item)) {
+    if (row.item && !isReconciliationItemId(row.item)) {
       add(`RR-SCHEMA-010: ${label} 의 Item ID '${row.item}' 형식 위반 (input-scoped 2자리: 01, 02...)`);
     }
     if (row.basis && !BASIS_VALUES.includes(row.basis)) {

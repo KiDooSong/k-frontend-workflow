@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { normalizeWorkRequest, strictJson } from './current-work-request.mjs';
 import { normalizeScopedWorkRequestSyntax } from './scoped-work-request.mjs';
+import { isReconciliationItemId } from './reconciliation-items.mjs';
 import {
   decodeScopedYaml, parseScopedPolicy, parseScopedOwner, parseDecisionWorkScopes,
   parseWorkCoverageReceipt, parseWorkCoverageReceipts,
@@ -228,6 +229,42 @@ test('D1 coverage structure: no-effect preserves nonempty routing evidence and f
   assert.throws(() => parseWorkCoverageReceipts([r, { ...r, item_ids: ['02'] }]));
 });
 
+test('review P2: shared v2 Item ID syntax accepts two digits without coercion', () => {
+  for (let n = 0; n < 100; n++) {
+    assert.equal(isReconciliationItemId(String(n).padStart(2, '0')), true);
+  }
+  for (const value of ['1', '001', 'not-an-item', '', ' 01', '01 ', '01\n', '０１',
+    1, 12, null, undefined, true, ['01'], { toString: () => '01' }]) {
+    assert.equal(isReconciliationItemId(value), false, String(value));
+  }
+});
+
+for (const [name, parseIds] of [
+  ['source.items', (items) => {
+    const value = owner();
+    value.units[0].sources = [{ ...source(), items }];
+    return parseScopedOwner(value, 'screen:RESULT-001')
+      .units.find((entry) => entry.id === 'layout').sources[0].items;
+  }],
+  ['receipt.item_ids', (item_ids) => parseWorkCoverageReceipt({ ...receipt(), item_ids }).item_ids],
+]) {
+  test(`review P2: ${name} enforces v2 Item IDs before reference resolution`, () => {
+    assert.deepEqual(parseIds(['01']), ['01']);
+    const ids = ['99', '01', '00'];
+    assert.deepEqual(parseIds(ids), ['00', '01', '99']);
+    assert.deepEqual(ids, ['99', '01', '00'], 'do not mutate authored selectors');
+    for (const value of ['1', '001', 'not-an-item', '', ' 01', '01 ', '01\n', '０１',
+      1, 12, null, undefined, true, ['01'], {}]) {
+      // A valid first selector must not hide a later malformed one.
+      assert.throws(() => parseIds(['01', value]), {
+        name: 'ScopedWorkContractError', message: /Item ID: expected exactly two digits/,
+      }, `${name}: ${String(value)}`);
+    }
+    assert.throws(() => parseIds(['01', '01']), /duplicate selector/);
+    assert.throws(() => parseIds([]), /nonempty array required/);
+  });
+}
+
 // Actual Git fixture + actual public wrappers. No authority files are needed:
 // C's strict request rejection must happen before snapshot/resource evaluation.
 // Missing modules/usage failures are not accepted as the expected rejection.
@@ -263,7 +300,7 @@ test('D1 packed CLI remains unsupported; declaration modules are packaged, tests
   const run = spawnSync(process.execPath, [path.join(KIT, 'scripts/pack-frontend-workflow-kit.mjs'), '--out', packed],
     { cwd: KIT, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout: 60000 });
   assert.equal(run.status, 0, run.stderr || run.stdout);
-  for (const file of ['current-work-request.mjs', 'scoped-work-request.mjs', 'scoped-work-declarations.mjs']) {
+  for (const file of ['current-work-request.mjs', 'scoped-work-request.mjs', 'scoped-work-declarations.mjs', 'reconciliation-items.mjs']) {
     assert.deepEqual(fs.readFileSync(path.join(packed, 'scripts/lib', file)), fs.readFileSync(path.join(KIT, 'scripts/lib', file)));
   }
   assert.equal(fs.existsSync(path.join(packed, 'scripts/lib/scoped-work-contracts.test.mjs')), false);
