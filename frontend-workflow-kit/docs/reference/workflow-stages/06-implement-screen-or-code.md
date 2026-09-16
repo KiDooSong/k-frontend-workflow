@@ -9,7 +9,40 @@ For shared behavior code, use [`implement-shared-surface`](../../../skills/imple
 
 **Skip this stage when** the task is docs-only / no code change. Then go to 07.
 
+## Select the execution branch first
+
+Choose the execution branch **before** applying the no-work/legacy blocking stop below.
+For a concrete task within current authority, use the current-work branch, including a
+**single target**. An explicitly selected visual-refresh task instead follows the existing
+[visual-refresh contract](../visual-reconciliation.md); do not mix its tuple with `--work`.
+Selecting a branch is not a grant and does not change no-work/visual authority.
+
+## Current-work branch
+
+[current-work reference](../current-work.md)의 `--work` 봉투를 **단일 target도 포함해** 사용한다.
+복수 origin/target은 필수 조건이 아니다. agent가 canonical input/owner/target에서 request를 조립하며
+사람에게 매번 JSON 수작업 승인을 요구하지 않는다. 시작 입력은 `origin_inputs`에 보존한다.
+
+```bash
+npm run workflow:readiness -- --work .workflow/current-work.json --json
+npm run workflow:run -- --work .workflow/current-work.json --json
+```
+
+`requested_mode`는 실제 current ceiling 이하여야 하고 모든 concrete path가 기존 helper에서 허가돼야 한다.
+`ready: true`와 각 target 판정, 구현 전 `HALT_READY_FOR_WORK`를 확인한다. 도구가 분류한 상위 미충족은
+`future_requirements`로 보고하고 `legacy_readiness.blocking`은 보존한다. raw blocking만으로 이 분기를
+다시 일괄 중단하지 않는다. 실제 deny·미해결 origin·구조/수집 오류·absorbed는 여전히 중단/정본 안내 대상이다.
+Denied request를 버리거나 낮은 mode의 path를 합치지 않으며, deny를 피하려 no-work/visual로 자동 fallback하거나
+absorbed target으로 자동 전환하지 않는다.
+
+readiness, packet/run, report/backstop에 같은 request/origin/resource를 전달한다.
+사후 검증과 정상 핸드오프는 [Stage 08 current-work report/backstop](08-validate-and-report.md#current-work-reportbackstop)을 따른다.
+`authority: scoped`, work unit, partial/no-effect coverage receipt로 새 권한을 여는 것은 C가 아니다.
+그런 저작이 필요하면 기존 Stage 04/05 및 사람 소유 checkpoint로 돌아간다.
+
 ## Mode/readiness-driven
+
+Without `--work`, keep the existing stop and authority rules below.
 
 Do not decide implementability yourself. Run the scripts and consume their output:
 
@@ -44,18 +77,6 @@ Edit only the full surface/policy/member intersection. The detailed contract is 
 
 If a related input is `not-started` / `in-progress` / `failed`, finish reconcile
 first (Stage 04) — do not implement on an unreconciled input.
-
-## Current-work branch
-
-한 사용자 작업에 여러 origin/target이 있고 **기존 current 권한 안에서만** 구현하려면
-[current-work reference](../current-work.md)의 `--work` 봉투를 사용한다. agent가 canonical
-input/owner/target에서 request를 조립하고 readiness, packet/run, report/backstop에 같은 request와
-resource 옵션을 전달한다. `requested_mode`는 실제 current ceiling 이하여야 하고 모든 concrete
-path가 기존 helper에서 허가돼야 한다. denied request를 버리거나 낮은 mode의 path를 합쳐 ready로
-만들지 않는다.
-
-`authority: scoped`, work unit, partial/no-effect coverage receipt로 새 권한을 여는 것은 이 단계의
-current 분기가 아니다. 그런 저작이 필요하면 기존 Stage 04/05 및 사람 소유 checkpoint로 돌아간다.
 
 ## Shared component midstream
 

@@ -47,6 +47,25 @@ does not grant an unowned v2 hook/API-client path. `--surface` accepts one canon
 Its mode is the minimum of surface facts, surface decision cap, and all member screen modes; code paths are the policy/member intersection only.
 See [shared-surfaces.md](docs/reference/shared-surfaces.md).
 
+## Current Work (C)
+
+For a concrete task within existing current authority, including a **single target**,
+select `--work` before applying the no-work/legacy blocking stop. See the
+[current-work reference](docs/reference/current-work.md) for the shared request,
+origin/resource binding, five-CLI flow, run states, and Git backstop.
+
+```bash
+npm run workflow:readiness -- --work .workflow/current-work.json --json
+npm run workflow:run -- --work .workflow/current-work.json --json
+```
+
+The agent assembles the request; people need not hand-author JSON for each task.
+All targets still require current path authority. Keep actual denials and unresolved
+origins; only tool-classified higher prerequisites are `future_requirements`.
+Do not mix `--work` with legacy/visual selection flags or use another branch to
+bypass a deny. No-work and visual-refresh v1 retain their existing authority;
+`scoped`/D and partial/no-effect receipts are not supported by C.
+
 ## Input Artifacts
 
 ```bash

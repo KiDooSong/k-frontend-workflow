@@ -18,16 +18,32 @@ description: 지정된 Screen ID를 readiness gate가 허용하는 모드와 경
 - generated 파일은 직접 수정하지 않는다. Open Decision resolve, Unknown close, Gap accept, `confirmed` 승격, live policy/CI gate 승격을 하지 않는다.
 
 ## 1. Preflight
-1. Reconciliation Register의 관련 input이 `not-started`/`in-progress`/`failed`면 Stage 04를 먼저 끝낸다.
-2. 일반 구현:
+Reconciliation Register의 관련 input이 `not-started`/`in-progress`/`failed`면 Stage 04를 먼저 끝낸다.
+그다음 **실행 분기를 먼저 선택한다.** 아래 no-work/legacy의 blocking 일괄 중단을 current/visual 분기에 먼저 적용하지 않는다.
+현재 권한에서 처리할 concrete 작업은 **단일 target도 포함해** current 분기로 평가한다. 기존 visual-refresh tuple을 사용하기로 한 작업은 아래 Visual refresh 분기의 독립된 계약을 따른다. `--work`와 legacy/visual 선택 옵션을 섞지 않는다.
+
+### Current-work 분기
+[current work execution](../../docs/reference/current-work.md)의 `authority: current` request를 agent가 조립한다. target/origin이 여러 개여야 한다는 조건은 없다. 시작 입력은 `origin_inputs`에 보존하고 입력이 없는 작업만 빈 배열을 사용한다. 사람에게 매번 JSON 수작업 승인을 요구하지 않는다.
+
+```bash
+npm run workflow:readiness -- --work .workflow/current-work.json --json
+npm run workflow:run -- --work .workflow/current-work.json --json
+```
+
+`ready: true`와 각 target의 실제 path 판정, 구현 전 `HALT_READY_FOR_WORK`를 확인한다. 상위 미충족은 도구가 분류한 `future_requirements`로 보고하고 `legacy_readiness.blocking`은 보존한다. raw blocking의 존재만으로 current 결과를 다시 일괄 중단하지 않는다.
+실제 deny·미해결 origin·구조/수집 오류·absorbed 결과는 그대로 멈추거나 정본을 안내한다. 거부된 request를 버리거나 낮은 mode의 경로를 합치지 않고, deny를 없애려 no-work/visual로 자동 fallback하지 않는다. absorbed target으로 자동 전환하지 않는다.
+`readiness → packet/run → backstop/report`에 같은 request/origin/resource를 유지한다. `scoped`/unit/partial·no-effect coverage receipt는 C 범위가 아니며 새 권한이 필요하면 기존 authoring/사람 확인으로 돌아간다.
+
+### No-work / legacy 분기
+`--work`를 사용하지 않는 일반 구현에만 다음 순서를 적용한다. 이 분기의 기존 권한·중단 의미는 바꾸지 않는다.
+1. 일반 구현:
    ```bash
    npm run workflow:state
    npm run workflow:readiness -- --screen <ID> --json
    ```
-3. JSON의 `readiness_applicable`를 `blocking`보다 먼저 본다. `readiness_applicable: false`이면 absorbed source에 구현하지 않고 `absorbed_into`를 보고한 뒤 멈춘다. target으로 자동 전환하지 않는다.
-4. 그 외 blocking이 있으면 `blocking`·`next_actions`를 보고하고 멈춘다.
-5. 사용자의 한 요청에 여러 concrete target/origin이 있고 모두 **현재 권한 안에서** 실행할 작업이면, [current work execution](../../docs/reference/current-work.md)의 `authority: current` request를 agent가 조립해 `readiness → packet/run → backstop/report`에 같은 `--work`를 전달할 수 있다. 사람에게 매번 JSON 수작업 승인을 요구하지 않는다. `scoped`/unit/coverage receipt는 C 범위가 아니며 새 권한이 필요하면 기존 authoring/사람 확인으로 돌아간다.
-6. 일반 concrete 경로는 수정 직전 다시 확인한다:
+2. JSON의 `readiness_applicable`를 `blocking`보다 먼저 본다. `readiness_applicable: false`이면 absorbed source에 구현하지 않고 `absorbed_into`를 보고한 뒤 멈춘다. target으로 자동 전환하지 않는다.
+3. 그 외 blocking이 있으면 `blocking`·`next_actions`를 보고하고 멈춘다.
+4. 일반 concrete 경로는 수정 직전 다시 확인한다:
    ```bash
    npm run workflow:readiness -- --screen <ID> --path <project-relative-path> --json
    ```
@@ -60,7 +76,9 @@ visual이면 [visual reconciliation](../../docs/reference/visual-reconciliation.
 시각 값·selector·endpoint·DTO·copy를 발명하지 않는다. shared shell/layout/component 소유 항목을 per-screen 파일에 ad-hoc으로 넣지 않는다. Figma와 canonical behavior/decision이 충돌하면 reconcile로 되돌린다.
 
 ## 3. 검증 / 핸드오프
-항상 작은 관련 test/lint 뒤 다음을 실행한다:
+current 분기에서는 작은 관련 test/lint와 `workflow:validate`를 실행하고, [Stage 08 current-work report/backstop](../../docs/reference/workflow-stages/08-validate-and-report.md#current-work-reportbackstop)에 따라 같은 `--work` request/origin/resource로 실제 구현 snapshot을 확인한다. no-work 화면 요약으로 current 판정을 대체하지 않는다. 실행·캡처 미검증은 보고하며 그 사실만으로 새 Draft/머지 gate를 만들지 않는다.
+
+no-work/visual 분기는 작은 관련 test/lint 뒤 다음을 실행한다:
 ```bash
 npm run workflow:state
 npm run workflow:readiness -- --screen <ID> --json

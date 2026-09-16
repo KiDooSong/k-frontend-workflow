@@ -9,6 +9,46 @@ import { fileURLToPath } from 'node:url';
 const LIB = path.dirname(fileURLToPath(import.meta.url));
 const KIT = path.resolve(LIB, '../..');
 
+const ENTRY_DOCS = [
+  'skills/implement-screen/SKILL.md',
+  'docs/reference/workflow-stages/06-implement-screen-or-code.md',
+  'docs/reference/workflow-stages/08-validate-and-report.md',
+  'COMMANDS.md',
+];
+
+function assertCurrentWorkDocs(root) {
+  const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
+  for (const [relative, currentHeading, legacyHeading] of [
+    [ENTRY_DOCS[0], '### Current-work 분기', '### No-work / legacy 분기'],
+    [ENTRY_DOCS[1], '## Current-work branch', '## Mode/readiness-driven'],
+  ]) {
+    const text = read(relative);
+    const current = text.indexOf(currentHeading);
+    const legacy = text.indexOf(legacyHeading);
+    assert.ok(current >= 0 && legacy > current, `${relative}: select current before legacy blocking`);
+    const branch = text.slice(current, legacy);
+    assert.match(text.slice(0, legacy), /단일 target/, `${relative}: current is not limited to multiple targets`);
+    for (const term of ['--work', 'origin_inputs', 'ready: true', 'HALT_READY_FOR_WORK',
+      'future_requirements', 'legacy_readiness.blocking', 'deny', 'fallback', 'scoped']) {
+      assert.ok(branch.includes(term), `${relative}: missing current boundary ${term}`);
+    }
+    assert.match(text.slice(legacy), /blocking/, `${relative}: preserve the no-work blocking branch`);
+  }
+  const reference = path.join(root, 'docs/reference/current-work.md');
+  assert.ok(fs.statSync(reference).isFile());
+  for (const relative of ENTRY_DOCS) {
+    const links = [...read(relative).matchAll(/\]\(([^)]+)\)/g)].map((match) => match[1].split('#')[0]);
+    assert.ok(links.some((link) => path.resolve(root, path.dirname(relative), link) === reference),
+      `${relative}: link directly to the existing current-work reference`);
+  }
+  assert.match(read('COMMANDS.md'), /single target/);
+  assert.match(read('COMMANDS.md'), /--work/);
+}
+
+test('current-work entry documentation routes single targets before legacy blocking', () => {
+  assertCurrentWorkDocs(KIT);
+});
+
 test('packed consumer payload contains and executes current-work runtime/reference', (t) => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'current-work-packed-'));
   t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
@@ -29,6 +69,11 @@ test('packed consumer payload contains and executes current-work runtime/referen
     'docs/reference/current-work.md',
   ]) assert.equal(fs.existsSync(path.join(packed, relative)), true, `packed missing ${relative}`);
   assert.equal(fs.existsSync(path.join(packed, 'scripts/lib/current-work-packed.test.mjs')), false);
+  assertCurrentWorkDocs(packed);
+  for (const relative of [...ENTRY_DOCS, 'docs/reference/current-work.md']) {
+    assert.deepEqual(fs.readFileSync(path.join(packed, relative)), fs.readFileSync(path.join(KIT, relative)),
+      `packed documentation differs: ${relative}`);
+  }
 
   // The pack intentionally contains package metadata, not installed dependencies. For
   // this runtime smoke only, point its module resolution at the already lockfile-installed
