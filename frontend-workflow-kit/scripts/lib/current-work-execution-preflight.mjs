@@ -22,7 +22,23 @@ export function prepareCurrentWork({ work, root, docs, src, policy, manifest, la
   const ctx = resolveProjectRoot(root);
   const workPath = path.isAbsolute(work) ? path.resolve(work) : path.resolve(ctx.projectRoot, work);
   let parsed;
-  try { parsed = readJson(workPath, 'work request'); }
+  let physicalWorkPath;
+  try {
+    // Root is realpathed too. Keep the caller path for the no-follow read and
+    // subsequent raw/digest rechecks, but bind scope to the same physical file.
+    // Never realpath a leaf symlink into an accepted regular request file.
+    const before = fs.lstatSync(workPath);
+    if (!before.isFile()) throw new CurrentWorkExecutionError('work request: regular file required (no leaf symlink)');
+    physicalWorkPath = fs.realpathSync(workPath);
+    parsed = readJson(workPath, 'work request');
+    const after = fs.lstatSync(workPath);
+    const physical = fs.lstatSync(physicalWorkPath);
+    const identityKeys = ['dev', 'ino', 'size', 'mtimeMs', 'ctimeMs'];
+    if ([after, physical].some(stat => !stat.isFile() || identityKeys.some(key => stat[key] !== before[key])) ||
+        fs.realpathSync(workPath) !== physicalWorkPath) {
+      throw new CurrentWorkExecutionError('work request: path or file changed while reading; retry from a stable input');
+    }
+  }
   catch (error) { throw new CurrentWorkExecutionError(error.message); }
   let request;
   try { request = normalizeWorkRequest(parsed.value); }
@@ -199,7 +215,7 @@ export function prepareCurrentWork({ work, root, docs, src, policy, manifest, la
       authority_read_set: currentAuthorityReadSet({ resources, inputArtifacts, artifactFiles, baselineRoot, baselineKitRoot, layoutData, snapshot }),
       work_request: {
         hash: hashBytes(parsed.raw),
-        path: outside(projectRoot, workPath) ? null : projectRelative(projectRoot, workPath, 'work request'),
+        path: outside(projectRoot, physicalWorkPath) ? null : projectRelative(projectRoot, physicalWorkPath, 'work request'),
       },
     };
     const ready = requests.length > 0 && requests.every((entry) => entry.ready) && errors.length === 0 && denials.length === 0;

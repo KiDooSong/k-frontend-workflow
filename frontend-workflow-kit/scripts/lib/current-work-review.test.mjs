@@ -242,3 +242,135 @@ for (const outside of [false, true]) {
     assert.ok(out.implementation_records.some(r => r.status === 'C'));
   });
 }
+
+// R5: the request leaf is regular; only an ancestor of root/work is an alias.
+// Do not normalize the fixture's inputs to make the CLI defect disappear.
+for (const prefix of ['', 'apps/mobile']) {
+  test(`R5 ancestor alias: five CLIs preserve physical request identity (${prefix || 'root'})`, (t) => {
+    const f = fixture(t, { prefix });
+    const alias = path.join(f.temp, 'repo-alias');
+    fs.symlinkSync(fs.realpathSync(f.repo), alias, 'junction');
+    const realRoot = fs.realpathSync(f.root), aliasRoot = path.join(alias, prefix);
+    const relative = '.workflow/current-work.json';
+    const realWork = fs.realpathSync(f.work), aliasWork = path.join(aliasRoot, relative);
+    assert.equal(fs.lstatSync(aliasWork).isFile(), true);
+    const variants = [[realRoot, realWork], [aliasRoot, relative], [aliasRoot, aliasWork], [realRoot, aliasWork]];
+    const invoke = (script, pair, extra = []) => f.cli(script, ['--root', pair[0], '--work', pair[1], ...extra]);
+    const beforeIndex = fs.readFileSync(path.join(f.repo, '.git/index'));
+    const baseline = body(invoke('readiness', variants[0]));
+    assert.equal(baseline.snapshot.work_request.path, relative);
+    const packet = path.join(f.temp, 'alias-packet.md');
+    for (const pair of variants) {
+      const ready = body(invoke('readiness', pair));
+      assert.deepEqual(ready.snapshot.work_request, baseline.snapshot.work_request);
+      assert.equal(ready.request_digest, baseline.request_digest);
+      const pk = body(invoke('workflow-packet', pair, ['--out', packet]));
+      assert.deepEqual(pk.snapshot.work_request, baseline.snapshot.work_request);
+      assert.equal(body(invoke('workflow-run', pair)).state, 'HALT_READY_FOR_WORK');
+      const clean = body(invoke('forbidden-paths', pair));
+      assert.equal(clean.implementation_records.length, 0);
+      assert.equal(clean.execution_input_records.length, 1);
+    }
+    fs.appendFileSync(f.target, '\n// requested work through an ancestor alias\n');
+    for (const pair of variants) {
+      const after = body(invoke('forbidden-paths', pair, ['--enforce']));
+      assert.equal(after.ok, true);
+      assert.equal(after.execution_input_records[0].projectPath, relative);
+      assert.equal(after.implementation_records.length, 1);
+      assert.equal(body(invoke('workflow-report', pair, ['--packet', packet])).backstop.ok, true);
+      assert.equal(body(invoke('workflow-run', pair)).state, 'DONE_PENDING_REVIEW');
+    }
+    assert.deepEqual(fs.readFileSync(path.join(f.repo, '.git/index')), beforeIndex);
+    f.git(['add', prefix ? `${prefix}/${TARGET}` : TARGET, prefix ? `${prefix}/${relative}` : relative]);
+    const stagedIndex = fs.readFileSync(path.join(f.repo, '.git/index'));
+    assert.equal(body(invoke('forbidden-paths', variants[2], ['--staged', '--enforce'])).ok, true);
+    fs.appendFileSync(f.work, '\n'); // same semantic digest; different pinned bytes
+    assert.equal(invoke('workflow-report', variants[2], ['--packet', packet]).status, 2);
+    const changed = body(invoke('forbidden-paths', variants[2], ['--staged', '--enforce']), 1);
+    assert.equal(changed.execution_input_records.length, 0);
+    assert.ok(changed.violations.some(v => v.path === relative));
+    assert.deepEqual(fs.readFileSync(path.join(f.repo, '.git/index')), stagedIndex);
+  });
+}
+
+test('R5 ancestor alias does not exempt neighboring files or a leaf symlink', (t) => {
+  const f = fixture(t);
+  const alias = path.join(f.temp, 'alias');
+  fs.symlinkSync(fs.realpathSync(f.repo), alias, 'junction');
+  const args = ['--root', alias, '--work', path.join(alias, '.workflow/current-work.json')];
+  fs.appendFileSync(f.target, '\n// implementation\n');
+  fs.writeFileSync(path.join(f.root, '.workflow/neighbor.json'), '{}');
+  const result = body(f.cli('forbidden-paths', [...args, '--enforce']), 1);
+  assert.equal(result.execution_input_records.length, 1);
+  assert.ok(result.violations.some(v => v.code === 'CW-GIT-UNREQUESTED' && v.path === '.workflow/neighbor.json'));
+  const realFile = path.join(f.temp, 'real-request.json');
+  fs.renameSync(f.work, realFile);
+  fs.symlinkSync(realFile, f.work);
+  for (const script of ['readiness', 'workflow-packet', 'workflow-run', 'forbidden-paths']) {
+    const rejected = f.cli(script, args);
+    assert.equal(rejected.status, 2, rejected.stdout);
+    assert.match(rejected.stderr, /regular file|symlink|ELOOP/i);
+  }
+});
+
+test('R5 actual outside requests stay outside even through an ancestor alias', (t) => {
+  const f = fixture(t, { inside: false });
+  const alias = path.join(f.temp, 'outside-alias');
+  fs.symlinkSync(fs.realpathSync(f.temp), alias, 'junction');
+  const args = ['--work', path.join(alias, 'work.json')];
+  const ready = body(f.cli('readiness', args));
+  assert.equal(ready.snapshot.work_request.path, null);
+  assert.equal(body(f.cli('workflow-run', args)).state, 'HALT_READY_FOR_WORK');
+  fs.appendFileSync(f.target, '\n// requested\n');
+  const checked = body(f.cli('forbidden-paths', [...args, '--enforce']));
+  assert.equal(checked.ok, true);
+  assert.equal(checked.execution_input_records.length, 0);
+  assert.equal(checked.implementation_records.length, 1);
+});
+
+test('R5 leaf symlinks are rejected before output with real and aliased parents', (t) => {
+  const f = fixture(t);
+  const alias = path.join(f.temp, 'leaf-alias');
+  fs.symlinkSync(fs.realpathSync(f.repo), alias, 'junction');
+  const data = path.join(f.temp, 'request-data.json');
+  fs.renameSync(f.work, data);
+  fs.symlinkSync(data, f.work);
+  for (const work of [f.work, path.join(alias, '.workflow/current-work.json')]) {
+    const out = path.join(f.temp, 'must-not-write.md');
+    const rejected = f.cli('workflow-packet', ['--root', alias, '--work', work, '--out', out]);
+    assert.equal(rejected.status, 2);
+    assert.match(rejected.stderr, /regular file|symlink|ELOOP/i);
+    assert.equal(fs.existsSync(out), false);
+  }
+});
+
+test('R5 an ancestor retargeted while reading cannot bind bytes to the old physical path', (t) => {
+  const f = fixture(t);
+  const alias = path.join(f.temp, 'moving-alias'), replacement = path.join(f.temp, 'replacement');
+  fs.mkdirSync(replacement);
+  fs.copyFileSync(f.work, path.join(replacement, 'current-work.json')); // identical bytes, different files
+  fs.symlinkSync(fs.realpathSync(path.dirname(f.work)), alias, 'junction');
+  // Isolate the filesystem fault from other tests and their module loaders.
+  const child = spawnSync(process.execPath, ['--input-type=module', '-e', `
+    import fs from 'node:fs';
+    import assert from 'node:assert/strict';
+    import { prepareCurrentWork, cleanupCurrentWork } from './scripts/lib/current-work-execution.mjs';
+    const [work, root, alias, replacement] = process.argv.slice(1);
+    const open = fs.openSync;
+    let switched = false, preflight;
+    fs.openSync = function (file, ...args) {
+      if (file === work && !switched) {
+        switched = true;
+        fs.unlinkSync(alias);
+        fs.symlinkSync(replacement, alias, 'junction');
+      }
+      return open.call(this, file, ...args);
+    };
+    try {
+      assert.throws(() => { preflight = prepareCurrentWork({ work, root, docs: 'docs/frontend-workflow', src: 'src',
+        policy: 'config/policy.yaml', manifest: 'config/manifest.yaml', layout: 'config/layout.yaml' }); }, /request.*changed|request.*identity/i);
+      assert.equal(switched, true);
+    } finally { fs.openSync = open; cleanupCurrentWork(preflight); }
+  `, path.join(alias, 'current-work.json'), f.root, alias, replacement], { cwd: KIT, encoding: 'utf8', timeout: 10000 });
+  assert.equal(child.status, 0, child.stderr || child.error?.message);
+});
