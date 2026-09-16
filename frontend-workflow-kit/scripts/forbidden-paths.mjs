@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { isCliEntry, parseArgs } from './lib/util.mjs';
 import { runVisualCliSafely, runVisualForbiddenPathsCli } from './lib/visual-refresh-cli.mjs';
+import { runCurrentWorkCliSafely } from './lib/current-work-cli.mjs';
 
 export * from './forbidden-paths-legacy.mjs';
 
@@ -29,6 +30,10 @@ function delegateLegacy(argv) {
 function main() {
   const argv = process.argv.slice(2);
   const { flags } = parseArgs(argv);
+  if (Object.prototype.hasOwnProperty.call(flags, 'work')) {
+    runCurrentWorkCliSafely('forbidden-paths', argv);
+    return;
+  }
   if (!Object.prototype.hasOwnProperty.call(flags, 'intent')) {
     if (Object.prototype.hasOwnProperty.call(flags, 'input')) {
       process.stderr.write('forbidden-paths: --input requires --intent visual-refresh\n');

@@ -4,12 +4,17 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { isCliEntry, parseArgs } from './lib/util.mjs';
 import { enforceCliFlagContract } from './lib/cli-args.mjs';
+import { runCurrentWorkCliSafely } from './lib/current-work-cli.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 function main() {
   const argv = process.argv.slice(2);
   const parsed = parseArgs(argv);
+  if (Object.prototype.hasOwnProperty.call(parsed.flags, 'work')) {
+    runCurrentWorkCliSafely('report', argv);
+    return;
+  }
   const visualValueFlags = new Set(['intent', 'input', 'path', 'root', 'policy', 'manifest', 'ci', 'range', 'base']);
   const visualBooleanFlags = new Set(['staged']);
   const hasVisualTuple =

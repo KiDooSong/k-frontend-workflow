@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { parseArgs, DEFAULTS, KIT_ROOT, readFileSafe, writeFile, yamlParse, runCli, isCliEntry } from './lib/util.mjs';
 import { enforceCliFlagContract } from './lib/cli-args.mjs';
+import { runCurrentWorkCliSafely } from './lib/current-work-cli.mjs';
 import { captureWorkflowJson } from './lib/workflow-json-capture.mjs';
 import {
   buildPacketModel,
@@ -153,6 +154,10 @@ function loadOrder(policyPath) {
 function main() {
   const argv = process.argv.slice(2);
   const parsed = parseArgs(argv);
+  if (Object.prototype.hasOwnProperty.call(parsed.flags, 'work')) {
+    runCurrentWorkCliSafely('packet', argv);
+    return;
+  }
   if (hasVisualCliSurface(parsed.flags)) {
     enforceCliFlagContract({
       argv, flags: parsed.flags, positionals: parsed.positionals,

@@ -60,6 +60,9 @@ exclude:
   - path: scripts/lib/upgrade-planner.test.mjs
     classification: kit-dev-test
     reason: pack CLI(제외 대상)를 spawn 하는 kit-dev 테스트이므로 consumer payload 에 넣지 않는다.
+  - path: scripts/lib/current-work-packed.test.mjs
+    classification: kit-dev-test
+    reason: consumer payload 자체를 pack 후 실행하는 kit-dev packed smoke이므로 payload에 포함하지 않는다.
   - path: examples/**
     classification: kit-dev-fixture
     reason: Golden fixtures and dogfood projects used by kit tests; kept in the kit repo, never vendored.
