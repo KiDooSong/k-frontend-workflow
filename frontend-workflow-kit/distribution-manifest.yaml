@@ -63,6 +63,9 @@ exclude:
   - path: scripts/lib/current-work-packed.test.mjs
     classification: kit-dev-test
     reason: consumer payload 자체를 pack 후 실행하는 kit-dev packed smoke이므로 payload에 포함하지 않는다.
+  - path: scripts/lib/scoped-work-contracts.test.mjs
+    classification: kit-dev-test
+    reason: 비활성 scoped 계약과 source/packed CLI를 검증하며 pack CLI를 spawn하는 kit-dev 회귀다.
   - path: examples/**
     classification: kit-dev-fixture
     reason: Golden fixtures and dogfood projects used by kit tests; kept in the kit repo, never vendored.
@@ -99,7 +102,7 @@ classification:
     distribution-manifest.yaml: consumer-reference
     docs: consumer-reference          # only docs/reference/ remains under the kit
     examples: kit-dev-fixture
-    temp: generated-dogfood-output    # guard only — dev dogfood output lives in repo-root kit-dev/temp/
+    temp: generated-dogfood-output    # guard only — dev dogfood output lives at repo-root kit-dev/temp/
   paths:
     docs/reference: consumer-reference
     examples: kit-dev-fixture

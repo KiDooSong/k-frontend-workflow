@@ -159,3 +159,40 @@ Without `--work`, readiness, packet, run, report, forbidden-paths, and the
 existing visual-refresh v1 route retain their existing CLI/JSON/exit semantics.
 Current work is additive. It adds no required CI status and does not implement
 scoped/D authority.
+
+## Inactive scoped authoring substrate (D1)
+
+The payload includes internal syntax parsers in
+[`scoped-work-request.mjs`](../../scripts/lib/scoped-work-request.mjs) and
+[`scoped-work-declarations.mjs`](../../scripts/lib/scoped-work-declarations.mjs).
+They are **not connected to any execution CLI**. A well-formed scoped request
+still exits 2 with `scoped is not implemented`; no readiness grant, packet, or
+implementation report is issued. There is no opt-in switch for this partial
+implementation. Do not add live `work_execution` or `decision_work_scopes`
+declarations to a consumer as an adoption step for D1.
+
+`normalizeScopedWorkRequestSyntax` checks selectors and preserves origins and
+separate owner/unit responsibilities for shared targets. `parseScopedPolicy`,
+`parseScopedOwner`, and `parseDecisionWorkScopes` check declaration structure.
+`decodeScopedYaml` rejects duplicate keys and malformed/unrecognized YAML before
+conversion; pass explicitly selected declaration or receipt text, not a whole
+Markdown document. `parseWorkCoverageReceipt(s)` checks receipt fields only.
+Missing optional sections use `undefined`; authored `null` is not absence.
+These are internal parse results, not serialized authority or approvals.
+
+Parsing does not resolve canonical artifacts, Items, source anchors, API rows,
+actual membership or mapping provenance. It does not compute `scope-basis-v1`,
+check a receipt's hashes against current bytes, validate a human approval, or
+prove development-only isolation. In particular, a structurally valid
+`no-effect-on-unit` receipt does not dismiss an origin or an Open Decision.
+No generic receipt requirement is added to ordinary reconciliation.
+
+Live adoption remains unsupported until typed evidence/decision resolution,
+all three work predicates, all-host/path claims, before/after Git checks, legacy
+fallback guards, and upgrade/downgrade handling are delivered together. Future
+pilot adoption needs explicit owner/policy/deny review; it must not silently
+promote modes or adopt all consumers. Rollback must stop scoped work and preserve
+the reviewed deny boundary before removing declarations. Neither this dormant
+substrate nor an older binary guarantees protection for live scoped markers.
+Do not use removal of a marker or a different intent to reinterpret a denied
+scoped task as permitted current work.
