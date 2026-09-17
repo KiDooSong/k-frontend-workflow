@@ -3,14 +3,14 @@
 import path from 'node:path';
 import { splitFrontmatter } from './util.mjs';
 import { validateInputArtifacts } from './input-artifact.mjs';
-import { buildInputArtifactIndex, resolveInputArtifact, resolveInputEvidence } from './provenance.mjs';
+import { buildInputArtifactIndex, resolveInputArtifact, resolveInputEvidence, parseInputEvidenceRef } from './provenance.mjs';
 import { parseReconciliationMarkdown, describeHeaderMismatch } from './reconciliation-markdown-ast.mjs';
 import { parseReconciliationRegister, REQUIRED_REGISTER_COLS, RECONCILE_STATUS_VALUES } from './reconciliation-register.mjs';
 import { parseRegisterContract, parseReconciliationItems, validateReconciliationV2,
   REQUIRED_ITEM_COLS, isReconciliationItemId, parseTargetRef } from './reconciliation-items.mjs';
 import { readCurrentBytes, canonicalJson, hashBytes, normalizeWorkOrigins } from './current-work-request.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
-import { ScopedWorkContractError, workObject, workSet, workPath } from './scoped-work-request.mjs';
+import { ScopedWorkContractError, workObject, workSet, workPath, workText } from './scoped-work-request.mjs';
 import { createScopedReferenceResolver, scopedRawTable } from './scoped-work-refs.mjs';
 
 const fail = (code, message) => { throw new ScopedWorkContractError(`${code}: ${message}`); };
@@ -20,7 +20,7 @@ const summaryFields = ['inputId', 'source', 'classification', 'reconcileStatus',
 const rowObjects = (table, fields) => table.cells.map((cells) => Object.fromEntries(fields.map((field, i) => [field, cells[i]])));
 
 export function createScopedSourceResolver({ inputArtifacts, registerFile, targetIndex, projectRoot } = {}) {
-  const refs = createScopedReferenceResolver({ targetIndex, projectRoot });
+  const refs = createScopedReferenceResolver({ targetIndex, projectRoot, inputArtifacts });
   if (!Array.isArray(inputArtifacts)) fail('SW-SOURCE-INDEX', 'canonical input artifacts required');
   // Own caches, never mutate the collector's records or its caller's declarations.
   const inputs = inputArtifacts.map((entry) => ({ ...entry, fm: structuredClone(entry.fm), body: undefined }));
@@ -139,5 +139,12 @@ export function createScopedSourceResolver({ inputArtifacts, registerFile, targe
     }
     return results;
   }
-  return { source, sources };
+  function evidence(token) {
+    workText(token, 'input evidence');
+    const ref = parseInputEvidenceRef(token);
+    if (!ref) fail('SW-SOURCE-ANCHOR', 'typed input evidence required');
+    const selected = anchor(token, ref.inputId);
+    return { input: structuredClone(input(ref.inputId).data), anchor: selected };
+  }
+  return { source, sources, evidence };
 }

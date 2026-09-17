@@ -2,6 +2,10 @@
 // Consume the existing target index from one validated snapshot. Snapshot capture,
 // owner/profile predicates, coverage, and the full R1 graph are separate steps.
 import path from 'node:path';
+import { splitFrontmatter } from './util.mjs';
+import { readCurrentBytes, canonicalJson } from './current-work-request.mjs';
+import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
+import { parseMappingProvenanceContract, validateMappingProvenance } from './mapping-provenance.mjs';
 import { parseTargetRef } from './reconciliation-items.mjs';
 import { resolveArtifact, isDuplicateArtifactId, resolveChildRow, bodyHasToken } from './reconciliation-target-index.mjs';
 import { parseReconciliationMarkdown, tableHeadersAreUnique } from './reconciliation-markdown-ast.mjs';
@@ -28,7 +32,7 @@ export function scopedRawTable(table) {
   return { headers, cells, rows: cells.map((row) => Object.fromEntries(headers.map((h, i) => [h, row[i]]))) };
 }
 
-export function createScopedReferenceResolver({ targetIndex, projectRoot } = {}) {
+export function createScopedReferenceResolver({ targetIndex, projectRoot, inputArtifacts = [] } = {}) {
   if (!(targetIndex?.artifacts instanceof Map) || !(targetIndex?.duplicates instanceof Set)) {
     fail('SW-REF-INDEX', 'existing reconciliation target index required');
   }
@@ -36,6 +40,7 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot } = {})
     fail('SW-REF-ROOT', 'canonical absolute snapshot project root required');
   }
   const parsed = new Map();
+  const mappingChecks = new Map();
   function artifact(id) {
     if (isDuplicateArtifactId(targetIndex, id)) fail('SW-REF-AMBIGUOUS', `duplicate artifact ${id}`);
     const record = resolveArtifact(targetIndex, id);
@@ -55,7 +60,43 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot } = {})
     if (hits.length !== 1) fail(hits.length ? 'SW-REF-AMBIGUOUS' : 'SW-REF-MISSING', `section #${slug}`);
     return hits[0];
   }
-  function rowSelection(occurrence, key, family = null) {
+  function mappingRow(record, occurrence, key) {
+    const id = record.fm.artifact_id;
+    if (!mappingChecks.has(id)) {
+      if (parseMappingProvenanceContract(record.fm).version !== 1) {
+        fail('SW-REF-MAPPING', 'M-key selection requires Mapping Provenance v1');
+      }
+      const current = splitFrontmatter(decodeGitUtf8(readCurrentBytes(record.file, 'scoped mapping'), 'scoped mapping'));
+      if (current.parseError || current.body !== record.body || canonicalJson(current.data) !== canonicalJson(record.fm)) {
+        fail('SW-REF-SNAPSHOT', `mapping ${id} differs from its indexed snapshot`);
+      }
+      const validation = validateMappingProvenance({ docs: [record], inputArtifacts });
+      if (validation.errors.length) fail('SW-REF-MAPPING', validation.errors.map((entry) => entry.message).join('; '));
+      mappingChecks.set(id, validation.warnings.map((entry) => ({ message: entry.message })));
+    }
+    // The existing validator proves anchored M-key grammar and row bijection.
+    // Read the same raw identity cell, not a second independently evolving regex.
+    if (occurrence.tables.length !== 1) fail('SW-REF-MAPPING', 'unique mapping table required');
+    const ast = occurrence.tables[0];
+    const raw = scopedRawTable(ast);
+    const matches = [];
+    raw.cells.forEach((cells, index) => {
+      const first = cells[0];
+      if (first !== ast.rows[index][ast.headers[0]]) fail('SW-REF-MAPPING', 'raw Mapping Key differs from rendered identity');
+      const identity = occurrence.slug === 'component-mapping'
+        ? first.split('`')[1] : (first.startsWith('`') ? first.slice(1, -1) : first);
+      if (identity === key) matches.push(cells);
+    });
+    if (matches.length !== 1) fail('SW-REF-MAPPING', `missing or ambiguous M-key ${key}`);
+    return { type: 'row', section: occurrence.slug, key, headers: raw.headers, cells: matches[0],
+      validation_warnings: structuredClone(mappingChecks.get(id)) };
+  }
+  function rowSelection(occurrence, key, family = null, record = null) {
+    if (!family && record?.fm?.artifact_type === 'figma-component-mapping' &&
+        ['component-mapping', 'mapping-provenance'].includes(occurrence.slug)) {
+      return mappingRow(record, occurrence, key);
+    }
+
     const tables = occurrence.tables.map(scopedRawTable);
     const eligible = family ? tables.filter((t) => signatures[family].every((h) => hasHeader(t.headers, h))) : tables;
     if (family && eligible.length !== 1) fail('SW-REF-AMBIGUOUS', `canonical ${family} table must be unique`);
@@ -82,7 +123,7 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot } = {})
         const selected = section(markdown, ref.section);
         selection = ref.rowKey === null
           ? { type: 'section', section: ref.section, content: lf(selected.text) }
-          : rowSelection(selected, ref.rowKey);
+          : rowSelection(selected, ref.rowKey, null, record);
       }
     } else if (Object.hasOwn(signatures, ref.kind)) {
       const child = resolveChildRow(record, ref.rowId, ref.kind);
