@@ -202,7 +202,11 @@ test('D projection: selected input inline-code values change projection while un
   for (const eol of ['\n', '\r\n', '\r']) {
     const f = fixture(t); withSource(f);
     const file = f.inputs.get('input.md');
-    fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace(/\n/g, eol));
+    // Body EOL normalization is separate from the legacy YAML delimiter grammar.
+    // Keep a supported LF header; CR-only frontmatter is not an input identity.
+    const parsed = splitFrontmatter(fs.readFileSync(file, 'utf8'));
+    fs.writeFileSync(file, md(parsed.data, parsed.body.replace(/\n/g, eol)));
+    assert.equal(loadInputArtifact(file).fm.input_id, INPUT, JSON.stringify(eol));
     const before = f.run();
     assert.match(scopeJson(before.projection), /Retry up to `3` times/);
     fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('Unselected fact.', 'Changed other fact.'));
@@ -211,6 +215,11 @@ test('D projection: selected input inline-code values change projection while un
     assert.notDeepEqual(unrelated.read_set, before.read_set);
     fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('`3`', '`10`'));
     assert.notDeepEqual(f.run().projection, before.projection);
+    if (eol === '\r') {
+      fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace(/\r\n|\r|\n/g, '\r'));
+      assert.equal(loadInputArtifact(file).hasFrontmatter, false);
+      assert.throws(() => f.run(), /SW-SOURCE-INPUT/, 'do not repair unsupported frontmatter into authority');
+    }
   }
 });
 
