@@ -352,7 +352,7 @@ function normalizeVisibleBulletText(value) {
     .trim();
 }
 
-function sectionOccurrences(source, tree, suppliedContext = null) {
+function sectionOccurrences(source, tree, suppliedContext = null, includeNodes = false) {
   const context = suppliedContext || { source, definitions: definitionLabels(tree) };
   const occurrences = [];
   let current = {
@@ -382,6 +382,7 @@ function sectionOccurrences(source, tree, suppliedContext = null) {
       text: source.slice(current.contentStart, current.contentEnd),
       bulletCount: bulletTexts.length,
       bulletTexts,
+      ...(includeNodes ? { nodes: current.nodes.map(({ node }) => node) } : {}),
       tables: current.nodes
         .map(({ node, previousNode }) => rootTable(source, node, previousNode))
         .filter(Boolean),
@@ -463,3 +464,13 @@ export function splitSectionOccurrences(text) {
     text: sectionText,
   }));
 }
+
+// Opt-in structural view for typed dependency traversal. Legacy projections above
+// keep their exact shapes. Native nodes retain source offsets and link definitions;
+// callers must not reparse rendered text into invented reference identities.
+export function parseReconciliationReferenceView(text) {
+  const source = String(text || '');
+  const tree = parseTree(source);
+  return { tree, sections: sectionOccurrences(source, tree, null, true) };
+}
+export { normalizeReferenceLabel as reconciliationReferenceLabel };

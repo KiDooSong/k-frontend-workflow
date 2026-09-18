@@ -10,8 +10,8 @@ import { spawnSync } from 'node:child_process';
 import { KIT_ROOT } from './util.mjs';
 
 const suites = ['scoped-work-refs.test.mjs', 'scoped-work-sources.test.mjs',
-  'scoped-work-mapping.test.mjs', 'scoped-work-api.test.mjs', 'scoped-work-normalize.test.mjs'];
-const runtime = ['scoped-work-request.mjs', 'scoped-work-declarations.mjs',
+  'scoped-work-mapping.test.mjs', 'scoped-work-api.test.mjs', 'scoped-work-normalize.test.mjs', 'scoped-work-graph.test.mjs'];
+const runtime = ['scoped-work-request.mjs', 'scoped-work-declarations.mjs', 'reconciliation-markdown-ast.mjs',
   ...suites.map((name) => name.replace('.test.mjs', '.mjs'))];
 
 function checkedNode(args, cwd, env = process.env) {
@@ -23,7 +23,7 @@ function checkedNode(args, cwd, env = process.env) {
   return run;
 }
 
-test('D packed: real reference, source, mapping, API and normalization run from the shipped runtime', (t) => {
+test('D packed: real reference, source, mapping, API, normalization and graph traversal run from the shipped runtime', (t) => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'scoped-packed-'));
   t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
   const packed = path.join(temp, 'payload');
@@ -47,7 +47,7 @@ test('D packed: real reference, source, mapping, API and normalization run from 
   delete env.NODE_TEST_CONTEXT; // Start a separate explicit test-runner process.
   const run = checkedNode(['--test', '--test-reporter=tap', ...suites.map((name) => path.join(lib, name))], packed, env);
   const count = /^# tests (\d+)\r?$/m.exec(run.stdout);
-  assert.ok(count && Number(count[1]) >= 48, run.stdout);
+  assert.ok(count && Number(count[1]) >= 64, run.stdout);
   for (const metric of ['fail', 'cancelled', 'skipped', 'todo']) {
     assert.match(run.stdout, new RegExp(`^# ${metric} 0\\r?$`, 'm'), run.stdout);
   }
