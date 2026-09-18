@@ -47,7 +47,7 @@ test('D packed: real reference, source, mapping, API, normalization and graph tr
   delete env.NODE_TEST_CONTEXT; // Start a separate explicit test-runner process.
   const run = checkedNode(['--test', '--test-reporter=tap', ...suites.map((name) => path.join(lib, name))], packed, env);
   const count = /^# tests (\d+)\r?$/m.exec(run.stdout);
-  assert.ok(count && Number(count[1]) >= 64, run.stdout);
+  assert.ok(count && Number(count[1]) >= 71, run.stdout);
   for (const metric of ['fail', 'cancelled', 'skipped', 'todo']) {
     assert.match(run.stdout, new RegExp(`^# ${metric} 0\\r?$`, 'm'), run.stdout);
   }

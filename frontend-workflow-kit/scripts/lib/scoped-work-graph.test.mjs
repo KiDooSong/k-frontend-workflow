@@ -7,6 +7,8 @@ import { buildReconciliationTargetIndex } from './reconciliation-target-index.mj
 import { loadInputArtifact } from './input-artifact.mjs';
 import { parseReconciliationMarkdown, parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
 import { resolveScopedContractGraph } from './scoped-work-graph.mjs';
+import { createScopedSourceResolver } from './scoped-work-sources.mjs';
+import { createScopedReferenceResolver } from './scoped-work-refs.mjs';
 
 const INPUT = 'IN-20260918-meeting-001';
 const REF = `input:${INPUT}#extracted-facts/01`;
@@ -192,8 +194,114 @@ test('D graph: shared AST reference view is opt-in and leaves every existing pro
   const legacy = parseReconciliationMarkdown(body);
   const structural = parseReconciliationReferenceView(body);
   assert.deepEqual(Object.keys(legacy).sort(), ['contentBody', 'occurrences', 'proseBody']);
-  for (const entry of legacy.occurrences) assert.equal(Object.hasOwn(entry, 'nodes'), false);
+  for (const entry of legacy.occurrences) {
+    for (const key of ['nodes', 'bulletNodes', 'bulletSources', 'tableNodes']) assert.equal(Object.hasOwn(entry, key), false);
+  }
   assert.equal(structural.tree.type, 'root');
   assert.ok(structural.sections.find((section) => section.slug === 'rules').nodes.length);
   assert.deepEqual(parseReconciliationMarkdown(body), legacy);
+});
+
+for (const eol of ['\n', '\r\n', '\r']) {
+  test(`D review P2: selected inline-code value changes source and graph content (${JSON.stringify(eol)})`, (t) => {
+    const body = ['## Extracted Facts', '- Retry up to `3` times.', '- Other `7` times.'].join(eol);
+    const f = fixture(t, [], body);
+    const beforeSource = createScopedSourceResolver(f.args).evidence(REF);
+    const before = f.graph([REF]);
+    assert.equal(beforeSource.anchor.content, 'Retry up to `3` times.');
+    assert.equal(before.nodes[0].selection.content, beforeSource.anchor.content);
+    fs.writeFileSync(f.inputFile, fs.readFileSync(f.inputFile, 'utf8').replace('`3`', '`10`'));
+    const afterSource = createScopedSourceResolver(f.options()).evidence(REF);
+    const after = f.graph([REF], f.options());
+    assert.equal(afterSource.anchor.content, 'Retry up to `10` times.');
+    assert.notDeepEqual(afterSource.anchor, beforeSource.anchor);
+    assert.notDeepEqual(after.nodes, before.nodes);
+    assert.deepEqual(after.edges, before.edges, 'a numeric code value is not a typed dependency');
+    assert.notDeepEqual(after.read_set, before.read_set);
+    // Witness the original information loss without changing the relation parser.
+    const prose = (text) => parseReconciliationMarkdown(text).occurrences.find((section) => section.slug === 'extracted-facts').bulletTexts[0];
+    assert.equal(prose(body), prose(body.replace('`3`', '`10`')));
+    assert.equal(Object.hasOwn(after, 'basis_digest'), false);
+  });
+}
+
+test('D review P2: unselected earlier and nested code edits do not change the selected parent', (t) => {
+  const body = '## Extracted Facts\n- Earlier `7` times.\n- Retry up to `3` times.\n  - Nested `8` times.\n- Last fact.';
+  const f = fixture(t, [], body);
+  const parentRef = REF.replace('/01', '/02');
+  const nestedRef = REF.replace('/01', '/03');
+  const before = f.graph([parentRef]);
+  const nestedBefore = f.graph([nestedRef]);
+  assert.equal(before.nodes[0].selection.content, 'Retry up to `3` times.');
+  assert.equal(nestedBefore.nodes[0].selection.content, 'Nested `8` times.');
+  fs.writeFileSync(f.inputFile, fs.readFileSync(f.inputFile, 'utf8').replace('`7`', '`7000`').replace('`8`', '`8000`'));
+  const after = f.graph([parentRef], f.options());
+  assert.deepEqual(after.nodes, before.nodes, 'source offsets and unselected code are not scope content');
+  assert.deepEqual(after.edges, before.edges);
+  assert.notDeepEqual(after.read_set, before.read_set);
+  assert.notDeepEqual(f.graph([nestedRef], f.options()).nodes, nestedBefore.nodes, 'nested bullet remains independently selectable');
+});
+
+test('D review P2: selected raw multiline content retains markup, code and order with LF-only normalization', (t) => {
+  const body = '## Extracted Facts\n- Keep  **literal** `3` and ``a ` b``.\n  Continue with `4`.\n\n  - Nested `8` value.\n\n  End with `5`.\n- Other fact.';
+  const f = fixture(t, [], body);
+  const before = f.graph([REF]);
+  const content = before.nodes[0].selection.content;
+  assert.ok(content.startsWith('Keep  **literal** `3` and ``a ` b``.\n  Continue with `4`.'));
+  assert.ok(content.endsWith('End with `5`.'));
+  assert.equal(content.includes('Nested'), false);
+  assert.equal(content.includes('`8`'), false);
+  assert.equal(content.includes('Other fact'), false);
+  const raw = fs.readFileSync(f.inputFile, 'utf8');
+  fs.writeFileSync(f.inputFile, raw.replace(/\n/g, '\r\n'));
+  const crlf = f.graph([REF], f.options());
+  assert.deepEqual(crlf.nodes, before.nodes);
+  assert.deepEqual(crlf.edges, before.edges);
+  assert.notDeepEqual(crlf.read_set, before.read_set);
+  fs.writeFileSync(f.inputFile, raw.replace('`8`', '`88888`'));
+  assert.deepEqual(f.graph([REF], f.options()).nodes, before.nodes);
+  fs.writeFileSync(f.inputFile, raw.replace('`5`', '`50`'));
+  assert.notDeepEqual(f.graph([REF], f.options()).nodes, before.nodes);
+});
+
+test('D review P2: graph row candidates use the exact canonical table filter, not native lookalikes', (t) => {
+  const table = '| ID | Value |\n|---|---|\n| 01 | [kept][Evidence] |';
+  const variants = [
+    table.split('\n').map((line) => ` ${line}`).join('\n'),
+    ` ${table}`, // Native sourceText can equal the canonical table after this offset.
+    table.split('\n').map((line) => line.slice(1)).join('\n'),
+    `Paragraph without a blank boundary.\n${table}`,
+  ];
+  for (const eol of ['\n', '\r\n']) for (const decoy of variants) {
+    const body = `## Rows\n\n${decoy}\n\n${table}\n\n## Definitions\n[Evidence]: artifact:GOOD#rules`.replace(/\n/g, eol);
+    const f = fixture(t, [{ id: 'ROWS', body }, { id: 'GOOD' }]);
+    const ref = 'artifact:ROWS#rows/01';
+    const selected = createScopedReferenceResolver(f.args).contract(ref);
+    const section = parseReconciliationReferenceView(body).sections.find((entry) => entry.slug === 'rows');
+    assert.equal(section.tables.length, 1);
+    assert.equal(section.tableNodes.length, 1);
+    assert.equal(section.nodes.filter((node) => node.type === 'table').length, 2, 'native decoy really exists');
+    assert.equal(section.tableNodes[0].position.start.column, 1);
+    const graph = f.graph([ref]);
+    assert.deepEqual(graph.nodes.find((node) => node.ref === ref).selection, selected.selection);
+    assert.deepEqual(ids(graph), ['artifact:GOOD#rules', ref]);
+    assert.deepEqual(graph.edges, [{ from: ref, to: 'artifact:GOOD#rules' }]);
+  }
+});
+
+test('D review P2: canonical child rows share the filter and real duplicate rows still fail', (t) => {
+  const table = '| ID | Status | Blocking Mode | Decision Needed | Options |\n|---|---|---|---|---|\n| D-SAVE | open | final-fixture-ui | Save? | Keep/Change |';
+  const indented = table.split('\n').map((line) => ` ${line}`).join('\n');
+  const f = fixture(t, [{ id: 'OD', body: `## Open Decisions\n\n${indented}\n\n${table}` }]);
+  const ref = 'decision:D-SAVE@OD';
+  assert.deepEqual(f.graph([ref]).nodes[0].selection, createScopedReferenceResolver(f.args).contract(ref).selection);
+  for (const body of [
+    `## Open Decisions\n\n${indented}`,
+    `## Open Decisions\n\n${table}\n\n${table}`,
+    `## Open Decisions\n\n${indented}\n\n${table}\n\n${table}`,
+  ]) {
+    const broken = fixture(t, [{ id: 'OD', body }]);
+    assert.throws(() => broken.graph([ref]), /SW-REF-/);
+    assert.throws(() => broken.graph(['artifact:OD#open-decisions/D-SAVE']), /SW-REF-/);
+  }
 });

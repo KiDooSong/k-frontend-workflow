@@ -4,7 +4,7 @@ import path from 'node:path';
 import { splitFrontmatter } from './util.mjs';
 import { validateInputArtifacts } from './input-artifact.mjs';
 import { buildInputArtifactIndex, resolveInputArtifact, resolveInputEvidence, parseInputEvidenceRef } from './provenance.mjs';
-import { parseReconciliationMarkdown, describeHeaderMismatch } from './reconciliation-markdown-ast.mjs';
+import { parseReconciliationMarkdown, parseReconciliationReferenceView, describeHeaderMismatch } from './reconciliation-markdown-ast.mjs';
 import { parseReconciliationRegister, REQUIRED_REGISTER_COLS, RECONCILE_STATUS_VALUES } from './reconciliation-register.mjs';
 import { parseRegisterContract, parseReconciliationItems, validateReconciliationV2,
   REQUIRED_ITEM_COLS, isReconciliationItemId, parseTargetRef } from './reconciliation-items.mjs';
@@ -49,7 +49,7 @@ export function createScopedSourceResolver({ inputArtifacts, registerFile, targe
       fail('SW-SOURCE-SNAPSHOT', `${id}: input metadata differs from the indexed snapshot`);
     }
     artifact.body = parsed.body;
-    const result = { artifact, markdown: parseReconciliationMarkdown(parsed.body),
+    const result = { artifact, markdown: parseReconciliationReferenceView(parsed.body),
       data: { input_id: id, file, input_sha256: hashBytes(raw), metadata: structuredClone(artifact.fm) } };
     loaded.set(id, result);
     return result;
@@ -59,12 +59,19 @@ export function createScopedSourceResolver({ inputArtifacts, registerFile, targe
     const source = input(inputId);
     const resolved = resolveInputEvidence(index, normalized);
     if (resolved.status !== 'ok') fail('SW-SOURCE-ANCHOR', `${normalized}: ${resolved.status}`);
-    const sections = source.markdown.occurrences.filter((entry) => entry.slug === resolved.ref.section);
+    const sections = source.markdown.sections.filter((entry) => entry.slug === resolved.ref.section);
     // The legacy helper concatenates duplicate H2s. D needs a unique selected
     // section; leave the legacy warning contract unchanged.
     if (sections.length !== 1) fail('SW-SOURCE-ANCHOR', `${normalized}: ambiguous section`);
-    const content = resolved.ref.bulletIndex === null ? lf(sections[0].text) : resolved.evidenceText;
-    if (typeof content !== 'string' || !content.trim()) fail('SW-SOURCE-ANCHOR', `${normalized}: empty selected evidence`);
+    const bullet = resolved.ref.bulletIndex;
+    // Retain the existing nonempty-prose prerequisite, but never substitute that
+    // relation-only projection for the selected source (it omits inline code).
+    if (bullet !== null && (typeof resolved.evidenceText !== 'string' || !resolved.evidenceText.trim())) {
+      fail('SW-SOURCE-ANCHOR', `${normalized}: empty selected evidence`);
+    }
+    const rawContent = bullet === null ? sections[0].text : sections[0].bulletSources[bullet - 1];
+    if (typeof rawContent !== 'string' || !rawContent.trim()) fail('SW-SOURCE-ANCHOR', `${normalized}: empty selected evidence`);
+    const content = lf(rawContent);
     return { ref: normalized, section: resolved.ref.section, bullet_index: resolved.ref.bulletIndex, content };
   }
   function register() {

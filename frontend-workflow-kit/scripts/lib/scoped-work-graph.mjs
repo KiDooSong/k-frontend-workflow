@@ -40,16 +40,15 @@ function selectedNodes(view, selection, body) {
   const nodes = sections[0].nodes;
   if (selection.type !== 'row' && selection.bullet_index == null) return nodes;
   if (selection.type === 'row') {
-    const matches = nodes.filter((node) => node.type === 'table' &&
+    // Never reintroduce native tables rejected by the canonical resolver.
+    const matches = sections[0].tableNodes.filter((node) =>
       scopeJson(splitRow(rawNode(body, node.children[0]))) === scopeJson(selection.headers))
       .flatMap((node) => node.children.slice(1))
       .filter((row) => scopeJson(splitRow(rawNode(body, row))) === scopeJson(selection.cells));
     if (matches.length !== 1) fail('selected raw row is missing or ambiguous in its native AST');
     return matches;
   }
-  const bullets = [];
-  for (const node of nodes) walk(node, (child) => { if (child.type === 'listItem') bullets.push(child); });
-  const selected = bullets[selection.bullet_index - 1];
+  const selected = sections[0].bulletNodes[selection.bullet_index - 1];
   if (!selected) fail('selected input bullet is missing');
   return [selected];
 }
