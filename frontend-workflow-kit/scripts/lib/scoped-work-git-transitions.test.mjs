@@ -26,7 +26,7 @@ const binding = (overrides = {}) => ({ decision_id: 'D-ONE', owner: OWNER, known
 // Real file-backed resolvers, reused unchanged next to the shipped runtime.
 // Recording a computed digest in this synthetic fixture is NOT human approval.
 function fixture(t) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'scoped-transitions-'));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'scoped-transitions-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const docsDir = path.join(root, 'docs'), kitRoot = path.join(root, '.kit'), docs = new Map();
   fs.mkdirSync(kitRoot);
