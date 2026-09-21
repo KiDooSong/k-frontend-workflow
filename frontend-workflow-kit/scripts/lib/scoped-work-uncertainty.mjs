@@ -22,9 +22,9 @@ const signatures = { unknown: ['ID', 'Question'], conflict: ['ID', 'Status'] };
 const union = (values) => scopeSet([...new Set(values)]);
 const key = (owner, unit) => scopeJson([owner, unit]);
 
-export function resolveScopedUncertaintyProjection(options = {}) {
+export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots = []) {
   const { targetIndex, projectRoot, inputArtifacts = [] } = options;
-  const base = resolveScopedDecisionProjection(options);
+  const base = resolveScopedDecisionProjection(options, dependencyRoots);
   const refs = createScopedReferenceResolver({ targetIndex, projectRoot, inputArtifacts });
   const files = new Map(base.read_set.map((entry) => [entry.file, entry]));
   const documents = new Map();
@@ -101,7 +101,7 @@ export function resolveScopedUncertaintyProjection(options = {}) {
 
   function subject(owner, unit) {
     const id = key(owner, unit);
-    if (!subjects.has(id)) subjects.set(id, { owner, unit, roots: new Set() });
+    if (!subjects.has(id)) subjects.set(id, { owner, unit, roots: new Set(), derived: new Map() });
     return subjects.get(id);
   }
   function seed(owner, unit, token) {
@@ -120,7 +120,20 @@ export function resolveScopedUncertaintyProjection(options = {}) {
     for (const token of roots) seed(unit.owner, id, token);
   }
   for (const owner of base.projection.owners) if (!owner.adopted) subject(owner.owner, null);
+  function derivedSeed(owner, unit, via, token) {
+    const out = subject(owner, unit);
+    if (!out.derived.has(via)) out.derived.set(via, new Set());
+    if (!nodes.has(token)) fail('missing derived dependency');
+    out.derived.get(via).add(token);
+  }
+  for (const root of base.projection.decision_relations.dependency_roots || []) {
+    derivedSeed(root.owner, root.unit, root.ref, root.ref);
+  }
   for (const application of base.projection.decision_relations.applications) {
+    if (application.uncertainty) {
+      derivedSeed(application.owner, application.unit, application.uncertainty, application.decision);
+      continue;
+    }
     if (application.unit !== null) seed(application.owner, application.unit, application.decision);
     else {
       const selected = [...subjects.values()].filter((value) => value.owner === application.owner);
@@ -149,6 +162,18 @@ export function resolveScopedUncertaintyProjection(options = {}) {
     }
     value.selected = [...seen].map((token) => nodes.get(token));
     if (value.selected.some((node) => !node)) fail('missing selected dependency');
+    const derived = [];
+    for (const [via, roots] of value.derived) {
+      const pending = [...roots], reached = new Set(pending);
+      for (let i = 0; i < pending.length; i += 1) for (const next of adjacency.get(pending[i]) || []) {
+        if (!reached.has(next)) { reached.add(next); pending.push(next); }
+      }
+      for (const token of reached) {
+        if (!nodes.has(token)) fail('missing transitive dependency');
+        derived.push({ via, node: nodes.get(token) });
+      }
+    }
+    value.derived = derived;
   }
   function ranges(node) {
     if (!spans.has(node.ref)) {
@@ -192,13 +217,19 @@ export function resolveScopedUncertaintyProjection(options = {}) {
       const inverse = direct.length ? [] : evidence.nodes.filter((node) => node.ref !== token)
         .flatMap((dependency) => value.selected.filter((node) => overlaps(dependency, node))
           .map((node) => ({ dependency: dependency.ref, selected: node.ref })));
+      const native = !direct.length && !inverse.length && nativeScope(entry, value);
+      // A relation discovered through uncertainty is not an authored selection.
+      // Never use its own returned graph to erase native scope-review-needed.
+      const transitive = direct.length || inverse.length || native ? [] : [record, ...evidence.nodes.filter((node) => node.ref !== token)]
+        .flatMap((dependency) => value.derived.filter(({ via, node }) => via !== token && overlaps(dependency, node))
+          .map(({ via, node }) => ({ via, dependency: dependency.ref, selected: node.ref })));
       const relation = direct.length ? 'selected-evidence' : inverse.length ? 'inverse-evidence'
-        : nativeScope(entry, value) ? 'scope-review-needed' : null;
+        : native ? 'scope-review-needed' : transitive.length ? 'transitive-evidence' : null;
       if (!relation) continue;
       included = true;
       const application = { owner: value.owner, unit: value.unit, uncertainty: token, relation,
         witnesses: direct.length ? union(direct).map((ref) => ({ dependency: token, selected: ref }))
-          : scopeSet([...new Map(inverse.map((pair) => [scopeJson(pair), pair])).values()]) };
+          : scopeSet([...new Map((inverse.length ? inverse : transitive).map((pair) => [scopeJson(pair), pair])).values()]) };
       applications.push(application);
       if (relation === 'scope-review-needed') review.push({ owner: value.owner, unit: value.unit, uncertainty: token });
     }

@@ -27,7 +27,9 @@ const decisionId = (id) => {
   return id;
 };
 
-export function resolveScopedDecisionProjection(options = {}) {
+// Additional roots are additive, validated Conflict/Unknown evidence only. They
+// cannot replace file-backed unit selection or supply an approval/permission.
+export function resolveScopedDecisionProjection(options = {}, dependencyRoots = []) {
   const { owner, projectRoot, docsDir, targetIndex, inputArtifacts = [] } = options;
   const base = resolveScopedUnitProjection(options);
   if (typeof docsDir !== 'string' || !path.isAbsolute(docsDir) || path.resolve(docsDir) !== docsDir) {
@@ -135,14 +137,15 @@ export function resolveScopedDecisionProjection(options = {}) {
     decisions.set(token, value);
     return value;
   }
-  function enqueue(token, subject) {
+  function enqueue(token, subject, uncertainty = null) {
     graphRoots.add(token);
-    const key = scopeJson([subject.owner, subject.unit, token]);
-    if (!visited.has(key)) queued.push({ token, subject });
+    const key = scopeJson([subject.owner, subject.unit, token, uncertainty]);
+    if (!visited.has(key)) queued.push({ token, subject, uncertainty });
   }
-  function apply(token, subject, referrer, relation, native = false) {
+  function apply(token, subject, referrer, relation, native = false, uncertainty = null) {
     decision(token);
-    const value = { ...subject, decision: token, referrer, relation };
+    const value = { ...subject, decision: token, referrer, relation,
+      ...(uncertainty === null ? {} : { uncertainty }) };
     applications.set(scopeJson(value), value);
     if (native) {
       const key = scopeJson([subject.owner, token]);
@@ -151,7 +154,7 @@ export function resolveScopedDecisionProjection(options = {}) {
       routes.add(referrer);
       if (routes.size > 1) fail(`duplicate native decision application to ${subject.owner}`);
     }
-    enqueue(token, subject);
+    enqueue(token, subject, uncertainty);
   }
   function globals(entry) {
     if (!Object.hasOwn(entry.fm, 'decision_refs')) return [];
@@ -225,25 +228,40 @@ export function resolveScopedDecisionProjection(options = {}) {
       enqueue(token, { owner: link.member, unit: link.host_unit === 'legacy-current' ? null : link.host_unit });
     }
   }
+  const derivedRoots = scopeSet(dependencyRoots, 'uncertainty dependency roots');
+  for (const root of derivedRoots) {
+    if (!root || Array.isArray(root) || typeof root !== 'object' ||
+        !same(Object.keys(root).sort(), ['owner', 'ref', 'unit'])) fail('invalid uncertainty root');
+    ownerParts(root.owner);
+    const selectedOwner = base.projection.owners.find((entry) => entry.owner === root.owner);
+    const selectedUnit = base.projection.units.some((entry) => entry.owner === root.owner && entry.declaration.id === root.unit);
+    if (!selectedOwner || (root.unit === null ? selectedOwner.adopted : !selectedUnit)) fail('uncertainty root outside selected units');
+    const parsed = parseTargetRef(workText(root.ref, 'uncertainty root ref'));
+    if (!parsed || !['conflict', 'unknown'].includes(parsed.kind)) fail('typed uncertainty root required');
+    enqueue(root.ref, { owner: root.owner, unit: root.unit }, root.ref);
+  }
   for (let index = 0; index < queued.length; index += 1) {
-    const { token, subject } = queued[index];
-    const key = scopeJson([subject.owner, subject.unit, token]);
+    const { token, subject, uncertainty } = queued[index];
+    const key = scopeJson([subject.owner, subject.unit, token, uncertainty]);
     if (visited.has(key)) continue;
     const graph = resolveScopedContractGraph({ contracts: [token], targetIndex, inputArtifacts, projectRoot });
     for (const file of graph.read_set) audit(file.file, file.sha256);
     for (const edge of graph.edges) graphEdges.set(scopeJson(edge), edge);
     for (const node of graph.nodes) {
-      visited.add(scopeJson([subject.owner, subject.unit, node.ref]));
+      visited.add(scopeJson([subject.owner, subject.unit, node.ref, uncertainty]));
       graphNodes.set(node.ref, scopedProjectionNode(node));
-      if (node.kind === 'decision') apply(node.ref, subject, node.ref, 'selected-evidence');
+      if (node.kind === 'decision') apply(node.ref, subject, node.ref,
+        uncertainty === null ? 'selected-evidence' : 'uncertainty-evidence', false, uncertainty);
       if (!node.artifact_id) continue;
       const entry = document(node.artifact_id);
       remember(entry);
-      for (const ref of globals(entry)) apply(ref, subject, node.ref, 'evidence-decision-ref');
+      for (const ref of globals(entry)) apply(ref, subject, node.ref,
+        uncertainty === null ? 'evidence-decision-ref' : 'uncertainty-decision-ref', false, uncertainty);
     }
   }
   for (const file of [...files.values()]) audit(file.file, file.sha256);
   return { projection: { ...base.projection, decision_relations: {
+    ...(derivedRoots.length ? { dependency_roots: derivedRoots } : {}),
     records: scopeSet([...decisions.values()]), applications: scopeSet([...applications.values()]),
     referrers: scopeSet([...referrers.values()]), memberships: scopeSet([...memberships.values()]),
     evidence: { roots: union([...graphRoots]), nodes: scopeSet([...graphNodes.values()]), edges: scopeSet([...graphEdges.values()]) },
