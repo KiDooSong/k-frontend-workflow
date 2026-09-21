@@ -30,6 +30,8 @@ function fixture(t) {
   const adopt = (owners = [OWNER]) => fs.writeFileSync(policyFile, JSON.stringify({ work_execution: { version: 1,
     owners, profiles: ['behavior'], role_limits: { behavior: ['screen', 'domain_component', 'hook', 'api_client', 'test'] }, deny_paths: [] } }));
   const write = (name, fm, body) => {
+    assert.ok(![...docs.keys()].some((other) => other !== name && other.toLowerCase() === name.toLowerCase()),
+      'fixture documents must remain distinct on case-insensitive filesystems');
     const file = path.join(docsDir, name); fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, md(fm, body)); docs.set(name, file); return file;
   };
@@ -106,7 +108,7 @@ test('D decisions: native screen/surface and surface/surface duplicate applicati
   for (const direct of [true, false]) {
     const f = fixture(t); f.global(); surface(f);
     if (direct) f.change('screen.md', ({ fm }) => { fm.decision_refs = ['D-GLOBAL']; });
-    else surface(f, { id: 'SECOND' });
+    else surface(f, { id: 'SECOND-SURFACE' });
     assert.throws(() => f.run(), /duplicate native decision application/);
   }
 });
