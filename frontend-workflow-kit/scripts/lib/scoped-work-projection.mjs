@@ -15,7 +15,7 @@ import { createScopedReferenceResolver } from './scoped-work-refs.mjs';
 import { createScopedSourceResolver } from './scoped-work-sources.mjs';
 import { createScopedApiResolver } from './scoped-work-api.mjs';
 import { resolveScopedMappingEvidence } from './scoped-work-mapping.mjs';
-import { resolveScopedContractGraph } from './scoped-work-graph.mjs';
+import { resolveScopedContractGraph, scopedGraphApiRowDependencies } from './scoped-work-graph.mjs';
 import { ScopedWorkContractError, workText, workSet } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet, scopeLf } from './scoped-work-normalize.mjs';
 
@@ -165,7 +165,8 @@ export function resolveScopedUnitProjection({ owner, policyFile, targetIndex, in
     const selectedSources = sources.sources(declared.sources).map(source);
     const api = apis.unit(data.record.artifact_id, ownerId, declared.id);
     const apiRows = api.candidates.map((candidate) => {
-      if (candidate.tracking) dependency(candidate.tracking);
+      const body = targetIndex.artifacts.get(api.artifact_id).body;
+      for (const ref of scopedGraphApiRowDependencies(body, candidate)) roots.add(ref);
       // Raw ordered cells retain every column, without analyzer line/row indexes.
       return { selection: candidate.selection, headers: candidate.headers, cells: candidate.cells,
         tracking: candidate.tracking?.ref ?? null };

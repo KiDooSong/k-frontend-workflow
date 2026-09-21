@@ -366,3 +366,73 @@ test('D basis: recursive cycles are finitely indexed before hashing, with stable
   f.change('extra.md', (doc) => { doc.body += '\nChanged selected dependency.'; });
   assert.notEqual(f.run().basis_digest, before.basis_digest);
 });
+
+
+// Review regression: an API row's reference spelling alone is not its evidence.
+// These cases run unchanged in the existing source and real packed basis suite.
+function withApiReference(f, note = 'artifact:RULES2#other', suffix = '') {
+  const api = withApi(f), rows = structuredClone(api.rows);
+  f.write('rules2.md', { artifact_id: 'RULES2', artifact_type: 'domain-rules', domain: 'result', status: 'confirmed' },
+    '## Other\nReferenced API evidence.\n\n## Unused\nUnreferenced sibling.');
+  rows[0][6] = note;
+  f.change('screen.md', (doc) => { doc.body = api.body(rows) + suffix; });
+  return { ...api, rows };
+}
+for (const [kind, note, suffix] of [
+  ['plain', 'artifact:RULES2#other', ''],
+  ['inline code', '`artifact:RULES2#other`', ''],
+  ['inline link', '[contract](artifact:RULES2#other)', ''],
+  ['reference link', '[contract][api-rule]', '\n\n[api-rule]: artifact:RULES2#other'],
+]) test(`D basis API references: ${kind} resolves selected evidence recursively`, (t) => {
+  const f = fixture(t); withApiReference(f, note, suffix); const before = f.run();
+  assert.ok(scopeJson(before.basis).includes('Referenced API evidence.'));
+  f.change('rules2.md', (doc) => { doc.body = doc.body.replace('Referenced API evidence.', 'Changed API evidence.'); });
+  const after = f.run();
+  assert.notEqual(after.basis_digest, before.basis_digest);
+  assert.ok(scopeJson(after.basis).includes('Changed API evidence.'));
+});
+
+for (const ref of ['artifact:MISSING#other', 'artifact:RULES2#missing']) {
+  test(`D basis API references: missing selected dependency ${ref} is rejected`, (t) => {
+    const f = fixture(t); withApiReference(f, ref);
+    assert.throws(() => f.run(), /SW-REF-MISSING/);
+  });
+}
+
+test('D basis API references: unselected rows and unreferenced sections stay outside scope', (t) => {
+  const f = fixture(t), api = withApiReference(f), before = f.run();
+  f.change('rules2.md', (doc) => { doc.body = doc.body.replace('Unreferenced sibling.', 'Changed unreferenced sibling.'); });
+  api.rows[1][6] = 'artifact:MISSING#not-selected';
+  f.change('screen.md', (doc) => { doc.body = api.body(api.rows); });
+  const after = f.run();
+  assert.equal(after.basis_digest, before.basis_digest);
+  assert.notDeepEqual(after.read_set, before.read_set);
+  assert.ok(!scopeJson(after.basis).includes('Changed unreferenced sibling.'));
+});
+
+test('D basis API references: a separately selected broad contract is not narrowed by the API row', (t) => {
+  const f = fixture(t); withApiReference(f);
+  f.change('screen.md', ({ fm }) => { fm.work_execution.units[0].contracts.push('artifact:RULES2'); });
+  const before = f.run();
+  f.change('rules2.md', (doc) => { doc.body = doc.body.replace('Unreferenced sibling.', 'Now selected by broad contract.'); });
+  assert.notEqual(f.run().basis_digest, before.basis_digest);
+});
+
+test('D basis API references: cycles reached only from the selected row remain finite', (t) => {
+  const f = fixture(t); withApiReference(f);
+  f.change('rules2.md', (doc) => { doc.body = doc.body.replace('Referenced API evidence.', 'See artifact:RULES2#other'); });
+  const before = f.run(); assert.equal(f.run().basis_digest, before.basis_digest);
+  f.change('rules2.md', (doc) => { doc.body = doc.body.replace('See artifact:RULES2#other', 'Changed cycle. See artifact:RULES2#other'); });
+  assert.notEqual(f.run().basis_digest, before.basis_digest);
+});
+
+test('D basis API references: canonical deferred Unknown Tracking and extra row evidence are both retained', (t) => {
+  const f = fixture(t), api = withApiReference(f);
+  api.rows[0][2] = 'candidate'; api.rows[0][3] = 'deferred'; api.rows[0][4] = 'unknown:U-LATER';
+  f.change('screen.md', (doc) => { doc.body = api.body(api.rows) +
+    `\n\n## Unknowns\n${table(['ID', 'Question', 'Status'], [['U-LATER', 'Later API?', 'open']])}`; });
+  const before = f.run();
+  assert.ok(scopeJson(before.basis).includes('unknown:U-LATER@SCREEN-RESULT-001'));
+  f.change('rules2.md', (doc) => { doc.body = doc.body.replace('Referenced API evidence.', 'Changed deferred evidence.'); });
+  assert.notEqual(f.run().basis_digest, before.basis_digest);
+});

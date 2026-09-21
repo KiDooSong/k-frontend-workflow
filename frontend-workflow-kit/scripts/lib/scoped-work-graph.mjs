@@ -232,3 +232,20 @@ export function scopedGraphSelectionSpans(body, view, selection, input = false) 
   }, input && selection.bullet_index != null);
   return spans;
 }
+
+// The API resolver has already checked the canonical v2 table, endpoint and raw
+// row correspondence. Traverse just that row's native cells, retaining document
+// definitions for reference-style links. Do not select the whole API section.
+export function scopedGraphApiRowDependencies(body, candidate) {
+  const view = parseReconciliationReferenceView(body);
+  const [row] = selectedNodes(view, { type: 'row', section: 'api-candidates',
+    headers: candidate.headers, cells: candidate.cells }, body);
+  const trackingIndex = candidate.headers.findIndex((header) => header.toLowerCase() === 'tracking');
+  if (candidate.tracking && trackingIndex < 0) fail('canonical API Tracking column required');
+  // Only deferred Unknown Tracking permits the API-local unknown:ID shorthand.
+  // It was resolved to an exact canonical row by createScopedApiResolver().unit().
+  // All other cells use the ordinary strict typed-reference scanner unchanged.
+  const cells = row.children.filter((_, index) => !candidate.tracking || index !== trackingIndex);
+  return scopeSet([...new Set([...dependencies(body, view, cells, false),
+    ...(candidate.tracking ? [canonicalRef(candidate.tracking.ref)] : [])])]);
+}
