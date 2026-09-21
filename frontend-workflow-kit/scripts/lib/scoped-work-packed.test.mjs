@@ -12,7 +12,8 @@ import { KIT_ROOT } from './util.mjs';
 const suites = ['scoped-work-refs.test.mjs', 'scoped-work-sources.test.mjs',
   'scoped-work-mapping.test.mjs', 'scoped-work-api.test.mjs', 'scoped-work-normalize.test.mjs', 'scoped-work-graph.test.mjs',
   'scoped-work-projection.test.mjs', 'scoped-work-decisions.test.mjs', 'scoped-work-boundaries.test.mjs', 'scoped-work-uncertainty.test.mjs',
-  'scoped-work-applicability.test.mjs', 'scoped-work-basis.test.mjs', 'scoped-work-bindings.test.mjs', 'scoped-work-transitions.test.mjs'];
+  'scoped-work-applicability.test.mjs', 'scoped-work-basis.test.mjs', 'scoped-work-bindings.test.mjs', 'scoped-work-transitions.test.mjs',
+  'scoped-work-git-transitions.test.mjs'];
 const runtime = ['scoped-work-request.mjs', 'scoped-work-declarations.mjs', 'reconciliation-markdown-ast.mjs',
   ...suites.map((name) => name.replace('.test.mjs', '.mjs'))];
 
@@ -25,7 +26,7 @@ function checkedNode(args, cwd, env = process.env) {
   return run;
 }
 
-test('D packed: real reference, source, mapping, API, normalization, graph traversal, unit projection, decision applicability, ownership boundaries, uncertainty relations, combined applicability, scope-basis digests and conservative binding/transition inspection run from the shipped runtime', (t) => {
+test('D packed: real reference, source, mapping, API, normalization, graph traversal, unit projection, decision applicability, ownership boundaries, uncertainty relations, combined applicability, scope-basis digests and conservative binding/transition and original Git snapshot inspection run from the shipped runtime', (t) => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'scoped-packed-'));
   t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
   const packed = path.join(temp, 'payload');
