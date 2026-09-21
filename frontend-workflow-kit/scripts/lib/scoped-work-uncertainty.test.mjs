@@ -78,9 +78,22 @@ test('D uncertainty: inverse typed dependency is collected even when no selected
   assert.equal(out.projection.evidence.nodes.some((node) => node.kind === 'unknown'), false);
 });
 
-test('D uncertainty: inverse selection intersects a real child section but not its sibling', (t) => {
+test('D uncertainty: inverse H2 selections retain child content and intersect whole bodies, not sibling sections', (t) => {
   const f = fixture(t); f.evidence(unknowns([['U-NESTED', 'See artifact:RULES#nested']]));
-  assert.deepEqual(applications(f.run(), 'U-NESTED').map((entry) => entry.unit), ['known']);
+  // Canonical selectors name H2 sections. H3 content belongs to the selected
+  // parent; it must neither become a standalone selector nor disappear.
+  assert.throws(() => f.run(), /SW-REF-MISSING: section #nested/);
+  f.evidence(unknowns([['U-NESTED', 'See artifact:RULES#rules']]));
+  const before = f.run();
+  assert.deepEqual(applications(before, 'U-NESTED').map((entry) => [entry.unit, entry.relation]),
+    [['known', 'inverse-evidence']]);
+  const selected = (out) => relations(out).evidence.nodes.find((node) => node.ref === 'artifact:RULES#rules');
+  assert.match(selected(before).selection.content, /### Nested\nNested contract\./);
+  assert.doesNotMatch(selected(before).selection.content, /Other behavior/);
+  f.change('rules.md', (doc) => { doc.body = doc.body.replace('Nested contract.', 'Updated nested contract.'); });
+  const after = f.run();
+  assert.notDeepEqual(selected(after), selected(before));
+  assert.deepEqual(applications(after, 'U-NESTED'), applications(before, 'U-NESTED'));
   f.change('screen.md', ({ fm }) => { fm.work_execution.units[0].contracts = ['artifact:RULES']; });
   f.evidence(unknowns([['U-OTHER', 'See artifact:RULES#other']]));
   assert.deepEqual(applications(f.run(), 'U-OTHER').map((entry) => entry.unit).sort(), ['known', 'other']);
