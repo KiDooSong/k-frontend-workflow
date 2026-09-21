@@ -190,7 +190,7 @@ test('D bindings: local and global canonical decisions are both inspected', (t) 
 test('D bindings: selected evidence decisions are not limited to owner decision_refs', (t) => {
   const f = fixture(t); f.change('screen.md', ({ fm }) => { delete fm.decision_refs; });
   f.change(HOME, ({ fm }) => { delete fm.decision_work_scopes; });
-  f.change('rules.md', (doc) => { doc.body = doc.body.replace('Known contract.', `See ${DECISION}.`); });
+  f.change('rules.md', (doc) => { doc.body = doc.body.replace('Known contract.', `See ${DECISION}`); });
   const result = check(f); blocked(result, 'missing'); assert.ok(result.applications.some((entry) => entry.unit === 'known'));
 });
 
