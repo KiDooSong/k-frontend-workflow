@@ -261,10 +261,12 @@ test('D transitions: stale indexed snapshots and malformed declarations are reje
 
 test('D transitions: a late mutation in the before tree is detected after reading the after tree', (t) => {
   const p = pair(t), file = p.before.docs.get('rules.md'), bytes = fs.readFileSync(file, 'utf8');
-  const read = fs.readFileSync; let changed = false;
-  t.mock.method(fs, 'readFileSync', function (target, ...args) {
+  // Protected resource reads use openSync/readSync, not readFileSync.
+  const open = fs.openSync; let changed = false;
+  t.mock.method(fs, 'openSync', function (target, ...args) {
     if (!changed && target === p.after.policyFile) { changed = true; fs.writeFileSync(file, bytes + '\nLate mutation.'); }
-    return read.call(this, target, ...args);
+    return open.call(this, target, ...args);
   });
   assert.throws(() => p.run(), /snapshot changed/); assert.equal(changed, true);
+  assert.equal(fs.readFileSync(file, 'utf8'), bytes + '\nLate mutation.');
 });
