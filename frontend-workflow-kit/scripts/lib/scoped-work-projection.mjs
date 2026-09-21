@@ -258,3 +258,6 @@ export function resolveScopedUnitProjection({ owner, policyFile, targetIndex, in
   for (const entry of [...files.values()]) read(entry.file, entry.sha256);
   return { projection, read_set: scopeSet([...files.values()]) };
 }
+
+// Share the same R1 metadata/content projection with later canonical graph layers.
+export { metadata as scopedProjectionMetadata, node as scopedProjectionNode };
