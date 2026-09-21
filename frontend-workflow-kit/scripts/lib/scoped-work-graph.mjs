@@ -217,3 +217,18 @@ export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifa
   return { roots: scopeSet(roots), nodes: scopeSet([...nodes.values()]), edges: scopeSet(edges),
     read_set: scopeSet([...files.values()]) };
 }
+
+// Share the exact native selection with inverse uncertainty matching. Leaf spans
+// avoid treating an input parent bullet as ownership of nested bullets. This is
+// source selection only: it neither scans prose for meaning nor grants a path.
+export function scopedGraphSelectionSpans(body, view, selection, input = false) {
+  const spans = [];
+  for (const selected of selectedNodes(view, selection, body)) walk(selected, (node) => {
+    if (node.children?.length) return;
+    const start = node.position?.start.offset;
+    const end = node.position?.end.offset;
+    if (!Number.isInteger(start) || !Number.isInteger(end) || start > end) fail('missing native source span');
+    spans.push([start, end]);
+  }, input && selection.bullet_index != null);
+  return spans;
+}
