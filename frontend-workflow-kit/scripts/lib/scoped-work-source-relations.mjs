@@ -173,7 +173,9 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
   }
   for (const source of selectedUnit.sources) {
     const out = selected(source.input_id);
-    source.items.forEach((id) => out.items.add(id)); source.source_refs.forEach((ref) => out.source_refs.add(ref));
+    source.items.forEach((id) => out.items.add(id));
+    // Preserve the native input/anchor error boundary before register inference.
+    source.source_refs.forEach((ref) => { inputNode(ref); out.source_refs.add(ref); });
     origin(source.input_id, { kind: 'unit-source', ref: ownerRecord.ref });
   }
   const inferred = new Map();

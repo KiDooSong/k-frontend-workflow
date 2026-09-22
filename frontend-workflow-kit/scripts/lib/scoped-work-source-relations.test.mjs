@@ -47,7 +47,7 @@ function fixture(t, { explicit = true, native = false, typed = false } = {}) {
   `## Rules\nKnown contract.${typed ? ` See ${REF}` : ''}\n\n## Other\nUnselected contract.`);
   const registerFile = path.join(root, 'register.md');
   const register = (rows = [effect(), effect('02', 'other')], status = 'partially-reconciled', result = 'pending') => {
-    const touched = [...new Set(rows.filter((row) => row[4] === 'update').map((row) => row[5].split('#')[0]))].join(', ') || '-';
+    const touched = [...new Set(rows.filter((row) => row[4] === 'update').map((row) => row[5].split('#')[0]))].join('; ') || '-';
     const count = new Set(rows.map((row) => row[1])).size;
     fs.writeFileSync(registerFile, md({ reconciliation_contract: 2, review_profile: 'reconcile-stage04-v1', structured_since: '2026-09-01T00:00:00Z' },
       `${table(REQUIRED_REGISTER_COLS, [[INPUT, 'meeting', `simple-update×${count}`, status, result, touched, '-', '-']])}\n\n## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, rows)}`));
@@ -304,7 +304,7 @@ test('D source closure: effect dependencies discover further canonical inputs wi
   const dependent = effect(); dependent[5] = 'artifact:EXTRA#terms';
   const nextEffect = [next, '01', 'compatible-fact', 'simple-update', 'update', 'artifact:EXTRA#terms', nextRef, 'inherit', 'statement', 'inherit'];
   const register = () => fs.writeFileSync(f.registerFile, md({ reconciliation_contract: 2, review_profile: 'reconcile-stage04-v1', structured_since: '2026-09-01T00:00:00Z' },
-    `${table(REQUIRED_REGISTER_COLS, [[INPUT, 'meeting', 'simple-update×2', 'partially-reconciled', 'pending', 'artifact:DOC, artifact:EXTRA', '-', '-'],
+    `${table(REQUIRED_REGISTER_COLS, [[INPUT, 'meeting', 'simple-update×2', 'partially-reconciled', 'pending', 'artifact:DOC; artifact:EXTRA', '-', '-'],
       [next, 'meeting', 'simple-update×1', 'partially-reconciled', 'pending', 'artifact:EXTRA', '-', '-']])}\n\n## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, [effect(), dependent, effect('02', 'other'), nextEffect])}`));
   register();
   const out = f.run(); assert.equal(out.sources.length, 2); assert.deepEqual(out.pending_connections, []);
