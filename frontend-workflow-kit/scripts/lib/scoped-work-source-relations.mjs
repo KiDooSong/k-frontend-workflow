@@ -24,13 +24,52 @@ const fail = (message) => { throw new ScopedWorkContractError(`SW-SOURCE-RELATIO
 const union = (values) => scopeSet([...new Set(values)]);
 const same = (a, b) => scopeJson(a) === scopeJson(b);
 
-export function resolveScopedSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
-  registerFile, projectRoot, layout } = {}) {
+export function resolveScopedSourceRelations(options = {}) {
+  return resolveSourceClosure(options, true);
+}
+
+// R1 records present facts even before inferred input effects have been authored.
+// This separate observation entry never turns absent/legacy reconciliation into
+// positive coverage. Explicit Item selectors still require valid v2 resolution.
+export function resolveScopedSourceProjection(options = {}) {
+  return resolveSourceClosure(options, false);
+}
+
+function resolveSourceClosure(options, requireEffects) {
+  const roots = new Set(), pins = new Map(), witnesses = new Map();
+  for (;;) {
+    const result = resolveSourceRelations(options, requireEffects, [...roots]);
+    for (const entry of result.read_set) {
+      if (pins.has(entry.file) && pins.get(entry.file).sha256 !== entry.sha256) fail('snapshot changed between source passes');
+      pins.set(entry.file, entry);
+    }
+    let changed = false;
+    for (const source of result.sources) {
+      const key = scopeJson(source.selection);
+      // A source must not become connected merely by adding its own effects
+      // as dependency roots in the following pass. Retain its first witnesses.
+      if (!witnesses.has(key)) witnesses.set(key, { connections: source.connections, issues: source.issues });
+      Object.assign(source, structuredClone(witnesses.get(key)));
+      if (requireEffects && source.issues.length) continue;
+      const dependencies = [...source.source.anchors.map((anchor) => anchor.ref),
+        ...source.source.groups.flatMap((group) => group.effects.flatMap((effect) =>
+          [effect.evidence.ref, ...(['none', 'input'].includes(effect.target.kind) ? [] : [effect.target.ref])] ))];
+      for (const ref of dependencies) if (!result.contracts.nodes.some((node) => node.ref === ref) && !roots.has(ref)) {
+        roots.add(ref); changed = true;
+      }
+    }
+    if (!changed) return { ...result, sources: scopeSet(result.sources), read_set: scopeSet([...pins.values()]) };
+  }
+}
+
+function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
+  registerFile, projectRoot, layout } = {}, requireEffects, dependencyRoots) {
   const parts = ownerParts(owner); workUnitId(unit);
   const args = { targetIndex, inputArtifacts, projectRoot };
   const refs = createScopedReferenceResolver(args);
   const sourceReader = createScopedSourceResolver({ ...args, registerFile });
-  const reads = new Map(), documents = new Map(), spans = new Map();
+  const reads = new Map(), documents = new Map(), spans = new Map(), nativeInputs = new Map();
+  let absentRegister = null;
   function read(file, expected) {
     const relative = path.isAbsolute(file) ? path.relative(projectRoot, file).split(path.sep).join('/') : file;
     if (path.isAbsolute(file) && path.resolve(file) !== file) fail('noncanonical snapshot path');
@@ -85,7 +124,7 @@ export function resolveScopedSourceRelations({ owner, unit, targetIndex, inputAr
   const declaration = parseScopedOwner(ownerRecord.metadata.work_execution, owner);
   const selectedUnit = declaration?.units.find((entry) => entry.id === unit);
   if (!selectedUnit) fail('declared owner unit required');
-  const roots = new Set(selectedUnit.contracts);
+  const roots = new Set([...selectedUnit.contracts, ...dependencyRoots]);
   if (selectedUnit.api_candidates.length) {
     const api = createScopedApiResolver({ targetIndex, projectRoot, layout }).unit(ownerRecord.artifact_id, owner, unit);
     for (const row of api.candidates) for (const ref of scopedGraphApiRowDependencies(document(ownerRecord).body, row)) roots.add(ref);
@@ -151,22 +190,39 @@ export function resolveScopedSourceRelations({ owner, unit, targetIndex, inputAr
       if (found.status !== 'ok' || found.artifact.parseError || inputErrors.some((error) => error.file === found.artifact.file)) {
         fail(`missing, ambiguous or invalid canonical input: ${source.ref}`);
       }
-      document({ kind: 'input-evidence', file: path.relative(projectRoot, found.artifact.file).split(path.sep).join('/'), metadata: found.artifact.fm });
+      const file = path.relative(projectRoot, found.artifact.file).split(path.sep).join('/');
+      document({ kind: 'input-evidence', file, metadata: found.artifact.fm });
+      nativeInputs.set(source.ref, { input_id: source.ref, file });
       inferred.set(source.ref, { input_id: source.ref, ref: null });
       origin(source.ref, { kind: 'canonical-input', ref: record.ref });
     }
   }
   let rows = [];
   if (selections.size) {
-    if (typeof registerFile !== 'string') fail('canonical register path required for source connections');
-    read(registerFile); // Pin bytes before either canonical parser consumes them.
-    const register = parseReconciliationRegister(registerFile);
-    if (!register.exists) fail('Reconciliation Contract v2 required');
-    const contract = parseRegisterContract(register.fm);
-    if (register.fmParseError || register.fmStructuralError || contract.version !== 2 || contract.errors.length) fail('valid Reconciliation Contract v2 required');
-    const validation = validateReconciliationV2({ register, registerFile, inputArtifacts, targetIndex });
-    if (validation.errors.length) fail(validation.errors.map((entry) => entry.message).join('; '));
-    rows = parseReconciliationItems(register.body).rows;
+    const required = requireEffects || selectedUnit.sources.length > 0;
+    let register = null;
+    if (typeof registerFile !== 'string') {
+      if (required) fail('canonical register path required for source connections');
+    } else {
+      const relative = path.isAbsolute(registerFile) ? path.relative(projectRoot, registerFile).split(path.sep).join('/') : registerFile;
+      if (path.isAbsolute(registerFile) && path.resolve(registerFile) !== registerFile) fail('noncanonical register path');
+      const actual = canonicalRepositoryPath(projectRoot, relative,
+        { required, type: 'file', label: 'scoped source register' });
+      if (actual.exists) {
+        read(registerFile); // Pin bytes before either canonical parser consumes them.
+        register = parseReconciliationRegister(actual.absolute);
+      } else absentRegister = relative;
+    }
+    if (register) {
+      const contract = parseRegisterContract(register.fm);
+      if (register.fmParseError || register.fmStructuralError || contract.errors.length ||
+          (contract.version !== 2 && (required || contract.version !== 1))) fail('valid Reconciliation Contract v2 required');
+      if (contract.version === 2) {
+        const validation = validateReconciliationV2({ register, registerFile, inputArtifacts, targetIndex });
+        if (validation.errors.length) fail(validation.errors.map((entry) => entry.message).join('; '));
+        rows = parseReconciliationItems(register.body).rows;
+      }
+    } else if (required) fail('Reconciliation Contract v2 required');
   }
   function witnesses(target) {
     const parsed = parseTargetRef(target);
@@ -176,7 +232,8 @@ export function resolveScopedSourceRelations({ owner, unit, targetIndex, inputAr
   }
   for (const connection of inferred.values()) {
     const anchor = connection.ref ? inputNode(connection.ref) : null;
-    const matches = rows.filter((row) => row.inputId === connection.input_id && witnesses(row.target).length &&
+    const matches = rows.filter((row) => row.inputId === connection.input_id &&
+      ((!requireEffects && anchor) || witnesses(row.target).length) &&
       (!anchor || overlaps(anchor, inputNode(row.evidence))));
     if (!matches.length) { pending.push({ input_id: connection.input_id, ref: connection.ref, reason: 'source-effect-unconnected' }); continue; }
     const out = selected(connection.input_id);
@@ -215,6 +272,9 @@ export function resolveScopedSourceRelations({ owner, unit, targetIndex, inputAr
         contracts_sha256: hashBytes(Buffer.from(scopeJson(contractHashes))) } });
   }
   for (const entry of [...reads.values()]) read(entry.file, entry.sha256);
+  if (absentRegister && canonicalRepositoryPath(projectRoot, absentRegister,
+    { required: false, type: 'file', label: 'scoped source register' }).exists) fail('register appeared during source projection');
   return { owner, unit, sources: scopeSet(resolved), pending_connections: scopeSet(pending),
+    inferred_sources: scopeSet([...inferred.values()]), native_inputs: scopeSet([...nativeInputs.values()]),
     contracts: graph, contract_hashes: contractHashes, read_set: scopeSet([...reads.values()]) };
 }

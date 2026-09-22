@@ -11,7 +11,9 @@ import { REQUIRED_ITEM_COLS } from './reconciliation-items.mjs';
 import { REQUIRED_REGISTER_COLS } from './reconciliation-register.mjs';
 import { COMPONENT_MAPPING_COLUMNS, MAPPING_PROVENANCE_COLUMNS } from './mapping-provenance.mjs';
 import { resolveScopedCoverageBasis } from './scoped-work-coverage.mjs';
-import { resolveScopedSourceRelations } from './scoped-work-source-relations.mjs';
+import { resolveScopedSourceRelations, resolveScopedSourceProjection } from './scoped-work-source-relations.mjs';
+import { resolveScopedUnitProjection } from './scoped-work-projection.mjs';
+import { scopeJson } from './scoped-work-normalize.mjs';
 
 const OWNER = 'screen:RESULT-001', INPUT = 'IN-20260922-meeting-001';
 const REF = `input:${INPUT}#extracted-facts/01`;
@@ -209,4 +211,117 @@ test('D source relations: inspection and caller mutation never rewrite canonical
   const before = files.map((file) => fs.readFileSync(file)); const out = f.run();
   out.sources[0].selection.items.push('99'); out.sources[0].source.groups.length = 0;
   assert.deepEqual(f.run().sources[0].selection, select()); files.forEach((file, i) => assert.deepEqual(fs.readFileSync(file), before[i]));
+});
+
+function scope(f) {
+  const policyFile = path.join(f.root, 'scope-policy.yaml');
+  if (!fs.existsSync(policyFile)) fs.writeFileSync(policyFile, JSON.stringify({ work_execution: {
+    version: 1, owners: [OWNER], profiles: ['behavior'], role_limits: { behavior: ['screen'] }, deny_paths: [],
+  } }));
+  return resolveScopedUnitProjection({ ...f.options(), policyFile });
+}
+
+test('D R1 inferred sources: canonical links retain exact source anchors and every connected effect field', (t) => {
+  const f = fixture(t, { explicit: false, typed: true }), before = scope(f);
+  assert.deepEqual(before.projection.units[0].sources[0].selection, select());
+  const rows = [effect(), effect('02', 'other')]; rows[0][8] = 'record'; f.register(rows);
+  const after = scope(f);
+  assert.notEqual(scopeJson(before.projection), scopeJson(after.projection));
+  assert.equal(after.projection.units[0].sources[0].groups[0].effects[0].fields.sourceUnit, 'record');
+});
+
+test('D R1 inferred sources: native input metadata resolves effective Items without selecting unrelated groups', (t) => {
+  const f = fixture(t, { explicit: false, native: true }), before = scope(f);
+  assert.deepEqual(before.projection.units[0].sources[0].selection.items, ['01']);
+  const rows = [effect(), effect('02', 'other')]; rows[1][8] = 'record'; f.register(rows);
+  assert.deepEqual(scope(f).projection, before.projection);
+  f.change('input.md', ({ fm }) => fm.captured_by = 'another-source-recorder', f.inputs);
+  assert.notDeepEqual(scope(f).projection, before.projection);
+});
+
+test('D R1 inferred sources: an absent register is unresolved evidence, never inferred source coverage', (t) => {
+  const f = fixture(t, { explicit: false, typed: true }); fs.unlinkSync(f.registerFile);
+  const out = resolveScopedSourceProjection(f.options());
+  assert.deepEqual(out.sources, []); assert.equal(out.pending_connections.length, 1); noPermit(out);
+  const projection = scope(f).projection;
+  assert.equal(projection.units[0].source_dependencies.pending_connections.length, 1);
+  assert.ok(projection.evidence.nodes.some((node) => node.ref === REF));
+  assert.throws(() => f.run()); // The strict coverage resolver was not softened.
+  f.register(); assert.notDeepEqual(scope(f).projection, projection);
+});
+
+test('D R1 inferred sources: legacy facts do not fabricate v2 effects, malformed v2 is not downgraded', (t) => {
+  const f = fixture(t, { explicit: false, native: true });
+  fs.writeFileSync(f.registerFile, '# Legacy reconciliation\n');
+  const out = resolveScopedSourceProjection(f.options());
+  assert.deepEqual(out.sources, []); assert.equal(out.pending_connections.length, 1);
+  assert.equal(scope(f).projection.inputs[0].input_id, INPUT);
+  f.register(); fs.writeFileSync(f.registerFile, fs.readFileSync(f.registerFile, 'utf8').replace('"reconciliation_contract":2', '"reconciliation_contract":99'));
+  assert.throws(() => resolveScopedSourceProjection(f.options()), /Reconciliation Contract v2/);
+});
+
+test('D R1 inferred sources: explicit Items still require their actual register and cannot use the observation fallback', (t) => {
+  const f = fixture(t); fs.unlinkSync(f.registerFile);
+  assert.throws(() => resolveScopedSourceProjection({ ...f.options(), requireEffects: false }));
+  assert.throws(() => scope(f));
+});
+
+test('D R1 inferred sources: selected sources belonging to another known unit remain in the owner projection', (t) => {
+  const f = fixture(t, { explicit: false, native: true });
+  f.change('screen.md', ({ fm }) => fm.work_execution.units.push({ id: 'other', kind: 'behavior', contracts: ['artifact:DOC#other'], sources: [] }));
+  const before = scope(f).projection;
+  assert.equal(before.units.length, 2);
+  assert.deepEqual(before.units.find((entry) => entry.declaration.id === 'other').sources[0].selection.items, ['02']);
+  const rows = [effect(), effect('02', 'other')]; rows[1][8] = 'record'; f.register(rows);
+  assert.notDeepEqual(scope(f).projection, before);
+});
+
+test('D R1 inferred sources: selected effect dependencies enter the real evidence graph and keep their ordered content', (t) => {
+  const f = fixture(t, { explicit: false, typed: true });
+  const rows = [effect(), effect('01', 'other'), effect('02', 'other')]; f.register(rows);
+  const before = scope(f).projection;
+  assert.equal(before.units[0].sources[0].groups[0].effects.length, 2);
+  assert.ok(before.evidence.nodes.some((node) => node.ref === 'artifact:DOC#other'));
+  f.change('contract.md', (doc) => doc.body = doc.body.replace('Unselected contract.', 'Now consumed through the other effect.'));
+  assert.notDeepEqual(scope(f).projection, before);
+});
+
+test('D R1 inferred sources: unselected prose and selector order remain stable without suppressing raw audit changes', (t) => {
+  const f = fixture(t, { explicit: true, typed: true }), before = scope(f);
+  f.change('contract.md', (doc) => doc.body += '\n\n## More Notes\nUnselected prose.');
+  const after = scope(f); assert.deepEqual(after.projection, before.projection); assert.notDeepEqual(after.read_set, before.read_set);
+  f.change('screen.md', ({ fm }) => fm.work_execution.units[0].sources[0].items.reverse());
+  assert.deepEqual(scope(f).projection, after.projection);
+});
+
+
+test('D source closure: effect dependencies discover further canonical inputs without letting an unrelated source self-connect', (t) => {
+  const f = fixture(t), next = 'IN-20260922-meeting-002', nextRef = `input:${next}#extracted-facts/01`;
+  const fm = splitFrontmatter(fs.readFileSync(f.inputFile, 'utf8')).data;
+  f.write('next-input.md', { ...fm, input_id: next }, '## Extracted Facts\n- Additional dependent fact.', f.inputs);
+  f.write('extra.md', { artifact_id: 'EXTRA', artifact_type: 'domain-rules', domain: 'result', status: 'draft' },
+    `## Terms\nSelected effect consumes ${nextRef}`);
+  const dependent = effect(); dependent[5] = 'artifact:EXTRA#terms';
+  const nextEffect = [next, '01', 'compatible-fact', 'simple-update', 'update', 'artifact:EXTRA#terms', nextRef, 'inherit', 'statement', 'inherit'];
+  const register = () => fs.writeFileSync(f.registerFile, md({ reconciliation_contract: 2, review_profile: 'reconcile-stage04-v1', structured_since: '2026-09-01T00:00:00Z' },
+    `${table(REQUIRED_REGISTER_COLS, [[INPUT, 'meeting', 'simple-update×2', 'partially-reconciled', 'pending', 'artifact:DOC, artifact:EXTRA', '-', '-'],
+      [next, 'meeting', 'simple-update×1', 'partially-reconciled', 'pending', 'artifact:EXTRA', '-', '-']])}\n\n## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, [effect(), dependent, effect('02', 'other'), nextEffect])}`));
+  register();
+  const out = f.run(); assert.equal(out.sources.length, 2); assert.deepEqual(out.pending_connections, []);
+  assert.ok(out.sources.every((entry) => entry.issues.length === 0));
+  assert.ok(Object.hasOwn(out.contract_hashes, 'extra.md'));
+  const before = scope(f).projection;
+  nextEffect[8] = 'record'; register(); assert.notDeepEqual(scope(f).projection, before);
+  const unrelated = fixture(t); unrelated.change('screen.md', ({ fm }) => fm.work_execution.units[0].sources = [select(['02'])]);
+  assert.ok(unrelated.run().sources[0].issues.some((issue) => issue.reason === 'source-effect-unconnected'));
+});
+
+test('D R1 inferred sources: unconnected typed effects are hashed as facts but remain inadmissible for strict coverage', (t) => {
+  const f = fixture(t, { explicit: false, typed: true }); f.register([effect('01', 'other'), effect('02', 'other')]);
+  const before = scope(f).projection;
+  assert.equal(before.units[0].sources[0].groups[0].effects[0].target, 'artifact:DOC#other');
+  assert.ok(before.units[0].source_dependencies.unconnected_effects.length > 0);
+  assert.equal(f.run().pending_connections.length, 1);
+  const rows = [effect('01', 'other'), effect('02', 'other')]; rows[0][8] = 'record'; f.register(rows);
+  assert.notDeepEqual(scope(f).projection, before);
 });

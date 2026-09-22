@@ -12,7 +12,7 @@ import { validateInputArtifacts } from './input-artifact.mjs';
 import { collectInputFidelityIssues, inspectInputFidelity } from './input-fidelity.mjs';
 import { parseScopedOwner, parseScopedPolicy, decodeScopedYaml } from './scoped-work-declarations.mjs';
 import { createScopedReferenceResolver } from './scoped-work-refs.mjs';
-import { createScopedSourceResolver } from './scoped-work-sources.mjs';
+import { resolveScopedSourceProjection } from './scoped-work-source-relations.mjs';
 import { createScopedApiResolver } from './scoped-work-api.mjs';
 import { resolveScopedMappingEvidence } from './scoped-work-mapping.mjs';
 import { resolveScopedContractGraph, scopedGraphApiRowDependencies } from './scoped-work-graph.mjs';
@@ -66,7 +66,6 @@ export function resolveScopedUnitProjection({ owner, policyFile, targetIndex, in
   projectRoot, layout } = {}) {
   ownerParts(owner);
   const refs = createScopedReferenceResolver({ targetIndex, inputArtifacts, projectRoot });
-  const sources = createScopedSourceResolver({ targetIndex, inputArtifacts, registerFile, projectRoot });
   const apis = createScopedApiResolver({ targetIndex, projectRoot, layout });
   const files = new Map();
   const selectedInputs = new Set();
@@ -161,8 +160,15 @@ export function resolveScopedUnitProjection({ owner, policyFile, targetIndex, in
       for (const ref of declared.isolation.decisions) roots.add(ref);
       for (const id of declared.isolation.disabled_units) enqueue(ownerId, id);
     }
-    if (declared.sources.length) read(registerFile); // Bind the register before its cached parser reads it.
-    const selectedSources = sources.sources(declared.sources).map(source);
+    // Include current canonical source connections, not only authored selectors.
+    // Missing inferred effects remain visible facts; this projection grants no
+    // coverage. Strict Item resolution and admission stay in the coverage layer.
+    const sourceFacts = resolveScopedSourceProjection({ owner: ownerId, unit: declared.id,
+      targetIndex, inputArtifacts, registerFile, projectRoot, layout });
+    for (const entry of sourceFacts.read_set) read(entry.file, entry.sha256);
+    for (const ref of sourceFacts.contracts.roots) roots.add(ref);
+    for (const entry of sourceFacts.native_inputs) selectedInputs.add(entry.input_id);
+    const selectedSources = sourceFacts.sources.map((entry) => source(entry.source));
     const api = apis.unit(data.record.artifact_id, ownerId, declared.id);
     const apiRows = api.candidates.map((candidate) => {
       const body = targetIndex.artifacts.get(api.artifact_id).body;
@@ -213,7 +219,12 @@ export function resolveScopedUnitProjection({ owner, policyFile, targetIndex, in
         disabled_units: scopeSet(declared.isolation.disabled_units) } : null,
       host_visual_evidence: Object.fromEntries(Object.entries(declared.host_visual_evidence)
         .map(([id, value]) => [id, { ...value, m_keys: scopeSet(value.m_keys) }])),
-    }, sources: scopeSet(selectedSources), api_rows: scopeSet(apiRows) });
+    }, sources: scopeSet(selectedSources), api_rows: scopeSet(apiRows),
+    ...(sourceFacts.inferred_sources.length ? { source_dependencies: {
+      inferred: sourceFacts.inferred_sources, pending_connections: sourceFacts.pending_connections,
+      unconnected_effects: scopeSet(sourceFacts.sources.flatMap((entry) => entry.issues
+        .map((issue) => ({ input_id: entry.selection.input_id, ...issue })))),
+    } } : {}) });
   }
 
   const graph = resolveScopedContractGraph({ contracts: setUnion([...roots]), targetIndex, inputArtifacts, projectRoot });
