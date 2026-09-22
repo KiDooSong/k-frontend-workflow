@@ -13,7 +13,7 @@ const suites = ['scoped-work-refs.test.mjs', 'scoped-work-sources.test.mjs',
   'scoped-work-mapping.test.mjs', 'scoped-work-api.test.mjs', 'scoped-work-normalize.test.mjs', 'scoped-work-graph.test.mjs',
   'scoped-work-projection.test.mjs', 'scoped-work-decisions.test.mjs', 'scoped-work-boundaries.test.mjs', 'scoped-work-uncertainty.test.mjs',
   'scoped-work-applicability.test.mjs', 'scoped-work-basis.test.mjs', 'scoped-work-bindings.test.mjs', 'scoped-work-transitions.test.mjs',
-  'scoped-work-git-transitions.test.mjs', 'scoped-work-coverage.test.mjs', 'scoped-work-receipts.test.mjs'];
+  'scoped-work-git-transitions.test.mjs', 'scoped-work-coverage.test.mjs', 'scoped-work-receipts.test.mjs', 'scoped-work-source-relations.test.mjs'];
 const runtime = ['scoped-work-request.mjs', 'scoped-work-declarations.mjs', 'reconciliation-markdown-ast.mjs',
   ...suites.map((name) => name.replace('.test.mjs', '.mjs'))];
 
@@ -26,7 +26,7 @@ function checkedNode(args, cwd, env = process.env) {
   return run;
 }
 
-test('D packed: real reference, source, mapping, API, normalization, graph traversal, unit projection, decision applicability, ownership boundaries, uncertainty relations, combined applicability, scope-basis digests and conservative binding/transition and original Git snapshot inspection plus coverage receipt integrity and selected review-file transport run from the shipped runtime', (t) => {
+test('D packed: real reference, source, mapping, API, normalization, graph traversal, unit projection, decision applicability, ownership boundaries, uncertainty relations, combined applicability, scope-basis digests and conservative binding/transition and original Git snapshot inspection plus coverage receipt integrity, selected review-file transport and canonical source relations run from the shipped runtime', (t) => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'scoped-packed-'));
   t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
   const packed = path.join(temp, 'payload');
