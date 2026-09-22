@@ -114,7 +114,7 @@ test('D coverage: raw contract changes outside a selected section invalidate rec
 test('D coverage: a non-first selected effect field changes the effect hash', (t) => {
   const f = fixture(t), receipt = f.receipt();
   const text = fs.readFileSync(f.registerFile, 'utf8').replace('artifact:DOC#other | ' + REF + ' | inherit | statement |',
-    'artifact:DOC#other | ' + REF + ' | inherit | second-statement |');
+    'artifact:DOC#other | ' + REF + ' | inherit | record |');
   fs.writeFileSync(f.registerFile, text);
   const out = f.run([receipt]); assert.deepEqual(out.receipt_mismatches, ['effects_sha256']); noPermit(out);
 });
@@ -122,7 +122,7 @@ test('D coverage: a non-first selected effect field changes the effect hash', (t
 test('D coverage: an unselected Item effect changes audit bytes without changing the selected hashes', (t) => {
   const f = fixture(t), receipt = f.receipt(), before = f.basis();
   const ref = REF.replace('/01', '/02');
-  fs.writeFileSync(f.registerFile, fs.readFileSync(f.registerFile, 'utf8').replace(`${ref} | inherit | statement |`, `${ref} | inherit | unselected-statement |`));
+  fs.writeFileSync(f.registerFile, fs.readFileSync(f.registerFile, 'utf8').replace(`${ref} | inherit | statement |`, `${ref} | inherit | record |`));
   const out = f.run([receipt]); assert.equal(out.receipt_state, 'current');
   assert.notDeepEqual(out.read_set, before.read_set); noPermit(out);
 });
