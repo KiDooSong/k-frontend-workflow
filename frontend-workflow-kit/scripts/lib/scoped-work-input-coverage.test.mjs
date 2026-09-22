@@ -66,6 +66,7 @@ function coverageFixture(t, config) {
   const policyFile = path.join(kitRoot, 'policy.yaml'), layoutFile = path.join(kitRoot, 'layout.yaml'), manifestFile = path.join(kitRoot, 'manifest.yaml');
   fs.writeFileSync(policyFile, JSON.stringify({ work_execution: { version: 1, owners: [OWNER], profiles: ['behavior'],
     role_limits: { behavior: ['screen', 'domain_component', 'hook', 'api_client', 'test'] }, deny_paths: [] } }));
+
   fs.writeFileSync(layoutFile, JSON.stringify({ roles: { screen: ['src/features/{domain}/screens/**'],
     domain_component: ['src/features/{domain}/components/**'], hook: ['src/features/{domain}/hooks/**'],
     api_client: ['src/api/**'], test: ['src/features/{domain}/tests/**'], route: ['src/routes/**'] } }));
@@ -212,13 +213,14 @@ test('D input coverage: memory receipts and forged caller relation/projection ca
 });
 
 test('D input coverage: report bytes changing during canonical evaluation invalidate the pinned observation', (t) => {
-  const f = coverageFixture(t), file = f.report(f.proof()), original = fs.readFileSync; let changed = false;
-  fs.readFileSync = function (name, ...args) {
-    const result = original.call(this, name, ...args);
+  const f = coverageFixture(t), file = f.report(f.proof()), options = f.options(), original = fs.openSync;
+  let changed = false;
+  t.mock.method(fs, 'openSync', function (name, ...args) {
+    const fd = original.call(this, name, ...args);
     if (!changed && name === f.ownerFile) { changed = true; fs.appendFileSync(file, '\nChanged during inspection.'); }
-    return result;
-  };
-  try { assert.throws(() => f.inspect(), /snapshot changed/); } finally { fs.readFileSync = original; }
+    return fd;
+  });
+  assert.throws(() => inspectScopedInputCoverage(options), /snapshot changed/);
   assert.equal(changed, true);
 });
 
