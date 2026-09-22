@@ -118,8 +118,9 @@ test('D owner: unknown units, missing concrete targets and unsupported changes n
 
 test('D owner: a late profile evidence edit is detected even though later prerequisites do not consume the file', (t) => {
   const f = fixture(t); f.api(); f.put(ENTRY, 'export const value = 1;');
-  const original = fs.readFileSync; let changed = false;
-  t.mock.method(fs, 'readFileSync', function(file, ...args) {
+  // readCurrentBytes opens once and uses readSync, not readFileSync.
+  const original = fs.openSync; let changed = false;
+  t.mock.method(fs, 'openSync', function(file, ...args) {
     const value = original.call(this, file, ...args);
     if (!changed && String(file) === path.join(f.root, ENTRY)) { changed = true; fs.appendFileSync(path.join(f.root, 'contracts/result.ts'), '\n// later change'); }
     return value;
@@ -129,8 +130,9 @@ test('D owner: a late profile evidence edit is detected even though later prereq
 
 test('D owner: late API evidence directory additions are detected without treating the old file hashes as completeness', (t) => {
   const f = fixture(t); f.api(); f.put(ENTRY, 'export const value = 1;');
-  const original = fs.readFileSync; let changed = false;
-  t.mock.method(fs, 'readFileSync', function(file, ...args) {
+  // readCurrentBytes opens once and uses readSync, not readFileSync.
+  const original = fs.openSync; let changed = false;
+  t.mock.method(fs, 'openSync', function(file, ...args) {
     const value = original.call(this, file, ...args);
     if (!changed && String(file) === path.join(f.root, ENTRY)) { changed = true; f.put('contracts/new.ts', 'export interface Another {}'); }
     return value;
@@ -142,4 +144,15 @@ test('D owner: returned observations and caller targets are independent across r
   const f = fixture(t), args = f.options(), before = JSON.stringify(args.targets), out = inspectScopedOwner(args);
   assert.equal(JSON.stringify(args.targets), before); out.read_set.length = 0; out.decision_scopes.blocking_units.push('known');
   const next = f.run(); assert.equal(next.owner_satisfied, true); assert.ok(next.read_set.length > 0); noGrant(next);
+});
+
+test('D owner: API-dependent behavior pins contract files and directory membership before path composition', (t) => {
+  const f = fixture(t); f.api(); const target = f.put(ENTRY, 'export const value = 1;');
+  const before = fs.readFileSync(target), out = f.run({ targets: [{ path: ENTRY, change: 'M' }] });
+  assert.equal(out.owner_satisfied, true, JSON.stringify(out.denials));
+  assert.equal(out.profile.api_evidence.length, 1); assert.equal(out.profile.api_evidence[0].satisfied, true);
+  assert.ok(out.read_set.some((entry) => entry.file === 'contracts/result.ts'));
+  assert.ok(out.directory_read_set.some((entry) => entry.file === 'contracts' &&
+    entry.entries.some(([name, kind]) => name === 'result.ts' && kind === 'file')));
+  assert.deepEqual(fs.readFileSync(target), before); noGrant(out);
 });
