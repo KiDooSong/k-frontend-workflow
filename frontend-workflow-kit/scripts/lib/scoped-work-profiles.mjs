@@ -96,7 +96,9 @@ export function inspectScopedProfile(options = {}) {
   if (declared.kind !== 'visual') {
     if (!api.selections.length && identity.metadata.api_required !== false) deny('api-selection-required');
     const selected = api.candidates.filter((row) => {
-      if (row.candidate.confidence !== 'confirmed' || row.candidate.gate !== 'active' || row.candidate.valid !== true) {
+      // unit() rejects invalid v2 analysis and returns the original candidate.
+      // `valid` exists only on the analyzer's actionable-candidate copies.
+      if (row.candidate.confidence !== 'confirmed' || row.candidate.gate !== 'active') {
         deny('api-not-confirmed-active', { endpoint: row.selection }); return false;
       }
       return true;
