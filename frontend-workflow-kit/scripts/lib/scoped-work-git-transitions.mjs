@@ -13,6 +13,7 @@ import { captureCurrentTree, captureCurrentIndex, snapshotRecords } from './curr
 import { materializeRawGitTree, runVisualGit } from './visual-refresh-git-objects.mjs';
 import { buildReconciliationTargetIndex } from './reconciliation-target-index.mjs';
 import { inspectScopedDecisionTransitions } from './scoped-work-transitions.mjs';
+import { inspectScopedDecisionScopeTransitions } from './scoped-work-decision-scopes.mjs';
 import { scopeSet } from './scoped-work-normalize.mjs';
 import { ScopedWorkContractError } from './scoped-work-request.mjs';
 
@@ -74,7 +75,7 @@ function snapshotContext(ctx, view, raw, resources) {
   };
 }
 
-export function inspectScopedGitDecisionTransitions(options = {}) {
+function inspectOriginalGitDecisionPair(options, inspectPair) {
   if (!options || typeof options !== 'object' || Array.isArray(options)) fail('explicit options object required');
   for (const key of Object.keys(options)) if (!KEYS.has(key)) fail(`unsupported option: ${key}`);
   ownerParts(options.owner);
@@ -100,7 +101,7 @@ export function inspectScopedGitDecisionTransitions(options = {}) {
       return snapshotContext(ctx, view, raw, resources);
     };
     const previous = materialize(before), current = materialize(after);
-    const findings = inspectScopedDecisionTransitions({ owner: options.owner,
+    const findings = inspectPair({ owner: options.owner,
       before: previous.options, after: current.options });
     const gitReadSets = { before: previous.audit(findings.read_sets.before), after: current.audit(findings.read_sets.after) };
     // Retain the complete repository diff, including paths outside --root.
@@ -119,4 +120,14 @@ export function inspectScopedGitDecisionTransitions(options = {}) {
   } finally {
     for (const raw of temporary.reverse()) raw.cleanup();
   }
+}
+
+// The evaluator is selected here, never supplied through options or serialized
+// approval/projection data. Keep the original conservative inspection unchanged.
+export function inspectScopedGitDecisionTransitions(options = {}) {
+  return inspectOriginalGitDecisionPair(options, inspectScopedDecisionTransitions);
+}
+
+export function inspectScopedGitDecisionScopes(options = {}) {
+  return inspectOriginalGitDecisionPair(options, inspectScopedDecisionScopeTransitions);
 }
