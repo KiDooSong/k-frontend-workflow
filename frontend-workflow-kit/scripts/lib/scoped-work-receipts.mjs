@@ -48,7 +48,7 @@ function fencedValue(body, node, file) {
   if (!opener || node.meta) fail(`noncanonical work-coverage fence: ${file}`);
   const closing = new RegExp(`^ {0,3}${opener[1][0]}{${opener[1].length},}[ \t]*$`);
   if (lines.length < 2 || !closing.test(lines.at(-1))) fail(`unclosed work-coverage fence: ${file}`);
-  return decodeScopedYaml(node.value, `work-coverage in ${file}`);
+  return decodeScopedYaml(node.value.replace(/\r\n|\r/g, '\n'), `work-coverage in ${file}`);
 }
 
 export function loadScopedCoverageReports({ projectRoot, coverage_reports = [] } = {}) {
