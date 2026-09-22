@@ -188,7 +188,10 @@ test('D input coverage: no-effect must preserve exact narrow/full origin scope a
   const { f, proof } = routing(t); f.report({ ...proof, origin_source_refs: [] }); pending(f.inspect());
   f.report({ ...proof, unit: 'other' }); pending(f.inspect());
   const full = routing(t); full.f.origins([{ input_id: INPUT, source_refs: [] }]); pending(full.f.inspect());
-  full.f.report({ ...full.proof, origin_source_refs: [] }); assert.equal(full.f.inspect().coverage_satisfied, true);
+  full.f.report({ ...full.proof, origin_source_refs: [] });
+  const out = full.f.inspect(); pending(out);
+  assert.ok(out.origin_inputs[0].reasons.includes('routing-affects-selected-contract'));
+  assert.deepEqual(out.origin_inputs[0].routing.origin_source.selection.items, ['01', '02']);
 });
 
 test('D input coverage: input/effect/contract hash changes reject previous partial review evidence', (t) => {
@@ -230,4 +233,57 @@ test('D input coverage: no-origin canonical work still checks sources, and inspe
   const out = f.inspect(); assert.equal(out.coverage_satisfied, true); assert.deepEqual(out.origin_inputs, []); noApproval(out);
   files.forEach((file, i) => assert.deepEqual(fs.readFileSync(file), bytes[i]));
   const g = coverageFixture(t, { explicit: false }); g.origins([]); assert.equal(g.inspect().coverage_satisfied, true);
+});
+
+
+test('D origin routing: full input with genuinely unrelated current effects can use a reviewed routing subset', (t) => {
+  const { f, proof } = routing(t); f.register([effect('01', 'other'), effect('02', 'other')]);
+  f.origins([{ input_id: INPUT, source_refs: [] }]); f.report({ ...proof, origin_source_refs: [] });
+  const out = f.inspect(); assert.equal(out.coverage_satisfied, true);
+  assert.deepEqual(out.origin_inputs[0].routing.source.selection.items, ['02']);
+  assert.deepEqual(out.origin_inputs[0].routing.origin_source.selection.items, ['01', '02']);
+  assert.deepEqual(out.sources, []); noApproval(out);
+});
+
+test('D origin routing: a new unselected related effect defeats full-input no-effect without changing its selected receipt hash', (t) => {
+  const { f, proof } = routing(t); f.register([effect('02', 'other')]);
+  f.origins([{ input_id: INPUT, source_refs: [] }]); f.report({ ...proof, origin_source_refs: [] });
+  const before = f.inspect(); assert.equal(before.coverage_satisfied, true);
+  f.register([effect(), effect('02', 'other')]);
+  const after = f.inspect(); pending(after);
+  assert.deepEqual(after.origin_inputs[0].routing.basis, before.origin_inputs[0].routing.basis);
+  assert.deepEqual(after.origin_inputs[0].routing.receipt_mismatches, []);
+  assert.ok(after.origin_inputs[0].reasons.includes('routing-affects-selected-contract'));
+});
+
+test('D origin routing: a new unselected unrelated effect does not force receipt rewrite or prior work repetition', (t) => {
+  const { f, proof } = routing(t); f.register([effect('02', 'other')]);
+  f.origins([{ input_id: INPUT, source_refs: [] }]); f.report({ ...proof, origin_source_refs: [] });
+  const before = f.inspect(); assert.equal(before.coverage_satisfied, true);
+  f.register([effect('01', 'other'), effect('02', 'other')]);
+  const after = f.inspect(); assert.equal(after.coverage_satisfied, true);
+  assert.deepEqual(after.origin_inputs[0].routing.basis, before.origin_inputs[0].routing.basis);
+  assert.deepEqual(after.origin_inputs[0].routing.origin_source.selection.items, ['01', '02']);
+});
+
+test('D origin routing: a narrow unrelated origin stays independent of a related effect outside its scope', (t) => {
+  const { f } = routing(t), out = f.inspect(); assert.equal(out.coverage_satisfied, true);
+  assert.deepEqual(out.origin_inputs[0].routing.origin_source.selection.items, ['02']);
+  assert.ok(!out.origin_inputs[0].routing.graph.nodes.some((node) => node.ref === 'artifact:DOC#rules'));
+});
+
+test('D origin routing: all effects in an origin-selected Item are inspected, not only its first unrelated row', (t) => {
+  const { f, proof } = routing(t); f.register([effect('01', 'other'), effect(), effect('02', 'other')]);
+  f.origins([{ input_id: INPUT, source_refs: [REF] }]); f.report({ ...proof, origin_source_refs: [REF] });
+  const out = f.inspect(); pending(out);
+  assert.equal(out.origin_inputs[0].routing.origin_source.groups[0].effects.length, 2);
+  assert.ok(out.origin_inputs[0].reasons.includes('routing-affects-selected-contract'));
+});
+
+test('D origin routing: a reviewed attachment for another source anchor cannot explain an origin with no effects', (t) => {
+  const { f, proof } = routing(t); f.register([effect('02', 'other')]);
+  f.origins([{ input_id: INPUT, source_refs: [REF] }]); f.report({ ...proof, origin_source_refs: [REF] });
+  const out = f.inspect(); pending(out);
+  assert.equal(out.origin_inputs[0].routing.origin_source, null);
+  assert.ok(out.origin_inputs[0].reasons.includes('origin-effect-unconnected'));
 });

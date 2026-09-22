@@ -9,6 +9,8 @@ import { normalizeWorkOrigins, readCurrentBytes, hashBytes } from './current-wor
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { buildInputArtifactIndex, resolveInputArtifact } from './provenance.mjs';
 import { validateInputArtifacts } from './input-artifact.mjs';
+import { parseReconciliationRegister } from './reconciliation-register.mjs';
+import { parseReconciliationItems } from './reconciliation-items.mjs';
 import { createScopedSourceResolver } from './scoped-work-sources.mjs';
 import { createScopedReferenceResolver } from './scoped-work-refs.mjs';
 import { resolveScopedSourceRelations } from './scoped-work-source-relations.mjs';
@@ -118,8 +120,22 @@ export function inspectScopedInputCoverage({ origin_inputs, coverage_reports = [
     const selectedSource = sources.find((entry) => entry.selection.input_id === origin.input_id);
     if (selectedSource && (!origin.source_refs.length || origin.source_refs.some((ref) =>
       selectedSource.selection.source_refs.some((selected) => overlaps(inputNode(ref), inputNode(selected)))))) reasons.push('origin-is-unit-source');
-    const routingRoots = union(source.groups.flatMap((group) => group.effects.flatMap((effect) =>
-      [effect.evidence.ref, ...(['none', 'input'].includes(effect.target.kind) ? [] : [effect.target.ref])])));
+    // A reviewed subset is not an exclusion list for the original request.
+    // Inspect every current Item touching that origin scope, retaining all of
+    // each matching group's effects. Keep these routing observations out of
+    // implementation sources and out of the receipt's selected-effect hash.
+    const register = parseReconciliationRegister(registerFile);
+    const originNodes = origin.source_refs.map(inputNode);
+    const rows = parseReconciliationItems(register.body).rows.filter((row) => row.inputId === origin.input_id);
+    const originItems = union(rows.filter((row) => !originNodes.length ||
+      originNodes.some((node) => overlaps(node, inputNode(row.evidence)))).map((row) => row.item));
+    const originRows = rows.filter((row) => originItems.includes(row.item));
+    const originSource = originItems.length ? sourceReader.source({ input_id: origin.input_id, items: originItems,
+      source_refs: union(originRows.map((row) => row.evidence)) }) : null;
+    if (!originSource) reasons.push('origin-effect-unconnected');
+    const routingRoots = union([source, ...(originSource ? [originSource] : [])].flatMap((selected) =>
+      selected.groups.flatMap((group) => group.effects.flatMap((effect) =>
+        [effect.evidence.ref, ...(['none', 'input'].includes(effect.target.kind) ? [] : [effect.target.ref])]))));
     const routingGraph = resolveScopedContractGraph({ ...args, contracts: routingRoots }); audit(routingGraph.read_set);
     const projection = actualRelations();
     const selectedNodes = [...relations.contracts.nodes];
@@ -132,7 +148,7 @@ export function inspectScopedInputCoverage({ origin_inputs, coverage_reports = [
       return !record || record.kind === 'unknown' || record.status !== 'resolved';
     });
     if (unresolved.length) reasons.push('unit-uncertainty-unresolved');
-    return { accepted: !reasons.length, reasons: union(reasons), source, basis,
+    return { accepted: !reasons.length, reasons: union(reasons), source, origin_source: originSource, basis,
       receipt_mismatches: comparison.mismatches, unresolved_relations: unresolved, graph: routingGraph };
   }
 
