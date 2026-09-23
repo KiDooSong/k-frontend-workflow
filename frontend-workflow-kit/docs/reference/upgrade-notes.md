@@ -17,6 +17,31 @@ or root config.
 
 ---
 
+## Scoped work execution (#238)
+
+- **Unadopted repositories need no action.** Without a policy `work_execution`
+  section, readiness/packet/run/report/forbidden-paths, current work and
+  visual-refresh v1 keep their existing results.
+- The five `--work` CLIs now evaluate a document of `authority: scoped` requests as
+  [scoped work](scoped-work.md) instead of rejecting it. A document mixing current
+  and scoped requests is an input error.
+- **Adopting is a manual, reviewed step:** add `work_execution` to the policy and
+  to each adopted owner, and optional `decision_work_scopes` to decision homes,
+  only after reviewing ceilings, deny paths, roots and units. Pilot one owner or
+  domain first; the planner never adopts anything for you.
+- After adoption, an adopted owner's scoped paths return `work-selection-required`
+  in `readiness --path`, no-work `forbidden-paths`, current work
+  (`CW-WORK-SELECTION-REQUIRED`) and visual-refresh v1. Select the owner unit with
+  `authority: scoped` instead of an older mode or intent.
+- **Do not downgrade while declarations remain.** The upgrade planner refuses to
+  apply a payload that cannot enforce adoption markers while tracked
+  `work_execution`/`decision_work_scopes` declarations remain (`--consumer-root`
+  selects the repository to inspect). Stop scoped work, restore the reviewed deny
+  boundaries and withdraw adoption first; an older binary run by hand is not
+  covered.
+
+---
+
 ## Partial Reconciliation Checkpoints (#232)
 
 - **Upgrade the runtime first**, before writing `partially-reconciled`: older kits

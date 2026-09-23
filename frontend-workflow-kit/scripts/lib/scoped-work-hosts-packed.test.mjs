@@ -1,7 +1,7 @@
 // Focused pack regression for D28+ host consent, request composition, the scoped
-// baseline preflight/Git backstop, adopted-path guards and the downgrade refusal.
-// It does not replay the already shipped resolver test suite. Existing package/CI
-// globs still select their full suites.
+// baseline preflight/Git backstop, adopted-path guards, the downgrade refusal and
+// the public work CLIs. It does not replay the already shipped resolver test suite.
+// Existing package/CI globs still select their full suites.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -11,9 +11,10 @@ import { spawnSync } from 'node:child_process';
 import { KIT_ROOT } from './util.mjs';
 
 const SUITES = ['scoped-work-hosts.test.mjs', 'scoped-work-composition.test.mjs', 'scoped-work-execution.test.mjs',
-  'scoped-work-adoption.test.mjs', 'scoped-work-downgrade.test.mjs'];
-// The downgrade suite exercises the shipped upgrade planner rather than a scoped runtime module.
-const RUNTIME = SUITES.map((name) => name === 'scoped-work-downgrade.test.mjs' ? 'upgrade-planner.mjs' : name.replace('.test.mjs', '.mjs'));
+  'scoped-work-adoption.test.mjs', 'scoped-work-downgrade.test.mjs', 'scoped-work-cli.test.mjs'];
+// The downgrade and CLI suites exercise the shipped planner and work CLI modules.
+const SHIPPED = { 'scoped-work-downgrade.test.mjs': 'upgrade-planner.mjs', 'scoped-work-cli.test.mjs': 'current-work-cli.mjs' };
+const RUNTIME = SUITES.map((name) => SHIPPED[name] ?? name.replace('.test.mjs', '.mjs'));
 
 function checkedNode(args, cwd, env = process.env) {
   const run = spawnSync(process.execPath, args, { cwd, env, encoding: 'utf8',

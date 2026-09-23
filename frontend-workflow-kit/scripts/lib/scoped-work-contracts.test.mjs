@@ -265,9 +265,10 @@ for (const [name, parseIds] of [
   });
 }
 
-// Actual Git fixture + actual public wrappers. No authority files are needed:
-// C's strict request rejection must happen before snapshot/resource evaluation.
-// Missing modules/usage failures are not accepted as the expected rejection.
+// Actual Git fixture + actual public wrappers. Since D34 the five CLIs evaluate a
+// scoped document with D instead of rejecting it as unimplemented. This fixture has
+// no adopted baseline authority, so every CLI must still fail closed (exit 2)
+// before writing any output. Missing modules/usage failures are not accepted.
 function cliFixture(t) {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'scoped-contracts-'));
   t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
@@ -280,7 +281,7 @@ function cliFixture(t) {
   const work = path.join(temp, 'request.json'); fs.writeFileSync(work, JSON.stringify(request()));
   return { temp, root, work };
 }
-function assertUnsupportedCli(root, fixture) {
+function assertScopedFailsClosedCli(root, fixture) {
   for (const script of ['readiness.mjs', 'workflow-packet.mjs', 'workflow-run.mjs', 'workflow-report.mjs', 'forbidden-paths.mjs']) {
     const output = path.join(fixture.temp, `out-${script}`);
     const args = ['--work', fixture.work, '--root', fixture.root, '--json'];
@@ -290,14 +291,15 @@ function assertUnsupportedCli(root, fixture) {
       { cwd: root, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, timeout: 60000 });
     assert.equal(run.error, undefined, `${script}: ${run.error}`);
     assert.equal(run.status, 2, `${script}: ${run.stderr}\n${run.stdout}`);
-    assert.match(run.stderr + run.stdout, /C supports authority:current only; scoped is not implemented/, script);
+    assert.match(run.stderr, /policy: path must stay inside --root/, script);
+    assert.doesNotMatch(run.stderr + run.stdout, /not implemented|Cannot find module|Usage:/, script);
     assert.equal(fs.existsSync(output), false, `${script}: rejected request must not write output`);
   }
 }
-test('D1 five public CLIs reject scoped before output or packet use', (t) => {
-  assertUnsupportedCli(KIT, cliFixture(t));
+test('D34 five public CLIs fail closed on a scoped document without adopted baseline authority', (t) => {
+  assertScopedFailsClosedCli(KIT, cliFixture(t));
 });
-test('D1 packed CLI remains unsupported; declaration modules are packaged, tests are not', (t) => {
+test('D34 packed CLIs fail closed the same way; declaration modules are packaged, tests are not', (t) => {
   const fixture = cliFixture(t);
   const packed = path.join(fixture.temp, 'packed');
   const run = spawnSync(process.execPath, [path.join(KIT, 'scripts/pack-frontend-workflow-kit.mjs'), '--out', packed],
@@ -312,5 +314,5 @@ test('D1 packed CLI remains unsupported; declaration modules are packaged, tests
     "import { parseScopedPolicy } from './scripts/lib/scoped-work-declarations.mjs'; if (parseScopedPolicy(undefined) !== null) process.exitCode = 1;"],
     { cwd: packed, encoding: 'utf8', timeout: 60000 });
   assert.equal(load.status, 0, load.stderr || load.stdout);
-  assertUnsupportedCli(packed, fixture);
+  assertScopedFailsClosedCli(packed, fixture);
 });

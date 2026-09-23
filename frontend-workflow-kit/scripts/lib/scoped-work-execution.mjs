@@ -311,3 +311,72 @@ export function evaluateScopedGit(preflight, { staged = false } = {}) {
     ok: violations.length === 0 && preflight.ready,
   };
 }
+
+// D34: scoped packet/report transport. A packet records baseline eligibility for
+// review; it is never a stored allow decision. Report/backstop re-evaluate the same
+// request against the same immutable baseline and require the recorded context.
+export function scopedPacketEnvelope(preflight) {
+  const value = publicScopedEnvelope(preflight);
+  return { ...value, packet_type: 'scoped-work',
+    packet_status: preflight.all_absorbed ? 'not-applicable' : preflight.ready ? 'ready-for-work' : 'ambiguity' };
+}
+export function renderScopedPacketMarkdown(preflight) {
+  const env = scopedPacketEnvelope(preflight);
+  return [
+    '---', 'kind: scoped-work-packet', 'work_contract: 1',
+    `request_digest: ${JSON.stringify(env.request_digest)}`,
+    `baseline_commit: ${JSON.stringify(env.snapshot.commit)}`,
+    `baseline_tree: ${JSON.stringify(env.snapshot.tree)}`,
+    '---', '', '# Scoped Work Packet', '',
+    '- authority: `scoped`', `- ready: \`${env.ready}\``, `- packet_status: \`${env.packet_status}\``,
+    `- requests: ${env.requests.length} · origins: ${env.origin_inputs.length} · denials: ${env.denials.length} · errors: ${env.errors.length}`,
+    '', '## Machine Envelope', '```json', JSON.stringify(env, null, 2), '```', '',
+    '> This packet records baseline eligibility. It is not a stored allow decision, human approval or semantic isolation proof; report/backstop re-evaluate the same request against the immutable baseline.', '',
+  ].join('\n');
+}
+export function parseScopedPacket(file) {
+  const raw = readCurrentBytes(file, 'packet').toString('utf8');
+  const match = /## Machine Envelope\s*\n```json\s*\n([\s\S]*?)\n```/.exec(raw);
+  if (!match) throw new CurrentWorkExecutionError('packet: scoped Machine Envelope not found');
+  let value;
+  try { value = JSON.parse(match[1]); }
+  catch (error) { throw new CurrentWorkExecutionError(`packet: invalid scoped Machine Envelope JSON (${error.message})`); }
+  if (value?.work_contract !== 1 || value.packet_type !== 'scoped-work' || value.authority !== 'scoped') {
+    throw new CurrentWorkExecutionError('packet: unsupported scoped work contract');
+  }
+  return value;
+}
+const packetContext = (snapshot) => JSON.stringify(stable({ project_prefix: snapshot?.project_prefix, resources: snapshot?.resources,
+  authority_read_set: snapshot?.authority_read_set, scoped_directory_read_set: snapshot?.scoped_directory_read_set,
+  target_read_set: snapshot?.target_read_set, work_request_path: snapshot?.work_request?.path }));
+export function assertScopedPacketMatches(preflight, packet) {
+  if (packet.request_digest !== preflight.request_digest) throw new CurrentWorkExecutionError('packet: request digest changed since packet creation');
+  if (packet.snapshot?.commit !== preflight.snapshot.commit || packet.snapshot?.tree !== preflight.snapshot.tree) {
+    throw new CurrentWorkExecutionError('packet: Git baseline changed since packet creation');
+  }
+  if (packetContext(packet.snapshot) !== packetContext(preflight.snapshot)) {
+    throw new CurrentWorkExecutionError('packet: project/resource/authority context changed; create a new preflight/checkpoint');
+  }
+  if (packet.snapshot?.work_request?.hash !== preflight.snapshot.work_request.hash) {
+    throw new CurrentWorkExecutionError('packet: work request bytes changed since packet creation');
+  }
+  if (JSON.stringify(stable(packet.origin_inputs || [])) !== JSON.stringify(publicScopedEnvelope(preflight).origin_inputs)) {
+    throw new CurrentWorkExecutionError('packet: origin identity/hash changed since packet creation');
+  }
+}
+export function scopedReportEnvelope(preflight, gitResult) {
+  const value = publicScopedEnvelope(preflight);
+  return stable({ work_contract: 1, report_type: 'scoped-work', authority: 'scoped', request_digest: value.request_digest,
+    snapshot: value.snapshot, origin_inputs: value.origin_inputs, requests: value.requests, ready: value.ready,
+    backstop: gitResult, required_reviews: value.required_reviews, approval_verified: false, semantic_coverage_verified: false });
+}
+export function renderScopedReportMarkdown(preflight, gitResult) {
+  const env = scopedReportEnvelope(preflight, gitResult);
+  return [
+    '---', 'kind: scoped-work-run-report', 'work_contract: 1', `request_digest: ${JSON.stringify(env.request_digest)}`, '---', '',
+    '# Scoped Work Run Report', '', `- baseline ready: \`${env.ready}\``, `- backstop ok: \`${gitResult.ok}\``,
+    `- changed records: ${gitResult.changed_records.length} · violations: ${gitResult.violations.length}`,
+    '', '## Machine Envelope', '```json', JSON.stringify(env, null, 2), '```', '',
+    '> Report/backstop evidence is review input. It does not verify human approval, semantic isolation or product/merge approval.', '',
+  ].join('\n');
+}

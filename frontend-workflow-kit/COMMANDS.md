@@ -64,7 +64,25 @@ All targets still require current path authority. Keep actual denials and unreso
 origins; only tool-classified higher prerequisites are `future_requirements`.
 Do not mix `--work` with legacy/visual selection flags or use another branch to
 bypass a deny. No-work and visual-refresh v1 retain their existing authority;
-`scoped`/D and partial/no-effect receipts are not supported by C.
+partial/no-effect receipts are not accepted by current authority.
+
+## Scoped Work (D)
+
+For an explicitly adopted owner, the same five CLIs evaluate a document of
+`authority: scoped` requests that each select an owner **unit** (regular-file
+`A`/`M` targets only). See the [scoped-work reference](docs/reference/scoped-work.md)
+for the adoption checkpoint, baseline preflight, host/shared-target rules, Git
+backstop, fallback guards and rollback.
+
+```bash
+npm run workflow:readiness -- --work .workflow/scoped-work.json --json
+npm run workflow:run -- --work .workflow/scoped-work.json --json
+```
+
+Adoption (`work_execution`, `decision_work_scopes`) is a human-reviewed change. An
+adopted owner's scoped paths return `work-selection-required` to no-work, current
+and visual-refresh v1 authority. Do not mix current and scoped requests in one
+document, and do not retry a denied scoped task under another mode or intent.
 
 ## Input Artifacts
 
