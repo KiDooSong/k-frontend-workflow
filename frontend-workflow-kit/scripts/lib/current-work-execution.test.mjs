@@ -63,6 +63,9 @@ function project(t, { malformedPolicy = false, origin = null } = {}) {
     fs.writeFileSync(path.join(root, 'docs/frontend-workflow/_meta/reconciliation-register.md'), `---\ntitle: Current work origin fixture\nstatus: draft\nkind: meta-register\n---\n\n# Reconciliation Register\n\n| Input ID | Source | Classification | Reconcile Status | Result | Touched Artifacts | Created Items | Supersedes |\n|---|---|---|---|---|---|---|---|\n| IN-20260720-figma-001 | figma | simple-update | reconciled | accepted | ${origin === 'unconnected' ? 'OTHER-001 screen-spec' : 'COUPON-001 screen-spec'} | - | - |\n`);
   }
   execFileSync('git', ['init', '-q'], { cwd: root });
+  // Git >=2.47 may detach auto-maintenance after commit; it can race temp-dir removal.
+  execFileSync('git', ['config', 'maintenance.auto', 'false'], { cwd: root });
+  execFileSync('git', ['config', 'gc.auto', '0'], { cwd: root });
   execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: root });
   execFileSync('git', ['config', 'user.name', 'test'], { cwd: root });
   execFileSync('git', ['add', '-A'], { cwd: root });

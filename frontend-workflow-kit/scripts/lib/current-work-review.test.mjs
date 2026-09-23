@@ -19,7 +19,7 @@ function fixture(t, { inside = true, prefix = '' } = {}) {
   fs.mkdirSync(path.join(root, 'config'));
   for (const [from, to] of [['policies/implementation-mode-policy.yaml', 'policy.yaml'], ['catalog/artifact-manifest.yaml', 'manifest.yaml'], ['presets/expo-feature.yaml', 'layout.yaml']]) fs.copyFileSync(path.join(KIT, from), path.join(root, 'config', to));
   const git = (args, input) => execFileSync('git', args, { cwd: repo, input, stdio: ['pipe', 'pipe', 'pipe'] });
-  git(['init', '-q']); git(['config', 'user.name', 'test']); git(['config', 'user.email', 'test@example.com']);
+  git(['init', '-q']); git(['config', 'maintenance.auto', 'false']); git(['config', 'gc.auto', '0']); git(['config', 'user.name', 'test']); git(['config', 'user.email', 'test@example.com']);
   git(['add', '-A']); git(['commit', '-qm', 'baseline']);
   const work = inside ? path.join(root, '.workflow/current-work.json') : path.join(temp, 'work.json');
   fs.mkdirSync(path.dirname(work), { recursive: true });

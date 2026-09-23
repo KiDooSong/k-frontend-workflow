@@ -273,6 +273,9 @@ function cliFixture(t) {
   t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
   const root = path.join(temp, 'project'); fs.mkdirSync(root);
   execFileSync('git', ['init', '-q'], { cwd: root });
+  // Git >=2.47 may detach auto-maintenance after commit; it can race temp-dir removal.
+  execFileSync('git', ['config', 'maintenance.auto', 'false'], { cwd: root });
+  execFileSync('git', ['config', 'gc.auto', '0'], { cwd: root });
   execFileSync('git', ['-c', 'user.name=test', '-c', 'user.email=test@example.com', 'commit', '--allow-empty', '-qm', 'baseline'], { cwd: root });
   const work = path.join(temp, 'request.json'); fs.writeFileSync(work, JSON.stringify(request()));
   return { temp, root, work };

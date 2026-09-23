@@ -176,7 +176,7 @@ function copyKitFile(root, target, sourceRelative) {
 }
 function createFixture(t, { explicitResources = false, generatedScreenManifest = false, aliasPath = null } = {}) {
   const root = tmpdir(t);
-  git(root, 'init');
+  git(root, 'init'); git(root, 'config', 'maintenance.auto', 'false'); git(root, 'config', 'gc.auto', '0');
   git(root, 'config', 'user.email', 'visual-refresh@example.com');
   git(root, 'config', 'user.name', 'Visual Refresh Test');
   write(root, 'docs/frontend-workflow/app/navigation-map.md', '---\nartifact_id: navigation-map\nartifact_type: navigation-map\nstatus: draft\n---\n');

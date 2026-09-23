@@ -86,7 +86,7 @@ function repository(t, { nested = false, resolved = false } = {}) {
   }
   const git = (...args) => execFileSync('git', ['--no-replace-objects', ...args], { cwd: repositoryRoot,
     encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } }).trim();
-  git('init', '-q'); git('config', 'user.email', 'scoped-test@example.invalid'); git('config', 'user.name', 'Scoped Test');
+  git('init', '-q'); git('config', 'maintenance.auto', 'false'); git('config', 'gc.auto', '0'); git('config', 'user.email', 'scoped-test@example.invalid'); git('config', 'user.name', 'Scoped Test');
   git('config', 'core.autocrlf', 'false'); git('config', 'core.filemode', 'true');
   git('add', '--', '.'); git('commit', '-qm', 'canonical baseline');
   const file = (relative) => path.join(projectRoot, relative);

@@ -74,7 +74,7 @@ function repository(t) {
     writeState(updateState);
     git(root, 'add', '-A'); git(root, 'commit', '-qm', message);
   }
-  git(root, 'init', '-q'); git(root, 'config', 'user.email', 'test@example.com'); git(root, 'config', 'user.name', 'test');
+  git(root, 'init', '-q'); git(root, 'config', 'maintenance.auto', 'false'); git(root, 'config', 'gc.auto', '0'); git(root, 'config', 'user.email', 'test@example.com'); git(root, 'config', 'user.name', 'test');
   commit();
   function request(requests = [surfaceRequest()], origins = [], where = outside) {
     const file = path.join(where, 'request.json');

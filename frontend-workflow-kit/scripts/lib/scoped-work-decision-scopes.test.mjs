@@ -57,7 +57,7 @@ function fixture(t, { blocks = ['other'], status = 'open', absent = false, stale
   if (!absent && !stale) recordDigest();
   const git = (...args) => execFileSync('git', ['--no-replace-objects', ...args], { cwd: root, encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } }).trim();
-  git('init', '-q'); git('config', 'user.email', 'scoped-test@example.invalid'); git('config', 'user.name', 'Scoped Test');
+  git('init', '-q'); git('config', 'maintenance.auto', 'false'); git('config', 'gc.auto', '0'); git('config', 'user.email', 'scoped-test@example.invalid'); git('config', 'user.name', 'Scoped Test');
   git('config', 'core.autocrlf', 'false'); git('config', 'core.filemode', 'true'); git('add', '--', '.kit', 'docs'); git('commit', '-qm', 'synthetic canonical baseline');
   const stage = (name) => git('add', '--', `docs/${name}`);
   return { root, file, put, write, edit, git, stage, resources, recordDigest,

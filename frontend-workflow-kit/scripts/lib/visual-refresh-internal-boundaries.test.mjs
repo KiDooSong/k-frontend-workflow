@@ -58,7 +58,7 @@ function baseline(repo, message = 'authority baseline') {
 }
 function fixture(t, { prefix = '', commit = true } = {}) {
   const repo = temporary(t);
-  git(repo, 'init');
+  git(repo, 'init'); git(repo, 'config', 'maintenance.auto', 'false'); git(repo, 'config', 'gc.auto', '0');
   git(repo, 'config', 'user.name', 'Visual Boundary Test');
   git(repo, 'config', 'user.email', 'visual-boundary@example.com');
   const project = prefix ? path.join(repo, prefix) : repo;
