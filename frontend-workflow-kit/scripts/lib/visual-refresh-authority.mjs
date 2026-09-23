@@ -13,6 +13,7 @@ import { buildState } from '../workflow-state.mjs';
 import { computeReadiness } from '../readiness-legacy.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
 import { globMatches, readinessPathAuthorization } from './path-backstop.mjs';
+import { adoptedWorkPaths } from './scoped-work-adoption.mjs';
 import { collectInputArtifacts, validateInputArtifacts } from './input-artifact.mjs';
 import {
   collectInputFidelityIssues,
@@ -829,7 +830,10 @@ function freshReadiness(root, selectedScreen, options) {
     exposeCaps: true,
     skipSurfaces: true,
   });
-  return { ...resources, state, output, entry: output?.[selectedScreen] || null };
+  // The selected-screen output has no project-wide claims; the runtime wrapper adds
+  // the candidate Slice Paths. Declared adopted roots are enforced here as well.
+  const adopted = adoptedWorkPaths({ docsDir: resources.docsDir, policy: resources.policy });
+  return { ...resources, state, output, adopted, entry: output?.[selectedScreen] || null };
 }
 
 function atLeast(entry, actual, minimum) {
@@ -881,6 +885,7 @@ export function visualImplementationAuthorization({
   domain,
   canonicalBuiltIn,
   generated,
+  adopted = null,
 }) {
   const checkedPath = canonicalAuthorityPath(file, '--path');
   if (checkedPath !== authorizedPath) {
@@ -904,7 +909,18 @@ export function visualImplementationAuthorization({
     screenId: selectedScreen,
     entry: readiness,
     modeOrder: readiness?.__mode_order || [],
+    adopted,
   });
+  // B §10.1: an adopted owner's path needs a scoped selection; no v1 waiver applies.
+  if (ordinary.work_selection_required) {
+    return {
+      allowed: false,
+      checked_path: checkedPath,
+      reason: `${ordinary.reason}; use --work with authority:scoped for this owner/unit`,
+      work_selection_required: ordinary.work_selection_required,
+      ordinary,
+    };
+  }
   if (ordinary.allowed) {
     return { allowed: true, checked_path: checkedPath, grant: 'ordinary-readiness', ordinary };
   }
@@ -1054,6 +1070,7 @@ export function evaluateVisualRefreshAuthority({
         domain: screen.destinationIdentity.domain,
         canonicalBuiltIn: destination.canonicalBuiltIn,
         generated: generatedOwner(canonicalChecked, generated),
+        adopted: destination.adopted,
       });
     } catch (error) {
       pathAuthorization = { allowed: false, reason: error.message };
@@ -1090,6 +1107,7 @@ export function evaluateVisualRefreshAuthority({
       register_path: rel(destinationRoot, evidence.registerFile || registerFile),
       mapping_path: evidence.mappingRelative || null,
       generated_patterns: generated,
+      adopted_work: destination.adopted,
     },
   };
 }
@@ -1200,6 +1218,7 @@ export function routeVisualBackstopRecords({ records, authority, projectPrefix =
           screenId: context.selected_screen,
           entry: context.readiness,
           modeOrder: context.readiness?.__mode_order || [],
+          adopted: context.adopted_work || null,
         });
       } catch (error) {
         ordinary = { allowed: false, reason: error.message };

@@ -22,7 +22,7 @@ function fixture(t, { change = 'M', prefix = '' } = {}) {
     fs.copyFileSync(path.join(KIT, source), path.join(root, 'config', target));
   }
   const git = (args, input) => execFileSync('git', args, { cwd: repo, input, stdio: ['pipe', 'pipe', 'pipe'] });
-  git(['init', '-q']); git(['config', 'user.name', 'test']); git(['config', 'user.email', 'test@example.com']);
+  git(['init', '-q']); git(['config', 'maintenance.auto', 'false']); git(['config', 'gc.auto', '0']); git(['config', 'user.name', 'test']); git(['config', 'user.email', 'test@example.com']);
   git(['add', '-A']); git(['commit', '-qm', 'baseline']);
   const work = path.join(temp, 'request.json');
   fs.writeFileSync(work, JSON.stringify({ version: 1, origin_inputs: [], requests: [{ owner: 'screen:COUPON-001', authority: 'current', requested_mode: 'rough-fixture-ui', targets: [{ path: TARGET, change }] }] }));
@@ -288,7 +288,7 @@ test('P1-3 ignored dirty gitlinks fail explicitly without refreshing the user in
   const f = fixture(t), sub = path.join(f.temp, 'sub');
   fs.mkdirSync(sub);
   const git = (args) => execFileSync('git', args, { cwd: sub, stdio: ['pipe', 'pipe', 'pipe'] });
-  git(['init', '-q']); git(['config', 'user.name', 'test']); git(['config', 'user.email', 'test@example.com']);
+  git(['init', '-q']); git(['config', 'maintenance.auto', 'false']); git(['config', 'gc.auto', '0']); git(['config', 'user.name', 'test']); git(['config', 'user.email', 'test@example.com']);
   fs.writeFileSync(path.join(sub, 'file'), 'before\n'); git(['add', '.']); git(['commit', '-qm', 'sub baseline']);
   f.git(['-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', sub, 'dep']);
   f.git(['commit', '-qm', 'gitlink baseline']); f.git(['config', 'submodule.dep.ignore', 'all']);

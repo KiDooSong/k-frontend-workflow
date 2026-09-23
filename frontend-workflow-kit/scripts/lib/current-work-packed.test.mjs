@@ -89,6 +89,9 @@ test('packed consumer payload contains and executes current-work runtime/referen
   fs.copyFileSync(path.join(packed, 'catalog/artifact-manifest.yaml'), path.join(root, 'config/manifest.yaml'));
   fs.copyFileSync(path.join(packed, 'presets/expo-feature.yaml'), path.join(root, 'config/layout.yaml'));
   execFileSync('git', ['init', '-q'], { cwd: root });
+  // Git >=2.47 may detach auto-maintenance after commit; it can race temp-dir removal.
+  execFileSync('git', ['config', 'maintenance.auto', 'false'], { cwd: root });
+  execFileSync('git', ['config', 'gc.auto', '0'], { cwd: root });
   execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: root });
   execFileSync('git', ['config', 'user.name', 'test'], { cwd: root });
   execFileSync('git', ['add', '-A'], { cwd: root });
