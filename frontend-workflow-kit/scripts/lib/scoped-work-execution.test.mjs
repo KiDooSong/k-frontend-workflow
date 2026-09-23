@@ -120,7 +120,22 @@ function repository(t, { prefix = '' } = {}) {
     put(`${DOCS}/_meta/reconciliation-register.md`, md({ reconciliation_contract: 2, review_profile: 'reconcile-stage04-v1', structured_since: '2026-09-01T00:00:00Z' },
       `${table(REQUIRED_REGISTER_COLS, summaries)}\n\n## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, effects)}`));
   }
-  return { repo, root, outside, docs, put, write, edit, commit, request, flags, prepare, visual };
+  // An api-contract unit `api` on RESULT-001 selecting GET /results. The manifest
+  // Source lists `source`; contracts/api/reply.ts carries the ts-type evidence.
+  function api(source) {
+    edit('screen-1.md', (doc) => {
+      doc.fm.api_required = true;
+      doc.fm.work_execution.units.push({ id: 'api', kind: 'api-contract', contracts: ['artifact:RULES-1#rules'], sources: [],
+        api_candidates: [{ method: 'GET', path: '/results' }] });
+      doc.body += `\n\n## API Candidates\n${table(['Method', 'Path', 'Confidence', 'Gate', 'Tracking', 'Slice Paths'],
+        [['GET', '/results', 'confirmed', 'active', '', 'src/api/results/**']])}`;
+    });
+    write('api.md', 'api/api-manifest.md', { artifact_id: 'API', artifact_type: 'api-manifest', status: 'draft' },
+      `## Endpoints\n${table(['Method', 'Path', 'Confidence', 'Linked Contract', 'Contract Kind', 'Source'],
+        [['GET', '/results', 'confirmed', 'ResultsResponse', 'ts-type', source]])}`);
+    put('contracts/api/reply.ts', 'export interface ResultsResponse { ok: boolean }\n');
+  }
+  return { repo, root, outside, docs, put, write, edit, commit, request, flags, prepare, visual, api };
 }
 const surfaceRequest = (targets = [PANEL]) => ({ owner: SURFACE, authority: 'scoped', unit: 'panel',
   targets: targets.map((file) => ({ path: file, change: 'M' })) });
@@ -268,6 +283,35 @@ test('D backstop: API evidence directory membership is compared against the base
   assert.equal(evaluateScopedGit(preflight).ok, true);
   r.put('contracts/api/two.yaml', 'openapi: 3.0.0\n');
   assert.ok(codes(evaluateScopedGit(preflight)).includes('SW-GIT-EVIDENCE-DIRECTORY-CHANGED'));
+});
+
+const CLIENT = 'src/api/results/client.ts';
+const apiRequest = () => [{ owner: 'screen:RESULT-001', authority: 'scoped', unit: 'api', targets: [{ path: CLIENT, change: 'A' }] }];
+
+test('D backstop: a missing API evidence source created as a requested file is an evidence change in the worktree and index', (t) => {
+  const r = repository(t); r.api(`contracts/api/reply.ts, ${CLIENT}`); r.commit('two API evidence sources');
+  const preflight = r.prepare(t, r.request(apiRequest()));
+  assert.equal(preflight.ready, true, JSON.stringify([preflight.denials, preflight.errors]));
+  assert.ok(preflight.snapshot.scoped_directory_read_set.some((entry) => entry.file === CLIENT && entry.entries === null));
+  // The allowed, requested A target is also the evidence source that was missing.
+  r.put(CLIENT, 'export interface ResultsResponse { ok: string }\n');
+  assert.deepEqual(codes(evaluateScopedGit(preflight)), ['SW-GIT-EVIDENCE-DIRECTORY-CHANGED']);
+  git(r.repo, 'add', CLIENT);
+  assert.deepEqual(codes(evaluateScopedGit(preflight, { staged: true })), ['SW-GIT-EVIDENCE-DIRECTORY-CHANGED']);
+});
+
+test('D backstop: a Git-ignored new entry in a consumed API evidence directory is observed in the worktree only', (t) => {
+  const r = repository(t); r.api('contracts/api'); r.put('.gitignore', 'contracts/api/local.ts\n'); r.commit('API evidence directory');
+  const preflight = r.prepare(t, r.request(apiRequest()));
+  assert.equal(preflight.ready, true, JSON.stringify([preflight.denials, preflight.errors]));
+  assert.ok(preflight.snapshot.scoped_directory_read_set.some((entry) => entry.file === 'contracts/api' && JSON.stringify(entry.entries) === '[["reply.ts","file"]]'));
+  r.put(CLIENT, 'export const client = 1;\n');
+  assert.deepEqual(codes(evaluateScopedGit(preflight)), []);
+  r.put('contracts/api/local.ts', 'export interface ResultsResponse { ok: string }\n');
+  assert.deepEqual(codes(evaluateScopedGit(preflight)), ['SW-GIT-EVIDENCE-DIRECTORY-CHANGED']);
+  // --staged evaluates the index, which cannot hold the ignored file.
+  git(r.repo, 'add', CLIENT);
+  assert.deepEqual(codes(evaluateScopedGit(preflight, { staged: true })), []);
 });
 
 const ORIGIN = 'IN-20260923-figma-001';

@@ -2,9 +2,11 @@
 // composed (owner, hosts, shared targets) against the materialized HEAD tree only;
 // worktree bytes, caller packets and serialized verdicts are never authority.
 // Current requests stay with C. This is eligibility, not the Git backstop or approval.
+import fs from 'node:fs';
 import path from 'node:path';
 import { TextDecoder } from 'node:util';
 import { splitFrontmatter, walkFiles } from './util.mjs';
+import { canonicalRepositoryPath, ArtifactPathError } from './artifact-path.mjs';
 import { computeReadiness } from '../readiness-legacy.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
 import { collectInputArtifacts, validateInputArtifacts } from './input-artifact.mjs';
@@ -191,6 +193,36 @@ export function publicScopedEnvelope(preflight) {
   return stable(publicValue);
 }
 
+// A consumed API evidence path in the profile's terms: missing, a file, or a
+// directory with its sorted [name, kind] members. The baseline records only the
+// missing and directory cases; evidence files are pinned by hash instead.
+const baselineEvidence = (entry) => entry.entries === null ? { kind: 'missing' } : { kind: 'directory', entries: entry.entries };
+// --staged: only indexed paths exist in the destination.
+function indexedEvidence(entries, name) {
+  const prefix = `${name}/`, children = new Map();
+  for (const [key, value] of entries) {
+    if (!key.startsWith(prefix)) continue;
+    const [child, ...deeper] = key.slice(prefix.length).split('/');
+    const kind = deeper.length ? 'directory' : REGULAR_MODES.has(value.mode) ? 'file' : 'unsupported';
+    children.set(child, children.has(child) && children.get(child) !== kind ? 'unsupported' : kind);
+  }
+  const self = entries.get(name);
+  if (self) return { kind: !children.size && REGULAR_MODES.has(self.mode) ? 'file' : 'unsupported' };
+  return children.size ? { kind: 'directory', entries: [...children].sort(([a], [b]) => byteCompare(a, b)) } : { kind: 'missing' };
+}
+// Worktree: list the path on disk the way the profile listed the baseline tree,
+// so Git-ignored and untracked members count too.
+function worktreeEvidence(repositoryRoot, name) {
+  let selected;
+  try { selected = canonicalRepositoryPath(repositoryRoot, name, { label: 'scoped API evidence' }); }
+  catch (error) { if (error instanceof ArtifactPathError) return { kind: 'unsupported' }; throw error; }
+  if (!selected.exists) return { kind: 'missing' };
+  const stat = fs.lstatSync(selected.absolute);
+  if (!stat.isDirectory()) return { kind: stat.isFile() ? 'file' : 'unsupported' };
+  return { kind: 'directory', entries: fs.readdirSync(selected.absolute, { withFileTypes: true }).map((entry) =>
+    [entry.name, entry.isDirectory() ? 'directory' : entry.isFile() ? 'file' : 'unsupported']).sort(([a], [b]) => byteCompare(a, b)) };
+}
+
 // D31: the actual Git backstop for a scoped preflight. The same baseline authority
 // is required byte-for-byte in the destination (no self-grant), so the preflight's
 // path decisions still hold for it; the actual diff must then be exactly the
@@ -210,33 +242,33 @@ export function evaluateScopedGit(preflight, { staged = false } = {}) {
   const repositoryPath = (name) => context.projectPrefix ? `${context.projectPrefix}/${name}` : name;
   const docs = preflight.snapshot.resources.find((entry) => entry.kind === 'docs').path;
   const authorityRecords = preflight.snapshot.authority_read_set;
+  const evidencePaths = preflight.snapshot.scoped_directory_read_set.map((entry) => repositoryPath(entry.file));
+  const onDisk = () => evidencePaths.map((name) => worktreeEvidence(context.repositoryRoot, name));
+  const diskBefore = staged ? null : onDisk();
   const destination = staged ? captureCurrentIndex(context.repositoryRoot) : captureCurrentWorktree(context.repositoryRoot, preflight.snapshot.tree, {
     extraFiles: authorityRecords.filter((entry) => entry.source === 'project').map((entry) => repositoryPath(entry.path)),
     inputRoots: [repositoryPath(`${docs}/inputs`)],
     artifactRoots: authorityRecords.filter((entry) => entry.source === 'artifact-index').map((entry) => repositoryPath(entry.path)),
   });
+  const evidenceAfter = staged ? evidencePaths.map((name) => indexedEvidence(destination.entries, name)) : onDisk();
+  if (!staged && JSON.stringify(evidenceAfter) !== JSON.stringify(diskBefore)) {
+    throw new Error('current worktree changed during capture: scoped API evidence paths');
+  }
   const evidenceFor = (relative) => destination.evidence(repositoryPath(relative));
   const authorityChecks = verifyCurrentAuthority(preflight, destination);
   const violations = authorityChecks.filter((check) => !check.ok).map((check) => ({
     code: 'SW-GIT-AUTHORITY-CHANGED', path: check.path, source: check.source,
     message: 'consumed authority bytes/mode or input/document inventory changed in destination; start a new authoring checkpoint',
   }));
-  // API evidence directory membership is authority too: a new sibling can change
-  // what an unset/directory evidence source selects.
-  for (const entry of preflight.snapshot.scoped_directory_read_set) {
-    const prefix = `${repositoryPath(entry.file)}/`, children = new Map();
-    for (const [name, value] of destination.entries) {
-      if (!name.startsWith(prefix)) continue;
-      const [child, ...deeper] = name.slice(prefix.length).split('/');
-      const kind = deeper.length ? 'directory' : REGULAR_MODES.has(value.mode) ? 'file' : 'unsupported';
-      children.set(child, children.has(child) && children.get(child) !== kind ? 'unsupported' : kind);
+  // API evidence paths are authority too: a missing source that becomes a file, or
+  // a new sibling (Git-ignored ones included), changes what an evidence source selects.
+  preflight.snapshot.scoped_directory_read_set.forEach((entry, index) => {
+    const before = baselineEvidence(entry), after = evidenceAfter[index];
+    if (JSON.stringify(after) !== JSON.stringify(before)) {
+      violations.push({ code: 'SW-GIT-EVIDENCE-DIRECTORY-CHANGED', path: entry.file, before: before.kind, after: after.kind,
+        message: 'API evidence path or directory membership changed after the baseline; start a new authoring checkpoint' });
     }
-    const actual = children.size ? [...children].sort(([a], [b]) => byteCompare(a, b)) : null;
-    if (JSON.stringify(actual) !== JSON.stringify(entry.entries)) {
-      violations.push({ code: 'SW-GIT-EVIDENCE-DIRECTORY-CHANGED', path: entry.file,
-        message: 'API evidence directory membership changed after the baseline; start a new authoring checkpoint' });
-    }
-  }
+  });
   const records = snapshotRecords(context.repositoryRoot, preflight.snapshot.tree, destination.tree, { copyPaths: [] })
     .map((record) => projectRecord(record, context.projectPrefix));
   const authority = new Set(authorityRecords.filter((entry) => entry.source === 'project').map((entry) => entry.path));

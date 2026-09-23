@@ -3,7 +3,8 @@
 > 날짜: 2026-09-23
 > 범위: #238 D(`authority: scoped`) 구현 — PR #246(Draft, `feat/238-scoped-execution`)
 > baseline: `a44fdc78f729a154da4c6e1a42f11ff303705d27` (PR #245 merge: C current work + D1 비활성 계약)
-> 구현 checkpoint: D02 `ae5eea5` … D34 `9eaaab3`(공개 CLI 활성화). 이 기록과 W 회귀 보강은 그 다음 checkpoint(D35)다.
+> 구현 checkpoint: D02 `ae5eea5` … D34 `9eaaab3`(공개 CLI 활성화). 이 기록과 W 회귀 보강은 그 다음 checkpoint(D35 `9a1c449`)다.
+> 리뷰 수정: D36 — `9a1c449` 재리뷰의 API 근거 경로 관측 P2 2건(§6).
 > 설계 정본: [issue-238-task-scoped-execution.md](../../docs/design/drafts/issue-238-task-scoped-execution.md) §13 회귀 매트릭스
 > 사용 안내: [scoped-work.md](../../../frontend-workflow-kit/docs/reference/scoped-work.md)
 > status: **IMPLEMENTATION CHECKPOINT — source checkpoint, not review approval.** 사람 채택·binding·consumer pilot·E 측정·release/version/dependency 변경은 없다.
@@ -15,8 +16,8 @@
 - 채택되지 않은 저장소에서 기존 CLI·readiness·visual-refresh v1 출력이 바뀌지 않는다.
 - 채택 owner의 work unit은 materialize한 `HEAD` baseline에서 owner 자체 조건, surface의 모든 host, 요청 간 공유 target을
   AND로 판정하고, 결과는 permit이 아니라 review input이다(`approval_verified: false`).
-- Git backstop은 소비한 authority 파일·문서/입력 inventory·API 근거 디렉터리의 불변과, 허용·요청된 regular-file `A`/`M`만의
-  변경을 요구한다. 구현 diff로 권한을 넓히는 self-grant는 위반이다.
+- Git backstop은 소비한 authority 파일·문서/입력 inventory·API 근거 경로(종류와 디렉터리 구성)의 불변과, 허용·요청된
+  regular-file `A`/`M`만의 변경을 요구한다. 구현 diff로 권한을 넓히는 self-grant는 위반이다.
 - 채택 경로는 no-work readiness/forbidden-paths, current work, visual-refresh v1에서 `work-selection-required`를 반환하고,
   upgrade planner는 marker가 남은 동안 marker를 강제하지 못하는 payload를 자동 적용하지 않는다.
 
@@ -40,6 +41,8 @@
 | D32 | 채택 경로의 fallback 진입점 guard (`work-selection-required`, `CW-WORK-SELECTION-REQUIRED`, `VR-WORK-SELECTION-REQUIRED`) |
 | D33 | upgrade planner의 downgrade 자동 적용 거부 |
 | D34 | 다섯 `--work` CLI(readiness/packet/forbidden-paths/report/run) 활성화, 소비자 문서 |
+| D35 | W01–W40 회귀 보강 16건, 이 검증 기록 |
+| D36 | 리뷰 수정: API 근거 경로의 종류 비교와 worktree 디스크 관측(§6) |
 
 D30의 CI 실패(#989)는 Git ≥2.47이 commit 뒤 분리 실행하는 auto-maintenance가 임시 저장소 삭제와 경합한 것이었다.
 Git fixture가 있는 테스트 파일에서 `maintenance.auto false`·`gc.auto 0`을 설정해 해소했다(`ad6858e`).
@@ -79,7 +82,7 @@ Git fixture가 있는 테스트 파일에서 `maintenance.auto false`·`gc.auto 
 | W19 | 충족 | `scoped-work-hosts`: "D hosts: both actual scoped host profiles, Decisions and role-ceiling consents are required, without a surface permit"; "D hosts: missing, duplicate and nonmember host selections never become a smaller successful set"; "D hosts: a legacy member base covers only declared surface paths"; `scoped-work-composition`: "D compose: a host prerequisite deny blocks every target of the surface request" | |
 | W20 | 충족 | `scoped-work-paths`: "W20: a component catalog listing without a known global editor creates no scoped path authority"; "D paths: explicit denies, generated outputs, global roles and own routes survive private declarations" | catalog 사례는 이번 보강 |
 | W21 | 부분 | `scoped-work-execution`: "D backstop: unrequested paths and delete/mode/type changes are violations"; `scoped-work-git-transitions`: "D Git transitions: mode-only and rename changes remain visible, not relabeled as safe work"; "D Git transitions: original gitlink resources cannot be borrowed from the working directory"; `scoped-work-paths`: "D paths: leaf and ancestor symlinks and directory targets are never regular A/M observations"; "W21: a case-alias spelling of the exact entry never becomes the owned entry" | case alias는 이번 보강. binary/NUL 바이트는 공유 helper 테스트(`current-work-snapshot`, `visual-refresh-git-snapshot`)로만 확인한다. `--work` CLI에는 name-only `--diff` 입력이 없다 |
-| W22 | 충족 | `scoped-work-execution`: "D backstop: an implementation diff cannot self-grant through authority, documents or requests"; "D preflight: uncommitted worktree edits cannot change baseline authority in either direction"; `scoped-work-adoption`: "W28: withdrawing adoption inside an implementation diff cannot reopen legacy authority for that run" | |
+| W22 | 충족 | `scoped-work-execution`: "D backstop: an implementation diff cannot self-grant through authority, documents or requests"; "D preflight: uncommitted worktree edits cannot change baseline authority in either direction"; "D backstop: a missing API evidence source created as a requested file is an evidence change in the worktree and index"; "D backstop: a Git-ignored new entry in a consumed API evidence directory is observed in the worktree only"; `scoped-work-adoption`: "W28: withdrawing adoption inside an implementation diff cannot reopen legacy authority for that run" | API 근거 경로 두 사례는 D36 리뷰 수정(§6) |
 | W23 | 부분 | `scoped-work-execution`: "W23: a project below the Git top level keeps repository paths and reports outside-root changes"; `scoped-work-git-transitions`: "D Git transitions: nested roots retain original repository paths and outside-root changes"; "D Git transitions: absolute in-project resources map to the same captured relative paths" | 하위 project root의 scoped backstop은 이번 보강. `--work` CLI는 `HEAD..worktree`와 `--staged`만 지원한다. base/range는 v1 visual-refresh에만 있다 |
 | W24 | 충족 | `scoped-work-execution`: "D backstop: unrequested paths and delete/mode/type changes are violations"; `scoped-work-cli`: "D34 CLI: unrequested changes, packet drift and baseline denials are never reported as success"; `current-work-snapshot`: "P1-3 ${flag}: hidden requested work and unrequested cross-root files are not omitted" | |
 | W25 | 리뷰·운영 | `scoped-work-cli`: "D34 CLI: the five public work CLIs run a scoped request from preflight to review evidence" | HALT/DONE은 orchestration 상태이고 merge·사람 승인이 아니다. 실행 불가와 실제 장애의 구분 보고는 리뷰가 확인한다 |
@@ -114,7 +117,7 @@ Git fixture가 있는 테스트 파일에서 `maintenance.auto false`·`gc.auto 
 | `npm run kit:pack` | 20.19.5 | exit 0 (293 files) |
 
 `test:spec`은 CI macos-smoke 목록(scoped-work 전체, current-work execution/packed/snapshot 포함)을 모두 포함한다.
-이 기록을 담은 D35 head의 CI는 커밋 이후에 관측한다.
+D35 이후 checkpoint의 CI는 해당 커밋 뒤에 관측한다.
 
 CI(`.github/workflows/frontend-workflow-kit.yml`의 validate-example Node 20·compat-smoke Node 24·macos-smoke Node 20):
 
@@ -127,6 +130,7 @@ CI(`.github/workflows/frontend-workflow-kit.yml`의 validate-example Node 20·co
 | #990 | `e982bcd` D32 (`ad6858e` 포함) | success |
 | #991 | `6f4ee3b` D33 | success |
 | #992 | `9eaaab3` D34 | success |
+| #993 | `9a1c449` D35 | success |
 
 ## 5. 남는 한계와 사람 소유 항목
 
@@ -134,3 +138,23 @@ CI(`.github/workflows/frontend-workflow-kit.yml`의 validate-example Node 20·co
   수렴(W27). scoped 다섯 CLI의 origin 포함 end-to-end fixture(W35 비고)도 없다.
 - 실제 저장소 채택, owner·unit·`decision_work_scopes` 작성과 승인, pilot, E 측정은 사람 소유이며 이 PR에 포함하지 않는다.
 - PR #246은 Draft이고 #238은 open이다. merge와 issue 종료는 사람 리뷰 이후의 전이다.
+
+## 6. D36 리뷰 수정 — API 근거 경로 관측
+
+D35(`9a1c449`) 재리뷰의 P2 2건을 고쳤다. 둘 다 Git backstop이 소비한 API 근거 경로의 변경을 놓치는 문제였다.
+
+| 지적 | 원인 | 수정 |
+|---|---|---|
+| baseline에 없던 근거 경로가 파일로 생기면 놓친다 | 디렉터리 비교가 `경로/` 아래 자식만 모아, 없음과 파일을 모두 `null`로 비교했다 | 경로 자체의 종류(없음·파일·디렉터리·지원 안 함)를 먼저 비교한다(worktree·index 모두) |
+| Git-ignored 새 근거 항목을 worktree에서 놓친다 | worktree 목록이 Git 경로 발견(`ls-files --others --exclude-standard`)에 의존했다 | worktree는 소비한 근거 경로를 디스크에서 직접 나열한다(ignore 포함, capture 전후 동일해야 함). `--staged`는 index만 본다 |
+
+회귀 테스트(`scoped-work-execution`)는 실제 api-contract unit fixture를 쓴다. 두 테스트 모두 수정 전 `evaluateScopedGit()`이 위반 없음(`[]`)을 반환해 실패했다.
+
+- "D backstop: a missing API evidence source created as a requested file is an evidence change in the worktree and index": manifest `Source`의 두 경로 중 없던 두 번째 경로가 요청된 `A` 대상이다.
+- "D backstop: a Git-ignored new entry in a consumed API evidence directory is observed in the worktree only"
+
+동작 변화: worktree 검사는 소비한 API 근거 디렉터리의 커밋되지 않은 항목과 Git-ignored 항목(OS·editor 메타데이터 포함)도 변경으로 보고한다.
+[scoped-work.md](../../../frontend-workflow-kit/docs/reference/scoped-work.md)의 Known limits에 적었다.
+
+로컬 검증(macOS, D36 작업 트리): scoped glob 536/536(Node 20.19.5, D35 + 2), `test:spec` 1965 tests / 1963 pass / 0 fail /
+2 skipped(Node 20.19.5·24.11.0), `example:validate`·`kit:pack` exit 0.

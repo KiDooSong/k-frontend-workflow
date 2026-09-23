@@ -12,8 +12,10 @@
 - 다섯 `--work` CLI가 scoped 문서를 D로 보낸다. current/scoped 혼합 문서는 입력 오류다. preflight는 materialize한
   HEAD baseline에서만 owner 자체 검사, surface의 모든 host(채택 host: profile·Decision·member role 상한, `legacy-current`:
   generated state 기반 legacy member base), 요청 간 공유 target AND를 판정한다. legacy readiness는 정보로 보존한다.
-- Git backstop은 소비한 authority·문서/입력 inventory·API 근거 디렉터리 불변(self-grant 거부)과, 허용된 요청 target의
-  regular-file `A`/`M`만의 변경을 요구한다. 삭제·rename·copy·type/mode 변경·미요청·누락은 위반이다.
+- Git backstop은 소비한 authority·문서/입력 inventory·API 근거 경로 불변(self-grant 거부)과, 허용된 요청 target의
+  regular-file `A`/`M`만의 변경을 요구한다. API 근거 경로는 종류(없음/파일/디렉터리)와 디렉터리 구성을 비교하며,
+  worktree 검사는 Git ignore 항목을 포함한 디스크 목록을, `--staged`는 index를 본다. 삭제·rename·copy·type/mode
+  변경·미요청·누락은 위반이다.
 - 채택 owner의 scoped 경로는 `readiness --path`, no-work `forbidden-paths`, current work, visual-refresh v1에서
   `work-selection-required`를 반환한다. 미채택 저장소는 결과가 바뀌지 않는다.
 - vendored-kit upgrade planner는 채택 marker를 강제하지 못하는 payload를 marker가 남은 동안 자동 적용하지 않는다.

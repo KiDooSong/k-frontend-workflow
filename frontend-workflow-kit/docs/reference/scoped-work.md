@@ -129,8 +129,11 @@ After implementation, `forbidden-paths`, `report` and `run` re-read the request
 (bytes and digest) and compare the actual `HEAD..worktree` (or `--staged` index)
 diff with the baseline:
 
-- every consumed authority file, the document/input inventories and API evidence
-  directory listings must be unchanged — an implementation diff cannot self-grant;
+- every consumed authority file, the document/input inventories and every consumed
+  API evidence path must be unchanged — an implementation diff cannot self-grant.
+  An evidence path keeps its kind (missing, file or directory) and a directory
+  keeps its members; the worktree check lists them on disk, Git-ignored entries
+  included, while `--staged` reads the index only;
 - only allowed, requested regular-file `A`/`M` targets with the requested change
   kind may change, and `M` keeps its file mode;
 - deletes, renames, copies, type/mode changes, unrequested paths and missing
@@ -177,3 +180,6 @@ isolation, or who approved a binding. Reviewers own those judgments.
 - Git evidence is `HEAD` against the worktree, or against the index with
   `--staged`; commit ranges are not an input. Committing the implementation moves
   the baseline, so check it with `forbidden-paths` or `report` before that commit.
+- A consumed API evidence directory is compared with its committed members, so an
+  uncommitted or Git-ignored file there (OS or editor metadata too) is reported in
+  the worktree check. Keep such directories clean, or name the evidence files.
