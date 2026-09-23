@@ -60,8 +60,8 @@ function baselineAuthorization(preflight, owner, file) {
   const order = effectiveOrder(context.policy, context.layout, domain);
   try {
     return parts.kind === 'screen'
-      ? readinessPathAuthorization({ file, screenId: parts.id, entry, modeOrder: order, claims: context.claims })
-      : exactSurfaceAuthorization(entry, file, parts.id, order);
+      ? readinessPathAuthorization({ file, screenId: parts.id, entry, modeOrder: order, claims: context.claims, adopted: context.adopted })
+      : exactSurfaceAuthorization(entry, file, parts.id, order, context.adopted);
   } catch (error) {
     return { allowed: false, reason: error.message };
   }

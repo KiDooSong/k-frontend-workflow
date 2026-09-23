@@ -11,6 +11,7 @@ import { parseReconciliationRegister } from './reconciliation-register.mjs';
 import { validateCurrentReconciliation } from './current-work-reconciliation.mjs';
 import { readJson, normalizeWorkRequest, digest, hashBytes, ownerParts, byteCompare } from './current-work-request.mjs';
 import { materializeRawGitTree } from './visual-refresh-git-objects.mjs';
+import { adoptedWorkPaths } from './scoped-work-adoption.mjs';
 import {
   CurrentWorkExecutionError, REGULAR_MODES, outside, projectRelative, resolveProjectPath, resolveProjectRoot, gitIdentity,
   yamlFile, screenDomain, effectiveOrder, modeIndex, invalidBlocker, generatedPatterns, generatedOwner,
@@ -112,6 +113,8 @@ export function prepareCurrentWork({ work, root, docs, src, policy, manifest, la
     const layoutData = loadLayoutProfile({ kitRoot: baselineKitRoot, flags: { layout: resources.layout.baseline } });
     const allScreens = computeReadiness({ state, policy: policyData, ci: ciData, manifest: manifestData, layout: layoutData, exposeCaps: true });
     const claims = collectApiCandidateClaims(allScreens);
+    // B §10.1: current authority never opens an adopted owner's scoped path.
+    const adopted = adoptedWorkPaths({ docsDir: resources.docs.baseline, policy: policyData, claims });
     const generated = generatedPatterns(manifestData, resources.docs.relative);
     const requests = [];
     const errors = [];
@@ -161,12 +164,14 @@ export function prepareCurrentWork({ work, root, docs, src, policy, manifest, la
         } else {
           try {
             authorization = parts.kind === 'screen'
-              ? readinessPathAuthorization({ file: target.path, screenId: parts.id, entry, modeOrder: order, claims })
-              : exactSurfaceAuthorization(entry, target.path, parts.id, order);
+              ? readinessPathAuthorization({ file: target.path, screenId: parts.id, entry, modeOrder: order, claims, adopted })
+              : exactSurfaceAuthorization(entry, target.path, parts.id, order, adopted);
           } catch (error) { authorization = { allowed: false, reason: error.message }; }
         }
         result.path_authorizations.push({ ...target, ...authorization });
-        if (!authorization.allowed) localDenials.push({ code: 'CW-PATH-DENIED', owner: selector.owner, path: target.path, change: target.change, reason: authorization.reason || authorization.causes || null });
+        if (!authorization.allowed) localDenials.push({ code: authorization.work_selection_required ? 'CW-WORK-SELECTION-REQUIRED' : 'CW-PATH-DENIED',
+          owner: selector.owner, path: target.path, change: target.change, reason: authorization.reason || authorization.causes || null,
+          ...(authorization.work_selection_required ? { work_selection_required: authorization.work_selection_required } : {}) });
       }
       denials.push(...localDenials); future.push(...localFuture);
       result.errors = localErrors;
@@ -255,7 +260,7 @@ export function prepareCurrentWork({ work, root, docs, src, policy, manifest, la
       required_reviews: [],
       legacy_readiness: Object.fromEntries(requests.map((entry) => [entry.owner, entry.legacy_readiness || null])),
       all_absorbed: absorbedCount === requests.length && requests.length > 0,
-      _context: { ...ctx, workPath, baselineRoot, request, policy: policyData, manifest: manifestData, ci: ciData, layout: layoutData, state, snapshot, claims, generated },
+      _context: { ...ctx, workPath, baselineRoot, request, policy: policyData, manifest: manifestData, ci: ciData, layout: layoutData, state, snapshot, claims, generated, adopted },
     };
   } catch (error) {
     snapshot.cleanup();

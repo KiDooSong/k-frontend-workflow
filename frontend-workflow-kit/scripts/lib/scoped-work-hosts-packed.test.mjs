@@ -1,5 +1,5 @@
 // Focused pack regression for D28+ host consent, request composition and the
-// scoped baseline preflight/Git backstop. It does not replay the already shipped
+// scoped baseline preflight/Git backstop and adopted-path guards. It does not replay the already shipped
 // resolver test suite. Existing package/CI globs still select their full suites.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -9,7 +9,8 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { KIT_ROOT } from './util.mjs';
 
-const SUITES = ['scoped-work-hosts.test.mjs', 'scoped-work-composition.test.mjs', 'scoped-work-execution.test.mjs'];
+const SUITES = ['scoped-work-hosts.test.mjs', 'scoped-work-composition.test.mjs', 'scoped-work-execution.test.mjs',
+  'scoped-work-adoption.test.mjs'];
 const RUNTIME = SUITES.map((name) => name.replace('.test.mjs', '.mjs'));
 
 function checkedNode(args, cwd, env = process.env) {
