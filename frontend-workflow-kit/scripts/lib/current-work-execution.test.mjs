@@ -212,3 +212,15 @@ test('work branch rejects legacy/visual tuple flags instead of silently mixing a
     assert.match(result.stderr, /unknown option/);
   }
 });
+
+test('W03: a lower requested mode cannot reopen a path the current mode closes, and an over-ceiling mode is denied', (t) => {
+  const root = project(t), route = 'src/app/(tabs)/coupons.tsx';
+  // route-skeleton allows route entries; the current rough-fixture-ui ceiling does not, and modes are not unioned.
+  const lower = json(run('readiness.mjs', [...common(root, writeRequest(t, request({ path: route, mode: 'route-skeleton' }))), '--json']));
+  assert.equal(lower.ready, false); assert.equal(lower.requests[0].readiness_mode, 'rough-fixture-ui');
+  assert.deepEqual(lower.denials.map((entry) => [entry.code, entry.path, entry.reason]), [['CW-PATH-DENIED', route, 'path is outside allowed_paths']]);
+  const over = json(run('readiness.mjs', [...common(root, writeRequest(t, request({ mode: 'final-fixture-ui' }))), '--json']));
+  assert.equal(over.ready, false);
+  assert.deepEqual(over.denials.map((entry) => [entry.code, entry.requested_mode, entry.readiness_mode]), [['CW-MODE-CEILING', 'final-fixture-ui', 'rough-fixture-ui']]);
+  assert.deepEqual(over.future_requirements, [], 'an over-ceiling request is not reported as merely future work');
+});

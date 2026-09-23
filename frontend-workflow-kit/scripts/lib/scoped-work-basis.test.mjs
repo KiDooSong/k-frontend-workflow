@@ -12,6 +12,7 @@ import { REQUIRED_REGISTER_COLS } from './reconciliation-register.mjs';
 import { COMPONENT_MAPPING_COLUMNS, MAPPING_PROVENANCE_COLUMNS } from './mapping-provenance.mjs';
 import { scopeJson } from './scoped-work-normalize.mjs';
 import { resolveScopedBindingBasis } from './scoped-work-basis.mjs';
+import { inspectScopedDecisionBindings } from './scoped-work-bindings.mjs';
 
 const OWNER = 'screen:RESULT-001';
 const SECOND = 'screen:RESULT-002';
@@ -435,4 +436,38 @@ test('D basis API references: canonical deferred Unknown Tracking and extra row 
   assert.ok(scopeJson(before.basis).includes('unknown:U-LATER@SCREEN-RESULT-001'));
   f.change('rules2.md', (doc) => { doc.body = doc.body.replace('Referenced API evidence.', 'Changed deferred evidence.'); });
   assert.notEqual(f.run().basis_digest, before.basis_digest);
+});
+
+// A recorded digest in these fixtures stands in for a reviewed scope; it is not an approval.
+const recordBasis = (f, owner = OWNER) => f.change('global/open-decisions.md', ({ fm }) => {
+  fm.decision_work_scopes.bindings[0].basis_digest = f.run(owner).basis_digest; });
+const bindingState = (f, owner = OWNER) => inspectScopedDecisionBindings(f.options(owner)).checks
+  .find((entry) => entry.decision === DECISION).binding_state;
+
+test('W30: a sources-only change stales the recorded binding, and refreshed coverage cannot restore it', (t) => {
+  const f = fixture(t), source = withSource(f); recordBasis(f);
+  assert.equal(bindingState(f), 'current-unverified');
+  // Same unit ID and contracts; only the selected input Item and anchor move.
+  f.change('screen.md', ({ fm }) => { fm.work_execution.units[0].sources[0] = { input_id: INPUT, items: ['02'], source_refs: [REF.replace('/01', '/02')] }; });
+  assert.equal(bindingState(f), 'stale-basis');
+  // Completing the reconciliation again is coverage evidence, not a human scope confirmation.
+  fs.writeFileSync(f.registerFile, fs.readFileSync(f.registerFile, 'utf8').replace('partially-reconciled | pending', 'reconciled | accepted'));
+  assert.equal(bindingState(f), 'stale-basis');
+  source.register(); assert.equal(bindingState(f), 'stale-basis');
+});
+
+test('W31: host link, same-named host unit content and M-key changes stale a surface binding', (t) => {
+  const cases = {
+    'M-key': (f) => f.change('surface.md', ({ fm }) => { fm.work_execution.units[0].host_visual_evidence['RESULT-002'].m_keys = ['M-002']; }),
+    'host unit content': (f) => f.change('second.md', ({ fm }) => { fm.work_execution.units[0].contracts.push('artifact:RULES#other'); }),
+    'host link': (f) => {
+      f.change('second.md', ({ fm }) => { fm.work_execution.units[0].id = 'layout-next'; });
+      f.change('surface.md', ({ fm }) => { fm.work_execution.units[0].host_units['RESULT-002'] = 'layout-next'; });
+    },
+  };
+  for (const [label, mutate] of Object.entries(cases)) {
+    const f = fixture(t), owner = withSurface(f); recordBasis(f, owner);
+    assert.equal(bindingState(f, owner), 'current-unverified', label);
+    mutate(f); assert.equal(bindingState(f, owner), 'stale-basis', label);
+  }
 });

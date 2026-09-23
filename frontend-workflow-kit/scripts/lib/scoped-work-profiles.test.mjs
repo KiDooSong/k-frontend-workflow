@@ -189,3 +189,18 @@ test('D profiles: inspection preserves source bytes and returns explicit semanti
   assert.equal(out.profile_satisfied, true); assert.ok(out.required_reviews.some((text) => text.includes('immutable Git'))); noGrant(out);
   [...f.docs.values()].forEach((file, index) => assert.deepEqual(fs.readFileSync(file), before[index]));
 });
+
+test('W10: visual isolation needs an open Decision that actually applies to the disabled behavior units', (t) => {
+  const f = fixture(t); f.visual();
+  const isolation = { decisions: ['decision:D-ONE@open-decision-register'], disabled_units: ['later'], exposure: 'development-only' };
+  f.change('screen.md', ({ fm }) => { fm.decision_refs = ['D-ONE']; fm.work_execution.units = [{ ...fm.work_execution.units[0], isolation }, { ...unit(), id: 'later' }]; });
+  const decision = (status) => f.write('global/open-decisions.md', { artifact_id: 'open-decision-register', artifact_type: 'open-decision-register', status: 'draft' },
+    `## Open Decisions\n${table(['ID', 'Decision Needed', 'Options', 'Blocking Mode', 'Owner', 'Status'], [['D-ONE', 'Choose the retry behavior.', 'A / B', 'api-integrated-ui', 'PM', status]])}`);
+  decision('open');
+  const out = f.run();
+  assert.equal(out.profile_satisfied, true, JSON.stringify(out.denials));
+  assert.deepEqual(out.isolation.map((entry) => [entry.disabled_units, entry.exposure, entry.semantic_isolation_verified]), [[['later'], 'development-only', false]]);
+  assert.match(out.isolation[0].responsibility, /disabled UI alone is not proof/); noGrant(out);
+  decision('resolved'); denied(f.run(), 'isolation-decision-unrelated');
+  decision('open'); f.change('screen.md', ({ fm }) => { delete fm.decision_refs; }); denied(f.run(), 'isolation-decision-unrelated');
+});

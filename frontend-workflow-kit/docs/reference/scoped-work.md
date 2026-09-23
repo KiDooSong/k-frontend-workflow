@@ -174,3 +174,6 @@ isolation, or who approved a binding. Reviewers own those judgments.
   (optionally in one inline-code pair); other forms are reported as
   `surface-visual-evidence-unresolved`.
 - A `legacy-current` host needs the generated legacy state for its surface.
+- Git evidence is `HEAD` against the worktree, or against the index with
+  `--staged`; commit ranges are not an input. Committing the implementation moves
+  the baseline, so check it with `forbidden-paths` or `report` before that commit.

@@ -252,3 +252,29 @@ test('D paths: set order and caller result mutation do not widen a later concret
   first.paths[0].roles.push('invented'); first.paths[0].boundary_satisfied = false;
   assert.deepEqual(inspectScopedPaths({ ...f.options(), targets }), second);
 });
+
+test('W20: a component catalog listing without a known global editor creates no scoped path authority', (t) => {
+  const f = fixture(t), file = 'src/components/ui/Button.tsx', catalog = 'docs/design/component-catalog.md';
+  f.json(f.layoutFile, { roles: { ...roles(), global_component: ['src/components/ui/**'] } });
+  f.put(file, 'export const Button = () => null;\n');
+  for (const kind of ['visual', 'behavior']) {
+    f.kind(kind);
+    const before = f.run(file, 'M');
+    f.put(catalog, '# Component Catalog\n\n## Button\n- import: `@/components/ui/Button`\n- props: `onPress: () => void`\n');
+    const after = f.run(file, 'M');
+    denied(after, 'outside-owned-role-intersection'); assert.deepEqual(after.paths, before.paths);
+    fs.rmSync(path.join(f.root, catalog));
+  }
+});
+
+test('W21: a case-alias spelling of the exact entry never becomes the owned entry', (t) => {
+  const f = fixture(t); f.put(ENTRY); assert.equal(f.run(ENTRY, 'M').boundary_satisfied, true);
+  const alias = ENTRY.replace('RESULT-001.tsx', 'result-001.tsx');
+  for (const change of ['A', 'M']) {
+    // A case-insensitive filesystem resolves the alias, so its spelling is rejected;
+    // a case-sensitive one sees another path, which is not this owner's entry.
+    let out;
+    try { out = f.run(alias, change); } catch (error) { assert.match(error.message, /spelling differs from repository directory entry/); continue; }
+    assert.equal(out.boundary_satisfied, false, JSON.stringify(out.paths));
+  }
+});

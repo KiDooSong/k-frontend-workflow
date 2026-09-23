@@ -171,3 +171,18 @@ test('D adoption: visual-refresh v1 path authority returns work-selection-requir
     assert.deepEqual(guarded.work_selection_required.map((entry) => entry.owner), ['screen:RESULT-001']);
   }
 });
+
+test('W28: withdrawing adoption inside an implementation diff cannot reopen legacy authority for that run', (t) => {
+  const r = repository(t);
+  const request = r.put('.work/current.json', JSON.stringify({ version: 1, origin_inputs: [], requests: [{ owner: 'screen:RESULT-001',
+    authority: 'current', requested_mode: 'rough-fixture-ui', targets: [{ path: ENTRY('RESULT-001'), change: 'M' }] }] }));
+  const flags = { work: request, root: r.root, docs: DOCS, src: 'src', policy: '.kit/policy.yaml', manifest: '.kit/manifest.yaml', layout: '.kit/layout.yaml' };
+  const preflight = prepareCurrentWork(flags); t.after(() => cleanupCurrentWork(preflight));
+  assert.deepEqual(preflight.denials.map((entry) => entry.code), ['CW-WORK-SELECTION-REQUIRED']);
+  // The same diff drops the policy adoption section and edits the adopted path.
+  fs.writeFileSync(r.policyFile, fs.readFileSync(DEFAULTS.policy, 'utf8'));
+  r.put(ENTRY('RESULT-001'), 'export default function Screen() { return null; }\n');
+  const codes = evaluateCurrentGit(preflight).violations.map((entry) => entry.code);
+  assert.ok(codes.includes('CW-GIT-AUTHORITY-CHANGED'), JSON.stringify(codes));
+  assert.ok(codes.includes('CW-GIT-DENIED-TARGET'), JSON.stringify(codes));
+});

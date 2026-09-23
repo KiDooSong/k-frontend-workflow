@@ -373,3 +373,31 @@ test('D hosts: caller mutations of one observation cannot change subsequent nati
   assert.deepEqual(next.targets, [{ path: TARGET, change: 'M' }]);
   assert.equal(JSON.stringify(args.origin_inputs), input); noGrant(next);
 });
+
+test('W38: a deprecated host mapping is denied for adopted and legacy hosts alike', (t) => {
+  for (const legacyHost of [false, true]) {
+    const f = fixture(t); f.visual(); if (legacyHost) f.legacy();
+    f.edit('mapping-2.md', ({ fm }) => { fm.status = 'deprecated'; });
+    const out = f.run({}, { targets: [{ path: `${SHARED}/Panel1.tsx`, change: 'M' }] });
+    denied(out, 'host-mapping-deprecated');
+    // The adopted host's own profile reports it too; the legacy host has no profile to borrow.
+    assert.equal(out.denials.some((entry) => entry.code === 'visual-mapping-deprecated' && entry.host === 'screen:RESULT-002'), !legacyHost);
+    assert.equal(hostOf(out, 'screen:RESULT-001').host_satisfied, true);
+  }
+});
+
+test('W39: an open visual Conflict on one host holds the surface until that host resolves it', (t) => {
+  const f = fixture(t); f.visual();
+  const targets = [{ path: `${SHARED}/Panel1.tsx`, change: 'M' }];
+  const conflict = (status) => f.edit('screen-2.md', (doc) => {
+    doc.body = `## Notes\nExisting host.\n\n## Conflicts\n${table(['ID', 'Description', 'Status'],
+      [['C-PANEL', 'Panel spacing differs from the RESULT-001 frame; see artifact:MAP-2#component-mapping', status]])}`;
+  });
+  conflict('open');
+  const held = f.run({}, { targets });
+  denied(held, 'unit-uncertainty-unresolved');
+  assert.equal(hostOf(held, 'screen:RESULT-001').host_satisfied, true);
+  conflict('resolved');
+  const released = f.run({}, { targets });
+  assert.equal(released.hosts_satisfied, true, JSON.stringify(released.denials)); noGrant(released);
+});
