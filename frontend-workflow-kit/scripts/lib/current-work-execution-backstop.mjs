@@ -9,11 +9,11 @@ import {
   screenDomain, effectiveOrder, exactSurfaceAuthorization,
 } from './current-work-execution-core.mjs';
 
-function recordKey(record) {
+export function recordKey(record) {
   return record.status === 'R' || record.status === 'C'
     ? `${record.status}:${record.oldPath}->${record.newPath}` : `${record.status}:${record.path}`;
 }
-function projectRecord(record, prefix) {
+export function projectRecord(record, prefix) {
   const strip = (p) => {
     if (!prefix) return p;
     if (p === prefix) return '';
@@ -66,7 +66,7 @@ function baselineAuthorization(preflight, owner, file) {
     return { allowed: false, reason: error.message };
   }
 }
-function gitModeOfEvidence(evidence) {
+export function gitModeOfEvidence(evidence) {
   if (!evidence || evidence.kind !== 'file') return null;
   return (evidence.mode & 0o111) ? '100755' : '100644';
 }
@@ -74,7 +74,7 @@ function gitModeOfEvidence(evidence) {
 // Only the exact newly-created, unchanged request can be transport rather than
 // implementation. Never exempt a directory, an existing source, a selected target,
 // or an authority dependency. The normal raw/digest recheck still runs first.
-function isExecutionInput(record, preflight, evidence) {
+export function isExecutionInput(record, preflight, evidence) {
   const name = preflight.snapshot.work_request.path;
   return Boolean(name && record.status === 'A' && record.projectPath === name &&
     !preflight._context.snapshot.entry(name) && evidence?.kind === 'file' &&

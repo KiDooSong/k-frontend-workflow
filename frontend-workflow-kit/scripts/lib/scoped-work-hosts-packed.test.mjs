@@ -1,6 +1,6 @@
-// Focused pack regression for D28+ host consent and request composition. It does
-// not replay the already shipped resolver test suite. Existing package/CI globs
-// still select their full suites.
+// Focused pack regression for D28+ host consent, request composition and the
+// scoped baseline preflight/Git backstop. It does not replay the already shipped
+// resolver test suite. Existing package/CI globs still select their full suites.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -9,19 +9,19 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { KIT_ROOT } from './util.mjs';
 
-const SUITES = ['scoped-work-hosts.test.mjs', 'scoped-work-composition.test.mjs'];
+const SUITES = ['scoped-work-hosts.test.mjs', 'scoped-work-composition.test.mjs', 'scoped-work-execution.test.mjs'];
 const RUNTIME = SUITES.map((name) => name.replace('.test.mjs', '.mjs'));
 
 function checkedNode(args, cwd, env = process.env) {
   const run = spawnSync(process.execPath, args, { cwd, env, encoding: 'utf8',
-    maxBuffer: 16 * 1024 * 1024, timeout: 120000 });
+    maxBuffer: 16 * 1024 * 1024, timeout: 300000 });
   assert.equal(run.error, undefined, String(run.error));
   assert.equal(run.signal, null, `terminated: ${run.signal}`);
   assert.equal(run.status, 0, `${run.stderr}\n${run.stdout}`);
   return run;
 }
 
-test('D hosts packed: the host consent and composition suites run against shipped runtime bytes only', (t) => {
+test('D hosts packed: host consent, composition and scoped execution suites run against shipped runtime bytes only', (t) => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'scoped-hosts-packed-'));
   t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
   const packed = path.join(temp, 'payload'), lib = path.join(packed, 'scripts/lib');
