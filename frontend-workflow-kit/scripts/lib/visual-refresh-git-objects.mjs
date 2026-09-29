@@ -42,11 +42,13 @@ export function decodeGitUtf8(bytes, label) {
 export function runVisualGit(args, cwd, options = {}) {
   try {
     return execFileSync('git', ['--no-replace-objects', ...args], {
-      cwd, encoding: options.encoding ?? null, maxBuffer: MAX_VISUAL_GIT_BUFFER,
+      cwd, encoding: options.encoding ?? null, maxBuffer: options.maxBuffer ?? MAX_VISUAL_GIT_BUFFER,
       env: { ...process.env, ...(options.env || {}) }, stdio: options.stdio, input: options.input,
     });
   } catch (error) {
-    const detail = error?.stderr ? String(error.stderr).trim() : error?.message || 'unknown Git error';
+    // An empty stderr Buffer is truthy; keep the spawn cause (e.g. ENOBUFS) instead.
+    const stderr = error?.stderr ? String(error.stderr).trim() : '';
+    const detail = stderr || error?.message || error?.code || 'unknown Git error';
     throw new VisualRefreshGitError(`git ${args.join(' ')} failed: ${detail}`);
   }
 }
@@ -72,10 +74,54 @@ function listEntries(repositoryRoot, tree) {
   return entries;
 }
 
+// Sizes come from the same object database before any content is read, so the
+// content batches below can be bounded by bytes, not only by count.
+function readBlobSizes(repositoryRoot, oids) {
+  const sizes = new Map();
+  if (!oids.length) return sizes;
+  const raw = decodeGitUtf8(
+    runVisualGit(['cat-file', '--batch-check'], repositoryRoot, { input: oids.join('\n') + '\n' }),
+    'cat-file --batch-check',
+  );
+  const lines = raw.endsWith('\n') ? raw.slice(0, -1).split('\n') : [];
+  if (lines.length !== oids.length) throw new VisualRefreshGitError('invalid/truncated cat-file --batch-check response');
+  lines.forEach((line, index) => {
+    const match = /^(\S+) blob (\d+)$/.exec(line);
+    const size = match ? Number(match[2]) : NaN;
+    if (!match || match[1] !== oids[index] || !Number.isSafeInteger(size)) {
+      throw new VisualRefreshGitError(`invalid cat-file blob size for ${oids[index]}`);
+    }
+    sizes.set(oids[index], size);
+  });
+  return sizes;
+}
+
+// A `cat-file --batch` response carries a header, the raw bytes and a newline per
+// blob. A batch stays within the byte budget; a blob larger than the budget is
+// read alone with a buffer sized to it, so no response is ever truncated.
+export function planBlobBatches(blobs, budget = MAX_VISUAL_GIT_BUFFER, maxCount = 128) {
+  if (!Number.isSafeInteger(budget) || budget < 1 || !Number.isSafeInteger(maxCount) || maxCount < 1) {
+    throw new VisualRefreshGitError('blob batch budget and count must be positive integers');
+  }
+  const batches = [];
+  let current = { oids: [], bytes: 0 };
+  for (const { oid, size } of blobs) {
+    const bytes = `${oid} blob ${size}\n`.length + size + 1;
+    if (current.oids.length && (current.oids.length >= maxCount || current.bytes + bytes > budget)) {
+      batches.push(current);
+      current = { oids: [], bytes: 0 };
+    }
+    current.oids.push(oid);
+    current.bytes += bytes;
+  }
+  if (current.oids.length) batches.push(current);
+  return batches;
+}
+
 // Every returned blob is binary, type/length checked, and hash-verified against
 // its requested OID. No path-based --filters/--textconv/--follow-symlinks mode.
-function readBlobBatch(repositoryRoot, oids) {
-  const buffer = runVisualGit(['cat-file', '--batch'], repositoryRoot, { input: oids.join('\n') + '\n' });
+function readBlobBatch(repositoryRoot, oids, maxBuffer = MAX_VISUAL_GIT_BUFFER) {
+  const buffer = runVisualGit(['cat-file', '--batch'], repositoryRoot, { input: oids.join('\n') + '\n', maxBuffer });
   const blobs = new Map();
   let offset = 0;
   for (const oid of oids) {
@@ -115,7 +161,7 @@ function ensureDirectory(root, relative) {
   return cursor;
 }
 
-export function materializeRawGitTree({ repositoryRoot, projectPrefix = '', tree }) {
+export function materializeRawGitTree({ repositoryRoot, projectPrefix = '', tree, batchBytes = MAX_VISUAL_GIT_BUFFER }) {
   if (projectPrefix) requireGitRepositoryPath(projectPrefix, 'project prefix');
   const entries = listEntries(repositoryRoot, tree);
   if (projectPrefix && entries.get(projectPrefix)?.mode !== '040000') {
@@ -139,11 +185,13 @@ export function materializeRawGitTree({ repositoryRoot, projectPrefix = '', tree
       }
     }
     const oids = [...blobsByOid.keys()];
-    // Batching avoids a process per file; the existing 128 MiB Git output bound
-    // applies per batch. Overflow is an explicit tool error, never partial authority.
+    const sizes = readBlobSizes(repositoryRoot, oids);
+    // Batching avoids a process per file. Batches are bounded by bytes as well as
+    // by count, so a tree of large binaries never overflows one Git output buffer.
+    // Any Git failure is still an explicit tool error, never partial authority.
     const links = [];
-    for (let i = 0; i < oids.length; i += 128) {
-      const batch = readBlobBatch(repositoryRoot, oids.slice(i, i + 128));
+    for (const planned of planBlobBatches(oids.map((oid) => ({ oid, size: sizes.get(oid) })), batchBytes)) {
+      const batch = readBlobBatch(repositoryRoot, planned.oids, Math.max(batchBytes, planned.bytes));
       for (const [oid, blob] of batch) {
         for (const entry of blobsByOid.get(oid)) {
           const absolute = path.join(checkoutRoot, ...entry.repository_path.split('/'));

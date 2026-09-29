@@ -7,7 +7,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
   materializeRawGitTree, requireGitRepositoryPath, decodeGitUtf8,
-  bindVisualGitScreenIdentity,
+  bindVisualGitScreenIdentity, planBlobBatches, runVisualGit, VisualRefreshGitError,
 } from './visual-refresh-git-objects.mjs';
 
 const KIT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -144,6 +144,42 @@ test('raw snapshot rejects physical filename collisions instead of overwriting G
   setMode(root, 'case.ts', '100644', two);
   const tree = git(root, 'write-tree');
   assert.throws(() => materializeRawGitTree({ repositoryRoot: root, tree }), /materialization failed|spelling|EEXIST/);
+});
+
+test('raw snapshot bounds cat-file batches by bytes, so large blobs never overflow one Git buffer', (t) => {
+  const root = temporary(t);
+  const budget = 64 * 1024;
+  const files = {
+    'assets/a.bin': Buffer.alloc(40 * 1024, 1),
+    'assets/b.bin': Buffer.alloc(40 * 1024, 2),
+    'assets/large.bin': Buffer.alloc(200 * 1024, 3), // over the budget: read alone
+    'docs/policy.yaml': Buffer.from('forbidden_paths: [src/**]\n'),
+    'docs/copy.yaml': Buffer.from('forbidden_paths: [src/**]\n'), // same OID, written twice from one read
+  };
+  for (const [file, content] of Object.entries(files)) write(root, file, content);
+  commit(root);
+  const view = materializeRawGitTree({ repositoryRoot: root, tree: git(root, 'rev-parse', 'HEAD^{tree}'), batchBytes: budget });
+  t.after(view.cleanup);
+  for (const [file, content] of Object.entries(files)) assert.deepEqual(fs.readFileSync(path.join(view.root, file)), content, file);
+
+  const blobs = [...new Set(Object.keys(files).map((file) => view.entry(file).oid))]
+    .map((oid) => ({ oid, size: Number(git(root, 'cat-file', '-s', oid)) }));
+  const batches = planBlobBatches(blobs, budget);
+  assert.equal(batches.length, 4, 'a | b | large | policy: no two of a, b and large share a 64 KiB response');
+  for (const batch of batches) assert.ok(batch.bytes <= budget || batch.oids.length === 1, 'only a lone blob may exceed the budget');
+  assert.deepEqual(batches.flatMap((batch) => batch.oids), blobs.map((blob) => blob.oid), 'every blob once, in order');
+  assert.throws(() => planBlobBatches(blobs, 0), /positive integers/);
+});
+
+test('Git failures keep their spawn cause when stderr is empty', (t) => {
+  const root = temporary(t);
+  write(root, 'docs/policy.yaml', 'forbidden_paths: [src/**]\n');
+  commit(root);
+  const oid = git(root, 'rev-parse', 'HEAD:docs/policy.yaml');
+  assert.throws(
+    () => runVisualGit(['cat-file', '--batch'], root, { input: `${oid}\n`, maxBuffer: 8 }),
+    (error) => error instanceof VisualRefreshGitError && /git cat-file --batch failed: .*ENOBUFS/.test(error.message),
+  );
 });
 
 function fixture(t, { prefix = '' } = {}) {
