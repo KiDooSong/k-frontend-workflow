@@ -32,6 +32,20 @@ Use `--root` when the project root is not the current working directory. Use
 `--src` when source files live outside `src/`. Use `--layout` when a custom
 `project-layout.yaml` declares Tier3/custom layer roles.
 
+Pass each command only the options it supports. Project the repository's shared
+options onto each subset, and do not forward an unsupported option to another CLI
+(it is a usage error, exit 2):
+
+- `workflow:state`: `--docs`, `--src`, `--root`, `--layout`
+- `workflow:readiness`: `--docs`, `--layout`, `--policy`, `--manifest`, `--ci`
+- `workflow:validate`: `--docs`, `--src`, `--root`, `--layout`, `--policy`, `--manifest`, and `--schema` when provided
+
+`workflow:readiness` with the explicit visual-refresh tuple (`--intent visual-refresh`)
+also accepts `--root` and `--src`. With `--work`, the five work CLIs (readiness,
+packet, run, report, forbidden-paths) share one resource set:
+`--root`, `--docs`, `--src`, `--policy`, `--manifest`, `--layout`, `--ci`.
+See [current work](docs/reference/current-work.md).
+
 `workflow:state`, `workflow:readiness`, and `workflow:validate` support `--help`
 and treat usage errors — an unknown option (e.g. a `--jsno`/`--screeen` typo), a
 value flag without a value, a value passed to a boolean flag, or a positional

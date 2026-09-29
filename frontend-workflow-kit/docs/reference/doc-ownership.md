@@ -43,6 +43,7 @@ inline and links the rest; it does not restate the references.
 | screen source aliases / canonical identity | [`screen-identity.md`](screen-identity.md) (Stage 02) | link from source / reconcile / implement |
 | ScreenSpec active/absorbed lifecycle, canonical absorption target, state/readiness meaning | [`screen-lifecycle.md`](screen-lifecycle.md) | link only; keep “do not author/implement absorbed source” inline where execution safety needs it |
 | implement `allowed_paths` / `forbidden_paths` / delegated shared paths | readiness output + [Stage 06](workflow-stages/06-implement-screen-or-code.md) | state the invariant only |
+| per-CLI option subsets for `workflow:state` / `readiness` / `validate`, and the `--work` resource set | [`COMMANDS.md`](../../COMMANDS.md) §Daily Loop | link; keep "do not forward an unsupported option to another CLI" inline |
 | current-work request/origin/digest/transport/backstop contract (`authority: current`) | [`current-work.md`](current-work.md) | link; keep only the existing-authority invariant inline |
 | scoped-work adoption, unit request, baseline preflight, host/shared-target rules, backstop, fallback guard and rollback (`authority: scoped`) | [`scoped-work.md`](scoped-work.md) | link; keep "adoption is human-reviewed; a denied scoped task is never retried under another authority" inline |
 | visual vs behavior split | [`input-reconciliation.md`](input-reconciliation.md) §Visual/Figma + [`figma-component-mapping.template.md`](../../templates/screen/figma-component-mapping.template.md) | short reminder only |
