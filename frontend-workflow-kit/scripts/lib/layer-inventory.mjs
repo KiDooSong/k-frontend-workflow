@@ -2,7 +2,7 @@
 // This module observes declared layout layers and records whether access rows are readiness-wired.
 // It does not promote hard gates, lint rules, pre-edit hooks, or CI behavior.
 import path from 'node:path';
-import { walkFiles, projectRootOf } from './util.mjs';
+import { walkFiles, projectRootOf, symlinkOnPath } from './util.mjs';
 import { globRoot, globToRegExp } from './glob.mjs';
 
 export const SUPPORTED_LAYER_FACTS = ['dir_has_files'];
@@ -120,10 +120,13 @@ function nestedRoleMatchers(layout, role, domain, ownerGlobs) {
   return out;
 }
 
-function matchingFilesForGlob(glob, { projectRoot, excludeMatchers = [], exts = SOURCE_FACT_EXTS } = {}) {
+function matchingFilesForGlob(glob, { projectRoot, excludeMatchers = [], exts = SOURCE_FACT_EXTS, rejectSymlinks = false } = {}) {
   const rootRel = globRoot(glob).replace(/\/+$/, '');
   const rootAbs = safeRootAbs(projectRoot, rootRel);
   if (!rootAbs) return { files: [], outOfScope: true };
+  // Nested links are never followed by walkFiles; a linked root or ancestor has no
+  // files in the Git tree either, so a baseline evaluation never follows it.
+  if (rejectSymlinks && symlinkOnPath(projectRoot, rootAbs)) return { files: [], outOfScope: false };
   const matcher = globToRegExp(glob);
   const files = [];
   for (const file of walkFiles(rootAbs, exts)) {
@@ -134,23 +137,23 @@ function matchingFilesForGlob(glob, { projectRoot, excludeMatchers = [], exts = 
   return { files, outOfScope: false };
 }
 
-export function countLayerFiles(layer, { layout, projectRoot, domain, excludeNestedRoles = false, exts = SOURCE_FACT_EXTS } = {}) {
+export function countLayerFiles(layer, { layout, projectRoot, domain, excludeNestedRoles = false, exts = SOURCE_FACT_EXTS, rejectSymlinks = false } = {}) {
   const globs = layerGlobValues(layer, { layout, domain });
   const excludeMatchers = excludeNestedRoles ? nestedRoleMatchers(layout, layer.role, domain, globs) : [];
   const files = new Set();
   let outOfScope = false;
   for (const glob of globs) {
-    const result = matchingFilesForGlob(glob, { projectRoot, excludeMatchers, exts });
+    const result = matchingFilesForGlob(glob, { projectRoot, excludeMatchers, exts, rejectSymlinks });
     outOfScope = outOfScope || result.outOfScope;
     for (const file of result.files) files.add(file);
   }
   return { count: files.size, outOfScope, globs };
 }
 
-function countResolvedGlobFiles(layer, resolvedGlob, { layout, projectRoot, domain, excludeNestedRoles = false, exts = SOURCE_FACT_EXTS } = {}) {
+function countResolvedGlobFiles(layer, resolvedGlob, { layout, projectRoot, domain, excludeNestedRoles = false, exts = SOURCE_FACT_EXTS, rejectSymlinks = false } = {}) {
   if (!resolvedGlob) return { count: 0, outOfScope: false };
   const excludeMatchers = excludeNestedRoles ? nestedRoleMatchers(layout, layer.role, domain, [resolvedGlob]) : [];
-  const result = matchingFilesForGlob(resolvedGlob, { projectRoot, excludeMatchers, exts });
+  const result = matchingFilesForGlob(resolvedGlob, { projectRoot, excludeMatchers, exts, rejectSymlinks });
   return { count: result.files.length, outOfScope: result.outOfScope };
 }
 
@@ -270,7 +273,7 @@ export function resolveLayerModel({ layout, domains = [] } = {}) {
   return { layers };
 }
 
-export function scanLayerInventory({ projectRoot, srcDir, layout, screens = [] } = {}) {
+export function scanLayerInventory({ projectRoot, srcDir, layout, screens = [], rejectSymlinks = false } = {}) {
   const root = projectRoot || projectRootOf(srcDir);
   const domains = screenDomains(screens);
   const model = resolveLayerModel({ layout, domains });
@@ -286,6 +289,7 @@ export function scanLayerInventory({ projectRoot, srcDir, layout, screens = [] }
       projectRoot: root,
       domain,
       excludeNestedRoles: true,
+      rejectSymlinks,
     });
     facts[`${layer.role}_present`] = Boolean(facts[`${layer.role}_present`]) || count > 0;
     for (const resolvedGlob of globs.length ? globs : [null]) {
@@ -294,6 +298,7 @@ export function scanLayerInventory({ projectRoot, srcDir, layout, screens = [] }
         projectRoot: root,
         domain,
         excludeNestedRoles: true,
+        rejectSymlinks,
       });
       const overlap = overlapInfo({ ...layer, glob: resolvedGlob || layer.glob }, { layout, domain });
       rows.push({

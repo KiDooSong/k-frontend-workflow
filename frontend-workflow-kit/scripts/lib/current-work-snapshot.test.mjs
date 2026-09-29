@@ -190,8 +190,10 @@ function authorityFixture(t) {
 for (const flag of ['assume-unchanged', 'skip-worktree']) {
   test(`P1-3 ${flag}: every consumed authority file is checked directly; user index is unchanged`, (t) => {
     const f = authorityFixture(t);
+    // #250: the workflow state is computed from the baseline documents, so the
+    // generated `_meta/workflow-state.yaml` is not a consumed authority file.
     const names = ['config/policy.yaml', 'config/manifest.yaml', 'config/layout.yaml', 'config/ci.yaml',
-      'docs/frontend-workflow/_meta/workflow-state.yaml', f.register, f.input];
+      f.register, f.input];
     for (const name of names) {
       const file = path.join(f.root, name), original = fs.readFileSync(file);
       f.git(['update-index', `--${flag}`, name]);

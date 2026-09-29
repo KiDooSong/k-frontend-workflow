@@ -250,7 +250,7 @@ export function isStub(spec) {
 //   opts.projectRoot : role 글롭 앵커(MINOR 2). 미주입 시 표준 <root>/src 가정으로 dirname(srcDir).
 //     validate 검사 8·check-generated-files route-tree 입력과 동일 식(projectRootOf)을 써 표류 방지.
 export function deriveMetrics(spec, opts = {}) {
-  const { srcDir, layout } = opts;
+  const { srcDir, layout, rejectSymlinks = false } = opts;
   const projectRoot = opts.projectRoot || projectRootOf(srcDir);
   const domain = spec.frontmatter.domain;
   const sections = spec.sections;
@@ -350,6 +350,7 @@ export function deriveMetrics(spec, opts = {}) {
         projectRoot,
         domain,
         excludeNestedRoles: true,
+        rejectSymlinks,
       });
     }
   }
@@ -364,6 +365,7 @@ export function deriveMetrics(spec, opts = {}) {
       domain,
       excludeNestedRoles: true,
       exts: TYPESCRIPT_FACT_EXTS,
+      rejectSymlinks,
     });
   }
 

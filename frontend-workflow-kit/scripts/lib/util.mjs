@@ -87,6 +87,40 @@ export function isDir(p) {
   }
 }
 
+// The first path from `root` (exclusive) down to `target` (inclusive) that is a
+// symbolic link, relative to `root` in POSIX form, or null. A missing segment ends
+// the check: nothing below it exists to be followed.
+export function symlinkOnPath(root, target) {
+  const rel = path.relative(root, target);
+  if (!rel || rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) return null;
+  let cursor = root;
+  for (const part of rel.split(path.sep)) {
+    cursor = path.join(cursor, part);
+    let stat;
+    try { stat = fs.lstatSync(cursor); } catch (error) {
+      if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return null;
+      throw error;
+    }
+    if (stat.isSymbolicLink()) return path.relative(root, cursor).split(path.sep).join('/');
+  }
+  return null;
+}
+
+// The first symbolic link anywhere below `root`, relative to it in POSIX form, or null.
+export function firstSymlinkBelow(root) {
+  if (!isDir(root)) return null;
+  const stack = [root];
+  while (stack.length) {
+    const dir = stack.pop();
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isSymbolicLink()) return path.relative(root, full).split(path.sep).join('/');
+      if (entry.isDirectory()) stack.push(full);
+    }
+  }
+  return null;
+}
+
 // dir 가 비어있지 않은(파일 1개 이상) 디렉토리인지
 export function dirHasFiles(dir, exts) {
   if (!isDir(dir)) return false;

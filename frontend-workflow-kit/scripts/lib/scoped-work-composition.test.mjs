@@ -4,8 +4,6 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { splitFrontmatter, DEFAULTS } from './util.mjs';
-import { buildState } from '../workflow-state.mjs';
-import { loadLayoutProfile } from './layout-profile.mjs';
 import { buildReconciliationTargetIndex } from './reconciliation-target-index.mjs';
 import { inspectScopedWorkRequests } from './scoped-work-composition.mjs';
 
@@ -65,25 +63,20 @@ function fixture(t) {
   }, SURFACE_BODY);
   // M targets must exist in the observed tree; A targets must not.
   for (const file of [PANEL, ...MEMBERS.map(ENTRY)]) put(file, 'export default null;\n');
-  function writeState() {
-    const layout = loadLayoutProfile({ kitRoot: root, flags: { layout: layoutFile } });
-    put(`${DOCS}/_meta/workflow-state.yaml`, JSON.stringify(buildState({ docsDir, srcDir: path.join(root, 'src'),
-      date: '2026-09-23', layout, projectRoot: root }).state));
-  }
   function legacy(number = 2) {
     edit(`screen-${number}.md`, ({ fm }) => { delete fm.work_execution; });
     work.owners = work.owners.filter((owner) => owner !== `screen:${MEMBERS[number - 1]}`); writePolicy();
     edit('surface.md', ({ fm }) => { fm.work_execution.units[0].host_units[MEMBERS[number - 1]] = 'legacy-current'; });
   }
-  const resources = () => ({ projectRoot: root, docsDir, kitRoot: path.join(root, '.kit'), policyFile, layoutFile, manifestFile,
+  // #250: a legacy-current host computes its state from docs and src; no generated file is written.
+  const resources = () => ({ projectRoot: root, docsDir, srcDir: path.join(root, 'src'), kitRoot: path.join(root, '.kit'), policyFile, layoutFile, manifestFile,
     registerFile: path.join(docsDir, '_meta/reconciliation-register.md'), inputArtifacts: [],
     targetIndex: buildReconciliationTargetIndex({ docs: [...docs.values()].map((file) => ({ file,
       fm: splitFrontmatter(fs.readFileSync(file, 'utf8')).data })) }) });
   function run(requests, extra = {}, { origins = [] } = {}) {
-    writeState();
     return inspectScopedWorkRequests({ ...resources(), ...extra, request: { version: 1, origin_inputs: origins, requests } });
   }
-  return { root, docs, put, edit, work, writePolicy, writeState, legacy, resources, run };
+  return { root, docs, put, edit, work, writePolicy, legacy, resources, run };
 }
 const surface = (targets = [PANEL]) => ({ owner: SURFACE, authority: 'scoped', unit: 'panel',
   targets: targets.map((file) => ({ path: file, change: 'M' })) });

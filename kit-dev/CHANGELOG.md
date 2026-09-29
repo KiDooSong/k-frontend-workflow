@@ -27,6 +27,21 @@
   실패하던 warning-only `example:test`의 skill-contract fixture 2건(implement-screen, reconcile-input)이 다시 통과한다.
 - 동작·권한·CLI 계약은 바꾸지 않았다. pilot 채택(E2)과 실제 수행 측정(E3)은 포함하지 않는다.
 
+### fix(workflow) — `--work`가 workflow state를 직접 계산 (#250-2)
+
+- current·scoped `--work` preflight는 HEAD 트리에 커밋된 `_meta/workflow-state.yaml`을 읽었다. 그래서 `_meta`
+  생성물을 추적하지 않는 consumer에서는 `workflow-state: file not found`로 멈췄고, 오래된 파일이 있으면 그 내용으로
+  판정했다. 이제 두 preflight는 materialize한 baseline 문서와 src로 `workflow:state`와 같은 `buildState()`를
+  호출해 state를 계산하고, `legacy-current` host도 docs·src 위치를 받아 같은 방식으로 계산한다.
+- 생성된 state 파일은 더 이상 authority read set·backstop 경로가 아니다. Git-ignore된 채 다시 생성된 파일은
+  보고하지 않고, 추적 중인 파일이 구현 diff에서 바뀌면 지금처럼 `CW-GIT-AUTHORITY-CHANGED`다.
+- 이 계산은 baseline 밖으로 symlink를 따라가지 않는다(`buildState({ rejectSymlinks: true })`). role glob의 시작
+  경로나 그 조상이 커밋된 symlink면 파일이 없는 것으로 보고, docs 안이나 docs·src 경로의 symlink는 입력 오류다.
+  외부 리뷰 P1: symlink로 저장소 밖 파일이 `fake_hook_exists` 같은 fact가 되어 readiness 상한을 올릴 수 있었다.
+  legacy `workflow:state` CLI 동작은 바꾸지 않았다.
+- no-work `readiness`·`forbidden-paths`는 그대로 `_meta/workflow-state.yaml`을 읽는다. 문서:
+  `current-work.md`, `scoped-work.md`, `upgrade-notes.md`.
+
 ### feat(workflow) — scoped work execution (#238 D)
 
 - 사람이 채택한 owner(policy `work_execution.owners` + owner `work_execution`)의 work unit을 `authority: scoped`로

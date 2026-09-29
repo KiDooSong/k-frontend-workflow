@@ -108,15 +108,17 @@ packets and serialized verdicts are not authority. For each scoped request:
 - **Surface hosts** — every member: an adopted host needs its own profile, Decision
   scopes and consent under its member role ceiling; a `legacy-current` host
   consents only through the member base envelope of the actual legacy surface
-  computation (from the generated `workflow-state.yaml`, which must match the
-  canonical surface — regenerate it with `workflow:state`). A visual surface keeps
-  each host's mapping rows and Figma provenance; a selected component must resolve
-  to one literal repository path inside the surface's own implementation paths.
+  computation, over the workflow state computed from the baseline documents and
+  source tree like [current work](current-work.md#origin-and-snapshot-binding)
+  (a generated `_meta/workflow-state.yaml` is never read). A visual
+  surface keeps each host's mapping rows and Figma provenance; a selected component
+  must resolve to one literal repository path inside the surface's own
+  implementation paths.
 - **Shared targets** — a target selected by several requests is allowed only when
   every responsible request allows it.
 - **Legacy readiness** is preserved as information in `legacy_readiness` and its
   phase blockers appear as `future_requirements`. Invalid or structural legacy
-  markers and owners missing from the generated state are errors.
+  markers and owners missing from the computed state are errors.
 
 The envelope has `work_contract: 1`, `authority: scoped`, `snapshot`,
 `request_digest`, `origin_inputs`, `requests` (per request `path_authorizations`,
@@ -176,7 +178,6 @@ isolation, or who approved a binding. Reviewers own those judgments.
 - A selected mapping component cell must hold one literal repository path
   (optionally in one inline-code pair); other forms are reported as
   `surface-visual-evidence-unresolved`.
-- A `legacy-current` host needs the generated legacy state for its surface.
 - Git evidence is `HEAD` against the worktree, or against the index with
   `--staged`; commit ranges are not an input. Committing the implementation moves
   the baseline, so check it with `forbidden-paths` or `report` before that commit.

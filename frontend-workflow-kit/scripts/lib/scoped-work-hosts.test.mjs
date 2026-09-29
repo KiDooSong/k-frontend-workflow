@@ -74,13 +74,15 @@ function fixture(t) {
       host_units: Object.fromEntries(MEMBERS.map((id) => [id, 'known'])) }] },
   }, SURFACE_BODY);
   const registerFile = path.join(docsDir, '_meta/reconciliation-register.md');
-  // The committed legacy state is generated from the same documents.
-  function writeState() {
+  // Hosts compute the legacy state from the canonical documents and source tree; a
+  // generated `_meta/workflow-state.yaml` is written only to prove it is never read.
+  function writeState(content) {
     const layout = loadLayoutProfile({ kitRoot: root, flags: { layout: layoutFile } });
-    put(`${DOCS}/_meta/workflow-state.yaml`, JSON.stringify(buildState({ docsDir, srcDir: path.join(root, 'src'),
+    put(`${DOCS}/_meta/workflow-state.yaml`, content ?? JSON.stringify(buildState({ docsDir, srcDir: path.join(root, 'src'),
       date: '2026-09-23', layout, projectRoot: root }).state));
   }
   const options = (targets = [{ path: TARGET, change: 'M' }]) => ({ owner: SURFACE, unit: 'panel', projectRoot: root, docsDir, kitRoot,
+    srcDir: path.join(root, 'src'),
     policyFile, layoutFile, manifestFile, registerFile, inputArtifacts: inputs.map(loadInputArtifact), origin_inputs: [], coverage_reports: [],
     targets, targetIndex: buildReconciliationTargetIndex({ docs: [...docs.values()].map((file) => ({ file,
       fm: splitFrontmatter(fs.readFileSync(file, 'utf8')).data })) }),
@@ -130,8 +132,7 @@ function fixture(t) {
     put(`${DOCS}/_meta/reconciliation-register.md`, md({ reconciliation_contract: 2, review_profile: 'reconcile-stage04-v1', structured_since: '2026-09-01T00:00:00Z' },
       `${table(REQUIRED_REGISTER_COLS, summaries)}\n\n## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, effects)}`));
   }
-  function run(extra = {}, { state = true, targets } = {}) {
-    if (state) writeState();
+  function run(extra = {}, { targets } = {}) {
     return inspectScopedSurfaceHosts({ ...options(targets), ...extra });
   }
   return { root, docs, inputs, put, write, edit, options, policyFile, registerFile, work, writePolicy, writeState,
@@ -154,7 +155,7 @@ const hostOf = (result, owner) => result.hosts.find((entry) => entry.owner === o
 
 test('D hosts: both actual scoped host profiles, Decisions and role-ceiling consents are required, without a surface permit', (t) => {
   const f = fixture(t); f.writeState();
-  const before = [...f.docs.values()].map((file) => fs.readFileSync(file)), out = f.run({}, { state: false });
+  const before = [...f.docs.values()].map((file) => fs.readFileSync(file)), out = f.run();
   assert.equal(out.hosts_satisfied, true, JSON.stringify(out.denials)); assert.equal(out.hosts.length, 2);
   assert.deepEqual(out.hosts.map((entry) => entry.owner).sort(), MEMBERS.map((id) => `screen:${id}`));
   assert.ok(out.hosts.every((entry) => entry.profile.profile_satisfied && entry.decision_scopes.unit_checks.some((check) => check.decisions_clear)));
@@ -199,13 +200,13 @@ test('D hosts: missing, duplicate and nonmember host selections never become a s
     [({ fm }) => { delete fm.work_execution.units[0].host_units['RESULT-002']; }, /membership and host_units must match/],
     [({ fm }) => { fm.member_screens.push('RESULT-001'); }, /duplicate/],
     [({ fm }) => { fm.work_execution.units[0].host_units['RESULT-999'] = 'known'; }, /membership and host_units must match/],
-  ]) { const f = fixture(t); f.edit('surface.md', change); assert.throws(() => f.run({}, { state: false }), pattern); }
+  ]) { const f = fixture(t); f.edit('surface.md', change); assert.throws(() => f.run(), pattern); }
 });
 
 test('D hosts: foreign domains and mismatched host unit kinds are not coerced or borrowed', (t) => {
   for (const [change, pattern] of [[({ fm }) => { fm.domain = 'foreign'; }, /host domain differs/],
     [({ fm }) => { fm.work_execution.units[0].kind = 'visual'; }, /host unit kind differs/]]) {
-    const f = fixture(t); f.edit('screen-2.md', change); assert.throws(() => f.run({}, { state: false }), pattern);
+    const f = fixture(t); f.edit('screen-2.md', change); assert.throws(() => f.run(), pattern);
   }
 });
 
@@ -217,7 +218,8 @@ test('D hosts: a legacy-current member consents through its actual legacy member
   assert.deepEqual(legacy.consent, [{ path: TARGET, basis: 'legacy-member-base', member_readiness_mode: 'rough-fixture-ui',
     allowed: true, causes: [] }]);
   assert.equal(hostOf(out, 'screen:RESULT-001').consent[0].basis, 'member-role-ceiling');
-  assert.ok(out.read_set.some((entry) => entry.file === `${DOCS}/_meta/workflow-state.yaml`)); noGrant(out);
+  // #250: the legacy state is computed from the documents, not read from `_meta`.
+  assert.equal(out.read_set.some((entry) => entry.file.endsWith('_meta/workflow-state.yaml')), false); noGrant(out);
 });
 
 test('W40: a legacy member base deny is retained and no scoped peer or valid mapping opens it', (t) => {
@@ -243,10 +245,16 @@ test('D hosts: a legacy member base covers only declared surface paths', (t) => 
   assert.deepEqual(hostOf(out, 'screen:RESULT-002').consent.map((item) => [item.path, item.allowed]), [[outside, false], [TARGET, true]]);
 });
 
-test('D hosts: a stale generated legacy state is rejected instead of interpreted', (t) => {
+test('D hosts: a stale or invalid generated state is never interpreted; the legacy base follows the documents', (t) => {
   const f = fixture(t); f.legacy(); f.writeState();
   f.edit('surface.md', ({ fm }) => { fm.implementation_paths.push(`${PREFIX}/components/extra/**`); });
-  assert.throws(() => f.run({}, { state: false }), /regenerate workflow:state/);
+  const extra = `${PREFIX}/components/extra/Extra.tsx`;
+  const out = f.run({}, { targets: [{ path: extra, change: 'A' }] });
+  assert.equal(out.hosts_satisfied, true, JSON.stringify(out.denials));
+  assert.deepEqual(hostOf(out, 'screen:RESULT-002').consent.map((item) => [item.path, item.basis, item.allowed]),
+    [[extra, 'legacy-member-base', true]]);
+  f.writeState('not: [valid yaml');
+  assert.equal(f.run().hosts_satisfied, true);
 });
 
 test('D hosts: legacy structural surface errors deny the legacy member base', (t) => {
@@ -256,17 +264,30 @@ test('D hosts: legacy structural surface errors deny the legacy member base', (t
   assert.ok(entry.causes.some((cause) => cause.kind === 'surface-contract'), JSON.stringify(entry));
 });
 
-test('D hosts: a late legacy state mutation after its base is pinned invalidates composition', (t) => {
+test('D hosts: a legacy member base never opens the generated state and needs canonical docs and src', (t) => {
   const f = fixture(t); f.legacy(); f.writeState();
-  const state = path.join(f.root, DOCS, '_meta/workflow-state.yaml'), original = fs.openSync;
-  let pinned = false, changed = false;
-  t.mock.method(fs, 'openSync', function(file, ...args) {
-    const fd = original.call(this, file, ...args);
-    if (String(file) === state) pinned = true;
-    else if (pinned && !changed) { changed = true; fs.appendFileSync(state, '\n'); }
-    return fd;
-  });
-  assert.throws(() => f.run({}, { state: false }), /changed/); assert.equal(changed, true);
+  const state = path.join(f.root, DOCS, '_meta/workflow-state.yaml'), original = fs.openSync, readFile = fs.readFileSync;
+  let opened = false;
+  t.mock.method(fs, 'openSync', function(file, ...args) { if (String(file) === state) opened = true; return original.call(this, file, ...args); });
+  t.mock.method(fs, 'readFileSync', function(file, ...args) { if (String(file) === state) opened = true; return readFile.call(this, file, ...args); });
+  assert.equal(f.run().hosts_satisfied, true); assert.equal(opened, false);
+  assert.throws(() => f.run({ srcDir: undefined }), /canonical docsDir and srcDir are required/);
+});
+
+test('#250: a legacy member base never follows a symbolic link and refuses linked documents', { skip: process.platform === 'win32' }, (t) => {
+  const f = fixture(t); f.legacy();
+  const external = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'scoped-hosts-external-')));
+  t.after(() => fs.rmSync(external, { recursive: true, force: true }));
+  const hooks = path.join(f.root, `${PREFIX}/hooks`);
+  fs.rmSync(hooks, { recursive: true, force: true }); fs.mkdirSync(path.dirname(hooks), { recursive: true });
+  fs.symlinkSync(external, hooks, 'dir');
+  const legacyOf = (out) => hostOf(out, 'screen:RESULT-002');
+  const empty = legacyOf(f.run());
+  fs.writeFileSync(path.join(external, 'useResult.ts'), 'export const useResult = () => null;\n');
+  assert.deepEqual(legacyOf(f.run()), empty);
+  fs.mkdirSync(path.join(f.root, DOCS, 'global'), { recursive: true });
+  fs.symlinkSync(path.join(external, 'useResult.ts'), path.join(f.root, DOCS, 'global/linked.md'));
+  assert.throws(() => f.run(), /legacy workflow state: docs contain a symbolic link: global\/linked\.md/);
 });
 
 test('D hosts: an adopted host consents only within its member role ceiling', (t) => {
@@ -282,19 +303,19 @@ test('D hosts: an adopted host consents only within its member role ceiling', (t
 });
 
 test('D hosts: nonconcrete or missing targets are rejected before any host is evaluated', (t) => {
-  const f = fixture(t); f.writeState();
+  const f = fixture(t);
   for (const targets of [[], [{ path: `${SHARED}/**`, change: 'M' }], [{ path: '../outside.tsx', change: 'M' }], [{ path: TARGET }]]) {
-    assert.throws(() => f.run({}, { state: false, targets }));
+    assert.throws(() => f.run({}, { targets }));
   }
   assert.throws(() => inspectScopedSurfaceHosts({ ...f.options(), targets: undefined }));
 });
 
 test('D hosts: caller host lists, approvals, legacy envelopes and callbacks cannot substitute canonical inputs', (t) => {
-  const f = fixture(t); f.writeState();
-  for (const key of ['host_units', 'host_results', 'approved', 'approval_verifier', 'legacy_base', 'state', 'layout', 'evaluator', 'hosts_satisfied', 'consent']) {
-    assert.throws(() => f.run({ [key]: true }, { state: false }), /SW-HOST: unsupported caller option/);
+  const f = fixture(t);
+  for (const key of ['host_units', 'host_results', 'approved', 'approval_verifier', 'legacy_base', 'state', 'legacyState', 'layout', 'evaluator', 'hosts_satisfied', 'consent']) {
+    assert.throws(() => f.run({ [key]: true }), /SW-HOST: unsupported caller option/);
   }
-  assert.throws(() => f.run({ owner: 'screen:RESULT-001', unit: 'known' }, { state: false }), /only an exact surface/);
+  assert.throws(() => f.run({ owner: 'screen:RESULT-001', unit: 'known' }), /only an exact surface/);
 });
 
 test('D hosts: satisfied host checks alone do not evaluate the surface own contract or concrete targets', (t) => {
@@ -351,7 +372,7 @@ test('D hosts visual: partial coverage cannot be borrowed from the successful pe
 });
 
 for (const changedKind of ['authority', 'component']) test(`D hosts visual: a late earlier-host ${changedKind} mutation invalidates composition`, (t) => {
-  const f = fixture(t); f.visual(); f.writeState();
+  const f = fixture(t); f.visual();
   const trigger = path.join(f.root, `${SHARED}/Panel2.tsx`), original = fs.openSync;
   let changed = false;
   t.mock.method(fs, 'openSync', function(file, ...args) {
@@ -362,14 +383,14 @@ for (const changedKind of ['authority', 'component']) test(`D hosts visual: a la
     }
     return fd;
   });
-  assert.throws(() => f.run({}, { state: false }), /snapshot changed|changed between hosts/); assert.equal(changed, true);
+  assert.throws(() => f.run(), /snapshot changed|changed between hosts/); assert.equal(changed, true);
 });
 
 test('D hosts: caller mutations of one observation cannot change subsequent native evaluations', (t) => {
-  const f = fixture(t); f.writeState();
+  const f = fixture(t);
   const args = f.options(), input = JSON.stringify(args.origin_inputs), out = inspectScopedSurfaceHosts(args);
   out.hosts.length = 0; out.read_set.length = 0; args.targets.push({ path: `${SHARED}/Late.tsx`, change: 'A' });
-  const next = f.run({}, { state: false }); assert.equal(next.hosts_satisfied, true); assert.equal(next.hosts.length, 2);
+  const next = f.run(); assert.equal(next.hosts_satisfied, true); assert.equal(next.hosts.length, 2);
   assert.deepEqual(next.targets, [{ path: TARGET, change: 'M' }]);
   assert.equal(JSON.stringify(args.origin_inputs), input); noGrant(next);
 });

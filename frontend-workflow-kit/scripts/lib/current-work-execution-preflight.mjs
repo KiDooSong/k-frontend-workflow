@@ -3,6 +3,7 @@ import { currentAuthorityReadSet } from './current-work-integrity.mjs';
 import path from 'node:path';
 import { DEFAULTS, KIT_ROOT } from './util.mjs';
 import { computeReadiness } from '../readiness-legacy.mjs';
+import { buildState } from '../workflow-state.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
 import { collectApiCandidateClaims, readinessPathAuthorization } from './path-backstop.mjs';
 import { collectInputArtifacts, validateInputArtifacts } from './input-artifact.mjs';
@@ -72,6 +73,21 @@ export function resolveWorkResources(ctx, baselineRoot, { docs, src, policy, man
   return { resources, baselineKitRoot, kitRelative };
 }
 
+// `--work` never reads a generated `_meta/workflow-state.yaml`. It computes the state
+// `workflow:state` would write, from the materialized baseline documents and source
+// tree, so a missing, untracked or stale generated file neither blocks nor changes the
+// evaluation. Symbolic links are never followed out of that tree. The JSON round trip
+// hands readers plain data, as a parsed file would. Shared by current and scoped work.
+export function baselineWorkflowState({ resources, layout, baselineRoot }) {
+  try {
+    const { state } = buildState({ docsDir: resources.docs.baseline, srcDir: resources.src.baseline,
+      date: 'baseline', layout, projectRoot: baselineRoot, rejectSymlinks: true });
+    return JSON.parse(JSON.stringify(state));
+  } catch (error) {
+    throw new CurrentWorkExecutionError(`baseline workflow state: ${error.message}`);
+  }
+}
+
 // Resource identities in the baseline tree; configuration resources must be regular blobs.
 export function workResourceRecords(resources, snapshot) {
   const resourceRecords = [];
@@ -103,14 +119,12 @@ export function prepareCurrentWork({ work, root, docs, src, policy, manifest, la
     const baselineRoot = snapshot.root;
     const { resources, baselineKitRoot } = resolveWorkResources(ctx, baselineRoot, { docs, src, policy, manifest, layout, ci });
 
-    const stateRel = `${resources.docs.relative}/_meta/workflow-state.yaml`;
     const registerRel = `${resources.docs.relative}/_meta/reconciliation-register.md`;
-    const stateFile = path.join(baselineRoot, ...stateRel.split('/'));
-    const state = yamlFile(stateFile, 'workflow-state', { maxAliasCount: 10000 });
     const policyData = yamlFile(resources.policy.baseline, 'policy');
     const manifestData = yamlFile(resources.manifest.baseline, 'manifest');
     const ciData = resources.ci ? yamlFile(resources.ci.baseline, 'CI') : {};
     const layoutData = loadLayoutProfile({ kitRoot: baselineKitRoot, flags: { layout: resources.layout.baseline } });
+    const state = baselineWorkflowState({ resources, layout: layoutData, baselineRoot });
     const allScreens = computeReadiness({ state, policy: policyData, ci: ciData, manifest: manifestData, layout: layoutData, exposeCaps: true });
     const claims = collectApiCandidateClaims(allScreens);
     // B §10.1: current authority never opens an adopted owner's scoped path.
