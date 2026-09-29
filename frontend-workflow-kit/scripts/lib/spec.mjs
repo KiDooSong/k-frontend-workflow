@@ -10,7 +10,7 @@ import {
   CONFIDENCE_ORDER,
   projectRootOf,
 } from './util.mjs';
-import { layerHasFiles, TYPESCRIPT_FACT_EXTS } from './layer-inventory.mjs';
+import { layerAppliesTo, layerHasFiles, TYPESCRIPT_FACT_EXTS } from './layer-inventory.mjs';
 import { canonicalProjectRelativePath } from './path-backstop.mjs';
 
 const REQUIRED_STATES = ['loading', 'empty', 'error', 'success', 'disabled', 'refreshing'];
@@ -339,10 +339,14 @@ export function deriveMetrics(spec, opts = {}) {
   // Coarse scope (#211): 이 fact 는 해당 도메인의 resolved {roles.hook} 디렉터리 단위다 —
   // "이 화면의 fake hook 존재"가 아니라 domain role 디렉터리에 TS 파일이 하나라도 있는지다.
   // 화면-정밀 ownership 은 API Candidates v2 hook Slice Path claim 이 담당한다.
+  // Screen-scoped layers (#250) count only for opts.screenId, or opts.memberScreens of a surface.
   const layerPresenceFacts = {};
   let effectiveLayers = [];
   if (srcDir && domain && layout) {
-    effectiveLayers = typeof layout.layersFor === 'function' ? layout.layersFor(domain) : layout.layers;
+    const layerContext = { screen_id: opts.screenId, member_screens: opts.memberScreens };
+    effectiveLayers = typeof layout.layersFor === 'function'
+      ? layout.layersFor(domain, layerContext)
+      : (Array.isArray(layout.layers) ? layout.layers : []).filter((layer) => layerAppliesTo(layer, layerContext));
     for (const layer of Array.isArray(effectiveLayers) ? effectiveLayers : []) {
       if (!layer || layer.fact !== 'dir_has_files' || !layer.role) continue;
       layerPresenceFacts[`${layer.role}_present`] = layerHasFiles(layer, {

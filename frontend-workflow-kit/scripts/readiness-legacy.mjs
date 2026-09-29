@@ -513,11 +513,18 @@ export function computeReadiness({
   //   per-screen {domain} 치환은 resolvePaths(p,{domain}) 안에 흡수된다(§5 the seam).
   const resolvedLayout = layout || loadLayoutProfile({ kitRoot: KIT_ROOT });
   const policyCache = new Map();
-  function effectivePolicyFor(domain) {
+  // Screen-scoped layers (#250) apply per Screen ID, and to a surface only when its
+  // complete member set matches, so the cache key carries that scope.
+  function effectivePolicyFor(domain, context = {}) {
     if (!resolvedLayout.layerTelemetryDeclared) return policy;
-    const key = domain == null ? '\0' : String(domain);
+    const scopeKey = context.screenId
+      ? `screen:${context.screenId}`
+      : `members:${(context.memberScreens || []).slice().sort().join(',')}`;
+    const key = `${domain == null ? '\0' : String(domain)}\0${scopeKey}`;
     if (!policyCache.has(key)) {
-      policyCache.set(key, synthesizeModePolicy(policy, resolvedLayout, { includeGates: false, domain }));
+      policyCache.set(key, synthesizeModePolicy(policy, resolvedLayout, {
+        includeGates: false, domain, screenId: context.screenId, memberScreens: context.memberScreens,
+      }));
     }
     return policyCache.get(key);
   }
@@ -534,7 +541,7 @@ export function computeReadiness({
     const facts = buildFacts(screen, global, ci);
     // resolvedLayout 를 screenCtx 에 실어 actionHint 가 hook 힌트 경로를 role 바인딩에서 파생하게 한다(MINOR 4).
     const screenCtx = { domain: screen.domain, facts, screenSpecTemplate, layout: resolvedLayout };
-    const effectivePolicy = effectivePolicyFor(screen.domain);
+    const effectivePolicy = effectivePolicyFor(screen.domain, { screenId: id });
     // policy.modes 가 객체가 아니면(문자열/숫자 등 손상된 정책) Object.keys 가 가짜 모드를 만들지 않게 막는다.
     const modes = effectivePolicy.modes && typeof effectivePolicy.modes === 'object' ? effectivePolicy.modes : {};
     const order = Array.isArray(effectivePolicy.order) ? effectivePolicy.order : Object.keys(modes);
@@ -772,7 +779,7 @@ export function computeReadiness({
     for (const [surfaceId, surface] of Object.entries(state.surfaces).sort(([a], [b]) => a.localeCompare(b))) {
       const own = ownSurfaceResults.get(surfaceId);
       if (!own) continue;
-      const effectivePolicy = effectivePolicyFor(surface.domain);
+      const effectivePolicy = effectivePolicyFor(surface.domain, { memberScreens: surface.member_screens || [] });
       const modes =
         effectivePolicy.modes && typeof effectivePolicy.modes === 'object'
           ? effectivePolicy.modes

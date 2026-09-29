@@ -310,6 +310,30 @@ test('custom implementation role root underneath docs is rejected before overlay
   assert.match(result.stderr, /implementation role\/layer root|겹침/);
 });
 
+test('screen-scoped layer root underneath docs is rejected before overlay even for another screen', (t) => {
+  const { repo, project } = fixture(t);
+  fs.cpSync(path.join(project, 'docs/frontend-workflow'), path.join(project, 'workspace'), { recursive: true });
+  const layoutFile = copyKit(project, 'config/layout.yaml', 'policies/project-layout.yaml');
+  const layout = yamlParse(fs.readFileSync(layoutFile, 'utf8'));
+  layout.layers = [
+    {
+      role: 'other_screen_host',
+      glob: 'workspace/hosts/other-host.tsx',
+      fact: 'dir_has_files',
+      scope: { screen_ids: ['SHOP-OTHER'] },
+      access: { allow: ['api-integrated-ui'] },
+    },
+  ];
+  fs.writeFileSync(layoutFile, yamlStringify(layout, { lineWidth: 0 }), 'utf8');
+  write(project, 'workspace/hosts/other-host.tsx', 'export const OtherHost = () => null;\n');
+
+  const result = run(READINESS, [
+    ...tuple(repo), '--docs', 'workspace', '--src', 'src', '--layout', 'config/layout.yaml',
+  ], repo);
+  assert.equal(result.status, 2, result.stdout);
+  assert.match(result.stderr, /implementation role\/layer root|겹침/);
+});
+
 test('case-only authority resource and docs aliases fail closed on case-insensitive filesystems', (t) => {
   const { repo, project } = fixture(t, { explicit: true });
   const policyAlias = path.join(project, 'Config/Policy.yaml');

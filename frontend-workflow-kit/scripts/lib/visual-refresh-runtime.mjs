@@ -423,6 +423,7 @@ export function evaluateVisualRefreshAuthority(options) {
   const rules = logicalPathRules(prepared.meta, {
     modeName: readiness?.readiness_mode,
     domain: coreContext.domain,
+    screenId: coreContext.selected_screen,
   });
   const generatedEntries = collectGeneratedOwnershipEntries(prepared.meta.manifest, {
     docsRelative: prepared.meta.docsRelative,

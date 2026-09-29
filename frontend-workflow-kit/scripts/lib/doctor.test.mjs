@@ -137,6 +137,27 @@ test('collectDoctorFindings: built-in layer glob checks follow rebound role path
   assert.equal(findings.some((f) => f.check === 'layer-glob' && f.role === 'screen'), false);
 });
 
+test('collectDoctorFindings: exact-file layer glob counts the file itself', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'doctor-exact-layer-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const file = path.join(tmp, 'src', 'features', 'account', 'components', 'code-body.tsx');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, 'export const CodeBody = () => null;\n');
+  const layer = (glob) => ({
+    role: 'code_body_shared',
+    glob,
+    fact: 'dir_has_files',
+    scope: { screen_ids: ['ACCOUNT-CODE-A', 'ACCOUNT-CODE-B'] },
+    access: { allow: ['api-integrated-ui'], forbid: [] },
+  });
+  const layerGlobWarnings = (glob) =>
+    collectDoctorFindings({ projectRoot: tmp, layout: { roles: {}, layers: [layer(glob)] } })
+      .filter((f) => f.check === 'layer-glob' && f.role === 'code_body_shared');
+
+  assert.deepEqual(layerGlobWarnings('src/features/account/components/code-body.tsx'), []);
+  assert.equal(layerGlobWarnings('src/features/account/components/missing-body.tsx').length, 1);
+});
+
 test('workflow:doctor default coupon fixture has no overlap warnings', () => {
   const r = spawnSync(process.execPath, [DOCTOR_CLI, '--src', 'examples/coupon-feature/src', '--json'], {
     cwd: KIT_ROOT,

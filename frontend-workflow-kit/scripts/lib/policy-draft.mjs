@@ -10,7 +10,7 @@ import {
   writeFile,
 } from './util.mjs';
 import { LayoutConfigError, loadLayoutProfile } from './layout-profile.mjs';
-import { BUILT_IN_LAYER_ROLES } from './layer-inventory.mjs';
+import { BUILT_IN_LAYER_ROLES, layerAppliesTo } from './layer-inventory.mjs';
 
 export const DRAFT_POLICY_FILENAME = 'implementation-mode-policy.draft.yaml';
 export const MIGRATION_GUIDE_FILENAME = 'implementation-mode-policy.migration.md';
@@ -219,7 +219,10 @@ function layerContextsForPolicy(layout) {
     return contexts;
   }
 
-  for (const layer of Array.isArray(layout?.layers) ? layout.layers : []) addLayer(layer, rolesForPolicy(layout));
+  // A screen-scoped layer (#250) is not a mode-wide rule, so a draft leaves it out.
+  for (const layer of Array.isArray(layout?.layers) ? layout.layers : []) {
+    if (layerAppliesTo(layer)) addLayer(layer, rolesForPolicy(layout));
+  }
   return contexts;
 }
 

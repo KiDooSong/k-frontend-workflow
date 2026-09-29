@@ -130,7 +130,7 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot, rejectS
     const screenEntry = fm.screen_entry || null;
     const status = fm.status || 'draft';
 
-    const derived = deriveMetrics(spec, { srcDir, layout: resolvedLayout, projectRoot, rejectSymlinks });
+    const derived = deriveMetrics(spec, { srcDir, layout: resolvedLayout, projectRoot, rejectSymlinks, screenId: screenKey });
     const lifecycleRecord = screenLifecycle.bySpec.get(spec);
     if (lifecycleRecord?.errors.length) {
       derived.lifecycle_errors = lifecycleRecord.errors.map((issue) => ({
@@ -206,6 +206,7 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot, rejectS
       layout: resolvedLayout,
       projectRoot,
       rejectSymlinks,
+      memberScreens: record.member_screens,
     });
     // Shared surfaces never own local Open Decision rows. analyzeSharedSurfaces records that
     // contract error; readiness consumes only canonical decision_refs here.
