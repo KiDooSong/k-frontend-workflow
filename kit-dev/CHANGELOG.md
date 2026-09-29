@@ -4,6 +4,17 @@
 
 ## Unreleased
 
+### fix(workflow) — 큰 저장소의 raw Git snapshot (#250-1)
+
+- current·scoped `--work` preflight와 backstop, visual-refresh가 함께 쓰는 raw Git tree materializer는 blob을 128개씩
+  읽으면서 응답 하나를 128 MiB로 제한했다. 그래서 큰 바이너리가 많은 저장소에서는 원인 없이
+  `git cat-file --batch failed:`로 멈췄다. 이제 `cat-file --batch-check`로 크기를 먼저 읽어 batch를 바이트 기준으로
+  나누고, 한도보다 큰 blob 하나는 그 크기의 버퍼로 따로 읽는다. 실패는 여전히 부분 권한 없는 tool error다.
+- Git 실행 오류는 stderr가 비어 있으면 spawn 원인(예: `ENOBUFS`)을 메시지에 남긴다.
+- 실측(pilot consumer 사본, blob 15,409개·약 3.95 GiB): 수정 전에는 `readiness --work`가 버퍼 오류로 exit 2였고,
+  수정 후에는 materialize가 끝나 다음 선행 문제(#250-2, 커밋되지 않은 state)까지 진행한다. 호출 한 번에 약 29초가
+  걸린다. 매번 전체 트리를 쓰는 비용은 남은 한계다.
+
 ### docs(skills) — implement 지침 중복 정리 (#248 E1)
 
 - `implement-screen`의 current/scoped 분기는 분기 선택과 핵심 불변식만 남기고, 절차는 Stage 06
