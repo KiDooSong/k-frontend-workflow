@@ -237,12 +237,17 @@ function basePathDenial(entry, file, base) {
 // allows the file — the API-client surface stays integration-gated. An integrated v2 screen may
 // edit only claimed paths inside its resolved hook/API-client surfaces (including at
 // production-ready where allowed_paths can contain src/**).
+// D32 (B §10.1): an adopted owner's scoped path needs authority:scoped with a unit.
+export const WORK_SELECTION_REQUIRED_REASON =
+  'work-selection-required: an adopted owner path needs authority:scoped with a unit selection; current/legacy/v1 authority does not open it';
+
 export function readinessPathAuthorization({
   file,
   screenId,
   entry,
   modeOrder = [],
   claims = { active: [], denied: [] },
+  adopted = null,
 }) {
   const normalizedFile = toPosix(file);
   // 입력 canonicality 는 helper 진입점에서 강제한다 — CLI 만 검사하면 다른 library 소비자가
@@ -254,6 +259,21 @@ export function readinessPathAuthorization({
       file: normalizedFile,
       screen_id: screenId,
       reason: `non-canonical concrete path is fail-closed: ${concreteIssue}`,
+      allowed_by: [],
+      forbidden_by: [],
+      candidate_matches: [],
+    };
+  }
+  // The marker is read before any broad mode allow, so a denied scoped task cannot
+  // fall back to current/legacy authority. No marker (unadopted) changes nothing.
+  const adoptedMatches = (adopted?.paths || []).filter((claim) => globMatches(claim.path, normalizedFile));
+  if (adoptedMatches.length > 0) {
+    return {
+      allowed: false,
+      file: normalizedFile,
+      screen_id: screenId,
+      reason: WORK_SELECTION_REQUIRED_REASON,
+      work_selection_required: adoptedMatches,
       allowed_by: [],
       forbidden_by: [],
       candidate_matches: [],

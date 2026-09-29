@@ -1,5 +1,7 @@
 # Current Roadmap
 
+> 2026-09-23 구현 갱신(#238 D, PR #246 Draft): 사람이 채택한 owner의 work unit을 `authority: scoped`로 평가하는 D가 구현됐다. 다섯 `--work` CLI가 scoped 문서를 HEAD baseline preflight(owner·모든 surface host·공유 target AND, `legacy-current` host는 legacy member base)와 Git backstop(self-grant 거부, regular-file A/M만)으로 처리하고, 채택 경로는 no-work/current/visual-refresh v1에서 `work-selection-required`를 반환하며, upgrade planner는 marker가 남은 downgrade 자동 적용을 거부한다. 미채택 저장소 출력은 바뀌지 않는다. 채택·binding은 사람 소유이고 consumer pilot·E 측정·릴리스/version 변경은 포함하지 않는다. 사용법: [scoped-work](../frontend-workflow-kit/docs/reference/scoped-work.md). 검증 기록: [issue-238-d-scoped-execution-001](temp/runs/issue-238-d-scoped-execution-001.md).
+
 > 2026-08-04 review follow-up(#202-C): 검사 12 advisory 단계의 `RR-ROUTE-101`과 Decision 기반
 > `RR-STALE-101/102/103` 구현은 유지한다. `RR-ROUTE-101`은 검사 11의 shared `INPUT_ID_PATTERN`과 input index의
 > unique resolution을 사용해 파일명·URL·noncanonical lookalike를 배제하고, 같은 input의 `summaryTrust`를 요구한다.

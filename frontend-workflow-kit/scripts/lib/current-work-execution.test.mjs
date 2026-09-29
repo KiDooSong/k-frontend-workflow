@@ -63,6 +63,9 @@ function project(t, { malformedPolicy = false, origin = null } = {}) {
     fs.writeFileSync(path.join(root, 'docs/frontend-workflow/_meta/reconciliation-register.md'), `---\ntitle: Current work origin fixture\nstatus: draft\nkind: meta-register\n---\n\n# Reconciliation Register\n\n| Input ID | Source | Classification | Reconcile Status | Result | Touched Artifacts | Created Items | Supersedes |\n|---|---|---|---|---|---|---|---|\n| IN-20260720-figma-001 | figma | simple-update | reconciled | accepted | ${origin === 'unconnected' ? 'OTHER-001 screen-spec' : 'COUPON-001 screen-spec'} | - | - |\n`);
   }
   execFileSync('git', ['init', '-q'], { cwd: root });
+  // Git >=2.47 may detach auto-maintenance after commit; it can race temp-dir removal.
+  execFileSync('git', ['config', 'maintenance.auto', 'false'], { cwd: root });
+  execFileSync('git', ['config', 'gc.auto', '0'], { cwd: root });
   execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: root });
   execFileSync('git', ['config', 'user.name', 'test'], { cwd: root });
   execFileSync('git', ['add', '-A'], { cwd: root });
@@ -208,4 +211,16 @@ test('work branch rejects legacy/visual tuple flags instead of silently mixing a
     assert.equal(result.status, 2);
     assert.match(result.stderr, /unknown option/);
   }
+});
+
+test('W03: a lower requested mode cannot reopen a path the current mode closes, and an over-ceiling mode is denied', (t) => {
+  const root = project(t), route = 'src/app/(tabs)/coupons.tsx';
+  // route-skeleton allows route entries; the current rough-fixture-ui ceiling does not, and modes are not unioned.
+  const lower = json(run('readiness.mjs', [...common(root, writeRequest(t, request({ path: route, mode: 'route-skeleton' }))), '--json']));
+  assert.equal(lower.ready, false); assert.equal(lower.requests[0].readiness_mode, 'rough-fixture-ui');
+  assert.deepEqual(lower.denials.map((entry) => [entry.code, entry.path, entry.reason]), [['CW-PATH-DENIED', route, 'path is outside allowed_paths']]);
+  const over = json(run('readiness.mjs', [...common(root, writeRequest(t, request({ mode: 'final-fixture-ui' }))), '--json']));
+  assert.equal(over.ready, false);
+  assert.deepEqual(over.denials.map((entry) => [entry.code, entry.requested_mode, entry.readiness_mode]), [['CW-MODE-CEILING', 'final-fixture-ui', 'rough-fixture-ui']]);
+  assert.deepEqual(over.future_requirements, [], 'an over-ceiling request is not reported as merely future work');
 });

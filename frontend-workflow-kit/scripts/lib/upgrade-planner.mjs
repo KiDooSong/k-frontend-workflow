@@ -13,6 +13,8 @@
 // never runs migrations — those stay human/LLM decisions surfaced in the plan.
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { splitFrontmatter, yamlParse } from './util.mjs';
 import {
   MANIFEST_SCHEMA_VERSION,
   PAYLOAD_MANIFEST_NAME,
@@ -28,6 +30,53 @@ import {
   toPosix,
 } from './kit-manifest.mjs';
 import { maskAutolinks, maskInlineCodeSpans } from './doc-drift.mjs';
+
+// D33 (B §12.6): a payload shipping this module reads adoption markers in the
+// ordinary/current/legacy/visual-refresh fallback entries. An older payload would
+// silently ignore live markers and reopen legacy authority on adopted paths.
+export const ADOPTION_GUARD_MODULE = 'scripts/lib/scoped-work-adoption.mjs';
+const ADOPTION_KEYS = ['work_execution', 'decision_work_scopes'];
+
+function gitOutput(args, cwd) {
+  try { return execFileSync('git', args, { cwd, encoding: 'buffer', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024 }); }
+  catch { return null; }
+}
+
+// Tracked consumer files (outside the vendored kit) whose policy YAML or Markdown
+// frontmatter still declares a live scoped-work key. A file that mentions a key
+// but cannot be parsed is reported too: refusing is the safe side of doubt.
+export function findAdoptionMarkers({ consumerRoot, currentDir }) {
+  const root = consumerRoot ? path.resolve(consumerRoot) : null;
+  if (!root) return { consumer_root: null, inspected: false, markers: [] };
+  const listed = gitOutput(['ls-files', '-z'], root);
+  if (listed === null) return { consumer_root: root, inspected: false, markers: [] };
+  const vendored = currentDir ? path.relative(root, path.resolve(currentDir)).split(path.sep).join('/') : null;
+  const markers = [];
+  for (const rel of listed.toString('utf8').split('\0').filter(Boolean).sort()) {
+    if (vendored && vendored !== '' && !vendored.startsWith('..') && (rel === vendored || rel.startsWith(`${vendored}/`))) continue;
+    const markdown = /\.(md|markdown)$/i.test(rel), yaml = /\.(ya?ml)$/i.test(rel);
+    if (!markdown && !yaml) continue;
+    let text;
+    try { text = fs.readFileSync(path.join(root, rel), 'utf8'); } catch { continue; }
+    if (!ADOPTION_KEYS.some((key) => text.includes(key))) continue;
+    let data, parsed = true;
+    try {
+      if (markdown) {
+        const front = splitFrontmatter(text);
+        if (front.parseError) parsed = false;
+        data = front.hasFrontmatter ? front.data : null;
+      } else data = yamlParse(text);
+    } catch { parsed = false; }
+    const keys = data && typeof data === 'object' && !Array.isArray(data) ? ADOPTION_KEYS.filter((key) => Object.hasOwn(data, key)) : [];
+    if (keys.length || !parsed) markers.push({ path: rel, keys, ...(parsed ? {} : { unparsed: true }) });
+  }
+  return { consumer_root: root, inspected: true, markers };
+}
+
+export function defaultConsumerRoot(currentDir) {
+  const out = gitOutput(['rev-parse', '--show-toplevel'], path.resolve(currentDir));
+  return out ? out.toString('utf8').trim() : null;
+}
 
 export const CATEGORIES = [
   'safe-update',
@@ -232,6 +281,11 @@ export function buildPlan({ currentDir, nextDir, options = {} }) {
   const baseline = resolveBaseline(currentDir);
   const next = resolveNext(nextDir);
   const baselineUnknown = baseline.source === 'unknown';
+  // Only a payload that cannot enforce adoption markers needs the consumer scan;
+  // ordinary upgrades keep their existing plan output.
+  const nextEnforcesAdoption = next.index.has(ADOPTION_GUARD_MODULE);
+  const adoptionScan = nextEnforcesAdoption ? null : findAdoptionMarkers({
+    consumerRoot: options.consumerRoot ?? defaultConsumerRoot(currentDir), currentDir });
 
   const universe = new Set([...next.index.keys(), ...baseline.index.keys()]);
   const files = [];
@@ -291,6 +345,18 @@ export function buildPlan({ currentDir, nextDir, options = {} }) {
   files.sort((a, b) => a.path.localeCompare(b.path));
 
   const warnings = [];
+  const adoption = adoptionScan && (adoptionScan.markers.length || (adoptionScan.consumer_root && !adoptionScan.inspected)) ? {
+    next_enforces_adoption: false, consumer_root: adoptionScan.consumer_root, inspected: adoptionScan.inspected,
+    markers: adoptionScan.markers, downgrade_blocked: adoptionScan.markers.length > 0,
+  } : null;
+  if (adoption?.downgrade_blocked) {
+    warnings.push('Live scoped-work adoption markers remain, but the next payload cannot enforce them in fallback entries. '
+      + 'Automatic apply is refused: stop scoped work, review/restore explicit deny boundaries and remove the declarations first; '
+      + 'this planner never rolls them back for you.');
+  } else if (adoption && !adoption.inspected) {
+    warnings.push('The next payload cannot enforce scoped-work adoption markers and the consumer repository could not be inspected; '
+      + 'confirm no work_execution/decision_work_scopes declarations remain before applying.');
+  }
   if (baselineUnknown) {
     warnings.push(
       'No installed manifest found. Treating current vendored kit as an unmanaged baseline. '
@@ -314,6 +380,7 @@ export function buildPlan({ currentDir, nextDir, options = {} }) {
     migration_notes: collectMigrationNotes(nextDir),
     warnings,
     options: opts,
+    ...(adoption ? { adoption } : {}),
   };
 }
 
@@ -588,6 +655,10 @@ export function renderPlanMarkdown(plan, renderContext = null) {
   if (c.conflict) manual.push(`- Resolve ${c.conflict} conflict(s) by merging upstream changes into your local edits (see below).`);
   if (c['removed-upstream']) manual.push(`- Review ${c['removed-upstream']} orphan(s); delete only if intentional (re-run with \`--prune\`).`);
   if (plan.baseline === 'unknown') manual.push('- First managed upgrade from an unmanaged install: review all differing files manually.');
+  if (plan.adoption?.downgrade_blocked) {
+    manual.push('- Automatic apply is refused while live scoped-work adoption markers remain (the next payload cannot enforce them):');
+    for (const marker of plan.adoption.markers) manual.push(`  - \`${marker.path}\`${marker.keys.length ? ` (${marker.keys.join(', ')})` : ' (unparsed)'}`);
+  }
   if (manual.length === 0) manual.push('- None. Safe updates and new files can be applied automatically.');
   lines.push(...manual);
   lines.push('');
@@ -792,6 +863,9 @@ export function buildInstallManifest({ currentDir, nextResolved, baseline, sourc
 
 // Execute the plan's planned actions. Only writes inside currentDir (+ backupDir).
 export function applyPlan({ plan, currentDir, nextDir, options = {} }) {
+  if (plan?.adoption?.downgrade_blocked) {
+    throw new Error('automatic apply refused: live scoped-work adoption markers remain and the next payload cannot enforce them');
+  }
   const resolvedCurrent = path.resolve(currentDir);
   const resolvedNext = path.resolve(nextDir);
   const realCurrent = fs.realpathSync(resolvedCurrent);

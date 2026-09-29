@@ -41,6 +41,10 @@ npm run workflow:run -- --work .workflow/current-work.json --json
 생성, exit 0은 승인이나 위반 없음의 대체 신호가 아니다. 실행한 검증, 실패/미실행 검증, 남은
 Decision/Unknown/Conflict를 구분해 handoff한다.
 
+`authority: scoped` request도 같은 세 명령을 쓴다([scoped work](../scoped-work.md)). backstop은 소비한 authority·문서/입력
+inventory·API 근거 디렉터리가 바뀌지 않았는지와, 허용된 요청 target의 regular-file `A`/`M`만 변경됐는지를 확인한다.
+보고에는 도구가 증명하지 않는 의미적 격리·사람 승인·시각 정합을 별도로 적는다.
+
 ## Optional web E2E evidence
 
 When the user asks for web E2E, Playwright, web verification, test generation, or

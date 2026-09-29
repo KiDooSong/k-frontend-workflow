@@ -13,6 +13,7 @@ import { analyzeScreenLifecycles } from './screen-lifecycle.mjs';
 import { loadScreenSpec } from './spec.mjs';
 import { walkFiles } from './util.mjs';
 import * as core from './visual-refresh-authority.mjs';
+import { adoptedWorkPaths } from './scoped-work-adoption.mjs';
 import {
   collectGeneratedOwnershipEntries,
   resolveGeneratedOwnership,
@@ -85,6 +86,7 @@ export function visualImplementationAuthorization({
   generated,
   claims = { active: [], denied: [] },
   logicalRules = [],
+  adopted = null,
 }) {
   const checkedPath = canonicalAuthorityPath(file, '--path');
   if (checkedPath !== authorizedPath) {
@@ -109,7 +111,18 @@ export function visualImplementationAuthorization({
     entry: readiness,
     modeOrder: readiness?.__mode_order || [],
     claims,
+    adopted,
   });
+  // B §10.1: an adopted owner's path needs a scoped selection; no v1 waiver applies.
+  if (ordinary.work_selection_required) {
+    return {
+      allowed: false,
+      checked_path: checkedPath,
+      reason: `${ordinary.reason}; use --work with authority:scoped for this owner/unit`,
+      work_selection_required: ordinary.work_selection_required,
+      ordinary,
+    };
+  }
   const matchingRules = logicalRules.filter((rule) =>
     globMatches(rule.resolved_path, checkedPath),
   );
@@ -346,11 +359,14 @@ function computeFullReadiness(destinationRoot, selectedScreen, prepared) {
     exposeCaps: true,
     skipSurfaces: false,
   });
+  const claims = collectApiCandidateClaims(output);
   return {
     state,
     output,
     entry: output?.[selectedScreen] || null,
-    claims: collectApiCandidateClaims(output),
+    claims,
+    // B §10.1: adopted roots plus the adopted screens' active Candidate Slice Paths.
+    adopted: adoptedWorkPaths({ docsDir, policy: meta.policy, claims }),
   };
 }
 
@@ -454,6 +470,7 @@ export function evaluateVisualRefreshAuthority(options) {
     canonicalBuiltIn: prepared.meta.canonicalBuiltIn,
     claims: full.claims,
     logicalRules: rules,
+    adopted: full.adopted,
   };
   const exactPathAuthorization = visualImplementationAuthorization({
     ...commonAuthorization,
@@ -476,6 +493,13 @@ export function evaluateVisualRefreshAuthority(options) {
     }
   }
 
+  if (reasons.length === 0 && exactPathAuthorization.work_selection_required) {
+    reasons.push({
+      code: 'VR-WORK-SELECTION-REQUIRED',
+      message: exactPathAuthorization.reason,
+      work_selection_required: exactPathAuthorization.work_selection_required,
+    });
+  }
   if (reasons.length === 0 && !exactPathAuthorization.allowed) {
     reasons.push({
       code: 'VR-PATH-002',
@@ -506,6 +530,7 @@ export function evaluateVisualRefreshAuthority(options) {
     docs_relative: prepared.meta.docsRelative,
     readiness,
     candidate_claims: full.claims,
+    adopted_work: full.adopted,
     logical_path_rules: rules,
     generated_entries: generatedEntries,
     generated_roots: roots,
@@ -705,6 +730,7 @@ export function routeVisualBackstopRecords({ records, authority, projectPrefix =
           entry: context.readiness,
           modeOrder: context.readiness?.__mode_order || [],
           claims: context.candidate_claims || { active: [], denied: [] },
+          adopted: context.adopted_work || null,
         });
       } catch (error) {
         ordinary = { allowed: false, reason: error.message };

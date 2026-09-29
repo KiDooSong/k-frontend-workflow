@@ -20,6 +20,7 @@ import {
   isCliEntry,
 } from './lib/util.mjs';
 import { LayoutConfigError, loadLayoutProfile, synthesizeModePolicy } from './lib/layout-profile.mjs';
+import { adoptedWorkPaths } from './lib/scoped-work-adoption.mjs';
 import {
   candidateSurfaceKind,
   collectApiCandidateClaims,
@@ -1112,6 +1113,15 @@ function main() {
   let result = fullResult;
   if (flags.path !== undefined) {
     const entry = fullResult[flags.screen];
+    const claims = collectApiCandidateClaims(fullResult);
+    // B §10.1: an adopted owner's scoped path needs a scoped work selection.
+    let adopted;
+    try {
+      adopted = adoptedWorkPaths({ docsDir, policy, claims });
+    } catch (error) {
+      process.stderr.write(`readiness: ${error.message}\n`);
+      process.exit(2);
+    }
     result = entry
       ? {
           [flags.screen]: {
@@ -1121,7 +1131,8 @@ function main() {
               screenId: flags.screen,
               entry,
               modeOrder: policy.order || Object.keys(policy.modes || {}),
-              claims: collectApiCandidateClaims(fullResult),
+              claims,
+              adopted,
             }),
           },
         }

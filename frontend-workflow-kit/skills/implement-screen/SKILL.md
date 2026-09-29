@@ -20,7 +20,7 @@ description: 지정된 Screen ID를 readiness gate가 허용하는 모드와 경
 ## 1. Preflight
 Reconciliation Register의 관련 input이 `not-started`/`in-progress`/`failed`면 Stage 04를 먼저 끝낸다.
 그다음 **실행 분기를 먼저 선택한다.** 아래 no-work/legacy의 blocking 일괄 중단을 current/visual 분기에 먼저 적용하지 않는다.
-현재 권한에서 처리할 concrete 작업은 **단일 target도 포함해** current 분기로 평가한다. 기존 visual-refresh tuple을 사용하기로 한 작업은 아래 Visual refresh 분기의 독립된 계약을 따른다. `--work`와 legacy/visual 선택 옵션을 섞지 않는다.
+현재 권한에서 처리할 concrete 작업은 **단일 target도 포함해** current 분기로 평가한다. 사람이 채택한 owner의 scoped 경로 작업은 Scoped-work 분기를 쓴다. 기존 visual-refresh tuple을 사용하기로 한 작업은 아래 Visual refresh 분기의 독립된 계약을 따른다. `--work`와 legacy/visual 선택 옵션을 섞지 않는다.
 
 ### Current-work 분기
 [current work execution](../../docs/reference/current-work.md)의 `authority: current` request를 agent가 조립한다. target/origin이 여러 개여야 한다는 조건은 없다. 시작 입력은 `origin_inputs`에 보존하고 입력이 없는 작업만 빈 배열을 사용한다. 사람에게 매번 JSON 수작업 승인을 요구하지 않는다.
@@ -33,6 +33,9 @@ npm run workflow:run -- --work .workflow/current-work.json --json
 `ready: true`와 각 target의 실제 path 판정, 구현 전 `HALT_READY_FOR_WORK`를 확인한다. 상위 미충족은 도구가 분류한 `future_requirements`로 보고하고 `legacy_readiness.blocking`은 보존한다. raw blocking의 존재만으로 current 결과를 다시 일괄 중단하지 않는다.
 실제 deny·미해결 origin·구조/수집 오류·absorbed 결과는 그대로 멈추거나 정본을 안내한다. 거부된 request를 버리거나 낮은 mode의 경로를 합치지 않고, deny를 없애려 no-work/visual로 자동 fallback하지 않는다. absorbed target으로 자동 전환하지 않는다.
 `readiness → packet/run → backstop/report`에 같은 request/origin/resource를 유지한다. `scoped`/unit/partial·no-effect coverage receipt는 C 범위가 아니며 새 권한이 필요하면 기존 authoring/사람 확인으로 돌아간다.
+
+### Scoped-work 분기
+채택 owner는 [scoped work](../../docs/reference/scoped-work.md)의 `authority: scoped` request로 **unit**을 고른다(A/M target만). 같은 다섯 CLI·origin·resource를 쓰고 판정은 HEAD baseline에서 한다. surface는 모든 host 동의와 공유 target AND가 필요하다. `work-selection-required` 경로를 current/no-work/visual로 재시도하지 않고, 채택·unit·binding 확대는 사람 authoring checkpoint로 돌린다. current와 scoped를 한 문서에 섞지 않는다.
 
 ### No-work / legacy 분기
 `--work`를 사용하지 않는 일반 구현에만 다음 순서를 적용한다. 이 분기의 기존 권한·중단 의미는 바꾸지 않는다.

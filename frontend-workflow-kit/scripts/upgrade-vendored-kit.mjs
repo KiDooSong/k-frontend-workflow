@@ -53,6 +53,12 @@ Apply safety (all default OFF):
   --force-runtime    Overwrite conflicted consumer-runtime files only. Off by default.
   --backup-dir <p>   Copy each file before it is overwritten/pruned into <p>.
 
+Scoped-work downgrade guard:
+  --consumer-root <path>  Consumer repository to inspect for live work_execution /
+                     decision_work_scopes declarations (default: Git toplevel of --current).
+                     A payload that cannot enforce them is never applied automatically
+                     while they remain.
+
 Notes:
   - Writes only inside --current, plus any --backup-dir / --plan path you pass.
   - Symlinked targets under --current are refused (no escape via links).
@@ -267,6 +273,7 @@ function main() {
     fail('--backup-dir requires a value');
   }
   if (flags.plan === true || flags.plan === '') fail('--plan requires a value');
+  if (flags['consumer-root'] === true || flags['consumer-root'] === '') fail('--consumer-root requires a value');
 
   const options = {
     apply,
@@ -274,9 +281,14 @@ function main() {
     allowConflicts: boolFlag(flags['allow-conflicts']),
     forceRuntime: boolFlag(flags['force-runtime']),
     backupDir: typeof flags['backup-dir'] === 'string' ? path.resolve(flags['backup-dir']) : null,
+    ...(typeof flags['consumer-root'] === 'string' ? { consumerRoot: requireDir('--consumer-root', flags['consumer-root']) } : {}),
   };
 
   const plan = buildPlan({ currentDir, nextDir, options });
+  if (apply && plan.adoption?.downgrade_blocked) {
+    fail(`automatic apply refused: live scoped-work adoption markers remain (${plan.adoption.markers.map((m) => m.path).join(', ')}) `
+      + 'and the next payload cannot enforce them; stop scoped work, restore reviewed deny boundaries and remove the declarations first');
+  }
 
   // Resolve where (if anywhere) to write the markdown plan, and write it BEFORE
   // mutating, so a bad --plan path fails fast instead of leaving an applied kit

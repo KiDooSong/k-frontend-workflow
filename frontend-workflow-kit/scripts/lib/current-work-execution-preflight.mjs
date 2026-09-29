@@ -11,15 +11,17 @@ import { parseReconciliationRegister } from './reconciliation-register.mjs';
 import { validateCurrentReconciliation } from './current-work-reconciliation.mjs';
 import { readJson, normalizeWorkRequest, digest, hashBytes, ownerParts, byteCompare } from './current-work-request.mjs';
 import { materializeRawGitTree } from './visual-refresh-git-objects.mjs';
+import { adoptedWorkPaths } from './scoped-work-adoption.mjs';
 import {
   CurrentWorkExecutionError, REGULAR_MODES, outside, projectRelative, resolveProjectPath, resolveProjectRoot, gitIdentity,
   yamlFile, screenDomain, effectiveOrder, modeIndex, invalidBlocker, generatedPatterns, generatedOwner,
   selectedInputErrors, artifactProjectPath, inputHash, relatedToOwner, exactSurfaceAuthorization,
 } from './current-work-execution-core.mjs';
 
-export function prepareCurrentWork({ work, root, docs, src, policy, manifest, layout, ci } = {}) {
+// Shared by current and scoped work: read the request once as a regular file and
+// bind it to the same physical file, without following a leaf symlink.
+export function readWorkRequestFile(ctx, work) {
   if (!work) throw new CurrentWorkExecutionError('--work requires a request JSON path');
-  const ctx = resolveProjectRoot(root);
   const workPath = path.isAbsolute(work) ? path.resolve(work) : path.resolve(ctx.projectRoot, work);
   let parsed;
   let physicalWorkPath;
@@ -40,6 +42,56 @@ export function prepareCurrentWork({ work, root, docs, src, policy, manifest, la
     }
   }
   catch (error) { throw new CurrentWorkExecutionError(error.message); }
+  return { workPath, physicalWorkPath, parsed };
+}
+
+// The same explicit/default resource set, resolved in the project and then in the
+// materialized immutable baseline tree. Shared by current and scoped work.
+export function resolveWorkResources(ctx, baselineRoot, { docs, src, policy, manifest, layout, ci } = {}) {
+  const projectRoot = ctx.projectRoot;
+  const currentKitInsideProject = !outside(projectRoot, KIT_ROOT);
+  const kitRelative = currentKitInsideProject ? projectRelative(projectRoot, KIT_ROOT, 'kit root') : null;
+  const baselineKitRoot = kitRelative ? path.join(baselineRoot, ...kitRelative.split('/')) : KIT_ROOT;
+  const defaultPolicy = currentKitInsideProject ? path.relative(projectRoot, DEFAULTS.policy) : DEFAULTS.policy;
+  const defaultManifest = currentKitInsideProject ? path.relative(projectRoot, DEFAULTS.manifest) : DEFAULTS.manifest;
+  const defaultLayout = currentKitInsideProject
+    ? path.relative(projectRoot, path.join(KIT_ROOT, 'policies', 'project-layout.yaml'))
+    : path.join(KIT_ROOT, 'policies', 'project-layout.yaml');
+  const resources = {
+    docs: resolveProjectPath(projectRoot, docs, DEFAULTS.docs, 'docs'),
+    src: resolveProjectPath(projectRoot, src, DEFAULTS.src, 'src'),
+    policy: resolveProjectPath(projectRoot, policy, defaultPolicy, 'policy'),
+    manifest: resolveProjectPath(projectRoot, manifest, defaultManifest, 'manifest'),
+    layout: resolveProjectPath(projectRoot, layout, defaultLayout, 'layout'),
+    ci: ci ? resolveProjectPath(projectRoot, ci, ci, 'ci') : null,
+  };
+  for (const key of ['docs', 'src', 'policy', 'manifest', 'layout']) {
+    resources[key].baseline = path.join(baselineRoot, ...resources[key].relative.split('/'));
+  }
+  if (resources.ci) resources.ci.baseline = path.join(baselineRoot, ...resources.ci.relative.split('/'));
+  return { resources, baselineKitRoot, kitRelative };
+}
+
+// Resource identities in the baseline tree; configuration resources must be regular blobs.
+export function workResourceRecords(resources, snapshot) {
+  const resourceRecords = [];
+  for (const [kind, resource] of Object.entries(resources)) {
+    if (!resource) continue;
+    const entry = snapshot.entry(resource.relative);
+    if (['policy', 'manifest', 'layout', 'ci'].includes(kind)) {
+      if (!entry || entry.type !== 'blob' || !REGULAR_MODES.has(entry.mode)) {
+        throw new CurrentWorkExecutionError(`${kind}: baseline resource must be a regular Git blob`);
+      }
+    }
+    resourceRecords.push({ kind, path: resource.relative, mode: entry?.mode || null, oid: entry?.oid || null });
+  }
+  return resourceRecords.sort((a, b) => byteCompare(a.kind, b.kind));
+}
+
+export function prepareCurrentWork({ work, root, docs, src, policy, manifest, layout, ci } = {}) {
+  if (!work) throw new CurrentWorkExecutionError('--work requires a request JSON path');
+  const ctx = resolveProjectRoot(root);
+  const { workPath, physicalWorkPath, parsed } = readWorkRequestFile(ctx, work);
   let request;
   try { request = normalizeWorkRequest(parsed.value); }
   catch (error) { throw new CurrentWorkExecutionError(error.message); }
@@ -49,26 +101,7 @@ export function prepareCurrentWork({ work, root, docs, src, policy, manifest, la
   try {
     const projectRoot = ctx.projectRoot;
     const baselineRoot = snapshot.root;
-    const currentKitInsideProject = !outside(projectRoot, KIT_ROOT);
-    const kitRelative = currentKitInsideProject ? projectRelative(projectRoot, KIT_ROOT, 'kit root') : null;
-    const baselineKitRoot = kitRelative ? path.join(baselineRoot, ...kitRelative.split('/')) : KIT_ROOT;
-    const defaultPolicy = currentKitInsideProject ? path.relative(projectRoot, DEFAULTS.policy) : DEFAULTS.policy;
-    const defaultManifest = currentKitInsideProject ? path.relative(projectRoot, DEFAULTS.manifest) : DEFAULTS.manifest;
-    const defaultLayout = currentKitInsideProject
-      ? path.relative(projectRoot, path.join(KIT_ROOT, 'policies', 'project-layout.yaml'))
-      : path.join(KIT_ROOT, 'policies', 'project-layout.yaml');
-    const resources = {
-      docs: resolveProjectPath(projectRoot, docs, DEFAULTS.docs, 'docs'),
-      src: resolveProjectPath(projectRoot, src, DEFAULTS.src, 'src'),
-      policy: resolveProjectPath(projectRoot, policy, defaultPolicy, 'policy'),
-      manifest: resolveProjectPath(projectRoot, manifest, defaultManifest, 'manifest'),
-      layout: resolveProjectPath(projectRoot, layout, defaultLayout, 'layout'),
-      ci: ci ? resolveProjectPath(projectRoot, ci, ci, 'ci') : null,
-    };
-    for (const key of ['docs', 'src', 'policy', 'manifest', 'layout']) {
-      resources[key].baseline = path.join(baselineRoot, ...resources[key].relative.split('/'));
-    }
-    if (resources.ci) resources.ci.baseline = path.join(baselineRoot, ...resources.ci.relative.split('/'));
+    const { resources, baselineKitRoot } = resolveWorkResources(ctx, baselineRoot, { docs, src, policy, manifest, layout, ci });
 
     const stateRel = `${resources.docs.relative}/_meta/workflow-state.yaml`;
     const registerRel = `${resources.docs.relative}/_meta/reconciliation-register.md`;
@@ -80,6 +113,8 @@ export function prepareCurrentWork({ work, root, docs, src, policy, manifest, la
     const layoutData = loadLayoutProfile({ kitRoot: baselineKitRoot, flags: { layout: resources.layout.baseline } });
     const allScreens = computeReadiness({ state, policy: policyData, ci: ciData, manifest: manifestData, layout: layoutData, exposeCaps: true });
     const claims = collectApiCandidateClaims(allScreens);
+    // B §10.1: current authority never opens an adopted owner's scoped path.
+    const adopted = adoptedWorkPaths({ docsDir: resources.docs.baseline, policy: policyData, claims });
     const generated = generatedPatterns(manifestData, resources.docs.relative);
     const requests = [];
     const errors = [];
@@ -129,12 +164,14 @@ export function prepareCurrentWork({ work, root, docs, src, policy, manifest, la
         } else {
           try {
             authorization = parts.kind === 'screen'
-              ? readinessPathAuthorization({ file: target.path, screenId: parts.id, entry, modeOrder: order, claims })
-              : exactSurfaceAuthorization(entry, target.path, parts.id, order);
+              ? readinessPathAuthorization({ file: target.path, screenId: parts.id, entry, modeOrder: order, claims, adopted })
+              : exactSurfaceAuthorization(entry, target.path, parts.id, order, adopted);
           } catch (error) { authorization = { allowed: false, reason: error.message }; }
         }
         result.path_authorizations.push({ ...target, ...authorization });
-        if (!authorization.allowed) localDenials.push({ code: 'CW-PATH-DENIED', owner: selector.owner, path: target.path, change: target.change, reason: authorization.reason || authorization.causes || null });
+        if (!authorization.allowed) localDenials.push({ code: authorization.work_selection_required ? 'CW-WORK-SELECTION-REQUIRED' : 'CW-PATH-DENIED',
+          owner: selector.owner, path: target.path, change: target.change, reason: authorization.reason || authorization.causes || null,
+          ...(authorization.work_selection_required ? { work_selection_required: authorization.work_selection_required } : {}) });
       }
       denials.push(...localDenials); future.push(...localFuture);
       result.errors = localErrors;
@@ -196,22 +233,11 @@ export function prepareCurrentWork({ work, root, docs, src, policy, manifest, la
       });
     }
 
-    const resourceRecords = [];
-    for (const [kind, resource] of Object.entries(resources)) {
-      if (!resource) continue;
-      const entry = snapshot.entry(resource.relative);
-      if (['policy', 'manifest', 'layout', 'ci'].includes(kind)) {
-        if (!entry || entry.type !== 'blob' || !REGULAR_MODES.has(entry.mode)) {
-          throw new CurrentWorkExecutionError(`${kind}: baseline resource must be a regular Git blob`);
-        }
-      }
-      resourceRecords.push({ kind, path: resource.relative, mode: entry?.mode || null, oid: entry?.oid || null });
-    }
     const baseline = {
       commit: identity.commit,
       tree: identity.tree,
       project_prefix: ctx.projectPrefix || '',
-      resources: resourceRecords.sort((a, b) => byteCompare(a.kind, b.kind)),
+      resources: workResourceRecords(resources, snapshot),
       authority_read_set: currentAuthorityReadSet({ resources, inputArtifacts, artifactFiles, baselineRoot, baselineKitRoot, layoutData, snapshot }),
       work_request: {
         hash: hashBytes(parsed.raw),
@@ -234,7 +260,7 @@ export function prepareCurrentWork({ work, root, docs, src, policy, manifest, la
       required_reviews: [],
       legacy_readiness: Object.fromEntries(requests.map((entry) => [entry.owner, entry.legacy_readiness || null])),
       all_absorbed: absorbedCount === requests.length && requests.length > 0,
-      _context: { ...ctx, workPath, baselineRoot, request, policy: policyData, manifest: manifestData, ci: ciData, layout: layoutData, state, snapshot, claims, generated },
+      _context: { ...ctx, workPath, baselineRoot, request, policy: policyData, manifest: manifestData, ci: ciData, layout: layoutData, state, snapshot, claims, generated, adopted },
     };
   } catch (error) {
     snapshot.cleanup();

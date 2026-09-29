@@ -90,10 +90,10 @@ export function invalidBlocker(blocker) {
   if (!blocker || typeof blocker !== 'object' || Array.isArray(blocker)) return true;
   return Object.keys(blocker).some((key) => key.startsWith('invalid_') || key === 'shared_surface_contract');
 }
-export function exactSurfaceAuthorization(entry, file, ownerId, order) {
+export function exactSurfaceAuthorization(entry, file, ownerId, order, adopted = null) {
   return readinessPathAuthorization({
     file, screenId: ownerId, entry, modeOrder: order,
-    claims: { active: [], denied: [] },
+    claims: { active: [], denied: [] }, adopted,
   });
 }
 export function screenDomain(state, parts) {

@@ -13,7 +13,8 @@ For shared behavior code, use [`implement-shared-surface`](../../../skills/imple
 
 Choose the execution branch **before** applying the no-work/legacy blocking stop below.
 For a concrete task within current authority, use the current-work branch, including a
-**single target**. An explicitly selected visual-refresh task instead follows the existing
+**single target**. A task on an explicitly adopted owner's scoped path uses the scoped-work
+branch. An explicitly selected visual-refresh task instead follows the existing
 [visual-refresh contract](../visual-reconciliation.md); do not mix its tuple with `--work`.
 Selecting a branch is not a grant and does not change no-work/visual authority.
 
@@ -39,6 +40,14 @@ readiness, packet/run, report/backstop에 같은 request/origin/resource를 전�
 사후 검증과 정상 핸드오프는 [Stage 08 current-work report/backstop](08-validate-and-report.md#current-work-reportbackstop)을 따른다.
 `authority: scoped`, work unit, partial/no-effect coverage receipt로 새 권한을 여는 것은 C가 아니다.
 그런 저작이 필요하면 기존 Stage 04/05 및 사람 소유 checkpoint로 돌아간다.
+
+## Scoped-work branch
+
+사람이 채택한 owner의 작업은 [scoped-work reference](../scoped-work.md)의 `authority: scoped` request로 owner **unit**을
+선택한다(regular-file `A`/`M` target만). 같은 다섯 CLI와 같은 request/origin/resource를 사용하고, 모든 판정은 immutable
+HEAD baseline에서 한다. surface는 모든 host 동의와 공유 target AND가 필요하다. `work-selection-required`가 나온 채택 경로를
+current/no-work/visual로 다시 시도하지 않는다. 채택·unit·decision binding을 새로 만들거나 넓히는 것은 구현이 아니라 사람
+소유 authoring checkpoint다. current와 scoped request를 한 문서에 섞지 않는다.
 
 ## Mode/readiness-driven
 

@@ -352,7 +352,34 @@ function normalizeVisibleBulletText(value) {
     .trim();
 }
 
-function sectionOccurrences(source, tree, suppliedContext = null) {
+// Scope content is original source, not the lossy visible-prose relation view.
+// Exclude the outer list marker and trailing nested lists by selecting the item's
+// own block span. Remove nested list subtrees within that span, without trimming
+// or rendering the remaining inline code, markup, whitespace or paragraph order.
+function bulletSourceText(source, item) {
+  const own = (item.children || []).filter((node) => node.type !== 'list');
+  const first = sourceRange(own[0]);
+  const last = sourceRange(own.at(-1));
+  if (!first || !last) return '';
+  const omitted = [];
+  walk(item, (node) => {
+    if (node.type === 'list') {
+      const range = sourceRange(node);
+      if (range) omitted.push(range);
+    }
+  });
+  omitted.sort((a, b) => a.start - b.start || b.end - a.end);
+  let cursor = first.start;
+  let text = '';
+  for (const range of omitted) {
+    if (range.end <= cursor || range.start >= last.end) continue;
+    text += source.slice(cursor, Math.max(cursor, range.start));
+    cursor = Math.min(last.end, range.end);
+  }
+  return text + source.slice(cursor, last.end);
+}
+
+function sectionOccurrences(source, tree, suppliedContext = null, includeNodes = false) {
   const context = suppliedContext || { source, definitions: definitionLabels(tree) };
   const occurrences = [];
   let current = {
@@ -366,9 +393,11 @@ function sectionOccurrences(source, tree, suppliedContext = null) {
   const flush = (endOffset) => {
     current.contentEnd = endOffset;
     const bulletTexts = [];
+    const bulletNodes = [];
     for (const { node } of current.nodes) {
       walk(node, (child) => {
         if (child.type !== 'listItem') return;
+        if (includeNodes) bulletNodes.push(child);
         bulletTexts.push(
           normalizeVisibleBulletText(
             visibleText(child, context, { omitNestedLists: true, root: true }),
@@ -376,15 +405,24 @@ function sectionOccurrences(source, tree, suppliedContext = null) {
         );
       });
     }
+    // The projection and structural view must share the very same canonical
+    // table candidates (column-zero pipes AND explicit block boundaries).
+    const tables = current.nodes
+      .map(({ node, previousNode }) => ({ node, table: rootTable(source, node, previousNode) }))
+      .filter(({ table }) => table !== null);
     occurrences.push({
       title: current.title,
       slug: current.slug,
       text: source.slice(current.contentStart, current.contentEnd),
       bulletCount: bulletTexts.length,
       bulletTexts,
-      tables: current.nodes
-        .map(({ node, previousNode }) => rootTable(source, node, previousNode))
-        .filter(Boolean),
+      ...(includeNodes ? {
+        nodes: current.nodes.map(({ node }) => node),
+        bulletNodes,
+        bulletSources: bulletNodes.map((node) => bulletSourceText(source, node)),
+        tableNodes: tables.map(({ node }) => node),
+      } : {}),
+      tables: tables.map(({ table }) => table),
     });
   };
 
@@ -463,3 +501,13 @@ export function splitSectionOccurrences(text) {
     text: sectionText,
   }));
 }
+
+// Opt-in structural view for typed dependency traversal. Legacy projections above
+// keep their exact shapes. Native nodes retain source offsets and link definitions;
+// callers must not reparse rendered text into invented reference identities.
+export function parseReconciliationReferenceView(text) {
+  const source = String(text || '');
+  const tree = parseTree(source);
+  return { tree, sections: sectionOccurrences(source, tree, null, true) };
+}
+export { normalizeReferenceLabel as reconciliationReferenceLabel };

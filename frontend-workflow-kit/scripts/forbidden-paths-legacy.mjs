@@ -30,6 +30,7 @@ import {
 import { enforceCliFlagContract } from './lib/cli-args.mjs';
 import { computeReadiness } from './readiness.mjs';
 import { LayoutConfigError, loadLayoutProfile } from './lib/layout-profile.mjs';
+import { adoptedWorkPaths } from './lib/scoped-work-adoption.mjs';
 import {
   covers,
   isClearedAt,
@@ -39,6 +40,7 @@ import {
   gitChangedRecords,
   stripRoot,
   globMatches,
+  WORK_SELECTION_REQUIRED_REASON,
   collectApiCandidateClaims,
   readinessPathAuthorization,
   GitError,
@@ -368,6 +370,15 @@ function main() {
   const guardedSurface = layout.materializeGuardedSurface(resolvedPolicy, domains);
   const apiClientSurfaces = optionalApiClientSurfaces(layout, domains);
   const claims = collectApiCandidateClaims(readinessOutput);
+  // B §10.1: a change inside an adopted owner's scoped path needs a scoped work
+  // selection (--work with authority:scoped). Without a marker nothing changes.
+  let adopted;
+  try {
+    adopted = adoptedWorkPaths({ docsDir, policy, claims });
+  } catch (error) {
+    process.stderr.write(`forbidden-paths: ${error.message}\n`);
+    process.exit(2);
+  }
   const hasV2CandidateContract = Object.values(readinessOutput).some(
     (entry) => entry?.api_candidate_authorization?.contract_version === 2,
   );
@@ -434,6 +445,19 @@ function main() {
       // --root strip → posix 정규화 (root 없으면 정규화만)
       const F = stripRoot(wp, rootRel);
       if (seenFiles.has(F)) continue; // 같은 파일 중복 방지(여러 record가 같은 새 경로를 줄 일은 드묾)
+      const adoptedMatches = adopted.paths.filter((entry) => globMatches(entry.path, F));
+      if (adoptedMatches.length > 0) {
+        seenFiles.add(F);
+        violations.push({
+          file: F,
+          change: changeLabel(record),
+          surface: adoptedMatches[0].path,
+          reason: `${WORK_SELECTION_REQUIRED_REASON} (${adoptedMatches.map((entry) => entry.owner).join(', ')})`,
+          would_clear: 'select this owner/unit with --work and authority:scoped',
+          work_selection_required: adoptedMatches,
+        });
+        continue;
+      }
       const deniedClaims = matchingClaims(claims.denied, F);
       if (deniedClaims.length > 0) {
         seenFiles.add(F);

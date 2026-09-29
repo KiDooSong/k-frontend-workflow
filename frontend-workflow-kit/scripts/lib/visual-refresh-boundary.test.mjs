@@ -181,7 +181,7 @@ structured_since: "2026-09-01T00:00:00+09:00"
 
 function createAuthorityFixture(t, options = {}) {
   const root = tmpdir(t, 'visual-refresh-e2e-');
-  git(root, 'init');
+  git(root, 'init'); git(root, 'config', 'maintenance.auto', 'false'); git(root, 'config', 'gc.auto', '0');
   git(root, 'config', 'user.email', 'visual-refresh@example.com');
   git(root, 'config', 'user.name', 'Visual Refresh Test');
   write(
@@ -400,7 +400,7 @@ test('explicit authority resource symlinks are rejected before any snapshot read
 
 test('diff records stay bound to captured tree OIDs even if the index mutates before diff', (t) => {
   const root = tmpdir(t, 'visual-refresh-race-');
-  git(root, 'init');
+  git(root, 'init'); git(root, 'config', 'maintenance.auto', 'false'); git(root, 'config', 'gc.auto', '0');
   git(root, 'config', 'user.email', 'race@example.com');
   git(root, 'config', 'user.name', 'Race Test');
   write(root, 'screen.tsx', 'before\n');

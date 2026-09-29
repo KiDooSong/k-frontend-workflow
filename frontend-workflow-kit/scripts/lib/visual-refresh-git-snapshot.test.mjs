@@ -27,7 +27,7 @@ function write(root, file, content) {
 function temporary(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vr-git-snapshot-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  git(root, 'init');
+  git(root, 'init'); git(root, 'config', 'maintenance.auto', 'false'); git(root, 'config', 'gc.auto', '0');
   git(root, 'config', 'user.name', 'Visual Snapshot Test');
   git(root, 'config', 'user.email', 'snapshot@example.com');
   return root;

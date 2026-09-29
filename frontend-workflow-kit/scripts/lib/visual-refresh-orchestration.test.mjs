@@ -159,7 +159,7 @@ structured_since: "2026-09-01T00:00:00+09:00"
 }
 function fixture(t, { prefix = '', explicit = false, plannedGenerated = false } = {}) {
   const repo = tmp(t);
-  git(repo, 'init');
+  git(repo, 'init'); git(repo, 'config', 'maintenance.auto', 'false'); git(repo, 'config', 'gc.auto', '0');
   git(repo, 'config', 'user.email', 'visual@example.com');
   git(repo, 'config', 'user.name', 'Visual Test');
   const project = prefix ? path.join(repo, ...prefix.split('/')) : repo;

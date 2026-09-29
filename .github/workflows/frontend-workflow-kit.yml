@@ -91,7 +91,7 @@ jobs:
             exit 1
           fi
 
-      - run: node --test scripts/lib/scoped-work-contracts.test.mjs
+      - run: node --test scripts/lib/scoped-work-*.test.mjs
       - run: npm run example:validate
       - run: npm run test:spec
       - run: npm run kit:pack
@@ -131,5 +131,5 @@ jobs:
           cache: npm
           cache-dependency-path: frontend-workflow-kit/package-lock.json
       - run: npm ci
-      - run: node --test scripts/lib/util.test.mjs scripts/lib/distribution.test.mjs scripts/lib/upgrade-planner.test.mjs scripts/lib/visual-refresh-followup.test.mjs scripts/lib/visual-refresh-orchestration.test.mjs scripts/lib/visual-refresh-internal-boundaries.test.mjs scripts/lib/visual-refresh-git-snapshot.test.mjs scripts/lib/current-work-request.test.mjs scripts/lib/scoped-work-contracts.test.mjs scripts/lib/current-work-execution.test.mjs scripts/lib/current-work-packed.test.mjs scripts/lib/current-work-snapshot.test.mjs
+      - run: node --test scripts/lib/util.test.mjs scripts/lib/distribution.test.mjs scripts/lib/upgrade-planner.test.mjs scripts/lib/visual-refresh-followup.test.mjs scripts/lib/visual-refresh-orchestration.test.mjs scripts/lib/visual-refresh-internal-boundaries.test.mjs scripts/lib/visual-refresh-git-snapshot.test.mjs scripts/lib/current-work-request.test.mjs scripts/lib/scoped-work-*.test.mjs scripts/lib/current-work-execution.test.mjs scripts/lib/current-work-packed.test.mjs scripts/lib/current-work-snapshot.test.mjs
       - run: npm run example:validate

@@ -337,7 +337,7 @@ test('existing selected input and generated outputs remain final denies', (t) =>
 test('staged resolver binds records and both immutable trees in one result', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'visual-refresh-git-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  git(root, 'init');
+  git(root, 'init'); git(root, 'config', 'maintenance.auto', 'false'); git(root, 'config', 'gc.auto', '0');
   git(root, 'config', 'user.email', 'test@example.com');
   git(root, 'config', 'user.name', 'Test');
   fs.writeFileSync(path.join(root, 'screen.tsx'), 'before\n', 'utf8');
@@ -371,7 +371,7 @@ test('staged resolver binds records and both immutable trees in one result', (t)
 test('diff context rejects ambiguous modes, malformed ranges, and repositories without HEAD', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'visual-refresh-empty-git-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  git(root, 'init');
+  git(root, 'init'); git(root, 'config', 'maintenance.auto', 'false'); git(root, 'config', 'gc.auto', '0');
 
   assert.throws(
     () => resolveVisualDiffContext({ repositoryRoot: root, staged: true, base: 'main' }),
