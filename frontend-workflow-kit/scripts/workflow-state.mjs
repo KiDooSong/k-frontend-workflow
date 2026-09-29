@@ -11,6 +11,8 @@ import {
   KIT_ROOT,
   findFiles,
   exists,
+  symlinkOnPath,
+  firstSymlinkBelow,
   splitFrontmatter,
   readFileSafe,
   emitGeneratedYaml,
@@ -46,7 +48,19 @@ function todayISO() {
   ).padStart(2, '0')}`;
 }
 
-export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
+export function buildState({ docsDir, srcDir, date, layout, projectRoot, rejectSymlinks = false }) {
+  // `--work` computes this state from a materialized Git baseline (#250): a symbolic
+  // link must never bring files from outside that tree into documents or source facts.
+  // Documents and the docs/src roots refuse links; linked source roots count as empty.
+  if (rejectSymlinks) {
+    const root = projectRoot || projectRootOf(srcDir);
+    for (const [label, dir] of [['docs', docsDir], ['src', srcDir]]) {
+      const link = symlinkOnPath(root, dir);
+      if (link) throw new Error(`${label} path crosses a symbolic link: ${link}`);
+    }
+    const link = firstSymlinkBelow(docsDir);
+    if (link) throw new Error(`docs contain a symbolic link: ${link}`);
+  }
   // 레이아웃 프로파일(tier1): deriveMetrics 의 fake_hook_exists 가 {roles.hook} 디렉토리를 단일
   // 출처에서 파생하도록 주입한다. 호출부가 주지 않으면 기본 프로파일(expo-feature)을 로드 —
   // 토큰화 이전과 BYTE-동치(README §1.1).
@@ -116,7 +130,7 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
     const screenEntry = fm.screen_entry || null;
     const status = fm.status || 'draft';
 
-    const derived = deriveMetrics(spec, { srcDir, layout: resolvedLayout, projectRoot });
+    const derived = deriveMetrics(spec, { srcDir, layout: resolvedLayout, projectRoot, rejectSymlinks });
     const lifecycleRecord = screenLifecycle.bySpec.get(spec);
     if (lifecycleRecord?.errors.length) {
       derived.lifecycle_errors = lifecycleRecord.errors.map((issue) => ({
@@ -191,6 +205,7 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
       srcDir,
       layout: resolvedLayout,
       projectRoot,
+      rejectSymlinks,
     });
     // Shared surfaces never own local Open Decision rows. analyzeSharedSurfaces records that
     // contract error; readiness consumes only canonical decision_refs here.
@@ -527,6 +542,7 @@ export function buildState({ docsDir, srcDir, date, layout, projectRoot }) {
         srcDir,
         layout: resolvedLayout,
         screens: liveInventory,
+        rejectSymlinks,
       })
     : null;
 

@@ -26,6 +26,10 @@ or root config.
 - The generated state is no longer a consumed authority file: a regenerated,
   ignored copy on disk is not reported by the backstop. A tracked copy that changes
   in the implementation diff is still reported.
+- That computation never follows symbolic links out of the baseline. A committed
+  link at a source role root (or a parent of it) counts as an empty directory, and
+  a link inside the docs directory or on the docs/src path is an input error
+  (exit 2). The legacy `workflow:state` command is unchanged.
 - No manual action. No-work `readiness`, `forbidden-paths` and `workflow:run`
   without `--work` still read `_meta/workflow-state.yaml`; keep running
   `workflow:state` for them.

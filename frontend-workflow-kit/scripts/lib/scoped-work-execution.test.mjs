@@ -194,6 +194,22 @@ test('D preflight: a stale or missing generated state is not read; legacy struct
   assert.equal(invalid.ready, false); assert.ok(invalid.errors.some((entry) => entry.code === 'SW-AUTHORITY-INVALID' && entry.owner === SURFACE));
 });
 
+test('#250: scoped legacy readiness never follows a committed symbolic link out of the tree', { skip: process.platform === 'win32' }, (t) => {
+  const r = repository(t);
+  const external = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'scoped-exec-external-')));
+  t.after(() => fs.rmSync(external, { recursive: true, force: true }));
+  const hooks = path.join(r.root, `${PREFIX}/hooks`);
+  fs.rmSync(hooks, { recursive: true, force: true }); fs.symlinkSync(external, hooks, 'dir');
+  r.commit('linked hook root');
+  const selected = () => r.request([{ owner: 'screen:RESULT-001', authority: 'scoped', unit: 'known',
+    targets: [{ path: ENTRY('RESULT-001'), change: 'M' }] }]);
+  const empty = r.prepare(t, selected());
+  fs.writeFileSync(path.join(external, 'useResult.ts'), 'export const useResult = () => null;\n');
+  const filled = r.prepare(t, selected());
+  assert.deepEqual(filled.legacy_readiness, empty.legacy_readiness);
+  assert.deepEqual(filled.requests, empty.requests);
+});
+
 test('D preflight: mixed documents, non A/M changes, unresolved origins and symlinked requests are input errors', (t) => {
   const r = repository(t);
   const current = { owner: 'screen:RESULT-001', authority: 'current', requested_mode: 'rough-fixture-ui', targets: [{ path: ENTRY('RESULT-001'), change: 'M' }] };

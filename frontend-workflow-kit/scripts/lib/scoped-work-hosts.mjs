@@ -152,7 +152,7 @@ export function inspectScopedSurfaceHosts(options = {}) {
     let state;
     try {
       state = JSON.parse(JSON.stringify(buildState({ docsDir: docs.absolute, srcDir: src.absolute,
-        date: 'baseline', layout, projectRoot }).state));
+        date: 'baseline', layout, projectRoot, rejectSymlinks: true }).state));
     } catch (error) { fail(`legacy workflow state: ${error.message}`); }
     const surfaceId = ownerParts(owner).id, record = state.surfaces?.[surfaceId];
     // The state and the canonical projection must describe the same surface.

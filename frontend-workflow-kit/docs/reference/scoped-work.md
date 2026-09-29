@@ -109,7 +109,8 @@ packets and serialized verdicts are not authority. For each scoped request:
   scopes and consent under its member role ceiling; a `legacy-current` host
   consents only through the member base envelope of the actual legacy surface
   computation, over the workflow state computed from the baseline documents and
-  source tree (a generated `_meta/workflow-state.yaml` is never read). A visual
+  source tree like [current work](current-work.md#origin-and-snapshot-binding)
+  (a generated `_meta/workflow-state.yaml` is never read). A visual
   surface keeps each host's mapping rows and Figma provenance; a selected component
   must resolve to one literal repository path inside the surface's own
   implementation paths.

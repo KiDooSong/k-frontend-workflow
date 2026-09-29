@@ -274,6 +274,22 @@ test('D hosts: a legacy member base never opens the generated state and needs ca
   assert.throws(() => f.run({ srcDir: undefined }), /canonical docsDir and srcDir are required/);
 });
 
+test('#250: a legacy member base never follows a symbolic link and refuses linked documents', { skip: process.platform === 'win32' }, (t) => {
+  const f = fixture(t); f.legacy();
+  const external = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'scoped-hosts-external-')));
+  t.after(() => fs.rmSync(external, { recursive: true, force: true }));
+  const hooks = path.join(f.root, `${PREFIX}/hooks`);
+  fs.rmSync(hooks, { recursive: true, force: true }); fs.mkdirSync(path.dirname(hooks), { recursive: true });
+  fs.symlinkSync(external, hooks, 'dir');
+  const legacyOf = (out) => hostOf(out, 'screen:RESULT-002');
+  const empty = legacyOf(f.run());
+  fs.writeFileSync(path.join(external, 'useResult.ts'), 'export const useResult = () => null;\n');
+  assert.deepEqual(legacyOf(f.run()), empty);
+  fs.mkdirSync(path.join(f.root, DOCS, 'global'), { recursive: true });
+  fs.symlinkSync(path.join(external, 'useResult.ts'), path.join(f.root, DOCS, 'global/linked.md'));
+  assert.throws(() => f.run(), /legacy workflow state: docs contain a symbolic link: global\/linked\.md/);
+});
+
 test('D hosts: an adopted host consents only within its member role ceiling', (t) => {
   const f = fixture(t);
   f.work.role_limits.behavior = ['screen', 'hook', 'api_client', 'test']; f.writePolicy();

@@ -76,12 +76,12 @@ export function resolveWorkResources(ctx, baselineRoot, { docs, src, policy, man
 // `--work` never reads a generated `_meta/workflow-state.yaml`. It computes the state
 // `workflow:state` would write, from the materialized baseline documents and source
 // tree, so a missing, untracked or stale generated file neither blocks nor changes the
-// evaluation. The JSON round trip hands readers plain data, as a parsed file would.
-// Shared by current and scoped work.
+// evaluation. Symbolic links are never followed out of that tree. The JSON round trip
+// hands readers plain data, as a parsed file would. Shared by current and scoped work.
 export function baselineWorkflowState({ resources, layout, baselineRoot }) {
   try {
     const { state } = buildState({ docsDir: resources.docs.baseline, srcDir: resources.src.baseline,
-      date: 'baseline', layout, projectRoot: baselineRoot });
+      date: 'baseline', layout, projectRoot: baselineRoot, rejectSymlinks: true });
     return JSON.parse(JSON.stringify(state));
   } catch (error) {
     throw new CurrentWorkExecutionError(`baseline workflow state: ${error.message}`);

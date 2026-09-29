@@ -116,7 +116,9 @@ snapshot also records the baseline commit/tree and resource identities.
 The workflow state is computed from the baseline documents and source tree, the
 same way `workflow:state` computes it. A generated `_meta/workflow-state.yaml` is
 neither required nor read, so it may be untracked, ignored or stale; it is not an
-authority file.
+authority file. The computation never follows a symbolic link out of the baseline:
+a linked source root (or a linked parent) counts as empty, and a link inside the
+docs directory or on the docs/src path is an input error.
 
 Packet values are audit evidence only. Report/backstop reads the current request
 again and requires the same normalized digest **and raw request bytes**; packet

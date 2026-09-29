@@ -146,6 +146,32 @@ test('#250: current work computes the baseline state; an ignored, stale or missi
     JSON.stringify(changed.violations));
 });
 
+test('#250: the computed baseline state never follows a committed symbolic link out of the tree', { skip: process.platform === 'win32' }, (t) => {
+  const root = project(t);
+  const git = (...args) => execFileSync('git', args, { cwd: root });
+  const external = fs.mkdtempSync(path.join(os.tmpdir(), 'current-work-external-'));
+  t.after(() => fs.rmSync(external, { recursive: true, force: true }));
+  // The committed hook role root points outside the repository, as a Git symlink blob.
+  const hooks = path.join(root, 'src/features/coupons/hooks');
+  fs.rmSync(hooks, { recursive: true, force: true });
+  fs.symlinkSync(external, hooks, 'dir');
+  git('add', '-A'); git('commit', '-qm', 'linked hook root');
+  const work = writeRequest(t, request());
+  const empty = json(run('readiness.mjs', [...common(root, work), '--json']));
+  fs.writeFileSync(path.join(external, 'useCoupons.ts'), 'export const useCoupons = () => null;\n');
+  const filled = json(run('readiness.mjs', [...common(root, work), '--json']));
+  assert.deepEqual(filled.requests, empty.requests);
+  assert.deepEqual(filled.future_requirements, empty.future_requirements);
+  assert.equal(git('status', '--porcelain').length, 0);
+
+  // A symbolic link among the documents is refused, never read.
+  fs.symlinkSync(path.join(external, 'useCoupons.ts'), path.join(root, 'docs/frontend-workflow/global/linked.md'));
+  git('add', '-A'); git('commit', '-qm', 'linked document');
+  const refused = run('readiness.mjs', [...common(root, work), '--json']);
+  assert.equal(refused.status, 2, refused.stdout);
+  assert.match(refused.stderr, /docs contain a symbolic link: global\/linked\.md/);
+});
+
 test('W33/W35: origin stays non-ready while unconnected and becomes ready after canonical connection', (t) => {
   const origin = [{ input_id: 'IN-20260720-figma-001', source_refs: [] }];
   const disconnectedRoot = project(t, { origin: 'unconnected' });
