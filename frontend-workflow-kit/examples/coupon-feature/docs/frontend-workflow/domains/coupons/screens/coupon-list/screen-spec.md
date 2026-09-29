@@ -22,7 +22,7 @@ last_reviewed: 2026-06-12
 
 ## Entry Points
 <!-- GENERATED:START nav-graph -->
-<!-- 직접 작성하지 마세요. 다른 화면 Interaction Matrix 선언을 `npm run workflow:nav` 가 역색인해 채웁니다. -->
+<!-- 직접 작성하지 마세요. 다른 화면 Interaction Matrix 선언을 `npm run workflow:nav-graph` 가 역색인해 채웁니다. -->
 <!-- MVP-A 임시: nav-graph 생성기 이전이라 아래는 수동 기재. MVP-C에서 생성으로 전환됩니다. -->
 - 하단 탭 > 쿠폰 (navigation-map: Tabs)
 - HOME-001 > 보유 쿠폰 카드 클릭

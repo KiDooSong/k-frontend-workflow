@@ -49,7 +49,7 @@ last_reviewed: "{YYYY-MM-DD}"
 
 ## Entry Points
 <!-- GENERATED:START nav-graph -->
-<!-- 직접 작성하지 마세요. 다른 화면 Interaction Matrix 선언을 `npm run workflow:nav` 가 역색인해 채웁니다. -->
+<!-- 직접 작성하지 마세요. 다른 화면 Interaction Matrix 선언을 `npm run workflow:nav-graph` 가 역색인해 채웁니다. -->
 <!-- GENERATED:END nav-graph -->
 
 ## UI Sections
