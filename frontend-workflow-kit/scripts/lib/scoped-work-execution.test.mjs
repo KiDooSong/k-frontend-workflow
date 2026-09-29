@@ -154,9 +154,11 @@ test('D preflight: a scoped surface request is evaluated only on the immutable H
   assert.deepEqual(selected.evidence.contracts, ['artifact:RULES-0#rules']);
   // Every file the scoped hosts read is pinned for the backstop, not only C's resources.
   const pinned = new Set(env.snapshot.authority_read_set.map((entry) => entry.path));
-  for (const file of ['.kit/policy.yaml', '.kit/layout.yaml', '.kit/manifest.yaml', `${DOCS}/_meta/workflow-state.yaml`,
+  for (const file of ['.kit/policy.yaml', '.kit/layout.yaml', '.kit/manifest.yaml',
     `${DOCS}/domains/result/rules/rules-1.md`, `${DOCS}/domains/result/rules/rules-2.md`,
     `${DOCS}/domains/result/surfaces/result-panel/surface-spec.md`]) assert.ok(pinned.has(file), file);
+  // #250: the workflow state is computed from the baseline documents; the generated file is not pinned.
+  assert.equal(pinned.has(`${DOCS}/_meta/workflow-state.yaml`), false);
   assert.ok(env.snapshot.authority_read_set.some((entry) => entry.source === 'artifact-index'));
   // Legacy readiness is preserved; its phase blockers are informational only.
   assert.ok(env.legacy_readiness[SURFACE]); assert.equal(Object.hasOwn(env, '_context'), false);
@@ -175,12 +177,18 @@ test('D preflight: uncommitted worktree edits cannot change baseline authority i
   assert.equal(r.prepare(t).ready, false, 'a worktree repair is not baseline authority');
 });
 
-test('D preflight: stale legacy state and legacy structural errors are errors, not future requirements', (t) => {
+test('D preflight: a stale or missing generated state is not read; legacy structural errors are errors, not future requirements', (t) => {
   const r = repository(t);
+  const selected = () => r.request([{ owner: 'screen:RESULT-001', authority: 'scoped', unit: 'known',
+    targets: [{ path: ENTRY('RESULT-001'), change: 'M' }] }]);
+  // #250: legacy readiness comes from the state computed from the committed documents.
   r.commit('drop a screen from the generated state', (state) => { delete state.screens['RESULT-001']; return state; });
-  const stale = r.prepare(t, r.request([{ owner: 'screen:RESULT-001', authority: 'scoped', unit: 'known',
-    targets: [{ path: ENTRY('RESULT-001'), change: 'M' }] }]));
-  assert.equal(stale.ready, false); assert.deepEqual(stale.errors.map((entry) => entry.code), ['SW-LEGACY-STATE-001']);
+  const stale = r.prepare(t, selected());
+  assert.deepEqual(stale.errors, []); assert.ok(stale.legacy_readiness['screen:RESULT-001']);
+  fs.rmSync(path.join(r.root, DOCS, '_meta/workflow-state.yaml'));
+  git(r.repo, 'add', '-A'); git(r.repo, 'commit', '-qm', 'no generated state');
+  const missing = r.prepare(t, selected());
+  assert.deepEqual(missing.errors, []); assert.deepEqual(missing.legacy_readiness, stale.legacy_readiness);
   const s = repository(t); s.edit('surface.md', (doc) => { doc.body = doc.body.replace('| retry | state |', '| retry | route |'); }); s.commit('route edge');
   const invalid = s.prepare(t);
   assert.equal(invalid.ready, false); assert.ok(invalid.errors.some((entry) => entry.code === 'SW-AUTHORITY-INVALID' && entry.owner === SURFACE));

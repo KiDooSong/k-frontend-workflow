@@ -38,10 +38,7 @@ function authorityPaths(preflight) {
   const paths = new Set(preflight.snapshot.resources.map((r) => r.path));
   for (const origin of preflight.origin_inputs) paths.add(origin.path);
   const docs = preflight.snapshot.resources.find((r) => r.kind === 'docs')?.path;
-  if (docs) {
-    paths.add(`${docs}/_meta/reconciliation-register.md`);
-    paths.add(`${docs}/_meta/workflow-state.yaml`);
-  }
+  if (docs) paths.add(`${docs}/_meta/reconciliation-register.md`);
   if (preflight.snapshot.work_request.path) paths.add(preflight.snapshot.work_request.path);
   return paths;
 }

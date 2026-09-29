@@ -122,7 +122,8 @@ export function captureCurrentWorktree(repositoryRoot, sourceTree, { extraFiles 
 export function currentAuthorityReadSet({ resources, inputArtifacts, artifactFiles = null, baselineRoot, baselineKitRoot, layoutData, snapshot }) {
   const files = new Set(Object.entries(resources).filter(([kind, r]) => r && !['docs', 'src'].includes(kind)).map(([, r]) => r.relative));
   const docs = resources.docs.relative;
-  files.add(`${docs}/_meta/workflow-state.yaml`);
+  // The workflow state is computed from the baseline documents, not read from a
+  // generated `_meta/workflow-state.yaml`, so that file is not an authority input.
   files.add(`${docs}/_meta/reconciliation-register.md`); // absence is also a dependency
   for (const artifact of inputArtifacts) files.add(posix(path.relative(baselineRoot, artifact.file)));
   const records = [];

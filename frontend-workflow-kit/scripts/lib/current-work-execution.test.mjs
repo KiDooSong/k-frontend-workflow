@@ -117,6 +117,35 @@ test('generated/do-not-edit ownership is final even when current mode glob match
   assert.match(out.denials[0].reason, /generated\/do-not-edit ownership is final/);
 });
 
+test('#250: current work computes the baseline state; an ignored, stale or missing generated file is not authority', (t) => {
+  const root = project(t);
+  const git = (...args) => execFileSync('git', args, { cwd: root });
+  const generated = ['docs/frontend-workflow/_meta/workflow-state.yaml', 'docs/frontend-workflow/_meta/screen-inventory.yaml'];
+  // A consumer that regenerates `_meta` locally and ignores it, like a readiness wrapper would.
+  fs.writeFileSync(path.join(root, '.gitignore'), `${generated.join('\n')}\n`);
+  git('rm', '-q', '--cached', ...generated); git('add', '-A'); git('commit', '-qm', 'ignore generated state');
+  // A stale copy that would drop the owner if it were read.
+  fs.writeFileSync(path.join(root, generated[0]), 'screens: {}\n');
+  const work = writeRequest(t, request());
+  const ready = json(run('readiness.mjs', [...common(root, work), '--json']));
+  assert.equal(ready.ready, true, JSON.stringify(ready.errors));
+  assert.equal(ready.requests[0].readiness_mode, 'rough-fixture-ui');
+  assert.equal(ready.snapshot.authority_read_set.some((entry) => entry.path.endsWith('_meta/workflow-state.yaml')), false);
+  fs.appendFileSync(path.join(root, SCREEN), '\n// implementation\n');
+  const backstop = json(run('forbidden-paths.mjs', [...common(root, work), '--json']));
+  assert.equal(backstop.ok, true, JSON.stringify(backstop.violations));
+  fs.rmSync(path.join(root, generated[0]));
+  assert.equal(json(run('readiness.mjs', [...common(root, work), '--json'])).ready, true);
+
+  // A tracked generated state that changes in the implementation diff is still reported.
+  const tracked = project(t);
+  fs.appendFileSync(path.join(tracked, SCREEN), '\n// implementation\n');
+  fs.appendFileSync(path.join(tracked, generated[0]), '\n');
+  const changed = json(run('forbidden-paths.mjs', [...common(tracked, work), '--json']));
+  assert.ok(changed.violations.some((entry) => entry.code === 'CW-GIT-AUTHORITY-CHANGED' && entry.path === generated[0]),
+    JSON.stringify(changed.violations));
+});
+
 test('W33/W35: origin stays non-ready while unconnected and becomes ready after canonical connection', (t) => {
   const origin = [{ input_id: 'IN-20260720-figma-001', source_refs: [] }];
   const disconnectedRoot = project(t, { origin: 'unconnected' });

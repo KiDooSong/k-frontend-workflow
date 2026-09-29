@@ -23,7 +23,7 @@ import {
   CurrentWorkExecutionError, REGULAR_MODES, AUTHORITY_BASENAMES, outside, projectRelative, resolveProjectRoot, gitIdentity, yamlFile,
   invalidBlocker, selectedInputErrors, artifactProjectPath, inputHash, stable,
 } from './current-work-execution-core.mjs';
-import { readWorkRequestFile, resolveWorkResources, workResourceRecords } from './current-work-execution-preflight.mjs';
+import { readWorkRequestFile, resolveWorkResources, workResourceRecords, baselineWorkflowState } from './current-work-execution-preflight.mjs';
 import { normalizeScopedWorkRequestSyntax } from './scoped-work-request.mjs';
 import { inspectScopedWorkRequests } from './scoped-work-composition.mjs';
 
@@ -85,11 +85,11 @@ export function prepareScopedWork({ work, root, docs, src, policy, manifest, lay
     const resourceRecords = workResourceRecords(resources, snapshot);
     const docsRoot = resources.docs.baseline;
     const registerFile = path.join(docsRoot, '_meta', 'reconciliation-register.md');
-    const state = yamlFile(path.join(docsRoot, '_meta', 'workflow-state.yaml'), 'workflow-state', { maxAliasCount: 10000 });
     const policyData = yamlFile(resources.policy.baseline, 'policy');
     const manifestData = yamlFile(resources.manifest.baseline, 'manifest');
     const ciData = resources.ci ? yamlFile(resources.ci.baseline, 'CI') : {};
     const layoutData = loadLayoutProfile({ kitRoot: baselineKitRoot, flags: { layout: resources.layout.baseline } });
+    const state = baselineWorkflowState({ resources, layout: layoutData, baselineRoot });
     const inputArtifacts = collectInputArtifacts(path.join(docsRoot, 'inputs'));
     const inputValidation = validateInputArtifacts(inputArtifacts);
     const inputIndex = buildInputArtifactIndex(inputArtifacts);
@@ -107,7 +107,7 @@ export function prepareScopedWork({ work, root, docs, src, policy, manifest, lay
       const entry = computeReadiness({ state, policy: policyData, ci: ciData, manifest: manifestData, layout: layoutData, exposeCaps: true,
         ...(parts.kind === 'screen' ? { screenOnlyId: parts.id } : { surfaceOnlyId: parts.id }) })?.[parts.id] || null;
       legacyReadiness[selected.owner] = entry;
-      if (!entry) { errors.push({ code: 'SW-LEGACY-STATE-001', owner: selected.owner, message: 'owner is missing from the generated legacy state; regenerate workflow:state' }); continue; }
+      if (!entry) { errors.push({ code: 'SW-LEGACY-STATE-001', owner: selected.owner, message: 'owner is missing from the baseline workflow state computed from the committed documents' }); continue; }
       if (entry.readiness_applicable === false || entry.screen_lifecycle === 'absorbed') absorbed += 1;
       for (const blocker of entry.blocking || []) {
         if (invalidBlocker(blocker)) errors.push({ code: 'SW-AUTHORITY-INVALID', owner: selected.owner, blocker });
@@ -137,7 +137,7 @@ export function prepareScopedWork({ work, root, docs, src, policy, manifest, lay
       request: parsed.value, projectRoot: baselineRoot, docsDir: docsRoot, kitRoot: baselineKitRoot,
       policyFile: resources.policy.baseline, layoutFile: resources.layout.baseline, manifestFile: resources.manifest.baseline,
       registerFile, ...(resources.ci ? { ciFile: resources.ci.baseline } : {}),
-      targetIndex: index.targetIndex, inputArtifacts,
+      targetIndex: index.targetIndex, inputArtifacts, srcDir: resources.src.baseline,
     });
 
     // The authority read set joins C's resources/inventories with every file the

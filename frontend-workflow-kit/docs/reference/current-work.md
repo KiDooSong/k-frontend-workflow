@@ -113,12 +113,16 @@ The normalized complete request (including origins) gets a `request_digest`.
 Each resolved origin carries its canonical path and raw `sha256` hash. The
 snapshot also records the baseline commit/tree and resource identities.
 
+The workflow state is computed from the baseline documents and source tree, the
+same way `workflow:state` computes it. A generated `_meta/workflow-state.yaml` is
+neither required nor read, so it may be untracked, ignored or stale; it is not an
+authority file.
+
 Packet values are audit evidence only. Report/backstop reads the current request
 again and requires the same normalized digest **and raw request bytes**; packet
 baseline commit/tree and origin identity/hash must still match. Changing the
-request, origin, policy/manifest/layout/CI authority, generated state, or other
-authority records is an authoring checkpoint, not a way to self-grant the same
-implementation run.
+request, origin, policy/manifest/layout/CI authority, or other authority records
+is an authoring checkpoint, not a way to self-grant the same implementation run.
 
 The CLI does not claim that repository state can prove the user originally
 mentioned every input; initial conversation/request capture remains an agent and

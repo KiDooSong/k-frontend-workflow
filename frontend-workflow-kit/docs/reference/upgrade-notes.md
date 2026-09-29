@@ -17,6 +17,21 @@ or root config.
 
 ---
 
+## Baseline workflow state for `--work` (#250)
+
+- The five `--work` CLIs (current and scoped) compute the workflow state from the
+  baseline documents and source tree, as `workflow:state` does. They no longer
+  need a committed `_meta/workflow-state.yaml`, and they never read one, so it may
+  be untracked, Git-ignored or stale without blocking or changing `--work`.
+- The generated state is no longer a consumed authority file: a regenerated,
+  ignored copy on disk is not reported by the backstop. A tracked copy that changes
+  in the implementation diff is still reported.
+- No manual action. No-work `readiness`, `forbidden-paths` and `workflow:run`
+  without `--work` still read `_meta/workflow-state.yaml`; keep running
+  `workflow:state` for them.
+
+---
+
 ## Scoped work execution (#238)
 
 - **Unadopted repositories need no action.** Without a policy `work_execution`

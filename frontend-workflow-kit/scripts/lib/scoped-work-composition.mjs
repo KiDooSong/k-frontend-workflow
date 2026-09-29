@@ -19,7 +19,9 @@ const RESOURCE_KEYS = ['projectRoot', 'docsDir', 'kitRoot', 'policyFile', 'layou
 
 export function inspectScopedWorkRequests(options = {}) {
   if (!options || typeof options !== 'object' || Array.isArray(options)) fail('options object required');
-  for (const key of Object.keys(options)) if (key !== 'request' && !RESOURCE_KEYS.includes(key)) fail(`unsupported caller option ${key}`);
+  for (const key of Object.keys(options)) {
+    if (key !== 'request' && key !== 'srcDir' && !RESOURCE_KEYS.includes(key)) fail(`unsupported caller option ${key}`);
+  }
   // Normalize the caller document again; a pre-normalized object is not trusted.
   const request = normalizeScopedWorkRequestSyntax(options.request);
   if (request.requests.some((entry) => entry.authority !== 'scoped')) fail('current requests are evaluated by current work, not composed as scoped');
@@ -78,7 +80,9 @@ export function inspectScopedWorkRequests(options = {}) {
     if (own.owner !== selected.owner || own.unit !== selected.unit || typeof own.owner_satisfied !== 'boolean') fail('owner observation mismatch');
     let hosts = null;
     if (ownerParts(selected.owner).kind === 'surface') {
-      hosts = inspectScopedSurfaceHosts(args); absorb(hosts);
+      // Only a legacy-current host computes the workflow state, from docs and src.
+      hosts = inspectScopedSurfaceHosts(Object.hasOwn(options, 'srcDir') ? { ...args, srcDir: options.srcDir } : args);
+      absorb(hosts);
       if (hosts.owner !== selected.owner || hosts.unit !== selected.unit || hosts.kind !== own.kind ||
         typeof hosts.hosts_satisfied !== 'boolean') fail('surface host observation mismatch');
     }
