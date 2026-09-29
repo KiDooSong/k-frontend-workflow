@@ -17,6 +17,8 @@
   디렉터리로만 탐색해 0개로 보았다. scope 없는 layout에도 적용되는 유일한 동작 변화다.
 - scoped layer는 고유 role을 써야 한다. 내장 layer role이거나 preset·project·domain의 다른 layer와 role이 같으면
   layout 오류다. role 단위 교체가 예외를 도메인 전체로 넓히거나, 교체된 layer를 다른 화면에서 지우는 것을 막는다.
+- `scope`를 생략해야만 모든 화면용 layer다. `scope: null`이나 값 없는 `scope:`는 layout 오류다. 외부 리뷰 P2:
+  allow만 선언한 layer에서 명시적 null이 생략과 같게 처리되어, 다른 화면에도 경로가 허용되었다.
 - pilot consumer가 로컬 patch로 쓰던 기능을 kit 계약으로 올렸다. 새 호출부(`--work`, visual-refresh 등)가 scoped
   layer를 버리던 문제(#250 blocker 3)가 이것으로 해소된다. 문서: Stage 10, `upgrade-notes.md`, doc-ownership.
 

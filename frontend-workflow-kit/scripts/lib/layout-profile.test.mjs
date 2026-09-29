@@ -356,8 +356,13 @@ test('layers: malformed screen-scoped layers follow LayoutConfigError contract',
     ...extra,
   ];
   const scoped = ['    scope:', '      screen_ids: [ACCOUNT-CODE-A]'];
+  const allowOnly = ['    access:', '      allow: [api-integrated-ui]'];
   const cases = [
     [hostLayer(['    scope: [ACCOUNT-CODE-A]']), /scope must be an object/],
+    // An explicit null scope on an allow-only layer must not become a grant for every screen.
+    [hostLayer(['    scope: null', ...allowOnly]), /scope must be an object/],
+    [hostLayer(['    scope:', ...allowOnly]), /scope must be an object/],
+    [hostLayer(['    scope: ~', ...allowOnly]), /scope must be an object/],
     [hostLayer(['    scope: {}']), /scope\.screen_ids is required/],
     [hostLayer(['    scope:', '      screen_ids: []']), /screen_ids must not be empty/],
     [
@@ -389,6 +394,14 @@ test('layers: malformed screen-scoped layers follow LayoutConfigError contract',
       lines.join('\n'),
     );
   }
+
+  // Omitting scope keeps its existing meaning: the layer applies to every screen.
+  const unscoped = loadLayoutProfile({ kitRoot: KIT_ROOT, flags: { layout: writeLayoutFile(t, hostLayer(allowOnly)) } });
+  assert.deepEqual(
+    synthesizeModePolicy(SCOPED_POLICY, unscoped, { domain: 'account', screenId: 'ACCOUNT-HOME' })
+      .modes['api-integrated-ui'].allowed_paths,
+    ['{roles.hook}', '{roles.api_client}', 'src/features/account/screens/code-screen.tsx'],
+  );
 });
 
 test('synthesizeModePolicy: custom explicit glob contributes paths without roles binding', () => {

@@ -32,6 +32,8 @@ or root config.
   check no longer report it as missing.
 - A screen-scoped layer must use a role of its own. A built-in layer role, or a
   role that another preset, project or domain layer declares, is a layout error.
+  So is `scope: null` or a `scope:` with no value; omit `scope` for a layer that
+  applies to every screen.
 - **Manual action:** none for layouts without `scope`. If you added these fields
   through local patches to the vendored kit, take the kit version of the files the
   planner reports as conflicts, then re-run `workflow:state` and your readiness

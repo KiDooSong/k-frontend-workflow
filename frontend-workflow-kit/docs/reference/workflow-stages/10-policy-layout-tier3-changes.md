@@ -42,6 +42,9 @@ layers:
         api-integrated-ui: ["{roles.screen}"]
 ```
 
+- `scope` needs a non-empty `screen_ids` list. Omit `scope` for a layer that applies
+  to every screen; `scope: null` or a `scope:` with no value is a layout error, not
+  an unscoped layer.
 - `remove_forbidden` is valid only on a screen-scoped layer. Each entry must equal
   a `forbidden_paths` entry as the policy or a layer writes it (for example
   `"{roles.screen}"`). An entry that matches nothing removes nothing.

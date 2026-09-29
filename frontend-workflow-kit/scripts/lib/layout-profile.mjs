@@ -100,10 +100,14 @@ function normalizeLayerGlob(value, label) {
 }
 
 // A screen-scoped layer applies only to the listed canonical Screen IDs (#250).
+// Only an omitted scope means "every screen": an explicit null (`scope:`, `scope: ~`)
+// is a config error, never a silent widening to all screens.
 function normalizeLayerScope(value, label) {
-  if (value == null) return null;
-  if (typeof value !== 'object' || Array.isArray(value)) {
-    throw new LayoutConfigError(`layout-profile: ${label} must be an object when present`);
+  if (value === undefined) return null;
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new LayoutConfigError(
+      `layout-profile: ${label} must be an object with screen_ids when present; omit scope for a layer that applies to every screen`,
+    );
   }
   if (value.screen_ids == null) {
     throw new LayoutConfigError(`layout-profile: ${label}.screen_ids is required when scope is present`);
