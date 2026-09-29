@@ -172,6 +172,40 @@ test('#250: the computed baseline state never follows a committed symbolic link 
   assert.match(refused.stderr, /docs contain a symbolic link: global\/linked\.md/);
 });
 
+test('#250: a screen-scoped layer opens its exact file for the current work of its listed screen only', (t) => {
+  const stub = 'src/api/coupon-client.ts';
+  const authorize = (screenIds, target) => {
+    const root = project(t);
+    // The mode forbids {roles.api_client}; the exception lifts it for the listed screen only,
+    // and its allow still limits that screen to the one exact file.
+    fs.appendFileSync(path.join(root, 'config/layout.yaml'), [
+      '  - role: coupon_client_stub',
+      `    glob: ${stub}`,
+      '    fact: dir_has_files',
+      '    scope:',
+      `      screen_ids: [${screenIds.join(', ')}]`,
+      '    access:',
+      '      allow: [rough-fixture-ui]',
+      '      remove_forbidden:',
+      '        rough-fixture-ui: ["{roles.api_client}"]',
+      '',
+    ].join('\n'));
+    execFileSync('git', ['commit', '-qam', 'screen-scoped layer'], { cwd: root });
+    const work = writeRequest(t, request({ path: target, change: 'A' }));
+    return json(run('readiness.mjs', [...common(root, work), '--json']));
+  };
+
+  const listed = authorize(['COUPON-001'], stub);
+  assert.equal(listed.ready, true, JSON.stringify(listed.denials));
+  assert.equal(listed.requests[0].path_authorizations[0].allowed, true);
+  const sibling = authorize(['COUPON-001'], 'src/api/client.ts');
+  assert.equal(sibling.ready, false);
+  assert.ok(sibling.denials.some((entry) => entry.code === 'CW-PATH-DENIED'));
+  const other = authorize(['OTHER-001'], stub);
+  assert.equal(other.ready, false);
+  assert.ok(other.denials.some((entry) => entry.code === 'CW-PATH-DENIED'));
+});
+
 test('W33/W35: origin stays non-ready while unconnected and becomes ready after canonical connection', (t) => {
   const origin = [{ input_id: 'IN-20260720-figma-001', source_refs: [] }];
   const disconnectedRoot = project(t, { origin: 'unconnected' });

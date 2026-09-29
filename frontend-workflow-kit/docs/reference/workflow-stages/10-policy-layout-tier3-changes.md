@@ -17,6 +17,47 @@ Conventions: [`../../../CONVENTIONS.md`](../../../CONVENTIONS.md).
 - **policy** — implementation-mode policy. Changes are handled as **review drafts**,
   not live replacement.
 
+## Narrow screen-scoped exceptions
+
+A `layers:` entry with `scope.screen_ids` is an exception for a closed set of
+canonical Screen IDs. It applies per Screen ID, so any other screen does not get
+it. A shared surface gets it only when its complete `member_screens` set equals the
+declared IDs. Readiness (`--path`, `forbidden-paths`), `--work`, visual refresh,
+layer facts and the layer inventory all apply it this way. A policy draft leaves it
+out because it is not a mode-wide rule.
+
+```yaml
+layers:
+  - role: account_code_a_host        # a role of its own
+    glob: src/features/account/screens/code-a-screen.tsx
+    fact: dir_has_files
+    scope:
+      screen_ids: [ACCOUNT-CODE-A]
+    access:
+      allow: [api-integrated-ui]
+      # Only when the mode already forbids a role that contains this exact file.
+      # This drops that forbid entry for the listed screen; `allow` still limits
+      # the editable path to the glob above.
+      remove_forbidden:
+        api-integrated-ui: ["{roles.screen}"]
+```
+
+- `scope` needs a non-empty `screen_ids` list. Omit `scope` for a layer that applies
+  to every screen; `scope: null` or a `scope:` with no value is a layout error, not
+  an unscoped layer.
+- `remove_forbidden` is valid only on a screen-scoped layer. Each entry must equal
+  a `forbidden_paths` entry as the policy or a layer writes it (for example
+  `"{roles.screen}"`). An entry that matches nothing removes nothing.
+- A screen-scoped layer needs a role of its own. A built-in layer role, or a role
+  that another preset, project or domain layer declares, is a layout error.
+- A `glob` naming one file counts that file (`dir_has_files`, layer inventory,
+  `workflow:doctor`).
+- Keep the glob exact and the removal list minimal. The layer is an exception to an
+  existing mode boundary, not a way to reopen a domain role, and not a list of every
+  unaffected screen. For code that two or more screens share, declare a
+  [shared surface](../shared-surfaces.md) and put only that component's paths in
+  its `implementation_paths`; host wiring stays screen-scoped.
+
 ## Draft, do not replace
 
 ```bash

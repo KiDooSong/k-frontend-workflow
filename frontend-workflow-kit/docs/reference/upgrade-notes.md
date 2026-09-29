@@ -17,6 +17,30 @@ or root config.
 
 ---
 
+## Screen-scoped layout layers (#250)
+
+- A `layers:` entry may declare `scope.screen_ids`. It then applies only to those
+  canonical Screen IDs, and to a shared surface only when the surface's complete
+  member set equals them. Readiness, `forbidden-paths`, the `--work` CLIs, visual
+  refresh, layer facts and the layer inventory all apply it this way.
+- `access.remove_forbidden` (screen-scoped layers only) drops the named
+  `forbidden_paths` entries of a mode for those screens; `allow` still limits the
+  editable paths. See
+  [Stage 10](workflow-stages/10-policy-layout-tier3-changes.md#narrow-screen-scoped-exceptions).
+- A layer `glob` naming one file now counts that file, for layouts with or without
+  `scope`: its `<role>_present` fact, layer-inventory row and `workflow:doctor`
+  check no longer report it as missing.
+- A screen-scoped layer must use a role of its own. A built-in layer role, or a
+  role that another preset, project or domain layer declares, is a layout error.
+  So is `scope: null` or a `scope:` with no value; omit `scope` for a layer that
+  applies to every screen.
+- **Manual action:** none for layouts without `scope`. If you added these fields
+  through local patches to the vendored kit, take the kit version of the files the
+  planner reports as conflicts, then re-run `workflow:state` and your readiness
+  checks.
+
+---
+
 ## Baseline workflow state for `--work` (#250)
 
 - The five `--work` CLIs (current and scoped) compute the workflow state from the

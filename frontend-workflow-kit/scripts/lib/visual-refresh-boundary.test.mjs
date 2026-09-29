@@ -335,6 +335,48 @@ test('actual default policy opens the exact api-integrated screen in forward and
   assert.deepEqual(stagedJson.violations, []);
 });
 
+test('a screen-scoped layer applies to visual refresh only for its listed screen', (t) => {
+  const root = createAuthorityFixture(t);
+  const authorizeWith = (screenIds) => {
+    const layout = yamlParse(fs.readFileSync(path.join(KIT_ROOT, 'policies', 'project-layout.yaml'), 'utf8'));
+    layout.layers = [
+      {
+        role: 'shop_home_host',
+        glob: SCREEN_PATH,
+        fact: 'dir_has_files',
+        scope: { screen_ids: screenIds },
+        access: { allow: ['api-integrated-ui'], remove_forbidden: { 'api-integrated-ui': ['{roles.screen}'] } },
+      },
+    ];
+    write(root, 'config/layout.yaml', yamlStringify(layout, { lineWidth: 0 }));
+    git(root, 'add', 'config/layout.yaml');
+    git(root, 'commit', '-m', `layout for ${screenIds.join(',')}`);
+    const result = run(READINESS, [...visualArgs(root), '--layout', 'config/layout.yaml'], root);
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    return JSON.parse(result.stdout);
+  };
+  const screenDeny = (rule) => rule.disposition === 'deny' && rule.authored_path === '{roles.screen}';
+
+  // Another screen's exception changes nothing here: the explicit layout keeps the screen deny.
+  const other = authorizeWith(['SHOP-OTHER']);
+  assert.equal(other.intent_authorization.applicable, false, JSON.stringify(other));
+  assert.equal(other.path_authorization.allowed, false);
+  assert.ok((other.path_authorization.non_waivable_rules || []).some(screenDeny), JSON.stringify(other));
+
+  const listed = authorizeWith([SCREEN_ID]);
+  assert.equal(listed.intent_authorization.applicable, true, JSON.stringify(listed));
+  assert.equal(listed.path_authorization.allowed, true);
+  assert.equal(listed.path_authorization.grant, 'ordinary-readiness');
+  assert.ok(
+    listed.path_authorization.matching_rules.some(
+      (rule) => rule.origin === 'layout-layer' && rule.role === 'shop_home_host' && rule.disposition === 'allow',
+    ),
+    JSON.stringify(listed.path_authorization.matching_rules),
+  );
+  // remove_forbidden drops the deny rule for the listed screen, as the effective readiness policy does.
+  assert.equal(listed.path_authorization.matching_rules.some(screenDeny), false);
+});
+
 test('staged authority reads explicit resources from the captured index tree, not unstaged worktree bytes', (t) => {
   const root = createAuthorityFixture(t, { explicitResources: true });
   write(root, SCREEN_PATH, 'export const ShopScreen = () => "staged";\n');

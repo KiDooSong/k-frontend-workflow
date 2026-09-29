@@ -1,6 +1,6 @@
 // doctor.mjs (lib) — warning-only preflight checks for layout/profile adoption.
 import path from 'node:path';
-import { isDir, walkFiles, exists, findFiles, readFileSafe } from './util.mjs';
+import { isDir, isFile, walkFiles, exists, findFiles, readFileSafe } from './util.mjs';
 import { globRoot, globToRegExp } from './glob.mjs';
 import { BUILT_IN_LAYER_ROLES } from './layer-inventory.mjs';
 import { buildPolicyDraft } from './policy-draft.mjs';
@@ -29,10 +29,12 @@ function countMatchingFiles(glob, { projectRoot }) {
   const rootRel = globRoot(normalized);
   const rootAbs = rootRel ? path.resolve(projectRoot, ...rootRel.split('/')) : projectRoot;
   if (!isSameOrInside(projectRoot, rootAbs)) return { count: 0, root: rootRel || '.', outOfScope: true };
-  if (!isDir(rootAbs)) return { count: 0, root: rootRel || '.' };
+  // An exact-file glob (e.g. one screen host) has the file itself as its root.
+  const exactFile = isFile(rootAbs);
+  if (!exactFile && !isDir(rootAbs)) return { count: 0, root: rootRel || '.' };
   const matcher = globToRegExp(normalized);
   let count = 0;
-  for (const file of walkFiles(rootAbs)) {
+  for (const file of exactFile ? [rootAbs] : walkFiles(rootAbs)) {
     const rel = toPosix(path.relative(projectRoot, file));
     if (matcher.test(rel)) count += 1;
   }

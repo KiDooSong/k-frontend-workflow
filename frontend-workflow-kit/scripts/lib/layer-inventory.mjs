@@ -2,7 +2,7 @@
 // This module observes declared layout layers and records whether access rows are readiness-wired.
 // It does not promote hard gates, lint rules, pre-edit hooks, or CI behavior.
 import path from 'node:path';
-import { walkFiles, projectRootOf, symlinkOnPath } from './util.mjs';
+import { walkFiles, projectRootOf, symlinkOnPath, isFile } from './util.mjs';
 import { globRoot, globToRegExp } from './glob.mjs';
 
 export const SUPPORTED_LAYER_FACTS = ['dir_has_files'];
@@ -18,6 +18,20 @@ export const BUILT_IN_LAYER_ROLES = [
 
 export const SOURCE_FACT_EXTS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'];
 export const TYPESCRIPT_FACT_EXTS = ['.ts', '.tsx'];
+
+// A screen-scoped layer (#250) applies to a screen listed in scope.screen_ids, and to a
+// shared surface only when its complete member set equals that list. Without a screen or
+// surface context it does not apply; include_scoped keeps it for root inventories.
+export function layerAppliesTo(layer, context = {}) {
+  if (!layer?.scope) return true;
+  if (context?.include_scoped === true) return true;
+  const scoped = new Set(asArray(layer.scope.screen_ids).map(String));
+  if (scoped.size === 0) return false;
+  if (typeof context?.screen_id === 'string' && context.screen_id) return scoped.has(context.screen_id);
+  if (!Array.isArray(context?.member_screens)) return false;
+  const members = [...new Set(context.member_screens.filter((id) => typeof id === 'string'))];
+  return members.length === scoped.size && members.every((id) => scoped.has(id));
+}
 
 function toPosix(p) {
   return String(p || '').replace(/\\/g, '/');
@@ -129,7 +143,11 @@ function matchingFilesForGlob(glob, { projectRoot, excludeMatchers = [], exts = 
   if (rejectSymlinks && symlinkOnPath(projectRoot, rootAbs)) return { files: [], outOfScope: false };
   const matcher = globToRegExp(glob);
   const files = [];
-  for (const file of walkFiles(rootAbs, exts)) {
+  // An exact-file glob (e.g. one screen host) has the file itself as its root.
+  const candidates = isFile(rootAbs)
+    ? (!exts || exts.some((ext) => rootAbs.endsWith(ext)) ? [rootAbs] : [])
+    : walkFiles(rootAbs, exts);
+  for (const file of candidates) {
     if (!isSameOrInside(projectRoot, file)) continue;
     const rel = toPosix(path.relative(projectRoot, file));
     if (matcher.test(rel) && !excludeMatchers.some((exclude) => exclude.test(rel))) files.push(rel);
@@ -190,19 +208,31 @@ function overlapInfo(layer, { layout, domain }) {
   return null;
 }
 
+function removeForbiddenModel(access) {
+  const value = access?.remove_forbidden;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return Object.fromEntries(Object.entries(value).map(([mode, paths]) => [mode, asArray(paths).map(String)]));
+}
+
 function accessModel(layer) {
   const access = layer?.access && typeof layer.access === 'object' ? layer.access : {};
-  return {
+  const out = {
     allow: asArray(access.allow).map(String),
     forbid: asArray(access.forbid).map(String),
   };
+  const removals = removeForbiddenModel(access);
+  if (removals) out.remove_forbidden = removals;
+  return out;
 }
 
 function cloneAccess(access) {
-  return {
+  const out = {
     allow: asArray(access?.allow).map(String),
     forbid: asArray(access?.forbid).map(String),
   };
+  const removals = removeForbiddenModel(access);
+  if (removals) out.remove_forbidden = removals;
+  return out;
 }
 
 function readinessAccessWired(layer) {
@@ -211,7 +241,7 @@ function readinessAccessWired(layer) {
 }
 
 function layerModel(layer, domain) {
-  return {
+  const model = {
     role: layer.role,
     glob: layer.glob,
     fact: layer.fact,
@@ -221,6 +251,10 @@ function layerModel(layer, domain) {
     gate_wired: false,
     domain,
   };
+  if (layer.scope && typeof layer.scope === 'object' && Array.isArray(layer.scope.screen_ids)) {
+    model.scope = { screen_ids: layer.scope.screen_ids.map(String) };
+  }
+  return model;
 }
 
 function layerModelKey(layer) {
@@ -230,6 +264,7 @@ function layerModelKey(layer) {
     layer.glob ?? null,
     layer.fact,
     layer.access,
+    layer.scope ?? null,
   ]);
 }
 
@@ -237,7 +272,19 @@ function layerIdentityKey(layer) {
   return layerModelKey(layerModel(layer, null));
 }
 
-export function resolveLayerModel({ layout, domains = [] } = {}) {
+// Screen contexts select screen-scoped layers (#250).
+function screenContexts(screens) {
+  const values = Array.isArray(screens) ? screens : Object.values(screens || {});
+  return values
+    .filter((screen) => screen && screen.id != null && screen.id !== '')
+    .map((screen) => ({
+      id: String(screen.id),
+      domain: screen.domain == null || screen.domain === '' ? null : String(screen.domain),
+    }))
+    .sort((a, b) => `${a.domain ?? ''}\0${a.id}`.localeCompare(`${b.domain ?? ''}\0${b.id}`));
+}
+
+export function resolveLayerModel({ layout, domains = [], screens = [] } = {}) {
   const layers = [];
   const seen = new Set();
   const addLayer = (layer, domain) => {
@@ -249,23 +296,38 @@ export function resolveLayerModel({ layout, domains = [] } = {}) {
     layers.push(model);
   };
 
+  // Domain-wide layers come first, in the same order as before; a screen-scoped layer is
+  // added only through a listed screen (#250).
+  const contexts = screenContexts(screens);
   if (typeof layout?.layersFor === 'function') {
     const baseLayerKeys = new Set((Array.isArray(layout.layers) ? layout.layers : []).map(layerIdentityKey));
-    const domainList = domains.length ? domains : [null];
-    for (const domain of domainList) {
-      const effectiveLayers = layout.layersFor(domain);
+    const addEffectiveLayers = (effectiveLayers, domain, { scopedOnly = false } = {}) => {
       for (const layer of Array.isArray(effectiveLayers) ? effectiveLayers : []) {
+        if (scopedOnly && !layer?.scope) continue;
         const preserveConcreteDomain = domain != null && !baseLayerKeys.has(layerIdentityKey(layer));
         for (const scanDomain of layerDomains(layer, domain == null ? [] : [domain], layout, { preserveConcreteDomain })) {
           addLayer(layer, scanDomain);
         }
       }
+    };
+    for (const domain of domains.length ? domains : [null]) addEffectiveLayers(layout.layersFor(domain), domain);
+    for (const context of contexts) {
+      addEffectiveLayers(layout.layersFor(context.domain, { screen_id: context.id }), context.domain, { scopedOnly: true });
     }
   } else {
     const baseLayers = Array.isArray(layout?.layers) ? layout.layers : [];
     for (const layer of baseLayers) {
+      if (layer?.scope) continue;
       for (const scanDomain of layerDomains(layer, domains, layout)) {
         addLayer(layer, scanDomain);
+      }
+    }
+    for (const context of contexts) {
+      for (const layer of baseLayers) {
+        if (!layer?.scope || !layerAppliesTo(layer, { screen_id: context.id })) continue;
+        for (const scanDomain of layerDomains(layer, context.domain == null ? [] : [context.domain], layout)) {
+          addLayer(layer, scanDomain);
+        }
       }
     }
   }
@@ -276,7 +338,7 @@ export function resolveLayerModel({ layout, domains = [] } = {}) {
 export function scanLayerInventory({ projectRoot, srcDir, layout, screens = [], rejectSymlinks = false } = {}) {
   const root = projectRoot || projectRootOf(srcDir);
   const domains = screenDomains(screens);
-  const model = resolveLayerModel({ layout, domains });
+  const model = resolveLayerModel({ layout, domains, screens });
   if (model.layers.length === 0) return null;
   const rows = [];
   const facts = {};
@@ -313,6 +375,7 @@ export function scanLayerInventory({ projectRoot, srcDir, layout, screens = [], 
         hard_gate_wired: false,
         gate_wired: false,
         access: cloneAccess(layer.access),
+        ...(layer.scope ? { scope: { screen_ids: layer.scope.screen_ids.slice() } } : {}),
         ...(overlap ? { overlap: overlap.status, overlap_role: overlap.role } : {}),
       });
     }

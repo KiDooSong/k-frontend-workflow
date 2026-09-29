@@ -87,6 +87,14 @@ export function isDir(p) {
   }
 }
 
+export function isFile(p) {
+  try {
+    return fs.statSync(p).isFile();
+  } catch {
+    return false;
+  }
+}
+
 // The first path from `root` (exclusive) down to `target` (inclusive) that is a
 // symbolic link, relative to `root` in POSIX form, or null. A missing segment ends
 // the check: nothing below it exists to be followed.

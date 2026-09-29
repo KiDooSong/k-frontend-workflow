@@ -5,7 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { scanLayerInventory } from './layer-inventory.mjs';
+import { layerAppliesTo, scanLayerInventory } from './layer-inventory.mjs';
+import { loadLayoutProfile } from './layout-profile.mjs';
+import { buildState } from '../workflow-state.mjs';
 
 const KIT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const WORKFLOW_STATE = path.join(KIT_ROOT, 'scripts', 'workflow-state.mjs');
@@ -131,6 +133,77 @@ test('scanLayerInventory follows domain-specific layersFor declarations', (t) =>
   assert.equal(inventory.layers[0].domain, 'coupons');
   assert.equal(inventory.layers[0].resolved_glob, 'src/features/coupons/repositories/**');
   assert.equal(inventory.layers[0].status, 'present');
+});
+
+// #250: screen-scoped layers (synthetic IDs) are counted only through their listed screens.
+const SCOPED_BODY_LAYOUT = [
+  'version: 1',
+  'layers:',
+  '  - role: code_body_shared',
+  '    glob: src/features/account/components/code-body.tsx',
+  '    fact: dir_has_files',
+  '    scope:',
+  '      screen_ids: [ACCOUNT-CODE-A, ACCOUNT-CODE-B]',
+  '    access:',
+  '      allow: [api-integrated-ui]',
+  '',
+].join('\n');
+
+test('layerAppliesTo: listed screen, exact surface member set, or root-inventory context', () => {
+  const layer = { role: 'code_body_shared', scope: { screen_ids: ['ACCOUNT-CODE-A', 'ACCOUNT-CODE-B'] } };
+  assert.equal(layerAppliesTo({ role: 'plain' }), true);
+  assert.equal(layerAppliesTo(layer), false);
+  assert.equal(layerAppliesTo(layer, { screen_id: 'ACCOUNT-CODE-A' }), true);
+  assert.equal(layerAppliesTo(layer, { screen_id: 'ACCOUNT-HOME' }), false);
+  assert.equal(layerAppliesTo(layer, { member_screens: ['ACCOUNT-CODE-B', 'ACCOUNT-CODE-A', 'ACCOUNT-CODE-A'] }), true);
+  assert.equal(layerAppliesTo(layer, { member_screens: ['ACCOUNT-CODE-A'] }), false);
+  assert.equal(layerAppliesTo(layer, { member_screens: ['ACCOUNT-CODE-A', 'ACCOUNT-CODE-B', 'ACCOUNT-HOME'] }), false);
+  assert.equal(layerAppliesTo(layer, { include_scoped: true }), true);
+  assert.equal(layerAppliesTo({ role: 'empty', scope: { screen_ids: [] } }, { member_screens: [] }), false);
+});
+
+test('scanLayerInventory counts an exact-file layer only through its listed screens', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'layer-inventory-screen-scope-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  write(path.join(tmp, 'src', 'features', 'account', 'components', 'code-body.tsx'), 'export const CodeBody = () => null;\n');
+  const layoutPath = path.join(tmp, 'project-layout.yaml');
+  write(layoutPath, SCOPED_BODY_LAYOUT);
+  const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags: { layout: layoutPath } });
+  const scan = (screens) => scanLayerInventory({ projectRoot: tmp, srcDir: path.join(tmp, 'src'), layout, screens });
+
+  const inventory = scan([
+    { id: 'ACCOUNT-CODE-A', domain: 'account' },
+    { id: 'ACCOUNT-HOME', domain: 'account' },
+  ]);
+  assert.equal(inventory.layers.length, 1);
+  assert.equal(inventory.layers[0].resolved_glob, 'src/features/account/components/code-body.tsx');
+  assert.equal(inventory.layers[0].status, 'present');
+  assert.equal(inventory.layers[0].file_count, 1);
+  assert.deepEqual(inventory.layers[0].scope, { screen_ids: ['ACCOUNT-CODE-A', 'ACCOUNT-CODE-B'] });
+  assert.equal(inventory.facts.code_body_shared_present, true);
+  assert.equal(scan([{ id: 'ACCOUNT-HOME', domain: 'account' }]), null);
+});
+
+test('workflow-state derives a screen-scoped presence fact only for listed screens', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'workflow-screen-scope-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const docsDir = path.join(tmp, 'docs', 'frontend-workflow');
+  const srcDir = path.join(tmp, 'src');
+  for (const [id, slug] of [['ACCOUNT-CODE-A', 'code-a'], ['ACCOUNT-HOME', 'home']]) {
+    write(
+      path.join(docsDir, 'domains', 'account', 'screens', slug, 'screen-spec.md'),
+      ['---', `screen_id: ${id}`, 'domain: account', `route: /${slug}`, 'status: draft', '---', '', '## Purpose', 'Account.', ''].join('\n'),
+    );
+  }
+  write(path.join(srcDir, 'features', 'account', 'components', 'code-body.tsx'), 'export const CodeBody = () => null;\n');
+  const layoutPath = path.join(tmp, 'project-layout.yaml');
+  write(layoutPath, SCOPED_BODY_LAYOUT);
+  const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags: { layout: layoutPath } });
+
+  const { state, layerInventory } = buildState({ docsDir, srcDir, date: '2026-09-29', layout, projectRoot: tmp });
+  assert.equal(state.screens['ACCOUNT-CODE-A'].derived.code_body_shared_present, true);
+  assert.equal('code_body_shared_present' in state.screens['ACCOUNT-HOME'].derived, false);
+  assert.deepEqual(layerInventory.layers.map((row) => row.role), ['code_body_shared']);
 });
 
 test('workflow-state writes layer-inventory only for explicit telemetry layers', (t) => {

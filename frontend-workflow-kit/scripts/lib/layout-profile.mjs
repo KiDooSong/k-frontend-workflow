@@ -34,7 +34,7 @@ export class LayoutConfigError extends Error {
 // classifyForbidden/covers/thresholdOf 미러를 두지 않고 path-backstop 의 순수 helper 를 재사용한다.
 // (단일 출처 — guarded surface 분류 로직이 두 곳으로 갈리지 않게.)
 import { classifyForbidden, thresholdOf } from './path-backstop.mjs';
-import { BUILT_IN_LAYER_ROLES, SUPPORTED_LAYER_FACTS } from './layer-inventory.mjs';
+import { BUILT_IN_LAYER_ROLES, SUPPORTED_LAYER_FACTS, layerAppliesTo } from './layer-inventory.mjs';
 
 // --- 경로 정규화 ----------------------------------------------------------
 // glob 은 항상 forward-slash 로 비교/저장한다(Windows 대응; path-backstop.toPosix 와 동일 의미).
@@ -99,6 +99,37 @@ function normalizeLayerGlob(value, label) {
   return Array.isArray(value) ? globs : globs[0];
 }
 
+// A screen-scoped layer applies only to the listed canonical Screen IDs (#250).
+// Only an omitted scope means "every screen": an explicit null (`scope:`, `scope: ~`)
+// is a config error, never a silent widening to all screens.
+function normalizeLayerScope(value, label) {
+  if (value === undefined) return null;
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new LayoutConfigError(
+      `layout-profile: ${label} must be an object with screen_ids when present; omit scope for a layer that applies to every screen`,
+    );
+  }
+  if (value.screen_ids == null) {
+    throw new LayoutConfigError(`layout-profile: ${label}.screen_ids is required when scope is present`);
+  }
+  const normalized = asStringArray(value.screen_ids, `${label}.screen_ids`);
+  if (normalized.length === 0) {
+    throw new LayoutConfigError(`layout-profile: ${label}.screen_ids must not be empty`);
+  }
+  return { screen_ids: [...new Set(normalized)] };
+}
+
+// mode -> exact forbidden_paths entries this screen-scoped layer removes for its screens.
+function normalizeRemoveForbidden(value, label) {
+  if (value == null) return {};
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new LayoutConfigError(`layout-profile: ${label} must be an object when present`);
+  }
+  return Object.fromEntries(
+    Object.entries(value).map(([mode, paths]) => [mode, [...new Set(asStringArray(paths, `${label}.${mode}`))]]),
+  );
+}
+
 function normalizeLayer(layer, label) {
   if (!layer || typeof layer !== 'object' || Array.isArray(layer)) {
     throw new LayoutConfigError(`layout-profile: ${label} must be an object`);
@@ -127,6 +158,23 @@ function normalizeLayer(layer, label) {
       forbid: asStringArray(access.forbid, `${label}.access.forbid`),
     },
   };
+  const scope = normalizeLayerScope(layer.scope, `${label}.scope`);
+  if (scope) {
+    // Built-in roles materialize as whole {roles.<role>} tokens, which a narrow exception must not.
+    if (BUILT_IN_LAYER_ROLES.includes(layer.role)) {
+      throw new LayoutConfigError(
+        `layout-profile: ${label} uses built-in layer role '${layer.role}'; a screen-scoped layer needs a role of its own`,
+      );
+    }
+    out.scope = scope;
+  }
+  const removeForbidden = normalizeRemoveForbidden(access.remove_forbidden, `${label}.access.remove_forbidden`);
+  if (Object.keys(removeForbidden).length > 0) {
+    if (!scope) {
+      throw new LayoutConfigError(`layout-profile: ${label}.access.remove_forbidden requires a screen-scoped layer`);
+    }
+    out.access.remove_forbidden = removeForbidden;
+  }
   if (layer.gates !== undefined) out.gates = asStringArray(layer.gates, `${label}.gates`);
   return out;
 }
@@ -153,12 +201,36 @@ function cloneLayer(layer) {
     },
   };
   if (layer.gates !== undefined) out.gates = Array.isArray(layer.gates) ? layer.gates.map(String) : [String(layer.gates)];
+  if (layer.scope && typeof layer.scope === 'object' && !Array.isArray(layer.scope)) {
+    const ids = layer.scope.screen_ids;
+    out.scope = { screen_ids: Array.isArray(ids) ? ids.map(String) : ids == null ? [] : [String(ids)] };
+  }
+  if (access.remove_forbidden && typeof access.remove_forbidden === 'object' && !Array.isArray(access.remove_forbidden)) {
+    out.access.remove_forbidden = Object.fromEntries(Object.entries(access.remove_forbidden).map(([mode, paths]) => [
+      mode, Array.isArray(paths) ? paths.map(String) : paths == null ? [] : [String(paths)],
+    ]));
+  }
   return out;
 }
 
 function asLayerArray(value) {
   if (!Array.isArray(value)) return [];
   return value.map(cloneLayer).filter(Boolean);
+}
+
+// Role replacement would turn a screen-scoped exception domain-wide or hide the layer it
+// replaced from the other screens, so a scoped layer may neither replace nor be replaced (#250).
+function assertNoScopedLayerReplacement(base, override, label) {
+  const byRole = new Map(asLayerArray(base).map((layer) => [layer.role, layer]));
+  for (const [index, layer] of asLayerArray(override).entries()) {
+    const replaced = byRole.get(layer.role);
+    if (replaced && (replaced.scope || layer.scope)) {
+      throw new LayoutConfigError(
+        `layout-profile: ${label}[${index}] role '${layer.role}' is declared by another layer; a screen-scoped layer needs a role of its own`,
+      );
+    }
+    byRole.set(layer.role, layer);
+  }
 }
 
 // preset.layers < project-layout.layers < domains.<d>.layers. role 단위 교체, 새 role 은 뒤에 추가한다.
@@ -225,6 +297,18 @@ function addLayerAccessList(map, modes, entries) {
   }
 }
 
+function addLayerRemovalList(map, removals) {
+  for (const [mode, entries] of Object.entries(removals || {})) {
+    for (const entry of entries || []) addUnique(map, mode, entry);
+  }
+}
+
+function removePathEntries(paths, removals) {
+  if (!removals || removals.length === 0) return paths;
+  const removalSet = new Set(removals.map((entry) => toPosix(entry)));
+  return (paths || []).filter((entry) => !removalSet.has(toPosix(entry)));
+}
+
 function synthesizeRequires(existing, gates) {
   const requires = Array.isArray(existing) ? existing.slice() : [];
   for (const req of gates || []) {
@@ -236,11 +320,14 @@ function synthesizeRequires(existing, gates) {
 // Tier3 readiness-access helper: layers[].access 를 mode-major policy path 셀로 전치한다.
 // Built-in layer roles keep role-token semantics to preserve preset/rebinding parity. Custom layers
 // with explicit glob materialize the glob directly, so they do not require a matching roles.<role>.
+// options.screenId / options.memberScreens select screen-scoped layers (#250); without them,
+// scoped layers do not apply. A scoped layer's remove_forbidden drops exact forbidden entries.
 export function synthesizeModePolicy(policy = {}, layout = {}, options = {}) {
   const domain = options.domain;
-  const layers = asLayerArray(
-    typeof layout.layersFor === 'function' ? layout.layersFor(domain) : layout.layers || [],
-  );
+  const context = { screen_id: options.screenId, member_screens: options.memberScreens };
+  const layers = typeof layout.layersFor === 'function'
+    ? asLayerArray(layout.layersFor(domain, context))
+    : asLayerArray(layout.layers).filter((layer) => layerAppliesTo(layer, context));
   const roles =
     typeof layout.rolesFor === 'function'
       ? layout.rolesFor(domain)
@@ -251,6 +338,7 @@ export function synthesizeModePolicy(policy = {}, layout = {}, options = {}) {
   const order = Array.isArray(policy.order) ? policy.order.slice() : Object.keys(modes);
   const allowByMode = new Map();
   const forbidByMode = new Map();
+  const removeForbiddenByMode = new Map();
   const gatesByMode = new Map();
   const includeGates = options.includeGates === true;
 
@@ -258,6 +346,7 @@ export function synthesizeModePolicy(policy = {}, layout = {}, options = {}) {
     const entries = layerPolicyPathEntries(layer, roles);
     addLayerAccessList(allowByMode, layer.access.allow, entries);
     addLayerAccessList(forbidByMode, layer.access.forbid, entries);
+    addLayerRemovalList(removeForbiddenByMode, layer.access.remove_forbidden);
     if (includeGates) {
       for (const mode of layer.gates || []) addUnique(gatesByMode, mode, `${layer.role}_present == true`);
     }
@@ -271,7 +360,10 @@ export function synthesizeModePolicy(policy = {}, layout = {}, options = {}) {
       ...mode,
       requires: synthesizeRequires(mode.requires, gatesByMode.get(name)),
       allowed_paths: synthesizePathList(mode.allowed_paths || [], allowByMode.get(name) || []),
-      forbidden_paths: synthesizePathList(mode.forbidden_paths || [], forbidByMode.get(name) || []),
+      forbidden_paths: removePathEntries(
+        synthesizePathList(mode.forbidden_paths || [], forbidByMode.get(name) || []),
+        removeForbiddenByMode.get(name) || [],
+      ),
     };
   }
   return { ...policy, order, modes: outModes };
@@ -322,6 +414,7 @@ export function loadLayoutProfile({ kitRoot, flags = {} } = {}) {
   const projectLayersDeclared = hasOwn(layout, 'layers');
   const projectLayers = normalizeLayerArray(layout.layers || [], 'project-layout.layers');
   const baseRoles = mergeRoles(presetRoles, layout.roles || {});
+  assertNoScopedLayerReplacement(presetLayers, projectLayers, 'project-layout.layers');
   const baseLayers = mergeLayers(presetLayers, projectLayers);
 
   // 도메인 오버라이드 맵(raw 보존 — per-screen 해소 시 룩업). 머지는 resolve 시점에 적용.
@@ -335,6 +428,7 @@ export function loadLayoutProfile({ kitRoot, flags = {} } = {}) {
     if (cfg && hasOwn(cfg, 'layers')) {
       domainLayersDeclared = true;
       domainLayerOverrides[d] = normalizeLayerArray(cfg.layers || [], `project-layout.domains.${d}.layers`);
+      assertNoScopedLayerReplacement(baseLayers, domainLayerOverrides[d], `project-layout.domains.${d}.layers`);
     }
   }
 
@@ -344,9 +438,14 @@ export function loadLayoutProfile({ kitRoot, flags = {} } = {}) {
     return ov ? mergeRoles(baseRoles, ov) : baseRoles;
   }
 
-  function layersFor(domain) {
+  // context.screen_id selects screen-scoped layers for that screen; context.member_screens
+  // selects them for a shared surface only when its complete member set equals the scope.
+  // Without a context, screen-scoped layers do not apply; context.include_scoped keeps them
+  // all for root inventories (see layerAppliesTo).
+  function layersFor(domain, context = {}) {
     const ov = domain != null ? domainLayerOverrides[domain] : null;
-    return ov ? mergeLayers(baseLayers, ov) : baseLayers;
+    const merged = ov ? mergeLayers(baseLayers, ov) : baseLayers;
+    return merged.filter((layer) => layerAppliesTo(layer, context));
   }
 
   // --- resolvedLayout API ---------------------------------------------------

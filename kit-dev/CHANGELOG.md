@@ -21,6 +21,24 @@
   옮기지 않았다. 다음에 manifest를 바꿀 때 함께 고친다. 템플릿 본문의 "Entry Points 는 생성됨" 같은 문구와
   블록을 실제로 채우는 기능은 이번 범위가 아니다.
 
+### feat(workflow) — 화면 단위 layout layer (#250-3)
+
+- `layers:` 항목에 `scope.screen_ids`를 선언하면 그 canonical Screen ID에만 적용된다. shared surface에는 전체
+  `member_screens` 집합이 선언과 같을 때만 적용하고, 화면·surface 문맥이 없는 곳(policy draft)에는 적용하지 않는다.
+  readiness(`--path`, no-work `forbidden-paths`), current·scoped `--work`의 legacy readiness, visual-refresh 규칙,
+  layer fact(`<role>_present`), layer inventory가 같은 판정(`layerAppliesTo`)을 쓴다. visual-refresh 경계 검사는
+  화면과 관계없이 모든 scoped layer의 루트를 포함한다.
+- `access.remove_forbidden`(scoped layer 전용)은 그 화면의 지정 mode에서 `forbidden_paths` 항목을 문자열 그대로
+  뺀다. 편집 경로는 여전히 `allow`가 제한한다. visual-refresh 규칙 목록도 같은 deny를 뺀다.
+- 파일 하나를 가리키는 layer glob은 그 파일을 센다(`dir_has_files`, layer inventory, `workflow:doctor`). 이전에는
+  디렉터리로만 탐색해 0개로 보았다. scope 없는 layout에도 적용되는 유일한 동작 변화다.
+- scoped layer는 고유 role을 써야 한다. 내장 layer role이거나 preset·project·domain의 다른 layer와 role이 같으면
+  layout 오류다. role 단위 교체가 예외를 도메인 전체로 넓히거나, 교체된 layer를 다른 화면에서 지우는 것을 막는다.
+- `scope`를 생략해야만 모든 화면용 layer다. `scope: null`이나 값 없는 `scope:`는 layout 오류다. 외부 리뷰 P2:
+  allow만 선언한 layer에서 명시적 null이 생략과 같게 처리되어, 다른 화면에도 경로가 허용되었다.
+- pilot consumer가 로컬 patch로 쓰던 기능을 kit 계약으로 올렸다. 새 호출부(`--work`, visual-refresh 등)가 scoped
+  layer를 버리던 문제(#250 blocker 3)가 이것으로 해소된다. 문서: Stage 10, `upgrade-notes.md`, doc-ownership.
+
 ### fix(workflow) — 큰 저장소의 raw Git snapshot (#250-1)
 
 - current·scoped `--work` preflight와 backstop, visual-refresh가 함께 쓰는 raw Git tree materializer는 blob을 128개씩
