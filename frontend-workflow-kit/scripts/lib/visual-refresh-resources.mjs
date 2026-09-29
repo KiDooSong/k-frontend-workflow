@@ -10,6 +10,7 @@ import {
   yamlStringify,
 } from './util.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
+import { layerAppliesTo } from './layer-inventory.mjs';
 import { concretePathIssue } from './path-backstop.mjs';
 
 export const PINNED_VISUAL_REFRESH_PACKAGE_VERSION = '0.3.0-mvp.2';
@@ -280,15 +281,32 @@ function presetHasCanonicalMirror(preset, modeName) {
   );
 }
 
-export function logicalPathRules(meta, { modeName, domain } = {}) {
+// Same normalization as layout-profile's remove_forbidden comparison.
+function posixPath(value) {
+  return String(value).split(path.sep).join('/');
+}
+
+// screenId selects screen-scoped layers (#250); their remove_forbidden entries drop the
+// matching deny rules, as the effective readiness policy for that screen does.
+export function logicalPathRules(meta, { modeName, domain, screenId } = {}) {
   if (!meta || !modeName) return [];
   const rules = [];
   const mode = meta.policy?.modes?.[modeName] || {};
+  const layerContext = { screen_id: screenId };
+  const layers = typeof meta.layout?.layersFor === 'function'
+    ? meta.layout.layersFor(domain, layerContext)
+    : (Array.isArray(meta.layout?.layers) ? meta.layout.layers : []).filter((layer) => layerAppliesTo(layer, layerContext));
+  const removedDenies = new Set();
+  for (const layer of layers || []) {
+    const removals = layer?.access?.remove_forbidden?.[modeName];
+    for (const entry of Array.isArray(removals) ? removals : []) removedDenies.add(posixPath(entry));
+  }
   for (const [disposition, key] of [
     ['allow', 'allowed_paths'],
     ['deny', 'forbidden_paths'],
   ]) {
     for (const [index, authoredPath] of (mode[key] || []).entries()) {
+      if (disposition === 'deny' && removedDenies.has(posixPath(authoredPath))) continue;
       const role = /^\{roles\.([A-Za-z0-9_]+)\}$/.exec(String(authoredPath))?.[1] || null;
       for (const [resolvedIndex, resolvedPath] of resolvedPaths(meta.layout, authoredPath, domain).entries()) {
         const canonicalApiStageScreenDeny =
@@ -325,9 +343,6 @@ export function logicalPathRules(meta, { modeName, domain } = {}) {
     }
   }
 
-  const layers = typeof meta.layout?.layersFor === 'function'
-    ? meta.layout.layersFor(domain)
-    : meta.layout?.layers || [];
   for (const [layerIndex, layer] of (layers || []).entries()) {
     for (const [disposition, accessKey] of [
       ['allow', 'allow'],
@@ -337,6 +352,7 @@ export function logicalPathRules(meta, { modeName, domain } = {}) {
         continue;
       }
       for (const [authoredIndex, authoredPath] of authoredLayerPaths(layer).entries()) {
+        if (disposition === 'deny' && removedDenies.has(posixPath(authoredPath))) continue;
         for (const [resolvedIndex, resolvedPath] of resolvedPaths(meta.layout, authoredPath, domain).entries()) {
           rules.push({
             rule_id: `layout:${domain || '*'}:${layer.role || 'anonymous'}:${modeName}:${disposition}:${layerIndex}:${authoredIndex}:${resolvedIndex}`,

@@ -176,6 +176,49 @@ test('buildPolicyDraft adds custom explicit globs without custom role tokens', (
   );
 });
 
+test('buildPolicyDraft leaves screen-scoped layers out of mode-wide rows', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'policy-draft-screen-scope-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const scopedLines = [
+    '  - role: code_a_host',
+    '    glob: src/features/account/screens/code-a-screen.tsx',
+    '    fact: dir_has_files',
+    '    scope:',
+    '      screen_ids: [ACCOUNT-CODE-A]',
+    '    access:',
+    '      allow: [api-integrated-ui]',
+    '      remove_forbidden:',
+    '        api-integrated-ui: ["{roles.screen}"]',
+  ];
+  const layoutFile = (name, layerLines) => {
+    const file = path.join(tmp, name);
+    write(file, ['version: 1', 'preset: expo-feature', ...layerLines, ''].join('\n'));
+    return loadLayoutProfile({ kitRoot: KIT_ROOT, flags: { layout: file } });
+  };
+  const policy = loadYaml(LIVE_POLICY);
+  const draftOf = (layout) => buildPolicyDraft({ policy, layout, date: '2026-09-29' });
+
+  const withScoped = draftOf(layoutFile('scoped.yaml', ['layers:', ...scopedLines]));
+  const without = draftOf(layoutFile('plain.yaml', ['layers: []']));
+  assert.deepEqual(withScoped.draftPolicy, without.draftPolicy);
+  assert.deepEqual(withScoped.diff, without.diff);
+  assert.equal(withScoped.layerRows.some((row) => row.role === 'code_a_host'), false);
+
+  // A plain layout object without layersFor() follows the same rule.
+  const scopedLayer = {
+    role: 'code_a_host',
+    glob: 'src/features/account/screens/code-a-screen.tsx',
+    fact: 'dir_has_files',
+    scope: { screen_ids: ['ACCOUNT-CODE-A'] },
+    access: { allow: ['api-integrated-ui'], forbid: [] },
+  };
+  const roles = { screen: 'src/features/{domain}/screens/**' };
+  assert.deepEqual(
+    draftOf({ roles, layers: [scopedLayer] }).draftPolicy,
+    draftOf({ roles, layers: [] }).draftPolicy,
+  );
+});
+
 test('buildPolicyDraft prunes stale custom layer-derived globs from policy-draft provenance', () => {
   const policy = {
     version: 1,

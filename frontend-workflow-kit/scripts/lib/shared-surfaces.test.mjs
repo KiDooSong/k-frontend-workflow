@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { buildState } from '../workflow-state.mjs';
 import { computeReadiness } from '../readiness.mjs';
 import { implementationPathIssues } from './shared-surfaces.mjs';
+import { loadLayoutProfile } from './layout-profile.mjs';
 import { validateSchema } from './schema.mjs';
 import { DEFAULTS, KIT_ROOT, loadYaml } from './util.mjs';
 
@@ -293,6 +294,52 @@ test('valid two-screen surface is additive in state and reserves shared code fro
     ]);
     assert.deepEqual(surfaceReadiness.forbidden_paths, []);
   });
+});
+
+test('a screen-scoped layer reaches the surface policy only when its scope equals the complete member set', () => {
+  const composer = 'src/features/chat/components/composer/**';
+  for (const [screenIds, surfacePolicyForbids] of [
+    [['CHAT-A', 'CHAT-B'], true],
+    [['CHAT-A', 'CHAT-B', 'CHAT-C'], false],
+  ]) {
+    withProject(({ root, docsDir, srcDir }) => {
+      for (const id of ['CHAT-A', 'CHAT-B', 'CHAT-C']) writeScreen(docsDir, id);
+      writeSurface(docsDir, 'CHAT-COMPOSER');
+      const layoutPath = path.join(root, 'project-layout.yaml');
+      fs.writeFileSync(
+        layoutPath,
+        [
+          'version: 1',
+          'preset: expo-feature',
+          'layers:',
+          '  - role: composer_freeze',
+          `    glob: ${composer}`,
+          '    fact: dir_has_files',
+          '    scope:',
+          `      screen_ids: [${screenIds.join(', ')}]`,
+          '    access:',
+          '      forbid: [production-ready]',
+          '',
+        ].join('\n'),
+      );
+      const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags: { layout: layoutPath } });
+      const { state } = buildState({ docsDir, srcDir, date: '2026-09-29', layout, projectRoot: root });
+      const readiness = computeReadiness({
+        state: fullyReady(state),
+        policy: loadYaml(DEFAULTS.policy),
+        manifest: loadYaml(DEFAULTS.manifest),
+        ci: CI,
+        layout,
+        surfaceOnlyId: 'CHAT-COMPOSER',
+      });
+      const [row] = readiness['CHAT-COMPOSER'].path_authorization;
+      const kinds = row.causes.map((cause) => cause.kind);
+      assert.equal(row.path, composer);
+      assert.equal(row.allowed, false);
+      assert.equal(kinds.includes('member-policy-forbidden'), true, JSON.stringify(row.causes));
+      assert.equal(kinds.includes('surface-policy-forbidden'), surfacePolicyForbids, JSON.stringify(row.causes));
+    });
+  }
 });
 
 test('prototype-named screen and surface IDs remain own state/readiness records with plain-object output', () => {

@@ -52,6 +52,7 @@ inline and links the rest; it does not restate the references.
 | visual contract bootstrap / adoption draft / `workflow:visual-contract-bootstrap` | [`visual-reconciliation.md`](visual-reconciliation.md) §Bootstrap / adoption | link only; keep "review-only draft, never overwrites the existing contract" inline |
 | component gap rules (proposal-only) | [`component-gap-register.template.md`](../../templates/global/component-gap-register.template.md) + [`task-artifact-matrix.md`](task-artifact-matrix.md) | short reminder only |
 | policy draft vs live policy | [Stage 10](workflow-stages/10-policy-layout-tier3-changes.md) + [`CONVENTIONS.md`](../../CONVENTIONS.md) §Tier3 + [`input-reconciliation.md`](input-reconciliation.md) §Tier3 | short reminder only |
+| screen-scoped layout layers (`scope.screen_ids`, `access.remove_forbidden`, exact-file globs) | [Stage 10](workflow-stages/10-policy-layout-tier3-changes.md#narrow-screen-scoped-exceptions) | link only |
 | route / screen / API conventions | [`CONVENTIONS.md`](../../CONVENTIONS.md) | link only |
 | per-candidate API deferral, v2 Tracking/Slice Paths, candidate path ownership | [`api-candidate-deferral.md`](api-candidate-deferral.md) | link; keep only “deferred paths remain forbidden” inline |
 | optional web E2E evidence | [Stage 08](workflow-stages/08-validate-and-report.md) + [`e2e-agent`](../../skills/e2e-agent/SKILL.md) | keep non-gating boundary inline; link the rest |

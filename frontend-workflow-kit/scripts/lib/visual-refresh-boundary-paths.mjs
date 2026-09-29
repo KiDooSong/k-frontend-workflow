@@ -76,7 +76,8 @@ function implementationRoots(layout, selectedDomain, authorityRoot) {
     for (const role of Object.keys(roles)) {
       patterns.push(...layout.resolvePaths([`{roles.${role}}`], { domain }));
     }
-    for (const layer of layout.layersFor(domain)) {
+    // Every screen-scoped layer (#250) is an implementation root too.
+    for (const layer of layout.layersFor(domain, { include_scoped: true })) {
       patterns.push(...layout.resolvePaths(values(layer.glob), { domain }));
     }
     for (const pattern of patterns) {

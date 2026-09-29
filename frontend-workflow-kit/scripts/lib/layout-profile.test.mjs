@@ -20,7 +20,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadLayoutProfile, LayoutConfigError, synthesizeModePolicy } from './layout-profile.mjs';
 import { computeReadiness } from '../readiness.mjs';
-import { deriveGuardedSurface, isCleared, isClearedAt } from './path-backstop.mjs';
+import { deriveGuardedSurface, isCleared, isClearedAt, readinessPathAuthorization } from './path-backstop.mjs';
 import { loadYaml } from './util.mjs';
 
 // 킷 루트: scripts/lib/ → scripts/ → kit-root. presets/·policies/ 가 그 아래.
@@ -236,6 +236,161 @@ test('layers: malformed project layer follows LayoutConfigError contract', (t) =
     LayoutConfigError,
   );
 });
+// #250: a screen-scoped layer is a narrow exception for listed canonical Screen IDs.
+function writeLayoutFile(t, lines) {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'layout-profile-screen-scope-'));
+  t.after(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
+  const layoutPath = path.join(tmpDir, 'project-layout.yaml');
+  fs.writeFileSync(layoutPath, [...lines, ''].join('\n'));
+  return layoutPath;
+}
+
+const SCOPED_LAYOUT_LINES = [
+  'version: 1',
+  'preset: expo-feature',
+  'layers:',
+  '  - role: code_body_shared',
+  '    glob: src/features/account/components/code-body.tsx',
+  '    fact: dir_has_files',
+  '    scope:',
+  '      screen_ids: [ACCOUNT-CODE-A, ACCOUNT-CODE-B]',
+  '    access:',
+  '      allow: [api-integrated-ui]',
+  '  - role: code_a_host',
+  '    glob: src/features/account/screens/code-a-screen.tsx',
+  '    fact: dir_has_files',
+  '    scope:',
+  '      screen_ids: [ACCOUNT-CODE-A]',
+  '    access:',
+  '      allow: [api-integrated-ui]',
+  '      remove_forbidden:',
+  '        api-integrated-ui: ["{roles.screen}"]',
+];
+
+const SCOPED_POLICY = {
+  order: ['docs-only', 'api-integrated-ui'],
+  modes: {
+    'docs-only': { requires: [], allowed_paths: [], forbidden_paths: [] },
+    'api-integrated-ui': { requires: [], allowed_paths: ['{roles.hook}'], forbidden_paths: ['{roles.screen}'] },
+  },
+};
+
+test('synthesizeModePolicy: screen-scoped layers apply only to listed screens and exact surface member sets', (t) => {
+  const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags: { layout: writeLayoutFile(t, SCOPED_LAYOUT_LINES) } });
+  const api = (options) =>
+    synthesizeModePolicy(SCOPED_POLICY, layout, { domain: 'account', ...options }).modes['api-integrated-ui'];
+  const base = ['{roles.hook}', '{roles.api_client}'];
+  const body = 'src/features/account/components/code-body.tsx';
+  const host = 'src/features/account/screens/code-a-screen.tsx';
+
+  assert.deepEqual(api({ screenId: 'ACCOUNT-CODE-A' }).allowed_paths, [...base, body, host]);
+  assert.deepEqual(api({ screenId: 'ACCOUNT-CODE-A' }).forbidden_paths, []);
+  assert.deepEqual(api({ screenId: 'ACCOUNT-CODE-B' }).allowed_paths, [...base, body]);
+  assert.deepEqual(api({ screenId: 'ACCOUNT-CODE-B' }).forbidden_paths, ['{roles.screen}']);
+  for (const other of [{ screenId: 'ACCOUNT-HOME' }, {}]) {
+    assert.deepEqual(api(other).allowed_paths, base);
+    assert.deepEqual(api(other).forbidden_paths, ['{roles.screen}']);
+  }
+  // A shared surface gets a scoped layer only when its complete member set equals the scope.
+  assert.deepEqual(api({ memberScreens: ['ACCOUNT-CODE-B', 'ACCOUNT-CODE-A'] }).allowed_paths, [...base, body]);
+  assert.deepEqual(api({ memberScreens: ['ACCOUNT-CODE-B', 'ACCOUNT-CODE-A'] }).forbidden_paths, ['{roles.screen}']);
+  assert.deepEqual(api({ memberScreens: ['ACCOUNT-CODE-A'] }).allowed_paths, [...base, host]);
+  for (const members of [['ACCOUNT-CODE-B'], ['ACCOUNT-CODE-A', 'ACCOUNT-CODE-B', 'ACCOUNT-HOME']]) {
+    assert.deepEqual(api({ memberScreens: members }).allowed_paths, base);
+  }
+  // Without a context scoped layers stay out; include_scoped keeps them for root inventories.
+  assert.deepEqual(layout.layersFor('account').filter((layer) => layer.scope), []);
+  assert.deepEqual(
+    layout.layersFor('account', { include_scoped: true }).filter((layer) => layer.scope).map((layer) => layer.role),
+    ['code_body_shared', 'code_a_host'],
+  );
+  assert.deepEqual(layout.layers.find((layer) => layer.role === 'code_a_host'), {
+    role: 'code_a_host',
+    glob: host,
+    fact: 'dir_has_files',
+    access: {
+      allow: ['api-integrated-ui'],
+      forbid: [],
+      remove_forbidden: { 'api-integrated-ui': ['{roles.screen}'] },
+    },
+    scope: { screen_ids: ['ACCOUNT-CODE-A'] },
+  });
+});
+
+test('computeReadiness: a screen-scoped layer opens its exact file only for its listed screen', (t) => {
+  const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags: { layout: writeLayoutFile(t, SCOPED_LAYOUT_LINES) } });
+  const state = {
+    global: {},
+    screens: {
+      'ACCOUNT-CODE-A': { status: 'draft', domain: 'account', stub: false, derived: {} },
+      'ACCOUNT-HOME': { status: 'draft', domain: 'account', stub: false, derived: {} },
+    },
+  };
+  const readiness = computeReadiness({ state, policy: SCOPED_POLICY, ci: {}, manifest: {}, layout });
+  const authorize = (screenId, file) =>
+    readinessPathAuthorization({ file, screenId, entry: readiness[screenId], modeOrder: SCOPED_POLICY.order });
+  const host = 'src/features/account/screens/code-a-screen.tsx';
+  const sibling = 'src/features/account/screens/code-b-screen.tsx';
+
+  assert.equal(readiness['ACCOUNT-CODE-A'].readiness_mode, 'api-integrated-ui');
+  assert.equal(authorize('ACCOUNT-CODE-A', host).allowed, true);
+  assert.equal(authorize('ACCOUNT-CODE-A', 'src/features/account/components/code-body.tsx').allowed, true);
+  // remove_forbidden lifts only the forbid; the allow list still limits the screen to its exact file.
+  assert.deepEqual(readiness['ACCOUNT-CODE-A'].forbidden_paths, []);
+  assert.equal(authorize('ACCOUNT-CODE-A', sibling).allowed, false);
+
+  assert.equal(readiness['ACCOUNT-HOME'].readiness_mode, 'api-integrated-ui');
+  assert.equal(authorize('ACCOUNT-HOME', host).allowed, false);
+  assert.ok(authorize('ACCOUNT-HOME', host).forbidden_by.length > 0);
+  assert.equal(authorize('ACCOUNT-HOME', 'src/features/account/components/code-body.tsx').allowed, false);
+});
+
+test('layers: malformed screen-scoped layers follow LayoutConfigError contract', (t) => {
+  const hostLayer = (extra) => [
+    'version: 1',
+    'preset: expo-feature',
+    'layers:',
+    '  - role: code_host',
+    '    glob: src/features/account/screens/code-screen.tsx',
+    '    fact: dir_has_files',
+    ...extra,
+  ];
+  const scoped = ['    scope:', '      screen_ids: [ACCOUNT-CODE-A]'];
+  const cases = [
+    [hostLayer(['    scope: [ACCOUNT-CODE-A]']), /scope must be an object/],
+    [hostLayer(['    scope: {}']), /scope\.screen_ids is required/],
+    [hostLayer(['    scope:', '      screen_ids: []']), /screen_ids must not be empty/],
+    [
+      hostLayer(['    access:', '      remove_forbidden:', '        api-integrated-ui: ["{roles.screen}"]']),
+      /remove_forbidden requires a screen-scoped layer/,
+    ],
+    [
+      ['version: 1', 'layers:', '  - role: screen', '    glob: src/features/account/screens/code-screen.tsx',
+        '    fact: dir_has_files', ...scoped],
+      /built-in layer role 'screen'/,
+    ],
+    // Role replacement would turn the exception domain-wide or hide the replaced layer.
+    [
+      [...hostLayer(scoped), '  - role: code_host', '    glob: src/features/account/screens/**', '    fact: dir_has_files'],
+      /layers\[1\] role 'code_host' is declared by another layer/,
+    ],
+    [
+      [...hostLayer([]), 'domains:', '  account:', '    layers:', '      - role: code_host',
+        '        glob: src/features/account/screens/code-screen.tsx', '        fact: dir_has_files',
+        '        scope:', '          screen_ids: [ACCOUNT-CODE-A]'],
+      /domains\.account\.layers\[0\] role 'code_host' is declared by another layer/,
+    ],
+  ];
+  for (const [lines, pattern] of cases) {
+    const layoutPath = writeLayoutFile(t, lines);
+    assert.throws(
+      () => loadLayoutProfile({ kitRoot: KIT_ROOT, flags: { layout: layoutPath } }),
+      (error) => error instanceof LayoutConfigError && pattern.test(error.message),
+      lines.join('\n'),
+    );
+  }
+});
+
 test('synthesizeModePolicy: custom explicit glob contributes paths without roles binding', () => {
   const policy = {
     order: ['docs-only', 'rough-fixture-ui', 'api-integrated-ui'],
