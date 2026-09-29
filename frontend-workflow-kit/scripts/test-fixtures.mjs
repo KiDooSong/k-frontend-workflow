@@ -59,6 +59,7 @@ const CATALOG_GEN_SCRIPT = path.join(KIT_ROOT, 'scripts', 'catalog-gen.mjs');
 const IMPLEMENT_SCREEN_SKILL = path.join(KIT_ROOT, 'skills', 'implement-screen', 'SKILL.md');
 const IMPLEMENT_SHARED_SURFACE_SKILL = path.join(KIT_ROOT, 'skills', 'implement-shared-surface', 'SKILL.md');
 const RECONCILE_INPUT_SKILL = path.join(KIT_ROOT, 'skills', 'reconcile-input', 'SKILL.md');
+const COMMANDS_DOC = path.join(KIT_ROOT, 'COMMANDS.md');
 
 // input-reconciliation golden(expected-llm-after) 의 stage=llm-after manifest.
 // 검사 대상 ID·기대 상태(올리기만 불변식). golden 의 실제 파일에서 확인한 값:
@@ -332,9 +333,8 @@ function buildFixtures() {
       { label: 'readiness-applicable', snippet: '`readiness_applicable`' },
       { label: 'absorbed-stop', snippet: '`readiness_applicable: false`' },
       { label: 'reconcile', snippet: 'Reconciliation Register' },
-      { label: 'state-options', snippet: '`workflow:state`: `--docs`, `--src`, `--root`, `--layout`' },
-      { label: 'readiness-options', snippet: '`workflow:readiness`: `--docs`, `--layout`, `--policy`, `--manifest`, `--ci`' },
-      { label: 'validate-options', snippet: '`workflow:validate`: `--docs`, `--src`, `--root`, `--layout`, `--policy`, `--manifest`' },
+      // CLI option subsets live once in COMMANDS.md (doc-ownership); the skill links them.
+      { label: 'cli-options-home', snippet: '(../../COMMANDS.md#daily-loop)' },
       { label: 'unsupported-options', snippet: '지원하지 않는 옵션을 다른 CLI에 그대로 전달하지 않는다' },
       { label: 'visual', snippet: '`figma-component-mapping.md`' },
       { label: 'testid', snippet: 'testID' },
@@ -345,6 +345,9 @@ function buildFixtures() {
       { label: 'screen-entry', snippet: 'screen_entry' },
       { label: 'route-entry', snippet: 'route_entry' },
       { label: 'validation', snippet: 'npm run workflow:validate' },
+      { label: 'artifact-matrix', snippet: '(../../docs/reference/task-artifact-matrix.md)' },
+      { label: 'current-home', snippet: '06-implement-screen-or-code.md#current-work-branch' },
+      { label: 'scoped-home', snippet: '06-implement-screen-or-code.md#scoped-work-branch' },
     ],
     mustNotContain: [
       { label: 'stale-fake-hook-only', snippet: '`useXxx` fake hook 만 사용한다' },
@@ -359,9 +362,8 @@ function buildFixtures() {
     expectVerdict: 'pass',
     file: IMPLEMENT_SHARED_SURFACE_SKILL,
     mustContain: [
-      { label: 'state-options', snippet: '`workflow:state`: `--docs`, `--src`, `--root`, `--layout`' },
-      { label: 'readiness-options', snippet: '`workflow:readiness`: `--docs`, `--layout`, `--policy`, `--manifest`, `--ci`' },
-      { label: 'validate-options', snippet: '`workflow:validate`: `--docs`, `--src`, `--root`, `--layout`, `--policy`, `--manifest`' },
+      // CLI option subsets live once in COMMANDS.md (doc-ownership); the skill links them.
+      { label: 'cli-options-home', snippet: '(../../COMMANDS.md#daily-loop)' },
       { label: 'unsupported-options', snippet: '지원하지 않는 옵션을 다른 CLI에 그대로 전달하지 않는다' },
       { label: 'path-authorization', snippet: '`path_authorization.allowed`가 `true`가 아니다' },
       { label: 'intermediate-open-decision', snippet: '`open_decision`이나 `member_screen_readiness`가 상위 모드만 제한' },
@@ -372,6 +374,22 @@ function buildFixtures() {
       { label: 'stale-all-cli-options', snippet: '모든 member readiness 명령에 일관되게 전달한다' },
       { label: 'stale-any-blocker-stop', snippet: 'structural/membership/path/decision/member blocker가 있거나' },
     ],
+  });
+
+  // CLI option subsets — the canonical home the implement skills link to.
+  fixtures.push({
+    id: 'commands:cli-option-subsets',
+    kind: 'skill-contract',
+    expectVerdict: 'pass',
+    file: COMMANDS_DOC,
+    mustContain: [
+      { label: 'state-options', snippet: '`workflow:state`: `--docs`, `--src`, `--root`, `--layout`' },
+      { label: 'readiness-options', snippet: '`workflow:readiness`: `--docs`, `--layout`, `--policy`, `--manifest`, `--ci`' },
+      { label: 'validate-options', snippet: '`workflow:validate`: `--docs`, `--src`, `--root`, `--layout`, `--policy`, `--manifest`' },
+      { label: 'unsupported-options', snippet: 'do not forward an unsupported option to another CLI' },
+      { label: 'work-resources', snippet: '`--root`, `--docs`, `--src`, `--policy`, `--manifest`,' },
+    ],
+    mustNotContain: [],
   });
 
   // reconcile-input skill — Stage 04 review profile/stop condition/batch finding 포인터가

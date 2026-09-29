@@ -51,7 +51,7 @@ Register에서 같은 `input_id`를 먼저 찾는다. **새 행을 늘리지 않
 7. 게이트 내림이 필요한 문서 변경은 사람 결정 후에만 한다. 전체 라우팅 완료를 위해 사람 결정 해결까지 기다리지는 않는다.
 8. 새/opt-in mapping은 기존 4컬럼과 `` `M-xxx` · `` key↔Mapping Provenance 1:1을 원자적으로 완성한다.
    effective Source Ref는 canonical Figma file + node/frame anchor다. planning/API/file-only나 document/statement/n/a로 대체하지 않는다. instance=Figma instance, record=API/domain record다.
-9. v2는 같은 10컬럼 `Reconciliation Items`에 새 **실제 effect만 누적**한다. 기존 Item ID/effect를 보존하고 삭제·재번호화·현재 자식 상태에 맞춘 rewrite·재수행을 하지 않는다.
+9. v2(`reconciliation_contract: 2`)는 같은 10컬럼 `## Reconciliation Items`에 새 **실제 effect만 누적**한다. 기존 Item ID/effect를 보존하고 삭제·재번호화·현재 자식 상태에 맞춘 rewrite·재수행을 하지 않는다.
    Summary Classification·Touched Artifacts·Created Items는 **모든 회차의 누적 projection**이다. 미처리 축에 가짜 record/update/link-evidence나 임의 분류를 만들지 않는다.
 10. 아래 종료 분기로 같은 Summary 행의 상태와 Result를 갱신한다. v1/v2·8/10컬럼·structured_since legacy 면제는 그대로다.
 11. [task-artifact matrix](../../docs/reference/task-artifact-matrix.md)로 2차 산출물을 확인하고 `workflow:state` → `workflow:readiness` → `workflow:validate` 및 이번 회차 리뷰를 수행한다.

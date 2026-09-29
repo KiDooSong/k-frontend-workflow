@@ -4,6 +4,18 @@
 
 ## Unreleased
 
+### docs(skills) — implement 지침 중복 정리 (#248 E1)
+
+- `implement-screen`의 current/scoped 분기는 분기 선택과 핵심 불변식만 남기고, 절차는 Stage 06
+  `#current-work-branch`/`#scoped-work-branch`에 링크한다. 테스트가 inline으로 고정한 불변식(hook claim·API-client
+  mode 조건, `future_requirements`/`legacy_readiness.blocking` 보존, visual-refresh tuple)은 유지했다.
+- CLI별 옵션 부분집합(state/readiness/validate), visual-refresh readiness의 `--root`/`--src`, `--work` resource set은
+  `COMMANDS.md` §Daily Loop 한 곳에 두고 두 implement skill은 링크한다. doc-ownership 표에 해당 행을 추가했다.
+- `implement-screen` context에 `figma-component-mapping.md`와 testID·Tier3 산출물(읽기 전용)·task-artifact-matrix 링크를,
+  `reconcile-input` 9단계에 `reconciliation_contract: 2`와 `## Reconciliation Items`를 명시했다. main CI #996에서
+  실패하던 warning-only `example:test`의 skill-contract fixture 2건(implement-screen, reconcile-input)이 다시 통과한다.
+- 동작·권한·CLI 계약은 바꾸지 않았다. pilot 채택(E2)과 실제 수행 측정(E3)은 포함하지 않는다.
+
 ### feat(workflow) — scoped work execution (#238 D)
 
 - 사람이 채택한 owner(policy `work_execution.owners` + owner `work_execution`)의 work unit을 `authority: scoped`로

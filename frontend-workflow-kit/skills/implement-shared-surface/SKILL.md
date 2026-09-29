@@ -12,10 +12,7 @@ description: canonical Surface ID를 shared-surface readiness와 모든 member s
 ## 입력
 
 - canonical Surface ID가 필수다. prose 이름/컴포넌트 파일명만 있으면 `surface_id`를 추측하지 말고 canonical artifact를 확인한다.
-- repo가 제공한 기준 옵션은 각 CLI가 지원하는 부분집합으로 투영한다.
-  - `workflow:state`: `--docs`, `--src`, `--root`, `--layout`
-  - `workflow:readiness`: `--docs`, `--layout`, `--policy`, `--manifest`, `--ci` (surface와 모든 member)
-  - `workflow:validate`: `--docs`, `--src`, `--root`, `--layout`, `--policy`, `--manifest`와 제공된 경우 `--schema`
+- repo가 제공한 기준 옵션은 [CLI별 지원 부분집합](../../COMMANDS.md#daily-loop)으로 투영한다(readiness는 surface와 모든 member에 같은 기준).
   지원하지 않는 옵션을 다른 CLI에 그대로 전달하지 않는다.
 
 ## 불변식
