@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { splitFrontmatter, DEFAULTS } from './util.mjs';
+import { splitFrontmatter, DEFAULTS, KIT_ROOT } from './util.mjs';
 import { buildState } from '../workflow-state.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
 import { REQUIRED_REGISTER_COLS } from './reconciliation-register.mjs';
@@ -312,6 +312,27 @@ test('D backstop: a Git-ignored new entry in a consumed API evidence directory i
   // --staged evaluates the index, which cannot hold the ignored file.
   git(r.repo, 'add', CLIENT);
   assert.deepEqual(codes(evaluateScopedGit(preflight, { staged: true })), []);
+});
+
+test('D run: an evidence change before any implementation is kept by the public runner, not reported as ready for work', (t) => {
+  const r = repository(t); r.api('contracts/api'); r.put('.gitignore', 'contracts/api/local.ts\n'); r.commit('API evidence directory');
+  const work = r.request(apiRequest());
+  const run = () => {
+    const result = spawnSync(process.execPath, [path.join(KIT_ROOT, 'scripts', 'workflow-run.mjs'), '--work', work, '--root', r.root, '--docs', DOCS,
+      '--src', 'src', '--policy', '.kit/policy.yaml', '--manifest', '.kit/manifest.yaml', '--layout', '.kit/layout.yaml', '--json'],
+    { cwd: r.root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout: 120000 });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    return JSON.parse(result.stdout);
+  };
+  // Before work only the requested change is missing: that is the ordinary ready state.
+  const ready = run();
+  assert.equal(ready.state, 'HALT_READY_FOR_WORK'); assert.equal(Object.hasOwn(ready, 'backstop'), false);
+  // An ignored sibling joins the consumed evidence directory; the requested file does not exist yet.
+  r.put('contracts/api/local.ts', 'export interface ResultsResponse { ok: string }\n');
+  const held = run();
+  assert.equal(held.state, 'HALT_AMBIGUITY');
+  assert.deepEqual(held.backstop.implementation_records, []);
+  assert.deepEqual(held.backstop.violations.map((entry) => entry.code).sort(), ['SW-GIT-EVIDENCE-DIRECTORY-CHANGED', 'SW-GIT-MISSING-REQUESTED']);
 });
 
 const ORIGIN = 'IN-20260923-figma-001';

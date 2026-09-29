@@ -4,7 +4,7 @@
 > 범위: #238 D(`authority: scoped`) 구현 — PR #246(Draft, `feat/238-scoped-execution`)
 > baseline: `a44fdc78f729a154da4c6e1a42f11ff303705d27` (PR #245 merge: C current work + D1 비활성 계약)
 > 구현 checkpoint: D02 `ae5eea5` … D34 `9eaaab3`(공개 CLI 활성화). 이 기록과 W 회귀 보강은 그 다음 checkpoint(D35 `9a1c449`)다.
-> 리뷰 수정: D36 — `9a1c449` 재리뷰의 API 근거 경로 관측 P2 2건(§6).
+> 리뷰 수정: D36 — `9a1c449` 재리뷰의 API 근거 경로 관측 P2 2건, D37 — `23652e6` 재리뷰의 runner 위반 보존 P2 1건(§6).
 > 설계 정본: [issue-238-task-scoped-execution.md](../../docs/design/drafts/issue-238-task-scoped-execution.md) §13 회귀 매트릭스
 > 사용 안내: [scoped-work.md](../../../frontend-workflow-kit/docs/reference/scoped-work.md)
 > status: **IMPLEMENTATION CHECKPOINT — source checkpoint, not review approval.** 사람 채택·binding·consumer pilot·E 측정·release/version/dependency 변경은 없다.
@@ -43,6 +43,7 @@
 | D34 | 다섯 `--work` CLI(readiness/packet/forbidden-paths/report/run) 활성화, 소비자 문서 |
 | D35 | W01–W40 회귀 보강 16건, 이 검증 기록 |
 | D36 | 리뷰 수정: API 근거 경로의 종류 비교와 worktree 디스크 관측(§6) |
+| D37 | 리뷰 수정: 구현 diff 전 backstop 위반을 `workflow:run`이 보존(§6) |
 
 D30의 CI 실패(#989)는 Git ≥2.47이 commit 뒤 분리 실행하는 auto-maintenance가 임시 저장소 삭제와 경합한 것이었다.
 Git fixture가 있는 테스트 파일에서 `maintenance.auto false`·`gc.auto 0`을 설정해 해소했다(`ad6858e`).
@@ -82,7 +83,7 @@ Git fixture가 있는 테스트 파일에서 `maintenance.auto false`·`gc.auto 
 | W19 | 충족 | `scoped-work-hosts`: "D hosts: both actual scoped host profiles, Decisions and role-ceiling consents are required, without a surface permit"; "D hosts: missing, duplicate and nonmember host selections never become a smaller successful set"; "D hosts: a legacy member base covers only declared surface paths"; `scoped-work-composition`: "D compose: a host prerequisite deny blocks every target of the surface request" | |
 | W20 | 충족 | `scoped-work-paths`: "W20: a component catalog listing without a known global editor creates no scoped path authority"; "D paths: explicit denies, generated outputs, global roles and own routes survive private declarations" | catalog 사례는 이번 보강 |
 | W21 | 부분 | `scoped-work-execution`: "D backstop: unrequested paths and delete/mode/type changes are violations"; `scoped-work-git-transitions`: "D Git transitions: mode-only and rename changes remain visible, not relabeled as safe work"; "D Git transitions: original gitlink resources cannot be borrowed from the working directory"; `scoped-work-paths`: "D paths: leaf and ancestor symlinks and directory targets are never regular A/M observations"; "W21: a case-alias spelling of the exact entry never becomes the owned entry" | case alias는 이번 보강. binary/NUL 바이트는 공유 helper 테스트(`current-work-snapshot`, `visual-refresh-git-snapshot`)로만 확인한다. `--work` CLI에는 name-only `--diff` 입력이 없다 |
-| W22 | 충족 | `scoped-work-execution`: "D backstop: an implementation diff cannot self-grant through authority, documents or requests"; "D preflight: uncommitted worktree edits cannot change baseline authority in either direction"; "D backstop: a missing API evidence source created as a requested file is an evidence change in the worktree and index"; "D backstop: a Git-ignored new entry in a consumed API evidence directory is observed in the worktree only"; `scoped-work-adoption`: "W28: withdrawing adoption inside an implementation diff cannot reopen legacy authority for that run" | API 근거 경로 두 사례는 D36 리뷰 수정(§6) |
+| W22 | 충족 | `scoped-work-execution`: "D backstop: an implementation diff cannot self-grant through authority, documents or requests"; "D preflight: uncommitted worktree edits cannot change baseline authority in either direction"; "D backstop: a missing API evidence source created as a requested file is an evidence change in the worktree and index"; "D backstop: a Git-ignored new entry in a consumed API evidence directory is observed in the worktree only"; "D run: an evidence change before any implementation is kept by the public runner, not reported as ready for work"; `scoped-work-adoption`: "W28: withdrawing adoption inside an implementation diff cannot reopen legacy authority for that run" | API 근거 경로 두 사례는 D36, runner 보존은 D37 리뷰 수정(§6) |
 | W23 | 부분 | `scoped-work-execution`: "W23: a project below the Git top level keeps repository paths and reports outside-root changes"; `scoped-work-git-transitions`: "D Git transitions: nested roots retain original repository paths and outside-root changes"; "D Git transitions: absolute in-project resources map to the same captured relative paths" | 하위 project root의 scoped backstop은 이번 보강. `--work` CLI는 `HEAD..worktree`와 `--staged`만 지원한다. base/range는 v1 visual-refresh에만 있다 |
 | W24 | 충족 | `scoped-work-execution`: "D backstop: unrequested paths and delete/mode/type changes are violations"; `scoped-work-cli`: "D34 CLI: unrequested changes, packet drift and baseline denials are never reported as success"; `current-work-snapshot`: "P1-3 ${flag}: hidden requested work and unrequested cross-root files are not omitted" | |
 | W25 | 리뷰·운영 | `scoped-work-cli`: "D34 CLI: the five public work CLIs run a scoped request from preflight to review evidence" | HALT/DONE은 orchestration 상태이고 merge·사람 승인이 아니다. 실행 불가와 실제 장애의 구분 보고는 리뷰가 확인한다 |
@@ -139,7 +140,7 @@ CI(`.github/workflows/frontend-workflow-kit.yml`의 validate-example Node 20·co
 - 실제 저장소 채택, owner·unit·`decision_work_scopes` 작성과 승인, pilot, E 측정은 사람 소유이며 이 PR에 포함하지 않는다.
 - PR #246은 Draft이고 #238은 open이다. merge와 issue 종료는 사람 리뷰 이후의 전이다.
 
-## 6. D36 리뷰 수정 — API 근거 경로 관측
+## 6. D36–D37 리뷰 수정 — API 근거 경로 관측과 runner 위반 보존
 
 D35(`9a1c449`) 재리뷰의 P2 2건을 고쳤다. 둘 다 Git backstop이 소비한 API 근거 경로의 변경을 놓치는 문제였다.
 
@@ -158,3 +159,16 @@ D35(`9a1c449`) 재리뷰의 P2 2건을 고쳤다. 둘 다 Git backstop이 소비
 
 로컬 검증(macOS, D36 작업 트리): scoped glob 536/536(Node 20.19.5, D35 + 2), `test:spec` 1965 tests / 1963 pass / 0 fail /
 2 skipped(Node 20.19.5·24.11.0), `example:validate`·`kit:pack` exit 0.
+
+D37은 `23652e6` 재리뷰의 P2 1건을 고쳤다. `workflow:run`은 구현 기록이 없으면 backstop 결과를 통째로 버리고
+`HALT_READY_FOR_WORK`를 반환했다. 그래서 요청 대상을 만들기 전에 소비한 API 근거 디렉터리에 Git-ignored 파일만 생긴 경우,
+D36 backstop이 찾은 `SW-GIT-EVIDENCE-DIRECTORY-CHANGED`가 출력에서 사라졌다. 이제 요청 누락(`*-GIT-MISSING-REQUESTED`)만
+있으면 여전히 `HALT_READY_FOR_WORK`이고, 다른 위반이 있으면 `HALT_AMBIGUITY`로 멈추며 `backstop` 결과를 남긴다. C와 D가 같은
+runner를 쓰므로 둘 다에 적용되며, [current-work.md](../../../frontend-workflow-kit/docs/reference/current-work.md#run-states)의
+run state 정의를 갱신했다.
+
+회귀 테스트 "D run: an evidence change before any implementation is kept by the public runner, not reported as ready for work"는
+공개 `workflow-run.mjs --work --json`을 실행한다. 수정 전에는 두 번째 실행이 `HALT_READY_FOR_WORK`로 실패했다.
+
+로컬 검증(macOS, D37 작업 트리): scoped glob 537/537(Node 20.19.5), `test:spec` 1966 tests / 1964 pass / 0 fail / 2 skipped
+(Node 20.19.5·24.11.0), `example:validate`·`kit:pack` exit 0.

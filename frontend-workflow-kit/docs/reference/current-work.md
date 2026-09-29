@@ -147,8 +147,8 @@ review evidence, not product/merge approval.
 
 | state | meaning | exit |
 |---|---|---:|
-| `HALT_READY_FOR_WORK` | all selected current paths and required preflight evidence are ready; no implementation diff yet | 0 |
-| `HALT_AMBIGUITY` | at least one current request is denied or execution evidence is unresolved | 0 |
+| `HALT_READY_FOR_WORK` | all selected current paths and required preflight evidence are ready; no implementation diff yet, and the backstop reports only the still-missing requested changes | 0 |
+| `HALT_AMBIGUITY` | at least one current request is denied or execution evidence is unresolved, including a backstop violation (such as changed authority or API evidence) before any implementation diff; the `backstop` result is kept | 0 |
 | `HALT_NOT_APPLICABLE` | all selected owners are absorbed/non-executable; report target only, do not auto-retarget | 0 |
 | `HALT_TOOL_ERROR` | malformed/unsupported input or collection failure | 2 |
 | `DONE_PENDING_REVIEW` | an implementation diff exists and report/backstop evidence is available | 0 |

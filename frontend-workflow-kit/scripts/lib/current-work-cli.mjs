@@ -32,6 +32,7 @@ import {
 } from './scoped-work-execution.mjs';
 
 const COMMON_VALUES = ['work', 'root', 'docs', 'src', 'policy', 'manifest', 'layout', 'ci'];
+const MISSING_REQUESTED = new Set(['CW-GIT-MISSING-REQUESTED', 'SW-GIT-MISSING-REQUESTED']);
 const COMMON_BOOLS = ['h', 'help', 'json'];
 const TOOL_VALUES = {
   readiness: [...COMMON_VALUES, 'out'],
@@ -219,12 +220,18 @@ export function runCurrentWorkCli(tool, argv) {
       else if (!preflight.ready) state = 'HALT_AMBIGUITY';
       else {
         const observed = impl.git(preflight);
-        if (observed.implementation_records.length === 0) {
-          git = null;
-          state = 'HALT_READY_FOR_WORK';
-        } else {
+        // Missing requested changes are the ordinary pre-work state. Any other
+        // violation (authority or API evidence changed, even Git-ignored) is kept.
+        const unresolved = observed.violations.some((entry) => !MISSING_REQUESTED.has(entry.code));
+        if (observed.implementation_records.length) {
           git = observed;
           state = 'DONE_PENDING_REVIEW';
+        } else if (unresolved) {
+          git = observed;
+          state = 'HALT_AMBIGUITY';
+        } else {
+          git = null;
+          state = 'HALT_READY_FOR_WORK';
         }
       }
       const status = statusEnvelope(impl, state, preflight, git);
