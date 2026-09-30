@@ -17,6 +17,20 @@ or root config.
 
 ---
 
+## Hand-written files under codegen output globs (#255)
+
+- Current and scoped work now apply the generated/`do_not_edit` final deny to a
+  manifest `outputs[]` glob only for a file whose baseline copy carries the
+  `GENERATED FILE — DO NOT EDIT` header. With the bundled manifest,
+  hand-written hooks under `src/features/{domain}/hooks/*.ts` were denied for both
+  `A` and `M` under `--work`; they are now judged like any other hook. See
+  [execution ownership](generated-files.md#execution-ownership).
+- Primary generated `path` outputs keep the final deny by location.
+- Scoped projections list a matching output glob in `ownership.generated` with
+  `marker_required: true`, so the basis digest of a scope that overlaps such a
+  glob changes; re-confirm any binding recorded for that scope.
+- Manual action: none. The manifest is unchanged.
+
 ## Screen-scoped layout layers (#250)
 
 - A `layers:` entry may declare `scope.screen_ids`. It then applies only to those

@@ -4,6 +4,21 @@
 
 ## Unreleased
 
+### fix(workflow) — codegen 출력 글롭 아래의 손으로 쓴 파일을 생성물로 거부하지 않음 (#255)
+
+- current `--work`의 preflight·backstop과 scoped 경로 검사는 manifest의 생성물 경로를 모두 final deny로 썼다.
+  번들 `codegen-openapi-client`의 `outputs`에 `src/features/{domain}/hooks/*.ts`가 있어서, 이 codegen을 쓰지
+  않는 저장소의 손으로 쓴 hook도 `--work`에서 신규·수정이 모두 거부됐다. legacy `--path`는 같은 경로를 허용했다.
+- 이제 artifact의 primary `path`는 지금처럼 위치로 판정하고, `outputs[]` 글롭은 그 파일에 GENERATED 머리말이
+  있을 때만 생성물로 본다. validate 검사 6과 visual-refresh가 이미 쓰는 규칙이다. current·scoped는 머리말을 불변
+  baseline tree에서만 읽는다. 그래서 변경에서 머리말을 지워도 거부가 풀리지 않는다.
+- manifest는 바꾸지 않았다(visual-refresh blob 고정). scoped 투영의 `ownership.generated`에서 출력 글롭 항목에
+  `marker_required: true`가 붙는다. 이 글롭과 겹치는 scope는 basis digest가 바뀐다.
+- 회귀 테스트: current는 손으로 쓴 hook의 M·A 허용, 머리말을 커밋한 파일의 거부, 작업 트리에서 머리말을 지워도
+  preflight 거부·backstop 보고. scoped는 머리말이 있을 때만 `generated-path`이고, 실행 경로에서 baseline 머리말을
+  index에서 지워도 preflight 거부·`--staged` backstop `SW-GIT-DENIED-TARGET`. 문서: `generated-files.md`
+  Execution Ownership, `current-work.md`, `upgrade-notes.md`, doc-ownership.
+
 ### docs(nav-graph) — nav-graph 명령 이름과 재생성 표를 실제 동작에 맞춤
 
 - ScreenSpec 템플릿과 `coupon-feature` 예제 `coupon-list`의 `<!-- GENERATED:START nav-graph -->` 주석이

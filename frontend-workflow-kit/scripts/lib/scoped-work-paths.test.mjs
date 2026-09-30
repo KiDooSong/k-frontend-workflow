@@ -109,6 +109,17 @@ test('D paths: explicit denies, generated outputs, global roles and own routes s
   f.json(f.layoutFile, { roles: roles() }); f.change('screen.md', (doc) => { doc.fm.route_entry = file; }); denied(f.run(file), 'route-entry');
 });
 
+test('#255: a generated output glob denies only an observed file that carries the GENERATED header', (t) => {
+  const f = fixture(t), file = `${ROOT}/hooks/local/useFixture.ts`;
+  f.json(f.manifestFile, { version: 1, artifacts: { codegen: { kind: 'generated', generated: true, do_not_edit: true,
+    outputs: [{ path: 'src/features/{domain}/hooks/**', role: 'hook' }] } } });
+  assert.equal(f.run(file).boundary_satisfied, true);
+  f.put(file, 'export const useFixture = () => null;\n');
+  assert.equal(f.run(file, 'M').boundary_satisfied, true);
+  f.put(file, '// GENERATED FILE - DO NOT EDIT\nexport const useFixture = () => null;\n');
+  denied(f.run(file, 'M'), 'generated-path');
+});
+
 test('D paths: another screen entry, private hook and test root cannot be covered by this owner', (t) => {
   const f = fixture(t), other = screen('RESULT-002', false);
   other.screen_entry = `${ROOT}/components/local/Other.tsx`;
