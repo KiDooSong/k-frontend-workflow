@@ -297,6 +297,27 @@ test('D backstop: --staged evaluates the index, not unstaged worktree bytes', (t
   assert.deepEqual(codes(evaluateScopedGit(preflight)), ['SW-GIT-UNREQUESTED']);
 });
 
+test('#255: only a baseline GENERATED header denies a codegen output glob; removing it in the index does not help', (t) => {
+  const r = repository(t), hook = `${PREFIX}/hooks/result-1/useResult.ts`;
+  r.edit('screen-1.md', ({ fm }) => { fm.work_execution.private_paths = { hook: [`${PREFIX}/hooks/result-1/**`] }; });
+  r.put('.kit/manifest.yaml', JSON.stringify({ version: 1, artifacts: { codegen: { kind: 'generated', generated: true,
+    do_not_edit: true, outputs: [{ path: 'src/features/{domain}/hooks/**', role: 'hook' }] } } }));
+  r.put(hook, 'export const useResult = () => null;\n'); r.commit('hand-written hook');
+  const selected = () => r.request([{ owner: 'screen:RESULT-001', authority: 'scoped', unit: 'known', targets: [{ path: hook, change: 'M' }] }]);
+  const written = r.prepare(t, selected());
+  assert.equal(written.ready, true, JSON.stringify(written.denials));
+  r.put(hook, 'export const useResult = () => 1;\n'); git(r.root, 'add', hook);
+  assert.equal(evaluateScopedGit(written, { staged: true }).ok, true);
+
+  r.put(hook, '// GENERATED FILE - DO NOT EDIT\nexport const useResult = () => null;\n'); r.commit('generated hook');
+  r.put(hook, 'export const useResult = () => 1;\n'); git(r.root, 'add', hook);
+  const generated = r.prepare(t, selected());
+  assert.equal(generated.ready, false);
+  assert.ok(generated.requests[0].path_authorizations[0].reasons.some((entry) => entry.code === 'generated-path'),
+    JSON.stringify(generated.requests[0].path_authorizations));
+  assert.deepEqual(codes(evaluateScopedGit(generated, { staged: true })), ['SW-GIT-DENIED-TARGET']);
+});
+
 test('D backstop: API evidence directory membership is compared against the baseline listing', (t) => {
   const r = repository(t); r.put('contracts/api/one.yaml', 'openapi: 3.0.0\n'); r.commit('api evidence');
   const preflight = r.prepare(t);

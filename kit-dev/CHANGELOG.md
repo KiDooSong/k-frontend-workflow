@@ -15,7 +15,8 @@
 - manifest는 바꾸지 않았다(visual-refresh blob 고정). scoped 투영의 `ownership.generated`에서 출력 글롭 항목에
   `marker_required: true`가 붙는다. 이 글롭과 겹치는 scope는 basis digest가 바뀐다.
 - 회귀 테스트: current는 손으로 쓴 hook의 M·A 허용, 머리말을 커밋한 파일의 거부, 작업 트리에서 머리말을 지워도
-  preflight 거부·backstop 보고. scoped는 머리말이 있을 때만 `generated-path`. 문서: `generated-files.md`
+  preflight 거부·backstop 보고. scoped는 머리말이 있을 때만 `generated-path`이고, 실행 경로에서 baseline 머리말을
+  index에서 지워도 preflight 거부·`--staged` backstop `SW-GIT-DENIED-TARGET`. 문서: `generated-files.md`
   Execution Ownership, `current-work.md`, `upgrade-notes.md`, doc-ownership.
 
 ### docs(nav-graph) — nav-graph 명령 이름과 재생성 표를 실제 동작에 맞춤
