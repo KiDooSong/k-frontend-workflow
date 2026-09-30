@@ -15,11 +15,13 @@ Generated files can become stale when their source docs, registers, layout, poli
 | `docs/frontend-workflow/_meta/layer-inventory.yaml` | `npm run workflow:state` when layer telemetry is declared | `project-layout.yaml` layer telemetry plus source tree scan | Tier3/custom layer declarations or source layout change |
 | `docs/frontend-workflow/design/component-catalog.md` | `npm run workflow:catalog` | `{roles.ui_primitive}` source files, or the default UI primitive root | Shared/common UI primitive files are added, removed, renamed, or exported differently |
 | `docs/frontend-workflow/_meta/route-tree.txt` | `npm run workflow:route-tree` | `{roles.route_entry}` route file tree | Route files are added, removed, renamed, or moved |
-| `docs/frontend-workflow/_meta/nav-graph.yaml` | `npm run workflow:nav-graph` | ScreenSpec Interaction Matrix sections and `app/navigation-map.md` Cross-Domain Edges | Navigation edges, route targets, ScreenSpec interaction rows, or navigation map edges change |
-| ScreenSpec generated blocks, such as `<!-- GENERATED:START nav-graph -->` | Owning generator, currently `npm run workflow:nav-graph` | Same generator inputs as the owning block | The generator source changes or the generated block is stale |
+| `docs/frontend-workflow/_meta/nav-graph.yaml` | `npm run workflow:nav-graph` | ScreenSpec Interaction Matrix rows (the only edge source) and `route` fields, `app/navigation-map.md` Structure / Deep Links routes (route seeds only; Cross-Domain Edges are not read), and `_meta/route-tree.txt` when resolving `/` | Interaction Matrix rows, ScreenSpec routes, navigation-map routes, or the route tree change |
+| ScreenSpec Entry Points block (`<!-- GENERATED:START nav-graph -->`) | Not generated yet — no command fills it; `workflow:nav-graph` never writes ScreenSpecs | — | — (see below) |
 | Policy draft outputs | `npm run workflow:policy-draft -- --out <review-output-dir>` | `project-layout.yaml` and implementation-mode policy | Layout/policy migration review is requested. Draft output does not replace live policy |
 | `eslint.workflow.config.mjs` when present | `npm run workflow:lint-gen` | `docs/frontend-workflow/_meta/lint-policy.yaml` | Lint policy changes or generated lint config drifts |
 | Codegen outputs when present | The repo's actual codegen command | API schema role, OpenAPI/manual schema evidence, and codegen adapter inputs | API schemas or codegen adapter inputs change |
+
+**ScreenSpec Entry Points block.** Validate check 6 requires the `GENERATED:START/END nav-graph` markers in every authored ScreenSpec, but no command fills the block yet. Leave it empty: the ScreenSpec parser drops the block before reading, so state, readiness, validate and nav-graph ignore its content, and a future generator may replace whatever is there. Inbound edges live in `_meta/nav-graph.yaml` under `screens.<id>.inbound`; tab and deep-link entry stays in `app/navigation-map.md`.
 
 ## Advisory Guard
 

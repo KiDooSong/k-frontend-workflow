@@ -4,6 +4,23 @@
 
 ## Unreleased
 
+### docs(nav-graph) — nav-graph 명령 이름과 재생성 표를 실제 동작에 맞춤
+
+- ScreenSpec 템플릿과 `coupon-feature` 예제 `coupon-list`의 `<!-- GENERATED:START nav-graph -->` 주석이
+  `package.json`에 없는 `npm run workflow:nav`를 가리켰다. 실제 alias인 `npm run workflow:nav-graph`로 고쳤다.
+  `0.3.0-mvp-c-phase1`에서 manifest command와 `package-scripts.template.json`을 맞출 때 이 주석이 빠졌다.
+- `generated-files.md` 재생성 표는 nav-graph가 ScreenSpec Entry Points 블록도 채운다고 적었다. 생성기는
+  Phase 1부터 ScreenSpec을 읽기만 하고 `_meta/nav-graph.yaml`만 쓴다. 표에는 아직 이 블록을 채우는 명령이
+  없다고 적고, 마커(validate 검사 6)는 두되 블록은 비워 두며 들어오는 이동은 `nav-graph.yaml`의
+  `screens.<id>.inbound`에서 보라고 안내한다.
+- 같은 표는 nav-graph 입력에 navigation-map Cross-Domain Edges를 넣었지만 코드는 읽지 않는다. 입력을
+  Interaction Matrix(이동 엣지의 유일한 출처), navigation-map Structure·Deep Links route 시드, 루트(`/`)
+  해소용 `_meta/route-tree.txt`로 정정했다.
+- 문서만 바꿨다. `catalog/artifact-manifest.yaml`의 nav-graph 주석에도 같은 옛 설명이 남아 있지만,
+  visual-refresh가 이 파일의 Git blob을 `PINNED_VISUAL_REFRESH_RESOURCES`로 고정하므로 주석만을 위해 고정값을
+  옮기지 않았다. 다음에 manifest를 바꿀 때 함께 고친다. 템플릿 본문의 "Entry Points 는 생성됨" 같은 문구와
+  블록을 실제로 채우는 기능은 이번 범위가 아니다.
+
 ### feat(workflow) — 화면 단위 layout layer (#250-3)
 
 - `layers:` 항목에 `scope.screen_ids`를 선언하면 그 canonical Screen ID에만 적용된다. shared surface에는 전체
