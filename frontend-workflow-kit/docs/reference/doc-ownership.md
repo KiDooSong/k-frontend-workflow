@@ -28,7 +28,7 @@ inline and links the rest; it does not restate the references.
 | stage routing | [`workflow-spine.md`](workflow-spine.md) + [`workflow-stages/00-start-here.md`](workflow-stages/00-start-here.md) | link only |
 | current-stage operational procedure | `workflow-stages/NN-*.md` (the stage doc, e.g. [Stage 04](workflow-stages/04-reconcile-input.md)) | link to the stage doc; repeat only critical invariants |
 | task → secondary artifact follow-up | [`task-artifact-matrix.md`](task-artifact-matrix.md) | link when secondary updates are needed |
-| generated / `do_not_edit` regeneration | [`generated-files.md`](generated-files.md) | link; do not duplicate the table |
+| generated / `do_not_edit` regeneration, output-glob header rule for execution ownership | [`generated-files.md`](generated-files.md) | link; do not duplicate the table |
 | input artifact contract + all-input `captured_at` RFC3339 hard | [`input-artifact.template.md`](../../templates/input/input-artifact.template.md) + [`input-reconciliation.md`](input-reconciliation.md) (Stage 03) | summarize only |
 | Input Fidelity Contract v2 (`input_contract: 2`), confidence/fidelity separation, warning-first validator vs hard producer | [`input-reconciliation.md`](input-reconciliation.md) §Input Fidelity + [`input-artifact.template.md`](../../templates/input/input-artifact.template.md) | link; never infer fidelity from source_type |
 | register-first / retry / check 12 | [`input-reconciliation.md`](input-reconciliation.md) (Stage 04) | keep the critical 2–3 bullets inline |

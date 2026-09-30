@@ -2,6 +2,7 @@
 // Decision scope, every host/co-owner and original Git snapshots remain separate.
 import fs from 'node:fs';
 import { canonicalRepositoryPath } from './artifact-path.mjs';
+import { hasGeneratedOwnershipHeader } from './generated-ownership.mjs';
 import { normalizeWorkTargets, ownerParts, readCurrentBytes, hashBytes } from './current-work-request.mjs';
 import { concretePathIssue, globMatches } from './path-backstop.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
@@ -64,7 +65,11 @@ export function inspectScopedPaths(options = {}) {
     if (!limits.profile_enabled) deny('profile-not-enabled');
     if (identity.metadata.status === 'deprecated' || identity.metadata.screen_lifecycle === 'absorbed') deny('owner-inactive');
     for (const pattern of boundary.explicit_denies) if (globMatches(pattern, file)) deny('explicit-deny', { pattern });
-    for (const generated of boundary.generated) if (globMatches(generated.path, file)) deny('generated-path', { generated });
+    // An `outputs[]` glob needs the GENERATED header in the observed file (#255).
+    const marked = () => current.exists && hasGeneratedOwnershipHeader(canonical(file).absolute);
+    for (const generated of boundary.generated) {
+      if (globMatches(generated.path, file) && (!generated.marker_required || marked())) deny('generated-path', { generated });
+    }
     for (const reserved of boundary.other_role_boundaries) if (globMatches(reserved.path, file)) deny('non-profile-role', { reserved });
     const reservations = boundary.reservations.filter((entry) => globMatches(entry.path, file));
     for (const reserved of reservations) {

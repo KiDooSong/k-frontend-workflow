@@ -117,6 +117,37 @@ test('generated/do-not-edit ownership is final even when current mode glob match
   assert.match(out.denials[0].reason, /generated\/do-not-edit ownership is final/);
 });
 
+test('#255: a codegen output glob denies only a baseline file that carries the GENERATED header', (t) => {
+  const root = project(t);
+  const git = (...args) => execFileSync('git', args, { cwd: root });
+  const hook = 'src/features/coupons/hooks/useCoupons.ts';
+  // The bundled manifest declares codegen hooks as src/features/{domain}/hooks/*.ts;
+  // the example hook is hand-written, so current work treats it like any other hook.
+  for (const [target, change] of [[hook, 'M'], ['src/features/coupons/hooks/useCouponDraft.ts', 'A']]) {
+    const out = json(run('readiness.mjs', [...common(root, writeRequest(t, request({ path: target, change }))), '--json']));
+    assert.equal(out.ready, true, JSON.stringify(out.denials));
+  }
+  const work = writeRequest(t, request({ path: hook }));
+  fs.appendFileSync(path.join(root, hook), '\n// implementation\n');
+  const backstop = json(run('forbidden-paths.mjs', [...common(root, work), '--json']));
+  assert.equal(backstop.ok, true, JSON.stringify(backstop.violations));
+  git('checkout', '-q', '--', hook);
+
+  // A committed codegen file keeps the final deny, and removing its header in the
+  // worktree does not lift it: only the baseline bytes decide.
+  const source = fs.readFileSync(path.join(root, hook), 'utf8');
+  fs.writeFileSync(path.join(root, hook), `// GENERATED FILE - DO NOT EDIT\n${source}`);
+  git('commit', '-qam', 'generated hook');
+  const denied = json(run('readiness.mjs', [...common(root, work), '--json']));
+  assert.equal(denied.ready, false);
+  assert.match(denied.denials[0].reason, /generated\/do-not-edit ownership is final \(codegen-openapi-client\)/);
+  fs.writeFileSync(path.join(root, hook), source);
+  const stripped = json(run('readiness.mjs', [...common(root, work), '--json']));
+  assert.match(stripped.denials[0].reason, /generated\/do-not-edit ownership is final \(codegen-openapi-client\)/);
+  const reported = json(run('forbidden-paths.mjs', [...common(root, work), '--json']));
+  assert.equal(reported.ok, false, JSON.stringify(reported.violations));
+});
+
 test('#250: current work computes the baseline state; an ignored, stale or missing generated file is not authority', (t) => {
   const root = project(t);
   const git = (...args) => execFileSync('git', args, { cwd: root });

@@ -51,7 +51,9 @@ function baselineAuthorization(preflight, owner, file) {
   const parts = ownerParts(owner);
   const entry = preflight.requests.find((request) => request.owner === owner)?.legacy_readiness;
   if (!entry) return { allowed: false, reason: 'owner readiness missing from baseline' };
-  const generatedEntry = generatedOwner(file, context.generated || []);
+  let generatedEntry;
+  try { generatedEntry = generatedOwner(file, context.generated || [], context.baselineRoot); }
+  catch (error) { return { allowed: false, reason: error.message }; }
   if (generatedEntry) return { allowed: false, reason: `generated/do-not-edit ownership is final (${generatedEntry.artifact_id})`, generated_owner: generatedEntry };
   const domain = screenDomain(context.state, parts);
   const order = effectiveOrder(context.policy, context.layout, domain);
@@ -79,7 +81,12 @@ export function isExecutionInput(record, preflight, evidence) {
     !preflight.requests.some(r => r.targets.some(t => t.path === name)) &&
     !preflight.snapshot.authority_read_set.some(r => r.source === 'project' && r.path === name) &&
     !AUTHORITY_BASENAMES.has(path.posix.basename(name)) &&
-    !generatedOwner(name, preflight._context.generated || []));
+    !generatedInBaseline(name, preflight._context));
+}
+// An unreadable ownership fact never makes a file transport.
+function generatedInBaseline(name, context) {
+  try { return Boolean(generatedOwner(name, context.generated || [], context.baselineRoot)); }
+  catch { return true; }
 }
 
 export function evaluateCurrentGit(preflight, { staged = false } = {}) {

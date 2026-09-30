@@ -93,7 +93,9 @@ For every request the tool:
 3. requires `requested_mode` to be at or below the actual current readiness
    ceiling;
 4. asks the existing concrete-path helper about **every** target;
-5. keeps generated/`do_not_edit` ownership as a final deny;
+5. keeps generated/`do_not_edit` ownership as a final deny (an `outputs[]` glob
+   counts only for a baseline file with the GENERATED header — see
+   [execution ownership](generated-files.md#execution-ownership));
 6. keeps malformed lifecycle/state/policy/reference conditions as errors;
 7. preserves unmet higher-mode prerequisites as `future_requirements` without
    deleting them from `legacy_readiness`;

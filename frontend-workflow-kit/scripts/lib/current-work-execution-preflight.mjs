@@ -171,17 +171,17 @@ export function prepareCurrentWork({ work, root, docs, src, policy, manifest, la
         ? (entry.blocking || []).filter((blocker) => !invalidBlocker(blocker)).map((blocker) => ({ owner: selector.owner, blocker }))
         : [];
       for (const target of selector.targets) {
-        const generatedEntry = generatedOwner(target.path, generated);
         let authorization;
-        if (generatedEntry) {
-          authorization = { allowed: false, checked_path: target.path, reason: `generated/do-not-edit ownership is final (${generatedEntry.artifact_id})`, generated_owner: generatedEntry };
-        } else {
-          try {
+        try {
+          const generatedEntry = generatedOwner(target.path, generated, baselineRoot);
+          if (generatedEntry) {
+            authorization = { allowed: false, checked_path: target.path, reason: `generated/do-not-edit ownership is final (${generatedEntry.artifact_id})`, generated_owner: generatedEntry };
+          } else {
             authorization = parts.kind === 'screen'
               ? readinessPathAuthorization({ file: target.path, screenId: parts.id, entry, modeOrder: order, claims, adopted })
               : exactSurfaceAuthorization(entry, target.path, parts.id, order, adopted);
-          } catch (error) { authorization = { allowed: false, reason: error.message }; }
-        }
+          }
+        } catch (error) { authorization = { allowed: false, reason: error.message }; }
         result.path_authorizations.push({ ...target, ...authorization });
         if (!authorization.allowed) localDenials.push({ code: authorization.work_selection_required ? 'CW-WORK-SELECTION-REQUIRED' : 'CW-PATH-DENIED',
           owner: selector.owner, path: target.path, change: target.change, reason: authorization.reason || authorization.causes || null,
