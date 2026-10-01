@@ -92,17 +92,23 @@ function parseTree(text) {
     /<(pre|script|style|textarea)\/>/gi,
     (_, tagName) => `<${tagName}${SELF_CLOSING_LITERAL_SENTINEL}>`,
   );
-  const cached = trees.get(parserSource);
+  return fromMarkdown(parserSource, {
+    extensions: [gfm()],
+    mdastExtensions: [gfmFromMarkdown()],
+  });
+}
+
+// Parses only on a cache miss, so parseTree runs once per distinct text.
+function sharedTree(text) {
+  const source = String(text || '');
+  const cached = trees.get(source);
   if (cached) {
     parseStats.reused += 1;
     return cached;
   }
-  const tree = freezeTree(fromMarkdown(parserSource, {
-    extensions: [gfm()],
-    mdastExtensions: [gfmFromMarkdown()],
-  }));
+  const tree = freezeTree(parseTree(source));
   parseStats.parsed += 1;
-  trees.set(parserSource, tree);
+  trees.set(source, tree);
   return tree;
 }
 
@@ -480,7 +486,7 @@ function sectionOccurrences(source, tree, suppliedContext = null, includeNodes =
 // Production entry point: callers derive every reconciliation view from this one parse.
 export function parseReconciliationMarkdown(text) {
   const source = String(text || '');
-  const tree = parseTree(source);
+  const tree = sharedTree(source);
   const context = { source, definitions: definitionLabels(tree) };
   return {
     contentBody: removeRangesPreservingLines(source, nonContentRanges(tree)),
@@ -492,7 +498,7 @@ export function parseReconciliationMarkdown(text) {
 // Compatibility helpers used by focused parser tests. Production indexing does not chain these helpers.
 export function stripNonContent(text) {
   const source = String(text || '');
-  const tree = parseTree(source);
+  const tree = sharedTree(source);
   return removeRangesPreservingLines(source, nonContentRanges(tree));
 }
 
@@ -502,18 +508,18 @@ export function stripFencedCodeBlocks(text) {
 
 export function stripInlineCodeSpans(text) {
   const source = String(text || '');
-  return removeRangesPreservingLines(source, inlineCodeRanges(parseTree(source)));
+  return removeRangesPreservingLines(source, inlineCodeRanges(sharedTree(source)));
 }
 
 export function toProseBody(text) {
   const source = String(text || '');
-  const tree = parseTree(source);
+  const tree = sharedTree(source);
   return visibleText(tree, { source, definitions: definitionLabels(tree) });
 }
 
 export function parseStrictTables(text) {
   const source = String(text || '');
-  const tree = parseTree(source);
+  const tree = sharedTree(source);
   const rootChildren = tree.children || [];
   return rootChildren
     .map((node, index) => rootTable(source, node, rootChildren[index - 1] || null))
@@ -522,7 +528,7 @@ export function parseStrictTables(text) {
 
 export function splitSectionOccurrences(text) {
   const source = String(text || '');
-  const tree = parseTree(source);
+  const tree = sharedTree(source);
   const context = { source, definitions: definitionLabels(tree) };
   return sectionOccurrences(source, tree, context).map(({ title, slug, text: sectionText }) => ({
     title,
@@ -536,7 +542,7 @@ export function splitSectionOccurrences(text) {
 // callers must not reparse rendered text into invented reference identities.
 export function parseReconciliationReferenceView(text) {
   const source = String(text || '');
-  const tree = parseTree(source);
+  const tree = sharedTree(source);
   return { tree, sections: sectionOccurrences(source, tree, null, true) };
 }
 export { normalizeReferenceLabel as reconciliationReferenceLabel };
