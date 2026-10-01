@@ -2,16 +2,17 @@
 // Inverse dependencies and unscoped canonical rows cannot disappear merely
 // because a selected unit did not list them. No prose-based negative inference,
 // new Unknown status, approval, isolation exemption or public CLI is introduced.
+// Only a malformed section that provably cannot relate is skipped, and reported.
 import path from 'node:path';
 import { splitFrontmatter } from './util.mjs';
 import { col, hasHeader } from './spec.mjs';
 import { canonicalRepositoryPath } from './artifact-path.mjs';
-import { ownerParts, readCurrentBytes, hashBytes } from './current-work-request.mjs';
+import { ownerParts, readCurrentBytes, hashBytes, CurrentWorkError } from './current-work-request.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { parseTargetRef } from './reconciliation-items.mjs';
 import { parseReconciliationMarkdown, parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
-import { createScopedReferenceResolver, scopedRawTable } from './scoped-work-refs.mjs';
-import { resolveScopedContractGraph, scopedGraphSelectionSpans } from './scoped-work-graph.mjs';
+import { createScopedReferenceResolver, scopedRawTable, parseScopedTargetRef } from './scoped-work-refs.mjs';
+import { resolveScopedContractGraph, scopedGraphSelectionSpans, scopedGraphMetadataRefs, scopedGraphBodyRefs } from './scoped-work-graph.mjs';
 import { scopedProjectionNode } from './scoped-work-projection.mjs';
 import { resolveScopedDecisionProjection } from './scoped-work-decisions.mjs';
 import { ScopedWorkContractError, workText } from './scoped-work-request.mjs';
@@ -19,6 +20,7 @@ import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
 
 const fail = (message) => { throw new ScopedWorkContractError(`SW-UNCERTAINTY: ${message}`); };
 const signatures = { unknown: ['ID', 'Question'], conflict: ['ID', 'Status'] };
+const typedSpelling = /(?:artifact|decision|unknown|conflict|gap|investigation|verification|input):/;
 const union = (values) => scopeSet([...new Set(values)]);
 const key = (owner, unit) => scopeJson([owner, unit]);
 
@@ -46,9 +48,10 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
   }
   function document(relative) {
     if (!documents.has(relative)) {
-      const parsed = splitFrontmatter(decodeGitUtf8(read(relative), 'scoped uncertainty'));
+      const text = decodeGitUtf8(read(relative), 'scoped uncertainty');
+      const parsed = splitFrontmatter(text);
       if (!parsed.hasFrontmatter || parsed.parseError) fail('invalid uncertainty document');
-      documents.set(relative, { body: parsed.body, view: parseReconciliationReferenceView(parsed.body) });
+      documents.set(relative, { text, body: parsed.body, view: parseReconciliationReferenceView(parsed.body) });
     }
     return documents.get(relative);
   }
@@ -63,9 +66,32 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
   addEvidence(base.projection.evidence);
   addEvidence(base.projection.decision_relations.evidence);
 
+  // Table shape and row identity of one canonical section, before any resolution.
+  function sectionRows(entry, family, headers, location) {
+    const tables = location.tables.map(scopedRawTable).filter((table) => headers.every((header) => hasHeader(table.headers, header)));
+    if (tables.length !== 1) fail(`one canonical ${family} table required`);
+    const rows = new Map();
+    for (const row of tables[0].rows) {
+      const id = col(row, 'ID');
+      if (id.startsWith('{')) continue; // Existing canonical template placeholder.
+      workText(id, `${family} ID`);
+      const token = `${family}:${id}@${entry.fm.artifact_id}`;
+      const parsedRef = parseScopedTargetRef(token);
+      if (parsedRef?.kind !== family || parsedRef.rowId !== id) fail(`noncanonical uncertainty ID ${JSON.stringify(id)}`);
+      if (candidates.has(token) || rows.has(token)) fail(`duplicate uncertainty ${token}`);
+      if (family === 'unknown') workText(col(row, 'Question'), 'Unknown Question');
+      const status = col(row, 'Status') || null;
+      // Unknowns deliberately keep their native optional status vocabulary.
+      if (family === 'conflict' && !['open', 'resolved'].includes(status)) fail(`invalid Conflict Status: ${token}`);
+      rows.set(token, status);
+    }
+    return rows;
+  }
+
   // Parse canonical homes again from the actual bytes, not caller-edited index
   // rows. The shared resolver still owns identity, table/section uniqueness and
   // exact raw row selection. Missing signatures must not become an empty set.
+  const unaudited = [];
   for (const entry of targetIndex.artifacts.values()) {
     const relative = path.relative(projectRoot, entry.file).split(path.sep).join('/');
     const parsed = parseReconciliationMarkdown(document(relative).body);
@@ -74,20 +100,14 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
         (family === 'conflict' && section.slug === '' && entry.fm.artifact_type === 'conflicts' &&
           section.tables.some((table) => headers.every((header) => hasHeader(table.headers, header)))));
       for (const location of locations) {
-        const tables = location.tables.map(scopedRawTable).filter((table) => headers.every((header) => hasHeader(table.headers, header)));
-        if (tables.length !== 1) fail(`one canonical ${family} table required`);
-        for (const row of tables[0].rows) {
-          const id = col(row, 'ID');
-          if (id.startsWith('{')) continue; // Existing canonical template placeholder.
-          workText(id, `${family} ID`);
-          const token = `${family}:${id}@${entry.fm.artifact_id}`;
-          const parsedRef = parseTargetRef(token);
-          if (parsedRef?.kind !== family || parsedRef.rowId !== id) fail('noncanonical uncertainty ID');
-          if (candidates.has(token)) fail(`duplicate uncertainty ${token}`);
-          if (family === 'unknown') workText(col(row, 'Question'), 'Unknown Question');
-          const status = col(row, 'Status') || null;
-          // Unknowns deliberately keep their native optional status vocabulary.
-          if (family === 'conflict' && !['open', 'resolved'].includes(status)) fail(`invalid Conflict Status: ${token}`);
+        let rows;
+        try { rows = sectionRows(entry, family, headers, location); } catch (error) {
+          if (!(error instanceof ScopedWorkContractError)) throw error;
+          // Fatal or unaudited is decided below, once selected evidence is known (#260).
+          unaudited.push({ entry, file: relative, section: location.slug, error });
+          continue;
+        }
+        for (const [token, status] of rows) {
           const record = { ...scopedProjectionNode(refs.contract(token)), status };
           const graph = resolveScopedContractGraph({ contracts: [token], targetIndex, projectRoot, inputArtifacts });
           for (const file of graph.read_set) read(file.file, file.sha256);
@@ -207,6 +227,27 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
     return fm.domain === undefined || fm.domain === 'global' || fm.domain === owner?.metadata.domain;
   }
 
+  // #260: a format problem stays fatal wherever a row could relate: a document in
+  // any subject's native scope (an unclassifiable one included), one holding
+  // selected or derived evidence, or one with a typed reference. Row cells and
+  // metadata refs are the only graph edges, so judge references as resolution
+  // reads them (decoded metadata, native content scan) as well as the raw text;
+  // a reference that cannot be read counts. Elsewhere no relation can be lost,
+  // so the section is reported as unaudited instead of stopping all scoped work.
+  const contractError = (check) => {
+    try { return check(); } catch (cause) { if (cause instanceof CurrentWorkError) return true; throw cause; }
+  };
+  const referencing = (entry, file) => typedSpelling.test(document(file).text) || contractError(() =>
+    scopedGraphMetadataRefs(entry.fm).length > 0 || scopedGraphBodyRefs(document(file).body, document(file).view).length > 0);
+  const skipped = new Map();
+  for (const { entry, file, section, error } of unaudited) {
+    const native = (value) => contractError(() => nativeScope(entry, value));
+    if (referencing(entry, file) || [...subjects.values()].some((value) => native(value) ||
+      [...value.selected, ...value.derived.map(({ node }) => node)].some((node) => node.file === file))) throw error;
+    const value = { file, section, reason: error.message };
+    skipped.set(scopeJson(value), value);
+  }
+
   const records = new Map(); const applications = []; const review = [];
   const projectedNodes = new Map(); const projectedEdges = new Map(); const roots = [];
   for (const [token, candidate] of candidates) {
@@ -245,5 +286,5 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
   return { projection: { ...base.projection, uncertainty_relations: {
     records: scopeSet([...records.values()]), applications: scopeSet(applications), scope_review_needed: scopeSet(review),
     evidence: { roots: union(roots), nodes: scopeSet([...projectedNodes.values()]), edges: scopeSet([...projectedEdges.values()]) },
-  } }, read_set: scopeSet([...files.values()]) };
+  } }, read_set: scopeSet([...files.values()]), unaudited: scopeSet([...skipped.values()]) };
 }

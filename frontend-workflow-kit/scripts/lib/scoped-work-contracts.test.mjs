@@ -148,6 +148,23 @@ test('D1 R1 host selector structure preserves every host/mapping/M-key; not a me
   ]) { const bad = surface(); mutate(bad.units[0]); assert.throws(() => parseScopedOwner(bad, 'surface:RESULT-PANEL')); }
 });
 
+test('D1 typed refs: table-backed kinds take general-contract IDs; contradictions and INV/VER stay strict (#260)', () => {
+  const v = owner();
+  v.units[0].contracts = ['unknown:RESULT-001-U001@RESULT-001-screen-spec', 'conflict:RESULT-CONFLICT-1@global-conflicts'];
+  v.units[0].isolation = { decisions: ['decision:RESULT-001-D001@RESULT-001-screen-spec'], disabled_units: ['save'], exposure: 'development-only' };
+  const parsed = parseScopedOwner(v, 'screen:RESULT-001').units.find((u) => u.id === 'layout');
+  assert.deepEqual(parsed.isolation.decisions, ['decision:RESULT-001-D001@RESULT-001-screen-spec']);
+  assert.equal(parsed.contracts.length, 2);
+  for (const ref of ['decision:U-SAVE@RESULT-001-screen-spec', 'investigation:RESULT-1@RESULT-001-screen-spec',
+    'unknown:RESULT 1@RESULT-001-screen-spec']) {
+    const bad = owner(); bad.units[0].contracts = [ref];
+    assert.throws(() => parseScopedOwner(bad, 'screen:RESULT-001'), /invalid typed reference/, ref);
+  }
+  assert.equal(parseDecisionWorkScopes({ version: 1, bindings: [{ ...binding(), decision_id: 'RESULT-001-D001' }] })
+    .bindings[0].decision_id, 'RESULT-001-D001');
+  assert.throws(() => parseDecisionWorkScopes({ version: 1, bindings: [{ ...binding(), decision_id: 'U-SAVE' }] }), /decision_id/);
+});
+
 test('D1 scope binding: explicit blocks subset and duplicate owner/decision validation, no approval inference', () => {
   const v = { version: 1, bindings: [binding()] };
   assert.deepEqual(parseDecisionWorkScopes(v).bindings[0].blocks, ['save']);

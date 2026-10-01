@@ -11,7 +11,7 @@ import { loadOpenDecisionRegister, resolveDecisionRefs, openDecisionRowIsMalform
   REQUIRED_OPEN_DECISION_COLUMNS } from './open-decisions.mjs';
 import { parseTargetRef } from './reconciliation-items.mjs';
 import { parseReconciliationMarkdown } from './reconciliation-markdown-ast.mjs';
-import { createScopedReferenceResolver, scopedRawTable } from './scoped-work-refs.mjs';
+import { createScopedReferenceResolver, scopedRawTable, parseScopedTargetRef, isScopedRowId } from './scoped-work-refs.mjs';
 import { resolveScopedContractGraph } from './scoped-work-graph.mjs';
 import { resolveScopedUnitProjection, scopedProjectionMetadata, scopedProjectionNode } from './scoped-work-projection.mjs';
 import { parseDecisionWorkScopes } from './scoped-work-declarations.mjs';
@@ -21,9 +21,12 @@ import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
 const fail = (message) => { throw new ScopedWorkContractError(`SW-DECISIONS: ${message}`); };
 const same = (a, b) => scopeJson(a) === scopeJson(b);
 const union = (values) => scopeSet([...new Set(values)]);
-const decisionId = (id) => {
-  workText(id, 'decision reference');
-  if (!/^D-[A-Za-z0-9-]+$/.test(id)) fail('decision_refs must name canonical global D- IDs');
+// #260: the general contract resolves a decision by its exact unique ID with no
+// kind prefix (open-decisions.md, Referencing). Scoped work needs only an ID it
+// can carry in a typed reference; name the actual home when one cannot.
+const decisionId = (id, label, artifactId) => {
+  workText(id, `${label} in ${artifactId}`);
+  if (!isScopedRowId('decision', id)) fail(`${label} ${JSON.stringify(id)} in ${artifactId} cannot form a scoped decision reference`);
   return id;
 };
 
@@ -116,9 +119,8 @@ export function resolveScopedDecisionProjection(options = {}, dependencyRoots = 
   }
   function decision(token) {
     if (decisions.has(token)) return decisions.get(token);
-    const parsed = parseTargetRef(token);
+    const parsed = parseScopedTargetRef(token);
     if (!parsed || parsed.kind !== 'decision') fail('canonical typed decision required');
-    decisionId(parsed.rowId);
     const home = document(parsed.ownerArtifactId);
     if (home.fm.artifact_type === 'open-decision-register') {
       if (home.fm.artifact_id !== 'open-decision-register' || home.file !== globalFile) fail('noncanonical global decision home');
@@ -158,7 +160,7 @@ export function resolveScopedDecisionProjection(options = {}, dependencyRoots = 
   }
   function globals(entry) {
     if (!Object.hasOwn(entry.fm, 'decision_refs')) return [];
-    const ids = workSet(entry.fm.decision_refs, decisionId, 'decision_refs');
+    const ids = workSet(entry.fm.decision_refs, (id) => decisionId(id, 'decision_refs entry', entry.fm.artifact_id), 'decision_refs');
     if (!ids.length) return [];
     const resolved = resolveDecisionRefs({ refs: ids, registry: globalRegistry(), referrer: entry.fm, conflictingIds: collisions });
     if (resolved.malformed.length) fail(resolved.malformed.map((value) => value.code).join(', '));
@@ -173,7 +175,8 @@ export function resolveScopedDecisionProjection(options = {}, dependencyRoots = 
       ['ID', 'Status', 'Blocking Mode'].every((header) => hasHeader(table.headers, header)));
     if (tables.length !== 1) fail('one canonical local decision table required');
     if (REQUIRED_OPEN_DECISION_COLUMNS.some((header) => !hasHeader(tables[0].headers, header))) fail('missing local decision columns');
-    return tables[0].rows.map((row) => `decision:${decisionId(col(row, 'ID'))}@${entry.fm.artifact_id}`);
+    return tables[0].rows.map((row) =>
+      `decision:${decisionId(col(row, 'ID'), 'local Open Decisions ID', entry.fm.artifact_id)}@${entry.fm.artifact_id}`);
   }
 
   const subjects = new Set(base.projection.owners.map((entry) => entry.owner));
@@ -236,7 +239,7 @@ export function resolveScopedDecisionProjection(options = {}, dependencyRoots = 
     const selectedOwner = base.projection.owners.find((entry) => entry.owner === root.owner);
     const selectedUnit = base.projection.units.some((entry) => entry.owner === root.owner && entry.declaration.id === root.unit);
     if (!selectedOwner || (root.unit === null ? selectedOwner.adopted : !selectedUnit)) fail('uncertainty root outside selected units');
-    const parsed = parseTargetRef(workText(root.ref, 'uncertainty root ref'));
+    const parsed = parseScopedTargetRef(workText(root.ref, 'uncertainty root ref'));
     if (!parsed || !['conflict', 'unknown'].includes(parsed.kind)) fail('typed uncertainty root required');
     enqueue(root.ref, { owner: root.owner, unit: root.unit }, root.ref);
   }

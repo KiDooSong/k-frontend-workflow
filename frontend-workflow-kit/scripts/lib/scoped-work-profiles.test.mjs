@@ -204,3 +204,13 @@ test('W10: visual isolation needs an open Decision that actually applies to the 
   decision('resolved'); denied(f.run(), 'isolation-decision-unrelated');
   decision('open'); f.change('screen.md', ({ fm }) => { delete fm.decision_refs; }); denied(f.run(), 'isolation-decision-unrelated');
 });
+
+test('D profiles: an unaudited uncertainty section is a required review, not a denial (#260)', (t) => {
+  const f = fixture(t), clean = f.run();
+  f.write('other.md', { artifact_id: 'OTHER', artifact_type: 'domain-rules', domain: 'other', status: 'draft' }, '## Unknowns\nNone — no new open questions.');
+  const out = f.run();
+  assert.deepEqual([out.profile_satisfied, out.denials], [clean.profile_satisfied, clean.denials]);
+  const added = out.required_reviews.filter((entry) => !clean.required_reviews.includes(entry));
+  assert.equal(added.length, 1);
+  assert.match(added[0], /^Unaudited uncertainty section docs\/other\.md#unknowns: SW-UNCERTAINTY: one canonical unknown table required\./);
+});

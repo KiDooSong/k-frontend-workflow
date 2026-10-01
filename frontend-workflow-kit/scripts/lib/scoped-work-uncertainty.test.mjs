@@ -124,6 +124,17 @@ test('D uncertainty: domain/global ambiguity is explicit, never inferred from ow
   }
 });
 
+test('D uncertainty: Unknown IDs need no U- prefix; the canonical table decides the kind (#260)', (t) => {
+  const f = fixture(t);
+  f.change('screen.md', (doc) => { doc.body += `\n\n${unknowns([['RESULT-001-U001', 'Which order applies?']])}`; });
+  f.evidence(unknowns([['OTHER-U001', 'Check artifact:RULES#rules']]));
+  const out = f.run();
+  assert.deepEqual(recordIds(out), ['OTHER-U001', 'RESULT-001-U001']);
+  assert.deepEqual(applications(out, 'RESULT-001-U001').map((entry) => [entry.unit, entry.relation]),
+    [['known', 'scope-review-needed'], ['other', 'scope-review-needed']]);
+  assert.deepEqual(applications(out, 'OTHER-U001').map((entry) => [entry.unit, entry.relation]), [['known', 'inverse-evidence']]);
+});
+
 test('D uncertainty: another screen local row is not borrowed; a shared surface fans out to its selected member', (t) => {
   const f = fixture(t);
   f.write('second.md', screen('RESULT-002'), unknowns([['U-OTHER-HOST', 'Only the other host.']]));
@@ -192,12 +203,53 @@ test('D uncertainty: malformed raw rows/sections and unresolved explicit depende
     unknowns([['U-MISSING', 'See artifact:ABSENT#rules']]),
     conflicts([['C-BAD', 'Question?', 'accepted']]),
   ]) {
-    const f = fixture(t); f.evidence(body); assert.throws(() => f.run(), undefined, body);
+    // #260: native scope, or any typed spelling that could reach selected evidence, keeps it fatal.
+    for (const [domain, text] of [['result', body], ['other', `${body}\n\nSee artifact:RULES#rules`]]) {
+      const f = fixture(t); f.evidence(text, domain); assert.throws(() => f.run(), undefined, text);
+    }
   }
   for (const domain of [null, '', 1]) {
     const f = fixture(t); f.evidence(unknowns([['U-SCOPE', 'Question?']]), domain);
     assert.throws(() => f.run());
   }
+});
+
+test('D uncertainty: a format problem in a document that cannot reach selected evidence is reported, not fatal (#260)', (t) => {
+  const f = fixture(t);
+  for (const [body, section, reason] of [
+    ['## Unknowns\nNone — no new open questions.', 'unknowns', 'SW-UNCERTAINTY: one canonical unknown table required'],
+    [conflicts([['C-ONE', 'Split `a | b` cell', 'open']]), 'conflicts', 'SW-REF-TABLE: row width differs from header'],
+    [unknowns([['OTHER U001', 'Spaced ID?']]), 'unknowns', 'SW-UNCERTAINTY: noncanonical uncertainty ID "OTHER U001"'],
+    [conflicts([['C-ONE', 'Closed wording.', 'closed']]), 'conflicts', 'SW-UNCERTAINTY: invalid Conflict Status: conflict:C-ONE@UNCERTAINTY'],
+  ]) {
+    f.evidence(body);
+    const out = f.run();
+    assert.deepEqual(relations(out).records, [], body);
+    assert.deepEqual(out.unaudited, [{ file: 'docs/uncertainty.md', section, reason }], body);
+  }
+});
+
+test('D uncertainty: decoded metadata and encoded link refs keep a format problem fatal, like plain spellings (#260)', (t) => {
+  const malformed = unknowns([['U-ONE', 'Which rule applies?'], ['U-TWO', '']]);
+  const escape = (raw) => raw.replace('"artifact:RULES#rules"', '"artifact\\u003aRULES#rules"');
+  for (const [label, extra, body, encode] of [
+    ['plain metadata', { depends_on: ['artifact:RULES#rules'] }, malformed, (raw) => raw],
+    ['escaped depends_on', { depends_on: ['artifact:RULES#rules'] }, malformed, escape],
+    ['escaped source ref', { sources: [{ ref: 'artifact:RULES#rules' }] }, malformed, escape],
+    ['entity link destination', {}, unknowns([['U-ONE', '[rule](artifact&#58;RULES#rules)'], ['U-TWO', '']]), (raw) => raw],
+  ]) {
+    const f = fixture(t);
+    const file = f.write('uncertainty.md', { artifact_id: 'UNCERTAINTY', artifact_type: 'domain-rules', domain: 'other', status: 'draft', ...extra }, body);
+    fs.writeFileSync(file, encode(fs.readFileSync(file, 'utf8')));
+    assert.throws(() => f.run(), /Unknown Question/, label);
+  }
+});
+
+test('D uncertainty: a format problem in a selected evidence file stays fatal outside native scope (#260)', (t) => {
+  const f = fixture(t);
+  f.evidence('## Rules\nForeign rule.\n\n## Unknowns\nNone — no new open questions.');
+  f.change('screen.md', ({ fm }) => { fm.work_execution.units[1].contracts = ['artifact:UNCERTAINTY#rules']; });
+  assert.throws(() => f.run(), /SW-UNCERTAINTY: one canonical unknown table required/);
 });
 
 test('D uncertainty: unrelated domain content and housekeeping change audit bytes only; set ordering is stable', (t) => {

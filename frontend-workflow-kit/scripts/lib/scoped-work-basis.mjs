@@ -5,8 +5,8 @@ import { splitFrontmatter } from './util.mjs';
 import { canonicalRepositoryPath } from './artifact-path.mjs';
 import { readCurrentBytes, hashBytes } from './current-work-request.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
-import { parseTargetRef } from './reconciliation-items.mjs';
 import { parseDecisionWorkScopes } from './scoped-work-declarations.mjs';
+import { parseScopedTargetRef } from './scoped-work-refs.mjs';
 import { resolveScopedApplicabilityProjection } from './scoped-work-applicability.mjs';
 import { ScopedWorkContractError, workText } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
@@ -15,7 +15,7 @@ const fail = (message) => { throw new ScopedWorkContractError(`SW-BASIS: ${messa
 
 export function resolveScopedBindingBasis(options = {}) {
   const { owner, decisionRef, projectRoot, targetIndex } = options;
-  const parsed = parseTargetRef(workText(decisionRef, 'scope basis decision'));
+  const parsed = parseScopedTargetRef(workText(decisionRef, 'scope basis decision'));
   if (!parsed || parsed.kind !== 'decision') fail('canonical typed decision reference required');
 
   // Re-resolve from actual resources; never hash a caller-provided projection,

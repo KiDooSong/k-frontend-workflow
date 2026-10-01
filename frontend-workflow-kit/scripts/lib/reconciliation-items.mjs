@@ -127,7 +127,7 @@ export const REQUIRED_ITEM_COLS = [
 ];
 
 // child target kind → 요구 ID 접두 (grammar 차원의 kind 검사).
-const CHILD_KIND_PREFIX = {
+export const CHILD_KIND_PREFIX = {
   decision: 'D-',
   unknown: 'U-',
   conflict: 'C-',

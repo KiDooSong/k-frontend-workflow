@@ -188,5 +188,8 @@ export function inspectScopedProfile(options = {}) {
       declared.kind === 'visual' ? 'Use actual selected Figma/catalog rules; fixture hooks must not connect speculative API/product behavior. Report fidelity limits without inventing pixel verification.'
         : declared.kind === 'api-contract' ? 'Only clients, pure adapters and contract tests; do not infer UI/business behavior from API availability.'
           : 'Implement only known confirmed behavior; final Figma is not a prerequisite and existing behavior must be preserved.',
+      // #260: the uncertainty layer proved these sections cannot relate; say so instead of failing every request.
+      ...observed.unaudited.map(({ file, section, reason }) => `Unaudited uncertainty section ${file}${section ? `#${section}` : ''}: ${reason}. ` +
+        'It cannot relate to this work (no typed reference, outside every selected native scope and evidence file); fix its format to audit its rows.'),
     ] };
 }

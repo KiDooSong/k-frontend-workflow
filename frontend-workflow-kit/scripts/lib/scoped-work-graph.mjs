@@ -7,11 +7,10 @@ import { splitRow } from './spec.mjs';
 import { canonicalRepositoryPath } from './artifact-path.mjs';
 import { readCurrentBytes, hashBytes, normalizeWorkOrigins } from './current-work-request.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
-import { parseTargetRef } from './reconciliation-items.mjs';
 import { parseInputEvidenceRef } from './provenance.mjs';
 import { resolveArtifact } from './reconciliation-target-index.mjs';
 import { parseReconciliationReferenceView, reconciliationReferenceLabel } from './reconciliation-markdown-ast.mjs';
-import { createScopedReferenceResolver } from './scoped-work-refs.mjs';
+import { createScopedReferenceResolver, parseScopedTargetRef } from './scoped-work-refs.mjs';
 import { createScopedSourceResolver } from './scoped-work-sources.mjs';
 import { workText, workSet, ScopedWorkContractError } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
@@ -23,7 +22,7 @@ function canonicalRef(token) {
   workText(token, 'graph reference');
   const input = parseInputEvidenceRef(token);
   if (input) return normalizeWorkOrigins([{ input_id: input.inputId, source_refs: [token] }])[0].source_refs[0];
-  const ref = parseTargetRef(token);
+  const ref = parseScopedTargetRef(token);
   if (!ref || ['none', 'input'].includes(ref.kind)) fail(`unsupported or malformed typed reference: ${token}`);
   return ref.raw;
 }
@@ -138,6 +137,39 @@ function dependencies(body, view, nodes, omitNestedLists) {
   return scopeSet([...found]);
 }
 
+// Only explicitly typed metadata references are graph edges here. Native
+// untyped decision IDs / ownership / unit declarations belong to the later
+// owner graph; binding approval_ref/basis_digest never seed this traversal.
+// Reads the decoded metadata, so an escaped spelling is the same edge (#260).
+export function scopedGraphMetadataRefs(metadata) {
+  const refs = [];
+  for (const key of ['depends_on', 'decision_refs']) {
+    if (!Object.hasOwn(metadata, key)) continue;
+    if (!Array.isArray(metadata[key])) fail(`${key}: array required`);
+    for (const value of metadata[key]) {
+      workText(value, key);
+      if (prefix.test(value)) refs.push(canonicalRef(value));
+    }
+  }
+  if (Object.hasOwn(metadata, 'sources')) {
+    if (!Array.isArray(metadata.sources)) fail('sources: array required');
+    for (const source of metadata.sources) {
+      workText(source?.ref, 'source ref');
+      if (prefix.test(source.ref)) refs.push(canonicalRef(source.ref));
+    }
+  }
+  if (metadata.approval_source?.ref !== undefined) {
+    const value = workText(metadata.approval_source.ref, 'approval source ref');
+    if (prefix.test(value)) refs.push(canonicalRef(value));
+  }
+  return refs;
+}
+// Every typed content edge the native scanner reads anywhere in one body; it
+// fails as resolution would on an encoded or escaped typed destination.
+export function scopedGraphBodyRefs(body, view) {
+  return dependencies(body, view, view.tree.children, false);
+}
+
 export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifacts = [], projectRoot } = {}) {
   const refs = createScopedReferenceResolver({ targetIndex, inputArtifacts, projectRoot });
   const sources = createScopedSourceResolver({ targetIndex, inputArtifacts, projectRoot });
@@ -181,29 +213,7 @@ export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifa
     const selected = selectedNodes(document.view, record.selection, document.body);
     const dependenciesForRef = dependencies(document.body, document.view, selected,
       Boolean(input) && record.selection.bullet_index != null);
-    // Only explicitly typed metadata references are graph edges here. Native
-    // untyped decision IDs / ownership / unit declarations belong to the later
-    // owner graph; binding approval_ref/basis_digest never seed this traversal.
-    const metadataRefs = [];
-    for (const key of ['depends_on', 'decision_refs']) {
-      if (!Object.hasOwn(record.metadata, key)) continue;
-      if (!Array.isArray(record.metadata[key])) fail(`${key}: array required`);
-      for (const value of record.metadata[key]) {
-        workText(value, key);
-        if (prefix.test(value)) metadataRefs.push(canonicalRef(value));
-      }
-    }
-    if (Object.hasOwn(record.metadata, 'sources')) {
-      if (!Array.isArray(record.metadata.sources)) fail('sources: array required');
-      for (const source of record.metadata.sources) {
-        workText(source?.ref, 'source ref');
-        if (prefix.test(source.ref)) metadataRefs.push(canonicalRef(source.ref));
-      }
-    }
-    if (record.metadata.approval_source?.ref !== undefined) {
-      const value = workText(record.metadata.approval_source.ref, 'approval source ref');
-      if (prefix.test(value)) metadataRefs.push(canonicalRef(value));
-    }
+    const metadataRefs = scopedGraphMetadataRefs(record.metadata);
     for (const dependency of scopeSet([...new Set([...dependenciesForRef, ...metadataRefs])])) {
       edges.push({ from: ref, to: dependency });
       if (!scheduled.has(dependency)) { scheduled.add(dependency); queue.push(dependency); }

@@ -4,6 +4,7 @@
 import { parseDocument } from 'yaml';
 import { own, ownerParts, canonicalJson, byteCompare, normalizeWorkOrigins } from './current-work-request.mjs';
 import { isReconciliationItemId, parseTargetRef, REVIEW_PROFILE_STAGE04 } from './reconciliation-items.mjs';
+import { parseScopedTargetRef, isScopedRowId } from './scoped-work-refs.mjs';
 import {
   ScopedWorkContractError, workObject, workText, workUnitId, workSet, workPath, workVersion,
 } from './scoped-work-request.mjs';
@@ -36,7 +37,7 @@ function pattern(value) {
 }
 function typedRef(value, kinds, label) {
   workText(value, label);
-  const parsed = parseTargetRef(value);
+  const parsed = parseScopedTargetRef(value);
   if (!parsed || !kinds.includes(parsed.kind)) fail(`${label}: invalid typed reference`);
   return value;
 }
@@ -167,7 +168,7 @@ export function parseDecisionWorkScopes(value) {
   const bindings = workSet(value.bindings, (binding) => {
     workObject(binding, ['decision_id', 'owner', 'known_units', 'blocks', 'basis_digest', 'approval_ref'], [], 'scope binding');
     const id = workText(binding.decision_id, 'decision_id');
-    if (!/^D-[A-Za-z0-9-]+$/.test(id)) fail('decision_id: canonical D- ID required');
+    if (!isScopedRowId('decision', id)) fail(`decision_id: ${JSON.stringify(id)} cannot form a scoped decision reference`);
     const known = workSet(binding.known_units, workUnitId, 'known_units', true);
     const blocks = workSet(binding.blocks, workUnitId, 'blocks');
     if (blocks.some((unit) => !known.includes(unit))) fail('scope binding: blocks must be a subset of known_units');
