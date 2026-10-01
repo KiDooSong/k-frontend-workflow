@@ -46,5 +46,5 @@ export function resolveScopedApplicabilityProjection(options = {}) {
     const file = canonicalRepositoryPath(projectRoot, entry.file, { required: true, type: 'file', label: 'scoped applicability' });
     if (hashBytes(readCurrentBytes(file.absolute, 'scoped applicability')) !== entry.sha256) fail('snapshot changed after relation closure');
   }
-  return { projection: { ...current.projection, ownership }, read_set: scopeSet([...files.values()]) };
+  return { projection: { ...current.projection, ownership }, read_set: scopeSet([...files.values()]), unaudited: current.unaudited };
 }

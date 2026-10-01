@@ -130,6 +130,24 @@ test('D decisions: duplicate IDs across actual local/global homes remain ambiguo
   assert.throws(() => f.run(), /ambiguous decision/);
 });
 
+test('D decisions: general-contract IDs need no D- prefix; the table holding the row decides the kind (#260)', (t) => {
+  const f = fixture(t); f.global([row('D-GLOBAL'), row('PANEL-OD-001')]);
+  f.change('screen.md', (doc) => {
+    doc.fm.decision_refs = ['PANEL-OD-001']; doc.body += `\n\n${decisions([row('RESULT-001-D001')])}`;
+  });
+  const out = f.run();
+  assert.deepEqual(ids(out), ['PANEL-OD-001', 'RESULT-001-D001']);
+  assert.deepEqual(relation(out).records.map((record) => record.ref).sort(),
+    ['decision:PANEL-OD-001@open-decision-register', 'decision:RESULT-001-D001@SCREEN-RESULT-001']);
+});
+
+test('D decisions: a local ID that cannot form a scoped reference is reported against its own table (#260)', (t) => {
+  const f = fixture(t);
+  f.change('screen.md', (doc) => { doc.body += `\n\n${decisions([row('D 001')])}`; });
+  assert.throws(() => f.run(), (error) =>
+    /local Open Decisions ID "D 001" in SCREEN-RESULT-001/.test(error.message) && !error.message.includes('decision_refs'));
+});
+
 test('D decisions: an alternative global location and a surface local home are rejected', (t) => {
   const f = fixture(t); f.global([row('D-GLOBAL')], 'elsewhere.md');
   f.change('screen.md', ({ fm }) => { fm.decision_refs = ['D-GLOBAL']; });

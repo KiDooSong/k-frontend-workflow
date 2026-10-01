@@ -119,6 +119,21 @@ packets and serialized verdicts are not authority. For each scoped request:
 - **Legacy readiness** is preserved as information in `legacy_readiness` and its
   phase blockers appear as `future_requirements`. Invalid or structural legacy
   markers and owners missing from the computed state are errors.
+- **Reference IDs** — a decision, Unknown, Conflict or gap reference resolves to
+  the exact ID in the canonical table that holds the row, as in the general
+  contracts: the table, not an ID prefix, decides the kind. Scoped work needs only
+  an ID that fits a typed reference (`[A-Za-z0-9][A-Za-z0-9._-]*`) and does not
+  start with another kind's prefix (`D-`, `U-`, `C-`, `G-`, `INV-`, `VER-`).
+  Investigation and verification references keep their prefix, and Reconciliation
+  Items targets keep the
+  [strict grammar](input-reconciliation.md#reconciliation-contract-v2-opt-in).
+- **Uncertainty audit** — Unknowns and Conflicts tables are audited in every
+  document. A table-shape or row-identity problem stops the preflight when a row
+  there could relate to the request: the document belongs to a selected owner's
+  native scope (its own spec, a surface it hosts, a same-domain, global or
+  undomained document), holds selected evidence, or contains any typed reference.
+  Elsewhere the section is skipped and listed in `required_reviews` as
+  `Unaudited uncertainty section <file>#<section>: <reason>`.
 
 The envelope has `work_contract: 1`, `authority: scoped`, `snapshot`,
 `request_digest`, `origin_inputs`, `requests` (per request `path_authorizations`,

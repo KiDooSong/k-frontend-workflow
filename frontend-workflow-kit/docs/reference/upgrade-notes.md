@@ -17,6 +17,24 @@ or root config.
 
 ---
 
+## Scoped work accepts general-contract IDs and formats (#260)
+
+- Scoped work no longer requires `D-`/`U-` ID prefixes. Local and global Open
+  Decisions, `decision_refs`, Unknowns, Conflicts, unit `contracts`,
+  `isolation.decisions` and `decision_work_scopes` bindings resolve the exact ID
+  in its canonical table, as legacy readiness and validate already did. An ID
+  still must fit a typed reference and must not start with another kind's
+  prefix. See [reference IDs](scoped-work.md#evaluation-on-the-immutable-baseline).
+- An Unknowns/Conflicts table-shape or row-identity problem stops the preflight
+  only where a row could relate to the request. Elsewhere, for example a
+  prose-only `## Unknowns` on an unadopted screen of another domain, the section
+  is skipped and listed in `required_reviews`.
+- A local Open Decisions ID that cannot form a reference is now reported against
+  its own table instead of `decision_refs`.
+- Projections and basis digests that resolved before are unchanged.
+- Manual action: none. Fix a format listed in `required_reviews` to bring that
+  section back into the audit.
+
 ## Hand-written files under codegen output globs (#255)
 
 - Current and scoped work now apply the generated/`do_not_edit` final deny to a

@@ -6,9 +6,8 @@ import path from 'node:path';
 import { col, hasHeader } from './spec.mjs';
 import { canonicalRepositoryPath } from './artifact-path.mjs';
 import { ownerParts, readCurrentBytes, hashBytes } from './current-work-request.mjs';
-import { parseTargetRef } from './reconciliation-items.mjs';
 import { REQUIRED_OPEN_DECISION_COLUMNS, openDecisionRowIsMalformed } from './open-decisions.mjs';
-import { createScopedReferenceResolver } from './scoped-work-refs.mjs';
+import { createScopedReferenceResolver, parseScopedTargetRef } from './scoped-work-refs.mjs';
 import { parseDecisionWorkScopes } from './scoped-work-declarations.mjs';
 import { resolveScopedApplicabilityProjection } from './scoped-work-applicability.mjs';
 import { inspectScopedDecisionBindings } from './scoped-work-bindings.mjs';
@@ -45,7 +44,7 @@ function snapshot(owner, options) {
     }
   }
   function decision(ref) {
-    const parsed = parseTargetRef(ref);
+    const parsed = parseScopedTargetRef(ref);
     if (!parsed || parsed.kind !== 'decision') fail('canonical decision reference required');
     // Preserve the old/new union even when a referrer or applicability edge was
     // removed. Reusing only the after closure could hide a simultaneous reopen.

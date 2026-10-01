@@ -18,7 +18,7 @@ const unit = (id = 'known') => ({ id, kind: 'behavior', contracts: [`artifact:RU
 
 // Only isolated synthetic repositories are authored/committed here. A fixture
 // approval_ref and a tool-computed digest are explicitly not human approval.
-function fixture(t, { blocks = ['other'], status = 'open', absent = false, stale = false } = {}) {
+function fixture(t, { blocks = ['other'], status = 'open', absent = false, stale = false, id = 'D-ONE' } = {}) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'scoped-scope-evaluation-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const docsDir = path.join(root, 'docs'), kitRoot = path.join(root, '.kit'), docs = new Map();
@@ -37,21 +37,21 @@ function fixture(t, { blocks = ['other'], status = 'open', absent = false, stale
     hook: ['src/features/{domain}/hooks/**'], api_client: ['src/api/**'], test: ['src/features/{domain}/tests/**'], route: ['src/routes/**'] } }));
   put(resources.manifest, JSON.stringify({ version: 1, artifacts: {} }));
   write('screen.md', { artifact_id: 'SCREEN-RESULT-001', artifact_type: 'screen-spec', screen_id: 'RESULT-001', domain: 'result', status: 'draft',
-    screen_entry: `${ROOT}/screens/RESULT-001.tsx`, decision_refs: ['D-ONE'], work_execution: { version: 1,
+    screen_entry: `${ROOT}/screens/RESULT-001.tsx`, decision_refs: [id], work_execution: { version: 1,
       private_paths: { hook: [`${ROOT}/hooks/RESULT-001/**`] }, test_paths: [`${ROOT}/tests/RESULT-001/**`], units: [unit(), unit('other')] } }, '## Notes\nOwner.');
   write('rules.md', { artifact_id: 'RULES', artifact_type: 'domain-rules', domain: 'result', status: 'confirmed' },
     '## Rules\nKnown contract.\n\n## Other\nOther contract.\n\n## Untouched\nUnselected prose.');
   write(HOME, { artifact_id: 'open-decision-register', artifact_type: 'open-decision-register', status: 'draft',
-    ...(absent ? {} : { decision_work_scopes: { version: 1, bindings: [{ decision_id: 'D-ONE', owner: OWNER,
+    ...(absent ? {} : { decision_work_scopes: { version: 1, bindings: [{ decision_id: id, owner: OWNER,
       known_units: [...UNITS], blocks, basis_digest: `sha256:${'0'.repeat(64)}`, approval_ref: 'review:fixture-only-unverified' }] } }) },
-  decisions([row('D-ONE', status), row('D-TWO')]));
+  decisions([row(id, status), row('D-TWO')]));
   const basisOptions = () => ({ owner: OWNER, projectRoot: root, docsDir, kitRoot, policyFile: file(resources.policy),
     layoutFile: file(resources.layout), manifestFile: file(resources.manifest), targetIndex: buildReconciliationTargetIndex({
       docs: [...docs.values()].map((target) => ({ file: target, fm: splitFrontmatter(fs.readFileSync(target, 'utf8')).data })),
     }) });
   const recordDigest = () => {
-    const digest = resolveScopedBindingBasis({ ...basisOptions(), decisionRef: REF }).basis_digest;
-    edit(HOME, ({ fm }) => { fm.decision_work_scopes.bindings.find((b) => b.decision_id === 'D-ONE' && b.owner === OWNER).basis_digest = digest; });
+    const digest = resolveScopedBindingBasis({ ...basisOptions(), decisionRef: `decision:${id}@open-decision-register` }).basis_digest;
+    edit(HOME, ({ fm }) => { fm.decision_work_scopes.bindings.find((b) => b.decision_id === id && b.owner === OWNER).basis_digest = digest; });
     return digest;
   };
   if (!absent && !stale) recordDigest();
@@ -80,6 +80,14 @@ test('D Decision scopes: current canonical blocks narrow only this prerequisite 
   assert.equal(out.git_snapshot.before.commit, f.git('rev-parse', 'HEAD')); assert.equal(out.git_snapshot.after.tree, f.git('rev-parse', 'HEAD^{tree}'));
   assert.deepEqual(fs.readFileSync(f.file('.git/index')), index); assert.equal(f.git('status', '--porcelain'), before);
   const conservative = inspectScopedGitDecisionTransitions(f.resources); assert.deepEqual(conservative.blocking_units, UNITS, 'existing conservative inspector API is unchanged');
+});
+
+test('D Decision scopes: a binding narrows a general-contract decision ID without a D- prefix (#260)', (t) => {
+  const out = fixture(t, { id: 'PANEL-OD-001' }).run();
+  assert.deepEqual(out.blocking_units, ['other']);
+  const check = out.after_decision_scopes.find((entry) => entry.decision === 'decision:PANEL-OD-001@open-decision-register');
+  assert.deepEqual([check.binding_state, check.scope_source], ['current-unverified', 'current-canonical-declaration']);
+  assert.equal(out.transition_valid, true); noPermit(out);
 });
 
 test('D Decision scopes: explicit current empty blocks differs from missing scope without authenticating its author', (t) => {

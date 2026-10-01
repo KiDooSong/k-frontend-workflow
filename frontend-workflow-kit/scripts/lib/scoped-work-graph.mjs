@@ -7,11 +7,10 @@ import { splitRow } from './spec.mjs';
 import { canonicalRepositoryPath } from './artifact-path.mjs';
 import { readCurrentBytes, hashBytes, normalizeWorkOrigins } from './current-work-request.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
-import { parseTargetRef } from './reconciliation-items.mjs';
 import { parseInputEvidenceRef } from './provenance.mjs';
 import { resolveArtifact } from './reconciliation-target-index.mjs';
 import { parseReconciliationReferenceView, reconciliationReferenceLabel } from './reconciliation-markdown-ast.mjs';
-import { createScopedReferenceResolver } from './scoped-work-refs.mjs';
+import { createScopedReferenceResolver, parseScopedTargetRef } from './scoped-work-refs.mjs';
 import { createScopedSourceResolver } from './scoped-work-sources.mjs';
 import { workText, workSet, ScopedWorkContractError } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
@@ -23,7 +22,7 @@ function canonicalRef(token) {
   workText(token, 'graph reference');
   const input = parseInputEvidenceRef(token);
   if (input) return normalizeWorkOrigins([{ input_id: input.inputId, source_refs: [token] }])[0].source_refs[0];
-  const ref = parseTargetRef(token);
+  const ref = parseScopedTargetRef(token);
   if (!ref || ['none', 'input'].includes(ref.kind)) fail(`unsupported or malformed typed reference: ${token}`);
   return ref.raw;
 }

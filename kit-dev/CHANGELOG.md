@@ -4,6 +4,23 @@
 
 ## Unreleased
 
+### fix(workflow) — scoped 판정이 일반 계약의 ID·문서 형식을 받아들임 (#260)
+
+- scoped preflight는 결정 ID에 `D-`, Unknown ID에 `U-` 접두를 요구했다. 또 모든 문서의 Unknowns·Conflicts 표
+  형식을 치명 오류로 검사했다. 그래서 legacy readiness·validate가 통과시키는 문서 하나 때문에 채택하지 않은
+  화면에서도 모든 scoped 요청이 exit 2로 멈췄다. 로컬 결정 ID 오류는 `decision_refs`를 원인으로 가리켰다.
+- 이제 결정·Unknown·Conflict·gap 참조는 그 행이 있는 canonical 표에서 정확히 일치하는 ID로 해소한다. 종류는
+  ID 접두가 아니라 표가 정한다. typed ref에 들어갈 수 있는 ID여야 하고, 다른 종류의 접두로 시작하면 안 된다.
+  investigation·verification 참조와 Reconciliation Items target 문법은 그대로 엄격하다.
+- Unknowns·Conflicts의 표 형식·행 식별 오류는 행이 요청과 관계될 수 있는 문서에서만 preflight를 멈춘다.
+  선택 owner의 native 범위, 선택 근거를 가진 문서, typed 참조가 있는 문서가 그렇다. 그 밖의 섹션은 건너뛰고
+  `required_reviews`에 `Unaudited uncertainty section <file>#<section>: <reason>`으로 남긴다.
+- 로컬 결정 ID 오류 문구는 그 ID가 있는 로컬 표를 가리킨다. 전에 해소되던 투영과 basis digest는 바뀌지 않는다.
+- 회귀 테스트: 접두 없는 로컬·전역 결정, `decision_work_scopes` binding, 단위 계약·격리 결정, Unknown의 native·
+  inverse 관계, 그래프 밖 형식 문제 4종의 건너뜀과 그 경계(native·근거 파일·typed 참조), profile의
+  `required_reviews`. 이슈의 `coupon-feature` 재현(B·C·D)은 공개 CLI 테스트가 됐다. 문서: `scoped-work.md`,
+  `upgrade-notes.md`, doc-ownership.
+
 ### fix(workflow) — codegen 출력 글롭 아래의 손으로 쓴 파일을 생성물로 거부하지 않음 (#255)
 
 - current `--work`의 preflight·backstop과 scoped 경로 검사는 manifest의 생성물 경로를 모두 final deny로 썼다.

@@ -7,7 +7,7 @@ import { splitFrontmatter } from './util.mjs';
 import { canonicalRepositoryPath } from './artifact-path.mjs';
 import { readCurrentBytes, hashBytes } from './current-work-request.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
-import { parseTargetRef } from './reconciliation-items.mjs';
+import { parseScopedTargetRef } from './scoped-work-refs.mjs';
 import { parseDecisionWorkScopes } from './scoped-work-declarations.mjs';
 import { resolveScopedApplicabilityProjection } from './scoped-work-applicability.mjs';
 import { resolveScopedBindingBasis } from './scoped-work-basis.mjs';
@@ -42,7 +42,7 @@ export function inspectScopedDecisionBindings(options = {}) {
   }
   function bindings(record) {
     if (homes.has(record.file)) return homes.get(record.file);
-    const parsed = parseTargetRef(record.ref);
+    const parsed = parseScopedTargetRef(record.ref);
     if (!parsed || parsed.kind !== 'decision') fail('canonical decision record required');
     const indexed = targetIndex.artifacts.get(parsed.ownerArtifactId);
     const home = splitFrontmatter(decodeGitUtf8(read(record.file), 'scoped binding home'));
