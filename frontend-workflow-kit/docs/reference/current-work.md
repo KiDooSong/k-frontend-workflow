@@ -57,18 +57,45 @@ current and scoped requests is an input error.
 
 ## Common CLI flow
 
-Use the same request and the same explicit resource options throughout:
+Run once before implementation and once afterwards with the **pre-work packet**.
+Use the same request and explicit resource options. Keep evidence outside the selected
+repository, in distinct before/after directories:
 
 ```bash
-npm run workflow:readiness -- --work .workflow/current-work.json --json
-npm run workflow:packet -- --work .workflow/current-work.json --out temp/current-work-packet.md --json
-npm run workflow:run -- --work .workflow/current-work.json --json
+RUN_EVIDENCE="$(mktemp -d)"
+npm run workflow:run -- --work .workflow/current-work.json \
+  --out "$RUN_EVIDENCE/before" --json
 
-# after implementation
-npm run workflow:forbidden-paths -- --work .workflow/current-work.json --json
-npm run workflow:report -- --work .workflow/current-work.json --packet temp/current-work-packet.md --json
-npm run workflow:run -- --work .workflow/current-work.json --json
+# Implement, regenerate applicable views, and run validate plus relevant tests/lint.
+# Verify before committing: the checkpoint requires the same HEAD baseline.
+npm run workflow:run -- --work .workflow/current-work.json \
+  --packet "$RUN_EVIDENCE/before/work-packet.md" \
+  --out "$RUN_EVIDENCE/after" --json
 ```
+
+Before editing, require `ready: true`, permission for every target and
+`HALT_READY_FOR_WORK`. After editing, inspect `ready`, `backstop.ok`, violations,
+and failed/unrun validation alongside the state. `DONE_PENDING_REVIEW` and exit 0
+are review evidence, not approval. Scoped work uses this flow with
+`.workflow/scoped-work.json` and its own authority checks.
+
+Each run prepares a fresh immutable baseline once. A packet-bound run compares the
+checkpoint before collecting Git evidence once, even when denied or absorbed.
+The same results feed state, JSON, status and report; no process cache is used.
+For a normal ready task this changes the representative flow's prepare calls from
+6 to 2 and backstop calls from 4 to 2. Time/token improvement has not been measured.
+
+Standalone commands remain useful diagnostics rather than required steps around run:
+
+| Command | Select when |
+|---|---|
+| `readiness --work` | inspect owner/target denials, ceiling or future requirements separately |
+| `packet --work --out <packet.md>` | collect only a pre-work packet |
+| `forbidden-paths --work` | inspect the diff separately; use `--staged` or `--enforce` when needed |
+| `report --work --packet <packet.md>` | collect the existing checkpoint-checked report alone |
+
+Run does not accept staged/enforce/range selectors. Each standalone command still
+prepares its own baseline and can run independently.
 
 For a non-default project layout, repeat the same `--root`, `--docs`, `--src`,
 `--policy`, `--manifest`, `--layout`, and optional `--ci` values. The work branch
@@ -122,8 +149,8 @@ authority file. The computation never follows a symbolic link out of the baselin
 a linked source root (or a linked parent) counts as empty, and a link inside the
 docs directory or on the docs/src path is an input error.
 
-Packet values are audit evidence only. Report/backstop reads the current request
-again and requires the same normalized digest **and raw request bytes**; packet
+Packet values are audit evidence only. Packet-bound run, report and backstop read the current request
+again and require the same normalized digest **and raw request bytes**; packet
 baseline commit/tree and origin identity/hash must still match. Changing the
 request, origin, policy/manifest/layout/CI authority, or other authority records
 is an authoring checkpoint, not a way to self-grant the same implementation run.
@@ -151,13 +178,43 @@ violations in JSON). `--enforce` returns exit 1 on violations. Usage/collection
 errors return exit 2. A generated report, `DONE_PENDING_REVIEW`, or exit 0 is
 review evidence, not product/merge approval.
 
+## Packet-bound run outputs
+
+`run --work --packet <packet.md>` uses the selected authority's existing packet
+parser/assertion. It checks digest, raw request bytes, HEAD commit/tree, origins,
+project/resource context and authority read sets. Scoped directory and target read
+sets are also bound. A checkpoint is never an allow list; destination authority,
+inventory, API evidence and concrete path checks still apply.
+
+JSON and status Markdown add `checkpoint: { packet: <resolved input path>, matched: true }`
+only for packet-bound runs. They preserve the full collected `backstop`, including
+changed/implementation records, violations, `ok` and destination snapshot, for every
+state. With `--out <dir>`, packet-bound runs write `work-packet.md`, `run-report.md`
+and `<dir>.md` from the same observation even with no diff or a HALT state. Without
+`--out`, JSON and human status retain the evidence and no report file is written.
+
+The input packet must remain separate from all three output files, including
+physical path aliases and hardlinks. Every output leaf must be absent before writing;
+an existing bundle is rejected, and unrelated files in the directory are preserved.
+Input/checkpoint mismatch, output collision and Git collection failure exit 2 before
+writing the bundle. An output I/O failure also exits 2; a partial bundle is not success
+evidence (writes are not a multi-file transaction).
+
+Without `--packet`, existing run behavior is preserved: deny/absorbed runs skip
+backstop, a ready run with only missing requested changes omits it from status, and
+report output requires an implementation diff. No checkpoint field is added.
+For ordinary post-work handoff, pass the pre-work packet. If it was omitted, record
+checkpoint comparison as unverified; this guidance adds no hard gate. Keep the
+request, packet, resource options and evidence paths in the session handoff. A moved
+HEAD or changed scope needs a new authoring/preflight checkpoint.
+
 ## Run states
 
 | state | meaning | exit |
 |---|---|---:|
 | `HALT_READY_FOR_WORK` | all selected current paths and required preflight evidence are ready; no implementation diff yet, and the backstop reports only the still-missing requested changes | 0 |
-| `HALT_AMBIGUITY` | at least one current request is denied or execution evidence is unresolved, including a backstop violation (such as changed authority or API evidence) before any implementation diff; the `backstop` result is kept | 0 |
-| `HALT_NOT_APPLICABLE` | all selected owners are absorbed/non-executable; report target only, do not auto-retarget | 0 |
+| `HALT_AMBIGUITY` | at least one current request is denied or execution evidence is unresolved, including a backstop violation (such as changed authority or API evidence) before any implementation diff; packet-bound runs keep full evidence even when denied | 0 |
+| `HALT_NOT_APPLICABLE` | all selected owners are absorbed/non-executable; report the canonical target, do not auto-retarget; packet-bound runs retain actual diff evidence | 0 |
 | `HALT_TOOL_ERROR` | malformed/unsupported input or collection failure | 2 |
 | `DONE_PENDING_REVIEW` | an implementation diff exists and report/backstop evidence is available | 0 |
 

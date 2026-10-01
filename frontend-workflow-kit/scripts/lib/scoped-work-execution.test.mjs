@@ -14,7 +14,7 @@ import { COMPONENT_MAPPING_COLUMNS, MAPPING_PROVENANCE_COLUMNS } from './mapping
 import { buildReconciliationTargetIndex } from './reconciliation-target-index.mjs';
 import { resolveScopedBindingBasis } from './scoped-work-basis.mjs';
 import { prepareScopedWork, cleanupScopedWork, publicScopedEnvelope, isScopedWorkDocument, evaluateScopedGit,
-  scopedPacketEnvelope, assertScopedPacketMatches } from './scoped-work-execution.mjs';
+  scopedPacketEnvelope, renderScopedPacketMarkdown, assertScopedPacketMatches } from './scoped-work-execution.mjs';
 
 const SURFACE = 'surface:RESULT-PANEL', MEMBERS = ['RESULT-001', 'RESULT-002'];
 const DOCS = 'docs/frontend-workflow', PREFIX = 'src/features/result', SHARED = `${PREFIX}/components/panel`;
@@ -362,9 +362,11 @@ test('D backstop: a Git-ignored new entry in a consumed API evidence directory i
 test('D run: an evidence change before any implementation is kept by the public runner, not reported as ready for work', (t) => {
   const r = repository(t); r.api('contracts/api'); r.put('.gitignore', 'contracts/api/local.ts\n'); r.commit('API evidence directory');
   const work = r.request(apiRequest());
-  const run = () => {
+  const packet = path.join(r.outside, 'prework.md');
+  fs.writeFileSync(packet, renderScopedPacketMarkdown(r.prepare(t, work)));
+  const run = (extra = []) => {
     const result = spawnSync(process.execPath, [path.join(KIT_ROOT, 'scripts', 'workflow-run.mjs'), '--work', work, '--root', r.root, '--docs', DOCS,
-      '--src', 'src', '--policy', '.kit/policy.yaml', '--manifest', '.kit/manifest.yaml', '--layout', '.kit/layout.yaml', '--json'],
+      '--src', 'src', '--policy', '.kit/policy.yaml', '--manifest', '.kit/manifest.yaml', '--layout', '.kit/layout.yaml', ...extra, '--json'],
     { cwd: r.root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout: 120000 });
     assert.equal(result.status, 0, result.stderr || result.stdout);
     return JSON.parse(result.stdout);
@@ -378,6 +380,11 @@ test('D run: an evidence change before any implementation is kept by the public 
   assert.equal(held.state, 'HALT_AMBIGUITY');
   assert.deepEqual(held.backstop.implementation_records, []);
   assert.deepEqual(held.backstop.violations.map((entry) => entry.code).sort(), ['SW-GIT-EVIDENCE-DIRECTORY-CHANGED', 'SW-GIT-MISSING-REQUESTED']);
+  const checked = run(['--packet', packet, '--out', path.join(r.outside, 'after')]);
+  assert.equal(checked.state, 'HALT_AMBIGUITY');
+  assert.deepEqual(checked.backstop, held.backstop);
+  assert.equal(checked.checkpoint.matched, true);
+  assert.ok(fs.existsSync(path.join(r.outside, 'after/run-report.md')));
 });
 
 const ORIGIN = 'IN-20260923-figma-001';

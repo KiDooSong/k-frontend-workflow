@@ -25,10 +25,8 @@ no-work/legacy의 blocking 일괄 중단을 다른 분기에 먼저 적용하지
 ### Current-work 분기
 [current work](../../docs/reference/current-work.md)의 `authority: current` request를 agent가 조립한다(단일 target 포함, 시작 입력은 `origin_inputs`에 보존).
 
-```bash
-npm run workflow:readiness -- --work .workflow/current-work.json --json
-npm run workflow:run -- --work .workflow/current-work.json --json
-```
+[대표 run 흐름](../../docs/reference/current-work.md#common-cli-flow)에 따라 사전 `run --work … --out`으로 packet을 보존하고,
+구현 커밋 전에 같은 packet을 사후 `run --packet`에 전달한다. 별도 readiness 호출은 진단용이다.
 
 기존 권한만 사용한다. `ready: true`·target 판정·구현 전 `HALT_READY_FOR_WORK`를 확인한다. 상위 미충족은 `future_requirements`로 보고하고 `legacy_readiness.blocking`은 보존하되, raw blocking만으로 current 결과를 다시 일괄 중단하지 않는다.
 실제 deny·미해결 origin·오류·absorbed는 멈추며 no-work/visual로 fallback하지 않는다.
@@ -81,7 +79,7 @@ testID·Tier3 항목이 있으면 해당 산출물(testID intake note, `implemen
 시각 값·selector·endpoint·DTO·copy를 발명하지 않는다. shared shell/layout/component 소유 항목을 per-screen 파일에 ad-hoc으로 넣지 않는다. Figma와 canonical behavior/decision이 충돌하면 reconcile로 되돌린다.
 
 ## 3. 검증 / 핸드오프
-current 분기에서는 작은 관련 test/lint와 `workflow:validate`를 실행하고, [Stage 08 current-work report/backstop](../../docs/reference/workflow-stages/08-validate-and-report.md#current-work-reportbackstop)에 따라 같은 `--work` request/origin/resource로 실제 구현 snapshot을 확인한다. no-work 화면 요약으로 current 판정을 대체하지 않는다. 실행·캡처 미검증은 보고하며 그 사실만으로 새 Draft/머지 gate를 만들지 않는다.
+current/scoped 분기에서는 작은 관련 test/lint와 `workflow:validate`를 실행하고, [Stage 08 current-work report/backstop](../../docs/reference/workflow-stages/08-validate-and-report.md#current-work-reportbackstop)에 따라 같은 `--work` request/origin/resource와 사전 packet으로 실제 구현 snapshot을 확인한다. no-work 화면 요약으로 current 판정을 대체하지 않는다. 실행·캡처 미검증은 보고하며 그 사실만으로 새 Draft/머지 gate를 만들지 않는다.
 
 no-work/visual 분기는 작은 관련 test/lint 뒤 다음을 실행한다:
 ```bash

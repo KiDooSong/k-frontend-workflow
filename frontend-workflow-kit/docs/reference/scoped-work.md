@@ -95,6 +95,16 @@ request selects one owner **unit**:
 - A document mixing current and scoped requests is an input error; submit
   separate work requests.
 
+## Common CLI flow
+
+Use the [representative before/after run flow](current-work.md#common-cli-flow)
+with `.workflow/scoped-work.json`. Carry the same request/origins/resource options
+and the pre-work packet to the post-work run, before committing the implementation.
+[Packet-bound output and preservation rules](current-work.md#packet-bound-run-outputs)
+apply to scoped runs too. The scoped parser/assertion binds its own authority,
+directory and target read sets; a current packet cannot stand in for it.
+Standalone readiness/packet/report/forbidden-paths remain diagnostic/compatible entries.
+
 ## Evaluation on the immutable baseline
 
 Every decision is computed from the materialized `HEAD` tree. Worktree edits,
@@ -197,7 +207,8 @@ isolation, or who approved a binding. Reviewers own those judgments.
   `surface-visual-evidence-unresolved`.
 - Git evidence is `HEAD` against the worktree, or against the index with
   `--staged`; commit ranges are not an input. Committing the implementation moves
-  the baseline, so check it with `forbidden-paths` or `report` before that commit.
+  the baseline, so check it with the packet-bound post-work `run` before that commit (standalone
+  `forbidden-paths`/`report` remain available).
 - A consumed API evidence directory is compared with its committed members, so an
   uncommitted or Git-ignored file there (OS or editor metadata too) is reported in
   the worktree check. Keep such directories clean, or name the evidence files.

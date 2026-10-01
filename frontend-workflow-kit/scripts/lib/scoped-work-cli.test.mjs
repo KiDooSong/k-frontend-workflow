@@ -97,10 +97,12 @@ test('D34 CLI: the five public work CLIs run a scoped request from preflight to 
   const report = r.json(r.cli('workflow-report.mjs', work, '--packet', packet, '--json'));
   assert.deepEqual([report.report_type, report.backstop.ok, report.approval_verified], ['scoped-work', true, false]);
   const outDir = path.join(r.outside, 'run');
-  const done = r.json(r.cli('workflow-run.mjs', work, '--out', outDir, '--json'));
+  const done = r.json(r.cli('workflow-run.mjs', work, '--packet', packet, '--out', outDir, '--json'));
   assert.deepEqual([done.authority, done.state, done.backstop.ok], ['scoped', 'DONE_PENDING_REVIEW', true]);
   assert.match(fs.readFileSync(`${outDir}.md`, 'utf8'), /kind: scoped-work-run-status[\s\S]*# Scoped Work Run — DONE_PENDING_REVIEW/);
   assert.ok(fs.existsSync(path.join(outDir, 'run-report.md')));
+  assert.deepEqual(done.backstop, report.backstop);
+  assert.deepEqual(done.checkpoint, { packet, matched: true });
 });
 
 test('D34 CLI: unrequested changes, packet drift and baseline denials are never reported as success', (t) => {

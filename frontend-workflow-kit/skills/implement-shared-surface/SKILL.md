@@ -17,7 +17,7 @@ description: canonical Surface ID를 shared-surface readiness와 모든 member s
 
 ## 불변식
 
-- 판정은 직접 재구현하지 않고 `workflow:state`와 `workflow:readiness -- --surface <ID> --json`만 소비한다.
+- 판정은 직접 재구현하지 않고 선택한 실행 분기의 CLI 출력을 소비한다. no-work 조회는 `workflow:state`와 `workflow:readiness -- --surface <ID> --json`을 쓴다.
 - policy `work_execution.owners`에 채택된 surface는 이 legacy 절차 대신 [scoped work](../../docs/reference/scoped-work.md)의
   `authority: scoped` unit 요청을 쓴다. 채택 경로는 no-work/legacy 판정에서 `work-selection-required`이며 우회하지 않는다.
 - surface readiness의 `allowed_paths`만 수정한다. `forbidden_paths`와 `path_authorization.allowed=false` 경로는 절대 수정하지 않는다.
@@ -28,6 +28,14 @@ description: canonical Surface ID를 shared-surface readiness와 모든 member s
   live policy 교체, CI/hard-gate 승격을 하지 않는다.
 
 ## 1. Preflight
+
+먼저 [Stage 06의 실행 분기](../../docs/reference/workflow-stages/06-implement-screen-or-code.md#select-the-execution-branch-first)를 선택한다.
+기존 권한의 concrete 작업은 **단일 target도** [current work](../../docs/reference/current-work.md)의
+`surface:<ID>` request를 쓰고, 채택 경로는 [scoped work](../../docs/reference/scoped-work.md)의 unit을 고른다.
+current/scoped는 [대표 run 흐름](../../docs/reference/current-work.md#common-cli-flow)으로 사전 packet을 남긴다.
+실제 deny·generated 제한·모든 member/host 교집합을 유지하며 다른 분기로 fallback하지 않는다.
+
+아래 루프는 `--work` 없는 조회·호환 절차다. current/scoped 실행 앞에 의무적으로 붙이지 않는다.
 
 1. 위 CLI별 지원 부분집합으로 상태와 surface readiness를 실행한다.
    ```bash
@@ -74,7 +82,11 @@ description: canonical Surface ID를 shared-surface readiness와 모든 member s
 
 ## 4. 검증과 보고
 
-가장 작은 관련 test/lint를 먼저 실행한 뒤 다음을 같은 옵션 기준으로 실행한다.
+가장 작은 관련 test/lint와 `workflow:validate`를 실행한다. current/scoped는
+[Stage 08 report/backstop](../../docs/reference/workflow-stages/08-validate-and-report.md#current-work-reportbackstop)에 따라
+같은 request/origin/resource·사전 packet으로 커밋 전에 사후 run을 수행한다. 사람 채택/binding은 별도 checkpoint다.
+
+다음은 no-work 조회·호환 절차에 같은 옵션 기준으로 적용한다.
 
 ```bash
 npm run workflow:state

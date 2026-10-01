@@ -22,27 +22,25 @@ product approval.
 When ScreenSpec lifecycle changed, confirm the active-only aggregate and the absorbed source's
 direct readiness redirect described in [`screen-lifecycle.md`](../screen-lifecycle.md).
 
-For adopted shared-surface work, also re-run `workflow:readiness -- --surface <SURFACE_ID> --json` and every member's `--screen` readiness; report limiting member modes and delegated/forbidden paths.
+For no-work shared-surface diagnostics, re-run `workflow:readiness -- --surface <SURFACE_ID> --json` and every member's `--screen` readiness. Selected current/scoped work follows the packet-bound run below; report its owner/host evidence and remaining limits.
 
 ## Current-work report/backstop
 
-Stage 06에서 `--work`를 사용했다면 [current-work reference](../current-work.md)에 따라 같은
-request/origin/resource를 report/backstop까지 유지한다. Packet의 stored allow 값은 audit-only이고,
-실제 구현 snapshot에서 request raw hash, origin raw hash, baseline authority, concrete path helper,
-전체 Git diff를 다시 확인한다.
+Stage 06에서 `--work`를 사용했다면 [대표 run 흐름](../current-work.md#common-cli-flow)의
+사후 `run --packet <사전 packet> --out <after>`를 **구현 커밋 전에** 실행한다. 사전과 같은
+request/origin/resource·HEAD baseline을 유지하고, 증거는 저장소 밖의 다른 bundle에 남긴다.
+Packet의 stored allow 값은 audit-only이며 실제 구현 snapshot의 raw request/origin, authority와 전체 diff를 다시 확인한다.
 
-```bash
-npm run workflow:forbidden-paths -- --work .workflow/current-work.json --json
-npm run workflow:report -- --work .workflow/current-work.json --packet temp/current-work-packet.md --json
-npm run workflow:run -- --work .workflow/current-work.json --json
-```
+`ready`, `backstop.ok`, 위반·변경 목록·destination snapshot을 상태와 함께 보고한다.
+HALT나 diff 없음에서도 packet-bound run은 수집한 증거를 보존하고 `--out`이면 report를 쓴다.
+상세 checkpoint·출력 보존·exit 계약은 [current-work reference](../current-work.md#packet-bound-run-outputs)가 정본이다.
+별도 `forbidden-paths`/`report`는 진단·호환이 필요할 때 선택한다. `--staged`/`--enforce`는 standalone
+`forbidden-paths`에서 사용하며, `--enforce` 위반만 exit 1이다.
 
-`forbidden-paths`는 기본 advisory이고 `--enforce` 위반만 exit 1이다. `DONE_PENDING_REVIEW`, report
-생성, exit 0은 승인이나 위반 없음의 대체 신호가 아니다. 실행한 검증, 실패/미실행 검증, 남은
-Decision/Unknown/Conflict를 구분해 handoff한다.
-
-`authority: scoped` request도 같은 세 명령을 쓴다([scoped work](../scoped-work.md)). backstop은 소비한 authority·문서/입력
-inventory·API 근거 디렉터리가 바뀌지 않았는지와, 허용된 요청 target의 regular-file `A`/`M`만 변경됐는지를 확인한다.
+`DONE_PENDING_REVIEW`, report 생성, exit 0은 승인이나 위반 없음의 대체 신호가 아니다.
+실행한 검증, 실패/미실행 검증, 누락된 checkpoint 대조, 남은 Decision/Unknown/Conflict를 구분해 handoff한다.
+`authority: scoped`도 같은 대표 흐름을 쓰며 [scoped work](../scoped-work.md)의 모든 host·공유 target AND,
+regular-file `A`/`M`·authority/inventory/API evidence 검사를 유지한다.
 보고에는 도구가 증명하지 않는 의미적 격리·사람 승인·시각 정합을 별도로 적는다.
 
 ## Optional web E2E evidence
