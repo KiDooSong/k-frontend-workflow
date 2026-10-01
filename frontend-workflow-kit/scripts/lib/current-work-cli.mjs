@@ -38,7 +38,7 @@ const TOOL_VALUES = {
   readiness: [...COMMON_VALUES, 'out'],
   packet: [...COMMON_VALUES, 'out', 'date', 'seq', 'owner'],
   report: [...COMMON_VALUES, 'packet', 'out', 'review', 'date', 'seq'],
-  run: [...COMMON_VALUES, 'out', 'review', 'date', 'seq', 'owner'],
+  run: [...COMMON_VALUES, 'packet', 'out', 'review', 'date', 'seq', 'owner'],
   'forbidden-paths': [...COMMON_VALUES],
 };
 const TOOL_BOOLS = {
@@ -68,7 +68,7 @@ function help(tool) {
   const common = '--work <request.json> [--root <project>] [--docs <dir>] [--src <dir>] [--policy <file>] [--manifest <file>] [--layout <file>] [--ci <file>]';
   const suffix = tool === 'packet' ? ' [--out <packet.md>] [--json]'
     : tool === 'report' ? ' --packet <packet.md> [--out <report.md>] [--json]'
-    : tool === 'run' ? ' [--out <dir>] [--json]'
+    : tool === 'run' ? ' [--packet <pre-work packet.md>] [--out <dir>] [--json]'
     : tool === 'forbidden-paths' ? ' [--staged] [--enforce] [--json]'
     : ' [--out <result.json>] [--json]';
   return `${tool}: work execution (authority:current or authority:scoped per request document)\nUsage: ${common}${suffix}\n`;
@@ -77,6 +77,40 @@ function own(v, k) { return Object.prototype.hasOwnProperty.call(v || {}, k); }
 function opt(flags, name) { return typeof flags[name] === 'string' ? flags[name] : undefined; }
 function resolveOut(value) { return value ? path.resolve(value) : null; }
 function writeJson(file, value) { writeFile(file, JSON.stringify(value, null, 2) + '\n'); }
+// Resolve existing ancestors too: a fresh bundle can be reached through a
+// symlinked directory. Existing leaves (including dangling links) are never fresh.
+function physicalOutputPath(file) {
+  try { return fs.realpathSync(file); }
+  catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    const parent = path.dirname(file);
+    if (parent === file) throw error;
+    return path.join(physicalOutputPath(parent), path.basename(file));
+  }
+}
+function assertFreshRunOutputs(packet, outDir) {
+  const input = fs.realpathSync(packet);
+  const inputStat = fs.statSync(input);
+  const seen = new Set();
+  for (const file of [path.join(outDir, 'work-packet.md'), path.join(outDir, 'run-report.md'), `${outDir}.md`]) {
+    const physical = physicalOutputPath(file);
+    const leaf = fs.lstatSync(file, { throwIfNoEntry: false });
+    const target = leaf && !leaf.isSymbolicLink() ? leaf : leaf ? fs.statSync(file, { throwIfNoEntry: false }) : null;
+    if (physical === input || (target && target.dev === inputStat.dev && target.ino === inputStat.ino)) {
+      throw new CurrentWorkExecutionError(`run output overlaps input packet: ${file}`);
+    }
+    if (seen.has(physical)) throw new CurrentWorkExecutionError(`run outputs overlap: ${file}`);
+    if (leaf) throw new CurrentWorkExecutionError(`run output already exists; use a fresh bundle: ${file}`);
+    seen.add(physical);
+  }
+}
+function writeRunFile(file, markdown, checkpoint) {
+  if (!checkpoint) { writeFile(file, markdown); return; }
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  // Also preserve a leaf created between preflight and writing. Multi-file
+  // transactionality is not claimed; an I/O failure remains a tool error.
+  fs.writeFileSync(file, markdown, { encoding: 'utf8', flag: 'wx' });
+}
 function humanReadiness(env) {
   const lines = [`${env.authority === 'scoped' ? 'scoped' : 'current'}-work readiness — ready=${env.ready} requests=${env.requests.length} origins=${env.origin_inputs.length}`];
   for (const req of env.requests) {
@@ -145,6 +179,10 @@ function renderRunStatus(impl, status) {
     `# ${impl.title} — ${status.state}`, '', `- baseline ready: \`${status.ready}\``,
     `- requests: ${status.requests.length} · origins: ${status.origin_inputs.length} · denials: ${status.denials.length} · errors: ${status.errors.length}`,
     ...(backstop ? [`- changed records: ${backstop.changed_records.length} · backstop violations: ${backstop.violations.length}`] : []),
+    ...(status.checkpoint ? [
+      `- checkpoint packet: ${JSON.stringify(status.checkpoint.packet)} · matched: true`,
+      '', '## Machine Envelope', '```json', JSON.stringify(status, null, 2), '```',
+    ] : []),
     '', '> HALT/DONE here is orchestration state, not merge approval or human approval.', ''
   ].join('\n');
 }
@@ -214,12 +252,21 @@ export function runCurrentWorkCli(tool, argv) {
       return;
     }
     if (tool === 'run') {
+      const packetFlag = opt(flags, 'packet');
+      const outDir = resolveOut(opt(flags, 'out'));
+      const checkpoint = packetFlag ? { packet: path.resolve(packetFlag), matched: true } : null;
+      if (checkpoint) {
+        impl.assertPacket(preflight, impl.parsePacket(checkpoint.packet));
+        if (outDir) assertFreshRunOutputs(checkpoint.packet, outDir);
+      }
       let state;
-      let git = null;
+      // Packet-bound runs collect evidence even for denied/absorbed work. Keep
+      // HALT precedence while sharing this one observation with every renderer.
+      let git = checkpoint ? impl.git(preflight) : null;
       if (preflight.all_absorbed) state = 'HALT_NOT_APPLICABLE';
       else if (!preflight.ready) state = 'HALT_AMBIGUITY';
       else {
-        const observed = impl.git(preflight);
+        const observed = git || impl.git(preflight);
         // Missing requested changes are the ordinary pre-work state. Any other
         // violation (authority or API evidence changed, even Git-ignored) is kept.
         const unresolved = observed.violations.some((entry) => !MISSING_REQUESTED.has(entry.code));
@@ -230,17 +277,17 @@ export function runCurrentWorkCli(tool, argv) {
           git = observed;
           state = 'HALT_AMBIGUITY';
         } else {
-          git = null;
+          if (!checkpoint) git = null;
           state = 'HALT_READY_FOR_WORK';
         }
       }
       const status = statusEnvelope(impl, state, preflight, git);
-      const outDir = resolveOut(opt(flags, 'out'));
+      if (checkpoint) status.checkpoint = checkpoint;
       if (outDir) {
         fs.mkdirSync(outDir, { recursive: true });
-        writeFile(path.join(outDir, 'work-packet.md'), impl.renderPacket(preflight));
-        if (git && git.implementation_records.length) writeFile(path.join(outDir, 'run-report.md'), impl.renderReport(preflight, git));
-        writeFile(`${outDir}.md`, renderRunStatus(impl, status));
+        writeRunFile(path.join(outDir, 'work-packet.md'), impl.renderPacket(preflight), checkpoint);
+        if (git && (checkpoint || git.implementation_records.length)) writeRunFile(path.join(outDir, 'run-report.md'), impl.renderReport(preflight, git), checkpoint);
+        writeRunFile(`${outDir}.md`, renderRunStatus(impl, status), checkpoint);
       }
       process.stdout.write(flags.json ? JSON.stringify(status, null, 2) + '\n' : outDir ? `workflow:run: ${state} — ${path.relative(process.cwd(), `${outDir}.md`) || `${outDir}.md`}\n` : renderRunStatus(impl, status));
       process.exitCode = 0;

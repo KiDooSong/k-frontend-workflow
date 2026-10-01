@@ -43,6 +43,18 @@ function assertCurrentWorkDocs(root) {
   }
   assert.match(read('COMMANDS.md'), /single target/);
   assert.match(read('COMMANDS.md'), /--work/);
+  const common = read('docs/reference/current-work.md').split('## Common CLI flow')[1].split('## Eligibility invariants')[0];
+  const commands = common.split('```bash')[1].split('```')[0];
+  assert.equal((commands.match(/npm run workflow:run/g) || []).length, 2);
+  assert.match(commands, /--packet "\$RUN_EVIDENCE\/before\/work-packet\.md"/);
+  assert.doesNotMatch(commands, /npm run workflow:(readiness|packet|report|forbidden-paths)/);
+  for (const relative of ['skills/implement-shared-surface/SKILL.md', 'docs/reference/task-artifact-matrix.md']) {
+    const text = read(relative);
+    assert.match(text, /06-implement-screen-or-code\.md#select-the-execution-branch-first/);
+    assert.match(text, /08-validate-and-report\.md#current-work-reportbackstop/);
+    assert.match(text, /current-work\.md#common-cli-flow/);
+  }
+
 }
 
 test('current-work entry documentation routes single targets before legacy blocking', () => {
@@ -111,4 +123,20 @@ test('packed consumer payload contains and executes current-work runtime/referen
   assert.equal(out.work_contract, 1);
   assert.equal(out.authority, 'current');
   assert.equal(out.ready, true);
+  const execute = (extra) => {
+    const result = spawnSync(process.execPath, [path.join(packed, 'scripts/workflow-run.mjs'),
+      '--work', work, '--root', root, '--docs', 'docs/frontend-workflow', '--src', 'src',
+      '--policy', 'config/policy.yaml', '--manifest', 'config/manifest.yaml', '--layout', 'config/layout.yaml', '--json', ...extra],
+    { cwd: packed, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    return JSON.parse(result.stdout);
+  };
+  const before = path.join(temp, 'before'), after = path.join(temp, 'after');
+  assert.equal(execute(['--out', before]).state, 'HALT_READY_FOR_WORK');
+  fs.appendFileSync(path.join(root, 'src/features/coupons/screens/CouponListScreen.tsx'), '\n// packed implementation\n');
+  const done = execute(['--packet', path.join(before, 'work-packet.md'), '--out', after]);
+  assert.equal(done.state, 'DONE_PENDING_REVIEW'); assert.equal(done.backstop.ok, true);
+  assert.equal(done.checkpoint.matched, true);
+  assert.match(fs.readFileSync(`${after}.md`, 'utf8'), /## Machine Envelope/);
+  assert.ok(fs.existsSync(path.join(after, 'run-report.md')));
 });

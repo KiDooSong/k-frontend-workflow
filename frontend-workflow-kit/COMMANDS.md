@@ -66,11 +66,14 @@ See [shared-surfaces.md](docs/reference/shared-surfaces.md).
 For a concrete task within existing current authority, including a **single target**,
 select `--work` before applying the no-work/legacy blocking stop. See the
 [current-work reference](docs/reference/current-work.md) for the shared request,
-origin/resource binding, five-CLI flow, run states, and Git backstop.
+origin/resource binding, representative run flow, run states, and Git backstop.
 
 ```bash
-npm run workflow:readiness -- --work .workflow/current-work.json --json
-npm run workflow:run -- --work .workflow/current-work.json --json
+RUN_EVIDENCE="$(mktemp -d)"  # outside the selected repository
+npm run workflow:run -- --work .workflow/current-work.json --out "$RUN_EVIDENCE/before" --json
+# after implementation and validation, before committing
+npm run workflow:run -- --work .workflow/current-work.json \
+  --packet "$RUN_EVIDENCE/before/work-packet.md" --out "$RUN_EVIDENCE/after" --json
 ```
 
 The agent assembles the request; people need not hand-author JSON for each task.
@@ -80,6 +83,18 @@ Do not mix `--work` with legacy/visual selection flags or use another branch to
 bypass a deny. No-work and visual-refresh v1 retain their existing authority;
 partial/no-effect receipts are not accepted by current authority.
 
+Work-run syntax (resource options above remain available):
+
+```text
+workflow:run --work <request.json> [--packet <pre-work packet.md>] [--out <dir>] [--json]
+```
+
+`--packet` compares the checkpoint with the fresh authority-specific preflight before
+one Git backstop collection. It does not accept `--staged`, `--enforce` or `--range`.
+`readiness --work`, `packet --work`, `forbidden-paths --work` and
+`report --work --packet` remain independent diagnostics. Output preservation and
+HALT evidence are defined in [current work](docs/reference/current-work.md#packet-bound-run-outputs).
+
 ## Scoped Work (D)
 
 For an explicitly adopted owner, the same five CLIs evaluate a document of
@@ -88,10 +103,8 @@ For an explicitly adopted owner, the same five CLIs evaluate a document of
 for the adoption checkpoint, baseline preflight, host/shared-target rules, Git
 backstop, fallback guards and rollback.
 
-```bash
-npm run workflow:readiness -- --work .workflow/scoped-work.json --json
-npm run workflow:run -- --work .workflow/scoped-work.json --json
-```
+Use the [same before/after run flow](docs/reference/current-work.md#common-cli-flow)
+with `.workflow/scoped-work.json`, its pre-work packet and distinct evidence bundles.
 
 Adoption (`work_execution`, `decision_work_scopes`) is a human-reviewed change. An
 adopted owner's scoped paths return `work-selection-required` to no-work, current

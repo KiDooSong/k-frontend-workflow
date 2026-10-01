@@ -11,7 +11,7 @@ final/    합의가 끝나 정본으로 승격된 설계. (아직 없음)
 
 ## Drafts
 
-- [Work CLI 대표 흐름 통합](drafts/work-cli-flow-consolidation.md) — 설계 전용. run의 사전 packet 대조를 보존하면서 current/scoped의 대표 호출을 전후 각 1회로 줄이는 제안; 관련 #248/#239, 문서 정렬 #259와 조정. 새 CLI는 아직 구현하지 않았다.
+- [Work CLI 대표 흐름 통합](drafts/work-cli-flow-consolidation.md) — 구현됨. run의 사전 packet 대조를 보존하면서 current/scoped의 대표 호출을 전후 각 1회로 통합; 관련 #248/#239, 문서 정렬 #259와 조정. 구현 현황은 [roadmap](../../roadmap-current.md), 절차는 [current work](../../../frontend-workflow-kit/docs/reference/current-work.md#common-cli-flow)가 정본.
 - [Reconciliation Contract v2 (#202)](drafts/issue-202-reconciliation-contract-v2.md) — Register v2 item/effect/routing + Stage 04 review profile + Mapping Provenance 구조 정본. slice A와 B 구현, C(semantic/stale warning)·dogfood 후속.
 - [Input Provenance / Fidelity Contract](drafts/input-provenance-fidelity-contract.md) — 검사 11 `captured_at` hard rollout, `input_contract: 2` fidelity, shared input Evidence/index, producer/validator severity와 migration 구현 정본.
 - [Customizable Architecture](drafts/customizable-architecture/README.md) — Tier 1 layout profile 과 Tier 2 router adapter 설계.

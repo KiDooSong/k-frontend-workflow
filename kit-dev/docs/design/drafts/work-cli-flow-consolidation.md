@@ -1,15 +1,15 @@
 # Work CLI 대표 흐름 통합 — 사전 packet 대조를 보존하는 run
 
-- 상태: **제안 / 설계 전용 / 구현 없음**
+- 상태: **구현됨** — 설계 PR [#261](https://github.com/KiDooSong/k-frontend-workflow/pull/261)의 후속 구현. 현황 정본: [roadmap](../../../roadmap-current.md), 사용법 정본: [current work](../../../../frontend-workflow-kit/docs/reference/current-work.md#common-cli-flow).
 - 작성일·이슈/PR 확인일: 2026-10-01 (Asia/Seoul)
 - 조사 기준: main `042415cb24b966257ec0f04fff4481adcce1f4f2` (PR #258 머지 후)
 - 관련 추적: [#248](https://github.com/KiDooSong/k-frontend-workflow/issues/248), 상위 [#239](https://github.com/KiDooSong/k-frontend-workflow/issues/239)
-- 경계: 이 PR은 이 초안과 설계 인덱스만 바꾼다. 아래 `run --work … --packet …`은 **후속 구현 제안이며 현재 지원하지 않는다**. 설계 게시·머지는 구현이나 사람 소유 결정의 승인으로 취급하지 않는다.
+- 경계: 원 설계 PR #261은 문서만 변경했다. 이후 별도 구현 요청으로 `run --work … --packet …`과 문서·회귀 검사를 구현했다. 설계 머지를 사람 소유 adoption/binding/promotion 승인으로 취급하지 않는다. 아래 통합 전 근거와 대안은 당시 설계 기록이며, 현재 명령 계약은 위 사용법 정본을 따른다.
 
-## 1. 문제와 확인 근거
+## 1. 통합 전 문제와 확인 근거
 
-[current-work의 Common CLI flow](../../../../frontend-workflow-kit/docs/reference/current-work.md#common-cli-flow)는
-구현 전 `readiness → packet → run`, 구현 후 `forbidden-paths → report → run`을 연속 명령으로 보여준다.
+[통합 전 current-work의 Common CLI flow](https://github.com/KiDooSong/k-frontend-workflow/blob/042415cb24b966257ec0f04fff4481adcce1f4f2/frontend-workflow-kit/docs/reference/current-work.md#common-cli-flow)는
+구현 전 `readiness → packet → run`, 구현 후 `forbidden-paths → report → run`을 연속 명령으로 보여줬다.
 모든 명령을 의무화한 규칙은 아니지만, 대표 예시를 순서대로 실행하면 같은 상태의 준비·검증이 반복된다.
 [Stage 06](../../../../frontend-workflow-kit/docs/reference/workflow-stages/06-implement-screen-or-code.md#current-work-branch),
 [Stage 08](../../../../frontend-workflow-kit/docs/reference/workflow-stages/08-validate-and-report.md#current-work-reportbackstop),
@@ -72,9 +72,9 @@ deny·absorbed 상태에서도 기존 report가 수집하던 실제 변경·위�
 
 ## 4. 대표 명령과 진단 명령
 
-### 4.1 후속 구현 후의 대표 흐름
+### 4.1 구현된 대표 흐름
 
-다음은 **제안 CLI 예시**다. 두 호출에 같은 request와 동일한 명시적 resource 옵션을 전달한다.
+다음은 **지원 CLI 예시**다. 두 호출에 같은 request와 동일한 명시적 resource 옵션을 전달한다.
 예시는 기본 layout이며, custom `--root`, `--docs`, `--src`, `--policy`, `--manifest`, `--layout`, `--ci`는
 [COMMANDS의 옵션 정본](../../../../frontend-workflow-kit/COMMANDS.md)에 따라 두 호출에 똑같이 붙인다.
 
@@ -88,7 +88,7 @@ npm run workflow:run -- --work .workflow/current-work.json \
 
 # 구현, 필요한 생성물 갱신, 기존 validate와 관련 test/lint를 수행한다.
 # 구현을 커밋하기 전에 사전 packet과 같은 baseline에서 사후 검증한다.
-# --packet은 이 초안에서 제안하는 새 work-run 옵션이다.
+# --packet은 사전 checkpoint를 대조하는 work-run 옵션이다.
 npm run workflow:run -- --work .workflow/current-work.json \
   --packet "$RUN_EVIDENCE/before/work-packet.md" \
   --out "$RUN_EVIDENCE/after" --json
@@ -114,12 +114,12 @@ repository 안의 출력 경로를 backstop에서 자동 제외하는 새 direct
 각 standalone 명령은 계속 자신의 `prepare`를 수행한다. 독립적으로 안전하게 실행할 수 있는 계약을
 캐시나 호출 순서 의존성으로 바꾸지 않는다.
 
-### 4.3 현재 CLI에서 가능한 축소
+### 4.3 설계 PR 당시 CLI에서 가능했던 축소 (과거)
 
-후속 구현 전에는 사전 `run --work … --out <before>`로 packet을 만들고,
+설계 PR 당시에는 사전 `run --work … --out <before>`로 packet을 만들고,
 사후 `report --work … --packet <before>/work-packet.md`를 쓰면 checkpoint와 전후 backstop을 유지할 수 있다.
 이 경로는 기존 run 상태 요약을 사후에 추가로 생성하지 않는다. **사전/사후 run만 호출하는 경로는 이전 packet 대조와 동등하지 않다.**
-이 초안 PR에서는 runtime reference/skill의 대표 예시를 바꾸지 않는다.
+설계 PR은 runtime reference/skill 예시를 바꾸지 않았으며, 후속 구현에서 §4.1 흐름으로 정렬했다.
 
 ## 5. 새 work-run 옵션과 처리 순서
 
@@ -218,9 +218,9 @@ packet-bound 실행은 `HALT_AMBIGUITY`·`HALT_NOT_APPLICABLE`에서도 수집�
 | run에 사전 packet 대조를 추가한다. | 제안 방향이다. 준비·backstop 결과를 한 호출에서 재사용하고 checkpoint 검증을 보존한다. |
 | 프로세스 간 prepare/backstop 캐시를 만든다. | request·HEAD·권한·inventory·ignored bytes 등의 무효화 계약을 추가해야 한다. 이번 반복은 대표 호출 수부터 줄이며 캐시는 범위 밖이다. |
 
-## 8. 후속 구현·문서 소유권
+## 8. 구현·문서 소유권
 
-이 설계를 리뷰한 뒤 별도 구현 PR에서 다음을 함께 변경한다. 미래 CLI를 먼저 runtime 문서에 게시하지 않는다.
+별도 구현 요청으로 다음을 함께 변경했다. 권한 helper와 개별 CLI 계약은 유지한다.
 
 | 변경 위치 | 소유할 내용 |
 |---|---|
@@ -233,11 +233,11 @@ packet-bound 실행은 `HALT_AMBIGUITY`·`HALT_NOT_APPLICABLE`에서도 수집�
 
 새 artifact axis, request version, readiness 모드, CI required check, 소비자 강제 이전, adoption/binding 변경,
 제품 승인 자동화, 전체 tree 최적화·캐시, no-work/visual 출력 변경은 포함하지 않는다.
-이 설계 PR은 #248 E2/E3나 #239 전체를 완료 처리하지 않는다.
+이 구현은 #248 E2/E3나 #239 전체를 완료 처리하지 않는다.
 
-## 9. 후속 수용 사례와 검증
+## 9. 수용 사례와 검증
 
-아래는 **구현 PR의 완료 조건**이다. 이 초안 PR에서 새 CLI가 동작한다고 주장하지 않는다.
+아래는 **구현 수용 조건**이다. 회귀는 `scoped-work-run.test.mjs`의 current/scoped 실제 CLI·Git fixture, 기존 current snapshot/review 및 scoped execution/CLI/packed 검사로 검증한다. 구체적 실행 결과는 [구현 검증 기록](../../../temp/runs/work-cli-flow-consolidation-001.md)을 따른다.
 
 | 사례 | 기대 결과 |
 |---|---|
