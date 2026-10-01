@@ -51,6 +51,15 @@ should not duplicate input_id/frontmatter rendering if workflow:create-input is 
 - A consumer producer may **write the artifact directly** only if the output passes
   the same contract below. Direct writing that bypasses the contract is not allowed.
 
+After all payload enrichment, use `workflow:create-input -- --dry-run --json`
+with the intended output options. Pass its `artifact_text` and final `output_path`
+to consumer source/hash/link checks before publication; producer schema success
+does not perform those checks. Public fields, temporary observation-copy usage,
+and immutable-input correction guidance live in
+[`COMMANDS.md — Preview before consumer checks`](../../../COMMANDS.md#preview-before-consumer-checks).
+Repeat the checks after payload changes. This is a consumer integration point,
+not a new required gate or permission to overwrite an issued input.
+
 ## Canonical input artifact contract
 
 The output must satisfy all of:

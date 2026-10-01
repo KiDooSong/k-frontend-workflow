@@ -154,6 +154,53 @@ paths are rejected. `input_id` stays globally unique and the Reconciliation
 Register key stays `input_id` regardless of path. `README.md` / `index.md` under
 `inputs/**` are directory guides, not input artifacts, and validate skips them.
 
+### Preview before consumer checks
+
+Finish all payload enrichment before checking the rendered input. Preview it with
+the same docs directory and grouping options intended for publication:
+
+```bash
+INPUT_PREVIEW_DIR="$(mktemp -d)"
+npm run -s workflow:create-input -- --docs docs/frontend-workflow \
+  --from-json input.final.json --group-by domain --dry-run --json \
+  > "$INPUT_PREVIEW_DIR/preview.json"
+```
+
+`--dry-run` does not write an input or reserve its ID. The redirect above writes
+only the caller's scratch JSON. Its public fields include:
+
+| Field | Consumer use |
+|---|---|
+| `output_path` | Final planned filename; resolve body-relative links from its directory, including flat/grouped/explicit subdir depth. |
+| `artifact_text` | Complete rendered input; check this after every added fact or payload correction. Present when `wrote` is false. |
+| `input_id` | Preview identity, not a reserved or issued input. |
+| `wrote` | False for dry-run; success means producer schema checks passed. |
+
+Report three checks separately: producer schema, local links, and consumer-owned
+pinned source/receipt hashes. Producer success (including declared fidelity) does
+not verify local source bytes, links, external URLs, source meaning, acceptance,
+or implementation permission. Use the public CLI output rather than importing
+kit-internal modules into a consumer producer.
+
+`workflow:doc-drift -- --root <observation-tree> --json` can inspect a **temporary
+copy** that preserves the planned input's project-relative path and local targets.
+The consumer may materialize `artifact_text` in that copy; do not write a preview
+over a live canonical input. Doc-drift scans files, not preview JSON/stdin. Inspect
+its findings: warning-first exit 0 is not "all links valid". External URLs and
+reference-style links are not checked; out-of-root targets are unverifiable.
+Source/receipt hash checks remain consumer-owned.
+
+If the payload, output options, timestamp or input directory changes, obtain a
+fresh preview and repeat the applicable consumer checks. The preview does not
+bind a later write: normal publication recomputes the output and may choose a
+different ID. Publication and its checks follow the consumer's existing policy;
+this adds no required CI/readiness gate.
+
+For an already issued input, preserve its bytes and use a new input plus
+`supersedes`. Where an old link must remain usable, retain a correctly located
+regular evidence file under the consumer's retention/hash policy. Do not use a
+symlink or `--overwrite` to bypass immutable-input or current-baseline rules.
+
 Reference: [docs/reference/input-reconciliation.md](docs/reference/input-reconciliation.md).
 
 ## Screen Identity
