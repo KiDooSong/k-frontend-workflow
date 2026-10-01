@@ -85,7 +85,10 @@ findings:
      check 10(Run Report ↔ Review Artifact 분리)는 두 파일이 따로 존재함으로 충족.
      A/B1/B2의 권한·snapshot 근거가 없거나 도구 오류이면 미검증으로 기록한다. 이를 경로 위반이나 통과로 단정하지 않는다.
      backstop은 기본 advisory이므로 exit 0 / DONE_PENDING_REVIEW만으로 통과 처리하지 않는다.
-     Run Report의 forbidden.status / forbidden.ok / violations와 해당 snapshot을 확인한다.
+     current/scoped --work Run Report는 backstop.ok / backstop.violations / backstop.snapshot을 확인한다.
+     visual Run Report는 forbidden.status / forbidden.ok / forbidden.violations와 해당 snapshot 근거를 확인한다.
+     no-work/legacy Run Report는 evidence.forbidden_paths(JSON) 또는 본문의 실행 결과를 확인하고,
+     같은 diff 입력의 workflow:forbidden-paths --json 결과(ok / violations)를 함께 참조한다.
      분기별 근거는 docs/reference/workflow-stages/08-validate-and-report.md 및 implement-screen 스킬을 따른다.
      src/api/**·openapi.yaml 같은 고정 경로 목록으로 현재 권한을 덮어쓰지 않는다.
      API 경로는 현재 policy와 candidate-aware 파일 판정을 따르며, generated 직접 편집·미확정 API 추측 금지는 유지한다. -->
