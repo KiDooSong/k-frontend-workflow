@@ -17,7 +17,8 @@ date: "{YYYY-MM-DD}"
   Review Artifact 는 한 Work Packet + Run Report 가 게이트·천장·불변식을 지켰는지 채점한다.
   Work Packet 과 같은 원칙: 리뷰어도 새로운 source of truth/gate 가 아니다.
   작성 규칙:
-  - 게이트/경로는 readiness_source 를 그대로 소비한다 (재계산 금지).
+  - 게이트/경로는 이번 작업의 readiness_source 와 실제 구현 snapshot의 backstop 결과를 소비한다 (리뷰어가 권한을 재구현하지 않는다).
+  - 같은 실행 분기의 request/target/resource 및 snapshot 근거를 확인한다. Packet의 저장된 allow 값이나 다른 작업의 결과로 권한을 대체하지 않는다.
   - 리뷰어는 Open Decision / Conflict / Unknown 을 닫지 못한다 — 사람-전용 불변식.
   - 위반은 근거(파일·라인·diff)와 함께 기록한다. 추측으로 메우지 않는다.
   - Checklist 는 work-packet-rubric 의 10개 check 를 그룹 롤업해 Work Packet 의 Review Checklist 와 정합시킨다 (1:1 아님 — 그룹 매핑, 아래 표 주석의 매핑 참조).
@@ -54,7 +55,8 @@ findings:
     ref: { file: "{path}", line: "{n}", diff: "{인용/요지}" }   # 근거 필수
     route: "{recommended-fix | human-only-decision | do-not-auto-fix}"
     note: "{한 줄 설명}"
-  # findings 없으면: 빈 목록 [] 로 두고 review_summary: ok.
+  # findings가 없고 필수 근거를 확인했으면: 빈 목록 [] 로 두고 review_summary: ok.
+  # 미검증 항목은 누락/오류 근거와 함께 advisory finding으로 남기고 검증 보완을 권고한다.
 ```
 
 > `blocker-candidate ≠ blocker`. severity 가 blocker-candidate 라도 그 자체로는 아무것도 막지 못한다 — 사람이 Open Decision 으로 승격해 readiness cap 이 걸릴 때만 실제 차단이 된다.
@@ -66,6 +68,7 @@ findings:
 - Work Packet: `{path-to-work-packet}`
 - Run Report: `{path-to-run-report}`
 - readiness output / run-report 게이트 출처: `{readiness_source}`
+- 작업 권한 / backstop 근거: `{실행 분기·request 또는 선택 tuple·검토한 Git snapshot·결과 링크}`
 - ScreenSpec (정본): `{docs/.../screen-spec.md}`
 
 ## Checklist
@@ -79,12 +82,21 @@ findings:
        B4 ← API endpoint 추측 안 함 (+ copy/design value 미발명)
        E  ← Open Decision 안 닫음 (+ confirmed/generated 미수정 재확인)
        F  ← ScreenSpec 링크(복사 안 함) · blocker 보고 · 멱등
-     check 10(Run Report ↔ Review Artifact 분리)는 두 파일이 따로 존재함으로 충족. -->
+     check 10(Run Report ↔ Review Artifact 분리)는 두 파일이 따로 존재함으로 충족.
+     A/B1/B2의 권한·snapshot 근거가 없거나 도구 오류이면 미검증으로 기록한다. 이를 경로 위반이나 통과로 단정하지 않는다.
+     backstop은 기본 advisory이므로 exit 0 / DONE_PENDING_REVIEW만으로 통과 처리하지 않는다.
+     current/scoped --work Run Report는 backstop.ok / backstop.violations / backstop.snapshot을 확인한다.
+     visual Run Report는 forbidden.status / forbidden.ok / forbidden.violations와 해당 snapshot 근거를 확인한다.
+     no-work/legacy Run Report는 evidence.forbidden_paths(JSON) 또는 본문의 실행 결과를 확인하고,
+     같은 diff 입력의 workflow:forbidden-paths --json 결과(ok / violations)를 함께 참조한다.
+     분기별 근거는 docs/reference/workflow-stages/08-validate-and-report.md 및 implement-screen 스킬을 따른다.
+     src/api/**·openapi.yaml 같은 고정 경로 목록으로 현재 권한을 덮어쓰지 않는다.
+     API 경로는 현재 policy와 candidate-aware 파일 판정을 따르며, generated 직접 편집·미확정 API 추측 금지는 유지한다. -->
 | Check | 기준 | 결과 | 근거 (파일·라인·diff) |
 |---|---|---|---|
-| A — 게이트 판독 | readiness_mode/allowed/forbidden 이 `{readiness_source}` 와 글자 일치 | {✅/❌} | {근거} |
-| B1 — allowed 안에서만 | diff ⊆ allowed_paths | {✅/❌} | {근거} |
-| B2 — forbidden 무접촉 | `src/api/**`·`openapi.yaml` 무접촉 | {✅/❌} | {근거} |
+| A — 게이트 판독 | 이번 작업의 실행 분기·권한·mode/경로 판정이 `{readiness_source}` 및 Run Report 근거와 일치 | {✅/❌/미검증} | {근거} |
+| B1 — allowed 안에서만 | diff가 이번 작업의 허용 범위 안에 있고 변경 경로별 concrete 권한 판정이 허용 | {✅/❌/미검증} | {근거} |
+| B2 — forbidden 무접촉 | 이번 작업의 effective forbidden/deny 침범 없음·실제 구현 snapshot의 backstop 위반 없음 | {✅/❌/미검증} | {근거} |
 | B3 — 천장 미초과 | `{readiness_mode}` 산출물만 (과구현 없음 — advisory grep 은 후보) | {✅/❌} | {근거} |
 | B4 — 미확정 미발명 | API/copy/design value 추측 없음 | {✅/❌} | {근거} |
 | E — 불변식 | Open Decision/Conflict/Unknown 미닫힘 | {✅/❌} | {근거} |
@@ -93,7 +105,7 @@ findings:
 ## Violations
 <!-- 구현이 고칠 수 있는 위반만. 각 항목에 위반 Check ID + 근거(파일·라인·diff).
      위반 없으면 "없음" 한 줄. -->
-- {예: B2 — `src/api/coupon.ts` 신규 (diff L1) = forbidden 침범.} 또는 없음.
+- {예: B2 — deferred slice의 `src/api/coupon.ts` 신규 (diff L1). 이번 작업의 권한 판정과 해당 snapshot의 backstop violation 근거: {결과 링크}.} 또는 없음.
 
 ## Human-only Decisions Needed
 <!-- 리뷰어/구현자가 못 닫는 사람-전용 항목. Open Decision / Conflict / candidate→confirmed 승격.
@@ -105,7 +117,7 @@ findings:
 
 ## Recommended Fixes
 <!-- review_summary=changes-suggested(route=recommended-fix) 일 때 구현이 자동 수행 가능한 교정. 게이트를 건드리지 않는 범위만. -->
-- {예: `src/api/**` 변경 되돌리고 fake hook 계약 유지 — readiness 재실행.}
+- {예: B2에서 거부가 확인된 deferred slice 변경을 되돌리고, 같은 작업의 readiness와 수정 snapshot의 backstop을 다시 확인한다.}
 - {예: 과구현 fixture UI 제거, screen-skeleton shell 로 환원.}
 
 ## Do Not Auto-Fix
