@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseReconciliationMarkdown } from './reconciliation-markdown-ast.mjs';
+import { parseReconciliationMarkdown, parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
 
 function section(markdown, slug = 'extracted-facts') {
   const parsed = parseReconciliationMarkdown(markdown);
@@ -50,4 +50,14 @@ test('evidence AST excludes non-visible code/HTML/destinations and preserves vis
   assert.ok(!occurrence.bulletTexts[4].includes('IN-20260802-fence-001'));
   assert.ok(!occurrence.bulletTexts[5].includes('IN-20260802-comment-001'));
   assert.ok(!occurrence.bulletTexts.join('\n').includes('IN-20260802-definition-001'));
+});
+
+test('the same body shares one read-only tree per process; derived views stay per call (#265)', () => {
+  const body = ['## Conflicts', '', '| ID | Status |', '|---|---|', '| C-1 | open |', ''].join('\n');
+  const tree = parseReconciliationReferenceView(body).tree;
+  assert.equal(parseReconciliationReferenceView([...body].join('')).tree, tree);
+  assert.notEqual(parseReconciliationReferenceView(`${body}\n`).tree, tree);
+  for (const value of [tree, tree.children, tree.children[1], tree.children[1].position.start]) assert.ok(Object.isFrozen(value));
+  assert.throws(() => tree.children.push({ type: 'text', value: 'x' }), TypeError);
+  assert.notEqual(parseReconciliationMarkdown(body).occurrences, parseReconciliationMarkdown(body).occurrences);
 });

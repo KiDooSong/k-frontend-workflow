@@ -6,7 +6,7 @@ import path from 'node:path';
 import { KIT_ROOT, splitFrontmatter } from './util.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
 import { buildReconciliationTargetIndex } from './reconciliation-target-index.mjs';
-import { parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
+import { parseReconciliationReferenceView, reconciliationParseStats } from './reconciliation-markdown-ast.mjs';
 import { scopedGraphSelectionSpans } from './scoped-work-graph.mjs';
 import { resolveScopedUncertaintyProjection } from './scoped-work-uncertainty.mjs';
 
@@ -284,5 +284,17 @@ test('D uncertainty: native input bullet spans exclude nested bullets and preser
     const all = scopedGraphSelectionSpans(body, view, { type: 'section', section: 'extracted-facts' }, true)
       .map(([start, end]) => body.slice(start, end)).join('');
     assert.match(all, /secret/); assert.match(all, /Sibling/);
+  }
+});
+
+test('D uncertainty: each document body is parsed at most once, however many candidate rows it holds (#265)', (t) => {
+  for (const rows of [10, 40]) {
+    const f = fixture(t);
+    f.write('conflicts.md', { artifact_id: 'conflicts', artifact_type: 'conflicts', status: 'draft' }, table(['ID', 'Description', 'Status'],
+      Array.from({ length: rows }, (_, i) => [`C-${i + 1}`, `Conflict ${rows}-${i + 1}`, i % 2 ? 'resolved' : 'open'])));
+    const before = reconciliationParseStats().parsed;
+    f.run();
+    const parsed = reconciliationParseStats().parsed - before;
+    assert.ok(parsed <= f.docs.size, `${rows} rows: ${parsed} parses for ${f.docs.size} documents`);
   }
 });

@@ -4,6 +4,7 @@
 import { fromMarkdown } from 'mdast-util-from-markdown';
 import { gfmFromMarkdown } from 'mdast-util-gfm';
 import { gfm } from 'micromark-extension-gfm';
+import { createTextKeyedCache } from './util.mjs';
 
 const BLOCK_TEXT_TYPES = new Set([
   'root',
@@ -71,15 +72,43 @@ export function describeHeaderMismatch(table, canonicalCols) {
   return problems.join(' / ');
 }
 
+// The tree is a pure function of the source text, and scoped work asks for the same bodies once
+// per candidate row and applicability pass (#265). One read-only tree per text is shared within
+// the process; views derived from it stay per call. Least recently used texts leave the cache
+// once the kept source exceeds the budget.
+const trees = createTextKeyedCache(32 * 1024 * 1024);
+const parseStats = { parsed: 0, reused: 0 };
+
+function freezeTree(value) {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const child of Object.values(value)) freezeTree(child);
+  }
+  return value;
+}
+
 function parseTree(text) {
   const parserSource = String(text || '').replace(
     /<(pre|script|style|textarea)\/>/gi,
     (_, tagName) => `<${tagName}${SELF_CLOSING_LITERAL_SENTINEL}>`,
   );
-  return fromMarkdown(parserSource, {
+  const cached = trees.get(parserSource);
+  if (cached) {
+    parseStats.reused += 1;
+    return cached;
+  }
+  const tree = freezeTree(fromMarkdown(parserSource, {
     extensions: [gfm()],
     mdastExtensions: [gfmFromMarkdown()],
-  });
+  }));
+  parseStats.parsed += 1;
+  trees.set(parserSource, tree);
+  return tree;
+}
+
+// Process-wide Markdown parse counts: read-only diagnostics (#265).
+export function reconciliationParseStats() {
+  return { ...parseStats };
 }
 
 function restoreParserSentinels(value) {

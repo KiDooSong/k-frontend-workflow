@@ -351,6 +351,35 @@ export function confidenceRank(c) {
   return i === -1 ? 0 : i;
 }
 
+// 텍스트 키 캐시. 키 길이 합이 예산을 넘으면 가장 오래 쓰지 않은 키부터 버린다.
+// 방금 넣은 키는 혼자 예산을 넘어도 남긴다(#265).
+export function createTextKeyedCache(limitChars) {
+  const entries = new Map();
+  let chars = 0;
+  return {
+    get(key) {
+      if (!entries.has(key)) return undefined;
+      const value = entries.get(key);
+      entries.delete(key);
+      entries.set(key, value);
+      return value;
+    },
+    set(key, value) {
+      if (entries.has(key)) {
+        entries.delete(key);
+        chars -= key.length;
+      }
+      entries.set(key, value);
+      chars += key.length;
+      for (const old of entries.keys()) {
+        if (chars <= limitChars || old === key) break;
+        entries.delete(old);
+        chars -= old.length;
+      }
+    },
+  };
+}
+
 // --- YAML 출력 (결정적) ----------------------------------------------------
 // 생성물 헤더 + 본문. 키 순서는 호출부가 제어하므로 sortMapEntries 는 쓰지 않는다.
 export function emitGeneratedYaml(headerLines, obj) {
