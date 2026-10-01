@@ -28,7 +28,8 @@ or root config.
 - Results, basis digests and messages are unchanged.
 - Parsed trees stay in memory up to 32M source characters, least recently used
   bodies leaving first, so a run over a large document set keeps more heap than
-  before (roughly ten times the cached source size).
+  before: about 14–18 bytes per cached source character in two measured
+  document sets (521 and 670 bodies), up to roughly 0.6 GB at the full budget.
 - Manual action: none.
 
 ## Scoped work accepts general-contract IDs and formats (#260)

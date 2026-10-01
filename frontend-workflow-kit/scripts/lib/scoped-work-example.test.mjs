@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { KIT_ROOT } from './util.mjs';
 
@@ -73,4 +74,38 @@ test('D #260 example: general-contract formats keep a structured scoped result; 
   // The same prose section on the adopted owner still stops the preflight.
   const own = readiness(t, ({ read, put }) => put(LIST, read(LIST).replace(/\n## Unknowns\n[\s\S]*?(?=\n## )/, PROSE.trimEnd())));
   assert.equal(own.status, 2); assert.match(own.stderr, /SW-UNCERTAINTY: one canonical unknown table required/);
+});
+
+// #265 regression: output pinned from 97b25c7, the commit before the shared parse. The register mixes
+// open rows with and without typed refs and resolved rows. D-001's scope binding carries the basis
+// digest that commit computed, so D-001 stops blocking only while the digest is unchanged. Only
+// snapshot.commit depends on the run. A change meant to alter this output re-pins it and says so.
+const BASIS = 'sha256:72d340fb9daa7aa73b848461c728d8a4e1b9d2f3b187c0da4757c7ff476569fd';
+const ENVELOPE = 'd3657b62c28f8b1f78ef5aa0928597a121731e6ef2899c9ce65c22fe264c4a4b';
+const SCOPES = { version: 1, bindings: [{ decision_id: 'D-001', owner: 'screen:COUPON-001', known_units: ['list-behavior'],
+  blocks: [], basis_digest: BASIS, approval_ref: 'review:golden' }] };
+const ROWS = Array.from({ length: 12 }, (_, i) => {
+  const a = i % 3 === 0 ? '`artifact:COUPON-001-screen-spec#state-matrix`' : `A ${i + 1}`;
+  return `| C-${String(i + 1).padStart(3, '0')} | Conflict ${i + 1} | ${a} | B ${i + 1} | COUPON-00${(i % 2) + 1} | ${i % 4 === 1 ? 'resolved' : 'open'} |`;
+});
+const pinned = (rows) => ({ read, put }) => {
+  put(LIST, read(LIST).replace('\n---\n', `\ndecision_work_scopes: ${JSON.stringify(SCOPES)}\n---\n`));
+  put(DETAIL, `${read(DETAIL)}${PROSE}`);
+  put('docs/frontend-workflow/global/conflicts.md', '---\nartifact_id: conflicts\nartifact_type: conflicts\nstatus: draft\n---\n\n# Conflicts\n\n' +
+    `| ID | 충돌 지점 | A (출처/값) | B (출처/값) | 영향 화면 | Status |\n|---|---|---|---|---|---|\n${rows.join('\n')}\n`);
+};
+
+test('#265 golden: the scoped envelope, basis digest and error text stay as they were before the shared parse', (t) => {
+  const run = readiness(t, pinned(ROWS));
+  const envelope = json(run);
+  assert.deepEqual(envelope.denials.filter((entry) => entry.code === 'unit-decision-blocked').flatMap((entry) => entry.decisions),
+    ['decision:D-002@COUPON-001-screen-spec', 'decision:D-003@COUPON-001-screen-spec'], 'the pinned basis digest keeps the D-001 binding current');
+  const stdout = run.stdout.split(envelope.snapshot.commit).join('<commit>');
+  assert.equal(createHash('sha256').update(stdout).digest('hex'), ENVELOPE, 'the scoped envelope differs from 97b25c7');
+
+  const width = readiness(t, pinned(ROWS.map((row, i) => (i === 5 ? `${row} extra |` : row))));
+  assert.deepEqual([width.status, width.stdout, width.stderr], [2, '', 'readiness: SW-REF-TABLE: row width differs from header\n']);
+  const duplicate = readiness(t, pinned([...ROWS.slice(0, 4), ROWS[3], ...ROWS.slice(4)]));
+  assert.deepEqual([duplicate.status, duplicate.stdout, duplicate.stderr],
+    [2, '', 'readiness: SW-UNCERTAINTY: duplicate uncertainty conflict:C-004@conflicts\n']);
 });
