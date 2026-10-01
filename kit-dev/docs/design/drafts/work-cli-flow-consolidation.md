@@ -58,6 +58,8 @@ deny·absorbed·수집 오류에서는 `run`의 backstop을 건너뛸 수 있다
 일반 current/scoped 작업은 **`workflow:run` 한 진입점을 구현 전후 각각 한 번** 사용한다.
 사후 `run --work`에 optional `--packet <사전 packet.md>`을 추가해 기존 `report`의 checkpoint 대조를 수행한다.
 한 호출에서 얻은 preflight와 backstop을 상태·JSON·packet/report 렌더에 재사용한다.
+packet을 받는 사후 실행은 대조 성공 후 readiness와 관계없이 backstop을 한 번 수행한다.
+deny·absorbed 상태에서도 기존 report가 수집하던 실제 변경·위반 증거를 보존한다.
 구현 전후를 한 프로세스로 붙이거나 CLI가 코드 구현을 수행하게 만들지는 않는다.
 
 - 매 호출의 권한은 immutable HEAD baseline에서 새로 계산한다. packet의 stored allow/ready는 권한이 아니다.
@@ -127,6 +129,7 @@ repository 안의 출력 경로를 backstop에서 자동 제외하는 새 direct
 - `--packet`이 없으면 기존 run의 옵션·stdout/JSON·상태·exit 동작을 유지한다. 구현 diff가 있어도 기존 호출을 갑자기 오류로 바꾸지 않는다.
 - 일반 작업의 사후 대표 절차는 `--packet`을 전달하도록 문서화한다. 누락된 사후 checkpoint는 handoff에서 미검증으로 기록하며, 새 hard gate를 만들지 않는다.
 - `--packet`이 있으면 `--out` 유무와 관계없이 해당 authority의 기존 parser/assertion으로 대조한다. current/scoped packet을 교환해 쓰지 않는다.
+- packet 대조와 출력 대상 확인에 성공한 사후 실행은 `ready: false` 또는 `all_absorbed`여도 backstop을 한 번 수행한다. 실행 불가 상태를 이유로 실제 변경·위반 증거를 생략하지 않는다.
 - unknown/mixed selection flags, 빈 packet 값, 읽기/형식 오류, snapshot 불일치는 기존 tool/input error와 같은 exit 2다. mismatch를 HALT_READY/DONE으로 바꾸지 않는다.
 - 기존 `forbidden-paths --staged/--enforce`, report와 packet의 계약은 유지한다. run에 staged/enforce/range 옵션은 추가하지 않는다.
 - no-work/visual-refresh 파서와 라우팅은 건드리지 않는다.
@@ -139,7 +142,9 @@ parse / flags 검증
 → prepare 1회: fresh immutable baseline과 현재 요청 권한 계산
 → --packet이 있으면 parsePacket + assertPacket (출력 쓰기 전)
 → 새 packet-bound 출력 대상 확인 (출력 쓰기 전)
-→ 기존 상태 분기; 실행 가능한 요청의 실제 Git backstop 최대 1회
+→ --packet이 있으면 ready/all_absorbed와 관계없이 실제 Git backstop 1회
+  --packet이 없으면 기존 run 조건에 따라 실제 Git backstop 최대 1회
+→ 기존 상태 우선순위로 판정; 이미 수집한 backstop을 재사용
 → 동일한 preflight/backstop으로 상태·JSON·packet/report 렌더
 → finally에서 snapshot cleanup
 ```
@@ -147,6 +152,13 @@ parse / flags 검증
 구현 대상은 [공통 CLI](../../../../frontend-workflow-kit/scripts/lib/current-work-cli.mjs)의 `TOOL_VALUES.run`,
 `help()`, `runCurrentWorkCli()`이며, `report` 분기의 parser/assertion 호출을 같은 구현 adapter로 재사용한다.
 기존 current/scoped 권한 helper를 바꾸거나 child CLI를 spawn해 prepare/backstop을 다시 실행하지 않는다.
+
+기존 `report` 분기는 packet 대조 후 `impl.git(preflight)`를 readiness와 무관하게 실행한다.
+새 packet-bound run도 이 수집 계약을 유지한다. `all_absorbed`이면 `HALT_NOT_APPLICABLE`,
+그 외 `!ready`이면 `HALT_AMBIGUITY`를 우선 유지하며 실제 변경이 있어도 DONE으로 승격하지 않는다.
+ready 경로에서도 이미 계산한 backstop으로 기존 diff/위반 상태를 판정하고 `impl.git()`를 다시 호출하지 않는다.
+어느 상태든 packet-bound 실행에서 수집한 backstop을 JSON/status에서 버리지 않는다.
+Git 수집이 실패하면 기존 tool-error/exit 2로 끝내며, 비어 있는 backstop이나 정상 HALT로 대체하지 않는다.
 
 ### 5.3 checkpoint 대조와 실행 중 재확인
 
@@ -159,8 +171,8 @@ parse / flags 검증
 | 이전 packet → 이번 fresh preflight | request digest와 raw bytes hash, baseline commit/tree, project/resource context, origin identity/hash; scoped의 authority/directory/target read set |
 | 이번 preflight → 실제 destination | request의 실행 중 raw/digest 재확인, consumed authority와 inventory/API evidence, 실제 Git diff의 모든 경로·change kind·bytes/mode·권한 |
 
-packet 대조는 ready/absorbed 상태의 early return보다 먼저 수행한다. fresh preflight가 실행 불가해도
-오래되거나 잘못된 checkpoint를 정상 handoff로 표시하지 않는다.
+packet 대조와 사후 Git 검증은 ready/absorbed 상태의 종료보다 먼저 수행한다. fresh preflight가 실행 불가해도
+오래되거나 잘못된 checkpoint를 정상 handoff로 표시하거나 이미 존재하는 금지 변경의 증거를 생략하지 않는다.
 대조 통과 뒤 요청이 바뀌면 기존 backstop의 재확인에서도 오류가 나야 한다.
 이 계약은 호출 중 저장소를 잠그는 sandbox나 packet의 작성자·진위를 증명하는 서명 모델이 아니다.
 
@@ -171,6 +183,13 @@ packet 대조는 ready/absorbed 상태의 early return보다 먼저 수행한다
 `checkpoint: { packet: <resolved input path>, matched: true }`를 추가해 어떤 사전 증거를 대조했는지 기록한다.
 기존 필드는 그대로 두며, `--packet` 없는 출력에는 이 필드를 추가하지 않는다.
 checkpoint는 권한·사람 승인·coverage receipt가 아니며, report의 기존 backstop envelope도 재사용한다.
+
+packet-bound 실행은 `HALT_AMBIGUITY`·`HALT_NOT_APPLICABLE`에서도 수집한 `backstop` 전체를 JSON/status에 남긴다.
+여기에는 `changed_records`, `implementation_records`, `violations`, `ok`와 실제 destination snapshot이 포함된다.
+`--out`이 있으면 Git 수집에 성공한 packet-bound 실행은 상태·구현 diff 유무와 관계없이
+같은 backstop으로 `run-report.md`를 출력한다. 변경이 없다면 빈 실제 변경 목록과 미충족 위반을 그대로 보고한다.
+이는 실패·복구 증거이며 HALT를 DONE으로 바꾸거나 구현 완료를 주장하지 않는다.
+`--packet` 없는 기존 run의 backstop 생략·report 출력 조건은 바꾸지 않는다.
 
 새 packet-bound run의 `--out`은 다음을 요구한다.
 
@@ -183,10 +202,11 @@ checkpoint는 권한·사람 승인·coverage receipt가 아니며, report의 �
 
 | 상황 | 상태/동작 |
 |---|---|
-| 사전 ready이며 diff 없음 | 기존 `HALT_READY_FOR_WORK`; packet/status만 출력한다. |
-| packet 대조 성공, 구현 diff 있음 | 기존 `DONE_PENDING_REVIEW`; 같은 backstop을 JSON과 report에 사용한다. 위반이 있어도 현재 상태 의미를 승인으로 바꾸지 않는다. |
-| packet 대조 성공, 구현 diff 없음 | 기존 상태 분기를 따른다. 이전 report를 복사하거나 새 report가 있다고 표시하지 않는다. |
-| deny·absorbed | 기존 `HALT_AMBIGUITY` / `HALT_NOT_APPLICABLE`과 근거를 유지한다. 정상 분기에서 실행하지 않던 backstop을 억지로 추가하지 않는다. |
+| --packet 없는 사전 ready이며 diff 없음 | 기존 `HALT_READY_FOR_WORK`; packet/status만 출력한다. |
+| packet 대조 성공, ready이며 구현 diff 있음 | 기존 `DONE_PENDING_REVIEW`; 한 번 수집한 backstop을 JSON/status와 report에 사용한다. 위반이 있어도 현재 상태 의미를 승인으로 바꾸지 않는다. |
+| packet 대조 성공, ready이며 구현 diff 없음 | 기존 상태 분기를 따르며 backstop의 빈 변경 목록·미충족 위반도 보존한다. `--out`이 있으면 실제 수집 결과로 새 report를 쓴다. 이전 report를 복사하지 않는다. |
+| packet 대조 성공, deny·absorbed | backstop을 한 번 수집하고 기존 `HALT_AMBIGUITY` / `HALT_NOT_APPLICABLE`을 유지한다. 실제 금지·미요청 변경과 위반을 JSON/status 및 `--out`의 report에 남긴다. |
+| --packet 없는 deny·absorbed | 기존 상태·근거와 backstop 생략·report 출력 조건을 유지한다. |
 | packet/입력/수집/출력 오류 | 기존 tool-error 경로와 exit 2를 유지한다. CLI의 예외 처리 동작을 새 성공 상태로 대체하지 않는다. |
 
 ## 7. 선택한 방향과 대안
@@ -229,7 +249,12 @@ checkpoint는 권한·사람 승인·coverage receipt가 아니며, report의 �
 | current/scoped packet 교환, malformed/missing packet, 빈 옵션, mixed flags | exit 2; 다른 분기 fallback과 파일 출력 없음. |
 | packet 대조 통과 후 request/authority/API evidence 변경 | 기존 실행 중 재확인·backstop에서 검출한다. packet은 allow 우회 수단이 아니다. |
 | unrequested/generated/deferred path, mode/type 변경, index·worktree 차이 | 기존 backstop 판정 유지. staged/enforce 특수 용도는 개별 forbidden-paths로 유지한다. |
-| absorbed/deny/no implementation diff | 기존 상태·근거 유지, 새 report 없음. packet-bound output에 과거 report가 있으면 쓰기 전 거부한다. |
+| ready: false + 거부된 target 또는 미요청 파일의 실제 변경 + packet 대조 성공 (current/scoped 각각) | backstop 1회. `HALT_AMBIGUITY`와 preflight 거부 사유를 유지하며 DENIED-TARGET/UNREQUESTED 등 실제 위반·변경·snapshot을 JSON/status와 `--out` report에 보존한다. |
+| all_absorbed + 실제 금지 변경 존재 + packet 대조 성공 (current/scoped 각각) | backstop 1회. `HALT_NOT_APPLICABLE`을 유지하며 실제 위반·변경·snapshot을 JSON/status와 `--out` report에 보존한다. |
+| packet 대조 성공, deny/absorbed이며 구현 diff 없음 | backstop 1회와 기존 HALT 상태·근거를 유지한다. 빈 실제 변경 목록·미충족 위반도 JSON/status와 `--out` report에 남긴다. |
+| deny/absorbed의 packet 대조 성공 후 Git 수집 실패 | exit 2. 정상 HALT 또는 빈 backstop으로 오류를 감추지 않으며 성공 checkpoint/report를 출력하지 않는다. |
+| packet-bound 실행에 --out 없음 | 상태와 관계없이 JSON/status에 실제 backstop 증거를 보존하며 report 파일은 쓰지 않는다. |
+| --packet 없는 absorbed/deny/no implementation diff | 기존 backstop 생략·상태·report 출력 조건을 유지한다. |
 | 입력 packet/output 경로 겹침, 기존 출력 파일, 출력 I/O 실패 | checkpoint와 사용자 파일 보존, exit 2. 부분 결과를 DONE 성공 근거로 보고하지 않는다. |
 | --packet 없는 기존 current/scoped 및 no-work/visual CLI | 기존 출력·상태·exit 회귀 없음. |
 | 대표 문서·skills·task matrix | 지원 CLI만 안내하며 run 앞뒤의 반복 명령을 필수 순서로 제시하지 않는다. 정본 링크와 기존 핵심 불변식 fixture를 유지한다. |
@@ -237,6 +262,9 @@ checkpoint는 권한·사람 승인·coverage receipt가 아니며, report의 �
 기존 `current-work-execution`, `current-work-snapshot`, `current-work-review`, scoped CLI/execution/packed,
 distribution·skill-contract·doc-drift 검사를 확장한다. packet assertion 사례를 양 authority에서 재사용하고
 prepare/backstop 호출 수와 출력 snapshot 일치도 확인한다. 권한 통과를 실측 성능 향상으로 해석하지 않는다.
+실패·복구 경로에서는 기존 `report --work --packet`과 새 packet-bound run을 같은 request·baseline·diff로 대조한다.
+상태가 HALT인 경우에도 changed/implementation records·violations·destination snapshot의 증거가 동등해야 하며,
+Git 검증은 정확히 한 번 수행되어야 한다. 정상 경로의 아래 호출 수 감소 목표는 그대로다.
 
 | 검증 지표 | 현행 대표 흐름 | 제안 대표 흐름 |
 |---|---:|---:|
