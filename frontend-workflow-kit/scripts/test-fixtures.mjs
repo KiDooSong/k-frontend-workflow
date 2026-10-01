@@ -348,6 +348,8 @@ function buildFixtures() {
       { label: 'artifact-matrix', snippet: '(../../docs/reference/task-artifact-matrix.md)' },
       { label: 'current-home', snippet: '06-implement-screen-or-code.md#current-work-branch' },
       { label: 'scoped-home', snippet: '06-implement-screen-or-code.md#scoped-work-branch' },
+      { label: 'run-flow-home', snippet: 'current-work.md#common-cli-flow' },
+      { label: 'packet-checkpoint', snippet: '사후 `run --packet`' },
     ],
     mustNotContain: [
       { label: 'stale-fake-hook-only', snippet: '`useXxx` fake hook 만 사용한다' },
@@ -369,6 +371,12 @@ function buildFixtures() {
       { label: 'intermediate-open-decision', snippet: '`open_decision`이나 `member_screen_readiness`가 상위 모드만 제한' },
       { label: 'intermediate-mode', snippet: '`readiness_mode` 범위 안에서 진행' },
       { label: 'entry-overlap', snippet: '`member-entry-overlap`과 `non-member-entry-overlap`' },
+      { label: 'branch-selection', snippet: '06-implement-screen-or-code.md#select-the-execution-branch-first' },
+      { label: 'current-home', snippet: 'current-work.md' },
+      { label: 'scoped-home', snippet: 'scoped-work.md' },
+      { label: 'report-home', snippet: '08-validate-and-report.md#current-work-reportbackstop' },
+      { label: 'run-flow-home', snippet: 'current-work.md#common-cli-flow' },
+      { label: 'no-work-only', snippet: '아래 루프는 `--work` 없는 조회·호환 절차다' },
     ],
     mustNotContain: [
       { label: 'stale-all-cli-options', snippet: '모든 member readiness 명령에 일관되게 전달한다' },

@@ -24,10 +24,8 @@ Selecting a branch is not a grant and does not change no-work/visual authority.
 복수 origin/target은 필수 조건이 아니다. agent가 canonical input/owner/target에서 request를 조립하며
 사람에게 매번 JSON 수작업 승인을 요구하지 않는다. 시작 입력은 `origin_inputs`에 보존한다.
 
-```bash
-npm run workflow:readiness -- --work .workflow/current-work.json --json
-npm run workflow:run -- --work .workflow/current-work.json --json
-```
+구현 전 packet은 [대표 run 흐름](../current-work.md#common-cli-flow)의 사전 `run --out`으로 남긴다.
+별도 readiness/packet 호출은 진단이 필요할 때 선택한다.
 
 `requested_mode`는 실제 current ceiling 이하여야 하고 모든 concrete path가 기존 helper에서 허가돼야 한다.
 `ready: true`와 각 target 판정, 구현 전 `HALT_READY_FOR_WORK`를 확인한다. 도구가 분류한 상위 미충족은
@@ -36,7 +34,7 @@ npm run workflow:run -- --work .workflow/current-work.json --json
 Denied request를 버리거나 낮은 mode의 path를 합치지 않으며, deny를 피하려 no-work/visual로 자동 fallback하거나
 absorbed target으로 자동 전환하지 않는다.
 
-readiness, packet/run, report/backstop에 같은 request/origin/resource를 전달한다.
+사전/사후 run에 같은 request/origin/resource와 사전 packet을 전달한다. 증거는 저장소 밖의 서로 다른 bundle에 남긴다.
 사후 검증과 정상 핸드오프는 [Stage 08 current-work report/backstop](08-validate-and-report.md#current-work-reportbackstop)을 따른다.
 `authority: scoped`, work unit, partial/no-effect coverage receipt로 새 권한을 여는 것은 C가 아니다.
 그런 저작이 필요하면 기존 Stage 04/05 및 사람 소유 checkpoint로 돌아간다.
@@ -44,7 +42,8 @@ readiness, packet/run, report/backstop에 같은 request/origin/resource를 전�
 ## Scoped-work branch
 
 사람이 채택한 owner의 작업은 [scoped-work reference](../scoped-work.md)의 `authority: scoped` request로 owner **unit**을
-선택한다(regular-file `A`/`M` target만). 같은 다섯 CLI와 같은 request/origin/resource를 사용하고, 모든 판정은 immutable
+선택한다(regular-file `A`/`M` target만). [같은 대표 run 흐름](../current-work.md#common-cli-flow)으로 사전 packet을 보존하고,
+같은 request/origin/resource를 사용한다. 모든 판정은 immutable
 HEAD baseline에서 한다. surface는 모든 host 동의와 공유 target AND가 필요하다. `work-selection-required`가 나온 채택 경로를
 current/no-work/visual로 다시 시도하지 않는다. 채택·unit·decision binding을 새로 만들거나 넓히는 것은 구현이 아니라 사람
 소유 authoring checkpoint다. current와 scoped request를 한 문서에 섞지 않는다.
