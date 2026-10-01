@@ -17,6 +17,20 @@ or root config.
 
 ---
 
+## Faster scoped work on large document sets (#265)
+
+- Scoped work parsed the same Markdown body again for every Unknown/Conflict
+  candidate row, every decision and every applicability pass, and encoded every
+  row of a table again to select one row. One large register with many rows
+  therefore dominated each request. Each body is now parsed once per process
+  into a read-only tree, and a table's row keys are encoded once; views derived
+  from the tree are still built per call.
+- Results, basis digests and messages are unchanged.
+- Parsed trees stay in memory up to 32M source characters, least recently used
+  bodies leaving first, so a run over a large document set keeps more heap than
+  before (roughly ten times the cached source size).
+- Manual action: none.
+
 ## Scoped work accepts general-contract IDs and formats (#260)
 
 - Scoped work no longer requires `D-`/`U-` ID prefixes. Local and global Open
