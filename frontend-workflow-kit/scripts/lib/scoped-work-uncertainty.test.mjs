@@ -298,3 +298,15 @@ test('D uncertainty: each document body is parsed at most once, however many can
     assert.ok(parsed <= f.docs.size, `${rows} rows: ${parsed} parses for ${f.docs.size} documents`);
   }
 });
+
+test('D uncertainty: a warm parse cache yields the same projection without parsing again (#265)', (t) => {
+  const f = fixture(t);
+  f.evidence(conflicts([['C-CACHE', `See artifact:RULES#rules (${process.hrtime.bigint()})`, 'open']]));
+  const start = reconciliationParseStats().parsed;
+  const cold = f.run();
+  const parsed = reconciliationParseStats().parsed;
+  assert.ok(parsed > start, 'the first run parses the new evidence body');
+  const warm = f.run();
+  assert.equal(reconciliationParseStats().parsed, parsed);
+  assert.deepEqual(warm, cold);
+});
