@@ -32,6 +32,29 @@ function walk(node, visit, omitNestedLists = false, root = true) {
   if (visit(node) === false) return;
   for (const child of node.children || []) walk(child, visit, omitNestedLists, false);
 }
+// Raw header and row keys per native table node. Trees are shared read-only per
+// source text (#265), so a table is encoded once instead of once per selected row.
+const tableKeys = new WeakMap();
+function nativeTableKeys(body, node) {
+  let entry = tableKeys.get(node);
+  if (entry?.body !== body) {
+    entry = { body, header: scopeJson(splitRow(rawNode(body, node.children[0]))), rows: null };
+    tableKeys.set(node, entry);
+  }
+  return entry;
+}
+function nativeRowsByKey(body, node) {
+  const entry = nativeTableKeys(body, node);
+  if (!entry.rows) {
+    const rows = new Map();
+    for (const row of node.children.slice(1)) {
+      const key = scopeJson(splitRow(rawNode(body, row)));
+      rows.set(key, [...(rows.get(key) || []), row]);
+    }
+    entry.rows = rows;
+  }
+  return entry.rows;
+}
 function selectedNodes(view, selection, body) {
   if (selection.type === 'body' || selection.type === 'body-token') return view.tree.children;
   const sections = view.sections.filter((section) => section.slug === selection.section);
@@ -41,9 +64,11 @@ function selectedNodes(view, selection, body) {
   if (selection.type === 'row') {
     // Never reintroduce native tables rejected by the canonical resolver.
     const matches = sections[0].tableNodes.filter((node) =>
-      scopeJson(splitRow(rawNode(body, node.children[0]))) === scopeJson(selection.headers))
-      .flatMap((node) => node.children.slice(1))
-      .filter((row) => scopeJson(splitRow(rawNode(body, row))) === scopeJson(selection.cells));
+      nativeTableKeys(body, node).header === scopeJson(selection.headers))
+      .flatMap((node) => {
+        const rows = nativeRowsByKey(body, node);
+        return rows.size ? rows.get(scopeJson(selection.cells)) || [] : [];
+      });
     if (matches.length !== 1) fail('selected raw row is missing or ambiguous in its native AST');
     return matches;
   }

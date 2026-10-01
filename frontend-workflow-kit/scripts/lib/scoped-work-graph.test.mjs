@@ -73,6 +73,15 @@ test('D graph: raw row selection never expands into unselected rows, but an inde
   assert.throws(() => f.graph(['artifact:ROWS#rows/01', 'artifact:ROWS#rows']), /SW-REF-/);
 });
 
+test('D graph: repeated row selections in one table keep their own dependencies (#265)', (t) => {
+  const body = '## Rows\n| ID | Value |\n|---|---|\n| 01 | `artifact:GOOD#rules` |\n| 02 | `artifact:OTHER#rules` |\n| 03 | plain |';
+  const f = fixture(t, [{ id: 'ROWS', body }, { id: 'GOOD' }, { id: 'OTHER' }]);
+  assert.deepEqual(ids(f.graph(['artifact:ROWS#rows/01'])), ['artifact:GOOD#rules', 'artifact:ROWS#rows/01']);
+  assert.deepEqual(ids(f.graph(['artifact:ROWS#rows/02'])), ['artifact:OTHER#rules', 'artifact:ROWS#rows/02']);
+  assert.deepEqual(ids(f.graph(['artifact:ROWS#rows/03', 'artifact:ROWS#rows/01'])),
+    ['artifact:GOOD#rules', 'artifact:ROWS#rows/01', 'artifact:ROWS#rows/03']);
+});
+
 test('D graph: unrelated section edits change raw audit hashes, not selected nodes or dependency edges', (t) => {
   const f = fixture(t, [{ id: 'ROOT', body: '## Rules\n`artifact:GOOD#rules`\n\n## Other\nUnselected note.' }, { id: 'GOOD' }]);
   const before = f.graph(['artifact:ROOT#rules']);
