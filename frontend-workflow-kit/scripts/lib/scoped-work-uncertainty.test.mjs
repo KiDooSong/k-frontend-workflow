@@ -229,6 +229,22 @@ test('D uncertainty: a format problem in a document that cannot reach selected e
   }
 });
 
+test('D uncertainty: decoded metadata and encoded link refs keep a format problem fatal, like plain spellings (#260)', (t) => {
+  const malformed = unknowns([['U-ONE', 'Which rule applies?'], ['U-TWO', '']]);
+  const escape = (raw) => raw.replace('"artifact:RULES#rules"', '"artifact\\u003aRULES#rules"');
+  for (const [label, extra, body, encode] of [
+    ['plain metadata', { depends_on: ['artifact:RULES#rules'] }, malformed, (raw) => raw],
+    ['escaped depends_on', { depends_on: ['artifact:RULES#rules'] }, malformed, escape],
+    ['escaped source ref', { sources: [{ ref: 'artifact:RULES#rules' }] }, malformed, escape],
+    ['entity link destination', {}, unknowns([['U-ONE', '[rule](artifact&#58;RULES#rules)'], ['U-TWO', '']]), (raw) => raw],
+  ]) {
+    const f = fixture(t);
+    const file = f.write('uncertainty.md', { artifact_id: 'UNCERTAINTY', artifact_type: 'domain-rules', domain: 'other', status: 'draft', ...extra }, body);
+    fs.writeFileSync(file, encode(fs.readFileSync(file, 'utf8')));
+    assert.throws(() => f.run(), /Unknown Question/, label);
+  }
+});
+
 test('D uncertainty: a format problem in a selected evidence file stays fatal outside native scope (#260)', (t) => {
   const f = fixture(t);
   f.evidence('## Rules\nForeign rule.\n\n## Unknowns\nNone — no new open questions.');

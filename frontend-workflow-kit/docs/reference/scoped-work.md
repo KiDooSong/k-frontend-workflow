@@ -131,8 +131,10 @@ packets and serialized verdicts are not authority. For each scoped request:
   document. A table-shape or row-identity problem stops the preflight when a row
   there could relate to the request: the document belongs to a selected owner's
   native scope (its own spec, a surface it hosts, a same-domain, global or
-  undomained document), holds selected evidence, or contains any typed reference.
-  Elsewhere the section is skipped and listed in `required_reviews` as
+  undomained document), holds selected evidence, or contains any typed reference
+  — as written, in decoded frontmatter or as a link destination, the way
+  resolution reads it. Elsewhere the section is skipped and listed in
+  `required_reviews` as
   `Unaudited uncertainty section <file>#<section>: <reason>`.
 
 The envelope has `work_contract: 1`, `authority: scoped`, `snapshot`,

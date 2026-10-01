@@ -63,6 +63,13 @@ test('D #260 example: general-contract formats keep a structured scoped result; 
   assert.ok(prose.required_reviews.some((entry) => entry.startsWith(`Unaudited uncertainty section ${DETAIL}#unknowns:`)));
   assert.equal(baseline.required_reviews.some((entry) => entry.startsWith('Unaudited')), false);
 
+  // A reference to the selected contract keeps it fatal, also when YAML escapes it.
+  const linked = readiness(t, ({ read, put }) => {
+    const detail = read(DETAIL);
+    put(DETAIL, `${detail.replace('depends_on: [navigation-map]', 'depends_on: [navigation-map, "artifact\\u003aCOUPON-001-screen-spec#state-matrix"]')}${PROSE}`);
+  });
+  assert.equal(linked.status, 2); assert.match(linked.stderr, /SW-UNCERTAINTY: one canonical unknown table required/);
+
   // The same prose section on the adopted owner still stops the preflight.
   const own = readiness(t, ({ read, put }) => put(LIST, read(LIST).replace(/\n## Unknowns\n[\s\S]*?(?=\n## )/, PROSE.trimEnd())));
   assert.equal(own.status, 2); assert.match(own.stderr, /SW-UNCERTAINTY: one canonical unknown table required/);

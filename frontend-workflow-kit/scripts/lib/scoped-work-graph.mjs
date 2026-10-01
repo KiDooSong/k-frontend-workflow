@@ -137,6 +137,39 @@ function dependencies(body, view, nodes, omitNestedLists) {
   return scopeSet([...found]);
 }
 
+// Only explicitly typed metadata references are graph edges here. Native
+// untyped decision IDs / ownership / unit declarations belong to the later
+// owner graph; binding approval_ref/basis_digest never seed this traversal.
+// Reads the decoded metadata, so an escaped spelling is the same edge (#260).
+export function scopedGraphMetadataRefs(metadata) {
+  const refs = [];
+  for (const key of ['depends_on', 'decision_refs']) {
+    if (!Object.hasOwn(metadata, key)) continue;
+    if (!Array.isArray(metadata[key])) fail(`${key}: array required`);
+    for (const value of metadata[key]) {
+      workText(value, key);
+      if (prefix.test(value)) refs.push(canonicalRef(value));
+    }
+  }
+  if (Object.hasOwn(metadata, 'sources')) {
+    if (!Array.isArray(metadata.sources)) fail('sources: array required');
+    for (const source of metadata.sources) {
+      workText(source?.ref, 'source ref');
+      if (prefix.test(source.ref)) refs.push(canonicalRef(source.ref));
+    }
+  }
+  if (metadata.approval_source?.ref !== undefined) {
+    const value = workText(metadata.approval_source.ref, 'approval source ref');
+    if (prefix.test(value)) refs.push(canonicalRef(value));
+  }
+  return refs;
+}
+// Every typed content edge the native scanner reads anywhere in one body; it
+// fails as resolution would on an encoded or escaped typed destination.
+export function scopedGraphBodyRefs(body, view) {
+  return dependencies(body, view, view.tree.children, false);
+}
+
 export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifacts = [], projectRoot } = {}) {
   const refs = createScopedReferenceResolver({ targetIndex, inputArtifacts, projectRoot });
   const sources = createScopedSourceResolver({ targetIndex, inputArtifacts, projectRoot });
@@ -180,29 +213,7 @@ export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifa
     const selected = selectedNodes(document.view, record.selection, document.body);
     const dependenciesForRef = dependencies(document.body, document.view, selected,
       Boolean(input) && record.selection.bullet_index != null);
-    // Only explicitly typed metadata references are graph edges here. Native
-    // untyped decision IDs / ownership / unit declarations belong to the later
-    // owner graph; binding approval_ref/basis_digest never seed this traversal.
-    const metadataRefs = [];
-    for (const key of ['depends_on', 'decision_refs']) {
-      if (!Object.hasOwn(record.metadata, key)) continue;
-      if (!Array.isArray(record.metadata[key])) fail(`${key}: array required`);
-      for (const value of record.metadata[key]) {
-        workText(value, key);
-        if (prefix.test(value)) metadataRefs.push(canonicalRef(value));
-      }
-    }
-    if (Object.hasOwn(record.metadata, 'sources')) {
-      if (!Array.isArray(record.metadata.sources)) fail('sources: array required');
-      for (const source of record.metadata.sources) {
-        workText(source?.ref, 'source ref');
-        if (prefix.test(source.ref)) metadataRefs.push(canonicalRef(source.ref));
-      }
-    }
-    if (record.metadata.approval_source?.ref !== undefined) {
-      const value = workText(record.metadata.approval_source.ref, 'approval source ref');
-      if (prefix.test(value)) metadataRefs.push(canonicalRef(value));
-    }
+    const metadataRefs = scopedGraphMetadataRefs(record.metadata);
     for (const dependency of scopeSet([...new Set([...dependenciesForRef, ...metadataRefs])])) {
       edges.push({ from: ref, to: dependency });
       if (!scheduled.has(dependency)) { scheduled.add(dependency); queue.push(dependency); }

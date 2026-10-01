@@ -13,13 +13,14 @@
   ID 접두가 아니라 표가 정한다. typed ref에 들어갈 수 있는 ID여야 하고, 다른 종류의 접두로 시작하면 안 된다.
   investigation·verification 참조와 Reconciliation Items target 문법은 그대로 엄격하다.
 - Unknowns·Conflicts의 표 형식·행 식별 오류는 행이 요청과 관계될 수 있는 문서에서만 preflight를 멈춘다.
-  선택 owner의 native 범위, 선택 근거를 가진 문서, typed 참조가 있는 문서가 그렇다. 그 밖의 섹션은 건너뛰고
+  선택 owner의 native 범위, 선택 근거를 가진 문서, typed 참조가 있는 문서가 그렇다. typed 참조는 원문뿐 아니라
+  해석된 frontmatter와 링크 목적지도 해소 단계와 같은 방식으로 본다. 그 밖의 섹션은 건너뛰고
   `required_reviews`에 `Unaudited uncertainty section <file>#<section>: <reason>`으로 남긴다.
 - 로컬 결정 ID 오류 문구는 그 ID가 있는 로컬 표를 가리킨다. 전에 해소되던 투영과 basis digest는 바뀌지 않는다.
 - 회귀 테스트: 접두 없는 로컬·전역 결정, `decision_work_scopes` binding, 단위 계약·격리 결정, Unknown의 native·
-  inverse 관계, 그래프 밖 형식 문제 4종의 건너뜀과 그 경계(native·근거 파일·typed 참조), profile의
-  `required_reviews`. 이슈의 `coupon-feature` 재현(B·C·D)은 공개 CLI 테스트가 됐다. 문서: `scoped-work.md`,
-  `upgrade-notes.md`, doc-ownership.
+  inverse 관계, 그래프 밖 형식 문제 4종의 건너뜀과 그 경계(native·근거 파일·typed 참조: 원문, escape된
+  frontmatter, 인코딩된 링크 목적지), profile의 `required_reviews`. 이슈의 `coupon-feature` 재현(B·C·D)과 escape된
+  `depends_on`의 치명 유지는 공개 CLI 테스트가 됐다. 문서: `scoped-work.md`, `upgrade-notes.md`, doc-ownership.
 
 ### fix(workflow) — codegen 출력 글롭 아래의 손으로 쓴 파일을 생성물로 거부하지 않음 (#255)
 

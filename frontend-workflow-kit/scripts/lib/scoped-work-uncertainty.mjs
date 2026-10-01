@@ -12,7 +12,7 @@ import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { parseTargetRef } from './reconciliation-items.mjs';
 import { parseReconciliationMarkdown, parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
 import { createScopedReferenceResolver, scopedRawTable, parseScopedTargetRef } from './scoped-work-refs.mjs';
-import { resolveScopedContractGraph, scopedGraphSelectionSpans } from './scoped-work-graph.mjs';
+import { resolveScopedContractGraph, scopedGraphSelectionSpans, scopedGraphMetadataRefs, scopedGraphBodyRefs } from './scoped-work-graph.mjs';
 import { scopedProjectionNode } from './scoped-work-projection.mjs';
 import { resolveScopedDecisionProjection } from './scoped-work-decisions.mjs';
 import { ScopedWorkContractError, workText } from './scoped-work-request.mjs';
@@ -229,15 +229,20 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
 
   // #260: a format problem stays fatal wherever a row could relate: a document in
   // any subject's native scope (an unclassifiable one included), one holding
-  // selected or derived evidence, or one with a typed spelling (row cells and
-  // metadata refs are the only graph edges). Elsewhere no relation can be lost,
+  // selected or derived evidence, or one with a typed reference. Row cells and
+  // metadata refs are the only graph edges, so judge references as resolution
+  // reads them (decoded metadata, native content scan) as well as the raw text;
+  // a reference that cannot be read counts. Elsewhere no relation can be lost,
   // so the section is reported as unaudited instead of stopping all scoped work.
+  const contractError = (check) => {
+    try { return check(); } catch (cause) { if (cause instanceof CurrentWorkError) return true; throw cause; }
+  };
+  const referencing = (entry, file) => typedSpelling.test(document(file).text) || contractError(() =>
+    scopedGraphMetadataRefs(entry.fm).length > 0 || scopedGraphBodyRefs(document(file).body, document(file).view).length > 0);
   const skipped = new Map();
   for (const { entry, file, section, error } of unaudited) {
-    const native = (value) => {
-      try { return nativeScope(entry, value); } catch (cause) { if (cause instanceof CurrentWorkError) return true; throw cause; }
-    };
-    if (typedSpelling.test(document(file).text) || [...subjects.values()].some((value) => native(value) ||
+    const native = (value) => contractError(() => nativeScope(entry, value));
+    if (referencing(entry, file) || [...subjects.values()].some((value) => native(value) ||
       [...value.selected, ...value.derived.map(({ node }) => node)].some((node) => node.file === file))) throw error;
     const value = { file, section, reason: error.message };
     skipped.set(scopeJson(value), value);
