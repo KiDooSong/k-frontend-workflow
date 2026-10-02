@@ -8,10 +8,11 @@ import { ownerParts, readCurrentBytes, hashBytes, normalizeWorkOrigins } from '.
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { buildInputArtifactIndex, resolveInputArtifact, parseRfc3339 } from './provenance.mjs';
 import { validateInputArtifacts } from './input-artifact.mjs';
-import { parseReconciliationRegister } from './reconciliation-register.mjs';
+import { parseReconciliationRegister, REQUIRED_REGISTER_COLS } from './reconciliation-register.mjs';
 import { parseRegisterContract, parseReconciliationItems, parseTargetRef, validateReconciliationV2,
   RESULT_BY_STATUS } from './reconciliation-items.mjs';
-import { parseReconciliationMarkdown, parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
+import { parseReconciliationMarkdown, parseReconciliationReferenceView, parseStrictTables, stripNonContent,
+  describeHeaderMismatch } from './reconciliation-markdown-ast.mjs';
 import { parseTable } from './spec.mjs';
 import { parseScopedOwner } from './scoped-work-declarations.mjs';
 import { createScopedReferenceResolver, scopedRawTable } from './scoped-work-refs.mjs';
@@ -37,29 +38,50 @@ const headerKey = (name) => name.toLowerCase().replace(/\s+/g, '');
 // validated Summary cell never shows one. Parse the same body with each comment kept as an indexed mark
 // instead: rows, cells and padding line up with the parser's, which shows the cells that held a comment, and
 // each row keeps its source line as written. A separator line drops its marks; marks before the leading pipe
-// move into the first cell, since the parser trims the line.
+// move into the first cell, since the parser trims the line. The rows are those of the canonical Summary: the
+// validator only compares the parser's table cell by cell with it (RR-SCHEMA-020), so an example table placed
+// before it may hold the same cells.
 const SEPARATOR = /^\|?[\s:|-]+\|?$/;
+// The line where the canonical Summary starts, picked as validateReconciliationV2 picks it (RR-SCHEMA-019): the
+// one table with exactly the Summary columns once code and comments are removed (line breaks stay). It is placed
+// among the top-level tables, so the same text in a list or quote does not count; -1 when it cannot be placed.
+function canonicalSummaryLine(body) {
+  const content = stripNonContent(body);
+  const tables = parseStrictTables(content).filter((table) => describeHeaderMismatch(table, REQUIRED_REGISTER_COLS) === null);
+  const nodes = tables.length !== 1 ? [] : parseReconciliationReferenceView(content).tree.children.filter((node) =>
+    node.type === 'table' && content.slice(node.position.start.offset, node.position.end.offset) === tables[0].sourceText);
+  return nodes.length === 1 ? content.slice(0, nodes[0].position.start.offset).split('\n').length - 1 : -1;
+}
 function summaryAsWritten(body) {
   let code = 0xe000;
   while (body.includes(String.fromCharCode(code))) code += 1;
   const mark = String.fromCharCode(code), token = `${mark}\\d+${mark}`, comments = [];
   const marks = new RegExp(`${mark}(\\d+)${mark}`, 'g');
   const lines = body.replace(/<!--[\s\S]*?-->/g, (comment) => `${mark}${comments.push(comment) - 1}${mark}`).split(/\r?\n/);
+  // The source line each line starts on: a comment's own line breaks went into its mark.
+  let folded = 0;
+  const sourceLine = lines.map((line, index) => {
+    const at = index + folded;
+    for (const [, comment] of line.matchAll(marks)) folded += comments[Number(comment)].split('\n').length - 1;
+    return at;
+  });
   const parsed = lines.map((line) => {
     const bare = line.replace(marks, '');
     if (SEPARATOR.test(bare.trim())) return bare;
     return line.replace(new RegExp(`\\\\((?:${token})+)\\|`, 'g'), '$1\\|') // a mark between `\` and `|` keeps the pipe escaped
       .replace(new RegExp(`^((?:\\s|${token})*)\\|`), '|$1');
   });
-  const table = parseTable(parsed.join('\n'));
-  // The rows' lines, by the parser's block rule: consecutive `|` lines, the first block whose second line is a separator.
-  let block = [], rowLines = [];
+  // The table's lines, by the parser's block rule (consecutive `|` lines whose second line is a separator): the
+  // block where the canonical Summary starts.
+  const start = canonicalSummaryLine(body);
+  let block = [];
   for (const [index, line] of [...parsed, ''].entries()) {
     if (line.trim().startsWith('|')) { block.push(index); continue; }
-    if (block.length >= 2 && SEPARATOR.test(parsed[block[1]].trim())) { rowLines = block.slice(2); break; }
+    if (block.length >= 2 && SEPARATOR.test(parsed[block[1]].trim()) && sourceLine[block[0]] === start) break;
     block = [];
   }
-  if (!table || rowLines.length !== table.cell_rows.length) return [];
+  const table = parseTable(block.map((index) => parsed[index]).join('\n')), rowLines = block.slice(2);
+  if (!table) return [];
   const plain = (cell) => cell.replace(marks, '').trim();
   return table.cell_rows.map((cells, i) => {
     const row = {};

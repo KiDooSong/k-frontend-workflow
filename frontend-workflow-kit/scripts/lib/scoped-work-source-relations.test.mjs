@@ -418,6 +418,38 @@ test('D #269 legacy sources: the register parser picks the table, row and cells;
   assert.deepEqual(f.run().legacy_connections, []); assert.deepEqual(f.run().pending_connections, unconnected());
 });
 
+test('D #269 legacy sources: the row as written comes from the canonical Summary, not an example table before it', (t) => {
+  // The v2 validator takes the Summary from the content view (code and comments removed) and only compares the
+  // cells of the first raw pipe table with it, so an example with the same cells may come first.
+  const header = `| ${REQUIRED_REGISTER_COLS.join(' | ')} |\n|${REQUIRED_REGISTER_COLS.map(() => '---').join('|')}|`;
+  const row = (cells) => `| ${cells.join(' | ')} |`;
+  const base = [INPUT, 'meeting', 'simple-update×0', 'reconciled', 'accepted', '-', '-', '-'];
+  const example = `${header}\n${row(base)}`;
+  const write = (f, before, real) => fs.writeFileSync(f.registerFile,
+    md(V2, `${before}\n\n${header}\n${real}\n\n## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, [])}`));
+  const real = row([...base.slice(0, 5), '- <!-- real -->', '-', '-']);
+  for (const [label, before] of [['fenced example', `\`\`\`md\n${example}\n\`\`\``], ['indented example', example.replace(/^/gm, '    ')],
+    ['list example', `- example\n${example}`]]) {
+    // An annotated Result in the canonical row does not connect through the example's clean copy.
+    const annotated = fixture(t, { explicit: false, native: true }); legacy(annotated);
+    write(annotated, before, row([...base.slice(0, 4), 'accepted <!-- note -->', ...base.slice(5)]));
+    assert.deepEqual(annotated.run().legacy_connections, [], label);
+    assert.deepEqual(annotated.run().pending_connections, unconnected(), label);
+    // A clean canonical row connects, and its own line is the evidence.
+    const f = fixture(t, { explicit: false, native: true }); legacy(f);
+    write(f, before, real);
+    assert.deepEqual(f.run().legacy_connections.map((entry) => entry.summary.row), [real], label);
+    // A row identical to the example connects too: the same text left in a list is not a second Summary.
+    const same = fixture(t, { explicit: false, native: true }); legacy(same);
+    write(same, before, row(base));
+    assert.deepEqual(same.run().legacy_connections.map((entry) => entry.summary.row), [row(base)], label);
+  }
+  // A comment over several lines before the Summary does not move the row off its source line.
+  const f = fixture(t, { explicit: false, native: true }); legacy(f);
+  write(f, '<!--\n  register notes\n  over lines\n-->', real);
+  assert.deepEqual(f.run().legacy_connections.map((entry) => entry.summary.row), [real]);
+});
+
 test('D #269 legacy sources: Items, a structured capture time, a missing Summary or a v1 register keep the item rule', (t) => {
   // Any Item makes the input structured: an Item for another section does not fall back to the Summary.
   const items = fixture(t, { explicit: false, native: true }); legacy(items, { rows: [effect('02', 'other')] });
