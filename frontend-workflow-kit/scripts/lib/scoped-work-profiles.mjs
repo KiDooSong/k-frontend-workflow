@@ -191,5 +191,9 @@ export function inspectScopedProfile(options = {}) {
       // #260: the uncertainty layer proved these sections cannot relate; say so instead of failing every request.
       ...observed.unaudited.map(({ file, section, reason }) => `Unaudited uncertainty section ${file}${section ? `#${section}` : ''}: ${reason}. ` +
         'It cannot relate to this work (no typed reference, outside every selected native scope and evidence file); fix its format to audit its rows.'),
+      // #269: a legacy source is connected by its Summary alone; a person checks what Items would have shown.
+      ...union(coverage.legacy_connections.map(({ input_id, summary }) => `Legacy summary-only source ${input_id} (reconciled + ${summary.result}) ` +
+        'is connected through its register Summary, without item-level evidence. Confirm the selected contracts reflect it; ' +
+        'Decisions and Conflicts it created are judged from their own tables.')),
     ] };
 }

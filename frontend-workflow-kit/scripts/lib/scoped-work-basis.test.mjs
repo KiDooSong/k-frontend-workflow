@@ -471,3 +471,27 @@ test('W31: host link, same-named host unit content and M-key changes stale a sur
     mutate(f); assert.equal(bindingState(f, owner), 'stale-basis', label);
   }
 });
+
+test('#269: each legacy Summary cell and the input bytes stale a binding that a legacy source reaches', (t) => {
+  const f = fixture(t), input = 'IN-20260801-meeting-001';
+  f.write('legacy.md', { ...inputFm(input), captured_at: '2026-08-01T00:00:00Z' }, '## Extracted Facts\n- Legacy fact.', f.inputs);
+  f.change('rules.md', ({ fm }) => { fm.sources = [{ type: 'meeting', ref: input }]; });
+  const row = [input, 'meeting', 'simple-update', 'reconciled', 'accepted', 'artifact:RULES', '-', '-'];
+  const register = (cells = row) => fs.writeFileSync(f.registerFile, md({ reconciliation_contract: 2,
+    review_profile: 'reconcile-stage04-v1', structured_since: '2026-09-01T00:00:00Z' },
+  `${table(REQUIRED_REGISTER_COLS, [cells])}\n\n## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, [])}`));
+  register(); recordBasis(f);
+  assert.deepEqual(f.run().basis.units.map((entry) => entry.source_dependencies.legacy_connections?.map((source) => source.input_id)),
+    [[input], [input]]);
+  assert.equal(bindingState(f), 'current-unverified');
+  // The reviewer would have seen the whole row, so each cell is scope; a still-connected value changes it.
+  const changed = { 0: `${input} <!-- note -->`, 1: 'document', 2: 'simple-update×0', 4: 'no-change', 5: 'artifact:RULES, artifact:SCREEN-RESULT-001',
+    6: 'D-ONE', 7: 'IN-20260701-meeting-001' };
+  for (const [cell, value] of Object.entries(changed)) {
+    const cells = [...row]; cells[cell] = value; register(cells);
+    assert.equal(bindingState(f), 'stale-basis', REQUIRED_REGISTER_COLS[cell]);
+    register(); assert.equal(bindingState(f), 'current-unverified', REQUIRED_REGISTER_COLS[cell]);
+  }
+  f.change('legacy.md', ({ fm }) => { fm.captured_by = 'another-recorder'; }, f.inputs);
+  assert.equal(bindingState(f), 'stale-basis');
+});

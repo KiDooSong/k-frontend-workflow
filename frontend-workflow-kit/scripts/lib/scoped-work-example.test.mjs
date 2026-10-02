@@ -109,3 +109,47 @@ test('#265 golden: the scoped envelope, basis digest and error text stay as they
   assert.deepEqual([duplicate.status, duplicate.stdout, duplicate.stderr],
     [2, '', 'readiness: SW-UNCERTAINTY: duplicate uncertainty conflict:C-004@conflicts\n']);
 });
+
+// #269: a summary-only legacy input (captured before structured_since) cited by the selected contract.
+const LEGACY_INPUT = 'IN-20260601-meeting-001';
+const WIREFRAME = '  - { type: wireframe, ref: docs/raw/wireframes/coupon-list.md }\n';
+const legacySource = ({ result = 'accepted', items = false } = {}) => ({ read, put }) => {
+  put(LIST, read(LIST).replace(WIREFRAME, `${WIREFRAME}  - { type: meeting, ref: ${LEGACY_INPUT} }\n`));
+  put(`docs/frontend-workflow/inputs/${LEGACY_INPUT}.md`, ['---', `input_id: "${LEGACY_INPUT}"`, 'input_type: "meeting"',
+    'source_type: "meeting"', 'source_ref: "meeting:coupon-expiry-review"', 'captured_at: "2026-06-01T00:00:00+09:00"',
+    'captured_by: "meeting-input"', 'status: "captured"', 'affected_domains: ["coupons"]', 'affected_screens: ["COUPON-001"]', '---', '',
+    '# Coupon expiry review', '', '## Extracted Facts', '', '- Expired coupons are listed after active ones, greyed out.', ''].join('\n'));
+  const item = `| ${LEGACY_INPUT} | 01 | compatible-fact | simple-update | update | artifact:COUPON-001-screen-spec#state-matrix | ` +
+    `input:${LEGACY_INPUT}#extracted-facts/01 | inherit | statement | inherit |\n`;
+  put('docs/frontend-workflow/_meta/reconciliation-register.md', '---\ntitle: Reconciliation Register\nstatus: draft\nkind: meta-register\n' +
+    'reconciliation_contract: 2\nreview_profile: reconcile-stage04-v1\nstructured_since: "2026-09-01T00:00:00+09:00"\n---\n\n' +
+    '# Reconciliation Register\n\n| Input ID | Source | Classification | Reconcile Status | Result | Touched Artifacts | Created Items | Supersedes |\n' +
+    `|---|---|---|---|---|---|---|---|\n| ${LEGACY_INPUT} | meeting | simple-update | reconciled | ${result} | artifact:COUPON-001-screen-spec | - | - |\n\n` +
+    '## Reconciliation Items\n\n| Input ID | Item | Basis | Classification | Effect | Target | Evidence | Source Ref | Source Unit | Captured At |\n' +
+    `|---|---|---|---|---|---|---|---|---|---|\n${items ? item : ''}`);
+};
+
+test('#269 example: a summary-only legacy source connects through its reconciled Summary and is listed for review', (t) => {
+  const reviews = (env) => env.required_reviews.filter((entry) => entry.startsWith('Legacy summary-only source'));
+  const legacySources = (env) => env.requests[0].evidence.legacy_sources?.map(({ input_sha256, ...entry }) => entry);
+  const baseline = json(readiness(t));
+  for (const result of ['accepted', 'pending-user-decision']) {
+    const env = json(readiness(t, legacySource({ result })));
+    assert.deepEqual(codes(env), codes(baseline), result);
+    assert.deepEqual(reviews(env).map((entry) => entry.slice(0, entry.indexOf(')') + 1)),
+      [`Legacy summary-only source ${LEGACY_INPUT} (reconciled + ${result})`]);
+    assert.deepEqual(legacySources(env), [{ input_id: LEGACY_INPUT, ref: null, reason: 'legacy-summary-only', summary: { input_id: LEGACY_INPUT, source: 'meeting',
+      classification: 'simple-update', reconcile_status: 'reconciled', result, touched_artifacts: 'artifact:COUPON-001-screen-spec',
+      created_items: '-', supersedes: '-',
+      row: `| ${LEGACY_INPUT} | meeting | simple-update | reconciled | ${result} | artifact:COUPON-001-screen-spec | - | - |` } }]);
+  }
+  // An annotated Result is not a canonical code, also when an HTML comment hides the note from the table parser.
+  // An Item connects at item level instead of through the Summary.
+  for (const result of ['accepted — kept after review', 'accepted <!-- kept after review -->']) {
+    const annotated = json(readiness(t, legacySource({ result })));
+    assert.ok(annotated.denials.some((entry) => entry.code === 'source-effect-unconnected'), result); assert.deepEqual(reviews(annotated), [], result);
+  }
+  const backfilled = json(readiness(t, legacySource({ items: true })));
+  assert.deepEqual(codes(backfilled), codes(baseline)); assert.deepEqual(reviews(backfilled), []);
+  assert.equal(legacySources(backfilled), undefined);
+});

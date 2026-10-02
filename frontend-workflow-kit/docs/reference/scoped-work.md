@@ -146,6 +146,27 @@ packets and serialized verdicts are not authority. For each scoped request:
   resolution reads it. Elsewhere the section is skipped and listed in
   `required_reviews` as
   `Unaudited uncertainty section <file>#<section>: <reason>`.
+- **Legacy sources** — a contract's canonical source (an `IN-` entry in
+  frontmatter `sources`, or a typed input reference) connects through
+  Reconciliation Items whose target touches the selected contract. An input
+  captured before the v2 register's `structured_since` that has no Items is the
+  [summary-only legacy row](input-reconciliation.md#v2-frontmatter) the register
+  contract allows. It connects through that row when the row is `reconciled`
+  with a canonical Result for that status (`accepted`, `pending-user-decision`,
+  `rejected`, `delegated`, `no-change`, `mixed`); the Decisions and Conflicts it
+  created keep their own gates. The register parser picks the row and its cells;
+  its Reconcile Status and Result must also be canonical as written in the
+  Summary table the validator checks (not an example placed before it), before
+  the parser drops HTML comments, so `accepted <!-- … -->` does not connect. The
+  request lists it, with the row's validated cells, its line as written and the
+  input sha256, in `evidence.legacy_sources` (an adopted surface host's under its
+  `evidence.hosts` entry) and in `required_reviews` as
+  `Legacy summary-only source <input_id> (reconciled + <result>) …`. Any Item, a
+  later capture, a v1 register, another status or an annotated Result
+  (`accepted — …`) keeps the item-level rule and its `source-effect-unconnected`
+  denial. An Item source keeps the stricter admission (`reconciled + accepted`,
+  or `pending`/partial with a current coverage receipt): history from before
+  adoption has no later re-apply path, so its Result is reported, not gated.
 
 The envelope has `work_contract: 1`, `authority: scoped`, `snapshot`,
 `request_digest`, `origin_inputs`, `requests` (per request `path_authorizations`,

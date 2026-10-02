@@ -222,6 +222,7 @@ export function resolveScopedUnitProjection({ owner, policyFile, targetIndex, in
     }, sources: scopeSet(selectedSources), api_rows: scopeSet(apiRows),
     ...(sourceFacts.inferred_sources.length ? { source_dependencies: {
       inferred: sourceFacts.inferred_sources, pending_connections: sourceFacts.pending_connections,
+      ...(sourceFacts.legacy_connections.length ? { legacy_connections: sourceFacts.legacy_connections } : {}),
       unconnected_effects: scopeSet(sourceFacts.sources.flatMap((entry) => entry.issues
         .map((issue) => ({ input_id: entry.selection.input_id, ...issue })))),
     } } : {}) });

@@ -104,7 +104,7 @@ export const RESULT_VALUES = [
 ];
 
 // Reconcile Status → 권고 Result 조합 (warning-first).
-const RESULT_BY_STATUS = {
+export const RESULT_BY_STATUS = {
   'not-started': ['pending'],
   'in-progress': ['pending'],
   'partially-reconciled': ['pending'],

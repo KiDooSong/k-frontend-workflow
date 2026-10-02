@@ -529,3 +529,21 @@ test('W13: missing, foreign or stale Decision scopes deny scoped work; no scope 
   assert.equal(blocked[0].legacy.__decision_cap, 'screen-skeleton');
   for (const entry of [...blocked, current]) assert.deepEqual(entry.legacy, blocked[0].legacy);
 });
+
+test('#269: a legacy source connected for an adopted surface host is listed in that host evidence', (t) => {
+  const r = repository(t), input = 'IN-20260801-meeting-001';
+  r.edit('rules-1.md', ({ fm }) => { fm.sources = [{ type: 'meeting', ref: input }]; });
+  r.put(`${DOCS}/inputs/input-legacy.md`, md({ input_id: input, input_type: 'meeting', source_type: 'meeting', source_ref: 'meeting:legacy-host',
+    captured_at: '2026-08-01T00:00:00Z', captured_by: 'test', status: 'captured', affected_domains: ['result'], affected_screens: ['RESULT-001'] },
+  '## Extracted Facts\n- Legacy host fact.'));
+  r.put(`${DOCS}/_meta/reconciliation-register.md`, md({ reconciliation_contract: 2, review_profile: 'reconcile-stage04-v1', structured_since: '2026-09-01T00:00:00Z' },
+    `${table(REQUIRED_REGISTER_COLS, [[input, 'meeting', 'simple-update', 'reconciled', 'accepted', 'artifact:RULES-1', '-', '-']])}\n\n` +
+    `## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, [])}`));
+  r.commit('legacy host source');
+  const env = publicScopedEnvelope(r.prepare(t)), [selected] = env.requests;
+  assert.equal(env.ready, true, JSON.stringify(env.denials));
+  assert.equal(Object.hasOwn(selected.evidence, 'legacy_sources'), false); // the surface unit itself does not cite it
+  assert.deepEqual(selected.evidence.hosts.map((host) => [host.owner, (host.legacy_sources ?? []).map((entry) => [entry.input_id, entry.summary.result])]),
+    [['screen:RESULT-001', [[input, 'accepted']]], ['screen:RESULT-002', []]]);
+  assert.ok(env.required_reviews.some((entry) => entry.startsWith(`Legacy summary-only source ${input} (reconciled + accepted)`)));
+});
