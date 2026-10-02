@@ -11,7 +11,7 @@ import { validateInputArtifacts } from './input-artifact.mjs';
 import { parseReconciliationRegister, REQUIRED_REGISTER_COLS } from './reconciliation-register.mjs';
 import { parseRegisterContract, parseReconciliationItems, parseTargetRef, validateReconciliationV2,
   RESULT_BY_STATUS } from './reconciliation-items.mjs';
-import { parseReconciliationMarkdown, parseReconciliationReferenceView, parseStrictTables, stripNonContent,
+import { parseReconciliationMarkdown, parseReconciliationReferenceView, locateStrictTables, stripNonContent,
   describeHeaderMismatch } from './reconciliation-markdown-ast.mjs';
 import { parseTable } from './spec.mjs';
 import { parseScopedOwner } from './scoped-work-declarations.mjs';
@@ -35,58 +35,38 @@ const SUMMARY_COLUMNS = [['inputId', 'Input ID'], ['source', 'Source'], ['classi
 const headerKey = (name) => name.toLowerCase().replace(/\s+/g, '');
 
 // The register parser removes HTML comments before it splits its first table (spec.mjs parseTables), so a
-// validated Summary cell never shows one. Parse the same body with each comment kept as an indexed mark
-// instead: rows, cells and padding line up with the parser's, which shows the cells that held a comment, and
-// each row keeps its source line as written. A separator line drops its marks; marks before the leading pipe
-// move into the first cell, since the parser trims the line. The rows are those of the canonical Summary: the
-// validator only compares the parser's table cell by cell with it (RR-SCHEMA-020), so an example table placed
-// before it may hold the same cells.
+// validated Summary cell never shows one. Read the canonical Summary's own lines with each comment kept as an
+// indexed mark instead: rows, cells and padding line up with the parser's, which shows the cells that held a
+// comment, and each row keeps its source line as written. A separator line drops its marks; marks before the
+// leading pipe move into the first cell, since the parser trims the line. The canonical Summary is the table
+// validateReconciliationV2 checks (RR-SCHEMA-019): the one strict top-level table with exactly the Summary
+// columns once code and comments are removed, line breaks kept, so its lines are the body's. The parser's own
+// table is only compared with it cell by cell (RR-SCHEMA-020) and may be an example placed before it.
 const SEPARATOR = /^\|?[\s:|-]+\|?$/;
-// The line where the canonical Summary starts, picked as validateReconciliationV2 picks it (RR-SCHEMA-019): the
-// one table with exactly the Summary columns once code and comments are removed (line breaks stay). It is placed
-// among the top-level tables, so the same text in a list or quote does not count; -1 when it cannot be placed.
-function canonicalSummaryLine(body) {
-  const content = stripNonContent(body);
-  const tables = parseStrictTables(content).filter((table) => describeHeaderMismatch(table, REQUIRED_REGISTER_COLS) === null);
-  const nodes = tables.length !== 1 ? [] : parseReconciliationReferenceView(content).tree.children.filter((node) =>
-    node.type === 'table' && content.slice(node.position.start.offset, node.position.end.offset) === tables[0].sourceText);
-  return nodes.length === 1 ? content.slice(0, nodes[0].position.start.offset).split('\n').length - 1 : -1;
-}
 function summaryAsWritten(body) {
+  const content = stripNonContent(body);
+  const found = locateStrictTables(content).filter(({ table }) => describeHeaderMismatch(table, REQUIRED_REGISTER_COLS) === null);
+  if (found.length !== 1) return [];
+  const lineAt = (offset) => content.slice(0, offset).split('\n').length - 1;
+  const source = body.split(/\r?\n/).slice(lineAt(found[0].start), lineAt(found[0].end) + 1).join('\n');
   let code = 0xe000;
-  while (body.includes(String.fromCharCode(code))) code += 1;
+  while (source.includes(String.fromCharCode(code))) code += 1;
   const mark = String.fromCharCode(code), token = `${mark}\\d+${mark}`, comments = [];
   const marks = new RegExp(`${mark}(\\d+)${mark}`, 'g');
-  const lines = body.replace(/<!--[\s\S]*?-->/g, (comment) => `${mark}${comments.push(comment) - 1}${mark}`).split(/\r?\n/);
-  // The source line each line starts on: a comment's own line breaks went into its mark.
-  let folded = 0;
-  const sourceLine = lines.map((line, index) => {
-    const at = index + folded;
-    for (const [, comment] of line.matchAll(marks)) folded += comments[Number(comment)].split('\n').length - 1;
-    return at;
-  });
+  const lines = source.replace(/<!--[\s\S]*?-->/g, (comment) => `${mark}${comments.push(comment) - 1}${mark}`).split('\n');
   const parsed = lines.map((line) => {
     const bare = line.replace(marks, '');
     if (SEPARATOR.test(bare.trim())) return bare;
     return line.replace(new RegExp(`\\\\((?:${token})+)\\|`, 'g'), '$1\\|') // a mark between `\` and `|` keeps the pipe escaped
       .replace(new RegExp(`^((?:\\s|${token})*)\\|`), '|$1');
   });
-  // The table's lines, by the parser's block rule (consecutive `|` lines whose second line is a separator): the
-  // block where the canonical Summary starts.
-  const start = canonicalSummaryLine(body);
-  let block = [];
-  for (const [index, line] of [...parsed, ''].entries()) {
-    if (line.trim().startsWith('|')) { block.push(index); continue; }
-    if (block.length >= 2 && SEPARATOR.test(parsed[block[1]].trim()) && sourceLine[block[0]] === start) break;
-    block = [];
-  }
-  const table = parseTable(block.map((index) => parsed[index]).join('\n')), rowLines = block.slice(2);
+  const table = parseTable(parsed.join('\n'));
   if (!table) return [];
   const plain = (cell) => cell.replace(marks, '').trim();
   return table.cell_rows.map((cells, i) => {
     const row = {};
     table.headers.forEach((header, h) => { row[plain(header)] = cells[h] ?? ''; });
-    return { line: lines[rowLines[i]].replace(marks, (_, index) => comments[Number(index)]),
+    return { line: lines[i + 2].replace(marks, (_, index) => comments[Number(index)]),
       ...Object.fromEntries(SUMMARY_COLUMNS.map(([field, name]) => {
         const cell = row[Object.keys(row).find((key) => headerKey(key) === headerKey(name))] || '';
         return [field, { plain: plain(cell), commented: cell.includes(mark) }];

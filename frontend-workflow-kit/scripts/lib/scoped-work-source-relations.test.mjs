@@ -429,7 +429,7 @@ test('D #269 legacy sources: the row as written comes from the canonical Summary
     md(V2, `${before}\n\n${header}\n${real}\n\n## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, [])}`));
   const real = row([...base.slice(0, 5), '- <!-- real -->', '-', '-']);
   for (const [label, before] of [['fenced example', `\`\`\`md\n${example}\n\`\`\``], ['indented example', example.replace(/^/gm, '    ')],
-    ['list example', `- example\n${example}`]]) {
+    ['list example', `- example\n${example}`], ['paragraph example', `Example:\n${example}`]]) {
     // An annotated Result in the canonical row does not connect through the example's clean copy.
     const annotated = fixture(t, { explicit: false, native: true }); legacy(annotated);
     write(annotated, before, row([...base.slice(0, 4), 'accepted <!-- note -->', ...base.slice(5)]));
@@ -448,6 +448,16 @@ test('D #269 legacy sources: the row as written comes from the canonical Summary
   const f = fixture(t, { explicit: false, native: true }); legacy(f);
   write(f, '<!--\n  register notes\n  over lines\n-->', real);
   assert.deepEqual(f.run().legacy_connections.map((entry) => entry.summary.row), [real]);
+  // An identical example glued to a paragraph after the Summary is not a second Summary either.
+  const after = fixture(t, { explicit: false, native: true }); legacy(after);
+  fs.writeFileSync(after.registerFile,
+    md(V2, `${header}\n${row(base)}\n\nExample:\n${example}\n\n## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, [])}`));
+  assert.deepEqual(after.run().legacy_connections.map((entry) => entry.summary.row), [row(base)]);
+  // A code line right above the Summary is not part of it, even after an example that the register parser reads.
+  const code = fixture(t, { explicit: false, native: true }); legacy(code);
+  fs.writeFileSync(code.registerFile, md(V2, `\`\`\`md\n${example}\n\`\`\`\n\n    | example text\n${header}\n${real}\n\n` +
+    `## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, [])}`));
+  assert.deepEqual(code.run().legacy_connections.map((entry) => entry.summary.row), [real]);
 });
 
 test('D #269 legacy sources: Items, a structured capture time, a missing Summary or a v1 register keep the item rule', (t) => {

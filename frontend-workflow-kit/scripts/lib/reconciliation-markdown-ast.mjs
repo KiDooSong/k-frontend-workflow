@@ -518,12 +518,18 @@ export function toProseBody(text) {
 }
 
 export function parseStrictTables(text) {
+  return locateStrictTables(text).map(({ table }) => table);
+}
+
+// The same tables with the source offsets each one spans, for callers that read a table's own lines.
+export function locateStrictTables(text) {
   const source = String(text || '');
   const tree = sharedTree(source);
   const rootChildren = tree.children || [];
-  return rootChildren
-    .map((node, index) => rootTable(source, node, rootChildren[index - 1] || null))
-    .filter(Boolean);
+  return rootChildren.flatMap((node, index) => {
+    const table = rootTable(source, node, rootChildren[index - 1] || null);
+    return table ? [{ table, ...sourceRange(node) }] : [];
+  });
 }
 
 export function splitSectionOccurrences(text) {
