@@ -157,8 +157,8 @@ packets and serialized verdicts are not authority. For each scoped request:
   created keep their own gates. The register parser picks the row and its cells;
   its Reconcile Status and Result must also be canonical as written, before the
   parser drops HTML comments, so `accepted <!-- … -->` does not connect. The
-  request lists it, with the whole Summary row as written and the input sha256,
-  in `evidence.legacy_sources` (an adopted surface host's under its
+  request lists it, with the row's validated cells, its line as written and the
+  input sha256, in `evidence.legacy_sources` (an adopted surface host's under its
   `evidence.hosts` entry) and in `required_reviews` as
   `Legacy summary-only source <input_id> (reconciled + <result>) …`. Any Item, a
   later capture, a v1 register, another status or an annotated Result

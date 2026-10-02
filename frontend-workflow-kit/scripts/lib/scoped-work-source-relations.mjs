@@ -35,31 +35,40 @@ const headerKey = (name) => name.toLowerCase().replace(/\s+/g, '');
 
 // The register parser removes HTML comments before it splits its first table (spec.mjs parseTables), so a
 // validated Summary cell never shows one. Parse the same body with each comment kept as an indexed mark
-// instead: rows, cells and padding line up with the parser's, and restoring the marks reads a cell as
-// written. Marks on a separator line are dropped; marks outside the edge pipes move into the edge cells.
+// instead: rows, cells and padding line up with the parser's, which shows the cells that held a comment, and
+// each row keeps its source line as written. A separator line drops its marks; marks before the leading pipe
+// move into the first cell, since the parser trims the line.
+const SEPARATOR = /^\|?[\s:|-]+\|?$/;
 function summaryAsWritten(body) {
   let code = 0xe000;
   while (body.includes(String.fromCharCode(code))) code += 1;
   const mark = String.fromCharCode(code), token = `${mark}\\d+${mark}`, comments = [];
   const marks = new RegExp(`${mark}(\\d+)${mark}`, 'g');
-  const marked = body.replace(/<!--[\s\S]*?-->/g, (comment) => `${mark}${comments.push(comment) - 1}${mark}`)
-    .split(/\r?\n/).map((line) => {
-      const bare = line.replace(marks, '');
-      if (/^\s*\|?[\s:|-]+\|?\s*$/.test(bare)) return bare;
-      return line.replace(new RegExp(`\\\\((?:${token})+)\\|`, 'g'), '$1\\|') // a mark between `\` and `|` keeps the pipe escaped
-        .replace(new RegExp(`(?<!\\\\)\\|((?:\\s|${token})*)$`), '$1|') // the closing pipe is an unescaped one, as in splitRow
-        .replace(new RegExp(`^((?:\\s|${token})*)\\|`), '|$1');
-    }).join('\n');
-  const table = parseTable(marked);
+  const lines = body.replace(/<!--[\s\S]*?-->/g, (comment) => `${mark}${comments.push(comment) - 1}${mark}`).split(/\r?\n/);
+  const parsed = lines.map((line) => {
+    const bare = line.replace(marks, '');
+    if (SEPARATOR.test(bare.trim())) return bare;
+    return line.replace(new RegExp(`\\\\((?:${token})+)\\|`, 'g'), '$1\\|') // a mark between `\` and `|` keeps the pipe escaped
+      .replace(new RegExp(`^((?:\\s|${token})*)\\|`), '|$1');
+  });
+  const table = parseTable(parsed.join('\n'));
+  // The rows' lines, by the parser's block rule: consecutive `|` lines, the first block whose second line is a separator.
+  let block = [], rowLines = [];
+  for (const [index, line] of [...parsed, ''].entries()) {
+    if (line.trim().startsWith('|')) { block.push(index); continue; }
+    if (block.length >= 2 && SEPARATOR.test(parsed[block[1]].trim())) { rowLines = block.slice(2); break; }
+    block = [];
+  }
+  if (!table || rowLines.length !== table.cell_rows.length) return [];
   const plain = (cell) => cell.replace(marks, '').trim();
-  const written = (cell) => cell.replace(marks, (_, index) => comments[Number(index)]);
-  return (table?.cell_rows || []).map((cells) => {
+  return table.cell_rows.map((cells, i) => {
     const row = {};
-    table.headers.forEach((header, i) => { row[plain(header)] = cells[i] ?? ''; });
-    return { ...Object.fromEntries(SUMMARY_COLUMNS.map(([field, name]) => {
-      const cell = row[Object.keys(row).find((key) => headerKey(key) === headerKey(name))] || '';
-      return [field, { plain: plain(cell), written: written(cell) }];
-    })), extra: cells.slice(table.headers.length).map(written) }; // cells the parser drops past the header
+    table.headers.forEach((header, h) => { row[plain(header)] = cells[h] ?? ''; });
+    return { line: lines[rowLines[i]].replace(marks, (_, index) => comments[Number(index)]),
+      ...Object.fromEntries(SUMMARY_COLUMNS.map(([field, name]) => {
+        const cell = row[Object.keys(row).find((key) => headerKey(key) === headerKey(name))] || '';
+        return [field, { plain: plain(cell), commented: cell.includes(mark) }];
+      })) };
   });
 }
 
@@ -280,17 +289,17 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
     const found = resolveInputArtifact(inputIndex, id);
     const captured = found.status === 'ok' ? parseRfc3339(found.artifact.fm?.captured_at) : null;
     if (captured === null || legacy.since === null || captured >= legacy.since) return null;
-    legacy.written ??= summaryAsWritten(legacy.body);
-    const row = legacy.written[legacy.summaries.indexOf(summary)];
+    legacy.asWritten ??= summaryAsWritten(legacy.body);
+    const row = legacy.asWritten[legacy.summaries.indexOf(summary)];
     // The marked row must be the validated one (if the two parses ever drift apart, nothing connects),
     // and its Status and Result must carry no comment.
     if (!row || SUMMARY_COLUMNS.some(([field]) => row[field].plain !== summary[field]) ||
-        row.reconcileStatus.written !== summary.reconcileStatus || row.result.written !== summary.result) return null;
-    // The whole Summary row is the evidence, so any cell change moves the projection and its basis.
-    return { input_id: id, ref, reason: 'legacy-summary-only', summary: { input_id: row.inputId.written, source: row.source.written,
-      classification: row.classification.written, reconcile_status: row.reconcileStatus.written, result: row.result.written,
-      touched_artifacts: row.touched.written, created_items: row.created.written, supersedes: row.supersedes.written,
-      ...(row.extra.length ? { extra_cells: row.extra } : {}) },
+        row.reconcileStatus.commented || row.result.commented) return null;
+    // The validated cells and the row's line as written are the evidence, so any change to the row moves the
+    // projection and its basis, as any change to the input's bytes does.
+    return { input_id: id, ref, reason: 'legacy-summary-only', summary: { input_id: summary.inputId, source: summary.source,
+      classification: summary.classification, reconcile_status: summary.reconcileStatus, result: summary.result,
+      touched_artifacts: summary.touched, created_items: summary.created, supersedes: summary.supersedes, row: row.line },
     input_sha256: hashBytes(read(found.artifact.file)) };
   }
   const legacyConnections = [];

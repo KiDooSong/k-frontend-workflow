@@ -15,14 +15,14 @@
   Decision·Conflict 는 기존 게이트가 판단한다. 요청의 `evidence.legacy_sources`(adopted surface host 의 연결은 그 host 의
   `evidence.hosts` 항목)에 Summary 행 전체·입력 sha256 과 함께 남고, `required_reviews` 에 입력마다 한 줄이 생긴다.
   행과 칸은 register 파서가 고르고, Reconcile Status·Result 는 표 파서가 HTML 주석을 지우기 전 그대로도 canonical 이어야
-  한다. 근거는 행을 쓰인 그대로 남긴다. Items 가 있는 입력, `structured_since` 이후 입력, v1 register, 설명이 붙은
+  한다. 근거에는 검증된 칸과 행의 원문 줄이 남는다. Items 가 있는 입력, `structured_since` 이후 입력, v1 register, 설명이 붙은
   Result(`accepted <!-- … -->` 포함)는 지금처럼 판정한다.
 - Item source 의 수용 조건(`reconciled + accepted`, 또는 receipt 가 있는 pending·partial)은 그대로다. 채택 이전 이력은
   재신청 경로가 없어 Result 를 게이트로 쓰지 않는다(#269 결정).
 - 회귀 테스트: legacy 연결(frontmatter·typed ref), canonical Result 6종과 그 밖의 상태·자유 서술·HTML 주석, 주석이 낀
-  ID·헤더·칸, 칸을 가로지르는 주석, 생략되거나 헤더보다 많은 칸, escaped pipe 뒤의 주석, Items·늦은 capture·Summary 없음·
-  v1 register, projection 과 binding basis 의 Summary 각 칸·입력 bytes 반영, coverage denial·origin, surface host 의
-  evidence, 공개 CLI(#269 재현 L1~L3).
+  ID·헤더·칸, 칸을 가로지르는 주석, 생략되거나 헤더보다 많은 칸, escaped pipe·짧은 행 뒤의 주석과 그 위치,
+  Items·늦은 capture·Summary 없음·v1 register, projection 과 binding basis 의 Summary 각 칸·입력 bytes 반영,
+  coverage denial·origin, surface host 의 evidence, 공개 CLI(#269 재현 L1~L3).
   문서: `scoped-work.md`, `input-reconciliation.md`, `upgrade-notes.md`, doc-ownership 행.
 
 ### perf(workflow) — scoped 판정이 같은 Markdown 본문을 한 번만 파싱함 (#265)

@@ -336,7 +336,7 @@ function legacy(f, { status = 'reconciled', result = 'accepted', capturedAt = '2
 }
 const legacyEntry = (f, ref, result = 'accepted') => ({ input_id: INPUT, ref, reason: 'legacy-summary-only',
   summary: { input_id: INPUT, source: 'meeting', classification: 'simple-update×0', reconcile_status: 'reconciled', result,
-    touched_artifacts: '-', created_items: '-', supersedes: '-' },
+    touched_artifacts: '-', created_items: '-', supersedes: '-', row: `| ${INPUT} | meeting | simple-update×0 | reconciled | ${result} | - | - | - |` },
   input_sha256: hashBytes(fs.readFileSync(f.inputFile)) });
 const unconnected = (ref = null) => [{ input_id: INPUT, ref, reason: 'source-effect-unconnected' }];
 
@@ -370,13 +370,14 @@ test('D #269 legacy sources: Status and Result connect only as written; a commen
     const out = f.run();
     assert.deepEqual(out.legacy_connections, [], `${status} ${result}`); assert.deepEqual(out.pending_connections, unconnected());
   }
-  // Another cell does not decide the connection; the evidence keeps it as written, comment included.
+  // Another cell does not decide the connection; the evidence keeps the row's line as written, comment included.
   const f = fixture(t, { explicit: false, native: true }); legacy(f);
   const before = scope(f).projection;
   const touched = (cell) => fs.writeFileSync(f.registerFile, md(V2, `${table(REQUIRED_REGISTER_COLS, [[INPUT, 'meeting',
     'simple-update×0', 'reconciled', 'accepted', cell, '-', '-']])}\n\n## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, [])}`));
   touched('- <!-- first note -->');
-  assert.deepEqual(f.run().legacy_connections.map((entry) => entry.summary.touched_artifacts), ['- <!-- first note -->']);
+  assert.deepEqual(f.run().legacy_connections.map((entry) => [entry.summary.touched_artifacts, entry.summary.row.includes('- <!-- first note -->')]),
+    [['-', true]]);
   const first = scope(f).projection; assert.notDeepEqual(first, before);
   touched('- <!-- second note -->'); assert.notDeepEqual(scope(f).projection, first);
 });
@@ -386,27 +387,31 @@ test('D #269 legacy sources: the register parser picks the table, row and cells;
   const write = (f, summary) => fs.writeFileSync(f.registerFile, md(V2, `${summary}\n\n## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, [])}`));
   const row = (cells) => `| ${cells.join(' | ')} |`;
   const base = [INPUT, 'meeting', 'simple-update×0', 'reconciled', 'accepted', '-', '-', '-'];
-  // Every comment on the row stays in a cell of the evidence, as the parser splits the cells.
+  // The evidence keeps the validated cells and the row's line as written, comments included.
   for (const [label, summary, expected] of [
-    ['Input ID comment', `${header}\n${row([`${INPUT} <!-- note -->`, ...base.slice(1)])}`, { input_id: `${INPUT} <!-- note -->` }],
+    ['Input ID comment', `${header}\n${row([`${INPUT} <!-- note -->`, ...base.slice(1)])}`, { input_id: INPUT }],
     ['header comment', `${header.replace('| Result |', '| Result <!-- note --> |')}\n${row(base)}`, { input_id: INPUT, result: 'accepted' }],
-    ['pipe in a comment', `${header}\n${row([...base.slice(0, 5), '- <!-- a | b -->', '-', '-'])}`, { touched_artifacts: '- <!-- a | b -->' }],
+    ['pipe in a comment', `${header}\n${row([...base.slice(0, 5), '- <!-- a | b -->', '-', '-'])}`, { touched_artifacts: '-' }],
     ['omitted trailing cells', `${header}\n${row(base.slice(0, 5))}`, { touched_artifacts: '', created_items: '', supersedes: '' }],
-    ['escaped pipe before a last comment', `${header}\n| ${base.slice(0, 7).join(' | ')} | - \\| <!-- first -->`, { supersedes: '- | <!-- first -->' }],
-    ['comment after the closing pipe', `${header}\n${row(base)} <!-- trail -->`, { supersedes: '-  <!-- trail -->' }],
+    ['escaped pipe before a last comment', `${header}\n| ${base.slice(0, 7).join(' | ')} | - \\| <!-- first -->`, { supersedes: '- |' }],
+    ['comment after the closing pipe', `${header}\n${row(base)} <!-- trail -->`, { supersedes: '-' }],
+    ['comment after a short row', `${header}\n${row(base.slice(0, 5))} <!-- note -->`, { result: 'accepted', touched_artifacts: '' }],
+    ['cell past the header', `${header}\n${row([...base, 'extra <!-- x -->'])}`, { supersedes: '-' }],
   ]) {
     const f = fixture(t, { explicit: false, native: true }); legacy(f); write(f, summary);
     const out = f.run();
     assert.deepEqual(out.pending_connections, [], label);
-    assert.deepEqual(out.legacy_connections.map((entry) => Object.fromEntries(Object.keys(expected).map((key) => [key, entry.summary[key]]))),
-      [expected], label);
+    assert.deepEqual(out.legacy_connections.map((entry) => ({ ...Object.fromEntries(Object.keys(expected).map((key) => [key, entry.summary[key]])),
+      row: entry.summary.row })), [{ ...expected, row: summary.split('\n').at(-1) }], label);
   }
-  // Cells past the eight columns are no Summary field, but they are part of the row as written.
-  const extra = fixture(t, { explicit: false, native: true }); legacy(extra);
-  write(extra, `${header}\n${row([...base, 'extra <!-- x -->'])}`);
-  assert.deepEqual(extra.run().legacy_connections.map((entry) => entry.summary.extra_cells), [['extra <!-- x -->']]);
-  const extraBefore = scope(extra).projection;
-  write(extra, `${header}\n${row([...base, 'extra <!-- y -->'])}`); assert.notDeepEqual(scope(extra).projection, extraBefore);
+  // The line is evidence byte for byte: the same cells with a comment on the other side of `\` move the projection.
+  const order = fixture(t, { explicit: false, native: true }); legacy(order);
+  write(order, `${header}\n${row([...base.slice(0, 5), '- \\<!-- note -->|', '-', '-'])}`);
+  assert.deepEqual(order.run().legacy_connections.map((entry) => entry.summary.touched_artifacts), ['- |']);
+  const orderBefore = scope(order).projection;
+  write(order, `${header}\n${row([...base.slice(0, 5), '- <!-- note -->\\|', '-', '-'])}`);
+  assert.deepEqual(order.run().legacy_connections.map((entry) => entry.summary.touched_artifacts), ['- |']);
+  assert.notDeepEqual(scope(order).projection, orderBefore);
   // A comment across cells: the register reads partially-reconciled with an empty Result, so nothing connects.
   const f = fixture(t, { explicit: false, native: true }); legacy(f);
   write(f, `${header}\n| ${INPUT} | meeting <!-- | ignored | reconciled | accepted | --> | simple-update | partially-reconciled |`);

@@ -140,7 +140,8 @@ test('#269 example: a summary-only legacy source connects through its reconciled
       [`Legacy summary-only source ${LEGACY_INPUT} (reconciled + ${result})`]);
     assert.deepEqual(legacySources(env), [{ input_id: LEGACY_INPUT, ref: null, reason: 'legacy-summary-only', summary: { input_id: LEGACY_INPUT, source: 'meeting',
       classification: 'simple-update', reconcile_status: 'reconciled', result, touched_artifacts: 'artifact:COUPON-001-screen-spec',
-      created_items: '-', supersedes: '-' } }]);
+      created_items: '-', supersedes: '-',
+      row: `| ${LEGACY_INPUT} | meeting | simple-update | reconciled | ${result} | artifact:COUPON-001-screen-spec | - | - |` } }]);
   }
   // An annotated Result is not a canonical code, also when an HTML comment hides the note from the table parser.
   // An Item connects at item level instead of through the Summary.
