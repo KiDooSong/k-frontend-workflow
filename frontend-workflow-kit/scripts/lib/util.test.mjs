@@ -12,6 +12,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
+  createTextKeyedCache,
   emitGeneratedYaml,
   isCliEntry,
   loadGeneratedWorkflowStateOrExit,
@@ -264,4 +265,17 @@ test('isCliEntry: symlink 경유 직접 실행도 실제 Node 프로세스에서
   const r = spawnSync(process.execPath, [path.join(link, 'entry.mjs')], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.stdout, 'true', 'symlink 경유 직접 실행도 true 여야 한다');
+});
+
+test('createTextKeyedCache: keeps recently used text keys within the budget, never evicting the newest (#265)', () => {
+  const cache = createTextKeyedCache(6);
+  cache.set('aa', 1); cache.set('bb', 2); cache.set('cc', 3);
+  assert.equal(cache.get('aa'), 1); // aa becomes the most recent
+  cache.set('dd', 4); // 8 chars: the least recent (bb) leaves
+  assert.equal(cache.get('bb'), undefined);
+  assert.deepEqual([cache.get('aa'), cache.get('cc'), cache.get('dd')], [1, 3, 4]);
+  const long = 'x'.repeat(10);
+  cache.set(long, 5); // over the budget alone: kept, every older key leaves
+  assert.equal(cache.get(long), 5);
+  assert.deepEqual([cache.get('aa'), cache.get('cc'), cache.get('dd')], [undefined, undefined, undefined]);
 });
