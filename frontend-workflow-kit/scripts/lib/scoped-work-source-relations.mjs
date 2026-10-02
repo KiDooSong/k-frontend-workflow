@@ -36,7 +36,7 @@ const headerKey = (name) => name.toLowerCase().replace(/\s+/g, '');
 // The register parser removes HTML comments before it splits its first table (spec.mjs parseTables), so a
 // validated Summary cell never shows one. Parse the same body with each comment kept as an indexed mark
 // instead: rows, cells and padding line up with the parser's, and restoring the marks reads a cell as
-// written. Marks where the parser keeps no cell text (a separator line, outside the edge pipes) are dropped.
+// written. Marks on a separator line are dropped; marks outside the edge pipes move into the edge cells.
 function summaryAsWritten(body) {
   let code = 0xe000;
   while (body.includes(String.fromCharCode(code))) code += 1;
@@ -46,8 +46,9 @@ function summaryAsWritten(body) {
     .split(/\r?\n/).map((line) => {
       const bare = line.replace(marks, '');
       if (/^\s*\|?[\s:|-]+\|?\s*$/.test(bare)) return bare;
-      return line.replace(new RegExp(`^(?:\\s|${token})*(?=\\|)`), '').replace(new RegExp(`(?<=\\|)(?:\\s|${token})*$`), '')
-        .replace(new RegExp(`\\\\((?:${token})+)\\|`, 'g'), '$1\\|'); // a mark between `\` and `|` keeps the pipe escaped
+      return line.replace(new RegExp(`\\\\((?:${token})+)\\|`, 'g'), '$1\\|') // a mark between `\` and `|` keeps the pipe escaped
+        .replace(new RegExp(`(?<!\\\\)\\|((?:\\s|${token})*)$`), '$1|') // the closing pipe is an unescaped one, as in splitRow
+        .replace(new RegExp(`^((?:\\s|${token})*)\\|`), '|$1');
     }).join('\n');
   const table = parseTable(marked);
   const plain = (cell) => cell.replace(marks, '').trim();
@@ -55,10 +56,10 @@ function summaryAsWritten(body) {
   return (table?.cell_rows || []).map((cells) => {
     const row = {};
     table.headers.forEach((header, i) => { row[plain(header)] = cells[i] ?? ''; });
-    return Object.fromEntries(SUMMARY_COLUMNS.map(([field, name]) => {
+    return { ...Object.fromEntries(SUMMARY_COLUMNS.map(([field, name]) => {
       const cell = row[Object.keys(row).find((key) => headerKey(key) === headerKey(name))] || '';
       return [field, { plain: plain(cell), written: written(cell) }];
-    }));
+    })), extra: cells.slice(table.headers.length).map(written) }; // cells the parser drops past the header
   });
 }
 
@@ -286,9 +287,10 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
     if (!row || SUMMARY_COLUMNS.some(([field]) => row[field].plain !== summary[field]) ||
         row.reconcileStatus.written !== summary.reconcileStatus || row.result.written !== summary.result) return null;
     // The whole Summary row is the evidence, so any cell change moves the projection and its basis.
-    return { input_id: id, ref, reason: 'legacy-summary-only', summary: { source: row.source.written,
+    return { input_id: id, ref, reason: 'legacy-summary-only', summary: { input_id: row.inputId.written, source: row.source.written,
       classification: row.classification.written, reconcile_status: row.reconcileStatus.written, result: row.result.written,
-      touched_artifacts: row.touched.written, created_items: row.created.written, supersedes: row.supersedes.written },
+      touched_artifacts: row.touched.written, created_items: row.created.written, supersedes: row.supersedes.written,
+      ...(row.extra.length ? { extra_cells: row.extra } : {}) },
     input_sha256: hashBytes(read(found.artifact.file)) };
   }
   const legacyConnections = [];

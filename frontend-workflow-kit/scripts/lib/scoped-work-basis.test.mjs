@@ -485,7 +485,7 @@ test('#269: each legacy Summary cell and the input bytes stale a binding that a 
     [[input], [input]]);
   assert.equal(bindingState(f), 'current-unverified');
   // The reviewer would have seen the whole row, so each cell is scope; a still-connected value changes it.
-  const changed = { 1: 'document', 2: 'simple-update×0', 4: 'no-change', 5: 'artifact:RULES, artifact:SCREEN-RESULT-001',
+  const changed = { 0: `${input} <!-- note -->`, 1: 'document', 2: 'simple-update×0', 4: 'no-change', 5: 'artifact:RULES, artifact:SCREEN-RESULT-001',
     6: 'D-ONE', 7: 'IN-20260701-meeting-001' };
   for (const [cell, value] of Object.entries(changed)) {
     const cells = [...row]; cells[cell] = value; register(cells);

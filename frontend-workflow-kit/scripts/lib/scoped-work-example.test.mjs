@@ -138,7 +138,7 @@ test('#269 example: a summary-only legacy source connects through its reconciled
     assert.deepEqual(codes(env), codes(baseline), result);
     assert.deepEqual(reviews(env).map((entry) => entry.slice(0, entry.indexOf(')') + 1)),
       [`Legacy summary-only source ${LEGACY_INPUT} (reconciled + ${result})`]);
-    assert.deepEqual(legacySources(env), [{ input_id: LEGACY_INPUT, ref: null, reason: 'legacy-summary-only', summary: { source: 'meeting',
+    assert.deepEqual(legacySources(env), [{ input_id: LEGACY_INPUT, ref: null, reason: 'legacy-summary-only', summary: { input_id: LEGACY_INPUT, source: 'meeting',
       classification: 'simple-update', reconcile_status: 'reconciled', result, touched_artifacts: 'artifact:COUPON-001-screen-spec',
       created_items: '-', supersedes: '-' } }]);
   }

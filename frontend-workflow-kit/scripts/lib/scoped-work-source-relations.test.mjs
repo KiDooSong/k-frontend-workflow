@@ -335,7 +335,7 @@ function legacy(f, { status = 'reconciled', result = 'accepted', capturedAt = '2
   f.register(rows, status, result);
 }
 const legacyEntry = (f, ref, result = 'accepted') => ({ input_id: INPUT, ref, reason: 'legacy-summary-only',
-  summary: { source: 'meeting', classification: 'simple-update×0', reconcile_status: 'reconciled', result,
+  summary: { input_id: INPUT, source: 'meeting', classification: 'simple-update×0', reconcile_status: 'reconciled', result,
     touched_artifacts: '-', created_items: '-', supersedes: '-' },
   input_sha256: hashBytes(fs.readFileSync(f.inputFile)) });
 const unconnected = (ref = null) => [{ input_id: INPUT, ref, reason: 'source-effect-unconnected' }];
@@ -386,17 +386,27 @@ test('D #269 legacy sources: the register parser picks the table, row and cells;
   const write = (f, summary) => fs.writeFileSync(f.registerFile, md(V2, `${summary}\n\n## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, [])}`));
   const row = (cells) => `| ${cells.join(' | ')} |`;
   const base = [INPUT, 'meeting', 'simple-update×0', 'reconciled', 'accepted', '-', '-', '-'];
-  for (const [label, summary, touched] of [
-    ['Input ID comment', `${header}\n${row([`${INPUT} <!-- note -->`, ...base.slice(1)])}`, '-'],
-    ['header comment', `${header.replace('| Result |', '| Result <!-- note --> |')}\n${row(base)}`, '-'],
-    ['pipe in a comment', `${header}\n${row([...base.slice(0, 5), '- <!-- a | b -->', '-', '-'])}`, '- <!-- a | b -->'],
-    ['omitted trailing cells', `${header}\n${row(base.slice(0, 5))}`, ''],
+  // Every comment on the row stays in a cell of the evidence, as the parser splits the cells.
+  for (const [label, summary, expected] of [
+    ['Input ID comment', `${header}\n${row([`${INPUT} <!-- note -->`, ...base.slice(1)])}`, { input_id: `${INPUT} <!-- note -->` }],
+    ['header comment', `${header.replace('| Result |', '| Result <!-- note --> |')}\n${row(base)}`, { input_id: INPUT, result: 'accepted' }],
+    ['pipe in a comment', `${header}\n${row([...base.slice(0, 5), '- <!-- a | b -->', '-', '-'])}`, { touched_artifacts: '- <!-- a | b -->' }],
+    ['omitted trailing cells', `${header}\n${row(base.slice(0, 5))}`, { touched_artifacts: '', created_items: '', supersedes: '' }],
+    ['escaped pipe before a last comment', `${header}\n| ${base.slice(0, 7).join(' | ')} | - \\| <!-- first -->`, { supersedes: '- | <!-- first -->' }],
+    ['comment after the closing pipe', `${header}\n${row(base)} <!-- trail -->`, { supersedes: '-  <!-- trail -->' }],
   ]) {
     const f = fixture(t, { explicit: false, native: true }); legacy(f); write(f, summary);
     const out = f.run();
     assert.deepEqual(out.pending_connections, [], label);
-    assert.deepEqual(out.legacy_connections.map((entry) => entry.summary.touched_artifacts), [touched], label);
+    assert.deepEqual(out.legacy_connections.map((entry) => Object.fromEntries(Object.keys(expected).map((key) => [key, entry.summary[key]]))),
+      [expected], label);
   }
+  // Cells past the eight columns are no Summary field, but they are part of the row as written.
+  const extra = fixture(t, { explicit: false, native: true }); legacy(extra);
+  write(extra, `${header}\n${row([...base, 'extra <!-- x -->'])}`);
+  assert.deepEqual(extra.run().legacy_connections.map((entry) => entry.summary.extra_cells), [['extra <!-- x -->']]);
+  const extraBefore = scope(extra).projection;
+  write(extra, `${header}\n${row([...base, 'extra <!-- y -->'])}`); assert.notDeepEqual(scope(extra).projection, extraBefore);
   // A comment across cells: the register reads partially-reconciled with an empty Result, so nothing connects.
   const f = fixture(t, { explicit: false, native: true }); legacy(f);
   write(f, `${header}\n| ${INPUT} | meeting <!-- | ignored | reconciled | accepted | --> | simple-update | partially-reconciled |`);

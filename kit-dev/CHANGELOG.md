@@ -20,8 +20,9 @@
 - Item source 의 수용 조건(`reconciled + accepted`, 또는 receipt 가 있는 pending·partial)은 그대로다. 채택 이전 이력은
   재신청 경로가 없어 Result 를 게이트로 쓰지 않는다(#269 결정).
 - 회귀 테스트: legacy 연결(frontmatter·typed ref), canonical Result 6종과 그 밖의 상태·자유 서술·HTML 주석, 주석이 낀
-  ID·헤더·칸·칸을 가로지르는 주석과 생략된 칸, Items·늦은 capture·Summary 없음·v1 register, projection 과 binding basis 의
-  Summary 각 칸·입력 bytes 반영, coverage denial·origin, surface host 의 evidence, 공개 CLI(#269 재현 L1~L3).
+  ID·헤더·칸, 칸을 가로지르는 주석, 생략되거나 헤더보다 많은 칸, escaped pipe 뒤의 주석, Items·늦은 capture·Summary 없음·
+  v1 register, projection 과 binding basis 의 Summary 각 칸·입력 bytes 반영, coverage denial·origin, surface host 의
+  evidence, 공개 CLI(#269 재현 L1~L3).
   문서: `scoped-work.md`, `input-reconciliation.md`, `upgrade-notes.md`, doc-ownership 행.
 
 ### perf(workflow) — scoped 판정이 같은 Markdown 본문을 한 번만 파싱함 (#265)
