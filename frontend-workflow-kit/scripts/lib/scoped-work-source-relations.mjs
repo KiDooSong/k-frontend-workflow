@@ -6,10 +6,11 @@ import { splitFrontmatter } from './util.mjs';
 import { canonicalRepositoryPath } from './artifact-path.mjs';
 import { ownerParts, readCurrentBytes, hashBytes, normalizeWorkOrigins } from './current-work-request.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
-import { buildInputArtifactIndex, resolveInputArtifact } from './provenance.mjs';
+import { buildInputArtifactIndex, resolveInputArtifact, parseRfc3339 } from './provenance.mjs';
 import { validateInputArtifacts } from './input-artifact.mjs';
 import { parseReconciliationRegister } from './reconciliation-register.mjs';
-import { parseRegisterContract, parseReconciliationItems, parseTargetRef, validateReconciliationV2 } from './reconciliation-items.mjs';
+import { parseRegisterContract, parseReconciliationItems, parseTargetRef, validateReconciliationV2,
+  RESULT_BY_STATUS } from './reconciliation-items.mjs';
 import { parseReconciliationMarkdown, parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
 import { parseScopedOwner } from './scoped-work-declarations.mjs';
 import { createScopedReferenceResolver, scopedRawTable } from './scoped-work-refs.mjs';
@@ -199,7 +200,7 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
       origin(source.ref, { kind: 'canonical-input', ref: record.ref });
     }
   }
-  let rows = [];
+  let rows = [], legacy = null;
   if (selections.size) {
     const required = requireEffects || selectedUnit.sources.length > 0;
     let register = null;
@@ -223,9 +224,26 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
         const validation = validateReconciliationV2({ register, registerFile, inputArtifacts, targetIndex });
         if (validation.errors.length) fail(validation.errors.map((entry) => entry.message).join('; '));
         rows = parseReconciliationItems(register.body).rows;
+        legacy = { since: contract.structuredSinceMs, summaries: register.rows };
       }
     } else if (required) fail('Reconciliation Contract v2 required');
   }
+  // #269: the register contract keeps an input captured before structured_since as a summary-only
+  // legacy row. A reconciled Summary with a canonical Result connects it without item-level
+  // evidence; the Decisions and Conflicts it created keep their own gates. Any Item, a later or
+  // invalid capture time, or another Summary state keeps the item-level rule.
+  function legacyConnection({ input_id: id, ref }) {
+    if (!legacy || rows.some((row) => row.inputId === id)) return null;
+    const summaries = legacy.summaries.filter((row) => row.inputId === id);
+    const summary = summaries.length === 1 ? summaries[0] : null;
+    if (summary?.reconcileStatus !== 'reconciled' || !RESULT_BY_STATUS.reconciled.includes(summary.result)) return null;
+    const found = resolveInputArtifact(inputIndex, id);
+    const captured = found.status === 'ok' ? parseRfc3339(found.artifact.fm?.captured_at) : null;
+    if (captured === null || legacy.since === null || captured >= legacy.since) return null;
+    return { input_id: id, ref, reason: 'legacy-summary-only', reconcile_status: summary.reconcileStatus,
+      result: summary.result, input_sha256: hashBytes(read(found.artifact.file)) };
+  }
+  const legacyConnections = [];
   function witnesses(target) {
     const parsed = parseTargetRef(target);
     if (!parsed || ['none', 'input'].includes(parsed.kind)) return [];
@@ -237,7 +255,12 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
     const matches = rows.filter((row) => row.inputId === connection.input_id &&
       ((!requireEffects && anchor) || witnesses(row.target).length) &&
       (!anchor || overlaps(anchor, inputNode(row.evidence))));
-    if (!matches.length) { pending.push({ input_id: connection.input_id, ref: connection.ref, reason: 'source-effect-unconnected' }); continue; }
+    if (!matches.length) {
+      const summary = legacyConnection(connection);
+      if (summary) legacyConnections.push(summary);
+      else pending.push({ input_id: connection.input_id, ref: connection.ref, reason: 'source-effect-unconnected' });
+      continue;
+    }
     const out = selected(connection.input_id);
     matches.forEach((row) => { out.items.add(row.item); out.source_refs.add(row.evidence); });
     if (connection.ref) out.source_refs.add(connection.ref);
@@ -277,6 +300,7 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
   if (absentRegister && canonicalRepositoryPath(projectRoot, absentRegister,
     { required: false, type: 'file', label: 'scoped source register' }).exists) fail('register appeared during source projection');
   return { owner, unit, sources: scopeSet(resolved), pending_connections: scopeSet(pending),
+    legacy_connections: scopeSet(legacyConnections),
     inferred_sources: scopeSet([...inferred.values()]), native_inputs: scopeSet([...nativeInputs.values()]),
     contracts: graph, contract_hashes: contractHashes, read_set: scopeSet([...reads.values()]) };
 }

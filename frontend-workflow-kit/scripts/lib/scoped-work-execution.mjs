@@ -62,6 +62,7 @@ function evidenceSummary(result) {
     visual_evidence: (profile.visual_evidence || []).map((record) => record.ref).sort(byteCompare),
     coverage: (profile.coverage?.sources || []).map((source) => ({ input_id: source.selection.input_id,
       accepted_for_source: source.accepted_for_source, receipt_state: source.receipt_state })),
+    ...(profile.coverage?.legacy_connections?.length ? { legacy_sources: profile.coverage.legacy_connections } : {}),
     decisions: decisions.checks.map((check) => ({ decision: check.decision, status: check.status,
       scope_source: check.scope_source, blocking_units: check.blocking_units })),
     hosts: (result.host_result?.hosts || []).map((host) => ({ owner: host.owner, unit: host.unit, adopted: host.adopted,

@@ -14,6 +14,7 @@ import { resolveScopedCoverageBasis } from './scoped-work-coverage.mjs';
 import { resolveScopedSourceRelations, resolveScopedSourceProjection } from './scoped-work-source-relations.mjs';
 import { resolveScopedUnitProjection } from './scoped-work-projection.mjs';
 import { scopeJson } from './scoped-work-normalize.mjs';
+import { hashBytes } from './current-work-request.mjs';
 
 const OWNER = 'screen:RESULT-001', INPUT = 'IN-20260922-meeting-001';
 const REF = `input:${INPUT}#extracted-facts/01`;
@@ -323,5 +324,69 @@ test('D R1 inferred sources: unconnected typed effects are hashed as facts but r
   assert.ok(before.units[0].source_dependencies.unconnected_effects.length > 0);
   assert.equal(f.run().pending_connections.length, 1);
   const rows = [effect('01', 'other'), effect('02', 'other')]; rows[0][8] = 'record'; f.register(rows);
+  assert.notDeepEqual(scope(f).projection, before);
+});
+
+// #269: an input captured before structured_since may keep a summary-only legacy row. Scoped work connects
+// it through a reconciled Summary with a canonical Result; Items stay the only connection for other inputs.
+const V2 = { reconciliation_contract: 2, review_profile: 'reconcile-stage04-v1', structured_since: '2026-09-01T00:00:00Z' };
+function legacy(f, { status = 'reconciled', result = 'accepted', capturedAt = '2026-08-01T00:00:00Z', rows = [] } = {}) {
+  f.change('input.md', ({ fm }) => { fm.captured_at = capturedAt; }, f.inputs);
+  f.register(rows, status, result);
+}
+const legacyEntry = (f, ref, result = 'accepted') => ({ input_id: INPUT, ref, reason: 'legacy-summary-only',
+  reconcile_status: 'reconciled', result, input_sha256: hashBytes(fs.readFileSync(f.inputFile)) });
+const unconnected = (ref = null) => [{ input_id: INPUT, ref, reason: 'source-effect-unconnected' }];
+
+test('D #269 legacy sources: a summary-only input captured before structured_since connects through its Summary', (t) => {
+  for (const [options, ref] of [[{ native: true }, null], [{ typed: true }, REF]]) {
+    const f = fixture(t, { explicit: false, ...options }); legacy(f);
+    const out = f.run();
+    assert.deepEqual(out.pending_connections, []); assert.deepEqual(out.sources, []);
+    assert.deepEqual(out.legacy_connections, [legacyEntry(f, ref)]); noPermit(out);
+    assert.deepEqual(resolveScopedSourceProjection(f.options()).legacy_connections, [legacyEntry(f, ref)]);
+  }
+});
+
+test('D #269 legacy sources: every canonical reconciled Result connects; any other legacy row stays unconnected', (t) => {
+  for (const result of ['accepted', 'pending-user-decision', 'rejected', 'delegated', 'no-change', 'mixed']) {
+    const f = fixture(t, { explicit: false, native: true }); legacy(f, { result });
+    assert.deepEqual(f.run().legacy_connections, [legacyEntry(f, null, result)], result);
+  }
+  for (const [status, result] of [['reconciled', 'accepted — kept after review'], ['reconciled', 'Accepted'],
+    ['reconciled', 'pending'], ['partially-reconciled', 'pending'], ['partially-reconciled', 'accepted']]) {
+    const f = fixture(t, { explicit: false, native: true }); legacy(f, { status, result });
+    const out = f.run();
+    assert.deepEqual(out.legacy_connections, [], `${status} ${result}`); assert.deepEqual(out.pending_connections, unconnected());
+  }
+});
+
+test('D #269 legacy sources: Items, a structured capture time, a missing Summary or a v1 register keep the item rule', (t) => {
+  // Any Item makes the input structured: an Item for another section does not fall back to the Summary.
+  const items = fixture(t, { explicit: false, native: true }); legacy(items, { rows: [effect('02', 'other')] });
+  assert.deepEqual(items.run().legacy_connections, []); assert.deepEqual(items.run().pending_connections, unconnected());
+  // Captured at structured_since: the register itself requires Items.
+  const late = fixture(t, { explicit: false, native: true }); legacy(late, { capturedAt: '2026-09-01T00:00:00Z' });
+  assert.throws(() => late.run(), /RR-ITEM-001/);
+  const bare = fixture(t, { explicit: false, native: true }); legacy(bare);
+  fs.writeFileSync(bare.registerFile, md(V2, `${table(REQUIRED_REGISTER_COLS, [])}\n\n## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, [])}`));
+  assert.deepEqual(bare.run().legacy_connections, []); assert.deepEqual(bare.run().pending_connections, unconnected());
+  const v1 = fixture(t, { explicit: false, native: true }); legacy(v1);
+  fs.writeFileSync(v1.registerFile, `# Legacy reconciliation\n\n${table(REQUIRED_REGISTER_COLS,
+    [[INPUT, 'meeting', 'simple-update', 'reconciled', 'accepted', 'artifact:DOC', '-', '-']])}\n`);
+  const observed = resolveScopedSourceProjection(v1.options());
+  assert.deepEqual(observed.legacy_connections, []); assert.deepEqual(observed.pending_connections, unconnected());
+  assert.throws(() => v1.run(), /Reconciliation Contract v2/);
+});
+
+test('D #269 legacy sources: the Summary state and the input bytes reach the projection', (t) => {
+  const f = fixture(t, { explicit: false, native: true }); legacy(f);
+  const before = scope(f).projection;
+  assert.deepEqual(before.units[0].source_dependencies.legacy_connections, [legacyEntry(f, null)]);
+  assert.deepEqual(before.units[0].source_dependencies.pending_connections, []);
+  // Rewrite only the register here: the fixture's change() also rewrites the input's bytes.
+  f.register([], 'reconciled', 'rejected'); assert.notDeepEqual(scope(f).projection, before);
+  f.register([], 'reconciled', 'accepted'); assert.deepEqual(scope(f).projection, before);
+  f.change('input.md', ({ fm }) => { fm.captured_by = 'another-recorder'; }, f.inputs);
   assert.notDeepEqual(scope(f).projection, before);
 });

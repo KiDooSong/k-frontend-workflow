@@ -287,3 +287,16 @@ test('D origin routing: a reviewed attachment for another source anchor cannot e
   assert.equal(out.origin_inputs[0].routing.origin_source, null);
   assert.ok(out.origin_inputs[0].reasons.includes('origin-effect-unconnected'));
 });
+
+// #269: a summary-only legacy source is connected through its Summary; it is not an admitted Item source.
+test('D #269 input coverage: a legacy Summary connection is no denial; an origin naming it still needs coverage', (t) => {
+  const f = coverageFixture(t, { explicit: false, native: true });
+  f.change('input.md', ({ fm }) => { fm.captured_at = '2026-08-01T00:00:00Z'; }, f.inputs);
+  f.register([], 'reconciled', 'pending-user-decision'); f.origins([]);
+  const out = f.inspect();
+  assert.deepEqual(out.denials, []); assert.equal(out.coverage_satisfied, true); assert.deepEqual(out.sources, []);
+  assert.deepEqual(out.legacy_connections.map((entry) => [entry.input_id, entry.result]), [[INPUT, 'pending-user-decision']]);
+  noApproval(out);
+  f.origins([{ input_id: INPUT, source_refs: [] }]);
+  assert.deepEqual(f.inspect().denials.map((entry) => [entry.code, entry.reasons]), [['origin-input-unreconciled', ['origin-input-unreconciled']]]);
+});

@@ -194,6 +194,7 @@ export function inspectScopedInputCoverage({ origin_inputs, coverage_reports = [
   }
   for (const entry of [...reads.values()]) read(entry.file, entry.sha256);
   return { owner, unit, sources, origin_inputs: evaluatedOrigins, pending_connections: relations.pending_connections,
+    legacy_connections: relations.legacy_connections,
     denials: scopeSet(denials), coverage_satisfied: !denials.length, read_set: scopeSet([...reads.values()]),
     semantic_coverage_verified: false, approval_verified: false,
     required_reviews: [{ scope: 'reconcile-stage04-v1', responsibility: 'source/routing completeness and meaning remain the reviewer responsibility; receipts never exempt Open Decisions or change human-owned scope' }] };
