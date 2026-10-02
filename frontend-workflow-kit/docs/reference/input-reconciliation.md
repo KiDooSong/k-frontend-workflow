@@ -456,6 +456,8 @@ structured_since: "2026-07-20T00:00:00+09:00"  # 이 시각 이후 capture 된 �
 `structured_since` **이전**에 capture 된 입력은 summary-only legacy 로 남는다 — 기존 행을 한 번에 backfill
 하지 않아도 된다. backfill 은 선택이며, 과거 source 가 불명확하면 정밀도를 발명하지 않는다
 (`Source Unit=document|statement` 같은 확인 가능한 최소 단위만).
+scoped work 는 이 legacy 입력을 `reconciled` Summary 로 연결하고 `required_reviews` 에 보고한다.
+상세: [scoped-work.md](scoped-work.md#evaluation-on-the-immutable-baseline).
 
 ### v2 Summary 문법 (기존 8컬럼 헤더는 불변)
 

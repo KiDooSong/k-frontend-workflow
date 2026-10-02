@@ -4,6 +4,22 @@
 
 ## Unreleased
 
+### fix(workflow) — scoped 판정이 summary-only legacy 입력을 Summary 로 연결함 (#269)
+
+- 일반 계약은 v2 register 의 `structured_since` 이전에 capture 된 입력을 summary-only legacy 로 둔다(backfill 은 선택).
+  그런데 scoped preflight 는 계약이 가리키는 입력마다 그 계약에 닿는 Reconciliation Items 를 요구했다. 그래서 문서의
+  Migration 대로 v2 로 옮긴 저장소에서는 기존 입력을 가리키는 계약을 가진 unit 이 모두 `source-effect-unconnected` 로
+  막혔다.
+- 이제 Items 가 없는 legacy 입력은 Summary 가 `reconciled` 이고 Result 가 그 상태의 canonical code
+  (`accepted`·`pending-user-decision`·`rejected`·`delegated`·`no-change`·`mixed`)이면 연결로 본다. 그 입력이 만든
+  Decision·Conflict 는 기존 게이트가 판단한다. 요청의 `evidence.legacy_sources` 와 `required_reviews` 에 입력마다 남는다.
+  Items 가 있는 입력, `structured_since` 이후 입력, v1 register, 설명이 붙은 Result 는 지금처럼 판정한다.
+- Item source 의 수용 조건(`reconciled + accepted`, 또는 receipt 가 있는 pending·partial)은 그대로다. 채택 이전 이력은
+  재신청 경로가 없어 Result 를 게이트로 쓰지 않는다(#269 결정).
+- 회귀 테스트: legacy 연결(frontmatter·typed ref), canonical Result 6종과 그 밖의 상태·자유 서술, Items·늦은 capture·
+  Summary 없음·v1 register, projection 의 Summary·입력 bytes 반영, coverage denial·origin, 공개 CLI(#269 재현 L1~L3).
+  문서: `scoped-work.md`, `input-reconciliation.md`, `upgrade-notes.md`, doc-ownership 행.
+
 ### perf(workflow) — scoped 판정이 같은 Markdown 본문을 한 번만 파싱함 (#265)
 
 - scoped preflight는 Unknown·Conflict 후보 행과 결정마다 계약 그래프를 새로 만들었다. 그래프는 방문한 문서 본문을

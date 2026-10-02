@@ -17,6 +17,24 @@ or root config.
 
 ---
 
+## Scoped work connects summary-only legacy sources (#269)
+
+- Under a v2 register, an input captured before `structured_since` keeps a
+  summary-only row, as the register contract allows. Scoped work used to deny
+  every unit whose selected contracts cite such an input
+  (`source-effect-unconnected`). Now a `reconciled` Summary with a canonical
+  Result for that status connects it, and the request lists it in
+  `evidence.legacy_sources` and `required_reviews` for a person to check.
+- A Result with a note appended (for example `accepted — kept after review`) is
+  not a canonical code and still denies. Move the note out of the Result cell
+  to use this.
+- Inputs with Items, inputs captured on or after `structured_since`, and v1
+  registers behave as before. Item sources keep their stricter admission.
+- A decision scope's basis digest changes once when its owner's units cite such
+  an input, because the source moves from the pending to the legacy list.
+  Re-review those bindings.
+- Manual action: none, unless you want annotated Result cells to connect.
+
 ## Faster scoped work on large document sets (#265)
 
 - Scoped work parsed the same Markdown body again for every Unknown/Conflict
