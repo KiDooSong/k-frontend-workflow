@@ -142,9 +142,12 @@ test('#269 example: a summary-only legacy source connects through its reconciled
       classification: 'simple-update', reconcile_status: 'reconciled', result, touched_artifacts: 'artifact:COUPON-001-screen-spec',
       created_items: '-', supersedes: '-' } }]);
   }
-  // An annotated Result is not a canonical code; an Item connects at item level instead of through the Summary.
-  const annotated = json(readiness(t, legacySource({ result: 'accepted — kept after review' })));
-  assert.ok(annotated.denials.some((entry) => entry.code === 'source-effect-unconnected')); assert.deepEqual(reviews(annotated), []);
+  // An annotated Result is not a canonical code, also when an HTML comment hides the note from the table parser.
+  // An Item connects at item level instead of through the Summary.
+  for (const result of ['accepted — kept after review', 'accepted <!-- kept after review -->']) {
+    const annotated = json(readiness(t, legacySource({ result })));
+    assert.ok(annotated.denials.some((entry) => entry.code === 'source-effect-unconnected'), result); assert.deepEqual(reviews(annotated), [], result);
+  }
   const backfilled = json(readiness(t, legacySource({ items: true })));
   assert.deepEqual(codes(backfilled), codes(baseline)); assert.deepEqual(reviews(backfilled), []);
   assert.equal(legacySources(backfilled), undefined);

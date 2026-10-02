@@ -363,6 +363,24 @@ test('D #269 legacy sources: every canonical reconciled Result connects; any oth
   }
 });
 
+test('D #269 legacy sources: Status and Result connect only as written; a comment in another cell is evidence', (t) => {
+  // The table parser drops HTML comments. As for an Item source, a comment cannot make a cell canonical.
+  for (const [status, result] of [['reconciled', 'accepted <!-- kept after review -->'], ['reconciled <!-- reviewed -->', 'accepted']]) {
+    const f = fixture(t, { explicit: false, native: true }); legacy(f, { status, result });
+    const out = f.run();
+    assert.deepEqual(out.legacy_connections, [], `${status} ${result}`); assert.deepEqual(out.pending_connections, unconnected());
+  }
+  // Another cell does not decide the connection; the evidence keeps it as written, comment included.
+  const f = fixture(t, { explicit: false, native: true }); legacy(f);
+  const before = scope(f).projection;
+  const touched = (cell) => fs.writeFileSync(f.registerFile, md(V2, `${table(REQUIRED_REGISTER_COLS, [[INPUT, 'meeting',
+    'simple-update×0', 'reconciled', 'accepted', cell, '-', '-']])}\n\n## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, [])}`));
+  touched('- <!-- first note -->');
+  assert.deepEqual(f.run().legacy_connections.map((entry) => entry.summary.touched_artifacts), ['- <!-- first note -->']);
+  const first = scope(f).projection; assert.notDeepEqual(first, before);
+  touched('- <!-- second note -->'); assert.notDeepEqual(scope(f).projection, first);
+});
+
 test('D #269 legacy sources: Items, a structured capture time, a missing Summary or a v1 register keep the item rule', (t) => {
   // Any Item makes the input structured: an Item for another section does not fall back to the Summary.
   const items = fixture(t, { explicit: false, native: true }); legacy(items, { rows: [effect('02', 'other')] });

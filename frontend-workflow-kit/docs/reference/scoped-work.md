@@ -154,9 +154,11 @@ packets and serialized verdicts are not authority. For each scoped request:
   contract allows. It connects through that row when the row is `reconciled`
   with a canonical Result for that status (`accepted`, `pending-user-decision`,
   `rejected`, `delegated`, `no-change`, `mixed`); the Decisions and Conflicts it
-  created keep their own gates. The request lists it, with the whole Summary row
-  and the input sha256, in `evidence.legacy_sources` (an adopted surface host's
-  under its `evidence.hosts` entry) and in `required_reviews` as
+  created keep their own gates. The row is read as written, before the table
+  parser drops HTML comments, so `accepted <!-- … -->` is not a canonical Result.
+  The request lists it, with the whole Summary row as written and the input
+  sha256, in `evidence.legacy_sources` (an adopted surface host's under its
+  `evidence.hosts` entry) and in `required_reviews` as
   `Legacy summary-only source <input_id> (reconciled + <result>) …`. Any Item, a
   later capture, a v1 register, another status or an annotated Result
   (`accepted — …`) keeps the item-level rule and its `source-effect-unconnected`

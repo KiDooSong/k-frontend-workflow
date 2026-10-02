@@ -27,8 +27,8 @@ or root config.
   row, in `evidence.legacy_sources` (an adopted surface host's under
   `evidence.hosts`) and in `required_reviews` for a person to check.
 - A Result with a note appended (for example `accepted — kept after review`) is
-  not a canonical code and still denies. Move the note out of the Result cell
-  to use this.
+  not a canonical code and still denies, also when the note is an HTML comment.
+  Move the note out of the Result cell to use this.
 - Inputs with Items, inputs captured on or after `structured_since`, and v1
   registers behave as before. Item sources keep their stricter admission: an
   input from before adoption has no later re-apply path, so its Result is

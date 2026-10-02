@@ -8,10 +8,10 @@ import { ownerParts, readCurrentBytes, hashBytes, normalizeWorkOrigins } from '.
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { buildInputArtifactIndex, resolveInputArtifact, parseRfc3339 } from './provenance.mjs';
 import { validateInputArtifacts } from './input-artifact.mjs';
-import { parseReconciliationRegister } from './reconciliation-register.mjs';
+import { parseReconciliationRegister, REQUIRED_REGISTER_COLS } from './reconciliation-register.mjs';
 import { parseRegisterContract, parseReconciliationItems, parseTargetRef, validateReconciliationV2,
   RESULT_BY_STATUS } from './reconciliation-items.mjs';
-import { parseReconciliationMarkdown, parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
+import { parseReconciliationMarkdown, parseReconciliationReferenceView, describeHeaderMismatch } from './reconciliation-markdown-ast.mjs';
 import { parseScopedOwner } from './scoped-work-declarations.mjs';
 import { createScopedReferenceResolver, scopedRawTable } from './scoped-work-refs.mjs';
 import { createScopedSourceResolver } from './scoped-work-sources.mjs';
@@ -224,17 +224,27 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
         const validation = validateReconciliationV2({ register, registerFile, inputArtifacts, targetIndex });
         if (validation.errors.length) fail(validation.errors.map((entry) => entry.message).join('; '));
         rows = parseReconciliationItems(register.body).rows;
-        legacy = { since: contract.structuredSinceMs, summaries: register.rows };
+        legacy = { since: contract.structuredSinceMs, body: register.body };
       }
     } else if (required) fail('Reconciliation Contract v2 required');
   }
   // #269: the register contract keeps an input captured before structured_since as a summary-only
   // legacy row. A reconciled Summary with a canonical Result connects it without item-level
   // evidence; the Decisions and Conflicts it created keep their own gates. Any Item, a later or
-  // invalid capture time, or another Summary state keeps the item-level rule.
+  // invalid capture time, or another Summary state keeps the item-level rule. The row is read as
+  // written: the table parser drops HTML comments, which must not make a cell canonical (SW-SOURCE-RAW).
+  let legacyRows = null;
+  function legacySummaries() {
+    if (legacyRows) return legacyRows;
+    const tables = parseReconciliationMarkdown(legacy.body).occurrences.flatMap((entry) => entry.tables)
+      .filter((table) => describeHeaderMismatch(table, REQUIRED_REGISTER_COLS) === null);
+    legacyRows = tables.length === 1 ? scopedRawTable(tables[0]).cells.map(([inputId, source, classification, reconcileStatus,
+      result, touched, created, supersedes]) => ({ inputId, source, classification, reconcileStatus, result, touched, created, supersedes })) : [];
+    return legacyRows;
+  }
   function legacyConnection({ input_id: id, ref }) {
     if (!legacy || rows.some((row) => row.inputId === id)) return null;
-    const summaries = legacy.summaries.filter((row) => row.inputId === id);
+    const summaries = legacySummaries().filter((row) => row.inputId === id);
     const summary = summaries.length === 1 ? summaries[0] : null;
     if (summary?.reconcileStatus !== 'reconciled' || !RESULT_BY_STATUS.reconciled.includes(summary.result)) return null;
     const found = resolveInputArtifact(inputIndex, id);
