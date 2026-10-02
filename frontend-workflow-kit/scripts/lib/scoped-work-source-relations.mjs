@@ -8,10 +8,11 @@ import { ownerParts, readCurrentBytes, hashBytes, normalizeWorkOrigins } from '.
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { buildInputArtifactIndex, resolveInputArtifact, parseRfc3339 } from './provenance.mjs';
 import { validateInputArtifacts } from './input-artifact.mjs';
-import { parseReconciliationRegister, REQUIRED_REGISTER_COLS } from './reconciliation-register.mjs';
+import { parseReconciliationRegister } from './reconciliation-register.mjs';
 import { parseRegisterContract, parseReconciliationItems, parseTargetRef, validateReconciliationV2,
   RESULT_BY_STATUS } from './reconciliation-items.mjs';
-import { parseReconciliationMarkdown, parseReconciliationReferenceView, describeHeaderMismatch } from './reconciliation-markdown-ast.mjs';
+import { parseReconciliationMarkdown, parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
+import { parseTable } from './spec.mjs';
 import { parseScopedOwner } from './scoped-work-declarations.mjs';
 import { createScopedReferenceResolver, scopedRawTable } from './scoped-work-refs.mjs';
 import { createScopedSourceResolver } from './scoped-work-sources.mjs';
@@ -24,6 +25,42 @@ import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
 const fail = (message) => { throw new ScopedWorkContractError(`SW-SOURCE-RELATION: ${message}`); };
 const union = (values) => scopeSet([...new Set(values)]);
 const same = (a, b) => scopeJson(a) === scopeJson(b);
+
+// The register parser's Summary fields and column lookup (reconciliation-register.mjs): header case and
+// spaces are ignored, and the first matching column wins.
+const SUMMARY_COLUMNS = [['inputId', 'Input ID'], ['source', 'Source'], ['classification', 'Classification'],
+  ['reconcileStatus', 'Reconcile Status'], ['result', 'Result'], ['touched', 'Touched Artifacts'],
+  ['created', 'Created Items'], ['supersedes', 'Supersedes']];
+const headerKey = (name) => name.toLowerCase().replace(/\s+/g, '');
+
+// The register parser removes HTML comments before it splits its first table (spec.mjs parseTables), so a
+// validated Summary cell never shows one. Parse the same body with each comment kept as an indexed mark
+// instead: rows, cells and padding line up with the parser's, and restoring the marks reads a cell as
+// written. Marks where the parser keeps no cell text (a separator line, outside the edge pipes) are dropped.
+function summaryAsWritten(body) {
+  let code = 0xe000;
+  while (body.includes(String.fromCharCode(code))) code += 1;
+  const mark = String.fromCharCode(code), token = `${mark}\\d+${mark}`, comments = [];
+  const marks = new RegExp(`${mark}(\\d+)${mark}`, 'g');
+  const marked = body.replace(/<!--[\s\S]*?-->/g, (comment) => `${mark}${comments.push(comment) - 1}${mark}`)
+    .split(/\r?\n/).map((line) => {
+      const bare = line.replace(marks, '');
+      if (/^\s*\|?[\s:|-]+\|?\s*$/.test(bare)) return bare;
+      return line.replace(new RegExp(`^(?:\\s|${token})*(?=\\|)`), '').replace(new RegExp(`(?<=\\|)(?:\\s|${token})*$`), '')
+        .replace(new RegExp(`\\\\((?:${token})+)\\|`, 'g'), '$1\\|'); // a mark between `\` and `|` keeps the pipe escaped
+    }).join('\n');
+  const table = parseTable(marked);
+  const plain = (cell) => cell.replace(marks, '').trim();
+  const written = (cell) => cell.replace(marks, (_, index) => comments[Number(index)]);
+  return (table?.cell_rows || []).map((cells) => {
+    const row = {};
+    table.headers.forEach((header, i) => { row[plain(header)] = cells[i] ?? ''; });
+    return Object.fromEntries(SUMMARY_COLUMNS.map(([field, name]) => {
+      const cell = row[Object.keys(row).find((key) => headerKey(key) === headerKey(name))] || '';
+      return [field, { plain: plain(cell), written: written(cell) }];
+    }));
+  });
+}
 
 export function resolveScopedSourceRelations(options = {}) {
   return resolveSourceClosure(options, true);
@@ -224,36 +261,34 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
         const validation = validateReconciliationV2({ register, registerFile, inputArtifacts, targetIndex });
         if (validation.errors.length) fail(validation.errors.map((entry) => entry.message).join('; '));
         rows = parseReconciliationItems(register.body).rows;
-        legacy = { since: contract.structuredSinceMs, body: register.body };
+        legacy = { since: contract.structuredSinceMs, summaries: register.rows, body: register.body };
       }
     } else if (required) fail('Reconciliation Contract v2 required');
   }
   // #269: the register contract keeps an input captured before structured_since as a summary-only
   // legacy row. A reconciled Summary with a canonical Result connects it without item-level
   // evidence; the Decisions and Conflicts it created keep their own gates. Any Item, a later or
-  // invalid capture time, or another Summary state keeps the item-level rule. The row is read as
-  // written: the table parser drops HTML comments, which must not make a cell canonical (SW-SOURCE-RAW).
-  let legacyRows = null;
-  function legacySummaries() {
-    if (legacyRows) return legacyRows;
-    const tables = parseReconciliationMarkdown(legacy.body).occurrences.flatMap((entry) => entry.tables)
-      .filter((table) => describeHeaderMismatch(table, REQUIRED_REGISTER_COLS) === null);
-    legacyRows = tables.length === 1 ? scopedRawTable(tables[0]).cells.map(([inputId, source, classification, reconcileStatus,
-      result, touched, created, supersedes]) => ({ inputId, source, classification, reconcileStatus, result, touched, created, supersedes })) : [];
-    return legacyRows;
-  }
+  // invalid capture time, or another Summary state keeps the item-level rule. The validated row
+  // decides; its Status and Result must also be canonical as written, since a comment the table parser
+  // dropped cannot make them so (as for an Item source, SW-SOURCE-RAW). The evidence is the row as written.
   function legacyConnection({ input_id: id, ref }) {
     if (!legacy || rows.some((row) => row.inputId === id)) return null;
-    const summaries = legacySummaries().filter((row) => row.inputId === id);
+    const summaries = legacy.summaries.filter((row) => row.inputId === id);
     const summary = summaries.length === 1 ? summaries[0] : null;
     if (summary?.reconcileStatus !== 'reconciled' || !RESULT_BY_STATUS.reconciled.includes(summary.result)) return null;
     const found = resolveInputArtifact(inputIndex, id);
     const captured = found.status === 'ok' ? parseRfc3339(found.artifact.fm?.captured_at) : null;
     if (captured === null || legacy.since === null || captured >= legacy.since) return null;
+    legacy.written ??= summaryAsWritten(legacy.body);
+    const row = legacy.written[legacy.summaries.indexOf(summary)];
+    // The marked row must be the validated one (if the two parses ever drift apart, nothing connects),
+    // and its Status and Result must carry no comment.
+    if (!row || SUMMARY_COLUMNS.some(([field]) => row[field].plain !== summary[field]) ||
+        row.reconcileStatus.written !== summary.reconcileStatus || row.result.written !== summary.result) return null;
     // The whole Summary row is the evidence, so any cell change moves the projection and its basis.
-    return { input_id: id, ref, reason: 'legacy-summary-only', summary: { source: summary.source,
-      classification: summary.classification, reconcile_status: summary.reconcileStatus, result: summary.result,
-      touched_artifacts: summary.touched, created_items: summary.created, supersedes: summary.supersedes },
+    return { input_id: id, ref, reason: 'legacy-summary-only', summary: { source: row.source.written,
+      classification: row.classification.written, reconcile_status: row.reconcileStatus.written, result: row.result.written,
+      touched_artifacts: row.touched.written, created_items: row.created.written, supersedes: row.supersedes.written },
     input_sha256: hashBytes(read(found.artifact.file)) };
   }
   const legacyConnections = [];

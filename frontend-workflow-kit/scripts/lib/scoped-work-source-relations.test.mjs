@@ -381,6 +381,28 @@ test('D #269 legacy sources: Status and Result connect only as written; a commen
   touched('- <!-- second note -->'); assert.notDeepEqual(scope(f).projection, first);
 });
 
+test('D #269 legacy sources: the register parser picks the table, row and cells; a comment elsewhere does not block', (t) => {
+  const header = `| ${REQUIRED_REGISTER_COLS.join(' | ')} |\n|${REQUIRED_REGISTER_COLS.map(() => '---').join('|')}|`;
+  const write = (f, summary) => fs.writeFileSync(f.registerFile, md(V2, `${summary}\n\n## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, [])}`));
+  const row = (cells) => `| ${cells.join(' | ')} |`;
+  const base = [INPUT, 'meeting', 'simple-update×0', 'reconciled', 'accepted', '-', '-', '-'];
+  for (const [label, summary, touched] of [
+    ['Input ID comment', `${header}\n${row([`${INPUT} <!-- note -->`, ...base.slice(1)])}`, '-'],
+    ['header comment', `${header.replace('| Result |', '| Result <!-- note --> |')}\n${row(base)}`, '-'],
+    ['pipe in a comment', `${header}\n${row([...base.slice(0, 5), '- <!-- a | b -->', '-', '-'])}`, '- <!-- a | b -->'],
+    ['omitted trailing cells', `${header}\n${row(base.slice(0, 5))}`, ''],
+  ]) {
+    const f = fixture(t, { explicit: false, native: true }); legacy(f); write(f, summary);
+    const out = f.run();
+    assert.deepEqual(out.pending_connections, [], label);
+    assert.deepEqual(out.legacy_connections.map((entry) => entry.summary.touched_artifacts), [touched], label);
+  }
+  // A comment across cells: the register reads partially-reconciled with an empty Result, so nothing connects.
+  const f = fixture(t, { explicit: false, native: true }); legacy(f);
+  write(f, `${header}\n| ${INPUT} | meeting <!-- | ignored | reconciled | accepted | --> | simple-update | partially-reconciled |`);
+  assert.deepEqual(f.run().legacy_connections, []); assert.deepEqual(f.run().pending_connections, unconnected());
+});
+
 test('D #269 legacy sources: Items, a structured capture time, a missing Summary or a v1 register keep the item rule', (t) => {
   // Any Item makes the input structured: an Item for another section does not fall back to the Summary.
   const items = fixture(t, { explicit: false, native: true }); legacy(items, { rows: [effect('02', 'other')] });
