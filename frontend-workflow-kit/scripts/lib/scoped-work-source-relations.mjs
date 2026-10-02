@@ -43,17 +43,25 @@ const headerKey = (name) => name.toLowerCase().replace(/\s+/g, '');
 // columns once code and comments are removed, line breaks kept, so its lines are the body's. The parser's own
 // table is only compared with it cell by cell (RR-SCHEMA-020) and may be an example placed before it.
 const SEPARATOR = /^\|?[\s:|-]+\|?$/;
+// Where each line starts and where its text ends, with line endings as the Markdown parser reads them (CR, LF, CRLF).
+function lineSpans(text) {
+  const ends = [...text.matchAll(/\r\n?|\n/g)];
+  return { starts: [0, ...ends.map((end) => end.index + end[0].length)], ends: [...ends.map((end) => end.index), text.length] };
+}
 function summaryAsWritten(body) {
   const content = stripNonContent(body);
   const found = locateStrictTables(content).filter(({ table }) => describeHeaderMismatch(table, REQUIRED_REGISTER_COLS) === null);
   if (found.length !== 1) return [];
-  const lineAt = (offset) => content.slice(0, offset).split('\n').length - 1;
-  const source = body.split(/\r?\n/).slice(lineAt(found[0].start), lineAt(found[0].end) + 1).join('\n');
+  // The table's own bytes: from its first line to the end of its last line, as the Markdown parser ends lines. Rows
+  // inside are then split as the register parser splits them (LF or CRLF), so they pair with the validated rows.
+  const view = lineSpans(content), written = lineSpans(body);
+  const lineOf = (offset) => view.starts.filter((start) => start <= offset).length - 1;
+  const source = body.slice(written.starts[lineOf(found[0].start)], written.ends[lineOf(found[0].end)]);
   let code = 0xe000;
   while (source.includes(String.fromCharCode(code))) code += 1;
   const mark = String.fromCharCode(code), token = `${mark}\\d+${mark}`, comments = [];
   const marks = new RegExp(`${mark}(\\d+)${mark}`, 'g');
-  const lines = source.replace(/<!--[\s\S]*?-->/g, (comment) => `${mark}${comments.push(comment) - 1}${mark}`).split('\n');
+  const lines = source.replace(/<!--[\s\S]*?-->/g, (comment) => `${mark}${comments.push(comment) - 1}${mark}`).split(/\r?\n/);
   const parsed = lines.map((line) => {
     const bare = line.replace(marks, '');
     if (SEPARATOR.test(bare.trim())) return bare;

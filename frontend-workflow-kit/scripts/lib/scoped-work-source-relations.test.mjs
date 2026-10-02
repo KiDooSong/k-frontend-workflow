@@ -458,6 +458,20 @@ test('D #269 legacy sources: the row as written comes from the canonical Summary
   fs.writeFileSync(code.registerFile, md(V2, `\`\`\`md\n${example}\n\`\`\`\n\n    | example text\n${header}\n${real}\n\n` +
     `## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, [])}`));
   assert.deepEqual(code.run().legacy_connections.map((entry) => entry.summary.row), [real]);
+  // A bare CR ends a line for the Markdown parser as well: a heading or code line before it is not in the Summary,
+  // and a code line after the last row is not in that row's evidence.
+  const fenced = `\`\`\`md\n${example}\n\`\`\`\n\n`, items = `\n\n## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, [])}`;
+  for (const [label, summary] of [['heading then CR', `${fenced}## Summary\r${header}\n${real}`],
+    ['code line then CR', `${fenced}    | example text\r${header}\n${real}`], ['CR then code line', `${header}\n${real}\r    | example text`]]) {
+    const cr = fixture(t, { explicit: false, native: true }); legacy(cr);
+    fs.writeFileSync(cr.registerFile, md(V2, `${summary}${items}`));
+    assert.deepEqual(cr.run().legacy_connections.map((entry) => entry.summary.row), [real], label);
+  }
+  // Inside the table, rows split as the register parser splits them: a bare CR does not end the row it validated.
+  const joined = fixture(t, { explicit: false, native: true }); legacy(joined);
+  const short = `| ${INPUT} | meeting | simple-update×0 | reconciled | accepted |\r| - | - | - |`;
+  fs.writeFileSync(joined.registerFile, md(V2, `${header}\n${short}${items}`));
+  assert.deepEqual(joined.run().legacy_connections.map((entry) => [entry.summary.created_items, entry.summary.row]), [['-', short]]);
 });
 
 test('D #269 legacy sources: Items, a structured capture time, a missing Summary or a v1 register keep the item rule', (t) => {
