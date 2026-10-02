@@ -11,7 +11,7 @@ import { validateInputArtifacts } from './input-artifact.mjs';
 import { parseReconciliationRegister, REQUIRED_REGISTER_COLS } from './reconciliation-register.mjs';
 import { parseRegisterContract, parseReconciliationItems, parseTargetRef, validateReconciliationV2,
   RESULT_BY_STATUS } from './reconciliation-items.mjs';
-import { parseReconciliationMarkdown, parseReconciliationReferenceView, locateStrictTables, stripNonContent,
+import { parseReconciliationMarkdown, parseReconciliationReferenceView, locateContentTables,
   describeHeaderMismatch } from './reconciliation-markdown-ast.mjs';
 import { parseTable } from './spec.mjs';
 import { parseScopedOwner } from './scoped-work-declarations.mjs';
@@ -40,8 +40,8 @@ const headerKey = (name) => name.toLowerCase().replace(/\s+/g, '');
 // comment, and each row keeps its source line as written. A separator line drops its marks; marks before the
 // leading pipe move into the first cell, since the parser trims the line. The canonical Summary is the table
 // validateReconciliationV2 checks (RR-SCHEMA-019): the one strict top-level table with exactly the Summary
-// columns once code and comments are removed, line breaks kept, so its lines are the body's. The parser's own
-// table is only compared with it cell by cell (RR-SCHEMA-020) and may be an example placed before it.
+// columns once code and comments are removed. The parser's own table is only compared with it cell by cell
+// (RR-SCHEMA-020) and may be an example placed before it.
 const SEPARATOR = /^\|?[\s:|-]+\|?$/;
 // Where each line starts and where its text ends, with line endings as the Markdown parser reads them (CR, LF, CRLF).
 function lineSpans(text) {
@@ -49,14 +49,14 @@ function lineSpans(text) {
   return { starts: [0, ...ends.map((end) => end.index + end[0].length)], ends: [...ends.map((end) => end.index), text.length] };
 }
 function summaryAsWritten(body) {
-  const content = stripNonContent(body);
-  const found = locateStrictTables(content).filter(({ table }) => describeHeaderMismatch(table, REQUIRED_REGISTER_COLS) === null);
+  const found = locateContentTables(body).filter(({ table }) => describeHeaderMismatch(table, REQUIRED_REGISTER_COLS) === null);
   if (found.length !== 1) return [];
-  // The table's own bytes: from its first line to the end of its last line, as the Markdown parser ends lines. Rows
-  // inside are then split as the register parser splits them (LF or CRLF), so they pair with the validated rows.
-  const view = lineSpans(content), written = lineSpans(body);
-  const lineOf = (offset) => view.starts.filter((start) => start <= offset).length - 1;
-  const source = body.slice(written.starts[lineOf(found[0].start)], written.ends[lineOf(found[0].end)]);
+  // The table's own bytes: from the start of its first line to the end of its last line, as the Markdown parser ends
+  // lines. Rows inside are then split as the register parser splits them (LF or CRLF), so they pair with the
+  // validated rows.
+  const spans = lineSpans(body);
+  const lineOf = (offset) => spans.starts.filter((start) => start <= offset).length - 1;
+  const source = body.slice(spans.starts[lineOf(found[0].start)], spans.ends[lineOf(found[0].end - 1)]);
   let code = 0xe000;
   while (source.includes(String.fromCharCode(code))) code += 1;
   const mark = String.fromCharCode(code), token = `${mark}\\d+${mark}`, comments = [];

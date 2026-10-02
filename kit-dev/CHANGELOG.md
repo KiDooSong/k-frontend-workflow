@@ -22,7 +22,7 @@
   재신청 경로가 없어 Result 를 게이트로 쓰지 않는다(#269 결정).
 - 회귀 테스트: legacy 연결(frontmatter·typed ref), canonical Result 6종과 그 밖의 상태·자유 서술·HTML 주석, 주석이 낀
   ID·헤더·칸, 칸을 가로지르는 주석, 생략되거나 헤더보다 많은 칸, escaped pipe·짧은 행 뒤의 주석과 그 위치,
-  Summary 앞뒤의 예시 표(fence·들여쓰기·목록·문단)와 Summary 바로 위의 코드 줄, 표 경계와 행 사이의 단독 CR,
+  Summary 앞뒤의 예시 표(fence·들여쓰기·목록·문단)와 Summary 바로 위의 코드 줄, 표 경계와 행 사이의 단독 CR, 지운 주석·코드 줄이 CR 과 LF 를 붙이는 경우(여럿이 쌓인 경우 포함),
   Items·늦은 capture·Summary 없음·v1 register, projection 과 binding basis 의 Summary 각 칸·입력 bytes 반영,
   coverage denial·origin, surface host 의 evidence, 공개 CLI(#269 재현 L1~L3).
   문서: `scoped-work.md`, `input-reconciliation.md`, `upgrade-notes.md`, doc-ownership 행.

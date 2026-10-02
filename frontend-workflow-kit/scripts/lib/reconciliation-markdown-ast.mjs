@@ -149,6 +149,27 @@ function removeRangesPreservingLines(source, ranges) {
   return output + source.slice(cursor);
 }
 
+// The source offset of each character removeRangesPreservingLines keeps, in output order.
+function keptSourceOffsets(source, ranges) {
+  const ordered = ranges
+    .filter((range) => range.start < range.end)
+    .sort((a, b) => a.start - b.start || b.end - a.end);
+  const kept = [];
+  const keep = (from, to, lineEndsOnly) => {
+    for (let i = from; i < to; i += 1) if (!lineEndsOnly || source[i] === '\r' || source[i] === '\n') kept.push(i);
+  };
+  let cursor = 0;
+  for (const range of ordered) {
+    if (range.end <= cursor) continue;
+    const start = Math.max(cursor, range.start);
+    keep(cursor, start, false);
+    keep(start, range.end, true);
+    cursor = range.end;
+  }
+  keep(cursor, source.length, false);
+  return kept;
+}
+
 function isNonContentHtml(node, parent) {
   if (node.type !== 'html') return false;
   // HTML comment는 block/inline 위치와 무관하게 렌더링되지 않는다.
@@ -519,6 +540,17 @@ export function toProseBody(text) {
 
 export function parseStrictTables(text) {
   return locateStrictTables(text).map(({ table }) => table);
+}
+
+// The strict tables of stripNonContent(text), which validateReconciliationV2 reads, with the offsets each one spans
+// in text itself. Removing a comment can join a CR and an LF into one line ending, so line numbers of the two do
+// not always match; the offsets follow each kept character back instead.
+export function locateContentTables(text) {
+  const source = String(text || '');
+  const ranges = nonContentRanges(sharedTree(source));
+  const kept = keptSourceOffsets(source, ranges);
+  return locateStrictTables(removeRangesPreservingLines(source, ranges))
+    .map(({ table, start, end }) => ({ table, start: kept[start], end: kept[end - 1] + 1 }));
 }
 
 // The same tables with the source offsets each one spans, for callers that read a table's own lines.

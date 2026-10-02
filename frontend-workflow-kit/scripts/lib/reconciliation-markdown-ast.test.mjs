@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseReconciliationMarkdown, parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
+import { parseReconciliationMarkdown, parseReconciliationReferenceView, locateContentTables } from './reconciliation-markdown-ast.mjs';
 
 function section(markdown, slug = 'extracted-facts') {
   const parsed = parseReconciliationMarkdown(markdown);
@@ -60,4 +60,17 @@ test('the same body shares one read-only tree per process; derived views stay pe
   for (const value of [tree, tree.children, tree.children[1], tree.children[1].position.start]) assert.ok(Object.isFrozen(value));
   assert.throws(() => tree.children.push({ type: 'text', value: 'x' }), TypeError);
   assert.notEqual(parseReconciliationMarkdown(body).occurrences, parseReconciliationMarkdown(body).occurrences);
+});
+
+test('locateContentTables: strict tables of the content view, at their offsets in the source', () => {
+  // Removing the comment joins the CR and the LF into one line ending; the fenced table is no table at all.
+  const source = '## Summary\r<!-- note -->\n| a | b |\n|---|---|\n| 1 | 2 | <!-- x -->\n\n\`\`\`\n| c | d |\n|---|---|\n\`\`\`\n';
+  const found = locateContentTables(source);
+  assert.equal(found.length, 1);
+  assert.deepEqual(found[0].table.headers, ['a', 'b']);
+  assert.equal(source.slice(found[0].start, found[0].end).trimEnd(), '| a | b |\n|---|---|\n| 1 | 2 |');
+  // Line ends inside removed code stay in the content view, so offsets after it still land on the same characters.
+  const after = '\`\`\`\n| c | d |\n|---|---|\n\`\`\`\n\n| a | b |\n|---|---|\n| 1 | 2 |';
+  const [table] = locateContentTables(after);
+  assert.equal(after.slice(table.start, table.end), '| a | b |\n|---|---|\n| 1 | 2 |');
 });

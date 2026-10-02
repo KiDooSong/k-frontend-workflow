@@ -462,11 +462,20 @@ test('D #269 legacy sources: the row as written comes from the canonical Summary
   // and a code line after the last row is not in that row's evidence.
   const fenced = `\`\`\`md\n${example}\n\`\`\`\n\n`, items = `\n\n## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, [])}`;
   for (const [label, summary] of [['heading then CR', `${fenced}## Summary\r${header}\n${real}`],
-    ['code line then CR', `${fenced}    | example text\r${header}\n${real}`], ['CR then code line', `${header}\n${real}\r    | example text`]]) {
+    ['code line then CR', `${fenced}    | example text\r${header}\n${real}`], ['CR then code line', `${header}\n${real}\r    | example text`],
+    ['CR, comment, LF', `## Summary\r<!-- note -->\n${header}\n${real}`], ['CR, code line, LF', `${fenced}## Summary\r    code line\n${header}\n${real}`]]) {
     const cr = fixture(t, { explicit: false, native: true }); legacy(cr);
     fs.writeFileSync(cr.registerFile, md(V2, `${summary}${items}`));
     assert.deepEqual(cr.run().legacy_connections.map((entry) => entry.summary.row), [real], label);
   }
+  // Such joins add up. Five of them above would have moved a line count onto the fenced example's rows.
+  const joins = 'p\r<!-- c -->\n'.repeat(5);
+  const shifted = fixture(t, { explicit: false, native: true }); legacy(shifted);
+  fs.writeFileSync(shifted.registerFile, md(V2, `${joins}\n${fenced}${header}\n${row([...base.slice(0, 4), 'accepted <!-- note -->', ...base.slice(5)])}${items}`));
+  assert.deepEqual(shifted.run().legacy_connections, []);
+  const kept = fixture(t, { explicit: false, native: true }); legacy(kept);
+  fs.writeFileSync(kept.registerFile, md(V2, `${joins}\n${fenced}${header}\n${real}${items}`));
+  assert.deepEqual(kept.run().legacy_connections.map((entry) => entry.summary.row), [real]);
   // Inside the table, rows split as the register parser splits them: a bare CR does not end the row it validated.
   const joined = fixture(t, { explicit: false, native: true }); legacy(joined);
   const short = `| ${INPUT} | meeting | simple-update×0 | reconciled | accepted |\r| - | - | - |`;
