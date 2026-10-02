@@ -295,7 +295,7 @@ test('D #269 input coverage: a legacy Summary connection is no denial; an origin
   f.register([], 'reconciled', 'pending-user-decision'); f.origins([]);
   const out = f.inspect();
   assert.deepEqual(out.denials, []); assert.equal(out.coverage_satisfied, true); assert.deepEqual(out.sources, []);
-  assert.deepEqual(out.legacy_connections.map((entry) => [entry.input_id, entry.result]), [[INPUT, 'pending-user-decision']]);
+  assert.deepEqual(out.legacy_connections.map((entry) => [entry.input_id, entry.summary.result]), [[INPUT, 'pending-user-decision']]);
   noApproval(out);
   f.origins([{ input_id: INPUT, source_refs: [] }]);
   assert.deepEqual(f.inspect().denials.map((entry) => [entry.code, entry.reasons]), [['origin-input-unreconciled', ['origin-input-unreconciled']]]);

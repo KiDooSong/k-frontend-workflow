@@ -240,8 +240,11 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
     const found = resolveInputArtifact(inputIndex, id);
     const captured = found.status === 'ok' ? parseRfc3339(found.artifact.fm?.captured_at) : null;
     if (captured === null || legacy.since === null || captured >= legacy.since) return null;
-    return { input_id: id, ref, reason: 'legacy-summary-only', reconcile_status: summary.reconcileStatus,
-      result: summary.result, input_sha256: hashBytes(read(found.artifact.file)) };
+    // The whole Summary row is the evidence, so any cell change moves the projection and its basis.
+    return { input_id: id, ref, reason: 'legacy-summary-only', summary: { source: summary.source,
+      classification: summary.classification, reconcile_status: summary.reconcileStatus, result: summary.result,
+      touched_artifacts: summary.touched, created_items: summary.created, supersedes: summary.supersedes },
+    input_sha256: hashBytes(read(found.artifact.file)) };
   }
   const legacyConnections = [];
   function witnesses(target) {

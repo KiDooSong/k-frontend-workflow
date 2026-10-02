@@ -66,7 +66,8 @@ function evidenceSummary(result) {
     decisions: decisions.checks.map((check) => ({ decision: check.decision, status: check.status,
       scope_source: check.scope_source, blocking_units: check.blocking_units })),
     hosts: (result.host_result?.hosts || []).map((host) => ({ owner: host.owner, unit: host.unit, adopted: host.adopted,
-      host_satisfied: host.host_satisfied, consent: host.consent })),
+      host_satisfied: host.host_satisfied, consent: host.consent,
+      ...(host.profile?.coverage?.legacy_connections?.length ? { legacy_sources: host.profile.coverage.legacy_connections } : {}) })),
   });
 }
 

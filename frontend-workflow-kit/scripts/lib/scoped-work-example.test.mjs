@@ -138,7 +138,9 @@ test('#269 example: a summary-only legacy source connects through its reconciled
     assert.deepEqual(codes(env), codes(baseline), result);
     assert.deepEqual(reviews(env).map((entry) => entry.slice(0, entry.indexOf(')') + 1)),
       [`Legacy summary-only source ${LEGACY_INPUT} (reconciled + ${result})`]);
-    assert.deepEqual(legacySources(env), [{ input_id: LEGACY_INPUT, ref: null, reason: 'legacy-summary-only', reconcile_status: 'reconciled', result }]);
+    assert.deepEqual(legacySources(env), [{ input_id: LEGACY_INPUT, ref: null, reason: 'legacy-summary-only', summary: { source: 'meeting',
+      classification: 'simple-update', reconcile_status: 'reconciled', result, touched_artifacts: 'artifact:COUPON-001-screen-spec',
+      created_items: '-', supersedes: '-' } }]);
   }
   // An annotated Result is not a canonical code; an Item connects at item level instead of through the Summary.
   const annotated = json(readiness(t, legacySource({ result: 'accepted — kept after review' })));

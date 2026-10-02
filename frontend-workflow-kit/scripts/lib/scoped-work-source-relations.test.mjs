@@ -335,7 +335,9 @@ function legacy(f, { status = 'reconciled', result = 'accepted', capturedAt = '2
   f.register(rows, status, result);
 }
 const legacyEntry = (f, ref, result = 'accepted') => ({ input_id: INPUT, ref, reason: 'legacy-summary-only',
-  reconcile_status: 'reconciled', result, input_sha256: hashBytes(fs.readFileSync(f.inputFile)) });
+  summary: { source: 'meeting', classification: 'simple-update×0', reconcile_status: 'reconciled', result,
+    touched_artifacts: '-', created_items: '-', supersedes: '-' },
+  input_sha256: hashBytes(fs.readFileSync(f.inputFile)) });
 const unconnected = (ref = null) => [{ input_id: INPUT, ref, reason: 'source-effect-unconnected' }];
 
 test('D #269 legacy sources: a summary-only input captured before structured_since connects through its Summary', (t) => {
@@ -387,6 +389,11 @@ test('D #269 legacy sources: the Summary state and the input bytes reach the pro
   // Rewrite only the register here: the fixture's change() also rewrites the input's bytes.
   f.register([], 'reconciled', 'rejected'); assert.notDeepEqual(scope(f).projection, before);
   f.register([], 'reconciled', 'accepted'); assert.deepEqual(scope(f).projection, before);
+  // Every other Summary cell is evidence too, not only the state and Result.
+  fs.writeFileSync(f.registerFile, md(V2, `${table(REQUIRED_REGISTER_COLS, [[INPUT, 'meeting', 'simple-update×0', 'reconciled', 'accepted',
+    'artifact:DOC', '-', '-']])}\n\n## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, [])}`));
+  assert.notDeepEqual(scope(f).projection, before);
+  f.register([], 'reconciled', 'accepted');
   f.change('input.md', ({ fm }) => { fm.captured_by = 'another-recorder'; }, f.inputs);
   assert.notDeepEqual(scope(f).projection, before);
 });

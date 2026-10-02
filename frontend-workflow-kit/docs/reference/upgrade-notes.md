@@ -23,13 +23,16 @@ or root config.
   summary-only row, as the register contract allows. Scoped work used to deny
   every unit whose selected contracts cite such an input
   (`source-effect-unconnected`). Now a `reconciled` Summary with a canonical
-  Result for that status connects it, and the request lists it in
-  `evidence.legacy_sources` and `required_reviews` for a person to check.
+  Result for that status connects it. The request lists it, with its Summary
+  row, in `evidence.legacy_sources` (an adopted surface host's under
+  `evidence.hosts`) and in `required_reviews` for a person to check.
 - A Result with a note appended (for example `accepted — kept after review`) is
   not a canonical code and still denies. Move the note out of the Result cell
   to use this.
 - Inputs with Items, inputs captured on or after `structured_since`, and v1
-  registers behave as before. Item sources keep their stricter admission.
+  registers behave as before. Item sources keep their stricter admission: an
+  input from before adoption has no later re-apply path, so its Result is
+  reported, not gated.
 - A decision scope's basis digest changes once when its owner's units cite such
   an input, because the source moves from the pending to the legacy list.
   Re-review those bindings.
