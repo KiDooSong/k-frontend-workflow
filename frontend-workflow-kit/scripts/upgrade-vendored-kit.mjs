@@ -55,7 +55,8 @@ Apply safety (all default OFF):
 
 Scoped-work downgrade guard:
   --consumer-root <path>  Consumer repository to inspect for live work_execution /
-                     decision_work_scopes declarations (default: Git toplevel of --current).
+                     decision_work_scopes / uncertainty_work_scopes declarations
+                     (default: Git toplevel of --current).
                      A payload that cannot enforce them is never applied automatically
                      while they remain.
 

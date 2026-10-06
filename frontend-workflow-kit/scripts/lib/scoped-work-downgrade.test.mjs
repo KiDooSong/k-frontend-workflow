@@ -69,13 +69,14 @@ test('D33: only live consumer declarations count as markers', (t) => {
   put(s.currentDir, 'docs/reference/example.md', '---\nwork_execution: {version: 1}\n---\n');
   put(s.consumer, 'docs/notes.md', '# Notes\n\n```yaml\nwork_execution:\n  version: 1\n```\n');
   put(s.consumer, 'docs/decisions.md', '---\nartifact_id: open-decision-register\ndecision_work_scopes:\n  version: 1\n  bindings: []\n---\n# Decisions\n');
+  put(s.consumer, 'docs/conflicts.md', '---\nartifact_id: conflicts\nuncertainty_work_scopes:\n  version: 1\n  bindings: []\n---\n# Conflicts\n');
   put(s.consumer, 'docs/broken.md', '---\nwork_execution: [unclosed\n---\n');
   s.git('add', '-A'); s.git('commit', '-qm', 'docs');
   put(s.consumer, 'untracked.yaml', 'work_execution: {}\n');
   const scan = findAdoptionMarkers({ consumerRoot: s.consumer, currentDir: s.currentDir });
   assert.equal(scan.inspected, true);
   assert.deepEqual(scan.markers, [{ path: 'docs/broken.md', keys: [], unparsed: true },
-    { path: 'docs/decisions.md', keys: ['decision_work_scopes'] }]);
+    { path: 'docs/conflicts.md', keys: ['uncertainty_work_scopes'] }, { path: 'docs/decisions.md', keys: ['decision_work_scopes'] }]);
 });
 
 test('D33: an uninspectable consumer root warns but cannot prove that markers remain', (t) => {

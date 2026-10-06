@@ -35,7 +35,7 @@ import { maskAutolinks, maskInlineCodeSpans } from './doc-drift.mjs';
 // ordinary/current/legacy/visual-refresh fallback entries. An older payload would
 // silently ignore live markers and reopen legacy authority on adopted paths.
 export const ADOPTION_GUARD_MODULE = 'scripts/lib/scoped-work-adoption.mjs';
-const ADOPTION_KEYS = ['work_execution', 'decision_work_scopes'];
+const ADOPTION_KEYS = ['work_execution', 'decision_work_scopes', 'uncertainty_work_scopes'];
 
 function gitOutput(args, cwd) {
   try { return execFileSync('git', args, { cwd, encoding: 'buffer', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024 }); }
@@ -355,7 +355,7 @@ export function buildPlan({ currentDir, nextDir, options = {} }) {
       + 'this planner never rolls them back for you.');
   } else if (adoption && !adoption.inspected) {
     warnings.push('The next payload cannot enforce scoped-work adoption markers and the consumer repository could not be inspected; '
-      + 'confirm no work_execution/decision_work_scopes declarations remain before applying.');
+      + 'confirm no work_execution/decision_work_scopes/uncertainty_work_scopes declarations remain before applying.');
   }
   if (baselineUnknown) {
     warnings.push(

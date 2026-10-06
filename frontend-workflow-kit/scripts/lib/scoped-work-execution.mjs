@@ -55,6 +55,10 @@ function baselineArtifactIndex(docsRoot) {
   return { files, targetIndex: buildReconciliationTargetIndex({ docs }) };
 }
 
+// #262: an Unknown/Conflict row whose home declares a binding for the owner, like a Decision row.
+const uncertaintyScopes = (profile) => profile?.uncertainty_scopes?.length ? { uncertainty_scopes: profile.uncertainty_scopes.map((check) =>
+  ({ uncertainty: check.uncertainty, status: check.status, scope_source: check.scope_source, blocking_units: check.blocking_units })) } : {};
+
 function evidenceSummary(result) {
   const profile = result.owner_result.profile, decisions = result.owner_result.decision_scopes;
   return stable({
@@ -65,9 +69,11 @@ function evidenceSummary(result) {
     ...(profile.coverage?.legacy_connections?.length ? { legacy_sources: profile.coverage.legacy_connections } : {}),
     decisions: decisions.checks.map((check) => ({ decision: check.decision, status: check.status,
       scope_source: check.scope_source, blocking_units: check.blocking_units })),
+    ...uncertaintyScopes(profile),
     hosts: (result.host_result?.hosts || []).map((host) => ({ owner: host.owner, unit: host.unit, adopted: host.adopted,
       host_satisfied: host.host_satisfied, consent: host.consent,
-      ...(host.profile?.coverage?.legacy_connections?.length ? { legacy_sources: host.profile.coverage.legacy_connections } : {}) })),
+      ...(host.profile?.coverage?.legacy_connections?.length ? { legacy_sources: host.profile.coverage.legacy_connections } : {}),
+      ...uncertaintyScopes(host.profile) })),
   });
 }
 

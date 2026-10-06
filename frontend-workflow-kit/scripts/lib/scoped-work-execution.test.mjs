@@ -13,6 +13,7 @@ import { REQUIRED_ITEM_COLS } from './reconciliation-items.mjs';
 import { COMPONENT_MAPPING_COLUMNS, MAPPING_PROVENANCE_COLUMNS } from './mapping-provenance.mjs';
 import { buildReconciliationTargetIndex } from './reconciliation-target-index.mjs';
 import { resolveScopedBindingBasis } from './scoped-work-basis.mjs';
+import { resolveScopedUncertaintyBindingBasis } from './scoped-work-uncertainty-scopes.mjs';
 import { prepareScopedWork, cleanupScopedWork, publicScopedEnvelope, isScopedWorkDocument, evaluateScopedGit,
   scopedPacketEnvelope, renderScopedPacketMarkdown, assertScopedPacketMatches } from './scoped-work-execution.mjs';
 
@@ -546,4 +547,43 @@ test('#269: a legacy source connected for an adopted surface host is listed in t
   assert.deepEqual(selected.evidence.hosts.map((host) => [host.owner, (host.legacy_sources ?? []).map((entry) => [entry.input_id, entry.summary.result])]),
     [['screen:RESULT-001', [[input, 'accepted']]], ['screen:RESULT-002', []]]);
   assert.ok(env.required_reviews.some((entry) => entry.startsWith(`Legacy summary-only source ${input} (reconciled + accepted)`)));
+});
+
+test('#262: a Conflict named for an adopted host denies it until a current binding narrows it, listed in that host evidence', (t) => {
+  const r = repository(t), owner = 'screen:RESULT-001', uncertaintyRef = 'conflict:C-ONE@conflicts';
+  const register = (scopes = {}) => r.write('conflicts.md', 'global/conflicts.md', { artifact_id: 'conflicts', artifact_type: 'conflicts',
+    status: 'draft', ...scopes }, `# Conflicts\n\n${table(['ID', '충돌 지점', 'A (출처/값)', 'B (출처/값)', '영향 화면', 'Status'],
+    [['C-ONE', 'Retry copy', 'Planning: Retry', 'Figma: Try again', 'RESULT-001', 'open']])}`);
+  const scope = (fields = {}) => ({ uncertainty_work_scopes: { version: 1, bindings: [{ conflict_id: 'C-ONE', owner, known_units: ['known'],
+    blocks: [], basis_digest: `sha256:${'0'.repeat(64)}`, approval_ref: 'review:synthetic-only', ...fields }] } });
+  const run = (scopes, message) => { register(scopes); r.commit(message); return publicScopedEnvelope(r.prepare(t)); };
+  const hostScopes = (env) => env.requests[0].evidence.hosts.map((host) => [host.owner, host.uncertainty_scopes ?? []]);
+  const narrowed = (env) => env.required_reviews.filter((entry) => entry.startsWith('Uncertainty scope '));
+
+  const open = run(undefined, 'named conflict');
+  assert.equal(open.ready, false);
+  assert.deepEqual(open.denials.map((entry) => [entry.code, entry.prerequisite, entry.host, entry.application?.uncertainty]),
+    [['unit-uncertainty-unresolved', 'host-profile', owner, uncertaintyRef]], 'only the named host; the surface and the other host are not named');
+  assert.deepEqual(hostScopes(open), [[owner, []], ['screen:RESULT-002', []]]);
+  const stale = run(scope(), 'stale binding');
+  assert.equal(stale.ready, false);
+  assert.deepEqual(hostScopes(stale)[0], [owner, [{ uncertainty: uncertaintyRef, status: 'open', scope_source: 'conservative-default', blocking_units: ['known'] }]]);
+  assert.deepEqual(narrowed(stale), []);
+  // A person reviews the scope and records the current basis digest.
+  const docsDir = path.join(r.root, DOCS);
+  const { basis_digest: digest } = resolveScopedUncertaintyBindingBasis({ owner, uncertaintyRef, projectRoot: r.root, docsDir, kitRoot: path.join(r.root, '.kit'),
+    policyFile: path.join(r.root, '.kit/policy.yaml'), layoutFile: path.join(r.root, '.kit/layout.yaml'), manifestFile: path.join(r.root, '.kit/manifest.yaml'),
+    registerFile: path.join(docsDir, '_meta/reconciliation-register.md'), inputArtifacts: [],
+    targetIndex: buildReconciliationTargetIndex({ docs: [...r.docs.values()].map((file) => ({ file, fm: splitFrontmatter(fs.readFileSync(file, 'utf8')).data })) }) });
+  const current = run(scope({ basis_digest: digest }), 'current binding');
+  assert.equal(current.ready, true, JSON.stringify(current.denials));
+  assert.deepEqual(hostScopes(current)[0], [owner, [{ uncertainty: uncertaintyRef, status: 'open', scope_source: 'current-canonical-declaration', blocking_units: [] }]]);
+  assert.deepEqual(narrowed(current).map((entry) => entry.slice(0, entry.indexOf(';'))),
+    [`Uncertainty scope ${uncertaintyRef} for ${owner} is narrowed by its canonical binding to blocks [] (approval_ref: review:synthetic-only)`]);
+  // The host's own request lists it in the request evidence.
+  const direct = publicScopedEnvelope(r.prepare(t, r.request(hostRequest())));
+  assert.equal(direct.ready, true, JSON.stringify(direct.denials));
+  assert.deepEqual(direct.requests[0].evidence.uncertainty_scopes,
+    [{ uncertainty: uncertaintyRef, status: 'open', scope_source: 'current-canonical-declaration', blocking_units: [] }]);
+  assert.deepEqual(narrowed(direct).length, 1);
 });
