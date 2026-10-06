@@ -170,12 +170,15 @@ packets and serialized verdicts are not authority. For each scoped request:
   through the unit's selected evidence, through a row or Decision it reaches, or
   natively: to every unit of an owner whose spec, hosted surface, domain or a
   global or undomained document holds it. A resolved row does not block (an
-  Unknown with Status `resolved` in any case, a Conflict with `resolved`). A
-  Conflicts row outside every owner spec keeps that native relation only for the
-  owners its `영향 화면` cell names, and for a named surface's member screens,
-  when the cell lists only known screen or surface IDs separated by `,` or `·`;
-  `global` in any letter case (even when a screen has that ID), a blank, prose,
-  markup or an unknown ID keeps it for every owner. A current
+  Unknown with Status `resolved` in any case, a Conflict with `resolved`). An
+  open Conflicts row outside every owner spec keeps that native relation only for
+  the owners its `영향 화면` cell names, for a named surface's member screens,
+  and for a surface that hosts a named screen still on legacy readiness (a
+  `legacy-current` host checks no Unknown or Conflict), when the cell lists only
+  known screen or surface IDs separated by `,` or `·`; `global` in any letter
+  case (even when a screen has that ID), a blank, prose, markup or an unknown ID
+  keeps it for every owner. A resolved row keeps its relations whatever the cell
+  names. A current
   `uncertainty_work_scopes` binding on an open row keeps the native relation
   only for its `blocks`, unless the unit still reaches the row through another
   row it keeps; a binding on a resolved row changes nothing.

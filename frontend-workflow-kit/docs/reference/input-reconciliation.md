@@ -967,7 +967,7 @@ User
 
 `Conflicts` 표는 현재 **passive log** 다 — `readiness.mjs`·`validate.mjs` 어느 쪽도 읽지 않는다. 따라서 **충돌을 Conflicts 에 적는 것만으로는 어떤 모드 게이트도 걸리지 않는다.** 게이트를 실제로 내리는 건 **open 상태의 Open Decision** 뿐이다.
 
-예외는 scoped work(`authority: scoped`)다. 관계된 unit 을 열린 Conflict 행이 막는다. 전역·도메인 문서의 행은 `영향 화면` 칸이 알려진 화면·surface ID 만의 목록(`,` 또는 `·` 구분, `global` 은 제외)이면, 원래 걸리던 owner 가운데 이름이 적힌 owner 에만 걸린다.
+예외는 scoped work(`authority: scoped`)다. 관계된 unit 을 열린 Conflict 행이 막는다. 전역·도메인 문서의 열린 행은 `영향 화면` 칸이 알려진 화면·surface ID 만의 목록(`,` 또는 `·` 구분, `global` 은 제외)이면, 원래 걸리던 owner 가운데 이름이 적힌 owner 에만 걸린다(이름이 적힌 surface 의 member 화면과, 이름이 적힌 화면을 `legacy-current` host 로 둔 surface 포함).
 상세와 사람 binding: [scoped-work.md](scoped-work.md#evaluation-on-the-immutable-baseline).
 
 ```txt

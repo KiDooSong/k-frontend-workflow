@@ -25,9 +25,11 @@ or root config.
 - A Conflicts row in a global, undomained or domain document applied natively to
   every owner of that scope (every adopted owner for the global register). When
   its `영향 화면` cell lists only known screen or surface IDs separated by `,` or
-  `·`, that native relation now stays only for the named owners and a named
-  surface's member screens. `global` in any letter case, a blank, prose or an
-  unknown ID keeps every owner; evidence relations do not depend on the cell.
+  `·`, that native relation of an open row now stays only for the named owners,
+  a named surface's member screens and a surface that hosts a named
+  `legacy-current` screen. `global` in any letter case, a blank, prose or an
+  unknown ID keeps every owner. Resolved rows and evidence relations do not
+  depend on the cell.
 - A person can narrow an open Unknown or Conflict row with
   `uncertainty_work_scopes` in the document that holds it (the
   `decision_work_scopes` shape, digest and approval rules, with `unknown_id`
