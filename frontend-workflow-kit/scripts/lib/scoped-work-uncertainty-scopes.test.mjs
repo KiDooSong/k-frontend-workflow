@@ -3,11 +3,14 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { splitFrontmatter } from './util.mjs';
 import { buildReconciliationTargetIndex } from './reconciliation-target-index.mjs';
 import { resolveScopedApplicabilityProjection } from './scoped-work-applicability.mjs';
 import { inspectScopedUncertaintyScopes, resolveScopedUncertaintyBindingBasis, scopedUncertaintyDenials,
   scopedUncertaintyScopes } from './scoped-work-uncertainty-scopes.mjs';
+import { inspectScopedUncertaintyTransitions } from './scoped-work-uncertainty-transitions.mjs';
+import { inspectScopedGitUncertaintyTransitions } from './scoped-work-git-transitions.mjs';
 
 // #262: a human binding narrows an open Unknown/Conflict's unproven (native) relation,
 // with decision_work_scopes' shape, digest and approval rules. Recording a computed
@@ -147,6 +150,34 @@ test('D uncertainty scopes: a row reached through another applied row keeps its 
   out = f.run(); assert.deepEqual([denied(out, 'known'), denied(out, 'other')], [[], [UNKNOWN, TWO]]);
 });
 
+test('D uncertainty scopes: a row reached only through a bound-out row is released with it (r1)', (t) => {
+  const f = fixture(t), FOREIGN = 'unknown:U-FOREIGN@FOREIGN';
+  // Another domain: no native relation, so U-FOREIGN reaches the units only through U-ONE.
+  f.write('foreign.md', { artifact_id: 'FOREIGN', artifact_type: 'domain-rules', domain: 'other', status: 'draft' },
+    unknowns([['U-FOREIGN', 'Does unknown:U-ONE@UNCERTAINTY hold?', 'open']]));
+  f.change(HOME, ({ fm }) => { delete fm.uncertainty_work_scopes; });
+  let out = f.run();
+  assert.ok(check(out, FOREIGN).applications.every((entry) => entry.relation === 'transitive-evidence' &&
+    entry.witnesses.every((witness) => witness.via === UNKNOWN)), 'only through U-ONE');
+  for (const id of UNITS) assert.deepEqual(denied(out, id), [CONFLICT, FOREIGN, UNKNOWN], id);
+  f.change(HOME, ({ fm }) => { fm.uncertainty_work_scopes = { version: 1, bindings: [binding({ blocks: ['other'] })] }; }); f.recordDigest();
+  out = f.run();
+  assert.deepEqual([denied(out, 'known'), denied(out, 'other')], [[CONFLICT], [CONFLICT, FOREIGN, UNKNOWN]]);
+  assert.deepEqual([check(out).blocking_units, check(out, FOREIGN).blocking_units], [['other'], ['other']]);
+});
+
+test('D uncertainty scopes: a binding on a resolved row changes nothing; that row still reaches the rows it cites (r1)', (t) => {
+  const f = fixture(t);
+  f.change(HOME, (doc) => { doc.body = `${unknowns([['U-ONE', 'Which state applies?', 'open']])}\n\n${conflicts([['C-ONE', 'Planning cites unknown:U-ONE@UNCERTAINTY here.', 'resolved']])}`; });
+  const { unknown_id, ...rest } = binding({ blocks: [] });
+  f.bind(binding({ blocks: [] }), { ...rest, conflict_id: 'C-ONE' }); f.recordDigest(); f.recordDigest(CONFLICT);
+  const out = f.run();
+  assert.deepEqual([check(out, CONFLICT).binding_state, check(out, CONFLICT).scope_source, check(out, CONFLICT).blocking_units],
+    ['current-unverified', 'resolved-uncertainty', []]);
+  assert.ok(check(out).applications.every((entry) => entry.witnesses.some((witness) => witness.via === CONFLICT)));
+  for (const id of UNITS) assert.deepEqual(denied(out, id), [UNKNOWN], id);
+});
+
 test('D uncertainty scopes: unit set, contract and blocks changes stale the binding; approval_ref does not', (t) => {
   const f = fixture(t), digest = f.recordDigest();
   f.change(HOME, ({ fm }) => { fm.uncertainty_work_scopes.bindings[0].approval_ref = 'https://example.invalid/approved'; });
@@ -210,4 +241,152 @@ test('D uncertainty scopes: an inspector evaluates only its own owner projection
   assert.throws(() => scopedUncertaintyScopes(options, projection, read_set.filter((entry) => entry.file !== 'docs/uncertainty.md')), /read set/);
   fs.appendFileSync(f.docs.get(HOME), '\nChanged after resolution.');
   assert.throws(() => scopedUncertaintyScopes(options, projection, read_set), /snapshot changed/);
+});
+
+// The Decision binding transition rules for Unknown/Conflict bindings (Spec r1): each side has its
+// own bytes and freshly built index. Matching fixture digests are not approvals or Git attestations.
+const { unknown_id: _unknownId, ...conflictBase } = binding();
+const conflictBinding = (overrides = {}) => ({ ...conflictBase, conflict_id: 'C-ONE', ...overrides });
+const resolveUnknown = (f) => f.change(HOME, (doc) => { doc.body = doc.body.replace('| Which state applies? | open |', '| Which state applies? | resolved |'); });
+// Both rows bound out of every unit, with their current digests. A digest recorded again for a
+// changed basis needs a new approval_ref, or the transition reports the reused approval.
+const release = (f, unknown = {}, conflict = {}) => {
+  f.bind(binding({ blocks: [], ...unknown }), conflictBinding({ blocks: [], ...conflict })); f.recordDigest(); f.recordDigest(CONFLICT);
+};
+const RENEWED = { approval_ref: 'review:renewed-fixture' };
+const renew = (f) => release(f, RENEWED, RENEWED);
+function transitions(t, before, after) {
+  const sides = [fixture(t), fixture(t)]; before(sides[0]); after(sides[1]);
+  return inspectScopedUncertaintyTransitions({ owner: OWNER, before: sides[0].options(), after: sides[1].options() });
+}
+const codes = (out) => out.violations.map((entry) => entry.code);
+const noPermit = (out) => {
+  assert.equal(out.approval_verified, false);
+  for (const key of ['ready', 'allowed', 'approved', 'effective_binding', 'allowed_paths', 'transition_valid']) assert.equal(Object.hasOwn(out, key), false, key);
+};
+
+test('D uncertainty transitions: unchanged current bindings stay valid and keep the narrowed blocking set', (t) => {
+  const out = transitions(t, release, release);
+  assert.deepEqual([codes(out), out.blocking_units, out.scope_changed, out.known_units_changed, out.review_required], [[], [], false, false, false]);
+  noPermit(out);
+});
+
+const reopenUnknown = (f) => f.change(HOME, (doc) => { doc.body = doc.body.replace('| Which state applies? | resolved |', '| Which state applies? | open |'); });
+const resolvedRelease = (f) => { resolveUnknown(f); release(f); };
+const finding = (out, code) => out.violations.find((entry) => entry.code === code);
+const transitionOf = (out, ref = UNKNOWN) => out.transitions.find((entry) => entry.uncertainty === ref);
+
+for (const replace of [false, true]) test(`D uncertainty transitions: a reopen retains no binding even with ${replace ? 'a new digest and approval_ref' : 'its unchanged old scope'}`, (t) => {
+  const out = transitions(t, resolvedRelease, replace ? renew : (f) => { resolvedRelease(f); reopenUnknown(f); });
+  assert.deepEqual([codes(out), out.blocking_units, out.scope_changed, out.review_required], [['reopen-binding-retained'], UNITS, true, true]);
+  noPermit(out);
+  const reopened = transitionOf(out);
+  assert.deepEqual([reopened.before_status, reopened.after_status, reopened.reopened, reopened.binding_change, reopened.after_binding_state],
+    ['resolved', 'open', true, replace ? 'changed' : 'unchanged', replace ? 'current-unverified' : 'stale-basis']);
+});
+
+test('D uncertainty transitions: a reopen must remove every owner binding of the row, even where the row stops applying', (t) => {
+  // Digests refreshed under the old approval_ref are reported for each row as well.
+  assert.deepEqual(codes(transitions(t, resolvedRelease, release)),
+    ['approval-ref-reused-with-changed-binding', 'approval-ref-reused-with-changed-binding', 'reopen-binding-retained']);
+  const second = transitions(t, resolvedRelease, (f) => {
+    f.bind(binding({ owner: SECOND, blocks: [] }), conflictBinding({ blocks: [], ...RENEWED })); f.recordDigest(CONFLICT);
+  });
+  assert.deepEqual([codes(second), finding(second, 'reopen-binding-retained').owners, second.blocking_units], [['reopen-binding-retained'], [SECOND], UNITS]);
+  const hidden = transitions(t, resolvedRelease, (f) => { resolvedRelease(f); reopenUnknown(f); f.change(HOME, ({ fm }) => { fm.domain = 'other'; }); });
+  assert.deepEqual([codes(hidden), transitionOf(hidden).after_applicable, transitionOf(hidden).reopened, transitionOf(hidden, CONFLICT).after_applicable, hidden.blocking_units],
+    [['reopen-binding-retained'], false, true, false, UNITS]);
+  // An Unknown resolved in any letter case is reopened the same way.
+  const capital = transitions(t, (f) => {
+    f.change(HOME, (doc) => { doc.body = doc.body.replace('| Which state applies? | open |', '| Which state applies? | Resolved |'); }); release(f);
+  }, renew);
+  assert.deepEqual([codes(capital), transitionOf(capital).reopened], [['reopen-binding-retained'], true]);
+});
+
+test('D uncertainty transitions: a reopen that removes its binding is valid and stays conservative', (t) => {
+  const out = transitions(t, resolvedRelease, (f) => { f.bind(conflictBinding({ blocks: [], ...RENEWED })); f.recordDigest(CONFLICT); });
+  assert.deepEqual([codes(out), out.blocking_units, out.review_required], [[], UNITS, true]);
+  assert.deepEqual([transitionOf(out).reopened, transitionOf(out).binding_change, transitionOf(out).after_binding_state], [true, 'removed', 'missing']);
+  noPermit(out);
+});
+
+test('D uncertainty transitions: an approval_ref reused for a changed scope is a violation', (t) => {
+  const out = transitions(t, (f) => release(f, { blocks: ['other'] }), release);
+  assert.deepEqual([codes(out), out.blocking_units], [['approval-ref-reused-with-changed-binding'], UNITS]);
+  const renewed = transitions(t, (f) => release(f, { blocks: ['other'] }), (f) => release(f, { approval_ref: 'review:renewed-fixture' }));
+  assert.deepEqual([codes(renewed), renewed.blocking_units, transitionOf(renewed).binding_change, renewed.review_required], [[], [], 'changed', true]);
+  noPermit(renewed);
+});
+
+test('D uncertainty transitions: a row that disappears or stops applying while open cannot unblock', (t) => {
+  const gone = transitions(t, release, (f) => {
+    f.change(HOME, (doc) => { doc.body = doc.body.replace(/\| U-ONE \|[^\n]*\n/, ''); }); f.bind(conflictBinding({ blocks: [], ...RENEWED })); f.recordDigest(CONFLICT);
+  });
+  assert.deepEqual([codes(gone), gone.blocking_units], [['uncertainty-disappeared'], UNITS]);
+  const moved = transitions(t, release, (f) => { release(f); f.change(HOME, ({ fm }) => { fm.domain = 'other'; }); });
+  assert.deepEqual([codes(moved), transitionOf(moved).before_applicable, transitionOf(moved).after_applicable, moved.review_required, moved.blocking_units],
+    [[], true, false, true, UNITS]);
+  // A changed contract changes the scope basis: every row needs review and the old digests are stale.
+  const contract = transitions(t, release, (f) => { release(f); f.change('rules.md', (doc) => { doc.body = doc.body.replace('Known contract.', 'Changed contract.'); }); });
+  assert.deepEqual([codes(contract), contract.scope_changed, transitionOf(contract).review_required, transitionOf(contract).after_binding_state, contract.blocking_units],
+    [[], true, true, 'stale-basis', UNITS]);
+  // A new unit leaves the recorded known_units behind: the bindings are stale and every unit is blocked.
+  const added = transitions(t, release, (f) => { release(f); f.change('screen.md', ({ fm }) => { fm.work_execution.units.push(unit('third')); }); });
+  assert.deepEqual([codes(added), added.known_units_changed, transitionOf(added).after_binding_state, added.blocking_units],
+    [[], true, 'stale-known-units', [...UNITS, 'third']]);
+});
+
+test('D uncertainty transitions: a row is identified by its home; the same local ID in another document is another row', (t) => {
+  // Unknown and Conflict IDs are local to the document that holds them, unlike Decision IDs.
+  const twin = (f) => f.write('twin.md', { artifact_id: 'TWIN', artifact_type: 'domain-rules', domain: 'result', status: 'draft' }, BODY);
+  const out = transitions(t, (f) => { twin(f); release(f); }, (f) => { twin(f); release(f); });
+  assert.deepEqual([codes(out), transitionOf(out).binding_change], [[], 'unchanged']);
+  assert.deepEqual(out.blocking_units, UNITS, 'the twin rows are open and unbound');
+  // A row moved to another document is a new row there; the old one disappeared.
+  const moved = transitions(t, release, (f) => {
+    f.change(HOME, (doc) => { doc.body = doc.body.replace(/\| U-ONE \|[^\n]*\n/, ''); }); twin(f);
+    f.bind(conflictBinding({ blocks: [], ...RENEWED })); f.recordDigest(CONFLICT);
+  });
+  assert.deepEqual([codes(moved), moved.blocking_units], [['uncertainty-disappeared'], UNITS]);
+  assert.equal(transitionOf(moved, 'unknown:U-ONE@TWIN').before_applicable, false);
+  // Nor does a Conflict with the same ID keep a removed Unknown in place.
+  const shared = (f, unknown) => {
+    f.bind(); f.change(HOME, (doc) => { doc.body = `${unknown ? `${unknowns([['X-ONE', 'Which state applies?', 'open']])}\n\n` : ''}${conflicts([['X-ONE', 'Planning and Figma disagree.', 'open']])}`; });
+  };
+  const kind = transitions(t, (f) => shared(f, true), (f) => shared(f, false));
+  assert.deepEqual(kind.violations, [{ code: 'uncertainty-disappeared', uncertainty: 'unknown:X-ONE@UNCERTAINTY' }]);
+});
+
+test('D uncertainty transitions: caller verdicts, another owner, stale or late-changed snapshots and malformed declarations are rejected', (t) => {
+  const before = fixture(t), after = fixture(t); release(before); release(after);
+  const run = (extra = {}) => inspectScopedUncertaintyTransitions({ owner: OWNER, before: before.options(), after: after.options(), ...extra });
+  assert.deepEqual(run({ projection: {}, blocks: [], approved: true, approvalVerifier: () => true }), run());
+  assert.throws(() => run({ after: after.options(SECOND) }), /snapshot owner differs/);
+  assert.throws(() => run({ before: { ...before.options(), uncertainty_scopes: [] } }), /caller uncertainty_scopes/);
+  const stale = before.options(); before.change('rules.md', (doc) => { doc.body += '\nChanged indexed bytes.'; });
+  assert.throws(() => run({ before: stale }), /snapshot|differs|changed/);
+  // Protected resource reads use openSync/readSync, not readFileSync.
+  const file = before.docs.get('rules.md'), bytes = fs.readFileSync(file, 'utf8'), policy = after.options().policyFile;
+  const open = fs.openSync; let changed = false;
+  const mock = t.mock.method(fs, 'openSync', function (target, ...args) {
+    if (!changed && target === policy) { changed = true; fs.writeFileSync(file, `${bytes}\nLate mutation.`); }
+    return open.call(this, target, ...args);
+  });
+  assert.throws(() => run(), /snapshot changed/); assert.equal(changed, true); mock.mock.restore();
+  after.change(HOME, ({ fm }) => { fm.uncertainty_work_scopes = null; });
+  assert.throws(() => run(), /uncertainty_work_scopes/);
+});
+
+test('D uncertainty transitions: the original Git HEAD -> index pair reports a reopen that keeps its binding', (t) => {
+  const f = fixture(t); resolveUnknown(f); release(f);
+  const git = (...args) => execFileSync('git', args, { cwd: f.root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  git('init', '-q'); git('config', 'maintenance.auto', 'false'); git('config', 'gc.auto', '0'); git('config', 'core.autocrlf', 'false');
+  git('config', 'user.email', 'scoped-test@example.invalid'); git('config', 'user.name', 'Scoped Test');
+  git('add', '--', '.kit', 'docs'); git('commit', '-qm', 'resolved row with its binding');
+  f.change(HOME, (doc) => { doc.body = doc.body.replace('| Which state applies? | resolved |', '| Which state applies? | open |'); });
+  renew(f); git('add', '--', 'docs');
+  const resources = { root: f.root, owner: OWNER, docs: 'docs', kit: '.kit', policy: '.kit/policy.yaml', manifest: '.kit/manifest.yaml', layout: '.kit/layout.yaml' };
+  const out = inspectScopedGitUncertaintyTransitions(resources);
+  assert.deepEqual([codes(out), out.blocking_units], [['reopen-binding-retained'], UNITS]);
+  assert.equal(out.git_snapshot.before.commit, git('rev-parse', 'HEAD'));
 });

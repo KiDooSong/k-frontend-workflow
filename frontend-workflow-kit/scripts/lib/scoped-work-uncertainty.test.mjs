@@ -131,20 +131,25 @@ const conflict = (id, screens, a = 'Planning value') => [id, `Conflict ${id}`, a
 const relationsOf = (out, id) => applications(out, id).map((entry) => [entry.unit, entry.relation]);
 
 test('D uncertainty: a global Conflict names its owners in 영향 화면; anything but a known ID list keeps every owner (#262)', (t) => {
-  const f = fixture(t);
-  f.write('second.md', screen('RESULT-002'), '## Notes\nAnother screen.');
-  f.write('third.md', screen('RESULT-003'), '## Notes\nA third screen.');
-  register(f, [conflict('C-OWN', 'RESULT-001'), conflict('C-LIST', 'RESULT-002 · RESULT-001'),
-    conflict('C-OTHER', 'RESULT-002'), conflict('C-DOT', 'RESULT-002 · RESULT-003'), conflict('C-COMMA', 'RESULT-003,RESULT-002'),
-    conflict('C-GLOBAL', 'global'), conflict('C-BLANK', ''), conflict('C-PROSE', 'RESULT-002 상단 배너'),
-    conflict('C-UNKNOWN', 'RESULT-002, RESULT-009'), conflict('C-CODE', '`RESULT-002`'), conflict('C-EMPTY-ITEM', 'RESULT-002,'),
-    conflict('C-COMMENT', 'RESULT-002 <!-- also RESULT-001? -->')]);
-  const out = f.run(), every = [['known', 'scope-review-needed'], ['other', 'scope-review-needed']];
-  for (const id of ['C-OWN', 'C-LIST', 'C-GLOBAL', 'C-BLANK', 'C-PROSE', 'C-UNKNOWN', 'C-CODE', 'C-EMPTY-ITEM', 'C-COMMENT']) {
-    assert.deepEqual(relationsOf(out, id), every, id);
-  }
-  for (const id of ['C-OTHER', 'C-DOT', 'C-COMMA']) {
-    assert.deepEqual(relationsOf(out, id), [], id); assert.ok(!recordIds(out).includes(id), id);
+  // A screen may be called `global` in any letter case; that cell value still names every owner (r1).
+  for (const name of ['global', 'GLOBAL']) {
+    const f = fixture(t);
+    f.write('second.md', screen('RESULT-002'), '## Notes\nAnother screen.');
+    f.write('third.md', screen('RESULT-003'), '## Notes\nA third screen.');
+    f.write('global-screen.md', screen(name), `## Notes\nA screen whose ID is ${name}.`);
+    register(f, [conflict('C-OWN', 'RESULT-001'), conflict('C-LIST', 'RESULT-002 · RESULT-001'),
+      conflict('C-OTHER', 'RESULT-002'), conflict('C-DOT', 'RESULT-002 · RESULT-003'), conflict('C-COMMA', 'RESULT-003,RESULT-002'),
+      conflict('C-GLOBAL', name), conflict('C-BLANK', ''), conflict('C-PROSE', 'RESULT-002 상단 배너'),
+      conflict('C-UNKNOWN', 'RESULT-002, RESULT-009'), conflict('C-CODE', '`RESULT-002`'), conflict('C-EMPTY-ITEM', 'RESULT-002,'),
+      conflict('C-COMMENT', 'RESULT-002 <!-- also RESULT-001? -->'), conflict('C-GLOBAL-LIST', `RESULT-002, ${name}`)]);
+    const out = f.run(), every = [['known', 'scope-review-needed'], ['other', 'scope-review-needed']];
+    for (const id of ['C-OWN', 'C-LIST', 'C-GLOBAL', 'C-GLOBAL-LIST', 'C-BLANK', 'C-PROSE', 'C-UNKNOWN', 'C-CODE',
+      'C-EMPTY-ITEM', 'C-COMMENT']) {
+      assert.deepEqual(relationsOf(out, id), every, `${name} ${id}`);
+    }
+    for (const id of ['C-OTHER', 'C-DOT', 'C-COMMA']) {
+      assert.deepEqual(relationsOf(out, id), [], id); assert.ok(!recordIds(out).includes(id), id);
+    }
   }
 });
 

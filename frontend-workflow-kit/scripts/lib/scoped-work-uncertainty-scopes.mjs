@@ -74,17 +74,21 @@ function evaluate(owner, projection, homes) {
       resolved: scopedUncertaintyResolved(record), binding_state: state, declared_binding: declared, computed_basis_digest: digest });
   }
 
-  // A current binding drops the native relation of a unit outside its blocks. A
-  // native relation also holds the transitive witnesses it would have without it,
-  // so start from every relation no binding drops, then keep a dropped one again
-  // while a witness reaches it through a row this unit still keeps. Rows that
-  // reach only each other do not keep one another.
+  // A current binding on an open row drops its native relation for a unit outside
+  // its blocks; a resolved row blocks nothing, so its binding changes nothing. A
+  // native relation also holds the transitive witnesses it would have without it.
+  // Start from the relations that stand on their own (selected and inverse
+  // evidence, a native relation no binding drops), then keep a transitive or a
+  // dropped native relation only while a witness reaches it through a row this
+  // unit keeps. Rows that reach the unit only through one another, or only
+  // through a row a binding dropped, keep nothing. Without bindings every
+  // transitive relation stands on such a start, so nothing changes.
   const dropped = (entry) => {
     const check = checks.get(entry.uncertainty);
-    return entry.relation === 'scope-review-needed' && entry.unit !== null && check.binding_state === 'current-unverified' &&
+    return entry.relation === 'scope-review-needed' && entry.unit !== null && !check.resolved && check.binding_state === 'current-unverified' &&
       !check.declared_binding.blocks.includes(entry.unit);
   };
-  const kept = new Set(applications.filter((entry) => !dropped(entry)));
+  const kept = new Set(applications.filter((entry) => entry.relation !== 'transitive-evidence' && !dropped(entry)));
   for (let grown = true; grown;) {
     grown = false;
     const reached = new Set([...kept].map((entry) => scopeJson([entry.unit, entry.uncertainty])));

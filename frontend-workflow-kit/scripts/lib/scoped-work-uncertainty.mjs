@@ -98,8 +98,9 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
   }
 
   // #262: the conflicts template's `영향 화면` cell names owners only as a list of
-  // known screen/surface IDs separated by `,` or `·`. Anything else (`global`,
-  // a blank, prose, markup or an unknown ID) names none: prose never narrows.
+  // known screen/surface IDs separated by `,` or `·`. Anything else (`global` in
+  // any case, even where a screen has that ID, a blank, prose, markup or an
+  // unknown ID) names none: prose never narrows.
   const knownOwners = new Map();
   for (const { fm } of targetIndex.artifacts.values()) {
     const [kind, id] = fm?.artifact_type === 'screen-spec' ? ['screen', fm.screen_id]
@@ -109,6 +110,7 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
   function affectedOwners(cell) {
     if (typeof cell !== 'string') return null;
     const ids = cell.split(/[,·]/).map((id) => id.trim());
+    if (ids.some((id) => id.toLowerCase() === 'global')) return null;
     return ids.every((id) => knownOwners.has(id)) ? new Set(ids.flatMap((id) => knownOwners.get(id))) : null;
   }
 
