@@ -174,9 +174,11 @@ packets and serialized verdicts are not authority. For each scoped request:
   Conflicts row outside every owner spec keeps that native relation only for the
   owners its `영향 화면` cell names, and for a named surface's member screens,
   when the cell lists only known screen or surface IDs separated by `,` or `·`;
-  `global`, a blank, prose, markup or an unknown ID keeps it for every owner. A current
-  `uncertainty_work_scopes` binding keeps the native relation only for its
-  `blocks`, unless the unit still reaches the row through another row it keeps.
+  `global` in any letter case (even when a screen has that ID), a blank, prose,
+  markup or an unknown ID keeps it for every owner. A current
+  `uncertainty_work_scopes` binding on an open row keeps the native relation
+  only for its `blocks`, unless the unit still reaches the row through another
+  row it keeps; a binding on a resolved row changes nothing.
   The request lists each row whose home declares a binding for its owner in
   `evidence.uncertainty_scopes` (an adopted surface host's under its
   `evidence.hosts` entry), and each binding that narrows in `required_reviews`
@@ -267,7 +269,9 @@ isolation, or who approved a binding. Reviewers own those judgments.
   `forbidden-paths`/`report` remain available).
 - The CLI reads one baseline snapshot. It does not see a row reopened with its
   binding left in place, because the reopened row has the bytes the binding was
-  recorded for; reviewers check that a reopen diff removes the binding.
+  recorded for. As for Decisions, a library check that pairs `HEAD` with the
+  index reports such a reopen, but no command runs it yet; reviewers check that
+  a reopen diff removes the binding.
 - A consumed API evidence directory is compared with its committed members, so an
   uncommitted or Git-ignored file there (OS or editor metadata too) is reported in
   the worktree check. Keep such directories clean, or name the evidence files.
