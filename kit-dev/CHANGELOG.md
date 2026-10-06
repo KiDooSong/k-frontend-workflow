@@ -4,6 +4,42 @@
 
 ## Unreleased
 
+### fix(workflow) — scoped 판정에서 resolved Unknown 이 막지 않고, 열린 Unknown·Conflict 를 `영향 화면`·사람 binding 으로 좁힘 (#262)
+
+- scoped profile 은 Unknown 이 적용되면 상태와 상관없이 unit 을 거부했다. 그래서 Unknown 을 한 번이라도 적은 화면은
+  그 행을 지우기 전까지 scoped 작업을 할 수 없었다. 또 전역 충돌 표의 열린 행은 선택 계약과 관계가 없어도 채택한
+  모든 owner 의 모든 unit 을 막았고, 결정과 달리 좁힐 자리가 없었다.
+- 이제 resolved Unknown(Status `resolved`, 대소문자 무관)은 막지 않는다. 그 밖의 Status 는 지금처럼 막는다.
+- owner spec 밖(전역·domain 없는·도메인 문서)의 열린 Conflict 행은 `영향 화면` 칸이 알려진 화면·surface ID 만의 목록
+  (`,`·`·` 구분)이면, native 관계를 그 범위의 owner 가운데 이름이 적힌 owner, 이름이 적힌 surface 의 member
+  화면, 이름이 적힌 화면을 `legacy-current` host 로 둔 surface 에만 남긴다(legacy host 는 Unknown·Conflict 를
+  보지 않으므로 surface 가 막는다). resolved 행은 칸과 상관없이 관계를 그대로 둔다. `global`(대소문자 무관, 같은 ID 의 화면이 있어도)·빈 칸·산문·markup·모르는 ID 는 지금처럼 범위의 모든 owner 에 적용하고, 산문은 해석하지
+  않는다. selected·inverse·transitive 근거는 칸과 상관없다.
+- 열린 Unknown·Conflict 행은 그 행이 있는 문서의 frontmatter `uncertainty_work_scopes` 로 사람이 좁힐 수 있다.
+  모양·digest·승인 규칙은 `decision_work_scopes` 와 같다(`decision_id` 대신 `unknown_id` 또는 `conflict_id`).
+  좁히는 것은 도구가 판단하지 못하는 native 관계(`scope-review-needed`)뿐이다. 선택 근거나, 그 unit 에 남은 다른 행을
+  거쳐 닿는 행은 계속 막는다. 그래서 native 관계도 그 관계가 없을 때 생길 transitive 근거를 함께 남긴다. 서로만
+  닿는 행이나 binding 으로 빠진 행만 거쳐 닿는 행은 남지 않고, resolved 행의 binding 은 아무것도 바꾸지 않는다. 요청의
+  `evidence.uncertainty_scopes`(adopted surface host 는 `evidence.hosts` 항목)에 binding 이 선언된 행이,
+  `required_reviews` 에 좁힌 binding 이 남는다. upgrade planner 는 이 키도 downgrade 전 adoption marker 로 센다.
+- 결정 binding 과 같은 전이 검사를 라이브러리에 더했다. 두 snapshot(Git 은 `HEAD`→index)을 비교해 resolved 행을
+  다시 열면서 어느 owner 든 binding 을 남긴 경우, 바뀐 binding 에 같은 `approval_ref` 를 다시 쓴 경우, 행이 사라진
+  경우를 위반으로 보고한다. 위반이 있거나 열린 행의 적용이 빠지면 owner 의 모든 unit 을 막는다. 결정처럼 아직 CLI 는
+  이 검사를 실행하지 않는다. Unknown·Conflict ID 는 그 행이 있는 문서 안에서만 유일하므로 행은 그 문서로 식별하고,
+  다른 문서로 옮긴 행은 새 행으로 본다.
+- 투영이 바뀌므로 해당 owner 의 basis digest(결정 binding 포함)가 한 번 바뀐다. #265 골든을 다시 고정했다:
+  `7e943bb` 대비 COUPON-002 만 적은 열린 행 C-008·C-012 의 거부 2건만 사라진다. behavior unit 의 API 선택
+  질문(#262 방향 2)은 바꾸지 않았다.
+- 회귀 테스트: resolved Unknown(profile·origin routing)과 그 밖의 Status(open·빈 칸·`unknown`·주석), `영향 화면`
+  문법(`,`·`·` 목록, `global`, 빈 칸, 산문, 모르는 ID, inline code, 빈 항목, 주석), surface membership, 근거 관계와
+  owner spec 행 유지, 도메인 문서, binding 상태(없음·빈 목록·stale digest·current·빈 blocks)와 stale 조건(unit 집합·
+  다른 unit 계약·blocks 변화, approval_ref 는 제외), 종류 분리, 근거 관계 비축소, transitive 근거와 서로만 닿는 행,
+  binding 으로 빠진 행만 거쳐 닿는 행, resolved 행과 그 binding, resolved 전역 행을 거쳐 닿는 열린 행, `global` 이름의 화면,
+  `legacy-current` host 만 적은 행의 surface 거부, 다른 owner, 잘못된 선언, 호출자 판정 거부, adopted host 의 evidence·required_reviews, downgrade marker,
+  공개 CLI(#262 재현 U1~U4·`영향 화면`), #265 골든 재고정, 전이 검사(reopen 과 binding 유지·교체·다른 owner·대소문자,
+  binding 제거, approval_ref 재사용, 사라짐·적용 제거, 문서별 ID, 호출자 판정·snapshot 검사, Git `HEAD`→index).
+  문서: `scoped-work.md`, `input-reconciliation.md`, `upgrade-notes.md`, doc-ownership 행, `COMMANDS.md`.
+
 ### fix(workflow) — scoped 판정이 summary-only legacy 입력을 Summary 로 연결함 (#269)
 
 - 일반 계약은 v2 register 의 `structured_since` 이전에 capture 된 입력을 summary-only legacy 로 둔다(backfill 은 선택).

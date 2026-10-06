@@ -51,17 +51,25 @@ export function resolveScopedBindingBasis(options = {}) {
     fail('binding known_units must match all current owner units');
   }
 
-  const basis = { ...projection, basis_version: 1, binding: {
+  const { basis, basis_digest } = scopedBindingBasis(projection, {
     decision: decisionRef, owner, known_units: knownUnits, blocks: scopeSet(binding.blocks),
-  } };
-  // The shared projection excludes decision_work_scopes, housekeeping and raw
-  // audit hashes, but retains referenced artifacts' own canonical approval facts.
-  // No blanket recursive removal of fields called "approval" or "sha256".
-  const serialized = scopeJson(basis);
+  });
   for (const entry of read_set) read(entry.file);
   return {
-    basis, basis_digest: hashBytes(Buffer.from(serialized, 'utf8')),
+    basis, basis_digest,
     recorded_binding: { basis_digest: binding.basis_digest, approval_ref: binding.approval_ref },
     read_set,
   };
+}
+
+// The scope-basis-v1 bytes of one binding over the owner's applicability projection,
+// which its caller resolved from actual resources. Decision and Unknown/Conflict
+// bindings share it; the binding's own key (decision/uncertainty) keeps them apart.
+// The shared projection excludes decision_work_scopes, uncertainty_work_scopes,
+// housekeeping and raw audit hashes, but retains referenced artifacts' own
+// canonical approval facts. No blanket recursive removal of fields called
+// "approval" or "sha256".
+export function scopedBindingBasis(projection, binding) {
+  const basis = { ...projection, basis_version: 1, binding };
+  return { basis, basis_digest: hashBytes(Buffer.from(scopeJson(basis), 'utf8')) };
 }

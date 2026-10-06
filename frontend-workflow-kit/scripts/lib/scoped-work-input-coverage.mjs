@@ -17,6 +17,7 @@ import { resolveScopedSourceRelations } from './scoped-work-source-relations.mjs
 import { loadScopedCoverageReports } from './scoped-work-receipts.mjs';
 import { resolveScopedBoundaryProjection } from './scoped-work-boundaries.mjs';
 import { resolveScopedApplicabilityProjection } from './scoped-work-applicability.mjs';
+import { scopedUncertaintyScopes, scopedUncertaintyDenials } from './scoped-work-uncertainty-scopes.mjs';
 import { resolveScopedContractGraph, scopedGraphSelectionSpans } from './scoped-work-graph.mjs';
 import { parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
 import { ScopedWorkContractError } from './scoped-work-request.mjs';
@@ -142,11 +143,9 @@ export function inspectScopedInputCoverage({ origin_inputs, coverage_reports = [
     for (const application of projection.decision_relations.applications) if (application.owner === owner &&
       (application.unit === null || application.unit === unit)) selectedNodes.push(refs.contract(application.decision));
     if (routingGraph.nodes.some((node) => selectedNodes.some((selected) => overlaps(node, selected)))) reasons.push('routing-affects-selected-contract');
-    const unresolved = projection.uncertainty_relations.applications.filter((entry) => entry.owner === owner &&
-      (entry.unit === null || entry.unit === unit)).filter((entry) => {
-      const record = projection.uncertainty_relations.records.find((record) => record.ref === entry.uncertainty);
-      return !record || record.kind === 'unknown' || record.status !== 'resolved';
-    });
+    // #262: the same rows deny here as in the profile, binding included.
+    const scopes = scopedUncertaintyScopes(options, projection, applicability.read_set); audit(scopes.read_set);
+    const unresolved = scopedUncertaintyDenials(scopes, unit);
     if (unresolved.length) reasons.push('unit-uncertainty-unresolved');
     return { accepted: !reasons.length, reasons: union(reasons), source, origin_source: originSource, basis,
       receipt_mismatches: comparison.mismatches, unresolved_relations: unresolved, graph: routingGraph };

@@ -16,6 +16,7 @@ import { inspectScopedInputCoverage } from './scoped-work-input-coverage.mjs';
 import { createScopedApiResolver } from './scoped-work-api.mjs';
 import { createScopedReferenceResolver } from './scoped-work-refs.mjs';
 import { resolveScopedSourceRelations } from './scoped-work-source-relations.mjs';
+import { scopedUncertaintyScopes, scopedUncertaintyDenials } from './scoped-work-uncertainty-scopes.mjs';
 import { ScopedWorkContractError, workUnitId } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
 
@@ -88,6 +89,10 @@ export function inspectScopedProfile(options = {}) {
   const sources = resolveScopedSourceRelations(args); audit(sources.read_set);
   const coverage = inspectScopedInputCoverage(options); audit(coverage.read_set);
   for (const reason of coverage.denials) denials.push(reason);
+  // #262: resolved rows clear; a current human binding narrows a native relation.
+  const uncertainty = scopedUncertaintyScopes(options, projection, observed.read_set); audit(uncertainty.read_set);
+  for (const application of scopedUncertaintyDenials(uncertainty, unit)) deny('unit-uncertainty-unresolved', { application });
+  const uncertaintyScopes = uncertainty.checks.filter((check) => check.declared_binding);
   const refs = createScopedReferenceResolver({ projectRoot, targetIndex, inputArtifacts });
   const contracts = declared.contracts.map((ref) => refs.contract(ref));
   const api = createScopedApiResolver({ projectRoot, targetIndex, layout }).unit(identity.artifact_id, owner, unit);
@@ -156,11 +161,6 @@ export function inspectScopedProfile(options = {}) {
     return populated(content) && fm.status === 'confirmed' && populated(fm.approved_by) && isRealDate(fm.approved_at) && populated(fm.decision_id);
   });
   if (declared.kind === 'behavior' && !confirmed.length) deny('confirmed-behavior-contract-required');
-  const uncertainty = projection.uncertainty_relations.applications.filter((entry) => entry.owner === owner && (entry.unit === null || entry.unit === unit));
-  for (const application of uncertainty) {
-    const record = projection.uncertainty_relations.records.find((row) => row.ref === application.uncertainty);
-    if (!record || record.kind === 'unknown' || record.status !== 'resolved') deny('unit-uncertainty-unresolved', { application });
-  }
   const isolated = [];
   if (declared.isolation) {
     for (const ref of declared.isolation.decisions) {
@@ -179,7 +179,7 @@ export function inspectScopedProfile(options = {}) {
   for (const entry of [...files.values()]) read(entry.file, entry.sha256);
   return { owner, unit, kind: declared.kind, profile_satisfied: denials.length === 0, denials: scopeSet(denials),
     confirmed_contracts: union(confirmed.map((entry) => entry.ref)), visual_evidence: visualEvidence,
-    api_evidence: apiEvidence, coverage, isolation: isolated, read_set: scopeSet([...files.values()]),
+    api_evidence: apiEvidence, coverage, isolation: isolated, uncertainty_scopes: uncertaintyScopes, read_set: scopeSet([...files.values()]),
     directory_read_set: scopeSet([...directories].map(([file, entries]) => ({ file, entries }))),
     approval_verified: false, semantic_coverage_verified: false,
     required_reviews: [
@@ -195,5 +195,10 @@ export function inspectScopedProfile(options = {}) {
       ...union(coverage.legacy_connections.map(({ input_id, summary }) => `Legacy summary-only source ${input_id} (reconciled + ${summary.result}) ` +
         'is connected through its register Summary, without item-level evidence. Confirm the selected contracts reflect it; ' +
         'Decisions and Conflicts it created are judged from their own tables.')),
+      // #262: a person narrowed a relation the tool cannot judge; the tool only checked the digest.
+      ...uncertaintyScopes.filter((check) => check.scope_source === 'current-canonical-declaration').map(({ uncertainty: ref, declared_binding: binding }) =>
+        `Uncertainty scope ${ref} for ${owner} is narrowed by its canonical binding to blocks [${binding.blocks.join(', ')}] ` +
+        `(approval_ref: ${binding.approval_ref}); evidence relations still apply. The digest and approval_ref are recorded evidence, ` +
+        'not authentication: confirm a person reviewed this scope. Reopening the row removes the binding.'),
     ] };
 }

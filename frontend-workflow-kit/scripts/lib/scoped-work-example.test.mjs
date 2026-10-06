@@ -80,8 +80,12 @@ test('D #260 example: general-contract formats keep a structured scoped result; 
 // open rows with and without typed refs and resolved rows. D-001's scope binding carries the basis
 // digest that commit computed, so D-001 stops blocking only while the digest is unchanged. Only
 // snapshot.commit depends on the run. A change meant to alter this output re-pins it and says so.
-const BASIS = 'sha256:72d340fb9daa7aa73b848461c728d8a4e1b9d2f3b187c0da4757c7ff476569fd';
-const ENVELOPE = 'd3657b62c28f8b1f78ef5aa0928597a121731e6ef2899c9ce65c22fe264c4a4b';
+// Re-pinned for #262: open C-008 and C-012 name only COUPON-002 in 영향 화면 and hold no typed
+// reference, so they no longer apply to the COUPON-001 unit; that changes D-001's basis too. Resolved
+// rows keep their relations whatever the cell names. Against 7e943bb those two denials are the only
+// difference (evidence, reviews and other denials are equal).
+const BASIS = 'sha256:eaedf212f76758f8046da95cf1f7bab4d3016efd5b3ae2e2985fb5dc696691a4';
+const ENVELOPE = '9abf63045b21f18f8a0230152f87312ef11466843023aeaf341eb2fc4c650ce7';
 const SCOPES = { version: 1, bindings: [{ decision_id: 'D-001', owner: 'screen:COUPON-001', known_units: ['list-behavior'],
   blocks: [], basis_digest: BASIS, approval_ref: 'review:golden' }] };
 const ROWS = Array.from({ length: 12 }, (_, i) => {
@@ -95,13 +99,13 @@ const pinned = (rows) => ({ read, put }) => {
     `| ID | 충돌 지점 | A (출처/값) | B (출처/값) | 영향 화면 | Status |\n|---|---|---|---|---|---|\n${rows.join('\n')}\n`);
 };
 
-test('#265 golden: the scoped envelope, basis digest and error text stay as they were before the shared parse', (t) => {
+test('#265 golden: the scoped envelope, basis digest and error text stay pinned (re-pinned for #262)', (t) => {
   const run = readiness(t, pinned(ROWS));
   const envelope = json(run);
   assert.deepEqual(envelope.denials.filter((entry) => entry.code === 'unit-decision-blocked').flatMap((entry) => entry.decisions),
     ['decision:D-002@COUPON-001-screen-spec', 'decision:D-003@COUPON-001-screen-spec'], 'the pinned basis digest keeps the D-001 binding current');
   const stdout = run.stdout.split(envelope.snapshot.commit).join('<commit>');
-  assert.equal(createHash('sha256').update(stdout).digest('hex'), ENVELOPE, 'the scoped envelope differs from 97b25c7');
+  assert.equal(createHash('sha256').update(stdout).digest('hex'), ENVELOPE, 'the scoped envelope differs from the #262 pin');
 
   const width = readiness(t, pinned(ROWS.map((row, i) => (i === 5 ? `${row} extra |` : row))));
   assert.deepEqual([width.status, width.stdout, width.stderr], [2, '', 'readiness: SW-REF-TABLE: row width differs from header\n']);
@@ -152,4 +156,28 @@ test('#269 example: a summary-only legacy source connects through its reconciled
   const backfilled = json(readiness(t, legacySource({ items: true })));
   assert.deepEqual(codes(backfilled), codes(baseline)); assert.deepEqual(reviews(backfilled), []);
   assert.equal(legacySources(backfilled), undefined);
+});
+
+// #262: the issue's Unknown variants (U1-U4) and the 영향 화면 rule through the public CLI.
+const U = '| U-001 | 현재 쿠폰 API 응답 예시(목록/상세)는 어디에 있는가? | open |';
+const resolveU = ({ read, put }) => put(LIST, read(LIST).replace(U, U.replace('| open |', '| resolved |')));
+const resolveDecisions = ({ read, put }) => put(LIST, read(LIST).replaceAll('| PM | open |', '| PM | resolved |').replaceAll('| BE | open |', '| BE | resolved |'));
+const conflictRegister = (rows) => ({ put }) => put('docs/frontend-workflow/global/conflicts.md', '---\nartifact_id: conflicts\nartifact_type: conflicts\nstatus: draft\n---\n\n# Conflicts\n\n' +
+  `| ID | 충돌 지점 | A (출처/값) | B (출처/값) | 영향 화면 | Status |\n|---|---|---|---|---|---|\n${rows.join('\n')}\n`);
+const both = (...edits) => (io) => { for (const edit of edits) edit(io); };
+
+test('#262 example: a resolved Unknown stops blocking; a Conflict naming only another screen does not apply', (t) => {
+  const uncertain = (env) => env.denials.filter((entry) => entry.code === 'unit-uncertainty-unresolved').map((entry) => entry.application.uncertainty).sort();
+  assert.deepEqual(uncertain(json(readiness(t))), ['unknown:U-001@COUPON-001-screen-spec']);
+  const resolved = json(readiness(t, resolveU));
+  const removed = json(readiness(t, ({ read, put }) => put(LIST, read(LIST).replace(`${U}\n`, ''))));
+  assert.deepEqual(resolved.denials, removed.denials, 'a resolved row blocks no more than no row');
+  assert.deepEqual(codes(resolved), ['api-selection-required', 'unit-decision-blocked']);
+  assert.deepEqual(codes(json(readiness(t, both(resolveU, resolveDecisions)))), ['api-selection-required']);
+  const named = json(readiness(t, both(resolveU, conflictRegister([
+    '| C-001 | Detail banner | Planning | Figma | COUPON-002 | open |',
+    '| C-002 | List badge | Planning | Figma | COUPON-002 · COUPON-001 | open |',
+    '| C-003 | Everywhere | Planning | Figma | global | open |',
+    '| C-004 | Detail copy | Planning | Figma | COUPON-002 상세 | open |']))));
+  assert.deepEqual(uncertain(named), ['conflict:C-002@conflicts', 'conflict:C-003@conflicts', 'conflict:C-004@conflicts']);
 });

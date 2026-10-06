@@ -157,6 +157,19 @@ test('D profiles: an unresolved unit Unknown is not an inferred unrelated fact o
   denied(f.run(), 'unit-uncertainty-unresolved');
 });
 
+test('D profiles: a resolved Unknown no longer blocks; any other Status still does (#262)', (t) => {
+  const f = fixture(t), clean = f.run();
+  const status = (value) => {
+    f.change('rules.md', (doc) => { doc.body = `${doc.body.replace(/\n\n## Unknowns\n[\s\S]*$/, '')}\n\n## Unknowns\n${table(['ID', 'Question', 'Status'], [['U-ONE', 'What was unknown?', value]])}`; });
+    return f.run();
+  };
+  for (const value of ['resolved', 'Resolved']) {
+    const out = status(value);
+    assert.deepEqual([out.profile_satisfied, out.denials], [clean.profile_satisfied, clean.denials], value);
+  }
+  for (const value of ['open', '', 'unknown', 'resolved <!-- pending -->']) denied(status(value), 'unit-uncertainty-unresolved');
+});
+
 test('D profiles: profile/owner opt-in and lifecycle are actual canonical facts, not caller overrides', (t) => {
   const f = fixture(t); f.change('screen.md', ({ fm }) => fm.status = 'deprecated'); denied(f.run(), 'owner-inactive');
   f.change('screen.md', ({ fm }) => fm.status = 'draft'); const policy = JSON.parse(fs.readFileSync(f.policyFile)); policy.work_execution.profiles = ['visual'];

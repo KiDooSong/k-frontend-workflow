@@ -124,6 +124,61 @@ test('D uncertainty: domain/global ambiguity is explicit, never inferred from ow
   }
 });
 
+// #262: the global conflicts register template's `영향 화면` column.
+const register = (f, rows, fm = {}) => f.write('global/conflicts.md', { artifact_id: 'conflicts', artifact_type: 'conflicts', status: 'draft', ...fm },
+  `# Conflicts\n\n${table(['ID', '충돌 지점', 'A (출처/값)', 'B (출처/값)', '영향 화면', 'Status'], rows)}`);
+const conflict = (id, screens, a = 'Planning value') => [id, `Conflict ${id}`, a, 'Figma value', screens, 'open'];
+const relationsOf = (out, id) => applications(out, id).map((entry) => [entry.unit, entry.relation]);
+
+test('D uncertainty: a global Conflict names its owners in 영향 화면; anything but a known ID list keeps every owner (#262)', (t) => {
+  // A screen may be called `global` in any letter case; that cell value still names every owner (r1).
+  for (const name of ['global', 'GLOBAL']) {
+    const f = fixture(t);
+    f.write('second.md', screen('RESULT-002'), '## Notes\nAnother screen.');
+    f.write('third.md', screen('RESULT-003'), '## Notes\nA third screen.');
+    f.write('global-screen.md', screen(name), `## Notes\nA screen whose ID is ${name}.`);
+    register(f, [conflict('C-OWN', 'RESULT-001'), conflict('C-LIST', 'RESULT-002 · RESULT-001'),
+      conflict('C-OTHER', 'RESULT-002'), conflict('C-DOT', 'RESULT-002 · RESULT-003'), conflict('C-COMMA', 'RESULT-003,RESULT-002'),
+      conflict('C-GLOBAL', name), conflict('C-BLANK', ''), conflict('C-PROSE', 'RESULT-002 상단 배너'),
+      conflict('C-UNKNOWN', 'RESULT-002, RESULT-009'), conflict('C-CODE', '`RESULT-002`'), conflict('C-EMPTY-ITEM', 'RESULT-002,'),
+      conflict('C-COMMENT', 'RESULT-002 <!-- also RESULT-001? -->'), conflict('C-GLOBAL-LIST', `RESULT-002, ${name}`)]);
+    const out = f.run(), every = [['known', 'scope-review-needed'], ['other', 'scope-review-needed']];
+    for (const id of ['C-OWN', 'C-LIST', 'C-GLOBAL', 'C-GLOBAL-LIST', 'C-BLANK', 'C-PROSE', 'C-UNKNOWN', 'C-CODE',
+      'C-EMPTY-ITEM', 'C-COMMENT']) {
+      assert.deepEqual(relationsOf(out, id), every, `${name} ${id}`);
+    }
+    for (const id of ['C-OTHER', 'C-DOT', 'C-COMMA']) {
+      assert.deepEqual(relationsOf(out, id), [], id); assert.ok(!recordIds(out).includes(id), id);
+    }
+  }
+});
+
+test('D uncertainty: 영향 화면 leaves a resolved Conflict native to every owner, as before (r2)', (t) => {
+  const f = fixture(t);
+  f.write('second.md', screen('RESULT-002'), '## Notes\nAnother screen.');
+  register(f, [['C-OLD', 'Conflict C-OLD', 'Planning value', 'Figma value', 'RESULT-002', 'resolved'], conflict('C-OPEN', 'RESULT-002')]);
+  const out = f.run();
+  assert.deepEqual(relationsOf(out, 'C-OLD'), [['known', 'scope-review-needed'], ['other', 'scope-review-needed']]);
+  assert.deepEqual(relationsOf(out, 'C-OPEN'), []);
+});
+
+test('D uncertainty: 영향 화면 narrows only the native relation; evidence, surface membership and owner specs keep theirs (#262)', (t) => {
+  const f = fixture(t);
+  f.write('second.md', screen('RESULT-002'), '## Notes\nAnother screen.');
+  f.write('panel.md', { artifact_id: 'PANEL', artifact_type: 'shared-surface-spec', surface_id: 'PANEL', domain: 'result',
+    status: 'draft', member_screens: ['RESULT-001', 'RESULT-002'], implementation_paths: ['src/features/result/components/panel/**'] }, '## Notes\nShared.');
+  register(f, [conflict('C-EVIDENCE', 'RESULT-002', 'See artifact:RULES#rules'), conflict('C-SURFACE', 'PANEL')]);
+  // A domain document narrows the same way; an owner's own spec keeps its rows native to it.
+  f.evidence(conflicts([['C-DOMAIN', 'Domain conflict', 'open']]).replace('| ID | Description | Status |', '| ID | Description | Status | 영향 화면 |')
+    .replace('|---|---|---|', '|---|---|---|---|').replace('| open |', '| open | RESULT-002 |'), 'result');
+  f.change('screen.md', (doc) => { doc.body += `\n\n## Conflicts\n${table(['ID', 'Description', '영향 화면', 'Status'], [['C-HOME', 'Home conflict', 'RESULT-002', 'open']])}`; });
+  const out = f.run();
+  assert.deepEqual(relationsOf(out, 'C-EVIDENCE'), [['known', 'inverse-evidence']]);
+  assert.deepEqual(relationsOf(out, 'C-SURFACE'), [['known', 'scope-review-needed'], ['other', 'scope-review-needed']]);
+  assert.deepEqual(relationsOf(out, 'C-DOMAIN'), []);
+  assert.deepEqual(relationsOf(out, 'C-HOME'), [['known', 'scope-review-needed'], ['other', 'scope-review-needed']]);
+});
+
 test('D uncertainty: Unknown IDs need no U- prefix; the canonical table decides the kind (#260)', (t) => {
   const f = fixture(t);
   f.change('screen.md', (doc) => { doc.body += `\n\n${unknowns([['RESULT-001-U001', 'Which order applies?']])}`; });

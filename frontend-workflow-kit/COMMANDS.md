@@ -106,7 +106,7 @@ backstop, fallback guards and rollback.
 Use the [same before/after run flow](docs/reference/current-work.md#common-cli-flow)
 with `.workflow/scoped-work.json`, its pre-work packet and distinct evidence bundles.
 
-Adoption (`work_execution`, `decision_work_scopes`) is a human-reviewed change. An
+Adoption (`work_execution`, `decision_work_scopes`, `uncertainty_work_scopes`) is a human-reviewed change. An
 adopted owner's scoped paths return `work-selection-required` to no-work, current
 and visual-refresh v1 authority. Do not mix current and scoped requests in one
 document, and do not retry a denied scoped task under another mode or intent.

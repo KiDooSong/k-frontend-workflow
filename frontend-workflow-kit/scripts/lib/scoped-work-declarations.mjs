@@ -180,6 +180,29 @@ export function parseDecisionWorkScopes(value) {
   // handling here. A full scope-basis-v1 resolver must precede any scope use.
   return { version: 1, bindings };
 }
+// #262: the same binding for an Unknown or Conflict row, in the frontmatter of the
+// document that holds the row. Each binding names exactly one kind.
+export function parseUncertaintyWorkScopes(value) {
+  if (value === undefined) return null;
+  workObject(value, ['version', 'bindings'], [], 'uncertainty_work_scopes');
+  workVersion(value.version, 'uncertainty_work_scopes');
+  const bindings = workSet(value.bindings, (binding) => {
+    const kinds = ['unknown', 'conflict'].filter((kind) => own(binding || {}, `${kind}_id`));
+    if (kinds.length !== 1) fail('uncertainty scope binding: exactly one of unknown_id or conflict_id required');
+    const [kind] = kinds, key = `${kind}_id`;
+    workObject(binding, [key, 'owner', 'known_units', 'blocks', 'basis_digest', 'approval_ref'], [], 'uncertainty scope binding');
+    const id = workText(binding[key], `uncertainty scope ${key}`);
+    if (!isScopedRowId(kind, id)) fail(`uncertainty scope ${key}: ${JSON.stringify(id)} cannot form a scoped ${kind} reference`);
+    const known = workSet(binding.known_units, workUnitId, 'uncertainty scope known_units', true);
+    const blocks = workSet(binding.blocks, workUnitId, 'uncertainty scope blocks');
+    if (blocks.some((unit) => !known.includes(unit))) fail('uncertainty scope binding: blocks must be a subset of known_units');
+    return { kind, id, owner: owner(binding.owner), known_units: known, blocks,
+      basis_digest: workDigest(binding.basis_digest, 'uncertainty scope basis_digest'),
+      approval_ref: workText(binding.approval_ref, 'uncertainty scope approval_ref') };
+  }, 'uncertainty_work_scopes bindings');
+  uniqueBy(bindings, (b) => canonicalJson([b.kind, b.id, b.owner]), 'uncertainty_work_scopes bindings');
+  return { version: 1, bindings };
+}
 
 // Decode only an explicitly selected declaration/receipt, not all ordinary
 // reconciliation documents. Reject duplicate keys before conversion loses them.

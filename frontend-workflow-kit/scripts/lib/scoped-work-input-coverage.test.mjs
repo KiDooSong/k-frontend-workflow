@@ -11,6 +11,7 @@ import { REQUIRED_ITEM_COLS } from './reconciliation-items.mjs';
 import { REQUIRED_REGISTER_COLS } from './reconciliation-register.mjs';
 import { COMPONENT_MAPPING_COLUMNS, MAPPING_PROVENANCE_COLUMNS } from './mapping-provenance.mjs';
 import { inspectScopedInputCoverage } from './scoped-work-input-coverage.mjs';
+import { resolveScopedUncertaintyBindingBasis } from './scoped-work-uncertainty-scopes.mjs';
 import { createScopedSourceResolver } from './scoped-work-sources.mjs';
 import { hashBytes } from './current-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
@@ -182,6 +183,26 @@ test('D input coverage: unconnected native source dependencies and unresolved un
   const { f: g } = routing(t); g.change('contract.md', (doc) => doc.body = doc.body.replace('Known contract.', `Known contract. ${REF.replace('/01', '/02')}`));
   g.report(g.proof(select(['02']), { origin_relation: 'no-effect-on-unit', origin_source_refs: select(['02']).source_refs }));
   pending(g.inspect());
+});
+
+test('D input coverage: a resolved Unknown no longer defeats no-effect (#262)', (t) => {
+  const { f } = routing(t);
+  f.write('unknown.md', { artifact_id: 'UNCERTAINTY', artifact_type: 'domain-rules', domain: 'result', status: 'draft' },
+    `## Unknowns\n${table(['ID', 'Question', 'Status'], [['U-ONE', 'What was unknown?', 'resolved']])}`);
+  const out = f.inspect(); assert.equal(out.coverage_satisfied, true, JSON.stringify(out.origin_inputs[0].reasons));
+  assert.deepEqual(out.origin_inputs[0].routing.unresolved_relations, []);
+});
+
+test('D input coverage: an open Unknown a person narrowed out of the unit no longer defeats no-effect (#262)', (t) => {
+  const { f } = routing(t), ref = 'unknown:U-ONE@UNCERTAINTY';
+  f.write('unknown.md', { artifact_id: 'UNCERTAINTY', artifact_type: 'domain-rules', domain: 'result', status: 'draft',
+    uncertainty_work_scopes: { version: 1, bindings: [{ unknown_id: 'U-ONE', owner: OWNER, known_units: ['known'], blocks: [],
+      basis_digest: `sha256:${'0'.repeat(64)}`, approval_ref: 'review:unverified-fixture' }] } },
+  `## Unknowns\n${table(['ID', 'Question', 'Status'], [['U-ONE', 'What remains unknown?', 'open']])}`);
+  const stale = f.inspect(); pending(stale); assert.ok(stale.origin_inputs[0].reasons.includes('unit-uncertainty-unresolved'));
+  const digest = resolveScopedUncertaintyBindingBasis({ ...f.options(), uncertaintyRef: ref }).basis_digest;
+  f.change('unknown.md', ({ fm }) => { fm.uncertainty_work_scopes.bindings[0].basis_digest = digest; });
+  const out = f.inspect(); assert.equal(out.coverage_satisfied, true, JSON.stringify(out.origin_inputs[0].reasons));
 });
 
 test('D input coverage: no-effect must preserve exact narrow/full origin scope and cannot borrow another unit receipt', (t) => {

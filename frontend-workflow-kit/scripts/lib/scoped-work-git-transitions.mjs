@@ -14,6 +14,7 @@ import { materializeRawGitTree, runVisualGit } from './visual-refresh-git-object
 import { buildReconciliationTargetIndex } from './reconciliation-target-index.mjs';
 import { inspectScopedDecisionTransitions } from './scoped-work-transitions.mjs';
 import { inspectScopedDecisionScopeTransitions } from './scoped-work-decision-scopes.mjs';
+import { inspectScopedUncertaintyTransitions } from './scoped-work-uncertainty-transitions.mjs';
 import { scopeSet } from './scoped-work-normalize.mjs';
 import { ScopedWorkContractError } from './scoped-work-request.mjs';
 
@@ -130,4 +131,9 @@ export function inspectScopedGitDecisionTransitions(options = {}) {
 
 export function inspectScopedGitDecisionScopes(options = {}) {
   return inspectOriginalGitDecisionPair(options, inspectScopedDecisionScopeTransitions);
+}
+
+// #262: the same original HEAD -> staged-index pair for Unknown/Conflict bindings.
+export function inspectScopedGitUncertaintyTransitions(options = {}) {
+  return inspectOriginalGitDecisionPair(options, inspectScopedUncertaintyTransitions);
 }

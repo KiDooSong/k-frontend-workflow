@@ -24,6 +24,15 @@ const typedSpelling = /(?:artifact|decision|unknown|conflict|gap|investigation|v
 const union = (values) => scopeSet([...new Set(values)]);
 const key = (owner, unit) => scopeJson([owner, unit]);
 
+// #262: a resolved row no longer blocks. A Conflict keeps its open|resolved
+// vocabulary; an Unknown keeps its own optional one, so only `resolved` clears it
+// (in any case, as legacy readiness reads Unknown Status). Anything else blocks.
+export function scopedUncertaintyResolved(record) {
+  if (!record) return false;
+  if (record.kind === 'unknown') return typeof record.status === 'string' && record.status.toLowerCase() === 'resolved';
+  return record.status === 'resolved';
+}
+
 export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots = []) {
   const { targetIndex, projectRoot, inputArtifacts = [] } = options;
   const base = resolveScopedDecisionProjection(options, dependencyRoots);
@@ -83,9 +92,26 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
       const status = col(row, 'Status') || null;
       // Unknowns deliberately keep their native optional status vocabulary.
       if (family === 'conflict' && !['open', 'resolved'].includes(status)) fail(`invalid Conflict Status: ${token}`);
-      rows.set(token, status);
+      rows.set(token, { status, affected: family === 'conflict' ? col(row, '영향 화면') : undefined });
     }
     return rows;
+  }
+
+  // #262: the conflicts template's `영향 화면` cell names owners only as a list of
+  // known screen/surface IDs separated by `,` or `·`. Anything else (`global` in
+  // any case, even where a screen has that ID, a blank, prose, markup or an
+  // unknown ID) names none: prose never narrows.
+  const knownOwners = new Map();
+  for (const { fm } of targetIndex.artifacts.values()) {
+    const [kind, id] = fm?.artifact_type === 'screen-spec' ? ['screen', fm.screen_id]
+      : fm?.artifact_type === 'shared-surface-spec' ? ['surface', fm.surface_id] : [];
+    if (typeof id === 'string' && id) knownOwners.set(id, [...(knownOwners.get(id) || []), `${kind}:${id}`]);
+  }
+  function affectedOwners(cell) {
+    if (typeof cell !== 'string') return null;
+    const ids = cell.split(/[,·]/).map((id) => id.trim());
+    if (ids.some((id) => id.toLowerCase() === 'global')) return null;
+    return ids.every((id) => knownOwners.has(id)) ? new Set(ids.flatMap((id) => knownOwners.get(id))) : null;
   }
 
   // Parse canonical homes again from the actual bytes, not caller-edited index
@@ -107,13 +133,13 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
           unaudited.push({ entry, file: relative, section: location.slug, error });
           continue;
         }
-        for (const [token, status] of rows) {
+        for (const [token, { status, affected }] of rows) {
           const record = { ...scopedProjectionNode(refs.contract(token)), status };
           const graph = resolveScopedContractGraph({ contracts: [token], targetIndex, projectRoot, inputArtifacts });
           for (const file of graph.read_set) read(file.file, file.sha256);
           const evidence = { roots: graph.roots, nodes: graph.nodes.map(scopedProjectionNode), edges: graph.edges };
           // Audit every inspected row; project only rows with a relation below.
-          candidates.set(token, { record, entry, evidence });
+          candidates.set(token, { record, entry, evidence, affected: affectedOwners(affected) });
         }
       }
     }
@@ -207,6 +233,22 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
     if (left.ref === right.ref) return true;
     return ranges(left).some(([a, b]) => ranges(right).some(([c, d]) => a < d && c < b));
   }
+  // #262: a named row outside every owner spec (global, undomained or domain
+  // document) is native only to the named owners and a named surface's members.
+  // An owner spec keeps its own rows, and a resolved row keeps its relations: it
+  // blocks nothing itself, but still leads to the open rows it cites. A surface
+  // keeps a row that names one of its unadopted members, because a legacy-current
+  // host checks no Unknown or Conflict. Selected, inverse and transitive evidence
+  // relations do not depend on the cell.
+  function named(candidate, value) {
+    if (!candidate.affected || scopedUncertaintyResolved(candidate.record) ||
+      ['screen-spec', 'shared-surface-spec'].includes(candidate.entry.fm.artifact_type)) return true;
+    const { memberships } = base.projection.decision_relations;
+    const unadopted = (owner) => base.projection.owners.some((entry) => entry.owner === owner && !entry.adopted);
+    return candidate.affected.has(value.owner) ||
+      memberships.some((edge) => candidate.affected.has(edge.surface) && edge.member === value.owner) ||
+      memberships.some((edge) => edge.surface === value.owner && candidate.affected.has(edge.member) && unadopted(edge.member));
+  }
   function nativeScope(entry, value) {
     const fm = entry.fm;
     if (Object.hasOwn(fm, 'domain')) workText(fm.domain, 'uncertainty domain');
@@ -258,10 +300,12 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
       const inverse = direct.length ? [] : evidence.nodes.filter((node) => node.ref !== token)
         .flatMap((dependency) => value.selected.filter((node) => overlaps(dependency, node))
           .map((node) => ({ dependency: dependency.ref, selected: node.ref })));
-      const native = !direct.length && !inverse.length && nativeScope(entry, value);
+      const native = !direct.length && !inverse.length && nativeScope(entry, value) && named(candidate, value);
       // A relation discovered through uncertainty is not an authored selection.
-      // Never use its own returned graph to erase native scope-review-needed.
-      const transitive = direct.length || inverse.length || native ? [] : [record, ...evidence.nodes.filter((node) => node.ref !== token)]
+      // Never use its own returned graph to erase native scope-review-needed. A
+      // native relation keeps these witnesses (#262): a binding narrows only the
+      // native part, never a row the unit still reaches through another applied row.
+      const transitive = direct.length || inverse.length ? [] : [record, ...evidence.nodes.filter((node) => node.ref !== token)]
         .flatMap((dependency) => value.derived.filter(({ via, node }) => via !== token && overlaps(dependency, node))
           .map(({ via, node }) => ({ via, dependency: dependency.ref, selected: node.ref })));
       const relation = direct.length ? 'selected-evidence' : inverse.length ? 'inverse-evidence'
