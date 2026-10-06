@@ -59,6 +59,26 @@ section keeps byte-compatible legacy/current/visual-refresh behavior.
    Only a person adopts, narrows or restores a binding; the tool computes and
    compares `basis_digest` but never authenticates `approval_ref`.
 
+4. **Unknown and Conflict scope** (optional) — the document that holds an
+   Unknown or Conflict row may narrow which units of an owner its open row blocks
+   with `uncertainty_work_scopes`: the same binding, with `unknown_id` or
+   `conflict_id` in place of `decision_id`, and the same digest and approval
+   rules. It answers only what the tool cannot judge (`scope-review-needed`); a
+   unit whose selected evidence reaches the row stays blocked. Reopening a
+   resolved row removes its binding.
+
+   ```yaml
+   uncertainty_work_scopes:
+     version: 1
+     bindings:
+       - conflict_id: C-012
+         owner: screen:RESULT-001
+         known_units: [result-layout, save-action]
+         blocks: [save-action]
+         basis_digest: sha256:<computed-by-tool>
+         approval_ref: <existing-human-approval-evidence>
+   ```
+
 Pilot one owner or domain at a time, and review the migration diff (policy
 ceilings, deny paths, roots, units, bindings) before relying on it.
 
@@ -146,6 +166,21 @@ packets and serialized verdicts are not authority. For each scoped request:
   resolution reads it. Elsewhere the section is skipped and listed in
   `required_reviews` as
   `Unaudited uncertainty section <file>#<section>: <reason>`.
+- **Uncertainty relations** — an Unknown or Conflict row applies to a unit
+  through the unit's selected evidence, through a row or Decision it reaches, or
+  natively: to every unit of an owner whose spec, hosted surface, domain or a
+  global or undomained document holds it. A resolved row does not block (an
+  Unknown with Status `resolved` in any case, a Conflict with `resolved`). A
+  Conflicts row outside every owner spec keeps that native relation only for the
+  owners its `영향 화면` cell names, and for a named surface's member screens,
+  when the cell lists only known screen or surface IDs separated by `,` or `·`;
+  `global`, a blank, prose, markup or an unknown ID keeps it for every owner. A current
+  `uncertainty_work_scopes` binding keeps the native relation only for its
+  `blocks`, unless the unit still reaches the row through another row it keeps.
+  The request lists each row whose home declares a binding for its owner in
+  `evidence.uncertainty_scopes` (an adopted surface host's under its
+  `evidence.hosts` entry), and each binding that narrows in `required_reviews`
+  as `Uncertainty scope <ref> for <owner> is narrowed …`.
 - **Legacy sources** — a contract's canonical source (an `IN-` entry in
   frontmatter `sources`, or a typed input reference) connects through
   Reconciliation Items whose target touches the selected contract. An input
@@ -210,8 +245,8 @@ Stop scoped work first. Review the current diff and unfinished work, restore the
 reviewed explicit deny boundaries, then withdraw adoption owner by owner. Do not
 delete input/effect/work records to hide history. The vendored-kit upgrade planner
 refuses to apply automatically a payload that cannot enforce adoption markers while
-tracked `work_execution`/`decision_work_scopes` declarations remain in the consumer
-repository. An older kit binary run by hand is outside this guarantee.
+tracked `work_execution`/`decision_work_scopes`/`uncertainty_work_scopes` declarations
+remain in the consumer repository. An older kit binary run by hand is outside this guarantee.
 
 ## What the tool does not prove
 
@@ -230,6 +265,9 @@ isolation, or who approved a binding. Reviewers own those judgments.
   `--staged`; commit ranges are not an input. Committing the implementation moves
   the baseline, so check it with the packet-bound post-work `run` before that commit (standalone
   `forbidden-paths`/`report` remain available).
+- The CLI reads one baseline snapshot. It does not see a row reopened with its
+  binding left in place, because the reopened row has the bytes the binding was
+  recorded for; reviewers check that a reopen diff removes the binding.
 - A consumed API evidence directory is compared with its committed members, so an
   uncommitted or Git-ignored file there (OS or editor metadata too) is reported in
   the worktree check. Keep such directories clean, or name the evidence files.

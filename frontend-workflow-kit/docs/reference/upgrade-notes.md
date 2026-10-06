@@ -17,6 +17,31 @@ or root config.
 
 ---
 
+## Scoped work clears resolved Unknowns and narrows open Unknowns and Conflicts (#262)
+
+- A resolved Unknown no longer blocks scoped work, as in legacy readiness. An
+  Unknown clears only with Status `resolved` (in any case); any other Status
+  still blocks.
+- A Conflicts row in a global, undomained or domain document applied natively to
+  every owner of that scope (every adopted owner for the global register). When
+  its `영향 화면` cell lists only known screen or surface IDs separated by `,` or
+  `·`, that native relation now stays only for the named owners and a named
+  surface's member screens. `global`, a blank, prose or an unknown ID keeps every
+  owner; evidence relations do not depend on the cell.
+- A person can narrow an open Unknown or Conflict row with
+  `uncertainty_work_scopes` in the document that holds it (the
+  `decision_work_scopes` shape, digest and approval rules, with `unknown_id`
+  or `conflict_id`). It narrows only the native relation; a unit whose selected
+  evidence, or another row it keeps, reaches the row stays blocked.
+- A native relation now also lists the transitive witnesses it would have
+  without it. Basis digests (Decision bindings included) change once for an
+  owner whose relations the `영향 화면` rule or these witnesses change.
+  Re-review those bindings.
+- The vendored-kit planner counts `uncertainty_work_scopes` as a live adoption
+  marker before a downgrade.
+- Manual action: none. To use the narrower native scope, write only IDs in a
+  global row's `영향 화면` cell; to narrow a row further, a person adds a binding.
+
 ## Scoped work connects summary-only legacy sources (#269)
 
 - Under a v2 register, an input captured before `structured_since` keeps a
