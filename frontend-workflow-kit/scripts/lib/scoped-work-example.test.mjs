@@ -81,10 +81,11 @@ test('D #260 example: general-contract formats keep a structured scoped result; 
 // digest that commit computed, so D-001 stops blocking only while the digest is unchanged. Only
 // snapshot.commit depends on the run. A change meant to alter this output re-pins it and says so.
 // Re-pinned for #262: open C-008 and C-012 name only COUPON-002 in 영향 화면 and hold no typed
-// reference, so they no longer apply to the COUPON-001 unit; that changes D-001's basis too. Against
-// 7e943bb those two denials are the only difference (evidence, reviews and other denials are equal).
-const BASIS = 'sha256:857dd45bfb6dd296601c64f54fc986aeed5b88b12fe640389640d953e4132eec';
-const ENVELOPE = 'f296154a2becc87b2a3bcc6c6f31398fc5565562de625cf016a2ae7cc7291601';
+// reference, so they no longer apply to the COUPON-001 unit; that changes D-001's basis too. Resolved
+// rows keep their relations whatever the cell names. Against 7e943bb those two denials are the only
+// difference (evidence, reviews and other denials are equal).
+const BASIS = 'sha256:eaedf212f76758f8046da95cf1f7bab4d3016efd5b3ae2e2985fb5dc696691a4';
+const ENVELOPE = '9abf63045b21f18f8a0230152f87312ef11466843023aeaf341eb2fc4c650ce7';
 const SCOPES = { version: 1, bindings: [{ decision_id: 'D-001', owner: 'screen:COUPON-001', known_units: ['list-behavior'],
   blocks: [], basis_digest: BASIS, approval_ref: 'review:golden' }] };
 const ROWS = Array.from({ length: 12 }, (_, i) => {

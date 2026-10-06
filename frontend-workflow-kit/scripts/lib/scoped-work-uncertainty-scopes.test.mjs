@@ -178,6 +178,22 @@ test('D uncertainty scopes: a binding on a resolved row changes nothing; that ro
   for (const id of UNITS) assert.deepEqual(denied(out, id), [UNKNOWN], id);
 });
 
+test('D uncertainty scopes: an open row cited by a resolved global Conflict still blocks through it, whatever 영향 화면 names (r2)', (t) => {
+  const f = fixture(t), FAR = 'unknown:U-FAR@FAR', OLD = 'conflict:C-OLD@conflicts';
+  f.write('second.md', { artifact_id: 'SCREEN-RESULT-002', artifact_type: 'screen-spec', screen_id: 'RESULT-002', domain: 'result',
+    status: 'draft', screen_entry: `${ROOT}/screens/RESULT-002.tsx` }, '## Notes\nAnother screen.');
+  // Another domain: U-FAR reaches the owner only through the resolved global row, which names another screen.
+  f.write('far.md', { artifact_id: 'FAR', artifact_type: 'domain-rules', domain: 'other', status: 'draft' }, unknowns([['U-FAR', 'Which copy applies?', 'open']]));
+  f.write('global/conflicts.md', { artifact_id: 'conflicts', artifact_type: 'conflicts', status: 'draft' },
+    `# Conflicts\n\n${table(['ID', '충돌 지점', 'A (출처/값)', 'B (출처/값)', '영향 화면', 'Status'],
+      [['C-OLD', 'Old copy', `See ${FAR}`, 'Figma value', 'RESULT-002', 'resolved']])}`);
+  const out = f.run();
+  assert.deepEqual([check(out, OLD).scope_source, check(out, OLD).blocking_units], ['resolved-uncertainty', []]);
+  assert.ok(check(out, FAR).applications.every((entry) => entry.relation === 'transitive-evidence' &&
+    entry.witnesses.every((witness) => witness.via === OLD)), 'only through the resolved row');
+  for (const id of UNITS) assert.ok(denied(out, id).includes(FAR), id);
+});
+
 test('D uncertainty scopes: unit set, contract and blocks changes stale the binding; approval_ref does not', (t) => {
   const f = fixture(t), digest = f.recordDigest();
   f.change(HOME, ({ fm }) => { fm.uncertainty_work_scopes.bindings[0].approval_ref = 'https://example.invalid/approved'; });

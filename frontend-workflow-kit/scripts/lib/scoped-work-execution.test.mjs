@@ -549,6 +549,24 @@ test('#269: a legacy source connected for an adopted surface host is listed in t
   assert.ok(env.required_reviews.some((entry) => entry.startsWith(`Legacy summary-only source ${input} (reconciled + accepted)`)));
 });
 
+test('#262: a Conflict naming only a legacy-current host still denies the surface; that host checks no Conflicts (r2)', (t) => {
+  const r = repository(t), policy = path.join(r.root, '.kit/policy.yaml');
+  // RESULT-002 stays on legacy readiness and hosts the panel as legacy-current.
+  fs.writeFileSync(policy, fs.readFileSync(policy, 'utf8').replace(',"screen:RESULT-002"', ''));
+  r.edit('screen-2.md', ({ fm }) => { delete fm.work_execution; });
+  r.edit('surface.md', ({ fm }) => { fm.work_execution.units[0].host_units['RESULT-002'] = 'legacy-current'; });
+  r.commit('legacy host');
+  assert.equal(publicScopedEnvelope(r.prepare(t)).ready, true, 'the legacy host consents without the Conflict');
+  r.write('conflicts.md', 'global/conflicts.md', { artifact_id: 'conflicts', artifact_type: 'conflicts', status: 'draft' },
+    `# Conflicts\n\n${table(['ID', '충돌 지점', 'A (출처/값)', 'B (출처/값)', '영향 화면', 'Status'],
+      [['C-ONE', 'Retry copy', 'Planning: Retry', 'Figma: Try again', 'RESULT-002', 'open']])}`);
+  r.commit('conflict naming the legacy host');
+  const out = publicScopedEnvelope(r.prepare(t));
+  assert.equal(out.ready, false);
+  assert.deepEqual(out.denials.map((entry) => [entry.code, entry.owner, entry.host ?? null, entry.application?.uncertainty]),
+    [['unit-uncertainty-unresolved', SURFACE, null, 'conflict:C-ONE@conflicts']], 'the surface keeps the row its legacy host cannot check');
+});
+
 test('#262: a Conflict named for an adopted host denies it until a current binding narrows it, listed in that host evidence', (t) => {
   const r = repository(t), owner = 'screen:RESULT-001', uncertaintyRef = 'conflict:C-ONE@conflicts';
   const register = (scopes = {}) => r.write('conflicts.md', 'global/conflicts.md', { artifact_id: 'conflicts', artifact_type: 'conflicts',

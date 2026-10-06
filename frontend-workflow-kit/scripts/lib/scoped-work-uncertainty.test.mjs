@@ -153,6 +153,15 @@ test('D uncertainty: a global Conflict names its owners in 영향 화면; anythi
   }
 });
 
+test('D uncertainty: 영향 화면 leaves a resolved Conflict native to every owner, as before (r2)', (t) => {
+  const f = fixture(t);
+  f.write('second.md', screen('RESULT-002'), '## Notes\nAnother screen.');
+  register(f, [['C-OLD', 'Conflict C-OLD', 'Planning value', 'Figma value', 'RESULT-002', 'resolved'], conflict('C-OPEN', 'RESULT-002')]);
+  const out = f.run();
+  assert.deepEqual(relationsOf(out, 'C-OLD'), [['known', 'scope-review-needed'], ['other', 'scope-review-needed']]);
+  assert.deepEqual(relationsOf(out, 'C-OPEN'), []);
+});
+
 test('D uncertainty: 영향 화면 narrows only the native relation; evidence, surface membership and owner specs keep theirs (#262)', (t) => {
   const f = fixture(t);
   f.write('second.md', screen('RESULT-002'), '## Notes\nAnother screen.');

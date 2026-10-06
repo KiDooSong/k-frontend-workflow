@@ -235,12 +235,19 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
   }
   // #262: a named row outside every owner spec (global, undomained or domain
   // document) is native only to the named owners and a named surface's members.
-  // An owner spec keeps its own rows; selected, inverse and transitive evidence
+  // An owner spec keeps its own rows, and a resolved row keeps its relations: it
+  // blocks nothing itself, but still leads to the open rows it cites. A surface
+  // keeps a row that names one of its unadopted members, because a legacy-current
+  // host checks no Unknown or Conflict. Selected, inverse and transitive evidence
   // relations do not depend on the cell.
   function named(candidate, value) {
-    if (!candidate.affected || ['screen-spec', 'shared-surface-spec'].includes(candidate.entry.fm.artifact_type)) return true;
-    return candidate.affected.has(value.owner) || base.projection.decision_relations.memberships.some((edge) =>
-      candidate.affected.has(edge.surface) && edge.member === value.owner);
+    if (!candidate.affected || scopedUncertaintyResolved(candidate.record) ||
+      ['screen-spec', 'shared-surface-spec'].includes(candidate.entry.fm.artifact_type)) return true;
+    const { memberships } = base.projection.decision_relations;
+    const unadopted = (owner) => base.projection.owners.some((entry) => entry.owner === owner && !entry.adopted);
+    return candidate.affected.has(value.owner) ||
+      memberships.some((edge) => candidate.affected.has(edge.surface) && edge.member === value.owner) ||
+      memberships.some((edge) => edge.surface === value.owner && candidate.affected.has(edge.member) && unadopted(edge.member));
   }
   function nativeScope(entry, value) {
     const fm = entry.fm;
