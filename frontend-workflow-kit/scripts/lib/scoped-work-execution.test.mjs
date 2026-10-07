@@ -310,7 +310,8 @@ test('#276 backstop: only requested deletes pass; a modify or directory in place
   const y = repository(t), replaced = y.prepare(t, y.request(deleteRequest()));
   fs.rmSync(path.join(y.root, PANEL)); y.put(`${PANEL}/inner.ts`, 'export const inner = 1;\n');
   const out = evaluateScopedGit(replaced);
-  assert.deepEqual(out.violations.map((entry) => `${entry.code}:${entry.path}`), [`SW-GIT-UNREQUESTED:${PANEL}/inner.ts`]);
+  assert.deepEqual(out.violations.map((entry) => `${entry.code}:${entry.path}`).sort(),
+    [`SW-GIT-TYPE:${PANEL}`, `SW-GIT-UNREQUESTED:${PANEL}/inner.ts`]);
   // A delete removes regular files only: deleting a baseline symlink is also a type violation.
   const s = repository(t), link = `${SHARED}/Link.tsx`;
   fs.symlinkSync('Panel.tsx', path.join(s.root, link)); s.commit('panel link');
@@ -319,6 +320,20 @@ test('#276 backstop: only requested deletes pass; a modify or directory in place
   fs.rmSync(path.join(s.root, PANEL)); fs.unlinkSync(path.join(s.root, link));
   assert.deepEqual(evaluateScopedGit(symlinked).violations.map((entry) => `${entry.code}:${entry.path}`).sort(),
     [`SW-GIT-TYPE:${link}`, `SW-GIT-UNREQUESTED:${link}`]);
+});
+
+test('#276 backstop: a worktree delete leaves nothing at the path, not even an empty or ignored-only directory', (t) => {
+  // Neither directory produces a Git record of its own, so only the target's presence shows it.
+  const e = repository(t), empty = e.prepare(t, e.request(deleteRequest()));
+  fs.rmSync(path.join(e.root, PANEL)); fs.mkdirSync(path.join(e.root, PANEL));
+  assert.deepEqual(evaluateScopedGit(empty).violations.map((entry) => `${entry.code}:${entry.path}`), [`SW-GIT-TYPE:${PANEL}`]);
+  // The index carries only the delete, and --staged evaluates the index.
+  git(e.root, 'add', '-A');
+  assert.equal(evaluateScopedGit(empty, { staged: true }).ok, true);
+  const i = repository(t), ignored = i.prepare(t, i.request(deleteRequest()));
+  fs.appendFileSync(path.join(i.root, '.git', 'info', 'exclude'), '*.log\n');
+  fs.rmSync(path.join(i.root, PANEL)); i.put(`${PANEL}/trace.log`, 'ignored\n');
+  assert.deepEqual(evaluateScopedGit(ignored).violations.map((entry) => `${entry.code}:${entry.path}`), [`SW-GIT-TYPE:${PANEL}`]);
 });
 
 test('#276 backstop: a requested delete and add that Git pairs as a rename stay a rename violation', (t) => {

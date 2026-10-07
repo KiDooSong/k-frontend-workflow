@@ -332,6 +332,12 @@ export function evaluateScopedGit(preflight, { staged = false } = {}) {
         violations.push({ code: 'SW-GIT-TYPE', path: writePath, kind: baselineEntry?.type ?? null, mode: baselineEntry?.mode ?? null,
           message: 'scoped deletes remove regular files only' });
       }
+      // Git records no empty or ignored-only directory, so in the worktree the deleted
+      // target itself must be gone. --staged evaluates the index only.
+      const onDisk = staged ? null : worktreeEvidence(context.repositoryRoot, repositoryPath(writePath));
+      if (onDisk && onDisk.kind !== 'missing') {
+        violations.push({ code: 'SW-GIT-TYPE', path: writePath, kind: onDisk.kind, message: 'a deleted target must be absent from the worktree' });
+      }
     } else if (evidence?.kind !== 'file') {
       violations.push({ code: 'SW-GIT-TYPE', path: writePath, kind: evidence?.kind ?? null, message: 'scoped targets must remain regular files' });
     } else if (record.status === 'M') {
