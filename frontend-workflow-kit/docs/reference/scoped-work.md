@@ -110,10 +110,11 @@ request selects one owner **unit**:
 - Scoped targets support regular-file `A`, `M` and `D` (#276). A `D` target must
   be a regular file in the baseline (`delete-target-missing` when it is absent)
   and passes the same unit gates and path checks as `A`/`M`. A path the owner
-  declares exactly — its screen entry, or an exact surface, private, test or
-  selected API slice path — is denied as `declared-path-delete`: deleting it
-  changes the owner's declaration, which a person reviews. Renames, copies and
-  type/mode changes stay separate work.
+  declares exactly — its screen entry, an exact surface, private or test path,
+  or an API Candidates slice path whether or not the requesting unit selects that
+  API — is denied as `declared-path-delete`: deleting it changes the owner's
+  declaration, which a person reviews. Renames, copies and type/mode changes stay
+  separate work.
 - An owner may select several distinct units; a target shared by several requests
   must plan the same change.
 - `origin_inputs` has the current-work meaning: the preserved starting inputs,
@@ -265,8 +266,9 @@ work from taking the change over (#276). To unblock the unit, a person:
 - resolves the blocking row through its normal workflow;
 - adds or re-judges the row's binding (`decision_work_scopes` or
   `uncertainty_work_scopes`) so the row blocks fewer units, with a recomputed
-  `basis_digest` and its `approval_ref` — a binding cannot release a unit whose
-  own selected evidence reaches the row; or
+  `basis_digest` and its `approval_ref`. A Decision binding's `blocks` applies as
+  written; an Unknown or Conflict binding narrows only the row's native relation,
+  so a unit whose selected evidence reaches that row stays blocked; or
 - withdraws the owner's adoption ([rollback](#rollback-and-downgrade)), which
   returns its paths to the legacy authority.
 
