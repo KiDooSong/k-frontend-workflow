@@ -30,9 +30,9 @@ or root config.
   person reviews first.
 - The Git backstop accepts only the requested deletes of baseline regular files.
   An unrequested delete, a delete of a symlink or other non-regular entry, a
-  modify in place of a requested delete, and renames, copies and type/mode
-  changes stay violations. A requested `D` and `A` whose contents Git pairs as a
-  rename are still a rename.
+  modify in place of a requested delete, a directory left at a deleted worktree
+  path, and renames, copies and type/mode changes stay violations. A requested
+  `D` and `A` whose contents Git pairs as a rename are still a rename.
 - Reported codes change for deletes. An unrequested delete used to be
   `SW-GIT-UNSUPPORTED-CHANGE`; it is now `SW-GIT-UNREQUESTED` (plus `SW-GIT-TYPE`
   for a non-regular entry). Deleting a target requested as `M` now reports

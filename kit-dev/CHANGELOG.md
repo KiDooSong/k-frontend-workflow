@@ -13,24 +13,25 @@
   파일을 `delete-target-missing` 으로, owner 가 정확히 선언한 경로(screen entry, exact surface·private·test 경로,
   API Candidates 표에 적힌 Slice Paths 항목)를 `declared-path-delete` 로 거부한다. Slice Paths 는 요청한 unit 이 그
   API 를 선택했는지, API 근거로 쓸 수 있는 경로인지와 무관하게 적힌 대로(정규화 형태 포함) 보고, 모든 API
-  Candidates 섹션과 그 안의 모든 표(들여썼거나 문단 바로 뒤에 붙은 표 포함)를 본다. 펜스 안의 예시와 다른 섹션의
-  표는 선언이 아니다. 그런 삭제는 owner 선언을 바꾸므로 사람이 검토한다.
+  Candidates 섹션과 그 안의 모든 표(들여썼거나 문단 바로 뒤나 HTML 블록 안에 있는 표 포함)를 본다. 코드 블록
+  (펜스·들여쓰기) 안의 예시와 다른 섹션의 표는 선언이 아니다. 그런 삭제는 owner 선언을 바꾸므로 사람이 검토한다.
 - Git backstop 은 요청한 삭제이고 baseline 에서 regular file 일 때만 받는다. 요청하지 않은 삭제는 예전
   `SW-GIT-UNSUPPORTED-CHANGE` 대신 `SW-GIT-UNREQUESTED` 이고, symlink 등 regular file 이 아닌 항목이면
   `SW-GIT-TYPE` 도 받는다. `M` 으로 요청한 대상을 지우면 같은 `SW-GIT-MISSING-REQUESTED` 옆에 예전
   `SW-GIT-UNSUPPORTED-CHANGE` 대신 `SW-GIT-UNREQUESTED` 가 난다. `SW-GIT-UNSUPPORTED-CHANGE` 는 이제
-  rename·copy·type 변경만 뜻한다. 지운 경로에 새로 놓은 내용(디렉터리 포함)은 요청하지 않은 `A` 다.
+  rename·copy·type 변경만 뜻한다. 지운 경로에 새로 놓은 내용(디렉터리 포함)은 요청하지 않은 `A` 다. worktree 에서
+  지운 대상은 디스크에서도 없어야 한다. 그 자리에 남은 디렉터리는 비었거나 ignored 파일만 있어도 `SW-GIT-TYPE` 이다.
   diff 는 rename 을 찾으므로, 내용이 비슷해 Git 이 rename 으로 묶는 `D`+`A` 요청 쌍도 rename 이라 위반이다.
 - 막힌 unit 의 요청은 무엇을 바꾸든 ready 가 아니다. 막힘과 무관한 정비(주석 정리·죽은 파일 삭제)도 막히고,
   current 로 넘어갈 수 없다. `scoped-work.md` 에 그 결과와 푸는 길(행 해소, binding 추가·재판정, 채택 철회)을 적었다.
 - 회귀 테스트: 요청 문법의 A/M/D 수용과 R/C/T 거부, preflight 의 `delete-target-missing`·`declared-path-delete`
   (owner 판정의 screen entry 삭제, 대소문자 별칭 철자, API 를 선택하지 않은 unit 의 exact slice 삭제 — screen 과
-  shared surface, deferred 후보, API 표면 밖·비정규 표기·중복 섹션·들여쓴 표·문단 뒤 표의 slice 포함, 펜스 예시와
-  다른 섹션의 표 제외), backstop 의 요청한 삭제 통과(worktree·`--staged`, 내용이 다른 `D`+`A` 쌍)와 요청하지 않은
-  삭제·삭제 자리의 수정·디렉터리·symlink 삭제·rename 으로 묶이는 `D`+`A` 쌍·baseline 거부 대상의 위반, CLI 의
-  사전 packet → 삭제 → `DONE_PENDING_REVIEW`. owner·합성 테스트가 지원하지 않는 변경의 예로 쓰던 `D` 는 `R` 로
-  바꿨다. 문서: `scoped-work.md` Request contract·Git backstop·While a unit is blocked, `COMMANDS.md`, Stage 06/08,
-  `upgrade-notes.md`.
+  shared surface, deferred 후보, API 표면 밖·비정규 표기·중복 섹션·들여쓴 표·문단 뒤 표·HTML 블록 안 표의 slice
+  포함, 코드 블록 예시와 다른 섹션의 표 제외), backstop 의 요청한 삭제 통과(worktree·`--staged`, 내용이 다른
+  `D`+`A` 쌍)와 요청하지 않은 삭제·삭제 자리의 수정·디렉터리(빈 것·ignored 파일만 든 것 포함)·symlink 삭제·
+  rename 으로 묶이는 `D`+`A` 쌍·baseline 거부 대상의 위반, CLI 의 사전 packet → 삭제 → `DONE_PENDING_REVIEW`.
+  owner·합성 테스트가 지원하지 않는 변경의 예로 쓰던 `D` 는 `R` 로 바꿨다. 문서: `scoped-work.md` Request
+  contract·Git backstop·While a unit is blocked, `COMMANDS.md`, Stage 06/08, `upgrade-notes.md`.
 
 ### fix(reconciliation) — v2 Items 대상이 일반 계약의 local ID 를 받음 (#274)
 

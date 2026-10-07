@@ -114,8 +114,9 @@ request selects one owner **unit**:
   or a Slice Paths entry of its API Candidates tables as written (whether or not
   the requesting unit selects that API, and even when the entry is not usable
   API evidence) — is denied as `declared-path-delete`: deleting it changes the
-  owner's declaration, which a person reviews. A fenced example is not a
-  declaration. Renames, copies and type/mode changes stay separate work.
+  owner's declaration, which a person reviews. A code block (fenced or indented)
+  is an example, not a declaration. Renames, copies and type/mode changes stay
+  separate work.
 - An owner may select several distinct units; a target shared by several requests
   must plan the same change.
 - `origin_inputs` has the current-work meaning: the preserved starting inputs,
@@ -235,7 +236,9 @@ diff with the baseline:
   included, while `--staged` reads the index only;
 - only allowed, requested regular-file `A`/`M`/`D` targets with the requested
   change kind may change; `M` keeps its file mode, and `D` may remove only a
-  baseline regular file. New content at a deleted path is an unrequested add;
+  baseline regular file. In the worktree a deleted target must be gone: a
+  directory left at the path, even empty or holding only ignored files, is a type
+  violation. New content at a deleted path is an unrequested add;
 - renames, copies, type/mode changes, unrequested paths (an unrequested delete
   included) and missing requested changes are violations. The diff detects
   renames, so a requested `D` and `A` whose contents Git pairs as a rename are
