@@ -22,6 +22,7 @@
 
 | 항목 | 날짜 | 도입 commit | 내용 · 결과 |
 |---|---|---|---|
+| [scoped-work-pilot-001/](scoped-work-pilot-001/run-report.md) | 2026-10-06 | `17b5a09` | #248 scoped work 소비자 pilot — E2 baseline 사례 4개와 E3 채택 뒤 재측정(공개 요약, 원문은 소비자 저장소에 비공개). 권한 밖 변경 0 · 절차 이탈 2 · 킷 관찰 9 — **측정 기록**(해석은 사람) |
 | [consumer-upgrade-0.3.0-mvp.2-dogfood-001/](consumer-upgrade-0.3.0-mvp.2-dogfood-001/run-report.md) | 2026-07-12 | `bf7705c` | 실제 vendored consumer(dogfood-expo-001) 0.1.0-mvp-a(unmanaged) → 0.3.0-mvp.2 safe upgrade — planner dry-run/apply/take-incoming + before/after 검증 — **PASS** (evidence/ 17파일) |
 | [consumer-dogfood-001/](consumer-dogfood-001/run-report.md) | 2026-06-14 | `6bbe8bd` (#17) | fresh Expo 프로젝트에 킷 적용, state→readiness→packet→implement→validate 완주 — **PASS** (evidence/ 9파일) |
 | [implement-screen-001/](implement-screen-001/implement-run-report.md) | 2026-06-13 | `c6acfc2` | implement-screen 스킬 dry-run — done |
