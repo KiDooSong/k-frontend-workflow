@@ -4,9 +4,10 @@ import fs from 'node:fs';
 import { canonicalRepositoryPath } from './artifact-path.mjs';
 import { hasGeneratedOwnershipHeader } from './generated-ownership.mjs';
 import { normalizeWorkTargets, ownerParts, readCurrentBytes, hashBytes } from './current-work-request.mjs';
-import { concretePathIssue, globMatches } from './path-backstop.mjs';
+import { canonicalProjectRelativePath, concretePathIssue, globMatches } from './path-backstop.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
 import { analyzeApiCandidateContract, loadScreenSpec } from './spec.mjs';
+import { parseReconciliationMarkdown } from './reconciliation-markdown-ast.mjs';
 import { resolveScopedBoundaryProjection } from './scoped-work-boundaries.mjs';
 import { createScopedApiResolver } from './scoped-work-api.mjs';
 import { ScopedWorkContractError, workPath, workUnitId } from './scoped-work-request.mjs';
@@ -48,18 +49,25 @@ export function inspectScopedPaths(options = {}) {
   // actionable-copy `valid` flag. Preserve that return contract here too.
   const selectedActive = selectedApi.candidates.filter((row) => row.candidate.confidence === 'confirmed' && row.candidate.gate === 'active');
   const selectedForPath = (file) => selectedActive.filter((row) => matches(row.candidate.safe_slice_paths || [], file));
-  // #276: every API Candidates slice the owner declares, whichever unit selects it.
-  // Boundary claims cover screens only and feed binding bases, so read the owner's
-  // own table here; checkAuthority() still pins its bytes to the snapshot.
+  // #276: every Slice Paths entry the owner writes in a real API Candidates table,
+  // whichever unit selects it and whether or not it is usable API evidence. Read the
+  // Markdown AST like the API resolver, so a fenced example declares nothing and every
+  // duplicate section counts. Boundary claims cover screens only and feed binding
+  // bases, so they stay as they are; checkAuthority() pins the owner spec's bytes.
   let ownerSlices = null;
   const declaredApiSlices = () => {
     if (ownerSlices) return ownerSlices;
     const entry = targetIndex.artifacts.get(identity.artifact_id);
     const spec = loadScreenSpec(entry.file);
     if (spec.body !== entry.body) fail('owner differs from indexed snapshot');
-    const analysis = analyzeApiCandidateContract(spec, { layout, domain: identity.metadata.domain });
-    ownerSlices = analysis.version !== 2 ? [] : [...analysis.actionable_candidates, ...analysis.deferred_candidates]
-      .flatMap((candidate) => candidate.safe_slice_paths || []);
+    const options = { layout, domain: identity.metadata.domain };
+    const written = parseReconciliationMarkdown(entry.body).occurrences
+      .filter((section) => section.slug === 'api-candidates').flatMap((section) => section.tables)
+      .flatMap((table) => {
+        const analysis = analyzeApiCandidateContract({ ...spec, sections: { ...spec.sections, 'api candidates': table.sourceText } }, options);
+        return analysis.version === 2 ? analysis.candidates.flatMap((candidate) => candidate.slice_paths) : [];
+      });
+    ownerSlices = [...new Set(written.flatMap((value) => [value, canonicalProjectRelativePath(value)]).filter(Boolean))];
     return ownerSlices;
   };
   function snapshot(file) {
