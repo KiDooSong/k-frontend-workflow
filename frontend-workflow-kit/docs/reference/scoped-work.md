@@ -240,7 +240,8 @@ diff with the baseline:
   directory left at the path, even empty or holding only ignored files, is a type
   violation. A regular file put back at the path is no delete: the requested `D`
   is missing, and unless the file keeps its baseline bytes and mode, Git sees an
-  unrequested modify. Files under a directory left there are unrequested adds;
+  unrequested modify. Under a directory left there Git reports only the files it
+  does not ignore, as adds, and an add the request does not name is unrequested;
 - renames, copies, type/mode changes, unrequested paths (an unrequested delete
   included) and missing requested changes are violations. The diff detects
   renames, so a requested `D` and `A` whose contents Git pairs as a rename are
