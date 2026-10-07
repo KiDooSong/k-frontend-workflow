@@ -200,9 +200,28 @@ test('D paths: inactive owner, missing unit, stale index and fabricated layouts 
   denied(f.run(ENTRY, 'A', { layout: { rolesFor: () => ({ screen: ['src/**'] }), resolvePaths: () => ['src/**'] }, boundary: { allowed: true }, approved: true }), 'outside-owned-role-intersection');
 });
 
+test('#276: a delete needs an existing file under an owned root, never a path the owner declares exactly', (t) => {
+  const f = fixture(t), card = `${ROOT}/components/local/Card.tsx`, exactTest = `${ROOT}/tests/local/Exact.test.ts`;
+  for (const file of [card, `${ROOT}/hooks/local/useFixture.ts`, `${ROOT}/tests/local/Card.test.ts`]) {
+    f.put(file); const out = f.run(file, 'D');
+    assert.equal(out.boundary_satisfied, true, JSON.stringify(out.paths)); assert.equal(out.paths[0].change, 'D');
+    assert.equal(out.target_read_set[0].exists, true); assert.match(out.target_read_set[0].sha256, /^sha256:[0-9a-f]{64}$/);
+  }
+  denied(f.run(`${ROOT}/components/local/Missing.tsx`, 'D'), 'delete-target-missing');
+  // The screen entry, an exact test path and an exact selected API slice are owner declarations:
+  // deleting one changes the declaration, so it needs a person's owner change, not a scoped unit.
+  f.put(ENTRY); denied(f.run(ENTRY, 'D'), 'declared-path-delete');
+  f.put(exactTest); f.change('screen.md', (doc) => { doc.fm.work_execution.test_paths.push(exactTest); });
+  denied(f.run(exactTest, 'D'), 'declared-path-delete');
+  const hook = `${ROOT}/hooks/local/useResults.ts`; f.put(hook); f.api([row('/results', hook)], selected);
+  denied(f.run(hook, 'D'), 'declared-path-delete');
+  // Ownership rules still apply to deletes: an unowned sibling stays closed.
+  f.put(`${ROOT}/components/sibling/Card.tsx`); denied(f.run(`${ROOT}/components/sibling/Card.tsx`, 'D'), 'outside-owned-role-intersection');
+});
+
 test('D paths: unsupported changes, duplicate targets, aliases and glob targets are rejected', (t) => {
   const f = fixture(t);
-  for (const change of ['D', 'R', 'C', 'T']) assert.throws(() => f.run(ENTRY, change));
+  for (const change of ['R', 'C', 'T']) assert.throws(() => f.run(ENTRY, change), /A\/M\/D only/);
   for (const file of [ENTRY.replace('/screens/', '/./screens/'), `/${ENTRY}`, ENTRY.replaceAll('/', '\\'), `${ROOT}/screens/**`, '.git/config']) assert.throws(() => f.run(file));
   assert.throws(() => inspectScopedPaths({ ...f.options(), targets: [{ path: ENTRY, change: 'A' }, { path: ENTRY, change: 'A' }] }));
 });
@@ -281,7 +300,8 @@ test('W20: a component catalog listing without a known global editor creates no 
 test('W21: a case-alias spelling of the exact entry never becomes the owned entry', (t) => {
   const f = fixture(t); f.put(ENTRY); assert.equal(f.run(ENTRY, 'M').boundary_satisfied, true);
   const alias = ENTRY.replace('RESULT-001.tsx', 'result-001.tsx');
-  for (const change of ['A', 'M']) {
+  // #276: D included, so an alias spelling cannot delete the entry around declared-path-delete.
+  for (const change of ['A', 'M', 'D']) {
     // A case-insensitive filesystem resolves the alias, so its spelling is rejected;
     // a case-sensitive one sees another path, which is not this owner's entry.
     let out;

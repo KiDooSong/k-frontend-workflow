@@ -22,7 +22,7 @@ export function inspectScopedPaths(options = {}) {
     workPath(target.path);
     const issue = concretePathIssue(target.path);
     if (issue) fail(issue);
-    if (!['A', 'M'].includes(target.change)) fail('regular file A/M only; original Git validation is still required');
+    if (!['A', 'M', 'D'].includes(target.change)) fail('regular file A/M/D only; original Git validation is still required');
   }
   const observed = resolveScopedBoundaryProjection(options);
   const { projection } = observed, boundary = projection.ownership;
@@ -61,6 +61,7 @@ export function inspectScopedPaths(options = {}) {
     const current = snapshot(file); observations.push(current);
     if (target.change === 'A' && current.exists) deny('add-target-exists');
     if (target.change === 'M' && !current.exists) deny('modify-target-missing');
+    if (target.change === 'D' && !current.exists) deny('delete-target-missing');
     if (observed.read_set.some((entry) => entry.file === file)) deny('authority-resource');
     if (!limits.profile_enabled) deny('profile-not-enabled');
     if (identity.metadata.status === 'deprecated' || identity.metadata.screen_lifecycle === 'absorbed') deny('owner-inactive');
@@ -80,6 +81,13 @@ export function inspectScopedPaths(options = {}) {
       (matches(role.layout_paths, file) || (role.role === 'test' && !hasTestRole)) &&
       role.owned.some((entry) => globMatches(entry.path, file)));
     if (!roles.length) deny('outside-owned-role-intersection');
+    // #276: deleting a path the owner names exactly (screen entry, an exact private/test/
+    // surface path or selected API slice) changes the owner declaration; a person does that.
+    if (target.change === 'D') {
+      for (const role of limits.roles) for (const entry of role.owned) {
+        if (entry.path === file) deny('declared-path-delete', { role: role.role, source: entry.source });
+      }
+    }
     if (limits.unknown_api_paths.some((entry) => globMatches(entry.path, file))) deny('ambiguous-api-surface');
     const claims = boundary.api_claims.filter((entry) => globMatches(entry.path, file));
     for (const claim of claims) {

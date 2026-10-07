@@ -211,12 +211,12 @@ test('#250: scoped legacy readiness never follows a committed symbolic link out 
   assert.deepEqual(filled.requests, empty.requests);
 });
 
-test('D preflight: mixed documents, non A/M changes, unresolved origins and symlinked requests are input errors', (t) => {
+test('D preflight: mixed documents, non A/M/D changes, unresolved origins and symlinked requests are input errors', (t) => {
   const r = repository(t);
   const current = { owner: 'screen:RESULT-001', authority: 'current', requested_mode: 'rough-fixture-ui', targets: [{ path: ENTRY('RESULT-001'), change: 'M' }] };
   assert.throws(() => r.prepare(t, r.request([current, surfaceRequest()])), /mixed current\/scoped/);
   assert.equal(isScopedWorkDocument({ requests: [current] }), false);
-  assert.throws(() => r.prepare(t, r.request([{ ...surfaceRequest(), targets: [{ path: PANEL, change: 'D' }] }])), /A\/M only/);
+  assert.throws(() => r.prepare(t, r.request([{ ...surfaceRequest(), targets: [{ path: PANEL, change: 'R' }] }])), /A\/M\/D only/);
   assert.throws(() => r.prepare(t, r.request([surfaceRequest()], [{ input_id: 'IN-20260923-figma-009', source_refs: [] }])), /origin IN-20260923-figma-009/);
   const link = path.join(r.outside, 'link.json'); fs.symlinkSync(r.request(), link);
   assert.throws(() => r.prepare(t, link), /regular file required/);
@@ -272,13 +272,76 @@ test('D backstop: unrequested paths and delete/mode/type changes are violations'
   const r = repository(t), preflight = r.prepare(t);
   r.put(PANEL, 'export const changed = 1;\n'); r.put('src/features/result/components/other/Other.tsx', 'export const other = 1;\n');
   assert.deepEqual(codes(evaluateScopedGit(preflight)), ['SW-GIT-UNREQUESTED']);
+  // #276: a delete is a supported kind, so deleting a target requested as M is a kind mismatch.
   const d = repository(t), deleted = d.prepare(t); fs.rmSync(path.join(d.root, PANEL));
-  assert.deepEqual(codes(evaluateScopedGit(deleted)).sort(), ['SW-GIT-MISSING-REQUESTED', 'SW-GIT-UNSUPPORTED-CHANGE']);
+  assert.deepEqual(codes(evaluateScopedGit(deleted)).sort(), ['SW-GIT-MISSING-REQUESTED', 'SW-GIT-UNREQUESTED']);
   const m = repository(t), mode = m.prepare(t); m.put(PANEL, 'export const changed = 1;\n'); fs.chmodSync(path.join(m.root, PANEL), 0o755);
   assert.deepEqual(codes(evaluateScopedGit(mode)), ['SW-GIT-MODE']);
   const y = repository(t), type = y.prepare(t); fs.rmSync(path.join(y.root, PANEL)); fs.symlinkSync('Other.tsx', path.join(y.root, PANEL));
   const typed = codes(evaluateScopedGit(type));
   assert.ok(typed.includes('SW-GIT-UNSUPPORTED-CHANGE') || typed.includes('SW-GIT-TYPE'), JSON.stringify(typed));
+});
+
+const deleteRequest = () => [{ ...surfaceRequest(), targets: [{ path: PANEL, change: 'D' }] }];
+
+test('#276 backstop: a ready unit deletes exactly the requested regular file', (t) => {
+  const r = repository(t), preflight = r.prepare(t, r.request(deleteRequest()));
+  assert.equal(preflight.ready, true, JSON.stringify(preflight.denials));
+  assert.deepEqual(codes(evaluateScopedGit(preflight)), ['SW-GIT-MISSING-REQUESTED'], 'the requested delete has not happened yet');
+  fs.rmSync(path.join(r.root, PANEL));
+  const done = evaluateScopedGit(preflight);
+  assert.equal(done.ok, true, JSON.stringify(done.violations));
+  assert.deepEqual(done.implementation_records.map((record) => `${record.status}:${record.projectPath}`), [`D:${PANEL}`]);
+  git(r.root, 'add', '-A');
+  assert.equal(evaluateScopedGit(preflight, { staged: true }).ok, true, 'the staged index carries the same delete');
+});
+
+test('#276 backstop: only requested deletes pass; a modify or directory in place of a delete is a violation', (t) => {
+  const other = `${SHARED}/Other.tsx`;
+  const u = repository(t); u.put(other, 'export const other = 1;\n'); u.commit('second panel file');
+  const unrequested = u.prepare(t, u.request(deleteRequest()));
+  fs.rmSync(path.join(u.root, PANEL)); fs.rmSync(path.join(u.root, other));
+  assert.deepEqual(codes(evaluateScopedGit(unrequested)), ['SW-GIT-UNREQUESTED']);
+  const m = repository(t), modified = m.prepare(t, m.request(deleteRequest()));
+  m.put(PANEL, 'export const kept = 1;\n');
+  assert.deepEqual(codes(evaluateScopedGit(modified)).sort(), ['SW-GIT-MISSING-REQUESTED', 'SW-GIT-UNREQUESTED']);
+  // A directory in place of the deleted file is new content under the old path: Git reports
+  // the requested D plus an unrequested A, so the replacement cannot ride on the delete.
+  const y = repository(t), replaced = y.prepare(t, y.request(deleteRequest()));
+  fs.rmSync(path.join(y.root, PANEL)); y.put(`${PANEL}/inner.ts`, 'export const inner = 1;\n');
+  const out = evaluateScopedGit(replaced);
+  assert.deepEqual(out.violations.map((entry) => `${entry.code}:${entry.path}`), [`SW-GIT-UNREQUESTED:${PANEL}/inner.ts`]);
+  // A delete removes regular files only: deleting a baseline symlink is also a type violation.
+  const s = repository(t), link = `${SHARED}/Link.tsx`;
+  fs.symlinkSync('Panel.tsx', path.join(s.root, link)); s.commit('panel link');
+  const symlinked = s.prepare(t, s.request(deleteRequest()));
+  // unlinkSync: Node 24's rmSync silently keeps a dangling symlink.
+  fs.rmSync(path.join(s.root, PANEL)); fs.unlinkSync(path.join(s.root, link));
+  assert.deepEqual(evaluateScopedGit(symlinked).violations.map((entry) => `${entry.code}:${entry.path}`).sort(),
+    [`SW-GIT-TYPE:${link}`, `SW-GIT-UNREQUESTED:${link}`]);
+});
+
+test('#276 backstop: a requested delete and add that Git pairs as a rename stay a rename violation', (t) => {
+  const pair = () => [{ ...surfaceRequest(), targets: [{ path: PANEL, change: 'D' }, { path: NEW, change: 'A' }] }];
+  // Unrelated content: Git keeps the delete and the add as separate records, and both pass.
+  const r = repository(t), separate = r.prepare(t, r.request(pair()));
+  assert.equal(separate.ready, true, JSON.stringify(separate.denials));
+  fs.rmSync(path.join(r.root, PANEL)); r.put(NEW, 'export const fresh = 2;\nexport const more = 3;\n');
+  const kept = evaluateScopedGit(separate);
+  assert.equal(kept.ok, true, JSON.stringify(kept.violations));
+  // The same bytes under the new path are a move: Git reports R, which scoped work still rejects.
+  const m = repository(t), moved = m.prepare(t, m.request(pair()));
+  const bytes = fs.readFileSync(path.join(m.root, PANEL)); fs.rmSync(path.join(m.root, PANEL)); m.put(NEW, bytes);
+  assert.deepEqual(codes(evaluateScopedGit(moved)).sort(),
+    ['SW-GIT-MISSING-REQUESTED', 'SW-GIT-MISSING-REQUESTED', 'SW-GIT-UNSUPPORTED-CHANGE']);
+});
+
+test('#276 backstop: a delete of a target denied at the baseline stays denied', (t) => {
+  const r = repository(t); r.edit('rules-2.md', ({ fm }) => { fm.status = 'draft'; }); r.commit('draft host contract');
+  const preflight = r.prepare(t, r.request(deleteRequest())); assert.equal(preflight.ready, false);
+  fs.rmSync(path.join(r.root, PANEL));
+  const result = evaluateScopedGit(preflight);
+  assert.equal(result.ok, false); assert.deepEqual(codes(result), ['SW-GIT-DENIED-TARGET']);
 });
 
 test('D backstop: a target denied at the baseline stays denied after implementation', (t) => {
