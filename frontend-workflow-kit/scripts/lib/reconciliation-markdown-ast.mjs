@@ -527,6 +527,19 @@ export function stripFencedCodeBlocks(text) {
   return stripNonContent(text);
 }
 
+// Code blocks (fenced or indented) only. HTML blocks and comments stay, so a caller
+// that reads them as an existing parser does (e.g. API Candidates tables) still can.
+export function stripCodeBlocks(text) {
+  const source = String(text || '');
+  const ranges = [];
+  walk(sharedTree(source), (node) => {
+    if (node.type !== 'code') return;
+    const range = sourceRange(node);
+    if (range) ranges.push(range);
+  });
+  return removeRangesPreservingLines(source, ranges);
+}
+
 export function stripInlineCodeSpans(text) {
   const source = String(text || '');
   return removeRangesPreservingLines(source, inlineCodeRanges(sharedTree(source)));

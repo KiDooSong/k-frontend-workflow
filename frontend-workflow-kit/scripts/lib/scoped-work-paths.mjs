@@ -7,7 +7,7 @@ import { normalizeWorkTargets, ownerParts, readCurrentBytes, hashBytes } from '.
 import { canonicalProjectRelativePath, concretePathIssue, globMatches } from './path-backstop.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
 import { parseTables } from './spec.mjs';
-import { parseReconciliationMarkdown } from './reconciliation-markdown-ast.mjs';
+import { parseReconciliationMarkdown, stripCodeBlocks } from './reconciliation-markdown-ast.mjs';
 import { resolveScopedBoundaryProjection } from './scoped-work-boundaries.mjs';
 import { createScopedApiResolver } from './scoped-work-api.mjs';
 import { ScopedWorkContractError, workPath, workUnitId } from './scoped-work-request.mjs';
@@ -51,11 +51,11 @@ export function inspectScopedPaths(options = {}) {
   const selectedForPath = (file) => selectedActive.filter((row) => matches(row.candidate.safe_slice_paths || [], file));
   // #276: every Slice Paths entry the owner writes in a real API Candidates section,
   // whichever unit selects it and whether or not it is usable API evidence. The Markdown
-  // AST finds every section (a heading in fenced code is not one) and drops code and
-  // comments from it; the API analyzer's own table parser then reads every table, as
-  // written (also indented or right after a paragraph). Boundary claims cover screens
-  // only and feed binding bases, so they stay as they are; checkAuthority() pins the
-  // owner spec's bytes.
+  // AST finds every section (a heading in a code block is not one) and drops its code
+  // blocks, which are examples; the API analyzer's own table parser then reads every
+  // table as written (indented, after a paragraph or in an HTML block; it drops
+  // comments). Boundary claims cover screens only and feed binding bases, so they stay
+  // as they are; checkAuthority() pins the owner spec's bytes.
   let ownerSlices = null;
   const declaredApiSlices = () => {
     if (ownerSlices) return ownerSlices;
@@ -63,7 +63,7 @@ export function inspectScopedPaths(options = {}) {
     const sliceColumn = (header) => String(header).toLowerCase().replace(/\s+/g, '') === 'slicepaths';
     const written = parseReconciliationMarkdown(body).occurrences
       .filter((section) => section.slug === 'api-candidates')
-      .flatMap((section) => parseTables(parseReconciliationMarkdown(section.text).contentBody))
+      .flatMap((section) => parseTables(stripCodeBlocks(section.text)))
       .flatMap((table) => {
         const columns = table.headers.flatMap((header, index) => (sliceColumn(header) ? [index] : []));
         return table.cell_rows.flatMap((cells) => columns.flatMap((index) => String(cells[index] ?? '').split(';')));
