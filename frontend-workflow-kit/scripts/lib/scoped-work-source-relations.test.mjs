@@ -159,6 +159,21 @@ test('D source relations: invalid v2 and missing effect targets fail rather than
   assert.throws(() => missing.run());
 });
 
+test('#274 D source relations: an Item answering a general-contract local decision ID connects through that decision contract', (t) => {
+  const f = fixture(t, { explicit: false, native: true }), decision = 'decision:RESULT-001-D001@DOC';
+  f.change('contract.md', (value) => { value.body += '\n\n## Open Decisions\n\n| ID | Decision Needed | Blocking Mode | Status |\n' +
+    '|---|---|---|---|\n| RESULT-001-D001 | 결과 화면에 다시 시도를 둘 것인가? | final-fixture-ui | open |'; });
+  f.change('screen.md', ({ fm }) => { fm.work_execution.units[0].contracts = [decision]; });
+  fs.writeFileSync(f.registerFile, md({ reconciliation_contract: 2, review_profile: 'reconcile-stage04-v1', structured_since: '2026-09-01T00:00:00Z' },
+    `${table(REQUIRED_REGISTER_COLS, [[INPUT, 'meeting', 'resolves-decision', 'partially-reconciled', 'pending', 'artifact:DOC', decision, '-']])}\n\n` +
+    `## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, [[INPUT, '01', 'decision-answer', 'resolves-decision', 'link-evidence', decision, REF, 'inherit', 'statement', 'inherit']])}`));
+  const out = f.run();
+  assert.deepEqual(out.sources[0].selection, select());
+  assert.equal(out.sources[0].connections.length, 1);
+  assert.deepEqual(out.sources[0].issues, []);
+  assert.deepEqual(out.pending_connections, []); noPermit(out);
+});
+
 test('D source relations: selected API raw-row references participate, unselected API rows do not', (t) => {
   const f = fixture(t, { explicit: false });
   f.change('screen.md', (doc) => {

@@ -33,6 +33,7 @@ import {
   parseReconciliationItems,
   validateReconciliationV2,
 } from './reconciliation-items.mjs';
+import { parseScopedTargetRef } from './scoped-work-refs.mjs';
 
 const KIT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const VALIDATE = path.join(KIT_ROOT, 'scripts', 'validate.mjs');
@@ -406,12 +407,109 @@ test('grammar: typed target/evidence', () => {
   assert.equal(parseEvidenceRef('IN-x#summary'), null);
 });
 
+test('#274 grammar: decision·unknown·conflict·gap targets take general-contract row IDs; the table proves the kind', () => {
+  // canonical 표가 있는 kind 는 접두가 아니라 행이 놓인 canonical 표(target index)로 kind 를 증명한다.
+  assert.deepEqual(parseTargetRef('decision:AUTH-001-D204@open-decision-register'), {
+    kind: 'decision',
+    rowId: 'AUTH-001-D204',
+    ownerArtifactId: 'open-decision-register',
+    raw: 'decision:AUTH-001-D204@open-decision-register',
+  });
+  assert.equal(parseTargetRef('unknown:COUPON-001-U001@COUPON-001-screen-spec').kind, 'unknown');
+  assert.equal(parseTargetRef('conflict:CF.12@conflicts').kind, 'conflict');
+  assert.equal(parseTargetRef('gap:gap_7@component-gap-register').kind, 'gap');
+  assert.equal(parseTargetRef('decision:D-204@AUTH-001').rowId, 'D-204');
+  // 다른 kind 의 canonical 접두는 계속 모순이다.
+  assert.equal(parseTargetRef('decision:U-001@AUTH-001'), null);
+  assert.equal(parseTargetRef('unknown:D-204@AUTH-001'), null);
+  assert.equal(parseTargetRef('conflict:G-001@conflicts'), null);
+  assert.equal(parseTargetRef('gap:INV-001@component-gap-register'), null);
+  // INV·VER 는 canonical 표가 없어 접두가 유일한 kind 근거다.
+  assert.equal(parseTargetRef('investigation:AUTH-001-I1@AUTH-001'), null);
+  assert.equal(parseTargetRef('verification:CHECK-1@COUPON-001'), null);
+  assert.equal(parseTargetRef('investigation:INV-001@AUTH-001').kind, 'investigation');
+  // delimiter-safe ID 와 owner 만 받는다.
+  for (const bad of ['decision:a b@X', 'decision:-D1@X', 'decision:D1;D2@X', 'decision:@X', 'decision:D1@', 'decision:D1@X@Y']) {
+    assert.equal(parseTargetRef(bad), null, bad);
+  }
+});
+
+test('#274 one grammar: scoped typed refs and Reconciliation Items read a target the same way', () => {
+  const tokens = [
+    'decision:AUTH-001-D204@open-decision-register',
+    'unknown:COUPON-001-U001@COUPON-001-screen-spec',
+    'conflict:C-001@conflicts',
+    'decision:U-001@AUTH-001',
+    'investigation:AUTH-001-I1@AUTH-001',
+    'verification:VER-001@COUPON-001',
+    'artifact:COUPON-001#state-matrix/offline',
+    'input:IN-20260720-meeting-001',
+    '-',
+    'decision:a b@X',
+  ];
+  for (const token of tokens) assert.deepEqual(parseScopedTargetRef(token), parseTargetRef(token), token);
+});
+
 // ── v2 pass ──────────────────────────────────────────────────────────────────
 
 test('v2 pass: multiset·effect pair·typed target·inherit 전부 해소 (에러/경고 0)', (t) => {
   const r = runV2(t);
   assert.deepEqual(messages(r.errors), []);
   assert.deepEqual(messages(r.warnings), []);
+});
+
+// #274: 일반 계약의 local ID(예: <SCREEN>-D001)를 쓰는 저장소의 결정·Unknown 행을 Items 가 가리킨다.
+const LOCAL_DECISION = 'AUTH-001-D204';
+const LOCAL_UNKNOWN = 'COUPON-001-U001';
+const localIdFiles = {
+  'global/open-decisions.md': DECISION_DOC.replace('| D-204 |', `| ${LOCAL_DECISION} |`),
+  'domains/coupons/screens/coupon-list/screen-spec.md': SCREEN_SPEC_DOC.replace('| U-001 |', `| ${LOCAL_UNKNOWN} |`),
+};
+const localIdRows = (decisionRef, unknownRef) => ({
+  itemRows: [
+    ...DEFAULT_ITEM_ROWS.slice(0, 3),
+    DEFAULT_ITEM_ROWS[3].replace('decision:D-204@open-decision-register', decisionRef),
+    `| IN-20260720-meeting-001 | 02 | unknown-answer | resolves-unknown | link-evidence | ${unknownRef} | input:IN-20260720-meeting-001#extracted-facts/01 | inherit | statement | inherit |`,
+  ],
+  summaryRows: [
+    DEFAULT_SUMMARY_ROWS[0],
+    DEFAULT_SUMMARY_ROWS[1]
+      .replace('| conflict |', '| conflict + resolves-unknown |')
+      .replace('artifact:conflicts; artifact:open-decision-register', 'artifact:conflicts; artifact:open-decision-register; artifact:COUPON-001-screen-spec')
+      .replace('decision:D-204@open-decision-register', `${decisionRef}; ${unknownRef}`),
+  ],
+});
+
+test('#274 v2 pass: Items·Summary resolve general-contract local decision·unknown IDs by their canonical table', (t) => {
+  const r = runV2(t, {
+    files: localIdFiles,
+    ...localIdRows(`decision:${LOCAL_DECISION}@open-decision-register`, `unknown:${LOCAL_UNKNOWN}@COUPON-001-screen-spec`),
+  });
+  assert.deepEqual(messages(r.errors), []);
+});
+
+test('#274 v2 hard: a local ID must sit in its own kind’s canonical table (RR-REF-008/009); another kind’s prefix is RR-SCHEMA-014', (t) => {
+  const missing = runV2(t, {
+    files: localIdFiles,
+    ...localIdRows('decision:AUTH-001-D999@open-decision-register', `unknown:${LOCAL_UNKNOWN}@COUPON-001-screen-spec`),
+  });
+  assert.ok(hasCode(missing.errors, 'RR-REF-008'), messages(missing.errors).join('\n'));
+  assert.equal(hasCode(missing.errors, 'RR-SCHEMA-014'), false);
+
+  // Unknowns 표에 사는 local ID 를 decision 으로 가리킨다.
+  const misplaced = runV2(t, {
+    files: localIdFiles,
+    ...localIdRows(`decision:${LOCAL_UNKNOWN}@COUPON-001-screen-spec`, `unknown:${LOCAL_UNKNOWN}@COUPON-001-screen-spec`),
+  });
+  assert.ok(hasCode(misplaced.errors, 'RR-REF-009'), messages(misplaced.errors).join('\n'));
+  assert.equal(hasCode(misplaced.errors, 'RR-SCHEMA-014'), false);
+
+  // 다른 kind 의 접두로 시작하는 ID 는 표를 보기 전에 문법 오류다.
+  const contradiction = runV2(t, {
+    files: localIdFiles,
+    ...localIdRows('decision:U-001@open-decision-register', `unknown:${LOCAL_UNKNOWN}@COUPON-001-screen-spec`),
+  });
+  assert.ok(hasCode(contradiction.errors, 'RR-SCHEMA-014'), messages(contradiction.errors).join('\n'));
 });
 
 test('v2: legacy(structured_since 이전) 입력은 summary-only 자유서술 허용', (t) => {

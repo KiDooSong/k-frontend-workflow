@@ -154,9 +154,10 @@ packets and serialized verdicts are not authority. For each scoped request:
   contracts: the table, not an ID prefix, decides the kind. Scoped work needs only
   an ID that fits a typed reference (`[A-Za-z0-9][A-Za-z0-9._-]*`) and does not
   start with another kind's prefix (`D-`, `U-`, `C-`, `G-`, `INV-`, `VER-`).
-  Investigation and verification references keep their prefix, and Reconciliation
-  Items targets keep the
-  [strict grammar](input-reconciliation.md#reconciliation-contract-v2-opt-in).
+  Investigation and verification references keep their prefix. Reconciliation
+  Items targets use the
+  [same grammar](input-reconciliation.md#reconciliation-contract-v2-opt-in) (#274),
+  so a scoped reference and an Items target read one token the same way.
 - **Uncertainty audit** — Unknowns and Conflicts tables are audited in every
   document. A table-shape or row-identity problem stops the preflight when a row
   there could relate to the request: the document belongs to a selected owner's

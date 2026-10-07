@@ -6,7 +6,7 @@ import { splitFrontmatter } from './util.mjs';
 import { readCurrentBytes, canonicalJson } from './current-work-request.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { parseMappingProvenanceContract, validateMappingProvenance } from './mapping-provenance.mjs';
-import { parseTargetRef, CHILD_KIND_PREFIX } from './reconciliation-items.mjs';
+import { parseTargetRef, isTargetRowId } from './reconciliation-items.mjs';
 import { resolveArtifact, isDuplicateArtifactId, resolveChildRow, bodyHasToken } from './reconciliation-target-index.mjs';
 import { parseReconciliationMarkdown, tableHeadersAreUnique } from './reconciliation-markdown-ast.mjs';
 import { splitRow, hasHeader, col } from './spec.mjs';
@@ -22,20 +22,14 @@ const signatures = {
 // #260: a typed child ref names its kind, and resolution proves it by location:
 // the exact row must sit in that kind's canonical table (resolveChildRow family).
 // The general contracts match IDs exactly with no kind prefix, so table-backed
-// kinds accept any delimiter-safe ID here. Another kind's canonical prefix stays
-// a contradiction, and INV/VER (no canonical table) keep their prefix as the only
-// kind evidence. Reconciliation Items keep the strict parseTargetRef grammar.
+// kinds accept any delimiter-safe ID. Another kind's canonical prefix stays a
+// contradiction, and INV/VER (no canonical table) keep their prefix as the only
+// kind evidence. #274: Reconciliation Items use the same grammar (isTargetRowId),
+// so a scoped typed ref and an Items target read one token the same way.
 export function isScopedRowId(kind, id) {
-  return Object.hasOwn(signatures, kind) && typeof id === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id) &&
-    !Object.entries(CHILD_KIND_PREFIX).some(([other, prefix]) => other !== kind && id.startsWith(prefix));
+  return Object.hasOwn(signatures, kind) && isTargetRowId(kind, id);
 }
-export function parseScopedTargetRef(token) {
-  const strict = parseTargetRef(token);
-  if (strict) return strict;
-  const raw = String(token || '').trim();
-  const m = /^([a-z]+):([^@]+)@([A-Za-z0-9][A-Za-z0-9._-]*)$/.exec(raw);
-  return m && isScopedRowId(m[1], m[2]) ? { kind: m[1], rowId: m[2], ownerArtifactId: m[3], raw } : null;
-}
+export const parseScopedTargetRef = parseTargetRef;
 
 // AST establishes that this really is a root table. Parse its *source* cells with
 // the shared splitter, not rendered labels (links/emphasis must not invent IDs).

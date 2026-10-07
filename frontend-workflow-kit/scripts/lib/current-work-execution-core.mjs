@@ -8,7 +8,7 @@ import { collectApiCandidateClaims, globMatches, parseNameStatusZ, readinessPath
 import { collectInputArtifacts, validateInputArtifacts } from './input-artifact.mjs';
 import { buildInputArtifactIndex, resolveInputArtifact, resolveInputEvidence } from './provenance.mjs';
 import { parseReconciliationRegister } from './reconciliation-register.mjs';
-import { parseReconciliationItems, parseTargetRef } from './reconciliation-items.mjs';
+import { parseReconciliationItems, parseTargetRef, TABLE_RESOLVED_KINDS } from './reconciliation-items.mjs';
 import { resolveArtifact, isDuplicateArtifactId, artifactHasSection, resolveChildRow } from './reconciliation-target-index.mjs';
 import { discoverArtifacts } from './check-generated-files.mjs';
 import { canonicalRepositoryPath } from './artifact-path.mjs';
@@ -131,7 +131,12 @@ export function relatedToOwner(artifact, parts, state, items, targetIndex) {
     const resolved = resolveArtifact(targetIndex, id);
     if (!resolved) return false;
     if (ref.kind === 'artifact' && ref.section && !artifactHasSection(resolved, ref.section)) return false;
-    if (ref.ownerArtifactId && !resolveChildRow(resolved, ref.rowId, ref.kind).found) return false;
+    // #274: like validate (RR-REF-009), a row in another kind's canonical table is not this target.
+    // INV/VER have no canonical table (validate resolves them by body token), so they keep the row check only.
+    if (ref.ownerArtifactId) {
+      const child = resolveChildRow(resolved, ref.rowId, ref.kind);
+      if (!child.found || (TABLE_RESOLVED_KINDS.has(ref.kind) && child.familyMismatch)) return false;
+    }
     const ownerId = resolved.fm?.[parts.kind === 'screen' ? 'screen_id' : 'surface_id'];
     const domain = screenDomain(state, parts);
     // Artifact IDs and external Source Refs are not owner identifiers. Alias

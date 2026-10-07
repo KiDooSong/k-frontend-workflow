@@ -4,6 +4,26 @@
 
 ## Unreleased
 
+### fix(reconciliation) — v2 Items 대상이 일반 계약의 local ID 를 받음 (#274)
+
+- v2 Items·Summary 의 `decision:`·`unknown:`·`conflict:`·`gap:` 대상은 `D-`·`U-`·`C-`·`G-` 접두를 요구했다. 그래서
+  화면 local ID(`<SCREEN>-D001`)를 쓰는 저장소는 register 를 v2 로 옮긴 뒤 결정 답·새 결정·reopen·Unknown 답을
+  Items 로 기록할 수 없었다(`RR-SCHEMA-014`). scoped 는 #260 에서 같은 ID 를 이미 받았다.
+- 이제 `parseTargetRef` 가 #260 의 규칙(`isTargetRowId`)을 쓴다. canonical 표가 있는 kind 는 delimiter-safe ID 를
+  받고, kind 는 행이 놓인 canonical 표가 증명한다. 다른 kind 의 접두는 계속 모순이고, INV·VER 는 접두를 요구한다.
+  `parseScopedTargetRef` 는 같은 함수다. validate·current work·visual-refresh·scoped source 연결이 한 문법을 쓴다.
+  visual-refresh 는 register 전체를 검증하므로, 예전에는 다른 입력의 local ID 대상 하나가 자격 있는 시각 입력까지
+  `VR-RR-011` 로 막았다.
+- 해소 규칙은 그대로다. 없는 행은 `RR-REF-008`, 다른 kind 표의 행은 `RR-REF-009` 다. 오류 메시지의 예시는
+  `decision:<ID>@owner` 로 바꿨다. current work 의 입력–owner 연결(`relatedToOwner`)도 이제 decision·unknown·
+  conflict·gap 대상이 다른 kind 표의 행이면 거부한다. CLI 는 그 전에 register 검증이 막으므로 동작은 같고, 공개
+  함수의 판정을 validate 와 맞췄다. INV·VER 는 canonical 표가 없어 validate 가 본문 토큰으로 해소하므로, 예전처럼
+  행이 있는지만 본다.
+- 회귀 테스트: 문법(허용·접두 모순·INV/VER·delimiter), scoped 와 같은 해석, local decision·unknown ID 의 v2 통과,
+  없는 행·다른 kind 표의 행·다른 kind 접두의 v2 오류, current work 연결과 INV/VER 연결 유지, scoped source 해석과
+  연결, 다른 입력의 local ID 가 visual-refresh 를 막지 않음. 문서: `input-reconciliation.md` Target 문법,
+  `scoped-work.md` Reference IDs, `upgrade-notes.md`.
+
 ### fix(workflow) — scoped 판정에서 resolved Unknown 이 막지 않고, 열린 Unknown·Conflict 를 `영향 화면`·사람 binding 으로 좁힘 (#262)
 
 - scoped profile 은 Unknown 이 적용되면 상태와 상관없이 unit 을 거부했다. 그래서 Unknown 을 한 번이라도 적은 화면은

@@ -658,6 +658,25 @@ test('P15: unrelated valid partial does not globally block an eligible visual in
   assertVisualReason(run(BACKSTOP, [...visualArgs(root), '--staged', '--enforce'], root), 'VR-RR-002', 1);
 });
 
+// #274: authority validates the whole register and treats every RR-SCHEMA error as its own (VR-RR-011),
+// so a general-contract local ID in another input's Item must parse, not block this visual input.
+test('#274: an unrelated Item answering a general-contract local decision ID does not block an eligible visual input', (t) => {
+  const root = createAuthorityFixture(t);
+  const other = 'IN-20260909-qa-274';
+  const decision = 'decision:OTHER-001-D001@other-rules';
+  const summaryRow = `| ${other} | qa | resolves-decision | reconciled | accepted | artifact:other-rules | ${decision} | - |`;
+  const itemRow = `| ${other} | 01 | decision-answer | resolves-decision | link-evidence | ${decision} | input:${other}#extracted-facts/01 | inherit | statement | inherit |`;
+  write(root, `docs/frontend-workflow/inputs/other/${other}.md`, `---\ninput_id: ${other}\ninput_type: qa\nsource_type: qa\nsource_ref: fixture://local-id/other\ncaptured_at: "2026-09-09T09:00:00+09:00"\ncaptured_by: synthetic-fixture-author\nstatus: captured\naffected_domains: [other]\naffected_screens: [OTHER-001]\nsupersedes: null\n---\n\n## Extracted Facts\n\n- Keep the existing other-domain rule.\n`);
+  write(root, 'docs/frontend-workflow/domains/other/domain-rules.md', `---\nartifact_id: other-rules\nartifact_type: domain-rules\ndomain: other\nstatus: draft\n---\n\n## Open Decisions\n\n| ID | Decision Needed | Blocking Mode | Status |\n|---|---|---|---|\n| OTHER-001-D001 | Keep the existing other-domain rule? | final-fixture-ui | resolved |\n`);
+  write(root, PARTIAL_REGISTER, registerArtifact().replace('\n\n## Reconciliation Items', `\n${summaryRow}\n\n## Reconciliation Items`) + `${itemRow}\n`);
+  git(root, 'add', '.');
+  git(root, 'commit', '-m', 'unrelated local decision answer');
+  const forward = run(READINESS, visualArgs(root), root);
+  assert.equal(forward.status, 0, forward.stderr || forward.stdout);
+  assert.equal(JSON.parse(forward.stdout).intent_authorization.applicable, true, forward.stdout);
+  assert.equal(JSON.parse(forward.stdout).path_authorization.allowed, true, forward.stdout);
+});
+
 test('P16: fully reconciled multi-item input still fails exact single-item authority', (t) => {
   const root = createAuthorityFixture(t);
   write(root, `docs/frontend-workflow/inputs/shop/${INPUT_ID}.md`, inputArtifact() + '- The secondary shop card padding is 8px.\n');
