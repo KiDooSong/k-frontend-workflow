@@ -111,10 +111,11 @@ request selects one owner **unit**:
   be a regular file in the baseline (`delete-target-missing` when it is absent)
   and passes the same unit gates and path checks as `A`/`M`. A path the owner
   declares exactly — its screen entry, an exact surface, private or test path,
-  or an API Candidates slice path whether or not the requesting unit selects that
-  API — is denied as `declared-path-delete`: deleting it changes the owner's
-  declaration, which a person reviews. Renames, copies and type/mode changes stay
-  separate work.
+  or a Slice Paths entry of its API Candidates tables as written (whether or not
+  the requesting unit selects that API, and even when the entry is not usable
+  API evidence) — is denied as `declared-path-delete`: deleting it changes the
+  owner's declaration, which a person reviews. A fenced example is not a
+  declaration. Renames, copies and type/mode changes stay separate work.
 - An owner may select several distinct units; a target shared by several requests
   must plan the same change.
 - `origin_inputs` has the current-work meaning: the preserved starting inputs,

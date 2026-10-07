@@ -24,9 +24,10 @@ or root config.
   claims, owned roles, every surface host and the shared-target AND.
 - The preflight denies `delete-target-missing` when the file is absent from the
   baseline, and `declared-path-delete` when the owner declares the path exactly
-  (its screen entry, an exact surface, private or test path, or an API
-  Candidates slice path whether or not the requesting unit selects that API):
-  that delete changes the owner's declaration, which a person reviews first.
+  (its screen entry, an exact surface, private or test path, or a Slice Paths
+  entry of its API Candidates tables as written, whether or not the requesting
+  unit selects that API): that delete changes the owner's declaration, which a
+  person reviews first.
 - The Git backstop accepts only the requested deletes of baseline regular files.
   An unrequested delete, a delete of a symlink or other non-regular entry, a
   modify in place of a requested delete, and renames, copies and type/mode
