@@ -262,15 +262,25 @@ test('#276: declared API slices are every Slice Paths entry of the real API Cand
     domain: 'result', status: 'draft', member_screens: ['RESULT-001', 'RESULT-002'], implementation_paths: [`${ROOT}/components/panel/**`],
     work_execution: { version: 1, private_paths: { hook: [`${ROOT}/hooks/panel/**`] }, units: [{ ...unit(),
       host_units: { 'RESULT-001': 'known', 'RESULT-002': 'legacy-current' } }] } }, body);
-  for (const file of [hook('useB'), hook('useC'), hook('useD'), hook('useE'), component]) f.put(file);
+  for (const file of [hook('useB'), hook('useC'), hook('useD'), hook('useE'), hook('useF'), hook('useG'), component]) f.put(file);
   const run = (file) => f.run(file, 'D', { owner: 'surface:PANEL' });
   // A slice outside the hook/API surfaces is not usable API evidence, and a non-canonical
-  // spelling is invalid authoring; both still declare the file. So does every duplicate section.
-  surface(`${apiBody([row('/a', component), row('/b', `${ROOT}/hooks/panel/./useB.ts`)])}\n${apiBody([row('/c', hook('useC'))])}`);
-  for (const file of [component, hook('useB'), hook('useC')]) denied(run(file), 'declared-path-delete');
-  // A fenced example is not an API Candidates section; its paths declare nothing.
-  surface(`## Notes\n\n\`\`\`md\n${apiBody([row('/e', hook('useE'))])}\`\`\`\n`);
-  const example = run(hook('useE')); assert.equal(example.boundary_satisfied, true, JSON.stringify(example.paths));
+  // spelling is invalid authoring; both still declare the file. So does every duplicate section,
+  // and a table the API analyzer reads even when indented or right after a paragraph.
+  const indented = apiBody([row('/f', hook('useF'))]).split('\n').map((line) => (line.startsWith('|') ? `  ${line}` : line)).join('\n');
+  const afterProse = apiBody([row('/g', hook('useG'))]).replace('## API Candidates\n', '## API Candidates\nPlanned endpoints:\n');
+  surface(`${apiBody([row('/a', component), row('/b', `${ROOT}/hooks/panel/./useB.ts`)])}\n${apiBody([row('/c', hook('useC'))])}\n${indented}\n${afterProse}`);
+  for (const file of [component, hook('useB'), hook('useC'), hook('useF'), hook('useG')]) denied(run(file), 'declared-path-delete');
+  // A fenced example is not an API Candidates section or table; its paths declare nothing,
+  // also when the fence sits inside a real API Candidates section. Nor does a table in
+  // another section.
+  const fencedTable = apiBody([row('/h', hook('useH'))]).replace('## API Candidates\n', '');
+  const otherTable = apiBody([row('/i', hook('useI'))]).replace('## API Candidates\n', '## Notes\n');
+  f.put(hook('useH')); f.put(hook('useI'));
+  surface(`## Notes\n\n\`\`\`md\n${apiBody([row('/e', hook('useE'))])}\`\`\`\n\n## API Candidates\nExample only:\n\n\`\`\`md\n${fencedTable}\`\`\`\n\n${otherTable}`);
+  for (const file of [hook('useE'), hook('useH'), hook('useI')]) {
+    const example = run(file); assert.equal(example.boundary_satisfied, true, JSON.stringify(example.paths));
+  }
 });
 
 test('D paths: unsupported changes, duplicate targets, aliases and glob targets are rejected', (t) => {

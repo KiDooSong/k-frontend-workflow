@@ -6,7 +6,7 @@ import { hasGeneratedOwnershipHeader } from './generated-ownership.mjs';
 import { normalizeWorkTargets, ownerParts, readCurrentBytes, hashBytes } from './current-work-request.mjs';
 import { canonicalProjectRelativePath, concretePathIssue, globMatches } from './path-backstop.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
-import { analyzeApiCandidateContract, loadScreenSpec } from './spec.mjs';
+import { parseTables } from './spec.mjs';
 import { parseReconciliationMarkdown } from './reconciliation-markdown-ast.mjs';
 import { resolveScopedBoundaryProjection } from './scoped-work-boundaries.mjs';
 import { createScopedApiResolver } from './scoped-work-api.mjs';
@@ -49,24 +49,26 @@ export function inspectScopedPaths(options = {}) {
   // actionable-copy `valid` flag. Preserve that return contract here too.
   const selectedActive = selectedApi.candidates.filter((row) => row.candidate.confidence === 'confirmed' && row.candidate.gate === 'active');
   const selectedForPath = (file) => selectedActive.filter((row) => matches(row.candidate.safe_slice_paths || [], file));
-  // #276: every Slice Paths entry the owner writes in a real API Candidates table,
-  // whichever unit selects it and whether or not it is usable API evidence. Read the
-  // Markdown AST like the API resolver, so a fenced example declares nothing and every
-  // duplicate section counts. Boundary claims cover screens only and feed binding
-  // bases, so they stay as they are; checkAuthority() pins the owner spec's bytes.
+  // #276: every Slice Paths entry the owner writes in a real API Candidates section,
+  // whichever unit selects it and whether or not it is usable API evidence. The Markdown
+  // AST finds every section (a heading in fenced code is not one) and drops code and
+  // comments from it; the API analyzer's own table parser then reads every table, as
+  // written (also indented or right after a paragraph). Boundary claims cover screens
+  // only and feed binding bases, so they stay as they are; checkAuthority() pins the
+  // owner spec's bytes.
   let ownerSlices = null;
   const declaredApiSlices = () => {
     if (ownerSlices) return ownerSlices;
-    const entry = targetIndex.artifacts.get(identity.artifact_id);
-    const spec = loadScreenSpec(entry.file);
-    if (spec.body !== entry.body) fail('owner differs from indexed snapshot');
-    const options = { layout, domain: identity.metadata.domain };
-    const written = parseReconciliationMarkdown(entry.body).occurrences
-      .filter((section) => section.slug === 'api-candidates').flatMap((section) => section.tables)
+    const body = targetIndex.artifacts.get(identity.artifact_id).body;
+    const sliceColumn = (header) => String(header).toLowerCase().replace(/\s+/g, '') === 'slicepaths';
+    const written = parseReconciliationMarkdown(body).occurrences
+      .filter((section) => section.slug === 'api-candidates')
+      .flatMap((section) => parseTables(parseReconciliationMarkdown(section.text).contentBody))
       .flatMap((table) => {
-        const analysis = analyzeApiCandidateContract({ ...spec, sections: { ...spec.sections, 'api candidates': table.sourceText } }, options);
-        return analysis.version === 2 ? analysis.candidates.flatMap((candidate) => candidate.slice_paths) : [];
-      });
+        const columns = table.headers.flatMap((header, index) => (sliceColumn(header) ? [index] : []));
+        return table.cell_rows.flatMap((cells) => columns.flatMap((index) => String(cells[index] ?? '').split(';')));
+      })
+      .map((value) => value.trim()).filter(Boolean);
     ownerSlices = [...new Set(written.flatMap((value) => [value, canonicalProjectRelativePath(value)]).filter(Boolean))];
     return ownerSlices;
   };
