@@ -19,8 +19,10 @@
   `SW-GIT-UNSUPPORTED-CHANGE` 대신 `SW-GIT-UNREQUESTED` 이고, symlink 등 regular file 이 아닌 항목이면
   `SW-GIT-TYPE` 도 받는다. `M` 으로 요청한 대상을 지우면 같은 `SW-GIT-MISSING-REQUESTED` 옆에 예전
   `SW-GIT-UNSUPPORTED-CHANGE` 대신 `SW-GIT-UNREQUESTED` 가 난다. `SW-GIT-UNSUPPORTED-CHANGE` 는 이제
-  rename·copy·type 변경만 뜻한다. 지운 경로에 새로 놓은 내용(디렉터리 포함)은 요청하지 않은 `A` 다. worktree 에서
-  지운 대상은 디스크에서도 없어야 한다. 그 자리에 남은 디렉터리는 비었거나 ignored 파일만 있어도 `SW-GIT-TYPE` 이다.
+  rename·copy·type 변경만 뜻한다. 지운 경로에 일반 파일을 다시 만들면 삭제가 아니다. 요청한 `D` 가 없으니
+  `SW-GIT-MISSING-REQUESTED` 가 나고, 바이트나 mode 가 baseline 과 다르면 Git 이 수정으로 보므로
+  `SW-GIT-UNREQUESTED` 도 난다. 그 자리에 둔 디렉터리 아래 새 파일은 요청하지 않은 `A` 다. worktree 에서 지운
+  대상은 디스크에서도 없어야 한다. 그 자리에 남은 디렉터리는 비었거나 ignored 파일만 있어도 `SW-GIT-TYPE` 이다.
   diff 는 rename 을 찾으므로, 내용이 비슷해 Git 이 rename 으로 묶는 `D`+`A` 요청 쌍도 rename 이라 위반이다.
 - 막힌 unit 의 요청은 무엇을 바꾸든 ready 가 아니다. 막힘과 무관한 정비(주석 정리·죽은 파일 삭제)도 막히고,
   current 로 넘어갈 수 없다. `scoped-work.md` 에 그 결과와 푸는 길(행 해소, binding 추가·재판정, 채택 철회)을 적었다.

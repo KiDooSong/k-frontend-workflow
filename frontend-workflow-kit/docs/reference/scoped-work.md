@@ -238,7 +238,9 @@ diff with the baseline:
   change kind may change; `M` keeps its file mode, and `D` may remove only a
   baseline regular file. In the worktree a deleted target must be gone: a
   directory left at the path, even empty or holding only ignored files, is a type
-  violation. New content at a deleted path is an unrequested add;
+  violation. A regular file put back at the path is no delete: the requested `D`
+  is missing, and unless the file keeps its baseline bytes and mode, Git sees an
+  unrequested modify. Files under a directory left there are unrequested adds;
 - renames, copies, type/mode changes, unrequested paths (an unrequested delete
   included) and missing requested changes are violations. The diff detects
   renames, so a requested `D` and `A` whose contents Git pairs as a rename are
