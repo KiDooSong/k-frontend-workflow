@@ -6,6 +6,7 @@ import { hasGeneratedOwnershipHeader } from './generated-ownership.mjs';
 import { normalizeWorkTargets, ownerParts, readCurrentBytes, hashBytes } from './current-work-request.mjs';
 import { concretePathIssue, globMatches } from './path-backstop.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
+import { analyzeApiCandidateContract, loadScreenSpec } from './spec.mjs';
 import { resolveScopedBoundaryProjection } from './scoped-work-boundaries.mjs';
 import { createScopedApiResolver } from './scoped-work-api.mjs';
 import { ScopedWorkContractError, workPath, workUnitId } from './scoped-work-request.mjs';
@@ -47,6 +48,20 @@ export function inspectScopedPaths(options = {}) {
   // actionable-copy `valid` flag. Preserve that return contract here too.
   const selectedActive = selectedApi.candidates.filter((row) => row.candidate.confidence === 'confirmed' && row.candidate.gate === 'active');
   const selectedForPath = (file) => selectedActive.filter((row) => matches(row.candidate.safe_slice_paths || [], file));
+  // #276: every API Candidates slice the owner declares, whichever unit selects it.
+  // Boundary claims cover screens only and feed binding bases, so read the owner's
+  // own table here; checkAuthority() still pins its bytes to the snapshot.
+  let ownerSlices = null;
+  const declaredApiSlices = () => {
+    if (ownerSlices) return ownerSlices;
+    const entry = targetIndex.artifacts.get(identity.artifact_id);
+    const spec = loadScreenSpec(entry.file);
+    if (spec.body !== entry.body) fail('owner differs from indexed snapshot');
+    const analysis = analyzeApiCandidateContract(spec, { layout, domain: identity.metadata.domain });
+    ownerSlices = analysis.version !== 2 ? [] : [...analysis.actionable_candidates, ...analysis.deferred_candidates]
+      .flatMap((candidate) => candidate.safe_slice_paths || []);
+    return ownerSlices;
+  };
   function snapshot(file) {
     const resolved = canonical(file);
     if (!resolved.exists) return { path: file, exists: false };
@@ -89,9 +104,7 @@ export function inspectScopedPaths(options = {}) {
       }
       // role.owned holds only this unit's selected API slices; the owner declares every
       // candidate's slice, so another unit of the same owner cannot delete one either.
-      for (const claim of boundary.api_claims) {
-        if (claim.owner === owner && claim.path === file) deny('declared-path-delete', { source: 'api-candidate', endpoint: claim.endpoint });
-      }
+      if (declaredApiSlices().includes(file)) deny('declared-path-delete', { source: 'api-candidate' });
     }
     if (limits.unknown_api_paths.some((entry) => globMatches(entry.path, file))) deny('ambiguous-api-surface');
     const claims = boundary.api_claims.filter((entry) => globMatches(entry.path, file));

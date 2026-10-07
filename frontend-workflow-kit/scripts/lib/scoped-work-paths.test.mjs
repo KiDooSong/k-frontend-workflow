@@ -234,6 +234,27 @@ test('#276: an exact API slice the owner declares stays a declared path for a un
   const child = f.run(more, 'D', { unit: 'look' }); assert.equal(child.boundary_satisfied, true, JSON.stringify(child.paths));
 });
 
+test('#276: a shared surface keeps its exact API slices declared for a unit that selects another endpoint', (t) => {
+  const f = fixture(t), sliceA = `${ROOT}/hooks/panel/usePanelA.ts`, sliceB = `${ROOT}/hooks/panel/usePanelB.ts`;
+  const later = `${ROOT}/hooks/panel/usePanelLater.ts`;
+  f.policy((p) => { p.owners.push('surface:PANEL'); }); f.write('other.md', screen('RESULT-002', false), '## Notes\nLegacy host.');
+  f.write('surface.md', { artifact_id: 'SURFACE', artifact_type: 'shared-surface-spec', surface_id: 'PANEL', domain: 'result', status: 'draft',
+    member_screens: ['RESULT-001', 'RESULT-002'], implementation_paths: [`${ROOT}/components/panel/**`],
+    work_execution: { version: 1, private_paths: { hook: [`${ROOT}/hooks/panel/**`] }, units: [{ ...unit(),
+      host_units: { 'RESULT-001': 'known', 'RESULT-002': 'legacy-current' }, api_candidates: [{ method: 'GET', path: '/panel-b' }] }] } },
+  apiBody([row('/panel-a', sliceA), row('/panel-b', sliceB), row('/later', later, 'candidate', 'deferred', 'issue:#12')]));
+  for (const file of [sliceA, sliceB, later]) f.put(file);
+  const surface = { owner: 'surface:PANEL' };
+  denied(f.run(sliceB, 'D', surface), 'declared-path-delete');
+  // The unit selects /panel-b only; the surface still declares /panel-a's exact slice
+  // and the deferred candidate's slice.
+  for (const file of [sliceA, later]) {
+    const out = f.run(file, 'D', surface); denied(out, 'declared-path-delete');
+    assert.deepEqual(out.paths[0].denials.map((d) => d.code), ['declared-path-delete']);
+  }
+  const edit = f.run(sliceA, 'M', surface); assert.equal(edit.boundary_satisfied, true, JSON.stringify(edit.paths));
+});
+
 test('D paths: unsupported changes, duplicate targets, aliases and glob targets are rejected', (t) => {
   const f = fixture(t);
   for (const change of ['R', 'C', 'T']) assert.throws(() => f.run(ENTRY, change), /A\/M\/D only/);
