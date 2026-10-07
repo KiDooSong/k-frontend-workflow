@@ -107,7 +107,16 @@ request selects one owner **unit**:
   `coverage_reports`; `requested_mode` and caller verdicts are invalid.
 - Coverage report files, like every other authority file, are read from the
   committed baseline tree; commit the reviewed report before the preflight.
-- Scoped targets support regular-file `A` and `M` only.
+- Scoped targets support regular-file `A`, `M` and `D` (#276). A `D` target must
+  be a regular file in the baseline (`delete-target-missing` when it is absent)
+  and passes the same unit gates and path checks as `A`/`M`. A path the owner
+  declares exactly — its screen entry, an exact surface, private or test path,
+  or a Slice Paths entry of its API Candidates tables as written (whether or not
+  the requesting unit selects that API, and even when the entry is not usable
+  API evidence) — is denied as `declared-path-delete`: deleting it changes the
+  owner's declaration, which a person reviews. A code block (fenced or indented)
+  is an example, not a declaration. Renames, copies and type/mode changes stay
+  separate work.
 - An owner may select several distinct units; a target shared by several requests
   must plan the same change.
 - `origin_inputs` has the current-work meaning: the preserved starting inputs,
@@ -225,10 +234,18 @@ diff with the baseline:
   An evidence path keeps its kind (missing, file or directory) and a directory
   keeps its members; the worktree check lists them on disk, Git-ignored entries
   included, while `--staged` reads the index only;
-- only allowed, requested regular-file `A`/`M` targets with the requested change
-  kind may change, and `M` keeps its file mode;
-- deletes, renames, copies, type/mode changes, unrequested paths and missing
-  requested changes are violations.
+- only allowed, requested regular-file `A`/`M`/`D` targets with the requested
+  change kind may change; `M` keeps its file mode, and `D` may remove only a
+  baseline regular file. In the worktree a deleted target must be gone: a
+  directory left at the path, even empty or holding only ignored files, is a type
+  violation. A regular file put back at the path is no delete: the requested `D`
+  is missing, and unless the file keeps its baseline bytes and mode, Git sees an
+  unrequested modify. Under a directory left there Git reports only the files it
+  does not ignore, as adds, and an add the request does not name is unrequested;
+- renames, copies, type/mode changes, unrequested paths (an unrequested delete
+  included) and missing requested changes are violations. The diff detects
+  renames, so a requested `D` and `A` whose contents Git pairs as a rename are
+  still a rename.
 
 `workflow:forbidden-paths --work` stays advisory (exit 0) unless `--enforce`
 (exit 1 on violations). Run states and exit codes are the same as
@@ -244,6 +261,23 @@ Paths) need `authority: scoped` with a unit. `readiness --path`, no-work
 cannot be retried under an older mode, another intent or current authority. Other
 paths of the same owner keep their existing decisions, and no-selector readiness
 summaries are unchanged.
+
+## While a unit is blocked
+
+A request under a blocked unit is not ready, whatever it changes — for example
+while an open Decision, Unknown or Conflict reaches the unit. Maintenance
+unrelated to the blocking row (a comment cleanup, a dead-file delete) is blocked
+too: there is no maintenance exception, and the fallback guard above keeps current
+work from taking the change over (#276). To unblock the unit, a person:
+
+- resolves the blocking row through its normal workflow;
+- adds or re-judges the row's binding (`decision_work_scopes` or
+  `uncertainty_work_scopes`) so the row blocks fewer units, with a recomputed
+  `basis_digest` and its `approval_ref`. A Decision binding's `blocks` applies as
+  written; an Unknown or Conflict binding narrows only the row's native relation,
+  so a unit whose selected evidence reaches that row stays blocked; or
+- withdraws the owner's adoption ([rollback](#rollback-and-downgrade)), which
+  returns its paths to the legacy authority.
 
 ## Rollback and downgrade
 

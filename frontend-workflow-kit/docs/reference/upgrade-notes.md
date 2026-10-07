@@ -17,6 +17,34 @@ or root config.
 
 ---
 
+## Scoped work can delete a file that a ready unit owns (#276)
+
+- A scoped request may now plan `D` for a regular file. The unit passes the same
+  gates as for `A`/`M`: profile, Decision/Unknown/Conflict scopes, sources, API
+  claims, owned roles, every surface host and the shared-target AND.
+- The preflight denies `delete-target-missing` when the file is absent from the
+  baseline, and `declared-path-delete` when the owner declares the path exactly
+  (its screen entry, an exact surface, private or test path, or a Slice Paths
+  entry of its API Candidates tables as written, whether or not the requesting
+  unit selects that API): that delete changes the owner's declaration, which a
+  person reviews first.
+- The Git backstop accepts only the requested deletes of baseline regular files.
+  An unrequested delete, a delete of a symlink or other non-regular entry, a
+  modify in place of a requested delete, a directory left at a deleted worktree
+  path, and renames, copies and type/mode changes stay violations. A requested
+  `D` and `A` whose contents Git pairs as a rename are still a rename.
+- Reported codes change for deletes. An unrequested delete used to be
+  `SW-GIT-UNSUPPORTED-CHANGE`; it is now `SW-GIT-UNREQUESTED` (plus `SW-GIT-TYPE`
+  for a non-regular entry). Deleting a target requested as `M` now reports
+  `SW-GIT-UNREQUESTED` instead of `SW-GIT-UNSUPPORTED-CHANGE`, next to the same
+  `SW-GIT-MISSING-REQUESTED`. `SW-GIT-UNSUPPORTED-CHANGE` now covers renames,
+  copies and type changes only.
+- A request under a blocked unit stays not ready, maintenance included. The
+  reference lists the ways to unblock the unit:
+  [While a unit is blocked](scoped-work.md#while-a-unit-is-blocked).
+- Manual action: none. Requests with `A`/`M` targets behave as before; update a
+  script that matched `SW-GIT-UNSUPPORTED-CHANGE` for deletes.
+
 ## Reconciliation Items targets accept general-contract IDs (#274)
 
 - A v2 Items or Summary target `decision:`, `unknown:`, `conflict:` or `gap:` no

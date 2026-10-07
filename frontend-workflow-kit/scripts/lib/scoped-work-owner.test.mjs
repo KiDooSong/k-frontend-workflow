@@ -113,7 +113,11 @@ test('D owner: caller-supplied intermediate results cannot replace canonical eva
 test('D owner: unknown units, missing concrete targets and unsupported changes never become successful empty work', (t) => {
   const f = fixture(t);
   assert.throws(() => f.run({ unit: 'missing' })); assert.throws(() => f.run({ targets: [] }));
-  assert.throws(() => f.run({ targets: [{ path: ENTRY, change: 'D' }] }));
+  assert.throws(() => f.run({ targets: [{ path: ENTRY, change: 'R' }] }), /A\/M\/D only/);
+  // #276: a delete is a supported kind, but deleting the declared screen entry is a path denial.
+  f.put(ENTRY, 'export const value = 1;');
+  const out = f.run({ targets: [{ path: ENTRY, change: 'D' }] }); denied(out, 'path');
+  assert.deepEqual(out.denials.map((d) => d.code), ['declared-path-delete']); noGrant(out);
 });
 
 test('D owner: a late profile evidence edit is detected even though later prerequisites do not consume the file', (t) => {

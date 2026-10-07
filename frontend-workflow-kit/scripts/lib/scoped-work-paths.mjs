@@ -4,8 +4,10 @@ import fs from 'node:fs';
 import { canonicalRepositoryPath } from './artifact-path.mjs';
 import { hasGeneratedOwnershipHeader } from './generated-ownership.mjs';
 import { normalizeWorkTargets, ownerParts, readCurrentBytes, hashBytes } from './current-work-request.mjs';
-import { concretePathIssue, globMatches } from './path-backstop.mjs';
+import { canonicalProjectRelativePath, concretePathIssue, globMatches } from './path-backstop.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
+import { parseTables } from './spec.mjs';
+import { parseReconciliationMarkdown, stripCodeBlocks } from './reconciliation-markdown-ast.mjs';
 import { resolveScopedBoundaryProjection } from './scoped-work-boundaries.mjs';
 import { createScopedApiResolver } from './scoped-work-api.mjs';
 import { ScopedWorkContractError, workPath, workUnitId } from './scoped-work-request.mjs';
@@ -22,7 +24,7 @@ export function inspectScopedPaths(options = {}) {
     workPath(target.path);
     const issue = concretePathIssue(target.path);
     if (issue) fail(issue);
-    if (!['A', 'M'].includes(target.change)) fail('regular file A/M only; original Git validation is still required');
+    if (!['A', 'M', 'D'].includes(target.change)) fail('regular file A/M/D only; original Git validation is still required');
   }
   const observed = resolveScopedBoundaryProjection(options);
   const { projection } = observed, boundary = projection.ownership;
@@ -47,6 +49,29 @@ export function inspectScopedPaths(options = {}) {
   // actionable-copy `valid` flag. Preserve that return contract here too.
   const selectedActive = selectedApi.candidates.filter((row) => row.candidate.confidence === 'confirmed' && row.candidate.gate === 'active');
   const selectedForPath = (file) => selectedActive.filter((row) => matches(row.candidate.safe_slice_paths || [], file));
+  // #276: every Slice Paths entry the owner writes in a real API Candidates section,
+  // whichever unit selects it and whether or not it is usable API evidence. The Markdown
+  // AST finds every section (a heading in a code block is not one) and drops its code
+  // blocks, which are examples; the API analyzer's own table parser then reads every
+  // table as written (indented, after a paragraph or in an HTML block; it drops
+  // comments). Boundary claims cover screens only and feed binding bases, so they stay
+  // as they are; checkAuthority() pins the owner spec's bytes.
+  let ownerSlices = null;
+  const declaredApiSlices = () => {
+    if (ownerSlices) return ownerSlices;
+    const body = targetIndex.artifacts.get(identity.artifact_id).body;
+    const sliceColumn = (header) => String(header).toLowerCase().replace(/\s+/g, '') === 'slicepaths';
+    const written = parseReconciliationMarkdown(body).occurrences
+      .filter((section) => section.slug === 'api-candidates')
+      .flatMap((section) => parseTables(stripCodeBlocks(section.text)))
+      .flatMap((table) => {
+        const columns = table.headers.flatMap((header, index) => (sliceColumn(header) ? [index] : []));
+        return table.cell_rows.flatMap((cells) => columns.flatMap((index) => String(cells[index] ?? '').split(';')));
+      })
+      .map((value) => value.trim()).filter(Boolean);
+    ownerSlices = [...new Set(written.flatMap((value) => [value, canonicalProjectRelativePath(value)]).filter(Boolean))];
+    return ownerSlices;
+  };
   function snapshot(file) {
     const resolved = canonical(file);
     if (!resolved.exists) return { path: file, exists: false };
@@ -61,6 +86,7 @@ export function inspectScopedPaths(options = {}) {
     const current = snapshot(file); observations.push(current);
     if (target.change === 'A' && current.exists) deny('add-target-exists');
     if (target.change === 'M' && !current.exists) deny('modify-target-missing');
+    if (target.change === 'D' && !current.exists) deny('delete-target-missing');
     if (observed.read_set.some((entry) => entry.file === file)) deny('authority-resource');
     if (!limits.profile_enabled) deny('profile-not-enabled');
     if (identity.metadata.status === 'deprecated' || identity.metadata.screen_lifecycle === 'absorbed') deny('owner-inactive');
@@ -80,6 +106,16 @@ export function inspectScopedPaths(options = {}) {
       (matches(role.layout_paths, file) || (role.role === 'test' && !hasTestRole)) &&
       role.owned.some((entry) => globMatches(entry.path, file)));
     if (!roles.length) deny('outside-owned-role-intersection');
+    // #276: deleting a path the owner names exactly (screen entry, an exact private/test/
+    // surface path or API Candidates slice) changes the owner declaration; a person does that.
+    if (target.change === 'D') {
+      for (const role of limits.roles) for (const entry of role.owned) {
+        if (entry.path === file) deny('declared-path-delete', { role: role.role, source: entry.source });
+      }
+      // role.owned holds only this unit's selected API slices; the owner declares every
+      // candidate's slice, so another unit of the same owner cannot delete one either.
+      if (declaredApiSlices().includes(file)) deny('declared-path-delete', { source: 'api-candidate' });
+    }
     if (limits.unknown_api_paths.some((entry) => globMatches(entry.path, file))) deny('ambiguous-api-surface');
     const claims = boundary.api_claims.filter((entry) => globMatches(entry.path, file));
     for (const claim of claims) {

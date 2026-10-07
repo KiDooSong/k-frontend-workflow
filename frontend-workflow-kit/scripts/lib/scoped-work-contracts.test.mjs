@@ -200,7 +200,7 @@ test('D1 request: current syntax output stays identical and mixed requests retai
   assert.throws(() => normalizeWorkRequest(request()), /scoped is not implemented/);
 });
 
-test('D1 request: scoped needs a unit, excludes mode/authority overrides and supports planned A/M only', () => {
+test('D1 request: scoped needs a unit, excludes mode/authority overrides and supports planned A/M/D only', () => {
   for (const mutate of [
     (r) => delete r.unit, (r) => r.unit = null, (r) => r.requested_mode = 'production-ready',
     (r) => r.allowed = true, (r) => r.authority = 'override', (r) => r.targets = [],
@@ -208,12 +208,15 @@ test('D1 request: scoped needs a unit, excludes mode/authority overrides and sup
     (r) => r.coverage_reports = ['../review.md'], (r) => r.coverage_reports = ['review.md', 'review.md'],
     (r) => r.targets[0].path = 'src/../result.tsx',
   ]) { const v = request(); mutate(v.requests[0]); assert.throws(() => normalizeScopedWorkRequestSyntax(v)); }
-  for (const change of ['D', 'R', 'C', 'T']) {
+  for (const change of ['R', 'C', 'T']) {
     const v = request(); v.requests[0].targets[0].change = change;
-    assert.throws(() => normalizeScopedWorkRequestSyntax(v), /A\/M only/);
+    assert.throws(() => normalizeScopedWorkRequestSyntax(v), /A\/M\/D only/);
   }
-  const v = request(); v.requests[0].targets[0].change = 'A';
-  assert.equal(normalizeScopedWorkRequestSyntax(v).requests[0].targets[0].change, 'A');
+  // #276: a scoped unit may delete a regular file; renames, copies and type changes stay separate work.
+  for (const change of ['A', 'D']) {
+    const v = request(); v.requests[0].targets[0].change = change;
+    assert.equal(normalizeScopedWorkRequestSyntax(v).requests[0].targets[0].change, change);
+  }
 });
 
 test('D1 request: duplicate unit/current owner, conflicting shared changes and origin errors are rejected', () => {

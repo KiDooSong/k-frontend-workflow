@@ -99,7 +99,7 @@ HALT evidence are defined in [current work](docs/reference/current-work.md#packe
 
 For an explicitly adopted owner, the same five CLIs evaluate a document of
 `authority: scoped` requests that each select an owner **unit** (regular-file
-`A`/`M` targets only). See the [scoped-work reference](docs/reference/scoped-work.md)
+`A`/`M`/`D` targets only). See the [scoped-work reference](docs/reference/scoped-work.md)
 for the adoption checkpoint, baseline preflight, host/shared-target rules, Git
 backstop, fallback guards and rollback.
 

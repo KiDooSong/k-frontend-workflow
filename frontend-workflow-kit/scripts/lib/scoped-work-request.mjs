@@ -67,8 +67,10 @@ export function normalizeScopedWorkRequestSyntax(value) {
     ownerParts(request.owner);
     const unit = workUnitId(request.unit);
     const targets = normalizeWorkTargets(request.targets);
-    if (targets.some((target) => !['A', 'M'].includes(target.change))) {
-      throw new ScopedWorkContractError('scoped target.change: regular file A/M only; actual Git validation is still required');
+    // #276: a unit may also delete a regular file it owns; renames, copies and type
+    // changes stay separate work (B §8.3).
+    if (targets.some((target) => !['A', 'M', 'D'].includes(target.change))) {
+      throw new ScopedWorkContractError('scoped target.change: regular file A/M/D only; actual Git validation is still required');
     }
     const reports = own(request, 'coverage_reports')
       ? workSet(request.coverage_reports, (p) => workPath(p, 'coverage report'), 'coverage_reports') : [];

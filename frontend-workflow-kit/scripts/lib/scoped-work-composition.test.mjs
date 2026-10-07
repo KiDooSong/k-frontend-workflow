@@ -143,12 +143,12 @@ test('D compose: a legacy-current host base deny stays with its target', (t) => 
   assert.deepEqual(panel.reasons.map((entry) => [entry.code, entry.host]), [['legacy-member-base-denied', 'screen:RESULT-002']]);
 });
 
-test('D compose: current authority, duplicate selectors and non A/M scoped changes are not composed', (t) => {
+test('D compose: current authority, duplicate selectors and non A/M/D scoped changes are not composed', (t) => {
   const f = fixture(t);
   assert.throws(() => f.run([{ owner: 'screen:RESULT-001', authority: 'current', requested_mode: 'rough-fixture-ui',
     targets: [{ path: ENTRY('RESULT-001'), change: 'M' }] }]), /current requests are evaluated by current work/);
   assert.throws(() => f.run([surface(), surface()]), /duplicate/);
-  assert.throws(() => f.run([{ ...surface(), targets: [{ path: PANEL, change: 'D' }] }]), /A\/M only/);
+  assert.throws(() => f.run([{ ...surface(), targets: [{ path: PANEL, change: 'R' }] }]), /A\/M\/D only/);
   assert.throws(() => f.run([{ ...surface(), allowed: true }]), /unknown field allowed/);
 });
 

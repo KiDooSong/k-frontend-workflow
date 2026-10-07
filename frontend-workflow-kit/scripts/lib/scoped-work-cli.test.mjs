@@ -105,6 +105,19 @@ test('D34 CLI: the five public work CLIs run a scoped request from preflight to 
   assert.deepEqual(done.checkpoint, { packet, matched: true });
 });
 
+test('#276 CLI: a scoped delete runs from packet to review evidence while the baseline still has the file', (t) => {
+  const r = repository(t), work = r.request([{ ...surfaceRequest, targets: [{ path: PANEL, change: 'D' }] }]);
+  const packet = path.join(r.outside, 'packet.md');
+  r.json(r.cli('workflow-packet.mjs', work, '--out', packet, '--json'));
+  assert.equal(r.json(r.cli('workflow-run.mjs', work, '--json')).state, 'HALT_READY_FOR_WORK');
+  fs.rmSync(path.join(r.root, PANEL));
+  const gate = r.json(r.cli('forbidden-paths.mjs', work, '--json'));
+  assert.deepEqual([gate.ok, gate.implementation_records.map((record) => `${record.status}:${record.projectPath}`)], [true, [`D:${PANEL}`]]);
+  assert.equal(r.json(r.cli('workflow-report.mjs', work, '--packet', packet, '--json')).backstop.ok, true);
+  const done = r.json(r.cli('workflow-run.mjs', work, '--packet', packet, '--json'));
+  assert.deepEqual([done.state, done.backstop.ok], ['DONE_PENDING_REVIEW', true]);
+});
+
 test('D34 CLI: unrequested changes, packet drift and baseline denials are never reported as success', (t) => {
   const r = repository(t), work = r.request([surfaceRequest]), packet = path.join(r.outside, 'packet.md');
   r.json(r.cli('workflow-packet.mjs', work, '--out', packet, '--json'));

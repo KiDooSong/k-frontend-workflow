@@ -200,9 +200,95 @@ test('D paths: inactive owner, missing unit, stale index and fabricated layouts 
   denied(f.run(ENTRY, 'A', { layout: { rolesFor: () => ({ screen: ['src/**'] }), resolvePaths: () => ['src/**'] }, boundary: { allowed: true }, approved: true }), 'outside-owned-role-intersection');
 });
 
+test('#276: a delete needs an existing file under an owned root, never a path the owner declares exactly', (t) => {
+  const f = fixture(t), card = `${ROOT}/components/local/Card.tsx`, exactTest = `${ROOT}/tests/local/Exact.test.ts`;
+  for (const file of [card, `${ROOT}/hooks/local/useFixture.ts`, `${ROOT}/tests/local/Card.test.ts`]) {
+    f.put(file); const out = f.run(file, 'D');
+    assert.equal(out.boundary_satisfied, true, JSON.stringify(out.paths)); assert.equal(out.paths[0].change, 'D');
+    assert.equal(out.target_read_set[0].exists, true); assert.match(out.target_read_set[0].sha256, /^sha256:[0-9a-f]{64}$/);
+  }
+  denied(f.run(`${ROOT}/components/local/Missing.tsx`, 'D'), 'delete-target-missing');
+  // The screen entry, an exact test path and an exact selected API slice are owner declarations:
+  // deleting one changes the declaration, so it needs a person's owner change, not a scoped unit.
+  f.put(ENTRY); denied(f.run(ENTRY, 'D'), 'declared-path-delete');
+  f.put(exactTest); f.change('screen.md', (doc) => { doc.fm.work_execution.test_paths.push(exactTest); });
+  denied(f.run(exactTest, 'D'), 'declared-path-delete');
+  const hook = `${ROOT}/hooks/local/useResults.ts`; f.put(hook); f.api([row('/results', hook)], selected);
+  denied(f.run(hook, 'D'), 'declared-path-delete');
+  // Ownership rules still apply to deletes: an unowned sibling stays closed.
+  f.put(`${ROOT}/components/sibling/Card.tsx`); denied(f.run(`${ROOT}/components/sibling/Card.tsx`, 'D'), 'outside-owned-role-intersection');
+});
+
+test('#276: an exact API slice the owner declares stays a declared path for a unit that does not select it', (t) => {
+  // A behavior unit selects the exact active API hook; a visual unit of the same owner does not.
+  const f = fixture(t), slice = `${ROOT}/hooks/local/useResultsApi.ts`, more = `${ROOT}/hooks/local/more/useMore.ts`;
+  f.put(slice); f.put(more); f.api([row('/results', slice), row('/more', `${ROOT}/hooks/local/more/**`)], selected);
+  f.change('screen.md', (doc) => { doc.fm.work_execution.units.push({ ...unit(), id: 'look', kind: 'visual' }); });
+  denied(f.run(slice, 'D'), 'declared-path-delete');
+  // The visual private fixture hook may still edit the file without selecting the API ...
+  const edit = f.run(slice, 'M', { unit: 'look' }); assert.equal(edit.boundary_satisfied, true, JSON.stringify(edit.paths));
+  // ... but switching units must not delete what the owner's API Candidates declare.
+  const out = f.run(slice, 'D', { unit: 'look' }); denied(out, 'declared-path-delete');
+  assert.deepEqual(out.paths[0].denials.map((d) => d.code), ['declared-path-delete']);
+  // A file under a glob slice is not named by the declaration, so it is not a declared path.
+  const child = f.run(more, 'D', { unit: 'look' }); assert.equal(child.boundary_satisfied, true, JSON.stringify(child.paths));
+});
+
+test('#276: a shared surface keeps its exact API slices declared for a unit that selects another endpoint', (t) => {
+  const f = fixture(t), sliceA = `${ROOT}/hooks/panel/usePanelA.ts`, sliceB = `${ROOT}/hooks/panel/usePanelB.ts`;
+  const later = `${ROOT}/hooks/panel/usePanelLater.ts`;
+  f.policy((p) => { p.owners.push('surface:PANEL'); }); f.write('other.md', screen('RESULT-002', false), '## Notes\nLegacy host.');
+  f.write('surface.md', { artifact_id: 'SURFACE', artifact_type: 'shared-surface-spec', surface_id: 'PANEL', domain: 'result', status: 'draft',
+    member_screens: ['RESULT-001', 'RESULT-002'], implementation_paths: [`${ROOT}/components/panel/**`],
+    work_execution: { version: 1, private_paths: { hook: [`${ROOT}/hooks/panel/**`] }, units: [{ ...unit(),
+      host_units: { 'RESULT-001': 'known', 'RESULT-002': 'legacy-current' }, api_candidates: [{ method: 'GET', path: '/panel-b' }] }] } },
+  apiBody([row('/panel-a', sliceA), row('/panel-b', sliceB), row('/later', later, 'candidate', 'deferred', 'issue:#12')]));
+  for (const file of [sliceA, sliceB, later]) f.put(file);
+  const surface = { owner: 'surface:PANEL' };
+  denied(f.run(sliceB, 'D', surface), 'declared-path-delete');
+  // The unit selects /panel-b only; the surface still declares /panel-a's exact slice
+  // and the deferred candidate's slice.
+  for (const file of [sliceA, later]) {
+    const out = f.run(file, 'D', surface); denied(out, 'declared-path-delete');
+    assert.deepEqual(out.paths[0].denials.map((d) => d.code), ['declared-path-delete']);
+  }
+  const edit = f.run(sliceA, 'M', surface); assert.equal(edit.boundary_satisfied, true, JSON.stringify(edit.paths));
+});
+
+test('#276: declared API slices are every Slice Paths entry of the real API Candidates tables, as written', (t) => {
+  const f = fixture(t), hook = (name) => `${ROOT}/hooks/panel/${name}.ts`, component = `${ROOT}/components/panel/Api.ts`;
+  f.policy((p) => { p.owners.push('surface:PANEL'); }); f.write('other.md', screen('RESULT-002', false), '## Notes\nLegacy host.');
+  const surface = (body) => f.write('surface.md', { artifact_id: 'SURFACE', artifact_type: 'shared-surface-spec', surface_id: 'PANEL',
+    domain: 'result', status: 'draft', member_screens: ['RESULT-001', 'RESULT-002'], implementation_paths: [`${ROOT}/components/panel/**`],
+    work_execution: { version: 1, private_paths: { hook: [`${ROOT}/hooks/panel/**`] }, units: [{ ...unit(),
+      host_units: { 'RESULT-001': 'known', 'RESULT-002': 'legacy-current' } }] } }, body);
+  for (const name of ['useB', 'useC', 'useD', 'useE', 'useF', 'useG', 'useH', 'useI', 'useJ', 'useK']) f.put(hook(name));
+  f.put(component);
+  const run = (file) => f.run(file, 'D', { owner: 'surface:PANEL' });
+  // A slice outside the hook/API surfaces is not usable API evidence, and a non-canonical
+  // spelling is invalid authoring; both still declare the file. So does every duplicate section,
+  // and a table the API analyzer reads even when indented, right after a paragraph or inside an
+  // HTML block.
+  const indented = apiBody([row('/f', hook('useF'))]).split('\n').map((line) => (line.startsWith('|') ? `  ${line}` : line)).join('\n');
+  const afterProse = apiBody([row('/g', hook('useG'))]).replace('## API Candidates\n', '## API Candidates\nPlanned endpoints:\n');
+  const wrapped = `${apiBody([row('/j', hook('useJ'))]).replace('## API Candidates\n', '## API Candidates\n<details>\n')}</details>\n`;
+  surface(`${apiBody([row('/a', component), row('/b', `${ROOT}/hooks/panel/./useB.ts`)])}\n${apiBody([row('/c', hook('useC'))])}\n${indented}\n${afterProse}\n${wrapped}`);
+  for (const file of [component, hook('useB'), hook('useC'), hook('useF'), hook('useG'), hook('useJ')]) denied(run(file), 'declared-path-delete');
+  // A code block (fenced or indented) is an example, not an API Candidates section or table;
+  // its paths declare nothing, also inside a real API Candidates section. Nor does a table in
+  // another section.
+  const fencedTable = apiBody([row('/h', hook('useH'))]).replace('## API Candidates\n', '');
+  const otherTable = apiBody([row('/i', hook('useI'))]).replace('## API Candidates\n', '## Notes\n');
+  const codeTable = fencedTable.split('\n').map((line) => (line.startsWith('|') ? `    ${line.replace(hook('useH'), hook('useK'))}` : line)).join('\n');
+  surface(`## Notes\n\n\`\`\`md\n${apiBody([row('/e', hook('useE'))])}\`\`\`\n\n## API Candidates\nExample only:\n\n\`\`\`md\n${fencedTable}\`\`\`\n\nIndented example:\n\n${codeTable}\n${otherTable}`);
+  for (const file of [hook('useE'), hook('useH'), hook('useI'), hook('useK')]) {
+    const example = run(file); assert.equal(example.boundary_satisfied, true, JSON.stringify(example.paths));
+  }
+});
+
 test('D paths: unsupported changes, duplicate targets, aliases and glob targets are rejected', (t) => {
   const f = fixture(t);
-  for (const change of ['D', 'R', 'C', 'T']) assert.throws(() => f.run(ENTRY, change));
+  for (const change of ['R', 'C', 'T']) assert.throws(() => f.run(ENTRY, change), /A\/M\/D only/);
   for (const file of [ENTRY.replace('/screens/', '/./screens/'), `/${ENTRY}`, ENTRY.replaceAll('/', '\\'), `${ROOT}/screens/**`, '.git/config']) assert.throws(() => f.run(file));
   assert.throws(() => inspectScopedPaths({ ...f.options(), targets: [{ path: ENTRY, change: 'A' }, { path: ENTRY, change: 'A' }] }));
 });
@@ -281,7 +367,8 @@ test('W20: a component catalog listing without a known global editor creates no 
 test('W21: a case-alias spelling of the exact entry never becomes the owned entry', (t) => {
   const f = fixture(t); f.put(ENTRY); assert.equal(f.run(ENTRY, 'M').boundary_satisfied, true);
   const alias = ENTRY.replace('RESULT-001.tsx', 'result-001.tsx');
-  for (const change of ['A', 'M']) {
+  // #276: D included, so an alias spelling cannot delete the entry around declared-path-delete.
+  for (const change of ['A', 'M', 'D']) {
     // A case-insensitive filesystem resolves the alias, so its spelling is rejected;
     // a case-sensitive one sees another path, which is not this owner's entry.
     let out;

@@ -40,7 +40,7 @@ HALT나 diff 없음에서도 packet-bound run은 수집한 증거를 보존하�
 `DONE_PENDING_REVIEW`, report 생성, exit 0은 승인이나 위반 없음의 대체 신호가 아니다.
 실행한 검증, 실패/미실행 검증, 누락된 checkpoint 대조, 남은 Decision/Unknown/Conflict를 구분해 handoff한다.
 `authority: scoped`도 같은 대표 흐름을 쓰며 [scoped work](../scoped-work.md)의 모든 host·공유 target AND,
-regular-file `A`/`M`·authority/inventory/API evidence 검사를 유지한다.
+regular-file `A`/`M`/`D`·authority/inventory/API evidence 검사를 유지한다.
 보고에는 도구가 증명하지 않는 의미적 격리·사람 승인·시각 정합을 별도로 적는다.
 
 ## Optional web E2E evidence

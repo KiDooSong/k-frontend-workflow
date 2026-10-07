@@ -234,7 +234,7 @@ function worktreeEvidence(repositoryRoot, name) {
 // D31: the actual Git backstop for a scoped preflight. The same baseline authority
 // is required byte-for-byte in the destination (no self-grant), so the preflight's
 // path decisions still hold for it; the actual diff must then be exactly the
-// allowed, requested regular-file A/M targets. Everything else is a violation.
+// allowed, requested regular-file A/M/D targets. Everything else is a violation.
 export function evaluateScopedGit(preflight, { staged = false } = {}) {
   const context = preflight._context;
   try {
@@ -306,10 +306,10 @@ export function evaluateScopedGit(preflight, { staged = false } = {}) {
         violations.push({ code: 'SW-GIT-AUTHORITY-CHANGED', path: changed, message: 'authority/request/origin resource changed after baseline; it cannot self-grant this run' });
       }
     }
-    // B §8.3: the initial scoped version supports regular-file A and M only.
-    if (!['A', 'M'].includes(record.status)) {
+    // B §8.3 + #276: scoped work supports regular-file A, M and D.
+    if (!['A', 'M', 'D'].includes(record.status)) {
       violations.push({ code: 'SW-GIT-UNSUPPORTED-CHANGE', record: recordKey(record), actual_change: record.status,
-        message: 'scoped work supports regular-file add/modify only; delete/rename/copy/type changes need separate work' });
+        message: 'scoped work supports regular-file add/modify/delete only; rename/copy/type changes need separate work' });
       continue;
     }
     const list = expected.get(writePath) || [];
@@ -325,7 +325,20 @@ export function evaluateScopedGit(preflight, { staged = false } = {}) {
       }
     }
     const evidence = captured.evidence;
-    if (evidence?.kind !== 'file') {
+    if (record.status === 'D') {
+      // A delete leaves no destination entry; it may remove only a baseline regular file.
+      const baselineEntry = context.snapshot.entry(writePath);
+      if (baselineEntry?.type !== 'blob' || !REGULAR_MODES.has(baselineEntry.mode)) {
+        violations.push({ code: 'SW-GIT-TYPE', path: writePath, kind: baselineEntry?.type ?? null, mode: baselineEntry?.mode ?? null,
+          message: 'scoped deletes remove regular files only' });
+      }
+      // Git records no empty or ignored-only directory, so in the worktree the deleted
+      // target itself must be gone. --staged evaluates the index only.
+      const onDisk = staged ? null : worktreeEvidence(context.repositoryRoot, repositoryPath(writePath));
+      if (onDisk && onDisk.kind !== 'missing') {
+        violations.push({ code: 'SW-GIT-TYPE', path: writePath, kind: onDisk.kind, message: 'a deleted target must be absent from the worktree' });
+      }
+    } else if (evidence?.kind !== 'file') {
       violations.push({ code: 'SW-GIT-TYPE', path: writePath, kind: evidence?.kind ?? null, message: 'scoped targets must remain regular files' });
     } else if (record.status === 'M') {
       const baselineEntry = context.snapshot.entry(writePath);
