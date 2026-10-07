@@ -219,6 +219,21 @@ test('#276: a delete needs an existing file under an owned root, never a path th
   f.put(`${ROOT}/components/sibling/Card.tsx`); denied(f.run(`${ROOT}/components/sibling/Card.tsx`, 'D'), 'outside-owned-role-intersection');
 });
 
+test('#276: an exact API slice the owner declares stays a declared path for a unit that does not select it', (t) => {
+  // A behavior unit selects the exact active API hook; a visual unit of the same owner does not.
+  const f = fixture(t), slice = `${ROOT}/hooks/local/useResultsApi.ts`, more = `${ROOT}/hooks/local/more/useMore.ts`;
+  f.put(slice); f.put(more); f.api([row('/results', slice), row('/more', `${ROOT}/hooks/local/more/**`)], selected);
+  f.change('screen.md', (doc) => { doc.fm.work_execution.units.push({ ...unit(), id: 'look', kind: 'visual' }); });
+  denied(f.run(slice, 'D'), 'declared-path-delete');
+  // The visual private fixture hook may still edit the file without selecting the API ...
+  const edit = f.run(slice, 'M', { unit: 'look' }); assert.equal(edit.boundary_satisfied, true, JSON.stringify(edit.paths));
+  // ... but switching units must not delete what the owner's API Candidates declare.
+  const out = f.run(slice, 'D', { unit: 'look' }); denied(out, 'declared-path-delete');
+  assert.deepEqual(out.paths[0].denials.map((d) => d.code), ['declared-path-delete']);
+  // A file under a glob slice is not named by the declaration, so it is not a declared path.
+  const child = f.run(more, 'D', { unit: 'look' }); assert.equal(child.boundary_satisfied, true, JSON.stringify(child.paths));
+});
+
 test('D paths: unsupported changes, duplicate targets, aliases and glob targets are rejected', (t) => {
   const f = fixture(t);
   for (const change of ['R', 'C', 'T']) assert.throws(() => f.run(ENTRY, change), /A\/M\/D only/);

@@ -82,10 +82,15 @@ export function inspectScopedPaths(options = {}) {
       role.owned.some((entry) => globMatches(entry.path, file)));
     if (!roles.length) deny('outside-owned-role-intersection');
     // #276: deleting a path the owner names exactly (screen entry, an exact private/test/
-    // surface path or selected API slice) changes the owner declaration; a person does that.
+    // surface path or API Candidates slice) changes the owner declaration; a person does that.
     if (target.change === 'D') {
       for (const role of limits.roles) for (const entry of role.owned) {
         if (entry.path === file) deny('declared-path-delete', { role: role.role, source: entry.source });
+      }
+      // role.owned holds only this unit's selected API slices; the owner declares every
+      // candidate's slice, so another unit of the same owner cannot delete one either.
+      for (const claim of boundary.api_claims) {
+        if (claim.owner === owner && claim.path === file) deny('declared-path-delete', { source: 'api-candidate', endpoint: claim.endpoint });
       }
     }
     if (limits.unknown_api_paths.some((entry) => globMatches(entry.path, file))) deny('ambiguous-api-surface');
