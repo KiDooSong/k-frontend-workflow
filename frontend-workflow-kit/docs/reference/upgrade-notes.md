@@ -17,6 +17,23 @@ or root config.
 
 ---
 
+## Reconciliation Items targets accept general-contract IDs (#274)
+
+- A v2 Items or Summary target `decision:`, `unknown:`, `conflict:` or `gap:` no
+  longer requires the `D-`/`U-`/`C-`/`G-` prefix. The ID resolves exactly in the
+  owner's canonical table, as scoped work (#260), legacy readiness and validate
+  already did. It must fit a typed reference and must not start with another
+  kind's prefix. `investigation:` and `verification:` keep `INV-`/`VER-`.
+- Validate, current work, visual-refresh and scoped source connection read Items
+  targets with this one grammar. After a register's `structured_since`, a
+  structured input can now record a decision answer, a new decision, a reopen or
+  an Unknown answer against a screen-local ID such as `<SCREEN>-D001`.
+- Visual-refresh validates the whole register, so such a target in another input
+  used to stop an eligible visual input with `VR-RR-011`. It no longer does.
+- A target that does not resolve still fails (`RR-REF-008`), and a row that sits
+  in another kind's table fails `RR-REF-009`.
+- Manual action: none. Registers that already validate are unchanged.
+
 ## Scoped work clears resolved Unknowns and narrows open Unknowns and Conflicts (#262)
 
 - A resolved Unknown no longer blocks scoped work, as in legacy readiness. An

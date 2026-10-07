@@ -538,8 +538,12 @@ v2 가 소비하는 마크다운은 **좁은 canonical authoring profile** 만 �
   gate-raising-only 경계다. effect 는 reconcile 시점의 **역사적 행위**이며, 나중에 사람이 target 을 다시
   닫아도 기록을 바꾸지 않는다 (validator 도 target 의 현재 status 를 hard 하게 요구하지 않는다).
 - `Target` 문법: `artifact:<artifact_id>[#<section-slug>[/<row-key>]]` 또는
-  `decision:D-x@<owner-artifact-id>` (unknown/conflict/gap/investigation/verification 동형), reject 는 `-` 또는
+  `decision:<ID>@<owner-artifact-id>` (unknown/conflict/gap/investigation/verification 동형), reject 는 `-` 또는
   **자기 자신의** `input:<input_id>`. owner artifact 를 필수로 해 U-/INV-/VER- 의 화면별 중복 모호성을 없앤다.
+  decision·unknown·conflict·gap 의 ID 는 일반 계약처럼 접두 없이 exact 매칭한다(#274) — delimiter-safe
+  (`[A-Za-z0-9][A-Za-z0-9._-]*`)이고 다른 kind 의 접두(`D-` `U-` `C-` `G-` `INV-` `VER-`)로 시작하지 않으면
+  되며, kind 는 아래처럼 행이 놓인 canonical 표가 증명한다. investigation·verification 은 canonical 표가 없어
+  `INV-`·`VER-` 접두를 요구한다. scoped typed ref 도 같은 문법을 쓴다.
   D-/C-/U-/G- row 해소는 owner 문서의 **canonical 위치 + 표 signature** 를 함께 만족하는 첫 표만
   인정한다: decision=`## Open Decisions` 의 ID+Status+Blocking Mode 표, unknown=`## Unknowns` 의
   ID+Question 표, conflict/gap=`## Conflicts`·`## Gaps`(또는 해당 register `artifact_type` 문서의
