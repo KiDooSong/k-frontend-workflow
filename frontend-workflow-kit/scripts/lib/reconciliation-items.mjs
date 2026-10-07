@@ -139,7 +139,7 @@ export const CHILD_KIND_PREFIX = {
 
 // canonical 표(row index)로 해소하는 child kind. INV-/VER- 는 canonical register 가 없어
 // owner 문서 본문 토큰 존재로 해소한다(설계 §8.1 은 D-/C-/U-/G- 만 row 해소를 요구).
-const TABLE_RESOLVED_KINDS = new Set(['decision', 'unknown', 'conflict', 'gap']);
+export const TABLE_RESOLVED_KINDS = new Set(['decision', 'unknown', 'conflict', 'gap']);
 
 // #260·#274: 일반 계약은 ID 를 접두 없이 exact 매칭하므로, canonical 표가 있는 kind 는 delimiter-safe
 // ID 를 받고 kind 는 해소 단계에서 행이 놓인 canonical 표(resolveChildRow 의 family)로 증명한다.

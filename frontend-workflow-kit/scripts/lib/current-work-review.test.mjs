@@ -185,6 +185,24 @@ test('#274: current work relates an input through an Items target on a local dec
   assert.equal(related('unknown:COUPON-001-D001@COUPON-001-screen-spec'), false); // 다른 kind 표의 행(validate RR-REF-009)
 });
 
+test('#274: INV/VER Item targets keep their connection rule; the family check is for table-backed kinds only', async (t) => {
+  const { relatedToOwner } = await import('./current-work-execution-core.mjs');
+  const { buildReconciliationTargetIndex } = await import('./reconciliation-target-index.mjs');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'current-inv-ver-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const file = path.join(root, 'screen-spec.md');
+  const fm = { artifact_id: 'COUPON-001-screen-spec', artifact_type: 'screen-spec', screen_id: 'COUPON-001', domain: 'coupons' };
+  // INV/VER 는 canonical 표가 없어 validate 가 본문 토큰으로 해소한다(RR-REF-009 없음). 그 ID 가 다른 kind 의
+  // 표에 있어도 kind 불일치로 연결을 끊지 않는다.
+  fs.writeFileSync(file, `---\n${JSON.stringify(fm)}\n---\n\n## Unknowns\n\n| ID | Question | Status |\n|---|---|---|\n` +
+    '| VER-001 | 만료 쿠폰 표시를 확인했는가? | open |\n| INV-001 | 만료 기준 시각은 어디서 오는가? | open |\n');
+  const targetIndex = buildReconciliationTargetIndex({ docs: [{ file, fm }] });
+  const related = (target) => relatedToOwner({ fm: { input_id: INPUT, affected_screens: [] } }, { kind: 'screen', id: 'COUPON-001' },
+    { screens: { 'COUPON-001': { domain: 'coupons' } } }, [{ inputId: INPUT, target }], targetIndex);
+  assert.equal(related('verification:VER-001@COUPON-001-screen-spec'), true);
+  assert.equal(related('investigation:INV-001@COUPON-001-screen-spec'), true);
+});
+
 test('review P2-1: public preflight does not connect COUPON-0010 or a coincidental external URL', (t) => {
   const f = originFixture(t, { v2: true });
   fs.writeFileSync(f.mapping, fs.readFileSync(f.mapping, 'utf8').replaceAll('COUPON-001', 'COUPON-0010'));
