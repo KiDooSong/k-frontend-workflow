@@ -165,6 +165,26 @@ test('review P2-1: relation uses the resolved typed artifact owner, never ID or 
   assert.equal(relatedToOwner(artifact, parts, state, rows, buildReconciliationTargetIndex({ docs })), false);
 });
 
+test('#274: current work relates an input through an Items target on a local decision ID only when the kind matches', async (t) => {
+  const { relatedToOwner } = await import('./current-work-execution-core.mjs');
+  const { buildReconciliationTargetIndex } = await import('./reconciliation-target-index.mjs');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'current-local-id-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const file = path.join(root, 'screen-spec.md');
+  const fm = { artifact_id: 'COUPON-001-screen-spec', artifact_type: 'screen-spec', screen_id: 'COUPON-001', domain: 'coupons' };
+  fs.writeFileSync(file, `---\n${JSON.stringify(fm)}\n---\n\n## Open Decisions\n\n` +
+    '| ID | Decision Needed | Options | Blocking Mode | Owner | Status |\n|---|---|---|---|---|---|\n' +
+    '| COUPON-001-D001 | 만료 쿠폰을 목록에 노출할 것인가? | show / hide | final-fixture-ui | PM | open |\n');
+  const targetIndex = buildReconciliationTargetIndex({ docs: [{ file, fm }] });
+  const artifact = { fm: { input_id: INPUT, affected_screens: [] } };
+  const parts = { kind: 'screen', id: 'COUPON-001' };
+  const state = { screens: { 'COUPON-001': { domain: 'coupons' } } };
+  const related = (target) => relatedToOwner(artifact, parts, state, [{ inputId: INPUT, target }], targetIndex);
+  assert.equal(related('decision:COUPON-001-D001@COUPON-001-screen-spec'), true);
+  assert.equal(related('decision:COUPON-001-D999@COUPON-001-screen-spec'), false); // 없는 행
+  assert.equal(related('unknown:COUPON-001-D001@COUPON-001-screen-spec'), false); // 다른 kind 표의 행(validate RR-REF-009)
+});
+
 test('review P2-1: public preflight does not connect COUPON-0010 or a coincidental external URL', (t) => {
   const f = originFixture(t, { v2: true });
   fs.writeFileSync(f.mapping, fs.readFileSync(f.mapping, 'utf8').replaceAll('COUPON-001', 'COUPON-0010'));

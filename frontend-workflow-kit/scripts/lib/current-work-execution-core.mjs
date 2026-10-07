@@ -131,7 +131,11 @@ export function relatedToOwner(artifact, parts, state, items, targetIndex) {
     const resolved = resolveArtifact(targetIndex, id);
     if (!resolved) return false;
     if (ref.kind === 'artifact' && ref.section && !artifactHasSection(resolved, ref.section)) return false;
-    if (ref.ownerArtifactId && !resolveChildRow(resolved, ref.rowId, ref.kind).found) return false;
+    // #274: like validate (RR-REF-009), a row in another kind's canonical table is not this target.
+    if (ref.ownerArtifactId) {
+      const child = resolveChildRow(resolved, ref.rowId, ref.kind);
+      if (!child.found || child.familyMismatch) return false;
+    }
     const ownerId = resolved.fm?.[parts.kind === 'screen' ? 'screen_id' : 'surface_id'];
     const domain = screenDomain(state, parts);
     // Artifact IDs and external Source Refs are not owner identifiers. Alias

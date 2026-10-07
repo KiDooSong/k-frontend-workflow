@@ -126,7 +126,8 @@ export const REQUIRED_ITEM_COLS = [
   'Captured At',
 ];
 
-// child target kind → 요구 ID 접두 (grammar 차원의 kind 검사).
+// child target kind → canonical ID 접두. canonical 표가 있는 kind 는 다른 kind 의 접두를 모순으로만
+// 쓰고, INV-/VER- 는 접두가 유일한 kind 근거다(isTargetRowId).
 export const CHILD_KIND_PREFIX = {
   decision: 'D-',
   unknown: 'U-',
@@ -139,6 +140,17 @@ export const CHILD_KIND_PREFIX = {
 // canonical 표(row index)로 해소하는 child kind. INV-/VER- 는 canonical register 가 없어
 // owner 문서 본문 토큰 존재로 해소한다(설계 §8.1 은 D-/C-/U-/G- 만 row 해소를 요구).
 const TABLE_RESOLVED_KINDS = new Set(['decision', 'unknown', 'conflict', 'gap']);
+
+// #260·#274: 일반 계약은 ID 를 접두 없이 exact 매칭하므로, canonical 표가 있는 kind 는 delimiter-safe
+// ID 를 받고 kind 는 해소 단계에서 행이 놓인 canonical 표(resolveChildRow 의 family)로 증명한다.
+// 다른 kind 의 canonical 접두는 계속 모순이다. INV-/VER- 는 canonical 표가 없어 접두를 요구한다.
+// scoped typed ref 와 Reconciliation Items 가 이 한 규칙을 쓴다.
+export function isTargetRowId(kind, id) {
+  if (typeof id !== 'string' || !Object.hasOwn(CHILD_KIND_PREFIX, kind)) return false;
+  if (!TABLE_RESOLVED_KINDS.has(kind)) return /^[A-Z][A-Z]*-[A-Za-z0-9-]+$/.test(id) && id.startsWith(CHILD_KIND_PREFIX[kind]);
+  return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id) &&
+    !Object.entries(CHILD_KIND_PREFIX).some(([other, prefix]) => other !== kind && id.startsWith(prefix));
+}
 
 // visual-evidence 가 허용하는 artifact_type (설계 §6.1).
 const VISUAL_ALLOWED_ARTIFACT_TYPES = new Set([
@@ -234,7 +246,7 @@ export function parseSummaryClassification(cell) {
 
 // typed target 토큰 하나를 파싱한다 (설계 §5.6).
 //   artifact:<artifact_id>[#<section-slug>[/<row-key>]]
-//   decision:<D-ID>@<owner-artifact-id>  (unknown/conflict/gap/investigation/verification 동형)
+//   decision:<ID>@<owner-artifact-id>  (unknown/conflict/gap/investigation/verification 동형, ID 규칙은 isTargetRowId)
 //   input:<input_id>   (reject 전용 — 원 input 을 가리킬 때)
 //   '-'                (target 없음 — reject 전용)
 // 반환: { kind, ... } 또는 null(문법 위반).
@@ -244,11 +256,11 @@ export function parseTargetRef(token) {
   if (t === '-') return { kind: 'none', raw: t };
   let m = /^artifact:([A-Za-z0-9][A-Za-z0-9._-]*)(?:#([a-z0-9][a-z0-9-]*)(?:\/([A-Za-z0-9][A-Za-z0-9._: -]*))?)?$/.exec(t);
   if (m) return { kind: 'artifact', artifactId: m[1], section: m[2] || null, rowKey: m[3] || null, raw: t };
-  m = /^(decision|unknown|conflict|gap|investigation|verification):([A-Z][A-Z]*-[A-Za-z0-9-]+)@([A-Za-z0-9][A-Za-z0-9._-]*)$/.exec(t);
+  m = /^(decision|unknown|conflict|gap|investigation|verification):([^@]+)@([A-Za-z0-9][A-Za-z0-9._-]*)$/.exec(t);
   if (m) {
     const kind = m[1];
     const rowId = m[2];
-    if (!rowId.startsWith(CHILD_KIND_PREFIX[kind])) return null; // kind ↔ ID 접두 모순은 문법 위반
+    if (!isTargetRowId(kind, rowId)) return null; // 문법 위반 또는 kind ↔ 다른 kind 접두 모순
     return { kind, rowId, ownerArtifactId: m[3], raw: t };
   }
   m = /^input:([A-Za-z0-9][A-Za-z0-9._-]*)$/.exec(t);
@@ -589,7 +601,7 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
       const ref = parseTargetRef(token);
       if (!ref || ref.kind === 'none' || ref.kind === 'input') {
         add(
-          `RR-SCHEMA-008: '${inputId}' summary Created Items 항목 '${token}' 은 typed target ref(decision:D-x@owner / artifact:<id> 등) 가 아님`,
+          `RR-SCHEMA-008: '${inputId}' summary Created Items 항목 '${token}' 은 typed target ref(decision:<ID>@owner / artifact:<id> 등) 가 아님`,
         );
         continue;
       }
@@ -690,7 +702,7 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
     if (row.target) {
       target = parseTargetRef(row.target);
       if (!target) {
-        add(`RR-SCHEMA-014: ${label} 의 Target '${row.target}' 문법 위반 (artifact:<id>[#sec[/row]] | decision:D-x@owner | ... | input:<id> | -)`);
+        add(`RR-SCHEMA-014: ${label} 의 Target '${row.target}' 문법 위반 (artifact:<id>[#sec[/row]] | decision:<ID>@owner | ... | input:<id> | -)`);
       } else if (target.kind === 'artifact') {
         const rec = resolveArtifact(targetIndex, target.artifactId);
         if (isDuplicateArtifactId(targetIndex, target.artifactId)) {

@@ -35,7 +35,7 @@ function fixture(t, opts = {}) {
   const targetIndex = buildReconciliationTargetIndex({ docs: [{ file: docFile, fm }] });
   const registerFile = path.join(root, 'register.md');
   const summaries = [[INPUT, 'meeting', opts.classification ?? 'simple-update×2', opts.state ?? 'partially-reconciled',
-    opts.result ?? 'pending', 'artifact:DOC', '-', '-']];
+    opts.result ?? 'pending', 'artifact:DOC', opts.created ?? '-', '-']];
   const items = opts.items ?? [effect('01'), effect('01', 'other'), effect('02', 'rules', '02')];
   fs.writeFileSync(registerFile, md(opts.registerFm ?? { reconciliation_contract: 2,
     review_profile: 'reconcile-stage04-v1', structured_since: '2026-09-01T00:00:00Z' },
@@ -61,6 +61,21 @@ test('D sources: resolve actual selected anchor and every effect in its Item gro
   assert.equal(out.reconciliation.summary.result, 'pending');
   for (const field of ['ready', 'allowed', 'basis_digest', 'approval_ref', 'coverage']) assert.equal(Object.hasOwn(out, field), false);
   assert.deepEqual(f.inputArtifacts, before);
+});
+
+test('#274 D sources: an Item target on a general-contract local decision ID resolves to its own canonical row', (t) => {
+  const contractBody = '## Rules\nSelected rule.\n\n## Open Decisions\n\n| ID | Decision Needed | Blocking Mode | Status |\n' +
+    '|---|---|---|---|\n| RESULT-001-D001 | 결과 화면에 다시 시도를 둘 것인가? | final-fixture-ui | open |';
+  const answer = (basis, classification, target) => fixture(t, { contractBody, classification, created: target,
+    items: [[INPUT, '01', basis, classification, 'link-evidence', target, REF, 'inherit', 'statement', 'inherit']] });
+  const out = answer('decision-answer', 'resolves-decision', 'decision:RESULT-001-D001@DOC').resolver.source(selection());
+  const { target } = out.groups[0].effects[0];
+  assert.equal(target.kind, 'decision');
+  assert.equal(target.selection.section, 'open-decisions');
+  assert.equal(target.selection.key, 'RESULT-001-D001');
+  // validate 와 같이(RR-REF-009) 다른 kind 표의 행은 그 kind 의 대상이 아니다.
+  assert.throws(() => answer('unknown-answer', 'resolves-unknown', 'unknown:RESULT-001-D001@DOC').resolver.source(selection()),
+    /SW-SOURCE-REGISTER: .*RR-REF-009/);
 });
 
 test('D sources: Item/anchor set order is stable and never mutates the selection', (t) => {
