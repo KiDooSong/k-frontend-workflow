@@ -107,7 +107,13 @@ request selects one owner **unit**:
   `coverage_reports`; `requested_mode` and caller verdicts are invalid.
 - Coverage report files, like every other authority file, are read from the
   committed baseline tree; commit the reviewed report before the preflight.
-- Scoped targets support regular-file `A` and `M` only.
+- Scoped targets support regular-file `A`, `M` and `D` (#276). A `D` target must
+  be a regular file in the baseline (`delete-target-missing` when it is absent)
+  and passes the same unit gates and path checks as `A`/`M`. A path the owner
+  declares exactly — its screen entry, or an exact surface, private, test or
+  selected API slice path — is denied as `declared-path-delete`: deleting it
+  changes the owner's declaration, which a person reviews. Renames, copies and
+  type/mode changes stay separate work.
 - An owner may select several distinct units; a target shared by several requests
   must plan the same change.
 - `origin_inputs` has the current-work meaning: the preserved starting inputs,
@@ -225,10 +231,13 @@ diff with the baseline:
   An evidence path keeps its kind (missing, file or directory) and a directory
   keeps its members; the worktree check lists them on disk, Git-ignored entries
   included, while `--staged` reads the index only;
-- only allowed, requested regular-file `A`/`M` targets with the requested change
-  kind may change, and `M` keeps its file mode;
-- deletes, renames, copies, type/mode changes, unrequested paths and missing
-  requested changes are violations.
+- only allowed, requested regular-file `A`/`M`/`D` targets with the requested
+  change kind may change; `M` keeps its file mode, and `D` may remove only a
+  baseline regular file. New content at a deleted path is an unrequested add;
+- renames, copies, type/mode changes, unrequested paths (an unrequested delete
+  included) and missing requested changes are violations. The diff detects
+  renames, so a requested `D` and `A` whose contents Git pairs as a rename are
+  still a rename.
 
 `workflow:forbidden-paths --work` stays advisory (exit 0) unless `--enforce`
 (exit 1 on violations). Run states and exit codes are the same as
@@ -244,6 +253,22 @@ Paths) need `authority: scoped` with a unit. `readiness --path`, no-work
 cannot be retried under an older mode, another intent or current authority. Other
 paths of the same owner keep their existing decisions, and no-selector readiness
 summaries are unchanged.
+
+## While a unit is blocked
+
+A request under a blocked unit is not ready, whatever it changes — for example
+while an open Decision, Unknown or Conflict reaches the unit. Maintenance
+unrelated to the blocking row (a comment cleanup, a dead-file delete) is blocked
+too: there is no maintenance exception, and the fallback guard above keeps current
+work from taking the change over (#276). To unblock the unit, a person:
+
+- resolves the blocking row through its normal workflow;
+- adds or re-judges the row's binding (`decision_work_scopes` or
+  `uncertainty_work_scopes`) so the row blocks fewer units, with a recomputed
+  `basis_digest` and its `approval_ref` — a binding cannot release a unit whose
+  own selected evidence reaches the row; or
+- withdraws the owner's adoption ([rollback](#rollback-and-downgrade)), which
+  returns its paths to the legacy authority.
 
 ## Rollback and downgrade
 

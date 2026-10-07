@@ -42,7 +42,7 @@ absorbed target으로 자동 전환하지 않는다.
 ## Scoped-work branch
 
 사람이 채택한 owner의 작업은 [scoped-work reference](../scoped-work.md)의 `authority: scoped` request로 owner **unit**을
-선택한다(regular-file `A`/`M` target만). [같은 대표 run 흐름](../current-work.md#common-cli-flow)으로 사전 packet을 보존하고,
+선택한다(regular-file `A`/`M`/`D` target만). [같은 대표 run 흐름](../current-work.md#common-cli-flow)으로 사전 packet을 보존하고,
 같은 request/origin/resource를 사용한다. 모든 판정은 immutable
 HEAD baseline에서 한다. surface는 모든 host 동의와 공유 target AND가 필요하다. `work-selection-required`가 나온 채택 경로를
 current/no-work/visual로 다시 시도하지 않는다. 채택·unit·decision binding을 새로 만들거나 넓히는 것은 구현이 아니라 사람

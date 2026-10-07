@@ -4,6 +4,29 @@
 
 ## Unreleased
 
+### feat(workflow) — scoped 의 ready unit 이 자기 범위의 regular file 을 지움 (#276)
+
+- scoped 는 regular file 의 `A`·`M` 만 받았다(B §8.3 초기 버전). 그래서 채택한 owner 의 파일 삭제는 scoped 로도,
+  current 로도(`work-selection-required`) 할 수 없었다.
+- 이제 scoped 요청이 `D` 를 계획할 수 있다. unit 은 `A`·`M` 과 같은 게이트(profile·결정/Unknown/Conflict scope·
+  source·API claim·owned role·모든 surface host·공유 target AND)를 통과해야 한다. preflight 는 baseline 에 없는
+  파일을 `delete-target-missing` 으로, owner 가 정확히 선언한 경로(screen entry, 또는 exact surface·private·test·
+  선택한 API slice 경로)를 `declared-path-delete` 로 거부한다. 그런 삭제는 owner 선언을 바꾸므로 사람이 검토한다.
+- Git backstop 은 요청한 삭제이고 baseline 에서 regular file 일 때만 받는다. 요청하지 않은 삭제는 예전
+  `SW-GIT-UNSUPPORTED-CHANGE` 대신 `SW-GIT-UNREQUESTED` 이고, symlink 등 regular file 이 아닌 항목이면
+  `SW-GIT-TYPE` 도 받는다. `M` 으로 요청한 대상을 지우면 같은 `SW-GIT-MISSING-REQUESTED` 옆에 예전
+  `SW-GIT-UNSUPPORTED-CHANGE` 대신 `SW-GIT-UNREQUESTED` 가 난다. `SW-GIT-UNSUPPORTED-CHANGE` 는 이제
+  rename·copy·type 변경만 뜻한다. 지운 경로에 새로 놓은 내용(디렉터리 포함)은 요청하지 않은 `A` 다.
+  diff 는 rename 을 찾으므로, 내용이 비슷해 Git 이 rename 으로 묶는 `D`+`A` 요청 쌍도 rename 이라 위반이다.
+- 막힌 unit 의 요청은 무엇을 바꾸든 ready 가 아니다. 막힘과 무관한 정비(주석 정리·죽은 파일 삭제)도 막히고,
+  current 로 넘어갈 수 없다. `scoped-work.md` 에 그 결과와 푸는 길(행 해소, binding 추가·재판정, 채택 철회)을 적었다.
+- 회귀 테스트: 요청 문법의 A/M/D 수용과 R/C/T 거부, preflight 의 `delete-target-missing`·`declared-path-delete`
+  (owner 판정의 screen entry 삭제와 대소문자 별칭 철자 포함), backstop 의 요청한 삭제 통과(worktree·`--staged`,
+  내용이 다른 `D`+`A` 쌍)와 요청하지 않은 삭제·삭제 자리의 수정·디렉터리·symlink 삭제·rename 으로 묶이는 `D`+`A`
+  쌍·baseline 거부 대상의 위반, CLI 의 사전 packet → 삭제 → `DONE_PENDING_REVIEW`. owner·합성 테스트가 지원하지
+  않는 변경의 예로 쓰던 `D` 는 `R` 로 바꿨다. 문서: `scoped-work.md` Request contract·Git backstop·While a unit is
+  blocked, `COMMANDS.md`, Stage 06/08, `upgrade-notes.md`.
+
 ### fix(reconciliation) — v2 Items 대상이 일반 계약의 local ID 를 받음 (#274)
 
 - v2 Items·Summary 의 `decision:`·`unknown:`·`conflict:`·`gap:` 대상은 `D-`·`U-`·`C-`·`G-` 접두를 요구했다. 그래서
