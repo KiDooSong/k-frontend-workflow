@@ -11,7 +11,9 @@ import { REQUIRED_ITEM_COLS } from './reconciliation-items.mjs';
 import { REQUIRED_REGISTER_COLS } from './reconciliation-register.mjs';
 import { COMPONENT_MAPPING_COLUMNS, MAPPING_PROVENANCE_COLUMNS } from './mapping-provenance.mjs';
 import { scopeJson } from './scoped-work-normalize.mjs';
-import { resolveScopedBindingBasis } from './scoped-work-basis.mjs';
+import { resolveScopedBindingBasis, scopedBindingBasis } from './scoped-work-basis.mjs';
+import { resolveScopedApplicabilityProjection } from './scoped-work-applicability.mjs';
+import { resolveScopedUncertaintyBindingBasis } from './scoped-work-uncertainty-scopes.mjs';
 import { inspectScopedDecisionBindings } from './scoped-work-bindings.mjs';
 
 const OWNER = 'screen:RESULT-001';
@@ -124,10 +126,10 @@ function withSurface(f, legacy = false) {
   f.bind(binding({ owner, known_units: ['panel'], blocks: ['panel'] })); return owner;
 }
 
-test('D basis: complete file-backed projection is hashed with version 1, without approval or writes', (t) => {
+test('D basis: complete file-backed projection is hashed with version 2, without approval or writes', (t) => {
   const f = fixture(t), before = [...f.docs.values()].map((file) => fs.readFileSync(file));
   const out = f.run();
-  assert.equal(out.basis.basis_version, 1); assert.deepEqual(out.basis.known_units, ['known', 'other']);
+  assert.equal(out.basis.basis_version, 2); assert.deepEqual(out.basis.known_units, ['known', 'other']);
   assert.deepEqual(out.basis.binding, { decision: DECISION, owner: OWNER, known_units: ['known', 'other'], blocks: ['other'] });
   assert.equal(out.basis.units.length, 2); assert.ok(out.basis.ownership.units.length);
   assert.ok(out.basis.decision_relations.records.length); assert.ok(out.basis.uncertainty_relations);
@@ -214,14 +216,127 @@ test('D basis: Decision question, options and Blocking Mode each change the scop
   }
 });
 
-test('D basis: inverse uncertainty and its transitive Decision content enter the digest', (t) => {
+// #275: an inverse Unknown reaches the unit, not D-ONE, so D-ONE's basis keeps out both the
+// Unknown and the Decision it cites. The Unknown's own basis carries that Decision's content.
+test('D basis: inverse uncertainty and its transitive Decision content enter that row\'s digest only', (t) => {
   const f = fixture(t), before = f.run();
-  f.write('unknown.md', { artifact_id: 'U-HOME', artifact_type: 'domain-rules', domain: 'foreign', status: 'draft' },
-    `## Unknowns\n${table(['ID', 'Question'], [['U-ONE', 'See artifact:RULES#rules and decision:D-UNUSED@open-decision-register']])}`);
-  const after = f.run(); assert.notEqual(after.basis_digest, before.basis_digest);
-  assert.ok(after.basis.decision_relations.records.some((entry) => entry.decision_id === 'D-UNUSED'));
+  f.write('unknown.md', { artifact_id: 'U-HOME', artifact_type: 'domain-rules', domain: 'foreign', status: 'draft',
+    uncertainty_work_scopes: { version: 1, bindings: [{ unknown_id: 'U-ONE', owner: OWNER, known_units: ['known', 'other'], blocks: ['known'],
+      basis_digest: `sha256:${'0'.repeat(64)}`, approval_ref: 'review:unknown' }] } },
+  `## Unknowns\n${table(['ID', 'Question'], [['U-ONE', 'See artifact:RULES#rules and decision:D-UNUSED@open-decision-register']])}`);
+  const after = f.run(); assert.equal(after.basis_digest, before.basis_digest, 'U-ONE does not relate to D-ONE');
+  assert.ok(!scopeJson(after.basis).includes('U-ONE') && !scopeJson(after.basis).includes('D-UNUSED'));
+  const unknown = () => resolveScopedUncertaintyBindingBasis({ ...f.options(), uncertaintyRef: 'unknown:U-ONE@U-HOME' });
+  const own = unknown();
+  assert.ok(own.basis.decision_relations.records.some((entry) => entry.decision_id === 'D-UNUSED'));
   f.change('global/open-decisions.md', (doc) => { doc.body = doc.body.replace('Unrelated decision.', 'Now selected indirectly.'); });
-  assert.notEqual(f.run().basis_digest, after.basis_digest);
+  assert.notEqual(unknown().basis_digest, own.basis_digest);
+  assert.equal(f.run().basis_digest, before.basis_digest);
+});
+
+// #275 scope-basis-v2: a binding's basis holds its own row's relation closure, not every
+// row that applies to the owner. Adding or editing an unrelated row keeps the digest.
+const unknowns = (rows) => `## Unknowns\n${table(['ID', 'Question', 'Status'], rows)}`;
+test('#275 basis v2: other Decision and Unknown rows of the owner stay out unless they relate to the target', (t) => {
+  const f = fixture(t), before = f.run();
+  f.change('screen.md', (doc) => { doc.body += `\n\n${decisions([decisionRow('D-LOCAL', 'Unrelated local decision.')])}\n\n` +
+    unknowns([['U-LOCAL', 'Unrelated question?', 'open']]); });
+  const added = f.run();
+  assert.equal(added.basis_digest, before.basis_digest, 'adding unrelated rows');
+  assert.ok(!scopeJson(added.basis).includes('D-LOCAL') && !scopeJson(added.basis).includes('U-LOCAL'));
+  f.change('screen.md', (doc) => { doc.body = doc.body.replace('Unrelated question?', 'Still unrelated?')
+    .replace('Unrelated local decision.', 'Changed local decision.'); });
+  assert.equal(f.run().basis_digest, before.basis_digest, 'editing unrelated rows');
+  // A binding on the local row has its own basis, which the edit changes.
+  f.change('screen.md', ({ fm }) => { fm.decision_work_scopes = { version: 1, bindings: [binding({ decision_id: 'D-LOCAL' })] }; });
+  const local = f.run(OWNER, 'decision:D-LOCAL@SCREEN-RESULT-001');
+  f.change('screen.md', (doc) => { doc.body = doc.body.replace('Changed local decision.', 'Changed again.'); });
+  assert.notEqual(f.run(OWNER, 'decision:D-LOCAL@SCREEN-RESULT-001').basis_digest, local.basis_digest);
+});
+
+test('#275 basis v2: a row that cites the target, or that the target cites, joins its closure', (t) => {
+  const f = fixture(t), before = f.run();
+  f.change('screen.md', (doc) => { doc.body += `\n\n${unknowns([['U-CITE', 'Which option of `decision:D-ONE@open-decision-register` applies?', 'open']])}`; });
+  const citing = f.run();
+  assert.notEqual(citing.basis_digest, before.basis_digest); assert.ok(scopeJson(citing.basis).includes('U-CITE'));
+  f.change('screen.md', (doc) => { doc.body = doc.body.replace('Which option', 'Which choice'); });
+  assert.notEqual(f.run().basis_digest, citing.basis_digest, 'editing the citing row');
+  // A Decision row has no witnesses: only the reference itself relates it.
+  const d = fixture(t);
+  d.change('screen.md', (doc) => { doc.body += `\n\n${decisions([decisionRow('D-CITE', 'Follow `decision:D-ONE@open-decision-register` first?')])}`; });
+  const decided = d.run(); assert.ok(scopeJson(decided.basis).includes('D-CITE'));
+  d.change('screen.md', (doc) => { doc.body = doc.body.replace('Follow', 'Settle'); });
+  assert.notEqual(d.run().basis_digest, decided.basis_digest, 'editing a citing Decision row');
+
+  const g = fixture(t);
+  g.change('screen.md', (doc) => { doc.body += `\n\n${unknowns([['U-ASKED', 'Where is the sample?', 'open'], ['U-OTHER', 'Unrelated?', 'open']])}`; });
+  g.change('global/open-decisions.md', (doc) => { doc.body = doc.body.replace('Choose behavior.', 'Choose after `unknown:U-ASKED@SCREEN-RESULT-001`.'); });
+  const cited = g.run(); assert.ok(scopeJson(cited.basis).includes('Where is the sample?'));
+  assert.ok(!scopeJson(cited.basis).includes('U-OTHER'));
+  g.change('screen.md', (doc) => { doc.body = doc.body.replace('Unrelated?', 'Still unrelated?'); });
+  assert.equal(g.run().basis_digest, cited.basis_digest, 'editing a row outside the closure');
+  g.change('screen.md', (doc) => { doc.body = doc.body.replace('Where is the sample?', 'Where is the newer sample?'); });
+  assert.notEqual(g.run().basis_digest, cited.basis_digest, 'editing the cited row');
+});
+
+test('#275 basis v2: an Unknown whose evidence overlaps the bound row is related through its witness', (t) => {
+  // U-SEC cites the section that holds D-LOCAL's row, with no reference to the row itself: only the
+  // inverse-evidence witness (that section overlaps the selected D-LOCAL row) relates the two.
+  const f = fixture(t);
+  f.change('screen.md', (doc) => { doc.fm.decision_work_scopes = { version: 1, bindings: [binding({ decision_id: 'D-LOCAL' })] };
+    doc.body += `\n\n${decisions([decisionRow('D-LOCAL', 'Local decision.')])}`; });
+  f.write('foreign.md', { artifact_id: 'FOREIGN', artifact_type: 'domain-rules', domain: 'foreign', status: 'draft' },
+    unknowns([['U-SEC', 'Is `artifact:SCREEN-RESULT-001#open-decisions` final?', 'open']]));
+  const local = () => f.run(OWNER, 'decision:D-LOCAL@SCREEN-RESULT-001');
+  const before = local(), global = f.run();
+  assert.ok(scopeJson(before.basis).includes('U-SEC') && !scopeJson(global.basis).includes('U-SEC'));
+  f.change('foreign.md', (doc) => { doc.body = doc.body.replace('final?', 'settled?'); });
+  assert.notEqual(local().basis_digest, before.basis_digest, 'the witness row is related');
+  assert.equal(f.run().basis_digest, global.basis_digest, 'D-ONE does not overlap it');
+});
+
+test('#275 basis v2: the owner document behind a native relation is not evidence of the row', (t) => {
+  // U-WHOLE cites the whole owner spec, so that document is an evidence node. D-ONE applies to the owner
+  // through the spec's decision_refs; that names the document, not its body, so other rows stay out.
+  const f = fixture(t);
+  f.change('screen.md', (doc) => { doc.body += `\n\n${decisions([decisionRow('D-LOCAL', 'Unrelated local decision.')])}\n\n` +
+    unknowns([['U-WHOLE', 'Does `artifact:SCREEN-RESULT-001` hold?', 'open']]); });
+  const before = f.run();
+  assert.ok(!scopeJson(before.basis).includes('Unrelated local decision.'));
+  f.change('screen.md', (doc) => { doc.body = doc.body.replace('Unrelated local decision.', 'Changed local decision.'); });
+  assert.equal(f.run().basis_digest, before.basis_digest);
+});
+
+test('#275 basis v2: component digests split the basis into target, relations, units and evidence', (t) => {
+  const f = fixture(t), base = f.run();
+  assert.deepEqual(Object.keys(base.component_digests).sort(), ['evidence', 'relations', 'target', 'units']);
+  const digest = (value) => `sha256:${createHash('sha256').update(Buffer.from(scopeJson(value), 'utf8')).digest('hex')}`;
+  for (const value of Object.values(base.component_digests)) assert.match(value, /^sha256:[0-9a-f]{64}$/);
+  assert.notEqual(new Set(Object.values(base.component_digests)).size, 1);
+  const changed = (a, b) => Object.keys(a.component_digests).filter((key) => a.component_digests[key] !== b.component_digests[key]).sort();
+  f.change('global/open-decisions.md', (doc) => { doc.body = doc.body.replace('Choose behavior.', 'Choose another behavior.'); });
+  const row = f.run(); assert.deepEqual(changed(base, row), ['evidence', 'target']);
+  f.change('rules.md', (doc) => { doc.body = doc.body.replace('Known contract.', 'Changed contract.'); });
+  const contract = f.run(); assert.deepEqual(changed(row, contract), ['units']);
+  f.change('screen.md', (doc) => { doc.body += `\n\n${unknowns([['U-CITE', 'Which option of `decision:D-ONE@open-decision-register` applies?', 'open']])}`; });
+  const related = f.run(); assert.ok(changed(contract, related).includes('relations'));
+  f.change('screen.md', (doc) => { doc.body = doc.body.replace('Which option', 'Which choice'); });
+  const edited = f.run(); assert.deepEqual(changed(related, edited), ['evidence', 'relations']);
+  // The binding fields themselves are no component; the whole digest still covers them.
+  f.bind(binding({ blocks: [] }));
+  const unblocked = f.run(); assert.deepEqual(changed(edited, unblocked), []);
+  assert.notEqual(unblocked.basis_digest, edited.basis_digest);
+  assert.equal(unblocked.basis_digest, digest(unblocked.basis));
+});
+
+test('#275 basis v2: an unknown projection field or a missing target row cannot be hashed', (t) => {
+  const f = fixture(t), { projection } = resolveScopedApplicabilityProjection(f.options());
+  const scope = { decision: DECISION, owner: OWNER, known_units: ['known', 'other'], blocks: ['other'] };
+  assert.equal(scopedBindingBasis(projection, scope).basis_digest, f.run().basis_digest);
+  assert.throws(() => scopedBindingBasis({ ...projection, surprise: [] }, scope), /SW-BASIS: unknown basis field surprise/);
+  assert.throws(() => scopedBindingBasis({ ...projection, decision_relations: { ...projection.decision_relations, surprise: [] } }, scope),
+    /SW-BASIS: unknown basis field decision_relations.surprise/);
+  assert.throws(() => scopedBindingBasis(projection, { ...scope, decision: 'decision:D-UNUSED@open-decision-register' }), /SW-BASIS: target row/);
 });
 
 test('D basis: contracts used only by another known unit still change the binding digest', (t) => {

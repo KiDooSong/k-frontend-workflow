@@ -302,9 +302,11 @@ for (const replace of [false, true]) test(`D uncertainty transitions: a reopen r
 });
 
 test('D uncertainty transitions: a reopen must remove every owner binding of the row, even where the row stops applying', (t) => {
-  // Digests refreshed under the old approval_ref are reported for each row as well.
-  assert.deepEqual(codes(transitions(t, resolvedRelease, release)),
-    ['approval-ref-reused-with-changed-binding', 'approval-ref-reused-with-changed-binding', 'reopen-binding-retained']);
+  // A digest refreshed under the old approval_ref is reported for each row whose basis changed.
+  // #275: C-ONE does not relate to the reopened U-ONE, so its basis and recorded digest stay the same.
+  const refreshed = transitions(t, resolvedRelease, release);
+  assert.deepEqual(codes(refreshed), ['approval-ref-reused-with-changed-binding', 'reopen-binding-retained']);
+  assert.equal(finding(refreshed, 'approval-ref-reused-with-changed-binding').uncertainty, UNKNOWN);
   const second = transitions(t, resolvedRelease, (f) => {
     f.bind(binding({ owner: SECOND, blocks: [] }), conflictBinding({ blocks: [], ...RENEWED })); f.recordDigest(CONFLICT);
   });

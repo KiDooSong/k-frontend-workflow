@@ -10,7 +10,7 @@ import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { parseScopedTargetRef } from './scoped-work-refs.mjs';
 import { parseDecisionWorkScopes } from './scoped-work-declarations.mjs';
 import { resolveScopedApplicabilityProjection } from './scoped-work-applicability.mjs';
-import { resolveScopedBindingBasis } from './scoped-work-basis.mjs';
+import { resolveScopedBindingBasis, scopedBindingBasis, SCOPE_BASIS_VERSION } from './scoped-work-basis.mjs';
 import { ScopedWorkContractError } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
 
@@ -59,24 +59,24 @@ export function inspectScopedDecisionBindings(options = {}) {
     if (!record || !['open', 'resolved'].includes(record.status)) fail('missing or malformed canonical decision');
     const binding = bindings(record).find((entry) => entry.decision_id === record.decision_id && entry.owner === owner);
     let bindingState = 'missing';
-    let computedDigest = null;
+    let computedDigest = null, computedComponents = null;
     if (binding) {
       bindingState = 'stale-known-units';
       if (same(scopeSet(binding.known_units), knownUnits)) {
         const current = resolveScopedBindingBasis({ ...options, decisionRef: ref });
         audit(current.read_set);
-        const { basis_version, binding: scope, ...currentProjection } = current.basis;
-        if (basis_version !== 1 || !same(currentProjection, projection) ||
-            !same(scope, { decision: ref, owner, known_units: scopeSet(binding.known_units), blocks: scopeSet(binding.blocks) }) ||
+        // The second pass must give the same scope-basis-v2 bytes from this pass's projection.
+        const scope = { decision: ref, owner, known_units: scopeSet(binding.known_units), blocks: scopeSet(binding.blocks) };
+        if (current.basis.basis_version !== SCOPE_BASIS_VERSION || !same(current.basis, scopedBindingBasis(projection, scope).basis) ||
             !same(current.recorded_binding, { basis_digest: binding.basis_digest, approval_ref: binding.approval_ref })) {
           fail('canonical binding or projection changed between passes');
         }
-        computedDigest = current.basis_digest;
+        computedDigest = current.basis_digest; computedComponents = current.component_digests;
         bindingState = computedDigest === binding.basis_digest ? 'current-unverified' : 'stale-basis';
       }
     }
     checks.push({ decision: ref, status: record.status, binding_state: bindingState,
-      declared_binding: binding || null, computed_basis_digest: computedDigest,
+      declared_binding: binding || null, computed_basis_digest: computedDigest, computed_component_digests: computedComponents,
       // Canonical Status is the sole source of resolved/open. A resolved row
       // contributes no open-decision block, but this is not an overall permit.
       blocking_units: record.status === 'open' ? [...knownUnits] : [],
