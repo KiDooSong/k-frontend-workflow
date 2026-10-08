@@ -11,12 +11,14 @@
 - `basis_version: 2` 는 owner 의 unit 사실과 대상 행의 관계 closure 만 해시한다.
   - unit 사실: 각 known unit 의 선언·계약·선택 근거, owner 경로, policy 상한, surface membership.
   - 관계 closure: 그 행, 그 행이 인용하거나 그 행을 인용하는 행(근거 참조를 따라 양방향, 어느 owner 에도 적용되지
-    않는 결정 행 포함), Unknown·Conflict 관계가 witness 로 이름을 댄 행, 그 행들이 적용되는 하나의 근거 그래프.
+    않는 행 포함), Unknown·Conflict 관계가 witness 로 이름을 댄 행, 그 행들이 적용되는 하나의 근거 그래프.
+    `artifact:X#unknowns/U-1` 같은 정확한 artifact 행 선택은 그 행과 같다.
   - 문서 frontmatter 의 `decision_refs` 는 closure 행이 그 문서를 인용할 때 그 결정을 closure 에 더한다. 그 결정을
     문서의 다른 행과 관계짓지 않고, 목록 자체는 해시하지 않는다.
-  - 어느 owner 에도 적용되지 않는 결정 행은 그 행이 인용하는 참조(본문·링크·typed `depends_on`)를 해소해 찾는다. ID 가
-    typed reference 를 만들 수 없는 결정 행은 관계를 맺을 때만 오류다. 표나 typed reference 를 읽을 수 없는 결정 행은
-    Unknown·Conflict 행처럼 어디에 있든 scoped 작업을 멈춘다.
+  - 어느 owner 에도 적용되지 않는 결정·Unknown·Conflict 행은 그 행이 인용하는 참조(본문·링크·typed `depends_on`)를
+    해소해 찾는다. ID 가 typed reference 를 만들 수 없는 결정 행은 관계를 맺을 때만 오류다. Unknown·Conflict section
+    처럼, 읽을 수 없는 Open Decisions 표는 그 문서에 typed reference 가 있으면 scoped 작업을 멈추고, 해소할 수 없는
+    typed reference 는 어디에 있든 멈춘다.
   - 그래서 관계없는 행의 추가·수정은 binding 을 바꾸지 않고, 그 행·관계 행·unit 계약의 수정은 바꾼다. projection
     에 이 버전이 모르는 필드가 있으면 해시하지 않고 오류다.
 - v1 로 기록한 digest 는 v2 에서 모두 stale 이므로 한 번 다시 기록한다(`upgrade-notes.md`). #265 golden 도 다시

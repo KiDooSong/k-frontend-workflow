@@ -95,19 +95,22 @@ computes from the documents (`basis_version: 2`, #275). The basis holds:
   membership;
 - the bound row's relation closure: the row and its status, how it applies to the
   owner and its units, the rows it cites or that cite it (along evidence
-  references, in either direction, including a Decision row that applies to no
-  owner), the rows an Unknown or Conflict relation names as a witness (and the
+  references, in either direction, including a row that applies to no owner),
+  the rows an Unknown or Conflict relation names as a witness (and the
   rows that name it), and one evidence graph through which they apply. A
   document's frontmatter `decision_refs` brings a Decision in when a closure row
   cites that document; it does not relate the Decision to the document's other
   rows, and the list itself is not hashed.
 
-A Decision row that applies to no owner is found through the references it
-cites, as resolution reads them (body, links, typed `depends_on`), wherever they
-lead. Any non-empty Decision ID is valid; one that cannot form a typed reference
-is an error only when its row relates to the projection. A Decision row whose
-table or typed references cannot be read stops scoped work wherever it is, as an
-Unknown or Conflict row does.
+A Decision, Unknown or Conflict row that applies to no owner is found through
+the references it cites, as resolution reads them (body, links, typed
+`depends_on`), wherever they lead. An exact artifact row selection
+(`artifact:X#unknowns/U-1`) is the row it selects. Any non-empty Decision ID is
+valid; one that cannot form a typed reference is an error only when its row
+relates to the projection. As for Unknown and Conflict sections, an Open
+Decisions table that cannot be read stops scoped work when its document holds a
+typed reference, and a typed reference that cannot be resolved stops it wherever
+it is.
 
 So adding or editing another row of the owner leaves the digest unchanged unless
 that row relates to the bound row; editing the bound row, a related row or any
