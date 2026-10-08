@@ -390,6 +390,70 @@ test('#275 basis v2: a Decision ID that cannot form a typed reference is an erro
   assert.throws(() => f.run(), /"Release choice" in SCREEN-RESULT-002 relates to a projected row but cannot form a scoped decision reference/);
 });
 
+const second = () => ({ artifact_id: 'SCREEN-RESULT-002', artifact_type: 'screen-spec', screen_id: 'RESULT-002', domain: 'result', status: 'draft' });
+const foreign = () => ({ artifact_id: 'FOREIGN', artifact_type: 'domain-rules', domain: 'foreign', status: 'draft' });
+
+// Review r3: rows of every kind that apply to no owner are found together, so an Unknown that cites
+// a Decision or an Unknown reached only through another unapplied row joins as well.
+test('#275 basis v2: an Unknown that cites what an unapplied row reaches joins the closure', (t) => {
+  const f = fixture(t);
+  f.change('global/open-decisions.md', (doc) => { doc.body = decisions([decisionRow(), decisionRow('D-UNUSED', 'Unrelated decision.'),
+    decisionRow('D-TWO', 'Second decision.')]); });
+  f.write('second.md', second(), decisions([decisionRow('D-INVERSE',
+    'Revisit `decision:D-ONE@open-decision-register` with `decision:D-TWO@open-decision-register` and `unknown:U-TWO@FOREIGN`.')]));
+  f.write('foreign.md', foreign(), unknowns([['U-TWO', 'Plain question?', 'open'],
+    ['U-CITE', 'Does `decision:D-TWO@open-decision-register` hold?', 'open'], ['U-THREE', 'After `unknown:U-TWO@FOREIGN`?', 'open']]));
+  const before = f.run(), text = scopeJson(before.basis);
+  assert.ok(text.includes('U-CITE') && text.includes('U-THREE') && !text.includes('D-UNUSED'));
+  f.change('foreign.md', (doc) => { doc.body = doc.body.replace('hold?', 'still hold?'); });
+  const cited = f.run(); assert.notEqual(cited.basis_digest, before.basis_digest, 'editing the Unknown that cites D-TWO');
+  f.change('foreign.md', (doc) => { doc.body = doc.body.replace('After', 'Only after'); });
+  assert.notEqual(f.run().basis_digest, cited.basis_digest, 'editing the Unknown that cites U-TWO');
+});
+
+// Review r3: an unapplied row outside the closure adds nothing to the basis, not even a document
+// link the basis already holds as an application.
+test('#275 basis v2: an unapplied row that cites the same evidence adds no document link', (t) => {
+  const f = fixture(t);
+  f.change('global/open-decisions.md', (doc) => { doc.body = decisions([decisionRow('D-ONE', 'Choose after `artifact:RULES#rules`.'),
+    decisionRow('D-UNUSED', 'Unrelated decision.'), decisionRow('D-TWO', 'Rule decision.')]); });
+  f.change('rules.md', ({ fm }) => { fm.decision_refs = ['D-TWO']; });
+  const before = f.run();
+  f.change('global/open-decisions.md', (doc) => { doc.body = doc.body.replace('Unrelated decision.', 'Only after `artifact:RULES#rules`.'); });
+  const after = f.run();
+  assert.ok(!scopeJson(after.basis).includes('Only after'));
+  assert.equal(after.basis_digest, before.basis_digest);
+});
+
+// Review r3: an exact artifact row selection names the same row as its typed reference.
+test('#275 basis v2: a row cited through its artifact row spelling relates as through its typed reference', (t) => {
+  const f = fixture(t);
+  f.change('screen.md', (doc) => {
+    doc.fm.work_execution.units = [unit('known', ['artifact:SCREEN-RESULT-001#unknowns/U-ONE'])];
+    doc.fm.uncertainty_work_scopes = { version: 1, bindings: [{ unknown_id: 'U-ONE', owner: OWNER, known_units: ['known'], blocks: [],
+      basis_digest: `sha256:${'0'.repeat(64)}`, approval_ref: 'review:unknown' }] };
+    doc.body += `\n\n${unknowns([['U-ONE', 'Owner question?', 'open']])}`;
+  });
+  // U-WIDE cites the section holding the row; its witness names the row by the artifact spelling.
+  f.write('foreign.md', foreign(), unknowns([['U-ALIAS', 'Answer to `artifact:SCREEN-RESULT-001#unknowns/U-ONE`?', 'open'],
+    ['U-WIDE', 'About `artifact:SCREEN-RESULT-001#unknowns`?', 'open']]));
+  const basis = () => resolveScopedUncertaintyBindingBasis({ ...f.options(), uncertaintyRef: 'unknown:U-ONE@SCREEN-RESULT-001' });
+  const before = basis();
+  assert.ok(scopeJson(before.basis).includes('U-ALIAS') && scopeJson(before.basis).includes('U-WIDE'));
+  f.change('foreign.md', (doc) => { doc.body = doc.body.replace('Answer to', 'An answer to'); });
+  assert.notEqual(basis().basis_digest, before.basis_digest);
+});
+
+// Review r3: a Decision table that cannot be read is not skipped where it may relate (#260 rule).
+test('#275 basis v2: an unreadable Decision table stops the basis when its document holds a typed reference', (t) => {
+  const f = fixture(t);
+  f.write('second.md', second(), `## Open Decisions\n${table(['ID', 'Decision Needed', 'Options', 'Blocking Mode', 'Owner', 'Status', 'Status'],
+    [['D-DUP', 'After `decision:D-ONE@open-decision-register`?', 'A / B', 'api-integrated-ui', 'PM', 'open', 'open']])}`);
+  assert.throws(() => f.run(), /Open Decisions table in SCREEN-RESULT-002 cannot be read/);
+  f.change('second.md', (doc) => { doc.body = doc.body.replace('After `decision:D-ONE@open-decision-register`?', 'Plain question?'); });
+  assert.doesNotThrow(() => f.run());
+});
+
 // Review r1 (Spec P2): a document's decision_refs list is not scope; the relation it makes is.
 test('#275 basis v2: another reference in a document\'s decision_refs is not scope of an unrelated binding', (t) => {
   const f = fixture(t), before = f.run();

@@ -87,11 +87,11 @@ test('D #260 example: general-contract formats keep a structured scoped result; 
 // Re-pinned for #275: scope-basis-v2 hashes only D-001's relation closure and the unit facts, so the
 // recorded digest is recomputed once. Against the #262 pin the envelope differs only in the bytes that
 // record it: the hash of the COUPON-001 spec, the docs tree oid and the commit tree. Denials, evidence
-// and reviews are equal. The v2 bytes later gained the Decision rows that apply to no owner, one
-// merged relation evidence graph, and lost metadata decision_refs lists (review r1); the envelope
-// again differs only there.
-const BASIS = 'sha256:521d11f41b71224529bc56c8db720f64a97366acf621229ef3b4bb7d6404c066';
-const ENVELOPE = 'e94dda8140cf4e0d8593514ec01f4e7ff831bd0070424ce389d58717a48e957a';
+// and reviews are equal. The v2 bytes later gained the related rows that apply to no owner, one
+// merged relation evidence graph, and lost metadata decision_refs lists (reviews r1-r3); the
+// envelope again differs only there.
+const BASIS = 'sha256:3d281826f4fd31aebdd34ab1f425f882da927c405664dfd4cf3151420f9aba45';
+const ENVELOPE = '464a1c7eaa31d9b2189395dfbc412431a75bf8d8420b1e956cd648c0fc092eac';
 const SCOPES = { version: 1, bindings: [{ decision_id: 'D-001', owner: 'screen:COUPON-001', known_units: ['list-behavior'],
   blocks: [], basis_digest: BASIS, approval_ref: 'review:golden' }] };
 const ROWS = Array.from({ length: 12 }, (_, i) => {

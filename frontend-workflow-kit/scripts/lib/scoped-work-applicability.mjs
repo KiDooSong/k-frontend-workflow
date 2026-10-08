@@ -7,7 +7,7 @@ import { splitFrontmatter } from './util.mjs';
 import { col, hasHeader } from './spec.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { parseReconciliationMarkdown } from './reconciliation-markdown-ast.mjs';
-import { parseScopedTargetRef, isScopedRowId, scopedRawTable } from './scoped-work-refs.mjs';
+import { parseScopedTargetRef, isScopedRowId, scopedRawTable, scopedRowAlias } from './scoped-work-refs.mjs';
 import { resolveScopedContractGraph, scopedGraphSelectionRefs } from './scoped-work-graph.mjs';
 import { scopedProjectionNode } from './scoped-work-projection.mjs';
 import { readCurrentBytes, hashBytes } from './current-work-request.mjs';
@@ -50,43 +50,68 @@ export function resolveScopedApplicabilityProjection(options = {}) {
     // Roots only grow; no arbitrary depth cutoff or first-host/first-pass win.
     if (roots.size === count) break;
   }
-  const unapplied = unappliedDecisions(options, current.projection);
+  const unapplied = unappliedRows(options, current.projection, current.unaudited);
   audit(unapplied.read_set);
   for (const entry of files.values()) {
     const file = canonicalRepositoryPath(projectRoot, entry.file, { required: true, type: 'file', label: 'scoped applicability' });
     if (hashBytes(readCurrentBytes(file.absolute, 'scoped applicability')) !== entry.sha256) fail('snapshot changed after relation closure');
   }
-  const projection = { ...current.projection, decision_relations: { ...current.projection.decision_relations, unapplied: unapplied.unapplied } };
+  const projection = { ...current.projection, unapplied_relations: unapplied.unapplied };
   return { projection: { ...projection, ownership }, read_set: scopeSet([...files.values()]), unaudited: current.unaudited };
 }
 
-// #275: Decision rows that apply to no owner but relate to a projected row or evidence node.
-// Every other Decision row's references are read as resolution reads them, in one graph, and
-// a row joins when they reach a projected row or node, or one a joined row reaches, to a
-// fixpoint. A document's frontmatter decision_refs leads from its evidence to the Decisions
-// it names, as for an applied row. They decide nothing here; a binding basis relates them to
-// the rows they reach. Any non-empty Decision ID is valid, so one that cannot form a typed
-// reference is an error only when its row relates. A table or reference that cannot be read
-// is an error wherever it is, as for Unknown and Conflict rows.
+// #275: Decision, Unknown and Conflict rows that apply to no owner but relate to a projected
+// row or evidence node. Every other row's references are read as resolution reads them, in
+// one graph, and a row joins when they reach a projected row or node, or one a joined row
+// reaches, to a fixpoint. An exact artifact row selection is the row it selects, and a
+// document's frontmatter decision_refs leads from its evidence to the Decisions it names, as
+// for an applied row. They decide nothing here; a binding basis relates them to the rows they
+// reach. Any non-empty Decision ID is valid, so one that cannot form a typed reference is an
+// error only when its row relates. As for Unknown and Conflict sections (#260), a Decision
+// table that cannot be read is an error when its document holds a typed reference, and a
+// reference that cannot be resolved is an error wherever it is.
+const TYPED_SPELLING = /(?:artifact|decision|unknown|conflict|gap|investigation|verification|input):/;
 const DECISION_TABLE = ['ID', 'Status', 'Blocking Mode'];
-function unappliedDecisions({ targetIndex, projectRoot, inputArtifacts = [] }, projection) {
+function unappliedRows({ targetIndex, projectRoot, inputArtifacts = [] }, projection, unaudited = []) {
   const { decision_relations: decisions, uncertainty_relations: uncertainty } = projection;
   const known = new Set([...decisions.records, ...uncertainty.records].map((entry) => entry.ref));
-  for (const graph of [projection.evidence, decisions.evidence, uncertainty.evidence]) for (const node of graph.nodes) known.add(node.ref);
+  for (const graph of [projection.evidence, decisions.evidence, uncertainty.evidence]) for (const node of graph.nodes) {
+    known.add(node.ref);
+    const alias = scopedRowAlias(node);
+    if (alias) known.add(alias);
+  }
+  const skipped = new Set(unaudited.map((entry) => scopeJson([entry.file, entry.section])));
   const rows = new Map(), readSet = [];
-  for (const [artifactId, entry] of targetIndex.artifacts) for (const [id, hits] of entry.rows) for (const hit of hits) {
-    const token = `decision:${id}@${artifactId}`;
-    if (hit.family !== 'decision' || known.has(token) || rows.has(token)) continue;
-    rows.set(token, isScopedRowId('decision', id) && parseScopedTargetRef(token)?.rowId === id
-      ? { id, artifactId, token, roots: [token] } : { id, artifactId, token: null, roots: untypedRowRefs(entry, hit.sectionSlug, id) });
-    if (!rows.get(token).token) readSet.push(indexedFile(projectRoot, entry));
+  const add = (row) => { if (!known.has(row.key) && !rows.has(row.key)) rows.set(row.key, row); };
+  for (const [artifactId, entry] of targetIndex.artifacts) {
+    const file = path.relative(projectRoot, entry.file).split(path.sep).join('/');
+    for (const { id, headers, cells, slug } of decisionRows(entry)) {
+      const token = `decision:${id}@${artifactId}`;
+      if (isScopedRowId('decision', id) && parseScopedTargetRef(token)?.rowId === id) add({ key: token, id, artifactId, token, roots: [token] });
+      else {
+        add({ key: token, id, artifactId, token: null, roots: scopedGraphSelectionRefs(entry.body, entry.fm, { type: 'row', section: slug, headers, cells }) });
+        readSet.push(indexedFile(projectRoot, entry));
+      }
+    }
+    for (const [id, hits] of entry.rows) for (const hit of hits) {
+      if (!['unknown', 'conflict'].includes(hit.family) || skipped.has(scopeJson([file, hit.sectionSlug]))) continue;
+      const token = `${hit.family}:${id}@${artifactId}`;
+      // The uncertainty pass read every such row outside an unaudited section and failed on a malformed one.
+      if (parseScopedTargetRef(token)?.rowId !== id) fail(`${hit.family} ${JSON.stringify(id)} in ${artifactId} cannot form a scoped reference`);
+      add({ key: token, id, artifactId, token, roots: [token] });
+    }
   }
   const roots = [...new Set([...rows.values()].flatMap((row) => row.roots))];
   const graph = roots.length ? resolveScopedContractGraph({ contracts: roots, targetIndex, inputArtifacts, projectRoot })
     : { nodes: [], edges: [], read_set: [] };
   readSet.push(...graph.read_set);
   const nodes = new Map(graph.nodes.map((node) => [node.ref, node])), forward = new Map();
-  for (const edge of graph.edges) forward.set(edge.from, [...(forward.get(edge.from) || []), edge.to]);
+  const link = (from, to) => forward.set(from, [...(forward.get(from) || []), to]);
+  for (const edge of graph.edges) link(edge.from, edge.to);
+  for (const node of graph.nodes) {
+    const alias = scopedRowAlias(node);
+    if (alias) { link(node.ref, alias); link(alias, node.ref); }
+  }
   // A document's decision_refs, as the global Decision refs it names; strict once it is related.
   const named = (artifactId, strict) => {
     const ids = targetIndex.artifacts.get(artifactId)?.fm?.decision_refs;
@@ -126,13 +151,15 @@ function unappliedDecisions({ targetIndex, projectRoot, inputArtifacts = [] }, p
   const records = [...joined].map((row) => {
     const node = nodes.get(row.token), { headers, cells } = node.selection;
     const status = col(Object.fromEntries(headers.map((header, index) => [header, cells[index]])), 'Status');
-    return { ...scopedProjectionNode(node), decision_id: row.id, status: String(status || '').toLowerCase() || null };
+    return { ...scopedProjectionNode(node), status: String(status || '').toLowerCase() || null };
   });
   const links = [];
   for (const ref of reached) {
     const node = nodes.get(ref);
     if (node?.artifact_id) for (const decision of named(node.artifact_id, true)) {
-      if (!nodes.has(decision) && !projectedDecision(projection, decision)) fail(`decision_refs in ${node.artifact_id} names no Decision row ${decision}`);
+      if (!nodes.has(decision) && !decisions.records.some((entry) => entry.ref === decision)) {
+        fail(`decision_refs in ${node.artifact_id} names no Decision row ${decision}`);
+      }
       links.push({ referrer: ref, decision });
     }
   }
@@ -140,19 +167,29 @@ function unappliedDecisions({ targetIndex, projectRoot, inputArtifacts = [] }, p
     nodes: scopeSet(graph.nodes.filter((node) => reached.has(node.ref)).map(scopedProjectionNode)),
     edges: scopeSet(graph.edges.filter((edge) => reached.has(edge.from) && reached.has(edge.to))) } }, read_set: readSet };
 }
-const projectedDecision = (projection, ref) => projection.decision_relations.records.some((entry) => entry.ref === ref);
 
-// The references one Decision row cites, read from the indexed snapshot of its document.
-function untypedRowRefs(entry, slug, id) {
-  const matches = [];
-  for (const occurrence of parseReconciliationMarkdown(entry.body).occurrences.filter((value) => value.slug === slug)) {
-    for (const table of occurrence.tables.map(scopedRawTable)) {
-      if (!DECISION_TABLE.every((header) => hasHeader(table.headers, header))) continue;
-      table.rows.forEach((row, index) => { if (col(row, 'ID') === id) matches.push({ headers: table.headers, cells: table.cells[index] }); });
+// The rows of a document's canonical Open Decisions tables, read from its indexed snapshot. A
+// section with a table but no single readable canonical one is an error when the document holds
+// a typed reference; otherwise its rows cannot cite anything and are left out.
+function decisionRows(entry) {
+  const rows = [];
+  for (const occurrence of parseReconciliationMarkdown(entry.body).occurrences) {
+    if (occurrence.slug !== 'open-decisions' || !occurrence.tables.length) continue;
+    try {
+      const tables = occurrence.tables.map(scopedRawTable).filter((table) => DECISION_TABLE.every((header) => hasHeader(table.headers, header)));
+      if (tables.length !== 1) fail('one canonical decision table required');
+      tables[0].rows.forEach((row, index) => {
+        const id = col(row, 'ID');
+        if (id && !id.startsWith('{')) rows.push({ id, headers: tables[0].headers, cells: tables[0].cells[index], slug: occurrence.slug });
+      });
+    } catch (error) {
+      if (!(error instanceof ScopedWorkContractError)) throw error;
+      if (TYPED_SPELLING.test(entry.body) || TYPED_SPELLING.test(JSON.stringify(entry.fm))) {
+        fail(`Open Decisions table in ${entry.fm.artifact_id} cannot be read: ${error.message}`);
+      }
     }
   }
-  if (matches.length !== 1) fail(`decision ${JSON.stringify(id)} in ${entry.fm.artifact_id} is missing or ambiguous`);
-  return scopedGraphSelectionRefs(entry.body, entry.fm, { type: 'row', section: slug, ...matches[0] });
+  return rows;
 }
 // A document read through its index entry joins the read set as the bytes it was indexed from.
 function indexedFile(projectRoot, entry) {
