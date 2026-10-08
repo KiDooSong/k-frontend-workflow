@@ -41,7 +41,7 @@ export function isScopedWorkDocument(value) {
 // The same Markdown domain as C/validate: every docs Markdown file except _meta,
 // strictly UTF-8 decoded. Non-artifact files are pinned too: their frontmatter
 // decides index membership.
-function baselineArtifactIndex(docsRoot) {
+export function baselineArtifactIndex(docsRoot) {
   const files = walkFiles(docsRoot, ['.md']).filter((file) => !path.relative(docsRoot, file).split(path.sep).includes('_meta')).sort(byteCompare);
   const docs = [];
   for (const file of files) {
