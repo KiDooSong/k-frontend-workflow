@@ -34,6 +34,20 @@ export const parseScopedTargetRef = parseTargetRef;
 // AST establishes that this really is a root table. Parse its *source* cells with
 // the shared splitter, not rendered labels (links/emphasis must not invent IDs).
 // Unlike parseTable(), do not remove inline HTML comments from authority cells.
+// #275: the canonical row an exact artifact row selection names, when it selects a row of a
+// canonical Decision, Unknown or Conflict table: `artifact:X#unknowns/U-1` is `unknown:U-1@X`.
+const ROW_FAMILIES = { 'open-decisions': 'decision', unknowns: 'unknown', conflicts: 'conflict' };
+export function scopedRowAlias(node) {
+  const selection = node?.selection;
+  if (node?.kind !== 'artifact' || selection?.type !== 'row' || !Array.isArray(selection.headers)) return null;
+  const family = ROW_FAMILIES[selection.section] ||
+    (selection.section === '' && node.metadata?.artifact_type === 'conflicts' ? 'conflict' : null);
+  if (!family || !signatures[family].every((header) => hasHeader(selection.headers, header))) return null;
+  const id = col(Object.fromEntries(selection.headers.map((header, index) => [header, selection.cells[index]])), 'ID');
+  const token = `${family}:${id}@${node.artifact_id}`;
+  return parseScopedTargetRef(token)?.rowId === id ? token : null;
+}
+
 export function scopedRawTable(table) {
   if (typeof table?.sourceText !== 'string' || !table.sourceText) fail('SW-REF-TABLE', 'table source required');
   const lines = lf(table.sourceText).split('\n');
