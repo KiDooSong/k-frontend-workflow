@@ -99,8 +99,10 @@ computes from the documents (`basis_version: 2`, #275). The basis holds:
   the rows an Unknown or Conflict relation names as a witness (and the
   rows that name it), and one evidence graph through which they apply. A
   document's frontmatter `decision_refs` brings a Decision in when a closure row
-  cites that document; it does not relate the Decision to the document's other
-  rows, and the list itself is not hashed.
+  (or the owner's unit evidence) reaches that document; it does not relate the
+  Decision to the document's other rows, and the list itself is not hashed. A
+  reference to a section or a whole document covers the rows it holds, as
+  overlapping evidence does for an Unknown or Conflict.
 
 A Decision, Unknown or Conflict row that applies to no owner is found through
 the references it cites, as resolution reads them (body, links, typed
