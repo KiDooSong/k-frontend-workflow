@@ -432,14 +432,15 @@ test('#275 basis v2: a row cited through its artifact row spelling relates as th
     doc.fm.work_execution.units = [unit('known', ['artifact:SCREEN-RESULT-001#unknowns/U-ONE'])];
     doc.fm.uncertainty_work_scopes = { version: 1, bindings: [{ unknown_id: 'U-ONE', owner: OWNER, known_units: ['known'], blocks: [],
       basis_digest: `sha256:${'0'.repeat(64)}`, approval_ref: 'review:unknown' }] };
-    doc.body += `\n\n${unknowns([['U-ONE', 'Owner question?', 'open']])}`;
+    doc.body += `\n\nTrack INV-1 here.\n\n${unknowns([['U-ONE', 'Owner question?', 'open']])}`;
   });
-  // U-WIDE cites the section holding the row; its witness names the row by the artifact spelling.
+  // U-WIDE cites the section holding the row. U-INV cites an investigation token, which selects the
+  // whole spec: only its witness, which names the row by the artifact spelling, relates it.
   f.write('foreign.md', foreign(), unknowns([['U-ALIAS', 'Answer to `artifact:SCREEN-RESULT-001#unknowns/U-ONE`?', 'open'],
-    ['U-WIDE', 'About `artifact:SCREEN-RESULT-001#unknowns`?', 'open']]));
+    ['U-WIDE', 'About `artifact:SCREEN-RESULT-001#unknowns`?', 'open'], ['U-INV', 'About `investigation:INV-1@SCREEN-RESULT-001`?', 'open']]));
   const basis = () => resolveScopedUncertaintyBindingBasis({ ...f.options(), uncertaintyRef: 'unknown:U-ONE@SCREEN-RESULT-001' });
   const before = basis();
-  assert.ok(scopeJson(before.basis).includes('U-ALIAS') && scopeJson(before.basis).includes('U-WIDE'));
+  assert.ok(['U-ALIAS', 'U-WIDE', 'U-INV'].every((id) => scopeJson(before.basis).includes(id)));
   f.change('foreign.md', (doc) => { doc.body = doc.body.replace('Answer to', 'An answer to'); });
   assert.notEqual(basis().basis_digest, before.basis_digest);
 });
@@ -452,6 +453,44 @@ test('#275 basis v2: an unreadable Decision table stops the basis when its docum
   assert.throws(() => f.run(), /Open Decisions table in SCREEN-RESULT-002 cannot be read/);
   f.change('second.md', (doc) => { doc.body = doc.body.replace('After `decision:D-ONE@open-decision-register`?', 'Plain question?'); });
   assert.doesNotThrow(() => f.run());
+});
+
+// Review r4: a reference to a section or a whole document covers the rows it holds, as an Unknown's
+// overlapping evidence does in the uncertainty pass, so citing the section that holds a related row
+// relates the citing row too.
+test('#275 basis v2: a row that cites the section holding a related row joins the closure', (t) => {
+  const f = fixture(t);
+  f.write('second.md', second(), decisions([decisionRow('D-INVERSE', 'Revisit `decision:D-ONE@open-decision-register` with `unknown:U-TWO@FOREIGN`.')]));
+  f.write('foreign.md', foreign(), unknowns([['U-TWO', 'Plain question?', 'open']]));
+  f.write('wide.md', { artifact_id: 'WIDE', artifact_type: 'domain-rules', domain: 'wide', status: 'draft' },
+    unknowns([['U-WIDE', 'About `artifact:FOREIGN#unknowns`?', 'open']]));
+  const before = f.run();
+  assert.ok(scopeJson(before.basis).includes('U-WIDE'));
+  f.change('wide.md', (doc) => { doc.body = doc.body.replace('About', 'Still about'); });
+  assert.notEqual(f.run().basis_digest, before.basis_digest);
+});
+
+// Review r4: an application through a document's decision_refs stays only where the closure or the
+// owner's unit evidence reaches that document's node, not where only an unrelated row of it does.
+test('#275 basis v2: a decision_refs route through an unrelated row of the owner spec stays out', (t) => {
+  const f = fixture(t), before = f.run();
+  f.change('screen.md', (doc) => { doc.body += `\n\n${decisions([decisionRow('D-LOCAL', 'Choose after `artifact:SCREEN-RESULT-001#notes`.')])}`; });
+  assert.equal(f.run().basis_digest, before.basis_digest, 'adding D-LOCAL');
+  f.change('screen.md', (doc) => { doc.body = doc.body.replace('Owner housekeeping.', 'Owner housekeeping, revised.'); });
+  assert.equal(f.run().basis_digest, before.basis_digest, 'editing the Notes that D-LOCAL cites');
+});
+
+// The owner's unit evidence reaches a document whose decision_refs names D-TWO: that route is how
+// D-TWO applies, so D-TWO's own basis keeps it.
+test('#275 basis v2: a Decision applying through a unit contract document keeps that application', (t) => {
+  const f = fixture(t);
+  f.change('global/open-decisions.md', (doc) => { doc.body = decisions([decisionRow(), decisionRow('D-UNUSED', 'Unrelated decision.'),
+    decisionRow('D-TWO', 'Rule decision.')]); });
+  f.change('rules.md', ({ fm }) => { fm.decision_refs = ['D-TWO']; });
+  f.bind(binding({ decision_id: 'D-TWO' }));
+  const own = f.run(OWNER, 'decision:D-TWO@open-decision-register');
+  assert.ok(own.basis.decision_relations.applications.some((entry) => entry.relation === 'evidence-decision-ref' &&
+    entry.referrer === 'artifact:RULES#rules'), scopeJson(own.basis.decision_relations.applications));
 });
 
 // Review r1 (Spec P2): a document's decision_refs list is not scope; the relation it makes is.

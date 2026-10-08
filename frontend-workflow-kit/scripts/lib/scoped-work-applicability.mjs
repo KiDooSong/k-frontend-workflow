@@ -7,7 +7,7 @@ import { splitFrontmatter } from './util.mjs';
 import { col, hasHeader } from './spec.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { parseReconciliationMarkdown } from './reconciliation-markdown-ast.mjs';
-import { parseScopedTargetRef, isScopedRowId, scopedRawTable, scopedRowAlias } from './scoped-work-refs.mjs';
+import { parseScopedTargetRef, isScopedRowId, scopedRawTable, scopedRowAlias, scopedRowSite, scopedCoveredRows } from './scoped-work-refs.mjs';
 import { resolveScopedContractGraph, scopedGraphSelectionRefs } from './scoped-work-graph.mjs';
 import { scopedProjectionNode } from './scoped-work-projection.mjs';
 import { readCurrentBytes, hashBytes } from './current-work-request.mjs';
@@ -63,9 +63,9 @@ export function resolveScopedApplicabilityProjection(options = {}) {
 // #275: Decision, Unknown and Conflict rows that apply to no owner but relate to a projected
 // row or evidence node. Every other row's references are read as resolution reads them, in
 // one graph, and a row joins when they reach a projected row or node, or one a joined row
-// reaches, to a fixpoint. An exact artifact row selection is the row it selects, and a
-// document's frontmatter decision_refs leads from its evidence to the Decisions it names, as
-// for an applied row. They decide nothing here; a binding basis relates them to the rows they
+// reaches, to a fixpoint. An exact artifact row selection is the row it selects, a reference
+// to a section or a whole document covers the rows it holds, and a document's frontmatter
+// decision_refs leads from its evidence to the Decisions it names, as for an applied row. They decide nothing here; a binding basis relates them to the rows they
 // reach. Any non-empty Decision ID is valid, so one that cannot form a typed reference is an
 // error only when its row relates. As for Unknown and Conflict sections (#260), a Decision
 // table that cannot be read is an error when its document holds a typed reference, and a
@@ -75,21 +75,31 @@ const DECISION_TABLE = ['ID', 'Status', 'Blocking Mode'];
 function unappliedRows({ targetIndex, projectRoot, inputArtifacts = [] }, projection, unaudited = []) {
   const { decision_relations: decisions, uncertainty_relations: uncertainty } = projection;
   const known = new Set([...decisions.records, ...uncertainty.records].map((entry) => entry.ref));
-  for (const graph of [projection.evidence, decisions.evidence, uncertainty.evidence]) for (const node of graph.nodes) {
+  const projected = [projection.evidence, decisions.evidence, uncertainty.evidence].flatMap((graph) => graph.nodes);
+  // Where each row sits, so that a section or document reference covers the rows it holds.
+  const sites = new Map();
+  const site = (value) => { if (value && !(sites.get(value.artifact_id) || []).some((entry) => entry.row === value.row)) {
+    sites.set(value.artifact_id, [...(sites.get(value.artifact_id) || []), value]);
+  } };
+  for (const node of [...decisions.records, ...uncertainty.records, ...projected]) site(scopedRowSite(node));
+  for (const node of projected) {
     known.add(node.ref);
     const alias = scopedRowAlias(node);
     if (alias) known.add(alias);
   }
   const skipped = new Set(unaudited.map((entry) => scopeJson([entry.file, entry.section])));
   const rows = new Map(), readSet = [];
-  const add = (row) => { if (!known.has(row.key) && !rows.has(row.key)) rows.set(row.key, row); };
+  const add = (row, section) => {
+    site({ row: row.key, artifact_id: row.artifactId, section });
+    if (!known.has(row.key) && !rows.has(row.key)) rows.set(row.key, row);
+  };
   for (const [artifactId, entry] of targetIndex.artifacts) {
     const file = path.relative(projectRoot, entry.file).split(path.sep).join('/');
     for (const { id, headers, cells, slug } of decisionRows(entry)) {
       const token = `decision:${id}@${artifactId}`;
-      if (isScopedRowId('decision', id) && parseScopedTargetRef(token)?.rowId === id) add({ key: token, id, artifactId, token, roots: [token] });
+      if (isScopedRowId('decision', id) && parseScopedTargetRef(token)?.rowId === id) add({ key: token, id, artifactId, token, roots: [token] }, slug);
       else {
-        add({ key: token, id, artifactId, token: null, roots: scopedGraphSelectionRefs(entry.body, entry.fm, { type: 'row', section: slug, headers, cells }) });
+        add({ key: token, id, artifactId, token: null, roots: scopedGraphSelectionRefs(entry.body, entry.fm, { type: 'row', section: slug, headers, cells }) }, slug);
         readSet.push(indexedFile(projectRoot, entry));
       }
     }
@@ -98,9 +108,10 @@ function unappliedRows({ targetIndex, projectRoot, inputArtifacts = [] }, projec
       const token = `${hit.family}:${id}@${artifactId}`;
       // The uncertainty pass read every such row outside an unaudited section and failed on a malformed one.
       if (parseScopedTargetRef(token)?.rowId !== id) fail(`${hit.family} ${JSON.stringify(id)} in ${artifactId} cannot form a scoped reference`);
-      add({ key: token, id, artifactId, token, roots: [token] });
+      add({ key: token, id, artifactId, token, roots: [token] }, hit.sectionSlug);
     }
   }
+  for (const node of projected) for (const row of scopedCoveredRows(node, sites)) known.add(row);
   const roots = [...new Set([...rows.values()].flatMap((row) => row.roots))];
   const graph = roots.length ? resolveScopedContractGraph({ contracts: roots, targetIndex, inputArtifacts, projectRoot })
     : { nodes: [], edges: [], read_set: [] };
@@ -111,6 +122,7 @@ function unappliedRows({ targetIndex, projectRoot, inputArtifacts = [] }, projec
   for (const node of graph.nodes) {
     const alias = scopedRowAlias(node);
     if (alias) { link(node.ref, alias); link(alias, node.ref); }
+    for (const row of scopedCoveredRows(node, sites)) link(node.ref, row);
   }
   // A document's decision_refs, as the global Decision refs it names; strict once it is related.
   const named = (artifactId, strict) => {

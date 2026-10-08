@@ -48,6 +48,20 @@ export function scopedRowAlias(node) {
   return parseScopedTargetRef(token)?.rowId === id ? token : null;
 }
 
+// #275: where a canonical row sits (its typed reference or an exact artifact row selection),
+// and the rows a reference to a section or a whole document covers, as an Unknown's
+// overlapping evidence covers them in the uncertainty pass.
+const ROW_KINDS = new Set(['decision', 'unknown', 'conflict']);
+export function scopedRowSite(node) {
+  const row = ROW_KINDS.has(node?.kind) ? node.ref : scopedRowAlias(node);
+  return row && node.selection?.type === 'row' ? { row, artifact_id: node.artifact_id, section: node.selection.section } : null;
+}
+export function scopedCoveredRows(node, sites) {
+  if (node?.kind !== 'artifact' || !['section', 'body'].includes(node.selection?.type)) return [];
+  return (sites.get(node.artifact_id) || []).filter((site) => node.selection.type === 'body' || site.section === node.selection.section)
+    .map((site) => site.row);
+}
+
 export function scopedRawTable(table) {
   if (typeof table?.sourceText !== 'string' || !table.sourceText) fail('SW-REF-TABLE', 'table source required');
   const lines = lf(table.sourceText).split('\n');

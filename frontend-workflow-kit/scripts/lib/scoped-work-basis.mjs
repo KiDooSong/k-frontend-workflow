@@ -6,7 +6,7 @@ import { canonicalRepositoryPath } from './artifact-path.mjs';
 import { readCurrentBytes, hashBytes } from './current-work-request.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { parseDecisionWorkScopes } from './scoped-work-declarations.mjs';
-import { parseScopedTargetRef, scopedRowAlias } from './scoped-work-refs.mjs';
+import { parseScopedTargetRef, scopedRowAlias, scopedRowSite, scopedCoveredRows } from './scoped-work-refs.mjs';
 import { resolveScopedApplicabilityProjection } from './scoped-work-applicability.mjs';
 import { ScopedWorkContractError, workText } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
@@ -94,21 +94,31 @@ function checkFields(value, allowed, label) {
 // edge from that document's evidence nodes to the Decision, followed forward only: what
 // a row cites depends on that Decision, but the Decision does not relate to every row
 // of a document that names it (a route through another row of it is dropped, see
-// keptApplication). Rows that apply to no owner relate in the same ways, and an exact
+// kept). Rows that apply to no owner relate in the same ways, and an exact
 // artifact row selection is the row it selects (`artifact:X#unknowns/U-1` is `unknown:U-1@X`).
+// A reference to a section or a whole document covers the rows it holds, as overlapping
+// evidence covers them in the uncertainty pass: it leads to each of them.
 function relationClosure(projection, target) {
   const { decision_relations: decisions, uncertainty_relations: uncertainty } = projection;
-  const forward = new Map(), backward = new Map(), related = new Map(), aliases = new Map();
+  const forward = new Map(), backward = new Map(), related = new Map(), aliases = new Map(), sites = new Map();
   const add = (map, from, to) => { if (!map.has(from)) map.set(from, new Set()); map.get(from).add(to); };
   const unapplied = projection.unapplied_relations;
-  for (const graph of [projection.evidence, decisions.evidence, uncertainty.evidence, unapplied.evidence]) {
+  const graphs = [projection.evidence, decisions.evidence, uncertainty.evidence, unapplied.evidence];
+  for (const graph of graphs) {
     for (const edge of graph.edges) { add(forward, edge.from, edge.to); add(backward, edge.to, edge.from); }
     for (const node of graph.nodes) {
+      const site = scopedRowSite(node);
+      if (site && !(sites.get(site.artifact_id) || []).some((entry) => entry.row === site.row)) {
+        sites.set(site.artifact_id, [...(sites.get(site.artifact_id) || []), site]);
+      }
       const alias = scopedRowAlias(node);
       if (!alias) continue;
       aliases.set(node.ref, alias);
       for (const map of [forward, backward]) { add(map, node.ref, alias); add(map, alias, node.ref); }
     }
+  }
+  for (const graph of graphs) for (const node of graph.nodes) for (const row of scopedCoveredRows(node, sites)) {
+    add(forward, node.ref, row); add(backward, row, node.ref);
   }
   for (const entry of decisions.applications) if (DOCUMENT_RELATIONS.has(entry.relation)) add(forward, entry.referrer, entry.decision);
   for (const link of unapplied.document_refs) add(forward, link.referrer, link.decision);
@@ -134,19 +144,20 @@ function relationClosure(projection, target) {
       if (isRow(ref) && !rows.has(ref)) { rows.add(ref); queue.push(ref); }
     }
   }
+  // A Decision application of a closure row, unless it routes through a row outside the
+  // closure: a referrer row, the Unknown/Conflict root it was derived through, or a document
+  // node that neither the closure nor the owner's own unit evidence reaches (so only an
+  // unrelated row of that document cited it).
+  const units = new Set(projection.evidence.nodes.map((node) => node.ref)), reached = new Set(nodes);
+  const kept = (entry) => rows.has(entry.decision) && (!isRow(entry.referrer) || rows.has(entry.referrer)) &&
+    (entry.uncertainty === undefined || rows.has(entry.uncertainty)) &&
+    (!DOCUMENT_RELATIONS.has(entry.relation) || reached.has(entry.referrer) || units.has(entry.referrer));
   // The evidence through which a kept row applies: its referrer and witness nodes.
-  for (const entry of decisions.applications) if (keptApplication(rows, entry) && !NATIVE_RELATIONS.has(entry.relation)) nodes.add(entry.referrer);
+  for (const entry of decisions.applications) if (kept(entry) && !NATIVE_RELATIONS.has(entry.relation)) nodes.add(entry.referrer);
   for (const entry of uncertainty.applications) if (rows.has(entry.uncertainty)) {
     for (const witness of entry.witnesses) for (const ref of [witness.via, witness.dependency, witness.selected]) if (ref) nodes.add(ref);
   }
-  return { rows, nodes };
-}
-
-// A Decision application of a closure row, unless it routes through a row outside the
-// closure: a referrer row, or the Unknown/Conflict root it was derived through.
-function keptApplication(rows, entry) {
-  return rows.has(entry.decision) && (!isRow(entry.referrer) || rows.has(entry.referrer)) &&
-    (entry.uncertainty === undefined || rows.has(entry.uncertainty));
+  return { rows, nodes, kept };
 }
 
 // A document's decision_refs list is not scope by itself: the relations it makes are kept
@@ -178,7 +189,7 @@ export function scopedBindingBasis(projection, binding) {
   const unapplied = projection.unapplied_relations;
   const records = parseScopedTargetRef(target)?.kind === 'decision' ? decisions.records : uncertainty.records;
   if (!isRow(target) || !records.some((entry) => entry.ref === target)) fail('target row missing from the applicability projection');
-  const { rows, nodes } = relationClosure(projection, target);
+  const { rows, nodes, kept } = relationClosure(projection, target);
   const node = (ref) => rows.has(ref) || nodes.has(ref);
   // One evidence graph of the closure, whichever relation pass contributed a node: an
   // unrelated row that cites the same evidence adds no copy of it.
@@ -189,7 +200,7 @@ export function scopedBindingBasis(projection, binding) {
   }
   const artifacts = new Set();
   for (const entry of evidenceNodes.values()) if (entry.artifact_id) artifacts.add(entry.artifact_id);
-  const applications = decisions.applications.filter((entry) => keptApplication(rows, entry));
+  const applications = decisions.applications.filter(kept);
   for (const entry of applications) {
     const referrer = parseScopedTargetRef(entry.referrer);
     if (referrer) artifacts.add(referrer.artifactId ?? referrer.ownerArtifactId);
