@@ -102,6 +102,13 @@ computes from the documents (`basis_version: 2`, #275). The basis holds:
   cites that document; it does not relate the Decision to the document's other
   rows, and the list itself is not hashed.
 
+A Decision row that applies to no owner is found through the references it
+cites, as resolution reads them (body, links, typed `depends_on`), wherever they
+lead. Any non-empty Decision ID is valid; one that cannot form a typed reference
+is an error only when its row relates to the projection. A Decision row whose
+table or typed references cannot be read stops scoped work wherever it is, as an
+Unknown or Conflict row does.
+
 So adding or editing another row of the owner leaves the digest unchanged unless
 that row relates to the bound row; editing the bound row, a related row or any
 unit contract changes it. Version 1 hashed every row that applied to the owner;
@@ -114,7 +121,7 @@ its digests read stale under version 2 ([upgrade notes](upgrade-notes.md)).
 | --- | --- |
 | `current` | the recorded digest equals the computed one |
 | `stale` | the recorded digest differs (`basis`), or `known_units` is not the owner's current unit set (`known-units`) |
-| `missing` | the row has no binding for the owner; an open row blocks every unit, a resolved one (`resolved: true`) nothing |
+| `missing` | the row has no binding for the owner; it blocks the units shown (`blocking_units`): every unit for an open Decision, the units its relations reach for an open Unknown or Conflict, none once resolved (`resolved: true`) |
 | `unresolved` | a binding declared for the owner on a row that does not apply to it or does not exist; it has no effect |
 
 Where it can compute one, it shows the recorded binding, the computed digest and
