@@ -107,6 +107,8 @@ test('#275 binding-status: each row shows its state, recorded binding, computed 
     binding('decision_id', 'D-404', ZERO)], [binding('unknown_id', 'U-001', ZERO)]);
   p.put(DETAIL, p.read(DETAIL).replace('\n---\n', `\ndecision_work_scopes: ${JSON.stringify({ version: 1,
     bindings: [{ ...binding('decision_id', 'D-001', ZERO) }] })}\n---\n`));
+  // A resolved row without a binding blocks nothing (review r1).
+  p.put(LIST, p.read(LIST).replace(/(\n\| D-002 \|[^\n]*\| )open( \|)/, '$1resolved$2'));
   p.commit('bindings to inspect');
   const head = p.git('rev-parse', 'HEAD').trim(), files = [LIST, DETAIL].map((file) => p.read(file));
   const env = p.json(p.status('--json'));
@@ -117,8 +119,8 @@ test('#275 binding-status: each row shows its state, recorded binding, computed 
   assert.deepEqual(Object.keys(rows).sort(), ['decision:D-001@COUPON-001-screen-spec', 'decision:D-001@COUPON-002-screen-spec',
     'decision:D-002@COUPON-001-screen-spec', D003, 'decision:D-404@COUPON-001-screen-spec', U001]);
   assert.deepEqual(['decision:D-001@COUPON-001-screen-spec', 'decision:D-002@COUPON-001-screen-spec'].map((ref) =>
-    [rows[ref].state, rows[ref].status, rows[ref].recorded, rows[ref].computed_basis_digest, rows[ref].components]),
-  [['missing', 'open', null, null, null], ['missing', 'open', null, null, null]]);
+    [rows[ref].state, rows[ref].status, rows[ref].resolved, rows[ref].recorded, rows[ref].computed_basis_digest, rows[ref].components]),
+  [['missing', 'open', false, null, null, null], ['missing', 'resolved', true, null, null, null]]);
   assert.deepEqual([rows[D003].state, rows[D003].stale_reason, rows[D003].computed_basis_digest, rows[D003].recorded.known_units],
     ['stale', 'known-units', null, ['list-behavior', 'list-visual']]);
   for (const ref of ['decision:D-404@COUPON-001-screen-spec', 'decision:D-001@COUPON-002-screen-spec']) {
@@ -134,6 +136,8 @@ test('#275 binding-status: each row shows its state, recorded binding, computed 
   // The text report names the same states; neither form writes anything.
   const text = p.status();
   assert.equal(text.status, 0, text.stderr);
+  assert.ok(text.stdout.includes('decision:D-001@COUPON-001-screen-spec  open  missing  — no binding; blocks every unit'), text.stdout);
+  assert.ok(text.stdout.includes('decision:D-002@COUPON-001-screen-spec  resolved  missing\n'), text.stdout);
   for (const expected of [`${OWNER} (known units: list-behavior)`, `${U001}  open  stale (basis)`, `${D003}  open  stale (known-units)`,
     'decision:D-404@COUPON-001-screen-spec  -  unresolved', `computed ${unknown.computed_basis_digest}`, `approval_ref ${APPROVAL}`]) {
     assert.ok(text.stdout.includes(expected), `${expected}\n${text.stdout}`);

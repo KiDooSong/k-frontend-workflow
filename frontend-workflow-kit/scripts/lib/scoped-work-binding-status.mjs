@@ -29,15 +29,16 @@ const recorded = (binding) => binding ? { known_units: binding.known_units, bloc
 
 function ownerStatus(options, home) {
   const decisions = inspectScopedDecisionBindings(options), uncertainty = inspectScopedUncertaintyScopes(options);
-  const row = (ref, kind, check) => {
+  // A resolved row blocks nothing, with or without a binding; the inspectors decide it.
+  const row = (ref, kind, check, resolved) => {
     if (!STATES[check.binding_state]) fail(`unknown binding state ${check.binding_state}`);
     const [state, reason] = STATES[check.binding_state];
-    return { ref, kind, status: check.status ?? null, home: home(parseScopedTargetRef(ref).ownerArtifactId), state, stale_reason: reason,
-      recorded: recorded(check.declared_binding), computed_basis_digest: check.computed_basis_digest,
+    return { ref, kind, status: check.status ?? null, resolved, home: home(parseScopedTargetRef(ref).ownerArtifactId), state,
+      stale_reason: reason, recorded: recorded(check.declared_binding), computed_basis_digest: check.computed_basis_digest,
       components: check.computed_component_digests };
   };
-  const rows = [...decisions.checks.map((check) => row(check.decision, 'decision', check)),
-    ...uncertainty.checks.map((check) => row(check.uncertainty, check.kind, check))];
+  const rows = [...decisions.checks.map((check) => row(check.decision, 'decision', check, check.status === 'resolved')),
+    ...uncertainty.checks.map((check) => row(check.uncertainty, check.kind, check, check.resolved))];
   const applicable = new Set(rows.map((entry) => entry.ref));
   for (const [id, entry] of options.targetIndex.artifacts) {
     const declared = [
@@ -45,7 +46,7 @@ function ownerStatus(options, home) {
       ...(parseUncertaintyWorkScopes(entry.fm.uncertainty_work_scopes)?.bindings || []).map((binding) => [`${binding.kind}:${binding.id}@${id}`, binding.kind, binding]),
     ];
     for (const [ref, kind, binding] of declared) if (binding.owner === options.owner && !applicable.has(ref)) {
-      rows.push({ ref, kind, status: null, home: home(id), state: 'unresolved', stale_reason: null, recorded: recorded(binding),
+      rows.push({ ref, kind, status: null, resolved: null, home: home(id), state: 'unresolved', stale_reason: null, recorded: recorded(binding),
         computed_basis_digest: null, components: null });
     }
   }
@@ -100,7 +101,7 @@ function render(report) {
     lines.push(`${entry.owner} (known units: ${entry.known_units.join(', ')})`);
     for (const row of entry.rows) {
       const state = row.stale_reason ? `${row.state} (${row.stale_reason})` : row.state;
-      lines.push(`  ${row.ref}  ${row.status ?? '-'}  ${state}${row.state === 'missing' ? '  — blocks every unit; no binding' : ''}`);
+      lines.push(`  ${row.ref}  ${row.status ?? '-'}  ${state}${row.state === 'missing' && !row.resolved ? '  — no binding; blocks every unit' : ''}`);
       if (row.recorded) {
         lines.push(`    recorded ${row.recorded.basis_digest}  approval_ref ${row.recorded.approval_ref}  known_units ${row.recorded.known_units.join(', ')}` +
           `  blocks ${row.recorded.blocks.length ? row.recorded.blocks.join(', ') : '(none)'}  in ${row.home}`);

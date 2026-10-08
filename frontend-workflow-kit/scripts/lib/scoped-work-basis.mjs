@@ -70,33 +70,41 @@ const ROW_KINDS = new Set(['decision', 'unknown', 'conflict']);
 // A native relation's referrer names the owner or surface document, whose metadata stays
 // in referrers; its body is not evidence of the row.
 const NATIVE_RELATIONS = new Set(['local', 'decision-ref', 'surface-member']);
+// An evidence node of a document whose frontmatter decision_refs names a Decision.
+const DOCUMENT_RELATIONS = new Set(['evidence-decision-ref', 'uncertainty-decision-ref']);
 const UNIT_FIELDS = ['evidence', 'host_links', 'inputs', 'known_units', 'owner', 'owners', 'ownership', 'policy', 'units'];
 const RELATION_FIELDS = {
-  decision_relations: ['applications', 'dependency_roots', 'evidence', 'memberships', 'records', 'referrers'],
+  decision_relations: ['applications', 'dependency_roots', 'evidence', 'memberships', 'records', 'referrers', 'unapplied'],
   uncertainty_relations: ['applications', 'evidence', 'records', 'scope_review_needed'],
 };
 export const SCOPE_BASIS_VERSION = 2;
 const digestOf = (value) => hashBytes(Buffer.from(scopeJson(value), 'utf8'));
 const isRow = (ref) => typeof ref === 'string' && ROW_KINDS.has(parseScopedTargetRef(ref)?.kind);
+const NO_UNAPPLIED = { records: [], document_refs: [], evidence: { nodes: [], edges: [] } };
 
 function checkFields(value, allowed, label) {
   for (const key of Object.keys(value || {})) if (!allowed.includes(key)) fail(`unknown basis field ${label}${key}`);
 }
 
 // The rows related to the target and the evidence nodes that touch them. Two rows are
-// related when one reaches the other along evidence edges (either direction) or when
+// related when one reaches the other along evidence edges (either direction), or when
 // an Unknown/Conflict relation names the other as a witness. Non-row nodes are followed
 // one way only (what a row cites, or what cites a row), so two rows that merely share a
-// section are not related through it. A document's frontmatter `decision_refs` relates
-// the document, not each of its rows, to a Decision: a route through another row of it
-// is not a relation (see keptApplication).
+// section are not related through it. A document's frontmatter `decision_refs` is an
+// edge from that document's evidence nodes to the Decision, followed forward only: what
+// a row cites depends on that Decision, but the Decision does not relate to every row
+// of a document that names it (a route through another row of it is dropped, see
+// keptApplication). Decision rows that apply to no owner relate in the same ways.
 function relationClosure(projection, target) {
   const { decision_relations: decisions, uncertainty_relations: uncertainty } = projection;
   const forward = new Map(), backward = new Map(), related = new Map();
   const add = (map, from, to) => { if (!map.has(from)) map.set(from, new Set()); map.get(from).add(to); };
-  for (const graph of [projection.evidence, decisions.evidence, uncertainty.evidence]) {
+  const unapplied = decisions.unapplied || NO_UNAPPLIED;
+  for (const graph of [projection.evidence, decisions.evidence, uncertainty.evidence, unapplied.evidence]) {
     for (const edge of graph.edges) { add(forward, edge.from, edge.to); add(backward, edge.to, edge.from); }
   }
+  for (const entry of decisions.applications) if (DOCUMENT_RELATIONS.has(entry.relation)) add(forward, entry.referrer, entry.decision);
+  for (const link of unapplied.document_refs) add(forward, link.referrer, link.decision);
   const relate = (a, b) => { if (a !== b && isRow(a) && isRow(b)) { add(related, a, b); add(related, b, a); } };
   for (const entry of uncertainty.applications) {
     for (const witness of entry.witnesses) for (const ref of [witness.via, witness.dependency, witness.selected]) relate(entry.uncertainty, ref);
@@ -131,6 +139,17 @@ function keptApplication(rows, entry) {
     (entry.uncertainty === undefined || rows.has(entry.uncertainty));
 }
 
+// A document's decision_refs list is not scope by itself: the relations it makes are kept
+// above as edges and applications of the closure's rows, so naming another Decision in a
+// document changes no unrelated binding. Only that list is dropped, from each metadata.
+function withoutDecisionRefs(value) {
+  if (Array.isArray(value)) return value.map(withoutDecisionRefs);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, key === 'metadata' && entry && typeof entry === 'object' &&
+    !Array.isArray(entry) ? withoutDecisionRefs(Object.fromEntries(Object.entries(entry).filter(([name]) => name !== 'decision_refs')))
+    : withoutDecisionRefs(entry)]));
+}
+
 // The scope-basis-v2 bytes of one binding over the owner's applicability projection,
 // which its caller resolved from actual resources. Decision and Unknown/Conflict
 // bindings share it; the binding's own key (decision/uncertainty) keeps them apart.
@@ -146,15 +165,20 @@ export function scopedBindingBasis(projection, binding) {
   }
   const target = binding.decision ?? binding.uncertainty;
   const { decision_relations: decisions, uncertainty_relations: uncertainty } = projection;
+  const unapplied = decisions.unapplied || NO_UNAPPLIED;
   const records = parseScopedTargetRef(target)?.kind === 'decision' ? decisions.records : uncertainty.records;
   if (!isRow(target) || !records.some((entry) => entry.ref === target)) fail('target row missing from the applicability projection');
   const { rows, nodes } = relationClosure(projection, target);
   const node = (ref) => rows.has(ref) || nodes.has(ref);
-  const graph = (evidence) => ({ roots: evidence.roots.filter(node), nodes: evidence.nodes.filter((entry) => node(entry.ref)),
-    edges: evidence.edges.filter((edge) => node(edge.from) && node(edge.to)) });
-  const kept = { decision: graph(decisions.evidence), uncertainty: graph(uncertainty.evidence) };
+  // One evidence graph of the closure, whichever relation pass contributed a node: an
+  // unrelated row that cites the same evidence adds no copy of it.
+  const evidenceNodes = new Map(), evidenceEdges = new Map();
+  for (const graph of [decisions.evidence, uncertainty.evidence, unapplied.evidence]) {
+    for (const entry of graph.nodes) if (node(entry.ref) && !evidenceNodes.has(entry.ref)) evidenceNodes.set(entry.ref, entry);
+    for (const edge of graph.edges) if (node(edge.from) && node(edge.to)) evidenceEdges.set(scopeJson(edge), edge);
+  }
   const artifacts = new Set();
-  for (const entry of [...kept.decision.nodes, ...kept.uncertainty.nodes]) if (entry.artifact_id) artifacts.add(entry.artifact_id);
+  for (const entry of evidenceNodes.values()) if (entry.artifact_id) artifacts.add(entry.artifact_id);
   const applications = decisions.applications.filter((entry) => keptApplication(rows, entry));
   for (const entry of applications) {
     const referrer = parseScopedTargetRef(entry.referrer);
@@ -163,20 +187,24 @@ export function scopedBindingBasis(projection, binding) {
   const roots = (decisions.dependency_roots || []).filter((entry) => rows.has(entry.ref));
   const { decision_relations: _decisions, uncertainty_relations: _uncertainty, ...unitFacts } = projection;
   const basis = {
-    ...unitFacts,
-    decision_relations: {
+    ...withoutDecisionRefs(unitFacts),
+    decision_relations: withoutDecisionRefs({
       ...(roots.length ? { dependency_roots: roots } : {}),
       records: decisions.records.filter((entry) => rows.has(entry.ref)),
+      unapplied: {
+        records: unapplied.records.filter((entry) => rows.has(entry.ref)),
+        document_refs: unapplied.document_refs.filter((link) => rows.has(link.decision) && nodes.has(link.referrer)),
+      },
       applications,
       referrers: decisions.referrers.filter((entry) => artifacts.has(entry.artifact_id)),
-      memberships: decisions.memberships, evidence: kept.decision,
-    },
-    uncertainty_relations: {
+      memberships: decisions.memberships,
+    }),
+    uncertainty_relations: withoutDecisionRefs({
       records: uncertainty.records.filter((entry) => rows.has(entry.ref)),
       applications: uncertainty.applications.filter((entry) => rows.has(entry.uncertainty)),
       scope_review_needed: uncertainty.scope_review_needed.filter((entry) => rows.has(entry.uncertainty)),
-      evidence: kept.uncertainty,
-    },
+    }),
+    relation_evidence: withoutDecisionRefs({ nodes: scopeSet([...evidenceNodes.values()]), edges: scopeSet([...evidenceEdges.values()]) }),
     basis_version: SCOPE_BASIS_VERSION, binding,
   };
   return { basis, basis_digest: digestOf(basis), component_digests: scopedBasisComponentDigests(basis, target) };
@@ -191,6 +219,7 @@ function scopedBasisComponentDigests(basis, target) {
     const pick = (entries, key) => (entries || []).filter((entry) => (entry[key] === target) === own);
     return {
       decision_relations: { dependency_roots: pick(decisions.dependency_roots, 'ref'), records: pick(decisions.records, 'ref'),
+        unapplied: { records: pick(decisions.unapplied.records, 'ref'), document_refs: pick(decisions.unapplied.document_refs, 'decision') },
         applications: pick(decisions.applications, 'decision') },
       uncertainty_relations: { records: pick(uncertainty.records, 'ref'), applications: pick(uncertainty.applications, 'uncertainty'),
         scope_review_needed: pick(uncertainty.scope_review_needed, 'uncertainty') },
@@ -198,8 +227,7 @@ function scopedBasisComponentDigests(basis, target) {
   };
   const units = Object.fromEntries(UNIT_FIELDS.filter((key) => Object.hasOwn(basis, key)).map((key) => [key, basis[key]]));
   return {
-    evidence: digestOf({ decision_relations: { evidence: decisions.evidence, referrers: decisions.referrers },
-      uncertainty_relations: { evidence: uncertainty.evidence } }),
+    evidence: digestOf({ relation_evidence: basis.relation_evidence, referrers: decisions.referrers }),
     relations: digestOf(rows(false)), target: digestOf(rows(true)),
     units: digestOf({ ...units, memberships: decisions.memberships }),
   };
