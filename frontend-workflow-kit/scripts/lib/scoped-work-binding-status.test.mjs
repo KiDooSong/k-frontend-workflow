@@ -35,9 +35,9 @@ function project(t) {
   put('config/layout.yaml', fs.readFileSync(path.join(KIT_ROOT, 'presets/expo-feature.yaml'), 'utf8'));
   const original = read(LIST), end = original.indexOf('\n---\n', 4);
   // The bindings sit in the owner spec's frontmatter; recording a digest changes only them.
-  const bind = (decisions, uncertainties) => {
+  const bind = (decisions, uncertainties, units = UNITS) => {
     const body = read(LIST), at = body.indexOf('\n---\n', 4);
-    put(LIST, `${original.slice(0, end)}\nscreen_entry: ${ENTRY}\nwork_execution: ${JSON.stringify(UNITS)}` +
+    put(LIST, `${original.slice(0, end)}\nscreen_entry: ${ENTRY}\nwork_execution: ${JSON.stringify(units)}` +
       `\ndecision_work_scopes: ${JSON.stringify({ version: 1, bindings: decisions })}` +
       `\nuncertainty_work_scopes: ${JSON.stringify({ version: 1, bindings: uncertainties })}${body.slice(at)}`);
   };
@@ -119,8 +119,10 @@ test('#275 binding-status: each row shows its state, recorded binding, computed 
   assert.deepEqual(Object.keys(rows).sort(), ['decision:D-001@COUPON-001-screen-spec', 'decision:D-001@COUPON-002-screen-spec',
     'decision:D-002@COUPON-001-screen-spec', D003, 'decision:D-404@COUPON-001-screen-spec', U001]);
   assert.deepEqual(['decision:D-001@COUPON-001-screen-spec', 'decision:D-002@COUPON-001-screen-spec'].map((ref) =>
-    [rows[ref].state, rows[ref].status, rows[ref].resolved, rows[ref].recorded, rows[ref].computed_basis_digest, rows[ref].components]),
-  [['missing', 'open', false, null, null, null], ['missing', 'resolved', true, null, null, null]]);
+    [rows[ref].state, rows[ref].status, rows[ref].resolved, rows[ref].blocking_units, rows[ref].recorded, rows[ref].computed_basis_digest,
+      rows[ref].components]),
+  [['missing', 'open', false, ['list-behavior'], null, null, null], ['missing', 'resolved', true, [], null, null, null]]);
+  assert.equal(rows[D003].blocking_units, null, 'only a missing binding reports the units it leaves blocked');
   assert.deepEqual([rows[D003].state, rows[D003].stale_reason, rows[D003].computed_basis_digest, rows[D003].recorded.known_units],
     ['stale', 'known-units', null, ['list-behavior', 'list-visual']]);
   for (const ref of ['decision:D-404@COUPON-001-screen-spec', 'decision:D-001@COUPON-002-screen-spec']) {
@@ -136,7 +138,7 @@ test('#275 binding-status: each row shows its state, recorded binding, computed 
   // The text report names the same states; neither form writes anything.
   const text = p.status();
   assert.equal(text.status, 0, text.stderr);
-  assert.ok(text.stdout.includes('decision:D-001@COUPON-001-screen-spec  open  missing  — no binding; blocks every unit'), text.stdout);
+  assert.ok(text.stdout.includes('decision:D-001@COUPON-001-screen-spec  open  missing  — no binding; blocks list-behavior\n'), text.stdout);
   assert.ok(text.stdout.includes('decision:D-002@COUPON-001-screen-spec  resolved  missing\n'), text.stdout);
   for (const expected of [`${OWNER} (known units: list-behavior)`, `${U001}  open  stale (basis)`, `${D003}  open  stale (known-units)`,
     'decision:D-404@COUPON-001-screen-spec  -  unresolved', `computed ${unknown.computed_basis_digest}`, `approval_ref ${APPROVAL}`]) {
@@ -144,6 +146,22 @@ test('#275 binding-status: each row shows its state, recorded binding, computed 
   }
   assert.equal(p.git('status', '--porcelain'), ''); assert.equal(p.git('rev-parse', 'HEAD').trim(), head);
   assert.deepEqual([LIST, DETAIL].map((file) => p.read(file)), files);
+});
+
+// Review r2: a row without a binding blocks the units its relations reach, which need not be all.
+test('#275 binding-status: a missing binding reports only the units its row blocks', (t) => {
+  const p = project(t), foreign = 'unknown:U-101@points-domain-rules';
+  p.bind([], [], { version: 1, units: [...UNITS.units,
+    { id: 'list-interaction', kind: 'behavior', contracts: ['artifact:COUPON-001-screen-spec#interaction-matrix'], sources: [] }] });
+  p.put('docs/frontend-workflow/domains/points/domain-rules.md', '---\nartifact_id: points-domain-rules\nartifact_type: domain-rules\n' +
+    'domain: points\nstatus: draft\n---\n\n# Points Domain Rules\n\n## Unknowns\n| ID | Question | Status |\n|---|---|---|\n' +
+    '| U-101 | Does `artifact:COUPON-001-screen-spec#state-matrix` hold for points? | open |\n');
+  p.commit('two units and a foreign Unknown');
+  const rows = p.rows();
+  assert.deepEqual([rows[foreign].state, rows[foreign].blocking_units], ['missing', ['list-behavior']]);
+  assert.deepEqual(rows['decision:D-001@COUPON-001-screen-spec'].blocking_units, ['list-behavior', 'list-interaction']);
+  const text = p.status();
+  assert.ok(text.stdout.includes(`${foreign}  open  missing  — no binding; blocks list-behavior\n`), text.stdout);
 });
 
 test('#275 binding-status: the committed HEAD is read, as readiness --work reads it', (t) => {

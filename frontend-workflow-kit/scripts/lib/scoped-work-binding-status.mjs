@@ -29,13 +29,14 @@ const recorded = (binding) => binding ? { known_units: binding.known_units, bloc
 
 function ownerStatus(options, home) {
   const decisions = inspectScopedDecisionBindings(options), uncertainty = inspectScopedUncertaintyScopes(options);
-  // A resolved row blocks nothing, with or without a binding; the inspectors decide it.
+  // Without a binding a row blocks the units the inspector names: none once resolved, every
+  // unit for an open Decision, the units its relations reach for an Unknown or Conflict.
   const row = (ref, kind, check, resolved) => {
     if (!STATES[check.binding_state]) fail(`unknown binding state ${check.binding_state}`);
     const [state, reason] = STATES[check.binding_state];
     return { ref, kind, status: check.status ?? null, resolved, home: home(parseScopedTargetRef(ref).ownerArtifactId), state,
-      stale_reason: reason, recorded: recorded(check.declared_binding), computed_basis_digest: check.computed_basis_digest,
-      components: check.computed_component_digests };
+      stale_reason: reason, blocking_units: state === 'missing' ? check.blocking_units : null, recorded: recorded(check.declared_binding),
+      computed_basis_digest: check.computed_basis_digest, components: check.computed_component_digests };
   };
   const rows = [...decisions.checks.map((check) => row(check.decision, 'decision', check, check.status === 'resolved')),
     ...uncertainty.checks.map((check) => row(check.uncertainty, check.kind, check, check.resolved))];
@@ -46,7 +47,8 @@ function ownerStatus(options, home) {
       ...(parseUncertaintyWorkScopes(entry.fm.uncertainty_work_scopes)?.bindings || []).map((binding) => [`${binding.kind}:${binding.id}@${id}`, binding.kind, binding]),
     ];
     for (const [ref, kind, binding] of declared) if (binding.owner === options.owner && !applicable.has(ref)) {
-      rows.push({ ref, kind, status: null, resolved: null, home: home(id), state: 'unresolved', stale_reason: null, recorded: recorded(binding),
+      rows.push({ ref, kind, status: null, resolved: null, home: home(id), state: 'unresolved', stale_reason: null, blocking_units: null,
+        recorded: recorded(binding),
         computed_basis_digest: null, components: null });
     }
   }
@@ -88,8 +90,8 @@ const HELP = `Usage: npm run workflow:binding-status -- [--owner <screen:ID|surf
 Reports the decision_work_scopes and uncertainty_work_scopes bindings of the adopted owners
 (every policy work_execution owner, or --owner) on the committed HEAD, which --work evaluates.
 For each row that applies to an owner: its status, the binding state (current, stale, missing),
-the recorded binding, and the scope-basis-v${SCOPE_BASIS_VERSION} digest and component digests
-(target, relations, units, evidence) the tool computes. A binding declared for the owner on a
+the units a missing binding leaves blocked, the recorded binding, and the scope-basis-v${SCOPE_BASIS_VERSION}
+digest and component digests (target, relations, units, evidence) the tool computes. A binding declared for the owner on a
 row that does not apply to it is unresolved. Read-only: a person records a digest; the tool
 never writes a binding or verifies approval_ref. Exit 0 with a report; 2 on usage or input errors.
 `;
@@ -101,7 +103,7 @@ function render(report) {
     lines.push(`${entry.owner} (known units: ${entry.known_units.join(', ')})`);
     for (const row of entry.rows) {
       const state = row.stale_reason ? `${row.state} (${row.stale_reason})` : row.state;
-      lines.push(`  ${row.ref}  ${row.status ?? '-'}  ${state}${row.state === 'missing' && !row.resolved ? '  — no binding; blocks every unit' : ''}`);
+      lines.push(`  ${row.ref}  ${row.status ?? '-'}  ${state}${row.blocking_units?.length ? `  — no binding; blocks ${row.blocking_units.join(', ')}` : ''}`);
       if (row.recorded) {
         lines.push(`    recorded ${row.recorded.basis_digest}  approval_ref ${row.recorded.approval_ref}  known_units ${row.recorded.known_units.join(', ')}` +
           `  blocks ${row.recorded.blocks.length ? row.recorded.blocks.join(', ') : '(none)'}  in ${row.home}`);

@@ -195,6 +195,14 @@ export function scopedGraphBodyRefs(body, view) {
   return dependencies(body, view, view.tree.children, false);
 }
 
+// #275: the typed references one selected table row cites as resolution reads it, with
+// its document's typed metadata, for a row whose ID cannot form a typed reference.
+export function scopedGraphSelectionRefs(body, metadata, selection) {
+  const view = parseReconciliationReferenceView(body);
+  return scopeSet([...new Set([...dependencies(body, view, selectedNodes(view, selection, body), false),
+    ...scopedGraphMetadataRefs(metadata)])]);
+}
+
 export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifacts = [], projectRoot } = {}) {
   const refs = createScopedReferenceResolver({ targetIndex, inputArtifacts, projectRoot });
   const sources = createScopedSourceResolver({ targetIndex, inputArtifacts, projectRoot });
