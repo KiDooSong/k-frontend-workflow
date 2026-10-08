@@ -95,10 +95,12 @@ computes from the documents (`basis_version: 2`, #275). The basis holds:
   membership;
 - the bound row's relation closure: the row and its status, how it applies to the
   owner and its units, the rows it cites or that cite it (along evidence
-  references, in either direction), the rows an Unknown or Conflict relation
-  names as a witness (and the rows that name it), and the evidence through which
-  they apply. A document's frontmatter `decision_refs` relates that document, not
-  each of its rows, to a Decision.
+  references, in either direction, including a Decision row that applies to no
+  owner), the rows an Unknown or Conflict relation names as a witness (and the
+  rows that name it), and one evidence graph through which they apply. A
+  document's frontmatter `decision_refs` brings a Decision in when a closure row
+  cites that document; it does not relate the Decision to the document's other
+  rows, and the list itself is not hashed.
 
 So adding or editing another row of the owner leaves the digest unchanged unless
 that row relates to the bound row; editing the bound row, a related row or any
@@ -112,7 +114,7 @@ its digests read stale under version 2 ([upgrade notes](upgrade-notes.md)).
 | --- | --- |
 | `current` | the recorded digest equals the computed one |
 | `stale` | the recorded digest differs (`basis`), or `known_units` is not the owner's current unit set (`known-units`) |
-| `missing` | the row has no binding for the owner; an open row blocks every unit |
+| `missing` | the row has no binding for the owner; an open row blocks every unit, a resolved one (`resolved: true`) nothing |
 | `unresolved` | a binding declared for the owner on a row that does not apply to it or does not exist; it has no effect |
 
 Where it can compute one, it shows the recorded binding, the computed digest and
