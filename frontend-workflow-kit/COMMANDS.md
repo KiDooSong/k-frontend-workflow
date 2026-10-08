@@ -111,6 +111,17 @@ adopted owner's scoped paths return `work-selection-required` to no-work, curren
 and visual-refresh v1 authority. Do not mix current and scoped requests in one
 document, and do not retry a denied scoped task under another mode or intent.
 
+```bash
+npm run workflow:binding-status
+npm run workflow:binding-status -- --owner screen:COUPON-001 --json
+```
+
+`workflow:binding-status` reports each scope binding of the adopted owners on the
+committed `HEAD`: its state (`current`, `stale`, `missing`, `unresolved`), the
+recorded binding, and the digest and component digests to compare or record. It
+writes nothing; a person records a digest. See
+[binding basis and status](docs/reference/scoped-work.md#binding-basis-and-status).
+
 ## Input Artifacts
 
 ```bash

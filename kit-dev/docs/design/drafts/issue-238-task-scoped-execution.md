@@ -238,6 +238,11 @@ Unknown의 새 상태 enum은 만들지 않는다. 미확인 사실이 selected 
 
 ### 5.4 결정 범위 해시의 입력과 정규화
 
+> 2026-10-08 갱신(#275): 구현은 `basis_version: 2`다. 「결정과 적용 관계」 투영을 binding 대상 행의 관계
+> closure로 좁혀, owner에 적용되는 다른 행의 추가·수정은 그 행이 대상 행과 관계를 맺을 때만 basis를 바꾼다.
+> 현재 규칙의 정본은 [scoped-work](../../../../frontend-workflow-kit/docs/reference/scoped-work.md#binding-basis-and-status)다.
+> 아래는 v1 제안 원문이다.
+
 `scope-basis-v1`은 저장 권한 필드를 늘리는 것이 아니라 `basis_digest`의 계산 규약 이름이다.
 입력은 binding의 owner에 있는 **모든 known unit**과 그 단위가 실제 참조하는 아래 값이다.
 선택한 실행 target 일부만 투영해, 같은 binding의 다른 unit 변경을 숨기지 않는다.

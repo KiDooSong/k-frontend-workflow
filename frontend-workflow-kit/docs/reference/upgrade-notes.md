@@ -17,6 +17,25 @@ or root config.
 
 ---
 
+## Scope bindings hash their own row's relations (basis version 2, #275)
+
+- A `decision_work_scopes` or `uncertainty_work_scopes` binding's `basis_digest`
+  now covers the owner's unit facts and only the bound row's relation closure
+  (`basis_version: 2`). Adding or editing a row that does not relate to the bound
+  row no longer makes the binding stale; editing the row, a related row or a unit
+  contract still does. See
+  [binding basis and status](scoped-work.md#binding-basis-and-status).
+- Every digest recorded under version 1 reads stale after the upgrade, so each
+  bound open row blocks every unit of its owner again until a person records it
+  once more.
+- New read-only command `workflow:binding-status`: each binding's state
+  (`current`, `stale`, `missing`, `unresolved`), the recorded binding, and the
+  computed digest and component digests, on the committed `HEAD`. Add it to your
+  `package.json` scripts from `package-scripts.template.json`.
+- Manual action (only for adopted owners with bindings): run
+  `npm run workflow:binding-status`, review each `stale` binding's scope, record
+  the computed digest with a new `approval_ref` for that review, and commit.
+
 ## Scoped work can delete a file that a ready unit owns (#276)
 
 - A scoped request may now plan `D` for a regular file. The unit passes the same

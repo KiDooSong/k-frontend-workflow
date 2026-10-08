@@ -82,6 +82,52 @@ section keeps byte-compatible legacy/current/visual-refresh behavior.
 Pilot one owner or domain at a time, and review the migration diff (policy
 ceilings, deny paths, roots, units, bindings) before relying on it.
 
+## Binding basis and status
+
+A binding's `basis_digest` is the sha256 of its scope basis, which the tool
+computes from the documents (`basis_version: 2`, #275). The basis holds:
+
+- the binding itself: the row, `owner`, `known_units` and `blocks` (not
+  `basis_digest` or `approval_ref`);
+- the owner's unit facts: each known unit's declaration (kind, contracts,
+  isolation, API selection, sources, host units), the contracts and selected
+  evidence it reaches, the owner's declared paths, the policy limits and surface
+  membership;
+- the bound row's relation closure: the row and its status, how it applies to the
+  owner and its units, the rows it cites or that cite it (along evidence
+  references, in either direction), the rows an Unknown or Conflict relation
+  names as a witness (and the rows that name it), and the evidence through which
+  they apply. A document's frontmatter `decision_refs` relates that document, not
+  each of its rows, to a Decision.
+
+So adding or editing another row of the owner leaves the digest unchanged unless
+that row relates to the bound row; editing the bound row, a related row or any
+unit contract changes it. Version 1 hashed every row that applied to the owner;
+its digests read stale under version 2 ([upgrade notes](upgrade-notes.md)).
+
+`npm run workflow:binding-status` lists, for every adopted owner (or `--owner
+<id>`), each row that applies to it with its status and binding state:
+
+| State | Meaning |
+| --- | --- |
+| `current` | the recorded digest equals the computed one |
+| `stale` | the recorded digest differs (`basis`), or `known_units` is not the owner's current unit set (`known-units`) |
+| `missing` | the row has no binding for the owner; an open row blocks every unit |
+| `unresolved` | a binding declared for the owner on a row that does not apply to it or does not exist; it has no effect |
+
+Where it can compute one, it shows the recorded binding, the computed digest and
+four component digests — `target` (the row's own entries), `relations` (the other
+rows of its closure), `units` (the unit facts) and `evidence` (the relation
+evidence) — so comparing two runs shows which part changed. It reads the
+committed `HEAD` that `--work` evaluates, writes nothing and does not verify
+`approval_ref`. The digest covers the binding as committed: to add or change a
+binding, commit it with any well-formed digest (for example `sha256:` followed by
+64 zeros), review the scope, then record the computed digest with an
+`approval_ref` for that review and commit again. A refreshed digest goes with a
+new `approval_ref`, never the old one: the library transition check reports an
+old `approval_ref` on a changed binding, but no command runs it yet, so reviewers
+check it.
+
 ## Request contract
 
 The five execution CLIs accept the same document as current work. A scoped
@@ -273,7 +319,8 @@ work from taking the change over (#276). To unblock the unit, a person:
 - resolves the blocking row through its normal workflow;
 - adds or re-judges the row's binding (`decision_work_scopes` or
   `uncertainty_work_scopes`) so the row blocks fewer units, with a recomputed
-  `basis_digest` and its `approval_ref`. A Decision binding's `blocks` applies as
+  `basis_digest` ([binding status](#binding-basis-and-status)) and its
+  `approval_ref`. A Decision binding's `blocks` applies as
   written; an Unknown or Conflict binding narrows only the row's native relation,
   so a unit whose selected evidence reaches that row stays blocked; or
 - withdraws the owner's adoption ([rollback](#rollback-and-downgrade)), which

@@ -4,6 +4,29 @@
 
 ## Unreleased
 
+### feat(workflow) — scope binding 의 basis 를 그 행의 관계로 좁히고 binding 상태 CLI 를 더함 (#275)
+
+- binding 의 `basis_digest` 는 owner 의 applicability projection 전체를 해시했다(`basis_version: 1`). 그래서 owner 에
+  적용되는 결정·Unknown·Conflict 행 하나를 고치거나 더하면 그 행과 무관한 binding 까지 모두 stale 이 됐다.
+- `basis_version: 2` 는 owner 의 unit 사실과 대상 행의 관계 closure 만 해시한다.
+  - unit 사실: 각 known unit 의 선언·계약·선택 근거, owner 경로, policy 상한, surface membership.
+  - 관계 closure: 그 행, 그 행이 인용하거나 그 행을 인용하는 행(근거 참조를 따라 양방향), Unknown·Conflict 관계가
+    witness 로 이름을 댄 행, 그 행들이 적용되는 근거.
+  - 문서 frontmatter 의 `decision_refs` 는 그 문서와 결정의 관계이지 문서의 각 행과의 관계가 아니다.
+  - 그래서 관계없는 행의 추가·수정은 binding 을 바꾸지 않고, 그 행·관계 행·unit 계약의 수정은 바꾼다. projection
+    에 이 버전이 모르는 필드가 있으면 해시하지 않고 오류다.
+- v1 로 기록한 digest 는 v2 에서 모두 stale 이므로 한 번 다시 기록한다(`upgrade-notes.md`). #265 golden 도 다시
+  고정했다. D-001 의 basis digest 가 바뀌었고, envelope 은 그 digest 를 기록한 파일의 바이트(COUPON-001 스펙 해시,
+  docs tree oid, commit tree)만 다르다.
+- 새 읽기 전용 CLI `workflow:binding-status` 는 채택 owner 마다 적용되는 행의 상태와 binding 상태(`current`·`stale`·
+  `missing`·`unresolved`), 기록된 binding, 계산한 digest 와 구성요소 digest(`target`·`relations`·`units`·`evidence`)
+  를 커밋된 HEAD 에서 보여 준다. binding 을 쓰지 않고 `approval_ref` 를 검증하지 않는다.
+- binding inspector 는 두 번째 계산이 같은 v2 basis 를 내는지 확인하고, 구성요소 digest 를 함께 돌려준다.
+- 회귀 테스트: basis 의 관계없는 행 제외(같은 owner 의 결정·Unknown, inverse Unknown 과 그것이 인용한 결정),
+  인용하거나 인용된 행 포함, 구성요소 digest 의 분할, 모르는 필드·없는 대상 행 오류, 재오픈 transition 의 approval
+  재사용 보고가 basis 가 바뀐 행에만 남음, CLI 의 B0~B5·네 상태·HEAD 읽기·입력 오류. 문서: `scoped-work.md` 새 절
+  Binding basis and status, `COMMANDS.md`, `upgrade-notes.md`, `package-scripts.template.json`.
+
 ### feat(workflow) — scoped 의 ready unit 이 자기 범위의 regular file 을 지움 (#276)
 
 - scoped 는 regular file 의 `A`·`M` 만 받았다(B §8.3 초기 버전). 그래서 채택한 owner 의 파일 삭제는 scoped 로도,
