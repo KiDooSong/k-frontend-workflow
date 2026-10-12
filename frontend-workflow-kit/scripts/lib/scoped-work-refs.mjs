@@ -170,19 +170,29 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot, inputA
     // The existing validator proves anchored M-key grammar and row bijection.
     // Read the same raw identity cell, not a second independently evolving regex.
     if (occurrence.tables.length !== 1) fail('SW-REF-MAPPING', 'unique mapping table required');
-    const ast = occurrence.tables[0];
-    const raw = scopedRawTable(ast);
-    const matches = [];
-    raw.cells.forEach((cells, index) => {
-      const first = cells[0];
-      if (first !== ast.rows[index][ast.headers[0]]) fail('SW-REF-MAPPING', 'raw Mapping Key differs from rendered identity');
-      const identity = occurrence.slug === 'component-mapping'
-        ? first.split('`')[1] : (first.startsWith('`') ? first.slice(1, -1) : first);
-      if (identity === key) matches.push(cells);
-    });
+    const { headers, rows } = mappingIndex(occurrence);
+    const matches = rows.get(key) || [];
     if (matches.length !== 1) fail('SW-REF-MAPPING', `missing or ambiguous M-key ${key}`);
-    return { type: 'row', section: occurrence.slug, key, headers: raw.headers, cells: matches[0],
+    return { type: 'row', section: occurrence.slug, key, headers: [...headers], cells: [...matches[0]],
       validation_warnings: structuredClone(mappingChecks.get(id)) };
+  }
+  // A mapping table's rows by M-key, read once per section through the shared table encoding, so
+  // selecting many M-keys stays linear (#275 r12). Every row's raw identity must be its rendered one.
+  const mappingIndexes = new WeakMap();
+  function mappingIndex(occurrence) {
+    if (!mappingIndexes.has(occurrence)) {
+      const ast = occurrence.tables[0], raw = encoded(occurrence)[0], rows = new Map();
+      raw.cells.forEach((cells, index) => {
+        const first = cells[0];
+        if (first !== ast.rows[index][ast.headers[0]]) fail('SW-REF-MAPPING', 'raw Mapping Key differs from rendered identity');
+        const identity = occurrence.slug === 'component-mapping'
+          ? first.split('`')[1] : (first.startsWith('`') ? first.slice(1, -1) : first);
+        if (!rows.has(identity)) rows.set(identity, []);
+        rows.get(identity).push(cells);
+      });
+      mappingIndexes.set(occurrence, { headers: raw.headers, rows });
+    }
+    return mappingIndexes.get(occurrence);
   }
   function rowSelection(occurrence, key, family = null, record = null) {
     if (!family && record?.fm?.artifact_type === 'figma-component-mapping' &&

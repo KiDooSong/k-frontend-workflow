@@ -765,6 +765,50 @@ test('#275 basis v2: a Decision named through decision_refs must live in the can
   assert.throws(() => f.run(OWNER, 'decision:D-LOC@SCREEN-RESULT-001'), /noncanonical global decision home/);
 });
 
+// Review r12 (Spec P2): a witness names what a related Unknown's unit selects. A selection that only a
+// row outside the closure opened leaves nothing behind, as for a derived Decision application; one
+// that a closure row opens stays.
+test('#275 basis v2: an Unknown witness that only an unrelated row selects stays out', (t) => {
+  const extra = (f) => f.write('extra.md', { artifact_id: 'EXTRA', artifact_type: 'domain-rules', domain: 'result', status: 'confirmed' }, '## Rules\nExtra rule.');
+  const cite = (f) => f.change('screen.md', (doc) => { doc.body += `\n\n${unknowns([['U-CITE', 'Does `decision:D-ONE@open-decision-register` follow `artifact:EXTRA#rules`?', 'open']])}`; });
+  const witnessed = (result) => result.basis.uncertainty_relations.applications.some((entry) =>
+    entry.witnesses.some((witness) => witness.selected === 'artifact:EXTRA#rules'));
+  const f = fixture(t);
+  extra(f); cite(f);
+  const before = f.run();
+  assert.ok(scopeJson(before.basis).includes('U-CITE') && !witnessed(before));
+  f.change('screen.md', (doc) => { doc.body += `\n\n${decisions([['D-LOCAL', 'Settle `artifact:EXTRA#rules`.', 'A / B', 'api-integrated-ui', 'PM', 'resolved']])}`; });
+  const after = f.run();
+  assert.ok(!witnessed(after));
+  assert.equal(after.basis_digest, before.basis_digest, 'adding a row outside the closure');
+  f.change('screen.md', (doc) => { doc.body = doc.body.replace('Does `decision', 'Will `decision'); });
+  assert.notEqual(f.run().basis_digest, before.basis_digest, 'the citing row stays related');
+  // The bound row itself selects the same evidence: that witness is a relation of the closure.
+  const g = fixture(t);
+  extra(g); cite(g);
+  g.change('global/open-decisions.md', (doc) => { doc.body = doc.body.replace('Choose behavior.', 'Choose after `artifact:EXTRA#rules`.'); });
+  assert.ok(witnessed(g.run()));
+});
+
+// Review r12 (Spec P2): the Decisions that reached documents name are validated against one collision
+// set, built once, so many such documents cost in proportion to their number.
+test('#275 basis v2: validating the decision_refs of many reached documents stays linear', (t) => {
+  const visits = (count) => {
+    const f = fixture(t);
+    f.change('global/open-decisions.md', (doc) => { doc.body = decisions([decisionRow(), decisionRow('D-UNUSED', 'Unrelated decision.'),
+      ...Array.from({ length: count }, (_, i) => decisionRow(`D-NAMED${i}`, `Named decision ${i}.`))]); });
+    for (let i = 0; i < count; i += 1) {
+      f.write(`notes-${i}.md`, { artifact_id: `NOTES${i}`, artifact_type: 'domain-rules', domain: 'foreign', status: 'draft', decision_refs: [`D-NAMED${i}`] }, '## Notes\nNotes text.');
+    }
+    f.write('foreign.md', foreign(), decisions([decisionRow('D-WIDE', `After \`decision:D-ONE@open-decision-register\` and ${Array.from({ length: count }, (_, i) => `\`artifact:NOTES${i}#notes\``).join(', ')}.`)]));
+    const before = scopedUnappliedSearchStats().visited;
+    resolveScopedApplicabilityProjection(f.options());
+    return scopedUnappliedSearchStats().visited - before;
+  };
+  const small = visits(20), large = visits(80);
+  assert.ok(large <= 5 * small, `${small} visits for 20 documents, ${large} for 80`);
+});
+
 // Review r11 (Spec P2 = Standards P2): a named Decision row is validated as for an ordinary
 // decision_refs entry, so a malformed register row (empty question, unknown status) stops the basis.
 test('#275 basis v2: a decision_refs entry naming a malformed register row stops the basis', (t) => {

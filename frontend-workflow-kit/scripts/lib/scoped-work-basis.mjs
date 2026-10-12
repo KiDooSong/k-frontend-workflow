@@ -211,12 +211,51 @@ function relationClosure(projection, target) {
   const kept = (entry) => rows.has(entry.decision) && (!isRow(entry.referrer) || rows.has(entry.referrer)) &&
     (entry.uncertainty === undefined || rows.has(entry.uncertainty)) &&
     (NATIVE_RELATIONS.has(entry.relation) || reachOf(subject(entry)).has(entry.referrer));
+  // A witness of a related Unknown or Conflict names what its unit selects, as the uncertainty pass
+  // seeds it: the unit's own evidence, a host link's mapping and the Decisions applying to it, or for a
+  // transitive witness what is derived through its `via` row. The witness stays only where such a seed
+  // of the closure (a kept application) leads to its selection; a selection that only a row outside
+  // the closure opened leaves nothing behind, and an application left with no witness stays out, as a
+  // derived Decision application does (#275 r12).
+  const selectionSeeds = new Map();
+  const selectionSeed = (key, ref) => { if (!selectionSeeds.has(key)) selectionSeeds.set(key, new Set()); selectionSeeds.get(key).add(ref); };
+  const ownerUnits = new Map();
+  for (const entry of uncertainty.applications) {
+    if (!ownerUnits.has(entry.owner)) ownerUnits.set(entry.owner, new Set());
+    ownerUnits.get(entry.owner).add(entry.unit);
+  }
+  for (const root of decisions.dependency_roots || []) if (rows.has(root.ref)) selectionSeed(scopeJson([root.owner, root.unit, root.ref]), root.ref);
+  for (const entry of decisions.applications) if (kept(entry)) {
+    if (entry.uncertainty !== undefined) selectionSeed(scopeJson([entry.owner, entry.unit, entry.uncertainty]), entry.decision);
+    else for (const unit of entry.unit === null ? [null, ...(ownerUnits.get(entry.owner) || [])] : [entry.unit]) {
+      selectionSeed(scopeJson([entry.owner, unit, null]), entry.decision);
+    }
+  }
+  const selections = new Map();
+  const selectionOf = (owner, unit, via = null) => {
+    const key = scopeJson([owner, unit, via]);
+    if (!selections.has(key)) {
+      const queue = [...(selectionSeeds.get(key) || []), ...(via === null ? seeds.get(subject({ owner, unit })) || [] : [])];
+      const seen = new Set(queue);
+      for (let index = 0; index < queue.length; index += 1) {
+        closureStats.visited += 1;
+        for (const next of traversal.get(queue[index]) || []) if (!seen.has(next)) { seen.add(next); queue.push(next); }
+      }
+      selections.set(key, seen);
+    }
+    return selections.get(key);
+  };
+  const relatedApplication = (entry) => {
+    if (!rows.has(entry.uncertainty)) return null;
+    const witnesses = entry.witnesses.filter((witness) => selectionOf(entry.owner, entry.unit, witness.via ?? null).has(witness.selected));
+    return witnesses.length || !entry.witnesses.length ? { ...entry, witnesses } : null;
+  };
   // The evidence through which a kept row applies: its referrer and witness nodes.
   for (const entry of decisions.applications) if (kept(entry) && !NATIVE_RELATIONS.has(entry.relation)) nodes.add(entry.referrer);
-  for (const entry of uncertainty.applications) if (rows.has(entry.uncertainty)) {
-    for (const witness of entry.witnesses) for (const ref of [witness.via, witness.dependency, witness.selected]) if (ref) nodes.add(ref);
+  for (const entry of uncertainty.applications) {
+    for (const witness of relatedApplication(entry)?.witnesses || []) for (const ref of [witness.via, witness.dependency, witness.selected]) if (ref) nodes.add(ref);
   }
-  return { rows, nodes, kept };
+  return { rows, nodes, kept, relatedApplication };
 }
 
 // A document's decision_refs list is not scope by itself: the relations it makes are kept
@@ -248,7 +287,7 @@ export function scopedBindingBasis(projection, binding) {
   const unapplied = projection.unapplied_relations;
   const records = parseScopedTargetRef(target)?.kind === 'decision' ? decisions.records : uncertainty.records;
   if (!isRow(target) || !records.some((entry) => entry.ref === target)) fail('target row missing from the applicability projection');
-  const { rows, nodes, kept } = relationClosure(projection, target);
+  const { rows, nodes, kept, relatedApplication } = relationClosure(projection, target);
   const node = (ref) => rows.has(ref) || nodes.has(ref);
   // One evidence graph of the closure, whichever relation pass contributed a node: an
   // unrelated row that cites the same evidence adds no copy of it.
@@ -277,7 +316,7 @@ export function scopedBindingBasis(projection, binding) {
     }),
     uncertainty_relations: withoutDecisionRefs({
       records: uncertainty.records.filter((entry) => rows.has(entry.ref)),
-      applications: uncertainty.applications.filter((entry) => rows.has(entry.uncertainty)),
+      applications: uncertainty.applications.map(relatedApplication).filter(Boolean),
       scope_review_needed: uncertainty.scope_review_needed.filter((entry) => rows.has(entry.uncertainty)),
     }),
     // A related row that applies to no owner. The document links that brought one in are

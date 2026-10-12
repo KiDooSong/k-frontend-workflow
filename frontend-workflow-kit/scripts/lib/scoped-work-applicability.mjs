@@ -73,7 +73,8 @@ export function resolveScopedApplicabilityProjection(options = {}) {
 // table that cannot be read is an error when its document holds a typed reference, and a
 // reference that cannot be resolved is an error wherever it is.
 const searchStats = { visited: 0 };
-// Process-wide node visits of the unapplied-row search: read-only diagnostics (#275).
+// Process-wide node visits of the unapplied-row search, and Decision homes examined for collisions:
+// read-only diagnostics (#275).
 export function scopedUnappliedSearchStats() {
   return { ...searchStats };
 }
@@ -231,6 +232,15 @@ function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] 
     register = loaded;
     return register;
   };
+  // The Decision IDs with more than one home, collected once for every list resolved below (#275 r12).
+  let collisions = null;
+  const collidingIds = () => {
+    if (!collisions) {
+      collisions = new Set();
+      for (const [id, found] of homes()) { searchStats.visited += 1; if (found.length !== 1) collisions.add(id); }
+    }
+    return collisions;
+  };
   // A document's whole decision_refs list, resolved once as the decision pass resolves an owner's: a
   // malformed referenced row stops the basis as it stops the pass.
   const resolvedLists = new Set();
@@ -238,8 +248,7 @@ function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] 
     if (resolvedLists.has(artifactId)) return;
     resolvedLists.add(artifactId);
     const entry = targetIndex.artifacts.get(artifactId);
-    const collisions = new Set([...homes()].filter(([, found]) => found.length !== 1).map(([id]) => id));
-    const resolved = resolveDecisionRefs({ refs: entry.fm.decision_refs, registry: canonicalRegister(), referrer: entry.fm, conflictingIds: collisions });
+    const resolved = resolveDecisionRefs({ refs: entry.fm.decision_refs, registry: canonicalRegister(), referrer: entry.fm, conflictingIds: collidingIds() });
     if (resolved.malformed.length) fail(`decision_refs in ${artifactId}: ${resolved.malformed.map((value) => value.code).join(', ')}`);
   };
   const links = [];
