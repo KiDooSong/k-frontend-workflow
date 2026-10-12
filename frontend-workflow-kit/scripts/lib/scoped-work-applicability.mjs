@@ -6,11 +6,11 @@ import { canonicalRepositoryPath } from './artifact-path.mjs';
 import { splitFrontmatter } from './util.mjs';
 import { col, hasHeader } from './spec.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
-import { parseReconciliationMarkdown } from './reconciliation-markdown-ast.mjs';
+import { parseReconciliationMarkdown, parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
 import { parseScopedTargetRef, isScopedRowId, scopedRawTable, scopedRowAlias, scopedRowSite, scopedCoveredRows } from './scoped-work-refs.mjs';
-import { resolveScopedContractGraph, scopedGraphSelectionRefs } from './scoped-work-graph.mjs';
+import { resolveScopedContractGraph, scopedGraphSelectionRefs, scopedGraphMetadataRefs, scopedGraphBodyRefs } from './scoped-work-graph.mjs';
 import { scopedProjectionNode } from './scoped-work-projection.mjs';
-import { readCurrentBytes, hashBytes } from './current-work-request.mjs';
+import { readCurrentBytes, hashBytes, CurrentWorkError } from './current-work-request.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
 import { ScopedWorkContractError } from './scoped-work-request.mjs';
 import { resolveScopedBoundaryProjection } from './scoped-work-boundaries.mjs';
@@ -88,7 +88,7 @@ function unappliedRows({ targetIndex, projectRoot, inputArtifacts = [] }, projec
     if (alias) known.add(alias);
   }
   const skipped = new Set(unaudited.map((entry) => scopeJson([entry.file, entry.section])));
-  const rows = new Map(), readSet = [];
+  const rows = new Map(), untyped = new Map(), readSet = [];
   const add = (row, section) => {
     site({ row: row.key, artifact_id: row.artifactId, section });
     if (!known.has(row.key) && !rows.has(row.key)) rows.set(row.key, row);
@@ -99,7 +99,9 @@ function unappliedRows({ targetIndex, projectRoot, inputArtifacts = [] }, projec
       const token = `decision:${id}@${artifactId}`;
       if (isScopedRowId('decision', id) && parseScopedTargetRef(token)?.rowId === id) add({ key: token, id, artifactId, token, roots: [token] }, slug);
       else {
-        add({ key: token, id, artifactId, token: null, roots: scopedGraphSelectionRefs(entry.body, entry.fm, { type: 'row', section: slug, headers, cells }) }, slug);
+        const key = `untyped:${artifactId}#${slug}/${id}`;
+        untyped.set(key, { artifactId, slug, id });
+        add({ key, id, artifactId, token: null, roots: scopedGraphSelectionRefs(entry.body, entry.fm, { type: 'row', section: slug, headers, cells }) }, slug);
         readSet.push(indexedFile(projectRoot, entry));
       }
     }
@@ -160,6 +162,17 @@ function unappliedRows({ targetIndex, projectRoot, inputArtifacts = [] }, projec
     }
   }
   const reached = new Set([...joined].flatMap((row) => [...reach(row)]));
+  // A row whose ID cannot form a typed reference also relates when a related node selects it
+  // (an artifact row selection) or covers it; the basis could not name it either way.
+  for (const node of [...projected, ...graph.nodes.filter((value) => reached.has(value.ref))]) {
+    const covered = new Set(scopedCoveredRows(node, sites));
+    for (const [key, row] of untyped) {
+      const selection = node.selection;
+      const selects = node.kind === 'artifact' && node.artifact_id === row.artifactId && selection?.type === 'row' && selection.section === row.slug &&
+        col(Object.fromEntries(selection.headers.map((header, index) => [header, selection.cells[index]])), 'ID') === row.id;
+      if (selects || covered.has(key)) fail(`decision ${JSON.stringify(row.id)} in ${row.artifactId} relates to a projected row but cannot form a scoped decision reference`);
+    }
+  }
   const records = [...joined].map((row) => {
     const node = nodes.get(row.token), { headers, cells } = node.selection;
     const status = col(Object.fromEntries(headers.map((header, index) => [header, cells[index]])), 'Status');
@@ -169,7 +182,8 @@ function unappliedRows({ targetIndex, projectRoot, inputArtifacts = [] }, projec
   for (const ref of reached) {
     const node = nodes.get(ref);
     if (node?.artifact_id) for (const decision of named(node.artifact_id, true)) {
-      if (!nodes.has(decision) && !decisions.records.some((entry) => entry.ref === decision)) {
+      const parsed = parseScopedTargetRef(decision);
+      if (!(targetIndex.artifacts.get(parsed.ownerArtifactId)?.rows.get(parsed.rowId) || []).some((hit) => hit.family === 'decision')) {
         fail(`decision_refs in ${node.artifact_id} names no Decision row ${decision}`);
       }
       links.push({ referrer: ref, decision });
@@ -196,12 +210,22 @@ function decisionRows(entry) {
       });
     } catch (error) {
       if (!(error instanceof ScopedWorkContractError)) throw error;
-      if (TYPED_SPELLING.test(entry.body) || TYPED_SPELLING.test(JSON.stringify(entry.fm))) {
-        fail(`Open Decisions table in ${entry.fm.artifact_id} cannot be read: ${error.message}`);
-      }
+      if (referencing(entry)) fail(`Open Decisions table in ${entry.fm.artifact_id} cannot be read: ${error.message}`);
     }
   }
   return rows;
+}
+// Whether a document holds a typed reference, as the Unknown/Conflict section audit judges it: its
+// raw spelling, or the metadata and native body references resolution reads (decoded link
+// destinations included); a reference that cannot be read counts.
+function referencing(entry) {
+  if (TYPED_SPELLING.test(entry.body) || TYPED_SPELLING.test(JSON.stringify(entry.fm))) return true;
+  try {
+    return scopedGraphMetadataRefs(entry.fm).length > 0 || scopedGraphBodyRefs(entry.body, parseReconciliationReferenceView(entry.body)).length > 0;
+  } catch (error) {
+    if (error instanceof CurrentWorkError) return true;
+    throw error;
+  }
 }
 // A document read through its index entry joins the read set as the bytes it was indexed from.
 function indexedFile(projectRoot, entry) {

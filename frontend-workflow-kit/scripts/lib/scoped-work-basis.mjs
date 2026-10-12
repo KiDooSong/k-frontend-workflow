@@ -145,13 +145,49 @@ function relationClosure(projection, target) {
     }
   }
   // A Decision application of a closure row, unless it routes through a row outside the
-  // closure: a referrer row, the Unknown/Conflict root it was derived through, or a document
-  // node that neither the closure nor the owner's own unit evidence reaches (so only an
-  // unrelated row of that document cited it).
-  const units = new Set(projection.evidence.nodes.map((node) => node.ref)), reached = new Set(nodes);
+  // closure: a referrer row, or the Unknown/Conflict root it was derived through. An
+  // application the decision pass derived (from a selected decision or a document's
+  // decision_refs) stays only where its subject reaches the referrer from that subject's
+  // own seeds, as the pass traverses them: the unit's declared evidence, a host link's
+  // mapping, its Unknown/Conflict root, and the closure rows that apply to it natively.
+  // So a route that only an unrelated row of a document opened leaves nothing behind.
+  const subject = (entry) => scopeJson([entry.owner, entry.unit, entry.uncertainty ?? null]);
+  const seeds = new Map(), evidence = new Set(projection.evidence.nodes.map((node) => node.ref));
+  const seed = (key, ref) => { if (!seeds.has(key)) seeds.set(key, new Set()); seeds.get(key).add(ref); };
+  for (const unit of projection.units) {
+    const refs = [...unit.declaration.contracts, ...(unit.declaration.isolation?.decisions || [])];
+    for (const source of unit.sources) {
+      refs.push(...source.anchors.map((anchor) => anchor.ref));
+      for (const group of source.groups) for (const effect of group.effects) refs.push(effect.target, effect.evidence.ref);
+    }
+    refs.push(...unit.api_rows.map((row) => row.tracking).filter(Boolean));
+    for (const ref of refs) if (evidence.has(ref)) seed(subject({ owner: unit.owner, unit: unit.declaration.id }), ref);
+  }
+  for (const link of projection.host_links) if (link.mapping) {
+    for (const row of link.mapping.rows) for (const ref of [`${link.mapping.ref}/${row.m_key}`,
+      `artifact:${parseScopedTargetRef(link.mapping.ref).artifactId}#mapping-provenance/${row.m_key}`, row.evidence]) {
+      seed(subject({ owner: link.surface, unit: link.unit }), ref);
+      seed(subject({ owner: link.member, unit: link.host_unit === 'legacy-current' ? null : link.host_unit }), ref);
+    }
+  }
+  for (const root of decisions.dependency_roots || []) seed(subject({ ...root, uncertainty: root.ref }), root.ref);
+  for (const entry of decisions.applications) if (NATIVE_RELATIONS.has(entry.relation) && rows.has(entry.decision)) seed(subject(entry), entry.decision);
+  const traversal = new Map();
+  for (const graph of graphs) for (const edge of graph.edges) add(traversal, edge.from, edge.to);
+  for (const entry of decisions.applications) if (DOCUMENT_RELATIONS.has(entry.relation)) add(traversal, entry.referrer, entry.decision);
+  for (const link of unapplied.document_refs) add(traversal, link.referrer, link.decision);
+  const reaches = new Map();
+  const reachOf = (key) => {
+    if (!reaches.has(key)) {
+      const seen = new Set();
+      for (const start of seeds.get(key) || []) for (const ref of reach(start, traversal)) seen.add(ref);
+      reaches.set(key, seen);
+    }
+    return reaches.get(key);
+  };
   const kept = (entry) => rows.has(entry.decision) && (!isRow(entry.referrer) || rows.has(entry.referrer)) &&
     (entry.uncertainty === undefined || rows.has(entry.uncertainty)) &&
-    (!DOCUMENT_RELATIONS.has(entry.relation) || reached.has(entry.referrer) || units.has(entry.referrer));
+    (NATIVE_RELATIONS.has(entry.relation) || reachOf(subject(entry)).has(entry.referrer));
   // The evidence through which a kept row applies: its referrer and witness nodes.
   for (const entry of decisions.applications) if (kept(entry) && !NATIVE_RELATIONS.has(entry.relation)) nodes.add(entry.referrer);
   for (const entry of uncertainty.applications) if (rows.has(entry.uncertainty)) {

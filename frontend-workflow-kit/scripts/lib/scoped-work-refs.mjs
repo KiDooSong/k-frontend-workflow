@@ -56,9 +56,11 @@ export function scopedRowSite(node) {
   const row = ROW_KINDS.has(node?.kind) ? node.ref : scopedRowAlias(node);
   return row && node.selection?.type === 'row' ? { row, artifact_id: node.artifact_id, section: node.selection.section } : null;
 }
+// An investigation or verification reference selects its document's whole body.
 export function scopedCoveredRows(node, sites) {
-  if (node?.kind !== 'artifact' || !['section', 'body'].includes(node.selection?.type)) return [];
-  return (sites.get(node.artifact_id) || []).filter((site) => node.selection.type === 'body' || site.section === node.selection.section)
+  const type = node?.selection?.type;
+  if (!['section', 'body', 'body-token'].includes(type) || (type === 'section' && node.kind !== 'artifact')) return [];
+  return (sites.get(node.artifact_id) || []).filter((site) => type !== 'section' || site.section === node.selection.section)
     .map((site) => site.row);
 }
 
