@@ -108,7 +108,10 @@ computes from the documents (`basis_version: 2`, #275). The basis holds:
   rows it holds, as overlapping evidence does for an Unknown or Conflict. An
   application that the Decision relations derived for an owner or unit stays
   only where that owner's or unit's own evidence (or a closure row applying to
-  it) leads to it, not where only an unrelated row opened the route.
+  it) leads to it, not where only an unrelated row opened the route. Likewise a
+  witness of a related Unknown or Conflict stays only where the unit's own
+  evidence or a closure row applying to it leads to what the witness selects,
+  and an application left with no witness stays out.
 
 A Decision, Unknown or Conflict row that applies to no owner is found through
 the references it cites, as resolution reads them (body, links, typed

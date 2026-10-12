@@ -18,7 +18,9 @@
     행을 그 결정과 관계짓지 않고, 그 밖의 문서에서는 내용이므로 그 문서를 인용한 행은 인라인 인용처럼 그 결정과
     관계를 맺는다. section 이나 문서 전체를 가리키는 참조(조사·검증
     참조 포함)는 Unknown·Conflict 의 겹치는 근거처럼 그 안의 행을 덮는다. 결정 관계가 owner·unit 에 대해 파생한 적용은
-    그 owner·unit 자신의 근거(또는 그것에 native 로 적용되는 closure 행)에서 닿을 때만 남는다.
+    그 owner·unit 자신의 근거(또는 그것에 native 로 적용되는 closure 행)에서 닿을 때만 남는다. 관계 있는
+    Unknown·Conflict 의 witness 도 unit 자신의 근거나 그 unit 에 적용되는 closure 행에서 그 witness 가 고른 것에
+    닿을 때만 남고, witness 가 하나도 남지 않은 적용은 빠진다.
   - 어느 owner 에도 적용되지 않는 결정·Unknown·Conflict 행은 그 행이 인용하는 참조(본문·링크·typed `depends_on`)와
     그 문서의 `decision_refs` 를 해소해 찾고, 관계 있는 참조가 그 행을 고르거나 덮거나 이름 대면 그 행이 아무것도 인용하지 않아도 기록과 함께
     들어간다. 이 탐색은 노드를 한 번씩 방문하고 문서마다 한 번 읽고 표마다 한 번 해석하며 section·표를 목록마다 한 번 색인해, 행과 참조 수에 비례한다. ID 가 typed reference 를 만들 수 없는 결정 행은 관계를 맺을 때(관계 있는 참조가 그 행을 고르거나
