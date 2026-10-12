@@ -10,6 +10,7 @@ import { parseReconciliationMarkdown, parseReconciliationReferenceView } from '.
 import { parseScopedTargetRef, isScopedRowId, scopedRawTable, scopedRowAlias, scopedRowSite, scopedAddRowSite, scopedCoveredRows } from './scoped-work-refs.mjs';
 import { resolveScopedContractGraph, scopedGraphSelectionRefs, scopedGraphMetadataRefs, scopedGraphBodyRefs } from './scoped-work-graph.mjs';
 import { scopedProjectionNode } from './scoped-work-projection.mjs';
+import { loadOpenDecisionRegister } from './open-decisions.mjs';
 import { readCurrentBytes, hashBytes, CurrentWorkError } from './current-work-request.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
 import { ScopedWorkContractError } from './scoped-work-request.mjs';
@@ -78,7 +79,7 @@ export function scopedUnappliedSearchStats() {
 }
 const TYPED_SPELLING = /(?:artifact|decision|unknown|conflict|gap|investigation|verification|input):/;
 const DECISION_TABLE = ['ID', 'Status', 'Blocking Mode'];
-function unappliedRows({ targetIndex, projectRoot, inputArtifacts = [] }, projection, unaudited = []) {
+function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] }, projection, unaudited = []) {
   const { decision_relations: decisions, uncertainty_relations: uncertainty } = projection;
   const applied = new Set([...decisions.records, ...uncertainty.records].map((entry) => entry.ref)), known = new Set(applied);
   const projected = [projection.evidence, decisions.evidence, uncertainty.evidence].flatMap((graph) => graph.nodes);
@@ -214,11 +215,25 @@ function unappliedRows({ targetIndex, projectRoot, inputArtifacts = [] }, projec
     }
     return decisionHomes;
   };
+  // The global register that ordinary decision_refs resolve against: its canonical file and type, and a
+  // register the decision pass can load.
+  let registerChecked = false;
+  const canonicalRegister = () => {
+    if (registerChecked) return;
+    const entry = targetIndex.artifacts.get('open-decision-register');
+    if (!entry || entry.file !== path.join(docsDir, 'global', 'open-decisions.md') || entry.fm.artifact_type !== 'open-decision-register') {
+      fail('noncanonical global decision home');
+    }
+    const register = loadOpenDecisionRegister({ docsDir });
+    if (!register.exists || register.structuralErrors.length) fail('invalid canonical global decision register');
+    registerChecked = true;
+  };
   const links = [];
   for (const ref of reached) {
     const node = nodes.get(ref);
     if (node?.artifact_id) for (const decision of named(node.artifact_id, true)) {
-      // Validated as an ordinary decision_refs entry: exactly one Decision home, the global register.
+      // Validated as an ordinary decision_refs entry: exactly one Decision home, the canonical global register.
+      canonicalRegister();
       const parsed = parseScopedTargetRef(decision), found = homes().get(parsed.rowId) || [];
       if (!found.includes(parsed.ownerArtifactId)) fail(`decision_refs in ${node.artifact_id} names no Decision row ${decision}`);
       if (found.length !== 1) fail(`decision_refs in ${node.artifact_id} names an ambiguous Decision ${decision}`);

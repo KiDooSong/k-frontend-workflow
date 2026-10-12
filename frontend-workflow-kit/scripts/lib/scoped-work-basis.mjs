@@ -272,7 +272,7 @@ export function scopedBindingBasis(projection, binding) {
       ...(roots.length ? { dependency_roots: roots } : {}),
       records: decisions.records.filter((entry) => rows.has(entry.ref)),
       applications,
-      referrers: decisions.referrers.filter((entry) => artifacts.has(entry.artifact_id)),
+      referrers: closureReferrers(decisions.referrers, evidenceNodes, artifacts),
       memberships: decisions.memberships,
     }),
     uncertainty_relations: withoutDecisionRefs({
@@ -287,6 +287,18 @@ export function scopedBindingBasis(projection, binding) {
     basis_version: SCOPE_BASIS_VERSION, binding,
   };
   return { basis, basis_digest: digestOf(basis), component_digests: scopedBasisComponentDigests(basis, target) };
+}
+
+// The metadata of each document the closure touches. A closure evidence node carries the same
+// projected metadata the decision pass records, so it is read from the closure first: whether the
+// pass happened to visit the document for some unrelated row must not change the basis (#275 r10).
+function closureReferrers(referrers, evidenceNodes, artifacts) {
+  const out = new Map();
+  for (const node of evidenceNodes.values()) if (node.artifact_id && artifacts.has(node.artifact_id) && !out.has(node.artifact_id)) {
+    out.set(node.artifact_id, { artifact_id: node.artifact_id, file: node.file, metadata: node.metadata });
+  }
+  for (const entry of referrers) if (artifacts.has(entry.artifact_id) && !out.has(entry.artifact_id)) out.set(entry.artifact_id, entry);
+  return scopeSet([...out.values()]);
 }
 
 // A partition of one basis for review: the target row's own entries, the other rows of

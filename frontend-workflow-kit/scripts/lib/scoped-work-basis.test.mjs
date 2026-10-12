@@ -738,6 +738,33 @@ test('#275 basis v2: a subject reaching through a chain of its own contracts gro
   assert.ok(large <= 5 * small, `${small} visits for 20 contracts, ${large} for 80`);
 });
 
+// Review r10 (Standards P2): the metadata of a document the closure touches comes from the closure, not
+// from whichever documents the decision pass visited for other rows: an unrelated resolved local Decision
+// that makes the pass visit that document leaves the digest unchanged.
+test('#275 basis v2: a document the closure cites keeps one metadata entry, whichever rows the decision pass visited', (t) => {
+  const f = fixture(t);
+  f.write('extra.md', { artifact_id: 'EXTRA', artifact_type: 'domain-rules', domain: 'foreign', status: 'draft' }, '## Rules\nExtra rule.\n\n## Other\nOther prose.');
+  f.write('second.md', second(), decisions([decisionRow('D-INVERSE', 'Revisit `decision:D-ONE@open-decision-register` with `artifact:EXTRA#rules`.')]));
+  const before = f.run();
+  assert.ok(scopeJson(before.basis).includes('D-INVERSE'));
+  f.change('screen.md', (doc) => { doc.body += `\n\n${decisions([[...decisionRow('D-LOCAL', 'Choose after `artifact:EXTRA#other`.').slice(0, 5), 'resolved']])}`; });
+  assert.equal(f.run().basis_digest, before.basis_digest);
+});
+
+// Review r10 (Spec P2): a Decision named by a reached document's decision_refs is validated as an
+// ordinary global reference, so its home must be the canonical global register.
+test('#275 basis v2: a Decision named through decision_refs must live in the canonical global register', (t) => {
+  const f = fixture(t);
+  f.change('screen.md', (doc) => { delete doc.fm.decision_refs;
+    doc.fm.decision_work_scopes = { version: 1, bindings: [binding({ decision_id: 'D-LOC' })] };
+    doc.body += `\n\n${decisions([decisionRow('D-LOC', 'Local choice.')])}`; });
+  f.change('global/open-decisions.md', (doc) => { doc.fm.artifact_type = 'domain-rules'; delete doc.fm.decision_work_scopes;
+    doc.body = decisions([decisionRow('D-FAKE', 'Not a register row.')]); });
+  f.write('notes.md', { artifact_id: 'NOTES', artifact_type: 'domain-rules', domain: 'foreign', status: 'draft', decision_refs: ['D-FAKE'] }, '## Notes\nNotes text.');
+  f.write('second.md', second(), decisions([decisionRow('D-INVERSE', 'Revisit `decision:D-LOC@SCREEN-RESULT-001` with `artifact:NOTES#notes`.')]));
+  assert.throws(() => f.run(OWNER, 'decision:D-LOC@SCREEN-RESULT-001'), /noncanonical global decision home/);
+});
+
 // What a row cites depends on the Decisions its cited documents name, so a row that reaches the bound
 // Decision only through a document's decision_refs relates to it; the search marks that route
 // backwards too, and a row whose ID cannot form a typed reference is then an error.

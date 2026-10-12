@@ -7,6 +7,7 @@ import { buildReconciliationTargetIndex } from './reconciliation-target-index.mj
 import { loadInputArtifact } from './input-artifact.mjs';
 import { parseReconciliationMarkdown, parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
 import { resolveScopedContractGraph } from './scoped-work-graph.mjs';
+import { scopedSectionLookupStats } from './scoped-work-refs.mjs';
 import { scopedProjectionNode } from './scoped-work-projection.mjs';
 import { scopeSet } from './scoped-work-normalize.mjs';
 import { createScopedSourceResolver } from './scoped-work-sources.mjs';
@@ -94,6 +95,21 @@ test('D graph: one resolution reads each document once, however many of its rows
   assert.equal(graph.nodes.length, 41);
   const reads = opened.mock.calls.filter((call) => path.basename(String(call.arguments[0])) === '0.md').length;
   assert.ok(reads <= 2, `${reads} reads of one document`);
+});
+
+// #275 review r10: selecting the rows of a document with many sections looks each section up in one
+// index per document, so the lookups grow with the rows, not with rows times sections.
+test('D graph: selecting rows of a document with many sections stays linear (#275)', (t) => {
+  const examined = (count) => {
+    const rows = Array.from({ length: count }, (_, i) => `| D-ROW${i} | open | final-fixture-ui | Row ${i}? | plain |`);
+    const notes = Array.from({ length: count }, (_, i) => `## Note ${i}\nProse ${i}.`);
+    const f = fixture(t, [{ id: 'OD', body: `## Open Decisions\n| ID | Status | Blocking Mode | Decision Needed | Options |\n|---|---|---|---|---|\n${rows.join('\n')}\n\n${notes.join('\n\n')}` }]);
+    const before = scopedSectionLookupStats().examined;
+    f.graph(rows.map((_, i) => `decision:D-ROW${i}@OD`));
+    return scopedSectionLookupStats().examined - before;
+  };
+  const small = examined(20), large = examined(80);
+  assert.ok(large <= 5 * small, `${small} sections examined for 20 rows, ${large} for 80`);
 });
 
 // #275 review r8: the unapplied-row search projects each node as it is recorded, so a register's rows

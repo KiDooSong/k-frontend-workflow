@@ -88,6 +88,26 @@ export function scopedRawTableStats() {
   return { ...encodeStats };
 }
 
+// One slug index per parsed section list (a document's occurrences or a view's sections), so
+// selecting the rows of a document with many sections looks each section up once (#275).
+const sectionIndexes = new WeakMap(), lookupStats = { examined: 0 };
+export function scopedSectionsBySlug(sections, slug) {
+  if (!sectionIndexes.has(sections)) {
+    const index = new Map();
+    for (const section of sections) {
+      lookupStats.examined += 1;
+      if (!index.has(section.slug)) index.set(section.slug, []);
+      index.get(section.slug).push(section);
+    }
+    sectionIndexes.set(sections, index);
+  }
+  return sectionIndexes.get(sections).get(slug) || [];
+}
+// Process-wide sections examined by slug lookups: read-only diagnostics (#275).
+export function scopedSectionLookupStats() {
+  return { ...lookupStats };
+}
+
 export function scopedRawTable(table) {
   if (typeof table?.sourceText !== 'string' || !table.sourceText) fail('SW-REF-TABLE', 'table source required');
   encodeStats.tables += 1;
@@ -123,7 +143,7 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot, inputA
     return { record, relative, markdown: parsed.get(id) };
   }
   function section(markdown, slug) {
-    const hits = markdown.occurrences.filter((entry) => entry.slug === slug);
+    const hits = scopedSectionsBySlug(markdown.occurrences, slug);
     if (hits.length !== 1) fail(hits.length ? 'SW-REF-AMBIGUOUS' : 'SW-REF-MISSING', `section #${slug}`);
     return hits[0];
   }

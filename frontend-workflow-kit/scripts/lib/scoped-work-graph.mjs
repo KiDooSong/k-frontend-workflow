@@ -10,7 +10,7 @@ import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { parseInputEvidenceRef } from './provenance.mjs';
 import { resolveArtifact } from './reconciliation-target-index.mjs';
 import { parseReconciliationReferenceView, reconciliationReferenceLabel } from './reconciliation-markdown-ast.mjs';
-import { createScopedReferenceResolver, parseScopedTargetRef } from './scoped-work-refs.mjs';
+import { createScopedReferenceResolver, parseScopedTargetRef, scopedSectionsBySlug } from './scoped-work-refs.mjs';
 import { createScopedSourceResolver } from './scoped-work-sources.mjs';
 import { workText, workSet, ScopedWorkContractError } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
@@ -57,7 +57,7 @@ function nativeRowsByKey(body, node) {
 }
 function selectedNodes(view, selection, body) {
   if (selection.type === 'body' || selection.type === 'body-token') return view.tree.children;
-  const sections = view.sections.filter((section) => section.slug === selection.section);
+  const sections = scopedSectionsBySlug(view.sections, selection.section);
   if (sections.length !== 1) fail('selected section is missing or ambiguous');
   const nodes = sections[0].nodes;
   if (selection.type !== 'row' && selection.bullet_index == null) return nodes;
