@@ -10,7 +10,7 @@ import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { parseInputEvidenceRef } from './provenance.mjs';
 import { resolveArtifact } from './reconciliation-target-index.mjs';
 import { parseReconciliationReferenceView, reconciliationReferenceLabel } from './reconciliation-markdown-ast.mjs';
-import { createScopedReferenceResolver, parseScopedTargetRef, scopedSectionsBySlug } from './scoped-work-refs.mjs';
+import { createScopedReferenceResolver, parseScopedTargetRef, scopedSectionsBySlug, scopedIndexedBy } from './scoped-work-refs.mjs';
 import { createScopedSourceResolver } from './scoped-work-sources.mjs';
 import { workText, workSet, ScopedWorkContractError } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
@@ -49,11 +49,26 @@ function nativeRowsByKey(body, node) {
     const rows = new Map();
     for (const row of node.children.slice(1)) {
       const key = scopeJson(splitRow(rawNode(body, row)));
-      rows.set(key, [...(rows.get(key) || []), row]);
+      if (!rows.has(key)) rows.set(key, []);
+      rows.get(key).push(row);
     }
     entry.rows = rows;
   }
   return entry.rows;
+}
+// A section's native rows by raw header and cells, listed once per section and indexed once, so
+// selecting every row of a section whose tables are many, or repeat a header, stays linear (#275).
+const sectionRows = new WeakMap();
+function nativeSectionRows(body, section) {
+  let entry = sectionRows.get(section);
+  if (entry?.body !== body) {
+    entry = { body, list: section.tableNodes.flatMap((node) => {
+      const { header } = nativeTableKeys(body, node);
+      return [...nativeRowsByKey(body, node)].flatMap(([key, rows]) => rows.map((row) => ({ key: `${header}\n${key}`, row })));
+    }) };
+    sectionRows.set(section, entry);
+  }
+  return scopedIndexedBy(entry.list, 'row', (item) => item.key);
 }
 function selectedNodes(view, selection, body) {
   if (selection.type === 'body' || selection.type === 'body-token') return view.tree.children;
@@ -63,12 +78,8 @@ function selectedNodes(view, selection, body) {
   if (selection.type !== 'row' && selection.bullet_index == null) return nodes;
   if (selection.type === 'row') {
     // Never reintroduce native tables rejected by the canonical resolver.
-    const matches = sections[0].tableNodes.filter((node) =>
-      nativeTableKeys(body, node).header === scopeJson(selection.headers))
-      .flatMap((node) => {
-        const rows = nativeRowsByKey(body, node);
-        return rows.size ? rows.get(scopeJson(selection.cells)) || [] : [];
-      });
+    const matches = (nativeSectionRows(body, sections[0]).get(`${scopeJson(selection.headers)}\n${scopeJson(selection.cells)}`) || [])
+      .map((item) => item.row);
     if (matches.length !== 1) fail('selected raw row is missing or ambiguous in its native AST');
     return matches;
   }

@@ -112,6 +112,35 @@ test('D graph: selecting rows of a document with many sections stays linear (#27
   assert.ok(large <= 5 * small, `${small} sections examined for 20 rows, ${large} for 80`);
 });
 
+// #275 review r11: a section that holds many tables beside its Decision table still finds each row
+// through one index per section, in the reference resolver and in the native tree.
+test('D graph: selecting rows of a section with many tables stays linear (#275)', (t) => {
+  const examined = (count) => {
+    const rows = Array.from({ length: count }, (_, i) => `| D-ROW${i} | open | final-fixture-ui | Row ${i}? | plain |`);
+    const aux = Array.from({ length: count }, (_, i) => `| Note ${i} | Value |\n|---|---|\n| n${i} | v${i} |`);
+    const f = fixture(t, [{ id: 'OD', body: `## Open Decisions\n| ID | Status | Blocking Mode | Decision Needed | Options |\n|---|---|---|---|---|\n${rows.join('\n')}\n\n${aux.join('\n\n')}` }]);
+    const before = scopedSectionLookupStats().examined;
+    f.graph(rows.map((_, i) => `decision:D-ROW${i}@OD`));
+    return scopedSectionLookupStats().examined - before;
+  };
+  const small = examined(20), large = examined(80);
+  assert.ok(large <= 5 * small, `${small} lookups for 20 rows and tables, ${large} for 80`);
+});
+
+// #275 review r11: tables that share one header are told apart by their rows, through one index per
+// section, so selecting every row of a section whose tables repeat a header stays linear too.
+test('D graph: selecting rows of tables that share a header stays linear (#275)', (t) => {
+  const examined = (count) => {
+    const tables = Array.from({ length: count }, (_, i) => `| Key | Value |\n|---|---|\n| n${i} | v${i} |`);
+    const f = fixture(t, [{ id: 'OD', body: `## Notes\n${tables.join('\n\n')}` }]);
+    const before = scopedSectionLookupStats().examined;
+    assert.equal(f.graph(tables.map((_, i) => `artifact:OD#notes/n${i}`)).nodes.length, count);
+    return scopedSectionLookupStats().examined - before;
+  };
+  const small = examined(20), large = examined(80);
+  assert.ok(large <= 5 * small, `${small} lookups for 20 tables, ${large} for 80`);
+});
+
 // #275 review r8: the unapplied-row search projects each node as it is recorded, so a register's rows
 // do not each carry a copy of its bindings; the projection is the one its caller would apply.
 test('D graph: a projected resolution records projected nodes, without the document bindings (#275)', (t) => {

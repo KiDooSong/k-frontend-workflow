@@ -88,22 +88,28 @@ export function scopedRawTableStats() {
   return { ...encodeStats };
 }
 
-// One slug index per parsed section list (a document's occurrences or a view's sections), so
-// selecting the rows of a document with many sections looks each section up once (#275).
-const sectionIndexes = new WeakMap(), lookupStats = { examined: 0 };
-export function scopedSectionsBySlug(sections, slug) {
-  if (!sectionIndexes.has(sections)) {
+// One index per parsed list (a document's sections, a section's tables) and key kind, built once,
+// so selecting the rows of a document with many sections or tables stays linear (#275).
+const listIndexes = new WeakMap(), lookupStats = { examined: 0 };
+export function scopedIndexedBy(list, kind, keyOf) {
+  if (!listIndexes.has(list)) listIndexes.set(list, new Map());
+  const byKind = listIndexes.get(list);
+  if (!byKind.has(kind)) {
     const index = new Map();
-    for (const section of sections) {
-      lookupStats.examined += 1;
-      if (!index.has(section.slug)) index.set(section.slug, []);
-      index.get(section.slug).push(section);
+    lookupStats.examined += list.length;
+    for (const item of list) {
+      const key = keyOf(item);
+      if (!index.has(key)) index.set(key, []);
+      index.get(key).push(item);
     }
-    sectionIndexes.set(sections, index);
+    byKind.set(kind, index);
   }
-  return sectionIndexes.get(sections).get(slug) || [];
+  return byKind.get(kind);
 }
-// Process-wide sections examined by slug lookups: read-only diagnostics (#275).
+export function scopedSectionsBySlug(sections, slug) {
+  return scopedIndexedBy(sections, 'slug', (section) => section.slug).get(slug) || [];
+}
+// Process-wide sections and tables examined by lookups: read-only diagnostics (#275).
 export function scopedSectionLookupStats() {
   return { ...lookupStats };
 }
@@ -185,9 +191,10 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot, inputA
     }
 
     const tables = encoded(occurrence);
-    const eligible = family ? tables.filter((t) => signatures[family].every((h) => hasHeader(t.headers, h))) : tables;
+    const eligible = family
+      ? scopedIndexedBy(tables, `family:${family}`, (t) => signatures[family].every((h) => hasHeader(t.headers, h))).get(true) || [] : tables;
     if (family && eligible.length !== 1) fail('SW-REF-AMBIGUOUS', `canonical ${family} table must be unique`);
-    const matches = eligible.flatMap((table) => (rowIndex(table, family).get(key) || []).map((index) => ({ table, index })));
+    const matches = rowsOf(eligible, family).get(key) || [];
     if (matches.length !== 1) fail(matches.length ? 'SW-REF-AMBIGUOUS' : 'SW-REF-MISSING', `exact row ${key}`);
     const { table, index } = matches[0];
     return { type: 'row', section: occurrence.slug, key, headers: [...table.headers], cells: [...table.cells[index]] };
@@ -198,6 +205,22 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot, inputA
   function encoded(occurrence) {
     if (!tableCache.has(occurrence)) tableCache.set(occurrence, occurrence.tables.map(scopedRawTable));
     return tableCache.get(occurrence);
+  }
+  // The rows of several tables by identity, in table then row order, indexed once per table list.
+  const combined = new WeakMap();
+  function rowsOf(tables, family) {
+    if (!combined.has(tables)) combined.set(tables, new Map());
+    const byMode = combined.get(tables), mode = family ? 'id' : 'first';
+    if (!byMode.has(mode)) {
+      const index = new Map();
+      lookupStats.examined += tables.length;
+      for (const table of tables) for (const [identity, positions] of rowIndex(table, family)) for (const position of positions) {
+        if (!index.has(identity)) index.set(identity, []);
+        index.get(identity).push({ table, index: position });
+      }
+      byMode.set(mode, index);
+    }
+    return byMode.get(mode);
   }
   function rowIndex(table, family) {
     if (!indexCache.has(table)) indexCache.set(table, new Map());

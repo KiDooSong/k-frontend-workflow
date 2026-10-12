@@ -10,7 +10,7 @@ import { parseReconciliationMarkdown, parseReconciliationReferenceView } from '.
 import { parseScopedTargetRef, isScopedRowId, scopedRawTable, scopedRowAlias, scopedRowSite, scopedAddRowSite, scopedCoveredRows } from './scoped-work-refs.mjs';
 import { resolveScopedContractGraph, scopedGraphSelectionRefs, scopedGraphMetadataRefs, scopedGraphBodyRefs } from './scoped-work-graph.mjs';
 import { scopedProjectionNode } from './scoped-work-projection.mjs';
-import { loadOpenDecisionRegister } from './open-decisions.mjs';
+import { loadOpenDecisionRegister, resolveDecisionRefs } from './open-decisions.mjs';
 import { readCurrentBytes, hashBytes, CurrentWorkError } from './current-work-request.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
 import { ScopedWorkContractError } from './scoped-work-request.mjs';
@@ -108,7 +108,9 @@ function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] 
         const key = `untyped:${artifactId}#${slug}/${id}`;
         untyped.set(key, { artifactId, slug, id });
         if (!view) { view = parseReconciliationReferenceView(entry.body); readSet.push(indexedFile(projectRoot, entry)); }
-        add({ key, id, artifactId, token: null, roots: scopedGraphSelectionRefs(entry.body, entry.fm, { type: 'row', section: slug, headers, cells }, view) }, slug);
+        // A typed row's node leads to its document's decision_refs; an untyped row starts from them too.
+        add({ key, id, artifactId, token: null, roots: [...new Set([...scopedGraphSelectionRefs(entry.body, entry.fm, { type: 'row', section: slug, headers, cells }, view),
+          ...looseDecisionRefs(entry.fm)])] }, slug);
       }
     }
     for (const [id, hits] of entry.rows) for (const hit of hits) {
@@ -217,32 +219,52 @@ function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] 
   };
   // The global register that ordinary decision_refs resolve against: its canonical file and type, and a
   // register the decision pass can load.
-  let registerChecked = false;
+  let register = null;
   const canonicalRegister = () => {
-    if (registerChecked) return;
+    if (register) return register;
     const entry = targetIndex.artifacts.get('open-decision-register');
     if (!entry || entry.file !== path.join(docsDir, 'global', 'open-decisions.md') || entry.fm.artifact_type !== 'open-decision-register') {
       fail('noncanonical global decision home');
     }
-    const register = loadOpenDecisionRegister({ docsDir });
-    if (!register.exists || register.structuralErrors.length) fail('invalid canonical global decision register');
-    registerChecked = true;
+    const loaded = loadOpenDecisionRegister({ docsDir });
+    if (!loaded.exists || loaded.structuralErrors.length) fail('invalid canonical global decision register');
+    register = loaded;
+    return register;
+  };
+  // A document's whole decision_refs list, resolved once as the decision pass resolves an owner's: a
+  // malformed referenced row stops the basis as it stops the pass.
+  const resolvedLists = new Set();
+  const resolveList = (artifactId) => {
+    if (resolvedLists.has(artifactId)) return;
+    resolvedLists.add(artifactId);
+    const entry = targetIndex.artifacts.get(artifactId);
+    const collisions = new Set([...homes()].filter(([, found]) => found.length !== 1).map(([id]) => id));
+    const resolved = resolveDecisionRefs({ refs: entry.fm.decision_refs, registry: canonicalRegister(), referrer: entry.fm, conflictingIds: collisions });
+    if (resolved.malformed.length) fail(`decision_refs in ${artifactId}: ${resolved.malformed.map((value) => value.code).join(', ')}`);
   };
   const links = [];
   for (const ref of reached) {
     const node = nodes.get(ref);
     if (node?.artifact_id) for (const decision of named(node.artifact_id, true)) {
-      // Validated as an ordinary decision_refs entry: exactly one Decision home, the canonical global register.
-      canonicalRegister();
+      // Validated as an ordinary decision_refs entry: exactly one Decision home, then the document's whole
+      // list against the canonical global register.
       const parsed = parseScopedTargetRef(decision), found = homes().get(parsed.rowId) || [];
       if (!found.includes(parsed.ownerArtifactId)) fail(`decision_refs in ${node.artifact_id} names no Decision row ${decision}`);
       if (found.length !== 1) fail(`decision_refs in ${node.artifact_id} names an ambiguous Decision ${decision}`);
+      resolveList(node.artifact_id);
       links.push({ referrer: ref, decision });
     }
   }
   return { unapplied: { records: scopeSet(records), document_refs: scopeSet(links), evidence: {
     nodes: scopeSet(graph.nodes.filter((node) => reached.has(node.ref)).map(scopedProjectionNode)),
     edges: scopeSet(graph.edges.filter((edge) => reached.has(edge.from) && reached.has(edge.to))) } }, read_set: readSet };
+}
+
+// The global Decision refs a document's frontmatter decision_refs names, read loosely; strict
+// validation happens once the document relates.
+function looseDecisionRefs(fm) {
+  const ids = fm?.decision_refs;
+  return Array.isArray(ids) ? ids.filter((id) => isScopedRowId('decision', id)).map((id) => `decision:${id}@open-decision-register`) : [];
 }
 
 // The rows of a document's canonical Open Decisions table, read from its indexed snapshot, as the

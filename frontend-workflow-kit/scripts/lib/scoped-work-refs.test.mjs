@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { buildReconciliationTargetIndex } from './reconciliation-target-index.mjs';
-import { createScopedReferenceResolver, scopedRawTableStats, scopedRowAlias, scopedAddRowSite, scopedCoveredRows, scopedRowSiteStats } from './scoped-work-refs.mjs';
+import { createScopedReferenceResolver, scopedRawTableStats, scopedRowAlias, scopedAddRowSite, scopedCoveredRows, scopedRowSiteStats, scopedSectionLookupStats } from './scoped-work-refs.mjs';
 const clone = (value) => structuredClone(value);
 
 // Actual Markdown files -> existing target index -> D's exact selection resolver.
@@ -91,6 +91,20 @@ test('D refs: a resolver encodes each table once, however many of its rows it se
   assert.notEqual(resolver.contract('decision:D-ROW1@OD').metadata, resolver.contract('decision:D-ROW2@OD').metadata);
   const shared = createScopedReferenceResolver({ targetIndex, projectRoot: root, shareMetadata: true });
   assert.equal(shared.contract('decision:D-ROW1@OD').metadata, shared.contract('decision:D-ROW2@OD').metadata);
+});
+
+// #275 review r11: a row of an ordinary section is found among all of its tables through one index,
+// so selecting every row of a section with many tables stays linear.
+test('D refs: selecting the rows of a section with many tables stays linear (#275)', (t) => {
+  const examined = (count) => {
+    const tables = Array.from({ length: count }, (_, i) => `| Key | Value |\n|---|---|\n| n${i} | v${i} |`);
+    const { resolver } = referenceFixture(t, [{ body: `## Notes\n${tables.join('\n\n')}` }]);
+    const before = scopedSectionLookupStats().examined;
+    for (let i = 0; i < count; i += 1) assert.deepEqual(resolver.contract(`artifact:DOC#notes/n${i}`).selection.cells, [`n${i}`, `v${i}`]);
+    return scopedSectionLookupStats().examined - before;
+  };
+  const small = examined(20), large = examined(80);
+  assert.ok(large <= 5 * small, `${small} lookups for 20 tables, ${large} for 80`);
 });
 
 // #275 review r7: only the canonical row families alias a row selection; a section named like an

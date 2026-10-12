@@ -765,6 +765,33 @@ test('#275 basis v2: a Decision named through decision_refs must live in the can
   assert.throws(() => f.run(OWNER, 'decision:D-LOC@SCREEN-RESULT-001'), /noncanonical global decision home/);
 });
 
+// Review r11 (Spec P2 = Standards P2): a named Decision row is validated as for an ordinary
+// decision_refs entry, so a malformed register row (empty question, unknown status) stops the basis.
+test('#275 basis v2: a decision_refs entry naming a malformed register row stops the basis', (t) => {
+  for (const row of [['D-BAD', '', 'A / B', 'api-integrated-ui', 'PM', 'open'], ['D-BAD', 'Bad status.', 'A / B', 'api-integrated-ui', 'PM', 'pending']]) {
+    const f = fixture(t);
+    f.change('global/open-decisions.md', (doc) => { doc.body = decisions([decisionRow(), decisionRow('D-UNUSED', 'Unrelated decision.'), row]); });
+    f.write('notes.md', { artifact_id: 'NOTES', artifact_type: 'domain-rules', domain: 'foreign', status: 'draft', decision_refs: ['D-BAD'] }, '## Notes\nNotes text.');
+    f.write('second.md', second(), decisions([decisionRow('D-INVERSE', 'Revisit `decision:D-ONE@open-decision-register` with `artifact:NOTES#notes`.')]));
+    assert.throws(() => f.run(), /malformed-row/, row[5]);
+  }
+});
+
+// Review r11 (Spec P2 = Standards P2): a row of a document relates through that document's
+// decision_refs whatever its ID; a row whose ID cannot form a typed reference therefore stops the
+// basis like any related one, where a typed row of the same document joins the closure.
+test('#275 basis v2: a row of a document whose decision_refs names the bound Decision relates, whatever its ID', (t) => {
+  const typed = fixture(t);
+  typed.write('foreign.md', { ...foreign(), decision_refs: ['D-ONE'] }, decisions([decisionRow('D-OTHER', 'Plain question.')]));
+  const before = typed.run();
+  assert.ok(scopeJson(before.basis).includes('D-OTHER'));
+  typed.change('foreign.md', (doc) => { doc.body = doc.body.replace('Plain question.', 'Changed question.'); });
+  assert.notEqual(typed.run().basis_digest, before.basis_digest);
+  const untyped = fixture(t);
+  untyped.write('foreign.md', { ...foreign(), decision_refs: ['D-ONE'] }, decisions([decisionRow('Release choice', 'Plain question.')]));
+  assert.throws(() => untyped.run(), /cannot form a scoped decision reference/);
+});
+
 // What a row cites depends on the Decisions its cited documents name, so a row that reaches the bound
 // Decision only through a document's decision_refs relates to it; the search marks that route
 // backwards too, and a row whose ID cannot form a typed reference is then an error.
