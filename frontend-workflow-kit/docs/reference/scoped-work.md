@@ -99,20 +99,24 @@ computes from the documents (`basis_version: 2`, #275). The basis holds:
   the rows an Unknown or Conflict relation names as a witness (and the
   rows that name it), and one evidence graph through which they apply. A
   document's frontmatter `decision_refs` brings a Decision in when a closure row
-  (or the owner's unit evidence) reaches that document; it does not relate the
-  Decision to the document's other rows, and the list itself is not hashed. A
-  reference to a section or a whole document covers the rows it holds, as
-  overlapping evidence does for an Unknown or Conflict.
+  cites that document; it does not relate the Decision to the document's other
+  rows, and the list itself is not hashed. A reference to a section or a whole
+  document (including an investigation or verification reference) covers the
+  rows it holds, as overlapping evidence does for an Unknown or Conflict. An
+  application that the Decision relations derived for an owner or unit stays
+  only where that owner's or unit's own evidence (or a closure row applying to
+  it) leads to it, not where only an unrelated row opened the route.
 
 A Decision, Unknown or Conflict row that applies to no owner is found through
 the references it cites, as resolution reads them (body, links, typed
 `depends_on`), wherever they lead. An exact artifact row selection
 (`artifact:X#unknowns/U-1`) is the row it selects. Any non-empty Decision ID is
 valid; one that cannot form a typed reference is an error only when its row
-relates to the projection. As for Unknown and Conflict sections, an Open
-Decisions table that cannot be read stops scoped work when its document holds a
-typed reference, and a typed reference that cannot be resolved stops it wherever
-it is.
+relates to the projection, including when a related reference selects or covers
+it. As for Unknown and Conflict sections, an Open Decisions table that cannot be
+read stops scoped work when its document holds a typed reference (as resolution
+reads it, encoded link destinations included), and a typed reference that
+cannot be resolved stops it wherever it is.
 
 So adding or editing another row of the owner leaves the digest unchanged unless
 that row relates to the bound row; editing the bound row, a related row or any
