@@ -18,7 +18,8 @@
     참조 포함)는 Unknown·Conflict 의 겹치는 근거처럼 그 안의 행을 덮는다. 결정 관계가 owner·unit 에 대해 파생한 적용은
     그 owner·unit 자신의 근거(또는 그것에 native 로 적용되는 closure 행)에서 닿을 때만 남는다.
   - 어느 owner 에도 적용되지 않는 결정·Unknown·Conflict 행은 그 행이 인용하는 참조(본문·링크·typed `depends_on`)를
-    해소해 찾는다. ID 가 typed reference 를 만들 수 없는 결정 행은 관계를 맺을 때(관계 있는 참조가 그 행을 고르거나
+    해소해 찾고, 관계 있는 참조가 그 행을 고르거나 덮거나 이름 대면 그 행이 아무것도 인용하지 않아도 기록과 함께
+    들어간다. 이 탐색은 문서마다 한 번 읽고 표마다 한 번 해석해 행 수에 비례한다. ID 가 typed reference 를 만들 수 없는 결정 행은 관계를 맺을 때(관계 있는 참조가 그 행을 고르거나
     덮을 때 포함)만 오류다. Unknown·Conflict section 처럼, 읽을 수 없는 Open Decisions 표는 그 문서에 typed
     reference 가 있으면(해소가 읽는 대로, 인코딩된 링크 대상 포함) scoped 작업을 멈추고, 해소할 수 없는 typed
     reference 는 어디에 있든 멈춘다.

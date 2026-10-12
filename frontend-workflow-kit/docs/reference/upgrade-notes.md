@@ -26,8 +26,9 @@ or root config.
   contract still does. See
   [binding basis and status](scoped-work.md#binding-basis-and-status).
 - Every digest recorded under version 1 reads stale after the upgrade, so each
-  bound open row blocks every unit of its owner again until a person records it
-  once more.
+  bound open row blocks again as it does without a binding until a person records
+  it once more: an open Decision blocks every unit of its owner, an open Unknown
+  or Conflict the units its relations reach (`blocking_units`).
 - New read-only command `workflow:binding-status`: each binding's state
   (`current`, `stale`, `missing`, `unresolved`), the recorded binding, and the
   computed digest and component digests, on the committed `HEAD`. Add it to your

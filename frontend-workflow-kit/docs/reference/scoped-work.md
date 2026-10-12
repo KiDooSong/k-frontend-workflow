@@ -109,7 +109,9 @@ computes from the documents (`basis_version: 2`, #275). The basis holds:
 
 A Decision, Unknown or Conflict row that applies to no owner is found through
 the references it cites, as resolution reads them (body, links, typed
-`depends_on`), wherever they lead. An exact artifact row selection
+`depends_on`), wherever they lead, and also when a related reference selects,
+covers or names it, even if it cites nothing itself; it then joins with its
+record. An exact artifact row selection
 (`artifact:X#unknowns/U-1`) is the row it selects. Any non-empty Decision ID is
 valid; one that cannot form a typed reference is an error only when its row
 relates to the projection, including when a related reference selects or covers
