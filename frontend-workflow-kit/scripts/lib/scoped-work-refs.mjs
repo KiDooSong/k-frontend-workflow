@@ -40,7 +40,7 @@ const ROW_FAMILIES = { 'open-decisions': 'decision', unknowns: 'unknown', confli
 export function scopedRowAlias(node) {
   const selection = node?.selection;
   if (node?.kind !== 'artifact' || selection?.type !== 'row' || !Array.isArray(selection.headers)) return null;
-  const family = ROW_FAMILIES[selection.section] ||
+  const family = (Object.hasOwn(ROW_FAMILIES, selection.section) ? ROW_FAMILIES[selection.section] : null) ||
     (selection.section === '' && node.metadata?.artifact_type === 'conflicts' ? 'conflict' : null);
   if (!family || !signatures[family].every((header) => hasHeader(selection.headers, header))) return null;
   const id = col(Object.fromEntries(selection.headers.map((header, index) => [header, selection.cells[index]])), 'ID');
@@ -56,11 +56,17 @@ export function scopedRowSite(node) {
   const row = ROW_KINDS.has(node?.kind) ? node.ref : scopedRowAlias(node);
   return row && node.selection?.type === 'row' ? { row, artifact_id: node.artifact_id, section: node.selection.section } : null;
 }
+// Sites are kept per document and row, so recording every row of a register stays linear.
+export function scopedAddRowSite(sites, site) {
+  if (!site) return;
+  if (!sites.has(site.artifact_id)) sites.set(site.artifact_id, new Map());
+  if (!sites.get(site.artifact_id).has(site.row)) sites.get(site.artifact_id).set(site.row, site);
+}
 // An investigation or verification reference selects its document's whole body.
 export function scopedCoveredRows(node, sites) {
   const type = node?.selection?.type;
   if (!['section', 'body', 'body-token'].includes(type) || (type === 'section' && node.kind !== 'artifact')) return [];
-  return (sites.get(node.artifact_id) || []).filter((site) => type !== 'section' || site.section === node.selection.section)
+  return [...(sites.get(node.artifact_id)?.values() || [])].filter((site) => type !== 'section' || site.section === node.selection.section)
     .map((site) => site.row);
 }
 

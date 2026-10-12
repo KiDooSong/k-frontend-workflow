@@ -12,7 +12,7 @@ import { REQUIRED_REGISTER_COLS } from './reconciliation-register.mjs';
 import { COMPONENT_MAPPING_COLUMNS, MAPPING_PROVENANCE_COLUMNS } from './mapping-provenance.mjs';
 import { scopeJson } from './scoped-work-normalize.mjs';
 import { resolveScopedBindingBasis, scopedBindingBasis } from './scoped-work-basis.mjs';
-import { resolveScopedApplicabilityProjection } from './scoped-work-applicability.mjs';
+import { resolveScopedApplicabilityProjection, scopedUnappliedSearchStats } from './scoped-work-applicability.mjs';
 import { resolveScopedUncertaintyBindingBasis } from './scoped-work-uncertainty-scopes.mjs';
 import { inspectScopedDecisionBindings } from './scoped-work-bindings.mjs';
 
@@ -608,6 +608,66 @@ test('#275 basis v2: an applicability pass reads a register as often for many un
   };
   for (const [name, id] of [['typed', (i) => `D-OLD${i}`], ['untyped', (i) => `Choice ${i}`]]) {
     assert.equal(reads(30, id), reads(3, id), name);
+  }
+});
+
+// Review r7 (Spec P2, Standards P2): a Decision row whose identity is ambiguous (a repeated ID, or a
+// second Open Decisions section) cannot be read. As for an unreadable table and as for a repeated
+// Unknown, it is left out of a document that holds no typed reference and stops scoped work in one
+// that does; a unique row beside it still joins with its record.
+test('#275 basis v2: Decision rows whose identity is ambiguous follow the unreadable table rule', (t) => {
+  const tableOf = (rows) => table(['ID', 'Decision Needed', 'Options', 'Blocking Mode', 'Owner', 'Status'], rows);
+  for (const [name, body] of [
+    ['repeated untyped ID', decisions([decisionRow('Release choice', 'Pick.'), decisionRow('Release choice', 'Pick.')])],
+    ['repeated typed ID', decisions([decisionRow('D-DUP', 'Pick.'), decisionRow('D-DUP', 'Other pick.')])],
+    ['second section', `${decisions([decisionRow('D-A', 'Pick.')])}\n\n## Open Decisions\n${tableOf([decisionRow('D-B', 'Other.')])}`],
+  ]) {
+    const quiet = fixture(t);
+    quiet.write('second.md', second(), body);
+    assert.doesNotThrow(() => quiet.run(), name);
+    const cited = fixture(t);
+    cited.write('second.md', second(), `${body}\n\nSee \`artifact:RULES#untouched\`.`);
+    assert.throws(() => cited.run(), /cannot be read/, name);
+  }
+  // Only the second repeated row cites the bound Decision: it is not dropped in favour of the first.
+  const f = fixture(t);
+  f.write('second.md', second(), decisions([decisionRow('Release choice', 'Pick.'), decisionRow('Release choice', 'After `decision:D-ONE@open-decision-register`.')]));
+  assert.throws(() => f.run(), /cannot be read/);
+  const keep = fixture(t);
+  keep.change('global/open-decisions.md', (doc) => { doc.body = doc.body.replace('Choose behavior.', 'Choose after `artifact:SCREEN-RESULT-002#open-decisions/D-KEEP`.'); });
+  keep.write('second.md', second(), decisions([decisionRow('D-DUP', 'Pick.'), decisionRow('D-DUP', 'Pick.'), decisionRow('D-KEEP', 'Kept row.')]));
+  const before = keep.run();
+  keep.change('second.md', (doc) => { doc.body = doc.body.replace('Kept row.', 'Kept row, changed.'); });
+  assert.notEqual(keep.run().component_digests.relations, before.component_digests.relations);
+});
+
+// What a row cites depends on the Decisions its cited documents name, so a row that reaches the bound
+// Decision only through a document's decision_refs relates to it; the search marks that route
+// backwards too, and a row whose ID cannot form a typed reference is then an error.
+test('#275 basis v2: a row reaching the bound Decision only through decision_refs relates', (t) => {
+  const f = fixture(t);
+  f.write('notes.md', { artifact_id: 'NOTES', artifact_type: 'domain-rules', domain: 'foreign', status: 'draft', decision_refs: ['D-ONE'] },
+    '## Notes\nNotes text.');
+  f.write('second.md', second(), decisions([decisionRow('Release choice', 'After `artifact:NOTES#notes`.')]));
+  assert.throws(() => f.run(), /cannot form a scoped decision reference/);
+});
+
+// Review r7 (Standards P2): finding unapplied rows visits each node a bounded number of times, so a
+// chain of rows that cite each other costs in proportion to its length, related or not.
+test('#275 basis v2: the unapplied-row search over a chain of rows grows with the chain, not its square', (t) => {
+  const visits = (count, related) => {
+    const f = fixture(t);
+    f.change('global/open-decisions.md', (doc) => { doc.body = decisions([
+      decisionRow('D-ONE', related ? 'Choose after `decision:D-CHAIN0@SCREEN-RESULT-002`.' : 'Choose behavior.'), decisionRow('D-UNUSED', 'Unrelated decision.')]); });
+    f.write('second.md', second(), decisions(Array.from({ length: count }, (_, i) =>
+      decisionRow(`D-CHAIN${i}`, i + 1 < count ? `After \`decision:D-CHAIN${i + 1}@SCREEN-RESULT-002\`.` : 'Last.'))));
+    const before = scopedUnappliedSearchStats().visited;
+    resolveScopedApplicabilityProjection(f.options());
+    return scopedUnappliedSearchStats().visited - before;
+  };
+  for (const related of [false, true]) {
+    const small = visits(20, related), large = visits(80, related);
+    assert.ok(large <= 5 * small, `${related ? 'related' : 'unrelated'} chain: ${small} visits for 20 rows, ${large} for 80`);
   }
 });
 

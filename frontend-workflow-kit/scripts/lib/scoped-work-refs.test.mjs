@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { buildReconciliationTargetIndex } from './reconciliation-target-index.mjs';
-import { createScopedReferenceResolver, scopedRawTableStats } from './scoped-work-refs.mjs';
+import { createScopedReferenceResolver, scopedRawTableStats, scopedRowAlias, scopedAddRowSite, scopedCoveredRows } from './scoped-work-refs.mjs';
 const clone = (value) => structuredClone(value);
 
 // Actual Markdown files -> existing target index -> D's exact selection resolver.
@@ -86,6 +86,29 @@ test('D refs: a resolver encodes each table once, however many of its rows it se
   assert.deepEqual(selected[7].cells, ['D-ROW7', 'Row 7?', 'A / B', 'final-fixture-ui', 'open']);
   selected[7].cells[1] = 'changed';
   assert.equal(resolver.contract('decision:D-ROW7@OD').selection.cells[1], 'Row 7?');
+});
+
+// #275 review r7: only the canonical row families alias a row selection; a section named like an
+// inherited object property is an ordinary section.
+test('D refs: a row selection in a section named like an object property is no row alias (#275)', () => {
+  for (const section of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+    assert.equal(scopedRowAlias({ kind: 'artifact', artifact_id: 'RULES', metadata: {},
+      selection: { type: 'row', section, headers: ['ID', 'Value'], cells: ['01', 'x'] } }), null, section);
+  }
+});
+
+// #275 review r7: a row's site is recorded once, however often it is added, and a section or
+// whole-document reference covers the rows recorded for its document.
+test('D refs: a row site is recorded once and covered by its section or document (#275)', () => {
+  const sites = new Map();
+  for (const site of [{ row: 'decision:D-1@X', artifact_id: 'X', section: 'open-decisions' },
+    { row: 'decision:D-1@X', artifact_id: 'X', section: 'open-decisions' }, null,
+    { row: 'unknown:U-1@X', artifact_id: 'X', section: 'unknowns' }, { row: 'unknown:U-2@Y', artifact_id: 'Y', section: 'unknowns' }]) {
+    scopedAddRowSite(sites, site);
+  }
+  assert.deepEqual(scopedCoveredRows({ kind: 'artifact', artifact_id: 'X', selection: { type: 'body' } }, sites), ['decision:D-1@X', 'unknown:U-1@X']);
+  assert.deepEqual(scopedCoveredRows({ kind: 'artifact', artifact_id: 'X', selection: { type: 'section', section: 'unknowns' } }, sites), ['unknown:U-1@X']);
+  assert.deepEqual(scopedCoveredRows({ kind: 'artifact', artifact_id: 'X', selection: { type: 'row', section: 'unknowns' } }, sites), []);
 });
 
 test('D refs: canonical child rows retain question/options/status and reject alternative homes', (t) => {

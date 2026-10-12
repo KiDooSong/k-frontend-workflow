@@ -6,7 +6,7 @@ import { canonicalRepositoryPath } from './artifact-path.mjs';
 import { readCurrentBytes, hashBytes } from './current-work-request.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { parseDecisionWorkScopes } from './scoped-work-declarations.mjs';
-import { parseScopedTargetRef, scopedRowAlias, scopedRowSite, scopedCoveredRows } from './scoped-work-refs.mjs';
+import { parseScopedTargetRef, scopedRowAlias, scopedRowSite, scopedAddRowSite, scopedCoveredRows } from './scoped-work-refs.mjs';
 import { resolveScopedApplicabilityProjection } from './scoped-work-applicability.mjs';
 import { ScopedWorkContractError, workText } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
@@ -107,10 +107,7 @@ function relationClosure(projection, target) {
   for (const graph of graphs) {
     for (const edge of graph.edges) { add(forward, edge.from, edge.to); add(backward, edge.to, edge.from); }
     for (const node of graph.nodes) {
-      const site = scopedRowSite(node);
-      if (site && !(sites.get(site.artifact_id) || []).some((entry) => entry.row === site.row)) {
-        sites.set(site.artifact_id, [...(sites.get(site.artifact_id) || []), site]);
-      }
+      scopedAddRowSite(sites, scopedRowSite(node));
       const alias = scopedRowAlias(node);
       if (!alias) continue;
       aliases.set(node.ref, alias);
