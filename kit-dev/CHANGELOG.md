@@ -26,7 +26,8 @@
     canonical 표가 없음. 글만 있거나 인용된 표 포함)이나 정체를 읽을 수 없는 행(빈 ID, 표가 되풀이한 ID)은 그
     문서에 typed reference 가 있으면(해소가 읽는 대로, 인코딩된 링크 대상 포함) scoped 작업을 멈추고, 없으면 그
     행만 뺀다(표의 다른 행은 남는다). `{` 로 시작하는 ID 는 target index 처럼 템플릿 placeholder 이고 행이 아니다.
-    해소할 수 없는 typed reference 는 어디에 있든 멈춘다.
+    해소할 수 없는 typed reference 는 어디에 있든 멈추고, 닿은 문서의 `decision_refs` 가 이름 댄 결정은 보통
+    `decision_refs` 처럼 검사한다(home 이 정확히 하나이고 그것이 정식 전역 register).
   - 그래서 관계없는 행의 추가·수정은 binding 을 바꾸지 않고, 그 행·관계 행·unit 계약의 수정은 바꾼다. projection
     에 이 버전이 모르는 필드가 있으면 해시하지 않고 오류다.
 - v1 로 기록한 digest 는 v2 에서 모두 stale 이므로 한 번 다시 기록한다(`upgrade-notes.md`). #265 golden 도 다시

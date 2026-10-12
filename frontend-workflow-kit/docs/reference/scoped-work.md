@@ -126,7 +126,9 @@ reference (as resolution reads it, encoded link destinations included);
 otherwise those rows cite nothing and are left out, while the table's other rows
 stay. An ID that starts with `{` is a template placeholder, as in the target
 index, and no row. A typed reference that cannot be resolved stops scoped work
-wherever it is.
+wherever it is, and a Decision that a reached document's `decision_refs` names
+is checked as an ordinary `decision_refs` entry: exactly one home, the canonical
+global register.
 
 So adding or editing another row of the owner leaves the digest unchanged unless
 that row relates to the bound row; editing the bound row, a related row or any
