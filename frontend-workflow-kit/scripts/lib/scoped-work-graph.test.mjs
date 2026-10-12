@@ -82,6 +82,18 @@ test('D graph: repeated row selections in one table keep their own dependencies 
     ['artifact:GOOD#rules', 'artifact:ROWS#rows/01', 'artifact:ROWS#rows/03']);
 });
 
+// #275 review r6: the unapplied-row search resolves every row of a register at once, so one
+// resolution reads each document once, however many of its rows it selects.
+test('D graph: one resolution reads each document once, however many of its rows it selects (#275)', (t) => {
+  const rows = Array.from({ length: 40 }, (_, i) => `| D-ROW${i} | open | final-fixture-ui | Row ${i}? | \`artifact:GOOD#rules\` |`);
+  const f = fixture(t, [{ id: 'OD', body: `## Open Decisions\n| ID | Status | Blocking Mode | Decision Needed | Options |\n|---|---|---|---|---|\n${rows.join('\n')}` }, { id: 'GOOD' }]);
+  const opened = t.mock.method(fs, 'openSync');
+  const graph = f.graph(rows.map((_, i) => `decision:D-ROW${i}@OD`));
+  assert.equal(graph.nodes.length, 41);
+  const reads = opened.mock.calls.filter((call) => path.basename(String(call.arguments[0])) === '0.md').length;
+  assert.ok(reads <= 2, `${reads} reads of one document`);
+});
+
 test('D graph: unrelated section edits change raw audit hashes, not selected nodes or dependency edges', (t) => {
   const f = fixture(t, [{ id: 'ROOT', body: '## Rules\n`artifact:GOOD#rules`\n\n## Other\nUnselected note.' }, { id: 'GOOD' }]);
   const before = f.graph(['artifact:ROOT#rules']);

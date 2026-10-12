@@ -567,6 +567,50 @@ test('#275 basis v2: an Unknown related through a transitive witness joins the c
   assert.notEqual(basis().basis_digest, before.basis_digest);
 });
 
+// Review r6 (Spec P2): a row that a related row reaches only through a covering section, a document's
+// decision_refs or its exact artifact row selection is related although it cites nothing itself, so
+// its record is part of the relations, not only text inside the evidence that reaches it.
+test('#275 basis v2: a leaf row reached through a covering section or decision_refs joins with its record', (t) => {
+  for (const [name, setup, file, from, to] of [
+    ['artifact row selection', (f) => {
+      f.change('global/open-decisions.md', (doc) => { doc.body = doc.body.replace('Choose behavior.', 'Choose after `artifact:open-decision-register#open-decisions/D-UNUSED`.'); });
+    }, 'global/open-decisions.md', 'Unrelated decision.', 'Changed unrelated decision.'],
+    ['covering section', (f) => {
+      f.change('global/open-decisions.md', (doc) => { doc.body = doc.body.replace('Choose behavior.', 'Choose after `artifact:SCREEN-RESULT-002#open-decisions`.'); });
+      f.write('second.md', second(), decisions([decisionRow('D-LEAF', 'Plain leaf.')]));
+    }, 'second.md', 'Plain leaf.', 'Changed leaf.'],
+    ['decision_refs', (f) => {
+      f.write('second.md', second(), decisions([decisionRow('D-INVERSE', 'Revisit `decision:D-ONE@open-decision-register` after `artifact:FOREIGN#rules`.')]));
+      f.write('foreign.md', { ...foreign(), decision_refs: ['D-NAMED'] }, '## Rules\nForeign rule.');
+      f.change('global/open-decisions.md', (doc) => { doc.body = decisions([decisionRow(), decisionRow('D-UNUSED', 'Unrelated decision.'), decisionRow('D-NAMED', 'Named leaf.')]); });
+    }, 'global/open-decisions.md', 'Named leaf.', 'Changed named leaf.'],
+  ]) {
+    const f = fixture(t); setup(f);
+    const before = f.run();
+    f.change(file, (doc) => { doc.body = doc.body.replace(from, to); });
+    assert.notEqual(f.run().component_digests.relations, before.component_digests.relations, name);
+  }
+});
+
+// Review r6 (Standards P2): the unapplied-row search reads every row of a register on each pass, so
+// a register is read the same number of times however many unrelated rows it holds, whether their
+// IDs form typed references or not.
+test('#275 basis v2: an applicability pass reads a register as often for many unrelated rows as for few', (t) => {
+  const reads = (count, id) => {
+    const f = fixture(t);
+    f.change('global/open-decisions.md', (doc) => { doc.body = decisions([decisionRow(),
+      ...Array.from({ length: count }, (_, i) => decisionRow(id(i), `Historical decision ${i}.`))]); });
+    const opened = t.mock.method(fs, 'openSync');
+    resolveScopedApplicabilityProjection(f.options());
+    const result = opened.mock.calls.filter((call) => path.basename(String(call.arguments[0])) === 'open-decisions.md').length;
+    opened.mock.restore();
+    return result;
+  };
+  for (const [name, id] of [['typed', (i) => `D-OLD${i}`], ['untyped', (i) => `Choice ${i}`]]) {
+    assert.equal(reads(30, id), reads(3, id), name);
+  }
+});
+
 // Review r1 (Spec P2): a document's decision_refs list is not scope; the relation it makes is.
 test('#275 basis v2: another reference in a document\'s decision_refs is not scope of an unrelated binding', (t) => {
   const f = fixture(t), before = f.run();

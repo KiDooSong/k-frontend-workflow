@@ -80,15 +80,25 @@ function selectedNodes(view, selection, body) {
 // Never scan rendered text: comments, entities and formatting cannot concatenate
 // fragments into a new reference. Inline code containing a complete typed token
 // is an explicit reference; fenced/indented code and HTML remain non-evidence.
+// A view's reference definitions, collected once per view: one graph resolution selects many
+// rows of a document through the same view (#275).
+const viewDefinitions = new WeakMap();
+function definitionsOf(view) {
+  if (!viewDefinitions.has(view)) {
+    const definitions = new Map();
+    walk(view.tree, (node) => {
+      if (node.type !== 'definition') return;
+      const key = reconciliationReferenceLabel(node.label ?? node.identifier);
+      if (!definitions.has(key)) definitions.set(key, []);
+      definitions.get(key).push(node);
+    });
+    viewDefinitions.set(view, definitions);
+  }
+  return viewDefinitions.get(view);
+}
 function dependencies(body, view, nodes, omitNestedLists) {
   const found = new Set();
-  const definitions = new Map();
-  walk(view.tree, (node) => {
-    if (node.type !== 'definition') return;
-    const key = reconciliationReferenceLabel(node.label ?? node.identifier);
-    if (!definitions.has(key)) definitions.set(key, []);
-    definitions.get(key).push(node);
-  });
+  const definitions = definitionsOf(view);
   const add = (token) => found.add(canonicalRef(token));
   function destination(node) {
     if (!prefix.test(node.url || '')) return;
@@ -197,8 +207,8 @@ export function scopedGraphBodyRefs(body, view) {
 
 // #275: the typed references one selected table row cites as resolution reads it, with
 // its document's typed metadata, for a row whose ID cannot form a typed reference.
-export function scopedGraphSelectionRefs(body, metadata, selection) {
-  const view = parseReconciliationReferenceView(body);
+// A caller selecting several rows of one body passes its view once.
+export function scopedGraphSelectionRefs(body, metadata, selection, view = parseReconciliationReferenceView(body)) {
   return scopeSet([...new Set([...dependencies(body, view, selectedNodes(view, selection, body), false),
     ...scopedGraphMetadataRefs(metadata)])]);
 }
@@ -212,17 +222,23 @@ export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifa
   const nodes = new Map();
   const edges = [];
   const files = new Map();
+  // Each document is read and viewed once per resolution, however many of its rows are
+  // selected (#275); every record is still checked against those bytes, and the re-read
+  // below catches a later change.
+  const documents = new Map();
   function read(file, metadata, expectedBody) {
-    const canonical = canonicalRepositoryPath(projectRoot, file, { required: true, type: 'file', label: 'scoped evidence' });
-    const raw = readCurrentBytes(canonical.absolute, 'scoped evidence');
-    const sha256 = hashBytes(raw);
-    const previous = files.get(file);
-    if (previous && previous.sha256 !== sha256) fail('evidence changed during graph resolution');
-    const parsed = splitFrontmatter(decodeGitUtf8(raw, 'scoped evidence'));
-    if (!parsed.hasFrontmatter || parsed.parseError || scopeJson(parsed.data) !== scopeJson(metadata) ||
+    if (!documents.has(file)) {
+      const canonical = canonicalRepositoryPath(projectRoot, file, { required: true, type: 'file', label: 'scoped evidence' });
+      const raw = readCurrentBytes(canonical.absolute, 'scoped evidence');
+      const parsed = splitFrontmatter(decodeGitUtf8(raw, 'scoped evidence'));
+      files.set(file, { file, sha256: hashBytes(raw) });
+      documents.set(file, { parsed, metadata: parsed.hasFrontmatter && !parsed.parseError ? scopeJson(parsed.data) : null, view: null });
+    }
+    const document = documents.get(file), { parsed } = document;
+    if (document.metadata === null || document.metadata !== scopeJson(metadata) ||
         (expectedBody !== undefined && parsed.body !== expectedBody)) fail('evidence differs from its indexed snapshot');
-    files.set(file, { file, sha256 });
-    return { body: parsed.body, view: parseReconciliationReferenceView(parsed.body) };
+    document.view ??= parseReconciliationReferenceView(parsed.body);
+    return { body: parsed.body, view: document.view };
   }
   // Iterative finite ref index: cycles retain their edges without recursive
   // expansion, and repeated dependencies never select an arbitrary first record.

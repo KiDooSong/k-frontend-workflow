@@ -64,8 +64,15 @@ export function scopedCoveredRows(node, sites) {
     .map((site) => site.row);
 }
 
+const encodeStats = { tables: 0 };
+// Process-wide raw table encodings: read-only diagnostics (#275).
+export function scopedRawTableStats() {
+  return { ...encodeStats };
+}
+
 export function scopedRawTable(table) {
   if (typeof table?.sourceText !== 'string' || !table.sourceText) fail('SW-REF-TABLE', 'table source required');
+  encodeStats.tables += 1;
   const lines = lf(table.sourceText).split('\n');
   const headers = splitRow(lines[0]);
   if (!tableHeadersAreUnique({ headers })) fail('SW-REF-TABLE', 'duplicate column identity');
@@ -139,18 +146,33 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot, inputA
       return mappingRow(record, occurrence, key);
     }
 
-    const tables = occurrence.tables.map(scopedRawTable);
+    const tables = encoded(occurrence);
     const eligible = family ? tables.filter((t) => signatures[family].every((h) => hasHeader(t.headers, h))) : tables;
     if (family && eligible.length !== 1) fail('SW-REF-AMBIGUOUS', `canonical ${family} table must be unique`);
-    const matches = [];
-    for (const table of eligible) {
-      table.rows.forEach((row, index) => {
-        const identity = family ? col(row, 'ID') : table.cells[index][0];
-        if (identity === key) matches.push({ headers: table.headers, cells: table.cells[index] });
-      });
-    }
+    const matches = eligible.flatMap((table) => (rowIndex(table, family).get(key) || []).map((index) => ({ table, index })));
     if (matches.length !== 1) fail(matches.length ? 'SW-REF-AMBIGUOUS' : 'SW-REF-MISSING', `exact row ${key}`);
-    return { type: 'row', section: occurrence.slug, key, ...matches[0] };
+    const { table, index } = matches[0];
+    return { type: 'row', section: occurrence.slug, key, headers: [...table.headers], cells: [...table.cells[index]] };
+  }
+  // A section's tables are encoded once per resolver and their rows indexed by identity, so
+  // selecting every row of a register stays linear (#275); each selection copies its cells.
+  const tableCache = new WeakMap(), indexCache = new WeakMap();
+  function encoded(occurrence) {
+    if (!tableCache.has(occurrence)) tableCache.set(occurrence, occurrence.tables.map(scopedRawTable));
+    return tableCache.get(occurrence);
+  }
+  function rowIndex(table, family) {
+    if (!indexCache.has(table)) indexCache.set(table, new Map());
+    const byMode = indexCache.get(table), mode = family ? 'id' : 'first';
+    if (!byMode.has(mode)) {
+      const index = new Map();
+      table.rows.forEach((row, position) => {
+        const identity = family ? col(row, 'ID') : table.cells[position][0];
+        index.set(identity, [...(index.get(identity) || []), position]);
+      });
+      byMode.set(mode, index);
+    }
+    return byMode.get(mode);
   }
   function contract(token) {
     workText(token, 'scoped contract');

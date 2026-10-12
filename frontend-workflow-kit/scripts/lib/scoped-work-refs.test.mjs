@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { buildReconciliationTargetIndex } from './reconciliation-target-index.mjs';
-import { createScopedReferenceResolver } from './scoped-work-refs.mjs';
+import { createScopedReferenceResolver, scopedRawTableStats } from './scoped-work-refs.mjs';
 const clone = (value) => structuredClone(value);
 
 // Actual Markdown files -> existing target index -> D's exact selection resolver.
@@ -72,6 +72,20 @@ test('D refs: duplicate rows/columns, malformed widths and noncanonical tables c
     const { resolver } = referenceFixture(t, [{ body }]);
     assert.throws(() => resolver.contract('artifact:DOC#rows/01'), /SW-REF-/, body);
   }
+});
+
+// #275 review r6: the unapplied-row search selects every row of a register, so a resolver encodes
+// each table once, however many of its rows it selects, and each selection keeps its own cells.
+test('D refs: a resolver encodes each table once, however many of its rows it selects (#275)', (t) => {
+  const rows = Array.from({ length: 30 }, (_, i) => `| D-ROW${i} | Row ${i}? | A / B | final-fixture-ui | open |`);
+  const { resolver } = referenceFixture(t, [{ id: 'OD', type: 'open-decision-register',
+    body: `## Open Decisions\n| ID | Decision Needed | Options | Blocking Mode | Status |\n|---|---|---|---|---|\n${rows.join('\n')}` }]);
+  const before = scopedRawTableStats().tables;
+  const selected = rows.map((_, i) => resolver.contract(`decision:D-ROW${i}@OD`).selection);
+  assert.ok(scopedRawTableStats().tables - before <= 1, `${scopedRawTableStats().tables - before} encodings of one table`);
+  assert.deepEqual(selected[7].cells, ['D-ROW7', 'Row 7?', 'A / B', 'final-fixture-ui', 'open']);
+  selected[7].cells[1] = 'changed';
+  assert.equal(resolver.contract('decision:D-ROW7@OD').selection.cells[1], 'Row 7?');
 });
 
 test('D refs: canonical child rows retain question/options/status and reject alternative homes', (t) => {
