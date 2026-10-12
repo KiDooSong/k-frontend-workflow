@@ -11,7 +11,7 @@ import { REQUIRED_ITEM_COLS } from './reconciliation-items.mjs';
 import { REQUIRED_REGISTER_COLS } from './reconciliation-register.mjs';
 import { COMPONENT_MAPPING_COLUMNS, MAPPING_PROVENANCE_COLUMNS } from './mapping-provenance.mjs';
 import { scopeJson } from './scoped-work-normalize.mjs';
-import { resolveScopedBindingBasis, scopedBindingBasis } from './scoped-work-basis.mjs';
+import { resolveScopedBindingBasis, scopedBindingBasis, scopedClosureStats } from './scoped-work-basis.mjs';
 import { resolveScopedApplicabilityProjection, scopedUnappliedSearchStats } from './scoped-work-applicability.mjs';
 import { resolveScopedUncertaintyBindingBasis } from './scoped-work-uncertainty-scopes.mjs';
 import { inspectScopedDecisionBindings } from './scoped-work-bindings.mjs';
@@ -639,6 +639,52 @@ test('#275 basis v2: Decision rows whose identity is ambiguous follow the unread
   const before = keep.run();
   keep.change('second.md', (doc) => { doc.body = doc.body.replace('Kept row.', 'Kept row, changed.'); });
   assert.notEqual(keep.run().component_digests.relations, before.component_digests.relations);
+});
+
+// Review r8 (Standards P2): as the Unknown/Conflict audit judges a section, an Open Decisions section
+// with no single readable canonical table (prose only, or a quoted table) and a row with an empty ID
+// cannot be read: an error where the document holds a typed reference, otherwise left out.
+test('#275 basis v2: an Open Decisions section without a readable table or with an empty ID follows the unreadable table rule', (t) => {
+  const quoted = (question) => `## Open Decisions\n> ${table(['ID', 'Decision Needed', 'Options', 'Blocking Mode', 'Owner', 'Status'],
+    [decisionRow('D-QUOTED', question)]).split('\n').join('\n> ')}`;
+  for (const [name, quiet, cited] of [
+    ['prose only', '## Open Decisions\nNone yet.', '## Open Decisions\nNone yet.\n\nSee `artifact:RULES#untouched`.'],
+    ['quoted table', quoted('Pick.'), quoted('After `decision:D-ONE@open-decision-register`.')],
+    ['empty ID', decisions([decisionRow('', 'Pick.'), decisionRow('D-KEEP', 'Kept.')]), decisions([decisionRow('', 'After `decision:D-ONE@open-decision-register`.')])],
+  ]) {
+    const f = fixture(t);
+    f.write('second.md', second(), quiet);
+    assert.doesNotThrow(() => f.run(), name);
+    const g = fixture(t);
+    g.write('second.md', second(), cited);
+    assert.throws(() => g.run(), /cannot be read/, name);
+  }
+});
+
+// Review r8 (Spec P2): an ID that starts with `{` is a template placeholder, not a Decision row, as in
+// the target index and the Unknown/Conflict audit; a reference that covers its section is no error.
+test('#275 basis v2: a template placeholder row is no Decision row, as in the target index', (t) => {
+  const f = fixture(t);
+  f.change('global/open-decisions.md', (doc) => { doc.body = doc.body.replace('Choose behavior.', 'Choose after `artifact:SCREEN-RESULT-002#open-decisions`.'); });
+  f.write('second.md', second(), decisions([['{D-XXX}', '{질문}', '{option-a / option-b}', '{final-fixture-ui}', '{PM}', 'open']]));
+  const before = f.run();
+  assert.ok(!scopeJson(before.basis.unapplied_relations).includes('D-XXX'));
+});
+
+// Review r8 (Standards P2): a closure expands each node once per direction, so a chain of related rows
+// costs in proportion to its length.
+test('#275 basis v2: the relation closure over a chain of related rows grows with the chain, not its square', (t) => {
+  const visits = (count) => {
+    const f = fixture(t);
+    f.write('second.md', second(), decisions(Array.from({ length: count }, (_, i) =>
+      decisionRow(`D-CHAIN${i}`, `After \`${i ? `decision:D-CHAIN${i - 1}@SCREEN-RESULT-002` : 'decision:D-ONE@open-decision-register'}\`.`))));
+    const before = scopedClosureStats().visited;
+    const result = f.run();
+    assert.ok(scopeJson(result.basis).includes(`D-CHAIN${count - 1}`));
+    return scopedClosureStats().visited - before;
+  };
+  const small = visits(20), large = visits(80);
+  assert.ok(large <= 5 * small, `${small} visits for 20 rows, ${large} for 80`);
 });
 
 // What a row cites depends on the Decisions its cited documents name, so a row that reaches the bound

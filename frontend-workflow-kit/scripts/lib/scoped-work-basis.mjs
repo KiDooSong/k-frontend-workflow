@@ -98,6 +98,11 @@ function checkFields(value, allowed, label) {
 // artifact row selection is the row it selects (`artifact:X#unknowns/U-1` is `unknown:U-1@X`).
 // A reference to a section or a whole document covers the rows it holds, as overlapping
 // evidence covers them in the uncertainty pass: it leads to each of them.
+const closureStats = { visited: 0 };
+// Process-wide node visits of relation closures: read-only diagnostics (#275).
+export function scopedClosureStats() {
+  return { ...closureStats };
+}
 function relationClosure(projection, target) {
   const { decision_relations: decisions, uncertainty_relations: uncertainty } = projection;
   const forward = new Map(), backward = new Map(), related = new Map(), aliases = new Map(), sites = new Map();
@@ -133,10 +138,25 @@ function relationClosure(projection, target) {
     }
     return seen;
   };
+  // Each node is expanded once per direction: what a row reaches through a row already expanded
+  // that way is in the closure, so a chain of related rows costs in proportion to its length.
+  const expanded = new Map([[forward, new Set()], [backward, new Set()]]);
+  const spread = (start, map) => {
+    const seen = expanded.get(map), found = [];
+    if (seen.has(start)) return found;
+    seen.add(start);
+    const queue = [start];
+    for (let index = 0; index < queue.length; index += 1) {
+      closureStats.visited += 1;
+      found.push(queue[index]);
+      for (const next of map.get(queue[index]) || []) if (!seen.has(next)) { seen.add(next); queue.push(next); }
+    }
+    return found;
+  };
   const rows = new Set([target]), nodes = new Set(), queue = [target];
   for (let index = 0; index < queue.length; index += 1) {
     const row = queue[index];
-    for (const ref of [...reach(row, forward), ...reach(row, backward), ...(related.get(row) || [])]) {
+    for (const ref of [...spread(row, forward), ...spread(row, backward), ...(related.get(row) || [])]) {
       nodes.add(ref);
       if (isRow(ref) && !rows.has(ref)) { rows.add(ref); queue.push(ref); }
     }

@@ -7,6 +7,8 @@ import { buildReconciliationTargetIndex } from './reconciliation-target-index.mj
 import { loadInputArtifact } from './input-artifact.mjs';
 import { parseReconciliationMarkdown, parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
 import { resolveScopedContractGraph } from './scoped-work-graph.mjs';
+import { scopedProjectionNode } from './scoped-work-projection.mjs';
+import { scopeSet } from './scoped-work-normalize.mjs';
 import { createScopedSourceResolver } from './scoped-work-sources.mjs';
 import { createScopedReferenceResolver } from './scoped-work-refs.mjs';
 
@@ -92,6 +94,21 @@ test('D graph: one resolution reads each document once, however many of its rows
   assert.equal(graph.nodes.length, 41);
   const reads = opened.mock.calls.filter((call) => path.basename(String(call.arguments[0])) === '0.md').length;
   assert.ok(reads <= 2, `${reads} reads of one document`);
+});
+
+// #275 review r8: the unapplied-row search projects each node as it is recorded, so a register's rows
+// do not each carry a copy of its bindings; the projection is the one its caller would apply.
+test('D graph: a projected resolution records projected nodes, without the document bindings (#275)', (t) => {
+  const bindings = Array.from({ length: 5 }, (_, i) => ({ decision_id: `D-ROW${i}`, owner: 'screen:RESULT-001', known_units: ['a'], blocks: [],
+    basis_digest: `sha256:${'0'.repeat(64)}`, approval_ref: 'review:x' }));
+  const rows = Array.from({ length: 5 }, (_, i) => `| D-ROW${i} | open | final-fixture-ui | Row ${i}? | \`artifact:GOOD#rules\` |`);
+  const f = fixture(t, [{ id: 'OD', fm: { decision_work_scopes: { version: 1, bindings } },
+    body: `## Open Decisions\n| ID | Status | Blocking Mode | Decision Needed | Options |\n|---|---|---|---|---|\n${rows.join('\n')}` }, { id: 'GOOD' }]);
+  const tokens = rows.map((_, i) => `decision:D-ROW${i}@OD`);
+  const plain = f.graph(tokens), projected = f.graph(tokens, { project: scopedProjectionNode });
+  assert.ok(plain.nodes.some((node) => Object.hasOwn(node.metadata, 'decision_work_scopes')));
+  assert.ok(projected.nodes.every((node) => !Object.hasOwn(node.metadata, 'decision_work_scopes')));
+  assert.deepEqual(projected, { ...plain, nodes: scopeSet(plain.nodes.map(scopedProjectionNode)) });
 });
 
 test('D graph: unrelated section edits change raw audit hashes, not selected nodes or dependency edges', (t) => {

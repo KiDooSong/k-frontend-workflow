@@ -213,8 +213,11 @@ export function scopedGraphSelectionRefs(body, metadata, selection, view = parse
     ...scopedGraphMetadataRefs(metadata)])]);
 }
 
-export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifacts = [], projectRoot } = {}) {
-  const refs = createScopedReferenceResolver({ targetIndex, inputArtifacts, projectRoot });
+// `project` maps each node as it is recorded (the unapplied-row search keeps only the projected
+// node, not every row's copy of its document's metadata); edges and the snapshot check still read
+// the full record.
+export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifacts = [], projectRoot, project = null } = {}) {
+  const refs = createScopedReferenceResolver({ targetIndex, inputArtifacts, projectRoot, shareMetadata: true });
   const sources = createScopedSourceResolver({ targetIndex, inputArtifacts, projectRoot });
   const roots = workSet(contracts, canonicalRef, 'graph roots', true);
   const queue = [...roots];
@@ -225,7 +228,13 @@ export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifa
   // Each document is read and viewed once per resolution, however many of its rows are
   // selected (#275); every record is still checked against those bytes, and the re-read
   // below catches a later change.
-  const documents = new Map();
+  const documents = new Map(), serialized = new WeakMap();
+  // Records of one document share its metadata object, so it is serialized once.
+  const serial = (value) => {
+    if (value === null || typeof value !== 'object') return scopeJson(value);
+    if (!serialized.has(value)) serialized.set(value, scopeJson(value));
+    return serialized.get(value);
+  };
   function read(file, metadata, expectedBody) {
     if (!documents.has(file)) {
       const canonical = canonicalRepositoryPath(projectRoot, file, { required: true, type: 'file', label: 'scoped evidence' });
@@ -235,7 +244,7 @@ export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifa
       documents.set(file, { parsed, metadata: parsed.hasFrontmatter && !parsed.parseError ? scopeJson(parsed.data) : null, view: null });
     }
     const document = documents.get(file), { parsed } = document;
-    if (document.metadata === null || document.metadata !== scopeJson(metadata) ||
+    if (document.metadata === null || document.metadata !== serial(metadata) ||
         (expectedBody !== undefined && parsed.body !== expectedBody)) fail('evidence differs from its indexed snapshot');
     document.view ??= parseReconciliationReferenceView(parsed.body);
     return { body: parsed.body, view: document.view };
@@ -258,7 +267,7 @@ export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifa
       record = refs.contract(ref);
       document = read(record.file, record.metadata, resolveArtifact(targetIndex, record.artifact_id).body);
     }
-    nodes.set(ref, record);
+    nodes.set(ref, project ? project(record) : record);
     const selected = selectedNodes(document.view, record.selection, document.body);
     const dependenciesForRef = dependencies(document.body, document.view, selected,
       Boolean(input) && record.selection.bullet_index != null);

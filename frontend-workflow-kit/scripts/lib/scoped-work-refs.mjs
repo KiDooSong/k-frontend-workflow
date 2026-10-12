@@ -87,7 +87,7 @@ export function scopedRawTable(table) {
   return { headers, cells, rows: cells.map((row) => Object.fromEntries(headers.map((h, i) => [h, row[i]]))) };
 }
 
-export function createScopedReferenceResolver({ targetIndex, projectRoot, inputArtifacts = [] } = {}) {
+export function createScopedReferenceResolver({ targetIndex, projectRoot, inputArtifacts = [], shareMetadata = false } = {}) {
   if (!(targetIndex?.artifacts instanceof Map) || !(targetIndex?.duplicates instanceof Set)) {
     fail('SW-REF-INDEX', 'existing reconciliation target index required');
   }
@@ -180,6 +180,15 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot, inputA
     }
     return byMode.get(mode);
   }
+  // A caller that keeps its records internal (one graph resolution) shares one copy of a
+  // document's metadata: selecting every row of a register would otherwise copy its frontmatter,
+  // bindings included, once per row (#275). Otherwise each record has its own copy.
+  const metadataCopies = new Map();
+  function metadataOf(id, record) {
+    if (!shareMetadata) return structuredClone(record.fm);
+    if (!metadataCopies.has(id)) metadataCopies.set(id, structuredClone(record.fm));
+    return metadataCopies.get(id);
+  }
   function contract(token) {
     workText(token, 'scoped contract');
     const ref = parseScopedTargetRef(token);
@@ -207,7 +216,7 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot, inputA
       selection = { type: 'body-token', key: ref.rowId, content: lf(record.body) };
     }
     return { ref: ref.raw, kind: ref.kind, artifact_id: id, file: relative,
-      metadata: structuredClone(record.fm), selection };
+      metadata: metadataOf(id, record), selection };
   }
   return { contract, contracts: (tokens) => workSet(tokens, contract, 'contracts', true) };
 }

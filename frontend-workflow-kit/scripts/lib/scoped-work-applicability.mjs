@@ -120,7 +120,7 @@ function unappliedRows({ targetIndex, projectRoot, inputArtifacts = [] }, projec
   }
   for (const node of projected) for (const row of scopedCoveredRows(node, sites)) known.add(row);
   const roots = [...new Set([...rows.values()].flatMap((row) => row.roots))];
-  const graph = roots.length ? resolveScopedContractGraph({ contracts: roots, targetIndex, inputArtifacts, projectRoot })
+  const graph = roots.length ? resolveScopedContractGraph({ contracts: roots, targetIndex, inputArtifacts, projectRoot, project: scopedProjectionNode })
     : { nodes: [], edges: [], read_set: [] };
   readSet.push(...graph.read_set);
   const nodes = new Map(graph.nodes.map((node) => [node.ref, node])), forward = new Map(), backward = new Map();
@@ -218,13 +218,15 @@ function unappliedRows({ targetIndex, projectRoot, inputArtifacts = [] }, projec
     edges: scopeSet(graph.edges.filter((edge) => reached.has(edge.from) && reached.has(edge.to))) } }, read_set: readSet };
 }
 
-// The rows of a document's canonical Open Decisions table, read from its indexed snapshot. A row
-// whose identity cannot be read (no single readable canonical table in one Open Decisions section,
-// or an ID the table repeats) is an error when the document holds a typed reference; otherwise it
-// cannot cite anything and is left out, while the table's unique rows stay.
+// The rows of a document's canonical Open Decisions table, read from its indexed snapshot, as the
+// Unknown/Conflict audit reads its sections. A section without a single readable canonical table
+// (prose only or a quoted table included), or a row whose identity cannot be read (an empty ID or
+// one the table repeats), is an error when the document holds a typed reference; otherwise it cannot
+// cite anything and is left out, while the table's other rows stay. An ID that starts with `{` is a
+// template placeholder, as in the target index, and no row.
 function decisionRows(entry) {
   const occurrences = parseReconciliationMarkdown(entry.body).occurrences.filter((occurrence) => occurrence.slug === 'open-decisions');
-  if (!occurrences.some((occurrence) => occurrence.tables.length)) return [];
+  if (!occurrences.length) return [];
   const unreadable = (message) => {
     if (referencing(entry)) fail(`Open Decisions table in ${entry.fm.artifact_id} cannot be read: ${message}`);
   };
@@ -235,8 +237,8 @@ function decisionRows(entry) {
     const tables = occurrence.tables.map(scopedRawTable).filter((table) => DECISION_TABLE.every((header) => hasHeader(table.headers, header)));
     if (tables.length !== 1) fail('one canonical decision table required');
     tables[0].rows.forEach((row, index) => {
-      const id = col(row, 'ID');
-      if (id && !id.startsWith('{')) rows.push({ id, headers: tables[0].headers, cells: tables[0].cells[index], slug: occurrence.slug });
+      const id = String(col(row, 'ID') ?? '').trim();
+      if (!id.startsWith('{')) rows.push({ id, headers: tables[0].headers, cells: tables[0].cells[index], slug: occurrence.slug });
     });
   } catch (error) {
     if (!(error instanceof ScopedWorkContractError)) throw error;
@@ -245,9 +247,9 @@ function decisionRows(entry) {
   }
   const counts = new Map();
   for (const row of rows) counts.set(row.id, (counts.get(row.id) || 0) + 1);
-  const repeated = [...counts].filter(([, count]) => count > 1).map(([id]) => id);
-  if (repeated.length) unreadable(`repeated Decision ID ${JSON.stringify(repeated[0])}`);
-  return rows.filter((row) => counts.get(row.id) === 1);
+  const unread = rows.find((row) => !row.id || counts.get(row.id) > 1);
+  if (unread) unreadable(unread.id ? `repeated Decision ID ${JSON.stringify(unread.id)}` : 'empty Decision ID');
+  return rows.filter((row) => row.id && counts.get(row.id) === 1);
 }
 // Whether a document holds a typed reference, as the Unknown/Conflict section audit judges it: its
 // raw spelling, or the metadata and native body references resolution reads (decoded link

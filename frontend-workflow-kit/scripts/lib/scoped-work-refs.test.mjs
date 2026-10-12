@@ -78,7 +78,7 @@ test('D refs: duplicate rows/columns, malformed widths and noncanonical tables c
 // each table once, however many of its rows it selects, and each selection keeps its own cells.
 test('D refs: a resolver encodes each table once, however many of its rows it selects (#275)', (t) => {
   const rows = Array.from({ length: 30 }, (_, i) => `| D-ROW${i} | Row ${i}? | A / B | final-fixture-ui | open |`);
-  const { resolver } = referenceFixture(t, [{ id: 'OD', type: 'open-decision-register',
+  const { resolver, targetIndex, root } = referenceFixture(t, [{ id: 'OD', type: 'open-decision-register',
     body: `## Open Decisions\n| ID | Decision Needed | Options | Blocking Mode | Status |\n|---|---|---|---|---|\n${rows.join('\n')}` }]);
   const before = scopedRawTableStats().tables;
   const selected = rows.map((_, i) => resolver.contract(`decision:D-ROW${i}@OD`).selection);
@@ -86,6 +86,11 @@ test('D refs: a resolver encodes each table once, however many of its rows it se
   assert.deepEqual(selected[7].cells, ['D-ROW7', 'Row 7?', 'A / B', 'final-fixture-ui', 'open']);
   selected[7].cells[1] = 'changed';
   assert.equal(resolver.contract('decision:D-ROW7@OD').selection.cells[1], 'Row 7?');
+  // #275 review r8: a resolver that keeps its records internal shares one copy of the document's
+  // metadata among them; any other resolver gives each record its own copy.
+  assert.notEqual(resolver.contract('decision:D-ROW1@OD').metadata, resolver.contract('decision:D-ROW2@OD').metadata);
+  const shared = createScopedReferenceResolver({ targetIndex, projectRoot: root, shareMetadata: true });
+  assert.equal(shared.contract('decision:D-ROW1@OD').metadata, shared.contract('decision:D-ROW2@OD').metadata);
 });
 
 // #275 review r7: only the canonical row families alias a row selection; a section named like an
