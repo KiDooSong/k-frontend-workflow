@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { buildReconciliationTargetIndex } from './reconciliation-target-index.mjs';
-import { createScopedReferenceResolver, scopedRawTableStats, scopedRowAlias, scopedAddRowSite, scopedCoveredRows } from './scoped-work-refs.mjs';
+import { createScopedReferenceResolver, scopedRawTableStats, scopedRowAlias, scopedAddRowSite, scopedCoveredRows, scopedRowSiteStats } from './scoped-work-refs.mjs';
 const clone = (value) => structuredClone(value);
 
 // Actual Markdown files -> existing target index -> D's exact selection resolver.
@@ -114,6 +114,17 @@ test('D refs: a row site is recorded once and covered by its section or document
   assert.deepEqual(scopedCoveredRows({ kind: 'artifact', artifact_id: 'X', selection: { type: 'body' } }, sites), ['decision:D-1@X', 'unknown:U-1@X']);
   assert.deepEqual(scopedCoveredRows({ kind: 'artifact', artifact_id: 'X', selection: { type: 'section', section: 'unknowns' } }, sites), ['unknown:U-1@X']);
   assert.deepEqual(scopedCoveredRows({ kind: 'artifact', artifact_id: 'X', selection: { type: 'row', section: 'unknowns' } }, sites), []);
+});
+
+// #275 review r9: a section reference finds the rows of its own section without looking at the
+// document's other rows, so references to many sections of one register stay linear.
+test('D refs: a section reference examines only the rows of its section (#275)', () => {
+  const sites = new Map();
+  for (let i = 0; i < 200; i += 1) scopedAddRowSite(sites, { row: `decision:D-${i}@X`, artifact_id: 'X', section: 'open-decisions' });
+  const before = scopedRowSiteStats().examined;
+  for (let i = 0; i < 50; i += 1) assert.deepEqual(scopedCoveredRows({ kind: 'artifact', artifact_id: 'X', selection: { type: 'section', section: `note-${i}` } }, sites), []);
+  assert.equal(scopedRowSiteStats().examined - before, 0);
+  assert.equal(scopedCoveredRows({ kind: 'artifact', artifact_id: 'X', selection: { type: 'section', section: 'open-decisions' } }, sites).length, 200);
 });
 
 test('D refs: canonical child rows retain question/options/status and reject alternative homes', (t) => {

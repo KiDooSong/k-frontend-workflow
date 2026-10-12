@@ -202,14 +202,26 @@ function unappliedRows({ targetIndex, projectRoot, inputArtifacts = [] }, projec
     const status = col(Object.fromEntries(headers.map((header, index) => [header, cells[index]])), 'Status');
     return { ...scopedProjectionNode(node), status: String(status || '').toLowerCase() || null };
   });
+  // Every Decision row's home documents, one per row, as the decision pass counts collisions.
+  let decisionHomes = null;
+  const homes = () => {
+    if (!decisionHomes) {
+      decisionHomes = new Map();
+      for (const [artifactId, entry] of targetIndex.artifacts) for (const [id, hits] of entry.rows) for (const hit of hits) if (hit.family === 'decision') {
+        if (!decisionHomes.has(id)) decisionHomes.set(id, []);
+        decisionHomes.get(id).push(artifactId);
+      }
+    }
+    return decisionHomes;
+  };
   const links = [];
   for (const ref of reached) {
     const node = nodes.get(ref);
     if (node?.artifact_id) for (const decision of named(node.artifact_id, true)) {
-      const parsed = parseScopedTargetRef(decision);
-      if (!(targetIndex.artifacts.get(parsed.ownerArtifactId)?.rows.get(parsed.rowId) || []).some((hit) => hit.family === 'decision')) {
-        fail(`decision_refs in ${node.artifact_id} names no Decision row ${decision}`);
-      }
+      // Validated as an ordinary decision_refs entry: exactly one Decision home, the global register.
+      const parsed = parseScopedTargetRef(decision), found = homes().get(parsed.rowId) || [];
+      if (!found.includes(parsed.ownerArtifactId)) fail(`decision_refs in ${node.artifact_id} names no Decision row ${decision}`);
+      if (found.length !== 1) fail(`decision_refs in ${node.artifact_id} names an ambiguous Decision ${decision}`);
       links.push({ referrer: ref, decision });
     }
   }

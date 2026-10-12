@@ -56,18 +56,30 @@ export function scopedRowSite(node) {
   const row = ROW_KINDS.has(node?.kind) ? node.ref : scopedRowAlias(node);
   return row && node.selection?.type === 'row' ? { row, artifact_id: node.artifact_id, section: node.selection.section } : null;
 }
-// Sites are kept per document and row, so recording every row of a register stays linear.
+// Sites are kept per document, by row and by section, so recording every row of a register and
+// covering many sections of it stay linear.
 export function scopedAddRowSite(sites, site) {
   if (!site) return;
-  if (!sites.has(site.artifact_id)) sites.set(site.artifact_id, new Map());
-  if (!sites.get(site.artifact_id).has(site.row)) sites.get(site.artifact_id).set(site.row, site);
+  if (!sites.has(site.artifact_id)) sites.set(site.artifact_id, { rows: new Map(), sections: new Map() });
+  const entry = sites.get(site.artifact_id);
+  if (entry.rows.has(site.row)) return;
+  entry.rows.set(site.row, site);
+  if (!entry.sections.has(site.section)) entry.sections.set(site.section, []);
+  entry.sections.get(site.section).push(site.row);
+}
+const siteStats = { examined: 0 };
+// Process-wide row sites examined by coverage: read-only diagnostics (#275).
+export function scopedRowSiteStats() {
+  return { ...siteStats };
 }
 // An investigation or verification reference selects its document's whole body.
 export function scopedCoveredRows(node, sites) {
   const type = node?.selection?.type;
   if (!['section', 'body', 'body-token'].includes(type) || (type === 'section' && node.kind !== 'artifact')) return [];
-  return [...(sites.get(node.artifact_id)?.values() || [])].filter((site) => type !== 'section' || site.section === node.selection.section)
-    .map((site) => site.row);
+  const entry = sites.get(node.artifact_id);
+  const rows = !entry ? [] : type === 'section' ? entry.sections.get(node.selection.section) || [] : [...entry.rows.keys()];
+  siteStats.examined += rows.length;
+  return [...rows];
 }
 
 const encodeStats = { tables: 0 };
@@ -174,7 +186,8 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot, inputA
       const index = new Map();
       table.rows.forEach((row, position) => {
         const identity = family ? col(row, 'ID') : table.cells[position][0];
-        index.set(identity, [...(index.get(identity) || []), position]);
+        if (!index.has(identity)) index.set(identity, []);
+        index.get(identity).push(position);
       });
       byMode.set(mode, index);
     }

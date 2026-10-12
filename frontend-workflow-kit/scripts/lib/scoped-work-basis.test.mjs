@@ -412,14 +412,17 @@ test('#275 basis v2: an Unknown that cites what an unapplied row reaches joins t
 });
 
 // Review r3: an unapplied row outside the closure adds nothing to the basis, not even a document
-// link the basis already holds as an application.
+// link the basis already holds as an application. The document naming D-TWO is a screen spec, whose
+// decision_refs is followed forward only (r9), so D-UNUSED citing it stays outside the closure; in
+// another document it would relate (see the r9 test).
 test('#275 basis v2: an unapplied row that cites the same evidence adds no document link', (t) => {
   const f = fixture(t);
-  f.change('global/open-decisions.md', (doc) => { doc.body = decisions([decisionRow('D-ONE', 'Choose after `artifact:RULES#rules`.'),
+  f.write('second.md', { ...second(), decision_refs: ['D-TWO'] }, '## Notes\nSecond notes.');
+  f.change('global/open-decisions.md', (doc) => { doc.body = decisions([decisionRow('D-ONE', 'Choose after `artifact:SCREEN-RESULT-002#notes`.'),
     decisionRow('D-UNUSED', 'Unrelated decision.'), decisionRow('D-TWO', 'Rule decision.')]); });
-  f.change('rules.md', ({ fm }) => { fm.decision_refs = ['D-TWO']; });
   const before = f.run();
-  f.change('global/open-decisions.md', (doc) => { doc.body = doc.body.replace('Unrelated decision.', 'Only after `artifact:RULES#rules`.'); });
+  assert.ok(scopeJson(before.basis).includes('Rule decision.'));
+  f.change('global/open-decisions.md', (doc) => { doc.body = doc.body.replace('Unrelated decision.', 'Only after `artifact:SCREEN-RESULT-002#notes`.'); });
   const after = f.run();
   assert.ok(!scopeJson(after.basis).includes('Only after'));
   assert.equal(after.basis_digest, before.basis_digest);
@@ -507,16 +510,20 @@ test('#275 basis v2: a row that cites an investigation token of the bound row\'s
 
 // Review r5: an application the decision pass derived for a subject stays only where that subject's own
 // seeds (unit evidence, host mapping, an Unknown/Conflict root, a closure row applying natively) reach
-// its referrer; an unrelated local row's route drops the applications derived from it.
+// its referrer; an unrelated local row's route drops the applications derived from it. D-TWO applies
+// through a unit contract in a screen spec that names it, whose decision_refs is followed forward only
+// (r9), so D-LOCAL citing another section of that spec stays unrelated.
 test('#275 basis v2: applications derived through an unrelated row of the owner spec stay out', (t) => {
   const f = fixture(t);
+  f.write('second.md', { ...second(), decision_refs: ['D-TWO'] }, '## Rules\nSecond rule.\n\n## Untouched\nUnselected prose.');
+  f.change('screen.md', (doc) => { doc.fm.work_execution.units[0] = unit('known', ['artifact:RULES#rules', 'artifact:SCREEN-RESULT-002#rules']); });
   f.change('global/open-decisions.md', (doc) => { doc.body = decisions([decisionRow(), decisionRow('D-UNUSED', 'Unrelated decision.'),
     decisionRow('D-TWO', 'Rule decision.')]); });
-  f.change('rules.md', ({ fm }) => { fm.decision_refs = ['D-TWO']; });
   f.bind(binding({ decision_id: 'D-TWO' }));
   const run = () => f.run(OWNER, 'decision:D-TWO@open-decision-register');
   const before = run();
-  f.change('screen.md', (doc) => { doc.body += `\n\n${decisions([decisionRow('D-LOCAL', 'Choose after `artifact:RULES#untouched`.')])}`; });
+  assert.ok(scopeJson(before.basis).includes('Rule decision.'));
+  f.change('screen.md', (doc) => { doc.body += `\n\n${decisions([decisionRow('D-LOCAL', 'Choose after `artifact:SCREEN-RESULT-002#untouched`.')])}`; });
   assert.equal(run().basis_digest, before.basis_digest);
 });
 
@@ -685,6 +692,50 @@ test('#275 basis v2: the relation closure over a chain of related rows grows wit
   };
   const small = visits(20), large = visits(80);
   assert.ok(large <= 5 * small, `${small} visits for 20 rows, ${large} for 80`);
+});
+
+// Review r9 (Standards P1, human decision): a document's decision_refs is its content unless the document
+// is an owner spec, whose decision_refs declares the owner's own Decisions. So a row citing another
+// document that names the bound Decision relates to it both ways, as an inline citation would, while a
+// row citing a part of the owner spec does not (see the r4 test of the owner spec's Notes).
+test('#275 basis v2: a row citing a document that names the bound Decision relates, outside an owner spec', (t) => {
+  for (const status of ['open', 'resolved']) {
+    const f = fixture(t);
+    f.write('notes.md', { artifact_id: 'NOTES', artifact_type: 'domain-rules', domain: 'result', status: 'draft', decision_refs: ['D-ONE'] }, '## Notes\nNotes text.');
+    f.change('screen.md', (doc) => { doc.body += `\n\n${decisions([[...decisionRow('D-NOTES', 'After `artifact:NOTES#notes`.').slice(0, 5), status]])}`; });
+    const before = f.run();
+    assert.ok(scopeJson(before.basis).includes('D-NOTES'), status);
+    f.change('screen.md', (doc) => { doc.body = doc.body.replace('After `artifact:NOTES#notes`.', 'Later after `artifact:NOTES#notes`.'); });
+    assert.notEqual(f.run().basis_digest, before.basis_digest, status);
+  }
+});
+
+// Review r9 (Standards P2): a Decision that a reached document's decision_refs names is validated as an
+// ordinary decision_refs entry: exactly one home, the global register. A repeated register row is an
+// ambiguous reference, not a link to neither row.
+test('#275 basis v2: a decision_refs entry naming a repeated register row is ambiguous', (t) => {
+  const f = fixture(t);
+  f.change('global/open-decisions.md', (doc) => { doc.body = decisions([decisionRow(), decisionRow('D-UNUSED', 'Unrelated decision.'),
+    decisionRow('D-DUP', 'First copy.'), decisionRow('D-DUP', 'Second copy.')]); });
+  f.write('notes.md', { artifact_id: 'NOTES', artifact_type: 'domain-rules', domain: 'foreign', status: 'draft', decision_refs: ['D-DUP'] }, '## Notes\nNotes text.');
+  f.write('second.md', second(), decisions([decisionRow('D-INVERSE', 'Revisit `decision:D-ONE@open-decision-register` with `artifact:NOTES#notes`.')]));
+  assert.throws(() => f.run(), /ambiguous Decision/);
+});
+
+// Review r9 (Spec P2): what a subject reaches from its seeds is one traversal from all of them, so a unit
+// whose contracts form a chain costs in proportion to the chain.
+test('#275 basis v2: a subject reaching through a chain of its own contracts grows with the chain, not its square', (t) => {
+  const visits = (count) => {
+    const f = fixture(t);
+    const sections = Array.from({ length: count }, (_, i) => `## S${i}\n${i + 1 < count ? `See \`artifact:RULES#s${i + 1}\`.` : 'Then `decision:D-ONE@open-decision-register`.'}`);
+    f.change('rules.md', (doc) => { doc.body = `${doc.body}\n\n${sections.join('\n\n')}`; });
+    f.change('screen.md', (doc) => { doc.fm.work_execution.units[0] = unit('known', ['artifact:RULES#rules', ...sections.map((_, i) => `artifact:RULES#s${i}`)]); });
+    const before = scopedClosureStats().visited;
+    f.run();
+    return scopedClosureStats().visited - before;
+  };
+  const small = visits(20), large = visits(80);
+  assert.ok(large <= 5 * small, `${small} visits for 20 contracts, ${large} for 80`);
 });
 
 // What a row cites depends on the Decisions its cited documents name, so a row that reaches the bound

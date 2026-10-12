@@ -72,6 +72,7 @@ const ROW_KINDS = new Set(['decision', 'unknown', 'conflict']);
 const NATIVE_RELATIONS = new Set(['local', 'decision-ref', 'surface-member']);
 // An evidence node of a document whose frontmatter decision_refs names a Decision.
 const DOCUMENT_RELATIONS = new Set(['evidence-decision-ref', 'uncertainty-decision-ref']);
+const OWNER_SPECS = new Set(['screen-spec', 'shared-surface-spec']);
 const UNIT_FIELDS = ['evidence', 'host_links', 'inputs', 'known_units', 'owner', 'owners', 'ownership', 'policy', 'units'];
 const RELATION_FIELDS = {
   decision_relations: ['applications', 'dependency_roots', 'evidence', 'memberships', 'records', 'referrers'],
@@ -91,10 +92,13 @@ function checkFields(value, allowed, label) {
 // an Unknown/Conflict relation names the other as a witness. Non-row nodes are followed
 // one way only (what a row cites, or what cites a row), so two rows that merely share a
 // section are not related through it. A document's frontmatter `decision_refs` is an
-// edge from that document's evidence nodes to the Decision, followed forward only: what
-// a row cites depends on that Decision, but the Decision does not relate to every row
-// of a document that names it (a route through another row of it is dropped, see
-// kept). Rows that apply to no owner relate in the same ways, and an exact
+// edge from that document's evidence nodes to the Decision. In an owner spec (a screen or
+// shared surface spec) it declares the owner's own Decisions, so it is followed forward
+// only: what a row cites depends on that Decision, but the Decision does not relate to
+// every row citing some part of the spec (a route through another row of it is dropped,
+// see kept). In any other document it is content, so a row citing that document relates
+// to the Decision both ways, as an inline citation would (#275 r9, human decision). Rows
+// that apply to no owner relate in the same ways, and an exact
 // artifact row selection is the row it selects (`artifact:X#unknowns/U-1` is `unknown:U-1@X`).
 // A reference to a section or a whole document covers the rows it holds, as overlapping
 // evidence covers them in the uncertainty pass: it leads to each of them.
@@ -122,8 +126,13 @@ function relationClosure(projection, target) {
   for (const graph of graphs) for (const node of graph.nodes) for (const row of scopedCoveredRows(node, sites)) {
     add(forward, node.ref, row); add(backward, row, node.ref);
   }
-  for (const entry of decisions.applications) if (DOCUMENT_RELATIONS.has(entry.relation)) add(forward, entry.referrer, entry.decision);
-  for (const link of unapplied.document_refs) add(forward, link.referrer, link.decision);
+  const documentTypes = new Map(graphs.flatMap((graph) => graph.nodes.map((node) => [node.ref, node.metadata?.artifact_type])));
+  const documentEdge = (referrer, decision) => {
+    add(forward, referrer, decision);
+    if (!OWNER_SPECS.has(documentTypes.get(referrer))) add(backward, decision, referrer);
+  };
+  for (const entry of decisions.applications) if (DOCUMENT_RELATIONS.has(entry.relation)) documentEdge(entry.referrer, entry.decision);
+  for (const link of unapplied.document_refs) documentEdge(link.referrer, link.decision);
   const relate = (a, b) => {
     const row = aliases.get(b) ?? b;
     if (a !== row && isRow(a) && isRow(row)) { add(related, a, row); add(related, row, a); }
@@ -131,13 +140,6 @@ function relationClosure(projection, target) {
   for (const entry of uncertainty.applications) {
     for (const witness of entry.witnesses) for (const ref of [witness.via, witness.dependency, witness.selected]) relate(entry.uncertainty, ref);
   }
-  const reach = (start, map) => {
-    const seen = new Set([start]), queue = [start];
-    for (let index = 0; index < queue.length; index += 1) for (const next of map.get(queue[index]) || []) {
-      if (!seen.has(next)) { seen.add(next); queue.push(next); }
-    }
-    return seen;
-  };
   // Each node is expanded once per direction: what a row reaches through a row already expanded
   // that way is in the closure, so a chain of related rows costs in proportion to its length.
   const expanded = new Map([[forward, new Set()], [backward, new Set()]]);
@@ -196,8 +198,12 @@ function relationClosure(projection, target) {
   const reaches = new Map();
   const reachOf = (key) => {
     if (!reaches.has(key)) {
-      const seen = new Set();
-      for (const start of seeds.get(key) || []) for (const ref of reach(start, traversal)) seen.add(ref);
+      // One traversal from all of a subject's seeds.
+      const queue = [...(seeds.get(key) || [])], seen = new Set(queue);
+      for (let index = 0; index < queue.length; index += 1) {
+        closureStats.visited += 1;
+        for (const next of traversal.get(queue[index]) || []) if (!seen.has(next)) { seen.add(next); queue.push(next); }
+      }
       reaches.set(key, seen);
     }
     return reaches.get(key);
