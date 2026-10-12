@@ -116,9 +116,11 @@ record. An exact artifact row selection
 valid; one that cannot form a typed reference is an error only when its row
 relates to the projection, including when a related reference selects or covers
 it. As for Unknown and Conflict sections, an Open Decisions table that cannot be
-read stops scoped work when its document holds a typed reference (as resolution
-reads it, encoded link destinations included), and a typed reference that
-cannot be resolved stops it wherever it is.
+read (no single canonical table in one Open Decisions section) or a Decision ID
+it repeats stops scoped work when its document holds a typed reference (as
+resolution reads it, encoded link destinations included); otherwise those rows
+cite nothing and are left out, while the table's unique rows stay. A typed
+reference that cannot be resolved stops scoped work wherever it is.
 
 So adding or editing another row of the owner leaves the digest unchanged unless
 that row relates to the bound row; editing the bound row, a related row or any
