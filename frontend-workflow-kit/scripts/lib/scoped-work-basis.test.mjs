@@ -790,6 +790,37 @@ test('#275 basis v2: an Unknown witness that only an unrelated row selects stays
   assert.ok(witnessed(g.run()));
 });
 
+// Review r13 (Spec P2 = Standards P2): an unrelated row's selection can change which relation the
+// uncertainty pass reports (native or transitive evidence becomes inverse evidence). The basis judges
+// the relation again from the closure's own selections, so it keeps the relation the row had. U-VIA
+// cites U-SHARE, so U-SHARE stays in the closure whatever witness the pass reports (which rows join
+// through a witness follows the pass, human decision on r13).
+test('#275 basis v2: a selection only an unrelated row makes leaves an Unknown its native or transitive relation', (t) => {
+  const settle = (f, section) => f.change('screen.md', (doc) => {
+    doc.body += `\n\n${decisions([['D-LOCAL', `Settle \`artifact:${section}\`.`, 'A / B', 'api-integrated-ui', 'PM', 'resolved']])}`; });
+  const scope = (unknown) => ({ version: 1, bindings: [{ unknown_id: unknown, owner: OWNER, known_units: ['known', 'other'], blocks: [],
+    basis_digest: `sha256:${'0'.repeat(64)}`, approval_ref: 'review:unknown' }] });
+  const relations = (result, ref) => result.basis.uncertainty_relations.applications.filter((entry) => entry.uncertainty === ref).map((entry) => entry.relation);
+  const f = fixture(t);
+  f.write('extra.md', { artifact_id: 'EXTRA', artifact_type: 'domain-rules', domain: 'result', status: 'confirmed' }, '## Rules\nExtra rule.');
+  f.change('screen.md', (doc) => { doc.fm.uncertainty_work_scopes = scope('U-ONE');
+    doc.body += `\n\n${unknowns([['U-ONE', 'Is `artifact:EXTRA#rules` final?', 'open']])}`; });
+  const native = () => resolveScopedUncertaintyBindingBasis({ ...f.options(), uncertaintyRef: 'unknown:U-ONE@SCREEN-RESULT-001' });
+  const before = native();
+  assert.deepEqual(relations(before, 'unknown:U-ONE@SCREEN-RESULT-001'), ['scope-review-needed', 'scope-review-needed']);
+  settle(f, 'EXTRA#rules');
+  assert.equal(native().basis_digest, before.basis_digest, 'native');
+  const g = fixture(t);
+  g.write('via.md', { ...foreign(), artifact_id: 'VIA', uncertainty_work_scopes: scope('U-VIA') },
+    unknowns([['U-VIA', 'Do `artifact:RULES#rules`, `artifact:RULES#other` and `unknown:U-SHARE@FOREIGN` hold?', 'open']]));
+  g.write('foreign.md', foreign(), unknowns([['U-SHARE', 'Is `artifact:RULES#untouched` final?', 'open']]));
+  const transitive = () => resolveScopedUncertaintyBindingBasis({ ...g.options(), uncertaintyRef: 'unknown:U-VIA@VIA' });
+  const shared = transitive();
+  assert.ok(relations(shared, 'unknown:U-SHARE@FOREIGN').every((relation) => relation === 'transitive-evidence'));
+  settle(g, 'RULES#untouched');
+  assert.equal(transitive().basis_digest, shared.basis_digest, 'transitive');
+});
+
 // Review r12 (Spec P2): the Decisions that reached documents name are validated against one collision
 // set, built once, so many such documents cost in proportion to their number.
 test('#275 basis v2: validating the decision_refs of many reached documents stays linear', (t) => {

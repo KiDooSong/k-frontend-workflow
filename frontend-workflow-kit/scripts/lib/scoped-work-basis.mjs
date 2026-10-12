@@ -76,7 +76,7 @@ const OWNER_SPECS = new Set(['screen-spec', 'shared-surface-spec']);
 const UNIT_FIELDS = ['evidence', 'host_links', 'inputs', 'known_units', 'owner', 'owners', 'ownership', 'policy', 'units'];
 const RELATION_FIELDS = {
   decision_relations: ['applications', 'dependency_roots', 'evidence', 'memberships', 'records', 'referrers'],
-  uncertainty_relations: ['applications', 'evidence', 'records', 'scope_review_needed'],
+  uncertainty_relations: ['applications', 'evidence', 'records', 'relation_inputs', 'scope_review_needed'],
   unapplied_relations: ['document_refs', 'evidence', 'records'],
 };
 export const SCOPE_BASIS_VERSION = 2;
@@ -137,6 +137,8 @@ function relationClosure(projection, target) {
     const row = aliases.get(b) ?? b;
     if (a !== row && isRow(a) && isRow(row)) { add(related, a, row); add(related, row, a); }
   };
+  // Which rows a witness relates follows the uncertainty pass over all of the owner's selections
+  // (#275 r13, human decision): a row outside the closure that selects the same evidence can change it.
   for (const entry of uncertainty.applications) {
     for (const witness of entry.witnesses) for (const ref of [witness.via, witness.dependency, witness.selected]) relate(entry.uncertainty, ref);
   }
@@ -211,12 +213,13 @@ function relationClosure(projection, target) {
   const kept = (entry) => rows.has(entry.decision) && (!isRow(entry.referrer) || rows.has(entry.referrer)) &&
     (entry.uncertainty === undefined || rows.has(entry.uncertainty)) &&
     (NATIVE_RELATIONS.has(entry.relation) || reachOf(subject(entry)).has(entry.referrer));
-  // A witness of a related Unknown or Conflict names what its unit selects, as the uncertainty pass
-  // seeds it: the unit's own evidence, a host link's mapping and the Decisions applying to it, or for a
-  // transitive witness what is derived through its `via` row. The witness stays only where such a seed
-  // of the closure (a kept application) leads to its selection; a selection that only a row outside
-  // the closure opened leaves nothing behind, and an application left with no witness stays out, as a
-  // derived Decision application does (#275 r12).
+  // How a related Unknown or Conflict applies to a unit is judged again from the closure's own
+  // selections, with the uncertainty pass's precedence (selected, inverse, native, transitive
+  // evidence) over everything the pass found that relation could rest on. A unit selects what the
+  // pass seeds it with: its own evidence, a host link's mapping and the Decisions applying to it, or
+  // for a transitive witness what is derived through its `via` row. Only a seed of the closure (a kept
+  // application) counts, so a selection that only a row outside the closure made changes neither a
+  // witness nor the relation, as for a derived Decision application (#275 r12, r13).
   const selectionSeeds = new Map();
   const selectionSeed = (key, ref) => { if (!selectionSeeds.has(key)) selectionSeeds.set(key, new Set()); selectionSeeds.get(key).add(ref); };
   const ownerUnits = new Map();
@@ -245,10 +248,23 @@ function relationClosure(projection, target) {
     }
     return selections.get(key);
   };
+  const inputs = new Map((uncertainty.relation_inputs || []).map((entry) => [scopeJson([entry.owner, entry.unit, entry.uncertainty]), entry]));
   const relatedApplication = (entry) => {
     if (!rows.has(entry.uncertainty)) return null;
-    const witnesses = entry.witnesses.filter((witness) => selectionOf(entry.owner, entry.unit, witness.via ?? null).has(witness.selected));
-    return witnesses.length || !entry.witnesses.length ? { ...entry, witnesses } : null;
+    const input = inputs.get(scopeJson([entry.owner, entry.unit, entry.uncertainty]));
+    if (!input) fail('uncertainty application without its relation inputs');
+    const selection = selectionOf(entry.owner, entry.unit);
+    const direct = input.direct.filter((ref) => selection.has(ref));
+    const inverse = direct.length ? [] : input.inverse.filter((witness) => selection.has(witness.selected));
+    // The pass could not read a native scope it did not need: keep the relation as it found it.
+    if (!direct.length && !inverse.length && input.native === null) return entry;
+    const native = !direct.length && !inverse.length && input.native;
+    const transitive = direct.length || inverse.length ? [] : input.transitive.filter((witness) =>
+      selectionOf(entry.owner, entry.unit, witness.via).has(witness.selected));
+    const relation = direct.length ? 'selected-evidence' : inverse.length ? 'inverse-evidence'
+      : native ? 'scope-review-needed' : transitive.length ? 'transitive-evidence' : null;
+    return relation && { owner: entry.owner, unit: entry.unit, uncertainty: entry.uncertainty, relation,
+      witnesses: direct.length ? direct.map((ref) => ({ dependency: entry.uncertainty, selected: ref })) : inverse.length ? inverse : transitive };
   };
   // The evidence through which a kept row applies: its referrer and witness nodes.
   for (const entry of decisions.applications) if (kept(entry) && !NATIVE_RELATIONS.has(entry.relation)) nodes.add(entry.referrer);
@@ -288,6 +304,7 @@ export function scopedBindingBasis(projection, binding) {
   const records = parseScopedTargetRef(target)?.kind === 'decision' ? decisions.records : uncertainty.records;
   if (!isRow(target) || !records.some((entry) => entry.ref === target)) fail('target row missing from the applicability projection');
   const { rows, nodes, kept, relatedApplication } = relationClosure(projection, target);
+  const related = uncertainty.applications.map(relatedApplication).filter(Boolean);
   const node = (ref) => rows.has(ref) || nodes.has(ref);
   // One evidence graph of the closure, whichever relation pass contributed a node: an
   // unrelated row that cites the same evidence adds no copy of it.
@@ -316,8 +333,9 @@ export function scopedBindingBasis(projection, binding) {
     }),
     uncertainty_relations: withoutDecisionRefs({
       records: uncertainty.records.filter((entry) => rows.has(entry.ref)),
-      applications: uncertainty.applications.map(relatedApplication).filter(Boolean),
-      scope_review_needed: uncertainty.scope_review_needed.filter((entry) => rows.has(entry.uncertainty)),
+      applications: scopeSet(related),
+      scope_review_needed: scopeSet(related.filter((entry) => entry.relation === 'scope-review-needed')
+        .map(({ owner, unit, uncertainty: ref }) => ({ owner, unit, uncertainty: ref }))),
     }),
     // A related row that applies to no owner. The document links that brought one in are
     // not hashed: the rows they bring are, and an applied row's link is its application.
