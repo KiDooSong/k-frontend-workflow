@@ -19,15 +19,16 @@
     관계를 맺는다. section 이나 문서 전체를 가리키는 참조(조사·검증
     참조 포함)는 Unknown·Conflict 의 겹치는 근거처럼 그 안의 행을 덮는다. 결정 관계가 owner·unit 에 대해 파생한 적용은
     그 owner·unit 자신의 근거(또는 그것에 native 로 적용되는 closure 행)에서 닿을 때만 남는다.
-  - 어느 owner 에도 적용되지 않는 결정·Unknown·Conflict 행은 그 행이 인용하는 참조(본문·링크·typed `depends_on`)를
-    해소해 찾고, 관계 있는 참조가 그 행을 고르거나 덮거나 이름 대면 그 행이 아무것도 인용하지 않아도 기록과 함께
-    들어간다. 이 탐색은 노드를 한 번씩 방문하고 문서마다 한 번 읽고 표마다 한 번 해석해, 행과 참조 수에 비례한다. ID 가 typed reference 를 만들 수 없는 결정 행은 관계를 맺을 때(관계 있는 참조가 그 행을 고르거나
+  - 어느 owner 에도 적용되지 않는 결정·Unknown·Conflict 행은 그 행이 인용하는 참조(본문·링크·typed `depends_on`)와
+    그 문서의 `decision_refs` 를 해소해 찾고, 관계 있는 참조가 그 행을 고르거나 덮거나 이름 대면 그 행이 아무것도 인용하지 않아도 기록과 함께
+    들어간다. 이 탐색은 노드를 한 번씩 방문하고 문서마다 한 번 읽고 표마다 한 번 해석하며 section·표를 목록마다 한 번 색인해, 행과 참조 수에 비례한다. ID 가 typed reference 를 만들 수 없는 결정 행은 관계를 맺을 때(관계 있는 참조가 그 행을 고르거나
     덮을 때 포함)만 오류다. Unknown·Conflict section 처럼, 읽을 수 없는 Open Decisions section(한 section 에 하나의
     canonical 표가 없음. 글만 있거나 인용된 표 포함)이나 정체를 읽을 수 없는 행(빈 ID, 표가 되풀이한 ID)은 그
     문서에 typed reference 가 있으면(해소가 읽는 대로, 인코딩된 링크 대상 포함) scoped 작업을 멈추고, 없으면 그
     행만 뺀다(표의 다른 행은 남는다). `{` 로 시작하는 ID 는 target index 처럼 템플릿 placeholder 이고 행이 아니다.
     해소할 수 없는 typed reference 는 어디에 있든 멈추고, 닿은 문서의 `decision_refs` 가 이름 댄 결정은 보통
-    `decision_refs` 처럼 검사한다(home 이 정확히 하나이고 그것이 정식 전역 register).
+    `decision_refs` 처럼 검사한다(home 이 정확히 하나이고 그것이 정식 전역 register 이며, 그 문서의 목록 전체를 결정
+    관계가 owner 의 목록을 해소하듯 해소하므로 형식이 틀린 행을 이름 대면 멈춘다).
   - 그래서 관계없는 행의 추가·수정은 binding 을 바꾸지 않고, 그 행·관계 행·unit 계약의 수정은 바꾼다. projection
     에 이 버전이 모르는 필드가 있으면 해시하지 않고 오류다.
 - v1 로 기록한 digest 는 v2 에서 모두 stale 이므로 한 번 다시 기록한다(`upgrade-notes.md`). #265 golden 도 다시

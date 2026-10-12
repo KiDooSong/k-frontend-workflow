@@ -112,7 +112,8 @@ computes from the documents (`basis_version: 2`, #275). The basis holds:
 
 A Decision, Unknown or Conflict row that applies to no owner is found through
 the references it cites, as resolution reads them (body, links, typed
-`depends_on`), wherever they lead, and also when a related reference selects,
+`depends_on`), and through its document's `decision_refs`, wherever they lead,
+and also when a related reference selects,
 covers or names it, even if it cites nothing itself; it then joins with its
 record. An exact artifact row selection
 (`artifact:X#unknowns/U-1`) is the row it selects. Any non-empty Decision ID is
@@ -128,7 +129,9 @@ stay. An ID that starts with `{` is a template placeholder, as in the target
 index, and no row. A typed reference that cannot be resolved stops scoped work
 wherever it is, and a Decision that a reached document's `decision_refs` names
 is checked as an ordinary `decision_refs` entry: exactly one home, the canonical
-global register.
+global register, and a well-formed row there (the document's whole list resolves
+as the Decision relations resolve an owner's, so a malformed row it names stops
+scoped work).
 
 So adding or editing another row of the owner leaves the digest unchanged unless
 that row relates to the bound row; editing the bound row, a related row or any
