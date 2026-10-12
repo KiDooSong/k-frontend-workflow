@@ -13,8 +13,10 @@
   - 관계 closure: 그 행, 그 행이 인용하거나 그 행을 인용하는 행(근거 참조를 따라 양방향, 어느 owner 에도 적용되지
     않는 행 포함), Unknown·Conflict 관계가 witness 로 이름을 댄 행, 그 행들이 적용되는 하나의 근거 그래프.
     `artifact:X#unknowns/U-1` 같은 정확한 artifact 행 선택은 그 행과 같다.
-  - 문서 frontmatter 의 `decision_refs` 는 closure 행이 그 문서를 인용할 때 그 결정을 closure 에 더한다. 그 결정을
-    문서의 다른 행과 관계짓지 않고, 목록 자체는 해시하지 않는다. section 이나 문서 전체를 가리키는 참조(조사·검증
+  - 문서 frontmatter 의 `decision_refs` 는 closure 행이 그 문서를 인용할 때 그 결정을 closure 에 더하고, 목록 자체는
+    해시하지 않는다. owner 스펙(화면·surface 스펙)의 목록은 owner 자신의 결정을 선언하므로 그 스펙 일부를 인용한
+    행을 그 결정과 관계짓지 않고, 그 밖의 문서에서는 내용이므로 그 문서를 인용한 행은 인라인 인용처럼 그 결정과
+    관계를 맺는다. section 이나 문서 전체를 가리키는 참조(조사·검증
     참조 포함)는 Unknown·Conflict 의 겹치는 근거처럼 그 안의 행을 덮는다. 결정 관계가 owner·unit 에 대해 파생한 적용은
     그 owner·unit 자신의 근거(또는 그것에 native 로 적용되는 closure 행)에서 닿을 때만 남는다.
   - 어느 owner 에도 적용되지 않는 결정·Unknown·Conflict 행은 그 행이 인용하는 참조(본문·링크·typed `depends_on`)를

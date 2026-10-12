@@ -99,8 +99,11 @@ computes from the documents (`basis_version: 2`, #275). The basis holds:
   the rows an Unknown or Conflict relation names as a witness (and the
   rows that name it), and one evidence graph through which they apply. A
   document's frontmatter `decision_refs` brings a Decision in when a closure row
-  cites that document; it does not relate the Decision to the document's other
-  rows, and the list itself is not hashed. A reference to a section or a whole
+  cites that document, and the list itself is not hashed. In an owner spec (a
+  screen or shared surface spec) the list declares the owner's own Decisions, so
+  it does not relate them to the rows that cite some part of the spec; in any
+  other document it is content, so a row citing that document relates to the
+  Decision as an inline citation would. A reference to a section or a whole
   document (including an investigation or verification reference) covers the
   rows it holds, as overlapping evidence does for an Unknown or Conflict. An
   application that the Decision relations derived for an owner or unit stays
