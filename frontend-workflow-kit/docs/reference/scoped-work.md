@@ -115,12 +115,15 @@ record. An exact artifact row selection
 (`artifact:X#unknowns/U-1`) is the row it selects. Any non-empty Decision ID is
 valid; one that cannot form a typed reference is an error only when its row
 relates to the projection, including when a related reference selects or covers
-it. As for Unknown and Conflict sections, an Open Decisions table that cannot be
-read (no single canonical table in one Open Decisions section) or a Decision ID
-it repeats stops scoped work when its document holds a typed reference (as
-resolution reads it, encoded link destinations included); otherwise those rows
-cite nothing and are left out, while the table's unique rows stay. A typed
-reference that cannot be resolved stops scoped work wherever it is.
+it. As for Unknown and Conflict sections, an Open Decisions section that cannot
+be read (no single canonical table in one Open Decisions section, prose only or
+a quoted table included) or a row whose identity cannot be read (an empty ID or
+one the table repeats) stops scoped work when its document holds a typed
+reference (as resolution reads it, encoded link destinations included);
+otherwise those rows cite nothing and are left out, while the table's other rows
+stay. An ID that starts with `{` is a template placeholder, as in the target
+index, and no row. A typed reference that cannot be resolved stops scoped work
+wherever it is.
 
 So adding or editing another row of the owner leaves the digest unchanged unless
 that row relates to the bound row; editing the bound row, a related row or any
