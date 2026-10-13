@@ -459,6 +459,20 @@ test('#257 a legacy report still returns for an absorbed packet when the bundled
   assert.equal(report.status, 0, report.stderr);
 });
 
+test('#257 a CLI marks its configuration refusal with the token its parent passes, and only then (r12)', (t) => {
+  const r = repository(t);
+  r.put(WORK_CONFIG_FILE, 'version: 2\n');
+  const diff = r.put('changes.txt', `M\t${HOOK}\n`);
+  const run = (env) => spawnSync(process.execPath, [path.join(KIT_ROOT, 'scripts', 'forbidden-paths.mjs'), '--docs', r.docsDir, '--diff', diff, '--json'],
+    { cwd: r.root, encoding: 'utf8', env: { ...process.env, ...env } });
+  const marked = run({ FRONTEND_WORKFLOW_REFUSAL_TOKEN: 'c0ffee' });
+  assert.equal(marked.status, 2, marked.stdout);
+  assert.match(marked.stderr, /^c0ffee WORK-CONFIG: frontend-workflow\.config\.yaml: version 1 required$/m);
+  const plain = run({ FRONTEND_WORKFLOW_REFUSAL_TOKEN: '' });
+  assert.equal(plain.status, 2, plain.stdout);
+  assert.equal(plain.stderr.trim().split('\n').length, 1, plain.stderr);
+});
+
 test('#257 legacy entries find the config of the project that holds the docs, wherever they run (r2)', (t) => {
   const r = repository(t), parent = path.dirname(r.root), at = (name) => path.join(r.root, name);
   const run = (name, args) => spawnSync(process.execPath, [path.join(KIT_ROOT, 'scripts', name), ...args], { cwd: parent, encoding: 'utf8' });
