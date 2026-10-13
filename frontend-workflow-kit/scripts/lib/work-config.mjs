@@ -89,9 +89,11 @@ export function readWorkConfig(root) {
 // A document counts by its artifact_type, or by the file name workflow:state reads it
 // under (domains/**/screen-spec.md, surface-spec.md) when artifact_type is missing; an
 // owner without its id is named by its path. What could hide a declaration is refused
-// rather than taken as declaring nothing: a directory that cannot be listed, a
-// document that cannot be read, and frontmatter that mentions work_execution but does
-// not parse.
+// rather than taken as declaring nothing: a directory that cannot be inspected or
+// listed, a document that cannot be read, and an owner document by name whose
+// frontmatter does not parse or is never closed (whether it declares cannot be known).
+// Another document with broken frontmatter has no artifact_type to make it an owner,
+// and workflow:state never judges it, so it is left as before.
 function ownerMarkdownFiles(docsDir) {
   const out = [];
   let stat;
@@ -125,16 +127,12 @@ export function declaredWorkOwners(docsDir) {
     try { raw = fs.readFileSync(file, 'utf8'); }
     catch (error) { fail(`${parts.join('/')}: cannot read (${error.code || error.message}) to check owner declarations`); }
     const { data, hasFrontmatter, parseError } = splitFrontmatter(raw);
-    // The frontmatter block as splitFrontmatter delimits it; one opened but never closed
-    // runs to the end of the file.
-    const text = raw.replace(/^\uFEFF/, '');
-    const unclosed = !hasFrontmatter && /^---\r?\n/.test(text);
-    const frontmatter = unclosed ? text : /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1] ?? '';
-    if ((parseError || unclosed) && frontmatter.includes('work_execution')) {
+    const byName = parts[0] === 'domains' ? parts.at(-1) : null;
+    const unclosed = !hasFrontmatter && /^---\r?\n/.test(raw.replace(/^\uFEFF/, ''));
+    if ((byName === 'screen-spec.md' || byName === 'surface-spec.md') && (parseError || unclosed)) {
       fail(`${parts.join('/')}: frontmatter does not parse (${parseError || 'not closed'}) to check owner declarations`);
     }
     if (!hasFrontmatter || parseError || !mapping(data) || !Object.hasOwn(data, 'work_execution')) continue;
-    const byName = parts[0] === 'domains' ? parts.at(-1) : null;
     const kind = data.artifact_type === 'screen-spec' || byName === 'screen-spec.md' ? 'screen'
       : data.artifact_type === 'shared-surface-spec' || byName === 'surface-spec.md' ? 'surface' : null;
     const id = kind && data[`${kind}_id`];

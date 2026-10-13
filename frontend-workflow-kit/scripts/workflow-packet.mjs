@@ -226,10 +226,10 @@ function main() {
   // #257: packet 이 직접 읽는 base policy 와 docs 도 채택 검사를 받는다(--readiness 로 판정을 건너뛸 때 포함).
   const docsForAdoption = visual ? path.join(rootResolved, ...(docsVisual || DEFAULTS.docs).split('/'))
     : path.resolve(docsFlag || DEFAULTS.docs);
+  //   파싱되지 않는 policy 는 채택 사실이 아니므로 base 검사만 건너뛰고, 그 오류는 이전처럼 뒤에서 보고한다.
   const policyRaw = readFileSafe(policyPath);
   let basePolicy = {};
-  try { basePolicy = policyRaw == null ? {} : yamlParse(policyRaw) || {}; }
-  catch (e) { fail(`policy YAML 파싱 실패: ${toPosix(policyPath)} — ${e.message}`); }
+  try { basePolicy = policyRaw == null ? {} : yamlParse(policyRaw) || {}; } catch { /* left to the policy readers */ }
   adoptionPolicy(basePolicy, work.config, docsForAdoption);
   const manifestPath = visual && manifestVisual
     ? path.join(rootResolved, ...manifestVisual.split('/'))

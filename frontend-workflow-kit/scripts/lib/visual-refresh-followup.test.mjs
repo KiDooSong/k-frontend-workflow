@@ -461,6 +461,18 @@ test('#257 visual readiness before the first commit refuses docs it cannot inspe
   } finally { fs.chmodSync(parent, 0o755); }
 });
 
+test('#257 a visual packet before the first commit keeps its result when the base policy does not parse (r10)', (t) => {
+  const root = createFixture(t, { explicitResources: true });
+  fs.rmSync(path.join(root, '.git'), { recursive: true, force: true });
+  git(root, 'init');
+  write(root, 'config/policy.yaml', 'modes: [unclosed\n');
+  // A policy that does not parse is not an adoption fact; the packet halts as before.
+  const packet = run(PACKET, ['--screen', SCREEN_ID, '--requested-mode', 'api-integrated-ui', '--intent', 'visual-refresh', '--input', INPUT_ID,
+    '--path', SCREEN_PATH, '--root', root, ...explicitPolicy, '--json'], root);
+  assert.equal(packet.status, 0, packet.stderr || packet.stdout);
+  assert.doesNotMatch(packet.stderr, /WORK-CONFIG/);
+});
+
 test('#257 a visual report refuses adoption before any other resource of its backstop fails (r4)', (t) => {
   const adoptInBase = (root) => fs.appendFileSync(path.join(root, 'config/policy.yaml'), `work_execution: ${JSON.stringify(ADOPTION)}\n`);
   const baseRefusal = /WORK-CONFIG: the base policy must not declare work_execution/;

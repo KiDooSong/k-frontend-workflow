@@ -209,20 +209,37 @@ test('#257 frontmatter that mentions work_execution but does not parse is refuse
   p.put(spec, '---\nartifact_type: screen-spec\nscreen_id: RESULT-001\nwork_execution:\n  units: [unclosed\n---\n\n# Doc\n');
   assert.throws(() => adoptionPolicy(base(), null, p.docsDir), (error) => error instanceof WorkConfigError &&
     /domains\/result\/screens\/result-001\/screen-spec\.md: frontmatter does not parse/.test(error.message));
-  // Without the word in its frontmatter it cannot declare units, so it is left to the
-  // other checks as before, even when its body mentions the word above a rule.
-  p.put(spec, '---\nartifact_type: screen-spec\nscreen_id: [unclosed\n---\n\n# Doc\n\nwork_execution\n\n---\n');
+  // A document workflow:state does not read as an owner is never judged without an
+  // overlay, so its broken frontmatter is left to the other checks as before.
+  p.put(spec, md({ artifact_type: 'screen-spec', screen_id: 'RESULT-001' }));
+  p.put(`${DOCS}/domains/result/notes.md`, '---\nartifact_type: screen-spec\nwork_execution:\n  units: [unclosed\n---\n\n# Notes\n');
   assert.equal(adoptionPolicy(base(), null, p.docsDir).work_execution, undefined);
 });
 
-test('#257 frontmatter that is opened but never closed is refused when it mentions work_execution (r9)', (t) => {
+test('#257 owner frontmatter that is opened but never closed is refused (r9)', (t) => {
   const p = project(t);
   const spec = `${DOCS}/domains/result/screens/result-001/screen-spec.md`;
   p.put(spec, '---\nartifact_type: screen-spec\nscreen_id: RESULT-001\nwork_execution:\n  version: 1\n');
   assert.throws(() => adoptionPolicy(base(), null, p.docsDir), (error) => error instanceof WorkConfigError &&
     /domains\/result\/screens\/result-001\/screen-spec\.md: frontmatter does not parse \(not closed\)/.test(error.message));
-  p.put(spec, '---\nartifact_type: screen-spec\nscreen_id: RESULT-001\n');
+  p.put(spec, md({ artifact_type: 'screen-spec', screen_id: 'RESULT-001' }));
+  p.put(`${DOCS}/domains/result/notes.md`, '---\nwork_execution:\n  version: 1\n');
   assert.equal(adoptionPolicy(base(), null, p.docsDir).work_execution, undefined);
+});
+
+test('#257 an owner document whose frontmatter does not parse is refused whatever it spells (r10)', (t) => {
+  const p = project(t);
+  const spec = `${DOCS}/domains/result/screens/result-001/screen-spec.md`, surface = `${DOCS}/domains/result/surfaces/panel/surface-spec.md`;
+  const refused = (file) => (error) => error instanceof WorkConfigError &&
+    new RegExp(`${file.slice(DOCS.length + 1).replace(/[.]/g, '\\.')}: frontmatter does not parse`).test(error.message);
+  // An escaped key is still the key; whether it declares units cannot be known.
+  p.put(spec, '---\nartifact_type: screen-spec\n"work\\u005fexecution":\n  units: [unclosed\n---\n');
+  assert.throws(() => adoptionPolicy(base(), null, p.docsDir), refused(spec));
+  p.put(spec, '---\nscreen_id: [unclosed\n---\n');
+  assert.throws(() => adoptionPolicy(base(), null, p.docsDir), refused(spec));
+  p.put(spec, md({ artifact_type: 'screen-spec', screen_id: 'RESULT-001' }));
+  p.put(surface, '---\nsurface_id: [unclosed\n---\n');
+  assert.throws(() => adoptionPolicy(base(), null, p.docsDir), refused(surface));
 });
 
 test('#257 a docs directory that cannot be inspected is a configuration error (r9)', (t) => {
