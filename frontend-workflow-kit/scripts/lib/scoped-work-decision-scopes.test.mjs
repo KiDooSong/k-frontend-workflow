@@ -29,8 +29,10 @@ function fixture(t, { blocks = ['other'], status = 'open', absent = false, stale
     const target = docs.get(name), parsed = splitFrontmatter(fs.readFileSync(target, 'utf8')), doc = { fm: parsed.data, body: parsed.body };
     update(doc); fs.writeFileSync(target, md(doc.fm, doc.body));
   };
-  const resources = { root, owner: OWNER, docs: 'docs', kit: '.kit', policy: '.kit/policy.yaml', manifest: '.kit/manifest.yaml', layout: '.kit/layout.yaml' };
-  put(resources.policy, JSON.stringify({ work_execution: { version: 1, owners: [OWNER], profiles: ['visual', 'api-contract', 'behavior'], role_limits: {
+  const resources = { root, owner: OWNER, docs: 'docs', kit: '.kit', policy: '.kit/policy.yaml', policy_overlay: '.kit/adoption.yaml',
+    manifest: '.kit/manifest.yaml', layout: '.kit/layout.yaml' };
+  put(resources.policy, JSON.stringify({}));
+  put(resources.policy_overlay, JSON.stringify({ work_execution: { version: 1, owners: [OWNER], profiles: ['visual', 'api-contract', 'behavior'], role_limits: {
     visual: ['screen', 'domain_component', 'hook', 'test'], 'api-contract': ['api_client', 'test'], behavior: ['screen', 'domain_component', 'hook', 'api_client', 'test'],
   }, deny_paths: [] } }));
   put(resources.layout, JSON.stringify({ roles: { screen: ['src/features/{domain}/screens/**'], domain_component: ['src/features/{domain}/components/**'],
@@ -46,7 +48,7 @@ function fixture(t, { blocks = ['other'], status = 'open', absent = false, stale
       known_units: [...UNITS], blocks, basis_digest: `sha256:${'0'.repeat(64)}`, approval_ref: 'review:fixture-only-unverified' }] } }) },
   decisions([row(id, status), row('D-TWO')]));
   const basisOptions = () => ({ owner: OWNER, projectRoot: root, docsDir, kitRoot, policyFile: file(resources.policy),
-    layoutFile: file(resources.layout), manifestFile: file(resources.manifest), targetIndex: buildReconciliationTargetIndex({
+    policyOverlayFile: file(resources.policy_overlay), layoutFile: file(resources.layout), manifestFile: file(resources.manifest), targetIndex: buildReconciliationTargetIndex({
       docs: [...docs.values()].map((target) => ({ file: target, fm: splitFrontmatter(fs.readFileSync(target, 'utf8')).data })),
     }) });
   const recordDigest = () => {

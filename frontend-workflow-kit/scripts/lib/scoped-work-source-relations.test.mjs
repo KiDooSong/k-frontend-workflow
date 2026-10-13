@@ -230,11 +230,13 @@ test('D source relations: inspection and caller mutation never rewrite canonical
 });
 
 function scope(f) {
-  const policyFile = path.join(f.root, 'scope-policy.yaml');
-  if (!fs.existsSync(policyFile)) fs.writeFileSync(policyFile, JSON.stringify({ work_execution: {
+  // #257: the base policy never adopts; work_execution lives only in the policy overlay.
+  const policyFile = path.join(f.root, 'scope-policy.yaml'), policyOverlayFile = path.join(f.root, 'scope-adoption.yaml');
+  if (!fs.existsSync(policyFile)) fs.writeFileSync(policyFile, JSON.stringify({}));
+  if (!fs.existsSync(policyOverlayFile)) fs.writeFileSync(policyOverlayFile, JSON.stringify({ work_execution: {
     version: 1, owners: [OWNER], profiles: ['behavior'], role_limits: { behavior: ['screen'] }, deny_paths: [],
   } }));
-  return resolveScopedUnitProjection({ ...f.options(), policyFile });
+  return resolveScopedUnitProjection({ ...f.options(), policyFile, policyOverlayFile });
 }
 
 test('D R1 inferred sources: canonical links retain exact source anchors and every connected effect field', (t) => {

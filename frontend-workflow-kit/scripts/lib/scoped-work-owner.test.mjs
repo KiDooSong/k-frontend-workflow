@@ -20,7 +20,9 @@ function fixture(t) {
   const write = (name, fm, body) => { const file = put(`docs/${name}`, md(fm, body)); docs.set(name, file); return file; };
   const edit = (name, update) => { const file = docs.get(name), parsed = splitFrontmatter(fs.readFileSync(file, 'utf8'));
     const doc = { fm: parsed.data, body: parsed.body }; update(doc); fs.writeFileSync(file, md(doc.fm, doc.body)); };
-  const policyFile = put('.kit/policy.yaml', JSON.stringify({ work_execution: { version: 1, owners: [OWNER], profiles: ['visual', 'api-contract', 'behavior'],
+  // #257: the base policy never adopts; work_execution lives only in the policy overlay.
+  const policyFile = put('.kit/policy.yaml', JSON.stringify({}));
+  const overlayFile = put('.kit/adoption.yaml', JSON.stringify({ work_execution: { version: 1, owners: [OWNER], profiles: ['visual', 'api-contract', 'behavior'],
     role_limits: { visual: ['screen', 'domain_component', 'hook', 'test'], 'api-contract': ['api_client', 'test'],
       behavior: ['screen', 'domain_component', 'hook', 'api_client', 'test'] }, deny_paths: [] } }));
   const layoutFile = put('.kit/layout.yaml', JSON.stringify({ roles: { screen: ['src/features/{domain}/screens/**'],
@@ -33,7 +35,7 @@ function fixture(t) {
   write('rules.md', { artifact_id: 'RULES', artifact_type: 'domain-rules', domain: 'result', status: 'confirmed',
     approved_by: 'synthetic-fixture-owner', approved_at: '2026-09-22', decision_id: 'fixture-known-contract' },
   '## Rules\nKnown local behavior without API calls.\n\n## Other\nOther known behavior.');
-  const options = () => ({ owner: OWNER, unit: 'known', projectRoot: root, docsDir, kitRoot, policyFile, layoutFile, manifestFile,
+  const options = () => ({ owner: OWNER, unit: 'known', projectRoot: root, docsDir, kitRoot, policyFile, policyOverlayFile: overlayFile, layoutFile, manifestFile,
     registerFile: path.join(docsDir, 'register.md'), inputArtifacts: [], origin_inputs: [], coverage_reports: [],
     targetIndex: buildReconciliationTargetIndex({ docs: [...docs.values()].map((file) => ({ file, fm: splitFrontmatter(fs.readFileSync(file, 'utf8')).data })) }),
     targets: [{ path: ENTRY, change: 'A' }] });
@@ -55,7 +57,7 @@ function fixture(t) {
       '## Endpoints\n| Method | Path | Confidence | Linked Contract | Contract Kind | Source |\n|---|---|---|---|---|---|\n| GET | /results | confirmed | ResultsResponse | ts-type | contracts |');
     put('contracts/result.ts', 'export interface ResultsResponse { value: string }\n');
   }
-  return { root, docs, put, write, edit, policyFile, options, decision, api, run: (extra = {}) => inspectScopedOwner({ ...options(), ...extra }) };
+  return { root, docs, put, write, edit, policyFile, overlayFile, options, decision, api, run: (extra = {}) => inspectScopedOwner({ ...options(), ...extra }) };
 }
 const denied = (out, prerequisite) => { assert.equal(out.owner_satisfied, false); assert.ok(out.denials.some((d) => d.prerequisite === prerequisite), JSON.stringify(out.denials)); };
 const noGrant = (out) => { assert.equal(out.permission_evaluated, false); assert.equal(out.approval_verified, false);
@@ -83,7 +85,7 @@ test('D owner: profile denial survives a valid path and an empty Decision block 
 test('D owner: a satisfied profile cannot authorize another owner path or explicit deny', (t) => {
   const f = fixture(t); let out = f.run({ targets: [{ path: `${ROOT}/screens/Other.tsx`, change: 'A' }] });
   denied(out, 'path'); assert.equal(out.profile.profile_satisfied, true);
-  const policy = JSON.parse(fs.readFileSync(f.policyFile, 'utf8')); policy.work_execution.deny_paths = [ENTRY]; fs.writeFileSync(f.policyFile, JSON.stringify(policy));
+  const policy = JSON.parse(fs.readFileSync(f.overlayFile, 'utf8')); policy.work_execution.deny_paths = [ENTRY]; fs.writeFileSync(f.overlayFile, JSON.stringify(policy));
   out = f.run(); denied(out, 'path'); assert.ok(out.denials.some((d) => d.code === 'explicit-deny'));
 });
 

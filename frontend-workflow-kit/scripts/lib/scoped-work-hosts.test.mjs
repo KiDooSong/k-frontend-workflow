@@ -46,10 +46,10 @@ function fixture(t) {
   const work = { version: 1, owners: [SURFACE, ...MEMBERS.map((id) => `screen:${id}`)], profiles: ['visual', 'api-contract', 'behavior'],
     role_limits: { visual: ['screen', 'domain_component', 'hook', 'test'], 'api-contract': ['api_client', 'test'],
       behavior: ['screen', 'domain_component', 'hook', 'api_client', 'test'] }, deny_paths: [] };
-  // The real mode ladder is needed by the legacy member base; the scoped section is additive.
+  // The real mode ladder is needed by the legacy member base; the scoped section lives in the overlay (#257).
   const policyText = fs.readFileSync(DEFAULTS.policy, 'utf8');
-  const policyFile = path.join(kitRoot, 'policy.yaml');
-  const writePolicy = () => put('.kit/policy.yaml', `${policyText}\nwork_execution: ${JSON.stringify(work)}\n`);
+  const policyFile = put('.kit/policy.yaml', policyText), overlayFile = path.join(kitRoot, 'adoption.yaml');
+  const writePolicy = () => put('.kit/adoption.yaml', `work_execution: ${JSON.stringify(work)}\n`);
   writePolicy();
   const layoutFile = put('.kit/layout.yaml', JSON.stringify({ roles: { route_entry: 'src/app/**',
     screen: 'src/features/{domain}/screens/**', domain_component: 'src/features/{domain}/components/**',
@@ -83,7 +83,7 @@ function fixture(t) {
   }
   const options = (targets = [{ path: TARGET, change: 'M' }]) => ({ owner: SURFACE, unit: 'panel', projectRoot: root, docsDir, kitRoot,
     srcDir: path.join(root, 'src'),
-    policyFile, layoutFile, manifestFile, registerFile, inputArtifacts: inputs.map(loadInputArtifact), origin_inputs: [], coverage_reports: [],
+    policyFile, policyOverlayFile: overlayFile, layoutFile, manifestFile, registerFile, inputArtifacts: inputs.map(loadInputArtifact), origin_inputs: [], coverage_reports: [],
     targets, targetIndex: buildReconciliationTargetIndex({ docs: [...docs.values()].map((file) => ({ file,
       fm: splitFrontmatter(fs.readFileSync(file, 'utf8')).data })) }),
   });
@@ -135,7 +135,7 @@ function fixture(t) {
   function run(extra = {}, { targets } = {}) {
     return inspectScopedSurfaceHosts({ ...options(targets), ...extra });
   }
-  return { root, docs, inputs, put, write, edit, options, policyFile, registerFile, work, writePolicy, writeState,
+  return { root, docs, inputs, put, write, edit, options, policyFile, overlayFile, registerFile, work, writePolicy, writeState,
     visual, legacy, stub, openDecision, run };
 }
 const noGrant = (result) => {

@@ -13,6 +13,7 @@ import { validateCurrentReconciliation } from './current-work-reconciliation.mjs
 import { readJson, normalizeWorkRequest, digest, hashBytes, ownerParts, byteCompare } from './current-work-request.mjs';
 import { materializeRawGitTree } from './visual-refresh-git-objects.mjs';
 import { adoptedWorkPaths } from './scoped-work-adoption.mjs';
+import { WORK_CONFIG_FILE, readWorkConfig, configuredLayout, adoptionPolicy } from './work-config.mjs';
 import {
   CurrentWorkExecutionError, REGULAR_MODES, outside, projectRelative, resolveProjectPath, resolveProjectRoot, gitIdentity,
   yamlFile, screenDomain, effectiveOrder, modeIndex, invalidBlocker, generatedPatterns, generatedOwner,
@@ -47,9 +48,13 @@ export function readWorkRequestFile(ctx, work) {
 }
 
 // The same explicit/default resource set, resolved in the project and then in the
-// materialized immutable baseline tree. Shared by current and scoped work.
+// materialized immutable baseline tree. Shared by current and scoped work. The
+// baseline frontend-workflow.config.yaml (#257) sets the default layout and names the
+// adoption overlay; both files become resources, so the backstop holds them unchanged.
 export function resolveWorkResources(ctx, baselineRoot, { docs, src, policy, manifest, layout, ci } = {}) {
   const projectRoot = ctx.projectRoot;
+  const config = readWorkConfig(baselineRoot);
+  const layoutChoice = configuredLayout(config, layout ? resolveProjectPath(projectRoot, layout, layout, 'layout').relative : undefined);
   const currentKitInsideProject = !outside(projectRoot, KIT_ROOT);
   const kitRelative = currentKitInsideProject ? projectRelative(projectRoot, KIT_ROOT, 'kit root') : null;
   const baselineKitRoot = kitRelative ? path.join(baselineRoot, ...kitRelative.split('/')) : KIT_ROOT;
@@ -63,14 +68,20 @@ export function resolveWorkResources(ctx, baselineRoot, { docs, src, policy, man
     src: resolveProjectPath(projectRoot, src, DEFAULTS.src, 'src'),
     policy: resolveProjectPath(projectRoot, policy, defaultPolicy, 'policy'),
     manifest: resolveProjectPath(projectRoot, manifest, defaultManifest, 'manifest'),
-    layout: resolveProjectPath(projectRoot, layout, defaultLayout, 'layout'),
+    layout: resolveProjectPath(projectRoot, layoutChoice, defaultLayout, 'layout'),
     ci: ci ? resolveProjectPath(projectRoot, ci, ci, 'ci') : null,
+    ...(config ? { config: resolveProjectPath(projectRoot, WORK_CONFIG_FILE, WORK_CONFIG_FILE, 'config') } : {}),
+    ...(config?.policy_overlay ? { policy_overlay: resolveProjectPath(projectRoot, config.policy_overlay.file, config.policy_overlay.file, 'policy_overlay') } : {}),
   };
-  for (const key of ['docs', 'src', 'policy', 'manifest', 'layout']) {
-    resources[key].baseline = path.join(baselineRoot, ...resources[key].relative.split('/'));
+  for (const key of ['docs', 'src', 'policy', 'manifest', 'layout', 'ci', 'config', 'policy_overlay']) {
+    if (resources[key]) resources[key].baseline = path.join(baselineRoot, ...resources[key].relative.split('/'));
   }
-  if (resources.ci) resources.ci.baseline = path.join(baselineRoot, ...resources.ci.relative.split('/'));
-  return { resources, baselineKitRoot, kitRelative };
+  return { resources, baselineKitRoot, kitRelative, config };
+}
+
+// The base policy with the configured adoption overlay (#257), read from the baseline.
+export function baselineWorkPolicy(resources, config) {
+  return adoptionPolicy(yamlFile(resources.policy.baseline, 'policy'), config, resources.docs.baseline);
 }
 
 // `--work` never reads a generated `_meta/workflow-state.yaml`. It computes the state
@@ -94,7 +105,7 @@ export function workResourceRecords(resources, snapshot) {
   for (const [kind, resource] of Object.entries(resources)) {
     if (!resource) continue;
     const entry = snapshot.entry(resource.relative);
-    if (['policy', 'manifest', 'layout', 'ci'].includes(kind)) {
+    if (['policy', 'manifest', 'layout', 'ci', 'config', 'policy_overlay'].includes(kind)) {
       if (!entry || entry.type !== 'blob' || !REGULAR_MODES.has(entry.mode)) {
         throw new CurrentWorkExecutionError(`${kind}: baseline resource must be a regular Git blob`);
       }
@@ -117,10 +128,10 @@ export function prepareCurrentWork({ work, root, docs, src, policy, manifest, la
   try {
     const projectRoot = ctx.projectRoot;
     const baselineRoot = snapshot.root;
-    const { resources, baselineKitRoot } = resolveWorkResources(ctx, baselineRoot, { docs, src, policy, manifest, layout, ci });
+    const { resources, baselineKitRoot, config } = resolveWorkResources(ctx, baselineRoot, { docs, src, policy, manifest, layout, ci });
 
     const registerRel = `${resources.docs.relative}/_meta/reconciliation-register.md`;
-    const policyData = yamlFile(resources.policy.baseline, 'policy');
+    const policyData = baselineWorkPolicy(resources, config);
     const manifestData = yamlFile(resources.manifest.baseline, 'manifest');
     const ciData = resources.ci ? yamlFile(resources.ci.baseline, 'CI') : {};
     const layoutData = loadLayoutProfile({ kitRoot: baselineKitRoot, flags: { layout: resources.layout.baseline } });

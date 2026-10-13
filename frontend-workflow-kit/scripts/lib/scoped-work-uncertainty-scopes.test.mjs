@@ -36,8 +36,10 @@ function fixture(t) {
   fs.mkdirSync(kitRoot);
   const policyFile = path.join(kitRoot, 'policy.yaml'), layoutFile = path.join(kitRoot, 'layout.yaml');
   const manifestFile = path.join(kitRoot, 'manifest.yaml');
+  const overlayFile = path.join(kitRoot, 'adoption.yaml'); // #257: work_execution lives only in the policy overlay
   const put = (file, value) => fs.writeFileSync(file, JSON.stringify(value));
-  put(policyFile, { work_execution: { version: 1, owners: [OWNER], profiles: ['behavior'],
+  put(policyFile, {});
+  put(overlayFile, { work_execution: { version: 1, owners: [OWNER], profiles: ['behavior'],
     role_limits: { behavior: ['screen', 'domain_component', 'hook', 'api_client', 'test'] }, deny_paths: [] } });
   put(layoutFile, { roles: { screen: ['src/features/{domain}/screens/**'], domain_component: ['src/features/{domain}/components/**'],
     hook: ['src/features/{domain}/hooks/**'], api_client: ['src/api/**'], test: ['src/features/{domain}/tests/**'], route: ['src/routes/**'] } });
@@ -58,7 +60,7 @@ function fixture(t) {
   // A same-domain document: its rows are native to every unit of the owner.
   write(HOME, { artifact_id: 'UNCERTAINTY', artifact_type: 'domain-rules', domain: 'result', status: 'draft',
     uncertainty_work_scopes: { version: 1, bindings: [binding()] } }, BODY);
-  const options = (owner = OWNER) => ({ owner, projectRoot: root, docsDir, kitRoot, policyFile, layoutFile, manifestFile,
+  const options = (owner = OWNER) => ({ owner, projectRoot: root, docsDir, kitRoot, policyFile, policyOverlayFile: overlayFile, layoutFile, manifestFile,
     targetIndex: buildReconciliationTargetIndex({ docs: [...docs.values()].map((file) =>
       ({ file, fm: splitFrontmatter(fs.readFileSync(file, 'utf8')).data })) }) });
   const run = (owner = OWNER) => inspectScopedUncertaintyScopes(options(owner));
@@ -403,7 +405,7 @@ test('D uncertainty transitions: the original Git HEAD -> index pair reports a r
   git('add', '--', '.kit', 'docs'); git('commit', '-qm', 'resolved row with its binding');
   f.change(HOME, (doc) => { doc.body = doc.body.replace('| Which state applies? | resolved |', '| Which state applies? | open |'); });
   renew(f); git('add', '--', 'docs');
-  const resources = { root: f.root, owner: OWNER, docs: 'docs', kit: '.kit', policy: '.kit/policy.yaml', manifest: '.kit/manifest.yaml', layout: '.kit/layout.yaml' };
+  const resources = { root: f.root, owner: OWNER, docs: 'docs', kit: '.kit', policy: '.kit/policy.yaml', policy_overlay: '.kit/adoption.yaml', manifest: '.kit/manifest.yaml', layout: '.kit/layout.yaml' };
   const out = inspectScopedGitUncertaintyTransitions(resources);
   assert.deepEqual([codes(out), out.blocking_units], [['reopen-binding-retained'], UNITS]);
   assert.equal(out.git_snapshot.before.commit, git('rev-parse', 'HEAD'));

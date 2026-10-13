@@ -351,3 +351,79 @@ test('shipped implement-screen documents the visual tuple and staged backstop pa
     assert.ok(skill.includes(token), `implement-screen missing ${token}`);
   }
 });
+
+// #257: frontend-workflow.config.yaml names the adoption overlay and the layout for visual-refresh too.
+const ADOPTION = { version: 1, owners: [`screen:${SCREEN_ID}`], profiles: ['behavior'], role_limits: { behavior: ['screen'] }, deny_paths: [] };
+function adoptShop(root, { config = true } = {}) {
+  const spec = path.join(root, 'docs/frontend-workflow/domains/shop/screens/shop-home/screen-spec.md');
+  fs.writeFileSync(spec, fs.readFileSync(spec, 'utf8').replace('status: confirmed\n',
+    `status: confirmed\nwork_execution: ${JSON.stringify({ version: 1, units: [{ id: 'layout', kind: 'behavior',
+      contracts: [`artifact:${SCREEN_ID}-screen-spec#state-matrix`], sources: [] }] })}\n`));
+  write(root, 'config/adoption.yaml', `work_execution: ${JSON.stringify(ADOPTION)}\n`);
+  if (config) write(root, 'frontend-workflow.config.yaml', 'version: 1\npolicy_overlay: config/adoption.yaml\nlayout: config/layout.yaml\n');
+  git(root, 'add', '.'); git(root, 'commit', '-m', 'adopt shop');
+}
+const explicitPolicy = ['--policy', 'config/policy.yaml', '--manifest', 'config/manifest.yaml'];
+
+test('#257 visual-refresh reads the adoption overlay and the layout from frontend-workflow.config.yaml', (t) => {
+  const root = createFixture(t, { explicitResources: true });
+  const before = run(READINESS, [...visualArgs(root), ...explicitPolicy], root);
+  assert.equal(JSON.parse(before.stdout).path_authorization.allowed, true, before.stderr || before.stdout);
+  adoptShop(root);
+  const result = run(READINESS, [...visualArgs(root), ...explicitPolicy], root);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const json = JSON.parse(result.stdout);
+  assert.equal(json.path_authorization.allowed, false, result.stdout);
+  assert.match(json.path_authorization.reason, /work-selection-required/);
+  const provenance = json.intent_authorization.resource_provenance;
+  assert.equal(provenance.layout.source, 'config/layout.yaml');
+  assert.equal(provenance.policy_overlay.source, 'config/adoption.yaml');
+  assert.equal(provenance.config.source, 'frontend-workflow.config.yaml');
+  const mismatch = run(READINESS, [...visualArgs(root), ...explicitPolicy, '--layout', 'config/policy.yaml'], root);
+  assert.equal(mismatch.status, 2, mismatch.stdout);
+  assert.match(mismatch.stderr, /WORK-CONFIG: --layout config\/policy\.yaml differs from frontend-workflow\.config\.yaml layout config\/layout\.yaml/);
+});
+
+test('#257 visual-refresh refuses owner units without a configured overlay and a base policy that adopts', (t) => {
+  const root = createFixture(t, { explicitResources: true });
+  adoptShop(root, { config: false });
+  const result = run(READINESS, [...visualArgs(root), ...explicitPolicy], root);
+  assert.equal(result.status, 2, result.stdout);
+  assert.match(result.stderr, /WORK-CONFIG: owner documents declare work_execution \(screen:SHOP-HOME\)/);
+  fs.appendFileSync(path.join(root, 'config/policy.yaml'), `work_execution: ${JSON.stringify(ADOPTION)}\n`);
+  write(root, 'frontend-workflow.config.yaml', 'version: 1\npolicy_overlay: config/adoption.yaml\n');
+  const inline = run(READINESS, [...visualArgs(root), ...explicitPolicy], root);
+  assert.equal(inline.status, 2, inline.stdout);
+  assert.match(inline.stderr, /the base policy must not declare work_execution/);
+});
+
+test('#257 a visual diff cannot change the adoption overlay or create the config', (t) => {
+  // An overlay that adopts no owner yet keeps the screen applicable, so the record check runs.
+  const adopted = createFixture(t, { explicitResources: true });
+  write(adopted, 'config/adoption.yaml', `work_execution: ${JSON.stringify({ ...ADOPTION, owners: [] })}\n`);
+  write(adopted, 'frontend-workflow.config.yaml', 'version: 1\npolicy_overlay: config/adoption.yaml\nlayout: config/layout.yaml\n');
+  git(adopted, 'add', '.'); git(adopted, 'commit', '-m', 'adoption config');
+  write(adopted, SCREEN_PATH, 'export const ShopScreen = () => "refreshed";\n');
+  fs.appendFileSync(path.join(adopted, 'config/adoption.yaml'), '# narrowed later\n');
+  git(adopted, 'add', '.');
+  const staged = run(BACKSTOP, [...visualArgs(adopted), ...explicitPolicy, '--staged', '--enforce'], adopted);
+  const json = JSON.parse(staged.stdout);
+  assert.ok(json.violations.some((entry) => entry.code === 'VR-BACKSTOP-012' && entry.file === 'config/adoption.yaml'), staged.stdout);
+  const plain = createFixture(t, { explicitResources: true });
+  write(plain, SCREEN_PATH, 'export const ShopScreen = () => "refreshed";\n');
+  write(plain, 'frontend-workflow.config.yaml', 'version: 1\nlayout: config/layout.yaml\n');
+  git(plain, 'add', '.');
+  const created = run(BACKSTOP, [...visualArgs(plain), ...explicitPolicy, '--layout', 'config/layout.yaml', '--staged', '--enforce'], plain);
+  assert.equal(created.status, 1, created.stderr || created.stdout);
+  assert.ok(JSON.parse(created.stdout).violations.some((entry) => entry.code === 'VR-BACKSTOP-012' && entry.file === 'frontend-workflow.config.yaml'), created.stdout);
+});
+
+test('#257 forward readiness reads the worktree config, not the committed one', (t) => {
+  const root = createFixture(t, { explicitResources: true });
+  adoptShop(root);
+  // The worktree withdraws the config while the owner still declares units.
+  fs.rmSync(path.join(root, 'frontend-workflow.config.yaml'));
+  const result = run(READINESS, [...visualArgs(root), ...explicitPolicy, '--layout', 'config/layout.yaml'], root);
+  assert.equal(result.status, 2, result.stdout);
+  assert.match(result.stderr, /WORK-CONFIG: owner documents declare work_execution \(screen:SHOP-HOME\)/);
+});

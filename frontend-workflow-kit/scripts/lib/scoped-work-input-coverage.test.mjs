@@ -65,7 +65,9 @@ function fixture(t, { explicit = true, native = false, typed = false } = {}) {
 function coverageFixture(t, config) {
   const f = fixture(t, config), kitRoot = path.join(f.root, '.kit'); fs.mkdirSync(kitRoot);
   const policyFile = path.join(kitRoot, 'policy.yaml'), layoutFile = path.join(kitRoot, 'layout.yaml'), manifestFile = path.join(kitRoot, 'manifest.yaml');
-  fs.writeFileSync(policyFile, JSON.stringify({ work_execution: { version: 1, owners: [OWNER], profiles: ['behavior'],
+  const policyOverlayFile = path.join(kitRoot, 'adoption.yaml');
+  fs.writeFileSync(policyFile, JSON.stringify({}));
+  fs.writeFileSync(policyOverlayFile, JSON.stringify({ work_execution: { version: 1, owners: [OWNER], profiles: ['behavior'],
     role_limits: { behavior: ['screen', 'domain_component', 'hook', 'api_client', 'test'] }, deny_paths: [] } }));
 
   fs.writeFileSync(layoutFile, JSON.stringify({ roles: { screen: ['src/features/{domain}/screens/**'],
@@ -74,7 +76,7 @@ function coverageFixture(t, config) {
   fs.writeFileSync(manifestFile, JSON.stringify({ version: 1, artifacts: {} }));
   let origins = [{ input_id: INPUT, source_refs: [REF] }], reports = [];
   const baseOptions = f.options;
-  f.options = () => ({ ...baseOptions(), docsDir: f.root, kitRoot, policyFile, layoutFile, manifestFile,
+  f.options = () => ({ ...baseOptions(), docsDir: f.root, kitRoot, policyFile, policyOverlayFile, layoutFile, manifestFile,
     origin_inputs: origins, coverage_reports: reports });
   f.inspect = (extra = {}) => inspectScopedInputCoverage({ ...f.options(), ...extra });
   f.origins = (value) => { origins = value; };

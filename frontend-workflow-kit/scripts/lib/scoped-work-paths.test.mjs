@@ -24,6 +24,7 @@ function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'scoped-paths-')); t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const docsDir = path.join(root, 'docs'), kitRoot = path.join(root, '.kit'), docs = new Map();
   const policyFile = path.join(kitRoot, 'policy.yaml'), layoutFile = path.join(kitRoot, 'layout.yaml'), manifestFile = path.join(kitRoot, 'manifest.yaml');
+  const overlayFile = path.join(kitRoot, 'adoption.yaml'); // #257: work_execution lives only in the policy overlay
   const put = (relative, content = 'export const value = 1;\n') => {
     const file = path.join(root, relative); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, content); return file;
   };
@@ -33,22 +34,23 @@ function fixture(t) {
     const file = docs.get(name), parsed = splitFrontmatter(fs.readFileSync(file, 'utf8')), value = { fm: parsed.data, body: parsed.body };
     update(value); fs.writeFileSync(file, md(value.fm, value.body));
   };
-  json(policyFile, { work_execution: { version: 1, owners: [OWNER], profiles: ['visual', 'api-contract', 'behavior'], role_limits: {
+  json(policyFile, {});
+  json(overlayFile, { work_execution: { version: 1, owners: [OWNER], profiles: ['visual', 'api-contract', 'behavior'], role_limits: {
     visual: ['screen', 'domain_component', 'hook', 'test'], 'api-contract': ['api_client', 'test'],
     behavior: ['screen', 'domain_component', 'hook', 'api_client', 'test'],
   }, deny_paths: [] } });
   json(layoutFile, { roles: roles() }); json(manifestFile, { version: 1, artifacts: {} });
   write('screen.md', screen(), '## Notes\nOwner.');
   write('rules.md', { artifact_id: 'RULES', artifact_type: 'domain-rules', domain: 'result', status: 'confirmed' }, '## Rules\nKnown contract.');
-  const options = () => ({ owner: OWNER, unit: 'known', projectRoot: root, docsDir, kitRoot, policyFile, layoutFile, manifestFile,
+  const options = () => ({ owner: OWNER, unit: 'known', projectRoot: root, docsDir, kitRoot, policyFile, policyOverlayFile: overlayFile, layoutFile, manifestFile,
     targetIndex: buildReconciliationTargetIndex({ docs: [...docs.values()].map((file) => ({ file, fm: splitFrontmatter(fs.readFileSync(file, 'utf8')).data })) }) });
   const run = (file, changeType = 'A', extra = {}) => inspectScopedPaths({ ...options(), targets: [{ path: file, change: changeType }], ...extra });
   const kind = (value) => change('screen.md', (doc) => { doc.fm.work_execution.units[0].kind = value; });
   const api = (rows, selections = []) => change('screen.md', (doc) => {
     doc.body = apiBody(rows); doc.fm.work_execution.units[0].api_candidates = selections;
   });
-  const policy = (update) => { const value = JSON.parse(fs.readFileSync(policyFile, 'utf8')); update(value.work_execution); json(policyFile, value); };
-  return { root, docs, kitRoot, policyFile, layoutFile, manifestFile, put, json, write, change, options, run, kind, api, policy };
+  const policy = (update) => { const value = JSON.parse(fs.readFileSync(overlayFile, 'utf8')); update(value.work_execution); json(overlayFile, value); };
+  return { root, docs, kitRoot, policyFile, overlayFile, layoutFile, manifestFile, put, json, write, change, options, run, kind, api, policy };
 }
 const denied = (out, code) => { assert.equal(out.boundary_satisfied, false); assert.ok(out.paths.some((entry) => entry.denials.some((d) => d.code === code)), JSON.stringify(out.paths)); };
 const selected = [{ method: 'GET', path: '/results' }];

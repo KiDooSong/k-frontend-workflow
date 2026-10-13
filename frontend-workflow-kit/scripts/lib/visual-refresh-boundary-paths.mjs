@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DEFAULTS, KIT_ROOT, readFileSafe, splitFrontmatter, walkFiles, yamlParse } from './util.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
+import { readWorkConfig, configuredLayout } from './work-config.mjs';
 import {
   assertSnapshotPath, canonicalSnapshotPath, readPinnedBundledResource, VisualRefreshResourceError,
 } from './visual-refresh-resources.mjs';
@@ -101,7 +102,7 @@ function assertSeparation(options, roots) {
       throw new VisualRefreshResourceError(`visual-refresh authority docs overlay가 implementation role/layer root와 겹침: docs=${docs}, implementation=${root}`);
     }
   }
-  for (const key of ['policy', 'manifest', 'layout', 'ci']) {
+  for (const key of ['policy', 'policy_overlay', 'manifest', 'layout', 'ci']) {
     const resource = options[key];
     if (!resource) continue;
     for (const root of implementation) {
@@ -128,6 +129,11 @@ export function normalizeVisualAuthorityTuple(tuple, { authorityRoot, sourceRoot
       });
     }
   }
+  // #257: frontend-workflow.config.yaml at this authority root sets the default layout
+  // (an explicit --layout must name the same file) and names the adoption overlay.
+  const config = readWorkConfig(authorityRoot);
+  if (config?.layout) options.layout = configuredLayout(config, options.layout);
+  if (config?.policy_overlay) options.policy_overlay = config.policy_overlay.file;
 
   // Pin a bundled layout/preset before following it, even for boundary-only reads.
   const layoutRaw = options.layout

@@ -25,7 +25,7 @@ const fail = (message) => { throw new ScopedWorkContractError(`SW-HOST: ${messag
 const same = (a, b) => scopeJson(a) === scopeJson(b);
 const byBytes = (a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b));
 const OPTION_KEYS = new Set(['owner', 'unit', 'projectRoot', 'docsDir', 'kitRoot',
-  'policyFile', 'layoutFile', 'manifestFile', 'registerFile', 'ciFile', 'targetIndex',
+  'policyFile', 'policyOverlayFile', 'layoutFile', 'manifestFile', 'registerFile', 'ciFile', 'targetIndex',
   'inputArtifacts', 'origin_inputs', 'coverage_reports', 'targets', 'srcDir']);
 // A legacy host's base is its own member causes plus the legacy structural surface
 // contract. The surface's cumulative own-mode causes are replaced by the scoped

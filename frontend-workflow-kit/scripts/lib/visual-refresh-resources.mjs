@@ -10,6 +10,7 @@ import {
   yamlStringify,
 } from './util.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
+import { WORK_CONFIG_FILE, readWorkConfig, configuredLayout, adoptionPolicy } from './work-config.mjs';
 import { layerAppliesTo } from './layer-inventory.mjs';
 import { concretePathIssue } from './path-backstop.mjs';
 
@@ -412,9 +413,16 @@ export function prepareVisualRefreshResources({
     bundledRoot,
   });
 
+  // #257: the destination's frontend-workflow.config.yaml sets the default layout and
+  // names the work_execution overlay applied over the base policy above. The base
+  // policy itself never adopts, and owner units without an overlay are refused.
+  const config = readWorkConfig(destinationRoot);
+  const layoutOption = configuredLayout(config, options.layout);
+  const adoption = adoptionPolicy(policy.value, config, path.join(destinationRoot, ...docsRelative.split('/')));
+
   let layout;
-  if (options.layout) {
-    const explicit = readSnapshotFile(destinationRoot, options.layout, '--layout');
+  if (layoutOption) {
+    const explicit = readSnapshotFile(destinationRoot, layoutOption, '--layout');
     layout = {
       raw: explicit.raw,
       value: explicit.value,
@@ -464,7 +472,9 @@ export function prepareVisualRefreshResources({
   const manifestRelative = `${bundleRelative}/manifest.yaml`;
   const layoutRelative = `${bundleRelative}/project-layout.yaml`;
   const ciRelative = ci.explicit ? `${bundleRelative}/ci.yaml` : null;
+  const overlayRelative = config?.policy_overlay ? `${bundleRelative}/policy-overlay.yaml` : null;
   writeBundleFile(destinationRoot, policyRelative, policy.raw);
+  if (overlayRelative) writeBundleFile(destinationRoot, overlayRelative, config.policy_overlay.raw);
   writeBundleFile(destinationRoot, manifestRelative, manifest.raw);
   writeBundleFile(destinationRoot, layoutRelative, yamlStringify(flattenedLayout, { lineWidth: 0 }));
   if (ciRelative) writeBundleFile(destinationRoot, ciRelative, ci.raw);
@@ -486,6 +496,10 @@ export function prepareVisualRefreshResources({
         }
       : {}),
     ...(ci.provenance ? { ci: ci.provenance } : {}),
+    ...(config ? { config: sourceProvenance(WORK_CONFIG_FILE, config.raw, { snapshot: 'destination' }) } : {}),
+    ...(config?.policy_overlay
+      ? { policy_overlay: sourceProvenance(config.policy_overlay.file, config.policy_overlay.raw, { snapshot: 'destination' }) }
+      : {}),
   };
 
   return {
@@ -497,11 +511,13 @@ export function prepareVisualRefreshResources({
       manifest: manifestRelative,
       layout: layoutRelative,
       ...(ciRelative ? { ci: ciRelative } : { ci: undefined }),
+      ...(overlayRelative ? { policy_overlay: overlayRelative } : { policy_overlay: undefined }),
     },
     meta: {
       docsRelative,
       srcRelative,
       policy: policy.value,
+      adoptionPolicy: adoption,
       manifest: manifest.value,
       ci: ci.value,
       layout: resolvedLayout,

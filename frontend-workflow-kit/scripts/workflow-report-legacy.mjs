@@ -24,6 +24,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { liveWorkConfig } from './lib/work-config.mjs';
 import {
   parseArgs,
   DEFAULTS,
@@ -32,6 +33,7 @@ import {
   removeFileIfExists,
   splitFrontmatter,
   isCliEntry,
+  runCli,
 } from './lib/util.mjs';
 import {
   extractSection,
@@ -383,7 +385,10 @@ function main() {
   //    전달한다(packet 의 --layout 규약과 동일). 누락 시 leaf 는 기본(expo) 레이아웃으로 해소돼 custom
   //    layout 에서 packet/report 와 leaf 가 서로 다른 프로파일을 보는 split-brain 이 된다.
   //    test-fixtures 는 전체 fixture harness 이므로 --layout 을 넘기지 않는다(기존 동작 유지).
-  const layoutResolved = layoutFlag ? path.resolve(layoutFlag) : null;
+  //    #257: leaf forbidden-paths 와 같은 root(유도한 project root, 없으면 작업 디렉터리)의
+  //    frontend-workflow.config.yaml layout 을 기본값으로 쓰고, 해석한 경로를 모든 leaf 에 명시로 넘긴다.
+  const work = liveWorkConfig(projectRoot || undefined, layoutFlag);
+  const layoutResolved = work.layout ? path.resolve(work.layout) : null;
   const validate = collectValidate(docs, src, layoutResolved);
   const forbidden = collectForbidden(diffResolved, docs, projectRoot || undefined, layoutResolved);
   const idempotency = collectTests(skipTests);
@@ -448,4 +453,5 @@ function main() {
   process.exitCode = 0;
 }
 
-if (isCliEntry(import.meta.url)) main();
+// runCli: frontend-workflow.config.yaml 어긋남(WorkConfigError)도 exit 2 로 surface.
+if (isCliEntry(import.meta.url)) runCli(main, 'workflow:report');

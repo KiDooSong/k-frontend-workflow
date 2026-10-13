@@ -39,8 +39,9 @@ function fixture(t) {
     role_limits: { visual: ['screen', 'domain_component', 'hook', 'test'], 'api-contract': ['api_client', 'test'],
       behavior: ['screen', 'domain_component', 'hook', 'api_client', 'test'] }, deny_paths: [] };
   const policyText = fs.readFileSync(DEFAULTS.policy, 'utf8');
-  const writePolicy = () => put('.kit/policy.yaml', `${policyText}\nwork_execution: ${JSON.stringify(work)}\n`);
-  const policyFile = writePolicy();
+  const policyFile = put('.kit/policy.yaml', policyText);
+  const writePolicy = () => put('.kit/adoption.yaml', `work_execution: ${JSON.stringify(work)}\n`);
+  const overlayFile = writePolicy();
   const layoutFile = put('.kit/layout.yaml', JSON.stringify({ roles: { route_entry: 'src/app/**',
     screen: 'src/features/{domain}/screens/**', domain_component: 'src/features/{domain}/components/**',
     hook: 'src/features/{domain}/hooks/**', api_client: 'src/api/**', test: 'src/features/{domain}/tests/**' } }));
@@ -69,7 +70,7 @@ function fixture(t) {
     edit('surface.md', ({ fm }) => { fm.work_execution.units[0].host_units[MEMBERS[number - 1]] = 'legacy-current'; });
   }
   // #250: a legacy-current host computes its state from docs and src; no generated file is written.
-  const resources = () => ({ projectRoot: root, docsDir, srcDir: path.join(root, 'src'), kitRoot: path.join(root, '.kit'), policyFile, layoutFile, manifestFile,
+  const resources = () => ({ projectRoot: root, docsDir, srcDir: path.join(root, 'src'), kitRoot: path.join(root, '.kit'), policyFile, policyOverlayFile: overlayFile, layoutFile, manifestFile,
     registerFile: path.join(docsDir, '_meta/reconciliation-register.md'), inputArtifacts: [],
     targetIndex: buildReconciliationTargetIndex({ docs: [...docs.values()].map((file) => ({ file,
       fm: splitFrontmatter(fs.readFileSync(file, 'utf8')).data })) }) });

@@ -14,7 +14,7 @@ import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
 const fail = (message) => { throw new ScopedWorkContractError(`SW-COMPOSE: ${message}`); };
 const same = (left, right) => scopeJson(left) === scopeJson(right);
 const union = (values) => scopeSet([...new Set(values)]);
-const RESOURCE_KEYS = ['projectRoot', 'docsDir', 'kitRoot', 'policyFile', 'layoutFile', 'manifestFile',
+const RESOURCE_KEYS = ['projectRoot', 'docsDir', 'kitRoot', 'policyFile', 'policyOverlayFile', 'layoutFile', 'manifestFile',
   'registerFile', 'ciFile', 'targetIndex', 'inputArtifacts'];
 
 export function inspectScopedWorkRequests(options = {}) {

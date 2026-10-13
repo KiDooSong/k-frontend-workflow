@@ -9,8 +9,8 @@ import { parseArgs } from './util.mjs';
 import { enforceCliFlagContract } from './cli-args.mjs';
 import { collectInputArtifacts } from './input-artifact.mjs';
 import { materializeRawGitTree } from './visual-refresh-git-objects.mjs';
-import { CurrentWorkExecutionError, resolveProjectRoot, gitIdentity, yamlFile } from './current-work-execution-core.mjs';
-import { resolveWorkResources } from './current-work-execution-preflight.mjs';
+import { CurrentWorkExecutionError, resolveProjectRoot, gitIdentity } from './current-work-execution-core.mjs';
+import { resolveWorkResources, baselineWorkPolicy } from './current-work-execution-preflight.mjs';
 import { byteCompare, ownerParts } from './current-work-request.mjs';
 import { baselineArtifactIndex } from './scoped-work-execution.mjs';
 import { parseScopedTargetRef } from './scoped-work-refs.mjs';
@@ -61,15 +61,16 @@ export function inspectScopedBindingStatus({ root, docs, src, policy, manifest, 
   const snapshot = materializeRawGitTree({ repositoryRoot: ctx.repositoryRoot, projectPrefix: ctx.projectPrefix, tree: identity.tree });
   try {
     const baselineRoot = snapshot.root;
-    const { resources, baselineKitRoot } = resolveWorkResources(ctx, baselineRoot, { docs, src, policy, manifest, layout });
-    const adopted = parseScopedPolicy(yamlFile(resources.policy.baseline, 'policy').work_execution)?.owners || [];
+    const { resources, baselineKitRoot, config } = resolveWorkResources(ctx, baselineRoot, { docs, src, policy, manifest, layout });
+    const adopted = parseScopedPolicy(baselineWorkPolicy(resources, config).work_execution)?.owners || [];
     if (owner !== undefined) {
       ownerParts(owner);
-      if (!adopted.includes(owner)) fail(`owner ${owner} is not adopted in policy work_execution.owners`);
+      if (!adopted.includes(owner)) fail(`owner ${owner} is not adopted in the policy_overlay work_execution.owners`);
     }
     const docsRoot = resources.docs.baseline, { targetIndex } = baselineArtifactIndex(docsRoot);
     const options = { projectRoot: baselineRoot, docsDir: docsRoot, kitRoot: baselineKitRoot,
       policyFile: resources.policy.baseline, layoutFile: resources.layout.baseline, manifestFile: resources.manifest.baseline,
+      ...(resources.policy_overlay ? { policyOverlayFile: resources.policy_overlay.baseline } : {}),
       registerFile: path.join(docsRoot, '_meta', 'reconciliation-register.md'), targetIndex,
       inputArtifacts: collectInputArtifacts(path.join(docsRoot, 'inputs')), srcDir: resources.src.baseline };
     const home = (artifactId) => {
@@ -88,7 +89,8 @@ const HELP = `Usage: npm run workflow:binding-status -- [--owner <screen:ID|surf
        [--root <dir>] [--docs <dir>] [--src <dir>] [--policy <file>] [--manifest <file>] [--layout <file>]
 
 Reports the decision_work_scopes and uncertainty_work_scopes bindings of the adopted owners
-(every policy work_execution owner, or --owner) on the committed HEAD, which --work evaluates.
+(every owner in the policy_overlay that frontend-workflow.config.yaml names, or --owner) on the
+committed HEAD, which --work evaluates.
 For each row that applies to an owner: its status, the binding state (current, stale, missing),
 the units a missing binding leaves blocked, the recorded binding, and the scope-basis-v${SCOPE_BASIS_VERSION}
 digest and component digests (target, relations, units, evidence) the tool computes. A binding declared for the owner on a

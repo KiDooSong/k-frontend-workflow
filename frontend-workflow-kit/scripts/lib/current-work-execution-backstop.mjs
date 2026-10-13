@@ -241,6 +241,8 @@ export function parseCurrentPacket(file) {
   if (value.work_contract !== 1 || value.packet_type !== 'current-work') throw new CurrentWorkExecutionError('packet: unsupported current work contract');
   return value;
 }
+// config and policy_overlay (#257) are recorded only when frontend-workflow.config.yaml exists.
+const RESOURCE_KINDS = ['docs', 'src', 'policy', 'manifest', 'layout', 'ci', 'config', 'policy_overlay'];
 function resourceContext(snapshot) {
   if (typeof snapshot?.project_prefix !== 'string' || !Array.isArray(snapshot.resources)) {
     throw new CurrentWorkExecutionError('packet: missing project/resource context; create a new preflight');
@@ -249,7 +251,7 @@ function resourceContext(snapshot) {
   const resources = snapshot.resources.map((resource) => {
     const keys = resource && typeof resource === 'object' ? Object.keys(resource).sort() : [];
     if (keys.join(',') !== 'kind,mode,oid,path' || typeof resource.kind !== 'string' ||
-        typeof resource.path !== 'string' || !['docs', 'src', 'policy', 'manifest', 'layout', 'ci'].includes(resource.kind) || kinds.has(resource.kind)) {
+        typeof resource.path !== 'string' || !RESOURCE_KINDS.includes(resource.kind) || kinds.has(resource.kind)) {
       throw new CurrentWorkExecutionError('packet: malformed or duplicate resource context');
     }
     kinds.add(resource.kind);

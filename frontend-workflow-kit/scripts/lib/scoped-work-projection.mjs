@@ -18,6 +18,7 @@ import { resolveScopedMappingEvidence } from './scoped-work-mapping.mjs';
 import { resolveScopedContractGraph, scopedGraphApiRowDependencies } from './scoped-work-graph.mjs';
 import { ScopedWorkContractError, workText, workSet } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet, scopeLf } from './scoped-work-normalize.mjs';
+import { WorkConfigError, parsePolicyOverlay } from './work-config.mjs';
 
 const fail = (message) => { throw new ScopedWorkContractError(`SW-PROJECTION: ${message}`); };
 const same = (a, b) => scopeJson(a) === scopeJson(b);
@@ -62,7 +63,7 @@ function node(record) {
 const setUnion = (values) => scopeSet([...new Set(values)]);
 const unitKey = (owner, id) => scopeJson([owner, id]);
 
-export function resolveScopedUnitProjection({ owner, policyFile, targetIndex, inputArtifacts = [], registerFile,
+export function resolveScopedUnitProjection({ owner, policyFile, policyOverlayFile, targetIndex, inputArtifacts = [], registerFile,
   projectRoot, layout } = {}) {
   ownerParts(owner);
   const refs = createScopedReferenceResolver({ targetIndex, inputArtifacts, projectRoot });
@@ -98,10 +99,21 @@ export function resolveScopedUnitProjection({ owner, policyFile, targetIndex, in
     }
     return record;
   }
+  // #257: the base policy (bundled or explicit) never adopts; work_execution comes only
+  // from the policy_overlay that frontend-workflow.config.yaml names.
   const policySource = read(policyFile);
   const policyDocument = decodeScopedYaml(decodeGitUtf8(policySource.raw, 'scoped policy'), 'scoped policy');
   if (!policyDocument || typeof policyDocument !== 'object' || Array.isArray(policyDocument)) fail('policy object required');
-  const policy = parseScopedPolicy(policyDocument.work_execution);
+  if (Object.hasOwn(policyDocument, 'work_execution')) fail('the base policy must not declare work_execution; adoption lives in the configured policy_overlay');
+  const overlaySource = policyOverlayFile === undefined ? null : read(policyOverlayFile);
+  let policy = null;
+  if (overlaySource) {
+    try { policy = parseScopedPolicy(parsePolicyOverlay(decodeScopedYaml(decodeGitUtf8(overlaySource.raw, 'scoped policy overlay'), 'scoped policy overlay'))); }
+    catch (error) {
+      if (error instanceof WorkConfigError) fail(error.message);
+      throw error;
+    }
+  }
   if (!policy || !policy.owners.includes(owner)) fail('root owner must be explicitly adopted');
 
   function ownerRecord(id) {
@@ -257,7 +269,7 @@ export function resolveScopedUnitProjection({ owner, policyFile, targetIndex, in
     }
   }
   const projection = { owner, known_units: scopeSet(root.declaration.units.map((unit) => unit.id)),
-    policy: { file: policySource.file, profiles: scopeSet(policy.profiles),
+    policy: { file: overlaySource.file, profiles: scopeSet(policy.profiles),
       role_limits: Object.fromEntries(Object.entries(policy.role_limits).map(([kind, roles]) => [kind, scopeSet(roles)])),
       deny_paths: scopeSet(policy.deny_paths) },
     owners: scopeSet([...owners.values()].map((data) => ({ owner: data.id, artifact_id: data.record.artifact_id,

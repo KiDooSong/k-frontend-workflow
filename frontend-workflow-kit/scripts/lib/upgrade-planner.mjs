@@ -35,6 +35,9 @@ import { maskAutolinks, maskInlineCodeSpans } from './doc-drift.mjs';
 // ordinary/current/legacy/visual-refresh fallback entries. An older payload would
 // silently ignore live markers and reopen legacy authority on adopted paths.
 export const ADOPTION_GUARD_MODULE = 'scripts/lib/scoped-work-adoption.mjs';
+// #257: adoption is read from the overlay that frontend-workflow.config.yaml names.
+// A payload without this module would read no overlay, so it cannot enforce either.
+export const ADOPTION_CONFIG_MODULE = 'scripts/lib/work-config.mjs';
 const ADOPTION_KEYS = ['work_execution', 'decision_work_scopes', 'uncertainty_work_scopes'];
 
 function gitOutput(args, cwd) {
@@ -283,7 +286,7 @@ export function buildPlan({ currentDir, nextDir, options = {} }) {
   const baselineUnknown = baseline.source === 'unknown';
   // Only a payload that cannot enforce adoption markers needs the consumer scan;
   // ordinary upgrades keep their existing plan output.
-  const nextEnforcesAdoption = next.index.has(ADOPTION_GUARD_MODULE);
+  const nextEnforcesAdoption = next.index.has(ADOPTION_GUARD_MODULE) && next.index.has(ADOPTION_CONFIG_MODULE);
   const adoptionScan = nextEnforcesAdoption ? null : findAdoptionMarkers({
     consumerRoot: options.consumerRoot ?? defaultConsumerRoot(currentDir), currentDir });
 

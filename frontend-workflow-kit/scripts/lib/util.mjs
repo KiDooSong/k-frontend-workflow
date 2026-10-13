@@ -306,7 +306,8 @@ export function runCli(main, tool = 'workflow') {
   try {
     main();
   } catch (err) {
-    if (err && err.name === 'LayoutConfigError') {
+    // WorkConfigError(work-config.mjs, #257): frontend-workflow.config.yaml·overlay 의 어긋남도 같은 exit 2.
+    if (err && (err.name === 'LayoutConfigError' || err.name === 'WorkConfigError')) {
       process.stderr.write(`${tool}: ${err.message}\n`);
       process.exit(2);
     }
