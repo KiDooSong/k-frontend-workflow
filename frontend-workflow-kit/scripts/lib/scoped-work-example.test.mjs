@@ -84,8 +84,14 @@ test('D #260 example: general-contract formats keep a structured scoped result; 
 // reference, so they no longer apply to the COUPON-001 unit; that changes D-001's basis too. Resolved
 // rows keep their relations whatever the cell names. Against 7e943bb those two denials are the only
 // difference (evidence, reviews and other denials are equal).
-const BASIS = 'sha256:eaedf212f76758f8046da95cf1f7bab4d3016efd5b3ae2e2985fb5dc696691a4';
-const ENVELOPE = '9abf63045b21f18f8a0230152f87312ef11466843023aeaf341eb2fc4c650ce7';
+// Re-pinned for #275: scope-basis-v2 hashes only D-001's relation closure and the unit facts, so the
+// recorded digest is recomputed once. Against the #262 pin the envelope differs only in the bytes that
+// record it: the hash of the COUPON-001 spec, the docs tree oid and the commit tree. Denials, evidence
+// and reviews are equal. The v2 bytes later gained the related rows that apply to no owner, one
+// merged relation evidence graph, and lost metadata decision_refs lists (reviews r1-r3); the
+// envelope again differs only there.
+const BASIS = 'sha256:3d281826f4fd31aebdd34ab1f425f882da927c405664dfd4cf3151420f9aba45';
+const ENVELOPE = '464a1c7eaa31d9b2189395dfbc412431a75bf8d8420b1e956cd648c0fc092eac';
 const SCOPES = { version: 1, bindings: [{ decision_id: 'D-001', owner: 'screen:COUPON-001', known_units: ['list-behavior'],
   blocks: [], basis_digest: BASIS, approval_ref: 'review:golden' }] };
 const ROWS = Array.from({ length: 12 }, (_, i) => {
@@ -99,13 +105,13 @@ const pinned = (rows) => ({ read, put }) => {
     `| ID | 충돌 지점 | A (출처/값) | B (출처/값) | 영향 화면 | Status |\n|---|---|---|---|---|---|\n${rows.join('\n')}\n`);
 };
 
-test('#265 golden: the scoped envelope, basis digest and error text stay pinned (re-pinned for #262)', (t) => {
+test('#265 golden: the scoped envelope, basis digest and error text stay pinned (re-pinned for #262, digest for #275)', (t) => {
   const run = readiness(t, pinned(ROWS));
   const envelope = json(run);
   assert.deepEqual(envelope.denials.filter((entry) => entry.code === 'unit-decision-blocked').flatMap((entry) => entry.decisions),
     ['decision:D-002@COUPON-001-screen-spec', 'decision:D-003@COUPON-001-screen-spec'], 'the pinned basis digest keeps the D-001 binding current');
   const stdout = run.stdout.split(envelope.snapshot.commit).join('<commit>');
-  assert.equal(createHash('sha256').update(stdout).digest('hex'), ENVELOPE, 'the scoped envelope differs from the #262 pin');
+  assert.equal(createHash('sha256').update(stdout).digest('hex'), ENVELOPE, 'the scoped envelope differs from the #275 pin');
 
   const width = readiness(t, pinned(ROWS.map((row, i) => (i === 5 ? `${row} extra |` : row))));
   assert.deepEqual([width.status, width.stdout, width.stderr], [2, '', 'readiness: SW-REF-TABLE: row width differs from header\n']);

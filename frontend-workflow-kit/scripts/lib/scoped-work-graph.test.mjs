@@ -7,6 +7,9 @@ import { buildReconciliationTargetIndex } from './reconciliation-target-index.mj
 import { loadInputArtifact } from './input-artifact.mjs';
 import { parseReconciliationMarkdown, parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
 import { resolveScopedContractGraph } from './scoped-work-graph.mjs';
+import { scopedSectionLookupStats } from './scoped-work-refs.mjs';
+import { scopedProjectionNode } from './scoped-work-projection.mjs';
+import { scopeSet } from './scoped-work-normalize.mjs';
 import { createScopedSourceResolver } from './scoped-work-sources.mjs';
 import { createScopedReferenceResolver } from './scoped-work-refs.mjs';
 
@@ -80,6 +83,77 @@ test('D graph: repeated row selections in one table keep their own dependencies 
   assert.deepEqual(ids(f.graph(['artifact:ROWS#rows/02'])), ['artifact:OTHER#rules', 'artifact:ROWS#rows/02']);
   assert.deepEqual(ids(f.graph(['artifact:ROWS#rows/03', 'artifact:ROWS#rows/01'])),
     ['artifact:GOOD#rules', 'artifact:ROWS#rows/01', 'artifact:ROWS#rows/03']);
+});
+
+// #275 review r6: the unapplied-row search resolves every row of a register at once, so one
+// resolution reads each document once, however many of its rows it selects.
+test('D graph: one resolution reads each document once, however many of its rows it selects (#275)', (t) => {
+  const rows = Array.from({ length: 40 }, (_, i) => `| D-ROW${i} | open | final-fixture-ui | Row ${i}? | \`artifact:GOOD#rules\` |`);
+  const f = fixture(t, [{ id: 'OD', body: `## Open Decisions\n| ID | Status | Blocking Mode | Decision Needed | Options |\n|---|---|---|---|---|\n${rows.join('\n')}` }, { id: 'GOOD' }]);
+  const opened = t.mock.method(fs, 'openSync');
+  const graph = f.graph(rows.map((_, i) => `decision:D-ROW${i}@OD`));
+  assert.equal(graph.nodes.length, 41);
+  const reads = opened.mock.calls.filter((call) => path.basename(String(call.arguments[0])) === '0.md').length;
+  assert.ok(reads <= 2, `${reads} reads of one document`);
+});
+
+// #275 review r10: selecting the rows of a document with many sections looks each section up in one
+// index per document, so the lookups grow with the rows, not with rows times sections.
+test('D graph: selecting rows of a document with many sections stays linear (#275)', (t) => {
+  const examined = (count) => {
+    const rows = Array.from({ length: count }, (_, i) => `| D-ROW${i} | open | final-fixture-ui | Row ${i}? | plain |`);
+    const notes = Array.from({ length: count }, (_, i) => `## Note ${i}\nProse ${i}.`);
+    const f = fixture(t, [{ id: 'OD', body: `## Open Decisions\n| ID | Status | Blocking Mode | Decision Needed | Options |\n|---|---|---|---|---|\n${rows.join('\n')}\n\n${notes.join('\n\n')}` }]);
+    const before = scopedSectionLookupStats().examined;
+    f.graph(rows.map((_, i) => `decision:D-ROW${i}@OD`));
+    return scopedSectionLookupStats().examined - before;
+  };
+  const small = examined(20), large = examined(80);
+  assert.ok(large <= 5 * small, `${small} sections examined for 20 rows, ${large} for 80`);
+});
+
+// #275 review r11: a section that holds many tables beside its Decision table still finds each row
+// through one index per section, in the reference resolver and in the native tree.
+test('D graph: selecting rows of a section with many tables stays linear (#275)', (t) => {
+  const examined = (count) => {
+    const rows = Array.from({ length: count }, (_, i) => `| D-ROW${i} | open | final-fixture-ui | Row ${i}? | plain |`);
+    const aux = Array.from({ length: count }, (_, i) => `| Note ${i} | Value |\n|---|---|\n| n${i} | v${i} |`);
+    const f = fixture(t, [{ id: 'OD', body: `## Open Decisions\n| ID | Status | Blocking Mode | Decision Needed | Options |\n|---|---|---|---|---|\n${rows.join('\n')}\n\n${aux.join('\n\n')}` }]);
+    const before = scopedSectionLookupStats().examined;
+    f.graph(rows.map((_, i) => `decision:D-ROW${i}@OD`));
+    return scopedSectionLookupStats().examined - before;
+  };
+  const small = examined(20), large = examined(80);
+  assert.ok(large <= 5 * small, `${small} lookups for 20 rows and tables, ${large} for 80`);
+});
+
+// #275 review r11: tables that share one header are told apart by their rows, through one index per
+// section, so selecting every row of a section whose tables repeat a header stays linear too.
+test('D graph: selecting rows of tables that share a header stays linear (#275)', (t) => {
+  const examined = (count) => {
+    const tables = Array.from({ length: count }, (_, i) => `| Key | Value |\n|---|---|\n| n${i} | v${i} |`);
+    const f = fixture(t, [{ id: 'OD', body: `## Notes\n${tables.join('\n\n')}` }]);
+    const before = scopedSectionLookupStats().examined;
+    assert.equal(f.graph(tables.map((_, i) => `artifact:OD#notes/n${i}`)).nodes.length, count);
+    return scopedSectionLookupStats().examined - before;
+  };
+  const small = examined(20), large = examined(80);
+  assert.ok(large <= 5 * small, `${small} lookups for 20 tables, ${large} for 80`);
+});
+
+// #275 review r8: the unapplied-row search projects each node as it is recorded, so a register's rows
+// do not each carry a copy of its bindings; the projection is the one its caller would apply.
+test('D graph: a projected resolution records projected nodes, without the document bindings (#275)', (t) => {
+  const bindings = Array.from({ length: 5 }, (_, i) => ({ decision_id: `D-ROW${i}`, owner: 'screen:RESULT-001', known_units: ['a'], blocks: [],
+    basis_digest: `sha256:${'0'.repeat(64)}`, approval_ref: 'review:x' }));
+  const rows = Array.from({ length: 5 }, (_, i) => `| D-ROW${i} | open | final-fixture-ui | Row ${i}? | \`artifact:GOOD#rules\` |`);
+  const f = fixture(t, [{ id: 'OD', fm: { decision_work_scopes: { version: 1, bindings } },
+    body: `## Open Decisions\n| ID | Status | Blocking Mode | Decision Needed | Options |\n|---|---|---|---|---|\n${rows.join('\n')}` }, { id: 'GOOD' }]);
+  const tokens = rows.map((_, i) => `decision:D-ROW${i}@OD`);
+  const plain = f.graph(tokens), projected = f.graph(tokens, { project: scopedProjectionNode });
+  assert.ok(plain.nodes.some((node) => Object.hasOwn(node.metadata, 'decision_work_scopes')));
+  assert.ok(projected.nodes.every((node) => !Object.hasOwn(node.metadata, 'decision_work_scopes')));
+  assert.deepEqual(projected, { ...plain, nodes: scopeSet(plain.nodes.map(scopedProjectionNode)) });
 });
 
 test('D graph: unrelated section edits change raw audit hashes, not selected nodes or dependency edges', (t) => {

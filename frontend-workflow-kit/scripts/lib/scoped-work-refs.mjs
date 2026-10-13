@@ -34,8 +34,89 @@ export const parseScopedTargetRef = parseTargetRef;
 // AST establishes that this really is a root table. Parse its *source* cells with
 // the shared splitter, not rendered labels (links/emphasis must not invent IDs).
 // Unlike parseTable(), do not remove inline HTML comments from authority cells.
+// #275: the canonical row an exact artifact row selection names, when it selects a row of a
+// canonical Decision, Unknown or Conflict table: `artifact:X#unknowns/U-1` is `unknown:U-1@X`.
+const ROW_FAMILIES = { 'open-decisions': 'decision', unknowns: 'unknown', conflicts: 'conflict' };
+export function scopedRowAlias(node) {
+  const selection = node?.selection;
+  if (node?.kind !== 'artifact' || selection?.type !== 'row' || !Array.isArray(selection.headers)) return null;
+  const family = (Object.hasOwn(ROW_FAMILIES, selection.section) ? ROW_FAMILIES[selection.section] : null) ||
+    (selection.section === '' && node.metadata?.artifact_type === 'conflicts' ? 'conflict' : null);
+  if (!family || !signatures[family].every((header) => hasHeader(selection.headers, header))) return null;
+  const id = col(Object.fromEntries(selection.headers.map((header, index) => [header, selection.cells[index]])), 'ID');
+  const token = `${family}:${id}@${node.artifact_id}`;
+  return parseScopedTargetRef(token)?.rowId === id ? token : null;
+}
+
+// #275: where a canonical row sits (its typed reference or an exact artifact row selection),
+// and the rows a reference to a section or a whole document covers, as an Unknown's
+// overlapping evidence covers them in the uncertainty pass.
+const ROW_KINDS = new Set(['decision', 'unknown', 'conflict']);
+export function scopedRowSite(node) {
+  const row = ROW_KINDS.has(node?.kind) ? node.ref : scopedRowAlias(node);
+  return row && node.selection?.type === 'row' ? { row, artifact_id: node.artifact_id, section: node.selection.section } : null;
+}
+// Sites are kept per document, by row and by section, so recording every row of a register and
+// covering many sections of it stay linear.
+export function scopedAddRowSite(sites, site) {
+  if (!site) return;
+  if (!sites.has(site.artifact_id)) sites.set(site.artifact_id, { rows: new Map(), sections: new Map() });
+  const entry = sites.get(site.artifact_id);
+  if (entry.rows.has(site.row)) return;
+  entry.rows.set(site.row, site);
+  if (!entry.sections.has(site.section)) entry.sections.set(site.section, []);
+  entry.sections.get(site.section).push(site.row);
+}
+const siteStats = { examined: 0 };
+// Process-wide row sites examined by coverage: read-only diagnostics (#275).
+export function scopedRowSiteStats() {
+  return { ...siteStats };
+}
+// An investigation or verification reference selects its document's whole body.
+export function scopedCoveredRows(node, sites) {
+  const type = node?.selection?.type;
+  if (!['section', 'body', 'body-token'].includes(type) || (type === 'section' && node.kind !== 'artifact')) return [];
+  const entry = sites.get(node.artifact_id);
+  const rows = !entry ? [] : type === 'section' ? entry.sections.get(node.selection.section) || [] : [...entry.rows.keys()];
+  siteStats.examined += rows.length;
+  return [...rows];
+}
+
+const encodeStats = { tables: 0 };
+// Process-wide raw table encodings: read-only diagnostics (#275).
+export function scopedRawTableStats() {
+  return { ...encodeStats };
+}
+
+// One index per parsed list (a document's sections, a section's tables) and key kind, built once,
+// so selecting the rows of a document with many sections or tables stays linear (#275).
+const listIndexes = new WeakMap(), lookupStats = { examined: 0 };
+export function scopedIndexedBy(list, kind, keyOf) {
+  if (!listIndexes.has(list)) listIndexes.set(list, new Map());
+  const byKind = listIndexes.get(list);
+  if (!byKind.has(kind)) {
+    const index = new Map();
+    lookupStats.examined += list.length;
+    for (const item of list) {
+      const key = keyOf(item);
+      if (!index.has(key)) index.set(key, []);
+      index.get(key).push(item);
+    }
+    byKind.set(kind, index);
+  }
+  return byKind.get(kind);
+}
+export function scopedSectionsBySlug(sections, slug) {
+  return scopedIndexedBy(sections, 'slug', (section) => section.slug).get(slug) || [];
+}
+// Process-wide sections and tables examined by lookups: read-only diagnostics (#275).
+export function scopedSectionLookupStats() {
+  return { ...lookupStats };
+}
+
 export function scopedRawTable(table) {
   if (typeof table?.sourceText !== 'string' || !table.sourceText) fail('SW-REF-TABLE', 'table source required');
+  encodeStats.tables += 1;
   const lines = lf(table.sourceText).split('\n');
   const headers = splitRow(lines[0]);
   if (!tableHeadersAreUnique({ headers })) fail('SW-REF-TABLE', 'duplicate column identity');
@@ -44,7 +125,7 @@ export function scopedRawTable(table) {
   return { headers, cells, rows: cells.map((row) => Object.fromEntries(headers.map((h, i) => [h, row[i]]))) };
 }
 
-export function createScopedReferenceResolver({ targetIndex, projectRoot, inputArtifacts = [] } = {}) {
+export function createScopedReferenceResolver({ targetIndex, projectRoot, inputArtifacts = [], shareMetadata = false } = {}) {
   if (!(targetIndex?.artifacts instanceof Map) || !(targetIndex?.duplicates instanceof Set)) {
     fail('SW-REF-INDEX', 'existing reconciliation target index required');
   }
@@ -68,7 +149,7 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot, inputA
     return { record, relative, markdown: parsed.get(id) };
   }
   function section(markdown, slug) {
-    const hits = markdown.occurrences.filter((entry) => entry.slug === slug);
+    const hits = scopedSectionsBySlug(markdown.occurrences, slug);
     if (hits.length !== 1) fail(hits.length ? 'SW-REF-AMBIGUOUS' : 'SW-REF-MISSING', `section #${slug}`);
     return hits[0];
   }
@@ -89,19 +170,29 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot, inputA
     // The existing validator proves anchored M-key grammar and row bijection.
     // Read the same raw identity cell, not a second independently evolving regex.
     if (occurrence.tables.length !== 1) fail('SW-REF-MAPPING', 'unique mapping table required');
-    const ast = occurrence.tables[0];
-    const raw = scopedRawTable(ast);
-    const matches = [];
-    raw.cells.forEach((cells, index) => {
-      const first = cells[0];
-      if (first !== ast.rows[index][ast.headers[0]]) fail('SW-REF-MAPPING', 'raw Mapping Key differs from rendered identity');
-      const identity = occurrence.slug === 'component-mapping'
-        ? first.split('`')[1] : (first.startsWith('`') ? first.slice(1, -1) : first);
-      if (identity === key) matches.push(cells);
-    });
+    const { headers, rows } = mappingIndex(occurrence);
+    const matches = rows.get(key) || [];
     if (matches.length !== 1) fail('SW-REF-MAPPING', `missing or ambiguous M-key ${key}`);
-    return { type: 'row', section: occurrence.slug, key, headers: raw.headers, cells: matches[0],
+    return { type: 'row', section: occurrence.slug, key, headers: [...headers], cells: [...matches[0]],
       validation_warnings: structuredClone(mappingChecks.get(id)) };
+  }
+  // A mapping table's rows by M-key, read once per section through the shared table encoding, so
+  // selecting many M-keys stays linear (#275 r12). Every row's raw identity must be its rendered one.
+  const mappingIndexes = new WeakMap();
+  function mappingIndex(occurrence) {
+    if (!mappingIndexes.has(occurrence)) {
+      const ast = occurrence.tables[0], raw = encoded(occurrence)[0], rows = new Map();
+      raw.cells.forEach((cells, index) => {
+        const first = cells[0];
+        if (first !== ast.rows[index][ast.headers[0]]) fail('SW-REF-MAPPING', 'raw Mapping Key differs from rendered identity');
+        const identity = occurrence.slug === 'component-mapping'
+          ? first.split('`')[1] : (first.startsWith('`') ? first.slice(1, -1) : first);
+        if (!rows.has(identity)) rows.set(identity, []);
+        rows.get(identity).push(cells);
+      });
+      mappingIndexes.set(occurrence, { headers: raw.headers, rows });
+    }
+    return mappingIndexes.get(occurrence);
   }
   function rowSelection(occurrence, key, family = null, record = null) {
     if (!family && record?.fm?.artifact_type === 'figma-component-mapping' &&
@@ -109,18 +200,60 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot, inputA
       return mappingRow(record, occurrence, key);
     }
 
-    const tables = occurrence.tables.map(scopedRawTable);
-    const eligible = family ? tables.filter((t) => signatures[family].every((h) => hasHeader(t.headers, h))) : tables;
+    const tables = encoded(occurrence);
+    const eligible = family
+      ? scopedIndexedBy(tables, `family:${family}`, (t) => signatures[family].every((h) => hasHeader(t.headers, h))).get(true) || [] : tables;
     if (family && eligible.length !== 1) fail('SW-REF-AMBIGUOUS', `canonical ${family} table must be unique`);
-    const matches = [];
-    for (const table of eligible) {
-      table.rows.forEach((row, index) => {
-        const identity = family ? col(row, 'ID') : table.cells[index][0];
-        if (identity === key) matches.push({ headers: table.headers, cells: table.cells[index] });
-      });
-    }
+    const matches = rowsOf(eligible, family).get(key) || [];
     if (matches.length !== 1) fail(matches.length ? 'SW-REF-AMBIGUOUS' : 'SW-REF-MISSING', `exact row ${key}`);
-    return { type: 'row', section: occurrence.slug, key, ...matches[0] };
+    const { table, index } = matches[0];
+    return { type: 'row', section: occurrence.slug, key, headers: [...table.headers], cells: [...table.cells[index]] };
+  }
+  // A section's tables are encoded once per resolver and their rows indexed by identity, so
+  // selecting every row of a register stays linear (#275); each selection copies its cells.
+  const tableCache = new WeakMap(), indexCache = new WeakMap();
+  function encoded(occurrence) {
+    if (!tableCache.has(occurrence)) tableCache.set(occurrence, occurrence.tables.map(scopedRawTable));
+    return tableCache.get(occurrence);
+  }
+  // The rows of several tables by identity, in table then row order, indexed once per table list.
+  const combined = new WeakMap();
+  function rowsOf(tables, family) {
+    if (!combined.has(tables)) combined.set(tables, new Map());
+    const byMode = combined.get(tables), mode = family ? 'id' : 'first';
+    if (!byMode.has(mode)) {
+      const index = new Map();
+      lookupStats.examined += tables.length;
+      for (const table of tables) for (const [identity, positions] of rowIndex(table, family)) for (const position of positions) {
+        if (!index.has(identity)) index.set(identity, []);
+        index.get(identity).push({ table, index: position });
+      }
+      byMode.set(mode, index);
+    }
+    return byMode.get(mode);
+  }
+  function rowIndex(table, family) {
+    if (!indexCache.has(table)) indexCache.set(table, new Map());
+    const byMode = indexCache.get(table), mode = family ? 'id' : 'first';
+    if (!byMode.has(mode)) {
+      const index = new Map();
+      table.rows.forEach((row, position) => {
+        const identity = family ? col(row, 'ID') : table.cells[position][0];
+        if (!index.has(identity)) index.set(identity, []);
+        index.get(identity).push(position);
+      });
+      byMode.set(mode, index);
+    }
+    return byMode.get(mode);
+  }
+  // A caller that keeps its records internal (one graph resolution) shares one copy of a
+  // document's metadata: selecting every row of a register would otherwise copy its frontmatter,
+  // bindings included, once per row (#275). Otherwise each record has its own copy.
+  const metadataCopies = new Map();
+  function metadataOf(id, record) {
+    if (!shareMetadata) return structuredClone(record.fm);
+    if (!metadataCopies.has(id)) metadataCopies.set(id, structuredClone(record.fm));
+    return metadataCopies.get(id);
   }
   function contract(token) {
     workText(token, 'scoped contract');
@@ -149,7 +282,7 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot, inputA
       selection = { type: 'body-token', key: ref.rowId, content: lf(record.body) };
     }
     return { ref: ref.raw, kind: ref.kind, artifact_id: id, file: relative,
-      metadata: structuredClone(record.fm), selection };
+      metadata: metadataOf(id, record), selection };
   }
   return { contract, contracts: (tokens) => workSet(tokens, contract, 'contracts', true) };
 }

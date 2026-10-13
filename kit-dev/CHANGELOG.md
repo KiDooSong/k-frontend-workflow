@@ -4,6 +4,52 @@
 
 ## Unreleased
 
+### feat(workflow) — scope binding 의 basis 를 그 행의 관계로 좁히고 binding 상태 CLI 를 더함 (#275)
+
+- binding 의 `basis_digest` 는 owner 의 applicability projection 전체를 해시했다(`basis_version: 1`). 그래서 owner 에
+  적용되는 결정·Unknown·Conflict 행 하나를 고치거나 더하면 그 행과 무관한 binding 까지 모두 stale 이 됐다.
+- `basis_version: 2` 는 owner 의 unit 사실과 대상 행의 관계 closure 만 해시한다.
+  - unit 사실: 각 known unit 의 선언·계약·선택 근거, owner 경로, policy 상한, surface membership.
+  - 관계 closure: 그 행, 그 행이 인용하거나 그 행을 인용하는 행(근거 참조를 따라 양방향, 어느 owner 에도 적용되지
+    않는 행 포함), Unknown·Conflict 관계가 witness 로 이름을 댄 행, 그 행들이 적용되는 하나의 근거 그래프.
+    `artifact:X#unknowns/U-1` 같은 정확한 artifact 행 선택은 그 행과 같다.
+  - 문서 frontmatter 의 `decision_refs` 는 closure 행이 그 문서를 인용할 때 그 결정을 closure 에 더하고, 목록 자체는
+    해시하지 않는다. owner 스펙(화면·surface 스펙)의 목록은 owner 자신의 결정을 선언하므로 그 스펙 일부를 인용한
+    행을 그 결정과 관계짓지 않고, 그 밖의 문서에서는 내용이므로 그 문서를 인용한 행은 인라인 인용처럼 그 결정과
+    관계를 맺는다. section 이나 문서 전체를 가리키는 참조(조사·검증
+    참조 포함)는 Unknown·Conflict 의 겹치는 근거처럼 그 안의 행을 덮는다. 결정 관계가 owner·unit 에 대해 파생한 적용은
+    그 owner·unit 자신의 근거(또는 그것에 native 로 적용되는 closure 행)에서 닿을 때만 남는다. 관계 있는
+    Unknown·Conflict 가 unit 에 적용되는 관계도 unit 자신의 근거와 그 unit 에 적용되는 closure 행이 고른 것만으로,
+    uncertainty 관계의 우선순위(selected·inverse·native·transitive evidence)대로 다시 판정하므로 무관한 행만 만든
+    선택은 관계도 witness 도 바꾸지 않는다. 어느 행이 witness 로 closure 에 드는지와 unit 이 어느 행에서 파생하는지는
+    owner 의 모든 선택에 대한 uncertainty 관계를 따르므로, 같은 근거를 고르는 closure 밖 행이 그것을 바꿀 수 있고
+    그때 binding 은 stale 이 된다(사람 결정).
+  - 어느 owner 에도 적용되지 않는 결정·Unknown·Conflict 행은 그 행이 인용하는 참조(본문·링크·typed `depends_on`)와
+    그 문서의 `decision_refs` 를 해소해 찾고, 관계 있는 참조가 그 행을 고르거나 덮거나 이름 대면 그 행이 아무것도 인용하지 않아도 기록과 함께
+    들어간다. 이 탐색은 노드를 한 번씩 방문하고 문서마다 한 번 읽고 표마다 한 번 해석하며 section·표를 목록마다 한 번 색인해, 행과 참조 수에 비례한다. ID 가 typed reference 를 만들 수 없는 결정 행은 관계를 맺을 때(관계 있는 참조가 그 행을 고르거나
+    덮을 때 포함)만 오류다. Unknown·Conflict section 처럼, 읽을 수 없는 Open Decisions section(한 section 에 하나의
+    canonical 표가 없음. 글만 있거나 인용된 표 포함)이나 정체를 읽을 수 없는 행(빈 ID, 표가 되풀이한 ID)은 그
+    문서에 typed reference 가 있으면(해소가 읽는 대로, 인코딩된 링크 대상 포함) scoped 작업을 멈추고, 없으면 그
+    행만 뺀다(표의 다른 행은 남는다). `{` 로 시작하는 ID 는 target index 처럼 템플릿 placeholder 이고 행이 아니다.
+    해소할 수 없는 typed reference 는 어디에 있든 멈추고, 닿은 문서의 `decision_refs` 가 이름 댄 결정은 보통
+    `decision_refs` 처럼 검사한다(home 이 정확히 하나이고 그것이 정식 전역 register 이며, 그 문서의 목록 전체를 결정
+    관계가 owner 의 목록을 해소하듯 해소하므로 형식이 틀린 행을 이름 대면 멈춘다).
+  - 그래서 관계없는 행의 추가·수정은 binding 을 바꾸지 않고, 그 행·관계 행·unit 계약의 수정은 바꾼다. projection
+    에 이 버전이 모르는 필드가 있으면 해시하지 않고 오류다.
+- v1 로 기록한 digest 는 v2 에서 모두 stale 이므로 한 번 다시 기록한다(`upgrade-notes.md`). #265 golden 도 다시
+  고정했다. D-001 의 basis digest 가 바뀌었고, envelope 은 그 digest 를 기록한 파일의 바이트(COUPON-001 스펙 해시,
+  docs tree oid, commit tree)만 다르다.
+- 새 읽기 전용 CLI `workflow:binding-status` 는 채택 owner 마다 적용되는 행의 상태와 binding 상태(`current`·`stale`·
+  `missing`·`unresolved`), 기록된 binding, 계산한 digest 와 구성요소 digest(`target`·`relations`·`units`·`evidence`)
+  를 커밋된 HEAD 에서 보여 준다. binding 이 없는 행은 그 행이 실제로 막는 unit(`blocking_units`)을 보여 주고, 해소된
+  행(`resolved: true`)은 막는다고 하지 않는다.
+  binding 을 쓰지 않고 `approval_ref` 를 검증하지 않는다.
+- binding inspector 는 두 번째 계산이 같은 v2 basis 를 내는지 확인하고, 구성요소 digest 를 함께 돌려준다.
+- 회귀 테스트: basis 의 관계없는 행 제외(같은 owner 의 결정·Unknown, inverse Unknown 과 그것이 인용한 결정),
+  인용하거나 인용된 행 포함, 구성요소 digest 의 분할, 모르는 필드·없는 대상 행 오류, 재오픈 transition 의 approval
+  재사용 보고가 basis 가 바뀐 행에만 남음, CLI 의 B0~B5·네 상태·HEAD 읽기·입력 오류. 문서: `scoped-work.md` 새 절
+  Binding basis and status, `COMMANDS.md`, `upgrade-notes.md`, `package-scripts.template.json`.
+
 ### feat(workflow) — scoped 의 ready unit 이 자기 범위의 regular file 을 지움 (#276)
 
 - scoped 는 regular file 의 `A`·`M` 만 받았다(B §8.3 초기 버전). 그래서 채택한 owner 의 파일 삭제는 scoped 로도,

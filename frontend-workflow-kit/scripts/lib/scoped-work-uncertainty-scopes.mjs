@@ -62,16 +62,18 @@ function evaluate(owner, projection, homes) {
   const checks = new Map();
   for (const ref of scopeSet([...new Set(applications.map((entry) => entry.uncertainty))])) {
     const record = records.get(ref) || null, declared = record ? homes.binding(record) : null;
-    let state = 'missing', digest = null;
+    let state = 'missing', digest = null, components = null;
     if (declared) {
       state = 'stale-known-units';
       if (same(scopeSet(declared.known_units), knownUnits)) {
-        digest = scopedBindingBasis(projection, basisBinding(ref, owner, declared)).basis_digest;
+        const computed = scopedBindingBasis(projection, basisBinding(ref, owner, declared));
+        digest = computed.basis_digest; components = computed.component_digests;
         state = digest === declared.basis_digest ? 'current-unverified' : 'stale-basis';
       }
     }
     checks.set(ref, { uncertainty: ref, kind: parseScopedTargetRef(ref).kind, status: record?.status ?? null,
-      resolved: scopedUncertaintyResolved(record), binding_state: state, declared_binding: declared, computed_basis_digest: digest });
+      resolved: scopedUncertaintyResolved(record), binding_state: state, declared_binding: declared,
+      computed_basis_digest: digest, computed_component_digests: components });
   }
 
   // A current binding on an open row drops its native relation for a unit outside
@@ -147,7 +149,8 @@ export function resolveScopedUncertaintyBindingBasis(options = {}) {
   const declared = homes.binding(record);
   if (!declared) fail('existing canonical uncertainty/owner binding required');
   if (!same(scopeSet(declared.known_units), projection.known_units)) fail('binding known_units must match all current owner units');
-  const { basis, basis_digest } = scopedBindingBasis(projection, basisBinding(uncertaintyRef, owner, declared));
+  const { basis, basis_digest, component_digests } = scopedBindingBasis(projection, basisBinding(uncertaintyRef, owner, declared));
   for (const entry of read_set) homes.read(entry.file);
-  return { basis, basis_digest, recorded_binding: { basis_digest: declared.basis_digest, approval_ref: declared.approval_ref }, read_set };
+  return { basis, basis_digest, component_digests,
+    recorded_binding: { basis_digest: declared.basis_digest, approval_ref: declared.approval_ref }, read_set };
 }

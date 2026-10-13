@@ -18,6 +18,7 @@
     "workflow:run": "node tools/frontend-workflow/scripts/workflow-run.mjs",
     "workflow:policy-draft": "node tools/frontend-workflow/scripts/policy-draft.mjs",
     "workflow:adoption-probe": "node tools/frontend-workflow/scripts/adoption-probe.mjs",
+    "workflow:binding-status": "node tools/frontend-workflow/scripts/binding-status.mjs",
     "workflow:route-cross-check": "node tools/frontend-workflow/scripts/route-cross-check.mjs",
     "workflow:visual-consistency": "node tools/frontend-workflow/scripts/visual-consistency.mjs",
     "workflow:visual-contract-bootstrap": "node tools/frontend-workflow/scripts/visual-contract-bootstrap.mjs",

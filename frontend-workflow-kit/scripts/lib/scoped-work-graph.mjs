@@ -10,7 +10,7 @@ import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { parseInputEvidenceRef } from './provenance.mjs';
 import { resolveArtifact } from './reconciliation-target-index.mjs';
 import { parseReconciliationReferenceView, reconciliationReferenceLabel } from './reconciliation-markdown-ast.mjs';
-import { createScopedReferenceResolver, parseScopedTargetRef } from './scoped-work-refs.mjs';
+import { createScopedReferenceResolver, parseScopedTargetRef, scopedSectionsBySlug, scopedIndexedBy } from './scoped-work-refs.mjs';
 import { createScopedSourceResolver } from './scoped-work-sources.mjs';
 import { workText, workSet, ScopedWorkContractError } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
@@ -49,26 +49,37 @@ function nativeRowsByKey(body, node) {
     const rows = new Map();
     for (const row of node.children.slice(1)) {
       const key = scopeJson(splitRow(rawNode(body, row)));
-      rows.set(key, [...(rows.get(key) || []), row]);
+      if (!rows.has(key)) rows.set(key, []);
+      rows.get(key).push(row);
     }
     entry.rows = rows;
   }
   return entry.rows;
 }
+// A section's native rows by raw header and cells, listed once per section and indexed once, so
+// selecting every row of a section whose tables are many, or repeat a header, stays linear (#275).
+const sectionRows = new WeakMap();
+function nativeSectionRows(body, section) {
+  let entry = sectionRows.get(section);
+  if (entry?.body !== body) {
+    entry = { body, list: section.tableNodes.flatMap((node) => {
+      const { header } = nativeTableKeys(body, node);
+      return [...nativeRowsByKey(body, node)].flatMap(([key, rows]) => rows.map((row) => ({ key: `${header}\n${key}`, row })));
+    }) };
+    sectionRows.set(section, entry);
+  }
+  return scopedIndexedBy(entry.list, 'row', (item) => item.key);
+}
 function selectedNodes(view, selection, body) {
   if (selection.type === 'body' || selection.type === 'body-token') return view.tree.children;
-  const sections = view.sections.filter((section) => section.slug === selection.section);
+  const sections = scopedSectionsBySlug(view.sections, selection.section);
   if (sections.length !== 1) fail('selected section is missing or ambiguous');
   const nodes = sections[0].nodes;
   if (selection.type !== 'row' && selection.bullet_index == null) return nodes;
   if (selection.type === 'row') {
     // Never reintroduce native tables rejected by the canonical resolver.
-    const matches = sections[0].tableNodes.filter((node) =>
-      nativeTableKeys(body, node).header === scopeJson(selection.headers))
-      .flatMap((node) => {
-        const rows = nativeRowsByKey(body, node);
-        return rows.size ? rows.get(scopeJson(selection.cells)) || [] : [];
-      });
+    const matches = (nativeSectionRows(body, sections[0]).get(`${scopeJson(selection.headers)}\n${scopeJson(selection.cells)}`) || [])
+      .map((item) => item.row);
     if (matches.length !== 1) fail('selected raw row is missing or ambiguous in its native AST');
     return matches;
   }
@@ -80,15 +91,25 @@ function selectedNodes(view, selection, body) {
 // Never scan rendered text: comments, entities and formatting cannot concatenate
 // fragments into a new reference. Inline code containing a complete typed token
 // is an explicit reference; fenced/indented code and HTML remain non-evidence.
+// A view's reference definitions, collected once per view: one graph resolution selects many
+// rows of a document through the same view (#275).
+const viewDefinitions = new WeakMap();
+function definitionsOf(view) {
+  if (!viewDefinitions.has(view)) {
+    const definitions = new Map();
+    walk(view.tree, (node) => {
+      if (node.type !== 'definition') return;
+      const key = reconciliationReferenceLabel(node.label ?? node.identifier);
+      if (!definitions.has(key)) definitions.set(key, []);
+      definitions.get(key).push(node);
+    });
+    viewDefinitions.set(view, definitions);
+  }
+  return viewDefinitions.get(view);
+}
 function dependencies(body, view, nodes, omitNestedLists) {
   const found = new Set();
-  const definitions = new Map();
-  walk(view.tree, (node) => {
-    if (node.type !== 'definition') return;
-    const key = reconciliationReferenceLabel(node.label ?? node.identifier);
-    if (!definitions.has(key)) definitions.set(key, []);
-    definitions.get(key).push(node);
-  });
+  const definitions = definitionsOf(view);
   const add = (token) => found.add(canonicalRef(token));
   function destination(node) {
     if (!prefix.test(node.url || '')) return;
@@ -195,8 +216,19 @@ export function scopedGraphBodyRefs(body, view) {
   return dependencies(body, view, view.tree.children, false);
 }
 
-export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifacts = [], projectRoot } = {}) {
-  const refs = createScopedReferenceResolver({ targetIndex, inputArtifacts, projectRoot });
+// #275: the typed references one selected table row cites as resolution reads it, with
+// its document's typed metadata, for a row whose ID cannot form a typed reference.
+// A caller selecting several rows of one body passes its view once.
+export function scopedGraphSelectionRefs(body, metadata, selection, view = parseReconciliationReferenceView(body)) {
+  return scopeSet([...new Set([...dependencies(body, view, selectedNodes(view, selection, body), false),
+    ...scopedGraphMetadataRefs(metadata)])]);
+}
+
+// `project` maps each node as it is recorded (the unapplied-row search keeps only the projected
+// node, not every row's copy of its document's metadata); edges and the snapshot check still read
+// the full record.
+export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifacts = [], projectRoot, project = null } = {}) {
+  const refs = createScopedReferenceResolver({ targetIndex, inputArtifacts, projectRoot, shareMetadata: true });
   const sources = createScopedSourceResolver({ targetIndex, inputArtifacts, projectRoot });
   const roots = workSet(contracts, canonicalRef, 'graph roots', true);
   const queue = [...roots];
@@ -204,17 +236,29 @@ export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifa
   const nodes = new Map();
   const edges = [];
   const files = new Map();
+  // Each document is read and viewed once per resolution, however many of its rows are
+  // selected (#275); every record is still checked against those bytes, and the re-read
+  // below catches a later change.
+  const documents = new Map(), serialized = new WeakMap();
+  // Records of one document share its metadata object, so it is serialized once.
+  const serial = (value) => {
+    if (value === null || typeof value !== 'object') return scopeJson(value);
+    if (!serialized.has(value)) serialized.set(value, scopeJson(value));
+    return serialized.get(value);
+  };
   function read(file, metadata, expectedBody) {
-    const canonical = canonicalRepositoryPath(projectRoot, file, { required: true, type: 'file', label: 'scoped evidence' });
-    const raw = readCurrentBytes(canonical.absolute, 'scoped evidence');
-    const sha256 = hashBytes(raw);
-    const previous = files.get(file);
-    if (previous && previous.sha256 !== sha256) fail('evidence changed during graph resolution');
-    const parsed = splitFrontmatter(decodeGitUtf8(raw, 'scoped evidence'));
-    if (!parsed.hasFrontmatter || parsed.parseError || scopeJson(parsed.data) !== scopeJson(metadata) ||
+    if (!documents.has(file)) {
+      const canonical = canonicalRepositoryPath(projectRoot, file, { required: true, type: 'file', label: 'scoped evidence' });
+      const raw = readCurrentBytes(canonical.absolute, 'scoped evidence');
+      const parsed = splitFrontmatter(decodeGitUtf8(raw, 'scoped evidence'));
+      files.set(file, { file, sha256: hashBytes(raw) });
+      documents.set(file, { parsed, metadata: parsed.hasFrontmatter && !parsed.parseError ? scopeJson(parsed.data) : null, view: null });
+    }
+    const document = documents.get(file), { parsed } = document;
+    if (document.metadata === null || document.metadata !== serial(metadata) ||
         (expectedBody !== undefined && parsed.body !== expectedBody)) fail('evidence differs from its indexed snapshot');
-    files.set(file, { file, sha256 });
-    return { body: parsed.body, view: parseReconciliationReferenceView(parsed.body) };
+    document.view ??= parseReconciliationReferenceView(parsed.body);
+    return { body: parsed.body, view: document.view };
   }
   // Iterative finite ref index: cycles retain their edges without recursive
   // expansion, and repeated dependencies never select an arbitrary first record.
@@ -234,7 +278,7 @@ export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifa
       record = refs.contract(ref);
       document = read(record.file, record.metadata, resolveArtifact(targetIndex, record.artifact_id).body);
     }
-    nodes.set(ref, record);
+    nodes.set(ref, project ? project(record) : record);
     const selected = selectedNodes(document.view, record.selection, document.body);
     const dependenciesForRef = dependencies(document.body, document.view, selected,
       Boolean(input) && record.selection.bullet_index != null);

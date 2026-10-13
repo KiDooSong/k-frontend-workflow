@@ -249,6 +249,12 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
       memberships.some((edge) => candidate.affected.has(edge.surface) && edge.member === value.owner) ||
       memberships.some((edge) => edge.surface === value.owner && candidate.affected.has(edge.member) && unadopted(edge.member));
   }
+  function nativeOrNull(entry, value, candidate) {
+    try { return nativeScope(entry, value) && named(candidate, value); } catch (cause) {
+      if (cause instanceof ScopedWorkContractError || cause instanceof CurrentWorkError) return null;
+      throw cause;
+    }
+  }
   function nativeScope(entry, value) {
     const fm = entry.fm;
     if (Object.hasOwn(fm, 'domain')) workText(fm.domain, 'uncertainty domain');
@@ -290,33 +296,43 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
     skipped.set(scopeJson(value), value);
   }
 
-  const records = new Map(); const applications = []; const review = [];
+  const records = new Map(); const applications = []; const review = []; const inputs = [];
   const projectedNodes = new Map(); const projectedEdges = new Map(); const roots = [];
+  const pairs = (list) => scopeSet([...new Map(list.map((pair) => [scopeJson(pair), pair])).values()]);
   for (const [token, candidate] of candidates) {
     const { record, entry, evidence } = candidate;
     let included = false;
     for (const value of subjects.values()) {
-      const direct = value.selected.filter((node) => overlaps(record, node)).map((node) => node.ref);
-      const inverse = direct.length ? [] : evidence.nodes.filter((node) => node.ref !== token)
+      const inverseOf = () => evidence.nodes.filter((node) => node.ref !== token)
         .flatMap((dependency) => value.selected.filter((node) => overlaps(dependency, node))
           .map((node) => ({ dependency: dependency.ref, selected: node.ref })));
+      const transitiveOf = () => [record, ...evidence.nodes.filter((node) => node.ref !== token)]
+        .flatMap((dependency) => value.derived.filter(({ via, node }) => via !== token && overlaps(dependency, node))
+          .map(({ via, node }) => ({ via, dependency: dependency.ref, selected: node.ref })));
+      const direct = value.selected.filter((node) => overlaps(record, node)).map((node) => node.ref);
+      const inverse = direct.length ? [] : inverseOf();
       const native = !direct.length && !inverse.length && nativeScope(entry, value) && named(candidate, value);
       // A relation discovered through uncertainty is not an authored selection.
       // Never use its own returned graph to erase native scope-review-needed. A
       // native relation keeps these witnesses (#262): a binding narrows only the
       // native part, never a row the unit still reaches through another applied row.
-      const transitive = direct.length || inverse.length ? [] : [record, ...evidence.nodes.filter((node) => node.ref !== token)]
-        .flatMap((dependency) => value.derived.filter(({ via, node }) => via !== token && overlaps(dependency, node))
-          .map(({ via, node }) => ({ via, dependency: dependency.ref, selected: node.ref })));
+      const transitive = direct.length || inverse.length ? [] : transitiveOf();
       const relation = direct.length ? 'selected-evidence' : inverse.length ? 'inverse-evidence'
         : native ? 'scope-review-needed' : transitive.length ? 'transitive-evidence' : null;
       if (!relation) continue;
       included = true;
       const application = { owner: value.owner, unit: value.unit, uncertainty: token, relation,
         witnesses: direct.length ? union(direct).map((ref) => ({ dependency: token, selected: ref }))
-          : scopeSet([...new Map((inverse.length ? inverse : transitive).map((pair) => [scopeJson(pair), pair])).values()]) };
+          : pairs(inverse.length ? inverse : transitive) };
       applications.push(application);
       if (relation === 'scope-review-needed') review.push({ owner: value.owner, unit: value.unit, uncertainty: token });
+      // #275: everything the relation could rest on, so a binding basis judges it from its own
+      // closure's selections; a selection only an unrelated row made must not change it. A native
+      // scope that cannot be read here (the relation did not need it) is null.
+      const overridden = direct.length || inverse.length;
+      inputs.push({ owner: value.owner, unit: value.unit, uncertainty: token, direct: union(direct),
+        inverse: pairs(direct.length ? inverseOf() : inverse), native: overridden ? nativeOrNull(entry, value, candidate) : native,
+        transitive: pairs(overridden ? transitiveOf() : transitive) });
     }
     if (!included) continue;
     records.set(token, record); roots.push(token);
@@ -329,6 +345,7 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
   for (const file of [...files.values()]) read(file.file, file.sha256);
   return { projection: { ...base.projection, uncertainty_relations: {
     records: scopeSet([...records.values()]), applications: scopeSet(applications), scope_review_needed: scopeSet(review),
+    relation_inputs: scopeSet(inputs),
     evidence: { roots: union(roots), nodes: scopeSet([...projectedNodes.values()]), edges: scopeSet([...projectedEdges.values()]) },
   } }, read_set: scopeSet([...files.values()]), unaudited: scopeSet([...skipped.values()]) };
 }

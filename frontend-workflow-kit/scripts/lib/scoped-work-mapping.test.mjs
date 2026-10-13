@@ -10,6 +10,7 @@ import { REQUIRED_ITEM_COLS } from './reconciliation-items.mjs';
 import { REQUIRED_REGISTER_COLS } from './reconciliation-register.mjs';
 import { createScopedSourceResolver } from './scoped-work-sources.mjs';
 import { resolveScopedMappingEvidence } from './scoped-work-mapping.mjs';
+import { scopedRawTableStats } from './scoped-work-refs.mjs';
 
 const INPUT = 'IN-20260917-figma-001';
 const REF = `input:${INPUT}#extracted-facts/01`;
@@ -62,6 +63,18 @@ test('D mapping: selected M-key and matching provenance resolve actual host/inpu
   assert.equal(out.rows[0].effective_captured_at, '2026-09-17T00:00:00Z');
   assert.deepEqual(f.args.inputArtifacts, before);
   for (const field of ['ready', 'allowed', 'basis_digest', 'all_hosts_allowed']) assert.equal(Object.hasOwn(out, field), false);
+});
+
+// #275 review r12: the reference resolver encodes a mapping table once, however many M-keys it selects.
+test('D mapping: selecting many M-keys encodes each mapping table once (#275)', (t) => {
+  const keys = Array.from({ length: 30 }, (_, i) => `M-${String(i + 1).padStart(3, '0')}`);
+  const f = fixture(t, { components: keys.map((key, i) => [`\`${key}\` · node ${i}`, `C${i}`, `src/features/result/components/C${i}.tsx`, 'fixture']),
+    provenance: keys.map((key) => [key, 'inherit', 'node', 'inherit', REF]) });
+  const before = scopedRawTableStats().tables;
+  const out = f.resolve({ mKeys: keys });
+  assert.deepEqual(out.rows.map((row) => row.m_key), keys);
+  assert.equal(out.rows[7].component.cells[1], 'C7');
+  assert.ok(scopedRawTableStats().tables - before <= 2, `${scopedRawTableStats().tables - before} encodings of two tables`);
 });
 
 test('D mapping: empty/duplicate/missing keys and incorrect typed selector shapes are rejected', (t) => {

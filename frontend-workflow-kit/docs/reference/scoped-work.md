@@ -82,6 +82,93 @@ section keeps byte-compatible legacy/current/visual-refresh behavior.
 Pilot one owner or domain at a time, and review the migration diff (policy
 ceilings, deny paths, roots, units, bindings) before relying on it.
 
+## Binding basis and status
+
+A binding's `basis_digest` is the sha256 of its scope basis, which the tool
+computes from the documents (`basis_version: 2`, #275). The basis holds:
+
+- the binding itself: the row, `owner`, `known_units` and `blocks` (not
+  `basis_digest` or `approval_ref`);
+- the owner's unit facts: each known unit's declaration (kind, contracts,
+  isolation, API selection, sources, host units), the contracts and selected
+  evidence it reaches, the owner's declared paths, the policy limits and surface
+  membership;
+- the bound row's relation closure: the row and its status, how it applies to the
+  owner and its units, the rows it cites or that cite it (along evidence
+  references, in either direction, including a row that applies to no owner),
+  the rows an Unknown or Conflict relation names as a witness (and the
+  rows that name it), and one evidence graph through which they apply. A
+  document's frontmatter `decision_refs` brings a Decision in when a closure row
+  cites that document, and the list itself is not hashed. In an owner spec (a
+  screen or shared surface spec) the list declares the owner's own Decisions, so
+  it does not relate them to the rows that cite some part of the spec; in any
+  other document it is content, so a row citing that document relates to the
+  Decision as an inline citation would. A reference to a section or a whole
+  document (including an investigation or verification reference) covers the
+  rows it holds, as overlapping evidence does for an Unknown or Conflict. An
+  application that the Decision relations derived for an owner or unit stays
+  only where that owner's or unit's own evidence (or a closure row applying to
+  it) leads to it, not where only an unrelated row opened the route. Likewise
+  how a related Unknown or Conflict applies to a unit is judged again from what
+  the unit selects through its own evidence and the closure rows applying to it,
+  with the uncertainty relations' precedence (selected, inverse, native, then
+  transitive evidence): a selection that only an unrelated row makes changes
+  neither the relation nor its witnesses. Which rows join through a witness,
+  and which rows a unit derives from, follow the uncertainty relations over all
+  of the owner's selections, so a row outside the closure that selects the
+  same evidence can still change them; the binding then reads stale.
+
+A Decision, Unknown or Conflict row that applies to no owner is found through
+the references it cites, as resolution reads them (body, links, typed
+`depends_on`), and through its document's `decision_refs`, wherever they lead,
+and also when a related reference selects,
+covers or names it, even if it cites nothing itself; it then joins with its
+record. An exact artifact row selection
+(`artifact:X#unknowns/U-1`) is the row it selects. Any non-empty Decision ID is
+valid; one that cannot form a typed reference is an error only when its row
+relates to the projection, including when a related reference selects or covers
+it. As for Unknown and Conflict sections, an Open Decisions section that cannot
+be read (no single canonical table in one Open Decisions section, prose only or
+a quoted table included) or a row whose identity cannot be read (an empty ID or
+one the table repeats) stops scoped work when its document holds a typed
+reference (as resolution reads it, encoded link destinations included);
+otherwise those rows cite nothing and are left out, while the table's other rows
+stay. An ID that starts with `{` is a template placeholder, as in the target
+index, and no row. A typed reference that cannot be resolved stops scoped work
+wherever it is, and a Decision that a reached document's `decision_refs` names
+is checked as an ordinary `decision_refs` entry: exactly one home, the canonical
+global register, and a well-formed row there (the document's whole list resolves
+as the Decision relations resolve an owner's, so a malformed row it names stops
+scoped work).
+
+So adding or editing another row of the owner leaves the digest unchanged unless
+that row relates to the bound row; editing the bound row, a related row or any
+unit contract changes it. Version 1 hashed every row that applied to the owner;
+its digests read stale under version 2 ([upgrade notes](upgrade-notes.md)).
+
+`npm run workflow:binding-status` lists, for every adopted owner (or `--owner
+<id>`), each row that applies to it with its status and binding state:
+
+| State | Meaning |
+| --- | --- |
+| `current` | the recorded digest equals the computed one |
+| `stale` | the recorded digest differs (`basis`), or `known_units` is not the owner's current unit set (`known-units`) |
+| `missing` | the row has no binding for the owner; it blocks the units shown (`blocking_units`): every unit for an open Decision, the units its relations reach for an open Unknown or Conflict, none once resolved (`resolved: true`) |
+| `unresolved` | a binding declared for the owner on a row that does not apply to it or does not exist; it has no effect |
+
+Where it can compute one, it shows the recorded binding, the computed digest and
+four component digests — `target` (the row's own entries), `relations` (the other
+rows of its closure), `units` (the unit facts) and `evidence` (the relation
+evidence) — so comparing two runs shows which part changed. It reads the
+committed `HEAD` that `--work` evaluates, writes nothing and does not verify
+`approval_ref`. The digest covers the binding as committed: to add or change a
+binding, commit it with any well-formed digest (for example `sha256:` followed by
+64 zeros), review the scope, then record the computed digest with an
+`approval_ref` for that review and commit again. A refreshed digest goes with a
+new `approval_ref`, never the old one: the library transition check reports an
+old `approval_ref` on a changed binding, but no command runs it yet, so reviewers
+check it.
+
 ## Request contract
 
 The five execution CLIs accept the same document as current work. A scoped
@@ -273,7 +360,8 @@ work from taking the change over (#276). To unblock the unit, a person:
 - resolves the blocking row through its normal workflow;
 - adds or re-judges the row's binding (`decision_work_scopes` or
   `uncertainty_work_scopes`) so the row blocks fewer units, with a recomputed
-  `basis_digest` and its `approval_ref`. A Decision binding's `blocks` applies as
+  `basis_digest` ([binding status](#binding-basis-and-status)) and its
+  `approval_ref`. A Decision binding's `blocks` applies as
   written; an Unknown or Conflict binding narrows only the row's native relation,
   so a unit whose selected evidence reaches that row stays blocked; or
 - withdraws the owner's adoption ([rollback](#rollback-and-downgrade)), which

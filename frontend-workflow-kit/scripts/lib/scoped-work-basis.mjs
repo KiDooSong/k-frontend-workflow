@@ -1,4 +1,4 @@
-// B §5.4 scope-basis-v1 for one existing canonical decision/owner binding.
+// B §5.4 scope basis (v2 since #275) for one existing canonical decision/owner binding.
 // Computing a digest does NOT adopt the binding, validate its human approval,
 // resolve/reopen a decision, grant coverage or authorize any path/CLI execution.
 import { splitFrontmatter } from './util.mjs';
@@ -6,7 +6,7 @@ import { canonicalRepositoryPath } from './artifact-path.mjs';
 import { readCurrentBytes, hashBytes } from './current-work-request.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { parseDecisionWorkScopes } from './scoped-work-declarations.mjs';
-import { parseScopedTargetRef } from './scoped-work-refs.mjs';
+import { parseScopedTargetRef, scopedRowAlias, scopedRowSite, scopedAddRowSite, scopedCoveredRows } from './scoped-work-refs.mjs';
 import { resolveScopedApplicabilityProjection } from './scoped-work-applicability.mjs';
 import { ScopedWorkContractError, workText } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
@@ -19,8 +19,9 @@ export function resolveScopedBindingBasis(options = {}) {
   if (!parsed || parsed.kind !== 'decision') fail('canonical typed decision reference required');
 
   // Re-resolve from actual resources; never hash a caller-provided projection,
-  // blocks list, target subset or precomputed digest. This includes ALL units
-  // of the binding owner, the selected host units, relation closure and claims.
+  // blocks list, target subset or precomputed digest. The projection holds ALL
+  // units of the binding owner, the selected host units, relation closure and
+  // claims; scope-basis-v2 keeps the unit facts and this row's relation closure.
   const { projection, read_set } = resolveScopedApplicabilityProjection(options);
   const record = projection.decision_relations.records.find((entry) => entry.ref === decisionRef);
   if (!record || !projection.decision_relations.applications.some((entry) =>
@@ -51,25 +52,331 @@ export function resolveScopedBindingBasis(options = {}) {
     fail('binding known_units must match all current owner units');
   }
 
-  const { basis, basis_digest } = scopedBindingBasis(projection, {
+  const { basis, basis_digest, component_digests } = scopedBindingBasis(projection, {
     decision: decisionRef, owner, known_units: knownUnits, blocks: scopeSet(binding.blocks),
   });
   for (const entry of read_set) read(entry.file);
   return {
-    basis, basis_digest,
+    basis, basis_digest, component_digests,
     recorded_binding: { basis_digest: binding.basis_digest, approval_ref: binding.approval_ref },
     read_set,
   };
 }
 
-// The scope-basis-v1 bytes of one binding over the owner's applicability projection,
+// #275 scope-basis-v2: the owner's unit facts as in v1, and only the target row's
+// relation closure from the Decision and Unknown/Conflict relations. Each projection
+// field is placed explicitly; a field this version does not know cannot be hashed.
+const ROW_KINDS = new Set(['decision', 'unknown', 'conflict']);
+// A native relation's referrer names the owner or surface document, whose metadata stays
+// in referrers; its body is not evidence of the row.
+const NATIVE_RELATIONS = new Set(['local', 'decision-ref', 'surface-member']);
+// An evidence node of a document whose frontmatter decision_refs names a Decision.
+const DOCUMENT_RELATIONS = new Set(['evidence-decision-ref', 'uncertainty-decision-ref']);
+const OWNER_SPECS = new Set(['screen-spec', 'shared-surface-spec']);
+const UNIT_FIELDS = ['evidence', 'host_links', 'inputs', 'known_units', 'owner', 'owners', 'ownership', 'policy', 'units'];
+const RELATION_FIELDS = {
+  decision_relations: ['applications', 'dependency_roots', 'evidence', 'memberships', 'records', 'referrers'],
+  uncertainty_relations: ['applications', 'evidence', 'records', 'relation_inputs', 'scope_review_needed'],
+  unapplied_relations: ['document_refs', 'evidence', 'records'],
+};
+export const SCOPE_BASIS_VERSION = 2;
+const digestOf = (value) => hashBytes(Buffer.from(scopeJson(value), 'utf8'));
+const isRow = (ref) => typeof ref === 'string' && ROW_KINDS.has(parseScopedTargetRef(ref)?.kind);
+
+function checkFields(value, allowed, label) {
+  for (const key of Object.keys(value || {})) if (!allowed.includes(key)) fail(`unknown basis field ${label}${key}`);
+}
+
+// The rows related to the target and the evidence nodes that touch them. Two rows are
+// related when one reaches the other along evidence edges (either direction), or when
+// an Unknown/Conflict relation names the other as a witness. Non-row nodes are followed
+// one way only (what a row cites, or what cites a row), so two rows that merely share a
+// section are not related through it. A document's frontmatter `decision_refs` is an
+// edge from that document's evidence nodes to the Decision. In an owner spec (a screen or
+// shared surface spec) it declares the owner's own Decisions, so it is followed forward
+// only: what a row cites depends on that Decision, but the Decision does not relate to
+// every row citing some part of the spec (a route through another row of it is dropped,
+// see kept). In any other document it is content, so a row citing that document relates
+// to the Decision both ways, as an inline citation would (#275 r9, human decision). Rows
+// that apply to no owner relate in the same ways, and an exact
+// artifact row selection is the row it selects (`artifact:X#unknowns/U-1` is `unknown:U-1@X`).
+// A reference to a section or a whole document covers the rows it holds, as overlapping
+// evidence covers them in the uncertainty pass: it leads to each of them.
+const closureStats = { visited: 0 };
+// Process-wide node visits of relation closures: read-only diagnostics (#275).
+export function scopedClosureStats() {
+  return { ...closureStats };
+}
+function relationClosure(projection, target) {
+  const { decision_relations: decisions, uncertainty_relations: uncertainty } = projection;
+  const forward = new Map(), backward = new Map(), related = new Map(), aliases = new Map(), sites = new Map();
+  const add = (map, from, to) => { if (!map.has(from)) map.set(from, new Set()); map.get(from).add(to); };
+  const unapplied = projection.unapplied_relations;
+  const graphs = [projection.evidence, decisions.evidence, uncertainty.evidence, unapplied.evidence];
+  for (const graph of graphs) {
+    for (const edge of graph.edges) { add(forward, edge.from, edge.to); add(backward, edge.to, edge.from); }
+    for (const node of graph.nodes) {
+      scopedAddRowSite(sites, scopedRowSite(node));
+      const alias = scopedRowAlias(node);
+      if (!alias) continue;
+      aliases.set(node.ref, alias);
+      for (const map of [forward, backward]) { add(map, node.ref, alias); add(map, alias, node.ref); }
+    }
+  }
+  for (const graph of graphs) for (const node of graph.nodes) for (const row of scopedCoveredRows(node, sites)) {
+    add(forward, node.ref, row); add(backward, row, node.ref);
+  }
+  const documentTypes = new Map(graphs.flatMap((graph) => graph.nodes.map((node) => [node.ref, node.metadata?.artifact_type])));
+  const documentEdge = (referrer, decision) => {
+    add(forward, referrer, decision);
+    if (!OWNER_SPECS.has(documentTypes.get(referrer))) add(backward, decision, referrer);
+  };
+  for (const entry of decisions.applications) if (DOCUMENT_RELATIONS.has(entry.relation)) documentEdge(entry.referrer, entry.decision);
+  for (const link of unapplied.document_refs) documentEdge(link.referrer, link.decision);
+  const relate = (a, b) => {
+    const row = aliases.get(b) ?? b;
+    if (a !== row && isRow(a) && isRow(row)) { add(related, a, row); add(related, row, a); }
+  };
+  // Which rows a witness relates follows the uncertainty pass over all of the owner's selections
+  // (#275 r13, human decision): a row outside the closure that selects the same evidence can change it.
+  for (const entry of uncertainty.applications) {
+    for (const witness of entry.witnesses) for (const ref of [witness.via, witness.dependency, witness.selected]) relate(entry.uncertainty, ref);
+  }
+  // Each node is expanded once per direction: what a row reaches through a row already expanded
+  // that way is in the closure, so a chain of related rows costs in proportion to its length.
+  const expanded = new Map([[forward, new Set()], [backward, new Set()]]);
+  const spread = (start, map) => {
+    const seen = expanded.get(map), found = [];
+    if (seen.has(start)) return found;
+    seen.add(start);
+    const queue = [start];
+    for (let index = 0; index < queue.length; index += 1) {
+      closureStats.visited += 1;
+      found.push(queue[index]);
+      for (const next of map.get(queue[index]) || []) if (!seen.has(next)) { seen.add(next); queue.push(next); }
+    }
+    return found;
+  };
+  const rows = new Set([target]), nodes = new Set(), queue = [target];
+  for (let index = 0; index < queue.length; index += 1) {
+    const row = queue[index];
+    for (const ref of [...spread(row, forward), ...spread(row, backward), ...(related.get(row) || [])]) {
+      nodes.add(ref);
+      if (isRow(ref) && !rows.has(ref)) { rows.add(ref); queue.push(ref); }
+    }
+  }
+  // A Decision application of a closure row, unless it routes through a row outside the
+  // closure: a referrer row, or the Unknown/Conflict root it was derived through. An
+  // application the decision pass derived (from a selected decision or a document's
+  // decision_refs) stays only where its subject reaches the referrer from that subject's
+  // own seeds, as the pass traverses them: the unit's declared evidence, a host link's
+  // mapping, its Unknown/Conflict root, and the closure rows that apply to it natively.
+  // So a route that only an unrelated row of a document opened leaves nothing behind.
+  const subject = (entry) => scopeJson([entry.owner, entry.unit, entry.uncertainty ?? null]);
+  const seeds = new Map(), evidence = new Set(projection.evidence.nodes.map((node) => node.ref));
+  const seed = (key, ref) => { if (!seeds.has(key)) seeds.set(key, new Set()); seeds.get(key).add(ref); };
+  for (const unit of projection.units) {
+    const refs = [...unit.declaration.contracts, ...(unit.declaration.isolation?.decisions || [])];
+    for (const source of unit.sources) {
+      refs.push(...source.anchors.map((anchor) => anchor.ref));
+      for (const group of source.groups) for (const effect of group.effects) refs.push(effect.target, effect.evidence.ref);
+    }
+    refs.push(...unit.api_rows.map((row) => row.tracking).filter(Boolean));
+    for (const ref of refs) if (evidence.has(ref)) seed(subject({ owner: unit.owner, unit: unit.declaration.id }), ref);
+  }
+  for (const link of projection.host_links) if (link.mapping) {
+    for (const row of link.mapping.rows) for (const ref of [`${link.mapping.ref}/${row.m_key}`,
+      `artifact:${parseScopedTargetRef(link.mapping.ref).artifactId}#mapping-provenance/${row.m_key}`, row.evidence]) {
+      seed(subject({ owner: link.surface, unit: link.unit }), ref);
+      seed(subject({ owner: link.member, unit: link.host_unit === 'legacy-current' ? null : link.host_unit }), ref);
+    }
+  }
+  for (const root of decisions.dependency_roots || []) seed(subject({ ...root, uncertainty: root.ref }), root.ref);
+  for (const entry of decisions.applications) if (NATIVE_RELATIONS.has(entry.relation) && rows.has(entry.decision)) seed(subject(entry), entry.decision);
+  const traversal = new Map();
+  for (const graph of graphs) for (const edge of graph.edges) add(traversal, edge.from, edge.to);
+  for (const entry of decisions.applications) if (DOCUMENT_RELATIONS.has(entry.relation)) add(traversal, entry.referrer, entry.decision);
+  for (const link of unapplied.document_refs) add(traversal, link.referrer, link.decision);
+  const reaches = new Map();
+  const reachOf = (key) => {
+    if (!reaches.has(key)) {
+      // One traversal from all of a subject's seeds.
+      const queue = [...(seeds.get(key) || [])], seen = new Set(queue);
+      for (let index = 0; index < queue.length; index += 1) {
+        closureStats.visited += 1;
+        for (const next of traversal.get(queue[index]) || []) if (!seen.has(next)) { seen.add(next); queue.push(next); }
+      }
+      reaches.set(key, seen);
+    }
+    return reaches.get(key);
+  };
+  const kept = (entry) => rows.has(entry.decision) && (!isRow(entry.referrer) || rows.has(entry.referrer)) &&
+    (entry.uncertainty === undefined || rows.has(entry.uncertainty)) &&
+    (NATIVE_RELATIONS.has(entry.relation) || reachOf(subject(entry)).has(entry.referrer));
+  // How a related Unknown or Conflict applies to a unit is judged again from the closure's own
+  // selections, with the uncertainty pass's precedence (selected, inverse, native, transitive
+  // evidence) over everything the pass found that relation could rest on. A unit selects what the
+  // pass seeds it with: its own evidence, a host link's mapping and the Decisions applying to it, or
+  // for a transitive witness what is derived through its `via` row. Only a seed of the closure (a kept
+  // application) counts, so a selection that only a row outside the closure made changes neither a
+  // witness nor the relation, as for a derived Decision application (#275 r12, r13).
+  const selectionSeeds = new Map();
+  const selectionSeed = (key, ref) => { if (!selectionSeeds.has(key)) selectionSeeds.set(key, new Set()); selectionSeeds.get(key).add(ref); };
+  const ownerUnits = new Map();
+  for (const entry of uncertainty.applications) {
+    if (!ownerUnits.has(entry.owner)) ownerUnits.set(entry.owner, new Set());
+    ownerUnits.get(entry.owner).add(entry.unit);
+  }
+  for (const root of decisions.dependency_roots || []) if (rows.has(root.ref)) selectionSeed(scopeJson([root.owner, root.unit, root.ref]), root.ref);
+  for (const entry of decisions.applications) if (kept(entry)) {
+    if (entry.uncertainty !== undefined) selectionSeed(scopeJson([entry.owner, entry.unit, entry.uncertainty]), entry.decision);
+    else for (const unit of entry.unit === null ? [null, ...(ownerUnits.get(entry.owner) || [])] : [entry.unit]) {
+      selectionSeed(scopeJson([entry.owner, unit, null]), entry.decision);
+    }
+  }
+  const selections = new Map();
+  const selectionOf = (owner, unit, via = null) => {
+    const key = scopeJson([owner, unit, via]);
+    if (!selections.has(key)) {
+      const queue = [...(selectionSeeds.get(key) || []), ...(via === null ? seeds.get(subject({ owner, unit })) || [] : [])];
+      const seen = new Set(queue);
+      for (let index = 0; index < queue.length; index += 1) {
+        closureStats.visited += 1;
+        for (const next of traversal.get(queue[index]) || []) if (!seen.has(next)) { seen.add(next); queue.push(next); }
+      }
+      selections.set(key, seen);
+    }
+    return selections.get(key);
+  };
+  const inputs = new Map((uncertainty.relation_inputs || []).map((entry) => [scopeJson([entry.owner, entry.unit, entry.uncertainty]), entry]));
+  const relatedApplication = (entry) => {
+    if (!rows.has(entry.uncertainty)) return null;
+    const input = inputs.get(scopeJson([entry.owner, entry.unit, entry.uncertainty]));
+    if (!input) fail('uncertainty application without its relation inputs');
+    const selection = selectionOf(entry.owner, entry.unit);
+    const direct = input.direct.filter((ref) => selection.has(ref));
+    const inverse = direct.length ? [] : input.inverse.filter((witness) => selection.has(witness.selected));
+    // The pass could not read a native scope it did not need: keep the relation as it found it.
+    if (!direct.length && !inverse.length && input.native === null) return entry;
+    const native = !direct.length && !inverse.length && input.native;
+    const transitive = direct.length || inverse.length ? [] : input.transitive.filter((witness) =>
+      selectionOf(entry.owner, entry.unit, witness.via).has(witness.selected));
+    const relation = direct.length ? 'selected-evidence' : inverse.length ? 'inverse-evidence'
+      : native ? 'scope-review-needed' : transitive.length ? 'transitive-evidence' : null;
+    return relation && { owner: entry.owner, unit: entry.unit, uncertainty: entry.uncertainty, relation,
+      witnesses: direct.length ? direct.map((ref) => ({ dependency: entry.uncertainty, selected: ref })) : inverse.length ? inverse : transitive };
+  };
+  // The evidence through which a kept row applies: its referrer and witness nodes.
+  for (const entry of decisions.applications) if (kept(entry) && !NATIVE_RELATIONS.has(entry.relation)) nodes.add(entry.referrer);
+  for (const entry of uncertainty.applications) {
+    for (const witness of relatedApplication(entry)?.witnesses || []) for (const ref of [witness.via, witness.dependency, witness.selected]) if (ref) nodes.add(ref);
+  }
+  return { rows, nodes, kept, relatedApplication };
+}
+
+// A document's decision_refs list is not scope by itself: the relations it makes are kept
+// above as edges and applications of the closure's rows, so naming another Decision in a
+// document changes no unrelated binding. Only that list is dropped, from each metadata.
+function withoutDecisionRefs(value) {
+  if (Array.isArray(value)) return value.map(withoutDecisionRefs);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, key === 'metadata' && entry && typeof entry === 'object' &&
+    !Array.isArray(entry) ? withoutDecisionRefs(Object.fromEntries(Object.entries(entry).filter(([name]) => name !== 'decision_refs')))
+    : withoutDecisionRefs(entry)]));
+}
+
+// The scope-basis-v2 bytes of one binding over the owner's applicability projection,
 // which its caller resolved from actual resources. Decision and Unknown/Conflict
 // bindings share it; the binding's own key (decision/uncertainty) keeps them apart.
-// The shared projection excludes decision_work_scopes, uncertainty_work_scopes,
+// The projection excludes decision_work_scopes, uncertainty_work_scopes,
 // housekeeping and raw audit hashes, but retains referenced artifacts' own
 // canonical approval facts. No blanket recursive removal of fields called
 // "approval" or "sha256".
 export function scopedBindingBasis(projection, binding) {
-  const basis = { ...projection, basis_version: 1, binding };
-  return { basis, basis_digest: hashBytes(Buffer.from(scopeJson(basis), 'utf8')) };
+  checkFields(projection, [...UNIT_FIELDS, ...Object.keys(RELATION_FIELDS)], '');
+  for (const [field, allowed] of Object.entries(RELATION_FIELDS)) {
+    if (!projection[field]) fail(`missing basis field ${field}`);
+    checkFields(projection[field], allowed, `${field}.`);
+  }
+  const target = binding.decision ?? binding.uncertainty;
+  const { decision_relations: decisions, uncertainty_relations: uncertainty } = projection;
+  const unapplied = projection.unapplied_relations;
+  const records = parseScopedTargetRef(target)?.kind === 'decision' ? decisions.records : uncertainty.records;
+  if (!isRow(target) || !records.some((entry) => entry.ref === target)) fail('target row missing from the applicability projection');
+  const { rows, nodes, kept, relatedApplication } = relationClosure(projection, target);
+  const related = uncertainty.applications.map(relatedApplication).filter(Boolean);
+  const node = (ref) => rows.has(ref) || nodes.has(ref);
+  // One evidence graph of the closure, whichever relation pass contributed a node: an
+  // unrelated row that cites the same evidence adds no copy of it.
+  const evidenceNodes = new Map(), evidenceEdges = new Map();
+  for (const graph of [decisions.evidence, uncertainty.evidence, unapplied.evidence]) {
+    for (const entry of graph.nodes) if (node(entry.ref) && !evidenceNodes.has(entry.ref)) evidenceNodes.set(entry.ref, entry);
+    for (const edge of graph.edges) if (node(edge.from) && node(edge.to)) evidenceEdges.set(scopeJson(edge), edge);
+  }
+  const artifacts = new Set();
+  for (const entry of evidenceNodes.values()) if (entry.artifact_id) artifacts.add(entry.artifact_id);
+  const applications = decisions.applications.filter(kept);
+  for (const entry of applications) {
+    const referrer = parseScopedTargetRef(entry.referrer);
+    if (referrer) artifacts.add(referrer.artifactId ?? referrer.ownerArtifactId);
+  }
+  const roots = (decisions.dependency_roots || []).filter((entry) => rows.has(entry.ref));
+  const { decision_relations: _decisions, uncertainty_relations: _uncertainty, unapplied_relations: _unapplied, ...unitFacts } = projection;
+  const basis = {
+    ...withoutDecisionRefs(unitFacts),
+    decision_relations: withoutDecisionRefs({
+      ...(roots.length ? { dependency_roots: roots } : {}),
+      records: decisions.records.filter((entry) => rows.has(entry.ref)),
+      applications,
+      referrers: closureReferrers(decisions.referrers, evidenceNodes, artifacts),
+      memberships: decisions.memberships,
+    }),
+    uncertainty_relations: withoutDecisionRefs({
+      records: uncertainty.records.filter((entry) => rows.has(entry.ref)),
+      applications: scopeSet(related),
+      scope_review_needed: scopeSet(related.filter((entry) => entry.relation === 'scope-review-needed')
+        .map(({ owner, unit, uncertainty: ref }) => ({ owner, unit, uncertainty: ref }))),
+    }),
+    // A related row that applies to no owner. The document links that brought one in are
+    // not hashed: the rows they bring are, and an applied row's link is its application.
+    unapplied_relations: withoutDecisionRefs({ records: unapplied.records.filter((entry) => rows.has(entry.ref)) }),
+    relation_evidence: withoutDecisionRefs({ nodes: scopeSet([...evidenceNodes.values()]), edges: scopeSet([...evidenceEdges.values()]) }),
+    basis_version: SCOPE_BASIS_VERSION, binding,
+  };
+  return { basis, basis_digest: digestOf(basis), component_digests: scopedBasisComponentDigests(basis, target) };
+}
+
+// The metadata of each document the closure touches. A closure evidence node carries the same
+// projected metadata the decision pass records, so it is read from the closure first: whether the
+// pass happened to visit the document for some unrelated row must not change the basis (#275 r10).
+function closureReferrers(referrers, evidenceNodes, artifacts) {
+  const out = new Map();
+  for (const node of evidenceNodes.values()) if (node.artifact_id && artifacts.has(node.artifact_id) && !out.has(node.artifact_id)) {
+    out.set(node.artifact_id, { artifact_id: node.artifact_id, file: node.file, metadata: node.metadata });
+  }
+  for (const entry of referrers) if (artifacts.has(entry.artifact_id) && !out.has(entry.artifact_id)) out.set(entry.artifact_id, entry);
+  return scopeSet([...out.values()]);
+}
+
+// A partition of one basis for review: the target row's own entries, the other rows of
+// its closure, the owner's unit facts (declarations, contracts, boundaries, membership)
+// and the relation evidence. The binding's fields are shown as written, not digested.
+function scopedBasisComponentDigests(basis, target) {
+  const { decision_relations: decisions, uncertainty_relations: uncertainty, unapplied_relations: unapplied } = basis;
+  const rows = (own) => {
+    const pick = (entries, key) => (entries || []).filter((entry) => (entry[key] === target) === own);
+    return {
+      decision_relations: { dependency_roots: pick(decisions.dependency_roots, 'ref'), records: pick(decisions.records, 'ref'),
+        applications: pick(decisions.applications, 'decision') },
+      uncertainty_relations: { records: pick(uncertainty.records, 'ref'), applications: pick(uncertainty.applications, 'uncertainty'),
+        scope_review_needed: pick(uncertainty.scope_review_needed, 'uncertainty') },
+      unapplied_relations: { records: pick(unapplied.records, 'ref') },
+    };
+  };
+  const units = Object.fromEntries(UNIT_FIELDS.filter((key) => Object.hasOwn(basis, key)).map((key) => [key, basis[key]]));
+  return {
+    evidence: digestOf({ relation_evidence: basis.relation_evidence, referrers: decisions.referrers }),
+    relations: digestOf(rows(false)), target: digestOf(rows(true)),
+    units: digestOf({ ...units, memberships: decisions.memberships }),
+  };
 }
