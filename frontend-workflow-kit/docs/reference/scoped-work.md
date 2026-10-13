@@ -70,7 +70,8 @@ behavior.
    - owner documents that declare `work_execution` while the config names no
      `policy_overlay`, or while there is no config. An owner document is a
      ScreenSpec or shared-surface-spec by `artifact_type`, or by the file name
-     `workflow:state` reads it under (`domains/**/screen-spec.md`, `surface-spec.md`);
+     `workflow:state` reads it under (`domains/**/screen-spec.md`, `surface-spec.md`).
+     A docs Markdown file that cannot be read is refused too, since it could be one;
    - an explicit `--layout` that names a different file from the config `layout`.
      The same file is accepted; without a config `layout`, `--layout` works as
      before.
