@@ -21,11 +21,9 @@ export class CurrentWorkExecutionError extends Error {
 }
 
 export const REGULAR_MODES = new Set(['100644', '100755']);
-// frontend-workflow.config.yaml (#257) too: a work diff cannot create the adoption config.
 export const AUTHORITY_BASENAMES = new Set([
   'implementation-mode-policy.yaml', 'artifact-manifest.yaml', 'project-layout.yaml',
   'workflow-state.yaml', 'reconciliation-register.md', 'open-decisions.md', 'decision-log.md',
-  'frontend-workflow.config.yaml',
 ]);
 
 export function outside(root, target) {

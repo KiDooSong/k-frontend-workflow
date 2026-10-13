@@ -304,6 +304,20 @@ test('#257 a work diff cannot create a config that Git ignores either (r3)', (t)
   assert.ok(violations.some((entry) => entry.code === 'CW-GIT-AUTHORITY-CHANGED' && entry.path === WORK_CONFIG_FILE), JSON.stringify(violations));
 });
 
+test('#257 only the project root config is an authority file; a file of that name elsewhere is ordinary work (r5)', (t) => {
+  const plain = repository(t, { adopted: false, declareUnits: false });
+  const nested = `${PREFIX}/hooks/${WORK_CONFIG_FILE}`;
+  plain.put(nested, 'fixture: true\n');
+  git(plain.root, 'add', '-A'); git(plain.root, 'commit', '-qm', 'a file named like the config');
+  const preflight = prepareCurrentWork({ work: currentRequest(plain, [nested]), root: plain.root, docs: DOCS, src: 'src',
+    policy: '.kit/policy.yaml', manifest: '.kit/manifest.yaml', layout: '.kit/layout.yaml' });
+  t.after(() => cleanupCurrentWork(preflight));
+  assert.equal(preflight.ready, true, JSON.stringify(preflight.errors));
+  plain.put(nested, 'fixture: false\n');
+  const violations = evaluateCurrentGit(preflight).violations;
+  assert.deepEqual(violations.filter((entry) => entry.code === 'CW-GIT-AUTHORITY-CHANGED'), []);
+});
+
 test('#257 packet and report resolve the configured layout and hand it to every leaf', (t) => {
   const r = repository(t);
   const layout = path.join(r.root, '.kit/layout.yaml');

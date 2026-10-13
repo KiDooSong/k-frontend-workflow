@@ -41,6 +41,9 @@ function authorityPaths(preflight) {
   const docs = preflight.snapshot.resources.find((r) => r.kind === 'docs')?.path;
   if (docs) paths.add(`${docs}/_meta/reconciliation-register.md`);
   if (preflight.snapshot.work_request.path) paths.add(preflight.snapshot.work_request.path);
+  // #257: the adoption config at the project root, even where HEAD has none, so a work
+  // diff cannot create it. Only that path: a file of the same name elsewhere is ordinary.
+  paths.add(WORK_CONFIG_FILE);
   return paths;
 }
 function authorizationFor(preflight, expected) {
