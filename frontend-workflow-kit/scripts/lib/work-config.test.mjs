@@ -265,6 +265,24 @@ test('#257 a declaration the readers parse after an empty block still counts (r1
   assert.deepEqual(declaredWorkOwners(p.docsDir), ['screen:domains/result/screens/result-001/screen-spec.md']);
 });
 
+test('#257 owner frontmatter that a ---- or ---x line ends is not closed (r15)', (t) => {
+  const p = project(t);
+  const spec = `${DOCS}/domains/result/screens/result-001/screen-spec.md`;
+  const notClosed = (error) => error instanceof WorkConfigError &&
+    /domains\/result\/screens\/result-001\/screen-spec\.md: frontmatter does not parse \(not closed\)/.test(error.message);
+  // splitFrontmatter ends the block at the first such line and reads the rest as body.
+  for (const end of ['----', '---invalid']) {
+    p.put(spec, `---\nscreen_id: RESULT-001\n${end}\nwork_execution:\n  units: [unclosed\n`);
+    assert.throws(() => adoptionPolicy(base(), null, p.docsDir), notClosed, end);
+    // A bare --- line after it does not close the block the reading already ended.
+    p.put(spec, `---\nscreen_id: RESULT-001\n${end}\nwork_execution:\n  units: []\n---\n`);
+    assert.throws(() => adoptionPolicy(base(), null, p.docsDir), notClosed, end);
+  }
+  // After a closing --- line (trailing blanks allowed), a ---- rule is body text.
+  p.put(spec, '---\nscreen_id: RESULT-001\n--- \n\n----\n\nMore.\n');
+  assert.equal(adoptionPolicy(base(), null, p.docsDir).work_execution, undefined);
+});
+
 test('#257 an overlay whose work_execution paths do not validate is a configuration error (r11)', (t) => {
   const p = project(t);
   p.put(WORK_CONFIG_FILE, 'version: 1\npolicy_overlay: config/adoption.yaml\n');

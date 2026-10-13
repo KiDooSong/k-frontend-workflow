@@ -131,12 +131,16 @@ export function declaredWorkOwners(docsDir) {
     catch (error) { fail(`${parts.join('/')}: cannot read (${error.code || error.message}) to check owner declarations`); }
     const { data, hasFrontmatter, parseError } = splitFrontmatter(raw);
     const byName = parts[0] === 'domains' ? parts.at(-1) : null;
-    // Opened but with no closing --- line; an empty block (---, ---) is closed although
-    // splitFrontmatter reads no frontmatter from it. Its parse error comes from body text
-    // read up to a later --- line, which hides nothing the empty block could declare.
+    // splitFrontmatter ends the block at the first later line that starts with ---, or reads
+    // none. Only a bare --- line closes it; ----, ---x or no such line leaves it unclosed.
+    // The line right after the opening one can only close an empty block, which splitFrontmatter
+    // does not read: its parse error comes from body text read up to a later --- line and
+    // hides nothing the empty block could declare.
     const text = raw.replace(/^\uFEFF/, '');
-    const unclosed = !hasFrontmatter && /^---\r?\n/.test(text) && !/^---\r?\n(?:[\s\S]*?\r?\n)?---[ \t]*(?:\r?\n|$)/.test(text);
-    const emptyBlock = /^---\r?\n---[ \t]*(?:\r?\n|$)/.test(text);
+    const lines = /^---\r?\n/.test(text) ? text.split(/\r?\n/) : [];
+    const end = lines.findIndex((line, index) => index > 0 && line.startsWith('---'));
+    const unclosed = lines.length > 0 && (end < 0 || !/^---[ \t]*$/.test(lines[end]));
+    const emptyBlock = end === 1 && !unclosed;
     if ((byName === 'screen-spec.md' || byName === 'surface-spec.md') && ((parseError && !emptyBlock) || unclosed)) {
       fail(`${parts.join('/')}: frontmatter does not parse (${parseError || 'not closed'}) to check owner declarations`);
     }
