@@ -94,7 +94,10 @@ export function readWorkConfig(root) {
 // not parse.
 function ownerMarkdownFiles(docsDir) {
   const out = [];
-  if (!fs.statSync(docsDir, { throwIfNoEntry: false })?.isDirectory()) return out;
+  let stat;
+  try { stat = fs.statSync(docsDir, { throwIfNoEntry: false }); }
+  catch (error) { fail(`${docsDir}: cannot inspect (${error.code || error.message}) to check owner declarations`); }
+  if (!stat?.isDirectory()) return out;
   const stack = [docsDir];
   while (stack.length) {
     const dir = stack.pop();
@@ -122,10 +125,13 @@ export function declaredWorkOwners(docsDir) {
     try { raw = fs.readFileSync(file, 'utf8'); }
     catch (error) { fail(`${parts.join('/')}: cannot read (${error.code || error.message}) to check owner declarations`); }
     const { data, hasFrontmatter, parseError } = splitFrontmatter(raw);
-    // The frontmatter block as splitFrontmatter delimits it.
-    const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/.exec(raw.replace(/^\uFEFF/, ''))?.[1] ?? '';
-    if (parseError && frontmatter.includes('work_execution')) {
-      fail(`${parts.join('/')}: frontmatter does not parse (${parseError}) to check owner declarations`);
+    // The frontmatter block as splitFrontmatter delimits it; one opened but never closed
+    // runs to the end of the file.
+    const text = raw.replace(/^\uFEFF/, '');
+    const unclosed = !hasFrontmatter && /^---\r?\n/.test(text);
+    const frontmatter = unclosed ? text : /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1] ?? '';
+    if ((parseError || unclosed) && frontmatter.includes('work_execution')) {
+      fail(`${parts.join('/')}: frontmatter does not parse (${parseError || 'not closed'}) to check owner declarations`);
     }
     if (!hasFrontmatter || parseError || !mapping(data) || !Object.hasOwn(data, 'work_execution')) continue;
     const byName = parts[0] === 'domains' ? parts.at(-1) : null;

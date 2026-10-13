@@ -10,7 +10,7 @@ import {
   yamlStringify,
 } from './util.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
-import { WORK_CONFIG_FILE, readWorkConfig, configuredLayout, adoptionPolicy } from './work-config.mjs';
+import { WORK_CONFIG_FILE, WorkConfigError, readWorkConfig, configuredLayout, adoptionPolicy } from './work-config.mjs';
 import { layerAppliesTo } from './layer-inventory.mjs';
 import { concretePathIssue } from './path-backstop.mjs';
 
@@ -111,9 +111,9 @@ export function assertSnapshotPath(
       if (!required && error?.code === 'ENOENT') {
         return { relative, absolute, exists: false };
       }
-      throw new VisualRefreshResourceError(
+      throw Object.assign(new VisualRefreshResourceError(
         `${label} snapshot 경로를 읽을 수 없음: ${relative} (${error?.code || error?.message || error})`,
-      );
+      ), { inspectionCode: error?.code || 'unknown' });
     }
     if (stat.isSymbolicLink()) {
       throw new VisualRefreshResourceError(
@@ -181,8 +181,18 @@ export function assertVisualAdoption(root, options = {}, bundledRoot = KIT_ROOT)
   const policy = lenient(() => (options.policy
     ? readSnapshotFile(root, options.policy, '--policy').value
     : parseMapping(readFileSafe(path.join(bundledRoot, PINNED_VISUAL_REFRESH_RESOURCES.policy.relative)) ?? '', 'bundled policy')));
-  const docs = lenient(() => assertSnapshotPath(root, canonicalSnapshotPath(options.docs || DEFAULTS.docs, '--docs'),
-    { label: '--docs', type: 'directory', required: false }).absolute);
+  // Docs that cannot be inspected could hide owner declarations, so they are refused;
+  // a docs path that is not canonical is a usage error the resource checks report.
+  const docsRelative = options.docs || DEFAULTS.docs;
+  let docs;
+  try {
+    docs = assertSnapshotPath(root, canonicalSnapshotPath(docsRelative, '--docs'), { label: '--docs', type: 'directory', required: false }).absolute;
+  } catch (error) {
+    if (!(error instanceof VisualRefreshResourceError)) throw error;
+    if (error.inspectionCode) {
+      throw new WorkConfigError(`--docs ${docsRelative}: cannot inspect (${error.inspectionCode}) to check owner declarations`);
+    }
+  }
   adoptionPolicy(policy ?? {}, config, docs);
 }
 

@@ -447,6 +447,20 @@ test('#257 visual readiness checks the adoption config before the first commit (
   assert.match(adopting.stderr, /WORK-CONFIG: the base policy must not declare work_execution/);
 });
 
+test('#257 visual readiness before the first commit refuses docs it cannot inspect (r9)', (t) => {
+  if (process.platform === 'win32' || process.getuid?.() === 0) { t.skip('requires POSIX permissions as a non-root user'); return; }
+  const root = createFixture(t, { explicitResources: true });
+  fs.rmSync(path.join(root, '.git'), { recursive: true, force: true });
+  git(root, 'init');
+  const parent = path.join(root, 'docs');
+  try {
+    fs.chmodSync(parent, 0o644);
+    const result = run(READINESS, [...visualArgs(root), ...explicitPolicy], root);
+    assert.equal(result.status, 2, result.stdout);
+    assert.match(result.stderr, /WORK-CONFIG: --docs docs\/frontend-workflow: cannot inspect \(EACCES\) to check owner declarations/);
+  } finally { fs.chmodSync(parent, 0o755); }
+});
+
 test('#257 a visual report refuses adoption before any other resource of its backstop fails (r4)', (t) => {
   const adoptInBase = (root) => fs.appendFileSync(path.join(root, 'config/policy.yaml'), `work_execution: ${JSON.stringify(ADOPTION)}\n`);
   const baseRefusal = /WORK-CONFIG: the base policy must not declare work_execution/;

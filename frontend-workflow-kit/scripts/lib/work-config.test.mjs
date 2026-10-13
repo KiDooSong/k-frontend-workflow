@@ -214,3 +214,25 @@ test('#257 frontmatter that mentions work_execution but does not parse is refuse
   p.put(spec, '---\nartifact_type: screen-spec\nscreen_id: [unclosed\n---\n\n# Doc\n\nwork_execution\n\n---\n');
   assert.equal(adoptionPolicy(base(), null, p.docsDir).work_execution, undefined);
 });
+
+test('#257 frontmatter that is opened but never closed is refused when it mentions work_execution (r9)', (t) => {
+  const p = project(t);
+  const spec = `${DOCS}/domains/result/screens/result-001/screen-spec.md`;
+  p.put(spec, '---\nartifact_type: screen-spec\nscreen_id: RESULT-001\nwork_execution:\n  version: 1\n');
+  assert.throws(() => adoptionPolicy(base(), null, p.docsDir), (error) => error instanceof WorkConfigError &&
+    /domains\/result\/screens\/result-001\/screen-spec\.md: frontmatter does not parse \(not closed\)/.test(error.message));
+  p.put(spec, '---\nartifact_type: screen-spec\nscreen_id: RESULT-001\n');
+  assert.equal(adoptionPolicy(base(), null, p.docsDir).work_execution, undefined);
+});
+
+test('#257 a docs directory that cannot be inspected is a configuration error (r9)', (t) => {
+  if (process.platform === 'win32' || process.getuid?.() === 0) { t.skip('requires POSIX permissions as a non-root user'); return; }
+  const p = project(t);
+  const parent = path.dirname(p.docsDir);
+  try {
+    // Readable but not searchable: the docs directory itself cannot be inspected.
+    fs.chmodSync(parent, 0o644);
+    assert.throws(() => adoptionPolicy(base(), null, p.docsDir), (error) => error instanceof WorkConfigError &&
+      /: cannot inspect \(EACCES\) to check owner declarations/.test(error.message));
+  } finally { fs.chmodSync(parent, 0o755); }
+});
