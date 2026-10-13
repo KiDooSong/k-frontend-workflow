@@ -250,6 +250,21 @@ test('#257 an owner document with an empty frontmatter block is closed, not refu
   assert.equal(adoptionPolicy(base(), null, p.docsDir).work_execution, undefined);
 });
 
+test('#257 an empty frontmatter block stays empty when the body has a --- rule (r14)', (t) => {
+  const p = project(t);
+  // splitFrontmatter would close at the body rule and parse the table as YAML.
+  p.put(`${DOCS}/domains/result/screens/result-001/screen-spec.md`,
+    '---\n---\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n---\n\nMore.\n');
+  assert.equal(adoptionPolicy(base(), null, p.docsDir).work_execution, undefined);
+});
+
+test('#257 a declaration the readers parse after an empty block still counts (r14)', (t) => {
+  const p = project(t);
+  // The same reading gives the owner readers a work_execution mapping.
+  p.put(`${DOCS}/domains/result/screens/result-001/screen-spec.md`, '---\n---\nwork_execution:\n  units: []\n---\n\n# Doc\n');
+  assert.deepEqual(declaredWorkOwners(p.docsDir), ['screen:domains/result/screens/result-001/screen-spec.md']);
+});
+
 test('#257 an overlay whose work_execution paths do not validate is a configuration error (r11)', (t) => {
   const p = project(t);
   p.put(WORK_CONFIG_FILE, 'version: 1\npolicy_overlay: config/adoption.yaml\n');

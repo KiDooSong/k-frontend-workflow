@@ -132,10 +132,12 @@ export function declaredWorkOwners(docsDir) {
     const { data, hasFrontmatter, parseError } = splitFrontmatter(raw);
     const byName = parts[0] === 'domains' ? parts.at(-1) : null;
     // Opened but with no closing --- line; an empty block (---, ---) is closed although
-    // splitFrontmatter reads no frontmatter from it.
+    // splitFrontmatter reads no frontmatter from it. Its parse error comes from body text
+    // read up to a later --- line, which hides nothing the empty block could declare.
     const text = raw.replace(/^\uFEFF/, '');
     const unclosed = !hasFrontmatter && /^---\r?\n/.test(text) && !/^---\r?\n(?:[\s\S]*?\r?\n)?---[ \t]*(?:\r?\n|$)/.test(text);
-    if ((byName === 'screen-spec.md' || byName === 'surface-spec.md') && (parseError || unclosed)) {
+    const emptyBlock = /^---\r?\n---[ \t]*(?:\r?\n|$)/.test(text);
+    if ((byName === 'screen-spec.md' || byName === 'surface-spec.md') && ((parseError && !emptyBlock) || unclosed)) {
       fail(`${parts.join('/')}: frontmatter does not parse (${parseError || 'not closed'}) to check owner declarations`);
     }
     if (!hasFrontmatter || parseError || !mapping(data) || !Object.hasOwn(data, 'work_execution')) continue;
