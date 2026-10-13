@@ -13,6 +13,7 @@ export function captureWorkflowJson(script, args, {
   cwd = process.cwd(),
   maxBytes = WORKFLOW_JSON_MAX_BYTES,
   timeout = WORKFLOW_JSON_TIMEOUT_MS,
+  env = process.env,
 } = {}) {
   const errorResult = (code, message, extra = {}) => ({
     code: 2,
@@ -34,6 +35,7 @@ export function captureWorkflowJson(script, args, {
     descriptors.push(fs.openSync(diagnostic, 'wx', 0o600));
     const child = spawnSync(process.execPath, [script, ...args], {
       cwd,
+      env,
       stdio: ['ignore', descriptors[0], descriptors[1]],
       timeout,
       killSignal: 'SIGKILL',

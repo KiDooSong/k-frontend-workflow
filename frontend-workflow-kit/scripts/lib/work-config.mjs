@@ -6,6 +6,7 @@
 // policy that declares work_execution, or owner documents that declare it without a
 // configured overlay, are refused rather than judged.
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { splitFrontmatter } from './util.mjs';
 import { ArtifactPathError, canonicalRepositoryPath } from './artifact-path.mjs';
@@ -191,10 +192,23 @@ export function legacyProjectRoot(docsDir) {
     ? path.dirname(path.dirname(docs)) : process.cwd();
 }
 
-// The configuration refusal a child CLI reported (its stderr), or null. An entry that
-// collects a child's result as evidence must not turn that refusal into a success.
-export function workConfigRefusal(text) {
-  return String(text || '').split('\n').find((line) => line.includes('WORK-CONFIG:'))?.trim() || null;
+// A child CLI marks its own configuration refusal with a token its parent passes in
+// this variable (util.mjs runCli and the visual CLIs write the line), so text an
+// error merely echoes, such as a ref name, is never taken for a refusal.
+export const REFUSAL_TOKEN_ENV = 'FRONTEND_WORKFLOW_REFUSAL_TOKEN';
+export const newRefusalToken = () => crypto.randomBytes(16).toString('hex');
+export function markWorkConfigRefusal(message) {
+  const token = process.env[REFUSAL_TOKEN_ENV];
+  if (token) process.stderr.write(`${token} ${message}\n`);
+}
+
+// The configuration refusal a child CLI marked with `token` on stderr, or null. An
+// entry that collects a child's result as evidence must not turn that refusal into a
+// success.
+export function workConfigRefusal(text, token) {
+  if (typeof token !== 'string' || !token) return null;
+  const prefix = `${token} `;
+  return String(text || '').split('\n').find((line) => line.startsWith(prefix))?.slice(prefix.length).trim() || null;
 }
 
 // Entries that read the live tree (legacy readiness/forbidden-paths, packet, report):

@@ -632,6 +632,19 @@ test('#257 a visual report refuses a configuration its backstop refuses (r2)', (
   assert.match(report.stderr, /WORK-CONFIG: frontend-workflow\.config\.yaml: version 1 required/);
 });
 
+test('#257 a visual report takes only its backstop\'s own refusal for one, not text an error echoes (r12)', (t) => {
+  const root = createFixture(t);
+  const packetPath = path.join(root, 'tmp', 'work-packet.md');
+  const packet = run(PACKET, ['--screen', SCREEN_ID, '--requested-mode', 'api-integrated-ui', '--intent', 'visual-refresh',
+    '--input', INPUT_ID, '--path', SCREEN_PATH, '--root', root, '--out', packetPath, '--json'], root);
+  assert.equal(packet.status, 0, packet.stderr || packet.stdout);
+  // The backstop fails on a range that names no commit and echoes it; that is evidence, as before.
+  const report = run(REPORT, ['--packet', packetPath, '--intent', 'visual-refresh', '--input', INPUT_ID, '--path', SCREEN_PATH,
+    '--root', root, '--range', 'WORK-CONFIG:..HEAD', '--json'], root);
+  assert.equal(report.status, 0, report.stderr || report.stdout);
+  assert.equal(JSON.parse(report.stdout).forbidden.status, 'error', report.stdout);
+});
+
 test('#257 a direct visual evaluation protects the authority files the config names (r2)', (t) => {
   const root = createFixture(t, { explicitResources: true });
   write(root, 'config/adoption.yaml', `work_execution: ${JSON.stringify({ ...ADOPTION, owners: [] })}\n`);

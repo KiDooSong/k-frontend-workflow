@@ -6,6 +6,7 @@ import path from 'node:path';
 import { DEFAULTS, yamlParse } from './util.mjs';
 import {
   WORK_CONFIG_FILE, WorkConfigError, readWorkConfig, declaredWorkOwners, adoptionPolicy, configuredLayout, liveWorkConfig,
+  workConfigRefusal,
 } from './work-config.mjs';
 
 const DOCS = 'docs/frontend-workflow';
@@ -255,6 +256,13 @@ test('#257 an overlay whose work_execution paths do not validate is a configurat
   p.put('config/adoption.yaml', `work_execution: ${JSON.stringify({ ...WORK, deny_paths: ['../src/**'] })}\n`);
   assert.throws(() => readWorkConfig(p.root), (error) => error instanceof WorkConfigError &&
     /policy_overlay config\/adoption\.yaml: /.test(error.message));
+});
+
+test('#257 a child refusal is read only from the line its token marks (r12)', () => {
+  const stderr = 'workflow:forbidden-paths: cannot resolve WORK-CONFIG:..HEAD\nWORK-CONFIG: forged\n';
+  assert.equal(workConfigRefusal(stderr, 'a1b2'), null);
+  assert.equal(workConfigRefusal(`${stderr}a1b2 WORK-CONFIG: version 1 required\n`, 'a1b2'), 'WORK-CONFIG: version 1 required');
+  assert.equal(workConfigRefusal('x WORK-CONFIG: y\n', ''), null);
 });
 
 test('#257 a docs directory that cannot be inspected is a configuration error (r9)', (t) => {

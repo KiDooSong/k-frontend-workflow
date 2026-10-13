@@ -4,7 +4,7 @@ import { DEFAULTS, parseArgs, yamlStringify } from './util.mjs';
 import { enforceCliFlagContract } from './cli-args.mjs';
 import { normalizeVisualAuthorityTuple } from './visual-refresh-boundary-paths.mjs';
 import { ArtifactPathError } from './artifact-path.mjs';
-import { WORK_CONFIG_FILE, WorkConfigError } from './work-config.mjs';
+import { WORK_CONFIG_FILE, WorkConfigError, markWorkConfigRefusal } from './work-config.mjs';
 import { visualChangedRecords } from './visual-refresh-records.mjs';
 import { bindVisualGitScreenIdentity } from './visual-refresh-git-objects.mjs';
 import {
@@ -261,6 +261,7 @@ export function runVisualCliSafely(fn, toolName) {
       error instanceof VisualRefreshResourceError || error instanceof ArtifactPathError || error instanceof WorkConfigError;
     const message = known ? error.message : `${error?.name || 'Error'}: ${error?.message || String(error)}`;
     process.stderr.write(`${toolName}: ${message}\n`);
+    if (error instanceof WorkConfigError) markWorkConfigRefusal(error.message);
     process.exitCode = 2;
     return null;
   }

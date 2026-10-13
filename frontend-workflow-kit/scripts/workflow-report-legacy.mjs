@@ -24,7 +24,9 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { adoptionPolicy, legacyProjectRoot, liveWorkConfig, workConfigRefusal } from './lib/work-config.mjs';
+import {
+  REFUSAL_TOKEN_ENV, adoptionPolicy, legacyProjectRoot, liveWorkConfig, newRefusalToken, workConfigRefusal,
+} from './lib/work-config.mjs';
 import {
   parseArgs,
   DEFAULTS,
@@ -124,9 +126,9 @@ function relToCwd(p) {
 
 // 서브프로세스를 throw 없이 실행해 { code, stdout, stderr } 로 정규화한다.
 // (validate/test 는 위반/실패 시 exit 1 로 throw 하지만 stdout 에 JSON 은 그대로 있다 → 복구한다.)
-function runCapture(scriptPath, args) {
+function runCapture(scriptPath, args, env = process.env) {
   try {
-    const stdout = execFileSync(process.execPath, [scriptPath, ...args], { encoding: 'utf8' });
+    const stdout = execFileSync(process.execPath, [scriptPath, ...args], { encoding: 'utf8', env });
     return { code: 0, stdout, stderr: '' };
   } catch (e) {
     return {
@@ -187,7 +189,12 @@ function collectForbidden(diffFile, docs, root, layout) {
   if (root) args.push('--root', root);
   if (layout) args.push('--layout', layout);
   const invocation = invocationLabel(FORBIDDEN_SCRIPT, args);
-  const r = runCapture(FORBIDDEN_SCRIPT, args);
+  // #257: a configuration refusal of forbidden-paths is the report's refusal too, never
+  //   evidence (exit 2). Only the line it marks with this run's token counts as one.
+  const token = newRefusalToken();
+  const r = runCapture(FORBIDDEN_SCRIPT, args, { ...process.env, [REFUSAL_TOKEN_ENV]: token });
+  const refusal = r.code !== 0 ? workConfigRefusal(r.stderr, token) : null;
+  if (refusal) fail(refusal);
   if (r.stdout.trim()) {
     try {
       const j = JSON.parse(r.stdout);
@@ -400,9 +407,6 @@ function main() {
   const layoutResolved = work.layout ? path.resolve(work.layout) : null;
   const validate = collectValidate(docs, src, layoutResolved);
   const forbidden = collectForbidden(diffResolved, docs, projectRoot || undefined, layoutResolved);
-  // leaf 가 설정·채택 때문에 판정을 거부했으면 evidence 로 삼키지 않고 report 도 거부한다(exit 2).
-  const refusal = forbidden.status === 'error' ? workConfigRefusal(forbidden.errorText) : null;
-  if (refusal) fail(refusal);
   const idempotency = collectTests(skipTests);
   const checkgen = collectCheckGenerated(docs, src, layoutResolved);
 
