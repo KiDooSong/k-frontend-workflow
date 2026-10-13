@@ -46,8 +46,12 @@ function gitOutput(args, cwd) {
 }
 
 // Tracked consumer files (outside the vendored kit) whose policy YAML or Markdown
-// frontmatter still declares a live scoped-work key. A file that mentions a key
-// but cannot be parsed is reported too: refusing is the safe side of doubt.
+// frontmatter still declares a live scoped-work key. Keys are read from the parsed
+// document, so an escaped spelling counts. A file that mentions a key but cannot be
+// parsed is reported too: refusing is the safe side of doubt. #257: a
+// frontend-workflow.config.yaml that names a policy_overlay is a marker itself, so
+// adoption counts whatever the overlay file is called or whether Git tracks it.
+const WORK_CONFIG_NAME = 'frontend-workflow.config.yaml';
 export function findAdoptionMarkers({ consumerRoot, currentDir }) {
   const root = consumerRoot ? path.resolve(consumerRoot) : null;
   if (!root) return { consumer_root: null, inspected: false, markers: [] };
@@ -61,7 +65,8 @@ export function findAdoptionMarkers({ consumerRoot, currentDir }) {
     if (!markdown && !yaml) continue;
     let text;
     try { text = fs.readFileSync(path.join(root, rel), 'utf8'); } catch { continue; }
-    if (!ADOPTION_KEYS.some((key) => text.includes(key))) continue;
+    const config = path.posix.basename(rel) === WORK_CONFIG_NAME;
+    const watched = config ? ['policy_overlay'] : ADOPTION_KEYS;
     let data, parsed = true;
     try {
       if (markdown) {
@@ -70,8 +75,10 @@ export function findAdoptionMarkers({ consumerRoot, currentDir }) {
         data = front.hasFrontmatter ? front.data : null;
       } else data = yamlParse(text);
     } catch { parsed = false; }
-    const keys = data && typeof data === 'object' && !Array.isArray(data) ? ADOPTION_KEYS.filter((key) => Object.hasOwn(data, key)) : [];
-    if (keys.length || !parsed) markers.push({ path: rel, keys, ...(parsed ? {} : { unparsed: true }) });
+    const keys = data && typeof data === 'object' && !Array.isArray(data) ? watched.filter((key) => Object.hasOwn(data, key)) : [];
+    if (keys.length || (!parsed && watched.some((key) => text.includes(key)))) {
+      markers.push({ path: rel, keys, ...(parsed ? {} : { unparsed: true }) });
+    }
   }
   return { consumer_root: root, inspected: true, markers };
 }

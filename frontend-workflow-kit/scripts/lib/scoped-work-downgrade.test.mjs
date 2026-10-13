@@ -100,8 +100,24 @@ test('#257: a payload that predates the adoption config cannot enforce the overl
   s.git('add', '-A'); s.git('commit', '-qm', 'adoption overlay');
   const plan = buildPlan({ currentDir: s.currentDir, nextDir: s.nextDir });
   assert.equal(plan.adoption.next_enforces_adoption, false); assert.equal(plan.adoption.downgrade_blocked, true);
-  assert.deepEqual(plan.adoption.markers, [{ path: 'config/adoption.yaml', keys: ['work_execution'] }]);
+  assert.deepEqual(plan.adoption.markers, [{ path: 'config/adoption.yaml', keys: ['work_execution'] },
+    { path: 'frontend-workflow.config.yaml', keys: ['policy_overlay'] }]);
   const apply = s.cli('--apply');
-  assert.equal(apply.status, 2); assert.match(apply.stderr, /automatic apply refused: live scoped-work adoption markers remain \(config\/adoption\.yaml\)/);
+  assert.equal(apply.status, 2);
+  assert.match(apply.stderr, /automatic apply refused: live scoped-work adoption markers remain \(config\/adoption\.yaml, frontend-workflow\.config\.yaml\)/);
   assert.equal(fs.readFileSync(path.join(s.currentDir, 'runtime.mjs'), 'utf8'), 'A');
+});
+
+test('#257 the config that names an overlay is a marker, whatever the overlay file is called, and escaped keys count (r13)', (t) => {
+  const s = scenario(t, { guard: 'marker-only', marker: false });
+  put(s.consumer, 'config/adoption.json', JSON.stringify({ work_execution: { version: 1, owners: ['screen:RESULT-001'] } }));
+  put(s.consumer, 'frontend-workflow.config.yaml', 'version: 1\npolicy_overlay: config/adoption.json\n');
+  put(s.consumer, 'docs/screen-spec.md', '---\nartifact_type: screen-spec\n"work\\u005fexecution": {version: 1, units: []}\n---\n# Screen\n');
+  // A config that sets only the layout is not adoption.
+  put(s.consumer, 'apps/web/frontend-workflow.config.yaml', 'version: 1\nlayout: config/layout.yaml\n');
+  s.git('add', '-A'); s.git('commit', '-qm', 'json overlay');
+  const plan = buildPlan({ currentDir: s.currentDir, nextDir: s.nextDir });
+  assert.equal(plan.adoption.downgrade_blocked, true);
+  assert.deepEqual(plan.adoption.markers, [{ path: 'docs/screen-spec.md', keys: ['work_execution'] },
+    { path: 'frontend-workflow.config.yaml', keys: ['policy_overlay'] }]);
 });
