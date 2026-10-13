@@ -50,8 +50,9 @@ behavior.
    forbidden-paths, packet, run and report, with or without `--work`), visual-refresh
    and `workflow:binding-status` read this config by default. Each applies the overlay
    over the base policy it selected (the bundled copy or `--policy`). A report also
-   refuses when the forbidden-paths run it collects refuses the config. Why one
-   config file:
+   refuses when the forbidden-paths run it collects refuses the config; that run
+   marks its refusal with a token the report passes for that run, so text an error
+   merely echoes (a ref name, a path) is never taken for one. Why one config file:
 
    - The vendored policy stays byte-identical, so its visual-refresh pin and the
      vendored-kit upgrade keep working. Editing the vendored copy would break the

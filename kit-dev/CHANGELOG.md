@@ -32,7 +32,9 @@
   - packet 은 `--readiness` 로 판정을 건너뛸 때도 자기가 읽는 base policy 와 docs 로 같은 검사를 한다(리뷰 r1).
     visual packet·run 의 `--layout` 은 다른 visual resource 처럼 `--root` 기준이다.
   - legacy report 는 absorbed packet 으로 일찍 끝나기 전에, leaf 가 쓰는 번들 policy 와 docs 로 같은 검사를 한다.
-    report(legacy·visual)는 모은 forbidden-paths 가 설정을 거부하면 evidence 로 삼키지 않고 exit 2 다(리뷰 r2).
+    report(legacy·visual)는 모은 forbidden-paths 가 설정을 거부하면 evidence 로 삼키지 않고 exit 2 다(리뷰 r2). 그 거부는
+    report 가 실행마다 넘기는 토큰(`FRONTEND_WORKFLOW_REFUSAL_TOKEN`)으로 표시된 stderr 줄로만 알아보므로, 오류가 되풀이한
+    입력(ref 이름 등)의 `WORK-CONFIG:` 는 거부가 아니다(리뷰 r12).
   - `HEAD` 가 없어 판정하지 않는 visual readiness 도 작업 트리의 설정·base policy·owner 선언을 검사한다. `--policy` 없는
     visual report 는 backstop 의 번들 pin 검사보다 먼저 번들 policy 의 `work_execution` 을 거부한다(리뷰 r3).
   - visual-refresh 는 이 검사를 다른 resource(manifest·layout·ci 등)를 검사하거나 읽기 전에 한다(`assertVisualAdoption`).
