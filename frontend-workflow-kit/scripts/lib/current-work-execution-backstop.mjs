@@ -4,6 +4,7 @@ import { readinessPathAuthorization } from './path-backstop.mjs';
 import { readJson, normalizeWorkRequest, digest, hashBytes, ownerParts, byteCompare, canonicalJson } from './current-work-request.mjs';
 import { captureCurrentIndex, snapshotRecords } from './current-work-snapshot.mjs';
 import { captureCurrentWorktree, verifyCurrentAuthority } from './current-work-integrity.mjs';
+import { WORK_CONFIG_FILE } from './work-config.mjs';
 import {
   CurrentWorkExecutionError, REGULAR_MODES, AUTHORITY_BASENAMES, posix, stable, generatedOwner,
   screenDomain, effectiveOrder, exactSurfaceAuthorization,
@@ -105,7 +106,11 @@ export function evaluateCurrentGit(preflight, { staged = false } = {}) {
   const repositoryPath = (name) => context.projectPrefix ? `${context.projectPrefix}/${name}` : name;
   const docs = preflight.snapshot.resources.find((r) => r.kind === 'docs').path;
   const destination = staged ? captureCurrentIndex(context.repositoryRoot) : captureCurrentWorktree(context.repositoryRoot, preflight.snapshot.tree, {
-    extraFiles: preflight.snapshot.authority_read_set.filter((r) => r.source === 'project').map((r) => repositoryPath(r.path)),
+    // #257: the adoption config is looked for even where HEAD has none and Git ignores it,
+    // so creating it is an authority change. It adds no read-set record, which keeps an
+    // unadopted repository's preflight byte-compatible.
+    extraFiles: [...preflight.snapshot.authority_read_set.filter((r) => r.source === 'project').map((r) => repositoryPath(r.path)),
+      repositoryPath(WORK_CONFIG_FILE)],
     inputRoots: [repositoryPath(`${docs}/inputs`)],
     artifactRoots: preflight.snapshot.authority_read_set.filter(r => r.source === 'artifact-index').map(r => repositoryPath(r.path)),
   });

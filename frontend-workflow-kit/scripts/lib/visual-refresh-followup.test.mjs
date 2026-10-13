@@ -429,6 +429,50 @@ test('#257 forward readiness reads the worktree config, not the committed one', 
   assert.match(result.stderr, /WORK-CONFIG: owner documents declare work_execution \(screen:SHOP-HOME\)/);
 });
 
+test('#257 visual readiness checks the adoption config before the first commit (r3)', (t) => {
+  const root = createFixture(t, { explicitResources: true });
+  fs.rmSync(path.join(root, '.git'), { recursive: true, force: true });
+  git(root, 'init');
+  const unborn = run(READINESS, [...visualArgs(root), ...explicitPolicy], root);
+  assert.equal(unborn.status, 0, unborn.stderr || unborn.stdout);
+  assert.ok(JSON.parse(unborn.stdout).intent_authorization.reasons.some((entry) => entry.code === 'VR-GIT-001'), unborn.stdout);
+  write(root, 'frontend-workflow.config.yaml', 'version: 2\n');
+  const malformed = run(READINESS, [...visualArgs(root), ...explicitPolicy], root);
+  assert.equal(malformed.status, 2, malformed.stdout);
+  assert.match(malformed.stderr, /WORK-CONFIG: frontend-workflow\.config\.yaml: version 1 required/);
+  write(root, 'frontend-workflow.config.yaml', 'version: 1\n');
+  fs.appendFileSync(path.join(root, 'config/policy.yaml'), `work_execution: ${JSON.stringify(ADOPTION)}\n`);
+  const adopting = run(READINESS, [...visualArgs(root), ...explicitPolicy], root);
+  assert.equal(adopting.status, 2, adopting.stdout);
+  assert.match(adopting.stderr, /WORK-CONFIG: the base policy must not declare work_execution/);
+});
+
+// A copy of the kit whose bundled policy declares work_execution.
+function adoptingKit(t) {
+  const kit = tmpdir(t, 'visual-adoption-kit-');
+  for (const dir of ['scripts', 'policies', 'catalog', 'presets', 'schemas', 'templates']) {
+    fs.cpSync(path.join(KIT_ROOT, dir), path.join(kit, dir), { recursive: true, filter: (source) => !source.endsWith('.test.mjs') });
+  }
+  fs.copyFileSync(path.join(KIT_ROOT, 'package.json'), path.join(kit, 'package.json'));
+  fs.symlinkSync(path.join(KIT_ROOT, 'node_modules'), path.join(kit, 'node_modules'));
+  fs.appendFileSync(path.join(kit, 'policies/implementation-mode-policy.yaml'), `\nwork_execution: ${JSON.stringify(ADOPTION)}\n`);
+  return kit;
+}
+
+test('#257 a visual report refuses a bundled policy that adopts, whatever its backstop fails on first (r3)', (t) => {
+  const root = createFixture(t), kit = adoptingKit(t);
+  const packetPath = path.join(root, 'tmp', 'work-packet.md');
+  const packet = run(PACKET, ['--screen', SCREEN_ID, '--requested-mode', 'api-integrated-ui', '--intent', 'visual-refresh',
+    '--input', INPUT_ID, '--path', SCREEN_PATH, '--root', root, '--out', packetPath, '--json'], root);
+  assert.equal(packet.status, 0, packet.stderr || packet.stdout);
+  write(root, SCREEN_PATH, 'export const ShopScreen = () => "refreshed";\n');
+  git(root, 'add', SCREEN_PATH);
+  const report = run(path.join(kit, 'scripts', 'workflow-report.mjs'), ['--packet', packetPath, '--intent', 'visual-refresh',
+    '--input', INPUT_ID, '--path', SCREEN_PATH, '--root', root, '--staged', '--json'], root);
+  assert.equal(report.status, 2, report.stdout);
+  assert.match(report.stderr, /WORK-CONFIG: the base policy must not declare work_execution/);
+});
+
 test('#257 forward readiness reads the worktree overlay the config names', (t) => {
   const root = createFixture(t, { explicitResources: true });
   adoptShop(root);

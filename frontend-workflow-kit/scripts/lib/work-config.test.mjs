@@ -150,3 +150,17 @@ test('#257 an unreadable config or overlay fails as a configuration error (r1)',
       (error) => error instanceof WorkConfigError && /frontend-workflow\.config\.yaml: cannot read \(EACCES\)/.test(error.message));
   } finally { fs.chmodSync(overlay, 0o644); fs.chmodSync(config, 0o644); }
 });
+
+test('#257 a configured layout that cannot be inspected fails as a configuration error (r3)', (t) => {
+  if (process.platform === 'win32' || process.getuid?.() === 0) { t.skip('requires POSIX permissions as a non-root user'); return; }
+  const p = project(t);
+  p.put('config/deep/layout.yaml', 'preset: expo-feature\n');
+  p.put(WORK_CONFIG_FILE, 'version: 1\nlayout: config/deep/layout.yaml\n');
+  const dir = path.join(p.root, 'config');
+  try {
+    // Readable but not searchable: listing works, inspecting an entry does not.
+    fs.chmodSync(dir, 0o644);
+    assert.throws(() => readWorkConfig(p.root),
+      (error) => error instanceof WorkConfigError && /frontend-workflow\.config\.yaml layout: cannot inspect \(EACCES\)/.test(error.message));
+  } finally { fs.chmodSync(dir, 0o755); }
+});

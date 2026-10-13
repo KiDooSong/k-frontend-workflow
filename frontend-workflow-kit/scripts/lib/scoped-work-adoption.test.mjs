@@ -288,6 +288,22 @@ test('#257 the config and its overlay are authority files of a work run', (t) =>
   assert.ok(violations.some((entry) => entry.code === 'CW-GIT-AUTHORITY-CHANGED' && entry.path === WORK_CONFIG_FILE), JSON.stringify(violations));
 });
 
+test('#257 a work diff cannot create a config that Git ignores either (r3)', (t) => {
+  const plain = repository(t, { adopted: false, declareUnits: false });
+  plain.put('.gitignore', `${WORK_CONFIG_FILE}\n`);
+  git(plain.root, 'add', '.gitignore'); git(plain.root, 'commit', '-qm', 'ignore the config');
+  const preflight = prepareCurrentWork({ work: currentRequest(plain, [HOOK]), root: plain.root, docs: DOCS, src: 'src',
+    policy: '.kit/policy.yaml', manifest: '.kit/manifest.yaml', layout: '.kit/layout.yaml' });
+  t.after(() => cleanupCurrentWork(preflight));
+  assert.equal(preflight.ready, true, JSON.stringify(preflight.errors));
+  // An unadopted repository's read set stays as before; the backstop looks for the config anyway.
+  assert.equal(preflight.snapshot.authority_read_set.some((entry) => entry.path === WORK_CONFIG_FILE), false);
+  plain.put(HOOK, 'export const useResult = () => null;\n');
+  plain.put(WORK_CONFIG_FILE, 'version: 1\npolicy_overlay: .kit/adoption.yaml\n');
+  const violations = evaluateCurrentGit(preflight).violations;
+  assert.ok(violations.some((entry) => entry.code === 'CW-GIT-AUTHORITY-CHANGED' && entry.path === WORK_CONFIG_FILE), JSON.stringify(violations));
+});
+
 test('#257 packet and report resolve the configured layout and hand it to every leaf', (t) => {
   const r = repository(t);
   const layout = path.join(r.root, '.kit/layout.yaml');

@@ -77,6 +77,7 @@ export function readWorkConfig(root) {
     try { canonicalRepositoryPath(root, value.layout, { label: `${WORK_CONFIG_FILE} layout`, required: true, type: 'file' }); }
     catch (error) {
       if (error instanceof ArtifactPathError) fail(error.message.replace('required repository path is missing', 'missing'));
+      if (error?.code) fail(`${WORK_CONFIG_FILE} layout: cannot inspect (${error.code})`);
       throw error;
     }
   }
@@ -108,11 +109,16 @@ export function assertAdoptionSource(config, docsDir) {
   }
 }
 
-// The policy every judgment reads: the base policy with the configured overlay.
-export function adoptionPolicy(policy, config, docsDir) {
+// Adoption lives only in the overlay; a base policy (bundled or --policy) never adopts.
+export function assertBasePolicy(policy) {
   if (mapping(policy) && Object.hasOwn(policy, 'work_execution')) {
     fail(`the base policy must not declare work_execution; move it to the policy_overlay named by ${WORK_CONFIG_FILE}`);
   }
+}
+
+// The policy every judgment reads: the base policy with the configured overlay.
+export function adoptionPolicy(policy, config, docsDir) {
+  assertBasePolicy(policy);
   assertAdoptionSource(config, docsDir);
   return config?.policy_overlay ? { ...policy, work_execution: config.policy_overlay.work_execution } : policy;
 }
