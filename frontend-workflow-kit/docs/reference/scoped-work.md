@@ -72,8 +72,8 @@ behavior.
      ScreenSpec or shared-surface-spec by `artifact_type`, or by the file name
      `workflow:state` reads it under (`domains/**/screen-spec.md`, `surface-spec.md`).
      What could hide a declaration is refused too: a docs directory that cannot be
-     listed, a docs Markdown file that cannot be read, and frontmatter that mentions
-     `work_execution` but does not parse;
+     inspected or listed, a docs Markdown file that cannot be read, and frontmatter
+     that mentions `work_execution` but does not parse or is never closed;
    - an explicit `--layout` that names a different file from the config `layout`.
      The same file is accepted; without a config `layout`, `--layout` works as
      before.
