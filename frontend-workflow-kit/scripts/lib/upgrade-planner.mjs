@@ -66,7 +66,7 @@ export function findAdoptionMarkers({ consumerRoot, currentDir }) {
     let text;
     try { text = fs.readFileSync(path.join(root, rel), 'utf8'); } catch { continue; }
     const config = path.posix.basename(rel) === WORK_CONFIG_NAME;
-    const watched = config ? ['policy_overlay'] : ADOPTION_KEYS;
+    const watched = config ? [...ADOPTION_KEYS, 'policy_overlay'] : ADOPTION_KEYS;
     let data, parsed = true;
     try {
       if (markdown) {

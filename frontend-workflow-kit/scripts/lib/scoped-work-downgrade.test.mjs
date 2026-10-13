@@ -121,3 +121,15 @@ test('#257 the config that names an overlay is a marker, whatever the overlay fi
   assert.deepEqual(plan.adoption.markers, [{ path: 'docs/screen-spec.md', keys: ['work_execution'] },
     { path: 'frontend-workflow.config.yaml', keys: ['policy_overlay'] }]);
 });
+
+test('#257 a config that holds adoption keys itself is still a marker (r18)', (t) => {
+  const s = scenario(t, { guard: 'marker-only', marker: false });
+  // A migration that left work_execution in the config, which the current kit refuses.
+  put(s.consumer, 'frontend-workflow.config.yaml', 'version: 1\nwork_execution: {version: 1, owners: []}\n');
+  put(s.consumer, 'apps/web/frontend-workflow.config.yaml', 'version: 1\nwork_execution: [unclosed\n');
+  s.git('add', '-A'); s.git('commit', '-qm', 'config keys');
+  const plan = buildPlan({ currentDir: s.currentDir, nextDir: s.nextDir });
+  assert.equal(plan.adoption.downgrade_blocked, true);
+  assert.deepEqual(plan.adoption.markers, [{ path: 'apps/web/frontend-workflow.config.yaml', keys: [], unparsed: true },
+    { path: 'frontend-workflow.config.yaml', keys: ['work_execution'] }]);
+});
