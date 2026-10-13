@@ -99,16 +99,19 @@ export function readWorkConfig(root) {
 // and workflow:state never judges it, so it is left as before.
 function ownerMarkdownFiles(docsDir) {
   const out = [];
-  const inspect = (file, name, follow = true) => {
-    try { return (follow ? fs.statSync : fs.lstatSync)(file, { throwIfNoEntry: false }); }
+  const inspect = (file, name) => {
+    try { return fs.statSync(file, { throwIfNoEntry: false, bigint: true }); }
     catch (error) { fail(`${name}: cannot inspect (${error.code || error.message}) to check owner declarations`); }
   };
   if (!inspect(docsDir, docsDir)?.isDirectory()) return out;
-  const stack = [docsDir];
-  // workflow:state reads owners from docs/domains (findFiles), following that root when it
-  // is a link but no link below it. The walk skips every link, so that root is added.
+  // workflow:state reads owners by the docs/domains path (findFiles): it follows that root
+  // when it is a link, though no link below it, and on a case-insensitive file system it
+  // reaches a directory named in another case. That path is walked as its own root, and
+  // the docs entry that is the same directory is not walked again under its own name.
   const domains = path.join(docsDir, 'domains');
-  if (inspect(domains, 'domains', false)?.isSymbolicLink() && inspect(domains, 'domains')?.isDirectory()) stack.push(domains);
+  const root = inspect(domains, 'domains');
+  const stack = root?.isDirectory() ? [docsDir, domains] : [docsDir];
+  const sameAsRoot = (stat) => stat?.dev === root.dev && stat?.ino === root.ino;
   while (stack.length) {
     const dir = stack.pop();
     let entries;
@@ -120,7 +123,9 @@ function ownerMarkdownFiles(docsDir) {
       const full = path.join(dir, entry.name);
       // As walkFiles: dot directories and node_modules are not docs; _meta holds no owners.
       if (entry.isDirectory()) {
-        if (entry.name !== 'node_modules' && !entry.name.startsWith('.') && entry.name !== '_meta') stack.push(full);
+        if (entry.name === 'node_modules' || entry.name.startsWith('.') || entry.name === '_meta') continue;
+        if (dir === docsDir && root?.isDirectory() && sameAsRoot(inspect(full, entry.name))) continue;
+        stack.push(full);
       } else if (entry.isFile() && entry.name.endsWith('.md')) out.push(full);
     }
   }

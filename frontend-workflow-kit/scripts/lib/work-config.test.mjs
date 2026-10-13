@@ -327,6 +327,17 @@ test('#257 a linked domains root that cannot be inspected is a configuration err
   } finally { fs.chmodSync(locked, 0o755); }
 });
 
+test('#257 owner discovery reads docs/domains by that path, whatever case the directory has (r18)', (t) => {
+  const p = project(t);
+  if (!fs.existsSync(path.join(p.docsDir, 'DOMAINS'))) { t.skip('requires a case-insensitive file system'); return; }
+  // workflow:state reads docs/domains by that path, which reaches a Domains directory here.
+  fs.renameSync(path.join(p.docsDir, 'domains'), path.join(p.docsDir, 'Domains'));
+  p.put(`${DOCS}/Domains/result/screens/result-001/screen-spec.md`, md({ screen_id: 'RESULT-001', work_execution: { version: 1, units: [] } }));
+  // An owner without an id is named by its path once, not under both names.
+  p.put(`${DOCS}/Domains/result/notes.md`, md({ artifact_type: 'screen-spec', work_execution: { version: 1, units: [] } }));
+  assert.deepEqual(declaredWorkOwners(p.docsDir), ['screen:RESULT-001', 'screen:domains/result/notes.md']);
+});
+
 test('#257 an overlay whose work_execution paths do not validate is a configuration error (r11)', (t) => {
   const p = project(t);
   p.put(WORK_CONFIG_FILE, 'version: 1\npolicy_overlay: config/adoption.yaml\n');
