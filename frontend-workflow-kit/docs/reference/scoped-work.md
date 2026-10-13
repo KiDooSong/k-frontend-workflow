@@ -78,7 +78,8 @@ behavior.
      document by name whose frontmatter does not parse or is never closed (whether
      it declares cannot be known). Only a bare `---` line closes it: a block that
      the reading ends at a `----` or `---x` line is not closed, even when a `---`
-     line follows. An empty block (two `---` lines) is closed and
+     line follows. The line right after the opening one never ends the block, so
+     there such a line is content. An empty block (two `---` lines) is closed and
      declares nothing, so a parse error from body text read up to a later `---`
      line is not refused; a `work_execution` that reading yields still counts, as
      it does for the owner readers. Another document with broken frontmatter has no
