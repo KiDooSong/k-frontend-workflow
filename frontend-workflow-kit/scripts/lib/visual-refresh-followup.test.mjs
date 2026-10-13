@@ -448,13 +448,22 @@ test('#257 visual readiness checks the adoption config before the first commit (
 });
 
 test('#257 a visual report refuses adoption before any other resource of its backstop fails (r4)', (t) => {
+  const adoptInBase = (root) => fs.appendFileSync(path.join(root, 'config/policy.yaml'), `work_execution: ${JSON.stringify(ADOPTION)}\n`);
+  const baseRefusal = /WORK-CONFIG: the base policy must not declare work_execution/;
+  // The manifest fails in resource preparation when it does not parse, and already in
+  // tuple normalization when it is gone.
+  const unparsable = (root) => write(root, 'config/manifest.yaml', 'artifacts: [unclosed\n');
+  const removed = (root) => fs.rmSync(path.join(root, 'config/manifest.yaml'));
   const cases = [
-    ['a base policy that adopts', (root) => fs.appendFileSync(path.join(root, 'config/policy.yaml'), `work_execution: ${JSON.stringify(ADOPTION)}\n`),
-      /WORK-CONFIG: the base policy must not declare work_execution/],
-    ['owner units without an overlay', (root) => adoptShop(root, { config: false, commit: false }),
+    ['a base policy that adopts', adoptInBase, unparsable, baseRefusal],
+    ['owner units without an overlay', (root) => adoptShop(root, { config: false, commit: false }), unparsable,
       /WORK-CONFIG: owner documents declare work_execution \(screen:SHOP-HOME\)/],
+    ['a base policy that adopts, the manifest removed', adoptInBase, removed, baseRefusal],
+    ['an explicit --layout that differs from the config, the manifest removed',
+      (root) => write(root, 'frontend-workflow.config.yaml', 'version: 1\nlayout: config/layout.yaml\n'), removed,
+      /WORK-CONFIG: --layout config\/policy\.yaml differs from frontend-workflow\.config\.yaml layout config\/layout\.yaml/, ['--layout', 'config/policy.yaml']],
   ];
-  for (const [name, adopt, refusal] of cases) {
+  for (const [name, adopt, breakManifest, refusal, extra = []] of cases) {
     const root = createFixture(t, { explicitResources: true });
     const packetPath = path.join(root, 'tmp', 'work-packet.md');
     const packet = run(PACKET, ['--screen', SCREEN_ID, '--requested-mode', 'api-integrated-ui', '--intent', 'visual-refresh', '--input', INPUT_ID,
@@ -462,14 +471,27 @@ test('#257 a visual report refuses adoption before any other resource of its bac
     assert.equal(packet.status, 0, packet.stderr || packet.stdout);
     // The staged destination misplaces adoption and breaks the manifest the backstop reads first.
     write(root, SCREEN_PATH, 'export const ShopScreen = () => "refreshed";\n');
-    write(root, 'config/manifest.yaml', 'artifacts: [unclosed\n');
+    breakManifest(root);
     adopt(root);
     git(root, 'add', '.');
     const report = run(REPORT, ['--packet', packetPath, '--intent', 'visual-refresh', '--input', INPUT_ID, '--path', SCREEN_PATH,
-      '--root', root, ...explicitPolicy, '--staged', '--json'], root);
+      '--root', root, ...explicitPolicy, ...extra, '--staged', '--json'], root);
     assert.equal(report.status, 2, `${name}: ${report.stdout}`);
     assert.match(report.stderr, refusal, name);
   }
+});
+
+test('#257 a direct visual evaluation refuses adoption before it reads the other resources (r4)', (t) => {
+  const root = createFixture(t, { explicitResources: true });
+  fs.appendFileSync(path.join(root, 'config/policy.yaml'), `work_execution: ${JSON.stringify(ADOPTION)}\n`);
+  write(root, 'config/manifest.yaml', 'artifacts: [unclosed\n');
+  git(root, 'add', '.'); git(root, 'commit', '-m', 'misplaced adoption');
+  const tree = git(root, 'rev-parse', 'HEAD^{tree}');
+  // No tuple normalization runs first; resource preparation itself checks adoption first.
+  assert.throws(() => evaluateVisualRefreshAuthority({ sourceRoot: root, destinationRoot: root, selectedScreen: SCREEN_ID, selectedInputId: INPUT_ID,
+    checkedPath: SCREEN_PATH, options: { policy: 'config/policy.yaml', manifest: 'config/manifest.yaml' },
+    snapshot: { source_tree: tree, destination_tree: tree, diff_kind: 'staged' } }),
+  (error) => error.name === 'WorkConfigError' && /the base policy must not declare work_execution/.test(error.message));
 });
 
 // A copy of the kit whose bundled policy declares work_execution.
@@ -496,6 +518,13 @@ test('#257 a visual report refuses a bundled policy that adopts, whatever its ba
     '--input', INPUT_ID, '--path', SCREEN_PATH, '--root', root, '--staged', '--json'], root);
   assert.equal(report.status, 2, report.stdout);
   assert.match(report.stderr, /WORK-CONFIG: the base policy must not declare work_execution/);
+});
+
+test('#257 visual readiness refuses a bundled policy that adopts as misplaced adoption, not only by its pin (r4)', (t) => {
+  const root = createFixture(t), kit = adoptingKit(t);
+  const readiness = run(path.join(kit, 'scripts', 'readiness.mjs'), visualArgs(root), root);
+  assert.equal(readiness.status, 2, readiness.stdout);
+  assert.match(readiness.stderr, /WORK-CONFIG: the base policy must not declare work_execution/);
 });
 
 test('#257 forward readiness reads the worktree overlay the config names', (t) => {
