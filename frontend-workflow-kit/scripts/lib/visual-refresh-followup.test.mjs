@@ -429,6 +429,28 @@ test('#257 forward readiness reads the worktree config, not the committed one', 
   assert.match(result.stderr, /WORK-CONFIG: owner documents declare work_execution \(screen:SHOP-HOME\)/);
 });
 
+test('#257 forward readiness reads the worktree overlay the config names', (t) => {
+  const root = createFixture(t, { explicitResources: true });
+  adoptShop(root);
+  write(root, 'config/adoption.yaml', `work_execution: ${JSON.stringify({ ...ADOPTION, owners: [] })}\n`);
+  git(root, 'add', '.'); git(root, 'commit', '-m', 'adopt nothing yet');
+  // Only the worktree overlay adopts the screen.
+  write(root, 'config/adoption.yaml', `work_execution: ${JSON.stringify(ADOPTION)}\n`);
+  const result = run(READINESS, [...visualArgs(root), ...explicitPolicy], root);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(JSON.parse(result.stdout).path_authorization.reason, /work-selection-required/, result.stdout);
+});
+
+test('#257 a configured overlay must stay outside the implementation roots, like an explicit resource', (t) => {
+  const root = createFixture(t, { explicitResources: true });
+  write(root, 'src/adoption.yaml', `work_execution: ${JSON.stringify({ ...ADOPTION, owners: [] })}\n`);
+  write(root, 'frontend-workflow.config.yaml', 'version: 1\npolicy_overlay: src/adoption.yaml\nlayout: config/layout.yaml\n');
+  git(root, 'add', '.'); git(root, 'commit', '-m', 'overlay under src');
+  const result = run(READINESS, [...visualArgs(root), ...explicitPolicy], root);
+  assert.equal(result.status, 2, result.stdout);
+  assert.match(result.stderr, /--policy_overlay authority resource는 implementation role\/layer root와 분리돼야 함: resource=src\/adoption\.yaml/);
+});
+
 test('#257 visual packet and run resolve --layout from --root, like every visual resource (r1)', (t) => {
   const root = createFixture(t, { explicitResources: true });
   write(root, 'config/adoption.yaml', `work_execution: ${JSON.stringify({ ...ADOPTION, owners: [] })}\n`);
