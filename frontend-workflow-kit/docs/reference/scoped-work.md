@@ -73,9 +73,11 @@ behavior.
      The same file is accepted; without a config `layout`, `--layout` works as
      before.
 
-   Every entry applies these checks before anything else can end the run. That
-   includes a visual-refresh readiness with no `HEAD` to judge, and a visual report
-   whose backstop would first fail the bundled policy's pin.
+   Every entry applies these checks before anything else can end the run.
+   Visual-refresh runs them before it validates or reads any other resource, also
+   when there is no `HEAD` to judge. A visual report checks the bundled policy before
+   its backstop runs. A report therefore never turns one of these refusals into
+   backstop error evidence.
 
    The config and the overlay are authority files. `--work` reads them from the
    committed `HEAD`, as it reads the policy. A `--work` or visual-refresh diff that

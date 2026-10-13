@@ -27,6 +27,8 @@
     report(legacy·visual)는 모은 forbidden-paths 가 설정을 거부하면 evidence 로 삼키지 않고 exit 2 다(리뷰 r2).
   - `HEAD` 가 없어 판정하지 않는 visual readiness 도 작업 트리의 설정·base policy·owner 선언을 검사한다. `--policy` 없는
     visual report 는 backstop 의 번들 pin 검사보다 먼저 번들 policy 의 `work_execution` 을 거부한다(리뷰 r3).
+  - visual-refresh 는 이 검사를 다른 resource(manifest·layout·ci 등)를 검사하거나 읽기 전에 한다(`assertVisualAdoption`).
+    그래서 다른 resource 오류가 채택 거부를 가려 report 가 이를 backstop 오류 evidence 로 바꾸지 않는다(리뷰 r4).
 - `--root` 가 없는 legacy 진입점(readiness·forbidden-paths·packet·report)은 `<root>/docs/frontend-workflow` docs 를
   담은 프로젝트를, 아니면 작업 디렉터리를 프로젝트 루트로 본다. report 가 monorepo diff 접두를 유도하는 방식과 같아서,
   다른 곳에서 실행해도 모든 진입점이 같은 설정을 읽는다(리뷰 r2).
