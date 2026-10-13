@@ -330,3 +330,35 @@ test('#257 legacy readiness and forbidden-paths judge with the configured layout
   assert.equal(forbidden.status, 0, forbidden.stderr);
   assert.deepEqual(JSON.parse(forbidden.stdout).violations.map((entry) => entry.file), ['src/remote/result/client.ts']);
 });
+
+test('#257 a packet from saved readiness and a legacy report still refuse misplaced adoption (r1)', (t) => {
+  const r = repository(t);
+  const saved = r.put('readiness.json', r.script('readiness.mjs', [...r.resources, '--screen', 'RESULT-001', '--json']).stdout);
+  const packetFile = path.join(r.root, 'packet.md');
+  const packetArgs = ['--docs', r.docsDir, '--manifest', '.kit/manifest.yaml', '--screen', 'RESULT-001',
+    '--requested-mode', 'rough-fixture-ui', '--readiness', saved, '--json'];
+  const ok = r.script('workflow-packet.mjs', [...packetArgs, '--policy', '.kit/policy.yaml', '--out', packetFile]);
+  assert.equal(ok.status, 0, ok.stderr);
+  r.put('.kit/inline-policy.yaml', `${fs.readFileSync(DEFAULTS.policy, 'utf8')}\n${fs.readFileSync(r.overlayFile, 'utf8')}`);
+  const inline = r.script('workflow-packet.mjs', [...packetArgs, '--policy', '.kit/inline-policy.yaml']);
+  assert.equal(inline.status, 2, inline.stdout); assert.match(inline.stderr, /WORK-CONFIG: the base policy must not declare work_execution/);
+  // The config is withdrawn while the owners still declare units.
+  fs.rmSync(path.join(r.root, WORK_CONFIG_FILE));
+  const refused = /WORK-CONFIG: owner documents declare work_execution/;
+  const packet = r.script('workflow-packet.mjs', [...packetArgs, '--policy', '.kit/policy.yaml']);
+  assert.equal(packet.status, 2, packet.stdout); assert.match(packet.stderr, refused);
+  for (const extra of [[], ['--diff', r.put('changes.txt', `M\t${HOOK}\n`)]]) {
+    const report = r.script('workflow-report.mjs', ['--packet', packetFile, '--docs', r.docsDir, '--skip-tests', '--json', ...extra]);
+    assert.equal(report.status, 2, report.stdout); assert.match(report.stderr, refused);
+  }
+});
+
+test('#257 an unreadable config is a configuration error, exit 2 (r1)', (t) => {
+  if (process.platform === 'win32' || process.getuid?.() === 0) { t.skip('requires POSIX permissions as a non-root user'); return; }
+  const r = repository(t), config = path.join(r.root, WORK_CONFIG_FILE);
+  fs.chmodSync(config, 0o000);
+  try {
+    const run = r.script('readiness.mjs', [...noPolicy(r), '--screen', 'RESULT-001', '--json']);
+    assert.equal(run.status, 2, run.stdout); assert.match(run.stderr, /WORK-CONFIG: frontend-workflow\.config\.yaml: cannot read \(EACCES\)/);
+  } finally { fs.chmodSync(config, 0o644); }
+});

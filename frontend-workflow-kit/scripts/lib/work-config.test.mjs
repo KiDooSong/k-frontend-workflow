@@ -135,3 +135,18 @@ test('#257 live entries resolve the configured layout from their root, and a mis
   assert.equal(liveWorkConfig(p.root, layout).layout, layout);
   assert.throws(() => liveWorkConfig(p.root, path.join(p.root, 'other.yaml')), /--layout other\.yaml differs/);
 });
+
+test('#257 an unreadable config or overlay fails as a configuration error (r1)', (t) => {
+  if (process.platform === 'win32' || process.getuid?.() === 0) { t.skip('requires POSIX permissions as a non-root user'); return; }
+  const p = project(t);
+  const config = p.put(WORK_CONFIG_FILE, 'version: 1\npolicy_overlay: config/adoption.yaml\n');
+  const overlay = p.put('config/adoption.yaml', `work_execution: ${JSON.stringify(WORK)}\n`);
+  try {
+    fs.chmodSync(overlay, 0o000);
+    assert.throws(() => readWorkConfig(p.root),
+      (error) => error instanceof WorkConfigError && /policy_overlay: cannot read \(EACCES\)/.test(error.message));
+    fs.chmodSync(overlay, 0o644); fs.chmodSync(config, 0o000);
+    assert.throws(() => readWorkConfig(p.root),
+      (error) => error instanceof WorkConfigError && /frontend-workflow\.config\.yaml: cannot read \(EACCES\)/.test(error.message));
+  } finally { fs.chmodSync(overlay, 0o644); fs.chmodSync(config, 0o644); }
+});

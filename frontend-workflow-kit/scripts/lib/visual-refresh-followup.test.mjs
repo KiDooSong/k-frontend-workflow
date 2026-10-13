@@ -427,3 +427,22 @@ test('#257 forward readiness reads the worktree config, not the committed one', 
   assert.equal(result.status, 2, result.stdout);
   assert.match(result.stderr, /WORK-CONFIG: owner documents declare work_execution \(screen:SHOP-HOME\)/);
 });
+
+test('#257 visual packet and run resolve --layout from --root, like every visual resource (r1)', (t) => {
+  const root = createFixture(t, { explicitResources: true });
+  write(root, 'config/adoption.yaml', `work_execution: ${JSON.stringify({ ...ADOPTION, owners: [] })}\n`);
+  write(root, 'frontend-workflow.config.yaml', 'version: 1\npolicy_overlay: config/adoption.yaml\nlayout: config/layout.yaml\n');
+  git(root, 'add', '.'); git(root, 'commit', '-m', 'adoption config');
+  const elsewhere = path.dirname(root);
+  const tuple = ['--screen', SCREEN_ID, '--requested-mode', 'api-integrated-ui', '--intent', 'visual-refresh', '--input', INPUT_ID,
+    '--path', SCREEN_PATH, '--root', root, ...explicitPolicy, '--json'];
+  const packet = run(PACKET, [...tuple, '--layout', 'config/layout.yaml'], elsewhere);
+  assert.equal(packet.status, 0, packet.stderr || packet.stdout);
+  assert.equal(JSON.parse(packet.stdout).visual_refresh.authority_applicable, true, packet.stdout);
+  const workflowRun = run(RUN, [...tuple, '--layout', 'config/layout.yaml'], elsewhere);
+  assert.equal(workflowRun.status, 0, workflowRun.stderr || workflowRun.stdout);
+  assert.equal(JSON.parse(workflowRun.stdout).state, 'HALT_READY_FOR_WORK', workflowRun.stdout);
+  const mismatch = run(PACKET, [...tuple, '--layout', 'config/policy.yaml'], elsewhere);
+  assert.equal(mismatch.status, 2, mismatch.stdout);
+  assert.match(mismatch.stderr, /WORK-CONFIG: --layout config\/policy\.yaml differs/);
+});

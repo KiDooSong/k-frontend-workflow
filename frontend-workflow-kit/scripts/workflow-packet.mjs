@@ -15,7 +15,7 @@ import {
   renderJsonEnvelope,
 } from './lib/workflow-packet.mjs';
 import { loadLayoutProfile } from './lib/layout-profile.mjs';
-import { liveWorkConfig } from './lib/work-config.mjs';
+import { adoptionPolicy, liveWorkConfig } from './lib/work-config.mjs';
 import {
   visualAuditFromReadiness, visualPreworkIssues, injectVisualAuditFrontmatter, visualStopPacket,
 } from './lib/visual-refresh-transport.mjs';
@@ -208,8 +208,10 @@ function main() {
   const rootResolved = visual ? resolveProjectRoot(rootFlag) : null;
   // #257: --root(visual) 또는 작업 디렉터리의 frontend-workflow.config.yaml 이 layout 기본값을 정한다.
   //   readiness 서브프로세스와 packet 자신이 같은 layout 을 보도록 해석한 경로를 명시로 넘긴다.
-  const work = liveWorkConfig(rootResolved || undefined, layoutFlag);
-  const configLayout = work.layout === layoutFlag ? null : work.layout;
+  //   visual 의 --layout 은 다른 visual resource 처럼 --root 기준이다.
+  const work = liveWorkConfig(rootResolved || undefined,
+    visual && layoutFlag ? path.join(rootResolved, ...visualRelative(layoutFlag, rootResolved).split('/')) : layoutFlag);
+  const configLayout = work.config?.layout ? work.layout : null;
   const docsVisual = visual && docsFlag ? visualRelative(docsFlag, rootResolved) : docsFlag;
   const srcVisual = visual && srcFlag ? visualRelative(srcFlag, rootResolved) : srcFlag;
   const policyVisual = visual && policyFlag ? visualRelative(policyFlag, rootResolved) : policyFlag;
@@ -220,6 +222,14 @@ function main() {
   const policyPath = visual && policyVisual
     ? path.join(rootResolved, ...policyVisual.split('/'))
     : policyFlag ? path.resolve(policyFlag) : DEFAULTS.policy;
+  // #257: packet 이 직접 읽는 base policy 와 docs 도 채택 검사를 받는다(--readiness 로 판정을 건너뛸 때 포함).
+  const docsForAdoption = visual ? path.join(rootResolved, ...(docsVisual || DEFAULTS.docs).split('/'))
+    : path.resolve(docsFlag || DEFAULTS.docs);
+  const policyRaw = readFileSafe(policyPath);
+  let basePolicy = {};
+  try { basePolicy = policyRaw == null ? {} : yamlParse(policyRaw) || {}; }
+  catch (e) { fail(`policy YAML 파싱 실패: ${toPosix(policyPath)} — ${e.message}`); }
+  adoptionPolicy(basePolicy, work.config, docsForAdoption);
   const manifestPath = visual && manifestVisual
     ? path.join(rootResolved, ...manifestVisual.split('/'))
     : manifestFlag ? path.resolve(manifestFlag) : DEFAULTS.manifest;

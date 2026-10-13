@@ -24,14 +24,16 @@ const mapping = (value) => value && typeof value === 'object' && !Array.isArray(
 
 // A canonical regular file under root: no symlink segment, no spelling alias.
 function readCanonical(root, relative, label, { required }) {
-  let file;
+  let file, raw;
   try { file = canonicalRepositoryPath(root, relative, { label, required, type: 'file' }); }
   catch (error) {
     if (error instanceof ArtifactPathError) fail(error.message.replace('required repository path is missing', 'missing'));
+    if (error?.code) fail(`${label}: cannot inspect (${error.code})`);
     throw error;
   }
   if (!file.exists) return null;
-  const raw = fs.readFileSync(file.absolute);
+  try { raw = fs.readFileSync(file.absolute); }
+  catch (error) { fail(`${label}: cannot read (${error.code || error.message})`); }
   if (raw.length > MAX_BYTES) fail(`${label}: exceeds 16 MiB input limit`);
   let value;
   try { value = decodeScopedYaml(new TextDecoder('utf-8', { fatal: true }).decode(raw), `${label}: YAML`); }
@@ -95,18 +97,24 @@ export function declaredWorkOwners(docsDir) {
   return [...owners].sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)));
 }
 
-// The policy every judgment reads: the base policy with the configured overlay.
-export function adoptionPolicy(policy, config, docsDir) {
-  if (mapping(policy) && Object.hasOwn(policy, 'work_execution')) {
-    fail(`the base policy must not declare work_execution; move it to the policy_overlay named by ${WORK_CONFIG_FILE}`);
-  }
-  if (config?.policy_overlay) return { ...policy, work_execution: config.policy_overlay.work_execution };
+// Owner documents that declare work_execution need the configured overlay; without
+// one they would be judged as unadopted. Entries that read no policy check only this.
+export function assertAdoptionSource(config, docsDir) {
+  if (config?.policy_overlay) return;
   const declared = typeof docsDir === 'string' ? declaredWorkOwners(docsDir) : [];
   if (declared.length) {
     fail(`owner documents declare work_execution (${declared.join(', ')}) but ${WORK_CONFIG_FILE} names no policy_overlay; ` +
       'refusing to judge them as unadopted');
   }
-  return policy;
+}
+
+// The policy every judgment reads: the base policy with the configured overlay.
+export function adoptionPolicy(policy, config, docsDir) {
+  if (mapping(policy) && Object.hasOwn(policy, 'work_execution')) {
+    fail(`the base policy must not declare work_execution; move it to the policy_overlay named by ${WORK_CONFIG_FILE}`);
+  }
+  assertAdoptionSource(config, docsDir);
+  return config?.policy_overlay ? { ...policy, work_execution: config.policy_overlay.work_execution } : policy;
 }
 
 // The layout path a run uses: the config's, unless an explicit --layout names

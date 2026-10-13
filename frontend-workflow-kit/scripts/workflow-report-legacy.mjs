@@ -24,7 +24,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { liveWorkConfig } from './lib/work-config.mjs';
+import { assertAdoptionSource, liveWorkConfig } from './lib/work-config.mjs';
 import {
   parseArgs,
   DEFAULTS,
@@ -388,6 +388,8 @@ function main() {
   //    #257: leaf forbidden-paths 와 같은 root(유도한 project root, 없으면 작업 디렉터리)의
   //    frontend-workflow.config.yaml layout 을 기본값으로 쓰고, 해석한 경로를 모든 leaf 에 명시로 넘긴다.
   const work = liveWorkConfig(projectRoot || undefined, layoutFlag);
+  // report 는 policy 를 읽지 않지만, overlay 없이 units 를 선언한 owner 는 판정하지 않는다.
+  assertAdoptionSource(work.config, path.resolve(docs));
   const layoutResolved = work.layout ? path.resolve(work.layout) : null;
   const validate = collectValidate(docs, src, layoutResolved);
   const forbidden = collectForbidden(diffResolved, docs, projectRoot || undefined, layoutResolved);
