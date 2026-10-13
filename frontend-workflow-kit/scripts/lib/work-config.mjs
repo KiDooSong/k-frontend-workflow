@@ -127,10 +127,26 @@ export function configuredLayout(config, explicitRelative) {
   return config.layout;
 }
 
+// The project root of an entry without --root: the directory that holds a
+// `<root>/docs/frontend-workflow` docs directory (as workflow:report infers it for its
+// monorepo diff prefix), otherwise the working directory. The default docs path gives
+// the working directory itself.
+export function legacyProjectRoot(docsDir) {
+  const docs = path.resolve(docsDir || 'docs/frontend-workflow');
+  return path.basename(docs) === 'frontend-workflow' && path.basename(path.dirname(docs)) === 'docs'
+    ? path.dirname(path.dirname(docs)) : process.cwd();
+}
+
+// The configuration refusal a child CLI reported (its stderr), or null. An entry that
+// collects a child's result as evidence must not turn that refusal into a success.
+export function workConfigRefusal(text) {
+  return String(text || '').split('\n').find((line) => line.includes('WORK-CONFIG:'))?.trim() || null;
+}
+
 // Entries that read the live tree (legacy readiness/forbidden-paths, packet, report):
-// the config sits at --root, or at the working directory when the entry has none, and
-// an explicit --layout is a path from the working directory. Returns the config and
-// the layout file to load (absolute), or the explicit value when no config layout.
+// the config sits at --root, or at legacyProjectRoot when the entry has none, and an
+// explicit --layout is a path from the working directory. Returns the config and the
+// layout file to load (absolute), or the explicit value when no config layout.
 export function liveWorkConfig(root, layoutFlag) {
   // A root that does not resolve holds no config; the entry reports its own root errors.
   let realRoot = path.resolve(root || '.');

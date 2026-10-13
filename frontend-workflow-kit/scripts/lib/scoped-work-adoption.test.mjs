@@ -362,3 +362,60 @@ test('#257 an unreadable config is a configuration error, exit 2 (r1)', (t) => {
     assert.equal(run.status, 2, run.stdout); assert.match(run.stderr, /WORK-CONFIG: frontend-workflow\.config\.yaml: cannot read \(EACCES\)/);
   } finally { fs.chmodSync(config, 0o644); }
 });
+
+// A kit copy whose bundled policy declares work_execution, as an in-place adopter would leave it.
+function adoptingKit(t, r) {
+  const kit = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'scoped-adoption-kit-')));
+  t.after(() => fs.rmSync(kit, { recursive: true, force: true }));
+  for (const dir of ['scripts', 'policies', 'catalog', 'presets', 'schemas', 'templates']) {
+    fs.cpSync(path.join(KIT_ROOT, dir), path.join(kit, dir), { recursive: true, filter: (source) => !source.endsWith('.test.mjs') });
+  }
+  fs.copyFileSync(path.join(KIT_ROOT, 'package.json'), path.join(kit, 'package.json'));
+  fs.symlinkSync(path.join(KIT_ROOT, 'node_modules'), path.join(kit, 'node_modules'));
+  fs.appendFileSync(path.join(kit, 'policies/implementation-mode-policy.yaml'), `\n${fs.readFileSync(r.overlayFile, 'utf8')}`);
+  return (name, args) => spawnSync(process.execPath, [path.join(kit, 'scripts', name), ...args], { cwd: r.root, encoding: 'utf8' });
+}
+
+test('#257 a bundled policy that adopts is refused by the legacy entries, report included (r2)', (t) => {
+  const r = repository(t), kit = adoptingKit(t, r);
+  const packetFile = path.join(r.root, 'packet.md');
+  const made = r.script('workflow-packet.mjs', ['--docs', r.docsDir, '--policy', '.kit/policy.yaml', '--manifest', '.kit/manifest.yaml',
+    '--screen', 'RESULT-001', '--requested-mode', 'rough-fixture-ui', '--out', packetFile, '--json']);
+  assert.equal(made.status, 0, made.stderr);
+  const refused = /WORK-CONFIG: the base policy must not declare work_execution/;
+  const runs = {
+    readiness: kit('readiness.mjs', [...noPolicy(r), '--screen', 'RESULT-001', '--json']),
+    report: kit('workflow-report.mjs', ['--packet', packetFile, '--docs', r.docsDir, '--skip-tests', '--json']),
+    'report --diff': kit('workflow-report.mjs', ['--packet', packetFile, '--docs', r.docsDir, '--diff', r.put('changes.txt', `M\t${HOOK}\n`), '--skip-tests', '--json']),
+  };
+  for (const [name, run] of Object.entries(runs)) { assert.equal(run.status, 2, `${name}: ${run.stdout}`); assert.match(run.stderr, refused, name); }
+});
+
+test('#257 a legacy report checks the config before an absorbed packet returns (r2)', (t) => {
+  const r = repository(t);
+  const packetFile = r.put('absorbed.md', ['---', 'readiness_applicable: false', 'screen_lifecycle: absorbed', 'readiness_mode: null',
+    'target_screen: RESULT-001', 'absorbed_into: RESULT-002', `readiness_source: "readiness.mjs --docs ${r.docsDir} --screen RESULT-001"`, '---', '', '# Absorbed', ''].join('\n'));
+  const accepted = r.script('workflow-report.mjs', ['--packet', packetFile, '--docs', r.docsDir, '--json']);
+  assert.equal(accepted.status, 0, accepted.stderr);
+  r.put(WORK_CONFIG_FILE, 'version: 2\n');
+  const refused = r.script('workflow-report.mjs', ['--packet', packetFile, '--docs', r.docsDir, '--json']);
+  assert.equal(refused.status, 2, refused.stdout); assert.match(refused.stderr, /WORK-CONFIG: frontend-workflow\.config\.yaml: version 1 required/);
+});
+
+test('#257 legacy entries find the config of the project that holds the docs, wherever they run (r2)', (t) => {
+  const r = repository(t), parent = path.dirname(r.root), at = (name) => path.join(r.root, name);
+  const run = (name, args) => spawnSync(process.execPath, [path.join(KIT_ROOT, 'scripts', name), ...args], { cwd: parent, encoding: 'utf8' });
+  const readiness = run('readiness.mjs', ['--docs', r.docsDir, '--manifest', at('.kit/manifest.yaml'), '--screen', 'RESULT-001', '--path', ENTRY('RESULT-001'), '--json']);
+  assert.equal(readiness.status, 0, readiness.stderr);
+  assert.equal(JSON.parse(readiness.stdout)['RESULT-001'].path_authorization.reason, WORK_SELECTION_REQUIRED_REASON);
+  const forbidden = run('forbidden-paths.mjs', ['--docs', r.docsDir, '--manifest', at('.kit/manifest.yaml'), '--diff', r.put('changes.txt', `M\t${PANEL}\n`), '--json']);
+  assert.equal(forbidden.status, 0, forbidden.stderr);
+  assert.deepEqual(JSON.parse(forbidden.stdout).violations.filter((entry) => entry.work_selection_required).map((entry) => entry.file), [PANEL]);
+  const packetFile = at('packet.md');
+  const packet = run('workflow-packet.mjs', ['--docs', r.docsDir, '--policy', at('.kit/policy.yaml'), '--manifest', at('.kit/manifest.yaml'),
+    '--screen', 'RESULT-001', '--requested-mode', 'rough-fixture-ui', '--out', packetFile, '--json']);
+  assert.equal(packet.status, 0, packet.stderr);
+  assert.match(JSON.parse(packet.stdout).readiness_source, /--layout \S+\/\.kit\/layout\.yaml/);
+  const report = run('workflow-report.mjs', ['--packet', packetFile, '--docs', r.docsDir, '--skip-tests', '--json']);
+  assert.equal(report.status, 0, report.stderr);
+});

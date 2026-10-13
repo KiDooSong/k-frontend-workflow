@@ -31,7 +31,7 @@ import { enforceCliFlagContract } from './lib/cli-args.mjs';
 import { computeReadiness } from './readiness.mjs';
 import { LayoutConfigError, loadLayoutProfile } from './lib/layout-profile.mjs';
 import { adoptedWorkPaths } from './lib/scoped-work-adoption.mjs';
-import { adoptionPolicy, liveWorkConfig } from './lib/work-config.mjs';
+import { adoptionPolicy, legacyProjectRoot, liveWorkConfig } from './lib/work-config.mjs';
 import {
   covers,
   isClearedAt,
@@ -347,8 +347,9 @@ function main() {
     process.stderr.write(`forbidden-paths: 정책 파일 없음: ${policyPath}\n`);
     process.exit(2);
   }
-  // #257: --root(없으면 작업 디렉터리)의 frontend-workflow.config.yaml 이 layout 기본값과 채택 overlay 를 정한다.
-  const work = liveWorkConfig(typeof flags.root === 'string' ? flags.root : undefined, flags.layout);
+  // #257: --root(없으면 docs 를 담은 프로젝트, 그것도 아니면 작업 디렉터리)의 frontend-workflow.config.yaml 이
+  //   layout 기본값과 채택 overlay 를 정한다.
+  const work = liveWorkConfig(typeof flags.root === 'string' ? flags.root : legacyProjectRoot(docsDir), flags.layout);
   const policy = adoptionPolicy(basePolicy, work.config, docsDir);
   // 매니페스트는 computeReadiness 의 부가 입력(next_actions 템플릿 경로 등). 게이트 판정은 정책 단일 출처.
   const manifest = loadYamlOrExit(path.resolve(flags.manifest || DEFAULTS.manifest), 'manifest') || {};

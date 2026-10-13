@@ -7,6 +7,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { KIT_ROOT, yamlParse, yamlStringify } from './util.mjs';
+import { evaluateVisualRefreshAuthority } from './visual-refresh-runtime.mjs';
 
 const READINESS = path.join(KIT_ROOT, 'scripts', 'readiness.mjs');
 const BACKSTOP = path.join(KIT_ROOT, 'scripts', 'forbidden-paths.mjs');
@@ -445,4 +446,40 @@ test('#257 visual packet and run resolve --layout from --root, like every visual
   const mismatch = run(PACKET, [...tuple, '--layout', 'config/policy.yaml'], elsewhere);
   assert.equal(mismatch.status, 2, mismatch.stdout);
   assert.match(mismatch.stderr, /WORK-CONFIG: --layout config\/policy\.yaml differs/);
+});
+
+test('#257 a visual report refuses a configuration its backstop refuses (r2)', (t) => {
+  const root = createFixture(t, { explicitResources: true });
+  write(root, 'config/adoption.yaml', `work_execution: ${JSON.stringify({ ...ADOPTION, owners: [] })}\n`);
+  write(root, 'frontend-workflow.config.yaml', 'version: 1\npolicy_overlay: config/adoption.yaml\nlayout: config/layout.yaml\n');
+  git(root, 'add', '.'); git(root, 'commit', '-m', 'adoption config');
+  const packetPath = path.join(root, 'tmp', 'work-packet.md');
+  const packet = run(PACKET, ['--screen', SCREEN_ID, '--requested-mode', 'api-integrated-ui', '--intent', 'visual-refresh', '--input', INPUT_ID,
+    '--path', SCREEN_PATH, '--root', root, ...explicitPolicy, '--out', packetPath, '--json'], root);
+  assert.equal(packet.status, 0, packet.stderr || packet.stdout);
+  // Only the staged destination breaks the config; the worktree keeps the valid one.
+  write(root, SCREEN_PATH, 'export const ShopScreen = () => "refreshed";\n');
+  write(root, 'frontend-workflow.config.yaml', 'version: 2\n');
+  git(root, 'add', SCREEN_PATH, 'frontend-workflow.config.yaml');
+  write(root, 'frontend-workflow.config.yaml', 'version: 1\npolicy_overlay: config/adoption.yaml\nlayout: config/layout.yaml\n');
+  const report = run(REPORT, ['--packet', packetPath, '--intent', 'visual-refresh', '--input', INPUT_ID, '--path', SCREEN_PATH,
+    '--root', root, ...explicitPolicy, '--staged', '--json'], root);
+  assert.equal(report.status, 2, report.stdout);
+  assert.match(report.stderr, /WORK-CONFIG: frontend-workflow\.config\.yaml: version 1 required/);
+});
+
+test('#257 a direct visual evaluation protects the authority files the config names (r2)', (t) => {
+  const root = createFixture(t, { explicitResources: true });
+  write(root, 'config/adoption.yaml', `work_execution: ${JSON.stringify({ ...ADOPTION, owners: [] })}\n`);
+  write(root, 'frontend-workflow.config.yaml', 'version: 1\npolicy_overlay: config/adoption.yaml\nlayout: config/layout.yaml\n');
+  git(root, 'add', '.'); git(root, 'commit', '-m', 'adoption config');
+  const tree = git(root, 'rev-parse', 'HEAD^{tree}');
+  // No tuple normalization: the options name neither the layout nor the overlay.
+  const result = evaluateVisualRefreshAuthority({ sourceRoot: root, destinationRoot: root, selectedScreen: SCREEN_ID, selectedInputId: INPUT_ID,
+    checkedPath: SCREEN_PATH, options: { policy: 'config/policy.yaml', manifest: 'config/manifest.yaml' },
+    snapshot: { source_tree: tree, destination_tree: tree, diff_kind: 'staged' } });
+  assert.ok(result._context, JSON.stringify(result.intent_authorization));
+  for (const name of ['config/adoption.yaml', 'config/layout.yaml', 'frontend-workflow.config.yaml']) {
+    assert.ok(result._context.authority_resource_paths.includes(name), `${name}: ${JSON.stringify(result._context.authority_resource_paths)}`);
+  }
 });

@@ -24,7 +24,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { assertAdoptionSource, liveWorkConfig } from './lib/work-config.mjs';
+import { adoptionPolicy, legacyProjectRoot, liveWorkConfig, workConfigRefusal } from './lib/work-config.mjs';
 import {
   parseArgs,
   DEFAULTS,
@@ -32,6 +32,7 @@ import {
   writeFile,
   removeFileIfExists,
   splitFrontmatter,
+  yamlParse,
   isCliEntry,
   runCli,
 } from './lib/util.mjs';
@@ -309,6 +310,21 @@ function main() {
   const { data: fm, body, hasFrontmatter, parseError } = splitFrontmatter(packetRaw);
   if (!hasFrontmatter) fail(`packet 에 frontmatter(---) 없음 — Work Packet 형식 아님: ${relToCwd(packetPath)}`);
   if (parseError) fail(`packet frontmatter YAML 파싱 실패: ${relToCwd(packetPath)} — ${parseError}`);
+
+  // 2) docs/src/root 유도: 플래그 우선 → packet readiness_source 의 --docs → DEFAULTS.
+  //    docs 를 posix 로 정규화해 Windows 역슬래시 경로에서도 root/src 유도가 동작하게 한다.
+  const docs = toPosix(docsFlag || docsFromReadinessSource(fm.readiness_source) || DEFAULTS.docs);
+  const docsRootMatch = /^(.*)\/docs\/frontend-workflow\/?$/.exec(docs);
+  const projectRoot = docsRootMatch ? docsRootMatch[1] : null; // 예: examples/coupon-feature (monorepo 프로젝트 루트)
+
+  // #257: lifecycle 반환보다 먼저, leaf 와 같은 project root 의 frontend-workflow.config.yaml 을 읽는다.
+  //   leaf(validate·forbidden-paths·check-generated)는 번들 policy 를 쓰므로 그 policy 로 채택 검사를 한다.
+  const work = liveWorkConfig(legacyProjectRoot(docs), layoutFlag);
+  let bundledPolicy;
+  try { bundledPolicy = yamlParse(readFileSafe(DEFAULTS.policy) ?? '') || {}; }
+  catch (e) { fail(`policy YAML 파싱 실패: ${relToCwd(DEFAULTS.policy)} — ${e.message}`); }
+  adoptionPolicy(bundledPolicy, work.config, path.resolve(docs));
+
   if (fm.readiness_applicable === false) {
     if (!isNonApplicablePacket(fm)) {
       fail(
@@ -347,11 +363,6 @@ function main() {
   const nextActions = extractNextActions(body);
   const snapshot = extractReadinessSnapshot(body);
 
-  // 2) docs/src/root 유도: 플래그 우선 → packet readiness_source 의 --docs → DEFAULTS.
-  //    docs 를 posix 로 정규화해 Windows 역슬래시 경로에서도 root/src 유도가 동작하게 한다.
-  const docs = toPosix(docsFlag || docsFromReadinessSource(fm.readiness_source) || DEFAULTS.docs);
-  const docsRootMatch = /^(.*)\/docs\/frontend-workflow\/?$/.exec(docs);
-  const projectRoot = docsRootMatch ? docsRootMatch[1] : null; // 예: examples/coupon-feature (monorepo 프로젝트 루트)
   let src;
   if (srcFlag) src = toPosix(srcFlag);
   else if (projectRoot) src = `${projectRoot}/src`;
@@ -385,14 +396,13 @@ function main() {
   //    전달한다(packet 의 --layout 규약과 동일). 누락 시 leaf 는 기본(expo) 레이아웃으로 해소돼 custom
   //    layout 에서 packet/report 와 leaf 가 서로 다른 프로파일을 보는 split-brain 이 된다.
   //    test-fixtures 는 전체 fixture harness 이므로 --layout 을 넘기지 않는다(기존 동작 유지).
-  //    #257: leaf forbidden-paths 와 같은 root(유도한 project root, 없으면 작업 디렉터리)의
-  //    frontend-workflow.config.yaml layout 을 기본값으로 쓰고, 해석한 경로를 모든 leaf 에 명시로 넘긴다.
-  const work = liveWorkConfig(projectRoot || undefined, layoutFlag);
-  // report 는 policy 를 읽지 않지만, overlay 없이 units 를 선언한 owner 는 판정하지 않는다.
-  assertAdoptionSource(work.config, path.resolve(docs));
+  //    #257: 위에서 읽은 설정의 layout 을 기본값으로 쓰고, 해석한 경로를 모든 leaf 에 명시로 넘긴다.
   const layoutResolved = work.layout ? path.resolve(work.layout) : null;
   const validate = collectValidate(docs, src, layoutResolved);
   const forbidden = collectForbidden(diffResolved, docs, projectRoot || undefined, layoutResolved);
+  // leaf 가 설정·채택 때문에 판정을 거부했으면 evidence 로 삼키지 않고 report 도 거부한다(exit 2).
+  const refusal = forbidden.status === 'error' ? workConfigRefusal(forbidden.errorText) : null;
+  if (refusal) fail(refusal);
   const idempotency = collectTests(skipTests);
   const checkgen = collectCheckGenerated(docs, src, layoutResolved);
 

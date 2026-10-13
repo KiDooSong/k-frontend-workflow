@@ -518,6 +518,11 @@ export function prepareVisualRefreshResources({
       srcRelative,
       policy: policy.value,
       adoptionPolicy: adoption,
+      // Project paths the config selected, protected like explicitly selected resources.
+      configResources: {
+        ...(layoutOption ? { layout: layoutOption } : {}),
+        ...(config?.policy_overlay ? { policy_overlay: config.policy_overlay.file } : {}),
+      },
       manifest: manifest.value,
       ci: ci.value,
       layout: resolvedLayout,

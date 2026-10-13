@@ -15,7 +15,7 @@ import {
   renderJsonEnvelope,
 } from './lib/workflow-packet.mjs';
 import { loadLayoutProfile } from './lib/layout-profile.mjs';
-import { adoptionPolicy, liveWorkConfig } from './lib/work-config.mjs';
+import { adoptionPolicy, legacyProjectRoot, liveWorkConfig } from './lib/work-config.mjs';
 import {
   visualAuditFromReadiness, visualPreworkIssues, injectVisualAuditFrontmatter, visualStopPacket,
 } from './lib/visual-refresh-transport.mjs';
@@ -206,10 +206,11 @@ function main() {
   const visual = intentFlag === VISUAL_REFRESH_INTENT;
   if (visual && readinessFlag) fail('visual-refresh에서는 --readiness override를 사용할 수 없음; 현재 authority를 다시 평가해야 함');
   const rootResolved = visual ? resolveProjectRoot(rootFlag) : null;
-  // #257: --root(visual) 또는 작업 디렉터리의 frontend-workflow.config.yaml 이 layout 기본값을 정한다.
+  // #257: --root(visual) 또는 docs 를 담은 프로젝트(없으면 작업 디렉터리)의 frontend-workflow.config.yaml 이
+  //   layout 기본값을 정한다.
   //   readiness 서브프로세스와 packet 자신이 같은 layout 을 보도록 해석한 경로를 명시로 넘긴다.
   //   visual 의 --layout 은 다른 visual resource 처럼 --root 기준이다.
-  const work = liveWorkConfig(rootResolved || undefined,
+  const work = liveWorkConfig(rootResolved || legacyProjectRoot(docsFlag || DEFAULTS.docs),
     visual && layoutFlag ? path.join(rootResolved, ...visualRelative(layoutFlag, rootResolved).split('/')) : layoutFlag);
   const configLayout = work.config?.layout ? work.layout : null;
   const docsVisual = visual && docsFlag ? visualRelative(docsFlag, rootResolved) : docsFlag;

@@ -11,6 +11,7 @@ import { enforceCliFlagContract } from './lib/cli-args.mjs';
 import { parseFindings } from './lib/workflow-report.mjs';
 import { captureWorkflowJson, WORKFLOW_JSON_MAX_BYTES } from './lib/workflow-json-capture.mjs';
 import { displayVisualChangedRecord } from './lib/visual-refresh-records.mjs';
+import { workConfigRefusal } from './lib/work-config.mjs';
 
 const SELF_DIR = path.dirname(fileURLToPath(import.meta.url));
 const FORBIDDEN_SCRIPT = path.join(SELF_DIR, 'forbidden-paths.mjs');
@@ -182,6 +183,9 @@ function main() {
   if (range) forbiddenArgs.push('--range', range);
   if (base) forbiddenArgs.push('--base', base);
   const captured = captureWorkflowJson(FORBIDDEN_SCRIPT, forbiddenArgs, { cwd: root });
+  // #257: a backstop that refuses the adoption config is a refusal, not tool-error evidence.
+  const refusal = captured.code !== 0 ? workConfigRefusal(captured.stderr) : null;
+  if (refusal) fail(refusal);
   const forbiddenJson = captured.json;
   const validResult = captured.code === 0 && typeof forbiddenJson?.ok === 'boolean' &&
     Array.isArray(forbiddenJson.violations) && Array.isArray(forbiddenJson.changed_records) &&

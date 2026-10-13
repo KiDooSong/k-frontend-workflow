@@ -539,7 +539,7 @@ export function evaluateVisualRefreshAuthority(options) {
     logical_path_rules: rules,
     generated_entries: generatedEntries,
     generated_roots: roots,
-    authority_resource_paths: explicitAuthorityResourcePaths(options.options),
+    authority_resource_paths: explicitAuthorityResourcePaths({ ...options.options, ...prepared.meta.configResources }),
     visual_path_authorization: exactPathAuthorization,
     screen_spec_path: selectedScreenSpecPath(
       options.destinationRoot,
