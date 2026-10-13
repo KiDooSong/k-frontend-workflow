@@ -17,6 +17,43 @@ or root config.
 
 ---
 
+## Adoption lives in `frontend-workflow.config.yaml` and its policy overlay (#257)
+
+- Scoped adoption (`work_execution`) is read only from the policy overlay that
+  `frontend-workflow.config.yaml` at the project root names. The five execution
+  CLIs, visual-refresh and `workflow:binding-status` read the config by default; it
+  can also set the project layout. See
+  [adoption](scoped-work.md#adoption-is-an-explicit-human-checkpoint).
+- **Unadopted repositories need no action.** With no owner `work_execution`
+  declaration, results are unchanged with or without a config. A config that only
+  sets `layout` is optional.
+- Now refused with exit 2 instead of judged:
+  - a base policy, bundled or `--policy`, that declares `work_execution`;
+  - owner documents that declare `work_execution` while no overlay is configured;
+  - an explicit `--layout` that names another file than the config `layout`;
+  - a config or overlay that does not validate.
+- **Manual action for a repository that adopted by editing the vendored policy**
+  (or by passing a `--policy` file that holds `work_execution`), at this upgrade:
+  1. Take the upstream `policies/implementation-mode-policy.yaml`. The local
+     `work_execution` edit makes it local-modified or a conflict in the plan.
+  2. Move the `work_execution` section, unchanged, into a project file outside the
+     vendored kit (for example `config/frontend-workflow/adoption.yaml`) that holds
+     only `work_execution:`.
+  3. Add `frontend-workflow.config.yaml` at the repository root: `version: 1` and
+     `policy_overlay: <that path>`. To set the default layout, add
+     `layout: <project layout path>`. Calls may then drop `--layout`, or keep
+     passing the same path.
+  4. Commit the config and the overlay on their own, not inside a work diff: both
+     are authority files.
+  5. Run `npm run workflow:binding-status`. A binding's basis records the file its
+     adoption came from, now the overlay, so recorded digests read `stale`. Review
+     each one and record the computed digest with a new `approval_ref`.
+- The upgrade planner treats a payload without `scripts/lib/work-config.mjs` as
+  unable to enforce adoption. It refuses to apply such a downgrade automatically
+  while declarations (the overlay included) remain.
+
+---
+
 ## Scope bindings hash their own row's relations (basis version 2, #275)
 
 - A `decision_work_scopes` or `uncertainty_work_scopes` binding's `basis_digest`

@@ -227,8 +227,9 @@ checks again.
 Without `--work`, readiness, packet, run, report, forbidden-paths, and the
 existing visual-refresh v1 route retain their existing CLI/JSON/exit semantics,
 except that an adopted scoped owner path returns `work-selection-required`
-(repositories without a policy `work_execution` section are unchanged). Current
-work is additive and adds no required CI status.
+(repositories without an adoption overlay or owner `work_execution` declarations
+are unchanged; see [adoption](scoped-work.md#adoption-is-an-explicit-human-checkpoint)).
+Current work is additive and adds no required CI status.
 
 ## Scoped work
 

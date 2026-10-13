@@ -111,6 +111,12 @@ adopted owner's scoped paths return `work-selection-required` to no-work, curren
 and visual-refresh v1 authority. Do not mix current and scoped requests in one
 document, and do not retry a denied scoped task under another mode or intent.
 
+The adopted owners and role ceilings live in the policy overlay that
+`frontend-workflow.config.yaml` at the project root names, never in the base policy.
+That config can also set the project layout. The five CLIs above, visual-refresh and
+`workflow:binding-status` read it by default; an explicit `--layout` must name the
+same file. See [adoption](docs/reference/scoped-work.md#adoption-is-an-explicit-human-checkpoint).
+
 ```bash
 npm run workflow:binding-status
 npm run workflow:binding-status -- --owner screen:COUPON-001 --json

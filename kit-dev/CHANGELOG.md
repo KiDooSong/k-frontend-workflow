@@ -4,6 +4,48 @@
 
 ## Unreleased
 
+### feat(workflow) — scoped 채택을 consumer 루트의 `frontend-workflow.config.yaml` 과 policy overlay 한 곳에서 읽음 (#257)
+
+- 채택 선언(`work_execution`)을 둘 위치가 정해져 있지 않았다.
+  - vendored policy 를 직접 고치면 visual-refresh pin 이 깨지고, 업그레이드마다 그 파일이 conflict 가 된다.
+  - 밖의 policy 를 `--policy` 로 넘기면, 인자를 빠뜨린 호출이 채택 경로를 미채택으로 판정했다(fail-open).
+- 이제 프로젝트 루트(`--root`, 없으면 작업 디렉터리)의 `frontend-workflow.config.yaml`(`version: 1`, `policy_overlay`,
+  `layout`)이 채택 overlay 와 project layout 을 정한다(사람 결정).
+  - 다섯 실행 CLI(readiness·forbidden-paths·packet·run·report, `--work` 여부와 무관), visual-refresh,
+    `workflow:binding-status` 가 이 설정을 기본값으로 읽는다.
+  - overlay 는 `work_execution` 만 담고, 고른 base policy(번들 또는 `--policy`) 위에 항상 겹친다.
+  - `workflow:report` 는 해석한 layout 을 validate·forbidden-paths·check-generated 에 명시로 넘긴다.
+- 판정하지 않고 exit 2 로 거부하는 경우:
+  - base policy 에 `work_execution` 이 있음. 번들이든 `--policy` 든 마찬가지다(사람 결정).
+  - owner 문서가 `work_execution` 을 선언했는데 overlay 가 없음(설정이 없거나 `policy_overlay` 가 없음).
+  - 명시한 `--layout` 이 설정 `layout` 과 다른 파일. 같은 파일은 허용하고, 설정 `layout` 이 없으면 지금과 같다.
+  - 설정이나 overlay 가 형식 검사를 통과하지 못함. 모르는 키, `version` 1 이 아님, 절대·`..`·symlink·철자가 다른 경로,
+    `work_execution` 밖의 overlay 키가 여기에 든다.
+- 설정과 overlay 는 authority 파일이다.
+  - `--work` 는 둘을 HEAD 에서 읽고 resource·authority read set 에 기록한다. work diff 가 이를 바꾸거나 설정을
+    만들면 `CW-`/`SW-GIT-AUTHORITY-CHANGED` 가 된다. `frontend-workflow.config.yaml` 은 basename 으로도 막는다.
+  - visual-refresh diff 에서는 `VR-BACKSTOP-012` 다. forward view 는 작업 트리의 설정과 overlay 를 쓴다.
+- scoped projection 은 `policyOverlayFile` 에서만 채택을 읽고, 그 파일을 `policy.file` 로 기록한다.
+  - 그래서 binding basis 의 `units` 구성요소가 바뀌어, 기록된 digest 는 한 번 다시 기록해야 한다.
+  - HEAD→index 라이브러리 검사(`inspectScopedGit*`)는 overlay 를 명시 `policy_overlay` 로 받는다.
+- 업그레이드 planner 는 `scripts/lib/work-config.mjs` 가 없는 payload 를 채택을 지킬 수 없는 payload 로 본다.
+  overlay 를 포함한 선언이 남아 있으면 그 downgrade 의 자동 적용을 거부한다.
+- #265 golden 을 다시 고정했다.
+  - D-001 의 구성요소 digest 가운데 `units` 만 바뀌었다.
+  - envelope 은 config·overlay resource·authority 레코드가 늘었고, 그 밖에는 다음 바이트만 다르다.
+    - base policy 바이트
+    - 새 digest 를 기록한 파일의 바이트(COUPON-001 스펙 해시, docs tree oid, commit tree)
+- 회귀 테스트:
+  - 설정·overlay 해석과 거부(`work-config.test.mjs`)
+  - legacy readiness·forbidden-paths, current work, packet·report 의 설정 기본값·layout 불일치·base policy 거부·
+    units 선언 거부·authority 변경
+  - visual-refresh 의 같은 경우
+  - projection 의 overlay 전용 채택
+  - planner downgrade guard
+  - 기존 scoped fixture 는 설정·overlay 로 옮겼다(기대값 변경은 golden 하나)
+- 문서: `scoped-work.md` §Adoption(위치와 이유)·Rollback·Known limits, `upgrade-notes.md`(옮기는 절차),
+  `COMMANDS.md`, `current-work.md`, `implement-shared-surface` 스킬.
+
 ### feat(workflow) — scope binding 의 basis 를 그 행의 관계로 좁히고 binding 상태 CLI 를 더함 (#275)
 
 - binding 의 `basis_digest` 는 owner 의 applicability projection 전체를 해시했다(`basis_version: 1`). 그래서 owner 에
