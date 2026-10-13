@@ -17,7 +17,9 @@
   - `workflow:report` 는 해석한 layout 을 validate·forbidden-paths·check-generated 에 명시로 넘긴다.
 - 판정하지 않고 exit 2 로 거부하는 경우:
   - base policy 에 `work_execution` 이 있음. 번들이든 `--policy` 든 마찬가지다(사람 결정).
-  - owner 문서가 `work_execution` 을 선언했는데 overlay 가 없음(설정이 없거나 `policy_overlay` 가 없음).
+  - owner 문서가 `work_execution` 을 선언했는데 overlay 가 없음(설정이 없거나 `policy_overlay` 가 없음). owner 문서는
+    `artifact_type` 으로, 또는 `artifact_type` 이 없으면 `workflow:state` 가 읽는 파일 이름(`domains/**/screen-spec.md`·
+    `surface-spec.md`)으로 정한다(리뷰 r6).
   - 명시한 `--layout` 이 설정 `layout` 과 다른 파일. 같은 파일은 허용하고, 설정 `layout` 이 없으면 지금과 같다.
   - 설정이나 overlay 가 형식 검사를 통과하지 못함. 모르는 키, `version` 1 이 아님, 절대·`..`·symlink·철자가 다른 경로,
     `work_execution` 밖의 overlay 키, 읽거나 검사할 수 없는 파일(권한 등, 설정 `layout` 경로 포함)이 여기에 든다.
@@ -35,7 +37,7 @@
 - 설정과 overlay 는 authority 파일이다.
   - `--work` 는 둘을 HEAD 에서 읽고 resource·authority read set 에 기록한다. work diff 가 이를 바꾸거나 설정을
     만들면 `CW-`/`SW-GIT-AUTHORITY-CHANGED` 가 된다. 설정은 프로젝트 루트의 그 경로만 authority 이고, 다른 곳의 같은 이름
-    파일은 일반 작업 파일이다(리뷰 r5).
+    파일은 일반 작업 파일이다(리뷰 r5). 그 경로에 저장한 `--work` 요청도 요청 전달 파일로 보지 않는다(리뷰 r6).
     current backstop 은 `HEAD` 에 없는 설정도 Git 이 무시하는지와 무관하게 찾는다. read set 레코드는 늘리지 않아
     채택 없는 저장소의 preflight 는 바이트가 같다(리뷰 r3).
   - visual-refresh diff 에서는 `VR-BACKSTOP-012` 다. forward view 는 작업 트리의 설정과 overlay 를 쓴다. 정규화 없이

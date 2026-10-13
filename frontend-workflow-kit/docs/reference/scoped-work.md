@@ -68,7 +68,9 @@ behavior.
      covers an overlay with any key besides `work_execution`.
    - a base policy (bundled or `--policy`) that declares `work_execution`;
    - owner documents that declare `work_execution` while the config names no
-     `policy_overlay`, or while there is no config;
+     `policy_overlay`, or while there is no config. An owner document is a
+     ScreenSpec or shared-surface-spec by `artifact_type`, or by the file name
+     `workflow:state` reads it under (`domains/**/screen-spec.md`, `surface-spec.md`);
    - an explicit `--layout` that names a different file from the config `layout`.
      The same file is accepted; without a config `layout`, `--layout` works as
      before.
@@ -86,7 +88,7 @@ behavior.
    current `--work` run looks for the config even where `HEAD` has none and Git
    ignores it; this adds no record to an unadopted repository's read set. Only the
    project root path is the config; a file of the same name elsewhere is ordinary
-   work.
+   work. A `--work` request saved at that path is not request transport either.
 
 2. **Owner** — the ScreenSpec or shared-surface-spec frontmatter declares stable
    work units (not per-session permits), optional narrow private roots and test
