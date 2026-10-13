@@ -99,11 +99,16 @@ export function readWorkConfig(root) {
 // and workflow:state never judges it, so it is left as before.
 function ownerMarkdownFiles(docsDir) {
   const out = [];
-  let stat;
-  try { stat = fs.statSync(docsDir, { throwIfNoEntry: false }); }
-  catch (error) { fail(`${docsDir}: cannot inspect (${error.code || error.message}) to check owner declarations`); }
-  if (!stat?.isDirectory()) return out;
+  const inspect = (file, name, follow = true) => {
+    try { return (follow ? fs.statSync : fs.lstatSync)(file, { throwIfNoEntry: false }); }
+    catch (error) { fail(`${name}: cannot inspect (${error.code || error.message}) to check owner declarations`); }
+  };
+  if (!inspect(docsDir, docsDir)?.isDirectory()) return out;
   const stack = [docsDir];
+  // workflow:state reads owners from docs/domains (findFiles), following that root when it
+  // is a link but no link below it. The walk skips every link, so that root is added.
+  const domains = path.join(docsDir, 'domains');
+  if (inspect(domains, 'domains', false)?.isSymbolicLink() && inspect(domains, 'domains')?.isDirectory()) stack.push(domains);
   while (stack.length) {
     const dir = stack.pop();
     let entries;

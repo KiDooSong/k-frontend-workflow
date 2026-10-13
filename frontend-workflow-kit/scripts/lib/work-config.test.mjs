@@ -294,6 +294,24 @@ test('#257 a first frontmatter line that starts with --- is content, not the clo
   }
 });
 
+test('#257 a linked domains root is read as workflow:state reads it, but not a link below it (r17)', (t) => {
+  if (process.platform === 'win32') return;
+  const p = project(t);
+  const linked = path.join(p.root, 'shared-domains');
+  const declared = { screen_id: 'RESULT-001', work_execution: { version: 1, units: [] } };
+  // workflow:state and the surface reader walk docs/domains and follow it when it is a link.
+  fs.rmSync(path.join(p.docsDir, 'domains'), { recursive: true });
+  p.put('shared-domains/result/screens/result-001/screen-spec.md', md(declared));
+  fs.symlinkSync(linked, path.join(p.docsDir, 'domains'));
+  assert.throws(() => adoptionPolicy(base(), null, p.docsDir), (error) => error instanceof WorkConfigError &&
+    /owner documents declare work_execution \(screen:RESULT-001\)/.test(error.message));
+  // They skip a link below it, so a declaration there is not one they read.
+  fs.rmSync(path.join(linked, 'result'), { recursive: true });
+  p.put('elsewhere/result/screens/result-001/screen-spec.md', md(declared));
+  fs.symlinkSync(path.join(p.root, 'elsewhere', 'result'), path.join(linked, 'result'));
+  assert.equal(adoptionPolicy(base(), null, p.docsDir).work_execution, undefined);
+});
+
 test('#257 an overlay whose work_execution paths do not validate is a configuration error (r11)', (t) => {
   const p = project(t);
   p.put(WORK_CONFIG_FILE, 'version: 1\npolicy_overlay: config/adoption.yaml\n');
