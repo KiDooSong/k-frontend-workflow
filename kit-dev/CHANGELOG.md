@@ -19,8 +19,10 @@
   - base policy 에 `work_execution` 이 있음. 번들이든 `--policy` 든 마찬가지다(사람 결정).
   - owner 문서가 `work_execution` 을 선언했는데 overlay 가 없음(설정이 없거나 `policy_overlay` 가 없음). owner 문서는
     `artifact_type` 으로, 또는 `artifact_type` 이 없으면 `workflow:state` 가 읽는 파일 이름(`domains/**/screen-spec.md`·
-    `surface-spec.md`)으로 정한다(리뷰 r6). 읽을 수 없는 docs Markdown 은 owner 일 수 있으므로 선언 없음으로 보지 않고
-    거부한다(리뷰 r7).
+    `surface-spec.md`)으로 정한다(리뷰 r6). 선언을 가릴 수 있는 것은 선언 없음으로 보지 않고 거부한다. 읽을 수 없는 docs
+    Markdown(리뷰 r7), 목록을 읽을 수 없는 docs 디렉터리, `work_execution` 을 담았지만 파싱되지 않는 frontmatter(리뷰 r8)가
+    여기에 든다.
+  - legacy report 는 파싱되지 않는 번들 policy 를 채택 사실로 보지 않고, 그 오류는 이전처럼 leaf 가 보고한다(리뷰 r8).
   - 명시한 `--layout` 이 설정 `layout` 과 다른 파일. 같은 파일은 허용하고, 설정 `layout` 이 없으면 지금과 같다.
   - 설정이나 overlay 가 형식 검사를 통과하지 못함. 모르는 키, `version` 1 이 아님, 절대·`..`·symlink·철자가 다른 경로,
     `work_execution` 밖의 overlay 키, 읽거나 검사할 수 없는 파일(권한 등, 설정 `layout` 경로 포함)이 여기에 든다.
