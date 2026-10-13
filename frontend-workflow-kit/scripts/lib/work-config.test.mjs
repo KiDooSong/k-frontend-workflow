@@ -173,3 +173,15 @@ test('#257 an owner document that the workflow state reads by its file name coun
   assert.throws(() => adoptionPolicy(base(), null, p.docsDir), (error) => error instanceof WorkConfigError &&
     /owner documents declare work_execution \(screen:RESULT-001, surface:domains\/result\/surfaces\/panel\/surface-spec\.md\)/.test(error.message));
 });
+
+test('#257 a document that cannot be read is not taken as declaring nothing (r7)', (t) => {
+  if (process.platform === 'win32' || process.getuid?.() === 0) { t.skip('requires POSIX permissions as a non-root user'); return; }
+  const p = project(t);
+  const spec = p.put(`${DOCS}/domains/result/screens/result-001/screen-spec.md`, md({ artifact_type: 'screen-spec', screen_id: 'RESULT-001',
+    work_execution: { version: 1, units: [] } }));
+  try {
+    fs.chmodSync(spec, 0o000);
+    assert.throws(() => adoptionPolicy(base(), null, p.docsDir), (error) => error instanceof WorkConfigError &&
+      /domains\/result\/screens\/result-001\/screen-spec\.md: cannot read \(EACCES\)/.test(error.message));
+  } finally { fs.chmodSync(spec, 0o644); }
+});

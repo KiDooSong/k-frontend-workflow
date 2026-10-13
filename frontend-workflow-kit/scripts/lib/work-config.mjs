@@ -7,7 +7,7 @@
 // configured overlay, are refused rather than judged.
 import fs from 'node:fs';
 import path from 'node:path';
-import { splitFrontmatter, walkFiles, readFileSafe } from './util.mjs';
+import { splitFrontmatter, walkFiles } from './util.mjs';
 import { ArtifactPathError, canonicalRepositoryPath } from './artifact-path.mjs';
 import { decodeScopedYaml, parseScopedPolicy } from './scoped-work-declarations.mjs';
 import { CurrentWorkError } from './current-work-request.mjs';
@@ -88,13 +88,17 @@ export function readWorkConfig(root) {
 // from the same canonical Markdown domain as the adoption marker (docs except _meta).
 // A document counts by its artifact_type, or by the file name workflow:state reads it
 // under (domains/**/screen-spec.md, surface-spec.md) when artifact_type is missing; an
-// owner without its id is named by its path.
+// owner without its id is named by its path. A document that cannot be read could be
+// an owner, so it is refused rather than taken as declaring nothing.
 export function declaredWorkOwners(docsDir) {
   const owners = new Set();
   for (const file of walkFiles(docsDir, ['.md'])) {
     const parts = path.relative(docsDir, file).split(path.sep);
     if (parts.includes('_meta')) continue;
-    const { data, hasFrontmatter, parseError } = splitFrontmatter(readFileSafe(file) ?? '');
+    let raw;
+    try { raw = fs.readFileSync(file, 'utf8'); }
+    catch (error) { fail(`${parts.join('/')}: cannot read (${error.code || error.message}) to check owner declarations`); }
+    const { data, hasFrontmatter, parseError } = splitFrontmatter(raw);
     if (!hasFrontmatter || parseError || !mapping(data) || !Object.hasOwn(data, 'work_execution')) continue;
     const byName = parts[0] === 'domains' ? parts.at(-1) : null;
     const kind = data.artifact_type === 'screen-spec' || byName === 'screen-spec.md' ? 'screen'
