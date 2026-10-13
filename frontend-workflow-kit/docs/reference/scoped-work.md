@@ -44,11 +44,14 @@ behavior.
    `role_limits` is a ceiling intersected with actual owner paths, not a glob
    grant. Move any project-specific extra prohibition into `deny_paths`.
 
-   The project root is `--root`; an entry without `--root` reads the working
-   directory. The five execution CLIs (readiness, forbidden-paths, packet, run and
-   report, with or without `--work`), visual-refresh and `workflow:binding-status`
-   read this config by default. Each applies the overlay over the base policy it
-   selected (the bundled copy or `--policy`). Why one config file:
+   The project root is `--root`. An entry without `--root` uses the project that
+   holds a `<root>/docs/frontend-workflow` docs directory, as `workflow:report` infers
+   it, and otherwise the working directory. The five execution CLIs (readiness,
+   forbidden-paths, packet, run and report, with or without `--work`), visual-refresh
+   and `workflow:binding-status` read this config by default. Each applies the overlay
+   over the base policy it selected (the bundled copy or `--policy`). A report also
+   refuses when the forbidden-paths run it collects refuses the config. Why one
+   config file:
 
    - The vendored policy stays byte-identical, so its visual-refresh pin and the
      vendored-kit upgrade keep working. Editing the vendored copy would break the

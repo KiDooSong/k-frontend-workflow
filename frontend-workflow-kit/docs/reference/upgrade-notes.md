@@ -22,7 +22,8 @@ or root config.
 - Scoped adoption (`work_execution`) is read only from the policy overlay that
   `frontend-workflow.config.yaml` at the project root names. The five execution
   CLIs, visual-refresh and `workflow:binding-status` read the config by default; it
-  can also set the project layout. See
+  can also set the project layout. The project root is `--root`; an entry without
+  `--root` uses the project that holds `docs/frontend-workflow`. See
   [adoption](scoped-work.md#adoption-is-an-explicit-human-checkpoint).
 - **Unadopted repositories need no action.** With no owner `work_execution`
   declaration, results are unchanged with or without a config. A config that only

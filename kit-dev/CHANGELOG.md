@@ -21,12 +21,18 @@
   - 명시한 `--layout` 이 설정 `layout` 과 다른 파일. 같은 파일은 허용하고, 설정 `layout` 이 없으면 지금과 같다.
   - 설정이나 overlay 가 형식 검사를 통과하지 못함. 모르는 키, `version` 1 이 아님, 절대·`..`·symlink·철자가 다른 경로,
     `work_execution` 밖의 overlay 키, 읽을 수 없는 파일(권한 등)이 여기에 든다.
-  - packet 은 `--readiness` 로 판정을 건너뛸 때도 자기가 읽는 base policy 와 docs 로, report 는 policy 를 읽지 않아도
-    docs 로 같은 검사를 한다(리뷰 r1). visual packet·run 의 `--layout` 은 다른 visual resource 처럼 `--root` 기준이다.
+  - packet 은 `--readiness` 로 판정을 건너뛸 때도 자기가 읽는 base policy 와 docs 로 같은 검사를 한다(리뷰 r1).
+    visual packet·run 의 `--layout` 은 다른 visual resource 처럼 `--root` 기준이다.
+  - legacy report 는 absorbed packet 으로 일찍 끝나기 전에, leaf 가 쓰는 번들 policy 와 docs 로 같은 검사를 한다.
+    report(legacy·visual)는 모은 forbidden-paths 가 설정을 거부하면 evidence 로 삼키지 않고 exit 2 다(리뷰 r2).
+- `--root` 가 없는 legacy 진입점(readiness·forbidden-paths·packet·report)은 `<root>/docs/frontend-workflow` docs 를
+  담은 프로젝트를, 아니면 작업 디렉터리를 프로젝트 루트로 본다. report 가 monorepo diff 접두를 유도하는 방식과 같아서,
+  다른 곳에서 실행해도 모든 진입점이 같은 설정을 읽는다(리뷰 r2).
 - 설정과 overlay 는 authority 파일이다.
   - `--work` 는 둘을 HEAD 에서 읽고 resource·authority read set 에 기록한다. work diff 가 이를 바꾸거나 설정을
     만들면 `CW-`/`SW-GIT-AUTHORITY-CHANGED` 가 된다. `frontend-workflow.config.yaml` 은 basename 으로도 막는다.
-  - visual-refresh diff 에서는 `VR-BACKSTOP-012` 다. forward view 는 작업 트리의 설정과 overlay 를 쓴다.
+  - visual-refresh diff 에서는 `VR-BACKSTOP-012` 다. forward view 는 작업 트리의 설정과 overlay 를 쓴다. 정규화 없이
+    부른 visual 평가도 설정이 고른 layout·overlay 를 불변 resource 로 둔다(리뷰 r2).
 - scoped projection 은 `policyOverlayFile` 에서만 채택을 읽고, 그 파일을 `policy.file` 로 기록한다.
   - 그래서 binding basis 의 `units` 구성요소가 바뀌어, 기록된 digest 는 한 번 다시 기록해야 한다.
   - HEAD→index 라이브러리 검사(`inspectScopedGit*`)는 overlay 를 명시 `policy_overlay` 로 받는다.
