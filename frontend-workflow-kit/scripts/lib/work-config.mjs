@@ -11,6 +11,7 @@ import { splitFrontmatter } from './util.mjs';
 import { ArtifactPathError, canonicalRepositoryPath } from './artifact-path.mjs';
 import { decodeScopedYaml, parseScopedPolicy } from './scoped-work-declarations.mjs';
 import { CurrentWorkError } from './current-work-request.mjs';
+import { VisualRefreshGitError } from './visual-refresh-git-objects.mjs';
 
 export const WORK_CONFIG_FILE = 'frontend-workflow.config.yaml';
 const CONFIG_KEYS = ['version', 'policy_overlay', 'layout'];
@@ -48,9 +49,10 @@ export function parsePolicyOverlay(value, label = 'policy_overlay') {
   if (extra.length || !Object.hasOwn(value, 'work_execution')) {
     fail(`${label}: the overlay holds only work_execution${extra.length ? ` (found ${extra.join(', ')})` : ''}`);
   }
+  // Its path checks reject a path such as ../src with VisualRefreshGitError.
   try { parseScopedPolicy(value.work_execution); }
   catch (error) {
-    if (error instanceof CurrentWorkError) fail(`${label}: ${error.message}`);
+    if (error instanceof CurrentWorkError || error instanceof VisualRefreshGitError) fail(`${label}: ${error.message}`);
     throw error;
   }
   return value.work_execution;
@@ -128,7 +130,10 @@ export function declaredWorkOwners(docsDir) {
     catch (error) { fail(`${parts.join('/')}: cannot read (${error.code || error.message}) to check owner declarations`); }
     const { data, hasFrontmatter, parseError } = splitFrontmatter(raw);
     const byName = parts[0] === 'domains' ? parts.at(-1) : null;
-    const unclosed = !hasFrontmatter && /^---\r?\n/.test(raw.replace(/^\uFEFF/, ''));
+    // Opened but with no closing --- line; an empty block (---, ---) is closed although
+    // splitFrontmatter reads no frontmatter from it.
+    const text = raw.replace(/^\uFEFF/, '');
+    const unclosed = !hasFrontmatter && /^---\r?\n/.test(text) && !/^---\r?\n(?:[\s\S]*?\r?\n)?---[ \t]*(?:\r?\n|$)/.test(text);
     if ((byName === 'screen-spec.md' || byName === 'surface-spec.md') && (parseError || unclosed)) {
       fail(`${parts.join('/')}: frontmatter does not parse (${parseError || 'not closed'}) to check owner declarations`);
     }

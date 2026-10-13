@@ -242,6 +242,21 @@ test('#257 an owner document whose frontmatter does not parse is refused whateve
   assert.throws(() => adoptionPolicy(base(), null, p.docsDir), refused(surface));
 });
 
+test('#257 an owner document with an empty frontmatter block is closed, not refused (r11)', (t) => {
+  const p = project(t);
+  p.put(`${DOCS}/domains/result/screens/result-001/screen-spec.md`, '---\n---\n\n# Doc\n');
+  p.put(`${DOCS}/domains/result/surfaces/panel/surface-spec.md`, '---\r\n---\r\n');
+  assert.equal(adoptionPolicy(base(), null, p.docsDir).work_execution, undefined);
+});
+
+test('#257 an overlay whose work_execution paths do not validate is a configuration error (r11)', (t) => {
+  const p = project(t);
+  p.put(WORK_CONFIG_FILE, 'version: 1\npolicy_overlay: config/adoption.yaml\n');
+  p.put('config/adoption.yaml', `work_execution: ${JSON.stringify({ ...WORK, deny_paths: ['../src/**'] })}\n`);
+  assert.throws(() => readWorkConfig(p.root), (error) => error instanceof WorkConfigError &&
+    /policy_overlay config\/adoption\.yaml: /.test(error.message));
+});
+
 test('#257 a docs directory that cannot be inspected is a configuration error (r9)', (t) => {
   if (process.platform === 'win32' || process.getuid?.() === 0) { t.skip('requires POSIX permissions as a non-root user'); return; }
   const p = project(t);
