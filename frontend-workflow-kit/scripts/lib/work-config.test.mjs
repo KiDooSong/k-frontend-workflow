@@ -164,3 +164,12 @@ test('#257 a configured layout that cannot be inspected fails as a configuration
       (error) => error instanceof WorkConfigError && /frontend-workflow\.config\.yaml layout: cannot inspect \(EACCES\)/.test(error.message));
   } finally { fs.chmodSync(dir, 0o755); }
 });
+
+test('#257 an owner document that the workflow state reads by its file name counts without artifact_type (r6)', (t) => {
+  const p = project(t);
+  // workflow:state collects domains/**/screen-spec.md and surface-spec.md by name.
+  p.put(`${DOCS}/domains/result/screens/result-001/screen-spec.md`, md({ screen_id: 'RESULT-001', work_execution: { version: 1, units: [] } }));
+  p.put(`${DOCS}/domains/result/surfaces/panel/surface-spec.md`, md({ work_execution: { version: 1, units: [] } }));
+  assert.throws(() => adoptionPolicy(base(), null, p.docsDir), (error) => error instanceof WorkConfigError &&
+    /owner documents declare work_execution \(screen:RESULT-001, surface:domains\/result\/surfaces\/panel\/surface-spec\.md\)/.test(error.message));
+});

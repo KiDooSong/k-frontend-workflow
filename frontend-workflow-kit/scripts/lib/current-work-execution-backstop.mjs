@@ -84,7 +84,7 @@ export function isExecutionInput(record, preflight, evidence) {
     evidence.hash === preflight.snapshot.work_request.hash &&
     !preflight.requests.some(r => r.targets.some(t => t.path === name)) &&
     !preflight.snapshot.authority_read_set.some(r => r.source === 'project' && r.path === name) &&
-    !AUTHORITY_BASENAMES.has(path.posix.basename(name)) &&
+    !AUTHORITY_BASENAMES.has(path.posix.basename(name)) && name !== WORK_CONFIG_FILE &&
     !generatedInBaseline(name, preflight._context));
 }
 // An unreadable ownership fact never makes a file transport.

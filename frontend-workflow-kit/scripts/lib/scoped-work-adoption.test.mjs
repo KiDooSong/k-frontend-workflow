@@ -318,6 +318,21 @@ test('#257 only the project root config is an authority file; a file of that nam
   assert.deepEqual(violations.filter((entry) => entry.code === 'CW-GIT-AUTHORITY-CHANGED'), []);
 });
 
+test('#257 a work request saved as the root config is not request transport (r6)', (t) => {
+  const plain = repository(t, { adopted: false, declareUnits: false });
+  // HEAD has no config; the request travels in the reserved root config path.
+  const work = plain.put(WORK_CONFIG_FILE, JSON.stringify({ version: 1, origin_inputs: [], requests: [{
+    owner: 'screen:RESULT-001', authority: 'current', requested_mode: 'rough-fixture-ui', targets: [{ path: HOOK, change: 'M' }] }] }));
+  const preflight = prepareCurrentWork({ work, root: plain.root, docs: DOCS, src: 'src',
+    policy: '.kit/policy.yaml', manifest: '.kit/manifest.yaml', layout: '.kit/layout.yaml' });
+  t.after(() => cleanupCurrentWork(preflight));
+  assert.equal(preflight.ready, true, JSON.stringify(preflight.errors));
+  plain.put(HOOK, 'export const useResult = () => null;\n');
+  const result = evaluateCurrentGit(preflight);
+  assert.equal(result.ok, false);
+  assert.ok(result.violations.some((entry) => entry.code === 'CW-GIT-AUTHORITY-CHANGED' && entry.path === WORK_CONFIG_FILE), JSON.stringify(result.violations));
+});
+
 test('#257 packet and report resolve the configured layout and hand it to every leaf', (t) => {
   const r = repository(t);
   const layout = path.join(r.root, '.kit/layout.yaml');

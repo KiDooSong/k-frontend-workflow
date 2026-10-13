@@ -86,14 +86,21 @@ export function readWorkConfig(root) {
 
 // Owners whose ScreenSpec or shared-surface-spec declares work_execution, read
 // from the same canonical Markdown domain as the adoption marker (docs except _meta).
+// A document counts by its artifact_type, or by the file name workflow:state reads it
+// under (domains/**/screen-spec.md, surface-spec.md) when artifact_type is missing; an
+// owner without its id is named by its path.
 export function declaredWorkOwners(docsDir) {
   const owners = new Set();
   for (const file of walkFiles(docsDir, ['.md'])) {
-    if (path.relative(docsDir, file).split(path.sep).includes('_meta')) continue;
+    const parts = path.relative(docsDir, file).split(path.sep);
+    if (parts.includes('_meta')) continue;
     const { data, hasFrontmatter, parseError } = splitFrontmatter(readFileSafe(file) ?? '');
     if (!hasFrontmatter || parseError || !mapping(data) || !Object.hasOwn(data, 'work_execution')) continue;
-    const kind = data.artifact_type === 'screen-spec' ? 'screen' : data.artifact_type === 'shared-surface-spec' ? 'surface' : null;
-    if (kind) owners.add(`${kind}:${data[`${kind}_id`]}`);
+    const byName = parts[0] === 'domains' ? parts.at(-1) : null;
+    const kind = data.artifact_type === 'screen-spec' || byName === 'screen-spec.md' ? 'screen'
+      : data.artifact_type === 'shared-surface-spec' || byName === 'surface-spec.md' ? 'surface' : null;
+    const id = kind && data[`${kind}_id`];
+    if (kind) owners.add(`${kind}:${typeof id === 'string' && id ? id : parts.join('/')}`);
   }
   return [...owners].sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)));
 }
