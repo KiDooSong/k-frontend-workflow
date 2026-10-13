@@ -73,6 +73,8 @@ behavior.
      `policy_overlay`, or while there is no config. An owner document is a
      ScreenSpec or shared-surface-spec by `artifact_type`, or by the file name
      `workflow:state` reads it under (`domains/**/screen-spec.md`, `surface-spec.md`).
+     Like `workflow:state`, the check follows a `domains` directory that is a link,
+     but no link below it.
      What could hide a declaration is refused too: a docs directory that cannot be
      inspected or listed, a docs Markdown file that cannot be read, and an owner
      document by name whose frontmatter does not parse or is never closed (whether
