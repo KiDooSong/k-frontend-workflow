@@ -23,7 +23,8 @@
     Markdown(리뷰 r7), 목록을 읽을 수 없는 docs 디렉터리(리뷰 r8), 검사할 수 없는 docs 디렉터리(`HEAD` 없는 visual readiness
     포함, 리뷰 r9), frontmatter 가 파싱되지 않거나 닫히지 않은 이름 기준 owner 문서(내용과 무관, 리뷰 r8~r10)가 여기에 든다.
     frontmatter 가 깨진 다른 문서는 `artifact_type` 이 없어 owner 가 아니고 판정되지도 않으므로 이전처럼 둔다. 빈 frontmatter
-    블록(`---` 두 줄)은 닫힌 것으로 본다(리뷰 r11).
+    블록(`---` 두 줄)은 닫힌 것으로 본다(리뷰 r11). 그 뒤 본문의 `---` 줄까지 읽은 YAML 파싱 오류는 빈 블록이 선언할 수 있는
+    것을 가리지 않으므로 거부하지 않고, 같은 읽기가 `work_execution` 을 주면 owner 리더처럼 선언으로 센다(리뷰 r14).
   - legacy report·packet 은 파싱되지 않는 policy 를 채택 사실로 보지 않고, 그 오류는 이전처럼 뒤에서 보고한다(리뷰 r8·r10).
   - 명시한 `--layout` 이 설정 `layout` 과 다른 파일. 같은 파일은 허용하고, 설정 `layout` 이 없으면 지금과 같다.
   - 설정이나 overlay 가 형식 검사를 통과하지 못함. 모르는 키, `version` 1 이 아님, 절대·`..`·symlink·철자가 다른 경로,

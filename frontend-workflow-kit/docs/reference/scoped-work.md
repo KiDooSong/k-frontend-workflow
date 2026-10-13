@@ -76,7 +76,10 @@ behavior.
      What could hide a declaration is refused too: a docs directory that cannot be
      inspected or listed, a docs Markdown file that cannot be read, and an owner
      document by name whose frontmatter does not parse or is never closed (whether
-     it declares cannot be known). Another document with broken frontmatter has no
+     it declares cannot be known). An empty block (two `---` lines) is closed and
+     declares nothing, so a parse error from body text read up to a later `---`
+     line is not refused; a `work_execution` that reading yields still counts, as
+     it does for the owner readers. Another document with broken frontmatter has no
      `artifact_type` and is never judged, so it is left as before;
    - an explicit `--layout` that names a different file from the config `layout`.
      The same file is accepted; without a config `layout`, `--layout` works as
