@@ -27,7 +27,8 @@
     것을 가리지 않으므로 거부하지 않고, 같은 읽기가 `work_execution` 을 주면 owner 리더처럼 선언으로 센다(리뷰 r14).
     닫는 줄은 맨 `---` 줄뿐이다. 읽기가 `----`·`---x` 줄에서 끝낸 블록은 뒤에 `---` 줄이 있어도 닫히지 않은 것이다(리뷰 r15).
     여는 줄 바로 다음 줄은 블록을 끝내지 않으므로, 거기의 `---x: true` 같은 줄은 내용이다(리뷰 r16).
-    `workflow:state` 처럼 링크인 `domains` 디렉터리는 따라가고 그 아래 링크는 따라가지 않는다(리뷰 r17).
+    `workflow:state` 처럼 `domains` 를 그 경로로 읽는다. 링크인 `domains` 는 따라가고 그 아래 링크는 따라가지 않으며(리뷰 r17),
+    대소문자를 구분하지 않는 파일시스템에서는 다른 대소문자 이름의 디렉터리에도 닿는다(리뷰 r18).
   - legacy report·packet 은 파싱되지 않는 policy 를 채택 사실로 보지 않고, 그 오류는 이전처럼 뒤에서 보고한다(리뷰 r8·r10).
   - 명시한 `--layout` 이 설정 `layout` 과 다른 파일. 같은 파일은 허용하고, 설정 `layout` 이 없으면 지금과 같다.
   - 설정이나 overlay 가 형식 검사를 통과하지 못함. 모르는 키, `version` 1 이 아님, 절대·`..`·symlink·철자가 다른 경로,
@@ -60,6 +61,7 @@
 - 업그레이드 planner 는 `scripts/lib/work-config.mjs` 가 없는 payload 를 채택을 지킬 수 없는 payload 로 본다.
   overlay 를 포함한 선언이 남아 있으면 그 downgrade 의 자동 적용을 거부한다. `policy_overlay` 를 지정한 설정 파일은
   overlay 파일 이름·추적 여부와 무관하게 표식이고, 표식 키는 파싱한 문서에서 읽으므로 이스케이프한 철자도 센다(리뷰 r13).
+  설정 파일 자체에 남은 채택 키도 계속 표식이다(리뷰 r18).
 - #265 golden 을 다시 고정했다.
   - D-001 의 구성요소 digest 가운데 `units` 만 바뀌었다.
   - envelope 은 config·overlay resource·authority 레코드가 늘었고, 그 밖에는 다음 바이트만 다르다.
