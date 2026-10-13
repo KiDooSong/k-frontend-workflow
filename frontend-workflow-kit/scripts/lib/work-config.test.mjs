@@ -283,6 +283,17 @@ test('#257 owner frontmatter that a ---- or ---x line ends is not closed (r15)',
   assert.equal(adoptionPolicy(base(), null, p.docsDir).work_execution, undefined);
 });
 
+test('#257 a first frontmatter line that starts with --- is content, not the closing line (r16)', (t) => {
+  const p = project(t);
+  const spec = `${DOCS}/domains/result/screens/result-001/screen-spec.md`;
+  // splitFrontmatter never closes on the line right after the opening one; only a bare
+  // --- line there is an empty block.
+  for (const first of ['---x: true', '----: true']) {
+    p.put(spec, `---\n${first}\nscreen_id: RESULT-001\n---\n\n# Doc\n`);
+    assert.equal(adoptionPolicy(base(), null, p.docsDir).work_execution, undefined, first);
+  }
+});
+
 test('#257 an overlay whose work_execution paths do not validate is a configuration error (r11)', (t) => {
   const p = project(t);
   p.put(WORK_CONFIG_FILE, 'version: 1\npolicy_overlay: config/adoption.yaml\n');
