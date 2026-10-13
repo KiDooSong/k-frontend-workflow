@@ -51,7 +51,9 @@ or root config.
      each one and record the computed digest with a new `approval_ref`.
 - The upgrade planner treats a payload without `scripts/lib/work-config.mjs` as
   unable to enforce adoption. It refuses to apply such a downgrade automatically
-  while declarations (the overlay included) remain.
+  while declarations remain: the overlay, any `frontend-workflow.config.yaml` that
+  names a `policy_overlay` (whatever the overlay file is called), and owner
+  frontmatter whose parsed keys declare adoption (an escaped spelling counts).
 
 ---
 

@@ -54,7 +54,8 @@
   - 그래서 binding basis 의 `units` 구성요소가 바뀌어, 기록된 digest 는 한 번 다시 기록해야 한다.
   - HEAD→index 라이브러리 검사(`inspectScopedGit*`)는 overlay 를 명시 `policy_overlay` 로 받는다.
 - 업그레이드 planner 는 `scripts/lib/work-config.mjs` 가 없는 payload 를 채택을 지킬 수 없는 payload 로 본다.
-  overlay 를 포함한 선언이 남아 있으면 그 downgrade 의 자동 적용을 거부한다.
+  overlay 를 포함한 선언이 남아 있으면 그 downgrade 의 자동 적용을 거부한다. `policy_overlay` 를 지정한 설정 파일은
+  overlay 파일 이름·추적 여부와 무관하게 표식이고, 표식 키는 파싱한 문서에서 읽으므로 이스케이프한 철자도 센다(리뷰 r13).
 - #265 golden 을 다시 고정했다.
   - D-001 의 구성요소 digest 가운데 `units` 만 바뀌었다.
   - envelope 은 config·overlay resource·authority 레코드가 늘었고, 그 밖에는 다음 바이트만 다르다.
