@@ -63,7 +63,8 @@ behavior.
    Each of these is refused with exit 2 rather than judged as unadopted:
 
    - a config or overlay that cannot be read or does not validate, or a config
-     `layout` path that cannot be inspected. That covers an unknown key, a `version` other than 1, and a path that is absolute, uses `..`,
+     `layout` path that cannot be inspected. That covers an invalid path inside the
+     overlay's `work_execution`, an unknown key, a `version` other than 1, and a path that is absolute, uses `..`,
      crosses a symlink or differs in spelling from the repository entry. It also
      covers an overlay with any key besides `work_execution`.
    - a base policy (bundled or `--policy`) that declares `work_execution`;

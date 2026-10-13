@@ -22,11 +22,13 @@
     `surface-spec.md`)으로 정한다(리뷰 r6). 선언을 가릴 수 있는 것은 선언 없음으로 보지 않고 거부한다. 읽을 수 없는 docs
     Markdown(리뷰 r7), 목록을 읽을 수 없는 docs 디렉터리(리뷰 r8), 검사할 수 없는 docs 디렉터리(`HEAD` 없는 visual readiness
     포함, 리뷰 r9), frontmatter 가 파싱되지 않거나 닫히지 않은 이름 기준 owner 문서(내용과 무관, 리뷰 r8~r10)가 여기에 든다.
-    frontmatter 가 깨진 다른 문서는 `artifact_type` 이 없어 owner 가 아니고 판정되지도 않으므로 이전처럼 둔다.
+    frontmatter 가 깨진 다른 문서는 `artifact_type` 이 없어 owner 가 아니고 판정되지도 않으므로 이전처럼 둔다. 빈 frontmatter
+    블록(`---` 두 줄)은 닫힌 것으로 본다(리뷰 r11).
   - legacy report·packet 은 파싱되지 않는 policy 를 채택 사실로 보지 않고, 그 오류는 이전처럼 뒤에서 보고한다(리뷰 r8·r10).
   - 명시한 `--layout` 이 설정 `layout` 과 다른 파일. 같은 파일은 허용하고, 설정 `layout` 이 없으면 지금과 같다.
   - 설정이나 overlay 가 형식 검사를 통과하지 못함. 모르는 키, `version` 1 이 아님, 절대·`..`·symlink·철자가 다른 경로,
-    `work_execution` 밖의 overlay 키, 읽거나 검사할 수 없는 파일(권한 등, 설정 `layout` 경로 포함)이 여기에 든다.
+    `work_execution` 밖의 overlay 키, overlay `work_execution` 안의 잘못된 경로(`deny_paths: [../src/**]` 등, 리뷰 r11),
+    읽거나 검사할 수 없는 파일(권한 등, 설정 `layout` 경로 포함)이 여기에 든다.
   - packet 은 `--readiness` 로 판정을 건너뛸 때도 자기가 읽는 base policy 와 docs 로 같은 검사를 한다(리뷰 r1).
     visual packet·run 의 `--layout` 은 다른 visual resource 처럼 `--root` 기준이다.
   - legacy report 는 absorbed packet 으로 일찍 끝나기 전에, leaf 가 쓰는 번들 policy 와 docs 로 같은 검사를 한다.
