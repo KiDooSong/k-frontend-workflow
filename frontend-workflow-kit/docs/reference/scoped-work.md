@@ -84,7 +84,9 @@ behavior.
    changes either file, or creates the config, is reported as an authority change
    (`CW-GIT-AUTHORITY-CHANGED`/`SW-GIT-AUTHORITY-CHANGED`, `VR-BACKSTOP-012`). A
    current `--work` run looks for the config even where `HEAD` has none and Git
-   ignores it; this adds no record to an unadopted repository's read set.
+   ignores it; this adds no record to an unadopted repository's read set. Only the
+   project root path is the config; a file of the same name elsewhere is ordinary
+   work.
 
 2. **Owner** — the ScreenSpec or shared-surface-spec frontmatter declares stable
    work units (not per-session permits), optional narrow private roots and test

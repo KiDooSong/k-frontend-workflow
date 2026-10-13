@@ -34,7 +34,8 @@
   다른 곳에서 실행해도 모든 진입점이 같은 설정을 읽는다(리뷰 r2).
 - 설정과 overlay 는 authority 파일이다.
   - `--work` 는 둘을 HEAD 에서 읽고 resource·authority read set 에 기록한다. work diff 가 이를 바꾸거나 설정을
-    만들면 `CW-`/`SW-GIT-AUTHORITY-CHANGED` 가 된다. `frontend-workflow.config.yaml` 은 basename 으로도 막는다.
+    만들면 `CW-`/`SW-GIT-AUTHORITY-CHANGED` 가 된다. 설정은 프로젝트 루트의 그 경로만 authority 이고, 다른 곳의 같은 이름
+    파일은 일반 작업 파일이다(리뷰 r5).
     current backstop 은 `HEAD` 에 없는 설정도 Git 이 무시하는지와 무관하게 찾는다. read set 레코드는 늘리지 않아
     채택 없는 저장소의 preflight 는 바이트가 같다(리뷰 r3).
   - visual-refresh diff 에서는 `VR-BACKSTOP-012` 다. forward view 는 작업 트리의 설정과 overlay 를 쓴다. 정규화 없이
