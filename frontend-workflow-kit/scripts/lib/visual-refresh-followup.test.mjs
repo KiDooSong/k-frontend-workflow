@@ -518,6 +518,11 @@ test('#257 a visual report refuses a bundled policy that adopts, whatever its ba
     '--input', INPUT_ID, '--path', SCREEN_PATH, '--root', root, '--staged', '--json'], root);
   assert.equal(report.status, 2, report.stdout);
   assert.match(report.stderr, /WORK-CONFIG: the base policy must not declare work_execution/);
+  // Also when the backstop fails before it has a snapshot to judge.
+  const unresolved = run(path.join(kit, 'scripts', 'workflow-report.mjs'), ['--packet', packetPath, '--intent', 'visual-refresh',
+    '--input', INPUT_ID, '--path', SCREEN_PATH, '--root', root, '--range', 'no-such-ref..HEAD', '--json'], root);
+  assert.equal(unresolved.status, 2, unresolved.stdout);
+  assert.match(unresolved.stderr, /WORK-CONFIG: the base policy must not declare work_execution/);
 });
 
 test('#257 visual readiness refuses a bundled policy that adopts as misplaced adoption, not only by its pin (r4)', (t) => {
@@ -534,6 +539,19 @@ test('#257 forward readiness reads the worktree overlay the config names', (t) =
   git(root, 'add', '.'); git(root, 'commit', '-m', 'adopt nothing yet');
   // Only the worktree overlay adopts the screen.
   write(root, 'config/adoption.yaml', `work_execution: ${JSON.stringify(ADOPTION)}\n`);
+  const result = run(READINESS, [...visualArgs(root), ...explicitPolicy], root);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(JSON.parse(result.stdout).path_authorization.reason, /work-selection-required/, result.stdout);
+});
+
+test('#257 forward readiness follows the worktree config to another overlay', (t) => {
+  const root = createFixture(t, { explicitResources: true });
+  adoptShop(root);
+  write(root, 'config/none.yaml', `work_execution: ${JSON.stringify({ ...ADOPTION, owners: [] })}\n`);
+  write(root, 'frontend-workflow.config.yaml', 'version: 1\npolicy_overlay: config/none.yaml\nlayout: config/layout.yaml\n');
+  git(root, 'add', '.'); git(root, 'commit', '-m', 'adopt nothing yet');
+  // Only the worktree config names the overlay that adopts the screen.
+  write(root, 'frontend-workflow.config.yaml', 'version: 1\npolicy_overlay: config/adoption.yaml\nlayout: config/layout.yaml\n');
   const result = run(READINESS, [...visualArgs(root), ...explicitPolicy], root);
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(JSON.parse(result.stdout).path_authorization.reason, /work-selection-required/, result.stdout);
