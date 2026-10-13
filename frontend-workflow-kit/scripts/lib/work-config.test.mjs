@@ -312,6 +312,21 @@ test('#257 a linked domains root is read as workflow:state reads it, but not a l
   assert.equal(adoptionPolicy(base(), null, p.docsDir).work_execution, undefined);
 });
 
+test('#257 a linked domains root that cannot be inspected is a configuration error (r17)', (t) => {
+  if (process.platform === 'win32' || process.getuid?.() === 0) { t.skip('requires POSIX permissions as a non-root user'); return; }
+  const p = project(t);
+  const locked = path.join(p.root, 'locked');
+  fs.rmSync(path.join(p.docsDir, 'domains'), { recursive: true });
+  p.put('locked/domains/result/screens/result-001/screen-spec.md', md({ screen_id: 'RESULT-001' }));
+  fs.symlinkSync(path.join(locked, 'domains'), path.join(p.docsDir, 'domains'));
+  try {
+    // The link itself is readable; its target is not searchable.
+    fs.chmodSync(locked, 0o644);
+    assert.throws(() => adoptionPolicy(base(), null, p.docsDir), (error) => error instanceof WorkConfigError &&
+      /domains: cannot inspect \(EACCES\) to check owner declarations/.test(error.message));
+  } finally { fs.chmodSync(locked, 0o755); }
+});
+
 test('#257 an overlay whose work_execution paths do not validate is a configuration error (r11)', (t) => {
   const p = project(t);
   p.put(WORK_CONFIG_FILE, 'version: 1\npolicy_overlay: config/adoption.yaml\n');
