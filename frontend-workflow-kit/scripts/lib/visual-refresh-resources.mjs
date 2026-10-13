@@ -163,6 +163,29 @@ function readSnapshotFile(root, raw, label) {
   return { ...ref, raw: content, value: parseMapping(content, label) };
 }
 
+// #257: the adoption facts of a visual run under `root` (the config, an explicit
+// --layout against it, the base policy and the owner declarations) are refused before
+// any other resource is validated or read, so no other failure stands in for the
+// refusal; a report records other backstop failures as evidence. The bundled policy is
+// read without its pin. A resource this check cannot read is left to the checks that
+// follow, which report it.
+export function assertVisualAdoption(root, options = {}, bundledRoot = KIT_ROOT) {
+  const config = readWorkConfig(root);
+  const lenient = (read) => {
+    try { return read(); } catch (error) { if (error instanceof VisualRefreshResourceError) return undefined; throw error; }
+  };
+  if (options.layout) {
+    const explicit = lenient(() => canonicalSnapshotPath(options.layout, '--layout'));
+    if (explicit !== undefined) configuredLayout(config, explicit);
+  }
+  const policy = lenient(() => (options.policy
+    ? readSnapshotFile(root, options.policy, '--policy').value
+    : parseMapping(readFileSafe(path.join(bundledRoot, PINNED_VISUAL_REFRESH_RESOURCES.policy.relative)) ?? '', 'bundled policy')));
+  const docs = lenient(() => assertSnapshotPath(root, canonicalSnapshotPath(options.docs || DEFAULTS.docs, '--docs'),
+    { label: '--docs', type: 'directory', required: false }).absolute);
+  adoptionPolicy(policy ?? {}, config, docs);
+}
+
 export function readPinnedBundledResource(name, bundledRoot = KIT_ROOT) {
   const spec = PINNED_VISUAL_REFRESH_RESOURCES[name];
   if (!spec) throw new VisualRefreshResourceError(`unknown bundled resource: ${name}`);
@@ -383,6 +406,7 @@ export function prepareVisualRefreshResources({
   bundledRoot = KIT_ROOT,
 } = {}) {
   if (!destinationRoot) throw new VisualRefreshResourceError('destinationRoot가 필요함');
+  assertVisualAdoption(destinationRoot, options, bundledRoot);
   const docsRelative = canonicalSnapshotPath(options.docs || DEFAULTS.docs, '--docs');
   const srcRelative = canonicalSnapshotPath(options.src || DEFAULTS.src, '--src');
   // Missing docs/src remain an applicability problem for the authority analyzer, but an

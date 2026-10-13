@@ -5,7 +5,7 @@ import { DEFAULTS, KIT_ROOT, readFileSafe, splitFrontmatter, walkFiles, yamlPars
 import { loadLayoutProfile } from './layout-profile.mjs';
 import { readWorkConfig, configuredLayout } from './work-config.mjs';
 import {
-  assertSnapshotPath, canonicalSnapshotPath, readPinnedBundledResource, VisualRefreshResourceError,
+  assertSnapshotPath, assertVisualAdoption, canonicalSnapshotPath, readPinnedBundledResource, VisualRefreshResourceError,
 } from './visual-refresh-resources.mjs';
 
 function toPosix(value) { return String(value).split(path.sep).join('/'); }
@@ -114,6 +114,7 @@ function assertSeparation(options, roots) {
 }
 
 export function normalizeVisualAuthorityTuple(tuple, { authorityRoot, sourceRoot }) {
+  assertVisualAdoption(authorityRoot, tuple.options);
   const options = {
     docs: canonicalPhysicalRelative(authorityRoot, tuple.options.docs || DEFAULTS.docs, {
       label: '--docs', type: 'directory',

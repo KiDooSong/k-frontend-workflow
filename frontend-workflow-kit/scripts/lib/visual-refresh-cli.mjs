@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { DEFAULTS, parseArgs, readFileSafe, yamlParse, yamlStringify } from './util.mjs';
+import { DEFAULTS, parseArgs, yamlStringify } from './util.mjs';
 import { enforceCliFlagContract } from './cli-args.mjs';
 import { normalizeVisualAuthorityTuple } from './visual-refresh-boundary-paths.mjs';
 import { ArtifactPathError } from './artifact-path.mjs';
-import { WORK_CONFIG_FILE, WorkConfigError, adoptionPolicy, liveWorkConfig } from './work-config.mjs';
+import { WORK_CONFIG_FILE, WorkConfigError } from './work-config.mjs';
 import { visualChangedRecords } from './visual-refresh-records.mjs';
 import { bindVisualGitScreenIdentity } from './visual-refresh-git-objects.mjs';
 import {
@@ -21,7 +21,7 @@ import {
   sourceHeadContext,
   VisualRefreshGitError,
 } from './visual-refresh-git.mjs';
-import { assertSnapshotPath, VisualRefreshResourceError } from './visual-refresh-resources.mjs';
+import { assertSnapshotPath, assertVisualAdoption, VisualRefreshResourceError } from './visual-refresh-resources.mjs';
 
 function own(object, key) {
   return Object.prototype.hasOwnProperty.call(object || {}, key);
@@ -167,24 +167,13 @@ function applyForwardFileIdentity(result, projectRoot) {
   return result;
 }
 
-// #257: with no HEAD nothing is judged, but the adoption facts the forward view would
-// read (the config, an explicit --layout against it, the base policy and the owner
-// declarations, all from the worktree) are still refused as every entry refuses them.
-// A policy that does not parse is not an adoption fact and is left as before.
-function assertWorktreeAdoption(projectRoot, options) {
-  const at = (value) => path.resolve(projectRoot, value);
-  const work = liveWorkConfig(projectRoot, options.layout ? at(options.layout) : undefined);
-  let policy = {};
-  try { policy = yamlParse(readFileSafe(options.policy ? at(options.policy) : DEFAULTS.policy) ?? '') || {}; } catch {}
-  adoptionPolicy(policy, work.config, at(options.docs || DEFAULTS.docs));
-}
-
 export function runVisualReadinessCli(argv = process.argv.slice(2)) {
   let tuple = parseTuple(argv, 'readiness');
   const repository = resolveRepositoryContext(tuple.root || process.cwd());
   const source = sourceHeadContext(repository);
   if (!source) {
-    assertWorktreeAdoption(repository.projectRoot, tuple.options);
+    // #257: nothing is judged without HEAD, but the worktree's adoption facts are still refused.
+    assertVisualAdoption(repository.projectRoot, tuple.options);
     const output = {
       intent_authorization: {
         intent: VISUAL_REFRESH_INTENT, input_id: tuple.input, applicable: false,
