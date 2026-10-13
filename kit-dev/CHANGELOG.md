@@ -9,7 +9,7 @@
 - 채택 선언(`work_execution`)을 둘 위치가 정해져 있지 않았다.
   - vendored policy 를 직접 고치면 visual-refresh pin 이 깨지고, 업그레이드마다 그 파일이 conflict 가 된다.
   - 밖의 policy 를 `--policy` 로 넘기면, 인자를 빠뜨린 호출이 채택 경로를 미채택으로 판정했다(fail-open).
-- 이제 프로젝트 루트(`--root`, 없으면 작업 디렉터리)의 `frontend-workflow.config.yaml`(`version: 1`, `policy_overlay`,
+- 이제 프로젝트 루트(`--root`, 없으면 아래 legacy 루트 규칙)의 `frontend-workflow.config.yaml`(`version: 1`, `policy_overlay`,
   `layout`)이 채택 overlay 와 project layout 을 정한다(사람 결정).
   - 다섯 실행 CLI(readiness·forbidden-paths·packet·run·report, `--work` 여부와 무관), visual-refresh,
     `workflow:binding-status` 가 이 설정을 기본값으로 읽는다.
@@ -20,17 +20,21 @@
   - owner 문서가 `work_execution` 을 선언했는데 overlay 가 없음(설정이 없거나 `policy_overlay` 가 없음).
   - 명시한 `--layout` 이 설정 `layout` 과 다른 파일. 같은 파일은 허용하고, 설정 `layout` 이 없으면 지금과 같다.
   - 설정이나 overlay 가 형식 검사를 통과하지 못함. 모르는 키, `version` 1 이 아님, 절대·`..`·symlink·철자가 다른 경로,
-    `work_execution` 밖의 overlay 키, 읽을 수 없는 파일(권한 등)이 여기에 든다.
+    `work_execution` 밖의 overlay 키, 읽거나 검사할 수 없는 파일(권한 등, 설정 `layout` 경로 포함)이 여기에 든다.
   - packet 은 `--readiness` 로 판정을 건너뛸 때도 자기가 읽는 base policy 와 docs 로 같은 검사를 한다(리뷰 r1).
     visual packet·run 의 `--layout` 은 다른 visual resource 처럼 `--root` 기준이다.
   - legacy report 는 absorbed packet 으로 일찍 끝나기 전에, leaf 가 쓰는 번들 policy 와 docs 로 같은 검사를 한다.
     report(legacy·visual)는 모은 forbidden-paths 가 설정을 거부하면 evidence 로 삼키지 않고 exit 2 다(리뷰 r2).
+  - `HEAD` 가 없어 판정하지 않는 visual readiness 도 작업 트리의 설정·base policy·owner 선언을 검사한다. `--policy` 없는
+    visual report 는 backstop 의 번들 pin 검사보다 먼저 번들 policy 의 `work_execution` 을 거부한다(리뷰 r3).
 - `--root` 가 없는 legacy 진입점(readiness·forbidden-paths·packet·report)은 `<root>/docs/frontend-workflow` docs 를
   담은 프로젝트를, 아니면 작업 디렉터리를 프로젝트 루트로 본다. report 가 monorepo diff 접두를 유도하는 방식과 같아서,
   다른 곳에서 실행해도 모든 진입점이 같은 설정을 읽는다(리뷰 r2).
 - 설정과 overlay 는 authority 파일이다.
   - `--work` 는 둘을 HEAD 에서 읽고 resource·authority read set 에 기록한다. work diff 가 이를 바꾸거나 설정을
     만들면 `CW-`/`SW-GIT-AUTHORITY-CHANGED` 가 된다. `frontend-workflow.config.yaml` 은 basename 으로도 막는다.
+    current backstop 은 `HEAD` 에 없는 설정도 Git 이 무시하는지와 무관하게 찾는다. read set 레코드는 늘리지 않아
+    채택 없는 저장소의 preflight 는 바이트가 같다(리뷰 r3).
   - visual-refresh diff 에서는 `VR-BACKSTOP-012` 다. forward view 는 작업 트리의 설정과 overlay 를 쓴다. 정규화 없이
     부른 visual 평가도 설정이 고른 layout·overlay 를 불변 resource 로 둔다(리뷰 r2).
 - scoped projection 은 `policyOverlayFile` 에서만 채택을 읽고, 그 파일을 `policy.file` 로 기록한다.

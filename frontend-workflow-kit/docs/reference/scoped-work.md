@@ -62,8 +62,8 @@ behavior.
 
    Each of these is refused with exit 2 rather than judged as unadopted:
 
-   - a config or overlay that cannot be read or does not validate. That covers an
-     unknown key, a `version` other than 1, and a path that is absolute, uses `..`,
+   - a config or overlay that cannot be read or does not validate, or a config
+     `layout` path that cannot be inspected. That covers an unknown key, a `version` other than 1, and a path that is absolute, uses `..`,
      crosses a symlink or differs in spelling from the repository entry. It also
      covers an overlay with any key besides `work_execution`.
    - a base policy (bundled or `--policy`) that declares `work_execution`;
@@ -73,10 +73,16 @@ behavior.
      The same file is accepted; without a config `layout`, `--layout` works as
      before.
 
+   Every entry applies these checks before anything else can end the run. That
+   includes a visual-refresh readiness with no `HEAD` to judge, and a visual report
+   whose backstop would first fail the bundled policy's pin.
+
    The config and the overlay are authority files. `--work` reads them from the
    committed `HEAD`, as it reads the policy. A `--work` or visual-refresh diff that
    changes either file, or creates the config, is reported as an authority change
-   (`CW-GIT-AUTHORITY-CHANGED`/`SW-GIT-AUTHORITY-CHANGED`, `VR-BACKSTOP-012`).
+   (`CW-GIT-AUTHORITY-CHANGED`/`SW-GIT-AUTHORITY-CHANGED`, `VR-BACKSTOP-012`). A
+   current `--work` run looks for the config even where `HEAD` has none and Git
+   ignores it; this adds no record to an unadopted repository's read set.
 
 2. **Owner** — the ScreenSpec or shared-surface-spec frontmatter declares stable
    work units (not per-session permits), optional narrow private roots and test
