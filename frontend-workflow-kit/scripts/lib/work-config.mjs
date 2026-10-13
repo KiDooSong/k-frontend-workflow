@@ -7,7 +7,7 @@
 // configured overlay, are refused rather than judged.
 import fs from 'node:fs';
 import path from 'node:path';
-import { splitFrontmatter, walkFiles } from './util.mjs';
+import { splitFrontmatter } from './util.mjs';
 import { ArtifactPathError, canonicalRepositoryPath } from './artifact-path.mjs';
 import { decodeScopedYaml, parseScopedPolicy } from './scoped-work-declarations.mjs';
 import { CurrentWorkError } from './current-work-request.mjs';
@@ -88,17 +88,45 @@ export function readWorkConfig(root) {
 // from the same canonical Markdown domain as the adoption marker (docs except _meta).
 // A document counts by its artifact_type, or by the file name workflow:state reads it
 // under (domains/**/screen-spec.md, surface-spec.md) when artifact_type is missing; an
-// owner without its id is named by its path. A document that cannot be read could be
-// an owner, so it is refused rather than taken as declaring nothing.
+// owner without its id is named by its path. What could hide a declaration is refused
+// rather than taken as declaring nothing: a directory that cannot be listed, a
+// document that cannot be read, and frontmatter that mentions work_execution but does
+// not parse.
+function ownerMarkdownFiles(docsDir) {
+  const out = [];
+  if (!fs.statSync(docsDir, { throwIfNoEntry: false })?.isDirectory()) return out;
+  const stack = [docsDir];
+  while (stack.length) {
+    const dir = stack.pop();
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); }
+    catch (error) {
+      fail(`${path.relative(docsDir, dir).split(path.sep).join('/') || '.'}: cannot list (${error.code || error.message}) to check owner declarations`);
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      // As walkFiles: dot directories and node_modules are not docs; _meta holds no owners.
+      if (entry.isDirectory()) {
+        if (entry.name !== 'node_modules' && !entry.name.startsWith('.') && entry.name !== '_meta') stack.push(full);
+      } else if (entry.isFile() && entry.name.endsWith('.md')) out.push(full);
+    }
+  }
+  return out.sort();
+}
+
 export function declaredWorkOwners(docsDir) {
   const owners = new Set();
-  for (const file of walkFiles(docsDir, ['.md'])) {
+  for (const file of ownerMarkdownFiles(docsDir)) {
     const parts = path.relative(docsDir, file).split(path.sep);
-    if (parts.includes('_meta')) continue;
     let raw;
     try { raw = fs.readFileSync(file, 'utf8'); }
     catch (error) { fail(`${parts.join('/')}: cannot read (${error.code || error.message}) to check owner declarations`); }
     const { data, hasFrontmatter, parseError } = splitFrontmatter(raw);
+    // The frontmatter block as splitFrontmatter delimits it.
+    const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/.exec(raw.replace(/^\uFEFF/, ''))?.[1] ?? '';
+    if (parseError && frontmatter.includes('work_execution')) {
+      fail(`${parts.join('/')}: frontmatter does not parse (${parseError}) to check owner declarations`);
+    }
     if (!hasFrontmatter || parseError || !mapping(data) || !Object.hasOwn(data, 'work_execution')) continue;
     const byName = parts[0] === 'domains' ? parts.at(-1) : null;
     const kind = data.artifact_type === 'screen-spec' || byName === 'screen-spec.md' ? 'screen'

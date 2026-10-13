@@ -319,10 +319,10 @@ function main() {
 
   // #257: lifecycle 반환보다 먼저, leaf 와 같은 project root 의 frontend-workflow.config.yaml 을 읽는다.
   //   leaf(validate·forbidden-paths·check-generated)는 번들 policy 를 쓰므로 그 policy 로 채택 검사를 한다.
+  //   파싱되지 않는 policy 는 채택 사실이 아니므로 base 검사만 건너뛰고, 그 오류는 이전처럼 leaf 가 보고한다.
   const work = liveWorkConfig(legacyProjectRoot(docs), layoutFlag);
-  let bundledPolicy;
-  try { bundledPolicy = yamlParse(readFileSafe(DEFAULTS.policy) ?? '') || {}; }
-  catch (e) { fail(`policy YAML 파싱 실패: ${relToCwd(DEFAULTS.policy)} — ${e.message}`); }
+  let bundledPolicy = {};
+  try { bundledPolicy = yamlParse(readFileSafe(DEFAULTS.policy) ?? '') || {}; } catch { /* left to the leaves */ }
   adoptionPolicy(bundledPolicy, work.config, path.resolve(docs));
 
   if (fm.readiness_applicable === false) {

@@ -409,7 +409,8 @@ test('#257 an unreadable config is a configuration error, exit 2 (r1)', (t) => {
 });
 
 // A kit copy whose bundled policy declares work_execution, as an in-place adopter would leave it.
-function adoptingKit(t, r) {
+// A copy of the kit whose bundled policy `edit` changes.
+function kitWith(t, r, edit) {
   const kit = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'scoped-adoption-kit-')));
   t.after(() => fs.rmSync(kit, { recursive: true, force: true }));
   for (const dir of ['scripts', 'policies', 'catalog', 'presets', 'schemas', 'templates']) {
@@ -417,9 +418,10 @@ function adoptingKit(t, r) {
   }
   fs.copyFileSync(path.join(KIT_ROOT, 'package.json'), path.join(kit, 'package.json'));
   fs.symlinkSync(path.join(KIT_ROOT, 'node_modules'), path.join(kit, 'node_modules'));
-  fs.appendFileSync(path.join(kit, 'policies/implementation-mode-policy.yaml'), `\n${fs.readFileSync(r.overlayFile, 'utf8')}`);
+  edit(path.join(kit, 'policies/implementation-mode-policy.yaml'));
   return (name, args) => spawnSync(process.execPath, [path.join(kit, 'scripts', name), ...args], { cwd: r.root, encoding: 'utf8' });
 }
+const adoptingKit = (t, r) => kitWith(t, r, (policy) => fs.appendFileSync(policy, `\n${fs.readFileSync(r.overlayFile, 'utf8')}`));
 
 test('#257 a bundled policy that adopts is refused by the legacy entries, report included (r2)', (t) => {
   const r = repository(t), kit = adoptingKit(t, r);
@@ -445,6 +447,16 @@ test('#257 a legacy report checks the config before an absorbed packet returns (
   r.put(WORK_CONFIG_FILE, 'version: 2\n');
   const refused = r.script('workflow-report.mjs', ['--packet', packetFile, '--docs', r.docsDir, '--json']);
   assert.equal(refused.status, 2, refused.stdout); assert.match(refused.stderr, /WORK-CONFIG: frontend-workflow\.config\.yaml: version 1 required/);
+});
+
+test('#257 a legacy report still returns for an absorbed packet when the bundled policy does not parse (r8)', (t) => {
+  const r = repository(t, { adopted: false, declareUnits: false });
+  const kit = kitWith(t, r, (policy) => fs.writeFileSync(policy, 'modes: [unclosed\n'));
+  const packetFile = r.put('absorbed.md', ['---', 'readiness_applicable: false', 'screen_lifecycle: absorbed', 'readiness_mode: null',
+    'target_screen: RESULT-001', 'absorbed_into: RESULT-002', `readiness_source: "readiness.mjs --docs ${r.docsDir} --screen RESULT-001"`, '---', '', '# Absorbed', ''].join('\n'));
+  // A policy that does not parse is not an adoption fact; the report returns as before.
+  const report = kit('workflow-report.mjs', ['--packet', packetFile, '--docs', r.docsDir, '--json']);
+  assert.equal(report.status, 0, report.stderr);
 });
 
 test('#257 legacy entries find the config of the project that holds the docs, wherever they run (r2)', (t) => {

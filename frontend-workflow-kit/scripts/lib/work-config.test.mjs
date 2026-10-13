@@ -185,3 +185,32 @@ test('#257 a document that cannot be read is not taken as declaring nothing (r7)
       /domains\/result\/screens\/result-001\/screen-spec\.md: cannot read \(EACCES\)/.test(error.message));
   } finally { fs.chmodSync(spec, 0o644); }
 });
+
+test('#257 a docs directory that cannot be listed is not taken as declaring nothing (r8)', (t) => {
+  if (process.platform === 'win32' || process.getuid?.() === 0) { t.skip('requires POSIX permissions as a non-root user'); return; }
+  const p = project(t);
+  p.put(`${DOCS}/domains/result/screens/result-001/screen-spec.md`, md({ artifact_type: 'screen-spec', screen_id: 'RESULT-001',
+    work_execution: { version: 1, units: [] } }));
+  p.put(`${DOCS}/_meta/hidden/state.md`, md({ generated: true }));
+  const screens = path.join(p.docsDir, 'domains', 'result', 'screens'), meta = path.join(p.docsDir, '_meta', 'hidden');
+  try {
+    // A generated _meta directory is not owner territory, so it is never listed.
+    fs.chmodSync(meta, 0o000);
+    assert.throws(() => adoptionPolicy(base(), null, p.docsDir), /owner documents declare work_execution \(screen:RESULT-001\)/);
+    fs.chmodSync(screens, 0o000);
+    assert.throws(() => adoptionPolicy(base(), null, p.docsDir), (error) => error instanceof WorkConfigError &&
+      /domains\/result\/screens: cannot list \(EACCES\)/.test(error.message));
+  } finally { fs.chmodSync(screens, 0o755); fs.chmodSync(meta, 0o755); }
+});
+
+test('#257 frontmatter that mentions work_execution but does not parse is refused (r8)', (t) => {
+  const p = project(t);
+  const spec = `${DOCS}/domains/result/screens/result-001/screen-spec.md`;
+  p.put(spec, '---\nartifact_type: screen-spec\nscreen_id: RESULT-001\nwork_execution:\n  units: [unclosed\n---\n\n# Doc\n');
+  assert.throws(() => adoptionPolicy(base(), null, p.docsDir), (error) => error instanceof WorkConfigError &&
+    /domains\/result\/screens\/result-001\/screen-spec\.md: frontmatter does not parse/.test(error.message));
+  // Without the word in its frontmatter it cannot declare units, so it is left to the
+  // other checks as before, even when its body mentions the word above a rule.
+  p.put(spec, '---\nartifact_type: screen-spec\nscreen_id: [unclosed\n---\n\n# Doc\n\nwork_execution\n\n---\n');
+  assert.equal(adoptionPolicy(base(), null, p.docsDir).work_execution, undefined);
+});
