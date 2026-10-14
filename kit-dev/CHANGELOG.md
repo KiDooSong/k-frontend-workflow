@@ -4,6 +4,80 @@
 
 ## Unreleased
 
+### feat(workflow) — scoped 채택을 consumer 루트의 `frontend-workflow.config.yaml` 과 policy overlay 한 곳에서 읽음 (#257)
+
+- 채택 선언(`work_execution`)을 둘 위치가 정해져 있지 않았다.
+  - vendored policy 를 직접 고치면 visual-refresh pin 이 깨지고, 업그레이드마다 그 파일이 conflict 가 된다.
+  - 밖의 policy 를 `--policy` 로 넘기면, 인자를 빠뜨린 호출이 채택 경로를 미채택으로 판정했다(fail-open).
+- 이제 프로젝트 루트(`--root`, 없으면 아래 legacy 루트 규칙)의 `frontend-workflow.config.yaml`(`version: 1`, `policy_overlay`,
+  `layout`)이 채택 overlay 와 project layout 을 정한다(사람 결정).
+  - 다섯 실행 CLI(readiness·forbidden-paths·packet·run·report, `--work` 여부와 무관), visual-refresh,
+    `workflow:binding-status` 가 이 설정을 기본값으로 읽는다.
+  - overlay 는 `work_execution` 만 담고, 고른 base policy(번들 또는 `--policy`) 위에 항상 겹친다.
+  - `workflow:report` 는 해석한 layout 을 validate·forbidden-paths·check-generated 에 명시로 넘긴다.
+- 판정하지 않고 exit 2 로 거부하는 경우:
+  - base policy 에 `work_execution` 이 있음. 번들이든 `--policy` 든 마찬가지다(사람 결정).
+  - owner 문서가 `work_execution` 을 선언했는데 overlay 가 없음(설정이 없거나 `policy_overlay` 가 없음). owner 문서는
+    `artifact_type` 으로, 또는 `artifact_type` 이 없으면 `workflow:state` 가 읽는 파일 이름(`domains/**/screen-spec.md`·
+    `surface-spec.md`)으로 정한다(리뷰 r6). 선언을 가릴 수 있는 것은 선언 없음으로 보지 않고 거부한다. 읽을 수 없는 docs
+    Markdown(리뷰 r7), 목록을 읽을 수 없는 docs 디렉터리(리뷰 r8), 검사할 수 없는 docs 디렉터리(`HEAD` 없는 visual readiness
+    포함, 리뷰 r9), frontmatter 가 파싱되지 않거나 닫히지 않은 이름 기준 owner 문서(내용과 무관, 리뷰 r8~r10)가 여기에 든다.
+    frontmatter 가 깨진 다른 문서는 `artifact_type` 이 없어 owner 가 아니고 판정되지도 않으므로 이전처럼 둔다. 빈 frontmatter
+    블록(`---` 두 줄)은 닫힌 것으로 본다(리뷰 r11). 그 뒤 본문의 `---` 줄까지 읽은 YAML 파싱 오류는 빈 블록이 선언할 수 있는
+    것을 가리지 않으므로 거부하지 않고, 같은 읽기가 `work_execution` 을 주면 owner 리더처럼 선언으로 센다(리뷰 r14).
+    닫는 줄은 맨 `---` 줄뿐이다. 읽기가 `----`·`---x` 줄에서 끝낸 블록은 뒤에 `---` 줄이 있어도 닫히지 않은 것이다(리뷰 r15).
+    여는 줄 바로 다음 줄은 블록을 끝내지 않으므로, 거기의 `---x: true` 같은 줄은 내용이다(리뷰 r16).
+    `workflow:state` 처럼 `domains` 를 그 경로로 읽는다. 링크인 `domains` 는 따라가고 그 아래 링크는 따라가지 않으며(리뷰 r17),
+    대소문자를 구분하지 않는 파일시스템에서는 다른 대소문자 이름의 디렉터리에도 닿는다(리뷰 r18).
+  - legacy report·packet 은 파싱되지 않는 policy 를 채택 사실로 보지 않고, 그 오류는 이전처럼 뒤에서 보고한다(리뷰 r8·r10).
+  - 명시한 `--layout` 이 설정 `layout` 과 다른 파일. 같은 파일은 허용하고, 설정 `layout` 이 없으면 지금과 같다.
+  - 설정이나 overlay 가 형식 검사를 통과하지 못함. 모르는 키, `version` 1 이 아님, 절대·`..`·symlink·철자가 다른 경로,
+    `work_execution` 밖의 overlay 키, overlay `work_execution` 안의 잘못된 경로(`deny_paths: [../src/**]` 등, 리뷰 r11),
+    읽거나 검사할 수 없는 파일(권한 등, 설정 `layout` 경로 포함)이 여기에 든다.
+  - packet 은 `--readiness` 로 판정을 건너뛸 때도 자기가 읽는 base policy 와 docs 로 같은 검사를 한다(리뷰 r1).
+    visual packet·run 의 `--layout` 은 다른 visual resource 처럼 `--root` 기준이다.
+  - legacy report 는 absorbed packet 으로 일찍 끝나기 전에, leaf 가 쓰는 번들 policy 와 docs 로 같은 검사를 한다.
+    report(legacy·visual)는 모은 forbidden-paths 가 설정을 거부하면 evidence 로 삼키지 않고 exit 2 다(리뷰 r2). 그 거부는
+    report 가 실행마다 넘기는 토큰(`FRONTEND_WORKFLOW_REFUSAL_TOKEN`)으로 표시된 stderr 줄로만 알아보므로, 오류가 되풀이한
+    입력(ref 이름 등)의 `WORK-CONFIG:` 는 거부가 아니다(리뷰 r12).
+  - `HEAD` 가 없어 판정하지 않는 visual readiness 도 작업 트리의 설정·base policy·owner 선언을 검사한다. `--policy` 없는
+    visual report 는 backstop 의 번들 pin 검사보다 먼저 번들 policy 의 `work_execution` 을 거부한다(리뷰 r3).
+  - visual-refresh 는 이 검사를 다른 resource(manifest·layout·ci 등)를 검사하거나 읽기 전에 한다(`assertVisualAdoption`).
+    그래서 다른 resource 오류가 채택 거부를 가려 report 가 이를 backstop 오류 evidence 로 바꾸지 않는다(리뷰 r4).
+- `--root` 가 없는 legacy 진입점(readiness·forbidden-paths·packet·report)은 `<root>/docs/frontend-workflow` docs 를
+  담은 프로젝트를, 아니면 작업 디렉터리를 프로젝트 루트로 본다. report 가 monorepo diff 접두를 유도하는 방식과 같아서,
+  다른 곳에서 실행해도 모든 진입점이 같은 설정을 읽는다(리뷰 r2).
+- 설정과 overlay 는 authority 파일이다.
+  - `--work` 는 둘을 HEAD 에서 읽고 resource·authority read set 에 기록한다. work diff 가 이를 바꾸거나 설정을
+    만들면 `CW-`/`SW-GIT-AUTHORITY-CHANGED` 가 된다. 설정은 프로젝트 루트의 그 경로만 authority 이고, 다른 곳의 같은 이름
+    파일은 일반 작업 파일이다(리뷰 r5). 그 경로에 저장한 `--work` 요청도 요청 전달 파일로 보지 않는다(리뷰 r6).
+    current backstop 은 `HEAD` 에 없는 설정도 Git 이 무시하는지와 무관하게 찾는다. read set 레코드는 늘리지 않아
+    채택 없는 저장소의 preflight 는 바이트가 같다(리뷰 r3).
+  - visual-refresh diff 에서는 `VR-BACKSTOP-012` 다. forward view 는 작업 트리의 설정과 overlay 를 쓴다. 정규화 없이
+    부른 visual 평가도 설정이 고른 layout·overlay 를 불변 resource 로 둔다(리뷰 r2).
+- scoped projection 은 `policyOverlayFile` 에서만 채택을 읽고, 그 파일을 `policy.file` 로 기록한다.
+  - 그래서 binding basis 의 `units` 구성요소가 바뀌어, 기록된 digest 는 한 번 다시 기록해야 한다.
+  - HEAD→index 라이브러리 검사(`inspectScopedGit*`)는 overlay 를 명시 `policy_overlay` 로 받는다.
+- 업그레이드 planner 는 `scripts/lib/work-config.mjs` 가 없는 payload 를 채택을 지킬 수 없는 payload 로 본다.
+  overlay 를 포함한 선언이 남아 있으면 그 downgrade 의 자동 적용을 거부한다. `policy_overlay` 를 지정한 설정 파일은
+  overlay 파일 이름·추적 여부와 무관하게 표식이고, 표식 키는 파싱한 문서에서 읽으므로 이스케이프한 철자도 센다(리뷰 r13).
+  설정 파일 자체에 남은 채택 키도 계속 표식이다(리뷰 r18).
+- #265 golden 을 다시 고정했다.
+  - D-001 의 구성요소 digest 가운데 `units` 만 바뀌었다.
+  - envelope 은 config·overlay resource·authority 레코드가 늘었고, 그 밖에는 다음 바이트만 다르다.
+    - base policy 바이트
+    - 새 digest 를 기록한 파일의 바이트(COUPON-001 스펙 해시, docs tree oid, commit tree)
+- 회귀 테스트:
+  - 설정·overlay 해석과 거부(`work-config.test.mjs`)
+  - legacy readiness·forbidden-paths, current work, packet·report 의 설정 기본값·layout 불일치·base policy 거부·
+    units 선언 거부·authority 변경
+  - visual-refresh 의 같은 경우
+  - projection 의 overlay 전용 채택
+  - planner downgrade guard
+  - 기존 scoped fixture 는 설정·overlay 로 옮겼다(기대값 변경은 golden 하나)
+- 문서: `scoped-work.md` §Adoption(위치와 이유)·Rollback·Known limits, `upgrade-notes.md`(옮기는 절차),
+  `COMMANDS.md`, `current-work.md`, `implement-shared-surface` 스킬.
+
 ### feat(workflow) — scope binding 의 basis 를 그 행의 관계로 좁히고 binding 상태 CLI 를 더함 (#275)
 
 - binding 의 `basis_digest` 는 owner 의 applicability projection 전체를 해시했다(`basis_version: 1`). 그래서 owner 에

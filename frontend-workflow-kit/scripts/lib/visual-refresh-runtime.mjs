@@ -14,6 +14,7 @@ import { loadScreenSpec } from './spec.mjs';
 import { walkFiles } from './util.mjs';
 import * as core from './visual-refresh-authority.mjs';
 import { adoptedWorkPaths } from './scoped-work-adoption.mjs';
+import { WORK_CONFIG_FILE } from './work-config.mjs';
 import {
   collectGeneratedOwnershipEntries,
   resolveGeneratedOwnership,
@@ -366,7 +367,7 @@ function computeFullReadiness(destinationRoot, selectedScreen, prepared) {
     entry: output?.[selectedScreen] || null,
     claims,
     // B §10.1: adopted roots plus the adopted screens' active Candidate Slice Paths.
-    adopted: adoptedWorkPaths({ docsDir, policy: meta.policy, claims }),
+    adopted: adoptedWorkPaths({ docsDir, policy: meta.adoptionPolicy, claims }),
   };
 }
 
@@ -380,12 +381,15 @@ function generatedRoots(sourceRoot, destinationRoot, observationRoot) {
   ];
 }
 
+// frontend-workflow.config.yaml (#257) is always listed, so a diff can neither change
+// nor create the adoption config that would judge it; its overlay is listed when named.
 function explicitAuthorityResourcePaths(options = {}) {
-  return [...new Set(
-    ['policy', 'manifest', 'layout', 'ci']
+  return [...new Set([
+    ...['policy', 'policy_overlay', 'manifest', 'layout', 'ci']
       .map((key) => options?.[key])
       .filter((value) => typeof value === 'string' && value.trim() !== ''),
-  )].sort();
+    WORK_CONFIG_FILE,
+  ])].sort();
 }
 
 // The authority core owns input/reconciliation/mapping/supersession validation. This
@@ -535,7 +539,7 @@ export function evaluateVisualRefreshAuthority(options) {
     logical_path_rules: rules,
     generated_entries: generatedEntries,
     generated_roots: roots,
-    authority_resource_paths: explicitAuthorityResourcePaths(options.options),
+    authority_resource_paths: explicitAuthorityResourcePaths({ ...options.options, ...prepared.meta.configResources }),
     visual_path_authorization: exactPathAuthorization,
     screen_spec_path: selectedScreenSpecPath(
       options.destinationRoot,

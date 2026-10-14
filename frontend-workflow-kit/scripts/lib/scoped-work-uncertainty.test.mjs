@@ -25,8 +25,10 @@ function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'scoped-uncertainty-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const docsDir = path.join(root, 'docs'); const docs = new Map();
-  const policyFile = path.join(root, 'policy.yaml');
-  const adopt = (owners = [OWNER]) => fs.writeFileSync(policyFile, JSON.stringify({ work_execution: {
+  // #257: the base policy never adopts; adopt() rewrites the policy overlay.
+  const policyFile = path.join(root, 'policy.yaml'), overlayFile = path.join(root, 'adoption.yaml');
+  fs.writeFileSync(policyFile, JSON.stringify({}));
+  const adopt = (owners = [OWNER]) => fs.writeFileSync(overlayFile, JSON.stringify({ work_execution: {
     version: 1, owners, profiles: ['behavior'],
     role_limits: { behavior: ['screen', 'domain_component', 'hook', 'api_client', 'test'] }, deny_paths: [],
   } }));
@@ -45,7 +47,7 @@ function fixture(t) {
   adopt(); write('screen.md', screen(), '## Notes\nOwner housekeeping.');
   write('rules.md', { artifact_id: 'RULES', artifact_type: 'domain-rules', domain: 'result', status: 'confirmed' },
     '## Rules\nKnown behavior.\n\n### Nested\nNested contract.\n\n## Other\nOther behavior.');
-  const options = (owner = OWNER) => ({ owner, policyFile, docsDir, projectRoot: root, layout,
+  const options = (owner = OWNER) => ({ owner, policyFile, policyOverlayFile: overlayFile, docsDir, projectRoot: root, layout,
     targetIndex: buildReconciliationTargetIndex({ docs: [...docs.values()].map((file) =>
       ({ file, fm: splitFrontmatter(fs.readFileSync(file, 'utf8')).data })) }) });
   return { root, docs, write, change, evidence, adopt, options,

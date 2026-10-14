@@ -306,8 +306,12 @@ export function runCli(main, tool = 'workflow') {
   try {
     main();
   } catch (err) {
-    if (err && err.name === 'LayoutConfigError') {
+    // WorkConfigError(work-config.mjs, #257): frontend-workflow.config.yaml·overlay 의 어긋남도 같은 exit 2.
+    if (err && (err.name === 'LayoutConfigError' || err.name === 'WorkConfigError')) {
       process.stderr.write(`${tool}: ${err.message}\n`);
+      // work-config.mjs REFUSAL_TOKEN_ENV: a parent that set a token reads this line as the refusal.
+      const token = process.env.FRONTEND_WORKFLOW_REFUSAL_TOKEN;
+      if (err.name === 'WorkConfigError' && token) process.stderr.write(`${token} ${err.message}\n`);
       process.exit(2);
     }
     throw err;

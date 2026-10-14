@@ -30,9 +30,10 @@ function fixture(t) {
   const docsDir = path.join(root, 'docs'), kitRoot = path.join(root, '.kit'), docs = new Map();
   fs.mkdirSync(kitRoot);
   const policyFile = path.join(kitRoot, 'policy.yaml'), layoutFile = path.join(kitRoot, 'layout.yaml');
-  const manifestFile = path.join(kitRoot, 'manifest.yaml');
+  const manifestFile = path.join(kitRoot, 'manifest.yaml'), overlayFile = path.join(kitRoot, 'adoption.yaml');
   const put = (file, value) => fs.writeFileSync(file, JSON.stringify(value));
-  put(policyFile, { work_execution: { version: 1, owners: [OWNER], profiles: ['visual', 'api-contract', 'behavior'],
+  put(policyFile, {});
+  put(overlayFile, { work_execution: { version: 1, owners: [OWNER], profiles: ['visual', 'api-contract', 'behavior'],
     role_limits: { visual: ['screen', 'domain_component', 'hook', 'test'], 'api-contract': ['api_client', 'test'],
       behavior: ['screen', 'domain_component', 'hook', 'api_client', 'test'] }, deny_paths: [] } });
   put(layoutFile, { roles: { screen: ['src/features/{domain}/screens/**'], domain_component: ['src/features/{domain}/components/**'],
@@ -54,7 +55,7 @@ function fixture(t) {
     '## Rules\nKnown contract.\n\n## Other\nOther contract.\n\n## Untouched\nUnselected prose.');
   write(HOME, { artifact_id: 'open-decision-register', artifact_type: 'open-decision-register', status: 'draft',
     decision_work_scopes: { version: 1, bindings: [binding()] } }, body([row(), row('D-TWO')]));
-  const options = (owner = OWNER) => ({ owner, projectRoot: root, docsDir, kitRoot, policyFile, layoutFile, manifestFile,
+  const options = (owner = OWNER) => ({ owner, projectRoot: root, docsDir, kitRoot, policyFile, policyOverlayFile: overlayFile, layoutFile, manifestFile,
     targetIndex: buildReconciliationTargetIndex({ docs: [...docs.values()].map((file) =>
       ({ file, fm: splitFrontmatter(fs.readFileSync(file, 'utf8')).data })) }) });
   const run = (owner = OWNER) => inspectScopedDecisionBindings(options(owner));
@@ -65,7 +66,7 @@ function fixture(t) {
       entry.owner === owner && decisionRef.startsWith(`decision:${entry.decision_id}@`)).basis_digest = digest; });
     return digest;
   };
-  return { root, docs, write, change, options, run, bind, recordDigest, policyFile };
+  return { root, docs, write, change, options, run, bind, recordDigest, policyFile, overlayFile };
 }
 
 // Each side has independent actual bytes and a freshly built canonical index.

@@ -30,8 +30,10 @@ function fixture(t) {
   const docsDir = path.join(root, 'docs'), kitRoot = path.join(root, '.kit');
   fs.mkdirSync(kitRoot); const docs = new Map();
   const policyFile = path.join(kitRoot, 'policy.yaml'), layoutFile = path.join(kitRoot, 'layout.yaml'), manifestFile = path.join(kitRoot, 'manifest.yaml');
+  const overlayFile = path.join(kitRoot, 'adoption.yaml');
   const putJson = (file, value) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify(value)); };
-  const policy = (owners = [OWNER], deny_paths = []) => putJson(policyFile, { work_execution: { version: 1, owners,
+  putJson(policyFile, {});
+  const policy = (owners = [OWNER], deny_paths = []) => putJson(overlayFile, { work_execution: { version: 1, owners,
     profiles: ['visual', 'api-contract', 'behavior'], role_limits: {
       visual: ['screen', 'domain_component', 'hook', 'test'], 'api-contract': ['api_client', 'test'],
       behavior: ['screen', 'domain_component', 'hook', 'api_client', 'test'],
@@ -49,10 +51,10 @@ function fixture(t) {
   policy(); layout(); manifest();
   write('screen.md', screen(), '## Notes\nOwner housekeeping.');
   write('rules.md', { artifact_id: 'RULES', artifact_type: 'domain-rules', domain: 'result', status: 'confirmed' }, '## Rules\nKnown contract.');
-  const options = (owner = OWNER) => ({ owner, projectRoot: root, docsDir, kitRoot, policyFile, layoutFile, manifestFile,
+  const options = (owner = OWNER) => ({ owner, projectRoot: root, docsDir, kitRoot, policyFile, policyOverlayFile: overlayFile, layoutFile, manifestFile,
     targetIndex: buildReconciliationTargetIndex({ docs: [...docs.values()].map((file) =>
       ({ file, fm: splitFrontmatter(fs.readFileSync(file, 'utf8')).data })) }) });
-  return { root, kitRoot, docs, policyFile, layoutFile, manifestFile, putJson, write, change, layout, policy, manifest, options,
+  return { root, kitRoot, docs, policyFile, overlayFile, layoutFile, manifestFile, putJson, write, change, layout, policy, manifest, options,
     run: (owner = OWNER) => resolveScopedBoundaryProjection(options(owner)) };
 }
 const boundary = (out) => out.projection.ownership;

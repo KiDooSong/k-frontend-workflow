@@ -23,7 +23,7 @@ import {
   CurrentWorkExecutionError, REGULAR_MODES, AUTHORITY_BASENAMES, outside, projectRelative, resolveProjectRoot, gitIdentity, yamlFile,
   invalidBlocker, selectedInputErrors, artifactProjectPath, inputHash, stable,
 } from './current-work-execution-core.mjs';
-import { readWorkRequestFile, resolveWorkResources, workResourceRecords, baselineWorkflowState } from './current-work-execution-preflight.mjs';
+import { readWorkRequestFile, resolveWorkResources, workResourceRecords, baselineWorkflowState, baselineWorkPolicy } from './current-work-execution-preflight.mjs';
 import { normalizeScopedWorkRequestSyntax } from './scoped-work-request.mjs';
 import { inspectScopedWorkRequests } from './scoped-work-composition.mjs';
 
@@ -89,11 +89,11 @@ export function prepareScopedWork({ work, root, docs, src, policy, manifest, lay
   const snapshot = materializeRawGitTree({ repositoryRoot: ctx.repositoryRoot, projectPrefix: ctx.projectPrefix, tree: identity.tree });
   try {
     const projectRoot = ctx.projectRoot, baselineRoot = snapshot.root;
-    const { resources, baselineKitRoot } = resolveWorkResources(ctx, baselineRoot, { docs, src, policy, manifest, layout, ci });
+    const { resources, baselineKitRoot, config } = resolveWorkResources(ctx, baselineRoot, { docs, src, policy, manifest, layout, ci });
     const resourceRecords = workResourceRecords(resources, snapshot);
     const docsRoot = resources.docs.baseline;
     const registerFile = path.join(docsRoot, '_meta', 'reconciliation-register.md');
-    const policyData = yamlFile(resources.policy.baseline, 'policy');
+    const policyData = baselineWorkPolicy(resources, config);
     const manifestData = yamlFile(resources.manifest.baseline, 'manifest');
     const ciData = resources.ci ? yamlFile(resources.ci.baseline, 'CI') : {};
     const layoutData = loadLayoutProfile({ kitRoot: baselineKitRoot, flags: { layout: resources.layout.baseline } });
@@ -144,6 +144,7 @@ export function prepareScopedWork({ work, root, docs, src, policy, manifest, lay
     const composition = inspectScopedWorkRequests({
       request: parsed.value, projectRoot: baselineRoot, docsDir: docsRoot, kitRoot: baselineKitRoot,
       policyFile: resources.policy.baseline, layoutFile: resources.layout.baseline, manifestFile: resources.manifest.baseline,
+      ...(resources.policy_overlay ? { policyOverlayFile: resources.policy_overlay.baseline } : {}),
       registerFile, ...(resources.ci ? { ciFile: resources.ci.baseline } : {}),
       targetIndex: index.targetIndex, inputArtifacts, srcDir: resources.src.baseline,
     });

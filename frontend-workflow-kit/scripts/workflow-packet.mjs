@@ -15,6 +15,7 @@ import {
   renderJsonEnvelope,
 } from './lib/workflow-packet.mjs';
 import { loadLayoutProfile } from './lib/layout-profile.mjs';
+import { adoptionPolicy, legacyProjectRoot, liveWorkConfig } from './lib/work-config.mjs';
 import {
   visualAuditFromReadiness, visualPreworkIssues, injectVisualAuditFrontmatter, visualStopPacket,
 } from './lib/visual-refresh-transport.mjs';
@@ -205,16 +206,31 @@ function main() {
   const visual = intentFlag === VISUAL_REFRESH_INTENT;
   if (visual && readinessFlag) fail('visual-refresh에서는 --readiness override를 사용할 수 없음; 현재 authority를 다시 평가해야 함');
   const rootResolved = visual ? resolveProjectRoot(rootFlag) : null;
+  // #257: --root(visual) 또는 docs 를 담은 프로젝트(없으면 작업 디렉터리)의 frontend-workflow.config.yaml 이
+  //   layout 기본값을 정한다.
+  //   readiness 서브프로세스와 packet 자신이 같은 layout 을 보도록 해석한 경로를 명시로 넘긴다.
+  //   visual 의 --layout 은 다른 visual resource 처럼 --root 기준이다.
+  const work = liveWorkConfig(rootResolved || legacyProjectRoot(docsFlag || DEFAULTS.docs),
+    visual && layoutFlag ? path.join(rootResolved, ...visualRelative(layoutFlag, rootResolved).split('/')) : layoutFlag);
+  const configLayout = work.config?.layout ? work.layout : null;
   const docsVisual = visual && docsFlag ? visualRelative(docsFlag, rootResolved) : docsFlag;
   const srcVisual = visual && srcFlag ? visualRelative(srcFlag, rootResolved) : srcFlag;
   const policyVisual = visual && policyFlag ? visualRelative(policyFlag, rootResolved) : policyFlag;
   const manifestVisual = visual && manifestFlag ? visualRelative(manifestFlag, rootResolved) : manifestFlag;
-  const layoutVisual = visual && layoutFlag ? visualRelative(layoutFlag, rootResolved) : layoutFlag;
+  const layoutVisual = visual && (configLayout || layoutFlag) ? visualRelative(configLayout || layoutFlag, rootResolved) : layoutFlag;
   const ciVisual = visual && ciFlag ? visualRelative(ciFlag, rootResolved) : ciFlag;
 
   const policyPath = visual && policyVisual
     ? path.join(rootResolved, ...policyVisual.split('/'))
     : policyFlag ? path.resolve(policyFlag) : DEFAULTS.policy;
+  // #257: packet 이 직접 읽는 base policy 와 docs 도 채택 검사를 받는다(--readiness 로 판정을 건너뛸 때 포함).
+  const docsForAdoption = visual ? path.join(rootResolved, ...(docsVisual || DEFAULTS.docs).split('/'))
+    : path.resolve(docsFlag || DEFAULTS.docs);
+  //   파싱되지 않는 policy 는 채택 사실이 아니므로 base 검사만 건너뛰고, 그 오류는 이전처럼 뒤에서 보고한다.
+  const policyRaw = readFileSafe(policyPath);
+  let basePolicy = {};
+  try { basePolicy = policyRaw == null ? {} : yamlParse(policyRaw) || {}; } catch { /* left to the policy readers */ }
+  adoptionPolicy(basePolicy, work.config, docsForAdoption);
   const manifestPath = visual && manifestVisual
     ? path.join(rootResolved, ...manifestVisual.split('/'))
     : manifestFlag ? path.resolve(manifestFlag) : DEFAULTS.manifest;
@@ -233,7 +249,7 @@ function main() {
     readinessSource = `readiness.mjs --screen ${screen} --intent ${intentFlag} --input ${inputFlag}${pathFlag ? ` --path ${pathFlag}` : ''} --root ${rootResolved} --json (computed ${date})`;
   } else {
     const docs = docsFlag ? path.resolve(docsFlag) : path.resolve(DEFAULTS.docs);
-    const layoutPath = layoutFlag ? path.resolve(layoutFlag) : null;
+    const layoutPath = configLayout || (layoutFlag ? path.resolve(layoutFlag) : null);
     data = runReadinessSubprocess({ screen, docs, policy: policyPath, manifest: manifestPath, layout: layoutPath });
     const docsLabel = toPosix(docsFlag || DEFAULTS.docs);
     const layoutLabel = layoutPath ? ` --layout ${toPosix(layoutPath)}` : '';
@@ -264,7 +280,8 @@ function main() {
   const issues = visual ? visualPreworkIssues(audit, { screen, input: inputFlag, checkedPath: pathFlag }) : [];
   const order = loadOrder(policyPath);
   const ambiguityLink = outPath ? toPosix(path.relative(path.dirname(outPath), AMBIGUITY_DOC)) : toPosix(path.relative(process.cwd(), AMBIGUITY_DOC));
-  const layoutFlags = visual && layoutVisual ? { layout: path.join(rootResolved, ...layoutVisual.split('/')) } : flags;
+  const layoutFlags = visual && layoutVisual ? { layout: path.join(rootResolved, ...layoutVisual.split('/')) }
+    : configLayout ? { ...flags, layout: configLayout } : flags;
   const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags: layoutFlags });
   const model = buildPacketModel({ entry, screen, requestedMode, domain: domainFlag, readinessSource, order, date, owner, seq, ambiguityLink, layout });
   if (issues.length) model.warnings = [...(model.warnings || []), ...issues.map((issue) => `visual-refresh pre-work stop — ${issue}`)];

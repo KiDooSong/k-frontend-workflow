@@ -37,7 +37,9 @@ function repository(t) {
   const work = { version: 1, owners: [SURFACE, ...MEMBERS.map((id) => `screen:${id}`)], profiles: ['visual', 'api-contract', 'behavior'],
     role_limits: { visual: ['screen', 'domain_component', 'hook', 'test'], 'api-contract': ['api_client', 'test'],
       behavior: ['screen', 'domain_component', 'hook', 'api_client', 'test'] }, deny_paths: [] };
-  put('.kit/policy.yaml', `${fs.readFileSync(DEFAULTS.policy, 'utf8')}\nwork_execution: ${JSON.stringify(work)}\n`);
+  put('.kit/policy.yaml', fs.readFileSync(DEFAULTS.policy, 'utf8'));
+  put('.kit/adoption.yaml', `work_execution: ${JSON.stringify(work)}\n`);
+  put('frontend-workflow.config.yaml', 'version: 1\npolicy_overlay: .kit/adoption.yaml\n');
   const layoutFile = put('.kit/layout.yaml', JSON.stringify({ roles: { route_entry: 'src/app/**',
     screen: 'src/features/{domain}/screens/**', domain_component: 'src/features/{domain}/components/**',
     hook: 'src/features/{domain}/hooks/**', api_client: 'src/api/**', test: 'src/features/{domain}/tests/**' } }));

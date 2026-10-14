@@ -30,7 +30,9 @@ function project(t) {
   const put = (name, text) => { fs.mkdirSync(path.dirname(path.join(root, name)), { recursive: true }); fs.writeFileSync(path.join(root, name), text); };
   const read = (name) => fs.readFileSync(path.join(root, name), 'utf8');
   const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
-  put('config/policy.yaml', `${fs.readFileSync(path.join(KIT_ROOT, 'policies/implementation-mode-policy.yaml'), 'utf8')}\nwork_execution: ${JSON.stringify(WORK)}\n`);
+  put('config/policy.yaml', fs.readFileSync(path.join(KIT_ROOT, 'policies/implementation-mode-policy.yaml'), 'utf8'));
+  put('config/adoption.yaml', `work_execution: ${JSON.stringify(WORK)}\n`);
+  put('frontend-workflow.config.yaml', 'version: 1\npolicy_overlay: config/adoption.yaml\n');
   put('config/manifest.yaml', fs.readFileSync(path.join(KIT_ROOT, 'catalog/artifact-manifest.yaml'), 'utf8'));
   put('config/layout.yaml', fs.readFileSync(path.join(KIT_ROOT, 'presets/expo-feature.yaml'), 'utf8'));
   const original = read(LIST), end = original.indexOf('\n---\n', 4);

@@ -9,6 +9,7 @@ import { buildState } from '../workflow-state.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
 import { readinessPathAuthorization, WORK_SELECTION_REQUIRED_REASON } from './path-backstop.mjs';
 import { adoptedWorkPaths, NO_ADOPTED_WORK } from './scoped-work-adoption.mjs';
+import { WORK_CONFIG_FILE } from './work-config.mjs';
 import { prepareCurrentWork, cleanupCurrentWork, evaluateCurrentGit } from './current-work-execution.mjs';
 import { visualImplementationAuthorization as runtimeVisualAuthorization } from './visual-refresh-runtime.mjs';
 import { visualImplementationAuthorization as coreVisualAuthorization } from './visual-refresh-authority.mjs';
@@ -30,8 +31,9 @@ const SURFACE_BODY = ['# Shared result panel', '## Purpose\nUniform result panel
   `## Unknowns\n${table(['ID', 'Question', 'Status'], [])}`].join('\n\n');
 const git = (root, ...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
 
-// owners: which owners the policy adopts; the documents always declare units.
-function repository(t, { owners = [SURFACE, 'screen:RESULT-001', 'screen:RESULT-002'], policySection = true } = {}) {
+// owners: which owners the overlay adopts; the documents always declare units unless
+// declareUnits is false. adopted=false leaves frontend-workflow.config.yaml out (#257).
+function repository(t, { owners = [SURFACE, 'screen:RESULT-001', 'screen:RESULT-002'], adopted = true, declareUnits = true } = {}) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'scoped-adoption-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const docs = new Map();
@@ -43,7 +45,9 @@ function repository(t, { owners = [SURFACE, 'screen:RESULT-001', 'screen:RESULT-
   const work = { version: 1, owners, profiles: ['visual', 'api-contract', 'behavior'],
     role_limits: { visual: ['screen', 'domain_component', 'hook', 'test'], 'api-contract': ['api_client', 'test'],
       behavior: ['screen', 'domain_component', 'hook', 'api_client', 'test'] }, deny_paths: [] };
-  const policyFile = put('.kit/policy.yaml', `${fs.readFileSync(DEFAULTS.policy, 'utf8')}${policySection ? `\nwork_execution: ${JSON.stringify(work)}\n` : ''}`);
+  const policyFile = put('.kit/policy.yaml', fs.readFileSync(DEFAULTS.policy, 'utf8'));
+  const overlayFile = put('.kit/adoption.yaml', `work_execution: ${JSON.stringify(work)}\n`);
+  if (adopted) put(WORK_CONFIG_FILE, 'version: 1\npolicy_overlay: .kit/adoption.yaml\nlayout: .kit/layout.yaml\n');
   const layoutFile = put('.kit/layout.yaml', JSON.stringify({ roles: { route_entry: 'src/app/**',
     screen: 'src/features/{domain}/screens/**', domain_component: 'src/features/{domain}/components/**',
     hook: 'src/features/{domain}/hooks/**', api_client: 'src/api/**', test: 'src/features/{domain}/tests/**' } }));
@@ -56,14 +60,14 @@ function repository(t, { owners = [SURFACE, 'screen:RESULT-001', 'screen:RESULT-
   MEMBERS.forEach((id, index) => write(`screen-${index + 1}.md`, `domains/result/screens/${id.toLowerCase()}/screen-spec.md`, {
     artifact_id: `HOST-${index + 1}`, artifact_type: 'screen-spec', screen_id: id, domain: 'result', route: `/${id.toLowerCase()}`,
     status: 'draft', api_required: false, screen_entry: ENTRY(id),
-    work_execution: { version: 1, ...(index === 0 ? { private_paths: { domain_component: [PRIVATE] }, test_paths: [`${PREFIX}/tests/result-001/**`] } : {}),
-      units: [{ id: 'known', kind: 'behavior', contracts: [`artifact:RULES-${index + 1}#rules`], sources: [] }] },
+    ...(declareUnits ? { work_execution: { version: 1, ...(index === 0 ? { private_paths: { domain_component: [PRIVATE] }, test_paths: [`${PREFIX}/tests/result-001/**`] } : {}),
+      units: [{ id: 'known', kind: 'behavior', contracts: [`artifact:RULES-${index + 1}#rules`], sources: [] }] } } : {}),
   }, '## Notes\nExisting host.'));
   write('surface.md', 'domains/result/surfaces/result-panel/surface-spec.md', { artifact_id: 'SURFACE', artifact_type: 'shared-surface-spec',
     surface_id: 'RESULT-PANEL', domain: 'result', status: 'draft', api_required: false, member_screens: [...MEMBERS],
     implementation_paths: [`${SHARED}/**`],
-    work_execution: { version: 1, units: [{ id: 'panel', kind: 'behavior', contracts: ['artifact:RULES-0#rules'], sources: [],
-      host_units: Object.fromEntries(MEMBERS.map((id) => [id, 'known'])) }] },
+    ...(declareUnits ? { work_execution: { version: 1, units: [{ id: 'panel', kind: 'behavior', contracts: ['artifact:RULES-0#rules'], sources: [],
+      host_units: Object.fromEntries(MEMBERS.map((id) => [id, 'known'])) }] } } : {}),
   }, SURFACE_BODY);
   for (const file of [PANEL, HOOK, ...MEMBERS.map(ENTRY)]) put(file, 'export default null;\n');
   const layout = loadLayoutProfile({ kitRoot: root, flags: { layout: layoutFile } });
@@ -73,13 +77,15 @@ function repository(t, { owners = [SURFACE, 'screen:RESULT-001', 'screen:RESULT-
   git(root, 'add', '-A'); git(root, 'commit', '-qm', 'baseline');
   const resources = ['--docs', path.join(root, DOCS), '--policy', policyFile, '--manifest', manifestFile, '--layout', layoutFile];
   const script = (name, args) => spawnSync(process.execPath, [path.join(KIT_ROOT, 'scripts', name), ...args], { cwd: root, encoding: 'utf8' });
-  return { root, docs, put, policyFile, resources, script,
-    policy: () => yamlParse(fs.readFileSync(policyFile, 'utf8')), docsDir: path.join(root, DOCS) };
+  return { root, docs, put, policyFile, overlayFile, resources, script,
+    policy: () => adopted ? { ...yamlParse(fs.readFileSync(policyFile, 'utf8')), ...yamlParse(fs.readFileSync(overlayFile, 'utf8')) }
+      : yamlParse(fs.readFileSync(policyFile, 'utf8')),
+    docsDir: path.join(root, DOCS) };
 }
 const sources = (marker) => marker.paths.map((entry) => [entry.owner, entry.path, entry.source]);
 
 test('D adoption: an unadopted repository gets an empty marker and unchanged path decisions', (t) => {
-  const r = repository(t, { policySection: false });
+  const r = repository(t, { adopted: false });
   assert.equal(adoptedWorkPaths({ docsDir: r.docsDir, policy: r.policy() }), NO_ADOPTED_WORK);
   assert.equal(adoptedWorkPaths({ docsDir: r.docsDir, policy: undefined }), NO_ADOPTED_WORK);
   const entry = { readiness_mode: 'production-ready', allowed_paths: ['src/**'], forbidden_paths: [] };
@@ -127,7 +133,7 @@ test('D adoption: readiness --path returns work-selection-required for an adopte
   const adopted = check(ENTRY('RESULT-001'));
   assert.equal(adopted.allowed, false); assert.equal(adopted.reason, WORK_SELECTION_REQUIRED_REASON);
   assert.equal(check(HOOK).allowed, true);
-  const plain = repository(t, { policySection: false });
+  const plain = repository(t, { adopted: false, declareUnits: false });
   const run = plain.script('readiness.mjs', [...plain.resources, '--screen', 'RESULT-001', '--path', ENTRY('RESULT-001'), '--json']);
   assert.equal(JSON.parse(run.stdout)['RESULT-001'].path_authorization.allowed, true);
 });
@@ -179,10 +185,308 @@ test('W28: withdrawing adoption inside an implementation diff cannot reopen lega
   const flags = { work: request, root: r.root, docs: DOCS, src: 'src', policy: '.kit/policy.yaml', manifest: '.kit/manifest.yaml', layout: '.kit/layout.yaml' };
   const preflight = prepareCurrentWork(flags); t.after(() => cleanupCurrentWork(preflight));
   assert.deepEqual(preflight.denials.map((entry) => entry.code), ['CW-WORK-SELECTION-REQUIRED']);
-  // The same diff drops the policy adoption section and edits the adopted path.
-  fs.writeFileSync(r.policyFile, fs.readFileSync(DEFAULTS.policy, 'utf8'));
+  // The same diff drops the adoption overlay and edits the adopted path.
+  fs.rmSync(r.overlayFile); fs.rmSync(path.join(r.root, WORK_CONFIG_FILE));
   r.put(ENTRY('RESULT-001'), 'export default function Screen() { return null; }\n');
   const codes = evaluateCurrentGit(preflight).violations.map((entry) => entry.code);
   assert.ok(codes.includes('CW-GIT-AUTHORITY-CHANGED'), JSON.stringify(codes));
   assert.ok(codes.includes('CW-GIT-DENIED-TARGET'), JSON.stringify(codes));
+});
+
+// #257: frontend-workflow.config.yaml at the project root is the one adoption location.
+const currentRequest = (r, targets) => r.put('.work/current.json', JSON.stringify({ version: 1, origin_inputs: [], requests: [{
+  owner: 'screen:RESULT-001', authority: 'current', requested_mode: 'rough-fixture-ui', targets: targets.map((file) => ({ path: file, change: 'M' })) }] }));
+const noPolicy = (r) => ['--docs', r.docsDir, '--manifest', '.kit/manifest.yaml'];
+
+test('#257 every entry reads the adoption overlay and the layout from frontend-workflow.config.yaml', (t) => {
+  const r = repository(t);
+  const readiness = r.script('readiness.mjs', [...noPolicy(r), '--screen', 'RESULT-001', '--path', ENTRY('RESULT-001'), '--json']);
+  assert.equal(readiness.status, 0, readiness.stderr);
+  assert.equal(JSON.parse(readiness.stdout)['RESULT-001'].path_authorization.reason, WORK_SELECTION_REQUIRED_REASON);
+  const explicit = r.script('readiness.mjs', [...r.resources, '--screen', 'RESULT-001', '--path', ENTRY('RESULT-001'), '--json']);
+  assert.equal(explicit.stdout, readiness.stdout);
+  const diff = r.put('changes.txt', `M\t${PANEL}\n`);
+  const forbidden = r.script('forbidden-paths.mjs', [...noPolicy(r), '--diff', diff, '--json']);
+  assert.equal(forbidden.status, 0, forbidden.stderr);
+  assert.deepEqual(JSON.parse(forbidden.stdout).violations.filter((entry) => entry.work_selection_required).map((entry) => entry.file), [PANEL]);
+  // --work needs its base policy inside --root; the kit default lies outside this fixture.
+  const preflight = prepareCurrentWork({ work: currentRequest(r, [ENTRY('RESULT-001')]), root: r.root, docs: DOCS, src: 'src',
+    policy: '.kit/policy.yaml', manifest: '.kit/manifest.yaml' });
+  t.after(() => cleanupCurrentWork(preflight));
+  assert.deepEqual(preflight.denials.map((entry) => entry.code), ['CW-WORK-SELECTION-REQUIRED']);
+  const resources = Object.fromEntries(preflight.snapshot.resources.map((entry) => [entry.kind, entry.path]));
+  assert.equal(resources.config, WORK_CONFIG_FILE);
+  assert.equal(resources.policy_overlay, '.kit/adoption.yaml');
+  assert.equal(resources.layout, '.kit/layout.yaml');
+  assert.ok(['.kit/adoption.yaml', WORK_CONFIG_FILE].every((name) =>
+    preflight.snapshot.authority_read_set.some((entry) => entry.path === name && entry.kind === 'file')));
+});
+
+test('#257 owner documents that declare work_execution without a configured overlay are refused, not judged unadopted', (t) => {
+  for (const config of [null, 'version: 1\nlayout: .kit/layout.yaml\n']) {
+    const r = repository(t, { adopted: false });
+    if (config) r.put(WORK_CONFIG_FILE, config);
+    const refused = /WORK-CONFIG: owner documents declare work_execution \(screen:RESULT-001, screen:RESULT-002, surface:RESULT-PANEL\)/;
+    for (const args of [['--screen', 'RESULT-001', '--path', ENTRY('RESULT-001'), '--json'], ['--json']]) {
+      const run = r.script('readiness.mjs', [...r.resources, ...args]);
+      assert.equal(run.status, 2, run.stdout); assert.match(run.stderr, refused);
+    }
+    const run = r.script('forbidden-paths.mjs', [...r.resources, '--diff', r.put('changes.txt', `M\t${HOOK}\n`), '--json']);
+    assert.equal(run.status, 2, run.stdout); assert.match(run.stderr, refused);
+    assert.throws(() => prepareCurrentWork({ work: currentRequest(r, [HOOK]), root: r.root, docs: DOCS, src: 'src',
+      policy: '.kit/policy.yaml', manifest: '.kit/manifest.yaml', layout: '.kit/layout.yaml' }), refused);
+  }
+});
+
+test('#257 a base policy that declares work_execution is refused, whatever the overlay', (t) => {
+  const r = repository(t);
+  r.put('.kit/inline-policy.yaml', `${fs.readFileSync(DEFAULTS.policy, 'utf8')}\nwork_execution: ${fs.readFileSync(r.overlayFile, 'utf8').slice('work_execution: '.length)}`);
+  const refused = /WORK-CONFIG: the base policy must not declare work_execution/;
+  const run = r.script('readiness.mjs', ['--docs', r.docsDir, '--policy', '.kit/inline-policy.yaml', '--manifest', '.kit/manifest.yaml', '--screen', 'RESULT-001', '--json']);
+  assert.equal(run.status, 2, run.stdout); assert.match(run.stderr, refused);
+  git(r.root, 'add', '-A'); git(r.root, 'commit', '-qm', 'inline policy');
+  assert.throws(() => prepareCurrentWork({ work: currentRequest(r, [HOOK]), root: r.root, docs: DOCS, src: 'src',
+    policy: '.kit/inline-policy.yaml', manifest: '.kit/manifest.yaml' }), refused);
+});
+
+test('#257 an explicit --layout must be the layout frontend-workflow.config.yaml names', (t) => {
+  const r = repository(t);
+  r.put('.kit/other-layout.yaml', fs.readFileSync(path.join(r.root, '.kit/layout.yaml')));
+  git(r.root, 'add', '-A'); git(r.root, 'commit', '-qm', 'other layout');
+  const refused = /WORK-CONFIG: --layout \.kit\/other-layout\.yaml differs from frontend-workflow\.config\.yaml layout \.kit\/layout\.yaml/;
+  const run = r.script('readiness.mjs', [...noPolicy(r), '--layout', '.kit/other-layout.yaml', '--screen', 'RESULT-001', '--json']);
+  assert.equal(run.status, 2, run.stdout); assert.match(run.stderr, refused);
+  const forbidden = r.script('forbidden-paths.mjs', [...noPolicy(r), '--layout', path.join(r.root, '.kit/other-layout.yaml'), '--diff', r.put('changes.txt', `M\t${HOOK}\n`), '--json']);
+  assert.equal(forbidden.status, 2, forbidden.stdout); assert.match(forbidden.stderr, refused);
+  assert.throws(() => prepareCurrentWork({ work: currentRequest(r, [HOOK]), root: r.root, docs: DOCS, src: 'src',
+    manifest: '.kit/manifest.yaml', layout: '.kit/other-layout.yaml' }), refused);
+  const same = r.script('readiness.mjs', [...noPolicy(r), '--layout', path.join(r.root, '.kit/layout.yaml'), '--screen', 'RESULT-001', '--json']);
+  assert.equal(same.status, 0, same.stderr);
+});
+
+test('#257 the config and its overlay are authority files of a work run', (t) => {
+  for (const [name, edit] of [['.kit/adoption.yaml', (r) => fs.appendFileSync(r.overlayFile, '# widened later\n')],
+    [WORK_CONFIG_FILE, (r) => fs.appendFileSync(path.join(r.root, WORK_CONFIG_FILE), '# moved later\n')]]) {
+    const r = repository(t);
+    const preflight = prepareCurrentWork({ work: currentRequest(r, [HOOK]), root: r.root, docs: DOCS, src: 'src',
+      policy: '.kit/policy.yaml', manifest: '.kit/manifest.yaml' });
+    t.after(() => cleanupCurrentWork(preflight));
+    assert.equal(preflight.ready, true, JSON.stringify(preflight.errors));
+    r.put(HOOK, 'export const useResult = () => null;\n'); edit(r);
+    const violations = evaluateCurrentGit(preflight).violations;
+    assert.ok(violations.some((entry) => entry.code === 'CW-GIT-AUTHORITY-CHANGED' && entry.path === name), JSON.stringify(violations));
+  }
+  // Without a config, a work diff cannot create one either.
+  const plain = repository(t, { adopted: false, declareUnits: false });
+  const preflight = prepareCurrentWork({ work: currentRequest(plain, [HOOK]), root: plain.root, docs: DOCS, src: 'src',
+    policy: '.kit/policy.yaml', manifest: '.kit/manifest.yaml', layout: '.kit/layout.yaml' });
+  t.after(() => cleanupCurrentWork(preflight));
+  assert.equal(preflight.snapshot.resources.some((entry) => entry.kind === 'config'), false);
+  plain.put(HOOK, 'export const useResult = () => null;\n');
+  plain.put(WORK_CONFIG_FILE, 'version: 1\npolicy_overlay: .kit/adoption.yaml\n');
+  const violations = evaluateCurrentGit(preflight).violations;
+  assert.ok(violations.some((entry) => entry.code === 'CW-GIT-AUTHORITY-CHANGED' && entry.path === WORK_CONFIG_FILE), JSON.stringify(violations));
+});
+
+test('#257 a work diff cannot create a config that Git ignores either (r3)', (t) => {
+  const plain = repository(t, { adopted: false, declareUnits: false });
+  plain.put('.gitignore', `${WORK_CONFIG_FILE}\n`);
+  git(plain.root, 'add', '.gitignore'); git(plain.root, 'commit', '-qm', 'ignore the config');
+  const preflight = prepareCurrentWork({ work: currentRequest(plain, [HOOK]), root: plain.root, docs: DOCS, src: 'src',
+    policy: '.kit/policy.yaml', manifest: '.kit/manifest.yaml', layout: '.kit/layout.yaml' });
+  t.after(() => cleanupCurrentWork(preflight));
+  assert.equal(preflight.ready, true, JSON.stringify(preflight.errors));
+  // An unadopted repository's read set stays as before; the backstop looks for the config anyway.
+  assert.equal(preflight.snapshot.authority_read_set.some((entry) => entry.path === WORK_CONFIG_FILE), false);
+  plain.put(HOOK, 'export const useResult = () => null;\n');
+  plain.put(WORK_CONFIG_FILE, 'version: 1\npolicy_overlay: .kit/adoption.yaml\n');
+  const violations = evaluateCurrentGit(preflight).violations;
+  assert.ok(violations.some((entry) => entry.code === 'CW-GIT-AUTHORITY-CHANGED' && entry.path === WORK_CONFIG_FILE), JSON.stringify(violations));
+});
+
+test('#257 only the project root config is an authority file; a file of that name elsewhere is ordinary work (r5)', (t) => {
+  const plain = repository(t, { adopted: false, declareUnits: false });
+  const nested = `${PREFIX}/hooks/${WORK_CONFIG_FILE}`;
+  plain.put(nested, 'fixture: true\n');
+  git(plain.root, 'add', '-A'); git(plain.root, 'commit', '-qm', 'a file named like the config');
+  const preflight = prepareCurrentWork({ work: currentRequest(plain, [nested]), root: plain.root, docs: DOCS, src: 'src',
+    policy: '.kit/policy.yaml', manifest: '.kit/manifest.yaml', layout: '.kit/layout.yaml' });
+  t.after(() => cleanupCurrentWork(preflight));
+  assert.equal(preflight.ready, true, JSON.stringify(preflight.errors));
+  plain.put(nested, 'fixture: false\n');
+  const violations = evaluateCurrentGit(preflight).violations;
+  assert.deepEqual(violations.filter((entry) => entry.code === 'CW-GIT-AUTHORITY-CHANGED'), []);
+});
+
+test('#257 a work request saved as the root config is not request transport (r6)', (t) => {
+  const plain = repository(t, { adopted: false, declareUnits: false });
+  // HEAD has no config; the request travels in the reserved root config path.
+  const work = plain.put(WORK_CONFIG_FILE, JSON.stringify({ version: 1, origin_inputs: [], requests: [{
+    owner: 'screen:RESULT-001', authority: 'current', requested_mode: 'rough-fixture-ui', targets: [{ path: HOOK, change: 'M' }] }] }));
+  const preflight = prepareCurrentWork({ work, root: plain.root, docs: DOCS, src: 'src',
+    policy: '.kit/policy.yaml', manifest: '.kit/manifest.yaml', layout: '.kit/layout.yaml' });
+  t.after(() => cleanupCurrentWork(preflight));
+  assert.equal(preflight.ready, true, JSON.stringify(preflight.errors));
+  plain.put(HOOK, 'export const useResult = () => null;\n');
+  const result = evaluateCurrentGit(preflight);
+  assert.equal(result.ok, false);
+  assert.ok(result.violations.some((entry) => entry.code === 'CW-GIT-AUTHORITY-CHANGED' && entry.path === WORK_CONFIG_FILE), JSON.stringify(result.violations));
+});
+
+test('#257 packet and report resolve the configured layout and hand it to every leaf', (t) => {
+  const r = repository(t);
+  const layout = path.join(r.root, '.kit/layout.yaml');
+  const packetArgs = ['--docs', r.docsDir, '--policy', '.kit/policy.yaml', '--manifest', '.kit/manifest.yaml',
+    '--screen', 'RESULT-001', '--requested-mode', 'rough-fixture-ui'];
+  const packet = r.script('workflow-packet.mjs', [...packetArgs, '--out', path.join(r.root, 'packet.md'), '--json']);
+  assert.equal(packet.status, 0, packet.stderr);
+  assert.match(JSON.parse(packet.stdout).readiness_source, new RegExp(`--layout ${layout.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')} --json`));
+  r.put('.kit/other-layout.yaml', fs.readFileSync(layout));
+  const mismatch = r.script('workflow-packet.mjs', [...packetArgs, '--layout', '.kit/other-layout.yaml', '--json']);
+  assert.equal(mismatch.status, 2, mismatch.stdout);
+  assert.match(mismatch.stderr, /WORK-CONFIG: --layout \.kit\/other-layout\.yaml differs/);
+  const reportFile = path.join(r.root, 'report.md');
+  const report = r.script('workflow-report.mjs', ['--packet', path.join(r.root, 'packet.md'), '--docs', r.docsDir,
+    '--diff', r.put('changes.txt', `M\t${HOOK}\n`), '--skip-tests', '--out', reportFile, '--json']);
+  assert.equal(report.status, 0, report.stderr);
+  const invocations = fs.readFileSync(reportFile, 'utf8');
+  for (const leaf of ['validate.mjs', 'forbidden-paths.mjs', 'check-generated-files.mjs']) {
+    assert.match(invocations, new RegExp(`${leaf.replace('.', '\\.')}[^\\n]*--layout ${layout.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}`), leaf);
+  }
+  const reportMismatch = r.script('workflow-report.mjs', ['--packet', path.join(r.root, 'packet.md'), '--docs', r.docsDir,
+    '--layout', '.kit/other-layout.yaml', '--skip-tests', '--json']);
+  assert.equal(reportMismatch.status, 2, reportMismatch.stdout);
+  assert.match(reportMismatch.stderr, /WORK-CONFIG: --layout \.kit\/other-layout\.yaml differs/);
+});
+
+test('#257 legacy readiness and forbidden-paths judge with the configured layout', (t) => {
+  const r = repository(t);
+  // Only the configured layout puts src/remote under the api_client role.
+  const alt = JSON.parse(fs.readFileSync(path.join(r.root, '.kit/layout.yaml'), 'utf8'));
+  alt.roles.api_client = 'src/remote/**';
+  r.put('.kit/alt-layout.yaml', JSON.stringify(alt));
+  r.put(WORK_CONFIG_FILE, 'version: 1\npolicy_overlay: .kit/adoption.yaml\nlayout: .kit/alt-layout.yaml\n');
+  const readiness = r.script('readiness.mjs', [...noPolicy(r), '--screen', 'RESULT-001', '--json']);
+  assert.equal(readiness.status, 0, readiness.stderr);
+  const forbiddenPaths = JSON.parse(readiness.stdout)['RESULT-001'].forbidden_paths;
+  assert.ok(forbiddenPaths.includes('src/remote/**') && !forbiddenPaths.includes('src/api/**'), JSON.stringify(forbiddenPaths));
+  const diff = r.put('changes.txt', 'M\tsrc/remote/result/client.ts\nM\tsrc/api/result/client.ts\n');
+  const forbidden = r.script('forbidden-paths.mjs', [...noPolicy(r), '--diff', diff, '--json']);
+  assert.equal(forbidden.status, 0, forbidden.stderr);
+  assert.deepEqual(JSON.parse(forbidden.stdout).violations.map((entry) => entry.file), ['src/remote/result/client.ts']);
+});
+
+test('#257 a packet from saved readiness and a legacy report still refuse misplaced adoption (r1)', (t) => {
+  const r = repository(t);
+  const saved = r.put('readiness.json', r.script('readiness.mjs', [...r.resources, '--screen', 'RESULT-001', '--json']).stdout);
+  const packetFile = path.join(r.root, 'packet.md');
+  const packetArgs = ['--docs', r.docsDir, '--manifest', '.kit/manifest.yaml', '--screen', 'RESULT-001',
+    '--requested-mode', 'rough-fixture-ui', '--readiness', saved, '--json'];
+  const ok = r.script('workflow-packet.mjs', [...packetArgs, '--policy', '.kit/policy.yaml', '--out', packetFile]);
+  assert.equal(ok.status, 0, ok.stderr);
+  r.put('.kit/inline-policy.yaml', `${fs.readFileSync(DEFAULTS.policy, 'utf8')}\n${fs.readFileSync(r.overlayFile, 'utf8')}`);
+  const inline = r.script('workflow-packet.mjs', [...packetArgs, '--policy', '.kit/inline-policy.yaml']);
+  assert.equal(inline.status, 2, inline.stdout); assert.match(inline.stderr, /WORK-CONFIG: the base policy must not declare work_execution/);
+  // The config is withdrawn while the owners still declare units.
+  fs.rmSync(path.join(r.root, WORK_CONFIG_FILE));
+  const refused = /WORK-CONFIG: owner documents declare work_execution/;
+  const packet = r.script('workflow-packet.mjs', [...packetArgs, '--policy', '.kit/policy.yaml']);
+  assert.equal(packet.status, 2, packet.stdout); assert.match(packet.stderr, refused);
+  for (const extra of [[], ['--diff', r.put('changes.txt', `M\t${HOOK}\n`)]]) {
+    const report = r.script('workflow-report.mjs', ['--packet', packetFile, '--docs', r.docsDir, '--skip-tests', '--json', ...extra]);
+    assert.equal(report.status, 2, report.stdout); assert.match(report.stderr, refused);
+  }
+});
+
+test('#257 an unreadable config is a configuration error, exit 2 (r1)', (t) => {
+  if (process.platform === 'win32' || process.getuid?.() === 0) { t.skip('requires POSIX permissions as a non-root user'); return; }
+  const r = repository(t), config = path.join(r.root, WORK_CONFIG_FILE);
+  fs.chmodSync(config, 0o000);
+  try {
+    const run = r.script('readiness.mjs', [...noPolicy(r), '--screen', 'RESULT-001', '--json']);
+    assert.equal(run.status, 2, run.stdout); assert.match(run.stderr, /WORK-CONFIG: frontend-workflow\.config\.yaml: cannot read \(EACCES\)/);
+  } finally { fs.chmodSync(config, 0o644); }
+});
+
+// A kit copy whose bundled policy declares work_execution, as an in-place adopter would leave it.
+// A copy of the kit whose bundled policy `edit` changes.
+function kitWith(t, r, edit) {
+  const kit = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'scoped-adoption-kit-')));
+  t.after(() => fs.rmSync(kit, { recursive: true, force: true }));
+  for (const dir of ['scripts', 'policies', 'catalog', 'presets', 'schemas', 'templates']) {
+    fs.cpSync(path.join(KIT_ROOT, dir), path.join(kit, dir), { recursive: true, filter: (source) => !source.endsWith('.test.mjs') });
+  }
+  fs.copyFileSync(path.join(KIT_ROOT, 'package.json'), path.join(kit, 'package.json'));
+  fs.symlinkSync(path.join(KIT_ROOT, 'node_modules'), path.join(kit, 'node_modules'));
+  edit(path.join(kit, 'policies/implementation-mode-policy.yaml'));
+  return (name, args) => spawnSync(process.execPath, [path.join(kit, 'scripts', name), ...args], { cwd: r.root, encoding: 'utf8' });
+}
+const adoptingKit = (t, r) => kitWith(t, r, (policy) => fs.appendFileSync(policy, `\n${fs.readFileSync(r.overlayFile, 'utf8')}`));
+
+test('#257 a bundled policy that adopts is refused by the legacy entries, report included (r2)', (t) => {
+  const r = repository(t), kit = adoptingKit(t, r);
+  const packetFile = path.join(r.root, 'packet.md');
+  const made = r.script('workflow-packet.mjs', ['--docs', r.docsDir, '--policy', '.kit/policy.yaml', '--manifest', '.kit/manifest.yaml',
+    '--screen', 'RESULT-001', '--requested-mode', 'rough-fixture-ui', '--out', packetFile, '--json']);
+  assert.equal(made.status, 0, made.stderr);
+  const refused = /WORK-CONFIG: the base policy must not declare work_execution/;
+  const runs = {
+    readiness: kit('readiness.mjs', [...noPolicy(r), '--screen', 'RESULT-001', '--json']),
+    report: kit('workflow-report.mjs', ['--packet', packetFile, '--docs', r.docsDir, '--skip-tests', '--json']),
+    'report --diff': kit('workflow-report.mjs', ['--packet', packetFile, '--docs', r.docsDir, '--diff', r.put('changes.txt', `M\t${HOOK}\n`), '--skip-tests', '--json']),
+  };
+  for (const [name, run] of Object.entries(runs)) { assert.equal(run.status, 2, `${name}: ${run.stdout}`); assert.match(run.stderr, refused, name); }
+});
+
+test('#257 a legacy report checks the config before an absorbed packet returns (r2)', (t) => {
+  const r = repository(t);
+  const packetFile = r.put('absorbed.md', ['---', 'readiness_applicable: false', 'screen_lifecycle: absorbed', 'readiness_mode: null',
+    'target_screen: RESULT-001', 'absorbed_into: RESULT-002', `readiness_source: "readiness.mjs --docs ${r.docsDir} --screen RESULT-001"`, '---', '', '# Absorbed', ''].join('\n'));
+  const accepted = r.script('workflow-report.mjs', ['--packet', packetFile, '--docs', r.docsDir, '--json']);
+  assert.equal(accepted.status, 0, accepted.stderr);
+  r.put(WORK_CONFIG_FILE, 'version: 2\n');
+  const refused = r.script('workflow-report.mjs', ['--packet', packetFile, '--docs', r.docsDir, '--json']);
+  assert.equal(refused.status, 2, refused.stdout); assert.match(refused.stderr, /WORK-CONFIG: frontend-workflow\.config\.yaml: version 1 required/);
+});
+
+test('#257 a legacy report still returns for an absorbed packet when the bundled policy does not parse (r8)', (t) => {
+  const r = repository(t, { adopted: false, declareUnits: false });
+  const kit = kitWith(t, r, (policy) => fs.writeFileSync(policy, 'modes: [unclosed\n'));
+  const packetFile = r.put('absorbed.md', ['---', 'readiness_applicable: false', 'screen_lifecycle: absorbed', 'readiness_mode: null',
+    'target_screen: RESULT-001', 'absorbed_into: RESULT-002', `readiness_source: "readiness.mjs --docs ${r.docsDir} --screen RESULT-001"`, '---', '', '# Absorbed', ''].join('\n'));
+  // A policy that does not parse is not an adoption fact; the report returns as before.
+  const report = kit('workflow-report.mjs', ['--packet', packetFile, '--docs', r.docsDir, '--json']);
+  assert.equal(report.status, 0, report.stderr);
+});
+
+test('#257 a CLI marks its configuration refusal with the token its parent passes, and only then (r12)', (t) => {
+  const r = repository(t);
+  r.put(WORK_CONFIG_FILE, 'version: 2\n');
+  const diff = r.put('changes.txt', `M\t${HOOK}\n`);
+  const run = (env) => spawnSync(process.execPath, [path.join(KIT_ROOT, 'scripts', 'forbidden-paths.mjs'), '--docs', r.docsDir, '--diff', diff, '--json'],
+    { cwd: r.root, encoding: 'utf8', env: { ...process.env, ...env } });
+  const marked = run({ FRONTEND_WORKFLOW_REFUSAL_TOKEN: 'c0ffee' });
+  assert.equal(marked.status, 2, marked.stdout);
+  assert.match(marked.stderr, /^c0ffee WORK-CONFIG: frontend-workflow\.config\.yaml: version 1 required$/m);
+  const plain = run({ FRONTEND_WORKFLOW_REFUSAL_TOKEN: '' });
+  assert.equal(plain.status, 2, plain.stdout);
+  assert.equal(plain.stderr.trim().split('\n').length, 1, plain.stderr);
+});
+
+test('#257 legacy entries find the config of the project that holds the docs, wherever they run (r2)', (t) => {
+  const r = repository(t), parent = path.dirname(r.root), at = (name) => path.join(r.root, name);
+  const run = (name, args) => spawnSync(process.execPath, [path.join(KIT_ROOT, 'scripts', name), ...args], { cwd: parent, encoding: 'utf8' });
+  const readiness = run('readiness.mjs', ['--docs', r.docsDir, '--manifest', at('.kit/manifest.yaml'), '--screen', 'RESULT-001', '--path', ENTRY('RESULT-001'), '--json']);
+  assert.equal(readiness.status, 0, readiness.stderr);
+  assert.equal(JSON.parse(readiness.stdout)['RESULT-001'].path_authorization.reason, WORK_SELECTION_REQUIRED_REASON);
+  const forbidden = run('forbidden-paths.mjs', ['--docs', r.docsDir, '--manifest', at('.kit/manifest.yaml'), '--diff', r.put('changes.txt', `M\t${PANEL}\n`), '--json']);
+  assert.equal(forbidden.status, 0, forbidden.stderr);
+  assert.deepEqual(JSON.parse(forbidden.stdout).violations.filter((entry) => entry.work_selection_required).map((entry) => entry.file), [PANEL]);
+  const packetFile = at('packet.md');
+  const packet = run('workflow-packet.mjs', ['--docs', r.docsDir, '--policy', at('.kit/policy.yaml'), '--manifest', at('.kit/manifest.yaml'),
+    '--screen', 'RESULT-001', '--requested-mode', 'rough-fixture-ui', '--out', packetFile, '--json']);
+  assert.equal(packet.status, 0, packet.stderr);
+  assert.match(JSON.parse(packet.stdout).readiness_source, /--layout \S+\/\.kit\/layout\.yaml/);
+  const report = run('workflow-report.mjs', ['--packet', packetFile, '--docs', r.docsDir, '--skip-tests', '--json']);
+  assert.equal(report.status, 0, report.stderr);
 });

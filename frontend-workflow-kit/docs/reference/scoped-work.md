@@ -12,13 +12,24 @@ request fails closed.
 
 ## Adoption is an explicit human checkpoint
 
-Nothing is adopted by default. A repository without a policy `work_execution`
-section keeps byte-compatible legacy/current/visual-refresh behavior.
+Nothing is adopted by default. A repository with no adoption overlay and no owner
+`work_execution` declaration keeps byte-compatible legacy/current/visual-refresh
+behavior.
 
-1. **Policy** — the implementation-mode policy lists the adopted owners and the
-   role ceilings per work kind:
+1. **Adoption config and policy overlay** — `frontend-workflow.config.yaml` at the
+   project root is the one place a repository declares adoption (#257). It names
+   the policy overlay that lists the adopted owners and the role ceilings per work
+   kind, and optionally the project layout. Paths are relative to the project root:
 
    ```yaml
+   # frontend-workflow.config.yaml
+   version: 1
+   policy_overlay: config/frontend-workflow/adoption.yaml
+   layout: config/frontend-workflow/project-layout.yaml   # optional
+   ```
+
+   ```yaml
+   # config/frontend-workflow/adoption.yaml: work_execution only
    work_execution:
      version: 1
      owners: [screen:RESULT-001, surface:RESULT-PANEL]
@@ -32,6 +43,68 @@ section keeps byte-compatible legacy/current/visual-refresh behavior.
 
    `role_limits` is a ceiling intersected with actual owner paths, not a glob
    grant. Move any project-specific extra prohibition into `deny_paths`.
+
+   The project root is `--root`. An entry without `--root` uses the project that
+   holds a `<root>/docs/frontend-workflow` docs directory, as `workflow:report` infers
+   it, and otherwise the working directory. The five execution CLIs (readiness,
+   forbidden-paths, packet, run and report, with or without `--work`), visual-refresh
+   and `workflow:binding-status` read this config by default. Each applies the overlay
+   over the base policy it selected (the bundled copy or `--policy`). A report also
+   refuses when the forbidden-paths run it collects refuses the config; that run
+   marks its refusal with a token the report passes for that run, so text an error
+   merely echoes (a ref name, a path) is never taken for one. Why one config file:
+
+   - The vendored policy stays byte-identical, so its visual-refresh pin and the
+     vendored-kit upgrade keep working. Editing the vendored copy would break the
+     pin and turn every upstream policy change into an upgrade conflict.
+   - No call can lose adoption by omitting an argument. A `--policy` that carried
+     the adoption could be left out of one call, which would then judge adopted
+     paths as unadopted.
+
+   Each of these is refused with exit 2 rather than judged as unadopted:
+
+   - a config or overlay that cannot be read or does not validate, or a config
+     `layout` path that cannot be inspected. That covers an invalid path inside the
+     overlay's `work_execution`, an unknown key, a `version` other than 1, and a path that is absolute, uses `..`,
+     crosses a symlink or differs in spelling from the repository entry. It also
+     covers an overlay with any key besides `work_execution`.
+   - a base policy (bundled or `--policy`) that declares `work_execution`;
+   - owner documents that declare `work_execution` while the config names no
+     `policy_overlay`, or while there is no config. An owner document is a
+     ScreenSpec or shared-surface-spec by `artifact_type`, or by the file name
+     `workflow:state` reads it under (`domains/**/screen-spec.md`, `surface-spec.md`).
+     Like `workflow:state`, the check reads `domains` by that path: it follows a
+     `domains` link, though no link below it, and on a case-insensitive file system
+     reaches a directory named in another case.
+     What could hide a declaration is refused too: a docs directory that cannot be
+     inspected or listed, a docs Markdown file that cannot be read, and an owner
+     document by name whose frontmatter does not parse or is never closed (whether
+     it declares cannot be known). Only a bare `---` line closes it: a block that
+     the reading ends at a `----` or `---x` line is not closed, even when a `---`
+     line follows. The line right after the opening one never ends the block, so
+     there such a line is content. An empty block (two `---` lines) is closed and
+     declares nothing, so a parse error from body text read up to a later `---`
+     line is not refused; a `work_execution` that reading yields still counts, as
+     it does for the owner readers. Another document with broken frontmatter has no
+     `artifact_type` and is never judged, so it is left as before;
+   - an explicit `--layout` that names a different file from the config `layout`.
+     The same file is accepted; without a config `layout`, `--layout` works as
+     before.
+
+   Every entry applies these checks before anything else can end the run.
+   Visual-refresh runs them before it validates or reads any other resource, also
+   when there is no `HEAD` to judge. A visual report checks the bundled policy before
+   its backstop runs. A report therefore never turns one of these refusals into
+   backstop error evidence.
+
+   The config and the overlay are authority files. `--work` reads them from the
+   committed `HEAD`, as it reads the policy. A `--work` or visual-refresh diff that
+   changes either file, or creates the config, is reported as an authority change
+   (`CW-GIT-AUTHORITY-CHANGED`/`SW-GIT-AUTHORITY-CHANGED`, `VR-BACKSTOP-012`). A
+   current `--work` run looks for the config even where `HEAD` has none and Git
+   ignores it; this adds no record to an unadopted repository's read set. Only the
+   project root path is the config; a file of the same name elsewhere is ordinary
+   work. A `--work` request saved at that path is not request transport either.
 
 2. **Owner** — the ScreenSpec or shared-surface-spec frontmatter declares stable
    work units (not per-session permits), optional narrow private roots and test
@@ -370,11 +443,16 @@ work from taking the change over (#276). To unblock the unit, a person:
 ## Rollback and downgrade
 
 Stop scoped work first. Review the current diff and unfinished work, restore the
-reviewed explicit deny boundaries, then withdraw adoption owner by owner. Do not
-delete input/effect/work records to hide history. The vendored-kit upgrade planner
-refuses to apply automatically a payload that cannot enforce adoption markers while
-tracked `work_execution`/`decision_work_scopes`/`uncertainty_work_scopes` declarations
-remain in the consumer repository. An older kit binary run by hand is outside this guarantee.
+reviewed explicit deny boundaries, then withdraw adoption owner by owner: remove the
+owner from the overlay's `owners`, then its `work_execution` declaration. Remove
+the config's `policy_overlay` only after no owner document declares
+`work_execution`; otherwise every entry refuses to judge. Do not delete
+input/effect/work records to hide history. The vendored-kit upgrade planner refuses
+to apply automatically a payload that cannot enforce adoption markers while tracked
+`work_execution`/`decision_work_scopes`/`uncertainty_work_scopes` declarations
+(the overlay included) remain in the consumer repository. A payload older than the
+adoption config cannot read the overlay, so it counts as one that cannot enforce
+them. An older kit binary run by hand is outside this guarantee.
 
 ## What the tool does not prove
 
@@ -385,6 +463,14 @@ isolation, or who approved a binding. Reviewers own those judgments.
 
 ## Known limits
 
+- Only the five execution CLIs, visual-refresh and `workflow:binding-status` read
+  `frontend-workflow.config.yaml`. Other commands (`workflow:state`, `validate`,
+  `doctor` and the rest) still take the layout from `--layout` or the default, so
+  pass the same layout to them. `workflow:report` passes the configured layout to
+  its validate, forbidden-paths and check-generated runs.
+- The library check that pairs `HEAD` with the index (`inspectScopedGit*`) takes
+  its resources explicitly, the overlay as `policy_overlay`; it does not read the
+  config.
 - A layout `preset` is read only from a kit inside the project root.
 - A selected mapping component cell must hold one literal repository path
   (optionally in one inline-code pair); other forms are reported as

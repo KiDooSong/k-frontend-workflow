@@ -4,6 +4,7 @@ import { readinessPathAuthorization } from './path-backstop.mjs';
 import { readJson, normalizeWorkRequest, digest, hashBytes, ownerParts, byteCompare, canonicalJson } from './current-work-request.mjs';
 import { captureCurrentIndex, snapshotRecords } from './current-work-snapshot.mjs';
 import { captureCurrentWorktree, verifyCurrentAuthority } from './current-work-integrity.mjs';
+import { WORK_CONFIG_FILE } from './work-config.mjs';
 import {
   CurrentWorkExecutionError, REGULAR_MODES, AUTHORITY_BASENAMES, posix, stable, generatedOwner,
   screenDomain, effectiveOrder, exactSurfaceAuthorization,
@@ -40,6 +41,9 @@ function authorityPaths(preflight) {
   const docs = preflight.snapshot.resources.find((r) => r.kind === 'docs')?.path;
   if (docs) paths.add(`${docs}/_meta/reconciliation-register.md`);
   if (preflight.snapshot.work_request.path) paths.add(preflight.snapshot.work_request.path);
+  // #257: the adoption config at the project root, even where HEAD has none, so a work
+  // diff cannot create it. Only that path: a file of the same name elsewhere is ordinary.
+  paths.add(WORK_CONFIG_FILE);
   return paths;
 }
 function authorizationFor(preflight, expected) {
@@ -80,7 +84,7 @@ export function isExecutionInput(record, preflight, evidence) {
     evidence.hash === preflight.snapshot.work_request.hash &&
     !preflight.requests.some(r => r.targets.some(t => t.path === name)) &&
     !preflight.snapshot.authority_read_set.some(r => r.source === 'project' && r.path === name) &&
-    !AUTHORITY_BASENAMES.has(path.posix.basename(name)) &&
+    !AUTHORITY_BASENAMES.has(path.posix.basename(name)) && name !== WORK_CONFIG_FILE &&
     !generatedInBaseline(name, preflight._context));
 }
 // An unreadable ownership fact never makes a file transport.
@@ -105,7 +109,11 @@ export function evaluateCurrentGit(preflight, { staged = false } = {}) {
   const repositoryPath = (name) => context.projectPrefix ? `${context.projectPrefix}/${name}` : name;
   const docs = preflight.snapshot.resources.find((r) => r.kind === 'docs').path;
   const destination = staged ? captureCurrentIndex(context.repositoryRoot) : captureCurrentWorktree(context.repositoryRoot, preflight.snapshot.tree, {
-    extraFiles: preflight.snapshot.authority_read_set.filter((r) => r.source === 'project').map((r) => repositoryPath(r.path)),
+    // #257: the adoption config is looked for even where HEAD has none and Git ignores it,
+    // so creating it is an authority change. It adds no read-set record, which keeps an
+    // unadopted repository's preflight byte-compatible.
+    extraFiles: [...preflight.snapshot.authority_read_set.filter((r) => r.source === 'project').map((r) => repositoryPath(r.path)),
+      repositoryPath(WORK_CONFIG_FILE)],
     inputRoots: [repositoryPath(`${docs}/inputs`)],
     artifactRoots: preflight.snapshot.authority_read_set.filter(r => r.source === 'artifact-index').map(r => repositoryPath(r.path)),
   });
@@ -241,6 +249,8 @@ export function parseCurrentPacket(file) {
   if (value.work_contract !== 1 || value.packet_type !== 'current-work') throw new CurrentWorkExecutionError('packet: unsupported current work contract');
   return value;
 }
+// config and policy_overlay (#257) are recorded only when frontend-workflow.config.yaml exists.
+const RESOURCE_KINDS = ['docs', 'src', 'policy', 'manifest', 'layout', 'ci', 'config', 'policy_overlay'];
 function resourceContext(snapshot) {
   if (typeof snapshot?.project_prefix !== 'string' || !Array.isArray(snapshot.resources)) {
     throw new CurrentWorkExecutionError('packet: missing project/resource context; create a new preflight');
@@ -249,7 +259,7 @@ function resourceContext(snapshot) {
   const resources = snapshot.resources.map((resource) => {
     const keys = resource && typeof resource === 'object' ? Object.keys(resource).sort() : [];
     if (keys.join(',') !== 'kind,mode,oid,path' || typeof resource.kind !== 'string' ||
-        typeof resource.path !== 'string' || !['docs', 'src', 'policy', 'manifest', 'layout', 'ci'].includes(resource.kind) || kinds.has(resource.kind)) {
+        typeof resource.path !== 'string' || !RESOURCE_KINDS.includes(resource.kind) || kinds.has(resource.kind)) {
       throw new CurrentWorkExecutionError('packet: malformed or duplicate resource context');
     }
     kinds.add(resource.kind);

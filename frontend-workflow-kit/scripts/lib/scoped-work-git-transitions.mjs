@@ -18,7 +18,9 @@ import { inspectScopedUncertaintyTransitions } from './scoped-work-uncertainty-t
 import { scopeSet } from './scoped-work-normalize.mjs';
 import { ScopedWorkContractError } from './scoped-work-request.mjs';
 
-const KEYS = new Set(['owner', 'root', 'docs', 'kit', 'policy', 'manifest', 'layout']);
+// policy_overlay (#257) is the adoption overlay frontend-workflow.config.yaml names;
+// explicit like every other resource, and audited on both sides when given.
+const KEYS = new Set(['owner', 'root', 'docs', 'kit', 'policy', 'policy_overlay', 'manifest', 'layout']);
 const RESOURCES = ['docs', 'kit', 'policy', 'manifest', 'layout'];
 const REGULAR = new Set(['100644', '100755']);
 const fail = (message) => { throw new ScopedWorkContractError(`SW-GIT-TRANSITIONS: ${message}`); };
@@ -48,7 +50,7 @@ function snapshotContext(ctx, view, raw, resources) {
     canonicalRepositoryPath(raw.root, resources[name],
       { required: true, type: 'directory', label: `scoped ${name}` });
   }
-  for (const name of ['policy', 'manifest', 'layout']) audit(resources[name]);
+  for (const name of ['policy', 'policy_overlay', 'manifest', 'layout']) if (resources[name]) audit(resources[name]);
   const docs = [], prefix = `${repositoryPath(resources.docs)}/`;
   // Same target-index domain as C/validate: Markdown under docs except _meta.
   // Pin non-artifact Markdown too: its frontmatter controls index membership.
@@ -67,6 +69,7 @@ function snapshotContext(ctx, view, raw, resources) {
   return {
     options: { projectRoot: raw.root, docsDir: absolute('docs'), kitRoot: absolute('kit'),
       policyFile: absolute('policy'), manifestFile: absolute('manifest'), layoutFile: absolute('layout'),
+      ...(resources.policy_overlay ? { policyOverlayFile: absolute('policy_overlay') } : {}),
       targetIndex: buildReconciliationTargetIndex({ docs }) },
     audit(readSet) {
       for (const entry of readSet) audit(entry.file, entry.sha256);
@@ -86,8 +89,10 @@ function inspectOriginalGitDecisionPair(options, inspectPair) {
     if (typeof options[name] !== 'string' || !options[name].trim()) fail(`explicit ${name} required`);
   }
   const ctx = resolveProjectRoot(options.root);
-  const resources = Object.fromEntries(RESOURCES.map((name) => [name,
-    resolveProjectPath(ctx.projectRoot, options[name], options[name], name).relative]));
+  const overlay = options.policy_overlay !== undefined;
+  if (overlay && (typeof options.policy_overlay !== 'string' || !options.policy_overlay.trim())) fail('explicit policy_overlay must be a path');
+  const resources = Object.fromEntries([...RESOURCES, ...(overlay ? ['policy_overlay'] : [])]
+    .map((name) => [name, resolveProjectPath(ctx.projectRoot, options[name], options[name], name).relative]));
   const baseline = gitIdentity(ctx.repositoryRoot);
   const exactTree = String(runVisualGit(['rev-parse', '--verify', `${baseline.commit}^{tree}`], ctx.repositoryRoot)).trim();
   if (exactTree !== baseline.tree) fail('HEAD changed while capturing baseline');

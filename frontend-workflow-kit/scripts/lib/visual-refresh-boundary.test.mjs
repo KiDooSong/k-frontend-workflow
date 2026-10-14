@@ -727,3 +727,18 @@ test('P17: register-only partial status leaves real no-intent mode and path perm
   }
   assert.deepEqual(JSON.parse(after.stdout), JSON.parse(before.stdout));
 });
+
+test('#257 the visual resource bundle applies the destination config without tuple normalization', (t) => {
+  const root = tmpdir(t, 'visual-refresh-config-');
+  fs.mkdirSync(path.join(root, 'docs', 'frontend-workflow'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'src'), { recursive: true });
+  write(root, 'config/layout.yaml', fs.readFileSync(path.join(KIT_ROOT, 'presets', 'expo-feature.yaml'), 'utf8'));
+  write(root, 'config/adoption.yaml', 'work_execution: {version: 1, owners: [], profiles: [behavior], role_limits: {behavior: [screen]}, deny_paths: []}\n');
+  write(root, 'frontend-workflow.config.yaml', 'version: 1\npolicy_overlay: config/adoption.yaml\nlayout: config/layout.yaml\n');
+  const prepared = prepareVisualRefreshResources({ destinationRoot: root, options: {} });
+  assert.equal(prepared.meta.resourceProvenance.layout.source, 'config/layout.yaml');
+  assert.equal(prepared.meta.resourceProvenance.policy_overlay.source, 'config/adoption.yaml');
+  assert.deepEqual(prepared.meta.adoptionPolicy.work_execution.owners, []);
+  assert.throws(() => prepareVisualRefreshResources({ destinationRoot: root, options: { layout: 'config/other.yaml' } }),
+    /--layout config\/other\.yaml differs from frontend-workflow\.config\.yaml layout/);
+});

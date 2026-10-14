@@ -50,8 +50,9 @@ function fixture(t) {
   const docs = new Map(), inputs = new Map();
   const policyFile = path.join(kitRoot, 'policy.yaml'), layoutFile = path.join(kitRoot, 'layout.yaml');
   const manifestFile = path.join(kitRoot, 'manifest.yaml'), registerFile = path.join(root, 'register.md');
+  const overlayFile = path.join(kitRoot, 'adoption.yaml'); // #257: work_execution lives only in the policy overlay
   const put = (file, value) => fs.writeFileSync(file, JSON.stringify(value));
-  put(policyFile, policy());
+  put(policyFile, {}); put(overlayFile, policy());
   put(layoutFile, { roles: { screen: ['src/features/{domain}/screens/**'], domain_component: ['src/features/{domain}/components/**'],
     hook: ['src/features/{domain}/hooks/**'], api_client: ['src/api/**'], test: ['src/features/{domain}/tests/**'], route: ['src/routes/**'] } });
   put(manifestFile, { version: 1, artifacts: {} });
@@ -70,10 +71,10 @@ function fixture(t) {
   write('global/open-decisions.md', { artifact_id: 'open-decision-register', artifact_type: 'open-decision-register', status: 'draft',
     decision_work_scopes: { version: 1, bindings: [binding()] } }, decisions([decisionRow(), decisionRow('D-UNUSED', 'Unrelated decision.')]));
   const options = (owner = OWNER, decisionRef = DECISION) => ({ owner, decisionRef, projectRoot: root, docsDir, kitRoot,
-    policyFile, layoutFile, manifestFile, registerFile, inputArtifacts: [...inputs.values()].map(loadInputArtifact),
+    policyFile, policyOverlayFile: overlayFile, layoutFile, manifestFile, registerFile, inputArtifacts: [...inputs.values()].map(loadInputArtifact),
     targetIndex: buildReconciliationTargetIndex({ docs: [...docs.values()].map((file) =>
       ({ file, fm: splitFrontmatter(fs.readFileSync(file, 'utf8')).data })) }) });
-  return { root, docs, inputs, write, change, put, policyFile, layoutFile, manifestFile, registerFile, options,
+  return { root, docs, inputs, write, change, put, policyFile, overlayFile, layoutFile, manifestFile, registerFile, options,
     run: (owner = OWNER, decisionRef = DECISION) => resolveScopedBindingBasis(options(owner, decisionRef)),
     bind: (value) => change('global/open-decisions.md', ({ fm }) => { fm.decision_work_scopes.bindings = [value]; }) };
 }
@@ -99,7 +100,7 @@ function withApi(f) {
 }
 function withSurface(f, legacy = false) {
   const owner = 'surface:PANEL', hosts = {}, visual = {};
-  f.put(f.policyFile, policy([owner, OWNER, ...legacy ? [] : [SECOND]]));
+  f.put(f.overlayFile, policy([owner, OWNER, ...legacy ? [] : [SECOND]]));
   for (const [number, name] of [[1, 'screen.md'], [2, 'second.md']]) {
     const id = `RESULT-00${number}`, mapping = `MAP-${number}`, input = `IN-20260921-figma-00${number}`;
     const evidence = `input:${input}#extracted-facts/01`, fm = screen(id);
@@ -997,7 +998,7 @@ test('D basis: set permutations and object key order cannot create spurious scop
   f.change('screen.md', ({ fm }) => { fm.work_execution.units[0].contracts.push('artifact:RULES#other'); });
   const before = f.run(); f.bind(binding({ known_units: ['other', 'known'], blocks: ['other', 'known'] }));
   f.change('screen.md', ({ fm }) => { fm.work_execution.units[0].contracts.reverse(); fm.work_execution.units.reverse(); });
-  const p = policy(); p.work_execution.profiles.reverse(); p.work_execution.role_limits.behavior.reverse(); f.put(f.policyFile, p);
+  const p = policy(); p.work_execution.profiles.reverse(); p.work_execution.role_limits.behavior.reverse(); f.put(f.overlayFile, p);
   const after = f.run(); assert.equal(after.basis_digest, before.basis_digest); assert.notDeepEqual(after.read_set, before.read_set);
 });
 
@@ -1013,8 +1014,8 @@ test('D basis: entry, private paths, role ceilings and explicit denies each affe
   for (const update of [
     (f) => f.change('screen.md', ({ fm }) => { fm.screen_entry = `${ROOT}/screens/Changed.tsx`; }),
     (f) => f.change('screen.md', ({ fm }) => { fm.work_execution.private_paths.hook.push(`${ROOT}/hooks/extra/**`); }),
-    (f) => { const p = policy(); p.work_execution.role_limits.behavior.pop(); f.put(f.policyFile, p); },
-    (f) => { const p = policy(); p.work_execution.deny_paths.push(`${ROOT}/screens/**`); f.put(f.policyFile, p); },
+    (f) => { const p = policy(); p.work_execution.role_limits.behavior.pop(); f.put(f.overlayFile, p); },
+    (f) => { const p = policy(); p.work_execution.deny_paths.push(`${ROOT}/screens/**`); f.put(f.overlayFile, p); },
   ]) { const f = fixture(t), before = f.run(); update(f); assert.notEqual(f.run().basis_digest, before.basis_digest); }
 });
 

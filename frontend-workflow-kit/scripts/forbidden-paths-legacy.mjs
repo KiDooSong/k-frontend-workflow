@@ -31,6 +31,7 @@ import { enforceCliFlagContract } from './lib/cli-args.mjs';
 import { computeReadiness } from './readiness.mjs';
 import { LayoutConfigError, loadLayoutProfile } from './lib/layout-profile.mjs';
 import { adoptedWorkPaths } from './lib/scoped-work-adoption.mjs';
+import { adoptionPolicy, legacyProjectRoot, liveWorkConfig } from './lib/work-config.mjs';
 import {
   covers,
   isClearedAt,
@@ -341,18 +342,22 @@ function main() {
     );
     process.exit(2);
   }
-  const policy = loadYamlOrExit(policyPath, 'policy');
-  if (!policy) {
+  const basePolicy = loadYamlOrExit(policyPath, 'policy');
+  if (!basePolicy) {
     process.stderr.write(`forbidden-paths: 정책 파일 없음: ${policyPath}\n`);
     process.exit(2);
   }
+  // #257: --root(없으면 docs 를 담은 프로젝트, 그것도 아니면 작업 디렉터리)의 frontend-workflow.config.yaml 이
+  //   layout 기본값과 채택 overlay 를 정한다.
+  const work = liveWorkConfig(typeof flags.root === 'string' ? flags.root : legacyProjectRoot(docsDir), flags.layout);
+  const policy = adoptionPolicy(basePolicy, work.config, docsDir);
   // 매니페스트는 computeReadiness 의 부가 입력(next_actions 템플릿 경로 등). 게이트 판정은 정책 단일 출처.
   const manifest = loadYamlOrExit(path.resolve(flags.manifest || DEFAULTS.manifest), 'manifest') || {};
 
   // --- 레이아웃 프로파일 + resolved policy (tier1 §6·§7) ---
   // 정책이 {roles.X} 로 토큰화돼 있으므로, path-backstop 의 글롭-문자열 helper 에 넘기기 전에
   // 토큰을 물리 글롭으로 펼친다(BYTE-동치 회귀 기준 — §10). --layout 으로 프로파일 경로 오버라이드.
-  const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags });
+  const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags: work.layout === flags.layout ? flags : { ...flags, layout: work.layout } });
   const resolvedPolicy = resolvePolicyPaths(policy, layout);
   // 모드 사다리 순서(clearance index 비교용). thresholdOf 를 토큰화 정책으로 재계산하지 않고
   // materializeGuardedSurface 가 준 구체 threshold 의 index 만 본다(§7-i / M3).

@@ -21,6 +21,7 @@ import {
 } from './lib/util.mjs';
 import { LayoutConfigError, loadLayoutProfile, synthesizeModePolicy } from './lib/layout-profile.mjs';
 import { adoptedWorkPaths } from './lib/scoped-work-adoption.mjs';
+import { adoptionPolicy, legacyProjectRoot, liveWorkConfig } from './lib/work-config.mjs';
 import {
   candidateSurfaceKind,
   collectApiCandidateClaims,
@@ -1096,17 +1097,22 @@ function main() {
     );
     process.exit(2);
   }
-  const policy = loadYamlOrExit(policyPath, 'policy', 'readiness');
-  if (!policy) {
+  const basePolicy = loadYamlOrExit(policyPath, 'policy', 'readiness');
+  if (!basePolicy) {
     process.stderr.write(`readiness: 정책 파일 없음: ${policyPath}\n`);
     process.exit(2);
   }
+  // #257: 프로젝트 루트(docs 를 담은 프로젝트, 없으면 작업 디렉터리)의 frontend-workflow.config.yaml 이
+  //   layout 기본값과 채택 overlay 를 정한다.
+  //   어긋남(설정 오류·명시 --layout 불일치·base policy 의 work_execution·overlay 없는 units 선언)은 exit 2.
+  const work = liveWorkConfig(legacyProjectRoot(docsDir), flags.layout);
+  const policy = adoptionPolicy(basePolicy, work.config, docsDir);
   // 매니페스트는 §6 입력 계약상의 입력. 게이트 판정은 정책이 단일 출처이고(불변식 #1),
   // 매니페스트는 next_actions 의 템플릿 경로 등 부가 정보로만 쓴다 (판정 중복 금지).
   const manifest = loadYamlOrExit(path.resolve(flags.manifest || DEFAULTS.manifest), 'manifest', 'readiness') || {};
   const ci = loadCi(flags);
   // 레이아웃 프로파일(tier1): role→glob 단일 출처. --layout 으로 project-layout.yaml 경로 오버라이드.
-  const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags });
+  const layout = loadLayoutProfile({ kitRoot: KIT_ROOT, flags: work.layout === flags.layout ? flags : { ...flags, layout: work.layout } });
 
   const fullResult = computeReadiness({
     state,

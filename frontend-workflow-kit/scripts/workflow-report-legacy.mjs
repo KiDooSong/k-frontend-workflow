@@ -25,13 +25,18 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import {
+  REFUSAL_TOKEN_ENV, adoptionPolicy, legacyProjectRoot, liveWorkConfig, newRefusalToken, workConfigRefusal,
+} from './lib/work-config.mjs';
+import {
   parseArgs,
   DEFAULTS,
   readFileSafe,
   writeFile,
   removeFileIfExists,
   splitFrontmatter,
+  yamlParse,
   isCliEntry,
+  runCli,
 } from './lib/util.mjs';
 import {
   extractSection,
@@ -121,9 +126,9 @@ function relToCwd(p) {
 
 // 서브프로세스를 throw 없이 실행해 { code, stdout, stderr } 로 정규화한다.
 // (validate/test 는 위반/실패 시 exit 1 로 throw 하지만 stdout 에 JSON 은 그대로 있다 → 복구한다.)
-function runCapture(scriptPath, args) {
+function runCapture(scriptPath, args, env = process.env) {
   try {
-    const stdout = execFileSync(process.execPath, [scriptPath, ...args], { encoding: 'utf8' });
+    const stdout = execFileSync(process.execPath, [scriptPath, ...args], { encoding: 'utf8', env });
     return { code: 0, stdout, stderr: '' };
   } catch (e) {
     return {
@@ -184,7 +189,12 @@ function collectForbidden(diffFile, docs, root, layout) {
   if (root) args.push('--root', root);
   if (layout) args.push('--layout', layout);
   const invocation = invocationLabel(FORBIDDEN_SCRIPT, args);
-  const r = runCapture(FORBIDDEN_SCRIPT, args);
+  // #257: a configuration refusal of forbidden-paths is the report's refusal too, never
+  //   evidence (exit 2). Only the line it marks with this run's token counts as one.
+  const token = newRefusalToken();
+  const r = runCapture(FORBIDDEN_SCRIPT, args, { ...process.env, [REFUSAL_TOKEN_ENV]: token });
+  const refusal = r.code !== 0 ? workConfigRefusal(r.stderr, token) : null;
+  if (refusal) fail(refusal);
   if (r.stdout.trim()) {
     try {
       const j = JSON.parse(r.stdout);
@@ -307,6 +317,21 @@ function main() {
   const { data: fm, body, hasFrontmatter, parseError } = splitFrontmatter(packetRaw);
   if (!hasFrontmatter) fail(`packet 에 frontmatter(---) 없음 — Work Packet 형식 아님: ${relToCwd(packetPath)}`);
   if (parseError) fail(`packet frontmatter YAML 파싱 실패: ${relToCwd(packetPath)} — ${parseError}`);
+
+  // 2) docs/src/root 유도: 플래그 우선 → packet readiness_source 의 --docs → DEFAULTS.
+  //    docs 를 posix 로 정규화해 Windows 역슬래시 경로에서도 root/src 유도가 동작하게 한다.
+  const docs = toPosix(docsFlag || docsFromReadinessSource(fm.readiness_source) || DEFAULTS.docs);
+  const docsRootMatch = /^(.*)\/docs\/frontend-workflow\/?$/.exec(docs);
+  const projectRoot = docsRootMatch ? docsRootMatch[1] : null; // 예: examples/coupon-feature (monorepo 프로젝트 루트)
+
+  // #257: lifecycle 반환보다 먼저, leaf 와 같은 project root 의 frontend-workflow.config.yaml 을 읽는다.
+  //   leaf(validate·forbidden-paths·check-generated)는 번들 policy 를 쓰므로 그 policy 로 채택 검사를 한다.
+  //   파싱되지 않는 policy 는 채택 사실이 아니므로 base 검사만 건너뛰고, 그 오류는 이전처럼 leaf 가 보고한다.
+  const work = liveWorkConfig(legacyProjectRoot(docs), layoutFlag);
+  let bundledPolicy = {};
+  try { bundledPolicy = yamlParse(readFileSafe(DEFAULTS.policy) ?? '') || {}; } catch { /* left to the leaves */ }
+  adoptionPolicy(bundledPolicy, work.config, path.resolve(docs));
+
   if (fm.readiness_applicable === false) {
     if (!isNonApplicablePacket(fm)) {
       fail(
@@ -345,11 +370,6 @@ function main() {
   const nextActions = extractNextActions(body);
   const snapshot = extractReadinessSnapshot(body);
 
-  // 2) docs/src/root 유도: 플래그 우선 → packet readiness_source 의 --docs → DEFAULTS.
-  //    docs 를 posix 로 정규화해 Windows 역슬래시 경로에서도 root/src 유도가 동작하게 한다.
-  const docs = toPosix(docsFlag || docsFromReadinessSource(fm.readiness_source) || DEFAULTS.docs);
-  const docsRootMatch = /^(.*)\/docs\/frontend-workflow\/?$/.exec(docs);
-  const projectRoot = docsRootMatch ? docsRootMatch[1] : null; // 예: examples/coupon-feature (monorepo 프로젝트 루트)
   let src;
   if (srcFlag) src = toPosix(srcFlag);
   else if (projectRoot) src = `${projectRoot}/src`;
@@ -383,7 +403,8 @@ function main() {
   //    전달한다(packet 의 --layout 규약과 동일). 누락 시 leaf 는 기본(expo) 레이아웃으로 해소돼 custom
   //    layout 에서 packet/report 와 leaf 가 서로 다른 프로파일을 보는 split-brain 이 된다.
   //    test-fixtures 는 전체 fixture harness 이므로 --layout 을 넘기지 않는다(기존 동작 유지).
-  const layoutResolved = layoutFlag ? path.resolve(layoutFlag) : null;
+  //    #257: 위에서 읽은 설정의 layout 을 기본값으로 쓰고, 해석한 경로를 모든 leaf 에 명시로 넘긴다.
+  const layoutResolved = work.layout ? path.resolve(work.layout) : null;
   const validate = collectValidate(docs, src, layoutResolved);
   const forbidden = collectForbidden(diffResolved, docs, projectRoot || undefined, layoutResolved);
   const idempotency = collectTests(skipTests);
@@ -448,4 +469,5 @@ function main() {
   process.exitCode = 0;
 }
 
-if (isCliEntry(import.meta.url)) main();
+// runCli: frontend-workflow.config.yaml 어긋남(WorkConfigError)도 exit 2 로 surface.
+if (isCliEntry(import.meta.url)) runCli(main, 'workflow:report');

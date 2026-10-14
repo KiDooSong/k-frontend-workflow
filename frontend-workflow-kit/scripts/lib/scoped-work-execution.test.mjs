@@ -53,7 +53,9 @@ function repository(t, { prefix = '' } = {}) {
   const work = { version: 1, owners: [SURFACE, ...MEMBERS.map((id) => `screen:${id}`)], profiles: ['visual', 'api-contract', 'behavior'],
     role_limits: { visual: ['screen', 'domain_component', 'hook', 'test'], 'api-contract': ['api_client', 'test'],
       behavior: ['screen', 'domain_component', 'hook', 'api_client', 'test'] }, deny_paths: [] };
-  put('.kit/policy.yaml', `${fs.readFileSync(DEFAULTS.policy, 'utf8')}\nwork_execution: ${JSON.stringify(work)}\n`);
+  put('.kit/policy.yaml', fs.readFileSync(DEFAULTS.policy, 'utf8'));
+  put('.kit/adoption.yaml', `work_execution: ${JSON.stringify(work)}\n`);
+  put('frontend-workflow.config.yaml', 'version: 1\npolicy_overlay: .kit/adoption.yaml\n');
   const layoutFile = put('.kit/layout.yaml', JSON.stringify({ roles: { route_entry: 'src/app/**',
     screen: 'src/features/{domain}/screens/**', domain_component: 'src/features/{domain}/components/**',
     hook: 'src/features/{domain}/hooks/**', api_client: 'src/api/**', test: 'src/features/{domain}/tests/**' } }));
@@ -600,7 +602,8 @@ test('W13: missing, foreign or stale Decision scopes deny scoped work; no scope 
   // A person reviews the scope and records the current basis digest.
   const docsDir = path.join(r.root, DOCS);
   const { basis_digest: digest } = resolveScopedBindingBasis({ owner, unit: 'known', decisionRef, projectRoot: r.root, docsDir, kitRoot: path.join(r.root, '.kit'),
-    policyFile: path.join(r.root, '.kit/policy.yaml'), layoutFile: path.join(r.root, '.kit/layout.yaml'), manifestFile: path.join(r.root, '.kit/manifest.yaml'),
+    policyFile: path.join(r.root, '.kit/policy.yaml'), policyOverlayFile: path.join(r.root, '.kit/adoption.yaml'),
+    layoutFile: path.join(r.root, '.kit/layout.yaml'), manifestFile: path.join(r.root, '.kit/manifest.yaml'),
     registerFile: path.join(docsDir, '_meta/reconciliation-register.md'), inputArtifacts: [],
     targetIndex: buildReconciliationTargetIndex({ docs: [...r.docs.values()].map((file) => ({ file, fm: splitFrontmatter(fs.readFileSync(file, 'utf8')).data })) }) });
   const current = outcome(scope({ basis_digest: digest }), 'current scope');
@@ -628,9 +631,9 @@ test('#269: a legacy source connected for an adopted surface host is listed in t
 });
 
 test('#262: a Conflict naming only a legacy-current host still denies the surface; that host checks no Conflicts (r2)', (t) => {
-  const r = repository(t), policy = path.join(r.root, '.kit/policy.yaml');
+  const r = repository(t), overlay = path.join(r.root, '.kit/adoption.yaml');
   // RESULT-002 stays on legacy readiness and hosts the panel as legacy-current.
-  fs.writeFileSync(policy, fs.readFileSync(policy, 'utf8').replace(',"screen:RESULT-002"', ''));
+  fs.writeFileSync(overlay, fs.readFileSync(overlay, 'utf8').replace(',"screen:RESULT-002"', ''));
   r.edit('screen-2.md', ({ fm }) => { delete fm.work_execution; });
   r.edit('surface.md', ({ fm }) => { fm.work_execution.units[0].host_units['RESULT-002'] = 'legacy-current'; });
   r.commit('legacy host');
@@ -668,7 +671,8 @@ test('#262: a Conflict named for an adopted host denies it until a current bindi
   // A person reviews the scope and records the current basis digest.
   const docsDir = path.join(r.root, DOCS);
   const { basis_digest: digest } = resolveScopedUncertaintyBindingBasis({ owner, uncertaintyRef, projectRoot: r.root, docsDir, kitRoot: path.join(r.root, '.kit'),
-    policyFile: path.join(r.root, '.kit/policy.yaml'), layoutFile: path.join(r.root, '.kit/layout.yaml'), manifestFile: path.join(r.root, '.kit/manifest.yaml'),
+    policyFile: path.join(r.root, '.kit/policy.yaml'), policyOverlayFile: path.join(r.root, '.kit/adoption.yaml'),
+    layoutFile: path.join(r.root, '.kit/layout.yaml'), manifestFile: path.join(r.root, '.kit/manifest.yaml'),
     registerFile: path.join(docsDir, '_meta/reconciliation-register.md'), inputArtifacts: [],
     targetIndex: buildReconciliationTargetIndex({ docs: [...r.docs.values()].map((file) => ({ file, fm: splitFrontmatter(fs.readFileSync(file, 'utf8')).data })) }) });
   const current = run(scope({ basis_digest: digest }), 'current binding');

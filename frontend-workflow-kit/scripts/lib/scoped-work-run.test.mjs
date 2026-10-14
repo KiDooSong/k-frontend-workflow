@@ -38,7 +38,9 @@ function repository(t) {
   const work = { version: 1, owners: [SURFACE, ...MEMBERS.map((id) => `screen:${id}`)], profiles: ['visual', 'api-contract', 'behavior'],
     role_limits: { visual: ['screen', 'domain_component', 'hook', 'test'], 'api-contract': ['api_client', 'test'],
       behavior: ['screen', 'domain_component', 'hook', 'api_client', 'test'] }, deny_paths: [] };
-  put('.kit/policy.yaml', `${fs.readFileSync(DEFAULTS.policy, 'utf8')}\nwork_execution: ${JSON.stringify(work)}\n`);
+  put('.kit/policy.yaml', fs.readFileSync(DEFAULTS.policy, 'utf8'));
+  put('.kit/adoption.yaml', `work_execution: ${JSON.stringify(work)}\n`);
+  put('frontend-workflow.config.yaml', 'version: 1\npolicy_overlay: .kit/adoption.yaml\n');
   const layoutFile = put('.kit/layout.yaml', JSON.stringify({ roles: { route_entry: 'src/app/**',
     screen: 'src/features/{domain}/screens/**', domain_component: 'src/features/{domain}/components/**',
     hook: 'src/features/{domain}/hooks/**', api_client: 'src/api/**', test: 'src/features/{domain}/tests/**' } }));
@@ -116,8 +118,8 @@ function fixture(t, authority, state = 'ready') {
     r.edit('screen-1.md', ({ fm }) => { fm.screen_lifecycle = 'absorbed'; fm.absorbed_into = 'RESULT-002'; fm.absorbed_at = '2026-09-23'; });
     // The lifecycle fixture is a screen request, independent of surface membership.
     fs.rmSync(path.join(r.root, DOCS, 'domains/result/surfaces'), { recursive: true });
-    const policy = path.join(r.root, '.kit/policy.yaml');
-    fs.writeFileSync(policy, fs.readFileSync(policy, 'utf8').replace('"surface:RESULT-PANEL",', ''));
+    const overlay = path.join(r.root, '.kit/adoption.yaml');
+    fs.writeFileSync(overlay, fs.readFileSync(overlay, 'utf8').replace('"surface:RESULT-PANEL",', ''));
     selection = authority === 'scoped'
       ? { owner: 'screen:RESULT-001', authority: 'scoped', unit: 'known', targets: [{ path: ENTRY('RESULT-001'), change: 'M' }] }
       : { ...selection, targets: [{ path: ENTRY('RESULT-001'), change: 'M' }] };
@@ -345,7 +347,7 @@ for (const authority of ['current', 'scoped']) {
     fs.cpSync(path.join(f.root, 'docs'), path.join(f.root, 'docs-copy'), { recursive: true });
     fs.cpSync(path.join(f.root, 'src'), path.join(f.root, 'src-copy'), { recursive: true });
     const twin = path.join(f.root, 'apps/twin'); fs.mkdirSync(twin, { recursive: true });
-    for (const name of ['docs', 'src', '.kit']) fs.cpSync(path.join(f.root, name), path.join(twin, name), { recursive: true });
+    for (const name of ['docs', 'src', '.kit', 'frontend-workflow.config.yaml']) fs.cpSync(path.join(f.root, name), path.join(twin, name), { recursive: true });
     f.commit('alternate selectors');
     f.json(f.cli('workflow-packet', ['--out', f.packet]));
     for (const [flag, value] of [['policy', '.kit/policy-copy.yaml'], ['manifest', '.kit/manifest-copy.yaml'], ['layout', '.kit/layout-copy.yaml'],

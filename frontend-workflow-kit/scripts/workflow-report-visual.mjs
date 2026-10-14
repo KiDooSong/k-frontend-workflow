@@ -5,12 +5,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  parseArgs, readFileSafe, writeFile, splitFrontmatter, isCliEntry,
+  DEFAULTS, parseArgs, readFileSafe, writeFile, splitFrontmatter, isCliEntry, yamlParse,
 } from './lib/util.mjs';
 import { enforceCliFlagContract } from './lib/cli-args.mjs';
 import { parseFindings } from './lib/workflow-report.mjs';
 import { captureWorkflowJson, WORKFLOW_JSON_MAX_BYTES } from './lib/workflow-json-capture.mjs';
 import { displayVisualChangedRecord } from './lib/visual-refresh-records.mjs';
+import {
+  REFUSAL_TOKEN_ENV, WorkConfigError, assertBasePolicy, newRefusalToken, workConfigRefusal,
+} from './lib/work-config.mjs';
 
 const SELF_DIR = path.dirname(fileURLToPath(import.meta.url));
 const FORBIDDEN_SCRIPT = path.join(SELF_DIR, 'forbidden-paths.mjs');
@@ -173,6 +176,15 @@ function main() {
   if (typeof fm.target_screen !== 'string' || !fm.target_screen) fail('packet target_screen 없음');
   if (fm.visual_selected_screen !== fm.target_screen) fail('packet visual selected screen이 target_screen과 일치하지 않음');
   const review = loadReview(reviewFlag, callerCwd);
+  // #257: without --policy the backstop judges with the bundled policy, whose pin check
+  // runs before its adoption check. A bundled policy that adopts is refused here, as the
+  // legacy report refuses it; any other refusal comes from the backstop below.
+  if (!policy) {
+    let bundled = {};
+    try { bundled = yamlParse(readFileSafe(DEFAULTS.policy) ?? '') || {}; } catch {}
+    try { assertBasePolicy(bundled); }
+    catch (error) { if (error instanceof WorkConfigError) fail(error.message); throw error; }
+  }
 
   const forbiddenArgs = ['--json', '--screen', fm.target_screen, '--intent', VISUAL_REFRESH_INTENT, '--input', input, '--path', checkedPath, '--root', '.'];
   for (const [name, value] of [['docs', docs], ['src', src], ['policy', policy], ['manifest', manifest], ['layout', layout], ['ci', ci]]) {
@@ -181,7 +193,12 @@ function main() {
   if (staged) forbiddenArgs.push('--staged');
   if (range) forbiddenArgs.push('--range', range);
   if (base) forbiddenArgs.push('--base', base);
-  const captured = captureWorkflowJson(FORBIDDEN_SCRIPT, forbiddenArgs, { cwd: root });
+  // #257: a backstop that refuses the adoption config is a refusal, not tool-error evidence.
+  //   Only the line the backstop marks with this run's token counts as that refusal.
+  const token = newRefusalToken();
+  const captured = captureWorkflowJson(FORBIDDEN_SCRIPT, forbiddenArgs, { cwd: root, env: { ...process.env, [REFUSAL_TOKEN_ENV]: token } });
+  const refusal = captured.code !== 0 ? workConfigRefusal(captured.stderr, token) : null;
+  if (refusal) fail(refusal);
   const forbiddenJson = captured.json;
   const validResult = captured.code === 0 && typeof forbiddenJson?.ok === 'boolean' &&
     Array.isArray(forbiddenJson.violations) && Array.isArray(forbiddenJson.changed_records) &&

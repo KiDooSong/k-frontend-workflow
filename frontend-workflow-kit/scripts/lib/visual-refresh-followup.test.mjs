@@ -7,6 +7,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { KIT_ROOT, yamlParse, yamlStringify } from './util.mjs';
+import { evaluateVisualRefreshAuthority } from './visual-refresh-runtime.mjs';
 
 const READINESS = path.join(KIT_ROOT, 'scripts', 'readiness.mjs');
 const BACKSTOP = path.join(KIT_ROOT, 'scripts', 'forbidden-paths.mjs');
@@ -349,5 +350,313 @@ test('shipped implement-screen documents the visual tuple and staged backstop pa
   const skill = fs.readFileSync(SKILL, 'utf8');
   for (const token of ['--intent visual-refresh', '--input <INPUT_ID>', 'workflow:run', '--staged', 'visual_authority_applicable', 'visual_prework.path_allowed:true', '--readiness', 'HALT_TOOL_ERROR']) {
     assert.ok(skill.includes(token), `implement-screen missing ${token}`);
+  }
+});
+
+// #257: frontend-workflow.config.yaml names the adoption overlay and the layout for visual-refresh too.
+const ADOPTION = { version: 1, owners: [`screen:${SCREEN_ID}`], profiles: ['behavior'], role_limits: { behavior: ['screen'] }, deny_paths: [] };
+function adoptShop(root, { config = true, commit = true } = {}) {
+  const spec = path.join(root, 'docs/frontend-workflow/domains/shop/screens/shop-home/screen-spec.md');
+  fs.writeFileSync(spec, fs.readFileSync(spec, 'utf8').replace('status: confirmed\n',
+    `status: confirmed\nwork_execution: ${JSON.stringify({ version: 1, units: [{ id: 'layout', kind: 'behavior',
+      contracts: [`artifact:${SCREEN_ID}-screen-spec#state-matrix`], sources: [] }] })}\n`));
+  write(root, 'config/adoption.yaml', `work_execution: ${JSON.stringify(ADOPTION)}\n`);
+  if (config) write(root, 'frontend-workflow.config.yaml', 'version: 1\npolicy_overlay: config/adoption.yaml\nlayout: config/layout.yaml\n');
+  git(root, 'add', '.'); if (commit) git(root, 'commit', '-m', 'adopt shop');
+}
+const explicitPolicy = ['--policy', 'config/policy.yaml', '--manifest', 'config/manifest.yaml'];
+
+test('#257 visual-refresh reads the adoption overlay and the layout from frontend-workflow.config.yaml', (t) => {
+  const root = createFixture(t, { explicitResources: true });
+  const before = run(READINESS, [...visualArgs(root), ...explicitPolicy], root);
+  assert.equal(JSON.parse(before.stdout).path_authorization.allowed, true, before.stderr || before.stdout);
+  adoptShop(root);
+  const result = run(READINESS, [...visualArgs(root), ...explicitPolicy], root);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const json = JSON.parse(result.stdout);
+  assert.equal(json.path_authorization.allowed, false, result.stdout);
+  assert.match(json.path_authorization.reason, /work-selection-required/);
+  const provenance = json.intent_authorization.resource_provenance;
+  assert.equal(provenance.layout.source, 'config/layout.yaml');
+  assert.equal(provenance.policy_overlay.source, 'config/adoption.yaml');
+  assert.equal(provenance.config.source, 'frontend-workflow.config.yaml');
+  const mismatch = run(READINESS, [...visualArgs(root), ...explicitPolicy, '--layout', 'config/policy.yaml'], root);
+  assert.equal(mismatch.status, 2, mismatch.stdout);
+  assert.match(mismatch.stderr, /WORK-CONFIG: --layout config\/policy\.yaml differs from frontend-workflow\.config\.yaml layout config\/layout\.yaml/);
+});
+
+test('#257 visual-refresh refuses owner units without a configured overlay and a base policy that adopts', (t) => {
+  const root = createFixture(t, { explicitResources: true });
+  adoptShop(root, { config: false });
+  const result = run(READINESS, [...visualArgs(root), ...explicitPolicy], root);
+  assert.equal(result.status, 2, result.stdout);
+  assert.match(result.stderr, /WORK-CONFIG: owner documents declare work_execution \(screen:SHOP-HOME\)/);
+  fs.appendFileSync(path.join(root, 'config/policy.yaml'), `work_execution: ${JSON.stringify(ADOPTION)}\n`);
+  write(root, 'frontend-workflow.config.yaml', 'version: 1\npolicy_overlay: config/adoption.yaml\n');
+  const inline = run(READINESS, [...visualArgs(root), ...explicitPolicy], root);
+  assert.equal(inline.status, 2, inline.stdout);
+  assert.match(inline.stderr, /the base policy must not declare work_execution/);
+});
+
+test('#257 a visual diff cannot change the adoption overlay or create the config', (t) => {
+  // An overlay that adopts no owner yet keeps the screen applicable, so the record check runs.
+  const adopted = createFixture(t, { explicitResources: true });
+  write(adopted, 'config/adoption.yaml', `work_execution: ${JSON.stringify({ ...ADOPTION, owners: [] })}\n`);
+  write(adopted, 'frontend-workflow.config.yaml', 'version: 1\npolicy_overlay: config/adoption.yaml\nlayout: config/layout.yaml\n');
+  git(adopted, 'add', '.'); git(adopted, 'commit', '-m', 'adoption config');
+  write(adopted, SCREEN_PATH, 'export const ShopScreen = () => "refreshed";\n');
+  fs.appendFileSync(path.join(adopted, 'config/adoption.yaml'), '# narrowed later\n');
+  git(adopted, 'add', '.');
+  const staged = run(BACKSTOP, [...visualArgs(adopted), ...explicitPolicy, '--staged', '--enforce'], adopted);
+  const json = JSON.parse(staged.stdout);
+  assert.ok(json.violations.some((entry) => entry.code === 'VR-BACKSTOP-012' && entry.file === 'config/adoption.yaml'), staged.stdout);
+  const plain = createFixture(t, { explicitResources: true });
+  write(plain, SCREEN_PATH, 'export const ShopScreen = () => "refreshed";\n');
+  write(plain, 'frontend-workflow.config.yaml', 'version: 1\nlayout: config/layout.yaml\n');
+  git(plain, 'add', '.');
+  const created = run(BACKSTOP, [...visualArgs(plain), ...explicitPolicy, '--layout', 'config/layout.yaml', '--staged', '--enforce'], plain);
+  assert.equal(created.status, 1, created.stderr || created.stdout);
+  assert.ok(JSON.parse(created.stdout).violations.some((entry) => entry.code === 'VR-BACKSTOP-012' && entry.file === 'frontend-workflow.config.yaml'), created.stdout);
+});
+
+test('#257 forward readiness reads the worktree config, not the committed one', (t) => {
+  const root = createFixture(t, { explicitResources: true });
+  adoptShop(root);
+  // The worktree withdraws the config while the owner still declares units.
+  fs.rmSync(path.join(root, 'frontend-workflow.config.yaml'));
+  const result = run(READINESS, [...visualArgs(root), ...explicitPolicy, '--layout', 'config/layout.yaml'], root);
+  assert.equal(result.status, 2, result.stdout);
+  assert.match(result.stderr, /WORK-CONFIG: owner documents declare work_execution \(screen:SHOP-HOME\)/);
+});
+
+test('#257 visual readiness checks the adoption config before the first commit (r3)', (t) => {
+  const root = createFixture(t, { explicitResources: true });
+  fs.rmSync(path.join(root, '.git'), { recursive: true, force: true });
+  git(root, 'init');
+  const unborn = run(READINESS, [...visualArgs(root), ...explicitPolicy], root);
+  assert.equal(unborn.status, 0, unborn.stderr || unborn.stdout);
+  assert.ok(JSON.parse(unborn.stdout).intent_authorization.reasons.some((entry) => entry.code === 'VR-GIT-001'), unborn.stdout);
+  write(root, 'frontend-workflow.config.yaml', 'version: 2\n');
+  const malformed = run(READINESS, [...visualArgs(root), ...explicitPolicy], root);
+  assert.equal(malformed.status, 2, malformed.stdout);
+  assert.match(malformed.stderr, /WORK-CONFIG: frontend-workflow\.config\.yaml: version 1 required/);
+  write(root, 'frontend-workflow.config.yaml', 'version: 1\n');
+  fs.appendFileSync(path.join(root, 'config/policy.yaml'), `work_execution: ${JSON.stringify(ADOPTION)}\n`);
+  const adopting = run(READINESS, [...visualArgs(root), ...explicitPolicy], root);
+  assert.equal(adopting.status, 2, adopting.stdout);
+  assert.match(adopting.stderr, /WORK-CONFIG: the base policy must not declare work_execution/);
+});
+
+test('#257 visual readiness before the first commit refuses docs it cannot inspect (r9)', (t) => {
+  if (process.platform === 'win32' || process.getuid?.() === 0) { t.skip('requires POSIX permissions as a non-root user'); return; }
+  const root = createFixture(t, { explicitResources: true });
+  fs.rmSync(path.join(root, '.git'), { recursive: true, force: true });
+  git(root, 'init');
+  const parent = path.join(root, 'docs');
+  try {
+    fs.chmodSync(parent, 0o644);
+    const result = run(READINESS, [...visualArgs(root), ...explicitPolicy], root);
+    assert.equal(result.status, 2, result.stdout);
+    assert.match(result.stderr, /WORK-CONFIG: --docs docs\/frontend-workflow: cannot inspect \(EACCES\) to check owner declarations/);
+  } finally { fs.chmodSync(parent, 0o755); }
+});
+
+test('#257 a visual packet before the first commit keeps its result when the base policy does not parse (r10)', (t) => {
+  const root = createFixture(t, { explicitResources: true });
+  fs.rmSync(path.join(root, '.git'), { recursive: true, force: true });
+  git(root, 'init');
+  write(root, 'config/policy.yaml', 'modes: [unclosed\n');
+  // A policy that does not parse is not an adoption fact; the packet halts as before.
+  const packet = run(PACKET, ['--screen', SCREEN_ID, '--requested-mode', 'api-integrated-ui', '--intent', 'visual-refresh', '--input', INPUT_ID,
+    '--path', SCREEN_PATH, '--root', root, ...explicitPolicy, '--json'], root);
+  assert.equal(packet.status, 0, packet.stderr || packet.stdout);
+  assert.doesNotMatch(packet.stderr, /WORK-CONFIG/);
+});
+
+test('#257 a visual report refuses adoption before any other resource of its backstop fails (r4)', (t) => {
+  const adoptInBase = (root) => fs.appendFileSync(path.join(root, 'config/policy.yaml'), `work_execution: ${JSON.stringify(ADOPTION)}\n`);
+  const baseRefusal = /WORK-CONFIG: the base policy must not declare work_execution/;
+  // The manifest fails in resource preparation when it does not parse, and already in
+  // tuple normalization when it is gone.
+  const unparsable = (root) => write(root, 'config/manifest.yaml', 'artifacts: [unclosed\n');
+  const removed = (root) => fs.rmSync(path.join(root, 'config/manifest.yaml'));
+  const cases = [
+    ['a base policy that adopts', adoptInBase, unparsable, baseRefusal],
+    ['owner units without an overlay', (root) => adoptShop(root, { config: false, commit: false }), unparsable,
+      /WORK-CONFIG: owner documents declare work_execution \(screen:SHOP-HOME\)/],
+    ['a base policy that adopts, the manifest removed', adoptInBase, removed, baseRefusal],
+    ['an explicit --layout that differs from the config, the manifest removed',
+      (root) => write(root, 'frontend-workflow.config.yaml', 'version: 1\nlayout: config/layout.yaml\n'), removed,
+      /WORK-CONFIG: --layout config\/policy\.yaml differs from frontend-workflow\.config\.yaml layout config\/layout\.yaml/, ['--layout', 'config/policy.yaml']],
+  ];
+  for (const [name, adopt, breakManifest, refusal, extra = []] of cases) {
+    const root = createFixture(t, { explicitResources: true });
+    const packetPath = path.join(root, 'tmp', 'work-packet.md');
+    const packet = run(PACKET, ['--screen', SCREEN_ID, '--requested-mode', 'api-integrated-ui', '--intent', 'visual-refresh', '--input', INPUT_ID,
+      '--path', SCREEN_PATH, '--root', root, ...explicitPolicy, '--out', packetPath, '--json'], root);
+    assert.equal(packet.status, 0, packet.stderr || packet.stdout);
+    // The staged destination misplaces adoption and breaks the manifest the backstop reads first.
+    write(root, SCREEN_PATH, 'export const ShopScreen = () => "refreshed";\n');
+    breakManifest(root);
+    adopt(root);
+    git(root, 'add', '.');
+    const report = run(REPORT, ['--packet', packetPath, '--intent', 'visual-refresh', '--input', INPUT_ID, '--path', SCREEN_PATH,
+      '--root', root, ...explicitPolicy, ...extra, '--staged', '--json'], root);
+    assert.equal(report.status, 2, `${name}: ${report.stdout}`);
+    assert.match(report.stderr, refusal, name);
+  }
+});
+
+test('#257 a direct visual evaluation refuses adoption before it reads the other resources (r4)', (t) => {
+  const root = createFixture(t, { explicitResources: true });
+  fs.appendFileSync(path.join(root, 'config/policy.yaml'), `work_execution: ${JSON.stringify(ADOPTION)}\n`);
+  write(root, 'config/manifest.yaml', 'artifacts: [unclosed\n');
+  git(root, 'add', '.'); git(root, 'commit', '-m', 'misplaced adoption');
+  const tree = git(root, 'rev-parse', 'HEAD^{tree}');
+  // No tuple normalization runs first; resource preparation itself checks adoption first.
+  assert.throws(() => evaluateVisualRefreshAuthority({ sourceRoot: root, destinationRoot: root, selectedScreen: SCREEN_ID, selectedInputId: INPUT_ID,
+    checkedPath: SCREEN_PATH, options: { policy: 'config/policy.yaml', manifest: 'config/manifest.yaml' },
+    snapshot: { source_tree: tree, destination_tree: tree, diff_kind: 'staged' } }),
+  (error) => error.name === 'WorkConfigError' && /the base policy must not declare work_execution/.test(error.message));
+});
+
+// A copy of the kit whose bundled policy declares work_execution.
+function adoptingKit(t) {
+  const kit = tmpdir(t, 'visual-adoption-kit-');
+  for (const dir of ['scripts', 'policies', 'catalog', 'presets', 'schemas', 'templates']) {
+    fs.cpSync(path.join(KIT_ROOT, dir), path.join(kit, dir), { recursive: true, filter: (source) => !source.endsWith('.test.mjs') });
+  }
+  fs.copyFileSync(path.join(KIT_ROOT, 'package.json'), path.join(kit, 'package.json'));
+  fs.symlinkSync(path.join(KIT_ROOT, 'node_modules'), path.join(kit, 'node_modules'));
+  fs.appendFileSync(path.join(kit, 'policies/implementation-mode-policy.yaml'), `\nwork_execution: ${JSON.stringify(ADOPTION)}\n`);
+  return kit;
+}
+
+test('#257 a visual report refuses a bundled policy that adopts, whatever its backstop fails on first (r3)', (t) => {
+  const root = createFixture(t), kit = adoptingKit(t);
+  const packetPath = path.join(root, 'tmp', 'work-packet.md');
+  const packet = run(PACKET, ['--screen', SCREEN_ID, '--requested-mode', 'api-integrated-ui', '--intent', 'visual-refresh',
+    '--input', INPUT_ID, '--path', SCREEN_PATH, '--root', root, '--out', packetPath, '--json'], root);
+  assert.equal(packet.status, 0, packet.stderr || packet.stdout);
+  write(root, SCREEN_PATH, 'export const ShopScreen = () => "refreshed";\n');
+  git(root, 'add', SCREEN_PATH);
+  const report = run(path.join(kit, 'scripts', 'workflow-report.mjs'), ['--packet', packetPath, '--intent', 'visual-refresh',
+    '--input', INPUT_ID, '--path', SCREEN_PATH, '--root', root, '--staged', '--json'], root);
+  assert.equal(report.status, 2, report.stdout);
+  assert.match(report.stderr, /WORK-CONFIG: the base policy must not declare work_execution/);
+  // Also when the backstop fails before it has a snapshot to judge.
+  const unresolved = run(path.join(kit, 'scripts', 'workflow-report.mjs'), ['--packet', packetPath, '--intent', 'visual-refresh',
+    '--input', INPUT_ID, '--path', SCREEN_PATH, '--root', root, '--range', 'no-such-ref..HEAD', '--json'], root);
+  assert.equal(unresolved.status, 2, unresolved.stdout);
+  assert.match(unresolved.stderr, /WORK-CONFIG: the base policy must not declare work_execution/);
+});
+
+test('#257 visual readiness refuses a bundled policy that adopts as misplaced adoption, not only by its pin (r4)', (t) => {
+  const root = createFixture(t), kit = adoptingKit(t);
+  const readiness = run(path.join(kit, 'scripts', 'readiness.mjs'), visualArgs(root), root);
+  assert.equal(readiness.status, 2, readiness.stdout);
+  assert.match(readiness.stderr, /WORK-CONFIG: the base policy must not declare work_execution/);
+});
+
+test('#257 forward readiness reads the worktree overlay the config names', (t) => {
+  const root = createFixture(t, { explicitResources: true });
+  adoptShop(root);
+  write(root, 'config/adoption.yaml', `work_execution: ${JSON.stringify({ ...ADOPTION, owners: [] })}\n`);
+  git(root, 'add', '.'); git(root, 'commit', '-m', 'adopt nothing yet');
+  // Only the worktree overlay adopts the screen.
+  write(root, 'config/adoption.yaml', `work_execution: ${JSON.stringify(ADOPTION)}\n`);
+  const result = run(READINESS, [...visualArgs(root), ...explicitPolicy], root);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(JSON.parse(result.stdout).path_authorization.reason, /work-selection-required/, result.stdout);
+});
+
+test('#257 forward readiness follows the worktree config to another overlay', (t) => {
+  const root = createFixture(t, { explicitResources: true });
+  adoptShop(root);
+  write(root, 'config/none.yaml', `work_execution: ${JSON.stringify({ ...ADOPTION, owners: [] })}\n`);
+  write(root, 'frontend-workflow.config.yaml', 'version: 1\npolicy_overlay: config/none.yaml\nlayout: config/layout.yaml\n');
+  git(root, 'add', '.'); git(root, 'commit', '-m', 'adopt nothing yet');
+  // Only the worktree config names the overlay that adopts the screen.
+  write(root, 'frontend-workflow.config.yaml', 'version: 1\npolicy_overlay: config/adoption.yaml\nlayout: config/layout.yaml\n');
+  const result = run(READINESS, [...visualArgs(root), ...explicitPolicy], root);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(JSON.parse(result.stdout).path_authorization.reason, /work-selection-required/, result.stdout);
+});
+
+test('#257 a configured overlay must stay outside the implementation roots, like an explicit resource', (t) => {
+  const root = createFixture(t, { explicitResources: true });
+  write(root, 'src/adoption.yaml', `work_execution: ${JSON.stringify({ ...ADOPTION, owners: [] })}\n`);
+  write(root, 'frontend-workflow.config.yaml', 'version: 1\npolicy_overlay: src/adoption.yaml\nlayout: config/layout.yaml\n');
+  git(root, 'add', '.'); git(root, 'commit', '-m', 'overlay under src');
+  const result = run(READINESS, [...visualArgs(root), ...explicitPolicy], root);
+  assert.equal(result.status, 2, result.stdout);
+  assert.match(result.stderr, /--policy_overlay authority resource는 implementation role\/layer root와 분리돼야 함: resource=src\/adoption\.yaml/);
+});
+
+test('#257 visual packet and run resolve --layout from --root, like every visual resource (r1)', (t) => {
+  const root = createFixture(t, { explicitResources: true });
+  write(root, 'config/adoption.yaml', `work_execution: ${JSON.stringify({ ...ADOPTION, owners: [] })}\n`);
+  write(root, 'frontend-workflow.config.yaml', 'version: 1\npolicy_overlay: config/adoption.yaml\nlayout: config/layout.yaml\n');
+  git(root, 'add', '.'); git(root, 'commit', '-m', 'adoption config');
+  const elsewhere = path.dirname(root);
+  const tuple = ['--screen', SCREEN_ID, '--requested-mode', 'api-integrated-ui', '--intent', 'visual-refresh', '--input', INPUT_ID,
+    '--path', SCREEN_PATH, '--root', root, ...explicitPolicy, '--json'];
+  const packet = run(PACKET, [...tuple, '--layout', 'config/layout.yaml'], elsewhere);
+  assert.equal(packet.status, 0, packet.stderr || packet.stdout);
+  assert.equal(JSON.parse(packet.stdout).visual_refresh.authority_applicable, true, packet.stdout);
+  const workflowRun = run(RUN, [...tuple, '--layout', 'config/layout.yaml'], elsewhere);
+  assert.equal(workflowRun.status, 0, workflowRun.stderr || workflowRun.stdout);
+  assert.equal(JSON.parse(workflowRun.stdout).state, 'HALT_READY_FOR_WORK', workflowRun.stdout);
+  const mismatch = run(PACKET, [...tuple, '--layout', 'config/policy.yaml'], elsewhere);
+  assert.equal(mismatch.status, 2, mismatch.stdout);
+  assert.match(mismatch.stderr, /WORK-CONFIG: --layout config\/policy\.yaml differs/);
+});
+
+test('#257 a visual report refuses a configuration its backstop refuses (r2)', (t) => {
+  const root = createFixture(t, { explicitResources: true });
+  write(root, 'config/adoption.yaml', `work_execution: ${JSON.stringify({ ...ADOPTION, owners: [] })}\n`);
+  write(root, 'frontend-workflow.config.yaml', 'version: 1\npolicy_overlay: config/adoption.yaml\nlayout: config/layout.yaml\n');
+  git(root, 'add', '.'); git(root, 'commit', '-m', 'adoption config');
+  const packetPath = path.join(root, 'tmp', 'work-packet.md');
+  const packet = run(PACKET, ['--screen', SCREEN_ID, '--requested-mode', 'api-integrated-ui', '--intent', 'visual-refresh', '--input', INPUT_ID,
+    '--path', SCREEN_PATH, '--root', root, ...explicitPolicy, '--out', packetPath, '--json'], root);
+  assert.equal(packet.status, 0, packet.stderr || packet.stdout);
+  // Only the staged destination breaks the config; the worktree keeps the valid one.
+  write(root, SCREEN_PATH, 'export const ShopScreen = () => "refreshed";\n');
+  write(root, 'frontend-workflow.config.yaml', 'version: 2\n');
+  git(root, 'add', SCREEN_PATH, 'frontend-workflow.config.yaml');
+  write(root, 'frontend-workflow.config.yaml', 'version: 1\npolicy_overlay: config/adoption.yaml\nlayout: config/layout.yaml\n');
+  const report = run(REPORT, ['--packet', packetPath, '--intent', 'visual-refresh', '--input', INPUT_ID, '--path', SCREEN_PATH,
+    '--root', root, ...explicitPolicy, '--staged', '--json'], root);
+  assert.equal(report.status, 2, report.stdout);
+  assert.match(report.stderr, /WORK-CONFIG: frontend-workflow\.config\.yaml: version 1 required/);
+});
+
+test('#257 a visual report takes only its backstop\'s own refusal for one, not text an error echoes (r12)', (t) => {
+  const root = createFixture(t);
+  const packetPath = path.join(root, 'tmp', 'work-packet.md');
+  const packet = run(PACKET, ['--screen', SCREEN_ID, '--requested-mode', 'api-integrated-ui', '--intent', 'visual-refresh',
+    '--input', INPUT_ID, '--path', SCREEN_PATH, '--root', root, '--out', packetPath, '--json'], root);
+  assert.equal(packet.status, 0, packet.stderr || packet.stdout);
+  // The backstop fails on a range that names no commit and echoes it; that is evidence, as before.
+  const report = run(REPORT, ['--packet', packetPath, '--intent', 'visual-refresh', '--input', INPUT_ID, '--path', SCREEN_PATH,
+    '--root', root, '--range', 'WORK-CONFIG:..HEAD', '--json'], root);
+  assert.equal(report.status, 0, report.stderr || report.stdout);
+  assert.equal(JSON.parse(report.stdout).forbidden.status, 'error', report.stdout);
+});
+
+test('#257 a direct visual evaluation protects the authority files the config names (r2)', (t) => {
+  const root = createFixture(t, { explicitResources: true });
+  write(root, 'config/adoption.yaml', `work_execution: ${JSON.stringify({ ...ADOPTION, owners: [] })}\n`);
+  write(root, 'frontend-workflow.config.yaml', 'version: 1\npolicy_overlay: config/adoption.yaml\nlayout: config/layout.yaml\n');
+  git(root, 'add', '.'); git(root, 'commit', '-m', 'adoption config');
+  const tree = git(root, 'rev-parse', 'HEAD^{tree}');
+  // No tuple normalization: the options name neither the layout nor the overlay.
+  const result = evaluateVisualRefreshAuthority({ sourceRoot: root, destinationRoot: root, selectedScreen: SCREEN_ID, selectedInputId: INPUT_ID,
+    checkedPath: SCREEN_PATH, options: { policy: 'config/policy.yaml', manifest: 'config/manifest.yaml' },
+    snapshot: { source_tree: tree, destination_tree: tree, diff_kind: 'staged' } });
+  assert.ok(result._context, JSON.stringify(result.intent_authorization));
+  for (const name of ['config/adoption.yaml', 'config/layout.yaml', 'frontend-workflow.config.yaml']) {
+    assert.ok(result._context.authority_resource_paths.includes(name), `${name}: ${JSON.stringify(result._context.authority_resource_paths)}`);
   }
 });

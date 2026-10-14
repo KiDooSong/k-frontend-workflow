@@ -47,16 +47,18 @@ function fixture(t) {
     update(next);
     fs.writeFileSync(file, md(next.fm, next.body));
   };
-  const policyFile = path.join(root, 'policy.yaml');
-  fs.writeFileSync(policyFile, JSON.stringify(policy()));
-  const setPolicy = (value) => fs.writeFileSync(policyFile, JSON.stringify(value));
+  // #257: the base policy never adopts; work_execution lives in the policy overlay.
+  const policyFile = path.join(root, 'policy.yaml'), overlayFile = path.join(root, 'adoption.yaml');
+  fs.writeFileSync(policyFile, JSON.stringify({}));
+  fs.writeFileSync(overlayFile, JSON.stringify(policy()));
+  const setPolicy = (value) => fs.writeFileSync(overlayFile, JSON.stringify(value));
   write('screen.md', { artifact_id: 'SCREEN', artifact_type: 'screen-spec', screen_id: 'RESULT-001', domain: 'result',
     status: 'draft', screen_entry: 'src/features/result/screens/Result.tsx',
     work_execution: { version: 1, private_paths: { hook: ['src/features/result/hooks/local/**'] },
       test_paths: ['src/features/result/tests/local/**'], units: [unit()] } }, '## Notes\nUnselected screen notes.');
   write('contract.md', { artifact_id: 'DOC', artifact_type: 'domain-rules', domain: 'result', status: 'confirmed' },
     '## Rules\nKnown contract.\n\n## Details\nKnown detail.\n\n## Notes\nHousekeeping.');
-  const options = (owner = OWNER) => ({ owner, policyFile, projectRoot: root, layout,
+  const options = (owner = OWNER) => ({ owner, policyFile, policyOverlayFile: overlayFile, projectRoot: root, layout,
     targetIndex: buildReconciliationTargetIndex({ docs: [...docs.values()].map((file) => ({ file,
       fm: splitFrontmatter(fs.readFileSync(file, 'utf8')).data })) }),
     inputArtifacts: [...inputs.values()].map(loadInputArtifact), registerFile: path.join(root, 'register.md') });
@@ -346,4 +348,25 @@ test('D projection: stale snapshot metadata and symlink policy files are rejecte
   const other = fixture(t); const opts = other.options();
   const link = path.join(other.root, 'policy-link.yaml'); fs.symlinkSync(opts.policyFile, link);
   assert.throws(() => resolveScopedUnitProjection({ ...opts, policyFile: link }));
+});
+
+test('#257 projection: adoption comes only from the policy overlay, which the projection records', (t) => {
+  const f = fixture(t), options = f.options();
+  const projection = resolveScopedUnitProjection(options);
+  assert.equal(projection.projection.policy.file, 'adoption.yaml');
+  assert.ok(projection.read_set.some((entry) => entry.file === 'adoption.yaml'));
+  assert.ok(projection.read_set.some((entry) => entry.file === 'policy.yaml'));
+  // No overlay: nothing is adopted, whatever the owner documents declare.
+  const { policyOverlayFile, ...withoutOverlay } = options;
+  assert.throws(() => resolveScopedUnitProjection(withoutOverlay), /root owner must be explicitly adopted/);
+  // A base policy that declares work_execution is refused even beside a valid overlay.
+  fs.writeFileSync(options.policyFile, JSON.stringify(policy()));
+  assert.throws(() => resolveScopedUnitProjection(options), /base policy must not declare work_execution/);
+  fs.writeFileSync(options.policyFile, JSON.stringify({}));
+  // The overlay holds work_execution only.
+  fs.writeFileSync(policyOverlayFile, JSON.stringify({ ...policy(), modes: {} }));
+  assert.throws(() => resolveScopedUnitProjection(options), /the overlay holds only work_execution \(found modes\)/);
+  const link = path.join(f.root, 'adoption-link.yaml');
+  fs.writeFileSync(policyOverlayFile, JSON.stringify(policy())); fs.symlinkSync(policyOverlayFile, link);
+  assert.throws(() => resolveScopedUnitProjection({ ...options, policyOverlayFile: link }), /symlink/);
 });

@@ -18,6 +18,8 @@ function put(root, rel, content) {
   fs.writeFileSync(file, content); return file;
 }
 // A consumer repository with a vendored kit and a separately packed next payload.
+// guard: true ships both adoption modules, 'marker-only' only the pre-#257 marker module.
+const CONFIG_MODULE = 'scripts/lib/work-config.mjs';
 function scenario(t, { guard = false, marker = true } = {}) {
   const temp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'scoped-downgrade-')));
   t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
@@ -27,7 +29,9 @@ function scenario(t, { guard = false, marker = true } = {}) {
     payload: { destination_hint: VENDORED, files: [{ path: 'runtime.mjs', sha256: sha('A'), classification: 'consumer-runtime', mode: '100644' }] } }));
   const files = [{ path: 'runtime.mjs', sha256: sha('OLD'), classification: 'consumer-runtime', mode: '100644' }];
   put(nextDir, 'runtime.mjs', 'OLD');
-  if (guard) { put(nextDir, ADOPTION_GUARD_MODULE, 'export {};\n'); files.push({ path: ADOPTION_GUARD_MODULE, sha256: sha('export {};\n'), classification: 'consumer-runtime', mode: '100644' }); }
+  for (const module of guard === true ? [ADOPTION_GUARD_MODULE, CONFIG_MODULE] : guard ? [ADOPTION_GUARD_MODULE] : []) {
+    put(nextDir, module, 'export {};\n'); files.push({ path: module, sha256: sha('export {};\n'), classification: 'consumer-runtime', mode: '100644' });
+  }
   put(nextDir, PAYLOAD_MANIFEST_NAME, JSON.stringify({ schema_version: 1, kit: { source_repo: 'O/R', source_ref: 'OLDREF' },
     distribution_manifest_version: 1, payload: { destination_hint: VENDORED, files } }));
   if (marker) put(consumer, 'config/policy.yaml', `version: 1\nwork_execution:\n  version: 1\n  owners: [screen:RESULT-001]\n`);
@@ -87,4 +91,45 @@ test('D33: an uninspectable consumer root warns but cannot prove that markers re
   assert.equal(plan.adoption.inspected, false); assert.equal(plan.adoption.downgrade_blocked, false);
   assert.ok(plan.warnings.some((line) => line.includes('could not be inspected')));
   assert.equal(s.cli('--consumer-root').status, 2);
+});
+
+test('#257: a payload that predates the adoption config cannot enforce the overlay', (t) => {
+  const s = scenario(t, { guard: 'marker-only', marker: false });
+  put(s.consumer, 'config/adoption.yaml', 'work_execution:\n  version: 1\n  owners: [screen:RESULT-001]\n');
+  put(s.consumer, 'frontend-workflow.config.yaml', 'version: 1\npolicy_overlay: config/adoption.yaml\n');
+  s.git('add', '-A'); s.git('commit', '-qm', 'adoption overlay');
+  const plan = buildPlan({ currentDir: s.currentDir, nextDir: s.nextDir });
+  assert.equal(plan.adoption.next_enforces_adoption, false); assert.equal(plan.adoption.downgrade_blocked, true);
+  assert.deepEqual(plan.adoption.markers, [{ path: 'config/adoption.yaml', keys: ['work_execution'] },
+    { path: 'frontend-workflow.config.yaml', keys: ['policy_overlay'] }]);
+  const apply = s.cli('--apply');
+  assert.equal(apply.status, 2);
+  assert.match(apply.stderr, /automatic apply refused: live scoped-work adoption markers remain \(config\/adoption\.yaml, frontend-workflow\.config\.yaml\)/);
+  assert.equal(fs.readFileSync(path.join(s.currentDir, 'runtime.mjs'), 'utf8'), 'A');
+});
+
+test('#257 the config that names an overlay is a marker, whatever the overlay file is called, and escaped keys count (r13)', (t) => {
+  const s = scenario(t, { guard: 'marker-only', marker: false });
+  put(s.consumer, 'config/adoption.json', JSON.stringify({ work_execution: { version: 1, owners: ['screen:RESULT-001'] } }));
+  put(s.consumer, 'frontend-workflow.config.yaml', 'version: 1\npolicy_overlay: config/adoption.json\n');
+  put(s.consumer, 'docs/screen-spec.md', '---\nartifact_type: screen-spec\n"work\\u005fexecution": {version: 1, units: []}\n---\n# Screen\n');
+  // A config that sets only the layout is not adoption.
+  put(s.consumer, 'apps/web/frontend-workflow.config.yaml', 'version: 1\nlayout: config/layout.yaml\n');
+  s.git('add', '-A'); s.git('commit', '-qm', 'json overlay');
+  const plan = buildPlan({ currentDir: s.currentDir, nextDir: s.nextDir });
+  assert.equal(plan.adoption.downgrade_blocked, true);
+  assert.deepEqual(plan.adoption.markers, [{ path: 'docs/screen-spec.md', keys: ['work_execution'] },
+    { path: 'frontend-workflow.config.yaml', keys: ['policy_overlay'] }]);
+});
+
+test('#257 a config that holds adoption keys itself is still a marker (r18)', (t) => {
+  const s = scenario(t, { guard: 'marker-only', marker: false });
+  // A migration that left work_execution in the config, which the current kit refuses.
+  put(s.consumer, 'frontend-workflow.config.yaml', 'version: 1\nwork_execution: {version: 1, owners: []}\n');
+  put(s.consumer, 'apps/web/frontend-workflow.config.yaml', 'version: 1\nwork_execution: [unclosed\n');
+  s.git('add', '-A'); s.git('commit', '-qm', 'config keys');
+  const plan = buildPlan({ currentDir: s.currentDir, nextDir: s.nextDir });
+  assert.equal(plan.adoption.downgrade_blocked, true);
+  assert.deepEqual(plan.adoption.markers, [{ path: 'apps/web/frontend-workflow.config.yaml', keys: [], unparsed: true },
+    { path: 'frontend-workflow.config.yaml', keys: ['work_execution'] }]);
 });

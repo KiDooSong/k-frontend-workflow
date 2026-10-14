@@ -24,7 +24,10 @@ function readiness(t, edit = () => {}) {
   for (const dir of ['docs', 'src']) fs.cpSync(path.join(KIT_ROOT, 'examples/coupon-feature', dir), path.join(root, dir), { recursive: true });
   const put = (name, text) => { fs.mkdirSync(path.dirname(path.join(root, name)), { recursive: true }); fs.writeFileSync(path.join(root, name), text); };
   const read = (name) => fs.readFileSync(path.join(root, name), 'utf8');
-  put('config/policy.yaml', `${fs.readFileSync(path.join(KIT_ROOT, 'policies/implementation-mode-policy.yaml'), 'utf8')}\nwork_execution: ${JSON.stringify(WORK)}\n`);
+  // #257: the base policy stays the bundled copy; adoption lives in the configured overlay.
+  put('config/policy.yaml', fs.readFileSync(path.join(KIT_ROOT, 'policies/implementation-mode-policy.yaml'), 'utf8'));
+  put('config/adoption.yaml', `work_execution: ${JSON.stringify(WORK)}\n`);
+  put('frontend-workflow.config.yaml', 'version: 1\npolicy_overlay: config/adoption.yaml\nlayout: config/layout.yaml\n');
   put('config/manifest.yaml', fs.readFileSync(path.join(KIT_ROOT, 'catalog/artifact-manifest.yaml'), 'utf8'));
   put('config/layout.yaml', fs.readFileSync(path.join(KIT_ROOT, 'presets/expo-feature.yaml'), 'utf8'));
   const list = read(LIST), end = list.indexOf('\n---\n', 4);
@@ -90,8 +93,14 @@ test('D #260 example: general-contract formats keep a structured scoped result; 
 // and reviews are equal. The v2 bytes later gained the related rows that apply to no owner, one
 // merged relation evidence graph, and lost metadata decision_refs lists (reviews r1-r3); the
 // envelope again differs only there.
-const BASIS = 'sha256:3d281826f4fd31aebdd34ab1f425f882da927c405664dfd4cf3151420f9aba45';
-const ENVELOPE = '464a1c7eaa31d9b2189395dfbc412431a75bf8d8420b1e956cd648c0fc092eac';
+// Re-pinned for #257: adoption moved from the base policy to the overlay that
+// frontend-workflow.config.yaml names. Of D-001's component digests only `units` changes (its
+// policy.file is now config/adoption.yaml). Against the #275 pin the envelope gains the config and
+// overlay resource and authority records, and differs in the base policy bytes (work_execution moved
+// out) and in the bytes that record the new digest (COUPON-001 spec hash, docs tree oid, commit tree).
+// Denials, evidence and reviews are equal.
+const BASIS = 'sha256:45953f1134675cd31f8e61a73d64cb17632fe151c8dfb8a3ee5f4b2960aadc93';
+const ENVELOPE = 'f0e4fbc24d0f6a84fd41d90adb2bcbfb39734c07617471de2be2f307bddca79f';
 const SCOPES = { version: 1, bindings: [{ decision_id: 'D-001', owner: 'screen:COUPON-001', known_units: ['list-behavior'],
   blocks: [], basis_digest: BASIS, approval_ref: 'review:golden' }] };
 const ROWS = Array.from({ length: 12 }, (_, i) => {
@@ -105,13 +114,13 @@ const pinned = (rows) => ({ read, put }) => {
     `| ID | 충돌 지점 | A (출처/값) | B (출처/값) | 영향 화면 | Status |\n|---|---|---|---|---|---|\n${rows.join('\n')}\n`);
 };
 
-test('#265 golden: the scoped envelope, basis digest and error text stay pinned (re-pinned for #262, digest for #275)', (t) => {
+test('#265 golden: the scoped envelope, basis digest and error text stay pinned (re-pinned for #262, #275 and #257)', (t) => {
   const run = readiness(t, pinned(ROWS));
   const envelope = json(run);
   assert.deepEqual(envelope.denials.filter((entry) => entry.code === 'unit-decision-blocked').flatMap((entry) => entry.decisions),
     ['decision:D-002@COUPON-001-screen-spec', 'decision:D-003@COUPON-001-screen-spec'], 'the pinned basis digest keeps the D-001 binding current');
   const stdout = run.stdout.split(envelope.snapshot.commit).join('<commit>');
-  assert.equal(createHash('sha256').update(stdout).digest('hex'), ENVELOPE, 'the scoped envelope differs from the #275 pin');
+  assert.equal(createHash('sha256').update(stdout).digest('hex'), ENVELOPE, 'the scoped envelope differs from the #257 pin');
 
   const width = readiness(t, pinned(ROWS.map((row, i) => (i === 5 ? `${row} extra |` : row))));
   assert.deepEqual([width.status, width.stdout, width.stderr], [2, '', 'readiness: SW-REF-TABLE: row width differs from header\n']);

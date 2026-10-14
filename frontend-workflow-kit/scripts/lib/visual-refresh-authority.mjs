@@ -14,6 +14,7 @@ import { computeReadiness } from '../readiness-legacy.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
 import { globMatches, readinessPathAuthorization } from './path-backstop.mjs';
 import { adoptedWorkPaths } from './scoped-work-adoption.mjs';
+import { WorkConfigError, parsePolicyOverlay } from './work-config.mjs';
 import { collectInputArtifacts, validateInputArtifacts } from './input-artifact.mjs';
 import {
   collectInputFidelityIssues,
@@ -772,8 +773,22 @@ function snapshotResources(root, options) {
     ? confined(root, options.layout, '--layout')
     : { relative: null, absolute: path.join(KIT_ROOT, 'policies', 'project-layout.yaml') };
   const ciRef = options.ci ? confined(root, options.ci, '--ci') : null;
+  const overlayRef = options.policy_overlay ? confined(root, options.policy_overlay, 'policy_overlay') : null;
 
   const policy = readYaml(policyRef.absolute, 'policy');
+  // #257: adoption comes only from the configured overlay, never from the base policy.
+  if (Object.hasOwn(policy.value, 'work_execution')) {
+    throw new VisualRefreshError('the base policy must not declare work_execution; adoption lives in the configured policy_overlay');
+  }
+  const overlay = overlayRef ? readYaml(overlayRef.absolute, 'policy_overlay') : null;
+  let adoptionPolicy = policy.value;
+  if (overlay) {
+    try { adoptionPolicy = { ...policy.value, work_execution: parsePolicyOverlay(overlay.value) }; }
+    catch (error) {
+      if (error instanceof WorkConfigError) throw new VisualRefreshError(error.message);
+      throw error;
+    }
+  }
   const manifest = readYaml(manifestRef.absolute, 'manifest');
   const ci = ciRef ? readYaml(ciRef.absolute, 'ci').value : {};
   const flags = Object.create(null);
@@ -792,6 +807,7 @@ function snapshotResources(root, options) {
     docsDir: path.join(root, ...docsRelative.split('/')),
     srcDir: path.join(root, ...srcRelative.split('/')),
     policy: policy.value,
+    adoptionPolicy,
     manifest: manifest.value,
     ci,
     layout,
@@ -807,6 +823,7 @@ function snapshotResources(root, options) {
       ...(ciRef
         ? { ci: { source: ciRef.relative, sha256: sha256(readFileSafe(ciRef.absolute) || '') } }
         : {}),
+      ...(overlayRef ? { policy_overlay: { source: overlayRef.relative, sha256: sha256(overlay.raw) } } : {}),
     },
   };
 }
@@ -832,7 +849,7 @@ function freshReadiness(root, selectedScreen, options) {
   });
   // The selected-screen output has no project-wide claims; the runtime wrapper adds
   // the candidate Slice Paths. Declared adopted roots are enforced here as well.
-  const adopted = adoptedWorkPaths({ docsDir: resources.docsDir, policy: resources.policy });
+  const adopted = adoptedWorkPaths({ docsDir: resources.docsDir, policy: resources.adoptionPolicy });
   return { ...resources, state, output, adopted, entry: output?.[selectedScreen] || null };
 }
 

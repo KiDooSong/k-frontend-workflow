@@ -34,8 +34,10 @@ function fixture(t) {
   fs.mkdirSync(kitRoot);
   const docs = new Map();
   const policyFile = path.join(kitRoot, 'policy.yaml'), layoutFile = path.join(kitRoot, 'layout.yaml'), manifestFile = path.join(kitRoot, 'manifest.yaml');
+  const overlayFile = path.join(kitRoot, 'adoption.yaml');
   const put = (file, value) => fs.writeFileSync(file, JSON.stringify(value));
-  const adopt = (owners = [OWNER], deny_paths = []) => put(policyFile, { work_execution: { version: 1, owners,
+  put(policyFile, {});
+  const adopt = (owners = [OWNER], deny_paths = []) => put(overlayFile, { work_execution: { version: 1, owners,
     profiles: ['behavior'], role_limits: { behavior: ['screen', 'domain_component', 'hook', 'api_client', 'test'] }, deny_paths } });
   put(layoutFile, { roles: { screen: ['src/features/{domain}/screens/**'], domain_component: ['src/features/{domain}/components/**'],
     hook: ['src/features/{domain}/hooks/**'], api_client: ['src/api/**'], test: ['src/features/{domain}/tests/**'], route: ['src/routes/**'] } });
@@ -60,11 +62,11 @@ function fixture(t) {
   adopt(); write('screen.md', screen(), '## Notes\nOwner housekeeping.');
   write('rules.md', { artifact_id: 'RULES', artifact_type: 'domain-rules', domain: 'result', status: 'confirmed' },
     '## Rules\nKnown contract.\n\n## Other\nOther contract.\n\n## Untouched\nUnselected prose.');
-  const options = (owner = OWNER) => ({ owner, projectRoot: root, docsDir, kitRoot, policyFile, layoutFile, manifestFile,
+  const options = (owner = OWNER) => ({ owner, projectRoot: root, docsDir, kitRoot, policyFile, policyOverlayFile: overlayFile, layoutFile, manifestFile,
     layout: loadLayoutProfile({ kitRoot, flags: { layout: layoutFile } }),
     targetIndex: buildReconciliationTargetIndex({ docs: [...docs.values()].map((file) =>
       ({ file, fm: splitFrontmatter(fs.readFileSync(file, 'utf8')).data })) }) });
-  return { root, docs, write, change, rules, uncertainty, global, adopt, put, policyFile, layoutFile, manifestFile, options,
+  return { root, docs, write, change, rules, uncertainty, global, adopt, put, policyFile, overlayFile, layoutFile, manifestFile, options,
     run: (owner = OWNER) => resolveScopedApplicabilityProjection(options(owner)) };
 }
 const relations = (out) => out.projection.decision_relations;

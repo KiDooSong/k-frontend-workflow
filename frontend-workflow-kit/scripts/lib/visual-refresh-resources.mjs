@@ -10,6 +10,7 @@ import {
   yamlStringify,
 } from './util.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
+import { WORK_CONFIG_FILE, WorkConfigError, readWorkConfig, configuredLayout, adoptionPolicy } from './work-config.mjs';
 import { layerAppliesTo } from './layer-inventory.mjs';
 import { concretePathIssue } from './path-backstop.mjs';
 
@@ -110,9 +111,9 @@ export function assertSnapshotPath(
       if (!required && error?.code === 'ENOENT') {
         return { relative, absolute, exists: false };
       }
-      throw new VisualRefreshResourceError(
+      throw Object.assign(new VisualRefreshResourceError(
         `${label} snapshot 경로를 읽을 수 없음: ${relative} (${error?.code || error?.message || error})`,
-      );
+      ), { inspectionCode: error?.code || 'unknown' });
     }
     if (stat.isSymbolicLink()) {
       throw new VisualRefreshResourceError(
@@ -160,6 +161,39 @@ function readSnapshotFile(root, raw, label) {
   const content = readFileSafe(ref.absolute);
   if (content == null) throw new VisualRefreshResourceError(`${label} 파일 없음: ${ref.relative}`);
   return { ...ref, raw: content, value: parseMapping(content, label) };
+}
+
+// #257: the adoption facts of a visual run under `root` (the config, an explicit
+// --layout against it, the base policy and the owner declarations) are refused before
+// any other resource is validated or read, so no other failure stands in for the
+// refusal; a report records other backstop failures as evidence. The bundled policy is
+// read without its pin. A resource this check cannot read is left to the checks that
+// follow, which report it.
+export function assertVisualAdoption(root, options = {}, bundledRoot = KIT_ROOT) {
+  const config = readWorkConfig(root);
+  const lenient = (read) => {
+    try { return read(); } catch (error) { if (error instanceof VisualRefreshResourceError) return undefined; throw error; }
+  };
+  if (options.layout) {
+    const explicit = lenient(() => canonicalSnapshotPath(options.layout, '--layout'));
+    if (explicit !== undefined) configuredLayout(config, explicit);
+  }
+  const policy = lenient(() => (options.policy
+    ? readSnapshotFile(root, options.policy, '--policy').value
+    : parseMapping(readFileSafe(path.join(bundledRoot, PINNED_VISUAL_REFRESH_RESOURCES.policy.relative)) ?? '', 'bundled policy')));
+  // Docs that cannot be inspected could hide owner declarations, so they are refused;
+  // a docs path that is not canonical is a usage error the resource checks report.
+  const docsRelative = options.docs || DEFAULTS.docs;
+  let docs;
+  try {
+    docs = assertSnapshotPath(root, canonicalSnapshotPath(docsRelative, '--docs'), { label: '--docs', type: 'directory', required: false }).absolute;
+  } catch (error) {
+    if (!(error instanceof VisualRefreshResourceError)) throw error;
+    if (error.inspectionCode) {
+      throw new WorkConfigError(`--docs ${docsRelative}: cannot inspect (${error.inspectionCode}) to check owner declarations`);
+    }
+  }
+  adoptionPolicy(policy ?? {}, config, docs);
 }
 
 export function readPinnedBundledResource(name, bundledRoot = KIT_ROOT) {
@@ -382,6 +416,7 @@ export function prepareVisualRefreshResources({
   bundledRoot = KIT_ROOT,
 } = {}) {
   if (!destinationRoot) throw new VisualRefreshResourceError('destinationRoot가 필요함');
+  assertVisualAdoption(destinationRoot, options, bundledRoot);
   const docsRelative = canonicalSnapshotPath(options.docs || DEFAULTS.docs, '--docs');
   const srcRelative = canonicalSnapshotPath(options.src || DEFAULTS.src, '--src');
   // Missing docs/src remain an applicability problem for the authority analyzer, but an
@@ -412,9 +447,16 @@ export function prepareVisualRefreshResources({
     bundledRoot,
   });
 
+  // #257: the destination's frontend-workflow.config.yaml sets the default layout and
+  // names the work_execution overlay applied over the base policy above. The base
+  // policy itself never adopts, and owner units without an overlay are refused.
+  const config = readWorkConfig(destinationRoot);
+  const layoutOption = configuredLayout(config, options.layout);
+  const adoption = adoptionPolicy(policy.value, config, path.join(destinationRoot, ...docsRelative.split('/')));
+
   let layout;
-  if (options.layout) {
-    const explicit = readSnapshotFile(destinationRoot, options.layout, '--layout');
+  if (layoutOption) {
+    const explicit = readSnapshotFile(destinationRoot, layoutOption, '--layout');
     layout = {
       raw: explicit.raw,
       value: explicit.value,
@@ -464,7 +506,9 @@ export function prepareVisualRefreshResources({
   const manifestRelative = `${bundleRelative}/manifest.yaml`;
   const layoutRelative = `${bundleRelative}/project-layout.yaml`;
   const ciRelative = ci.explicit ? `${bundleRelative}/ci.yaml` : null;
+  const overlayRelative = config?.policy_overlay ? `${bundleRelative}/policy-overlay.yaml` : null;
   writeBundleFile(destinationRoot, policyRelative, policy.raw);
+  if (overlayRelative) writeBundleFile(destinationRoot, overlayRelative, config.policy_overlay.raw);
   writeBundleFile(destinationRoot, manifestRelative, manifest.raw);
   writeBundleFile(destinationRoot, layoutRelative, yamlStringify(flattenedLayout, { lineWidth: 0 }));
   if (ciRelative) writeBundleFile(destinationRoot, ciRelative, ci.raw);
@@ -486,6 +530,10 @@ export function prepareVisualRefreshResources({
         }
       : {}),
     ...(ci.provenance ? { ci: ci.provenance } : {}),
+    ...(config ? { config: sourceProvenance(WORK_CONFIG_FILE, config.raw, { snapshot: 'destination' }) } : {}),
+    ...(config?.policy_overlay
+      ? { policy_overlay: sourceProvenance(config.policy_overlay.file, config.policy_overlay.raw, { snapshot: 'destination' }) }
+      : {}),
   };
 
   return {
@@ -497,11 +545,18 @@ export function prepareVisualRefreshResources({
       manifest: manifestRelative,
       layout: layoutRelative,
       ...(ciRelative ? { ci: ciRelative } : { ci: undefined }),
+      ...(overlayRelative ? { policy_overlay: overlayRelative } : { policy_overlay: undefined }),
     },
     meta: {
       docsRelative,
       srcRelative,
       policy: policy.value,
+      adoptionPolicy: adoption,
+      // Project paths the config selected, protected like explicitly selected resources.
+      configResources: {
+        ...(layoutOption ? { layout: layoutOption } : {}),
+        ...(config?.policy_overlay ? { policy_overlay: config.policy_overlay.file } : {}),
+      },
       manifest: manifest.value,
       ci: ci.value,
       layout: resolvedLayout,

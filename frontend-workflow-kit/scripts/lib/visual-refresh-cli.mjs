@@ -4,6 +4,7 @@ import { DEFAULTS, parseArgs, yamlStringify } from './util.mjs';
 import { enforceCliFlagContract } from './cli-args.mjs';
 import { normalizeVisualAuthorityTuple } from './visual-refresh-boundary-paths.mjs';
 import { ArtifactPathError } from './artifact-path.mjs';
+import { WORK_CONFIG_FILE, WorkConfigError, markWorkConfigRefusal } from './work-config.mjs';
 import { visualChangedRecords } from './visual-refresh-records.mjs';
 import { bindVisualGitScreenIdentity } from './visual-refresh-git-objects.mjs';
 import {
@@ -20,7 +21,7 @@ import {
   sourceHeadContext,
   VisualRefreshGitError,
 } from './visual-refresh-git.mjs';
-import { assertSnapshotPath, VisualRefreshResourceError } from './visual-refresh-resources.mjs';
+import { assertSnapshotPath, assertVisualAdoption, VisualRefreshResourceError } from './visual-refresh-resources.mjs';
 
 function own(object, key) {
   return Object.prototype.hasOwnProperty.call(object || {}, key);
@@ -137,8 +138,10 @@ function overlayAuthorityPath(projectRoot, destinationRoot, relative) {
 function materializeForwardAuthorityView(repository, sourceTree, options) {
   const destination = materializeGitTree({ repositoryRoot: repository.repositoryRoot, projectPrefix: repository.projectPrefix, tree: sourceTree });
   try {
-    const overlays = new Set([options.docs || DEFAULTS.docs]);
-    for (const key of ['policy', 'manifest', 'layout', 'ci']) if (options[key]) overlays.add(options[key]);
+    // The current adoption config (#257) and its overlay are authoring too; a config
+    // missing from the worktree is removed from the view as well.
+    const overlays = new Set([options.docs || DEFAULTS.docs, WORK_CONFIG_FILE]);
+    for (const key of ['policy', 'policy_overlay', 'manifest', 'layout', 'ci']) if (options[key]) overlays.add(options[key]);
     for (const relative of overlays) overlayAuthorityPath(repository.projectRoot, destination.root, relative);
     return destination;
   } catch (error) { destination.cleanup(); throw error; }
@@ -169,6 +172,8 @@ export function runVisualReadinessCli(argv = process.argv.slice(2)) {
   const repository = resolveRepositoryContext(tuple.root || process.cwd());
   const source = sourceHeadContext(repository);
   if (!source) {
+    // #257: nothing is judged without HEAD, but the worktree's adoption facts are still refused.
+    assertVisualAdoption(repository.projectRoot, tuple.options);
     const output = {
       intent_authorization: {
         intent: VISUAL_REFRESH_INTENT, input_id: tuple.input, applicable: false,
@@ -253,9 +258,10 @@ export function runVisualCliSafely(fn, toolName) {
   try { return fn(); }
   catch (error) {
     const known = error instanceof VisualRefreshError || error instanceof VisualRefreshGitError ||
-      error instanceof VisualRefreshResourceError || error instanceof ArtifactPathError;
+      error instanceof VisualRefreshResourceError || error instanceof ArtifactPathError || error instanceof WorkConfigError;
     const message = known ? error.message : `${error?.name || 'Error'}: ${error?.message || String(error)}`;
     process.stderr.write(`${toolName}: ${message}\n`);
+    if (error instanceof WorkConfigError) markWorkConfigRefusal(error.message);
     process.exitCode = 2;
     return null;
   }

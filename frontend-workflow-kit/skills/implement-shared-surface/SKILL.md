@@ -18,7 +18,7 @@ description: canonical Surface ID를 shared-surface readiness와 모든 member s
 ## 불변식
 
 - 판정은 직접 재구현하지 않고 선택한 실행 분기의 CLI 출력을 소비한다. no-work 조회는 `workflow:state`와 `workflow:readiness -- --surface <ID> --json`을 쓴다.
-- policy `work_execution.owners`에 채택된 surface는 이 legacy 절차 대신 [scoped work](../../docs/reference/scoped-work.md)의
+- 채택 overlay(`frontend-workflow.config.yaml` 의 `policy_overlay`)의 `work_execution.owners`에 채택된 surface는 이 legacy 절차 대신 [scoped work](../../docs/reference/scoped-work.md)의
   `authority: scoped` unit 요청을 쓴다. 채택 경로는 no-work/legacy 판정에서 `work-selection-required`이며 우회하지 않는다.
 - surface readiness의 `allowed_paths`만 수정한다. `forbidden_paths`와 `path_authorization.allowed=false` 경로는 절대 수정하지 않는다.
 - `implementation_paths`는 전역 물리 경로 소유권이다. domain/member 여부와 무관하게 어떤 ScreenSpec의

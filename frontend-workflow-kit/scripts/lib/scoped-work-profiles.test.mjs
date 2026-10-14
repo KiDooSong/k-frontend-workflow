@@ -27,7 +27,9 @@ function fixture(t) {
   const docsDir = path.join(root, 'docs'), kitRoot = path.join(root, '.kit'), docs = new Map(), inputs = [];
   fs.mkdirSync(kitRoot);
   const raw = (name, value) => { const file = path.join(root, name); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, value); return file; };
-  const policyFile = raw('.kit/policy.yaml', JSON.stringify({ work_execution: { version: 1, owners: [OWNER], profiles: ['visual', 'api-contract', 'behavior'],
+  // #257: the base policy never adopts; work_execution lives only in the policy overlay.
+  const policyFile = raw('.kit/policy.yaml', JSON.stringify({}));
+  const overlayFile = raw('.kit/adoption.yaml', JSON.stringify({ work_execution: { version: 1, owners: [OWNER], profiles: ['visual', 'api-contract', 'behavior'],
     role_limits: { visual: ['screen', 'domain_component', 'hook', 'test'], 'api-contract': ['api_client', 'test'], behavior: ['screen', 'domain_component', 'hook', 'api_client', 'test'] }, deny_paths: [] } }));
   const layoutFile = raw('.kit/layout.yaml', JSON.stringify({ roles: { screen: ['src/features/{domain}/screens/**'], domain_component: ['src/features/{domain}/components/**'],
     hook: ['src/features/{domain}/hooks/**'], api_client: ['src/api/**'], test: ['src/features/{domain}/tests/**'], route: ['src/routes/**'] } }));
@@ -40,7 +42,7 @@ function fixture(t) {
     approved_by: 'synthetic-fixture-owner', approved_at: '2026-09-22', decision_id: 'fixture-known-contract' },
   '## Rules\nUse the existing local value without network calls. State, interaction, data and copy relevance remains a scope review responsibility.\n\n## Other\nUnselected text.');
   const registerFile = path.join(docsDir, 'register.md');
-  const options = () => ({ owner: OWNER, unit: 'known', projectRoot: root, docsDir, kitRoot, policyFile, layoutFile, manifestFile, registerFile,
+  const options = () => ({ owner: OWNER, unit: 'known', projectRoot: root, docsDir, kitRoot, policyFile, policyOverlayFile: overlayFile, layoutFile, manifestFile, registerFile,
     targetIndex: buildReconciliationTargetIndex({ docs: [...docs.values()].map((file) => ({ file, fm: splitFrontmatter(fs.readFileSync(file, 'utf8')).data })) }),
     inputArtifacts: inputs.map(loadInputArtifact), origin_inputs: [], coverage_reports: [] });
   const api = (kind = 'api-contract', rows = [candidate()]) => {
@@ -57,7 +59,7 @@ function fixture(t) {
     raw('docs/register.md', md({ reconciliation_contract: 2, review_profile: 'reconcile-stage04-v1', structured_since: '2026-09-01T00:00:00Z' },
       `${table(REQUIRED_REGISTER_COLS, [[INPUT, 'figma', 'simple-update×1', 'reconciled', 'accepted', 'artifact:MAP', '-', '-']])}\n\n## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, [[INPUT, '01', 'visual-evidence', 'simple-update', 'update', 'artifact:MAP#component-mapping/M-001', ANCHOR, 'inherit', 'node', 'inherit']])}`));
   };
-  return { root, docs, inputs, docsDir, raw, write, change, options, api, visual, policyFile, manifestFile, registerFile, run: (extra = {}) => inspectScopedProfile({ ...options(), ...extra }) };
+  return { root, docs, inputs, docsDir, raw, write, change, options, api, visual, policyFile, overlayFile, manifestFile, registerFile, run: (extra = {}) => inspectScopedProfile({ ...options(), ...extra }) };
 }
 const denied = (result, code) => { assert.equal(result.profile_satisfied, false); assert.ok(result.denials.some((entry) => entry.code === code), JSON.stringify(result.denials)); };
 const noGrant = (result) => { assert.equal(Object.hasOwn(result, 'ready'), false); assert.equal(Object.hasOwn(result, 'allowed_paths'), false); assert.equal(result.approval_verified, false); assert.equal(result.semantic_coverage_verified, false); };
@@ -172,8 +174,8 @@ test('D profiles: a resolved Unknown no longer blocks; any other Status still do
 
 test('D profiles: profile/owner opt-in and lifecycle are actual canonical facts, not caller overrides', (t) => {
   const f = fixture(t); f.change('screen.md', ({ fm }) => fm.status = 'deprecated'); denied(f.run(), 'owner-inactive');
-  f.change('screen.md', ({ fm }) => fm.status = 'draft'); const policy = JSON.parse(fs.readFileSync(f.policyFile)); policy.work_execution.profiles = ['visual'];
-  fs.writeFileSync(f.policyFile, JSON.stringify(policy)); denied(f.run({ profile_enabled: true }), 'profile-not-enabled');
+  f.change('screen.md', ({ fm }) => fm.status = 'draft'); const policy = JSON.parse(fs.readFileSync(f.overlayFile)); policy.work_execution.profiles = ['visual'];
+  fs.writeFileSync(f.overlayFile, JSON.stringify(policy)); denied(f.run({ profile_enabled: true }), 'profile-not-enabled');
 });
 
 test('D profiles: selected contract/evidence byte mutation during profile inspection is detected without modifying the index', (t) => {
