@@ -7,6 +7,7 @@ import { KIT_ROOT } from './util.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
 import { buildReconciliationTargetIndex } from './reconciliation-target-index.mjs';
 import { createScopedApiResolver } from './scoped-work-api.mjs';
+import { scopedGraphApiRowDependencies } from './scoped-work-graph.mjs';
 
 const layout = loadLayoutProfile({ kitRoot: KIT_ROOT });
 const ID = 'RESULT-001-screen-spec';
@@ -130,6 +131,17 @@ test('D API: deferred Unknown tracking requires an exact unique canonical open r
     `${base}\n## Unknowns\n${unknown.replace('U-LATER', 'U-<!-- hidden -->LATER')}`]) {
     assert.throws(() => fixture(t, { body }).run(), /SW-(API|REF)-/);
   }
+});
+
+test('#282 D API: row dependencies preserve reordered/spaced columns and additional evidence', (t) => {
+  const columns = ['Notes', 'Tr a c king', 'Path', 'Method', 'Gate', 'Slice Paths', 'Confidence'];
+  const body = `${bodyFor([['artifact:SUPPLEMENT#rules', 'unknown:U-LATER', '/results', 'GET', 'deferred',
+    'src/api/results/**', 'candidate']], columns)}\n## Unknowns\n` +
+    '| ID | Question | Status |\n|---|---|---|\n| U-LATER | Later API? | open |\n';
+  const candidate = fixture(t, { body }).run().candidates[0];
+  assert.equal(candidate.tracking.ref, `unknown:U-LATER@${ID}`);
+  assert.deepEqual(scopedGraphApiRowDependencies(body, candidate), ['artifact:SUPPLEMENT#rules', `unknown:U-LATER@${ID}`]);
+  assert.deepEqual(candidate.headers, columns);
 });
 
 test('D API: owner identity, declared unit and actual layout are required', (t) => {

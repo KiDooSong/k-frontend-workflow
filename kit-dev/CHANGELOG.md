@@ -4,6 +4,20 @@
 
 ## Unreleased
 
+### fix(scoped) — API deferred Tracking을 섹션·문서 그래프에서도 해소 (#282)
+
+- canonical API Candidates v2의 deferred `Tracking: unknown:U-...`가 있는 섹션이나
+  문서를 선택하면 일반 typed-reference 문법과 충돌해 `SW-GRAPH`로 중단되던 문제를 수정했다.
+- 기존 작성 표기는 유지하고, 방문한 Tracking 셀에 소속 ScreenSpec/shared-surface-spec의
+  `artifact_id`를 붙여 canonical open Unknown 행과 edge로 연결한다. 같은 본문의 다른 문서도
+  각자의 ID를 사용하며, 선택하지 않은 행·섹션의 Tracking은 해소하지 않는다.
+- Tracking 문법·필수 열 판정을 API 분석기와 공유하고 body/selection/API 행 경로를 정렬했다.
+  다른 열·본문의 owner 없는 참조, 변형된 Tracking, 누락·중복·닫힌 Unknown은 계속 거부한다.
+- source Item의 다른 화면 effect·evidence, 기존 Unknown 차단과 deferred 경로 금지,
+  binding stale 판정은 유지한다. source 선택 범위·권한·binding 승인·릴리스 버전은 변경하지 않는다.
+- 회귀: 이슈 G0~G3, 문서 identity/선택 범위/원문·표 경계, source relation 및
+  `readiness --work`·`binding-status --owner` 합성 통합 테스트.
+
 ### feat(workflow) — scoped 채택을 consumer 루트의 `frontend-workflow.config.yaml` 과 policy overlay 한 곳에서 읽음 (#257)
 
 - 채택 선언(`work_execution`)을 둘 위치가 정해져 있지 않았다.

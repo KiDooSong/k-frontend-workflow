@@ -5,6 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { KIT_ROOT } from './util.mjs';
+import { REQUIRED_ITEM_COLS } from './reconciliation-items.mjs';
+import { REQUIRED_REGISTER_COLS } from './reconciliation-register.mjs';
 
 // #275: the issue's coupon-feature repro through the public CLIs. COUPON-001 alone is adopted, with
 // D-003 and U-001 bound out of its one unit. workflow:binding-status reports each binding's state and
@@ -57,13 +59,63 @@ function project(t) {
   const status = (...args) => node('binding-status.mjs', ['--root', root, ...CONFIG, ...args]);
   const json = (run) => { assert.equal(run.status, 0, run.stderr || run.stdout); return JSON.parse(run.stdout); };
   const rows = () => Object.fromEntries(json(status('--json')).owners[0].rows.map((row) => [row.ref, row]));
+  const readiness = () => json(node('readiness.mjs', ['--work', work, '--root', root, ...CONFIG, '--json']));
   const blocking = () => {
-    const env = json(node('readiness.mjs', ['--work', work, '--root', root, ...CONFIG, '--json']));
+    const env = readiness();
     return [...env.denials.filter((entry) => entry.code === 'unit-decision-blocked').flatMap((entry) => entry.decisions),
       ...env.denials.filter((entry) => entry.code === 'unit-uncertainty-unresolved').map((entry) => entry.application.uncertainty)].sort();
   };
-  return { root, read, put, git, commit, bind, status, json, rows, blocking };
+  return { root, read, put, git, commit, bind, status, json, rows, readiness, blocking };
 }
+
+// Synthetic consumer regression: one selected Item has effects on both the adopted screen's
+// contract and another screen's deferred API table. No consumer repository or approval is edited.
+test('#282 CLI: deferred Tracking in another Item effect returns structured denials and preserves stale bindings', (t) => {
+  const p = project(t), baseline = p.rows();
+  const input = 'IN-20261019-meeting-001', ref = `input:${input}#extracted-facts/01`;
+  const target = 'artifact:COUPON-002-screen-spec#api-candidates', unknown = 'unknown:U-LATER@COUPON-002-screen-spec';
+  const inputFile = `docs/frontend-workflow/inputs/${input}.md`;
+  const registerFile = 'docs/frontend-workflow/_meta/reconciliation-register.md';
+  const table = (headers, rows) => [`| ${headers.join(' | ')} |`, `|${headers.map(() => '---').join('|')}|`,
+    ...rows.map((row) => `| ${row.join(' | ')} |`)].join('\n');
+  const md = (fm, body) => `---\n${JSON.stringify(fm)}\n---\n\n${body}`;
+  const decisions = [binding('decision_id', 'D-003', baseline[D003].computed_basis_digest)];
+  const uncertainties = [binding('unknown_id', 'U-001', baseline[U001].computed_basis_digest)];
+  p.bind(decisions, uncertainties); p.commit('record the existing binding digests');
+
+  const units = structuredClone(UNITS);
+  units.units[0].sources = [{ input_id: input, items: ['01'], source_refs: [ref] }];
+  p.bind(decisions, uncertainties, units);
+  p.put(DETAIL, `${p.read(DETAIL)}\n## API Candidates\n${table(['Method', 'Path', 'Confidence', 'Gate', 'Tracking', 'Slice Paths'], [
+    ['GET', '/coupons/later', 'candidate', 'deferred', 'unknown:U-LATER', 'src/api/coupons/later/**'],
+  ])}\n\n## Unknowns\n${table(['ID', 'Question', 'Status'], [['U-LATER', 'Later coupon API?', 'open']])}\n`);
+  p.put(inputFile, md({ input_id: input, input_type: 'meeting', source_type: 'meeting', source_ref: 'meeting:tracking-regression',
+    captured_at: '2026-10-19T00:00:00Z', captured_by: 'test', status: 'captured', affected_domains: ['coupons'],
+    affected_screens: ['COUPON-001', 'COUPON-002'] }, '## Extracted Facts\n- Coordinate list behavior and the later API.'));
+  p.put(registerFile, md({ reconciliation_contract: 2, review_profile: 'reconcile-stage04-v1', structured_since: '2026-09-01T00:00:00Z' },
+    `${table(REQUIRED_REGISTER_COLS, [[input, 'meeting', 'simple-update×1', 'partially-reconciled', 'pending',
+      'artifact:COUPON-001-screen-spec; artifact:COUPON-002-screen-spec', '-', '-']])}\n\n## Reconciliation Items\n` +
+    table(REQUIRED_ITEM_COLS, ['artifact:COUPON-001-screen-spec#state-matrix', target].map((itemTarget) =>
+      [input, '01', 'compatible-fact', 'simple-update', 'update', itemTarget, ref, 'inherit', 'statement', 'inherit']))));
+  p.commit('selected Item reaches another screen deferred API');
+  const files = [LIST, DETAIL, inputFile, registerFile].map((file) => p.read(file));
+
+  const report = p.json(p.status('--owner', OWNER, '--json'));
+  const rows = Object.fromEntries(report.owners[0].rows.map((row) => [row.ref, row]));
+  assert.deepEqual([rows[unknown].state, rows[unknown].status, rows[unknown].home, rows[unknown].blocking_units],
+    ['missing', 'open', DETAIL, ['list-behavior']]);
+  assert.deepEqual([rows[U001].state, rows[U001].stale_reason, rows[U001].recorded.basis_digest],
+    ['stale', 'basis', uncertainties[0].basis_digest]);
+  const ready = p.readiness();
+  assert.deepEqual([ready.authority, ready.ready], ['scoped', false]);
+  assert.ok(ready.denials.some((entry) => entry.code === 'unit-uncertainty-unresolved' &&
+    entry.application.uncertainty === unknown), 'the open Tracking Unknown still blocks the selected unit');
+  assert.ok(ready.denials.some((entry) => entry.code === 'unit-uncertainty-unresolved' &&
+    entry.application.uncertainty === U001), 'a stale binding remains a denial');
+  assert.deepEqual(p.json(p.status('--owner', OWNER, '--json')), report);
+  assert.equal(p.git('status', '--porcelain'), '');
+  assert.deepEqual([LIST, DETAIL, inputFile, registerFile].map((file) => p.read(file)), files);
+});
 
 test('#275 binding-status: B0-B5 change only the bindings whose row or unit contract changed', (t) => {
   const p = project(t), before = p.rows();

@@ -315,7 +315,7 @@ function decisionRows(entry) {
 function referencing(entry) {
   if (TYPED_SPELLING.test(entry.body) || TYPED_SPELLING.test(JSON.stringify(entry.fm))) return true;
   try {
-    return scopedGraphMetadataRefs(entry.fm).length > 0 || scopedGraphBodyRefs(entry.body, parseReconciliationReferenceView(entry.body)).length > 0;
+    return scopedGraphMetadataRefs(entry.fm).length > 0 || scopedGraphBodyRefs(entry.body, parseReconciliationReferenceView(entry.body), entry.fm).length > 0;
   } catch (error) {
     if (error instanceof CurrentWorkError) return true;
     throw error;

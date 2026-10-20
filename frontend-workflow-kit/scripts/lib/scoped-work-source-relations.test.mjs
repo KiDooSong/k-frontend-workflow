@@ -304,6 +304,31 @@ test('D R1 inferred sources: selected effect dependencies enter the real evidenc
   assert.notDeepEqual(scope(f).projection, before);
 });
 
+test('#282 D R1: every effect of a selected Item retains another screen\'s deferred Tracking evidence', (t) => {
+  const f = fixture(t, { explicit: false, typed: true });
+  const target = 'artifact:LATER#api-candidates', tracking = 'unknown:U-LATER@LATER';
+  f.write('later.md', { artifact_id: 'LATER', artifact_type: 'screen-spec', screen_id: 'RESULT-002',
+    domain: 'result', status: 'draft' },
+  `## API Candidates\n${table(['Method', 'Path', 'Confidence', 'Gate', 'Tracking', 'Slice Paths'], [
+    ['GET', '/later', 'candidate', 'deferred', 'unknown:U-LATER', 'src/api/later/**'],
+  ])}\n\n## Unknowns\n${table(['ID', 'Question', 'Status'], [['U-LATER', 'Later API contract?', 'open']])}`);
+  const crossScreen = effect(); crossScreen[5] = target;
+  f.register([effect(), crossScreen, effect('02', 'other')]);
+
+  const out = f.run(), before = scope(f).projection;
+  assert.deepEqual(out.sources[0].selection, select());
+  assert.deepEqual(out.sources[0].issues, []);
+  assert.deepEqual(out.sources[0].source.groups[0].effects.map((entry) => entry.target.ref).sort(),
+    ['artifact:DOC#rules', target].sort());
+  assert.ok(out.contracts.edges.some((edge) => edge.from === target && edge.to === tracking));
+  assert.ok(before.evidence.nodes.some((node) => node.ref === tracking));
+  assert.ok(!before.evidence.nodes.some((node) => node.ref === 'unknown:U-LATER@SCREEN'));
+  assert.deepEqual(scope(f).projection, before, 'the same snapshot has deterministic selected evidence');
+
+  f.change('later.md', (doc) => { doc.body = doc.body.replace('Later API contract?', 'Which later API contract?'); });
+  assert.notDeepEqual(scope(f).projection, before, 'the other effect\'s Unknown remains binding evidence');
+});
+
 test('D R1 inferred sources: unselected prose and selector order remain stable without suppressing raw audit changes', (t) => {
   const f = fixture(t, { explicit: true, typed: true }), before = scope(f);
   f.change('contract.md', (doc) => doc.body += '\n\n## More Notes\nUnselected prose.');
