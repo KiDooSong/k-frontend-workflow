@@ -17,7 +17,8 @@ client readiness paths.
 
 ## Structured v2
 
-Opt in by replacing the section with exactly one six-column table:
+Opt in by replacing the section with exactly one table containing each of the
+six required columns once. Column order may vary and extra columns are allowed:
 
 ```md
 ## API Candidates
@@ -33,6 +34,18 @@ Opt in by replacing the section with exactly one six-column table:
 - `Slice Paths`: `;`-separated project-root-relative exact paths or terminal `/**`
   subtree globs. Every row needs them, including active rows.
 - Deferred confidence is `unknown|candidate`; `confirmed + deferred` is invalid.
+
+Scoped evidence graphs read the same local `unknown:U-...` Tracking syntax when
+selecting an API row, the API Candidates section, or the whole owner document
+(ScreenSpec or shared-surface-spec). A literal deferred Tracking cell creates an
+`unknown:<id>@<containing-artifact_id>` edge to its canonical open Unknown row.
+The containing document supplies the artifact ID even when a source effect from
+another screen selects that section. Author the local form above; no migration to
+an `@artifact` suffix is needed. This shorthand is confined to the actual Tracking
+cell in the unique canonical v2 table. The table and Unknown target must belong to
+the literal authored sections read by the API contract, outside generated blocks;
+lookalike headings do not create that context. Other cells and prose keep the
+ordinary typed-reference grammar. Only selected cells resolve their Tracking targets.
 
 When a candidate-like table exists, it is the complete authorization contract.
 Legacy bullets cannot add candidates to that table; matching endpoint explanations

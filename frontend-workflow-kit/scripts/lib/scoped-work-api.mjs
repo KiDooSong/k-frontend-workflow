@@ -3,7 +3,7 @@
 // confirmed/integrated owner. Manifest evidence and path predicates come later.
 import path from 'node:path';
 import { splitFrontmatter } from './util.mjs';
-import { analyzeApiCandidateContract, loadScreenSpec, parseTables, col } from './spec.mjs';
+import { analyzeApiCandidateContract, loadScreenSpec, parseTables, col, parseApiCandidateTracking } from './spec.mjs';
 import { parseReconciliationMarkdown } from './reconciliation-markdown-ast.mjs';
 import { canonicalJson, ownerParts, readCurrentBytes } from './current-work-request.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
@@ -83,10 +83,11 @@ export function createScopedApiResolver({ targetIndex, projectRoot, layout } = {
       if (matches.length !== 1) fail('SW-API-SELECTION', `missing or ambiguous ${selector.method} ${selector.path}`);
       const { candidate, index } = matches[0];
       let tracking = null;
-      if (candidate.gate === 'deferred' && candidate.tracking?.startsWith('unknown:')) {
+      const parsedTracking = parseApiCandidateTracking(candidate.tracking);
+      if (candidate.gate === 'deferred' && parsedTracking?.kind === 'unknown') {
         // The existing analyzer checks local Unknown status. Also require its
         // exact canonical raw row so duplicate/rendered IDs cannot supply it.
-        tracking = refs.contract(`${candidate.tracking}@${artifactId}`);
+        tracking = refs.contract(`unknown:${parsedTracking.id}@${artifactId}`);
         const row = Object.fromEntries(tracking.selection.headers.map((header, i) => [header, tracking.selection.cells[i]]));
         if (String(col(row, 'Status') || '').toLowerCase() !== 'open') fail('SW-API-TRACKING', 'canonical open Unknown required');
       }

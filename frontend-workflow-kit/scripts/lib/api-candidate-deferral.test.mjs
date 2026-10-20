@@ -10,6 +10,7 @@ import {
   deriveMetrics,
   findApiCandidateOwnershipConflicts,
   getSections,
+  parseApiCandidateTracking,
 } from './spec.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
 import { KIT_ROOT, yamlStringify } from './util.mjs';
@@ -31,6 +32,18 @@ import {
 } from './path-backstop.mjs';
 
 const layout = loadLayoutProfile({ kitRoot: KIT_ROOT });
+
+test('API candidate Tracking uses the exact local syntax without rendering or adding an owner (#282)', () => {
+  assert.deepEqual(parseApiCandidateTracking('unknown:U-LATER'), { kind: 'unknown', id: 'U-LATER' });
+  assert.deepEqual(parseApiCandidateTracking('unknown:U-A_1'), { kind: 'unknown', id: 'U-A_1' });
+  assert.deepEqual(parseApiCandidateTracking('issue:#12'), { kind: 'issue', number: '12' });
+  for (const value of [null, '', 'unknown:U-', 'unknown:LOCAL', 'unknown:U-LATER@SCREEN',
+    ' unknown:U-LATER', 'unknown:U-LATER\n', 'unknown:U-LATER; artifact:MISSING',
+    'unknown:U-<!-- comment -->LATER', '`unknown:U-LATER`', '[later](unknown:U-LATER)',
+    '**unknown:U-LATER**', 'issue:#0', 'issue:#01', 'issue:#12\n']) {
+    assert.equal(parseApiCandidateTracking(value), null, String(value));
+  }
+});
 
 function makeSpec(apiSection, unknownRows = '| U-DEFER | contract pending | open |', domain = 'create') {
   const body = [

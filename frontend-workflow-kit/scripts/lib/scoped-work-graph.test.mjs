@@ -5,13 +5,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { buildReconciliationTargetIndex } from './reconciliation-target-index.mjs';
 import { loadInputArtifact } from './input-artifact.mjs';
-import { parseReconciliationMarkdown, parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
-import { resolveScopedContractGraph } from './scoped-work-graph.mjs';
-import { scopedSectionLookupStats } from './scoped-work-refs.mjs';
+import { parseReconciliationMarkdown, parseReconciliationReferenceView, reconciliationParseStats } from './reconciliation-markdown-ast.mjs';
+import { resolveScopedContractGraph, scopedGraphBodyRefs, scopedGraphSelectionRefs } from './scoped-work-graph.mjs';
+import { scopedSectionLookupStats, scopedRawTableStats } from './scoped-work-refs.mjs';
 import { scopedProjectionNode } from './scoped-work-projection.mjs';
 import { scopeSet } from './scoped-work-normalize.mjs';
 import { createScopedSourceResolver } from './scoped-work-sources.mjs';
 import { createScopedReferenceResolver } from './scoped-work-refs.mjs';
+import { loadScreenSpec, analyzeApiCandidateContract } from './spec.mjs';
 
 const INPUT = 'IN-20260918-meeting-001';
 const REF = `input:${INPUT}#extracted-facts/01`;
@@ -40,6 +41,263 @@ function fixture(t, entries, inputBody = '## Extracted Facts\n- Actual selected 
   return { root, docs, inputFile, args, options,
     graph: (contracts, extra = {}) => resolveScopedContractGraph({ ...args, contracts, ...extra }) };
 }
+
+const API_TRACKING_HEADERS = ['Method', 'Path', 'Confidence', 'Gate', 'Tracking', 'Slice Paths'];
+const apiTrackingRow = (overrides = {}) => ({ Method: 'GET', Path: '/later', Confidence: 'candidate',
+  Gate: 'deferred', Tracking: 'unknown:U-LATER', 'Slice Paths': 'src/api/later/**', ...overrides });
+const apiTrackingTable = (rows = [apiTrackingRow()], headers = API_TRACKING_HEADERS) => [
+  `| ${headers.join(' | ')} |`, `|${headers.map(() => '---').join('|')}|`,
+  ...rows.map((row) => `| ${headers.map((header) => row[header] ?? '').join(' | ')} |`),
+].join('\n');
+const TRACKING_UNKNOWNS = '| ID | Question | Status |\n|---|---|---|\n| U-LATER | Later API? | open |';
+const apiTrackingBody = (table = apiTrackingTable(), unknowns = TRACKING_UNKNOWNS) =>
+  `## API Candidates\n${table}\n\n## Unknowns\n${unknowns}`;
+
+test('D graph #282: G0-G3 preserve controls and resolve deferred Tracking from section and body roots', (t) => {
+  const table = (tracking) => apiTrackingTable([
+    apiTrackingRow({ Path: '/results', Confidence: 'confirmed', Gate: 'active', Tracking: '', 'Slice Paths': 'src/api/results/**' }),
+    apiTrackingRow({ Tracking: tracking }),
+  ]);
+  const issue = fixture(t, [{ id: 'RESULT-001-screen-spec', body: apiTrackingBody(table('issue:#12')) }]);
+  const section = 'artifact:RESULT-001-screen-spec#api-candidates';
+  assert.deepEqual(ids(issue.graph([section])), [section], 'G0: issue Tracking adds no Unknown');
+  assert.deepEqual(issue.graph([section]).edges, []);
+
+  const f = fixture(t, [{ id: 'RESULT-001-screen-spec', body: apiTrackingBody(table('unknown:U-LATER')) }]);
+  const unknown = 'unknown:U-LATER@RESULT-001-screen-spec';
+  for (const root of [section, 'artifact:RESULT-001-screen-spec']) {
+    const graph = f.graph([root]);
+    assert.deepEqual(ids(graph), [root, unknown], 'G1/G2: retain the exact Unknown node');
+    assert.deepEqual(graph.edges, [{ from: root, to: unknown }]);
+    assert.equal(graph.nodes.find((node) => node.ref === unknown).selection.cells[2], 'open');
+    assert.deepEqual(graph, f.graph([root]), 'the same snapshot is deterministic');
+  }
+  const other = 'artifact:RESULT-001-screen-spec#unknowns';
+  assert.deepEqual(ids(f.graph([other])), [other], 'G3: an unvisited Tracking cell adds no edge');
+  assert.deepEqual(f.graph([other]).edges, []);
+});
+
+test('D graph #282: shared AST cells bind to their own document, including body and selection helpers', (t) => {
+  const body = apiTrackingBody();
+  const view = parseReconciliationReferenceView(body);
+  assert.equal(view.tree, parseReconciliationReferenceView(body).tree);
+  const f = fixture(t, [{ id: 'A', body }, { id: 'B', body }]);
+  const roots = ['artifact:A#api-candidates', 'artifact:B#api-candidates'];
+  const graph = f.graph(roots);
+  assert.deepEqual(ids(graph), [...roots, 'unknown:U-LATER@A', 'unknown:U-LATER@B']);
+  assert.deepEqual(graph.edges, [
+    { from: roots[0], to: 'unknown:U-LATER@A' },
+    { from: roots[1], to: 'unknown:U-LATER@B' },
+  ]);
+  for (const { fm } of [...f.docs].reverse()) {
+    const expected = [`unknown:U-LATER@${fm.artifact_id}`];
+    assert.deepEqual(scopedGraphBodyRefs(body, view, fm), expected);
+    assert.deepEqual(scopedGraphSelectionRefs(body, fm, { type: 'section', section: 'api-candidates' }, view), expected);
+    assert.deepEqual(scopedGraphSelectionRefs(body, fm, { type: 'section', section: 'unknowns' }, view), []);
+  }
+  assert.deepEqual(graph, f.graph([...roots].reverse()));
+  assert.throws(() => scopedGraphBodyRefs(body, view), /SW-GRAPH/, 'a missing document context cannot invent an owner');
+});
+
+test('D graph #282: only a visited API row adds Tracking, and unrelated invalid rows are not prevalidated', (t) => {
+  const headers = ['ID', ...API_TRACKING_HEADERS];
+  const table = apiTrackingTable([
+    apiTrackingRow({ ID: 'chosen' }),
+    apiTrackingRow({ ID: 'other', Path: '/other', Tracking: 'unknown:U-MISSING', 'Slice Paths': '' }),
+  ], headers);
+  const body = apiTrackingBody(table);
+  const f = fixture(t, [{ id: 'API', body }]);
+  const chosen = 'artifact:API#api-candidates/chosen';
+  assert.deepEqual(ids(f.graph([chosen])), [chosen, 'unknown:U-LATER@API']);
+  assert.deepEqual(f.graph([chosen]).edges, [{ from: chosen, to: 'unknown:U-LATER@API' }]);
+  assert.deepEqual(scopedGraphSelectionRefs(body, f.docs[0].fm,
+    { type: 'row', section: 'api-candidates', headers, cells: ['chosen', 'GET', '/later', 'candidate', 'deferred', 'unknown:U-LATER', 'src/api/later/**'] }),
+  ['unknown:U-LATER@API']);
+  assert.throws(() => f.graph(['artifact:API#api-candidates/other']), /SW-REF-/);
+  assert.deepEqual(ids(f.graph(['artifact:API#unknowns'])), ['artifact:API#unknowns']);
+
+  const malformed = fixture(t, [{ id: 'API', body: apiTrackingBody(apiTrackingTable([
+    apiTrackingRow({ Tracking: 'unknown:U-<!-- comment -->LATER' }),
+  ])) }]);
+  assert.deepEqual(ids(malformed.graph(['artifact:API#unknowns'])), ['artifact:API#unknowns']);
+});
+
+test('D graph #282: API owner types, reordered columns, extra columns and existing header normalization stay supported', (t) => {
+  const variants = [
+    apiTrackingTable([apiTrackingRow({ Notes: 'Deferred by the owner.' })],
+      ['Notes', 'Path', 'Tracking', 'Method', 'Slice Paths', 'Gate', 'Confidence']),
+    apiTrackingTable([{ mETHOD: 'get', Path: '/later', Confidence: 'candidate', 'G ate': 'DEFERRED',
+      'Tr acking': 'unknown:U-LATER', 'Slice  Paths': 'src/api/later/**' }],
+    ['mETHOD', 'Path', 'Confidence', 'G ate', 'Tr acking', 'Slice  Paths']),
+  ];
+  for (const artifact_type of ['screen-spec', 'shared-surface-spec']) for (const table of variants) {
+    const f = fixture(t, [{ id: 'API', fm: { artifact_type }, body: apiTrackingBody(table) }]);
+    assert.deepEqual(ids(f.graph(['artifact:API#api-candidates'])), ['artifact:API#api-candidates', 'unknown:U-LATER@API']);
+  }
+});
+
+test('D graph #282: local Unknown shorthand stays invalid outside a deferred API Tracking cell', (t) => {
+  const table = apiTrackingTable();
+  const variants = [
+    { body: apiTrackingBody(apiTrackingTable([apiTrackingRow({ Gate: 'active' })])) },
+    { body: apiTrackingBody(apiTrackingTable([apiTrackingRow({ Tracking: 'issue:#12', Notes: 'unknown:U-LATER' })], [...API_TRACKING_HEADERS, 'Notes'])) },
+    { body: `## Notes\nunknown:U-LATER\n\n${apiTrackingBody(apiTrackingTable([apiTrackingRow({ Tracking: 'issue:#12' })]))}` },
+    { body: apiTrackingBody().replace('## API Candidates', '## Other Candidates') },
+    { body: apiTrackingBody(), fm: { artifact_type: 'domain-rules' } },
+    { body: apiTrackingBody(table.split('\n').map((line) => ` ${line}`).join('\n')) },
+    { body: apiTrackingBody(table.split('\n').map((line) => `> ${line}`).join('\n')) },
+  ];
+  for (const entry of variants) {
+    const f = fixture(t, [{ id: 'API', ...entry }]);
+    assert.throws(() => f.graph(['artifact:API']), /SW-GRAPH/, entry.body);
+  }
+});
+
+test('D graph #282: raw API headings and generated-block boundaries match the existing spec contract', (t) => {
+  const table = apiTrackingTable();
+  const generated = (text) => `<!-- GENERATED:START api-candidates -->\n\n${text}\n\n<!-- GENERATED:END api-candidates -->`;
+  const unknowns = `\n\n## Unknowns\n${TRACKING_UNKNOWNS}`;
+  const lookalikes = [
+    '## API-Candidates', '## API **Candidates**', '## API  Candidates',
+    '## API Candidates ##', 'API Candidates\n--------------',
+  ].map((heading) => `${heading}\n${table}${unknowns}`);
+  const excluded = [
+    ...lookalikes,
+    `## API Candidates\n\n${generated(table)}${unknowns}`,
+    `${generated(`## API Candidates\n${table}`)}${unknowns}`,
+    `${generated('## API Candidates')}\n\n${table}${unknowns}`,
+    `## API Candidates\n\n\`\`\`md\n## Notes\n\`\`\`\n\n${table}${unknowns}`,
+    `## API Candidates\n\n<!--\n## Notes\n-->\n\n${table}${unknowns}`,
+    `## API Candidates\n${table}\n\n\`\`\`md\n## API Candidates\n\`\`\`${unknowns}`,
+  ];
+  for (const eol of ['\n', '\r\n']) for (const source of excluded) {
+    const body = source.replace(/\n/g, eol);
+    const f = fixture(t, [{ id: 'API', body }]);
+    assert.equal(analyzeApiCandidateContract(loadScreenSpec(f.docs[0].file)).version, 1,
+      'the existing spec reader does not treat this as the authored API v2 contract');
+    for (const root of ['artifact:API', 'artifact:API#api-candidates']) {
+      assert.throws(() => f.graph([root]), /SW-GRAPH/, source);
+    }
+    assert.deepEqual(ids(f.graph(['artifact:API#unknowns'])), ['artifact:API#unknowns']);
+  }
+  for (const heading of ['## API Candidates', '## aPi cAnDiDaTeS', '##\tAPI Candidates']) {
+    const f = fixture(t, [{ id: 'API', body: `${heading}\n${table}${unknowns}` }]);
+    assert.equal(analyzeApiCandidateContract(loadScreenSpec(f.docs[0].file)).version, 2);
+    assert.deepEqual(ids(f.graph(['artifact:API#api-candidates'])), ['artifact:API#api-candidates', 'unknown:U-LATER@API']);
+  }
+});
+
+test('D graph #282: only complete raw Tracking cells are handled specially', (t) => {
+  for (const tracking of [
+    'unknown:U-LATER; artifact:MISSING', 'unknown:U-LATER artifact:MISSING',
+    'unknown:U-<!-- comment -->LATER', 'unknown:U-LATER<!-- comment -->',
+    '**unknown:U-LATER**', '`unknown:U-LATER`', '[later](unknown:U-LATER)',
+    '[unknown:U-LATER](https://example.invalid)', 'unknown:U-LA**TER**',
+    'issue:#12; artifact:MISSING',
+  ]) {
+    const body = apiTrackingBody(apiTrackingTable([apiTrackingRow({ Tracking: tracking })]));
+    const f = fixture(t, [{ id: 'API', body }]);
+    assert.throws(() => f.graph(['artifact:API#api-candidates']), /SW-GRAPH|SW-REF-/, tracking);
+  }
+  // These raw fragments do not spell a typed reference to the strict scanner.
+  // Rendering them must not manufacture an Unknown dependency.
+  for (const tracking of ['unknown&#58;U-LATER', 'unk<!-- comment -->nown:U-LATER']) {
+    const body = apiTrackingBody(apiTrackingTable([apiTrackingRow({ Tracking: tracking })]));
+    const f = fixture(t, [{ id: 'API', body }]);
+    assert.deepEqual(ids(f.graph(['artifact:API#api-candidates'])), ['artifact:API#api-candidates']);
+    assert.deepEqual(f.graph(['artifact:API#api-candidates']).edges, []);
+  }
+});
+
+test('D graph #282: malformed or ambiguous API tables never choose a Tracking column or section', (t) => {
+  const table = apiTrackingTable();
+  const variants = [
+    apiTrackingBody(`${table}\n\n${table}`),
+    `${apiTrackingBody()}\n\n## API Candidates\n${table}`,
+    apiTrackingBody(apiTrackingTable([apiTrackingRow()], ['Method', 'Path', 'Gate', 'Tracking', 'Slice Paths'])),
+    apiTrackingBody(apiTrackingTable([apiTrackingRow()], [...API_TRACKING_HEADERS, 'Tracking'])),
+  ];
+  for (const body of variants) {
+    const f = fixture(t, [{ id: 'API', body }]);
+    assert.throws(() => f.graph(['artifact:API']), /SW-GRAPH|SW-REF-/);
+    assert.deepEqual(ids(f.graph(['artifact:API#unknowns'])), ['artifact:API#unknowns'], 'unselected ambiguity is not a new preflight gate');
+  }
+});
+
+test('D graph #282: Tracking resolves one canonical open Unknown, not a missing, duplicate or wrong-kind row', (t) => {
+  const malformed = [
+    TRACKING_UNKNOWNS.replace('U-LATER', 'U-OTHER'),
+    `${TRACKING_UNKNOWNS}\n| U-LATER | Duplicate? | open |`,
+    `${TRACKING_UNKNOWNS}\n\n${TRACKING_UNKNOWNS}`,
+    TRACKING_UNKNOWNS.replace('Question', 'Description'),
+    TRACKING_UNKNOWNS.replace('| open |', '| resolved |'),
+    TRACKING_UNKNOWNS.replace('| open |', '| **open** |'),
+    TRACKING_UNKNOWNS.replace('| Status |', '| State |'),
+  ];
+  for (const unknowns of malformed) {
+    const f = fixture(t, [{ id: 'API', body: apiTrackingBody(apiTrackingTable(), unknowns) }]);
+    assert.throws(() => f.graph(['artifact:API#api-candidates']), /SW-GRAPH|SW-REF-/, unknowns);
+  }
+  const wrongSection = fixture(t, [{ id: 'API', body: apiTrackingBody().replace('## Unknowns', '## Conflicts') }]);
+  assert.throws(() => wrongSection.graph(['artifact:API#api-candidates']), /SW-REF-/);
+
+  const generated = (text) => `<!-- GENERATED:START unknowns -->\n\n${text}\n\n<!-- GENERATED:END unknowns -->`;
+  const unauthoredUnknowns = [
+    apiTrackingBody().replace('## Unknowns', '## **Unknowns**'),
+    apiTrackingBody(apiTrackingTable(), generated(TRACKING_UNKNOWNS)),
+    `## API Candidates\n${apiTrackingTable()}\n\n${generated(`## Unknowns\n${TRACKING_UNKNOWNS}`)}`,
+    apiTrackingBody(apiTrackingTable(), `\`\`\`md\n## Notes\n\`\`\`\n\n${TRACKING_UNKNOWNS}`),
+  ];
+  for (const body of unauthoredUnknowns) {
+    const f = fixture(t, [{ id: 'API', body }]);
+    const analysis = analyzeApiCandidateContract(loadScreenSpec(f.docs[0].file));
+    assert.ok(analysis.issues.some((entry) => entry.code === 'API-V2-TRACKING-UNKNOWN'),
+      'deferred Tracking requires an Unknown from the authored spec contract');
+    assert.throws(() => f.graph(['artifact:API#api-candidates']), /SW-GRAPH/);
+    const ordinary = 'unknown:U-LATER@API';
+    assert.deepEqual(ids(f.graph([ordinary])), [ordinary], 'ordinary typed Unknown references keep their existing raw-row contract');
+  }
+});
+
+test('D graph #282: open-Tracking checks survive projection and an already-visited Unknown root', (t) => {
+  for (const status of ['open', 'resolved']) {
+    const f = fixture(t, [
+      { id: 'BRIDGE', body: '## Rules\nartifact:API#api-candidates' },
+      { id: 'API', body: apiTrackingBody(apiTrackingTable(), TRACKING_UNKNOWNS.replace('| open |', `| ${status} |`)) },
+    ]);
+    const roots = ['artifact:BRIDGE#rules', 'unknown:U-LATER@API'];
+    // The ordinary typed Unknown is valid in either state; only deferred Tracking requires open.
+    assert.deepEqual(ids(f.graph(['unknown:U-LATER@API'])), ['unknown:U-LATER@API']);
+    if (status !== 'open') {
+      assert.throws(() => f.graph(roots), /SW-GRAPH/);
+      assert.throws(() => f.graph(roots, { project: scopedProjectionNode }), /SW-GRAPH/);
+      continue;
+    }
+    const graph = f.graph(roots);
+    assert.ok(graph.edges.some((edge) => edge.from === 'artifact:API#api-candidates' && edge.to === 'unknown:U-LATER@API'));
+    assert.deepEqual(f.graph(roots, { project: scopedProjectionNode }),
+      { ...graph, nodes: scopeSet(graph.nodes.map(scopedProjectionNode)) });
+  }
+});
+
+test('D graph #282: many API row selections reuse the document parse and canonical table encodings', (t) => {
+  const count = 30;
+  const rows = Array.from({ length: count }, (_, i) => apiTrackingRow({ ID: `api-${i}`, Path: `/later/${i}`,
+    Tracking: `unknown:U-LATER-${i}`, 'Slice Paths': `src/api/later/${i}/**` }));
+  const unknowns = ['| ID | Question | Status |', '|---|---|---|',
+    ...rows.map((_, i) => `| U-LATER-${i} | Later API ${i}? | open |`)].join('\n');
+  const f = fixture(t, [{ id: 'MANY-API', body: apiTrackingBody(apiTrackingTable(rows, ['ID', ...API_TRACKING_HEADERS]), unknowns) }]);
+  const parses = reconciliationParseStats().parsed;
+  const tables = scopedRawTableStats().tables;
+  const opened = t.mock.method(fs, 'openSync');
+  const graph = f.graph(rows.map((row) => `artifact:MANY-API#api-candidates/${row.ID}`));
+  assert.equal(graph.nodes.length, count * 2);
+  assert.equal(graph.edges.length, count);
+  assert.ok(reconciliationParseStats().parsed - parses <= 1, 'the same document is not reparsed for every row');
+  assert.equal(scopedRawTableStats().tables - tables, 2, 'one API and one Unknown table encoding');
+  assert.equal(opened.mock.calls.filter((call) => path.basename(String(call.arguments[0])) === '0.md').length, 2,
+    'one bounded source read and one final snapshot check');
+});
 
 test('D graph: actual multi-hop section, Decision and input evidence are all resolved without a permit', (t) => {
   const f = fixture(t, [

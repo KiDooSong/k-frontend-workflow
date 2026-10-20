@@ -3,7 +3,7 @@
 // eventual basis builder must add every owner/unit/decision/host and project
 // metadata explicitly; hashing this raw evidence graph is NOT scope-basis-v1.
 import { splitFrontmatter } from './util.mjs';
-import { splitRow } from './spec.mjs';
+import { splitRow, col, specSectionName, stripGeneratedBlocks, apiCandidateColumns, parseApiCandidateTracking } from './spec.mjs';
 import { canonicalRepositoryPath } from './artifact-path.mjs';
 import { readCurrentBytes, hashBytes, normalizeWorkOrigins } from './current-work-request.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
@@ -38,7 +38,8 @@ const tableKeys = new WeakMap();
 function nativeTableKeys(body, node) {
   let entry = tableKeys.get(node);
   if (entry?.body !== body) {
-    entry = { body, header: scopeJson(splitRow(rawNode(body, node.children[0]))), rows: null };
+    const headers = splitRow(rawNode(body, node.children[0]));
+    entry = { body, headers, header: scopeJson(headers), rows: null };
     tableKeys.set(node, entry);
   }
   return entry;
@@ -107,9 +108,87 @@ function definitionsOf(view) {
   }
   return viewDefinitions.get(view);
 }
-function dependencies(body, view, nodes, omitNestedLists) {
+
+// API authoring reads literal H2 names and removes generated blocks. A native
+// slug alone also matches formatted/setext/lookalike headings, so keep the raw
+// authoring section and source-span eligibility beside native tables and rows.
+const authoredTables = new WeakMap();
+function authoredTableSections(body, view) {
+  if (authoredTables.has(view.tree)) return authoredTables.get(view.tree);
+  const authored = stripGeneratedBlocks(body, { preserveOffsets: true });
+  // getSections reads raw H2 lines, even inside examples/comments, and keeps the
+  // last occurrence of each name. Match that source ownership as well as the
+  // native heading; a displayed section must not expand the authoring contract.
+  const rawSections = [], lastSections = new Map();
+  let offset = 0;
+  for (const line of authored.split(/\r?\n/)) {
+    const name = specSectionName(line);
+    if (name !== null) {
+      const entry = { name, start: offset };
+      rawSections.push(entry);
+      lastSections.set(name, entry);
+    }
+    offset += line.length + (authored.startsWith('\r\n', offset + line.length) ? 2 : 1);
+  }
+  const sections = new Map();
+  let section = null, sourceIndex = -1;
+  for (const node of view.tree.children) {
+    while (rawSections[sourceIndex + 1]?.start <= node.position.start.offset) sourceIndex += 1;
+    const source = rawSections[sourceIndex];
+    const raw = rawNode(body, node);
+    const retained = authored.slice(node.position.start.offset, node.position.end.offset) === raw;
+    if (node.type === 'heading' && node.depth === 2) {
+      section = retained ? specSectionName(raw) : null;
+    } else if (node.type === 'table' && retained && section === source?.name && lastSections.get(section) === source) {
+      sections.set(node, section);
+      for (const row of node.children.slice(1)) sections.set(row, section);
+    }
+  }
+  authoredTables.set(view.tree, sections);
+  return sections;
+}
+
+// Index only canonical API table cells. The tree is shared by equal bodies from
+// different artifacts, so cache local IDs, never a document's canonical ref.
+// Indexing is syntax-only: unselected rows must not resolve or validate targets.
+const apiTrackingCells = new WeakMap();
+function localApiTrackingCells(body, view) {
+  if (apiTrackingCells.has(view.tree)) return apiTrackingCells.get(view.tree);
+  const cells = new Map();
+  apiTrackingCells.set(view.tree, cells);
+  const sections = scopedSectionsBySlug(view.sections, 'api-candidates');
+  if (sections.length !== 1) return cells;
+  const tables = sections[0].tableNodes.map((node) => ({ node,
+    columns: apiCandidateColumns(nativeTableKeys(body, node).headers),
+  })).filter(({ columns }) => columns.some(({ indexes }) => indexes.length > 0));
+  if (tables.length !== 1) return cells;
+  const [{ node: table, columns }] = tables;
+  if (authoredTableSections(body, view).get(table) !== 'api candidates') return cells;
+  if (columns.some(({ indexes }) => indexes.length !== 1)) return cells;
+  const gateIndex = columns.find(({ name }) => name === 'Gate').indexes[0];
+  const trackingIndex = columns.find(({ name }) => name === 'Tracking').indexes[0];
+  const width = nativeTableKeys(body, table).headers.length;
+  for (const row of table.children.slice(1)) {
+    // Native cells must correspond to the complete original row, including any
+    // extra columns; neither padded nor truncated rows can supply this shorthand.
+    const rawCells = splitRow(rawNode(body, row));
+    if (row.children.length !== width || rawCells.length !== width) continue;
+    if (rawCells[gateIndex].toLowerCase() !== 'deferred') continue;
+    const cell = row.children[trackingIndex];
+    // Native cell spans include pipe delimiters; the shared raw splitter removes
+    // only those delimiters/outer space, without rendering markup or comments.
+    const tracking = parseApiCandidateTracking(rawCells[trackingIndex]);
+    if (tracking?.kind === 'unknown') cells.set(cell, tracking.id);
+  }
+  return cells;
+}
+
+function dependencies(body, view, nodes, omitNestedLists, metadata = {}) {
   const found = new Set();
+  const deferredTracking = new Set();
   const definitions = definitionsOf(view);
+  const trackingCells = ['screen-spec', 'shared-surface-spec'].includes(metadata.artifact_type)
+    ? localApiTrackingCells(body, view) : null;
   const add = (token) => found.add(canonicalRef(token));
   function destination(node) {
     if (!prefix.test(node.url || '')) return;
@@ -133,6 +212,13 @@ function dependencies(body, view, nodes, omitNestedLists) {
     add(literal);
   }
   for (const selected of nodes) walk(selected, (node) => {
+    if (trackingCells?.has(node)) {
+      const artifactId = workText(metadata.artifact_id, 'API Tracking artifact');
+      const ref = canonicalRef(`unknown:${trackingCells.get(node)}@${artifactId}`);
+      found.add(ref);
+      deferredTracking.add(ref);
+      return false;
+    }
     if (['code', 'html', 'definition'].includes(node.type)) return false;
     if (node.type === 'image' || node.type === 'imageReference') {
       const matches = definitions.get(reconciliationReferenceLabel(node.label ?? node.identifier));
@@ -180,7 +266,7 @@ function dependencies(body, view, nodes, omitNestedLists) {
       }
     }
   }, omitNestedLists);
-  return scopeSet([...found]);
+  return { refs: scopeSet([...found]), deferredTracking: scopeSet([...deferredTracking]) };
 }
 
 // Only explicitly typed metadata references are graph edges here. Native
@@ -212,15 +298,15 @@ export function scopedGraphMetadataRefs(metadata) {
 }
 // Every typed content edge the native scanner reads anywhere in one body; it
 // fails as resolution would on an encoded or escaped typed destination.
-export function scopedGraphBodyRefs(body, view) {
-  return dependencies(body, view, view.tree.children, false);
+export function scopedGraphBodyRefs(body, view, metadata = {}) {
+  return dependencies(body, view, view.tree.children, false, metadata).refs;
 }
 
 // #275: the typed references one selected table row cites as resolution reads it, with
 // its document's typed metadata, for a row whose ID cannot form a typed reference.
 // A caller selecting several rows of one body passes its view once.
 export function scopedGraphSelectionRefs(body, metadata, selection, view = parseReconciliationReferenceView(body)) {
-  return scopeSet([...new Set([...dependencies(body, view, selectedNodes(view, selection, body), false),
+  return scopeSet([...new Set([...dependencies(body, view, selectedNodes(view, selection, body), false, metadata).refs,
     ...scopedGraphMetadataRefs(metadata)])]);
 }
 
@@ -240,6 +326,7 @@ export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifa
   // selected (#275); every record is still checked against those bytes, and the re-read
   // below catches a later change.
   const documents = new Map(), serialized = new WeakMap();
+  const checkedTracking = new Set();
   // Records of one document share its metadata object, so it is serialized once.
   const serial = (value) => {
     if (value === null || typeof value !== 'object') return scopeJson(value);
@@ -280,8 +367,22 @@ export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifa
     }
     nodes.set(ref, project ? project(record) : record);
     const selected = selectedNodes(document.view, record.selection, document.body);
-    const dependenciesForRef = dependencies(document.body, document.view, selected,
-      Boolean(input) && record.selection.bullet_index != null);
+    const { refs: dependenciesForRef, deferredTracking } = dependencies(document.body, document.view, selected,
+      Boolean(input) && record.selection.bullet_index != null, input ? {} : record.metadata);
+    // Validate when a Tracking edge is encountered, even if its Unknown was
+    // already visited as another root. Do not inspect a projected node or require
+    // unrelated ordinary Unknown references to be open.
+    for (const dependency of deferredTracking) {
+      if (checkedTracking.has(dependency)) continue;
+      const tracking = refs.contract(dependency);
+      const [trackingRow] = selectedNodes(document.view, tracking.selection, document.body);
+      const row = Object.fromEntries(tracking.selection.headers.map((header, index) => [header, tracking.selection.cells[index]]));
+      if (authoredTableSections(document.body, document.view).get(trackingRow) !== 'unknowns' ||
+          String(col(row, 'Status') || '').toLowerCase() !== 'open') {
+        fail(`deferred Tracking requires a canonical open Unknown: ${dependency}`);
+      }
+      checkedTracking.add(dependency);
+    }
     const metadataRefs = scopedGraphMetadataRefs(record.metadata);
     for (const dependency of scopeSet([...new Set([...dependenciesForRef, ...metadataRefs])])) {
       edges.push({ from: ref, to: dependency });
@@ -319,12 +420,16 @@ export function scopedGraphApiRowDependencies(body, candidate) {
   const view = parseReconciliationReferenceView(body);
   const [row] = selectedNodes(view, { type: 'row', section: 'api-candidates',
     headers: candidate.headers, cells: candidate.cells }, body);
-  const trackingIndex = candidate.headers.findIndex((header) => header.toLowerCase() === 'tracking');
-  if (candidate.tracking && trackingIndex < 0) fail('canonical API Tracking column required');
+  const trackingIndexes = apiCandidateColumns(candidate.headers).find(({ name }) => name === 'Tracking').indexes;
+  const trackingIndex = trackingIndexes[0];
+  if (candidate.tracking && (trackingIndexes.length !== 1 ||
+      parseApiCandidateTracking(candidate.cells[trackingIndex])?.kind !== 'unknown')) {
+    fail('canonical API Unknown Tracking cell required');
+  }
   // Only deferred Unknown Tracking permits the API-local unknown:ID shorthand.
   // It was resolved to an exact canonical row by createScopedApiResolver().unit().
   // All other cells use the ordinary strict typed-reference scanner unchanged.
   const cells = row.children.filter((_, index) => !candidate.tracking || index !== trackingIndex);
-  return scopeSet([...new Set([...dependencies(body, view, cells, false),
+  return scopeSet([...new Set([...dependencies(body, view, cells, false).refs,
     ...(candidate.tracking ? [canonicalRef(candidate.tracking.ref)] : [])])]);
 }

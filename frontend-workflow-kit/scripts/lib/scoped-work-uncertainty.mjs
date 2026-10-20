@@ -286,7 +286,7 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
     try { return check(); } catch (cause) { if (cause instanceof CurrentWorkError) return true; throw cause; }
   };
   const referencing = (entry, file) => typedSpelling.test(document(file).text) || contractError(() =>
-    scopedGraphMetadataRefs(entry.fm).length > 0 || scopedGraphBodyRefs(document(file).body, document(file).view).length > 0);
+    scopedGraphMetadataRefs(entry.fm).length > 0 || scopedGraphBodyRefs(document(file).body, document(file).view, entry.fm).length > 0);
   const skipped = new Map();
   for (const { entry, file, section, error } of unaudited) {
     const native = (value) => contractError(() => nativeScope(entry, value));

@@ -20,11 +20,17 @@ function stripComments(text) {
 }
 
 // GENERATED 블록 내부를 제거한다 (생성 섹션은 본문 파싱 대상이 아님).
-function stripGeneratedBlocks(text) {
-  return text.replace(/<!--\s*GENERATED:START[\s\S]*?GENERATED:END[^\n]*-->/g, '');
+export function stripGeneratedBlocks(text, { preserveOffsets = false } = {}) {
+  return text.replace(/<!--\s*GENERATED:START[\s\S]*?GENERATED:END[^\n]*-->/g,
+    (block) => preserveOffsets ? block.replace(/[^\r\n]/g, ' ') : '');
 }
 
 // `## Heading` 기준으로 섹션을 나눈다. key 는 소문자 제목.
+export function specSectionName(line) {
+  const match = /^##\s+(.+?)\s*$/.exec(line);
+  return match ? match[1].trim().toLowerCase() : null;
+}
+
 export function getSections(body) {
   const sections = {};
   const lines = body.split(/\r?\n/);
@@ -34,10 +40,10 @@ export function getSections(body) {
     if (current !== null) sections[current] = buf.join('\n');
   };
   for (const line of lines) {
-    const m = /^##\s+(.+?)\s*$/.exec(line);
-    if (m) {
+    const name = specSectionName(line);
+    if (name !== null) {
       flush();
-      current = m[1].trim().toLowerCase();
+      current = name;
       buf = [];
     } else if (current !== null) {
       buf.push(line);
@@ -425,6 +431,25 @@ function normalizedHeader(name) {
   return String(name || '').toLowerCase().replace(/\s+/g, '');
 }
 
+// Shared syntax only: callers retain their own raw-source and target-resolution
+// checks. In particular, do not render Markdown or add an artifact owner here.
+export function parseApiCandidateTracking(value) {
+  if (typeof value !== 'string') return null;
+  const unknown = UNKNOWN_TRACKING_RE.exec(value);
+  if (unknown?.[0] === value) return { kind: 'unknown', id: unknown[1] };
+  const issue = ISSUE_TRACKING_RE.exec(value);
+  return issue?.[0] === value ? { kind: 'issue', number: issue[1] } : null;
+}
+
+// Required columns occur once, in any order; additional columns are allowed.
+// Keep raw table consumers on the analyzer's case/whitespace matching rules.
+export function apiCandidateColumns(headers) {
+  const normalized = headers.map(normalizedHeader);
+  return API_CANDIDATE_V2_COLUMNS.map((name) => ({ name,
+    indexes: normalized.flatMap((header, index) => header === normalizedHeader(name) ? [index] : []),
+  }));
+}
+
 function parseLegacyApiCandidates(sectionText) {
   if (!sectionText) return [];
   const clean = stripComments(sectionText);
@@ -640,10 +665,8 @@ export function analyzeApiCandidateContract(spec, { layout, domain } = {}) {
     );
   }
   for (const [tableIndex, table] of tables.entries()) {
-    const normalized = table.headers.map(normalizedHeader);
-    for (const column of API_CANDIDATE_V2_COLUMNS) {
-      const key = normalizedHeader(column);
-      const count = normalized.filter((header) => header === key).length;
+    for (const { name: column, indexes } of apiCandidateColumns(table.headers)) {
+      const count = indexes.length;
       if (count !== 1) {
         contractIssues.push(
           issue(
@@ -753,9 +776,8 @@ export function analyzeApiCandidateContract(spec, { layout, domain } = {}) {
     candidate.safe_slice_paths = safeSlicePaths;
 
     if (candidate.gate === 'deferred') {
-      const unknownMatch = UNKNOWN_TRACKING_RE.exec(candidate.tracking || '');
-      const issueMatch = ISSUE_TRACKING_RE.exec(candidate.tracking || '');
-      if (!unknownMatch && !issueMatch) {
+      const tracking = parseApiCandidateTracking(candidate.tracking);
+      if (!tracking) {
         contractIssues.push(
           issue(
             'API-V2-TRACKING',
@@ -764,7 +786,7 @@ export function analyzeApiCandidateContract(spec, { layout, domain } = {}) {
           ),
         );
         candidateValid = false;
-      } else if (unknownMatch && unknowns.get(unknownMatch[1]) !== 'open') {
+      } else if (tracking.kind === 'unknown' && unknowns.get(tracking.id) !== 'open') {
         contractIssues.push(
           issue(
             'API-V2-TRACKING-UNKNOWN',
