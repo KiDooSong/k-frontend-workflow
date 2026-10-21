@@ -12,7 +12,8 @@ import { loadOpenDecisionRegister, resolveDecisionRefs, openDecisionRowIsMalform
 import { parseTargetRef } from './reconciliation-items.mjs';
 import { parseReconciliationMarkdown, parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
 import { createScopedReferenceResolver, scopedRawTable, parseScopedTargetRef, isScopedRowId } from './scoped-work-refs.mjs';
-import { resolveScopedContractGraph, scopedGraphContexts, scopedGraphSelectionSpans } from './scoped-work-graph.mjs';
+import { resolveScopedContractGraph, scopedGraphContexts, scopedGraphSelectionSpans,
+  copyScopedGraphContexts, mergeScopedGraphContexts } from './scoped-work-graph.mjs';
 import { resolveScopedUnitProjection, scopedProjectionMetadata, scopedProjectionNode } from './scoped-work-projection.mjs';
 import { parseDecisionWorkScopes } from './scoped-work-declarations.mjs';
 import { ScopedWorkContractError, workText, workSet, workPath } from './scoped-work-request.mjs';
@@ -37,6 +38,7 @@ export function resolveScopedDecisionProjection(options = {}, dependencyRoots = 
   const { owner, projectRoot, docsDir, targetIndex, inputArtifacts = [] } = options;
   const base = resolveScopedUnitProjection(options);
   const baseContext = scopedGraphContexts(base.projection.evidence);
+  const evidenceContexts = [base.projection.evidence];
   if (typeof docsDir !== 'string' || !path.isAbsolute(docsDir) || path.resolve(docsDir) !== docsDir) {
     fail('canonical absolute docsDir required');
   }
@@ -272,6 +274,7 @@ export function resolveScopedDecisionProjection(options = {}, dependencyRoots = 
     if (visited.has(key)) continue;
     const graph = resolveScopedContractGraph({ contracts: [token], targetIndex, inputArtifacts, projectRoot,
       ...baseContext, authoredRefs });
+    evidenceContexts.push(copyScopedGraphContexts(graph, {}));
     for (const file of graph.read_set) audit(file.file, file.sha256);
     for (const edge of graph.edges) graphEdges.set(scopeJson(edge), edge);
     for (const node of graph.nodes) {
@@ -292,6 +295,7 @@ export function resolveScopedDecisionProjection(options = {}, dependencyRoots = 
     ...(derivedRoots.length ? { dependency_roots: derivedRoots } : {}),
     records: copyScopedNodeContexts(records, scopeSet(records)), applications: scopeSet([...applications.values()]),
     referrers: scopeSet([...referrers.values()]), memberships: scopeSet([...memberships.values()]),
-    evidence: { roots: union([...graphRoots]), nodes: copyScopedNodeContexts(evidenceNodes, scopeSet(evidenceNodes)), edges: scopeSet([...graphEdges.values()]) },
+    evidence: mergeScopedGraphContexts(evidenceContexts, { roots: union([...graphRoots]),
+      nodes: copyScopedNodeContexts(evidenceNodes, scopeSet(evidenceNodes)), edges: scopeSet([...graphEdges.values()]) }),
   } }, read_set: scopeSet([...files.values()]) };
 }

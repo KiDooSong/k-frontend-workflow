@@ -54,7 +54,14 @@ original table/row nodes. Ordinary fully qualified references can still select
 raw generated evidence; that evidence cannot supply a local deferred Tracking
 target. If an ordinary reference and Tracking select different physical rows for
 the same canonical reference, resolution fails as ambiguous, even when the cells
-are identical. Original file hashes and selected section/document content remain
+are identical. This check also applies when decision, uncertainty and unapplied
+relation graphs are combined. Unrelated candidate rows remain separate during
+relation discovery; only rows that join the selected closure become selection demands.
+Ordinary generated Unknown rows remain uncertainty
+candidates when authored rows coexist; a selected open row still blocks its unit.
+Generic artifact row references search raw rows alongside authored fallback rows,
+and InputArtifact anchors retain their original raw heading and bullet boundaries.
+Original file hashes and selected section/document content remain
 part of their existing audit/basis contracts, so adding GENERATED content does
 not promise an unchanged binding digest.
 

@@ -10,6 +10,7 @@ import { resolveScopedDecisionProjection } from './scoped-work-decisions.mjs';
 import { resolveScopedUncertaintyProjection } from './scoped-work-uncertainty.mjs';
 import { resolveScopedBoundaryProjection } from './scoped-work-boundaries.mjs';
 import { resolveScopedApplicabilityProjection } from './scoped-work-applicability.mjs';
+import { scopedBindingBasis } from './scoped-work-basis.mjs';
 
 const OWNER = 'screen:RESULT-001';
 const SECOND = 'screen:RESULT-002';
@@ -260,4 +261,118 @@ test('D applicability: adding a known unit cannot hide it from native uncertaint
   const out = f.run(); assert.deepEqual(out.projection.known_units, ['known', 'new-unit', 'other']);
   assert.ok(apps(out, 'D-ONE').some((entry) => entry.unit === 'new-unit'));
   assert.ok(out.projection.ownership.units.some((entry) => entry.unit === 'new-unit'));
+});
+
+function trackingWithUnappliedDecision(t, generatedQuestion = null) {
+  const f = fixture(t);
+  const authoredQuestion = 'Authored API question?';
+  f.change('screen.md', (doc) => {
+    doc.fm.work_execution.units[0] = unit('known', ['artifact:API#api-candidates']);
+  });
+  const raw = generatedQuestion === null ? '' : `<!-- GENERATED:START summary -->\n\n${table(['ID', 'Question', 'Status'],
+    [['U-SHARED', generatedQuestion, 'open']])}\n\n## Generated Summary\n\nDisplay text.\n\n<!-- GENERATED:END summary -->\n\n`;
+  f.write('api.md', { artifact_id: 'API', artifact_type: 'screen-spec', screen_id: 'API-001', domain: 'foreign',
+    status: 'draft', screen_entry: 'src/features/foreign/screens/API-001.tsx' },
+  `## API Candidates\n\n${table(['Method', 'Path', 'Confidence', 'Gate', 'Tracking', 'Slice Paths'],
+    [['GET', '/later', 'candidate', 'deferred', 'unknown:U-SHARED', 'src/api/later/**']])}\n\n## Unknowns\n\n${raw}${table(
+    ['ID', 'Question', 'Status'], [['U-SHARED', authoredQuestion, 'open']])}`);
+  f.write('foreign.md', { artifact_id: 'FOREIGN', artifact_type: 'screen-spec', screen_id: 'FOREIGN-001',
+    domain: 'foreign', status: 'draft', screen_entry: 'src/features/foreign/screens/FOREIGN-001.tsx' },
+  decisions([decisionRow('D-PROXY', 'See unknown:U-SHARED@API')]));
+  return f;
+}
+
+for (const question of ['Generated proxy question?', 'Authored API question?']) {
+  test(`#284 review: unapplied Decision cannot merge a different physical Unknown row (${question})`, (t) => {
+    const f = trackingWithUnappliedDecision(t, question);
+    assert.throws(() => f.run(), /ambiguous.*(?:selection|evidence|source)|inconsistent selected evidence/,
+      'identical reference strings and even equal cells cannot collapse different raw/authored rows');
+    f.change('api.md', (doc) => { doc.body = doc.body.replace(question, 'Changed generated question?'); });
+    assert.throws(() => f.run(), /ambiguous.*(?:selection|evidence|source)|inconsistent selected evidence/,
+      'fresh applicability must reject the conflicting evidence before a binding digest can omit it');
+  });
+}
+
+test('#284 review: an unapplied Decision sharing the same actual Unknown row retains its evidence in the basis', (t) => {
+  const f = trackingWithUnappliedDecision(t);
+  const binding = { uncertainty: 'unknown:U-SHARED@API', known_units: ['known', 'other'], units: ['known'], blocks: ['other'] };
+  const before = f.run();
+  assert.deepEqual(before.projection.unapplied_relations.records.map((row) => row.ref), ['decision:D-PROXY@FOREIGN']);
+  const first = scopedBindingBasis(before.projection, binding);
+  assert.ok(first.basis.relation_evidence.nodes.some((node) => node.ref === 'decision:D-PROXY@FOREIGN'));
+  f.change('foreign.md', (doc) => { doc.body = doc.body.replace('See unknown:', 'Changed question: unknown:'); });
+  const after = scopedBindingBasis(f.run().projection, binding);
+  assert.notEqual(after.basis_digest, first.basis_digest);
+});
+
+test('#284 review: unrelated raw and authored Unknown candidates do not become two demanded roots', (t) => {
+  const f = trackingWithUnappliedDecision(t, 'Unrelated generated question?');
+  f.change('screen.md', (doc) => { doc.fm.work_execution.units[0] = unit(); });
+  f.change('foreign.md', (doc) => { doc.body = decisions([decisionRow('D-PROXY')]); });
+  f.change('api.md', (doc) => { doc.body = doc.body.slice(doc.body.indexOf('## Unknowns')); });
+  const out = f.run();
+  assert.deepEqual(out.projection.uncertainty_relations.records, []);
+  assert.deepEqual(out.projection.unapplied_relations.records, []);
+});
+
+test('#284 review: an unrelated raw alternative remains harmless beside an applied authored Unknown', (t) => {
+  const f = trackingWithUnappliedDecision(t, 'Unrelated generated question?');
+  f.change('foreign.md', (doc) => { doc.body = decisions([decisionRow('D-PROXY')]); });
+  const out = f.run();
+  assert.deepEqual(out.projection.uncertainty_relations.records.map((row) => row.ref), ['unknown:U-SHARED@API']);
+  assert.deepEqual(out.projection.uncertainty_relations.records[0].selection.cells,
+    ['U-SHARED', 'Authored API question?', 'open']);
+  assert.deepEqual(out.projection.unapplied_relations.records, []);
+});
+
+test('#284 review: an applied ref cannot hide a raw alternative related through newly joined evidence', (t) => {
+  const f = trackingWithUnappliedDecision(t, 'See decision:D-LEAF@open-decision-register');
+  f.global([decisionRow('D-BASE'), decisionRow('D-LEAF')]);
+  f.change('screen.md', (doc) => {
+    doc.fm.work_execution.units[0] = unit('known', ['artifact:API#api-candidates', 'decision:D-BASE@open-decision-register']);
+  });
+  f.change('foreign.md', (doc) => {
+    doc.body = decisions([decisionRow('D-BRIDGE',
+      'See decision:D-BASE@open-decision-register and decision:D-LEAF@open-decision-register')]);
+  });
+  assert.throws(() => f.run(), /ambiguous.*(?:selection|evidence|source)|inconsistent selected evidence/,
+    'the raw alternative joins through D-LEAF even though its canonical ref already names an applied authored row');
+});
+
+function rawCandidateChain(f) {
+  f.change('api.md', (doc) => {
+    doc.body = `## Unknowns\n\n<!-- GENERATED:START summary -->\n\n${table(['ID', 'Question', 'Status'], [
+      ['U-GENERATED', 'See unknown:U-SHARED@API', 'open'], ['U-SHARED', 'Raw question.', 'open'],
+    ])}\n\n## Generated Summary\n\nDisplay.\n\n<!-- GENERATED:END summary -->\n\n${table(['ID', 'Question', 'Status'],
+      [['U-SHARED', 'Unrelated authored question.', 'open']])}`;
+  });
+}
+
+test('#284 review: unrelated raw candidate dependencies do not demand an authored alternative', (t) => {
+  const f = trackingWithUnappliedDecision(t);
+  rawCandidateChain(f);
+  f.change('screen.md', (doc) => { doc.fm.work_execution.units[0] = unit(); });
+  f.change('foreign.md', (doc) => { doc.body = decisions([decisionRow('D-PROXY')]); });
+  const out = f.run();
+  assert.deepEqual(out.projection.uncertainty_relations.records, []);
+  assert.deepEqual(out.projection.unapplied_relations.records, []);
+});
+
+test('#284 review: a related unapplied raw chain keeps only the demanded rows and changes its binding basis', (t) => {
+  const f = trackingWithUnappliedDecision(t);
+  rawCandidateChain(f);
+  f.global([decisionRow('D-BASE')]);
+  f.change('screen.md', (doc) => { doc.fm.work_execution.units[0] = unit('known', ['decision:D-BASE@open-decision-register']); });
+  f.change('foreign.md', (doc) => { doc.body = decisions([decisionRow('D-PROXY',
+    'See decision:D-BASE@open-decision-register and unknown:U-GENERATED@API')]); });
+  const before = f.run();
+  assert.deepEqual(before.projection.unapplied_relations.records.map((row) => row.ref).sort(),
+    ['decision:D-PROXY@FOREIGN', 'unknown:U-GENERATED@API', 'unknown:U-SHARED@API']);
+  const row = before.projection.unapplied_relations.evidence.nodes.find((node) => node.ref === 'unknown:U-SHARED@API');
+  assert.deepEqual(row.selection.cells, ['U-SHARED', 'Raw question.', 'open']);
+  const binding = { decision: 'decision:D-BASE@open-decision-register', known_units: ['known', 'other'], units: ['known'], blocks: ['other'] };
+  const first = scopedBindingBasis(before.projection, binding);
+  f.change('api.md', (doc) => { doc.body = doc.body.replace('Raw question.', 'Changed raw question.'); });
+  const after = scopedBindingBasis(f.run().projection, binding);
+  assert.notEqual(after.basis_digest, first.basis_digest);
 });

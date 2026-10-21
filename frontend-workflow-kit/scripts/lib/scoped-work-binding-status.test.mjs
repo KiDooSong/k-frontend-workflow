@@ -163,6 +163,33 @@ test('#282 CLI: selected deferred API stays blocked with generated API and Unkno
   assert.equal(p.read(LIST), body);
 });
 
+test('#284 CLI: directly selected generated Unknown remains blocking beside another authored ID', (t) => {
+  const p = project(t), unknown = 'unknown:U-GENERATED@COUPON-001-screen-spec';
+  const units = structuredClone(UNITS);
+  units.units[0].contracts = [unknown];
+  p.bind([], [], units);
+  // The raw Unknown selector reaches the generated row before the generated H2.
+  // The authored view reaches a different ID after that H2 and generated block.
+  const body = p.read(LIST).replace(/\n## Unknowns\n[\s\S]*?(?=\n## )/, '\n## Unknowns\n\n' +
+    `${generated('| ID | Question | Status |\n|---|---|---|\n' +
+      '| U-GENERATED | Selected generated question? | open |\n\n## Generated Summary\n\nOutput text.')}\n\n` +
+    '| ID | Question | Status |\n|---|---|---|\n| U-AUTHORED | Another authored question? | resolved |\n');
+  p.put(LIST, body); p.commit('select a raw generated Unknown beside another authored ID');
+
+  const report = p.json(p.status('--owner', OWNER, '--json'));
+  const row = report.owners[0].rows.find((entry) => entry.ref === unknown);
+  assert.ok(row, 'the directly selected raw GENERATED Unknown must appear in the public binding report');
+  assert.deepEqual([row.state, row.status, row.home, row.blocking_units],
+    ['missing', 'open', LIST, ['list-behavior']]);
+  const ready = p.readiness();
+  assert.deepEqual([ready.authority, ready.ready], ['scoped', false]);
+  assert.ok(ready.denials.some((entry) => entry.code === 'unit-uncertainty-unresolved' &&
+    entry.application.uncertainty === unknown), 'readiness must deny the actual selected raw open Unknown');
+  assert.equal(ready.requests[0].path_authorizations[0].allowed, false);
+  assert.equal(p.git('status', '--porcelain'), '');
+  assert.equal(p.read(LIST), body);
+});
+
 test('#275 binding-status: B0-B5 change only the bindings whose row or unit contract changed', (t) => {
   const p = project(t), before = p.rows();
   assert.deepEqual([before[D003].state, before[D003].stale_reason, before[U001].state, before[U001].stale_reason],

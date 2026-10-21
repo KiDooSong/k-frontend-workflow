@@ -259,6 +259,26 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot, inputA
     }
     return byMode.get(mode);
   }
+  // An ordinary artifact row names raw evidence, including GENERATED rows. The
+  // authored view may extend that row's section across GENERATED headings, but
+  // must not replace its existing raw candidates. Merge native tables once per
+  // section and deduplicate only the same physical table, never equal cell text.
+  const artifactRowHomes = new WeakMap();
+  function artifactRowSelection(record, markdown, ref, authored) {
+    if (!artifactRowHomes.has(markdown)) artifactRowHomes.set(markdown, new Map());
+    const homes = artifactRowHomes.get(markdown);
+    if (!homes.has(ref.section)) {
+      const retained = scopedSectionsBySlug(scopedAuthoredView(record.body, markdown).sections, ref.section);
+      if (retained.length !== 1) fail(retained.length ? 'SW-REF-AMBIGUOUS' : 'SW-REF-MISSING', `section #${ref.section}`);
+      const raw = scopedSectionsBySlug(markdown.sections, ref.section);
+      const tables = new Map();
+      for (const home of [...raw, ...authored]) home.tableNodes.forEach((node, index) => {
+        if (!tables.has(node)) tables.set(node, home.tables[index]);
+      });
+      homes.set(ref.section, { slug: ref.section, tableNodes: [...tables.keys()], tables: [...tables.values()] });
+    }
+    return rowSelection(homes.get(ref.section), ref.rowKey, null, record);
+  }
   // A caller that keeps its records internal (one graph resolution) shares one copy of a
   // document's metadata: selecting every row of a register would otherwise copy its frontmatter,
   // bindings included, once per row (#275). Otherwise each record has its own copy.
@@ -322,7 +342,8 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot, inputA
         const selected = authored.length === 1 ? authored[0] : section(markdown, ref.section);
         selection = ref.rowKey === null
           ? { type: 'section', section: ref.section, content: lf(selected.text) }
-          : rowSelection(selected, ref.rowKey, null, record);
+          : authored.length ? artifactRowSelection(record, markdown, ref, authored)
+            : rowSelection(selected, ref.rowKey, null, record);
         if (ref.rowKey === null) rememberScopedSelection(selection, record.body, selected.nodes);
       }
     } else if (Object.hasOwn(signatures, ref.kind)) {

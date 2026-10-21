@@ -13,6 +13,10 @@
   필드, 원본 본문·파일 해시·snapshot 검사와 문서별 artifact ID 분리는 보존한다.
 - GENERATED 내부의 ordinary fully qualified 참조는 유지한다. local Tracking의 작성
   근거와 구분하고, 같은 참조가 서로 다른 원본 행을 선택하면 방문 순서와 무관하게 거부한다.
+- PR #284 리뷰 후 raw/authored Unknown 후보를 실제 행별로 유지해 직접 선택한 open
+  GENERATED Unknown의 차단 누락을 고쳤다. 파생 root와 미적용 관계도 실제 선택 문맥과
+  원본 범위를 비교하며, 혼합 표의 일반 artifact 행 참조와 InputArtifact의 raw anchor
+  경계를 보존한다. 공개 CLI 회귀에서 해당 Unknown의 missing/open 차단까지 확인한다.
 - 회귀에 원문 3사례, LF/CRLF·동일 제목·Unknown 경계, 정확한 edge/원본 범위와 교차 화면
   effect를 추가했다. 실제 packed runtime에서 `readiness --work`·`binding-status --owner`를
   실행하고 payload manifest의 파일별 해시도 확인한다. 기존 open Unknown·deferred·stale

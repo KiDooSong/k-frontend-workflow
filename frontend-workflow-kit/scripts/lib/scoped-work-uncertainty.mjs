@@ -12,12 +12,13 @@ import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { parseTargetRef } from './reconciliation-items.mjs';
 import { parseReconciliationMarkdown, parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
 import { createScopedReferenceResolver, scopedRawTable, parseScopedTargetRef } from './scoped-work-refs.mjs';
-import { resolveScopedContractGraph, scopedGraphSelectionSpans, scopedGraphMetadataRefs, scopedGraphBodyRefs } from './scoped-work-graph.mjs';
+import { resolveScopedContractGraph, scopedGraphSelectionSpans, scopedGraphMetadataRefs, scopedGraphBodyRefs,
+  mergeScopedGraphContexts } from './scoped-work-graph.mjs';
 import { scopedProjectionNode } from './scoped-work-projection.mjs';
 import { resolveScopedDecisionProjection } from './scoped-work-decisions.mjs';
 import { ScopedWorkContractError, workText } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
-import { scopedAuthoredSections, copyScopedNodeContexts } from './scoped-work-authored.mjs';
+import { scopedAuthoredSections, scopedSelectionNodes, copyScopedNodeContexts } from './scoped-work-authored.mjs';
 
 const fail = (message) => { throw new ScopedWorkContractError(`SW-UNCERTAINTY: ${message}`); };
 const signatures = { unknown: ['ID', 'Question'], conflict: ['ID', 'Status'] };
@@ -25,15 +26,36 @@ const typedSpelling = /(?:artifact|decision|unknown|conflict|gap|investigation|v
 const union = (values) => scopeSet([...new Set(values)]);
 const key = (owner, unit) => scopeJson([owner, unit]);
 
-// An authored Unknown table can sit after a GENERATED heading in the original
-// tree. Use the same homes as API Tracking, without changing ordinary raw-only
-// Unknown evidence (including generated-only or formatted-heading homes).
+// An authored table can sit after a GENERATED heading while an independently
+// resolvable raw Unknown table remains before it. Keep both physical sources;
+// the presence of an authored table must not erase ordinary generated evidence.
 export function scopedUnknownHomes(body, view = parseReconciliationReferenceView(body)) {
   const authored = scopedAuthoredSections(body, 'unknowns', view);
-  const hasAuthoredTable = authored.some((section) => section.tables.some((table) =>
-    signatures.unknown.every((header) => hasHeader(table.headers, header))));
-  return (hasAuthoredTable ? authored : view.sections.filter((section) => section.slug === 'unknowns'))
-    .map((location) => ({ location, authored: hasAuthoredTable }));
+  const canonical = (table) => signatures.unknown.every((header) => hasHeader(table.headers, header));
+  const authoredTables = new Set(authored.flatMap((section) => section.tableNodes.filter((_, index) => canonical(section.tables[index]))));
+  const raw = view.sections.filter((section) => section.slug === 'unknowns');
+  if (!authoredTables.size) return raw.map((location) => ({ location, authored: false }));
+  const homes = authored.map((location) => ({ location, authored: true }));
+  // Multiple raw sections/tables cannot supply an ordinary canonical Unknown.
+  // Do not restore GENERATED-only empty sections or display legends as authored
+  // format errors; selected ordinary refs still undergo the raw resolver checks.
+  if (raw.length === 1) {
+    const tables = raw[0].tableNodes.filter((_, index) => canonical(raw[0].tables[index]));
+    if (tables.length === 1 && !authoredTables.has(tables[0])) homes.push({ location: raw[0], authored: false });
+  }
+  return homes;
+}
+
+// Fixpoint roots keep the selected physical row's context, not a document-wide
+// "has authored Unknowns" flag. Compare source offsets so parser cache eviction
+// cannot change the answer for an existing selection sidecar.
+export function scopedUnknownAuthored(body, selection, view = parseReconciliationReferenceView(body)) {
+  const nodes = scopedSelectionNodes(body, selection);
+  if (selection.type !== 'row' || nodes?.length !== 1) return false;
+  const [row] = nodes;
+  return scopedAuthoredSections(body, 'unknowns', view).some((home) => home.tableNodes.some((table, index) =>
+    signatures.unknown.every((header) => hasHeader(home.tables[index].headers, header)) &&
+    table.position.start.offset <= row.position.start.offset && row.position.end.offset <= table.position.end.offset));
 }
 
 const nodeSet = (values) => copyScopedNodeContexts(values, scopeSet(values));
@@ -47,16 +69,12 @@ export function scopedUncertaintyResolved(record) {
   return record.status === 'resolved';
 }
 
-export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots = []) {
+export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots = [], dependencyContext = {}) {
   const { targetIndex, projectRoot, inputArtifacts = [] } = options;
   // The fixpoint re-expands derived rows in the decision layer. Carry their
-  // authored provenance beside the unchanged public root declarations.
-  const authoredRefs = union((Array.isArray(dependencyRoots) ? dependencyRoots : []).flatMap((root) => {
-    const ref = parseScopedTargetRef(root?.ref);
-    const entry = ref?.kind === 'unknown' ? targetIndex.artifacts.get(ref.ownerArtifactId) : null;
-    return entry && scopedUnknownHomes(entry.body).some((home) => home.authored) ? [ref.raw] : [];
-  }));
-  const base = resolveScopedDecisionProjection(options, dependencyRoots, { authoredRefs });
+  // actual row context beside the unchanged public root declarations. Ordinary
+  // roots stay ordinary unless their caller carries an authored selection.
+  const base = resolveScopedDecisionProjection(options, dependencyRoots, dependencyContext);
   const refs = createScopedReferenceResolver({ targetIndex, projectRoot, inputArtifacts });
   const files = new Map(base.read_set.map((entry) => [entry.file, entry]));
   const documents = new Map();
@@ -101,6 +119,7 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
   }
   addEvidence(base.projection.evidence);
   addEvidence(base.projection.decision_relations.evidence);
+  const consumedGraphs = [base.projection.evidence, base.projection.decision_relations.evidence];
 
   // Table shape and row identity of one canonical section, before any resolution.
   function sectionRows(entry, family, headers, location) {
@@ -114,7 +133,7 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
       const token = `${family}:${id}@${entry.fm.artifact_id}`;
       const parsedRef = parseScopedTargetRef(token);
       if (parsedRef?.kind !== family || parsedRef.rowId !== id) fail(`noncanonical uncertainty ID ${JSON.stringify(id)}`);
-      if (candidates.has(token) || rows.has(token)) fail(`duplicate uncertainty ${token}`);
+      if (rows.has(token)) fail(`duplicate uncertainty ${token}`);
       if (family === 'unknown') workText(col(row, 'Question'), 'Unknown Question');
       const status = col(row, 'Status') || null;
       // Unknowns deliberately keep their native optional status vocabulary.
@@ -166,12 +185,15 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
         for (const [token, { status, affected }] of rows) {
           const selected = authored ? refs.authoredContract(token) : refs.contract(token);
           const record = { ...scopedProjectionNode(selected), status };
+          const physical = scopeJson([token, ranges(record)]);
+          if (candidates.has(physical)) continue;
           const graph = resolveScopedContractGraph({ contracts: [token], targetIndex, projectRoot, inputArtifacts,
             authoredRefs: authored ? [token] : [] });
           for (const file of graph.read_set) read(file.file, file.sha256);
-          const evidence = { roots: graph.roots, nodes: graph.nodes.map(scopedProjectionNode), edges: graph.edges };
+          const evidence = mergeScopedGraphContexts([graph],
+            { roots: graph.roots, nodes: graph.nodes.map(scopedProjectionNode), edges: graph.edges });
           // Audit every inspected row; project only rows with a relation below.
-          candidates.set(token, { record, entry, evidence, affected: affectedOwners(affected) });
+          candidates.set(physical, { record, entry, evidence, affected: affectedOwners(affected) });
         }
       }
     }
@@ -262,10 +284,9 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
   }
   function overlaps(left, right) {
     if (left.file !== right.file) return false;
-    if (left.ref === right.ref) {
-      if (scopeJson(ranges(left)) !== scopeJson(ranges(right))) fail(`ambiguous selected evidence source: ${left.ref}`);
-      return true;
-    }
+    // Merely auditing another physical candidate is not a demand for its row.
+    // If both sources actually apply, addNode rejects their equal-ref merge.
+    if (left.ref === right.ref) return scopeJson(ranges(left)) === scopeJson(ranges(right));
     return ranges(left).some(([a, b]) => ranges(right).some(([c, d]) => a < d && c < b));
   }
   // #262: a named row outside every owner spec (global, undomained or domain
@@ -334,8 +355,9 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
   const records = new Map(); const applications = []; const review = []; const inputs = [];
   const projectedNodes = new Map(); const projectedEdges = new Map(); const roots = [];
   const pairs = (list) => scopeSet([...new Map(list.map((pair) => [scopeJson(pair), pair])).values()]);
-  for (const [token, candidate] of candidates) {
+  for (const candidate of candidates.values()) {
     const { record, entry, evidence } = candidate;
+    const token = record.ref;
     let included = false;
     for (const value of subjects.values()) {
       const inverseOf = () => evidence.nodes.filter((node) => node.ref !== token)
@@ -371,6 +393,7 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
     }
     if (!included) continue;
     records.set(token, record); roots.push(token);
+    consumedGraphs.push(evidence);
     for (const node of evidence.nodes) {
       addNode(node);
       projectedNodes.set(node.ref, node);
@@ -381,6 +404,7 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
   return { projection: { ...base.projection, uncertainty_relations: {
     records: nodeSet([...records.values()]), applications: scopeSet(applications), scope_review_needed: scopeSet(review),
     relation_inputs: scopeSet(inputs),
-    evidence: { roots: union(roots), nodes: nodeSet([...projectedNodes.values()]), edges: scopeSet([...projectedEdges.values()]) },
+    evidence: mergeScopedGraphContexts(consumedGraphs,
+      { roots: union(roots), nodes: nodeSet([...projectedNodes.values()]), edges: scopeSet([...projectedEdges.values()]) }),
   } }, read_set: scopeSet([...files.values()]), unaudited: scopeSet([...skipped.values()]) };
 }

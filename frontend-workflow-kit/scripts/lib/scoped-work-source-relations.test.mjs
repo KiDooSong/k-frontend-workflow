@@ -126,6 +126,27 @@ test('D source relations: source references inside unselected sections do not cr
   const out = f.run(); assert.deepEqual(out.sources, []); assert.deepEqual(out.pending_connections, []);
 });
 
+for (const [heading, slug] of [['API Candidates', 'api-candidates'], ['Unknowns', 'unknowns']]) {
+  test(`#284 D source closure: input ${slug} does not reach beyond its raw H2 boundary`, (t) => {
+    const f = fixture(t, { explicit: false, typed: true }), ref = `input:${INPUT}#${slug}`;
+    f.change('contract.md', (doc) => { doc.body = doc.body.replace(REF, ref); });
+    f.change('input.md', (doc) => { doc.body = `## ${heading}\n- Known first fact.\n\n` +
+      '<!-- GENERATED:START summary -->\n\n## Generated Summary\n\nOutput text.\n\n<!-- GENERATED:END summary -->\n\n' +
+      table(['ID', 'Question', 'Status'], [['U-OUTSIDE', 'artifact:OUTSIDE#rules', 'open']]); }, f.inputs);
+    f.write('outside.md', { artifact_id: 'OUTSIDE', artifact_type: 'domain-rules', domain: 'result', status: 'draft' },
+      '## Rules\nOutside the selected input anchor.');
+    const row = effect(); row[6] = ref; f.register([row]);
+    const out = f.run();
+    assert.deepEqual(out.sources[0].selection, { input_id: INPUT, items: ['01'], source_refs: [ref] });
+    assert.deepEqual(out.sources[0].issues, []);
+    assert.deepEqual(out.pending_connections, []);
+    assert.deepEqual(out.contracts.nodes.map((node) => node.ref).sort(), ['artifact:DOC#rules', ref].sort());
+    assert.deepEqual(out.contracts.edges, [{ from: 'artifact:DOC#rules', to: ref }]);
+    assert.ok(!out.read_set.some((entry) => entry.file === 'outside.md'));
+    assert.ok(!scope(f).projection.evidence.nodes.some((node) => node.ref === 'artifact:OUTSIDE#rules'));
+  });
+}
+
 test('D source relations: nested input bullets are not owned by their parent anchor', (t) => {
   const f = fixture(t, { explicit: false, typed: true });
   f.change('input.md', (doc) => doc.body = '## Extracted Facts\n- Parent fact.\n  - Nested fact.\n- Later fact.', f.inputs);

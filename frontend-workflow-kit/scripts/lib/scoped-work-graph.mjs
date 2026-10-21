@@ -12,7 +12,7 @@ import { resolveArtifact } from './reconciliation-target-index.mjs';
 import { parseReconciliationReferenceView, reconciliationReferenceLabel } from './reconciliation-markdown-ast.mjs';
 import { createScopedReferenceResolver, parseScopedTargetRef, scopedSectionsBySlug, scopedIndexedBy } from './scoped-work-refs.mjs';
 import { createScopedSourceResolver } from './scoped-work-sources.mjs';
-import { workText, workSet, ScopedWorkContractError } from './scoped-work-request.mjs';
+import { workText, workSet, workObject, ScopedWorkContractError } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
 import { scopedAuthoredSections, scopedSelectionNodes, copyScopedSelectionContext, copyScopedNodeContexts } from './scoped-work-authored.mjs';
 
@@ -288,6 +288,118 @@ export function copyScopedGraphContexts(from, to) {
   const context = graphContexts.get(from);
   if (context) graphContexts.set(to, context);
   return to;
+}
+
+// Relation passes combine independently expanded graphs. Keep every resolution
+// demand beside that union so later passes cannot reinterpret a shared ref.
+export function mergeScopedGraphContexts(graphs, to) {
+  const merged = { authoredRefs: new Set(), trackingRefs: new Set(), ordinaryRefs: new Set() };
+  for (const graph of graphs) {
+    const context = scopedGraphContexts(graph);
+    for (const name of Object.keys(merged)) for (const ref of context[name]) merged[name].add(ref);
+  }
+  graphContexts.set(to, Object.fromEntries(Object.entries(merged).map(([name, refs]) => [name, [...refs]])));
+  return to;
+}
+
+// An unapplied-row search audits alternative sources before knowing which rows
+// relate. Keep its vertices separate by actual source; an unrelated candidate
+// must not impose its resolution mode on another candidate's dependency. This
+// is discovery only. Reached roots still require the strict graph below before
+// their records can become selected evidence or enter a binding basis.
+export function resolveScopedCandidateGraph({ roots = [], targetIndex, inputArtifacts = [], projectRoot, project = null } = {}) {
+  const refs = createScopedReferenceResolver({ targetIndex, inputArtifacts, projectRoot, shareMetadata: true });
+  const sources = createScopedSourceResolver({ targetIndex, inputArtifacts, projectRoot });
+  const selectedRoots = workSet(roots, (root) => {
+    workObject(root, ['ref', 'mode'], [], 'candidate graph root');
+    const ref = canonicalRef(root.ref), mode = root.mode;
+    if (!['ordinary', 'authored', 'tracking'].includes(mode)) fail('invalid candidate graph mode');
+    if (mode !== 'ordinary' && parseScopedTargetRef(ref)?.kind !== 'unknown') fail('authored candidate requires an Unknown');
+    return { ref, mode };
+  }, 'candidate graph roots');
+  const queue = [], requests = new Map(), nodes = new Map(), pendingEdges = [];
+  const files = new Map(), documents = new Map(), serialized = new WeakMap();
+  const serial = (value) => {
+    if (value === null || typeof value !== 'object') return scopeJson(value);
+    if (!serialized.has(value)) serialized.set(value, scopeJson(value));
+    return serialized.get(value);
+  };
+  function read(file, metadata, expectedBody) {
+    if (!documents.has(file)) {
+      const canonical = canonicalRepositoryPath(projectRoot, file, { required: true, type: 'file', label: 'scoped evidence' });
+      const raw = readCurrentBytes(canonical.absolute, 'scoped evidence');
+      const parsed = splitFrontmatter(decodeGitUtf8(raw, 'scoped evidence'));
+      files.set(file, { file, sha256: hashBytes(raw) });
+      documents.set(file, { parsed, metadata: parsed.hasFrontmatter && !parsed.parseError ? scopeJson(parsed.data) : null, view: null });
+    }
+    const document = documents.get(file), { parsed } = document;
+    if (document.metadata === null || document.metadata !== serial(metadata) ||
+        (expectedBody !== undefined && parsed.body !== expectedBody)) fail('evidence differs from its indexed snapshot');
+    document.view ??= parseReconciliationReferenceView(parsed.body);
+    return { body: parsed.body, view: document.view };
+  }
+  function enqueue(ref, mode) {
+    const identity = scopeJson([mode, ref]);
+    if (!requests.has(identity)) {
+      const request = { ref, mode, key: null };
+      requests.set(identity, request); queue.push(request);
+    }
+    return requests.get(identity);
+  }
+  const rootRequests = selectedRoots.map(({ ref, mode }) => enqueue(ref, mode));
+  for (let index = 0; index < queue.length; index += 1) {
+    const request = queue[index], { ref, mode } = request;
+    const input = parseInputEvidenceRef(ref);
+    let record, document;
+    if (input) {
+      const evidence = sources.evidence(ref), { input: data, anchor } = evidence;
+      document = read(data.file, data.metadata);
+      if (files.get(data.file).sha256 !== data.input_sha256) fail('input changed after anchor resolution');
+      record = { ref, kind: 'input-evidence', input_id: data.input_id, file: data.file,
+        metadata: data.metadata, selection: anchor };
+    } else {
+      // Resolve each requested mode even if another mode already reached the
+      // same source: Tracking must still validate its canonical open status.
+      record = mode === 'tracking' ? refs.tracking(ref) : mode === 'authored' ? refs.authoredContract(ref) : refs.contract(ref);
+      document = read(record.file, record.metadata, resolveArtifact(targetIndex, record.artifact_id).body);
+    }
+    const selected = selectedNodes(document.view, record.selection, document.body);
+    const spans = selected.map((node) => {
+      const start = node.position?.start.offset, end = node.position?.end.offset;
+      if (!Number.isInteger(start) || !Number.isInteger(end) || start > end) fail('missing native source span');
+      return [start, end];
+    });
+    // A section/body may contain many native nodes and many outgoing edges.
+    // Keep its full source identity in a fixed-size digest rather than repeat
+    // every selected range in every edge and turn a linear graph quadratic.
+    const key = scopeJson([ref, record.file, hashBytes(scopeJson(spans))]);
+    request.key = key;
+    if (nodes.has(key)) { nodes.get(key).modes.add(mode); continue; }
+    const projected = project ? project(record) : record;
+    if (projected?.selection) copyScopedSelectionContext(record.selection, projected.selection);
+    nodes.set(key, { key, ref, modes: new Set([mode]), record: projected });
+    const found = dependencies(document.body, document.view, selected,
+      Boolean(input) && record.selection.bullet_index != null, input ? {} : record.metadata);
+    const ordinary = new Set([...found.ordinaryRefs, ...scopedGraphMetadataRefs(record.metadata)]);
+    for (const dependency of ordinary) pendingEdges.push({ from: key, to: enqueue(dependency, 'ordinary') });
+    for (const dependency of found.deferredTracking) pendingEdges.push({ from: key, to: enqueue(dependency, 'tracking') });
+  }
+  for (const entry of files.values()) {
+    const file = canonicalRepositoryPath(projectRoot, entry.file, { required: true, type: 'file', label: 'scoped evidence' });
+    if (hashBytes(readCurrentBytes(file.absolute, 'scoped evidence')) !== entry.sha256) fail('evidence changed during graph resolution');
+  }
+  const values = [...nodes.values()].map((node) => ({ ...node, modes: scopeSet([...node.modes]) }));
+  const normalized = scopeSet(values);
+  for (const node of normalized) {
+    const original = nodes.get(node.key).record;
+    if (original?.selection && node.record?.selection) copyScopedSelectionContext(original.selection, node.record.selection);
+  }
+  const edges = new Map();
+  for (const edge of pendingEdges) {
+    const value = { from: edge.from, to: edge.to.key };
+    edges.set(scopeJson(value), value);
+  }
+  return { roots: scopeSet(rootRequests), nodes: normalized, edges: scopeSet([...edges.values()]), read_set: scopeSet([...files.values()]) };
 }
 
 // `project` maps each node as it is recorded (the unapplied-row search keeps only the projected

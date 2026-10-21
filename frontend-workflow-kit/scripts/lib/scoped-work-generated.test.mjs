@@ -352,3 +352,84 @@ test('#282 GENERATED: authored caches follow a reparsed source tree instead of r
   const root = `artifact:${ID}#api-candidates`;
   assert.deepEqual(f.graph([root]).edges, [{ from: root, to: unknown }]);
 });
+
+test('#284 generic artifact rows preserve generated API and Unknown rows beside authored tables', (t) => {
+  const apiHeaders = ['ID', ...headers];
+  const authoredApi = ['author', 'GET', '/author', 'confirmed', 'active', '-', 'src/api/author/**'];
+  const generatedApi = ['generated', 'GET', '/generated', 'confirmed', 'active', '-', 'src/api/generated/**'];
+  const authoredUnknown = ['U-AUTHOR', 'Authored question?', 'open'];
+  const generatedUnknown = ['U-GEN', 'Generated question?', 'open'];
+  for (const eol of ['\n', '\r\n']) {
+    const body = bodyFor({ api: table(apiHeaders, [authoredApi]), apiAfter: generated(table(apiHeaders, [generatedApi])),
+      unknowns: table(unknownHeaders, [authoredUnknown]), unknownAfter: generated(table(unknownHeaders, [generatedUnknown])) }).replace(/\n/g, eol);
+    const f = fixture(t, [{ body }]);
+    const refs = createScopedReferenceResolver(f.options);
+    const view = parseReconciliationReferenceView(body);
+    for (const [section, columns, expected] of [
+      ['api-candidates', apiHeaders, authoredApi], ['api-candidates', apiHeaders, generatedApi],
+      ['unknowns', unknownHeaders, authoredUnknown], ['unknowns', unknownHeaders, generatedUnknown],
+    ]) {
+      const ref = `artifact:${ID}#${section}/${expected[0]}`;
+      const selected = refs.contract(ref);
+      assert.deepEqual(selected.selection, { type: 'row', section, key: expected[0], headers: columns, cells: expected });
+      const graph = f.graph([ref]);
+      assert.deepEqual(ids(graph), [ref]);
+      assert.deepEqual(graph.edges, []);
+      const rowText = `| ${expected.join(' | ')} |`, start = body.indexOf(rowText), end = start + rowText.length;
+      for (const selection of [selected.selection, graph.nodes[0].selection]) {
+        const spans = scopedGraphSelectionSpans(body, view, selection);
+        assert.ok(spans.length > 0 && spans.every(([a, b]) => start <= a && b <= end));
+      }
+    }
+    assert.throws(() => refs.tracking(`unknown:U-GEN@${ID}`), /SW-(GRAPH|REF)/,
+      'generic evidence selection must not turn a generated row into an authored Tracking witness');
+  }
+});
+
+for (const identicalCells of [false, true]) test(`#284 generic artifact rows reject physical raw/authored key collisions (${identicalCells ? 'same' : 'different'} cells)`, (t) => {
+  const apiHeaders = ['ID', ...headers];
+  const authoredApi = ['chosen', 'GET', '/author', 'confirmed', 'active', '-', 'src/api/author/**'];
+  const generatedApi = identicalCells ? authoredApi : ['chosen', 'GET', '/generated', 'confirmed', 'active', '-', 'src/api/generated/**'];
+  const authoredUnknown = ['U-SHARED', 'Authored question?', 'open'];
+  const generatedUnknown = identicalCells ? authoredUnknown : ['U-SHARED', 'Generated question?', 'open'];
+  for (const heading of [false, true]) {
+    const apiExample = generated(`${table(apiHeaders, [generatedApi])}${heading ? '\n\n## Generated API Summary\n\nOutput.' : ''}`);
+    const unknownExample = generated(`${table(unknownHeaders, [generatedUnknown])}${heading ? '\n\n## Generated Unknown Summary\n\nOutput.' : ''}`);
+    const body = bodyFor({ api: table(apiHeaders, [authoredApi]), apiBefore: heading ? apiExample : '', apiAfter: heading ? '' : apiExample,
+      unknowns: table(unknownHeaders, [authoredUnknown]), unknownBefore: heading ? unknownExample : '', unknownAfter: heading ? '' : unknownExample });
+    const f = fixture(t, [{ body }]);
+    const refs = createScopedReferenceResolver(f.options);
+    for (const ref of [`artifact:${ID}#api-candidates/chosen`, `artifact:${ID}#unknowns/U-SHARED`]) {
+      assert.throws(() => refs.contract(ref), /SW-REF-AMBIGUOUS/);
+      assert.throws(() => f.graph([ref]), /SW-REF-AMBIGUOUS/);
+    }
+    assert.deepEqual(refs.tracking(`unknown:U-SHARED@${ID}`).selection.cells, authoredUnknown,
+      'the local Tracking resolver continues to use the unique authored row');
+  }
+});
+
+test('#284 generic artifact rows deduplicate one physical row visible through raw and authored homes', (t) => {
+  const apiHeaders = ['ID', ...headers];
+  const authoredApi = ['chosen', 'GET', '/author', 'confirmed', 'active', '-', 'src/api/author/**'];
+  for (const sameHeading of [false, true]) {
+    const body = bodyFor({ api: table(apiHeaders, [authoredApi]),
+      apiBefore: generated(`${sameHeading ? '## API Candidates' : '## Generated API Summary'}\n\nOutput.`),
+      unknownBefore: generated(`${sameHeading ? '## Unknowns' : '## Generated Unknown Summary'}\n\nOutput.`) });
+    const f = fixture(t, [{ body }]);
+    const refs = createScopedReferenceResolver(f.options);
+    for (const [ref, expected] of [[`artifact:${ID}#api-candidates/chosen`, authoredApi], [`artifact:${ID}#unknowns/U-LATER`, unknownCells]]) {
+      assert.deepEqual(refs.contract(ref).selection.cells, expected);
+      assert.deepEqual(f.graph([ref]).nodes[0].selection.cells, expected);
+    }
+  }
+});
+
+test('#284 generic artifact row fallback keeps real duplicate section headings ambiguous', (t) => {
+  const apiHeaders = ['ID', ...headers];
+  const api = table(apiHeaders, [['chosen', 'GET', '/author', 'confirmed', 'active', '-', 'src/api/author/**']]);
+  for (const heading of ['## API Candidates', '## **API Candidates**']) {
+    const body = bodyFor({ api, apiAfter: `${heading}\n\n${table(['ID', 'Notes'], [['other', 'Other actual section']])}` });
+    const f = fixture(t, [{ body }]);
+    assert.throws(() => createScopedReferenceResolver(f.options).contract(`artifact:${ID}#api-candidates/chosen`), /SW-REF-AMBIGUOUS/);
+  }
+});
