@@ -15,8 +15,9 @@ import { readCurrentBytes, hashBytes, CurrentWorkError } from './current-work-re
 import { loadLayoutProfile } from './layout-profile.mjs';
 import { ScopedWorkContractError } from './scoped-work-request.mjs';
 import { resolveScopedBoundaryProjection } from './scoped-work-boundaries.mjs';
-import { resolveScopedUncertaintyProjection } from './scoped-work-uncertainty.mjs';
+import { resolveScopedUncertaintyProjection, scopedUnknownHomes } from './scoped-work-uncertainty.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
+import { copyScopedNodeContexts } from './scoped-work-authored.mjs';
 
 const fail = (message) => { throw new ScopedWorkContractError(`SW-APPLICABILITY: ${message}`); };
 
@@ -94,7 +95,7 @@ function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] 
     if (alias) known.add(alias);
   }
   const skipped = new Set(unaudited.map((entry) => scopeJson([entry.file, entry.section])));
-  const rows = new Map(), untyped = new Map(), readSet = [];
+  const rows = new Map(), untyped = new Map(), readSet = [], authoredRefs = new Set();
   const add = (row, section) => {
     site({ row: row.key, artifact_id: row.artifactId, section });
     if (!applied.has(row.key) && !rows.has(row.key)) rows.set(row.key, row);
@@ -114,8 +115,23 @@ function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] 
           ...looseDecisionRefs(entry.fm)])] }, slug);
       }
     }
+    // The public target index stays raw. Derive the corrected authored Unknown
+    // homes used by uncertainty instead of losing rows beyond GENERATED H2s.
+    for (const { location, authored } of scopedUnknownHomes(entry.body)) {
+      if (skipped.has(scopeJson([file, location.slug]))) continue;
+      const tables = location.tables.map(scopedRawTable).filter((table) =>
+        ['ID', 'Question'].every((header) => hasHeader(table.headers, header)));
+      for (const table of tables) for (const row of table.rows) {
+        const id = col(row, 'ID');
+        if (id.startsWith('{')) continue;
+        const token = `unknown:${id}@${artifactId}`;
+        if (parseScopedTargetRef(token)?.rowId !== id) fail(`unknown ${JSON.stringify(id)} in ${artifactId} cannot form a scoped reference`);
+        add({ key: token, id, artifactId, token, roots: [token] }, location.slug);
+        if (authored) authoredRefs.add(token);
+      }
+    }
     for (const [id, hits] of entry.rows) for (const hit of hits) {
-      if (!['unknown', 'conflict'].includes(hit.family) || skipped.has(scopeJson([file, hit.sectionSlug]))) continue;
+      if (hit.family !== 'conflict' || skipped.has(scopeJson([file, hit.sectionSlug]))) continue;
       const token = `${hit.family}:${id}@${artifactId}`;
       // The uncertainty pass read every such row outside an unaudited section and failed on a malformed one.
       if (parseScopedTargetRef(token)?.rowId !== id) fail(`${hit.family} ${JSON.stringify(id)} in ${artifactId} cannot form a scoped reference`);
@@ -124,7 +140,8 @@ function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] 
   }
   for (const node of projected) for (const row of scopedCoveredRows(node, sites)) known.add(row);
   const roots = [...new Set([...rows.values()].flatMap((row) => row.roots))];
-  const graph = roots.length ? resolveScopedContractGraph({ contracts: roots, targetIndex, inputArtifacts, projectRoot, project: scopedProjectionNode })
+  const graph = roots.length ? resolveScopedContractGraph({ contracts: roots, targetIndex, inputArtifacts, projectRoot,
+    project: scopedProjectionNode, authoredRefs: roots.filter((ref) => authoredRefs.has(ref)) })
     : { nodes: [], edges: [], read_set: [] };
   readSet.push(...graph.read_set);
   const nodes = new Map(graph.nodes.map((node) => [node.ref, node])), forward = new Map(), backward = new Map();
@@ -264,8 +281,9 @@ function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] 
       links.push({ referrer: ref, decision });
     }
   }
-  return { unapplied: { records: scopeSet(records), document_refs: scopeSet(links), evidence: {
-    nodes: scopeSet(graph.nodes.filter((node) => reached.has(node.ref)).map(scopedProjectionNode)),
+  const evidenceNodes = graph.nodes.filter((node) => reached.has(node.ref)).map(scopedProjectionNode);
+  return { unapplied: { records: copyScopedNodeContexts(records, scopeSet(records)), document_refs: scopeSet(links), evidence: {
+    nodes: copyScopedNodeContexts(evidenceNodes, scopeSet(evidenceNodes)),
     edges: scopeSet(graph.edges.filter((edge) => reached.has(edge.from) && reached.has(edge.to))) } }, read_set: readSet };
 }
 

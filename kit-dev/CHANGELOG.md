@@ -4,6 +4,20 @@
 
 ## Unreleased
 
+### fix(scoped) — GENERATED 구조와 작성 API/Unknown 선택 기준 통일 (#282 후속)
+
+- GENERATED 안내 표가 정상 API 표의 유일성 검사를 깨뜨리거나, GENERATED H2가 작성
+  섹션을 끊어 Unknown edge를 누락하던 문제를 공통 authored view로 수정했다.
+- API unit·행 dependency·본문/섹션 그래프·source 범위·uncertainty가 같은 원본 AST 행을
+  선택한다. 내부 선택 문맥은 그래프 재확장과 projection까지 유지하며 public selection
+  필드, 원본 본문·파일 해시·snapshot 검사와 문서별 artifact ID 분리는 보존한다.
+- GENERATED 내부의 ordinary fully qualified 참조는 유지한다. local Tracking의 작성
+  근거와 구분하고, 같은 참조가 서로 다른 원본 행을 선택하면 방문 순서와 무관하게 거부한다.
+- 회귀에 원문 3사례, LF/CRLF·동일 제목·Unknown 경계, 정확한 edge/원본 범위와 교차 화면
+  effect를 추가했다. 실제 packed runtime에서 `readiness --work`·`binding-status --owner`를
+  실행하고 payload manifest의 파일별 해시도 확인한다. 기존 open Unknown·deferred·stale
+  binding 제한은 유지하며 consumer 업그레이드 승인은 별도 실 저장소 재검증을 따른다.
+
 ### fix(scoped) — API deferred Tracking을 섹션·문서 그래프에서도 해소 (#282)
 
 - canonical API Candidates v2의 deferred `Tracking: unknown:U-...`가 있는 섹션이나

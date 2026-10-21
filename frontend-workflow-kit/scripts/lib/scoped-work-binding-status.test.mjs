@@ -8,6 +8,9 @@ import { KIT_ROOT } from './util.mjs';
 import { REQUIRED_ITEM_COLS } from './reconciliation-items.mjs';
 import { REQUIRED_REGISTER_COLS } from './reconciliation-register.mjs';
 
+// A packed run borrows only fixture documents from the source kit. All imports,
+// configuration templates and spawned CLI executables still come from KIT_ROOT.
+const FIXTURE_ROOT = process.env.SCOPED_WORK_TEST_FIXTURE_ROOT || KIT_ROOT;
 // #275: the issue's coupon-feature repro through the public CLIs. COUPON-001 alone is adopted, with
 // D-003 and U-001 bound out of its one unit. workflow:binding-status reports each binding's state and
 // the digest to record; readiness --work shows whether the row blocks again.
@@ -24,11 +27,11 @@ const CONFIG = ['--docs', 'docs/frontend-workflow', '--src', 'src', '--policy', 
 const binding = (key, id, digest, overrides = {}) => ({ [key]: id, owner: OWNER, known_units: ['list-behavior'], blocks: [],
   basis_digest: digest, approval_ref: APPROVAL, ...overrides });
 
-function project(t) {
+function project(t, target = ENTRY) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'binding-status-')));
   const outside = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'binding-status-request-')));
   t.after(() => { fs.rmSync(root, { recursive: true, force: true }); fs.rmSync(outside, { recursive: true, force: true }); });
-  for (const dir of ['docs', 'src']) fs.cpSync(path.join(KIT_ROOT, 'examples/coupon-feature', dir), path.join(root, dir), { recursive: true });
+  for (const dir of ['docs', 'src']) fs.cpSync(path.join(FIXTURE_ROOT, 'examples/coupon-feature', dir), path.join(root, dir), { recursive: true });
   const put = (name, text) => { fs.mkdirSync(path.dirname(path.join(root, name)), { recursive: true }); fs.writeFileSync(path.join(root, name), text); };
   const read = (name) => fs.readFileSync(path.join(root, name), 'utf8');
   const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
@@ -53,7 +56,7 @@ function project(t) {
   commit('adopt COUPON-001 with two bindings');
   const work = path.join(outside, 'request.json');
   fs.writeFileSync(work, JSON.stringify({ version: 1, origin_inputs: [], requests: [
-    { owner: OWNER, authority: 'scoped', unit: 'list-behavior', targets: [{ path: ENTRY, change: 'M' }] }] }));
+    { owner: OWNER, authority: 'scoped', unit: 'list-behavior', targets: [{ path: target, change: 'M' }] }] }));
   const node = (script, args) => spawnSync(process.execPath, [path.join(KIT_ROOT, 'scripts', script), ...args],
     { cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout: 120000 });
   const status = (...args) => node('binding-status.mjs', ['--root', root, ...CONFIG, ...args]);
@@ -70,7 +73,16 @@ function project(t) {
 
 // Synthetic consumer regression: one selected Item has effects on both the adopted screen's
 // contract and another screen's deferred API table. No consumer repository or approval is edited.
-test('#282 CLI: deferred Tracking in another Item effect returns structured denials and preserves stale bindings', (t) => {
+const generated = (body) => `<!-- GENERATED:START summary -->\n\n${body}\n\n<!-- GENERATED:END summary -->`;
+const generatedCases = [
+  { name: 'control' },
+  { name: 'generated API legend', apiAfter: generated('| Method | Meaning |\n|---|---|\n| GET | Read only |') },
+  { name: 'generated API heading', apiBefore: generated('## Generated Summary\n\nOutput text.') },
+  { name: 'generated Unknown heading', unknownBefore: generated('## Generated Summary\n\nOutput text.') },
+  { name: 'generated duplicate headings with CRLF', apiBefore: generated('## API Candidates\n\nOutput text.'),
+    unknownBefore: generated('## Unknowns\n\nOutput text.'), crlf: true },
+];
+for (const variant of generatedCases) test(`#282 CLI: ${variant.name} preserves cross-screen Tracking denials and stale bindings`, (t) => {
   const p = project(t), baseline = p.rows();
   const input = 'IN-20261019-meeting-001', ref = `input:${input}#extracted-facts/01`;
   const target = 'artifact:COUPON-002-screen-spec#api-candidates', unknown = 'unknown:U-LATER@COUPON-002-screen-spec';
@@ -86,9 +98,10 @@ test('#282 CLI: deferred Tracking in another Item effect returns structured deni
   const units = structuredClone(UNITS);
   units.units[0].sources = [{ input_id: input, items: ['01'], source_refs: [ref] }];
   p.bind(decisions, uncertainties, units);
-  p.put(DETAIL, `${p.read(DETAIL)}\n## API Candidates\n${table(['Method', 'Path', 'Confidence', 'Gate', 'Tracking', 'Slice Paths'], [
+  const later = `${p.read(DETAIL)}\n## API Candidates\n\n${variant.apiBefore || ''}\n\n${table(['Method', 'Path', 'Confidence', 'Gate', 'Tracking', 'Slice Paths'], [
     ['GET', '/coupons/later', 'candidate', 'deferred', 'unknown:U-LATER', 'src/api/coupons/later/**'],
-  ])}\n\n## Unknowns\n${table(['ID', 'Question', 'Status'], [['U-LATER', 'Later coupon API?', 'open']])}\n`);
+  ])}\n\n${variant.apiAfter || ''}\n\n## Unknowns\n\n${variant.unknownBefore || ''}\n\n${table(['ID', 'Question', 'Status'], [['U-LATER', 'Later coupon API?', 'open']])}\n`;
+  p.put(DETAIL, variant.crlf ? later.replace(/\r?\n/g, '\r\n') : later);
   p.put(inputFile, md({ input_id: input, input_type: 'meeting', source_type: 'meeting', source_ref: 'meeting:tracking-regression',
     captured_at: '2026-10-19T00:00:00Z', captured_by: 'test', status: 'captured', affected_domains: ['coupons'],
     affected_screens: ['COUPON-001', 'COUPON-002'] }, '## Extracted Facts\n- Coordinate list behavior and the later API.'));
@@ -102,6 +115,7 @@ test('#282 CLI: deferred Tracking in another Item effect returns structured deni
 
   const report = p.json(p.status('--owner', OWNER, '--json'));
   const rows = Object.fromEntries(report.owners[0].rows.map((row) => [row.ref, row]));
+  assert.ok(rows[unknown], 'generated content must not silently omit the cross-screen Tracking Unknown');
   assert.deepEqual([rows[unknown].state, rows[unknown].status, rows[unknown].home, rows[unknown].blocking_units],
     ['missing', 'open', DETAIL, ['list-behavior']]);
   assert.deepEqual([rows[U001].state, rows[U001].stale_reason, rows[U001].recorded.basis_digest],
@@ -115,6 +129,38 @@ test('#282 CLI: deferred Tracking in another Item effect returns structured deni
   assert.deepEqual(p.json(p.status('--owner', OWNER, '--json')), report);
   assert.equal(p.git('status', '--porcelain'), '');
   assert.deepEqual([LIST, DETAIL, inputFile, registerFile].map((file) => p.read(file)), files);
+});
+
+test('#282 CLI: selected deferred API stays blocked with generated API and Unknown headings', (t) => {
+  const target = 'src/api/coupons/later/client.ts', p = project(t, target);
+  const unknown = 'unknown:U-LATER@COUPON-001-screen-spec';
+  const units = structuredClone(UNITS);
+  units.units[0].api_candidates = [{ method: 'GET', path: '/coupons/later' }];
+  p.bind([], [], units);
+  const api = `## API Candidates\n\n${generated('## Generated Summary\n\nOutput text.')}\n\n` +
+    '| Method | Path | Confidence | Gate | Tracking | Slice Paths |\n|---|---|---|---|---|---|\n' +
+    '| GET | /coupons/later | candidate | deferred | unknown:U-LATER | src/api/coupons/later/** |\n\n' +
+    `${generated('| Method | Meaning |\n|---|---|\n| GET | Read only |')}\n`;
+  const body = p.read(LIST).replace(/\n## API Candidates\n[\s\S]*?(?=\n## )/, `\n${api}`)
+    .replace(/\n## Unknowns\n[\s\S]*?(?=\n## )/, '\n## Unknowns\n\n' +
+      `${generated('## Generated Unknown Summary\n\nOutput text.')}\n\n` +
+      '| ID | Question | Status |\n|---|---|---|\n| U-LATER | Later API contract? | open |\n');
+  p.put(LIST, body); p.put(target, 'export const later = null;\n');
+  p.commit('select a deferred API behind generated headings');
+  const report = p.json(p.status('--owner', OWNER, '--json'));
+  const row = report.owners[0].rows.find((entry) => entry.ref === unknown);
+  assert.ok(row, 'the selected API Tracking Unknown is included in the binding report');
+  assert.deepEqual([row.state, row.status, row.blocking_units], ['missing', 'open', ['list-behavior']]);
+  const ready = p.readiness();
+  assert.deepEqual([ready.authority, ready.ready], ['scoped', false]);
+  for (const code of ['api-not-confirmed-active', 'deferred-api-claim']) {
+    assert.ok(ready.denials.some((entry) => entry.code === code), JSON.stringify(ready.denials));
+  }
+  assert.ok(ready.denials.some((entry) => entry.code === 'unit-uncertainty-unresolved' &&
+    entry.application.uncertainty === unknown), 'the actual selected open Unknown remains blocking');
+  assert.equal(ready.requests[0].path_authorizations[0].allowed, false);
+  assert.equal(p.git('status', '--porcelain'), '');
+  assert.equal(p.read(LIST), body);
 });
 
 test('#275 binding-status: B0-B5 change only the bindings whose row or unit contract changed', (t) => {

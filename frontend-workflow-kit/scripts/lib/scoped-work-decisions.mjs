@@ -10,13 +10,14 @@ import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { loadOpenDecisionRegister, resolveDecisionRefs, openDecisionRowIsMalformed,
   REQUIRED_OPEN_DECISION_COLUMNS } from './open-decisions.mjs';
 import { parseTargetRef } from './reconciliation-items.mjs';
-import { parseReconciliationMarkdown } from './reconciliation-markdown-ast.mjs';
+import { parseReconciliationMarkdown, parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
 import { createScopedReferenceResolver, scopedRawTable, parseScopedTargetRef, isScopedRowId } from './scoped-work-refs.mjs';
-import { resolveScopedContractGraph } from './scoped-work-graph.mjs';
+import { resolveScopedContractGraph, scopedGraphContexts, scopedGraphSelectionSpans } from './scoped-work-graph.mjs';
 import { resolveScopedUnitProjection, scopedProjectionMetadata, scopedProjectionNode } from './scoped-work-projection.mjs';
 import { parseDecisionWorkScopes } from './scoped-work-declarations.mjs';
 import { ScopedWorkContractError, workText, workSet, workPath } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
+import { copyScopedNodeContexts } from './scoped-work-authored.mjs';
 
 const fail = (message) => { throw new ScopedWorkContractError(`SW-DECISIONS: ${message}`); };
 const same = (a, b) => scopeJson(a) === scopeJson(b);
@@ -32,9 +33,10 @@ const decisionId = (id, label, artifactId) => {
 
 // Additional roots are additive, validated Conflict/Unknown evidence only. They
 // cannot replace file-backed unit selection or supply an approval/permission.
-export function resolveScopedDecisionProjection(options = {}, dependencyRoots = []) {
+export function resolveScopedDecisionProjection(options = {}, dependencyRoots = [], dependencyContext = {}) {
   const { owner, projectRoot, docsDir, targetIndex, inputArtifacts = [] } = options;
   const base = resolveScopedUnitProjection(options);
+  const baseContext = scopedGraphContexts(base.projection.evidence);
   if (typeof docsDir !== 'string' || !path.isAbsolute(docsDir) || path.resolve(docsDir) !== docsDir) {
     fail('canonical absolute docsDir required');
   }
@@ -56,6 +58,8 @@ export function resolveScopedDecisionProjection(options = {}, dependencyRoots = 
   const nativeRoutes = new Map();
   const homes = new Map();
   const entries = [...targetIndex.artifacts.values()];
+  const selectedEvidence = new Map(base.projection.evidence.nodes.map((node) => [node.ref, node]));
+  const views = new Map();
 
   function audit(relative, expectedHash) {
     const file = canonicalRepositoryPath(projectRoot, relative, { required: true, type: 'file', label: 'scoped decision' });
@@ -86,6 +90,20 @@ export function resolveScopedDecisionProjection(options = {}, dependencyRoots = 
   function remember(entry) {
     referrers.set(entry.fm.artifact_id, { artifact_id: entry.fm.artifact_id, file: entry.relative,
       metadata: scopedProjectionMetadata(entry.fm) });
+  }
+  function addGraphNode(record) {
+    const node = scopedProjectionNode(record);
+    const previous = graphNodes.get(node.ref) || selectedEvidence.get(node.ref);
+    if (previous) {
+      if (!same(previous, node)) fail(`inconsistent selected evidence: ${node.ref}`);
+      if (node.artifact_id) {
+        const entry = document(node.artifact_id);
+        if (!views.has(node.artifact_id)) views.set(node.artifact_id, parseReconciliationReferenceView(entry.body));
+        const spans = (value) => scopedGraphSelectionSpans(entry.body, views.get(node.artifact_id), value.selection);
+        if (!same(spans(previous), spans(node))) fail(`ambiguous selected evidence source: ${node.ref}`);
+      }
+    }
+    graphNodes.set(node.ref, node);
   }
   function ownerDocument(id, includeMetadata = true) {
     const parts = ownerParts(id);
@@ -243,16 +261,22 @@ export function resolveScopedDecisionProjection(options = {}, dependencyRoots = 
     if (!parsed || !['conflict', 'unknown'].includes(parsed.kind)) fail('typed uncertainty root required');
     enqueue(root.ref, { owner: root.owner, unit: root.unit }, root.ref);
   }
+  const authoredRefs = union([...baseContext.authoredRefs, ...workSet(dependencyContext.authoredRefs || [], (token) => {
+    const parsed = parseScopedTargetRef(token);
+    if (parsed?.kind !== 'unknown' || !derivedRoots.some((root) => root.ref === token)) fail('authored context requires a derived Unknown root');
+    return parsed.raw;
+  }, 'authored uncertainty roots')]);
   for (let index = 0; index < queued.length; index += 1) {
     const { token, subject, uncertainty } = queued[index];
     const key = scopeJson([subject.owner, subject.unit, token, uncertainty]);
     if (visited.has(key)) continue;
-    const graph = resolveScopedContractGraph({ contracts: [token], targetIndex, inputArtifacts, projectRoot });
+    const graph = resolveScopedContractGraph({ contracts: [token], targetIndex, inputArtifacts, projectRoot,
+      ...baseContext, authoredRefs });
     for (const file of graph.read_set) audit(file.file, file.sha256);
     for (const edge of graph.edges) graphEdges.set(scopeJson(edge), edge);
     for (const node of graph.nodes) {
       visited.add(scopeJson([subject.owner, subject.unit, node.ref, uncertainty]));
-      graphNodes.set(node.ref, scopedProjectionNode(node));
+      addGraphNode(node);
       if (node.kind === 'decision') apply(node.ref, subject, node.ref,
         uncertainty === null ? 'selected-evidence' : 'uncertainty-evidence', false, uncertainty);
       if (!node.artifact_id) continue;
@@ -263,10 +287,11 @@ export function resolveScopedDecisionProjection(options = {}, dependencyRoots = 
     }
   }
   for (const file of [...files.values()]) audit(file.file, file.sha256);
+  const records = [...decisions.values()], evidenceNodes = [...graphNodes.values()];
   return { projection: { ...base.projection, decision_relations: {
     ...(derivedRoots.length ? { dependency_roots: derivedRoots } : {}),
-    records: scopeSet([...decisions.values()]), applications: scopeSet([...applications.values()]),
+    records: copyScopedNodeContexts(records, scopeSet(records)), applications: scopeSet([...applications.values()]),
     referrers: scopeSet([...referrers.values()]), memberships: scopeSet([...memberships.values()]),
-    evidence: { roots: union([...graphRoots]), nodes: scopeSet([...graphNodes.values()]), edges: scopeSet([...graphEdges.values()]) },
+    evidence: { roots: union([...graphRoots]), nodes: copyScopedNodeContexts(evidenceNodes, scopeSet(evidenceNodes)), edges: scopeSet([...graphEdges.values()]) },
   } }, read_set: scopeSet([...files.values()]) };
 }

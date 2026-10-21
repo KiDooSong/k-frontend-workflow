@@ -4,7 +4,7 @@
 import path from 'node:path';
 import { splitFrontmatter } from './util.mjs';
 import { analyzeApiCandidateContract, loadScreenSpec, parseTables, col, parseApiCandidateTracking } from './spec.mjs';
-import { parseReconciliationMarkdown } from './reconciliation-markdown-ast.mjs';
+import { scopedAuthoredSections } from './scoped-work-authored.mjs';
 import { canonicalJson, ownerParts, readCurrentBytes } from './current-work-request.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { ScopedWorkContractError, workText, workUnitId } from './scoped-work-request.mjs';
@@ -51,8 +51,7 @@ export function createScopedApiResolver({ targetIndex, projectRoot, layout } = {
     // require an unrelated API table; the later profile checks its actual needs.
     if (!selectors.length) return result;
 
-    const sections = parseReconciliationMarkdown(current.body).occurrences
-      .filter((entry) => entry.slug === 'api-candidates');
+    const sections = scopedAuthoredSections(current.body, 'api candidates');
     if (sections.length !== 1) fail('SW-API-SECTION', 'one canonical API Candidates section required');
     const options = { layout, domain: fm.domain };
     const analyzeTable = (table) => analyzeApiCandidateContract({ ...spec,
@@ -87,7 +86,7 @@ export function createScopedApiResolver({ targetIndex, projectRoot, layout } = {
       if (candidate.gate === 'deferred' && parsedTracking?.kind === 'unknown') {
         // The existing analyzer checks local Unknown status. Also require its
         // exact canonical raw row so duplicate/rendered IDs cannot supply it.
-        tracking = refs.contract(`unknown:${parsedTracking.id}@${artifactId}`);
+        tracking = refs.tracking(`unknown:${parsedTracking.id}@${artifactId}`);
         const row = Object.fromEntries(tracking.selection.headers.map((header, i) => [header, tracking.selection.cells[i]]));
         if (String(col(row, 'Status') || '').toLowerCase() !== 'open') fail('SW-API-TRACKING', 'canonical open Unknown required');
       }

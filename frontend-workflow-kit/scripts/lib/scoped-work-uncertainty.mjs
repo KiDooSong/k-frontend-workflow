@@ -17,12 +17,26 @@ import { scopedProjectionNode } from './scoped-work-projection.mjs';
 import { resolveScopedDecisionProjection } from './scoped-work-decisions.mjs';
 import { ScopedWorkContractError, workText } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
+import { scopedAuthoredSections, copyScopedNodeContexts } from './scoped-work-authored.mjs';
 
 const fail = (message) => { throw new ScopedWorkContractError(`SW-UNCERTAINTY: ${message}`); };
 const signatures = { unknown: ['ID', 'Question'], conflict: ['ID', 'Status'] };
 const typedSpelling = /(?:artifact|decision|unknown|conflict|gap|investigation|verification|input):/;
 const union = (values) => scopeSet([...new Set(values)]);
 const key = (owner, unit) => scopeJson([owner, unit]);
+
+// An authored Unknown table can sit after a GENERATED heading in the original
+// tree. Use the same homes as API Tracking, without changing ordinary raw-only
+// Unknown evidence (including generated-only or formatted-heading homes).
+export function scopedUnknownHomes(body, view = parseReconciliationReferenceView(body)) {
+  const authored = scopedAuthoredSections(body, 'unknowns', view);
+  const hasAuthoredTable = authored.some((section) => section.tables.some((table) =>
+    signatures.unknown.every((header) => hasHeader(table.headers, header))));
+  return (hasAuthoredTable ? authored : view.sections.filter((section) => section.slug === 'unknowns'))
+    .map((location) => ({ location, authored: hasAuthoredTable }));
+}
+
+const nodeSet = (values) => copyScopedNodeContexts(values, scopeSet(values));
 
 // #262: a resolved row no longer blocks. A Conflict keeps its open|resolved
 // vocabulary; an Unknown keeps its own optional one, so only `resolved` clears it
@@ -35,7 +49,14 @@ export function scopedUncertaintyResolved(record) {
 
 export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots = []) {
   const { targetIndex, projectRoot, inputArtifacts = [] } = options;
-  const base = resolveScopedDecisionProjection(options, dependencyRoots);
+  // The fixpoint re-expands derived rows in the decision layer. Carry their
+  // authored provenance beside the unchanged public root declarations.
+  const authoredRefs = union((Array.isArray(dependencyRoots) ? dependencyRoots : []).flatMap((root) => {
+    const ref = parseScopedTargetRef(root?.ref);
+    const entry = ref?.kind === 'unknown' ? targetIndex.artifacts.get(ref.ownerArtifactId) : null;
+    return entry && scopedUnknownHomes(entry.body).some((home) => home.authored) ? [ref.raw] : [];
+  }));
+  const base = resolveScopedDecisionProjection(options, dependencyRoots, { authoredRefs });
   const refs = createScopedReferenceResolver({ targetIndex, projectRoot, inputArtifacts });
   const files = new Map(base.read_set.map((entry) => [entry.file, entry]));
   const documents = new Map();
@@ -43,7 +64,7 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
   const edges = new Map();
   const candidates = new Map();
   const subjects = new Map();
-  const spans = new Map();
+  const spans = new WeakMap();
 
   function read(relative, expectedHash) {
     const file = canonicalRepositoryPath(projectRoot, relative, { required: true, type: 'file', label: 'scoped uncertainty' });
@@ -65,7 +86,13 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
     return documents.get(relative);
   }
   function addNode(node) {
-    if (nodes.has(node.ref) && scopeJson(nodes.get(node.ref)) !== scopeJson(node)) fail('inconsistent selected evidence');
+    if (nodes.has(node.ref)) {
+      const previous = nodes.get(node.ref);
+      if (scopeJson(previous) !== scopeJson(node)) fail('inconsistent selected evidence');
+      const doc = document(node.file);
+      const spansOf = (record) => scopedGraphSelectionSpans(doc.body, doc.view, record.selection, record.kind === 'input-evidence');
+      if (scopeJson(spansOf(previous)) !== scopeJson(spansOf(node))) fail('ambiguous selected evidence source');
+    }
     nodes.set(node.ref, node);
   }
   function addEvidence(evidence) {
@@ -120,12 +147,15 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
   const unaudited = [];
   for (const entry of targetIndex.artifacts.values()) {
     const relative = path.relative(projectRoot, entry.file).split(path.sep).join('/');
-    const parsed = parseReconciliationMarkdown(document(relative).body);
+    const doc = document(relative);
+    const parsed = parseReconciliationMarkdown(doc.body);
     for (const [family, headers] of Object.entries(signatures)) {
-      const locations = parsed.occurrences.filter((section) => section.slug === `${family}s` ||
+      const locations = family === 'unknown' ? scopedUnknownHomes(doc.body, doc.view)
+        : parsed.occurrences.filter((section) => section.slug === `${family}s` ||
         (family === 'conflict' && section.slug === '' && entry.fm.artifact_type === 'conflicts' &&
-          section.tables.some((table) => headers.every((header) => hasHeader(table.headers, header)))));
-      for (const location of locations) {
+          section.tables.some((table) => headers.every((header) => hasHeader(table.headers, header)))))
+          .map((location) => ({ location, authored: false }));
+      for (const { location, authored } of locations) {
         let rows;
         try { rows = sectionRows(entry, family, headers, location); } catch (error) {
           if (!(error instanceof ScopedWorkContractError)) throw error;
@@ -134,8 +164,10 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
           continue;
         }
         for (const [token, { status, affected }] of rows) {
-          const record = { ...scopedProjectionNode(refs.contract(token)), status };
-          const graph = resolveScopedContractGraph({ contracts: [token], targetIndex, projectRoot, inputArtifacts });
+          const selected = authored ? refs.authoredContract(token) : refs.contract(token);
+          const record = { ...scopedProjectionNode(selected), status };
+          const graph = resolveScopedContractGraph({ contracts: [token], targetIndex, projectRoot, inputArtifacts,
+            authoredRefs: authored ? [token] : [] });
           for (const file of graph.read_set) read(file.file, file.sha256);
           const evidence = { roots: graph.roots, nodes: graph.nodes.map(scopedProjectionNode), edges: graph.edges };
           // Audit every inspected row; project only rows with a relation below.
@@ -222,15 +254,18 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
     value.derived = derived;
   }
   function ranges(node) {
-    if (!spans.has(node.ref)) {
+    if (!spans.has(node.selection)) {
       const doc = document(node.file);
-      spans.set(node.ref, scopedGraphSelectionSpans(doc.body, doc.view, node.selection, node.kind === 'input-evidence'));
+      spans.set(node.selection, scopedGraphSelectionSpans(doc.body, doc.view, node.selection, node.kind === 'input-evidence'));
     }
-    return spans.get(node.ref);
+    return spans.get(node.selection);
   }
   function overlaps(left, right) {
     if (left.file !== right.file) return false;
-    if (left.ref === right.ref) return true;
+    if (left.ref === right.ref) {
+      if (scopeJson(ranges(left)) !== scopeJson(ranges(right))) fail(`ambiguous selected evidence source: ${left.ref}`);
+      return true;
+    }
     return ranges(left).some(([a, b]) => ranges(right).some(([c, d]) => a < d && c < b));
   }
   // #262: a named row outside every owner spec (global, undomained or domain
@@ -344,8 +379,8 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
   }
   for (const file of [...files.values()]) read(file.file, file.sha256);
   return { projection: { ...base.projection, uncertainty_relations: {
-    records: scopeSet([...records.values()]), applications: scopeSet(applications), scope_review_needed: scopeSet(review),
+    records: nodeSet([...records.values()]), applications: scopeSet(applications), scope_review_needed: scopeSet(review),
     relation_inputs: scopeSet(inputs),
-    evidence: { roots: union(roots), nodes: scopeSet([...projectedNodes.values()]), edges: scopeSet([...projectedEdges.values()]) },
+    evidence: { roots: union(roots), nodes: nodeSet([...projectedNodes.values()]), edges: scopeSet([...projectedEdges.values()]) },
   } }, read_set: scopeSet([...files.values()]), unaudited: scopeSet([...skipped.values()]) };
 }

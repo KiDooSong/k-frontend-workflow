@@ -77,7 +77,12 @@ export function inspectScopedInputCoverage({ origin_inputs, coverage_reports = [
     return scopedGraphSelectionSpans(doc.body, doc.view, node.selection, node.kind === 'input-evidence');
   }
   function overlaps(left, right) {
-    return left.file === right.file && (left.ref === right.ref || ranges(left).some(([a, b]) => ranges(right).some(([c, d]) => a < d && c < b)));
+    if (left.file !== right.file) return false;
+    if (left.ref === right.ref) {
+      if (!same(ranges(left), ranges(right))) fail(`ambiguous source selection: ${left.ref}`);
+      return true;
+    }
+    return ranges(left).some(([a, b]) => ranges(right).some(([c, d]) => a < d && c < b));
   }
   function contained(origin, selected) {
     if (origin.file !== selected.file) return false;
