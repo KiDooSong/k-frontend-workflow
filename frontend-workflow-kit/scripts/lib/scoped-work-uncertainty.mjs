@@ -18,7 +18,7 @@ import { scopedProjectionNode } from './scoped-work-projection.mjs';
 import { resolveScopedDecisionProjection } from './scoped-work-decisions.mjs';
 import { ScopedWorkContractError, workText } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
-import { scopedAuthoredSections, scopedSelectionNodes, copyScopedNodeContexts } from './scoped-work-authored.mjs';
+import { scopedAuthoredSections, scopedSelectionNodes, rememberScopedSelection, copyScopedNodeContexts } from './scoped-work-authored.mjs';
 
 const fail = (message) => { throw new ScopedWorkContractError(`SW-UNCERTAINTY: ${message}`); };
 const signatures = { unknown: ['ID', 'Question'], conflict: ['ID', 'Status'] };
@@ -206,14 +206,58 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
     }
   }
 
+  // Index physical Unknown rows once per document for section/body selections.
+  // Raw homes retain GENERATED rows; authored homes also retain real rows after
+  // GENERATED H2s. Decode a table only when a selected range covers one of its
+  // rows, so an unselected display table cannot introduce a new format error.
+  const unknownTables = new Map();
+  function coveredUnknownRows(node) {
+    const doc = document(node.file);
+    if (!unknownTables.has(node.file)) {
+      const tables = new Map();
+      const homes = [...doc.view.sections.filter((home) => home.slug === 'unknowns'),
+        ...scopedAuthoredSections(doc.body, 'unknowns', doc.view)];
+      for (const home of homes) home.tableNodes.forEach((native, index) => {
+        const table = home.tables[index];
+        if (tables.has(native) || !signatures.unknown.every((header) => hasHeader(table.headers, header))) return;
+        tables.set(native, { table, rows: native.children.slice(1).map((row) => ({
+          kind: 'artifact', artifact_id: node.artifact_id, file: node.file,
+          selection: rememberScopedSelection({ type: 'row', section: 'unknowns' }, doc.body, [row]),
+        })) });
+      });
+      unknownTables.set(node.file, [...tables.values()]);
+    }
+    // Native leaf spans are disjoint. Search them separately, preserving holes
+    // in the selection instead of treating its outer bounds as ownership.
+    const selected = [...ranges(node)].sort(([a, b], [c, d]) => a - c || b - d);
+    const contains = ([start, end]) => {
+      let low = 0, high = selected.length;
+      while (low < high) {
+        const middle = Math.floor((low + high) / 2);
+        if (selected[middle][0] <= start) low = middle + 1;
+        else high = middle;
+      }
+      return low > 0 && end <= selected[low - 1][1];
+    };
+    const covered = [];
+    for (const table of unknownTables.get(node.file)) table.rows.forEach((source, index) => {
+      const spans = ranges(source);
+      if (!spans.length || !spans.every(contains)) return;
+      table.raw ??= scopedRawTable(table.table);
+      if (!signatures.unknown.every((header) => hasHeader(table.raw.headers, header))) return;
+      if (col(table.raw.rows[index], 'ID').startsWith('{')) return;
+      const cells = table.raw.cells[index];
+      Object.assign(source.selection, { key: cells[0], headers: table.raw.headers, cells });
+      covered.push(source);
+    });
+    return covered;
+  }
   // Canonical-home enumeration intentionally ignores GENERATED display tables
-  // beside an authored table. An explicitly selected row is actual evidence,
-  // however: retain its canonical alias and prove that re-resolution selects
-  // exactly the same original row. Do not promote unselected display legends.
-  for (const node of nodes.values()) {
+  // beside an authored table. Exact rows and rows fully covered by a selected
+  // section/body are evidence: re-resolve each alias to the same original row.
+  // Keep the exact-row path independent of the document-wide row index.
+  function addSelectedUnknown(node) {
     const selection = node.selection;
-    if (!['artifact', 'unknown'].includes(node.kind) || selection?.type !== 'row' || selection.section !== 'unknowns' ||
-        !signatures.unknown.every((header) => hasHeader(selection.headers, header))) continue;
     const row = Object.fromEntries(selection.headers.map((header, index) => [header, selection.cells[index]]));
     const token = node.kind === 'unknown' ? node.ref : scopedRowAlias(node);
     if (!token) fail(`noncanonical uncertainty ID ${JSON.stringify(col(row, 'ID'))}`);
@@ -221,6 +265,14 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
     const doc = document(node.file);
     const authored = scopedUnknownAuthored(doc.body, selection, doc.view);
     addCandidate(targetIndex.artifacts.get(node.artifact_id), token, col(row, 'Status') || null, undefined, authored, node);
+  }
+  for (const node of nodes.values()) {
+    const selection = node.selection;
+    if (['artifact', 'unknown'].includes(node.kind) && selection?.type === 'row' && selection.section === 'unknowns' &&
+        signatures.unknown.every((header) => hasHeader(selection.headers, header))) addSelectedUnknown(node);
+    else if (node.artifact_id && ['section', 'body', 'body-token'].includes(selection?.type)) {
+      for (const source of coveredUnknownRows(node)) addSelectedUnknown(source);
+    }
   }
 
   function subject(owner, unit) {

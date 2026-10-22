@@ -98,10 +98,11 @@ test('#284 uncertainty: a selected raw GENERATED Unknown remains an open blocker
   assert.deepEqual(profile.denials.filter((entry) => entry.code === 'unit-uncertainty-unresolved').map((entry) => entry.application.uncertainty), [ref]);
 });
 
-test('#284 uncertainty: an artifact-selected GENERATED Unknown stays blocking in mixed tables without a GENERATED H2', (t) => {
+const unknownSelections = [['row', '#unknowns/GENERATED-KEY'], ['section', '#unknowns'], ['body', '']];
+for (const [selection, suffix] of unknownSelections) test(`#284 uncertainty: artifact ${selection} selection keeps mixed GENERATED Unknown blocking without a GENERATED H2`, (t) => {
   for (const generatedFirst of [false, true]) for (const newline of ['\n', '\r\n']) {
     const f = fixture(t), ref = 'unknown:U-GENERATED@UNCERTAINTY';
-    const contract = 'artifact:UNCERTAINTY#unknowns/GENERATED-KEY';
+    const contract = `artifact:UNCERTAINTY${suffix}`;
     // The artifact key and canonical ID are deliberately different columns.
     const headers = ['Key', 'ID', 'Question', 'Status'];
     const raw = generated(table(headers, [['GENERATED-KEY', 'U-GENERATED', 'Selected generated question?', 'open']]));
@@ -109,20 +110,29 @@ test('#284 uncertainty: an artifact-selected GENERATED Unknown stays blocking in
     f.evidence(`## Unknowns\n\n${(generatedFirst ? [raw, authored] : [authored, raw]).join('\n\n')}`.replace(/\n/g, newline));
     f.change('screen.md', ({ fm }) => { fm.work_execution.units[0].contracts = [contract]; fm.api_required = false; });
     const options = fullOptions(f), out = resolveScopedUncertaintyProjection(options);
-    assert.deepEqual(recordIds(out), ['U-GENERATED']);
+    const expected = selection === 'row' ? ['U-GENERATED'] : ['U-AUTHORED', 'U-GENERATED'];
+    assert.deepEqual(recordIds(out), expected);
     assert.deepEqual(applications(out, 'U-GENERATED').map((entry) => [entry.unit, entry.relation]), [['known', 'selected-evidence']]);
-    const selected = out.projection.evidence.nodes.find((node) => node.ref === contract), record = relations(out).records[0];
+    const selected = out.projection.evidence.nodes.find((node) => node.ref === contract);
+    const record = relations(out).records.find((node) => node.ref === ref);
     const body = options.targetIndex.artifacts.get('UNCERTAINTY').body, view = parseReconciliationReferenceView(body);
     assert.equal(record.ref, ref);
     assert.deepEqual(record.selection.cells, ['GENERATED-KEY', 'U-GENERATED', 'Selected generated question?', 'open']);
-    assert.deepEqual(scopedGraphSelectionSpans(body, view, record.selection), scopedGraphSelectionSpans(body, view, selected.selection));
+    const rowSpans = scopedGraphSelectionSpans(body, view, record.selection);
+    const selectedSpans = scopedGraphSelectionSpans(body, view, selected.selection);
+    assert.ok(rowSpans.length > 0 && rowSpans.every(([start, end]) =>
+      selectedSpans.some(([a, b]) => a <= start && end <= b)), 'the whole physical row belongs to the selected contract');
+    assert.ok(rowSpans.every(([start, end]) => body.indexOf('| GENERATED-KEY |') <= start &&
+      end <= body.indexOf('<!-- GENERATED:END summary -->')), 'the canonical row remains inside its original GENERATED block');
+    if (selection === 'row') assert.deepEqual(rowSpans, selectedSpans);
     const scopes = scopedUncertaintyScopes(options, out.projection, out.read_set);
-    assert.deepEqual(scopes.checks.map((check) => [check.uncertainty, check.binding_state, check.status, check.blocking_units]),
+    assert.deepEqual(scopes.checks.filter((check) => check.uncertainty === ref)
+      .map((check) => [check.uncertainty, check.binding_state, check.status, check.blocking_units]),
       [[ref, 'missing', 'open', ['known']]]);
     assert.equal(scopedUncertaintyDenials(scopes, 'known').length, 1);
     assert.equal(scopedUncertaintyDenials(scopes, 'other').length, 0);
     const applied = resolveScopedApplicabilityProjection(options);
-    assert.deepEqual(recordIds(applied), ['U-GENERATED'], 'derived canonical roots must retain the artifact-selected row');
+    assert.deepEqual(recordIds(applied), expected, 'derived canonical roots must retain the artifact-selected rows');
     const profile = inspectScopedProfile({ ...options, unit: 'known' });
     assert.deepEqual(profile.denials.filter((entry) => entry.code === 'unit-uncertainty-unresolved').map((entry) => entry.application.uncertainty), [ref]);
   }
@@ -144,27 +154,81 @@ test('#284 uncertainty: an artifact-selected mixed GENERATED row keeps its trans
 });
 
 test('#284 uncertainty: a selected mixed row with an ambiguous canonical ID fails instead of disappearing', (t) => {
-  const f = fixture(t), headers = ['Key', 'ID', 'Question', 'Status'];
-  f.evidence(`## Unknowns\n\n${table(headers, [['AUTHOR', 'U-SHARED', 'Same question.', 'open']])}\n\n` +
-    generated(table(headers, [['GENERATED', 'U-SHARED', 'Same question.', 'open']])));
-  f.change('screen.md', ({ fm }) => { fm.work_execution.units[0].contracts = ['artifact:UNCERTAINTY#unknowns/GENERATED']; });
-  assert.throws(() => f.run(), /SW-REF-AMBIGUOUS/);
+  for (const suffix of ['#unknowns/GENERATED', '#unknowns', '']) {
+    const f = fixture(t), headers = ['Key', 'ID', 'Question', 'Status'];
+    f.evidence(`## Unknowns\n\n${table(headers, [['AUTHOR', 'U-SHARED', 'Same question.', 'open']])}\n\n` +
+      generated(table(headers, [['GENERATED', 'U-SHARED', 'Same question.', 'open']])));
+    f.change('screen.md', ({ fm }) => { fm.work_execution.units[0].contracts = [`artifact:UNCERTAINTY${suffix}`]; });
+    assert.throws(() => f.run(), /SW-REF-AMBIGUOUS/);
+  }
 });
 
 test('#284 uncertainty: selected generated-only duplicate canonical tables fail closed', (t) => {
-  const f = fixture(t);
-  f.evidence(`## Unknowns\n\n${generated(table(['ID', 'Question', 'Status'], [['U-GENERATED', 'Selected?', 'open']]))}\n\n` +
-    generated(table(['ID', 'Question', 'Status'], [['U-OTHER', 'Other?', 'open']])));
-  f.change('screen.md', ({ fm }) => { fm.work_execution.units[0].contracts = ['artifact:UNCERTAINTY#unknowns/U-GENERATED']; });
-  assert.throws(() => f.run(), /SW-(UNCERTAINTY|REF-AMBIGUOUS)/);
+  for (const suffix of ['#unknowns/U-GENERATED', '#unknowns', '']) {
+    const f = fixture(t);
+    f.evidence(`## Unknowns\n\n${generated(table(['ID', 'Question', 'Status'], [['U-GENERATED', 'Selected?', 'open']]))}\n\n` +
+      generated(table(['ID', 'Question', 'Status'], [['U-OTHER', 'Other?', 'open']])));
+    f.change('screen.md', ({ fm }) => { fm.work_execution.units[0].contracts = [`artifact:UNCERTAINTY${suffix}`]; });
+    assert.throws(() => f.run(), /SW-(UNCERTAINTY|REF-AMBIGUOUS)/);
+  }
 });
 
 test('#284 uncertainty: unselected duplicate GENERATED legends do not become canonical candidates', (t) => {
-  const f = fixture(t), legend = generated(table(['ID', 'Question', 'Status'], [['U-LEGEND', 'Display only.', 'open']]));
-  f.evidence(`## Unknowns\n\n${legend}\n\n${table(['ID', 'Question', 'Status'], [['U-AUTHORED', 'Reviewed.', 'resolved']])}\n\n${legend}`, 'result');
-  const out = resolveScopedApplicabilityProjection(fullOptions(f));
-  assert.deepEqual(recordIds(out), ['U-AUTHORED']);
-  assert.ok(relations(out).records.every((row) => row.status === 'resolved'));
+  for (const contract of ['artifact:RULES#rules', 'artifact:UNCERTAINTY#notes', 'artifact:UNCERTAINTY#unknowns/U-AUTHORED']) {
+    const f = fixture(t), legend = generated(table(['ID', 'Question', 'Status'], [['U-LEGEND', 'Display only.', 'open']]));
+    f.evidence(`## Unknowns\n\n${legend}\n\n${table(['ID', 'Question', 'Status'], [['U-AUTHORED', 'Reviewed.', 'resolved']])}\n\n${legend}\n\n## Notes\nSelected notes.`, 'result');
+    f.change('screen.md', ({ fm }) => { fm.work_execution.units[0].contracts = [contract]; });
+    const out = resolveScopedApplicabilityProjection(fullOptions(f));
+    assert.deepEqual(recordIds(out), ['U-AUTHORED']);
+    assert.ok(relations(out).records.every((row) => row.status === 'resolved'));
+  }
+});
+
+test('#284 uncertainty: section and body selections retain both sides of a GENERATED heading', (t) => {
+  for (const suffix of ['#unknowns', '']) {
+    const f = fixture(t);
+    f.evidence(mixedUnknowns([['U-GENERATED', 'Selected generated question?', 'open']],
+      [['U-AUTHORED', 'Independent authored question.', 'resolved']]));
+    f.change('screen.md', ({ fm }) => { fm.work_execution.units[0].contracts = [`artifact:UNCERTAINTY${suffix}`]; });
+    const out = resolveScopedApplicabilityProjection(fullOptions(f));
+    assert.deepEqual(recordIds(out), ['U-AUTHORED', 'U-GENERATED']);
+    for (const id of ['U-AUTHORED', 'U-GENERATED']) {
+      assert.deepEqual(applications(out, id).map((entry) => [entry.unit, entry.relation]), [['known', 'selected-evidence']]);
+    }
+    // Equal cells do not make the two original rows interchangeable.
+    f.change('uncertainty.md', (doc) => { doc.body = mixedUnknowns([['U-SHARED', 'Same question.', 'open']],
+      [['U-SHARED', 'Same question.', 'open']]); });
+    assert.throws(() => f.run(), /ambiguous|inconsistent selected evidence/i);
+  }
+});
+
+test('#284 uncertainty: broad selections retain covered mixed Unknowns and ignore template placeholders', (t) => {
+  for (const contract of ['artifact:UNCERTAINTY#unknowns', 'artifact:UNCERTAINTY',
+    'investigation:INV-SCAN@UNCERTAINTY', 'verification:VER-SCAN@UNCERTAINTY']) {
+    const f = fixture(t), headers = ['ID', 'Question', 'Status'];
+    f.evidence('## Notes\nINV-SCAN and VER-SCAN\n\n## Unknowns\n\n' +
+      table(headers, [['U-AUTHORED', 'Reviewed.', 'resolved']]) + '\n\n' + generated(table(headers,
+        [['{UNKNOWN-ID}', 'Template question.', ''], ['U-GENERATED', 'Covered question?', 'open']])));
+    f.change('screen.md', ({ fm }) => { fm.work_execution.units[0].contracts = [contract]; });
+    const options = fullOptions(f), out = resolveScopedApplicabilityProjection(options);
+    assert.deepEqual(recordIds(out), ['U-AUTHORED', 'U-GENERATED']);
+    assert.deepEqual(applications(out, 'U-GENERATED').map((entry) => [entry.unit, entry.relation]), [['known', 'selected-evidence']]);
+    const scopes = scopedUncertaintyScopes(options, out.projection, out.read_set);
+    assert.deepEqual(scopedUncertaintyDenials(scopes, 'known').map((entry) => entry.uncertainty),
+      ['unknown:U-GENERATED@UNCERTAINTY']);
+  }
+});
+
+test('#284 uncertainty: formatted display headers do not invent canonical Unknowns in a selected section or body', (t) => {
+  for (const suffix of ['#unknowns', '']) for (const headers of [['**ID**', 'Question', 'Status'], ['ID', '**Question**', 'Status']]) {
+    const f = fixture(t);
+    f.evidence('## Unknowns\n\n' + table(['ID', 'Question', 'Status'], [['U-AUTHORED', 'Reviewed.', 'resolved']]) + '\n\n' +
+      generated(table(headers, [['U-DISPLAY', 'Formatted display question.', 'open']])));
+    f.change('screen.md', ({ fm }) => { fm.work_execution.units[0].contracts = [`artifact:UNCERTAINTY${suffix}`]; });
+    const options = fullOptions(f), out = resolveScopedApplicabilityProjection(options);
+    assert.deepEqual(recordIds(out), ['U-AUTHORED']);
+    assert.deepEqual(scopedUncertaintyDenials(scopedUncertaintyScopes(options, out.projection, out.read_set), 'known'), []);
+  }
 });
 
 test('#284 uncertainty: raw generated native and inverse rows remain candidates when another authored table exists', (t) => {

@@ -72,15 +72,15 @@ test('D packed: real reference, source, mapping, API, normalization, graph trave
   // driver resolves to packed, so both public CLIs execute shipped code only.
   const cli = checkedNode(['--test', '--test-reporter=tap', '--test-name-pattern=^(#282|#284) CLI:', path.join(lib, cliSuite)], packed,
     { ...env, SCOPED_WORK_TEST_FIXTURE_ROOT: KIT_ROOT });
-  assert.match(cli.stdout, /^# pass 8\r?$/m, cli.stdout);
+  assert.match(cli.stdout, /^# pass 10\r?$/m, cli.stdout);
   for (const metric of ['fail', 'cancelled', 'todo']) {
     assert.match(cli.stdout, new RegExp(`^# ${metric} 0\\r?$`, 'm'), cli.stdout);
   }
   // A filtered-out #275 test can be reported as skipped on older Node versions;
-  // all eight #282/#284 regressions must execute and pass on every supported Node.
+  // all ten #282/#284 regressions must execute and pass on every supported Node.
   checkPayload();
   assert.equal(fs.existsSync(path.join(packed, 'examples')), false);
-  t.diagnostic('packed readiness/binding-status subprocess: all 8 #282/#284 generated-boundary CLI cases passed');
+  t.diagnostic('packed readiness/binding-status subprocess: all 10 #282/#284 generated-boundary CLI cases passed');
 });
 
 test('D resolver suites stay wired to both package commands and existing focused/macOS CI', () => {

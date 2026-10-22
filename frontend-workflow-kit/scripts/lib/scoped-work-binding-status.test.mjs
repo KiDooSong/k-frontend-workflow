@@ -190,10 +190,11 @@ test('#284 CLI: directly selected generated Unknown remains blocking beside anot
   assert.equal(p.read(LIST), body);
 });
 
-test('#284 CLI: artifact-selected generated Unknown stays blocking when an independent authored table is added', (t) => {
+const unknownSelections = [['row', '#unknowns/U-GENERATED'], ['section', '#unknowns'], ['body', '']];
+for (const [selection, suffix] of unknownSelections) test(`#284 CLI: artifact ${selection} selection keeps generated Unknown blocking when an independent authored table is added`, (t) => {
   const p = project(t), unknown = 'unknown:U-GENERATED@COUPON-001-screen-spec';
   const units = structuredClone(UNITS);
-  units.units[0].contracts = ['artifact:COUPON-001-screen-spec#unknowns/U-GENERATED'];
+  units.units[0].contracts = [`artifact:COUPON-001-screen-spec${suffix}`];
   p.bind([], [], units);
   const original = p.read(LIST);
   const table = (row) => '| ID | Question | Status |\n|---|---|---|\n' + row;

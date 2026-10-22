@@ -22,6 +22,10 @@
   추가해도 공개 CLI의 missing/open·blocking unit·readiness denial이 사라지지 않으며,
   같은 ID의 다른 원본 행이나 작성 표 중복은 모호성으로 거부한다. 선택하지 않은 GENERATED
   요약 표를 canonical 후보로 추가하지 않는다.
+- 섹션·문서 전체 선택도 실제 원본 범위에 완전히 포함된 canonical Unknown 행을 후보로
+  보완한다. GENERATED 표에 독립 resolved authored 표를 추가해도 선택된 open Unknown의
+  `selected-evidence` 관계와 공개 CLI 차단을 유지한다. 행·섹션·문서 세 선택 방식의 전후
+  대조, 원본 행 충돌, 선택 범위 밖 표와 template/formatted 안내 표 대조를 회귀에 포함했다.
 - 실제 H2의 Markdown slug 유일성 검사를 일반 artifact 섹션·행 선택의 공통 단계로
   옮겼다. `Unknowns`/`**Unknowns**` 및 API Candidates의 실제 중복은 두 참조 모두
   거부하고, GENERATED 동명 H2를 제외하는 기존 작성 섹션 경계는 유지한다.

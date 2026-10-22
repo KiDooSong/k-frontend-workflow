@@ -339,7 +339,11 @@ packets and serialized verdicts are not authority. For each scoped request:
 - **Uncertainty relations** — an Unknown or Conflict row applies to a unit
   through the unit's selected evidence, through a row or Decision it reaches, or
   natively: to every unit of an owner whose spec, hosted surface, domain or a
-  global or undomained document holds it. A resolved row does not block (an
+  global or undomained document holds it. An ordinary artifact row, section or
+  document selection retains a canonical Unknown whose original row it covers,
+  including a GENERATED row beside an independent authored table. Its canonical
+  reference must resolve to the same physical row; an ambiguous or different
+  source stops resolution. A resolved row does not block (an
   Unknown with Status `resolved` in any case, a Conflict with `resolved`). An
   open Conflicts row outside every owner spec keeps that native relation only for
   the owners its `영향 화면` cell names, for a named surface's member screens,
