@@ -12,6 +12,7 @@ import { readCurrentBytes, canonicalJson, hashBytes, normalizeWorkOrigins } from
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { ScopedWorkContractError, workObject, workSet, workPath, workText } from './scoped-work-request.mjs';
 import { createScopedReferenceResolver, scopedRawTable } from './scoped-work-refs.mjs';
+import { rememberScopedSelection } from './scoped-work-authored.mjs';
 
 const fail = (code, message) => { throw new ScopedWorkContractError(`${code}: ${message}`); };
 const lf = (text) => text.replace(/\r\n|\r/g, '\n');
@@ -72,7 +73,13 @@ export function createScopedSourceResolver({ inputArtifacts, registerFile, targe
     const rawContent = bullet === null ? sections[0].text : sections[0].bulletSources[bullet - 1];
     if (typeof rawContent !== 'string' || !rawContent.trim()) fail('SW-SOURCE-ANCHOR', `${normalized}: empty selected evidence`);
     const content = lf(rawContent);
-    return { ref: normalized, section: resolved.ref.section, bullet_index: resolved.ref.bulletIndex, content };
+    // InputArtifact anchors use raw Markdown boundaries even when a section is
+    // named API Candidates or Unknowns. Keep those exact original nodes beside
+    // the public anchor so later graph/span selection cannot infer authoring
+    // semantics from its slug and scan beyond the content resolved above.
+    const nodes = bullet === null ? sections[0].nodes : [sections[0].bulletNodes[bullet - 1]];
+    return rememberScopedSelection({ ref: normalized, section: resolved.ref.section, bullet_index: bullet, content },
+      source.artifact.body, nodes);
   }
   function register() {
     if (reconciliation) return reconciliation;

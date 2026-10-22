@@ -19,9 +19,10 @@ import { createScopedReferenceResolver, scopedRawTable } from './scoped-work-ref
 import { createScopedSourceResolver } from './scoped-work-sources.mjs';
 import { createScopedApiResolver } from './scoped-work-api.mjs';
 import { resolveScopedMappingEvidence } from './scoped-work-mapping.mjs';
-import { resolveScopedContractGraph, scopedGraphSelectionSpans, scopedGraphApiRowDependencies } from './scoped-work-graph.mjs';
+import { resolveScopedContractGraph, scopedGraphSelectionSpans, scopedGraphApiRowContext } from './scoped-work-graph.mjs';
 import { ScopedWorkContractError, workUnitId } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
+import { scopedEvidenceSet } from './scoped-work-authored.mjs';
 
 const fail = (message) => { throw new ScopedWorkContractError(`SW-SOURCE-RELATION: ${message}`); };
 const union = (values) => scopeSet([...new Set(values)]);
@@ -116,7 +117,7 @@ function resolveSourceClosure(options, requireEffects) {
         roots.add(ref); changed = true;
       }
     }
-    if (!changed) return { ...result, sources: scopeSet(result.sources), read_set: scopeSet([...pins.values()]) };
+    if (!changed) return { ...result, sources: scopedEvidenceSet(result.sources), read_set: scopeSet([...pins.values()]) };
   }
 }
 
@@ -126,7 +127,7 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
   const args = { targetIndex, inputArtifacts, projectRoot };
   const refs = createScopedReferenceResolver(args);
   const sourceReader = createScopedSourceResolver({ ...args, registerFile });
-  const reads = new Map(), documents = new Map(), spans = new Map(), nativeInputs = new Map();
+  const reads = new Map(), documents = new Map(), spans = new WeakMap(), nativeInputs = new Map();
   let absentRegister = null;
   function read(file, expected) {
     const relative = path.isAbsolute(file) ? path.relative(projectRoot, file).split(path.sep).join('/') : file;
@@ -155,15 +156,18 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
     return doc;
   }
   function ranges(record) {
-    if (!spans.has(record.ref)) {
+    if (!spans.has(record.selection)) {
       const doc = document(record);
-      spans.set(record.ref, scopedGraphSelectionSpans(doc.body, doc.view, record.selection, record.kind === 'input-evidence'));
+      spans.set(record.selection, scopedGraphSelectionSpans(doc.body, doc.view, record.selection, record.kind === 'input-evidence'));
     }
-    return spans.get(record.ref);
+    return spans.get(record.selection);
   }
   function overlaps(a, b) {
     if (a.file !== b.file) return false;
-    if (a.ref === b.ref) return true;
+    if (a.ref === b.ref) {
+      if (!same(ranges(a), ranges(b))) fail(`ambiguous source selection: ${a.ref}`);
+      return true;
+    }
     return ranges(a).some(([x, y]) => ranges(b).some(([u, v]) => x < v && u < y));
   }
   function inputNode(ref) {
@@ -183,10 +187,17 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
   const selectedUnit = declaration?.units.find((entry) => entry.id === unit);
   if (!selectedUnit) fail('declared owner unit required');
   const roots = new Set([...selectedUnit.contracts, ...dependencyRoots]);
+  const trackingRefs = new Set(), ordinaryRefs = new Set(roots);
   if (selectedUnit.api_candidates.length) {
     const api = createScopedApiResolver({ targetIndex, projectRoot, layout }).unit(ownerRecord.artifact_id, owner, unit);
-    for (const row of api.candidates) for (const ref of scopedGraphApiRowDependencies(document(ownerRecord).body, row)) roots.add(ref);
+    for (const row of api.candidates) {
+      const context = scopedGraphApiRowContext(document(ownerRecord).body, row);
+      for (const ref of context.refs) roots.add(ref);
+      for (const ref of context.trackingRefs) trackingRefs.add(ref);
+      for (const ref of context.ordinaryRefs) ordinaryRefs.add(ref);
+    }
   }
+  const context = () => ({ trackingRefs: [...trackingRefs], ordinaryRefs: [...ordinaryRefs] });
   function mapping(host, mappingRef, keys) {
     const result = resolveScopedMappingEvidence({ ...args, hostRef: host.ref, mappingRef, mKeys: keys });
     for (const row of result.rows) {
@@ -203,7 +214,7 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
       mapping(host, selected.mapping_ref, selected.m_keys);
     }
   }
-  let graph = resolveScopedContractGraph({ ...args, contracts: [...roots] }); audit(graph);
+  let graph = resolveScopedContractGraph({ ...args, contracts: [...roots], ...context() }); audit(graph);
   // A screen's selected mapping rows also consume the matching provenance rows.
   // Enumerate raw keys, then let the existing mapping resolver validate grammar,
   // row bijection, owning screen/domain and actual inherited Figma evidence.
@@ -216,7 +227,7 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
       : scopedRawTable(section[0].tables[0]).cells.map((cells) => cells[0].split('`')[1]);
     mapping(ownerRecord, `artifact:${record.artifact_id}#component-mapping`, keys);
   }
-  if (!same(union([...roots]), graph.roots)) { graph = resolveScopedContractGraph({ ...args, contracts: [...roots] }); audit(graph); }
+  if (!same(union([...roots]), graph.roots)) { graph = resolveScopedContractGraph({ ...args, contracts: [...roots], ...context() }); audit(graph); }
   const contracts = graph.nodes.filter((record) => record.kind !== 'input-evidence');
   const selections = new Map(), origins = new Map(), pending = [];
   function selected(id) {
@@ -368,7 +379,7 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
   for (const entry of [...reads.values()]) read(entry.file, entry.sha256);
   if (absentRegister && canonicalRepositoryPath(projectRoot, absentRegister,
     { required: false, type: 'file', label: 'scoped source register' }).exists) fail('register appeared during source projection');
-  return { owner, unit, sources: scopeSet(resolved), pending_connections: scopeSet(pending),
+  return { owner, unit, sources: scopedEvidenceSet(resolved), pending_connections: scopeSet(pending),
     legacy_connections: scopeSet(legacyConnections),
     inferred_sources: scopeSet([...inferred.values()]), native_inputs: scopeSet([...nativeInputs.values()]),
     contracts: graph, contract_hashes: contractHashes, read_set: scopeSet([...reads.values()]) };

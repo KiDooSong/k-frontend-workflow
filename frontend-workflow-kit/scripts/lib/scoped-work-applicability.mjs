@@ -8,15 +8,17 @@ import { col, hasHeader } from './spec.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { parseReconciliationMarkdown, parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
 import { parseScopedTargetRef, isScopedRowId, scopedRawTable, scopedRowAlias, scopedRowSite, scopedAddRowSite, scopedCoveredRows } from './scoped-work-refs.mjs';
-import { resolveScopedContractGraph, scopedGraphSelectionRefs, scopedGraphMetadataRefs, scopedGraphBodyRefs } from './scoped-work-graph.mjs';
+import { resolveScopedContractGraph, resolveScopedCandidateGraph, scopedGraphSelectionRefs, scopedGraphMetadataRefs, scopedGraphBodyRefs,
+  scopedGraphContexts, scopedGraphSelectionSpans, mergeScopedGraphContexts } from './scoped-work-graph.mjs';
 import { scopedProjectionNode } from './scoped-work-projection.mjs';
 import { loadOpenDecisionRegister, resolveDecisionRefs } from './open-decisions.mjs';
 import { readCurrentBytes, hashBytes, CurrentWorkError } from './current-work-request.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
 import { ScopedWorkContractError } from './scoped-work-request.mjs';
 import { resolveScopedBoundaryProjection } from './scoped-work-boundaries.mjs';
-import { resolveScopedUncertaintyProjection } from './scoped-work-uncertainty.mjs';
+import { resolveScopedUncertaintyProjection, scopedUnknownHomes, scopedUnknownAuthored } from './scoped-work-uncertainty.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
+import { copyScopedNodeContexts } from './scoped-work-authored.mjs';
 
 const fail = (message) => { throw new ScopedWorkContractError(`SW-APPLICABILITY: ${message}`); };
 
@@ -35,21 +37,27 @@ export function resolveScopedApplicabilityProjection(options = {}) {
   }
   audit(boundary.read_set);
   const { decision_relations: _decisions, ownership, ...unitProjection } = boundary.projection;
-  const roots = new Map();
+  const roots = new Map(), authoredRoots = new Set();
   let current;
   while (true) {
-    current = resolveScopedUncertaintyProjection({ ...options, layout }, scopeSet([...roots.values()]));
+    current = resolveScopedUncertaintyProjection({ ...options, layout }, scopeSet([...roots.values()]),
+      { authoredRefs: [...authoredRoots] });
     audit(current.read_set);
     const { decision_relations: _nextDecisions, uncertainty_relations, ...nextUnits } = current.projection;
     if (scopeJson(nextUnits) !== scopeJson(unitProjection)) fail('unit projection changed between layers');
-    const count = roots.size;
+    const count = roots.size, authoredCount = authoredRoots.size;
+    const records = new Map(uncertainty_relations.records.map((record) => [record.ref, record]));
     for (const application of uncertainty_relations.applications) {
       const root = { owner: application.owner, unit: application.unit, ref: application.uncertainty };
       roots.set(scopeJson(root), root);
+      const record = records.get(root.ref);
+      if (record?.kind === 'unknown' && scopedUnknownAuthored(options.targetIndex.artifacts.get(record.artifact_id).body, record.selection)) {
+        authoredRoots.add(root.ref);
+      }
     }
     // Canonical uncertainty refs x selected owner/units form a finite set.
     // Roots only grow; no arbitrary depth cutoff or first-host/first-pass win.
-    if (roots.size === count) break;
+    if (roots.size === count && authoredRoots.size === authoredCount) break;
   }
   const unapplied = unappliedRows(options, current.projection, current.unaudited);
   audit(unapplied.read_set);
@@ -63,7 +71,7 @@ export function resolveScopedApplicabilityProjection(options = {}) {
 
 // #275: Decision, Unknown and Conflict rows that apply to no owner but relate to a projected
 // row or evidence node. Every other row's references are read as resolution reads them, in
-// one graph, and a row joins when they reach a projected row or node, or one a joined row
+// one candidate graph, and a row joins when they reach a projected row or node, or one a joined row
 // reaches, to a fixpoint; a row that such a node is, selects, covers or names joins as well, even
 // when it cites nothing itself. An exact artifact row selection is the row it selects, a reference
 // to a section or a whole document covers the rows it holds, and a document's frontmatter
@@ -83,7 +91,33 @@ const DECISION_TABLE = ['ID', 'Status', 'Blocking Mode'];
 function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] }, projection, unaudited = []) {
   const { decision_relations: decisions, uncertainty_relations: uncertainty } = projection;
   const applied = new Set([...decisions.records, ...uncertainty.records].map((entry) => entry.ref)), known = new Set(applied);
-  const projected = [projection.evidence, decisions.evidence, uncertainty.evidence].flatMap((graph) => graph.nodes);
+  const priorGraphs = [projection.evidence, decisions.evidence, uncertainty.evidence];
+  const projected = priorGraphs.flatMap((graph) => graph.nodes);
+  const context = scopedGraphContexts(mergeScopedGraphContexts(priorGraphs, {}));
+  const selected = new Map(), views = new Map(), selectionSpans = new WeakMap();
+  const spans = (node) => {
+    if (!selectionSpans.has(node.selection)) {
+      if (!views.has(node.file)) {
+        const indexed = node.artifact_id ? targetIndex.artifacts.get(node.artifact_id) : null;
+        const file = indexed ? null : canonicalRepositoryPath(projectRoot, node.file,
+          { required: true, type: 'file', label: 'scoped applicability evidence' });
+        const body = indexed?.body ?? splitFrontmatter(decodeGitUtf8(readCurrentBytes(file.absolute,
+          'scoped applicability evidence'), 'scoped applicability evidence')).body;
+        views.set(node.file, { body, view: parseReconciliationReferenceView(body) });
+      }
+      const { body, view } = views.get(node.file);
+      selectionSpans.set(node.selection, scopedGraphSelectionSpans(body, view, node.selection, node.kind === 'input-evidence'));
+    }
+    return selectionSpans.get(node.selection);
+  };
+  const checkSelected = (node) => {
+    const previous = selected.get(node.ref);
+    if (previous && (scopeJson(previous) !== scopeJson(node) || scopeJson(spans(previous)) !== scopeJson(spans(node)))) {
+      fail(`ambiguous selected evidence source: ${node.ref}`);
+    }
+    selected.set(node.ref, node);
+  };
+  for (const node of projected) checkSelected(node);
   // Where each row sits, so that a section or document reference covers the rows it holds.
   const sites = new Map();
   const site = (value) => scopedAddRowSite(sites, value);
@@ -95,9 +129,11 @@ function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] 
   }
   const skipped = new Set(unaudited.map((entry) => scopeJson([entry.file, entry.section])));
   const rows = new Map(), untyped = new Map(), readSet = [];
-  const add = (row, section) => {
+  const rootKey = (ref, mode) => scopeJson([ref, mode]);
+  const add = (row, section, mode = 'ordinary') => {
     site({ row: row.key, artifact_id: row.artifactId, section });
-    if (!applied.has(row.key) && !rows.has(row.key)) rows.set(row.key, row);
+    const key = rootKey(row.key, mode);
+    if (!rows.has(key)) rows.set(key, { ...row, mode });
   };
   for (const [artifactId, entry] of targetIndex.artifacts) {
     const file = path.relative(projectRoot, entry.file).split(path.sep).join('/');
@@ -114,8 +150,22 @@ function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] 
           ...looseDecisionRefs(entry.fm)])] }, slug);
       }
     }
+    // The public target index stays raw. Derive the corrected authored Unknown
+    // homes used by uncertainty instead of losing rows beyond GENERATED H2s.
+    for (const { location, authored } of scopedUnknownHomes(entry.body)) {
+      if (skipped.has(scopeJson([file, location.slug]))) continue;
+      const tables = location.tables.map(scopedRawTable).filter((table) =>
+        ['ID', 'Question'].every((header) => hasHeader(table.headers, header)));
+      for (const table of tables) for (const row of table.rows) {
+        const id = col(row, 'ID');
+        if (id.startsWith('{')) continue;
+        const token = `unknown:${id}@${artifactId}`;
+        if (parseScopedTargetRef(token)?.rowId !== id) fail(`unknown ${JSON.stringify(id)} in ${artifactId} cannot form a scoped reference`);
+        add({ key: token, id, artifactId, token, roots: [token] }, location.slug, authored ? 'authored' : 'ordinary');
+      }
+    }
     for (const [id, hits] of entry.rows) for (const hit of hits) {
-      if (!['unknown', 'conflict'].includes(hit.family) || skipped.has(scopeJson([file, hit.sectionSlug]))) continue;
+      if (hit.family !== 'conflict' || skipped.has(scopeJson([file, hit.sectionSlug]))) continue;
       const token = `${hit.family}:${id}@${artifactId}`;
       // The uncertainty pass read every such row outside an unaudited section and failed on a malformed one.
       if (parseScopedTargetRef(token)?.rowId !== id) fail(`${hit.family} ${JSON.stringify(id)} in ${artifactId} cannot form a scoped reference`);
@@ -123,22 +173,87 @@ function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] 
     }
   }
   for (const node of projected) for (const row of scopedCoveredRows(node, sites)) known.add(row);
-  const roots = [...new Set([...rows.values()].flatMap((row) => row.roots))];
-  const graph = roots.length ? resolveScopedContractGraph({ contracts: roots, targetIndex, inputArtifacts, projectRoot, project: scopedProjectionNode })
-    : { nodes: [], edges: [], read_set: [] };
+  const roots = [...new Map([...rows.values()].flatMap((row) => row.roots.map((ref) =>
+    [rootKey(ref, row.mode), { ref, mode: row.mode }]))).values()];
+  // Enumeration is not selection. Keep alternate physical rows separate while
+  // discovering relations; only the joined rows become strict graph demands.
+  const graph = roots.length ? resolveScopedCandidateGraph({ roots, targetIndex, inputArtifacts, projectRoot,
+    project: scopedProjectionNode }) : { roots: [], nodes: [], edges: [], read_set: [] };
   readSet.push(...graph.read_set);
-  const nodes = new Map(graph.nodes.map((node) => [node.ref, node])), forward = new Map(), backward = new Map();
+  const rootVertices = new Map(graph.roots.map(({ ref, mode, key }) => [rootKey(ref, mode), key]));
+  for (const row of rows.values()) row.vertices = [...new Set(row.roots.map((ref) => rootVertices.get(rootKey(ref, row.mode))))];
+  const nodes = new Map(graph.nodes.map((node) => [node.key, node.record])), byRef = new Map();
+  const sameSource = (left, right) => left.file === right.file && scopeJson(spans(left)) === scopeJson(spans(right));
+  const priorSources = new Map();
+  for (const node of selected.values()) for (const ref of [node.ref, scopedRowAlias(node)].filter(Boolean)) {
+    if (!priorSources.has(ref)) priorSources.set(ref, []);
+    priorSources.get(ref).push(node);
+  }
+  // A canonical ref can have an applied authored row and a different ordinary
+  // candidate. Suppress only the already applied physical root, not its sibling.
+  for (const [key, row] of rows) if (applied.has(row.token) && row.vertices.every((vertex) =>
+    (priorSources.get(row.token) || []).some((prior) => sameSource(prior, nodes.get(vertex))))) rows.delete(key);
+  const forward = new Map(), backward = new Map(), physicalSites = new Map(), bounds = new WeakMap();
+  const coverageNodes = new Map(nodes), referenceVertex = (ref) => scopeJson(['prior-ref', ref]);
+  for (const { key, record } of graph.nodes) {
+    if (!byRef.has(record.ref)) byRef.set(record.ref, []);
+    byRef.get(record.ref).push(key);
+    const location = scopedRowSite(record);
+    if (location) scopedAddRowSite(physicalSites, { ...location, row: key });
+  }
+  // Applied rows are not discovery roots, but a candidate section/body can
+  // still cover their exact selected source and thereby relate to that row.
+  for (const record of selected.values()) {
+    const location = scopedRowSite(record);
+    if (!location) continue;
+    const key = referenceVertex(record.ref);
+    coverageNodes.set(key, record);
+    scopedAddRowSite(physicalSites, { ...location, row: key });
+  }
+  const range = (node) => {
+    if (!bounds.has(node.selection)) {
+      const selected = spans(node);
+      bounds.set(node.selection, selected.length ? selected.reduce(([first, last], [start, end]) =>
+        [Math.min(first, start), Math.max(last, end)], [Infinity, -Infinity]) : null);
+    }
+    return bounds.get(node.selection);
+  };
+  const covered = (node) => scopedCoveredRows(node, physicalSites).filter((key) => {
+    const outer = range(node), inner = range(coverageNodes.get(key));
+    return outer && inner && outer[0] <= inner[0] && inner[1] <= outer[1];
+  });
   const link = (from, to) => {
     if (!forward.has(from)) forward.set(from, []);
     forward.get(from).push(to);
     if (!backward.has(to)) backward.set(to, []);
     backward.get(to).push(from);
   };
-  for (const edge of graph.edges) link(edge.from, edge.to);
-  for (const node of graph.nodes) {
+  const linkRef = (from, ref) => {
+    const targets = byRef.get(ref) || [referenceVertex(ref)];
+    for (const target of targets) link(from, target);
+  };
+  for (const edge of graph.edges) {
+    link(edge.from, edge.to);
+    const node = nodes.get(edge.to);
+    // A real dependency on a previously selected ref is a relation witness
+    // even if it chooses another source; strict materialization must reject it.
+    for (const ref of [node.ref, scopedRowAlias(node)].filter(Boolean)) if (known.has(ref)) {
+      link(edge.from, referenceVertex(ref));
+    }
+  }
+  for (const { key, record: node } of graph.nodes) {
     const alias = scopedRowAlias(node);
-    if (alias) { link(node.ref, alias); link(alias, node.ref); }
-    for (const row of scopedCoveredRows(node, sites)) link(node.ref, row);
+    if (alias) for (const target of byRef.get(alias) || []) {
+      if (node.file === nodes.get(target).file && scopeJson(spans(node)) === scopeJson(spans(nodes.get(target)))) {
+        link(key, target); link(target, key);
+      }
+    }
+    for (const row of covered(node)) link(key, row);
+    // Enumeration alone is no demand for an alternative source with the same
+    // spelling. Seed these roots only from an actually selected physical row.
+    for (const ref of [node.ref, alias].filter(Boolean)) if ((priorSources.get(ref) || []).some((prior) => sameSource(prior, node))) {
+      link(key, referenceVertex(ref));
+    }
   }
   // A document's decision_refs, as the global Decision refs it names; strict once it is related.
   const named = (artifactId, strict) => {
@@ -153,15 +268,15 @@ function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] 
   };
   // Each node's document decision_refs lead on to the Decisions it names (loosely here).
   const loose = new Map();
-  for (const node of graph.nodes) if (node.artifact_id) {
+  for (const { key, record: node } of graph.nodes) if (node.artifact_id) {
     if (!loose.has(node.artifact_id)) loose.set(node.artifact_id, named(node.artifact_id, false));
-    for (const decision of loose.get(node.artifact_id)) link(node.ref, decision);
+    for (const decision of loose.get(node.artifact_id)) linkRef(key, decision);
   }
   // A row joins when one of its roots reaches a known node, and what a joined row reaches becomes
   // known, to a fixpoint. Rather than each row's own closure, the nodes that reach a known node are
   // marked backwards once and each reached node is expanded once, so the search is linear in the graph.
   const rootsOf = new Map();
-  for (const row of rows.values()) for (const root of row.roots) {
+  for (const row of rows.values()) for (const root of row.vertices) {
     if (!rootsOf.has(root)) rootsOf.set(root, []);
     rootsOf.get(root).push(row);
   }
@@ -176,23 +291,25 @@ function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] 
       for (const previous of backward.get(queue[index]) || []) if (!reaching.has(previous)) { reaching.add(previous); queue.push(previous); }
     }
   };
-  for (const ref of known) reachingFrom(ref);
+  const knownVertices = new Set([...known].map(referenceVertex));
+  for (const node of projected) for (const row of covered(node)) knownVertices.add(row);
+  for (const ref of knownVertices) reachingFrom(ref);
   while (ready.length) {
     const row = ready.pop();
     if (joined.has(row)) continue;
     if (!row.token) fail(`decision ${JSON.stringify(row.id)} in ${row.artifactId} relates to a projected row but cannot form a scoped decision reference`);
     joined.add(row);
-    const queue = row.roots.filter((root) => !reached.has(root));
+    const queue = row.vertices.filter((root) => !reached.has(root));
     for (const root of queue) reached.add(root);
     for (let index = 0; index < queue.length; index += 1) {
       searchStats.visited += 1;
-      if (!known.has(queue[index])) { known.add(queue[index]); reachingFrom(queue[index]); }
+      if (!knownVertices.has(queue[index])) { knownVertices.add(queue[index]); reachingFrom(queue[index]); }
       for (const next of forward.get(queue[index]) || []) if (!reached.has(next)) { reached.add(next); queue.push(next); }
     }
   }
   // A row whose ID cannot form a typed reference also relates when a related node selects it
   // (an artifact row selection) or covers it; the basis could not name it either way.
-  if (untyped.size) for (const node of [...projected, ...graph.nodes.filter((value) => reached.has(value.ref))]) {
+  if (untyped.size) for (const node of [...projected, ...graph.nodes.filter((value) => reached.has(value.key)).map((value) => value.record)]) {
     const selection = node.selection;
     const id = node.kind === 'artifact' && selection?.type === 'row' && Array.isArray(selection.headers)
       ? col(Object.fromEntries(selection.headers.map((header, index) => [header, selection.cells[index]])), 'ID') : null;
@@ -201,8 +318,17 @@ function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] 
       if (row) fail(`decision ${JSON.stringify(row.id)} in ${row.artifactId} relates to a projected row but cannot form a scoped decision reference`);
     }
   }
-  const records = [...joined].map((row) => {
-    const node = nodes.get(row.token), { headers, cells } = node.selection;
+  const demandedRoots = [...joined].flatMap((row) => row.roots.map((ref) => ({ ref, mode: row.mode })));
+  const materialized = demandedRoots.length ? resolveScopedContractGraph({
+    contracts: [...new Set(demandedRoots.map(({ ref }) => ref))], targetIndex, inputArtifacts, projectRoot,
+    project: scopedProjectionNode, trackingRefs: context.trackingRefs,
+    authoredRefs: [...new Set([...context.authoredRefs, ...demandedRoots.filter(({ mode }) => mode === 'authored').map(({ ref }) => ref)])],
+    ordinaryRefs: [...new Set([...context.ordinaryRefs, ...demandedRoots.filter(({ mode }) => mode === 'ordinary').map(({ ref }) => ref)])],
+  }) : { nodes: [], edges: [], read_set: [] };
+  readSet.push(...materialized.read_set);
+  const materializedNodes = new Map(materialized.nodes.map((node) => [node.ref, node]));
+  const records = [...new Set([...joined].map((row) => row.token))].map((token) => {
+    const node = materializedNodes.get(token), { headers, cells } = node.selection;
     const status = col(Object.fromEntries(headers.map((header, index) => [header, cells[index]])), 'Status');
     return { ...scopedProjectionNode(node), status: String(status || '').toLowerCase() || null };
   });
@@ -261,12 +387,16 @@ function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] 
       if (!found.includes(parsed.ownerArtifactId)) fail(`decision_refs in ${node.artifact_id} names no Decision row ${decision}`);
       if (found.length !== 1) fail(`decision_refs in ${node.artifact_id} names an ambiguous Decision ${decision}`);
       resolveList(node.artifact_id);
-      links.push({ referrer: ref, decision });
+      links.push({ referrer: node.ref, decision });
     }
   }
-  return { unapplied: { records: scopeSet(records), document_refs: scopeSet(links), evidence: {
-    nodes: scopeSet(graph.nodes.filter((node) => reached.has(node.ref)).map(scopedProjectionNode)),
-    edges: scopeSet(graph.edges.filter((edge) => reached.has(edge.from) && reached.has(edge.to))) } }, read_set: readSet };
+  const evidenceNodes = materialized.nodes.map(scopedProjectionNode);
+  // Validate source identity before the basis can combine this graph with earlier
+  // passes. Equal public cells still cannot substitute a different physical row.
+  for (const node of evidenceNodes) checkSelected(node);
+  return { unapplied: { records: copyScopedNodeContexts(records, scopeSet(records)), document_refs: scopeSet(links), evidence: mergeScopedGraphContexts([materialized], {
+    nodes: copyScopedNodeContexts(evidenceNodes, scopeSet(evidenceNodes)),
+    edges: materialized.edges }) }, read_set: readSet };
 }
 
 // The global Decision refs a document's frontmatter decision_refs names, read loosely; strict

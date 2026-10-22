@@ -8,8 +8,9 @@ import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { parseMappingProvenanceContract, validateMappingProvenance } from './mapping-provenance.mjs';
 import { parseTargetRef, isTargetRowId } from './reconciliation-items.mjs';
 import { resolveArtifact, isDuplicateArtifactId, resolveChildRow, bodyHasToken } from './reconciliation-target-index.mjs';
-import { parseReconciliationMarkdown, tableHeadersAreUnique } from './reconciliation-markdown-ast.mjs';
-import { splitRow, hasHeader, col } from './spec.mjs';
+import { parseReconciliationReferenceView, tableHeadersAreUnique } from './reconciliation-markdown-ast.mjs';
+import { scopedAuthoredView, scopedAuthoredSections, rememberScopedSelection, scopedSelectionNodes } from './scoped-work-authored.mjs';
+import { splitRow, hasHeader, col, stripGeneratedBlocks } from './spec.mjs';
 import { ScopedWorkContractError, workText, workPath, workSet } from './scoped-work-request.mjs';
 
 const fail = (code, message) => { throw new ScopedWorkContractError(`${code}: ${message}`); };
@@ -145,7 +146,10 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot, inputA
     if (path.resolve(record.file) !== record.file) fail('SW-REF-PATH', `noncanonical artifact path ${id}`);
     const relative = path.relative(projectRoot, record.file).split(path.sep).join('/');
     workPath(relative, 'scoped artifact path');
-    if (!parsed.has(id)) parsed.set(id, parseReconciliationMarkdown(record.body));
+    if (!parsed.has(id)) {
+      const view = parseReconciliationReferenceView(record.body);
+      parsed.set(id, { ...view, occurrences: view.sections });
+    }
     return { record, relative, markdown: parsed.get(id) };
   }
   function section(markdown, slug) {
@@ -207,13 +211,25 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot, inputA
     const matches = rowsOf(eligible, family).get(key) || [];
     if (matches.length !== 1) fail(matches.length ? 'SW-REF-AMBIGUOUS' : 'SW-REF-MISSING', `exact row ${key}`);
     const { table, index } = matches[0];
-    return { type: 'row', section: occurrence.slug, key, headers: [...table.headers], cells: [...table.cells[index]] };
+    return selectedRow(occurrence.slug, key, table, index, record);
+  }
+  function selectedRow(slug, key, table, index, record) {
+    const selected = { type: 'row', section: slug, key, headers: [...table.headers], cells: [...table.cells[index]] };
+    if (record) rememberScopedSelection(selected, record.body, [nativeTables.get(table).children[index + 1]]);
+    return selected;
   }
   // A section's tables are encoded once per resolver and their rows indexed by identity, so
   // selecting every row of a register stays linear (#275); each selection copies its cells.
-  const tableCache = new WeakMap(), indexCache = new WeakMap();
+  const tableCache = new WeakMap(), indexCache = new WeakMap(), rawTables = new WeakMap(), nativeTables = new WeakMap();
   function encoded(occurrence) {
-    if (!tableCache.has(occurrence)) tableCache.set(occurrence, occurrence.tables.map(scopedRawTable));
+    if (!tableCache.has(occurrence)) tableCache.set(occurrence, occurrence.tables.map((table, i) => {
+      const node = occurrence.tableNodes[i];
+      if (!rawTables.has(node)) {
+        const raw = scopedRawTable(table);
+        rawTables.set(node, raw); nativeTables.set(raw, node);
+      }
+      return rawTables.get(node);
+    }));
     return tableCache.get(occurrence);
   }
   // The rows of several tables by identity, in table then row order, indexed once per table list.
@@ -246,6 +262,24 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot, inputA
     }
     return byMode.get(mode);
   }
+  // An ordinary artifact row names raw evidence, including GENERATED rows. The
+  // authored view may extend that row's section across GENERATED headings, but
+  // must not replace its existing raw candidates. Merge native tables once per
+  // section and deduplicate only the same physical table, never equal cell text.
+  const artifactRowHomes = new WeakMap();
+  function artifactRowSelection(record, markdown, ref, authored) {
+    if (!artifactRowHomes.has(markdown)) artifactRowHomes.set(markdown, new Map());
+    const homes = artifactRowHomes.get(markdown);
+    if (!homes.has(ref.section)) {
+      const raw = scopedSectionsBySlug(markdown.sections, ref.section);
+      const tables = new Map();
+      for (const home of [...raw, ...authored]) home.tableNodes.forEach((node, index) => {
+        if (!tables.has(node)) tables.set(node, home.tables[index]);
+      });
+      homes.set(ref.section, { slug: ref.section, tableNodes: [...tables.keys()], tables: [...tables.values()] });
+    }
+    return rowSelection(homes.get(ref.section), ref.rowKey, null, record);
+  }
   // A caller that keeps its records internal (one graph resolution) shares one copy of a
   // document's metadata: selecting every row of a register would otherwise copy its frontmatter,
   // bindings included, once per row (#275). Otherwise each record has its own copy.
@@ -255,7 +289,42 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot, inputA
     if (!metadataCopies.has(id)) metadataCopies.set(id, structuredClone(record.fm));
     return metadataCopies.get(id);
   }
-  function contract(token) {
+  function authoredContract(token) {
+    workText(token, 'authored scoped contract');
+    const ref = parseScopedTargetRef(token);
+    if (ref?.kind !== 'unknown') fail('SW-REF-SYNTAX', `authored Unknown required: ${token}`);
+    const { record, relative, markdown } = artifact(ref.ownerArtifactId);
+    const homes = scopedAuthoredSections(record.body, 'unknowns', markdown);
+    if (homes.length !== 1) fail(homes.length ? 'SW-REF-AMBIGUOUS' : 'SW-REF-MISSING', `authored Unknowns: ${token}`);
+    if (!homes[0].tables.some((table) => signatures.unknown.every((header) => hasHeader(table.headers, header)))) {
+      fail('SW-REF-MISSING', `authored Unknown table: ${token}`);
+    }
+    const selection = rowSelection(homes[0], ref.rowId, 'unknown', record);
+    return { ref: ref.raw, kind: ref.kind, artifact_id: ref.ownerArtifactId, file: relative,
+      metadata: metadataOf(ref.ownerArtifactId, record), selection };
+  }
+  function tracking(token) {
+    let selected;
+    try { selected = authoredContract(token); } catch (error) {
+      // A raw-only Unknown remains a valid ordinary reference, but never an
+      // authored deferral witness (including generated/formatted examples).
+      if (error instanceof ScopedWorkContractError && /SW-REF-MISSING/.test(error.message)) {
+        const parsedRef = parseScopedTargetRef(token);
+        const { record } = artifact(parsedRef.ownerArtifactId);
+        const raw = resolveChildRow(record, parsedRef.rowId, 'unknown');
+        if (raw.found && !raw.familyMismatch) {
+          fail('SW-GRAPH', `deferred Tracking requires a canonical open Unknown: ${token}`);
+        }
+      }
+      throw error;
+    }
+    const row = Object.fromEntries(selected.selection.headers.map((h, i) => [h, selected.selection.cells[i]]));
+    if (String(col(row, 'Status') || '').toLowerCase() !== 'open') {
+      fail('SW-GRAPH', `deferred Tracking requires a canonical open Unknown: ${token}`);
+    }
+    return selected;
+  }
+  function rawContract(token) {
     workText(token, 'scoped contract');
     const ref = parseScopedTargetRef(token);
     if (!ref || ['none', 'input'].includes(ref.kind)) fail('SW-REF-SYNTAX', `unsupported contract ${token}`);
@@ -265,16 +334,31 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot, inputA
     if (ref.kind === 'artifact') {
       if (!ref.section) selection = { type: 'body', content: lf(record.body) };
       else {
-        const selected = section(markdown, ref.section);
+        let authored = (ref.section === 'api-candidates' && ['screen-spec', 'shared-surface-spec'].includes(record.fm.artifact_type)) || ref.section === 'unknowns'
+          ? scopedAuthoredSections(record.body, ref.section === 'api-candidates' ? 'api candidates' : 'unknowns', markdown) : [];
+        if (ref.section === 'unknowns' && !authored.some((home) => home.tables.some((table) =>
+          signatures.unknown.every((header) => hasHeader(table.headers, header))))) authored = [];
+        if (ref.section === 'api-candidates' && ref.rowKey !== null && !authored.some((home) => home.tables.length)) authored = [];
+        if (authored.length > 1) fail('SW-REF-AMBIGUOUS', `section #${ref.section}`);
+        // Literal authoring names may omit a formatted H2 with the same native
+        // slug. Validate all retained headings before either section or row
+        // selection; GENERATED headings alone do not make a real duplicate.
+        if (authored.length) {
+          const retained = scopedSectionsBySlug(scopedAuthoredView(record.body, markdown).sections, ref.section);
+          if (retained.length !== 1) fail(retained.length ? 'SW-REF-AMBIGUOUS' : 'SW-REF-MISSING', `section #${ref.section}`);
+        }
+        const selected = authored.length === 1 ? authored[0] : section(markdown, ref.section);
         selection = ref.rowKey === null
           ? { type: 'section', section: ref.section, content: lf(selected.text) }
-          : rowSelection(selected, ref.rowKey, null, record);
+          : authored.length ? artifactRowSelection(record, markdown, ref, authored)
+            : rowSelection(selected, ref.rowKey, null, record);
+        if (ref.rowKey === null) rememberScopedSelection(selection, record.body, selected.nodes);
       }
     } else if (Object.hasOwn(signatures, ref.kind)) {
       const child = resolveChildRow(record, ref.rowId, ref.kind);
       if (!child.found || child.familyMismatch) fail('SW-REF-MISSING', `canonical ${token}`);
       if (child.ambiguous) fail('SW-REF-AMBIGUOUS', `canonical ${token}`);
-      selection = rowSelection(section(markdown, child.sectionSlug), ref.rowId, ref.kind);
+      selection = rowSelection(section(markdown, child.sectionSlug), ref.rowId, ref.kind, record);
     } else {
       // INV/VER have no canonical row family in v2. Retain the whole body rather
       // than pretending a coincidental line is an independently owned contract.
@@ -284,5 +368,66 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot, inputA
     return { ref: ref.raw, kind: ref.kind, artifact_id: id, file: relative,
       metadata: metadataOf(id, record), selection };
   }
-  return { contract, contracts: (tokens) => workSet(tokens, contract, 'contracts', true) };
+  // An ordinary artifact row may explicitly select GENERATED evidence beside a
+  // canonical authored table, without a GENERATED H2 separating the raw tables.
+  // Its derived Unknown must resolve to that same unique ID, not disappear at
+  // the table-count check. This fallback never accepts two authored tables or
+  // two physical rows with the same ID, and never changes a successful raw ref.
+  const mixedUnknownTables = new WeakMap();
+  function mixedUnknownSelection(record, markdown, ref) {
+    if (!mixedUnknownTables.has(markdown)) {
+      let tables = null;
+      const retained = scopedSectionsBySlug(scopedAuthoredView(record.body, markdown).sections, 'unknowns');
+      const authored = scopedAuthoredSections(record.body, 'unknowns', markdown);
+      const raw = scopedSectionsBySlug(markdown.sections, 'unknowns');
+      const canonical = (home) => scopedIndexedBy(encoded(home), 'family:unknown', (table) =>
+        signatures.unknown.every((header) => hasHeader(table.headers, header))).get(true) || [];
+      if (retained.length === 1 && authored.length === 1 && raw.length === 1) {
+        const authoredTables = canonical(authored[0]), rawTables = canonical(raw[0]);
+        if (authoredTables.length === 1 && rawTables.length > 1 && rawTables.includes(authoredTables[0])) {
+          const clean = stripGeneratedBlocks(record.body, { preserveOffsets: true });
+          const generated = rawTables.filter((table) => table !== authoredTables[0]);
+          if (generated.every((table) => {
+            const node = nativeTables.get(table);
+            return !clean.slice(node.position.start.offset, node.position.end.offset).trim();
+          })) tables = rawTables;
+        }
+      }
+      mixedUnknownTables.set(markdown, tables);
+    }
+    const tables = mixedUnknownTables.get(markdown);
+    if (!tables) return null;
+    const matches = rowsOf(tables, 'unknown').get(ref.rowId) || [];
+    if (matches.length !== 1) fail(matches.length ? 'SW-REF-AMBIGUOUS' : 'SW-REF-MISSING', `canonical ${ref.raw}`);
+    const { table, index } = matches[0];
+    return selectedRow('unknowns', ref.rowId, table, index, record);
+  }
+  function contract(token) {
+    try { return rawContract(token); } catch (error) {
+      const ref = parseScopedTargetRef(token);
+      if (!(error instanceof ScopedWorkContractError) || ref?.kind !== 'unknown' ||
+          !/SW-REF-(?:MISSING|AMBIGUOUS):/.test(error.message)) throw error;
+      const { record, relative, markdown } = artifact(ref.ownerArtifactId);
+      const mixed = mixedUnknownSelection(record, markdown, ref);
+      if (mixed) return { ref: ref.raw, kind: ref.kind, artifact_id: ref.ownerArtifactId, file: relative,
+        metadata: metadataOf(ref.ownerArtifactId, record), selection: mixed };
+      // Only GENERATED-induced boundaries get a fallback. A second authored
+      // home, malformed table or a different raw row is still an ambiguity.
+      const authored = scopedAuthoredView(record.body, markdown);
+      if (authored.sections.length === markdown.sections.length) throw error;
+      let selected;
+      try { selected = authoredContract(token); } catch { throw error; }
+      const target = scopedSelectionNodes(record.body, selected.selection)[0];
+      const matches = [];
+      for (const home of markdown.sections.filter((entry) => entry.slug === 'unknowns')) {
+        for (const table of encoded(home)) {
+          if (!signatures.unknown.every((header) => hasHeader(table.headers, header))) continue;
+          for (const index of rowIndex(table, 'unknown').get(ref.rowId) || []) matches.push(nativeTables.get(table).children[index + 1]);
+        }
+      }
+      if (matches.length > 1 || matches.some((node) => node !== target)) fail('SW-REF-AMBIGUOUS', `raw/authored Unknown differs: ${token}`);
+      return selected;
+    }
+  }
+  return { contract, authoredContract, tracking, contracts: (tokens) => workSet(tokens, contract, 'contracts', true) };
 }

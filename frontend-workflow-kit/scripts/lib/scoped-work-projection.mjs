@@ -15,7 +15,8 @@ import { createScopedReferenceResolver } from './scoped-work-refs.mjs';
 import { resolveScopedSourceProjection } from './scoped-work-source-relations.mjs';
 import { createScopedApiResolver } from './scoped-work-api.mjs';
 import { resolveScopedMappingEvidence } from './scoped-work-mapping.mjs';
-import { resolveScopedContractGraph, scopedGraphApiRowDependencies } from './scoped-work-graph.mjs';
+import { resolveScopedContractGraph, scopedGraphApiRowContext, scopedGraphContexts, copyScopedGraphContexts } from './scoped-work-graph.mjs';
+import { copyScopedSelectionContext, copyScopedNodeContexts } from './scoped-work-authored.mjs';
 import { ScopedWorkContractError, workText, workSet } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet, scopeLf } from './scoped-work-normalize.mjs';
 import { WorkConfigError, parsePolicyOverlay } from './work-config.mjs';
@@ -52,7 +53,7 @@ function metadata(fm, input = false) {
 function selection(value) {
   const { validation_warnings, ...selected } = value;
   if (Object.hasOwn(selected, 'content')) selected.content = scopeLf(selected.content);
-  return structuredClone(selected);
+  return copyScopedSelectionContext(value, structuredClone(selected));
 }
 function node(record) {
   return { ref: record.ref, kind: record.kind,
@@ -74,6 +75,7 @@ export function resolveScopedUnitProjection({ owner, policyFile, policyOverlayFi
   const units = new Map();
   const links = [];
   const roots = new Set();
+  const authoredRefs = new Set(), trackingRefs = new Set(), ordinaryRefs = new Set();
   const pending = [];
   const scheduled = new Set();
 
@@ -146,7 +148,7 @@ export function resolveScopedUnitProjection({ owner, policyFile, policyOverlayFi
     selectedInputs.add(data.input_id);
   }
   function dependency(record) {
-    if (!['none', 'input'].includes(record.kind)) roots.add(record.ref);
+    if (!['none', 'input'].includes(record.kind)) { roots.add(record.ref); ordinaryRefs.add(record.ref); }
   }
   function source(value) {
     input(value.input);
@@ -167,7 +169,7 @@ export function resolveScopedUnitProjection({ owner, policyFile, policyOverlayFi
   for (let index = 0; index < pending.length; index += 1) {
     const { data, declared, key } = pending[index];
     const ownerId = data.id;
-    for (const ref of declared.contracts) roots.add(ref);
+    for (const ref of declared.contracts) { roots.add(ref); ordinaryRefs.add(ref); }
     if (declared.isolation) {
       for (const ref of declared.isolation.decisions) roots.add(ref);
       for (const id of declared.isolation.disabled_units) enqueue(ownerId, id);
@@ -179,12 +181,19 @@ export function resolveScopedUnitProjection({ owner, policyFile, policyOverlayFi
       targetIndex, inputArtifacts, registerFile, projectRoot, layout });
     for (const entry of sourceFacts.read_set) read(entry.file, entry.sha256);
     for (const ref of sourceFacts.contracts.roots) roots.add(ref);
+    const sourceContext = scopedGraphContexts(sourceFacts.contracts);
+    for (const ref of sourceContext.authoredRefs) authoredRefs.add(ref);
+    for (const ref of sourceContext.trackingRefs) trackingRefs.add(ref);
+    for (const ref of sourceContext.ordinaryRefs) ordinaryRefs.add(ref);
     for (const entry of sourceFacts.native_inputs) selectedInputs.add(entry.input_id);
     const selectedSources = sourceFacts.sources.map((entry) => source(entry.source));
     const api = apis.unit(data.record.artifact_id, ownerId, declared.id);
     const apiRows = api.candidates.map((candidate) => {
       const body = targetIndex.artifacts.get(api.artifact_id).body;
-      for (const ref of scopedGraphApiRowDependencies(body, candidate)) roots.add(ref);
+      const context = scopedGraphApiRowContext(body, candidate);
+      for (const ref of context.refs) roots.add(ref);
+      for (const ref of context.trackingRefs) trackingRefs.add(ref);
+      for (const ref of context.ordinaryRefs) ordinaryRefs.add(ref);
       // Raw ordered cells retain every column, without analyzer line/row indexes.
       return { selection: candidate.selection, headers: candidate.headers, cells: candidate.cells,
         tracking: candidate.tracking?.ref ?? null };
@@ -240,7 +249,8 @@ export function resolveScopedUnitProjection({ owner, policyFile, policyOverlayFi
     } } : {}) });
   }
 
-  const graph = resolveScopedContractGraph({ contracts: setUnion([...roots]), targetIndex, inputArtifacts, projectRoot });
+  const graph = resolveScopedContractGraph({ contracts: setUnion([...roots]), targetIndex, inputArtifacts, projectRoot,
+    authoredRefs: [...authoredRefs], trackingRefs: [...trackingRefs], ordinaryRefs: [...ordinaryRefs] });
   for (const entry of graph.read_set) read(entry.file, entry.sha256);
   for (const record of graph.nodes) if (record.kind === 'input-evidence') selectedInputs.add(record.input_id);
   // Fidelity inheritance is metadata dependency, not a whole-body/anchor grant.
@@ -279,7 +289,8 @@ export function resolveScopedUnitProjection({ owner, policyFile, policyOverlayFi
         test_paths: scopeSet(data.declaration.test_paths),
       } : null }))),
     units: scopeSet([...units.values()]), host_links: scopeSet(links), inputs: scopeSet(inputProjection),
-    evidence: { roots: graph.roots, nodes: scopeSet(graph.nodes.map(node)), edges: graph.edges } };
+    evidence: copyScopedGraphContexts(graph,
+      { roots: graph.roots, nodes: copyScopedNodeContexts(graph.nodes, scopeSet(graph.nodes.map(node))), edges: graph.edges }) };
   for (const entry of [...files.values()]) read(entry.file, entry.sha256);
   return { projection, read_set: scopeSet([...files.values()]) };
 }

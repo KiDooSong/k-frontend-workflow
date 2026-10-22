@@ -3,7 +3,7 @@
 // eventual basis builder must add every owner/unit/decision/host and project
 // metadata explicitly; hashing this raw evidence graph is NOT scope-basis-v1.
 import { splitFrontmatter } from './util.mjs';
-import { splitRow, col, specSectionName, stripGeneratedBlocks, apiCandidateColumns, parseApiCandidateTracking } from './spec.mjs';
+import { splitRow, hasHeader, apiCandidateColumns, parseApiCandidateTracking } from './spec.mjs';
 import { canonicalRepositoryPath } from './artifact-path.mjs';
 import { readCurrentBytes, hashBytes, normalizeWorkOrigins } from './current-work-request.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
@@ -12,8 +12,9 @@ import { resolveArtifact } from './reconciliation-target-index.mjs';
 import { parseReconciliationReferenceView, reconciliationReferenceLabel } from './reconciliation-markdown-ast.mjs';
 import { createScopedReferenceResolver, parseScopedTargetRef, scopedSectionsBySlug, scopedIndexedBy } from './scoped-work-refs.mjs';
 import { createScopedSourceResolver } from './scoped-work-sources.mjs';
-import { workText, workSet, ScopedWorkContractError } from './scoped-work-request.mjs';
+import { workText, workSet, workObject, ScopedWorkContractError } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
+import { scopedAuthoredSections, scopedSelectionNodes, copyScopedSelectionContext, copyScopedNodeContexts } from './scoped-work-authored.mjs';
 
 const fail = (message) => { throw new ScopedWorkContractError(`SW-GRAPH: ${message}`); };
 const prefix = /^(?:artifact|decision|unknown|conflict|gap|investigation|verification|input):/;
@@ -72,8 +73,14 @@ function nativeSectionRows(body, section) {
   return scopedIndexedBy(entry.list, 'row', (item) => item.key);
 }
 function selectedNodes(view, selection, body) {
+  const remembered = scopedSelectionNodes(body, selection);
+  if (remembered) return remembered;
   if (selection.type === 'body' || selection.type === 'body-token') return view.tree.children;
-  const sections = scopedSectionsBySlug(view.sections, selection.section);
+  let authored = ['api-candidates', 'unknowns'].includes(selection.section)
+    ? scopedAuthoredSections(body, selection.section === 'api-candidates' ? 'api candidates' : 'unknowns', view) : [];
+  if (selection.section === 'unknowns' && !authored.some((home) => home.tables.some((table) =>
+    ['ID', 'Question'].every((header) => hasHeader(table.headers, header))))) authored = [];
+  const sections = authored.length ? authored : scopedSectionsBySlug(view.sections, selection.section);
   if (sections.length !== 1) fail('selected section is missing or ambiguous');
   const nodes = sections[0].nodes;
   if (selection.type !== 'row' && selection.bullet_index == null) return nodes;
@@ -109,45 +116,6 @@ function definitionsOf(view) {
   return viewDefinitions.get(view);
 }
 
-// API authoring reads literal H2 names and removes generated blocks. A native
-// slug alone also matches formatted/setext/lookalike headings, so keep the raw
-// authoring section and source-span eligibility beside native tables and rows.
-const authoredTables = new WeakMap();
-function authoredTableSections(body, view) {
-  if (authoredTables.has(view.tree)) return authoredTables.get(view.tree);
-  const authored = stripGeneratedBlocks(body, { preserveOffsets: true });
-  // getSections reads raw H2 lines, even inside examples/comments, and keeps the
-  // last occurrence of each name. Match that source ownership as well as the
-  // native heading; a displayed section must not expand the authoring contract.
-  const rawSections = [], lastSections = new Map();
-  let offset = 0;
-  for (const line of authored.split(/\r?\n/)) {
-    const name = specSectionName(line);
-    if (name !== null) {
-      const entry = { name, start: offset };
-      rawSections.push(entry);
-      lastSections.set(name, entry);
-    }
-    offset += line.length + (authored.startsWith('\r\n', offset + line.length) ? 2 : 1);
-  }
-  const sections = new Map();
-  let section = null, sourceIndex = -1;
-  for (const node of view.tree.children) {
-    while (rawSections[sourceIndex + 1]?.start <= node.position.start.offset) sourceIndex += 1;
-    const source = rawSections[sourceIndex];
-    const raw = rawNode(body, node);
-    const retained = authored.slice(node.position.start.offset, node.position.end.offset) === raw;
-    if (node.type === 'heading' && node.depth === 2) {
-      section = retained ? specSectionName(raw) : null;
-    } else if (node.type === 'table' && retained && section === source?.name && lastSections.get(section) === source) {
-      sections.set(node, section);
-      for (const row of node.children.slice(1)) sections.set(row, section);
-    }
-  }
-  authoredTables.set(view.tree, sections);
-  return sections;
-}
-
 // Index only canonical API table cells. The tree is shared by equal bodies from
 // different artifacts, so cache local IDs, never a document's canonical ref.
 // Indexing is syntax-only: unselected rows must not resolve or validate targets.
@@ -156,14 +124,13 @@ function localApiTrackingCells(body, view) {
   if (apiTrackingCells.has(view.tree)) return apiTrackingCells.get(view.tree);
   const cells = new Map();
   apiTrackingCells.set(view.tree, cells);
-  const sections = scopedSectionsBySlug(view.sections, 'api-candidates');
+  const sections = scopedAuthoredSections(body, 'api candidates', view);
   if (sections.length !== 1) return cells;
   const tables = sections[0].tableNodes.map((node) => ({ node,
     columns: apiCandidateColumns(nativeTableKeys(body, node).headers),
   })).filter(({ columns }) => columns.some(({ indexes }) => indexes.length > 0));
   if (tables.length !== 1) return cells;
   const [{ node: table, columns }] = tables;
-  if (authoredTableSections(body, view).get(table) !== 'api candidates') return cells;
   if (columns.some(({ indexes }) => indexes.length !== 1)) return cells;
   const gateIndex = columns.find(({ name }) => name === 'Gate').indexes[0];
   const trackingIndex = columns.find(({ name }) => name === 'Tracking').indexes[0];
@@ -186,10 +153,11 @@ function localApiTrackingCells(body, view) {
 function dependencies(body, view, nodes, omitNestedLists, metadata = {}) {
   const found = new Set();
   const deferredTracking = new Set();
+  const ordinaryRefs = new Set();
   const definitions = definitionsOf(view);
   const trackingCells = ['screen-spec', 'shared-surface-spec'].includes(metadata.artifact_type)
     ? localApiTrackingCells(body, view) : null;
-  const add = (token) => found.add(canonicalRef(token));
+  const add = (token) => { const ref = canonicalRef(token); found.add(ref); ordinaryRefs.add(ref); };
   function destination(node) {
     if (!prefix.test(node.url || '')) return;
     const raw = rawNode(body, node);
@@ -266,7 +234,7 @@ function dependencies(body, view, nodes, omitNestedLists, metadata = {}) {
       }
     }
   }, omitNestedLists);
-  return { refs: scopeSet([...found]), deferredTracking: scopeSet([...deferredTracking]) };
+  return { refs: scopeSet([...found]), deferredTracking: scopeSet([...deferredTracking]), ordinaryRefs: scopeSet([...ordinaryRefs]) };
 }
 
 // Only explicitly typed metadata references are graph edges here. Native
@@ -310,10 +278,135 @@ export function scopedGraphSelectionRefs(body, metadata, selection, view = parse
     ...scopedGraphMetadataRefs(metadata)])]);
 }
 
+const graphContexts = new WeakMap();
+export function scopedGraphContexts(graph) {
+  const context = graphContexts.get(graph);
+  return context ? { authoredRefs: [...context.authoredRefs], trackingRefs: [...context.trackingRefs], ordinaryRefs: [...context.ordinaryRefs] }
+    : { authoredRefs: [], trackingRefs: [], ordinaryRefs: [] };
+}
+export function copyScopedGraphContexts(from, to) {
+  const context = graphContexts.get(from);
+  if (context) graphContexts.set(to, context);
+  return to;
+}
+
+// Relation passes combine independently expanded graphs. Keep every resolution
+// demand beside that union so later passes cannot reinterpret a shared ref.
+export function mergeScopedGraphContexts(graphs, to) {
+  const merged = { authoredRefs: new Set(), trackingRefs: new Set(), ordinaryRefs: new Set() };
+  for (const graph of graphs) {
+    const context = scopedGraphContexts(graph);
+    for (const name of Object.keys(merged)) for (const ref of context[name]) merged[name].add(ref);
+  }
+  graphContexts.set(to, Object.fromEntries(Object.entries(merged).map(([name, refs]) => [name, [...refs]])));
+  return to;
+}
+
+// An unapplied-row search audits alternative sources before knowing which rows
+// relate. Keep its vertices separate by actual source; an unrelated candidate
+// must not impose its resolution mode on another candidate's dependency. This
+// is discovery only. Reached roots still require the strict graph below before
+// their records can become selected evidence or enter a binding basis.
+export function resolveScopedCandidateGraph({ roots = [], targetIndex, inputArtifacts = [], projectRoot, project = null } = {}) {
+  const refs = createScopedReferenceResolver({ targetIndex, inputArtifacts, projectRoot, shareMetadata: true });
+  const sources = createScopedSourceResolver({ targetIndex, inputArtifacts, projectRoot });
+  const selectedRoots = workSet(roots, (root) => {
+    workObject(root, ['ref', 'mode'], [], 'candidate graph root');
+    const ref = canonicalRef(root.ref), mode = root.mode;
+    if (!['ordinary', 'authored', 'tracking'].includes(mode)) fail('invalid candidate graph mode');
+    if (mode !== 'ordinary' && parseScopedTargetRef(ref)?.kind !== 'unknown') fail('authored candidate requires an Unknown');
+    return { ref, mode };
+  }, 'candidate graph roots');
+  const queue = [], requests = new Map(), nodes = new Map(), pendingEdges = [];
+  const files = new Map(), documents = new Map(), serialized = new WeakMap();
+  const serial = (value) => {
+    if (value === null || typeof value !== 'object') return scopeJson(value);
+    if (!serialized.has(value)) serialized.set(value, scopeJson(value));
+    return serialized.get(value);
+  };
+  function read(file, metadata, expectedBody) {
+    if (!documents.has(file)) {
+      const canonical = canonicalRepositoryPath(projectRoot, file, { required: true, type: 'file', label: 'scoped evidence' });
+      const raw = readCurrentBytes(canonical.absolute, 'scoped evidence');
+      const parsed = splitFrontmatter(decodeGitUtf8(raw, 'scoped evidence'));
+      files.set(file, { file, sha256: hashBytes(raw) });
+      documents.set(file, { parsed, metadata: parsed.hasFrontmatter && !parsed.parseError ? scopeJson(parsed.data) : null, view: null });
+    }
+    const document = documents.get(file), { parsed } = document;
+    if (document.metadata === null || document.metadata !== serial(metadata) ||
+        (expectedBody !== undefined && parsed.body !== expectedBody)) fail('evidence differs from its indexed snapshot');
+    document.view ??= parseReconciliationReferenceView(parsed.body);
+    return { body: parsed.body, view: document.view };
+  }
+  function enqueue(ref, mode) {
+    const identity = scopeJson([mode, ref]);
+    if (!requests.has(identity)) {
+      const request = { ref, mode, key: null };
+      requests.set(identity, request); queue.push(request);
+    }
+    return requests.get(identity);
+  }
+  const rootRequests = selectedRoots.map(({ ref, mode }) => enqueue(ref, mode));
+  for (let index = 0; index < queue.length; index += 1) {
+    const request = queue[index], { ref, mode } = request;
+    const input = parseInputEvidenceRef(ref);
+    let record, document;
+    if (input) {
+      const evidence = sources.evidence(ref), { input: data, anchor } = evidence;
+      document = read(data.file, data.metadata);
+      if (files.get(data.file).sha256 !== data.input_sha256) fail('input changed after anchor resolution');
+      record = { ref, kind: 'input-evidence', input_id: data.input_id, file: data.file,
+        metadata: data.metadata, selection: anchor };
+    } else {
+      // Resolve each requested mode even if another mode already reached the
+      // same source: Tracking must still validate its canonical open status.
+      record = mode === 'tracking' ? refs.tracking(ref) : mode === 'authored' ? refs.authoredContract(ref) : refs.contract(ref);
+      document = read(record.file, record.metadata, resolveArtifact(targetIndex, record.artifact_id).body);
+    }
+    const selected = selectedNodes(document.view, record.selection, document.body);
+    const spans = selected.map((node) => {
+      const start = node.position?.start.offset, end = node.position?.end.offset;
+      if (!Number.isInteger(start) || !Number.isInteger(end) || start > end) fail('missing native source span');
+      return [start, end];
+    });
+    // A section/body may contain many native nodes and many outgoing edges.
+    // Keep its full source identity in a fixed-size digest rather than repeat
+    // every selected range in every edge and turn a linear graph quadratic.
+    const key = scopeJson([ref, record.file, hashBytes(scopeJson(spans))]);
+    request.key = key;
+    if (nodes.has(key)) { nodes.get(key).modes.add(mode); continue; }
+    const projected = project ? project(record) : record;
+    if (projected?.selection) copyScopedSelectionContext(record.selection, projected.selection);
+    nodes.set(key, { key, ref, modes: new Set([mode]), record: projected });
+    const found = dependencies(document.body, document.view, selected,
+      Boolean(input) && record.selection.bullet_index != null, input ? {} : record.metadata);
+    const ordinary = new Set([...found.ordinaryRefs, ...scopedGraphMetadataRefs(record.metadata)]);
+    for (const dependency of ordinary) pendingEdges.push({ from: key, to: enqueue(dependency, 'ordinary') });
+    for (const dependency of found.deferredTracking) pendingEdges.push({ from: key, to: enqueue(dependency, 'tracking') });
+  }
+  for (const entry of files.values()) {
+    const file = canonicalRepositoryPath(projectRoot, entry.file, { required: true, type: 'file', label: 'scoped evidence' });
+    if (hashBytes(readCurrentBytes(file.absolute, 'scoped evidence')) !== entry.sha256) fail('evidence changed during graph resolution');
+  }
+  const values = [...nodes.values()].map((node) => ({ ...node, modes: scopeSet([...node.modes]) }));
+  const normalized = scopeSet(values);
+  for (const node of normalized) {
+    const original = nodes.get(node.key).record;
+    if (original?.selection && node.record?.selection) copyScopedSelectionContext(original.selection, node.record.selection);
+  }
+  const edges = new Map();
+  for (const edge of pendingEdges) {
+    const value = { from: edge.from, to: edge.to.key };
+    edges.set(scopeJson(value), value);
+  }
+  return { roots: scopeSet(rootRequests), nodes: normalized, edges: scopeSet([...edges.values()]), read_set: scopeSet([...files.values()]) };
+}
+
 // `project` maps each node as it is recorded (the unapplied-row search keeps only the projected
 // node, not every row's copy of its document's metadata); edges and the snapshot check still read
 // the full record.
-export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifacts = [], projectRoot, project = null } = {}) {
+export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifacts = [], projectRoot, project = null,
+  authoredRefs = [], trackingRefs = [], ordinaryRefs = [] } = {}) {
   const refs = createScopedReferenceResolver({ targetIndex, inputArtifacts, projectRoot, shareMetadata: true });
   const sources = createScopedSourceResolver({ targetIndex, inputArtifacts, projectRoot });
   const roots = workSet(contracts, canonicalRef, 'graph roots', true);
@@ -326,7 +419,11 @@ export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifa
   // selected (#275); every record is still checked against those bytes, and the re-read
   // below catches a later change.
   const documents = new Map(), serialized = new WeakMap();
-  const checkedTracking = new Set();
+  const authored = new Set(workSet(authoredRefs, canonicalRef, 'authored graph references'));
+  const tracking = new Set(workSet(trackingRefs, canonicalRef, 'Tracking graph references'));
+  const ordinary = new Set([...roots.filter((ref) => !authored.has(ref) && !tracking.has(ref)),
+    ...workSet(ordinaryRefs, canonicalRef, 'ordinary graph references')]);
+  const resolved = new Map(), contextRecords = new Map();
   // Records of one document share its metadata object, so it is serialized once.
   const serial = (value) => {
     if (value === null || typeof value !== 'object') return scopeJson(value);
@@ -347,6 +444,33 @@ export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifa
     document.view ??= parseReconciliationReferenceView(parsed.body);
     return { body: parsed.body, view: document.view };
   }
+  function sameSource(a, b) {
+    if (a.file !== b.file || a.artifact_id !== b.artifact_id) return false;
+    const doc = read(a.file, a.metadata, resolveArtifact(targetIndex, a.artifact_id).body);
+    const spans = (record) => selectedNodes(doc.view, record.selection, doc.body)
+      .map((node) => [node.position.start.offset, node.position.end.offset]);
+    return scopeJson(spans(a)) === scopeJson(spans(b));
+  }
+  function contextual(ref) {
+    const mode = tracking.has(ref) ? 'tracking' : 'authored';
+    let cached = contextRecords.get(ref);
+    if (!cached || cached.mode !== mode) {
+      cached = { mode, record: mode === 'tracking' ? refs.tracking(ref) : refs.authoredContract(ref) };
+      contextRecords.set(ref, cached);
+    }
+    // The same spelling cannot silently select two physical rows, including
+    // equal-cell generated/authored rows and a raw root visited before Tracking.
+    const other = resolved.get(ref) || (ordinary.has(ref) ? refs.contract(ref) : null);
+    if (other && !sameSource(other, cached.record)) fail(`ambiguous raw/authored selection: ${ref}`);
+    return cached.record;
+  }
+  function markOrdinary(ref) {
+    ordinary.add(ref);
+    if (authored.has(ref) || tracking.has(ref)) {
+      const selected = contextual(ref), raw = refs.contract(ref);
+      if (!sameSource(raw, selected)) fail(`ambiguous raw/authored selection: ${ref}`);
+    }
+  }
   // Iterative finite ref index: cycles retain their edges without recursive
   // expansion, and repeated dependencies never select an arbitrary first record.
   for (let index = 0; index < queue.length; index += 1) {
@@ -362,29 +486,23 @@ export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifa
       record = { ref, kind: 'input-evidence', input_id: data.input_id, file: data.file,
         metadata: data.metadata, selection: anchor };
     } else {
-      record = refs.contract(ref);
+      record = tracking.has(ref) || authored.has(ref) ? contextual(ref) : refs.contract(ref);
       document = read(record.file, record.metadata, resolveArtifact(targetIndex, record.artifact_id).body);
     }
-    nodes.set(ref, project ? project(record) : record);
+    resolved.set(ref, record);
+    const projected = project ? project(record) : record;
+    if (projected?.selection) copyScopedSelectionContext(record.selection, projected.selection);
+    nodes.set(ref, projected);
     const selected = selectedNodes(document.view, record.selection, document.body);
-    const { refs: dependenciesForRef, deferredTracking } = dependencies(document.body, document.view, selected,
+    const { refs: dependenciesForRef, deferredTracking, ordinaryRefs: contentRefs } = dependencies(document.body, document.view, selected,
       Boolean(input) && record.selection.bullet_index != null, input ? {} : record.metadata);
-    // Validate when a Tracking edge is encountered, even if its Unknown was
-    // already visited as another root. Do not inspect a projected node or require
-    // unrelated ordinary Unknown references to be open.
     for (const dependency of deferredTracking) {
-      if (checkedTracking.has(dependency)) continue;
-      const tracking = refs.contract(dependency);
-      const [trackingRow] = selectedNodes(document.view, tracking.selection, document.body);
-      const row = Object.fromEntries(tracking.selection.headers.map((header, index) => [header, tracking.selection.cells[index]]));
-      if (authoredTableSections(document.body, document.view).get(trackingRow) !== 'unknowns' ||
-          String(col(row, 'Status') || '').toLowerCase() !== 'open') {
-        fail(`deferred Tracking requires a canonical open Unknown: ${dependency}`);
-      }
-      checkedTracking.add(dependency);
+      tracking.add(dependency);
+      contextual(dependency);
     }
     const metadataRefs = scopedGraphMetadataRefs(record.metadata);
     for (const dependency of scopeSet([...new Set([...dependenciesForRef, ...metadataRefs])])) {
+      if (contentRefs.includes(dependency) || metadataRefs.includes(dependency)) markOrdinary(dependency);
       edges.push({ from: ref, to: dependency });
       if (!scheduled.has(dependency)) { scheduled.add(dependency); queue.push(dependency); }
     }
@@ -394,8 +512,11 @@ export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifa
     const file = canonicalRepositoryPath(projectRoot, entry.file, { required: true, type: 'file', label: 'scoped evidence' });
     if (hashBytes(readCurrentBytes(file.absolute, 'scoped evidence')) !== entry.sha256) fail('evidence changed during graph resolution');
   }
-  return { roots: scopeSet(roots), nodes: scopeSet([...nodes.values()]), edges: scopeSet(edges),
+  const values = [...nodes.values()];
+  const graph = { roots: scopeSet(roots), nodes: copyScopedNodeContexts(values, scopeSet(values)), edges: scopeSet(edges),
     read_set: scopeSet([...files.values()]) };
+  graphContexts.set(graph, { authoredRefs: [...authored], trackingRefs: [...tracking], ordinaryRefs: [...ordinary] });
+  return graph;
 }
 
 // Share the exact native selection with inverse uncertainty matching. Leaf spans
@@ -416,7 +537,7 @@ export function scopedGraphSelectionSpans(body, view, selection, input = false) 
 // The API resolver has already checked the canonical v2 table, endpoint and raw
 // row correspondence. Traverse just that row's native cells, retaining document
 // definitions for reference-style links. Do not select the whole API section.
-export function scopedGraphApiRowDependencies(body, candidate) {
+export function scopedGraphApiRowContext(body, candidate) {
   const view = parseReconciliationReferenceView(body);
   const [row] = selectedNodes(view, { type: 'row', section: 'api-candidates',
     headers: candidate.headers, cells: candidate.cells }, body);
@@ -430,6 +551,10 @@ export function scopedGraphApiRowDependencies(body, candidate) {
   // It was resolved to an exact canonical row by createScopedApiResolver().unit().
   // All other cells use the ordinary strict typed-reference scanner unchanged.
   const cells = row.children.filter((_, index) => !candidate.tracking || index !== trackingIndex);
-  return scopeSet([...new Set([...dependencies(body, view, cells, false).refs,
-    ...(candidate.tracking ? [canonicalRef(candidate.tracking.ref)] : [])])]);
+  const ordinaryRefs = dependencies(body, view, cells, false).refs;
+  const trackingRefs = candidate.tracking ? [canonicalRef(candidate.tracking.ref)] : [];
+  return { refs: scopeSet([...new Set([...ordinaryRefs, ...trackingRefs])]), ordinaryRefs, trackingRefs };
+}
+export function scopedGraphApiRowDependencies(body, candidate) {
+  return scopedGraphApiRowContext(body, candidate).refs;
 }

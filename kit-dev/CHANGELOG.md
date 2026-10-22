@@ -4,6 +4,36 @@
 
 ## Unreleased
 
+### fix(scoped) — GENERATED 구조와 작성 API/Unknown 선택 기준 통일 (#282 후속)
+
+- GENERATED 안내 표가 정상 API 표의 유일성 검사를 깨뜨리거나, GENERATED H2가 작성
+  섹션을 끊어 Unknown edge를 누락하던 문제를 공통 authored view로 수정했다.
+- API unit·행 dependency·본문/섹션 그래프·source 범위·uncertainty가 같은 원본 AST 행을
+  선택한다. 내부 선택 문맥은 그래프 재확장과 projection까지 유지하며 public selection
+  필드, 원본 본문·파일 해시·snapshot 검사와 문서별 artifact ID 분리는 보존한다.
+- GENERATED 내부의 ordinary fully qualified 참조는 유지한다. local Tracking의 작성
+  근거와 구분하고, 같은 참조가 서로 다른 원본 행을 선택하면 방문 순서와 무관하게 거부한다.
+- PR #284 리뷰 후 raw/authored Unknown 후보를 실제 행별로 유지해 직접 선택한 open
+  GENERATED Unknown의 차단 누락을 고쳤다. 파생 root와 미적용 관계도 실제 선택 문맥과
+  원본 범위를 비교하며, 혼합 표의 일반 artifact 행 참조와 InputArtifact의 raw anchor
+  경계를 보존한다. 공개 CLI 회귀에서 해당 Unknown의 missing/open 차단까지 확인한다.
+- 후속 리뷰의 GENERATED H2 없는 혼합 표에서도 일반 artifact 행으로 선택한 Unknown을
+  실제 원본 행과 canonical ID로 다시 해소해 후보·관계·차단을 유지한다. 독립 authored 표를
+  추가해도 공개 CLI의 missing/open·blocking unit·readiness denial이 사라지지 않으며,
+  같은 ID의 다른 원본 행이나 작성 표 중복은 모호성으로 거부한다. 선택하지 않은 GENERATED
+  요약 표를 canonical 후보로 추가하지 않는다.
+- 섹션·문서 전체 선택도 실제 원본 범위에 완전히 포함된 canonical Unknown 행을 후보로
+  보완한다. GENERATED 표에 독립 resolved authored 표를 추가해도 선택된 open Unknown의
+  `selected-evidence` 관계와 공개 CLI 차단을 유지한다. 행·섹션·문서 세 선택 방식의 전후
+  대조, 원본 행 충돌, 선택 범위 밖 표와 template/formatted 안내 표 대조를 회귀에 포함했다.
+- 실제 H2의 Markdown slug 유일성 검사를 일반 artifact 섹션·행 선택의 공통 단계로
+  옮겼다. `Unknowns`/`**Unknowns**` 및 API Candidates의 실제 중복은 두 참조 모두
+  거부하고, GENERATED 동명 H2를 제외하는 기존 작성 섹션 경계는 유지한다.
+- 회귀에 원문 3사례, LF/CRLF·동일 제목·Unknown 경계, 정확한 edge/원본 범위와 교차 화면
+  effect를 추가했다. 실제 packed runtime에서 `readiness --work`·`binding-status --owner`를
+  실행하고 payload manifest의 파일별 해시도 확인한다. 기존 open Unknown·deferred·stale
+  binding 제한은 유지하며 consumer 업그레이드 승인은 별도 실 저장소 재검증을 따른다.
+
 ### fix(scoped) — API deferred Tracking을 섹션·문서 그래프에서도 해소 (#282)
 
 - canonical API Candidates v2의 deferred `Tracking: unknown:U-...`가 있는 섹션이나

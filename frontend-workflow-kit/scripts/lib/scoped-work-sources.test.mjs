@@ -9,6 +9,9 @@ import { REQUIRED_ITEM_COLS } from './reconciliation-items.mjs';
 import { REQUIRED_REGISTER_COLS } from './reconciliation-register.mjs';
 import { hashBytes } from './current-work-request.mjs';
 import { createScopedSourceResolver } from './scoped-work-sources.mjs';
+import { splitFrontmatter } from './util.mjs';
+import { parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
+import { resolveScopedContractGraph, scopedGraphSelectionSpans } from './scoped-work-graph.mjs';
 
 const INPUT = 'IN-20260917-meeting-001';
 const REF = `input:${INPUT}#extracted-facts/01`;
@@ -118,6 +121,46 @@ test('D sources: unique real input sections and nonempty, in-range anchors are m
   assert.match(whole.anchors[0].content, /Second actual fact/);
   assert.equal(whole.anchors[0].bullet_index, null);
 });
+
+for (const [title, section] of [['API Candidates', 'api-candidates'], ['Unknowns', 'unknowns']]) {
+  for (const ending of ['LF', 'CRLF']) test(`#284 D input ranges: ${section} keeps its raw section boundary with ${ending}`, (t) => {
+    const ref = `input:${INPUT}#${section}`, inside = 'artifact:DOC#rules', outside = 'artifact:OUTSIDE#rules';
+    const text = `Selected ${inside}`, marker = '<!-- GENERATED:START summary -->';
+    const body = `## ${title}\n- ${text}\n\n${marker}\n\n## Generated Summary\n\nGenerated text.\n\n` +
+      '<!-- GENERATED:END summary -->\n\n' +
+      table(['ID', 'Question', 'Status'], [['U-OUTSIDE', outside, 'open']]) +
+      '\n\n## Extracted Facts\n- Unrelated captured fact.\n';
+    const item = effect(); item[6] = ref;
+    const f = fixture(t, { inputBody: ending === 'CRLF' ? body.replace(/\n/g, '\r\n') : body,
+      items: [item], classification: 'simple-update×1' });
+    const file = path.join(f.root, 'outside.md'), fm = { artifact_id: 'OUTSIDE', artifact_type: 'business-rules', domain: 'result', status: 'draft' };
+    fs.writeFileSync(file, md(fm, '## Rules\nOutside the selected input section.'));
+    const options = { ...f.options, targetIndex: buildReconciliationTargetIndex({ docs: [
+      ...[...f.options.targetIndex.artifacts.values()].map(({ file, fm }) => ({ file, fm })), { file, fm },
+    ] }) };
+    const inputBody = splitFrontmatter(fs.readFileSync(f.inputFile, 'utf8')).body;
+    const view = parseReconciliationReferenceView(inputBody), start = inputBody.indexOf(text), markerStart = inputBody.indexOf(marker);
+    const source = f.resolver.source({ input_id: INPUT, items: ['01'], source_refs: [ref] });
+    const sectionSpans = [[start, start + text.length], [markerStart, markerStart + marker.length]];
+    for (const anchor of [source.anchors[0], source.groups[0].effects[0].evidence]) {
+      assert.deepEqual(Object.keys(anchor).sort(), ['bullet_index', 'content', 'ref', 'section']);
+      assert.ok(anchor.content.includes(text));
+      assert.ok(!anchor.content.includes(outside));
+      assert.deepEqual(scopedGraphSelectionSpans(inputBody, view, anchor, true), sectionSpans);
+    }
+    for (const token of [ref, `${ref}/01`]) {
+      const graph = resolveScopedContractGraph({ ...options, contracts: [token], project: (record) => structuredClone(record) });
+      assert.deepEqual(graph.roots, [token]);
+      assert.deepEqual(graph.nodes.map((node) => node.ref).sort(), [inside, token].sort());
+      assert.deepEqual(graph.edges, [{ from: token, to: inside }]);
+      assert.deepEqual(graph.read_set.map((entry) => entry.file).sort(), [`${INPUT}.md`, 'contract.md'].sort());
+      const selected = graph.nodes.find((node) => node.ref === token).selection;
+      assert.ok(!selected.content.includes(outside));
+      assert.deepEqual(scopedGraphSelectionSpans(inputBody, view, selected, true),
+        token === ref ? sectionSpans : [[start, start + text.length]], 'graph projection keeps the same raw source span');
+    }
+  });
+}
 
 test('D sources: existing v2 hard routing, projection, evidence and provenance checks are executed', (t) => {
   for (const opts of [
