@@ -190,6 +190,42 @@ test('#284 CLI: directly selected generated Unknown remains blocking beside anot
   assert.equal(p.read(LIST), body);
 });
 
+test('#284 CLI: artifact-selected generated Unknown stays blocking when an independent authored table is added', (t) => {
+  const p = project(t), unknown = 'unknown:U-GENERATED@COUPON-001-screen-spec';
+  const units = structuredClone(UNITS);
+  units.units[0].contracts = ['artifact:COUPON-001-screen-spec#unknowns/U-GENERATED'];
+  p.bind([], [], units);
+  const original = p.read(LIST);
+  const table = (row) => '| ID | Question | Status |\n|---|---|---|\n' + row;
+  // There is deliberately no H2 inside this GENERATED block. Both physical
+  // tables therefore belong to the same native Unknowns section after the edit.
+  const selected = generated(table('| U-GENERATED | An explicitly selected generated question? | open |'));
+  const independent = table('| U-AUTHORED | Independent authored question? | resolved |');
+  let baseline;
+  for (const [label, authored] of [['generated table alone', ''], ['independent authored table added', independent]]) {
+    const body = original.replace(/\n## Unknowns\n[\s\S]*?(?=\n## )/,
+      `\n## Unknowns\n\n${authored}\n\n${selected}\n`);
+    assert.ok(body.includes(selected), 'the selected generated row and block stay identical');
+    p.put(LIST, body); p.commit(label);
+
+    const report = p.json(p.status('--owner', OWNER, '--json'));
+    const row = report.owners[0].rows.find((entry) => entry.ref === unknown);
+    assert.ok(row, `${label}: binding-status must retain the artifact-selected GENERATED Unknown`);
+    const result = [row.state, row.status, row.home, row.blocking_units];
+    assert.deepEqual(result, ['missing', 'open', LIST, ['list-behavior']], label);
+    if (baseline) assert.deepEqual(result, baseline, 'adding a separate authored table must not clear the selected row');
+    baseline = result;
+
+    const ready = p.readiness();
+    assert.deepEqual([ready.authority, ready.ready], ['scoped', false], label);
+    assert.ok(ready.denials.some((entry) => entry.code === 'unit-uncertainty-unresolved' &&
+      entry.application.uncertainty === unknown), `${label}: the selected open Unknown must deny the unit`);
+    assert.equal(ready.requests[0].path_authorizations[0].allowed, false, label);
+    assert.equal(p.git('status', '--porcelain'), '', label);
+    assert.equal(p.read(LIST), body, label);
+  }
+});
+
 test('#275 binding-status: B0-B5 change only the bindings whose row or unit contract changed', (t) => {
   const p = project(t), before = p.rows();
   assert.deepEqual([before[D003].state, before[D003].stale_reason, before[U001].state, before[U001].stale_reason],

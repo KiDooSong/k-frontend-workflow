@@ -17,6 +17,14 @@
   GENERATED Unknown의 차단 누락을 고쳤다. 파생 root와 미적용 관계도 실제 선택 문맥과
   원본 범위를 비교하며, 혼합 표의 일반 artifact 행 참조와 InputArtifact의 raw anchor
   경계를 보존한다. 공개 CLI 회귀에서 해당 Unknown의 missing/open 차단까지 확인한다.
+- 후속 리뷰의 GENERATED H2 없는 혼합 표에서도 일반 artifact 행으로 선택한 Unknown을
+  실제 원본 행과 canonical ID로 다시 해소해 후보·관계·차단을 유지한다. 독립 authored 표를
+  추가해도 공개 CLI의 missing/open·blocking unit·readiness denial이 사라지지 않으며,
+  같은 ID의 다른 원본 행이나 작성 표 중복은 모호성으로 거부한다. 선택하지 않은 GENERATED
+  요약 표를 canonical 후보로 추가하지 않는다.
+- 실제 H2의 Markdown slug 유일성 검사를 일반 artifact 섹션·행 선택의 공통 단계로
+  옮겼다. `Unknowns`/`**Unknowns**` 및 API Candidates의 실제 중복은 두 참조 모두
+  거부하고, GENERATED 동명 H2를 제외하는 기존 작성 섹션 경계는 유지한다.
 - 회귀에 원문 3사례, LF/CRLF·동일 제목·Unknown 경계, 정확한 edge/원본 범위와 교차 화면
   effect를 추가했다. 실제 packed runtime에서 `readiness --work`·`binding-status --owner`를
   실행하고 payload manifest의 파일별 해시도 확인한다. 기존 open Unknown·deferred·stale

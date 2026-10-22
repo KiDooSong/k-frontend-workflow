@@ -424,12 +424,39 @@ test('#284 generic artifact rows deduplicate one physical row visible through ra
   }
 });
 
-test('#284 generic artifact row fallback keeps real duplicate section headings ambiguous', (t) => {
-  const apiHeaders = ['ID', ...headers];
-  const api = table(apiHeaders, [['chosen', 'GET', '/author', 'confirmed', 'active', '-', 'src/api/author/**']]);
-  for (const heading of ['## API Candidates', '## **API Candidates**']) {
-    const body = bodyFor({ api, apiAfter: `${heading}\n\n${table(['ID', 'Notes'], [['other', 'Other actual section']])}` });
-    const f = fixture(t, [{ body }]);
-    assert.throws(() => createScopedReferenceResolver(f.options).contract(`artifact:${ID}#api-candidates/chosen`), /SW-REF-AMBIGUOUS/);
-  }
-});
+for (const [title, slug, columns, row] of [
+  ['API Candidates', 'api-candidates', ['ID', ...headers], ['chosen', 'GET', '/author', 'confirmed', 'active', '-', 'src/api/author/**']],
+  ['Unknowns', 'unknowns', unknownHeaders, ['U-AUTHOR', 'Authored question?', 'open']],
+]) {
+  for (const format of ['plain', 'bold']) test(`#284 generic artifact section and row reject real duplicate ${title} (${format})`, (t) => {
+    const heading = format === 'plain' ? `## ${title}` : `## **${title}**`;
+    for (const eol of ['\n', '\r\n']) for (const duplicateFirst of [false, true]) {
+      const authored = `## ${title}\n\n${table(columns, [row])}`;
+      const duplicate = `${heading}\n\nartifact:MISSING`;
+      const body = (duplicateFirst ? [duplicate, authored] : [authored, duplicate]).join('\n\n').replace(/\n/g, eol);
+      const f = fixture(t, [{ body }]);
+      const refs = createScopedReferenceResolver(f.options);
+      for (const ref of [`artifact:${ID}#${slug}`, `artifact:${ID}#${slug}/${row[0]}`]) {
+        assert.throws(() => refs.contract(ref), /SW-REF-AMBIGUOUS/);
+        assert.throws(() => f.graph([ref]), /SW-REF-AMBIGUOUS/,
+          'reject ambiguous selection before silently dropping the other real section or following its missing dependency');
+      }
+    }
+  });
+
+  test(`#284 generic artifact section and row ignore GENERATED same-slug ${title} headings`, (t) => {
+    for (const heading of [`## ${title}`, `## **${title}**`]) for (const duplicateFirst of [false, true]) {
+      const example = generated(`${heading}\n\nGenerated display text.`);
+      const body = `## ${title}\n\n${(duplicateFirst ? [example, table(columns, [row])] : [table(columns, [row]), example]).join('\n\n')}`;
+      const f = fixture(t, [{ body }]);
+      const refs = createScopedReferenceResolver(f.options);
+      const sectionRef = `artifact:${ID}#${slug}`, rowRef = `${sectionRef}/${row[0]}`;
+      assert.ok(refs.contract(sectionRef).selection.content.includes(row[1]));
+      assert.deepEqual(refs.contract(rowRef).selection.cells, row);
+      for (const ref of [sectionRef, rowRef]) {
+        assert.deepEqual(ids(f.graph([ref])), [ref]);
+        assert.deepEqual(f.graph([ref]).edges, []);
+      }
+    }
+  });
+}

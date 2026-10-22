@@ -11,7 +11,7 @@ import { ownerParts, readCurrentBytes, hashBytes, CurrentWorkError } from './cur
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { parseTargetRef } from './reconciliation-items.mjs';
 import { parseReconciliationMarkdown, parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
-import { createScopedReferenceResolver, scopedRawTable, parseScopedTargetRef } from './scoped-work-refs.mjs';
+import { createScopedReferenceResolver, scopedRawTable, parseScopedTargetRef, scopedRowAlias } from './scoped-work-refs.mjs';
 import { resolveScopedContractGraph, scopedGraphSelectionSpans, scopedGraphMetadataRefs, scopedGraphBodyRefs,
   mergeScopedGraphContexts } from './scoped-work-graph.mjs';
 import { scopedProjectionNode } from './scoped-work-projection.mjs';
@@ -143,6 +143,22 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
     return rows;
   }
 
+  function addCandidate(entry, token, status, affected, authored, source = null) {
+    const selected = authored ? refs.authoredContract(token) : refs.contract(token);
+    const record = { ...scopedProjectionNode(selected), status };
+    if (source && (source.file !== record.file || scopeJson(ranges(source)) !== scopeJson(ranges(record)))) {
+      fail(`ambiguous canonical Unknown source: ${token}`);
+    }
+    const physical = scopeJson([token, ranges(record)]);
+    if (candidates.has(physical)) return;
+    const graph = resolveScopedContractGraph({ contracts: [token], targetIndex, projectRoot, inputArtifacts,
+      authoredRefs: authored ? [token] : [] });
+    for (const file of graph.read_set) read(file.file, file.sha256);
+    const evidence = mergeScopedGraphContexts([graph],
+      { roots: graph.roots, nodes: graph.nodes.map(scopedProjectionNode), edges: graph.edges });
+    candidates.set(physical, { record, entry, evidence, affected: affectedOwners(affected) });
+  }
+
   // #262: the conflicts template's `영향 화면` cell names owners only as a list of
   // known screen/surface IDs separated by `,` or `·`. Anything else (`global` in
   // any case, even where a screen has that ID, a blank, prose, markup or an
@@ -183,20 +199,28 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
           continue;
         }
         for (const [token, { status, affected }] of rows) {
-          const selected = authored ? refs.authoredContract(token) : refs.contract(token);
-          const record = { ...scopedProjectionNode(selected), status };
-          const physical = scopeJson([token, ranges(record)]);
-          if (candidates.has(physical)) continue;
-          const graph = resolveScopedContractGraph({ contracts: [token], targetIndex, projectRoot, inputArtifacts,
-            authoredRefs: authored ? [token] : [] });
-          for (const file of graph.read_set) read(file.file, file.sha256);
-          const evidence = mergeScopedGraphContexts([graph],
-            { roots: graph.roots, nodes: graph.nodes.map(scopedProjectionNode), edges: graph.edges });
           // Audit every inspected row; project only rows with a relation below.
-          candidates.set(physical, { record, entry, evidence, affected: affectedOwners(affected) });
+          addCandidate(entry, token, status, affected, authored);
         }
       }
     }
+  }
+
+  // Canonical-home enumeration intentionally ignores GENERATED display tables
+  // beside an authored table. An explicitly selected row is actual evidence,
+  // however: retain its canonical alias and prove that re-resolution selects
+  // exactly the same original row. Do not promote unselected display legends.
+  for (const node of nodes.values()) {
+    const selection = node.selection;
+    if (!['artifact', 'unknown'].includes(node.kind) || selection?.type !== 'row' || selection.section !== 'unknowns' ||
+        !signatures.unknown.every((header) => hasHeader(selection.headers, header))) continue;
+    const row = Object.fromEntries(selection.headers.map((header, index) => [header, selection.cells[index]]));
+    const token = node.kind === 'unknown' ? node.ref : scopedRowAlias(node);
+    if (!token) fail(`noncanonical uncertainty ID ${JSON.stringify(col(row, 'ID'))}`);
+    workText(col(row, 'Question'), 'Unknown Question');
+    const doc = document(node.file);
+    const authored = scopedUnknownAuthored(doc.body, selection, doc.view);
+    addCandidate(targetIndex.artifacts.get(node.artifact_id), token, col(row, 'Status') || null, undefined, authored, node);
   }
 
   function subject(owner, unit) {
