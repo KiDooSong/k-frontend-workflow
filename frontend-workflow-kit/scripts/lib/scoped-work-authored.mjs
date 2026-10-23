@@ -68,10 +68,24 @@ export function scopedAuthoredView(body, raw = null) {
     }
   }
   flush(body.length);
+  // A literal authoring name owns its tables, but any other retained native H2
+  // with the same slug (`## **Unknowns**`, a setext heading) is a real second
+  // home (#285). List those beside it so every caller's uniqueness check still
+  // rejects it; GENERATED headings never reach this list. sections[0] is the
+  // preamble, not an H2.
+  const named = new Map(), bySlug = new Map();
+  const group = (index, key, section) => {
+    if (!index.has(key)) index.set(key, []);
+    index.get(key).push(section);
+  };
+  for (const section of sections.slice(1)) {
+    group(named, section.name, section); group(bySlug, section.slug, section);
+  }
   const byName = new Map();
-  for (const section of sections) {
-    if (!byName.has(section.name)) byName.set(section.name, []);
-    byName.get(section.name).push(section);
+  for (const [name, list] of named) {
+    const slugs = [...new Set(list.map((section) => section.slug))];
+    byName.set(name, slugs.length === 1 ? bySlug.get(slugs[0])
+      : slugs.flatMap((slug) => bySlug.get(slug)).sort((a, b) => a.start - b.start));
   }
   const view = { tree: raw.tree, sections, tableSections, byName };
   views.set(body, view);
@@ -79,7 +93,9 @@ export function scopedAuthoredView(body, raw = null) {
 }
 
 // Index authoring names once per body; many selected rows must not rescan every
-// section. Callers treat these shared structural lists as read-only.
+// section. A name without a literal H2 has no home, even beside a formatted one;
+// otherwise every retained H2 of its native slug is listed, in document order.
+// Callers treat these shared structural lists as read-only.
 export function scopedAuthoredSections(body, name, raw = null) {
   return scopedAuthoredView(body, raw).byName.get(name) || [];
 }

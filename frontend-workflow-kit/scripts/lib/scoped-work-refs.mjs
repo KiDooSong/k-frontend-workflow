@@ -340,9 +340,9 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot, inputA
           signatures.unknown.every((header) => hasHeader(table.headers, header))))) authored = [];
         if (ref.section === 'api-candidates' && ref.rowKey !== null && !authored.some((home) => home.tables.length)) authored = [];
         if (authored.length > 1) fail('SW-REF-AMBIGUOUS', `section #${ref.section}`);
-        // Literal authoring names may omit a formatted H2 with the same native
-        // slug. Validate all retained headings before either section or row
-        // selection; GENERATED headings alone do not make a real duplicate.
+        // Authored homes already list each retained H2 of the literal name's
+        // native slug (#285). Validate them by slug before either section or
+        // row selection; GENERATED headings alone do not make a real duplicate.
         if (authored.length) {
           const retained = scopedSectionsBySlug(scopedAuthoredView(record.body, markdown).sections, ref.section);
           if (retained.length !== 1) fail(retained.length ? 'SW-REF-AMBIGUOUS' : 'SW-REF-MISSING', `section #${ref.section}`);

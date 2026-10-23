@@ -4,6 +4,18 @@
 
 ## Unreleased
 
+### fix(scoped) — GENERATED 밖 실제 서식 중복 H2 거부 복원 (#285)
+
+- #284의 authored view가 작성 섹션을 `specSectionName()` 원문 이름으로만 묶어,
+  `## Unknowns` 옆 GENERATED 밖 `## **Unknowns**`(setext H2 포함)나 `## **API Candidates**`를
+  별개 섹션으로 보던 회귀를 고쳤다. 원문 이름의 작성 섹션이 있으면 같은 native slug의
+  retained H2를 모두 함께 돌려주어 각 호출부의 기존 유일성 검사가 다시 거부한다.
+- owner·근거 문서의 Unknown 열거와 local Tracking은 `SW-REF-AMBIGUOUS`, API unit 직접
+  선택은 `SW-API-SECTION`으로 실패한다. open Unknown이 차단 unit 없이 사라지지 않는다.
+- GENERATED 동명·서식 H2 허용, 원문 작성 H2 없는 단독 서식 제목의 raw 경로, #284의
+  authored 표·행 보존은 유지한다. 회귀에 서식/setext 중복, LF/CRLF, 순서 반전과
+  GENERATED 대조를 추가했다.
+
 ### fix(scoped) — GENERATED 구조와 작성 API/Unknown 선택 기준 통일 (#282 후속)
 
 - GENERATED 안내 표가 정상 API 표의 유일성 검사를 깨뜨리거나, GENERATED H2가 작성

@@ -49,9 +49,12 @@ ordinary typed-reference grammar. Only selected cells resolve their Tracking tar
 
 GENERATED headings do not terminate the authored API Candidates or Unknowns
 section, and GENERATED tables are excluded before counting canonical authoring
-tables. API selection, graph traversal and source-range matching use the same
-original table/row nodes. Ordinary fully qualified references can still select
-raw generated evidence; that evidence cannot supply a local deferred Tracking
+tables. A heading outside generated blocks that shares the literal section's
+Markdown slug (such as `## **Unknowns**` or a setext heading beside `## Unknowns`)
+is a real duplicate: API unit selection, local Tracking and uncertainty enumeration
+fail as ambiguous instead of reading only the literal section. API selection,
+graph traversal and source-range matching use the same original table/row nodes.
+Ordinary fully qualified references can still select raw generated evidence; that evidence cannot supply a local deferred Tracking
 target. If an ordinary reference and Tracking select different physical rows for
 the same canonical reference, resolution fails as ambiguous, even when the cells
 are identical. This check also applies when decision, uncertainty and unapplied
