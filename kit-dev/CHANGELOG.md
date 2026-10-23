@@ -4,6 +4,21 @@
 
 ## Unreleased
 
+### fix(scoped) — sibling effect로 들어온 다른 화면·legacy 매핑을 일반 근거로 유지 (#287)
+
+- screen owner의 source relation 루프가 그래프의 모든 `figma-component-mapping` 문서 전체·
+  `#component-mapping` 선택을 owner가 고른 매핑으로 해석했다. 그래서 sibling effect 대상으로
+  들어온 다른 화면 매핑이나 legacy 매핑에 MP-002/003 형태 검사와 owner host 해석을 적용해
+  `SW-SOURCE-RELATION`·`SW-MAPPING`·`Mapping Key` 오류로 멈추던 문제를 고쳤다.
+- 이 루프는 unit이 자기 `contracts`에 직접 고른 매핑과 owner 화면 자신의(`screen_id`·`domain` 일치)
+  opt-in(`provenance_contract` 존재) 매핑에만 적용한다. effect 대상·본문 참조로만 들어온 다른
+  화면·legacy 매핑은 문서 전체·섹션·행 어느 선택이든 read set·contract hash·basis에 남는
+  일반 근거다.
+- owner opt-in 매핑의 M-key provenance·Item group 소비, MP-002/003·미지원 contract의
+  fail-closed, unit이 직접 고른 다른 화면·domain 매핑의 `SW-MAPPING`, surface
+  `host_visual_evidence`, sibling effect root 추가는 그대로다.
+  이 경로에서 이미 성공하던 owner의 relations·projection 출력은 byte 단위로 같다.
+
 ### fix(scoped) — GENERATED 밖 실제 서식 중복 H2 거부 복원 (#285)
 
 - #284의 authored view가 작성 섹션을 `specSectionName()` 원문 이름으로만 묶어,

@@ -19,6 +19,7 @@ import { createScopedReferenceResolver, scopedRawTable } from './scoped-work-ref
 import { createScopedSourceResolver } from './scoped-work-sources.mjs';
 import { createScopedApiResolver } from './scoped-work-api.mjs';
 import { resolveScopedMappingEvidence } from './scoped-work-mapping.mjs';
+import { parseMappingProvenanceContract } from './mapping-provenance.mjs';
 import { resolveScopedContractGraph, scopedGraphSelectionSpans, scopedGraphApiRowContext } from './scoped-work-graph.mjs';
 import { ScopedWorkContractError, workUnitId } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
@@ -218,9 +219,17 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
   // A screen's selected mapping rows also consume the matching provenance rows.
   // Enumerate raw keys, then let the existing mapping resolver validate grammar,
   // row bijection, owning screen/domain and actual inherited Figma evidence.
+  // The unit's own contracts and the screen's own opted-in mapping stay strict.
+  // Another screen's mapping, or a legacy one without provenance_contract, can
+  // also reach the graph as an effect target or body reference (#287). It stays
+  // ordinary read/basis evidence, without M-key rows or a host interpretation.
+  const chosen = new Set(selectedUnit.contracts);
   if (parts.kind === 'screen') for (const record of graph.nodes) {
     if (record.metadata.artifact_type !== 'figma-component-mapping' ||
-        (record.selection.type !== 'body' && record.selection.section !== 'component-mapping')) continue;
+        (record.selection.type !== 'body' && record.selection.section !== 'component-mapping') ||
+        (!chosen.has(record.ref) && (record.metadata.screen_id !== parts.id ||
+          record.metadata.domain !== ownerRecord.metadata.domain ||
+          parseMappingProvenanceContract(record.metadata).version === 0))) continue;
     const section = parseReconciliationMarkdown(document(record).body).occurrences.filter((entry) => entry.slug === 'component-mapping');
     if (section.length !== 1 || section[0].tables.length !== 1) fail('one Component Mapping table required');
     const keys = record.selection.type === 'row' ? [record.selection.key]
