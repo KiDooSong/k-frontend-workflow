@@ -10,7 +10,7 @@ import { parseReconciliationReferenceView, reconciliationParseStats } from './re
 import { scopedGraphSelectionSpans } from './scoped-work-graph.mjs';
 import { resolveScopedUncertaintyProjection } from './scoped-work-uncertainty.mjs';
 import { resolveScopedApplicabilityProjection } from './scoped-work-applicability.mjs';
-import { scopedUncertaintyScopes, scopedUncertaintyDenials } from './scoped-work-uncertainty-scopes.mjs';
+import { scopedUncertaintyScopes, scopedUncertaintyDenials, inspectScopedUncertaintyScopes } from './scoped-work-uncertainty-scopes.mjs';
 import { inspectScopedProfile } from './scoped-work-profiles.mjs';
 
 const OWNER = 'screen:RESULT-001';
@@ -228,6 +228,36 @@ test('#284 uncertainty: formatted display headers do not invent canonical Unknow
     const options = fullOptions(f), out = resolveScopedApplicabilityProjection(options);
     assert.deepEqual(recordIds(out), ['U-AUTHORED']);
     assert.deepEqual(scopedUncertaintyDenials(scopedUncertaintyScopes(options, out.projection, out.read_set), 'known'), []);
+  }
+});
+
+// #285: a retained formatted or setext H2 with the native `unknowns` slug is a
+// real second home beside a literal `## Unknowns`. Its open row must not vanish
+// from enumeration while the literal home's resolved row passes; a GENERATED
+// heading of the same form remains display output inside the authored home.
+test('#285 uncertainty: a real formatted duplicate Unknowns H2 fails instead of dropping its open row', (t) => {
+  const headers = ['ID', 'Question', 'Status'];
+  const resolved = `## Unknowns\n\n${table(headers, [['U-RESOLVED', 'Settled?', 'resolved']])}`;
+  const open = ['U-OPEN', 'Still open?', 'open'];
+  for (const [name, artifact, contract] of [['screen.md', 'SCREEN-RESULT-001', null], ['uncertainty.md', 'UNCERTAINTY', 'artifact:UNCERTAINTY']]) {
+    const setup = (unknownsBody) => {
+      const f = fixture(t), body = `## Notes\nOwner.\n\n${unknownsBody}`;
+      if (name === 'uncertainty.md') f.evidence(body); else f.change(name, (doc) => { doc.body = body; });
+      if (contract) f.change('screen.md', ({ fm }) => { fm.work_execution.units[0].contracts = [contract]; });
+      return f;
+    };
+    for (const heading of ['## **Unknowns**', 'Unknowns\n--------']) for (const duplicateFirst of [false, true]) {
+      const duplicate = `${heading}\n\n${table(headers, [open])}`;
+      const f = setup((duplicateFirst ? [duplicate, resolved] : [resolved, duplicate]).join('\n\n'));
+      assert.throws(() => f.run(), /SW-REF-AMBIGUOUS/, `${name} ${heading}`);
+      assert.throws(() => inspectScopedUncertaintyScopes(fullOptions(f)), /SW-REF-AMBIGUOUS/, `${name} ${heading}`);
+    }
+    const f = setup(`${resolved.replace('| resolved |', '| resolved |\n| U-OPEN | Still open? | open |')}\n\n` +
+      generated('## **Unknowns**\n\nGenerated display text.'));
+    const checks = inspectScopedUncertaintyScopes(fullOptions(f)).checks;
+    assert.deepEqual(checks.map((check) => [check.uncertainty, check.status]),
+      [[`unknown:U-OPEN@${artifact}`, 'open'], [`unknown:U-RESOLVED@${artifact}`, 'resolved']], name);
+    assert.ok(checks[0].blocking_units.includes('known'), `${name}: the authored open Unknown still blocks its unit`);
   }
 });
 

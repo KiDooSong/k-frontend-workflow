@@ -460,3 +460,29 @@ for (const [title, slug, columns, row] of [
     }
   });
 }
+
+// #285: a literal authoring name must not hide another retained native H2 with
+// the same slug. A formatted or setext duplicate outside GENERATED is a real
+// second home for the API unit and local Tracking, as it was before #284.
+for (const [title, place] of [['API Candidates', 'apiAfter'], ['Unknowns', 'unknownAfter']]) {
+  test(`#285 API unit and local Tracking reject a real formatted duplicate ${title} H2`, (t) => {
+    for (const heading of [`## **${title}**`, `${title}\n${'-'.repeat(title.length)}`]) for (const eol of ['\n', '\r\n']) {
+      const body = bodyFor({ [place]: `${heading}\n\nDuplicate authored heading.` }).replace(/\n/g, eol);
+      const f = fixture(t, [{ body }]);
+      assert.throws(() => f.api(), title === 'API Candidates' ? /SW-API-SECTION/ : /SW-REF-AMBIGUOUS/, heading);
+      assert.throws(() => f.graph([`artifact:${ID}#api-candidates`]), /SW-(REF-AMBIGUOUS|GRAPH)/, heading);
+      if (title === 'Unknowns') {
+        assert.throws(() => createScopedReferenceResolver(f.options).tracking(`unknown:U-LATER@${ID}`), /SW-REF-AMBIGUOUS/, heading);
+      }
+    }
+  });
+
+  test(`#285 API unit and local Tracking still ignore a GENERATED formatted ${title} H2`, (t) => {
+    for (const eol of ['\n', '\r\n']) {
+      const body = bodyFor({ [place]: generated(`## **${title}**\n\nGenerated display text.`) }).replace(/\n/g, eol);
+      const f = fixture(t, [{ body }]);
+      const [candidate, ...rest] = f.api().candidates;
+      assert.deepEqual([candidate.cells, candidate.tracking.selection.cells, rest], [cells, unknownCells, []]);
+    }
+  });
+}

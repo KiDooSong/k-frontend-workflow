@@ -62,13 +62,14 @@ function project(t, target = ENTRY) {
   const status = (...args) => node('binding-status.mjs', ['--root', root, ...CONFIG, ...args]);
   const json = (run) => { assert.equal(run.status, 0, run.stderr || run.stdout); return JSON.parse(run.stdout); };
   const rows = () => Object.fromEntries(json(status('--json')).owners[0].rows.map((row) => [row.ref, row]));
-  const readiness = () => json(node('readiness.mjs', ['--work', work, '--root', root, ...CONFIG, '--json']));
+  const readinessRun = () => node('readiness.mjs', ['--work', work, '--root', root, ...CONFIG, '--json']);
+  const readiness = () => json(readinessRun());
   const blocking = () => {
     const env = readiness();
     return [...env.denials.filter((entry) => entry.code === 'unit-decision-blocked').flatMap((entry) => entry.decisions),
       ...env.denials.filter((entry) => entry.code === 'unit-uncertainty-unresolved').map((entry) => entry.application.uncertainty)].sort();
   };
-  return { root, read, put, git, commit, bind, status, json, rows, readiness, blocking };
+  return { root, read, put, git, commit, bind, status, json, rows, readiness, readinessRun, blocking };
 }
 
 // Synthetic consumer regression: one selected Item has effects on both the adopted screen's
@@ -225,6 +226,37 @@ for (const [selection, suffix] of unknownSelections) test(`#284 CLI: artifact ${
     assert.equal(p.git('status', '--porcelain'), '', label);
     assert.equal(p.read(LIST), body, label);
   }
+});
+
+// #285: a formatted H2 outside GENERATED shares the native `unknowns` slug with
+// the owner's literal home. The public report must fail closed rather than list
+// only the literal home's rows; the same heading inside GENERATED stays display.
+test('#285 CLI: a real formatted duplicate Unknowns H2 fails closed instead of dropping its open row', (t) => {
+  const p = project(t), formatted = 'unknown:U-FORMATTED@COUPON-001-screen-spec';
+  const original = p.read(LIST);
+  const duplicate = '## **Unknowns**\n\n| ID | Question | Status |\n|---|---|---|\n| U-FORMATTED | Formatted duplicate question? | open |';
+  const withHeading = (text) => original.replace('\n## Open Decisions', `\n${text}\n\n## Open Decisions`);
+  const baseline = p.rows()[U001], blockers = p.blocking();
+  assert.ok(blockers.includes(U001));
+
+  const display = withHeading(generated(duplicate));
+  p.put(LIST, display); p.commit('GENERATED formatted Unknowns heading');
+  const rows = p.rows();
+  assert.equal(rows[formatted], undefined, 'a GENERATED heading and table remain display output');
+  assert.deepEqual([rows[U001].status, rows[U001].home, rows[U001].blocking_units],
+    [baseline.status, baseline.home, baseline.blocking_units]);
+  assert.deepEqual(p.blocking(), blockers);
+
+  const body = withHeading(duplicate);
+  p.put(LIST, body); p.commit('real formatted duplicate Unknowns heading');
+  const report = p.status('--owner', OWNER, '--json');
+  assert.notEqual(report.status, 0, 'binding-status must not report only the literal home');
+  assert.match(`${report.stdout}${report.stderr}`, /SW-REF-AMBIGUOUS/);
+  const ready = p.readinessRun();
+  assert.equal(ready.status, 2, 'readiness --work must stop instead of authorizing without the open row');
+  assert.match(ready.stderr, /SW-REF-AMBIGUOUS/);
+  assert.equal(p.git('status', '--porcelain'), '');
+  assert.equal(p.read(LIST), body);
 });
 
 test('#275 binding-status: B0-B5 change only the bindings whose row or unit contract changed', (t) => {
