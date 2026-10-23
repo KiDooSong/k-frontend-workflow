@@ -276,6 +276,24 @@ test('#287 D source relations: another screen or a legacy mapping reached as a s
   }
 });
 
+test('#287 D source relations: indirect mappings with the same screen ID in another domain stay ordinary evidence', (t) => {
+  for (const target of ['artifact:MAP', 'artifact:MAP#component-mapping', 'artifact:MAP#component-mapping/M-001']) {
+    for (const via of ['effect', 'body']) {
+      const f = siblingMapping(t, { screen_id: 'RESULT-001', domain: 'other', provenance_contract: 1 }, optInMapping(), target);
+      if (via === 'body') {
+        f.register([effect()]);
+        f.change('contract.md', (value) => { value.body = value.body.replace('Known contract.', `Known contract. See ${target}`); });
+      }
+      const out = f.run(), label = `${via}: ${target}`;
+      assert.deepEqual(mappingRefs(out), [target], label);
+      assert.ok(out.read_set.some((entry) => entry.file === 'mapping.md'), label);
+      assert.equal(out.contract_hashes['mapping.md'], out.read_set.find((entry) => entry.file === 'mapping.md').sha256, label);
+      assert.deepEqual(out.sources[0].selection, select(), label);
+      noPermit(out);
+    }
+  }
+});
+
 test('#287 D source relations: the unit\'s chosen mapping and the screen\'s own opted-in mapping stay strict', (t) => {
   const own = { screen_id: 'RESULT-001', provenance_contract: 1 };
   const whole = siblingMapping(t, own, optInMapping()).run();
@@ -287,7 +305,6 @@ test('#287 D source relations: the unit\'s chosen mapping and the screen\'s own 
     ['MP-003 second table', own, optInMapping(second), /SW-SOURCE-RELATION: one Component Mapping table required/],
     ['MP-002 no Component Mapping', own, optInMapping().replace('## Component Mapping', '## Mapping'), /SW-SOURCE-RELATION: one Component Mapping table required/],
     ['unsupported provenance_contract', { ...own, provenance_contract: 2 }, optInMapping(), /SW-REF-MAPPING/],
-    ['own screen in another domain', { ...own, domain: 'other' }, optInMapping(), /SW-MAPPING: mapping belongs to a different host or domain/],
   ]) assert.throws(() => siblingMapping(t, fm, body).run(), error, name);
   // A mapping the unit itself lists in contracts is the owner's own choice:
   // another screen's rows or section still resolve against the owner host.
@@ -295,6 +312,9 @@ test('#287 D source relations: the unit\'s chosen mapping and the screen\'s own 
     const f = siblingMapping(t, { provenance_contract: 1 }, optInMapping());
     f.change('screen.md', ({ fm }) => fm.work_execution.units[0].contracts.push(chosen));
     assert.throws(() => f.run(), /SW-MAPPING: mapping belongs to a different host or domain/, chosen);
+    const otherDomain = siblingMapping(t, { ...own, domain: 'other' }, optInMapping());
+    otherDomain.change('screen.md', ({ fm }) => fm.work_execution.units[0].contracts.push(chosen));
+    assert.throws(() => otherDomain.run(), /SW-MAPPING: mapping belongs to a different host or domain/, chosen);
   }
 });
 

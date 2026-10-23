@@ -228,6 +228,7 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
     if (record.metadata.artifact_type !== 'figma-component-mapping' ||
         (record.selection.type !== 'body' && record.selection.section !== 'component-mapping') ||
         (!chosen.has(record.ref) && (record.metadata.screen_id !== parts.id ||
+          record.metadata.domain !== ownerRecord.metadata.domain ||
           parseMappingProvenanceContract(record.metadata).version === 0))) continue;
     const section = parseReconciliationMarkdown(document(record).body).occurrences.filter((entry) => entry.slug === 'component-mapping');
     if (section.length !== 1 || section[0].tables.length !== 1) fail('one Component Mapping table required');
