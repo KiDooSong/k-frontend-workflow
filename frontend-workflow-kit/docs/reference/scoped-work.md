@@ -381,6 +381,15 @@ packets and serialized verdicts are not authority. For each scoped request:
   denial. An Item source keeps the stricter admission (`reconciled + accepted`,
   or `pending`/partial with a current coverage receipt): history from before
   adoption has no later re-apply path, so its Result is reported, not gated.
+- **Screen mapping evidence** — a Figma mapping that a screen unit lists in its
+  own `contracts`, or the screen's own opted-in mapping (same `screen_id`,
+  `provenance_contract: 1`), selected as a whole document, `#component-mapping`
+  or an M-key row, also selects each M-key's Mapping Provenance row and
+  evidence; its single Component Mapping table, owning screen and domain stay
+  fail-closed. Another screen's mapping, or a legacy one without
+  `provenance_contract`, reached only as an Item effect target or body reference
+  stays ordinary evidence in the read set and basis, without M-key provenance
+  rows or a host interpretation.
 
 The envelope has `work_contract: 1`, `authority: scoped`, `snapshot`,
 `request_digest`, `origin_inputs`, `requests` (per request `path_authorizations`,

@@ -230,6 +230,74 @@ test('D source relations: selected screen M-key consumes only its real matching 
   assert.ok(!out.contracts.nodes.some((node) => node.ref.endsWith('/M-002')));
 });
 
+// #287: source closure also roots a sibling effect's target. Another screen's
+// mapping, or a legacy one, reached that way is ordinary read/basis evidence:
+// no opt-in Component Mapping shape, M-key provenance rows or owner host.
+const LEGACY_MAPPING_HEADERS = ['Figma Frame / Node', 'UI 요소', '매핑 컴포넌트', '비고'];
+const legacyMapping = (tables) => `## Component Mapping\n${Array.from({ length: tables }, (_, i) =>
+  `${i ? `### Sub ${i}\n` : ''}${table(LEGACY_MAPPING_HEADERS, [[`frame / 1:${i + 1}`, 'Element', 'src/features/other/components/X.tsx', 'legacy']])}`)
+  .join('\n\n')}\n\n## Notes\nLegacy mapping without provenance_contract.`;
+const optInMapping = (component = table(COMPONENT_MAPPING_COLUMNS, [
+  ['`M-001` · first', 'First', 'src/features/result/components/First.tsx', 'selected'],
+  ['`M-002` · other', 'Other', 'src/features/result/components/Other.tsx', 'unselected'],
+])) => `## Component Mapping\n${component}\n\n## Mapping Provenance\n${table(MAPPING_PROVENANCE_COLUMNS, [
+  ['M-001', 'inherit', 'node', 'inherit', REF], ['M-002', 'inherit', 'node', 'inherit', REF.replace('/01', '/02')],
+])}`;
+function siblingMapping(t, fm, body, target = 'artifact:MAP') {
+  const f = fixture(t, { explicit: false, native: true });
+  f.change('input.md', ({ fm: input }) => { input.input_type = 'figma'; input.source_type = 'figma'; input.source_ref = 'figma://file/source-relations/node/1:1'; }, f.inputs);
+  f.write('mapping.md', { artifact_id: 'MAP', artifact_type: 'figma-component-mapping', domain: 'result', screen_id: 'RESULT-002', status: 'draft', ...fm }, body);
+  const sibling = effect(); sibling[5] = target;
+  f.register([effect(), sibling]);
+  return f;
+}
+const mappingRefs = (out) => out.contracts.nodes.map((node) => node.ref).filter((ref) => ref.startsWith('artifact:MAP')).sort();
+
+test('#287 D source relations: another screen or a legacy mapping reached as a sibling effect target stays ordinary evidence', (t) => {
+  const own = { screen_id: 'RESULT-001' }, optIn = { provenance_contract: 1 };
+  for (const [name, fm, body, target = 'artifact:MAP'] of [
+    ['other legacy, three tables', {}, legacyMapping(3)],
+    ['other legacy, one table', {}, legacyMapping(1)],
+    ['other legacy, no Component Mapping', {}, '## Frame\n- frame\n\n## Notes\nNo Component Mapping section.'],
+    ['other legacy section, three tables', {}, legacyMapping(3), 'artifact:MAP#component-mapping'],
+    ['own legacy, one table', own, legacyMapping(1)],
+    ['own legacy, three tables', own, legacyMapping(3)],
+    ['own legacy section', own, legacyMapping(1), 'artifact:MAP#component-mapping'],
+    ['other opted-in', optIn, optInMapping()],
+    ['other opted-in section', optIn, optInMapping(), 'artifact:MAP#component-mapping'],
+    ['other opted-in M-key row', optIn, optInMapping(), 'artifact:MAP#component-mapping/M-001'],
+  ]) {
+    const f = siblingMapping(t, fm, body, target), out = f.run();
+    assert.deepEqual(mappingRefs(out), [target], `${name}: no M-key provenance rows are consumed`);
+    assert.ok(out.read_set.some((entry) => entry.file === 'mapping.md'), `${name}: the document stays in the read set`);
+    assert.equal(out.contract_hashes['mapping.md'], out.read_set.find((entry) => entry.file === 'mapping.md').sha256, `${name}: and in the contract basis`);
+    assert.deepEqual(out.sources[0].selection, select(), name);
+    noPermit(out);
+  }
+});
+
+test('#287 D source relations: the unit\'s chosen mapping and the screen\'s own opted-in mapping stay strict', (t) => {
+  const own = { screen_id: 'RESULT-001', provenance_contract: 1 };
+  const whole = siblingMapping(t, own, optInMapping()).run();
+  assert.deepEqual(mappingRefs(whole), ['artifact:MAP', 'artifact:MAP#component-mapping/M-001', 'artifact:MAP#component-mapping/M-002',
+    'artifact:MAP#mapping-provenance/M-001', 'artifact:MAP#mapping-provenance/M-002']);
+  const second = `${table(COMPONENT_MAPPING_COLUMNS, [['`M-001` · first', 'First', 'src/features/result/components/First.tsx', 'selected']])}\n\n### Sub\n` +
+    table(COMPONENT_MAPPING_COLUMNS, [['`M-002` · other', 'Other', 'src/features/result/components/Other.tsx', 'unselected']]);
+  for (const [name, fm, body, error] of [
+    ['MP-003 second table', own, optInMapping(second), /SW-SOURCE-RELATION: one Component Mapping table required/],
+    ['MP-002 no Component Mapping', own, optInMapping().replace('## Component Mapping', '## Mapping'), /SW-SOURCE-RELATION: one Component Mapping table required/],
+    ['unsupported provenance_contract', { ...own, provenance_contract: 2 }, optInMapping(), /SW-REF-MAPPING/],
+    ['own screen in another domain', { ...own, domain: 'other' }, optInMapping(), /SW-MAPPING: mapping belongs to a different host or domain/],
+  ]) assert.throws(() => siblingMapping(t, fm, body).run(), error, name);
+  // A mapping the unit itself lists in contracts is the owner's own choice:
+  // another screen's rows or section still resolve against the owner host.
+  for (const chosen of ['artifact:MAP#component-mapping/M-001', 'artifact:MAP#component-mapping', 'artifact:MAP']) {
+    const f = siblingMapping(t, { provenance_contract: 1 }, optInMapping());
+    f.change('screen.md', ({ fm }) => fm.work_execution.units[0].contracts.push(chosen));
+    assert.throws(() => f.run(), /SW-MAPPING: mapping belongs to a different host or domain/, chosen);
+  }
+});
+
 test('D source relations: stale indexed bytes and real mutation during register reading are rejected', (t) => {
   const f = fixture(t), opts = f.options(); fs.appendFileSync(f.docFile, '\nChanged after indexing.');
   assert.throws(() => resolveScopedSourceRelations(opts), /differs from/);
