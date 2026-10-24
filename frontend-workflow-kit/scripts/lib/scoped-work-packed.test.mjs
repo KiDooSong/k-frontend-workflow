@@ -15,11 +15,12 @@ const suites = ['scoped-work-refs.test.mjs', 'scoped-work-sources.test.mjs',
   'scoped-work-projection.test.mjs', 'scoped-work-decisions.test.mjs', 'scoped-work-boundaries.test.mjs', 'scoped-work-uncertainty.test.mjs',
   'scoped-work-applicability.test.mjs', 'scoped-work-basis.test.mjs', 'scoped-work-bindings.test.mjs', 'scoped-work-transitions.test.mjs',
   'scoped-work-git-transitions.test.mjs', 'scoped-work-coverage.test.mjs', 'scoped-work-receipts.test.mjs', 'scoped-work-source-relations.test.mjs', 'scoped-work-input-coverage.test.mjs', 'scoped-work-profiles.test.mjs', 'scoped-work-paths.test.mjs', 'scoped-work-decision-scopes.test.mjs', 'scoped-work-owner.test.mjs'];
-const runtime = ['scoped-work-request.mjs', 'scoped-work-declarations.mjs', 'reconciliation-markdown-ast.mjs', 'scoped-work-binding-status.mjs',
+const runtime = ['scoped-work-request.mjs', 'scoped-work-declarations.mjs', 'reconciliation-markdown-ast.mjs', 'scoped-work-binding-status.mjs', 'scoped-work-source-state.mjs',
   ...suites.map((name) => name.replace('.test.mjs', '.mjs'))];
 // This regression exercises several real modules, rather than a matching .mjs.
 const resolverSuites = [...suites, 'scoped-work-generated.test.mjs'];
 const cliSuite = 'scoped-work-binding-status.test.mjs';
+const sourceCliSuite = 'scoped-work-cli.test.mjs';
 
 function checkedNode(args, cwd, env = process.env) {
   const run = spawnSync(process.execPath, args, { cwd, env, encoding: 'utf8',
@@ -55,7 +56,7 @@ test('D packed: real reference, source, mapping, API, normalization, graph trave
   // The installed lockfile dependencies are shared, not a different runtime or
   // hand-written stand-in. Relative imports below resolve only within payload.
   fs.symlinkSync(path.join(KIT_ROOT, 'node_modules'), path.join(packed, 'node_modules'), 'dir');
-  for (const name of [...resolverSuites, cliSuite]) {
+  for (const name of [...resolverSuites, cliSuite, sourceCliSuite]) {
     fs.copyFileSync(path.join(KIT_ROOT, 'scripts/lib', name), path.join(lib, name), fs.constants.COPYFILE_EXCL);
   }
   const env = { ...process.env };
@@ -81,6 +82,14 @@ test('D packed: real reference, source, mapping, API, normalization, graph trave
   checkPayload();
   assert.equal(fs.existsSync(path.join(packed, 'examples')), false);
   t.diagnostic('packed readiness/binding-status subprocess: all 10 #282/#284 generated-boundary CLI cases passed');
+  const sourceCli = checkedNode(['--test', '--test-reporter=tap', '--test-name-pattern=^source admission CLI:',
+    path.join(lib, sourceCliSuite)], packed, env);
+  assert.match(sourceCli.stdout, /^# pass 4\r?$/m, sourceCli.stdout);
+  for (const metric of ['fail', 'cancelled', 'todo']) {
+    assert.match(sourceCli.stdout, new RegExp(`^# ${metric} 0\\r?$`, 'm'), sourceCli.stdout);
+  }
+  checkPayload();
+  t.diagnostic('packed source admission CLI: both new Results, missing/current/stale receipts, no-effect routing and retained gates passed');
 });
 
 test('D resolver suites stay wired to both package commands and existing focused/macOS CI', () => {

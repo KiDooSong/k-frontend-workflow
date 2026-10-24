@@ -84,6 +84,7 @@ test('D coverage: current matching receipt is integrity evidence, not semantic a
 });
 
 for (const [state, result, required] of [['reconciled', 'accepted', false], ['reconciled', 'pending', true],
+  ['reconciled', 'pending-user-decision', true], ['reconciled', 'mixed', true],
   ['partially-reconciled', 'accepted', true], ['partially-reconciled', 'pending', true]]) {
   test(`D coverage: ${state}/${result} retains its existing state and receipt requirement`, (t) => {
     const out = fixture(t, { state, result }).run();

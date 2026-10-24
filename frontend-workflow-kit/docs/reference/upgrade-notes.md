@@ -17,6 +17,24 @@ or root config.
 
 ---
 
+## Reconciled Item sources with open decisions or mixed results
+
+- Scoped work now supports exactly `reconciled + pending-user-decision` and
+  `reconciled + mixed` for canonical v2 Item sources and origin routing. Both
+  require current, explicitly selected `complete-for-unit` review evidence;
+  existing accepted/pending behavior is unchanged. See the
+  [support table and receipt conditions](scoped-work.md#item-backed-source-admission).
+- Manual action: review the unit's source/routing meaning under the existing
+  Stage 04 rubric, select its committed review file in `coverage_reports`, then
+  run the normal scoped preflight. Preserve the original input, cumulative
+  Items, Summary Result and `origin_inputs`; an accepted successor does not
+  automatically replace an origin. No input reissue or Summary rewrite is needed.
+- Partial + `mixed`/`pending-user-decision` remains unsupported. A receipt never
+  resolves a Decision/Unknown/Conflict, changes a binding or opens a forbidden
+  path. Successful source admission does not establish full consumer readiness.
+
+---
+
 ## Adoption lives in `frontend-workflow.config.yaml` and its policy overlay (#257)
 
 - Scoped adoption (`work_execution`) is read only from the policy overlay that
