@@ -378,9 +378,10 @@ packets and serialized verdicts are not authority. For each scoped request:
   `Legacy summary-only source <input_id> (reconciled + <result>) …`. Any Item, a
   later capture, a v1 register, another status or an annotated Result
   (`accepted — …`) keeps the item-level rule and its `source-effect-unconnected`
-  denial. An Item source keeps the stricter admission (`reconciled + accepted`,
-  or `pending`/partial with a current coverage receipt): history from before
-  adoption has no later re-apply path, so its Result is reported, not gated.
+  denial. An Item source uses the [source admission table](#item-backed-source-admission)
+  below; the summary-only connection does not admit Items or explain a request
+  origin by itself. History from before adoption has no later re-apply path,
+  so its Result is reported, not gated.
 - **Screen mapping evidence** — a Figma mapping that a screen unit lists in its
   own `contracts`, or the screen's own opted-in mapping (same `screen_id` and domain,
   `provenance_contract: 1`), selected as a whole document, `#component-mapping`
@@ -395,6 +396,44 @@ The envelope has `work_contract: 1`, `authority: scoped`, `snapshot`,
 `request_digest`, `origin_inputs`, `requests` (per request `path_authorizations`,
 `prerequisite_denials`, `evidence`), `shared_targets`, `ready`, `errors`,
 `denials`, `future_requirements` and `required_reviews`.
+
+## Item-backed source admission
+
+For canonical v2 Reconciliation Items, source inspection, unit-source admission
+and `no-effect-on-unit` origin routing use the same state allowlist:
+
+| Reconcile Status | Result | Supported source state | Current coverage receipt required for unit-source admission |
+| --- | --- | --- | --- |
+| `reconciled` | `accepted` | yes | no (existing complete reconciliation) |
+| `reconciled` | `pending` | yes | yes |
+| `partially-reconciled` | `accepted` or `pending` | yes | yes |
+| `reconciled` | `pending-user-decision` | yes | yes |
+| `reconciled` | `mixed` | yes | yes |
+| any other combination, including partial + `pending-user-decision`/`mixed` | any | no | a receipt cannot make it supported |
+
+A required receipt is a `work-coverage` attachment in a committed review file
+explicitly selected by the request's `coverage_reports`. It declares
+`review_scope: reconcile-stage04-v1` and `coverage: complete-for-unit`, matches
+the owner, unit, input, exact Item/source-ref sets and current input, effects and
+contract hashes, and has a positive coverage relation (an omitted relation or
+`covered-for-unit`). A `no-effect-on-unit` attachment is routing evidence only;
+it never substitutes for required positive source coverage. The selected source
+must still connect through actual Items to the unit's contracts.
+
+No-effect routing always needs its own current receipt, exact original scope,
+connected origin effects and unrelated routing targets. It cannot hide a unit
+source, a selected-contract effect, a pending canonical source connection or a
+related unresolved uncertainty. A successor with `accepted` Result does not
+replace an original `origin_inputs` entry or its required explanation.
+
+The [Stage 04 semantic review](reconcile-review-rubric.md) of source/routing
+completeness and meaning remains required. The tool reports
+`semantic_coverage_verified: false` and `approval_verified: false`; current hashes
+do not authenticate a reviewer or approve a human scope change. Preserve the
+input, Summary Result, Items and canonical source references. Open Decisions,
+Unknowns, Conflicts, API claims, profiles, bindings, host/shared-target consent,
+path reservations and snapshot/backstop checks still apply. Source coverage alone
+does not make a request ready.
 
 ## Git backstop
 

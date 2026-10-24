@@ -13,6 +13,7 @@ import { createScopedSourceResolver } from './scoped-work-sources.mjs';
 import { resolveScopedContractGraph } from './scoped-work-graph.mjs';
 import { ScopedWorkContractError } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
+import { scopedSourceState } from './scoped-work-source-state.mjs';
 
 const fail = (message) => { throw new ScopedWorkContractError(`SW-COVERAGE: ${message}`); };
 const same = (a, b) => scopeJson(a) === scopeJson(b);
@@ -84,9 +85,7 @@ export function inspectScopedSourceCoverage({ receipts = [], ...options } = {}) 
       if (!same(receipt[field], basis[field])) mismatches.push(field);
     }
   }
-  const state = summary.reconcileStatus, result = summary.result;
-  const supported = (state === 'reconciled' || state === 'partially-reconciled') && ['pending', 'accepted'].includes(result);
-  const required = supported && !(state === 'reconciled' && result === 'accepted');
+  const { supported, receipt_required: required } = scopedSourceState(summary);
   const routingOnly = receipt?.origin_relation === 'no-effect-on-unit';
   return { ...evidence, receipt,
     source_state_supported: supported, receipt_required: required,

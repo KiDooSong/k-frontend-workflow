@@ -7,8 +7,8 @@ import { KIT_ROOT, splitFrontmatter } from './util.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
 import { loadInputArtifact } from './input-artifact.mjs';
 import { buildReconciliationTargetIndex } from './reconciliation-target-index.mjs';
-import { REQUIRED_ITEM_COLS } from './reconciliation-items.mjs';
-import { REQUIRED_REGISTER_COLS } from './reconciliation-register.mjs';
+import { REQUIRED_ITEM_COLS, RESULT_VALUES } from './reconciliation-items.mjs';
+import { REQUIRED_REGISTER_COLS, RECONCILE_STATUS_VALUES } from './reconciliation-register.mjs';
 import { COMPONENT_MAPPING_COLUMNS, MAPPING_PROVENANCE_COLUMNS } from './mapping-provenance.mjs';
 import { inspectScopedInputCoverage } from './scoped-work-input-coverage.mjs';
 import { resolveScopedUncertaintyBindingBasis } from './scoped-work-uncertainty-scopes.mjs';
@@ -16,6 +16,7 @@ import { createScopedSourceResolver } from './scoped-work-sources.mjs';
 import { hashBytes } from './current-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
 import { resolveScopedSourceRelations } from './scoped-work-source-relations.mjs';
+import { inspectScopedSourceCoverage } from './scoped-work-coverage.mjs';
 
 const OWNER = 'screen:RESULT-001', INPUT = 'IN-20260922-meeting-001';
 const REF = `input:${INPUT}#extracted-facts/01`;
@@ -97,14 +98,113 @@ function coverageFixture(t, config) {
   return f;
 }
 const positive = (f) => { const receipt = f.proof(); f.report(receipt); return receipt; };
-function routing(t) {
+function routing(t, result = 'pending', state = 'partially-reconciled') {
   const f = coverageFixture(t, { explicit: false });
+  f.register(undefined, state, result);
   f.origins([{ input_id: INPUT, source_refs: select(['02']).source_refs }]);
   const proof = f.proof(select(['02']), { origin_source_refs: select(['02']).source_refs, origin_relation: 'no-effect-on-unit' });
   const file = f.report(proof); return { f, proof, file };
 }
 function pending(out) { assert.equal(out.coverage_satisfied, false); assert.equal(out.origin_inputs[0].accepted, false); }
 function noApproval(out) { assert.equal(out.semantic_coverage_verified, false); assert.equal(out.approval_verified, false); assert.equal(Object.hasOwn(out, 'ready'), false); }
+
+test('source admission: every status/Result pair agrees across source inspection, file-backed admission and origin routing', (t) => {
+  // The register permits noncanonical/recommended Result combinations with a
+  // warning; those warnings must never broaden this admission allowlist.
+  const allowed = new Map([
+    ['reconciled/accepted', false], ['reconciled/pending', true],
+    ['reconciled/pending-user-decision', true], ['reconciled/mixed', true],
+    ['partially-reconciled/accepted', true], ['partially-reconciled/pending', true],
+  ]);
+  for (const state of RECONCILE_STATUS_VALUES) for (const result of [...RESULT_VALUES, 'invalid', 'accepted — note']) {
+    const label = `${state}/${result}`, supported = allowed.has(label), required = allowed.get(label) ?? false;
+    const f = coverageFixture(t); f.register(undefined, state, result); const proof = positive(f);
+    const source = inspectScopedSourceCoverage({ ...f.options(), inputId: INPUT, receipts: [proof] });
+    const out = f.inspect(), selected = out.sources[0];
+    assert.deepEqual([source.source_state_supported, source.receipt_required, source.receipt_state], [supported, required, 'current'], label);
+    assert.deepEqual([selected.source_state_supported, selected.receipt_required, selected.accepted_for_source], [supported, required, supported], label);
+    assert.equal(out.coverage_satisfied, supported, label); noApproval(out);
+    const routed = routing(t, result, state).f.inspect();
+    assert.equal(routed.coverage_satisfied, supported, `routing ${label}`);
+    assert.equal(routed.origin_inputs[0].reasons.includes('routing-source-state-unsupported'), !supported, label);
+  }
+  for (const state of ['invalid', 'reconciled — note']) {
+    const f = coverageFixture(t); f.register(undefined, state, 'accepted');
+    assert.throws(() => f.inspect(), /SW-SOURCE-REGISTER/);
+    assert.throws(() => inspectScopedSourceCoverage({ ...f.options(), inputId: INPUT }), /SW-SOURCE-REGISTER/);
+  }
+});
+
+for (const result of ['pending-user-decision', 'mixed']) {
+  test(`source admission: reconciled/${result} requires exact current source coverage and preserves original bytes`, (t) => {
+    const f = coverageFixture(t); f.register(undefined, 'reconciled', result);
+    const files = [f.inputFile, f.ownerFile, f.docFile, f.registerFile], before = files.map((file) => fs.readFileSync(file));
+    const missing = f.inspect(); pending(missing);
+    assert.deepEqual([missing.sources[0].source_state_supported, missing.sources[0].receipt_required, missing.sources[0].receipt_state], [true, true, 'missing']);
+    const proof = f.proof(); f.report(proof);
+    const current = f.inspect(); assert.equal(current.coverage_satisfied, true); noApproval(current);
+    assert.deepEqual(current.origin_inputs.map(({ input_id, source_refs }) => ({ input_id, source_refs })), [{ input_id: INPUT, source_refs: [REF] }]);
+    for (const [field, value] of [['input_sha256', `sha256:${'0'.repeat(64)}`], ['effects_sha256', `sha256:${'0'.repeat(64)}`],
+      ['contracts_sha256', `sha256:${'0'.repeat(64)}`], ['item_ids', ['02']], ['source_refs', select(['02']).source_refs]]) {
+      f.report({ ...proof, [field]: value }); const out = f.inspect(); pending(out);
+      assert.equal(out.sources[0].receipt_state, 'stale'); assert.deepEqual(out.sources[0].receipt_mismatches, [field]);
+      const single = inspectScopedSourceCoverage({ ...f.options(), inputId: INPUT, receipts: [{ ...proof, [field]: value }] });
+      assert.deepEqual(single.receipt_mismatches, [field]);
+    }
+    for (const patch of [{ owner: 'screen:OTHER-001' }, { unit: 'other' },
+      { input_id: 'IN-20260922-meeting-999', source_refs: ['input:IN-20260922-meeting-999#extracted-facts/01'] }]) {
+      f.report({ ...proof, ...patch }); const out = f.inspect(); pending(out); assert.equal(out.sources[0].receipt_state, 'missing');
+    }
+    f.report({ ...proof, origin_relation: 'no-effect-on-unit', origin_source_refs: [REF] });
+    const routingOnly = f.inspect(); pending(routingOnly);
+    assert.equal(routingOnly.sources[0].receipt_state, 'routing-only');
+    assert.ok(routingOnly.origin_inputs[0].reasons.includes('origin-is-unit-source'));
+    files.forEach((file, i) => assert.deepEqual(fs.readFileSync(file), before[i]));
+  });
+
+  test(`source admission: reconciled/${result} no-effect still checks receipt scope, hashes, connections and uncertainty`, (t) => {
+    const { f, proof } = routing(t, result, 'reconciled');
+    pending(f.inspect({ coverage_reports: [] }));
+    for (const patch of [{ origin_source_refs: [] }, { unit: 'other' }, { item_ids: ['01'] },
+      ...['input_sha256', 'effects_sha256', 'contracts_sha256'].map((field) => ({ [field]: `sha256:${'0'.repeat(64)}` }))]) {
+      f.report({ ...proof, ...patch }); pending(f.inspect());
+    }
+    f.register([effect(), effect('02', 'rules')], 'reconciled', result);
+    f.report(f.proof(select(['02']), { origin_relation: 'no-effect-on-unit', origin_source_refs: select(['02']).source_refs }));
+    const selected = f.inspect(); pending(selected); assert.ok(selected.origin_inputs[0].reasons.includes('routing-affects-selected-contract'));
+
+    const { f: g } = routing(t, result, 'reconciled');
+    g.write('unknown.md', { artifact_id: 'UNCERTAINTY', artifact_type: 'domain-rules', domain: 'result', status: 'draft' },
+      `## Unknowns\n${table(['ID', 'Question', 'Status'], [['U-ONE', `Unresolved meaning of ${REF}`, 'open']])}`);
+    const uncertain = g.inspect(); pending(uncertain); assert.ok(uncertain.origin_inputs[0].reasons.includes('unit-uncertainty-unresolved'));
+
+    const unconnected = coverageFixture(t, { explicit: false, native: true });
+    unconnected.register([effect('01', 'other'), effect('02', 'other')], 'reconciled', result);
+    unconnected.report(unconnected.proof(select(['02']), { origin_relation: 'no-effect-on-unit', origin_source_refs: [REF] }));
+    const denied = unconnected.inspect(); pending(denied);
+    assert.ok(denied.denials.some((entry) => entry.code === 'source-effect-unconnected'));
+    assert.ok(denied.origin_inputs[0].reasons.includes('canonical-source-unconnected'));
+  });
+
+  test(`source admission: an accepted successor never replaces reconciled/${result} request origins`, (t) => {
+    const f = coverageFixture(t, { explicit: false }), successor = 'IN-20260922-meeting-002';
+    f.register([effect('01', 'other')], 'reconciled', result);
+    const original = splitFrontmatter(fs.readFileSync(f.inputFile, 'utf8'));
+    f.write('successor.md', { ...original.data, input_id: successor, supersedes: INPUT }, '## Extracted Facts\n- Successor fact.', f.inputs);
+    f.change('contract.md', ({ fm }) => { fm.sources = [{ type: 'meeting', ref: successor }]; });
+    const register = splitFrontmatter(fs.readFileSync(f.registerFile, 'utf8'));
+    fs.writeFileSync(f.registerFile, md(register.data,
+      `${table(REQUIRED_REGISTER_COLS, [
+        [INPUT, 'meeting', 'simple-update', 'reconciled', result, 'artifact:DOC', '-', '-'],
+        [successor, 'meeting', 'simple-update', 'reconciled', 'accepted', 'artifact:DOC', '-', INPUT],
+      ])}\n\n## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, [effect('01', 'other'),
+        [successor, ...effect().slice(1, 6), `input:${successor}#extracted-facts/01`, ...effect().slice(7)]])}`));
+    const out = f.inspect(); pending(out);
+    assert.equal(out.sources[0].selection.input_id, successor); assert.equal(out.sources[0].accepted_for_source, true);
+    assert.equal(out.origin_inputs[0].input_id, INPUT);
+    assert.deepEqual(out.origin_inputs[0].reasons, ['origin-input-unreconciled']);
+  });
+}
 
 test('D input coverage: completed accepted typed reconciliation needs no extra receipt and retains exact origin', (t) => {
   const f = coverageFixture(t); f.register(undefined, 'reconciled', 'accepted'); const out = f.inspect();
@@ -117,7 +217,8 @@ test('D input coverage: partial/pending without review evidence stays unready', 
   assert.equal(out.sources[0].receipt_state, 'missing'); assert.equal(out.sources[0].receipt_required, true);
 });
 
-for (const [state, result] of [['partially-reconciled', 'pending'], ['partially-reconciled', 'accepted'], ['reconciled', 'pending']]) {
+for (const [state, result] of [['partially-reconciled', 'pending'], ['partially-reconciled', 'accepted'], ['reconciled', 'pending'],
+  ['reconciled', 'pending-user-decision'], ['reconciled', 'mixed']]) {
   test(`D input coverage: ${state}/${result} accepts current file-backed unit coverage without approving the whole input`, (t) => {
     const f = coverageFixture(t); f.register(undefined, state, result); positive(f); const out = f.inspect();
     assert.equal(out.coverage_satisfied, true); assert.equal(out.sources[0].receipt_required, true);
@@ -167,6 +268,13 @@ test('D input coverage: no-effect uses current unrelated routing effects, not po
   const { f } = routing(t), out = f.inspect(); assert.equal(out.coverage_satisfied, true);
   assert.equal(out.origin_inputs[0].relation, 'no-effect-on-unit'); assert.deepEqual(out.sources, []);
   assert.equal(out.origin_inputs[0].routing.source.groups[0].effects[0].target.ref, 'artifact:DOC#other'); noApproval(out);
+});
+
+for (const result of ['pending-user-decision', 'mixed']) test(`source admission: reconciled/${result} allows current unrelated origin routing`, (t) => {
+  const { f } = routing(t, result, 'reconciled'), out = f.inspect();
+  assert.equal(out.coverage_satisfied, true, JSON.stringify(out.denials));
+  assert.equal(out.origin_inputs[0].relation, 'no-effect-on-unit');
+  assert.deepEqual(out.sources, []); noApproval(out);
 });
 
 test('D input coverage: a no-effect label cannot hide a selected-contract effect or explicit source dependency', (t) => {

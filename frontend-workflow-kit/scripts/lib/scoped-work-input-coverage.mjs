@@ -22,16 +22,13 @@ import { resolveScopedContractGraph, scopedGraphSelectionSpans } from './scoped-
 import { parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
 import { ScopedWorkContractError } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
+import { scopedSourceState } from './scoped-work-source-state.mjs';
 
 const fail = (message) => { throw new ScopedWorkContractError(`SW-INPUT-COVERAGE: ${message}`); };
 const union = (values) => scopeSet([...new Set(values)]);
 const same = (a, b) => scopeJson(a) === scopeJson(b);
 const hash = (value) => hashBytes(Buffer.from(scopeJson(value), 'utf8'));
 const fields = ['item_ids', 'source_refs', 'input_sha256', 'effects_sha256', 'contracts_sha256'];
-function sourceState(summary) {
-  const supported = ['reconciled', 'partially-reconciled'].includes(summary.reconcileStatus) && ['accepted', 'pending'].includes(summary.result);
-  return { supported, receipt_required: supported && !(summary.reconcileStatus === 'reconciled' && summary.result === 'accepted') };
-}
 function compareReceipt(receipt, basis) {
   const mismatches = receipt ? fields.filter((field) => !same(receipt[field], basis[field])) : [];
   return { mismatches, state: !receipt ? 'missing' : mismatches.length ? 'stale'
@@ -93,7 +90,7 @@ export function inspectScopedInputCoverage({ origin_inputs, coverage_reports = [
   const proofFor = (receipt) => receipt ? reports.records.find((record) => same(record.receipt, receipt)) || null : null;
   const sources = relations.sources.map((source) => {
     const receipt = receiptFor(source.selection.input_id), comparison = compareReceipt(receipt, source.basis);
-    const state = sourceState(source.source.reconciliation.summary);
+    const state = scopedSourceState(source.source.reconciliation.summary);
     const admitted = state.supported && source.issues.length === 0 &&
       (!state.receipt_required || comparison.state === 'current');
     return { ...source, source_state_supported: state.supported, receipt_required: state.receipt_required,
@@ -121,7 +118,7 @@ export function inspectScopedInputCoverage({ origin_inputs, coverage_reports = [
       input_sha256: source.input.input_sha256, effects_sha256: hash(effects), contracts_sha256: hash(relations.contract_hashes) };
     const comparison = compareReceipt(receipt, basis);
     if (comparison.mismatches.length) reasons.push('routing-receipt-stale');
-    if (!sourceState(source.reconciliation.summary).supported) reasons.push('routing-source-state-unsupported');
+    if (!scopedSourceState(source.reconciliation.summary).supported) reasons.push('routing-source-state-unsupported');
     if (relations.pending_connections.some((entry) => entry.input_id === origin.input_id)) reasons.push('canonical-source-unconnected');
     const selectedSource = sources.find((entry) => entry.selection.input_id === origin.input_id);
     if (selectedSource && (!origin.source_refs.length || origin.source_refs.some((ref) =>
