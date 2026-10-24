@@ -14,7 +14,7 @@ import { createScopedReferenceResolver, parseScopedTargetRef, scopedSectionsBySl
 import { createScopedSourceResolver } from './scoped-work-sources.mjs';
 import { workText, workSet, workObject, ScopedWorkContractError } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
-import { scopedAuthoredSections, scopedAuthoredSubsections, scopedSelectionNodes, copyScopedSelectionContext, copyScopedNodeContexts } from './scoped-work-authored.mjs';
+import { scopedAuthoredSections, scopedAuthoredSubsections, scopedSelectionNodes, rememberScopedSelection, copyScopedSelectionContext, copyScopedNodeContexts } from './scoped-work-authored.mjs';
 
 const fail = (message) => { throw new ScopedWorkContractError(`SW-GRAPH: ${message}`); };
 const prefix = /^(?:artifact|decision|unknown|conflict|gap|investigation|verification|input):/;
@@ -86,6 +86,7 @@ function selectedNodes(view, selection, body) {
     if (sections.length === 1 && selection.content !== sections[0].text.replace(/\r\n|\r/g, '\n')) {
       fail('selected subsection differs from its native source');
     }
+    if (sections.length === 1) rememberScopedSelection(selection, body, sections[0].nodes, { subsection: true });
   }
   if (sections.length !== 1) fail('selected section is missing or ambiguous');
   const nodes = sections[0].nodes;

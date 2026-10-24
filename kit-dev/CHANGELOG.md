@@ -14,6 +14,9 @@
 - 복사·직렬화·캐시 축출 후 native 선택, parent effect overlap·전체 Item effect,
   current receipt·원 origin·실제 미결 차단과 Git backstop을 source 및 packed runtime에서
   검증했다. H3 해소는 의미 검토·승인·readiness를 대신하지 않는다.
+- H3가 기존 H2 home의 canonical 행을 포함하면 실제 원본 행 범위로 coverage를
+  연결한다. 행 식별자를 바꾸는 내부 후보 그래프에서도 native 문맥을 유지해 역참조한
+  Decision 편집이 binding을 stale로 바꾸고, 선택된 open 행의 차단이 남도록 한다.
 - basis v2·package/release 버전·payload 경계·CI/policy/human gate는 유지한다.
   검증: [scoped-authored-h3-001](temp/runs/scoped-authored-h3-001.md).
 

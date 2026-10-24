@@ -314,6 +314,12 @@ selector, never a heading path. Canonical home slugs (`open-decisions`,
 an H3 cannot substitute for one. API and mapping ownership/provenance rules
 still apply.
 
+An H3 may contain canonical rows whose home remains an existing H2. Those exact
+physical rows stay covered by the H3 selection, including in inverse relations
+and binding closures. Editing a related Decision must therefore invalidate the
+affected binding's basis, as it does for the parent H2 selection. An empty native
+scope binding cannot clear a selected open row.
+
 A parent H2 effect continues to cover its H3 content. Selecting H3 does not
 discard original inputs, Items or sibling effects, satisfy source/coverage
 review, approve a binding or establish readiness. Selected, inverse and

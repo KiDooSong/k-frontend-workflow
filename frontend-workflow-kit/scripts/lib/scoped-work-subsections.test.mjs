@@ -9,7 +9,7 @@ import { KIT_ROOT, DEFAULTS, splitFrontmatter } from './util.mjs';
 import { buildReconciliationTargetIndex } from './reconciliation-target-index.mjs';
 import { parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
 import { scopedAuthoredSubsections, scopedSelectionNodes, copyScopedSelectionContext } from './scoped-work-authored.mjs';
-import { createScopedReferenceResolver } from './scoped-work-refs.mjs';
+import { createScopedReferenceResolver, scopedRowSite, scopedAddRowSite, scopedCoveredRows } from './scoped-work-refs.mjs';
 import { scopedGraphSelectionRefs, scopedGraphSelectionSpans, resolveScopedContractGraph } from './scoped-work-graph.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
 import { loadInputArtifact } from './input-artifact.mjs';
@@ -251,5 +251,70 @@ test('H3 CLI: original origins and current receipts retain sibling-effect blocke
     fs.appendFileSync(f.inputs.get(`inputs/${INPUT}.md`), '\nChanged source note.\n'); f.commit();
     const stale = json(f.cli('readiness.mjs', ['--json']));
     assert.equal(stale.ready, false); assert.match(JSON.stringify(stale.denials), /stale|coverage/);
+  }
+});
+
+test('H3: canonical row coverage uses physical containment, including copied sections and re-keyed row sites', (t) => {
+  for (const [home, kind, id, headers, cells] of [
+    ['Unknowns', 'unknown', 'U-ONE', ['ID', 'Question', 'Status'], ['U-ONE', 'Question?', 'open']],
+    ['Open Decisions', 'decision', 'D-ONE', ['ID', 'Decision Needed', 'Options', 'Blocking Mode', 'Status'], ['D-ONE', 'Choose?', 'A/B', 'final-fixture-ui', 'open']],
+    ['Conflicts', 'conflict', 'C-ONE', ['ID', 'Description', 'Status'], ['C-ONE', 'Conflict.', 'open']],
+  ]) {
+    const f = fixture(t);
+    f.write('rows.md', { artifact_id: 'ROWS', artifact_type: 'domain-rules', domain: 'other' },
+      `## ${home}\n\n### Group\n\n${table(headers, [cells])}\n\n## Other\nOutside.`);
+    const refs = f.refs(), row = refs.contract(`${kind}:${id}@ROWS`), section = refs.contract('artifact:ROWS#group');
+    const sites = new Map(); scopedAddRowSite(sites, scopedRowSite(row));
+    assert.deepEqual(scopedCoveredRows(section, sites), [row.ref]);
+    assert.deepEqual(scopedCoveredRows(structuredClone(section), sites), [row.ref]);
+    assert.deepEqual(scopedCoveredRows(refs.contract('artifact:ROWS#other'), sites), []);
+    assert.throws(() => scopedCoveredRows({ ...section, selection: { ...section.selection, content: 'forged' } }, sites), /native source/);
+    if (kind === 'unknown') {
+      for (let i = 0; i < 17; i += 1) parseReconciliationReferenceView(`<!-- coverage ${i}${'x'.repeat(2 * 1024 * 1024)} -->`);
+      assert.deepEqual(scopedCoveredRows(structuredClone(section), sites), [row.ref], 'physical offsets survive a new parse');
+    }
+    const physical = new Map(), site = scopedRowSite(row);
+    scopedAddRowSite(physical, { ...site, row: 'physical-row-key' }, row.selection);
+    assert.deepEqual(scopedCoveredRows(structuredClone(section), physical), ['physical-row-key']);
+  }
+});
+
+test('H3 CLI: selecting a contained open Unknown stays blocked under a current empty native binding', (t) => {
+  const f = fixture(t), ref = 'unknown:U-ONE@ROWS';
+  f.write('rows.md', { artifact_id: 'ROWS', artifact_type: 'domain-rules', domain: 'other', status: 'confirmed',
+    approved_by: 'synthetic-test-owner', approved_at: '2026-10-24', decision_id: 'fixture-rows',
+    uncertainty_work_scopes: { version: 1, bindings: [{ unknown_id: 'U-ONE', owner: OWNER, known_units: ['narrow'], blocks: [],
+      basis_digest: `sha256:${'0'.repeat(64)}`, approval_ref: 'review:synthetic-only' }] } },
+  `## Unknowns\n\n### Group\n\n${table(['ID', 'Question', 'Status'], [['U-ONE', 'Question?', 'open']])}`);
+  f.edit('domains/example/screens/example/screen-spec.md', ({ fm }) => { fm.work_execution.units[0].contracts = ['artifact:ROWS#group']; });
+  const before = resolveScopedUncertaintyBindingBasis({ ...f.options(), uncertaintyRef: ref });
+  f.edit('rows.md', ({ fm }) => { fm.uncertainty_work_scopes.bindings[0].basis_digest = before.basis_digest; });
+  assert.equal(inspectScopedUncertaintyScopes(f.options()).checks[0].binding_state, 'current-unverified');
+  const profile = inspectScopedProfile(f.options());
+  assert.deepEqual(profile.denials.map((entry) => entry.code), ['unit-uncertainty-unresolved']);
+  f.init(); const envelope = json(f.cli('readiness.mjs', ['--json']));
+  assert.equal(envelope.ready, false);
+  assert.ok(envelope.denials.some((entry) => entry.code === 'unit-uncertainty-unresolved'));
+});
+
+test('H3 CLI: a Decision citing a contained canonical row joins its binding basis and invalidates freshness on edit', (t) => {
+  for (const selector of ['group', 'unknowns']) {
+    const f = fixture(t), ref = 'unknown:U-ONE@UNCERTAINTY', question = `Choose artifact:UNCERTAINTY#${selector}`;
+    f.write('uncertainty.md', { artifact_id: 'UNCERTAINTY', artifact_type: 'domain-rules', domain: 'example', status: 'draft',
+      uncertainty_work_scopes: { version: 1, bindings: [{ unknown_id: 'U-ONE', owner: OWNER, known_units: ['narrow'], blocks: [],
+        basis_digest: `sha256:${'0'.repeat(64)}`, approval_ref: 'review:synthetic-only' }] } },
+    `## Unknowns\n\n### Group\n\n${table(['ID', 'Question', 'Status'], [['U-ONE', 'Question?', 'open']])}`);
+    f.write('other.md', { artifact_id: 'OTHER', artifact_type: 'domain-rules', domain: 'other', status: 'draft' },
+      `## Open Decisions\n${table(['ID', 'Decision Needed', 'Options', 'Blocking Mode', 'Status'], [['D-INVERSE', question, 'A/B', 'final-fixture-ui', 'open']])}`);
+    const before = resolveScopedUncertaintyBindingBasis({ ...f.options(), uncertaintyRef: ref });
+    assert.match(JSON.stringify(before.basis), /decision:D-INVERSE@OTHER/);
+    f.edit('uncertainty.md', ({ fm }) => { fm.uncertainty_work_scopes.bindings[0].basis_digest = before.basis_digest; });
+    assert.equal(inspectScopedUncertaintyScopes(f.options()).checks[0].binding_state, 'current-unverified');
+    f.init(); assert.equal(json(f.cli('readiness.mjs', ['--json'])).ready, true);
+    f.edit('other.md', (doc) => { doc.body = doc.body.replace('Choose artifact:', 'Reconsider artifact:'); });
+    const after = resolveScopedUncertaintyBindingBasis({ ...f.options(), uncertaintyRef: ref });
+    assert.notEqual(after.basis_digest, before.basis_digest, selector);
+    assert.equal(inspectScopedUncertaintyScopes(f.options()).checks[0].binding_state, 'stale-basis');
+    f.commit(); assert.equal(json(f.cli('readiness.mjs', ['--json'])).ready, false);
   }
 });

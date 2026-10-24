@@ -24,6 +24,10 @@ or root config.
   and full extent remain unchanged, even when H3 has the same slug. `/row`,
   canonical table homes and global reconciliation parsing retain their contracts.
   See [artifact section references](scoped-work.md#artifact-section-references).
+- An H3 that contains a canonical row under an existing H2 retains that physical
+  row in relation and binding coverage. Related inverse Decision edits invalidate
+  the basis; the H3 does not create a new canonical home or narrow an actual
+  selected-row blocker.
 - Manual action: audit newly resolved H3 selections and their native extent and
   dependencies, then run normal source/coverage review, binding status and a
   fresh scoped preflight. Keep original inputs, Items, effect groups and origins;

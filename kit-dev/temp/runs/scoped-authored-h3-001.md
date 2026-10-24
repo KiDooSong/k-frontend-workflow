@@ -11,13 +11,22 @@ and [upgrade note](../../../frontend-workflow-kit/docs/reference/upgrade-notes.m
 own the reference rules. The implementation adds a separate H3 index and restores
 serialized selections against native nodes. The existing Markdown heading-title
 function gains an export so H3 uses exactly the H2 title/slug convention; global
-parsing and section splitting are unchanged. That makes four runtime files and
+parsing and section splitting are unchanged. The applicability graph's two
+re-keyed row-site calls also carry their original selection, so physical-row
+coverage survives that internal transport. That makes five runtime files and
 two consumer reference docs, rather than three runtime files.
 
 The old uncertainty regression that expected a missing H3 now checks the actual
 H3 inverse relation and its overlap with the unchanged H2 parent. No H2 golden
 digest was re-pinned. Canonical home slugs are excluded from H3 fallback; row
 references, API and mapping authority still require their existing homes.
+An H3 containing a canonical row in an existing H2 home covers that exact native
+row in inverse relations and binding closure. Regressions reproduce a missing
+inverse Decision and unchanged freshness before the correction, then require
+the Decision in the basis, a changed digest and stale binding after its edit,
+with an H2 control. A selected contained open Unknown stays blocked under a
+current empty native binding. Serialized selections and re-keyed candidate row
+sites preserve the same physical source.
 
 ## Validation
 
@@ -26,9 +35,9 @@ Environment: macOS, Node `v24.11.0`. Normal package entry points:
 | Check | Result |
 | --- | --- |
 | Baseline `npm test` | 2,368 tests; 2,366 pass, 0 fail, 2 skip |
-| Final `npm test` | 2,380 tests; 2,378 pass, 0 fail, same 2 skip |
-| H3 focused suite | 12 tests pass, no skip |
-| Packed resolver suites inside `npm test` | 663 tests pass, no fail/cancel/skip/todo |
+| Final `npm test` | 2,383 tests; 2,381 pass, 0 fail, same 2 skip |
+| H3 focused suite | 15 tests pass, no skip |
+| Packed resolver suites inside `npm test` | 666 tests pass, no fail/cancel/skip/todo |
 | Existing packed public CLI regressions | All 10 generated-boundary cases and 4 source-admission cases pass |
 | `npm run example:state` / `example:readiness` / `example:validate` | Exit 0; generated `_meta` byte-identical; validate 12 checks pass |
 | `npm run kit:pack` | 301 allowlisted payload entries; no added/deleted payload path |
@@ -62,6 +71,9 @@ The four public commands exit 0 in both runs; their complete normalized results
 are byte-identical. Existing envelope and basis pins also pass unchanged in
 source and packed suites. This comparison does not claim unchanged relations
 for documents containing a previously unresolved H3 reference.
+The complete normalized before/after JSON has SHA256
+`4fa2daf5a5264601b66bd2d31f992d3170170ab3fb2e09ebb1346a36461d3eb0`
+on both sides, including after the canonical-row coverage correction.
 
 ## Distribution and limits
 
@@ -70,6 +82,7 @@ Against a normal pack of the base, only these allowlisted files differ:
 - `scripts/lib/scoped-work-authored.mjs`
 - `scripts/lib/scoped-work-refs.mjs`
 - `scripts/lib/scoped-work-graph.mjs`
+- `scripts/lib/scoped-work-applicability.mjs` (native selection transport at two calls)
 - `scripts/lib/reconciliation-markdown-ast.mjs` (export only)
 - `docs/reference/scoped-work.md`
 - `docs/reference/upgrade-notes.md`

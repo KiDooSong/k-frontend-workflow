@@ -199,7 +199,7 @@ function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] 
     if (!byRef.has(record.ref)) byRef.set(record.ref, []);
     byRef.get(record.ref).push(key);
     const location = scopedRowSite(record);
-    if (location) scopedAddRowSite(physicalSites, { ...location, row: key });
+    if (location) scopedAddRowSite(physicalSites, { ...location, row: key }, record.selection);
   }
   // Applied rows are not discovery roots, but a candidate section/body can
   // still cover their exact selected source and thereby relate to that row.
@@ -208,7 +208,7 @@ function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] 
     if (!location) continue;
     const key = referenceVertex(record.ref);
     coverageNodes.set(key, record);
-    scopedAddRowSite(physicalSites, { ...location, row: key });
+    scopedAddRowSite(physicalSites, { ...location, row: key }, record.selection);
   }
   const range = (node) => {
     if (!bounds.has(node.selection)) {
