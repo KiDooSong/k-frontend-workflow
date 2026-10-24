@@ -2,7 +2,7 @@
 // tree and byte ranges: GENERATED headings do not end an authored section, and
 // GENERATED tables cannot supply API/Unknown authoring evidence. The raw parser
 // and its ordinary fully qualified reference contract remain unchanged.
-import { parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
+import { parseReconciliationReferenceView, reconciliationHeadingText, slugifySectionTitle } from './reconciliation-markdown-ast.mjs';
 import { specSectionName, stripGeneratedBlocks } from './spec.mjs';
 import { ScopedWorkContractError } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
@@ -98,6 +98,42 @@ export function scopedAuthoredView(body, raw = null) {
 // Callers treat these shared structural lists as read-only.
 export function scopedAuthoredSections(body, name, raw = null) {
   return scopedAuthoredView(body, raw).byName.get(name) || [];
+}
+
+// H3 is a section-only fallback, never a canonical table home. Keep its index
+// separate from H2 so neither an H2's extent nor its ambiguity can change.
+const subsectionViews = new WeakMap();
+const canonicalHomes = new Set(['open-decisions', 'unknowns', 'conflicts', 'gaps', 'component-gap-register',
+  'api-candidates', 'component-mapping', 'mapping-provenance']);
+export function scopedAuthoredSubsections(body, slug, raw = null) {
+  if (canonicalHomes.has(slug)) return [];
+  const view = scopedAuthoredView(body, raw);
+  if (!subsectionViews.has(view)) {
+    const authored = stripGeneratedBlocks(body, { preserveOffsets: true });
+    const bySlug = new Map();
+    let current = null;
+    const flush = (end) => {
+      if (!current) return;
+      current.text = body.slice(current.start, end);
+      if (!bySlug.has(current.slug)) bySlug.set(current.slug, []);
+      bySlug.get(current.slug).push(current);
+    };
+    for (const node of view.tree.children) {
+      if (node.type === 'heading' && node.depth <= 3 && source(authored, node) === source(body, node)) {
+        flush(node.position.start.offset);
+        current = null;
+        if (node.depth === 3) {
+          const title = reconciliationHeadingText(node), end = node.position.end.offset;
+          const newline = /\r\n?|\n/.exec(body.slice(end));
+          current = { title, slug: slugifySectionTitle(title), nodes: [],
+            start: newline ? end + newline.index + newline[0].length : body.length };
+        }
+      } else if (current) current.nodes.push(node);
+    }
+    flush(body.length);
+    subsectionViews.set(view, bySlug);
+  }
+  return subsectionViews.get(view).get(slug) || [];
 }
 
 // Context is not public selection/basis data. These sidecars bind a selection to

@@ -17,6 +17,25 @@ or root config.
 
 ---
 
+## Scoped authored H3 section-only references
+
+- Scoped ordinary `artifact:EXAMPLE#section` references now fall back to a unique
+  authored root H3 when existing H2 lookup has no match. H2 priority, ambiguity
+  and full extent remain unchanged, even when H3 has the same slug. `/row`,
+  canonical table homes and global reconciliation parsing retain their contracts.
+  See [artifact section references](scoped-work.md#artifact-section-references).
+- Manual action: audit newly resolved H3 selections and their native extent and
+  dependencies, then run normal source/coverage review, binding status and a
+  fresh scoped preflight. Keep original inputs, Items, effect groups and origins;
+  do not promote H3 to H2 to bypass a missing reference or rewrite a Summary Result.
+  Successful reference resolution does not approve scope or make a unit ready.
+- The binding basis stays at version 2; existing H2-only values do not change.
+  Newly resolved evidence can change a unit's actual relations and digest. Review
+  those facts through the normal human checkpoint instead of copying an old
+  digest or automatically refreshing an approval.
+
+---
+
 ## Reconciled Item sources with open decisions or mixed results
 
 - Scoped work now supports exactly `reconciled + pending-user-decision` and

@@ -330,9 +330,12 @@ test('#284 uncertainty: two references to the same empty section still establish
 
 test('D uncertainty: inverse H2 selections retain child content and intersect whole bodies, not sibling sections', (t) => {
   const f = fixture(t); f.evidence(unknowns([['U-NESTED', 'See artifact:RULES#nested']]));
-  // Canonical selectors name H2 sections. H3 content belongs to the selected
-  // parent; it must neither become a standalone selector nor disappear.
-  assert.throws(() => f.run(), /SW-REF-MISSING: section #nested/);
+  // A section-only authored H3 now resolves independently and still overlaps
+  // the parent's unchanged selection; the sibling remains outside it.
+  const nested = f.run();
+  assert.deepEqual(applications(nested, 'U-NESTED').map((entry) => [entry.unit, entry.relation]), [['known', 'inverse-evidence']]);
+  assert.equal(relations(nested).evidence.nodes.find((node) => node.ref === 'artifact:RULES#nested').selection.content,
+    'Nested contract.\n\n');
   f.evidence(unknowns([['U-NESTED', 'See artifact:RULES#rules']]));
   const before = f.run();
   assert.deepEqual(applications(before, 'U-NESTED').map((entry) => [entry.unit, entry.relation]),

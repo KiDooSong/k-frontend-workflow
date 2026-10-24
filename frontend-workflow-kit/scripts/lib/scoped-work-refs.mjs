@@ -9,7 +9,7 @@ import { parseMappingProvenanceContract, validateMappingProvenance } from './map
 import { parseTargetRef, isTargetRowId } from './reconciliation-items.mjs';
 import { resolveArtifact, isDuplicateArtifactId, resolveChildRow, bodyHasToken } from './reconciliation-target-index.mjs';
 import { parseReconciliationReferenceView, tableHeadersAreUnique } from './reconciliation-markdown-ast.mjs';
-import { scopedAuthoredView, scopedAuthoredSections, rememberScopedSelection, scopedSelectionNodes } from './scoped-work-authored.mjs';
+import { scopedAuthoredView, scopedAuthoredSections, scopedAuthoredSubsections, rememberScopedSelection, scopedSelectionNodes } from './scoped-work-authored.mjs';
 import { splitRow, hasHeader, col, stripGeneratedBlocks } from './spec.mjs';
 import { ScopedWorkContractError, workText, workPath, workSet } from './scoped-work-request.mjs';
 
@@ -152,8 +152,9 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot, inputA
     }
     return { record, relative, markdown: parsed.get(id) };
   }
-  function section(markdown, slug) {
-    const hits = scopedSectionsBySlug(markdown.occurrences, slug);
+  function section(markdown, slug, subsectionBody = null) {
+    let hits = scopedSectionsBySlug(markdown.occurrences, slug);
+    if (!hits.length && subsectionBody !== null) hits = scopedAuthoredSubsections(subsectionBody, slug, markdown);
     if (hits.length !== 1) fail(hits.length ? 'SW-REF-AMBIGUOUS' : 'SW-REF-MISSING', `section #${slug}`);
     return hits[0];
   }
@@ -347,7 +348,7 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot, inputA
           const retained = scopedSectionsBySlug(scopedAuthoredView(record.body, markdown).sections, ref.section);
           if (retained.length !== 1) fail(retained.length ? 'SW-REF-AMBIGUOUS' : 'SW-REF-MISSING', `section #${ref.section}`);
         }
-        const selected = authored.length === 1 ? authored[0] : section(markdown, ref.section);
+        const selected = authored.length === 1 ? authored[0] : section(markdown, ref.section, ref.rowKey === null ? record.body : null);
         selection = ref.rowKey === null
           ? { type: 'section', section: ref.section, content: lf(selected.text) }
           : authored.length ? artifactRowSelection(record, markdown, ref, authored)

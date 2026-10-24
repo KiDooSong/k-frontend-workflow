@@ -4,6 +4,19 @@
 
 ## Unreleased
 
+### fix(scoped) — 기존 H2를 보존하는 authored H3 section-only fallback
+
+- 기존 H2 해소가 없는 일반 artifact의 section-only 참조에서 유일한 native authored
+  root H3를 해소한다. 다음 authored H1/H2/H3 전까지 원본 노드·span과 H4 이하 내용을
+  유지하고 문서 전체 reference definition 문맥을 공유한다.
+- H2 우선순위·중복 판정·전체 범위와 기존 row/Unknown/Decision/API/mapping home을
+  보존한다. `/row`·global reconciliation parser·H4~H6 selector는 확장하지 않는다.
+- 복사·직렬화·캐시 축출 후 native 선택, parent effect overlap·전체 Item effect,
+  current receipt·원 origin·실제 미결 차단과 Git backstop을 source 및 packed runtime에서
+  검증했다. H3 해소는 의미 검토·승인·readiness를 대신하지 않는다.
+- basis v2·package/release 버전·payload 경계·CI/policy/human gate는 유지한다.
+  검증: [scoped-authored-h3-001](temp/runs/scoped-authored-h3-001.md).
+
 ### fix(scoped) — sibling effect로 들어온 다른 화면·legacy 매핑을 일반 근거로 유지 (#287)
 
 - screen owner의 source relation 루프가 그래프의 모든 `figma-component-mapping` 문서 전체·

@@ -284,6 +284,42 @@ request selects one owner **unit**:
 - A document mixing current and scoped requests is an input error; submit
   separate work requests.
 
+## Artifact section references
+
+For scoped ordinary artifact references, `artifact:EXAMPLE#section` selects a
+section's original content, with the existing Markdown slug rules:
+
+- Existing H2 lookup has priority, including its missing/ambiguity rules and
+  full content extent with child headings. An H3 with the same slug does not
+  change that H2 or create ambiguity; that H3 cannot be selected independently.
+  An ambiguous H2 is never hidden by an H3 fallback.
+- Only when that H2 lookup has no match, a section-only token may select one
+  unique native authored root H3. Its content starts after its heading and ends
+  before the next authored root H1, H2 or H3 (or the document end). H4–H6 and
+  their content remain descendants, with no independent H4–H6 selectors.
+- Quoted, listed, fenced, indented, inline-code, comment and GENERATED examples
+  cannot supply an H3 heading. GENERATED headings do not split an authored
+  subsection. Original text and nodes inside its extent remain ordinary
+  evidence, including generated content, as in an authored H2.
+- Duplicate H3 slugs fail closed. Selection keeps native AST nodes/spans and the
+  original document's reference definitions, including after copying or
+  serializing evidence. Dangling, malformed or ambiguous typed dependencies
+  still stop resolution.
+
+This fallback does not apply to `/row`, typed child references, input anchors or
+global Reconciliation Items section splitting. `/row` remains an H2 table-row
+selector, never a heading path. Canonical home slugs (`open-decisions`,
+`unknowns`, `conflicts`, `gaps`, `component-gap-register`, `api-candidates`,
+`component-mapping`, `mapping-provenance`) require their existing H2 contracts;
+an H3 cannot substitute for one. API and mapping ownership/provenance rules
+still apply.
+
+A parent H2 effect continues to cover its H3 content. Selecting H3 does not
+discard original inputs, Items or sibling effects, satisfy source/coverage
+review, approve a binding or establish readiness. Selected, inverse and
+transitive unresolved evidence keeps its blocking effect, including under a
+binding that narrows only native `scope-review-needed` relations.
+
 ## Common CLI flow
 
 Use the [representative before/after run flow](current-work.md#common-cli-flow)
