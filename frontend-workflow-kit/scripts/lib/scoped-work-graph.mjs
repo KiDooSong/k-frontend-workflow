@@ -14,7 +14,7 @@ import { createScopedReferenceResolver, parseScopedTargetRef, scopedSectionsBySl
 import { createScopedSourceResolver } from './scoped-work-sources.mjs';
 import { workText, workSet, workObject, ScopedWorkContractError } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
-import { scopedAuthoredSections, scopedSelectionNodes, copyScopedSelectionContext, copyScopedNodeContexts } from './scoped-work-authored.mjs';
+import { scopedAuthoredSections, scopedAuthoredSubsections, scopedSelectionNodes, rememberScopedSelection, copyScopedSelectionContext, copyScopedNodeContexts } from './scoped-work-authored.mjs';
 
 const fail = (message) => { throw new ScopedWorkContractError(`SW-GRAPH: ${message}`); };
 const prefix = /^(?:artifact|decision|unknown|conflict|gap|investigation|verification|input):/;
@@ -80,7 +80,14 @@ function selectedNodes(view, selection, body) {
     ? scopedAuthoredSections(body, selection.section === 'api-candidates' ? 'api candidates' : 'unknowns', view) : [];
   if (selection.section === 'unknowns' && !authored.some((home) => home.tables.some((table) =>
     ['ID', 'Question'].every((header) => hasHeader(table.headers, header))))) authored = [];
-  const sections = authored.length ? authored : scopedSectionsBySlug(view.sections, selection.section);
+  let sections = authored.length ? authored : scopedSectionsBySlug(view.sections, selection.section);
+  if (!sections.length && selection.type === 'section' && selection.bullet_index == null) {
+    sections = scopedAuthoredSubsections(body, selection.section, view);
+    if (sections.length === 1 && selection.content !== sections[0].text.replace(/\r\n|\r/g, '\n')) {
+      fail('selected subsection differs from its native source');
+    }
+    if (sections.length === 1) rememberScopedSelection(selection, body, sections[0].nodes, { subsection: true });
+  }
   if (sections.length !== 1) fail('selected section is missing or ambiguous');
   const nodes = sections[0].nodes;
   if (selection.type !== 'row' && selection.bullet_index == null) return nodes;
@@ -89,6 +96,7 @@ function selectedNodes(view, selection, body) {
     const matches = (nativeSectionRows(body, sections[0]).get(`${scopeJson(selection.headers)}\n${scopeJson(selection.cells)}`) || [])
       .map((item) => item.row);
     if (matches.length !== 1) fail('selected raw row is missing or ambiguous in its native AST');
+    rememberScopedSelection(selection, body, matches);
     return matches;
   }
   const selected = sections[0].bulletNodes[selection.bullet_index - 1];

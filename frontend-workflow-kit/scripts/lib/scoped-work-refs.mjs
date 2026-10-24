@@ -9,7 +9,7 @@ import { parseMappingProvenanceContract, validateMappingProvenance } from './map
 import { parseTargetRef, isTargetRowId } from './reconciliation-items.mjs';
 import { resolveArtifact, isDuplicateArtifactId, resolveChildRow, bodyHasToken } from './reconciliation-target-index.mjs';
 import { parseReconciliationReferenceView, tableHeadersAreUnique } from './reconciliation-markdown-ast.mjs';
-import { scopedAuthoredView, scopedAuthoredSections, rememberScopedSelection, scopedSelectionNodes } from './scoped-work-authored.mjs';
+import { scopedAuthoredView, scopedAuthoredSections, scopedAuthoredSubsections, rememberScopedSelection, scopedSelectionNodes, scopedSelectionRowSpans } from './scoped-work-authored.mjs';
 import { splitRow, hasHeader, col, stripGeneratedBlocks } from './spec.mjs';
 import { ScopedWorkContractError, workText, workPath, workSet } from './scoped-work-request.mjs';
 
@@ -53,13 +53,17 @@ export function scopedRowAlias(node) {
 // and the rows a reference to a section or a whole document covers, as an Unknown's
 // overlapping evidence covers them in the uncertainty pass.
 const ROW_KINDS = new Set(['decision', 'unknown', 'conflict']);
+const rowSelections = new WeakMap(), nativeSites = new WeakMap();
 export function scopedRowSite(node) {
   const row = ROW_KINDS.has(node?.kind) ? node.ref : scopedRowAlias(node);
-  return row && node.selection?.type === 'row' ? { row, artifact_id: node.artifact_id, section: node.selection.section } : null;
+  if (!row || node.selection?.type !== 'row') return null;
+  const site = { row, artifact_id: node.artifact_id, section: node.selection.section };
+  rowSelections.set(site, node.selection);
+  return site;
 }
 // Sites are kept per document, by row and by section, so recording every row of a register and
 // covering many sections of it stay linear.
-export function scopedAddRowSite(sites, site) {
+export function scopedAddRowSite(sites, site, selection = rowSelections.get(site)) {
   if (!site) return;
   if (!sites.has(site.artifact_id)) sites.set(site.artifact_id, { rows: new Map(), sections: new Map() });
   const entry = sites.get(site.artifact_id);
@@ -67,6 +71,16 @@ export function scopedAddRowSite(sites, site) {
   entry.rows.set(site.row, site);
   if (!entry.sections.has(site.section)) entry.sections.set(site.section, []);
   entry.sections.get(site.section).push(site.row);
+  const source = scopedSelectionRowSpans(selection);
+  if (source) {
+    if (!nativeSites.has(entry)) nativeSites.set(entry, { body: source.body, rows: new Map() });
+    const native = nativeSites.get(entry);
+    if (native.body !== source.body) fail('SW-REF-SNAPSHOT', 'canonical row sites have different source bodies');
+    for (const span of source.spans) {
+      if (!native.rows.has(span)) native.rows.set(span, new Set());
+      native.rows.get(span).add(site.row);
+    }
+  }
 }
 const siteStats = { examined: 0 };
 // Process-wide row sites examined by coverage: read-only diagnostics (#275).
@@ -80,6 +94,14 @@ export function scopedCoveredRows(node, sites) {
   const entry = sites.get(node.artifact_id);
   const rows = !entry ? [] : type === 'section' ? entry.sections.get(node.selection.section) || [] : [...entry.rows.keys()];
   siteStats.examined += rows.length;
+  if (type === 'section' && entry && nativeSites.has(entry)) {
+    const native = nativeSites.get(entry);
+    const selected = scopedSelectionRowSpans(node.selection, { body: native.body, subsectionOnly: true });
+    if (selected) {
+      siteStats.examined += selected.spans.length;
+      return [...new Set([...rows, ...selected.spans.flatMap((span) => [...native.rows.get(span) || []])])];
+    }
+  }
   return [...rows];
 }
 
@@ -152,8 +174,9 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot, inputA
     }
     return { record, relative, markdown: parsed.get(id) };
   }
-  function section(markdown, slug) {
-    const hits = scopedSectionsBySlug(markdown.occurrences, slug);
+  function section(markdown, slug, subsectionBody = null) {
+    let hits = scopedSectionsBySlug(markdown.occurrences, slug);
+    if (!hits.length && subsectionBody !== null) hits = scopedAuthoredSubsections(subsectionBody, slug, markdown);
     if (hits.length !== 1) fail(hits.length ? 'SW-REF-AMBIGUOUS' : 'SW-REF-MISSING', `section #${slug}`);
     return hits[0];
   }
@@ -347,12 +370,12 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot, inputA
           const retained = scopedSectionsBySlug(scopedAuthoredView(record.body, markdown).sections, ref.section);
           if (retained.length !== 1) fail(retained.length ? 'SW-REF-AMBIGUOUS' : 'SW-REF-MISSING', `section #${ref.section}`);
         }
-        const selected = authored.length === 1 ? authored[0] : section(markdown, ref.section);
+        const selected = authored.length === 1 ? authored[0] : section(markdown, ref.section, ref.rowKey === null ? record.body : null);
         selection = ref.rowKey === null
           ? { type: 'section', section: ref.section, content: lf(selected.text) }
           : authored.length ? artifactRowSelection(record, markdown, ref, authored)
             : rowSelection(selected, ref.rowKey, null, record);
-        if (ref.rowKey === null) rememberScopedSelection(selection, record.body, selected.nodes);
+        if (ref.rowKey === null) rememberScopedSelection(selection, record.body, selected.nodes, { subsection: selected.depth === 3 });
       }
     } else if (Object.hasOwn(signatures, ref.kind)) {
       const child = resolveChildRow(record, ref.rowId, ref.kind);

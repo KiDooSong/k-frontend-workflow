@@ -2,7 +2,7 @@
 // tree and byte ranges: GENERATED headings do not end an authored section, and
 // GENERATED tables cannot supply API/Unknown authoring evidence. The raw parser
 // and its ordinary fully qualified reference contract remain unchanged.
-import { parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
+import { parseReconciliationReferenceView, reconciliationHeadingText, slugifySectionTitle } from './reconciliation-markdown-ast.mjs';
 import { specSectionName, stripGeneratedBlocks } from './spec.mjs';
 import { ScopedWorkContractError } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
@@ -100,12 +100,48 @@ export function scopedAuthoredSections(body, name, raw = null) {
   return scopedAuthoredView(body, raw).byName.get(name) || [];
 }
 
+// H3 is a section-only fallback, never a canonical table home. Keep its index
+// separate from H2 so neither an H2's extent nor its ambiguity can change.
+const subsectionViews = new WeakMap();
+const canonicalHomes = new Set(['open-decisions', 'unknowns', 'conflicts', 'gaps', 'component-gap-register',
+  'api-candidates', 'component-mapping', 'mapping-provenance']);
+export function scopedAuthoredSubsections(body, slug, raw = null) {
+  if (canonicalHomes.has(slug)) return [];
+  const view = scopedAuthoredView(body, raw);
+  if (!subsectionViews.has(view)) {
+    const authored = stripGeneratedBlocks(body, { preserveOffsets: true });
+    const bySlug = new Map();
+    let current = null;
+    const flush = (end) => {
+      if (!current) return;
+      current.text = body.slice(current.start, end);
+      if (!bySlug.has(current.slug)) bySlug.set(current.slug, []);
+      bySlug.get(current.slug).push(current);
+    };
+    for (const node of view.tree.children) {
+      if (node.type === 'heading' && node.depth <= 3 && source(authored, node) === source(body, node)) {
+        flush(node.position.start.offset);
+        current = null;
+        if (node.depth === 3) {
+          const title = reconciliationHeadingText(node), end = node.position.end.offset;
+          const newline = /\r\n?|\n/.exec(body.slice(end));
+          current = { title, slug: slugifySectionTitle(title), depth: 3, nodes: [],
+            start: newline ? end + newline.index + newline[0].length : body.length };
+        }
+      } else if (current) current.nodes.push(node);
+    }
+    flush(body.length);
+    subsectionViews.set(view, bySlug);
+  }
+  return subsectionViews.get(view).get(slug) || [];
+}
+
 // Context is not public selection/basis data. These sidecars bind a selection to
 // its exact original nodes, including when identical raw/authored rows coexist.
 // Explicit copy points preserve them through JSON projection/normalization.
 const selections = new WeakMap();
-export function rememberScopedSelection(selection, body, nodes) {
-  selections.set(selection, { body, nodes });
+export function rememberScopedSelection(selection, body, nodes, { subsection = false } = {}) {
+  selections.set(selection, { body, nodes, subsection });
   return selection;
 }
 export function scopedSelectionNodes(body, selection) {
@@ -113,6 +149,35 @@ export function scopedSelectionNodes(body, selection) {
   if (!context) return null;
   if (context.body !== body) throw new ScopedWorkContractError('SW-REF-SNAPSHOT: selection body changed');
   return context.nodes;
+}
+
+// Physical table rows, not rendered cells or an H3's slug, establish containment
+// in a canonical H2 home. Offsets also survive eviction/reparsing of the tree.
+export function scopedSelectionRowSpans(selection, { body = null, subsectionOnly = false } = {}) {
+  let context = selections.get(selection);
+  if (!context && body !== null && subsectionOnly && selection?.type === 'section') {
+    const raw = parseReconciliationReferenceView(body);
+    // A copied H2 keeps its existing coverage contract, even beside an H3.
+    if (raw.sections.some((section) => section.slug === selection.section)) return null;
+    const homes = scopedAuthoredSubsections(body, selection.section, raw);
+    if (homes.length !== 1 || selection.content !== homes[0].text.replace(/\r\n|\r/g, '\n')) {
+      throw new ScopedWorkContractError('SW-REF-SNAPSHOT: subsection differs from its native source');
+    }
+    rememberScopedSelection(selection, body, homes[0].nodes, { subsection: true });
+    context = selections.get(selection);
+  }
+  if (!context || (subsectionOnly && !context.subsection)) return null;
+  if (body !== null && context.body !== body) throw new ScopedWorkContractError('SW-REF-SNAPSHOT: row coverage body changed');
+  if (!context.rowSpans) {
+    const spans = [];
+    const visit = (node) => {
+      if (node.type === 'tableRow') spans.push(`${node.position.start.offset}:${node.position.end.offset}`);
+      for (const child of node.children || []) visit(child);
+    };
+    context.nodes.forEach(visit);
+    context.rowSpans = spans;
+  }
+  return { body: context.body, spans: context.rowSpans };
 }
 export function copyScopedSelectionContext(from, to) {
   const context = selections.get(from);

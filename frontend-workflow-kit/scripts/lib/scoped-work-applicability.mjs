@@ -120,7 +120,7 @@ function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] 
   for (const node of projected) checkSelected(node);
   // Where each row sits, so that a section or document reference covers the rows it holds.
   const sites = new Map();
-  const site = (value) => scopedAddRowSite(sites, value);
+  const site = (value, selection) => scopedAddRowSite(sites, value, selection);
   for (const node of [...decisions.records, ...uncertainty.records, ...projected]) site(scopedRowSite(node));
   for (const node of projected) {
     known.add(node.ref);
@@ -130,8 +130,8 @@ function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] 
   const skipped = new Set(unaudited.map((entry) => scopeJson([entry.file, entry.section])));
   const rows = new Map(), untyped = new Map(), readSet = [];
   const rootKey = (ref, mode) => scopeJson([ref, mode]);
-  const add = (row, section, mode = 'ordinary') => {
-    site({ row: row.key, artifact_id: row.artifactId, section });
+  const add = (row, section, mode = 'ordinary', selection) => {
+    site({ row: row.key, artifact_id: row.artifactId, section }, selection);
     const key = rootKey(row.key, mode);
     if (!rows.has(key)) rows.set(key, { ...row, mode });
   };
@@ -145,9 +145,10 @@ function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] 
         const key = `untyped:${artifactId}#${slug}/${id}`;
         untyped.set(key, { artifactId, slug, id });
         if (!view) { view = parseReconciliationReferenceView(entry.body); readSet.push(indexedFile(projectRoot, entry)); }
+        const selection = { type: 'row', section: slug, headers, cells };
         // A typed row's node leads to its document's decision_refs; an untyped row starts from them too.
-        add({ key, id, artifactId, token: null, roots: [...new Set([...scopedGraphSelectionRefs(entry.body, entry.fm, { type: 'row', section: slug, headers, cells }, view),
-          ...looseDecisionRefs(entry.fm)])] }, slug);
+        add({ key, id, artifactId, token: null, roots: [...new Set([...scopedGraphSelectionRefs(entry.body, entry.fm, selection, view),
+          ...looseDecisionRefs(entry.fm)])] }, slug, 'ordinary', selection);
       }
     }
     // The public target index stays raw. Derive the corrected authored Unknown
@@ -199,7 +200,7 @@ function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] 
     if (!byRef.has(record.ref)) byRef.set(record.ref, []);
     byRef.get(record.ref).push(key);
     const location = scopedRowSite(record);
-    if (location) scopedAddRowSite(physicalSites, { ...location, row: key });
+    if (location) scopedAddRowSite(physicalSites, { ...location, row: key }, record.selection);
   }
   // Applied rows are not discovery roots, but a candidate section/body can
   // still cover their exact selected source and thereby relate to that row.
@@ -208,7 +209,7 @@ function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] 
     if (!location) continue;
     const key = referenceVertex(record.ref);
     coverageNodes.set(key, record);
-    scopedAddRowSite(physicalSites, { ...location, row: key });
+    scopedAddRowSite(physicalSites, { ...location, row: key }, record.selection);
   }
   const range = (node) => {
     if (!bounds.has(node.selection)) {

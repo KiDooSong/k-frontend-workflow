@@ -596,4 +596,4 @@ export function parseReconciliationReferenceView(text) {
   const tree = sharedTree(source);
   return { tree, sections: sectionOccurrences(source, tree, null, true) };
 }
-export { normalizeReferenceLabel as reconciliationReferenceLabel };
+export { normalizeReferenceLabel as reconciliationReferenceLabel, headingText as reconciliationHeadingText };
