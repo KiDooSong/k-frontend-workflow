@@ -96,6 +96,7 @@ function selectedNodes(view, selection, body) {
     const matches = (nativeSectionRows(body, sections[0]).get(`${scopeJson(selection.headers)}\n${scopeJson(selection.cells)}`) || [])
       .map((item) => item.row);
     if (matches.length !== 1) fail('selected raw row is missing or ambiguous in its native AST');
+    rememberScopedSelection(selection, body, matches);
     return matches;
   }
   const selected = sections[0].bulletNodes[selection.bullet_index - 1];

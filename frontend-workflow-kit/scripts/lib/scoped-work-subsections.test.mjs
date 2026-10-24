@@ -18,6 +18,7 @@ import { REQUIRED_REGISTER_COLS } from './reconciliation-register.mjs';
 import { resolveScopedSourceRelations } from './scoped-work-source-relations.mjs';
 import { resolveScopedCoverageBasis, inspectScopedSourceCoverage } from './scoped-work-coverage.mjs';
 import { resolveScopedUncertaintyProjection } from './scoped-work-uncertainty.mjs';
+import { resolveScopedApplicabilityProjection } from './scoped-work-applicability.mjs';
 import { inspectScopedProfile } from './scoped-work-profiles.mjs';
 import { inspectScopedUncertaintyScopes, resolveScopedUncertaintyBindingBasis } from './scoped-work-uncertainty-scopes.mjs';
 
@@ -316,5 +317,22 @@ test('H3 CLI: a Decision citing a contained canonical row joins its binding basi
     assert.notEqual(after.basis_digest, before.basis_digest, selector);
     assert.equal(inspectScopedUncertaintyScopes(f.options()).checks[0].binding_state, 'stale-basis');
     f.commit(); assert.equal(json(f.cli('readiness.mjs', ['--json'])).ready, false);
+  }
+});
+
+test('H3 CLI: malformed Decision IDs without outgoing references fail closed like the parent H2', (t) => {
+  for (const id of ['Release choice', 'U-OTHER', 'D:bad']) for (const mixed of [false, true]) {
+    const f = fixture(t), headers = ['ID', 'Decision Needed', 'Options', 'Blocking Mode', 'Status'];
+    const row = (key) => [key, 'Choose behavior.', 'A/B', 'final-fixture-ui', 'open'];
+    f.write('rows.md', { artifact_id: 'ROWS', artifact_type: 'domain-rules', domain: 'other', status: 'draft' },
+      `## Open Decisions\n\n### Group\n\n${table(headers, [...mixed ? [row('D-VALID')] : [], row(id)])}\n\n### Safe\nUnrelated prose.`);
+    const choose = (section) => f.edit('domains/example/screens/example/screen-spec.md', ({ fm }) => {
+      fm.work_execution.units[0].contracts = [`artifact:ROWS#${section}`];
+    });
+    choose('safe'); assert.doesNotThrow(() => resolveScopedApplicabilityProjection(f.options()));
+    choose('open-decisions'); assert.throws(() => resolveScopedApplicabilityProjection(f.options()), /cannot form a scoped decision reference/);
+    choose('group'); assert.throws(() => resolveScopedApplicabilityProjection(f.options()), /cannot form a scoped decision reference/);
+    f.init(); const result = f.cli('readiness.mjs', ['--json']);
+    assert.equal(result.status, 2); assert.match(result.stderr, /cannot form a scoped decision reference/);
   }
 });
