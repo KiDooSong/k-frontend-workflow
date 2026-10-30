@@ -34,6 +34,7 @@ import {
   validateReconciliationV2,
 } from './reconciliation-items.mjs';
 import { parseScopedTargetRef } from './scoped-work-refs.mjs';
+import { reconciliationParseStats } from './reconciliation-markdown-ast.mjs';
 
 const KIT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const VALIDATE = path.join(KIT_ROOT, 'scripts', 'validate.mjs');
@@ -3194,4 +3195,83 @@ test('parseReconciliationItems: 섹션/표/행 파싱', () => {
 
   const noSection = parseReconciliationItems('# Register\n\n표 없음');
   assert.equal(noSection.sectionExists, false);
+});
+
+test('Items reuse skips Markdown work and isolates every returned table/row', () => {
+  const body = ['# Items cache isolation', '', '## Reconciliation Items', '',
+    ...ITEMS_HEADER, ...DEFAULT_ITEM_ROWS].join('\n');
+  const first = parseReconciliationItems(body);
+  const expected = structuredClone(first);
+  const afterFirst = reconciliationParseStats();
+  first.sectionCount = 99;
+  first.table.headers[0] = 'poison';
+  first.table.rows[0]['Input ID'] = 'poison';
+  first.table.rows.push({ poison: 'row' });
+  first.table.sourceText = 'poison';
+  first.rows[0].target = 'none';
+  first.rows.length = 0;
+
+  const second = parseReconciliationItems(Buffer.from(body).toString('utf8'));
+  assert.deepEqual(second, expected);
+  assert.deepEqual(reconciliationParseStats(), afterFirst);
+  second.table.rows[0].Target = 'poison';
+  second.rows.push({ poison: 'row' });
+  assert.deepEqual(parseReconciliationItems(body), expected);
+});
+
+test('Items reuse preserves invalid structure results and exact source line endings', () => {
+  const section = ['## Reconciliation Items', '', ...ITEMS_HEADER, ...DEFAULT_ITEM_ROWS].join('\n');
+  const bodies = [
+    '# Missing Items cache case',
+    `${section}\n\n${section}`,
+    `${section}\n\n${[...ITEMS_HEADER, ...DEFAULT_ITEM_ROWS].join('\n')}`,
+    section.replace('Input ID | Item', 'Input ID | Input ID'),
+    `# Hidden examples cache case\n\n\`\`\`md\n${section}\n\`\`\`\n\n<!-- ${section} -->`,
+  ];
+  for (const body of bodies) {
+    const first = parseReconciliationItems(body);
+    const expected = structuredClone(first);
+    const stats = reconciliationParseStats();
+    assert.equal(first.rows.length, 0);
+    first.rows.push({ poison: 'row' });
+    first.sectionCount = 0;
+    if (first.table) first.table.headers.length = 0;
+    assert.deepEqual(parseReconciliationItems(body), expected);
+    assert.deepEqual(reconciliationParseStats(), stats);
+  }
+
+  const lf = `# Exact Items source\n\n${section}`;
+  const crlf = lf.replaceAll('\n', '\r\n');
+  const before = parseReconciliationItems(lf);
+  const after = parseReconciliationItems(crlf);
+  assert.deepEqual(after.rows, before.rows);
+  assert.notEqual(after.table.sourceText, before.table.sourceText);
+  assert.ok(after.table.sourceText.includes('\r\n'));
+  const changed = lf.replace('artifact:COUPON-001-figma-component-mapping', 'artifact:CHANGED-mapping');
+  assert.ok(parseReconciliationItems(changed).rows[0].target.includes('CHANGED-mapping'));
+  assert.deepEqual(parseReconciliationItems(lf), before);
+});
+
+test('Items syntax reuse does not reuse target validation or diagnostic file locations', (t) => {
+  const valid = runV2(t);
+  assert.deepEqual(valid.errors, []);
+  const missingTarget = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/figma-component-mapping.md': null },
+  });
+  assert.equal(missingTarget.register.body, valid.register.body);
+  assert.ok(missingTarget.errors.some((entry) => entry.message.startsWith('RR-REF-')));
+  assert.ok(missingTarget.errors.every((entry) => entry.file === missingTarget.registerFile));
+  assert.notEqual(missingTarget.registerFile, valid.registerFile);
+  assert.deepEqual(runV2(t).errors, []);
+});
+
+test('Items inputs larger than the source budget are not retained as parse results', () => {
+  const body = `<!-- ${'x'.repeat(8 * 1024 * 1024)} -->\n\n## Reconciliation Items\n\n` +
+    [...ITEMS_HEADER, ...DEFAULT_ITEM_ROWS].join('\n');
+  const first = parseReconciliationItems(body);
+  const stats = reconciliationParseStats();
+  assert.equal(first.rows.length, DEFAULT_ITEM_ROWS.length);
+  assert.deepEqual(parseReconciliationItems(body), first);
+  // Existing AST reuse is allowed; the Items stages still run on each call.
+  assert.ok(reconciliationParseStats().reused > stats.reused);
 });

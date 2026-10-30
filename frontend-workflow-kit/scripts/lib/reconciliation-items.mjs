@@ -25,6 +25,7 @@
 // 이 모듈은 순수하다 — { errors:[{file,message}], warnings:[{file,message}] } 를 반환하고
 // file 은 항상 절대경로다. validate.mjs 가 add()/warn() 으로 상대화한다.
 import { col, parseTable } from './spec.mjs';
+import { createTextKeyedCache } from './util.mjs';
 import { RECONCILE_STATUS_VALUES, REQUIRED_REGISTER_COLS } from './reconciliation-register.mjs';
 import {
   FIGMA_PRECISION_SOURCE_UNITS,
@@ -293,8 +294,26 @@ function splitRefList(cell) {
 // (validator 가 RR-SCHEMA-018/017 로 fail-closed). fence/HTML 주석 안의 heading·표는 섹션도
 // 표도 아니다(stripNonContent 를 section 분리 **이전**에 적용 — fence 안의 heading 이 실제 섹션을
 // 만들면 closing fence 가 고아가 되어 fence 내부 표가 노출된다). 행은 단일 섹션·단일 표일 때만 파싱한다.
+// Cache syntax data only, never validation/authority results or file observations.
+// The budget counts exact source characters; oversized inputs remain uncached.
+const ITEMS_CACHE_CHARS = 8 * 1024 * 1024;
+const itemParses = createTextKeyedCache(ITEMS_CACHE_CHARS);
+
 export function parseReconciliationItems(body) {
-  const occurrences = splitSectionOccurrences(stripNonContent(String(body || ''))).filter(
+  const source = String(body || '');
+  if (source.length > ITEMS_CACHE_CHARS) return parseItems(source);
+  let parsed = itemParses.get(source);
+  if (!parsed) {
+    parsed = parseItems(source);
+    itemParses.set(source, parsed);
+  }
+  // Keep the stored result private, including on the first call. Callers may
+  // mutate tables/rows without changing another caller's syntax observations.
+  return structuredClone(parsed);
+}
+
+function parseItems(source) {
+  const occurrences = splitSectionOccurrences(stripNonContent(source)).filter(
     (occ) => occ.slug === ITEMS_SECTION_SLUG,
   );
   if (occurrences.length === 0) {
