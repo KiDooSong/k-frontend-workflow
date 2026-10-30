@@ -22,9 +22,13 @@ const resolverSuites = [...suites, 'scoped-work-generated.test.mjs', 'scoped-wor
 const cliSuite = 'scoped-work-binding-status.test.mjs';
 const sourceCliSuite = 'scoped-work-cli.test.mjs';
 
+// Each packed subprocess runs a full suite with real Git/CLI observations.
+// Allow whole-suite CI contention while keeping every subprocess bounded.
+const PACKED_SUBPROCESS_TIMEOUT_MS = 5 * 60_000;
+
 function checkedNode(args, cwd, env = process.env) {
   const run = spawnSync(process.execPath, args, { cwd, env, encoding: 'utf8',
-    maxBuffer: 16 * 1024 * 1024, timeout: 120000 });
+    maxBuffer: 16 * 1024 * 1024, timeout: PACKED_SUBPROCESS_TIMEOUT_MS });
   assert.equal(run.error, undefined, String(run.error));
   assert.equal(run.signal, null, `terminated: ${run.signal}`);
   assert.equal(run.status, 0, `${run.stderr}\n${run.stdout}`);
