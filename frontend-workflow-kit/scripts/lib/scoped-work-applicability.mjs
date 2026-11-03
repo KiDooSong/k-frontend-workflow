@@ -66,7 +66,8 @@ export function resolveScopedApplicabilityProjection(options = {}) {
     if (hashBytes(readCurrentBytes(file.absolute, 'scoped applicability')) !== entry.sha256) fail('snapshot changed after relation closure');
   }
   const projection = { ...current.projection, unapplied_relations: unapplied.unapplied };
-  return { projection: { ...projection, ownership }, read_set: scopeSet([...files.values()]), unaudited: current.unaudited };
+  return { projection: { ...projection, ownership }, read_set: scopeSet([...files.values()]), unaudited: current.unaudited,
+    ...(current.target_fallbacks ? { target_fallbacks: current.target_fallbacks } : {}) };
 }
 
 // #275: Decision, Unknown and Conflict rows that apply to no owner but relate to a projected

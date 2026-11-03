@@ -131,3 +131,34 @@ test('every allowlisted flag still runs validate (empty docs → vacuous pass ex
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('frontmatter sources duplicates use scoped normalization and stay check 3 warnings (#293)', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'validate-sources-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const docsDir = path.join(root, 'docs', 'frontend-workflow');
+  const file = path.join(docsDir, 'domains', 'result', 'domain-rules.md');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const inspect = (sources) => {
+    fs.writeFileSync(file, `---\n${JSON.stringify({ artifact_id: 'RULES', artifact_type: 'domain-rules',
+      domain: 'result', status: 'draft', sources })}\n---\n\n## Rules\nKnown contract.\n`);
+    const result = run(['--docs', docsDir, '--root', root, '--json', '--enforce']);
+    assert.equal(result.status, 0, result.stdout || result.stderr);
+    const parsed = JSON.parse(result.stdout);
+    assert.equal(parsed.ok, true);
+    assert.deepEqual(parsed.errors, []);
+    return parsed.warnings.filter((entry) => entry.message.startsWith('FM-SOURCES-101:'));
+  };
+
+  const source = { type: 'input', ref: 'IN-20260922-meeting-001', context: { a: 1, b: 2 } };
+  const reordered = { context: { b: 2, a: 1 }, ref: source.ref, type: source.type };
+  for (const sources of [[source, source], [source, reordered]]) {
+    const warnings = inspect(sources);
+    assert.equal(warnings.length, 1);
+    assert.equal(warnings[0].check, 3);
+    assert.equal(warnings[0].file, 'docs/frontend-workflow/domains/result/domain-rules.md');
+  }
+  for (const sources of [[], [source], [source, { ...source, type: 'meeting' }],
+    [source, { ...source, ref: `${source.ref} ` }], [source, { ...source, context: { a: 1, b: 3 } }]]) {
+    assert.deepEqual(inspect(sources), []);
+  }
+});

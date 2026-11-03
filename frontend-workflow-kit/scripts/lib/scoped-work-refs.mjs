@@ -7,13 +7,22 @@ import { readCurrentBytes, canonicalJson } from './current-work-request.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { parseMappingProvenanceContract, validateMappingProvenance } from './mapping-provenance.mjs';
 import { parseTargetRef, isTargetRowId } from './reconciliation-items.mjs';
-import { resolveArtifact, isDuplicateArtifactId, resolveChildRow, bodyHasToken } from './reconciliation-target-index.mjs';
+import { resolveArtifact, isDuplicateArtifactId, resolveChildRow, bodyHasToken, isHistoricalArtifactRowTarget } from './reconciliation-target-index.mjs';
 import { parseReconciliationReferenceView, tableHeadersAreUnique } from './reconciliation-markdown-ast.mjs';
 import { scopedAuthoredView, scopedAuthoredSections, scopedAuthoredSubsections, rememberScopedSelection, scopedSelectionNodes, scopedSelectionRowSpans } from './scoped-work-authored.mjs';
 import { splitRow, hasHeader, col, stripGeneratedBlocks } from './spec.mjs';
 import { ScopedWorkContractError, workText, workPath, workSet } from './scoped-work-request.mjs';
 
 const fail = (code, message) => { throw new ScopedWorkContractError(`${code}: ${message}`); };
+// Only these two absence cases may widen a historical Item's ordinary row target.
+// Keep the tag private: a missing artifact, malformed table or ambiguous home is
+// not evidence that a row was retired, and must retain its existing hard error.
+const missingSelections = new WeakMap();
+function missingSelection(kind, key, message) {
+  const error = new ScopedWorkContractError(`SW-REF-MISSING: ${message}`);
+  missingSelections.set(error, { kind, key });
+  throw error;
+}
 const lf = (text) => text.replace(/\r\n|\r/g, '\n');
 const signatures = {
   decision: ['ID', 'Status', 'Blocking Mode'], unknown: ['ID', 'Question'],
@@ -177,7 +186,8 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot, inputA
   function section(markdown, slug, subsectionBody = null) {
     let hits = scopedSectionsBySlug(markdown.occurrences, slug);
     if (!hits.length && subsectionBody !== null) hits = scopedAuthoredSubsections(subsectionBody, slug, markdown);
-    if (hits.length !== 1) fail(hits.length ? 'SW-REF-AMBIGUOUS' : 'SW-REF-MISSING', `section #${slug}`);
+    if (!hits.length) missingSelection('section', slug, `section #${slug}`);
+    if (hits.length !== 1) fail('SW-REF-AMBIGUOUS', `section #${slug}`);
     return hits[0];
   }
   function mappingRow(record, occurrence, key) {
@@ -232,7 +242,8 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot, inputA
       ? scopedIndexedBy(tables, `family:${family}`, (t) => signatures[family].every((h) => hasHeader(t.headers, h))).get(true) || [] : tables;
     if (family && eligible.length !== 1) fail('SW-REF-AMBIGUOUS', `canonical ${family} table must be unique`);
     const matches = rowsOf(eligible, family).get(key) || [];
-    if (matches.length !== 1) fail(matches.length ? 'SW-REF-AMBIGUOUS' : 'SW-REF-MISSING', `exact row ${key}`);
+    if (!matches.length) missingSelection('row', key, `exact row ${key}`);
+    if (matches.length !== 1) fail('SW-REF-AMBIGUOUS', `exact row ${key}`);
     const { table, index } = matches[0];
     return selectedRow(occurrence.slug, key, table, index, record);
   }
@@ -452,5 +463,25 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot, inputA
       return selected;
     }
   }
-  return { contract, authoredContract, tracking, contracts: (tokens) => workSet(tokens, contract, 'contracts', true) };
+  // Item effects record what reconciliation did then. Only that caller may
+  // widen a now-missing ordinary /row to the surviving section or document.
+  // contract(), graph dependencies and direct unit selectors stay exact.
+  function historicalTarget(token) {
+    try { return contract(token); } catch (error) {
+      const absent = missingSelections.get(error), ref = parseScopedTargetRef(token);
+      if (!absent || ref?.kind !== 'artifact' || !ref.section || ref.rowKey === null) throw error;
+      const { record } = artifact(ref.artifactId);
+      if (!isHistoricalArtifactRowTarget(ref, record) ||
+          !(absent.kind === 'row' && absent.key === ref.rowKey || absent.kind === 'section' && absent.key === ref.section)) throw error;
+      let target, reason = 'missing-row';
+      try { target = contract(`artifact:${ref.artifactId}#${ref.section}`); } catch (sectionError) {
+        const missing = missingSelections.get(sectionError);
+        if (missing?.kind !== 'section' || missing.key !== ref.section) throw sectionError;
+        target = contract(`artifact:${ref.artifactId}`);
+        reason = 'missing-section';
+      }
+      return { ...target, historical_target: { original_ref: ref.raw, effective_ref: target.ref, reason } };
+    }
+  }
+  return { contract, historicalTarget, authoredContract, tracking, contracts: (tokens) => workSet(tokens, contract, 'contracts', true) };
 }

@@ -18,7 +18,7 @@ const suites = ['scoped-work-refs.test.mjs', 'scoped-work-sources.test.mjs',
 const runtime = ['scoped-work-request.mjs', 'scoped-work-declarations.mjs', 'scoped-work-authored.mjs', 'reconciliation-markdown-ast.mjs', 'scoped-work-binding-status.mjs', 'scoped-work-source-state.mjs',
   ...suites.map((name) => name.replace('.test.mjs', '.mjs'))];
 // This regression exercises several real modules, rather than a matching .mjs.
-const resolverSuites = [...suites, 'scoped-work-generated.test.mjs', 'scoped-work-subsections.test.mjs'];
+const resolverSuites = [...suites, 'scoped-work-generated.test.mjs', 'scoped-work-subsections.test.mjs', 'scoped-work-retired-targets.test.mjs'];
 const cliSuite = 'scoped-work-binding-status.test.mjs';
 const sourceCliSuite = 'scoped-work-cli.test.mjs';
 

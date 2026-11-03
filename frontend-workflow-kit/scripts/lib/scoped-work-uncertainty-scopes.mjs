@@ -112,10 +112,10 @@ function evaluate(owner, projection, homes) {
 // whole snapshot after evaluating it.
 export function inspectScopedUncertaintyScopes(options = {}) {
   const owner = owned(options);
-  const { projection, read_set } = resolveScopedApplicabilityProjection(options);
+  const { projection, read_set, target_fallbacks } = resolveScopedApplicabilityProjection(options);
   const homes = homeBindings(options, read_set), result = evaluate(owner, projection, homes);
   for (const entry of read_set) homes.read(entry.file);
-  return { ...result, read_set };
+  return { ...result, read_set, ...(target_fallbacks ? { target_fallbacks } : {}) };
 }
 
 // The same evaluation inside an inspector that has just resolved this owner's

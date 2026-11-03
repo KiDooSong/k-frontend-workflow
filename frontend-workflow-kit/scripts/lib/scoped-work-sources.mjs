@@ -20,6 +20,14 @@ const itemFields = ['inputId', 'item', 'basis', 'classification', 'effect', 'tar
 const summaryFields = ['inputId', 'source', 'classification', 'reconcileStatus', 'result', 'touched', 'created', 'supersedes'];
 const rowObjects = (table, fields) => table.cells.map((cells) => Object.fromEntries(fields.map((field, i) => [field, cells[i]])));
 
+export function scopedHistoricalTargetWarning(target, row, file) {
+  if (!target.historical_target) return null;
+  const { original_ref, effective_ref, reason } = target.historical_target;
+  return { code: 'SW-SOURCE-TARGET-FALLBACK', file, input_id: row.inputId, item_id: row.item,
+    original_ref, effective_ref, reason,
+    message: `Historical Item ${row.inputId}/${row.item}: ${original_ref} -> ${effective_ref} (${reason}); original effect retained.` };
+}
+
 export function createScopedSourceResolver({ inputArtifacts, registerFile, targetIndex, projectRoot } = {}) {
   const refs = createScopedReferenceResolver({ targetIndex, projectRoot, inputArtifacts });
   if (!Array.isArray(inputArtifacts)) fail('SW-SOURCE-INDEX', 'canonical input artifacts required');
@@ -133,7 +141,7 @@ export function createScopedSourceResolver({ inputArtifacts, registerFile, targe
         const target = parseTargetRef(row.target);
         const resolvedTarget = ['none', 'input'].includes(target.kind)
           ? { ref: target.raw, kind: target.kind, ...(target.kind === 'input' ? { input_id: target.inputId } : {}) }
-          : refs.contract(row.target);
+          : refs.historicalTarget(row.target);
         return { fields: row, target: resolvedTarget, evidence: anchor(row.evidence, selection.input_id) };
       }) };
     });
@@ -141,7 +149,9 @@ export function createScopedSourceResolver({ inputArtifacts, registerFile, targe
       input: structuredClone(current.data), anchors, groups,
       reconciliation: { file: recon.file, summary: structuredClone(summaries[0]) },
       warnings: [...validation.warnings.filter((entry) => entry.file === current.artifact.file)
-        .map((entry) => ({ file: current.data.file, message: entry.message })), ...recon.warnings] };
+        .map((entry) => ({ file: current.data.file, message: entry.message })), ...recon.warnings,
+        ...groups.flatMap((group) => group.effects.map((effect) =>
+          scopedHistoricalTargetWarning(effect.target, effect.fields, recon.file)).filter(Boolean))] };
   }
   // These results deliberately retain in-progress/partial/result/decision facts.
   // They do not evaluate receipt freshness, owner relations, semantic completeness,

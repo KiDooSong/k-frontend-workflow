@@ -52,7 +52,8 @@ function ownerStatus(options, home) {
         computed_basis_digest: null, components: null });
     }
   }
-  return { owner: options.owner, known_units: decisions.known_units, rows: rows.sort((a, b) => byteCompare(a.ref, b.ref)) };
+  return { owner: options.owner, known_units: decisions.known_units, rows: rows.sort((a, b) => byteCompare(a.ref, b.ref)),
+    ...(uncertainty.target_fallbacks ? { target_fallbacks: uncertainty.target_fallbacks } : {}) };
 }
 
 export function inspectScopedBindingStatus({ root, docs, src, policy, manifest, layout, owner } = {}) {
@@ -103,6 +104,9 @@ function render(report) {
   if (!report.owners.length) lines.push('  no adopted owners');
   for (const entry of report.owners) {
     lines.push(`${entry.owner} (known units: ${entry.known_units.join(', ')})`);
+    for (const warning of entry.target_fallbacks || []) {
+      lines.push(`  warning ${warning.code} [${warning.owner}/${warning.unit}] ${warning.message}`);
+    }
     for (const row of entry.rows) {
       const state = row.stale_reason ? `${row.state} (${row.stale_reason})` : row.state;
       lines.push(`  ${row.ref}  ${row.status ?? '-'}  ${state}${row.blocking_units?.length ? `  — no binding; blocks ${row.blocking_units.join(', ')}` : ''}`);

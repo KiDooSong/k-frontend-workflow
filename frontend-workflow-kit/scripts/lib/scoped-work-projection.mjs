@@ -73,6 +73,7 @@ export function resolveScopedUnitProjection({ owner, policyFile, policyOverlayFi
   const selectedInputs = new Set();
   const owners = new Map();
   const units = new Map();
+  const fallbacks = new Map();
   const links = [];
   const roots = new Set();
   const authoredRefs = new Set(), trackingRefs = new Set(), ordinaryRefs = new Set();
@@ -179,6 +180,10 @@ export function resolveScopedUnitProjection({ owner, policyFile, policyOverlayFi
     // coverage. Strict Item resolution and admission stay in the coverage layer.
     const sourceFacts = resolveScopedSourceProjection({ owner: ownerId, unit: declared.id,
       targetIndex, inputArtifacts, registerFile, projectRoot, layout });
+    for (const entry of sourceFacts.target_fallbacks || []) {
+      const warning = { owner: ownerId, unit: declared.id, ...entry };
+      fallbacks.set(scopeJson(warning), warning);
+    }
     for (const entry of sourceFacts.read_set) read(entry.file, entry.sha256);
     for (const ref of sourceFacts.contracts.roots) roots.add(ref);
     const sourceContext = scopedGraphContexts(sourceFacts.contracts);
@@ -292,7 +297,10 @@ export function resolveScopedUnitProjection({ owner, policyFile, policyOverlayFi
     evidence: copyScopedGraphContexts(graph,
       { roots: graph.roots, nodes: copyScopedNodeContexts(graph.nodes, scopeSet(graph.nodes.map(node))), edges: graph.edges }) };
   for (const entry of [...files.values()]) read(entry.file, entry.sha256);
-  return { projection, read_set: scopeSet([...files.values()]) };
+  // Diagnostics stay outside the hashed projection. The selected effect fields
+  // retain the original target, while evidence hashes the effective wider scope.
+  return { projection, read_set: scopeSet([...files.values()]),
+    ...(fallbacks.size ? { target_fallbacks: scopeSet([...fallbacks.values()]) } : {}) };
 }
 
 // Share the same R1 metadata/content projection with later canonical graph layers.

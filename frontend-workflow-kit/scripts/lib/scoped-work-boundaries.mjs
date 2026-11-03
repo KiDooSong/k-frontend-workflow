@@ -216,7 +216,8 @@ export function resolveScopedBoundaryProjection(options = {}) {
     api_conflicts: scopeSet(crossConflicts.filter((entry) => entry.paths.some(overlaps))),
     generated: union(generated), other_role_boundaries: union(globalRoles),
     explicit_denies: base.projection.policy.deny_paths,
-  } }, read_set: scopeSet([...files.values()]) };
+  } }, read_set: scopeSet([...files.values()]),
+    ...(base.target_fallbacks ? { target_fallbacks: base.target_fallbacks } : {}) };
   for (const record of result.read_set) read(path.join(projectRoot, record.file), record.sha256);
   return result;
 }

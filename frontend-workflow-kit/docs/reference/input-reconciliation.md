@@ -536,7 +536,9 @@ v2 가 소비하는 마크다운은 **좁은 canonical authoring profile** 만 �
 - `Effect` enum: `update` `create` `create-open` `reopen` `link-evidence` `record` `reject`.
   **`resolve`/`close`/`accept`/`confirm`/`implement` 는 의도적으로 없다** — machine record 차원의
   gate-raising-only 경계다. effect 는 reconcile 시점의 **역사적 행위**이며, 나중에 사람이 target 을 다시
-  닫아도 기록을 바꾸지 않는다 (validator 도 target 의 현재 status 를 hard 하게 요구하지 않는다).
+  닫거나 문서 정비로 대상 행을 없애도 기존 Item ID·Effect·Target을 삭제하거나 현재 상태에 맞춰 다시 쓰지
+  않는다 (validator 도 target 의 현재 status 를 hard 하게 요구하지 않는다). 문서 정비를 설명하려고 가짜
+  입력이나 `retire` effect를 만들지 않는다.
 - `Target` 문법: `artifact:<artifact_id>[#<section-slug>[/<row-key>]]` 또는
   `decision:<ID>@<owner-artifact-id>` (unknown/conflict/gap/investigation/verification 동형), reject 는 `-` 또는
   **자기 자신의** `input:<input_id>`. owner artifact 를 필수로 해 U-/INV-/VER- 의 화면별 중복 모호성을 없앤다.
@@ -549,6 +551,9 @@ v2 가 소비하는 마크다운은 **좁은 canonical authoring profile** 만 �
   ID+Question 표, conflict/gap=`## Conflicts`·`## Gaps`(또는 해당 register `artifact_type` 문서의
   h1 직속 표)의 ID+Status 표. Notes/예시 표·fenced code block 안의 표에 인용된 ID 로는 해소되지
   않는다. `artifact_id` 가 중복 선언된 대상은 owner 를 결정할 수 없어 해소 불가(hard)다.
+  scoped Item 해소에서 일반 artifact `/row`가 나중에 없어지면 원래 Target을 보존하고 살아 있는 섹션,
+  그 섹션도 없으면 문서 전체를 근거로 선택한다. 직접 contract·typed child·canonical mapping 참조의
+  엄격한 경계와 진단/basis 계약은 [historical Item row targets](scoped-work.md#historical-item-row-targets)가 소유한다.
 - `Evidence` 문법: `input:<input_id>#<section-slug>[/NN]` (NN 은 1-based: `01`, `02`...) —
   section 존재는 hard, bullet index 범위 초과는 warning-first. 202-C semantic analyzer는 `/NN`이 있는 exact bullet만
   읽고 section-only pointer는 의미 추정에 사용하지 않는다. bullet prose는 같은 shared Markdown AST에서 추출하며
@@ -596,6 +601,29 @@ Navigation Map·Domain Rules 는 hard error — Figma 입력이 behavior 충돌�
 - `Classification` multiset = unique `(Input ID, Item)` 의 classification 개수 (validator 가 canonical order 제안).
 - `Created Items` = effect 가 `create`/`create-open`/`reopen`/`link-evidence`/`record` 인 target 집합 (exact).
 - `Touched Artifacts` = 모든 effect target 의 owner artifact 집합 (artifact id 수준 exact; section detail 차이는 warning).
+
+### Scoped 참조 preflight warnings (#293)
+
+`workflow:validate`는 scoped 해소 전에 다음 authoring 문제를 warning으로 알린다.
+검사 12의 row/evidence 진단은 v2 Items에만 적용하며 v1 register에 새로 발화하지 않는다.
+frontmatter `sources`의 중복은 register 버전과 독립적인 기존 검사 3에서 확인한다.
+
+| Code | 검사 | 관측과 처리 |
+| --- | --- | --- |
+| `RR-REF-102` | 12 | artifact target의 row가 없거나, 일반 historical `/row` target의 섹션이 없다. 일반 historical target은 원래 Target을 보존하고 scoped에서 현재 해소 가능한 섹션 또는 문서 전체를 근거로 선택한다. section-only target이나 canonical mapping target의 섹션 누락은 기존 hard error다. |
+| `RR-REF-103` | 12 | Evidence의 `/NN`이 존재하지만 추출된 bullet prose가 비어 있다. 실제 근거 bullet을 가리키는지 확인한다. scoped source가 요구하는 nonempty evidence 조건은 그대로다. |
+| `RR-REF-104` | 12 | 기존 row-key 검사는 통과하지만 raw 첫 셀의 exact 매칭이 1개가 아니다. 대소문자·백틱·추가 문구·중복 행을 확인한다. legacy substring 판정은 바꾸지 않으며, scoped에서 정확한 행이 없는 historical target은 fallback하고 모호한 행은 계속 오류다. |
+| `FM-SOURCES-101` | 3 | frontmatter `sources`에 정규화 후 동일한 항목이 반복된다. 객체 키 순서가 다른 동일 항목도 중복이다. 중복을 정리해야 scoped projection의 `SW-NORMALIZE: sources: duplicate normalized member` 중단을 피할 수 있다. |
+
+Evidence bullet의 1-based pre-order 번호와 부모/자식 분리는 바꾸지 않는다. 예를 들어
+`- 01. First fact`는 비어 있는 바깥 bullet 아래의 ordered child로 파싱될 수 있어 `/01`이
+빈 부모를 선택한다. 자식 문구를 부모에 합치거나 index를 자동 이동하지 않고 `RR-REF-103`으로
+알린다. inline code만 있어 prose가 비어 있는 선택도 같은 진단 대상이며, section-only Evidence에
+bullet warning을 적용하지 않는다.
+
+이 진단은 기본 실행과 `--enforce` 모두 warning이다. warning만 있는 실행은 exit 0을 유지하며,
+자동 Target rewrite·gate 해제·required CI 승격은 없다. scoped historical fallback의 원본/effective
+참조와 영향 범위는 [별도 계약](scoped-work.md#historical-item-row-targets)을 따른다.
 
 ### Warning-only semantic drift analyzers (202-C)
 

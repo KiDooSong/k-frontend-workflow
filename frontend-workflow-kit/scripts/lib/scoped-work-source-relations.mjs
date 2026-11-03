@@ -16,7 +16,7 @@ import { parseReconciliationMarkdown, parseReconciliationReferenceView, locateCo
 import { parseTable } from './spec.mjs';
 import { parseScopedOwner } from './scoped-work-declarations.mjs';
 import { createScopedReferenceResolver, scopedRawTable } from './scoped-work-refs.mjs';
-import { createScopedSourceResolver } from './scoped-work-sources.mjs';
+import { createScopedSourceResolver, scopedHistoricalTargetWarning } from './scoped-work-sources.mjs';
 import { createScopedApiResolver } from './scoped-work-api.mjs';
 import { resolveScopedMappingEvidence } from './scoped-work-mapping.mjs';
 import { parseMappingProvenanceContract } from './mapping-provenance.mjs';
@@ -95,10 +95,59 @@ export function resolveScopedSourceProjection(options = {}) {
   return resolveSourceClosure(options, false);
 }
 
+// A wider historical target can infer another Item of the same input and change
+// the full selection key. Keep each Item's first target/evidence/contracts facts
+// and each anchor's first disconnected fact across that growth. New anchors may
+// join an existing witness only when the current pass observes that same effect;
+// its new self-derived targets/contracts cannot replace the original witnesses.
+function retainHistoricalWitnesses(source, remembered, active) {
+  const { input_id, items, source_refs } = source.selection;
+  if (!remembered.has(input_id)) remembered.set(input_id, { items: new Map(), anchors: new Map() });
+  const first = remembered.get(input_id);
+  const current = new Map(items.map((id) => [id, { connections: [], issues: [] }]));
+  const anchorIssues = new Map();
+  for (const connection of source.connections) current.get(connection.item_id).connections.push(connection);
+  for (const issue of source.issues) {
+    if (issue.item_id) current.get(issue.item_id).issues.push(issue);
+    else if (issue.ref) anchorIssues.set(issue.ref, issue);
+  }
+  for (const [id, facts] of current) if (!first.items.has(id)) first.items.set(id, structuredClone(facts));
+  // Observe earlier passes as well, but leave their legacy full-selection result
+  // unchanged unless this closure actually selects a historical fallback.
+  if (!active) {
+    for (const ref of source_refs) if (!first.anchors.has(ref)) first.anchors.set(ref, anchorIssues.get(ref) || null);
+    return;
+  }
+  const witnessKey = (entry) => scopeJson([entry.item_id, entry.target, entry.evidence]);
+  const observed = new Map(source.connections.map((entry) => [witnessKey(entry), entry]));
+  const connections = [], issues = [], connectedRefs = new Set();
+  for (const id of items) {
+    const item = first.items.get(id);
+    item.connections = item.connections.flatMap((witness) => {
+      const added = (observed.get(witnessKey(witness))?.source_refs || []).filter((ref) => !first.anchors.has(ref));
+      const refs = union([...witness.source_refs, ...added].filter((ref) => !first.anchors.get(ref)));
+      return refs.length ? [{ ...witness, source_refs: refs }] : [];
+    });
+    if (!item.connections.length && !item.issues.length) item.issues.push({ item_id: id, reason: 'source-effect-unconnected' });
+    connections.push(...item.connections); issues.push(...item.issues);
+    for (const witness of item.connections) for (const ref of witness.source_refs) connectedRefs.add(ref);
+  }
+  for (const ref of source_refs) {
+    if (!first.anchors.has(ref)) first.anchors.set(ref, connectedRefs.has(ref) ? null : { ref, reason: 'source-anchor-unconnected' });
+    if (first.anchors.get(ref)) issues.push(first.anchors.get(ref));
+  }
+  source.connections = scopeSet(connections); source.issues = scopeSet(issues);
+}
+
 function resolveSourceClosure(options, requireEffects) {
-  const roots = new Set(), pins = new Map(), witnesses = new Map();
+  const roots = new Set(), pins = new Map(), witnesses = new Map(), fallbacks = new Map();
+  const itemWitnesses = new Map();
+  let historical = false;
   for (;;) {
     const result = resolveSourceRelations(options, requireEffects, [...roots]);
+    historical ||= result.sources.some((entry) => entry.source.groups.some((group) =>
+      group.effects.some((effect) => effect.target.historical_target)));
+    for (const warning of result.target_fallbacks || []) fallbacks.set(scopeJson(warning), warning);
     for (const entry of result.read_set) {
       if (pins.has(entry.file) && pins.get(entry.file).sha256 !== entry.sha256) fail('snapshot changed between source passes');
       pins.set(entry.file, entry);
@@ -110,6 +159,7 @@ function resolveSourceClosure(options, requireEffects) {
       // as dependency roots in the following pass. Retain its first witnesses.
       if (!witnesses.has(key)) witnesses.set(key, { connections: source.connections, issues: source.issues });
       Object.assign(source, structuredClone(witnesses.get(key)));
+      retainHistoricalWitnesses(source, itemWitnesses, historical);
       if (requireEffects && source.issues.length) continue;
       const dependencies = [...source.source.anchors.map((anchor) => anchor.ref),
         ...source.source.groups.flatMap((group) => group.effects.flatMap((effect) =>
@@ -118,7 +168,8 @@ function resolveSourceClosure(options, requireEffects) {
         roots.add(ref); changed = true;
       }
     }
-    if (!changed) return { ...result, sources: scopedEvidenceSet(result.sources), read_set: scopeSet([...pins.values()]) };
+    if (!changed) return { ...result, sources: scopedEvidenceSet(result.sources), read_set: scopeSet([...pins.values()]),
+      ...(fallbacks.size ? { target_fallbacks: scopeSet([...fallbacks.values()]) } : {}) };
   }
 }
 
@@ -128,7 +179,7 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
   const args = { targetIndex, inputArtifacts, projectRoot };
   const refs = createScopedReferenceResolver(args);
   const sourceReader = createScopedSourceResolver({ ...args, registerFile });
-  const reads = new Map(), documents = new Map(), spans = new WeakMap(), nativeInputs = new Map();
+  const reads = new Map(), documents = new Map(), spans = new WeakMap(), nativeInputs = new Map(), fallbacks = new Map();
   let absentRegister = null;
   function read(file, expected) {
     const relative = path.isAbsolute(file) ? path.relative(projectRoot, file).split(path.sep).join('/') : file;
@@ -333,16 +384,21 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
     input_sha256: hashBytes(read(found.artifact.file)) };
   }
   const legacyConnections = [];
-  function witnesses(target) {
+  function witnesses(target, historicalRow = null) {
     const parsed = parseTargetRef(target);
     if (!parsed || ['none', 'input'].includes(parsed.kind)) return [];
-    const record = refs.contract(target); document(record);
+    const record = historicalRow ? refs.historicalTarget(target) : refs.contract(target); document(record);
+    if (historicalRow && record.historical_target) {
+      const file = path.isAbsolute(registerFile) ? path.relative(projectRoot, registerFile).split(path.sep).join('/') : registerFile;
+      const warning = scopedHistoricalTargetWarning(record, historicalRow, file);
+      fallbacks.set(scopeJson(warning), warning);
+    }
     return contracts.filter((node) => overlaps(record, node)).map((node) => node.ref);
   }
   for (const connection of inferred.values()) {
     const anchor = connection.ref ? inputNode(connection.ref) : null;
     const matches = rows.filter((row) => row.inputId === connection.input_id &&
-      ((!requireEffects && anchor) || witnesses(row.target).length) &&
+      ((!requireEffects && anchor) || witnesses(row.target, row).length) &&
       (!anchor || overlaps(anchor, inputNode(row.evidence))));
     if (!matches.length) {
       const summary = legacyConnection(connection);
@@ -360,6 +416,7 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
     if (!choice.items.size || !choice.source_refs.size) continue;
     const selection = { input_id: choice.input_id, items: union([...choice.items]), source_refs: union([...choice.source_refs]) };
     const source = sourceReader.source(selection); read(source.input.file, source.input.input_sha256);
+    for (const warning of source.warnings) if (warning.code === 'SW-SOURCE-TARGET-FALLBACK') fallbacks.set(scopeJson(warning), warning);
     const connections = [], issues = [];
     for (const group of source.groups) {
       const groupWitnesses = [];
@@ -379,7 +436,11 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
       [effect.evidence.ref, ...(['none', 'input'].includes(effect.target.kind) ? [] : [effect.target.ref])])));
     const dependencies = resolveScopedContractGraph({ ...args, contracts: dependencyRoots }); audit(dependencies);
     const effects = scopeSet(source.groups.flatMap((group) => group.effects.map((effect) => effect.fields)));
-    resolved.push({ selection, source, connections: scopeSet(connections), issues: scopeSet(issues),
+    // Distinct retired rows can now share one section/document witness. Keep all
+    // original effects and warnings, deduplicating only those derived facts.
+    const connectionFacts = source.groups.some((group) => group.effects.some((effect) => effect.target.historical_target))
+      ? [...new Map(connections.map((entry) => [scopeJson(entry), entry])).values()] : connections;
+    resolved.push({ selection, source, connections: scopeSet(connectionFacts), issues: scopeSet(issues),
       provenance: scopeSet([...origins.get(choice.input_id).values()]),
       basis: { version: 1, owner, unit, input_id: choice.input_id, item_ids: selection.items, source_refs: selection.source_refs,
         input_sha256: source.input.input_sha256, effects_sha256: hashBytes(Buffer.from(scopeJson(effects))),
@@ -391,5 +452,6 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
   return { owner, unit, sources: scopedEvidenceSet(resolved), pending_connections: scopeSet(pending),
     legacy_connections: scopeSet(legacyConnections),
     inferred_sources: scopeSet([...inferred.values()]), native_inputs: scopeSet([...nativeInputs.values()]),
-    contracts: graph, contract_hashes: contractHashes, read_set: scopeSet([...reads.values()]) };
+    contracts: graph, contract_hashes: contractHashes, read_set: scopeSet([...reads.values()]),
+    ...(fallbacks.size ? { target_fallbacks: scopeSet([...fallbacks.values()]) } : {}) };
 }
