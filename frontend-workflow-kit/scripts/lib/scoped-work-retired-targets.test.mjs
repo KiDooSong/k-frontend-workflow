@@ -14,6 +14,7 @@ import { COMPONENT_MAPPING_COLUMNS, MAPPING_PROVENANCE_COLUMNS } from './mapping
 import { createScopedReferenceResolver } from './scoped-work-refs.mjs';
 import { resolveScopedSourceRelations, resolveScopedSourceProjection } from './scoped-work-source-relations.mjs';
 import { resolveScopedUnitProjection } from './scoped-work-projection.mjs';
+import { inspectScopedInputCoverage } from './scoped-work-input-coverage.mjs';
 import { resolveScopedBindingBasis } from './scoped-work-basis.mjs';
 import { resolveScopedUncertaintyProjection } from './scoped-work-uncertainty.mjs';
 import { scopeJson } from './scoped-work-normalize.mjs';
@@ -64,11 +65,11 @@ function fixture(t, { native = true, explicit = false } = {}) {
   '## Rules\nKnown contract.\n\n## Other\nUnselected contract.');
   write('copy.md', { artifact_id: 'COPY', artifact_type: 'screen-spec', screen_id: 'RESULT-002', domain: 'result', status: 'draft' }, copyKeys(kept));
   const registerFile = path.join(root, 'register.md');
-  const register = (rows = [effect(), effect({ target: ROW })]) => {
+  const register = (rows = [effect(), effect({ target: ROW })], status = 'partially-reconciled', result = 'pending') => {
     const summaries = [...new Set(rows.map((row) => row[0]))].map((id) => {
       const items = rows.filter((row) => row[0] === id);
       const touched = [...new Set(items.filter((row) => row[4] === 'update').map((row) => row[5].split('#')[0]))].join('; ') || '-';
-      return [id, 'meeting', `simple-update×${new Set(items.map((row) => row[1])).size}`, 'partially-reconciled', 'pending', touched, '-', '-'];
+      return [id, 'meeting', `simple-update×${new Set(items.map((row) => row[1])).size}`, status, result, touched, '-', '-'];
     });
     fs.writeFileSync(registerFile, md({ reconciliation_contract: 2, review_profile: 'reconcile-stage04-v1', structured_since: '2026-09-01T00:00:00Z' },
       `${table(REQUIRED_REGISTER_COLS, summaries)}\n\n## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, rows)}`));
@@ -110,6 +111,72 @@ const fallback = (out, original = ROW) => (out.target_fallbacks || []).find((ent
 const noPermit = (out) => {
   for (const key of ['ready', 'allowed', 'approval_verified', 'semantic_coverage_verified']) assert.equal(Object.hasOwn(out, key), false);
 };
+
+// X and Y discover further input Items one closure pass at a time. C's COPY
+// fallback is consequently discovered only after A has already gained /02.
+function lateFallbackFixture(t, { wholeEvidence = false, retired = true } = {}) {
+  const f = fixture(t, { native: false, explicit: true }), third = 'IN-20260922-meeting-003';
+  f.addInput(NEXT); f.addInput(third);
+  for (const [artifact, input] of [['X', NEXT], ['Y', third]]) f.write(`${artifact}.md`, {
+    artifact_id: artifact, artifact_type: 'domain-rules', domain: 'result', status: 'draft',
+    sources: [{ type: 'meeting', ref: input }],
+  }, '## Rules\nConnected contract.');
+  const initial = effect(), sibling = effect({ target: 'artifact:X#rules' });
+  if (wholeEvidence) initial[6] = `input:${INPUT}#extracted-facts`;
+  sibling[6] = inputRef('02');
+  f.register([initial, sibling,
+    effect({ input: NEXT, target: 'artifact:X#rules' }), effect({ input: NEXT, target: 'artifact:Y#rules' }),
+    effect({ input: third, target: 'artifact:Y#rules' }), effect({ input: third, target: ROW }),
+  ], 'reconciled', 'accepted');
+  if (retired) f.change('copy.md', (doc) => { doc.body = copyKeys(deleted); });
+  f.inspect = () => inspectScopedInputCoverage({ ...f.options(),
+    origin_inputs: [{ input_id: INPUT, source_refs: [inputRef('02')] }] });
+  return f;
+}
+
+test('#293 late fallback keeps an earlier unsupported anchor unconnected in actual input coverage', (t) => {
+  const f = lateFallbackFixture(t), out = f.run(), coverage = f.inspect();
+  const source = out.sources.find((entry) => entry.selection.input_id === INPUT);
+  assert.ok(fallback(out));
+  assert.deepEqual({
+    source_refs: source.selection.source_refs,
+    connections: source.connections.map((entry) => ({ target: entry.target, source_refs: entry.source_refs })),
+    issues: source.issues,
+    accepted_for_source: coverage.sources.find((entry) => entry.selection.input_id === INPUT).accepted_for_source,
+    origin_accepted: coverage.origin_inputs[0].accepted,
+    coverage_satisfied: coverage.coverage_satisfied,
+  }, {
+    source_refs: [inputRef(), inputRef('02')],
+    connections: [{ target: 'artifact:DOC#rules', source_refs: [inputRef()] }],
+    issues: [{ ref: inputRef('02'), reason: 'source-anchor-unconnected' }],
+    accepted_for_source: false, origin_accepted: false, coverage_satisfied: false,
+  });
+});
+
+test('#293 late fallback admits a new anchor supported by the original whole-section witness', (t) => {
+  const f = lateFallbackFixture(t, { wholeEvidence: true }), out = f.run(), coverage = f.inspect();
+  const source = out.sources.find((entry) => entry.selection.input_id === INPUT);
+  assert.ok(fallback(out));
+  assert.deepEqual(source.connections.map((entry) => ({ target: entry.target, evidence: entry.evidence, source_refs: entry.source_refs })), [{
+    target: 'artifact:DOC#rules', evidence: `input:${INPUT}#extracted-facts`,
+    source_refs: [`input:${INPUT}#extracted-facts`, inputRef(), inputRef('02')],
+  }]);
+  assert.deepEqual(source.issues, []);
+  assert.equal(coverage.sources.find((entry) => entry.selection.input_id === INPUT).accepted_for_source, true);
+  assert.equal(coverage.origin_inputs[0].accepted, true);
+  assert.equal(coverage.coverage_satisfied, true);
+});
+
+test('#293 multi-pass closure without a fallback retains normal source, projection and coverage bytes', (t) => {
+  const f = lateFallbackFixture(t, { retired: false }), out = f.run(), coverage = f.inspect(), projection = f.project().projection;
+  assert.equal(Object.hasOwn(out, 'target_fallbacks'), false);
+  assert.equal(coverage.coverage_satisfied, true);
+  // PR #294 HEAD 896855e: shadow witness bookkeeping must not change a closure
+  // which never selects a historical fallback, including its coverage outcome.
+  assert.equal(digest(out), 'sha256:e96a2cd16d64cb1d869f5c4e9d46317997c8edf9c568f19242c658b0cf77b260');
+  assert.equal(digest(projection), 'sha256:05a91d4eba9b374d7bfc371c82e1adbbf42f5cf74bf99c404ca16f3c0c6675b1');
+  assert.equal(digest(coverage), 'sha256:d381ae43f8db1a82e07361a39dba68cc2f8e422b4e7b74dfa1720b298d0f3930');
+});
 
 test('#293 unchanged exact target: graph, projection and binding bytes match the pre-fix baseline', (t) => {
   const f = fixture(t); f.binding();

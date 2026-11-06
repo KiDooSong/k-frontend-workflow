@@ -365,6 +365,14 @@ selected current content and source-overlap evidence. Adding an Item's own
 dependency root does not establish its initial connection to the unit. An
 unconnected Item keeps its source issue, and an unrelated historical Item found
 during inference does not become selected merely because its target falls back.
+The first Item witnesses and each anchor's connection to them are tracked even
+before a fallback is discovered through other inputs. A newly selected anchor
+can join an original witness whose evidence actually overlaps it, including
+section-wide evidence; an Item's own added target cannot supply that connection.
+These retained facts apply when the closure selects a historical fallback, so
+its discovery pass cannot change whether an unsupported anchor satisfies source
+coverage. Closures without a selected fallback keep their existing output and
+basis behavior.
 
 Affected `binding-status` owners report `target_fallbacks` entries with
 `code: SW-SOURCE-TARGET-FALLBACK`, the owner/unit, register file, `input_id`,

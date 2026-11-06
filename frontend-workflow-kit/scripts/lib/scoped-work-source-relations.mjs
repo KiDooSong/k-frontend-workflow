@@ -105,19 +105,14 @@ function retainHistoricalWitnesses(source, remembered, active) {
   if (!remembered.has(input_id)) remembered.set(input_id, { items: new Map(), anchors: new Map() });
   const first = remembered.get(input_id);
   const current = new Map(items.map((id) => [id, { connections: [], issues: [] }]));
-  const anchorIssues = new Map();
   for (const connection of source.connections) current.get(connection.item_id).connections.push(connection);
   for (const issue of source.issues) {
     if (issue.item_id) current.get(issue.item_id).issues.push(issue);
-    else if (issue.ref) anchorIssues.set(issue.ref, issue);
   }
   for (const [id, facts] of current) if (!first.items.has(id)) first.items.set(id, structuredClone(facts));
-  // Observe earlier passes as well, but leave their legacy full-selection result
-  // unchanged unless this closure actually selects a historical fallback.
-  if (!active) {
-    for (const ref of source_refs) if (!first.anchors.has(ref)) first.anchors.set(ref, anchorIssues.get(ref) || null);
-    return;
-  }
+  // Track every pass against the first Item witnesses, even before a fallback
+  // appears in another input. The current pass may already connect a new anchor
+  // through this Item's own added dependency root, which is not initial evidence.
   const witnessKey = (entry) => scopeJson([entry.item_id, entry.target, entry.evidence]);
   const observed = new Map(source.connections.map((entry) => [witnessKey(entry), entry]));
   const connections = [], issues = [], connectedRefs = new Set();
@@ -136,7 +131,10 @@ function retainHistoricalWitnesses(source, remembered, active) {
     if (!first.anchors.has(ref)) first.anchors.set(ref, connectedRefs.has(ref) ? null : { ref, reason: 'source-anchor-unconnected' });
     if (first.anchors.get(ref)) issues.push(first.anchors.get(ref));
   }
-  source.connections = scopeSet(connections); source.issues = scopeSet(issues);
+  // Preserve legacy output unless this closure selects a historical fallback.
+  if (active) {
+    source.connections = scopeSet(connections); source.issues = scopeSet(issues);
+  }
 }
 
 function resolveSourceClosure(options, requireEffects) {

@@ -14,6 +14,10 @@
   `missing-row`/`missing-section`을 알린다. 진단은 basis 밖에 두며, 선택된 원본 effect와 더 넓은 현재
   근거는 기존 basis에 남는다. 정상 exact row의 graph·binding bytes는 유지하고 영향받은 root/content만
   보수적으로 넓힌다. fallback 자체로 source 연결·receipt 충족·사람 승인을 인정하지 않는다.
+- 여러 input을 거친 뒤 fallback을 발견해도 최초 Item witness에 연결되지 않은 anchor의
+  `source-anchor-unconnected`를 유지해 잘못된 coverage 통과를 막는다. fallback 전부터 내부 연결
+  근거를 추적하되 출력 반영은 fallback 이후로 제한한다. 원래 evidence가 섹션 전체인 정상 연결과
+  fallback 없는 owner의 출력·digest는 유지한다.
 - validate 검사 12는 historical row/section 누락을 `RR-REF-102`, 빈 bullet Evidence를 `RR-REF-103`,
   legacy 검사와 raw 첫 셀 exact 유일성의 차이를 `RR-REF-104`로 알린다. 기존 Evidence pre-order와
   v1 row/evidence 출력은 유지한다. 검사 3은 frontmatter `sources`의 정규화 중복을 `FM-SOURCES-101`로 알린다.
