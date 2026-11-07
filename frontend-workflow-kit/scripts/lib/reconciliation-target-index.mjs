@@ -2,11 +2,12 @@
 // validate.mjs가 수집한 docs를 받아 artifact_id → 문서 인덱스를 만든다. 본문은 파일별로 한 번 읽고,
 // CommonMark/GFM AST도 문서별로 한 번만 만든다.
 import { readFileSafe, splitFrontmatter } from './util.mjs';
-import { hasHeader, col } from './spec.mjs';
+import { hasHeader, col, splitRow } from './spec.mjs';
 import {
   describeHeaderMismatch,
   normalizedTableHeaders,
   parseReconciliationMarkdown,
+  parseReconciliationReferenceView,
   parseStrictTables,
   slugifySectionTitle,
   splitSectionOccurrences,
@@ -16,6 +17,7 @@ import {
   tableHeadersAreUnique,
   toProseBody,
 } from './reconciliation-markdown-ast.mjs';
+import { scopedAuthoredSections, scopedAuthoredView } from './scoped-work-authored.mjs';
 
 export {
   describeHeaderMismatch,
@@ -153,6 +155,64 @@ export function sectionRowKeyExists(record, sectionSlug, rowKey) {
     if (cell.toLowerCase().includes(wanted)) return true;
   }
   return false;
+}
+
+// Only ordinary artifact row targets are historical selections that may fall
+// back to their surviving section/document. Typed child rows and canonical
+// mapping M-keys keep their own identity/provenance contracts.
+export function isHistoricalArtifactRowTarget(ref, record) {
+  return ref?.kind === 'artifact' && !!ref.section && !!ref.rowKey &&
+    !(record?.fm?.artifact_type === 'figma-component-mapping' &&
+      ['component-mapping', 'mapping-provenance'].includes(ref.section));
+}
+
+// Keep the legacy substring helper above stable. Scoped rows use the exact raw
+// first cell (including markup), parsed with the same escaped-pipe splitter as
+// scopedRawTable. Retain counts so duplicate rows are not mistaken for a unique
+// target, without adding fields to the public target-index record.
+const exactRowKeyIndexes = new WeakMap();
+export function sectionExactRowKeyCount(record, sectionSlug, rowKey) {
+  if (!record || typeof record.body !== 'string') return 0;
+  if (!exactRowKeyIndexes.has(record)) {
+    const markdown = parseReconciliationReferenceView(record.body), sections = new Map();
+    for (const occurrence of markdown.sections) {
+      if (!sections.has(occurrence.slug)) sections.set(occurrence.slug, []);
+      sections.get(occurrence.slug).push(occurrence);
+    }
+    exactRowKeyIndexes.set(record, { markdown, sections, counts: new Map() });
+  }
+  const cached = exactRowKeyIndexes.get(record);
+  if (!cached.counts.has(sectionSlug)) {
+    const counts = new Map();
+    cached.counts.set(sectionSlug, counts);
+    let authored = [];
+    if (sectionSlug === 'unknowns') {
+      authored = scopedAuthoredSections(record.body, 'unknowns', cached.markdown);
+      if (!authored.some((home) => home.tables.some((table) =>
+        ['ID', 'Question'].every((header) => hasHeader(table.headers, header))))) authored = [];
+    } else if (sectionSlug === 'api-candidates' && ['screen-spec', 'shared-surface-spec'].includes(record.fm?.artifact_type)) {
+      authored = scopedAuthoredSections(record.body, 'api candidates', cached.markdown);
+      if (!authored.some((home) => home.tables.length)) authored = [];
+    }
+    const raw = cached.sections.get(sectionSlug) || [];
+    if (authored.length ? authored.length !== 1 || scopedAuthoredView(record.body, cached.markdown).sections
+      .filter((home) => home.slug === sectionSlug).length !== 1 : raw.length !== 1) return 0;
+    // Unknown/API authoring homes may cross GENERATED H2s. Preserve their raw
+    // candidates too, deduplicating only the same physical table as scoped's
+    // artifactRowSelection does; equal text in two tables is still ambiguous.
+    const tables = new Map();
+    for (const home of [...raw, ...authored]) home.tableNodes.forEach((node, index) => {
+      if (!tables.has(node)) tables.set(node, home.tables[index]);
+    });
+    for (const table of tables.values()) {
+      const lines = table.sourceText.replace(/\r\n|\r/g, '\n').split('\n');
+      for (const line of lines.slice(2)) {
+        const key = splitRow(line)[0];
+        counts.set(key, (counts.get(key) || 0) + 1);
+      }
+    }
+  }
+  return cached.counts.get(sectionSlug).get(String(rowKey)) || 0;
 }
 
 // child row ID가 owner 문서의 canonical 가족 표에서 해소되는지 판정한다.

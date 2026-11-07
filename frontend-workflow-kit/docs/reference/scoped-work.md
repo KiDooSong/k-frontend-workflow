@@ -242,6 +242,11 @@ new `approval_ref`, never the old one: the library transition check reports an
 old `approval_ref` on a changed binding, but no command runs it yet, so reviewers
 check it.
 
+When a [historical Item row target](#historical-item-row-targets) needs a wider
+selection, the text report also shows a `SW-SOURCE-TARGET-FALLBACK` warning. JSON
+reports include `owners[].target_fallbacks` only for affected owners. These
+diagnostics are separate from the binding basis and do not change its version.
+
 ## Request contract
 
 The five execution CLIs accept the same document as current work. A scoped
@@ -325,6 +330,65 @@ discard original inputs, Items or sibling effects, satisfy source/coverage
 review, approve a binding or establish readiness. Selected, inverse and
 transitive unresolved evidence keeps its blocking effect, including under a
 binding that narrows only native `scope-review-needed` relations.
+
+## Historical Item row targets
+
+A v2 Reconciliation Item records the effect performed during reconciliation.
+Later document maintenance can remove its target row without changing that
+history. During Item source resolution only, an ordinary
+`artifact:EXAMPLE#section/key` target therefore uses the following selection:
+
+| Current target | Effective evidence |
+| --- | --- |
+| One exact raw first-cell row exists | That row, with the existing selection and graph bytes |
+| The exact row is absent but the section resolves | The surviving section |
+| The section is absent and the artifact still exists | The whole surviving artifact |
+
+The section step uses the existing [section resolver](#artifact-section-references),
+including its unique authored H3 fallback when no H2 matches. It does not make
+H3 `/row` references valid. Backticks, different case or additional text in the
+first cell do not become an exact row match; a historical Item with that missing
+exact row uses the same conservative fallback.
+
+Only a missing ordinary artifact row or its section permits this widening.
+Direct unit `contracts`, ordinary body/dependency references and section-only
+Item targets remain strict. Typed child targets (`decision:`, `unknown:`,
+`conflict:`, `gap:`, `investigation:`, `verification:`), canonical mapping M-key
+and Mapping Provenance identities, missing artifacts, malformed references or
+tables, and ambiguous rows or sections retain their existing errors. A duplicate
+row or section is never resolved by taking a wider selection.
+
+The Item's original `Target` and all its other fields stay unchanged. Every
+effect of a selected Item remains in scope; a sibling effect is not dropped
+because its row has gone. The effective target supplies the dependency roots,
+selected current content and source-overlap evidence. Adding an Item's own
+dependency root does not establish its initial connection to the unit. An
+unconnected Item keeps its source issue, and an unrelated historical Item found
+during inference does not become selected merely because its target falls back.
+The first Item witnesses and each anchor's connection to them are tracked even
+before a fallback is discovered through other inputs. A newly selected anchor
+can join an original witness whose evidence actually overlaps it, including
+section-wide evidence; an Item's own added target cannot supply that connection.
+These retained facts apply when the closure selects a historical fallback, so
+its discovery pass cannot change whether an unsupported anchor satisfies source
+coverage. Closures without a selected fallback keep their existing output and
+basis behavior.
+
+Affected `binding-status` owners report `target_fallbacks` entries with
+`code: SW-SOURCE-TARGET-FALLBACK`, the owner/unit, register file, `input_id`,
+`item_id`, `original_ref`, `effective_ref` and `reason` (`missing-row` or
+`missing-section`). The warning can describe a target inspected during inference
+even when its Item was not selected. The diagnostics stay outside the hashed
+projection; selected original Item fields and effective evidence remain inside
+it. Successful exact targets keep their existing graph and binding bytes, while
+affected selections can include more current content and change their basis.
+
+This resolution does not rewrite history, add a retirement effect, approve a
+binding or satisfy a coverage receipt. Current source/receipt requirements and
+open Decision, Unknown and Conflict restrictions still apply to the wider
+evidence. The change adds no required gate, warning promotion or basis/package
+version migration. Authoring warnings are described in
+[Input Reconciliation](input-reconciliation.md#scoped-참조-preflight-warnings-293).
 
 ## Common CLI flow
 

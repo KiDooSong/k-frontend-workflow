@@ -20,6 +20,7 @@ import {
   bodyHasToken,
   buildReconciliationTargetIndex,
   parseStrictTables,
+  sectionExactRowKeyCount,
   splitSectionOccurrences,
   stripFencedCodeBlocks,
   stripNonContent,
@@ -33,7 +34,7 @@ import {
   parseReconciliationItems,
   validateReconciliationV2,
 } from './reconciliation-items.mjs';
-import { parseScopedTargetRef } from './scoped-work-refs.mjs';
+import { createScopedReferenceResolver, parseScopedTargetRef } from './scoped-work-refs.mjs';
 import { reconciliationParseStats } from './reconciliation-markdown-ast.mjs';
 
 const KIT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -2547,6 +2548,151 @@ test('v2 warning: annotation·Result 어휘·권고 조합·bullet index·row-ke
   assert.ok(w.some((m) => m.startsWith('RR-REF-101:'))); // bullet index
   assert.ok(w.some((m) => m.startsWith('RR-REF-102:'))); // row-key
   assert.ok(r.errors.length >= 0); // r 은 참조용 (RR-ITEM-006 발화 여부와 무관)
+});
+
+function historicalRowFixture(t, { cells = ['app.copy.closeLabel'], section = 'copy-keys', includeSection = true,
+  rowTarget = true, rowKey = 'app.copy.closeLabel', files = {} } = {}) {
+  const originalTarget = 'artifact:COUPON-001-figma-component-mapping#component-mapping/M-001';
+  const target = `artifact:COUPON-001-screen-spec#${section}${rowTarget ? `/${rowKey}` : ''}`;
+  const copyKeys = includeSection
+    ? `\n\n## Copy Keys\n| Key | Text | Status |\n|---|---|---|\n${cells.map((key) => `| ${key} | Close | draft |`).join('\n')}\n`
+    : '';
+  return runV2(t, {
+    summaryRows: [
+      DEFAULT_SUMMARY_ROWS[0].replace(originalTarget, target)
+        .replace('artifact:COUPON-001-figma-component-mapping;', 'artifact:COUPON-001-screen-spec;'),
+      DEFAULT_SUMMARY_ROWS[1],
+    ],
+    itemRows: [DEFAULT_ITEM_ROWS[0].replace(originalTarget, target).replace('visual-evidence', 'compatible-fact'), ...DEFAULT_ITEM_ROWS.slice(1)],
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': SCREEN_SPEC_DOC + copyKeys, ...files },
+  });
+}
+
+test('v2 warns when legacy row-key matches cannot resolve as unique raw exact rows (#293)', (t) => {
+  for (const cells of [
+    ['`app.copy.closeLabel`'],
+    ['prefix.app.copy.closeLabel'],
+    ['app.copy.closeLabel (legacy)'],
+    ['APP.COPY.CLOSELABEL'],
+    ['[app.copy.closeLabel](https://example.com/key)'],
+    ['**app.copy.closeLabel**'],
+    ['app.copy.closeLabel <!-- old -->'],
+    ['app.copy.closeLabel', 'app.copy.closeLabel'],
+  ]) {
+    const result = historicalRowFixture(t, { cells });
+    assert.deepEqual(messages(result.errors), [], cells.join(', '));
+    assert.equal(result.warnings.filter((entry) => entry.message.startsWith('RR-REF-104:')).length, 1, cells.join(', '));
+    assert.equal(hasCode(result.warnings, 'RR-REF-102'), false, cells.join(', '));
+  }
+
+  const exact = historicalRowFixture(t);
+  assert.deepEqual(messages(exact.errors), []);
+  assert.deepEqual(messages(exact.warnings), []);
+  const missing = historicalRowFixture(t, { cells: ['app.copy.done'] });
+  assert.deepEqual(messages(missing.errors), []);
+  assert.ok(hasCode(missing.warnings, 'RR-REF-102'));
+  assert.equal(hasCode(missing.warnings, 'RR-REF-104'), false);
+
+  // Canonical mapping M-keys have their own keyed/provenance grammar, which is
+  // not the ordinary artifact raw-first-cell contract.
+  assert.deepEqual(messages(runV2(t).warnings), []);
+});
+
+test('v2 missing historical row sections warn; current section and canonical mapping refs remain hard (#293)', (t) => {
+  const retired = historicalRowFixture(t, { includeSection: false });
+  assert.deepEqual(messages(retired.errors), []);
+  assert.ok(hasCode(retired.warnings, 'RR-REF-102'));
+  assert.match(retired.warnings.find((entry) => entry.message.startsWith('RR-REF-102:')).message, /문서 전체/);
+
+  const sectionOnly = historicalRowFixture(t, { includeSection: false, rowTarget: false });
+  assert.ok(hasCode(sectionOnly.errors, 'RR-REF-007'));
+  const missingArtifact = historicalRowFixture(t, {
+    files: { 'domains/coupons/screens/coupon-list/screen-spec.md': null },
+  });
+  assert.ok(hasCode(missingArtifact.errors, 'RR-REF-006'));
+  const missingMappingSection = runV2(t, {
+    files: { 'domains/coupons/screens/coupon-list/figma-component-mapping.md': MAPPING_DOC.replace('## Component Mapping', '## Previous Mapping') },
+  });
+  assert.ok(hasCode(missingMappingSection.errors, 'RR-REF-007'));
+});
+
+test('raw row preflight keeps authored Unknown/API rows across GENERATED H2s and ignores cell rendering (#293)', (t) => {
+  for (const [title, section, rowKey, headers, trailing] of [
+    ['Unknowns', 'unknowns', 'U-001', ['ID', 'Question', 'Status'], ['Known question?', 'resolved']],
+    ['API Candidates', 'api-candidates', 'GET', ['Method', 'Path', 'Confidence', 'Gate', 'Tracking', 'Slice Paths'],
+      ['/items', 'confirmed', 'active', '-', 'src/api/items.ts']],
+  ]) {
+    const table = (key) => [`| ${headers.join(' | ')} |`, `|${headers.map(() => '---').join('|')}|`,
+      `| ${[key, ...trailing].join(' | ')} |`].join('\n');
+    const content = `${SCREEN_SPEC_DOC.slice(0, SCREEN_SPEC_DOC.indexOf('## Unknowns'))}## ${title}\n\n` +
+      `<!-- GENERATED:START summary -->\n\n${table(`\`${rowKey}\``)}\n\n## Generated Notes\n\n<!-- GENERATED:END summary -->\n\n${table(rowKey)}\n`;
+    const result = historicalRowFixture(t, { section, rowKey, files: {
+      'domains/coupons/screens/coupon-list/screen-spec.md': content,
+    } });
+    assert.deepEqual(messages(result.errors), [], title);
+    assert.equal(hasCode(result.warnings, 'RR-REF-104'), false, title);
+    const file = path.join(result.docsDir, 'domains/coupons/screens/coupon-list/screen-spec.md');
+    const targetIndex = buildReconciliationTargetIndex({ docs: [{ file, fm: splitFrontmatter(content).data }] });
+    const record = targetIndex.artifacts.get('COUPON-001-screen-spec');
+    const refs = createScopedReferenceResolver({ targetIndex, projectRoot: path.resolve(result.docsDir, '../..') });
+    assert.equal(sectionExactRowKeyCount(record, section, rowKey), 1, title);
+    assert.equal(refs.contract(`artifact:COUPON-001-screen-spec#${section}/${rowKey}`).selection.cells[0], rowKey, title);
+  }
+});
+
+test('v2 warns on empty selected bullet prose without changing nested-list evidence numbering (#293)', (t) => {
+  const numberedInput = FIGMA_INPUT.replace('- Primary CTA', '- 01. Primary CTA')
+    .replace('- SegmentedTabs', '- 02. SegmentedTabs');
+  const files = { 'inputs/IN-20260720-figma-001.md': numberedInput };
+  const parent = runV2(t, { files });
+  assert.deepEqual(messages(parent.errors), []);
+  const emptyWarnings = parent.warnings.filter((entry) => entry.message.startsWith('RR-REF-103:'));
+  assert.equal(emptyWarnings.length, 1);
+  assert.match(emptyWarnings[0].message, /#extracted-facts\/01/);
+  assert.match(emptyWarnings[0].message, /nested ordered list/);
+
+  // The inner first/second list items are still /02 and /04; silently dropping
+  // empty parents would retarget existing evidence pointers.
+  const children = runV2(t, { files, itemRows: [
+    DEFAULT_ITEM_ROWS[0].replace('#extracted-facts/01', '#extracted-facts/02'),
+    DEFAULT_ITEM_ROWS[1].replace('#extracted-facts/02', '#extracted-facts/04'),
+    ...DEFAULT_ITEM_ROWS.slice(2),
+  ] });
+  assert.deepEqual(messages(children.errors), []);
+  assert.equal(hasCode(children.warnings, 'RR-REF-103'), false);
+
+  const inlineOnly = runV2(t, { files: { 'inputs/IN-20260720-figma-001.md': FIGMA_INPUT.replace(
+    '- Primary CTA instance 확인 (node 1:234)', '- `code only`',
+  ) } });
+  assert.ok(hasCode(inlineOnly.warnings, 'RR-REF-103'));
+  const sectionOnly = runV2(t, { files, itemRows: [
+    DEFAULT_ITEM_ROWS[0].replace('#extracted-facts/01', '#extracted-facts'),
+    ...DEFAULT_ITEM_ROWS.slice(1),
+  ] });
+  assert.equal(hasCode(sectionOnly.warnings, 'RR-REF-103'), false);
+});
+
+test('validate reports all #293 authoring warnings together and never promotes them with --enforce', (t) => {
+  const result = historicalRowFixture(t, {
+    cells: ['`app.copy.closeLabel`'],
+    files: {
+      'inputs/IN-20260720-figma-001.md': FIGMA_INPUT.replace('- Primary CTA', '- 01. Primary CTA'),
+      'domains/coupons/domain-rules.md': DOMAIN_RULES_DOC.replace('status: draft',
+        'status: draft\nsources: [{ type: input, ref: IN-20260720-figma-001 }, { ref: IN-20260720-figma-001, type: input }]'),
+    },
+  });
+  const run = (extra = []) => JSON.parse(execFileSync(process.execPath,
+    [VALIDATE, '--docs', result.docsDir, '--json', ...extra], { cwd: KIT_ROOT, encoding: 'utf8' }));
+  const baseline = run(), enforced = run(['--enforce']);
+  assert.deepEqual(enforced, baseline);
+  assert.equal(baseline.ok, true);
+  assert.equal(baseline.count, 0);
+  assert.deepEqual(baseline.errors, []);
+  assert.ok(baseline.warnings.some((entry) => entry.check === 3 && entry.message.startsWith('FM-SOURCES-101:')));
+  for (const code of ['RR-REF-103:', 'RR-REF-104:']) {
+    assert.ok(baseline.warnings.some((entry) => entry.check === 12 && entry.message.startsWith(code)));
+  }
+  for (const warning of baseline.warnings) assert.deepEqual(Object.keys(warning).sort(), ['check', 'file', 'message']);
 });
 
 test('v2 hard: visual-evidence Source Ref/Unit must meet the Figma precision floor (RP-005)', (t) => {

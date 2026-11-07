@@ -482,5 +482,6 @@ export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots
     relation_inputs: scopeSet(inputs),
     evidence: mergeScopedGraphContexts(consumedGraphs,
       { roots: union(roots), nodes: nodeSet([...projectedNodes.values()]), edges: scopeSet([...projectedEdges.values()]) }),
-  } }, read_set: scopeSet([...files.values()]), unaudited: scopeSet([...skipped.values()]) };
+  } }, read_set: scopeSet([...files.values()]), unaudited: scopeSet([...skipped.values()]),
+    ...(base.target_fallbacks ? { target_fallbacks: base.target_fallbacks } : {}) };
 }

@@ -297,5 +297,6 @@ export function resolveScopedDecisionProjection(options = {}, dependencyRoots = 
     referrers: scopeSet([...referrers.values()]), memberships: scopeSet([...memberships.values()]),
     evidence: mergeScopedGraphContexts(evidenceContexts, { roots: union([...graphRoots]),
       nodes: copyScopedNodeContexts(evidenceNodes, scopeSet(evidenceNodes)), edges: scopeSet([...graphEdges.values()]) }),
-  } }, read_set: scopeSet([...files.values()]) };
+  } }, read_set: scopeSet([...files.values()]),
+    ...(base.target_fallbacks ? { target_fallbacks: base.target_fallbacks } : {}) };
 }

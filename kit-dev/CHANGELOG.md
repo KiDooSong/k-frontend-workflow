@@ -4,6 +4,27 @@
 
 ## Unreleased
 
+### fix(scoped) — historical Item의 삭제된 row target 해소와 validate 사전 경고 (#293)
+
+- v2 Item의 일반 `artifact:<id>#<section>/<row>`가 현재 문서에서 해소되지 않으면 살아 있는
+  섹션, 그 섹션도 없으면 존재하는 문서 전체를 근거로 선택한다. 섹션 선택은 기존 H2 우선순위와
+  유일한 authored H3 호환을 재사용한다. 기존 Item ID·Effect·Target은 보존하며 sibling effect도
+  빠뜨리지 않는다. 직접 unit/body 계약·typed child·canonical mapping과 모호성·구조 오류는 엄격하게 유지한다.
+- `binding-status`는 영향받은 owner에만 `target_fallbacks`를 추가해 `original_ref`·`effective_ref`와
+  `missing-row`/`missing-section`을 알린다. 진단은 basis 밖에 두며, 선택된 원본 effect와 더 넓은 현재
+  근거는 기존 basis에 남는다. 정상 exact row의 graph·binding bytes는 유지하고 영향받은 root/content만
+  보수적으로 넓힌다. fallback 자체로 source 연결·receipt 충족·사람 승인을 인정하지 않는다.
+- 여러 input을 거친 뒤 fallback을 발견해도 최초 Item witness에 연결되지 않은 anchor의
+  `source-anchor-unconnected`를 유지해 잘못된 coverage 통과를 막는다. fallback 전부터 내부 연결
+  근거를 추적하되 출력 반영은 fallback 이후로 제한한다. 원래 evidence가 섹션 전체인 정상 연결과
+  fallback 없는 owner의 출력·digest는 유지한다.
+- validate 검사 12는 historical row/section 누락을 `RR-REF-102`, 빈 bullet Evidence를 `RR-REF-103`,
+  legacy 검사와 raw 첫 셀 exact 유일성의 차이를 `RR-REF-104`로 알린다. 기존 Evidence pre-order와
+  v1 row/evidence 출력은 유지한다. 검사 3은 frontmatter `sources`의 정규화 중복을 `FM-SOURCES-101`로 알린다.
+- 새 진단은 `--enforce`에서도 warning이며, 새 numbered check·required CI·human gate/promotion·
+  basis/package/release 버전 변경은 없다. 계약: [historical Item row targets](../frontend-workflow-kit/docs/reference/scoped-work.md#historical-item-row-targets),
+  [validate preflight warnings](../frontend-workflow-kit/docs/reference/input-reconciliation.md#scoped-참조-preflight-warnings-293).
+
 ### fix(scoped) — 기존 H2를 보존하는 authored H3 section-only fallback
 
 - 기존 H2 해소가 없는 일반 artifact의 section-only 참조에서 유일한 native authored

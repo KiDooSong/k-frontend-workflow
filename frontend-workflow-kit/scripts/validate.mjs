@@ -3,7 +3,7 @@
 //   출처: 검사 1~8 = impl §8 / 검사 9~12 = open-decisions.md · input-reconciliation.md (아래 각 항목 참조).
 //   1. frontmatter ↔ frontmatter.schema.json
 //   2. artifact-manifest 기준 필수 frontmatter 누락
-//   3. 끊어진 참조 (depends_on 대상 부재, sources 로컬 파일 부재)
+//   3. 끊어진 참조 (depends_on 대상 부재, sources 로컬 파일 부재); sources 정규화 중복은 warning-first.
 //   4. 이동 대상 부재 (Interaction Matrix route target 이 inventory 에 없음)
 //   5. screen_id 중복, route 중복
 //   6. do_not_edit 산출물의 GENERATED 헤더/마커 훼손
@@ -86,6 +86,7 @@ import {
 // 활성화되고, v1 register 출력은 byte-compatible 하게 유지한다 (input-reconciliation.md §Contract v2).
 import { parseRegisterContract, validateReconciliationV2 } from './lib/reconciliation-items.mjs';
 import { buildReconciliationTargetIndex } from './lib/reconciliation-target-index.mjs';
+import { scopeSet } from './lib/scoped-work-normalize.mjs';
 import { validateMappingProvenance } from './lib/mapping-provenance.mjs';
 import {
   buildEndpointIndex,
@@ -314,6 +315,16 @@ function main() {
       }
     }
     if (Array.isArray(fm.sources)) {
+      try {
+        scopeSet(fm.sources, 'sources');
+      } catch (error) {
+        // Projection uses the same normalization. Diagnose duplicates early,
+        // without promoting this advisory or other normalization failures into
+        // a new validate gate; schema errors keep their existing diagnostics.
+        if (error instanceof TypeError && error.message === 'SW-NORMALIZE: sources: duplicate normalized member') {
+          warn(3, file, 'FM-SOURCES-101: sources 에 정규화 중복 항목이 있음 — 객체 키 순서는 구분하지 않음; 중복을 제거하지 않으면 scoped binding-status 가 SW-NORMALIZE 로 중단됨 (warning-first)');
+        }
+      }
       for (const s of fm.sources) {
         const ref = s?.ref;
         if (isLocalRef(ref) && !exists(path.resolve(projectRoot, ref))) {

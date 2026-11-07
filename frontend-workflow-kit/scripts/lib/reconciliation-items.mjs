@@ -44,6 +44,8 @@ import {
   isDuplicateArtifactId,
   artifactHasSection,
   sectionRowKeyExists,
+  sectionExactRowKeyCount,
+  isHistoricalArtifactRowTarget,
   resolveChildRow,
   bodyHasToken,
   stripNonContent,
@@ -732,10 +734,20 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
           add(`RR-REF-006: ${label} 의 target artifact '${target.artifactId}' 가 실제 문서(artifact_id)로 해소되지 않음`);
         } else {
           if (target.section && !artifactHasSection(rec, target.section)) {
-            add(`RR-REF-007: ${label} 의 target section '#${target.section}' 이 '${target.artifactId}' 문서에 없음`);
+            if (isHistoricalArtifactRowTarget(target, rec)) {
+              warn(
+                `RR-REF-102: ${label} 의 historical target row '#${target.section}/${target.rowKey}' 의 H2 섹션이 '${target.artifactId}' 문서에 없음 — scoped Item dependency 는 해소 가능한 섹션 또는 문서 전체를 역사 근거로 선택함 (warning-first)`,
+              );
+            } else {
+              add(`RR-REF-007: ${label} 의 target section '#${target.section}' 이 '${target.artifactId}' 문서에 없음`);
+            }
           } else if (target.section && target.rowKey && !sectionRowKeyExists(rec, target.section, target.rowKey)) {
             warn(
               `RR-REF-102: ${label} 의 target row '#${target.section}/${target.rowKey}' 를 해당 섹션 표에서 찾지 못함 (warning-first)`,
+            );
+          } else if (isHistoricalArtifactRowTarget(target, rec) && sectionExactRowKeyCount(rec, target.section, target.rowKey) !== 1) {
+            warn(
+              `RR-REF-104: ${label} 의 target row '#${target.section}/${target.rowKey}' 가 표의 raw 첫 셀 exact 매칭으로 유일하지 않음 — 대소문자·백틱·추가 문구·중복 행을 확인하세요; scoped 직접 계약 참조는 해소되지 않음 (warning-first)`,
             );
           }
         }
@@ -793,6 +805,10 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
         } else if (evidence.status === 'bullet-out-of-range') {
           warn(
             `RR-REF-101: ${label} 의 Evidence bullet index '/${String(ev.bulletIndex).padStart(2, '0')}' 가 '#${ev.section}' 의 bullet 수(${evidence.bulletCount})를 넘음 (warning-first)`,
+          );
+        } else if (evidence.status === 'ok' && ev.bulletIndex !== null && !evidence.evidenceText?.trim()) {
+          warn(
+            `RR-REF-103: ${label} 의 Evidence '${row.evidence}' 가 빈 bullet 근거를 선택함 — '- NN.' 표기는 nested ordered list 의 빈 부모 bullet로 파싱될 수 있음; 실제 근거 bullet을 가리키거나 목록 표기를 고치세요 (warning-first)`,
           );
         }
       }
