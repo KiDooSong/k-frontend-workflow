@@ -10,6 +10,8 @@
   표에서 데이터행 셀 수가 헤더 수와 다른 경우를 알린다. 두 Summary 검사에서 겹친 경고는 한 번만 낸다.
 - 공유 `splitRow` 규칙으로 셀을 세고 데이터행 번호·Input ID·Items의 Item 키·기대/실제 셀 수를
   제공한다. 셀 안의 pipe escape, 합쳐진 행의 개행과 빠진 셀/구분자 복구를 안내한다.
+- v2 Items는 AST가 선택하고 non-content를 처리한 원문의 데이터행을 직접 분리한다.
+  inline code의 `<!--`/`-->` 사이 행을 주석으로 다시 제거해 셀 수 경고를 누락하지 않는다.
 - 기본/`--enforce` 모두 warning이며 기존 파싱 결과·권한·hard error와 자동수정 없는 경계를 유지한다.
   계약: [Register table cell counts](../frontend-workflow-kit/docs/reference/input-reconciliation.md#register-table-cell-counts-244).
 

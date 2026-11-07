@@ -24,7 +24,7 @@
 //
 // 이 모듈은 순수하다 — { errors:[{file,message}], warnings:[{file,message}] } 를 반환하고
 // file 은 항상 절대경로다. validate.mjs 가 add()/warn() 으로 상대화한다.
-import { col, hasHeader, parseTable } from './spec.mjs';
+import { col, hasHeader, parseTable, splitRow } from './spec.mjs';
 import { createTextKeyedCache } from './util.mjs';
 import { RECONCILE_STATUS_VALUES, REQUIRED_REGISTER_COLS, reconciliationTableWidthWarnings } from './reconciliation-register.mjs';
 import {
@@ -484,12 +484,14 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
     items.tableCount === 1 &&
     !items.headerIssue;
   if (itemRowsUsable) {
-    // GFM truncates excess cells in its projected rows. Inspect the selected
-    // table's source with splitRow's existing escape rules, not rendered cells.
-    const rawItems = parseTable(items.table.sourceText.replace(/\r\n|\r/g, '\n'));
-    // AST-accepted headers may contain emphasis. Use their validated identities
-    // to locate raw cells without changing the actual Item parser or its rows.
-    const widthTable = rawItems && { ...rawItems, headers: items.table.headers };
+    // GFM truncates excess cells in its projected rows. The AST-selected source
+    // already excludes non-content; parseTable's comment regex would erase
+    // literal <!-- / --> markers and the cells between them. Split data rows
+    // directly, keeping validated header identities (including emphasis).
+    const widthTable = {
+      headers: items.table.headers,
+      cell_rows: items.table.sourceText.split(/\r\n?|\n/).slice(2).map(splitRow),
+    };
     for (const message of reconciliationTableWidthWarnings(widthTable, 'Reconciliation Items')) warn(message);
   }
 

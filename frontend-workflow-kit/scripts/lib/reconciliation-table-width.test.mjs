@@ -8,8 +8,9 @@ import { spawnSync } from 'node:child_process';
 import { KIT_ROOT, splitFrontmatter, walkFiles } from './util.mjs';
 import { collectInputArtifacts } from './input-artifact.mjs';
 import { parseReconciliationRegister, validateReconciliationRegister, REQUIRED_REGISTER_COLS } from './reconciliation-register.mjs';
-import { validateReconciliationV2 } from './reconciliation-items.mjs';
+import { parseReconciliationItems, validateReconciliationV2 } from './reconciliation-items.mjs';
 import { buildReconciliationTargetIndex } from './reconciliation-target-index.mjs';
+import { splitRow } from './spec.mjs';
 
 const PREFIX = 'RR-TABLE-101:';
 const INPUT = 'IN-20260720-figma-001';
@@ -210,6 +211,46 @@ test('v2 Items preserve escaped pipes in ordinary source-ref cells', (t) => {
   assert.deepEqual(result.errors, []);
   assert.deepEqual(result.warnings, []);
 });
+
+for (const damaged of [false, true]) {
+  for (const enforce of [false, true]) {
+    test(`v2 Items literal comment markers preserve row-width diagnostics, damaged=${damaged}, enforce=${enforce}`, (t) => {
+      const f = fixture(t, 2);
+      const input = 'IN-20260720-meeting-001';
+      f.write(f.read().split('\n').map((line) => {
+        const cells = splitRow(line);
+        if (cells[0] !== input) return line;
+        if (cells[4] === 'create-open') {
+          cells[7] = 'notes/template.md: opening `<!--`';
+          if (damaged) cells.push('extra');
+        } else if (cells[4] === 'reopen') {
+          cells[7] = 'notes/template.md: closing `-->`';
+        } else return line;
+        return row(cells);
+      }).join('\n'));
+
+      const result = check(f, enforce);
+      const items = parseReconciliationItems(result.register.body);
+      assert.equal(items.rows.length, 4, 'literal markers must not hide authored Item rows');
+      assert.deepEqual(items.table.sourceText.split('\n').slice(2).map((line) => splitRow(line).length),
+        [10, 10, damaged ? 11 : 10, 10]);
+      assert.deepEqual(result.errors, []);
+      const publicResult = cli(f, enforce);
+      assert.equal(publicResult.ok, true);
+      assert.equal(publicResult.count, 0);
+      assert.deepEqual(publicResult.errors, []);
+      assert.equal(result.warnings.length, damaged ? 1 : 0);
+      assert.equal(publicResult.warnings.length, damaged ? 1 : 0);
+      assert.deepEqual(publicResult.warnings.map(({ message }) => message), result.warnings.map(({ message }) => message));
+      if (damaged) {
+        assertWidth(widthWarnings(result)[0], {
+          expected: 10, actual: 11, ordinal: 3, id: input, table: 'Reconciliation Items', item: "Item: '01'",
+        });
+        assert.equal(publicResult.warnings[0].check, 12);
+      }
+    });
+  }
+}
 
 for (const decorated of ['**Input ID** | Item', '**Input ID** | *Item*']) {
   test(`v2 width diagnostics preserve identity under accepted formatted headers: ${decorated}`, (t) => {
