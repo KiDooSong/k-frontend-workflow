@@ -1,5 +1,9 @@
 # Current Roadmap
 
+> 2026-11-08 #244: 검사 12의 `RR-TABLE-101`이 Register 데이터행과 헤더의 셀 수 불일치를 경고한다.
+> 기존 첫 Summary 표(v1/v2)와 v2의 유일한 canonical Summary·Items가 대상이며 겹친 경고는 한 번만 낸다.
+> `--enforce`에서도 warning이며 기존 파싱·권한·hard error를 유지한다. 계약: [Register table cell counts](../frontend-workflow-kit/docs/reference/input-reconciliation.md#register-table-cell-counts-244).
+
 > 2026-11-06 #294 리뷰 후속: 다단계 source 확장 뒤 historical fallback이 발견돼도 최초 Item witness에 연결되지 않은 anchor는 coverage를 통과하지 못하도록 내부 연결 상태를 모든 pass에서 추적한다. 원래 witness와 겹치는 새 anchor는 허용하고, fallback 없는 owner의 출력·digest는 유지한다. 계약: [historical Item row targets](../frontend-workflow-kit/docs/reference/scoped-work.md#historical-item-row-targets).
 
 > 2026-11-04 호환 보완(#293): v2 historical Item의 일반 artifact `/row`가 없으면 원본 effect를 보존하고 현재 해소 가능한 섹션, 섹션도 없으면 문서 전체를 scoped 근거로 선택한다. 직접 계약·typed child·canonical mapping과 모호성 오류는 유지하고 `binding-status`의 `target_fallbacks` 진단은 basis 밖에 둔다. validate의 row/section·빈 Evidence·raw exact 차이·중복 sources 진단은 `--enforce`에서도 warning이다. 정상 graph/binding bytes·기존 source/receipt·미결 차단·사람 승인 경계와 basis/package/release 버전은 유지한다. 계약: [historical Item row targets](../frontend-workflow-kit/docs/reference/scoped-work.md#historical-item-row-targets), [validate preflight warnings](../frontend-workflow-kit/docs/reference/input-reconciliation.md#scoped-참조-preflight-warnings-293).

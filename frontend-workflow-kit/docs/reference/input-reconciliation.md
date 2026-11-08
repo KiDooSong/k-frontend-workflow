@@ -337,6 +337,22 @@ docs/frontend-workflow/_meta/reconciliation-register.md
 - **자식 item 의 open/closed 는 각 레지스터(Open Decisions·Conflicts·Unknowns)가 단일 출처다.** register 에 다시 적지 않는다(이중 기재 → 로그가 현실과 어긋난다). register 는 "이 입력을 reconcile 해서 이런 항목을 만들었다"만 기록한다.
 - **`Supersedes` 는 입력↔입력 축만** 쓴다. 결정값 번복(decision supersede)은 여기 적지 않는다 — 후속 `decision-log` 의 몫이다. 두 축을 한 칼럼에 섞으면 이력 추적이 흐려진다.
 
+### Register table cell counts (#244)
+
+검사 12는 v1/v2에서 기존 Summary 파서가 읽는 첫 표에 필수 8컬럼이 모두 있으면 데이터행을 검사한다. v2에서는 유일하게
+식별된 canonical Summary와 `## Reconciliation Items` 표도 검사하며, 기존 첫 표 검사와 겹친
+경고는 한 번만 보고한다. 각 데이터행을 공유 `splitRow` 규칙으로 나누어 해당 헤더 셀 수와
+비교한다(정상 Summary 8셀, Items 10셀). 보조 표와 다른 artifact 표는 대상이 아니다.
+
+셀 수가 다르면 `RR-TABLE-101`이 1부터 시작하는 데이터행 번호, 읽힌 `Input ID`(Items는 `Item`
+키도), 기대/실제 셀 수를 알린다. 헤더와 구분자 줄은 데이터행 번호에서 제외한다.
+셀 내용의 리터럴 `|`는 `\|`로 escape하며 **inline code 안에서도 동일**하다. 붙어 버린 데이터행은
+개행을 복구하고, 부족한 셀은 빠진 셀이나 구분자를 복구한다.
+`&#124;`는 raw-cell 파서에서 리터럴 파이프로 복원하지 않으므로 `\|`의 대안으로 쓰지 않는다.
+
+`RR-TABLE-101`은 기본과 `--enforce` 모두 warning이다. 파싱 결과·권한을 바꾸거나 자동으로
+고치지 않으며, 기존 구조·상태·참조 등의 hard error는 그대로 적용된다.
+
 ## Partial Reconciliation Checkpoints
 
 `partially-reconciled`는 **이번 회차의 실제 문서 작업과 effect 기록은 일관되게 마무리했지만,
@@ -439,7 +455,8 @@ partial + pending/accepted 모두 `VR-RR-005`로 거부하며, 완전 reconciled
 ## Reconciliation Contract v2 (opt-in)
 
 register frontmatter 에 `reconciliation_contract: 2` 를 선언하면 check 12 가 **구조화 계약(v2)** 을 추가로
-강제한다. 필드가 없으면 기존 상태의 v1 동작(위 8컬럼 검사)이 byte-compatible 하게 유지된다. v2 의 목적은 #202 가 지적한
+강제한다. 필드가 없으면 v1의 8컬럼 검사·파싱 결과를 유지하며 정상 행의 출력은 byte-compatible하다.
+위 표 셀 수 경고는 v1/v2 공통이다. v2 의 목적은 #202 가 지적한
 세 곱셈 인자(기계 강제 0 × 정밀도 바닥 0 × 잠정물 최종-fidelity 리뷰)를 줄이는 것이다.
 
 핵심 문장: **정적 validator 는 선언된 구조와 참조를 강제하고, reviewer 는 diff 에서 권한 경계를 확인한다.
@@ -679,6 +696,7 @@ v2 의 deterministic 오류는 `--enforce` 와 무관하게 **항상 에러**다
 heuristic(`RR-ROUTE-101`, `RR-STALE-101/102/103`)은 `--enforce` 로도 hard 승격하지 않는다. warning-only
 fixture는 기본/`--enforce` 모두 exit 0이며, hard/CI/readiness 승격은 별도 사람 승인이다.
 v1/v2 공통 partial의 `RR-LIFECYCLE-101`도 기본/`--enforce` 모두 warning이며 Result 오저작으로 숨길 수 없다.
+v1/v2 공통 [표 셀 수 경고 `RR-TABLE-101`](#register-table-cell-counts-244)도 `--enforce`로 승격하지 않는다.
 
 ### Migration
 

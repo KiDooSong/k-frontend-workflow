@@ -32,6 +32,25 @@ export const REQUIRED_REGISTER_COLS = [
   'Supersedes',
 ];
 
+// Observe the raw cells already split by the shared parser. Row objects have
+// dropped extra cells and padded missing ones, so they cannot reveal #244.
+// Messages only: do not repair rows, change authority, or promote under --enforce.
+export function reconciliationTableWidthWarnings(table, name = 'Summary') {
+  if (!table || !hasHeader(table.headers, 'Input ID')) return [];
+  const expected = table.headers.length;
+  const inputIndex = table.headers.findIndex((header) => hasHeader([header], 'Input ID'));
+  const itemIndex = table.headers.findIndex((header) => hasHeader([header], 'Item'));
+  return (table.cell_rows || []).flatMap((cells, index) => {
+    if (cells.length === expected) return [];
+    const input = cells[inputIndex] || '(없음)';
+    const item = itemIndex >= 0 ? `, Item: '${cells[itemIndex] || '(없음)'}'` : '';
+    return [
+      `RR-TABLE-101: ${name} 데이터 행 ${index + 1} (Input ID: '${input}'${item}) 셀 수 불일치: 기대 ${expected}, 실제 ${cells.length}` +
+      ' → 셀 안의 리터럴 파이프는 \\|로 escape하고, 합쳐진 행의 개행 또는 빠진 셀/구분자를 복구하세요.',
+    ];
+  });
+}
+
 // 헤더 이름을 느슨하게 매칭(대소문자/공백 무시) — spec.mjs col() 과 같은 규약.
 // (col 은 spec.mjs 의 module-private 라 여기서 동일 규약의 얇은 헬퍼만 둔다 — parseTable 은 공유.)
 function cell(row, name) {
@@ -166,6 +185,9 @@ export function validateReconciliationRegister({ register, inputArtifacts = [], 
   const missingCols = REQUIRED_REGISTER_COLS.filter((c) => !hasHeader(headers, c));
   if (missingCols.length) {
     add(registerFile, `Reconciliation Register 표 필수 컬럼 누락: ${missingCols.join(', ')}`);
+  }
+  if (!missingCols.length) {
+    for (const message of reconciliationTableWidthWarnings(register.table)) warn(registerFile, message);
   }
   // Input ID / Reconcile Status 컬럼이 아예 없으면 그 컬럼에 의존하는 행 검사는 의미가 없다
   // (위 컬럼-누락 에러가 구조 결함을 가리키므로 행마다 빈값 에러를 쏟지 않는다).

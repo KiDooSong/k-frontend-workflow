@@ -24,9 +24,9 @@
 //
 // 이 모듈은 순수하다 — { errors:[{file,message}], warnings:[{file,message}] } 를 반환하고
 // file 은 항상 절대경로다. validate.mjs 가 add()/warn() 으로 상대화한다.
-import { col, parseTable } from './spec.mjs';
+import { col, hasHeader, parseTable, splitRow } from './spec.mjs';
 import { createTextKeyedCache } from './util.mjs';
-import { RECONCILE_STATUS_VALUES, REQUIRED_REGISTER_COLS } from './reconciliation-register.mjs';
+import { RECONCILE_STATUS_VALUES, REQUIRED_REGISTER_COLS, reconciliationTableWidthWarnings } from './reconciliation-register.mjs';
 import {
   FIGMA_PRECISION_SOURCE_UNITS,
   INHERIT,
@@ -483,6 +483,17 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
     items.table &&
     items.tableCount === 1 &&
     !items.headerIssue;
+  if (itemRowsUsable) {
+    // GFM truncates excess cells in its projected rows. The AST-selected source
+    // already excludes non-content; parseTable's comment regex would erase
+    // literal <!-- / --> markers and the cells between them. Split data rows
+    // directly, keeping validated header identities (including emphasis).
+    const widthTable = {
+      headers: items.table.headers,
+      cell_rows: items.table.sourceText.split(/\r\n?|\n/).slice(2).map(splitRow),
+    };
+    for (const message of reconciliationTableWidthWarnings(widthTable, 'Reconciliation Items')) warn(message);
+  }
 
   // --- canonical Summary 표 (v2 전용 파싱) ---
   // v1 파서(parseTable)는 raw body 의 "첫 파이프 표"를 Summary 로 삼는다 — fence 안의 8컬럼 예시나
@@ -523,6 +534,15 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
   // canonical source bytes with the v1 raw-cell parser and use that single projection for both the
   // RR-SCHEMA-020 source-table comparison and all downstream structured grammar/projection checks.
   const canonicalV1Table = parseTable(summaryTables[0].sourceText || '');
+  // The legacy first table can be a fenced example with the same first eight
+  // fields. RR-SCHEMA-020 cannot expose extra cells discarded from that projection.
+  // Inspect the canonical table too, reporting an identical common warning once.
+  const commonWidthWarnings = new Set(REQUIRED_REGISTER_COLS.every((name) => hasHeader(register.table?.headers, name))
+    ? reconciliationTableWidthWarnings(register.table) : []);
+  const summaryWidthTable = canonicalV1Table && { ...canonicalV1Table, headers: summaryTables[0].headers };
+  for (const message of reconciliationTableWidthWarnings(summaryWidthTable)) {
+    if (!commonWidthWarnings.has(message)) warn(message);
+  }
   const summaryRows = (canonicalV1Table?.rows || []).map(normalizeSummaryRow);
   if (rowsFingerprint(summaryRows) !== rowsFingerprint(register.rows)) {
     add(
