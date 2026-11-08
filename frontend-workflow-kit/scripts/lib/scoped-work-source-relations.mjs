@@ -37,33 +37,44 @@ const SUMMARY_COLUMNS = [['inputId', 'Input ID'], ['source', 'Source'], ['classi
 const headerKey = (name) => name.toLowerCase().replace(/\s+/g, '');
 
 // The register parser removes HTML comments before it splits its first table (spec.mjs parseTables), so a
-// validated Summary cell never shows one. Read the canonical Summary's own lines with each comment kept as an
+// validated Summary cell never shows one. Read the same content view with each removed comment kept as an
 // indexed mark instead: rows, cells and padding line up with the parser's, which shows the cells that held a
-// comment, and each row keeps its source line as written. A separator line drops its marks; marks before the
+// comment. Retained source offsets supply row evidence without restoring removed code/HTML.
+// A separator line drops its marks; marks before the
 // leading pipe move into the first cell, since the parser trims the line. The canonical Summary is the table
 // validateReconciliationV2 checks (RR-SCHEMA-019): the one strict top-level table with exactly the Summary
 // columns once code and comments are removed. The parser's own table is only compared with it cell by cell
 // (RR-SCHEMA-020) and may be an example placed before it.
 const SEPARATOR = /^\|?[\s:|-]+\|?$/;
-// Where each line starts and where its text ends, with line endings as the Markdown parser reads them (CR, LF, CRLF).
-function lineSpans(text) {
-  const ends = [...text.matchAll(/\r\n?|\n/g)];
-  return { starts: [0, ...ends.map((end) => end.index + end[0].length)], ends: [...ends.map((end) => end.index), text.length] };
-}
 function summaryAsWritten(body) {
-  const found = locateContentTables(body).filter(({ table }) => describeHeaderMismatch(table, REQUIRED_REGISTER_COLS) === null);
+  const found = locateContentTables(body, { includeSourceLines: true })
+    .filter(({ table }) => describeHeaderMismatch(table, REQUIRED_REGISTER_COLS) === null);
   if (found.length !== 1) return [];
-  // The table's own bytes: from the start of its first line to the end of its last line, as the Markdown parser ends
-  // lines. Rows inside are then split as the register parser splits them (LF or CRLF), so they pair with the
-  // validated rows.
-  const spans = lineSpans(body);
-  const lineOf = (offset) => spans.starts.filter((start) => start <= offset).length - 1;
-  const source = body.slice(spans.starts[lineOf(found[0].start)], spans.ends[lineOf(found[0].end - 1)]);
+  const { sourceLines, sourceLineEndings } = found[0];
   let code = 0xe000;
-  while (source.includes(String.fromCharCode(code))) code += 1;
+  while (body.includes(String.fromCharCode(code))) code += 1;
   const mark = String.fromCharCode(code), token = `${mark}\\d+${mark}`, comments = [];
   const marks = new RegExp(`${mark}(\\d+)${mark}`, 'g');
-  const lines = source.replace(/<!--[\s\S]*?-->/g, (comment) => `${mark}${comments.push(comment) - 1}${mark}`).split(/\r?\n/);
+  const commentMark = (lineBreaks = 0) => `${mark}${comments.push(lineBreaks) - 1}${mark}`;
+  const source = sourceLines.map(({ text, commentOffsets }) => {
+    for (const offset of [...commentOffsets].sort((a, b) => b - a)) {
+      text = text.slice(0, offset) + commentMark() + text.slice(offset);
+    }
+    return text;
+  }).join('\n');
+  // Literal comment spellings retained by the AST still follow parseTable's
+  // raw-cell grammar. Track any LF it removes so evidence stays paired with the
+  // same row, rather than relying on original Markdown line numbers.
+  const lines = source.replace(/<!--[\s\S]*?-->/g,
+    (comment) => commentMark((comment.match(/\n/g) || []).length)).split('\n');
+  let sourceLine = 0;
+  const evidence = lines.map((line) => {
+    const first = sourceLine;
+    line.replace(marks, (_, index) => { sourceLine += comments[Number(index)]; return ''; });
+    const last = sourceLine++;
+    return sourceLines.slice(first, sourceLine)
+      .map((entry, index) => entry.sourceText + (first + index < last ? sourceLineEndings[first + index] : '')).join('');
+  });
   const parsed = lines.map((line) => {
     const bare = line.replace(marks, '');
     if (SEPARATOR.test(bare.trim())) return bare;
@@ -76,7 +87,7 @@ function summaryAsWritten(body) {
   return table.cell_rows.map((cells, i) => {
     const row = {};
     table.headers.forEach((header, h) => { row[plain(header)] = cells[h] ?? ''; });
-    return { line: lines[i + 2].replace(marks, (_, index) => comments[Number(index)]),
+    return { line: evidence[i + 2],
       ...Object.fromEntries(SUMMARY_COLUMNS.map(([field, name]) => {
         const cell = row[Object.keys(row).find((key) => headerKey(key) === headerKey(name))] || '';
         return [field, { plain: plain(cell), commented: cell.includes(mark) }];

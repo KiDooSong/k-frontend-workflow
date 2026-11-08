@@ -479,7 +479,13 @@ packets and serialized verdicts are not authority. For each scoped request:
   created keep their own gates. The register parser picks the row and its cells;
   its Reconcile Status and Result must also be canonical as written in the
   Summary table the validator checks (not an example placed before it), before
-  the parser drops HTML comments, so `accepted <!-- … -->` does not connect. The
+  the parser drops HTML comments, so `accepted <!-- … -->` does not connect.
+  This check uses the validator's content view: removed code and HTML blocks
+  stay excluded, while comment positions are retained for the raw-cell check.
+  Source offsets identify the original lines contributing to each validated
+  row, including its comments; a removed block after a bare CR cannot become
+  row evidence or hide the next row. The existing LF/CRLF raw-row split still
+  keeps a bare CR between retained pipe fragments in the same row. The
   request lists it, with the row's validated cells, its line as written and the
   input sha256, in `evidence.legacy_sources` (an adopted surface host's under its
   `evidence.hosts` entry) and in `required_reviews` as

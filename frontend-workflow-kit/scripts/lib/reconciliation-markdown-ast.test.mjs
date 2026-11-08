@@ -74,3 +74,51 @@ test('locateContentTables: strict tables of the content view, at their offsets i
   const [table] = locateContentTables(after);
   assert.equal(after.slice(table.start, table.end), '| a | b |\n|---|---|\n| 1 | 2 |');
 });
+
+test('locateContentTables source lines: CR-joined omitted blocks cannot enter row evidence or comment offsets', () => {
+  const header = '| a | b |', separator = '|---|---|';
+  const before = '| 1 ', middle = ' | 2 | ';
+  const first = `${before}<!-- in cell -->${middle}<!-- after pipe -->`, second = '| 3 | 4 |';
+  for (const block of ['    code <!-- ignored -->', '<pre>HTML <!-- ignored --></pre>']) {
+    const rows = [
+      { text: header, sourceText: header, commentOffsets: [] },
+      { text: separator, sourceText: separator, commentOffsets: [] },
+      { text: before + middle, sourceText: first, commentOffsets: [before.length, before.length + middle.length] },
+    ];
+    // Each block is non-content in the original AST. Combining both placements would leave the first
+    // data line as a paragraph, whose continuation cannot be interrupted by a second indented code line.
+    for (const [source, expected, endings] of [
+      [`${header}\n${separator}\r${block}\n${first}`, rows, ['\n', '\r\n', '']],
+      [`${header}\n${separator}\n${first}\r${block}\n${second}`,
+        [...rows, { text: second, sourceText: second, commentOffsets: [] }], ['\n', '\n', '\r\n', '']],
+    ]) {
+      const [found] = locateContentTables(source, { includeSourceLines: true });
+      assert.deepEqual(found.sourceLines, expected, block);
+      assert.deepEqual(found.sourceLineEndings, endings, block);
+    }
+  }
+});
+
+test('locateContentTables source lines: kept bare CR and inline comment literals retain the legacy row shape', () => {
+  const first = '| `<!-- literal -->` | 1 |', before = '| 2 ', after = ' | 3 |';
+  const row = `${first}\r${before}<!-- actual comment -->${after}`;
+  const [found] = locateContentTables(`| a | b |\n|---|---|\n${row}`, { includeSourceLines: true });
+  assert.equal(found.sourceLines.length, 3);
+  assert.deepEqual(found.sourceLines[2], {
+    text: `${first}\r${before}${after}`,
+    sourceText: row,
+    commentOffsets: [first.length + 1 + before.length],
+  });
+});
+
+test('locateContentTables source lines: comments outside a contributing physical row do not shift its evidence', () => {
+  const first = '| 1 | 2 |', second = '| 3 | 4 |', trailing = ' <!-- row note -->';
+  const source = 'p\r<!-- before -->\n'.repeat(3) + '\n| a | b |\n|---|---|\n' +
+    `${first}\r<!-- outside row -->\n${second}${trailing}`;
+  const [found] = locateContentTables(source, { includeSourceLines: true });
+  assert.deepEqual(found.sourceLines.slice(2), [
+    { text: first, sourceText: first, commentOffsets: [] },
+    { text: `${second} `, sourceText: second + trailing, commentOffsets: [second.length + 1] },
+  ]);
+  assert.deepEqual(found.sourceLineEndings, ['\n', '\n', '\r\n', '']);
+});

@@ -173,6 +173,60 @@ test('#269 example: a summary-only legacy source connects through its reconciled
   assert.equal(legacySources(backfilled), undefined);
 });
 
+// #271: an equal fenced example lets the legacy parser and the v2 validator agree
+// on the Summary, while only the canonical content table may supply row evidence.
+const LEGACY_CR_BLOCKS = [
+  ['indented code', '    hidden code <!-- not a Summary comment -->'],
+  ['HTML block', '<pre>hidden HTML <!-- not a Summary comment --></pre>'],
+];
+const legacyContentSource = (block, annotated) => (io) => {
+  legacySource()(io);
+  const file = 'docs/frontend-workflow/_meta/reconciliation-register.md', text = io.read(file);
+  const start = text.indexOf('| Input ID |'), end = text.indexOf('\n\n## Reconciliation Items');
+  assert.ok(start >= 0 && end > start);
+  const summary = text.slice(start, end), lines = summary.split('\n');
+  assert.equal(lines.length, 3);
+  lines[2] = lines[2].replace('| artifact:COUPON-001-screen-spec |',
+    '| artifact:COUPON-001-screen-spec <!-- retained row note --> |');
+  if (annotated) {
+    const value = annotated === 'Status' ? 'reconciled' : 'accepted';
+    lines[2] = lines[2].replace(`| ${value} |`, `| ${value} <!-- reviewed --> |`);
+  }
+  const canonical = `${lines[0]}\n${lines[1]}\r${block}\n${lines[2]}`;
+  io.put(file, `${text.slice(0, start)}\`\`\`md\n${summary}\n\`\`\`\n\n${canonical}${text.slice(end)}`);
+};
+
+test('#271 CLI: removed code or HTML after a CR separator keeps legacy evidence and existing denials', (t) => {
+  const baseline = json(readiness(t, legacySource()));
+  assert.equal(baseline.ready, false);
+  assert.ok(baseline.denials.length > 0);
+  const expected = baseline.requests[0].evidence.legacy_sources.map((entry) => ({ ...entry,
+    summary: { ...entry.summary, row: entry.summary.row.replace('| artifact:COUPON-001-screen-spec |',
+      '| artifact:COUPON-001-screen-spec <!-- retained row note --> |') } }));
+  for (const [kind, block] of LEGACY_CR_BLOCKS) {
+    const env = json(readiness(t, legacyContentSource(block)));
+    assert.deepEqual(env.requests[0].evidence.legacy_sources, expected, kind);
+    assert.deepEqual(codes(env), codes(baseline), kind);
+    assert.deepEqual(env.requests[0].path_authorizations, baseline.requests[0].path_authorizations, kind);
+    assert.equal(env.ready, false, kind); assert.equal(env.requests[0].ready, false, kind);
+    assert.equal(env.approval_verified, false, kind);
+    assert.deepEqual(env.required_reviews.filter((entry) => entry.startsWith('Legacy summary-only source')),
+      baseline.required_reviews.filter((entry) => entry.startsWith('Legacy summary-only source')), kind);
+  }
+});
+
+test('#271 CLI: comments in canonical Status or Result stay unconnected after a removed CR block', (t) => {
+  for (const [kind, block] of LEGACY_CR_BLOCKS) {
+    for (const field of ['Status', 'Result']) {
+      const env = json(readiness(t, legacyContentSource(block, field))), label = `${kind}: ${field}`;
+      assert.equal(env.ready, false, label);
+      assert.ok(env.denials.some((entry) => entry.code === 'source-effect-unconnected'), label);
+      assert.equal(env.requests[0].evidence.legacy_sources, undefined, label);
+      assert.deepEqual(env.required_reviews.filter((entry) => entry.startsWith('Legacy summary-only source')), [], label);
+    }
+  }
+});
+
 // #262: the issue's Unknown variants (U1-U4) and the 영향 화면 rule through the public CLI.
 const U = '| U-001 | 현재 쿠폰 API 응답 예시(목록/상세)는 어디에 있는가? | open |';
 const resolveU = ({ read, put }) => put(LIST, read(LIST).replace(U, U.replace('| open |', '| resolved |')));
