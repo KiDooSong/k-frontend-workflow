@@ -227,6 +227,42 @@ test('#271 CLI: comments in canonical Status or Result stay unconnected after a 
   }
 });
 
+test('#271 CLI: a trailing CR comment stays complete in its legacy row and tail edits change only that evidence', (t) => {
+  const nextInput = 'IN-20260601-meeting-002';
+  const row = `| ${LEGACY_INPUT} | meeting | simple-update | reconciled | accepted | artifact:COUPON-001-screen-spec | - | - |`;
+  const nextRow = row.replace(LEGACY_INPUT, nextInput);
+  const comment = (tail) => ` <!-- review start\r${tail} -->`;
+  const run = (tail) => json(readiness(t, (io) => {
+    legacySource()(io);
+    io.put(LIST, io.read(LIST).replace(`  - { type: meeting, ref: ${LEGACY_INPUT} }\n`,
+      `  - { type: meeting, ref: ${LEGACY_INPUT} }\n  - { type: meeting, ref: ${nextInput} }\n`));
+    io.put(`docs/frontend-workflow/inputs/${nextInput}.md`,
+      io.read(`docs/frontend-workflow/inputs/${LEGACY_INPUT}.md`).replaceAll(LEGACY_INPUT, nextInput));
+    const register = 'docs/frontend-workflow/_meta/reconciliation-register.md';
+    // The pipe in this real header comment preserves the review's valid-v2 AST
+    // shape; the validator and legacy parser still see the same eight columns.
+    io.put(register, io.read(register).replace('| Input ID |', '| Input ID <!-- x | y --> |')
+      .replace(row, `${row}${comment(tail)}\n${nextRow}`));
+  }));
+  const before = run('TAIL-A'), after = run('TAIL-B');
+  const sources = (env) => Object.fromEntries(env.requests[0].evidence.legacy_sources.map((entry) => [entry.input_id, entry]));
+  const first = sources(before), changed = sources(after);
+  assert.deepEqual(Object.keys(first).sort(), [LEGACY_INPUT, nextInput]);
+  assert.equal(first[LEGACY_INPUT].summary.row, row + comment('TAIL-A'));
+  assert.equal(changed[LEGACY_INPUT].summary.row, row + comment('TAIL-B'));
+  assert.deepEqual(changed[LEGACY_INPUT], { ...first[LEGACY_INPUT],
+    summary: { ...first[LEGACY_INPUT].summary, row: row + comment('TAIL-B') } });
+  assert.equal(first[nextInput].summary.row, nextRow);
+  assert.deepEqual(changed[nextInput], first[nextInput], 'the preceding comment must not leak into the next row');
+  assert.deepEqual(after.denials, before.denials);
+  assert.deepEqual(after.requests[0].path_authorizations, before.requests[0].path_authorizations);
+  assert.equal(after.request_digest, before.request_digest);
+  for (const env of [before, after]) {
+    assert.equal(env.ready, false); assert.equal(env.approval_verified, false);
+    assert.equal(env.denials.some((entry) => entry.code === 'source-effect-unconnected'), false);
+  }
+});
+
 // #262: the issue's Unknown variants (U1-U4) and the 영향 화면 rule through the public CLI.
 const U = '| U-001 | 현재 쿠폰 API 응답 예시(목록/상세)는 어디에 있는가? | open |';
 const resolveU = ({ read, put }) => put(LIST, read(LIST).replace(U, U.replace('| open |', '| resolved |')));

@@ -122,3 +122,38 @@ test('locateContentTables source lines: comments outside a contributing physical
   ]);
   assert.deepEqual(found.sourceLineEndings, ['\n', '\n', '\r\n', '']);
 });
+
+test('locateContentTables source lines: a row-owned multiline comment retains its full span exactly once', () => {
+  const first = '| 1 | 2 |', second = '| 3 | 4 |';
+  for (const [internal, following] of [['\r', '\n'], ['\n', ''], ['\r\n', '']]) {
+    const comment = ` <!-- row note${internal}continued note -->`;
+    const source = `| a <!-- x | y --> | b |\n|---|---|\n${first}${comment}${following}${second}`;
+    const [found] = locateContentTables(source, { includeSourceLines: true });
+    assert.deepEqual(found.sourceLines.slice(2), [
+      { text: `${first} `, sourceText: first + comment, commentOffsets: [first.length + 1] },
+      { text: second, sourceText: second, commentOffsets: [] },
+    ], JSON.stringify(internal));
+    // The internal EOL belongs to the full comment, so only the following bytes separate the source rows.
+    // When the comment closes directly before the next row, there is no additional source separator.
+    assert.deepEqual(found.sourceLineEndings, ['\n', '\n', following, '']);
+  }
+});
+
+test('locateContentTables source lines: an external comment tail before the header is not header evidence', () => {
+  const header = '| a <!-- x | y --> | b |';
+  const source = `--- <!-- outside\r-->${header}\n|---|---|\n| 1 | 2 |`;
+  const [found] = locateContentTables(source, { includeSourceLines: true });
+  assert.deepEqual(found.sourceLines[0], { text: '| a  | b |', sourceText: header, commentOffsets: [4] });
+  assert.deepEqual(found.sourceLineEndings, ['\n', '\n', '']);
+});
+
+test('locateContentTables source lines: preserving one comment does not adopt another on its continuation line', () => {
+  const first = '| 1 | 2 |', second = '| 3 | 4 |', owned = ' <!-- owned\rcontinued -->';
+  const source = `| a <!-- x | y --> | b |\n|---|---|\n${first}${owned}<!-- outside -->\n${second}`;
+  const [found] = locateContentTables(source, { includeSourceLines: true });
+  assert.deepEqual(found.sourceLines.slice(2), [
+    { text: `${first} `, sourceText: first + owned, commentOffsets: [first.length + 1] },
+    { text: second, sourceText: second, commentOffsets: [] },
+  ]);
+  assert.deepEqual(found.sourceLineEndings, ['\n', '\n', '\n', '']);
+});

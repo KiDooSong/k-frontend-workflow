@@ -592,8 +592,6 @@ export function locateContentTables(text, { includeSourceLines = false } = {}) {
       if (range) comments.push(range);
     }
   });
-  const commentKeys = new Set(comments.map(({ start, end }) => `${start}:${end}`));
-  const omitted = ranges.filter(({ start, end }) => !commentKeys.has(`${start}:${end}`));
   const sourceSlice = (start, end, removed) => removeRangesPreservingLines(source.slice(start, end), removed
     .filter((range) => range.start < end && range.end > start)
     .map((range) => ({ start: Math.max(0, range.start - start), end: Math.min(end, range.end) - start })));
@@ -604,12 +602,23 @@ export function locateContentTables(text, { includeSourceLines = false } = {}) {
       const lineStart = offset;
       offset += text.length + (content.slice(offset + text.length, offset + text.length + 2) === '\r\n' ? 2 : 1);
       const first = kept[lineStart], last = kept[lineStart + text.length - 1];
-      const sourceStart = starts[lowerBound(starts, first + 1) - 1];
-      const sourceEnd = ends[lowerBound(starts, last + 1) - 1];
+      const physicalStart = starts[lowerBound(starts, first + 1) - 1];
+      const physicalEnd = ends[lowerBound(starts, last + 1) - 1];
+      // A row owns comments that start on its contributing physical lines.
+      // Keep their complete ranges, including CR/LF after the last visible
+      // character, without claiming a comment from a later independent line.
+      // A prior row's comment may end on this row's first physical line.
+      const sourceStart = Math.max(physicalStart, sourceSpans.at(-1)?.end ?? 0);
+      const ownedComments = comments.filter((range) => range.start >= sourceStart && range.start < physicalEnd);
+      const sourceEnd = ownedComments.reduce((end, range) => Math.max(end, range.end), physicalEnd);
       sourceSpans.push({ start: sourceStart, end: sourceEnd });
-      const commentOffsets = comments.filter((range) => range.start < sourceEnd && range.end > sourceStart)
+      const commentOffsets = ownedComments
         .map((range) => Math.max(0, Math.min(text.length, lowerBound(kept, range.start) - lineStart)));
-      const sourceText = sourceSlice(sourceStart, sourceEnd, omitted);
+      // A comment starting outside this row can overlap its physical line too;
+      // only owned comments are restored, never a clipped tail or code/HTML.
+      const ownedKeys = new Set(ownedComments.map(({ start, end }) => `${start}:${end}`));
+      const sourceText = sourceSlice(sourceStart, sourceEnd,
+        ranges.filter(({ start, end }) => !ownedKeys.has(`${start}:${end}`)));
       return { text, sourceText, commentOffsets };
     });
     // A literal comment inside inline code can span these lines and the legacy

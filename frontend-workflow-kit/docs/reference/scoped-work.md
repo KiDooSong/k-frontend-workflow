@@ -483,8 +483,11 @@ packets and serialized verdicts are not authority. For each scoped request:
   This check uses the validator's content view: removed code and HTML blocks
   stay excluded, while comment positions are retained for the raw-cell check.
   Source offsets identify the original lines contributing to each validated
-  row, including its comments; a removed block after a bare CR cannot become
-  row evidence or hide the next row. The existing LF/CRLF raw-row split still
+  row. A comment starting on those lines belongs to that row through its
+  closing delimiter, including internal CR/LF bytes; its continuation is not
+  repeated on the next row, and later independent comments stay excluded.
+  A removed block after a bare CR cannot become row evidence or hide the next
+  row. The existing LF/CRLF raw-row split still
   keeps a bare CR between retained pipe fragments in the same row. The
   request lists it, with the row's validated cells, its line as written and the
   input sha256, in `evidence.legacy_sources` (an adopted surface host's under its
