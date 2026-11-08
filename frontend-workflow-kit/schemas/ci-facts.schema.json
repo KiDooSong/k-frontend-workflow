@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ci-facts.schema.json",
+  "title": "Frontend Workflow CI facts",
+  "description": "Authoring/editor schema for the optional flat YAML mapping passed with --ci. Runtime loaders do not enforce this schema. Partial mappings and null (unverified) values are supported; evidence belongs in YAML comments or a referenced durable report. See docs/reference/ci-facts.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "ci_lint": {
+      "description": "Observed lint result for the recorded revision and evaluation scope. null means unverified; the shipped policy requires the exact string pass.",
+      "enum": ["pass", "fail", null]
+    },
+    "ci_schema_validation": {
+      "description": "Observed result of the consumer's documented schema/contract checks. null means unverified; the shipped policy requires the exact string pass.",
+      "enum": ["pass", "fail", null]
+    },
+    "state_coverage_complete": {
+      "description": "Recorded coverage of the required states across the evaluation scope, supported by tests/stories or reviewed evidence. A complete State Matrix alone is insufficient; the shipped policy requires boolean true.",
+      "type": ["boolean", "null"]
+    },
+    "llm_semantic_review": {
+      "description": "The actual semantic review result for the recorded revision and evaluation scope. null means unreviewed. Lint/test success is not this review, and pass is not human approval.",
+      "enum": ["pass", "fail", null]
+    }
+  }
+}

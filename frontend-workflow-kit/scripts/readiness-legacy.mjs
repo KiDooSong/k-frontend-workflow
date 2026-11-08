@@ -489,7 +489,7 @@ function limitNoApiEditSurfaces({ allowedPaths, forbiddenPaths, modes, order, ch
   };
 }
 
-// CI 결과가 입력되지 않으면 로컬에서 알 수 없는 게이트라 blocking 에서 제외한다.
+// CI 결과가 입력되지 않으면 로컬에서 알 수 없는 게이트라 blocking 에서 제외하고 입력만 안내한다.
 const CI_FACTS = new Set([
   'ci_lint',
   'ci_schema_validation',
@@ -606,6 +606,7 @@ export function computeReadiness({
     const blocking = [];
     const nextActions = [];
     const seen = new Set();
+    const missingCiFacts = new Set();
 
     // (0) invalid ScreenSpec lifecycle: malformed absorption must stay visible but may not
     // authorize implementation. The lifecycle helper supplies deterministic provenance.
@@ -677,7 +678,10 @@ export function computeReadiness({
           );
           continue;
         }
-        if (CI_FACTS.has(cond.key) && !ciProvided) continue;
+        if (CI_FACTS.has(cond.key) && !ciProvided) {
+          missingCiFacts.add(cond.key);
+          continue;
+        }
         if (
           ['api_confidence_min', 'api_actionable_confidence_min', 'api_actionable_candidates_count', 'api_candidate_deferrals_valid'].includes(cond.key) &&
           facts.api_required === false
@@ -693,6 +697,10 @@ export function computeReadiness({
         blocking.push({ [friendly]: current === null ? 'missing' : current });
         nextActions.push(actionHint(cond.key, screenCtx));
       }
+    }
+    if (missingCiFacts.size > 0) {
+      nextActions.push(`provide recorded CI facts with --ci <file> for: ${[...missingCiFacts].join(', ')} ` +
+        '(see tools/frontend-workflow/docs/reference/ci-facts.md)');
     }
 
     let allowedPaths = uniquePaths(resolvedLayout.resolvePaths(chosen.allowed_paths || [], { domain: screen.domain }));

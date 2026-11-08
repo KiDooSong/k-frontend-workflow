@@ -24,6 +24,15 @@ direct readiness redirect described in [`screen-lifecycle.md`](../screen-lifecyc
 
 For no-work shared-surface diagnostics, re-run `workflow:readiness -- --surface <SURFACE_ID> --json` and every member's `--screen` readiness. Selected current/scoped work follows the packet-bound run below; report its owner/host evidence and remaining limits.
 
+## Optional CI facts
+
+When supplying readiness with `--ci`, record the actual checks/review outcomes and
+their evidence using the [CI facts contract](../ci-facts.md). It owns the flat YAML
+template, authoring schema, scope and snapshot rules. Keep unverified results
+unset; a semantic-review result must not be inferred from validation success.
+Report missing CI data and next actions alongside the computed mode. Any requested
+human-owned transition still goes through [Stage 09](09-human-decision-gates.md).
+
 ## Current-work report/backstop
 
 Stage 06에서 `--work`를 사용했다면 [대표 run 흐름](../current-work.md#common-cli-flow)의

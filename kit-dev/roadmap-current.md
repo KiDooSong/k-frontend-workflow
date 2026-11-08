@@ -1,5 +1,11 @@
 # Current Roadmap
 
+> 2026-11-08 #228: 기존 `--ci` 평면 fact 입력의 저작용 schema·안전한 template·manifest와 근거 기록 계약을 추가했다.
+> 미제공 CI 때문에 실패한 정책 조건은 기존처럼 blocking에서 제외하되 필요한 입력을 next_actions에 한 번 안내한다.
+> mode/path/권한은 유지하며 runtime schema 강제·자동 producer·증거 인증은 포함하지 않는다.
+> manifest 저작 항목 등록과 visual bundled manifest pin을 함께 갱신하며, 번들 리소스의 바이트 일치 검사를 유지한다.
+> 정본: [CI facts](../frontend-workflow-kit/docs/reference/ci-facts.md).
+
 > 2026-11-08 #271: scoped summary-only legacy 연결의 원문 검사를 검증기의 콘텐츠 뷰에서 만든다.
 > 단독 CR 뒤에서 제거된 코드·HTML의 연결 누락과 행 근거 혼입을 고치고, 원문 offset으로 해당 행과 주석을 보존한다.
 > canonical Status/Result·기존 raw-row 분할·Items/미결/권한 조건은 유지한다. 계약: [scoped-work](../frontend-workflow-kit/docs/reference/scoped-work.md#evaluation-on-the-immutable-baseline).

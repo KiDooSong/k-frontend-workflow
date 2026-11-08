@@ -27,6 +27,11 @@ What an agent *may* do without a human: add an `open` decision/conflict/unknown/
 reopen a resolved decision (raising the gate), link evidence to an Unknown while
 keeping it `open`.
 
+Recording observed checks or an explicit semantic-review outcome follows the
+[CI facts contract](../ci-facts.md). Such a record is evidence, not authorization
+for any human-owned transition listed above; a review `pass` does not replace
+the specific human ask and approval metadata.
+
 ## When the user authorizes a transition
 
 Only then, and only the specific transition asked for:

@@ -175,6 +175,15 @@ artifacts:
     template: templates/meta/lint-policy.template.yaml
     schema: schemas/lint-policy.schema.json
 
+  # 기존 --ci 채널의 선택적 평면 fact 입력. 명시적 --ci로만 읽는다.
+  # schema는 저작/editor용이며 validate/readiness가 강제하거나 evidence를 인증하지 않는다.
+  ci-facts:
+    kind: authoring
+    scope: global
+    path: docs/frontend-workflow/_meta/ci-facts.yaml
+    template: templates/meta/ci-facts.template.yaml
+    schema: schemas/ci-facts.schema.json
+
   # --------------------------------------------------------------------------
   # 생성물 (generated / do_not_edit) — 일관 계약 (MVP-C Phase 0 하드닝)
   #

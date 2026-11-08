@@ -25,7 +25,8 @@
       "run npm run workflow:catalog from the consumer repo root (see tools/frontend-workflow/docs/reference/generated-files.md; for custom paths/layout, run npm run workflow:catalog -- --help)",
       "create figma-component-mapping (status >= draft)",
       "add fake hook at src/features/auth/hooks/",
-      "confirm API candidates"
+      "confirm API candidates",
+      "provide recorded CI facts with --ci <file> for: ci_lint, ci_schema_validation, state_coverage_complete, llm_semantic_review (see tools/frontend-workflow/docs/reference/ci-facts.md)"
     ],
     "next_mode": "rough-fixture-ui",
     "readiness_mode": "screen-skeleton"
@@ -76,7 +77,8 @@
       "raise screen-spec status (confirmed requires human approval metadata)",
       "create figma-component-mapping (status >= draft)",
       "add fake hook at src/features/coupons/hooks/",
-      "confirm API (resolve 1 open unknown(s))"
+      "confirm API (resolve 1 open unknown(s))",
+      "provide recorded CI facts with --ci <file> for: ci_lint, ci_schema_validation, state_coverage_complete, llm_semantic_review (see tools/frontend-workflow/docs/reference/ci-facts.md)"
     ],
     "next_mode": "rough-fixture-ui",
     "readiness_mode": "screen-skeleton"
@@ -119,7 +121,8 @@
       "create figma-component-mapping (status >= draft)",
       "add fake hook at src/features/coupons/hooks/",
       "confirm API candidates",
-      "complete State Matrix (loading/empty/error/success/disabled/refreshing)"
+      "complete State Matrix (loading/empty/error/success/disabled/refreshing)",
+      "provide recorded CI facts with --ci <file> for: ci_lint, ci_schema_validation, state_coverage_complete, llm_semantic_review (see tools/frontend-workflow/docs/reference/ci-facts.md)"
     ],
     "next_mode": "rough-fixture-ui",
     "readiness_mode": "screen-skeleton"
@@ -162,7 +165,8 @@
       "raise screen-spec status (confirmed requires human approval metadata)",
       "create figma-component-mapping (status >= draft)",
       "add fake hook at src/features/home/hooks/",
-      "confirm API (resolve 1 open unknown(s))"
+      "confirm API (resolve 1 open unknown(s))",
+      "provide recorded CI facts with --ci <file> for: ci_lint, ci_schema_validation, state_coverage_complete, llm_semantic_review (see tools/frontend-workflow/docs/reference/ci-facts.md)"
     ],
     "next_mode": "rough-fixture-ui",
     "readiness_mode": "screen-skeleton"
@@ -205,7 +209,8 @@
       "raise screen-spec status (confirmed requires human approval metadata)",
       "create figma-component-mapping (status >= draft)",
       "add fake hook at src/features/notices/hooks/",
-      "confirm API (resolve 1 open unknown(s))"
+      "confirm API (resolve 1 open unknown(s))",
+      "provide recorded CI facts with --ci <file> for: ci_lint, ci_schema_validation, state_coverage_complete, llm_semantic_review (see tools/frontend-workflow/docs/reference/ci-facts.md)"
     ],
     "next_mode": "screen-skeleton",
     "readiness_mode": "route-skeleton"
@@ -247,7 +252,8 @@
       "raise screen-spec status (confirmed requires human approval metadata)",
       "create figma-component-mapping (status >= draft)",
       "add fake hook at src/features/profile/hooks/",
-      "confirm API (resolve 1 open unknown(s))"
+      "confirm API (resolve 1 open unknown(s))",
+      "provide recorded CI facts with --ci <file> for: ci_lint, ci_schema_validation, state_coverage_complete, llm_semantic_review (see tools/frontend-workflow/docs/reference/ci-facts.md)"
     ],
     "next_mode": "route-skeleton",
     "readiness_mode": "docs-only"
