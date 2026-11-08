@@ -14,6 +14,11 @@ description: 외부 입력 스킬이 저장한 새 입력 결과물(input_id 보
 - 입력 결과물 경로 (예: `docs/frontend-workflow/inputs/IN-20260613-figma-001.md` — 파일명 = `{input_id}.md`). 없으면 사용자에게 묻는다. 기존 partial 입력도 같은 경로/ID로 재개한다.
 - (선택) 대상 screen/domain.
 
+## 시작 전 — 소비 저장소 지침
+적용되는 `AGENTS.md` 등과 소비자 워크플로우 문서 루트의 `README.md`(기본 `docs/frontend-workflow/README.md`) 및 연결된 문서 변경·검색 지침을 읽는다.
+없으면 킷 공통 규칙으로 진행한다. 소비자 포인터는 그 README/에이전트 지침에 두고 vendored 본문을 고치지 않는다.
+상세: [검색 근거와 소비자 연결점](../../../frontend-workflow-kit/docs/reference/input-reconciliation.md#search-evidence-before-classification).
+
 ## 핵심 불변식
 - **register-first**: 어떤 문서 수정보다 **먼저** register에 같은 Summary 행을 `in-progress`로 생성/재개한다.
 - LLM은 게이트를 **올리기만** 한다 (open 추가, `resolved→open` 재오픈). **내리는** 전이(resolve/close)는 사람-전용.
@@ -48,6 +53,7 @@ description: 외부 입력 스킬이 저장한 새 입력 결과물(input_id 보
 4. `affected_domains`/`affected_screens`(구 `suggested_scope` — deprecated read-compat) 기준으로 관련 산출물을 연다. 위 라우팅 표에 따라 visual/testID/Tier3 산출물도 포함한다.
    사실별 canonical screen/domain과 적용 조건을 먼저 확인한다. raw source 코드는 canonical ID가 아니며, 화면 식별이 미해결이면 [screen-identity.md](../../../frontend-workflow-kit/docs/reference/screen-identity.md)의 Stage 02 경계를 따른다.
 5. 분류 전에 [결정 대조 절차](../../../frontend-workflow-kit/docs/reference/input-reconciliation.md#decision-aware-preclassification)를 수행한다. partial의 미처리 범위도 동일하다.
+   [검색 근거 규칙](../../../frontend-workflow-kit/docs/reference/input-reconciliation.md#search-evidence-before-classification)에 따라 키·범위·결과와 실제 연 문맥을 보고한다. 줄 앞부분만 잘라 부재를 판단하지 않고, 미검색 범위는 `미확인`으로 남긴다.
    관련 ScreenSpec의 `## Unknowns`·`## Open Decisions`와 `decision_refs`의 global canonical 행 → 현재 본문·Domain Rules·Copy Keys → 관련 ID/주제의 결정 이력과 연결 근거를 읽는다.
    실제 결정값·적용 scope·현재 유효성을 확인한다. **읽기 순서는 권위 순서가 아니다.** 대체·범위 변경은 후속 기록까지 확인하며 로그 전체 정독이나 필수 로그 신설을 요구하지 않는다.
 6. 이번 처리 사실의 classification을 만든다 (입력 1개 → item 여러 개 가능). 아래 분류표 참조. 미처리 축의 계획을 가짜 effect로 기록하지 않는다.

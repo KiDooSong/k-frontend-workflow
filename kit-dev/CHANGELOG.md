@@ -4,6 +4,15 @@
 
 ## Unreleased
 
+### fix(reconcile) — 부재·반영 판정의 검색 근거와 소비자 지침 연결 (#247)
+
+- 신규/재개 회차의 판정에 검색 키·범위·결과·실제 연 문맥과 미확인 범위를 남기도록 저작·리뷰 절차를 보강했다.
+  긴 표 행의 앞부분 잘림이나 키워드 0건을 `영향 없음`·`이미 반영됨`으로 오인하지 않도록 판정별 근거를 구분한다.
+- 배포/repo-local reconcile skill과 Stage 04가 소비자 워크플로우 README·에이전트 지침의 문서 변경/검색 규칙을
+  읽도록 연결했다. 소비자는 vendored 본문이나 설정 스키마 변경 없이 자기 포인터를 유지한다.
+- 기존 행 소급 요구·새 artifact/enum·validator/CI/readiness 변경은 없다. 정본:
+  [Search evidence before classification](../frontend-workflow-kit/docs/reference/input-reconciliation.md#search-evidence-before-classification).
+
 ### fix(reconciliation) — Register 데이터행 셀 수 불일치 경고 (#244)
 
 - 검사 12의 `RR-TABLE-101`이 기존 첫 Summary 표(v1/v2)와 v2의 유일한 canonical Summary·Items
