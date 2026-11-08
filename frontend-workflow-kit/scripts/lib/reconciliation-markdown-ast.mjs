@@ -558,12 +558,84 @@ export function parseStrictTables(text) {
 // The strict tables of stripNonContent(text), which validateReconciliationV2 reads, with the offsets each one spans
 // in text itself. Removing a comment can join a CR and an LF into one line ending, so line numbers of the two do
 // not always match; the offsets follow each kept character back instead.
-export function locateContentTables(text) {
+// includeSourceLines adds raw-parser row text, contributing source lines and removed-comment positions.
+// sourceLineEndings preserves source separators when the raw parser joins rows through a literal comment.
+export function locateContentTables(text, { includeSourceLines = false } = {}) {
   const source = String(text || '');
-  const ranges = nonContentRanges(sharedTree(source));
+  const tree = sharedTree(source);
+  const ranges = nonContentRanges(tree);
   const kept = keptSourceOffsets(source, ranges);
-  return locateStrictTables(removeRangesPreservingLines(source, ranges))
+  const content = removeRangesPreservingLines(source, ranges);
+  const located = locateStrictTables(content);
+  if (!includeSourceLines) return located
     .map(({ table, start, end }) => ({ table, start: kept[start], end: kept[end - 1] + 1 }));
+
+  // Source rows must follow the validator's LF/CRLF raw-cell parser, including a
+  // kept bare CR between pipe fragments. Only their contributing physical source
+  // lines supply evidence: CR + removed code/HTML + LF may now be one CRLF.
+  const endings = [...source.matchAll(/\r\n?|\n/g)];
+  const starts = [0, ...endings.map((ending) => ending.index + ending[0].length)];
+  const ends = [...endings.map((ending) => ending.index), source.length];
+  const lowerBound = (values, value) => {
+    let low = 0, high = values.length;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      if (values[middle] < value) low = middle + 1;
+      else high = middle;
+    }
+    return low;
+  };
+  const comments = [];
+  walk(tree, (node, parent) => {
+    if (isNonContentHtml(node, parent) && /^\s*<!--/.test(node.value || '')) {
+      const range = sourceRange(node);
+      if (range) comments.push(range);
+    }
+  });
+  const sourceSlice = (start, end, removed) => removeRangesPreservingLines(source.slice(start, end), removed
+    .filter((range) => range.start < end && range.end > start)
+    .map((range) => ({ start: Math.max(0, range.start - start), end: Math.min(end, range.end) - start })));
+  return located.map(({ table, start, end }) => {
+    let offset = start;
+    const sourceSpans = [];
+    const sourceLines = table.sourceText.split(/\r?\n/).map((text) => {
+      const lineStart = offset;
+      offset += text.length + (content.slice(offset + text.length, offset + text.length + 2) === '\r\n' ? 2 : 1);
+      const first = kept[lineStart], last = kept[lineStart + text.length - 1];
+      const physicalStart = starts[lowerBound(starts, first + 1) - 1];
+      const physicalEnd = ends[lowerBound(starts, last + 1) - 1];
+      // A row owns comments that start on its contributing physical lines.
+      // Keep their complete ranges, including CR/LF after the last visible
+      // character, and any adjacent comments separated only by horizontal
+      // whitespace. An external newline or visible text ends that ownership.
+      // A prior row's comment may end on this row's first physical line.
+      const sourceStart = Math.max(physicalStart, sourceSpans.at(-1)?.end ?? 0);
+      const ownedComments = [];
+      for (const range of comments) {
+        const previous = ownedComments.at(-1);
+        if ((range.start >= sourceStart && range.start < physicalEnd)
+          || (previous && range.start >= previous.end && /^[\t ]*$/.test(source.slice(previous.end, range.start)))) {
+          ownedComments.push(range);
+        }
+      }
+      const sourceEnd = ownedComments.reduce((end, range) => Math.max(end, range.end), physicalEnd);
+      sourceSpans.push({ start: sourceStart, end: sourceEnd });
+      const commentOffsets = ownedComments
+        .map((range) => Math.max(0, Math.min(text.length, lowerBound(kept, range.start) - lineStart)));
+      // A comment starting outside this row can overlap its physical line too;
+      // only owned comments are restored, never a clipped tail or code/HTML.
+      const ownedKeys = new Set(ownedComments.map(({ start, end }) => `${start}:${end}`));
+      const sourceText = sourceSlice(sourceStart, sourceEnd,
+        ranges.filter(({ start, end }) => !ownedKeys.has(`${start}:${end}`)));
+      return { text, sourceText, commentOffsets };
+    });
+    // A literal comment inside inline code can span these lines and the legacy
+    // raw parser removes it, joining rows. Preserve their original line endings
+    // for that row's evidence without restoring non-content between the lines.
+    const sourceLineEndings = sourceSpans.map((span, index) => index + 1 < sourceSpans.length
+      ? sourceSlice(span.end, sourceSpans[index + 1].start, ranges) : '');
+    return { table, start: kept[start], end: kept[end - 1] + 1, sourceLines, sourceLineEndings };
+  });
 }
 
 // The same tables with the source offsets each one spans, for callers that read a table's own lines.

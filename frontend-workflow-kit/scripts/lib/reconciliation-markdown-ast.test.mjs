@@ -74,3 +74,108 @@ test('locateContentTables: strict tables of the content view, at their offsets i
   const [table] = locateContentTables(after);
   assert.equal(after.slice(table.start, table.end), '| a | b |\n|---|---|\n| 1 | 2 |');
 });
+
+test('locateContentTables source lines: CR-joined omitted blocks cannot enter row evidence or comment offsets', () => {
+  const header = '| a | b |', separator = '|---|---|';
+  const before = '| 1 ', middle = ' | 2 | ';
+  const first = `${before}<!-- in cell -->${middle}<!-- after pipe -->`, second = '| 3 | 4 |';
+  for (const block of ['    code <!-- ignored -->', '<pre>HTML <!-- ignored --></pre>']) {
+    const rows = [
+      { text: header, sourceText: header, commentOffsets: [] },
+      { text: separator, sourceText: separator, commentOffsets: [] },
+      { text: before + middle, sourceText: first, commentOffsets: [before.length, before.length + middle.length] },
+    ];
+    // Each block is non-content in the original AST. Combining both placements would leave the first
+    // data line as a paragraph, whose continuation cannot be interrupted by a second indented code line.
+    for (const [source, expected, endings] of [
+      [`${header}\n${separator}\r${block}\n${first}`, rows, ['\n', '\r\n', '']],
+      [`${header}\n${separator}\n${first}\r${block}\n${second}`,
+        [...rows, { text: second, sourceText: second, commentOffsets: [] }], ['\n', '\n', '\r\n', '']],
+    ]) {
+      const [found] = locateContentTables(source, { includeSourceLines: true });
+      assert.deepEqual(found.sourceLines, expected, block);
+      assert.deepEqual(found.sourceLineEndings, endings, block);
+    }
+  }
+});
+
+test('locateContentTables source lines: kept bare CR and inline comment literals retain the legacy row shape', () => {
+  const first = '| `<!-- literal -->` | 1 |', before = '| 2 ', after = ' | 3 |';
+  const row = `${first}\r${before}<!-- actual comment -->${after}`;
+  const [found] = locateContentTables(`| a | b |\n|---|---|\n${row}`, { includeSourceLines: true });
+  assert.equal(found.sourceLines.length, 3);
+  assert.deepEqual(found.sourceLines[2], {
+    text: `${first}\r${before}${after}`,
+    sourceText: row,
+    commentOffsets: [first.length + 1 + before.length],
+  });
+});
+
+test('locateContentTables source lines: comments outside a contributing physical row do not shift its evidence', () => {
+  const first = '| 1 | 2 |', second = '| 3 | 4 |', trailing = ' <!-- row note -->';
+  const source = 'p\r<!-- before -->\n'.repeat(3) + '\n| a | b |\n|---|---|\n' +
+    `${first}\r<!-- outside row -->\n${second}${trailing}`;
+  const [found] = locateContentTables(source, { includeSourceLines: true });
+  assert.deepEqual(found.sourceLines.slice(2), [
+    { text: first, sourceText: first, commentOffsets: [] },
+    { text: `${second} `, sourceText: second + trailing, commentOffsets: [second.length + 1] },
+  ]);
+  assert.deepEqual(found.sourceLineEndings, ['\n', '\n', '\r\n', '']);
+});
+
+test('locateContentTables source lines: a row-owned multiline comment retains its full span exactly once', () => {
+  const first = '| 1 | 2 |', second = '| 3 | 4 |';
+  for (const [internal, following] of [['\r', '\n'], ['\n', ''], ['\r\n', '']]) {
+    const comment = ` <!-- row note${internal}continued note -->`;
+    const source = `| a <!-- x | y --> | b |\n|---|---|\n${first}${comment}${following}${second}`;
+    const [found] = locateContentTables(source, { includeSourceLines: true });
+    assert.deepEqual(found.sourceLines.slice(2), [
+      { text: `${first} `, sourceText: first + comment, commentOffsets: [first.length + 1] },
+      { text: second, sourceText: second, commentOffsets: [] },
+    ], JSON.stringify(internal));
+    // The internal EOL belongs to the full comment, so only the following bytes separate the source rows.
+    // When the comment closes directly before the next row, there is no additional source separator.
+    assert.deepEqual(found.sourceLineEndings, ['\n', '\n', following, '']);
+  }
+});
+
+test('locateContentTables source lines: an external comment tail before the header is not header evidence', () => {
+  const header = '| a <!-- x | y --> | b |';
+  const source = `--- <!-- outside\r-->${header}\n|---|---|\n| 1 | 2 |`;
+  const [found] = locateContentTables(source, { includeSourceLines: true });
+  assert.deepEqual(found.sourceLines[0], { text: '| a  | b |', sourceText: header, commentOffsets: [4] });
+  assert.deepEqual(found.sourceLineEndings, ['\n', '\n', '']);
+});
+
+test('locateContentTables source lines: adjacent comments remain evidence across an owned continuation', () => {
+  const first = '| 1 | 2 |', second = '| 3 | 4 |', owned = ' <!-- owned\rcontinued -->';
+  const header = '| a <!-- x | y --> | b |\n|---|---|\n', adjacent = '<!-- also owned -->';
+  for (const gap of ['', ' ', '\t', ' \t ']) {
+    const [found] = locateContentTables(`${header}${first}${owned}${gap}${adjacent}\n${second}`, { includeSourceLines: true });
+    const expected = [{ text: `${first} `, sourceText: first + owned + gap + adjacent,
+      commentOffsets: [first.length + 1, first.length + 1] }];
+    // Nonempty horizontal whitespace between the kept CR and LF is a blank Markdown line, so only
+    // the first data row is in that strict table. Its complete adjacent comment chain is still evidence.
+    if (!gap) expected.push({ text: second, sourceText: second, commentOffsets: [] });
+    assert.deepEqual(found.sourceLines.slice(2), expected, JSON.stringify(gap));
+    assert.deepEqual(found.sourceLineEndings, gap ? ['\n', '\n', ''] : ['\n', '\n', '\n', '']);
+  }
+  // A CR outside any owned comment creates a distinct physical line; that standalone comment is not
+  // adjacent through the owned comment's continuation and must not become evidence for the first row.
+  const [standalone] = locateContentTables(`${header}${first}\r<!-- standalone -->\n${second}`, { includeSourceLines: true });
+  assert.deepEqual(standalone.sourceLines.slice(2), [
+    { text: first, sourceText: first, commentOffsets: [] },
+    { text: second, sourceText: second, commentOffsets: [] },
+  ]);
+});
+
+test('locateContentTables source lines: comment chaining stops at external newlines and other content', () => {
+  const first = '| 1 | 2 |', owned = ' <!-- owned\rcontinued -->';
+  const header = '| a <!-- x | y --> | b |\n|---|---|\n';
+  for (const gap of ['\n', '\r', '# visible heading ', '\n```txt\nhidden code\n```\n', '<pre>hidden HTML</pre>']) {
+    const source = `${header}${first}${owned}${gap}<!-- separate -->\n| 3 | 4 |`;
+    const [found] = locateContentTables(source, { includeSourceLines: true });
+    assert.deepEqual(found.sourceLines[2], { text: `${first} `, sourceText: first + owned,
+      commentOffsets: [first.length + 1] }, JSON.stringify(gap));
+  }
+});

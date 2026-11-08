@@ -173,6 +173,100 @@ test('#269 example: a summary-only legacy source connects through its reconciled
   assert.equal(legacySources(backfilled), undefined);
 });
 
+// #271: an equal fenced example lets the legacy parser and the v2 validator agree
+// on the Summary, while only the canonical content table may supply row evidence.
+const LEGACY_CR_BLOCKS = [
+  ['indented code', '    hidden code <!-- not a Summary comment -->'],
+  ['HTML block', '<pre>hidden HTML <!-- not a Summary comment --></pre>'],
+];
+const legacyContentSource = (block, annotated) => (io) => {
+  legacySource()(io);
+  const file = 'docs/frontend-workflow/_meta/reconciliation-register.md', text = io.read(file);
+  const start = text.indexOf('| Input ID |'), end = text.indexOf('\n\n## Reconciliation Items');
+  assert.ok(start >= 0 && end > start);
+  const summary = text.slice(start, end), lines = summary.split('\n');
+  assert.equal(lines.length, 3);
+  lines[2] = lines[2].replace('| artifact:COUPON-001-screen-spec |',
+    '| artifact:COUPON-001-screen-spec <!-- retained row note --> |');
+  if (annotated) {
+    const value = annotated === 'Status' ? 'reconciled' : 'accepted';
+    lines[2] = lines[2].replace(`| ${value} |`, `| ${value} <!-- reviewed --> |`);
+  }
+  const canonical = `${lines[0]}\n${lines[1]}\r${block}\n${lines[2]}`;
+  io.put(file, `${text.slice(0, start)}\`\`\`md\n${summary}\n\`\`\`\n\n${canonical}${text.slice(end)}`);
+};
+
+test('#271 CLI: removed code or HTML after a CR separator keeps legacy evidence and existing denials', (t) => {
+  const baseline = json(readiness(t, legacySource()));
+  assert.equal(baseline.ready, false);
+  assert.ok(baseline.denials.length > 0);
+  const expected = baseline.requests[0].evidence.legacy_sources.map((entry) => ({ ...entry,
+    summary: { ...entry.summary, row: entry.summary.row.replace('| artifact:COUPON-001-screen-spec |',
+      '| artifact:COUPON-001-screen-spec <!-- retained row note --> |') } }));
+  for (const [kind, block] of LEGACY_CR_BLOCKS) {
+    const env = json(readiness(t, legacyContentSource(block)));
+    assert.deepEqual(env.requests[0].evidence.legacy_sources, expected, kind);
+    assert.deepEqual(codes(env), codes(baseline), kind);
+    assert.deepEqual(env.requests[0].path_authorizations, baseline.requests[0].path_authorizations, kind);
+    assert.equal(env.ready, false, kind); assert.equal(env.requests[0].ready, false, kind);
+    assert.equal(env.approval_verified, false, kind);
+    assert.deepEqual(env.required_reviews.filter((entry) => entry.startsWith('Legacy summary-only source')),
+      baseline.required_reviews.filter((entry) => entry.startsWith('Legacy summary-only source')), kind);
+  }
+});
+
+test('#271 CLI: comments in canonical Status or Result stay unconnected after a removed CR block', (t) => {
+  for (const [kind, block] of LEGACY_CR_BLOCKS) {
+    for (const field of ['Status', 'Result']) {
+      const env = json(readiness(t, legacyContentSource(block, field))), label = `${kind}: ${field}`;
+      assert.equal(env.ready, false, label);
+      assert.ok(env.denials.some((entry) => entry.code === 'source-effect-unconnected'), label);
+      assert.equal(env.requests[0].evidence.legacy_sources, undefined, label);
+      assert.deepEqual(env.required_reviews.filter((entry) => entry.startsWith('Legacy summary-only source')), [], label);
+    }
+  }
+});
+
+test('#271 CLI: a trailing CR comment stays complete in its legacy row and tail edits change only that evidence', (t) => {
+  const nextInput = 'IN-20260601-meeting-002';
+  const row = `| ${LEGACY_INPUT} | meeting | simple-update | reconciled | accepted | artifact:COUPON-001-screen-spec | - | - |`;
+  const nextRow = row.replace(LEGACY_INPUT, nextInput);
+  const run = (comment, tail) => json(readiness(t, (io) => {
+    legacySource()(io);
+    io.put(LIST, io.read(LIST).replace(`  - { type: meeting, ref: ${LEGACY_INPUT} }\n`,
+      `  - { type: meeting, ref: ${LEGACY_INPUT} }\n  - { type: meeting, ref: ${nextInput} }\n`));
+    io.put(`docs/frontend-workflow/inputs/${nextInput}.md`,
+      io.read(`docs/frontend-workflow/inputs/${LEGACY_INPUT}.md`).replaceAll(LEGACY_INPUT, nextInput));
+    const register = 'docs/frontend-workflow/_meta/reconciliation-register.md';
+    // The pipe in this real header comment preserves the review's valid-v2 AST
+    // shape; the validator and legacy parser still see the same eight columns.
+    io.put(register, io.read(register).replace('| Input ID |', '| Input ID <!-- x | y --> |')
+      .replace(row, `${row}${comment(tail)}\n${nextRow}`));
+  }));
+  const sources = (env) => Object.fromEntries(env.requests[0].evidence.legacy_sources.map((entry) => [entry.input_id, entry]));
+  for (const comment of [
+    (tail) => ` <!-- review start\r${tail} -->`,
+    (tail) => ` <!-- owned\rcontinued --><!-- adjacent ${tail} -->`,
+  ]) {
+    const before = run(comment, 'TAIL-A'), after = run(comment, 'TAIL-B');
+    const first = sources(before), changed = sources(after);
+    assert.deepEqual(Object.keys(first).sort(), [LEGACY_INPUT, nextInput]);
+    assert.equal(first[LEGACY_INPUT].summary.row, row + comment('TAIL-A'));
+    assert.equal(changed[LEGACY_INPUT].summary.row, row + comment('TAIL-B'));
+    assert.deepEqual(changed[LEGACY_INPUT], { ...first[LEGACY_INPUT],
+      summary: { ...first[LEGACY_INPUT].summary, row: row + comment('TAIL-B') } });
+    assert.equal(first[nextInput].summary.row, nextRow);
+    assert.deepEqual(changed[nextInput], first[nextInput], 'the preceding comment must not leak into the next row');
+    assert.deepEqual(after.denials, before.denials);
+    assert.deepEqual(after.requests[0].path_authorizations, before.requests[0].path_authorizations);
+    assert.equal(after.request_digest, before.request_digest);
+    for (const env of [before, after]) {
+      assert.equal(env.ready, false); assert.equal(env.approval_verified, false);
+      assert.equal(env.denials.some((entry) => entry.code === 'source-effect-unconnected'), false);
+    }
+  }
+});
+
 // #262: the issue's Unknown variants (U1-U4) and the 영향 화면 rule through the public CLI.
 const U = '| U-001 | 현재 쿠폰 API 응답 예시(목록/상세)는 어디에 있는가? | open |';
 const resolveU = ({ read, put }) => put(LIST, read(LIST).replace(U, U.replace('| open |', '| resolved |')));

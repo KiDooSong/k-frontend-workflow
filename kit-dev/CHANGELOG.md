@@ -4,6 +4,21 @@
 
 ## Unreleased
 
+### fix(scoped) — legacy Summary 원문 검사를 검증기의 콘텐츠 뷰와 정렬 (#271)
+
+- Summary 연결 검사가 검증기와 같은 non-content 제거 결과에서 행·셀을 읽고, 제거된 주석의 위치만
+  표시해 Status·Result의 원문 조건을 확인한다. 단독 CR 뒤의 코드·HTML 때문에 정상 연결이 누락되거나
+  숨겨진 블록이 `row` 근거에 섞이던 두 경로를 수정했다.
+- 보존된 문자 offset을 원문으로 역매핑해 각 행에 기여한 원문 줄과 주석을 근거로 기록한다.
+  CR + 제거된 범위 + LF의 결합과, 실제 pipe 행 조각 사이에 남은 CR을 구분한다.
+- PR #298 리뷰 후속: 행에서 시작한 실제 주석이 물리 줄 끝을 넘어가도 닫는 표식과 내부 CR/LF까지
+  온전히 보존해 주석 뒷부분의 변경을 projection에 반영한다. 공백·탭만 사이에 둔 인접 주석도 같은
+  행에 보존한다. 이어지는 주석 꼬리는 다음 행에 중복 귀속하지 않고, 주석 바깥 개행 뒤의 독립 주석이나
+  제외된 코드·HTML을 근거로 끌어오지 않는다.
+- 기존 canonical 표 선택·LF/CRLF raw-row 분할·escaped pipe·짧은 행·주석이 있는 Status/Result 거부와
+  input 시각/Items/미결/권한 조건은 유지한다. v1 register·승격 정책·basis/package/release 버전은 바꾸지 않는다.
+  계약: [Legacy sources](../frontend-workflow-kit/docs/reference/scoped-work.md#evaluation-on-the-immutable-baseline).
+
 ### fix(snapshot) — 중단된 raw Git tree 회수와 안전한 orphan 정리 (#292)
 
 - current/scoped/`binding-status`/visual 공통 materializer가 checkout 밖 소유권 표지를 먼저 기록하고,

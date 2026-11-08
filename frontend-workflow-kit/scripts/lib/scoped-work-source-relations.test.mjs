@@ -697,6 +697,170 @@ test('D #269 legacy sources: the row as written comes from the canonical Summary
   assert.deepEqual(joined.run().legacy_connections.map((entry) => [entry.summary.created_items, entry.summary.row]), [['-', short]]);
 });
 
+// The old register parser can read an equal fenced example first. The v2 validator still selects the
+// strict table in its content view; legacy connection evidence must come from that same table.
+function writeLegacyContentSummary(f, summary, rows) {
+  fs.writeFileSync(f.registerFile, md(V2, `\`\`\`md\n${table(REQUIRED_REGISTER_COLS, rows)}\n\`\`\`\n\n${summary}\n\n` +
+    `## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, [])}`));
+}
+const LEGACY_CR_BLOCKS = [
+  ['indented code', '    hidden code <!-- not a Summary comment -->'],
+  ['HTML block', '<pre>hidden HTML <!-- not a Summary comment --></pre>'],
+];
+for (const [kind, block] of LEGACY_CR_BLOCKS) {
+  test(`D #271 legacy sources: removed ${kind} after a CR separator does not disconnect the Summary`, (t) => {
+    const f = fixture(t, { explicit: false, native: true }); legacy(f);
+    const cells = [INPUT, 'meeting', 'simple-update×0', 'reconciled', 'accepted', '-', '-', '-'];
+    const row = legacyEntry(f, null).summary.row;
+    writeLegacyContentSummary(f, `${table(REQUIRED_REGISTER_COLS, [])}\r${block}\n${row}`, [cells]);
+    const out = f.run();
+    assert.deepEqual(out.pending_connections, []);
+    assert.deepEqual(out.legacy_connections, [legacyEntry(f, null)]); noPermit(out);
+  });
+
+  test(`D #271 legacy sources: removed ${kind} between CR rows cannot enter their evidence or projection`, (t) => {
+    const f = fixture(t, { explicit: false, native: true }); legacy(f);
+    const next = 'IN-20260801-meeting-002', fm = splitFrontmatter(fs.readFileSync(f.inputFile, 'utf8')).data;
+    f.write('next-input.md', { ...fm, input_id: next }, '## Facts\n- Another legacy fact.', f.inputs);
+    f.change('contract.md', ({ fm: metadata }) => metadata.sources.push({ type: 'meeting', ref: next }));
+    const cells = [INPUT, 'meeting', 'simple-update×0', 'reconciled', 'accepted', '-', '-', '-'];
+    const first = `| ${[...cells.slice(0, 5), '- <!-- first row note -->', '-', '-'].join(' | ')} |`;
+    const second = `| ${[next, ...cells.slice(1, 5), '- <!-- second row note -->', '-', '-'].join(' | ')} |`;
+    const write = (omitted) => writeLegacyContentSummary(f,
+      `${table(REQUIRED_REGISTER_COLS, [])}\n${first}\r${omitted}\n${second}`, [cells, [next, ...cells.slice(1)]]);
+    write(block);
+    const out = f.run();
+    assert.deepEqual(out.pending_connections, []);
+    assert.deepEqual(Object.fromEntries(out.legacy_connections.map((entry) => [entry.input_id, entry.summary.row])),
+      { [INPUT]: first, [next]: second });
+    assert.ok(out.legacy_connections.every((entry) => entry.summary.touched_artifacts === '-')); noPermit(out);
+    const before = scope(f);
+    write(block.replace('hidden', 'changed'));
+    const after = scope(f);
+    assert.deepEqual(after.projection, before.projection);
+    assert.notDeepEqual(after.read_set, before.read_set);
+  });
+
+  test(`D #271 legacy sources: canonical Status and Result comments remain unconnected after removed ${kind}`, (t) => {
+    for (const field of [3, 4]) {
+      const f = fixture(t, { explicit: false, native: true }); legacy(f);
+      const cells = [INPUT, 'meeting', 'simple-update×0', 'reconciled', 'accepted', '-', '-', '-'];
+      const annotated = cells.map((cell, index) => index === field ? `${cell} <!-- reviewed -->` : cell);
+      writeLegacyContentSummary(f, `${table(REQUIRED_REGISTER_COLS, [])}\r${block}\n| ${annotated.join(' | ')} |`, [cells]);
+      const out = f.run();
+      assert.deepEqual(out.legacy_connections, [], REQUIRED_REGISTER_COLS[field]);
+      assert.deepEqual(out.pending_connections, unconnected(), REQUIRED_REGISTER_COLS[field]); noPermit(out);
+    }
+  });
+}
+
+test('D #271 legacy sources: content retained on both sides of a bare CR remains one legacy row', (t) => {
+  const f = fixture(t, { explicit: false, native: true }); legacy(f);
+  const row = `| ${INPUT} | meeting | simple-update×0 | reconciled | accepted |\r| - | - | - |`;
+  // The legacy LF parser sees an empty sixth cell, then two '-' cells; the final '-' is excess.
+  const cells = [INPUT, 'meeting', 'simple-update×0', 'reconciled', 'accepted', '', '-', '-'];
+  writeLegacyContentSummary(f, `${table(REQUIRED_REGISTER_COLS, [])}\r    hidden code\n${row}`, [cells]);
+  const out = f.run();
+  assert.deepEqual(out.pending_connections, []);
+  assert.deepEqual(out.legacy_connections.map((entry) => [entry.summary.touched_artifacts, entry.summary.created_items, entry.summary.row]),
+    [['', '-', row]]); noPermit(out);
+});
+
+test('D #271 legacy sources: the existing literal-comment projection retains consumed LF and CRLF bytes', (t) => {
+  const f = fixture(t, { explicit: false, native: true }); legacy(f);
+  const cells = [INPUT, 'meeting', 'simple-update×0', 'reconciled', 'accepted', '-', '-', '-'];
+  const first = `| ${[...cells.slice(0, 5), '- `<!--`', '-', '-'].join(' | ')} |`;
+  const second = `| ${['DELETED-ROW', ...cells.slice(1, 5), '- `-->`', '-', '-'].join(' | ')} |`;
+  const projections = [];
+  for (const eol of ['\n', '\r\n']) {
+    // The v1 raw-cell grammar consumes the literal markers and the intervening line break. #271 keeps
+    // that existing projection, while its evidence must still distinguish the original physical bytes.
+    const joined = first + eol + second;
+    fs.writeFileSync(f.registerFile, md(V2, `${table(REQUIRED_REGISTER_COLS, [])}\n${joined}\n\n` +
+      `## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, [])}`));
+    const out = f.run();
+    assert.deepEqual(out.pending_connections, []);
+    assert.deepEqual(out.legacy_connections.map((entry) => entry.summary.row), [joined]); noPermit(out);
+    projections.push(scope(f).projection);
+  }
+  assert.notDeepEqual(projections[0], projections[1]);
+});
+
+test('D #271 legacy sources: a row-owned multiline comment remains whole evidence and changes the projection', (t) => {
+  const f = fixture(t, { explicit: false, native: true }); legacy(f);
+  const next = 'IN-20260801-meeting-002', fm = splitFrontmatter(fs.readFileSync(f.inputFile, 'utf8')).data;
+  f.write('next-input.md', { ...fm, input_id: next }, '## Facts\n- Another legacy fact.', f.inputs);
+  f.change('contract.md', ({ fm: metadata }) => metadata.sources.push({ type: 'meeting', ref: next }));
+  const cells = [INPUT, 'meeting', 'simple-update×0', 'reconciled', 'accepted', '-', '-', '-'];
+  const first = `| ${cells.join(' | ')} |`, second = `| ${[next, ...cells.slice(1)].join(' | ')} |`;
+  // This remains a valid canonical Summary after the validator removes actual HTML comments. The pipe
+  // in the header comment also prevents the original AST's table context from truncating the row comment.
+  const header = table(REQUIRED_REGISTER_COLS, []).replace('| Input ID |', '| Input ID <!-- x | y --> |');
+  const write = (tail) => {
+    const row = `${first} <!-- row note\r${tail} -->`;
+    fs.writeFileSync(f.registerFile, md(V2, `${header}\n${row}\n${second}\n\n` +
+      `## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, [])}`));
+    return row;
+  };
+  const original = write('continued note'), before = scope(f), out = f.run();
+  assert.deepEqual(out.pending_connections, []);
+  assert.deepEqual(Object.fromEntries(out.legacy_connections.map((entry) => [entry.input_id, entry.summary.row])),
+    { [INPUT]: original, [next]: second }); noPermit(out);
+  const changed = write('changed tail'), after = scope(f), later = f.run();
+  assert.deepEqual(later.pending_connections, []);
+  assert.deepEqual(Object.fromEntries(later.legacy_connections.map((entry) => [entry.input_id, entry.summary.row])),
+    { [INPUT]: changed, [next]: second }); noPermit(later);
+  assert.notDeepEqual(after.projection, before.projection);
+  assert.notDeepEqual(after.read_set, before.read_set);
+});
+
+test('D #271 legacy sources: a multiline comment closing before the next row is owned only by its starting row', (t) => {
+  const f = fixture(t, { explicit: false, native: true }); legacy(f);
+  const next = 'IN-20260801-meeting-002', fm = splitFrontmatter(fs.readFileSync(f.inputFile, 'utf8')).data;
+  f.write('next-input.md', { ...fm, input_id: next }, '## Facts\n- Another legacy fact.', f.inputs);
+  f.change('contract.md', ({ fm: metadata }) => metadata.sources.push({ type: 'meeting', ref: next }));
+  const cells = [INPUT, 'meeting', 'simple-update×0', 'reconciled', 'accepted', '-', '-', '-'];
+  const nextCells = [next, ...cells.slice(1)];
+  const first = `| ${cells.join(' | ')} |`, second = `| ${nextCells.join(' | ')} |`;
+  const header = table(REQUIRED_REGISTER_COLS, []).replace('| Input ID |', '| Input ID <!-- x | y --> |');
+  for (const eol of ['\n', '\r\n']) {
+    const owned = `${first} <!-- row note${eol}continued note -->`;
+    // The validator preserves the comment's EOL and sees two rows. Its original raw parser is supplied
+    // by the equal fenced example; removing that guard would create a different, invalid v2 register.
+    writeLegacyContentSummary(f, `${header}\n${owned}${second}`, [cells, nextCells]);
+    const out = f.run();
+    assert.deepEqual(out.pending_connections, []);
+    assert.deepEqual(Object.fromEntries(out.legacy_connections.map((entry) => [entry.input_id, entry.summary.row])),
+      { [INPUT]: owned, [next]: second }); noPermit(out);
+  }
+});
+
+test('D #271 legacy sources: a secondary adjacent comment remains row evidence and changes the projection', (t) => {
+  const f = fixture(t, { explicit: false, native: true }); legacy(f);
+  const next = 'IN-20260801-meeting-002', fm = splitFrontmatter(fs.readFileSync(f.inputFile, 'utf8')).data;
+  f.write('next-input.md', { ...fm, input_id: next }, '## Facts\n- Another legacy fact.', f.inputs);
+  f.change('contract.md', ({ fm: metadata }) => metadata.sources.push({ type: 'meeting', ref: next }));
+  const cells = [INPUT, 'meeting', 'simple-update×0', 'reconciled', 'accepted', '-', '-', '-'];
+  const first = `| ${cells.join(' | ')} |`, second = `| ${[next, ...cells.slice(1)].join(' | ')} |`;
+  const header = table(REQUIRED_REGISTER_COLS, []).replace('| Input ID |', '| Input ID <!-- x | y --> |');
+  const write = (tail) => {
+    const row = `${first} <!-- owned\rcontinued --><!-- ${tail} -->`;
+    fs.writeFileSync(f.registerFile, md(V2, `${header}\n${row}\n${second}\n\n` +
+      `## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, [])}`));
+    return row;
+  };
+  const original = write('first adjacent note'), before = scope(f), out = f.run();
+  assert.deepEqual(out.pending_connections, []);
+  assert.deepEqual(Object.fromEntries(out.legacy_connections.map((entry) => [entry.input_id, entry.summary.row])),
+    { [INPUT]: original, [next]: second }); noPermit(out);
+  const changed = write('changed adjacent note'), after = scope(f), later = f.run();
+  assert.deepEqual(later.pending_connections, []);
+  assert.deepEqual(Object.fromEntries(later.legacy_connections.map((entry) => [entry.input_id, entry.summary.row])),
+    { [INPUT]: changed, [next]: second }); noPermit(later);
+  assert.notDeepEqual(after.projection, before.projection);
+  assert.notDeepEqual(after.read_set, before.read_set);
+});
+
 test('D #269 legacy sources: Items, a structured capture time, a missing Summary or a v1 register keep the item rule', (t) => {
   // Any Item makes the input structured: an Item for another section does not fall back to the Summary.
   const items = fixture(t, { explicit: false, native: true }); legacy(items, { rows: [effect('02', 'other')] });

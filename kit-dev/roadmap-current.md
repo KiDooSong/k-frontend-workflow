@@ -1,5 +1,9 @@
 # Current Roadmap
 
+> 2026-11-08 #271: scoped summary-only legacy 연결의 원문 검사를 검증기의 콘텐츠 뷰에서 만든다.
+> 단독 CR 뒤에서 제거된 코드·HTML의 연결 누락과 행 근거 혼입을 고치고, 원문 offset으로 해당 행과 주석을 보존한다.
+> canonical Status/Result·기존 raw-row 분할·Items/미결/권한 조건은 유지한다. 계약: [scoped-work](../frontend-workflow-kit/docs/reference/scoped-work.md#evaluation-on-the-immutable-baseline).
+
 > 2026-11-08 #292: raw Git 스냅샷에 소유권 표지·정상/exit cleanup·detached guardian·다음 실행 orphan 회수를 추가했다.
 > 동기 materialization 중 INT/TERM/HUP의 원래 종료 동작을 보존하고, 같은 host/user의 확실히 종료된 소유자만 회수한다.
 > live/불명확/구버전 unmarked 폴더는 보존하며 raw authority·출력·게이트·버전은 유지한다. 계약: [Temporary snapshot lifecycle](../frontend-workflow-kit/docs/reference/visual-refresh-boundaries.md#temporary-snapshot-lifecycle).
