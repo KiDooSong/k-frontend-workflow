@@ -231,8 +231,7 @@ test('#271 CLI: a trailing CR comment stays complete in its legacy row and tail 
   const nextInput = 'IN-20260601-meeting-002';
   const row = `| ${LEGACY_INPUT} | meeting | simple-update | reconciled | accepted | artifact:COUPON-001-screen-spec | - | - |`;
   const nextRow = row.replace(LEGACY_INPUT, nextInput);
-  const comment = (tail) => ` <!-- review start\r${tail} -->`;
-  const run = (tail) => json(readiness(t, (io) => {
+  const run = (comment, tail) => json(readiness(t, (io) => {
     legacySource()(io);
     io.put(LIST, io.read(LIST).replace(`  - { type: meeting, ref: ${LEGACY_INPUT} }\n`,
       `  - { type: meeting, ref: ${LEGACY_INPUT} }\n  - { type: meeting, ref: ${nextInput} }\n`));
@@ -244,22 +243,27 @@ test('#271 CLI: a trailing CR comment stays complete in its legacy row and tail 
     io.put(register, io.read(register).replace('| Input ID |', '| Input ID <!-- x | y --> |')
       .replace(row, `${row}${comment(tail)}\n${nextRow}`));
   }));
-  const before = run('TAIL-A'), after = run('TAIL-B');
   const sources = (env) => Object.fromEntries(env.requests[0].evidence.legacy_sources.map((entry) => [entry.input_id, entry]));
-  const first = sources(before), changed = sources(after);
-  assert.deepEqual(Object.keys(first).sort(), [LEGACY_INPUT, nextInput]);
-  assert.equal(first[LEGACY_INPUT].summary.row, row + comment('TAIL-A'));
-  assert.equal(changed[LEGACY_INPUT].summary.row, row + comment('TAIL-B'));
-  assert.deepEqual(changed[LEGACY_INPUT], { ...first[LEGACY_INPUT],
-    summary: { ...first[LEGACY_INPUT].summary, row: row + comment('TAIL-B') } });
-  assert.equal(first[nextInput].summary.row, nextRow);
-  assert.deepEqual(changed[nextInput], first[nextInput], 'the preceding comment must not leak into the next row');
-  assert.deepEqual(after.denials, before.denials);
-  assert.deepEqual(after.requests[0].path_authorizations, before.requests[0].path_authorizations);
-  assert.equal(after.request_digest, before.request_digest);
-  for (const env of [before, after]) {
-    assert.equal(env.ready, false); assert.equal(env.approval_verified, false);
-    assert.equal(env.denials.some((entry) => entry.code === 'source-effect-unconnected'), false);
+  for (const comment of [
+    (tail) => ` <!-- review start\r${tail} -->`,
+    (tail) => ` <!-- owned\rcontinued --><!-- adjacent ${tail} -->`,
+  ]) {
+    const before = run(comment, 'TAIL-A'), after = run(comment, 'TAIL-B');
+    const first = sources(before), changed = sources(after);
+    assert.deepEqual(Object.keys(first).sort(), [LEGACY_INPUT, nextInput]);
+    assert.equal(first[LEGACY_INPUT].summary.row, row + comment('TAIL-A'));
+    assert.equal(changed[LEGACY_INPUT].summary.row, row + comment('TAIL-B'));
+    assert.deepEqual(changed[LEGACY_INPUT], { ...first[LEGACY_INPUT],
+      summary: { ...first[LEGACY_INPUT].summary, row: row + comment('TAIL-B') } });
+    assert.equal(first[nextInput].summary.row, nextRow);
+    assert.deepEqual(changed[nextInput], first[nextInput], 'the preceding comment must not leak into the next row');
+    assert.deepEqual(after.denials, before.denials);
+    assert.deepEqual(after.requests[0].path_authorizations, before.requests[0].path_authorizations);
+    assert.equal(after.request_digest, before.request_digest);
+    for (const env of [before, after]) {
+      assert.equal(env.ready, false); assert.equal(env.approval_verified, false);
+      assert.equal(env.denials.some((entry) => entry.code === 'source-effect-unconnected'), false);
+    }
   }
 });
 

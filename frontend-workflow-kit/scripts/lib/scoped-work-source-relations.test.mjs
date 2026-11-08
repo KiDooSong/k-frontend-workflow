@@ -835,6 +835,32 @@ test('D #271 legacy sources: a multiline comment closing before the next row is 
   }
 });
 
+test('D #271 legacy sources: a secondary adjacent comment remains row evidence and changes the projection', (t) => {
+  const f = fixture(t, { explicit: false, native: true }); legacy(f);
+  const next = 'IN-20260801-meeting-002', fm = splitFrontmatter(fs.readFileSync(f.inputFile, 'utf8')).data;
+  f.write('next-input.md', { ...fm, input_id: next }, '## Facts\n- Another legacy fact.', f.inputs);
+  f.change('contract.md', ({ fm: metadata }) => metadata.sources.push({ type: 'meeting', ref: next }));
+  const cells = [INPUT, 'meeting', 'simple-update×0', 'reconciled', 'accepted', '-', '-', '-'];
+  const first = `| ${cells.join(' | ')} |`, second = `| ${[next, ...cells.slice(1)].join(' | ')} |`;
+  const header = table(REQUIRED_REGISTER_COLS, []).replace('| Input ID |', '| Input ID <!-- x | y --> |');
+  const write = (tail) => {
+    const row = `${first} <!-- owned\rcontinued --><!-- ${tail} -->`;
+    fs.writeFileSync(f.registerFile, md(V2, `${header}\n${row}\n${second}\n\n` +
+      `## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, [])}`));
+    return row;
+  };
+  const original = write('first adjacent note'), before = scope(f), out = f.run();
+  assert.deepEqual(out.pending_connections, []);
+  assert.deepEqual(Object.fromEntries(out.legacy_connections.map((entry) => [entry.input_id, entry.summary.row])),
+    { [INPUT]: original, [next]: second }); noPermit(out);
+  const changed = write('changed adjacent note'), after = scope(f), later = f.run();
+  assert.deepEqual(later.pending_connections, []);
+  assert.deepEqual(Object.fromEntries(later.legacy_connections.map((entry) => [entry.input_id, entry.summary.row])),
+    { [INPUT]: changed, [next]: second }); noPermit(later);
+  assert.notDeepEqual(after.projection, before.projection);
+  assert.notDeepEqual(after.read_set, before.read_set);
+});
+
 test('D #269 legacy sources: Items, a structured capture time, a missing Summary or a v1 register keep the item rule', (t) => {
   // Any Item makes the input structured: an Item for another section does not fall back to the Summary.
   const items = fixture(t, { explicit: false, native: true }); legacy(items, { rows: [effect('02', 'other')] });

@@ -606,10 +606,18 @@ export function locateContentTables(text, { includeSourceLines = false } = {}) {
       const physicalEnd = ends[lowerBound(starts, last + 1) - 1];
       // A row owns comments that start on its contributing physical lines.
       // Keep their complete ranges, including CR/LF after the last visible
-      // character, without claiming a comment from a later independent line.
+      // character, and any adjacent comments separated only by horizontal
+      // whitespace. An external newline or visible text ends that ownership.
       // A prior row's comment may end on this row's first physical line.
       const sourceStart = Math.max(physicalStart, sourceSpans.at(-1)?.end ?? 0);
-      const ownedComments = comments.filter((range) => range.start >= sourceStart && range.start < physicalEnd);
+      const ownedComments = [];
+      for (const range of comments) {
+        const previous = ownedComments.at(-1);
+        if ((range.start >= sourceStart && range.start < physicalEnd)
+          || (previous && range.start >= previous.end && /^[\t ]*$/.test(source.slice(previous.end, range.start)))) {
+          ownedComments.push(range);
+        }
+      }
       const sourceEnd = ownedComments.reduce((end, range) => Math.max(end, range.end), physicalEnd);
       sourceSpans.push({ start: sourceStart, end: sourceEnd });
       const commentOffsets = ownedComments

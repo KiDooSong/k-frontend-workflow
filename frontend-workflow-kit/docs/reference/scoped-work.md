@@ -484,8 +484,10 @@ packets and serialized verdicts are not authority. For each scoped request:
   stay excluded, while comment positions are retained for the raw-cell check.
   Source offsets identify the original lines contributing to each validated
   row. A comment starting on those lines belongs to that row through its
-  closing delimiter, including internal CR/LF bytes; its continuation is not
-  repeated on the next row, and later independent comments stay excluded.
+  closing delimiter, including internal CR/LF bytes. Adjacent actual comments
+  separated only by spaces or tabs belong to that row too; an external newline
+  or visible text ends this continuation. Owned comments are not repeated on
+  the next row, and later independent comments stay excluded.
   A removed block after a bare CR cannot become row evidence or hide the next
   row. The existing LF/CRLF raw-row split still
   keeps a bare CR between retained pipe fragments in the same row. The
