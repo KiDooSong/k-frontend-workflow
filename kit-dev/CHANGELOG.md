@@ -13,6 +13,8 @@
 - schema는 editor/저작용이며 loader 강제·자동 파일 탐색·producer·증거/신선도 인증을 추가하지 않는다.
   기존 부분 입력과 current/scoped/visual의 immutable resource·사람 승인 경계를 유지한다.
   계약: [CI facts](../frontend-workflow-kit/docs/reference/ci-facts.md).
+- manifest의 저작 항목 등록에 맞춰 visual bundled manifest의 Git blob pin을 갱신하고,
+  네 가지 번들 리소스 모두에서 정상 바이트 일치와 변경된 바이트 거부를 검증한다.
 
 ### fix(scoped) — legacy Summary 원문 검사를 검증기의 콘텐츠 뷰와 정렬 (#271)
 

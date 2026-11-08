@@ -403,16 +403,20 @@ test('staged authority reads explicit resources from the captured index tree, no
 
 test('bundled resources are pinned and a dirty byte sequence cannot self-attest', (t) => {
   const bundled = tmpdir(t, 'visual-refresh-bundled-');
-  const policy = PINNED_VISUAL_REFRESH_RESOURCES.policy;
-  const destination = path.join(bundled, ...policy.relative.split('/'));
-  fs.mkdirSync(path.dirname(destination), { recursive: true });
-  fs.copyFileSync(path.join(KIT_ROOT, ...policy.relative.split('/')), destination);
-  assert.equal(readPinnedBundledResource('policy', bundled).git_blob_sha, policy.git_blob_sha);
-  fs.appendFileSync(destination, '\n# dirty\n', 'utf8');
-  assert.throws(
-    () => readPinnedBundledResource('policy', bundled),
-    /pinned Git blob과 불일치/,
-  );
+  // A reviewed update to any bundled resource must update its pin as well.
+  // Exercise every shipped byte sequence before checking that local edits fail closed.
+  for (const [name, spec] of Object.entries(PINNED_VISUAL_REFRESH_RESOURCES)) {
+    const destination = path.join(bundled, ...spec.relative.split('/'));
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    fs.copyFileSync(path.join(KIT_ROOT, ...spec.relative.split('/')), destination);
+    assert.equal(readPinnedBundledResource(name, bundled).git_blob_sha, spec.git_blob_sha, name);
+    fs.appendFileSync(destination, '\n# dirty\n', 'utf8');
+    assert.throws(
+      () => readPinnedBundledResource(name, bundled),
+      /pinned Git blob과 불일치/,
+      `${name}: modified bytes must not become authority`,
+    );
+  }
 });
 
 test('explicit authority resource symlinks are rejected before any snapshot read', (t) => {
