@@ -4,6 +4,19 @@
 
 ## Unreleased
 
+### fix(snapshot) — 중단된 raw Git tree 회수와 안전한 orphan 정리 (#292)
+
+- current/scoped/`binding-status`/visual 공통 materializer가 checkout 밖 소유권 표지를 먼저 기록하고,
+  정상 cleanup·초기 mkdir/쓰기 실패·process exit에서 정리한다. payload를 먼저 지우고 표지는 마지막에
+  삭제해 정리 중 재중단돼도 다음 실행이 회수할 수 있다.
+- 별도 detached guardian이 소유자 종료 후 해당 세션의 트리를 회수한다. 부모 signal handler를
+  바꾸지 않아 동기 처리 중 INT/TERM/HUP의 종료 의미와 기존 custom handler를 보존한다.
+- 새 allocation은 같은 host/user(Linux는 PID namespace도 일치)의 검증된 표지·디렉터리 identity와
+  `ESRCH`인 소유자만 회수한다.
+  살아 있거나 불명확한 소유자, 바뀐/손상된 표지, symlink와 업그레이드 전 unmarked 폴더는 보존한다.
+- raw bytes/modes·권한·JSON/packet/basis·버전·required check는 그대로다. 공간 예측·tree 축소는 포함하지 않는다.
+  계약: [Temporary snapshot lifecycle](../frontend-workflow-kit/docs/reference/visual-refresh-boundaries.md#temporary-snapshot-lifecycle).
+
 ### fix(reconcile) — 부재·반영 판정의 검색 근거와 소비자 지침 연결 (#247)
 
 - 신규/재개 회차의 판정에 검색 키·범위·결과·실제 연 문맥과 미확인 범위를 남기도록 저작·리뷰 절차를 보강했다.

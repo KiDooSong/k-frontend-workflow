@@ -1,11 +1,11 @@
 // Visual-only Git object boundary. Never check out authority through attributes,
 // filters, EOL conversion, working-tree-encoding, or core.symlinks.
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { TextDecoder } from 'node:util';
+import { allocateRawGitSnapshotDirectory } from './visual-refresh-snapshot-lifecycle.mjs';
 
 export const MAX_VISUAL_GIT_BUFFER = 128 * 1024 * 1024;
 const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
@@ -169,10 +169,10 @@ export function materializeRawGitTree({ repositoryRoot, projectPrefix = '', tree
     // Existing symlink/gitlink/file roots, however, must never become directories.
     if (entries.has(projectPrefix)) throw new VisualRefreshGitError(`project prefix is not a Git tree directory: ${projectPrefix}`);
   }
-  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'workflow-visual-refresh-tree-'));
-  const checkoutRoot = path.join(temporary, 'checkout');
-  fs.mkdirSync(checkoutRoot);
+  const temporary = allocateRawGitSnapshotDirectory();
+  const checkoutRoot = path.join(temporary.directory, 'checkout');
   try {
+    fs.mkdirSync(checkoutRoot);
     const blobsByOid = new Map();
     for (const entry of entries.values()) {
       if (entry.mode === '040000' || entry.mode === '160000') {
@@ -214,10 +214,10 @@ export function materializeRawGitTree({ repositoryRoot, projectPrefix = '', tree
         requireGitRepositoryPath(relative, 'snapshot entry lookup');
         return entries.get(projectPrefix ? `${projectPrefix}/${relative}` : relative) || null;
       },
-      cleanup() { fs.rmSync(temporary, { recursive: true, force: true }); },
+      cleanup: temporary.cleanup,
     };
   } catch (error) {
-    fs.rmSync(temporary, { recursive: true, force: true });
+    try { temporary.cleanup(); } catch { /* Preserve the cause; ownership remains retryable. */ }
     if (error instanceof VisualRefreshGitError) throw error;
     throw new VisualRefreshGitError(`raw Git tree materialization failed: ${error.message}`);
   }

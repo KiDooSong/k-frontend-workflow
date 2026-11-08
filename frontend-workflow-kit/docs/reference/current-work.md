@@ -142,6 +142,10 @@ The normalized complete request (including origins) gets a `request_digest`.
 Each resolved origin carries its canonical path and raw `sha256` hash. The
 snapshot also records the baseline commit/tree and resource identities.
 
+Temporary raw Git trees use the shared
+[snapshot cleanup and orphan recovery](visual-refresh-boundaries.md#temporary-snapshot-lifecycle)
+lifecycle, including interrupted synchronous execution.
+
 The workflow state is computed from the baseline documents and source tree, the
 same way `workflow:state` computes it. A generated `_meta/workflow-state.yaml` is
 neither required nor read, so it may be untracked, ignored or stale; it is not an

@@ -234,7 +234,9 @@ four component digests — `target` (the row's own entries), `relations` (the ot
 rows of its closure), `units` (the unit facts) and `evidence` (the relation
 evidence) — so comparing two runs shows which part changed. It reads the
 committed `HEAD` that `--work` evaluates, writes nothing and does not verify
-`approval_ref`. The digest covers the binding as committed: to add or change a
+`approval_ref`. Its temporary tree uses the shared
+[snapshot cleanup and orphan recovery](visual-refresh-boundaries.md#temporary-snapshot-lifecycle).
+The digest covers the binding as committed: to add or change a
 binding, commit it with any well-formed digest (for example `sha256:` followed by
 64 zeros), review the scope, then record the computed digest with an
 `approval_ref` for that review and commit again. A refreshed digest goes with a
