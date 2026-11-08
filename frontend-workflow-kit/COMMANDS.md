@@ -22,6 +22,7 @@ Useful options:
 ```bash
 npm run workflow:state -- --docs docs/frontend-workflow --src src
 npm run workflow:readiness -- --screen COUPON-001 --json
+npm run workflow:readiness -- --screen COUPON-001 --ci docs/frontend-workflow/_meta/ci-facts.yaml --json
 npm run workflow:readiness -- --screen COUPON-001 --path src/api/coupons/list.ts --json
 npm run workflow:readiness -- --surface CHAT-COMPOSER --json
 npm run workflow:validate -- --json
@@ -45,6 +46,10 @@ also accepts `--root` and `--src`. With `--work`, the five work CLIs (readiness,
 packet, run, report, forbidden-paths) share one resource set:
 `--root`, `--docs`, `--src`, `--policy`, `--manifest`, `--layout`, `--ci`.
 See [current work](docs/reference/current-work.md).
+
+For the optional `--ci` input, use the flat facts and evidence-recording procedure
+in [CI facts](docs/reference/ci-facts.md), including its template, authoring schema
+and per-invocation resource rules.
 
 `workflow:state`, `workflow:readiness`, and `workflow:validate` support `--help`
 and treat usage errors — an unknown option (e.g. a `--jsno`/`--screeen` typo), a

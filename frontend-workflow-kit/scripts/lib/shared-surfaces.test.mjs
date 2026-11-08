@@ -296,6 +296,57 @@ test('valid two-screen surface is additive in state and reserves shared code fro
   });
 });
 
+test('missing CI guidance preserves shared-surface ceilings, path intersections and member delegation', () => {
+  withProject(({ docsDir, srcDir }) => {
+    const surfaceId = 'CHAT-COMPOSER';
+    const sharedPath = 'src/features/chat/components/composer/**';
+    const memberIds = ['CHAT-A', 'CHAT-B'];
+    for (const id of memberIds) writeScreen(docsDir, id);
+    writeSurface(docsDir, surfaceId);
+    const { state } = buildState({ docsDir, srcDir, date: '2026-07-15' });
+    const input = {
+      state: fullyReady(state), policy: loadYaml(DEFAULTS.policy),
+      manifest: loadYaml(DEFAULTS.manifest), ci: {},
+    };
+    const hint = 'provide recorded CI facts with --ci <file> for: ci_lint, ci_schema_validation, state_coverage_complete, llm_semantic_review (see tools/frontend-workflow/docs/reference/ci-facts.md)';
+    const screens = computeReadiness(input);
+    for (const id of memberIds) {
+      assert.equal(screens[id].readiness_mode, 'api-integrated-ui');
+      assert.equal(screens[id].next_mode, 'production-ready');
+      assert.deepEqual(screens[id].allowed_paths, ['src/features/chat/hooks/**', 'src/api/**']);
+      assert.deepEqual(screens[id].forbidden_paths, ['src/features/chat/screens/**', sharedPath]);
+      assert.deepEqual(screens[id].blocking, []);
+      assert.deepEqual(screens[id].next_actions, [hint]);
+      assert.deepEqual(screens[id].delegated_shared_surfaces, [{
+        surface_id: surfaceId, implementation_paths: [sharedPath],
+        source: state.surfaces[surfaceId].source,
+      }]);
+    }
+
+    const surface = computeReadiness({ ...input, surfaceOnlyId: surfaceId })[surfaceId];
+    const causes = [
+      { kind: 'surface-policy-coverage', readiness_mode: 'api-integrated-ui' },
+      ...memberIds.map((screen_id) => ({
+        kind: 'member-policy-coverage', screen_id, readiness_mode: 'api-integrated-ui',
+      })),
+    ];
+    assert.deepEqual(surface, {
+      readiness_mode: 'api-integrated-ui',
+      surface_fact_mode: 'api-integrated-ui',
+      surface_decision_cap: 'production-ready',
+      member_cap: 'api-integrated-ui',
+      member_modes: memberIds.map((screen_id) => ({ screen_id, readiness_mode: 'api-integrated-ui' })),
+      limiting_members: memberIds,
+      next_mode: 'production-ready',
+      allowed_paths: [],
+      forbidden_paths: [sharedPath],
+      path_authorization: [{ path: sharedPath, allowed: false, causes }],
+      blocking: [{ shared_surface_path: { path: sharedPath, causes } }],
+      next_actions: [hint, `resolve shared-surface path authorization for ${sharedPath}`],
+    });
+  });
+});
+
 test('a screen-scoped layer reaches the surface policy only when its scope equals the complete member set', () => {
   const composer = 'src/features/chat/components/composer/**';
   for (const [screenIds, surfacePolicyForbids] of [

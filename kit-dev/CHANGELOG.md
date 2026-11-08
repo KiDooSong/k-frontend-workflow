@@ -4,6 +4,16 @@
 
 ## Unreleased
 
+### fix(readiness) — CI facts 저작 계약과 미제공 안내 (#228)
+
+- 기존 평면 4개 fact 입력에 저작용 schema·미확인(null) 기본 template·manifest 항목을 추가하고,
+  revision·평가 범위·작성자/시각·실제 검사와 의미 검토 근거를 남기는 절차를 문서화했다.
+- CI가 비어 있고 effective policy에 미충족 CI 조건이 있으면 `next_actions`에 필요한 fact와
+  명시적 `--ci` 입력 안내를 한 번 표시한다. 기존 mode·path·blocking 판정은 유지한다.
+- schema는 editor/저작용이며 loader 강제·자동 파일 탐색·producer·증거/신선도 인증을 추가하지 않는다.
+  기존 부분 입력과 current/scoped/visual의 immutable resource·사람 승인 경계를 유지한다.
+  계약: [CI facts](../frontend-workflow-kit/docs/reference/ci-facts.md).
+
 ### fix(scoped) — legacy Summary 원문 검사를 검증기의 콘텐츠 뷰와 정렬 (#271)
 
 - Summary 연결 검사가 검증기와 같은 non-content 제거 결과에서 행·셀을 읽고, 제거된 주석의 위치만

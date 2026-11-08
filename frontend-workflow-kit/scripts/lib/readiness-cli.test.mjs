@@ -289,6 +289,7 @@ const CATALOG_CI = {
   ci_lint: 'fail', ci_schema_validation: 'pass',
   state_coverage_complete: true, llm_semantic_review: 'pass',
 };
+const CI_INPUT_HINT = 'provide recorded CI facts with --ci <file> for: ci_lint, ci_schema_validation, state_coverage_complete, llm_semantic_review (see tools/frontend-workflow/docs/reference/ci-facts.md)';
 
 function catalogGuidanceState(generated) {
   return {
@@ -331,7 +332,7 @@ function expectedCatalogGuidance(generated, ciProvided = true) {
     next_actions: [
       'resolve decision D-CATALOG: review fixture',
       ...(generated ? [] : [CATALOG_HINT]),
-      ...(ciProvided ? ['pass CI: lint'] : []),
+      ...(ciProvided ? ['pass CI: lint'] : [CI_INPUT_HINT]),
     ],
   };
 }
@@ -434,6 +435,211 @@ test('public readiness CLI shows catalog remediation without writing files or gr
       assert.deepEqual(catalogWorkspaceSnapshot(root), before, 'readiness must not generate or overwrite files');
       assert.equal(fs.existsSync(catalogFile), generated);
       assert.equal(fs.existsSync(defaultCatalog), false);
+    }
+  });
+});
+
+function ciGuidanceState() {
+  return {
+    global: {
+      stub_screen_specs_count: 1,
+      navigation_map_status: 'draft',
+      component_catalog_generated: true,
+    },
+    screens: {
+      'CI-001': {
+        domain: 'checkout', status: 'confirmed', stub: false,
+        derived: {
+          fake_hook_exists: true, figma_mapping_status: 'draft',
+          api_confidence_min: 'confirmed', state_matrix_complete: true,
+        },
+      },
+    },
+  };
+}
+
+const CI_PENDING_AUTHORITY = {
+  readiness_mode: 'api-integrated-ui',
+  next_mode: 'production-ready',
+  allowed_paths: ['src/features/checkout/hooks/**', 'src/api/**'],
+  forbidden_paths: ['src/features/checkout/screens/**'],
+};
+const CI_PASS = {
+  ci_lint: 'pass', ci_schema_validation: 'pass',
+  state_coverage_complete: true, llm_semantic_review: 'pass',
+};
+const CI_PRODUCTION_AUTHORITY = {
+  readiness_mode: 'production-ready', next_mode: null,
+  allowed_paths: ['src/**'], forbidden_paths: [],
+};
+const CI_UNMET_ACTIONS = [
+  'pass CI: lint', 'pass CI: schema validation',
+  'complete state coverage (stories/tests)', 'pass LLM semantic review',
+];
+const CI_MISSING_BLOCKERS = [
+  { ci_lint: 'missing' }, { ci_schema_validation: 'missing' },
+  { state_coverage: false }, { llm_semantic_review: 'missing' },
+];
+
+test('missing CI facts explain the remaining input without changing readiness, paths or blockers', () => {
+  const input = {
+    state: ciGuidanceState(), policy: loadYaml(DEFAULTS.policy),
+    manifest: loadYaml(DEFAULTS.manifest), ci: {},
+  };
+  const before = structuredClone(input);
+  assert.deepEqual(computeReadiness(input), {
+    'CI-001': { ...CI_PENDING_AUTHORITY, blocking: [], next_actions: [CI_INPUT_HINT] },
+  });
+  assert.deepEqual(computeReadiness({ ...input, exposeCaps: true }), {
+    'CI-001': {
+      ...CI_PENDING_AUTHORITY, blocking: [], next_actions: [CI_INPUT_HINT],
+      __fact_mode: 'api-integrated-ui', __decision_cap: 'production-ready',
+      __mode_order: CATALOG_MODE_ORDER,
+    },
+  });
+  assert.deepEqual(input, before, 'guidance must not change the supplied facts or authority inputs');
+});
+
+test('explicit CI mappings retain exact value semantics and the existing per-fact remediation', () => {
+  const cases = [
+    {
+      name: 'complete passing facts', ci: { ...CI_PASS },
+      authority: CI_PRODUCTION_AUTHORITY, blocking: [], actions: [],
+    },
+    {
+      name: 'partial facts', ci: { ci_lint: 'pass' },
+      blocking: CI_MISSING_BLOCKERS.slice(1), actions: CI_UNMET_ACTIONS.slice(1),
+    },
+    {
+      name: 'truthy values are not pass or boolean true',
+      ci: { ci_lint: true, ci_schema_validation: true, state_coverage_complete: 'true', llm_semantic_review: true },
+      blocking: [{ ci_lint: true }, { ci_schema_validation: true }, { state_coverage: 'true' }, { llm_semantic_review: true }],
+      actions: CI_UNMET_ACTIONS,
+    },
+    {
+      name: 'explicit failed observations',
+      ci: { ci_lint: 'fail', ci_schema_validation: 'fail', state_coverage_complete: false, llm_semantic_review: 'fail' },
+      blocking: [{ ci_lint: 'fail' }, { ci_schema_validation: 'fail' }, { state_coverage: false }, { llm_semantic_review: 'fail' }],
+      actions: CI_UNMET_ACTIONS,
+    },
+    {
+      name: 'metadata-only mapping is still a supplied input', ci: { evidence: 'reports/ci.log' },
+      blocking: CI_MISSING_BLOCKERS, actions: CI_UNMET_ACTIONS,
+    },
+    {
+      name: 'unfilled authoring template grants no higher mode',
+      ci: loadYaml(path.join(KIT_ROOT, 'templates', 'meta', 'ci-facts.template.yaml')),
+      blocking: CI_MISSING_BLOCKERS, actions: CI_UNMET_ACTIONS,
+    },
+  ];
+  for (const { name, ci, authority = CI_PENDING_AUTHORITY, blocking, actions } of cases) {
+    const input = {
+      state: ciGuidanceState(), policy: loadYaml(DEFAULTS.policy),
+      manifest: loadYaml(DEFAULTS.manifest), ci,
+    };
+    const before = structuredClone(input);
+    assert.deepEqual(computeReadiness(input), {
+      'CI-001': { ...authority, blocking, next_actions: actions },
+    }, name);
+    assert.deepEqual(input, before, `${name}: readiness must not rewrite recorded facts`);
+  }
+});
+
+test('missing CI guidance follows actual failed policy requirements, deduplicates keys and preserves malformed gates', () => {
+  const malformedAction = 'fix malformed policy requirement in mode verify: "ci_lint = pass" (expected "fact OP value", OP one of >= <= == > <)';
+  const malformedBlocker = { invalid_policy_requirement: { requirement: 'ci_lint = pass', mode: 'verify' } };
+  const cases = [
+    {
+      name: 'no CI requirements with an unmet local fact',
+      first: ['state_matrix_complete == false'], last: [],
+      blocking: [{ state_matrix: true }],
+      actions: ['complete State Matrix (loading/empty/error/success/disabled/refreshing)'],
+    },
+    {
+      name: 'policy with no CI requirements can complete',
+      first: ['screen_spec_authored == true'], last: [], completed: true,
+      blocking: [], actions: [],
+    },
+    {
+      name: 'a satisfied CI condition does not request an absent input',
+      first: ['state_coverage_complete == false'], last: [], completed: true,
+      blocking: [], actions: [],
+    },
+    {
+      name: 'unmet keys follow policy encounter order across custom modes',
+      first: ['state_coverage_complete == false', 'llm_semantic_review == pass', 'ci_lint == pass', 'llm_semantic_review == pass'],
+      last: ['ci_schema_validation == pass', 'ci_lint == pass', 'state_coverage_complete == true'],
+      blocking: [],
+      actions: ['provide recorded CI facts with --ci <file> for: llm_semantic_review, ci_lint, ci_schema_validation, state_coverage_complete (see tools/frontend-workflow/docs/reference/ci-facts.md)'],
+    },
+    {
+      name: 'malformed CI requirement alone stays visible without a fabricated missing key',
+      first: ['ci_lint = pass'], last: [],
+      blocking: [malformedBlocker], actions: [malformedAction],
+    },
+    {
+      name: 'malformed gate and real missing CI input retain separate actions',
+      first: ['ci_lint = pass', 'llm_semantic_review == pass'], last: ['llm_semantic_review == pass'],
+      blocking: [malformedBlocker],
+      actions: [malformedAction, 'provide recorded CI facts with --ci <file> for: llm_semantic_review (see tools/frontend-workflow/docs/reference/ci-facts.md)'],
+    },
+  ];
+  for (const { name, first, last, completed = false, blocking, actions } of cases) {
+    const policy = {
+      order: ['docs-only', 'verify', 'publish'],
+      modes: {
+        'docs-only': { requires: [], allowed_paths: ['docs/**'], forbidden_paths: ['src/**'] },
+        verify: { requires: first, allowed_paths: ['src/verified/**'], forbidden_paths: ['src/live/**'] },
+        publish: { requires: last, allowed_paths: ['src/**'], forbidden_paths: [] },
+      },
+    };
+    const result = computeReadiness({
+      state: ciGuidanceState(), policy, ci: {}, manifest: {},
+      layout: { layerTelemetryDeclared: false, resolvePaths: (paths) => [...paths] },
+    });
+    assert.deepEqual(result, {
+      'CI-001': {
+        readiness_mode: completed ? 'publish' : 'docs-only', next_mode: completed ? null : 'verify',
+        allowed_paths: completed ? ['src/**'] : ['docs/**'],
+        forbidden_paths: completed ? [] : ['src/**'],
+        blocking, next_actions: actions,
+      },
+    }, name);
+  }
+});
+
+test('public CLI emits missing CI guidance in JSON and YAML without implicitly loading or writing CI facts', () => {
+  withTmpDir((root) => {
+    const docs = path.join(root, 'docs', 'frontend-workflow');
+    const meta = path.join(docs, '_meta');
+    const ciFile = path.join(meta, 'ci-facts.yaml');
+    fs.mkdirSync(meta, { recursive: true });
+    fs.writeFileSync(path.join(meta, 'workflow-state.yaml'), yamlStringify(ciGuidanceState()));
+    // The recommended authoring location is not an implicit source of authority.
+    fs.writeFileSync(ciFile, yamlStringify(CI_PASS));
+    const before = catalogWorkspaceSnapshot(root);
+    const args = [
+      '--docs', docs, '--screen', 'CI-001',
+      '--policy', DEFAULTS.policy, '--manifest', DEFAULTS.manifest,
+      '--layout', path.join(KIT_ROOT, 'policies', 'project-layout.yaml'),
+    ];
+    for (const supplied of [false, true]) {
+      const invocation = [...args, ...(supplied ? ['--ci', ciFile] : [])];
+      const expected = {
+        'CI-001': {
+          ...(supplied ? CI_PRODUCTION_AUTHORITY : CI_PENDING_AUTHORITY),
+          blocking: [], next_actions: supplied ? [] : [CI_INPUT_HINT],
+        },
+      };
+      const json = run([...invocation, '--json'], { cwd: root });
+      const yaml = run(invocation, { cwd: root });
+      for (const result of [json, yaml]) {
+        assert.equal(result.status, 0, result.stderr);
+        assert.equal(result.stderr, '');
+      }
+      assert.equal(json.stdout, JSON.stringify(expected, null, 2) + '\n');
+      assert.equal(yaml.stdout, yamlStringify(expected, { lineWidth: 0 }));
+      assert.deepEqual(catalogWorkspaceSnapshot(root), before, 'readiness must not create or rewrite CI facts or other workspace files');
     }
   });
 });

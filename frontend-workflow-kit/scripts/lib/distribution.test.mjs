@@ -71,6 +71,7 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
     'CONVENTIONS.md',
     'distribution-manifest.yaml',
     'docs/reference/ambiguity-triage.md',
+    'docs/reference/ci-facts.md',
     'docs/reference/e2e-consumer-adoption.md',
     'docs/reference/e2e-playwright-agents.md',
     'docs/reference/doc-ownership.md',
@@ -101,6 +102,7 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
     'catalog/artifact-manifest.yaml',
     'policies/implementation-mode-policy.yaml',
     'presets/expo-feature.yaml',
+    'schemas/ci-facts.schema.json',
     'schemas/frontmatter.schema.json',
     'scripts/create-input-artifact.mjs',
     'scripts/lib/provenance.mjs',
@@ -135,10 +137,35 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
     'templates/screen/screen-spec.template.md',
     'templates/screen/figma-component-mapping.template.md',
     'templates/surface/shared-surface-spec.template.md',
+    'templates/meta/ci-facts.template.yaml',
     'templates/meta/session-learnings.template.md',
   ]) {
     assert.equal(exists(rel, out), true, `${rel} should be packed`);
   }
+
+  const ciArtifact = loadYaml(path.join(out, 'catalog', 'artifact-manifest.yaml')).artifacts['ci-facts'];
+  assert.deepEqual(ciArtifact, {
+    kind: 'authoring',
+    scope: 'global',
+    path: 'docs/frontend-workflow/_meta/ci-facts.yaml',
+    template: 'templates/meta/ci-facts.template.yaml',
+    schema: 'schemas/ci-facts.schema.json',
+  });
+  for (const rel of [ciArtifact.schema, ciArtifact.template, 'docs/reference/ci-facts.md']) {
+    assert.deepEqual(fs.readFileSync(path.join(out, rel)), fs.readFileSync(path.join(KIT_ROOT, rel)),
+      `${rel}: packed authoring contract must preserve source bytes`);
+  }
+  const ciTemplate = loadYaml(path.join(out, ciArtifact.template));
+  assert.deepEqual(ciTemplate, {
+    ci_lint: null,
+    ci_schema_validation: null,
+    state_coverage_complete: null,
+    llm_semantic_review: null,
+  }, 'copying the authoring template must not assert any verified CI result');
+  const ciSchema = JSON.parse(fs.readFileSync(path.join(out, ciArtifact.schema), 'utf8'));
+  assert.equal(ciSchema.type, 'object');
+  assert.equal(ciSchema.additionalProperties, false);
+  assert.deepEqual(Object.keys(ciSchema.properties).sort(), Object.keys(ciTemplate).sort());
 
   const packedImplementScreen = fs.readFileSync(
     path.join(out, 'skills', 'implement-screen', 'SKILL.md'),

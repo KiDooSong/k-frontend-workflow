@@ -1,0 +1,32 @@
+# Optional recorded CI facts. Suggested copy: docs/frontend-workflow/_meta/ci-facts.yaml.
+# Select the file explicitly with --ci; its presence does not auto-load it.
+# Contract: tools/frontend-workflow/docs/reference/ci-facts.md
+# Editor schema: tools/frontend-workflow/schemas/ci-facts.schema.json (not runtime-enforced).
+#
+# Keep a durable evidence record here or link a report containing these fields:
+# Project/repository: <identity>
+# Verified source revision: <immutable commit/tree and any additional verified inputs>
+# Evaluation scope: <all affected screens/surfaces/members and required checks>
+# Recorded by / observed at: <actor> / <RFC3339 timestamp with timezone>
+# Evidence report: <durable path or URL, if the details below are recorded there>
+#
+# For each non-null fact, record the exact check/command or review, result,
+# evidence location, covered scope/revision, actor and observation time.
+# Comments document scope; they do not filter which screens receive these facts.
+# The loaded workflow state uses this mapping for every evaluated screen/surface.
+# --screen/--surface filters the reported result, not which owners receive the facts.
+#
+# ci_lint evidence: <check/command; result; evidence reference>
+ci_lint: null
+# ci_schema_validation evidence: <check/command; result; evidence reference>
+ci_schema_validation: null
+# state_coverage_complete evidence: <required states; coverage checks; result; reference>
+state_coverage_complete: null
+# llm_semantic_review evidence: <actual review; findings/disposition; reviewer; reference>
+llm_semantic_review: null
+#
+# null = unverified. Record observed pass/fail or boolean true/false only when
+# supported by the matching evidence. Do not fill values just to raise readiness.
+# A semantic-review pass does not resolve Decisions, confirm artifacts or approve a product.
+# For --work/visual execution, prepare the resource before the immutable baseline;
+# never change these facts inside the implementation diff to grant that work authority.
