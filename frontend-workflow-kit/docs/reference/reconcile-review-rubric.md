@@ -49,6 +49,9 @@ validator나 reviewer는 warning을 근거로 문서를 자동 mutate하지 않�
    구현 드리프트, 본문 밖의 답, 의도적 미제공, 진짜 새 충돌, 다른 범위/대체된 기록, 원래 open U-/D- 답을 구분했는가.
    `resolved` 문자열이나 읽기 순서만으로 권위를 정하지 않았는가. Notes 근거 보강은 실제 artifact `update`와 일치하며
    가짜 update / `simple-update + link-evidence`가 없는가. 근거 부족은 추측 대신 기존 불확실성 경로에 남겼는가.
+   이번 회차의 부재·영향 없음·이미 반영 판정은 [검색 근거](input-reconciliation.md#search-evidence-before-classification)의
+   키·범위·결과·실제 연 문맥으로 뒷받침되는가. 잘린 행/검색 0건을 정합으로 해석하거나 미검색 범위를 부재로 넓히지
+   않았는가. 과거 행 소급 보완이나 특정 도구·보고 형식 자체를 새 pass 조건으로 요구하지 않는다.
 3. **Gate-raising boundary** — diff 에서 LLM 이 resolve/close/accept/confirm/`confirmed` 승격을 수행하지
    않았는가. resolved decision 과의 충돌 시 Conflict 기록(이전 값 보존) + decision reopen 이 **함께** 있는가.
    partial에서도 이 쌍은 **같은 회차·같은 Item**으로 완결하며 이미 확인한 충돌을 재개 메모에 숨기지 않는다.

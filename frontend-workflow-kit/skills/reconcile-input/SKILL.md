@@ -16,6 +16,11 @@ description: 외부 입력 스킬이 저장한 새 입력 결과물(input_id 보
   매칭 키는 경로가 아니라 **`input_id`**이며 inputs/는 재귀 스캔한다. `README.md`·`index.md`는 입력이 아니다.
 - (선택) 대상 screen/domain. 세션 분할만을 위해 새 입력을 만들지 않는다.
 
+## 시작 전 — 소비 저장소 지침
+적용되는 `AGENTS.md` 등과 소비자 워크플로우 문서 루트의 `README.md`(기본 `docs/frontend-workflow/README.md`) 및 연결된 문서 변경·검색 지침을 읽는다.
+없으면 킷 공통 규칙으로 진행한다. 소비자 포인터는 그 README/에이전트 지침에 두고 vendored 본문을 고치지 않는다.
+상세: [검색 근거와 소비자 연결점](../../docs/reference/input-reconciliation.md#search-evidence-before-classification).
+
 ## 핵심 불변식
 - **register-first**: 어떤 문서 수정보다 **먼저** 같은 Summary 행을 `in-progress`로 생성/재개한다.
 - **gate raising only**: open 추가 / `resolved→open` 재오픈, Conflict·Unknown·Gap·INV-/VER- 생성까지만.
@@ -43,6 +48,7 @@ Register에서 같은 `input_id`를 먼저 찾는다. **새 행을 늘리지 않
 2. `affected_domains`/`affected_screens`(구 `suggested_scope`)로 관련 산출물만 연다. identity 미해결은 Stage 02로 보낸다.
 3. 분류 전 [결정 대조 절차](../../docs/reference/input-reconciliation.md#decision-aware-preclassification)로 관련 Unknowns/Open Decisions·global `decision_refs`·현재 정본·연결 이력을 확인한다.
    실제 결정값·scope·현재 유효성을 대조하며 **읽기 순서는 권위 순서가 아니다**. partial의 미처리 범위와 수동 입력도 동일하다.
+   [검색 근거 규칙](../../docs/reference/input-reconciliation.md#search-evidence-before-classification)에 따라 키·범위·결과와 실제 연 문맥을 보고한다. 줄 앞부분만 잘라 부재를 판단하지 않고, 미검색 범위는 `미확인`으로 남긴다.
 4. 이번 처리 사실을 분류한다. 구현 드리프트·본문 밖의 답·의도적 미제공을 새 선택/충돌/컴포넌트 누락과 구분한다. `expected_reconciliation`은 힌트다.
 5. 허용되는 `simple-update`만 문서에 반영한다. 실제 근거 note 추가는 해당 artifact의 `update`이며 가짜 update / `simple-update + link-evidence`는 금지다.
    원래 open U-/D- 답은 기존 unknown-answer/decision-answer의 `link-evidence`로 연결하고 Status는 open으로 둔다.

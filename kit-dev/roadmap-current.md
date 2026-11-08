@@ -1,5 +1,9 @@
 # Current Roadmap
 
+> 2026-11-08 #247: reconcile의 신규/재개 판정은 검색 키·범위·결과와 실제 연 문맥을 근거로 남기고 미검색 범위를 미확인으로 구분한다.
+> 배포/repo-local skill·Stage 04·리뷰 루브릭을 [검색 근거 정본](../frontend-workflow-kit/docs/reference/input-reconciliation.md#search-evidence-before-classification)에 연결했다.
+> 소비자 README/에이전트 지침으로 로컬 규율에 도달하며, 과거 행 소급·새 설정/스키마·runtime/게이트 변경은 없다.
+
 > 2026-11-08 #244: 검사 12의 `RR-TABLE-101`이 Register 데이터행과 헤더의 셀 수 불일치를 경고한다.
 > 기존 첫 Summary 표(v1/v2)와 v2의 유일한 canonical Summary·Items가 대상이며 겹친 경고는 한 번만 낸다.
 > `--enforce`에서도 warning이며 기존 파싱·권한·hard error를 유지한다. 계약: [Register table cell counts](../frontend-workflow-kit/docs/reference/input-reconciliation.md#register-table-cell-counts-244).

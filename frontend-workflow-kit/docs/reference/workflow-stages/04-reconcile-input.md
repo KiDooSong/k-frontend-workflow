@@ -11,6 +11,14 @@ remaining scope of an existing `partially-reconciled` input.
 **Skip this stage when** neither new input nor remaining reconciliation work is
 involved. Then go to 05/06/08.
 
+## Consumer entry guidance
+
+Read applicable consumer agent instructions and the workflow docs root's `README.md`
+(normally `docs/frontend-workflow/README.md`), including linked document-change/search
+standards. Keep those pointers in consumer-owned docs so re-vendoring the skill preserves
+them. Missing guidance does not require a new file; follow the common
+[search evidence contract](../input-reconciliation.md#search-evidence-before-classification).
+
 ## Register-first
 
 Write the Reconciliation Register row **before** touching any target doc. If a
@@ -70,6 +78,11 @@ Keys, then relevant decision history and linked evidence (including superseding
 records). Verify the actual choice, scope, and current validity: **read order is
 not authority order**. Producer hints and manual inputs follow the same check.
 Apply this procedure again to the remaining scope when resuming a partial input.
+
+Use the [search evidence contract](../input-reconciliation.md#search-evidence-before-classification)
+to report actual search keys, scope, results and opened context. A truncated line or zero
+keyword matches does not establish "no impact" or "already reflected". Mark unsearched
+scope as unverified; these rules apply to new judgments, not historical row backfills.
 
 An implementation not following an existing decision, a rule recorded outside the
 body, and intentional absence are not automatically new decisions or component

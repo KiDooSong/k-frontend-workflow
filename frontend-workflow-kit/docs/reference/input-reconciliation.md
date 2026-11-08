@@ -723,7 +723,7 @@ partial 사용을 위해 v1을 v2로 바꾸거나 과거 행을 일괄 backfill�
       - enum 위반, duplicate row, required column 누락: 먼저 register 구조를 고친다.
 3.  행이 없으면 Register 에 행을 먼저 쓴다 (Reconcile Status: `in-progress`).   ← 어떤 문서 수정보다 먼저.
 4.  입력 요약(body `## Summary`)과 범위(`affected_domains`/`affected_screens`, 구 `suggested_scope`)를 읽는다.
-5.  관련 기존 산출물을 찾는다.
+5.  아래 Search evidence before classification 규칙으로 소비 저장소 지침과 관련 기존 산출물을 찾고 검색 근거를 남긴다.
 6.  아래 Decision-aware preclassification 절차로 실제 결정값·scope·현재 유효성을 대조한다. partial의 미처리 범위에도 동일 적용한다.
 7.  이번에 처리하는 사실의 변경 유형을 분류한다 (입력 1개가 여러 분류일 수 있다). 미처리 계획을 fake effect로 기록하지 않는다.
 8.  사용자 결정이 필요한 경우 해당 선택을 멈추고 선택지를 제시한다. 전체 라우팅 완료를 위해 사람 결정의 해결까지 기다리지는 않는다.
@@ -763,6 +763,71 @@ readiness output
 implementation-mode-policy.draft.yaml
 implementation-mode-policy.migration.md
 ```
+
+## Search evidence before classification
+
+새 입력과 partial 재개에서 **이번에 내리는 판정**에 적용한다. 과거 register 행에 근거를 소급해서 채우거나
+정상 `reconciled` 입력을 다시 열라는 요구가 아니다. 검색은 관련 scope로 제한하며 전 저장소·결정 로그의
+매회 전수 정독을 요구하지 않는다. 이 절은 도구 중립 저작·리뷰 규칙이며 새 validator/CI gate가 아니다.
+
+### Consumer guidance without editing vendored skills
+
+시작 전에 소비 저장소의 적용되는 `AGENTS.md` 등 에이전트 지침과 **워크플로우 문서 루트의 `README.md`**
+(기본 `docs/frontend-workflow/README.md`, custom docs 경로면 그 루트)를 읽는다. README의 작업 진입 안내가
+연결한 문서 변경 표준·검색/근거 지침이 있으면 이번 작업에 적용한다. 이는 킷 설치 디렉터리의 README와 다르다.
+지침의 위치·읽을 시점·적용 범위는 소비자가 소유하는 README/에이전트 지침에 포인터로 남긴다.
+vendored `reconcile-input/SKILL.md`를 fork하거나 선택 설정 필드를 추가할 필요가 없으며, 재vendor 때도
+소비자 포인터를 유지할 수 있다. 예: `입력 대조 전 docs/standards/document-changes.md의 검색·근거 규칙을 읽는다.`
+
+이 문서들이 없으면 아래 공통 규칙으로 진행하며 새 필수 파일을 만들지 않는다. 명시된 지침을 열 수 없으면
+읽지 못한 경로·이유를 보고하고 해당 규율을 확인했다고 주장하지 않는다. 소비자 지침은 검색 도구·보고 형식을
+보완하는 연결점이며 기존 register-first·권한·사람 결정 경계를 바꾸지 않는다.
+
+### Search and inspect the evidence
+
+1. `input_id`와 사실/원문 pointer, canonical screen/domain·플랫폼·버전·조건으로 **주장의 범위**를 먼저 정한다.
+   관련 ID·별칭·용어를 검색 키로 잡고 [결정 대조 절차](#decision-aware-preclassification)의 정본과 연결 이력을 찾는다.
+2. 실제 검색 키/검색식, 도구·옵션, 검색 경로·포함/제외 범위를 기록한다. 파일·줄·히트 수 등 도구가 제공하는
+   결과 요약과 0건 결과를 보존한다. 생략·출력 잘림·읽기 오류·건너뛴 바이너리/파일도 기록한다.
+   도구가 수치를 제공하지 않으면 `미집계`로 적고 임의로 0을 만들지 않는다. 오류/미실행을 0건으로 기록하지 않는다.
+3. 검색 결과를 `cut -c1-220` 같은 **줄 앞부분 자르기**로 판독하지 않는다. 매치 앞뒤 문맥을 열고, 긴 표 행은
+   헤더·행 키·매치 셀과 판정에 필요한 다른 셀(조건·상태·부정·근거)을 함께 읽는다. 출력이 잘리면 범위를 좁혀
+   다시 연다. 판정에 관여하는 D-/U-/C-/G-/INV-/VER-/입력 ID 참조도 따라가 실제 값·scope·현재 유효성을 확인한다.
+4. 열어 본 파일·행/섹션/행 키와 그 내용이 입력 사실을 어떻게 지지하거나 배제하는지 남긴다.
+   검색하지 않았거나 생략된 범위는 **`미확인`**이다. 그 범위까지 넓혀 부재를 주장하지 않는다.
+
+| 판정 문구 | 필요한 근거 |
+|---|---|
+| `인용 없음`, `X에만 있음` | 재현 가능한 검색 키·범위·결과와 관련 문맥 확인. `X에만`은 X의 실제 존재와 나머지 주장 범위의 부재를 함께 확인한다. 0건은 그 검색 범위/검색식에서만의 결과이며, 별칭·연결 문서를 확인하지 않았다면 그 부분은 미확인이다. |
+| `영향 없음` | 관련 정본/매치의 문맥과 적용 조건을 실제로 열어 입력이 해당 scope에 영향을 주지 않는 이유를 설명한다. 키워드 0건이나 잘린 행은 영향 없음의 근거가 아니다. |
+| `이미 반영됨` | 현재 유효한 대상 정본의 구체적 파일·섹션/행 키와 입력 사실의 대응을 제시한다. 같은 단어·ID의 존재나 검색 0건만으로 정합을 인정하지 않는다. |
+
+### Record and hand off
+
+이번 회차 보고에 아래 정보를 한 묶음으로 남긴다. 같은 검색 근거는 여러 사실에서 재사용하고 해당 사실 pointer를
+연결할 수 있다. 기존 보고서/Notes에 기록했다면 그 위치를 가리킨다. 검색 전용 필수 artifact나 register 컬럼은
+추가하지 않는다. 아래는 보고 예시 형식이며 새 machine schema가 아니다.
+
+```text
+입력/사실: IN-... / Extracted Facts 03
+주장 범위: <screen/domain, 플랫폼·버전·조건>
+검색: <실제 키/검색식, 도구·옵션, 경로와 포함/제외>
+결과: <파일·줄·히트 등 제공된 집계, 0건 출력, 생략/잘림/오류/미집계>
+확인 위치: <파일:행 또는 섹션/행 키, 판정에 관여한 연결 근거>
+판정과 이유: <입력 사실과 현재 정본의 대응 또는 차이>
+미확인/다음 확인: <검색 밖·읽지 못한 범위와 다음 행동, 없으면 없음>
+```
+
+v1 Result에 요약을 남기거나 기존 보고/Notes를 연결할 수 있지만, **v2 Result의 정해진 값에 검색 산문을 붙이지
+않는다**. 위 판정 문구는 새 Basis/Classification/Effect/Result 값이 아니다. 보고만 남긴 것을 artifact `update`로
+꾸미거나 근거 형식을 채우려고 가짜 effect·문서 수정을 만들지 않는다. 실제 대상 문서를 보강했을 때만 기존
+[routing matrix](#routing-matrix-hard)에 맞는 effect를 기록한다.
+Items의 `Evidence`는 기존 `input:<id>#section[/NN]` 입력 사실 포인터를 유지한다. 검색 transcript나 현재 문서
+경로로 typed Evidence를 대체하지 않으며, 검색 보고와 입력 원문의 근거 역할을 구분한다.
+
+근거가 부족하면 `미확인`과 다음 확인을 보고하고 기존 Unknown/INV-/VER- 및 필요한 Open Decision 경로를 따른다.
+아직 처리하지 못한 입력 범위는 [partial checkpoint](#partial-reconciliation-checkpoints)로 구분한다. 검색 누락을
+`영향 없음`으로 덮거나 검색 보고 자체를 readiness 허가·resolve/accept/confirmed 승격의 근거로 사용하지 않는다.
 
 ## Decision-aware preclassification
 
