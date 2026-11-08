@@ -1,5 +1,9 @@
 # Current Roadmap
 
+> 2026-11-08 #292: raw Git 스냅샷에 소유권 표지·정상/exit cleanup·detached guardian·다음 실행 orphan 회수를 추가했다.
+> 동기 materialization 중 INT/TERM/HUP의 원래 종료 동작을 보존하고, 같은 host/user의 확실히 종료된 소유자만 회수한다.
+> live/불명확/구버전 unmarked 폴더는 보존하며 raw authority·출력·게이트·버전은 유지한다. 계약: [Temporary snapshot lifecycle](../frontend-workflow-kit/docs/reference/visual-refresh-boundaries.md#temporary-snapshot-lifecycle).
+
 > 2026-11-08 #247: reconcile의 신규/재개 판정은 검색 키·범위·결과와 실제 연 문맥을 근거로 남기고 미검색 범위를 미확인으로 구분한다.
 > 배포/repo-local skill·Stage 04·리뷰 루브릭을 [검색 근거 정본](../frontend-workflow-kit/docs/reference/input-reconciliation.md#search-evidence-before-classification)에 연결했다.
 > 소비자 README/에이전트 지침으로 로컬 규율에 도달하며, 과거 행 소급·새 설정/스키마·runtime/게이트 변경은 없다.

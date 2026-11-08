@@ -111,6 +111,42 @@ deny `VR-GIT-002` even if its materialized file appears regular. Forward retains
 the documented authoring-doc overlay, but the screen's original Git mode cannot
 be promoted by current worktree facts.
 
+### Temporary snapshot lifecycle
+
+Current/scoped execution, `binding-status` and visual-refresh share this raw
+snapshot lifecycle. Each `workflow-visual-refresh-tree-*` directory has a private
+ownership marker outside `checkout`, written before any Git payload. Normal
+cleanup, construction errors (including the first checkout mkdir) and process
+exit remove the checkout, then the marker and empty directory. Keeping the marker
+until payload deletion finishes makes an interrupted cleanup retryable.
+
+On supported POSIX systems, a detached guardian observes the owner's exit without
+installing or replacing its signal handlers. `SIGINT`, `SIGTERM` and `SIGHUP` keep
+their original termination semantics even during synchronous materialization;
+an existing handler that keeps the owner alive also keeps its snapshots. The
+guardian removes its session's marked snapshots after the owner is confirmed
+dead. This cleanup runs asynchronously after termination, so the directory can
+briefly outlive the command. It also covers an owner killed with `SIGKILL` when
+the guardian survives.
+
+Before allocating another snapshot, the helper retries abandoned directories
+with a valid marker, matching host/user, directory identity and a definitely
+absent owner PID (`ESRCH`). Linux also requires the same verified PID namespace;
+containers sharing a temp directory must not interpret each other's PIDs as dead.
+This recovers work left by a killed guardian or failed cleanup when ownership can
+still be established. Live/reused PIDs, permission uncertainty, symlinked roots
+or markers, unexpected sibling files, changed identities and malformed/foreign
+markers are preserved. A guardian
+that cannot start or confirm owner death leaves recovery to this next-run sweep.
+Old unmarked directories are **not** automatically reclaimed; their provenance
+must be checked separately. Concurrent runners never adopt or rename another
+runner's temporary directory.
+
+Lifecycle metadata does not enter the Git checkout, packet, binding basis or
+authority calculation. Raw bytes/modes and CLI output contracts stay the same.
+This does not estimate free space, reduce the materialized tree or add a temp-path
+configuration option.
+
 ## Gitlink change completeness
 
 The visual tree-to-tree diff explicitly uses `--ignore-submodules=none`.

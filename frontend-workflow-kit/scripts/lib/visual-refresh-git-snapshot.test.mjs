@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
   materializeRawGitTree, requireGitRepositoryPath, decodeGitUtf8,
@@ -180,6 +180,254 @@ test('Git failures keep their spawn cause when stderr is empty', (t) => {
     () => runVisualGit(['cat-file', '--batch'], root, { input: `${oid}\n`, maxBuffer: 8 }),
     (error) => error instanceof VisualRefreshGitError && /git cat-file --batch failed: .*ENOBUFS/.test(error.message),
   );
+});
+
+const SNAPSHOT_PREFIX = 'workflow-visual-refresh-tree-';
+const SNAPSHOT_OWNER = '.workflow-snapshot-owner.json';
+
+async function waitForSnapshotLifecycle(check, message) {
+  const deadline = Date.now() + 5_000;
+  while (!check()) {
+    assert.ok(Date.now() < deadline, message);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
+function snapshotLifecycleFixture(t) {
+  const repositoryRoot = temporary(t);
+  write(repositoryRoot, 'src/lifecycle.txt', 'raw snapshot lifecycle\n');
+  commit(repositoryRoot);
+  const tree = git(repositoryRoot, 'rev-parse', 'HEAD^{tree}');
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'vr-snapshot-lifecycle-'));
+  const ready = path.join(tempRoot, 'ready.json');
+  const release = path.join(tempRoot, 'release');
+  const handled = path.join(tempRoot, 'handled.json');
+  const children = [];
+  t.after(async () => {
+    for (const child of children) {
+      if (!child.result) child.process.kill('SIGKILL');
+      await child.closed;
+    }
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+  return {
+    tempRoot, ready, release, handled,
+    roots: () => fs.readdirSync(tempRoot).filter((name) => name.startsWith(SNAPSHOT_PREFIX)),
+    start(body, { detached = false } = {}) {
+      const source = `
+        import assert from 'node:assert/strict';
+        import fs from 'node:fs';
+        import path from 'node:path';
+        const moduleUrl = ${JSON.stringify(new URL('./visual-refresh-git-objects.mjs', import.meta.url).href)};
+        const options = ${JSON.stringify({ repositoryRoot, tree })};
+        const tempRoot = ${JSON.stringify(tempRoot)};
+        const ready = ${JSON.stringify(ready)};
+        const release = ${JSON.stringify(release)};
+        const handled = ${JSON.stringify(handled)};
+        const prefix = ${JSON.stringify(SNAPSHOT_PREFIX)};
+        const owner = ${JSON.stringify(SNAPSHOT_OWNER)};
+        const events = ['exit', 'SIGINT', 'SIGTERM', 'SIGHUP'];
+        const listeners = () => events.map((event) => process.rawListeners(event));
+        const roots = () => fs.readdirSync(tempRoot).filter((name) => name.startsWith(prefix));
+        ${body}
+      `;
+      const process_ = spawn(process.execPath, ['--input-type=module', '--eval', source], {
+        cwd: repositoryRoot, env: { ...process.env, TMPDIR: tempRoot, TMP: tempRoot, TEMP: tempRoot },
+        detached, stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      const child = { process: process_, stdout: '', stderr: '', result: null, error: null };
+      process_.stdout.setEncoding('utf8'); process_.stderr.setEncoding('utf8');
+      process_.stdout.on('data', (chunk) => { child.stdout += chunk; });
+      process_.stderr.on('data', (chunk) => { child.stderr += chunk; });
+      process_.on('error', (error) => { child.error = error; });
+      child.closed = new Promise((resolve) => process_.once('close', (code, signal) => {
+        child.result = { code, signal };
+        resolve(child.result);
+      }));
+      children.push(child);
+      return child;
+    },
+  };
+}
+
+async function snapshotProcessResult(child) {
+  await waitForSnapshotLifecycle(() => child.result || child.error,
+    `snapshot child did not exit; stdout=${child.stdout}; stderr=${child.stderr}`);
+  assert.ifError(child.error);
+  await child.closed;
+  return child.result;
+}
+
+test('raw snapshot lifecycle import has no listeners, processes or temporary-directory side effects', async (t) => {
+  const fixture = snapshotLifecycleFixture(t);
+  const child = fixture.start(`
+    const childProcess = (await import('node:child_process')).default;
+    const { syncBuiltinESMExports } = await import('node:module');
+    for (const name of ['spawn', 'spawnSync', 'fork', 'exec', 'execSync', 'execFile', 'execFileSync']) {
+      childProcess[name] = () => { throw new Error('import attempted child process: ' + name); };
+    }
+    syncBuiltinESMExports();
+    const before = listeners();
+    await import(moduleUrl);
+    assert.deepEqual(listeners(), before);
+    assert.deepEqual(roots(), []);
+  `);
+  assert.deepEqual(await snapshotProcessResult(child), { code: 0, signal: null }, child.stderr);
+  assert.equal(child.stdout, '');
+  assert.equal(child.stderr, '');
+});
+
+test('raw snapshot lifecycle keeps simultaneous views independent and releases its last listener exactly once', async (t) => {
+  const fixture = snapshotLifecycleFixture(t);
+  const child = fixture.start(`
+    const { materializeRawGitTree } = await import(moduleUrl);
+    const existing = () => {};
+    for (const event of events) process.on(event, existing);
+    const before = listeners();
+    const first = materializeRawGitTree(options);
+    const second = materializeRawGitTree(options);
+    assert.notEqual(first.root, second.root);
+    assert.equal(roots().length, 2);
+    for (const view of [first, second]) {
+      assert.equal(fs.existsSync(path.join(path.dirname(view.root), owner)), true);
+      assert.equal(fs.existsSync(path.join(view.root, owner)), false);
+    }
+    assert.deepEqual(listeners().slice(1), before.slice(1), 'signal listeners must be untouched');
+    first.cleanup(); first.cleanup();
+    assert.equal(fs.existsSync(first.root), false);
+    assert.equal(fs.readFileSync(path.join(second.root, 'src/lifecycle.txt'), 'utf8'), 'raw snapshot lifecycle\\n');
+    assert.equal(roots().length, 1);
+    second.cleanup(); second.cleanup();
+    assert.deepEqual(roots(), []);
+    assert.deepEqual(listeners(), before, 'the last cleanup restores the original listeners');
+  `);
+  assert.deepEqual(await snapshotProcessResult(child), { code: 0, signal: null }, child.stderr);
+  assert.equal(child.stderr, '');
+});
+
+for (const phase of ['checkout mkdir', 'blob write']) {
+  test(`raw snapshot lifecycle reclaims partial allocation after ${phase} failure`, async (t) => {
+    const fixture = snapshotLifecycleFixture(t);
+    const child = fixture.start(`
+      const { materializeRawGitTree } = await import(moduleUrl);
+      const before = listeners();
+      const method = ${JSON.stringify(phase === 'checkout mkdir' ? 'mkdirSync' : 'writeFileSync')};
+      const original = fs[method];
+      fs[method] = function(file, ...args) {
+        const name = String(file);
+        if (${phase === 'checkout mkdir'
+    ? "path.basename(name) === 'checkout' && path.basename(path.dirname(name)).startsWith(prefix)"
+    : "name.endsWith(path.join('checkout', 'src', 'lifecycle.txt'))"}) {
+          throw Object.assign(new Error('injected snapshot filesystem failure'), { code: 'EACCES' });
+        }
+        return original.call(this, file, ...args);
+      };
+      try { assert.throws(() => materializeRawGitTree(options), /injected snapshot filesystem failure/); }
+      finally { fs[method] = original; }
+      assert.deepEqual(roots(), [], 'failed construction must not leave its temporary directory');
+      assert.deepEqual(listeners(), before);
+    `);
+    assert.deepEqual(await snapshotProcessResult(child), { code: 0, signal: null }, child.stderr);
+    assert.equal(child.stderr, '');
+  });
+}
+
+for (const { signal, group = false } of [
+  ...['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGKILL'].map((signal) => ({ signal })),
+  { signal: 'SIGTERM', group: true },
+]) {
+  const label = `${group ? 'process-group ' : ''}${signal}`;
+  test(`raw snapshot lifecycle reclaims ${label} during synchronous materialization without swallowing the signal`, { skip: process.platform === 'win32' }, async (t) => {
+    const fixture = snapshotLifecycleFixture(t);
+    const child = fixture.start(`
+      const { materializeRawGitTree } = await import(moduleUrl);
+      const originalWrite = fs.writeFileSync;
+      fs.writeFileSync = function(file, ...args) {
+        const result = originalWrite.call(this, file, ...args);
+        if (String(file).endsWith(path.join('checkout', 'src', 'lifecycle.txt'))) {
+          const root = path.dirname(path.dirname(path.dirname(String(file))));
+          originalWrite(ready, JSON.stringify({ root }));
+          // The real blob has been written, but the synchronous API has not
+          // returned. A JS signal listener would stall here or swallow the signal.
+          const wait = new Int32Array(new SharedArrayBuffer(4));
+          while (!fs.existsSync(release)) Atomics.wait(wait, 0, 0, 50);
+        }
+        return result;
+      };
+      materializeRawGitTree(options);
+      fs.writeSync(1, 'unexpected completed materialization');
+    `, { detached: group });
+    await waitForSnapshotLifecycle(() => fs.existsSync(fixture.ready), `materialization never reached its ${label} barrier`);
+    const { root } = JSON.parse(fs.readFileSync(fixture.ready, 'utf8'));
+    assert.equal(fs.existsSync(path.join(root, SNAPSHOT_OWNER)), true);
+    assert.equal(fs.existsSync(path.join(root, 'checkout/src/lifecycle.txt')), true);
+    if (group) process.kill(-child.process.pid, signal);
+    else child.process.kill(signal);
+    assert.deepEqual(await snapshotProcessResult(child), { code: null, signal }, child.stderr);
+    assert.equal(child.stdout, '');
+    assert.equal(child.stderr, '');
+    await waitForSnapshotLifecycle(() => !fs.existsSync(root), `${label} left the materialized snapshot behind`);
+    assert.deepEqual(fixture.roots(), []);
+  });
+}
+
+for (const mode of ['natural', 'explicit']) {
+  test(`raw snapshot lifecycle reclaims all live views on ${mode} process exit`, async (t) => {
+    const fixture = snapshotLifecycleFixture(t);
+    const code = mode === 'natural' ? 0 : 23;
+    const child = fixture.start(`
+      const { materializeRawGitTree } = await import(moduleUrl);
+      const views = [materializeRawGitTree(options), materializeRawGitTree(options)];
+      fs.writeFileSync(ready, JSON.stringify(views.map((view) => path.dirname(view.root))));
+      fs.writeSync(1, 'existing output\\n');
+      ${mode === 'explicit' ? `process.exit(${code});` : ''}
+    `);
+    assert.deepEqual(await snapshotProcessResult(child), { code, signal: null }, child.stderr);
+    assert.equal(child.stdout, 'existing output\n');
+    assert.equal(child.stderr, '');
+    const roots = JSON.parse(fs.readFileSync(fixture.ready, 'utf8'));
+    assert.equal(roots.length, 2);
+    await waitForSnapshotLifecycle(() => roots.every((root) => !fs.existsSync(root)), `${mode} exit left live snapshots behind`);
+    assert.deepEqual(fixture.roots(), []);
+  });
+}
+
+test('raw snapshot lifecycle preserves an existing signal handler that keeps the owner alive', { skip: process.platform === 'win32' }, async (t) => {
+  const fixture = snapshotLifecycleFixture(t);
+  const child = fixture.start(`
+    let view;
+    process.on('SIGTERM', () => {
+      fs.writeFileSync(handled, JSON.stringify({ exists: fs.existsSync(view.root) }));
+    });
+    const before = listeners();
+    const { materializeRawGitTree } = await import(moduleUrl);
+    view = materializeRawGitTree(options);
+    assert.deepEqual(listeners().slice(1), before.slice(1));
+    fs.writeFileSync(ready, JSON.stringify({ root: path.dirname(view.root) }));
+    const interval = setInterval(() => {
+      if (!fs.existsSync(release)) return;
+      clearInterval(interval);
+      assert.equal(fs.readFileSync(path.join(view.root, 'src/lifecycle.txt'), 'utf8'), 'raw snapshot lifecycle\\n');
+      view.cleanup();
+      // Node 20 removes its temporary ESM exit listener before this timer runs.
+      // Exit-listener cleanup is covered by the synchronous multi-view test.
+      assert.deepEqual(listeners().slice(1), before.slice(1));
+      fs.writeSync(1, 'continued after signal\\n');
+      process.exitCode = 23;
+    }, 20);
+  `);
+  await waitForSnapshotLifecycle(() => fs.existsSync(fixture.ready), 'snapshot owner never became ready');
+  const { root } = JSON.parse(fs.readFileSync(fixture.ready, 'utf8'));
+  child.process.kill('SIGTERM');
+  await waitForSnapshotLifecycle(() => fs.existsSync(fixture.handled), 'the existing signal handler did not run');
+  assert.deepEqual(JSON.parse(fs.readFileSync(fixture.handled, 'utf8')), { exists: true });
+  assert.equal(child.result, null);
+  assert.equal(fs.existsSync(root), true);
+  fs.writeFileSync(fixture.release, 'continue');
+  assert.deepEqual(await snapshotProcessResult(child), { code: 23, signal: null }, child.stderr);
+  assert.equal(child.stdout, 'continued after signal\n');
+  assert.equal(child.stderr, '');
+  assert.equal(fs.existsSync(root), false);
 });
 
 function fixture(t, { prefix = '' } = {}) {

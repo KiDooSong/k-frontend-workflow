@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync, execFileSync } from 'node:child_process';
+import { spawn, spawnSync, execFileSync } from 'node:child_process';
+import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
 const LIB_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -17,6 +18,7 @@ function run(script, args, options = {}) {
     encoding: 'utf8',
     env: { ...process.env, ...(options.env || {}) },
     maxBuffer: 32 * 1024 * 1024,
+    timeout: options.timeout,
   });
 }
 function json(result) {
@@ -292,6 +294,84 @@ test('five public CLIs preserve request/origin/digest and backstop actual Git di
     assert.equal(env.origin_inputs[0].raw_hash, readiness.origin_inputs[0].raw_hash);
   }
 });
+
+test('#292 public run: SIGTERM during synchronous materialization keeps its signal and removes the snapshot',
+  { skip: process.platform === 'win32', timeout: 30000 }, async (t) => {
+    const root = project(t), work = writeRequest(t, request());
+    const scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'current-work-signal-')));
+    t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+    const temporary = path.join(scratch, 'tmp'), barrier = path.join(scratch, 'materializing.json');
+    fs.mkdirSync(temporary);
+    const env = { ...process.env, TMPDIR: temporary, TMP: temporary, TEMP: temporary };
+    const snapshots = () => fs.readdirSync(temporary).filter((name) => name.startsWith('workflow-visual-refresh-tree-'));
+    const waitFor = async (condition, message, timeout = 5000) => {
+      const deadline = Date.now() + timeout;
+      while (!condition()) {
+        assert.ok(Date.now() < deadline, message);
+        await delay(20);
+      }
+    };
+    const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
+    const head = git('rev-parse', 'HEAD'), status = git('status', '--porcelain');
+    const args = [...common(root, work), '--json'];
+    const normal = () => json(run('workflow-run.mjs', args, { env, timeout: 10000 }));
+    const before = normal();
+    assert.equal(before.state, 'HALT_READY_FOR_WORK');
+    assert.equal(before.ready, true);
+    assert.equal(before.requests[0].owner, 'screen:COUPON-001');
+    assert.deepEqual(snapshots(), []);
+
+    // Pause the real first checkout write, not an artificial async wait after the
+    // CLI has returned. Node signal callbacks cannot run in this synchronous wait.
+    const preload = path.join(scratch, 'pause-checkout.cjs');
+    fs.writeFileSync(preload, `
+const fs = require('node:fs'), path = require('node:path');
+const original = fs.writeFileSync;
+fs.writeFileSync = function(file, ...args) {
+  const result = original.call(this, file, ...args);
+  if (typeof file === 'string') {
+    const parts = path.relative(${JSON.stringify(temporary)}, file).split(path.sep);
+    if (parts[0].startsWith('workflow-visual-refresh-tree-') && parts[1] === 'checkout' && parts.length > 2) {
+      original(${JSON.stringify(barrier + '.pending')}, JSON.stringify({ pid: process.pid,
+        snapshot: path.join(${JSON.stringify(temporary)}, parts[0]), file }));
+      fs.renameSync(${JSON.stringify(barrier + '.pending')}, ${JSON.stringify(barrier)});
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);
+    }
+  }
+  return result;
+};
+require('node:module').syncBuiltinESMExports();
+`);
+    const child = spawn(process.execPath, ['--require', preload, path.join(SCRIPTS, 'workflow-run.mjs'), ...args],
+      { cwd: KIT, env, stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, killSignal: 'SIGKILL' });
+    let closed = null, spawnError = null, stdout = '', stderr = '';
+    child.on('error', (error) => { spawnError = error; });
+    child.on('close', (code, signal) => { closed = { code, signal }; });
+    child.stdout.setEncoding('utf8').on('data', (chunk) => { stdout += chunk; });
+    child.stderr.setEncoding('utf8').on('data', (chunk) => { stderr += chunk; });
+    try {
+      await waitFor(() => fs.existsSync(barrier) || closed || spawnError, 'public run did not reach a checkout write', 10000);
+      assert.equal(spawnError, null);
+      assert.equal(closed, null, stderr || stdout);
+      const active = JSON.parse(fs.readFileSync(barrier, 'utf8'));
+      assert.equal(active.pid, child.pid);
+      assert.equal(path.dirname(active.snapshot), temporary);
+      assert.ok(fs.statSync(active.file).isFile(), 'the real materializer wrote a Git blob before interruption');
+      assert.equal(child.kill('SIGTERM'), true);
+      await waitFor(() => closed, 'public run did not terminate after SIGTERM');
+      assert.deepEqual(closed, { code: null, signal: 'SIGTERM' }, stderr || stdout);
+      assert.equal(stdout, '', 'interrupted preflight must not publish a successful run envelope');
+      await waitFor(() => !fs.existsSync(active.snapshot), 'SIGTERM left the raw snapshot behind after 5 seconds');
+      assert.deepEqual(snapshots(), []);
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+      child.stdout.destroy(); child.stderr.destroy();
+    }
+    assert.deepEqual(normal(), before, 'interrupt cleanup must not change the normal JSON or authority');
+    assert.deepEqual(snapshots(), []);
+    assert.equal(git('status', '--porcelain'), status);
+    assert.equal(git('rev-parse', 'HEAD'), head);
+  });
 
 test('backstop is advisory by default, --enforce exits 1, and detects unrequested files', (t) => {
   const root = project(t);

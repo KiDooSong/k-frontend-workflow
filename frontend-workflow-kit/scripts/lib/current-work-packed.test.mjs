@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync, spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { setTimeout as delay } from 'node:timers/promises';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const LIB = path.dirname(fileURLToPath(import.meta.url));
 const KIT = path.resolve(LIB, '../..');
@@ -61,18 +62,24 @@ test('current-work entry documentation routes single targets before legacy block
   assertCurrentWorkDocs(KIT);
 });
 
-test('packed consumer payload contains and executes current-work runtime/reference', (t) => {
-  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'current-work-packed-'));
+test('packed consumer payload contains and executes current-work runtime/reference', async (t) => {
+  const temp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'current-work-packed-')));
   t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
+  const temporary = path.join(temp, 'tmp');
+  fs.mkdirSync(temporary);
+  const env = { ...process.env, TMPDIR: temporary, TMP: temporary, TEMP: temporary };
   const packed = path.join(temp, 'kit');
   const pack = spawnSync(process.execPath, [path.join(KIT, 'scripts/pack-frontend-workflow-kit.mjs'), '--out', packed], {
-    cwd: KIT, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024,
+    cwd: KIT, env, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024,
   });
   assert.equal(pack.status, 0, pack.stderr || pack.stdout);
   for (const relative of [
     'scripts/lib/current-work-request.mjs',
     'scripts/lib/current-work-execution.mjs',
     'scripts/lib/current-work-cli.mjs',
+    'scripts/lib/visual-refresh-snapshot-lifecycle.mjs',
+    'scripts/lib/visual-refresh-snapshot-guardian.mjs',
+    'scripts/lib/visual-refresh-snapshot-owner.mjs',
     'scripts/readiness.mjs',
     'scripts/workflow-packet.mjs',
     'scripts/workflow-run.mjs',
@@ -117,7 +124,7 @@ test('packed consumer payload contains and executes current-work runtime/referen
   const run = spawnSync(process.execPath, [path.join(packed, 'scripts/readiness.mjs'),
     '--work', work, '--root', root, '--docs', 'docs/frontend-workflow', '--src', 'src',
     '--policy', 'config/policy.yaml', '--manifest', 'config/manifest.yaml', '--layout', 'config/layout.yaml', '--json'],
-    { cwd: packed, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+    { cwd: packed, env, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
   assert.equal(run.status, 0, run.stderr || run.stdout);
   const out = JSON.parse(run.stdout);
   assert.equal(out.work_contract, 1);
@@ -127,7 +134,7 @@ test('packed consumer payload contains and executes current-work runtime/referen
     const result = spawnSync(process.execPath, [path.join(packed, 'scripts/workflow-run.mjs'),
       '--work', work, '--root', root, '--docs', 'docs/frontend-workflow', '--src', 'src',
       '--policy', 'config/policy.yaml', '--manifest', 'config/manifest.yaml', '--layout', 'config/layout.yaml', '--json', ...extra],
-    { cwd: packed, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+    { cwd: packed, env, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
     assert.equal(result.status, 0, result.stderr || result.stdout);
     return JSON.parse(result.stdout);
   };
@@ -139,4 +146,63 @@ test('packed consumer payload contains and executes current-work runtime/referen
   assert.equal(done.checkpoint.matched, true);
   assert.match(fs.readFileSync(`${after}.md`, 'utf8'), /## Machine Envelope/);
   assert.ok(fs.existsSync(path.join(after, 'run-report.md')));
+
+  await t.test('#292 packed raw materializer reclaims SIGTERM during a synchronous checkout write',
+    { skip: process.platform === 'win32', timeout: 20000 }, async () => {
+      const barrier = path.join(temp, 'materializing.json'), script = path.join(temp, 'interrupt-packed.mjs');
+      const materializer = pathToFileURL(path.join(packed, 'scripts/lib/visual-refresh-git-objects.mjs')).href;
+      const tree = execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { cwd: root, encoding: 'utf8' }).trim();
+      // Import only the packed materializer: its relative guardian/owner imports must
+      // work after distribution, including while synchronous work cannot handle signals.
+      fs.writeFileSync(script, `
+import fs from 'node:fs';
+import path from 'node:path';
+import { syncBuiltinESMExports } from 'node:module';
+import { materializeRawGitTree } from ${JSON.stringify(materializer)};
+const original = fs.writeFileSync;
+fs.writeFileSync = function(file, ...args) {
+  const result = original.call(this, file, ...args);
+  const parts = path.relative(${JSON.stringify(temporary)}, String(file)).split(path.sep);
+  if (parts[0].startsWith('workflow-visual-refresh-tree-') && parts[1] === 'checkout' && parts.length > 2) {
+    original(${JSON.stringify(barrier + '.pending')}, JSON.stringify({ pid: process.pid,
+      snapshot: path.join(${JSON.stringify(temporary)}, parts[0]), file }));
+    fs.renameSync(${JSON.stringify(barrier + '.pending')}, ${JSON.stringify(barrier)});
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);
+  }
+  return result;
+};
+syncBuiltinESMExports();
+materializeRawGitTree({ repositoryRoot: ${JSON.stringify(root)}, tree: ${JSON.stringify(tree)} }).cleanup();
+`);
+      const waitFor = async (condition, message) => {
+        const deadline = Date.now() + 5000;
+        while (!condition()) {
+          assert.ok(Date.now() < deadline, message);
+          await delay(20);
+        }
+      };
+      const child = spawn(process.execPath, [script], { cwd: packed, env,
+        stdio: ['ignore', 'ignore', 'pipe'], timeout: 10000, killSignal: 'SIGKILL' });
+      let closed = null, spawnError = null, stderr = '';
+      child.on('error', (error) => { spawnError = error; });
+      child.on('close', (code, signal) => { closed = { code, signal }; });
+      child.stderr.setEncoding('utf8').on('data', (chunk) => { stderr += chunk; });
+      try {
+        await waitFor(() => fs.existsSync(barrier) || closed || spawnError, 'packed materializer did not write a checkout blob');
+        assert.equal(spawnError, null);
+        assert.equal(closed, null, stderr);
+        const active = JSON.parse(fs.readFileSync(barrier, 'utf8'));
+        assert.equal(active.pid, child.pid);
+        assert.equal(path.dirname(active.snapshot), temporary);
+        assert.ok(fs.statSync(active.file).isFile());
+        assert.equal(child.kill('SIGTERM'), true);
+        await waitFor(() => closed, 'packed materializer did not terminate after SIGTERM');
+        assert.deepEqual(closed, { code: null, signal: 'SIGTERM' }, stderr);
+        await waitFor(() => !fs.existsSync(active.snapshot), 'packed guardian did not reclaim the snapshot within 5 seconds');
+        assert.deepEqual(fs.readdirSync(temporary).filter((name) => name.startsWith('workflow-visual-refresh-tree-')), []);
+      } finally {
+        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+        child.stderr.destroy();
+      }
+    });
 });
