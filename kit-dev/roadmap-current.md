@@ -1,5 +1,11 @@
 # Current Roadmap
 
+> 2026-11-09 #300 4차 성능 개선: GFM 표 파서의 공식 패치 `micromark-extension-gfm-table` 2.1.2를 runtime lock에 반영했다.
+> 셀 편집 위치의 반복 선형 탐색을 인덱스로 바꿔 큰 표의 첫 파싱과 캐시 축출 뒤 재파싱 비용을 줄인다.
+> 기존 문법·원문 위치·섹션별 reference 경계·검증 판정과 AST 캐시 예산을 유지한다. 임시 Map 때문에 peak memory 감소는 보장하지 않는다.
+> 적용 절차: [large Markdown table parsing](../frontend-workflow-kit/docs/reference/upgrade-notes.md#large-markdown-table-parsing-300).
+> 재현: [GFM table benchmark](benchmarks/gfm-tables.mjs). 합성 parse 시간·프로세스 peak RSS를 비교하며 전체 consumer 실행 시간은 별도 측정 대상이다.
+
 > 2026-11-09 #300 3차 성능 개선: raw Git 스냅샷의 디렉터리 생성 단계에서 같은 부모의 항목 이름을 재사용한다.
 > 부모 identity·mode·size·timestamp가 바뀌면 다시 읽고, 각 조상의 directory/symlink 검사와 mkdir 뒤 실제 철자 검사를 유지한다.
 > 캐시는 blob 전개 전에 비우며 스냅샷 사이에 공유하지 않는다. 전체 tree·raw bytes·mode·OID 검증과 basis/checkpoint 계약은 유지한다.
