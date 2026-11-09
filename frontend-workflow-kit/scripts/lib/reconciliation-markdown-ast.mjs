@@ -555,6 +555,60 @@ export function parseStrictTables(text) {
   return locateStrictTables(text).map(({ table }) => table);
 }
 
+// Items historically runs stripNonContent -> splitSectionOccurrences -> parseStrictTables
+// on the selected section. Keep that content view, but share its tree between the
+// heading scan and table extraction instead of parsing the section a second time (#300).
+// Only the requested section's tables are materialized; other sections need no
+// table/bullet projections. The shared tree stays private; returned tables are fresh.
+export function parseContentSectionTables(text, sectionSlug) {
+  const source = String(text || '');
+  const original = sharedTree(source);
+  const content = removeRangesPreservingLines(source, nonContentRanges(original));
+  // Removing code/HTML can change block membership or inline syntax, including
+  // headings, table delimiters and CR+LF pairs. Only a no-op strip reuses the tree.
+  const tree = content === source ? original : sharedTree(content);
+  const children = tree.children || [];
+  let sectionCount = 0;
+  let selected = null;
+  for (let index = 0; index < children.length; index += 1) {
+    const node = children[index];
+    if (node.type !== 'heading' || node.depth !== 2) continue;
+    const headingStart = node.position?.start?.offset ?? content.length;
+    if (selected?.endIndex === null) {
+      selected.endIndex = index;
+      selected.end = headingStart;
+    }
+    if (slugifySectionTitle(headingText(node)) !== sectionSlug) continue;
+    sectionCount += 1;
+    if (sectionCount === 1) {
+      selected = {
+        startIndex: index + 1,
+        endIndex: null,
+        start: lineEndOffset(content, node.position?.end?.offset ?? headingStart),
+        end: content.length,
+      };
+    }
+  }
+  if (sectionCount !== 1) return { sectionCount, tables: [] };
+
+  const nodes = children.slice(selected.startIndex, selected.endIndex ?? children.length);
+  const hasReference = (node) => node.type === 'linkReference' || node.type === 'imageReference'
+    || (node.children || []).some(hasReference);
+  if (nodes.some((node) => node.type === 'table' && hasReference(node))) {
+    // The old section-only parse cannot resolve definitions outside this H2.
+    // Reparse reference-sensitive tables in that same scope so an external
+    // definition never turns an invalid header/Target into an accepted value.
+    return { sectionCount, tables: parseStrictTables(content.slice(selected.start, selected.end)) };
+  }
+  const tables = nodes.flatMap((node, index) => {
+    // The first node follows an H2 in the document and has no predecessor in
+    // the section. Both are explicit table boundaries; later predecessors stay.
+    const table = rootTable(content, node, nodes[index - 1] || null);
+    return table ? [table] : [];
+  });
+  return { sectionCount, tables };
+}
+
 // The strict tables of stripNonContent(text), which validateReconciliationV2 reads, with the offsets each one spans
 // in text itself. Removing a comment can join a CR and an LF into one line ending, so line numbers of the two do
 // not always match; the offsets follow each kept character back instead.

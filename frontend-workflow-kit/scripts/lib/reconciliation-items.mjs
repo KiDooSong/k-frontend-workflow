@@ -26,6 +26,7 @@
 // file 은 항상 절대경로다. validate.mjs 가 add()/warn() 으로 상대화한다.
 import { col, hasHeader, parseTable, splitRow } from './spec.mjs';
 import { createTextKeyedCache } from './util.mjs';
+import { parseContentSectionTables } from './reconciliation-markdown-ast.mjs';
 import { RECONCILE_STATUS_VALUES, REQUIRED_REGISTER_COLS, reconciliationTableWidthWarnings } from './reconciliation-register.mjs';
 import {
   FIGMA_PRECISION_SOURCE_UNITS,
@@ -49,7 +50,6 @@ import {
   resolveChildRow,
   bodyHasToken,
   stripNonContent,
-  splitSectionOccurrences,
   parseStrictTables,
   describeHeaderMismatch,
 } from './reconciliation-target-index.mjs';
@@ -315,16 +315,13 @@ export function parseReconciliationItems(body) {
 }
 
 function parseItems(source) {
-  const occurrences = splitSectionOccurrences(stripNonContent(source)).filter(
-    (occ) => occ.slug === ITEMS_SECTION_SLUG,
-  );
-  if (occurrences.length === 0) {
+  const { sectionCount, tables } = parseContentSectionTables(source, ITEMS_SECTION_SLUG);
+  if (sectionCount === 0) {
     return { sectionExists: false, sectionCount: 0, tableCount: 0, table: null, headerIssue: null, rows: [] };
   }
-  if (occurrences.length > 1) {
-    return { sectionExists: true, sectionCount: occurrences.length, tableCount: 0, table: null, headerIssue: null, rows: [] };
+  if (sectionCount > 1) {
+    return { sectionExists: true, sectionCount, tableCount: 0, table: null, headerIssue: null, rows: [] };
   }
-  const tables = parseStrictTables(occurrences[0].text);
   if (tables.length === 0) {
     return { sectionExists: true, sectionCount: 1, tableCount: 0, table: null, headerIssue: null, rows: [] };
   }
