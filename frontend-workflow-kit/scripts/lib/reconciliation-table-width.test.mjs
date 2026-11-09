@@ -23,14 +23,156 @@ const brokenRows = [
   '| IN-20260101-figma-001 | figma(spec) | simple-update | reconciled | 결과 | [c](./c.md) | - | - || IN-20260101-figma-002 | figma(spec) | simple-update | reconciled | 결과 | [d](./d.md) | - | - |',
 ];
 
+// A complete v2 register and its input/target documents. Keep the fixture local
+// so the packed suite does not depend on the development-only examples directory.
+const V2_FIXTURE_FILES = {
+  '_meta/reconciliation-register.md': `---
+title: Reconciliation Register (reconciliation-validation / v2-pass)
+status: draft
+kind: meta-register
+reconciliation_contract: 2
+review_profile: reconcile-stage04-v1
+structured_since: "2026-07-20T00:00:00+09:00"
+---
+
+# Reconciliation Register — v2-pass fixture (Check 12 / Contract v2)
+
+> Contract v2 opt-in PASS 픽스처. summary Classification multiset ↔ item 개수, typed Touched/Created ref,
+> resolved-decision-conflict 의 \`conflict create-open + decision reopen\` 페어, evidence section pointer,
+> \`inherit\` provenance 가 전부 해소되어 에러·경고 0 (exit 0) 이어야 한다.
+> HEADLINE GUARD 는 v1 과 동일: 자식 C-001/D-204 가 open 이어도 \`reconciled\` 는 통과한다.
+
+| Input ID | Source | Classification | Reconcile Status | Result | Touched Artifacts | Created Items | Supersedes |
+|---|---|---|---|---|---|---|---|
+| IN-20260720-figma-001 | figma | simple-update + component-gap | reconciled | accepted | artifact:COUPON-001-figma-component-mapping; artifact:component-gap-register | artifact:COUPON-001-figma-component-mapping#component-mapping/M-001; gap:G-001@component-gap-register | - |
+| IN-20260720-meeting-001 | meeting | conflict | reconciled | pending-user-decision | artifact:conflicts; artifact:open-decision-register | conflict:C-001@conflicts; decision:D-204@open-decision-register | - |
+
+## Reconciliation Items
+
+| Input ID | Item | Basis | Classification | Effect | Target | Evidence | Source Ref | Source Unit | Captured At |
+|---|---|---|---|---|---|---|---|---|---|
+| IN-20260720-figma-001 | 01 | visual-evidence | simple-update | create | artifact:COUPON-001-figma-component-mapping#component-mapping/M-001 | input:IN-20260720-figma-001#extracted-facts/01 | figma://file/abc/node/1:234 | instance | inherit |
+| IN-20260720-figma-001 | 02 | component-missing | component-gap | create-open | gap:G-001@component-gap-register | input:IN-20260720-figma-001#extracted-facts/02 | figma://file/abc/node/1:235 | instance | inherit |
+| IN-20260720-meeting-001 | 01 | resolved-decision-conflict | conflict | create-open | conflict:C-001@conflicts | input:IN-20260720-meeting-001#extracted-facts/01 | inherit | statement | inherit |
+| IN-20260720-meeting-001 | 01 | resolved-decision-conflict | conflict | reopen | decision:D-204@open-decision-register | input:IN-20260720-meeting-001#extracted-facts/01 | inherit | statement | inherit |
+`,
+  'domains/coupons/screens/coupon-list/figma-component-mapping.md': `---
+artifact_id: "COUPON-001-figma-component-mapping"
+artifact_type: figma-component-mapping
+domain: "coupons"
+screen_id: "COUPON-001"
+status: draft
+sources:
+  - { type: figma, ref: "figma://file/abc" }
+last_reviewed: "2026-07-20"
+---
+
+# Figma Component Mapping
+
+## Frame
+- figma://file/abc
+
+## Component Mapping
+| Figma Frame / Node | UI 요소 | 매핑 컴포넌트 | 비고 |
+|---|---|---|---|
+| \`M-001\` · frame / node \`1:234\` | Primary CTA | components/ui/Button | variant=primary |
+
+## Notes
+- 시각 매핑.
+`,
+  'global/component-gap-register.md': `---
+artifact_id: component-gap-register
+artifact_type: component-gap-register
+status: draft
+last_reviewed: "2026-07-20"
+---
+
+# Component Gap Register
+
+| ID | 제안 컴포넌트 | 필요한 화면 | 기존 카탈로그로 안 되는 이유 | Status |
+|---|---|---|---|---|
+| G-001 | SegmentedTabs | COUPON-001 | 상태 탭 분리 표현 불가 | open |
+`,
+  'global/conflicts.md': `---
+artifact_id: conflicts
+artifact_type: conflicts
+status: draft
+last_reviewed: "2026-07-20"
+---
+
+# Conflicts
+
+| ID | 충돌 지점 | A (출처/값) | B (출처/값) | 영향 화면 | Status |
+|---|---|---|---|---|---|
+| C-001 | 로그인 리다이렉트 | IN-20260720-meeting-001 / returnTo 우선 | D-204 / 항상 홈 | AUTH-001 | open |
+`,
+  'global/open-decisions.md': `---
+artifact_id: open-decision-register
+artifact_type: open-decision-register
+status: draft
+---
+
+# Cross-Screen Open Decisions
+
+## Open Decisions
+
+| ID | Decision Needed | Options | Blocking Mode | Owner | Status |
+|---|---|---|---|---|---|
+| D-204 | 로그인 성공 후 이동 위치 | home / returnTo | final-fixture-ui | PM | open |
+`,
+  'inputs/IN-20260720-figma-001.md': `---
+input_id: "IN-20260720-figma-001"
+input_type: "figma"
+source_type: "figma"
+source_ref: "figma://file/abc"
+captured_at: "2026-07-20T10:00:00+09:00"
+captured_by: "figma-input-skill"
+status: "captured"
+affected_domains: ["coupons"]
+affected_screens: ["COUPON-001"]
+---
+
+## Summary
+쿠폰 목록 시각 갱신.
+
+## Extracted Facts
+- Primary CTA instance 확인 (node 1:234)
+- SegmentedTabs 컴포넌트가 카탈로그에 없음 (node 1:235)
+`,
+  'inputs/IN-20260720-meeting-001.md': `---
+input_id: "IN-20260720-meeting-001"
+input_type: "meeting"
+source_type: "meeting"
+source_ref: "meetings/2026-07-20.md"
+captured_at: "2026-07-20T11:00:00+09:00"
+captured_by: "meeting-note-input-skill"
+status: "captured"
+affected_domains: ["auth"]
+affected_screens: ["AUTH-001"]
+---
+
+## Summary
+로그인 리다이렉트 재논의.
+
+## Extracted Facts
+- returnTo 우선 정책 요구 (기존 D-204 resolved 와 충돌)
+`,
+};
+
 function fixture(t, version = 1) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'reconciliation-table-width-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  if (version === 2) fs.cpSync(path.join(KIT_ROOT, 'examples/reconciliation-validation/v2-pass'), root, { recursive: true });
   const docs = path.join(root, 'docs/frontend-workflow');
   const file = path.join(docs, '_meta/reconciliation-register.md');
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.mkdirSync(path.join(root, 'src'), { recursive: true });
+  if (version === 2) {
+    for (const [relative, content] of Object.entries(V2_FIXTURE_FILES)) {
+      const target = path.join(docs, relative);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, content);
+    }
+  }
   const read = () => fs.readFileSync(file, 'utf8');
   const write = (text) => fs.writeFileSync(file, text);
   if (version === 1) write(header + validRow() + '\n');
