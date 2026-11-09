@@ -17,6 +17,26 @@ or root config.
 
 ---
 
+## Packaged table-width regression tests (#302)
+
+`scripts/lib/reconciliation-table-width.test.mjs` now creates its complete v2
+input and target documents in temporary directories. The suite runs from the
+packed kit with all v1 and v2 cases, without the development-only `examples/`
+directory. Its packed execution is also checked by the kit's distribution tests.
+
+If a consumer test runner excluded this file because its v2 cases failed with
+`ENOENT`, include it again after upgrading. With the vendored kit's dependencies
+installed, run this from the consumer project root:
+
+```bash
+node --test tools/frontend-workflow/scripts/lib/reconciliation-table-width.test.mjs
+```
+
+The tests continue to cover the existing [row-width advisory contract](input-reconciliation.md#register-table-cell-counts-244),
+including warning behavior under `--enforce` and the existing hard validation errors.
+
+---
+
 ## Bundled project-layout ownership (#301)
 
 `tools/frontend-workflow/policies/project-layout.yaml` is the **kit-owned default**.

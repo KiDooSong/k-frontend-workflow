@@ -337,6 +337,38 @@ test('kit:pack emits a payload manifest and excludes the upgrade-planner kit-dev
   );
 });
 
+test('#302 packed table-width regression suite runs all cases without excluded examples', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-pack-table-width-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const out = path.join(tmp, 'frontend-workflow-kit');
+  const pack = spawnSync(process.execPath, [PACK_CLI, '--out', out, '--json'], {
+    cwd: KIT_ROOT,
+    encoding: 'utf8',
+  });
+  assert.equal(pack.status, 0, pack.stderr);
+  const suite = 'scripts/lib/reconciliation-table-width.test.mjs';
+  assert.equal(exists(suite, out), true, 'consumer table-width tests must remain in the payload');
+  assert.equal(exists('examples', out), false, 'the suite must work without kit-dev fixtures');
+  linkInstalledDependencies(out);
+
+  // Start a fresh test runner, not another file inside this runner's child context.
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
+  const run = spawnSync(process.execPath, ['--test', '--test-reporter=tap', path.join(out, suite)], {
+    cwd: out,
+    encoding: 'utf8',
+    env,
+    timeout: 120_000,
+  });
+  assert.equal(run.status, 0, `${run.stderr}\n${run.stdout}`);
+  // Keep the issue's 22 existing v1/v2 cases active while allowing new cases.
+  const counts = Object.fromEntries([...run.stdout.matchAll(/^# (tests|pass|fail|cancelled|skipped|todo) (\d+)\r?$/gm)]
+    .map(([, key, value]) => [key, Number(value)]));
+  assert.ok(counts.tests >= 22, `expected every v1/v2 regression to execute: ${run.stdout}`);
+  assert.equal(counts.pass, counts.tests);
+  for (const key of ['fail', 'cancelled', 'skipped', 'todo']) assert.equal(counts[key], 0, key);
+});
+
 test('packed consumer-facing markdown does not link to excluded docs', (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-pack-links-'));
   t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));

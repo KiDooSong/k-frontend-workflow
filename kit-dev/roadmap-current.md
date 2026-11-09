@@ -1,5 +1,9 @@
 # Current Roadmap
 
+> 2026-11-09 #302: table-width 회귀 테스트가 v2 입력·대상 문서를 자체 생성해 배포에서 제외된 example 의존성을 없앴다.
+> 기존 v1·v2 22개 검증을 유지하고, `examples/` 없는 실제 packed payload에서 전체 suite 실행을 distribution 회귀로 확인한다.
+> 사용법: [packaged table-width tests](../frontend-workflow-kit/docs/reference/upgrade-notes.md#packaged-table-width-regression-tests-302).
+
 > 2026-11-09 #301: 번들 `policies/project-layout.yaml`을 킷 소유 기본값으로 명시하고 consumer override를 킷 밖의 별도 layout으로 연결하도록 안내한다.
 > 업그레이드 planner는 번들 내용 차이가 있는 `local-modified`/`conflict`에 `KIT-LAYOUT-MIGRATION` advisory를 내며, mode-only 변경은 제외한다.
 > 기존 수정본 보존·CLI별 config/`--layout` 지원·동일 payload 원본 복원 절차를 추가하고 주석 변경에 맞춰 visual resource pin을 갱신한다.
