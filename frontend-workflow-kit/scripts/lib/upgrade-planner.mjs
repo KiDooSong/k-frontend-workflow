@@ -13,12 +13,14 @@
 // never runs migrations — those stay human/LLM decisions surfaced in the plan.
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { splitFrontmatter, yamlParse } from './util.mjs';
 import {
   MANIFEST_SCHEMA_VERSION,
   PAYLOAD_MANIFEST_NAME,
   INSTALL_MANIFEST_NAME,
+  DISTRIBUTION_SUMMARY_NAME,
   CONFLICTS_DIR_NAME,
   sha256OfFile,
   readJsonSafe,
@@ -888,6 +890,41 @@ export function buildInstallManifest({ currentDir, nextResolved, baseline, sourc
   };
 }
 
+// Replace the summary's directory entry instead of truncating an inode that may
+// also belong to an external archive or a payload file marked keep-local (#308).
+function writeSummaryAtomic(summaryPath, bytes) {
+  let lastErr = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const tmpPath = `${summaryPath}.tmp-${crypto.randomBytes(8).toString('hex')}`;
+    let fd = null;
+    let created = false;
+    try {
+      fd = fs.openSync(tmpPath, 'wx');
+      created = true;
+      fs.writeFileSync(fd, bytes);
+      fs.closeSync(fd);
+      fd = null;
+      fs.renameSync(tmpPath, summaryPath);
+      created = false; // The temporary name no longer belongs to us after rename.
+      return;
+    } catch (err) {
+      if (!created && err.code === 'EEXIST') {
+        lastErr = err;
+        continue; // Never remove a path whose exclusive creation failed.
+      }
+      throw err;
+    } finally {
+      if (fd !== null) {
+        try { fs.closeSync(fd); } catch { /* preserve the original failure */ }
+      }
+      if (created) {
+        try { fs.rmSync(tmpPath, { force: true }); } catch { /* best-effort cleanup */ }
+      }
+    }
+  }
+  throw lastErr ?? new Error(`failed to create a temporary distribution summary: ${summaryPath}`);
+}
+
 // Execute the plan's planned actions. Only writes inside currentDir (+ backupDir).
 export function applyPlan({ plan, currentDir, nextDir, options = {} }) {
   if (plan?.adoption?.downgrade_blocked) {
@@ -903,6 +940,24 @@ export function applyPlan({ plan, currentDir, nextDir, options = {} }) {
   const actions = [];
   const record = (rel, action) => actions.push({ path: rel, action });
   const LABEL = 'current vendored kit';
+
+  // #303: this diagnostic describes the selected upstream payload, not a rescan
+  // of locally kept files. Read it and check its destination before payload writes.
+  const summaryPath = path.join(resolvedCurrent, DISTRIBUTION_SUMMARY_NAME);
+  let nextSummary = null;
+  try {
+    nextSummary = fs.readFileSync(path.join(resolvedNext, DISTRIBUTION_SUMMARY_NAME));
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+  }
+  assertSafeWriteTarget(realCurrent, summaryPath, LABEL);
+  try {
+    if (!fs.lstatSync(summaryPath).isFile()) {
+      throw new Error(`refusing to refresh a non-file distribution summary: ${summaryPath}`);
+    }
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+  }
 
   for (const f of plan.files) {
     const action = f.planned_action;
@@ -939,8 +994,8 @@ export function applyPlan({ plan, currentDir, nextDir, options = {} }) {
     // none / keep-local / leave / keep-orphan → no write
   }
 
-  // Refresh meta: install manifest (post-apply baseline) + a copy of the next
-  // payload manifest so the vendored kit advertises the ref it was upgraded to.
+  // Refresh meta: the post-apply baseline plus the next payload's manifest and
+  // summary. Metadata stays outside payload action/count/backup semantics.
   const installManifest = buildInstallManifest({
     currentDir: resolvedCurrent,
     nextResolved: next,
@@ -955,6 +1010,14 @@ export function applyPlan({ plan, currentDir, nextDir, options = {} }) {
     const payloadPath = path.join(resolvedCurrent, PAYLOAD_MANIFEST_NAME);
     assertSafeWriteTarget(realCurrent, payloadPath, LABEL);
     writeJson(payloadPath, nextManifestRaw);
+  }
+
+  assertSafeWriteTarget(realCurrent, summaryPath, LABEL);
+  if (nextSummary !== null) {
+    writeSummaryAtomic(summaryPath, nextSummary);
+  } else {
+    // Legacy/hand-built payloads may omit the summary; do not retain stale facts.
+    fs.rmSync(summaryPath, { force: true });
   }
 
   return { actions, installManifest };

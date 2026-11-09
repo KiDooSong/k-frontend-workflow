@@ -17,6 +17,39 @@ or root config.
 
 ---
 
+## Distribution summary refresh (#303)
+
+`_distribution-summary.json` is generated pack metadata: its `files`,
+`file_count` and `excluded` describe the upstream payload selected by `--next`.
+Managed `--apply` now copies that payload's summary unchanged alongside the
+install/payload manifest refresh. If `--next` has no summary, apply removes the
+old generated summary so it cannot continue describing an earlier payload.
+
+Summary refresh writes a new file in the same directory and atomically replaces
+the summary entry. Other hard links keep their original bytes, including an
+external archive or a payload file classified `keep-local`. Removing a stale
+summary only unlinks the summary path and preserves those other files too.
+
+The summary is separate from payload file actions, counts and backups. Its
+replacement or removal is part of metadata refresh, including when every
+payload action is `none`. This refresh only runs on `--apply`.
+On apply, a `--plan` or `--backup-dir` at or below the summary path is rejected
+before files are written, so the plan and backups cannot block metadata refresh.
+
+The consumer directory can still contain local modifications, unresolved
+conflicts, retained orphans and unknown files after apply; inspect the upgrade
+plan for those differences. The install manifest records the next upstream
+baseline and any retained tracked orphans, so its file count can differ from
+the summary.
+
+To repair an already stale summary, use the **updated planner from the new
+payload**, review its dry-run, then apply the selected payload as described in
+[Upgrade A Vendored Kit](../../README.md#upgrade-a-vendored-kit). Reapplying the
+same payload refreshes this metadata even when no payload files need changing.
+An older installed planner does not perform this refresh.
+
+---
+
 ## Packaged table-width regression tests (#302)
 
 `scripts/lib/reconciliation-table-width.test.mjs` now creates its complete v2
