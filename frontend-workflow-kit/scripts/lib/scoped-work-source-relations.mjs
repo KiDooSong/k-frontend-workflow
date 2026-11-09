@@ -183,17 +183,19 @@ function createSourceSnapshot(projectRoot) {
     if (expected !== undefined && pin.sha256 !== expected) fail(`snapshot changed: ${relative}`);
     return { ...pin, ...(needBytes ? { bytes: raw } : {}) };
   }
+  function verifyFile(file) {
+    const pin = pins.get(file);
+    if (!pin || current(file).sha256 !== pin.sha256) fail(`snapshot changed: ${file}`);
+  }
   function verify() {
     // Never use read() here: the final audit must inspect current spelling,
     // every ancestor, and bytes, including files seen only in earlier passes.
     bytes.clear(); byteSize = 0;
-    for (const pin of pins.values()) {
-      if (current(pin.file).sha256 !== pin.sha256) fail(`snapshot changed: ${pin.file}`);
-    }
+    for (const pin of pins.values()) verifyFile(pin.file);
     for (const relative of absentRegisters) if (canonicalRepositoryPath(projectRoot, relative,
       { required: false, type: 'file', label: 'scoped source register' }).exists) fail('register appeared during source projection');
   }
-  return { read, verify, absentRegister: (relative) => absentRegisters.add(relative) };
+  return { read, verify, verifyFile, absentRegister: (relative) => absentRegisters.add(relative) };
 }
 
 function resolveSourceClosure(options, requireEffects) {
@@ -241,7 +243,7 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
   const refs = createScopedReferenceResolver(args);
   const sourceReader = createScopedSourceResolver({ ...args, registerFile });
   const reads = new Map(), documents = new Map(), spans = new WeakMap(), nativeInputs = new Map(), fallbacks = new Map();
-  let absentRegister = null;
+  let absentRegister = null, presentRegister = null;
   function read(file, expected, needBytes = false) {
     const entry = snapshot.read(file, expected, needBytes);
     // Pass-local reads still define this pass's evidence and contract hashes.
@@ -395,7 +397,10 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
       const actual = canonicalRepositoryPath(projectRoot, relative,
         { required, type: 'file', label: 'scoped source register' });
       if (actual.exists) {
-        read(registerFile); // Pin bytes before either canonical parser consumes them.
+        presentRegister = read(registerFile).file;
+        // Both register parsers read disk independently. Keep their per-pass
+        // byte checks so transient effects cannot become retained witnesses.
+        snapshot.verifyFile(presentRegister);
         register = parseReconciliationRegister(actual.absolute);
       } else {
         absentRegister = relative; snapshot.absentRegister(relative);
@@ -503,6 +508,7 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
         input_sha256: source.input.input_sha256, effects_sha256: hashBytes(Buffer.from(scopeJson(effects))),
         contracts_sha256: hashBytes(Buffer.from(scopeJson(contractHashes))) } });
   }
+  if (presentRegister) snapshot.verifyFile(presentRegister);
   if (absentRegister && canonicalRepositoryPath(projectRoot, absentRegister,
     { required: false, type: 'file', label: 'scoped source register' }).exists) fail('register appeared during source projection');
   return { owner, unit, sources: scopedEvidenceSet(resolved), pending_connections: scopeSet(pending),

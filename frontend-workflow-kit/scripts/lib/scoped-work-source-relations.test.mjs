@@ -981,3 +981,22 @@ test('#300 source projection detects a register appearing during the final file 
   assert.throws(() => resolveScopedSourceProjection(options), /register appeared during source projection/);
   assert.equal(appeared, true);
 });
+
+test('#300 source closure rejects transient register effects before they become retained witnesses', (t) => {
+  const f = fixture(t); f.register([effect('01', 'other')]);
+  const options = f.options();
+  assert.ok(resolveScopedSourceRelations(options).sources[0].issues.some((issue) => issue.reason === 'source-effect-unconnected'));
+  const original = fs.readFileSync(f.registerFile, 'utf8');
+  const transient = original.replace('artifact:DOC#other', 'artifact:DOC#rules');
+  const readFile = fs.readFileSync; let registerReads = 0, changed = false;
+  t.mock.method(fs, 'readFileSync', function (file, ...args) {
+    if (file === f.registerFile && ++registerReads === 3) fs.writeFileSync(file, original);
+    const raw = readFile.call(this, file, ...args);
+    if (file === f.registerFile && registerReads === 1) {
+      changed = true; fs.writeFileSync(file, transient);
+    }
+    return raw;
+  });
+  assert.throws(() => resolveScopedSourceRelations(options), /snapshot changed/);
+  assert.equal(changed, true);
+});

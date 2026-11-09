@@ -409,7 +409,8 @@ one source closure. First-read SHA-256 pins outlive evicted bytes; retained raw
 bytes are bounded to 16 MiB per closure. This is a byte-cache budget, not a process
 RSS limit. Graph/source expected hashes are checked on every use, and all pinned
 files are freshly checked for canonical path spelling, ancestors and bytes before
-returning. Optional register absence is also rechecked. Caches never cross calls;
+returning. The register's independent parsers retain fresh byte checks at each
+pass boundary; optional register absence is also rechecked. Caches never cross calls;
 read-set entries, relation rules and binding/checkpoint digest inputs are unchanged.
 
 Every decision is computed from the materialized `HEAD` tree. Worktree edits,
