@@ -32,10 +32,11 @@ import {
   parseTargetRef,
   parseEvidenceRef,
   parseReconciliationItems,
+  REQUIRED_ITEM_COLS,
   validateReconciliationV2,
 } from './reconciliation-items.mjs';
 import { createScopedReferenceResolver, parseScopedTargetRef } from './scoped-work-refs.mjs';
-import { reconciliationParseStats } from './reconciliation-markdown-ast.mjs';
+import { describeHeaderMismatch, reconciliationParseStats } from './reconciliation-markdown-ast.mjs';
 
 const KIT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const VALIDATE = path.join(KIT_ROOT, 'scripts', 'validate.mjs');
@@ -3341,6 +3342,174 @@ test('parseReconciliationItems: 섹션/표/행 파싱', () => {
 
   const noSection = parseReconciliationItems('# Register\n\n표 없음');
   assert.equal(noSection.sectionExists, false);
+});
+
+// Preserve the pre-#300 orchestration as a differential oracle: stripping can
+// change block structure, while the final section parse limits reference labels.
+function legacyItemsParse(body) {
+  const sections = splitSectionOccurrences(stripNonContent(body))
+    .filter((section) => section.slug === 'reconciliation-items');
+  const result = { sectionExists: sections.length > 0, sectionCount: sections.length,
+    tableCount: 0, table: null, headerIssue: null, rows: [] };
+  if (sections.length !== 1) return result;
+  const tables = parseStrictTables(sections[0].text);
+  result.tableCount = tables.length;
+  result.table = tables[0] || null;
+  if (tables.length !== 1) return result;
+  result.headerIssue = describeHeaderMismatch(result.table, REQUIRED_ITEM_COLS);
+  if (result.headerIssue) return result;
+  const fields = ['inputId', 'item', 'basis', 'classification', 'effect', 'target',
+    'evidence', 'sourceRef', 'sourceUnit', 'capturedAt'];
+  const key = (value) => value.toLowerCase().replace(/\s+/g, '');
+  result.rows = result.table.rows.map((row) => Object.fromEntries(fields.map((field, index) => {
+    const header = Object.keys(row).find((name) => key(name) === key(REQUIRED_ITEM_COLS[index]));
+    return [field, (row[header] || '').trim()];
+  }))).filter((row) => Object.values(row).some(Boolean));
+  return result;
+}
+
+const ITEMS_PARSE_ROW = '| IN-20261109-meeting-001 | 01 | compatible-fact | simple-update | update | artifact:DOC#rules | input:IN-20261109-meeting-001#extracted-facts/01 | parser-probe.txt | statement | inherit |';
+const ITEMS_PARSE_TABLE = [...ITEMS_HEADER, ITEMS_PARSE_ROW].join('\n');
+const ITEMS_PARSE_SECTION = `## Reconciliation Items\n\n${ITEMS_PARSE_TABLE}`;
+
+test('#300 Items cold parsing avoids a second section tree and exact repeats skip all Markdown work', async (t) => {
+  for (const [name, prefix, expectedParses] of [
+    ['clean', '', 1],
+    ['stripped', '<!-- cold parse annotation -->\n\n', 2],
+  ]) await t.test(name, () => {
+    // Make the section text unique too: a different document prefix alone could
+    // accidentally reuse the old parser's cached section tree from another test.
+    const body = `# Cold ${name}\n\n${prefix}${ITEMS_PARSE_SECTION}`
+      .replace('parser-probe.txt', `cold-${name}-section.txt`);
+    const before = reconciliationParseStats();
+    const first = parseReconciliationItems(body);
+    const after = reconciliationParseStats();
+    assert.equal(first.rows.length, 1);
+    assert.equal(after.parsed - before.parsed, expectedParses);
+    assert.deepEqual(parseReconciliationItems(body), first);
+    assert.deepEqual(reconciliationParseStats(), after);
+  });
+});
+
+test('#300 Items preserve transformed headings, containers and table interpretation', () => {
+  const cases = [
+    ['split ATX heading', `#<!-- split --># Reconciliation Items\n\n${ITEMS_PARSE_TABLE}`, 1, 1, 1],
+    ['split setext heading', `Reconciliation Items\n--<!-- split -->--\n\n${ITEMS_PARSE_TABLE}`, 1, 1, 1],
+    ['comment in heading', ITEMS_PARSE_SECTION.replace('Reconciliation Items', 'Reconciliation<!-- note --> Items'), 1, 1, 1],
+    ['comment in delimiter', ITEMS_PARSE_SECTION.replace('|---|', '|--<!-- split -->-|'), 1, 1, 1],
+    ['comment joins emphasis', ITEMS_PARSE_SECTION.replace('artifact:DOC#rules', '*<!-- split -->*artifact:DOC#rules**'), 1, 1, 1],
+    ['same-line HTML tail', `<!-- note --> ## Reconciliation Items\n\n${ITEMS_PARSE_TABLE}`, 0, 0, 0],
+    ['heading absorbed by list after stripping', `- list item\n\n<!-- barrier -->\n\n  ${ITEMS_PARSE_SECTION}`, 0, 0, 0],
+    ['fenced duplicate stays hidden', `\`\`\`md\n${ITEMS_PARSE_SECTION}\n\`\`\`\n\n${ITEMS_PARSE_SECTION}`, 1, 1, 1],
+    ['generated duplicate still counts', `${ITEMS_PARSE_SECTION}\n\n<!-- GENERATED:START summary -->\n\n${ITEMS_PARSE_SECTION}\n\n<!-- GENERATED:END summary -->`, 2, 0, 0],
+    ['two tables stay invalid', `${ITEMS_PARSE_SECTION}\n\n${ITEMS_PARSE_TABLE}`, 1, 2, 0],
+  ];
+  for (const [name, body, sections, tables, rows] of cases) {
+    const actual = parseReconciliationItems(body);
+    assert.deepEqual(actual, legacyItemsParse(body), name);
+    assert.deepEqual([actual.sectionCount, actual.tableCount, actual.rows.length], [sections, tables, rows], name);
+    if (rows) assert.equal(actual.rows[0].target, 'artifact:DOC#rules', name);
+  }
+});
+
+test('#300 Items keep reference definitions local to the selected section', () => {
+  for (const marker of ['', '!']) {
+    for (const [field, value] of [['Target', 'artifact:DOC#rules'], ['Input ID', 'Input ID']]) {
+      const reference = `${marker}[${value}][items-ref]`;
+      const section = ITEMS_PARSE_SECTION.replace(value, reference);
+      for (const [name, body, resolved] of [
+        ['before section', `[items-ref]: /outside\n\n${section}`, false],
+        ['after next heading', `${section}\n\n## Other\n\n[items-ref]: /outside`, false],
+        ['inside section', `${section}\n\n[items-ref]: /inside`, true],
+        ['fenced definition', `\`\`\`md\n[items-ref]: /example\n\`\`\`\n\n${section}`, false],
+      ]) {
+        const label = `${marker || 'link'} ${field}: ${name}`;
+        const actual = parseReconciliationItems(body);
+        assert.deepEqual(actual, legacyItemsParse(body), label);
+        if (field === 'Target') {
+          assert.equal(actual.rows[0].target, resolved ? value : reference, label);
+        } else {
+          assert.equal(actual.table.headers[0], resolved ? value : reference, label);
+          assert.equal(actual.rows.length, resolved ? 1 : 0, label);
+          assert.equal(actual.headerIssue === null, resolved, label);
+        }
+      }
+    }
+  }
+});
+
+const definitionSensitiveItemCells = (value) => [
+  { kind: 'inline image alt', cell: `![[${value}][outside]](/image)`, unresolved: `[${value}][outside]`,
+    definition: '[outside]: /url', control: `![${value}](/image)` },
+  { kind: 'footnote', cell: `${value}[^outside]`, unresolved: `${value}[^outside]`,
+    definition: '[^outside]: note', control: value },
+];
+
+test('#305 Items image alt and footnotes keep reference labels local to the section', async (t) => {
+  for (const [field, value] of [['Target', 'artifact:DOC#rules'], ['Input ID', 'Input ID']]) {
+    for (const syntax of definitionSensitiveItemCells(value)) {
+      const section = ITEMS_PARSE_SECTION.replace(value, syntax.cell);
+      for (const [name, body, resolved] of [
+        ['definition before Items', `${syntax.definition}\n\n${section}`, false],
+        ['definition after next H2', `${section}\n\n## Other\n\n${syntax.definition}`, false],
+        ['definition inside Items', `${section}\n\n${syntax.definition}`, true],
+        ['fenced definition', `${section}\n\n\`\`\`md\n${syntax.definition}\n\`\`\``, false],
+        ['no reference control', ITEMS_PARSE_SECTION.replace(value, syntax.control), true],
+      ]) await t.test(`${syntax.kind} ${field}: ${name}`, () => {
+        const actual = parseReconciliationItems(body);
+        assert.deepEqual(actual, legacyItemsParse(body));
+        if (field === 'Target') {
+          assert.equal(actual.rows[0].target, resolved ? value : syntax.unresolved);
+        } else {
+          assert.equal(actual.table.headers[0], resolved ? value : syntax.unresolved);
+          assert.equal(actual.headerIssue === null, resolved);
+          assert.equal(actual.rows.length, resolved ? 1 : 0);
+        }
+      });
+    }
+  }
+});
+
+test('#305 v2 cannot accept image-alt or footnote Target/header values through an outside definition', async (t) => {
+  const target = 'artifact:COUPON-001-figma-component-mapping#component-mapping/M-001';
+  for (const [field, value, code] of [['Target', target, 'RR-SCHEMA-014'], ['Input ID', 'Input ID', 'RR-SCHEMA-005']]) {
+    for (const syntax of definitionSensitiveItemCells(value)) {
+      const cells = field === 'Target'
+        ? { itemRows: [DEFAULT_ITEM_ROWS[0].replace(value, syntax.cell), ...DEFAULT_ITEM_ROWS.slice(1)] }
+        : { itemsHeader: [ITEMS_HEADER[0].replace(value, syntax.cell), ITEMS_HEADER[1]] };
+      for (const [name, placement, resolved] of [
+        ['definition before Items', { summaryPrefix: `${syntax.definition}\n` }, false],
+        ['definition after next H2', { registerExtra: `## Other\n\n${syntax.definition}` }, false],
+        ['definition inside Items', { registerExtra: syntax.definition }, true],
+        ['fenced definition', { registerExtra: `\`\`\`md\n${syntax.definition}\n\`\`\`` }, false],
+      ]) await t.test(`${syntax.kind} ${field}: ${name}`, (t) => {
+        const result = runV2(t, { ...cells, ...placement });
+        if (resolved) assert.deepEqual(messages(result.errors), []);
+        else assert.ok(hasCode(result.errors, code), `${code} required: ${messages(result.errors).join('; ')}`);
+      });
+    }
+  }
+});
+
+test('#300 Items preserve exact table source and atomic line endings after stripping', () => {
+  const literal = ITEMS_PARSE_ROW.replace('parser-probe.txt', '`<!--`') + ' extra |';
+  const closing = ITEMS_PARSE_ROW.replace('parser-probe.txt', '`-->`');
+  for (const eol of ['\n', '\r\n', '\r']) {
+    const sourceText = [...ITEMS_HEADER, literal, closing].join(eol);
+    const body = `<!-- annotation -->${eol}${eol}## Reconciliation Items${eol}${eol}${sourceText}`;
+    const actual = parseReconciliationItems(body);
+    assert.deepEqual(actual, legacyItemsParse(body), JSON.stringify(eol));
+    assert.equal(actual.table.sourceText, sourceText);
+    assert.equal(actual.rows.length, 2);
+    assert.ok(actual.table.sourceText.includes(' extra |'), 'excess raw cells stay available to width warnings');
+  }
+  for (const omitted of ['    hidden code', '<pre>hidden HTML</pre>', '<!-- hidden comment -->']) {
+    const body = `## Reconciliation Items\n\n${ITEMS_HEADER[0]}\n${ITEMS_HEADER[1]}\r${omitted}\n${ITEMS_PARSE_ROW}`;
+    const actual = parseReconciliationItems(body);
+    assert.deepEqual(actual, legacyItemsParse(body), omitted);
+    assert.equal(actual.table.sourceText, `${ITEMS_HEADER[0]}\n${ITEMS_HEADER[1]}\r\n${ITEMS_PARSE_ROW}`);
+    assert.equal(actual.rows.length, 1);
+  }
 });
 
 test('Items reuse skips Markdown work and isolates every returned table/row', () => {
