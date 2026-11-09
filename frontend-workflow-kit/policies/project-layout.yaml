@@ -1,6 +1,7 @@
-# 소비 프로젝트 레이아웃 프로파일 (tier1 layout profile — role → glob).
-# 기본은 동봉 프리셋 'expo-feature' (= 현 하드코딩). 소비자는 여기서 `roles:` 부분 오버라이드 또는
-# `domains.<d>.roles:` 도메인별 오버라이드를 얹는다. 머지: preset < roles < domains.<d>.roles.
-# 설계: docs/design/drafts/customizable-architecture/tier1-layout-profile.md
+# 킷 소유 기본 레이아웃 프로파일 (tier1 layout profile — role → glob). 이 번들 파일은 편집하지 않는다.
+# consumer override는 templates/adoption/project-layout.template.yaml을 바탕으로 킷 밖의 별도
+# project-layout.yaml에 작성하고, frontend-workflow.config.yaml의 layout: 또는 --layout으로 지정한다.
+# 별도 파일에서 roles: / domains.<d>.roles:를 덮어쓴다. 머지: preset < roles < domains.<d>.roles.
+# 기존 편집 이관 및 CLI별 설정 지원: docs/reference/upgrade-notes.md#bundled-project-layout-ownership-301
 version: 1
 preset: expo-feature

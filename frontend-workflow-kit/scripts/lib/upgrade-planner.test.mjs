@@ -134,6 +134,42 @@ function buildModeUpdateScenario(tmp, t) {
   return { currentDir, nextDir, rel, body, currentAbs };
 }
 
+const LAYOUT_PATH = 'policies/project-layout.yaml';
+const LAYOUT_BASE = '# Bundled layout\nversion: 1\npreset: expo-feature\n';
+const LAYOUT_LOCAL = `${LAYOUT_BASE}roles:\n  screens: [src/screens/**]\n`;
+const LAYOUT_NEXT = LAYOUT_BASE.replace('# Bundled layout', '# Keep bundled layout unchanged');
+
+function buildLayoutScenario(tmp, {
+  rel = LAYOUT_PATH, old = LAYOUT_BASE, cur = LAYOUT_LOCAL, next = LAYOUT_BASE,
+  withInstallManifest = true, nextMode = '100644',
+} = {}) {
+  const currentDir = path.join(tmp, 'current');
+  const nextDir = path.join(tmp, 'next');
+  fs.mkdirSync(currentDir, { recursive: true });
+  if (cur != null) writeFile(currentDir, rel, cur);
+  if (next != null) writeFile(nextDir, rel, next);
+  const entry = (body, mode = '100644') => ({
+    path: rel, sha256: sha(body), classification: 'consumer-runtime', mode,
+  });
+  if (withInstallManifest) {
+    writeFile(currentDir, INSTALL_MANIFEST_NAME, JSON.stringify({
+      schema_version: 1,
+      kit: { source_repo: 'O/R', source_ref: 'OLDREF' },
+      payload: { files: old == null ? [] : [entry(old)] },
+    }));
+  }
+  writeFile(nextDir, PAYLOAD_MANIFEST_NAME, JSON.stringify({
+    schema_version: 1,
+    kit: { source_repo: 'O/R', source_ref: 'NEXTREF' },
+    payload: { files: next == null ? [] : [entry(next, nextMode)] },
+  }));
+  return { currentDir, nextDir };
+}
+
+function layoutWarnings(plan) {
+  return plan.warnings.filter((warning) => warning.startsWith('KIT-LAYOUT-MIGRATION:'));
+}
+
 function categoryOf(plan, rel) {
   return plan.files.find((f) => f.path === rel)?.category;
 }
@@ -212,6 +248,116 @@ test('buildPlan classifies every file correctly (managed baseline)', (t) => {
   assert.equal(plan.counts['unknown-local'], 1);
   assert.equal(plan.counts['missing-current'], 1);
   assert.equal(plan.warnings.length, 0);
+});
+
+test('#301 locally edited bundled layouts warn without changing upgrade actions', async (t) => {
+  for (const [label, scenario, category] of [
+    ['unchanged upstream', {}, 'local-modified'],
+    ['upstream header update', { next: LAYOUT_NEXT }, 'conflict'],
+    ['unknown baseline', { next: LAYOUT_NEXT, withInstallManifest: false }, 'conflict'],
+  ]) {
+    await t.test(label, () => {
+      const tmp = mkTmp('layout-migration');
+      t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+      const { currentDir, nextDir } = buildLayoutScenario(tmp, scenario);
+      const plan = buildPlan({ currentDir, nextDir });
+      assert.equal(categoryOf(plan, LAYOUT_PATH), category);
+      const warnings = layoutWarnings(plan);
+      assert.equal(warnings.length, 1);
+      assert.match(warnings[0], /policies\/project-layout\.yaml/);
+      assert.match(warnings[0], /frontend-workflow\.config\.yaml/);
+      assert.match(warnings[0], /--layout/);
+      assert.match(warnings[0], /outside/i);
+      assert.match(warnings[0], /restore/i);
+      assert.match(warnings[0], /upgrade-notes\.md#bundled-project-layout-ownership-301/);
+      for (const [options, conflictAction] of [
+        [{}, 'write-incoming'],
+        [{ allowConflicts: true }, 'overwrite-conflict'],
+        [{ forceRuntime: true }, 'overwrite-forced'],
+      ]) {
+        const selected = buildPlan({ currentDir, nextDir, options });
+        assert.equal(actionOf(selected, LAYOUT_PATH), category === 'local-modified' ? 'keep-local' : conflictAction);
+        assert.deepEqual(layoutWarnings(selected), warnings);
+      }
+
+      const applied = applyPlan({ plan, currentDir, nextDir });
+      assert.equal(read(currentDir, LAYOUT_PATH), LAYOUT_LOCAL, 'default apply preserves the consumer layout');
+      assert.deepEqual(applied.actions, category === 'conflict'
+        ? [{ path: LAYOUT_PATH, action: 'write-incoming' }] : []);
+      if (category === 'conflict') {
+        assert.equal(read(currentDir, `${CONFLICTS_DIR_NAME}/${LAYOUT_PATH}.incoming`), LAYOUT_NEXT);
+      }
+      const again = buildPlan({ currentDir, nextDir });
+      assert.equal(actionOf(again, LAYOUT_PATH), 'keep-local');
+      assert.deepEqual(layoutWarnings(again), warnings, 'kept overrides still need migration on the next plan');
+    });
+  }
+});
+
+test('#301 layout migration advice excludes unchanged, new, and unrelated content', async (t) => {
+  for (const [label, scenario, category] of [
+    ['unchanged layout', { cur: LAYOUT_BASE }, 'unchanged'],
+    ['new layout', { old: null, cur: null }, 'new-file'],
+    ['safe upstream header update', { cur: LAYOUT_BASE, next: LAYOUT_NEXT }, 'safe-update'],
+    ['upstream mode-only update', { cur: LAYOUT_BASE, nextMode: '100755' }, 'mode-update'],
+    ['already matches next', { cur: LAYOUT_NEXT, next: LAYOUT_NEXT }, 'unchanged'],
+    ['different policy path', { rel: 'policies/custom-layout.yaml' }, 'local-modified'],
+  ]) {
+    await t.test(label, () => {
+      const tmp = mkTmp('layout-no-migration');
+      t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+      const dirs = buildLayoutScenario(tmp, scenario);
+      const plan = buildPlan(dirs);
+      assert.equal(categoryOf(plan, scenario.rel ?? LAYOUT_PATH), category);
+      assert.deepEqual(layoutWarnings(plan), []);
+    });
+  }
+});
+
+test('#301 mode-only local layout changes need no content migration, including upstream header conflicts', async (t) => {
+  for (const [label, next, category] of [
+    ['upstream unchanged', LAYOUT_BASE, 'local-modified'],
+    ['upstream header changed', LAYOUT_NEXT, 'conflict'],
+  ]) {
+    await t.test(label, (st) => {
+      const tmp = mkTmp('layout-mode-only');
+      st.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+      const dirs = buildLayoutScenario(tmp, { cur: LAYOUT_BASE, next });
+      const currentAbs = path.join(dirs.currentDir, LAYOUT_PATH);
+      try { fs.chmodSync(currentAbs, 0o755); } catch {
+        st.skip('chmod not supported on this platform');
+        return;
+      }
+      if (statMode(currentAbs) !== '100755') {
+        st.skip('executable bit is not observable on this platform');
+        return;
+      }
+      const plan = buildPlan(dirs);
+      assert.equal(categoryOf(plan, LAYOUT_PATH), category);
+      assert.deepEqual(layoutWarnings(plan), []);
+    });
+  }
+});
+
+test('#301 CLI JSON and Markdown expose the layout migration advisory without applying it', (t) => {
+  const tmp = mkTmp('layout-cli');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const { currentDir, nextDir } = buildLayoutScenario(tmp, { next: LAYOUT_NEXT });
+  const planPath = path.join(tmp, 'upgrade-plan.md');
+  const result = spawnSync(process.execPath, [
+    UPGRADE_CLI, '--current', currentDir, '--next', nextDir, '--json', '--plan', planPath,
+  ], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.mode, 'dry-run');
+  assert.equal(output.applied, null);
+  assert.equal(actionOf(output.plan, LAYOUT_PATH), 'write-incoming');
+  const warnings = layoutWarnings(output.plan);
+  assert.equal(warnings.length, 1);
+  const markdown = fs.readFileSync(planPath, 'utf8');
+  assert.ok(markdown.includes(`## Warnings\n\n- ${warnings[0]}\n`));
+  assert.equal(read(currentDir, LAYOUT_PATH), LAYOUT_LOCAL);
+  assert.equal(fs.existsSync(path.join(currentDir, CONFLICTS_DIR_NAME)), false);
 });
 
 // --- apply (Part I 2,3,4,5,6,7,8,9,13) -------------------------------------

@@ -374,6 +374,23 @@ export function buildPlan({ currentDir, nextDir, options = {} }) {
       + 'After a successful apply, future upgrades will be manifest-based.',
     );
   }
+  const bundledLayout = files.find((file) => file.path === 'policies/project-layout.yaml');
+  // #301: category alone also includes mode-only edits. With a known baseline,
+  // only locally changed bytes need migration; an unknown baseline is advisory.
+  if (bundledLayout
+    && ['local-modified', 'conflict'].includes(bundledLayout.category)
+    && bundledLayout.current_sha256 != null && bundledLayout.next_sha256 != null
+    && bundledLayout.current_sha256 !== bundledLayout.next_sha256
+    && (bundledLayout.old_sha256 == null || bundledLayout.current_sha256 !== bundledLayout.old_sha256)) {
+    warnings.push(
+      'KIT-LAYOUT-MIGRATION: policies/project-layout.yaml differs from the next kit-owned default. '
+      + 'Review it before applying: copy the full current profile to a consumer-owned layout file outside the vendored kit, '
+      + 'select it with frontend-workflow.config.yaml layout: (for supported CLIs) or --layout, '
+      + 'then restore the bundled file together with the matching next payload runtime. '
+      + 'See docs/reference/upgrade-notes.md#bundled-project-layout-ownership-301. '
+      + 'The planner does not migrate layout or config automatically; explicit overwrite options still apply.',
+    );
+  }
 
   return {
     schema_version: MANIFEST_SCHEMA_VERSION,

@@ -16,8 +16,8 @@ import { concretePathIssue } from './path-backstop.mjs';
 
 export const PINNED_VISUAL_REFRESH_PACKAGE_VERSION = '0.3.0-mvp.2';
 
-// Git blob identities from the reviewed Issue #222 baseline plus #228's authoring
-// manifest registration. Omitted
+// Git blob identities from the reviewed Issue #222 baseline, #228's authoring
+// manifest registration and #301's layout ownership guidance. Omitted
 // authority resources are trusted only after their bytes reproduce these identities.
 // A dirty or shadowed kit file therefore cannot become positive authority merely by
 // being the file that happens to execute the CLI.
@@ -32,7 +32,7 @@ export const PINNED_VISUAL_REFRESH_RESOURCES = Object.freeze({
   }),
   layout: Object.freeze({
     relative: 'policies/project-layout.yaml',
-    git_blob_sha: '72700a7e3504bf2c2eb577dd3d9e7484b4c8d75b',
+    git_blob_sha: '971767aae81450ede78de73bf444be83798d7f0f',
   }),
   preset: Object.freeze({
     relative: 'presets/expo-feature.yaml',

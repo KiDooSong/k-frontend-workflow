@@ -1,5 +1,11 @@
 # Current Roadmap
 
+> 2026-11-09 #301: 번들 `policies/project-layout.yaml`을 킷 소유 기본값으로 명시하고 consumer override를 킷 밖의 별도 layout으로 연결하도록 안내한다.
+> 업그레이드 planner는 번들 내용 차이가 있는 `local-modified`/`conflict`에 `KIT-LAYOUT-MIGRATION` advisory를 내며, mode-only 변경은 제외한다.
+> 기존 수정본 보존·CLI별 config/`--layout` 지원·동일 payload 원본 복원 절차를 추가하고 주석 변경에 맞춰 visual resource pin을 갱신한다.
+> 기본 keep-local/write-incoming과 명시적 덮어쓰기 옵션은 유지하며, layout/config의 자동 이관이나 기존 binding 승인은 수행하지 않는다.
+> 정본: [bundled layout ownership](../frontend-workflow-kit/docs/reference/upgrade-notes.md#bundled-project-layout-ownership-301).
+
 > 2026-11-09 #300 2차 성능 개선: Reconciliation Items의 제목 탐색과 표 추출이 같은 콘텐츠 AST를 재사용한다.
 > 참조·이미지·각주가 없는 단일 Items 표는 GFM 파싱 2→1회, 코드·HTML 제거로 본문이 달라지면 3→2회로 줄이고 선택한 섹션의 표만 만든다.
 > 참조형 링크·이미지·각주가 있는 표는 기존 섹션 단독 파싱을 유지해 외부 definition이 header·Target 판정을 바꾸지 못하게 한다. 이미지 alt 안에서 문자열로 변환된 참조도 이 경계를 지킨다.
