@@ -1,5 +1,10 @@
 # Current Roadmap
 
+> 2026-11-09 #300 3차 성능 개선: raw Git 스냅샷의 디렉터리 생성 단계에서 같은 부모의 항목 이름을 재사용한다.
+> 부모 identity·mode·size·timestamp가 바뀌면 다시 읽고, 각 조상의 directory/symlink 검사와 mkdir 뒤 실제 철자 검사를 유지한다.
+> 캐시는 blob 전개 전에 비우며 스냅샷 사이에 공유하지 않는다. 전체 tree·raw bytes·mode·OID 검증과 basis/checkpoint 계약은 유지한다.
+> 정본: [raw Git snapshot boundary](../frontend-workflow-kit/docs/reference/visual-refresh-boundaries.md#raw-git-names-and-object-snapshots).
+
 > 2026-11-09 #303: 관리형 apply가 `_distribution-summary.json`을 next payload 원문으로 갱신하고, next에 없으면 오래된 요약을 제거한다.
 > 요약은 upstream 배포 목록·제외 규칙이며 consumer의 실제 파일 inventory가 아니다. 기존 payload 분류·로컬 수정 보존을 유지하고 metadata 단계에서 처리한다.
 > #308 리뷰 보완: summary를 같은 디렉터리의 새 파일로 교체해 외부 파일·`keep-local` payload와 연결된 하드링크 원본을 보존한다.

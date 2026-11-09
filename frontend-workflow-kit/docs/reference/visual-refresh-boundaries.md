@@ -100,6 +100,13 @@ and working-tree encoding do not rewrite the authority snapshot. Git reads keep
 the 128 MiB per-invocation buffer bound; overflow aborts and removes the partial
 snapshot rather than evaluating partial data.
 
+Directory-entry names are reused during one snapshot's directory construction
+instead of rereading the same ancestors for every file. Each lookup checks the
+current parent identity, mode, size and timestamps; a changed stamp refreshes the
+listing. Ancestor directory/symlink checks and the actual spelling check after
+`mkdir` remain in place. The cache is cleared before blob materialization and is
+never shared between snapshots.
+
 Modes are preserved from the Git tree: `100644`/`100755` become regular files,
 `120000` becomes an actual symlink (created last, never followed while writing),
 and `160000` remains an opaque gitlink directory. Unsupported symlink creation or
