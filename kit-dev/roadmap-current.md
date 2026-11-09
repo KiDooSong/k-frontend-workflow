@@ -1,5 +1,10 @@
 # Current Roadmap
 
+> 2026-11-09 #300 1차 성능 개선: source closure의 경로·바이트·해시 재읽기를 호출 내부에서 재사용하고 원문 캐시는 16 MiB로 제한한다.
+> worktree 경로의 디렉터리 목록은 단계별로 재사용하며 live parent stamp가 바뀌면 갱신한다.
+> 최종 파일·부재·inventory 재검증과 판정·basis/checkpoint 계약을 유지한다. Markdown 파싱·전체 Git tree 전개 비용은 후속이다.
+> 정본: [scoped source snapshot](../frontend-workflow-kit/docs/reference/scoped-work.md#evaluation-on-the-immutable-baseline), [current work Git backstop](../frontend-workflow-kit/docs/reference/current-work.md#git-backstop).
+
 > 2026-11-08 #228: 기존 `--ci` 평면 fact 입력의 저작용 schema·안전한 template·manifest와 근거 기록 계약을 추가했다.
 > 미제공 CI 때문에 실패한 정책 조건은 기존처럼 blocking에서 제외하되 필요한 입력을 next_actions에 한 번 안내한다.
 > mode/path/권한은 유지하며 runtime schema 강제·자동 producer·증거 인증은 포함하지 않는다.

@@ -148,12 +148,61 @@ function retainHistoricalWitnesses(source, remembered, active) {
   }
 }
 
+// One source closure owns these pins; no caller can supply or reuse a snapshot.
+// Keep byte retention bounded independently of the (small) digest read set.
+// Audits need only the first digest, even after its raw bytes have been evicted.
+const SOURCE_BYTE_CACHE_LIMIT = 16 * 1024 * 1024;
+function createSourceSnapshot(projectRoot) {
+  const pins = new Map(), bytes = new Map(), absentRegisters = new Set();
+  let byteSize = 0;
+  function current(relative) {
+    const canonical = canonicalRepositoryPath(projectRoot, relative,
+      { required: true, type: 'file', label: 'scoped source relation' });
+    const raw = readCurrentBytes(canonical.absolute, 'scoped source relation');
+    return { raw, sha256: hashBytes(raw) };
+  }
+  function read(file, expected, needBytes = false) {
+    const relative = path.isAbsolute(file) ? path.relative(projectRoot, file).split(path.sep).join('/') : file;
+    if (path.isAbsolute(file) && path.resolve(file) !== file) fail('noncanonical snapshot path');
+    let pin = pins.get(relative), raw = bytes.get(relative);
+    if (!pin || (needBytes && raw === undefined)) {
+      const value = current(relative);
+      if (pin && pin.sha256 !== value.sha256) fail(`snapshot changed: ${relative}`);
+      pin = { file: relative, sha256: value.sha256 };
+      pins.set(relative, pin); raw = value.raw;
+      while (byteSize + raw.length > SOURCE_BYTE_CACHE_LIMIT && bytes.size) {
+        const oldest = bytes.keys().next().value;
+        byteSize -= bytes.get(oldest).length; bytes.delete(oldest);
+      }
+      if (raw.length <= SOURCE_BYTE_CACHE_LIMIT) {
+        bytes.set(relative, raw); byteSize += raw.length;
+      }
+    } else if (needBytes) {
+      bytes.delete(relative); bytes.set(relative, raw);
+    }
+    if (expected !== undefined && pin.sha256 !== expected) fail(`snapshot changed: ${relative}`);
+    return { ...pin, ...(needBytes ? { bytes: raw } : {}) };
+  }
+  function verify() {
+    // Never use read() here: the final audit must inspect current spelling,
+    // every ancestor, and bytes, including files seen only in earlier passes.
+    bytes.clear(); byteSize = 0;
+    for (const pin of pins.values()) {
+      if (current(pin.file).sha256 !== pin.sha256) fail(`snapshot changed: ${pin.file}`);
+    }
+    for (const relative of absentRegisters) if (canonicalRepositoryPath(projectRoot, relative,
+      { required: false, type: 'file', label: 'scoped source register' }).exists) fail('register appeared during source projection');
+  }
+  return { read, verify, absentRegister: (relative) => absentRegisters.add(relative) };
+}
+
 function resolveSourceClosure(options, requireEffects) {
+  const snapshot = createSourceSnapshot(options.projectRoot);
   const roots = new Set(), pins = new Map(), witnesses = new Map(), fallbacks = new Map();
   const itemWitnesses = new Map();
   let historical = false;
   for (;;) {
-    const result = resolveSourceRelations(options, requireEffects, [...roots]);
+    const result = resolveSourceRelations(options, requireEffects, [...roots], snapshot);
     historical ||= result.sources.some((entry) => entry.source.groups.some((group) =>
       group.effects.some((effect) => effect.target.historical_target)));
     for (const warning of result.target_fallbacks || []) fallbacks.set(scopeJson(warning), warning);
@@ -177,35 +226,32 @@ function resolveSourceClosure(options, requireEffects) {
         roots.add(ref); changed = true;
       }
     }
-    if (!changed) return { ...result, sources: scopedEvidenceSet(result.sources), read_set: scopeSet([...pins.values()]),
-      ...(fallbacks.size ? { target_fallbacks: scopeSet([...fallbacks.values()]) } : {}) };
+    if (!changed) {
+      snapshot.verify();
+      return { ...result, sources: scopedEvidenceSet(result.sources), read_set: scopeSet([...pins.values()]),
+        ...(fallbacks.size ? { target_fallbacks: scopeSet([...fallbacks.values()]) } : {}) };
+    }
   }
 }
 
 function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
-  registerFile, projectRoot, layout } = {}, requireEffects, dependencyRoots) {
+  registerFile, projectRoot, layout } = {}, requireEffects, dependencyRoots, snapshot) {
   const parts = ownerParts(owner); workUnitId(unit);
   const args = { targetIndex, inputArtifacts, projectRoot };
   const refs = createScopedReferenceResolver(args);
   const sourceReader = createScopedSourceResolver({ ...args, registerFile });
   const reads = new Map(), documents = new Map(), spans = new WeakMap(), nativeInputs = new Map(), fallbacks = new Map();
   let absentRegister = null;
-  function read(file, expected) {
-    const relative = path.isAbsolute(file) ? path.relative(projectRoot, file).split(path.sep).join('/') : file;
-    if (path.isAbsolute(file) && path.resolve(file) !== file) fail('noncanonical snapshot path');
-    const canonical = canonicalRepositoryPath(projectRoot, relative,
-      { required: true, type: 'file', label: 'scoped source relation' });
-    const bytes = readCurrentBytes(canonical.absolute, 'scoped source relation'), sha256 = hashBytes(bytes);
-    if ((expected !== undefined && sha256 !== expected) || (reads.has(relative) && reads.get(relative).sha256 !== sha256)) {
-      fail(`snapshot changed: ${relative}`);
-    }
-    reads.set(relative, { file: relative, sha256 });
-    return bytes;
+  function read(file, expected, needBytes = false) {
+    const entry = snapshot.read(file, expected, needBytes);
+    // Pass-local reads still define this pass's evidence and contract hashes.
+    reads.set(entry.file, { file: entry.file, sha256: entry.sha256 });
+    return entry;
   }
   function audit(graph) { for (const entry of graph.read_set) read(entry.file, entry.sha256); }
   function document(record) {
     if (!documents.has(record.file)) {
-      const parsed = splitFrontmatter(decodeGitUtf8(read(record.file), 'scoped source relation'));
+      const parsed = splitFrontmatter(decodeGitUtf8(read(record.file, undefined, true).bytes, 'scoped source relation'));
       if (!parsed.hasFrontmatter || parsed.parseError) fail('invalid canonical document');
       documents.set(record.file, { ...parsed, view: parseReconciliationReferenceView(parsed.body) });
     }
@@ -351,7 +397,9 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
       if (actual.exists) {
         read(registerFile); // Pin bytes before either canonical parser consumes them.
         register = parseReconciliationRegister(actual.absolute);
-      } else absentRegister = relative;
+      } else {
+        absentRegister = relative; snapshot.absentRegister(relative);
+      }
     }
     if (register) {
       const contract = parseRegisterContract(register.fm);
@@ -390,7 +438,7 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
     return { input_id: id, ref, reason: 'legacy-summary-only', summary: { input_id: summary.inputId, source: summary.source,
       classification: summary.classification, reconcile_status: summary.reconcileStatus, result: summary.result,
       touched_artifacts: summary.touched, created_items: summary.created, supersedes: summary.supersedes, row: row.line },
-    input_sha256: hashBytes(read(found.artifact.file)) };
+    input_sha256: read(found.artifact.file).sha256 };
   }
   const legacyConnections = [];
   function witnesses(target, historicalRow = null) {
@@ -455,7 +503,6 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
         input_sha256: source.input.input_sha256, effects_sha256: hashBytes(Buffer.from(scopeJson(effects))),
         contracts_sha256: hashBytes(Buffer.from(scopeJson(contractHashes))) } });
   }
-  for (const entry of [...reads.values()]) read(entry.file, entry.sha256);
   if (absentRegister && canonicalRepositoryPath(projectRoot, absentRegister,
     { required: false, type: 'file', label: 'scoped source register' }).exists) fail('register appeared during source projection');
   return { owner, unit, sources: scopedEvidenceSet(resolved), pending_connections: scopeSet(pending),

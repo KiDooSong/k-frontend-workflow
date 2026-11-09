@@ -16,7 +16,7 @@ function stat(file) {
   try { return fs.lstatSync(file, { bigint: true }); }
   catch (error) { if (error.code === 'ENOENT') return null; throw error; }
 }
-function exactPath(root, name) {
+function exactPath(root, name, directories = null) {
   requireGitRepositoryPath(name, 'current worktree path');
   let cursor = root;
   const parts = name.split('/');
@@ -25,7 +25,13 @@ function exactPath(root, name) {
     if (!parent) return path.join(root, ...parts);
     if (!parent.isDirectory() || parent.isSymbolicLink()) throw new Error(`current worktree: non-directory ancestor: ${name}`);
     const next = path.join(cursor, parts[i]);
-    if (!fs.readdirSync(cursor).includes(parts[i]) && stat(next)) throw new Error(`current worktree: path spelling alias: ${name}`);
+    const parentStamp = stamp(parent);
+    let listing = directories?.get(cursor);
+    if (!listing || listing.stamp !== parentStamp) {
+      listing = { stamp: parentStamp, names: new Set(fs.readdirSync(cursor)) };
+      directories?.set(cursor, listing);
+    }
+    if (!listing.names.has(parts[i]) && stat(next)) throw new Error(`current worktree: path spelling alias: ${name}`);
     cursor = next;
   }
   return cursor;
@@ -49,10 +55,10 @@ function readRaw(file, before) {
     return Buffer.concat(chunks, length);
   } finally { fs.closeSync(fd); }
 }
-function inputNames(root, name, { artifactIndex = false } = {}) {
+function inputNames(root, name, { artifactIndex = false, directories = null } = {}) {
   const out = [];
   function visit(relative) {
-    const file = exactPath(root, relative), s = stat(file);
+    const file = exactPath(root, relative, directories), s = stat(file);
     if (!s) return;
     if (s.isSymbolicLink()) throw new Error(`current input scan: symlink is not a canonical input: ${relative}`);
     if (s.isDirectory()) {
@@ -70,17 +76,20 @@ export function captureCurrentWorktree(repositoryRoot, sourceTree, { extraFiles 
   if (ancestors.includes(realRoot)) throw new Error('current worktree: recursive submodule root');
   const baseline = captureCurrentTree(repositoryRoot, sourceTree);
   const index = captureCurrentIndex(repositoryRoot);
-  const discover = () => {
+  const discover = (directories) => {
     const raw = decodeGitUtf8(runVisualGit(['-c', 'core.untrackedCache=false', '-c', 'core.fsmonitor=false',
       'ls-files', '--others', '--exclude-standard', '-z'], repositoryRoot), 'current untracked paths');
     if (raw && !raw.endsWith('\0')) throw new Error('current untracked paths: unterminated entry');
     return [...new Set([...baseline.entries.keys(), ...index.entries.keys(), ...extraFiles,
-      ...(raw ? raw.slice(0, -1).split('\0') : []), ...inputRoots.flatMap((root) => inputNames(repositoryRoot, root)),
-      ...artifactRoots.flatMap((root) => inputNames(repositoryRoot, root, { artifactIndex: true }))])].sort(byteCompare);
+      ...(raw ? raw.slice(0, -1).split('\0') : []), ...inputRoots.flatMap((root) => inputNames(repositoryRoot, root, { directories })),
+      ...artifactRoots.flatMap((root) => inputNames(repositoryRoot, root, { artifactIndex: true, directories }))])].sort(byteCompare);
   };
-  const names = discover(), entries = new Map(), observations = new Map();
+  // Each phase owns its directory listings. Fresh parent stamps also refresh
+  // names within a phase, while every path retains its live ancestor checks.
+  let directories = new Map();
+  const names = discover(directories), entries = new Map(), observations = new Map();
   for (const name of names) {
-    const file = exactPath(repositoryRoot, name), before = stat(file);
+    const file = exactPath(repositoryRoot, name, directories), before = stat(file);
     observations.set(name, stamp(before));
     if (!before) continue;
     const prior = index.entries.get(name) || baseline.entries.get(name);
@@ -112,10 +121,12 @@ export function captureCurrentWorktree(repositoryRoot, sourceTree, { extraFiles 
     entries.set(name, { mode, oid });
   }
   // Do not label a mixed observed capture as stable if paths changed while read.
+  directories = new Map();
   for (const [name, before] of observations) {
-    if (stamp(stat(exactPath(repositoryRoot, name))) !== before) throw new Error(`current worktree changed during capture: ${name}`);
+    if (stamp(stat(exactPath(repositoryRoot, name, directories))) !== before) throw new Error(`current worktree changed during capture: ${name}`);
   }
-  if (canonicalJson(discover()) !== canonicalJson(names)) throw new Error('current worktree inventory changed during capture');
+  directories = new Map();
+  if (canonicalJson(discover(directories)) !== canonicalJson(names)) throw new Error('current worktree inventory changed during capture');
   return { ...createCurrentSnapshot(repositoryRoot, entries), observed_index_tree: index.tree };
 }
 
