@@ -165,6 +165,13 @@ review responsibility.
 
 ## Git backstop
 
+Worktree capture shares directory-entry name sets only within its capture,
+verification or inventory phase. Every path still checks live ancestor stats;
+a changed parent stamp refreshes its names. Verification and the final inventory
+start with fresh caches, and actual inventory traversal remains fresh. This
+reduces repeated directory reads without carrying filesystem facts into a later
+capture or skipping file changes, path spelling aliases or symlink ancestors.
+
 The default C backstop compares actual `HEAD` to the current worktree with raw
 Git name/status data, `--ignore-submodules=none`, rename detection, and actual
 filesystem bytes/modes. `forbidden-paths --staged` uses the index instead.

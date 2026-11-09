@@ -6,6 +6,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { captureCurrentWorktree } from './current-work-integrity.mjs';
 
 const KIT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const TARGET = 'src/features/coupons/screens/CouponListScreen.tsx';
@@ -303,3 +304,71 @@ test('P1-3 ignored dirty gitlinks fail explicitly without refreshing the user in
 
 // Keep review regressions in the existing test/test:spec and macOS entry point.
 import './current-work-review.test.mjs';
+
+test('#300 worktree capture lists shared ancestors per phase and refreshes on the next capture', (t) => {
+  const f = fixture(t), relative = 'src/capture-cache', dir = path.join(f.root, relative);
+  fs.mkdirSync(dir);
+  for (let i = 0; i < 64; i++) fs.writeFileSync(path.join(dir, `file-${String(i).padStart(2, '0')}.ts`), `export const n = ${i};\n`);
+  f.git(['add', '-A']); f.git(['commit', '-qm', 'many sibling paths']);
+  const tree = String(f.git(['rev-parse', 'HEAD^{tree}'])).trim();
+  const index = fs.readFileSync(f.index), readdir = fs.readdirSync;
+  let listings = 0;
+  t.mock.method(fs, 'readdirSync', function (file, ...args) {
+    if (file === dir) listings += 1;
+    return readdir.call(this, file, ...args);
+  });
+  const first = captureCurrentWorktree(f.repo, tree);
+  t.diagnostic(`worktree capture IO: ${listings} shared-directory listings for 64 sibling files`);
+  assert.equal(first.tree, tree);
+  assert.ok(listings > 0 && listings <= 3, `shared directory was listed ${listings} times for 64 files`);
+  assert.deepEqual(fs.readFileSync(f.index), index);
+  fs.writeFileSync(path.join(dir, 'new.ts'), 'new\n');
+  fs.appendFileSync(path.join(dir, 'file-00.ts'), '// changed\n');
+  listings = 0;
+  const second = captureCurrentWorktree(f.repo, tree);
+  assert.notEqual(second.tree, tree);
+  assert.ok(second.entries.has(`${relative}/new.ts`));
+  assert.equal(second.evidence(`${relative}/file-00.ts`).hash, hash(fs.readFileSync(path.join(dir, 'file-00.ts'))));
+  assert.ok(listings > 0 && listings <= 3);
+  assert.deepEqual(fs.readFileSync(f.index), index);
+});
+
+test('#300 cached directory names refresh before accepting a case-only path alias', (t) => {
+  const f = fixture(t), dir = path.join(f.root, 'src/capture-alias');
+  fs.mkdirSync(dir);
+  const first = path.join(dir, 'a.ts'), original = path.join(dir, 'z.ts'), renamed = path.join(dir, 'Z.ts');
+  fs.writeFileSync(first, 'first\n'); fs.writeFileSync(original, 'last\n');
+  f.git(['add', '-A']); f.git(['commit', '-qm', 'case mutation fixture']);
+  const tree = String(f.git(['rev-parse', 'HEAD^{tree}'])).trim(), open = fs.openSync, lstat = fs.lstatSync;
+  let moved = false;
+  t.mock.method(fs, 'lstatSync', function (file, ...args) {
+    // Exercise the case-insensitive alias on Linux as well as native macOS.
+    return lstat.call(this, moved && file === original ? renamed : file, ...args);
+  });
+  t.mock.method(fs, 'openSync', function (file, ...args) {
+    const fd = open.call(this, file, ...args);
+    if (!moved && file === first) {
+      moved = true; fs.renameSync(original, renamed);
+      fs.utimesSync(dir, new Date(), new Date(Date.now() + 2000));
+    }
+    return fd;
+  });
+  assert.throws(() => captureCurrentWorktree(f.repo, tree), /path spelling alias/);
+  assert.equal(moved, true);
+});
+
+test('#300 worktree capture detects an ignored input created during capture', (t) => {
+  const f = fixture(t), root = 'docs/frontend-workflow/inputs';
+  const relative = `${root}/IN-20261109-user-note-001.md`, added = path.join(f.root, relative);
+  fs.mkdirSync(path.dirname(added), { recursive: true });
+  fs.appendFileSync(path.join(f.repo, '.git/info/exclude'), `\n${relative}\n`);
+  const tree = String(f.git(['rev-parse', 'HEAD^{tree}'])).trim(), open = fs.openSync;
+  let injected = false;
+  t.mock.method(fs, 'openSync', function (file, ...args) {
+    const fd = open.call(this, file, ...args);
+    if (!injected && file === f.target) { injected = true; fs.writeFileSync(added, 'new ignored input\n'); }
+    return fd;
+  });
+  assert.throws(() => captureCurrentWorktree(f.repo, tree, { inputRoots: [root] }), /inventory changed during capture/);
+  assert.equal(injected, true);
+});
