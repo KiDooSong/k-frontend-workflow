@@ -17,6 +17,99 @@ or root config.
 
 ---
 
+## Bundled project-layout ownership (#301)
+
+`tools/frontend-workflow/policies/project-layout.yaml` is the **kit-owned default**.
+Keep its bytes from the matching kit payload. Consumer role, domain and layer
+overrides belong in a project-owned file outside `tools/frontend-workflow/`, for
+example `config/frontend-workflow/project-layout.yaml`. The old bundled header
+incorrectly invited in-place overrides. When visual-refresh uses the bundled
+default, it checks those bytes against its pinned Git blob; an edited default
+therefore fails that check even if other commands accept its YAML.
+
+For a new custom layout, copy `templates/adoption/project-layout.template.yaml`
+to the project-owned path and adapt it. For an **already edited bundled layout**,
+preserve the existing content using the migration below.
+
+### Which commands read the configured layout
+
+`frontend-workflow.config.yaml` can name a default layout, but support is specific
+to the command. These are the entries that accept a consumer layout:
+
+| Command | Reads config `layout` automatically | Custom-layout usage |
+|---|---|---|
+| `workflow:readiness`, `workflow:forbidden-paths`, `workflow:packet`, `workflow:report`, `workflow:run` | Yes, including current/scoped `--work` and visual-refresh modes | Set config `layout`; an explicit `--layout` must select the same file. |
+| `workflow:binding-status` | Yes, from committed `HEAD` | Set config `layout`; an explicit `--layout` must select the same file. |
+| `workflow:state`, `workflow:validate`, `workflow:doctor`, `workflow:catalog`, `workflow:check-generated`, `workflow:policy-draft` | No | Pass `--layout <project-owned file>` on each invocation or add it to the consumer's package script. Without it, these commands use the bundled default. |
+
+The config path is relative to the project root. Ordinary `--layout` paths are
+relative to the working directory; `--work`, visual-refresh and binding-status
+use their `--root`-relative resource rules. Run the examples below from the
+consumer project root. In a monorepo, select the same project and docs with the
+flags supported by each [command](../../COMMANDS.md).
+
+### Manual migration of an edited bundled layout
+
+1. **Preserve the full edited file before restoring or upgrading it.** Choose an
+   unused project-owned path, or compare and merge with an existing profile
+   without overwriting its edits. For a new destination:
+
+   ```bash
+   mkdir -p config/frontend-workflow
+   cp -i tools/frontend-workflow/policies/project-layout.yaml \
+     config/frontend-workflow/project-layout.yaml
+   ```
+
+   Verify that the copied profile retains all local `roles`, `domains` and layer
+   declarations. Starting from a fresh template at this step would lose them.
+2. Merge `layout` into the existing project-root
+   `frontend-workflow.config.yaml`, preserving `policy_overlay` and any other
+   existing supported settings. If there is no config, this is sufficient:
+
+   ```yaml
+   version: 1
+   layout: config/frontend-workflow/project-layout.yaml
+   ```
+
+   A project without scoped adoption can use a layout-only config. For the
+   commands in the table's last row, update their invocations or consumer package
+   scripts to pass `--layout config/frontend-workflow/project-layout.yaml` as well.
+3. After verifying the preserved copy and its configuration, restore the bundled
+   file from a **known clean payload that matches the installed kit runtime and
+   resource pin**. During an upgrade, resolve it to the incoming bundled file
+   together with that same payload's runtime. Do not restore only this file from
+   an unrelated release or from an arbitrary latest checkout: its bytes and the
+   runtime's pin must agree. Keep the external profile and backup while resolving
+   the upgrade plan.
+4. Commit the external profile, config and restored/upgraded kit as a setup
+   change before starting a new work request. Snapshot-based commands need these
+   files in their evaluated Git baseline. Re-run the usual checks with the same
+   selected profile, for example:
+
+   ```bash
+   npm run workflow:doctor -- --layout config/frontend-workflow/project-layout.yaml
+   npm run workflow:state -- --layout config/frontend-workflow/project-layout.yaml
+   npm run workflow:validate -- --layout config/frontend-workflow/project-layout.yaml
+   ```
+
+   For adopted owners with bindings, run `npm run workflow:binding-status` and
+   review any changed or stale basis through the normal human checkpoint.
+   Moving the layout does not transfer an old approval automatically.
+
+The new upgrade planner emits `KIT-LAYOUT-MIGRATION` when a content-edited
+bundled layout is classified `local-modified` or `conflict`. With no known
+baseline, it conservatively reports differing content for review. Mode-only
+local changes do not trigger this diagnostic. This is advisory:
+the default apply behavior still preserves local edits, and the planner never
+moves overrides or edits the consumer config. Explicit overwrite options can
+still replace the bundled file; preserve and connect the external profile first.
+For the first upgrade, run the planner **from the new payload**, after installing
+its dependencies as shown in [Upgrade A Vendored Kit](../../README.md#upgrade-a-vendored-kit).
+An older installed planner cannot emit this new diagnostic, even though it can
+include these incoming migration notes in its plan.
+
+---
+
 ## Scoped authored H3 section-only references
 
 - Scoped ordinary `artifact:EXAMPLE#section` references now fall back to a unique
@@ -83,8 +176,10 @@ or root config.
      only `work_execution:`.
   3. Add `frontend-workflow.config.yaml` at the repository root: `version: 1` and
      `policy_overlay: <that path>`. To set the default layout, add
-     `layout: <project layout path>`. Calls may then drop `--layout`, or keep
-     passing the same path.
+     `layout: <project layout path>`. The config-aware commands in the
+     [layout support table](#which-commands-read-the-configured-layout) may then
+     drop `--layout`, or keep passing the same path; the other listed commands
+     still require the explicit flag.
   4. Commit the config and the overlay on their own, not inside a work diff: both
      are authority files.
   5. Run `npm run workflow:binding-status`. A binding's basis records the file its

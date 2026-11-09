@@ -419,6 +419,38 @@ test('bundled resources are pinned and a dirty byte sequence cannot self-attest'
   }
 });
 
+test('#301 consumer-owned layout overrides leave the bundled pin intact and dirty fallback fails closed', (t) => {
+  const root = tmpdir(t, 'visual-refresh-owned-layout-');
+  const bundled = tmpdir(t, 'visual-refresh-owned-bundle-');
+  for (const spec of Object.values(PINNED_VISUAL_REFRESH_RESOURCES)) {
+    write(bundled, spec.relative, fs.readFileSync(path.join(KIT_ROOT, spec.relative), 'utf8'));
+  }
+  const original = readPinnedBundledResource('layout', bundled);
+  const prepare = (options = {}) => prepareVisualRefreshResources({ destinationRoot: root, options, bundledRoot: bundled });
+  const fallback = prepare();
+  assert.equal(fallback.meta.resourceProvenance.layout.source, 'bundled:policies/project-layout.yaml');
+  assert.equal(fallback.meta.resourceProvenance.layout.pinned, true);
+  assert.equal(fallback.meta.resourceProvenance.layout.git_blob_sha, PINNED_VISUAL_REFRESH_RESOURCES.layout.git_blob_sha);
+
+  const layoutPath = 'config/project-layout.yaml';
+  write(root, layoutPath, yamlStringify({ ...original.value, roles: { screen: 'app/screens/**' } }, { lineWidth: 0 }));
+  for (const [selection, options] of [['--layout', { layout: layoutPath }], ['config', {}]]) {
+    if (selection === 'config') write(root, 'frontend-workflow.config.yaml', `version: 1\nlayout: ${layoutPath}\n`);
+    const prepared = prepare(options);
+    assert.deepEqual(prepared.meta.layout.roleGlobs('screen'), ['app/screens/**'], selection);
+    assert.equal(prepared.meta.resourceProvenance.layout.source, layoutPath, selection);
+    assert.equal(prepared.meta.resourceProvenance.layout.snapshot, 'destination', selection);
+    assert.equal(Object.hasOwn(prepared.meta.resourceProvenance.layout, 'pinned'), false, selection);
+    assert.equal(prepared.meta.canonicalBuiltIn, false, selection);
+  }
+  assert.equal(readPinnedBundledResource('layout', bundled).raw, original.raw, 'consumer overrides never rewrite the bundle');
+
+  fs.rmSync(path.join(root, 'frontend-workflow.config.yaml'));
+  fs.appendFileSync(path.join(bundled, 'policies', 'project-layout.yaml'), '\n# local bundled edit\n');
+  assert.throws(() => prepare(),
+    (error) => error instanceof VisualRefreshResourceError && /bundled layout bytes.*pinned Git blob/.test(error.message));
+});
+
 test('explicit authority resource symlinks are rejected before any snapshot read', (t) => {
   const root = tmpdir(t, 'visual-refresh-symlink-');
   fs.mkdirSync(path.join(root, 'docs', 'frontend-workflow'), { recursive: true });

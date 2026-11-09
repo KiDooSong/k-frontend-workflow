@@ -60,9 +60,16 @@ layers:
 
 ## Draft, do not replace
 
+Pass the same consumer-owned layout to both commands. Neither reads config
+`layout` automatically; see the [command support and path rules](../upgrade-notes.md#which-commands-read-the-configured-layout).
+For a profile at `config/frontend-workflow/project-layout.yaml`, run from the
+consumer project root:
+
 ```bash
-npm run workflow:doctor -- --root <root> --src <src>      # inspect layout
-npm run workflow:policy-draft -- --out docs/frontend-workflow/_meta/policy-drafts
+npm run workflow:doctor -- --root <root> --src <src> \
+  --layout config/frontend-workflow/project-layout.yaml
+npm run workflow:policy-draft -- --layout config/frontend-workflow/project-layout.yaml \
+  --out docs/frontend-workflow/_meta/policy-drafts
 ```
 
 Policy draft and migration output is **review evidence**. It does not replace

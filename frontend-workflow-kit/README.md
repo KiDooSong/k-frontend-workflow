@@ -91,9 +91,10 @@ cp tools/frontend-workflow/templates/global/llm-rules.template.md docs/frontend-
 cd frontend-workflow-kit && npm run kit:pack
 ```
 
-소비 repo에서 **새 payload의** planner를 dry-run으로 돌린다(기본이 dry-run, 무쓰기). planner는 교체 전 새 payload에서 실행하는 업그레이드 도구이며 `workflow:*` 명령으로 등록하지 않는다.
+소비 repo에서 **새 payload의** 의존성을 설치한 뒤 그 planner를 dry-run으로 돌린다(기본이 dry-run, 무쓰기). planner는 교체 전 새 payload에서 실행하는 업그레이드 도구이며 `workflow:*` 명령으로 등록하지 않는다. 이전 설치본의 planner에는 새 마이그레이션 진단이 없을 수 있다.
 
 ```bash
+npm --prefix /path/to/new/frontend-workflow-kit ci
 node /path/to/new/frontend-workflow-kit/scripts/upgrade-vendored-kit.mjs \
   --current tools/frontend-workflow \
   --next /path/to/new/frontend-workflow-kit \
@@ -153,7 +154,9 @@ npm run workflow:state -- --docs docs/frontend-workflow --src src
 npm run workflow:validate -- --docs docs/frontend-workflow --src src
 ```
 
-기본 layer model과 다르면 `templates/adoption/project-layout.template.yaml`에서 시작해 `project-layout.yaml`을 만들고 `--layout project-layout.yaml`을 넘긴다. monorepo/custom root 변형과 layout profile 상세는 [CONVENTIONS.md](CONVENTIONS.md) §Project Layout Profiles, 플래그 의미는 [COMMANDS.md](COMMANDS.md)를 본다. route/screen/API/Tier3 관례도 CONVENTIONS.md를 본다.
+번들 `tools/frontend-workflow/policies/project-layout.yaml`은 킷 소유 기본값이므로 원본을 유지한다. 기본 layer model과 다르면 `templates/adoption/project-layout.template.yaml`에서 시작해 킷 밖의 소비 repo 파일(예: `config/frontend-workflow/project-layout.yaml`)을 만들고 root `frontend-workflow.config.yaml`의 `layout`으로 연결한다. `state`·`validate`·`doctor` 등 config를 읽지 않는 명령에는 같은 파일을 `--layout`으로 넘긴다.
+
+이미 번들 파일을 수정했다면 **그 수정본 전체를 외부 파일로 먼저 보존**한 뒤 설정을 연결하고, 설치 버전과 일치하는 번들 원본을 복원한다. 정확한 명령별 config 지원과 손실 없는 이전 순서는 [upgrade notes](docs/reference/upgrade-notes.md#bundled-project-layout-ownership-301)를 본다. monorepo/custom root 변형과 layout profile 상세는 [CONVENTIONS.md](CONVENTIONS.md) §Project Layout Profiles, 플래그 의미는 [COMMANDS.md](COMMANDS.md)를 본다. route/screen/API/Tier3 관례도 CONVENTIONS.md를 본다.
 
 ## Input And Reconcile Flow
 
@@ -253,10 +256,11 @@ brownfield repo 전체 도입 진단과 함께 보려면 `workflow:adoption-prob
 
 ## Tier3 And Policy Drafts
 
-Tier3/custom layer는 readiness 코드를 바꾸지 않고 `project-layout.yaml`로 선언한다(layer/선언 상세는 [CONVENTIONS.md](CONVENTIONS.md) §Tier3). `workflow:doctor`로 layout을 확인하고, policy 변경은 live policy 교체가 아니라 draft/review artifact로 다룬다.
+Tier3/custom layer는 소비 repo 소유 layout 파일로 선언한다(layer/선언 상세는 [CONVENTIONS.md](CONVENTIONS.md) §Tier3). `workflow:doctor -- --layout <그 파일>`로 layout을 확인하고, policy 변경은 draft/review artifact로 다룬다. `workflow:policy-draft`에도 같은 `--layout`을 넘긴다.
 
 ```bash
-npm run workflow:policy-draft -- --out docs/frontend-workflow/_meta/policy-drafts
+npm run workflow:policy-draft -- --layout config/frontend-workflow/project-layout.yaml \
+  --out docs/frontend-workflow/_meta/policy-drafts
 ```
 
 policy draft나 migration guide가 만들어져도 hard gate, CI required check, pre-edit hook 승격은 별도 사람 결정이다.
@@ -265,7 +269,7 @@ policy draft나 migration guide가 만들어져도 hard gate, CI required check,
 
 - `validate`가 navigation-map 의존성으로 실패하면 `app/navigation-map.md`를 먼저 만든다.
 - `final-fixture-ui` 이상으로 올라가지 않으면 screen hook/source path와 `--src`/`--layout`을 확인한다(`fake_hook_exists` 는 final 승격 전제 — fixture hook 은 `rough-fixture-ui` 에서 먼저 만든다).
-- monorepo에서 파일을 못 찾으면 모든 workflow 명령에 같은 `--root`, `--src`, `--docs`, `--layout` 값을 넘긴다.
+- monorepo에서 파일을 못 찾으면 각 명령이 지원하는 `--root`, `--src`, `--docs`로 같은 프로젝트를 선택하고, [layout 지원표](docs/reference/upgrade-notes.md#which-commands-read-the-configured-layout)에 따라 config 또는 `--layout`으로 같은 profile을 선택한다.
 - check 12가 row 없음으로 경고/에러를 보고하면 Reconciliation Register에 해당 `input_id` row를 먼저 만들고 `in-progress`로 시작한다.
 - check 12가 기존 row의 `not-started`/`in-progress`/`failed` 상태를 보고하면 새 row를 만들지 말고 같은 row를 재개하며, severity 규칙은 [input-reconciliation.md](docs/reference/input-reconciliation.md)를 본다.
 - 생성 파일이 stale 해 보이면 직접 수정하지 말고 [docs/reference/generated-files.md](docs/reference/generated-files.md)의 명령으로 재생성한다. `workflow:check-generated`는 advisory guard이며 hard CI gate가 아니다.

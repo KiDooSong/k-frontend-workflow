@@ -66,10 +66,21 @@ npm run workflow:state -- --root apps/mobile --src apps/mobile/src
 npm run workflow:doctor -- --root apps/mobile --src apps/mobile/src
 ```
 
-When the layer model differs from the default, copy
-`templates/adoption/project-layout.template.yaml`, adapt it, then pass
-`--layout project-layout.yaml` to state/readiness/validate/doctor commands that
-need project structure.
+The bundled `policies/project-layout.yaml` is a kit-owned default; keep it from
+the matching kit payload. When the layer model differs, copy
+`templates/adoption/project-layout.template.yaml` to a consumer-owned file outside
+the vendored kit, such as `config/frontend-workflow/project-layout.yaml`, and
+adapt that file. Set `layout: config/frontend-workflow/project-layout.yaml` in
+the project-root `frontend-workflow.config.yaml` (with `version: 1`, preserving
+any existing `policy_overlay`).
+
+The execution CLIs and binding-status read this config. State, validate, doctor,
+catalog, check-generated and policy-draft still require an explicit
+`--layout config/frontend-workflow/project-layout.yaml`; run these examples from
+the project root. See the exact [command support and path rules](docs/reference/upgrade-notes.md#which-commands-read-the-configured-layout).
+If the bundled file was already edited, preserve the whole edited profile before
+restoring a matching upstream copy. Follow the [manual migration](docs/reference/upgrade-notes.md#manual-migration-of-an-edited-bundled-layout)
+so existing overrides remain available to every layout-consuming command.
 
 ## Thin Route, Separate Screen
 
@@ -157,10 +168,10 @@ Raw source collection remains consumer-owned; agents do not resolve/confirm/acce
 
 ## Tier3 Layers
 
-Tier3 layers are supported through `project-layout.yaml`, not by editing
-readiness code. Declare custom roles and access rules there, run
-`workflow:doctor`, and keep policy changes as reviewed documents until the team
-accepts them.
+Declare Tier3 roles and access rules in the consumer-owned layout described in
+[Project Layout Profiles](#project-layout-profiles). Run `workflow:doctor` with
+that file's explicit `--layout`, and keep policy changes as reviewed documents
+until the team accepts them. Pass the same layout to `workflow:policy-draft`.
 
 Policy draft and migration guide output is review evidence. It does not replace
 `policies/implementation-mode-policy.yaml`, promote CI, or enable hard gates.
