@@ -895,3 +895,89 @@ test('D #269 legacy sources: the Summary state and the input bytes reach the pro
   f.change('input.md', ({ fm }) => { fm.captured_by = 'another-recorder'; }, f.inputs);
   assert.notDeepEqual(scope(f).projection, before);
 });
+
+test('#300 source closure bounds file reads as anchors grow and preserves the coverage basis', (t) => {
+  function measure(count) {
+    const f = fixture(t), ids = Array.from({ length: count }, (_, i) => String(i + 1).padStart(2, '0'));
+    f.change('input.md', (doc) => { doc.body = '## Extracted Facts\n' +
+      ids.map((id) => `- Fact ${id}.`).join('\n'); }, f.inputs);
+    f.change('screen.md', ({ fm }) => { fm.work_execution.units[0].sources = [select(ids)]; });
+    f.register(ids.map((id) => effect(id)));
+    const options = f.options(), expectedBasis = resolveScopedCoverageBasis({ ...options, inputId: INPUT }).basis;
+    const counts = { opens: 0, listings: 0, ownerOpens: 0 };
+    const open = fs.openSync, readdir = fs.readdirSync;
+    const opened = t.mock.method(fs, 'openSync', function (file, ...args) {
+      counts.opens += 1;
+      if (file === f.ownerFile) counts.ownerOpens += 1;
+      return open.call(this, file, ...args);
+    });
+    const listed = t.mock.method(fs, 'readdirSync', function (...args) {
+      counts.listings += 1; return readdir.apply(this, args);
+    });
+    let out;
+    try { out = resolveScopedSourceRelations(options); }
+    finally { opened.mock.restore(); listed.mock.restore(); }
+    assert.deepEqual(out.sources[0].basis, expectedBasis);
+    assert.deepEqual(out.sources[0].selection, select(ids));
+    assert.deepEqual(out.sources[0].issues, []);
+    assert.equal(out.sources[0].connections.length, count);
+    assert.ok(out.contracts.nodes.some((node) => node.ref === REF),
+      'effect anchors require a further closure pass');
+    assert.deepEqual(resolveScopedSourceRelations(options), out);
+    noPermit(out);
+    return counts;
+  }
+  const one = measure(1), many = measure(24);
+  t.diagnostic(`source closure IO: ${JSON.stringify({ one_anchor: one, twenty_four_anchors: many })}`);
+  assert.equal(one.ownerOpens, 2, 'read owner once and verify it once across all passes');
+  assert.equal(many.ownerOpens, 2);
+  assert.ok(many.opens <= one.opens + 2, 'anchor comparisons must not amplify file opens');
+  assert.ok(many.listings <= one.listings + 2, 'anchor comparisons must not amplify directory reads');
+});
+
+test('#300 source closure detects changed owner bytes in its uncached final audit', (t) => {
+  const f = fixture(t), options = f.options(), readFile = fs.readFileSync;
+  let mutated = false;
+  t.mock.method(fs, 'readFileSync', function (file, ...args) {
+    const raw = readFile.call(this, file, ...args);
+    if (!mutated && file === f.registerFile) {
+      mutated = true; fs.appendFileSync(f.ownerFile, '\nChanged after the owner was pinned.');
+    }
+    return raw;
+  });
+  assert.throws(() => resolveScopedSourceRelations(options), /snapshot changed|differs from/);
+  assert.equal(mutated, true);
+});
+
+test('#300 source closure rechecks a same-byte owner behind a replaced ancestor', { skip: process.platform === 'win32' }, (t) => {
+  const f = fixture(t), ownerDir = path.join(f.root, 'owner'), movedDir = path.join(f.root, 'owner-real');
+  fs.mkdirSync(ownerDir);
+  const ownerFile = path.join(ownerDir, 'screen.md');
+  fs.renameSync(f.ownerFile, ownerFile); f.docs.set('screen.md', ownerFile);
+  const options = f.options(), readFile = fs.readFileSync;
+  let mutated = false;
+  t.mock.method(fs, 'readFileSync', function (file, ...args) {
+    const raw = readFile.call(this, file, ...args);
+    if (!mutated && file === f.registerFile) {
+      mutated = true; fs.renameSync(ownerDir, movedDir); fs.symlinkSync(movedDir, ownerDir, 'dir');
+    }
+    return raw;
+  });
+  assert.throws(() => resolveScopedSourceRelations(options), /symlink/);
+  assert.equal(mutated, true);
+});
+
+test('#300 source projection detects a register appearing during the final file audit', (t) => {
+  const f = fixture(t, { explicit: false, typed: true }); fs.unlinkSync(f.registerFile);
+  const options = f.options(), open = fs.openSync;
+  let ownerOpens = 0, appeared = false;
+  t.mock.method(fs, 'openSync', function (file, ...args) {
+    const fd = open.call(this, file, ...args);
+    if (file === f.ownerFile && ++ownerOpens === 2) {
+      appeared = true; f.register();
+    }
+    return fd;
+  });
+  assert.throws(() => resolveScopedSourceProjection(options), /register appeared during source projection/);
+  assert.equal(appeared, true);
+});
