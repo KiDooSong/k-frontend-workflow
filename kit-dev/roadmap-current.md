@@ -1,5 +1,9 @@
 # Current Roadmap
 
+> 2026-11-09 #303: 관리형 apply가 `_distribution-summary.json`을 next payload 원문으로 갱신하고, next에 없으면 오래된 요약을 제거한다.
+> 요약은 upstream 배포 목록·제외 규칙이며 consumer의 실제 파일 inventory가 아니다. 기존 payload 분류·로컬 수정 보존을 유지하고 metadata 단계에서 처리한다.
+> summary 쓰기·삭제 전 경로를 검사하고 `--plan`·`--backup-dir`와의 충돌을 거부한다. 정본: [distribution summary refresh](../frontend-workflow-kit/docs/reference/upgrade-notes.md#distribution-summary-refresh-303).
+
 > 2026-11-09 #302: table-width 회귀 테스트가 v2 입력·대상 문서를 자체 생성해 배포에서 제외된 example 의존성을 없앴다.
 > 기존 v1·v2 22개 검증을 유지하고, `examples/` 없는 실제 packed payload에서 전체 suite 실행을 distribution 회귀로 확인한다.
 > 사용법: [packaged table-width tests](../frontend-workflow-kit/docs/reference/upgrade-notes.md#packaged-table-width-regression-tests-302).

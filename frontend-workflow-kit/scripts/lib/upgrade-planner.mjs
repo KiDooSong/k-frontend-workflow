@@ -19,6 +19,7 @@ import {
   MANIFEST_SCHEMA_VERSION,
   PAYLOAD_MANIFEST_NAME,
   INSTALL_MANIFEST_NAME,
+  DISTRIBUTION_SUMMARY_NAME,
   CONFLICTS_DIR_NAME,
   sha256OfFile,
   readJsonSafe,
@@ -904,6 +905,24 @@ export function applyPlan({ plan, currentDir, nextDir, options = {} }) {
   const record = (rel, action) => actions.push({ path: rel, action });
   const LABEL = 'current vendored kit';
 
+  // #303: this diagnostic describes the selected upstream payload, not a rescan
+  // of locally kept files. Read it and check its destination before payload writes.
+  const summaryPath = path.join(resolvedCurrent, DISTRIBUTION_SUMMARY_NAME);
+  let nextSummary = null;
+  try {
+    nextSummary = fs.readFileSync(path.join(resolvedNext, DISTRIBUTION_SUMMARY_NAME));
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+  }
+  assertSafeWriteTarget(realCurrent, summaryPath, LABEL);
+  try {
+    if (!fs.lstatSync(summaryPath).isFile()) {
+      throw new Error(`refusing to refresh a non-file distribution summary: ${summaryPath}`);
+    }
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+  }
+
   for (const f of plan.files) {
     const action = f.planned_action;
     if (!isSafeRelPath(f.path)) continue; // never act on a traversal/absolute path
@@ -939,8 +958,8 @@ export function applyPlan({ plan, currentDir, nextDir, options = {} }) {
     // none / keep-local / leave / keep-orphan → no write
   }
 
-  // Refresh meta: install manifest (post-apply baseline) + a copy of the next
-  // payload manifest so the vendored kit advertises the ref it was upgraded to.
+  // Refresh meta: the post-apply baseline plus the next payload's manifest and
+  // summary. Metadata stays outside payload action/count/backup semantics.
   const installManifest = buildInstallManifest({
     currentDir: resolvedCurrent,
     nextResolved: next,
@@ -955,6 +974,14 @@ export function applyPlan({ plan, currentDir, nextDir, options = {} }) {
     const payloadPath = path.join(resolvedCurrent, PAYLOAD_MANIFEST_NAME);
     assertSafeWriteTarget(realCurrent, payloadPath, LABEL);
     writeJson(payloadPath, nextManifestRaw);
+  }
+
+  assertSafeWriteTarget(realCurrent, summaryPath, LABEL);
+  if (nextSummary !== null) {
+    fs.writeFileSync(summaryPath, nextSummary);
+  } else {
+    // Legacy/hand-built payloads may omit the summary; do not retain stale facts.
+    fs.rmSync(summaryPath, { force: true });
   }
 
   return { actions, installManifest };

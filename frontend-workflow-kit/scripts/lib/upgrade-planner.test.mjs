@@ -19,6 +19,7 @@ import { writePlanAtomic } from '../upgrade-vendored-kit.mjs';
 import {
   PAYLOAD_MANIFEST_NAME,
   INSTALL_MANIFEST_NAME,
+  DISTRIBUTION_SUMMARY_NAME,
   CONFLICTS_DIR_NAME,
   manifestFileIndex,
   isSafeRelPath,
@@ -403,6 +404,162 @@ test('applyPlan performs only safe operations and refreshes the install manifest
   assert.equal(idx.get('orphan.mjs').sha256, sha('O'));
   // unknown-local never enters the managed manifest
   assert.equal(idx.has('localonly.mjs'), false);
+});
+
+test('#303 apply refreshes summary bytes without classifying metadata or changing kept payload files', (t) => {
+  const tmp = mkTmp('summary-refresh');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const { currentDir, nextDir } = buildScenario(tmp);
+  const withoutSummary = buildPlan({ currentDir, nextDir });
+  const nextFiles = JSON.parse(read(nextDir, PAYLOAD_MANIFEST_NAME)).payload.files.map(({ path }) => path).sort();
+  const summary = {
+    manifest: 'distribution-manifest.yaml', manifest_version: 1,
+    destination_hint: 'tools/frontend-workflow', file_count: nextFiles.length, files: nextFiles,
+    excluded: [{ path: 'examples/**', classification: 'kit-dev-fixture', reason: 'development fixtures' }],
+  };
+  // Preserve the incoming artifact itself, including non-default JSON formatting.
+  const nextRaw = JSON.stringify(summary, null, '\t') + '\r\n';
+  writeFile(currentDir, DISTRIBUTION_SUMMARY_NAME, '{"file_count":1,"files":["old.mjs"],"excluded":[]}\n');
+  writeFile(nextDir, DISTRIBUTION_SUMMARY_NAME, nextRaw);
+  const plan = buildPlan({ currentDir, nextDir });
+  assert.deepEqual(plan.files, withoutSummary.files);
+  assert.deepEqual(plan.counts, withoutSummary.counts);
+  const backupDir = path.join(tmp, 'backup');
+  const applied = applyPlan({ plan, currentDir, nextDir, options: { backupDir } });
+  assert.equal(read(currentDir, DISTRIBUTION_SUMMARY_NAME), nextRaw);
+  assert.equal(read(nextDir, DISTRIBUTION_SUMMARY_NAME), nextRaw);
+  assert.equal(applied.actions.some(({ path }) => path === DISTRIBUTION_SUMMARY_NAME), false);
+  assert.equal(fs.existsSync(path.join(backupDir, DISTRIBUTION_SUMMARY_NAME)), false);
+  for (const rel of ['localmod.mjs', 'conflict-runtime.mjs', 'docs/conflict-doc.md', 'orphan.mjs', 'localonly.mjs']) {
+    assert.equal(read(currentDir, rel), SPEC[rel].cur, rel);
+  }
+  assert.equal(read(currentDir, `${CONFLICTS_DIR_NAME}/conflict-runtime.mjs.incoming`), 'A3');
+  assert.equal(summary.files.includes('orphan.mjs'), false, 'summary describes the upstream payload, not kept orphans');
+  const install = JSON.parse(read(currentDir, INSTALL_MANIFEST_NAME));
+  assert.equal(install.kit.source_ref, 'NEXTREF');
+  assert.equal(manifestFileIndex(install).get('localmod.mjs').sha256, sha('A'));
+  assert.equal(manifestFileIndex(install).has(DISTRIBUTION_SUMMARY_NAME), false);
+
+  writeFile(currentDir, DISTRIBUTION_SUMMARY_NAME, '{"file_count":149}\n');
+  const again = applyPlan({ plan: buildPlan({ currentDir, nextDir }), currentDir, nextDir });
+  assert.deepEqual(again.actions, []);
+  assert.equal(read(currentDir, DISTRIBUTION_SUMMARY_NAME), nextRaw);
+  assert.equal(read(currentDir, 'localmod.mjs'), 'A2');
+  fs.rmSync(path.join(currentDir, DISTRIBUTION_SUMMARY_NAME));
+  applyPlan({ plan: buildPlan({ currentDir, nextDir }), currentDir, nextDir });
+  assert.equal(read(currentDir, DISTRIBUTION_SUMMARY_NAME), nextRaw, 'missing current metadata is restored too');
+});
+
+test('#303 an absent upstream summary clears stale metadata and stays absent on repeated apply', async (t) => {
+  for (const manifest of [true, false]) {
+    await t.test(manifest ? 'manifest-backed next' : 'legacy scanned next', () => {
+      const tmp = mkTmp('summary-absent');
+      t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+      const { currentDir, nextDir } = buildScenario(tmp);
+      if (!manifest) fs.rmSync(path.join(nextDir, PAYLOAD_MANIFEST_NAME));
+      writeFile(currentDir, DISTRIBUTION_SUMMARY_NAME, '{"file_count":149}\n');
+      for (let run = 0; run < 2; run++) {
+        const plan = buildPlan({ currentDir, nextDir });
+        assert.equal(plan.files.some(({ path }) => path === DISTRIBUTION_SUMMARY_NAME), false);
+        const applied = applyPlan({ plan, currentDir, nextDir });
+        assert.equal(fs.existsSync(path.join(currentDir, DISTRIBUTION_SUMMARY_NAME)), false);
+        assert.equal(applied.actions.some(({ path }) => path === DISTRIBUTION_SUMMARY_NAME), false);
+        assert.equal(read(currentDir, 'localmod.mjs'), 'A2');
+      }
+    });
+  }
+});
+
+test('#303 summary symlinks are refused before payload writes for both refresh and removal', async (t) => {
+  for (const incoming of [true, false]) {
+    for (const dangling of [false, true]) {
+      await t.test(`${incoming ? 'refresh' : 'removal'}, ${dangling ? 'dangling' : 'existing'} target`, (st) => {
+        const tmp = mkTmp('summary-link');
+        st.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+        const { currentDir, nextDir } = buildScenario(tmp);
+        if (incoming) writeFile(nextDir, DISTRIBUTION_SUMMARY_NAME, '{"file_count":7}\n');
+        const outside = path.join(tmp, 'outside-summary.json');
+        if (!dangling) fs.writeFileSync(outside, 'SENTINEL');
+        const destination = path.join(currentDir, DISTRIBUTION_SUMMARY_NAME);
+        try { fs.symlinkSync(outside, destination, 'file'); } catch {
+          st.skip('symlink creation not permitted on this platform');
+          return;
+        }
+        const installBefore = read(currentDir, INSTALL_MANIFEST_NAME);
+        assert.throws(() => applyPlan({ plan: buildPlan({ currentDir, nextDir }), currentDir, nextDir }), /symlink/i);
+        assert.equal(read(currentDir, 'safe.mjs'), 'A', 'summary preflight must run before payload writes');
+        assert.equal(read(currentDir, INSTALL_MANIFEST_NAME), installBefore);
+        assert.equal(fs.existsSync(path.join(currentDir, CONFLICTS_DIR_NAME)), false);
+        assert.equal(fs.lstatSync(destination).isSymbolicLink(), true);
+        if (dangling) assert.equal(fs.existsSync(outside), false);
+        else assert.equal(fs.readFileSync(outside, 'utf8'), 'SENTINEL');
+      });
+    }
+  }
+});
+
+test('#303 invalid summary file locations fail before payload or metadata changes', async (t) => {
+  for (const sourceDirectory of [true, false]) {
+    await t.test(sourceDirectory ? 'unreadable next summary directory' : 'current summary directory', () => {
+      const tmp = mkTmp('summary-directory');
+      t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+      const { currentDir, nextDir } = buildScenario(tmp);
+      const invalidRoot = sourceDirectory ? nextDir : currentDir;
+      const validRoot = sourceDirectory ? currentDir : nextDir;
+      fs.mkdirSync(path.join(invalidRoot, DISTRIBUTION_SUMMARY_NAME));
+      writeFile(validRoot, DISTRIBUTION_SUMMARY_NAME, '{"sentinel":true}\n');
+      const installBefore = read(currentDir, INSTALL_MANIFEST_NAME);
+      assert.throws(() => applyPlan({ plan: buildPlan({ currentDir, nextDir }), currentDir, nextDir }));
+      assert.equal(read(currentDir, 'safe.mjs'), 'A');
+      assert.equal(read(currentDir, INSTALL_MANIFEST_NAME), installBefore);
+      assert.equal(fs.existsSync(path.join(currentDir, CONFLICTS_DIR_NAME)), false);
+      assert.equal(read(validRoot, DISTRIBUTION_SUMMARY_NAME), '{"sentinel":true}\n');
+      assert.equal(fs.statSync(path.join(invalidRoot, DISTRIBUTION_SUMMARY_NAME)).isDirectory(), true);
+    });
+  }
+});
+
+test('#303 --apply rejects a plan at or inside the summary path before any write', async (t) => {
+  for (const rel of [DISTRIBUTION_SUMMARY_NAME, `${DISTRIBUTION_SUMMARY_NAME}/plan.md`]) {
+    await t.test(rel, () => {
+      const tmp = mkTmp('summary-plan');
+      t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+      const { currentDir, nextDir } = buildScenario(tmp);
+      writeFile(nextDir, DISTRIBUTION_SUMMARY_NAME, '{"file_count":7}\n');
+      const run = spawnSync(process.execPath, [
+        UPGRADE_CLI, '--current', currentDir, '--next', nextDir, '--apply', '--plan', path.join(currentDir, rel),
+      ], { encoding: 'utf8' });
+      assert.equal(run.status, 2, run.stderr);
+      assert.match(run.stderr, /collides with a path/);
+      assert.equal(read(currentDir, 'safe.mjs'), 'A');
+      assert.equal(fs.existsSync(path.join(currentDir, DISTRIBUTION_SUMMARY_NAME)), false);
+      assert.equal(fs.existsSync(path.join(currentDir, CONFLICTS_DIR_NAME)), false);
+    });
+  }
+});
+
+test('#303 --apply rejects backup directories at or inside the summary path before any write', async (t) => {
+  for (const rel of [DISTRIBUTION_SUMMARY_NAME, `${DISTRIBUTION_SUMMARY_NAME}/subdir`]) {
+    await t.test(rel, () => {
+      const tmp = mkTmp('summary-backup');
+      t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+      const { currentDir, nextDir } = buildScenario(tmp);
+      writeFile(nextDir, DISTRIBUTION_SUMMARY_NAME, '{"file_count":7}\n');
+      const installBefore = read(currentDir, INSTALL_MANIFEST_NAME);
+      const planPath = path.join(tmp, 'upgrade-plan.md');
+      const run = spawnSync(process.execPath, [
+        UPGRADE_CLI, '--current', currentDir, '--next', nextDir, '--apply',
+        '--backup-dir', path.join(currentDir, rel), '--plan', planPath,
+      ], { encoding: 'utf8' });
+      assert.equal(run.status, 2, run.stderr);
+      assert.match(run.stderr, /--backup-dir/);
+      assert.equal(fs.existsSync(planPath), false, 'reject before writing the plan');
+      assert.equal(read(currentDir, 'safe.mjs'), 'A');
+      assert.equal(read(currentDir, INSTALL_MANIFEST_NAME), installBefore);
+      assert.equal(fs.existsSync(path.join(currentDir, DISTRIBUTION_SUMMARY_NAME)), false);
+      assert.equal(fs.existsSync(path.join(currentDir, CONFLICTS_DIR_NAME)), false);
+    });
+  }
 });
 
 test('applyPlan applies upstream mode-only changes and refreshes the install manifest mode', (t) => {
@@ -1652,6 +1809,64 @@ function linkInstalledDependency(out, packageName) {
     fs.cpSync(source, target, { recursive: true });
   }
 }
+
+test('#303 packed upgrade CLI keeps dry-run inert and refreshes an older payload summary on apply', (t) => {
+  const tmp = mkTmp('summary-packed');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const currentDir = path.join(tmp, 'consumer', 'tools', 'frontend-workflow');
+  const nextDir = path.join(tmp, 'next');
+  const added = 'schemas/ci-facts.schema.json';
+  const manifest = read(KIT_ROOT, 'distribution-manifest.yaml');
+  const oldManifest = manifest.replace('exclude:\n', `exclude:\n  - path: ${added}\n    classification: kit-dev-fixture\n    reason: omitted by the older test payload\n`);
+  assert.notEqual(oldManifest, manifest);
+  const oldManifestPath = path.join(tmp, 'old-distribution.yaml');
+  fs.writeFileSync(oldManifestPath, oldManifest);
+  for (const [out, ref, extra] of [
+    [currentDir, 'summary-old', ['--manifest', oldManifestPath]],
+    [nextDir, 'summary-next', []],
+  ]) {
+    const pack = spawnSync(process.execPath, [PACK_CLI, '--out', out, '--json', '--source-ref', ref, ...extra],
+      { cwd: KIT_ROOT, encoding: 'utf8' });
+    assert.equal(pack.status, 0, pack.stderr);
+  }
+  const oldSummaryRaw = read(currentDir, DISTRIBUTION_SUMMARY_NAME);
+  const oldPayloadRaw = read(currentDir, PAYLOAD_MANIFEST_NAME);
+  const nextSummaryRaw = read(nextDir, DISTRIBUTION_SUMMARY_NAME);
+  const oldSummary = JSON.parse(oldSummaryRaw);
+  const nextSummary = JSON.parse(nextSummaryRaw);
+  assert.equal(nextSummary.file_count, oldSummary.file_count + 1);
+  assert.equal(oldSummary.files.includes(added), false);
+  assert.equal(nextSummary.files.includes(added), true);
+  assert.notDeepEqual(oldSummary.excluded, nextSummary.excluded);
+  linkInstalledDependency(nextDir, 'yaml');
+
+  const cliArgs = [path.join(nextDir, 'scripts', 'upgrade-vendored-kit.mjs'),
+    '--current', currentDir, '--next', nextDir, '--json'];
+  const dryRun = spawnSync(process.execPath, cliArgs, { cwd: tmp, encoding: 'utf8' });
+  assert.equal(dryRun.status, 0, dryRun.stderr);
+  const dry = JSON.parse(dryRun.stdout);
+  assert.equal(dry.mode, 'dry-run');
+  assert.equal(dry.applied, null);
+  assert.equal(actionOf(dry.plan, added), 'add');
+  assert.equal(dry.plan.files.some(({ path }) => path === DISTRIBUTION_SUMMARY_NAME), false);
+  assert.equal(read(currentDir, DISTRIBUTION_SUMMARY_NAME), oldSummaryRaw);
+  assert.equal(read(currentDir, PAYLOAD_MANIFEST_NAME), oldPayloadRaw);
+  assert.equal(fs.existsSync(path.join(currentDir, INSTALL_MANIFEST_NAME)), false);
+  assert.equal(fs.existsSync(path.join(currentDir, added)), false);
+
+  const apply = spawnSync(process.execPath, [...cliArgs, '--apply'], { cwd: tmp, encoding: 'utf8' });
+  assert.equal(apply.status, 0, apply.stderr);
+  assert.equal(JSON.parse(apply.stdout).applied.some(({ path }) => path === DISTRIBUTION_SUMMARY_NAME), false);
+  assert.equal(read(currentDir, DISTRIBUTION_SUMMARY_NAME), nextSummaryRaw);
+  const payload = JSON.parse(read(currentDir, PAYLOAD_MANIFEST_NAME));
+  const install = JSON.parse(read(currentDir, INSTALL_MANIFEST_NAME));
+  assert.equal(install.kit.source_ref, 'summary-next');
+  assert.equal(payload.kit.source_ref, 'summary-next');
+  assert.deepEqual(nextSummary.files, payload.payload.files.map(({ path }) => path));
+  assert.deepEqual(nextSummary.files, install.payload.files.map(({ path }) => path));
+  assert.equal(nextSummary.file_count, install.payload.files.length);
+  assert.equal(read(currentDir, added), read(nextDir, added));
+});
 
 test('packed payload: upgrade CLI rebases the shipped upgrade-notes links in the generated plan', (t) => {
   const tmp = mkTmp('rebase-packed');

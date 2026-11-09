@@ -23,8 +23,8 @@ export const DISTRIBUTION_SUMMARY_NAME = '_distribution-summary.json';
 export const UPGRADE_DIR_NAME = '_upgrade';
 export const CONFLICTS_DIR_NAME = '.upgrade-conflicts';
 
-// Files that are pack/install/planner metadata — never treated as payload content
-// when scanning a kit tree (so they are never copied, compared, or flagged local).
+// Pack/install/planner metadata is excluded from normal payload scanning,
+// comparison and local-edit classification. Apply refreshes metadata separately.
 export const META_FILES = new Set([
   PAYLOAD_MANIFEST_NAME,
   INSTALL_MANIFEST_NAME,

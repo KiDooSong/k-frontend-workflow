@@ -110,8 +110,10 @@ node /path/to/new/frontend-workflow-kit/scripts/upgrade-vendored-kit.mjs \
   --apply
 ```
 
-- 로컬 수정 파일은 기본적으로 절대 덮어쓰지 않는다. conflict는 `.upgrade-conflicts/<path>.incoming`으로 남겨 수동/LLM 병합한다.
-- upstream에서 삭제된 파일은 기본 보존(orphan 보고)하며 `--prune`을 줄 때만 삭제한다.
+- 로컬 수정 payload 파일은 기본적으로 절대 덮어쓰지 않는다. conflict는 `.upgrade-conflicts/<path>.incoming`으로 남겨 수동/LLM 병합한다.
+- upstream에서 삭제된 payload 파일은 기본 보존(orphan 보고)하며 `--prune`을 줄 때만 삭제한다.
+
+`--apply`는 생성 메타데이터인 `_distribution-summary.json`도 새 payload 기준으로 갱신한다. 새 payload에 요약이 없으면 오래된 요약을 제거한다. 이 파일은 upstream의 배포 목록이며, 보존된 로컬 수정·충돌·orphan은 upgrade plan에서 확인한다. 이미 오래된 요약의 복구 방법과 메타데이터 의미는 [distribution summary 안내](docs/reference/upgrade-notes.md#distribution-summary-refresh-303)를 본다.
 
 옵션·분류 규칙은 [COMMANDS.md](COMMANDS.md)의 Upgrade 항목과 `--help`를 본다. 사람이 봐야 할 마이그레이션 노트는 [docs/reference/upgrade-notes.md](docs/reference/upgrade-notes.md)에 있고 plan에 함께 포함된다.
 

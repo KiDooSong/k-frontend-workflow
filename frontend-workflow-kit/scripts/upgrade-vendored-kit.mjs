@@ -22,6 +22,7 @@ import {
   UPGRADE_DIR_NAME,
   INSTALL_MANIFEST_NAME,
   PAYLOAD_MANIFEST_NAME,
+  DISTRIBUTION_SUMMARY_NAME,
   CONFLICTS_DIR_NAME,
 } from './lib/kit-manifest.mjs';
 import { buildPlan, renderPlanMarkdown, applyPlan, assertSafeWriteTarget } from './lib/upgrade-planner.mjs';
@@ -191,9 +192,9 @@ export function writePlanAtomic(planPath, markdown) {
 // inside --backup-dir (the plan file would block/collide with backup copies),
 // or colliding with anything the apply writes or tracks inside --current
 // (payload files, the conflict .incoming tree including its root, the
-// install/payload manifests, or --current itself). Fail-closed, exit 2 BEFORE
-// the plan is written and before any mutation. Every comparison runs on the
-// lexical AND physical (realpath) form of both sides, so a symlink/junction
+// install/payload manifests, distribution summary, or --current itself).
+// Fail-closed, exit 2 BEFORE the plan is written and before any mutation.
+// Comparisons use lexical AND physical (realpath) forms, so a symlink/junction
 // alias of a protected root cannot smuggle the plan past the guard. Physical
 // containment of the plan write itself is enforced separately via
 // assertSafeWriteTarget.
@@ -209,20 +210,32 @@ function assertPlanPathDoesNotCollide({ planPath, currentDir, nextDir, backupDir
     if (err && err.code !== 'ENOENT') throw err;
   }
   const planForms = pathForms(planPath);
+  const currentForms = pathForms(currentDir);
+  const backupForms = backupDir ? pathForms(backupDir) : [];
+  // A backup directory here would turn the summary's file path into a directory
+  // during payload writes and make metadata refresh fail after a partial apply.
+  for (const c of currentForms) {
+    const summaryPath = path.join(c, DISTRIBUTION_SUMMARY_NAME);
+    for (const b of backupForms) {
+      if (relTo(summaryPath, b) != null) {
+        fail(`--backup-dir must not point at or inside ${DISTRIBUTION_SUMMARY_NAME} (it would block metadata refresh): ${backupDir}`);
+      }
+    }
+  }
   for (const p of planForms) {
     for (const n of pathForms(nextDir)) {
       if (relTo(n, p) != null) {
         fail(`--plan must not point at or inside --next (it would corrupt the upgrade payload): ${planPath}`);
       }
     }
-    for (const b of backupDir ? pathForms(backupDir) : []) {
+    for (const b of backupForms) {
       // At/inside backup-dir, or an ANCESTOR of it: a plan FILE above a
       // not-yet-created backup dir would block its mkdir mid-apply.
       if (relTo(b, p) != null || relTo(p, b) != null) {
         fail(`--plan must not overlap --backup-dir (it would block backup copies): ${planPath}`);
       }
     }
-    for (const c of pathForms(currentDir)) {
+    for (const c of currentForms) {
       const relCur = relTo(c, p);
       if (relCur == null) continue;
       // Exact tracked path, or an ancestor of one: a plan FILE at `z` blocks
@@ -234,6 +247,8 @@ function assertPlanPathDoesNotCollide({ planPath, currentDir, nextDir, backupDir
         || tracked
         || relCur === INSTALL_MANIFEST_NAME
         || relCur === PAYLOAD_MANIFEST_NAME
+        || relCur === DISTRIBUTION_SUMMARY_NAME
+        || relCur.startsWith(`${DISTRIBUTION_SUMMARY_NAME}/`)
         || relCur === CONFLICTS_DIR_NAME
         || relCur.startsWith(`${CONFLICTS_DIR_NAME}/`)
       ) {
