@@ -102,6 +102,143 @@ test('raw snapshot ignores replacement refs for both trees and blobs', (t) => {
   assert.equal(view.entry('config/policy.yaml').oid, aBlob);
 });
 
+test('#300 raw snapshot directory listings scale with directories, not sibling files, in each materialization', (t) => {
+  const root = temporary(t);
+  const files = new Map();
+  for (const family of ['buttons', 'cards']) {
+    for (let index = 0; index < 64; index += 1) {
+      files.set(`docs/raw/components/${family}/part-${String(index).padStart(3, '0')}.bin`,
+        Buffer.from([index, 0, 255, 128, 13, 10]));
+    }
+  }
+  files.set('tools/run.sh', Buffer.from('#!/bin/sh\nprintf snapshot\\n\n'));
+  for (const [file, content] of files) write(root, file, content);
+  git(root, 'add', '.');
+  git(root, 'update-index', '--chmod=+x', 'tools/run.sh');
+  git(root, 'commit', '-m', 'many siblings under shared parents');
+  const tree = git(root, 'rev-parse', 'HEAD^{tree}');
+  const directories = new Set(['']);
+  for (const file of files.keys()) {
+    let parent = path.posix.dirname(file);
+    while (parent !== '.') {
+      directories.add(parent);
+      parent = path.posix.dirname(parent);
+    }
+  }
+  const calls = new Map();
+  const originalRead = fs.readdirSync;
+  fs.readdirSync = (directory, ...args) => {
+    const name = String(directory);
+    calls.set(name, (calls.get(name) || 0) + 1);
+    return originalRead(directory, ...args);
+  };
+  let first, second;
+  try {
+    first = materialize(t, root, tree);
+    second = materialize(t, root, tree);
+  } finally {
+    fs.readdirSync = originalRead;
+  }
+  assert.notEqual(first.root, second.root);
+  for (const view of [first, second]) {
+    const listings = [...calls].filter(([directory]) => directory === view.root || directory.startsWith(view.root + path.sep))
+      .reduce((total, [, count]) => total + count, 0);
+    assert.ok(listings > 0, 'each new materialization must observe its own directories');
+    assert.ok(listings <= directories.size * 2,
+      `${listings} listings for ${directories.size} directories and ${files.size} files`);
+    assert.equal(view.tree, tree);
+    for (const [file, content] of files) {
+      assert.deepEqual(fs.readFileSync(path.join(view.root, file)), content, file);
+      assert.deepEqual(view.entry(file), first.entry(file), 'Git entry metadata must be stable across materializations');
+      assert.equal(view.entry(file).mode, file === 'tools/run.sh' ? '100755' : '100644');
+      if (process.platform !== 'win32') {
+        assert.equal(fs.statSync(path.join(view.root, file)).mode & 0o777, file === 'tools/run.sh' ? 0o755 : 0o644);
+      }
+    }
+  }
+});
+
+test('#300 raw snapshot refreshes a cached parent listing after its directory changes', (t) => {
+  const root = temporary(t);
+  write(root, 'docs/early/a.bin', 'first raw blob');
+  write(root, 'docs/late/b.bin', 'second raw blob');
+  commit(root);
+  const tree = git(root, 'rev-parse', 'HEAD^{tree}');
+  const originalRead = fs.readdirSync;
+  let mutated = false;
+  let observedFreshListing = false;
+  fs.readdirSync = (directory, ...args) => {
+    const names = originalRead(directory, ...args);
+    if (String(directory).endsWith(path.join('checkout', 'docs'))) {
+      if (mutated && names.includes('late')) observedFreshListing = true;
+      if (!mutated && names.includes('early') && !names.includes('late')) {
+        // Change the parent after its names were read. A cached old list must
+        // not cause a duplicate mkdir when the later Git tree entry is visited.
+        const before = fs.statSync(directory);
+        fs.mkdirSync(path.join(directory, 'late'));
+        fs.utimesSync(directory, before.atime, new Date(before.mtimeMs + 2_000));
+        mutated = true;
+      }
+    }
+    return names;
+  };
+  let view;
+  try {
+    view = materialize(t, root, tree);
+  } finally {
+    fs.readdirSync = originalRead;
+  }
+  assert.equal(mutated, true, 'the parent must change after a real cached listing');
+  assert.equal(observedFreshListing, true, 'the changed parent stamp must trigger a fresh listing');
+  assert.equal(fs.readFileSync(path.join(view.root, 'docs/early/a.bin'), 'utf8'), 'first raw blob');
+  assert.equal(fs.readFileSync(path.join(view.root, 'docs/late/b.bin'), 'utf8'), 'second raw blob');
+});
+
+test('#300 raw snapshot still rejects a cached ancestor replaced by a file or symlink', async (t) => {
+  for (const replacement of ['file', 'symlink']) {
+    await t.test(replacement, (st) => {
+      const root = temporary(st);
+      write(root, 'docs/raw/a.bin', 'first raw blob');
+      write(root, 'docs/raw/b.bin', 'second raw blob');
+      commit(root);
+      const tree = git(root, 'rev-parse', 'HEAD^{tree}');
+      const outside = path.join(root, 'outside');
+      write(outside, 'sentinel.txt', 'external bytes must survive');
+      if (replacement === 'symlink') {
+        const probe = path.join(root, 'symlink-probe');
+        try { fs.symlinkSync(outside, probe, 'dir'); } catch {
+          st.skip('directory symlink creation is unavailable');
+          return;
+        }
+        fs.unlinkSync(probe);
+      }
+      const originalStat = fs.lstatSync;
+      let injectedPath = null;
+      fs.lstatSync = (file, ...args) => {
+        const stat = originalStat(file, ...args);
+        if (!injectedPath && String(file).endsWith(path.join('checkout', 'docs', 'raw')) && stat.isDirectory()) {
+          // The new directory passed its first check. Before the next sibling,
+          // replace it while its parent's name set can still contain "raw".
+          injectedPath = String(file);
+          fs.rmdirSync(file);
+          if (replacement === 'file') fs.writeFileSync(file, 'not a directory');
+          else fs.symlinkSync(outside, file, 'dir');
+        }
+        return stat;
+      };
+      try {
+        assert.throws(() => materializeRawGitTree({ repositoryRoot: root, tree }), /non-directory Git tree ancestor/);
+      } finally {
+        fs.lstatSync = originalStat;
+      }
+      assert.notEqual(injectedPath, null);
+      assert.equal(fs.existsSync(injectedPath), false, 'failed construction must clean up its snapshot');
+      assert.equal(fs.readFileSync(path.join(outside, 'sentinel.txt'), 'utf8'), 'external bytes must survive');
+      assert.deepEqual(fs.readdirSync(outside), ['sentinel.txt'], 'no Git blob may be written through a replacement link');
+    });
+  }
+});
+
 test('raw snapshot mode survives core.symlinks=false and remains a final deny after file replacement', { skip: process.platform === 'win32' }, (t) => {
   const root = temporary(t);
   write(root, 'target.ts', 'export const target = true;\n');
@@ -142,6 +279,17 @@ test('raw snapshot rejects physical filename collisions instead of overwriting G
   const two = hashBlob(root, 'two');
   setMode(root, 'Case.ts', '100644', one);
   setMode(root, 'case.ts', '100644', two);
+  const tree = git(root, 'write-tree');
+  assert.throws(() => materializeRawGitTree({ repositoryRoot: root, tree }), /materialization failed|spelling|EEXIST/);
+});
+
+test('#300 raw snapshot rejects physical directory spelling collisions', (t) => {
+  const root = temporary(t);
+  write(root, 'CaseDir/probe', 'case probe');
+  if (!fs.existsSync(path.join(root, 'casedir'))) { t.skip('case-insensitive filesystem required'); return; }
+  git(root, 'config', 'core.ignorecase', 'false');
+  setMode(root, 'CaseDir/first.ts', '100644', hashBlob(root, 'first'));
+  setMode(root, 'casedir/second.ts', '100644', hashBlob(root, 'second'));
   const tree = git(root, 'write-tree');
   assert.throws(() => materializeRawGitTree({ repositoryRoot: root, tree }), /materialization failed|spelling|EEXIST/);
 });

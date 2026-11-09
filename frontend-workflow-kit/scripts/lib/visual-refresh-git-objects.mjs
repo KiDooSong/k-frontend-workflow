@@ -145,18 +145,41 @@ function readBlobBatch(repositoryRoot, oids, maxBuffer = MAX_VISUAL_GIT_BUFFER) 
   return blobs;
 }
 
-function ensureDirectory(root, relative) {
+// Only directory construction shares these listings. A fresh ancestor stat must
+// still match before reuse; never carry them into another snapshot or view.
+function directoryNames(directory, stat, directories, relative) {
+  if (!stat.isDirectory() || stat.isSymbolicLink()) throw new VisualRefreshGitError(`non-directory Git tree ancestor: ${relative}`);
+  const cached = directories.get(directory);
+  const previous = cached?.stat;
+  if (previous && previous.dev === stat.dev && previous.ino === stat.ino &&
+      previous.mode === stat.mode && previous.size === stat.size &&
+      previous.mtimeNs === stat.mtimeNs && previous.ctimeNs === stat.ctimeNs) {
+    return cached.names;
+  }
+  // The stamp is captured before readdir: a later mutation must invalidate this
+  // listing instead of making stale names appear to have the new directory stamp.
+  const names = new Set(fs.readdirSync(directory));
+  directories.set(directory, { stat, names });
+  return names;
+}
+
+function ensureDirectory(root, relative, directories) {
   let cursor = root;
-  for (const segment of relative ? relative.split('/') : []) {
+  if (!relative) return cursor;
+  let parent = fs.lstatSync(cursor, { bigint: true });
+  for (const segment of relative.split('/')) {
     const next = path.join(cursor, segment);
-    if (!fs.readdirSync(cursor).includes(segment)) {
+    if (!directoryNames(cursor, parent, directories, relative).has(segment)) {
       // EEXIST here is a physical spelling collision, not a reusable directory.
       fs.mkdirSync(next);
-      if (!fs.readdirSync(cursor).includes(segment)) throw new VisualRefreshGitError(`filesystem changed Git spelling: ${relative}`);
+      directories.delete(cursor);
+      const changed = fs.lstatSync(cursor, { bigint: true });
+      if (!directoryNames(cursor, changed, directories, relative).has(segment)) throw new VisualRefreshGitError(`filesystem changed Git spelling: ${relative}`);
     }
-    const stat = fs.lstatSync(next);
+    const stat = fs.lstatSync(next, { bigint: true });
     if (!stat.isDirectory() || stat.isSymbolicLink()) throw new VisualRefreshGitError(`non-directory Git tree ancestor: ${relative}`);
     cursor = next;
+    parent = stat; // Reuse this fresh child stat as the next ancestor's stamp.
   }
   return cursor;
 }
@@ -174,16 +197,18 @@ export function materializeRawGitTree({ repositoryRoot, projectPrefix = '', tree
   try {
     fs.mkdirSync(checkoutRoot);
     const blobsByOid = new Map();
+    const directories = new Map();
     for (const entry of entries.values()) {
       if (entry.mode === '040000' || entry.mode === '160000') {
-        ensureDirectory(checkoutRoot, entry.repository_path); // gitlinks remain opaque directories, never blobs
+        ensureDirectory(checkoutRoot, entry.repository_path, directories); // gitlinks remain opaque directories, never blobs
       } else {
-        ensureDirectory(checkoutRoot, path.posix.dirname(entry.repository_path) === '.' ? '' : path.posix.dirname(entry.repository_path));
+        ensureDirectory(checkoutRoot, path.posix.dirname(entry.repository_path) === '.' ? '' : path.posix.dirname(entry.repository_path), directories);
         const targets = blobsByOid.get(entry.oid) || [];
         targets.push(entry);
         blobsByOid.set(entry.oid, targets);
       }
     }
+    directories.clear(); // Release names before reading blobs; returned views never retain them.
     const oids = [...blobsByOid.keys()];
     const sizes = readBlobSizes(repositoryRoot, oids);
     // Batching avoids a process per file. Batches are bounded by bytes as well as
