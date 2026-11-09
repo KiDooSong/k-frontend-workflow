@@ -3438,6 +3438,59 @@ test('#300 Items keep reference definitions local to the selected section', () =
   }
 });
 
+const definitionSensitiveItemCells = (value) => [
+  { kind: 'inline image alt', cell: `![[${value}][outside]](/image)`, unresolved: `[${value}][outside]`,
+    definition: '[outside]: /url', control: `![${value}](/image)` },
+  { kind: 'footnote', cell: `${value}[^outside]`, unresolved: `${value}[^outside]`,
+    definition: '[^outside]: note', control: value },
+];
+
+test('#305 Items image alt and footnotes keep reference labels local to the section', async (t) => {
+  for (const [field, value] of [['Target', 'artifact:DOC#rules'], ['Input ID', 'Input ID']]) {
+    for (const syntax of definitionSensitiveItemCells(value)) {
+      const section = ITEMS_PARSE_SECTION.replace(value, syntax.cell);
+      for (const [name, body, resolved] of [
+        ['definition before Items', `${syntax.definition}\n\n${section}`, false],
+        ['definition after next H2', `${section}\n\n## Other\n\n${syntax.definition}`, false],
+        ['definition inside Items', `${section}\n\n${syntax.definition}`, true],
+        ['fenced definition', `${section}\n\n\`\`\`md\n${syntax.definition}\n\`\`\``, false],
+        ['no reference control', ITEMS_PARSE_SECTION.replace(value, syntax.control), true],
+      ]) await t.test(`${syntax.kind} ${field}: ${name}`, () => {
+        const actual = parseReconciliationItems(body);
+        assert.deepEqual(actual, legacyItemsParse(body));
+        if (field === 'Target') {
+          assert.equal(actual.rows[0].target, resolved ? value : syntax.unresolved);
+        } else {
+          assert.equal(actual.table.headers[0], resolved ? value : syntax.unresolved);
+          assert.equal(actual.headerIssue === null, resolved);
+          assert.equal(actual.rows.length, resolved ? 1 : 0);
+        }
+      });
+    }
+  }
+});
+
+test('#305 v2 cannot accept image-alt or footnote Target/header values through an outside definition', async (t) => {
+  const target = 'artifact:COUPON-001-figma-component-mapping#component-mapping/M-001';
+  for (const [field, value, code] of [['Target', target, 'RR-SCHEMA-014'], ['Input ID', 'Input ID', 'RR-SCHEMA-005']]) {
+    for (const syntax of definitionSensitiveItemCells(value)) {
+      const cells = field === 'Target'
+        ? { itemRows: [DEFAULT_ITEM_ROWS[0].replace(value, syntax.cell), ...DEFAULT_ITEM_ROWS.slice(1)] }
+        : { itemsHeader: [ITEMS_HEADER[0].replace(value, syntax.cell), ITEMS_HEADER[1]] };
+      for (const [name, placement, resolved] of [
+        ['definition before Items', { summaryPrefix: `${syntax.definition}\n` }, false],
+        ['definition after next H2', { registerExtra: `## Other\n\n${syntax.definition}` }, false],
+        ['definition inside Items', { registerExtra: syntax.definition }, true],
+        ['fenced definition', { registerExtra: `\`\`\`md\n${syntax.definition}\n\`\`\`` }, false],
+      ]) await t.test(`${syntax.kind} ${field}: ${name}`, (t) => {
+        const result = runV2(t, { ...cells, ...placement });
+        if (resolved) assert.deepEqual(messages(result.errors), []);
+        else assert.ok(hasCode(result.errors, code), `${code} required: ${messages(result.errors).join('; ')}`);
+      });
+    }
+  }
+});
+
 test('#300 Items preserve exact table source and atomic line endings after stripping', () => {
   const literal = ITEMS_PARSE_ROW.replace('parser-probe.txt', '`<!--`') + ' extra |';
   const closing = ITEMS_PARSE_ROW.replace('parser-probe.txt', '`-->`');

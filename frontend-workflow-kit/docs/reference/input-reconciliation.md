@@ -537,10 +537,11 @@ v2 가 소비하는 마크다운은 **좁은 canonical authoring profile** 만 �
   canonical 표도 중복 header 를 가지면 신뢰하지 않는다.
 - H2 heading 은 CommonMark 대로 선행 공백 0~3칸까지 **인식**한다 — 들여쓴 실제 heading 도 중복
   개수 검사(hard)에 포함된다.
-- Items 표의 reference-style link/image는 **해당 Items 섹션 안의 definition**만 해소한다.
+- Items 표의 reference-style link/image와 각주 참조는 **해당 Items 섹션 안의 definition**만 해소한다.
   섹션 밖의 definition으로 header나 Target의 원래 표기를 바꾸지 않는다. Items 파서는 제목 탐색과
-  표 추출의 AST를 재사용하지만(#300), 참조형 link/image가 있는 표는 이 섹션 경계를 지키도록
-  기존 섹션 단독 파싱을 유지한다. 코드·HTML 제거로 내용이 달라질 때도 제거 후의 문법을 다시 해석한다.
+  표 추출의 AST를 재사용하지만(#300), 참조형 링크·이미지·각주가 있는 표는 이 섹션 경계를 지키도록
+  기존 섹션 단독 파싱을 유지한다. 일반 이미지도 alt 안의 참조가 문자열로 변환될 수 있어 포함한다.
+  코드·HTML 제거로 내용이 달라질 때도 제거 후의 문법을 다시 해석한다.
 - INV-/VER- 토큰 존재 검사는 **visible prose** 만 본다: code(fence/indented/inline span — span 은
   여러 줄·긴 delimiter 포함 stateful 로 소비)·HTML block/주석에 더해 **link/image destination
   (중첩·backslash-escaped 괄호와 `<...>` form, destination/title 사이 최대 한 줄바꿈과 blank-line 없는

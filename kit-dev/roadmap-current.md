@@ -1,8 +1,8 @@
 # Current Roadmap
 
 > 2026-11-09 #300 2차 성능 개선: Reconciliation Items의 제목 탐색과 표 추출이 같은 콘텐츠 AST를 재사용한다.
-> 일반 본문은 GFM 파싱 2→1회, 코드·HTML 제거로 본문이 달라지면 3→2회로 줄이고 선택한 섹션의 표만 만든다.
-> 참조형 링크·이미지가 있는 표는 기존 섹션 단독 파싱을 유지해 외부 definition이 header·Target 판정을 바꾸지 못하게 한다.
+> 참조·이미지·각주가 없는 단일 Items 표는 GFM 파싱 2→1회, 코드·HTML 제거로 본문이 달라지면 3→2회로 줄이고 선택한 섹션의 표만 만든다.
+> 참조형 링크·이미지·각주가 있는 표는 기존 섹션 단독 파싱을 유지해 외부 definition이 header·Target 판정을 바꾸지 못하게 한다. 이미지 alt 안에서 문자열로 변환된 참조도 이 경계를 지킨다.
 > 기존 구문 캐시 예산·반환값 격리·검증 및 basis/checkpoint 계약을 유지하며 전체 consumer 실행 시간은 별도 측정 대상이다.
 > 정본: [Reconciliation Contract v2](../frontend-workflow-kit/docs/reference/input-reconciliation.md#reconciliation-contract-v2-opt-in).
 

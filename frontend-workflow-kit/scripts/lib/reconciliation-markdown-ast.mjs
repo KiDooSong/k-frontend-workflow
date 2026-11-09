@@ -592,9 +592,13 @@ export function parseContentSectionTables(text, sectionSlug) {
   if (sectionCount !== 1) return { sectionCount, tables: [] };
 
   const nodes = children.slice(selected.startIndex, selected.endIndex ?? children.length);
-  const hasReference = (node) => node.type === 'linkReference' || node.type === 'imageReference'
-    || (node.children || []).some(hasReference);
-  if (nodes.some((node) => node.type === 'table' && hasReference(node))) {
+  // Ordinary image labels flatten nested references into alt text, so the
+  // reference nodes can already be gone. Footnotes also depend on definitions
+  // and cellText omits their leaf nodes. Both need the original section scope.
+  const needsSectionParse = (node) => node.type === 'linkReference' || node.type === 'imageReference'
+    || node.type === 'image' || node.type === 'footnoteReference'
+    || (node.children || []).some(needsSectionParse);
+  if (nodes.some((node) => node.type === 'table' && needsSectionParse(node))) {
     // The old section-only parse cannot resolve definitions outside this H2.
     // Reparse reference-sensitive tables in that same scope so an external
     // definition never turns an invalid header/Target into an accepted value.
