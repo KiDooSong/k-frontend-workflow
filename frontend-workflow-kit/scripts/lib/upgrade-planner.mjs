@@ -13,6 +13,7 @@
 // never runs migrations — those stay human/LLM decisions surfaced in the plan.
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { splitFrontmatter, yamlParse } from './util.mjs';
 import {
@@ -889,6 +890,41 @@ export function buildInstallManifest({ currentDir, nextResolved, baseline, sourc
   };
 }
 
+// Replace the summary's directory entry instead of truncating an inode that may
+// also belong to an external archive or a payload file marked keep-local (#308).
+function writeSummaryAtomic(summaryPath, bytes) {
+  let lastErr = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const tmpPath = `${summaryPath}.tmp-${crypto.randomBytes(8).toString('hex')}`;
+    let fd = null;
+    let created = false;
+    try {
+      fd = fs.openSync(tmpPath, 'wx');
+      created = true;
+      fs.writeFileSync(fd, bytes);
+      fs.closeSync(fd);
+      fd = null;
+      fs.renameSync(tmpPath, summaryPath);
+      created = false; // The temporary name no longer belongs to us after rename.
+      return;
+    } catch (err) {
+      if (!created && err.code === 'EEXIST') {
+        lastErr = err;
+        continue; // Never remove a path whose exclusive creation failed.
+      }
+      throw err;
+    } finally {
+      if (fd !== null) {
+        try { fs.closeSync(fd); } catch { /* preserve the original failure */ }
+      }
+      if (created) {
+        try { fs.rmSync(tmpPath, { force: true }); } catch { /* best-effort cleanup */ }
+      }
+    }
+  }
+  throw lastErr ?? new Error(`failed to create a temporary distribution summary: ${summaryPath}`);
+}
+
 // Execute the plan's planned actions. Only writes inside currentDir (+ backupDir).
 export function applyPlan({ plan, currentDir, nextDir, options = {} }) {
   if (plan?.adoption?.downgrade_blocked) {
@@ -978,7 +1014,7 @@ export function applyPlan({ plan, currentDir, nextDir, options = {} }) {
 
   assertSafeWriteTarget(realCurrent, summaryPath, LABEL);
   if (nextSummary !== null) {
-    fs.writeFileSync(summaryPath, nextSummary);
+    writeSummaryAtomic(summaryPath, nextSummary);
   } else {
     // Legacy/hand-built payloads may omit the summary; do not retain stale facts.
     fs.rmSync(summaryPath, { force: true });

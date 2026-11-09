@@ -450,6 +450,175 @@ test('#303 apply refreshes summary bytes without classifying metadata or changin
   assert.equal(read(currentDir, DISTRIBUTION_SUMMARY_NAME), nextRaw, 'missing current metadata is restored too');
 });
 
+test('#308 --apply preserves hard-linked summary targets during refresh and removal', async (t) => {
+  for (const incoming of [true, false]) {
+    for (const linkedTarget of ['external archive', 'keep-local payload']) {
+      await t.test(`${incoming ? 'refresh' : 'removal'}, ${linkedTarget}`, (st) => {
+        const tmp = mkTmp('summary-hardlink');
+        st.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+        const currentDir = path.join(tmp, 'current');
+        const nextDir = path.join(tmp, 'next');
+        const rel = 'local.mjs';
+        const upstream = 'export const original = true;\n';
+        const oldRaw = '{"file_count":1,"files":["old.mjs"],"excluded":[]}\n';
+        const nextRaw = JSON.stringify({
+          manifest: 'distribution-manifest.yaml', manifest_version: 1,
+          destination_hint: 'tools/frontend-workflow', file_count: 1, files: [rel], excluded: [],
+        }, null, '\t') + '\r\n';
+        const files = [{ path: rel, sha256: sha(upstream), classification: 'consumer-runtime', mode: '100644' }];
+        writeFile(currentDir, rel, oldRaw);
+        writeFile(nextDir, rel, upstream);
+        writeFile(currentDir, INSTALL_MANIFEST_NAME, JSON.stringify({
+          schema_version: 1,
+          kit: { source_repo: 'O/R', source_ref: 'OLDREF', package_version: '1.0.0' },
+          payload: { destination_hint: 'tools/frontend-workflow', files },
+        }) + '\n');
+        writeFile(nextDir, PAYLOAD_MANIFEST_NAME, JSON.stringify({
+          schema_version: 1,
+          kit: { source_repo: 'O/R', source_ref: 'NEXTREF', package_version: '9.9.9' },
+          distribution_manifest_version: 1,
+          payload: { destination_hint: 'tools/frontend-workflow', files },
+        }) + '\n');
+        if (incoming) writeFile(nextDir, DISTRIBUTION_SUMMARY_NAME, nextRaw);
+        const targetPath = linkedTarget === 'external archive'
+          ? path.join(tmp, 'archive-summary.json')
+          : path.join(currentDir, rel);
+        if (linkedTarget === 'external archive') fs.writeFileSync(targetPath, oldRaw);
+        const summaryPath = path.join(currentDir, DISTRIBUTION_SUMMARY_NAME);
+        try { fs.linkSync(targetPath, summaryPath); } catch {
+          st.skip('hard link creation not supported on this filesystem');
+          return;
+        }
+        const targetBefore = fs.statSync(targetPath, { bigint: true });
+        const run = spawnSync(process.execPath, [
+          UPGRADE_CLI, '--current', currentDir, '--next', nextDir, '--apply', '--json',
+          '--plan', path.join(tmp, 'upgrade-plan.md'),
+        ], { encoding: 'utf8' });
+        assert.equal(run.status, 0, run.stderr);
+        const result = JSON.parse(run.stdout);
+        assert.equal(result.ok, true);
+        assert.deepEqual(result.applied, [], 'metadata refresh must not require payload actions');
+        const local = result.plan.files.find(({ path }) => path === rel);
+        assert.equal(local.category, 'local-modified');
+        assert.equal(local.planned_action, 'keep-local');
+        assert.equal(fs.readFileSync(targetPath, 'utf8'), oldRaw, 'linked target bytes must be preserved');
+        assert.equal(read(currentDir, rel), oldRaw, 'keep-local payload must be preserved');
+        const targetAfter = fs.statSync(targetPath, { bigint: true });
+        assert.equal(targetAfter.ino, targetBefore.ino, 'linked target must retain its inode');
+        if (incoming) {
+          assert.equal(read(currentDir, DISTRIBUTION_SUMMARY_NAME), nextRaw);
+          assert.equal(read(nextDir, DISTRIBUTION_SUMMARY_NAME), nextRaw);
+          const summaryAfter = fs.statSync(summaryPath, { bigint: true });
+          if (targetBefore.ino !== 0n && summaryAfter.ino !== 0n) {
+            assert.notEqual(summaryAfter.ino, targetAfter.ino, 'refreshed summary must detach from the shared inode');
+          }
+        } else {
+          assert.equal(fs.existsSync(summaryPath), false);
+        }
+        assert.deepEqual(fs.readdirSync(currentDir).sort(), [
+          INSTALL_MANIFEST_NAME, PAYLOAD_MANIFEST_NAME, rel,
+          ...(incoming ? [DISTRIBUTION_SUMMARY_NAME] : []),
+        ].sort(), 'summary replacement must leave no temporary files');
+      });
+    }
+  }
+});
+
+test('#308 a summary temp collision preserves the existing file and retries safely', (t) => {
+  const tmp = mkTmp('summary-temp-collision');
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const { currentDir, nextDir } = buildScenario(tmp);
+  const summaryPath = path.join(currentDir, DISTRIBUTION_SUMMARY_NAME);
+  const nextRaw = '{"file_count":7,"files":["new.mjs"]}\r\n';
+  writeFile(currentDir, DISTRIBUTION_SUMMARY_NAME, '{"file_count":1}\n');
+  writeFile(nextDir, DISTRIBUTION_SUMMARY_NAME, nextRaw);
+  const plan = buildPlan({ currentDir, nextDir });
+  const originalOpen = fs.openSync;
+  const tempAttempts = [];
+  const sentinel = 'A different writer owns this file.\n';
+  fs.openSync = (p, flags, mode) => {
+    if (String(p).startsWith(`${summaryPath}.tmp-`)) {
+      tempAttempts.push(String(p));
+      if (tempAttempts.length === 1) {
+        // Occupy the chosen name before the real exclusive open reports EEXIST.
+        const collisionFd = originalOpen(p, 'wx');
+        try { fs.writeFileSync(collisionFd, sentinel); } finally { fs.closeSync(collisionFd); }
+      }
+    }
+    return originalOpen(p, flags, mode);
+  };
+  try {
+    applyPlan({ plan, currentDir, nextDir });
+  } finally {
+    fs.openSync = originalOpen;
+  }
+  assert.equal(tempAttempts.length, 2, 'exclusive-create collision must retry with a fresh name');
+  assert.notEqual(tempAttempts[0], tempAttempts[1]);
+  assert.equal(fs.readFileSync(tempAttempts[0], 'utf8'), sentinel, 'a failed exclusive open does not transfer ownership');
+  assert.equal(read(currentDir, DISTRIBUTION_SUMMARY_NAME), nextRaw);
+  assert.deepEqual(fs.readdirSync(currentDir).filter((name) => name.startsWith(`${DISTRIBUTION_SUMMARY_NAME}.tmp-`)), [
+    path.basename(tempAttempts[0]),
+  ], 'only the colliding file owned by another writer remains');
+});
+
+test('#308 summary write failures preserve current bytes and clean up owned temporary files', async (t) => {
+  for (const fault of ['partial write', 'rename']) {
+    await t.test(fault, (st) => {
+      const tmp = mkTmp('summary-temp-failure');
+      st.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+      const { currentDir, nextDir } = buildScenario(tmp);
+      const summaryPath = path.join(currentDir, DISTRIBUTION_SUMMARY_NAME);
+      const oldRaw = '{"file_count":1,"files":["old.mjs"]}\n';
+      writeFile(currentDir, DISTRIBUTION_SUMMARY_NAME, oldRaw);
+      writeFile(nextDir, DISTRIBUTION_SUMMARY_NAME, '{"file_count":7}\r\n');
+      const plan = buildPlan({ currentDir, nextDir });
+      const originalOpen = fs.openSync;
+      const originalWrite = fs.writeFileSync;
+      const originalRename = fs.renameSync;
+      const code = fault === 'partial write' ? 'ENOSPC' : 'EACCES';
+      let tempPath = null;
+      let tempFd = null;
+      let injected = false;
+      fs.openSync = (p, flags, mode) => {
+        const fd = originalOpen(p, flags, mode);
+        if (String(p).startsWith(`${summaryPath}.tmp-`)) {
+          tempPath = String(p);
+          tempFd = fd;
+        }
+        return fd;
+      };
+      fs.writeFileSync = (p, data, opts) => {
+        if (fault === 'partial write' && tempFd !== null && p === tempFd) {
+          originalWrite(p, 'PARTIAL', opts);
+          injected = true;
+          throw Object.assign(new Error('injected: no space left on device'), { code });
+        }
+        return originalWrite(p, data, opts);
+      };
+      fs.renameSync = (from, to) => {
+        if (fault === 'rename' && from === tempPath && to === summaryPath) {
+          injected = true;
+          throw Object.assign(new Error('injected: summary rename denied'), { code });
+        }
+        return originalRename(from, to);
+      };
+      try {
+        assert.throws(() => applyPlan({ plan, currentDir, nextDir }), { code });
+      } finally {
+        fs.openSync = originalOpen;
+        fs.writeFileSync = originalWrite;
+        fs.renameSync = originalRename;
+      }
+      assert.equal(injected, true, 'failure must occur in the summary replacement');
+      assert.notEqual(tempPath, null);
+      assert.equal(fs.existsSync(tempPath), false, 'owned temporary file must be removed');
+      assert.throws(() => fs.fstatSync(tempFd), { code: 'EBADF' }, 'temporary file descriptor must be closed');
+      assert.equal(read(currentDir, DISTRIBUTION_SUMMARY_NAME), oldRaw, 'failed replacement must preserve existing summary bytes');
+      assert.deepEqual(fs.readdirSync(currentDir).filter((name) => name.startsWith(`${DISTRIBUTION_SUMMARY_NAME}.tmp-`)), []);
+    });
+  }
+});
+
 test('#303 an absent upstream summary clears stale metadata and stays absent on repeated apply', async (t) => {
   for (const manifest of [true, false]) {
     await t.test(manifest ? 'manifest-backed next' : 'legacy scanned next', () => {

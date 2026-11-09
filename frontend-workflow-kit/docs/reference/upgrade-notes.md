@@ -25,6 +25,11 @@ Managed `--apply` now copies that payload's summary unchanged alongside the
 install/payload manifest refresh. If `--next` has no summary, apply removes the
 old generated summary so it cannot continue describing an earlier payload.
 
+Summary refresh writes a new file in the same directory and atomically replaces
+the summary entry. Other hard links keep their original bytes, including an
+external archive or a payload file classified `keep-local`. Removing a stale
+summary only unlinks the summary path and preserves those other files too.
+
 The summary is separate from payload file actions, counts and backups. Its
 replacement or removal is part of metadata refresh, including when every
 payload action is `none`. This refresh only runs on `--apply`.
