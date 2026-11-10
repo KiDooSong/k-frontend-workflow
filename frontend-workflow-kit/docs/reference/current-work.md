@@ -55,6 +55,12 @@ semantic duplicate refs/targets are input errors. A document whose requests are 
 `authority: scoped` is evaluated as [scoped work](scoped-work.md); a document mixing
 current and scoped requests is an input error.
 
+The opened file's size is an allocation hint only. A correctly sized file uses
+one buffer with space for the EOF probe, avoiding a second buffer and a full copy.
+Short reads continue in the same buffer; an underestimated or zero size falls back
+to bounded chunks until actual EOF or the byte limit is exceeded. Descriptor
+ownership, before/after file checks and the input error contract stay with the caller.
+
 ## Common CLI flow
 
 Run once before implementation and once afterwards with the **pre-work packet**.
@@ -171,6 +177,11 @@ a changed parent stamp refreshes its names. Verification and the final inventory
 start with fresh caches, and actual inventory traversal remains fresh. This
 reduces repeated directory reads without carrying filesystem facts into a later
 capture or skipping file changes, path spelling aliases or symlink ancestors.
+
+Raw worktree and baseline-authority file reads use the same bounded allocation
+strategy with a 128 MiB per-file limit. They still read at most one byte beyond
+that limit, check the opened descriptor's identity and final stat, and retain the
+capture's final path and inventory verification. Each call reads the current file bytes.
 
 The default C backstop compares actual `HEAD` to the current worktree with raw
 Git name/status data, `--ignore-submodules=none`, rename detection, and actual

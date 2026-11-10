@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { KIT_ROOT } from './util.mjs';
+import { KIT_ROOT, readBoundedFileDescriptor } from './util.mjs';
 import { isInputDirGuideFile } from './input-artifact.mjs';
 import { hashBytes, byteCompare, canonicalJson } from './current-work-request.mjs';
 import { runVisualGit, decodeGitUtf8, requireGitRepositoryPath, MAX_VISUAL_GIT_BUFFER } from './visual-refresh-git-objects.mjs';
@@ -42,17 +42,11 @@ function readRaw(file, before) {
     const opened = fs.fstatSync(fd, { bigint: true });
     if (!opened.isFile() || stamp(opened) !== stamp(before)) throw new Error('current worktree: file changed before reading');
     if (opened.size > BigInt(MAX_VISUAL_GIT_BUFFER)) throw new Error('current worktree: file exceeds snapshot byte limit');
-    const chunks = []; let length = 0;
-    while (length <= MAX_VISUAL_GIT_BUFFER) {
-      const chunk = Buffer.alloc(Math.min(65536, MAX_VISUAL_GIT_BUFFER + 1 - length));
-      const count = fs.readSync(fd, chunk, 0, chunk.length, null);
-      if (!count) break;
-      chunks.push(chunk.subarray(0, count)); length += count;
-    }
-    if (length > MAX_VISUAL_GIT_BUFFER || stamp(fs.fstatSync(fd, { bigint: true })) !== stamp(opened)) {
+    const raw = readBoundedFileDescriptor(fd, { maxBytes: MAX_VISUAL_GIT_BUFFER, sizeHint: Number(opened.size) });
+    if (raw === null || stamp(fs.fstatSync(fd, { bigint: true })) !== stamp(opened)) {
       throw new Error('current worktree: file changed or exceeded limit while reading');
     }
-    return Buffer.concat(chunks, length);
+    return raw;
   } finally { fs.closeSync(fd); }
 }
 function inputNames(root, name, { artifactIndex = false, directories = null } = {}) {

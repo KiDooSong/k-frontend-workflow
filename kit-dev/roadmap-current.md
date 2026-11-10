@@ -1,5 +1,10 @@
 # Current Roadmap
 
+> 2026-11-10 #300 6차 성능 개선: current/scoped 입력과 worktree·authority 원문 읽기의 고정 64 KiB 버퍼 낭비와 정상 경로의 전체 복사를 줄인다.
+> 열린 파일 크기는 초기 할당 hint로만 쓰고 실제 EOF·short read·부정확한 크기·limit+1 초과 읽기·전후 stat·fd 정리 계약을 유지한다.
+> 호출마다 현재 bytes를 읽고 authority·basis/checkpoint 계약을 유지한다. 정본: [current work](../frontend-workflow-kit/docs/reference/current-work.md#git-backstop).
+> 재현: [worktree byte-read benchmark](benchmarks/worktree-reads.mjs). 실제 capture 시간·프로세스 peak RSS와 별도 reader 할당 계측을 구분한다.
+
 > 2026-11-10 #300 5차 성능 개선: 입력 Evidence는 section slug와 bullet prose만 파생하고, 새 input index에서도 작은 구문 결과를 재사용한다.
 > 현재 본문 읽기와 ID/중복·metadata·참조·파일 변경·권한 판정을 유지한다. 캐시 key는 원문 UTF-16 길이·SHA-256이며 직렬화 결과와 key를 8 MiB·4,096개로 제한한다.
 > 원문·AST를 추가 보관하지 않고 index별 Map·배열을 분리한다. 기존 bullet 번호·definition 문맥·판정·basis/checkpoint 계약과 AST 캐시 예산은 유지한다.

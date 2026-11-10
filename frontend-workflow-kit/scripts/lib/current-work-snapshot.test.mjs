@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { captureCurrentWorktree } from './current-work-integrity.mjs';
+import { MAX_VISUAL_GIT_BUFFER } from './visual-refresh-git-objects.mjs';
 
 const KIT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const TARGET = 'src/features/coupons/screens/CouponListScreen.tsx';
@@ -371,4 +372,123 @@ test('#300 worktree capture detects an ignored input created during capture', (t
   });
   assert.throws(() => captureCurrentWorktree(f.repo, tree, { inputRoots: [root] }), /inventory changed during capture/);
   assert.equal(injected, true);
+});
+
+test('#300 raw worktree bytes survive short reads and inaccurate size metadata', (t) => {
+  const f = fixture(t), bytes = Buffer.from(Array.from({ length: 4097 }, (_, index) => index % 256));
+  fs.writeFileSync(f.target, bytes);
+  f.git(['add', '-A']); f.git(['commit', '-qm', 'raw binary read fixture']);
+  const tree = String(f.git(['rev-parse', 'HEAD^{tree}'])).trim();
+  const open = fs.openSync, close = fs.closeSync, read = fs.readSync, lstat = fs.lstatSync, fstat = fs.fstatSync;
+  let targetFd, sizeHint = null, readBytes = 0, eofReads = 0, closed = 0;
+  t.mock.method(fs, 'openSync', function (file, ...args) {
+    const fd = open.call(this, file, ...args);
+    if (file === f.target) targetFd = fd;
+    return fd;
+  });
+  t.mock.method(fs, 'closeSync', function (fd, ...args) {
+    if (fd === targetFd) { closed += 1; targetFd = undefined; }
+    return close.call(this, fd, ...args);
+  });
+  t.mock.method(fs, 'lstatSync', function (file, ...args) {
+    const result = lstat.call(this, file, ...args);
+    if (file === f.target && sizeHint !== null) result.size = sizeHint;
+    return result;
+  });
+  t.mock.method(fs, 'fstatSync', function (fd, ...args) {
+    const result = fstat.call(this, fd, ...args);
+    if (fd === targetFd && sizeHint !== null) result.size = sizeHint;
+    return result;
+  });
+  t.mock.method(fs, 'readSync', function (fd, buffer, offset, length, position) {
+    if (fd !== targetFd) return read.call(this, fd, buffer, offset, length, position);
+    assert.ok(length > 0, 'a full hinted buffer must not become a zero-length EOF probe');
+    const count = read.call(this, fd, buffer, offset, Math.min(length, 127), position);
+    readBytes += count;
+    if (count === 0) eofReads += 1;
+    return count;
+  });
+  for (const [label, hint] of [['accurate', null], ['zero', 0n], ['underreported', 7n], ['overreported', 8192n]]) {
+    sizeHint = hint; readBytes = 0; eofReads = 0; closed = 0;
+    const snapshot = captureCurrentWorktree(f.repo, tree);
+    assert.equal(snapshot.tree, tree, label);
+    assert.equal(snapshot.evidence(f.repositoryPath).hash, hash(bytes), label);
+    assert.equal(readBytes, bytes.length, label);
+    assert.equal(eofReads, 1, label);
+    assert.equal(closed, 1, label);
+  }
+});
+
+test('#300 raw worktree reads reject concurrent edits and close descriptors on read errors', (t) => {
+  const f = fixture(t), bytes = Buffer.from('stable raw snapshot bytes\n');
+  fs.writeFileSync(f.target, bytes);
+  f.git(['add', '-A']); f.git(['commit', '-qm', 'mutable raw read fixture']);
+  const tree = String(f.git(['rev-parse', 'HEAD^{tree}'])).trim();
+  const open = fs.openSync, close = fs.closeSync, read = fs.readSync;
+  const flags = fs.constants.O_RDONLY | fs.constants.O_NONBLOCK | (fs.constants.O_NOFOLLOW || 0);
+  const failure = Object.assign(new Error('injected raw read failure'), { code: 'EIO' });
+  let targetFd, mode, injected = false, closed = 0;
+  t.mock.method(fs, 'openSync', function (file, openFlags, ...args) {
+    const fd = open.call(this, file, openFlags, ...args);
+    if (file === f.target && openFlags === flags) targetFd = fd;
+    return fd;
+  });
+  t.mock.method(fs, 'closeSync', function (fd, ...args) {
+    if (fd === targetFd) { closed += 1; targetFd = undefined; }
+    return close.call(this, fd, ...args);
+  });
+  t.mock.method(fs, 'readSync', function (fd, ...args) {
+    if (fd !== targetFd || injected) return read.call(this, fd, ...args);
+    injected = true;
+    if (mode === 'read-error') throw failure;
+    const count = read.call(this, fd, ...args);
+    if (mode === 'shrink') fs.truncateSync(f.target, 1);
+    else if (mode === 'grow') fs.appendFileSync(f.target, 'new bytes');
+    else {
+      fs.writeFileSync(f.target, Buffer.alloc(bytes.length, 0x78));
+      fs.utimesSync(f.target, new Date(), new Date(Date.now() + 2000));
+    }
+    return count;
+  });
+  for (const operation of ['shrink', 'grow', 'same-size', 'read-error']) {
+    fs.writeFileSync(f.target, bytes);
+    mode = operation; injected = false; closed = 0;
+    assert.throws(() => captureCurrentWorktree(f.repo, tree), (error) => mode === 'read-error'
+      ? error === failure : /file changed or exceeded limit while reading/.test(error.message), operation);
+    assert.equal(injected, true, operation);
+    assert.equal(closed, 1, operation);
+  }
+});
+
+test('#300 raw worktree capture rejects an initially oversized file before reading its bytes', (t) => {
+  const f = fixture(t), tree = String(f.git(['rev-parse', 'HEAD^{tree}'])).trim();
+  const open = fs.openSync, close = fs.closeSync, read = fs.readSync, lstat = fs.lstatSync, fstat = fs.fstatSync;
+  let targetFd, reads = 0, closed = 0;
+  const oversized = BigInt(MAX_VISUAL_GIT_BUFFER) + 1n;
+  t.mock.method(fs, 'openSync', function (file, ...args) {
+    const fd = open.call(this, file, ...args);
+    if (file === f.target) targetFd = fd;
+    return fd;
+  });
+  t.mock.method(fs, 'closeSync', function (fd, ...args) {
+    if (fd === targetFd) { closed += 1; targetFd = undefined; }
+    return close.call(this, fd, ...args);
+  });
+  t.mock.method(fs, 'lstatSync', function (file, ...args) {
+    const result = lstat.call(this, file, ...args);
+    if (file === f.target) result.size = oversized;
+    return result;
+  });
+  t.mock.method(fs, 'fstatSync', function (fd, ...args) {
+    const result = fstat.call(this, fd, ...args);
+    if (fd === targetFd) result.size = oversized;
+    return result;
+  });
+  t.mock.method(fs, 'readSync', function (fd, ...args) {
+    if (fd === targetFd) reads += 1;
+    return read.call(this, fd, ...args);
+  });
+  assert.throws(() => captureCurrentWorktree(f.repo, tree), /file exceeds snapshot byte limit/);
+  assert.equal(reads, 0);
+  assert.equal(closed, 1);
 });
