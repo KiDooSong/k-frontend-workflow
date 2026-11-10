@@ -16,6 +16,7 @@ import {
   resolveInputEvidence,
 } from './provenance.mjs';
 import { loadInputArtifact } from './input-artifact.mjs';
+import { reconciliationParseStats } from './reconciliation-markdown-ast.mjs';
 
 function tmpdir(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'provenance-'));
@@ -164,4 +165,114 @@ test('exact evidence text is additive, section-only stays non-semantic, and one 
   assert.equal(details.sections, sections);
   assert.equal(index.sectionCache.size, 1);
   assert.equal(index.sectionDetailsCache.size, 1);
+});
+
+test('#300 fresh input indexes reuse evidence syntax and keep mutable maps and arrays independent', (t) => {
+  const root = tmpdir(t);
+  const id = 'IN-20261110-planning-001';
+  const file = writeInput(root, id, [
+    '# Evidence cache isolation',
+    '## Extracted Facts',
+    '- parent evidence',
+    '  - child evidence',
+    '## Empty Section',
+    'Prose is not a bullet.',
+    '## Extracted Facts',
+    '- later evidence',
+    '## constructor',
+    '- ordinary section name',
+  ].join('\n'));
+  const artifact = loadInputArtifact(file);
+  const firstIndex = buildInputArtifactIndex([artifact]);
+  const first = inputSectionDetails(firstIndex, artifact);
+  const expected = structuredClone(first);
+  assert.equal(first.sections.get('extracted-facts'), 3);
+  assert.equal(first.sections.get('empty-section'), 0);
+  assert.deepEqual(first.bulletTexts.get('extracted-facts'), ['parent evidence', 'child evidence', 'later evidence']);
+  assert.deepEqual(first.bulletTexts.get('constructor'), ['ordinary section name']);
+  assert.equal(first.sections, firstIndex.sectionCache.get(file));
+  assert.equal(first, firstIndex.sectionDetailsCache.get(file));
+
+  first.sections.set('extracted-facts', 99);
+  first.bulletTexts.get('extracted-facts')[0] = 'poison';
+  first.bulletTexts.get('constructor').push('poison');
+  first.bulletTexts.delete('empty-section');
+  const stats = reconciliationParseStats();
+  const secondIndex = buildInputArtifactIndex([artifact]);
+  const second = inputSectionDetails(secondIndex, artifact);
+  assert.deepEqual(second, expected);
+  assert.deepEqual(reconciliationParseStats(), stats, 'a fresh index must not repeat Markdown parsing or projection');
+  assert.equal(second.sections, secondIndex.sectionCache.get(file));
+  assert.equal(second, inputSectionDetails(secondIndex, artifact), 'keep the existing index-local view identity');
+  assert.notEqual(second.sections, first.sections);
+  assert.notEqual(second.bulletTexts.get('extracted-facts'), first.bulletTexts.get('extracted-facts'));
+  second.bulletTexts.get('extracted-facts').length = 0;
+  assert.deepEqual(inputSectionDetails(buildInputArtifactIndex([artifact]), artifact), expected);
+});
+
+test('#300 evidence reuse still reads each fresh index and observes same-size edits, deletion and restoration', (t) => {
+  const root = tmpdir(t);
+  const id = 'IN-20261110-planning-002';
+  const file = writeInput(root, id, '## Fresh Evidence\n- alpha evidence\n');
+  const raw = fs.readFileSync(file, 'utf8');
+  const artifact = loadInputArtifact(file);
+  const stamp = fs.statSync(file);
+  const read = fs.readFileSync;
+  let reads = 0;
+  t.mock.method(fs, 'readFileSync', function (target, ...args) {
+    if (String(target) === file) reads += 1;
+    return read.call(this, target, ...args);
+  });
+  const resolve = () => resolveInputEvidence(buildInputArtifactIndex([artifact]), `input:${id}#fresh-evidence/01`);
+  assert.equal(resolve().evidenceText, 'alpha evidence');
+  const warm = reconciliationParseStats();
+  assert.equal(resolve().evidenceText, 'alpha evidence');
+  assert.equal(reads, 2, 'a content cache hit must still read the current file');
+  assert.deepEqual(reconciliationParseStats(), warm);
+
+  fs.writeFileSync(file, raw.replace('alpha evidence', 'omega evidence'));
+  fs.utimesSync(file, stamp.atime, stamp.mtime);
+  assert.equal(fs.statSync(file).size, stamp.size);
+  assert.equal(resolve().evidenceText, 'omega evidence');
+  fs.unlinkSync(file);
+  assert.equal(resolve().status, 'missing-section');
+  fs.writeFileSync(file, raw);
+  const beforeRestore = reconciliationParseStats();
+  assert.equal(resolve().evidenceText, 'alpha evidence');
+  assert.deepEqual(reconciliationParseStats(), beforeRestore, 'restored exact content may reuse syntax after reading it');
+  assert.equal(reads, 5);
+});
+
+test('#300 cached evidence does not reuse input identity, metadata or ambiguity decisions', (t) => {
+  const root = tmpdir(t);
+  const id = 'IN-20261110-planning-003';
+  const file = writeInput(root, id, '## Identity Evidence\n- same source syntax\n');
+  const artifact = loadInputArtifact(file);
+  const ref = `input:${id}#identity-evidence/01`;
+  assert.equal(resolveInputEvidence(buildInputArtifactIndex([artifact]), ref).status, 'ok');
+
+  const changed = { ...artifact, fm: { ...artifact.fm, source_ref: 'planning/new-ref', captured_at: 'invalid' } };
+  const current = resolveInputEvidence(buildInputArtifactIndex([changed]), ref);
+  assert.equal(current.artifact, changed);
+  assert.equal(resolveEffectiveSourceRef('inherit', current.artifact), 'planning/new-ref');
+  assert.equal(current.artifact.fm.captured_at, 'invalid');
+  assert.equal(resolveInputEvidence(buildInputArtifactIndex([artifact, changed]), ref).status, 'ambiguous-input');
+  assert.equal(resolveInputEvidence(buildInputArtifactIndex([{ ...artifact, parseError: 'bad frontmatter' }]), ref).status, 'missing-input');
+  assert.equal(resolveInputEvidence(buildInputArtifactIndex([{ ...artifact, fm: { input_id: 'IN-20261110-planning-004' } }]), ref).status, 'missing-input');
+});
+
+test('#300 supplied bodies retain precedence over files, including an empty body', (t) => {
+  const root = tmpdir(t);
+  const id = 'IN-20261110-planning-005';
+  const file = writeInput(root, id, '## Body Precedence\n- file evidence\n');
+  const artifact = loadInputArtifact(file);
+  const resolve = (body) => {
+    const supplied = { ...artifact, body };
+    return resolveInputEvidence(buildInputArtifactIndex([supplied]), `input:${id}#body-precedence/01`);
+  };
+  assert.equal(resolve('## Body Precedence\n- supplied evidence\n').evidenceText, 'supplied evidence');
+  assert.equal(resolve('').status, 'missing-section');
+  fs.unlinkSync(file);
+  assert.equal(resolve('## Body Precedence\n- supplied evidence\n').evidenceText, 'supplied evidence');
+  assert.equal(resolveInputEvidence(buildInputArtifactIndex([artifact]), `input:${id}#body-precedence/01`).status, 'missing-section');
 });

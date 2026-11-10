@@ -12,6 +12,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
+  createContentJsonCache,
   createTextKeyedCache,
   emitGeneratedYaml,
   isCliEntry,
@@ -278,4 +279,133 @@ test('createTextKeyedCache: keeps recently used text keys within the budget, nev
   cache.set(long, 5); // over the budget alone: kept, every older key leaves
   assert.equal(cache.get(long), 5);
   assert.deepEqual([cache.get('aa'), cache.get('cc'), cache.get('dd')], [undefined, undefined, undefined]);
+});
+
+test('createContentJsonCache: requires explicit positive integer limits and a string source', () => {
+  for (const invalid of [undefined, 0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, '100']) {
+    assert.throws(() => createContentJsonCache({ maxBytes: invalid, maxEntries: 1 }), RangeError);
+    assert.throws(() => createContentJsonCache({ maxBytes: 256, maxEntries: invalid }), RangeError);
+  }
+  const cache = createContentJsonCache({ maxBytes: 1, maxEntries: 1 });
+  assert.throws(() => cache.getOrCreate(null, () => null), TypeError);
+  assert.throws(() => cache.getOrCreate('', null), TypeError);
+  assert.equal(cache.getOrCreate('', () => null), null, 'a budget too small to admit a value still computes');
+});
+
+test('createContentJsonCache: stores JSON only and isolates nested caller mutations', () => {
+  const cache = createContentJsonCache({ maxBytes: 2048, maxEntries: 4 });
+  const expected = JSON.parse('{"sections":[["constructor",["original"]]],"meta":{"__proto__":{"kept":true}},"flags":[false,0,"",null]}');
+  let calls = 0;
+  let produced;
+  const compute = () => { calls += 1; produced = structuredClone(expected); return produced; };
+  const first = cache.getOrCreate('same body', compute);
+  first.sections[0][1].push('poison');
+  produced.meta.__proto__.kept = false;
+  const second = cache.getOrCreate('same body', compute);
+  assert.deepEqual(second, expected);
+  assert.notEqual(first, second);
+  assert.equal(Object.getPrototypeOf(second.meta), Object.prototype);
+  second.flags.length = 0;
+  second.sections[0][1][0] = 'poison';
+  assert.deepEqual(cache.getOrCreate('same body', compute), expected);
+  assert.equal(calls, 1);
+});
+
+test('createContentJsonCache: byte pressure evicts the least recently used projection', () => {
+  const cache = createContentJsonCache({ maxBytes: 300, maxEntries: 10 });
+  const calls = new Map();
+  const read = (source) => cache.getOrCreate(source, () => {
+    calls.set(source, (calls.get(source) || 0) + 1);
+    return 'syntax';
+  });
+  // Two of these small projections fit, while a third exceeds the byte budget.
+  read('a'); read('b'); read('a'); read('c'); read('a'); read('b');
+  assert.deepEqual([...calls], [['a', 1], ['b', 2], ['c', 1]]);
+});
+
+test('createContentJsonCache: accounts for UTF-16 key and serialized value bytes at admission', () => {
+  // One-character source: 66 key characters (length, colon, SHA-256 hex).
+  // The JSON string "한" adds three characters, so the payload costs 138 bytes.
+  for (const [maxBytes, expectedCalls] of [[138, 1], [137, 2]]) {
+    const cache = createContentJsonCache({ maxBytes, maxEntries: 1 });
+    let calls = 0;
+    const compute = () => { calls += 1; return '한'; };
+    assert.equal(cache.getOrCreate('a', compute), '한');
+    assert.equal(cache.getOrCreate('a', compute), '한');
+    assert.equal(calls, expectedCalls);
+  }
+});
+
+test('createContentJsonCache: entry count limits small values independently of the byte budget', () => {
+  const cache = createContentJsonCache({ maxBytes: 10000, maxEntries: 2 });
+  const calls = new Map();
+  const read = (source) => cache.getOrCreate(source, () => {
+    calls.set(source, (calls.get(source) || 0) + 1);
+    return false;
+  });
+  read('a'); read('b'); read('a'); read('c'); read('a'); read('b');
+  assert.deepEqual([...calls], [['a', 1], ['b', 2], ['c', 1]]);
+});
+
+test('createContentJsonCache: a large source can reuse a tiny derived result', () => {
+  const cache = createContentJsonCache({ maxBytes: 512, maxEntries: 2 });
+  const source = `prefix ${'x'.repeat(1024 * 1024)}`;
+  let calls = 0;
+  const compute = () => { calls += 1; return [['facts', ['one']]]; };
+  assert.deepEqual(cache.getOrCreate(source, compute), [['facts', ['one']]]);
+  assert.deepEqual(cache.getOrCreate(Buffer.from(source).toString('utf8'), compute), [['facts', ['one']]]);
+  assert.equal(calls, 1, 'source size must not consume the serialized-value budget');
+});
+
+test('createContentJsonCache: oversized projections stay uncached without displacing useful entries', () => {
+  const cache = createContentJsonCache({ maxBytes: 512, maxEntries: 2 });
+  const calls = new Map();
+  const read = (source) => cache.getOrCreate(source, () => {
+    calls.set(source, (calls.get(source) || 0) + 1);
+    return source === 'large' ? 'x'.repeat(1000) : source;
+  });
+  read('a'); read('b');
+  assert.equal(read('large').length, 1000);
+  assert.equal(read('large').length, 1000);
+  assert.deepEqual([read('a'), read('b')], ['a', 'b']);
+  assert.deepEqual([...calls], [['a', 1], ['b', 1], ['large', 2]]);
+});
+
+test('createContentJsonCache: exact UTF-16 source identity preserves lone surrogates and line endings', () => {
+  const cache = createContentJsonCache({ maxBytes: 10000, maxEntries: 12 });
+  const sources = ['\ud800', '\ud801', '\udc00', '\ufffd', '\0', '\n', '\r', '한'];
+  assert.deepEqual(Buffer.from(sources[0]), Buffer.from(sources[1]), 'UTF-8 alone would conflate distinct lone surrogates');
+  let calls = 0;
+  for (let pass = 0; pass < 2; pass += 1) {
+    for (const source of sources) {
+      assert.deepEqual(cache.getOrCreate(source, () => { calls += 1; return { source }; }), { source });
+    }
+  }
+  assert.equal(calls, sources.length);
+});
+
+test('createContentJsonCache: computation and serialization failures are not cached or admitted', () => {
+  const cache = createContentJsonCache({ maxBytes: 1024, maxEntries: 1 });
+  let stableCalls = 0;
+  const stable = () => { stableCalls += 1; return ['stable']; };
+  cache.getOrCreate('stable', stable);
+  const failure = new Error('parse failed');
+  let failedComputations = 0;
+  const cyclic = {}; cyclic.self = cyclic;
+  let failedSerializations = 0;
+  for (let pass = 0; pass < 2; pass += 1) {
+    assert.throws(() => cache.getOrCreate('bad parse', () => {
+      failedComputations += 1; throw failure;
+    }), (error) => error === failure);
+    assert.throws(() => cache.getOrCreate('bad serialization', () => {
+      failedSerializations += 1; return cyclic;
+    }), TypeError);
+    assert.throws(() => cache.getOrCreate('no JSON data', () => undefined), /must be JSON data/);
+    assert.deepEqual(cache.getOrCreate('stable', stable), ['stable']);
+  }
+  assert.equal(failedComputations, 2);
+  assert.equal(failedSerializations, 2);
+  assert.equal(stableCalls, 1);
+  assert.deepEqual(cache.getOrCreate('bad parse', () => ['recovered']), ['recovered']);
+  assert.deepEqual(cache.getOrCreate('bad parse', () => assert.fail('successful retry should now be cached')), ['recovered']);
 });

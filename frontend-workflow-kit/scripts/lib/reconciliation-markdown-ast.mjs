@@ -435,7 +435,7 @@ function bulletSourceText(source, item) {
   return text + source.slice(cursor, last.end);
 }
 
-function sectionOccurrences(source, tree, suppliedContext = null, includeNodes = false) {
+function sectionOccurrences(source, tree, suppliedContext = null, { includeNodes = false, evidenceOnly = false } = {}) {
   const context = suppliedContext || { source, definitions: definitionLabels(tree) };
   const occurrences = [];
   let current = {
@@ -460,6 +460,10 @@ function sectionOccurrences(source, tree, suppliedContext = null, includeNodes =
           ),
         );
       });
+    }
+    if (evidenceOnly) {
+      occurrences.push({ slug: current.slug, bulletTexts });
+      return;
     }
     // The projection and structural view must share the very same canonical
     // table candidates (column-zero pipes AND explicit block boundaries).
@@ -504,7 +508,7 @@ function sectionOccurrences(source, tree, suppliedContext = null, includeNodes =
   return occurrences;
 }
 
-// Production entry point: callers derive every reconciliation view from this one parse.
+// Full reconciliation projection, backed by the shared document parse.
 export function parseReconciliationMarkdown(text) {
   const source = String(text || '');
   const tree = sharedTree(source);
@@ -514,6 +518,14 @@ export function parseReconciliationMarkdown(text) {
     proseBody: visibleText(tree, context),
     occurrences: sectionOccurrences(source, tree, context),
   };
+}
+
+// Input evidence consumes only section slugs and visible bullet text. Share the
+// full view's section boundaries and reference context without rendering unused
+// document prose, raw section content, tables, or native bullet source spans.
+export function parseReconciliationEvidence(text) {
+  const source = String(text || '');
+  return sectionOccurrences(source, sharedTree(source), null, { evidenceOnly: true });
 }
 
 // Compatibility helpers used by focused parser tests. Production indexing does not chain these helpers.
@@ -724,6 +736,6 @@ export function splitSectionOccurrences(text) {
 export function parseReconciliationReferenceView(text) {
   const source = String(text || '');
   const tree = sharedTree(source);
-  return { tree, sections: sectionOccurrences(source, tree, null, true) };
+  return { tree, sections: sectionOccurrences(source, tree, null, { includeNodes: true }) };
 }
 export { normalizeReferenceLabel as reconciliationReferenceLabel, headingText as reconciliationHeadingText };

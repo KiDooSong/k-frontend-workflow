@@ -1,5 +1,5 @@
-import { readFileSafe, splitFrontmatter } from './util.mjs';
-import { parseReconciliationMarkdown } from './reconciliation-markdown-ast.mjs';
+import { createContentJsonCache, readFileSafe, splitFrontmatter } from './util.mjs';
+import { parseReconciliationEvidence } from './reconciliation-markdown-ast.mjs';
 
 // Provenance 공통 파서 — RFC3339 timestamp · Source Unit enum · inherit 토큰의 단일 출처.
 // 계약: input-reconciliation.md "Reconciliation Contract v2" §Provenance.
@@ -163,8 +163,27 @@ function inputArtifactBody(artifact) {
   return splitFrontmatter(readFileSafe(artifact.file)).body || '';
 }
 
+// Retain only serialized section/bullet syntax, not source strings, ASTs, file
+// observations or validation results. A fresh index still obtains the current
+// body before this lookup. The bounds cover serialized UTF-16 payload and keys;
+// the entry cap also bounds per-entry bookkeeping.
+const inputSectionSyntax = createContentJsonCache({ maxBytes: 8 * 1024 * 1024, maxEntries: 4096 });
+
+function inputSectionEntries(body) {
+  const bulletTexts = new Map();
+  for (const occurrence of parseReconciliationEvidence(body)) {
+    if (!occurrence.slug) continue;
+    const existingTexts = bulletTexts.get(occurrence.slug) || [];
+    const occurrenceTexts = Array.isArray(occurrence.bulletTexts) ? occurrence.bulletTexts : [];
+    bulletTexts.set(occurrence.slug, [...existingTexts, ...occurrenceTexts]);
+  }
+  // Entries preserve Map insertion order and arbitrary section names without
+  // turning authored slugs into object properties.
+  return [...bulletTexts];
+}
+
 // H2 section slug -> actual Markdown list item count + exact visible bullet prose.
-// One shared AST parse populates both views. Fenced/indented code, HTML comments,
+// One evidence-only projection populates both views. Fenced/indented code, HTML comments,
 // raw HTML attributes, link destinations, URL-only autolinks, definitions, and image
 // destinations do not become evidence text. Duplicate real H2 slugs are concatenated
 // in source order, preserving the existing aggregate bullet-count behavior.
@@ -173,16 +192,9 @@ export function inputSectionDetails(index, artifact) {
   const cacheKey = artifact.file || artifact;
   if (index?.sectionDetailsCache?.has(cacheKey)) return index.sectionDetailsCache.get(cacheKey);
 
-  const sections = new Map();
-  const bulletTexts = new Map();
-  for (const occurrence of parseReconciliationMarkdown(inputArtifactBody(artifact)).occurrences) {
-    if (!occurrence.slug) continue;
-    const existingTexts = bulletTexts.get(occurrence.slug) || [];
-    const occurrenceTexts = Array.isArray(occurrence.bulletTexts) ? occurrence.bulletTexts : [];
-    const combinedTexts = [...existingTexts, ...occurrenceTexts];
-    bulletTexts.set(occurrence.slug, combinedTexts);
-    sections.set(occurrence.slug, combinedTexts.length);
-  }
+  const entries = inputSectionSyntax.getOrCreate(inputArtifactBody(artifact), inputSectionEntries);
+  const bulletTexts = new Map(entries);
+  const sections = new Map(entries.map(([slug, texts]) => [slug, texts.length]));
 
   const details = { sections, bulletTexts };
   if (index) {
