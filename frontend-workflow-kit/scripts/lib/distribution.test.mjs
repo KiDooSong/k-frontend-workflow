@@ -281,6 +281,11 @@ test('kit:pack copies only the consumer allowlist and writes a stable summary', 
   const packageJson = JSON.parse(fs.readFileSync(path.join(out, 'package.json'), 'utf8'));
   assert.equal(Object.hasOwn(packageJson, 'scripts'), false);
   assert.equal(packageJson.bin['workflow-state'], 'scripts/workflow-state.mjs');
+  const sourceLock = fs.readFileSync(path.join(KIT_ROOT, 'package-lock.json'));
+  assert.deepEqual(fs.readFileSync(path.join(out, 'package-lock.json')), sourceLock,
+    'packed installs must retain the locked runtime versions and integrity hashes');
+  assert.deepEqual(JSON.parse(sourceLock).packages[''].dependencies, packageJson.dependencies,
+    'removing kit-dev scripts must leave the packed package compatible with npm ci');
 
   const readme = fs.readFileSync(path.join(out, 'README.md'), 'utf8');
   for (const rel of [

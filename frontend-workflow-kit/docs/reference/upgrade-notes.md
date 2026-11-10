@@ -17,6 +17,35 @@ or root config.
 
 ---
 
+## Large Markdown table parsing (#300)
+
+The runtime lock now selects `micromark-extension-gfm-table` **2.1.2** instead
+of 2.1.1. This official patch replaces repeated scans of pending table edits
+with an indexed lookup. Large tables benefit on their first parse as well as
+after the kit's existing AST cache evicts a document. The kit's Markdown
+grammar, section boundaries, validation rules and cache budgets stay the same.
+
+**Manual action:** after applying the updated `package-lock.json`, reinstall
+dependencies inside the vendored kit. Managed `--apply` does not update an
+existing `node_modules` directory. From the consumer project root:
+
+```bash
+npm --prefix tools/frontend-workflow ci
+npm --prefix tools/frontend-workflow ls micromark-extension-gfm-table
+```
+
+For this payload, the installed table parser should be **2.1.2**. If the plan
+keeps a locally modified lockfile or reports a conflict, reconcile that
+lockfile before reinstalling; retaining the old lock can retain the old parser.
+The packed kit includes the same runtime lock as the source kit.
+
+This is a parsing speed improvement, not a memory reduction. The parser uses a
+temporary lookup map during table parsing, so peak memory can increase.
+The gain depends on table size and how much of a command's runtime is spent
+parsing; it is not an end-to-end CLI speed guarantee.
+
+---
+
 ## Distribution summary refresh (#303)
 
 `_distribution-summary.json` is generated pack metadata: its `files`,
