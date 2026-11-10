@@ -2,6 +2,7 @@
 // 의존성 최소 원칙: Node 내장 + `yaml` 한 개만 사용한다.
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse as yamlParse, stringify as yamlStringify } from 'yaml';
 
@@ -380,6 +381,57 @@ export function createTextKeyedCache(limitChars) {
         entries.delete(old);
         chars -= old.length;
       }
+    },
+  };
+}
+
+// Internal cache for pure, JSON-compatible projections of a source string.
+// Keep only serialized values: substring-backed fields must not retain the full
+// source, and caller mutations must not change another call's projection. The
+// budget bounds UTF-16 key/value payload bytes; the entry cap also bounds Map
+// overhead. It is not a bound on parser allocations or total process memory.
+export function createContentJsonCache({ maxBytes, maxEntries }) {
+  if (![maxBytes, maxEntries].every((value) => Number.isSafeInteger(value) && value > 0)) {
+    throw new RangeError('cache maxBytes and maxEntries must be positive safe integers');
+  }
+  const entries = new Map();
+  let bytes = 0;
+  const size = (key, json) => 2 * (key.length + json.length);
+  return {
+    getOrCreate(source, compute) {
+      if (typeof source !== 'string' || typeof compute !== 'function') {
+        throw new TypeError('content cache requires a source string and a compute function');
+      }
+      // UTF-8 replaces lone surrogates with U+FFFD. Hash exact JS code units so
+      // those distinct inputs cannot acquire the same content key that way.
+      const key = `${source.length}:${createHash('sha256').update(source, 'utf16le').digest('hex')}`;
+      if (entries.has(key)) {
+        const json = entries.get(key);
+        entries.delete(key);
+        entries.set(key, json);
+        return JSON.parse(json);
+      }
+      const value = compute(source);
+      const json = JSON.stringify(value);
+      if (typeof json !== 'string') throw new TypeError('content cache projection must be JSON data');
+      const valueBytes = size(key, json);
+      // An oversized projection must not displace useful smaller entries.
+      if (valueBytes <= maxBytes) {
+        if (entries.has(key)) {
+          bytes -= size(key, entries.get(key));
+          entries.delete(key);
+        }
+        entries.set(key, json);
+        bytes += valueBytes;
+        while (bytes > maxBytes || entries.size > maxEntries) {
+          const oldest = entries.keys().next().value;
+          bytes -= size(oldest, entries.get(oldest));
+          entries.delete(oldest);
+        }
+      }
+      // Detach cacheable projections from parser-owned strings on the first
+      // call too; every retained result has the same fresh JSON value shape.
+      return valueBytes <= maxBytes ? JSON.parse(json) : value;
     },
   };
 }

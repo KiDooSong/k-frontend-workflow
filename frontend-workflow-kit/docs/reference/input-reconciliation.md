@@ -582,6 +582,13 @@ v2 가 소비하는 마크다운은 **좁은 canonical authoring profile** 만 �
   fenced/indented/inline code, HTML comment/tag/attribute, link/image destination, URL-only autolink, reference definition은
   제외하고 visible link text와 일반 prose만 유지한다. nested list는 1-based pre-order이며 부모 bullet에 child text를
   중복 합성하지 않는다.
+  근거 전용 파생 뷰는 필요한 section slug와 bullet text만 만든다(#300). 새 input index에서도
+  현재 본문을 읽은 뒤, 정규화하지 않은 UTF-16 본문의 길이·SHA-256이 같은 구문 결과를 프로세스 안에서
+  재사용한다. 이 캐시는 직렬화한 section/bullet 결과와 key를 UTF-16 payload 기준 8 MiB·최대 4,096개로
+  제한하며 원문이나 AST를 추가 보관하지 않는다. 새 index에는 독립된 Map·배열을 주고, 기존 index 내부의
+  view 공유는 유지한다. 파일 내용은 새 index에서 다시 읽고, 입력 ID/중복·metadata·대상 참조와
+  validation/authority 판정은 해당 호출의 현재 입력으로 확인한다. 기존 AST 캐시 예산과
+  출력·basis/checkpoint 계약은 그대로다.
 - `Source Ref`/`Captured At`: `inherit` 면 input frontmatter 의 `source_ref`/`captured_at` 을 상속.
   inherit 로 해소된 `captured_at` 도 이 item 의 provenance 이므로 RFC3339 계약을 hard 로 통과해야 한다.
   `Source Unit` 은 item 마다 명시(enum: `document` `statement` `record` `instance` `node` `frame` `token`

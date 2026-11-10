@@ -1,5 +1,10 @@
 # Current Roadmap
 
+> 2026-11-10 #300 5차 성능 개선: 입력 Evidence는 section slug와 bullet prose만 파생하고, 새 input index에서도 작은 구문 결과를 재사용한다.
+> 현재 본문 읽기와 ID/중복·metadata·참조·파일 변경·권한 판정을 유지한다. 캐시 key는 원문 UTF-16 길이·SHA-256이며 직렬화 결과와 key를 8 MiB·4,096개로 제한한다.
+> 원문·AST를 추가 보관하지 않고 index별 Map·배열을 분리한다. 기존 bullet 번호·definition 문맥·판정·basis/checkpoint 계약과 AST 캐시 예산은 유지한다.
+> 정본: [Evidence contract](../frontend-workflow-kit/docs/reference/input-reconciliation.md#reconciliation-contract-v2-opt-in). 재현: [입력 근거 벤치마크](benchmarks/input-evidence.mjs).
+
 > 2026-11-09 #300 4차 성능 개선: GFM 표 파서의 공식 패치 `micromark-extension-gfm-table` 2.1.2를 runtime lock에 반영했다.
 > 셀 편집 위치의 반복 선형 탐색을 인덱스로 바꿔 큰 표의 첫 파싱과 캐시 축출 뒤 재파싱 비용을 줄인다.
 > 기존 문법·원문 위치·섹션별 reference 경계·검증 판정과 AST 캐시 예산을 유지한다. 임시 Map 때문에 peak memory 감소는 보장하지 않는다.

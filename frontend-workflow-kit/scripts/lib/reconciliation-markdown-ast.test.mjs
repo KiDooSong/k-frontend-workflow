@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseReconciliationMarkdown, parseReconciliationReferenceView, locateContentTables } from './reconciliation-markdown-ast.mjs';
+import { parseReconciliationMarkdown, parseReconciliationEvidence, parseReconciliationReferenceView, locateContentTables } from './reconciliation-markdown-ast.mjs';
 
 function section(markdown, slug = 'extracted-facts') {
   const parsed = parseReconciliationMarkdown(markdown);
@@ -50,6 +50,174 @@ test('evidence AST excludes non-visible code/HTML/destinations and preserves vis
   assert.ok(!occurrence.bulletTexts[4].includes('IN-20260802-fence-001'));
   assert.ok(!occurrence.bulletTexts[5].includes('IN-20260802-comment-001'));
   assert.ok(!occurrence.bulletTexts.join('\n').includes('IN-20260802-definition-001'));
+});
+
+const evidenceFixtures = [
+  ['empty document', []],
+  ['preamble and repeated or empty headings', [
+    '- preamble',
+    '',
+    '## Extracted Facts',
+    '- first',
+    '',
+    '## Extracted Facts',
+    '- repeated',
+    '',
+    '##',
+    '- empty heading',
+    '',
+    '## !!!',
+    '- punctuation heading',
+  ]],
+  ['code and HTML', [
+    '## Extracted Facts',
+    '- inline `hidden IN-CODE` and [visible link](https://example.test/hidden)',
+    '- inline <span data-note="hidden">visible HTML</span> and <!-- hidden --> comment',
+    '- autolink <https://example.test/hidden> and <person@example.test>',
+    '- fenced code:',
+    '  ```md',
+    '  - hidden list item',
+    '  ## Hidden Heading',
+    '  ```',
+    '',
+    '    ## Indented Code',
+    '    - hidden indented item',
+    '',
+    '<div>',
+    '## HTML Heading',
+    '- hidden HTML item',
+    '</div>',
+    '',
+    '<!--',
+    '## Comment Heading',
+    '- hidden comment item',
+    '-->',
+    '',
+    '- final visible item',
+  ]],
+  ['document-wide definitions, image alt, and footnotes', [
+    '[before]: /before',
+    '[^before]: footnote before',
+    '',
+    '## Extracted Facts',
+    '- [before link][before], [inside link][inside], [after link][after]',
+    '- [missing link][missing], [before][], [after], and ![reference image][before]',
+    '- ![[alt before][before]](/image) and ![[alt after][after]](/image)',
+    '- ![[alt missing][missing]](/image)',
+    '- footnotes [^before], [^inside], [^after], and [^missing]',
+    '',
+    '[inside]: /inside',
+    '[^inside]: footnote inside',
+    '',
+    '## Following Section',
+    '[after]: /after',
+    '[^after]: footnote after',
+    '',
+    '- [following link][before]',
+  ]],
+  ['containers and nested bullets', [
+    '## Extracted Facts',
+    '- parent',
+    '  - child',
+    '    - grandchild',
+    '- ',
+    '',
+    '> ## Nested Heading',
+    '>',
+    '> - quoted parent',
+    '>   - quoted child',
+    '',
+    '1. ordered parent',
+    '   1. ordered child',
+    '',
+    '   ## Heading in a List',
+    '',
+    '   - child after heading',
+    '',
+    '- [x] checked task',
+    '- [ ] unchecked task',
+    '',
+    '## Next Root Section',
+    '- next root item',
+  ]],
+  ['ATX and setext headings with tables', [
+    '# Document Title',
+    '',
+    '- preamble',
+    '',
+    '## **Extracted** Facts ##',
+    '- ATX item',
+    '',
+    '| Name | Value |',
+    '| --- | --- |',
+    '| visible | `code` |',
+    '| [label](/target) | ![alt](/image) |',
+    '',
+    'Extracted Facts',
+    '---------------',
+    '',
+    '- setext item',
+    '',
+    'Other Title',
+    '===========',
+    '',
+    '- H1 remains in current section',
+    '',
+    '### Nested Depth',
+    '- H3 remains in current section',
+    '',
+    '## Final Section',
+  ]],
+];
+
+for (const [name, lines] of evidenceFixtures) {
+  test(`compact evidence matches the full projection: ${name}`, () => {
+    for (const lineEnding of ['\n', '\r\n', '\r']) {
+      const body = lines.join(lineEnding);
+      const expected = parseReconciliationMarkdown(body).occurrences
+        .map(({ slug, bulletTexts }) => ({ slug, bulletTexts }));
+      assert.deepEqual(parseReconciliationEvidence(body), expected, JSON.stringify(lineEnding));
+    }
+  });
+}
+
+test('compact evidence retains occurrence order, empty slugs, and nested bullet indexes', () => {
+  const body = [
+    '## Facts',
+    '- parent',
+    '  - child',
+    '',
+    '> ## Nested Heading',
+    '> - quoted bullet',
+    '',
+    '## Facts',
+    '- repeated',
+    '',
+    '##',
+    '- empty heading',
+  ].join('\n');
+  assert.deepEqual(parseReconciliationEvidence(body), [
+    { slug: '', bulletTexts: [] },
+    { slug: 'facts', bulletTexts: ['parent', 'child', 'quoted bullet'] },
+    { slug: 'facts', bulletTexts: ['repeated'] },
+    { slug: '', bulletTexts: ['empty heading'] },
+  ]);
+});
+
+test('compact evidence is fresh per call and cannot mutate full or native views', () => {
+  const body = ['## Extracted Facts', '- parent', '  - child', '', '| a | b |', '|---|---|', '| 1 | 2 |'].join('\n');
+  const full = parseReconciliationMarkdown(body);
+  const native = parseReconciliationReferenceView(body);
+  const expected = full.occurrences.map(({ slug, bulletTexts }) => ({ slug, bulletTexts }));
+  const evidence = parseReconciliationEvidence(body);
+  evidence[1].slug = 'changed';
+  evidence[1].bulletTexts[0] = 'changed';
+  evidence[1].bulletTexts.push('added');
+  evidence.push({ slug: 'added', bulletTexts: [] });
+
+  assert.deepEqual(parseReconciliationEvidence(body), expected);
+  assert.deepEqual(parseReconciliationMarkdown(body), full);
+  assert.deepEqual(parseReconciliationReferenceView(body), native);
 });
 
 test('the same body shares one read-only tree per process; derived views stay per call (#265)', () => {
