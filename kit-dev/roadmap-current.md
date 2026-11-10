@@ -2,6 +2,7 @@
 
 > 2026-11-10 #300 6차 성능 개선: current/scoped 입력과 worktree·authority 원문 읽기의 고정 64 KiB 버퍼 낭비와 정상 경로의 전체 복사를 줄인다.
 > 열린 파일 크기는 초기 할당 hint로만 쓰고 실제 EOF·short read·부정확한 크기·limit+1 초과 읽기·전후 stat·fd 정리 계약을 유지한다.
+> #312 리뷰 보완: 크기가 0이거나 없으면 첫 읽기부터 bounded 64 KiB를 사용해 일부 가상 파일의 내용 누락을 방지하고, overflow 테스트 mock을 정리 전에 복원해 Node 20을 지원한다.
 > 호출마다 현재 bytes를 읽고 authority·basis/checkpoint 계약을 유지한다. 정본: [current work](../frontend-workflow-kit/docs/reference/current-work.md#git-backstop).
 > 재현: [worktree byte-read benchmark](benchmarks/worktree-reads.mjs). 실제 capture 시간·프로세스 peak RSS와 별도 reader 할당 계측을 구분한다.
 

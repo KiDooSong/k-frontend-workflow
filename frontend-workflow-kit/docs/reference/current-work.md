@@ -55,11 +55,13 @@ semantic duplicate refs/targets are input errors. A document whose requests are 
 `authority: scoped` is evaluated as [scoped work](scoped-work.md); a document mixing
 current and scoped requests is an input error.
 
-The opened file's size is an allocation hint only. A correctly sized file uses
-one buffer with space for the EOF probe, avoiding a second buffer and a full copy.
-Short reads continue in the same buffer; an underestimated or zero size falls back
-to bounded chunks until actual EOF or the byte limit is exceeded. Descriptor
-ownership, before/after file checks and the input error contract stay with the caller.
+The opened file's size is an allocation hint only. A correctly sized nonempty file
+uses one buffer with space for the EOF probe, avoiding a second buffer and a full
+copy. A zero or unknown size starts with a bounded 64 KiB read, because some virtual
+files return EOF after a partial first read. Every read also respects the remaining
+byte limit plus one overflow byte. Short reads continue in the same buffer, then
+bounded chunks until actual EOF or overflow. Descriptor ownership, before/after
+file checks and the input error contract stay with the caller.
 
 ## Common CLI flow
 

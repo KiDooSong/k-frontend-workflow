@@ -91,6 +91,44 @@ test('#300 current byte reads treat zero, low and high metadata sizes only as hi
   }
 });
 
+test('#312 current byte reads preserve size-zero virtual files with EOF after the first read', (t) => {
+  const expected = Buffer.from('4194304\n');
+  // Use a real empty regular file for stable size-zero metadata, but model a
+  // /proc/sys reader: unread bytes from its first response cannot be retrieved
+  // by a later read. Merely changing an ordinary file's size hint misses this.
+  const name = file(t, ''), fstat = fs.fstatSync, close = fs.closeSync;
+  const requested = [], stats = [];
+  let readingFd, closed = 0;
+  const statMock = t.mock.method(fs, 'fstatSync', function (...args) {
+    const metadata = fstat.apply(this, args);
+    stats.push(metadata);
+    return metadata;
+  });
+  const readMock = t.mock.method(fs, 'readSync', function (fd, buffer, offset, length, position) {
+    readingFd = fd;
+    assert.equal(position, null);
+    requested.push(length);
+    if (requested.length > 1) return 0;
+    return expected.copy(buffer, offset, 0, Math.min(expected.length, length));
+  });
+  const closeMock = t.mock.method(fs, 'closeSync', function (fd) {
+    if (fd === readingFd) closed++;
+    return close.call(this, fd);
+  });
+  try {
+    assert.deepEqual(readCurrentBytes(name), expected);
+    assert.equal(requested[0], 64 * 1024, 'unknown size needs the original bounded first read');
+    assert.equal(requested.length, 2, 'confirm actual EOF after the response');
+    assert.equal(stats.length, 2, 'preserve both descriptor metadata checks');
+    assert.ok(stats.every((metadata) => metadata.isFile() && metadata.size === 0));
+    assert.equal(closed, 1);
+  } finally {
+    closeMock.mock.restore();
+    readMock.mock.restore();
+    statMock.mock.restore();
+  }
+});
+
 for (const change of ['grow', 'shrink', 'rewrite']) {
   test(`#300 current byte reads reject ${change} during reading and close the descriptor`, (t) => {
     const name = file(t, Buffer.alloc(257, 0x61)), read = fs.readSync, close = fs.closeSync;

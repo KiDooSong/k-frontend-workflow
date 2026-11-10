@@ -68,9 +68,14 @@ export function readBoundedFileDescriptor(fd, { maxBytes, sizeHint = 0 }) {
       !Number.isSafeInteger(sizeHint) || sizeHint < 0) {
     throw new RangeError('bounded read maxBytes and sizeHint must be non-negative safe integers, with room for an overflow byte');
   }
-  // The extra byte supplies the EOF/overflow probe without a second allocation
-  // for a correctly sized regular file. All returned bytes have been read.
-  let buffer = Buffer.alloc(Math.min(maxBytes, sizeHint) + 1);
+  // A positive size hint supplies room for the EOF/overflow probe without a
+  // second allocation. Unknown/zero sizes need the original bounded chunk on
+  // the first read: some virtual files return EOF after a partial first read.
+  // All returned bytes have been read.
+  const initialCapacity = sizeHint > 0
+    ? Math.min(maxBytes, sizeHint) + 1
+    : Math.min(64 * 1024, maxBytes + 1);
+  let buffer = Buffer.alloc(initialCapacity);
   let used = 0;
   let length = 0;
   const chunks = [];
