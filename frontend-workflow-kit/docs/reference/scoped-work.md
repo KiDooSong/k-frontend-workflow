@@ -191,6 +191,14 @@ computes from the documents (`basis_version: 2`, #275). The basis holds:
   of the owner's selections, so a row outside the closure that selects the
   same evidence can still change them; the binding then reads stale.
 
+Scope-basis serialization orders object keys and explicit set members by UTF-8
+bytes. Other arrays keep their order; strings receive no Unicode normalization.
+The strict JSON checks reject duplicate normalized set members, lone Unicode
+surrogates, cycles, sparse arrays, accessors and hidden properties. Set members
+are validated together before duplicate checks and the returned values are
+independent copies. Encoding ordinary set members once preserves these same
+bytes and checks; it does not change the basis version or grant authority.
+
 A Decision, Unknown or Conflict row that applies to no owner is found through
 the references it cites, as resolution reads them (body, links, typed
 `depends_on`), and through its document's `decision_refs`, wherever they lead,

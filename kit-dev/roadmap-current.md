@@ -1,5 +1,10 @@
 # Current Roadmap
 
+> 2026-11-11 #300 10차 성능 개선: scoped 공통 정규화에서 set의 엄격한 검증과 member 직렬화를 한 번의 순회로 수행하고, Node 내장 Unicode 검사를 사용한다.
+> surrogate가 없는 문자열 집합은 UTF-8과 같은 순서를 내는 기본 정렬을 사용해 비교마다 만들던 Buffer를 없앤다. 비 BMP 문자가 있거나 Proxy가 관여하는 set은 필요한 기존 비교·재읽기 경로를 유지한다.
+> 전체 member 검증 뒤 중복 판정·오류 순서·순환/희소/accessor/숨은 속성 거부·반환값 격리와 기존 JSON/basis bytes를 유지하며 캐시·판정 재사용은 추가하지 않는다.
+> 정본: [scope basis](../frontend-workflow-kit/docs/reference/scoped-work.md). 재현: [normalization benchmark](benchmarks/scoped-normalization.mjs), [실제 binding-status CLI](benchmarks/binding-status.mjs) — CLI 비교는 같은 파일시스템의 runtime 복사본으로 제한한다.
+
 > 2026-11-11 #300 9차 성능 개선: `binding-status`의 owner별 applicability 계산 안에서 unit projection을 한 번 만들고, Decision·Unknown/Conflict 관계를 확장할 때 재사용한다.
 > 관계의 전체 고정점 계산과 scope-basis-v2·상태/차단 판정은 유지한다. 재사용 전 unit read set·실제 확인한 register 부재·검증 중 읽은 입력 원문을 확인하고, 관계 단계 사이 canonical layout/preset과 반환 전 전체 파일을 다시 검증한다.
 > 검증용 Evidence를 읽은 미선택 입력과 unit 사이에 나타난 register도 감지한다. owner·호출 사이 공유와 외부 projection 주입은 없으며 standalone inspector는 독립 재계산을 유지한다.

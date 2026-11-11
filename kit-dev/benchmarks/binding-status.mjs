@@ -222,6 +222,10 @@ async function main(args) {
     .filter((name) => process.env[name] !== undefined);
   assert.equal(redirected.length, 0, `run without redirection or Node instrumentation variables: ${redirected.join(', ')}`);
   const kits = { before: path.resolve(args[0]), after: path.resolve(args[1]) };
+  // Startup imports are timed too. Stage both source trees on one filesystem so
+  // a /tmp checkout and a differently mounted workspace cannot confound them.
+  assert.equal(fs.statSync(kits.before).dev, fs.statSync(kits.after).dev,
+    'before/after kit roots must be on the same filesystem; stage both under one parent directory');
   const runs = integer(args[2] ?? '3', 1), counts = (args[3] ?? '0,8,24').split(',').map((value) => integer(value, 0)), inputs = integer(args[4] ?? '16', 1);
   const unitCount = integer(args[5] ?? String(UNIT_IDS.length), UNIT_IDS.length);
   assert.equal(new Set(counts).size, counts.length, 'binding counts must be unique');
@@ -260,7 +264,7 @@ async function main(args) {
     console.log(JSON.stringify({ node: process.version, platform: process.platform, arch: process.arch, runs, kits,
       measurement: {
         elapsed_ms: 'Fresh actual public binding-status CLI process per kit/case/run, including startup/imports, Git snapshot materialization, evaluation, JSON output and cleanup. No instrumentation in timed runs. Setup and independent verification excluded.',
-        order: 'Before/after order alternates. Both versions use the same committed fixture and exact CLI flags. Fixture setup warms the filesystem cache; this is not cold-storage latency.',
+        order: 'Before/after order alternates. Both kit roots must be on the same filesystem. Both versions use the same committed fixture and exact CLI flags. Fixture setup warms the filesystem cache; this is not cold-storage latency.',
         diagnostics: 'Separate untimed processes count filesystem calls and actual yaml.parse calls after the parser import, and report instrumented process peak RSS (not timed-run peak or retained memory). YAML interception is installed before kit imports; all counters start after those imports. Child Git process RSS is not included.',
         verification: 'Whole stdout bytes, snapshot commit/tree, every binding state and digest agree across kits/runs; original HEAD, index bytes and tracked worktree bytes/modes stay unchanged; private snapshots are removed.',
         scope: 'Synthetic one-owner workload with configurable input/binding/unit counts, selected source/Items and mixed binding states. Extra units select the first unit\'s existing source Item. It is not a reproduction or timing prediction of the reported four-hour consumer execution.',
