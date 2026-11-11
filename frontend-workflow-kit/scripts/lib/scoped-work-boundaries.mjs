@@ -14,6 +14,7 @@ import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { decodeScopedYaml, parseScopedOwner } from './scoped-work-declarations.mjs';
 import { ScopedWorkContractError, workText, workPath, workSet } from './scoped-work-request.mjs';
 import { resolveScopedDecisionProjection } from './scoped-work-decisions.mjs';
+import { createScopedSnapshotRelationResolver } from './scoped-work-uncertainty.mjs';
 import { createScopedApiResolver } from './scoped-work-api.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
 
@@ -63,6 +64,31 @@ export function scopedPatternsOverlap(left, right) {
 }
 
 export function resolveScopedBoundaryProjection(options = {}) {
+  return boundaryProjection(options, false);
+}
+
+// Internal report composition. Only this entry enables reuse, after the same
+// canonical resource loading as standalone boundary resolution. The wrapper's
+// closure retains resource pins, not the boundary builder's temporary analyses.
+export function resolveScopedSnapshotBoundaryProjection(options = {}) {
+  const { boundary, relations, resources } = boundaryProjection(options, true);
+  const projectRoot = options.projectRoot;
+  return { boundary, verify: relations.verify,
+    uncertainty(dependencyRoots = [], dependencyContext = {}) {
+      // Standalone applicability reloads layout before its uncertainty passes.
+      // Verify the captured layout/preset bytes before using their role functions.
+      for (const entry of resources) {
+        const file = canonicalRepositoryPath(projectRoot, entry.file,
+          { required: true, type: 'file', label: 'scoped snapshot layout' });
+        if (hashBytes(readCurrentBytes(file.absolute, 'scoped snapshot layout')) !== entry.sha256) {
+          fail('layout changed between snapshot relation passes');
+        }
+      }
+      return relations.uncertainty(dependencyRoots, dependencyContext);
+    } };
+}
+
+function boundaryProjection(options, snapshot) {
   const { projectRoot, docsDir, targetIndex, layoutFile, manifestFile, kitRoot } = options;
   const files = new Map();
   function read(file, expected) {
@@ -105,7 +131,8 @@ export function resolveScopedBoundaryProjection(options = {}) {
   const layout = loadLayoutProfile({ kitRoot: kitRoot || projectRoot, flags: { layout: layoutFile } });
   const manifest = yaml(manifestFile);
   if (!manifest.data.artifacts || typeof manifest.data.artifacts !== 'object' || Array.isArray(manifest.data.artifacts)) fail('manifest artifacts object required');
-  const base = resolveScopedDecisionProjection({ ...options, layout });
+  const relations = snapshot ? createScopedSnapshotRelationResolver({ ...options, layout }) : null;
+  const base = relations ? relations.decision() : resolveScopedDecisionProjection({ ...options, layout });
   for (const record of base.read_set) read(path.join(projectRoot, record.file), record.sha256);
   const selected = new Set(base.projection.owners.map((entry) => entry.owner));
   const contexts = new Map();
@@ -219,5 +246,6 @@ export function resolveScopedBoundaryProjection(options = {}) {
   } }, read_set: scopeSet([...files.values()]),
     ...(base.target_fallbacks ? { target_fallbacks: base.target_fallbacks } : {}) };
   for (const record of result.read_set) read(path.join(projectRoot, record.file), record.sha256);
-  return result;
+  return relations ? { boundary: result, relations,
+    resources: [layoutSource, preset].filter(Boolean).map((source) => files.get(source.relative)) } : result;
 }

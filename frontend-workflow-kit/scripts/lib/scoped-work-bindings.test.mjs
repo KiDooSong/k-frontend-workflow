@@ -9,6 +9,8 @@ import { buildReconciliationTargetIndex } from './reconciliation-target-index.mj
 import { resolveScopedBindingBasis } from './scoped-work-basis.mjs';
 import { inspectScopedDecisionBindings, inspectScopedSnapshotBindings } from './scoped-work-bindings.mjs';
 import { inspectScopedUncertaintyScopes } from './scoped-work-uncertainty-scopes.mjs';
+import { REQUIRED_ITEM_COLS } from './reconciliation-items.mjs';
+import { REQUIRED_REGISTER_COLS } from './reconciliation-register.mjs';
 
 const OWNER = 'screen:RESULT-001', SECOND = 'screen:RESULT-002';
 const ROOT = 'src/features/result', HOME = 'global/open-decisions.md';
@@ -67,7 +69,7 @@ function fixture(t) {
       entry.owner === owner && decisionRef.startsWith(`decision:${entry.decision_id}@`)).basis_digest = digest; });
     return digest;
   };
-  return { root, docs, write, change, options, run, bind, recordDigest, policyFile, overlayFile };
+  return { root, docs, write, change, options, run, bind, recordDigest, policyFile, overlayFile, layoutFile };
 }
 function check(f, ref = DECISION, owner = OWNER) {
   return f.run(owner).checks.find((entry) => entry.decision === ref);
@@ -432,4 +434,149 @@ test('#300 snapshot bindings do not inspect a register path that no unit consult
   assert.deepEqual(inspectScopedSnapshotBindings(options), {
     decisions: inspectScopedDecisionBindings(options), uncertainty: inspectScopedUncertaintyScopes(options),
   });
+});
+
+function inverseQuestion(f) {
+  return f.write('question.md', { artifact_id: 'QUESTIONS', artifact_type: 'domain-rules', domain: 'foreign', status: 'draft' },
+    `## Unknowns\n${table(['ID', 'Question', 'Status'], [
+      ['U-CHECK', 'See artifact:RULES#rules and decision:D-ONE@open-decision-register', 'open'],
+    ])}`);
+}
+
+// This direct uncertainty read occurs after its first unit pass and creates a
+// dependency root for the next pass. Lower Decision reads are not the boundary.
+function afterFirstUncertaintyRead(t, question, change, restore) {
+  const open = fs.openSync;
+  const state = { changed: false, restored: false };
+  const hook = t.mock.method(fs, 'openSync', function (file, ...args) {
+    const fd = open.call(this, file, ...args);
+    if (file === question && (!state.changed || (restore && !state.restored))) {
+      const stack = new Error().stack;
+      if (stack.includes('at document (') && stack.includes('scoped-work-uncertainty.mjs') && !stack.includes('scoped-work-decisions.mjs')) {
+        if (!state.changed) { state.changed = true; change(); }
+        else { state.restored = true; restore(); }
+      }
+    }
+    return fd;
+  });
+  return { state, restore: () => hook.mock.restore() };
+}
+
+for (const kind of ['typed', 'native']) {
+  test(`#300 snapshot unit reuse observes an absent ${kind} register before the next relation pass`, (t) => {
+    const f = fixture(t), question = inverseQuestion(f);
+    const { registerFile, options } = optionalRegister(f, kind);
+    if (kind === 'native') options.registerFile = 'docs/register.md';
+    const mutation = afterFirstUncertaintyRead(t, question, () => {
+      fs.writeFileSync(registerFile, md({ reconciliation_contract: 2, review_profile: 'reconcile-stage04-v1',
+        structured_since: '2026-09-01T00:00:00Z' }, 'Malformed register appeared between unit passes.'));
+    }, () => fs.unlinkSync(registerFile));
+    // A final-only absence check misses a register removed in the next pass.
+    // The original independent unit pass rejects its malformed contents first.
+    try {
+      assert.throws(() => inspectScopedSnapshotBindings(options), /register appeared|RR-SCHEMA-004.*RR-SCHEMA-019/s);
+      assert.equal(mutation.state.changed, true);
+      assert.equal(mutation.state.restored, false, 'reject the changed observation before the next relation pass');
+    } finally { mutation.restore(); }
+  });
+}
+
+test('#300 snapshot unit reuse retains register absence when a later unit observes the file', (t) => {
+  const f = fixture(t), { registerFile, options } = optionalRegister(f, 'native');
+  const selected = options.inputArtifacts[0].fm.input_id;
+  const register = md({ reconciliation_contract: 2, review_profile: 'reconcile-stage04-v1', structured_since: '2026-09-01T00:00:00Z' },
+    `${table(REQUIRED_REGISTER_COLS, [
+      [selected, 'meeting', 'simple-update×1', 'partially-reconciled', 'pending', 'artifact:RULES', '-', '-'],
+    ])}\n\n## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, [
+      [selected, '01', 'compatible-fact', 'simple-update', 'update', 'artifact:RULES', `input:${selected}#extracted-facts/01`, 'inherit', 'statement', 'inherit'],
+    ])}`);
+  let appeared = false;
+  const open = fs.openSync, stackTraceLimit = Error.stackTraceLimit;
+  Error.stackTraceLimit = 30;
+  const hook = t.mock.method(fs, 'openSync', function (file, ...args) {
+    if (!appeared && file === f.docs.get('screen.md')) {
+      const stack = new Error().stack;
+      // The unit's own API analysis follows its source closure. Insert the
+      // register after unit one observed absence and before unit two reads it.
+      if (stack.includes('scoped-work-api.mjs') && stack.includes('resolveScopedUnitProjection') && !stack.includes('resolveSourceClosure')) {
+        appeared = true; fs.writeFileSync(registerFile, register);
+      }
+    }
+    return open.call(this, file, ...args);
+  });
+  try {
+    assert.throws(() => inspectScopedSnapshotBindings(options), /register (?:appeared|changed)|unit projection changed|snapshot changed/i);
+    assert.equal(appeared, true);
+  } finally { hook.mock.restore(); Error.stackTraceLimit = stackTraceLimit; }
+});
+
+test('#300 snapshot unit reuse rechecks a present unit resource between relation passes', (t) => {
+  const f = fixture(t), question = inverseQuestion(f), options = f.options();
+  const original = fs.readFileSync(f.policyFile);
+  const mutation = afterFirstUncertaintyRead(t, question,
+    () => fs.appendFileSync(f.policyFile, '\n# changed between unit passes\n'),
+    () => fs.writeFileSync(f.policyFile, original));
+  try {
+    assert.throws(() => inspectScopedSnapshotBindings(options), /changed|differs|snapshot/i);
+    assert.equal(mutation.state.changed, true);
+    assert.equal(mutation.state.restored, false, 'a final audit cannot replace the check before the next relation pass');
+  } finally { mutation.restore(); }
+});
+
+test('#300 snapshot unit reuse rechecks the canonical layout before the next relation pass', (t) => {
+  const f = fixture(t), question = inverseQuestion(f), options = f.options();
+  const original = fs.readFileSync(f.layoutFile);
+  const mutation = afterFirstUncertaintyRead(t, question,
+    () => fs.appendFileSync(f.layoutFile, '\n# changed between relation passes\n'),
+    () => fs.writeFileSync(f.layoutFile, original));
+  try {
+    assert.throws(() => inspectScopedSnapshotBindings(options), /layout changed|snapshot changed/i);
+    assert.equal(mutation.state.changed, true);
+    assert.equal(mutation.state.restored, false);
+  } finally { mutation.restore(); }
+});
+
+test('#300 snapshot unit reuse retains validation reads of an unselected input Evidence body', (t) => {
+  const f = fixture(t), question = inverseQuestion(f);
+  const { registerFile, options } = optionalRegister(f);
+  const selected = options.inputArtifacts[0].fm.input_id, unrelated = 'IN-20260922-meeting-002';
+  const file = path.join(f.root, 'unselected-input.md');
+  fs.writeFileSync(file, md({ ...options.inputArtifacts[0].fm, input_id: unrelated, source_ref: 'meeting:unselected' },
+    '## Extracted Facts\n- A rejected but validated fact.'));
+  options.inputArtifacts.push(loadInputArtifact(file));
+  fs.writeFileSync(registerFile, md({ reconciliation_contract: 2, review_profile: 'reconcile-stage04-v1',
+    structured_since: '2026-09-01T00:00:00Z' }, `${table(REQUIRED_REGISTER_COLS, [
+    [selected, 'meeting', 'simple-update×1', 'partially-reconciled', 'pending', 'artifact:RULES', '-', '-'],
+    [unrelated, 'meeting', 'reject-input', 'reconciled', 'rejected', '-', '-', '-'],
+  ])}\n\n## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, [
+    [selected, '01', 'compatible-fact', 'simple-update', 'update', 'artifact:RULES#rules', `input:${selected}#extracted-facts/01`, 'inherit', 'statement', 'inherit'],
+    [unrelated, '01', 'reject', 'reject-input', 'reject', '-', `input:${unrelated}#extracted-facts/01`, 'inherit', 'statement', 'inherit'],
+  ])}`));
+  const stable = inspectScopedSnapshotBindings(options);
+  assert.equal(stable.decisions.read_set.some((entry) => entry.file === 'unselected-input.md'), false,
+    'validation-only input text must not become selected evidence or change the public read set');
+  const raw = fs.readFileSync(file, 'utf8');
+  const mutation = afterFirstUncertaintyRead(t, question, () => fs.writeFileSync(file,
+    raw.replace('## Extracted Facts', '## Removed Facts')), () => fs.writeFileSync(file, raw));
+  try {
+    assert.throws(() => inspectScopedSnapshotBindings(options), /RR-REF-005|changed|snapshot/i);
+    assert.equal(mutation.state.changed, true);
+    assert.equal(mutation.state.restored, false, 'check validation observations before reuse, not only after closure');
+  } finally { mutation.restore(); }
+});
+
+test('#300 snapshot unit reuse does not observe an input file whose body was never consulted', (t) => {
+  const f = fixture(t), question = inverseQuestion(f), file = path.join(f.root, 'unused-input.md');
+  const options = { ...f.options(), inputArtifacts: [{ file, hasFrontmatter: true, fm: {
+    input_id: 'IN-20260922-meeting-999', input_type: 'meeting', source_type: 'meeting', source_ref: 'meeting:unused',
+    captured_at: '2026-09-22T00:00:00Z', captured_by: 'test', status: 'captured',
+    affected_domains: ['result'], affected_screens: ['RESULT-001'],
+  } }] };
+  const expected = { decisions: inspectScopedDecisionBindings(options), uncertainty: inspectScopedUncertaintyScopes(options) };
+  const mutation = afterFirstUncertaintyRead(t, question, () => fs.writeFileSync(file, 'An unused file appeared.'));
+  try {
+    assert.deepEqual(inspectScopedSnapshotBindings(options), expected);
+    assert.equal(mutation.state.changed, true);
+    assert.equal(expected.decisions.read_set.some((entry) => entry.file === 'unused-input.md'), false);
+  } finally { mutation.restore(); }
 });

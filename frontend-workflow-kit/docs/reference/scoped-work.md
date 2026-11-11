@@ -238,10 +238,15 @@ committed `HEAD` that `--work` evaluates, writes nothing and does not verify
 [snapshot cleanup and orphan recovery](visual-refresh-boundaries.md#temporary-snapshot-lifecycle).
 Within that owned snapshot, the report resolves each owner's full applicability
 projection once and derives its Decision and Unknown/Conflict binding digests
-from the same projection. It re-reads the canonical binding homes and verifies
-the complete file read set and any consulted register's absence before returning
-the owner's report. No projection is shared across owners or calls. The standalone
-inspectors for mutable files keep their independent resolution and change checks.
+from the same projection. Within that computation, it builds the owner's unit
+facts once; Decision and Unknown/Conflict relations still expand to their full
+fixed point. Before reusing the unit facts, it checks their file read set, every
+consulted register's absence and any input text read during validation, including
+Evidence from unselected inputs. The canonical layout and preset are checked
+between relation passes. It re-reads the canonical binding homes and verifies
+these observations and the complete file read set before returning the owner's
+report. No projection is shared across owners or calls. The standalone inspectors
+for mutable files keep their independent resolution and change checks.
 The digest covers the binding as committed: to add or change a
 binding, commit it with any well-formed digest (for example `sha256:` followed by
 64 zeros), review the scope, then record the computed digest with an

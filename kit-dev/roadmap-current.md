@@ -1,5 +1,10 @@
 # Current Roadmap
 
+> 2026-11-11 #300 9차 성능 개선: `binding-status`의 owner별 applicability 계산 안에서 unit projection을 한 번 만들고, Decision·Unknown/Conflict 관계를 확장할 때 재사용한다.
+> 관계의 전체 고정점 계산과 scope-basis-v2·상태/차단 판정은 유지한다. 재사용 전 unit read set·실제 확인한 register 부재·검증 중 읽은 입력 원문을 확인하고, 관계 단계 사이 canonical layout/preset과 반환 전 전체 파일을 다시 검증한다.
+> 검증용 Evidence를 읽은 미선택 입력과 unit 사이에 나타난 register도 감지한다. owner·호출 사이 공유와 외부 projection 주입은 없으며 standalone inspector는 독립 재계산을 유지한다.
+> 정본: [binding status](../frontend-workflow-kit/docs/reference/scoped-work.md). 재현: [binding-status benchmark](benchmarks/binding-status.mjs) — 입력 수와 unit 수를 나누어 실제 CLI 시간·전체 JSON·상태 보존을 비교한다.
+
 > 2026-11-11 #300 8차 성능 개선: `binding-status` 등 입력 Evidence를 조회하는 경로에서 본문 추출 뒤 버리던 YAML frontmatter 재파싱을 제거한다.
 > 기존 구분자·BOM·본문 bytes와 입력 로더의 metadata 오류/경고, 현재 파일 재읽기·ID/중복·참조·변경 감지·basis/checkpoint 계약을 유지한다.
 > 새 캐시는 추가하지 않는다. 정본: [Evidence contract](../frontend-workflow-kit/docs/reference/input-reconciliation.md#reconciliation-contract-v2-opt-in).

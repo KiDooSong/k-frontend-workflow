@@ -5,11 +5,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { splitFrontmatter } from './util.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
+import { loadInputArtifact } from './input-artifact.mjs';
 import { buildReconciliationTargetIndex } from './reconciliation-target-index.mjs';
 import { resolveScopedDecisionProjection } from './scoped-work-decisions.mjs';
 import { resolveScopedUncertaintyProjection } from './scoped-work-uncertainty.mjs';
 import { resolveScopedBoundaryProjection } from './scoped-work-boundaries.mjs';
-import { resolveScopedApplicabilityProjection } from './scoped-work-applicability.mjs';
+import { resolveScopedApplicabilityProjection, resolveScopedSnapshotApplicabilityProjection } from './scoped-work-applicability.mjs';
 import { scopedBindingBasis } from './scoped-work-basis.mjs';
 
 const OWNER = 'screen:RESULT-001';
@@ -375,4 +376,119 @@ test('#284 review: a related unapplied raw chain keeps only the demanded rows an
   f.change('api.md', (doc) => { doc.body = doc.body.replace('Raw question.', 'Changed raw question.'); });
   const after = scopedBindingBasis(f.run().projection, binding);
   assert.notEqual(after.basis_digest, first.basis_digest);
+});
+
+test('#300 snapshot applicability reuses one unit projection through four relation waves with identical results', (t) => {
+  const f = fixture(t), rows = [];
+  for (let index = 1; index <= 4; index += 1) {
+    f.rules(`NEXT-${index}`);
+    rows.push(decisionRow(`D-${index}`, `See artifact:NEXT-${index}#rules`));
+    f.uncertainty(`U-${index}`, `See artifact:${index === 1 ? 'RULES' : `NEXT-${index - 1}`}#rules and decision:D-${index}@open-decision-register`);
+  }
+  f.global(rows);
+  const options = f.options();
+  const counted = (resolve) => {
+    const open = fs.openSync; let policyReads = 0;
+    const hook = t.mock.method(fs, 'openSync', function (file, ...args) {
+      if (file === f.policyFile && new Error().stack.includes('at resolveScopedUnitProjection')) policyReads += 1;
+      return open.call(this, file, ...args);
+    });
+    try { return { result: resolve(options), policyReads }; }
+    finally { hook.mock.restore(); }
+  };
+  const fresh = counted(resolveScopedApplicabilityProjection);
+  const snapshot = counted(resolveScopedSnapshotApplicabilityProjection);
+  assert.deepEqual(snapshot.result, fresh.result, 'retain projection, audit hashes, unaudited rows and diagnostics');
+  assert.deepEqual(ids(snapshot.result), ['D-1', 'D-2', 'D-3', 'D-4']);
+  assert.equal(relations(snapshot.result).dependency_roots.length, 4);
+  // Each complete unit projection reads its policy once and audits it once.
+  // Relation discovery still takes every wave; only its invariant units shrink.
+  assert.equal(snapshot.policyReads, 2);
+  assert.ok(fresh.policyReads >= 10, `expected independent unit passes, saw ${fresh.policyReads} policy reads`);
+  const binding = { decision: 'decision:D-1@open-decision-register', known_units: ['known', 'other'], units: ['known'], blocks: ['other'] };
+  assert.deepEqual(scopedBindingBasis(snapshot.result.projection, binding), scopedBindingBasis(fresh.result.projection, binding));
+});
+
+for (const legacy of [false, true]) {
+  test(`#300 snapshot applicability preserves ${legacy ? 'legacy' : 'adopted'} surface hosts and all owner relations`, (t) => {
+    const f = fixture(t), owner = surface(f, legacy);
+    f.global([decisionRow('D-FIRST'), decisionRow('D-SECOND')]);
+    f.change('screen.md', (doc) => { doc.body += `\n\n${unknown('U-FIRST', 'See decision:D-FIRST@open-decision-register')}`; });
+    f.change('second.md', (doc) => { doc.body += `\n\n${unknown('U-SECOND', 'See decision:D-SECOND@open-decision-register')}`; });
+    const options = f.options(owner);
+    const expected = resolveScopedApplicabilityProjection(options);
+    const actual = resolveScopedSnapshotApplicabilityProjection(options);
+    assert.deepEqual(actual, expected);
+    assert.deepEqual(ids(actual), ['D-FIRST', 'D-SECOND']);
+    assert.ok(apps(actual, 'D-FIRST').every((entry) => entry.owner === OWNER && entry.unit === 'known'));
+    assert.ok(apps(actual, 'D-SECOND').every((entry) => entry.owner === SECOND && entry.unit === (legacy ? null : 'other')));
+    assert.deepEqual(actual.projection.ownership.requires_legacy_base, legacy ? [SECOND] : []);
+  });
+}
+
+test('#300 snapshot applicability keeps authored selection context beside generated alternatives', (t) => {
+  const f = trackingWithUnappliedDecision(t, 'Unrelated generated question?');
+  f.change('foreign.md', (doc) => { doc.body = decisions([decisionRow('D-PROXY')]); });
+  const options = f.options();
+  const expected = resolveScopedApplicabilityProjection(options);
+  const actual = resolveScopedSnapshotApplicabilityProjection(options);
+  assert.deepEqual(actual, expected);
+  assert.deepEqual(unknownRelations(actual).records.map((row) => row.selection.cells), [['U-SHARED', 'Authored API question?', 'open']]);
+  const binding = { uncertainty: 'unknown:U-SHARED@API', known_units: ['known', 'other'], units: ['known'], blocks: ['other'] };
+  assert.deepEqual(scopedBindingBasis(actual.projection, binding), scopedBindingBasis(expected.projection, binding));
+  f.change('foreign.md', (doc) => { doc.body = decisions([decisionRow('D-PROXY', 'See unknown:U-SHARED@API')]); });
+  for (const resolve of [resolveScopedApplicabilityProjection, resolveScopedSnapshotApplicabilityProjection]) {
+    assert.throws(() => resolve(f.options()), /ambiguous.*(?:selection|evidence|source)|inconsistent selected evidence/,
+      'different physical rows must remain ambiguous even when they share a reference');
+  }
+});
+
+test('#300 snapshot applicability ignores caller authority and rebuilds from changed files on its next call', (t) => {
+  const f = fixture(t); f.global(); f.uncertainty();
+  const before = resolveScopedApplicabilityProjection(f.options());
+  const poisoned = { ...f.options(), layout: { resolvePaths: () => ['src/**'] },
+    projection: { allowed: true }, dependencyRoots: [], units: ['other'], read_set: [],
+    unitProjection: { projection: before.projection, read_set: [] } };
+  assert.deepEqual(resolveScopedSnapshotApplicabilityProjection(poisoned), before);
+  f.change('rules.md', (doc) => { doc.body = doc.body.replace('Known contract.', 'Changed contract.'); });
+  const expected = resolveScopedApplicabilityProjection(f.options());
+  const after = resolveScopedSnapshotApplicabilityProjection(f.options());
+  assert.deepEqual(after, expected);
+  assert.notDeepEqual(after.projection, before.projection, 'a snapshot owns no cache across calls');
+});
+
+test('#300 snapshot applicability preserves inherited input fidelity and refreshes ancestor metadata', (t) => {
+  const f = fixture(t); f.global(); f.uncertainty();
+  const child = 'IN-20260922-meeting-001', parent = 'IN-20260922-meeting-002';
+  const childFile = path.join(f.root, 'child.md'), parentFile = path.join(f.root, 'parent.md');
+  const input = (id) => ({ input_id: id, input_type: 'meeting', source_type: 'meeting', source_ref: 'meeting:inheritance',
+    captured_at: '2026-09-22T00:00:00Z', captured_by: 'test', status: 'captured', input_contract: 2,
+    affected_domains: ['result'], affected_screens: ['RESULT-001'] });
+  const parentFm = { ...input(parent), raw_artifacts: ['capture.txt'], fidelity: {
+    extraction: 'direct-text', verification: 'verified', verified_against: 'raw_artifact:capture.txt', unreadable_count: 0,
+  } };
+  fs.writeFileSync(parentFile, md(parentFm, '## Extracted Facts\n- Parent detail.'));
+  fs.writeFileSync(childFile, md({ ...input(child), fidelity: { extraction: 'inherited', verification: 'inherited',
+    verified_against: `input:${parent}`, unreadable_count: 0 } }, '## Extracted Facts\n- Child fact.'));
+  f.change('rules.md', (doc) => { doc.body = `## Rules\nSee input:${child}#extracted-facts/01\n\n## Other\nOther contract.`; });
+  const options = () => ({ ...f.options(), inputArtifacts: [childFile, parentFile].map(loadInputArtifact),
+    registerFile: path.join(f.root, 'register.md') });
+  const compare = () => {
+    const current = options(), expected = resolveScopedApplicabilityProjection(current);
+    const actual = resolveScopedSnapshotApplicabilityProjection(current);
+    assert.deepEqual(actual, expected);
+    return actual;
+  };
+  const before = compare();
+  assert.deepEqual(before.projection.inputs.map((entry) => entry.input_id).sort(), [child, parent]);
+  assert.ok(before.read_set.some((entry) => entry.file === 'parent.md'));
+  const binding = { decision: 'decision:D-ONE@open-decision-register', known_units: ['known', 'other'], units: ['known'], blocks: ['other'] };
+  const basis = scopedBindingBasis(before.projection, binding);
+  fs.appendFileSync(parentFile, '\nUnrelated ancestor prose.');
+  const prose = compare();
+  assert.deepEqual(prose.projection, before.projection);
+  assert.deepEqual(scopedBindingBasis(prose.projection, binding), basis);
+  fs.writeFileSync(parentFile, md({ ...parentFm, source_ref: 'meeting:changed-ancestor' }, '## Extracted Facts\n- Parent detail.'));
+  const metadata = compare();
+  assert.notEqual(scopedBindingBasis(metadata.projection, binding).basis_digest, basis.basis_digest);
 });

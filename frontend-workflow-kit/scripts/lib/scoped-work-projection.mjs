@@ -12,7 +12,7 @@ import { validateInputArtifacts } from './input-artifact.mjs';
 import { collectInputFidelityIssues, inspectInputFidelity } from './input-fidelity.mjs';
 import { parseScopedOwner, parseScopedPolicy, decodeScopedYaml } from './scoped-work-declarations.mjs';
 import { createScopedReferenceResolver } from './scoped-work-refs.mjs';
-import { resolveScopedSourceProjection } from './scoped-work-source-relations.mjs';
+import { resolveScopedSourceProjection, scopedSourceAbsentRegisters } from './scoped-work-source-relations.mjs';
 import { createScopedApiResolver } from './scoped-work-api.mjs';
 import { resolveScopedMappingEvidence } from './scoped-work-mapping.mjs';
 import { resolveScopedContractGraph, scopedGraphApiRowContext, scopedGraphContexts, copyScopedGraphContexts } from './scoped-work-graph.mjs';
@@ -64,6 +64,13 @@ function node(record) {
 const setUnion = (values) => scopeSet([...new Set(values)]);
 const unitKey = (owner, id) => scopeJson([owner, id]);
 
+// Each source closure can observe absence before another unit reads a newly
+// present register. Preserve both observations without widening public read_set.
+const unitAbsenceObservations = new WeakMap();
+export function scopedUnitAbsentRegisters(result) {
+  return [...(unitAbsenceObservations.get(result) || [])];
+}
+
 export function resolveScopedUnitProjection({ owner, policyFile, policyOverlayFile, targetIndex, inputArtifacts = [], registerFile,
   projectRoot, layout } = {}) {
   ownerParts(owner);
@@ -74,6 +81,7 @@ export function resolveScopedUnitProjection({ owner, policyFile, policyOverlayFi
   const owners = new Map();
   const units = new Map();
   const fallbacks = new Map();
+  const absentRegisters = new Set();
   const links = [];
   const roots = new Set();
   const authoredRefs = new Set(), trackingRefs = new Set(), ordinaryRefs = new Set();
@@ -180,6 +188,7 @@ export function resolveScopedUnitProjection({ owner, policyFile, policyOverlayFi
     // coverage. Strict Item resolution and admission stay in the coverage layer.
     const sourceFacts = resolveScopedSourceProjection({ owner: ownerId, unit: declared.id,
       targetIndex, inputArtifacts, registerFile, projectRoot, layout });
+    for (const relative of scopedSourceAbsentRegisters(sourceFacts)) absentRegisters.add(relative);
     for (const entry of sourceFacts.target_fallbacks || []) {
       const warning = { owner: ownerId, unit: declared.id, ...entry };
       fallbacks.set(scopeJson(warning), warning);
@@ -299,8 +308,10 @@ export function resolveScopedUnitProjection({ owner, policyFile, policyOverlayFi
   for (const entry of [...files.values()]) read(entry.file, entry.sha256);
   // Diagnostics stay outside the hashed projection. The selected effect fields
   // retain the original target, while evidence hashes the effective wider scope.
-  return { projection, read_set: scopeSet([...files.values()]),
+  const result = { projection, read_set: scopeSet([...files.values()]),
     ...(fallbacks.size ? { target_fallbacks: scopeSet([...fallbacks.values()]) } : {}) };
+  if (absentRegisters.size) unitAbsenceObservations.set(result, [...absentRegisters]);
+  return result;
 }
 
 // Share the same R1 metadata/content projection with later canonical graph layers.

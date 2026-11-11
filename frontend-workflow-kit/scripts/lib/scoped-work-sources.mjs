@@ -3,7 +3,8 @@
 import path from 'node:path';
 import { splitFrontmatter } from './util.mjs';
 import { validateInputArtifacts } from './input-artifact.mjs';
-import { buildInputArtifactIndex, resolveInputArtifact, resolveInputEvidence, parseInputEvidenceRef } from './provenance.mjs';
+import { buildInputArtifactIndex, resolveInputArtifact, resolveInputEvidence, parseInputEvidenceRef,
+  copyInputEvidenceObservation } from './provenance.mjs';
 import { parseReconciliationMarkdown, parseReconciliationReferenceView, describeHeaderMismatch } from './reconciliation-markdown-ast.mjs';
 import { parseReconciliationRegister, REQUIRED_REGISTER_COLS, RECONCILE_STATUS_VALUES } from './reconciliation-register.mjs';
 import { parseRegisterContract, parseReconciliationItems, validateReconciliationV2,
@@ -32,7 +33,8 @@ export function createScopedSourceResolver({ inputArtifacts, registerFile, targe
   const refs = createScopedReferenceResolver({ targetIndex, projectRoot, inputArtifacts });
   if (!Array.isArray(inputArtifacts)) fail('SW-SOURCE-INDEX', 'canonical input artifacts required');
   // Own caches, never mutate the collector's records or its caller's declarations.
-  const inputs = inputArtifacts.map((entry) => ({ ...entry, fm: structuredClone(entry.fm), body: undefined }));
+  const inputs = inputArtifacts.map((entry) => copyInputEvidenceObservation(entry,
+    { ...entry, fm: structuredClone(entry.fm), body: undefined }));
   const index = buildInputArtifactIndex(inputs);
   const validation = validateInputArtifacts(inputs);
   const loaded = new Map();

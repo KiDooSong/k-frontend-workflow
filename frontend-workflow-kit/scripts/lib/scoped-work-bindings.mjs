@@ -10,7 +10,7 @@ import { readCurrentBytes, hashBytes } from './current-work-request.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { parseScopedTargetRef } from './scoped-work-refs.mjs';
 import { parseDecisionWorkScopes } from './scoped-work-declarations.mjs';
-import { resolveScopedApplicabilityProjection } from './scoped-work-applicability.mjs';
+import { resolveScopedApplicabilityProjection, resolveScopedSnapshotApplicabilityProjection } from './scoped-work-applicability.mjs';
 import { resolveScopedBindingBasis, scopedBindingBasis, SCOPE_BASIS_VERSION } from './scoped-work-basis.mjs';
 import { scopedUncertaintyScopes } from './scoped-work-uncertainty-scopes.mjs';
 import { ScopedWorkContractError } from './scoped-work-request.mjs';
@@ -113,7 +113,7 @@ export function inspectScopedDecisionBindings(options = {}) {
 // HEAD tree and its indexes. This is not a mutable-worktree/authority inspector.
 // One owner and one call own this projection; nothing is cached across reports.
 export function inspectScopedSnapshotBindings(options = {}) {
-  const resolved = resolveScopedApplicabilityProjection(options);
+  const resolved = resolveScopedSnapshotApplicabilityProjection(options);
   // Inferred sources consult the optional register even when it is absent.
   // A present register is in read_set; preserve the negative observation too.
   // Do not validate an unused register path for owners without inferred sources.
