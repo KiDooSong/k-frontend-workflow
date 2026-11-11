@@ -5,6 +5,7 @@ import { parseDocument } from 'yaml';
 import { INPUT_ID_PATTERN } from './input-artifact.mjs';
 import { parseInputEvidenceRef } from './provenance.mjs';
 import { requireGitRepositoryPath, decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
+import { readBoundedFileDescriptor } from './util.mjs';
 
 export class CurrentWorkError extends Error {
   constructor(message) { super(message); this.name = 'CurrentWorkError'; }
@@ -44,21 +45,12 @@ export function readCurrentBytes(file, label = 'input') {
     const before = fs.fstatSync(fd);
     if (!before.isFile()) throw new CurrentWorkError(`${label}: regular file required`);
     if (before.size > CURRENT_WORK_INPUT_LIMIT) throw new CurrentWorkError(`${label}: exceeds 16 MiB input limit`);
-    const chunks = [];
-    let length = 0;
-    while (length <= CURRENT_WORK_INPUT_LIMIT) {
-      const chunk = Buffer.alloc(Math.min(64 * 1024, CURRENT_WORK_INPUT_LIMIT + 1 - length));
-      const count = fs.readSync(fd, chunk, 0, chunk.length, null);
-      if (count === 0) break;
-      chunks.push(chunk.subarray(0, count));
-      length += count;
-    }
-    if (length > CURRENT_WORK_INPUT_LIMIT) throw new CurrentWorkError(`${label}: exceeds 16 MiB input limit`);
+    const raw = readBoundedFileDescriptor(fd, { maxBytes: CURRENT_WORK_INPUT_LIMIT, sizeHint: before.size });
+    if (raw === null) throw new CurrentWorkError(`${label}: exceeds 16 MiB input limit`);
     const after = fs.fstatSync(fd);
     if (before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs) {
       throw new CurrentWorkError(`${label}: file changed while reading; retry from a stable input`);
     }
-    const raw = Buffer.concat(chunks, length);
     return raw;
   } finally {
     if (fd !== undefined) fs.closeSync(fd);

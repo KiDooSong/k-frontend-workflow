@@ -59,6 +59,44 @@ export function readFileSafe(p) {
   }
 }
 
+// Read from the descriptor's current position without owning or closing it.
+// The size is only an allocation hint: short reads, growth and size-zero virtual
+// files still require actual EOF. Read at most one byte beyond the limit, then
+// return null so callers can preserve their own errors and identity checks.
+export function readBoundedFileDescriptor(fd, { maxBytes, sizeHint = 0 }) {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 0 || !Number.isSafeInteger(maxBytes + 1) ||
+      !Number.isSafeInteger(sizeHint) || sizeHint < 0) {
+    throw new RangeError('bounded read maxBytes and sizeHint must be non-negative safe integers, with room for an overflow byte');
+  }
+  // A positive size hint supplies room for the EOF/overflow probe without a
+  // second allocation. Unknown/zero sizes need the original bounded chunk on
+  // the first read: some virtual files return EOF after a partial first read.
+  // All returned bytes have been read.
+  const initialCapacity = sizeHint > 0
+    ? Math.min(maxBytes, sizeHint) + 1
+    : Math.min(64 * 1024, maxBytes + 1);
+  let buffer = Buffer.alloc(initialCapacity);
+  let used = 0;
+  let length = 0;
+  const chunks = [];
+  while (true) {
+    const count = fs.readSync(fd, buffer, used, buffer.length - used, null);
+    if (count === 0) {
+      if (!chunks.length) return buffer.subarray(0, used);
+      if (used) chunks.push(buffer.subarray(0, used));
+      return chunks.length === 1 ? chunks[0] : Buffer.concat(chunks, length);
+    }
+    used += count;
+    length += count;
+    if (length > maxBytes) return null;
+    if (used === buffer.length) {
+      chunks.push(buffer);
+      buffer = Buffer.alloc(Math.min(64 * 1024, maxBytes + 1 - length));
+      used = 0;
+    }
+  }
+}
+
 export function exists(p) {
   try {
     fs.accessSync(p);

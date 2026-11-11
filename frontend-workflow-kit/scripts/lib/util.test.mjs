@@ -19,6 +19,7 @@ import {
   loadGeneratedWorkflowStateOrExit,
   loadYaml,
   loadYamlOrExit,
+  readBoundedFileDescriptor,
   removeFileIfExists,
   yamlParse,
 } from './util.mjs';
@@ -155,6 +156,184 @@ test('loadGeneratedWorkflowStateOrExit: nested alias expansion above the finite 
   assert.equal(r.stdout, '');
   assert.match(r.stderr, /readiness: workflow-state YAML 파싱 실패/);
   assert.match(r.stderr, /Excessive alias count/);
+});
+
+test('readBoundedFileDescriptor: exact-limit and empty files reach EOF without closing the descriptor', (t) => {
+  const file = path.join(tmpdir(t), 'bytes.bin');
+  for (const bytes of [Buffer.alloc(0), Buffer.from([0, 255, 128, 13, 10, 1])]) {
+    fs.writeFileSync(file, bytes);
+    const fd = fs.openSync(file, 'r');
+    try {
+      assert.deepEqual(readBoundedFileDescriptor(fd, { maxBytes: bytes.length, sizeHint: bytes.length }), bytes);
+      assert.equal(fs.fstatSync(fd).size, bytes.length);
+      assert.equal(fs.readSync(fd, Buffer.alloc(1), 0, 1, null), 0, 'the helper must observe actual EOF');
+    } finally { fs.closeSync(fd); }
+  }
+});
+
+test('readBoundedFileDescriptor: short reads fill one size-hinted buffer without a concat copy', (t) => {
+  const file = path.join(tmpdir(t), 'short-reads.bin');
+  const bytes = Buffer.from([0, 255, 128, 13, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+  fs.writeFileSync(file, bytes);
+  const fd = fs.openSync(file, 'r');
+  const read = fs.readSync, alloc = Buffer.alloc, concat = Buffer.concat;
+  const allocations = [], buffers = new Set();
+  let reads = 0, concats = 0;
+  t.mock.method(fs, 'readSync', function (target, buffer, offset, length, position) {
+    if (target === fd) { buffers.add(buffer); reads += 1; }
+    return read.call(this, target, buffer, offset, target === fd ? Math.min(length, 3) : length, position);
+  });
+  t.mock.method(Buffer, 'alloc', function (size, ...args) {
+    allocations.push(size);
+    return alloc.call(this, size, ...args);
+  });
+  t.mock.method(Buffer, 'concat', function (...args) { concats += 1; return concat.apply(this, args); });
+  try {
+    const result = readBoundedFileDescriptor(fd, { maxBytes: 1024, sizeHint: bytes.length });
+    t.mock.restoreAll();
+    assert.deepEqual(result, bytes);
+    assert.deepEqual(allocations, [bytes.length + 1], 'a tiny file must not allocate fixed 64 KiB read/EOF buffers');
+    assert.equal(buffers.size, 1, 'partial reads must keep filling the same allocation');
+    assert.equal(reads, 7, 'six short reads plus the EOF probe');
+    assert.equal(concats, 0, 'a healthy size hint must avoid copying all bytes at EOF');
+    assert.equal(result.buffer, [...buffers][0].buffer);
+  } finally { fs.closeSync(fd); }
+});
+
+test('readBoundedFileDescriptor: missing and underestimated hints still read all bounded bytes', (t) => {
+  const file = path.join(tmpdir(t), 'underreported.bin');
+  const bytes = Buffer.from(Array.from({ length: 2 * 64 * 1024 + 13 }, (_, i) => i % 256));
+  fs.writeFileSync(file, bytes);
+  for (const sizeHint of [undefined, 0, 1, 64 * 1024 - 1]) {
+    const fd = fs.openSync(file, 'r');
+    try {
+      assert.deepEqual(readBoundedFileDescriptor(fd, { maxBytes: bytes.length, sizeHint }), bytes);
+      assert.equal(fs.readSync(fd, Buffer.alloc(1), 0, 1, null), 0);
+    } finally { fs.closeSync(fd); }
+  }
+});
+
+test('readBoundedFileDescriptor: zero or missing size hints preserve a one-shot virtual file response', (t) => {
+  const file = path.join(tmpdir(t), 'virtual.bin');
+  fs.writeFileSync(file, '');
+  const bytes = Buffer.from('4194304\n');
+  const read = fs.readSync;
+  for (const sizeHint of [undefined, 0]) {
+    for (const maxBytes of [0, 3, bytes.length - 1, bytes.length, 64 * 1024 - 1, 64 * 1024, 128 * 1024]) {
+      const fd = fs.openSync(file, 'r');
+      const requests = [];
+      // Like /proc/sys values, this response is only available on the first
+      // read; a short initial request cannot recover the remainder later.
+      const readMock = t.mock.method(fs, 'readSync', function (target, buffer, offset, length, position) {
+        if (target !== fd) return read.call(this, target, buffer, offset, length, position);
+        requests.push(length);
+        return requests.length === 1 ? bytes.copy(buffer, offset, 0, length) : 0;
+      });
+      try {
+        const result = readBoundedFileDescriptor(fd, { maxBytes, sizeHint });
+        assert.deepEqual(result, bytes.length > maxBytes ? null : bytes);
+        assert.equal(requests[0], Math.min(64 * 1024, maxBytes + 1));
+        assert.equal(requests.length, bytes.length > maxBytes ? 1 : 2,
+          'return on overflow; otherwise require the actual EOF response');
+      } finally {
+        readMock.mock.restore();
+        fs.closeSync(fd);
+      }
+    }
+  }
+});
+
+test('readBoundedFileDescriptor: overreported size is only a hint, never content or an overflow verdict', (t) => {
+  const file = path.join(tmpdir(t), 'overreported.bin');
+  const bytes = Buffer.from('actual bytes\0\xff', 'latin1');
+  fs.writeFileSync(file, bytes);
+  for (const sizeHint of [bytes.length + 50, Number.MAX_SAFE_INTEGER]) {
+    const fd = fs.openSync(file, 'r');
+    try {
+      const result = readBoundedFileDescriptor(fd, { maxBytes: 64, sizeHint });
+      assert.deepEqual(result, bytes, 'unused capacity must not become returned bytes');
+      assert.equal(fs.fstatSync(fd).size, bytes.length);
+    } finally { fs.closeSync(fd); }
+  }
+});
+
+test('readBoundedFileDescriptor: overflow consumes exactly limit plus one and never concatenates', (t) => {
+  const file = path.join(tmpdir(t), 'overflow.bin');
+  const bytes = Buffer.from(Array.from({ length: 64 * 1024 + 32 }, (_, i) => i % 256));
+  fs.writeFileSync(file, bytes);
+  const read = fs.readSync;
+  let activeFd = null, consumed = 0;
+  t.mock.method(fs, 'readSync', function (target, ...args) {
+    const count = read.call(this, target, ...args);
+    if (target === activeFd) consumed += count;
+    return count;
+  });
+  const concatMock = t.mock.method(Buffer, 'concat', () => assert.fail('overflow must return before any concat copy'));
+  try {
+    for (const maxBytes of [0, 7, 64 * 1024]) {
+      for (const sizeHint of [0, maxBytes, maxBytes + 20]) {
+        const fd = fs.openSync(file, 'r');
+        activeFd = fd; consumed = 0;
+        try {
+          assert.equal(readBoundedFileDescriptor(fd, { maxBytes, sizeHint }), null);
+          assert.equal(consumed, maxBytes + 1);
+          const next = Buffer.alloc(1);
+          assert.equal(read(fd, next, 0, 1, null), 1, 'overflow must leave the caller-owned descriptor open');
+          assert.equal(next[0], bytes[maxBytes + 1], 'bytes beyond the overflow probe must remain unread');
+        } finally { activeFd = null; fs.closeSync(fd); }
+      }
+    }
+  } finally {
+    // Node 20's recursive fs.rmSync cleanup also calls Buffer.concat, before
+    // test-scoped mocks are automatically restored.
+    concatMock.mock.restore();
+  }
+});
+
+test('readBoundedFileDescriptor: a file growing past its original hint remains bounded', (t) => {
+  const file = path.join(tmpdir(t), 'growing.bin');
+  fs.writeFileSync(file, 'abc');
+  const fd = fs.openSync(file, 'r');
+  const read = fs.readSync;
+  let grew = false, consumed = 0;
+  t.mock.method(fs, 'readSync', function (target, ...args) {
+    const count = read.call(this, target, ...args);
+    if (target === fd) {
+      consumed += count;
+      if (!grew) { grew = true; fs.appendFileSync(file, 'defghijklmnop'); }
+    }
+    return count;
+  });
+  try {
+    assert.equal(readBoundedFileDescriptor(fd, { maxBytes: 7, sizeHint: 3 }), null);
+    assert.equal(grew, true);
+    assert.equal(consumed, 8);
+    assert.equal(fs.fstatSync(fd).size, 16);
+  } finally { fs.closeSync(fd); }
+});
+
+test('readBoundedFileDescriptor: reads from the current offset and propagates IO errors without closing', (t) => {
+  const file = path.join(tmpdir(t), 'offset.bin');
+  fs.writeFileSync(file, 'skip|remaining');
+  const fd = fs.openSync(file, 'r');
+  try {
+    fs.readSync(fd, Buffer.alloc(5), 0, 5, null);
+    assert.deepEqual(readBoundedFileDescriptor(fd, { maxBytes: 9, sizeHint: 14 }), Buffer.from('remaining'));
+    const failure = new Error('injected descriptor read failure');
+    t.mock.method(fs, 'readSync', () => { throw failure; });
+    assert.throws(() => readBoundedFileDescriptor(fd, { maxBytes: 9 }), (error) => error === failure);
+    assert.equal(fs.fstatSync(fd).size, 14);
+  } finally { fs.closeSync(fd); }
+});
+
+test('readBoundedFileDescriptor: rejects invalid budgets and hints before reading', (t) => {
+  t.mock.method(fs, 'readSync', () => assert.fail('invalid options must not access the descriptor'));
+  for (const maxBytes of [undefined, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER, '64']) {
+    assert.throws(() => readBoundedFileDescriptor(0, { maxBytes }), /maxBytes and sizeHint/);
+  }
+  for (const sizeHint of [-1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, '64']) {
+    assert.throws(() => readBoundedFileDescriptor(0, { maxBytes: 64, sizeHint }), /maxBytes and sizeHint/);
+  }
 });
 
 test('removeFileIfExists: missing path is a no-op and regular file is removed', (t) => {
