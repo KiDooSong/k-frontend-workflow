@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import {
   buildInputArtifactIndex,
   inputSectionDetails,
@@ -275,4 +276,60 @@ test('#300 supplied bodies retain precedence over files, including an empty body
   fs.unlinkSync(file);
   assert.equal(resolve('## Body Precedence\n- supplied evidence\n').evidenceText, 'supplied evidence');
   assert.equal(resolveInputEvidence(buildInputArtifactIndex([artifact]), `input:${id}#body-precedence/01`).status, 'missing-section');
+});
+
+test('#300 file-backed evidence reads skip YAML decoding while metadata loaders and validation keep their checks', (t) => {
+  const root = tmpdir(t);
+  const id = 'IN-20261111-planning-001';
+  const file = writeInput(root, id, '## Decode Boundary\n- original evidence\n');
+  // Install the counter before importing the modules in an isolated process.
+  // The normal test runner's YAML imports and cleanup must remain untouched.
+  const script = `
+    import assert from 'node:assert/strict';
+    import fs from 'node:fs';
+    import { createRequire } from 'node:module';
+    const require = createRequire(${JSON.stringify(import.meta.url)});
+    const yaml = require('yaml');
+    const originalParse = yaml.parse;
+    let parses = 0;
+    yaml.parse = (...args) => { parses += 1; return originalParse(...args); };
+    const { loadInputArtifact, validateInputArtifacts } = await import(${JSON.stringify(new URL('./input-artifact.mjs', import.meta.url).href)});
+    const { buildInputArtifactIndex, resolveInputEvidence } = await import(${JSON.stringify(new URL('./provenance.mjs', import.meta.url).href)});
+    parses = 0;
+    const file = ${JSON.stringify(file)}, ref = ${JSON.stringify(`input:${id}#decode-boundary/01`)};
+    const raw = fs.readFileSync(file, 'utf8');
+    const artifact = loadInputArtifact(file);
+    assert.equal(parses, 1, 'the metadata loader still decodes YAML');
+    const resolve = (entry) => resolveInputEvidence(buildInputArtifactIndex([entry]), ref);
+    assert.equal(resolve(artifact).evidenceText, 'original evidence');
+    assert.equal(resolve(artifact).evidenceText, 'original evidence');
+    assert.equal(parses, 1, 'fresh evidence indexes need body text, not another YAML decode');
+
+    fs.writeFileSync(file, raw.replace('input_type: "planning"', 'input_type: [unclosed'));
+    const malformed = loadInputArtifact(file);
+    assert.ok(malformed.parseError, 'full loaders must still report invalid YAML');
+    assert.equal(parses, 2);
+    assert.equal(resolve(malformed).status, 'missing-input', 'a parse-error artifact is excluded from the input index');
+    assert.equal(resolve(artifact).evidenceText, 'original evidence', 'the body-only view retains its existing delimiter semantics');
+    assert.equal(parses, 2);
+
+    fs.writeFileSync(file, raw.replace('captured_at: "2026-07-30T10:00:00+09:00"', 'captured_at: "invalid"')
+      .replace('status: "captured"', 'status: "captured"\\nsummary: old-frontmatter-summary')
+      .replace('original evidence', 'updated evidence'));
+    const changed = loadInputArtifact(file);
+    assert.equal(parses, 3);
+    const validation = validateInputArtifacts([changed]);
+    assert.ok(validation.errors.some((entry) => /IP-001.*captured_at/.test(entry.message)));
+    assert.ok(validation.warnings.some((entry) => /deprecated frontmatter 'summary'/.test(entry.message)));
+    assert.equal(resolve(changed).evidenceText, 'updated evidence');
+    assert.equal(parses, 3, 'validation remains separate from body extraction');
+    process.stdout.write(JSON.stringify({ parses }));
+  `;
+  const result = spawnSync(process.execPath, ['--input-type=module', '--eval', script], {
+    encoding: 'utf8', timeout: 30_000,
+  });
+  assert.equal(result.error, undefined, result.error?.message);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(result.stderr, '');
+  assert.deepEqual(JSON.parse(result.stdout), { parses: 3 });
 });

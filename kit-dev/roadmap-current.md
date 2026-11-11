@@ -1,5 +1,10 @@
 # Current Roadmap
 
+> 2026-11-11 #300 8차 성능 개선: `binding-status` 등 입력 Evidence를 조회하는 경로에서 본문 추출 뒤 버리던 YAML frontmatter 재파싱을 제거한다.
+> 기존 구분자·BOM·본문 bytes와 입력 로더의 metadata 오류/경고, 현재 파일 재읽기·ID/중복·참조·변경 감지·basis/checkpoint 계약을 유지한다.
+> 새 캐시는 추가하지 않는다. 정본: [Evidence contract](../frontend-workflow-kit/docs/reference/input-reconciliation.md#reconciliation-contract-v2-opt-in).
+> 재현: [binding-status benchmark](benchmarks/binding-status.mjs). 실제 CLI 시간과 별도 YAML 파싱 호출 수를 구분한다.
+
 > 2026-11-11 #300 7차 성능 개선: `binding-status`가 자신이 전개한 HEAD 스냅샷에서 owner별 전체 applicability projection을 한 번 계산해 Decision·Unknown/Conflict 바인딩 보고서에 재사용한다.
 > 일치하는 `known_units`를 가진 Decision 바인딩 수만큼 전체 관계를 다시 해석하던 비용을 제거하고, canonical home 확인과 반환 직전 전체 read set 재검증을 유지한다.
 > owner·호출 사이 캐시 공유는 없으며 변경 가능한 파일을 검사하는 standalone inspector의 독립 재해석·변경 감지와 scope-basis-v2 digest·기존 상태/차단 판정은 유지한다.
