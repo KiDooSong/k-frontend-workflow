@@ -75,17 +75,17 @@ test('D packed: real reference, source, mapping, API, normalization, graph trave
   t.diagnostic(`packed resolver subprocess: ${count[1]} tests, no failures/cancellations/skips/todos`);
   // The fixture data remains outside the payload. KIT_ROOT in this copied
   // driver resolves to packed, so both public CLIs execute shipped code only.
-  const cli = checkedNode(['--test', '--test-reporter=tap', '--test-name-pattern=^(#282|#284) CLI:', path.join(lib, cliSuite)], packed,
+  const cli = checkedNode(['--test', '--test-reporter=tap', '--test-name-pattern=^(?:(#282|#284) CLI:|#300 binding-status:)', path.join(lib, cliSuite)], packed,
     { ...env, SCOPED_WORK_TEST_FIXTURE_ROOT: KIT_ROOT });
-  assert.match(cli.stdout, /^# pass 10\r?$/m, cli.stdout);
+  assert.match(cli.stdout, /^# pass 11\r?$/m, cli.stdout);
   for (const metric of ['fail', 'cancelled', 'todo']) {
     assert.match(cli.stdout, new RegExp(`^# ${metric} 0\\r?$`, 'm'), cli.stdout);
   }
   // A filtered-out #275 test can be reported as skipped on older Node versions;
-  // all ten #282/#284 regressions must execute and pass on every supported Node.
+  // all eleven #282/#284/#300 regressions must execute and pass on every supported Node.
   checkPayload();
   assert.equal(fs.existsSync(path.join(packed, 'examples')), false);
-  t.diagnostic('packed readiness/binding-status subprocess: all 10 #282/#284 generated-boundary CLI cases passed');
+  t.diagnostic('packed readiness/binding-status subprocess: all 11 #282/#284/#300 generated-boundary and binding-read CLI cases passed');
   const sourceCli = checkedNode(['--test', '--test-reporter=tap', '--test-name-pattern=^source admission CLI:',
     path.join(lib, sourceCliSuite)], packed, env);
   assert.match(sourceCli.stdout, /^# pass 4\r?$/m, sourceCli.stdout);

@@ -15,8 +15,7 @@ import { byteCompare, ownerParts } from './current-work-request.mjs';
 import { baselineArtifactIndex } from './scoped-work-execution.mjs';
 import { parseScopedTargetRef } from './scoped-work-refs.mjs';
 import { parseScopedPolicy, parseDecisionWorkScopes, parseUncertaintyWorkScopes } from './scoped-work-declarations.mjs';
-import { inspectScopedDecisionBindings } from './scoped-work-bindings.mjs';
-import { inspectScopedUncertaintyScopes } from './scoped-work-uncertainty-scopes.mjs';
+import { inspectScopedSnapshotBindings } from './scoped-work-bindings.mjs';
 import { SCOPE_BASIS_VERSION } from './scoped-work-basis.mjs';
 
 const TOOL = 'binding-status';
@@ -28,7 +27,7 @@ const recorded = (binding) => binding ? { known_units: binding.known_units, bloc
   basis_digest: binding.basis_digest, approval_ref: binding.approval_ref } : null;
 
 function ownerStatus(options, home) {
-  const decisions = inspectScopedDecisionBindings(options), uncertainty = inspectScopedUncertaintyScopes(options);
+  const { decisions, uncertainty } = inspectScopedSnapshotBindings(options);
   // Without a binding a row blocks the units the inspector names: none once resolved, every
   // unit for an open Decision, the units its relations reach for an Unknown or Conflict.
   const row = (ref, kind, check, resolved) => {

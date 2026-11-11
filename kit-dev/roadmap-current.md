@@ -1,5 +1,10 @@
 # Current Roadmap
 
+> 2026-11-11 #300 7차 성능 개선: `binding-status`가 자신이 전개한 HEAD 스냅샷에서 owner별 전체 applicability projection을 한 번 계산해 Decision·Unknown/Conflict 바인딩 보고서에 재사용한다.
+> 일치하는 `known_units`를 가진 Decision 바인딩 수만큼 전체 관계를 다시 해석하던 비용을 제거하고, canonical home 확인과 반환 직전 전체 read set 재검증을 유지한다.
+> owner·호출 사이 캐시 공유는 없으며 변경 가능한 파일을 검사하는 standalone inspector의 독립 재해석·변경 감지와 scope-basis-v2 digest·기존 상태/차단 판정은 유지한다.
+> 정본: [binding status](../frontend-workflow-kit/docs/reference/scoped-work.md). 재현: [binding-status benchmark](benchmarks/binding-status.mjs).
+
 > 2026-11-10 #300 6차 성능 개선: current/scoped 입력과 worktree·authority 원문 읽기의 고정 64 KiB 버퍼 낭비와 정상 경로의 전체 복사를 줄인다.
 > 열린 파일 크기는 초기 할당 hint로만 쓰고 실제 EOF·short read·부정확한 크기·limit+1 초과 읽기·전후 stat·fd 정리 계약을 유지한다.
 > #312 리뷰 보완: 크기가 0이거나 없으면 첫 읽기부터 bounded 64 KiB를 사용해 일부 가상 파일의 내용 누락을 방지하고, overflow 테스트 mock을 정리 전에 복원해 Node 20을 지원한다.
