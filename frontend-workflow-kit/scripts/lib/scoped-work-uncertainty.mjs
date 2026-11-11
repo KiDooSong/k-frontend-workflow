@@ -15,7 +15,7 @@ import { createScopedReferenceResolver, scopedRawTable, parseScopedTargetRef, sc
 import { resolveScopedContractGraph, scopedGraphSelectionSpans, scopedGraphMetadataRefs, scopedGraphBodyRefs,
   mergeScopedGraphContexts } from './scoped-work-graph.mjs';
 import { scopedProjectionNode } from './scoped-work-projection.mjs';
-import { resolveScopedDecisionProjection } from './scoped-work-decisions.mjs';
+import { resolveScopedDecisionProjection, createScopedSnapshotDecisionResolver } from './scoped-work-decisions.mjs';
 import { ScopedWorkContractError, workText } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
 import { scopedAuthoredSections, scopedSelectionNodes, rememberScopedSelection, copyScopedNodeContexts } from './scoped-work-authored.mjs';
@@ -70,11 +70,24 @@ export function scopedUncertaintyResolved(record) {
 }
 
 export function resolveScopedUncertaintyProjection(options = {}, dependencyRoots = [], dependencyContext = {}) {
-  const { targetIndex, projectRoot, inputArtifacts = [] } = options;
   // The fixpoint re-expands derived rows in the decision layer. Carry their
   // actual row context beside the unchanged public root declarations. Ordinary
   // roots stay ordinary unless their caller carries an authored selection.
-  const base = resolveScopedDecisionProjection(options, dependencyRoots, dependencyContext);
+  return uncertaintyProjection(options, resolveScopedDecisionProjection(options, dependencyRoots, dependencyContext));
+}
+
+// The boundary creates this only after resolving its actual layout/preset.
+// Both stages share internally derived units; no caller base replaces a read.
+export function createScopedSnapshotRelationResolver(options = {}) {
+  const resolved = createScopedSnapshotDecisionResolver(options);
+  return { decision: resolved.decision, verify: resolved.verify,
+    uncertainty(dependencyRoots = [], dependencyContext = {}) {
+      return uncertaintyProjection(options, resolved.decision(dependencyRoots, dependencyContext));
+    } };
+}
+
+function uncertaintyProjection(options, base) {
+  const { targetIndex, projectRoot, inputArtifacts = [] } = options;
   const refs = createScopedReferenceResolver({ targetIndex, projectRoot, inputArtifacts });
   const files = new Map(base.read_set.map((entry) => [entry.file, entry]));
   const documents = new Map();

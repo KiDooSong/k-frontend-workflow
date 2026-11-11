@@ -73,16 +73,16 @@ test('D packed: real reference, source, mapping, API, normalization, graph trave
   }
   for (const [name, value] of bytes) assert.deepEqual(fs.readFileSync(path.join(lib, name)), value, name);
   t.diagnostic(`packed resolver subprocess: ${count[1]} tests, no failures/cancellations/skips/todos`);
-  // These shared-helper tests already ship. Run the body-only/metadata boundary
-  // regressions from their unchanged payload files, without copying over them.
+  // These shared-helper tests already ship. Run the body/metadata boundary and
+  // observed-read regressions from their payload files, without copying over them.
   const syntax = checkedNode(['--test', '--test-reporter=tap',
-    '--test-name-pattern=^#300 (?:body-only frontmatter|full frontmatter|file-backed evidence)',
+    '--test-name-pattern=^#300 (?:body-only frontmatter|full frontmatter|file-backed evidence|evidence read)',
     path.join(lib, 'util.test.mjs'), path.join(lib, 'provenance.test.mjs')], packed, env);
-  assert.match(syntax.stdout, /^# pass 3\r?$/m, syntax.stdout);
+  assert.match(syntax.stdout, /^# pass 8\r?$/m, syntax.stdout);
   for (const metric of ['fail', 'cancelled', 'todo']) {
     assert.match(syntax.stdout, new RegExp(`^# ${metric} 0\\r?$`, 'm'), syntax.stdout);
   }
-  t.diagnostic('packed input syntax subprocess: all 3 body extraction/metadata validation regressions passed');
+  t.diagnostic('packed input syntax subprocess: all 8 body extraction/metadata validation and observed-read regressions passed');
   // The fixture data remains outside the payload. KIT_ROOT in this copied
   // driver resolves to packed, so both public CLIs execute shipped code only.
   const cli = checkedNode(['--test', '--test-reporter=tap', '--test-name-pattern=^(?:(#282|#284) CLI:|#300 binding-status:)', path.join(lib, cliSuite)], packed,

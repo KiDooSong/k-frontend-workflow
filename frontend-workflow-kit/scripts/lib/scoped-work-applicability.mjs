@@ -15,7 +15,7 @@ import { loadOpenDecisionRegister, resolveDecisionRefs } from './open-decisions.
 import { readCurrentBytes, hashBytes, CurrentWorkError } from './current-work-request.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
 import { ScopedWorkContractError } from './scoped-work-request.mjs';
-import { resolveScopedBoundaryProjection } from './scoped-work-boundaries.mjs';
+import { resolveScopedBoundaryProjection, resolveScopedSnapshotBoundaryProjection } from './scoped-work-boundaries.mjs';
 import { resolveScopedUncertaintyProjection, scopedUnknownHomes, scopedUnknownAuthored } from './scoped-work-uncertainty.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
 import { copyScopedNodeContexts } from './scoped-work-authored.mjs';
@@ -23,11 +23,22 @@ import { copyScopedNodeContexts } from './scoped-work-authored.mjs';
 const fail = (message) => { throw new ScopedWorkContractError(`SW-APPLICABILITY: ${message}`); };
 
 export function resolveScopedApplicabilityProjection(options = {}) {
+  return applicabilityProjection(options, false);
+}
+
+// Binding-status owns the raw tree and indexes for this one owner evaluation.
+// Mutable standalone callers keep the independent unit passes above.
+export function resolveScopedSnapshotApplicabilityProjection(options = {}) {
+  return applicabilityProjection(options, true);
+}
+
+function applicabilityProjection(options, snapshot) {
   const { projectRoot, kitRoot, layoutFile } = options;
-  const boundary = resolveScopedBoundaryProjection(options);
+  const session = snapshot ? resolveScopedSnapshotBoundaryProjection(options) : null;
+  const boundary = session ? session.boundary : resolveScopedBoundaryProjection(options);
   // Ignore caller role functions, as the boundary resolver does. All layers
   // must use the same selected layout/preset bytes and canonical document index.
-  const layout = loadLayoutProfile({ kitRoot: kitRoot || projectRoot, flags: { layout: layoutFile } });
+  const layout = session ? null : loadLayoutProfile({ kitRoot: kitRoot || projectRoot, flags: { layout: layoutFile } });
   const files = new Map();
   function audit(entries) {
     for (const entry of entries) {
@@ -40,8 +51,9 @@ export function resolveScopedApplicabilityProjection(options = {}) {
   const roots = new Map(), authoredRoots = new Set();
   let current;
   while (true) {
-    current = resolveScopedUncertaintyProjection({ ...options, layout }, scopeSet([...roots.values()]),
-      { authoredRefs: [...authoredRoots] });
+    const dependencyRoots = scopeSet([...roots.values()]), dependencyContext = { authoredRefs: [...authoredRoots] };
+    current = session ? session.uncertainty(dependencyRoots, dependencyContext)
+      : resolveScopedUncertaintyProjection({ ...options, layout }, dependencyRoots, dependencyContext);
     audit(current.read_set);
     const { decision_relations: _nextDecisions, uncertainty_relations, ...nextUnits } = current.projection;
     if (scopeJson(nextUnits) !== scopeJson(unitProjection)) fail('unit projection changed between layers');
@@ -61,6 +73,7 @@ export function resolveScopedApplicabilityProjection(options = {}) {
   }
   const unapplied = unappliedRows(options, current.projection, current.unaudited);
   audit(unapplied.read_set);
+  session?.verify();
   for (const entry of files.values()) {
     const file = canonicalRepositoryPath(projectRoot, entry.file, { required: true, type: 'file', label: 'scoped applicability' });
     if (hashBytes(readCurrentBytes(file.absolute, 'scoped applicability')) !== entry.sha256) fail('snapshot changed after relation closure');

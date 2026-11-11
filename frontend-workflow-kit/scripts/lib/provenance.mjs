@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { createContentJsonCache, frontmatterBody, readFileSafe } from './util.mjs';
 import { parseReconciliationEvidence } from './reconciliation-markdown-ast.mjs';
 
@@ -157,10 +158,55 @@ export function resolveInputArtifact(index, inputId) {
   return { status: 'ok', artifact: matches[0], artifacts: matches };
 }
 
+// A resolver may passively observe the Evidence file reads its own input copies
+// actually perform. Keep only the first exact text fingerprint (or read-failure
+// sentinel), never source text, metadata verdicts or a caller-supplied read set.
+const inputEvidenceObservations = new WeakMap();
+const inputEvidenceFingerprint = (raw) => raw === null ? null
+  : `${raw.length}:${createHash('sha256').update(raw, 'utf16le').digest('hex')}`;
+
+export function observeInputEvidenceReads(inputArtifacts = []) {
+  const reads = new Map();
+  let changed = false;
+  const observe = (file, raw) => {
+    const fingerprint = inputEvidenceFingerprint(raw);
+    if (!reads.has(file)) reads.set(file, fingerprint);
+    else if (reads.get(file) !== fingerprint) changed = true;
+  };
+  const artifacts = inputArtifacts.map((artifact) => {
+    const copy = { ...artifact };
+    // Deliberately create a fresh observation scope even if artifact belonged
+    // to an earlier observer. No source object is decorated or reused as a key.
+    inputEvidenceObservations.set(copy, observe);
+    return copy;
+  });
+  return { artifacts, verify() {
+    if (changed) return false;
+    for (const [file, fingerprint] of reads) {
+      if (inputEvidenceFingerprint(readFileSafe(file)) !== fingerprint) {
+        changed = true;
+        return false;
+      }
+    }
+    return true;
+  } };
+}
+
+// Source resolvers make their own metadata/body copies. Carry the passive
+// observation along without exposing it as a field or allowing its replacement.
+export function copyInputEvidenceObservation(source, copy) {
+  const observe = inputEvidenceObservations.get(source);
+  if (observe) inputEvidenceObservations.set(copy, observe);
+  else inputEvidenceObservations.delete(copy);
+  return copy;
+}
+
 function inputArtifactBody(artifact) {
   if (typeof artifact?.body === 'string') return artifact.body;
   if (!artifact?.file) return '';
-  return frontmatterBody(readFileSafe(artifact.file));
+  const raw = readFileSafe(artifact.file);
+  inputEvidenceObservations.get(artifact)?.(artifact.file, raw);
+  return frontmatterBody(raw);
 }
 
 // Retain only serialized section/bullet syntax, not source strings, ASTs, file

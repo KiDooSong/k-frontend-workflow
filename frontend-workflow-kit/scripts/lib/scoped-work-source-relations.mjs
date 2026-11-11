@@ -29,6 +29,13 @@ const fail = (message) => { throw new ScopedWorkContractError(`SW-SOURCE-RELATIO
 const union = (values) => scopeSet([...new Set(values)]);
 const same = (a, b) => scopeJson(a) === scopeJson(b);
 
+// Preserve actual negative reads beside a completed source closure. They are
+// observations for later snapshot audits, not selected evidence/read_set fields.
+const sourceAbsenceObservations = new WeakMap();
+export function scopedSourceAbsentRegisters(result) {
+  return [...(sourceAbsenceObservations.get(result) || [])];
+}
+
 // The register parser's Summary fields and column lookup (reconciliation-register.mjs): header case and
 // spaces are ignored, and the first matching column wins.
 const SUMMARY_COLUMNS = [['inputId', 'Input ID'], ['source', 'Source'], ['classification', 'Classification'],
@@ -195,7 +202,8 @@ function createSourceSnapshot(projectRoot) {
     for (const relative of absentRegisters) if (canonicalRepositoryPath(projectRoot, relative,
       { required: false, type: 'file', label: 'scoped source register' }).exists) fail('register appeared during source projection');
   }
-  return { read, verify, verifyFile, absentRegister: (relative) => absentRegisters.add(relative) };
+  return { read, verify, verifyFile, absentRegister: (relative) => absentRegisters.add(relative),
+    observedAbsentRegisters: () => [...absentRegisters] };
 }
 
 function resolveSourceClosure(options, requireEffects) {
@@ -230,8 +238,11 @@ function resolveSourceClosure(options, requireEffects) {
     }
     if (!changed) {
       snapshot.verify();
-      return { ...result, sources: scopedEvidenceSet(result.sources), read_set: scopeSet([...pins.values()]),
+      const projection = { ...result, sources: scopedEvidenceSet(result.sources), read_set: scopeSet([...pins.values()]),
         ...(fallbacks.size ? { target_fallbacks: scopeSet([...fallbacks.values()]) } : {}) };
+      const absent = snapshot.observedAbsentRegisters();
+      if (absent.length) sourceAbsenceObservations.set(projection, absent);
+      return projection;
     }
   }
 }

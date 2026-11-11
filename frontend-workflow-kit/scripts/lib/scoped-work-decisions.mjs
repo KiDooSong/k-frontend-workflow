@@ -14,7 +14,9 @@ import { parseReconciliationMarkdown, parseReconciliationReferenceView } from '.
 import { createScopedReferenceResolver, scopedRawTable, parseScopedTargetRef, isScopedRowId } from './scoped-work-refs.mjs';
 import { resolveScopedContractGraph, scopedGraphContexts, scopedGraphSelectionSpans,
   copyScopedGraphContexts, mergeScopedGraphContexts } from './scoped-work-graph.mjs';
-import { resolveScopedUnitProjection, scopedProjectionMetadata, scopedProjectionNode } from './scoped-work-projection.mjs';
+import { resolveScopedUnitProjection, scopedProjectionMetadata, scopedProjectionNode,
+  scopedUnitAbsentRegisters } from './scoped-work-projection.mjs';
+import { observeInputEvidenceReads } from './provenance.mjs';
 import { parseDecisionWorkScopes } from './scoped-work-declarations.mjs';
 import { ScopedWorkContractError, workText, workSet, workPath } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
@@ -35,8 +37,52 @@ const decisionId = (id, label, artifactId) => {
 // Additional roots are additive, validated Conflict/Unknown evidence only. They
 // cannot replace file-backed unit selection or supply an approval/permission.
 export function resolveScopedDecisionProjection(options = {}, dependencyRoots = [], dependencyContext = {}) {
+  return decisionProjection(options, resolveScopedUnitProjection(options), dependencyRoots, dependencyContext);
+}
+
+// Internal owned-snapshot composition: derive the units from actual resources,
+// never from caller-supplied projections or resolver callbacks. Later relation
+// passes may add roots, but cannot change the owner's unit/source selection.
+export function createScopedSnapshotDecisionResolver(options = {}) {
+  const observed = observeInputEvidenceReads(options.inputArtifacts || []);
+  const base = resolveScopedUnitProjection({ ...options, inputArtifacts: observed.artifacts });
+  const absentRegisters = scopedUnitAbsentRegisters(base);
+  const projectRoot = options.projectRoot;
+  // Keep the original objects and their authored-selection WeakMap contexts.
+  // A returned relation projection must not let a caller mutate cached units.
+  const freeze = (value) => {
+    if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+      Object.freeze(value);
+      for (const child of Object.values(value)) freeze(child);
+    }
+  };
+  freeze(base);
+  const verify = () => {
+    for (const entry of base.read_set) {
+      const file = canonicalRepositoryPath(projectRoot, entry.file,
+        { required: true, type: 'file', label: 'scoped snapshot unit' });
+      if (hashBytes(readCurrentBytes(file.absolute, 'scoped snapshot unit')) !== entry.sha256) {
+        fail('snapshot changed while reusing unit projection');
+      }
+    }
+    // Whole-register validation can read an unselected input's Evidence body.
+    // Those observations are not authority/basis fields or the public read_set.
+    if (!observed.verify()) fail('input evidence changed while reusing unit projection');
+    for (const relative of absentRegisters) if (canonicalRepositoryPath(projectRoot, relative,
+      { required: false, type: 'file', label: 'scoped snapshot register' }).exists) {
+      fail('register appeared while reusing unit projection');
+    }
+  };
+  return { verify, decision(dependencyRoots = [], dependencyContext = {}) {
+    verify();
+    const result = decisionProjection(options, base, dependencyRoots, dependencyContext);
+    if (result.target_fallbacks) result.target_fallbacks = structuredClone(result.target_fallbacks);
+    return result;
+  } };
+}
+
+function decisionProjection(options, base, dependencyRoots, dependencyContext) {
   const { owner, projectRoot, docsDir, targetIndex, inputArtifacts = [] } = options;
-  const base = resolveScopedUnitProjection(options);
   const baseContext = scopedGraphContexts(base.projection.evidence);
   const evidenceContexts = [base.projection.evidence];
   if (typeof docsDir !== 'string' || !path.isAbsolute(docsDir) || path.resolve(docsDir) !== docsDir) {

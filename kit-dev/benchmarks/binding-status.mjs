@@ -1,5 +1,5 @@
 // Usage: node kit-dev/benchmarks/binding-status.mjs <before-kit-root> <after-kit-root>
-//        [runs=3] [matching-decision-bindings=0,8,24] [inputs=16]
+//        [runs=3] [matching-decision-bindings=0,8,24] [inputs=16] [units=2]
 // Install both kits' dependencies first. Timed samples run the actual public CLI
 // in fresh processes without instrumentation. Separate diagnostic runs count
 // filesystem/YAML parse calls and report their own process peak RSS. This synthetic corpus
@@ -14,7 +14,7 @@ import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { pathToFileURL } from 'node:url';
 
-const usage = 'usage: node binding-status.mjs <before-kit-root> <after-kit-root> [runs=3] [matching-decision-bindings=0,8,24] [inputs=16]';
+const usage = 'usage: node binding-status.mjs <before-kit-root> <after-kit-root> [runs=3] [matching-decision-bindings=0,8,24] [inputs=16] [units=2]';
 const OWNER = 'screen:COUPON-001';
 const LIST = 'docs/frontend-workflow/domains/coupons/screens/coupon-list/screen-spec.md';
 const UNIT_IDS = ['list-behavior', 'list-interactions'];
@@ -77,7 +77,7 @@ function runCli(kit, fixture, scratch, diagnostic) {
   }
 }
 
-async function createFixture(kit, root, scratch, matching, inputs) {
+async function createFixture(kit, root, scratch, matching, inputs, unitCount = UNIT_IDS.length) {
   const lib = (name) => import(pathToFileURL(path.join(kit, `scripts/lib/${name}.mjs`)).href);
   const [{ REQUIRED_ITEM_COLS }, { REQUIRED_REGISTER_COLS }] = await Promise.all([lib('reconciliation-items'), lib('reconciliation-register')]);
   const put = (name, value) => { const file = path.join(root, name); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, value); };
@@ -87,13 +87,19 @@ async function createFixture(kit, root, scratch, matching, inputs) {
   put('config/adoption.yaml', `work_execution: ${JSON.stringify({ version: 1, owners: [OWNER], profiles: ['visual', 'behavior'],
     role_limits: { visual: ['screen', 'domain_component', 'hook', 'test'], behavior: ['screen', 'domain_component', 'hook', 'api_client', 'test'] }, deny_paths: [] })}\n`);
   put('frontend-workflow.config.yaml', 'version: 1\npolicy_overlay: config/adoption.yaml\n');
+  const extraIds = Array.from({ length: unitCount - UNIT_IDS.length }, (_, index) => `list-source-${String(index + 1).padStart(3, '0')}`);
+  const unitIds = [...UNIT_IDS, ...extraIds];
   const units = { version: 1, units: [
     { id: UNIT_IDS[0], kind: 'behavior', contracts: ['artifact:COUPON-001-screen-spec#state-matrix'],
       sources: [{ input_id: inputId(0), items: ['01'], source_refs: [inputRef(0)] }] },
     { id: UNIT_IDS[1], kind: 'behavior', contracts: ['artifact:COUPON-001-screen-spec#interaction-matrix'], sources: [] },
+    // Extra units select the same valid Item/source as the first unit. This
+    // varies repeated source/validation work without inventing another input.
+    ...extraIds.map((id) => ({ id, kind: 'behavior', contracts: ['artifact:COUPON-001-screen-spec#state-matrix'],
+      sources: [{ input_id: inputId(0), items: ['01'], source_refs: [inputRef(0)] }] })),
   ] };
   const original = fs.readFileSync(path.join(root, LIST), 'utf8'), end = original.indexOf('\n---\n', 4);
-  const common = { owner: OWNER, known_units: UNIT_IDS, blocks: [], basis_digest: ZERO, approval_ref: 'docs/approvals/performance.md#synthetic' };
+  const common = { owner: OWNER, known_units: unitIds, blocks: [], basis_digest: ZERO, approval_ref: 'docs/approvals/performance.md#synthetic' };
   const bindings = Array.from({ length: matching }, (_, index) => ({ ...common, decision_id: decisionId(index) }));
   const extraBindings = [{ ...common, decision_id: 'D-PERF-STALE-UNITS', known_units: [UNIT_IDS[0]] },
     { ...common, decision_id: 'D-PERF-UNRESOLVED' }];
@@ -140,7 +146,7 @@ async function createFixture(kit, root, scratch, matching, inputs) {
     assert.notEqual(bindings[0].basis_digest, null);
   }
   writeOwner(bindings); commit('Record synthetic binding states');
-  return { root, matching, inputs, commit: git(root, 'rev-parse', 'HEAD'), tree: git(root, 'rev-parse', 'HEAD^{tree}') };
+  return { root, matching, inputs, unit_ids: unitIds, commit: git(root, 'rev-parse', 'HEAD'), tree: git(root, 'rev-parse', 'HEAD^{tree}') };
 }
 
 function repositoryState(root) {
@@ -160,7 +166,7 @@ function verifyReport(report, fixture) {
   assert.equal(report.binding_status, 1); assert.equal(report.basis_version, 2); assert.equal(report.approval_verified, false);
   assert.deepEqual(report.snapshot, { commit: fixture.commit, tree: fixture.tree });
   assert.equal(report.owners.length, 1); assert.equal(report.owners[0].owner, OWNER);
-  assert.deepEqual(report.owners[0].known_units, UNIT_IDS);
+  assert.deepEqual(report.owners[0].known_units, [...(fixture.unit_ids || UNIT_IDS)].sort());
   const rows = new Map(report.owners[0].rows.map((row) => [row.ref, row]));
   const get = (kind, id) => { const row = rows.get(`${kind}:${id}@COUPON-001-screen-spec`); assert.ok(row, `${kind}:${id}`); return row; };
   assert.equal(get('decision', 'D-001').state, 'missing');
@@ -210,19 +216,20 @@ function median(values) {
 }
 
 async function main(args) {
-  assert.ok(args.length >= 2 && args.length <= 5, usage);
+  assert.ok(args.length >= 2 && args.length <= 6, usage);
   const redirected = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY',
     'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_CONFIG', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_PARAMETERS', 'NODE_V8_COVERAGE', 'NODE_OPTIONS']
     .filter((name) => process.env[name] !== undefined);
   assert.equal(redirected.length, 0, `run without redirection or Node instrumentation variables: ${redirected.join(', ')}`);
   const kits = { before: path.resolve(args[0]), after: path.resolve(args[1]) };
   const runs = integer(args[2] ?? '3', 1), counts = (args[3] ?? '0,8,24').split(',').map((value) => integer(value, 0)), inputs = integer(args[4] ?? '16', 1);
+  const unitCount = integer(args[5] ?? String(UNIT_IDS.length), UNIT_IDS.length);
   assert.equal(new Set(counts).size, counts.length, 'binding counts must be unique');
   const scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'fwkit-binding-benchmark-'))), cases = [];
   try {
     const hook = diagnosticHook(scratch);
     for (const matching of counts) {
-      const fixture = await createFixture(kits.before, path.join(scratch, `project-${matching}`), scratch, matching, inputs);
+      const fixture = await createFixture(kits.before, path.join(scratch, `project-${matching}`), scratch, matching, inputs, unitCount);
       const state = repositoryState(fixture.root), samples = [];
       assert.equal(state.status, '', 'fixture must begin clean');
       let expected;
@@ -235,7 +242,7 @@ async function main(args) {
       for (let run = 0; run < runs; run++) for (const side of run % 2 ? ['after', 'before'] : ['before', 'after']) {
         const result = runCli(kits[side], fixture.root, scratch); verify(result);
         samples.push({ side, run: run + 1, elapsed_ms: result.elapsed_ms });
-        console.error(`${matching} matching bindings, run ${run + 1}/${runs}, ${side}: ${result.elapsed_ms.toFixed(1)} ms; exact report/index/worktree verified`);
+        console.error(`${unitCount} units, ${inputs} inputs, ${matching} matching bindings, run ${run + 1}/${runs}, ${side}: ${result.elapsed_ms.toFixed(1)} ms; exact report/index/worktree verified`);
       }
       const diagnostics = {};
       for (const side of ['before', 'after']) {
@@ -245,7 +252,7 @@ async function main(args) {
       }
       const medians = Object.fromEntries(['before', 'after'].map((side) => [side,
         { elapsed_ms: median(samples.filter((sample) => sample.side === side).map((sample) => sample.elapsed_ms)) }]));
-      cases.push({ matching_decision_bindings: matching, declared_units: UNIT_IDS.length, generated_inputs: inputs,
+      cases.push({ matching_decision_bindings: matching, declared_units: unitCount, generated_inputs: inputs,
         commit: fixture.commit, tree: fixture.tree, tracked_files: state.files, report_sha256: sha256(expected),
         row_count: JSON.parse(expected).owners[0].rows.length, medians,
         speedup: medians.before.elapsed_ms / medians.after.elapsed_ms, samples, diagnostics });
@@ -256,7 +263,7 @@ async function main(args) {
         order: 'Before/after order alternates. Both versions use the same committed fixture and exact CLI flags. Fixture setup warms the filesystem cache; this is not cold-storage latency.',
         diagnostics: 'Separate untimed processes count filesystem calls and actual yaml.parse calls after the parser import, and report instrumented process peak RSS (not timed-run peak or retained memory). YAML interception is installed before kit imports; all counters start after those imports. Child Git process RSS is not included.',
         verification: 'Whole stdout bytes, snapshot commit/tree, every binding state and digest agree across kits/runs; original HEAD, index bytes and tracked worktree bytes/modes stay unchanged; private snapshots are removed.',
-        scope: 'Synthetic one-owner, two-unit workload with configurable input/binding counts, selected source/Items and mixed binding states. It is not a reproduction or timing prediction of the reported four-hour consumer execution.',
+        scope: 'Synthetic one-owner workload with configurable input/binding/unit counts, selected source/Items and mixed binding states. Extra units select the first unit\'s existing source Item. It is not a reproduction or timing prediction of the reported four-hour consumer execution.',
       }, cases }, null, 2));
   } finally {
     fs.rmSync(scratch, { recursive: true, force: true });

@@ -6,10 +6,12 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
   buildInputArtifactIndex,
+  copyInputEvidenceObservation,
   inputSectionDetails,
   inputSectionIndex,
   inspectFigmaSourcePrecision,
   isRfc3339,
+  observeInputEvidenceReads,
   parseFigmaSourcePointer,
   parseInputEvidenceRef,
   resolveEffectiveSourceRef,
@@ -332,4 +334,114 @@ test('#300 file-backed evidence reads skip YAML decoding while metadata loaders 
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.equal(result.stderr, '');
   assert.deepEqual(JSON.parse(result.stdout), { parses: 3 });
+});
+
+const observedDetails = (artifact) => inputSectionDetails(buildInputArtifactIndex([artifact]), artifact);
+
+test('#300 evidence read observations retain the first raw text and detect observed changes even after restoration', (t) => {
+  const root = tmpdir(t), id = 'IN-20261111-planning-002';
+  const file = writeInput(root, id, '## Observed Facts\n- stable evidence\n');
+  const original = loadInputArtifact(file), raw = fs.readFileSync(file, 'utf8');
+  const observation = observeInputEvidenceReads([original]);
+  assert.deepEqual(Object.keys(observation), ['artifacts', 'verify']);
+  const [artifact] = observation.artifacts;
+  assert.notEqual(artifact, original);
+  assert.equal(artifact.fm, original.fm, 'observation owns a shallow entry copy, not a new metadata verdict');
+  assert.deepEqual(Reflect.ownKeys(artifact), Reflect.ownKeys(original), 'the observer is not a caller-replaceable field');
+  assert.equal(observedDetails(artifact).bulletTexts.get('observed-facts')[0], 'stable evidence');
+  assert.equal(observation.verify(), true);
+
+  // Even metadata-only changes matter to the full raw observation. The syntax
+  // cache can still reuse the unchanged body without hiding this new read.
+  fs.writeFileSync(file, raw.replace('planning/ref', 'planning/changed'));
+  assert.equal(observedDetails(artifact).bulletTexts.get('observed-facts')[0], 'stable evidence');
+  fs.writeFileSync(file, raw);
+  assert.equal(observation.verify(), false, 'a later read cannot overwrite the first observation');
+  assert.equal(observation.verify(), false);
+});
+
+test('#300 evidence read observations distinguish missing reads from empty files and retain audit failures', (t) => {
+  const root = tmpdir(t), file = path.join(root, 'empty.md');
+  const artifact = { file, fm: { input_id: 'IN-20261111-planning-003' } };
+  const missing = observeInputEvidenceReads([artifact]);
+  assert.equal(observedDetails(missing.artifacts[0]).sections.size, 0);
+  assert.equal(missing.verify(), true);
+  fs.writeFileSync(file, '');
+  assert.equal(missing.verify(), false, 'null read and empty text have different observations');
+
+  const present = observeInputEvidenceReads([artifact]);
+  assert.equal(observedDetails(present.artifacts[0]).sections.size, 0);
+  assert.equal(present.verify(), true);
+  fs.unlinkSync(file);
+  assert.equal(present.verify(), false);
+  fs.writeFileSync(file, '');
+  assert.equal(present.verify(), false, 'restoration does not erase an observed audit failure');
+});
+
+test('#300 evidence read observations leave unused files and explicit bodies unobserved', (t) => {
+  const root = tmpdir(t), outsideRoot = tmpdir(t);
+  const selected = writeInput(root, 'IN-20261111-planning-004', '## Selected\n- actual file\n');
+  const outside = path.join(outsideRoot, 'outside.md'), missing = path.join(root, 'missing.md');
+  fs.writeFileSync(outside, 'unrelated outside file');
+  const entries = [loadInputArtifact(selected),
+    { file: missing, fm: { input_id: 'IN-20261111-planning-005' } },
+    { file: outside, fm: { input_id: 'IN-20261111-planning-006' } },
+    { file: outside, fm: { input_id: 'IN-20261111-planning-007' }, body: '## Supplied\n- explicit body\n' },
+    { file: missing, fm: { input_id: 'IN-20261111-planning-008' }, body: '' }];
+  const originalRead = fs.readFileSync, reads = [];
+  const readMock = t.mock.method(fs, 'readFileSync', function (file, ...args) {
+    if ([selected, outside, missing].includes(String(file))) reads.push(String(file));
+    return originalRead.call(this, file, ...args);
+  });
+  try {
+    const observation = observeInputEvidenceReads(entries);
+    assert.deepEqual(reads, [], 'setting up an observer reads no file');
+    observedDetails(observation.artifacts[0]);
+    assert.equal(observedDetails(observation.artifacts[3]).bulletTexts.get('supplied')[0], 'explicit body');
+    assert.equal(observedDetails(observation.artifacts[4]).sections.size, 0);
+    fs.writeFileSync(outside, 'changed outside file');
+    assert.equal(observation.verify(), true);
+    assert.deepEqual(reads, [selected, selected], 'only the actual body read and its audit touch disk');
+  } finally {
+    readMock.mock.restore();
+  }
+});
+
+test('#300 evidence read observers stay independent and propagate only through explicit source copies', (t) => {
+  const root = tmpdir(t), id = 'IN-20261111-planning-009';
+  const file = writeInput(root, id, '## Independent\n- first value\n');
+  const original = loadInputArtifact(file), raw = fs.readFileSync(file, 'utf8');
+  const first = observeInputEvidenceReads([original]);
+  const second = observeInputEvidenceReads(first.artifacts);
+  observedDetails(second.artifacts[0]);
+  fs.writeFileSync(file, raw.replace('first value', 'second value'));
+  assert.equal(first.verify(), true, 'a new observer must not inherit its source observer');
+  assert.equal(second.verify(), false);
+
+  const clone = { ...first.artifacts[0], fm: structuredClone(first.artifacts[0].fm), body: undefined };
+  assert.equal(copyInputEvidenceObservation(first.artifacts[0], clone), clone);
+  assert.equal(observedDetails(clone).bulletTexts.get('independent')[0], 'second value');
+  assert.equal(first.verify(), true);
+  fs.writeFileSync(file, raw);
+  assert.equal(first.verify(), false, 'source-resolver copies keep the passive observation');
+});
+
+test('#300 evidence read observations preserve exact UTF-16 text identities', (t) => {
+  const root = tmpdir(t), id = 'IN-20261111-planning-010';
+  const file = writeInput(root, id, '## Text Identity\n- unchanged body\n');
+  const artifact = loadInputArtifact(file), raw = fs.readFileSync(file, 'utf8');
+  let current = raw.replace('captured_by: "test"', 'captured_by: "\ud800"');
+  const originalRead = fs.readFileSync;
+  const readMock = t.mock.method(fs, 'readFileSync', function (target, ...args) {
+    return String(target) === file ? current : originalRead.call(this, target, ...args);
+  });
+  try {
+    const observation = observeInputEvidenceReads([artifact]);
+    observedDetails(observation.artifacts[0]);
+    assert.equal(observation.verify(), true);
+    current = current.replace('\ud800', '\ud801');
+    assert.equal(observation.verify(), false, 'UTF-8 replacement must not collapse distinct raw strings');
+  } finally {
+    readMock.mock.restore();
+  }
 });
