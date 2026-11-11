@@ -582,7 +582,9 @@ v2 가 소비하는 마크다운은 **좁은 canonical authoring profile** 만 �
   fenced/indented/inline code, HTML comment/tag/attribute, link/image destination, URL-only autolink, reference definition은
   제외하고 visible link text와 일반 prose만 유지한다. nested list는 1-based pre-order이며 부모 bullet에 child text를
   중복 합성하지 않는다.
-  근거 전용 파생 뷰는 필요한 section slug와 bullet text만 만든다(#300). 새 input index에서도
+  근거 전용 파생 뷰는 필요한 section slug와 bullet text만 만든다(#300). 파일에서 본문만 얻는 단계는
+  기존 frontmatter 구분자·BOM 규칙을 공유하고, 사용하지 않는 YAML metadata를 다시 파싱하지 않는다.
+  입력 로더와 검증기의 YAML 오류·필수 필드·시각·deprecated 경고 판정은 유지한다. 새 input index에서도
   현재 본문을 읽은 뒤, 정규화하지 않은 UTF-16 본문의 길이·SHA-256이 같은 구문 결과를 프로세스 안에서
   재사용한다. 이 캐시는 직렬화한 section/bullet 결과와 key를 UTF-16 payload 기준 8 MiB·최대 4,096개로
   제한하며 원문이나 AST를 추가 보관하지 않는다. 새 index에는 독립된 Map·배열을 주고, 기존 index 내부의

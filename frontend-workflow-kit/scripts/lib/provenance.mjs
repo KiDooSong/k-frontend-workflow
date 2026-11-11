@@ -1,4 +1,4 @@
-import { createContentJsonCache, readFileSafe, splitFrontmatter } from './util.mjs';
+import { createContentJsonCache, frontmatterBody, readFileSafe } from './util.mjs';
 import { parseReconciliationEvidence } from './reconciliation-markdown-ast.mjs';
 
 // Provenance 공통 파서 — RFC3339 timestamp · Source Unit enum · inherit 토큰의 단일 출처.
@@ -160,7 +160,7 @@ export function resolveInputArtifact(index, inputId) {
 function inputArtifactBody(artifact) {
   if (typeof artifact?.body === 'string') return artifact.body;
   if (!artifact?.file) return '';
-  return splitFrontmatter(readFileSafe(artifact.file)).body || '';
+  return frontmatterBody(readFileSafe(artifact.file));
 }
 
 // Retain only serialized section/bullet syntax, not source strings, ASTs, file

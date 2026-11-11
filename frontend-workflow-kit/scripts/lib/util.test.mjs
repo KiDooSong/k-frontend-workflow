@@ -15,17 +15,89 @@ import {
   createContentJsonCache,
   createTextKeyedCache,
   emitGeneratedYaml,
+  frontmatterBody,
   isCliEntry,
   loadGeneratedWorkflowStateOrExit,
   loadYaml,
   loadYamlOrExit,
   readBoundedFileDescriptor,
   removeFileIfExists,
+  splitFrontmatter,
   yamlParse,
 } from './util.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const UTIL_PATH = path.join(HERE, 'util.mjs');
+
+test('#300 body-only frontmatter extraction preserves the existing delimiter and BOM boundaries', () => {
+  const cases = [
+    { raw: null, body: '', hasFrontmatter: false },
+    { raw: undefined, body: '', hasFrontmatter: false },
+    { raw: '', body: '', hasFrontmatter: false },
+    { raw: '\ufeff', body: '', hasFrontmatter: false },
+    { raw: '\ufeff\ufeffplain', body: '\ufeffplain', hasFrontmatter: false },
+    { raw: 'plain\r\nbody\r', body: 'plain\r\nbody\r', hasFrontmatter: false },
+    { raw: '\ufeffplain\nbody', body: 'plain\nbody', hasFrontmatter: false },
+    { raw: '---\nvalue: one', body: '---\nvalue: one', hasFrontmatter: false },
+    { raw: '\ufeff---\nvalue: one', body: '---\nvalue: one', hasFrontmatter: false },
+    { raw: '---\rvalue: one\r---\rbody', body: '---\rvalue: one\r---\rbody', hasFrontmatter: false },
+    { raw: '--- \nvalue: one\n---\nbody', body: '--- \nvalue: one\n---\nbody', hasFrontmatter: false },
+    { raw: '\n---\nvalue: one\n---\nbody', body: '\n---\nvalue: one\n---\nbody', hasFrontmatter: false },
+    { raw: '---\n---\nbody', body: '---\n---\nbody', hasFrontmatter: false },
+    { raw: '---\n\n---\nbody', body: 'body', hasFrontmatter: true },
+    { raw: '---\nvalue: one\n---', body: '', hasFrontmatter: true },
+    { raw: '---\nvalue: one\n---body', body: 'body', hasFrontmatter: true },
+    { raw: '---\nvalue: one\n----\nbody', body: '-\nbody', hasFrontmatter: true },
+    { raw: '---\nvalue: one\n--- \nbody', body: ' \nbody', hasFrontmatter: true },
+    { raw: '---\nvalue: one\n---\rbody', body: 'body', hasFrontmatter: true },
+    { raw: '---\nvalue: one\n---\r\r\nbody', body: '\r\nbody', hasFrontmatter: true },
+    { raw: '---\nvalue: [unclosed\n---\n## Facts\n- preserved\n', body: '## Facts\n- preserved\n', hasFrontmatter: true },
+    { raw: '---\nvalue: one\n---\n\ufeff## Facts\n---\n', body: '\ufeff## Facts\n---\n', hasFrontmatter: true },
+  ];
+  for (const opener of ['\n', '\r\n']) for (const beforeClose of ['\n', '\r\n']) {
+    for (const afterClose of ['', '\n', '\r\n', '\r']) for (const bom of ['', '\ufeff']) {
+      const body = '\n## Facts\r\n- 한글 😀\r\n  trailing spaces  \n';
+      cases.push({ raw: `${bom}---${opener}value: one${beforeClose}---${afterClose}${body}`,
+        // The optional closing newline consumes the body's first LF when the
+        // delimiter has no ending of its own (or only a CR).
+        body: afterClose === '' || afterClose === '\r' ? body.slice(1) : body,
+        hasFrontmatter: true });
+    }
+  }
+  for (const { raw, body, hasFrontmatter } of cases) {
+    const label = JSON.stringify(raw);
+    assert.equal(frontmatterBody(raw), body, label);
+    const parsed = splitFrontmatter(raw);
+    assert.equal(parsed.body, body, label);
+    assert.equal(parsed.hasFrontmatter, hasFrontmatter, label);
+  }
+});
+
+test('#300 full frontmatter parsing still returns YAML values, alias identity and parse errors', () => {
+  const body = '\n## Facts\n- kept exactly\n';
+  const raw = `---\nsource: &source {value: one}\ncopy: *source\n---\n${body}`;
+  const parsed = splitFrontmatter(raw);
+  assert.equal(parsed.hasFrontmatter, true);
+  assert.equal(Object.hasOwn(parsed, 'parseError'), false);
+  assert.deepEqual(parsed.data, { source: { value: 'one' }, copy: { value: 'one' } });
+  assert.equal(parsed.data.source, parsed.data.copy, 'YAML aliases keep their original identity');
+  assert.equal(frontmatterBody(raw), body);
+  assert.equal(parsed.body, body);
+
+  for (const [yaml, expected] of [['null', {}], ['false', {}], ['42', 42], ['[one, two]', ['one', 'two']]]) {
+    assert.deepEqual(splitFrontmatter(`---\n${yaml}\n---\n${body}`), { data: expected, body, hasFrontmatter: true });
+  }
+  for (const yaml of ['value: [unclosed', 'value: *missing', 'value: one\nvalue: two']) {
+    const content = `---\n${yaml}\n---\n${body}`;
+    const invalid = splitFrontmatter(content);
+    assert.deepEqual(invalid.data, {});
+    assert.equal(invalid.hasFrontmatter, true);
+    assert.equal(invalid.body, body);
+    assert.equal(typeof invalid.parseError, 'string');
+    assert.ok(invalid.parseError.length > 0);
+    assert.equal(frontmatterBody(content), body);
+  }
+});
 
 // symlink 를 우리가 직접 만들어 macOS 가 아니어도 같은 시나리오를 재현한다.
 function tmpdir(t) {

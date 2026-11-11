@@ -243,19 +243,30 @@ export function writeFile(p, content) {
 
 // --- frontmatter -----------------------------------------------------------
 // `---\n...\n---\n본문` 형식을 분리한다. gray-matter 대신 직접 분리해 의존성을 줄인다.
-export function splitFrontmatter(content) {
-  if (content == null) return { data: {}, body: '', hasFrontmatter: false };
+function frontmatterParts(content) {
+  if (content == null) return { yaml: null, body: '' };
   // BOM 제거
   const text = content.replace(/^﻿/, '');
   const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(text);
-  if (!m) return { data: {}, body: text, hasFrontmatter: false };
+  return m ? { yaml: m[1], body: m[2] } : { yaml: null, body: text };
+}
+
+// Body-only consumers share the exact delimiter/BOM rules without decoding YAML
+// they discard. Metadata callers still use splitFrontmatter and its parse errors.
+export function frontmatterBody(content) {
+  return frontmatterParts(content).body;
+}
+
+export function splitFrontmatter(content) {
+  const { yaml, body } = frontmatterParts(content);
+  if (yaml === null) return { data: {}, body, hasFrontmatter: false };
   let data = {};
   try {
-    data = yamlParse(m[1]) || {};
+    data = yamlParse(yaml) || {};
   } catch (err) {
-    return { data: {}, body: m[2], hasFrontmatter: true, parseError: String(err.message || err) };
+    return { data: {}, body, hasFrontmatter: true, parseError: String(err.message || err) };
   }
-  return { data, body: m[2], hasFrontmatter: true };
+  return { data, body, hasFrontmatter: true };
 }
 
 export function loadYaml(p) {

@@ -2,8 +2,9 @@
 //        [runs=3] [matching-decision-bindings=0,8,24] [inputs=16]
 // Install both kits' dependencies first. Timed samples run the actual public CLI
 // in fresh processes without instrumentation. Separate diagnostic runs count
-// filesystem calls and report their own process peak RSS. This synthetic corpus
-// exercises repeated binding calculations, not the reported four-hour consumer run.
+// filesystem/YAML parse calls and report their own process peak RSS. This synthetic corpus
+// exercises input inventories and repeated binding calculations, not the reported
+// four-hour consumer run.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -182,15 +183,23 @@ function diagnosticHook(scratch) {
   fs.writeFileSync(file, `import fs from 'node:fs';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {syncBuiltinESMExports} from 'node:module';
-const {reconciliationParseStats}=await import(pathToFileURL(path.join(process.env.FWKIT_BINDING_BENCH_KIT,'scripts/lib/reconciliation-markdown-ast.mjs')).href);
+import {createRequire,syncBuiltinESMExports} from 'node:module';
+const kit=process.env.FWKIT_BINDING_BENCH_KIT;
+const yaml=createRequire(path.join(kit,'package.json'))('yaml');
+const parseYaml=yaml.parse;
+let yamlParseCalls=0;
+// Install before util.mjs captures YAML's named CommonJS export. This is a
+// separate diagnostic process; timed CLI processes never load the hook.
+yaml.parse=function(...args){yamlParseCalls++;return parseYaml.apply(this,args);};
+const {reconciliationParseStats}=await import(pathToFileURL(path.join(kit,'scripts/lib/reconciliation-markdown-ast.mjs')).href);
+yamlParseCalls=0;
 const counts={};
 for(const name of ['lstatSync','statSync','readdirSync','realpathSync','readSync','readFileSync']){
   const original=fs[name];counts[name]=0;
   fs[name]=function(...args){counts[name]++;return original.apply(this,args);};
 }
 syncBuiltinESMExports();
-process.on('exit',()=>fs.writeFileSync(process.env.FWKIT_BINDING_BENCH_COUNTS,JSON.stringify({counts,parse:reconciliationParseStats(),instrumented_peak_rss_kib:process.resourceUsage().maxRSS})));
+process.on('exit',()=>fs.writeFileSync(process.env.FWKIT_BINDING_BENCH_COUNTS,JSON.stringify({counts,yaml_parse_calls:yamlParseCalls,parse:reconciliationParseStats(),instrumented_peak_rss_kib:process.resourceUsage().maxRSS})));
 `);
   return file;
 }
@@ -245,9 +254,9 @@ async function main(args) {
       measurement: {
         elapsed_ms: 'Fresh actual public binding-status CLI process per kit/case/run, including startup/imports, Git snapshot materialization, evaluation, JSON output and cleanup. No instrumentation in timed runs. Setup and independent verification excluded.',
         order: 'Before/after order alternates. Both versions use the same committed fixture and exact CLI flags. Fixture setup warms the filesystem cache; this is not cold-storage latency.',
-        diagnostics: 'Separate untimed processes count filesystem calls after the parser import and report instrumented process peak RSS (not timed-run peak or retained memory). Child Git process RSS is not included.',
+        diagnostics: 'Separate untimed processes count filesystem calls and actual yaml.parse calls after the parser import, and report instrumented process peak RSS (not timed-run peak or retained memory). YAML interception is installed before kit imports; all counters start after those imports. Child Git process RSS is not included.',
         verification: 'Whole stdout bytes, snapshot commit/tree, every binding state and digest agree across kits/runs; original HEAD, index bytes and tracked worktree bytes/modes stay unchanged; private snapshots are removed.',
-        scope: 'Synthetic one-owner, two-unit binding amplification with selected source/Items and mixed binding states. It is not a reproduction or timing prediction of the reported four-hour consumer execution.',
+        scope: 'Synthetic one-owner, two-unit workload with configurable input/binding counts, selected source/Items and mixed binding states. It is not a reproduction or timing prediction of the reported four-hour consumer execution.',
       }, cases }, null, 2));
   } finally {
     fs.rmSync(scratch, { recursive: true, force: true });
