@@ -125,9 +125,10 @@ async function createFixture(kit, root, scratch, matching, inputs) {
   git(root, 'init', '--quiet', '--object-format=sha1');
   for (const [key, value] of [['gc.auto', '0'], ['maintenance.auto', 'false'], ['core.autocrlf', 'false'], ['core.filemode', 'true']]) git(root, 'config', key, value);
   const commit = (message) => { git(root, 'add', '-A'); git(root, 'commit', '-qm', message); };
-  // Compute one existing Decision and Unknown binding during fixture setup. The
-  // declarations are omitted from scope-basis-v2, so restoring the other binding
-  // declarations leaves these two current; the report assertions below prove it.
+  // Compute one existing Decision and Unknown binding during fixture setup.
+  // Binding lists are omitted from projected document metadata. These targets'
+  // known_units/blocks stay fixed, so restoring the other rows' declarations
+  // keeps both digests current; the report assertions below check this.
   writeOwner(bindings.slice(0, 1)); commit('Prepare synthetic binding statuses');
   const preparation = runCli(kit, root, scratch).report;
   const rows = new Map(preparation.owners[0].rows.map((row) => [row.ref, row]));
