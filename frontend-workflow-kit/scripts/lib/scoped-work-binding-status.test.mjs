@@ -73,6 +73,65 @@ function project(t, target = ENTRY) {
   return { root, read, put, git, commit, bind, status, json, rows, readiness, readinessRun, blocking };
 }
 
+test('#300 binding-status: more Decision bindings do not repeat whole-owner resource reads', (t) => {
+  const p = project(t);
+  const scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'binding-status-reads-')));
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+  const countsFile = path.join(scratch, 'counts.json'), preload = path.join(scratch, 'count-reads.cjs');
+  // Count an unchanged resource read by every complete owner projection. This
+  // observes the actual public CLI in a separate process, without a time limit
+  // assertion or a caller-supplied projection replacing canonical resolution.
+  fs.writeFileSync(preload, `
+const fs = require('node:fs'), path = require('node:path');
+const open = fs.openSync;
+let policyReads = 0;
+fs.openSync = function(file, ...args) {
+  if (typeof file === 'string') {
+    const parts = path.normalize(file).split(path.sep);
+    if (parts.includes('checkout') && parts.slice(-2).join('/') === 'config/policy.yaml') policyReads++;
+  }
+  return open.call(this, file, ...args);
+};
+require('node:module').syncBuiltinESMExports();
+process.on('exit', () => fs.writeFileSync(${JSON.stringify(countsFile)}, JSON.stringify({ policyReads })));
+`);
+  const measure = () => {
+    const run = spawnSync(process.execPath, ['--require', preload, path.join(KIT_ROOT, 'scripts/binding-status.mjs'),
+      '--root', p.root, ...CONFIG, '--owner', OWNER, '--json'],
+    { cwd: p.root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout: 120000 });
+    const report = p.json(run), counts = JSON.parse(fs.readFileSync(countsFile, 'utf8'));
+    assert.ok(counts.policyReads > 0, 'the preload must observe actual snapshot policy reads');
+    return { report, ...counts };
+  };
+  const ids = ['D-001', 'D-002', 'D-003', 'D-004', 'D-005', 'D-006'];
+  p.put(LIST, p.read(LIST).replace(/(\n\| D-003 \|[^\n]*)/, '$1' + ids.slice(3)
+    .map((id) => `\n| ${id} | Choose ${id}? | A / B | final-fixture-ui | PM | open |`).join('')));
+  p.commit('keep six Decision rows and one recorded binding');
+  const one = measure();
+  p.bind(ids.map((id) => binding('decision_id', id, ZERO)), [binding('unknown_id', 'U-001', ZERO)]);
+  p.commit('record bindings for the same six Decision rows');
+  const head = p.git('rev-parse', 'HEAD').trim(), before = p.read(LIST), many = measure();
+  assert.equal(many.policyReads, one.policyReads,
+    'adding matching bindings must not rebuild the owner projection for each row');
+  assert.equal(many.report.snapshot.commit, head);
+  assert.equal(many.report.approval_verified, false);
+  const rows = Object.fromEntries(many.report.owners[0].rows.map((row) => [row.ref, row]));
+  assert.deepEqual(many.report.owners.map((entry) => [entry.owner, entry.known_units]), [[OWNER, ['list-behavior']]]);
+  for (const id of ids) {
+    const row = rows[`decision:${id}@COUPON-001-screen-spec`];
+    assert.deepEqual([row.state, row.stale_reason, row.status, row.resolved, row.home, row.blocking_units],
+      ['stale', 'basis', 'open', false, LIST, null]);
+    assert.deepEqual(row.recorded, { known_units: ['list-behavior'], blocks: [], basis_digest: ZERO, approval_ref: APPROVAL });
+    assert.match(row.computed_basis_digest, /^sha256:[0-9a-f]{64}$/);
+    assert.deepEqual(Object.keys(row.components).sort(), ['evidence', 'relations', 'target', 'units']);
+  }
+  const oldRows = Object.fromEntries(one.report.owners[0].rows.map((row) => [row.ref, row]));
+  for (const ref of [D003, U001]) assert.deepEqual(rows[ref], oldRows[ref], 'other bindings must not change an existing row basis');
+  assert.deepEqual(p.json(p.status('--owner', OWNER, '--json')), many.report, 'a fresh call computes the same complete report');
+  assert.equal(p.git('status', '--porcelain'), '');
+  assert.equal(p.read(LIST), before);
+});
+
 test('#292 public binding-status: SIGTERM during synchronous materialization keeps its signal and removes the snapshot',
   { skip: process.platform === 'win32', timeout: 30000 }, async (t) => {
     const p = project(t);

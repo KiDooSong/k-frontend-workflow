@@ -236,6 +236,12 @@ evidence) — so comparing two runs shows which part changed. It reads the
 committed `HEAD` that `--work` evaluates, writes nothing and does not verify
 `approval_ref`. Its temporary tree uses the shared
 [snapshot cleanup and orphan recovery](visual-refresh-boundaries.md#temporary-snapshot-lifecycle).
+Within that owned snapshot, the report resolves each owner's full applicability
+projection once and derives its Decision and Unknown/Conflict binding digests
+from the same projection. It re-reads the canonical binding homes and verifies
+the complete file read set and any consulted register's absence before returning
+the owner's report. No projection is shared across owners or calls. The standalone
+inspectors for mutable files keep their independent resolution and change checks.
 The digest covers the binding as committed: to add or change a
 binding, commit it with any well-formed digest (for example `sha256:` followed by
 64 zeros), review the scope, then record the computed digest with an
