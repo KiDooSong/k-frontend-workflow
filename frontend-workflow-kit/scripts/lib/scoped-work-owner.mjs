@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { canonicalRepositoryPath } from './artifact-path.mjs';
 import { ownerParts, readCurrentBytes, hashBytes } from './current-work-request.mjs';
 import { ScopedWorkContractError, workUnitId } from './scoped-work-request.mjs';
-import { inspectScopedProfile } from './scoped-work-profiles.mjs';
+import { inspectScopedProfile, inspectScopedSnapshotProfile } from './scoped-work-profiles.mjs';
 import { inspectScopedPaths } from './scoped-work-paths.mjs';
 import { inspectScopedDecisionScopes, inspectScopedSnapshotDecisionScopes } from './scoped-work-decision-scopes.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
@@ -17,8 +17,8 @@ export function inspectScopedOwner(options = {}) {
   return inspectOwner(options, false);
 }
 
-// The execution adapter owns this raw Git baseline. Only Decision basis
-// calculation is reused; profile/path checks and every final audit stay local.
+// The execution adapter owns this raw Git baseline. Profile and Decision
+// inspections each own their reuse; path checks and every final audit stay local.
 export function inspectScopedSnapshotOwner(options = {}) {
   return inspectOwner(options, true);
 }
@@ -32,7 +32,7 @@ function inspectOwner(options, snapshot) {
     'approved', 'approval_verifier', 'decisions_clear', 'owner_satisfied']) {
     if (Object.hasOwn(options, key)) fail(`caller ${key} is not authority`);
   }
-  const profile = inspectScopedProfile(options);
+  const profile = snapshot ? inspectScopedSnapshotProfile(options) : inspectScopedProfile(options);
   const paths = inspectScopedPaths(options);
   const decisions = snapshot ? inspectScopedSnapshotDecisionScopes(options) : inspectScopedDecisionScopes(options);
   if (profile.owner !== owner || paths.owner !== owner || decisions.owner !== owner ||

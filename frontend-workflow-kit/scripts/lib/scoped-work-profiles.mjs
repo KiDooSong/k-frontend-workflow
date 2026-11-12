@@ -11,7 +11,7 @@ import { isRealDate } from './schema.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
 import { buildEndpointIndex, normEndpoint, isContractUnset, CONTRACT_KINDS,
   collectSchemaExports, collectTsTypeExports, contractSourceHasText } from './api-manifest.mjs';
-import { resolveScopedApplicabilityProjection } from './scoped-work-applicability.mjs';
+import { resolveScopedApplicabilityProjection, createScopedSnapshotApplicabilitySession } from './scoped-work-applicability.mjs';
 import { inspectScopedInputCoverage } from './scoped-work-input-coverage.mjs';
 import { createScopedApiResolver } from './scoped-work-api.mjs';
 import { createScopedReferenceResolver } from './scoped-work-refs.mjs';
@@ -26,6 +26,16 @@ const union = (values) => scopeSet([...new Set(values)]);
 const populated = (value) => typeof value === 'string' && value.trim().length > 0;
 
 export function inspectScopedProfile(options = {}) {
+  return inspectProfile(options, false);
+}
+
+// Internal owned-baseline entry. Reuse unit facts only inside this profile's
+// applicability calculation; source/coverage/API checks remain independent.
+export function inspectScopedSnapshotProfile(options = {}) {
+  return inspectProfile(options, true);
+}
+
+function inspectProfile(options, snapshot) {
   const { owner, unit, projectRoot, targetIndex, inputArtifacts = [], registerFile, kitRoot, layoutFile } = options;
   ownerParts(owner); workUnitId(unit);
   const files = new Map(), directories = new Map(), denials = [];
@@ -76,7 +86,8 @@ export function inspectScopedProfile(options = {}) {
     }
     return union(result);
   }
-  const observed = resolveScopedApplicabilityProjection(options); audit(observed.read_set);
+  const session = snapshot ? createScopedSnapshotApplicabilitySession(options) : null;
+  const observed = session ? session.resolved : resolveScopedApplicabilityProjection(options); audit(observed.read_set);
   const { projection } = observed;
   const declared = projection.units.find((entry) => entry.owner === owner && entry.declaration.id === unit)?.declaration;
   const identity = projection.owners.find((entry) => entry.owner === owner);
@@ -90,6 +101,9 @@ export function inspectScopedProfile(options = {}) {
   const coverage = inspectScopedInputCoverage(options); audit(coverage.read_set);
   for (const reason of coverage.denials) denials.push(reason);
   // #262: resolved rows clear; a current human binding narrows a native relation.
+  // Coverage can consult different files. Keep the applicability session's
+  // private validation-only input reads and register absences pinned too.
+  session?.verify();
   const uncertainty = scopedUncertaintyScopes(options, projection, observed.read_set); audit(uncertainty.read_set);
   for (const application of scopedUncertaintyDenials(uncertainty, unit)) deny('unit-uncertainty-unresolved', { application });
   const uncertaintyScopes = uncertainty.checks.filter((check) => check.declared_binding);
@@ -169,7 +183,8 @@ export function inspectScopedProfile(options = {}) {
       if (!decision || decision.status !== 'open' || !declared.isolation.disabled_units.every((id) =>
         applications.some((entry) => entry.unit === null || entry.unit === id))) deny('isolation-decision-unrelated', { decision: ref });
     }
-    isolated.push({ ...declared.isolation, semantic_isolation_verified: false,
+    // Snapshot unit facts are frozen; returned review data stays independently mutable.
+    isolated.push({ ...structuredClone(declared.isolation), semantic_isolation_verified: false,
       responsibility: 'Keep only these unfinished behavior units unavailable to ordinary users. Review every entry/effect/deep-link; disabled UI alone is not proof. Do not disable existing production behavior.' });
   }
   for (const [file, names] of [...directories]) {
@@ -177,6 +192,7 @@ export function inspectScopedProfile(options = {}) {
     if (current.kind === 'file' || !same(directories.get(file), names)) fail('API evidence directory changed');
   }
   for (const entry of [...files.values()]) read(entry.file, entry.sha256);
+  session?.verify();
   return { owner, unit, kind: declared.kind, profile_satisfied: denials.length === 0, denials: scopeSet(denials),
     confirmed_contracts: union(confirmed.map((entry) => entry.ref)), visual_evidence: visualEvidence,
     api_evidence: apiEvidence, coverage, isolation: isolated, uncertainty_scopes: uncertaintyScopes, read_set: scopeSet([...files.values()]),

@@ -1,5 +1,10 @@
 # Current Roadmap
 
+> 2026-11-13 #300 14차 성능 개선: scoped 실행 baseline의 profile applicability도 관계 단계 사이 unit·source 계산을 재사용한다.
+> profile과 Decision 검사는 각각 독립된 projection을 계산하며, coverage·path·host consent를 공유하거나 생략하지 않는다. profile은 uncertainty 적용 전과 API 파일·디렉터리 최종 검사 후에 private 검증 관찰을 다시 확인한다.
+> 검증용 미선택 입력 Evidence·register 부재·canonical bytes와 owner/host별 격리, mutable standalone 계산, scope-basis-v2·판정·read set·checkpoint 계약을 유지한다.
+> 정본: [scoped baseline](../frontend-workflow-kit/docs/reference/scoped-work.md#evaluation-on-the-immutable-baseline). 재현: [실제 scoped readiness CLI](benchmarks/scoped-readiness.mjs) — 입력·unit 수와 바인딩 없는 대조군을 구분한다.
+
 > 2026-11-12 #300 13차 성능 개선: scoped `--work` 실행이 직접 전개한 Git baseline에서 owner·host별 Decision 검사 안의 전체 applicability를 한 번 계산한다.
 > 바인딩마다 전체 관계를 재계산하던 경로를 제거하고 같은 projection으로 각 basis를 계산한다. 재사용 전과 반환 전에는 실제 파일·확인한 register 부재·검증용 미선택 입력 Evidence를 다시 확인한다.
 > canonical binding home 비교, profile·coverage·path·host consent와 최종 composition 검사, standalone mutable inspector의 독립 계산, scope-basis-v2·판정·read set·checkpoint 계약을 유지한다.

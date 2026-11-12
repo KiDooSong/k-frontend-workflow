@@ -15,7 +15,7 @@ import { ownerParts, readCurrentBytes, hashBytes, normalizeWorkTargets } from '.
 import { ScopedWorkContractError, workPath, workUnitId } from './scoped-work-request.mjs';
 import { resolveScopedApplicabilityProjection } from './scoped-work-applicability.mjs';
 import { resolveScopedMappingEvidence } from './scoped-work-mapping.mjs';
-import { inspectScopedProfile } from './scoped-work-profiles.mjs';
+import { inspectScopedProfile, inspectScopedSnapshotProfile } from './scoped-work-profiles.mjs';
 import { inspectScopedDecisionScopes, inspectScopedSnapshotDecisionScopes } from './scoped-work-decision-scopes.mjs';
 import { COMPONENT_MAPPING_COLUMNS } from './mapping-provenance.mjs';
 import { concretePathIssue, globMatches } from './path-backstop.mjs';
@@ -52,7 +52,7 @@ export function inspectScopedSurfaceHosts(options = {}) {
   return inspectSurfaceHosts(options, false);
 }
 
-// Each host resolves its own Decision applicability on the owned raw baseline;
+// Each host resolves its own profile/Decision applicability on the raw baseline;
 // no surface/peer projection or successful prerequisite is shared with it.
 export function inspectScopedSnapshotSurfaceHosts(options = {}) {
   return inspectSurfaceHosts(options, true);
@@ -219,7 +219,7 @@ function inspectSurfaceHosts(options, snapshot) {
       const args = { ...options, owner: link.member, unit: link.host_unit };
       // Shared targets belong to the surface, not to a host's private path roots.
       // Host path-policy success is neither fabricated nor borrowed here.
-      profile = inspectScopedProfile(args); absorb(profile);
+      profile = snapshot ? inspectScopedSnapshotProfile(args) : inspectScopedProfile(args); absorb(profile);
       decisionScopes = snapshot ? inspectScopedSnapshotDecisionScopes(args) : inspectScopedDecisionScopes(args); absorb(decisionScopes);
       if (profile.owner !== link.member || profile.unit !== link.host_unit || profile.kind !== declared.kind ||
         decisionScopes.owner !== link.member) fail('host inspector identity mismatch');

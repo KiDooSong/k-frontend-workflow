@@ -9,7 +9,8 @@ import { loadInputArtifact } from './input-artifact.mjs';
 import { REQUIRED_REGISTER_COLS } from './reconciliation-register.mjs';
 import { REQUIRED_ITEM_COLS } from './reconciliation-items.mjs';
 import { COMPONENT_MAPPING_COLUMNS, MAPPING_PROVENANCE_COLUMNS } from './mapping-provenance.mjs';
-import { inspectScopedProfile } from './scoped-work-profiles.mjs';
+import { inspectScopedProfile, inspectScopedSnapshotProfile } from './scoped-work-profiles.mjs';
+import { resolveScopedUncertaintyBindingBasis } from './scoped-work-uncertainty-scopes.mjs';
 
 const OWNER = 'screen:RESULT-001', PREFIX = 'src/features/result';
 const INPUT = 'IN-20260922-figma-001', ANCHOR = `input:${INPUT}#extracted-facts/01`;
@@ -20,6 +21,18 @@ const candidate = (confidence = 'confirmed', gate = 'active') => ['GET', '/resul
 const apiBody = (rows = [candidate()]) => `## API Candidates\n${table(['Method', 'Path', 'Confidence', 'Gate', 'Tracking', 'Slice Paths'], rows)}`;
 const endpointRow = (kind = 'manual', name = 'ResultsResponse', source = 'contracts/result.md') => ['GET', '/results', 'confirmed', name, kind, source];
 const manifestBody = (rows) => `## Endpoints\n${table(['Method', 'Path', 'Confidence', 'Linked Contract', 'Contract Kind', 'Source'], rows)}`;
+
+function compareProfiles(options) {
+  let expected;
+  try { expected = inspectScopedProfile(options); }
+  catch (error) {
+    assert.throws(() => inspectScopedSnapshotProfile(options), { name: error.name, message: error.message });
+    throw error;
+  }
+  const actual = inspectScopedSnapshotProfile(options);
+  assert.deepEqual(actual, expected, 'snapshot reuse must preserve the entire public profile result');
+  return actual;
+}
 
 function fixture(t) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'scoped-profiles-')));
@@ -59,7 +72,7 @@ function fixture(t) {
     raw('docs/register.md', md({ reconciliation_contract: 2, review_profile: 'reconcile-stage04-v1', structured_since: '2026-09-01T00:00:00Z' },
       `${table(REQUIRED_REGISTER_COLS, [[INPUT, 'figma', 'simple-update×1', 'reconciled', 'accepted', 'artifact:MAP', '-', '-']])}\n\n## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, [[INPUT, '01', 'visual-evidence', 'simple-update', 'update', 'artifact:MAP#component-mapping/M-001', ANCHOR, 'inherit', 'node', 'inherit']])}`));
   };
-  return { root, docs, inputs, docsDir, raw, write, change, options, api, visual, policyFile, overlayFile, manifestFile, registerFile, run: (extra = {}) => inspectScopedProfile({ ...options(), ...extra }) };
+  return { root, docs, inputs, docsDir, raw, write, change, options, api, visual, policyFile, overlayFile, manifestFile, registerFile, run: (extra = {}) => compareProfiles({ ...options(), ...extra }) };
 }
 const denied = (result, code) => { assert.equal(result.profile_satisfied, false); assert.ok(result.denials.some((entry) => entry.code === code), JSON.stringify(result.denials)); };
 const noGrant = (result) => { assert.equal(Object.hasOwn(result, 'ready'), false); assert.equal(Object.hasOwn(result, 'allowed_paths'), false); assert.equal(result.approval_verified, false); assert.equal(result.semantic_coverage_verified, false); };
@@ -178,26 +191,30 @@ test('D profiles: profile/owner opt-in and lifecycle are actual canonical facts,
   fs.writeFileSync(f.overlayFile, JSON.stringify(policy)); denied(f.run({ profile_enabled: true }), 'profile-not-enabled');
 });
 
-test('D profiles: selected contract/evidence byte mutation during profile inspection is detected without modifying the index', (t) => {
-  const f = fixture(t); f.api(); const options = f.options(), original = fs.openSync; let changed = false;
-  t.mock.method(fs, 'openSync', function (name, ...args) {
-    const fd = original.call(this, name, ...args);
-    if (!changed && name === path.join(f.root, 'contracts/result.md')) { changed = true; fs.appendFileSync(f.docs.get('rules.md'), '\nChanged during inspection.'); }
-    return fd;
+for (const [label, inspect] of [['mutable', inspectScopedProfile], ['snapshot', inspectScopedSnapshotProfile]]) {
+  test(`D profiles: ${label} selected contract/evidence byte mutation is detected without modifying the index`, (t) => {
+    const f = fixture(t); f.api(); const options = f.options(), original = fs.openSync; let changed = false;
+    const hook = t.mock.method(fs, 'openSync', function (name, ...args) {
+      const fd = original.call(this, name, ...args);
+      if (!changed && name === path.join(f.root, 'contracts/result.md')) { changed = true; fs.appendFileSync(f.docs.get('rules.md'), '\nChanged during inspection.'); }
+      return fd;
+    });
+    try { assert.throws(() => inspect(options), /snapshot changed/); assert.equal(changed, true); }
+    finally { hook.mock.restore(); }
   });
-  assert.throws(() => inspectScopedProfile(options), /snapshot changed/); assert.equal(changed, true);
-});
 
-test('D profiles: directory membership mutation during the existing contract helper is not invisible', (t) => {
-  const f = fixture(t); f.api(); f.change('api.md', (doc) => doc.body = manifestBody([endpointRow('manual', 'ResultsResponse', 'contracts')]));
-  const options = f.options(), original = fs.readFileSync; let changed = false;
-  t.mock.method(fs, 'readFileSync', function (name, ...args) {
-    const value = original.call(this, name, ...args);
-    if (!changed && name === path.join(f.root, 'contracts/result.md')) { changed = true; f.raw('contracts/new.md', 'New additional evidence.'); }
-    return value;
+  test(`D profiles: ${label} directory membership mutation during the existing contract helper is not invisible`, (t) => {
+    const f = fixture(t); f.api(); f.change('api.md', (doc) => doc.body = manifestBody([endpointRow('manual', 'ResultsResponse', 'contracts')]));
+    const options = f.options(), original = fs.readFileSync; let changed = false;
+    const hook = t.mock.method(fs, 'readFileSync', function (name, ...args) {
+      const value = original.call(this, name, ...args);
+      if (!changed && name === path.join(f.root, 'contracts/result.md')) { changed = true; f.raw('contracts/new.md', 'New additional evidence.'); }
+      return value;
+    });
+    try { assert.throws(() => inspect(options), /directory changed/); assert.equal(changed, true); }
+    finally { hook.mock.restore(); }
   });
-  assert.throws(() => inspectScopedProfile(options), /directory changed/); assert.equal(changed, true);
-});
+}
 
 test('D profiles: inspection preserves source bytes and returns explicit semantic, scope and Git review responsibilities', (t) => {
   const f = fixture(t), before = [...f.docs.values()].map((file) => fs.readFileSync(file)), out = f.run({ ready: true, selected_contracts: [], approved_by: 'caller' });
@@ -216,6 +233,13 @@ test('W10: visual isolation needs an open Decision that actually applies to the 
   assert.equal(out.profile_satisfied, true, JSON.stringify(out.denials));
   assert.deepEqual(out.isolation.map((entry) => [entry.disabled_units, entry.exposure, entry.semantic_isolation_verified]), [[['later'], 'development-only', false]]);
   assert.match(out.isolation[0].responsibility, /disabled UI alone is not proof/); noGrant(out);
+  const expected = structuredClone(out);
+  out.isolation[0].decisions.push('decision:D-CALLER@open-decision-register');
+  out.isolation[0].disabled_units.push('caller-unit');
+  out.visual_evidence[0].metadata.status = 'deprecated';
+  out.read_set[0].file = 'caller-mutated.md';
+  out.coverage.denials.push({ code: 'caller-denial' });
+  assert.deepEqual(f.run(), expected, 'mutable returned arrays and evidence must not affect later inspections');
   decision('resolved'); denied(f.run(), 'isolation-decision-unrelated');
   decision('open'); f.change('screen.md', ({ fm }) => { delete fm.decision_refs; }); denied(f.run(), 'isolation-decision-unrelated');
 });
@@ -228,4 +252,155 @@ test('D profiles: an unaudited uncertainty section is a required review, not a d
   const added = out.required_reviews.filter((entry) => !clean.required_reviews.includes(entry));
   assert.equal(added.length, 1);
   assert.match(added[0], /^Unaudited uncertainty section docs\/other\.md#unknowns: SW-UNCERTAINTY: one canonical unknown table required\./);
+});
+
+function nativeUnknown(f) {
+  f.change('screen.md', ({ fm }) => fm.work_execution.units.push({ ...unit(), id: 'later' }));
+  const file = f.write('uncertainty.md', { artifact_id: 'UNCERTAINTY', artifact_type: 'domain-rules', domain: 'result', status: 'draft',
+    uncertainty_work_scopes: { version: 1, bindings: [{ unknown_id: 'U-ONE', owner: OWNER, known_units: ['known', 'later'], blocks: ['later'],
+      basis_digest: `sha256:${'0'.repeat(64)}`, approval_ref: 'review:synthetic-profile-scope' }] } },
+  `## Unknowns\n${table(['ID', 'Question', 'Status'], [['U-ONE', 'Which later behavior applies?', 'open']])}`);
+  const ref = 'unknown:U-ONE@UNCERTAINTY';
+  // A calculated digest in this synthetic fixture is not human approval.
+  const digest = resolveScopedUncertaintyBindingBasis({ ...f.options(), uncertaintyRef: ref }).basis_digest;
+  f.change('uncertainty.md', ({ fm }) => fm.uncertainty_work_scopes.bindings[0].basis_digest = digest);
+  return { file, ref, digest };
+}
+
+test('#300 snapshot profiles preserve current, stale and resolved uncertainty scopes with the same basis and reviews', (t) => {
+  const f = fixture(t), unknown = nativeUnknown(f), current = f.run();
+  assert.equal(current.profile_satisfied, true);
+  assert.equal(current.uncertainty_scopes[0].computed_basis_digest, unknown.digest);
+  assert.equal(current.uncertainty_scopes[0].scope_source, 'current-canonical-declaration');
+  assert.deepEqual(current.uncertainty_scopes[0].blocking_units, ['later']);
+  assert.ok(current.required_reviews.some((entry) => entry.includes('review:synthetic-profile-scope')));
+  const expected = structuredClone(current);
+  current.uncertainty_scopes[0].declared_binding.blocks.push('known');
+  current.uncertainty_scopes[0].applications.length = 0;
+  assert.deepEqual(f.run(), expected);
+  f.change('rules.md', (doc) => doc.body = doc.body.replace('Use the existing local value', 'Use the newly specified local value'));
+  const stale = f.run(); denied(stale, 'unit-uncertainty-unresolved');
+  assert.equal(stale.uncertainty_scopes[0].binding_state, 'stale-basis');
+  f.change('uncertainty.md', (doc) => doc.body = doc.body.replace('| open |', '| resolved |'));
+  const resolved = f.run(); assert.equal(resolved.profile_satisfied, true);
+  assert.equal(resolved.uncertainty_scopes[0].scope_source, 'resolved-uncertainty');
+});
+
+test('#300 snapshot profile calls keep owner facts, caller metadata and returned results independent', (t) => {
+  const f = fixture(t), secondOwner = 'screen:OTHER-001';
+  const metadata = splitFrontmatter(fs.readFileSync(f.docs.get('screen.md'), 'utf8')).data;
+  f.write('other-screen.md', { ...metadata, artifact_id: 'OTHER-SCREEN', screen_id: 'OTHER-001', domain: 'other',
+    screen_entry: 'src/features/other/screens/Other.tsx', work_execution: { version: 1, units: [{ ...unit(), contracts: ['artifact:OTHER#rules'] }] } }, '## Notes\nSecond owner.');
+  f.write('other-rules.md', { artifact_id: 'OTHER', artifact_type: 'domain-rules', domain: 'other', status: 'draft' }, '## Rules\nAn unconfirmed different contract.');
+  const adoption = JSON.parse(fs.readFileSync(f.overlayFile, 'utf8'));
+  adoption.work_execution.owners.push(secondOwner); fs.writeFileSync(f.overlayFile, JSON.stringify(adoption));
+  const options = f.options(), before = structuredClone(options), first = compareProfiles(options);
+  assert.equal(first.profile_satisfied, true);
+  denied(compareProfiles({ ...options, owner: secondOwner }), 'confirmed-behavior-contract-required');
+  assert.deepEqual(compareProfiles(options), first);
+  assert.deepEqual(options, before, 'snapshot inspection must not freeze or rewrite caller metadata');
+  options.targetIndex.artifacts.get('RULES').fm.status = 'draft';
+  assert.throws(() => compareProfiles(options), /metadata|snapshot|indexed/);
+  assert.deepEqual(f.run(), first, 'a new call resolves current facts after a caller-owned index was changed');
+});
+
+function meetingSource(f, withRegister = true) {
+  const inputId = 'IN-20260922-meeting-001', ref = `input:${inputId}#extracted-facts/01`;
+  const metadata = { input_id: inputId, input_type: 'meeting', source_type: 'meeting', source_ref: 'meeting:profile-source',
+    captured_at: '2026-09-22T00:00:00Z', captured_by: 'test', status: 'captured', affected_domains: ['result'], affected_screens: ['RESULT-001'] };
+  f.inputs.push(f.raw('docs/input.md', md(metadata, '## Extracted Facts\n- An existing selected fact.')));
+  f.change('rules.md', (doc) => doc.body = doc.body.replace('## Rules\n', `## Rules\nSee ${ref}\n`));
+  if (!withRegister) return { inputId, ref };
+  const unrelated = 'IN-20260922-meeting-002';
+  const file = f.raw('unselected-input.md', md({ ...metadata, input_id: unrelated, source_ref: 'meeting:unselected' },
+    '## Extracted Facts\n- A rejected but validated fact.'));
+  f.inputs.push(file);
+  f.raw('docs/register.md', md({ reconciliation_contract: 2, review_profile: 'reconcile-stage04-v1', structured_since: '2026-09-01T00:00:00Z' },
+    `${table(REQUIRED_REGISTER_COLS, [
+      [inputId, 'meeting', 'simple-update×1', 'reconciled', 'accepted', 'artifact:RULES', '-', '-'],
+      [unrelated, 'meeting', 'reject-input', 'reconciled', 'rejected', '-', '-', '-'],
+    ])}\n\n## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, [
+      [inputId, '01', 'compatible-fact', 'simple-update', 'update', 'artifact:RULES#rules', ref, 'inherit', 'statement', 'inherit'],
+      [unrelated, '01', 'reject', 'reject-input', 'reject', '-', `input:${unrelated}#extracted-facts/01`, 'inherit', 'statement', 'inherit'],
+    ])}`));
+  return { inputId, ref, file };
+}
+
+function afterApiContractRead(t, f, change) {
+  const read = fs.readFileSync, state = { changed: false };
+  const hook = t.mock.method(fs, 'readFileSync', function (file, ...args) {
+    const result = read.call(this, file, ...args);
+    if (!state.changed && file === path.join(f.root, 'contracts/result.md')) { state.changed = true; change(); }
+    return result;
+  });
+  return { state, restore: () => hook.mock.restore() };
+}
+
+test('#300 snapshot profile rechecks validation-only input reads before narrowing uncertainty after independent coverage', (t) => {
+  const f = fixture(t), input = meetingSource(f), unknown = nativeUnknown(f), before = f.run();
+  const receipt = { ...before.coverage.sources[0].basis, review_scope: 'reconcile-stage04-v1', coverage: 'complete-for-unit' };
+  const report = f.raw('review.md', `\`\`\`work-coverage\n${JSON.stringify(receipt)}\n\`\`\`\n`);
+  const options = { ...f.options(), coverage_reports: ['review.md'] }, expected = compareProfiles(options);
+  assert.equal(expected.profile_satisfied, true);
+  assert.equal(expected.coverage.sources[0].receipt_state, 'current');
+  assert.equal(expected.read_set.some((entry) => entry.file === 'unselected-input.md'), false);
+  const original = fs.readFileSync(input.file, 'utf8'), open = fs.openSync, state = { changed: false, restored: false };
+  const hook = t.mock.method(fs, 'openSync', function (file, ...args) {
+    const fd = open.call(this, file, ...args), stack = new Error().stack;
+    if (!state.changed && file === report && /at audit \([^\n]*scoped-work-profiles\.mjs:/.test(stack)) {
+      // This report belongs only to the later coverage pass, not applicability.
+      state.changed = true; fs.writeFileSync(input.file, original.replace('## Extracted Facts', '## Removed Facts'));
+    } else if (state.changed && !state.restored && file === unknown.file && stack.includes('scoped-work-uncertainty-scopes.mjs')) {
+      state.restored = true; fs.writeFileSync(input.file, original);
+    }
+    return fd;
+  });
+  try {
+    assert.throws(() => inspectScopedSnapshotProfile(options), /input evidence changed|snapshot changed/);
+    assert.equal(state.changed, true);
+    assert.equal(state.restored, false, 'check private observations before using the binding, not only at final publication');
+  } finally { hook.mock.restore(); }
+});
+
+test('#300 snapshot profile retains validation-only input observations through later API evidence and final publication', (t) => {
+  const f = fixture(t); f.api('behavior'); const input = meetingSource(f), options = f.options(), expected = compareProfiles(options);
+  assert.equal(expected.profile_satisfied, true);
+  assert.equal(expected.read_set.some((entry) => entry.file === 'unselected-input.md'), false,
+    'whole-register validation must not broaden selected evidence or the public read set');
+  const original = fs.readFileSync(input.file, 'utf8');
+  const mutation = afterApiContractRead(t, f, () => fs.writeFileSync(input.file, original.replace('## Extracted Facts', '## Removed Facts')));
+  try {
+    assert.throws(() => inspectScopedSnapshotProfile(options), /input evidence changed|snapshot changed/);
+    assert.equal(mutation.state.changed, true);
+  } finally { mutation.restore(); }
+});
+
+test('#300 snapshot profile retains another unit\'s consulted register absence through later API evidence', (t) => {
+  const f = fixture(t); f.api('behavior'); const input = meetingSource(f, false);
+  f.change('screen.md', ({ fm }) => fm.work_execution.units.push({ ...unit(), id: 'later', contracts: ['artifact:RULES#other'] }));
+  f.change('rules.md', (doc) => doc.body = doc.body.replace(`See ${input.ref}\n`, '').replace('## Other\n', `## Other\nSee ${input.ref}\n`));
+  const options = f.options(), expected = compareProfiles(options);
+  assert.equal(expected.profile_satisfied, true);
+  assert.equal(expected.read_set.some((entry) => entry.file === 'docs/register.md'), false);
+  const mutation = afterApiContractRead(t, f, () => f.raw('docs/register.md', 'A newly appeared register.'));
+  try {
+    assert.throws(() => inspectScopedSnapshotProfile(options), /register appeared/);
+    assert.equal(mutation.state.changed, true);
+  } finally { mutation.restore(); }
+});
+
+test('#300 snapshot profile does not invent observations for an unused input or unconsulted register', (t) => {
+  const f = fixture(t); f.api();
+  const file = path.join(f.root, 'unused-input.md'), options = { ...f.options(), inputArtifacts: [{ file, hasFrontmatter: true, fm: {
+    input_id: 'IN-20260922-meeting-999', input_type: 'meeting', source_type: 'meeting', source_ref: 'meeting:unused',
+    captured_at: '2026-09-22T00:00:00Z', captured_by: 'test', status: 'captured', affected_domains: ['result'], affected_screens: ['RESULT-001'],
+  } }] }, expected = compareProfiles(options);
+  const mutation = afterApiContractRead(t, f, () => {
+    f.raw('unused-input.md', 'An unobserved input appeared.'); f.raw('docs/register.md', 'An unconsulted register appeared.');
+  });
+  try {
+    assert.deepEqual(inspectScopedSnapshotProfile(options), expected);
+    assert.equal(mutation.state.changed, true);
+    assert.equal(expected.read_set.some((entry) => ['unused-input.md', 'docs/register.md'].includes(entry.file)), false);
+  } finally { mutation.restore(); }
 });

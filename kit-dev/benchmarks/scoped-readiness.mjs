@@ -213,7 +213,7 @@ const names=['resolveScopedUnitProjection','resolveScopedDecisionProjection','re
   'resolveScopedBoundaryProjection','resolveScopedApplicabilityProjection','resolveScopedSnapshotApplicabilityProjection',
   'createScopedSnapshotApplicabilitySession',
   'resolveScopedBindingBasis','inspectScopedDecisionBindings','inspectScopedSnapshotDecisionBindings',
-  'inspectScopedProfile','inspectScopedPaths','inspectScopedOwner','inspectScopedSnapshotOwner',
+  'inspectScopedProfile','inspectScopedSnapshotProfile','inspectScopedPaths','inspectScopedOwner','inspectScopedSnapshotOwner',
   'inspectScopedSnapshotSurfaceHosts','inspectScopedSnapshotWorkRequests','scopedBindingBasis',
   'createScopedSourceResolver','validateInputArtifacts','validateCurrentReconciliation'];
 export async function load(url,context,nextLoad){
