@@ -1,5 +1,10 @@
 # Current Roadmap
 
+> 2026-11-12 #300 11차 성능 개선: 첫 raw 표를 읽는 경로는 첫 유효한 표에서 행 구성을 끝내고, v2 Summary 탐색은 canonical header가 일치하는 표의 행만 만든다.
+> 전체 원문의 HTML 주석 제거, 기존 raw 표 문법, strict 표의 column-zero·block 경계와 문서 전체 definition 문맥을 유지한다. 일치하는 Summary는 모두 세므로 중복 표 거부도 유지한다.
+> 파일·metadata·Evidence 검증과 판정·basis bytes는 그대로이며 새 캐시는 없다. 정본: [Reconciliation Contract v2](../frontend-workflow-kit/docs/reference/input-reconciliation.md#reconciliation-contract-v2-opt-in).
+> 재현: [table selection benchmark](benchmarks/table-selection.mjs), [binding-status benchmark](benchmarks/binding-status.mjs) — helper 반복 비용과 실제 CLI 전체 시간을 구분한다.
+
 > 2026-11-11 #300 10차 성능 개선: scoped 공통 정규화에서 set의 엄격한 검증과 member 직렬화를 한 번의 순회로 수행하고, Node 내장 Unicode 검사를 사용한다.
 > surrogate가 없는 문자열 집합은 UTF-8과 같은 순서를 내는 기본 정렬을 사용해 비교마다 만들던 Buffer를 없앤다. 비 BMP 문자가 있거나 Proxy가 관여하는 set은 필요한 기존 비교·재읽기 경로를 유지한다.
 > 전체 member 검증 뒤 중복 판정·오류 순서·순환/희소/accessor/숨은 속성 거부·반환값 격리와 기존 JSON/basis bytes를 유지하며 캐시·판정 재사용은 추가하지 않는다.

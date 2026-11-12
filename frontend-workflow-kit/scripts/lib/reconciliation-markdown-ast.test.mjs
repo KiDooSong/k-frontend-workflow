@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseReconciliationMarkdown, parseReconciliationEvidence, parseReconciliationReferenceView, locateContentTables } from './reconciliation-markdown-ast.mjs';
+import { parseReconciliationMarkdown, parseReconciliationEvidence, parseReconciliationReferenceView, locateContentTables,
+  parseStrictTables, parseStrictTablesWithHeaders, describeHeaderMismatch } from './reconciliation-markdown-ast.mjs';
 
 function section(markdown, slug = 'extracted-facts') {
   const parsed = parseReconciliationMarkdown(markdown);
@@ -228,6 +229,140 @@ test('the same body shares one read-only tree per process; derived views stay pe
   for (const value of [tree, tree.children, tree.children[1], tree.children[1].position.start]) assert.ok(Object.isFrozen(value));
   assert.throws(() => tree.children.push({ type: 'text', value: 'x' }), TypeError);
   assert.notEqual(parseReconciliationMarkdown(body).occurrences, parseReconciliationMarkdown(body).occurrences);
+});
+
+const strictHeaders = ['Input ID', 'Status'];
+const strictTable = (headers = strictHeaders, rows = [['IN-1', 'open']]) => [
+  `| ${headers.join(' | ')} |`,
+  `| ${headers.map(() => '---').join(' | ')} |`,
+  ...rows.map((cells) => `| ${cells.join(' | ')} |`),
+];
+
+test('#300 header-selected tables match full strict-table filtering across Markdown boundaries', () => {
+  const canonical = strictTable(), example = strictTable(['Example', 'Notes'], [['example', 'ignored']]);
+  const cases = [
+    [], ['plain text'], canonical,
+    [...example, '', ...canonical],
+    ['paragraph', ...canonical], ['paragraph', '', ...canonical],
+    ['## Heading', ...canonical], ['---', ...canonical], ['>', ...canonical],
+    ['<!-- boundary -->', ...canonical],
+    canonical.map((line) => ` ${line}`),
+    [canonical[0], canonical[1], ` ${canonical[2]}`],
+    canonical.map((line) => line.slice(1)),
+    canonical.map((line) => `> ${line}`),
+    ['- list item', '', ...canonical.map((line) => `  ${line}`)],
+    ['```md', ...canonical, '```'],
+    canonical.map((line) => `    ${line}`),
+    ['<div>', ...canonical, '</div>'],
+    [...canonical, '', ...example, '', ...strictTable(strictHeaders, [['IN-2', 'resolved']])],
+    ...[
+      ['Input ID', 'inputid'], ['Input ID', 'Status', 'Extra'], ['Status', 'Input ID'],
+      ['input\tID', 'STATUS'], ['**Input ID**', '*Status*'], ['`Input ID`', 'Status'],
+      ['[Input ID](/header)', '![Status](/image)'], ['<em>Input ID</em>', 'Status'],
+    ].map((headers) => strictTable(headers)),
+  ];
+  for (const ending of ['\n', '\r\n', '\r']) for (const [index, lines] of cases.entries()) {
+    const body = lines.join(ending);
+    const expected = parseStrictTables(body).filter((table) => describeHeaderMismatch(table, strictHeaders) === null);
+    assert.deepEqual(parseStrictTablesWithHeaders(body, strictHeaders), expected, `${index}: ${JSON.stringify(ending)}`);
+  }
+});
+
+test('#300 header-selected tables reject malformed headers but preserve accepted header spelling', () => {
+  for (const headers of [
+    ['Input ID', 'inputid'], ['Input ID', 'Status', 'Extra'], ['Status', 'Input ID'],
+    ['`Input ID`', 'Status'], ['<em>Input ID</em>', 'Status'],
+  ]) {
+    assert.deepEqual(parseStrictTablesWithHeaders(strictTable(headers).join('\n'), strictHeaders), [], headers.join(' / '));
+  }
+  const [table] = parseStrictTablesWithHeaders(strictTable(['**input ID**', '*STATUS*']).join('\n'), strictHeaders);
+  assert.deepEqual(table.headers, ['input ID', 'STATUS']);
+  assert.deepEqual(table.rows, [{ 'input ID': 'IN-1', STATUS: 'open' }]);
+});
+
+test('#300 header-selected tables preserve column-zero and explicit block-boundary requirements', () => {
+  const lines = strictTable();
+  for (const body of [
+    `paragraph\n${lines.join('\n')}`,
+    lines.map((line) => ` ${line}`).join('\n'),
+    [lines[0], lines[1], ` ${lines[2]}`].join('\n'),
+    lines.map((line) => `> ${line}`).join('\n'),
+    ['```md', ...lines, '```'].join('\n'),
+  ]) assert.deepEqual(parseStrictTablesWithHeaders(body, strictHeaders), [], body);
+  for (const prefix of ['', 'paragraph\n\n', '## Heading\n', '>\n', '<!-- boundary -->\n']) {
+    const found = parseStrictTablesWithHeaders(prefix + lines.join('\n'), strictHeaders);
+    assert.equal(found.length, 1, prefix);
+    assert.deepEqual(found[0].rows, [{ 'Input ID': 'IN-1', Status: 'open' }], prefix);
+  }
+});
+
+test('#300 header-selected tables retain every matching table in document order', () => {
+  const first = strictTable(strictHeaders, [['IN-1', 'open']]).join('\n');
+  const second = strictTable(strictHeaders, [['IN-2', 'resolved']]).join('\n');
+  const example = strictTable(['Example', 'Notes'], [['ignored', 'example']]).join('\n');
+  const found = parseStrictTablesWithHeaders(`${example}\n\n## First\n${first}\n\n${example}\n\n## Second\n${second}`, strictHeaders);
+  assert.equal(found.length, 2, 'duplicate canonical tables remain visible to the caller');
+  assert.deepEqual(found.map((table) => table.rows[0]['Input ID']), ['IN-1', 'IN-2']);
+  assert.deepEqual(found.map((table) => table.sourceText), [first, second]);
+});
+
+test('#300 header-selected tables preserve escaped cells, short/extra rows and exact source text', () => {
+  for (const ending of ['\n', '\r\n', '\r']) {
+    const source = ['| Input ID | Status |', '|---|---|', '| IN-\\|1 | `a\\|b` |',
+      '| IN-2 |', '| IN-3 | open | extra |'].join(ending);
+    assert.deepEqual(parseStrictTablesWithHeaders(source, strictHeaders), [{
+      headers: ['Input ID', 'Status'],
+      rows: [{ 'Input ID': 'IN-|1', Status: '`a|b`' }, { 'Input ID': 'IN-2', Status: '' },
+        { 'Input ID': 'IN-3', Status: 'open' }],
+      rowCount: 3,
+      sourceText: source,
+    }], JSON.stringify(ending));
+  }
+});
+
+test('#300 header-selected tables retain full-document reference definitions including image alt references', () => {
+  const headers = ['Input ID', 'Target'];
+  for (const ending of ['\n', '\r\n', '\r']) for (const label of [
+    '[Input ID][outside]', '![[Input ID][outside]](/image)',
+  ]) {
+    const lines = strictTable([label, 'Target'], [['IN-1', '![[artifact:EXAMPLE#section/row][outside]](/image)']]);
+    for (const placement of ['before', 'inside', 'after']) {
+      const body = [
+        ...(placement === 'before' ? ['[outside]: /url', ''] : []),
+        '## Summary', ...lines,
+        ...(placement === 'inside' ? ['', '[outside]: /url'] : []),
+        '', '## Following',
+        ...(placement === 'after' ? ['[outside]: /url'] : []),
+      ].join(ending);
+      // This helper filters full-document tables. Unlike the Items-section
+      // helper, it must keep definitions on either side of the selected H2.
+      const expected = parseStrictTables(body).filter((table) => describeHeaderMismatch(table, headers) === null);
+      const found = parseStrictTablesWithHeaders(body, headers);
+      assert.deepEqual(found, expected, `${placement}: ${JSON.stringify(ending)}`);
+      assert.equal(found.length, 1);
+      assert.deepEqual(found[0].headers, headers);
+      assert.deepEqual(found[0].rows, [{ 'Input ID': 'IN-1', Target: 'artifact:EXAMPLE#section/row' }]);
+      assert.equal(found[0].sourceText, lines.join(ending));
+    }
+    assert.deepEqual(parseStrictTablesWithHeaders(lines.join(ending), headers), [], 'an absent definition stays unresolved');
+  }
+});
+
+test('#300 header-selected tables return detached projections without mutating the shared AST', () => {
+  const body = strictTable().join('\n');
+  const full = parseStrictTables(body), native = parseReconciliationReferenceView(body);
+  const expected = structuredClone(full), found = parseStrictTablesWithHeaders(body, strictHeaders);
+  found[0].headers[0] = 'changed';
+  found[0].rows[0]['Input ID'] = 'changed';
+  found[0].rows.push({ 'Input ID': 'added', Status: 'open' });
+  found[0].rowCount = 99;
+  found[0].sourceText = 'changed';
+  found.push({ headers: [], rows: [], rowCount: 0, sourceText: '' });
+  assert.deepEqual(parseStrictTablesWithHeaders(body, strictHeaders), expected);
+  assert.deepEqual(full, expected);
+  assert.deepEqual(parseStrictTables(body), expected);
+  assert.deepEqual(parseReconciliationReferenceView(body), native);
+  assert.deepEqual(strictHeaders, ['Input ID', 'Status']);
 });
 
 test('locateContentTables: strict tables of the content view, at their offsets in the source', () => {
