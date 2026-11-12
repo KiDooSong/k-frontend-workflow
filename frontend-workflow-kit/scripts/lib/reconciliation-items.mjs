@@ -26,7 +26,7 @@
 // file 은 항상 절대경로다. validate.mjs 가 add()/warn() 으로 상대화한다.
 import { col, hasHeader, parseTable, splitRow } from './spec.mjs';
 import { createTextKeyedCache } from './util.mjs';
-import { parseContentSectionTables } from './reconciliation-markdown-ast.mjs';
+import { parseContentSectionTables, parseStrictTablesWithHeaders } from './reconciliation-markdown-ast.mjs';
 import { RECONCILE_STATUS_VALUES, REQUIRED_REGISTER_COLS, reconciliationTableWidthWarnings } from './reconciliation-register.mjs';
 import {
   FIGMA_PRECISION_SOURCE_UNITS,
@@ -50,7 +50,6 @@ import {
   resolveChildRow,
   bodyHasToken,
   stripNonContent,
-  parseStrictTables,
   describeHeaderMismatch,
 } from './reconciliation-target-index.mjs';
 import { analyzeReconciliationWarnings } from './reconciliation-warnings.mjs';
@@ -512,9 +511,7 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
   });
   // canonical Summary 표는 8컬럼 header 와 **exact 일치**(개수·중복·누락·추가·순서)해야 한다 —
   // 중복 header 는 행 object 에서 뒤 셀이 앞 셀을 덮어써 Reconcile Status 등 lifecycle 신호를 가린다.
-  const summaryTables = parseStrictTables(cleanBody).filter(
-    (t) => describeHeaderMismatch(t, REQUIRED_REGISTER_COLS) === null,
-  );
+  const summaryTables = parseStrictTablesWithHeaders(cleanBody, REQUIRED_REGISTER_COLS);
   if (summaryTables.length !== 1) {
     add(
       `RR-SCHEMA-019: canonical Summary 표(정확히 8컬럼: | ${REQUIRED_REGISTER_COLS.join(' | ')} |)는 정확히 1개여야 함 (현재 ${summaryTables.length}개 — 중복/추가 header 표와 fence/주석/indented code/container lazy paragraph 안의 예시는 세지 않음)`,

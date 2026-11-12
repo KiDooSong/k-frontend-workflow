@@ -243,6 +243,85 @@ test('P1: parseTables 가 빈 줄로 구분된 두 표를 병합하지 않고 �
   assert.equal(tables[1].rows[0].ID, 'D-1');
 });
 
+test('#300 parseTable keeps the first valid raw block, including an empty table', () => {
+  const source = ['| orphan |', '', '| invalid | block |', '| not a delimiter |', '',
+    '| Example |', '| --- |', '', '| ID | Status |', '| --- | --- |', '| D-1 | open |'].join('\n');
+  assert.deepEqual(parseTable(source), {
+    headers: ['Example'], rows: [], cell_rows: [], rowCount: 0,
+  });
+  const all = parseTables(source);
+  assert.equal(all.length, 2);
+  assert.deepEqual(all[1].rows, [{ ID: 'D-1', Status: 'open' }]);
+  assert.equal(parseTable('| orphan |\n\n| invalid |\n| not a delimiter |'), null);
+});
+
+test('#300 parseTable preserves raw cells, duplicate headers and fresh return values', () => {
+  const first = ['| ID | Value | Value | Status |', '| --- | --- | --- | --- |',
+    '| D-1 | previous | a \\| b | open | extra |', '| D-2 | short |'].join('\n');
+  const source = `${first}\n\n| Later |\n| --- |\n| ignored |`;
+  const expected = {
+    headers: ['ID', 'Value', 'Value', 'Status'],
+    rows: [{ ID: 'D-1', Value: 'a | b', Status: 'open' }, { ID: 'D-2', Value: '', Status: '' }],
+    cell_rows: [['D-1', 'previous', 'a | b', 'open', 'extra'], ['D-2', 'short']], rowCount: 2,
+  };
+  const parsed = parseTable(source);
+  assert.deepEqual(parsed, expected);
+  parsed.headers[0] = 'changed';
+  parsed.rows[0].Status = 'resolved';
+  parsed.cell_rows[0][0] = 'changed';
+  assert.deepEqual(parseTable(source), expected);
+  assert.deepEqual(parseTables(source)[0], expected);
+});
+
+test('#300 parseTable strips comments across later blocks before selecting its first table', () => {
+  const source = ['| Name | Value |', '| --- | --- |', '| first | keep <!--', '',
+    '| Hidden | Table |', '| --- | --- |', '| ignored | ignored |', '-->|', '',
+    '| Later |', '| --- |', '| second |'].join('\n');
+  assert.deepEqual(parseTable(source), {
+    headers: ['Name', 'Value'], rows: [{ Name: 'first', Value: 'keep' }],
+    cell_rows: [['first', 'keep']], rowCount: 1,
+  });
+  assert.equal(parseTables(source).length, 2);
+  const hiddenFirst = ['<!--', '| Hidden |', '| --- |', '| hidden |', '-->', '',
+    '| Visible |', '| --- |', '| shown |'].join('\n');
+  assert.deepEqual(parseTable(hiddenFirst).rows, [{ Visible: 'shown' }]);
+});
+
+test('#300 parseTable keeps legacy whitespace, fence and line-ending rules', () => {
+  for (const newline of ['\n', '\r\n']) {
+    const source = ['```md', '  | Example |', '\t| :--- |', ' | first |', '```', '',
+      '| ID | Status |', '| --- | --- |', '| D-1 | open |'].join(newline);
+    assert.deepEqual(parseTable(source).rows, [{ Example: 'first' }]);
+    assert.equal(parseTables(source).length, 2);
+  }
+  assert.equal(parseTable('| A |\r| --- |\r| value |'), null, 'bare CR is not a legacy row separator');
+  const source = '| A |\n| --- |\n| before\rafter |\n\n| B |\n| --- |\n| next |';
+  assert.deepEqual(parseTable(source).cell_rows, [['before\rafter']]);
+  assert.equal(parseTables(source).length, 2);
+});
+
+test('#300 parseTable preserves empty bodies and the final row at EOF or a trailing newline', () => {
+  for (const source of ['', '\n', '\r\n', '\r', '<!-- removed -->']) {
+    assert.equal(parseTable(source), null);
+    assert.deepEqual(parseTables(source), []);
+  }
+  const table = '| ID | Status |\n| --- | --- |\n| D-1 | open |';
+  const expected = { headers: ['ID', 'Status'], rows: [{ ID: 'D-1', Status: 'open' }],
+    cell_rows: [['D-1', 'open']], rowCount: 1 };
+  for (const ending of ['', '\n', '\r\n', '\r']) {
+    assert.deepEqual(parseTable(table + ending), expected);
+    assert.deepEqual(parseTables(table + ending), [expected]);
+  }
+});
+
+test('#300 parseTable preserves embedded lone CR when CR precedes a CRLF separator', () => {
+  const source = ['| A |', '| --- |', '| before\rafter |', '', '| B |', '| --- |', '| next |']
+    .join('\r\r\n');
+  assert.deepEqual(parseTable(source), { headers: ['A'], rows: [{ A: 'before\rafter' }],
+    cell_rows: [['before\rafter']], rowCount: 1 });
+  assert.deepEqual(parseTables(source).map((table) => table.cell_rows), [[['before\rafter']], [['next']]]);
+});
+
 test('P1 fail-closed: Open Decisions 시그니처 표가 없으면 sectionHasContent 로 surface', () => {
   // 범례 표만 있고 진짜 결정 표가 없음 → 게이트가 조용히 열리면 안 됨.
   const section = ['| Status | 의미 |', '| --- | --- |', '| open | 결정 대기 |'].join('\n');

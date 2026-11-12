@@ -567,6 +567,22 @@ export function parseStrictTables(text) {
   return locateStrictTables(text).map(({ table }) => table);
 }
 
+// Keep the same full-document AST, root boundaries and header rendering while
+// avoiding row projections for tables the caller would discard by signature.
+export function parseStrictTablesWithHeaders(text, canonicalCols) {
+  const source = String(text || '');
+  const rootChildren = sharedTree(source).children || [];
+  return rootChildren.flatMap((node, index) => {
+    if (node.type !== 'table') return [];
+    const headerRow = node.children?.[0];
+    if (!headerRow) return [];
+    const headers = (headerRow.children || []).map((cell) => cellText(cell).trim());
+    if (describeHeaderMismatch({ headers }, canonicalCols) !== null) return [];
+    const table = rootTable(source, node, rootChildren[index - 1] || null);
+    return table ? [table] : [];
+  });
+}
+
 // Items historically runs stripNonContent -> splitSectionOccurrences -> parseStrictTables
 // on the selected section. Keep that content view, but share its tree between the
 // heading scan and table extraction instead of parsing the section a second time (#300).
