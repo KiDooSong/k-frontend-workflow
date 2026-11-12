@@ -15,7 +15,7 @@ const suites = ['scoped-work-refs.test.mjs', 'scoped-work-sources.test.mjs',
   'scoped-work-projection.test.mjs', 'scoped-work-decisions.test.mjs', 'scoped-work-boundaries.test.mjs', 'scoped-work-uncertainty.test.mjs',
   'scoped-work-applicability.test.mjs', 'scoped-work-basis.test.mjs', 'scoped-work-bindings.test.mjs', 'scoped-work-transitions.test.mjs',
   'scoped-work-git-transitions.test.mjs', 'scoped-work-coverage.test.mjs', 'scoped-work-receipts.test.mjs', 'scoped-work-source-relations.test.mjs', 'scoped-work-input-coverage.test.mjs', 'scoped-work-profiles.test.mjs', 'scoped-work-paths.test.mjs', 'scoped-work-decision-scopes.test.mjs', 'scoped-work-owner.test.mjs'];
-const runtime = ['scoped-work-request.mjs', 'scoped-work-declarations.mjs', 'scoped-work-authored.mjs', 'reconciliation-markdown-ast.mjs', 'scoped-work-binding-status.mjs', 'scoped-work-source-state.mjs',
+const runtime = ['util.mjs', 'frontmatter-syntax.mjs', 'scoped-work-request.mjs', 'scoped-work-declarations.mjs', 'scoped-work-authored.mjs', 'spec.mjs', 'reconciliation-items.mjs', 'reconciliation-markdown-ast.mjs', 'scoped-work-binding-status.mjs', 'scoped-work-source-state.mjs',
   ...suites.map((name) => name.replace('.test.mjs', '.mjs'))];
 // This regression exercises several real modules, rather than a matching .mjs.
 const resolverSuites = [...suites, 'scoped-work-generated.test.mjs', 'scoped-work-subsections.test.mjs', 'scoped-work-retired-targets.test.mjs'];
@@ -83,6 +83,21 @@ test('D packed: real reference, source, mapping, API, normalization, graph trave
     assert.match(syntax.stdout, new RegExp(`^# ${metric} 0\\r?$`, 'm'), syntax.stdout);
   }
   t.diagnostic('packed input syntax subprocess: all 8 body extraction/metadata validation and observed-read regressions passed');
+  const metadata = checkedNode(['--test', '--test-reporter=tap', '--test-name-pattern=^#300 frontmatter',
+    path.join(lib, 'frontmatter-syntax.test.mjs'), path.join(lib, 'util.test.mjs')], packed, env);
+  assert.match(metadata.stdout, /^# pass 21\r?$/m, metadata.stdout);
+  for (const metric of ['fail', 'cancelled', 'todo']) {
+    assert.match(metadata.stdout, new RegExp(`^# ${metric} 0\\r?$`, 'm'), metadata.stdout);
+  }
+  t.diagnostic('packed frontmatter subprocess: all 21 syntax reuse, fallback diagnostics, bounded retention and fresh-value regressions passed');
+  const tables = checkedNode(['--test', '--test-reporter=tap',
+    '--test-name-pattern=^#300 (?:parseTable|header-selected tables)',
+    path.join(lib, 'spec.test.mjs'), path.join(lib, 'reconciliation-markdown-ast.test.mjs')], packed, env);
+  assert.match(tables.stdout, /^# pass 13\r?$/m, tables.stdout);
+  for (const metric of ['fail', 'cancelled', 'todo']) {
+    assert.match(tables.stdout, new RegExp(`^# ${metric} 0\\r?$`, 'm'), tables.stdout);
+  }
+  t.diagnostic('packed table selection subprocess: all 13 raw-table and strict-header regressions passed');
   // The fixture data remains outside the payload. KIT_ROOT in this copied
   // driver resolves to packed, so both public CLIs execute shipped code only.
   const cli = checkedNode(['--test', '--test-reporter=tap', '--test-name-pattern=^(?:(#282|#284) CLI:|#300 binding-status:)', path.join(lib, cliSuite)], packed,
@@ -113,5 +128,7 @@ test('D resolver suites stay wired to both package commands and existing focused
   assert.match(workflow, /run: node --test scripts\/lib\/scoped-work-\*\.test\.mjs/);
   const macos = workflow.slice(workflow.indexOf('  macos-smoke:'));
   assert.ok(macos.includes('scripts/lib/scoped-work-*.test.mjs'));
+  for (const name of ['test', 'test:spec']) assert.ok(pkg.scripts[name].includes('scripts/lib/frontmatter-syntax.test.mjs'));
+  assert.ok(macos.includes('scripts/lib/frontmatter-syntax.test.mjs'));
   assert.ok(macos.includes('scripts/lib/current-work-snapshot.test.mjs'), 'retain existing C regression');
 });

@@ -65,10 +65,22 @@ export function splitRow(line) {
     .map((c) => c.replace(/\\\|/g, '|').trim()); // `\|` → 리터럴 `|` 로 복원
 }
 
+// Match split(/\r?\n/) lazily: a lone CR stays in its line, including at EOF.
+function* rawTableLines(text) {
+  let start = 0;
+  let newline;
+  while ((newline = text.indexOf('\n', start)) !== -1) {
+    const end = newline > start && text[newline - 1] === '\r' ? newline - 1 : newline;
+    yield text.slice(start, end);
+    start = newline + 1;
+  }
+  yield text.slice(start);
+}
+
 // 섹션 텍스트의 모든 마크다운 표 블록을 파싱한다.
 // 빈 줄/비-표 라인이 표 블록을 종료한다 — 한 섹션의 "범례/예시 표 → 빈 줄 → 진짜 표"가
 // 하나로 병합돼 진짜 표의 행이 첫 표 헤더로 잘못 매핑되며 조용히 사라지던 결함(fail-open)을 막는다.
-export function parseTables(sectionText) {
+function readTables(sectionText, firstOnly = false) {
   if (!sectionText) return [];
   const clean = stripComments(sectionText);
   const blocks = [];
@@ -77,10 +89,15 @@ export function parseTables(sectionText) {
     if (cur.length) blocks.push(cur);
     cur = [];
   };
-  for (const raw of clean.split(/\r?\n/)) {
+  const lines = firstOnly && typeof clean === 'string' ? rawTableLines(clean) : clean.split(/\r?\n/);
+  for (const raw of lines) {
     const line = raw.trim();
     if (line.startsWith('|')) cur.push(line);
-    else flush(); // 빈 줄 포함 비-표 라인 → 현재 표 블록 종료
+    else {
+      const firstComplete = firstOnly && cur.length >= 2 && /^\|?[\s:|-]+\|?$/.test(cur[1]);
+      flush(); // 빈 줄 포함 비-표 라인 → 현재 표 블록 종료
+      if (firstComplete) break;
+    }
   }
   flush();
 
@@ -109,9 +126,15 @@ export function parseTables(sectionText) {
   return tables;
 }
 
+export function parseTables(sectionText) {
+  return readTables(sectionText);
+}
+
 // 섹션의 첫 번째 마크다운 표 (하위호환). 특정 표가 필요하면 parseTables + pickTableBySignature.
 export function parseTable(sectionText) {
-  const tables = parseTables(sectionText);
+  // Strip comments with the same whole-source scope, then stop after the first
+  // valid block instead of constructing rows for every later table we discard.
+  const tables = readTables(sectionText, true);
   return tables.length ? tables[0] : null;
 }
 

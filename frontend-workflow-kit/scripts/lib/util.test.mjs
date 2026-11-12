@@ -99,6 +99,67 @@ test('#300 full frontmatter parsing still returns YAML values, alias identity an
   }
 });
 
+test('#300 frontmatter integration: changed YAML is observed even when the Markdown body is unchanged', () => {
+  const body = '## Facts\n- Identical body\n';
+  const before = `---\nstatus: draft\nsource: {revision: one}\n---\n${body}`;
+  const after = `---\nstatus: ready\nsource: {revision: two}\n---\n${body}`;
+  for (let pass = 0; pass < 2; pass++) {
+    assert.deepEqual(splitFrontmatter(before), {
+      data: { status: 'draft', source: { revision: 'one' } }, body, hasFrontmatter: true,
+    });
+    assert.deepEqual(splitFrontmatter(after), {
+      data: { status: 'ready', source: { revision: 'two' } }, body, hasFrontmatter: true,
+    });
+  }
+});
+
+test('#300 frontmatter integration: reused YAML preserves current body bytes and isolates returned metadata', () => {
+  const yaml = 'input_id: IN-20261112-meeting-001\nsource: {values: [one, two]}';
+  const bodies = ['## Facts\n- original\n', '\r\n## Facts\r\n- changed 😀  \r\n',
+    '\ufeff## Facts\r- retained\r\n---\n'];
+  for (const body of bodies) {
+    const parsed = splitFrontmatter(`\ufeff---\n${yaml}\n---\n${body}`);
+    assert.equal(parsed.body, body);
+    assert.equal(parsed.hasFrontmatter, true);
+    assert.deepEqual(parsed.data, yamlParse(yaml));
+    parsed.data.source.values.push('caller mutation');
+    parsed.data.input_id = 'changed';
+  }
+  assert.deepEqual(splitFrontmatter(`---\n${yaml}\n---\n${bodies[0]}`).data, yamlParse(yaml));
+});
+
+test('#300 frontmatter integration: falsy YAML and missing frontmatter keep fresh fallback objects', () => {
+  for (const yaml of ['null', 'false', '0', '-0', '.nan', '""', '# empty document']) {
+    const source = `---\n${yaml}\n---\nbody`;
+    const first = splitFrontmatter(source);
+    assert.deepEqual(first, { data: {}, body: 'body', hasFrontmatter: true });
+    first.data.changed = true;
+    const second = splitFrontmatter(source);
+    assert.deepEqual(second, { data: {}, body: 'body', hasFrontmatter: true });
+    assert.notEqual(first.data, second.data);
+  }
+  const first = splitFrontmatter('plain body');
+  first.data.changed = true;
+  assert.deepEqual(splitFrontmatter('plain body'), { data: {}, body: 'plain body', hasFrontmatter: false });
+});
+
+test('#300 frontmatter integration: warmed valid metadata cannot hide later parsing errors', () => {
+  const body = '## Facts\n- still present\n';
+  const valid = `---\nstatus: draft\n---\n${body}`;
+  assert.deepEqual(splitFrontmatter(valid).data, { status: 'draft' });
+  for (const yaml of ['status: [unclosed', 'status: one\nstatus: two', 'status: *missing']) {
+    let expected;
+    try { yamlParse(yaml); } catch (error) { expected = String(error.message || error); }
+    assert.equal(typeof expected, 'string');
+    for (let pass = 0; pass < 2; pass++) {
+      assert.deepEqual(splitFrontmatter(`---\n${yaml}\n---\n${body}`), {
+        data: {}, body, hasFrontmatter: true, parseError: expected,
+      });
+    }
+  }
+  assert.deepEqual(splitFrontmatter(valid), { data: { status: 'draft' }, body, hasFrontmatter: true });
+});
+
 // symlink 를 우리가 직접 만들어 macOS 가 아니어도 같은 시나리오를 재현한다.
 function tmpdir(t) {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'fwk-util-')));

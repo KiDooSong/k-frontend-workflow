@@ -1,5 +1,20 @@
 # Current Roadmap
 
+> 2026-11-12 #300 12차 성능 개선: 같은 YAML frontmatter의 반복 디코딩을 제한된 프로세스 내부 구문 캐시로 줄인다.
+> 현재 파일 읽기와 metadata/body 비교·최종 변경 검사는 유지하며, 정확히 같은 YAML 원문에만 독립된 반환값을 재생성한다. 본문·AST·판정은 보관하지 않는다.
+> 기본 보관 한도는 복사한 UTF-16 원문 키와 직렬화 결과 합계 4 MiB·2,048개이며 전체 RSS 한도가 아니다. 경고·오류·명시적 태그/지시문·alias·복합 키는 같은 한도 안에 경로 표지만 보관하고 매번 기존 YAML parser를 실행한다.
+> 기존 body·parseError·객체 격리·basis/checkpoint 계약과 authority는 유지한다. 재현: [frontmatter benchmark](benchmarks/frontmatter.mjs), [실제 binding-status CLI](benchmarks/binding-status.mjs) — helper 비용과 전체 실행 시간을 구분하고 YAML 두 진입점의 실제 파싱을 함께 센다.
+
+> 2026-11-12 #300 11차 성능 개선: 첫 raw 표를 읽는 경로는 첫 유효한 표에서 행 구성을 끝내고, v2 Summary 탐색은 canonical header가 일치하는 표의 행만 만든다.
+> 전체 원문의 HTML 주석 제거, 기존 raw 표 문법, strict 표의 column-zero·block 경계와 문서 전체 definition 문맥을 유지한다. 일치하는 Summary는 모두 세므로 중복 표 거부도 유지한다.
+> 파일·metadata·Evidence 검증과 판정·basis bytes는 그대로이며 새 캐시는 없다. 정본: [Reconciliation Contract v2](../frontend-workflow-kit/docs/reference/input-reconciliation.md#reconciliation-contract-v2-opt-in).
+> 재현: [table selection benchmark](benchmarks/table-selection.mjs), [binding-status benchmark](benchmarks/binding-status.mjs) — helper 반복 비용과 실제 CLI 전체 시간을 구분한다.
+
+> 2026-11-11 #300 10차 성능 개선: scoped 공통 정규화에서 set의 엄격한 검증과 member 직렬화를 한 번의 순회로 수행하고, Node 내장 Unicode 검사를 사용한다.
+> surrogate가 없는 문자열 집합은 UTF-8과 같은 순서를 내는 기본 정렬을 사용해 비교마다 만들던 Buffer를 없앤다. 비 BMP 문자가 있거나 Proxy가 관여하는 set은 필요한 기존 비교·재읽기 경로를 유지한다.
+> 전체 member 검증 뒤 중복 판정·오류 순서·순환/희소/accessor/숨은 속성 거부·반환값 격리와 기존 JSON/basis bytes를 유지하며 캐시·판정 재사용은 추가하지 않는다.
+> 정본: [scope basis](../frontend-workflow-kit/docs/reference/scoped-work.md). 재현: [normalization benchmark](benchmarks/scoped-normalization.mjs), [실제 binding-status CLI](benchmarks/binding-status.mjs) — CLI 비교는 같은 파일시스템의 runtime 복사본으로 제한한다.
+
 > 2026-11-11 #300 9차 성능 개선: `binding-status`의 owner별 applicability 계산 안에서 unit projection을 한 번 만들고, Decision·Unknown/Conflict 관계를 확장할 때 재사용한다.
 > 관계의 전체 고정점 계산과 scope-basis-v2·상태/차단 판정은 유지한다. 재사용 전 unit read set·실제 확인한 register 부재·검증 중 읽은 입력 원문을 확인하고, 관계 단계 사이 canonical layout/preset과 반환 전 전체 파일을 다시 검증한다.
 > 검증용 Evidence를 읽은 미선택 입력과 unit 사이에 나타난 register도 감지한다. owner·호출 사이 공유와 외부 projection 주입은 없으며 standalone inspector는 독립 재계산을 유지한다.
