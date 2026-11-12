@@ -155,6 +155,65 @@ test('D34 CLI: current and scoped documents stay separate; a mixed document is a
   assert.deepEqual(adopted.denials.map((entry) => entry.code), ['CW-WORK-SELECTION-REQUIRED']);
 });
 
+test('#300 scoped readiness CLI: matching Decision bindings do not repeat whole-owner projections', (t) => {
+  const r = repository(t), owner = 'screen:RESULT-001', ids = Array.from({ length: 6 }, (_, index) => `D-${index + 1}`);
+  const binding = (id) => ({ decision_id: id, owner, known_units: ['known'], blocks: [],
+    basis_digest: `sha256:${'0'.repeat(64)}`, approval_ref: 'review:synthetic-readiness-scope' });
+  r.edit('screen-1.md', (doc) => {
+    doc.fm.decision_work_scopes = { version: 1, bindings: [binding(ids[0])] };
+    doc.body += `\n\n## Open Decisions\n${table(['ID', 'Decision Needed', 'Options', 'Blocking Mode', 'Owner', 'Status'],
+      ids.map((id) => [id, `Choose ${id}?`, 'A / B', 'api-integrated-ui', 'PM', 'open']))}`;
+  });
+  const work = r.request([{ owner, authority: 'scoped', unit: 'known', targets: [{ path: ENTRY('RESULT-001'), change: 'M' }] }]);
+  const countsFile = path.join(r.outside, 'readiness-counts.json'), preload = path.join(r.outside, 'count-readiness.cjs');
+  // Observe actual policy reads in unit construction inside the spawned CLI.
+  // Fresh audits are still required and may grow with the number of bindings;
+  // they must not be mistaken for another full applicability computation.
+  fs.writeFileSync(preload, `
+const fs = require('node:fs'), path = require('node:path');
+const open = fs.openSync;
+let unitProjectionPolicyReads = 0;
+fs.openSync = function(file, ...args) {
+  if (typeof file === 'string') {
+    const parts = path.normalize(file).split(path.sep);
+    if (parts.includes('checkout') && parts.slice(-2).join('/') === '.kit/policy.yaml' &&
+        new Error().stack.includes('at resolveScopedUnitProjection')) unitProjectionPolicyReads++;
+  }
+  return open.call(this, file, ...args);
+};
+require('node:module').syncBuiltinESMExports();
+process.on('exit', () => fs.writeFileSync(${JSON.stringify(countsFile)}, JSON.stringify({ unitProjectionPolicyReads })));
+`);
+  const measure = () => {
+    const run = spawnSync(process.execPath, ['--require', preload, path.join(KIT_ROOT, 'scripts/readiness.mjs'),
+      '--work', work, '--root', r.root, '--docs', DOCS, '--src', 'src', '--policy', '.kit/policy.yaml',
+      '--manifest', '.kit/manifest.yaml', '--layout', '.kit/layout.yaml', '--json'],
+    { cwd: r.root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout: 120000 });
+    const report = r.json(run), counts = JSON.parse(fs.readFileSync(countsFile, 'utf8'));
+    assert.ok(counts.unitProjectionPolicyReads > 0, 'the diagnostic must observe real snapshot unit construction');
+    return { report, ...counts };
+  };
+  r.commit('six open Decisions with one recorded binding');
+  const one = measure();
+  r.edit('screen-1.md', ({ fm }) => { fm.decision_work_scopes.bindings = ids.map(binding); });
+  r.commit('record bindings for all six existing Decisions');
+  const before = fs.readFileSync(r.docs.get('screen-1.md')), many = measure();
+  assert.equal(many.unitProjectionPolicyReads, one.unitProjectionPolicyReads,
+    'matching Decision bindings must reuse their owner projection instead of rebuilding its units');
+  const { snapshot: oneSnapshot, ...onePublic } = one.report, { snapshot: manySnapshot, ...manyPublic } = many.report;
+  assert.deepEqual(manyPublic, onePublic, 'missing and stale scopes retain the same full public readiness result and conservative gates');
+  assert.deepEqual([many.report.authority, many.report.ready, many.report.approval_verified, many.report.semantic_coverage_verified],
+    ['scoped', false, false, false]);
+  assert.deepEqual(many.report.requests[0].evidence.decisions.map((entry) => [entry.decision, entry.scope_source, entry.blocking_units]),
+    ids.map((id) => [`decision:${id}@HOST-1`, 'conservative-default', ['known']]));
+  assert.notEqual(manySnapshot.commit, oneSnapshot.commit, 'fresh HEAD and authority bytes remain independently pinned');
+  assert.notDeepEqual(manySnapshot.authority_read_set, oneSnapshot.authority_read_set);
+  assert.deepEqual(manySnapshot.work_request, oneSnapshot.work_request);
+  assert.deepEqual(r.json(r.cli('readiness.mjs', work, '--json')), many.report, 'instrumentation changes neither output nor repeated-call results');
+  assert.deepEqual(fs.readFileSync(r.docs.get('screen-1.md')), before);
+  assert.equal(execFileSync('git', ['status', '--porcelain'], { cwd: r.root, encoding: 'utf8' }), '');
+});
+
 // Synthetic v2 Items and review attachments on real committed Git snapshots.
 // No receipt here authenticates a reviewer or represents a consumer dry-run.
 function sourceAdmissionFixture(t, result) {

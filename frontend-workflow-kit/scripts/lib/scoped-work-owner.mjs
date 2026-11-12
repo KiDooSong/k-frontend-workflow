@@ -6,7 +6,7 @@ import { ownerParts, readCurrentBytes, hashBytes } from './current-work-request.
 import { ScopedWorkContractError, workUnitId } from './scoped-work-request.mjs';
 import { inspectScopedProfile } from './scoped-work-profiles.mjs';
 import { inspectScopedPaths } from './scoped-work-paths.mjs';
-import { inspectScopedDecisionScopes } from './scoped-work-decision-scopes.mjs';
+import { inspectScopedDecisionScopes, inspectScopedSnapshotDecisionScopes } from './scoped-work-decision-scopes.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
 
 const fail = (message) => { throw new ScopedWorkContractError(`SW-OWNER: ${message}`); };
@@ -14,6 +14,16 @@ const same = (left, right) => scopeJson(left) === scopeJson(right);
 const byBytes = (a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b));
 
 export function inspectScopedOwner(options = {}) {
+  return inspectOwner(options, false);
+}
+
+// The execution adapter owns this raw Git baseline. Only Decision basis
+// calculation is reused; profile/path checks and every final audit stay local.
+export function inspectScopedSnapshotOwner(options = {}) {
+  return inspectOwner(options, true);
+}
+
+function inspectOwner(options, snapshot) {
   const { owner, unit, projectRoot } = options;
   ownerParts(owner); workUnitId(unit);
   // Only canonical resource selectors are inputs. Serialized intermediate
@@ -24,7 +34,7 @@ export function inspectScopedOwner(options = {}) {
   }
   const profile = inspectScopedProfile(options);
   const paths = inspectScopedPaths(options);
-  const decisions = inspectScopedDecisionScopes(options);
+  const decisions = snapshot ? inspectScopedSnapshotDecisionScopes(options) : inspectScopedDecisionScopes(options);
   if (profile.owner !== owner || paths.owner !== owner || decisions.owner !== owner ||
     profile.unit !== unit || paths.unit !== unit || profile.kind !== paths.kind) fail('owner/unit observations disagree');
   const checks = decisions.unit_checks.filter((entry) => entry.unit === unit);

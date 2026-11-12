@@ -25,7 +25,7 @@ import {
 } from './current-work-execution-core.mjs';
 import { readWorkRequestFile, resolveWorkResources, workResourceRecords, baselineWorkflowState, baselineWorkPolicy } from './current-work-execution-preflight.mjs';
 import { normalizeScopedWorkRequestSyntax } from './scoped-work-request.mjs';
-import { inspectScopedWorkRequests } from './scoped-work-composition.mjs';
+import { inspectScopedSnapshotWorkRequests } from './scoped-work-composition.mjs';
 
 const fail = (message) => { throw new CurrentWorkExecutionError(message, 'SW-INPUT'); };
 
@@ -141,7 +141,7 @@ export function prepareScopedWork({ work, root, docs, src, policy, manifest, lay
         reconcile_status: rows[0]?.reconcileStatus || null, reconcile_result: rows[0]?.result || null };
     });
 
-    const composition = inspectScopedWorkRequests({
+    const composition = inspectScopedSnapshotWorkRequests({
       request: parsed.value, projectRoot: baselineRoot, docsDir: docsRoot, kitRoot: baselineKitRoot,
       policyFile: resources.policy.baseline, layoutFile: resources.layout.baseline, manifestFile: resources.manifest.baseline,
       ...(resources.policy_overlay ? { policyOverlayFile: resources.policy_overlay.baseline } : {}),

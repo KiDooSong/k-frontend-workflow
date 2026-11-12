@@ -16,7 +16,7 @@ import { ScopedWorkContractError, workPath, workUnitId } from './scoped-work-req
 import { resolveScopedApplicabilityProjection } from './scoped-work-applicability.mjs';
 import { resolveScopedMappingEvidence } from './scoped-work-mapping.mjs';
 import { inspectScopedProfile } from './scoped-work-profiles.mjs';
-import { inspectScopedDecisionScopes } from './scoped-work-decision-scopes.mjs';
+import { inspectScopedDecisionScopes, inspectScopedSnapshotDecisionScopes } from './scoped-work-decision-scopes.mjs';
 import { COMPONENT_MAPPING_COLUMNS } from './mapping-provenance.mjs';
 import { concretePathIssue, globMatches } from './path-backstop.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
@@ -49,6 +49,16 @@ function componentPath(selection) {
 }
 
 export function inspectScopedSurfaceHosts(options = {}) {
+  return inspectSurfaceHosts(options, false);
+}
+
+// Each host resolves its own Decision applicability on the owned raw baseline;
+// no surface/peer projection or successful prerequisite is shared with it.
+export function inspectScopedSnapshotSurfaceHosts(options = {}) {
+  return inspectSurfaceHosts(options, true);
+}
+
+function inspectSurfaceHosts(options, snapshot) {
   if (!options || typeof options !== 'object' || Array.isArray(options)) fail('options object required');
   for (const key of Object.keys(options)) if (!OPTION_KEYS.has(key)) fail(`unsupported caller option ${key}`);
   const { owner, unit, projectRoot, docsDir, kitRoot, policyFile, layoutFile, manifestFile, targetIndex, inputArtifacts = [] } = options;
@@ -210,7 +220,7 @@ export function inspectScopedSurfaceHosts(options = {}) {
       // Shared targets belong to the surface, not to a host's private path roots.
       // Host path-policy success is neither fabricated nor borrowed here.
       profile = inspectScopedProfile(args); absorb(profile);
-      decisionScopes = inspectScopedDecisionScopes(args); absorb(decisionScopes);
+      decisionScopes = snapshot ? inspectScopedSnapshotDecisionScopes(args) : inspectScopedDecisionScopes(args); absorb(decisionScopes);
       if (profile.owner !== link.member || profile.unit !== link.host_unit || profile.kind !== declared.kind ||
         decisionScopes.owner !== link.member) fail('host inspector identity mismatch');
       const checks = decisionScopes.unit_checks.filter((entry) => entry.unit === link.host_unit);

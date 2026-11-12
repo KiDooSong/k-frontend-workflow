@@ -7,7 +7,8 @@ import { splitFrontmatter } from './util.mjs';
 import { loadInputArtifact } from './input-artifact.mjs';
 import { buildReconciliationTargetIndex } from './reconciliation-target-index.mjs';
 import { resolveScopedBindingBasis } from './scoped-work-basis.mjs';
-import { inspectScopedDecisionBindings, inspectScopedSnapshotBindings } from './scoped-work-bindings.mjs';
+import { inspectScopedDecisionBindings, inspectScopedSnapshotBindings,
+  inspectScopedSnapshotDecisionBindings } from './scoped-work-bindings.mjs';
 import { inspectScopedUncertaintyScopes } from './scoped-work-uncertainty-scopes.mjs';
 import { REQUIRED_ITEM_COLS } from './reconciliation-items.mjs';
 import { REQUIRED_REGISTER_COLS } from './reconciliation-register.mjs';
@@ -283,7 +284,7 @@ test('D bindings: inspection never changes decision, binding, resource bytes or 
   const before = snapshot(); f.run(); assert.deepEqual(snapshot(), before);
 });
 
-test('#300 snapshot bindings match both standalone inspectors for mixed states and multiple bindings', (t) => {
+function mixedBindingFixture(t) {
   const f = fixture(t);
   const ids = ['D-ONE', 'D-TWO', 'D-MISSING', 'D-OLD-UNITS', 'D-RESOLVED'];
   f.change('screen.md', (doc) => {
@@ -300,6 +301,11 @@ test('#300 snapshot bindings match both standalone inspectors for mixed states a
     doc.body = body(ids.map((id) => row(id, id === 'D-RESOLVED' ? 'resolved' : 'open')));
   });
   f.recordDigest();
+  return f;
+}
+
+test('#300 snapshot bindings match both standalone inspectors for mixed states and multiple bindings', (t) => {
+  const f = mixedBindingFixture(t);
   const options = f.options();
   const expected = { decisions: inspectScopedDecisionBindings(options), uncertainty: inspectScopedUncertaintyScopes(options) };
   const actual = inspectScopedSnapshotBindings(options);
@@ -314,6 +320,49 @@ test('#300 snapshot bindings match both standalone inspectors for mixed states a
   assert.equal(actual.uncertainty.checks.length, 2);
   assert.equal(actual.uncertainty.approval_verified, false);
   assert.deepEqual(actual.decisions.checks.find((check) => check.status === 'resolved').blocking_units, []);
+});
+
+test('#300 readiness Decision snapshot matches complete mutable results for mixed and absent bindings', (t) => {
+  const f = mixedBindingFixture(t), options = f.options();
+  const expected = inspectScopedDecisionBindings(options);
+  const actual = inspectScopedSnapshotDecisionBindings(options);
+  assert.deepEqual(actual, expected, 'retain every state, application, basis component and observation');
+  assert.deepEqual(new Set(actual.checks.map((check) => check.binding_state)),
+    new Set(['missing', 'stale-known-units', 'current-unverified', 'stale-basis']));
+  assert.deepEqual(actual.checks.find((check) => check.status === 'resolved').blocking_units, []);
+  assert.equal(actual.checks.every((check) => check.approval_verified === false), true);
+
+  const absent = fixture(t);
+  absent.change(HOME, ({ fm }) => { delete fm.decision_work_scopes; });
+  assert.deepEqual(inspectScopedSnapshotDecisionBindings(absent.options()), absent.run());
+  absent.change('screen.md', ({ fm }) => { delete fm.decision_refs; });
+  const empty = inspectScopedSnapshotDecisionBindings(absent.options());
+  assert.deepEqual(empty, absent.run());
+  assert.deepEqual(empty.checks, []);
+  assert.equal(Object.hasOwn(empty, 'ready'), false, 'a Decision-only observation is not execution authority');
+});
+
+test('#300 readiness Decision snapshot keeps owners, mutable results and subsequent file evaluations independent', (t) => {
+  const f = fixture(t);
+  const policy = JSON.parse(fs.readFileSync(f.overlayFile, 'utf8'));
+  policy.work_execution.owners.push(SECOND); fs.writeFileSync(f.overlayFile, JSON.stringify(policy));
+  f.write('second.md', { artifact_id: 'SCREEN-RESULT-002', artifact_type: 'screen-spec', screen_id: 'RESULT-002', domain: 'result',
+    status: 'draft', screen_entry: `${ROOT}/screens/RESULT-002.tsx`, decision_refs: ['D-TWO'],
+    work_execution: { version: 1, units: [unit('second')] } }, '## Notes\nAnother owner.');
+  f.change(HOME, ({ fm }) => fm.decision_work_scopes.bindings.push(binding({ decision_id: 'D-TWO', owner: SECOND,
+    known_units: ['second'], blocks: [] })));
+  const first = inspectScopedSnapshotDecisionBindings(f.options()), before = structuredClone(first);
+  const second = inspectScopedSnapshotDecisionBindings(f.options(SECOND));
+  assert.deepEqual(second, f.run(SECOND));
+  assert.deepEqual(second.known_units, ['second']);
+  assert.deepEqual(second.checks.map((check) => check.decision), ['decision:D-TWO@open-decision-register']);
+  assert.deepEqual(first, before);
+  first.checks[0].declared_binding.blocks.push('caller-only'); first.read_set.length = 0;
+  assert.deepEqual(inspectScopedSnapshotDecisionBindings(f.options()), before);
+  f.change(HOME, (doc) => { doc.body = doc.body.replace('Choose D-ONE.', 'Changed D-ONE contract.'); });
+  const changed = inspectScopedSnapshotDecisionBindings(f.options());
+  assert.deepEqual(changed, f.run());
+  assert.notEqual(changed.checks[0].computed_basis_digest, before.checks[0].computed_basis_digest);
 });
 
 test('#300 snapshot bindings keep owners and successive reports independent', (t) => {
@@ -578,5 +627,114 @@ test('#300 snapshot unit reuse does not observe an input file whose body was nev
     assert.deepEqual(inspectScopedSnapshotBindings(options), expected);
     assert.equal(mutation.state.changed, true);
     assert.equal(expected.decisions.read_set.some((entry) => entry.file === 'unused-input.md'), false);
+  } finally { mutation.restore(); }
+});
+
+// This is after applicability and the canonical binding home have been read.
+// A second serialization can restore a transient edit, so a final-only check
+// cannot substitute for checking the observation before the next basis reuse.
+function afterFirstDecisionBasis(t, change, restore) {
+  const from = Buffer.from, state = { changed: false, restored: false };
+  const hook = t.mock.method(Buffer, 'from', function (value, ...args) {
+    const result = from.call(this, value, ...args);
+    if (typeof value === 'string' && value.startsWith('{"basis_version":2,"binding":')) {
+      if (!state.changed) { state.changed = true; change(); }
+      else if (restore && !state.restored) { state.restored = true; restore(); }
+    }
+    return result;
+  });
+  return { state, restore: () => hook.mock.restore() };
+}
+
+for (const target of ['decision home', 'contract', 'policy']) {
+  test(`#300 readiness Decision snapshot rechecks ${target} after basis capture`, (t) => {
+    const f = fixture(t), options = f.options();
+    const file = target === 'decision home' ? f.docs.get(HOME) : target === 'contract' ? f.docs.get('rules.md') : f.policyFile;
+    const mutation = afterFirstDecisionBasis(t, () => fs.appendFileSync(file, '\nchanged after basis capture\n'));
+    try {
+      assert.throws(() => inspectScopedSnapshotDecisionBindings(options), /changed|differs|snapshot/i);
+      assert.equal(mutation.state.changed, true);
+    } finally { mutation.restore(); }
+  });
+}
+
+for (const kind of ['typed', 'native']) {
+  test(`#300 readiness Decision snapshot retains absent ${kind} registers through binding evaluation`, (t) => {
+    const f = fixture(t), { registerFile, options } = optionalRegister(f, kind);
+    if (kind === 'native') options.registerFile = 'docs/register.md';
+    const expected = inspectScopedDecisionBindings(options);
+    assert.deepEqual(inspectScopedSnapshotDecisionBindings(options), expected);
+    assert.equal(expected.read_set.some((entry) => entry.file === 'docs/register.md'), false);
+    const mutation = afterFirstDecisionBasis(t, () => fs.writeFileSync(registerFile, 'Appeared after applicability.'));
+    try {
+      assert.throws(() => inspectScopedSnapshotDecisionBindings(options), /register appeared|snapshot changed/i);
+      assert.equal(mutation.state.changed, true);
+    } finally { mutation.restore(); }
+  });
+}
+
+test('#300 readiness Decision snapshot rejects a policy edit before another binding can reuse the projection', (t) => {
+  const f = fixture(t);
+  f.change('screen.md', ({ fm }) => { fm.decision_refs = ['D-ONE', 'D-TWO']; });
+  f.change(HOME, ({ fm }) => { fm.decision_work_scopes.bindings.push(binding({ decision_id: 'D-TWO' })); });
+  const options = f.options(), original = fs.readFileSync(f.policyFile);
+  const mutation = afterFirstDecisionBasis(t, () => fs.appendFileSync(f.policyFile, '\n# temporary change\n'),
+    () => fs.writeFileSync(f.policyFile, original));
+  try {
+    assert.throws(() => inspectScopedSnapshotDecisionBindings(options), /changed|differs|snapshot/i);
+    assert.equal(mutation.state.changed, true);
+    assert.equal(mutation.state.restored, false, 'reject before computing the next binding basis');
+  } finally { mutation.restore(); }
+});
+
+for (const transient of [false, true]) {
+  test(`#300 readiness Decision snapshot retains validation-only input reads ${transient ? 'before the next binding' : 'through publication'}`, (t) => {
+    const f = fixture(t);
+    if (transient) {
+      f.change('screen.md', ({ fm }) => { fm.decision_refs = ['D-ONE', 'D-TWO']; });
+      f.change(HOME, ({ fm }) => { fm.decision_work_scopes.bindings.push(binding({ decision_id: 'D-TWO' })); });
+    }
+    const { registerFile, options } = optionalRegister(f);
+    const selected = options.inputArtifacts[0].fm.input_id, unrelated = 'IN-20260922-meeting-002';
+    const file = path.join(f.root, 'unselected-input.md');
+    fs.writeFileSync(file, md({ ...options.inputArtifacts[0].fm, input_id: unrelated, source_ref: 'meeting:unselected' },
+      '## Extracted Facts\n- A rejected but validated fact.'));
+    options.inputArtifacts.push(loadInputArtifact(file));
+    fs.writeFileSync(registerFile, md({ reconciliation_contract: 2, review_profile: 'reconcile-stage04-v1',
+      structured_since: '2026-09-01T00:00:00Z' }, `${table(REQUIRED_REGISTER_COLS, [
+      [selected, 'meeting', 'simple-update×1', 'partially-reconciled', 'pending', 'artifact:RULES', '-', '-'],
+      [unrelated, 'meeting', 'reject-input', 'reconciled', 'rejected', '-', '-', '-'],
+    ])}\n\n## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, [
+      [selected, '01', 'compatible-fact', 'simple-update', 'update', 'artifact:RULES#rules', `input:${selected}#extracted-facts/01`, 'inherit', 'statement', 'inherit'],
+      [unrelated, '01', 'reject', 'reject-input', 'reject', '-', `input:${unrelated}#extracted-facts/01`, 'inherit', 'statement', 'inherit'],
+    ])}`));
+    const expected = inspectScopedDecisionBindings(options);
+    assert.deepEqual(inspectScopedSnapshotDecisionBindings(options), expected);
+    assert.equal(expected.read_set.some((entry) => entry.file === 'unselected-input.md'), false,
+      'validation-only text stays out of public authority and basis fields');
+    const raw = fs.readFileSync(file, 'utf8');
+    const mutation = afterFirstDecisionBasis(t, () => fs.writeFileSync(file, raw.replace('## Extracted Facts', '## Removed Facts')),
+      transient ? () => fs.writeFileSync(file, raw) : undefined);
+    try {
+      assert.throws(() => inspectScopedSnapshotDecisionBindings(options), /RR-REF-005|changed|snapshot/i);
+      assert.equal(mutation.state.changed, true);
+      assert.equal(mutation.state.restored, false, 'private validation reads must be checked before reuse or publication');
+    } finally { mutation.restore(); }
+  });
+}
+
+test('#300 readiness Decision snapshot does not promote an unread input body to authority', (t) => {
+  const f = fixture(t), file = path.join(f.root, 'unused-input.md');
+  const options = { ...f.options(), inputArtifacts: [{ file, hasFrontmatter: true, fm: {
+    input_id: 'IN-20260922-meeting-999', input_type: 'meeting', source_type: 'meeting', source_ref: 'meeting:unused',
+    captured_at: '2026-09-22T00:00:00Z', captured_by: 'test', status: 'captured',
+    affected_domains: ['result'], affected_screens: ['RESULT-001'],
+  } }] };
+  const expected = inspectScopedDecisionBindings(options);
+  const mutation = afterFirstDecisionBasis(t, () => fs.writeFileSync(file, 'Unconsulted bytes appeared.'));
+  try {
+    assert.deepEqual(inspectScopedSnapshotDecisionBindings(options), expected);
+    assert.equal(mutation.state.changed, true);
+    assert.equal(expected.read_set.some((entry) => entry.file === 'unused-input.md'), false);
   } finally { mutation.restore(); }
 });

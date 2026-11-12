@@ -10,7 +10,8 @@ import { readCurrentBytes, hashBytes } from './current-work-request.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { parseScopedTargetRef } from './scoped-work-refs.mjs';
 import { parseDecisionWorkScopes } from './scoped-work-declarations.mjs';
-import { resolveScopedApplicabilityProjection, resolveScopedSnapshotApplicabilityProjection } from './scoped-work-applicability.mjs';
+import { resolveScopedApplicabilityProjection, resolveScopedSnapshotApplicabilityProjection,
+  createScopedSnapshotApplicabilitySession } from './scoped-work-applicability.mjs';
 import { resolveScopedBindingBasis, scopedBindingBasis, SCOPE_BASIS_VERSION } from './scoped-work-basis.mjs';
 import { scopedUncertaintyScopes } from './scoped-work-uncertainty-scopes.mjs';
 import { ScopedWorkContractError } from './scoped-work-request.mjs';
@@ -21,8 +22,8 @@ const same = (a, b) => scopeJson(a) === scopeJson(b);
 
 // The canonical projection is supplied only by the entry points below, never
 // by an options field. Mutable file-backed inspection keeps its independent
-// basis passes; a report on an owned raw Git snapshot can reuse its projection.
-function decisionInspection(options, { projection, read_set }, resolveBasis) {
+// basis passes; an inspection on an owned raw Git snapshot can reuse its projection.
+function decisionInspection(options, { projection, read_set }, resolveBasis, verifyProjection) {
   const { owner, projectRoot, targetIndex } = options;
   const knownUnits = projection.known_units;
   const applications = projection.decision_relations.applications.filter((entry) => entry.owner === owner);
@@ -77,6 +78,7 @@ function decisionInspection(options, { projection, read_set }, resolveBasis) {
             fail('canonical binding or projection changed between passes');
           }
         } else {
+          verifyProjection?.();
           current = scopedBindingBasis(projection, scope);
         }
         computedDigest = current.basis_digest; computedComponents = current.component_digests;
@@ -106,6 +108,18 @@ export function inspectScopedDecisionBindings(options = {}) {
   const inspection = decisionInspection(options, resolved,
     (decisionRef) => resolveScopedBindingBasis({ ...options, decisionRef }));
   inspection.verify();
+  return inspection.result;
+}
+
+// Internal execution-baseline entry. Only prepareScopedWork's owned raw tree
+// reaches this path; mutable standalone inspectors retain independent passes.
+// Each call resolves this owner's complete applicability once, then rechecks
+// both public files and private validation/absence observations before reuse.
+export function inspectScopedSnapshotDecisionBindings(options = {}) {
+  const session = createScopedSnapshotApplicabilitySession(options);
+  const inspection = decisionInspection(options, session.resolved, null, session.verify);
+  inspection.verify();
+  session.verify();
   return inspection.result;
 }
 

@@ -23,12 +23,19 @@ import { copyScopedNodeContexts } from './scoped-work-authored.mjs';
 const fail = (message) => { throw new ScopedWorkContractError(`SW-APPLICABILITY: ${message}`); };
 
 export function resolveScopedApplicabilityProjection(options = {}) {
-  return applicabilityProjection(options, false);
+  return applicabilityProjection(options, false).resolved;
 }
 
 // Binding-status owns the raw tree and indexes for this one owner evaluation.
 // Mutable standalone callers keep the independent unit passes above.
 export function resolveScopedSnapshotApplicabilityProjection(options = {}) {
+  return applicabilityProjection(options, true).resolved;
+}
+
+// Internal owned-snapshot inspection: keep the private validation/absence
+// observations alive until every binding has been evaluated. These observations
+// are not authority/basis fields and must not widen the public read_set.
+export function createScopedSnapshotApplicabilitySession(options = {}) {
   return applicabilityProjection(options, true);
 }
 
@@ -73,14 +80,17 @@ function applicabilityProjection(options, snapshot) {
   }
   const unapplied = unappliedRows(options, current.projection, current.unaudited);
   audit(unapplied.read_set);
-  session?.verify();
-  for (const entry of files.values()) {
-    const file = canonicalRepositoryPath(projectRoot, entry.file, { required: true, type: 'file', label: 'scoped applicability' });
-    if (hashBytes(readCurrentBytes(file.absolute, 'scoped applicability')) !== entry.sha256) fail('snapshot changed after relation closure');
-  }
+  const verify = () => {
+    session?.verify();
+    for (const entry of files.values()) {
+      const file = canonicalRepositoryPath(projectRoot, entry.file, { required: true, type: 'file', label: 'scoped applicability' });
+      if (hashBytes(readCurrentBytes(file.absolute, 'scoped applicability')) !== entry.sha256) fail('snapshot changed after relation closure');
+    }
+  };
+  verify();
   const projection = { ...current.projection, unapplied_relations: unapplied.unapplied };
-  return { projection: { ...projection, ownership }, read_set: scopeSet([...files.values()]), unaudited: current.unaudited,
-    ...(current.target_fallbacks ? { target_fallbacks: current.target_fallbacks } : {}) };
+  return { resolved: { projection: { ...projection, ownership }, read_set: scopeSet([...files.values()]), unaudited: current.unaudited,
+    ...(current.target_fallbacks ? { target_fallbacks: current.target_fallbacks } : {}) }, verify };
 }
 
 // #275: Decision, Unknown and Conflict rows that apply to no owner but relate to a projected

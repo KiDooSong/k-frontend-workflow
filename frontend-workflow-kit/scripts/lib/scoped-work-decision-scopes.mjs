@@ -3,7 +3,7 @@
 // refresh its digest, resolve a Decision, or accept caller-supplied verdicts.
 import { canonicalRepositoryPath } from './artifact-path.mjs';
 import { ownerParts, readCurrentBytes, hashBytes } from './current-work-request.mjs';
-import { inspectScopedDecisionBindings } from './scoped-work-bindings.mjs';
+import { inspectScopedDecisionBindings, inspectScopedSnapshotDecisionBindings } from './scoped-work-bindings.mjs';
 import { inspectScopedDecisionTransitions } from './scoped-work-transitions.mjs';
 import { ScopedWorkContractError } from './scoped-work-request.mjs';
 import { scopeSet } from './scoped-work-normalize.mjs';
@@ -12,7 +12,15 @@ const fail = (message) => { throw new ScopedWorkContractError(`SW-DECISION-SCOPE
 const union = (values) => scopeSet([...new Set(values)]);
 
 export function inspectScopedDecisionScopes(options = {}) {
-  const inspection = inspectScopedDecisionBindings(options);
+  return decisionScopes(inspectScopedDecisionBindings(options));
+}
+
+// Internal owned-baseline composition, never selected by a caller option.
+export function inspectScopedSnapshotDecisionScopes(options = {}) {
+  return decisionScopes(inspectScopedSnapshotDecisionBindings(options));
+}
+
+function decisionScopes(inspection) {
   const checks = inspection.checks.map((check) => {
     // The native inspector has already checked the exact owner/Decision home,
     // complete known-unit set and resolved R1 basis. "Current" is byte/scope
