@@ -2,7 +2,7 @@
 //        [runs=3] [matching-decision-bindings=0,8,24] [inputs=16] [units=2]
 // Install both kits' dependencies first. Timed samples run the actual public CLI
 // in fresh processes without instrumentation. Separate diagnostic runs count
-// filesystem/YAML parse calls and report their own process peak RSS. This synthetic corpus
+// filesystem/YAML parse calls and report their own process peak RSS and CPU time. This synthetic corpus
 // exercises input inventories and repeated binding calculations, not the reported
 // four-hour consumer run.
 import assert from 'node:assert/strict';
@@ -192,20 +192,26 @@ import {pathToFileURL} from 'node:url';
 import {createRequire,syncBuiltinESMExports} from 'node:module';
 const kit=process.env.FWKIT_BINDING_BENCH_KIT;
 const yaml=createRequire(path.join(kit,'package.json'))('yaml');
-const parseYaml=yaml.parse;
-let yamlParseCalls=0;
+const parseYaml=yaml.parse, parseYamlDocument=yaml.parseDocument;
+let yamlParseApiCalls=0, yamlParseDocumentCalls=0;
 // Install before util.mjs captures YAML's named CommonJS export. This is a
 // separate diagnostic process; timed CLI processes never load the hook.
-yaml.parse=function(...args){yamlParseCalls++;return parseYaml.apply(this,args);};
+// yaml.parse calls its private lexical parseDocument, not the exported method,
+// so summing these entry points counts each actual document parse once.
+yaml.parse=function(...args){yamlParseApiCalls++;return parseYaml.apply(this,args);};
+yaml.parseDocument=function(...args){yamlParseDocumentCalls++;return parseYamlDocument.apply(this,args);};
 const {reconciliationParseStats}=await import(pathToFileURL(path.join(kit,'scripts/lib/reconciliation-markdown-ast.mjs')).href);
-yamlParseCalls=0;
+yamlParseApiCalls=0;yamlParseDocumentCalls=0;
 const counts={};
 for(const name of ['lstatSync','statSync','readdirSync','realpathSync','readSync','readFileSync']){
   const original=fs[name];counts[name]=0;
   fs[name]=function(...args){counts[name]++;return original.apply(this,args);};
 }
 syncBuiltinESMExports();
-process.on('exit',()=>fs.writeFileSync(process.env.FWKIT_BINDING_BENCH_COUNTS,JSON.stringify({counts,yaml_parse_calls:yamlParseCalls,parse:reconciliationParseStats(),instrumented_peak_rss_kib:process.resourceUsage().maxRSS})));
+process.on('exit',()=>{
+  const usage=process.resourceUsage();
+  fs.writeFileSync(process.env.FWKIT_BINDING_BENCH_COUNTS,JSON.stringify({counts,yaml_parse_calls:yamlParseApiCalls+yamlParseDocumentCalls,yaml_parse_api_calls:yamlParseApiCalls,yaml_parse_document_calls:yamlParseDocumentCalls,parse:reconciliationParseStats(),instrumented_peak_rss_kib:usage.maxRSS,instrumented_user_cpu_us:usage.userCPUTime,instrumented_system_cpu_us:usage.systemCPUTime}));
+});
 `);
   return file;
 }
@@ -265,7 +271,7 @@ async function main(args) {
       measurement: {
         elapsed_ms: 'Fresh actual public binding-status CLI process per kit/case/run, including startup/imports, Git snapshot materialization, evaluation, JSON output and cleanup. No instrumentation in timed runs. Setup and independent verification excluded.',
         order: 'Before/after order alternates. Both kit roots must be on the same filesystem. Both versions use the same committed fixture and exact CLI flags. Fixture setup warms the filesystem cache; this is not cold-storage latency.',
-        diagnostics: 'Separate untimed processes count filesystem calls and actual yaml.parse calls after the parser import, and report instrumented process peak RSS (not timed-run peak or retained memory). YAML interception is installed before kit imports; all counters start after those imports. Child Git process RSS is not included.',
+        diagnostics: 'Separate untimed processes count filesystem calls and actual YAML document parses (yaml.parse plus direct yaml.parseDocument calls, also reported separately) after the parser import, and report instrumented process peak RSS plus user/system CPU microseconds. These are not timed-run memory/CPU or retained memory. YAML interception is installed before kit imports; all counters start after those imports. Resource usage spans the diagnostic process lifetime and excludes child Git process CPU/RSS.',
         verification: 'Whole stdout bytes, snapshot commit/tree, every binding state and digest agree across kits/runs; original HEAD, index bytes and tracked worktree bytes/modes stay unchanged; private snapshots are removed.',
         scope: 'Synthetic one-owner workload with configurable input/binding/unit counts, selected source/Items and mixed binding states. Extra units select the first unit\'s existing source Item. It is not a reproduction or timing prediction of the reported four-hour consumer execution.',
       }, cases }, null, 2));

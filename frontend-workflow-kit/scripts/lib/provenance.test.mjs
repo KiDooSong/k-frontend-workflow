@@ -292,9 +292,13 @@ test('#300 file-backed evidence reads skip YAML decoding while metadata loaders 
     import { createRequire } from 'node:module';
     const require = createRequire(${JSON.stringify(import.meta.url)});
     const yaml = require('yaml');
-    const originalParse = yaml.parse;
     let parses = 0;
-    yaml.parse = (...args) => { parses += 1; return originalParse(...args); };
+    // Frontmatter may use parseDocument before the original parse fallback.
+    // Count both public entry points so body-only reads cannot hide a decode.
+    for (const name of ['parse', 'parseDocument']) {
+      const original = yaml[name];
+      yaml[name] = (...args) => { parses += 1; return original(...args); };
+    }
     const { loadInputArtifact, validateInputArtifacts } = await import(${JSON.stringify(new URL('./input-artifact.mjs', import.meta.url).href)});
     const { buildInputArtifactIndex, resolveInputEvidence } = await import(${JSON.stringify(new URL('./provenance.mjs', import.meta.url).href)});
     parses = 0;
@@ -310,21 +314,21 @@ test('#300 file-backed evidence reads skip YAML decoding while metadata loaders 
     fs.writeFileSync(file, raw.replace('input_type: "planning"', 'input_type: [unclosed'));
     const malformed = loadInputArtifact(file);
     assert.ok(malformed.parseError, 'full loaders must still report invalid YAML');
-    assert.equal(parses, 2);
+    assert.equal(parses, 3, 'invalid YAML takes the unchanged parser fallback');
     assert.equal(resolve(malformed).status, 'missing-input', 'a parse-error artifact is excluded from the input index');
     assert.equal(resolve(artifact).evidenceText, 'original evidence', 'the body-only view retains its existing delimiter semantics');
-    assert.equal(parses, 2);
+    assert.equal(parses, 3);
 
     fs.writeFileSync(file, raw.replace('captured_at: "2026-07-30T10:00:00+09:00"', 'captured_at: "invalid"')
       .replace('status: "captured"', 'status: "captured"\\nsummary: old-frontmatter-summary')
       .replace('original evidence', 'updated evidence'));
     const changed = loadInputArtifact(file);
-    assert.equal(parses, 3);
+    assert.equal(parses, 4);
     const validation = validateInputArtifacts([changed]);
     assert.ok(validation.errors.some((entry) => /IP-001.*captured_at/.test(entry.message)));
     assert.ok(validation.warnings.some((entry) => /deprecated frontmatter 'summary'/.test(entry.message)));
     assert.equal(resolve(changed).evidenceText, 'updated evidence');
-    assert.equal(parses, 3, 'validation remains separate from body extraction');
+    assert.equal(parses, 4, 'validation remains separate from body extraction');
     process.stdout.write(JSON.stringify({ parses }));
   `;
   const result = spawnSync(process.execPath, ['--input-type=module', '--eval', script], {
@@ -333,7 +337,7 @@ test('#300 file-backed evidence reads skip YAML decoding while metadata loaders 
   assert.equal(result.error, undefined, result.error?.message);
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.equal(result.stderr, '');
-  assert.deepEqual(JSON.parse(result.stdout), { parses: 3 });
+  assert.deepEqual(JSON.parse(result.stdout), { parses: 4 });
 });
 
 const observedDetails = (artifact) => inputSectionDetails(buildInputArtifactIndex([artifact]), artifact);
