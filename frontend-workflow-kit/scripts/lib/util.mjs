@@ -5,6 +5,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse as yamlParse, stringify as yamlStringify } from 'yaml';
+import { createFrontmatterParser } from './frontmatter-syntax.mjs';
 
 // 킷 루트(scripts/..)를 스크립트 위치 기준으로 해석한다.
 // 소비 프로젝트에서는 tools/frontend-workflow/ 에 킷 전체가 복사되고,
@@ -242,6 +243,8 @@ export function writeFile(p, content) {
 }
 
 // --- frontmatter -----------------------------------------------------------
+const parseFrontmatter = createFrontmatterParser();
+
 // `---\n...\n---\n본문` 형식을 분리한다. gray-matter 대신 직접 분리해 의존성을 줄인다.
 function frontmatterParts(content) {
   if (content == null) return { yaml: null, body: '' };
@@ -262,7 +265,7 @@ export function splitFrontmatter(content) {
   if (yaml === null) return { data: {}, body, hasFrontmatter: false };
   let data = {};
   try {
-    data = yamlParse(yaml) || {};
+    data = parseFrontmatter(yaml) || {};
   } catch (err) {
     return { data: {}, body, hasFrontmatter: true, parseError: String(err.message || err) };
   }

@@ -1,5 +1,10 @@
 # Current Roadmap
 
+> 2026-11-12 #300 12차 성능 개선: 같은 YAML frontmatter의 반복 디코딩을 제한된 프로세스 내부 구문 캐시로 줄인다.
+> 현재 파일 읽기와 metadata/body 비교·최종 변경 검사는 유지하며, 정확히 같은 YAML 원문에만 독립된 반환값을 재생성한다. 본문·AST·판정은 보관하지 않는다.
+> 기본 보관 한도는 복사한 UTF-16 원문 키와 직렬화 결과 합계 4 MiB·2,048개이며 전체 RSS 한도가 아니다. 경고·오류·명시적 태그/지시문·alias·복합 키는 같은 한도 안에 경로 표지만 보관하고 매번 기존 YAML parser를 실행한다.
+> 기존 body·parseError·객체 격리·basis/checkpoint 계약과 authority는 유지한다. 재현: [frontmatter benchmark](benchmarks/frontmatter.mjs), [실제 binding-status CLI](benchmarks/binding-status.mjs) — helper 비용과 전체 실행 시간을 구분하고 YAML 두 진입점의 실제 파싱을 함께 센다.
+
 > 2026-11-12 #300 11차 성능 개선: 첫 raw 표를 읽는 경로는 첫 유효한 표에서 행 구성을 끝내고, v2 Summary 탐색은 canonical header가 일치하는 표의 행만 만든다.
 > 전체 원문의 HTML 주석 제거, 기존 raw 표 문법, strict 표의 column-zero·block 경계와 문서 전체 definition 문맥을 유지한다. 일치하는 Summary는 모두 세므로 중복 표 거부도 유지한다.
 > 파일·metadata·Evidence 검증과 판정·basis bytes는 그대로이며 새 캐시는 없다. 정본: [Reconciliation Contract v2](../frontend-workflow-kit/docs/reference/input-reconciliation.md#reconciliation-contract-v2-opt-in).

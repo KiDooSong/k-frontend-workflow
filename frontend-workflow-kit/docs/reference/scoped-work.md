@@ -429,8 +429,15 @@ bytes are bounded to 16 MiB per closure. This is a byte-cache budget, not a proc
 RSS limit. Graph/source expected hashes are checked on every use, and all pinned
 files are freshly checked for canonical path spelling, ancestors and bytes before
 returning. The register's independent parsers retain fresh byte checks at each
-pass boundary; optional register absence is also rechecked. Caches never cross calls;
+pass boundary; optional register absence is also rechecked. Source read caches never cross calls;
 read-set entries, relation rules and binding/checkpoint digest inputs are unchanged.
+
+Frontmatter decoding separately reuses ordinary YAML syntax by exact source text
+within a process. It returns independent metadata objects and retains only copied
+YAML keys and serialized values, bounded to 4 MiB and 2,048 entries; this does not
+bound total process RSS. Unusual YAML retains only a parser-route marker under
+the same bounds and invokes the original parser on every call, including diagnostics.
+Current bytes, indexed metadata/body comparisons and final read audits still run.
 
 Every decision is computed from the materialized `HEAD` tree. Worktree edits,
 packets and serialized verdicts are not authority. For each scoped request:
