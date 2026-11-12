@@ -420,6 +420,9 @@ and the pre-work packet to the post-work run, before committing the implementati
 apply to scoped runs too. The scoped parser/assertion binds its own authority,
 directory and target read sets; a current packet cannot stand in for it.
 Standalone readiness/packet/report/forbidden-paths remain diagnostic/compatible entries.
+`readiness.mjs --work <request>` runs the scoped preflight once when the request
+selects `authority: scoped`. It does not start Jest, retry itself or impose a
+30-minute timeout; those behaviors belong to the invoking runner or session.
 
 ## Evaluation on the immutable baseline
 
@@ -438,6 +441,19 @@ YAML keys and serialized values, bounded to 4 MiB and 2,048 entries; this does n
 bound total process RSS. Unusual YAML retains only a parser-route marker under
 the same bounds and invokes the original parser on every call, including diagnostics.
 Current bytes, indexed metadata/body comparisons and final read audits still run.
+
+Within the execution adapter's owned baseline, each owner or adopted host's
+Decision-scope inspection resolves its full applicability once, including the
+complete relation fixed point, and derives every canonical binding basis from
+that projection. Before each reuse and before publishing, it freshly verifies
+all observed files, consulted register absences and input Evidence read only
+for validation. Canonical binding homes are still re-read and compared with
+their indexed metadata/body. This reuse is confined to one Decision inspection;
+profile, input coverage, path, host consent and final composition checks remain
+independent. No request field selects this internal path, no result is shared
+across owners or calls, and mutable standalone inspectors keep their independent
+per-binding resolutions. Scope-basis-v2, read sets, denials and checkpoint bytes
+retain their existing meanings.
 
 Every decision is computed from the materialized `HEAD` tree. Worktree edits,
 packets and serialized verdicts are not authority. For each scoped request:

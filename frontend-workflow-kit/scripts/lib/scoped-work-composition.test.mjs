@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { splitFrontmatter, DEFAULTS } from './util.mjs';
 import { buildReconciliationTargetIndex } from './reconciliation-target-index.mjs';
-import { inspectScopedWorkRequests } from './scoped-work-composition.mjs';
+import { inspectScopedWorkRequests, inspectScopedSnapshotWorkRequests } from './scoped-work-composition.mjs';
 
 const SURFACE = 'surface:RESULT-PANEL', MEMBERS = ['RESULT-001', 'RESULT-002'];
 const DOCS = 'docs/frontend-workflow', PREFIX = 'src/features/result', SHARED = `${PREFIX}/components/panel`;
@@ -125,6 +125,20 @@ test('D compose: a shared target needs every responsibility; a surface allow nev
   noGrant(out);
 });
 
+test('#300 snapshot composition preserves every owner, host and shared-target responsibility', (t) => {
+  const f = fixture(t), options = { ...f.resources(), request: { version: 1, origin_inputs: [],
+    requests: [screen('RESULT-001', [PANEL]), surface()] } };
+  const expected = inspectScopedWorkRequests(options), actual = inspectScopedSnapshotWorkRequests(options);
+  assert.deepEqual(actual, expected, 'snapshot execution retains all nested prerequisites, observations and denials');
+  assert.equal(actual.ready, false);
+  assert.equal(requestOf(actual, SURFACE).owner_satisfied, true);
+  assert.equal(requestOf(actual, SURFACE).hosts_satisfied, true);
+  assert.equal(requestOf(actual, SURFACE).path_authorizations[0].allowed, false);
+  assert.deepEqual(actual.shared_targets[0].responsibilities.map((entry) => [entry.owner, entry.allowed]),
+    [['screen:RESULT-001', false], [SURFACE, true]]);
+  noGrant(actual);
+});
+
 test('D compose: a host prerequisite deny blocks every target of the surface request', (t) => {
   const f = fixture(t); f.edit('rules-2.md', ({ fm }) => { fm.status = 'draft'; }); f.put(`${SHARED}/Other.tsx`, 'export default null;\n');
   const out = f.run([surface([PANEL, `${SHARED}/Other.tsx`])]), selected = requestOf(out, SURFACE);
@@ -154,9 +168,12 @@ test('D compose: current authority, duplicate selectors and non A/M/D scoped cha
 });
 
 test('D compose: caller verdicts, owners and hosts cannot be supplied as options', (t) => {
-  const f = fixture(t);
-  for (const key of ['owner', 'unit', 'targets', 'approved', 'hosts_satisfied', 'owner_result', 'origin_inputs', 'coverage_reports']) {
-    assert.throws(() => f.run([surface()], { [key]: true }), /SW-COMPOSE: unsupported caller option/);
+  const f = fixture(t), options = { ...f.resources(), request: { version: 1, origin_inputs: [], requests: [surface()] } };
+  for (const inspect of [inspectScopedWorkRequests, inspectScopedSnapshotWorkRequests]) {
+    for (const key of ['owner', 'unit', 'targets', 'approved', 'hosts_satisfied', 'owner_result', 'origin_inputs', 'coverage_reports',
+      'projection', 'snapshot', 'resolveBasis']) {
+      assert.throws(() => inspect({ ...options, [key]: true }), /SW-COMPOSE: unsupported caller option/);
+    }
   }
 });
 
@@ -170,6 +187,21 @@ test('D compose: authority changed between two requests invalidates the composit
   });
   fs.mkdirSync(path.dirname(entry), { recursive: true }); fs.writeFileSync(entry, 'export default null;\n');
   assert.throws(() => f.run([screen('RESULT-001'), screen('RESULT-002')]), /changed/); assert.equal(changed, true);
+});
+
+test('#300 snapshot composition rejects a late mutation of an earlier owner authority', (t) => {
+  const f = fixture(t), options = { ...f.resources(), request: { version: 1, origin_inputs: [],
+    requests: [screen('RESULT-001'), screen('RESULT-002')] } };
+  const original = fs.openSync, rules = f.docs.get('rules-1.md'), entry = path.join(f.root, ENTRY('RESULT-002'));
+  let changed = false;
+  const hook = t.mock.method(fs, 'openSync', function(file, ...args) {
+    if (!changed && String(file) === entry) { changed = true; fs.appendFileSync(rules, '\nLate edit.'); }
+    return original.call(this, file, ...args);
+  });
+  try {
+    assert.throws(() => inspectScopedSnapshotWorkRequests(options), /changed/);
+    assert.equal(changed, true, 'the first request completed before its authority changed');
+  } finally { hook.mock.restore(); }
 });
 
 test('D compose: output is detached from later caller mutation and reevaluates from files', (t) => {

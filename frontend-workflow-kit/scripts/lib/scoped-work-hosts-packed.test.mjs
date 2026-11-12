@@ -43,6 +43,12 @@ test('D hosts packed: host consent, composition and scoped execution suites run 
   for (const metric of ['fail', 'cancelled', 'skipped', 'todo']) {
     assert.match(run.stdout, new RegExp(`^# ${metric} 0\\r?$`, 'm'), run.stdout);
   }
+  const unescapedTap = run.stdout.replace(/\\#/g, '#');
+  for (const name of ['#300 snapshot hosts preserve each canonical binding digest',
+    '#300 snapshot composition preserves every owner', '#300 snapshot composition rejects a late mutation',
+    '#300 scoped readiness CLI: matching Decision bindings']) {
+    assert.ok(unescapedTap.includes(`# Subtest: ${name}`), `packed regression was not executed: ${name}`);
+  }
   for (const [name, bytes] of before) assert.deepEqual(fs.readFileSync(path.join(lib, name)), bytes, name);
   t.diagnostic(`focused packed host/composition subprocess: ${count[1]} tests (nested, not additive)`);
 });

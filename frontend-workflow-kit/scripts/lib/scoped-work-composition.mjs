@@ -7,8 +7,8 @@ import fs from 'node:fs';
 import { canonicalRepositoryPath } from './artifact-path.mjs';
 import { ownerParts, readCurrentBytes, hashBytes, byteCompare } from './current-work-request.mjs';
 import { ScopedWorkContractError, normalizeScopedWorkRequestSyntax } from './scoped-work-request.mjs';
-import { inspectScopedOwner } from './scoped-work-owner.mjs';
-import { inspectScopedSurfaceHosts } from './scoped-work-hosts.mjs';
+import { inspectScopedOwner, inspectScopedSnapshotOwner } from './scoped-work-owner.mjs';
+import { inspectScopedSurfaceHosts, inspectScopedSnapshotSurfaceHosts } from './scoped-work-hosts.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
 
 const fail = (message) => { throw new ScopedWorkContractError(`SW-COMPOSE: ${message}`); };
@@ -18,6 +18,16 @@ const RESOURCE_KEYS = ['projectRoot', 'docsDir', 'kitRoot', 'policyFile', 'polic
   'registerFile', 'ciFile', 'targetIndex', 'inputArtifacts'];
 
 export function inspectScopedWorkRequests(options = {}) {
+  return inspectWorkRequests(options, false);
+}
+
+// Only the execution adapter selects this entry after materializing raw Git
+// bytes and constructing its own indexes. No request field enables reuse.
+export function inspectScopedSnapshotWorkRequests(options = {}) {
+  return inspectWorkRequests(options, true);
+}
+
+function inspectWorkRequests(options, snapshot) {
   if (!options || typeof options !== 'object' || Array.isArray(options)) fail('options object required');
   for (const key of Object.keys(options)) {
     if (key !== 'request' && key !== 'srcDir' && !RESOURCE_KEYS.includes(key)) fail(`unsupported caller option ${key}`);
@@ -76,12 +86,13 @@ export function inspectScopedWorkRequests(options = {}) {
     // Every responsibility, including a surface host subrequest, keeps the same origins.
     const args = { ...resources, owner: selected.owner, unit: selected.unit, targets: selected.targets,
       origin_inputs: request.origin_inputs, coverage_reports: selected.coverage_reports };
-    const own = inspectScopedOwner(args); absorb(own);
+    const own = snapshot ? inspectScopedSnapshotOwner(args) : inspectScopedOwner(args); absorb(own);
     if (own.owner !== selected.owner || own.unit !== selected.unit || typeof own.owner_satisfied !== 'boolean') fail('owner observation mismatch');
     let hosts = null;
     if (ownerParts(selected.owner).kind === 'surface') {
       // Only a legacy-current host computes the workflow state, from docs and src.
-      hosts = inspectScopedSurfaceHosts(Object.hasOwn(options, 'srcDir') ? { ...args, srcDir: options.srcDir } : args);
+      const hostArgs = Object.hasOwn(options, 'srcDir') ? { ...args, srcDir: options.srcDir } : args;
+      hosts = snapshot ? inspectScopedSnapshotSurfaceHosts(hostArgs) : inspectScopedSurfaceHosts(hostArgs);
       absorb(hosts);
       if (hosts.owner !== selected.owner || hosts.unit !== selected.unit || hosts.kind !== own.kind ||
         typeof hosts.hosts_satisfied !== 'boolean') fail('surface host observation mismatch');

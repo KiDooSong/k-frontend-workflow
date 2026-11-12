@@ -11,7 +11,8 @@ import { loadInputArtifact } from './input-artifact.mjs';
 import { REQUIRED_REGISTER_COLS } from './reconciliation-register.mjs';
 import { REQUIRED_ITEM_COLS } from './reconciliation-items.mjs';
 import { COMPONENT_MAPPING_COLUMNS, MAPPING_PROVENANCE_COLUMNS } from './mapping-provenance.mjs';
-import { inspectScopedSurfaceHosts } from './scoped-work-hosts.mjs';
+import { inspectScopedSurfaceHosts, inspectScopedSnapshotSurfaceHosts } from './scoped-work-hosts.mjs';
+import { resolveScopedBindingBasis } from './scoped-work-basis.mjs';
 
 const SURFACE = 'surface:RESULT-PANEL', MEMBERS = ['RESULT-001', 'RESULT-002'];
 const DOCS = 'docs/frontend-workflow', PREFIX = 'src/features/result', SHARED = `${PREFIX}/components/panel`;
@@ -187,6 +188,39 @@ test('D hosts: an unbound open Decision on only the second host remains blocking
   noGrant(out);
 });
 
+test('#300 snapshot hosts preserve each canonical binding digest and the second host denial', (t) => {
+  const f = fixture(t); f.openDecision();
+  const owner = 'screen:RESULT-001', decisionRef = 'decision:D-FIRST@HOST-1';
+  f.edit('screen-1.md', (doc) => {
+    doc.fm.decision_work_scopes = { version: 1, bindings: [{ decision_id: 'D-FIRST', owner,
+      known_units: ['known'], blocks: [], basis_digest: `sha256:${'0'.repeat(64)}`, approval_ref: 'review:synthetic-host-scope' }] };
+    doc.body += `\n\n## Open Decisions\n${table(['ID', 'Decision Needed', 'Options', 'Blocking Mode', 'Owner', 'Status'],
+      [['D-FIRST', 'Choose the first host behavior.', 'A / B', 'api-integrated-ui', 'PM', 'open']])}`;
+  });
+  const basis = resolveScopedBindingBasis({ ...f.options(), owner, unit: 'known', decisionRef });
+  f.edit('screen-1.md', ({ fm }) => { fm.decision_work_scopes.bindings[0].basis_digest = basis.basis_digest; });
+  const options = f.options(), expected = inspectScopedSurfaceHosts(options), actual = inspectScopedSnapshotSurfaceHosts(options);
+  assert.deepEqual(actual, expected, 'snapshot host checks retain complete results, read sets and basis components');
+  const first = hostOf(actual, owner), second = hostOf(actual, 'screen:RESULT-002');
+  assert.equal(first.host_satisfied, true);
+  assert.equal(first.decision_scopes.checks[0].binding_state, 'current-unverified');
+  assert.equal(first.decision_scopes.checks[0].computed_basis_digest, basis.basis_digest);
+  assert.deepEqual(first.decision_scopes.checks[0].computed_component_digests, basis.component_digests);
+  assert.deepEqual(second.decision_scopes.blocking_units, ['known']);
+  assert.equal(second.decision_scopes.checks[0].binding_state, 'missing');
+  assert.deepEqual(denied(actual, 'host-decision-blocked').decisions, ['decision:D-HOST@open-decision-register']);
+  noGrant(actual);
+});
+
+test('#300 snapshot hosts preserve a legacy-current member base denial beside an adopted host', (t) => {
+  const f = fixture(t); f.legacy(); f.stub();
+  const options = f.options(), expected = inspectScopedSurfaceHosts(options), actual = inspectScopedSnapshotSurfaceHosts(options);
+  assert.deepEqual(actual, expected);
+  assert.equal(hostOf(actual, 'screen:RESULT-001').host_satisfied, true);
+  assert.deepEqual(actual.legacy_hosts, ['screen:RESULT-002']);
+  denied(actual, 'legacy-member-base-denied'); noGrant(actual);
+});
+
 test('D hosts: member and host selector ordering changes no host prerequisite verdict', (t) => {
   const f = fixture(t), before = f.run();
   f.edit('surface.md', ({ fm }) => { fm.member_screens.reverse(); fm.work_execution.units[0].host_units = { 'RESULT-002': 'known', 'RESULT-001': 'known' }; });
@@ -311,11 +345,14 @@ test('D hosts: nonconcrete or missing targets are rejected before any host is ev
 });
 
 test('D hosts: caller host lists, approvals, legacy envelopes and callbacks cannot substitute canonical inputs', (t) => {
-  const f = fixture(t);
-  for (const key of ['host_units', 'host_results', 'approved', 'approval_verifier', 'legacy_base', 'state', 'legacyState', 'layout', 'evaluator', 'hosts_satisfied', 'consent']) {
-    assert.throws(() => f.run({ [key]: true }), /SW-HOST: unsupported caller option/);
+  const f = fixture(t), options = f.options();
+  for (const inspect of [inspectScopedSurfaceHosts, inspectScopedSnapshotSurfaceHosts]) {
+    for (const key of ['host_units', 'host_results', 'approved', 'approval_verifier', 'legacy_base', 'state', 'legacyState',
+      'layout', 'evaluator', 'hosts_satisfied', 'consent', 'projection', 'snapshot', 'resolveBasis']) {
+      assert.throws(() => inspect({ ...options, [key]: true }), /SW-HOST: unsupported caller option/);
+    }
+    assert.throws(() => inspect({ ...options, owner: 'screen:RESULT-001', unit: 'known' }), /only an exact surface/);
   }
-  assert.throws(() => f.run({ owner: 'screen:RESULT-001', unit: 'known' }), /only an exact surface/);
 });
 
 test('D hosts: satisfied host checks alone do not evaluate the surface own contract or concrete targets', (t) => {

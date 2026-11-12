@@ -1,5 +1,10 @@
 # Current Roadmap
 
+> 2026-11-12 #300 13차 성능 개선: scoped `--work` 실행이 직접 전개한 Git baseline에서 owner·host별 Decision 검사 안의 전체 applicability를 한 번 계산한다.
+> 바인딩마다 전체 관계를 재계산하던 경로를 제거하고 같은 projection으로 각 basis를 계산한다. 재사용 전과 반환 전에는 실제 파일·확인한 register 부재·검증용 미선택 입력 Evidence를 다시 확인한다.
+> canonical binding home 비교, profile·coverage·path·host consent와 최종 composition 검사, standalone mutable inspector의 독립 계산, scope-basis-v2·판정·read set·checkpoint 계약을 유지한다.
+> 정본: [scoped baseline](../frontend-workflow-kit/docs/reference/scoped-work.md#evaluation-on-the-immutable-baseline). 재현: [실제 scoped readiness CLI](benchmarks/scoped-readiness.mjs) — 계측 없는 전체 실행 시간과 별도 호출 수 진단을 구분한다.
+
 > 2026-11-12 #300 12차 성능 개선: 같은 YAML frontmatter의 반복 디코딩을 제한된 프로세스 내부 구문 캐시로 줄인다.
 > 현재 파일 읽기와 metadata/body 비교·최종 변경 검사는 유지하며, 정확히 같은 YAML 원문에만 독립된 반환값을 재생성한다. 본문·AST·판정은 보관하지 않는다.
 > 기본 보관 한도는 복사한 UTF-16 원문 키와 직렬화 결과 합계 4 MiB·2,048개이며 전체 RSS 한도가 아니다. 경고·오류·명시적 태그/지시문·alias·복합 키는 같은 한도 안에 경로 표지만 보관하고 매번 기존 YAML parser를 실행한다.

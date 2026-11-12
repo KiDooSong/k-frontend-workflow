@@ -4,6 +4,19 @@
 
 ## Unreleased
 
+### perf(scoped) — scoped readiness의 Decision 바인딩별 전체 관계 재계산 제거 (#300)
+
+- scoped `--work` 실행의 raw Git baseline 안에서 owner와 각 adopted host의 Decision 검사마다
+  전체 applicability를 한 번 계산하고, canonical binding별 scope-basis-v2를 같은 projection에서 만든다.
+  readiness·packet·report·run·forbidden-paths가 공유하는 preflight에 적용한다.
+- 바인딩 원문/metadata/body 확인, 각 재사용 전과 최종 파일·register 부재·검증용 입력 Evidence 확인,
+  profile·coverage·path·host consent와 owner/composition 최종 검증을 유지한다.
+  공개 mutable inspector의 독립 재계산과 owner/호출별 격리는 그대로이며 caller projection/옵션은 받지 않는다.
+- 기존 전체 결과·basis/packet·read set·차단/승인 경계를 유지한다. 별도 합성 실제 CLI 벤치마크는
+  바인딩 수에 따른 호출 증가와 전체 시간을 비교하고 stdout·Git 상태·snapshot cleanup을 확인한다.
+  계약: [scoped baseline](../frontend-workflow-kit/docs/reference/scoped-work.md#evaluation-on-the-immutable-baseline),
+  재현: [scoped readiness benchmark](benchmarks/scoped-readiness.mjs).
+
 ### fix(readiness) — CI facts 저작 계약과 미제공 안내 (#228)
 
 - 기존 평면 4개 fact 입력에 저작용 schema·미확인(null) 기본 template·manifest 항목을 추가하고,
