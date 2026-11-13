@@ -169,18 +169,68 @@ fs.writeSync = function(fd, ...args) {
   assert.deepEqual(runBundle(observedDir), runBundle(plainDir));
 });
 
-test('#321 progress CLI: failing owner preserves the original error and exit without publishing a packet', (t) => {
+test('#321 progress CLI: failing owner reports actual cleanup before deletion and preserves the original error and exit', async (t) => {
   const r = repository(t);
   r.edit('screen-1.md', ({ fm }) => { fm.work_execution.units[0].contracts = ['artifact:MISSING#rules']; });
   r.commit('broken selected contract');
   const work = r.request(screenRequests()), plainDir = path.join(r.outside, 'plain'), observedDir = path.join(r.outside, 'observed');
-  const plain = r.cli('workflow-run.mjs', work, '--out', plainDir, '--json');
-  const observed = r.cli('workflow-run.mjs', work, '--out', observedDir, '--json', '--progress');
-  assert.equal(plain.status, 2); assert.equal(observed.status, plain.status);
-  assert.equal(plain.stdout, ''); assert.equal(observed.stdout, plain.stdout);
-  assert.ok(observed.stderr.endsWith(plain.stderr), 'the existing tool error remains verbatim');
-  assert.match(observed.stderr, /owner:start "1\/2 screen:RESULT-001\/known"/);
-  assert.match(observed.stderr, /run:failed/); assert.doesNotMatch(observed.stderr, /run:done|packet:done/);
+  const temporary = path.join(r.outside, 'tmp'); fs.mkdirSync(temporary);
+  const env = { ...process.env, TMPDIR: temporary, TMP: temporary, TEMP: temporary };
+  const plain = spawnSync(process.execPath, r.command('workflow-run.mjs', work, '--out', plainDir, '--json'),
+    { cwd: r.root, env, encoding: 'utf8', timeout: 120000 });
+  assert.equal(plain.status, 2); assert.equal(plain.signal, null); assert.equal(plain.error, undefined);
+  assert.equal(plain.stdout, ''); assert.doesNotMatch(plain.stderr, /workflow:run \[/);
+  assert.deepEqual(fs.readdirSync(temporary), [], 'opt-out still cleans the failed preparation');
+  const preload = path.join(r.outside, 'pause-failed-cleanup.cjs'), paused = path.join(r.outside, 'cleanup-paused.json');
+  fs.writeFileSync(preload, `
+const fs = require('node:fs'), path = require('node:path'), remove = fs.rmSync;
+let blocked = false;
+fs.rmSync = function(file, ...args) {
+  if (!blocked && path.basename(String(file)) === 'checkout' &&
+      path.basename(path.dirname(String(file))).startsWith('workflow-visual-refresh-tree-')) {
+    blocked = true;
+    fs.writeFileSync(${JSON.stringify(paused)}, JSON.stringify({ file: String(file), exists: fs.existsSync(file) }));
+    fs.writeSync(2, 'TEST cleanup paused before deletion\\n');
+    const ack = Buffer.alloc(1);
+    if (fs.readSync(0, ack, 0, 1, null) !== 1 || ack[0] !== 120) throw new Error('missing cleanup acknowledgment');
+  }
+  return remove.call(this, file, ...args);
+};
+`);
+  const child = spawn(process.execPath, ['--require', preload,
+    ...r.command('workflow-run.mjs', work, '--out', observedDir, '--json', '--progress')],
+  { cwd: r.root, env, stdio: ['pipe', 'pipe', 'pipe'], timeout: 120000, killSignal: 'SIGKILL' });
+  let stdout = '', stderr = '', released = false, atPause, pauseError, stdinError;
+  child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
+  child.stdout.on('data', (chunk) => { stdout += chunk; });
+  child.stderr.on('data', (chunk) => {
+    stderr += chunk;
+    if (!released && stderr.includes('TEST cleanup paused before deletion')) {
+      released = true;
+      try {
+        const snapshot = JSON.parse(fs.readFileSync(paused, 'utf8'));
+        atPause = { stdout, stderr, running: child.exitCode === null,
+          snapshotExists: snapshot.exists && fs.existsSync(snapshot.file) };
+      } catch (error) { pauseError = error; }
+      finally { child.stdin.end('x'); }
+    }
+  });
+  child.stdin.on('error', (error) => { stdinError = error; });
+  const result = await new Promise((resolve, reject) => {
+    child.once('error', reject); child.once('close', (code, signal) => resolve({ code, signal }));
+  });
+  assert.equal(result.code, plain.status, stderr); assert.equal(result.signal, null); assert.equal(stdinError, undefined);
+  assert.equal(pauseError, undefined);
+  assert.equal(released, true); assert.equal(atPause.running, true); assert.equal(atPause.snapshotExists, true);
+  assert.equal(atPause.stdout, ''); assert.match(atPause.stderr, /cleanup:start/);
+  assert.doesNotMatch(atPause.stderr, /cleanup:done|run:failed/, 'cleanup must still be in progress while deletion is blocked');
+  assert.equal(stdout, plain.stdout);
+  assert.ok(stderr.endsWith(plain.stderr), 'the existing tool error remains verbatim');
+  assert.match(stderr, /owner:start "1\/2 screen:RESULT-001\/known"/);
+  assert.match(stderr, /run:failed/); assert.doesNotMatch(stderr, /run:done|packet:done/);
+  assert.equal((stderr.match(/cleanup:start/g) || []).length, 1, 'the outer no-op cleanup must not start another phase');
+  assert.equal((stderr.match(/cleanup:done/g) || []).length, 1);
+  assert.deepEqual(fs.readdirSync(temporary), [], 'the real snapshot is removed before the original error exits');
   assert.equal(fs.existsSync(observedDir), false); assert.equal(fs.existsSync(plainDir), false);
 });
 

@@ -550,7 +550,7 @@ test('#321 compact Evidence validators resolve IDs independently and preserve ex
   assert.equal(missing.verify(), false, 'a missing read and an empty file retain different observation identities');
 });
 
-test('#321 compact Evidence summaries retain large prose as booleans and never become full-prose results', () => {
+test('#321 compact Evidence summaries retain large prose as flags and never become full-prose results', () => {
   const id = 'IN-20261113-meeting-005', ref = `input:${id}#compact-large/01`;
   const body = `## Compact Large\n- ${'long visible evidence '.repeat(60_000)}\n`;
   const artifact = { fm: { input_id: id }, body };
@@ -563,6 +563,80 @@ test('#321 compact Evidence summaries retain large prose as booleans and never b
   assert.equal(full.evidenceText, 'long visible evidence '.repeat(60_000).trim());
   assert.deepEqual(createInputEvidenceValidator([artifact])(ref), validationProjection(full));
 });
+
+test('#321 compact Evidence flags preserve empty, full and mixed lists across packed boundaries', () => {
+  const id = 'IN-20261113-meeting-bitmap';
+  for (const count of [0, 1, 3, 4, 5, 7, 8, 9, 15, 16, 17, 31, 32, 33, 79, 80, 81]) {
+    for (const density of ['empty', 'full', 'mixed']) {
+      const nonempty = Array.from({ length: count }, (_, index) => density === 'full' ||
+        (density === 'mixed' && index % 3 === 0));
+      const artifact = { fm: { input_id: id }, body: `## Bitmap ${density} ${count}\n` +
+        nonempty.map((visible, index) => visible ? `- visible ${index}` : `- \`code ${index}\``).join('\n') };
+      const prefix = `input:${id}#bitmap-${density}-${count}`;
+      const full = buildInputArtifactIndex([artifact]);
+      // A second validator exercises the serialized cache-hit value too.
+      for (let pass = 0; pass < 2; pass += 1) {
+        const compact = createInputEvidenceValidator([artifact]);
+        assert.deepEqual(compact(prefix), validationProjection(resolveInputEvidence(full, prefix)));
+        for (let index = 0; index < count; index += 1) {
+          const ref = `${prefix}/${String(index + 1).padStart(2, '0')}`;
+          assert.deepEqual(compact(ref), validationProjection(resolveInputEvidence(full, ref)), ref);
+          assert.equal(compact(ref).hasEvidenceText, nonempty[index], `${ref} pass ${pass}`);
+        }
+        const outside = `${prefix}/${count + 1}`;
+        assert.deepEqual(compact(outside), validationProjection(resolveInputEvidence(full, outside)));
+      }
+    }
+  }
+});
+
+for (const [shape, bulletCount] of [['short', 80], ['long', 40]]) {
+  test(`#321 compact Evidence retains 1274 ${shape}-bullet inputs across fresh validator sweeps`, (t) => {
+    const inputBytes = Math.floor(14.25 * 1024 * 1024 / 1274) + 1;
+    const artifacts = Array.from({ length: 1274 }, (_, input) => {
+      const id = `IN-20261113-meeting-${String(input + 1).padStart(4, '0')}`;
+      const prefix = `---\n${JSON.stringify({ input_id: id })}\n---\n\n`;
+      const facts = '## Extracted Facts\n' + Array.from({ length: bulletCount }, (_, bullet) => shape === 'short'
+        ? `- Fact ${input}/${bullet}: preserve item.`
+        : `- Existing fact ${input}/${bullet}: Preserve the documented local behavior and show the captured context. `.repeat(3)).join('\n');
+      const body = `${facts}\n\n## Notes\n`.padEnd(inputBytes - prefix.length - 1, ' ') + '\n';
+      assert.equal(prefix.length + body.length, inputBytes);
+      return { fm: { input_id: id }, body };
+    });
+    const refs = artifacts.map((artifact) => `input:${artifact.fm.input_id}#extracted-facts/01`);
+    const stringify = JSON.stringify, serialized = [];
+    const hook = t.mock.method(JSON, 'stringify', function (value, ...args) {
+      const json = stringify.call(this, value, ...args);
+      if (Array.isArray(value) && value[0]?.[0] === 'extracted-facts') serialized.push(json);
+      return json;
+    });
+    let retainedBytes;
+    try {
+      const first = createInputEvidenceValidator(artifacts);
+      for (const ref of refs) {
+        const evidence = first(ref);
+        assert.equal(evidence.status, 'ok');
+        assert.equal(evidence.bulletCount, bulletCount);
+        assert.equal(evidence.hasEvidenceText, true);
+      }
+      assert.equal(serialized.length, artifacts.length, 'one syntax projection per unique first-read body');
+      // The shared cache measures exact UTF-16 key + serialized payload bytes.
+      // SHA-256 contributes 64 hex characters; every key also includes source length.
+      retainedBytes = serialized.reduce((bytes, json, index) =>
+        bytes + 2 * (String(artifacts[index].body.length).length + 1 + 64 + json.length), 0);
+      t.diagnostic(`${artifacts.length} ${shape} inputs: ${retainedBytes} first-pass cache key/payload bytes`);
+      const warm = reconciliationParseStats(), writes = serialized.length;
+      for (let pass = 0; pass < 2; pass += 1) {
+        const fresh = createInputEvidenceValidator(artifacts);
+        for (const ref of refs) assert.equal(fresh(ref).bulletCount, bulletCount);
+        assert.deepEqual(reconciliationParseStats(), warm, 'a fresh complete sweep must not rebuild Evidence views');
+        assert.equal(serialized.length, writes, 'no summary is reserialized during a cache-hit sweep');
+      }
+      assert.ok(retainedBytes < 1024 * 1024, `${shape} summaries require ${retainedBytes} bytes`);
+    } finally { hook.mock.restore(); }
+    t.diagnostic(`${artifacts.length} ${shape} inputs: ${retainedBytes} retained key/payload bytes; repeat sweeps add zero projections`);
+  });
+}
 
 test('#321 compact Evidence cache enforces its byte budget and skips oversized summaries', () => {
   const id = 'IN-20261113-meeting-006';

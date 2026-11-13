@@ -111,6 +111,8 @@ backstop and packet/report creation. For example,
 `owner:start "1/2 screen:RESULT-001/known"` identifies the first requested owner evaluation.
 Current-authority runs provide the common preparation, backstop and output
 phases. Checkpoint, report and backstop markers appear only when those steps run.
+If scoped preparation fails after its snapshot is materialized, cleanup markers
+start before removing that owned snapshot and finish after removal.
 
 Markers are diagnostic phase boundaries, not periodic heartbeats, percentages or
 permission. A long gap after a `:start` marker means that phase has not returned;

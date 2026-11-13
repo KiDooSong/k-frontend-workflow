@@ -1,9 +1,10 @@
 // Actual scoped workflow-run, including packet/checkpoint/backstop comparisons.
 // node kit-dev/benchmarks/scoped-run.mjs <before-kit> <after-kit>
-//   [runs=3] [owners=1,2] [inputs=1274] [shape=sparse|dense] [blobs=3303]
+//   [runs=3] [owners=1,2] [inputs=1274] [shape=sparse|dense|short-bullets] [blobs=3303]
 //   [raw-blob-bytes=8192] [timeout-ms=240000] [raw-doc-bytes=raw-blob-bytes]
 // sparse: short Evidence bullet, tables/Notes; dense: long Extracted Facts bullets.
-// Both shapes keep the same input count and bytes. Raw .bin files represent a
+// short-bullets: 80 short Evidence bullets, with remaining bytes in separate Notes.
+// All shapes keep the same input count and bytes. Raw .bin files represent a
 // broad tree, not additional Markdown authority. The output records actual size;
 // this fixture does not reproduce the consumer's undisclosed documents or 68m run.
 // Diagnostics and packet-bound postwork run once per side for the largest owner
@@ -19,7 +20,7 @@ import {pathToFileURL} from 'node:url';
 
 const DOCS = 'docs/frontend-workflow', OWNERS = ['RESULT-001', 'RESULT-002'];
 const INPUT_BYTES = Math.floor(14.25 * 1024 * 1024 / 1274) + 1;
-const USAGE = 'usage: scoped-run.mjs <before-kit> <after-kit> [runs=3] [owners=1,2] [inputs=1274] [shape=sparse|dense] [blobs=3303] [raw-blob-bytes=8192] [timeout-ms=240000] [raw-doc-bytes=raw-blob-bytes]';
+const USAGE = 'usage: scoped-run.mjs <before-kit> <after-kit> [runs=3] [owners=1,2] [inputs=1274] [shape=sparse|dense|short-bullets] [blobs=3303] [raw-blob-bytes=8192] [timeout-ms=240000] [raw-doc-bytes=raw-blob-bytes]';
 const table = (headers, rows) => [`| ${headers.join(' | ')} |`, `|${headers.map(() => '---').join('|')}|`,
   ...rows.map((row) => `| ${row.join(' | ')} |`)].join('\n');
 const md = (fm, body) => `---\n${JSON.stringify(fm)}\n---\n\n${body}`;
@@ -85,6 +86,8 @@ async function createFixture(kit, root, config) {
     const id = inputId(index), ref = inputRef(index);
     const facts = config.shape === 'dense'
       ? '## Extracted Facts\n' + Array.from({length: 40}, (_, n) => `- Existing fact ${index}/${n}: Preserve the documented local behavior and show the captured context. `.repeat(3)).join('\n') + '\n'
+      : config.shape === 'short-bullets'
+      ? '## Extracted Facts\n' + Array.from({length: 80}, (_, n) => `- Fact ${index}/${n}: preserve item.`).join('\n') + '\n\n## Notes\n'
       : `## Extracted Facts\n- Existing source ${index}.\n\n## Inventory\n` + table(['Item', 'Behavior'], Array.from({length: 40}, (_, n) =>
         [`control-${index}-${n}`, `Preserve state ${index}/${n} while loading and do not silently change a reported result.`])) + '\n\n## Notes\n';
     let value = md({input_id: id, input_type: 'meeting', source_type: 'meeting', source_ref: `meeting:perf-${index}`,
@@ -204,14 +207,14 @@ async function main(args) {
     rawBytes: integer(args[7] ?? 8192, 64), timeout: integer(args[8] ?? 240000, 1000)};
   config.rawDocBytes = integer(args[9] ?? config.rawBytes, 64);
   assert.ok(config.owners.every((n) => n <= 2) && new Set(config.owners).size === config.owners.length, USAGE);
-  assert.ok(['sparse', 'dense'].includes(config.shape), USAGE);
+  assert.ok(['sparse', 'dense', 'short-bullets'].includes(config.shape), USAGE);
   const scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'fwkit-run-benchmark-')));
   const output = {benchmark: 'scoped-workflow-run', harness_sha256: hash(fs.readFileSync(new URL(import.meta.url))),
     node: process.version, platform: `${process.platform}/${process.arch}`, kits, config,
     method: {timing: 'Fresh actual workflow-run --work --out --json processes; alternating order; includes startup, raw tree, preflight, backstop, packet/status writes and cleanup. All timed samples retained; no hooks or excluded warm-up.',
       verification: 'Exact complete prework stdout plus packet/status bytes for every owner case; ready, path decisions and digests preserved. HEAD/tree/index/worktree bytes/modes/status checked; raw snapshots cleaned. The largest selected owner request also verifies packet-bound postwork stdout/packet/status/report and backstop with controlled requested changes, outside timing.',
       diagnostics: 'Separate instrumented processes for the largest selected owner request count exported functions and AST parses by initial register/composition phase. CPU/RSS includes loader worker and excludes Git child usage; not timed-run or retained memory.',
-      fixture: 'One or two adopted screen behavior owners with 7/3 regular-file M targets; first has no API candidate, second consumes an existing manual API contract. Each has an unselected source-backed later unit. Fixed 1274-input scale is 14.25 MiB; sparse and dense vary where prose is stored. Synthetic declarations are not human approval.',
+      fixture: 'One or two adopted screen behavior owners with 7/3 regular-file M targets; first has no API candidate, second consumes an existing manual API contract. Each has an unselected source-backed later unit. Fixed 1274-input scale is 14.25 MiB; sparse, dense (40 long bullets) and short-bullets (80 short bullets plus separate Notes) vary where prose is stored. Synthetic declarations are not human approval.',
       scope: 'Raw .bin files model unrelated tree breadth; raw bytes and counts are explicit. Inputs and trees are synthetic, not the undisclosed consumer; the observed 68-minute run is not reproduced or predicted.'}, cases: []};
   try {
     const fixture = await createFixture(kits.before, path.join(scratch, 'project'), config), clean = repositoryState(fixture.root);

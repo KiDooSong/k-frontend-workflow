@@ -232,6 +232,23 @@ function inputSectionEntries(body) {
   return [...bulletTexts];
 }
 
+function inputValidationEntries(body) {
+  return inputSectionEntries(body).map(([slug, texts]) => {
+    // Four nonempty flags per ASCII hex digit. JSON boolean arrays cost about
+    // five or six characters per flag and can evict inventories that fit the full
+    // prose cache. A bitmap stays small for both empty and nonempty lists.
+    const packed = [];
+    for (let start = 0; start < texts.length; start += 4) {
+      let bits = 0;
+      for (let bit = 0; bit < 4 && start + bit < texts.length; bit += 1) {
+        if (texts[start + bit].trim()) bits |= 1 << bit;
+      }
+      packed.push(bits.toString(16));
+    }
+    return [slug, [texts.length, packed.join('')]];
+  });
+}
+
 // Each validator owns a private index and first-read summaries. Do not accept
 // the public Evidence index: mixing compact and full-text views would require
 // retaining old prose to reproduce a later full-text read after a file edit.
@@ -248,15 +265,16 @@ export function createInputEvidenceValidator(inputArtifacts = []) {
     if (resolution.status !== 'ok') return result(resolution.status === 'ambiguous' ? 'ambiguous-input' : 'missing-input');
     const artifact = resolution.artifact, key = artifact.file || artifact;
     if (!summaries.has(key)) {
-      const entries = inputValidationSyntax.getOrCreate(inputArtifactBody(artifact), (body) =>
-        inputSectionEntries(body).map(([slug, texts]) => [slug, texts.map((text) => Boolean(text.trim()))]));
+      const entries = inputValidationSyntax.getOrCreate(inputArtifactBody(artifact), inputValidationEntries);
       summaries.set(key, new Map(entries));
     }
     const sections = summaries.get(key);
     if (!sections.has(ref.section)) return result('missing-section');
-    const bullets = sections.get(ref.section), count = bullets.length;
+    const [count, nonempty] = sections.get(ref.section);
     if (ref.bulletIndex !== null && ref.bulletIndex > count) return result('bullet-out-of-range', count);
-    return result('ok', count, ref.bulletIndex !== null && bullets[ref.bulletIndex - 1] === true);
+    const offset = ref.bulletIndex === null ? null : ref.bulletIndex - 1;
+    return result('ok', count, offset !== null && Boolean(
+      Number.parseInt(nonempty[Math.floor(offset / 4)], 16) & (1 << (offset % 4))));
   };
 }
 

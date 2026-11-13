@@ -317,9 +317,11 @@ function executeWorkCli(tool, parsed) {
     }
     throw new CurrentWorkExecutionError(`unsupported work CLI: ${tool}`);
   } finally {
-    workflowProgress('cleanup:start');
+    // Failed preparation cleans its private snapshot before throwing. There is
+    // no returned preflight to clean again or report as another cleanup phase.
+    if (preflight) workflowProgress('cleanup:start');
     impl.cleanup(preflight);
-    workflowProgress('cleanup:done');
+    if (preflight) workflowProgress('cleanup:done');
   }
 }
 

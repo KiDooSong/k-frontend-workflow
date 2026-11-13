@@ -198,7 +198,9 @@ export function prepareScopedWork({ work, root, docs, src, policy, manifest, lay
       _context: { ...ctx, workPath, baselineRoot, request, snapshot, composition, resources },
     };
   } catch (error) {
+    workflowProgress('cleanup:start');
     snapshot.cleanup();
+    workflowProgress('cleanup:done');
     throw error;
   }
 }
