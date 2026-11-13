@@ -55,11 +55,11 @@ function advisoryValidationFixture(t, { conflict = true, alias = false, unrelate
   const marker = 'UNRELATED_PROSE_MUST_STAY_COMPACT_321';
   if (unrelated) {
     const file = path.join(root, `${UNRELATED_INPUT_ID}.md`);
-    fs.writeFileSync(file, document({ ...metadata, input_id: UNRELATED_INPUT_ID }, `## Extracted Facts\n- ${marker} ${'ordinary prose '.repeat(800)}`));
+    fs.writeFileSync(file, document({ ...metadata, input_id: UNRELATED_INPUT_ID }, `## Unrelated Facts\n- ${marker} ${'ordinary prose '.repeat(800)}`));
     artifacts.push(loadInputArtifact(file));
     summaries.push([UNRELATED_INPUT_ID, 'meeting', 'reject-input', 'reconciled', 'rejected', '-', '-', '-']);
     items.push([UNRELATED_INPUT_ID, '01', 'reject', 'reject-input', 'reject', '-',
-      `input:${UNRELATED_INPUT_ID}#extracted-facts/01`, 'inherit', 'statement', 'inherit']);
+      `input:${UNRELATED_INPUT_ID}#unrelated-facts/01`, 'inherit', 'statement', 'inherit']);
   }
   const registerFile = path.join(root, 'register.md');
   fs.writeFileSync(registerFile, document({ reconciliation_contract: 2, review_profile: 'reconcile-stage04-v1', structured_since: '2026-07-20T00:00:00Z' },
@@ -608,15 +608,24 @@ for (const alias of [false, true]) for (const initialConflict of [false, true]) 
 test('#321 one scope advisory retains compact validation for unrelated input files', (t) => {
   const f = advisoryValidationFixture(t, { unrelated: true });
   const stringify = JSON.stringify;
+  let compactSummaries = 0;
   const hook = t.mock.method(JSON, 'stringify', function (value, ...args) {
-    const serializedProse = Array.isArray(value) && value.some((entry) => Array.isArray(entry) && Array.isArray(entry[1]) &&
-      entry[1].some((text) => typeof text === 'string' && text.includes(f.marker)));
-    assert.equal(serializedProse, false, 'an unrelated Evidence body must use compact flags even in a register with a scope advisory');
-    return stringify.call(this, value, ...args);
+    const json = stringify.call(this, value, ...args);
+    const entry = Array.isArray(value) ? value.find((item) =>
+      Array.isArray(item) && item[0] === 'unrelated-facts') : null;
+    // A cold compact miss can populate full syntax too. Check compact output
+    // separately so an advisory cannot silently send unrelated inputs to full validation.
+    if (entry && typeof entry[1]?.[0] === 'number') {
+      compactSummaries += 1;
+      assert.deepEqual(entry[1], [1, '1']);
+      assert.equal(json.includes(f.marker), false, 'compact output retains flags rather than unrelated prose');
+    }
+    return json;
   });
   try {
     const result = f.run();
     assert.deepEqual(result.errors, []);
     assert.equal(result.warnings.filter((entry) => entry.message.startsWith('RR-ROUTE-101:')).length, 1);
+    assert.equal(compactSummaries, 1, 'an unrelated input still uses compact validation alongside a scope advisory');
   } finally { hook.mock.restore(); }
 });
