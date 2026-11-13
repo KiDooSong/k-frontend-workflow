@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { splitFrontmatter, DEFAULTS, KIT_ROOT } from './util.mjs';
 import { buildState } from '../workflow-state.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
@@ -82,13 +82,215 @@ function repository(t) {
   const request = (requests, name = 'request.json') => {
     const file = path.join(outside, name); fs.writeFileSync(file, JSON.stringify({ version: 1, origin_inputs: [], requests })); return file;
   };
-  const cli = (script, work, ...extra) => spawnSync(process.execPath, [path.join(KIT_ROOT, 'scripts', script), '--work', work, '--root', root,
-    '--docs', DOCS, '--src', 'src', '--policy', '.kit/policy.yaml', '--manifest', '.kit/manifest.yaml', '--layout', '.kit/layout.yaml', ...extra],
+  const command = (script, work, ...extra) => [path.join(KIT_ROOT, 'scripts', script), '--work', work, '--root', root,
+    '--docs', DOCS, '--src', 'src', '--policy', '.kit/policy.yaml', '--manifest', '.kit/manifest.yaml', '--layout', '.kit/layout.yaml', ...extra];
+  const cli = (script, work, ...extra) => spawnSync(process.execPath, command(script, work, ...extra),
   { cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout: 120000 });
   const json = (run) => { assert.equal(run.status, 0, run.stderr || run.stdout); return JSON.parse(run.stdout); };
-  return { root, outside, docs, put, edit, commit, request, cli, json };
+  return { root, outside, docs, put, edit, commit, request, command, cli, json };
 }
 const surfaceRequest = { owner: SURFACE, authority: 'scoped', unit: 'panel', targets: [{ path: PANEL, change: 'M' }] };
+
+const screenRequests = () => MEMBERS.map((id) => ({ owner: `screen:${id}`, authority: 'scoped', unit: 'known',
+  targets: [{ path: ENTRY(id), change: 'M' }] }));
+const runBundle = (directory) => ['work-packet.md', 'run-report.md'].map((name) => path.join(directory, name)).concat(`${directory}.md`)
+  .map((file) => fs.existsSync(file) ? fs.readFileSync(file) : null);
+
+for (const denied of [false, true]) test(`#321 progress CLI: ${denied ? 'denied' : 'ready'} two-owner pre-work keeps stdout and packet bytes identical`, (t) => {
+  const r = repository(t);
+  if (denied) { r.edit('rules-2.md', ({ fm }) => { fm.status = 'draft'; }); r.commit('unconfirmed second host contract'); }
+  const work = r.request(screenRequests()), plainDir = path.join(r.outside, 'plain'), observedDir = path.join(r.outside, 'observed');
+  const plain = r.cli('workflow-run.mjs', work, '--out', plainDir, '--json');
+  const observed = r.cli('workflow-run.mjs', work, '--out', observedDir, '--json', '--progress');
+  const expected = r.json(plain), actual = r.json(observed);
+  assert.equal(expected.state, denied ? 'HALT_AMBIGUITY' : 'HALT_READY_FOR_WORK');
+  assert.equal(plain.stderr, '');
+  assert.equal(observed.stdout, plain.stdout);
+  assert.deepEqual(actual, expected);
+  assert.deepEqual(runBundle(observedDir), runBundle(plainDir));
+  for (const phase of ['run:start', 'snapshot:start', 'snapshot:done', 'baseline-inputs:start', 'baseline-inputs:done',
+    'composition-audit:start', 'composition-audit:done', 'authority:start', 'authority:done', 'packet:start', 'packet:done', 'cleanup:done', 'run:done']) {
+    assert.ok(observed.stderr.includes(phase), `missing progress phase ${phase}`);
+  }
+  for (const [index, id] of MEMBERS.entries()) {
+    assert.ok(observed.stderr.includes(`owner:start "${index + 1}/2 screen:${id}/known"`));
+    assert.ok(observed.stderr.includes(`owner:done "${index + 1}/2 screen:${id}/known"`));
+  }
+  assert.equal(observed.stderr.includes('backstop:start'), !denied);
+  assert.equal(execFileSync('git', ['status', '--porcelain'], { cwd: r.root, encoding: 'utf8' }), '');
+});
+
+test('#321 progress CLI: packet-bound post-work keeps checkpoint, backstop and every output byte identical', (t) => {
+  const r = repository(t), work = r.request(screenRequests()), before = path.join(r.outside, 'before');
+  r.json(r.cli('workflow-run.mjs', work, '--out', before, '--json'));
+  const packet = path.join(before, 'work-packet.md'), packetBytes = fs.readFileSync(packet);
+  for (const id of MEMBERS) r.put(ENTRY(id), `export default function Result() { return '${id}'; }\n`);
+  const plainDir = path.join(r.outside, 'plain'), observedDir = path.join(r.outside, 'observed');
+  const plain = r.cli('workflow-run.mjs', work, '--packet', packet, '--out', plainDir, '--json');
+  const observed = r.cli('workflow-run.mjs', work, '--packet', packet, '--out', observedDir, '--json', '--progress');
+  assert.equal(r.json(plain).state, 'DONE_PENDING_REVIEW');
+  assert.equal(r.json(observed).backstop.ok, true);
+  assert.equal(plain.stderr, '');
+  assert.equal(observed.stdout, plain.stdout);
+  assert.deepEqual(runBundle(observedDir), runBundle(plainDir));
+  assert.deepEqual(fs.readFileSync(packet), packetBytes);
+  for (const phase of ['checkpoint:start', 'checkpoint:done', 'backstop:start', 'backstop:done', 'report:start', 'report:done']) {
+    assert.ok(observed.stderr.includes(phase));
+  }
+});
+
+test('#321 progress CLI: current authority retains its independent preparation and existing denial', (t) => {
+  const r = repository(t), work = r.request([{ owner: 'screen:RESULT-001', authority: 'current', requested_mode: 'rough-fixture-ui',
+    targets: [{ path: ENTRY('RESULT-001'), change: 'M' }] }]);
+  const plain = r.cli('workflow-run.mjs', work, '--json'), observed = r.cli('workflow-run.mjs', work, '--json', '--progress');
+  assert.equal(r.json(plain).state, 'HALT_AMBIGUITY');
+  assert.ok(r.json(observed).denials.some((entry) => entry.code === 'CW-WORK-SELECTION-REQUIRED'));
+  assert.equal(plain.stderr, ''); assert.equal(observed.stdout, plain.stdout);
+  assert.match(observed.stderr, /prepare:start "current"/); assert.match(observed.stderr, /prepare:done "current"/);
+  assert.doesNotMatch(observed.stderr, /snapshot:start|owner:start/);
+});
+
+test('#321 progress CLI: a closed diagnostic sink preserves the full run output and packet', (t) => {
+  const r = repository(t), work = r.request(screenRequests()), plainDir = path.join(r.outside, 'plain'), observedDir = path.join(r.outside, 'observed');
+  const plain = r.cli('workflow-run.mjs', work, '--out', plainDir, '--json'); r.json(plain);
+  const preload = path.join(r.outside, 'closed-progress.cjs');
+  fs.writeFileSync(preload, `
+const fs = require('node:fs'), write = fs.writeSync;
+fs.writeSync = function(fd, ...args) {
+  if (fd === 2) throw Object.assign(new Error('closed diagnostic sink'), { code: 'EPIPE' });
+  return write.call(this, fd, ...args);
+};
+`);
+  const observed = spawnSync(process.execPath, ['--require', preload,
+    ...r.command('workflow-run.mjs', work, '--out', observedDir, '--json', '--progress')],
+  { cwd: r.root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout: 120000 });
+  r.json(observed);
+  assert.equal(observed.stderr, ''); assert.equal(observed.stdout, plain.stdout);
+  assert.deepEqual(runBundle(observedDir), runBundle(plainDir));
+});
+
+test('#321 progress CLI: failing owner reports actual cleanup before deletion and preserves the original error and exit', async (t) => {
+  const r = repository(t);
+  r.edit('screen-1.md', ({ fm }) => { fm.work_execution.units[0].contracts = ['artifact:MISSING#rules']; });
+  r.commit('broken selected contract');
+  const work = r.request(screenRequests()), plainDir = path.join(r.outside, 'plain'), observedDir = path.join(r.outside, 'observed');
+  const temporary = path.join(r.outside, 'tmp'); fs.mkdirSync(temporary);
+  const env = { ...process.env, TMPDIR: temporary, TMP: temporary, TEMP: temporary };
+  const plain = spawnSync(process.execPath, r.command('workflow-run.mjs', work, '--out', plainDir, '--json'),
+    { cwd: r.root, env, encoding: 'utf8', timeout: 120000 });
+  assert.equal(plain.status, 2); assert.equal(plain.signal, null); assert.equal(plain.error, undefined);
+  assert.equal(plain.stdout, ''); assert.doesNotMatch(plain.stderr, /workflow:run \[/);
+  assert.deepEqual(fs.readdirSync(temporary), [], 'opt-out still cleans the failed preparation');
+  const preload = path.join(r.outside, 'pause-failed-cleanup.cjs'), paused = path.join(r.outside, 'cleanup-paused.json');
+  fs.writeFileSync(preload, `
+const fs = require('node:fs'), path = require('node:path'), remove = fs.rmSync;
+let blocked = false;
+fs.rmSync = function(file, ...args) {
+  if (!blocked && path.basename(String(file)) === 'checkout' &&
+      path.basename(path.dirname(String(file))).startsWith('workflow-visual-refresh-tree-')) {
+    blocked = true;
+    fs.writeFileSync(${JSON.stringify(paused)}, JSON.stringify({ file: String(file), exists: fs.existsSync(file) }));
+    fs.writeSync(2, 'TEST cleanup paused before deletion\\n');
+    const ack = Buffer.alloc(1);
+    if (fs.readSync(0, ack, 0, 1, null) !== 1 || ack[0] !== 120) throw new Error('missing cleanup acknowledgment');
+  }
+  return remove.call(this, file, ...args);
+};
+`);
+  const child = spawn(process.execPath, ['--require', preload,
+    ...r.command('workflow-run.mjs', work, '--out', observedDir, '--json', '--progress')],
+  { cwd: r.root, env, stdio: ['pipe', 'pipe', 'pipe'], timeout: 120000, killSignal: 'SIGKILL' });
+  let stdout = '', stderr = '', released = false, atPause, pauseError, stdinError;
+  child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
+  child.stdout.on('data', (chunk) => { stdout += chunk; });
+  child.stderr.on('data', (chunk) => {
+    stderr += chunk;
+    if (!released && stderr.includes('TEST cleanup paused before deletion')) {
+      released = true;
+      try {
+        const snapshot = JSON.parse(fs.readFileSync(paused, 'utf8'));
+        atPause = { stdout, stderr, running: child.exitCode === null,
+          snapshotExists: snapshot.exists && fs.existsSync(snapshot.file) };
+      } catch (error) { pauseError = error; }
+      finally { child.stdin.end('x'); }
+    }
+  });
+  child.stdin.on('error', (error) => { stdinError = error; });
+  const result = await new Promise((resolve, reject) => {
+    child.once('error', reject); child.once('close', (code, signal) => resolve({ code, signal }));
+  });
+  assert.equal(result.code, plain.status, stderr); assert.equal(result.signal, null); assert.equal(stdinError, undefined);
+  assert.equal(pauseError, undefined);
+  assert.equal(released, true); assert.equal(atPause.running, true); assert.equal(atPause.snapshotExists, true);
+  assert.equal(atPause.stdout, ''); assert.match(atPause.stderr, /cleanup:start/);
+  assert.doesNotMatch(atPause.stderr, /cleanup:done|run:failed/, 'cleanup must still be in progress while deletion is blocked');
+  assert.equal(stdout, plain.stdout);
+  assert.ok(stderr.endsWith(plain.stderr), 'the existing tool error remains verbatim');
+  assert.match(stderr, /owner:start "1\/2 screen:RESULT-001\/known"/);
+  assert.match(stderr, /run:failed/); assert.doesNotMatch(stderr, /run:done|packet:done/);
+  assert.equal((stderr.match(/cleanup:start/g) || []).length, 1, 'the outer no-op cleanup must not start another phase');
+  assert.equal((stderr.match(/cleanup:done/g) || []).length, 1);
+  assert.deepEqual(fs.readdirSync(temporary), [], 'the real snapshot is removed before the original error exits');
+  assert.equal(fs.existsSync(observedDir), false); assert.equal(fs.existsSync(plainDir), false);
+});
+
+test('#321 progress CLI: snapshot progress reaches stderr while synchronous preparation is still blocked', async (t) => {
+  const r = repository(t), work = r.request(screenRequests()), plain = r.cli('workflow-run.mjs', work, '--json');
+  r.json(plain);
+  const preload = path.join(r.outside, 'pause-on-progress.cjs');
+  const acknowledged = path.join(r.outside, 'progress-acknowledged');
+  fs.writeFileSync(preload, `
+const fs = require('node:fs'), write = fs.writeSync;
+let paused = false;
+fs.writeSync = function(fd, bytes, ...args) {
+  const result = write.call(this, fd, bytes, ...args);
+  if (!paused && fd === 2 && Buffer.isBuffer(bytes) && bytes.includes(Buffer.from('snapshot:start'))) {
+    paused = true;
+    const ack = Buffer.alloc(1);
+    if (fs.readSync(0, ack, 0, 1, null) !== 1 || ack[0] !== 120) throw new Error('missing progress acknowledgment');
+    fs.writeFileSync(${JSON.stringify(acknowledged)}, 'acknowledged');
+  }
+  return result;
+};
+`);
+  const child = spawn(process.execPath, ['--require', preload, ...r.command('workflow-run.mjs', work, '--json', '--progress')],
+    { cwd: r.root, stdio: ['pipe', 'pipe', 'pipe'], timeout: 120000, killSignal: 'SIGKILL' });
+  let stdout = '', stderr = '', released = false, stdoutAtProgress = null, runningAtProgress = false;
+  child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
+  child.stdout.on('data', (chunk) => { stdout += chunk; });
+  child.stderr.on('data', (chunk) => {
+    stderr += chunk;
+    if (!released && stderr.includes('snapshot:start')) {
+      released = true; stdoutAtProgress = stdout; runningAtProgress = child.exitCode === null;
+      child.stdin.end('x');
+    }
+  });
+  let stdinError;
+  child.stdin.on('error', (error) => { stdinError = error; });
+  const result = await new Promise((resolve, reject) => {
+    child.once('error', reject); child.once('close', (code, signal) => resolve({ code, signal }));
+  });
+  assert.equal(result.code, 0, stderr); assert.equal(result.signal, null);
+  assert.equal(stdinError, undefined); assert.equal(released, true); assert.equal(runningAtProgress, true);
+  assert.equal(fs.readFileSync(acknowledged, 'utf8'), 'acknowledged', 'the synchronous pause must receive the parent handshake');
+  assert.equal(stdoutAtProgress, '', 'progress is observable before a complete JSON envelope exists');
+  assert.equal(stdout, plain.stdout);
+  assert.match(stderr, /run:done/);
+});
+
+test('#321 progress CLI: opt-in is restricted to boolean workflow-run --work and help documents stderr', (t) => {
+  const r = repository(t), work = r.request(screenRequests());
+  for (const script of ['readiness.mjs', 'workflow-packet.mjs', 'workflow-report.mjs', 'forbidden-paths.mjs']) {
+    const result = r.cli(script, work, '--progress', '--json');
+    assert.equal(result.status, 2); assert.match(result.stderr, /unknown option --progress/); assert.equal(result.stdout, '');
+  }
+  const malformed = r.cli('workflow-run.mjs', work, '--progress=true', '--json');
+  assert.equal(malformed.status, 2); assert.match(malformed.stderr, /--progress does not accept a value/);
+  const ordinary = spawnSync(process.execPath, [path.join(KIT_ROOT, 'scripts/workflow-run.mjs'), '--progress', '--help'], { encoding: 'utf8' });
+  assert.equal(ordinary.status, 2); assert.match(ordinary.stderr, /--progress requires --work/);
+  const help = r.cli('workflow-run.mjs', work, '--help');
+  assert.equal(help.status, 0); assert.match(help.stdout, /--progress.*stderr/); assert.equal(help.stderr, '');
+});
 
 test('D34 CLI: the five public work CLIs run a scoped request from preflight to review evidence', (t) => {
   const r = repository(t), work = r.request([surfaceRequest]);

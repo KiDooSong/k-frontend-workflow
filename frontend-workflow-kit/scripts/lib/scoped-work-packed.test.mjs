@@ -83,6 +83,20 @@ test('D packed: real reference, source, mapping, API, normalization, graph trave
     assert.match(syntax.stdout, new RegExp(`^# ${metric} 0\\r?$`, 'm'), syntax.stdout);
   }
   t.diagnostic('packed input syntax subprocess: all 8 body extraction/metadata validation and observed-read regressions passed');
+  const compact = checkedNode(['--test', '--test-reporter=tap', '--test-name-pattern=^#321 compact Evidence',
+    path.join(lib, 'provenance.test.mjs')], packed, env);
+  assert.match(compact.stdout, /^# pass 12\r?$/m, compact.stdout);
+  for (const metric of ['fail', 'cancelled', 'todo']) {
+    assert.match(compact.stdout, new RegExp(`^# ${metric} 0\\r?$`, 'm'), compact.stdout);
+  }
+  t.diagnostic('packed compact Evidence subprocess: all 12 bitmap, full-syntax fallback, repeated-sweep, fresh-read and bounded-cache regressions passed');
+  const advisory = checkedNode(['--test', '--test-reporter=tap', '--test-name-pattern=^#321 ',
+    path.join(lib, 'reconciliation-warnings.test.mjs')], packed, env);
+  assert.match(advisory.stdout, /^# pass 5\r?$/m, advisory.stdout);
+  for (const metric of ['fail', 'cancelled', 'todo']) {
+    assert.match(advisory.stdout, new RegExp(`^# ${metric} 0\\r?$`, 'm'), advisory.stdout);
+  }
+  t.diagnostic('packed Evidence advisory subprocess: all 5 first-read, same-file alias and mixed-register regressions passed');
   const metadata = checkedNode(['--test', '--test-reporter=tap', '--test-name-pattern=^#300 frontmatter',
     path.join(lib, 'frontmatter-syntax.test.mjs'), path.join(lib, 'util.test.mjs')], packed, env);
   assert.match(metadata.stdout, /^# pass 21\r?$/m, metadata.stdout);

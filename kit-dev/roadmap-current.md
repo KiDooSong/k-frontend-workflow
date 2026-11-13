@@ -1,5 +1,10 @@
 # Current Roadmap
 
+> 2026-11-13 #321: 대형 scoped 사전 실행의 v2 Evidence 검증은 section·bullet 개수·압축된 nonempty 비트맵만 별도 제한 캐시로 재사용한다. PR #322 리뷰의 짧은 bullet 다수 조건과, 요약 한도를 넘어도 기존 full 구문 캐시에 들어가는 다중 섹션 조건을 검증한다. 요약 miss는 기존 8 MiB 구문 캐시를 거쳐 Evidence 뷰를 재사용한다.
+> 새 검증마다 현재 본문과 입력/대상 상태를 확인하고 validation-only 읽기 관찰·판정·basis/checkpoint를 유지한다. 긴 prose와 작은 bullet 사례를 나누어 단일/두 화면의 실제 `workflow:run`·packet·backstop을 비교한다.
+> `workflow:run --work --progress`는 snapshot·입력 준비·owner별 평가·packet/report 등의 경과 단계를 선택적으로 stderr에 표시한다. stdout·출력 파일·검증/권한 판정은 바뀌지 않는다.
+> 정본: [Evidence](../frontend-workflow-kit/docs/reference/input-reconciliation.md#reconciliation-contract-v2-opt-in), [진행 진단](../frontend-workflow-kit/docs/reference/current-work.md#optional-progress-diagnostics). 재현: [scoped run benchmark](benchmarks/scoped-run.mjs). 실제 consumer의 68분 실행 해소 여부는 별도 재실행으로 확인한다.
+
 > 2026-11-13 #300 14차 성능 개선: scoped 실행 baseline의 profile applicability도 관계 단계 사이 unit·source 계산을 재사용한다.
 > profile과 Decision 검사는 각각 독립된 projection을 계산하며, coverage·path·host consent를 공유하거나 생략하지 않는다. profile은 uncertainty 적용 전과 API 파일·디렉터리 최종 검사 후에 private 검증 관찰을 다시 확인한다.
 > 검증용 미선택 입력 Evidence·register 부재·canonical bytes와 owner/host별 격리, mutable standalone 계산, scope-basis-v2·판정·read set·checkpoint 계약을 유지한다.

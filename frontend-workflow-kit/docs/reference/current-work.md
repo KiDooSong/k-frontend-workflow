@@ -89,9 +89,38 @@ are review evidence, not approval. Scoped work uses this flow with
 
 Each run prepares a fresh immutable baseline once. A packet-bound run compares the
 checkpoint before collecting Git evidence once, even when denied or absorbed.
-The same results feed state, JSON, status and report; no process cache is used.
+The same results feed state, JSON, status and report; a later invocation does not
+reuse an earlier preflight or Git verdict.
 For a normal ready task this changes the representative flow's prepare calls from
 6 to 2 and backstop calls from 4 to 2. Time/token improvement has not been measured.
+
+### Optional progress diagnostics
+
+For a long `workflow:run --work` invocation, add `--progress` to print elapsed
+phase markers to stderr while the synchronous work is running:
+
+```bash
+npm run -s workflow:run -- --work .workflow/scoped-work.json \
+  --out "$RUN_EVIDENCE/before" --json --progress \
+  > "$RUN_EVIDENCE/before.json" 2> "$RUN_EVIDENCE/before.progress.log"
+```
+
+Scoped runs identify snapshot materialization, baseline input preparation, each
+selected owner/unit, the final composition audit, authority collection, Git
+backstop and packet/report creation. For example,
+`owner:start "1/2 screen:RESULT-001/known"` identifies the first requested owner evaluation.
+Current-authority runs provide the common preparation, backstop and output
+phases. Checkpoint, report and backstop markers appear only when those steps run.
+If scoped preparation fails after its snapshot is materialized, cleanup markers
+start before removing that owned snapshot and finish after removal.
+
+Markers are diagnostic phase boundaries, not periodic heartbeats, percentages or
+permission. A long gap after a `:start` marker means that phase has not returned;
+no timeout or retry is added. The normal JSON stdout, packet/checkpoint bytes,
+exit codes and approval requirements are unchanged. Reporting is off by default;
+an unwritable stderr disables it without changing the evaluation. `--progress`
+is a boolean supported only by `workflow:run --work`, including packet-bound
+post-work runs. Other work CLIs and ordinary/visual run selectors reject it.
 
 Standalone commands remain useful diagnostics rather than required steps around run:
 

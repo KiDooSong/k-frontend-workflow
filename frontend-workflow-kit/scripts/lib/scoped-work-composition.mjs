@@ -10,6 +10,7 @@ import { ScopedWorkContractError, normalizeScopedWorkRequestSyntax } from './sco
 import { inspectScopedOwner, inspectScopedSnapshotOwner } from './scoped-work-owner.mjs';
 import { inspectScopedSurfaceHosts, inspectScopedSnapshotSurfaceHosts } from './scoped-work-hosts.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
+import { workflowProgress } from './workflow-progress.mjs';
 
 const fail = (message) => { throw new ScopedWorkContractError(`SW-COMPOSE: ${message}`); };
 const same = (left, right) => scopeJson(left) === scopeJson(right);
@@ -83,6 +84,8 @@ function inspectWorkRequests(options, snapshot) {
 
   const results = [];
   for (const selected of request.requests) {
+    const progressLabel = `${results.length + 1}/${request.requests.length} ${selected.owner}/${selected.unit}`;
+    workflowProgress('owner:start', progressLabel);
     // Every responsibility, including a surface host subrequest, keeps the same origins.
     const args = { ...resources, owner: selected.owner, unit: selected.unit, targets: selected.targets,
       origin_inputs: request.origin_inputs, coverage_reports: selected.coverage_reports };
@@ -109,6 +112,7 @@ function inspectWorkRequests(options, snapshot) {
         allowed: pathReasons(target.path).length === 0 && general.length === 0 })),
       prerequisite_denials: scopeSet(general), owner_satisfied: own.owner_satisfied,
       hosts_satisfied: hosts ? hosts.hosts_satisfied : null, owner_result: own, host_result: hosts });
+    workflowProgress('owner:done', progressLabel);
   }
 
   // A shared target is an AND of every responsible request; one allow never
@@ -132,7 +136,9 @@ function inspectWorkRequests(options, snapshot) {
     result.ready = result.owner_satisfied && result.hosts_satisfied !== false &&
       result.path_authorizations.every((entry) => entry.allowed);
   }
+  workflowProgress('composition-audit:start');
   audit();
+  workflowProgress('composition-audit:done');
   const ready = results.every((result) => result.ready) && shared.every((entry) => entry.allowed);
   // The same reason can be reported by several targets of one request; keep it once.
   const denials = new Map(results.flatMap((result) => [...result.prerequisite_denials,
