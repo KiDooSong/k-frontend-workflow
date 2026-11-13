@@ -214,6 +214,10 @@ function inputArtifactBody(artifact) {
 // body before this lookup. The bounds cover serialized UTF-16 payload and keys;
 // the entry cap also bounds per-entry bookkeeping.
 const inputSectionSyntax = createContentJsonCache({ maxBytes: 8 * 1024 * 1024, maxEntries: 4096 });
+// Register validation needs section existence, bullet counts and empty-prose
+// detection, not the full bullet text. Keep that pure syntax separately so a
+// large prose inventory cannot evict every validation summary on each pass.
+const inputValidationSyntax = createContentJsonCache({ maxBytes: 1024 * 1024, maxEntries: 4096 });
 
 function inputSectionEntries(body) {
   const bulletTexts = new Map();
@@ -226,6 +230,34 @@ function inputSectionEntries(body) {
   // Entries preserve Map insertion order and arbitrary section names without
   // turning authored slugs into object properties.
   return [...bulletTexts];
+}
+
+// Each validator owns a private index and first-read summaries. Do not accept
+// the public Evidence index: mixing compact and full-text views would require
+// retaining old prose to reproduce a later full-text read after a file edit.
+// No file is read at construction. Every fresh validator observes current body
+// bytes before the content lookup, exactly as the full Evidence resolver does.
+export function createInputEvidenceValidator(inputArtifacts = []) {
+  const index = buildInputArtifactIndex(inputArtifacts), summaries = new Map();
+  return (token) => {
+    const ref = parseInputEvidenceRef(token);
+    const result = (status, bulletCount = null, hasEvidenceText = false) =>
+      ({ status, ref, bulletCount, hasEvidenceText });
+    if (!ref) return result('invalid');
+    const resolution = resolveInputArtifact(index, ref.inputId);
+    if (resolution.status !== 'ok') return result(resolution.status === 'ambiguous' ? 'ambiguous-input' : 'missing-input');
+    const artifact = resolution.artifact, key = artifact.file || artifact;
+    if (!summaries.has(key)) {
+      const entries = inputValidationSyntax.getOrCreate(inputArtifactBody(artifact), (body) =>
+        inputSectionEntries(body).map(([slug, texts]) => [slug, texts.map((text) => Boolean(text.trim()))]));
+      summaries.set(key, new Map(entries));
+    }
+    const sections = summaries.get(key);
+    if (!sections.has(ref.section)) return result('missing-section');
+    const bullets = sections.get(ref.section), count = bullets.length;
+    if (ref.bulletIndex !== null && ref.bulletIndex > count) return result('bullet-out-of-range', count);
+    return result('ok', count, ref.bulletIndex !== null && bullets[ref.bulletIndex - 1] === true);
+  };
 }
 
 // H2 section slug -> actual Markdown list item count + exact visible bullet prose.

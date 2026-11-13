@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { buildInputArtifactIndex } from './provenance.mjs';
+import { loadInputArtifact } from './input-artifact.mjs';
+import { buildReconciliationTargetIndex } from './reconciliation-target-index.mjs';
+import { parseReconciliationRegister, REQUIRED_REGISTER_COLS } from './reconciliation-register.mjs';
+import { REQUIRED_ITEM_COLS, validateReconciliationV2 } from './reconciliation-items.mjs';
 import {
   analyzeReconciliationWarnings,
   extractCanonicalInputIds,
@@ -16,6 +23,52 @@ const WHILE_SOURCE_INPUT_ID = 'IN-20260731-while-003';
 const MAY_SOURCE_INPUT_ID = 'IN-20260731-may-003';
 const UNRELATED_INPUT_ID = 'IN-20260803-qa-002';
 const GROUP_KEY = `${CURRENT_INPUT_ID}\0${'01'}`;
+
+function advisoryValidationFixture(t, { conflict = true, alias = false, unrelated = false } = {}) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'reconciliation-advisory-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const table = (headers, rows) => [`| ${headers.join(' | ')} |`, `|${headers.map(() => '---').join('|')}|`,
+    ...rows.map((row) => `| ${row.join(' | ')} |`)].join('\n');
+  const document = (metadata, body) => `---\n${JSON.stringify(metadata)}\n---\n\n${body}\n`;
+  const inputFile = path.join(root, `${CURRENT_INPUT_ID}.md`);
+  const metadata = { input_id: CURRENT_INPUT_ID, input_type: 'meeting', source_type: 'meeting', source_ref: 'meeting:advisory',
+    captured_at: '2026-08-03T00:00:00Z', captured_by: 'test', status: 'captured', affected_domains: ['coupons'], affected_screens: ['COUPON-001'] };
+  const inputBody = (hasConflict) => `## Extracted Facts\n- Earlier nonscope evidence.\n- ${hasConflict
+    ? `${CURRENT_INPUT_ID} conflicts with ${OTHER_INPUT_ID}.` : 'An ordinary observation.'}`;
+  fs.writeFileSync(inputFile, document(metadata, inputBody(conflict)));
+  const targetFile = path.join(root, 'screen.md'), targetMetadata = { artifact_id: 'COUPON-001-screen-spec',
+    artifact_type: 'screen-spec', screen_id: 'COUPON-001', domain: 'coupons', status: 'draft' };
+  fs.writeFileSync(targetFile, document(targetMetadata, `## Unknowns\n${table(['ID', 'Question', 'Status'], [['U-001', 'What remains unknown?', 'open']])}`));
+  const artifacts = [loadInputArtifact(inputFile), inputArtifact(OTHER_INPUT_ID, ['Other input context.'])];
+  const firstId = alias ? THIRD_INPUT_ID : CURRENT_INPUT_ID;
+  if (alias) artifacts.push({ ...artifacts[0], fm: { ...metadata, input_id: firstId } });
+  const scopeTarget = 'unknown:U-001@COUPON-001-screen-spec';
+  const items = [
+    [firstId, '01', 'reject', 'reject-input', 'reject', '-', `input:${firstId}#extracted-facts/01`, 'inherit', 'statement', 'inherit'],
+    [CURRENT_INPUT_ID, '02', 'scope-unclear', 'scope-unclear', 'create-open', scopeTarget,
+      `input:${CURRENT_INPUT_ID}#extracted-facts/02`, 'inherit', 'statement', 'inherit'],
+  ];
+  const summaries = alias ? [
+    [firstId, 'meeting', 'reject-input', 'reconciled', 'rejected', '-', '-', '-'],
+    [CURRENT_INPUT_ID, 'meeting', 'scope-unclear', 'reconciled', 'pending-user-decision', 'artifact:COUPON-001-screen-spec', scopeTarget, '-'],
+  ] : [[CURRENT_INPUT_ID, 'meeting', 'reject-input + scope-unclear', 'reconciled', 'mixed', 'artifact:COUPON-001-screen-spec', scopeTarget, '-']];
+  const marker = 'UNRELATED_PROSE_MUST_STAY_COMPACT_321';
+  if (unrelated) {
+    const file = path.join(root, `${UNRELATED_INPUT_ID}.md`);
+    fs.writeFileSync(file, document({ ...metadata, input_id: UNRELATED_INPUT_ID }, `## Extracted Facts\n- ${marker} ${'ordinary prose '.repeat(800)}`));
+    artifacts.push(loadInputArtifact(file));
+    summaries.push([UNRELATED_INPUT_ID, 'meeting', 'reject-input', 'reconciled', 'rejected', '-', '-', '-']);
+    items.push([UNRELATED_INPUT_ID, '01', 'reject', 'reject-input', 'reject', '-',
+      `input:${UNRELATED_INPUT_ID}#extracted-facts/01`, 'inherit', 'statement', 'inherit']);
+  }
+  const registerFile = path.join(root, 'register.md');
+  fs.writeFileSync(registerFile, document({ reconciliation_contract: 2, review_profile: 'reconcile-stage04-v1', structured_since: '2026-07-20T00:00:00Z' },
+    `${table(REQUIRED_REGISTER_COLS, summaries)}\n\n## Reconciliation Items\n${table(REQUIRED_ITEM_COLS, items)}`));
+  const options = { register: parseReconciliationRegister(registerFile), registerFile, inputArtifacts: artifacts,
+    targetIndex: buildReconciliationTargetIndex({ docs: [{ file: targetFile, fm: targetMetadata }] }) };
+  return { inputFile, marker, run: () => validateReconciliationV2(options),
+    change: (hasConflict) => fs.writeFileSync(inputFile, document(metadata, inputBody(hasConflict))) };
+}
 
 function inputArtifact(inputId, facts = []) {
   return {
@@ -527,4 +580,43 @@ test('RR-ROUTE-101 keeps a trusted candidate when only another input Summary is 
     }).length,
     1,
   );
+});
+
+for (const alias of [false, true]) for (const initialConflict of [false, true]) {
+  test(`#321 v2 advisory keeps first Evidence prose when conflict ${initialConflict ? 'disappears' : 'appears'} after an earlier nonscope Item (${alias ? 'same-file alias' : 'same input'})`, (t) => {
+    const f = advisoryValidationFixture(t, { conflict: initialConflict, alias });
+    const expected = f.run();
+    assert.deepEqual(expected.errors, []);
+    assert.equal(expected.warnings.filter((entry) => entry.message.startsWith('RR-ROUTE-101:')).length, initialConflict ? 1 : 0);
+    const read = fs.readFileSync; let reads = 0, changed = false;
+    const hook = t.mock.method(fs, 'readFileSync', function (file, ...args) {
+      const value = read.call(this, file, ...args);
+      if (String(file) === f.inputFile) {
+        reads += 1;
+        if (!changed) { changed = true; f.change(!initialConflict); }
+      }
+      return value;
+    });
+    try {
+      assert.deepEqual(f.run(), expected, 'deterministic checks and advisory must share the original first-read prose');
+      assert.equal(changed, true);
+      assert.equal(reads, 1, 'the earlier nonscope Item pins prose for a later scope Item and advisory');
+    } finally { hook.mock.restore(); }
+  });
+}
+
+test('#321 one scope advisory retains compact validation for unrelated input files', (t) => {
+  const f = advisoryValidationFixture(t, { unrelated: true });
+  const stringify = JSON.stringify;
+  const hook = t.mock.method(JSON, 'stringify', function (value, ...args) {
+    const serializedProse = Array.isArray(value) && value.some((entry) => Array.isArray(entry) && Array.isArray(entry[1]) &&
+      entry[1].some((text) => typeof text === 'string' && text.includes(f.marker)));
+    assert.equal(serializedProse, false, 'an unrelated Evidence body must use compact flags even in a register with a scope advisory');
+    return stringify.call(this, value, ...args);
+  });
+  try {
+    const result = f.run();
+    assert.deepEqual(result.errors, []);
+    assert.equal(result.warnings.filter((entry) => entry.message.startsWith('RR-ROUTE-101:')).length, 1);
+  } finally { hook.mock.restore(); }
 });

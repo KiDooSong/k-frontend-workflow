@@ -26,6 +26,7 @@ import {
 import { readWorkRequestFile, resolveWorkResources, workResourceRecords, baselineWorkflowState, baselineWorkPolicy } from './current-work-execution-preflight.mjs';
 import { normalizeScopedWorkRequestSyntax } from './scoped-work-request.mjs';
 import { inspectScopedSnapshotWorkRequests } from './scoped-work-composition.mjs';
+import { workflowProgress } from './workflow-progress.mjs';
 
 const fail = (message) => { throw new CurrentWorkExecutionError(message, 'SW-INPUT'); };
 
@@ -86,8 +87,11 @@ export function prepareScopedWork({ work, root, docs, src, policy, manifest, lay
   catch (error) { fail(error.message); }
   const requestDigest = digest(request);
   const identity = gitIdentity(ctx.repositoryRoot);
+  workflowProgress('snapshot:start');
   const snapshot = materializeRawGitTree({ repositoryRoot: ctx.repositoryRoot, projectPrefix: ctx.projectPrefix, tree: identity.tree });
   try {
+    workflowProgress('snapshot:done');
+    workflowProgress('baseline-inputs:start');
     const projectRoot = ctx.projectRoot, baselineRoot = snapshot.root;
     const { resources, baselineKitRoot, config } = resolveWorkResources(ctx, baselineRoot, { docs, src, policy, manifest, layout, ci });
     const resourceRecords = workResourceRecords(resources, snapshot);
@@ -141,6 +145,7 @@ export function prepareScopedWork({ work, root, docs, src, policy, manifest, lay
         reconcile_status: rows[0]?.reconcileStatus || null, reconcile_result: rows[0]?.result || null };
     });
 
+    workflowProgress('baseline-inputs:done');
     const composition = inspectScopedSnapshotWorkRequests({
       request: parsed.value, projectRoot: baselineRoot, docsDir: docsRoot, kitRoot: baselineKitRoot,
       policyFile: resources.policy.baseline, layoutFile: resources.layout.baseline, manifestFile: resources.manifest.baseline,
@@ -151,6 +156,7 @@ export function prepareScopedWork({ work, root, docs, src, policy, manifest, lay
 
     // The authority read set joins C's resources/inventories with every file the
     // scoped evaluation actually read. The backstop requires them unchanged.
+    workflowProgress('authority:start');
     const authority = currentAuthorityReadSet({ resources, inputArtifacts, artifactFiles: index.files, baselineRoot,
       baselineKitRoot, layoutData, snapshot });
     const known = new Map(authority.filter((entry) => entry.source === 'project').map((entry) => [entry.path, entry]));
@@ -165,6 +171,7 @@ export function prepareScopedWork({ work, root, docs, src, policy, manifest, lay
       known.set(entry.file, record); authority.push(record);
     }
     authority.sort((a, b) => byteCompare(`${a.source}:${a.path}`, `${b.source}:${b.path}`));
+    workflowProgress('authority:done');
 
     const requests = composition.requests.map((result) => ({
       owner: result.owner, authority: 'scoped', unit: result.unit, kind: result.kind,

@@ -91,11 +91,14 @@ partial/no-effect receipts are not accepted by current authority.
 Work-run syntax (resource options above remain available):
 
 ```text
-workflow:run --work <request.json> [--packet <pre-work packet.md>] [--out <dir>] [--json]
+workflow:run --work <request.json> [--packet <pre-work packet.md>] [--out <dir>] [--json] [--progress]
 ```
 
 `--packet` compares the checkpoint with the fresh authority-specific preflight before
 one Git backstop collection. It does not accept `--staged`, `--enforce` or `--range`.
+`--progress` optionally prints elapsed phase markers to stderr; it is supported
+only by `run --work`. See [progress diagnostics](docs/reference/current-work.md#optional-progress-diagnostics)
+for phase meanings and separate JSON/log capture.
 `readiness --work`, `packet --work`, `forbidden-paths --work` and
 `report --work --packet` remain independent diagnostics. Output preservation and
 HALT evidence are defined in [current work](docs/reference/current-work.md#packet-bound-run-outputs).

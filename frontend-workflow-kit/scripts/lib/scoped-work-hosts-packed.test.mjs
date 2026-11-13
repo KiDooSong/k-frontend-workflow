@@ -11,9 +11,10 @@ import { spawnSync } from 'node:child_process';
 import { KIT_ROOT } from './util.mjs';
 
 const SUITES = ['scoped-work-hosts.test.mjs', 'scoped-work-composition.test.mjs', 'scoped-work-execution.test.mjs',
-  'scoped-work-adoption.test.mjs', 'scoped-work-downgrade.test.mjs', 'scoped-work-cli.test.mjs'];
+  'scoped-work-adoption.test.mjs', 'scoped-work-downgrade.test.mjs', 'scoped-work-cli.test.mjs', 'scoped-work-progress.test.mjs'];
 // The downgrade and CLI suites exercise the shipped planner and work CLI modules.
-const SHIPPED = { 'scoped-work-downgrade.test.mjs': 'upgrade-planner.mjs', 'scoped-work-cli.test.mjs': 'current-work-cli.mjs' };
+const SHIPPED = { 'scoped-work-downgrade.test.mjs': 'upgrade-planner.mjs', 'scoped-work-cli.test.mjs': 'current-work-cli.mjs',
+  'scoped-work-progress.test.mjs': 'workflow-progress.mjs' };
 const RUNTIME = SUITES.map((name) => SHIPPED[name] ?? name.replace('.test.mjs', '.mjs'));
 
 function checkedNode(args, cwd, env = process.env) {
@@ -48,7 +49,11 @@ test('D hosts packed: host consent, composition and scoped execution suites run 
     '#300 snapshot hosts preserve a later host profile denial',
     '#300 snapshot hosts retain earlier profile API file checks', '#300 snapshot hosts retain earlier profile API directory checks',
     '#300 snapshot composition preserves every owner', '#300 snapshot composition rejects a late mutation',
-    '#300 scoped readiness CLI: matching Decision bindings and profile applicability']) {
+    '#300 scoped readiness CLI: matching Decision bindings and profile applicability',
+    '#321 progress CLI: ready two-owner', '#321 progress CLI: denied two-owner', '#321 progress CLI: packet-bound',
+    '#321 progress CLI: current authority', '#321 progress CLI: a closed diagnostic sink',
+    '#321 progress CLI: failing owner', '#321 progress CLI: snapshot progress', '#321 progress CLI: opt-in',
+    '#321 progress: unwritable stderr']) {
     assert.ok(unescapedTap.includes(`# Subtest: ${name}`), `packed regression was not executed: ${name}`);
   }
   for (const [name, bytes] of before) assert.deepEqual(fs.readFileSync(path.join(lib, name)), bytes, name);

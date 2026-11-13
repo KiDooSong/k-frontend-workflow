@@ -106,6 +106,7 @@ function main() {
     runCurrentWorkCliSafely('run', argv);
     return;
   }
+  if (Object.prototype.hasOwnProperty.call(parsed.flags, 'progress')) fail('--progress requires --work');
   if (hasVisualCliSurface(parsed.flags)) {
     enforceCliFlagContract({
       argv, flags: parsed.flags, positionals: parsed.positionals,
@@ -125,6 +126,8 @@ function main() {
       '필수: --screen <ID> --requested-mode <mode>\n' +
       '선택: --out <dir> --docs <dir> --src <dir> --readiness <path> --policy <path> --manifest <path> --layout <path> --domain <name>\n' +
       '       --diff <name-status.txt> --review <path> --skip-tests --json --date YYYY-MM-DD --seq NNN --owner <name>\n' +
+      'work: --work <request.json> [--packet <pre-work packet.md>] [--out <dir>] [--json] [--progress]\n' +
+      '      --progress는 work 실행 단계와 경과 시간을 stderr에 표시한다.\n' +
       'visual: --intent visual-refresh --input <INPUT_ID> --path <SCREEN_ENTRY> [--root <project>] [--ci <path>] [--staged|--range <A..B>|--base <ref>]\n' +
       'visual-refresh에서는 --readiness override를 지원하지 않으며 현재 concrete path authorization을 요구한다.\n'
     );

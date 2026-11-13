@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import {
   buildInputArtifactIndex,
   copyInputEvidenceObservation,
+  createInputEvidenceValidator,
   inputSectionDetails,
   inputSectionIndex,
   inspectFigmaSourcePrecision,
@@ -448,4 +449,150 @@ test('#300 evidence read observations preserve exact UTF-16 text identities', (t
   } finally {
     readMock.mock.restore();
   }
+});
+
+const validationProjection = (result) => ({ status: result.status, ref: result.ref,
+  bulletCount: result.bulletCount, hasEvidenceText: Boolean(result.evidenceText?.trim()) });
+
+for (const [ending, newline] of [['LF', '\n'], ['CRLF', '\r\n'], ['CR', '\r']]) {
+  test(`#321 compact Evidence validation agrees with full prose across Markdown boundaries (${ending})`, () => {
+    const id = 'IN-20261113-meeting-001';
+    const body = [
+      '[outside]: /outside', '[^note]: a note', '',
+      '- preamble', '',
+      '```md', '## Fake', '- hidden list', '```', '',
+      '<!--', '## Hidden', '- hidden item', '-->', '',
+      '## **Extracted Facts** ##',
+      '- parent', '  - child', '    - grandchild',
+      '- 01. nested ordered child',
+      '- `code only`', '- <!-- only a comment -->',
+      '- <https://example.test/only-url>', '- [visible][outside]',
+      '- ![[alt label][outside]](/image)', '- [^note]',
+      '- [unresolved][missing]', '- <span>visible HTML</span>',
+      '- [ ] unchecked', '- [x] checked', '',
+      '> ## Nested Heading', '>', '> - quoted bullet', '',
+      '    ## Indented Heading', '    - hidden code item', '',
+      '| Column | Value |', '| --- | --- |', '| cell | another |', '',
+      '## Empty Section', 'Only paragraph prose.', '',
+      'Setext Heading', '--------------', '- setext item', '',
+      '## Extracted Facts', '- later occurrence', '',
+      '## constructor', '- ordinary name', '',
+      '## Next Section', '[after]: /after', '- [after link][after]',
+    ].join(newline);
+    const artifact = { fm: { input_id: id }, body }, full = buildInputArtifactIndex([artifact]);
+    const compact = createInputEvidenceValidator([artifact]);
+    const sections = ['extracted-facts', 'empty-section', 'setext-heading', 'constructor', 'next-section',
+      'fake', 'hidden', 'nested-heading', 'indented-heading'];
+    const refs = sections.flatMap((section) => ['', '/01', '/02', '/03', '/04', '/05', '/06', '/07', '/08', '/09', '/10', '/11', '/12', '/13', '/14', '/99']
+      .map((suffix) => `input:${id}#${section}${suffix}`));
+    refs.push('not evidence', `input:${id}#extracted-facts/00`, 'input:IN-20261113-meeting-999#extracted-facts/01');
+    for (const ref of refs) assert.deepEqual(compact(ref), validationProjection(resolveInputEvidence(full, ref)), ref);
+  });
+}
+
+test('#321 compact Evidence validators own lazy first-read state and retain fresh read observations', (t) => {
+  const root = tmpdir(t), id = 'IN-20261113-meeting-002';
+  const file = writeInput(root, id, '## Compact Fresh\n- alpha\n'), artifact = loadInputArtifact(file);
+  const raw = fs.readFileSync(file, 'utf8'), stamp = fs.statSync(file), ref = `input:${id}#compact-fresh/01`;
+  const read = fs.readFileSync; let reads = 0;
+  const hook = t.mock.method(fs, 'readFileSync', function (target, ...args) {
+    if (String(target) === file) reads += 1;
+    return read.call(this, target, ...args);
+  });
+  try {
+    const observation = observeInputEvidenceReads([artifact]);
+    const first = createInputEvidenceValidator(observation.artifacts);
+    assert.equal(reads, 0, 'constructing a validator must not read input files');
+    const expected = first(ref), warm = reconciliationParseStats();
+    assert.equal(expected.hasEvidenceText, true);
+    expected.ref.section = 'caller-change'; expected.hasEvidenceText = false;
+    assert.equal(first(ref).hasEvidenceText, true);
+    assert.equal(first(ref).ref.section, 'compact-fresh');
+    assert.equal(reads, 1, 'one private index retains its initial Evidence view');
+    assert.equal(createInputEvidenceValidator(observation.artifacts)(ref).hasEvidenceText, true);
+    assert.equal(reads, 2, 'a fresh validator reads bytes even on a compact syntax hit');
+    assert.deepEqual(reconciliationParseStats(), warm);
+    fs.writeFileSync(file, raw.replace('alpha', '`xxx`')); fs.utimesSync(file, stamp.atime, stamp.mtime);
+    assert.equal(fs.statSync(file).size, stamp.size);
+    assert.equal(first(ref).hasEvidenceText, true);
+    assert.equal(createInputEvidenceValidator(observation.artifacts)(ref).hasEvidenceText, false);
+    assert.equal(resolveInputEvidence(buildInputArtifactIndex([artifact]), ref).evidenceText, '',
+      'the ordinary full-prose API keeps its independent current-file index');
+    fs.writeFileSync(file, raw);
+    assert.equal(observation.verify(), false, 'a changed read remains observed after restoration');
+    assert.equal(createInputEvidenceValidator([artifact])(ref).hasEvidenceText, true);
+    fs.unlinkSync(file);
+    assert.equal(createInputEvidenceValidator([artifact])(ref).status, 'missing-section');
+    fs.writeFileSync(file, raw);
+    assert.equal(createInputEvidenceValidator([artifact])(ref).hasEvidenceText, true);
+  } finally { hook.mock.restore(); }
+});
+
+test('#321 compact Evidence validators resolve IDs independently and preserve explicit-body precedence', (t) => {
+  const root = tmpdir(t), id = 'IN-20261113-meeting-003';
+  const file = writeInput(root, id, '## Compact Identity\n- actual file\n');
+  const artifact = loadInputArtifact(file), ref = `input:${id}#compact-identity/01`;
+  assert.equal(createInputEvidenceValidator([artifact])(ref).hasEvidenceText, true);
+  const changed = { ...artifact, fm: { ...artifact.fm, input_id: 'IN-20261113-meeting-004' } };
+  assert.equal(createInputEvidenceValidator([changed])(ref).status, 'missing-input');
+  assert.equal(createInputEvidenceValidator([artifact, { ...artifact }])(ref).status, 'ambiguous-input');
+  assert.equal(createInputEvidenceValidator([{ ...artifact, parseError: 'invalid YAML' }])(ref).status, 'missing-input');
+  const supplied = observeInputEvidenceReads([{ ...artifact, body: '## Compact Identity\n- `code only`\n' }]);
+  assert.equal(createInputEvidenceValidator(supplied.artifacts)(ref).hasEvidenceText, false);
+  assert.equal(createInputEvidenceValidator([{ ...artifact, body: '' }])(ref).status, 'missing-section');
+  fs.unlinkSync(file);
+  assert.equal(supplied.verify(), true, 'explicit bodies do not observe their unused file');
+  assert.equal(createInputEvidenceValidator(supplied.artifacts)(ref).hasEvidenceText, false);
+  const missing = observeInputEvidenceReads([artifact]);
+  assert.equal(createInputEvidenceValidator(missing.artifacts)(ref).status, 'missing-section');
+  assert.equal(missing.verify(), true);
+  fs.writeFileSync(file, '');
+  assert.equal(missing.verify(), false, 'a missing read and an empty file retain different observation identities');
+});
+
+test('#321 compact Evidence summaries retain large prose as booleans and never become full-prose results', () => {
+  const id = 'IN-20261113-meeting-005', ref = `input:${id}#compact-large/01`;
+  const body = `## Compact Large\n- ${'long visible evidence '.repeat(60_000)}\n`;
+  const artifact = { fm: { input_id: id }, body };
+  assert.equal(createInputEvidenceValidator([artifact])(ref).hasEvidenceText, true);
+  const warm = reconciliationParseStats();
+  assert.equal(createInputEvidenceValidator([artifact])(ref).hasEvidenceText, true);
+  assert.deepEqual(reconciliationParseStats(), warm,
+    'a summary of a >1MiB source must fit without retaining its full prose');
+  const full = resolveInputEvidence(buildInputArtifactIndex([artifact]), ref);
+  assert.equal(full.evidenceText, 'long visible evidence '.repeat(60_000).trim());
+  assert.deepEqual(createInputEvidenceValidator([artifact])(ref), validationProjection(full));
+});
+
+test('#321 compact Evidence cache enforces its byte budget and skips oversized summaries', () => {
+  const id = 'IN-20261113-meeting-006';
+  const resolve = (slug) => createInputEvidenceValidator([{ fm: { input_id: id }, body: `## ${slug}\n- evidence\n` }])(`input:${id}#${slug}/01`);
+  const slugs = Array.from({ length: 5 }, (_, index) => `compact-budget-${index}-${'x'.repeat(110_000)}`);
+  for (const slug of slugs) assert.equal(resolve(slug).hasEvidenceText, true);
+  const warm = reconciliationParseStats();
+  assert.equal(resolve(slugs.at(-1)).hasEvidenceText, true);
+  assert.deepEqual(reconciliationParseStats(), warm, 'the newest in-budget summary stays cached');
+  assert.equal(resolve(slugs[0]).hasEvidenceText, true);
+  assert.ok(reconciliationParseStats().reused > warm.reused,
+    'five >220KiB summaries cannot all remain in the 1MiB validation cache');
+  const oversized = `compact-oversized-${'x'.repeat(530_000)}`;
+  assert.equal(resolve(oversized).hasEvidenceText, true);
+  const first = reconciliationParseStats();
+  assert.equal(resolve(oversized).hasEvidenceText, true);
+  assert.ok(reconciliationParseStats().reused > first.reused, 'an oversized summary is recomputed');
+  const beforeSmall = reconciliationParseStats();
+  assert.equal(resolve(slugs[0]).hasEvidenceText, true);
+  assert.deepEqual(reconciliationParseStats(), beforeSmall, 'oversized results do not displace useful summaries');
+});
+
+test('#321 compact Evidence cache bounds entry count as well as retained syntax bytes', () => {
+  const id = 'IN-20261113-meeting-007', ref = `input:${id}#compact-entry-cap/01`;
+  const resolve = (number) => createInputEvidenceValidator([{ fm: { input_id: id },
+    body: `## Compact Entry Cap\n- evidence\n<!-- entry ${number} -->\n` }])(ref);
+  for (let index = 0; index <= 4096; index += 1) assert.equal(resolve(index).hasEvidenceText, true);
+  const warm = reconciliationParseStats();
+  assert.equal(resolve(4096).hasEvidenceText, true);
+  assert.deepEqual(reconciliationParseStats(), warm);
+  assert.equal(resolve(0).hasEvidenceText, true);
+  assert.ok(reconciliationParseStats().reused > warm.reused, 'the oldest of 4097 compact entries must be evicted');
 });

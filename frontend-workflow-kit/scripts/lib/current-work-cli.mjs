@@ -17,6 +17,7 @@ import {
 } from './current-work-execution.mjs';
 import { resolveProjectRoot } from './current-work-execution-core.mjs';
 import { readWorkRequestFile } from './current-work-execution-preflight.mjs';
+import { withWorkflowProgress, workflowProgress } from './workflow-progress.mjs';
 import {
   isScopedWorkDocument,
   prepareScopedWork,
@@ -45,7 +46,7 @@ const TOOL_BOOLS = {
   readiness: COMMON_BOOLS,
   packet: COMMON_BOOLS,
   report: [...COMMON_BOOLS, 'skip-tests'],
-  run: [...COMMON_BOOLS, 'skip-tests'],
+  run: [...COMMON_BOOLS, 'skip-tests', 'progress'],
   'forbidden-paths': [...COMMON_BOOLS, 'enforce', 'staged'],
 };
 
@@ -68,10 +69,11 @@ function help(tool) {
   const common = '--work <request.json> [--root <project>] [--docs <dir>] [--src <dir>] [--policy <file>] [--manifest <file>] [--layout <file>] [--ci <file>]';
   const suffix = tool === 'packet' ? ' [--out <packet.md>] [--json]'
     : tool === 'report' ? ' --packet <packet.md> [--out <report.md>] [--json]'
-    : tool === 'run' ? ' [--packet <pre-work packet.md>] [--out <dir>] [--json]'
+    : tool === 'run' ? ' [--packet <pre-work packet.md>] [--out <dir>] [--json] [--progress]'
     : tool === 'forbidden-paths' ? ' [--staged] [--enforce] [--json]'
     : ' [--out <result.json>] [--json]';
-  return `${tool}: work execution (authority:current or authority:scoped per request document)\nUsage: ${common}${suffix}\n`;
+  return `${tool}: work execution (authority:current or authority:scoped per request document)\nUsage: ${common}${suffix}\n` +
+    (tool === 'run' ? '--progress: optional elapsed phase diagnostics on stderr; JSON and packet bytes are unchanged.\n' : '');
 }
 function own(v, k) { return Object.prototype.hasOwnProperty.call(v || {}, k); }
 function opt(flags, name) { return typeof flags[name] === 'string' ? flags[name] : undefined; }
@@ -190,11 +192,17 @@ function renderRunStatus(impl, status) {
 export function runCurrentWorkCli(tool, argv) {
   const parsed = parse(tool, argv);
   if (parsed.help) { process.stdout.write(help(tool)); return; }
+  return withWorkflowProgress(tool === 'run' && parsed.flags.progress === true, () => executeWorkCli(tool, parsed));
+}
+
+function executeWorkCli(tool, parsed) {
   const { flags } = parsed;
   const impl = implementationFor(options(flags));
   let preflight;
   try {
+    workflowProgress('prepare:start', impl.authority);
     preflight = impl.prepare(options(flags));
+    workflowProgress('prepare:done', impl.authority);
     if (tool === 'readiness') {
       const env = impl.envelope(preflight);
       const out = resolveOut(opt(flags, 'out'));
@@ -252,21 +260,29 @@ export function runCurrentWorkCli(tool, argv) {
       return;
     }
     if (tool === 'run') {
+      const observeGit = () => {
+        workflowProgress('backstop:start');
+        const result = impl.git(preflight);
+        workflowProgress('backstop:done');
+        return result;
+      };
       const packetFlag = opt(flags, 'packet');
       const outDir = resolveOut(opt(flags, 'out'));
       const checkpoint = packetFlag ? { packet: path.resolve(packetFlag), matched: true } : null;
       if (checkpoint) {
+        workflowProgress('checkpoint:start');
         impl.assertPacket(preflight, impl.parsePacket(checkpoint.packet));
         if (outDir) assertFreshRunOutputs(checkpoint.packet, outDir);
+        workflowProgress('checkpoint:done');
       }
       let state;
       // Packet-bound runs collect evidence even for denied/absorbed work. Keep
       // HALT precedence while sharing this one observation with every renderer.
-      let git = checkpoint ? impl.git(preflight) : null;
+      let git = checkpoint ? observeGit() : null;
       if (preflight.all_absorbed) state = 'HALT_NOT_APPLICABLE';
       else if (!preflight.ready) state = 'HALT_AMBIGUITY';
       else {
-        const observed = git || impl.git(preflight);
+        const observed = git || observeGit();
         // Missing requested changes are the ordinary pre-work state. Any other
         // violation (authority or API evidence changed, even Git-ignored) is kept.
         const unresolved = observed.violations.some((entry) => !MISSING_REQUESTED.has(entry.code));
@@ -284,9 +300,15 @@ export function runCurrentWorkCli(tool, argv) {
       const status = statusEnvelope(impl, state, preflight, git);
       if (checkpoint) status.checkpoint = checkpoint;
       if (outDir) {
+        workflowProgress('packet:start');
         fs.mkdirSync(outDir, { recursive: true });
         writeRunFile(path.join(outDir, 'work-packet.md'), impl.renderPacket(preflight), checkpoint);
-        if (git && (checkpoint || git.implementation_records.length)) writeRunFile(path.join(outDir, 'run-report.md'), impl.renderReport(preflight, git), checkpoint);
+        workflowProgress('packet:done');
+        if (git && (checkpoint || git.implementation_records.length)) {
+          workflowProgress('report:start');
+          writeRunFile(path.join(outDir, 'run-report.md'), impl.renderReport(preflight, git), checkpoint);
+          workflowProgress('report:done');
+        }
         writeRunFile(`${outDir}.md`, renderRunStatus(impl, status), checkpoint);
       }
       process.stdout.write(flags.json ? JSON.stringify(status, null, 2) + '\n' : outDir ? `workflow:run: ${state} — ${path.relative(process.cwd(), `${outDir}.md`) || `${outDir}.md`}\n` : renderRunStatus(impl, status));
@@ -295,7 +317,9 @@ export function runCurrentWorkCli(tool, argv) {
     }
     throw new CurrentWorkExecutionError(`unsupported work CLI: ${tool}`);
   } finally {
+    workflowProgress('cleanup:start');
     impl.cleanup(preflight);
+    workflowProgress('cleanup:done');
   }
 }
 

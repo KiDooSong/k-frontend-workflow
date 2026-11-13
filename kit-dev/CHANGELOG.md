@@ -4,6 +4,21 @@
 
 ## Unreleased
 
+### perf(work) — 대형 Evidence 검증 요약과 선택적 실행 진행 진단 (#321)
+
+- v2 등록부 검증은 section 이름과 bullet nonempty 여부만 담은 별도 구문 요약을 사용한다.
+  정확한 본문 key·직렬화 payload 합계 1 MiB·4,096개로 제한해 긴 prose 캐시의 반복 축출 비용을 줄인다.
+  매 검증의 현재 파일 읽기·validation-only 관찰·입력 ID/metadata·target 판정과 기존 full Evidence API를 유지한다.
+  실제 문장을 읽는 scope-unclear 의미 경고의 입력 파일은 기존 full resolver로 처리해 같은 검증의 첫 본문을 유지한다.
+- `workflow:run --work --progress`가 동기 작업 중에도 stderr에 경과 시간과 진행 단계를 표시한다.
+  scoped snapshot·입력 준비·owner별 평가, 공통 prepare·checkpoint·backstop·packet/report·cleanup을 구분한다.
+  기본값은 off이며 JSON stdout·packet/checkpoint·종료 코드·권한은 유지한다. 다른 실행 selector/CLI는 이 옵션을 받지 않는다.
+- 실제 scoped 단일/두 화면 run의 합성 입력 규모·본문 형태를 분리하고, packet·backstop·출력 bytes와
+  저장소 보존을 비교하는 [재현 harness](benchmarks/scoped-run.mjs)를 추가한다.
+  원래 consumer 실행 시간과 동일한 원인·개선율을 가정하지 않으며 판정/게이트/basis 버전은 바꾸지 않는다.
+  계약: [Evidence](../frontend-workflow-kit/docs/reference/input-reconciliation.md#reconciliation-contract-v2-opt-in),
+  [진행 진단](../frontend-workflow-kit/docs/reference/current-work.md#optional-progress-diagnostics).
+
 ### perf(scoped) — profile 관계 해석 안의 unit·source 반복 계산 감소 (#300)
 
 - owned Git baseline에서 owner와 각 adopted host의 profile applicability도 unit facts를 한 번 만들고

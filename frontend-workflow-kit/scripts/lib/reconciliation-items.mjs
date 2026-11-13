@@ -33,6 +33,7 @@ import {
   INHERIT,
   SOURCE_UNIT_VALUES,
   buildInputArtifactIndex,
+  createInputEvidenceValidator,
   inspectFigmaSourcePrecision,
   isRfc3339,
   parseInputEvidenceRef,
@@ -437,6 +438,7 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
   // duplicate input_id는 first-wins하지 않는다. unique target만 inputsById에 노출하고,
   // Evidence는 shared resolver가 missing/ambiguous/section/bullet을 구분한다.
   const inputIndex = buildInputArtifactIndex(inputArtifacts);
+  const validateEvidence = createInputEvidenceValidator(inputArtifacts);
   const inputsById = new Map();
   for (const [inputId, matches] of inputIndex.byId) {
     if (matches.length === 1) inputsById.set(inputId, matches[0]);
@@ -562,6 +564,25 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
       itemsByInput.get(row.inputId).push(row);
     }
   }
+
+  // RR-ROUTE-101 reads full Evidence prose after deterministic validation.
+  // Keep its original index's first-read view for every potentially consulted
+  // file, including an earlier non-scope Item or another input ID at that file.
+  // Other inputs retain compact syntax; one scope row must not make a large
+  // unrelated register retain/reproject all of its prose.
+  const advisoryEvidenceFiles = new Set();
+  for (const row of items.rows) {
+    if (row.basis !== 'scope-unclear' || row.classification !== 'scope-unclear') continue;
+    const ref = parseInputEvidenceRef(row.evidence);
+    const matches = ref ? inputIndex.byId.get(ref.inputId) || [] : [];
+    if (matches.length === 1) advisoryEvidenceFiles.add(matches[0].file || matches[0]);
+  }
+  const requiresEvidenceProse = (token) => {
+    if (!advisoryEvidenceFiles.size) return false;
+    const ref = parseInputEvidenceRef(token);
+    const matches = ref ? inputIndex.byId.get(ref.inputId) || [] : [];
+    return matches.length === 1 && advisoryEvidenceFiles.has(matches[0].file || matches[0]);
+  };
 
   const structuredInputs = new Set(); // summary grammar + projection 대상
   for (const inputId of summaryByInput.keys()) {
@@ -802,7 +823,8 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
 
     // Evidence grammar + 같은 input + unique input/섹션 존재(hard) / bullet index(warning).
     if (row.evidence) {
-      const evidence = resolveInputEvidence(inputIndex, row.evidence);
+      const fullProse = requiresEvidenceProse(row.evidence);
+      const evidence = fullProse ? resolveInputEvidence(inputIndex, row.evidence) : validateEvidence(row.evidence);
       const ev = evidence.ref;
       if (evidence.status === 'invalid') {
         add(`RR-SCHEMA-015: ${label} 의 Evidence '${row.evidence}' 문법 위반 (input:<input_id>#<section-slug>[/NN])`);
@@ -820,7 +842,8 @@ export function validateReconciliationV2({ register, registerFile, inputArtifact
           warn(
             `RR-REF-101: ${label} 의 Evidence bullet index '/${String(ev.bulletIndex).padStart(2, '0')}' 가 '#${ev.section}' 의 bullet 수(${evidence.bulletCount})를 넘음 (warning-first)`,
           );
-        } else if (evidence.status === 'ok' && ev.bulletIndex !== null && !evidence.evidenceText?.trim()) {
+        } else if (evidence.status === 'ok' && ev.bulletIndex !== null &&
+          !(fullProse ? evidence.evidenceText?.trim() : evidence.hasEvidenceText)) {
           warn(
             `RR-REF-103: ${label} 의 Evidence '${row.evidence}' 가 빈 bullet 근거를 선택함 — '- NN.' 표기는 nested ordered list 의 빈 부모 bullet로 파싱될 수 있음; 실제 근거 bullet을 가리키거나 목록 표기를 고치세요 (warning-first)`,
           );

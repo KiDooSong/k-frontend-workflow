@@ -423,6 +423,9 @@ Standalone readiness/packet/report/forbidden-paths remain diagnostic/compatible 
 `readiness.mjs --work <request>` runs the scoped preflight once when the request
 selects `authority: scoped`. It does not start Jest, retry itself or impose a
 30-minute timeout; those behaviors belong to the invoking runner or session.
+For long representative runs, `workflow:run --work ... --progress` provides
+[optional stderr phase diagnostics](current-work.md#optional-progress-diagnostics)
+without adding fields to the scoped result or checkpoint.
 
 ## Evaluation on the immutable baseline
 
