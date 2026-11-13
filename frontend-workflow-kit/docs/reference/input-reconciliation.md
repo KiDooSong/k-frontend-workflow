@@ -594,8 +594,10 @@ v2 가 소비하는 마크다운은 **좁은 canonical authoring profile** 만 �
   v2 등록부의 구조적 Evidence 검증은 별도의 private input index에서 section 이름과 bullet별 nonempty 여부만
   해석한다(#321). 요약은 bullet 개수와 nonempty 비트맵을 저장하며, bullet 4개를 16진수 한 글자로
   묶는다. 짧은 bullet이 많을 때도 boolean 배열의 직렬화 비용이 반복되지 않도록 한다.
-  검증 요약은 별도 UTF-16 key·직렬화 payload 합계 1 MiB·최대 4,096개 안에서 재사용한다. 이 추가 한도는
-  전체 RSS 한도가 아니다. 같은 Markdown 파생 뷰로 요약을 만들고, 새 검증은 현재 본문을 읽은 뒤
+  검증 요약은 별도 UTF-16 key·직렬화 payload 합계 1 MiB·최대 4,096개 안에서 재사용한다. 요약이 없으면
+  기존 8 MiB·4,096개 section/bullet 구문 캐시를 거쳐 비트맵을 만든다. 두 캐시의 한도와 축출 규칙은
+  각각 유지하며, full 구문이 남아 있으면 요약이 축출돼도 Evidence 뷰를 다시 구성하지 않는다.
+  이 한도는 전체 RSS 한도가 아니다. 같은 Markdown 파생 뷰로 요약을 만들고, 새 검증은 현재 본문을 읽은 뒤
   정확한 콘텐츠 key를 확인한다. 검증용 입력 읽기 관찰·중복 ID·현재 metadata와 target 판정,
   기존 full Evidence resolver의 본문·Map·배열과 오류/경고 계약은 유지한다.
   `scope-unclear/scope-unclear` 행의 의미 경고가 본문을 읽을 수 있는 입력 파일은 기존 full resolver를

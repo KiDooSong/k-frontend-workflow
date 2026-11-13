@@ -233,7 +233,10 @@ function inputSectionEntries(body) {
 }
 
 function inputValidationEntries(body) {
-  return inputSectionEntries(body).map(([slug, texts]) => {
+  // A compact miss can still reuse a full syntax view: many short, multi-section
+  // inputs fit the existing 8 MiB cache but overflow the 1 MiB summary cache.
+  const entries = inputSectionSyntax.getOrCreate(body, inputSectionEntries);
+  return entries.map(([slug, texts]) => {
     // Four nonempty flags per ASCII hex digit. JSON boolean arrays cost about
     // five or six characters per flag and can evict inventories that fit the full
     // prose cache. A bitmap stays small for both empty and nonempty lists.

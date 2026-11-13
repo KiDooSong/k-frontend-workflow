@@ -9,6 +9,8 @@
 - v2 등록부 검증은 section 이름과 bullet nonempty 여부만 담은 별도 구문 요약을 사용한다.
   bullet 개수와 4개당 16진수 한 글자의 비트맵으로 저장해, 짧은 bullet이 많은 입력의 boolean 배열 축출 회귀를 방지한다.
   정확한 본문 key·직렬화 payload 합계 1 MiB·4,096개로 제한해 긴 prose 캐시의 반복 축출 비용을 줄인다.
+  요약이 없으면 기존 8 MiB·4,096개 full 구문 캐시를 먼저 이용해, 여러 섹션의 요약이 넘치는 입력도
+  재사용 가능한 Evidence 뷰를 반복 구성하지 않는다. 두 캐시의 한도·축출 규칙은 유지한다.
   매 검증의 현재 파일 읽기·validation-only 관찰·입력 ID/metadata·target 판정과 기존 full Evidence API를 유지한다.
   실제 문장을 읽는 scope-unclear 의미 경고의 입력 파일은 기존 full resolver로 처리해 같은 검증의 첫 본문을 유지한다.
 - `workflow:run --work --progress`가 동기 작업 중에도 stderr에 경과 시간과 진행 단계를 표시한다.
