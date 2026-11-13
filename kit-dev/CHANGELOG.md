@@ -4,6 +4,19 @@
 
 ## Unreleased
 
+### perf(scoped) — profile 관계 해석 안의 unit·source 반복 계산 감소 (#300)
+
+- owned Git baseline에서 owner와 각 adopted host의 profile applicability도 unit facts를 한 번 만들고
+  관계 고정점 계산에 재사용한다. Decision 검사의 projection과는 별개이며, input coverage·path·host consent는
+  기존 독립 검사를 수행한다. mutable standalone profile도 기존 계산 경로를 유지한다.
+- profile의 private verifier를 source/coverage/API 검사 이후까지 유지하고, uncertainty 적용 전과
+  기존 API directory/file 최종 검증 후 다시 확인한다. 공개 read set 밖의 검증용 입력 Evidence와
+  확인한 register 부재도 계속 관찰한다.
+- 실제 packed runtime의 owner/host별 판단·coverage·불확실성·API 근거 변경 감지와 CLI 호출 수를 검증한다.
+  scope-basis-v2·read set·판정·checkpoint 형식과 버전은 그대로다.
+  계약: [scoped baseline](../frontend-workflow-kit/docs/reference/scoped-work.md#evaluation-on-the-immutable-baseline),
+  재현: [scoped readiness benchmark](benchmarks/scoped-readiness.mjs).
+
 ### perf(scoped) — scoped readiness의 Decision 바인딩별 전체 관계 재계산 제거 (#300)
 
 - scoped `--work` 실행의 raw Git baseline 안에서 owner와 각 adopted host의 Decision 검사마다

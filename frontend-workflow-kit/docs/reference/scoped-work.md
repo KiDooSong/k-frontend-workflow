@@ -443,17 +443,20 @@ the same bounds and invokes the original parser on every call, including diagnos
 Current bytes, indexed metadata/body comparisons and final read audits still run.
 
 Within the execution adapter's owned baseline, each owner or adopted host's
-Decision-scope inspection resolves its full applicability once, including the
-complete relation fixed point, and derives every canonical binding basis from
-that projection. Before each reuse and before publishing, it freshly verifies
-all observed files, consulted register absences and input Evidence read only
-for validation. Canonical binding homes are still re-read and compared with
-their indexed metadata/body. This reuse is confined to one Decision inspection;
-profile, input coverage, path, host consent and final composition checks remain
-independent. No request field selects this internal path, no result is shared
-across owners or calls, and mutable standalone inspectors keep their independent
-per-binding resolutions. Scope-basis-v2, read sets, denials and checkpoint bytes
-retain their existing meanings.
+profile and Decision-scope inspections resolve separate applicability projections.
+Each projection builds its unit facts once and reuses them while expanding the
+complete relation fixed point. The Decision inspection derives every canonical
+binding basis from its own projection. Before each reuse and before publishing,
+the session freshly verifies all observed files, consulted register absences and
+input Evidence read only for validation. The profile keeps this verifier through
+its later source/coverage/API checks, calls it before applying uncertainty scopes,
+and calls it again after the profile's final API-directory and file audits.
+Canonical binding homes are still re-read and compared with their indexed
+metadata/body. Input coverage, path, host consent and final composition checks
+remain independent. No request field selects this internal path, no result is
+shared across owners or calls, and mutable standalone inspectors keep their
+independent relation and per-binding resolutions. Scope-basis-v2, read sets,
+denials and checkpoint bytes retain their existing meanings.
 
 Every decision is computed from the materialized `HEAD` tree. Worktree edits,
 packets and serialized verdicts are not authority. For each scoped request:

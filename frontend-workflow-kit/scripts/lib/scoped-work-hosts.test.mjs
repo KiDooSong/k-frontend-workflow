@@ -168,11 +168,15 @@ test('D hosts: both actual scoped host profiles, Decisions and role-ceiling cons
   assert.deepEqual([...f.docs.values()].map((file) => fs.readFileSync(file)), before); noGrant(out);
 });
 
-test('D hosts: later host denial is not hidden by the first host success', (t) => {
-  const f = fixture(t); f.edit('rules-2.md', ({ fm }) => { fm.status = 'draft'; }); const out = f.run();
+test('#300 snapshot hosts preserve a later host profile denial independently of the first host success', (t) => {
+  const f = fixture(t); f.edit('rules-2.md', ({ fm }) => { fm.status = 'draft'; });
+  const options = f.options(), expected = inspectScopedSurfaceHosts(options), out = inspectScopedSnapshotSurfaceHosts(options);
+  assert.deepEqual(out, expected, 'each host retains its own complete profile, denials and evidence observations');
   const entry = denied(out, 'confirmed-behavior-contract-required');
   assert.equal(entry.prerequisite, 'host-profile'); assert.equal(entry.host_unit, 'known');
-  assert.equal(out.hosts.length, 2); assert.equal(hostOf(out, 'screen:RESULT-001').host_satisfied, true); noGrant(out);
+  assert.equal(out.hosts.length, 2); assert.equal(hostOf(out, 'screen:RESULT-001').host_satisfied, true);
+  assert.equal(hostOf(out, 'screen:RESULT-001').profile.profile_satisfied, true);
+  assert.equal(hostOf(out, 'screen:RESULT-002').profile.profile_satisfied, false); noGrant(out);
 });
 
 test('D hosts: evaluation retains all host denials rather than stopping at the first failure', (t) => {
@@ -421,6 +425,47 @@ for (const changedKind of ['authority', 'component']) test(`D hosts visual: a la
     return fd;
   });
   assert.throws(() => f.run(), /snapshot changed|changed between hosts/); assert.equal(changed, true);
+});
+
+for (const changedKind of ['file', 'directory']) test(`#300 snapshot hosts retain earlier profile API ${changedKind} checks through the later host`, (t) => {
+  const f = fixture(t), evidence = [], endpoints = [];
+  for (const number of [1, 2]) {
+    const endpoint = `/host-${number}`, directory = `contracts/host-${number}`;
+    f.edit(`screen-${number}.md`, (doc) => {
+      doc.fm.api_required = true;
+      doc.fm.work_execution.units[0].api_candidates = [{ method: 'GET', path: endpoint }];
+      doc.body += `\n\n## API Candidates\n${table(['Method', 'Path', 'Confidence', 'Gate', 'Tracking', 'Slice Paths'],
+        [['GET', endpoint, 'confirmed', 'active', '', `src/api/host-${number}/**`]])}`;
+    });
+    endpoints.push(['GET', endpoint, 'confirmed', `Host${number}Response`, 'manual', directory]);
+    evidence.push(f.put(`${directory}/response.md`, `## Host${number}Response\nExisting explicit host ${number} contract.`));
+  }
+  f.write('api.md', 'api/api-manifest.md', { artifact_id: 'API', artifact_type: 'api-manifest', status: 'draft' },
+    `## Endpoints\n${table(['Method', 'Path', 'Confidence', 'Linked Contract', 'Contract Kind', 'Source'], endpoints)}`);
+  const options = f.options(), before = inspectScopedSnapshotSurfaceHosts(options);
+  assert.equal(before.hosts_satisfied, true, JSON.stringify(before.denials));
+  assert.deepEqual(before, inspectScopedSurfaceHosts(options));
+  assert.ok(before.read_set.some((entry) => entry.file === 'contracts/host-1/response.md'));
+  assert.ok(before.directory_read_set.some((entry) => entry.file === 'contracts/host-1'));
+  const original = fs.openSync;
+  let earlierEvidenceRead = false, changed = false;
+  const open = t.mock.method(fs, 'openSync', function(file, ...args) {
+    const fd = original.call(this, file, ...args);
+    if (String(file) === evidence[0]) earlierEvidenceRead = true;
+    if (!changed && String(file) === evidence[1]) {
+      assert.equal(earlierEvidenceRead, true, 'the first host profile must already have consumed its independent evidence');
+      changed = true;
+      if (changedKind === 'file') fs.appendFileSync(evidence[0], '\nChanged after the first host profile.');
+      else f.put('contracts/host-1/late.md', 'New evidence after the first host profile.');
+    }
+    return fd;
+  });
+  try {
+    assert.throws(() => inspectScopedSnapshotSurfaceHosts(options), changedKind === 'file'
+      ? /SW-HOST: authority snapshot changed: contracts\/host-1\/response\.md/
+      : /SW-HOST: evidence directory membership changed: contracts\/host-1/);
+    assert.equal(changed, true);
+  } finally { open.mock.restore(); }
 });
 
 test('D hosts: caller mutations of one observation cannot change subsequent native evaluations', (t) => {

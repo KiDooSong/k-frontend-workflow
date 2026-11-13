@@ -45,8 +45,10 @@ test('D hosts packed: host consent, composition and scoped execution suites run 
   }
   const unescapedTap = run.stdout.replace(/\\#/g, '#');
   for (const name of ['#300 snapshot hosts preserve each canonical binding digest',
+    '#300 snapshot hosts preserve a later host profile denial',
+    '#300 snapshot hosts retain earlier profile API file checks', '#300 snapshot hosts retain earlier profile API directory checks',
     '#300 snapshot composition preserves every owner', '#300 snapshot composition rejects a late mutation',
-    '#300 scoped readiness CLI: matching Decision bindings']) {
+    '#300 scoped readiness CLI: matching Decision bindings and profile applicability']) {
     assert.ok(unescapedTap.includes(`# Subtest: ${name}`), `packed regression was not executed: ${name}`);
   }
   for (const [name, bytes] of before) assert.deepEqual(fs.readFileSync(path.join(lib, name)), bytes, name);
