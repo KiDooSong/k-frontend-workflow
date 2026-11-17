@@ -10,7 +10,7 @@ import { spawnSync } from 'node:child_process';
 import { KIT_ROOT } from './util.mjs';
 import { PAYLOAD_MANIFEST_NAME, sha256OfFile } from './kit-manifest.mjs';
 
-const suites = ['scoped-work-refs.test.mjs', 'scoped-work-sources.test.mjs',
+const suites = ['scoped-work-refs.test.mjs', 'scoped-work-sources.test.mjs', 'scoped-work-input-metadata.test.mjs',
   'scoped-work-mapping.test.mjs', 'scoped-work-api.test.mjs', 'scoped-work-normalize.test.mjs', 'scoped-work-graph.test.mjs',
   'scoped-work-projection.test.mjs', 'scoped-work-decisions.test.mjs', 'scoped-work-boundaries.test.mjs', 'scoped-work-uncertainty.test.mjs',
   'scoped-work-applicability.test.mjs', 'scoped-work-basis.test.mjs', 'scoped-work-bindings.test.mjs', 'scoped-work-transitions.test.mjs',
@@ -125,17 +125,17 @@ test('D packed: real reference, source, mapping, API, normalization, graph trave
   t.diagnostic('packed shared reference view subprocess: all 3 immutable-view, raw-boundary and section-definition regressions passed');
   // The fixture data remains outside the payload. KIT_ROOT in this copied
   // driver resolves to packed, so both public CLIs execute shipped code only.
-  const cli = checkedNode(['--test', '--test-reporter=tap', '--test-name-pattern=^(?:(#282|#284) CLI:|#300 binding-status:)', path.join(lib, cliSuite)], packed,
+  const cli = checkedNode(['--test', '--test-reporter=tap', '--test-name-pattern=^(?:(#282|#284) CLI:|#(?:300|323) binding-status:)', path.join(lib, cliSuite)], packed,
     { ...env, SCOPED_WORK_TEST_FIXTURE_ROOT: KIT_ROOT });
-  assert.match(cli.stdout, /^# pass 11\r?$/m, cli.stdout);
+  assert.match(cli.stdout, /^# pass 13\r?$/m, cli.stdout);
   for (const metric of ['fail', 'cancelled', 'todo']) {
     assert.match(cli.stdout, new RegExp(`^# ${metric} 0\\r?$`, 'm'), cli.stdout);
   }
   // A filtered-out #275 test can be reported as skipped on older Node versions;
-  // all eleven #282/#284/#300 regressions must execute and pass on every supported Node.
+  // all thirteen #282/#284/#300/#323 regressions must execute and pass on every supported Node.
   checkPayload();
   assert.equal(fs.existsSync(path.join(packed, 'examples')), false);
-  t.diagnostic('packed readiness/binding-status subprocess: all 11 #282/#284/#300 generated-boundary and binding-read CLI cases passed');
+  t.diagnostic('packed readiness/binding-status subprocess: all 13 #282/#284/#300/#323 generated-boundary, binding-read and metadata-copy CLI cases passed');
   const progress = checkedNode(['--test', '--test-reporter=tap', path.join(lib, bindingProgressSuite)], packed,
     { ...env, SCOPED_WORK_TEST_FIXTURE_ROOT: KIT_ROOT });
   assert.match(progress.stdout, /^# pass 8\r?$/m, progress.stdout);

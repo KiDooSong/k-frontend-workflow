@@ -11,6 +11,8 @@
 // raw_tables reports the kit's scopedRawTableStats() unchanged: tables counts
 // actual encodings; newer kits also report row-index builds/rows and reuse.
 // Missing counters in an older baseline are unavailable, not zero.
+// input_metadata is optional kit diagnostics; structured_clone separately counts
+// actual clone calls, including metadata output copies that remain necessary.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -214,7 +216,8 @@ const names=['resolveScopedUnitProjection','resolveScopedDecisionProjection','re
   'resolveScopedBoundaryProjection','resolveScopedApplicabilityProjection','resolveScopedSnapshotApplicabilityProjection',
   'scopedBindingBasis','relationClosure','withoutDecisionRefs','scopedBasisComponentDigests','scopeJson','scopeSet',
   'scopedUnknownAuthored','parseReconciliationReferenceView','sharedReconciliationReferenceView','sectionOccurrences',
-  'resolveScopedContractGraph','createScopedReferenceResolver','scopedGraphSelectionRefs'];
+  'resolveScopedContractGraph','createScopedReferenceResolver','scopedGraphSelectionRefs',
+  'createScopedSourceResolver','buildInputArtifactIndex','validateInputArtifacts','prepareScopedInputMetadata'];
 export async function load(url,context,nextLoad){
   const result=await nextLoad(url,context);
   if(!url.startsWith(prefix)||!url.endsWith('.mjs'))return result;
@@ -230,6 +233,7 @@ export async function load(url,context,nextLoad){
   fs.writeFileSync(file, `import fs from 'node:fs';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
+import {types} from 'node:util';
 import {createRequire,register,syncBuiltinESMExports} from 'node:module';
 const kit=process.env.FWKIT_BINDING_BENCH_KIT;
 const functions={}, depths=new Map();
@@ -261,7 +265,28 @@ yaml.parseDocument=function(...args){yamlParseDocumentCalls++;return parseYamlDo
 const {reconciliationParseStats}=await import(pathToFileURL(path.join(kit,'scripts/lib/reconciliation-markdown-ast.mjs')).href);
 const {scopedClosureStats}=await import(pathToFileURL(path.join(kit,'scripts/lib/scoped-work-basis.mjs')).href);
 const {scopedRawTableStats}=await import(pathToFileURL(path.join(kit,'scripts/lib/scoped-work-refs.mjs')).href);
+const metadataModule=path.join(kit,'scripts/lib/scoped-work-input-metadata.mjs');
+const metadataStats=fs.existsSync(metadataModule)
+  ? (await import(pathToFileURL(metadataModule).href)).scopedInputMetadataStats : undefined;
 yamlParseApiCalls=0;yamlParseDocumentCalls=0;
+const cloneCounts={calls:0,input_metadata:0,source_constructor_input_metadata:0,preparation_input_metadata:0,other_input_metadata:0};
+const clone=globalThis.structuredClone;
+globalThis.structuredClone=function(...args){
+  cloneCounts.calls++;
+  const value=args[0];
+  // Descriptor-only classification never evaluates metadata getters. Proxies
+  // stay unclassified so this diagnostic adds no property traps to cloning.
+  if(value&&typeof value==='object'&&!types.isProxy(value)&&
+    ['input_id','input_type','source_type'].every(key=>{
+      const descriptor=Object.getOwnPropertyDescriptor(value,key);
+      return descriptor&&Object.hasOwn(descriptor,'value')&&typeof descriptor.value==='string';
+    })){
+    cloneCounts.input_metadata++;
+    cloneCounts[depths.get('createScopedSourceResolver')?'source_constructor_input_metadata':
+      depths.get('prepareScopedInputMetadata')?'preparation_input_metadata':'other_input_metadata']++;
+  }
+  return clone.apply(this,args);
+};
 const counts={};
 for(const name of ['lstatSync','statSync','readdirSync','realpathSync','readSync','readFileSync']){
   const original=fs[name];counts[name]=0;
@@ -270,7 +295,7 @@ for(const name of ['lstatSync','statSync','readdirSync','realpathSync','readSync
 syncBuiltinESMExports();
 process.on('exit',()=>{
   const usage=process.resourceUsage();
-  fs.writeFileSync(process.env.FWKIT_BINDING_BENCH_COUNTS,JSON.stringify({functions,closure:scopedClosureStats(),raw_tables:typeof scopedRawTableStats==='function'?scopedRawTableStats():null,counts,yaml_parse_calls:yamlParseApiCalls+yamlParseDocumentCalls,yaml_parse_api_calls:yamlParseApiCalls,yaml_parse_document_calls:yamlParseDocumentCalls,parse:reconciliationParseStats(),instrumented_peak_rss_kib:usage.maxRSS,instrumented_user_cpu_us:usage.userCPUTime,instrumented_system_cpu_us:usage.systemCPUTime}));
+  fs.writeFileSync(process.env.FWKIT_BINDING_BENCH_COUNTS,JSON.stringify({functions,closure:scopedClosureStats(),raw_tables:typeof scopedRawTableStats==='function'?scopedRawTableStats():null,input_metadata:typeof metadataStats==='function'?metadataStats():null,structured_clone:cloneCounts,counts,yaml_parse_calls:yamlParseApiCalls+yamlParseDocumentCalls,yaml_parse_api_calls:yamlParseApiCalls,yaml_parse_document_calls:yamlParseDocumentCalls,parse:reconciliationParseStats(),instrumented_peak_rss_kib:usage.maxRSS,instrumented_user_cpu_us:usage.userCPUTime,instrumented_system_cpu_us:usage.systemCPUTime}));
 });
 `);
   return file;
@@ -332,7 +357,7 @@ async function main(args) {
       measurement: {
         elapsed_ms: 'Fresh actual public binding-status CLI process per kit/case/run, including startup/imports, Git snapshot materialization, evaluation, JSON output and cleanup. No instrumentation in timed runs. Setup and independent verification excluded.',
         order: 'Before/after order alternates. Both kit roots must be on the same filesystem. Both versions use the same committed fixture and exact CLI flags. Fixture setup warms the filesystem cache; this is not cold-storage latency.',
-        diagnostics: 'Separate untimed processes count selected functions with an ESM loader, filesystem calls and YAML document parses (yaml.parse plus direct yaml.parseDocument), and report their own peak RSS plus user/system CPU microseconds. Function inclusive_us includes nested calls and instrumentation overhead; do not sum overlapping phases or treat these as uninstrumented timings. Recursive functions time only outer calls; scopeJson serialized_bytes counts every returned canonical string. raw_tables contains the kit\'s available raw-table counters: tables counts actual encodings; indexes/indexedRows count index builds/visited rows; reusedTables/reusedIndexes count cache hits. Unavailable fields stay absent and an unavailable accessor is null. These are not timed-run memory/CPU or retained memory. YAML interception is installed before kit imports; YAML counters reset after imports. Resource usage spans the diagnostic process lifetime including its loader worker and excludes child Git process CPU/RSS.',
+        diagnostics: 'Separate untimed processes count selected functions with an ESM loader, filesystem calls and YAML document parses (yaml.parse plus direct yaml.parseDocument), and report their own peak RSS plus user/system CPU microseconds. Function inclusive_us includes nested calls and instrumentation overhead; do not sum overlapping phases or treat these as uninstrumented timings. Recursive functions time only outer calls; scopeJson serialized_bytes counts every returned canonical string. raw_tables contains the kit\'s available raw-table counters: tables counts actual encodings; indexes/indexedRows count index builds/visited rows; reusedTables/reusedIndexes count cache hits. input_metadata contains optional preparation/source-clone diagnostics: prepared counts preparation copies, fallbacks counts unsupported preparation values, cloned counts legacy source-constructor copies, and reused counts privately prepared metadata reuse. An older kit without this module reports null. structured_clone counts actual global clone calls after imports; input_metadata classifies nonProxy values with own data string input_id/input_type/source_type fields. source_constructor_input_metadata and preparation_input_metadata classify the active constructor/preparation contexts; other_input_metadata counts direct metadata copies outside both contexts, including output metadata. Clones of larger output wrappers count in total calls but are not classified as direct metadata copies. No getter is evaluated for classification. Unavailable fields stay absent and an unavailable accessor is null. These are not timed-run memory/CPU or retained memory. YAML interception is installed before kit imports; YAML counters reset after imports. Resource usage spans the diagnostic process lifetime including its loader worker and excludes child Git process CPU/RSS.',
         verification: 'Whole stdout bytes, snapshot commit/tree, every binding state and digest agree across kits/runs; original HEAD, index bytes and tracked worktree bytes/modes stay unchanged; private snapshots are removed.',
         scope: 'Synthetic one-owner workload with configurable input/binding/unit counts, selected source/Items and mixed binding states. Extra units select the first unit\'s existing source Item. Optional unbound rows alternate Decision/Unknown and include open/resolved rows; these enlarge applicability without computing invented binding digests. It is not a reproduction or timing prediction of the reported consumer execution.',
       }, cases }, null, 2));

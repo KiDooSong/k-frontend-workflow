@@ -18,6 +18,7 @@ import { parseScopedPolicy, parseDecisionWorkScopes, parseUncertaintyWorkScopes 
 import { inspectScopedSnapshotBindings } from './scoped-work-bindings.mjs';
 import { SCOPE_BASIS_VERSION } from './scoped-work-basis.mjs';
 import { withBindingStatusProgress, bindingStatusProgress } from './workflow-progress.mjs';
+import { prepareScopedInputMetadata } from './scoped-work-input-metadata.mjs';
 
 const TOOL = 'binding-status';
 const fail = (message) => { throw new CurrentWorkExecutionError(message); };
@@ -72,12 +73,18 @@ export function inspectScopedBindingStatus({ root, docs, src, policy, manifest, 
       if (!adopted.includes(owner)) fail(`owner ${owner} is not adopted in the policy_overlay work_execution.owners`);
     }
     const docsRoot = resources.docs.baseline, { targetIndex } = baselineArtifactIndex(docsRoot);
+    const owners = owner === undefined ? adopted : [owner];
+    const inputArtifacts = collectInputArtifacts(path.join(docsRoot, 'inputs'));
+    // This collection belongs to the private Git snapshot. Prepare only detached
+    // plain metadata; every resolver still owns its records, body and read checks.
+    // Standalone callers and reports without owners keep the ordinary values.
+    const preparedInputs = owners.length ? inputArtifacts.map((entry) =>
+      ({ ...entry, fm: prepareScopedInputMetadata(entry.fm) })) : inputArtifacts;
     const options = { projectRoot: baselineRoot, docsDir: docsRoot, kitRoot: baselineKitRoot,
       policyFile: resources.policy.baseline, layoutFile: resources.layout.baseline, manifestFile: resources.manifest.baseline,
       ...(resources.policy_overlay ? { policyOverlayFile: resources.policy_overlay.baseline } : {}),
       registerFile: path.join(docsRoot, '_meta', 'reconciliation-register.md'), targetIndex,
-      inputArtifacts: collectInputArtifacts(path.join(docsRoot, 'inputs')), srcDir: resources.src.baseline };
-    const owners = owner === undefined ? adopted : [owner];
+      inputArtifacts: preparedInputs, srcDir: resources.src.baseline };
     bindingStatusProgress('inputs:done', `${owners.length} owners; ${options.inputArtifacts.length} inputs`);
     const home = (artifactId) => {
       const entry = targetIndex.artifacts.get(artifactId);
