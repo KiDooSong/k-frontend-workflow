@@ -4,6 +4,22 @@
 
 ## Unreleased
 
+### perf(binding-status) — Unknown 뷰 반복 구성 감소와 실행 진행 진단 (#323)
+
+- owner 관계 고정점에서 Unknown 행의 authoring 여부를 확인할 때 기존 exact-body authored view를 재사용한다.
+  이미 파싱한 AST의 전체 section·table·cell을 행×unit마다 다시 구성하던 기본 인자 평가를 제거한다.
+  기존 제한 캐시와 물리 source offset·GENERATED/저작 행 구분·명시적 raw view의 tree identity 검사를 유지한다.
+  현재 파일 읽기·read set 재검증·관계 고정점·scope-basis-v2·판정·digest 계산은 그대로다.
+- `workflow:binding-status --progress`가 snapshot 준비·owner projection·행 검사·개별 digest·실제 cleanup의
+  경과 단계를 선택적으로 stderr에 표시한다. 미바인딩 행과 실제 digest 계산 수를 구분하고,
+  snapshot 생성 중 실패와 owner 평가 실패 모두 실제 삭제 전후를 표시한다.
+  기본값 off, JSON/text stdout·종료 코드 유지, 닫힌 stderr는 진단만 중단한다.
+- [binding-status benchmark](benchmarks/binding-status.mjs)에 미바인딩 행 수를 추가해
+  적은 binding·많은 open/resolved 행 조건을 따로 측정하고 전체 출력·저장소·cleanup 보존을 확인한다.
+  실제 consumer의 56분 실행과 같은 원인/개선율 또는 수 분 내 완료를 가정하지 않는다.
+  계약: [binding status](../frontend-workflow-kit/docs/reference/scoped-work.md#binding-basis-and-status),
+  [진행 진단](../frontend-workflow-kit/docs/reference/scoped-work.md#optional-binding-status-progress).
+
 ### perf(work) — 대형 Evidence 검증 요약과 선택적 실행 진행 진단 (#321)
 
 - v2 등록부 검증은 section 이름과 bullet nonempty 여부만 담은 별도 구문 요약을 사용한다.

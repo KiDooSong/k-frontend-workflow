@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { TextDecoder } from 'node:util';
 import { allocateRawGitSnapshotDirectory } from './visual-refresh-snapshot-lifecycle.mjs';
+import { bindingStatusProgress } from './workflow-progress.mjs';
 
 export const MAX_VISUAL_GIT_BUFFER = 128 * 1024 * 1024;
 const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
@@ -242,7 +243,14 @@ export function materializeRawGitTree({ repositoryRoot, projectPrefix = '', tree
       cleanup: temporary.cleanup,
     };
   } catch (error) {
-    try { temporary.cleanup(); } catch { /* Preserve the cause; ownership remains retryable. */ }
+    bindingStatusProgress('cleanup:start', 'snapshot preparation failed');
+    try {
+      temporary.cleanup();
+      bindingStatusProgress('cleanup:done', 'snapshot preparation failed');
+    } catch {
+      bindingStatusProgress('cleanup:failed', 'snapshot preparation failed');
+      // Preserve the cause; ownership remains retryable.
+    }
     if (error instanceof VisualRefreshGitError) throw error;
     throw new VisualRefreshGitError(`raw Git tree materialization failed: ${error.message}`);
   }

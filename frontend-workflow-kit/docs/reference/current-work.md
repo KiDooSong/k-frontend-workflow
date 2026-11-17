@@ -119,8 +119,10 @@ permission. A long gap after a `:start` marker means that phase has not returned
 no timeout or retry is added. The normal JSON stdout, packet/checkpoint bytes,
 exit codes and approval requirements are unchanged. Reporting is off by default;
 an unwritable stderr disables it without changing the evaluation. `--progress`
-is a boolean supported only by `workflow:run --work`, including packet-bound
-post-work runs. Other work CLIs and ordinary/visual run selectors reject it.
+is a boolean for `workflow:run --work`, including packet-bound post-work runs.
+Other work CLIs and ordinary/visual run selectors reject it. The separate
+[`workflow:binding-status` report](scoped-work.md#optional-binding-status-progress)
+also supports optional stderr progress.
 
 Standalone commands remain useful diagnostics rather than required steps around run:
 

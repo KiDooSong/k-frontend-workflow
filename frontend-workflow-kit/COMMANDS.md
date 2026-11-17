@@ -96,8 +96,8 @@ workflow:run --work <request.json> [--packet <pre-work packet.md>] [--out <dir>]
 
 `--packet` compares the checkpoint with the fresh authority-specific preflight before
 one Git backstop collection. It does not accept `--staged`, `--enforce` or `--range`.
-`--progress` optionally prints elapsed phase markers to stderr; it is supported
-only by `run --work`. See [progress diagnostics](docs/reference/current-work.md#optional-progress-diagnostics)
+`run --work --progress` optionally prints elapsed phase markers to stderr.
+See [progress diagnostics](docs/reference/current-work.md#optional-progress-diagnostics)
 for phase meanings and separate JSON/log capture.
 `readiness --work`, `packet --work`, `forbidden-paths --work` and
 `report --work --packet` remain independent diagnostics. Output preservation and
@@ -128,6 +128,7 @@ same file. See [adoption](docs/reference/scoped-work.md#adoption-is-an-explicit-
 ```bash
 npm run workflow:binding-status
 npm run workflow:binding-status -- --owner screen:COUPON-001 --json
+npm run -s workflow:binding-status -- --owner screen:COUPON-001 --json --progress
 ```
 
 `workflow:binding-status` reports each scope binding of the adopted owners on the
@@ -135,6 +136,8 @@ committed `HEAD`: its state (`current`, `stale`, `missing`, `unresolved`), the
 recorded binding, and the digest and component digests to compare or record. It
 writes nothing; a person records a digest. See
 [binding basis and status](docs/reference/scoped-work.md#binding-basis-and-status).
+`--progress` reports snapshot, owner projection, binding checks/digests and cleanup
+on stderr while preserving stdout. See [binding progress](docs/reference/scoped-work.md#optional-binding-status-progress).
 
 ## Input Artifacts
 

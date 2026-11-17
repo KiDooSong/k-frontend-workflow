@@ -16,6 +16,7 @@ import { resolveScopedBindingBasis, scopedBindingBasis, SCOPE_BASIS_VERSION } fr
 import { scopedUncertaintyScopes } from './scoped-work-uncertainty-scopes.mjs';
 import { ScopedWorkContractError } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
+import { bindingStatusProgress } from './workflow-progress.mjs';
 
 const fail = (message) => { throw new ScopedWorkContractError(`SW-BINDINGS: ${message}`); };
 const same = (a, b) => scopeJson(a) === scopeJson(b);
@@ -57,6 +58,9 @@ function decisionInspection(options, { projection, read_set }, resolveBasis, ver
   }
 
   const checks = [];
+  let computed = 0;
+  const progressEvery = Math.max(1, Math.ceil(decisions.length / 20));
+  bindingStatusProgress('decision-bindings:start', `${decisions.length} rows`);
   for (const ref of decisions) {
     const record = projection.decision_relations.records.find((entry) => entry.ref === ref);
     if (!record || !['open', 'resolved'].includes(record.status)) fail('missing or malformed canonical decision');
@@ -67,6 +71,7 @@ function decisionInspection(options, { projection, read_set }, resolveBasis, ver
       bindingState = 'stale-known-units';
       if (same(scopeSet(binding.known_units), knownUnits)) {
         const scope = { decision: ref, owner, known_units: scopeSet(binding.known_units), blocks: scopeSet(binding.blocks) };
+        bindingStatusProgress('binding-digest:start', ref);
         let current;
         if (resolveBasis) {
           current = resolveBasis(ref);
@@ -81,6 +86,8 @@ function decisionInspection(options, { projection, read_set }, resolveBasis, ver
           verifyProjection?.();
           current = scopedBindingBasis(projection, scope);
         }
+        bindingStatusProgress('binding-digest:done', ref);
+        computed += 1;
         computedDigest = current.basis_digest; computedComponents = current.component_digests;
         bindingState = computedDigest === binding.basis_digest ? 'current-unverified' : 'stale-basis';
       }
@@ -93,11 +100,15 @@ function decisionInspection(options, { projection, read_set }, resolveBasis, ver
       scope_review_needed: record.status === 'open', approval_verified: false,
       applications: scopeSet(applications.filter((entry) => entry.decision === ref)),
     });
+    if (checks.length % progressEvery === 0 || checks.length === decisions.length) {
+      bindingStatusProgress('decision-bindings:progress', `${checks.length}/${decisions.length} rows; ${computed} digests`);
+    }
   }
   const result = { owner, known_units: [...knownUnits], checks: scopeSet(checks),
     blocking_units: scopeSet([...new Set(checks.flatMap((entry) => entry.blocking_units))]),
     read_set: scopeSet([...files.values()]),
   };
+  bindingStatusProgress('decision-bindings:done', `${checks.length} rows; ${computed} digests`);
   return { result, audit, verify: () => { for (const entry of files.values()) read(entry.file); } };
 }
 
@@ -127,7 +138,9 @@ export function inspectScopedSnapshotDecisionBindings(options = {}) {
 // HEAD tree and its indexes. This is not a mutable-worktree/authority inspector.
 // One owner and one call own this projection; nothing is cached across reports.
 export function inspectScopedSnapshotBindings(options = {}) {
+  bindingStatusProgress('owner-projection:start', options.owner);
   const resolved = resolveScopedSnapshotApplicabilityProjection(options);
+  bindingStatusProgress('owner-projection:done', options.owner);
   // Inferred sources consult the optional register even when it is absent.
   // A present register is in read_set; preserve the negative observation too.
   // Do not validate an unused register path for owners without inferred sources.

@@ -8,13 +8,15 @@ import { KIT_ROOT } from './util.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
 import { analyzeApiCandidateContract, loadScreenSpec } from './spec.mjs';
 import { buildReconciliationTargetIndex } from './reconciliation-target-index.mjs';
-import { parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
+import { parseReconciliationReferenceView, reconciliationParseStats } from './reconciliation-markdown-ast.mjs';
 import { createScopedApiResolver } from './scoped-work-api.mjs';
 import { createScopedReferenceResolver } from './scoped-work-refs.mjs';
 import { resolveScopedContractGraph, scopedGraphApiRowDependencies, scopedGraphApiRowContext, scopedGraphBodyRefs,
   scopedGraphSelectionRefs, scopedGraphSelectionSpans } from './scoped-work-graph.mjs';
 import { scopedProjectionNode } from './scoped-work-projection.mjs';
 import { scopeSet } from './scoped-work-normalize.mjs';
+import { scopedUnknownAuthored } from './scoped-work-uncertainty.mjs';
+import { copyScopedSelectionContext } from './scoped-work-authored.mjs';
 
 const layout = loadLayoutProfile({ kitRoot: KIT_ROOT });
 const ID = 'RESULT-001-screen-spec';
@@ -270,6 +272,59 @@ for (const identicalCells of [false, true]) test(`#282 GENERATED: raw/authored U
   ]) for (const project of [null, scopedProjectionNode]) {
     assert.throws(() => f.graph(roots, { project }), /SW-(REF|GRAPH).*ambig/i,
       'reference-string deduplication must not hide conflicting source rows');
+  }
+});
+
+test('#323 authored Unknown classification: repeated unit applications reuse the view and preserve physical rows', (t) => {
+  // The raw and authored rows deliberately have identical cells. Their source
+  // offsets, carried beside the public selection, decide which is authored.
+  const body = `${bodyFor({ unknownBefore: generated(`${unknownTable}\n\n## Generated Summary\n\nOutput text.`) })}\n\n<!-- #323 repeated applications -->`;
+  const f = fixture(t, [{ body }]), refs = createScopedReferenceResolver(f.options);
+  const unknown = `unknown:U-LATER@${ID}`;
+  const ordinary = refs.contract(unknown).selection, authored = refs.tracking(unknown).selection;
+  assert.deepEqual(ordinary, authored, 'equal public cells do not identify the physical row');
+  const copiedOrdinary = copyScopedSelectionContext(ordinary, structuredClone(ordinary));
+  const copiedAuthored = copyScopedSelectionContext(authored, structuredClone(authored));
+  const view = parseReconciliationReferenceView(body);
+  assert.equal(scopedUnknownAuthored(body, ordinary, view), false);
+  assert.equal(scopedUnknownAuthored(body, authored, view), true);
+  const before = reconciliationParseStats();
+  for (let application = 0; application < 180; application += 1) {
+    assert.equal(scopedUnknownAuthored(body, copiedOrdinary), false);
+    assert.equal(scopedUnknownAuthored(body, copiedAuthored), true);
+  }
+  assert.deepEqual(reconciliationParseStats(), before,
+    'warm classification must not reconstruct the reference view, even from an already-cached AST');
+});
+
+test('#323 authored Unknown classification: missing sidecars and changed bodies cannot borrow an authored row', (t) => {
+  const body = `${bodyFor(variants.combined)}\n\n<!-- #323 sidecar checks -->`;
+  const f = fixture(t, [{ body }]), selection = createScopedReferenceResolver(f.options).tracking(`unknown:U-LATER@${ID}`).selection;
+  assert.equal(scopedUnknownAuthored(body, selection), true);
+  const before = reconciliationParseStats();
+  assert.equal(scopedUnknownAuthored(body, structuredClone(selection)), false, 'serialized selections carry no physical source authority');
+  assert.equal(scopedUnknownAuthored(body, { type: 'section', section: 'unknowns' }), false);
+  const copied = copyScopedSelectionContext(selection, structuredClone(selection));
+  assert.throws(() => scopedUnknownAuthored(`${body}\nChanged.`, copied), /SW-REF-SNAPSHOT: selection body changed/);
+  assert.deepEqual(reconciliationParseStats(), before, 'sidecar checks run before any unnecessary view construction');
+});
+
+test('#323 authored Unknown classification: original row offsets survive a reparsed tree and warm reuse', async (t) => {
+  // A real separate parser models eviction/reparsing without allocating tens
+  // of MiB of filler. Explicit fresh views retain their tree-identity contract.
+  const { parseReconciliationReferenceView: reparse } = await import('./reconciliation-markdown-ast.mjs?unknown-classification-generation');
+  const body = `${bodyFor({ unknownBefore: generated(`${unknownTable}\n\n## Generated Summary\n\nOutput text.`) })}\n\n<!-- #323 reparse -->`;
+  const f = fixture(t, [{ body }]), refs = createScopedReferenceResolver(f.options), unknown = `unknown:U-LATER@${ID}`;
+  const ordinary = refs.contract(unknown).selection, authored = refs.tracking(unknown).selection;
+  const original = parseReconciliationReferenceView(body), fresh = reparse(body);
+  assert.notEqual(original.tree, fresh.tree);
+  for (const view of [fresh, original, fresh]) {
+    assert.equal(scopedUnknownAuthored(body, ordinary, view), false);
+    assert.equal(scopedUnknownAuthored(body, authored, view), true);
+    const before = reconciliationParseStats();
+    assert.equal(scopedUnknownAuthored(body, ordinary), false);
+    assert.equal(scopedUnknownAuthored(body, authored), true);
+    assert.deepEqual(reconciliationParseStats(), before, 'default classification reuses the exact-body authored view');
   }
 });
 

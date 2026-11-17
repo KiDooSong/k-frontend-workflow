@@ -16,10 +16,12 @@ const suites = ['scoped-work-refs.test.mjs', 'scoped-work-sources.test.mjs',
   'scoped-work-applicability.test.mjs', 'scoped-work-basis.test.mjs', 'scoped-work-bindings.test.mjs', 'scoped-work-transitions.test.mjs',
   'scoped-work-git-transitions.test.mjs', 'scoped-work-coverage.test.mjs', 'scoped-work-receipts.test.mjs', 'scoped-work-source-relations.test.mjs', 'scoped-work-input-coverage.test.mjs', 'scoped-work-profiles.test.mjs', 'scoped-work-paths.test.mjs', 'scoped-work-decision-scopes.test.mjs', 'scoped-work-owner.test.mjs'];
 const runtime = ['util.mjs', 'frontmatter-syntax.mjs', 'scoped-work-request.mjs', 'scoped-work-declarations.mjs', 'scoped-work-authored.mjs', 'spec.mjs', 'reconciliation-items.mjs', 'reconciliation-markdown-ast.mjs', 'scoped-work-binding-status.mjs', 'scoped-work-source-state.mjs',
+  'workflow-progress.mjs', 'visual-refresh-git-objects.mjs',
   ...suites.map((name) => name.replace('.test.mjs', '.mjs'))];
 // This regression exercises several real modules, rather than a matching .mjs.
 const resolverSuites = [...suites, 'scoped-work-generated.test.mjs', 'scoped-work-subsections.test.mjs', 'scoped-work-retired-targets.test.mjs'];
 const cliSuite = 'scoped-work-binding-status.test.mjs';
+const bindingProgressSuite = 'scoped-work-binding-progress.test.mjs';
 const sourceCliSuite = 'scoped-work-cli.test.mjs';
 
 // Each packed subprocess runs a full suite with real Git/CLI observations.
@@ -60,7 +62,7 @@ test('D packed: real reference, source, mapping, API, normalization, graph trave
   // The installed lockfile dependencies are shared, not a different runtime or
   // hand-written stand-in. Relative imports below resolve only within payload.
   fs.symlinkSync(path.join(KIT_ROOT, 'node_modules'), path.join(packed, 'node_modules'), 'dir');
-  for (const name of [...resolverSuites, cliSuite, sourceCliSuite]) {
+  for (const name of [...resolverSuites, cliSuite, bindingProgressSuite, sourceCliSuite]) {
     fs.copyFileSync(path.join(KIT_ROOT, 'scripts/lib', name), path.join(lib, name), fs.constants.COPYFILE_EXCL);
   }
   const env = { ...process.env };
@@ -125,6 +127,14 @@ test('D packed: real reference, source, mapping, API, normalization, graph trave
   checkPayload();
   assert.equal(fs.existsSync(path.join(packed, 'examples')), false);
   t.diagnostic('packed readiness/binding-status subprocess: all 11 #282/#284/#300 generated-boundary and binding-read CLI cases passed');
+  const progress = checkedNode(['--test', '--test-reporter=tap', path.join(lib, bindingProgressSuite)], packed,
+    { ...env, SCOPED_WORK_TEST_FIXTURE_ROOT: KIT_ROOT });
+  assert.match(progress.stdout, /^# pass 8\r?$/m, progress.stdout);
+  for (const metric of ['fail', 'cancelled', 'skipped', 'todo']) {
+    assert.match(progress.stdout, new RegExp(`^# ${metric} 0\\r?$`, 'm'), progress.stdout);
+  }
+  checkPayload();
+  t.diagnostic('packed binding progress subprocess: all 8 stdout, synchronous phase, cleanup and closed-stderr regressions passed');
   const sourceCli = checkedNode(['--test', '--test-reporter=tap', '--test-name-pattern=^source admission CLI:',
     path.join(lib, sourceCliSuite)], packed, env);
   assert.match(sourceCli.stdout, /^# pass 4\r?$/m, sourceCli.stdout);

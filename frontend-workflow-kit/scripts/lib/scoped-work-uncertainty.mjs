@@ -49,10 +49,13 @@ export function scopedUnknownHomes(body, view = parseReconciliationReferenceView
 // Fixpoint roots keep the selected physical row's context, not a document-wide
 // "has authored Unknowns" flag. Compare source offsets so parser cache eviction
 // cannot change the answer for an existing selection sidecar.
-export function scopedUnknownAuthored(body, selection, view = parseReconciliationReferenceView(body)) {
+export function scopedUnknownAuthored(body, selection, view = null) {
   const nodes = scopedSelectionNodes(body, selection);
   if (selection.type !== 'row' || nodes?.length !== 1) return false;
   const [row] = nodes;
+  // Only offsets are compared below. Reuse the existing exact-body authored
+  // view when no current raw view was supplied; rebuilding every table/cell for
+  // each row and unit makes the applicability fixed point grow quadratically.
   return scopedAuthoredSections(body, 'unknowns', view).some((home) => home.tableNodes.some((table, index) =>
     signatures.unknown.every((header) => hasHeader(home.tables[index].headers, header)) &&
     table.position.start.offset <= row.position.start.offset && row.position.end.offset <= table.position.end.offset));
