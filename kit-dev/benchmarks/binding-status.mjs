@@ -1,5 +1,5 @@
 // Usage: node kit-dev/benchmarks/binding-status.mjs <before-kit-root> <after-kit-root>
-//        [runs=3] [matching-decision-bindings=0,8,24] [inputs=16] [units=2] [unbound-rows=0]
+//        [runs=3] [matching-decision-bindings=0,8,24] [inputs=16] [units=2] [unbound-rows=0] [source-items=1]
 // Install both kits' dependencies first. Timed samples run the actual public CLI
 // in fresh processes without instrumentation. Separate diagnostic runs count
 // function/filesystem/YAML calls and report their own inclusive function time,
@@ -13,6 +13,7 @@
 // Missing counters in an older baseline are unavailable, not zero.
 // input_metadata is optional kit diagnostics; structured_clone separately counts
 // actual clone calls, including metadata output copies that remain necessary.
+// source-items (1..99) varies anchor/effect matching within the first input.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -22,7 +23,7 @@ import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { pathToFileURL } from 'node:url';
 
-const usage = 'usage: node binding-status.mjs <before-kit-root> <after-kit-root> [runs=3] [matching-decision-bindings=0,8,24] [inputs=16] [units=2] [unbound-rows=0]';
+const usage = 'usage: node binding-status.mjs <before-kit-root> <after-kit-root> [runs=3] [matching-decision-bindings=0,8,24] [inputs=16] [units=2] [unbound-rows=0] [source-items=1]';
 const OWNER = 'screen:COUPON-001';
 const LIST = 'docs/frontend-workflow/domains/coupons/screens/coupon-list/screen-spec.md';
 const UNIT_IDS = ['list-behavior', 'list-interactions'];
@@ -31,7 +32,7 @@ const CONFIG = ['--docs', 'docs/frontend-workflow', '--src', 'src', '--policy', 
   '--manifest', 'config/manifest.yaml', '--layout', 'config/layout.yaml', '--owner', OWNER, '--json'];
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const inputId = (index) => `IN-20261111-meeting-${String(index + 1).padStart(4, '0')}`;
-const inputRef = (index) => `input:${inputId(index)}#extracted-facts/01`;
+const inputRef = (index, item = '01') => `input:${inputId(index)}#extracted-facts/${item}`;
 const decisionId = (index) => `D-PERF-${String(index).padStart(4, '0')}`;
 const unboundId = (index) => `${index % 2 ? 'U' : 'D'}-UNBOUND-${String(index).padStart(4, '0')}`;
 const unboundStatus = (index) => index % 8 < 2 ? 'open' : 'resolved';
@@ -87,7 +88,7 @@ function runCli(kit, fixture, scratch, diagnostic) {
   }
 }
 
-async function createFixture(kit, root, scratch, matching, inputs, unitCount = UNIT_IDS.length, unboundRows = 0) {
+async function createFixture(kit, root, scratch, matching, inputs, unitCount = UNIT_IDS.length, unboundRows = 0, sourceItems = 1) {
   const lib = (name) => import(pathToFileURL(path.join(kit, `scripts/lib/${name}.mjs`)).href);
   const [{ REQUIRED_ITEM_COLS }, { REQUIRED_REGISTER_COLS }] = await Promise.all([lib('reconciliation-items'), lib('reconciliation-register')]);
   const put = (name, value) => { const file = path.join(root, name); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, value); };
@@ -99,14 +100,16 @@ async function createFixture(kit, root, scratch, matching, inputs, unitCount = U
   put('frontend-workflow.config.yaml', 'version: 1\npolicy_overlay: config/adoption.yaml\n');
   const extraIds = Array.from({ length: unitCount - UNIT_IDS.length }, (_, index) => `list-source-${String(index + 1).padStart(3, '0')}`);
   const unitIds = [...UNIT_IDS, ...extraIds];
+  const itemIds = Array.from({ length: sourceItems }, (_, index) => String(index + 1).padStart(2, '0'));
+  const selectedSource = () => ({ input_id: inputId(0), items: [...itemIds], source_refs: itemIds.map((id) => inputRef(0, id)) });
   const units = { version: 1, units: [
     { id: UNIT_IDS[0], kind: 'behavior', contracts: ['artifact:COUPON-001-screen-spec#state-matrix'],
-      sources: [{ input_id: inputId(0), items: ['01'], source_refs: [inputRef(0)] }] },
+      sources: [selectedSource()] },
     { id: UNIT_IDS[1], kind: 'behavior', contracts: ['artifact:COUPON-001-screen-spec#interaction-matrix'], sources: [] },
-    // Extra units select the same valid Item/source as the first unit. This
+    // Extra units select the same valid Items/source as the first unit. This
     // varies repeated source/validation work without inventing another input.
     ...extraIds.map((id) => ({ id, kind: 'behavior', contracts: ['artifact:COUPON-001-screen-spec#state-matrix'],
-      sources: [{ input_id: inputId(0), items: ['01'], source_refs: [inputRef(0)] }] })),
+      sources: [selectedSource()] })),
   ] };
   const original = fs.readFileSync(path.join(root, LIST), 'utf8'), end = original.indexOf('\n---\n', 4);
   const common = { owner: OWNER, known_units: unitIds, blocks: [], basis_digest: ZERO, approval_ref: 'docs/approvals/performance.md#synthetic' };
@@ -131,15 +134,18 @@ async function createFixture(kit, root, scratch, matching, inputs, unitCount = U
   const summaryRows = [], itemRows = [];
   for (let index = 0; index < inputs; index++) {
     const id = inputId(index), ref = inputRef(index);
-    const inputBody = `## Extracted Facts\n\n- Observation ${index}: preserve selected context.\n- Further observation ${index}: keep the displayed result.\n\n## Inventory\n\n` +
+    const facts = [`- Observation ${index}: preserve selected context.`, `- Further observation ${index}: keep the displayed result.`];
+    if (index === 0) for (let item = 2; item < sourceItems; item++) facts.push(`- Selected observation ${item + 1}: preserve independent source ${item + 1}.`);
+    const inputBody = `## Extracted Facts\n\n${facts.join('\n')}\n\n## Inventory\n\n` +
       table(['Item', 'Behavior'], Array.from({ length: 16 }, (_, row) => [`control-${index}-${row}`, `Keep state ${index}/${row} after loading.`]));
     put(`docs/frontend-workflow/inputs/_multi/${id}.md`, md({ input_id: id, input_type: 'meeting', source_type: 'meeting',
       source_ref: `meeting:performance-${index}`, captured_at: '2026-11-11T00:00:00Z', captured_by: 'synthetic-benchmark',
       status: 'captured', affected_domains: ['coupons'], affected_screens: ['COUPON-001'] }, inputBody));
-    summaryRows.push(index === 0 ? [id, 'meeting', 'simple-update×1', 'partially-reconciled', 'pending', 'artifact:COUPON-001-screen-spec', '-', '-']
+    summaryRows.push(index === 0 ? [id, 'meeting', `simple-update×${sourceItems}`, 'partially-reconciled', 'pending', 'artifact:COUPON-001-screen-spec', '-', '-']
       : [id, 'meeting', 'reject-input', 'reconciled', 'rejected', '-', '-', '-']);
-    itemRows.push(index === 0 ? [id, '01', 'compatible-fact', 'simple-update', 'update', 'artifact:COUPON-001-screen-spec#state-matrix', ref, 'inherit', 'statement', 'inherit']
-      : [id, '01', 'reject', 'reject-input', 'reject', '-', ref, 'inherit', 'statement', 'inherit']);
+    if (index === 0) itemRows.push(...itemIds.map((item) => [id, item, 'compatible-fact', 'simple-update', 'update',
+      'artifact:COUPON-001-screen-spec#state-matrix', inputRef(index, item), 'inherit', 'statement', 'inherit']));
+    else itemRows.push([id, '01', 'reject', 'reject-input', 'reject', '-', ref, 'inherit', 'statement', 'inherit']);
   }
   put('docs/frontend-workflow/_meta/reconciliation-register.md', md({ reconciliation_contract: 2, review_profile: 'reconcile-stage04-v1',
     structured_since: '2026-11-10T00:00:00Z' }, `${table(REQUIRED_REGISTER_COLS, summaryRows)}\n\n## Reconciliation Items\n\n${table(REQUIRED_ITEM_COLS, itemRows)}`));
@@ -160,7 +166,7 @@ async function createFixture(kit, root, scratch, matching, inputs, unitCount = U
     assert.notEqual(bindings[0].basis_digest, null);
   }
   writeOwner(bindings); commit('Record synthetic binding states');
-  return { root, matching, inputs, unbound_rows: unboundRows, unit_ids: unitIds,
+  return { root, matching, inputs, unbound_rows: unboundRows, unit_ids: unitIds, source_items: sourceItems,
     commit: git(root, 'rev-parse', 'HEAD'), tree: git(root, 'rev-parse', 'HEAD^{tree}') };
 }
 
@@ -217,7 +223,8 @@ const names=['resolveScopedUnitProjection','resolveScopedDecisionProjection','re
   'scopedBindingBasis','relationClosure','withoutDecisionRefs','scopedBasisComponentDigests','scopeJson','scopeSet',
   'scopedUnknownAuthored','parseReconciliationReferenceView','sharedReconciliationReferenceView','sectionOccurrences',
   'resolveScopedContractGraph','createScopedReferenceResolver','scopedGraphSelectionRefs',
-  'createScopedSourceResolver','buildInputArtifactIndex','validateInputArtifacts','prepareScopedInputMetadata'];
+  'createScopedSourceResolver','buildInputArtifactIndex','validateInputArtifacts','prepareScopedInputMetadata',
+  'resolveSourceRelations','scopedGraphSelectionSpans'];
 export async function load(url,context,nextLoad){
   const result=await nextLoad(url,context);
   if(!url.startsWith(prefix)||!url.endsWith('.mjs'))return result;
@@ -269,7 +276,7 @@ const metadataModule=path.join(kit,'scripts/lib/scoped-work-input-metadata.mjs')
 const metadataStats=fs.existsSync(metadataModule)
   ? (await import(pathToFileURL(metadataModule).href)).scopedInputMetadataStats : undefined;
 yamlParseApiCalls=0;yamlParseDocumentCalls=0;
-const cloneCounts={calls:0,input_metadata:0,source_constructor_input_metadata:0,preparation_input_metadata:0,other_input_metadata:0};
+const cloneCounts={calls:0,input_metadata:0,input_records:0,source_constructor_input_metadata:0,preparation_input_metadata:0,other_input_metadata:0};
 const clone=globalThis.structuredClone;
 globalThis.structuredClone=function(...args){
   cloneCounts.calls++;
@@ -285,6 +292,9 @@ globalThis.structuredClone=function(...args){
     cloneCounts[depths.get('createScopedSourceResolver')?'source_constructor_input_metadata':
       depths.get('prepareScopedInputMetadata')?'preparation_input_metadata':'other_input_metadata']++;
   }
+  if(value&&typeof value==='object'&&!types.isProxy(value)&&
+    ['input_id','file','input_sha256'].every(key=>typeof Object.getOwnPropertyDescriptor(value,key)?.value==='string')&&
+    Object.hasOwn(Object.getOwnPropertyDescriptor(value,'metadata')||{},'value'))cloneCounts.input_records++;
   return clone.apply(this,args);
 };
 const counts={};
@@ -307,7 +317,7 @@ function median(values) {
 }
 
 async function main(args) {
-  assert.ok(args.length >= 2 && args.length <= 7, usage);
+  assert.ok(args.length >= 2 && args.length <= 8, usage);
   const redirected = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY',
     'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_CONFIG', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_PARAMETERS', 'NODE_V8_COVERAGE', 'NODE_OPTIONS']
     .filter((name) => process.env[name] !== undefined);
@@ -320,12 +330,14 @@ async function main(args) {
   const runs = integer(args[2] ?? '3', 1), counts = (args[3] ?? '0,8,24').split(',').map((value) => integer(value, 0)), inputs = integer(args[4] ?? '16', 1);
   const unitCount = integer(args[5] ?? String(UNIT_IDS.length), UNIT_IDS.length);
   const unboundRows = integer(args[6] ?? '0', 0);
+  const sourceItems = integer(args[7] ?? '1', 1);
+  assert.ok(sourceItems <= 99, 'source-items must fit canonical two-digit Item IDs (1..99)');
   assert.equal(new Set(counts).size, counts.length, 'binding counts must be unique');
   const scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'fwkit-binding-benchmark-'))), cases = [];
   try {
     const hook = diagnosticHook(scratch);
     for (const matching of counts) {
-      const fixture = await createFixture(kits.before, path.join(scratch, `project-${matching}`), scratch, matching, inputs, unitCount, unboundRows);
+      const fixture = await createFixture(kits.before, path.join(scratch, `project-${matching}`), scratch, matching, inputs, unitCount, unboundRows, sourceItems);
       const state = repositoryState(fixture.root), samples = [];
       assert.equal(state.status, '', 'fixture must begin clean');
       let expected;
@@ -338,7 +350,7 @@ async function main(args) {
       for (let run = 0; run < runs; run++) for (const side of run % 2 ? ['after', 'before'] : ['before', 'after']) {
         const result = runCli(kits[side], fixture.root, scratch); verify(result);
         samples.push({ side, run: run + 1, elapsed_ms: result.elapsed_ms });
-        console.error(`${unitCount} units, ${inputs} inputs, ${matching} matching bindings, ${unboundRows} extra unbound rows, run ${run + 1}/${runs}, ${side}: ${result.elapsed_ms.toFixed(1)} ms; exact report/index/worktree verified`);
+        console.error(`${unitCount} units, ${inputs} inputs, ${sourceItems} selected source Items, ${matching} matching bindings, ${unboundRows} extra unbound rows, run ${run + 1}/${runs}, ${side}: ${result.elapsed_ms.toFixed(1)} ms; exact report/index/worktree verified`);
       }
       const diagnostics = {};
       for (const side of ['before', 'after']) {
@@ -348,7 +360,7 @@ async function main(args) {
       }
       const medians = Object.fromEntries(['before', 'after'].map((side) => [side,
         { elapsed_ms: median(samples.filter((sample) => sample.side === side).map((sample) => sample.elapsed_ms)) }]));
-      cases.push({ matching_decision_bindings: matching, declared_units: unitCount, generated_inputs: inputs, extra_unbound_rows: unboundRows,
+      cases.push({ matching_decision_bindings: matching, declared_units: unitCount, generated_inputs: inputs, extra_unbound_rows: unboundRows, selected_source_items: sourceItems,
         commit: fixture.commit, tree: fixture.tree, tracked_files: state.files, report_sha256: sha256(expected),
         row_count: JSON.parse(expected).owners[0].rows.length, medians,
         speedup: medians.before.elapsed_ms / medians.after.elapsed_ms, samples, diagnostics });
@@ -357,9 +369,9 @@ async function main(args) {
       measurement: {
         elapsed_ms: 'Fresh actual public binding-status CLI process per kit/case/run, including startup/imports, Git snapshot materialization, evaluation, JSON output and cleanup. No instrumentation in timed runs. Setup and independent verification excluded.',
         order: 'Before/after order alternates. Both kit roots must be on the same filesystem. Both versions use the same committed fixture and exact CLI flags. Fixture setup warms the filesystem cache; this is not cold-storage latency.',
-        diagnostics: 'Separate untimed processes count selected functions with an ESM loader, filesystem calls and YAML document parses (yaml.parse plus direct yaml.parseDocument), and report their own peak RSS plus user/system CPU microseconds. Function inclusive_us includes nested calls and instrumentation overhead; do not sum overlapping phases or treat these as uninstrumented timings. Recursive functions time only outer calls; scopeJson serialized_bytes counts every returned canonical string. raw_tables contains the kit\'s available raw-table counters: tables counts actual encodings; indexes/indexedRows count index builds/visited rows; reusedTables/reusedIndexes count cache hits. input_metadata contains optional preparation/source-clone diagnostics: prepared counts preparation copies, fallbacks counts unsupported preparation values, cloned counts legacy source-constructor copies, and reused counts privately prepared metadata reuse. An older kit without this module reports null. structured_clone counts actual global clone calls after imports; input_metadata classifies nonProxy values with own data string input_id/input_type/source_type fields. source_constructor_input_metadata and preparation_input_metadata classify the active constructor/preparation contexts; other_input_metadata counts direct metadata copies outside both contexts, including output metadata. Clones of larger output wrappers count in total calls but are not classified as direct metadata copies. No getter is evaluated for classification. Unavailable fields stay absent and an unavailable accessor is null. These are not timed-run memory/CPU or retained memory. YAML interception is installed before kit imports; YAML counters reset after imports. Resource usage spans the diagnostic process lifetime including its loader worker and excludes child Git process CPU/RSS.',
+        diagnostics: 'Separate untimed processes count selected functions with an ESM loader, filesystem calls and YAML document parses (yaml.parse plus direct yaml.parseDocument), and report their own peak RSS plus user/system CPU microseconds. Function inclusive_us includes nested calls and instrumentation overhead; do not sum overlapping phases or treat these as uninstrumented timings. Recursive functions time only outer calls; scopeJson serialized_bytes counts every returned canonical string. raw_tables contains the kit\'s available raw-table counters: tables counts actual encodings; indexes/indexedRows count index builds/visited rows; reusedTables/reusedIndexes count cache hits. input_metadata contains optional preparation/source-clone diagnostics: prepared counts preparation copies, fallbacks counts unsupported preparation values, cloned counts legacy source-constructor copies, and reused counts privately prepared metadata reuse. An older kit without this module reports null. structured_clone counts actual global clone calls after imports; input_metadata classifies nonProxy values with own data string input_id/input_type/source_type fields. source_constructor_input_metadata and preparation_input_metadata classify the active constructor/preparation contexts; other_input_metadata counts direct metadata copies outside both contexts, including output metadata. input_records counts own-data input_id/file/input_sha256/metadata wrappers copied by source/evidence results. Clones of larger output wrappers count in total calls but are not classified as direct metadata copies. scopedGraphSelectionSpans counts actual selection-range derivations across callers; resolveSourceRelations counts individual closure passes. No getter is evaluated for classification. Unavailable fields stay absent and an unavailable accessor is null. These are not timed-run memory/CPU or retained memory. YAML interception is installed before kit imports; YAML counters reset after imports. Resource usage spans the diagnostic process lifetime including its loader worker and excludes child Git process CPU/RSS.',
         verification: 'Whole stdout bytes, snapshot commit/tree, every binding state and digest agree across kits/runs; original HEAD, index bytes and tracked worktree bytes/modes stay unchanged; private snapshots are removed.',
-        scope: 'Synthetic one-owner workload with configurable input/binding/unit counts, selected source/Items and mixed binding states. Extra units select the first unit\'s existing source Item. Optional unbound rows alternate Decision/Unknown and include open/resolved rows; these enlarge applicability without computing invented binding digests. It is not a reproduction or timing prediction of the reported consumer execution.',
+        scope: 'Synthetic one-owner workload with configurable input/binding/unit counts, selected source/Items and mixed binding states. source-items (1..99) selects distinct bullets and matching update effects from the first input; other inputs retain one rejected Item. Extra units select the same source Items as the first unit. Optional unbound rows alternate Decision/Unknown and include open/resolved rows; these enlarge applicability without computing invented binding digests. It is not a reproduction or timing prediction of the reported consumer execution.',
       }, cases }, null, 2));
   } finally {
     fs.rmSync(scratch, { recursive: true, force: true });

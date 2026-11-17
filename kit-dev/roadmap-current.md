@@ -1,5 +1,9 @@
 # Current Roadmap
 
+> 2026-11-17 #300/#321/#323 후속: source 관계 pass 내부에서 같은 Evidence ref의 입력 anchor와 물리 span을 재사용해 Item effect 대조의 반복 구성을 줄인다.
+> 새 pass·호출의 source resolver 격리와 section/bullet 선택, 각 사용의 expected hash·현재 파일 검증·최종 audit, 판정·digest·공개 반환값 격리를 유지한다.
+> 정본: [scoped baseline](../frontend-workflow-kit/docs/reference/scoped-work.md#evaluation-on-the-immutable-baseline). 재현: [binding-status benchmark](benchmarks/binding-status.mjs) — 선택적 `source-items`로 Item/anchor 규모를 늘린 실제 CLI를 비교한다.
+
 > 2026-11-17 #323 후속: `binding-status`의 owned snapshot에서 plain 입력 metadata를 한 번 분리·동결하고 내부 source resolver의 반복 복사를 줄인다.
 > private identity가 있는 복사본만 재사용하며 일반 mutable API의 eager 복사·반환값 격리, resolver별 index/validation/body·현재 파일 읽기와 passive Evidence 관찰을 유지한다. owner가 없거나 metadata가 특수한 객체이면 기존 경로를 유지한다.
 > 정본: [binding status](../frontend-workflow-kit/docs/reference/scoped-work.md#binding-basis-and-status). 재현: [binding-status benchmark](benchmarks/binding-status.mjs) — metadata 복사/재사용과 전체 CLI 시간·RSS·출력·파일 보존을 구분한다.

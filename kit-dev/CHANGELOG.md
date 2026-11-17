@@ -4,6 +4,18 @@
 
 ## Unreleased
 
+### perf(scoped) — source 관계 pass 안의 입력 anchor 반복 구성 감소 (#300, #321, #323)
+
+- 여러 Item effect와 같은 Evidence를 대조할 때 pass 내부에서 해소한 입력 anchor를 재사용해
+  metadata 복사와 물리 span의 반복 구성을 줄인다. section/bullet별 선택과 source overlap 판정은 유지한다.
+- 새 pass·호출은 독립 source resolver를 만들며, 각 사용의 expected hash 확인과 현재 파일·metadata 검증,
+  validation-only Evidence 관찰·최종 read set audit·공개 반환값 격리를 유지한다.
+  별도 본문·파일 관찰·검증 결과 캐시나 source admission·scope-basis-v2·checkpoint 변경은 없다.
+- [binding-status benchmark](benchmarks/binding-status.mjs)의 선택적 `source-items`로 Item/anchor 수를
+  늘려 실제 CLI의 출력·digest·저장소·cleanup 보존과 실행 비용을 비교한다. 합성 fixture의 결과는
+  실제 consumer 실행의 개선율을 대신하지 않는다.
+  계약: [scoped baseline](../frontend-workflow-kit/docs/reference/scoped-work.md#evaluation-on-the-immutable-baseline).
+
 ### perf(binding-status) — 내부 입력 metadata의 반복 복사 감소 (#323)
 
 - owned snapshot에서 수집한 plain 입력 metadata를 한 번 분리·동결하고 private identity로 식별한다.

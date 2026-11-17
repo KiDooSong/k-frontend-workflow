@@ -935,6 +935,100 @@ test('#300 source closure bounds file reads as anchors grow and preserves the co
   assert.ok(many.listings <= one.listings + 2, 'anchor comparisons must not amplify directory reads');
 });
 
+test('#323 source anchors: matching more equal-text bullets does not repeatedly clone every compared input', (t) => {
+  function measure(count) {
+    const f = fixture(t), ids = Array.from({ length: count }, (_, i) => String(i + 1).padStart(2, '0'));
+    f.change('input.md', (doc) => { doc.body = '## Extracted Facts\n' +
+      ids.map(() => '- The same visible fact at a different source position.').join('\n'); }, f.inputs);
+    f.change('screen.md', ({ fm }) => { fm.work_execution.units[0].sources = [select(ids)]; });
+    f.register(ids.map((id) => effect(id)));
+    const options = f.options(), expectedBasis = resolveScopedCoverageBasis({ ...options, inputId: INPUT }).basis;
+    const clone = globalThis.structuredClone;
+    let inputCopies = 0;
+    // Count actual public input-result copies, not a cache counter. These wrap
+    // the input hash and metadata and occur outside source relation matching too.
+    const counted = t.mock.method(globalThis, 'structuredClone', function (value, ...args) {
+      if (value && Object.getOwnPropertyDescriptor(value, 'input_id')?.value === INPUT &&
+          Object.hasOwn(value, 'input_sha256') && Object.hasOwn(value, 'metadata')) inputCopies += 1;
+      return clone.call(this, value, ...args);
+    });
+    let out;
+    try { out = resolveScopedSourceRelations(options); }
+    finally { counted.mock.restore(); }
+    assert.deepEqual(out.sources[0].basis, expectedBasis);
+    assert.deepEqual(out.sources[0].selection, select(ids));
+    assert.deepEqual(out.sources[0].issues, []);
+    assert.deepEqual(out.sources[0].connections, ids.map((id) => ({ item_id: id,
+      target: 'artifact:DOC#rules', evidence: `input:${INPUT}#extracted-facts/${id}`,
+      contracts: ['artifact:DOC#rules'], source_refs: [`input:${INPUT}#extracted-facts/${id}`] })),
+    'equal visible text must not merge distinct physical bullet selections');
+    assert.deepEqual(resolveScopedSourceRelations(options), out);
+    noPermit(out);
+    return inputCopies;
+  }
+  const eight = measure(8), twentyFour = measure(24);
+  t.diagnostic(`source input-result copies: ${JSON.stringify({ eight_anchors: eight, twenty_four_anchors: twentyFour })}`);
+  assert.ok(eight > 0, 'the observer must count real result copies');
+  assert.ok(twentyFour <= eight * 4,
+    'tripling anchors must not add quadratic copies while checking every effect against every anchor');
+});
+
+test('#323 source anchors: section and nested-bullet spans stay distinct and unrelated effects stay disconnected', (t) => {
+  const f = fixture(t), section = `input:${INPUT}#extracted-facts`;
+  const refs = ['01', '02', '03'].map((id) => `${section}/${id}`);
+  f.change('input.md', (doc) => { doc.body = '## Extracted Facts\n- Parent fact.\n  - Nested fact.\n- Later fact.\n'; }, f.inputs);
+  f.change('screen.md', ({ fm }) => { fm.work_execution.units[0].sources = [
+    { input_id: INPUT, items: ['01', '02', '03'], source_refs: [section, ...refs] }]; });
+  f.register([effect('01'), effect('02'), effect('03', 'other')]);
+  const out = f.run(), source = out.sources[0];
+  assert.deepEqual(source.connections, ['01', '02'].map((id, index) => ({ item_id: id,
+    target: 'artifact:DOC#rules', evidence: refs[index], contracts: ['artifact:DOC#rules'],
+    source_refs: [section, refs[index]] })), 'a parent bullet cannot inherit its nested bullet span');
+  assert.ok(source.issues.some((entry) => entry.item_id === '03' && entry.reason === 'source-effect-unconnected'));
+  assert.ok(source.issues.some((entry) => entry.ref === refs[2] && entry.reason === 'source-anchor-unconnected'));
+  assert.deepEqual(source.source.groups.map((group) => group.item_id), ['01', '02', '03']);
+  assert.equal(source.source.groups[2].effects[0].target.ref, 'artifact:DOC#other');
+  assert.deepEqual(out.pending_connections, []);
+  noPermit(out);
+});
+
+test('#323 source anchors: later calls detach prior results, read current body and reject changed indexed metadata', (t) => {
+  const f = fixture(t);
+  f.change('input.md', ({ fm }) => { fm.extra = { notes: Array.from({ length: 32 }, (_, index) =>
+    ({ index, context: 'Recorded context. '.repeat(64) })) }; }, f.inputs);
+  const options = f.options(), first = resolveScopedSourceRelations(options);
+  const expected = structuredClone(first);
+  first.sources[0].source.input.metadata.affected_screens.push('RESULT-OTHER');
+  first.sources[0].source.input.metadata.extra.notes[0].context = 'Caller-only metadata.';
+  first.sources[0].source.anchors[0].content = 'Caller-only content.';
+  first.sources[0].connections[0].source_refs.push(`input:${INPUT}#extracted-facts/02`);
+  assert.deepEqual(resolveScopedSourceRelations(options), expected, 'private nodes cannot escape through earlier output');
+  f.change('input.md', (doc) => { doc.body = doc.body.replace('Known first fact.', 'Changed first fact.'); }, f.inputs);
+  const current = resolveScopedSourceRelations(options);
+  assert.equal(current.sources[0].source.anchors[0].content, 'Changed first fact.');
+  assert.notEqual(current.sources[0].basis.input_sha256, expected.sources[0].basis.input_sha256);
+  assert.deepEqual(current.sources[0].connections, expected.sources[0].connections);
+  f.change('input.md', ({ fm }) => { fm.captured_by = 'another-recorder'; }, f.inputs);
+  assert.throws(() => resolveScopedSourceRelations(options), /SW-SOURCE-SNAPSHOT/,
+    'a new call must validate current input metadata against the original index');
+});
+
+test('#323 source anchors: input bytes changed after selection reuse still fail the snapshot audit', (t) => {
+  const f = fixture(t), options = f.options(), readFile = fs.readFileSync;
+  let mutated = false;
+  t.mock.method(fs, 'readFileSync', function (file, ...args) {
+    const raw = readFile.call(this, file, ...args);
+    // Explicit source anchors have already been selected when the register is
+    // parsed. Reusing them cannot hide a later edit to their actual input file.
+    if (!mutated && file === f.registerFile) {
+      mutated = true; fs.appendFileSync(f.inputFile, '\nChanged after the input anchor was selected.');
+    }
+    return raw;
+  });
+  assert.throws(() => resolveScopedSourceRelations(options), /snapshot changed/);
+  assert.equal(mutated, true);
+});
+
 test('#300 source closure detects changed owner bytes in its uncached final audit', (t) => {
   const f = fixture(t), options = f.options(), readFile = fs.readFileSync;
   let mutated = false;
