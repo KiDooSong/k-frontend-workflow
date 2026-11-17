@@ -2,6 +2,7 @@
 // Consume the existing target index from one validated snapshot. Snapshot capture,
 // owner/profile predicates, coverage, and the full R1 graph are separate steps.
 import path from 'node:path';
+import { types } from 'node:util';
 import { splitFrontmatter } from './util.mjs';
 import { readCurrentBytes, canonicalJson } from './current-work-request.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
@@ -114,8 +115,8 @@ export function scopedCoveredRows(node, sites) {
   return [...rows];
 }
 
-const encodeStats = { tables: 0 };
-// Process-wide raw table encodings: read-only diagnostics (#275).
+const encodeStats = { tables: 0, indexes: 0, indexedRows: 0, reusedTables: 0, reusedIndexes: 0 };
+// Process-wide raw table encodings and row indexes: read-only diagnostics (#275).
 export function scopedRawTableStats() {
   return { ...encodeStats };
 }
@@ -155,6 +156,42 @@ export function scopedRawTable(table) {
   const cells = lines.slice(2).map(splitRow);
   if (cells.some((row) => row.length !== headers.length)) fail('SW-REF-TABLE', 'row width differs from header');
   return { headers, cells, rows: cells.map((row) => Object.fromEntries(headers.map((h, i) => [h, row[i]]))) };
+}
+
+// A raw view's frozen source tables can outlive one resolver. Reuse only their
+// pure source-cell encoding for the same native table; neither a file observation
+// nor a reference result belongs here. Both weak keys follow the existing view
+// lifetime without another source-text cache. Keep the public result mutable.
+const sharedRawTables = new WeakMap(), sharedRowIndexes = new WeakMap();
+function resolverRawTable(table, node) {
+  // An old mutable view can feed the authored view beside the same native AST.
+  // Even a frozen accessor/proxy need not return the same source text twice.
+  const descriptor = table && typeof table === 'object' && !types.isProxy(table) && Object.isFrozen(table)
+    ? Object.getOwnPropertyDescriptor(table, 'sourceText') : null;
+  if (!descriptor || !Object.hasOwn(descriptor, 'value') || descriptor.writable || typeof descriptor.value !== 'string') {
+    return scopedRawTable(table);
+  }
+  const native = sharedRawTables.get(table);
+  if (native?.has(node)) {
+    encodeStats.reusedTables += 1;
+    return native.get(node);
+  }
+  const raw = scopedRawTable(table);
+  Object.freeze(raw.headers);
+  for (const row of raw.cells) Object.freeze(row);
+  Object.freeze(raw.cells);
+  for (const row of raw.rows) Object.freeze(row);
+  Object.freeze(raw.rows);
+  Object.freeze(raw);
+  // A mutable authored-view prewarm may attach one frozen source table to more
+  // than one native node. Keep their encodings distinct so the resolver's reverse
+  // mapping cannot replace one physical row with another's identical cells.
+  if (!native) sharedRawTables.set(table, new WeakMap());
+  sharedRawTables.get(table).set(node, raw);
+  // These maps and their position lists stay private. Public selections always
+  // copy headers/cells, and each resolver retains its own native-node mapping.
+  sharedRowIndexes.set(raw, new Map());
+  return raw;
 }
 
 export function createScopedReferenceResolver({ targetIndex, projectRoot, inputArtifacts = [], shareMetadata = false } = {}) {
@@ -252,14 +289,15 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot, inputA
     if (record) rememberScopedSelection(selected, record.body, [nativeTables.get(table).children[index + 1]]);
     return selected;
   }
-  // A section's tables are encoded once per resolver and their rows indexed by identity, so
-  // selecting every row of a register stays linear (#275); each selection copies its cells.
+  // A section's frozen tables share their source encoding and row indexes across
+  // resolvers. Mutable tables retain the per-resolver cache; every selection
+  // copies its cells, and native source identity stays local to this resolver.
   const tableCache = new WeakMap(), indexCache = new WeakMap(), rawTables = new WeakMap(), nativeTables = new WeakMap();
   function encoded(occurrence) {
     if (!tableCache.has(occurrence)) tableCache.set(occurrence, occurrence.tables.map((table, i) => {
       const node = occurrence.tableNodes[i];
       if (!rawTables.has(node)) {
-        const raw = scopedRawTable(table);
+        const raw = resolverRawTable(table, node);
         rawTables.set(node, raw); nativeTables.set(raw, node);
       }
       return rawTables.get(node);
@@ -283,9 +321,13 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot, inputA
     return byMode.get(mode);
   }
   function rowIndex(table, family) {
-    if (!indexCache.has(table)) indexCache.set(table, new Map());
-    const byMode = indexCache.get(table), mode = family ? 'id' : 'first';
+    const shared = sharedRowIndexes.get(table);
+    if (!shared && !indexCache.has(table)) indexCache.set(table, new Map());
+    const byMode = shared || indexCache.get(table), mode = family ? 'id' : 'first';
+    if (shared && byMode.has(mode)) encodeStats.reusedIndexes += 1;
     if (!byMode.has(mode)) {
+      encodeStats.indexes += 1;
+      encodeStats.indexedRows += table.rows.length;
       const index = new Map();
       table.rows.forEach((row, position) => {
         const identity = family ? col(row, 'ID') : table.cells[position][0];

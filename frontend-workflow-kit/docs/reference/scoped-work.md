@@ -269,6 +269,17 @@ a second source-text cache with a separate eviction threshold. Derived views
 remain allocated while existing owners retain their trees, so the source-cache
 budget is not a bound on total memory. The ordinary reference-view parser still
 returns independent mutable containers to callers that need them.
+For immutable source tables, fresh resolvers also reuse the raw cell encoding
+and private row-identity indexes. This avoids splitting and indexing an entire
+table again for each separately resolved candidate. The weak keys identify both
+the source table object and its native AST node, so equal text and even a source
+table supplied at two physical locations cannot merge those locations.
+Mutable source tables and tables with accessors keep the resolver-local path.
+Each returned row still receives independent header and cell arrays, and the
+public raw-table helper still returns fresh mutable values.
+These derived encodings and indexes add retained memory while their existing
+source-table owners are live; they introduce no additional source-text cache or
+separate eviction threshold.
 Each resolver keeps its own metadata and mapping validation, and each graph
 still reads current bytes, checks the indexed body and metadata, and rechecks
 its complete read set. Sharing raw syntax does not reuse selected records,
