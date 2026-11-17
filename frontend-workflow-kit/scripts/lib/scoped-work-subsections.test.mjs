@@ -7,7 +7,7 @@ import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { KIT_ROOT, DEFAULTS, splitFrontmatter } from './util.mjs';
 import { buildReconciliationTargetIndex } from './reconciliation-target-index.mjs';
-import { parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
+import { parseReconciliationReferenceView, sharedReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
 import { scopedAuthoredSubsections, scopedSelectionNodes, copyScopedSelectionContext } from './scoped-work-authored.mjs';
 import { createScopedReferenceResolver, scopedRowSite, scopedAddRowSite, scopedCoveredRows } from './scoped-work-refs.mjs';
 import { scopedGraphSelectionRefs, scopedGraphSelectionSpans, resolveScopedContractGraph } from './scoped-work-graph.mjs';
@@ -111,6 +111,8 @@ test('H3: duplicate slugs fail; quoted, listed, fenced, inline, indented and gen
 test('H3: generated headings do not split an authored subsection; copies and cache eviction restore native nodes', (t) => {
   const f = fixture(t, `## Rules\n\n### Narrow contract\nBefore.\n\n${generated('## Generated summary\n\n### Narrow contract\nOrdinary evidence.')}\n\nAfter.\n\n### Sibling\nOutside.`);
   const body = f.bodyOf(), view = parseReconciliationReferenceView(body), selection = f.refs().contract('artifact:RULES#narrow-contract').selection;
+  const shared = sharedReconciliationReferenceView(body);
+  assert.equal(shared.tree, view.tree);
   assert.match(selection.content, /Before\.[\s\S]*After\./); assert.doesNotMatch(selection.content, /Outside/);
   const copied = copyScopedSelectionContext(selection, structuredClone(selection));
   assert.equal(scopedSelectionNodes(body, copied), scopedSelectionNodes(body, selection));
@@ -118,6 +120,11 @@ test('H3: generated headings do not split an authored subsection; copies and cac
   for (let i = 0; i < 17; i += 1) parseReconciliationReferenceView(`<!-- ${i}${'x'.repeat(2 * 1024 * 1024)} -->`);
   const fresh = parseReconciliationReferenceView(body);
   assert.notEqual(fresh.tree, view.tree, 'the original parse really was evicted');
+  const sharedFresh = sharedReconciliationReferenceView(body);
+  assert.equal(sharedFresh.tree, fresh.tree, 'shared syntax follows the current AST generation after actual eviction');
+  assert.notEqual(sharedFresh, shared, 'holding an old view must not make it authoritative after tree eviction');
+  assert.deepEqual(sharedFresh, fresh);
+  assert.equal(sharedReconciliationReferenceView(body), sharedFresh);
   assert.deepEqual(scopedGraphSelectionSpans(body, fresh, JSON.parse(JSON.stringify(selection))), spans);
   assert.deepEqual(scopedAuthoredSubsections(body, 'narrow-contract', fresh)[0].nodes,
     scopedSelectionNodes(body, f.refs().contract('artifact:RULES#narrow-contract').selection));

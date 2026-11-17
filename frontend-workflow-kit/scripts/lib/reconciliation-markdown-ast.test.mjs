@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseReconciliationMarkdown, parseReconciliationEvidence, parseReconciliationReferenceView, locateContentTables,
-  parseStrictTables, parseStrictTablesWithHeaders, describeHeaderMismatch } from './reconciliation-markdown-ast.mjs';
+import { parseReconciliationMarkdown, parseReconciliationEvidence, parseReconciliationReferenceView, sharedReconciliationReferenceView,
+  locateContentTables, parseContentSectionTables, parseStrictTables, parseStrictTablesWithHeaders, describeHeaderMismatch } from './reconciliation-markdown-ast.mjs';
 
 function section(markdown, slug = 'extracted-facts') {
   const parsed = parseReconciliationMarkdown(markdown);
@@ -229,6 +229,100 @@ test('the same body shares one read-only tree per process; derived views stay pe
   for (const value of [tree, tree.children, tree.children[1], tree.children[1].position.start]) assert.ok(Object.isFrozen(value));
   assert.throws(() => tree.children.push({ type: 'text', value: 'x' }), TypeError);
   assert.notEqual(parseReconciliationMarkdown(body).occurrences, parseReconciliationMarkdown(body).occurrences);
+});
+
+test('#323 shared reference view is immutable while ordinary callers keep detached mutable projections', () => {
+  const body = '## Shared view isolation\n- First fact.\n  - Nested fact.\n\n| ID | Value |\n|---|---|\n| A | original |';
+  const ordinary = parseReconciliationReferenceView(body), expected = structuredClone(ordinary);
+  const shared = sharedReconciliationReferenceView(body);
+  assert.equal(shared.tree, ordinary.tree);
+  assert.equal(sharedReconciliationReferenceView([...body].join('')), shared);
+  assert.notEqual(sharedReconciliationReferenceView(`${body}\n`), shared, 'source bytes define the cache identity');
+  assert.deepEqual(shared, expected);
+
+  const visited = new Set();
+  const frozen = (value) => {
+    if (!value || typeof value !== 'object' || visited.has(value)) return;
+    visited.add(value);
+    assert.ok(Object.isFrozen(value), 'every shared container, including table rows, is immutable');
+    Object.values(value).forEach(frozen);
+  };
+  frozen(shared);
+  assert.throws(() => shared.sections.pop(), TypeError);
+  assert.throws(() => { shared.sections[1].tables[0].rows[0].Value = 'forged'; }, TypeError);
+  assert.throws(() => shared.sections[1].bulletSources.push('forged'), TypeError);
+
+  // Neither a fresh view made before sharing nor one made afterward aliases
+  // mutable containers into the shared syntax.
+  for (const view of [ordinary, parseReconciliationReferenceView(body)]) {
+    assert.notEqual(view.sections, shared.sections);
+    view.sections[1].tables[0].headers[0] = 'changed';
+    view.sections[1].tables[0].rows[0].Value = 'changed';
+    view.sections[1].tables[0].rows.push({ ID: 'extra', Value: 'changed' });
+    view.sections[1].bulletTexts[0] = 'changed';
+    view.sections[1].bulletSources[0] = 'changed';
+    view.sections[1].nodes.pop();
+    view.sections.pop();
+  }
+  assert.equal(sharedReconciliationReferenceView(body), shared);
+  assert.deepEqual(shared, expected);
+  assert.deepEqual(parseReconciliationReferenceView(body), expected);
+});
+
+test('#323 shared reference view retains raw ranges, nested lists and canonical table boundaries', () => {
+  const table = '| ID | Value |\n|---|---|\n| A | original |';
+  const boundaries = [
+    ['heading', `## Rows\n${table}`, 1],
+    ['blank line', `## Rows\nParagraph.\n\n${table}`, 1],
+    ['paragraph continuation', `## Rows\nParagraph.\n${table}`, 0],
+    ['quoted table', `## Rows\n${table.split('\n').map((line) => `> ${line}`).join('\n')}`, 0],
+    ['indented pipes', `## Rows\n${table.split('\n').map((line) => ` ${line}`).join('\n')}`, 0],
+    ['fenced example', `## Rows\n\`\`\`md\n${table}\n\`\`\``, 0],
+    ['HTML example', `## Rows\n<div>\n${table}\n</div>`, 0],
+  ];
+  for (const ending of ['\n', '\r\n', '\r']) {
+    for (const [name, source, count] of boundaries) {
+      const body = source.replace(/\n/g, ending), view = sharedReconciliationReferenceView(body);
+      assert.deepEqual(view, parseReconciliationReferenceView(body), `${name}: ${JSON.stringify(ending)}`);
+      assert.equal(view.sections.flatMap((entry) => entry.tables).length, count, name);
+      for (const entry of view.sections) entry.tableNodes.forEach((node, index) => {
+        assert.equal(entry.tables[index].sourceText, body.slice(node.position.start.offset, node.position.end.offset));
+      });
+      assert.equal(sharedReconciliationReferenceView(body), view);
+    }
+    for (const [name, lines] of evidenceFixtures) {
+      const body = lines.join(ending);
+      assert.deepEqual(sharedReconciliationReferenceView(body), parseReconciliationReferenceView(body), name);
+    }
+  }
+});
+
+test('#323 shared reference view keeps document definitions separate from Items section interpretation', () => {
+  const lines = ['| ![[Input ID][outside]](/image) | Target |', '|---|---|',
+    '| IN-1 | ![[artifact:EXAMPLE#section/row][outside]](/image) |'];
+  for (const ending of ['\n', '\r\n', '\r']) for (const placement of ['before', 'inside', 'after']) {
+    const body = [
+      ...(placement === 'before' ? ['[outside]: /url', ''] : []),
+      '## Reconciliation Items', ...lines,
+      ...(placement === 'inside' ? ['', '[outside]: /url'] : []),
+      '', '## Following', ...(placement === 'after' ? ['[outside]: /url'] : []),
+    ].join(ending);
+    const view = sharedReconciliationReferenceView(body);
+    const table = view.sections.find((entry) => entry.slug === 'reconciliation-items').tables[0];
+    assert.deepEqual(table.headers, ['Input ID', 'Target']);
+    assert.deepEqual(table.rows, [{ 'Input ID': 'IN-1', Target: 'artifact:EXAMPLE#section/row' }]);
+    assert.equal(table.sourceText, lines.join(ending));
+    assert.deepEqual(view, parseReconciliationReferenceView(body));
+
+    // Warming the document-wide view cannot supply an outside definition to
+    // the existing section-only Items interpretation (including image alt).
+    const section = parseContentSectionTables(body, 'reconciliation-items');
+    assert.equal(section.sectionCount, 1);
+    assert.equal(section.tables[0].headers[0], placement === 'inside' ? 'Input ID' : '[Input ID][outside]');
+    assert.equal(section.tables[0].rows[0].Target, placement === 'inside'
+      ? 'artifact:EXAMPLE#section/row' : '[artifact:EXAMPLE#section/row][outside]');
+    assert.equal(sharedReconciliationReferenceView(body), view);
+  }
 });
 
 const strictHeaders = ['Input ID', 'Status'];

@@ -9,7 +9,7 @@ import { readCurrentBytes, hashBytes, normalizeWorkOrigins } from './current-wor
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { parseInputEvidenceRef } from './provenance.mjs';
 import { resolveArtifact } from './reconciliation-target-index.mjs';
-import { parseReconciliationReferenceView, reconciliationReferenceLabel } from './reconciliation-markdown-ast.mjs';
+import { parseReconciliationReferenceView, sharedReconciliationReferenceView, reconciliationReferenceLabel } from './reconciliation-markdown-ast.mjs';
 import { createScopedReferenceResolver, parseScopedTargetRef, scopedSectionsBySlug, scopedIndexedBy } from './scoped-work-refs.mjs';
 import { createScopedSourceResolver } from './scoped-work-sources.mjs';
 import { workText, workSet, workObject, ScopedWorkContractError } from './scoped-work-request.mjs';
@@ -343,7 +343,7 @@ export function resolveScopedCandidateGraph({ roots = [], targetIndex, inputArti
     const document = documents.get(file), { parsed } = document;
     if (document.metadata === null || document.metadata !== serial(metadata) ||
         (expectedBody !== undefined && parsed.body !== expectedBody)) fail('evidence differs from its indexed snapshot');
-    document.view ??= parseReconciliationReferenceView(parsed.body);
+    document.view ??= sharedReconciliationReferenceView(parsed.body);
     return { body: parsed.body, view: document.view };
   }
   function enqueue(ref, mode) {
@@ -449,7 +449,7 @@ export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifa
     const document = documents.get(file), { parsed } = document;
     if (document.metadata === null || document.metadata !== serial(metadata) ||
         (expectedBody !== undefined && parsed.body !== expectedBody)) fail('evidence differs from its indexed snapshot');
-    document.view ??= parseReconciliationReferenceView(parsed.body);
+    document.view ??= sharedReconciliationReferenceView(parsed.body);
     return { body: parsed.body, view: document.view };
   }
   function sameSource(a, b) {

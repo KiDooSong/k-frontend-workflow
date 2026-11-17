@@ -6,7 +6,7 @@ import path from 'node:path';
 import { buildReconciliationTargetIndex } from './reconciliation-target-index.mjs';
 import { loadInputArtifact } from './input-artifact.mjs';
 import { parseReconciliationMarkdown, parseReconciliationReferenceView, reconciliationParseStats } from './reconciliation-markdown-ast.mjs';
-import { resolveScopedContractGraph, scopedGraphBodyRefs, scopedGraphSelectionRefs } from './scoped-work-graph.mjs';
+import { resolveScopedContractGraph, resolveScopedCandidateGraph, scopedGraphBodyRefs, scopedGraphSelectionRefs } from './scoped-work-graph.mjs';
 import { scopedSectionLookupStats, scopedRawTableStats } from './scoped-work-refs.mjs';
 import { scopedProjectionNode } from './scoped-work-projection.mjs';
 import { scopeSet } from './scoped-work-normalize.mjs';
@@ -491,6 +491,78 @@ test('D graph: indexed body/metadata changes and missing files are rejected for 
   }
   const f = fixture(t, [{ id: 'GOOD' }]); fs.unlinkSync(f.docs[0].file);
   assert.throws(() => f.graph(['artifact:GOOD#rules']));
+});
+
+test('#323 shared reference view: fresh graph resolvers reuse section indexes and still read current files', (t) => {
+  const body = '## Rules\nRepeated graph reference view.\n\n## Other\nUnselected.';
+  const f = fixture(t, [{ id: 'WARM', body }]), ref = 'artifact:WARM#rules';
+  const strict = () => f.graph([ref]);
+  const candidate = () => resolveScopedCandidateGraph({ ...f.args, roots: [{ ref, mode: 'ordinary' }] });
+  const expected = [strict(), candidate()];
+  const warm = scopedSectionLookupStats();
+  const opened = t.mock.method(fs, 'openSync');
+  try {
+    for (let pass = 0; pass < 8; pass += 1) {
+      assert.deepEqual(strict(), expected[0]);
+      assert.deepEqual(candidate(), expected[1]);
+    }
+    assert.deepEqual(scopedSectionLookupStats(), warm,
+      'fresh resolvers must reuse the shared section list instead of rebuilding/indexing it on every graph');
+    assert.equal(opened.mock.calls.filter((call) => path.basename(String(call.arguments[0])) === '0.md').length, 32,
+      'each of sixteen resolutions still performs its current read and final file recheck');
+  } finally {
+    opened.mock.restore();
+  }
+});
+
+test('#323 shared reference view: warm strict and candidate graphs reject changed bytes, metadata and missing files', (t) => {
+  for (const candidate of [false, true]) for (const change of ['body', 'metadata', 'missing']) {
+    const f = fixture(t, [{ id: 'WARM' }]), ref = 'artifact:WARM#rules';
+    const run = () => candidate
+      ? resolveScopedCandidateGraph({ ...f.args, roots: [{ ref, mode: 'ordinary' }] }) : f.graph([ref]);
+    run();
+    const file = f.docs[0].file, original = fs.readFileSync(file, 'utf8');
+    if (change === 'missing') fs.unlinkSync(file);
+    else fs.writeFileSync(file, change === 'body'
+      ? original.replace('Actual rule.', 'Edited rule.') : original.replace('"status":"draft"', '"status":"ready"'));
+    if (change === 'missing') assert.throws(run);
+    else assert.throws(run, /indexed snapshot/, `${candidate ? 'candidate' : 'strict'}: ${change}`);
+  }
+});
+
+test('#323 shared reference view: warm strict and candidate graphs retain the final mutation check', (t) => {
+  for (const candidate of [false, true]) {
+    const f = fixture(t, [{ id: 'WARM' }]), ref = 'artifact:WARM#rules';
+    const run = (extra = {}) => candidate
+      ? resolveScopedCandidateGraph({ ...f.args, roots: [{ ref, mode: 'ordinary' }], ...extra }) : f.graph([ref], extra);
+    run();
+    const file = f.docs[0].file, original = fs.readFileSync(file, 'utf8');
+    let projected = false;
+    assert.throws(() => run({ project(record) {
+      projected = true;
+      fs.writeFileSync(file, original.replace('Actual rule.', 'Edited rule.'));
+      return record;
+    } }), /evidence changed during graph resolution/);
+    assert.equal(projected, true, 'the mutation happens after the initial evidence read');
+  }
+});
+
+test('#323 shared reference view: warm dependency scans keep typed-image and definition errors', (t) => {
+  const cases = [
+    ['![hidden](artifact:GOOD)', /typed image dependencies/],
+    ['[visible][target]\n\n[target]: artifact:GOOD\n[target]: artifact:OTHER', /referenced definition is missing or ambiguous/],
+    ['[visible](artifact:GO&#79;D)', /encoded or escaped typed destination/],
+  ];
+  for (const [content, error] of cases) {
+    const body = `## Rules\n${content}`;
+    const f = fixture(t, [{ id: 'ROOT', body }, { id: 'GOOD' }, { id: 'OTHER' }]);
+    const ref = 'artifact:ROOT#rules';
+    parseReconciliationReferenceView(body);
+    for (let pass = 0; pass < 2; pass += 1) {
+      assert.throws(() => f.graph([ref]), error);
+      assert.throws(() => resolveScopedCandidateGraph({ ...f.args, roots: [{ ref, mode: 'ordinary' }] }), error);
+    }
+  }
 });
 
 test('D graph: native canonical repository path checks reject leaf and ancestor symlinks', (t) => {

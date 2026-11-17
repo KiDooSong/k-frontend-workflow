@@ -1,5 +1,9 @@
 # Current Roadmap
 
+> 2026-11-17 #323 후속: scoped 참조 resolver와 evidence graph는 같은 native AST에서 만든 불변 raw section·table·cell view를 재사용한다.
+> 약한 참조로 기존 tree 수명에 연결하며 별도 source cache를 추가하지 않는다. 재파싱된 tree는 새 view를 만들고, 각 graph의 현재 파일·metadata·최종 read set 검사는 계속 수행한다.
+> 정본: [binding status](../frontend-workflow-kit/docs/reference/scoped-work.md#binding-basis-and-status). 재현: [binding-status benchmark](benchmarks/binding-status.mjs) — 공유 조회와 실제 view 구성, 전체 CLI 시간·RSS를 구분한다.
+
 > 2026-11-17 #323: `binding-status`의 Unknown 행×unit authoring 확인은 기존 exact-body authored view를 재사용한다.
 > 이미 파싱한 AST에서 전체 표·셀을 다시 구성하던 비용을 줄이고 물리 선택·현재 파일 관찰·최종 read set·scope-basis-v2 계약을 유지한다.
 > `workflow:binding-status --progress`는 snapshot·owner projection·binding 검사/실제 digest 수·실제 cleanup을 stderr에 표시하며 기본 stdout·판정·종료 코드는 유지한다.

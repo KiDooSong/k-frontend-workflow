@@ -8,7 +8,7 @@ import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { parseMappingProvenanceContract, validateMappingProvenance } from './mapping-provenance.mjs';
 import { parseTargetRef, isTargetRowId } from './reconciliation-items.mjs';
 import { resolveArtifact, isDuplicateArtifactId, resolveChildRow, bodyHasToken, isHistoricalArtifactRowTarget } from './reconciliation-target-index.mjs';
-import { parseReconciliationReferenceView, tableHeadersAreUnique } from './reconciliation-markdown-ast.mjs';
+import { sharedReconciliationReferenceView, tableHeadersAreUnique } from './reconciliation-markdown-ast.mjs';
 import { scopedAuthoredView, scopedAuthoredSections, scopedAuthoredSubsections, rememberScopedSelection, scopedSelectionNodes, scopedSelectionRowSpans } from './scoped-work-authored.mjs';
 import { splitRow, hasHeader, col, stripGeneratedBlocks } from './spec.mjs';
 import { ScopedWorkContractError, workText, workPath, workSet } from './scoped-work-request.mjs';
@@ -178,7 +178,7 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot, inputA
     const relative = path.relative(projectRoot, record.file).split(path.sep).join('/');
     workPath(relative, 'scoped artifact path');
     if (!parsed.has(id)) {
-      const view = parseReconciliationReferenceView(record.body);
+      const view = sharedReconciliationReferenceView(record.body);
       parsed.set(id, { ...view, occurrences: view.sections });
     }
     return { record, relative, markdown: parsed.get(id) };
