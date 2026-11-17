@@ -6,6 +6,8 @@
 // process peak RSS and CPU time. Unbound rows vary owner-wide applicability
 // independently of recorded binding count. This synthetic corpus does not
 // reproduce or predict the reported consumer run.
+// Accessor calls include cache hits. sectionOccurrences.raw_reference_view_builds
+// counts actual structural section/table construction (includeNodes=true).
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -208,7 +210,8 @@ const prefix=pathToFileURL(path.join(process.env.FWKIT_BINDING_BENCH_KIT,'script
 const names=['resolveScopedUnitProjection','resolveScopedDecisionProjection','resolveScopedUncertaintyProjection',
   'resolveScopedBoundaryProjection','resolveScopedApplicabilityProjection','resolveScopedSnapshotApplicabilityProjection',
   'scopedBindingBasis','relationClosure','withoutDecisionRefs','scopedBasisComponentDigests','scopeJson','scopeSet',
-  'scopedUnknownAuthored','parseReconciliationReferenceView','sectionOccurrences'];
+  'scopedUnknownAuthored','parseReconciliationReferenceView','sharedReconciliationReferenceView','sectionOccurrences',
+  'resolveScopedContractGraph','createScopedReferenceResolver','scopedGraphSelectionRefs'];
 export async function load(url,context,nextLoad){
   const result=await nextLoad(url,context);
   if(!url.startsWith(prefix)||!url.endsWith('.mjs'))return result;
@@ -231,6 +234,7 @@ globalThis.__fwkitBindingMeasure=(name,fn,receiver,args)=>{
   const depth=depths.get(name)||0;depths.set(name,depth+1);
   const record=functions[name]??={calls:0,outer_calls:0,inclusive_us:0,serialized_bytes:0};
   record.calls++;if(!depth)record.outer_calls++;
+  if(name==='sectionOccurrences'&&args[3]?.includeNodes===true)record.raw_reference_view_builds=(record.raw_reference_view_builds||0)+1;
   const started=depth?0n:process.hrtime.bigint();
   try{
     const result=fn.apply(receiver,args);

@@ -260,6 +260,20 @@ instead of reconstructing every table and cell for each row/unit application.
 The selection's original source offsets still distinguish authored rows from
 identical GENERATED rows; an explicitly supplied raw view retains its own tree
 identity checks. This does not cache file observations, row states or digests.
+
+Scoped reference resolvers and evidence graph readers also reuse immutable raw
+section, table and cell views of the same native AST. A weak association keeps
+each derived view with that exact tree; reparsing after AST eviction starts a
+new view generation. This uses the existing AST source-cache policy rather than
+a second source-text cache with a separate eviction threshold. Derived views
+remain allocated while existing owners retain their trees, so the source-cache
+budget is not a bound on total memory. The ordinary reference-view parser still
+returns independent mutable containers to callers that need them.
+Each resolver keeps its own metadata and mapping validation, and each graph
+still reads current bytes, checks the indexed body and metadata, and rechecks
+its complete read set. Sharing raw syntax does not reuse selected records,
+resolution modes, graph results or file observations across those checks.
+
 The digest covers the binding as committed: to add or change a
 binding, commit it with any well-formed digest (for example `sha256:` followed by
 64 zeros), review the scope, then record the computed digest with an

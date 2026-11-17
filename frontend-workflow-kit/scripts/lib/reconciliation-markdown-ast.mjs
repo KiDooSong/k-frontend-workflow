@@ -754,4 +754,19 @@ export function parseReconciliationReferenceView(text) {
   const tree = sharedTree(source);
   return { tree, sections: sectionOccurrences(source, tree, null, { includeNodes: true }) };
 }
+
+// Opt-in raw syntax only. Independent scoped resolvers can reuse these immutable
+// sections/tables while still reading and checking their own current evidence.
+// Key by the exact native tree so reparsing starts a new generation. Weak keys
+// add no source-text cache or lifetime beyond existing owners of that tree;
+// the public parser above keeps its fresh, mutable derived containers.
+const referenceViews = new WeakMap();
+export function sharedReconciliationReferenceView(text) {
+  const source = String(text || '');
+  const tree = sharedTree(source);
+  if (!referenceViews.has(tree)) {
+    referenceViews.set(tree, freezeTree({ tree, sections: sectionOccurrences(source, tree, null, { includeNodes: true }) }));
+  }
+  return referenceViews.get(tree);
+}
 export { normalizeReferenceLabel as reconciliationReferenceLabel, headingText as reconciliationHeadingText };

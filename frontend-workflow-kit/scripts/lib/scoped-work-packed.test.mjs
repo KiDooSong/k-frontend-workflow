@@ -114,6 +114,14 @@ test('D packed: real reference, source, mapping, API, normalization, graph trave
     assert.match(tables.stdout, new RegExp(`^# ${metric} 0\\r?$`, 'm'), tables.stdout);
   }
   t.diagnostic('packed table selection subprocess: all 13 raw-table and strict-header regressions passed');
+  const referenceViews = checkedNode(['--test', '--test-reporter=tap',
+    '--test-name-pattern=^#323 shared reference view',
+    path.join(lib, 'reconciliation-markdown-ast.test.mjs')], packed, env);
+  assert.match(referenceViews.stdout, /^# pass 3\r?$/m, referenceViews.stdout);
+  for (const metric of ['fail', 'cancelled', 'todo']) {
+    assert.match(referenceViews.stdout, new RegExp(`^# ${metric} 0\\r?$`, 'm'), referenceViews.stdout);
+  }
+  t.diagnostic('packed shared reference view subprocess: all 3 immutable-view, raw-boundary and section-definition regressions passed');
   // The fixture data remains outside the payload. KIT_ROOT in this copied
   // driver resolves to packed, so both public CLIs execute shipped code only.
   const cli = checkedNode(['--test', '--test-reporter=tap', '--test-name-pattern=^(?:(#282|#284) CLI:|#300 binding-status:)', path.join(lib, cliSuite)], packed,

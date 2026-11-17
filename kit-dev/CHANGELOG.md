@@ -4,6 +4,18 @@
 
 ## Unreleased
 
+### perf(scoped) — 후보 관계 해석의 raw reference view 재사용 (#323)
+
+- Decision·Unknown/Conflict 후보의 독립된 참조·관계 해석이 같은 native AST의 section·table·cell을
+  매번 다시 만들던 경로에서 불변 raw view를 재사용한다. 정확한 tree identity를 키로 하는 약한 참조를
+  사용하며 기존 AST 축출 뒤 재파싱은 새 view를 만든다. 기존 source cache 정책과 일반 parser의
+  독립된 반환값을 유지한다. 파생 view는 기존 tree 소유자와 수명을 함께하며 전체 RSS 한도는 아니다.
+- resolver별 metadata·mapping 검증과 graph별 현재 파일 읽기·본문/metadata 비교·최종 read set 확인,
+  원문 위치·GENERATED/저작 행 구분·참조 definition 문맥·scope-basis-v2 판정을 유지한다.
+- [binding-status benchmark](benchmarks/binding-status.mjs)는 공유 view 조회와 실제 raw view 구성 횟수를
+  나누어 기록한다. 실제 CLI 출력·digest·저장소·cleanup 및 배포본 회귀를 함께 검증한다.
+  계약: [binding status](../frontend-workflow-kit/docs/reference/scoped-work.md#binding-basis-and-status).
+
 ### perf(binding-status) — Unknown 뷰 반복 구성 감소와 실행 진행 진단 (#323)
 
 - owner 관계 고정점에서 Unknown 행의 authoring 여부를 확인할 때 기존 exact-body authored view를 재사용한다.
