@@ -4,6 +4,19 @@
 
 ## Unreleased
 
+### perf(scoped) — 참조 resolver 사이 원문 표 변환과 행 인덱스 재사용 (#323)
+
+- 같은 불변 source table의 원문 셀 변환과 private 행 identity 인덱스를 새 resolver에서도 재사용한다.
+  정확한 표 객체와 native AST node에 연결한 약한 참조를 사용해 서로 다른 물리 표·본문을 합치지 않으며,
+  별도 source-text 캐시나 축출 한도를 추가하지 않는다. 기존 표 소유자의 수명 동안 파생 값이
+  추가로 보관되므로 전체 RSS 감소를 보장하는 변경은 아니다.
+- mutable/accessor source table은 기존 resolver 내부 경로로 처리하고, 공개 `scopedRawTable()`과
+  반환 selection의 독립된 mutable 값을 유지한다. raw/저작 행 구분·중복/폭 오류·mapping 검증,
+  현재 파일 읽기·metadata 비교·최종 read set·scope-basis-v2 판정은 그대로다.
+- [binding-status benchmark](benchmarks/binding-status.mjs)에서 실제 표 변환·행 인덱스 구성/재사용
+  횟수를 진단하며 계측 없는 CLI 전체 시간·RSS·stdout·저장소·cleanup 보존을 별도로 비교한다.
+  계약: [binding status](../frontend-workflow-kit/docs/reference/scoped-work.md#binding-basis-and-status).
+
 ### perf(scoped) — 후보 관계 해석의 raw reference view 재사용 (#323)
 
 - Decision·Unknown/Conflict 후보의 독립된 참조·관계 해석이 같은 native AST의 section·table·cell을

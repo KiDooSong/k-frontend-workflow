@@ -8,6 +8,9 @@
 // reproduce or predict the reported consumer run.
 // Accessor calls include cache hits. sectionOccurrences.raw_reference_view_builds
 // counts actual structural section/table construction (includeNodes=true).
+// raw_tables reports the kit's scopedRawTableStats() unchanged: tables counts
+// actual encodings; newer kits also report row-index builds/rows and reuse.
+// Missing counters in an older baseline are unavailable, not zero.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -257,6 +260,7 @@ yaml.parse=function(...args){yamlParseApiCalls++;return parseYaml.apply(this,arg
 yaml.parseDocument=function(...args){yamlParseDocumentCalls++;return parseYamlDocument.apply(this,args);};
 const {reconciliationParseStats}=await import(pathToFileURL(path.join(kit,'scripts/lib/reconciliation-markdown-ast.mjs')).href);
 const {scopedClosureStats}=await import(pathToFileURL(path.join(kit,'scripts/lib/scoped-work-basis.mjs')).href);
+const {scopedRawTableStats}=await import(pathToFileURL(path.join(kit,'scripts/lib/scoped-work-refs.mjs')).href);
 yamlParseApiCalls=0;yamlParseDocumentCalls=0;
 const counts={};
 for(const name of ['lstatSync','statSync','readdirSync','realpathSync','readSync','readFileSync']){
@@ -266,7 +270,7 @@ for(const name of ['lstatSync','statSync','readdirSync','realpathSync','readSync
 syncBuiltinESMExports();
 process.on('exit',()=>{
   const usage=process.resourceUsage();
-  fs.writeFileSync(process.env.FWKIT_BINDING_BENCH_COUNTS,JSON.stringify({functions,closure:scopedClosureStats(),counts,yaml_parse_calls:yamlParseApiCalls+yamlParseDocumentCalls,yaml_parse_api_calls:yamlParseApiCalls,yaml_parse_document_calls:yamlParseDocumentCalls,parse:reconciliationParseStats(),instrumented_peak_rss_kib:usage.maxRSS,instrumented_user_cpu_us:usage.userCPUTime,instrumented_system_cpu_us:usage.systemCPUTime}));
+  fs.writeFileSync(process.env.FWKIT_BINDING_BENCH_COUNTS,JSON.stringify({functions,closure:scopedClosureStats(),raw_tables:typeof scopedRawTableStats==='function'?scopedRawTableStats():null,counts,yaml_parse_calls:yamlParseApiCalls+yamlParseDocumentCalls,yaml_parse_api_calls:yamlParseApiCalls,yaml_parse_document_calls:yamlParseDocumentCalls,parse:reconciliationParseStats(),instrumented_peak_rss_kib:usage.maxRSS,instrumented_user_cpu_us:usage.userCPUTime,instrumented_system_cpu_us:usage.systemCPUTime}));
 });
 `);
   return file;
@@ -328,7 +332,7 @@ async function main(args) {
       measurement: {
         elapsed_ms: 'Fresh actual public binding-status CLI process per kit/case/run, including startup/imports, Git snapshot materialization, evaluation, JSON output and cleanup. No instrumentation in timed runs. Setup and independent verification excluded.',
         order: 'Before/after order alternates. Both kit roots must be on the same filesystem. Both versions use the same committed fixture and exact CLI flags. Fixture setup warms the filesystem cache; this is not cold-storage latency.',
-        diagnostics: 'Separate untimed processes count selected functions with an ESM loader, filesystem calls and YAML document parses (yaml.parse plus direct yaml.parseDocument), and report their own peak RSS plus user/system CPU microseconds. Function inclusive_us includes nested calls and instrumentation overhead; do not sum overlapping phases or treat these as uninstrumented timings. Recursive functions time only outer calls; scopeJson serialized_bytes counts every returned canonical string. These are not timed-run memory/CPU or retained memory. YAML interception is installed before kit imports; YAML counters reset after imports. Resource usage spans the diagnostic process lifetime including its loader worker and excludes child Git process CPU/RSS.',
+        diagnostics: 'Separate untimed processes count selected functions with an ESM loader, filesystem calls and YAML document parses (yaml.parse plus direct yaml.parseDocument), and report their own peak RSS plus user/system CPU microseconds. Function inclusive_us includes nested calls and instrumentation overhead; do not sum overlapping phases or treat these as uninstrumented timings. Recursive functions time only outer calls; scopeJson serialized_bytes counts every returned canonical string. raw_tables contains the kit\'s available raw-table counters: tables counts actual encodings; indexes/indexedRows count index builds/visited rows; reusedTables/reusedIndexes count cache hits. Unavailable fields stay absent and an unavailable accessor is null. These are not timed-run memory/CPU or retained memory. YAML interception is installed before kit imports; YAML counters reset after imports. Resource usage spans the diagnostic process lifetime including its loader worker and excludes child Git process CPU/RSS.',
         verification: 'Whole stdout bytes, snapshot commit/tree, every binding state and digest agree across kits/runs; original HEAD, index bytes and tracked worktree bytes/modes stay unchanged; private snapshots are removed.',
         scope: 'Synthetic one-owner workload with configurable input/binding/unit counts, selected source/Items and mixed binding states. Extra units select the first unit\'s existing source Item. Optional unbound rows alternate Decision/Unknown and include open/resolved rows; these enlarge applicability without computing invented binding digests. It is not a reproduction or timing prediction of the reported consumer execution.',
       }, cases }, null, 2));
