@@ -14,6 +14,7 @@ import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { ScopedWorkContractError, workObject, workSet, workPath, workText } from './scoped-work-request.mjs';
 import { createScopedReferenceResolver, scopedRawTable } from './scoped-work-refs.mjs';
 import { rememberScopedSelection } from './scoped-work-authored.mjs';
+import { cloneScopedSourceMetadata } from './scoped-work-input-metadata.mjs';
 
 const fail = (code, message) => { throw new ScopedWorkContractError(`${code}: ${message}`); };
 const lf = (text) => text.replace(/\r\n|\r/g, '\n');
@@ -34,7 +35,7 @@ export function createScopedSourceResolver({ inputArtifacts, registerFile, targe
   if (!Array.isArray(inputArtifacts)) fail('SW-SOURCE-INDEX', 'canonical input artifacts required');
   // Own caches, never mutate the collector's records or its caller's declarations.
   const inputs = inputArtifacts.map((entry) => copyInputEvidenceObservation(entry,
-    { ...entry, fm: structuredClone(entry.fm), body: undefined }));
+    { ...entry, fm: cloneScopedSourceMetadata(entry.fm), body: undefined }));
   const index = buildInputArtifactIndex(inputs);
   const validation = validateInputArtifacts(inputs);
   const loaded = new Map();

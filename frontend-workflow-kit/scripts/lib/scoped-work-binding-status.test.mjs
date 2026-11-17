@@ -73,6 +73,81 @@ function project(t, target = ENTRY) {
   return { root, read, put, git, commit, bind, status, json, rows, readiness, readinessRun, blocking };
 }
 
+const COPY_INPUT = 'IN-20261117-meeting-777';
+function metadataCopyFixture(t, p, extra = 'extra: ordinary metadata') {
+  p.put(`docs/frontend-workflow/inputs/${COPY_INPUT}.md`, `---
+input_id: ${COPY_INPUT}
+input_type: meeting
+source_type: meeting
+source_ref: meeting:metadata-copy-regression
+captured_at: '2026-11-17T00:00:00Z'
+captured_by: test
+status: captured
+affected_domains: [coupons]
+affected_screens: [COUPON-001]
+${extra}
+---
+## Extracted Facts
+- An unselected input still participates in source index and metadata validation.
+`);
+  p.commit('add unselected input metadata');
+  const scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'binding-metadata-copies-')));
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+  const temporary = path.join(scratch, 'snapshots');
+  fs.mkdirSync(temporary);
+  const countsFile = path.join(scratch, 'counts.json'), preload = path.join(scratch, 'copies.cjs');
+  // Observe actual clone work in the public CLI, without opting a caller into
+  // a prepared context. This preload also works with the unoptimized runtime.
+  fs.writeFileSync(preload, `
+const fs = require('node:fs'), { types } = require('node:util');
+const clone = globalThis.structuredClone;
+let copies = 0;
+globalThis.structuredClone = function(value, ...args) {
+  if (value && typeof value === 'object' && !types.isProxy(value) &&
+      Object.getOwnPropertyDescriptor(value, 'input_id')?.value === ${JSON.stringify(COPY_INPUT)}) copies++;
+  return clone.call(this, value, ...args);
+};
+process.on('exit', () => fs.writeFileSync(${JSON.stringify(countsFile)}, JSON.stringify({ copies })));
+`);
+  return () => {
+    const head = p.git('rev-parse', 'HEAD'), tree = p.git('rev-parse', 'HEAD^{tree}');
+    const index = fs.readFileSync(path.join(p.root, '.git/index'));
+    const run = spawnSync(process.execPath, ['--require', preload, path.join(KIT_ROOT, 'scripts/binding-status.mjs'),
+      '--root', p.root, ...CONFIG, '--json'], { cwd: p.root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024,
+      timeout: 120000, env: { ...process.env, TMPDIR: temporary, TMP: temporary, TEMP: temporary } });
+    const report = p.json(run), { copies } = JSON.parse(fs.readFileSync(countsFile, 'utf8'));
+    assert.equal(run.stderr, '');
+    assert.deepEqual(fs.readdirSync(temporary), [], 'the real CLI cleans its owned snapshot');
+    assert.equal(p.git('status', '--porcelain'), '');
+    assert.equal(p.git('rev-parse', 'HEAD'), head);
+    assert.equal(p.git('rev-parse', 'HEAD^{tree}'), tree);
+    assert.deepEqual(fs.readFileSync(path.join(p.root, '.git/index')), index);
+    return { report, copies, stdout: run.stdout };
+  };
+}
+
+test('#323 binding-status: owned input metadata is copied once across fresh source resolvers', (t) => {
+  const p = project(t), measure = metadataCopyFixture(t, p);
+  const result = measure();
+  assert.equal(result.copies, 1, 'prepare the unselected input once, not once per graph');
+  assert.equal(result.report.owners[0].owner, OWNER);
+  const plain = p.status('--json');
+  assert.equal(plain.status, 0, plain.stderr);
+  assert.equal(plain.stdout, result.stdout, 'counting clones cannot change the report');
+});
+
+test('#323 binding-status: cyclic metadata keeps its copy path and ownerless reports skip preparation', (t) => {
+  const p = project(t), measure = metadataCopyFixture(t, p, 'extra: &cycle\n  self: *cycle');
+  const adopted = measure();
+  assert.ok(adopted.copies > 1, 'unsupported cyclic data retains the legacy per-resolver copies');
+  assert.equal(adopted.report.owners[0].owner, OWNER);
+  p.put('config/adoption.yaml', `work_execution: ${JSON.stringify({ ...WORK, owners: [] })}\n`);
+  p.commit('remove adoption without changing the unusual input');
+  const ownerless = measure();
+  assert.deepEqual(ownerless.report.owners, []);
+  assert.equal(ownerless.copies, 0, 'no owner means no metadata preparation or source resolution');
+});
+
 test('#300 binding-status: more Decision bindings do not repeat whole-owner resource reads', (t) => {
   const p = project(t);
   const scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'binding-status-reads-')));

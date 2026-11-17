@@ -4,6 +4,19 @@
 
 ## Unreleased
 
+### perf(binding-status) — 내부 입력 metadata의 반복 복사 감소 (#323)
+
+- owned snapshot에서 수집한 plain 입력 metadata를 한 번 분리·동결하고 private identity로 식별한다.
+  내부 source resolver는 해당 불변 복사본만 재사용하며, 일반 caller나 외부에서 동결한 값은 기존처럼
+  constructor에서 복사한다. owner가 없으면 준비를 생략하고 accessor·Proxy·순환·특수 객체는
+  기존 경로를 유지해 불필요한 오류나 getter 관찰을 앞당기지 않는다.
+- resolver별 record/body/index/validation/loaded 상태, 현재 입력 파일 읽기·metadata 비교와
+  passive Evidence 관찰 전달을 유지한다. 공개 결과의 metadata는 계속 독립된 mutable 복사본이다.
+  약한 identity 집합 외에 별도 inventory·본문·검증 결과·파일 관찰 캐시는 추가하지 않는다.
+- [binding-status benchmark](benchmarks/binding-status.mjs)는 metadata 복사/재사용과 source/index/validation
+  호출 수를 진단하고, 계측 없는 실제 CLI 시간과 별도 RSS·출력·저장소·cleanup 보존을 비교한다.
+  계약: [binding status](../frontend-workflow-kit/docs/reference/scoped-work.md#binding-basis-and-status).
+
 ### perf(scoped) — 참조 resolver 사이 원문 표 변환과 행 인덱스 재사용 (#323)
 
 - 같은 불변 source table의 원문 셀 변환과 private 행 identity 인덱스를 새 resolver에서도 재사용한다.

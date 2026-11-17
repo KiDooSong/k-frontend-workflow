@@ -1,5 +1,9 @@
 # Current Roadmap
 
+> 2026-11-17 #323 후속: `binding-status`의 owned snapshot에서 plain 입력 metadata를 한 번 분리·동결하고 내부 source resolver의 반복 복사를 줄인다.
+> private identity가 있는 복사본만 재사용하며 일반 mutable API의 eager 복사·반환값 격리, resolver별 index/validation/body·현재 파일 읽기와 passive Evidence 관찰을 유지한다. owner가 없거나 metadata가 특수한 객체이면 기존 경로를 유지한다.
+> 정본: [binding status](../frontend-workflow-kit/docs/reference/scoped-work.md#binding-basis-and-status). 재현: [binding-status benchmark](benchmarks/binding-status.mjs) — metadata 복사/재사용과 전체 CLI 시간·RSS·출력·파일 보존을 구분한다.
+
 > 2026-11-17 #323 후속: 새 scoped 참조 resolver가 같은 불변 표의 원문 셀과 행 identity 인덱스를 다시 구성하지 않도록 약한 참조로 재사용한다.
 > 정확한 source table 객체와 native AST node를 함께 키로 삼아 물리적으로 다른 표를 구분하고, mutable/accessor 표·공개 raw-table helper와 반환 selection의 독립성을 유지한다. metadata·mapping 검증·현재 파일 읽기·최종 read set 확인은 계속 수행한다.
 > 정본: [binding status](../frontend-workflow-kit/docs/reference/scoped-work.md#binding-basis-and-status). 재현: [binding-status benchmark](benchmarks/binding-status.mjs) — 표 변환·인덱스 구성 횟수와 실제 CLI 시간·RSS·출력 보존을 함께 확인한다.

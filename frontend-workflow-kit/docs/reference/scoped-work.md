@@ -261,6 +261,18 @@ The selection's original source offsets still distinguish authored rows from
 identical GENERATED rows; an explicitly supplied raw view retains its own tree
 identity checks. This does not cache file observations, row states or digests.
 
+For adopted owners, the report also prepares a detached immutable copy of each
+eligible input's plain metadata once inside its owned snapshot. Source resolvers
+can reuse those privately identified copies while keeping their own input
+records, bodies, indexes, validation results and loaded-file state. Returned
+metadata remains independent and mutable. Ordinary source and graph callers
+keep their existing eager metadata copies; freezing a caller's object does not
+opt it in. Accessors, proxies, cycles and mutable built-in objects use the
+existing copy path. An ownerless report skips this preparation. Current input
+bytes, metadata comparisons and passive Evidence observations are still checked.
+The private identity set uses weak references and retains no separate input
+inventory, source text, validation verdict or file observation.
+
 Scoped reference resolvers and evidence graph readers also reuse immutable raw
 section, table and cell views of the same native AST. A weak association keeps
 each derived view with that exact tree; reparsing after AST eviction starts a
