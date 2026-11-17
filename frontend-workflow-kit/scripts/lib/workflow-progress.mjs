@@ -1,4 +1,4 @@
-// Optional work-run diagnostics. This context is never a request, authority,
+// Optional CLI diagnostics. This context is never a request, authority,
 // checkpoint or result field, and does not expose a caller-supplied callback.
 import fs from 'node:fs';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -11,11 +11,13 @@ export function workflowProgress(phase, detail) {
   const context = contexts.getStore();
   if (!context?.active) return;
   try {
-    const label = typeof phase === 'string' && phase.length <= 64 && /^[a-z][a-z-]*:(?:start|done|failed)$/.test(phase)
+    const allowedPhase = context.tool === 'binding-status'
+      ? /^[a-z][a-z-]*:(?:start|done|failed|progress)$/ : /^[a-z][a-z-]*:(?:start|done|failed)$/;
+    const label = typeof phase === 'string' && phase.length <= 64 && allowedPhase.test(phase)
       ? phase : quoted(phase);
     const suffix = detail === undefined ? '' : ` ${quoted(detail)}`;
     const seconds = ((performance.now() - context.started) / 1000).toFixed(3);
-    const bytes = Buffer.from(`workflow:run [${seconds}s] ${label}${suffix}\n`);
+    const bytes = Buffer.from(`${context.tool} [${seconds}s] ${label}${suffix}\n`);
     // The work is synchronous. Buffered stream writes could remain pending
     // until it finishes, so write the small diagnostic directly to stderr.
     let offset = 0;
@@ -30,11 +32,11 @@ export function workflowProgress(phase, detail) {
   }
 }
 
-// All work-run drivers are synchronous. A nested or subsequent invocation gets
+// These CLI drivers are synchronous. A nested or subsequent invocation gets
 // its own context; opt-out also suppresses an enclosing invocation's reporter.
-export function withWorkflowProgress(enabled, run) {
+function withProgress(enabled, tool, run) {
   if (!enabled) return contexts.getStore() ? contexts.run(undefined, run) : run();
-  const context = { active: true, started: performance.now() };
+  const context = { active: true, tool, started: performance.now() };
   return contexts.run(context, () => {
     workflowProgress('run:start');
     try {
@@ -48,4 +50,18 @@ export function withWorkflowProgress(enabled, run) {
       context.active = false;
     }
   });
+}
+
+export function withWorkflowProgress(enabled, run) {
+  return withProgress(enabled, 'workflow:run', run);
+}
+
+export function withBindingStatusProgress(enabled, run) {
+  return withProgress(enabled, 'binding-status', run);
+}
+
+// Shared binding inspectors also run during workflow:run. Their report-only
+// phases stay private to this CLI instead of changing that driver's diagnostics.
+export function bindingStatusProgress(phase, detail) {
+  if (contexts.getStore()?.tool === 'binding-status') workflowProgress(phase, detail);
 }

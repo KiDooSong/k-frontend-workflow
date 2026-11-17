@@ -255,6 +255,11 @@ between relation passes. It re-reads the canonical binding homes and verifies
 these observations and the complete file read set before returning the owner's
 report. No projection is shared across owners or calls. The standalone inspectors
 for mutable files keep their independent resolution and change checks.
+Unknown-row authoring checks reuse the existing bounded exact-body authored view
+instead of reconstructing every table and cell for each row/unit application.
+The selection's original source offsets still distinguish authored rows from
+identical GENERATED rows; an explicitly supplied raw view retains its own tree
+identity checks. This does not cache file observations, row states or digests.
 The digest covers the binding as committed: to add or change a
 binding, commit it with any well-formed digest (for example `sha256:` followed by
 64 zeros), review the scope, then record the computed digest with an
@@ -267,6 +272,32 @@ When a [historical Item row target](#historical-item-row-targets) needs a wider
 selection, the text report also shows a `SW-SOURCE-TARGET-FALLBACK` warning. JSON
 reports include `owners[].target_fallbacks` only for affected owners. These
 diagnostics are separate from the binding basis and do not change its version.
+
+### Optional binding-status progress
+
+Use `--progress` to see elapsed stages while a large report is running. Capture
+the report and its diagnostic log separately:
+
+```bash
+npm run -s workflow:binding-status -- --owner screen:COUPON-001 --json --progress \
+  > binding-status.json 2> binding-status.progress.log
+```
+
+The stderr prefix is `binding-status [<seconds>s]`. Stages identify snapshot
+materialization, input/resource preparation, each owner projection, Decision and
+Unknown/Conflict binding checks, individual computed digests and actual snapshot
+cleanup. Binding-check updates show rows checked and digests computed separately:
+missing bindings and stale `known_units` still have no computed digest. Row counts
+are coarse progress, not a completion-time estimate; a single projection can
+take most of the run. The next marker is written when the synchronous phase moves
+forward, rather than on a timer. Failed materialization and owner evaluation also
+mark their actual cleanup before deleting the snapshot.
+
+Progress is off by default. The boolean flag changes neither JSON/text stdout nor
+binding state, scope-basis-v2 bytes, exit codes or approval requirements. An
+unwritable stderr disables diagnostics without changing the result. No final
+digest is reused across runs: changing a unit still changes the basis inputs,
+and a person must review and record the resulting binding as described above.
 
 ## Request contract
 

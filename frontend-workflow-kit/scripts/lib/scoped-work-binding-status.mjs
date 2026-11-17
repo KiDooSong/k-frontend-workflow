@@ -17,6 +17,7 @@ import { parseScopedTargetRef } from './scoped-work-refs.mjs';
 import { parseScopedPolicy, parseDecisionWorkScopes, parseUncertaintyWorkScopes } from './scoped-work-declarations.mjs';
 import { inspectScopedSnapshotBindings } from './scoped-work-bindings.mjs';
 import { SCOPE_BASIS_VERSION } from './scoped-work-basis.mjs';
+import { withBindingStatusProgress, bindingStatusProgress } from './workflow-progress.mjs';
 
 const TOOL = 'binding-status';
 const fail = (message) => { throw new CurrentWorkExecutionError(message); };
@@ -58,8 +59,11 @@ function ownerStatus(options, home) {
 export function inspectScopedBindingStatus({ root, docs, src, policy, manifest, layout, owner } = {}) {
   const ctx = resolveProjectRoot(root);
   const identity = gitIdentity(ctx.repositoryRoot);
+  bindingStatusProgress('snapshot:start');
   const snapshot = materializeRawGitTree({ repositoryRoot: ctx.repositoryRoot, projectPrefix: ctx.projectPrefix, tree: identity.tree });
   try {
+    bindingStatusProgress('snapshot:done');
+    bindingStatusProgress('inputs:start');
     const baselineRoot = snapshot.root;
     const { resources, baselineKitRoot, config } = resolveWorkResources(ctx, baselineRoot, { docs, src, policy, manifest, layout });
     const adopted = parseScopedPolicy(baselineWorkPolicy(resources, config).work_execution)?.owners || [];
@@ -73,19 +77,29 @@ export function inspectScopedBindingStatus({ root, docs, src, policy, manifest, 
       ...(resources.policy_overlay ? { policyOverlayFile: resources.policy_overlay.baseline } : {}),
       registerFile: path.join(docsRoot, '_meta', 'reconciliation-register.md'), targetIndex,
       inputArtifacts: collectInputArtifacts(path.join(docsRoot, 'inputs')), srcDir: resources.src.baseline };
+    const owners = owner === undefined ? adopted : [owner];
+    bindingStatusProgress('inputs:done', `${owners.length} owners; ${options.inputArtifacts.length} inputs`);
     const home = (artifactId) => {
       const entry = targetIndex.artifacts.get(artifactId);
       return entry ? path.relative(baselineRoot, entry.file).split(path.sep).join('/') : null;
     };
     return { binding_status: 1, basis_version: SCOPE_BASIS_VERSION, snapshot: { commit: identity.commit, tree: identity.tree },
-      owners: (owner === undefined ? adopted : [owner]).map((id) => ownerStatus({ ...options, owner: id }, home)),
+      owners: owners.map((id, index) => {
+        const detail = `${index + 1}/${owners.length} ${id}`;
+        bindingStatusProgress('owner:start', detail);
+        const result = ownerStatus({ ...options, owner: id }, home);
+        bindingStatusProgress('owner:done', `${detail}; ${result.rows.length} rows`);
+        return result;
+      }),
       approval_verified: false };
   } finally {
+    bindingStatusProgress('cleanup:start');
     snapshot.cleanup();
+    bindingStatusProgress('cleanup:done');
   }
 }
 
-const HELP = `Usage: npm run workflow:binding-status -- [--owner <screen:ID|surface:ID>] [--json]
+const HELP = `Usage: npm run workflow:binding-status -- [--owner <screen:ID|surface:ID>] [--json] [--progress]
        [--root <dir>] [--docs <dir>] [--src <dir>] [--policy <file>] [--manifest <file>] [--layout <file>]
 
 Reports the decision_work_scopes and uncertainty_work_scopes bindings of the adopted owners
@@ -96,6 +110,7 @@ the units a missing binding leaves blocked, the recorded binding, and the scope-
 digest and component digests (target, relations, units, evidence) the tool computes. A binding declared for the owner on a
 row that does not apply to it is unresolved. Read-only: a person records a digest; the tool
 never writes a binding or verifies approval_ref. Exit 0 with a report; 2 on usage or input errors.
+--progress: optional elapsed stages and binding-check counts on stderr; stdout bytes are unchanged.
 `;
 
 function render(report) {
@@ -125,17 +140,19 @@ function render(report) {
 export function cliMain(argv) {
   const parsed = parseArgs(argv);
   enforceCliFlagContract({ argv, flags: parsed.flags, positionals: parsed.positionals,
-    valueFlags: new Set(['root', 'docs', 'src', 'policy', 'manifest', 'layout', 'owner']), booleanFlags: new Set(['json', 'help']),
+    valueFlags: new Set(['root', 'docs', 'src', 'policy', 'manifest', 'layout', 'owner']), booleanFlags: new Set(['json', 'help', 'progress']),
     tool: TOOL, helpCommand: 'npm run workflow:binding-status --' });
   const { flags } = parsed;
   if (flags.help) { process.stdout.write(HELP); return; }
   try {
-    if (argv.filter((token) => token === '--owner' || token.startsWith('--owner=')).length > 1) {
-      fail('--owner accepts one owner; omit it to report every adopted owner');
-    }
-    const report = inspectScopedBindingStatus({ root: flags.root, docs: flags.docs, src: flags.src, policy: flags.policy,
-      manifest: flags.manifest, layout: flags.layout, owner: flags.owner });
-    process.stdout.write(flags.json ? `${JSON.stringify(report, null, 2)}\n` : render(report));
+    return withBindingStatusProgress(flags.progress === true, () => {
+      if (argv.filter((token) => token === '--owner' || token.startsWith('--owner=')).length > 1) {
+        fail('--owner accepts one owner; omit it to report every adopted owner');
+      }
+      const report = inspectScopedBindingStatus({ root: flags.root, docs: flags.docs, src: flags.src, policy: flags.policy,
+        manifest: flags.manifest, layout: flags.layout, owner: flags.owner });
+      process.stdout.write(flags.json ? `${JSON.stringify(report, null, 2)}\n` : render(report));
+    });
   } catch (error) {
     process.stderr.write(`${TOOL}: ${error?.message || String(error)}\n`);
     process.exitCode = 2;

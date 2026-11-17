@@ -1,5 +1,11 @@
 # Current Roadmap
 
+> 2026-11-17 #323: `binding-status`의 Unknown 행×unit authoring 확인은 기존 exact-body authored view를 재사용한다.
+> 이미 파싱한 AST에서 전체 표·셀을 다시 구성하던 비용을 줄이고 물리 선택·현재 파일 관찰·최종 read set·scope-basis-v2 계약을 유지한다.
+> `workflow:binding-status --progress`는 snapshot·owner projection·binding 검사/실제 digest 수·실제 cleanup을 stderr에 표시하며 기본 stdout·판정·종료 코드는 유지한다.
+> 정본: [binding status](../frontend-workflow-kit/docs/reference/scoped-work.md#binding-basis-and-status), [진행 진단](../frontend-workflow-kit/docs/reference/scoped-work.md#optional-binding-status-progress).
+> 재현: [binding-status benchmark](benchmarks/binding-status.mjs) — binding 수와 미바인딩 open/resolved 행 수를 구분한다. 실제 consumer 56분 실행의 해소는 별도 재실행으로 확인한다.
+
 > 2026-11-13 #321: 대형 scoped 사전 실행의 v2 Evidence 검증은 section·bullet 개수·압축된 nonempty 비트맵만 별도 제한 캐시로 재사용한다. PR #322 리뷰의 짧은 bullet 다수 조건과, 요약 한도를 넘어도 기존 full 구문 캐시에 들어가는 다중 섹션 조건을 검증한다. 요약 miss는 기존 8 MiB 구문 캐시를 거쳐 Evidence 뷰를 재사용한다.
 > 새 검증마다 현재 본문과 입력/대상 상태를 확인하고 validation-only 읽기 관찰·판정·basis/checkpoint를 유지한다. 긴 prose와 작은 bullet 사례를 나누어 단일/두 화면의 실제 `workflow:run`·packet·backstop을 비교한다.
 > `workflow:run --work --progress`는 snapshot·입력 준비·owner별 평가·packet/report 등의 경과 단계를 선택적으로 stderr에 표시한다. stdout·출력 파일·검증/권한 판정은 바뀌지 않는다.

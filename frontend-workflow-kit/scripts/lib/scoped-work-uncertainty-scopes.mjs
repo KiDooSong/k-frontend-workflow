@@ -15,6 +15,7 @@ import { scopedBindingBasis } from './scoped-work-basis.mjs';
 import { scopedUncertaintyResolved } from './scoped-work-uncertainty.mjs';
 import { ScopedWorkContractError, workText } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
+import { bindingStatusProgress } from './workflow-progress.mjs';
 
 const fail = (message) => { throw new ScopedWorkContractError(`SW-UNCERTAINTY-SCOPE: ${message}`); };
 const same = (a, b) => scopeJson(a) === scopeJson(b);
@@ -60,13 +61,20 @@ function evaluate(owner, projection, homes) {
   const applications = projection.uncertainty_relations.applications.filter((entry) => entry.owner === owner);
   const records = new Map(projection.uncertainty_relations.records.map((record) => [record.ref, record]));
   const checks = new Map();
-  for (const ref of scopeSet([...new Set(applications.map((entry) => entry.uncertainty))])) {
+  const refs = scopeSet([...new Set(applications.map((entry) => entry.uncertainty))]);
+  let computedCount = 0;
+  const progressEvery = Math.max(1, Math.ceil(refs.length / 20));
+  bindingStatusProgress('uncertainty-bindings:start', `${refs.length} rows`);
+  for (const ref of refs) {
     const record = records.get(ref) || null, declared = record ? homes.binding(record) : null;
     let state = 'missing', digest = null, components = null;
     if (declared) {
       state = 'stale-known-units';
       if (same(scopeSet(declared.known_units), knownUnits)) {
+        bindingStatusProgress('binding-digest:start', ref);
         const computed = scopedBindingBasis(projection, basisBinding(ref, owner, declared));
+        bindingStatusProgress('binding-digest:done', ref);
+        computedCount += 1;
         digest = computed.basis_digest; components = computed.component_digests;
         state = digest === declared.basis_digest ? 'current-unverified' : 'stale-basis';
       }
@@ -74,6 +82,9 @@ function evaluate(owner, projection, homes) {
     checks.set(ref, { uncertainty: ref, kind: parseScopedTargetRef(ref).kind, status: record?.status ?? null,
       resolved: scopedUncertaintyResolved(record), binding_state: state, declared_binding: declared,
       computed_basis_digest: digest, computed_component_digests: components });
+    if (checks.size % progressEvery === 0 || checks.size === refs.length) {
+      bindingStatusProgress('uncertainty-bindings:progress', `${checks.size}/${refs.length} rows; ${computedCount} digests`);
+    }
   }
 
   // A current binding on an open row drops its native relation for a unit outside
@@ -105,7 +116,9 @@ function evaluate(owner, projection, homes) {
       scope_source: check.resolved ? 'resolved-uncertainty' : current ? 'current-canonical-declaration' : 'conservative-default',
       blocking_units: check.resolved ? [] : unitsOf(own.filter((entry) => kept.has(entry))), approval_verified: false };
   });
-  return { owner, known_units: [...knownUnits], checks: scopeSet(result), applications: scopeSet([...kept]), approval_verified: false };
+  const evaluated = { owner, known_units: [...knownUnits], checks: scopeSet(result), applications: scopeSet([...kept]), approval_verified: false };
+  bindingStatusProgress('uncertainty-bindings:done', `${checks.size} rows; ${computedCount} digests`);
+  return evaluated;
 }
 
 // Standalone: resolve the owner's applicability projection, then re-read that
