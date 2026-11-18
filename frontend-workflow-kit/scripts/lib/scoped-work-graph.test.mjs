@@ -558,7 +558,7 @@ function nestedGraphFixture(t, entries) {
   return { ...f, directory, args: f.options() };
 }
 
-test('#323 path reuse: strict and candidate graphs enumerate stable directories once per phase while preserving all file reads', (t) => {
+test('#323 path reuse: graphs share initial directory reads and refresh every final path while preserving all file reads', (t) => {
   const entries = Array.from({ length: 8 }, (_, i) => ({ id: `PATH-${i}`,
     body: `## Rules\nRule ${i}.${i < 7 ? ` \`artifact:PATH-${i + 1}#rules\`` : ''}` }));
   for (const candidate of [false, true]) {
@@ -571,8 +571,8 @@ test('#323 path reuse: strict and candidate graphs enumerate stable directories 
     const listed = t.mock.method(fs, 'readdirSync'), opened = t.mock.method(fs, 'openSync');
     try {
       assert.deepEqual(run(), expected, 'the graph, selected evidence and complete read set stay unchanged');
-      assert.equal(listed.mock.calls.filter((call) => String(call.arguments[0]) === f.directory).length, 2,
-        'dependencies share one listing and the final audit starts from a fresh directory listing');
+      assert.equal(listed.mock.calls.filter((call) => String(call.arguments[0]) === f.directory).length, entries.length + 1,
+        'dependencies share one listing and each final path reads the current directory entries');
       assert.equal(opened.mock.calls.filter((call) => files.has(String(call.arguments[0]))).length, entries.length * 2,
         'each selected document still has its initial byte read and final hash check');
     } finally {
@@ -650,6 +650,50 @@ test('#323 path reuse: final audits refresh case spelling even when parent stamp
     } finally {
       stats.mock.restore(); paths.mock.restore(); opened.mock.restore();
     }
+  }
+});
+
+for (const candidate of [false, true]) test(`#329 path audit: ${candidate ? 'candidate' : 'strict'} graph detects a later file renamed during the final audit`, (t) => {
+  const f = nestedGraphFixture(t, [
+    { id: 'A', body: '## Rules\nFirst rule references `artifact:B#rules`.' },
+    { id: 'B' },
+  ]);
+  const files = ['a.md', 'b.md'].map((name, index) => {
+    const file = path.join(f.directory, name);
+    fs.renameSync(f.docs[index].file, file); f.docs[index].file = file;
+    return file;
+  });
+  f.args = f.options();
+  const [first, second] = files, renamed = path.join(f.directory, 'B.md');
+  const run = () => candidate
+    ? resolveScopedCandidateGraph({ ...f.args, roots: [{ ref: 'artifact:A#rules', mode: 'ordinary' }] })
+    : resolveScopedContractGraph({ ...f.args, contracts: ['artifact:A#rules'] });
+  assert.deepEqual(run().read_set.map(({ file }) => file), ['docs/screens/a.md', 'docs/screens/b.md']);
+  const lstat = fs.lstatSync, realpath = fs.realpathSync, open = fs.openSync;
+  const parentStats = { plain: lstat(f.directory), bigint: lstat(f.directory, { bigint: true }) };
+  let changed = false, firstReads = 0, secondReads = 0;
+  const currentPath = (name) => changed && name === second ? renamed : name;
+  // Both initial reads finish before the first file is opened for its final
+  // byte audit. Rename the unverified second file at that point. Coarse parent
+  // stamps and case-insensitive lookups must not make its old spelling valid.
+  const stats = t.mock.method(fs, 'lstatSync', (name, ...options) => name === f.directory
+    ? parentStats[options[0]?.bigint ? 'bigint' : 'plain'] : lstat(currentPath(name), ...options));
+  const paths = t.mock.method(fs, 'realpathSync', (name, ...options) => realpath(currentPath(name), ...options));
+  const opened = t.mock.method(fs, 'openSync', (name, ...options) => {
+    if (name === first && ++firstReads === 2) {
+      assert.equal(secondReads, 1, 'both initial reads finish before the final audit mutation');
+      fs.renameSync(second, renamed); changed = true;
+    }
+    if (name === second) secondReads++;
+    return open(currentPath(name), ...options);
+  });
+  try {
+    assert.throws(run, /spelling differs from repository directory entry/);
+    assert.equal(changed, true, 'the rename occurs while auditing the first file');
+    assert.equal(firstReads, 2);
+    assert.equal(secondReads, 1, 'the renamed file is rejected before its final bytes are opened');
+  } finally {
+    stats.mock.restore(); paths.mock.restore(); opened.mock.restore();
   }
 });
 

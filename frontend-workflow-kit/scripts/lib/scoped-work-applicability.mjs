@@ -2,7 +2,7 @@
 // binding digest, approval, uncertainty resolution, readiness or path permit.
 // Public scoped execution stays unsupported until the complete runtime exists.
 import path from 'node:path';
-import { createCanonicalRepositoryPathResolver } from './artifact-path.mjs';
+import { canonicalRepositoryPath, createCanonicalRepositoryPathResolver } from './artifact-path.mjs';
 import { splitFrontmatter } from './util.mjs';
 import { col, hasHeader } from './spec.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
@@ -82,9 +82,8 @@ function applicabilityProjection(options, snapshot) {
   audit(unapplied.read_set);
   const verify = () => {
     session?.verify();
-    const canonicalPath = createCanonicalRepositoryPathResolver(projectRoot);
     for (const entry of files.values()) {
-      const file = canonicalPath(entry.file, { required: true, type: 'file', label: 'scoped applicability' });
+      const file = canonicalRepositoryPath(projectRoot, entry.file, { required: true, type: 'file', label: 'scoped applicability' });
       if (hashBytes(readCurrentBytes(file.absolute, 'scoped applicability')) !== entry.sha256) fail('snapshot changed after relation closure');
     }
   };

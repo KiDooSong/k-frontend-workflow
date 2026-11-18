@@ -1043,6 +1043,38 @@ test('#300 source closure detects changed owner bytes in its uncached final audi
   assert.equal(mutated, true);
 });
 
+test('#329 path audit: source closure detects a later file renamed during the final audit', (t) => {
+  const f = fixture(t), options = f.options(), renamed = path.join(f.root, 'Contract.md');
+  const stat = fs.statSync, lstat = fs.lstatSync, realpath = fs.realpathSync, open = fs.openSync;
+  const parentStats = { plain: stat(f.root), bigint: stat(f.root, { bigint: true }) };
+  let changed = false, ownerReads = 0, contractReads = 0, contractReadsAtRename;
+  const currentPath = (name) => changed && name === f.docFile ? renamed : name;
+  // The source snapshot pins the owner before the contract. Its second owner
+  // read starts the final byte audit, after the directory spelling was checked.
+  // Model case-insensitive lookups and a parent stamp unchanged by the rename.
+  const stats = t.mock.method(fs, 'statSync', (name, ...args) => name === f.root
+    ? parentStats[args[0]?.bigint ? 'bigint' : 'plain'] : stat(currentPath(name), ...args));
+  const leaves = t.mock.method(fs, 'lstatSync', (name, ...args) => lstat(currentPath(name), ...args));
+  const paths = t.mock.method(fs, 'realpathSync', (name, ...args) => realpath(currentPath(name), ...args));
+  const opened = t.mock.method(fs, 'openSync', (name, ...args) => {
+    if (name === f.ownerFile && ++ownerReads === 2) {
+      assert.ok(contractReads > 0, 'the contract is read before final verification begins');
+      contractReadsAtRename = contractReads;
+      fs.renameSync(f.docFile, renamed); changed = true;
+    }
+    if (name === f.docFile) contractReads++;
+    return open(currentPath(name), ...args);
+  });
+  try {
+    assert.throws(() => resolveScopedSourceRelations(options), /spelling differs from repository directory entry/);
+    assert.equal(changed, true);
+    assert.equal(ownerReads, 2);
+    assert.equal(contractReads, contractReadsAtRename, 'reject the renamed contract before reopening its unchanged bytes');
+  } finally {
+    stats.mock.restore(); leaves.mock.restore(); paths.mock.restore(); opened.mock.restore();
+  }
+});
+
 test('#300 source closure rechecks a same-byte owner behind a replaced ancestor', { skip: process.platform === 'win32' }, (t) => {
   const f = fixture(t), ownerDir = path.join(f.root, 'owner'), movedDir = path.join(f.root, 'owner-real');
   fs.mkdirSync(ownerDir);

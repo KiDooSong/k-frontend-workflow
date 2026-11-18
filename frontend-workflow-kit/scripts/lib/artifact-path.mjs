@@ -35,6 +35,8 @@ export function canonicalRepositoryPath(root, raw, { label = 'artifact path', re
 // A resolver owns only bounded directory-name listings. Every use still checks
 // current parent identity, each child, and physical confinement. Never cache a
 // successful path, a missing result, a realpath, or file contents.
+// Matching timestamps cannot prove that directory names stayed unchanged.
+// Final verification must use canonicalRepositoryPath separately for each path.
 const DIRECTORY_CACHE_BYTES = 1024 * 1024, DIRECTORY_CACHE_ENTRIES = 256;
 const directoryStampFields = ['dev', 'ino', 'mode', 'size', 'mtimeNs', 'ctimeNs'];
 function directoryNames(directory, stat, cache) {

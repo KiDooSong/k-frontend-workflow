@@ -4,7 +4,7 @@
 // metadata explicitly; hashing this raw evidence graph is NOT scope-basis-v1.
 import { splitFrontmatter } from './util.mjs';
 import { splitRow, hasHeader, apiCandidateColumns, parseApiCandidateTracking } from './spec.mjs';
-import { createCanonicalRepositoryPathResolver } from './artifact-path.mjs';
+import { canonicalRepositoryPath, createCanonicalRepositoryPathResolver } from './artifact-path.mjs';
 import { readCurrentBytes, hashBytes, normalizeWorkOrigins } from './current-work-request.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { parseInputEvidenceRef } from './provenance.mjs';
@@ -393,9 +393,8 @@ export function resolveScopedCandidateGraph({ roots = [], targetIndex, inputArti
     for (const dependency of ordinary) pendingEdges.push({ from: key, to: enqueue(dependency, 'ordinary') });
     for (const dependency of found.deferredTracking) pendingEdges.push({ from: key, to: enqueue(dependency, 'tracking') });
   }
-  const verifyPath = createCanonicalRepositoryPathResolver(projectRoot);
   for (const entry of files.values()) {
-    const file = verifyPath(entry.file, { required: true, type: 'file', label: 'scoped evidence' });
+    const file = canonicalRepositoryPath(projectRoot, entry.file, { required: true, type: 'file', label: 'scoped evidence' });
     if (hashBytes(readCurrentBytes(file.absolute, 'scoped evidence')) !== entry.sha256) fail('evidence changed during graph resolution');
   }
   const values = [...nodes.values()].map((node) => ({ ...node, modes: scopeSet([...node.modes]) }));
@@ -519,10 +518,10 @@ export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifa
     }
   }
   // Re-read consumed paths so a late mutation cannot yield a mixed read set.
-  // Do not carry directory listings from primary reads into this final audit.
-  const verifyPath = createCanonicalRepositoryPathResolver(projectRoot);
+  // Every file needs fresh directory entries, even within this final audit:
+  // unchanged parent timestamps cannot prove that a later name is unchanged.
   for (const entry of files.values()) {
-    const file = verifyPath(entry.file, { required: true, type: 'file', label: 'scoped evidence' });
+    const file = canonicalRepositoryPath(projectRoot, entry.file, { required: true, type: 'file', label: 'scoped evidence' });
     if (hashBytes(readCurrentBytes(file.absolute, 'scoped evidence')) !== entry.sha256) fail('evidence changed during graph resolution');
   }
   const values = [...nodes.values()];

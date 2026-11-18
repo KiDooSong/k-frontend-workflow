@@ -3,7 +3,7 @@
 // This is evidence/receipt-basis resolution, not semantic review or a permit.
 import path from 'node:path';
 import { splitFrontmatter } from './util.mjs';
-import { createCanonicalRepositoryPathResolver } from './artifact-path.mjs';
+import { canonicalRepositoryPath, createCanonicalRepositoryPathResolver } from './artifact-path.mjs';
 import { ownerParts, readCurrentBytes, hashBytes, normalizeWorkOrigins } from './current-work-request.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { buildInputArtifactIndex, resolveInputArtifact, parseRfc3339 } from './provenance.mjs';
@@ -160,12 +160,12 @@ function retainHistoricalWitnesses(source, remembered, active) {
 // Audits need only the first digest, even after its raw bytes have been evicted.
 const SOURCE_BYTE_CACHE_LIMIT = 16 * 1024 * 1024;
 function createSourceSnapshot(projectRoot) {
-  let canonicalPath = createCanonicalRepositoryPathResolver(projectRoot);
+  const canonicalPath = createCanonicalRepositoryPathResolver(projectRoot);
   const pins = new Map(), bytes = new Map(), absentRegisters = new Set();
   let byteSize = 0;
-  function current(relative) {
-    const canonical = canonicalPath(relative,
-      { required: true, type: 'file', label: 'scoped source relation' });
+  function current(relative, verifying = false) {
+    const options = { required: true, type: 'file', label: 'scoped source relation' };
+    const canonical = verifying ? canonicalRepositoryPath(projectRoot, relative, options) : canonicalPath(relative, options);
     const raw = readCurrentBytes(canonical.absolute, 'scoped source relation');
     return { raw, sha256: hashBytes(raw) };
   }
@@ -193,15 +193,14 @@ function createSourceSnapshot(projectRoot) {
   }
   function verifyFile(file) {
     const pin = pins.get(file);
-    if (!pin || current(file).sha256 !== pin.sha256) fail(`snapshot changed: ${file}`);
+    if (!pin || current(file, true).sha256 !== pin.sha256) fail(`snapshot changed: ${file}`);
   }
   function verify() {
     // Never use read() here: the final audit must inspect current spelling,
     // every ancestor, and bytes, including files seen only in earlier passes.
     bytes.clear(); byteSize = 0;
-    canonicalPath = createCanonicalRepositoryPathResolver(projectRoot);
     for (const pin of pins.values()) verifyFile(pin.file);
-    for (const relative of absentRegisters) if (canonicalPath(relative,
+    for (const relative of absentRegisters) if (canonicalRepositoryPath(projectRoot, relative,
       { required: false, type: 'file', label: 'scoped source register' }).exists) fail('register appeared during source projection');
   }
   return { read, verify, verifyFile, absentRegister: (relative) => absentRegisters.add(relative),
@@ -252,7 +251,6 @@ function resolveSourceClosure(options, requireEffects) {
 function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
   registerFile, projectRoot, layout } = {}, requireEffects, dependencyRoots, snapshot) {
   const parts = ownerParts(owner); workUnitId(unit);
-  const canonicalPath = createCanonicalRepositoryPathResolver(projectRoot);
   const args = { targetIndex, inputArtifacts, projectRoot };
   const refs = createScopedReferenceResolver(args);
   const sourceReader = createScopedSourceResolver({ ...args, registerFile });
@@ -418,7 +416,7 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
     } else {
       const relative = path.isAbsolute(registerFile) ? path.relative(projectRoot, registerFile).split(path.sep).join('/') : registerFile;
       if (path.isAbsolute(registerFile) && path.resolve(registerFile) !== registerFile) fail('noncanonical register path');
-      const actual = canonicalPath(relative,
+      const actual = canonicalRepositoryPath(projectRoot, relative,
         { required, type: 'file', label: 'scoped source register' });
       if (actual.exists) {
         presentRegister = read(registerFile).file;
@@ -533,7 +531,7 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
         contracts_sha256: hashBytes(Buffer.from(scopeJson(contractHashes))) } });
   }
   if (presentRegister) snapshot.verifyFile(presentRegister);
-  if (absentRegister && canonicalPath(absentRegister,
+  if (absentRegister && canonicalRepositoryPath(projectRoot, absentRegister,
     { required: false, type: 'file', label: 'scoped source register' }).exists) fail('register appeared during source projection');
   return { owner, unit, sources: scopedEvidenceSet(resolved), pending_connections: scopeSet(pending),
     legacy_connections: scopeSet(legacyConnections),

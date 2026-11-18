@@ -4,7 +4,7 @@
 import path from 'node:path';
 import { splitFrontmatter } from './util.mjs';
 import { col, hasHeader } from './spec.mjs';
-import { createCanonicalRepositoryPathResolver } from './artifact-path.mjs';
+import { canonicalRepositoryPath, createCanonicalRepositoryPathResolver } from './artifact-path.mjs';
 import { readCurrentBytes, hashBytes, ownerParts } from './current-work-request.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { loadOpenDecisionRegister, resolveDecisionRefs, openDecisionRowIsMalformed,
@@ -58,9 +58,8 @@ export function createScopedSnapshotDecisionResolver(options = {}) {
   };
   freeze(base);
   const verify = () => {
-    const canonicalPath = createCanonicalRepositoryPathResolver(projectRoot);
     for (const entry of base.read_set) {
-      const file = canonicalPath(entry.file,
+      const file = canonicalRepositoryPath(projectRoot, entry.file,
         { required: true, type: 'file', label: 'scoped snapshot unit' });
       if (hashBytes(readCurrentBytes(file.absolute, 'scoped snapshot unit')) !== entry.sha256) {
         fail('snapshot changed while reusing unit projection');
@@ -69,7 +68,7 @@ export function createScopedSnapshotDecisionResolver(options = {}) {
     // Whole-register validation can read an unselected input's Evidence body.
     // Those observations are not authority/basis fields or the public read_set.
     if (!observed.verify()) fail('input evidence changed while reusing unit projection');
-    for (const relative of absentRegisters) if (canonicalPath(relative,
+    for (const relative of absentRegisters) if (canonicalRepositoryPath(projectRoot, relative,
       { required: false, type: 'file', label: 'scoped snapshot register' }).exists) {
       fail('register appeared while reusing unit projection');
     }
@@ -84,7 +83,7 @@ export function createScopedSnapshotDecisionResolver(options = {}) {
 
 function decisionProjection(options, base, dependencyRoots, dependencyContext) {
   const { owner, projectRoot, docsDir, targetIndex, inputArtifacts = [] } = options;
-  let canonicalPath = createCanonicalRepositoryPathResolver(projectRoot);
+  const canonicalPath = createCanonicalRepositoryPathResolver(projectRoot);
   const baseContext = scopedGraphContexts(base.projection.evidence);
   const evidenceContexts = [base.projection.evidence];
   if (typeof docsDir !== 'string' || !path.isAbsolute(docsDir) || path.resolve(docsDir) !== docsDir) {
@@ -112,7 +111,8 @@ function decisionProjection(options, base, dependencyRoots, dependencyContext) {
   const views = new Map();
 
   function audit(relative, expectedHash) {
-    const file = canonicalPath(relative, { required: true, type: 'file', label: 'scoped decision' });
+    const options = { required: true, type: 'file', label: 'scoped decision' };
+    const file = expectedHash === undefined ? canonicalPath(relative, options) : canonicalRepositoryPath(projectRoot, relative, options);
     const raw = readCurrentBytes(file.absolute, 'scoped decision');
     const sha256 = hashBytes(raw);
     if ((expectedHash && expectedHash !== sha256) || (files.has(relative) && files.get(relative).sha256 !== sha256)) {
@@ -337,7 +337,6 @@ function decisionProjection(options, base, dependencyRoots, dependencyContext) {
         uncertainty === null ? 'evidence-decision-ref' : 'uncertainty-decision-ref', false, uncertainty);
     }
   }
-  canonicalPath = createCanonicalRepositoryPathResolver(projectRoot);
   for (const file of [...files.values()]) audit(file.file, file.sha256);
   const records = [...decisions.values()], evidenceNodes = [...graphNodes.values()];
   return { projection: { ...base.projection, decision_relations: {
