@@ -2,7 +2,7 @@
 // binding digest, approval, uncertainty resolution, readiness or path permit.
 // Public scoped execution stays unsupported until the complete runtime exists.
 import path from 'node:path';
-import { canonicalRepositoryPath } from './artifact-path.mjs';
+import { canonicalRepositoryPath, createCanonicalRepositoryPathResolver } from './artifact-path.mjs';
 import { splitFrontmatter } from './util.mjs';
 import { col, hasHeader } from './spec.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
@@ -113,6 +113,7 @@ export function scopedUnappliedSearchStats() {
 const TYPED_SPELLING = /(?:artifact|decision|unknown|conflict|gap|investigation|verification|input):/;
 const DECISION_TABLE = ['ID', 'Status', 'Blocking Mode'];
 function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] }, projection, unaudited = []) {
+  const canonicalPath = createCanonicalRepositoryPathResolver(projectRoot);
   const { decision_relations: decisions, uncertainty_relations: uncertainty } = projection;
   const applied = new Set([...decisions.records, ...uncertainty.records].map((entry) => entry.ref)), known = new Set(applied);
   const priorGraphs = [projection.evidence, decisions.evidence, uncertainty.evidence];
@@ -123,7 +124,7 @@ function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] 
     if (!selectionSpans.has(node.selection)) {
       if (!views.has(node.file)) {
         const indexed = node.artifact_id ? targetIndex.artifacts.get(node.artifact_id) : null;
-        const file = indexed ? null : canonicalRepositoryPath(projectRoot, node.file,
+        const file = indexed ? null : canonicalPath(node.file,
           { required: true, type: 'file', label: 'scoped applicability evidence' });
         const body = indexed?.body ?? splitFrontmatter(decodeGitUtf8(readCurrentBytes(file.absolute,
           'scoped applicability evidence'), 'scoped applicability evidence')).body;
@@ -168,7 +169,7 @@ function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] 
       else {
         const key = `untyped:${artifactId}#${slug}/${id}`;
         untyped.set(key, { artifactId, slug, id });
-        if (!view) { view = parseReconciliationReferenceView(entry.body); readSet.push(indexedFile(projectRoot, entry)); }
+        if (!view) { view = parseReconciliationReferenceView(entry.body); readSet.push(indexedFile(projectRoot, entry, canonicalPath)); }
         const selection = { type: 'row', section: slug, headers, cells };
         // A typed row's node leads to its document's decision_refs; an untyped row starts from them too.
         add({ key, id, artifactId, token: null, roots: [...new Set([...scopedGraphSelectionRefs(entry.body, entry.fm, selection, view),
@@ -477,9 +478,9 @@ function referencing(entry) {
   }
 }
 // A document read through its index entry joins the read set as the bytes it was indexed from.
-function indexedFile(projectRoot, entry) {
+function indexedFile(projectRoot, entry, canonicalPath) {
   const file = path.relative(projectRoot, entry.file).split(path.sep).join('/');
-  const bytes = readCurrentBytes(canonicalRepositoryPath(projectRoot, file, { required: true, type: 'file', label: 'scoped decision' }).absolute, 'scoped decision');
+  const bytes = readCurrentBytes(canonicalPath(file, { required: true, type: 'file', label: 'scoped decision' }).absolute, 'scoped decision');
   const parsed = splitFrontmatter(decodeGitUtf8(bytes, 'scoped decision'));
   if (parsed.parseError || parsed.body !== entry.body || scopeJson(parsed.data) !== scopeJson(entry.fm)) fail('decision document differs from its indexed snapshot');
   return { file, sha256: hashBytes(bytes) };

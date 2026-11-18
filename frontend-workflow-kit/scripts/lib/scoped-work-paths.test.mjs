@@ -6,6 +6,7 @@ import path from 'node:path';
 import { splitFrontmatter } from './util.mjs';
 import { buildReconciliationTargetIndex } from './reconciliation-target-index.mjs';
 import { inspectScopedPaths } from './scoped-work-paths.mjs';
+import { canonicalRepositoryPath, createCanonicalRepositoryPathResolver } from './artifact-path.mjs';
 
 const OWNER = 'screen:RESULT-001', ROOT = 'src/features/result';
 const ENTRY = `${ROOT}/screens/RESULT-001.tsx`, COMPONENT = `${ROOT}/components/local/**`, HOOK = `${ROOT}/hooks/local/**`;
@@ -377,4 +378,143 @@ test('W21: a case-alias spelling of the exact entry never becomes the owned entr
     try { out = f.run(alias, change); } catch (error) { assert.match(error.message, /spelling differs from repository directory entry/); continue; }
     assert.equal(out.boundary_satisfied, false, JSON.stringify(out.paths));
   }
+});
+
+function canonicalFixture(t) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'canonical-path-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const put = (relative, bytes = 'current bytes') => {
+    const file = path.join(root, relative);
+    fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, bytes);
+    return file;
+  };
+  return { root, put, resolve: createCanonicalRepositoryPathResolver(root) };
+}
+
+test('#323 canonical path resolver reuses listings while retaining live child and realpath checks', (t) => {
+  const f = canonicalFixture(t), files = ['a', 'b', 'c'].map((name) => `docs/domain/screen/${name}.md`);
+  for (const file of files) f.put(file);
+  const calls = { readdirSync: 0, lstatSync: 0, realpathSync: 0 };
+  for (const name of Object.keys(calls)) {
+    const original = fs[name];
+    t.mock.method(fs, name, (...args) => { calls[name]++; return original(...args); });
+  }
+  const requests = [...files, ...files], options = { required: true, type: 'file' };
+  const cached = requests.map((file) => f.resolve(file, options));
+  const reused = { ...calls };
+  for (const name of Object.keys(calls)) calls[name] = 0;
+  assert.deepEqual(requests.map((file) => canonicalRepositoryPath(f.root, file, options)), cached);
+  assert.equal(reused.readdirSync, 4); assert.equal(calls.readdirSync, requests.length * 4);
+  assert.equal(reused.lstatSync, calls.lstatSync); assert.equal(reused.realpathSync, calls.realpathSync);
+  assert.equal(reused.realpathSync, requests.length * 2);
+  cached[0].exists = false; cached[0].absolute = 'not the file';
+  assert.equal(f.resolve(files[0], options).absolute, path.join(f.root, files[0]));
+  const before = calls.readdirSync;
+  assert.equal(createCanonicalRepositoryPathResolver(f.root)(files[0], options).exists, true);
+  assert.equal(calls.readdirSync - before, 4, 'another resolver owns fresh listings');
+});
+
+test('#323 canonical path resolver preserves lexical, required, type and label behavior per call', (t) => {
+  const f = canonicalFixture(t); f.put('docs/file.md');
+  const result = (read) => {
+    try { return read(); }
+    catch (error) { return { name: error.name, code: error.code, message: error.message }; }
+  };
+  const cases = [
+    ...['', '../file', 'docs//file', './docs/file', 'docs\\file', '/file', 'docs/*.md', 'docs/?.md', ' docs/file'].map((raw) => [raw, {}]),
+    ['docs/file.md', { type: 'file', required: true }], ['docs/file.md', { type: 'directory' }],
+    ['docs', { type: 'directory', required: true }], ['docs', { type: 'file' }],
+    ['docs/file.md/child', {}], ['missing/file.md', {}], ['missing/file.md', { required: true }],
+    ['docs/missing.md', { required: true, label: 'first caller' }],
+    ['docs/missing.md', { required: true, label: 'second caller' }],
+  ];
+  for (const [raw, options] of cases) {
+    assert.deepEqual(result(() => f.resolve(raw, options)), result(() => canonicalRepositoryPath(f.root, raw, options)), raw);
+  }
+  const absent = createCanonicalRepositoryPathResolver(path.join(f.root, 'absent-root'));
+  assert.throws(() => absent('../invalid'), /empty, dot or parent segment is forbidden/);
+  assert.equal(absent('file.md').exists, false);
+});
+
+test('#323 canonical path resolver sees new and removed paths and current leaf types', (t) => {
+  const f = canonicalFixture(t), relative = 'docs/nested/file.md';
+  assert.equal(f.resolve(relative).exists, false);
+  const file = f.put(relative); assert.equal(f.resolve(relative, { required: true, type: 'file' }).exists, true);
+  fs.unlinkSync(file); assert.equal(f.resolve(relative).exists, false);
+  assert.throws(() => f.resolve(relative, { required: true }), /required repository path is missing/);
+  fs.mkdirSync(file); assert.equal(f.resolve(relative, { type: 'directory' }).exists, true);
+  assert.throws(() => f.resolve(relative, { type: 'file' }), /regular file required/);
+  fs.rmdirSync(file); f.put(relative);
+  fs.renameSync(file, `${file}.real`); fs.symlinkSync('file.md.real', file);
+  assert.throws(() => f.resolve(relative, { type: 'file' }), /symlink\/junction segment is forbidden/);
+  const docs = path.join(f.root, 'docs'), moved = path.join(f.root, 'real-docs');
+  fs.renameSync(docs, moved); fs.symlinkSync(moved, docs, 'dir');
+  assert.throws(() => f.resolve('docs/nested/file.md.real'), /symlink\/junction segment is forbidden/);
+});
+
+test('#323 canonical path resolver refreshes physical spelling after a directory entry rename', (t) => {
+  const f = canonicalFixture(t), file = f.put('docs/file.md'), renamed = path.join(f.root, 'docs/File.md');
+  f.resolve('docs/file.md', { required: true }); fs.renameSync(file, renamed);
+  // Model a case-insensitive lookup even on Linux. Directory-entry spelling
+  // remains the authority and must be refreshed after the rename.
+  const lstat = fs.lstatSync;
+  t.mock.method(fs, 'lstatSync', (name, ...options) => lstat(name === file ? renamed : name, ...options));
+  assert.throws(() => f.resolve('docs/file.md', { required: true }), /spelling differs from repository directory entry/);
+  assert.equal(f.resolve('docs/File.md', { required: true }).exists, true);
+});
+
+test('#323 canonical path resolver does not attach a later stamp to a stale directory listing', (t) => {
+  const f = canonicalFixture(t), before = f.put('docs/before.md'), after = path.join(f.root, 'docs/after.md');
+  const readdir = fs.readdirSync; let mutated = false;
+  t.mock.method(fs, 'readdirSync', (directory, ...options) => {
+    const names = readdir(directory, ...options);
+    if (!mutated && directory === path.dirname(before)) {
+      mutated = true; fs.renameSync(before, after);
+    }
+    return names;
+  });
+  assert.throws(() => f.resolve('docs/before.md', { required: true }), /ENOENT/);
+  assert.equal(mutated, true);
+  assert.equal(f.resolve('docs/after.md', { required: true }).exists, true);
+});
+
+test('#323 canonical path resolver follows caller root aliases freshly and permits unchanged root alias behavior', (t) => {
+  const f = canonicalFixture(t);
+  f.put('first/shared.md', 'first'); f.put('first/only-first.md');
+  f.put('second/shared.md', 'second'); f.put('second/only-second.md');
+  const alias = path.join(f.root, 'alias'); fs.symlinkSync(path.join(f.root, 'first'), alias, 'dir');
+  const resolve = createCanonicalRepositoryPathResolver(alias), options = { required: true, type: 'file' };
+  assert.deepEqual(resolve('shared.md', options), canonicalRepositoryPath(alias, 'shared.md', options));
+  assert.equal(resolve('only-first.md', options).exists, true);
+  fs.unlinkSync(alias); fs.symlinkSync(path.join(f.root, 'second'), alias, 'dir');
+  assert.equal(fs.readFileSync(resolve('shared.md', options).absolute, 'utf8'), 'second');
+  assert.equal(resolve('only-first.md').exists, false);
+  assert.equal(resolve('only-second.md', options).exists, true);
+});
+
+test('#323 canonical path resolver bounds retained listings and rereads after eviction', (t) => {
+  const f = canonicalFixture(t);
+  for (let index = 0; index < 300; index++) f.put(`directory-${index}/leaf.md`);
+  const first = path.join(f.root, 'directory-0'), readdir = fs.readdirSync; let firstReads = 0;
+  t.mock.method(fs, 'readdirSync', (directory, ...options) => {
+    if (directory === first) firstReads++;
+    return readdir(directory, ...options);
+  });
+  for (let index = 0; index < 300; index++) assert.equal(f.resolve(`directory-${index}/leaf.md`, { required: true }).exists, true);
+  assert.equal(firstReads, 1);
+  assert.equal(f.resolve('directory-0/leaf.md', { required: true }).exists, true);
+  assert.equal(firstReads, 2);
+});
+
+test('#323 canonical path resolver does not retain an oversized directory listing', (t) => {
+  const f = canonicalFixture(t); f.put('wide/leaf.md');
+  const wide = path.join(f.root, 'wide'), readdir = fs.readdirSync; let wideReads = 0;
+  const extra = Array.from({ length: 20_000 }, (_, index) => `${index}-${'x'.repeat(64)}`);
+  t.mock.method(fs, 'readdirSync', (directory, ...options) => {
+    const names = readdir(directory, ...options);
+    if (directory !== wide) return names;
+    wideReads++; return [...names, ...extra];
+  });
+  for (let index = 0; index < 2; index++) assert.equal(f.resolve('wide/leaf.md', { required: true }).exists, true);
+  assert.equal(wideReads, 2, 'wide names are used for this call but not retained');
 });

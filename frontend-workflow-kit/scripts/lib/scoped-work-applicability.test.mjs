@@ -7,10 +7,11 @@ import { splitFrontmatter } from './util.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
 import { loadInputArtifact } from './input-artifact.mjs';
 import { buildReconciliationTargetIndex } from './reconciliation-target-index.mjs';
-import { resolveScopedDecisionProjection } from './scoped-work-decisions.mjs';
+import { resolveScopedDecisionProjection, createScopedSnapshotDecisionResolver } from './scoped-work-decisions.mjs';
 import { resolveScopedUncertaintyProjection } from './scoped-work-uncertainty.mjs';
 import { resolveScopedBoundaryProjection } from './scoped-work-boundaries.mjs';
-import { resolveScopedApplicabilityProjection, resolveScopedSnapshotApplicabilityProjection } from './scoped-work-applicability.mjs';
+import { resolveScopedApplicabilityProjection, resolveScopedSnapshotApplicabilityProjection,
+  createScopedSnapshotApplicabilitySession } from './scoped-work-applicability.mjs';
 import { scopedBindingBasis } from './scoped-work-basis.mjs';
 
 const OWNER = 'screen:RESULT-001';
@@ -455,6 +456,39 @@ test('#300 snapshot applicability ignores caller authority and rebuilds from cha
   const after = resolveScopedSnapshotApplicabilityProjection(f.options());
   assert.deepEqual(after, expected);
   assert.notDeepEqual(after.projection, before.projection, 'a snapshot owns no cache across calls');
+});
+
+for (const applicability of [false, true]) test(`#329 path audit: ${applicability ? 'applicability' : 'Decision'} session detects a later file renamed during verification`, (t) => {
+  const f = fixture(t), options = f.options();
+  const session = applicability ? createScopedSnapshotApplicabilitySession(options) : createScopedSnapshotDecisionResolver(options);
+  const first = f.docs.get('rules.md'), second = f.docs.get('screen.md');
+  const directory = path.dirname(second), renamed = path.join(directory, 'Screen.md');
+  const lstat = fs.lstatSync, realpath = fs.realpathSync, open = fs.openSync;
+  const parentStats = { plain: lstat(directory), bigint: lstat(directory, { bigint: true }) };
+  let changed = false, firstReads = 0, secondReads = 0;
+  const currentPath = (name) => changed && name === second ? renamed : name;
+  const auditNumber = applicability ? 2 : 1;
+  // Applicability verifies its nested Decision snapshot first. Rename only
+  // during its own outer audit, after that nested verification has completed.
+  const stats = t.mock.method(fs, 'lstatSync', (name, ...args) => name === directory
+    ? parentStats[args[0]?.bigint ? 'bigint' : 'plain'] : lstat(currentPath(name), ...args));
+  const paths = t.mock.method(fs, 'realpathSync', (name, ...args) => realpath(currentPath(name), ...args));
+  const opened = t.mock.method(fs, 'openSync', (name, ...args) => {
+    if (name === first && ++firstReads === auditNumber) {
+      assert.equal(secondReads, auditNumber - 1, 'the later file has not reached this verification pass');
+      fs.renameSync(second, renamed); changed = true;
+    }
+    if (name === second) secondReads++;
+    return open(currentPath(name), ...args);
+  });
+  try {
+    assert.throws(() => session.verify(), /spelling differs from repository directory entry/);
+    assert.equal(changed, true);
+    assert.equal(firstReads, auditNumber);
+    assert.equal(secondReads, auditNumber - 1, 'reject changed spelling before the later byte audit');
+  } finally {
+    stats.mock.restore(); paths.mock.restore(); opened.mock.restore();
+  }
 });
 
 test('#300 snapshot applicability preserves inherited input fidelity and refreshes ancestor metadata', (t) => {

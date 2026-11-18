@@ -518,6 +518,24 @@ final read-set audit remain in place. This adds no separate input-body,
 file-observation or validation-result cache. Public results remain independent,
 and source admission, scope-basis-v2 and checkpoint bytes are unchanged.
 
+Initial path reads in graph, source, Decision, uncertainty and applicability calculations
+reuse directory-entry name sets within a private resolver. Each use checks the
+current parent identity, mode, size and nanosecond modification/change times before
+reusing names. Each ancestor and leaf is still checked, and both root and target
+physical paths are resolved on every successful check. Changed directories are
+listed again; missing paths, path validity, file bytes and validation results are
+never cached by this resolver. Every final read-set path uses the uncached
+canonical check, which reads directory entries anew for that individual file.
+Expected-hash rechecks, source register parser boundaries and optional-register
+absence verification also use uncached path checks. Even matching nanosecond
+timestamps cannot prove that a later file's spelling stayed unchanged during
+an audit. Current-file, byte, metadata and hash checks remain in place.
+Each resolver retains at most 256 directory listings and 1 MiB of estimated
+path/name storage, not total process RSS; oversized listings are not retained.
+Resolvers remain private to initial reads and are not used for verification
+or shared across independent calls. Standalone canonical path
+checks keep their existing uncached behavior.
+
 Frontmatter decoding separately reuses ordinary YAML syntax by exact source text
 within a process. It returns independent metadata objects and retains only copied
 YAML keys and serialized values, bounded to 4 MiB and 2,048 entries; this does not

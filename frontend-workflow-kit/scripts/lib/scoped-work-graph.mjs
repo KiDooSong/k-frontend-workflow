@@ -4,7 +4,7 @@
 // metadata explicitly; hashing this raw evidence graph is NOT scope-basis-v1.
 import { splitFrontmatter } from './util.mjs';
 import { splitRow, hasHeader, apiCandidateColumns, parseApiCandidateTracking } from './spec.mjs';
-import { canonicalRepositoryPath } from './artifact-path.mjs';
+import { canonicalRepositoryPath, createCanonicalRepositoryPathResolver } from './artifact-path.mjs';
 import { readCurrentBytes, hashBytes, normalizeWorkOrigins } from './current-work-request.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { parseInputEvidenceRef } from './provenance.mjs';
@@ -316,6 +316,7 @@ export function mergeScopedGraphContexts(graphs, to) {
 // is discovery only. Reached roots still require the strict graph below before
 // their records can become selected evidence or enter a binding basis.
 export function resolveScopedCandidateGraph({ roots = [], targetIndex, inputArtifacts = [], projectRoot, project = null } = {}) {
+  const canonicalPath = createCanonicalRepositoryPathResolver(projectRoot);
   const refs = createScopedReferenceResolver({ targetIndex, inputArtifacts, projectRoot, shareMetadata: true });
   const sources = createScopedSourceResolver({ targetIndex, inputArtifacts, projectRoot });
   const selectedRoots = workSet(roots, (root) => {
@@ -334,7 +335,7 @@ export function resolveScopedCandidateGraph({ roots = [], targetIndex, inputArti
   };
   function read(file, metadata, expectedBody) {
     if (!documents.has(file)) {
-      const canonical = canonicalRepositoryPath(projectRoot, file, { required: true, type: 'file', label: 'scoped evidence' });
+      const canonical = canonicalPath(file, { required: true, type: 'file', label: 'scoped evidence' });
       const raw = readCurrentBytes(canonical.absolute, 'scoped evidence');
       const parsed = splitFrontmatter(decodeGitUtf8(raw, 'scoped evidence'));
       files.set(file, { file, sha256: hashBytes(raw) });
@@ -415,6 +416,7 @@ export function resolveScopedCandidateGraph({ roots = [], targetIndex, inputArti
 // the full record.
 export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifacts = [], projectRoot, project = null,
   authoredRefs = [], trackingRefs = [], ordinaryRefs = [] } = {}) {
+  const canonicalPath = createCanonicalRepositoryPathResolver(projectRoot);
   const refs = createScopedReferenceResolver({ targetIndex, inputArtifacts, projectRoot, shareMetadata: true });
   const sources = createScopedSourceResolver({ targetIndex, inputArtifacts, projectRoot });
   const roots = workSet(contracts, canonicalRef, 'graph roots', true);
@@ -440,7 +442,7 @@ export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifa
   };
   function read(file, metadata, expectedBody) {
     if (!documents.has(file)) {
-      const canonical = canonicalRepositoryPath(projectRoot, file, { required: true, type: 'file', label: 'scoped evidence' });
+      const canonical = canonicalPath(file, { required: true, type: 'file', label: 'scoped evidence' });
       const raw = readCurrentBytes(canonical.absolute, 'scoped evidence');
       const parsed = splitFrontmatter(decodeGitUtf8(raw, 'scoped evidence'));
       files.set(file, { file, sha256: hashBytes(raw) });
@@ -516,6 +518,8 @@ export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifa
     }
   }
   // Re-read consumed paths so a late mutation cannot yield a mixed read set.
+  // Every file needs fresh directory entries, even within this final audit:
+  // unchanged parent timestamps cannot prove that a later name is unchanged.
   for (const entry of files.values()) {
     const file = canonicalRepositoryPath(projectRoot, entry.file, { required: true, type: 'file', label: 'scoped evidence' });
     if (hashBytes(readCurrentBytes(file.absolute, 'scoped evidence')) !== entry.sha256) fail('evidence changed during graph resolution');

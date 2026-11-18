@@ -4,7 +4,7 @@
 import path from 'node:path';
 import { splitFrontmatter } from './util.mjs';
 import { col, hasHeader } from './spec.mjs';
-import { canonicalRepositoryPath } from './artifact-path.mjs';
+import { canonicalRepositoryPath, createCanonicalRepositoryPathResolver } from './artifact-path.mjs';
 import { readCurrentBytes, hashBytes, ownerParts } from './current-work-request.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { loadOpenDecisionRegister, resolveDecisionRefs, openDecisionRowIsMalformed,
@@ -83,6 +83,7 @@ export function createScopedSnapshotDecisionResolver(options = {}) {
 
 function decisionProjection(options, base, dependencyRoots, dependencyContext) {
   const { owner, projectRoot, docsDir, targetIndex, inputArtifacts = [] } = options;
+  const canonicalPath = createCanonicalRepositoryPathResolver(projectRoot);
   const baseContext = scopedGraphContexts(base.projection.evidence);
   const evidenceContexts = [base.projection.evidence];
   if (typeof docsDir !== 'string' || !path.isAbsolute(docsDir) || path.resolve(docsDir) !== docsDir) {
@@ -110,7 +111,8 @@ function decisionProjection(options, base, dependencyRoots, dependencyContext) {
   const views = new Map();
 
   function audit(relative, expectedHash) {
-    const file = canonicalRepositoryPath(projectRoot, relative, { required: true, type: 'file', label: 'scoped decision' });
+    const options = { required: true, type: 'file', label: 'scoped decision' };
+    const file = expectedHash === undefined ? canonicalPath(relative, options) : canonicalRepositoryPath(projectRoot, relative, options);
     const raw = readCurrentBytes(file.absolute, 'scoped decision');
     const sha256 = hashBytes(raw);
     if ((expectedHash && expectedHash !== sha256) || (files.has(relative) && files.get(relative).sha256 !== sha256)) {

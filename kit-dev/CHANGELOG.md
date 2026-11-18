@@ -4,6 +4,22 @@
 
 ## Unreleased
 
+### perf(scoped) — canonical 경로 검사의 디렉터리 목록 재사용 (#300, #321, #323)
+
+- graph·source·Decision·uncertainty·applicability의 초기 읽기에서 private 경로 resolver가 같은 부모의 이름 집합을
+  재사용한다. 현재 부모 identity·mode·size·나노초 변경 시각이 바뀌면 목록을 다시 읽는다.
+- 조상·leaf의 현재 lstat, root/target realpath와 최종 read-set 재검증을 유지하며,
+  최종 검증은 파일마다 캐시 없는 경로 검사로 디렉터리 목록을 다시 읽는다.
+  expected-hash 재검사·register parser 경계·register 부재 검사도 목록을 재사용하지 않는다.
+  경로의 성공·부재·파일 bytes·검증 결과는 재사용하지 않는다.
+  standalone 경로 검사는 기존대로다.
+- PR #329 리뷰 보완: 감사 시작 시점만 새 resolver로 분리하면 감사 도중 뒤쪽 파일의 철자 변경을
+  놓칠 수 있다. 같은 parent stamp·대소문자 비구분 lookup에서 두 파일의 감사 사이에 rename하는 회귀를 검증한다.
+- resolver별 목록은 최대 256개·추정 path/name 보관량 1 MiB로 제한하고 큰 목록은 보관하지 않는다.
+  한도는 전체 RSS가 아니다. 호출 간 공유, 판정·scope-basis-v2·checkpoint 변경은 없다.
+- [binding-status benchmark](benchmarks/binding-status.mjs)는 전체 canonical 검사 횟수와 실제
+  디렉터리 읽기를 구분해 기록한다. 계약: [scoped baseline](../frontend-workflow-kit/docs/reference/scoped-work.md#evaluation-on-the-immutable-baseline).
+
 ### perf(scoped) — source 관계 pass 안의 입력 anchor 반복 구성 감소 (#300, #321, #323)
 
 - 여러 Item effect와 같은 Evidence를 대조할 때 pass 내부에서 해소한 입력 anchor를 재사용해

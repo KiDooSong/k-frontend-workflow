@@ -3,7 +3,7 @@
 // This is evidence/receipt-basis resolution, not semantic review or a permit.
 import path from 'node:path';
 import { splitFrontmatter } from './util.mjs';
-import { canonicalRepositoryPath } from './artifact-path.mjs';
+import { canonicalRepositoryPath, createCanonicalRepositoryPathResolver } from './artifact-path.mjs';
 import { ownerParts, readCurrentBytes, hashBytes, normalizeWorkOrigins } from './current-work-request.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { buildInputArtifactIndex, resolveInputArtifact, parseRfc3339 } from './provenance.mjs';
@@ -160,11 +160,12 @@ function retainHistoricalWitnesses(source, remembered, active) {
 // Audits need only the first digest, even after its raw bytes have been evicted.
 const SOURCE_BYTE_CACHE_LIMIT = 16 * 1024 * 1024;
 function createSourceSnapshot(projectRoot) {
+  const canonicalPath = createCanonicalRepositoryPathResolver(projectRoot);
   const pins = new Map(), bytes = new Map(), absentRegisters = new Set();
   let byteSize = 0;
-  function current(relative) {
-    const canonical = canonicalRepositoryPath(projectRoot, relative,
-      { required: true, type: 'file', label: 'scoped source relation' });
+  function current(relative, verifying = false) {
+    const options = { required: true, type: 'file', label: 'scoped source relation' };
+    const canonical = verifying ? canonicalRepositoryPath(projectRoot, relative, options) : canonicalPath(relative, options);
     const raw = readCurrentBytes(canonical.absolute, 'scoped source relation');
     return { raw, sha256: hashBytes(raw) };
   }
@@ -192,7 +193,7 @@ function createSourceSnapshot(projectRoot) {
   }
   function verifyFile(file) {
     const pin = pins.get(file);
-    if (!pin || current(file).sha256 !== pin.sha256) fail(`snapshot changed: ${file}`);
+    if (!pin || current(file, true).sha256 !== pin.sha256) fail(`snapshot changed: ${file}`);
   }
   function verify() {
     // Never use read() here: the final audit must inspect current spelling,
