@@ -3,7 +3,9 @@
 // Install both kits' dependencies first. Timed samples run the actual public CLI
 // in fresh processes without instrumentation. Separate diagnostic runs count
 // function/filesystem/YAML calls and report their own inclusive function time,
-// process peak RSS and CPU time. Unbound rows vary owner-wide applicability
+// process peak RSS and CPU time. Another untimed process records resource usage
+// with only an exit hook, without the loader or function/filesystem interception.
+// Unbound rows vary owner-wide applicability
 // independently of recorded binding count. This synthetic corpus does not
 // reproduce or predict the reported consumer run.
 // Accessor calls include cache hits. sectionOccurrences.raw_reference_view_builds
@@ -13,6 +15,8 @@
 // Missing counters in an older baseline are unavailable, not zero.
 // input_metadata is optional kit diagnostics; structured_clone separately counts
 // actual clone calls, including metadata output copies that remain necessary.
+// canonicalRepositoryPath counts complete path checks, including private resolver
+// calls in newer kits; the public delegating wrapper is not counted twice.
 // source-items (1..99) varies anchor/effect matching within the first input.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -74,7 +78,8 @@ function runCli(kit, fixture, scratch, diagnostic) {
     const started = performance.now();
     const result = spawnSync(process.execPath, args, { cwd: fixture, encoding: 'utf8',
       env: environment({ TMPDIR: temporary, TMP: temporary, TEMP: temporary,
-        ...(diagnostic ? { FWKIT_BINDING_BENCH_KIT: kit, FWKIT_BINDING_BENCH_COUNTS: diagnostic.output } : {}) }),
+        ...(diagnostic ? { FWKIT_BINDING_BENCH_KIT: kit,
+          [diagnostic.resourceOnly ? 'FWKIT_BINDING_BENCH_RESOURCES' : 'FWKIT_BINDING_BENCH_COUNTS']: diagnostic.output } : {}) }),
       maxBuffer: 64 * 1024 * 1024, timeout: 240000 });
     const elapsed = performance.now() - started;
     assert.equal(result.error, undefined, result.error?.message);
@@ -213,6 +218,19 @@ function verifyReport(report, fixture) {
   }
 }
 
+function resourceHook(scratch) {
+  const file = path.join(scratch, 'resources.mjs');
+  fs.writeFileSync(file, `import fs from 'node:fs';
+process.once('exit',()=>{
+  const usage=process.resourceUsage();
+  fs.writeFileSync(process.env.FWKIT_BINDING_BENCH_RESOURCES,JSON.stringify({
+    peak_rss_kib:usage.maxRSS,user_cpu_us:usage.userCPUTime,system_cpu_us:usage.systemCPUTime
+  }));
+});
+`);
+  return file;
+}
+
 function diagnosticHook(scratch) {
   const loader = path.join(scratch, 'binding-count-loader.mjs');
   fs.writeFileSync(loader, String.raw`import path from 'node:path';
@@ -229,9 +247,14 @@ export async function load(url,context,nextLoad){
   const result=await nextLoad(url,context);
   if(!url.startsWith(prefix)||!url.endsWith('.mjs'))return result;
   let source=String(result.source);
-  for(const name of names){
+  const measurements=names.map(name=>[name,name]);
+  if(url===prefix+'artifact-path.mjs'){
+    const check=/function checkRepositoryPath\(/.test(source)?'checkRepositoryPath':'canonicalRepositoryPath';
+    measurements.push([check,'canonicalRepositoryPath'],['createCanonicalRepositoryPathResolver','createCanonicalRepositoryPathResolver']);
+  }
+  for(const [name,metric] of measurements){
     const signature=new RegExp('(export )?function '+name+'\\([\\s\\S]*?\\) \\{');
-    source=source.replace(signature,(match,ex='')=>ex+'function '+name+'(...args){return globalThis.__fwkitBindingMeasure('+JSON.stringify(name)+',__fwkitOriginal_'+name+',this,args);}\nfunction __fwkitOriginal_'+name+match.slice(match.indexOf('(')));
+    source=source.replace(signature,(match,ex='')=>ex+'function '+name+'(...args){return globalThis.__fwkitBindingMeasure('+JSON.stringify(metric)+',__fwkitOriginal_'+name+',this,args);}\nfunction __fwkitOriginal_'+name+match.slice(match.indexOf('(')));
   }
   return {...result,source};
 }
@@ -335,7 +358,7 @@ async function main(args) {
   assert.equal(new Set(counts).size, counts.length, 'binding counts must be unique');
   const scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'fwkit-binding-benchmark-'))), cases = [];
   try {
-    const hook = diagnosticHook(scratch);
+    const hook = diagnosticHook(scratch), resourceProbe = resourceHook(scratch);
     for (const matching of counts) {
       const fixture = await createFixture(kits.before, path.join(scratch, `project-${matching}`), scratch, matching, inputs, unitCount, unboundRows, sourceItems);
       const state = repositoryState(fixture.root), samples = [];
@@ -352,24 +375,28 @@ async function main(args) {
         samples.push({ side, run: run + 1, elapsed_ms: result.elapsed_ms });
         console.error(`${unitCount} units, ${inputs} inputs, ${sourceItems} selected source Items, ${matching} matching bindings, ${unboundRows} extra unbound rows, run ${run + 1}/${runs}, ${side}: ${result.elapsed_ms.toFixed(1)} ms; exact report/index/worktree verified`);
       }
-      const diagnostics = {};
+      const diagnostics = {}, resources = {};
       for (const side of ['before', 'after']) {
         const output = path.join(scratch, `counts-${matching}-${side}.json`);
         verify(runCli(kits[side], fixture.root, scratch, { hook, output }));
         diagnostics[side] = JSON.parse(fs.readFileSync(output, 'utf8'));
+        const resourceOutput = path.join(scratch, `resources-${matching}-${side}.json`);
+        verify(runCli(kits[side], fixture.root, scratch, { hook: resourceProbe, output: resourceOutput, resourceOnly: true }));
+        resources[side] = JSON.parse(fs.readFileSync(resourceOutput, 'utf8'));
       }
       const medians = Object.fromEntries(['before', 'after'].map((side) => [side,
         { elapsed_ms: median(samples.filter((sample) => sample.side === side).map((sample) => sample.elapsed_ms)) }]));
       cases.push({ matching_decision_bindings: matching, declared_units: unitCount, generated_inputs: inputs, extra_unbound_rows: unboundRows, selected_source_items: sourceItems,
         commit: fixture.commit, tree: fixture.tree, tracked_files: state.files, report_sha256: sha256(expected),
         row_count: JSON.parse(expected).owners[0].rows.length, medians,
-        speedup: medians.before.elapsed_ms / medians.after.elapsed_ms, samples, diagnostics });
+        speedup: medians.before.elapsed_ms / medians.after.elapsed_ms, samples, diagnostics, resources });
     }
     console.log(JSON.stringify({ node: process.version, platform: process.platform, arch: process.arch, runs, kits,
       measurement: {
         elapsed_ms: 'Fresh actual public binding-status CLI process per kit/case/run, including startup/imports, Git snapshot materialization, evaluation, JSON output and cleanup. No instrumentation in timed runs. Setup and independent verification excluded.',
         order: 'Before/after order alternates. Both kit roots must be on the same filesystem. Both versions use the same committed fixture and exact CLI flags. Fixture setup warms the filesystem cache; this is not cold-storage latency.',
-        diagnostics: 'Separate untimed processes count selected functions with an ESM loader, filesystem calls and YAML document parses (yaml.parse plus direct yaml.parseDocument), and report their own peak RSS plus user/system CPU microseconds. Function inclusive_us includes nested calls and instrumentation overhead; do not sum overlapping phases or treat these as uninstrumented timings. Recursive functions time only outer calls; scopeJson serialized_bytes counts every returned canonical string. raw_tables contains the kit\'s available raw-table counters: tables counts actual encodings; indexes/indexedRows count index builds/visited rows; reusedTables/reusedIndexes count cache hits. input_metadata contains optional preparation/source-clone diagnostics: prepared counts preparation copies, fallbacks counts unsupported preparation values, cloned counts legacy source-constructor copies, and reused counts privately prepared metadata reuse. An older kit without this module reports null. structured_clone counts actual global clone calls after imports; input_metadata classifies nonProxy values with own data string input_id/input_type/source_type fields. source_constructor_input_metadata and preparation_input_metadata classify the active constructor/preparation contexts; other_input_metadata counts direct metadata copies outside both contexts, including output metadata. input_records counts own-data input_id/file/input_sha256/metadata wrappers copied by source/evidence results. Clones of larger output wrappers count in total calls but are not classified as direct metadata copies. scopedGraphSelectionSpans counts actual selection-range derivations across callers; resolveSourceRelations counts individual closure passes. No getter is evaluated for classification. Unavailable fields stay absent and an unavailable accessor is null. These are not timed-run memory/CPU or retained memory. YAML interception is installed before kit imports; YAML counters reset after imports. Resource usage spans the diagnostic process lifetime including its loader worker and excludes child Git process CPU/RSS.',
+        resources: 'One separate untimed CLI process per kit/case preloads only node:fs and an exit listener that writes process.resourceUsage() to a private file. No ESM loader, function/filesystem/YAML interception or structuredClone wrapper is installed in this process. peak_rss_kib is the process high-water resident set, not retained heap or timed-run memory. User/system CPU microseconds and peak RSS include the minimal preload and CLI process lifetime, excluding child Git process CPU/RSS. Results can vary with V8 collection timing; repeat the benchmark to assess variation. Whole output, original repository and snapshot cleanup receive the same verification as timed and diagnostic runs.',
+        diagnostics: 'Separate untimed processes count selected functions with an ESM loader, filesystem calls and YAML document parses (yaml.parse plus direct yaml.parseDocument), and report their own peak RSS plus user/system CPU microseconds. Function inclusive_us includes nested calls and instrumentation overhead; do not sum overlapping phases or treat these as uninstrumented timings. Recursive functions time only outer calls; scopeJson serialized_bytes counts every returned canonical string. raw_tables contains the kit\'s available raw-table counters: tables counts actual encodings; indexes/indexedRows count index builds/visited rows; reusedTables/reusedIndexes count cache hits. input_metadata contains optional preparation/source-clone diagnostics: prepared counts preparation copies, fallbacks counts unsupported preparation values, cloned counts legacy source-constructor copies, and reused counts privately prepared metadata reuse. An older kit without this module reports null. structured_clone counts actual global clone calls after imports; input_metadata classifies nonProxy values with own data string input_id/input_type/source_type fields. source_constructor_input_metadata and preparation_input_metadata classify the active constructor/preparation contexts; other_input_metadata counts direct metadata copies outside both contexts, including output metadata. input_records counts own-data input_id/file/input_sha256/metadata wrappers copied by source/evidence results. Clones of larger output wrappers count in total calls but are not classified as direct metadata copies. scopedGraphSelectionSpans counts actual selection-range derivations across callers; resolveSourceRelations counts individual closure passes. canonicalRepositoryPath counts full canonical path checks: the internal checkRepositoryPath helper when available, otherwise the standalone public function. New private resolver calls and standalone calls share this counter, and delegating wrappers are not double-counted. createCanonicalRepositoryPathResolver counts resolver construction only. Filesystem counters include freshness stats and actual directory reads, so fewer readdir calls do not imply skipped canonical checks. No getter is evaluated for classification. Unavailable fields stay absent and an unavailable accessor is null. These are not timed-run memory/CPU or retained memory. YAML interception is installed before kit imports; YAML counters reset after imports. Resource usage spans the diagnostic process lifetime including its loader worker and excludes child Git process CPU/RSS.',
         verification: 'Whole stdout bytes, snapshot commit/tree, every binding state and digest agree across kits/runs; original HEAD, index bytes and tracked worktree bytes/modes stay unchanged; private snapshots are removed.',
         scope: 'Synthetic one-owner workload with configurable input/binding/unit counts, selected source/Items and mixed binding states. source-items (1..99) selects distinct bullets and matching update effects from the first input; other inputs retain one rejected Item. Extra units select the same source Items as the first unit. Optional unbound rows alternate Decision/Unknown and include open/resolved rows; these enlarge applicability without computing invented binding digests. It is not a reproduction or timing prediction of the reported consumer execution.',
       }, cases }, null, 2));

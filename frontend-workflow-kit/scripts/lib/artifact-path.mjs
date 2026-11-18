@@ -29,22 +29,64 @@ function lexical(raw, label) {
 // Directory-entry names, not realpath string equality, define repository spelling.
 // Inspect all existing segments even when the final output has not been generated.
 export function canonicalRepositoryPath(root, raw, { label = 'artifact path', required = false, type = null } = {}) {
+  return checkRepositoryPath(root, raw, { label, required, type });
+}
+
+// A resolver owns only bounded directory-name listings. Every use still checks
+// current parent identity, each child, and physical confinement. Never cache a
+// successful path, a missing result, a realpath, or file contents.
+const DIRECTORY_CACHE_BYTES = 1024 * 1024, DIRECTORY_CACHE_ENTRIES = 256;
+const directoryStampFields = ['dev', 'ino', 'mode', 'size', 'mtimeNs', 'ctimeNs'];
+function directoryNames(directory, stat, cache) {
+  const previous = cache.entries.get(directory);
+  const stamped = typeof stat.mtimeNs === 'bigint' && typeof stat.ctimeNs === 'bigint';
+  if (stamped && previous && directoryStampFields.every((field) => previous.stat[field] === stat[field])) {
+    return previous.names;
+  }
+  if (previous) { cache.bytes -= previous.bytes; cache.entries.delete(directory); }
+  // Capture the stamp before reading names, so a mutation during readdir cannot
+  // attach an old listing to the directory's newer stamp.
+  const names = new Set(fs.readdirSync(directory));
+  let bytes = directory.length * 2 + 64;
+  for (const name of names) bytes += name.length * 2 + 32;
+  if (stamped && bytes <= DIRECTORY_CACHE_BYTES) {
+    while (cache.entries.size && (cache.entries.size >= DIRECTORY_CACHE_ENTRIES || cache.bytes + bytes > DIRECTORY_CACHE_BYTES)) {
+      const oldest = cache.entries.keys().next().value;
+      cache.bytes -= cache.entries.get(oldest).bytes; cache.entries.delete(oldest);
+    }
+    cache.entries.set(directory, { stat, names, bytes }); cache.bytes += bytes;
+  }
+  return names;
+}
+
+export function createCanonicalRepositoryPathResolver(root) {
+  const cache = { entries: new Map(), bytes: 0 };
+  return (raw, options = {}) => checkRepositoryPath(root, raw, options, cache);
+}
+
+function checkRepositoryPath(root, raw, { label = 'artifact path', required = false, type = null } = {}, directories = null) {
   const relative = lexical(raw, label);
   if (/[*?]/.test(relative)) invalid(label, raw, 'concrete path required');
   const absoluteRoot = path.resolve(root);
   const absolute = path.join(absoluteRoot, ...relative.split('/'));
   let cursor = absoluteRoot;
+  let parent;
   const segments = relative.split('/');
   for (let index = 0; index < segments.length; index++) {
     let names;
-    try { names = fs.readdirSync(cursor); }
+    try {
+      // The caller's root may itself be an alias. Follow it just as readdir and
+      // the final realpath checks do; repository-relative symlinks stay invalid.
+      names = directories ? directoryNames(cursor, index === 0 ? fs.statSync(cursor, { bigint: true }) : parent, directories)
+        : fs.readdirSync(cursor);
+    }
     catch (error) {
       if (!required && error.code === 'ENOENT') return { relative, absolute, exists: false };
       invalid(label, raw, `cannot inspect directory (${error.code || error.message})`);
     }
     const segment = segments[index];
     const next = path.join(cursor, segment);
-    if (!names.includes(segment)) {
+    if (!(directories ? names.has(segment) : names.includes(segment))) {
       // A case-insensitive filesystem may still resolve this noncanonical name.
       try {
         fs.lstatSync(next);
@@ -56,7 +98,7 @@ export function canonicalRepositoryPath(root, raw, { label = 'artifact path', re
         return { relative, absolute, exists: false };
       }
     }
-    const stat = fs.lstatSync(next);
+    const stat = directories ? fs.lstatSync(next, { bigint: true }) : fs.lstatSync(next);
     if (stat.isSymbolicLink()) invalid(label, raw, 'symlink/junction segment is forbidden');
     if (index < segments.length - 1 && !stat.isDirectory()) invalid(label, raw, 'intermediate segment is not a directory');
     if (index === segments.length - 1) {
@@ -64,6 +106,7 @@ export function canonicalRepositoryPath(root, raw, { label = 'artifact path', re
       if (type === 'directory' && !stat.isDirectory()) invalid(label, raw, 'directory required');
     }
     cursor = next;
+    parent = stat;
   }
   const physicalRelative = path.relative(fs.realpathSync(absoluteRoot), fs.realpathSync(absolute));
   if (physicalRelative === '..' || physicalRelative.startsWith(`..${path.sep}`) || path.isAbsolute(physicalRelative)) {

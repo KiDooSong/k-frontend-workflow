@@ -1,5 +1,9 @@
 # Current Roadmap
 
+> 2026-11-18 #300/#321/#323 후속: graph·source·Decision·uncertainty·applicability의 canonical 경로 검사는 private resolver 안에서 디렉터리 이름 집합을 재사용한다.
+> 현재 부모 stamp·각 조상/leaf·실제 경로·최종 read set 검사를 유지하며, 최종 검증은 새 목록으로 시작한다. 경로 결과와 파일 bytes는 이 resolver에 보관하지 않는다. 목록은 resolver별 최대 256개·추정 보관량 1 MiB이며 단계·독립 호출 사이 공유하지 않는다.
+> 정본: [scoped baseline](../frontend-workflow-kit/docs/reference/scoped-work.md#evaluation-on-the-immutable-baseline). 재현: [binding-status benchmark](benchmarks/binding-status.mjs) — 전체 canonical 검사와 실제 directory read 수, 계측 없는 CLI 시간을 나누어 비교한다.
+
 > 2026-11-17 #300/#321/#323 후속: source 관계 pass 내부에서 같은 Evidence ref의 입력 anchor와 물리 span을 재사용해 Item effect 대조의 반복 구성을 줄인다.
 > 새 pass·호출의 source resolver 격리와 section/bullet 선택, 각 사용의 expected hash·현재 파일 검증·최종 audit, 판정·digest·공개 반환값 격리를 유지한다.
 > 정본: [scoped baseline](../frontend-workflow-kit/docs/reference/scoped-work.md#evaluation-on-the-immutable-baseline). 재현: [binding-status benchmark](benchmarks/binding-status.mjs) — 선택적 `source-items`로 Item/anchor 규모를 늘린 실제 CLI를 비교한다.

@@ -547,6 +547,112 @@ test('#323 shared reference view: warm strict and candidate graphs retain the fi
   }
 });
 
+function nestedGraphFixture(t, entries) {
+  const f = fixture(t, entries), directory = path.join(f.root, 'docs', 'screens');
+  fs.mkdirSync(directory, { recursive: true });
+  for (const doc of f.docs) {
+    const file = path.join(directory, path.basename(doc.file));
+    fs.renameSync(doc.file, file);
+    doc.file = file;
+  }
+  return { ...f, directory, args: f.options() };
+}
+
+test('#323 path reuse: strict and candidate graphs enumerate stable directories once per phase while preserving all file reads', (t) => {
+  const entries = Array.from({ length: 8 }, (_, i) => ({ id: `PATH-${i}`,
+    body: `## Rules\nRule ${i}.${i < 7 ? ` \`artifact:PATH-${i + 1}#rules\`` : ''}` }));
+  for (const candidate of [false, true]) {
+    const f = nestedGraphFixture(t, entries), ref = 'artifact:PATH-0#rules';
+    const run = () => candidate
+      ? resolveScopedCandidateGraph({ ...f.args, roots: [{ ref, mode: 'ordinary' }] })
+      : resolveScopedContractGraph({ ...f.args, contracts: [ref] });
+    const expected = run(), files = new Set(f.docs.map(({ file }) => file));
+    assert.equal(expected.read_set.length, entries.length);
+    const listed = t.mock.method(fs, 'readdirSync'), opened = t.mock.method(fs, 'openSync');
+    try {
+      assert.deepEqual(run(), expected, 'the graph, selected evidence and complete read set stay unchanged');
+      assert.equal(listed.mock.calls.filter((call) => String(call.arguments[0]) === f.directory).length, 2,
+        'dependencies share one listing and the final audit starts from a fresh directory listing');
+      assert.equal(opened.mock.calls.filter((call) => files.has(String(call.arguments[0]))).length, entries.length * 2,
+        'each selected document still has its initial byte read and final hash check');
+    } finally {
+      listed.mock.restore();
+      opened.mock.restore();
+    }
+  }
+});
+
+test('#323 path reuse: final graph audits detect ancestor aliases and replaced leaves, and later calls stay fresh', (t) => {
+  for (const candidate of [false, true]) for (const change of ['ancestor-symlink', 'leaf-symlink', 'atomic-replacement']) {
+    const f = nestedGraphFixture(t, [{ id: 'PATH' }]), ref = 'artifact:PATH#rules';
+    const run = (extra = {}) => candidate
+      ? resolveScopedCandidateGraph({ ...f.args, roots: [{ ref, mode: 'ordinary' }], ...extra })
+      : resolveScopedContractGraph({ ...f.args, contracts: [ref], ...extra });
+    const expected = run(), file = f.docs[0].file, original = fs.readFileSync(file, 'utf8');
+    const moved = path.join(f.root, 'moved'), replacement = path.join(f.root, 'replacement.md');
+    let projected = false;
+    assert.throws(() => run({ project(record) {
+      projected = true;
+      if (change === 'ancestor-symlink') {
+        fs.renameSync(f.directory, moved);
+        fs.symlinkSync(moved, f.directory, 'dir');
+      } else if (change === 'leaf-symlink') {
+        fs.renameSync(file, replacement);
+        fs.symlinkSync(replacement, file);
+      } else {
+        fs.writeFileSync(replacement, original.replace('Actual rule.', 'Replaced rule.'));
+        fs.renameSync(replacement, file);
+      }
+      return record;
+    } }), change === 'atomic-replacement' ? /evidence changed during graph resolution/ : /symlink/,
+    `${candidate ? 'candidate' : 'strict'}: ${change}`);
+    assert.equal(projected, true, 'the change occurs after the graph has populated its directory view');
+    assert.throws(run, change === 'atomic-replacement' ? /indexed snapshot/ : /symlink/,
+      'a fresh graph cannot reuse the earlier successful path observation');
+    if (change === 'ancestor-symlink') {
+      fs.unlinkSync(f.directory);
+      fs.renameSync(moved, f.directory);
+    } else if (change === 'leaf-symlink') {
+      fs.unlinkSync(file);
+      fs.renameSync(replacement, file);
+    } else fs.writeFileSync(file, original);
+    assert.deepEqual(run(), expected, 'restoring canonical files is observed by the next independent graph');
+  }
+});
+
+test('#323 path reuse: final audits refresh case spelling even when parent stamps are unchanged', (t) => {
+  for (const candidate of [false, true]) {
+    const f = nestedGraphFixture(t, [{ id: 'PATH' }]), ref = 'artifact:PATH#rules';
+    const file = path.join(f.directory, 'fact.md'), renamed = path.join(f.directory, 'Fact.md');
+    fs.renameSync(f.docs[0].file, file);
+    f.docs[0].file = file; f.args = f.options();
+    const run = (extra) => candidate
+      ? resolveScopedCandidateGraph({ ...f.args, roots: [{ ref, mode: 'ordinary' }], ...extra })
+      : resolveScopedContractGraph({ ...f.args, contracts: [ref], ...extra });
+    const lstat = fs.lstatSync, realpath = fs.realpathSync, open = fs.openSync;
+    const parentStats = { plain: lstat(f.directory), bigint: lstat(f.directory, { bigint: true }) };
+    let renamedDuringGraph = false;
+    const currentPath = (name) => renamedDuringGraph && name === file ? renamed : name;
+    // Model a case-insensitive filesystem whose directory timestamps cannot
+    // distinguish this rename. Byte and physical-path checks still succeed for
+    // the old spelling; only a fresh listing exposes the noncanonical alias.
+    const stats = t.mock.method(fs, 'lstatSync', (name, ...options) => name === f.directory
+      ? parentStats[options[0]?.bigint ? 'bigint' : 'plain'] : lstat(currentPath(name), ...options));
+    const paths = t.mock.method(fs, 'realpathSync', (name, ...options) => realpath(currentPath(name), ...options));
+    const opened = t.mock.method(fs, 'openSync', (name, ...options) => open(currentPath(name), ...options));
+    try {
+      assert.throws(() => run({ project(record) {
+        fs.renameSync(file, renamed); renamedDuringGraph = true;
+        return record;
+      } }), /spelling differs from repository directory entry/,
+      `${candidate ? 'candidate' : 'strict'} final audit must not retain initial spelling authority`);
+      assert.equal(renamedDuringGraph, true);
+    } finally {
+      stats.mock.restore(); paths.mock.restore(); opened.mock.restore();
+    }
+  }
+});
+
 test('#323 shared reference view: warm dependency scans keep typed-image and definition errors', (t) => {
   const cases = [
     ['![hidden](artifact:GOOD)', /typed image dependencies/],

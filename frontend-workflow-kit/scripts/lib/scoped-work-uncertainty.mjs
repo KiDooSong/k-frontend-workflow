@@ -6,7 +6,7 @@
 import path from 'node:path';
 import { splitFrontmatter } from './util.mjs';
 import { col, hasHeader } from './spec.mjs';
-import { canonicalRepositoryPath } from './artifact-path.mjs';
+import { createCanonicalRepositoryPathResolver } from './artifact-path.mjs';
 import { ownerParts, readCurrentBytes, hashBytes, CurrentWorkError } from './current-work-request.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { parseTargetRef } from './reconciliation-items.mjs';
@@ -91,6 +91,7 @@ export function createScopedSnapshotRelationResolver(options = {}) {
 
 function uncertaintyProjection(options, base) {
   const { targetIndex, projectRoot, inputArtifacts = [] } = options;
+  let canonicalPath = createCanonicalRepositoryPathResolver(projectRoot);
   const refs = createScopedReferenceResolver({ targetIndex, projectRoot, inputArtifacts });
   const files = new Map(base.read_set.map((entry) => [entry.file, entry]));
   const documents = new Map();
@@ -101,7 +102,7 @@ function uncertaintyProjection(options, base) {
   const spans = new WeakMap();
 
   function read(relative, expectedHash) {
-    const file = canonicalRepositoryPath(projectRoot, relative, { required: true, type: 'file', label: 'scoped uncertainty' });
+    const file = canonicalPath(relative, { required: true, type: 'file', label: 'scoped uncertainty' });
     const raw = readCurrentBytes(file.absolute, 'scoped uncertainty');
     const sha256 = hashBytes(raw);
     if ((expectedHash && sha256 !== expectedHash) || (files.has(relative) && files.get(relative).sha256 !== sha256)) {
@@ -492,6 +493,7 @@ function uncertaintyProjection(options, base) {
     }
     for (const edge of evidence.edges) projectedEdges.set(scopeJson(edge), edge);
   }
+  canonicalPath = createCanonicalRepositoryPathResolver(projectRoot);
   for (const file of [...files.values()]) read(file.file, file.sha256);
   return { projection: { ...base.projection, uncertainty_relations: {
     records: nodeSet([...records.values()]), applications: scopeSet(applications), scope_review_needed: scopeSet(review),
