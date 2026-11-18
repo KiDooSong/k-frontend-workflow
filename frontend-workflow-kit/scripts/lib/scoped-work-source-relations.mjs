@@ -290,11 +290,21 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
     }
     return ranges(a).some(([x, y]) => ranges(b).some(([u, v]) => x < v && u < y));
   }
+  // These nodes are private to this pass. Reuse the exact anchor selection so
+  // repeated effect comparisons also reuse its native spans. Share one private
+  // metadata copy per file instead of retaining another copy for every anchor.
+  const inputNodes = new Map(), inputMetadata = new Map();
   function inputNode(ref) {
-    const evidence = sourceReader.evidence(ref);
-    read(evidence.input.file, evidence.input.input_sha256);
-    return { ref, kind: 'input-evidence', input_id: evidence.input.input_id, file: evidence.input.file,
-      metadata: evidence.input.metadata, selection: evidence.anchor };
+    if (!inputNodes.has(ref)) {
+      const { input, anchor } = sourceReader.evidence(ref);
+      if (!inputMetadata.has(input.file)) inputMetadata.set(input.file, input.metadata);
+      inputNodes.set(ref, { sha256: input.input_sha256,
+        record: { ref, kind: 'input-evidence', input_id: input.input_id, file: input.file,
+          metadata: inputMetadata.get(input.file), selection: anchor } });
+    }
+    const { record, sha256 } = inputNodes.get(ref);
+    read(record.file, sha256); // Keep the expected-hash check on every use.
+    return record;
   }
   function home(ownerId) {
     const p = ownerParts(ownerId), type = p.kind === 'screen' ? 'screen-spec' : 'shared-surface-spec';

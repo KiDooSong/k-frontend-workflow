@@ -506,6 +506,18 @@ returning. The register's independent parsers retain fresh byte checks at each
 pass boundary; optional register absence is also rechecked. Source read caches never cross calls;
 read-set entries, relation rules and binding/checkpoint digest inputs are unchanged.
 
+Within one source-relation pass, repeated effect/anchor comparisons reuse the
+private resolved input record for each exact Evidence ref. Anchors of one input
+share one private metadata copy rather than retaining a copy per anchor. Section and bullet
+refs keep their distinct selections and native source spans. This avoids
+repeated metadata copies and span reconstruction for the same anchor without
+changing which effects overlap it. Each new pass or call creates a fresh source
+resolver and its own records. Expected-hash checks still run on every use;
+current-file and metadata checks, validation-only Evidence observations and the
+final read-set audit remain in place. This adds no separate input-body,
+file-observation or validation-result cache. Public results remain independent,
+and source admission, scope-basis-v2 and checkpoint bytes are unchanged.
+
 Frontmatter decoding separately reuses ordinary YAML syntax by exact source text
 within a process. It returns independent metadata objects and retains only copied
 YAML keys and serialized values, bounded to 4 MiB and 2,048 entries; this does not
