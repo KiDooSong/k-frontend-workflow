@@ -358,6 +358,21 @@ new `approval_ref`, never the old one: the library transition check reports an
 old `approval_ref` on a changed binding, but no command runs it yet, so reviewers
 check it.
 
+The library's before/after Decision transition check also compares each
+Decision's applicable unit sets. These come from canonical `applications`,
+expanding a native `unit: null` against that snapshot's complete `known_units`,
+independently of status and declared `blocks`. Each transition reports
+`before_applicable_units`, `after_applicable_units` and `removed_applicable_units`.
+If a Decision is open on either side, removing even one previously applicable
+unit sets `removed_open_applicability`, even when another unit still references
+that Decision. The scope transition is invalid and every current owner unit
+stays blocked, matching the existing full-applicability-removal rule. A different
+remaining path to the same unit is not a unit removal; a Decision resolved on
+both sides adds no open block. Single-snapshot scope evaluation still uses the
+current canonical application set or a current binding's explicit `blocks`.
+These are library transition findings; no public command runs this check yet,
+and the findings neither authenticate review nor grant execution permission.
+
 When a [historical Item row target](#historical-item-row-targets) needs a wider
 selection, the text report also shows a `SW-SOURCE-TARGET-FALLBACK` warning. JSON
 reports include `owners[].target_fallbacks` only for affected owners. These

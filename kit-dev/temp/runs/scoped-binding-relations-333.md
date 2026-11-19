@@ -95,6 +95,60 @@ Unknown root. Native and malformed/transition tests retain their prior scope.
 Review findings were resolved before submission. Review and binding digests do
 not authenticate a human approval or authorize a merge.
 
+## Follow-up review — partial unit applicability removal (#334)
+
+The subsequent user review identified a P2 missed by the initial review: both
+transition inspectors only detected removal of a Decision from the entire
+owner. With unit-scoped defaults, deleting one unit's reference could therefore
+remove its block while another unit kept the same open Decision applicable.
+
+An independent real-Git reproduction on submitted HEAD
+`b91bddbcfa71a1a19a8d9832da0aa113b9592ae5` commits two different contract sections
+that both refer to the same unbound open Decision. It then stages deletion of
+only the `known` unit's reference. The before/after results are:
+
+| Result | Submitted HEAD | Corrected transition |
+| --- | --- | --- |
+| `blocking_units` | `["other"]` | `["known", "other"]` |
+| `known.decisions_clear` | `true` | `false` |
+| `transition_valid` | `true` | `false` |
+| `removed_open_applicability` | `false` | `true` |
+| `violations` | `[]` | `[]` |
+| `review_required` | `true` | `true` |
+
+The lower transition inspector now compares applicable units per Decision,
+derived from canonical applications rather than status-dependent blockers or a
+binding's explicit `blocks`. A native `unit: null` expands against each
+snapshot's own complete unit set. The output reports before, after and removed
+applicable units; the scope composer consumes the same removal flag. Removal
+with an open status on either side invalidates the transition and retains the
+existing fallback to every current owner unit. A resolved-to-resolved change
+does not introduce a block, and losing one route without losing a reached unit
+does not count as unit removal. Single-snapshot scope calculations stay intact.
+
+Nine new real-Git regressions in `scoped-work-decision-scopes.test.mjs` cover
+missing/stale bindings, refreshed current empty blocks, native-to-unit scope,
+retained alternate paths, resolved rows, an unbound reopen and per-Decision
+changes hidden by an unchanged owner-wide union. The staged-removal cases also
+restore HEAD bytes in the worktree and assert preservation of HEAD, raw index
+bytes, status and worktree bytes. Both Git transition APIs are exercised. The
+existing packed harness already includes this suite.
+
+With the same suite copied beside the exact `b91bddb` runtime, 21 of 28 cases
+pass and seven defect cases fail; the existing 19 cases and both new negative
+controls pass. The corrected runtime passes all 28 cases. This separates
+reproducing the reported gap from merely asserting new diagnostic fields.
+
+The follow-up integrates main `c1424bffb84a0af6bb1650847b582097c51b9ef8`, including
+the reviewed #332 fix `0ca823ae75930f2d89c02e1b365d1e683c21f309`. Merge conflicts
+were limited to the packed resolver test list and the current roadmap; both
+PRs' additions are retained. The correction changes library transition
+judgment only: no public command invokes this transition check, and this
+reproduction does not establish a `workflow:run` permission bypass.
+
+The final independent Standards/Spec reviews and exact-head verification
+results are recorded in PR #334.
+
 ## Validation
 
 Validation results are recorded in the PR alongside the exact submitted commit.

@@ -69,8 +69,7 @@ export function inspectScopedDecisionScopeTransitions({ owner, before, after } =
   }
   const readSets = { before: audit(before, [findings.read_sets.before, previous.read_set]),
     after: audit(after, [findings.read_sets.after, current.read_set]) };
-  const removedOpenApplicability = findings.transitions.some((entry) => entry.before_applicable && !entry.after_applicable &&
-    (entry.before_status === 'open' || entry.after_status === 'open'));
+  const removedOpenApplicability = findings.removed_open_applicability;
   const transitionValid = findings.violations.length === 0 && !removedOpenApplicability;
   const blocking = transitionValid ? current.blocking_units : [...current.known_units];
   return { ...findings, known_units: current.known_units,

@@ -65,6 +65,25 @@ function fixture(t, { blocks = ['other'], status = 'open', absent = false, stale
   return { root, file, put, write, edit, git, stage, resources, recordDigest,
     run: (extra = {}) => inspectScopedGitDecisionScopes({ ...resources, ...extra }) };
 }
+// Commit two independent contract sections reaching the same Decision, without
+// owner-native applicability. Subsequent changes exercise actual HEAD -> index.
+function unitReferences(t, { absent = true, ...options } = {}) {
+  const f = fixture(t, { absent, ...options });
+  f.edit('screen.md', ({ fm }) => { fm.decision_refs = []; });
+  f.edit('rules.md', (doc) => {
+    doc.body = doc.body.replace('Known contract.', `Known contract. See ${REF}`)
+      .replace('Other contract.', `Other contract. See ${REF}`);
+  });
+  if (!absent && !options.stale) f.recordDigest();
+  for (const name of ['screen.md', 'rules.md', HOME]) f.stage(name);
+  f.git('commit', '-qm', 'two independent unit references');
+  return f;
+}
+const removeKnownReference = (f) => {
+  f.edit('rules.md', (doc) => { doc.body = doc.body.replace(`Known contract. See ${REF}`, 'Known contract.'); });
+  f.stage('rules.md');
+};
+const applicationChange = (out) => out.transitions.find((entry) => entry.decision === REF);
 const noPermit = (result) => {
   assert.equal(result.approval_verified, false); assert.equal(result.permission_evaluated, false);
   for (const key of ['ready', 'allowed', 'approved', 'allowed_paths']) assert.equal(Object.hasOwn(result, key), false);
@@ -161,6 +180,102 @@ test('D Decision scopes: removed open applicability cannot turn an empty after s
   const f = fixture(t); f.edit('screen.md', ({ fm }) => { fm.decision_refs = []; }); f.stage('screen.md');
   const out = f.run(); allBlocked(out); assert.equal(out.removed_open_applicability, true); assert.equal(out.transition_valid, false);
   assert.deepEqual(out.after_decision_scopes, []);
+});
+
+for (const state of ['missing', 'stale-basis', 'stale-known-units']) {
+  test(`D Decision scopes: partial unit applicability removal cannot lower a ${state} open scope`, (t) => {
+    const f = unitReferences(t, { absent: state === 'missing', stale: state !== 'missing' });
+    if (state === 'stale-known-units') {
+      changeBinding(f, (binding) => { binding.known_units = ['other']; });
+      f.stage(HOME); f.git('commit', '-qm', 'stale known unit set');
+    }
+    const baseline = f.run(); allBlocked(baseline); assert.equal(baseline.transition_valid, true);
+    const file = f.file('docs/rules.md'), original = fs.readFileSync(file);
+    removeKnownReference(f);
+    // The staged deletion is authoritative even if the worktree restores HEAD.
+    fs.writeFileSync(file, original);
+    const head = f.git('rev-parse', 'HEAD'), index = fs.readFileSync(f.file('.git/index'));
+    const status = f.git('status', '--porcelain'), out = f.run();
+    assert.equal(scope(out).binding_state, state);
+    assert.deepEqual(scope(out).blocking_units, ['other'], 'single-snapshot defaults remain unit scoped');
+    assert.equal(out.removed_open_applicability, true); assert.equal(out.transition_valid, false);
+    assert.equal(applicationChange(out).before_applicable, true); assert.equal(applicationChange(out).after_applicable, true);
+    assert.deepEqual(applicationChange(out).before_applicable_units, UNITS);
+    assert.deepEqual(applicationChange(out).after_applicable_units, ['other']);
+    assert.deepEqual(applicationChange(out).removed_applicable_units, ['known']);
+    assert.equal(out.review_required, true); allBlocked(out);
+    const conservative = inspectScopedGitDecisionTransitions(f.resources);
+    assert.equal(conservative.removed_open_applicability, true); assert.deepEqual(conservative.blocking_units, UNITS);
+    assert.equal(f.git('rev-parse', 'HEAD'), head); assert.equal(f.git('status', '--porcelain'), status);
+    assert.deepEqual(fs.readFileSync(f.file('.git/index')), index); assert.deepEqual(fs.readFileSync(file), original);
+  });
+}
+
+test('D Decision scopes: refreshed current empty blocks cannot mask a removed unit application', (t) => {
+  const f = unitReferences(t, { absent: false, blocks: [] });
+  assert.deepEqual(f.run().blocking_units, []);
+  removeKnownReference(f);
+  changeBinding(f, (binding) => { binding.approval_ref = 'review:changed-synthetic-scope'; });
+  f.recordDigest(); f.stage(HOME);
+  const out = f.run();
+  assert.equal(scope(out).binding_state, 'current-unverified'); assert.deepEqual(scope(out).blocking_units, []);
+  assert.deepEqual(out.violations, []); assert.equal(out.removed_open_applicability, true);
+  assert.equal(out.transition_valid, false); allBlocked(out);
+});
+
+test('D Decision scopes: removing owner-native applicability cannot hide a surviving single-unit reference', (t) => {
+  const f = fixture(t, { absent: true });
+  f.edit('rules.md', (doc) => { doc.body = doc.body.replace('Other contract.', `Other contract. See ${REF}`); });
+  f.stage('rules.md'); f.git('commit', '-qm', 'native and single-unit reference');
+  f.edit('screen.md', ({ fm }) => { fm.decision_refs = []; }); f.stage('screen.md');
+  const out = f.run();
+  assert.ok(out.before_decision_scopes[0].applications.some((entry) => entry.unit === null));
+  assert.equal(out.removed_open_applicability, true); assert.equal(out.transition_valid, false); allBlocked(out);
+  assert.deepEqual(applicationChange(out).before_applicable_units, UNITS);
+  assert.deepEqual(applicationChange(out).after_applicable_units, ['other']);
+  assert.deepEqual(applicationChange(out).removed_applicable_units, ['known']);
+});
+
+test('D Decision scopes: replacing native applicability with the same unit coverage keeps the transition valid', (t) => {
+  const f = unitReferences(t);
+  f.edit('screen.md', ({ fm }) => { fm.decision_refs = ['D-ONE']; }); f.stage('screen.md');
+  f.git('commit', '-qm', 'native and both unit references');
+  f.edit('screen.md', ({ fm }) => { fm.decision_refs = []; }); f.stage('screen.md');
+  const out = f.run();
+  assert.ok(out.before_decision_scopes[0].applications.some((entry) => entry.unit === null));
+  assert.ok(scope(out).applications.every((entry) => entry.unit !== null));
+  assert.equal(out.removed_open_applicability, false); assert.equal(out.transition_valid, true); allBlocked(out);
+});
+
+test('D Decision scopes: removing one unit application of a resolved Decision does not create an open block', (t) => {
+  const f = unitReferences(t, { status: 'resolved' }); removeKnownReference(f);
+  const out = f.run();
+  assert.equal(out.removed_open_applicability, false); assert.equal(out.transition_valid, true);
+  assert.deepEqual(out.blocking_units, []); assert.ok(out.unit_checks.every((check) => check.decisions_clear)); noPermit(out);
+});
+
+test('D Decision scopes: a simultaneous unbound reopen and partial reference removal remains blocked', (t) => {
+  const f = unitReferences(t, { status: 'resolved' }); removeKnownReference(f);
+  f.edit(HOME, (doc) => { doc.body = decisions([row(), row('D-TWO')]); }); f.stage(HOME);
+  const out = f.run();
+  assert.equal(out.removed_open_applicability, true); assert.equal(out.transition_valid, false); allBlocked(out);
+  assert.equal(applicationChange(out).reopened, true); assert.deepEqual(applicationChange(out).removed_applicable_units, ['known']);
+  assert.deepEqual(out.violations, []); assert.equal(scope(out).binding_state, 'missing');
+  assert.deepEqual(scope(out).blocking_units, ['other']);
+});
+
+test('D Decision scopes: exchanging Decision references cannot hide a per-Decision unit removal', (t) => {
+  const f = unitReferences(t), second = 'decision:D-TWO@open-decision-register';
+  f.edit('rules.md', (doc) => { doc.body = doc.body.replace(`Other contract. See ${REF}`, `Other contract. See ${REF} and ${second}`); });
+  f.edit(HOME, (doc) => { doc.body = decisions([row(), row('D-TWO', 'resolved')]); });
+  f.stage('rules.md'); f.stage(HOME); f.git('commit', '-qm', 'two Decisions already applicable to owner');
+  f.edit('rules.md', (doc) => { doc.body = doc.body.replace(`Known contract. See ${REF}`, `Known contract. See ${second}`); }); f.stage('rules.md');
+  const out = f.run();
+  assert.equal(out.removed_open_applicability, true); assert.equal(out.transition_valid, false); allBlocked(out);
+  assert.deepEqual(applicationChange(out).removed_applicable_units, ['known']);
+  const added = out.transitions.find((entry) => entry.decision === second);
+  assert.deepEqual(added.before_applicable_units, ['other']); assert.deepEqual(added.after_applicable_units, UNITS);
+  assert.deepEqual(added.removed_applicable_units, []);
 });
 
 test('D Decision scopes: actual canonical resolution removes the open block, not other execution requirements', (t) => {

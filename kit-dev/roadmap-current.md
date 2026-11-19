@@ -2,6 +2,7 @@
 
 > 2026-11-19 #333: 미바인딩/stale Decision의 기본 차단 범위는 실제 canonical application의 unit 집합으로 계산한다.
 > 다른 unit의 evidence 관계를 owner 전체로 확대하지 않으며, native `unit: null` 관계와 current binding의 명시 `blocks`는 유지한다.
+> #334 리뷰 보완: before/after 전환에서 Decision별 적용 unit 집합도 비교한다. 열린 Decision의 일부 unit 참조만 제거해도 적용 제거로 판정하고 현재 owner unit의 차단을 유지한다. 단일 스냅샷의 unit 범위와 public command 미연결 경계는 유지한다.
 > `binding-status`는 행별 `applications`와 미바인딩 행의 실제 `blocking_applications`를 제공해 referrer·inverse/transitive witness를 드러낸다.
 > 같은 문서의 다른 절만 공유하는 조건은 기존에도 분리되며, 공통 metadata source 및 명시적인 간접 의존·native Unknown/Conflict 범위는 유지한다.
 > 정본: [binding basis and status](../frontend-workflow-kit/docs/reference/scoped-work.md#binding-basis-and-status). 재현·리뷰: [#333 run evidence](temp/runs/scoped-binding-relations-333.md).
