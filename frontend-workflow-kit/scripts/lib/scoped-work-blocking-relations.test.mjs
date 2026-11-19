@@ -77,7 +77,7 @@ function fixture(t) {
   const status = (...args) => spawnSync(process.execPath, [path.join(KIT_ROOT, 'scripts/binding-status.mjs'), '--root', root,
     '--docs', 'docs', '--src', 'src', '--policy', '.kit/policy.yaml', '--manifest', '.kit/manifest.yaml',
     '--layout', '.kit/layout.yaml', '--owner', OWNER, ...args], { cwd: root, encoding: 'utf8', timeout: 30000, maxBuffer: 8 * 1024 * 1024 });
-  return { root, file, edit, options, link, bind, recordDigest, git, commit, status };
+  return { root, file, write, edit, options, link, bind, recordDigest, git, commit, status };
 }
 const decision = (result) => result.checks.find((entry) => entry.decision === DECISION);
 
@@ -272,4 +272,57 @@ test('#333 a current Decision declaration preserves blocks outside its evidence-
   assert.deepEqual(check.blocking_units, ['parse-result']);
   assert.deepEqual(scopes.unit_checks, [{ unit: 'parse-result', decisions_clear: false }, { unit: 'settings-ui', decisions_clear: true }]);
   assert.equal(check.approval_verified, false);
+});
+
+test('#333 blocking witnesses exclude dropped native roots but retain resolved roots that still apply', (t) => {
+  const f = fixture(t), one = 'unknown:U-ONE@NATIVE', two = 'unknown:U-TWO@NATIVE';
+  f.write('bridge.md', { artifact_id: 'BRIDGE', artifact_type: 'domain-rules', domain: 'foreign', status: 'confirmed' },
+    '## Rules\nCommon bridge.');
+  f.write('global/open-decisions.md', { artifact_id: 'open-decision-register', artifact_type: 'open-decision-register', status: 'draft' },
+    `## Open Decisions\n${table(['ID', 'Decision Needed', 'Options', 'Blocking Mode', 'Owner', 'Status'],
+      [['D-BRIDGE', 'See artifact:BRIDGE#rules', 'A / B', 'api-integrated-ui', 'PM', 'resolved']])}`);
+  f.write('native.md', { artifact_id: 'NATIVE', artifact_type: 'domain-rules', domain: 'example', status: 'draft',
+    decision_refs: ['D-BRIDGE'], uncertainty_work_scopes: { version: 1, bindings: [{ unknown_id: 'U-ONE', owner: OWNER,
+      known_units: [...UNITS], blocks: [], basis_digest: ZERO, approval_ref: 'review:synthetic-native-witness' }] } },
+    `## Unknowns\n${table(['ID', 'Question', 'Status'],
+      [['U-ONE', 'First native question?', 'open'], ['U-TWO', 'Second native question?', 'open']])}`);
+  f.edit('b.md', (doc) => { doc.body = doc.body.replace('| U-B | See artifact:RULES#screen-b |', '| U-B | See artifact:BRIDGE#rules |'); });
+  const digest = resolveScopedUncertaintyBindingBasis({ ...f.options(), uncertaintyRef: one }).basis_digest;
+  f.edit('native.md', ({ fm }) => { fm.uncertainty_work_scopes.bindings[0].basis_digest = digest; });
+  const vias = (applications) => [...new Set(applications.flatMap((entry) => entry.witnesses.map((witness) => witness.via)))].sort();
+  const report = () => {
+    const run = f.status('--json'); assert.equal(run.status, 0, run.stderr || run.stdout);
+    return JSON.parse(run.stdout).owners[0].rows;
+  };
+  const textBlock = () => {
+    const run = f.status(); assert.equal(run.status, 0, run.stderr || run.stdout);
+    const lines = run.stdout.split('\n'), at = lines.findIndex((line) => line.startsWith(`  ${UNKNOWN}  `));
+    assert.ok(at >= 0);
+    const tail = lines.slice(at + 1), next = tail.findIndex((line) => /^  (?:decision|unknown|conflict):/.test(line));
+    return tail.slice(0, next < 0 ? tail.length : next).join('\n');
+  };
+  f.commit();
+  let rows = report(), foreign = rows.find((entry) => entry.ref === UNKNOWN);
+  assert.equal(rows.find((entry) => entry.ref === one).state, 'current');
+  assert.deepEqual(vias(foreign.applications), [one, two], 'potential evidence keeps both independently discovered paths');
+  assert.deepEqual(foreign.blocking_units, UNITS);
+  assert.deepEqual(vias(foreign.blocking_applications), [two], 'only the retained native root explains the active block');
+  let text = textBlock();
+  assert.ok(text.includes(`via ${two}`));
+  assert.ok(!text.includes(`via ${one}`), 'the CLI must not name an excluded path as a blocking reason');
+
+  // Resolved is different from bound out: it blocks no unit itself, but remains
+  // an applicable evidence root for the unresolved row reached through it.
+  f.edit('native.md', (doc) => { doc.body = doc.body.replace('| U-ONE | First native question? | open |', '| U-ONE | First native question? | resolved |'); });
+  const scopes = inspectScopedUncertaintyScopes(f.options()), resolved = scopes.checks.find((entry) => entry.uncertainty === one);
+  assert.equal(resolved.resolved, true);
+  assert.deepEqual(resolved.blocking_units, []);
+  assert.ok(scopes.applications.some((entry) => entry.uncertainty === one));
+  f.commit();
+  rows = report(); foreign = rows.find((entry) => entry.ref === UNKNOWN);
+  assert.deepEqual(foreign.blocking_units, UNITS);
+  assert.deepEqual(vias(foreign.blocking_applications), [one, two]);
+  text = textBlock();
+  assert.ok(text.includes(`via ${one}`));
+  assert.ok(text.includes(`via ${two}`));
 });

@@ -253,7 +253,12 @@ scope, not a claimed explicit reference.
 For a `missing` row, `blocking_applications` lists only the relations that
 actually contribute to its reported `blocking_units`. It is empty for a
 resolved row and excludes transitive uncertainty relations whose only witness
-was removed by a current native-scope binding. For `current`, `stale` and
+was removed by a current native-scope binding. When other witnesses keep the
+relation active, its blocking list also omits each excluded `via` witness for
+that same owner/unit. A resolved `via` row may still carry dependencies, so its
+witness remains when the relation survives, even though that row blocks no
+units itself. The full potential witness list stays in `applications`.
+For `current`, `stale` and
 `unresolved` rows it is `null`, as is `blocking_units`: the report does not turn
 those declarations into an execution permit. An unresolved row has no
 applications. Text output prints the missing row's blocking units, relation

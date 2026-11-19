@@ -43,9 +43,17 @@ function ownerStatus(options, home) {
       computed_basis_digest: check.computed_basis_digest, components: check.computed_component_digests };
   };
   const keptUncertainty = new Map();
+  const applicationKey = (application, ref) => JSON.stringify([application.owner, application.unit, ref]);
+  const keptKeys = new Set(uncertainty.applications.map((application) => applicationKey(application, application.uncertainty)));
   for (const application of uncertainty.applications) {
     if (!keptUncertainty.has(application.uncertainty)) keptUncertainty.set(application.uncertainty, []);
-    keptUncertainty.get(application.uncertainty).push(application);
+    // A kept application may have several alternative witnesses, including
+    // ones whose via row was bound out. Keep only surviving paths here, while
+    // applications above retains the complete potential relation. Resolved
+    // rows can still carry dependencies, so use kept membership, not blockers.
+    keptUncertainty.get(application.uncertainty).push({ ...application,
+      witnesses: application.witnesses.filter((witness) => !witness.via || keptKeys.has(applicationKey(application, witness.via))),
+    });
   }
   const rows = [...decisions.checks.map((check) => row(check.decision, 'decision', check, check.status === 'resolved', check.applications)),
     ...uncertainty.checks.map((check) => row(check.uncertainty, check.kind, check, check.resolved,

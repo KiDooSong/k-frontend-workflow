@@ -51,18 +51,20 @@ retain their fail-closed behavior.
 `binding-status` adds `applications` for the canonical potential relations and
 `blocking_applications` for the relations that actually explain a missing
 binding's `blocking_units`. An uncertainty relation reachable only through a
-bound-out native row is absent from the latter. Resolved missing rows have an
-empty list; current/stale/unresolved rows have `null`. Text output includes
-the unit, relation, referrer and uncertainty witnesses.
+bound-out native row is absent from the latter. A surviving application also
+omits individual witnesses whose `via` row was bound out for that owner/unit.
+Resolved via rows still carry dependencies when their relation is kept.
+Resolved missing rows have an empty list; current/stale/unresolved rows have
+`null`. Text output includes the unit, relation, referrer and uncertainty witnesses.
 
 ## Regression evidence
 
-The new `scoped-work-blocking-relations.test.mjs` contains 18 cases covering:
+The new `scoped-work-blocking-relations.test.mjs` contains 19 cases covering:
 separate sections, one/both consuming units, indirect Unknown → Conflict →
 Decision references, native scope, missing/stale bindings, resolved/current
 bindings, malformed inputs, committed-HEAD CLI output, JSON/text witnesses,
 progress stdout equality, repository preservation, and bound-out transitive
-uncertainty explanations.
+uncertainty explanations, mixed kept/excluded witnesses, and resolved via rows.
 
 On the untouched baseline, a named selection of six new behavioral regressions
 fails **6/6**: direct and indirect references, missing/stale-basis/stale-known-units
@@ -83,6 +85,12 @@ Unknown root. Native and malformed/transition tests retain their prior scope.
 - Both reviewers examined the final two added cases and retained clean verdicts.
 - A separate synthetic shared-metadata-source CLI experiment preserved the
   inverse blockers and reported the actual common source in JSON and text.
+- A final mixed-path check found one diagnostic P2: a kept application could
+  still list a witness through a bound-out row. The report now filters only
+  its blocking witness copy by `(owner, unit, uncertainty)` kept membership;
+  potential applications and all scope decisions stay unchanged. The new
+  regression checks both the excluded witness and a resolved via row that must
+  remain. The finding was corrected and independently re-reviewed.
 
 Review findings were resolved before submission. Review and binding digests do
 not authenticate a human approval or authorize a merge.
@@ -90,6 +98,9 @@ not authenticate a human approval or authorize a merge.
 ## Validation
 
 Validation results are recorded in the PR alongside the exact submitted commit.
+The initial local 114-file Node 20 spec batch (packed gate run separately) hit
+its 600-second process limit without an assertion failure in the emitted TAP;
+it is not recorded as a complete pass. The final CI runs provide the full gate.
 The new suite is included in the packed-runtime harness, so it exercises shipped
 modules and the shipped CLI as well as source runtime. The package's existing
 Node 20/24 and macOS workflows remain unchanged.
