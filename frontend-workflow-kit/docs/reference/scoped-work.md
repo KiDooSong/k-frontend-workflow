@@ -293,7 +293,7 @@ claims require an end-to-end workload with the repeated syntax seen in profiling
 Scoped reference resolvers and evidence graph readers also reuse immutable raw
 section, table and cell views of the same native AST. A weak association keeps
 each derived view with that exact tree; reparsing after AST eviction starts a
-new view generation. This uses the existing AST source-cache policy rather than
+new view generation. This uses the bounded AST syntax cache described below rather than
 a second source-text cache with a separate eviction threshold. Derived views
 remain allocated while existing owners retain their trees, so the source-cache
 budget is not a bound on total memory. The ordinary reference-view parser still
@@ -326,6 +326,47 @@ When a [historical Item row target](#historical-item-row-targets) needs a wider
 selection, the text report also shows a `SW-SOURCE-TARGET-FALLBACK` warning. JSON
 reports include `owners[].target_fallbacks` only for affected owners. These
 diagnostics are separate from the binding basis and do not change its version.
+
+#### Bounded syntax retention
+
+Dense Markdown lists and tables can allocate many native AST nodes for a small
+source string. The shared AST cache, authored-view cache and each uncertainty
+evaluation's document cache therefore enforce three independent limits:
+
+| Limit, per cache | Maximum retained |
+| --- | --- |
+| Source text | 8,388,608 UTF-16 code units |
+| Native AST nodes | 262,144 |
+| Entries | 512 |
+
+All three limits apply together, with least-recently-used eviction. A single
+oversized entry is returned to its current caller without being retained by
+these caches or displacing other useful entries. Authored views count their
+entire native tree because they can keep it alive after the AST cache evicts it.
+The uncertainty document cache counts its path and original document text as well as its tree.
+These are structural retention budgets, not measurements of V8 allocation size
+or a total heap/RSS guarantee. Derived views, live selected graphs, input indexes
+and the parser's temporary allocations still consume memory.
+
+An uncertainty document's synchronous row batch keeps its exact-source native
+tree and shared raw/authored views active until the batch finishes. This includes
+oversized documents and cached trees evicted by nested dependency work, so more
+candidate rows do not each reparse the same whole document. Covered Unknown rows
+from a selected section/body use the same batch lifetime; physical spans needed
+by later relation merging are computed while that document is active. Other
+documents still use the bounded caches. Nested scopes restore their predecessor
+on return or error, and a later call or asynchronous continuation cannot inherit
+a completed scope. These scopes do not collect every oversized document for
+the owner.
+
+Eviction drops syntax only. The uncertainty evaluation retains every observed
+file hash, rereads current bytes on a document-cache miss, rejects mismatches
+with its earlier observation, and audits the complete read set at the end.
+Active syntax never replaces a graph's current-file, metadata or indexed-body
+checks, and explicitly supplied raw parser generations keep their own views.
+Raw/authored physical selections, source boundaries, refusal reasons and
+scope-basis/checkpoint bytes keep their existing contracts. A working set above
+these limits may require more parsing; cache misses never skip validation.
 
 ### Optional binding-status progress
 
@@ -372,8 +413,24 @@ or failure. The phase vocabulary is finite, so thousands of short graph calls do
 not each create a new start/done pair. There is no timer-only heartbeat: a long
 individual synchronous step can still leave a gap until it completes.
 
+`owner-stage:start|done|failed` additionally identifies `boundary`, `units`,
+`sources`, `uncertainty`, `candidates` and `audit` work. The start marker is
+written before that synchronous work; the closing marker includes inclusive
+`elapsed_ms` and the stage's sampled heap maximum. Nested stage durations
+overlap and must not be added together.
+
+`owner-memory:progress` reports current `heap`, `external`, `rss`, the owner's
+`heap-sampled-peak`, and process-lifetime `max-rss`, all in bytes (`unit=B`).
+Heap maxima are the largest observed samples, not exact transient V8 peaks.
+Samples occur at owner/stage boundaries and at most once a second during
+completed operations, without a timer or a memory read for every graph node.
+The owner heap maximum resets for each owner; process maximum RSS does not.
+The last stage and memory sample can help locate a stall or later OOM, but a
+fatal V8 OOM cannot promise a final marker or a completed JSON/packet.
+
 The reporter stays outside requests, results, binding bases and read sets.
-Opting out suppresses these diagnostics, and a failed stderr write disables them
+Opting out suppresses these diagnostics and their memory sampling. A failed
+clock, memory sample or stderr write disables diagnostics
 without changing evaluation, output artifacts or the original error.
 
 ## Request contract

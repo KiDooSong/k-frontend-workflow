@@ -17,6 +17,35 @@ or root config.
 
 ---
 
+## Scoped owner memory diagnostics and syntax retention (#331)
+
+The Markdown AST, authored-view and uncertainty document caches now limit native
+node count and entry count as well as source length. Eviction preserves file
+hash observations and all final audits. This reduces retention for dense
+Markdown; it does not impose a total process-memory limit or prove that every
+large consumer can complete within its default V8 heap.
+
+The #332 review follow-up also reuses an oversized document's AST and raw/authored
+views while its current row batch is running. This avoids reparsing the whole
+body for every Unknown candidate or covered selected row. The scope ends on
+return or error; the global retention limits and current-file audits stay intact.
+
+**Manual action:** no document migration, heap override or new approval is
+required. Re-run an affected request with `--progress` after upgrading:
+
+```bash
+npm run -s workflow:run -- --work request.json --out before --json --progress \
+  > before.json 2> progress.log
+```
+
+The log now identifies nested owner stages, elapsed milliseconds, sampled heap
+maxima and process maximum RSS. JSON and packet contracts are unchanged. See
+[syntax retention](scoped-work.md#bounded-syntax-retention) and
+[owner diagnostics](scoped-work.md#owner-projection-diagnostics) for the limits
+and the distinction between sampled heap maxima and RSS high-water marks.
+
+---
+
 ## Large Markdown table parsing (#300)
 
 The runtime lock now selects `micromark-extension-gfm-table` **2.1.2** instead
@@ -394,14 +423,14 @@ include these incoming migration notes in its plan.
 - Scoped work parsed the same Markdown body again for every Unknown/Conflict
   candidate row, every decision and every applicability pass, and encoded every
   row of a table again to select one row. One large register with many rows
-  therefore dominated each request. Each body is now parsed once per process
-  into a read-only tree, and a table's row keys are encoded once; views derived
-  from the tree are still built per call.
+  therefore dominated each request. This change introduced reusable read-only
+  trees and table row indexes while their syntax remains cached; eviction starts
+  a new parse generation. Later updates also share immutable derived views.
 - Results, basis digests and messages are unchanged.
-- Parsed trees stay in memory up to 32M source characters, least recently used
-  bodies leaving first, so a run over a large document set keeps more heap than
-  before: about 14–18 bytes per cached source character in two measured
-  document sets (521 and 670 bodies), up to roughly 0.6 GB at the full budget.
+- The original #265 policy retained up to 32M source characters. Its two measured
+  document sets (521 and 670 bodies) used about 14–18 bytes per source character;
+  that observation is not an upper bound for dense lists/tables. #331 replaces
+  this source-only policy with [source, native-node and entry limits](scoped-work.md#bounded-syntax-retention).
 - Manual action: none.
 
 ## Scoped work accepts general-contract IDs and formats (#260)

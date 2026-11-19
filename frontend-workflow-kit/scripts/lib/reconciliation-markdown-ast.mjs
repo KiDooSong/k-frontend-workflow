@@ -4,7 +4,7 @@
 import { fromMarkdown } from 'mdast-util-from-markdown';
 import { gfmFromMarkdown } from 'mdast-util-gfm';
 import { gfm } from 'micromark-extension-gfm';
-import { createTextKeyedCache } from './util.mjs';
+import { createSyntaxCache } from './syntax-cache.mjs';
 
 const BLOCK_TEXT_TYPES = new Set([
   'root',
@@ -74,10 +74,48 @@ export function describeHeaderMismatch(table, canonicalCols) {
 
 // The tree is a pure function of the source text, and scoped work asks for the same bodies once
 // per candidate row and applicability pass (#265). One read-only tree per text is shared within
-// the process; views derived from it stay per call. Least recently used texts leave the cache
-// once the kept source exceeds the budget.
-const trees = createTextKeyedCache(32 * 1024 * 1024);
+// the process. Bound source characters, native nodes and entries independently:
+// dense tables/lists can occupy far more heap than their short source suggests.
+// Derived views share this tree's lifetime; an oversized tree is never retained
+// by this cache. Live graph selections may still own the syntax they require.
+const trees = createSyntaxCache();
+const treeSizes = new WeakMap();
 const parseStats = { parsed: 0, reused: 0 };
+let activeSyntax = null;
+
+// Keep the one document currently being processed alive across nested parser
+// consumers, even when it exceeds the retained-cache budgets. Only exact source
+// text can reuse this internally parsed tree; callers cannot supply a tree or a
+// file-validity result. Synchronous scopes restore their predecessor on every
+// exit, so neither later calls nor asynchronous continuations inherit a pin.
+export function withReconciliationSyntax(text, run) {
+  const source = String(text || ''), tree = sharedTree(source);
+  const previous = activeSyntax;
+  activeSyntax = { source, tree, previous };
+  try {
+    return run();
+  } finally {
+    activeSyntax = previous;
+  }
+}
+
+// Native trees are immutable, so count once per exact tree, including a tree
+// supplied by another parser generation. This weak sidecar owns no tree.
+export function reconciliationTreeNodeCount(tree) {
+  if (!treeSizes.has(tree)) {
+    let count = 0;
+    const visit = (node) => {
+      count += 1;
+      for (const child of node.children || []) visit(child);
+    };
+    visit(tree); treeSizes.set(tree, count);
+  }
+  return treeSizes.get(tree);
+}
+
+export function reconciliationSyntaxCacheStats() {
+  return trees.stats();
+}
 
 function freezeTree(value) {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -98,9 +136,15 @@ function parseTree(text) {
   });
 }
 
-// Parses only on a cache miss, so parseTree runs once per distinct text.
+// A live document scope also survives global-cache eviction or oversized bypass.
 function sharedTree(text) {
   const source = String(text || '');
+  for (let active = activeSyntax; active; active = active.previous) {
+    if (active.source === source) {
+      parseStats.reused += 1;
+      return active.tree;
+    }
+  }
   const cached = trees.get(source);
   if (cached) {
     parseStats.reused += 1;
@@ -108,7 +152,7 @@ function sharedTree(text) {
   }
   const tree = freezeTree(parseTree(source));
   parseStats.parsed += 1;
-  trees.set(source, tree);
+  trees.set(source, tree, { nodes: reconciliationTreeNodeCount(tree) });
   return tree;
 }
 

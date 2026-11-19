@@ -16,11 +16,12 @@ const suites = ['scoped-work-refs.test.mjs', 'scoped-work-sources.test.mjs', 'sc
   'scoped-work-applicability.test.mjs', 'scoped-work-basis.test.mjs', 'scoped-work-bindings.test.mjs', 'scoped-work-transitions.test.mjs',
   'scoped-work-git-transitions.test.mjs', 'scoped-work-coverage.test.mjs', 'scoped-work-receipts.test.mjs', 'scoped-work-source-relations.test.mjs', 'scoped-work-input-coverage.test.mjs', 'scoped-work-profiles.test.mjs', 'scoped-work-paths.test.mjs', 'scoped-work-decision-scopes.test.mjs', 'scoped-work-owner.test.mjs'];
 const runtime = ['util.mjs', 'frontmatter-syntax.mjs', 'scoped-work-request.mjs', 'scoped-work-declarations.mjs', 'scoped-work-authored.mjs', 'spec.mjs', 'reconciliation-items.mjs', 'reconciliation-markdown-ast.mjs', 'scoped-work-binding-status.mjs', 'scoped-work-source-state.mjs',
-  'workflow-progress.mjs', 'visual-refresh-git-objects.mjs',
+  'workflow-progress.mjs', 'syntax-cache.mjs', 'visual-refresh-git-objects.mjs',
   ...suites.map((name) => name.replace('.test.mjs', '.mjs'))];
 // This regression exercises several real modules, rather than a matching .mjs.
 const resolverSuites = [...suites, 'scoped-work-generated.test.mjs', 'scoped-work-subsections.test.mjs',
-  'scoped-work-retired-targets.test.mjs', 'scoped-work-refs-shared.test.mjs'];
+  'scoped-work-retired-targets.test.mjs', 'scoped-work-refs-shared.test.mjs', 'scoped-work-memory.test.mjs',
+  'scoped-work-graph-cache.test.mjs', 'scoped-work-active-syntax.test.mjs', 'scoped-work-syntax-scope.test.mjs'];
 const cliSuite = 'scoped-work-binding-status.test.mjs';
 const bindingProgressSuite = 'scoped-work-binding-progress.test.mjs';
 const sourceCliSuite = 'scoped-work-cli.test.mjs';

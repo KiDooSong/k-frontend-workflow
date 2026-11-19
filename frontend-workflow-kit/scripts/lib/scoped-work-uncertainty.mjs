@@ -10,7 +10,9 @@ import { canonicalRepositoryPath, createCanonicalRepositoryPathResolver } from '
 import { ownerParts, readCurrentBytes, hashBytes, CurrentWorkError } from './current-work-request.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { parseTargetRef } from './reconciliation-items.mjs';
-import { parseReconciliationMarkdown, parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
+import { parseReconciliationMarkdown, parseReconciliationReferenceView, sharedReconciliationReferenceView,
+  reconciliationTreeNodeCount } from './reconciliation-markdown-ast.mjs';
+import { createSyntaxCache } from './syntax-cache.mjs';
 import { createScopedReferenceResolver, scopedRawTable, parseScopedTargetRef, scopedRowAlias } from './scoped-work-refs.mjs';
 import { resolveScopedContractGraph, scopedGraphSelectionSpans, scopedGraphMetadataRefs, scopedGraphBodyRefs,
   mergeScopedGraphContexts } from './scoped-work-graph.mjs';
@@ -18,7 +20,8 @@ import { scopedProjectionNode } from './scoped-work-projection.mjs';
 import { resolveScopedDecisionProjection, createScopedSnapshotDecisionResolver } from './scoped-work-decisions.mjs';
 import { ScopedWorkContractError, workText } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
-import { scopedAuthoredSections, scopedSelectionNodes, rememberScopedSelection, copyScopedNodeContexts } from './scoped-work-authored.mjs';
+import { scopedAuthoredSections, scopedSelectionNodes, rememberScopedSelection, copyScopedNodeContexts,
+  withScopedDocumentSyntax } from './scoped-work-authored.mjs';
 import { scopedProjectionProgress } from './workflow-progress.mjs';
 
 const fail = (message) => { throw new ScopedWorkContractError(`SW-UNCERTAINTY: ${message}`); };
@@ -95,7 +98,9 @@ function uncertaintyProjection(options, base) {
   const canonicalPath = createCanonicalRepositoryPathResolver(projectRoot);
   const refs = createScopedReferenceResolver({ targetIndex, projectRoot, inputArtifacts });
   const files = new Map(base.read_set.map((entry) => [entry.file, entry]));
-  const documents = new Map();
+  // Enumeration visits every indexed artifact. Keep only a bounded working set
+  // of parsed documents; the complete file hashes below remain authoritative.
+  const documents = createSyntaxCache();
   const nodes = new Map();
   const edges = new Map();
   const candidates = new Map();
@@ -113,22 +118,34 @@ function uncertaintyProjection(options, base) {
     files.set(relative, { file: relative, sha256 });
     return raw;
   }
-  function document(relative) {
-    if (!documents.has(relative)) {
+  function document(relative, visit = null) {
+    const cached = documents.get(relative);
+    if (cached && !visit) return cached;
+    let source = cached;
+    if (!source) {
+      // A miss, including during an active syntax scope, still reads actual
+      // bytes and compares with the original hash. Only parsing is reused.
       const text = decodeGitUtf8(read(relative), 'scoped uncertainty');
       const parsed = splitFrontmatter(text);
       if (!parsed.hasFrontmatter || parsed.parseError) fail('invalid uncertainty document');
-      documents.set(relative, { text, body: parsed.body, view: parseReconciliationReferenceView(parsed.body) });
+      source = { text, body: parsed.body };
     }
-    return documents.get(relative);
+    const materialize = (view) => {
+      const doc = source.view === view ? source : { ...source, view };
+      documents.set(relative, doc, { sourceChars: relative.length + doc.text.length,
+        nodes: reconciliationTreeNodeCount(view.tree) });
+      return visit ? visit(doc) : doc;
+    };
+    // Open the scope before the first view is built, then release it after this
+    // document's row batch. Never retain all oversized documents for the owner.
+    return visit ? withScopedDocumentSyntax(source.body, materialize)
+      : materialize(sharedReconciliationReferenceView(source.body));
   }
   function addNode(node) {
     if (nodes.has(node.ref)) {
       const previous = nodes.get(node.ref);
       if (scopeJson(previous) !== scopeJson(node)) fail('inconsistent selected evidence');
-      const doc = document(node.file);
-      const spansOf = (record) => scopedGraphSelectionSpans(doc.body, doc.view, record.selection, record.kind === 'input-evidence');
-      if (scopeJson(spansOf(previous)) !== scopeJson(spansOf(node))) fail('ambiguous selected evidence source');
+      if (scopeJson(ranges(previous)) !== scopeJson(ranges(node))) fail('ambiguous selected evidence source');
     }
     nodes.set(node.ref, node);
   }
@@ -175,6 +192,10 @@ function uncertaintyProjection(options, base) {
     for (const file of graph.read_set) read(file.file, file.sha256);
     const evidence = mergeScopedGraphContexts([graph],
       { roots: graph.roots, nodes: graph.nodes.map(scopedProjectionNode), edges: graph.edges });
+    // Later relation merging only needs these immutable physical spans. Compute
+    // them while this document's syntax is active, rather than reparsing its
+    // oversized body for each duplicate root after the row batch has finished.
+    for (const node of evidence.nodes) if (node.file === record.file) ranges(node);
     candidates.set(physical, { record, entry, evidence, affected: affectedOwners(affected) });
     scopedProjectionProgress('candidate-rows');
   }
@@ -202,28 +223,29 @@ function uncertaintyProjection(options, base) {
   const unaudited = [];
   for (const entry of targetIndex.artifacts.values()) {
     const relative = path.relative(projectRoot, entry.file).split(path.sep).join('/');
-    const doc = document(relative);
-    const parsed = parseReconciliationMarkdown(doc.body);
-    for (const [family, headers] of Object.entries(signatures)) {
-      const locations = family === 'unknown' ? scopedUnknownHomes(doc.body, doc.view)
-        : parsed.occurrences.filter((section) => section.slug === `${family}s` ||
-        (family === 'conflict' && section.slug === '' && entry.fm.artifact_type === 'conflicts' &&
-          section.tables.some((table) => headers.every((header) => hasHeader(table.headers, header)))))
-          .map((location) => ({ location, authored: false }));
-      for (const { location, authored } of locations) {
-        let rows;
-        try { rows = sectionRows(entry, family, headers, location); } catch (error) {
-          if (!(error instanceof ScopedWorkContractError)) throw error;
-          // Fatal or unaudited is decided below, once selected evidence is known (#260).
-          unaudited.push({ entry, file: relative, section: location.slug, error });
-          continue;
-        }
-        for (const [token, { status, affected }] of rows) {
-          // Audit every inspected row; project only rows with a relation below.
-          addCandidate(entry, token, status, affected, authored);
+    document(relative, (doc) => {
+      const parsed = parseReconciliationMarkdown(doc.body);
+      for (const [family, headers] of Object.entries(signatures)) {
+        const locations = family === 'unknown' ? scopedUnknownHomes(doc.body, doc.view)
+          : parsed.occurrences.filter((section) => section.slug === `${family}s` ||
+          (family === 'conflict' && section.slug === '' && entry.fm.artifact_type === 'conflicts' &&
+            section.tables.some((table) => headers.every((header) => hasHeader(table.headers, header)))))
+            .map((location) => ({ location, authored: false }));
+        for (const { location, authored } of locations) {
+          let rows;
+          try { rows = sectionRows(entry, family, headers, location); } catch (error) {
+            if (!(error instanceof ScopedWorkContractError)) throw error;
+            // Fatal or unaudited is decided below, once selected evidence is known (#260).
+            unaudited.push({ entry, file: relative, section: location.slug, error });
+            continue;
+          }
+          for (const [token, { status, affected }] of rows) {
+            // Audit every inspected row; project only rows with a relation below.
+            addCandidate(entry, token, status, affected, authored);
+          }
         }
       }
-    }
+    });
     scopedProjectionProgress('candidate-documents');
   }
 
@@ -287,14 +309,28 @@ function uncertaintyProjection(options, base) {
     const authored = scopedUnknownAuthored(doc.body, selection, doc.view);
     addCandidate(targetIndex.artifacts.get(node.artifact_id), token, col(row, 'Status') || null, undefined, authored, node);
   }
+  let selectedBatch = [];
+  const visitSelectedBatch = () => {
+    if (!selectedBatch.length) return;
+    document(selectedBatch[0].file, () => {
+      for (const node of selectedBatch) {
+        if (node.selection.type === 'row') addSelectedUnknown(node);
+        else for (const source of coveredUnknownRows(node)) addSelectedUnknown(source);
+      }
+    });
+    selectedBatch = [];
+  };
   for (const node of nodes.values()) {
     const selection = node.selection;
-    if (['artifact', 'unknown'].includes(node.kind) && selection?.type === 'row' && selection.section === 'unknowns' &&
-        signatures.unknown.every((header) => hasHeader(selection.headers, header))) addSelectedUnknown(node);
-    else if (node.artifact_id && ['section', 'body', 'body-token'].includes(selection?.type)) {
-      for (const source of coveredUnknownRows(node)) addSelectedUnknown(source);
-    }
+    const row = ['artifact', 'unknown'].includes(node.kind) && selection?.type === 'row' && selection.section === 'unknowns' &&
+      signatures.unknown.every((header) => hasHeader(selection.headers, header));
+    if (!row && !(node.artifact_id && ['section', 'body', 'body-token'].includes(selection?.type))) continue;
+    // Keep existing selection order, grouping only consecutive work for the
+    // same file. A whole selected section may cover many canonical rows.
+    if (selectedBatch.length && selectedBatch[0].file !== node.file) visitSelectedBatch();
+    selectedBatch.push(node);
   }
+  visitSelectedBatch();
 
   function subject(owner, unit) {
     const id = key(owner, unit);
