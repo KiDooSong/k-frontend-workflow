@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { withWorkflowProgress, withBindingStatusProgress, workflowProgress,
-  withOwnerProjectionProgress, scopedProjectionProgress } from './workflow-progress.mjs';
+  withOwnerProjectionProgress, withScopedProjectionStage, scopedProjectionProgress } from './workflow-progress.mjs';
 
 function capture(t, write) {
   const original = fs.writeSync, chunks = [];
@@ -15,6 +15,152 @@ function capture(t, write) {
   });
   return { text: () => Buffer.concat(chunks).toString('utf8'), restore: () => hook.mock.restore() };
 }
+
+test('#331 owner stages: opt-out and absent owner contexts perform no clock or memory reads', (t) => {
+  const sink = capture(t);
+  const unexpected = () => { throw new Error('disabled diagnostics must not sample'); };
+  t.mock.method(performance, 'now', unexpected);
+  t.mock.method(process, 'memoryUsage', unexpected);
+  t.mock.method(process, 'resourceUsage', unexpected);
+  const work = () => withScopedProjectionStage('sources', () => {
+    scopedProjectionProgress('sources');
+    return 53;
+  });
+  assert.equal(withWorkflowProgress(false, () => withOwnerProjectionProgress('screen:RESULT-001', work)), 53);
+  assert.equal(withOwnerProjectionProgress('screen:RESULT-001', work), 53);
+  assert.equal(work(), 53);
+  assert.equal(sink.text(), '');
+});
+
+for (const [tool, withProgress] of [['workflow:run', withWorkflowProgress], ['binding-status', withBindingStatusProgress]]) {
+  test(`#331 owner stages: ${tool} reports synchronous boundaries, durations and sampled heap peaks with bounded sampling`, (t) => {
+    const sink = capture(t);
+    let now = 0, heap = 100, reads = 0;
+    t.mock.method(performance, 'now', () => now);
+    t.mock.method(process, 'memoryUsage', () => { reads += 1; return { heapUsed: heap, external: 20, rss: 4096 }; });
+    t.mock.method(process, 'resourceUsage', () => ({ maxRSS: 8 }));
+    const result = withProgress(true, () => {
+      const answer = withOwnerProjectionProgress('screen:RESULT-001', () => withScopedProjectionStage('sources', () => {
+        assert.match(sink.text(), /owner-stage:start "screen:RESULT-001; sources"/,
+          'stage start must reach stderr before synchronous work');
+        for (let index = 0; index < 10000; index += 1) scopedProjectionProgress('contract-graph');
+        scopedProjectionProgress('candidate-rows');
+        assert.equal(reads, 2, 'owner and stage boundaries sample; every node and first counter do not');
+        now = 1000; heap = 800;
+        scopedProjectionProgress('contract-graph');
+        assert.equal(reads, 3, 'completed work samples once after one second');
+        now = 1001; heap = 200;
+        withScopedProjectionStage('audit', () => { now = 1500; heap = 500; });
+        now = 2000; heap = 300;
+        scopedProjectionProgress('contract-graph');
+        assert.equal(reads, 5, 'a recent stage-boundary sample shares the memory throttle');
+        return 59;
+      }));
+      assert.equal(reads, 7, 'stage and owner completion each take their final sample');
+      heap = 10;
+      withOwnerProjectionProgress('screen:RESULT-002', () => {});
+      return answer;
+    });
+    assert.equal(result, 59);
+    const output = sink.text(), lines = output.trimEnd().split('\n');
+    assert.ok(lines.every((line) => line.startsWith(`${tool} [`)));
+    assert.match(output, /owner-stage:done "screen:RESULT-001; audit; elapsed_ms=499\.000; heap-sampled-peak=500B"/);
+    assert.match(output, /owner-stage:done "screen:RESULT-001; sources; elapsed_ms=2000\.000; heap-sampled-peak=800B"/);
+    assert.match(output, /owner-memory:progress "audit; heap=500; heap-sampled-peak=800; external=20; rss=4096; max-rss=8192; unit=B"/);
+    assert.match(output.slice(output.indexOf('owner-projection:start "screen:RESULT-002"')),
+      /owner-memory:progress "projection; heap=10; heap-sampled-peak=10;/, 'owner peak is reset between owners');
+    assert.equal(reads, 9);
+    scopedProjectionProgress('contract-graph');
+    assert.equal(reads, 9, 'no samples after the invocation completes');
+    assert.ok(lines.every((line) => Buffer.byteLength(line) < 2048));
+  });
+}
+
+test('#331 owner stages: nested CLI contexts and unknown phases cannot inherit stage diagnostics', (t) => {
+  const sink = capture(t);
+  let heap = 400, reads = 0;
+  t.mock.method(performance, 'now', () => 0);
+  t.mock.method(process, 'memoryUsage', () => { reads += 1; return { heapUsed: heap, external: 0, rss: 4096 }; });
+  t.mock.method(process, 'resourceUsage', () => ({ maxRSS: 4 }));
+  withWorkflowProgress(true, () => withOwnerProjectionProgress('screen:OUTER', () => withScopedProjectionStage('units', () => {
+    const before = reads;
+    withWorkflowProgress(false, () => withScopedProjectionStage('sources', () => scopedProjectionProgress('sources')));
+    withBindingStatusProgress(true, () => withScopedProjectionStage('sources', () => scopedProjectionProgress('sources')));
+    withScopedProjectionStage('invented-phase', () => {});
+    assert.equal(reads, before);
+    heap = 50;
+    withBindingStatusProgress(true, () => withOwnerProjectionProgress('screen:INNER', () =>
+      withScopedProjectionStage('audit', () => scopedProjectionProgress('audit-files'))));
+    heap = 70;
+  })));
+  const lines = sink.text().trimEnd().split('\n').filter((line) => line.includes('owner-stage:'));
+  assert.equal(lines.length, 4);
+  assert.match(lines[0], /^workflow:run .*screen:OUTER; units/);
+  assert.match(lines[1], /^binding-status .*screen:INNER; audit/);
+  assert.match(lines[2], /^binding-status .*screen:INNER; audit; elapsed_ms=0\.000; heap-sampled-peak=50B/);
+  assert.match(lines[3], /^workflow:run .*screen:OUTER; units; elapsed_ms=0\.000; heap-sampled-peak=400B/);
+  assert.doesNotMatch(sink.text(), /invented-phase|; sources/);
+});
+
+test('#331 owner stages: a failing stage preserves its original error and records the failed boundary', (t) => {
+  const sink = capture(t), sentinel = new Error('original scoped failure');
+  let now = 0;
+  t.mock.method(performance, 'now', () => now);
+  t.mock.method(process, 'memoryUsage', () => ({ heapUsed: 500, external: 0, rss: 4096 }));
+  t.mock.method(process, 'resourceUsage', () => ({ maxRSS: 4 }));
+  assert.throws(() => withWorkflowProgress(true, () => withOwnerProjectionProgress('screen:RESULT-001', () =>
+    withScopedProjectionStage('candidates', () => { now = 125; throw sentinel; }))), (error) => error === sentinel);
+  assert.match(sink.text(), /owner-stage:failed "screen:RESULT-001; candidates; elapsed_ms=125\.000; heap-sampled-peak=500B"/);
+  assert.match(sink.text(), /owner-projection:failed "screen:RESULT-001"\n[\s\S]*run:failed\n$/);
+  assert.doesNotMatch(sink.text(), /owner-stage:done|owner-projection:done|run:done/);
+});
+
+for (const failure of ['memory', 'resources', 'clock', 'sink']) {
+  test(`#331 owner stages: failed ${failure} observation cannot repeat work or replace results and errors`, (t) => {
+    let broken = false, calls = 0, failures = 0;
+    const fail = () => { failures += 1; throw new Error('diagnostic failure'); };
+    const sink = capture(t, (bytes) => broken && failure === 'sink' ? fail() : bytes.length);
+    t.mock.method(performance, 'now', () => broken && failure === 'clock' ? fail() : 0);
+    t.mock.method(process, 'memoryUsage', () => broken && failure === 'memory' ? fail() : { heapUsed: 500, external: 0, rss: 4096 });
+    t.mock.method(process, 'resourceUsage', () => broken && failure === 'resources' ? fail() : { maxRSS: 4 });
+    const sentinel = new Error('original work error');
+    for (const throws of [false, true]) {
+      broken = false;
+      const invoke = () => withWorkflowProgress(true, () => withOwnerProjectionProgress('screen:RESULT-001', () => {
+        broken = true;
+        return withScopedProjectionStage('sources', () => {
+          calls += 1;
+          scopedProjectionProgress('sources');
+          if (throws) throw sentinel;
+          return 61;
+        });
+      }));
+      if (throws) assert.throws(invoke, (error) => error === sentinel);
+      else assert.equal(invoke(), 61);
+      assert.equal(failures, calls, 'a failed observation disables further diagnostics in that invocation');
+    }
+    assert.equal(calls, 2, 'each callback ran exactly once');
+    assert.doesNotMatch(sink.text(), /owner-stage:done|owner-stage:failed|owner-projection:done|run:done|run:failed/);
+  });
+}
+
+test('#331 owner stages: a failed initial clock or owner memory sample still executes the original callback', (t) => {
+  const sink = capture(t), sentinel = new Error('original work error');
+  const clock = t.mock.method(performance, 'now', () => { throw new Error('clock unavailable'); });
+  let calls = 0;
+  assert.equal(withWorkflowProgress(true, () => { calls += 1; return 67; }), 67);
+  assert.throws(() => withWorkflowProgress(true, () => { calls += 1; throw sentinel; }), (error) => error === sentinel);
+  assert.equal(calls, 2);
+  assert.equal(sink.text(), '');
+  clock.mock.restore();
+  t.mock.method(process, 'memoryUsage', () => { throw new Error('memory unavailable'); });
+  assert.equal(withWorkflowProgress(true, () => withOwnerProjectionProgress('screen:RESULT-001', () => {
+    calls += 1;
+    return withScopedProjectionStage('audit', () => 71);
+  })), 71);
+  assert.equal(calls, 3);
+  assert.doesNotMatch(sink.text(), /owner-stage:|owner-memory:|owner-projection:done|run:done/);
+});
 
 test('#321 progress: opt-out and completed contexts never write diagnostics', (t) => {
   const sink = capture(t);

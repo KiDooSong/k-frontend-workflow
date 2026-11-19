@@ -20,7 +20,7 @@ import { copyScopedSelectionContext, copyScopedNodeContexts } from './scoped-wor
 import { ScopedWorkContractError, workText, workSet } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet, scopeLf } from './scoped-work-normalize.mjs';
 import { WorkConfigError, parsePolicyOverlay } from './work-config.mjs';
-import { scopedProjectionProgress } from './workflow-progress.mjs';
+import { scopedProjectionProgress, withScopedProjectionStage } from './workflow-progress.mjs';
 
 const fail = (message) => { throw new ScopedWorkContractError(`SW-PROJECTION: ${message}`); };
 const same = (a, b) => scopeJson(a) === scopeJson(b);
@@ -72,7 +72,11 @@ export function scopedUnitAbsentRegisters(result) {
   return [...(unitAbsenceObservations.get(result) || [])];
 }
 
-export function resolveScopedUnitProjection({ owner, policyFile, policyOverlayFile, targetIndex, inputArtifacts = [], registerFile,
+export function resolveScopedUnitProjection(options = {}) {
+  return withScopedProjectionStage('units', () => unitProjection(options));
+}
+
+function unitProjection({ owner, policyFile, policyOverlayFile, targetIndex, inputArtifacts = [], registerFile,
   projectRoot, layout } = {}) {
   ownerParts(owner);
   const refs = createScopedReferenceResolver({ targetIndex, inputArtifacts, projectRoot });

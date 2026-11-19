@@ -1,7 +1,7 @@
 // Usage: node kit-dev/benchmarks/input-evidence.mjs <before-kit-root> <after-kit-root> [documents=64,1200] [runs=3]
 // Install each kit's dependencies first. Each sample imports one kit in a fresh
 // process, then calls the actual v2 validator twice with file-backed inputs.
-// The large case exceeds the shared AST's 32 Mi-character source budget while
+// The large case exceeds the historical AST's 32 Mi-character source budget while
 // its compact evidence projection fits the new 8 MiB syntax cache. This is a
 // synthetic cache-capacity scenario, not an end-to-end consumer CLI benchmark.
 import assert from 'node:assert/strict';
@@ -19,7 +19,7 @@ const factCount = 12;
 const tableRows = 80;
 const paragraphs = 12;
 const paragraphChars = 1024;
-const astSourceBudgetChars = 32 * 1024 * 1024;
+const historicalAstSourceBudgetChars = 32 * 1024 * 1024;
 
 function positiveInteger(value) {
   const number = Number(value);
@@ -243,7 +243,7 @@ async function main(args) {
   console.log(JSON.stringify({ node: process.version, platform: process.platform, arch: process.arch,
     runs, kits, fixture: { fact_bullets_per_document: factCount, inventory_table_rows: tableRows,
       inventory_table_columns: 4, prose_paragraphs: paragraphs, characters_per_paragraph: paragraphChars,
-      ast_source_budget_chars: astSourceBudgetChars },
+      historical_ast_source_budget_chars: historicalAstSourceBudgetChars },
     measurement: {
       elapsed_ms: 'Actual validateReconciliationV2 calls; includes a fresh internal input index, unchanged file reads and all v2 validation. Imports, fixture setup, parseReconciliationRegister, result assertions/hashing, forced GC and exact evidence verification are outside timing.',
       parser_counts: 'Shared Markdown AST parsed/reused counter deltas per validator call, including the register where applicable; register parsing during setup is excluded.',

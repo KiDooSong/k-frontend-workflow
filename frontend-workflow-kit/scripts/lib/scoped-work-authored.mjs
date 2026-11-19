@@ -2,16 +2,49 @@
 // tree and byte ranges: GENERATED headings do not end an authored section, and
 // GENERATED tables cannot supply API/Unknown authoring evidence. The raw parser
 // and its ordinary fully qualified reference contract remain unchanged.
-import { parseReconciliationReferenceView, reconciliationHeadingText, slugifySectionTitle } from './reconciliation-markdown-ast.mjs';
+import { parseReconciliationReferenceView, reconciliationHeadingText, slugifySectionTitle,
+  reconciliationTreeNodeCount, sharedReconciliationReferenceView,
+  withReconciliationSyntax } from './reconciliation-markdown-ast.mjs';
 import { specSectionName, stripGeneratedBlocks } from './spec.mjs';
 import { ScopedWorkContractError } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
-import { createTextKeyedCache } from './util.mjs';
+import { createSyntaxCache } from './syntax-cache.mjs';
 
-const views = createTextKeyedCache(32 * 1024 * 1024);
+// This cache also owns the raw tree through the authored view, so it must obey
+// the same structural budgets even after the parser has evicted that tree.
+const views = createSyntaxCache();
 const source = (body, node) => body.slice(node.position.start.offset, node.position.end.offset);
+let activeDocument = null;
+
+// The active document owns raw and authored views only while its synchronous
+// row batch runs. Other dependency documents still use the bounded caches.
+// Build both views internally; no caller-provided syntax can replace validation.
+export function withScopedDocumentSyntax(body, run) {
+  return withReconciliationSyntax(body, () => {
+    const raw = sharedReconciliationReferenceView(body);
+    const view = scopedAuthoredView(body, raw), previous = activeDocument;
+    activeDocument = { body, raw, view, previous };
+    try {
+      return run(raw);
+    } finally {
+      activeDocument = previous;
+    }
+  });
+}
+
+export function scopedAuthoredCacheStats() {
+  return views.stats();
+}
 
 export function scopedAuthoredView(body, raw = null) {
+  for (let active = activeDocument; active; active = active.previous) {
+    // Resolvers may wrap the shared view, retaining the exact frozen sections.
+    // A detached/custom raw wrapper must still build its own derived contents,
+    // even when its native tree happens to be the active tree.
+    if (active.body === body && (!raw || (raw.tree === active.raw.tree && raw.sections === active.raw.sections))) {
+      return active.view;
+    }
+  }
   const cached = views.get(body);
   // The raw parser has its own bounded cache. If its tree was evicted and
   // reparsed, rebuild our node/cell index against that exact current tree.
@@ -88,7 +121,7 @@ export function scopedAuthoredView(body, raw = null) {
       : slugs.flatMap((slug) => bySlug.get(slug)).sort((a, b) => a.start - b.start));
   }
   const view = { tree: raw.tree, sections, tableSections, byName };
-  views.set(body, view);
+  views.set(body, view, { nodes: reconciliationTreeNodeCount(raw.tree) });
   return view;
 }
 

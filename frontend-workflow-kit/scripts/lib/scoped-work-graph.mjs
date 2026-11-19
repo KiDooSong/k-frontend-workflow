@@ -129,6 +129,11 @@ function definitionsOf(view) {
 // different artifacts, so cache local IDs, never a document's canonical ref.
 // Indexing is syntax-only: unselected rows must not resolve or validate targets.
 const apiTrackingCells = new WeakMap();
+function trackingCellSpan(node) {
+  if (node?.type !== 'tableCell') return null;
+  const start = node.position?.start?.offset, end = node.position?.end?.offset;
+  return Number.isInteger(start) && Number.isInteger(end) && start < end ? `${start}:${end}` : null;
+}
 function localApiTrackingCells(body, view) {
   if (apiTrackingCells.has(view.tree)) return apiTrackingCells.get(view.tree);
   const cells = new Map();
@@ -154,7 +159,12 @@ function localApiTrackingCells(body, view) {
     // Native cell spans include pipe delimiters; the shared raw splitter removes
     // only those delimiters/outer space, without rendering markup or comments.
     const tracking = parseApiCandidateTracking(rawCells[trackingIndex]);
-    if (tracking?.kind === 'unknown') cells.set(cell, tracking.id);
+    // A remembered selection may keep native nodes from an earlier parse after
+    // eviction, or while an oversized body is deliberately not cached. Exact
+    // table-cell positions identify the same physical cell across generations;
+    // a different column or GENERATED table cannot borrow this Tracking mode.
+    const span = trackingCellSpan(cell);
+    if (tracking?.kind === 'unknown' && span !== null) cells.set(span, tracking.id);
   }
   return cells;
 }
@@ -189,9 +199,10 @@ function dependencies(body, view, nodes, omitNestedLists, metadata = {}) {
     add(literal);
   }
   for (const selected of nodes) walk(selected, (node) => {
-    if (trackingCells?.has(node)) {
+    const trackingId = trackingCells?.get(trackingCellSpan(node));
+    if (trackingId !== undefined) {
       const artifactId = workText(metadata.artifact_id, 'API Tracking artifact');
-      const ref = canonicalRef(`unknown:${trackingCells.get(node)}@${artifactId}`);
+      const ref = canonicalRef(`unknown:${trackingId}@${artifactId}`);
       found.add(ref);
       deferredTracking.add(ref);
       return false;

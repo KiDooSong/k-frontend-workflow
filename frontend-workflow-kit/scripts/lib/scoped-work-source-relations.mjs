@@ -24,7 +24,7 @@ import { resolveScopedContractGraph, scopedGraphSelectionSpans, scopedGraphApiRo
 import { ScopedWorkContractError, workUnitId } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
 import { scopedEvidenceSet } from './scoped-work-authored.mjs';
-import { scopedProjectionProgress } from './workflow-progress.mjs';
+import { scopedProjectionProgress, withScopedProjectionStage } from './workflow-progress.mjs';
 
 const fail = (message) => { throw new ScopedWorkContractError(`SW-SOURCE-RELATION: ${message}`); };
 const union = (values) => scopeSet([...new Set(values)]);
@@ -212,6 +212,10 @@ function createSourceSnapshot(projectRoot) {
 }
 
 function resolveSourceClosure(options, requireEffects) {
+  return withScopedProjectionStage('sources', () => sourceClosure(options, requireEffects));
+}
+
+function sourceClosure(options, requireEffects) {
   const snapshot = createSourceSnapshot(options.projectRoot);
   const roots = new Set(), pins = new Map(), witnesses = new Map(), fallbacks = new Map();
   const itemWitnesses = new Map();
