@@ -25,6 +25,11 @@ hash observations and all final audits. This reduces retention for dense
 Markdown; it does not impose a total process-memory limit or prove that every
 large consumer can complete within its default V8 heap.
 
+The #332 review follow-up also reuses an oversized document's AST and raw/authored
+views while its current row batch is running. This avoids reparsing the whole
+body for every Unknown candidate or covered selected row. The scope ends on
+return or error; the global retention limits and current-file audits stay intact.
+
 **Manual action:** no document migration, heap override or new approval is
 required. Re-run an affected request with `--progress` after upgrading:
 

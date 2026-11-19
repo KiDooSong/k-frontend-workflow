@@ -21,7 +21,7 @@ const runtime = ['util.mjs', 'frontmatter-syntax.mjs', 'scoped-work-request.mjs'
 // This regression exercises several real modules, rather than a matching .mjs.
 const resolverSuites = [...suites, 'scoped-work-generated.test.mjs', 'scoped-work-subsections.test.mjs',
   'scoped-work-retired-targets.test.mjs', 'scoped-work-refs-shared.test.mjs', 'scoped-work-memory.test.mjs',
-  'scoped-work-graph-cache.test.mjs'];
+  'scoped-work-graph-cache.test.mjs', 'scoped-work-active-syntax.test.mjs', 'scoped-work-syntax-scope.test.mjs'];
 const cliSuite = 'scoped-work-binding-status.test.mjs';
 const bindingProgressSuite = 'scoped-work-binding-progress.test.mjs';
 const sourceCliSuite = 'scoped-work-cli.test.mjs';

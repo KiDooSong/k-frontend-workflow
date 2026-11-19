@@ -340,17 +340,30 @@ evaluation's document cache therefore enforce three independent limits:
 | Entries | 512 |
 
 All three limits apply together, with least-recently-used eviction. A single
-oversized entry is returned to its current caller without being retained or
-displacing other useful entries. Authored views count their entire native tree
-because they can keep it alive after the AST cache evicts it. The uncertainty
-document cache counts its path and original document text as well as its tree.
+oversized entry is returned to its current caller without being retained by
+these caches or displacing other useful entries. Authored views count their
+entire native tree because they can keep it alive after the AST cache evicts it.
+The uncertainty document cache counts its path and original document text as well as its tree.
 These are structural retention budgets, not measurements of V8 allocation size
 or a total heap/RSS guarantee. Derived views, live selected graphs, input indexes
 and the parser's temporary allocations still consume memory.
 
+An uncertainty document's synchronous row batch keeps its exact-source native
+tree and shared raw/authored views active until the batch finishes. This includes
+oversized documents and cached trees evicted by nested dependency work, so more
+candidate rows do not each reparse the same whole document. Covered Unknown rows
+from a selected section/body use the same batch lifetime; physical spans needed
+by later relation merging are computed while that document is active. Other
+documents still use the bounded caches. Nested scopes restore their predecessor
+on return or error, and a later call or asynchronous continuation cannot inherit
+a completed scope. These scopes do not collect every oversized document for
+the owner.
+
 Eviction drops syntax only. The uncertainty evaluation retains every observed
 file hash, rereads current bytes on a document-cache miss, rejects mismatches
 with its earlier observation, and audits the complete read set at the end.
+Active syntax never replaces a graph's current-file, metadata or indexed-body
+checks, and explicitly supplied raw parser generations keep their own views.
 Raw/authored physical selections, source boundaries, refusal reasons and
 scope-basis/checkpoint bytes keep their existing contracts. A working set above
 these limits may require more parsing; cache misses never skip validation.

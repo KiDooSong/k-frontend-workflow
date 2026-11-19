@@ -6,6 +6,13 @@
 > and the [roadmap](../../roadmap-current.md). This is not a consumer completion,
 > release, gate promotion, or confirmation that the reported consumer OOM is resolved.
 
+> Measurement revision: the tables below describe initial PR #332 head
+> `ea7d68236027d3fd6410429ebb2ea41648133d59`. The review subsequently found
+> repeated whole-document parsing for an oversized individual document. The
+> [active-syntax follow-up](scoped-owner-active-syntax-332.md) records that fix and
+> its separate measurements; do not attribute the original timing/RSS table to
+> the later runtime fingerprint.
+
 ## Problem and comparison baseline
 
 The issue reports a single adopted screen/unit preflight that reached `owner:start`

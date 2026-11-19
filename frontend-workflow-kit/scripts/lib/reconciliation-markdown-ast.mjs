@@ -81,6 +81,23 @@ export function describeHeaderMismatch(table, canonicalCols) {
 const trees = createSyntaxCache();
 const treeSizes = new WeakMap();
 const parseStats = { parsed: 0, reused: 0 };
+let activeSyntax = null;
+
+// Keep the one document currently being processed alive across nested parser
+// consumers, even when it exceeds the retained-cache budgets. Only exact source
+// text can reuse this internally parsed tree; callers cannot supply a tree or a
+// file-validity result. Synchronous scopes restore their predecessor on every
+// exit, so neither later calls nor asynchronous continuations inherit a pin.
+export function withReconciliationSyntax(text, run) {
+  const source = String(text || ''), tree = sharedTree(source);
+  const previous = activeSyntax;
+  activeSyntax = { source, tree, previous };
+  try {
+    return run();
+  } finally {
+    activeSyntax = previous;
+  }
+}
 
 // Native trees are immutable, so count once per exact tree, including a tree
 // supplied by another parser generation. This weak sidecar owns no tree.
@@ -119,9 +136,15 @@ function parseTree(text) {
   });
 }
 
-// Parses only on a cache miss, so parseTree runs once per distinct text.
+// A live document scope also survives global-cache eviction or oversized bypass.
 function sharedTree(text) {
   const source = String(text || '');
+  for (let active = activeSyntax; active; active = active.previous) {
+    if (active.source === source) {
+      parseStats.reused += 1;
+      return active.tree;
+    }
+  }
   const cached = trees.get(source);
   if (cached) {
     parseStats.reused += 1;
