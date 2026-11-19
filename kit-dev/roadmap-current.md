@@ -1,5 +1,11 @@
 # Current Roadmap
 
+> 2026-11-20 #335: 한도를 넘는 Unknown 문서의 활성 배치가 끝난 뒤에도 물리 행의 작은 authored/GENERATED 판정 정보를 재사용해 행×unit 적용 검사에서 전체 Markdown을 다시 파싱하지 않는다.
+> 선택 처리에는 이미 읽은 현재 문서를 전달하고, 동일 uncertainty 평가의 후보 graph가 같은 불변 물리 절을 선택하면 leaf-span 배열을 공유한다. explicit raw 해석·물리 행·input 중첩 경계·공개 mutable 반환값·기존 구문 보관 한도는 유지한다.
+> 현재 bytes/expected hash와 최종 canonical read-set 감사는 계속 수행한다. 실제 consumer의 장시간 실행·OOM 해소는 해당 환경 재실행으로 확인한다.
+> 정본: [binding status](../frontend-workflow-kit/docs/reference/scoped-work.md#binding-basis-and-status), [구문 보관 한도](../frontend-workflow-kit/docs/reference/scoped-work.md#bounded-syntax-retention).
+> 재현: [Unknown 재사용 benchmark](benchmarks/scoped-unknown-reuse.mjs), [#335 측정·리뷰 증거](temp/runs/scoped-unknown-reuse-335.md).
+
 > 2026-11-19 #333: 미바인딩/stale Decision의 기본 차단 범위는 실제 canonical application의 unit 집합으로 계산한다.
 > 다른 unit의 evidence 관계를 owner 전체로 확대하지 않으며, native `unit: null` 관계와 current binding의 명시 `blocks`는 유지한다.
 > #334 리뷰 보완: before/after 전환에서 Decision별 적용 unit 집합도 비교한다. 열린 Decision의 일부 unit 참조만 제거해도 적용 제거로 판정하고 현재 owner unit의 차단을 유지한다. 단일 스냅샷의 unit 범위와 public command 미연결 경계는 유지한다.

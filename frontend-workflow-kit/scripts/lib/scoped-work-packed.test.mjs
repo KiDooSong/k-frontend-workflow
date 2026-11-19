@@ -22,7 +22,8 @@ const runtime = ['util.mjs', 'frontmatter-syntax.mjs', 'scoped-work-request.mjs'
 const resolverSuites = [...suites, 'scoped-work-generated.test.mjs', 'scoped-work-subsections.test.mjs',
   'scoped-work-retired-targets.test.mjs', 'scoped-work-refs-shared.test.mjs', 'scoped-work-memory.test.mjs',
   'scoped-work-graph-cache.test.mjs', 'scoped-work-active-syntax.test.mjs', 'scoped-work-syntax-scope.test.mjs',
-  'scoped-work-blocking-relations.test.mjs'];
+  'scoped-work-blocking-relations.test.mjs', 'scoped-work-unknown-reuse.test.mjs',
+  'scoped-work-selection-costs.test.mjs'];
 const cliSuite = 'scoped-work-binding-status.test.mjs';
 const bindingProgressSuite = 'scoped-work-binding-progress.test.mjs';
 const sourceCliSuite = 'scoped-work-cli.test.mjs';

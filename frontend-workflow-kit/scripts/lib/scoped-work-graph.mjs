@@ -2,6 +2,7 @@
 // No permit, approval, basis_digest, or caller-supplied resolver callbacks. The
 // eventual basis builder must add every owner/unit/decision/host and project
 // metadata explicitly; hashing this raw evidence graph is NOT scope-basis-v1.
+import { types } from 'node:util';
 import { splitFrontmatter } from './util.mjs';
 import { splitRow, hasHeader, apiCandidateColumns, parseApiCandidateTracking } from './spec.mjs';
 import { canonicalRepositoryPath, createCanonicalRepositoryPathResolver } from './artifact-path.mjs';
@@ -555,15 +556,71 @@ export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifa
 // avoid treating an input parent bullet as ownership of nested bullets. This is
 // source selection only: it neither scans prose for meaning nor grants a path.
 export function scopedGraphSelectionSpans(body, view, selection, input = false) {
+  return nativeSelectionSpans(selectedNodes(view, selection, body), input && selection.bullet_index != null);
+}
+
+function nativeSelectionSpans(nodes, omitNestedLists) {
   const spans = [];
-  for (const selected of selectedNodes(view, selection, body)) walk(selected, (node) => {
+  for (const selected of nodes) walk(selected, (node) => {
     if (node.children?.length) return;
     const start = node.position?.start.offset;
     const end = node.position?.end.offset;
     if (!Number.isInteger(start) || !Number.isInteger(end) || start > end) fail('missing native source span');
     spans.push([start, end]);
-  }, input && selection.bullet_index != null);
+  }, omitNestedLists);
   return spans;
+}
+
+// One relation evaluation can encounter the same native section through many
+// candidate graphs. Share immutable spans only inside that evaluation; the
+// public helper above still returns independent mutable arrays.
+export function createScopedGraphSelectionSpanResolver() {
+  const selections = new WeakMap(), immutable = new WeakMap();
+  const absent = Symbol('non-data-field');
+  const data = (value, key) => {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    return descriptor && Object.hasOwn(descriptor, 'value') ? descriptor.value : absent;
+  };
+  const plain = (value) => value !== null && typeof value === 'object' && !types.isProxy(value) &&
+    Object.isFrozen(value) && [Object.prototype, null].includes(Object.getPrototypeOf(value));
+  const point = (value) => plain(value) && Number.isInteger(data(value, 'offset'));
+  const frozen = (node) => {
+    if (!node || typeof node !== 'object') return false;
+    if (immutable.has(node)) return immutable.get(node);
+    // Frozen accessors/proxies can still supply changing positions or children.
+    // Check only the immutable data used by the walk, without invoking getters.
+    if (!plain(node) || typeof data(node, 'type') !== 'string') return false;
+    const position = data(node, 'position');
+    if (!plain(position) || !point(data(position, 'start')) || !point(data(position, 'end'))) return false;
+    const children = data(node, 'children');
+    let result = children === absent ? !('children' in node) : children == null;
+    if (Array.isArray(children) && !types.isProxy(children) && Object.isFrozen(children) &&
+        Object.getPrototypeOf(children) === Array.prototype) {
+      result = true;
+      for (let index = 0; index < children.length; index += 1) {
+        if (!frozen(data(children, String(index)))) { result = false; break; }
+      }
+    }
+    immutable.set(node, result);
+    return result;
+  };
+  return (body, view, selection, input = false) => {
+    // Resolve again even on a hit: a copied/replaced selection must retain its
+    // actual source body, and callers can mutate a context's node array.
+    const nodes = selectedNodes(view, selection, body), omitNestedLists = input && selection.bullet_index != null;
+    if (!nodes.every(frozen)) return nativeSelectionSpans(nodes, omitNestedLists);
+    const key = nodes.length === 1 ? nodes[0] : nodes;
+    let cached = selections.get(key);
+    if (!cached || cached.body !== body || cached.nodes.length !== nodes.length ||
+        cached.nodes.some((node, index) => node !== nodes[index])) {
+      cached = { body, nodes: [...nodes], modes: new Map() };
+      selections.set(key, cached);
+    }
+    if (!cached.modes.has(omitNestedLists)) {
+      cached.modes.set(omitNestedLists, Object.freeze(nativeSelectionSpans(nodes, omitNestedLists).map(Object.freeze)));
+    }
+    return cached.modes.get(omitNestedLists);
+  };
 }
 
 // The API resolver has already checked the canonical v2 table, endpoint and raw
