@@ -19,7 +19,7 @@ import { resolveScopedBoundaryProjection, resolveScopedSnapshotBoundaryProjectio
 import { resolveScopedUncertaintyProjection, scopedUnknownHomes, scopedUnknownAuthored } from './scoped-work-uncertainty.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
 import { copyScopedNodeContexts } from './scoped-work-authored.mjs';
-import { withOwnerProjectionProgress, scopedProjectionProgress } from './workflow-progress.mjs';
+import { withOwnerProjectionProgress, withScopedProjectionStage, scopedProjectionProgress } from './workflow-progress.mjs';
 
 const fail = (message) => { throw new ScopedWorkContractError(`SW-APPLICABILITY: ${message}`); };
 
@@ -46,8 +46,10 @@ function applicabilityProjection(options, snapshot) {
 
 function resolveApplicabilityProjection(options, snapshot) {
   const { projectRoot, kitRoot, layoutFile } = options;
-  const session = snapshot ? resolveScopedSnapshotBoundaryProjection(options) : null;
-  const boundary = session ? session.boundary : resolveScopedBoundaryProjection(options);
+  const { session, boundary } = withScopedProjectionStage('boundary', () => {
+    const session = snapshot ? resolveScopedSnapshotBoundaryProjection(options) : null;
+    return { session, boundary: session ? session.boundary : resolveScopedBoundaryProjection(options) };
+  });
   // Ignore caller role functions, as the boundary resolver does. All layers
   // must use the same selected layout/preset bytes and canonical document index.
   const layout = session ? null : loadLayoutProfile({ kitRoot: kitRoot || projectRoot, flags: { layout: layoutFile } });
@@ -64,8 +66,8 @@ function resolveApplicabilityProjection(options, snapshot) {
   let current;
   while (true) {
     const dependencyRoots = scopeSet([...roots.values()]), dependencyContext = { authoredRefs: [...authoredRoots] };
-    current = session ? session.uncertainty(dependencyRoots, dependencyContext)
-      : resolveScopedUncertaintyProjection({ ...options, layout }, dependencyRoots, dependencyContext);
+    current = withScopedProjectionStage('uncertainty', () => session ? session.uncertainty(dependencyRoots, dependencyContext)
+      : resolveScopedUncertaintyProjection({ ...options, layout }, dependencyRoots, dependencyContext));
     audit(current.read_set);
     const { decision_relations: _nextDecisions, uncertainty_relations, ...nextUnits } = current.projection;
     if (scopeJson(nextUnits) !== scopeJson(unitProjection)) fail('unit projection changed between layers');
@@ -83,16 +85,16 @@ function resolveApplicabilityProjection(options, snapshot) {
     // Roots only grow; no arbitrary depth cutoff or first-host/first-pass win.
     if (roots.size === count && authoredRoots.size === authoredCount) break;
   }
-  const unapplied = unappliedRows(options, current.projection, current.unaudited);
+  const unapplied = withScopedProjectionStage('candidates', () => unappliedRows(options, current.projection, current.unaudited));
   audit(unapplied.read_set);
-  const verify = () => {
+  const verify = () => withScopedProjectionStage('audit', () => {
     session?.verify();
     for (const entry of files.values()) {
       const file = canonicalRepositoryPath(projectRoot, entry.file, { required: true, type: 'file', label: 'scoped applicability' });
       if (hashBytes(readCurrentBytes(file.absolute, 'scoped applicability')) !== entry.sha256) fail('snapshot changed after relation closure');
       scopedProjectionProgress('audit-files');
     }
-  };
+  });
   verify();
   const projection = { ...current.projection, unapplied_relations: unapplied.unapplied };
   return { resolved: { projection: { ...projection, ownership }, read_set: scopeSet([...files.values()]), unaudited: current.unaudited,

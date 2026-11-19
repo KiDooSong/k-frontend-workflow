@@ -1,5 +1,12 @@
 # Current Roadmap
 
+> 2026-11-19 #331: 원문 길이만 제한하던 AST·authored view와 owner uncertainty의 문서 보관을 각각 원문 8 Mi UTF-16 code units·native AST 262,144개·512개 entry의 LRU로 제한한다.
+> 단일 초과 항목은 보관하지 않으며 전체 read set·현재 bytes 확인·최종 audit·물리 행 선택·판정·digest 계약을 유지한다.
+> `--progress`는 owner 내부 boundary/units/sources/uncertainty/candidates/audit의 시작·소요 시간·sampled heap peak와 RSS를 추가 보고한다.
+> 정본: [구문 보관 한도](../frontend-workflow-kit/docs/reference/scoped-work.md#bounded-syntax-retention), [owner diagnostics](../frontend-workflow-kit/docs/reference/scoped-work.md#owner-projection-diagnostics).
+> 재현: [단일 owner 메모리 benchmark](benchmarks/scoped-owner-memory.mjs), [측정·회귀 증거](temp/runs/scoped-owner-memory-331.md).
+> 1,274개 합성 입력의 ready/denied/postwork에서 최대 RSS 32–34% 감소·전체 결과 bytes 일치를 확인했다. 재파싱 시간 비용과 중간 규모 RSS 증가도 기록하며, 실제 consumer의 63분 OOM 해소 여부는 해당 환경 재실행으로 확인한다.
+
 > 2026-11-19 #321/#323 후속: scoped 실행 스냅샷의 입력 metadata를 한 번 준비해 resolver 간 반복 복사를 줄인다.
 > 반복 RFC3339 형식·달력 계산은 복사한 문자열 key 128 KiB·2,048개 한도의 LRU로 재사용하며 전체 input 판정·epoch·파일 관찰은 저장하지 않는다.
 > `binding-status`와 scoped `workflow:run`은 owner projection 도중 실제 완료한 source·graph·candidate·audit 연산을 선택형 stderr 진단으로 보고한다.

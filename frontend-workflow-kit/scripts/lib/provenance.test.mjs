@@ -881,5 +881,10 @@ test('#321 compact Evidence cache bounds entry count as well as retained syntax 
   assert.equal(resolve(4096).hasEvidenceText, true);
   assert.deepEqual(reconciliationParseStats(), warm);
   assert.equal(resolve(0).hasEvidenceText, true);
-  assert.ok(reconciliationParseStats().reused > warm.reused, 'the oldest of 4097 compact entries must be evicted');
+  const recomputed = reconciliationParseStats();
+  // The bounded AST cache can evict this body before the two 4,096-entry JSON
+  // caches do. Their eviction must rebuild Evidence from either a retained tree
+  // or a fresh parse, rather than depending on the AST's old source-only budget.
+  assert.equal(recomputed.parsed + recomputed.reused, warm.parsed + warm.reused + 1,
+    'the oldest of 4097 compact entries must reconstruct its Evidence syntax');
 });

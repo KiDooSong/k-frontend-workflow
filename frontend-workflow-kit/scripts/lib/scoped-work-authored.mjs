@@ -2,14 +2,21 @@
 // tree and byte ranges: GENERATED headings do not end an authored section, and
 // GENERATED tables cannot supply API/Unknown authoring evidence. The raw parser
 // and its ordinary fully qualified reference contract remain unchanged.
-import { parseReconciliationReferenceView, reconciliationHeadingText, slugifySectionTitle } from './reconciliation-markdown-ast.mjs';
+import { parseReconciliationReferenceView, reconciliationHeadingText, slugifySectionTitle,
+  reconciliationTreeNodeCount } from './reconciliation-markdown-ast.mjs';
 import { specSectionName, stripGeneratedBlocks } from './spec.mjs';
 import { ScopedWorkContractError } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
-import { createTextKeyedCache } from './util.mjs';
+import { createSyntaxCache } from './syntax-cache.mjs';
 
-const views = createTextKeyedCache(32 * 1024 * 1024);
+// This cache also owns the raw tree through the authored view, so it must obey
+// the same structural budgets even after the parser has evicted that tree.
+const views = createSyntaxCache();
 const source = (body, node) => body.slice(node.position.start.offset, node.position.end.offset);
+
+export function scopedAuthoredCacheStats() {
+  return views.stats();
+}
 
 export function scopedAuthoredView(body, raw = null) {
   const cached = views.get(body);
@@ -88,7 +95,7 @@ export function scopedAuthoredView(body, raw = null) {
       : slugs.flatMap((slug) => bySlug.get(slug)).sort((a, b) => a.start - b.start));
   }
   const view = { tree: raw.tree, sections, tableSections, byName };
-  views.set(body, view);
+  views.set(body, view, { nodes: reconciliationTreeNodeCount(raw.tree) });
   return view;
 }
 

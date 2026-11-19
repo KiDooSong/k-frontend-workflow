@@ -10,7 +10,9 @@ import { canonicalRepositoryPath, createCanonicalRepositoryPathResolver } from '
 import { ownerParts, readCurrentBytes, hashBytes, CurrentWorkError } from './current-work-request.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { parseTargetRef } from './reconciliation-items.mjs';
-import { parseReconciliationMarkdown, parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
+import { parseReconciliationMarkdown, parseReconciliationReferenceView, sharedReconciliationReferenceView,
+  reconciliationTreeNodeCount } from './reconciliation-markdown-ast.mjs';
+import { createSyntaxCache } from './syntax-cache.mjs';
 import { createScopedReferenceResolver, scopedRawTable, parseScopedTargetRef, scopedRowAlias } from './scoped-work-refs.mjs';
 import { resolveScopedContractGraph, scopedGraphSelectionSpans, scopedGraphMetadataRefs, scopedGraphBodyRefs,
   mergeScopedGraphContexts } from './scoped-work-graph.mjs';
@@ -95,7 +97,9 @@ function uncertaintyProjection(options, base) {
   const canonicalPath = createCanonicalRepositoryPathResolver(projectRoot);
   const refs = createScopedReferenceResolver({ targetIndex, projectRoot, inputArtifacts });
   const files = new Map(base.read_set.map((entry) => [entry.file, entry]));
-  const documents = new Map();
+  // Enumeration visits every indexed artifact. Keep only a bounded working set
+  // of parsed documents; the complete file hashes below remain authoritative.
+  const documents = createSyntaxCache();
   const nodes = new Map();
   const edges = new Map();
   const candidates = new Map();
@@ -114,13 +118,17 @@ function uncertaintyProjection(options, base) {
     return raw;
   }
   function document(relative) {
-    if (!documents.has(relative)) {
-      const text = decodeGitUtf8(read(relative), 'scoped uncertainty');
-      const parsed = splitFrontmatter(text);
-      if (!parsed.hasFrontmatter || parsed.parseError) fail('invalid uncertainty document');
-      documents.set(relative, { text, body: parsed.body, view: parseReconciliationReferenceView(parsed.body) });
-    }
-    return documents.get(relative);
+    const cached = documents.get(relative);
+    if (cached) return cached;
+    // A cache miss, including eviction, reads actual bytes and compares against
+    // the original hash in files. Eviction cannot forget a validation read.
+    const text = decodeGitUtf8(read(relative), 'scoped uncertainty');
+    const parsed = splitFrontmatter(text);
+    if (!parsed.hasFrontmatter || parsed.parseError) fail('invalid uncertainty document');
+    const doc = { text, body: parsed.body, view: sharedReconciliationReferenceView(parsed.body) };
+    documents.set(relative, doc, { sourceChars: relative.length + text.length,
+      nodes: reconciliationTreeNodeCount(doc.view.tree) });
+    return doc;
   }
   function addNode(node) {
     if (nodes.has(node.ref)) {

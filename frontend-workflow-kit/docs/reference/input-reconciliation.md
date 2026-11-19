@@ -589,8 +589,8 @@ v2 가 소비하는 마크다운은 **좁은 canonical authoring profile** 만 �
   재사용한다. 이 캐시는 직렬화한 section/bullet 결과와 key를 UTF-16 payload 기준 8 MiB·최대 4,096개로
   제한하며 원문이나 AST를 추가 보관하지 않는다. 새 index에는 독립된 Map·배열을 주고, 기존 index 내부의
   view 공유는 유지한다. 파일 내용은 새 index에서 다시 읽고, 입력 ID/중복·metadata·대상 참조와
-  validation/authority 판정은 해당 호출의 현재 입력으로 확인한다. 기존 AST 캐시 예산과
-  출력·basis/checkpoint 계약은 그대로다.
+  validation/authority 판정은 해당 호출의 현재 입력으로 확인한다. 이 Evidence 캐시는
+  [AST 구문 보관 한도](scoped-work.md#bounded-syntax-retention)와 별개이며 출력·basis/checkpoint 계약은 유지한다.
   v2 등록부의 구조적 Evidence 검증은 별도의 private input index에서 section 이름과 bullet별 nonempty 여부만
   해석한다(#321). 요약은 bullet 개수와 nonempty 비트맵을 저장하며, bullet 4개를 16진수 한 글자로
   묶는다. 짧은 bullet이 많을 때도 boolean 배열의 직렬화 비용이 반복되지 않도록 한다.
