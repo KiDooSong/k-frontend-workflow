@@ -138,12 +138,12 @@ test('D packed: real reference, source, mapping, API, normalization, graph trave
   t.diagnostic('packed readiness/binding-status subprocess: all 13 #282/#284/#300/#323 generated-boundary, binding-read and metadata-copy CLI cases passed');
   const progress = checkedNode(['--test', '--test-reporter=tap', path.join(lib, bindingProgressSuite)], packed,
     { ...env, SCOPED_WORK_TEST_FIXTURE_ROOT: KIT_ROOT });
-  assert.match(progress.stdout, /^# pass 8\r?$/m, progress.stdout);
+  assert.match(progress.stdout, /^# pass 10\r?$/m, progress.stdout);
   for (const metric of ['fail', 'cancelled', 'skipped', 'todo']) {
     assert.match(progress.stdout, new RegExp(`^# ${metric} 0\\r?$`, 'm'), progress.stdout);
   }
   checkPayload();
-  t.diagnostic('packed binding progress subprocess: all 8 stdout, synchronous phase, cleanup and closed-stderr regressions passed');
+  t.diagnostic('packed binding progress subprocess: all 10 stdout, synchronous phase, cleanup and closed-stderr regressions passed');
   const sourceCli = checkedNode(['--test', '--test-reporter=tap', '--test-name-pattern=^source admission CLI:',
     path.join(lib, sourceCliSuite)], packed, env);
   assert.match(sourceCli.stdout, /^# pass 4\r?$/m, sourceCli.stdout);
