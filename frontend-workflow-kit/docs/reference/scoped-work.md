@@ -127,8 +127,13 @@ behavior.
    ```
 
 3. **Decision scope** (optional) — the canonical home of an Open Decision may
-   narrow which units of an owner it blocks with `decision_work_scopes`. Without a
-   current binding an open decision blocks **every** scoped unit of that owner.
+   declare which units of an owner it blocks with `decision_work_scopes`. Without a
+   current binding an open decision blocks the units its canonical applications
+   reach. A native owner relation (`local`, `decision-ref` or `surface-member`,
+   with `unit: null`) blocks **every** scoped unit of that owner. An evidence
+   relation belonging to one unit does not block the owner's other units.
+   Missing and stale bindings use this same default; a current binding keeps
+   its explicit `blocks`, including an empty list or another known unit.
    Only a person adopts, narrows or restores a binding; the tool computes and
    compares `basis_digest` but never authenticates `approval_ref`.
 
@@ -234,8 +239,34 @@ its digests read stale under version 2 ([upgrade notes](upgrade-notes.md)).
 | --- | --- |
 | `current` | the recorded digest equals the computed one |
 | `stale` | the recorded digest differs (`basis`), or `known_units` is not the owner's current unit set (`known-units`) |
-| `missing` | the row has no binding for the owner; it blocks the units shown (`blocking_units`): every unit for an open Decision, the units its relations reach for an open Unknown or Conflict, none once resolved (`resolved: true`) |
+| `missing` | the row has no binding for the owner; it blocks the units shown (`blocking_units`): the units its canonical relations reach, every unit for an owner-wide native Decision, none once resolved (`resolved: true`) |
 | `unresolved` | a binding declared for the owner on a row that does not apply to it or does not exist; it has no effect |
+
+Every row includes `applications`: the canonical owner/unit relations considered
+by the inspectors. Decision applications carry `relation` and `referrer`, and
+an `uncertainty` ref when discovered through an Unknown or Conflict. Unknown and
+Conflict applications carry `relation` and `witnesses` with `dependency`,
+`selected` and, for a transitive relation, `via`. A `unit: null` relation applies
+to all of that owner's units; `scope-review-needed` is a conservative native
+scope, not a claimed explicit reference.
+
+For a `missing` row, `blocking_applications` lists only the relations that
+actually contribute to its reported `blocking_units`. It is empty for a
+resolved row and excludes transitive uncertainty relations whose only witness
+was removed by a current native-scope binding. For `current`, `stale` and
+`unresolved` rows it is `null`, as is `blocking_units`: the report does not turn
+those declarations into an execution permit. An unresolved row has no
+applications. Text output prints the missing row's blocking units, relation
+names, referrers and witnesses beside the row.
+
+Sharing a file alone does not create an evidence relation between disjoint
+sections. Explicit references, including document metadata (`sources`,
+`depends_on` and `decision_refs`), still participate. Different selections that
+reach a shared source can therefore establish inverse evidence; its witnesses
+name that common source. Native Unknown/Conflict scope also remains
+conservative until a current human-owned binding narrows it. These diagnostics
+explain those existing relations without discarding indirect dependencies,
+changing row statuses, writing bindings or authenticating approval evidence.
 
 Where it can compute one, it shows the recorded binding, the computed digest and
 four component digests — `target` (the row's own entries), `relations` (the other

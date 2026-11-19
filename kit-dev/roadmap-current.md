@@ -1,5 +1,11 @@
 # Current Roadmap
 
+> 2026-11-19 #333: 미바인딩/stale Decision의 기본 차단 범위는 실제 canonical application의 unit 집합으로 계산한다.
+> 다른 unit의 evidence 관계를 owner 전체로 확대하지 않으며, native `unit: null` 관계와 current binding의 명시 `blocks`는 유지한다.
+> `binding-status`는 행별 `applications`와 미바인딩 행의 실제 `blocking_applications`를 제공해 referrer·inverse/transitive witness를 드러낸다.
+> 같은 문서의 다른 절만 공유하는 조건은 기존에도 분리되며, 공통 metadata source 및 명시적인 간접 의존·native Unknown/Conflict 범위는 유지한다.
+> 정본: [binding basis and status](../frontend-workflow-kit/docs/reference/scoped-work.md#binding-basis-and-status). 재현·리뷰: [#333 run evidence](temp/runs/scoped-binding-relations-333.md).
+
 > 2026-11-19 #321/#323 후속: scoped 실행 스냅샷의 입력 metadata를 한 번 준비해 resolver 간 반복 복사를 줄인다.
 > 반복 RFC3339 형식·달력 계산은 복사한 문자열 key 128 KiB·2,048개 한도의 LRU로 재사용하며 전체 input 판정·epoch·파일 관찰은 저장하지 않는다.
 > `binding-status`와 scoped `workflow:run`은 owner projection 도중 실제 완료한 source·graph·candidate·audit 연산을 선택형 stderr 진단으로 보고한다.

@@ -30,17 +30,26 @@ const recorded = (binding) => binding ? { known_units: binding.known_units, bloc
 
 function ownerStatus(options, home) {
   const { decisions, uncertainty } = inspectScopedSnapshotBindings(options);
-  // Without a binding a row blocks the units the inspector names: none once resolved, every
-  // unit for an open Decision, the units its relations reach for an Unknown or Conflict.
-  const row = (ref, kind, check, resolved) => {
+  // Applications describe the canonical relation, not approval. For a missing
+  // binding, show only the relations the inspectors actually keep as blockers;
+  // a bound-out uncertainty must not appear as a surviving transitive reason.
+  const row = (ref, kind, check, resolved, blockingApplications) => {
     if (!STATES[check.binding_state]) fail(`unknown binding state ${check.binding_state}`);
     const [state, reason] = STATES[check.binding_state];
     return { ref, kind, status: check.status ?? null, resolved, home: home(parseScopedTargetRef(ref).ownerArtifactId), state,
       stale_reason: reason, blocking_units: state === 'missing' ? check.blocking_units : null, recorded: recorded(check.declared_binding),
+      applications: check.applications,
+      blocking_applications: state === 'missing' ? (resolved ? [] : blockingApplications) : null,
       computed_basis_digest: check.computed_basis_digest, components: check.computed_component_digests };
   };
-  const rows = [...decisions.checks.map((check) => row(check.decision, 'decision', check, check.status === 'resolved')),
-    ...uncertainty.checks.map((check) => row(check.uncertainty, check.kind, check, check.resolved))];
+  const keptUncertainty = new Map();
+  for (const application of uncertainty.applications) {
+    if (!keptUncertainty.has(application.uncertainty)) keptUncertainty.set(application.uncertainty, []);
+    keptUncertainty.get(application.uncertainty).push(application);
+  }
+  const rows = [...decisions.checks.map((check) => row(check.decision, 'decision', check, check.status === 'resolved', check.applications)),
+    ...uncertainty.checks.map((check) => row(check.uncertainty, check.kind, check, check.resolved,
+      keptUncertainty.get(check.uncertainty) || []))];
   const applicable = new Set(rows.map((entry) => entry.ref));
   for (const [id, entry] of options.targetIndex.artifacts) {
     const declared = [
@@ -49,6 +58,7 @@ function ownerStatus(options, home) {
     ];
     for (const [ref, kind, binding] of declared) if (binding.owner === options.owner && !applicable.has(ref)) {
       rows.push({ ref, kind, status: null, resolved: null, home: home(id), state: 'unresolved', stale_reason: null, blocking_units: null,
+        applications: [], blocking_applications: null,
         recorded: recorded(binding),
         computed_basis_digest: null, components: null });
     }
@@ -113,7 +123,8 @@ Reports the decision_work_scopes and uncertainty_work_scopes bindings of the ado
 (every owner in the policy_overlay that frontend-workflow.config.yaml names, or --owner) on the
 committed HEAD, which --work evaluates.
 For each row that applies to an owner: its status, the binding state (current, stale, missing),
-the units a missing binding leaves blocked, the recorded binding, and the scope-basis-v${SCOPE_BASIS_VERSION}
+the units a missing binding leaves blocked, canonical applications and the surviving blocking
+applications (unit, relation, referrer or witnesses), the recorded binding, and the scope-basis-v${SCOPE_BASIS_VERSION}
 digest and component digests (target, relations, units, evidence) the tool computes. A binding declared for the owner on a
 row that does not apply to it is unresolved. Read-only: a person records a digest; the tool
 never writes a binding or verifies approval_ref. Exit 0 with a report; 2 on usage or input errors.
@@ -131,6 +142,14 @@ function render(report) {
     for (const row of entry.rows) {
       const state = row.stale_reason ? `${row.state} (${row.stale_reason})` : row.state;
       lines.push(`  ${row.ref}  ${row.status ?? '-'}  ${state}${row.blocking_units?.length ? `  — no binding; blocks ${row.blocking_units.join(', ')}` : ''}`);
+      for (const application of row.blocking_applications || []) {
+        lines.push(`    blocks ${application.unit === null ? '(all owner units)' : application.unit}: ${application.relation}` +
+          (application.referrer ? `  referrer ${application.referrer}` : '') +
+          (application.uncertainty && row.kind === 'decision' ? `  via ${application.uncertainty}` : ''));
+        for (const witness of application.witnesses || []) {
+          lines.push(`      ${witness.via ? `via ${witness.via}  ` : ''}dependency ${witness.dependency}  selected ${witness.selected}`);
+        }
+      }
       if (row.recorded) {
         lines.push(`    recorded ${row.recorded.basis_digest}  approval_ref ${row.recorded.approval_ref}  known_units ${row.recorded.known_units.join(', ')}` +
           `  blocks ${row.recorded.blocks.length ? row.recorded.blocks.join(', ') : '(none)'}  in ${row.home}`);

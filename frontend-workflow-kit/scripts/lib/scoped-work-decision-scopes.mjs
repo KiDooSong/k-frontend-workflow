@@ -29,7 +29,9 @@ function decisionScopes(inspection) {
     const open = check.status === 'open';
     return { ...check, declaration_current: current, declaration_scope_used: open && current,
       scope_source: !open ? 'resolved-decision' : current ? 'current-canonical-declaration' : 'conservative-default',
-      blocking_units: !open ? [] : current ? [...check.declared_binding.blocks] : [...inspection.known_units],
+      // Missing/stale declarations retain the canonical application scope. A
+      // different unit's evidence is not an owner-wide native application.
+      blocking_units: !open ? [] : current ? [...check.declared_binding.blocks] : [...check.blocking_units],
       scope_review_needed: open && !current, approval_verified: false };
   });
   const blocking = union(checks.flatMap((check) => check.blocking_units));

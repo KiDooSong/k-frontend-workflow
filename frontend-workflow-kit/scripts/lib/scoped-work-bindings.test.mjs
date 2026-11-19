@@ -75,9 +75,9 @@ function fixture(t) {
 function check(f, ref = DECISION, owner = OWNER) {
   return f.run(owner).checks.find((entry) => entry.decision === ref);
 }
-function blocked(result, state) {
+function blocked(result, state, units = UNITS) {
   assert.equal(result.binding_state, state);
-  assert.deepEqual(result.blocking_units, UNITS);
+  assert.deepEqual(result.blocking_units, units);
   assert.equal(result.scope_review_needed, true);
   assert.equal(result.approval_verified, false);
 }
@@ -197,14 +197,18 @@ test('D bindings: selected evidence decisions are not limited to owner decision_
   const f = fixture(t); f.change('screen.md', ({ fm }) => { delete fm.decision_refs; });
   f.change(HOME, ({ fm }) => { delete fm.decision_work_scopes; });
   f.change('rules.md', (doc) => { doc.body = doc.body.replace('Known contract.', `See ${DECISION}`); });
-  const result = check(f); blocked(result, 'missing'); assert.ok(result.applications.some((entry) => entry.unit === 'known'));
+  const result = check(f); blocked(result, 'missing', ['known']);
+  assert.ok(result.applications.every((entry) => entry.unit === 'known'));
 });
 
 test('D bindings: inverse Unknown evidence discovers additional applicable decisions', (t) => {
   const f = fixture(t);
   f.write('unknown.md', { artifact_id: 'U-HOME', artifact_type: 'domain-rules', domain: 'foreign', status: 'draft' },
     `## Unknowns\n${table(['ID', 'Question'], [['U-ONE', 'See artifact:RULES#rules and decision:D-TWO@open-decision-register']])}`);
-  blocked(check(f, 'decision:D-TWO@open-decision-register'), 'missing'); assert.equal(f.run().checks.length, 2);
+  const result = check(f, 'decision:D-TWO@open-decision-register');
+  blocked(result, 'missing', ['known']);
+  assert.ok(result.applications.every((entry) => entry.unit === 'known' && entry.uncertainty === 'unknown:U-ONE@U-HOME'));
+  assert.equal(f.run().checks.length, 2);
 });
 
 test('D bindings: cyclic selected contracts retain finite decision closure', (t) => {
