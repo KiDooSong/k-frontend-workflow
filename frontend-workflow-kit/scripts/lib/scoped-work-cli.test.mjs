@@ -115,6 +115,13 @@ for (const denied of [false, true]) test(`#321 progress CLI: ${denied ? 'denied'
   for (const [index, id] of MEMBERS.entries()) {
     assert.ok(observed.stderr.includes(`owner:start "${index + 1}/2 screen:${id}/known"`));
     assert.ok(observed.stderr.includes(`owner:done "${index + 1}/2 screen:${id}/known"`));
+    const start = observed.stderr.indexOf(`owner-projection:start "screen:${id}"`);
+    const done = observed.stderr.indexOf(`owner-projection:done "screen:${id}"`, start);
+    assert.ok(start >= 0 && done > start, `missing owner projection boundaries for ${id}`);
+    const projection = observed.stderr.slice(start, done);
+    for (const phase of ['source-passes', 'units', 'contract-graph', 'candidate-documents', 'audit-files']) {
+      assert.match(projection, new RegExp(`owner-projection:progress "screen:${id}; ${phase}: [1-9]\\d* `));
+    }
   }
   assert.equal(observed.stderr.includes('backstop:start'), !denied);
   assert.equal(execFileSync('git', ['status', '--porcelain'], { cwd: r.root, encoding: 'utf8' }), '');
@@ -150,22 +157,28 @@ test('#321 progress CLI: current authority retains its independent preparation a
   assert.doesNotMatch(observed.stderr, /snapshot:start|owner:start/);
 });
 
-test('#321 progress CLI: a closed diagnostic sink preserves the full run output and packet', (t) => {
+for (const duringProjection of [false, true]) test(`progress CLI: a sink closed ${duringProjection ? 'inside projection' : 'before work'} preserves the full run output and packet`, (t) => {
   const r = repository(t), work = r.request(screenRequests()), plainDir = path.join(r.outside, 'plain'), observedDir = path.join(r.outside, 'observed');
   const plain = r.cli('workflow-run.mjs', work, '--out', plainDir, '--json'); r.json(plain);
   const preload = path.join(r.outside, 'closed-progress.cjs');
   fs.writeFileSync(preload, `
 const fs = require('node:fs'), write = fs.writeSync;
-fs.writeSync = function(fd, ...args) {
-  if (fd === 2) throw Object.assign(new Error('closed diagnostic sink'), { code: 'EPIPE' });
-  return write.call(this, fd, ...args);
+fs.writeSync = function(fd, bytes, ...args) {
+  if (fd === 2 && (!${duringProjection} || Buffer.from(bytes).includes(Buffer.from('owner-projection:progress')))) {
+    throw Object.assign(new Error('closed diagnostic sink'), { code: 'EPIPE' });
+  }
+  return write.call(this, fd, bytes, ...args);
 };
 `);
   const observed = spawnSync(process.execPath, ['--require', preload,
     ...r.command('workflow-run.mjs', work, '--out', observedDir, '--json', '--progress')],
   { cwd: r.root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout: 120000 });
   r.json(observed);
-  assert.equal(observed.stderr, ''); assert.equal(observed.stdout, plain.stdout);
+  if (duringProjection) {
+    assert.match(observed.stderr, /owner-projection:start/);
+    assert.doesNotMatch(observed.stderr, /owner-projection:progress|owner-projection:done|run:done/);
+  } else assert.equal(observed.stderr, '');
+  assert.equal(observed.stdout, plain.stdout);
   assert.deepEqual(runBundle(observedDir), runBundle(plainDir));
 });
 
@@ -234,7 +247,7 @@ fs.rmSync = function(file, ...args) {
   assert.equal(fs.existsSync(observedDir), false); assert.equal(fs.existsSync(plainDir), false);
 });
 
-test('#321 progress CLI: snapshot progress reaches stderr while synchronous preparation is still blocked', async (t) => {
+for (const marker of ['snapshot:start', 'contract-graph: 1 nodes resolved']) test(`progress CLI: ${marker} reaches stderr while synchronous work is still blocked`, async (t) => {
   const r = repository(t), work = r.request(screenRequests()), plain = r.cli('workflow-run.mjs', work, '--json');
   r.json(plain);
   const preload = path.join(r.outside, 'pause-on-progress.cjs');
@@ -244,7 +257,7 @@ const fs = require('node:fs'), write = fs.writeSync;
 let paused = false;
 fs.writeSync = function(fd, bytes, ...args) {
   const result = write.call(this, fd, bytes, ...args);
-  if (!paused && fd === 2 && Buffer.isBuffer(bytes) && bytes.includes(Buffer.from('snapshot:start'))) {
+  if (!paused && fd === 2 && Buffer.isBuffer(bytes) && bytes.includes(Buffer.from(${JSON.stringify(marker)}))) {
     paused = true;
     const ack = Buffer.alloc(1);
     if (fs.readSync(0, ack, 0, 1, null) !== 1 || ack[0] !== 120) throw new Error('missing progress acknowledgment');
@@ -255,13 +268,15 @@ fs.writeSync = function(fd, bytes, ...args) {
 `);
   const child = spawn(process.execPath, ['--require', preload, ...r.command('workflow-run.mjs', work, '--json', '--progress')],
     { cwd: r.root, stdio: ['pipe', 'pipe', 'pipe'], timeout: 120000, killSignal: 'SIGKILL' });
-  let stdout = '', stderr = '', released = false, stdoutAtProgress = null, runningAtProgress = false;
+  let stdout = '', stderr = '', released = false, stdoutAtProgress = null, runningAtProgress = false, projectionDoneAtProgress;
+  t.after(() => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); });
   child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
   child.stdout.on('data', (chunk) => { stdout += chunk; });
   child.stderr.on('data', (chunk) => {
     stderr += chunk;
-    if (!released && stderr.includes('snapshot:start')) {
+    if (!released && stderr.includes(marker)) {
       released = true; stdoutAtProgress = stdout; runningAtProgress = child.exitCode === null;
+      projectionDoneAtProgress = stderr.includes('owner-projection:done');
       child.stdin.end('x');
     }
   });
@@ -272,6 +287,7 @@ fs.writeSync = function(fd, bytes, ...args) {
   });
   assert.equal(result.code, 0, stderr); assert.equal(result.signal, null);
   assert.equal(stdinError, undefined); assert.equal(released, true); assert.equal(runningAtProgress, true);
+  assert.equal(projectionDoneAtProgress, false, 'the inner-loop update is visible before the owner projection returns');
   assert.equal(fs.readFileSync(acknowledged, 'utf8'), 'acknowledged', 'the synchronous pause must receive the parent handshake');
   assert.equal(stdoutAtProgress, '', 'progress is observable before a complete JSON envelope exists');
   assert.equal(stdout, plain.stdout);

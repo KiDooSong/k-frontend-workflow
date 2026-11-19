@@ -1,5 +1,11 @@
 # Current Roadmap
 
+> 2026-11-19 #321/#323 후속: scoped 실행 스냅샷의 입력 metadata를 한 번 준비해 resolver 간 반복 복사를 줄인다.
+> 반복 RFC3339 형식·달력 계산은 복사한 문자열 key 128 KiB·2,048개 한도의 LRU로 재사용하며 전체 input 판정·epoch·파일 관찰은 저장하지 않는다.
+> `binding-status`와 scoped `workflow:run`은 owner projection 도중 실제 완료한 source·graph·candidate·audit 연산을 선택형 stderr 진단으로 보고한다.
+> 판정·거부 사유·scope-basis-v2·read-set·최종 경로 감사는 유지한다. 합성 측정은 실제 consumer 장시간 실행의 해소를 증명하지 않는다.
+> 정본: [owner projection diagnostics](../frontend-workflow-kit/docs/reference/scoped-work.md#owner-projection-diagnostics). 재현: [owner projection benchmark](benchmarks/owner-projection.mjs).
+
 > 2026-11-18 #300/#321/#323 후속: graph·source·Decision·uncertainty·applicability의 초기 canonical 경로 읽기는 private resolver 안에서 디렉터리 이름 집합을 재사용한다.
 > 현재 부모 stamp·각 조상/leaf·실제 경로·최종 read set 검사를 유지한다. #329 리뷰 보완으로 최종 감사·expected-hash 재검사·register 경계/부재 확인은 파일마다 캐시 없는 경로 검사로 목록을 새로 읽는다. 경로 결과와 파일 bytes는 이 resolver에 보관하지 않으며, 초기 목록은 resolver별 최대 256개·추정 보관량 1 MiB로 제한하고 독립 호출 사이 공유하지 않는다.
 > 정본: [scoped baseline](../frontend-workflow-kit/docs/reference/scoped-work.md#evaluation-on-the-immutable-baseline). 재현: [binding-status benchmark](benchmarks/binding-status.mjs) — 전체 canonical 검사와 실제 directory read 수, 계측 없는 CLI 시간을 나누어 비교한다.

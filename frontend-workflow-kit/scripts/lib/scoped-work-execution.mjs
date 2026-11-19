@@ -26,6 +26,7 @@ import {
 import { readWorkRequestFile, resolveWorkResources, workResourceRecords, baselineWorkflowState, baselineWorkPolicy } from './current-work-execution-preflight.mjs';
 import { normalizeScopedWorkRequestSyntax } from './scoped-work-request.mjs';
 import { inspectScopedSnapshotWorkRequests } from './scoped-work-composition.mjs';
+import { prepareScopedInputMetadata } from './scoped-work-input-metadata.mjs';
 import { workflowProgress } from './workflow-progress.mjs';
 
 const fail = (message) => { throw new CurrentWorkExecutionError(message, 'SW-INPUT'); };
@@ -145,13 +146,18 @@ export function prepareScopedWork({ work, root, docs, src, policy, manifest, lay
         reconcile_status: rows[0]?.reconcileStatus || null, reconcile_result: rows[0]?.result || null };
     });
 
+    // The execution adapter owns this raw Git snapshot and its input collection.
+    // Share only detached immutable plain metadata with its fresh source resolvers;
+    // their records, validation, bodies and current-file observations stay private.
+    const preparedInputs = inputArtifacts.map((entry) =>
+      ({ ...entry, fm: prepareScopedInputMetadata(entry.fm) }));
     workflowProgress('baseline-inputs:done');
     const composition = inspectScopedSnapshotWorkRequests({
       request: parsed.value, projectRoot: baselineRoot, docsDir: docsRoot, kitRoot: baselineKitRoot,
       policyFile: resources.policy.baseline, layoutFile: resources.layout.baseline, manifestFile: resources.manifest.baseline,
       ...(resources.policy_overlay ? { policyOverlayFile: resources.policy_overlay.baseline } : {}),
       registerFile, ...(resources.ci ? { ciFile: resources.ci.baseline } : {}),
-      targetIndex: index.targetIndex, inputArtifacts, srcDir: resources.src.baseline,
+      targetIndex: index.targetIndex, inputArtifacts: preparedInputs, srcDir: resources.src.baseline,
     });
 
     // The authority read set joins C's resources/inventories with every file the

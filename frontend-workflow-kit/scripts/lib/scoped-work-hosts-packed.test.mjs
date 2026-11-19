@@ -51,8 +51,13 @@ test('D hosts packed: host consent, composition and scoped execution suites run 
     '#300 snapshot composition preserves every owner', '#300 snapshot composition rejects a late mutation',
     '#300 scoped readiness CLI: matching Decision bindings and profile applicability',
     '#321 progress CLI: ready two-owner', '#321 progress CLI: denied two-owner', '#321 progress CLI: packet-bound',
-    '#321 progress CLI: current authority', '#321 progress CLI: a closed diagnostic sink',
-    '#321 progress CLI: failing owner', '#321 progress CLI: snapshot progress', '#321 progress CLI: opt-in',
+    '#321 progress CLI: current authority',
+    'progress CLI: a sink closed before work preserves the full run output and packet',
+    'progress CLI: a sink closed inside projection preserves the full run output and packet',
+    '#321 progress CLI: failing owner',
+    'progress CLI: snapshot:start reaches stderr while synchronous work is still blocked',
+    'progress CLI: contract-graph: 1 nodes resolved reaches stderr while synchronous work is still blocked',
+    '#321 progress CLI: opt-in',
     '#321 progress: unwritable stderr']) {
     assert.ok(unescapedTap.includes(`# Subtest: ${name}`), `packed regression was not executed: ${name}`);
   }

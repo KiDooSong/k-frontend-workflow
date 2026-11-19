@@ -472,6 +472,84 @@ const ORIGIN = 'IN-20260923-figma-001';
 const visualRequest = () => [{ owner: SURFACE, authority: 'scoped', unit: 'panel', targets: [{ path: `${SHARED}/Panel1.tsx`, change: 'M' }] }];
 const hostRequest = () => [{ owner: 'screen:RESULT-001', authority: 'scoped', unit: 'known', targets: [{ path: ENTRY('RESULT-001'), change: 'M' }] }];
 
+const COPY_INPUT = 'IN-20261118-meeting-001';
+function metadataExecutionFixture(t, extra = 'extra: { nested: { note: ordinary metadata } }') {
+  const r = repository(t), input = `${DOCS}/inputs/metadata-copy.md`;
+  r.put(input, `---
+input_id: ${COPY_INPUT}
+input_type: meeting
+source_type: meeting
+source_ref: meeting:execution-metadata-regression
+captured_at: '2026-11-18T00:00:00Z'
+captured_by: test
+status: captured
+affected_domains: [other]
+affected_screens: [OTHER-001]
+${extra}
+---
+## Extracted Facts
+- Unselected metadata still participates in every fresh source index.
+`);
+  r.commit('unselected execution input');
+  const work = r.request(hostRequest()), temporary = path.join(r.outside, 'snapshots');
+  fs.mkdirSync(temporary);
+  const countsFile = path.join(r.outside, 'copies.json'), preload = path.join(r.outside, 'copies.cjs');
+  // Count native copies in the actual public run. This observes the existing
+  // input collection boundary without adding a caller-selected reuse option.
+  fs.writeFileSync(preload, `
+const fs = require('node:fs'), { types } = require('node:util');
+const clone = globalThis.structuredClone;
+let copies = 0;
+globalThis.structuredClone = function(value, ...args) {
+  if (value && typeof value === 'object' && !types.isProxy(value) &&
+      Object.getOwnPropertyDescriptor(value, 'input_id')?.value === ${JSON.stringify(COPY_INPUT)}) copies++;
+  return clone.call(this, value, ...args);
+};
+process.on('exit', () => fs.writeFileSync(${JSON.stringify(countsFile)}, JSON.stringify({ copies })));
+`);
+  const run = (count = false) => {
+    const head = git(r.repo, 'rev-parse', 'HEAD'), tree = git(r.repo, 'rev-parse', 'HEAD^{tree}');
+    const index = fs.readFileSync(path.join(r.repo, '.git/index'));
+    const result = spawnSync(process.execPath, [...(count ? ['--require', preload] : []),
+      path.join(KIT_ROOT, 'scripts/workflow-run.mjs'), '--work', work, '--root', r.root, '--docs', DOCS,
+      '--src', 'src', '--policy', '.kit/policy.yaml', '--manifest', '.kit/manifest.yaml', '--layout', '.kit/layout.yaml', '--json'],
+    { cwd: r.root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout: 120000,
+      env: { ...process.env, TMPDIR: temporary, TMP: temporary, TEMP: temporary } });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.equal(result.stderr, '');
+    assert.deepEqual(fs.readdirSync(temporary), [], 'the public run cleans its owned snapshot');
+    assert.equal(git(r.repo, 'status', '--porcelain'), '');
+    assert.equal(git(r.repo, 'rev-parse', 'HEAD'), head);
+    assert.equal(git(r.repo, 'rev-parse', 'HEAD^{tree}'), tree);
+    assert.deepEqual(fs.readFileSync(path.join(r.repo, '.git/index')), index);
+    return { stdout: result.stdout, report: JSON.parse(result.stdout),
+      copies: count ? JSON.parse(fs.readFileSync(countsFile, 'utf8')).copies : null };
+  };
+  return { r, input, work, run };
+}
+
+test('scoped execution: owned input metadata is copied once and unselected input bytes remain authority', (t) => {
+  const { r, input, work, run } = metadataExecutionFixture(t);
+  const counted = run(true), plain = run();
+  assert.equal(counted.copies, 1, 'prepare the unselected input once across all fresh source resolvers');
+  assert.equal(counted.report.state, 'HALT_READY_FOR_WORK');
+  assert.equal(counted.stdout, plain.stdout, 'metadata copy instrumentation cannot change the full public result');
+  const preflight = r.prepare(t, work);
+  const entry = preflight.snapshot.authority_read_set.find((record) => record.source === 'project' && record.path === input);
+  assert.equal(entry?.hash, `sha256:${createHash('sha256').update(fs.readFileSync(path.join(r.root, input))).digest('hex')}`);
+  fs.appendFileSync(path.join(r.root, input), '\nA later input byte change.\n');
+  assert.ok(codes(evaluateScopedGit(preflight)).includes('SW-GIT-AUTHORITY-CHANGED'),
+    'prepared metadata cannot exempt an unselected canonical input from the fresh Git backstop');
+});
+
+test('scoped execution: cyclic metadata keeps the existing per-resolver copy path', (t) => {
+  const { run } = metadataExecutionFixture(t, 'extra: &cycle\n  self: *cycle');
+  const counted = run(true), plain = run();
+  assert.ok(counted.copies > 1, 'non-plain metadata still reaches each ordinary native clone');
+  assert.equal(counted.report.state, 'HALT_READY_FOR_WORK');
+  assert.equal(counted.stdout, plain.stdout, 'fallback preserves the complete public run result');
+});
+
 test('W35: a connected origin is preserved from the scoped preflight into packet transport', (t) => {
   const r = repository(t); r.visual(); r.commit('visual evidence');
   const preflight = r.prepare(t, r.request(hostRequest(), [{ input_id: ORIGIN, source_refs: [] }]));

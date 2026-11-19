@@ -15,6 +15,7 @@ import { createScopedSourceResolver } from './scoped-work-sources.mjs';
 import { workText, workSet, workObject, ScopedWorkContractError } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
 import { scopedAuthoredSections, scopedAuthoredSubsections, scopedSelectionNodes, rememberScopedSelection, copyScopedSelectionContext, copyScopedNodeContexts } from './scoped-work-authored.mjs';
+import { scopedProjectionProgress } from './workflow-progress.mjs';
 
 const fail = (message) => { throw new ScopedWorkContractError(`SW-GRAPH: ${message}`); };
 const prefix = /^(?:artifact|decision|unknown|conflict|gap|investigation|verification|input):/;
@@ -383,7 +384,11 @@ export function resolveScopedCandidateGraph({ roots = [], targetIndex, inputArti
     // every selected range in every edge and turn a linear graph quadratic.
     const key = scopeJson([ref, record.file, hashBytes(scopeJson(spans))]);
     request.key = key;
-    if (nodes.has(key)) { nodes.get(key).modes.add(mode); continue; }
+    if (nodes.has(key)) {
+      nodes.get(key).modes.add(mode);
+      scopedProjectionProgress('candidate-graph');
+      continue;
+    }
     const projected = project ? project(record) : record;
     if (projected?.selection) copyScopedSelectionContext(record.selection, projected.selection);
     nodes.set(key, { key, ref, modes: new Set([mode]), record: projected });
@@ -392,10 +397,12 @@ export function resolveScopedCandidateGraph({ roots = [], targetIndex, inputArti
     const ordinary = new Set([...found.ordinaryRefs, ...scopedGraphMetadataRefs(record.metadata)]);
     for (const dependency of ordinary) pendingEdges.push({ from: key, to: enqueue(dependency, 'ordinary') });
     for (const dependency of found.deferredTracking) pendingEdges.push({ from: key, to: enqueue(dependency, 'tracking') });
+    scopedProjectionProgress('candidate-graph');
   }
   for (const entry of files.values()) {
     const file = canonicalRepositoryPath(projectRoot, entry.file, { required: true, type: 'file', label: 'scoped evidence' });
     if (hashBytes(readCurrentBytes(file.absolute, 'scoped evidence')) !== entry.sha256) fail('evidence changed during graph resolution');
+    scopedProjectionProgress('audit-files');
   }
   const values = [...nodes.values()].map((node) => ({ ...node, modes: scopeSet([...node.modes]) }));
   const normalized = scopeSet(values);
@@ -516,6 +523,7 @@ export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifa
       edges.push({ from: ref, to: dependency });
       if (!scheduled.has(dependency)) { scheduled.add(dependency); queue.push(dependency); }
     }
+    scopedProjectionProgress('contract-graph');
   }
   // Re-read consumed paths so a late mutation cannot yield a mixed read set.
   // Every file needs fresh directory entries, even within this final audit:
@@ -523,6 +531,7 @@ export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifa
   for (const entry of files.values()) {
     const file = canonicalRepositoryPath(projectRoot, entry.file, { required: true, type: 'file', label: 'scoped evidence' });
     if (hashBytes(readCurrentBytes(file.absolute, 'scoped evidence')) !== entry.sha256) fail('evidence changed during graph resolution');
+    scopedProjectionProgress('audit-files');
   }
   const values = [...nodes.values()];
   const graph = { roots: scopeSet(roots), nodes: copyScopedNodeContexts(values, scopeSet(values)), edges: scopeSet(edges),

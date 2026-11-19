@@ -273,6 +273,23 @@ bytes, metadata comparisons and passive Evidence observations are still checked.
 The private identity set uses weak references and retains no separate input
 inventory, source text, validation verdict or file observation.
 
+The scoped `--work` execution adapter uses the same private preparation after
+its baseline input validation and origin processing. It passes detached plain
+metadata to the snapshot's fresh source resolvers while retaining the original
+collected input records for authority inventory and backstop checks. Unselected
+inputs remain part of that inventory; changing one still fails the existing
+authority check. This preparation does not make public mutable callers eligible
+for reuse or change the unusual-metadata fallback described above.
+
+The shared provenance timestamp helper also reuses the format/calendar result
+for the exact trimmed primitive string. Its LRU keeps at most 2,048 copied keys
+and 128 KiB of UTF-16 key storage; these limits are not a bound on total RSS.
+Oversized strings use the existing uncached parser. Each input field is still
+validated, and timestamp-to-epoch conversion still calls `Date.parse` normally.
+No metadata, whole-input verdict, file observation or binding digest is cached.
+Cold distinct timestamps can cost more than the uncached helper, so performance
+claims require an end-to-end workload with the repeated syntax seen in profiling.
+
 Scoped reference resolvers and evidence graph readers also reuse immutable raw
 section, table and cell views of the same native AST. A weak association keeps
 each derived view with that exact tree; reparsing after AST eviction starts a
@@ -335,6 +352,29 @@ binding state, scope-basis-v2 bytes, exit codes or approval requirements. An
 unwritable stderr disables diagnostics without changing the result. No final
 digest is reused across runs: changing a unit still changes the basis inputs,
 and a person must review and record the resulting binding as described above.
+
+#### Owner projection diagnostics
+
+Both `binding-status --progress` and scoped `workflow:run --work --progress`
+report `owner-projection:start`, `owner-projection:done` or
+`owner-projection:failed`. Between those boundaries,
+`owner-projection:progress` identifies the selected owner, the phase and a
+cumulative count of completed operations. Phases distinguish input metadata,
+source selections and passes, units, contract/candidate graph work, candidate
+rows/documents/relations, input fidelity and file audits.
+
+These counts describe work performed within that projection. Repeated graph or
+source passes count their repeated operations; the counts are not unique inputs,
+coverage, a known total or a completion-time estimate. Each encountered phase
+reports its first completed operation. Further intermediate updates share one
+one-second throttle across phases, and changed counts are flushed at completion
+or failure. The phase vocabulary is finite, so thousands of short graph calls do
+not each create a new start/done pair. There is no timer-only heartbeat: a long
+individual synchronous step can still leave a gap until it completes.
+
+The reporter stays outside requests, results, binding bases and read sets.
+Opting out suppresses these diagnostics, and a failed stderr write disables them
+without changing evaluation, output artifacts or the original error.
 
 ## Request contract
 

@@ -19,6 +19,7 @@ import { resolveScopedBoundaryProjection, resolveScopedSnapshotBoundaryProjectio
 import { resolveScopedUncertaintyProjection, scopedUnknownHomes, scopedUnknownAuthored } from './scoped-work-uncertainty.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
 import { copyScopedNodeContexts } from './scoped-work-authored.mjs';
+import { withOwnerProjectionProgress, scopedProjectionProgress } from './workflow-progress.mjs';
 
 const fail = (message) => { throw new ScopedWorkContractError(`SW-APPLICABILITY: ${message}`); };
 
@@ -40,6 +41,10 @@ export function createScopedSnapshotApplicabilitySession(options = {}) {
 }
 
 function applicabilityProjection(options, snapshot) {
+  return withOwnerProjectionProgress(options.owner, () => resolveApplicabilityProjection(options, snapshot));
+}
+
+function resolveApplicabilityProjection(options, snapshot) {
   const { projectRoot, kitRoot, layoutFile } = options;
   const session = snapshot ? resolveScopedSnapshotBoundaryProjection(options) : null;
   const boundary = session ? session.boundary : resolveScopedBoundaryProjection(options);
@@ -85,6 +90,7 @@ function applicabilityProjection(options, snapshot) {
     for (const entry of files.values()) {
       const file = canonicalRepositoryPath(projectRoot, entry.file, { required: true, type: 'file', label: 'scoped applicability' });
       if (hashBytes(readCurrentBytes(file.absolute, 'scoped applicability')) !== entry.sha256) fail('snapshot changed after relation closure');
+      scopedProjectionProgress('audit-files');
     }
   };
   verify();
@@ -197,6 +203,7 @@ function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] 
       if (parseScopedTargetRef(token)?.rowId !== id) fail(`${hit.family} ${JSON.stringify(id)} in ${artifactId} cannot form a scoped reference`);
       add({ key: token, id, artifactId, token, roots: [token] }, hit.sectionSlug);
     }
+    scopedProjectionProgress('candidate-documents');
   }
   for (const node of projected) for (const row of scopedCoveredRows(node, sites)) known.add(row);
   const roots = [...new Map([...rows.values()].flatMap((row) => row.roots.map((ref) =>
@@ -315,6 +322,7 @@ function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] 
       searchStats.visited += 1;
       ready.push(...(rootsOf.get(queue[index]) || []));
       for (const previous of backward.get(queue[index]) || []) if (!reaching.has(previous)) { reaching.add(previous); queue.push(previous); }
+      scopedProjectionProgress('candidate-relations');
     }
   };
   const knownVertices = new Set([...known].map(referenceVertex));
@@ -331,6 +339,7 @@ function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] 
       searchStats.visited += 1;
       if (!knownVertices.has(queue[index])) { knownVertices.add(queue[index]); reachingFrom(queue[index]); }
       for (const next of forward.get(queue[index]) || []) if (!reached.has(next)) { reached.add(next); queue.push(next); }
+      scopedProjectionProgress('candidate-relations');
     }
   }
   // A row whose ID cannot form a typed reference also relates when a related node selects it

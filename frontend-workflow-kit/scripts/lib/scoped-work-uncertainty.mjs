@@ -19,6 +19,7 @@ import { resolveScopedDecisionProjection, createScopedSnapshotDecisionResolver }
 import { ScopedWorkContractError, workText } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
 import { scopedAuthoredSections, scopedSelectionNodes, rememberScopedSelection, copyScopedNodeContexts } from './scoped-work-authored.mjs';
+import { scopedProjectionProgress } from './workflow-progress.mjs';
 
 const fail = (message) => { throw new ScopedWorkContractError(`SW-UNCERTAINTY: ${message}`); };
 const signatures = { unknown: ['ID', 'Question'], conflict: ['ID', 'Status'] };
@@ -175,6 +176,7 @@ function uncertaintyProjection(options, base) {
     const evidence = mergeScopedGraphContexts([graph],
       { roots: graph.roots, nodes: graph.nodes.map(scopedProjectionNode), edges: graph.edges });
     candidates.set(physical, { record, entry, evidence, affected: affectedOwners(affected) });
+    scopedProjectionProgress('candidate-rows');
   }
 
   // #262: the conflicts template's `영향 화면` cell names owners only as a list of
@@ -222,6 +224,7 @@ function uncertaintyProjection(options, base) {
         }
       }
     }
+    scopedProjectionProgress('candidate-documents');
   }
 
   // Index physical Unknown rows once per document for section/body selections.

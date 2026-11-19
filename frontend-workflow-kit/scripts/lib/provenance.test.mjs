@@ -15,11 +15,13 @@ import {
   observeInputEvidenceReads,
   parseFigmaSourcePointer,
   parseInputEvidenceRef,
+  parseRfc3339,
+  rfc3339SyntaxStats,
   resolveEffectiveSourceRef,
   resolveInputArtifact,
   resolveInputEvidence,
 } from './provenance.mjs';
-import { loadInputArtifact } from './input-artifact.mjs';
+import { loadInputArtifact, validateInputArtifacts } from './input-artifact.mjs';
 import { reconciliationParseStats } from './reconciliation-markdown-ast.mjs';
 
 function tmpdir(t) {
@@ -71,6 +73,99 @@ test('shared RFC3339 parser accepts timezone variants and rejects normalized-inv
     null,
     123,
   ]) assert.equal(isRfc3339(value), false, String(value));
+});
+
+test('RFC3339 syntax reuse preserves calendar, offset, fractional, case and padding rules', () => {
+  const cases = [
+    ['0000-02-29T00:00:00Z', true], ['0001-02-29T00:00:00Z', false],
+    ['1900-02-29T00:00:00Z', false], ['2000-02-29T00:00:00Z', true],
+    ['2032-02-29t23:59:59.123456789z', true], ['2032-02-30T00:00:00Z', false],
+    ['2032-00-01T00:00:00Z', false], ['2032-13-01T00:00:00Z', false],
+    ['2032-01-00T00:00:00Z', false], ['2032-01-32T00:00:00Z', false],
+    ['2032-04-31T00:00:00Z', false], ['2032-01-01T24:00:00Z', false],
+    ['2032-01-01T23:60:00Z', false], ['2032-01-01T23:59:60Z', false],
+    ['2032-01-01T00:00:00+23:59', true], ['2032-01-01T00:00:00-00:00', true],
+    ['2032-01-01T00:00:00+24:00', false], ['2032-01-01T00:00:00-00:60', false],
+    ['2032-01-01T00:00:00.Z', false], ['2032-01-01T00:00:00.0Z', true],
+    ['2032-01-01T00:00:00', false], ['2032-1-1T00:00:00Z', false],
+    ['\ufeff \t2032-01-01T00:00:00Z\r\n', true], ['2032-01-01 T00:00:00Z', false],
+    ['2032-01-01T00:00:00Z trailing', false], ['2032-01-01T00:00:00Z\u200b', false],
+  ];
+  for (const pass of ['cold', 'warm']) for (const [value, valid] of cases) {
+    assert.equal(isRfc3339(value), valid, `${pass}: ${JSON.stringify(value)}`);
+    assert.equal(parseRfc3339(value), valid ? Date.parse(value.trim()) : null,
+      `epoch parsing keeps its original native result: ${pass}: ${JSON.stringify(value)}`);
+  }
+  const parse = Date.parse;
+  try {
+    let calls = 0;
+    Date.parse = () => { calls += 1; return 1234; };
+    assert.equal(parseRfc3339('2032-01-01T00:00:00Z'), 1234);
+    assert.equal(parseRfc3339('2032-01-01T00:00:00Z'), 1234);
+    assert.equal(calls, 2, 'syntax reuse never stores the epoch result');
+  } finally { Date.parse = parse; }
+});
+
+test('RFC3339 syntax cache uses exact primitive code units and cannot coerce caller objects', () => {
+  const values = ['invalid:\ud800', 'invalid:\ud801', 'invalid:\ufffd'];
+  const before = rfc3339SyntaxStats();
+  for (const value of values) assert.equal(isRfc3339(value), false);
+  for (const value of values) assert.equal(isRfc3339(value), false);
+  const after = rfc3339SyntaxStats();
+  assert.equal(after.checks - before.checks, values.length);
+  assert.equal(after.hits - before.hits, values.length, 'false syntax outcomes are reusable too');
+  const calls = [], object = { toString() { calls.push('coerce'); throw new Error('must not coerce'); } };
+  const proxy = new Proxy(object, { get() { calls.push('get'); throw new Error('must not inspect'); } });
+  for (const value of [object, proxy, new String('2032-01-01T00:00:00Z'), null, undefined, false, 0, 1n, Symbol('timestamp')]) {
+    assert.equal(isRfc3339(value), false);
+    assert.equal(parseRfc3339(value), null);
+  }
+  assert.deepEqual(calls, []);
+  after.hits = -1;
+  assert.notEqual(rfc3339SyntaxStats().hits, -1, 'diagnostic snapshots cannot mutate syntax state');
+});
+
+test('RFC3339 syntax cache evicts by recency and bounds both copied keys and entries', () => {
+  const { max_entries: maxEntries, max_key_bytes: maxBytes } = rfc3339SyntaxStats();
+  const kept = '2040-01-02T03:04:05Z';
+  assert.equal(isRfc3339(kept), true);
+  for (let index = 0; index < maxEntries - 1; index += 1) isRfc3339(`invalid-entry-${index}`);
+  assert.equal(rfc3339SyntaxStats().entries, maxEntries);
+  assert.equal(isRfc3339(kept), true); // Refresh the oldest key before one insertion.
+  isRfc3339('invalid-entry-extra');
+  const before = rfc3339SyntaxStats();
+  assert.equal(isRfc3339(kept), true);
+  assert.equal(rfc3339SyntaxStats().hits - before.hits, 1);
+  assert.equal(isRfc3339('invalid-entry-0'), false);
+  assert.equal(rfc3339SyntaxStats().checks - before.checks, 1, 'the evicted syntax is parsed again');
+  assert.ok(rfc3339SyntaxStats().evictions > 0);
+  for (const prefix of ['wide-a:', 'wide-b:']) isRfc3339(prefix + 'x'.repeat(Math.floor(maxBytes / 3)));
+  const bounded = rfc3339SyntaxStats();
+  assert.equal(bounded.entries, 1, 'two wide keys cannot both fit the byte budget');
+  assert.ok(bounded.key_bytes <= maxBytes);
+  const oversized = `2040-01-02T03:04:05.${'0'.repeat(maxBytes / 2)}Z`;
+  assert.equal(isRfc3339(oversized), true);
+  assert.equal(isRfc3339(oversized), true);
+  const after = rfc3339SyntaxStats();
+  assert.equal(after.oversized - bounded.oversized, 2);
+  assert.equal(after.checks - bounded.checks, 2, 'oversized syntax keeps the original parsing path');
+  assert.equal(after.entries, bounded.entries);
+  assert.equal(after.key_bytes, bounded.key_bytes, 'oversized syntax cannot displace retained small keys');
+});
+
+test('RFC3339 syntax reuse does not reuse mutable input field validation', (t) => {
+  const entry = loadInputArtifact(writeInput(tmpdir(t), 'IN-20261119-meeting-777'));
+  let current, reads = 0;
+  Object.defineProperty(entry.fm, 'captured_at', { enumerable: true,
+    get() { reads += 1; return current; } });
+  for (const [value, invalid] of [['2040-02-29T00:00:00Z', false], ['2041-02-29T00:00:00Z', true],
+    ['2040-02-29T00:00:00Z', false]]) {
+    isRfc3339(value); // Exercise input validation with an already warm syntax entry.
+    current = value;
+    const before = reads, result = validateInputArtifacts([entry]);
+    assert.ok(reads > before, 'each validation still reads the current field');
+    assert.equal(result.errors.some((entry) => entry.message.includes('captured_at')), invalid);
+  }
 });
 
 test('shared Figma precision helper requires explicit file plus node/frame and keeps unit authoring explicit', () => {

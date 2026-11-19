@@ -24,6 +24,7 @@ import { resolveScopedContractGraph, scopedGraphSelectionSpans, scopedGraphApiRo
 import { ScopedWorkContractError, workUnitId } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
 import { scopedEvidenceSet } from './scoped-work-authored.mjs';
+import { scopedProjectionProgress } from './workflow-progress.mjs';
 
 const fail = (message) => { throw new ScopedWorkContractError(`SW-SOURCE-RELATION: ${message}`); };
 const union = (values) => scopeSet([...new Set(values)]);
@@ -199,7 +200,10 @@ function createSourceSnapshot(projectRoot) {
     // Never use read() here: the final audit must inspect current spelling,
     // every ancestor, and bytes, including files seen only in earlier passes.
     bytes.clear(); byteSize = 0;
-    for (const pin of pins.values()) verifyFile(pin.file);
+    for (const pin of pins.values()) {
+      verifyFile(pin.file);
+      scopedProjectionProgress('audit-files');
+    }
     for (const relative of absentRegisters) if (canonicalRepositoryPath(projectRoot, relative,
       { required: false, type: 'file', label: 'scoped source register' }).exists) fail('register appeared during source projection');
   }
@@ -237,6 +241,7 @@ function resolveSourceClosure(options, requireEffects) {
         roots.add(ref); changed = true;
       }
     }
+    scopedProjectionProgress('source-passes');
     if (!changed) {
       snapshot.verify();
       const projection = { ...result, sources: scopedEvidenceSet(result.sources), read_set: scopeSet([...pins.values()]),
@@ -529,6 +534,7 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
       basis: { version: 1, owner, unit, input_id: choice.input_id, item_ids: selection.items, source_refs: selection.source_refs,
         input_sha256: source.input.input_sha256, effects_sha256: hashBytes(Buffer.from(scopeJson(effects))),
         contracts_sha256: hashBytes(Buffer.from(scopeJson(contractHashes))) } });
+    scopedProjectionProgress('sources');
   }
   if (presentRegister) snapshot.verifyFile(presentRegister);
   if (absentRegister && canonicalRepositoryPath(projectRoot, absentRegister,
