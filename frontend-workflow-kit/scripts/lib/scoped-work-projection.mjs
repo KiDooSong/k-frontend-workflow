@@ -20,6 +20,7 @@ import { copyScopedSelectionContext, copyScopedNodeContexts } from './scoped-wor
 import { ScopedWorkContractError, workText, workSet } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet, scopeLf } from './scoped-work-normalize.mjs';
 import { WorkConfigError, parsePolicyOverlay } from './work-config.mjs';
+import { scopedProjectionProgress } from './workflow-progress.mjs';
 
 const fail = (message) => { throw new ScopedWorkContractError(`SW-PROJECTION: ${message}`); };
 const same = (a, b) => scopeJson(a) === scopeJson(b);
@@ -261,6 +262,7 @@ export function resolveScopedUnitProjection({ owner, policyFile, policyOverlayFi
       unconnected_effects: scopeSet(sourceFacts.sources.flatMap((entry) => entry.issues
         .map((issue) => ({ input_id: entry.selection.input_id, ...issue })))),
     } } : {}) });
+    scopedProjectionProgress('units');
   }
 
   const graph = resolveScopedContractGraph({ contracts: setUnion([...roots]), targetIndex, inputArtifacts, projectRoot,
@@ -291,6 +293,7 @@ export function resolveScopedUnitProjection({ owner, policyFile, policyOverlayFi
       const parent = info.fidelity.verified_against.slice('input:'.length);
       if (!selectedInputs.has(parent)) { selectedInputs.add(parent); inputQueue.push(parent); }
     }
+    scopedProjectionProgress('input-fidelity');
   }
   const projection = { owner, known_units: scopeSet(root.declaration.units.map((unit) => unit.id)),
     policy: { file: overlaySource.file, profiles: scopeSet(policy.profiles),
@@ -305,7 +308,10 @@ export function resolveScopedUnitProjection({ owner, policyFile, policyOverlayFi
     units: scopeSet([...units.values()]), host_links: scopeSet(links), inputs: scopeSet(inputProjection),
     evidence: copyScopedGraphContexts(graph,
       { roots: graph.roots, nodes: copyScopedNodeContexts(graph.nodes, scopeSet(graph.nodes.map(node))), edges: graph.edges }) };
-  for (const entry of [...files.values()]) read(entry.file, entry.sha256);
+  for (const entry of [...files.values()]) {
+    read(entry.file, entry.sha256);
+    scopedProjectionProgress('audit-files');
+  }
   // Diagnostics stay outside the hashed projection. The selected effect fields
   // retain the original target, while evidence hashes the effective wider scope.
   const result = { projection, read_set: scopeSet([...files.values()]),

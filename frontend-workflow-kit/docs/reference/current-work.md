@@ -109,13 +109,18 @@ Scoped runs identify snapshot materialization, baseline input preparation, each
 selected owner/unit, the final composition audit, authority collection, Git
 backstop and packet/report creation. For example,
 `owner:start "1/2 screen:RESULT-001/known"` identifies the first requested owner evaluation.
+While a scoped owner is being projected, shared `owner-projection:progress`
+markers identify its owner, phase and completed operations. See
+[owner projection diagnostics](scoped-work.md#owner-projection-diagnostics)
+for the count and throttling contract.
 Current-authority runs provide the common preparation, backstop and output
 phases. Checkpoint, report and backstop markers appear only when those steps run.
 If scoped preparation fails after its snapshot is materialized, cleanup markers
 start before removing that owned snapshot and finish after removal.
 
-Markers are diagnostic phase boundaries, not periodic heartbeats, percentages or
-permission. A long gap after a `:start` marker means that phase has not returned;
+Markers report diagnostic phase boundaries and completed work, not periodic
+heartbeats, percentages or permission. A gap between updates means the current
+synchronous step has not completed;
 no timeout or retry is added. The normal JSON stdout, packet/checkpoint bytes,
 exit codes and approval requirements are unchanged. Reporting is off by default;
 an unwritable stderr disables it without changing the evaluation. `--progress`

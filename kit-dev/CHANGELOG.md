@@ -4,6 +4,24 @@
 
 ## Unreleased
 
+### perf(scoped) — 실행 입력 metadata 재사용과 owner 내부 진행 진단 (#321, #323)
+
+- scoped `--work` 실행이 소유한 Git snapshot에서도 입력 검증·origin 처리 뒤 plain metadata를
+  한 번 분리·동결해 fresh source resolver에 전달한다. 원본 입력은 authority inventory에 유지하며,
+  일반 mutable caller·순환/특수 metadata의 기존 복사 경로와 현재 bytes·최종 read-set 검사를 보존한다.
+- 반복 검증되는 RFC3339 문자열의 형식·달력 결과만 정확한 trimmed 문자열로 재사용한다.
+  복사한 UTF-16 key 128 KiB·2,048개 LRU이며 초과 길이는 기존 parser로 처리한다. 전체 input 판정,
+  metadata·읽기 관찰·epoch 값은 보관하지 않는다. 처음 보는 값만 연속 처리하면 helper 비용은 늘 수 있다.
+- `binding-status`와 scoped `workflow:run`의 선택형 `--progress`는 owner projection 안의 source,
+  graph, candidate, metadata·fidelity·audit 작업을 owner/phase/완료 연산 수로 표시한다.
+  유한한 phase별 첫 완료, phase 사이에 공유하는 1초 간격, 종료 시 변경된 수만 보고한다.
+  반복 pass는 실제 반복 연산으로 세며 coverage·전체 건수·남은 시간으로 표현하지 않는다.
+- 진행 진단 실패는 원래 계산·오류를 바꾸지 않는다. stdout·권한·basis/checkpoint 계약과 새 gate는
+  바뀌지 않는다. [owner projection benchmark](benchmarks/owner-projection.mjs)는 같은 커밋된 합성 트리에서
+  두 CLI의 시간과 출력 보존을 비교한다. 실제 consumer 장시간 실행의 해소는 별도 재실행으로 확인한다.
+- 계약: [owner projection diagnostics](../frontend-workflow-kit/docs/reference/scoped-work.md#owner-projection-diagnostics),
+  [scoped baseline](../frontend-workflow-kit/docs/reference/scoped-work.md#evaluation-on-the-immutable-baseline).
+
 ### perf(scoped) — canonical 경로 검사의 디렉터리 목록 재사용 (#300, #321, #323)
 
 - graph·source·Decision·uncertainty·applicability의 초기 읽기에서 private 경로 resolver가 같은 부모의 이름 집합을

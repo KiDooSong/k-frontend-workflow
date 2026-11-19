@@ -53,12 +53,46 @@ function calendarComponentsValid(m) {
   return true;
 }
 
+// Reuse only primitive timestamp syntax, never input validation, metadata or a
+// file observation. Bound copied UTF-16 key storage and Map entries separately;
+// these are not bounds on transient parser allocations or total process RSS.
+const RFC3339_SYNTAX_MAX_BYTES = 128 * 1024;
+const RFC3339_SYNTAX_MAX_ENTRIES = 2048;
+const rfc3339Syntax = new Map();
+let rfc3339SyntaxBytes = 0;
+const rfc3339Stats = { checks: 0, hits: 0, evictions: 0, oversized: 0 };
+export function rfc3339SyntaxStats() {
+  return { ...rfc3339Stats, entries: rfc3339Syntax.size, key_bytes: rfc3339SyntaxBytes,
+    max_entries: RFC3339_SYNTAX_MAX_ENTRIES, max_key_bytes: RFC3339_SYNTAX_MAX_BYTES };
+}
+
 // 문자열이 RFC3339(with timezone) 인지 — 형식 + 달력 구성요소 검증.
 export function isRfc3339(value) {
   if (typeof value !== 'string') return false;
-  const m = RFC3339_RE.exec(value.trim());
-  if (!m) return false;
-  return calendarComponentsValid(m);
+  const text = value.trim(), cached = rfc3339Syntax.get(text);
+  if (cached) {
+    // Preserve the detached stored key on a hit, not a caller's source slice.
+    rfc3339Syntax.delete(text);
+    rfc3339Syntax.set(cached.key, cached);
+    rfc3339Stats.hits += 1;
+    return cached.valid;
+  }
+  rfc3339Stats.checks += 1;
+  const match = RFC3339_RE.exec(text), valid = Boolean(match && calendarComponentsValid(match));
+  const size = text.length * 2;
+  if (size > RFC3339_SYNTAX_MAX_BYTES) { rfc3339Stats.oversized += 1; return valid; }
+  // A scalar may be a substring of a large source. Copy exact code units,
+  // including lone surrogates, before retaining this small syntax key.
+  const key = Buffer.from(text, 'utf16le').toString('utf16le');
+  while (rfc3339Syntax.size >= RFC3339_SYNTAX_MAX_ENTRIES || rfc3339SyntaxBytes + size > RFC3339_SYNTAX_MAX_BYTES) {
+    const oldest = rfc3339Syntax.keys().next().value;
+    rfc3339Syntax.delete(oldest);
+    rfc3339SyntaxBytes -= oldest.length * 2;
+    rfc3339Stats.evictions += 1;
+  }
+  rfc3339Syntax.set(key, { key, valid });
+  rfc3339SyntaxBytes += size;
+  return valid;
 }
 
 // RFC3339 문자열 → epoch ms. 형식 위반이면 null (호출부가 fail-closed 판단).

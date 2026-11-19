@@ -138,9 +138,7 @@ export function inspectScopedSnapshotDecisionBindings(options = {}) {
 // HEAD tree and its indexes. This is not a mutable-worktree/authority inspector.
 // One owner and one call own this projection; nothing is cached across reports.
 export function inspectScopedSnapshotBindings(options = {}) {
-  bindingStatusProgress('owner-projection:start', options.owner);
   const resolved = resolveScopedSnapshotApplicabilityProjection(options);
-  bindingStatusProgress('owner-projection:done', options.owner);
   // Inferred sources consult the optional register even when it is absent.
   // A present register is in read_set; preserve the negative observation too.
   // Do not validate an unused register path for owners without inferred sources.

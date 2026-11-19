@@ -25,6 +25,11 @@ function project(t, broken = false) {
   };
   for (const name of ['docs', 'src']) fs.cpSync(path.join(FIXTURE_ROOT, 'examples/coupon-feature', name),
     path.join(root, name), { recursive: true });
+  put('docs/frontend-workflow/inputs/progress/input.md', `---\n${JSON.stringify({
+    input_id: 'IN-20260918-meeting-001', input_type: 'meeting', source_type: 'meeting', source_ref: 'meeting:synthetic-progress',
+    captured_at: '2026-09-18T00:00:00Z', captured_by: 'test', status: 'captured',
+    affected_domains: ['coupons'], affected_screens: ['COUPON-001'],
+  })}\n---\n\n## Extracted Facts\n- Synthetic input for progress observation.\n`);
   for (const [name, original] of [['policy.yaml', 'policies/implementation-mode-policy.yaml'],
     ['manifest.yaml', 'catalog/artifact-manifest.yaml'], ['layout.yaml', 'presets/expo-feature.yaml']]) {
     put(`config/${name}`, fs.readFileSync(path.join(KIT_ROOT, original)));
@@ -104,6 +109,12 @@ for (const json of [false, true]) test(`#323 binding progress preserves ${json ?
   assert.equal(steps[0], 'run:start'); assert.equal(steps.at(-1), 'run:done');
   assert.ok(steps.indexOf('snapshot:done') < steps.indexOf('owner-projection:start'));
   assert.ok(steps.indexOf('owner:done') < steps.indexOf('cleanup:start'));
+  assert.equal(steps.filter((phase) => phase === 'owner-projection:start').length, 1);
+  assert.equal(steps.filter((phase) => phase === 'owner-projection:done').length, 1);
+  const projection = observed.stderr.slice(observed.stderr.indexOf('owner-projection:start'), observed.stderr.indexOf('owner-projection:done'));
+  for (const phase of ['input-metadata', 'source-passes', 'units', 'contract-graph', 'candidate-graph', 'candidate-rows', 'audit-files']) {
+    assert.match(projection, new RegExp(`owner-projection:progress "${OWNER}; ${phase}: [1-9]\\d* `));
+  }
   if (json) {
     const report = JSON.parse(observed.stdout), rows = report.owners[0].rows;
     const computed = rows.filter((row) => row.computed_basis_digest !== null).length;
@@ -120,7 +131,7 @@ for (const json of [false, true]) test(`#323 binding progress preserves ${json ?
   assert.deepEqual(fs.readFileSync(path.join(p.root, '.git/index')), index);
 });
 
-test('#323 binding progress can reach stderr before synchronous snapshot preparation completes', async (t) => {
+for (const marker of ['snapshot:start', 'candidate-graph: 1 requests resolved']) test(`binding progress reaches stderr during synchronous ${marker}`, async (t) => {
   const p = project(t), plain = p.cli('--json'); success(plain);
   const preload = path.join(p.scratch, 'pause-snapshot.cjs'), acknowledged = path.join(p.scratch, 'acknowledged');
   fs.writeFileSync(preload, `
@@ -128,7 +139,7 @@ const fs = require('node:fs'), original = fs.writeSync;
 let paused = false;
 fs.writeSync = function(fd, bytes, ...args) {
   const result = original.call(this, fd, bytes, ...args);
-  if (!paused && fd === 2 && Buffer.isBuffer(bytes) && bytes.includes(Buffer.from('snapshot:start'))) {
+  if (!paused && fd === 2 && Buffer.isBuffer(bytes) && bytes.includes(Buffer.from(${JSON.stringify(marker)}))) {
     paused = true;
     const ack = Buffer.alloc(1);
     if (fs.readSync(0, ack, 0, 1, null) !== 1 || ack[0] !== 120) throw new Error('missing snapshot acknowledgment');
@@ -145,8 +156,8 @@ fs.writeSync = function(fd, bytes, ...args) {
   child.stdout.on('data', (chunk) => { stdout += chunk; });
   child.stderr.on('data', (chunk) => {
     stderr += chunk;
-    if (!released && stderr.includes('snapshot:start')) {
-      released = true; atPause = { stdout, running: child.exitCode === null };
+    if (!released && stderr.includes(marker)) {
+      released = true; atPause = { stdout, running: child.exitCode === null, projectionDone: stderr.includes('owner-projection:done') };
       child.stdin.end('x');
     }
   });
@@ -156,7 +167,7 @@ fs.writeSync = function(fd, bytes, ...args) {
   });
   assert.deepEqual(result, { code: 0, signal: null }, stderr);
   assert.equal(stdinError, undefined); assert.equal(released, true);
-  assert.deepEqual(atPause, { stdout: '', running: true });
+  assert.deepEqual(atPause, { stdout: '', running: true, projectionDone: false });
   assert.equal(fs.readFileSync(acknowledged, 'utf8'), 'acknowledged');
   assert.equal(stdout, plain.stdout); assert.match(stderr, /run:done/);
   assert.deepEqual(fs.readdirSync(p.temporary), []);
@@ -230,19 +241,25 @@ fs.rmSync = function(file, ...args) {
   assert.deepEqual(fs.readdirSync(p.temporary), []);
 });
 
-test('#323 a closed progress sink preserves the binding report and successful exit', (t) => {
+for (const duringProjection of [false, true]) test(`a progress sink closed ${duringProjection ? 'inside projection' : 'before work'} preserves the binding report and successful exit`, (t) => {
   const p = project(t), plain = p.cli('--json'); success(plain);
   const preload = path.join(p.scratch, 'closed-progress.cjs');
   fs.writeFileSync(preload, `
 const fs = require('node:fs'), original = fs.writeSync;
-fs.writeSync = function(fd, ...args) {
-  if (fd === 2) throw Object.assign(new Error('closed progress sink'), { code: 'EPIPE' });
-  return original.call(this, fd, ...args);
+fs.writeSync = function(fd, bytes, ...args) {
+  if (fd === 2 && (!${duringProjection} || Buffer.from(bytes).includes(Buffer.from('owner-projection:progress')))) {
+    throw Object.assign(new Error('closed progress sink'), { code: 'EPIPE' });
+  }
+  return original.call(this, fd, bytes, ...args);
 };
 `);
   const observed = spawnSync(process.execPath, ['--require', preload, ...p.command('--json', '--progress')],
     { cwd: p.root, env: p.env, encoding: 'utf8', timeout: 60000, maxBuffer: 32 * 1024 * 1024 });
-  success(observed); assert.equal(observed.stdout, plain.stdout); assert.equal(observed.stderr, '');
+  success(observed); assert.equal(observed.stdout, plain.stdout);
+  if (duringProjection) {
+    assert.match(observed.stderr, /owner-projection:start/);
+    assert.doesNotMatch(observed.stderr, /owner-projection:progress|owner-projection:done|run:done/);
+  } else assert.equal(observed.stderr, '');
   assert.deepEqual(fs.readdirSync(p.temporary), []);
 });
 
