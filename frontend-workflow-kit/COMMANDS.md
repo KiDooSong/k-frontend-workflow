@@ -133,7 +133,11 @@ npm run -s workflow:binding-status -- --owner screen:COUPON-001 --json --progres
 
 `workflow:binding-status` reports each scope binding of the adopted owners on the
 committed `HEAD`: its state (`current`, `stale`, `missing`, `unresolved`), the
-recorded binding, and the digest and component digests to compare or record. It
+recorded binding, the digest and component digests to compare or record, and the
+canonical unit relations (`applications`). For a missing binding it also shows
+the actual `blocking_units` and `blocking_applications`, including referrers or
+uncertainty witnesses. Evidence-only Decisions block their applicable units;
+owner-wide native Decisions still block all owner units. It
 writes nothing; a person records a digest. See
 [binding basis and status](docs/reference/scoped-work.md#binding-basis-and-status).
 `--progress` reports snapshot, owner projection, binding checks/digests and cleanup

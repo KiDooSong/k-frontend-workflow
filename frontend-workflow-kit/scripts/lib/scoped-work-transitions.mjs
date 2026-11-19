@@ -19,6 +19,10 @@ const same = (a, b) => scopeJson(a) === scopeJson(b);
 const bindingScope = (binding) => binding ? { known_units: scopeSet(binding.known_units),
   blocks: scopeSet(binding.blocks), basis_digest: binding.basis_digest } : null;
 const bindingValue = (binding) => binding ? { ...bindingScope(binding), approval_ref: binding.approval_ref } : null;
+// Applicability is independent of status and declared blocks: resolved rows can
+// reopen, and a current binding cannot erase the unit that consumes a Decision.
+const applicableUnits = (snapshot, ref) => scopeSet([...new Set((snapshot.checks.get(ref)?.applications || [])
+  .flatMap((entry) => entry.unit === null ? snapshot.inspection.known_units : [entry.unit]))]);
 
 function snapshot(owner, options) {
   if (!options || typeof options !== 'object' || Array.isArray(options)) fail('two file-backed snapshot options required');
@@ -94,6 +98,9 @@ export function inspectScopedDecisionTransitions({ owner, before, after } = {}) 
     const newBinding = next?.bindings.find((binding) => binding.owner === owner) || null;
     const bindingChanged = !same(bindingValue(oldBinding), bindingValue(newBinding));
     const wasApplicable = previous.checks.has(ref), isApplicable = current.checks.has(ref);
+    const beforeApplicableUnits = applicableUnits(previous, ref), afterApplicableUnits = applicableUnits(current, ref);
+    const afterUnitSet = new Set(afterApplicableUnits);
+    const removedApplicableUnits = beforeApplicableUnits.filter((unit) => !afterUnitSet.has(unit));
     const reopened = old?.status === 'resolved' && next?.status === 'open';
     if (old && !next) violations.push({ code: 'decision-disappeared', decision: ref });
     if (reopened && next.bindings.length) {
@@ -106,9 +113,12 @@ export function inspectScopedDecisionTransitions({ owner, before, after } = {}) 
         !same(bindingScope(oldBinding), bindingScope(newBinding))) {
       violations.push({ code: 'approval-ref-reused-with-changed-binding', decision: ref, owner });
     }
-    if (wasApplicable && !isApplicable && (old?.status === 'open' || next?.status === 'open')) removedOpenApplicability = true;
+    if (((wasApplicable && !isApplicable) || removedApplicableUnits.length > 0) &&
+        (old?.status === 'open' || next?.status === 'open')) removedOpenApplicability = true;
     transitions.push({ decision: ref, before_status: old?.status ?? null, after_status: next?.status ?? null,
-      before_applicable: wasApplicable, after_applicable: isApplicable, reopened,
+      before_applicable: wasApplicable, after_applicable: isApplicable,
+      before_applicable_units: beforeApplicableUnits, after_applicable_units: afterApplicableUnits,
+      removed_applicable_units: removedApplicableUnits, reopened,
       binding_change: !oldBinding && !newBinding ? 'absent' : !oldBinding ? 'added' : !newBinding ? 'removed'
         : bindingChanged ? 'changed' : 'unchanged',
       after_binding_state: current.checks.get(ref)?.binding_state ?? null,
@@ -119,6 +129,7 @@ export function inspectScopedDecisionTransitions({ owner, before, after } = {}) 
   // excused just because after was read last. No document or binding is written.
   previous.audit(); current.audit();
   return { owner, scope_changed: scopeChanged, known_units_changed: knownUnitsChanged,
+    removed_open_applicability: removedOpenApplicability,
     transitions: scopeSet(transitions), violations: scopeSet(violations),
     review_required: scopeChanged || transitions.some((entry) => entry.review_required) || violations.length > 0,
     approval_verified: false,

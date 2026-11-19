@@ -1,5 +1,12 @@
 # Current Roadmap
 
+> 2026-11-19 #333: 미바인딩/stale Decision의 기본 차단 범위는 실제 canonical application의 unit 집합으로 계산한다.
+> 다른 unit의 evidence 관계를 owner 전체로 확대하지 않으며, native `unit: null` 관계와 current binding의 명시 `blocks`는 유지한다.
+> #334 리뷰 보완: before/after 전환에서 Decision별 적용 unit 집합도 비교한다. 열린 Decision의 일부 unit 참조만 제거해도 적용 제거로 판정하고 현재 owner unit의 차단을 유지한다. 단일 스냅샷의 unit 범위와 public command 미연결 경계는 유지한다.
+> `binding-status`는 행별 `applications`와 미바인딩 행의 실제 `blocking_applications`를 제공해 referrer·inverse/transitive witness를 드러낸다.
+> 같은 문서의 다른 절만 공유하는 조건은 기존에도 분리되며, 공통 metadata source 및 명시적인 간접 의존·native Unknown/Conflict 범위는 유지한다.
+> 정본: [binding basis and status](../frontend-workflow-kit/docs/reference/scoped-work.md#binding-basis-and-status). 재현·리뷰: [#333 run evidence](temp/runs/scoped-binding-relations-333.md).
+
 > 2026-11-19 #331: 원문 길이만 제한하던 AST·authored view와 owner uncertainty의 문서 보관을 각각 원문 8 Mi UTF-16 code units·native AST 262,144개·512개 entry의 LRU로 제한한다.
 > 단일 초과 항목은 LRU에 보관하지 않으며 전체 read set·현재 bytes 확인·최종 audit·물리 행 선택·판정·digest 계약을 유지한다.
 > #332 리뷰 보완: 현재 문서의 후보·선택 행 묶음 동안 exact-source AST와 raw/authored view를 재사용하고 종료·예외 시 해제한다. 원문 한도 초과 문서의 Unknown 1/8/16행에서 추가 전체 파싱 6/27/51회를 1/1/1회로 줄였으며, 문서 캐시 miss의 현재 bytes 검증과 graph 최종 감사를 유지한다.

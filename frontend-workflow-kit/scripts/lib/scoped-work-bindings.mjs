@@ -1,8 +1,9 @@
 // Single-snapshot B §5.3 inspection, NOT an execution/approval predicate.
 // Matching scope bytes and an approval_ref string cannot authenticate a human
 // decision or prove that a prior resolved -> open transition removed its scope.
-// Until that separate review/transition contract is checked, every applicable
-// open decision remains blocking for ALL of this owner's current scoped units.
+// Until that separate review/transition contract is checked, an open decision
+// blocks the units its canonical applications reach. Native owner-wide
+// applications (unit: null) still block every current unit of that owner.
 import path from 'node:path';
 import { splitFrontmatter } from './util.mjs';
 import { canonicalRepositoryPath } from './artifact-path.mjs';
@@ -92,13 +93,16 @@ function decisionInspection(options, { projection, read_set }, resolveBasis, ver
         bindingState = computedDigest === binding.basis_digest ? 'current-unverified' : 'stale-basis';
       }
     }
+    const ownApplications = scopeSet(applications.filter((entry) => entry.decision === ref));
+    const applicableUnits = scopeSet([...new Set(ownApplications.flatMap((entry) =>
+      entry.unit === null ? knownUnits : [entry.unit]))]);
     checks.push({ decision: ref, status: record.status, binding_state: bindingState,
       declared_binding: binding || null, computed_basis_digest: computedDigest, computed_component_digests: computedComponents,
       // Canonical Status is the sole source of resolved/open. A resolved row
       // contributes no open-decision block, but this is not an overall permit.
-      blocking_units: record.status === 'open' ? [...knownUnits] : [],
+      blocking_units: record.status === 'open' ? applicableUnits : [],
       scope_review_needed: record.status === 'open', approval_verified: false,
-      applications: scopeSet(applications.filter((entry) => entry.decision === ref)),
+      applications: ownApplications,
     });
     if (checks.length % progressEvery === 0 || checks.length === decisions.length) {
       bindingStatusProgress('decision-bindings:progress', `${checks.length}/${decisions.length} rows; ${computed} digests`);

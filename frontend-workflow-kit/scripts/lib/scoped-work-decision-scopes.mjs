@@ -29,7 +29,9 @@ function decisionScopes(inspection) {
     const open = check.status === 'open';
     return { ...check, declaration_current: current, declaration_scope_used: open && current,
       scope_source: !open ? 'resolved-decision' : current ? 'current-canonical-declaration' : 'conservative-default',
-      blocking_units: !open ? [] : current ? [...check.declared_binding.blocks] : [...inspection.known_units],
+      // Missing/stale declarations retain the canonical application scope. A
+      // different unit's evidence is not an owner-wide native application.
+      blocking_units: !open ? [] : current ? [...check.declared_binding.blocks] : [...check.blocking_units],
       scope_review_needed: open && !current, approval_verified: false };
   });
   const blocking = union(checks.flatMap((check) => check.blocking_units));
@@ -67,8 +69,7 @@ export function inspectScopedDecisionScopeTransitions({ owner, before, after } =
   }
   const readSets = { before: audit(before, [findings.read_sets.before, previous.read_set]),
     after: audit(after, [findings.read_sets.after, current.read_set]) };
-  const removedOpenApplicability = findings.transitions.some((entry) => entry.before_applicable && !entry.after_applicable &&
-    (entry.before_status === 'open' || entry.after_status === 'open'));
+  const removedOpenApplicability = findings.removed_open_applicability;
   const transitionValid = findings.violations.length === 0 && !removedOpenApplicability;
   const blocking = transitionValid ? current.blocking_units : [...current.known_units];
   return { ...findings, known_units: current.known_units,
