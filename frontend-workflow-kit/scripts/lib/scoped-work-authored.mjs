@@ -239,20 +239,35 @@ export function scopedSelectionNodes(body, selection) {
   return context.nodes;
 }
 
+// A relation evaluation can share canonical nodes for an equal physical source
+// selected by separate parser generations. Keep each context's own node-array
+// wrapper and subsection mode; replacing one returned wrapper cannot replace
+// another selection's physical source. The proved body value is shared too.
+export function reuseScopedSelectionNodes(body, selection, nodes) {
+  const context = selections.get(selection);
+  if (!context || context.body !== body) throw new ScopedWorkContractError('SW-REF-SNAPSHOT: selection body changed');
+  selections.set(selection, { ...context, body, nodes: [...nodes] });
+  return selection;
+}
+
 // Preserve the exact physical row through copied projections. Explicit raw
 // views keep their own interpretation and cannot replace canonical row facts.
 export function scopedSelectionUnknownAuthored(body, selection, raw = null) {
   const nodes = scopedSelectionNodes(body, selection);
   if (selection.type !== 'row' || nodes?.length !== 1) return false;
   const [row] = nodes, start = row.position.start.offset, end = row.position.end.offset;
-  const known = raw === null ? unknownRows.get(row) : null;
+  // Internal selected-row processing already owns a shared immutable raw view.
+  // Treat that proven view like the default canonical lookup; a mutable public
+  // authored prewarm must not decide the answer until its AST is evicted.
+  const canonical = raw === null || isSharedReconciliationReferenceView(body, raw);
+  const known = canonical ? unknownRows.get(row) : null;
   if (known && known.body === body && known.start === start && known.end === end) return known.authored;
-  const homes = raw === null ? canonicalAuthoredView(body).byName.get('unknowns') || []
+  const homes = canonical ? canonicalAuthoredView(body, raw).byName.get('unknowns') || []
     : scopedAuthoredSections(body, 'unknowns', raw);
   const authored = homes.some((home) => home.tableNodes.some((table, index) =>
     ['ID', 'Question'].every((header) => hasHeader(home.tables[index].headers, header)) &&
     table.position.start.offset <= start && end <= table.position.end.offset));
-  if (raw === null) unknownRows.set(row, { body, start, end, authored });
+  if (canonical) unknownRows.set(row, { body, start, end, authored });
   return authored;
 }
 

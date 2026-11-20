@@ -15,7 +15,7 @@ import { createScopedReferenceResolver } from './scoped-work-refs.mjs';
 import { resolveScopedSourceProjection, scopedSourceAbsentRegisters } from './scoped-work-source-relations.mjs';
 import { createScopedApiResolver } from './scoped-work-api.mjs';
 import { resolveScopedMappingEvidence } from './scoped-work-mapping.mjs';
-import { resolveScopedContractGraph, scopedGraphApiRowContext, scopedGraphContexts, copyScopedGraphContexts } from './scoped-work-graph.mjs';
+import { resolveScopedContractGraph, createScopedGraphApiRowContextResolver, scopedGraphContexts, copyScopedGraphContexts } from './scoped-work-graph.mjs';
 import { copyScopedSelectionContext, copyScopedNodeContexts } from './scoped-work-authored.mjs';
 import { ScopedWorkContractError, workText, workSet } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet, scopeLf } from './scoped-work-normalize.mjs';
@@ -207,9 +207,10 @@ function unitProjection({ owner, policyFile, policyOverlayFile, targetIndex, inp
     for (const entry of sourceFacts.native_inputs) selectedInputs.add(entry.input_id);
     const selectedSources = sourceFacts.sources.map((entry) => source(entry.source));
     const api = apis.unit(data.record.artifact_id, ownerId, declared.id);
+    const apiContext = api.candidates.length
+      ? createScopedGraphApiRowContextResolver(targetIndex.artifacts.get(api.artifact_id).body) : null;
     const apiRows = api.candidates.map((candidate) => {
-      const body = targetIndex.artifacts.get(api.artifact_id).body;
-      const context = scopedGraphApiRowContext(body, candidate);
+      const context = apiContext(candidate);
       for (const ref of context.refs) roots.add(ref);
       for (const ref of context.trackingRefs) trackingRefs.add(ref);
       for (const ref of context.ordinaryRefs) ordinaryRefs.add(ref);

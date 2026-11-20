@@ -83,6 +83,24 @@ const trees = createSyntaxCache();
 const treeSizes = new WeakMap();
 const parseStats = { parsed: 0, reused: 0 };
 let activeSyntax = null;
+let activeSyntaxReuse = null;
+const { max_source_chars: maxRetainedSource, max_nodes: maxRetainedNodes } = trees.stats();
+
+// A relation evaluation can repeatedly visit the same oversized dependency
+// outside its current authored-document scope. Keep at most one such tree for
+// that synchronous evaluation. A second oversized source replaces the first;
+// ordinary documents continue using the existing bounded LRU. This is syntax
+// reuse only: every consumer still owns its current-file/hash/audit checks.
+export function withReconciliationSyntaxReuse(run) {
+  const previous = activeSyntaxReuse, scope = { oversized: null };
+  activeSyntaxReuse = scope;
+  try {
+    return run();
+  } finally {
+    scope.oversized = null;
+    activeSyntaxReuse = previous;
+  }
+}
 
 // Keep the one document currently being processed alive across nested parser
 // consumers, even when it exceeds the retained-cache budgets. Only exact source
@@ -146,6 +164,10 @@ function sharedTree(text) {
       return active.tree;
     }
   }
+  if (activeSyntaxReuse?.oversized?.source === source) {
+    parseStats.reused += 1;
+    return activeSyntaxReuse.oversized.tree;
+  }
   const cached = trees.get(source);
   if (cached) {
     parseStats.reused += 1;
@@ -153,7 +175,11 @@ function sharedTree(text) {
   }
   const tree = freezeTree(parseTree(source));
   parseStats.parsed += 1;
-  trees.set(source, tree, { nodes: reconciliationTreeNodeCount(tree) });
+  const nodes = reconciliationTreeNodeCount(tree);
+  trees.set(source, tree, { nodes });
+  if (activeSyntaxReuse && (source.length > maxRetainedSource || nodes > maxRetainedNodes)) {
+    activeSyntaxReuse.oversized = { source, tree };
+  }
   return tree;
 }
 

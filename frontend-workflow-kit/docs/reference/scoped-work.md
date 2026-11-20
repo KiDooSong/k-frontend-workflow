@@ -376,16 +376,28 @@ resolution modes, graph results or file observations across those checks.
 Within one strict or candidate graph, its reference resolver can hand its
 already parsed immutable view to the graph's document reader. The reader first
 checks current file bytes, frontmatter and indexed body, and accepts the view
-only for the same resolver, artifact ID and exact body. Thus a document above
-the syntax-cache budgets needs one parse for reference selection and graph use.
-The view follows that resolver's lifetime; another graph still performs its own
-reads and cannot inherit an oversized view from the completed call.
+only for the same resolver, artifact ID and exact body. The input Evidence path
+uses the same handoff, guarded by that source resolver, input ID and exact body.
+The first anchor selection and the legacy Evidence parser share one synchronous
+syntax scope. Thus an artifact or input above the syntax-cache budgets needs
+one parse for reference selection and graph use. Input section wrappers remain
+independent between resolvers, including when their immutable nodes are shared.
+The view follows that resolver's lifetime; every graph still performs its own
+reads. An independent graph outside the same live uncertainty evaluation cannot
+inherit an oversized view from the completed call.
 
 Canonical API candidate lookups share a private authored section view and row
-index for the same native tree. Public mutable authored views and explicitly
+index for the same native tree. Unit projection and source-relation evaluation
+each create one lazy resolver for their candidate batch and exact owner body.
+That resolver holds its view through the batch even if the body exceeds a cache
+budget; no candidates means no parse. Independently calling the scalar helper
+does not extend an oversized view's lifetime across calls.
+Public mutable authored views and explicitly
 supplied raw interpretations retain their own behavior. Canonical Unknown row
 classification also derives from private syntax, so editing a public header
-cannot change the classification when the AST is evicted and rebuilt. Its
+cannot change the classification when the AST is evicted and rebuilt. A proven
+internally shared raw view uses this canonical classification too; an explicit
+custom raw view retains its own interpretation. Its
 compact physical-row facts and private tree-keyed views add no separate
 source-text cache or retention threshold.
 
@@ -443,11 +455,25 @@ tree and shared raw/authored views active until the batch finishes. This include
 oversized documents and cached trees evicted by nested dependency work, so more
 candidate rows do not each reparse the same whole document. Covered Unknown rows
 from a selected section/body use the same batch lifetime; physical spans needed
-by later relation merging are computed while that document is active. Other
-documents still use the bounded caches. Nested scopes restore their predecessor
+by later relation merging are computed while that document is active. A
+synchronous uncertainty evaluation also keeps at most one oversized dependency
+tree outside these caches. Repeated candidate graphs for that exact dependency
+reuse it; another oversized source replaces it. Ordinary documents continue to
+use the bounded caches. Alternating oversized dependencies can therefore still
+require repeated parsing. Nested scopes restore their predecessor
 on return or error, and a later call or asynchronous continuation cannot inherit
 a completed scope. These scopes do not collect every oversized document for
-the owner.
+the owner, and the single overflow slot is released on return or error.
+
+Before retaining a candidate graph, the uncertainty evaluation prepares spans
+for all its selections, including external dependencies. Remembered native
+selections need no full document view just to compute their ranges. For equal
+current file hashes, exact bodies and ordered native type/offset identities,
+immutable physical selections share the same selected node fragments across
+parser generations. Each selection keeps its own wrapper and subsection mode.
+The evaluation retains those fragments already needed by the results, rather
+than one full dependency tree per candidate. Selected fragments may themselves
+be large, and neither this sharing nor the one-tree slot is a total RSS bound.
 
 The selected-row helpers receive that batch's already read document rather than
 reading, hashing and splitting its frontmatter again. Within one uncertainty
@@ -456,8 +482,10 @@ share their leaf-span arrays. This sharing checks the exact body, ordered
 physical node identities and input-bullet nesting mode. Separate wrapper arrays
 containing the same node sequence share the same internal result, including
 multi-paragraph input sections; equal refs or row contents do not merge
-different physical selections. Mutable nodes, accessors and proxies keep the
-fresh-computation path. The internal arrays are immutable, the public span helper
+different physical selections. Mutable nodes, accessors, proxies and custom
+array iteration keep the fresh-computation path. Indexed-child eligibility
+applies only to ordinary arrays with the unchanged inherited Array iterator;
+the actual native walk still honors custom traversal. The internal arrays are immutable, the public span helper
 still returns independent mutable values, and a later evaluation gets its own
 span store. These arrays and the compact row facts above follow existing node
 owners rather than extending an oversized tree's active scope; they do not add a
