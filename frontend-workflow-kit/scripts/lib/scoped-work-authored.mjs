@@ -13,7 +13,11 @@ import { createSyntaxCache } from './syntax-cache.mjs';
 // This cache also owns the raw tree through the authored view, so it must obey
 // the same structural budgets even after the parser has evicted that tree.
 const views = createSyntaxCache();
-const viewSections = new WeakMap(), canonicalViews = new WeakSet();
+const viewSections = new WeakMap();
+// Public authored views remain mutable and may be prewarmed by callers. Keep
+// canonical interpretation beside the immutable raw tree, never in that cache.
+// Weak keys give this derived view no lifetime beyond existing tree owners.
+const canonicalViews = new WeakMap(), classifiedTrees = new WeakSet();
 // These weak row facts retain no tree/view or table-sized range array. Physical
 // selections may outlive an oversized document's active syntax batch.
 const unknownRows = new WeakMap();
@@ -28,10 +32,10 @@ export function withScopedDocumentSyntax(body, run) {
   return withReconciliationSyntax(body, () => {
     const raw = sharedReconciliationReferenceView(body);
     const view = scopedAuthoredView(body, raw), previous = activeDocument;
-    // Public authoring resolvers retain the legacy same-tree mutable prewarm.
-    // Canonical row facts use a separate internal interpretation when needed.
-    const canonicalView = canonicalViews.has(view) ? view : authoredView(body, raw, true);
-    activeDocument = { body, raw, view, canonicalView, previous };
+    // A trusted build already recorded immutable row facts before exposing its
+    // mutable view. A custom prewarm needs a separate canonical interpretation.
+    if (!classifiedTrees.has(raw.tree)) canonicalAuthoredView(body, raw);
+    activeDocument = { body, raw, view, previous };
     try {
       return run(raw);
     } finally {
@@ -45,24 +49,46 @@ export function scopedAuthoredCacheStats() {
 }
 
 export function scopedAuthoredView(body, raw = null) {
-  return authoredView(body, raw, raw === null || isSharedReconciliationReferenceView(body, raw), { allowPrewarmed: true });
+  return authoredView(body, raw);
 }
 
-function authoredView(body, raw, canonical, { allowPrewarmed = false } = {}) {
+function authoredView(body, raw) {
   for (let active = activeDocument; active; active = active.previous) {
     // Resolvers may wrap the shared view, retaining the exact frozen sections.
     // A detached/custom raw wrapper must still build its own derived contents,
     // even when its native tree happens to be the active tree.
     if (active.body === body && (!raw || (raw.tree === active.raw.tree && raw.sections === active.raw.sections))) {
-      return canonical && !allowPrewarmed ? active.canonicalView : active.view;
+      return active.view;
     }
   }
   const cached = views.get(body);
+  const canonical = raw === null || isSharedReconciliationReferenceView(body, raw);
   // The raw parser has its own bounded cache. If its tree was evicted and
   // reparsed, rebuild our node/cell index against that exact current tree.
-  if (cached && (allowPrewarmed || !canonical || canonicalViews.has(cached)) &&
-      (!raw || (cached.tree === raw.tree && (canonical || viewSections.get(cached) === raw.sections)))) return cached;
+  if (cached && (!raw || (cached.tree === raw.tree && (canonical || viewSections.get(cached) === raw.sections)))) return cached;
   raw ??= parseReconciliationReferenceView(body);
+  const view = buildAuthoredView(body, raw, canonical);
+  views.set(body, view, { nodes: reconciliationTreeNodeCount(raw.tree) });
+  return view;
+}
+
+function canonicalAuthoredView(body, raw = null) {
+  raw ??= sharedReconciliationReferenceView(body);
+  if (!canonicalViews.has(raw.tree)) {
+    const view = buildAuthoredView(body, raw, true);
+    for (const section of view.sections) {
+      for (const field of ['nodes', 'tableNodes', 'tables', 'bulletNodes']) Object.freeze(section[field]);
+      Object.freeze(section);
+    }
+    for (const sections of view.byName.values()) Object.freeze(sections);
+    Object.freeze(view.sections);
+    Object.freeze(view.tableSections); Object.freeze(view.byName);
+    canonicalViews.set(raw.tree, Object.freeze(view));
+  }
+  return canonicalViews.get(raw.tree);
+}
+
+function buildAuthoredView(body, raw, canonical) {
   const authored = stripGeneratedBlocks(body, { preserveOffsets: true });
   const retained = (node) => source(authored, node) === source(body, node);
   const literalSections = [], last = new Map();
@@ -136,18 +162,13 @@ function authoredView(body, raw, canonical, { allowPrewarmed = false } = {}) {
   const view = { tree: raw.tree, sections, tableSections, byName };
   viewSections.set(view, raw.sections);
   if (canonical) {
-    canonicalViews.add(view);
     const authoredTables = new Set((byName.get('unknowns') || []).flatMap((home) => home.tableNodes.filter((_, index) =>
       ['ID', 'Question'].every((header) => hasHeader(home.tables[index].headers, header)))));
     for (const table of nativeTables.keys()) for (const row of table.children) {
       unknownRows.set(row, { body, start: row.position.start.offset, end: row.position.end.offset,
         authored: authoredTables.has(table) });
     }
-  }
-  // A private canonical lookup must not replace a public mutable prewarm. Its
-  // compact row facts survive without storing this temporary whole view.
-  if (allowPrewarmed || !cached || canonicalViews.has(cached)) {
-    views.set(body, view, { nodes: reconciliationTreeNodeCount(raw.tree) });
+    classifiedTrees.add(raw.tree);
   }
   return view;
 }
@@ -158,6 +179,13 @@ function authoredView(body, raw, canonical, { allowPrewarmed = false } = {}) {
 // Callers treat these shared structural lists as read-only.
 export function scopedAuthoredSections(body, name, raw = null) {
   return scopedAuthoredView(body, raw).byName.get(name) || [];
+}
+
+// Internal API candidate lookup shares one immutable physical section/index
+// per native tree. Explicit custom raw interpretations keep the public path.
+export function sharedScopedAuthoredSections(body, name, raw = null) {
+  if (raw !== null && !isSharedReconciliationReferenceView(body, raw)) return scopedAuthoredSections(body, name, raw);
+  return canonicalAuthoredView(body, raw).byName.get(name) || [];
 }
 
 // H3 is a section-only fallback, never a canonical table home. Keep its index
@@ -219,7 +247,7 @@ export function scopedSelectionUnknownAuthored(body, selection, raw = null) {
   const [row] = nodes, start = row.position.start.offset, end = row.position.end.offset;
   const known = raw === null ? unknownRows.get(row) : null;
   if (known && known.body === body && known.start === start && known.end === end) return known.authored;
-  const homes = raw === null ? authoredView(body, null, true).byName.get('unknowns') || []
+  const homes = raw === null ? canonicalAuthoredView(body).byName.get('unknowns') || []
     : scopedAuthoredSections(body, 'unknowns', raw);
   const authored = homes.some((home) => home.tableNodes.some((table, index) =>
     ['ID', 'Question'].every((header) => hasHeader(home.tables[index].headers, header)) &&

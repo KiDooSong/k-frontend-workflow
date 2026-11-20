@@ -11,11 +11,12 @@ import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { parseInputEvidenceRef } from './provenance.mjs';
 import { resolveArtifact } from './reconciliation-target-index.mjs';
 import { parseReconciliationReferenceView, sharedReconciliationReferenceView, reconciliationReferenceLabel } from './reconciliation-markdown-ast.mjs';
-import { createScopedReferenceResolver, parseScopedTargetRef, scopedSectionsBySlug, scopedIndexedBy } from './scoped-work-refs.mjs';
+import { createScopedReferenceResolver, parseScopedTargetRef, scopedSectionsBySlug, scopedIndexedBy,
+  scopedReferenceResolverView } from './scoped-work-refs.mjs';
 import { createScopedSourceResolver } from './scoped-work-sources.mjs';
 import { workText, workSet, workObject, ScopedWorkContractError } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
-import { scopedAuthoredSections, scopedAuthoredSubsections, scopedSelectionNodes, rememberScopedSelection, copyScopedSelectionContext, copyScopedNodeContexts } from './scoped-work-authored.mjs';
+import { scopedAuthoredSections, sharedScopedAuthoredSections, scopedAuthoredSubsections, scopedSelectionNodes, rememberScopedSelection, copyScopedSelectionContext, copyScopedNodeContexts } from './scoped-work-authored.mjs';
 import { scopedProjectionProgress } from './workflow-progress.mjs';
 
 const fail = (message) => { throw new ScopedWorkContractError(`SW-GRAPH: ${message}`); };
@@ -74,12 +75,13 @@ function nativeSectionRows(body, section) {
   }
   return scopedIndexedBy(entry.list, 'row', (item) => item.key);
 }
-function selectedNodes(view, selection, body) {
+function selectedNodes(view, selection, body, canonicalAuthoring = false) {
   const remembered = scopedSelectionNodes(body, selection);
   if (remembered) return remembered;
   if (selection.type === 'body' || selection.type === 'body-token') return view.tree.children;
+  const authoring = canonicalAuthoring ? sharedScopedAuthoredSections : scopedAuthoredSections;
   let authored = ['api-candidates', 'unknowns'].includes(selection.section)
-    ? scopedAuthoredSections(body, selection.section === 'api-candidates' ? 'api candidates' : 'unknowns', view) : [];
+    ? authoring(body, selection.section === 'api-candidates' ? 'api candidates' : 'unknowns', view) : [];
   if (selection.section === 'unknowns' && !authored.some((home) => home.tables.some((table) =>
     ['ID', 'Question'].every((header) => hasHeader(table.headers, header))))) authored = [];
   let sections = authored.length ? authored : scopedSectionsBySlug(view.sections, selection.section);
@@ -346,7 +348,7 @@ export function resolveScopedCandidateGraph({ roots = [], targetIndex, inputArti
     if (!serialized.has(value)) serialized.set(value, scopeJson(value));
     return serialized.get(value);
   };
-  function read(file, metadata, expectedBody) {
+  function read(file, metadata, expectedBody, artifactId) {
     if (!documents.has(file)) {
       const canonical = canonicalPath(file, { required: true, type: 'file', label: 'scoped evidence' });
       const raw = readCurrentBytes(canonical.absolute, 'scoped evidence');
@@ -357,7 +359,10 @@ export function resolveScopedCandidateGraph({ roots = [], targetIndex, inputArti
     const document = documents.get(file), { parsed } = document;
     if (document.metadata === null || document.metadata !== serial(metadata) ||
         (expectedBody !== undefined && parsed.body !== expectedBody)) fail('evidence differs from its indexed snapshot');
-    document.view ??= sharedReconciliationReferenceView(parsed.body);
+    // Reuse only the syntax already selected by this resolver, after all
+    // current-byte/frontmatter/body checks above. Oversized trees need not
+    // survive in a global cache or be parsed a second time for this graph.
+    document.view ??= scopedReferenceResolverView(refs, artifactId, parsed.body) ?? sharedReconciliationReferenceView(parsed.body);
     return { body: parsed.body, view: document.view };
   }
   function enqueue(ref, mode) {
@@ -383,7 +388,7 @@ export function resolveScopedCandidateGraph({ roots = [], targetIndex, inputArti
       // Resolve each requested mode even if another mode already reached the
       // same source: Tracking must still validate its canonical open status.
       record = mode === 'tracking' ? refs.tracking(ref) : mode === 'authored' ? refs.authoredContract(ref) : refs.contract(ref);
-      document = read(record.file, record.metadata, resolveArtifact(targetIndex, record.artifact_id).body);
+      document = read(record.file, record.metadata, resolveArtifact(targetIndex, record.artifact_id).body, record.artifact_id);
     }
     const selected = selectedNodes(document.view, record.selection, document.body);
     const spans = selected.map((node) => {
@@ -459,7 +464,7 @@ export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifa
     if (!serialized.has(value)) serialized.set(value, scopeJson(value));
     return serialized.get(value);
   };
-  function read(file, metadata, expectedBody) {
+  function read(file, metadata, expectedBody, artifactId) {
     if (!documents.has(file)) {
       const canonical = canonicalPath(file, { required: true, type: 'file', label: 'scoped evidence' });
       const raw = readCurrentBytes(canonical.absolute, 'scoped evidence');
@@ -470,12 +475,12 @@ export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifa
     const document = documents.get(file), { parsed } = document;
     if (document.metadata === null || document.metadata !== serial(metadata) ||
         (expectedBody !== undefined && parsed.body !== expectedBody)) fail('evidence differs from its indexed snapshot');
-    document.view ??= sharedReconciliationReferenceView(parsed.body);
+    document.view ??= scopedReferenceResolverView(refs, artifactId, parsed.body) ?? sharedReconciliationReferenceView(parsed.body);
     return { body: parsed.body, view: document.view };
   }
   function sameSource(a, b) {
     if (a.file !== b.file || a.artifact_id !== b.artifact_id) return false;
-    const doc = read(a.file, a.metadata, resolveArtifact(targetIndex, a.artifact_id).body);
+    const doc = read(a.file, a.metadata, resolveArtifact(targetIndex, a.artifact_id).body, a.artifact_id);
     const spans = (record) => selectedNodes(doc.view, record.selection, doc.body)
       .map((node) => [node.position.start.offset, node.position.end.offset]);
     return scopeJson(spans(a)) === scopeJson(spans(b));
@@ -516,7 +521,7 @@ export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifa
         metadata: data.metadata, selection: anchor };
     } else {
       record = tracking.has(ref) || authored.has(ref) ? contextual(ref) : refs.contract(ref);
-      document = read(record.file, record.metadata, resolveArtifact(targetIndex, record.artifact_id).body);
+      document = read(record.file, record.metadata, resolveArtifact(targetIndex, record.artifact_id).body, record.artifact_id);
     }
     resolved.set(ref, record);
     const projected = project ? project(record) : record;
@@ -575,7 +580,10 @@ function nativeSelectionSpans(nodes, omitNestedLists) {
 // candidate graphs. Share immutable spans only inside that evaluation; the
 // public helper above still returns independent mutable arrays.
 export function createScopedGraphSelectionSpanResolver() {
-  const selections = new WeakMap(), immutable = new WeakMap();
+  // Graphs may own different arrays containing the same ordered native nodes.
+  // A weak identity trie shares that physical selection without retaining its
+  // wrapper array or merging equal text at different positions.
+  const selections = { next: new WeakMap() }, immutable = new WeakMap();
   const absent = Symbol('non-data-field');
   const data = (value, key) => {
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
@@ -609,12 +617,15 @@ export function createScopedGraphSelectionSpanResolver() {
     // actual source body, and callers can mutate a context's node array.
     const nodes = selectedNodes(view, selection, body), omitNestedLists = input && selection.bullet_index != null;
     if (!nodes.every(frozen)) return nativeSelectionSpans(nodes, omitNestedLists);
-    const key = nodes.length === 1 ? nodes[0] : nodes;
-    let cached = selections.get(key);
-    if (!cached || cached.body !== body || cached.nodes.length !== nodes.length ||
-        cached.nodes.some((node, index) => node !== nodes[index])) {
-      cached = { body, nodes: [...nodes], modes: new Map() };
-      selections.set(key, cached);
+    let sequence = selections;
+    for (const node of nodes) {
+      if (!sequence.next.has(node)) sequence.next.set(node, { next: new WeakMap() });
+      sequence = sequence.next.get(node);
+    }
+    let cached = sequence.cached;
+    if (!cached || cached.body !== body) {
+      cached = { body, modes: new Map() };
+      sequence.cached = cached;
     }
     if (!cached.modes.has(omitNestedLists)) {
       cached.modes.set(omitNestedLists, Object.freeze(nativeSelectionSpans(nodes, omitNestedLists).map(Object.freeze)));
@@ -627,9 +638,9 @@ export function createScopedGraphSelectionSpanResolver() {
 // row correspondence. Traverse just that row's native cells, retaining document
 // definitions for reference-style links. Do not select the whole API section.
 export function scopedGraphApiRowContext(body, candidate) {
-  const view = parseReconciliationReferenceView(body);
+  const view = sharedReconciliationReferenceView(body);
   const [row] = selectedNodes(view, { type: 'row', section: 'api-candidates',
-    headers: candidate.headers, cells: candidate.cells }, body);
+    headers: candidate.headers, cells: candidate.cells }, body, true);
   const trackingIndexes = apiCandidateColumns(candidate.headers).find(({ name }) => name === 'Tracking').indexes;
   const trackingIndex = trackingIndexes[0];
   if (candidate.tracking && (trackingIndexes.length !== 1 ||

@@ -23,6 +23,7 @@ const resolverSuites = [...suites, 'scoped-work-generated.test.mjs', 'scoped-wor
   'scoped-work-retired-targets.test.mjs', 'scoped-work-refs-shared.test.mjs', 'scoped-work-memory.test.mjs',
   'scoped-work-graph-cache.test.mjs', 'scoped-work-active-syntax.test.mjs', 'scoped-work-syntax-scope.test.mjs',
   'scoped-work-blocking-relations.test.mjs', 'scoped-work-unknown-reuse.test.mjs', 'scoped-work-source-preparation.test.mjs',
+  'scoped-work-graph-read-view.test.mjs', 'scoped-work-authored-isolation.test.mjs', 'scoped-work-multinode-spans.test.mjs',
   'scoped-work-selection-costs.test.mjs'];
 const cliSuite = 'scoped-work-binding-status.test.mjs';
 const bindingProgressSuite = 'scoped-work-binding-progress.test.mjs';
