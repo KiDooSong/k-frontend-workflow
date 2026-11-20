@@ -26,7 +26,7 @@ import {
 import { readWorkRequestFile, resolveWorkResources, workResourceRecords, baselineWorkflowState, baselineWorkPolicy } from './current-work-execution-preflight.mjs';
 import { normalizeScopedWorkRequestSyntax } from './scoped-work-request.mjs';
 import { inspectScopedSnapshotWorkRequests } from './scoped-work-composition.mjs';
-import { prepareScopedInputMetadata } from './scoped-work-input-metadata.mjs';
+import { prepareScopedSourceInputs } from './scoped-work-source-inputs.mjs';
 import { workflowProgress } from './workflow-progress.mjs';
 
 const fail = (message) => { throw new CurrentWorkExecutionError(message, 'SW-INPUT'); };
@@ -147,10 +147,9 @@ export function prepareScopedWork({ work, root, docs, src, policy, manifest, lay
     });
 
     // The execution adapter owns this raw Git snapshot and its input collection.
-    // Share only detached immutable plain metadata with its fresh source resolvers;
-    // their records, validation, bodies and current-file observations stay private.
-    const preparedInputs = inputArtifacts.map((entry) =>
-      ({ ...entry, fm: prepareScopedInputMetadata(entry.fm) }));
+    // Share immutable inventory preparation with its fresh source resolvers;
+    // loaded bodies, Evidence observations and source/register checks stay private.
+    const preparedInputs = prepareScopedSourceInputs(inputArtifacts);
     workflowProgress('baseline-inputs:done');
     const composition = inspectScopedSnapshotWorkRequests({
       request: parsed.value, projectRoot: baselineRoot, docsDir: docsRoot, kitRoot: baselineKitRoot,

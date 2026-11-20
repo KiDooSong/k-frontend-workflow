@@ -16,7 +16,7 @@ import { resolveScopedContractGraph, scopedGraphContexts, scopedGraphSelectionSp
   copyScopedGraphContexts, mergeScopedGraphContexts } from './scoped-work-graph.mjs';
 import { resolveScopedUnitProjection, scopedProjectionMetadata, scopedProjectionNode,
   scopedUnitAbsentRegisters } from './scoped-work-projection.mjs';
-import { observeInputEvidenceReads } from './provenance.mjs';
+import { observeScopedSourceInputReads } from './scoped-work-source-inputs.mjs';
 import { parseDecisionWorkScopes } from './scoped-work-declarations.mjs';
 import { ScopedWorkContractError, workText, workSet, workPath } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
@@ -44,7 +44,7 @@ export function resolveScopedDecisionProjection(options = {}, dependencyRoots = 
 // never from caller-supplied projections or resolver callbacks. Later relation
 // passes may add roots, but cannot change the owner's unit/source selection.
 export function createScopedSnapshotDecisionResolver(options = {}) {
-  const observed = observeInputEvidenceReads(options.inputArtifacts || []);
+  const observed = observeScopedSourceInputReads(options.inputArtifacts || []);
   const base = resolveScopedUnitProjection({ ...options, inputArtifacts: observed.artifacts });
   const absentRegisters = scopedUnitAbsentRegisters(base);
   const projectRoot = options.projectRoot;

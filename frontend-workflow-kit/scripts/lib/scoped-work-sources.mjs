@@ -2,9 +2,7 @@
 // Keep raw-input hashing separate from the future human-owned R1 scope digest.
 import path from 'node:path';
 import { splitFrontmatter } from './util.mjs';
-import { validateInputArtifacts } from './input-artifact.mjs';
-import { buildInputArtifactIndex, resolveInputArtifact, resolveInputEvidence, parseInputEvidenceRef,
-  copyInputEvidenceObservation } from './provenance.mjs';
+import { resolveInputArtifact, resolveInputEvidence, parseInputEvidenceRef } from './provenance.mjs';
 import { parseReconciliationMarkdown, parseReconciliationReferenceView, describeHeaderMismatch } from './reconciliation-markdown-ast.mjs';
 import { parseReconciliationRegister, REQUIRED_REGISTER_COLS, RECONCILE_STATUS_VALUES } from './reconciliation-register.mjs';
 import { parseRegisterContract, parseReconciliationItems, validateReconciliationV2,
@@ -14,8 +12,7 @@ import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { ScopedWorkContractError, workObject, workSet, workPath, workText } from './scoped-work-request.mjs';
 import { createScopedReferenceResolver, scopedRawTable } from './scoped-work-refs.mjs';
 import { rememberScopedSelection } from './scoped-work-authored.mjs';
-import { cloneScopedSourceMetadata } from './scoped-work-input-metadata.mjs';
-import { scopedProjectionProgress } from './workflow-progress.mjs';
+import { createScopedSourceInputs } from './scoped-work-source-inputs.mjs';
 
 const fail = (code, message) => { throw new ScopedWorkContractError(`${code}: ${message}`); };
 const lf = (text) => text.replace(/\r\n|\r/g, '\n');
@@ -34,15 +31,7 @@ export function scopedHistoricalTargetWarning(target, row, file) {
 export function createScopedSourceResolver({ inputArtifacts, registerFile, targetIndex, projectRoot } = {}) {
   const refs = createScopedReferenceResolver({ targetIndex, projectRoot, inputArtifacts });
   if (!Array.isArray(inputArtifacts)) fail('SW-SOURCE-INDEX', 'canonical input artifacts required');
-  // Own caches, never mutate the collector's records or its caller's declarations.
-  const inputs = inputArtifacts.map((entry) => {
-    const input = copyInputEvidenceObservation(entry,
-      { ...entry, fm: cloneScopedSourceMetadata(entry.fm), body: undefined });
-    scopedProjectionProgress('input-metadata');
-    return input;
-  });
-  const index = buildInputArtifactIndex(inputs);
-  const validation = validateInputArtifacts(inputs);
+  const { inputs, index, validation } = createScopedSourceInputs(inputArtifacts);
   const loaded = new Map();
   let reconciliation;
 
