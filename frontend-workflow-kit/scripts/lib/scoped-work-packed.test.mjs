@@ -18,13 +18,19 @@ const suites = ['scoped-work-refs.test.mjs', 'scoped-work-sources.test.mjs', 'sc
 const runtime = ['util.mjs', 'frontmatter-syntax.mjs', 'scoped-work-request.mjs', 'scoped-work-declarations.mjs', 'scoped-work-authored.mjs', 'spec.mjs', 'reconciliation-items.mjs', 'reconciliation-markdown-ast.mjs', 'scoped-work-binding-status.mjs', 'scoped-work-source-state.mjs',
   'workflow-progress.mjs', 'syntax-cache.mjs', 'visual-refresh-git-objects.mjs', 'scoped-work-source-inputs.mjs',
   ...suites.map((name) => name.replace('.test.mjs', '.mjs'))];
-// This regression exercises several real modules, rather than a matching .mjs.
+// These regressions exercise several real modules, rather than matching .mjs files.
+// Run each new oversized-source/node file in its own bounded child process,
+// serially, so their independent full parser allocations do not overlap and
+// no single timeout covers several expensive native parser generations.
+const syntaxLifetimeSuites = ['scoped-work-api-context-batch.test.mjs', 'scoped-work-dependency-syntax.test.mjs',
+  'scoped-work-input-syntax.test.mjs', 'scoped-work-selected-unknown.test.mjs',
+  'scoped-work-span-iterator.test.mjs', 'scoped-work-syntax-reuse.test.mjs'];
 const resolverSuites = [...suites, 'scoped-work-generated.test.mjs', 'scoped-work-subsections.test.mjs',
   'scoped-work-retired-targets.test.mjs', 'scoped-work-refs-shared.test.mjs', 'scoped-work-memory.test.mjs',
   'scoped-work-graph-cache.test.mjs', 'scoped-work-active-syntax.test.mjs', 'scoped-work-syntax-scope.test.mjs',
   'scoped-work-blocking-relations.test.mjs', 'scoped-work-unknown-reuse.test.mjs', 'scoped-work-source-preparation.test.mjs',
   'scoped-work-graph-read-view.test.mjs', 'scoped-work-authored-isolation.test.mjs', 'scoped-work-multinode-spans.test.mjs',
-  'scoped-work-selection-costs.test.mjs'];
+  'scoped-work-selection-costs.test.mjs', ...syntaxLifetimeSuites];
 const cliSuite = 'scoped-work-binding-status.test.mjs';
 const bindingProgressSuite = 'scoped-work-binding-progress.test.mjs';
 const sourceCliSuite = 'scoped-work-cli.test.mjs';
@@ -72,7 +78,8 @@ test('D packed: real reference, source, mapping, API, normalization, graph trave
   }
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT; // Start a separate explicit test-runner process.
-  const run = checkedNode(['--test', '--test-reporter=tap', ...resolverSuites.map((name) => path.join(lib, name))], packed, env);
+  const run = checkedNode(['--test', '--test-reporter=tap',
+    ...resolverSuites.filter((name) => !syntaxLifetimeSuites.includes(name)).map((name) => path.join(lib, name))], packed, env);
   const count = /^# tests (\d+)\r?$/m.exec(run.stdout);
   assert.ok(count && Number(count[1]) >= 211, run.stdout);
   for (const metric of ['fail', 'cancelled', 'skipped', 'todo']) {
@@ -80,6 +87,19 @@ test('D packed: real reference, source, mapping, API, normalization, graph trave
   }
   for (const [name, value] of bytes) assert.deepEqual(fs.readFileSync(path.join(lib, name)), value, name);
   t.diagnostic(`packed resolver subprocess: ${count[1]} tests, no failures/cancellations/skips/todos`);
+  let lifetimeCount = 0;
+  for (const name of syntaxLifetimeSuites) {
+    const lifetimes = checkedNode(['--test', '--test-reporter=tap', path.join(lib, name)], packed, env);
+    const fileCount = /^# tests (\d+)\r?$/m.exec(lifetimes.stdout);
+    assert.ok(fileCount, lifetimes.stdout);
+    lifetimeCount += Number(fileCount[1]);
+    for (const metric of ['fail', 'cancelled', 'skipped', 'todo']) {
+      assert.match(lifetimes.stdout, new RegExp(`^# ${metric} 0\\r?$`, 'm'), lifetimes.stdout);
+    }
+  }
+  assert.equal(lifetimeCount, 33);
+  for (const [name, value] of bytes) assert.deepEqual(fs.readFileSync(path.join(lib, name)), value, name);
+  t.diagnostic('packed syntax lifetime subprocess: all 33 oversized parsing, native selection, Unknown and iterator regressions passed');
   // These shared-helper tests already ship. Run the body/metadata boundary and
   // observed-read regressions from their payload files, without copying over them.
   const syntax = checkedNode(['--test', '--test-reporter=tap',

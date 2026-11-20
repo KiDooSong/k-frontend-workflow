@@ -3,7 +3,8 @@
 import path from 'node:path';
 import { splitFrontmatter } from './util.mjs';
 import { resolveInputArtifact, resolveInputEvidence, parseInputEvidenceRef } from './provenance.mjs';
-import { parseReconciliationMarkdown, parseReconciliationReferenceView, describeHeaderMismatch } from './reconciliation-markdown-ast.mjs';
+import { parseReconciliationMarkdown, sharedReconciliationReferenceView, withReconciliationSyntax,
+  describeHeaderMismatch } from './reconciliation-markdown-ast.mjs';
 import { parseReconciliationRegister, REQUIRED_REGISTER_COLS, RECONCILE_STATUS_VALUES } from './reconciliation-register.mjs';
 import { parseRegisterContract, parseReconciliationItems, validateReconciliationV2,
   REQUIRED_ITEM_COLS, isReconciliationItemId, parseTargetRef } from './reconciliation-items.mjs';
@@ -19,6 +20,15 @@ const lf = (text) => text.replace(/\r\n|\r/g, '\n');
 const itemFields = ['inputId', 'item', 'basis', 'classification', 'effect', 'target', 'evidence', 'sourceRef', 'sourceUnit', 'capturedAt'];
 const summaryFields = ['inputId', 'source', 'classification', 'reconcileStatus', 'result', 'touched', 'created', 'supersedes'];
 const rowObjects = (table, fields) => table.cells.map((cells) => Object.fromEntries(fields.map((field, i) => [field, cells[i]])));
+
+// A graph can borrow only the immutable raw syntax its own source resolver has
+// already selected. Exact-body lookup supplies no file observation or metadata
+// verdict and retains nothing beyond that resolver's existing input lifetime.
+const resolverViews = new WeakMap();
+export function scopedSourceResolverView(resolver, inputId, body) {
+  const cached = resolverViews.get(resolver)?.get(inputId);
+  return cached && cached.artifact.body === body ? cached.markdown : null;
+}
 
 export function scopedHistoricalTargetWarning(target, row, file) {
   if (!target.historical_target) return null;
@@ -55,7 +65,7 @@ export function createScopedSourceResolver({ inputArtifacts, registerFile, targe
       fail('SW-SOURCE-SNAPSHOT', `${id}: input metadata differs from the indexed snapshot`);
     }
     artifact.body = parsed.body;
-    const result = { artifact, markdown: parseReconciliationReferenceView(parsed.body),
+    const result = { artifact, markdown: null, sectionNodes: new WeakMap(),
       data: { input_id: id, file, input_sha256: hashBytes(raw), metadata: structuredClone(artifact.fm) } };
     loaded.set(id, result);
     return result;
@@ -63,6 +73,15 @@ export function createScopedSourceResolver({ inputArtifacts, registerFile, targe
   function anchor(token, inputId) {
     const normalized = normalizeWorkOrigins([{ input_id: inputId, source_refs: [token] }])[0].source_refs[0];
     const source = input(inputId);
+    if (!source.markdown) return withReconciliationSyntax(source.artifact.body, () => {
+      source.markdown = sharedReconciliationReferenceView(source.artifact.body);
+      // Legacy Evidence validation and the exact raw selection need the same
+      // current input tree, including when it exceeds retained-cache budgets.
+      return selectAnchor(normalized, source);
+    });
+    return selectAnchor(normalized, source);
+  }
+  function selectAnchor(normalized, source) {
     const resolved = resolveInputEvidence(index, normalized);
     if (resolved.status !== 'ok') fail('SW-SOURCE-ANCHOR', `${normalized}: ${resolved.status}`);
     const sections = source.markdown.sections.filter((entry) => entry.slug === resolved.ref.section);
@@ -82,7 +101,14 @@ export function createScopedSourceResolver({ inputArtifacts, registerFile, targe
     // named API Candidates or Unknowns. Keep those exact original nodes beside
     // the public anchor so later graph/span selection cannot infer authoring
     // semantics from its slug and scan beyond the content resolved above.
-    const nodes = bullet === null ? sections[0].nodes : [sections[0].bulletNodes[bullet - 1]];
+    const section = sections[0];
+    if (bullet === null && !source.sectionNodes.has(section)) {
+      // Share immutable native nodes, but preserve this source resolver's own
+      // mutable section wrapper. Independent returned selections must not
+      // acquire another resolver's edited node array through the shared view.
+      source.sectionNodes.set(section, [...section.nodes]);
+    }
+    const nodes = bullet === null ? source.sectionNodes.get(section) : [section.bulletNodes[bullet - 1]];
     return rememberScopedSelection({ ref: normalized, section: resolved.ref.section, bullet_index: bullet, content },
       source.artifact.body, nodes);
   }
@@ -167,5 +193,7 @@ export function createScopedSourceResolver({ inputArtifacts, registerFile, targe
     const selected = anchor(token, ref.inputId);
     return { input: structuredClone(input(ref.inputId).data), anchor: selected };
   }
-  return { source, sources, evidence };
+  const resolver = { source, sources, evidence };
+  resolverViews.set(resolver, loaded);
+  return resolver;
 }

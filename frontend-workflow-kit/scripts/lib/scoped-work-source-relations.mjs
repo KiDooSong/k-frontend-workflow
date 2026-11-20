@@ -20,7 +20,7 @@ import { createScopedSourceResolver, scopedHistoricalTargetWarning } from './sco
 import { createScopedApiResolver } from './scoped-work-api.mjs';
 import { resolveScopedMappingEvidence } from './scoped-work-mapping.mjs';
 import { parseMappingProvenanceContract } from './mapping-provenance.mjs';
-import { resolveScopedContractGraph, scopedGraphSelectionSpans, scopedGraphApiRowContext } from './scoped-work-graph.mjs';
+import { resolveScopedContractGraph, scopedGraphSelectionSpans, createScopedGraphApiRowContextResolver } from './scoped-work-graph.mjs';
 import { ScopedWorkContractError, workUnitId } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
 import { scopedEvidenceSet } from './scoped-work-authored.mjs';
@@ -330,8 +330,9 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
   const trackingRefs = new Set(), ordinaryRefs = new Set(roots);
   if (selectedUnit.api_candidates.length) {
     const api = createScopedApiResolver({ targetIndex, projectRoot, layout }).unit(ownerRecord.artifact_id, owner, unit);
+    const apiContext = createScopedGraphApiRowContextResolver(document(ownerRecord).body);
     for (const row of api.candidates) {
-      const context = scopedGraphApiRowContext(document(ownerRecord).body, row);
+      const context = apiContext(row);
       for (const ref of context.refs) roots.add(ref);
       for (const ref of context.trackingRefs) trackingRefs.add(ref);
       for (const ref of context.ordinaryRefs) ordinaryRefs.add(ref);

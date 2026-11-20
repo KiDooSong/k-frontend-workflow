@@ -11,7 +11,7 @@ import { ownerParts, readCurrentBytes, hashBytes, CurrentWorkError } from './cur
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { parseTargetRef } from './reconciliation-items.mjs';
 import { parseReconciliationMarkdown, parseReconciliationReferenceView, sharedReconciliationReferenceView,
-  reconciliationTreeNodeCount } from './reconciliation-markdown-ast.mjs';
+  reconciliationTreeNodeCount, withReconciliationSyntaxReuse } from './reconciliation-markdown-ast.mjs';
 import { createSyntaxCache } from './syntax-cache.mjs';
 import { createScopedReferenceResolver, scopedRawTable, parseScopedTargetRef, scopedRowAlias } from './scoped-work-refs.mjs';
 import { resolveScopedContractGraph, createScopedGraphSelectionSpanResolver, scopedGraphMetadataRefs, scopedGraphBodyRefs,
@@ -21,7 +21,7 @@ import { resolveScopedDecisionProjection, createScopedSnapshotDecisionResolver }
 import { ScopedWorkContractError, workText } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
 import { scopedAuthoredSections, scopedSelectionUnknownAuthored, rememberScopedSelection, copyScopedNodeContexts,
-  withScopedDocumentSyntax } from './scoped-work-authored.mjs';
+  scopedSelectionNodes, reuseScopedSelectionNodes, withScopedDocumentSyntax } from './scoped-work-authored.mjs';
 import { scopedProjectionProgress } from './workflow-progress.mjs';
 
 const fail = (message) => { throw new ScopedWorkContractError(`SW-UNCERTAINTY: ${message}`); };
@@ -86,6 +86,10 @@ export function createScopedSnapshotRelationResolver(options = {}) {
 }
 
 function uncertaintyProjection(options, base) {
+  return withReconciliationSyntaxReuse(() => computeUncertaintyProjection(options, base));
+}
+
+function computeUncertaintyProjection(options, base) {
   const { targetIndex, projectRoot, inputArtifacts = [] } = options;
   const canonicalPath = createCanonicalRepositoryPathResolver(projectRoot);
   const refs = createScopedReferenceResolver({ targetIndex, projectRoot, inputArtifacts });
@@ -99,6 +103,10 @@ function uncertaintyProjection(options, base) {
   const subjects = new Map();
   const spans = new WeakMap();
   const selectionSpans = createScopedGraphSelectionSpanResolver();
+  // Retain only nodes that the candidate results already need, once for each
+  // exact physical source. The dependency syntax scope separately holds at
+  // most one oversized tree; this map never retains a whole document view.
+  const physicalSelections = new Map();
 
   function read(relative, expectedHash) {
     const options = { required: true, type: 'file', label: 'scoped uncertainty' };
@@ -111,18 +119,18 @@ function uncertaintyProjection(options, base) {
     files.set(relative, { file: relative, sha256 });
     return raw;
   }
-  function document(relative, visit = null) {
+  function documentSource(relative) {
     const cached = documents.get(relative);
-    if (cached && !visit) return cached;
-    let source = cached;
-    if (!source) {
-      // A miss, including during an active syntax scope, still reads actual
-      // bytes and compares with the original hash. Only parsing is reused.
-      const text = decodeGitUtf8(read(relative), 'scoped uncertainty');
-      const parsed = splitFrontmatter(text);
-      if (!parsed.hasFrontmatter || parsed.parseError) fail('invalid uncertainty document');
-      source = { text, body: parsed.body };
-    }
+    if (cached) return cached;
+    // A miss, including during an active syntax scope, still reads actual
+    // bytes and compares with the original hash. Only parsing is reused.
+    const text = decodeGitUtf8(read(relative), 'scoped uncertainty');
+    const parsed = splitFrontmatter(text);
+    if (!parsed.hasFrontmatter || parsed.parseError) fail('invalid uncertainty document');
+    return { text, body: parsed.body, file: relative };
+  }
+  function document(relative, visit = null, source = documentSource(relative)) {
+    if (source.view && !visit) return source;
     const materialize = (view) => {
       const doc = source.view === view ? source : { ...source, file: relative, view };
       documents.set(relative, doc, { sourceChars: relative.length + doc.text.length,
@@ -186,10 +194,14 @@ function uncertaintyProjection(options, base) {
     for (const file of graph.read_set) read(file.file, file.sha256);
     const evidence = mergeScopedGraphContexts([graph],
       { roots: graph.roots, nodes: graph.nodes.map(scopedProjectionNode), edges: graph.edges });
-    // Later relation merging only needs these immutable physical spans. Compute
-    // them while this document's syntax is active, rather than reparsing its
-    // oversized body for each duplicate root after the row batch has finished.
-    for (const node of evidence.nodes) if (node.file === record.file) ranges(node, current);
+    // Relation matching needs physical spans, including external dependencies.
+    // Their graph already resolved and audited the actual source. Prepare every
+    // selection now, and share equal canonical nodes across candidate graphs.
+    for (const node of evidence.nodes) {
+      const source = node.file === current?.file ? current : documentSource(node.file);
+      ranges(node, source);
+      retainPhysicalSelection(node, source);
+    }
     candidates.set(physical, { record, entry, evidence, affected: affectedOwners(affected) });
     scopedProjectionProgress('candidate-rows');
   }
@@ -402,10 +414,33 @@ function uncertaintyProjection(options, base) {
   }
   function ranges(node, current = null) {
     if (!spans.has(node.selection)) {
-      const doc = current?.file === node.file ? current : document(node.file);
-      spans.set(node.selection, selectionSpans(doc.body, doc.view, node.selection, node.kind === 'input-evidence'));
+      const doc = current?.file === node.file ? current : documentSource(node.file);
+      // A graph selection already carries exact native nodes. Rechecking the
+      // current body must not parse a whole oversized dependency just to obtain
+      // a view that selectedNodes would immediately ignore.
+      const view = scopedSelectionNodes(doc.body, node.selection) ? null : document(node.file, null, doc).view;
+      spans.set(node.selection, selectionSpans(doc.body, view, node.selection, node.kind === 'input-evidence'));
     }
     return spans.get(node.selection);
+  }
+  function retainPhysicalSelection(node, doc) {
+    const native = scopedSelectionNodes(doc.body, node.selection), selected = spans.get(node.selection);
+    // The internal span resolver freezes a result only for immutable data nodes.
+    // Custom mutable/accessor/iterator trees keep their independent contexts.
+    if (!native || !Object.isFrozen(selected)) return;
+    const stamp = files.get(node.file)?.sha256;
+    if (!stamp) fail('missing selected source hash');
+    const key = scopeJson([node.file, stamp, native.map((part) =>
+      [part.type, part.position.start.offset, part.position.end.offset])]);
+    const existing = physicalSelections.get(key);
+    if (existing && existing.body === doc.body) {
+      reuseScopedSelectionNodes(existing.body, node.selection, existing.nodes);
+      // Reuse spans through the shared canonical nodes, retaining the input
+      // nested-list mode. Public context wrappers still remain independent.
+      spans.set(node.selection, selectionSpans(doc.body, null, node.selection, node.kind === 'input-evidence'));
+    } else {
+      physicalSelections.set(key, { body: doc.body, nodes: [...native] });
+    }
   }
   function overlaps(left, right) {
     if (left.file !== right.file) return false;

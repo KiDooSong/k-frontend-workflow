@@ -13,13 +13,14 @@ import { resolveArtifact } from './reconciliation-target-index.mjs';
 import { parseReconciliationReferenceView, sharedReconciliationReferenceView, reconciliationReferenceLabel } from './reconciliation-markdown-ast.mjs';
 import { createScopedReferenceResolver, parseScopedTargetRef, scopedSectionsBySlug, scopedIndexedBy,
   scopedReferenceResolverView } from './scoped-work-refs.mjs';
-import { createScopedSourceResolver } from './scoped-work-sources.mjs';
+import { createScopedSourceResolver, scopedSourceResolverView } from './scoped-work-sources.mjs';
 import { workText, workSet, workObject, ScopedWorkContractError } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
 import { scopedAuthoredSections, sharedScopedAuthoredSections, scopedAuthoredSubsections, scopedSelectionNodes, rememberScopedSelection, copyScopedSelectionContext, copyScopedNodeContexts } from './scoped-work-authored.mjs';
 import { scopedProjectionProgress } from './workflow-progress.mjs';
 
 const fail = (message) => { throw new ScopedWorkContractError(`SW-GRAPH: ${message}`); };
+const arrayIterator = Array.prototype.values;
 const prefix = /^(?:artifact|decision|unknown|conflict|gap|investigation|verification|input):/;
 const spelling = /(?:^|[\s([{"';,])((?:artifact|decision|unknown|conflict|gap|investigation|verification|input):[^\s`<>\[\](){}"';,]+)/g;
 function canonicalRef(token) {
@@ -348,7 +349,7 @@ export function resolveScopedCandidateGraph({ roots = [], targetIndex, inputArti
     if (!serialized.has(value)) serialized.set(value, scopeJson(value));
     return serialized.get(value);
   };
-  function read(file, metadata, expectedBody, artifactId) {
+  function read(file, metadata, expectedBody, artifactId, inputId) {
     if (!documents.has(file)) {
       const canonical = canonicalPath(file, { required: true, type: 'file', label: 'scoped evidence' });
       const raw = readCurrentBytes(canonical.absolute, 'scoped evidence');
@@ -362,7 +363,8 @@ export function resolveScopedCandidateGraph({ roots = [], targetIndex, inputArti
     // Reuse only the syntax already selected by this resolver, after all
     // current-byte/frontmatter/body checks above. Oversized trees need not
     // survive in a global cache or be parsed a second time for this graph.
-    document.view ??= scopedReferenceResolverView(refs, artifactId, parsed.body) ?? sharedReconciliationReferenceView(parsed.body);
+    document.view ??= scopedReferenceResolverView(refs, artifactId, parsed.body) ??
+      scopedSourceResolverView(sources, inputId, parsed.body) ?? sharedReconciliationReferenceView(parsed.body);
     return { body: parsed.body, view: document.view };
   }
   function enqueue(ref, mode) {
@@ -380,7 +382,7 @@ export function resolveScopedCandidateGraph({ roots = [], targetIndex, inputArti
     let record, document;
     if (input) {
       const evidence = sources.evidence(ref), { input: data, anchor } = evidence;
-      document = read(data.file, data.metadata);
+      document = read(data.file, data.metadata, undefined, undefined, data.input_id);
       if (files.get(data.file).sha256 !== data.input_sha256) fail('input changed after anchor resolution');
       record = { ref, kind: 'input-evidence', input_id: data.input_id, file: data.file,
         metadata: data.metadata, selection: anchor };
@@ -464,7 +466,7 @@ export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifa
     if (!serialized.has(value)) serialized.set(value, scopeJson(value));
     return serialized.get(value);
   };
-  function read(file, metadata, expectedBody, artifactId) {
+  function read(file, metadata, expectedBody, artifactId, inputId) {
     if (!documents.has(file)) {
       const canonical = canonicalPath(file, { required: true, type: 'file', label: 'scoped evidence' });
       const raw = readCurrentBytes(canonical.absolute, 'scoped evidence');
@@ -475,7 +477,8 @@ export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifa
     const document = documents.get(file), { parsed } = document;
     if (document.metadata === null || document.metadata !== serial(metadata) ||
         (expectedBody !== undefined && parsed.body !== expectedBody)) fail('evidence differs from its indexed snapshot');
-    document.view ??= scopedReferenceResolverView(refs, artifactId, parsed.body) ?? sharedReconciliationReferenceView(parsed.body);
+    document.view ??= scopedReferenceResolverView(refs, artifactId, parsed.body) ??
+      scopedSourceResolverView(sources, inputId, parsed.body) ?? sharedReconciliationReferenceView(parsed.body);
     return { body: parsed.body, view: document.view };
   }
   function sameSource(a, b) {
@@ -515,7 +518,7 @@ export function resolveScopedContractGraph({ contracts, targetIndex, inputArtifa
     if (input) {
       const evidence = sources.evidence(ref);
       const { input: data, anchor } = evidence;
-      document = read(data.file, data.metadata);
+      document = read(data.file, data.metadata, undefined, undefined, data.input_id);
       if (files.get(data.file).sha256 !== data.input_sha256) fail('input changed after anchor resolution');
       record = { ref, kind: 'input-evidence', input_id: data.input_id, file: data.file,
         metadata: data.metadata, selection: anchor };
@@ -589,6 +592,13 @@ export function createScopedGraphSelectionSpanResolver() {
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
     return descriptor && Object.hasOwn(descriptor, 'value') ? descriptor.value : absent;
   };
+  // A frozen array can still run a stateful own iterator. Eligibility and the
+  // native walk must see the same indexed sequence; inspect descriptors without
+  // invoking caller accessors. Check the inherited iterator again on each call
+  // so replacing Array.prototype's iterator cannot validate an old cache hit.
+  const ordinaryArray = (value) => Array.isArray(value) && !types.isProxy(value) &&
+    Object.getPrototypeOf(value) === Array.prototype && !Object.hasOwn(value, Symbol.iterator) &&
+    data(Array.prototype, Symbol.iterator) === arrayIterator;
   const plain = (value) => value !== null && typeof value === 'object' && !types.isProxy(value) &&
     Object.isFrozen(value) && [Object.prototype, null].includes(Object.getPrototypeOf(value));
   const point = (value) => plain(value) && Number.isInteger(data(value, 'offset'));
@@ -602,8 +612,7 @@ export function createScopedGraphSelectionSpanResolver() {
     if (!plain(position) || !point(data(position, 'start')) || !point(data(position, 'end'))) return false;
     const children = data(node, 'children');
     let result = children === absent ? !('children' in node) : children == null;
-    if (Array.isArray(children) && !types.isProxy(children) && Object.isFrozen(children) &&
-        Object.getPrototypeOf(children) === Array.prototype) {
+    if (ordinaryArray(children) && Object.isFrozen(children)) {
       result = true;
       for (let index = 0; index < children.length; index += 1) {
         if (!frozen(data(children, String(index)))) { result = false; break; }
@@ -616,7 +625,10 @@ export function createScopedGraphSelectionSpanResolver() {
     // Resolve again even on a hit: a copied/replaced selection must retain its
     // actual source body, and callers can mutate a context's node array.
     const nodes = selectedNodes(view, selection, body), omitNestedLists = input && selection.bullet_index != null;
-    if (!nodes.every(frozen)) return nativeSelectionSpans(nodes, omitNestedLists);
+    if (!ordinaryArray(nodes)) return nativeSelectionSpans(nodes, omitNestedLists);
+    for (let index = 0; index < nodes.length; index += 1) {
+      if (!frozen(data(nodes, String(index)))) return nativeSelectionSpans(nodes, omitNestedLists);
+    }
     let sequence = selections;
     for (const node of nodes) {
       if (!sequence.next.has(node)) sequence.next.set(node, { next: new WeakMap() });
@@ -639,6 +651,22 @@ export function createScopedGraphSelectionSpanResolver() {
 // definitions for reference-style links. Do not select the whole API section.
 export function scopedGraphApiRowContext(body, candidate) {
   const view = sharedReconciliationReferenceView(body);
+  return apiRowContext(body, candidate, view);
+}
+
+// One checked owner body may supply many API candidates in the same evaluation.
+// Keep its canonical view/row index in that caller-owned batch even if the body
+// exceeds the retained syntax budgets. No file validity or candidate result is
+// cached, and a batch without candidates does not parse an unused document.
+export function createScopedGraphApiRowContextResolver(body) {
+  let view;
+  return (candidate) => {
+    view ??= sharedReconciliationReferenceView(body);
+    return apiRowContext(body, candidate, view);
+  };
+}
+
+function apiRowContext(body, candidate, view) {
   const [row] = selectedNodes(view, { type: 'row', section: 'api-candidates',
     headers: candidate.headers, cells: candidate.cells }, body, true);
   const trackingIndexes = apiCandidateColumns(candidate.headers).find(({ name }) => name === 'Tracking').indexes;
