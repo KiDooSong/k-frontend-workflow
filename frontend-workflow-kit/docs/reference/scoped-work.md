@@ -309,20 +309,32 @@ custom, canonical row checks prepare their own temporary view without replacing
 it; later authored reference resolvers still observe edits to the custom table.
 
 For adopted owners, the report also prepares a detached immutable copy of each
-eligible input's plain metadata once inside its owned snapshot. Source resolvers
-can reuse those privately identified copies while keeping their own input
-records, bodies, indexes, validation results and loaded-file state. Returned
-metadata remains independent and mutable. Ordinary source and graph callers
-keep their existing eager metadata copies; freezing a caller's object does not
-opt it in. Accessors, proxies, cycles and mutable built-in objects use the
-existing copy path. An ownerless report skips this preparation. Current input
-bytes, metadata comparisons and passive Evidence observations are still checked.
-The private identity set uses weak references and retains no separate input
-inventory, source text, validation verdict or file observation.
+eligible input's plain metadata once inside its owned snapshot. When every record
+has the collector's ordinary immutable fields, it also owns a frozen copy of the
+complete input list. The first source resolver prepares the duplicate-preserving
+ID positions and metadata-only inventory validation; later source resolvers in
+that snapshot reuse this pure calculation. No input is pruned from validation.
+
+Each observation scope prepares immutable source records with no supplied body.
+Resolvers copy only selected records before loading their bodies; their loaded
+files and section caches remain separate. Register validation still reads the
+selected local bodies and freshly observes unselected Evidence. An observer's
+private callback follows its own records and never becomes another observer's
+read history. Current input bytes, indexed metadata comparisons, expected hashes
+and final read-set audits still run. The shared catalog stores no source text,
+register verdict, binding state or digest, and weak collection identities keep
+its lifetime within the owned snapshot.
+
+Returned metadata remains independent and mutable. Ordinary source and graph
+callers keep their existing eager metadata copies and inventory validation;
+freezing a caller's object does not opt it in. Accessors, proxies, cycles,
+mutable built-in objects and unusual record fields retain the existing fallback.
+An ownerless report skips preparation. The first source constructor remains the
+validation boundary, so merely collecting unused inputs does not validate them.
 
 The scoped `--work` execution adapter uses the same private preparation after
-its baseline input validation and origin processing. It passes detached plain
-metadata to the snapshot's fresh source resolvers while retaining the original
+its baseline input validation and origin processing. It passes the owned input
+collection to the snapshot's fresh source resolvers while retaining the original
 collected input records for authority inventory and backstop checks. Unselected
 inputs remain part of that inventory; changing one still fails the existing
 authority check. This preparation does not make public mutable callers eligible
@@ -486,6 +498,12 @@ one-second throttle across phases, and changed counts are flushed at completion
 or failure. The phase vocabulary is finite, so thousands of short graph calls do
 not each create a new start/done pair. There is no timer-only heartbeat: a long
 individual synchronous step can still leave a gap until it completes.
+
+`input-metadata: N records prepared` counts source record preparations, including
+immutable seeds and selected resolver-local copies. Reusing an existing seed
+does not add another operation. Metadata preparation before the owner context
+is outside this count; it is included in whole-command elapsed time. These
+diagnostics count neither file reads nor Markdown parses.
 
 `owner-stage:start|done|failed` additionally identifies `boundary`, `units`,
 `sources`, `uncertainty`, `candidates` and `audit` work. The start marker is
@@ -683,10 +701,11 @@ share one private metadata copy rather than retaining a copy per anchor. Section
 refs keep their distinct selections and native source spans. This avoids
 repeated metadata copies and span reconstruction for the same anchor without
 changing which effects overlap it. Each new pass or call creates a fresh source
-resolver and its own records. Expected-hash checks still run on every use;
+resolver and its own selected records and body state. Owned snapshot resolvers
+share only the immutable inventory preparation described above. Expected-hash checks still run on every use;
 current-file and metadata checks, validation-only Evidence observations and the
-final read-set audit remain in place. This adds no separate input-body,
-file-observation or validation-result cache. Public results remain independent,
+final read-set audit remain in place. Source relation passes add no separate
+input-body, file-observation or register-validation cache. Public results remain independent,
 and source admission, scope-basis-v2 and checkpoint bytes are unchanged.
 
 Initial path reads in graph, source, Decision, uncertainty and applicability calculations

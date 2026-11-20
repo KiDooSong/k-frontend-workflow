@@ -11,6 +11,12 @@ export function scopedInputMetadataStats() {
   return { ...stats };
 }
 
+// Only the detached plain-data values made below can certify an immutable
+// inventory. Object.freeze on an arbitrary caller value is not that proof.
+export function isPreparedScopedInputMetadata(value) {
+  return prepared.has(value);
+}
+
 // Inspect descriptors without consuming getters. Only ordinary JSON data can
 // become a shared immutable value; unusual YAML/caller values keep their old
 // structuredClone path. The explicit stack preserves DAG aliases, rejects

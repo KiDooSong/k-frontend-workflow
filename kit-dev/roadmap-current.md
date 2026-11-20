@@ -1,5 +1,10 @@
 # Current Roadmap
 
+> 2026-11-20 #337: CLI가 소유한 불변 입력 목록은 source resolver의 전체 ID 색인·메타데이터 검증을 한 번 준비한다. 관찰 범위별 불변 레코드를 재사용하고, 선택한 입력만 resolver별 본문 레코드로 복사한다.
+> 중복·미선택 입력 검증, observer별 Evidence 관찰, 현재 bytes·expected hash·최종 read-set 감사, basis·차단 판정은 유지한다. 일반 mutable 호출과 특수 데이터는 기존 eager 경로를 사용한다.
+> `input-metadata`는 실제 source seed·선택 레코드 준비 횟수이며 파일 읽기나 Markdown 파싱 횟수가 아니다. 공개 합성 fixture의 반복 준비 감소와 실제 consumer 전체 실행 성능은 구분한다.
+> 정본: [binding status](../frontend-workflow-kit/docs/reference/scoped-work.md#binding-basis-and-status). 재현: [source preparation benchmark](benchmarks/scoped-source-preparation.mjs), [#337 측정·리뷰 증거](temp/runs/scoped-source-preparation-337.md).
+
 > 2026-11-20 #335: 한도를 넘는 Unknown 문서의 활성 배치가 끝난 뒤에도 물리 행의 작은 authored/GENERATED 판정 정보를 재사용해 행×unit 적용 검사에서 전체 Markdown을 다시 파싱하지 않는다.
 > 선택 처리에는 이미 읽은 현재 문서를 전달하고, 동일 uncertainty 평가의 후보 graph가 같은 불변 물리 절을 선택하면 leaf-span 배열을 공유한다. explicit raw 해석·물리 행·input 중첩 경계·공개 mutable 반환값·기존 구문 보관 한도는 유지한다.
 > 현재 bytes/expected hash와 최종 canonical read-set 감사는 계속 수행한다. 실제 consumer의 장시간 실행·OOM 해소는 해당 환경 재실행으로 확인한다.
