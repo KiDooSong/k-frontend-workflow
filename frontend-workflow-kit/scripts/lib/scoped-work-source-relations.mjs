@@ -15,7 +15,7 @@ import { parseReconciliationMarkdown, parseReconciliationReferenceView, locateCo
   describeHeaderMismatch } from './reconciliation-markdown-ast.mjs';
 import { parseTable } from './spec.mjs';
 import { parseScopedOwner } from './scoped-work-declarations.mjs';
-import { createScopedReferenceResolver, scopedRawTable } from './scoped-work-refs.mjs';
+import { createCanonicalScopedReferenceResolver as createScopedReferenceResolver, scopedRawTable } from './scoped-work-refs.mjs';
 import { createScopedSourceResolver, scopedHistoricalTargetWarning } from './scoped-work-sources.mjs';
 import { createScopedApiResolver } from './scoped-work-api.mjs';
 import { resolveScopedMappingEvidence } from './scoped-work-mapping.mjs';

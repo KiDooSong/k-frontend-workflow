@@ -10,18 +10,20 @@ import { canonicalRepositoryPath, createCanonicalRepositoryPathResolver } from '
 import { ownerParts, readCurrentBytes, hashBytes, CurrentWorkError } from './current-work-request.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { parseTargetRef } from './reconciliation-items.mjs';
-import { parseReconciliationMarkdown, parseReconciliationReferenceView, sharedReconciliationReferenceView,
+import { parseReconciliationMarkdown, sharedReconciliationReferenceView,
   reconciliationTreeNodeCount, withReconciliationSyntaxReuse } from './reconciliation-markdown-ast.mjs';
 import { createSyntaxCache } from './syntax-cache.mjs';
-import { createScopedReferenceResolver, scopedRawTable, parseScopedTargetRef, scopedRowAlias } from './scoped-work-refs.mjs';
+import { createCanonicalScopedReferenceResolver as createScopedReferenceResolver,
+  scopedRawTable, parseScopedTargetRef, scopedRowAlias } from './scoped-work-refs.mjs';
 import { resolveScopedContractGraph, createScopedGraphSelectionSpanResolver, scopedGraphMetadataRefs, scopedGraphBodyRefs,
   mergeScopedGraphContexts } from './scoped-work-graph.mjs';
 import { scopedProjectionNode } from './scoped-work-projection.mjs';
 import { resolveScopedDecisionProjection, createScopedSnapshotDecisionResolver } from './scoped-work-decisions.mjs';
 import { ScopedWorkContractError, workText } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
-import { scopedAuthoredSections, scopedSelectionUnknownAuthored, rememberScopedSelection, copyScopedNodeContexts,
-  scopedSelectionNodes, reuseScopedSelectionNodes, withScopedDocumentSyntax } from './scoped-work-authored.mjs';
+import { sharedScopedAuthoredSections, scopedSelectionUnknownAuthored, rememberScopedSelection, copyScopedNodeContexts,
+  scopedSelectionNodes, reuseScopedSelectionNodes,
+  withCanonicalScopedDocumentSyntax as withScopedDocumentSyntax } from './scoped-work-authored.mjs';
 import { scopedProjectionProgress } from './workflow-progress.mjs';
 
 const fail = (message) => { throw new ScopedWorkContractError(`SW-UNCERTAINTY: ${message}`); };
@@ -33,12 +35,29 @@ const key = (owner, unit) => scopeJson([owner, unit]);
 // An authored table can sit after a GENERATED heading while an independently
 // resolvable raw Unknown table remains before it. Keep both physical sources;
 // the presence of an authored table must not erase ordinary generated evidence.
-export function scopedUnknownHomes(body, view = parseReconciliationReferenceView(body)) {
-  const authored = scopedAuthoredSections(body, 'unknowns', view);
+export function scopedUnknownHomes(body, view) {
+  const publicDefault = view === undefined;
+  if (publicDefault) view = sharedReconciliationReferenceView(body);
+  // Default public lookups must neither replace the authored prewarm nor expose
+  // shared frozen containers as formerly mutable results. Only the derived
+  // containers are copied: their immutable native nodes keep physical identity.
+  // Internal callers pass their shared view explicitly and retain zero-copy
+  // canonical homes; explicit custom/raw views keep their own interpretation.
+  const result = (homes) => publicDefault ? homes.map(({ location, authored }) => {
+    const copy = { ...location };
+    for (const [name, value] of Object.entries(copy)) {
+      if (!Array.isArray(value)) continue;
+      copy[name] = name === 'tables' ? value.map((table) => ({ ...table,
+        headers: [...table.headers], rows: table.rows.map((row) => ({ ...row })),
+      })) : [...value];
+    }
+    return { location: copy, authored };
+  }) : homes;
+  const authored = sharedScopedAuthoredSections(body, 'unknowns', view);
   const canonical = (table) => signatures.unknown.every((header) => hasHeader(table.headers, header));
   const authoredTables = new Set(authored.flatMap((section) => section.tableNodes.filter((_, index) => canonical(section.tables[index]))));
   const raw = view.sections.filter((section) => section.slug === 'unknowns');
-  if (!authoredTables.size) return raw.map((location) => ({ location, authored: false }));
+  if (!authoredTables.size) return result(raw.map((location) => ({ location, authored: false })));
   const homes = authored.map((location) => ({ location, authored: true }));
   // Multiple raw sections/tables cannot supply an ordinary canonical Unknown.
   // Do not restore GENERATED-only empty sections or display legends as authored
@@ -47,7 +66,7 @@ export function scopedUnknownHomes(body, view = parseReconciliationReferenceView
     const tables = raw[0].tableNodes.filter((_, index) => canonical(raw[0].tables[index]));
     if (tables.length === 1 && !authoredTables.has(tables[0])) homes.push({ location: raw[0], authored: false });
   }
-  return homes;
+  return result(homes);
 }
 
 // Fixpoint roots keep the selected physical row's context, not a document-wide
@@ -92,7 +111,10 @@ function uncertaintyProjection(options, base) {
 function computeUncertaintyProjection(options, base) {
   const { targetIndex, projectRoot, inputArtifacts = [] } = options;
   const canonicalPath = createCanonicalRepositoryPathResolver(projectRoot);
-  const refs = createScopedReferenceResolver({ targetIndex, projectRoot, inputArtifacts });
+  // Each document row batch owns its reference resolver. Keeping one for the
+  // whole evaluation would retain every oversized owner's parsed view after
+  // the bounded document cache has declined it.
+  let refs = null;
   const files = new Map(base.read_set.map((entry) => [entry.file, entry]));
   // Enumeration visits every indexed artifact. Keep only a bounded working set
   // of parsed documents; the complete file hashes below remain authoritative.
@@ -119,15 +141,18 @@ function computeUncertaintyProjection(options, base) {
     files.set(relative, { file: relative, sha256 });
     return raw;
   }
+  function sourceFromBytes(relative, raw) {
+    const text = decodeGitUtf8(raw, 'scoped uncertainty');
+    const parsed = splitFrontmatter(text);
+    if (!parsed.hasFrontmatter || parsed.parseError) fail('invalid uncertainty document');
+    return { text, body: parsed.body, file: relative };
+  }
   function documentSource(relative) {
     const cached = documents.get(relative);
     if (cached) return cached;
     // A miss, including during an active syntax scope, still reads actual
     // bytes and compares with the original hash. Only parsing is reused.
-    const text = decodeGitUtf8(read(relative), 'scoped uncertainty');
-    const parsed = splitFrontmatter(text);
-    if (!parsed.hasFrontmatter || parsed.parseError) fail('invalid uncertainty document');
-    return { text, body: parsed.body, file: relative };
+    return sourceFromBytes(relative, read(relative));
   }
   function document(relative, visit = null, source = documentSource(relative)) {
     if (source.view && !visit) return source;
@@ -135,7 +160,14 @@ function computeUncertaintyProjection(options, base) {
       const doc = source.view === view ? source : { ...source, file: relative, view };
       documents.set(relative, doc, { sourceChars: relative.length + doc.text.length,
         nodes: reconciliationTreeNodeCount(view.tree) });
-      return visit ? visit(doc) : doc;
+      if (!visit) return doc;
+      const previous = refs;
+      refs = createScopedReferenceResolver({ targetIndex, projectRoot, inputArtifacts });
+      try {
+        return visit(doc);
+      } finally {
+        refs = previous;
+      }
     };
     // Open the scope before the first view is built, then release it after this
     // document's row batch. Never retain all oversized documents for the owner.
@@ -191,17 +223,32 @@ function computeUncertaintyProjection(options, base) {
     if (candidates.has(physical)) return;
     const graph = resolveScopedContractGraph({ contracts: [token], targetIndex, projectRoot, inputArtifacts,
       authoredRefs: authored ? [token] : [] });
-    for (const file of graph.read_set) read(file.file, file.sha256);
     const evidence = mergeScopedGraphContexts([graph],
       { roots: graph.roots, nodes: graph.nodes.map(scopedProjectionNode), edges: graph.edges });
     // Relation matching needs physical spans, including external dependencies.
-    // Their graph already resolved and audited the actual source. Prepare every
-    // selection now, and share equal canonical nodes across candidate graphs.
+    // Group selections by file and consume this graph's mandatory audit read.
+    // A dozen anchors from an uncached input need one verified source here,
+    // not a fresh read/hash/frontmatter split per selection. These source bytes
+    // live only through this file's work; the next graph and final audit read
+    // the actual file again.
+    const selectedFiles = new Map();
     for (const node of evidence.nodes) {
-      const source = node.file === current?.file ? current : documentSource(node.file);
-      ranges(node, source);
-      retainPhysicalSelection(node, source);
+      if (!selectedFiles.has(node.file)) selectedFiles.set(node.file, []);
+      selectedFiles.get(node.file).push(node);
     }
+    for (const file of graph.read_set) {
+      const raw = read(file.file, file.sha256);
+      const selected = selectedFiles.get(file.file);
+      if (!selected) continue;
+      const source = file.file === current?.file ? current
+        : documents.get(file.file) || sourceFromBytes(file.file, raw);
+      for (const node of selected) {
+        ranges(node, source);
+        retainPhysicalSelection(node, source);
+      }
+      selectedFiles.delete(file.file);
+    }
+    if (selectedFiles.size) fail('missing selected source audit');
     candidates.set(physical, { record, entry, evidence, affected: affectedOwners(affected) });
     scopedProjectionProgress('candidate-rows');
   }
@@ -264,7 +311,7 @@ function computeUncertaintyProjection(options, base) {
     if (!unknownTables.has(node.file)) {
       const tables = new Map();
       const homes = [...doc.view.sections.filter((home) => home.slug === 'unknowns'),
-        ...scopedAuthoredSections(doc.body, 'unknowns', doc.view)];
+        ...sharedScopedAuthoredSections(doc.body, 'unknowns', doc.view)];
       for (const home of homes) home.tableNodes.forEach((native, index) => {
         const table = home.tables[index];
         if (tables.has(native) || !signatures.unknown.every((header) => hasHeader(table.headers, header))) return;
@@ -501,8 +548,8 @@ function computeUncertaintyProjection(options, base) {
   const contractError = (check) => {
     try { return check(); } catch (cause) { if (cause instanceof CurrentWorkError) return true; throw cause; }
   };
-  const referencing = (entry, file) => typedSpelling.test(document(file).text) || contractError(() =>
-    scopedGraphMetadataRefs(entry.fm).length > 0 || scopedGraphBodyRefs(document(file).body, document(file).view, entry.fm).length > 0);
+  const referencing = (entry, file) => document(file, (doc) => typedSpelling.test(doc.text) || contractError(() =>
+    scopedGraphMetadataRefs(entry.fm).length > 0 || scopedGraphBodyRefs(doc.body, doc.view, entry.fm).length > 0));
   const skipped = new Map();
   for (const { entry, file, section, error } of unaudited) {
     const native = (value) => contractError(() => nativeScope(entry, value));

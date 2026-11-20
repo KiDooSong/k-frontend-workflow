@@ -6,7 +6,7 @@ import { canonicalRepositoryPath, createCanonicalRepositoryPathResolver } from '
 import { splitFrontmatter } from './util.mjs';
 import { col, hasHeader } from './spec.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
-import { parseReconciliationMarkdown, parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
+import { parseReconciliationMarkdown, parseReconciliationReferenceView, sharedReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
 import { parseScopedTargetRef, isScopedRowId, scopedRawTable, scopedRowAlias, scopedRowSite, scopedAddRowSite, scopedCoveredRows } from './scoped-work-refs.mjs';
 import { resolveScopedContractGraph, resolveScopedCandidateGraph, scopedGraphSelectionRefs, scopedGraphMetadataRefs, scopedGraphBodyRefs,
   scopedGraphContexts, scopedGraphSelectionSpans, mergeScopedGraphContexts } from './scoped-work-graph.mjs';
@@ -186,7 +186,7 @@ function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] 
     }
     // The public target index stays raw. Derive the corrected authored Unknown
     // homes used by uncertainty instead of losing rows beyond GENERATED H2s.
-    for (const { location, authored } of scopedUnknownHomes(entry.body)) {
+    for (const { location, authored } of scopedUnknownHomes(entry.body, sharedReconciliationReferenceView(entry.body))) {
       if (skipped.has(scopeJson([file, location.slug]))) continue;
       const tables = location.tables.map(scopedRawTable).filter((table) =>
         ['ID', 'Question'].every((header) => hasHeader(table.headers, header)));

@@ -12,7 +12,7 @@ import { validateInputArtifacts } from './input-artifact.mjs';
 import { parseReconciliationRegister } from './reconciliation-register.mjs';
 import { parseReconciliationItems } from './reconciliation-items.mjs';
 import { createScopedSourceResolver } from './scoped-work-sources.mjs';
-import { createScopedReferenceResolver } from './scoped-work-refs.mjs';
+import { createCanonicalScopedReferenceResolver as createScopedReferenceResolver } from './scoped-work-refs.mjs';
 import { resolveScopedSourceRelations } from './scoped-work-source-relations.mjs';
 import { loadScopedCoverageReports } from './scoped-work-receipts.mjs';
 import { resolveScopedBoundaryProjection } from './scoped-work-boundaries.mjs';

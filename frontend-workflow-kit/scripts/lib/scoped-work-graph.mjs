@@ -10,17 +10,35 @@ import { readCurrentBytes, hashBytes, normalizeWorkOrigins } from './current-wor
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { parseInputEvidenceRef } from './provenance.mjs';
 import { resolveArtifact } from './reconciliation-target-index.mjs';
-import { parseReconciliationReferenceView, sharedReconciliationReferenceView, reconciliationReferenceLabel } from './reconciliation-markdown-ast.mjs';
-import { createScopedReferenceResolver, parseScopedTargetRef, scopedSectionsBySlug, scopedIndexedBy,
+import { parseReconciliationReferenceView, sharedReconciliationReferenceView, isSharedReconciliationReferenceView,
+  reconciliationReferenceLabel } from './reconciliation-markdown-ast.mjs';
+import { createCanonicalScopedReferenceResolver as createScopedReferenceResolver, parseScopedTargetRef, scopedSectionsBySlug, scopedIndexedBy,
   scopedReferenceResolverView } from './scoped-work-refs.mjs';
 import { createScopedSourceResolver, scopedSourceResolverView } from './scoped-work-sources.mjs';
 import { workText, workSet, workObject, ScopedWorkContractError } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
-import { scopedAuthoredSections, sharedScopedAuthoredSections, scopedAuthoredSubsections, scopedSelectionNodes, rememberScopedSelection, copyScopedSelectionContext, copyScopedNodeContexts } from './scoped-work-authored.mjs';
+import { sharedScopedAuthoredSections, sharedScopedAuthoredSubsections as scopedAuthoredSubsections, scopedSelectionNodes, rememberScopedSelection, copyScopedSelectionContext, copyScopedNodeContexts } from './scoped-work-authored.mjs';
 import { scopedProjectionProgress } from './workflow-progress.mjs';
 
 const fail = (message) => { throw new ScopedWorkContractError(`SW-GRAPH: ${message}`); };
-const arrayIterator = Array.prototype.values;
+// Loading this module is not proof that the current traversal methods are
+// native: a caller may already have installed an accessor, proxy or stateful
+// function. Inspect own data only, and never call an unverified values method
+// merely to discover its iterator prototype. A failed native check only loses
+// span sharing; the actual walk continues to honor the caller's iteration.
+const functionSource = Function.prototype.toString;
+const nativeMethod = (value, name) => typeof value === 'function' && !types.isProxy(value) &&
+  Reflect.apply(functionSource, value, []) === `function ${name}() { [native code] }`;
+const arrayValues = Object.getOwnPropertyDescriptor(Array.prototype, 'values')?.value;
+const arrayIterator = nativeMethod(arrayValues, 'values') ? arrayValues : null;
+const arrayIteratorPrototype = (() => {
+  if (!arrayIterator) return null;
+  // A different builtin (for example Set#values) can have the same spelling but
+  // reject an array receiver. Failed discovery must not prevent a fresh walk.
+  try { return Object.getPrototypeOf(Reflect.apply(arrayIterator, [], [])); }
+  catch { return null; }
+})();
+let arrayIteratorNext = null;
 const prefix = /^(?:artifact|decision|unknown|conflict|gap|investigation|verification|input):/;
 const spelling = /(?:^|[\s([{"';,])((?:artifact|decision|unknown|conflict|gap|investigation|verification|input):[^\s`<>\[\](){}"';,]+)/g;
 function canonicalRef(token) {
@@ -76,13 +94,12 @@ function nativeSectionRows(body, section) {
   }
   return scopedIndexedBy(entry.list, 'row', (item) => item.key);
 }
-function selectedNodes(view, selection, body, canonicalAuthoring = false) {
+function selectedNodes(view, selection, body) {
   const remembered = scopedSelectionNodes(body, selection);
   if (remembered) return remembered;
   if (selection.type === 'body' || selection.type === 'body-token') return view.tree.children;
-  const authoring = canonicalAuthoring ? sharedScopedAuthoredSections : scopedAuthoredSections;
   let authored = ['api-candidates', 'unknowns'].includes(selection.section)
-    ? authoring(body, selection.section === 'api-candidates' ? 'api candidates' : 'unknowns', view) : [];
+    ? sharedScopedAuthoredSections(body, selection.section === 'api-candidates' ? 'api candidates' : 'unknowns', view) : [];
   if (selection.section === 'unknowns' && !authored.some((home) => home.tables.some((table) =>
     ['ID', 'Question'].every((header) => hasHeader(table.headers, header))))) authored = [];
   let sections = authored.length ? authored : scopedSectionsBySlug(view.sections, selection.section);
@@ -139,10 +156,13 @@ function trackingCellSpan(node) {
   return Number.isInteger(start) && Number.isInteger(end) && start < end ? `${start}:${end}` : null;
 }
 function localApiTrackingCells(body, view) {
-  if (apiTrackingCells.has(view.tree)) return apiTrackingCells.get(view.tree);
+  // Only canonical views may share a tree's Tracking interpretation. Explicit
+  // custom authored views remain mutable even when they share that native tree.
+  const canonical = isSharedReconciliationReferenceView(body, view);
+  if (canonical && apiTrackingCells.has(view.tree)) return apiTrackingCells.get(view.tree);
   const cells = new Map();
-  apiTrackingCells.set(view.tree, cells);
-  const sections = scopedAuthoredSections(body, 'api candidates', view);
+  if (canonical) apiTrackingCells.set(view.tree, cells);
+  const sections = sharedScopedAuthoredSections(body, 'api candidates', view);
   if (sections.length !== 1) return cells;
   const tables = sections[0].tableNodes.map((node) => ({ node,
     columns: apiCandidateColumns(nativeTableKeys(body, node).headers),
@@ -594,11 +614,20 @@ export function createScopedGraphSelectionSpanResolver() {
   };
   // A frozen array can still run a stateful own iterator. Eligibility and the
   // native walk must see the same indexed sequence; inspect descriptors without
-  // invoking caller accessors. Check the inherited iterator again on each call
-  // so replacing Array.prototype's iterator cannot validate an old cache hit.
-  const ordinaryArray = (value) => Array.isArray(value) && !types.isProxy(value) &&
-    Object.getPrototypeOf(value) === Array.prototype && !Object.hasOwn(value, Symbol.iterator) &&
-    data(Array.prototype, Symbol.iterator) === arrayIterator;
+  // invoking caller accessors. Recheck both inherited traversal methods on each
+  // call: unchanged Array.prototype iteration can still yield different nodes
+  // through a replaced/accessor/inherited next on its iterator prototype.
+  const ordinaryArray = (value) => {
+    if (!arrayIteratorPrototype || !Array.isArray(value) || types.isProxy(value) ||
+        Object.getPrototypeOf(value) !== Array.prototype || Object.hasOwn(value, Symbol.iterator) ||
+        data(Array.prototype, Symbol.iterator) !== arrayIterator) return false;
+    const next = data(arrayIteratorPrototype, 'next');
+    // Missing/inherited or accessor next is valid custom iteration, but cannot
+    // certify a cache. Verify a native method once, possibly after restoration,
+    // then keep the ordinary fast path to a descriptor identity comparison.
+    if (arrayIteratorNext === null && nativeMethod(next, 'next')) arrayIteratorNext = next;
+    return arrayIteratorNext !== null && next === arrayIteratorNext;
+  };
   const plain = (value) => value !== null && typeof value === 'object' && !types.isProxy(value) &&
     Object.isFrozen(value) && [Object.prototype, null].includes(Object.getPrototypeOf(value));
   const point = (value) => plain(value) && Number.isInteger(data(value, 'offset'));
@@ -668,7 +697,7 @@ export function createScopedGraphApiRowContextResolver(body) {
 
 function apiRowContext(body, candidate, view) {
   const [row] = selectedNodes(view, { type: 'row', section: 'api-candidates',
-    headers: candidate.headers, cells: candidate.cells }, body, true);
+    headers: candidate.headers, cells: candidate.cells }, body);
   const trackingIndexes = apiCandidateColumns(candidate.headers).find(({ name }) => name === 'Tracking').indexes;
   const trackingIndex = trackingIndexes[0];
   if (candidate.tracking && (trackingIndexes.length !== 1 ||

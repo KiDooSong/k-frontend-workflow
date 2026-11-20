@@ -11,7 +11,7 @@ import { buildInputArtifactIndex, resolveInputArtifact } from './provenance.mjs'
 import { validateInputArtifacts } from './input-artifact.mjs';
 import { collectInputFidelityIssues, inspectInputFidelity } from './input-fidelity.mjs';
 import { parseScopedOwner, parseScopedPolicy, decodeScopedYaml } from './scoped-work-declarations.mjs';
-import { createScopedReferenceResolver } from './scoped-work-refs.mjs';
+import { createCanonicalScopedReferenceResolver as createScopedReferenceResolver } from './scoped-work-refs.mjs';
 import { resolveScopedSourceProjection, scopedSourceAbsentRegisters } from './scoped-work-source-relations.mjs';
 import { createScopedApiResolver } from './scoped-work-api.mjs';
 import { resolveScopedMappingEvidence } from './scoped-work-mapping.mjs';

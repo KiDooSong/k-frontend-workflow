@@ -4,12 +4,12 @@
 import path from 'node:path';
 import { splitFrontmatter } from './util.mjs';
 import { analyzeApiCandidateContract, loadScreenSpec, parseTables, col, parseApiCandidateTracking } from './spec.mjs';
-import { scopedAuthoredSections } from './scoped-work-authored.mjs';
+import { sharedScopedAuthoredSections as scopedAuthoredSections } from './scoped-work-authored.mjs';
 import { canonicalJson, ownerParts, readCurrentBytes } from './current-work-request.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { ScopedWorkContractError, workText, workUnitId } from './scoped-work-request.mjs';
 import { parseScopedOwner } from './scoped-work-declarations.mjs';
-import { createScopedReferenceResolver, scopedRawTable } from './scoped-work-refs.mjs';
+import { createCanonicalScopedReferenceResolver as createScopedReferenceResolver, scopedRawTable } from './scoped-work-refs.mjs';
 
 const fail = (code, message) => { throw new ScopedWorkContractError(`${code}: ${message}`); };
 const equal = (a, b) => canonicalJson(a) === canonicalJson(b);
