@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedReconciliationReferenceView, reconciliationParseStats, reconciliationSyntaxCacheStats,
-  withReconciliationSyntax, withReconciliationSyntaxReuse } from './reconciliation-markdown-ast.mjs';
+  reconciliationTreeNodeCount, withReconciliationSyntax, withReconciliationSyntaxReuse } from './reconciliation-markdown-ast.mjs';
 
 const longBody = (name) => `## ${name}\n\n~~~\n${'x'.repeat(8 * 1024 * 1024)}\n~~~\n`;
 const parsed = () => reconciliationParseStats().parsed;
@@ -85,9 +85,13 @@ test('#345 syntax reuse: escaped async continuations cannot inherit a finished o
 });
 
 test('#345 syntax reuse: a dense node-limit dependency also reuses only one parse', () => {
-  const body = '## Dense dependency\n\n' + '- one\n'.repeat(88000), before = parsed();
+  // Real paragraph/inline nodes keep the structural boundary without the
+  // long-list parser work that made this regression too expensive on Node 20.
+  const body = '## Dense dependency\n\n' + '*a* *b* *c* *d*\n\n'.repeat(22000), before = parsed();
   withReconciliationSyntaxReuse(() => {
     const first = sharedReconciliationReferenceView(body);
+    assert.ok(reconciliationTreeNodeCount(first.tree) > reconciliationSyntaxCacheStats().max_nodes,
+      'the already parsed real tree must exceed the native-node retention limit');
     assert.equal(sharedReconciliationReferenceView(body), first);
     assert.equal(sharedReconciliationReferenceView(body), first);
     bounded();

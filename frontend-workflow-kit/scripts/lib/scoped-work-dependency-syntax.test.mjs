@@ -64,7 +64,9 @@ function fixture(t, { peers = 1, family = 'unknown', oversized = true, nodeLimit
     docs: [entries.get('questions')],
   }).artifacts.get('questions'));
   const documents = Array.from({ length: peers }, (_, index) => put(`peer-${index}`,
-    `${nodeLimit ? '- Unselected background.\n'.repeat(88000)
+    // Each short paragraph adds twelve real AST nodes. Avoid a giant list's
+    // Node 20 parser cost while still exceeding the unchanged node budget.
+    `${nodeLimit ? '*a* *b* *c* *d*\n\n'.repeat(22000)
       : oversized ? `~~~\n${String(index).repeat(reconciliationSyntaxCacheStats().max_source_chars)}\n~~~\n\n` : ''}` +
     `<!-- dependency ${id}-${index} -->\n\n## Facts\n\nSelected evidence.\n`));
   const targetIndex = { artifacts: entries, duplicates: new Set() }, options = { projectRoot: root, targetIndex };

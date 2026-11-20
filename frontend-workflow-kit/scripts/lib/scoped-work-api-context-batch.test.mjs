@@ -20,7 +20,9 @@ const rows = Array.from({ length: 4 }, (_, index) => ['GET', `/example-${index}`
   'unknown:U-LATER', `src/api/example-${index}/**`, '[ordinary][rules]']);
 const table = (columns, values) => [`| ${columns.join(' | ')} |`, `|${columns.map(() => '---').join('|')}|`,
   ...values.map((cells) => `| ${cells.join(' | ')} |`)].join('\n');
-const payload = (nodeLimit = false) => nodeLimit ? '- x\n'.repeat(88_000)
+// 22,000 short paragraphs contribute 264,000 real AST nodes without the
+// long-list parser cost that exceeded the packed Node 20 subprocess budget.
+const payload = (nodeLimit = false) => nodeLimit ? '*a* *b* *c* *d*\n\n'.repeat(22000)
   : `~~~\n${'x'.repeat(8 * 1024 * 1024)}\n~~~\n`;
 const apiBody = (padding = '', label = '') => `## API Candidates\n\n${table(headers, rows)}\n\n` +
   `## Unknowns\n\n${table(['ID', 'Question', 'Status'], [['U-LATER', 'Which contract?', 'open']])}\n\n` +
@@ -40,11 +42,17 @@ for (const [name, nodeLimit] of [['source', false], ['node', true]]) {
   test(`#344 API context batch: ${name}-oversized candidates share one view and physical row index`, () => {
     const body = apiBody(payload(nodeLimit), `${name} batch`), select = createScopedGraphApiRowContextResolver(body);
     const before = parsed(), examined = scopedSectionLookupStats().examined;
+    const cacheBefore = reconciliationSyntaxCacheStats();
     const result = candidates().map(select);
     assert.deepEqual(result, candidates().map(() => expectedContext));
     assert.equal(parsed() - before, 1, 'one batch parses its oversized owner once');
     assert.equal(scopedSectionLookupStats().examined - examined, rows.length,
       'one native API row index serves every candidate');
+    if (nodeLimit) {
+      assert.ok(body.length < cacheBefore.max_source_chars, 'this case isolates the native-node budget');
+      assert.ok(reconciliationSyntaxCacheStats().oversized > cacheBefore.oversized,
+        'the real node-heavy tree must be rejected by the retained AST cache');
+    }
     result[0].refs.push('artifact:CALLER#edit'); result[0].ordinaryRefs.length = 0;
     assert.deepEqual(select(candidates()[0]), expectedContext, 'results remain independent and mutable');
     if (!nodeLimit) {

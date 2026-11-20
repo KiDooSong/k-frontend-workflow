@@ -5,6 +5,9 @@
 > Current contracts: [scoped-work.md](../../../frontend-workflow-kit/docs/reference/scoped-work.md#binding-basis-and-status).
 > All fixtures and observations below are public synthetic evidence. They do
 > not contain consumer documents, private identifiers or private measurements.
+> Initial measurements describe `a1b1002`. The Node 20 CI failure and fixture
+> correction are recorded in the review follow-up below; earlier results remain
+> historical observations, not proof that the initial CI passed.
 
 ## Reproductions on the latest baseline
 
@@ -57,8 +60,10 @@ files. All five source-sized baseline cases failed on the expected parser-count
 assertions. Baseline caller counts used Node 24; the final changed caller suite
 used Node 20.20.2. These are operation counts, with no cross-version timing
 comparison. Source refs, Tracking refs, selected physical Unknown rows and
-read-set hashes remain covered. The dense 88,000-bullet batch separately proves
-reuse above the native-node budget, below the source-length budget.
+read-set hashes remain covered. The initial dense 88,000-bullet batch separately
+proved reuse above the native-node budget, below the source-length budget. The
+Node 20 follow-up replaces that expensive fixture shape while preserving both
+budget boundaries.
 
 ## Implementation and retained lifetimes
 
@@ -225,6 +230,63 @@ independent graph from candidate graphs inside the same live uncertainty
 evaluation; that wording was corrected. The final PR records their committed-tree
 confirmation separately from these runtime and evidence fingerprints.
 
+## PR #349 review follow-up: supported Node 20 CI
+
+The initial [CI run 44676849906](https://github.com/KiDooSong/k-frontend-workflow/actions/runs/44676849906)
+failed on both supported Node 20 jobs. Ubuntu's `test:spec` and the macOS broad
+test invocation timed out in the packed dependency subprocess at the unchanged
+300-second limit. Ubuntu's direct dense dependency case took 391.7 and 468.8
+seconds in its two test steps. Node 24 passed. Earlier local Node 24 success and
+focused Node 20 success were insufficient to establish full CI compatibility.
+
+The outer scoped/test:spec commands run the new test files directly and also run
+the packed harness, which executes them again. Four new dense fixtures account
+for six whole parses per direct run; direct plus packed execution doubles that
+work. Ubuntu Node 20 runs both the scoped step and `test:spec`, so those paths
+exercise 24 dense parses in total. Per-file packed subprocesses do not prevent
+an individual dense case from exceeding its time limit.
+
+The correction replaces the large unselected flat lists in the API, dependency,
+input and core syntax-reuse tests with 22,000 short paragraphs:
+
+```js
+'*a* *b* *c* *d*\n\n'.repeat(22000)
+```
+
+Each paragraph has twelve real AST nodes: a paragraph, four emphasis nodes and
+seven text nodes. The padding alone contributes 264,000 nodes. The input-shaped
+probe retains a real first `- one` Evidence bullet in `Extracted Facts` and places
+the padding under `Background`. Its actual tree has 264,009 nodes and its source
+has 374,042 UTF-16 code units. Thus it still exceeds the 262,144-node limit while
+remaining below the 8,388,608-character limit.
+
+The actual Node 20.20.2 parser rejected cache admission, parsed once and preserved
+the selected raw bullet. Its isolated parse/view observation was 4,973.5 ms with
+maximum RSS 604,392 KiB. This is a different local workload from the earlier CI
+test case; it is not a directly comparable CI speedup ratio. Splitting the old
+bullets into shorter lists still exceeded a separate 60-second probe bound. The
+paragraph shape avoids the parser's per-list-item event insertion work.
+
+All 33 regression cases, actual shipped-runtime checks, package/CI paths and
+300-second subprocess bounds remain. Source-size overflow, nested lists,
+freshness, mutable-wrapper isolation and read-set audit tests remain intact.
+The API case now also asserts source length below the source budget and rejected
+AST admission. The core case counts the already-built real tree, so a fixture
+that no longer exceeds the node budget cannot silently pass. No production
+runtime module, cache limit or consumer output was changed by this follow-up.
+
+The actual packed-runtime test passed locally on Node 20.20.2 in 204.0 seconds:
+898 existing resolver cases, all 33 syntax lifetime regressions, and all auxiliary
+groups listed above passed with the original subprocess bounds. Fresh Standards
+and Spec reviewers independently confirmed the real node-count boundary,
+preserved selections and assertions, unchanged distribution and CI wiring, and
+the distinction between local timing and full CI evidence. No actionable code
+findings remained in the correction.
+
+Full new-head Ubuntu Node 20 and macOS Node 20 completion is required to close
+this P1; the final CI job URLs and outcomes are recorded in the PR. The local
+packed pass alone does not establish that condition.
+
 ## Reproduction
 
 Install the baseline and changed kit dependencies, then run each case in a fresh
@@ -238,9 +300,10 @@ cmp before-344.json after-344.json
 
 Repeat for `345` and `346`. For `347` and `348`, compare the explicit corrections
 in the first table instead of requiring equal JSON. `344-node` and `346-node`
-are optional slower standalone probes; the committed regression suite exercises
-the corresponding 88,000-bullet conditions. Those optional standalone modes were
-not run for this evidence record.
+remain optional slower standalone probes with the original 88,000-bullet shape.
+The current committed regressions exercise the same node-budget overflow using
+the paragraph padding described above. Those optional standalone modes were not
+run for this evidence record.
 
 Run the actual packed integration from the changed kit directory:
 

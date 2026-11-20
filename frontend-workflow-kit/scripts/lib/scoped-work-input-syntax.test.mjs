@@ -82,7 +82,10 @@ test('#346 input syntax: source-limit overflow parses once per graph and preserv
 });
 
 test('#346 input syntax: node-limit overflow also parses once for each strict and candidate graph', (t) => {
-  const body = `## Extracted Facts\n\n${'- one\n'.repeat(88000)}`, f = fixture(t, body);
+  // Keep a real selected Evidence bullet; unrelated short paragraphs provide
+  // 264,000 native nodes without the cost of one 88,000-item list on Node 20.
+  const body = '## Extracted Facts\n\n- one\n\n## Background\n\n' +
+    '*a* *b* *c* *d*\n\n'.repeat(22000), f = fixture(t, body);
   assert.ok(body.length < reconciliationSyntaxCacheStats().max_source_chars, 'this case isolates the native-node budget');
   const options = f.options(), currentBody = f.body(), initialOversized = reconciliationSyntaxCacheStats().oversized;
   let previousNode;
