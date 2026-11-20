@@ -373,6 +373,22 @@ still reads current bytes, checks the indexed body and metadata, and rechecks
 its complete read set. Sharing raw syntax does not reuse selected records,
 resolution modes, graph results or file observations across those checks.
 
+Within one strict or candidate graph, its reference resolver can hand its
+already parsed immutable view to the graph's document reader. The reader first
+checks current file bytes, frontmatter and indexed body, and accepts the view
+only for the same resolver, artifact ID and exact body. Thus a document above
+the syntax-cache budgets needs one parse for reference selection and graph use.
+The view follows that resolver's lifetime; another graph still performs its own
+reads and cannot inherit an oversized view from the completed call.
+
+Canonical API candidate lookups share a private authored section view and row
+index for the same native tree. Public mutable authored views and explicitly
+supplied raw interpretations retain their own behavior. Canonical Unknown row
+classification also derives from private syntax, so editing a public header
+cannot change the classification when the AST is evicted and rebuilt. Its
+compact physical-row facts and private tree-keyed views add no separate
+source-text cache or retention threshold.
+
 The digest covers the binding as committed: to add or change a
 binding, commit it with any well-formed digest (for example `sha256:` followed by
 64 zeros), review the scope, then record the computed digest with an
@@ -436,8 +452,10 @@ the owner.
 The selected-row helpers receive that batch's already read document rather than
 reading, hashing and splitting its frontmatter again. Within one uncertainty
 evaluation, candidate graphs selecting the same immutable native nodes also
-share their leaf-span arrays. This sharing checks the exact body, physical node
-identities and input-bullet nesting mode; equal refs or row contents do not merge
+share their leaf-span arrays. This sharing checks the exact body, ordered
+physical node identities and input-bullet nesting mode. Separate wrapper arrays
+containing the same node sequence share the same internal result, including
+multi-paragraph input sections; equal refs or row contents do not merge
 different physical selections. Mutable nodes, accessors and proxies keep the
 fresh-computation path. The internal arrays are immutable, the public span helper
 still returns independent mutable values, and a later evaluation gets its own

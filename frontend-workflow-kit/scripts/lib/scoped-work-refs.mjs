@@ -194,6 +194,16 @@ function resolverRawTable(table, node) {
   return raw;
 }
 
+// A graph may reuse syntax its own reference resolver has already selected.
+// This sidecar owns no additional source lifetime: its key is the resolver,
+// and it exposes only an already parsed immutable view of the exact body.
+// It never supplies a file observation or validates an indexed snapshot.
+const resolverViews = new WeakMap();
+export function scopedReferenceResolverView(resolver, artifactId, body) {
+  const cached = resolverViews.get(resolver)?.get(artifactId);
+  return cached && cached.body === body ? cached.view : null;
+}
+
 export function createScopedReferenceResolver({ targetIndex, projectRoot, inputArtifacts = [], shareMetadata = false } = {}) {
   if (!(targetIndex?.artifacts instanceof Map) || !(targetIndex?.duplicates instanceof Set)) {
     fail('SW-REF-INDEX', 'existing reconciliation target index required');
@@ -216,9 +226,10 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot, inputA
     workPath(relative, 'scoped artifact path');
     if (!parsed.has(id)) {
       const view = sharedReconciliationReferenceView(record.body);
-      parsed.set(id, { ...view, occurrences: view.sections });
+      parsed.set(id, { body: record.body, view,
+        markdown: { ...view, occurrences: view.sections } });
     }
-    return { record, relative, markdown: parsed.get(id) };
+    return { record, relative, markdown: parsed.get(id).markdown };
   }
   function section(markdown, slug, subsectionBody = null) {
     let hits = scopedSectionsBySlug(markdown.occurrences, slug);
@@ -525,5 +536,8 @@ export function createScopedReferenceResolver({ targetIndex, projectRoot, inputA
       return { ...target, historical_target: { original_ref: ref.raw, effective_ref: target.ref, reason } };
     }
   }
-  return { contract, historicalTarget, authoredContract, tracking, contracts: (tokens) => workSet(tokens, contract, 'contracts', true) };
+  const resolver = { contract, historicalTarget, authoredContract, tracking,
+    contracts: (tokens) => workSet(tokens, contract, 'contracts', true) };
+  resolverViews.set(resolver, parsed);
+  return resolver;
 }

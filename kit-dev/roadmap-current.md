@@ -1,5 +1,10 @@
 # Current Roadmap
 
+> 2026-11-20 #339–#342: 최신 #338 반영 baseline에서 구문 재사용 경계 네 건을 보완한다. strict/candidate graph는 현재 bytes·frontmatter·indexed body 대조 뒤 자신의 참조 resolver가 만든 동일 본문 뷰를 재사용한다.
+> API 후보의 정본 작성 뷰·행 색인은 native tree별로 재사용하고, Unknown의 정본 물리 행 판정은 공개 가변 뷰와 분리해 AST 퇴출 전후 일관성을 유지한다. 다중 노드 선택의 내부 span은 동일 평가의 본문·노드 순서·중첩 모드로 공유한다.
+> 공개 raw/authored 뷰·반환값 가변성, 물리 위치·nested-list 경계, 구문 보관 한도, 현재 파일·최종 read-set 감사와 basis/approval 계약은 유지한다.
+> 정본: [구문 재사용과 보관](../frontend-workflow-kit/docs/reference/scoped-work.md#binding-basis-and-status). 재현: [공개 합성 benchmark](benchmarks/scoped-cache-reuse.mjs), [측정·리뷰 근거](temp/runs/scoped-cache-reuse-339-342.md).
+
 > 2026-11-20 #337: CLI가 소유한 불변 입력 목록은 source resolver의 전체 ID 색인·메타데이터 검증을 한 번 준비한다. 관찰 범위별 불변 레코드를 재사용하고, 선택한 입력만 resolver별 본문 레코드로 복사한다.
 > 중복·미선택 입력 검증, observer별 Evidence 관찰, 현재 bytes·expected hash·최종 read-set 감사, basis·차단 판정은 유지한다. 일반 mutable 호출과 특수 데이터는 기존 eager 경로를 사용한다.
 > `input-metadata`는 실제 source seed·선택 레코드 준비 횟수이며 파일 읽기나 Markdown 파싱 횟수가 아니다. 공개 합성 fixture의 반복 준비 감소와 실제 consumer 전체 실행 성능은 구분한다.
