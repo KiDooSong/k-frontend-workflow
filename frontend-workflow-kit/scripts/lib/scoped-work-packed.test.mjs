@@ -24,7 +24,8 @@ const runtime = ['util.mjs', 'frontmatter-syntax.mjs', 'scoped-work-request.mjs'
 // no single timeout covers several expensive native parser generations.
 const syntaxLifetimeSuites = ['scoped-work-api-context-batch.test.mjs', 'scoped-work-dependency-syntax.test.mjs',
   'scoped-work-input-syntax.test.mjs', 'scoped-work-selected-unknown.test.mjs',
-  'scoped-work-span-iterator.test.mjs', 'scoped-work-syntax-reuse.test.mjs'];
+  'scoped-work-span-iterator.test.mjs', 'scoped-work-syntax-reuse.test.mjs',
+  'scoped-work-evaluation-lifetime.test.mjs'];
 const resolverSuites = [...suites, 'scoped-work-generated.test.mjs', 'scoped-work-subsections.test.mjs',
   'scoped-work-retired-targets.test.mjs', 'scoped-work-refs-shared.test.mjs', 'scoped-work-memory.test.mjs',
   'scoped-work-graph-cache.test.mjs', 'scoped-work-active-syntax.test.mjs', 'scoped-work-syntax-scope.test.mjs',
@@ -97,9 +98,9 @@ test('D packed: real reference, source, mapping, API, normalization, graph trave
       assert.match(lifetimes.stdout, new RegExp(`^# ${metric} 0\\r?$`, 'm'), lifetimes.stdout);
     }
   }
-  assert.equal(lifetimeCount, 33);
+  assert.equal(lifetimeCount, 61);
   for (const [name, value] of bytes) assert.deepEqual(fs.readFileSync(path.join(lib, name)), value, name);
-  t.diagnostic('packed syntax lifetime subprocess: all 33 oversized parsing, native selection, Unknown and iterator regressions passed');
+  t.diagnostic('packed syntax lifetime subprocess: all 61 oversized parsing, native selection, Unknown, iterator and evaluation boundary regressions passed');
   // These shared-helper tests already ship. Run the body/metadata boundary and
   // observed-read regressions from their payload files, without copying over them.
   const syntax = checkedNode(['--test', '--test-reporter=tap',

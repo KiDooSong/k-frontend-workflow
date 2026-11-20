@@ -5,8 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { buildReconciliationTargetIndex } from './reconciliation-target-index.mjs';
 import { createScopedReferenceResolver } from './scoped-work-refs.mjs';
-import { parseReconciliationReferenceView, reconciliationSyntaxCacheStats } from './reconciliation-markdown-ast.mjs';
-import { copyScopedSelectionContext } from './scoped-work-authored.mjs';
+import { parseReconciliationReferenceView, sharedReconciliationReferenceView,
+  reconciliationSyntaxCacheStats } from './reconciliation-markdown-ast.mjs';
+import { copyScopedSelectionContext, scopedAuthoredView } from './scoped-work-authored.mjs';
 import { resolveScopedContractGraph, resolveScopedCandidateGraph, scopedGraphSelectionRefs,
   scopedGraphSelectionSpans } from './scoped-work-graph.mjs';
 
@@ -113,4 +114,23 @@ test('#331 graph cache: an oversized uncached body keeps strict and candidate de
   assert.equal(candidate.nodes.find((node) => node.ref === UNKNOWN).record.selection.cells[2], 'open');
   assert.ok(reconciliationSyntaxCacheStats().oversized > before.oversized,
     'the real configured cache bypass, not a mocked parse, caused repeated native generations');
+});
+
+test('#350 graph cache: custom Tracking interpretations cannot populate or borrow the canonical tree cache', (t) => {
+  const body = `${bodyFor()}\n\n<!-- custom Tracking cache provenance -->\n`, f = fixture(t, body);
+  const selection = f.refs.contract(`${API}/chosen`).selection;
+  const custom = parseReconciliationReferenceView(body), canonical = sharedReconciliationReferenceView(body);
+  assert.equal(custom.tree, canonical.tree, 'both interpretations deliberately share the same native tree');
+  const home = scopedAuthoredView(body, custom).byName.get('api candidates')[0], tableNode = home.tableNodes[0];
+  home.tableNodes.length = 0;
+  const read = (view) => scopedGraphSelectionRefs(body, f.fm, selection, view);
+  assert.throws(() => read(custom), /unsupported or malformed typed reference: unknown:U-LATER/);
+  assert.deepEqual(read(canonical), [UNKNOWN], 'a custom-first miss cannot poison canonical Tracking');
+  home.tableNodes.push(tableNode);
+  assert.deepEqual(read(custom), [UNKNOWN], 'a later explicit custom edit must be observed');
+  home.tableNodes.length = 0;
+  assert.throws(() => read(custom), /unsupported or malformed typed reference: unknown:U-LATER/,
+    'a custom view cannot inherit a previously cached canonical Tracking exception');
+  assert.deepEqual(read(canonical), [UNKNOWN]);
+  assert.equal(home.tableNodes.length, 0, 'internal canonical processing preserves the public custom edit');
 });

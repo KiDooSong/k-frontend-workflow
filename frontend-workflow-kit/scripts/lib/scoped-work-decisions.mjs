@@ -11,7 +11,7 @@ import { loadOpenDecisionRegister, resolveDecisionRefs, openDecisionRowIsMalform
   REQUIRED_OPEN_DECISION_COLUMNS } from './open-decisions.mjs';
 import { parseTargetRef } from './reconciliation-items.mjs';
 import { parseReconciliationMarkdown, parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
-import { createScopedReferenceResolver, scopedRawTable, parseScopedTargetRef, isScopedRowId } from './scoped-work-refs.mjs';
+import { createCanonicalScopedReferenceResolver as createScopedReferenceResolver, scopedRawTable, parseScopedTargetRef, isScopedRowId } from './scoped-work-refs.mjs';
 import { resolveScopedContractGraph, scopedGraphContexts, scopedGraphSelectionSpans,
   copyScopedGraphContexts, mergeScopedGraphContexts } from './scoped-work-graph.mjs';
 import { resolveScopedUnitProjection, scopedProjectionMetadata, scopedProjectionNode,

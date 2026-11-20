@@ -6,7 +6,7 @@
 import { col } from './spec.mjs';
 import { canonicalRepositoryPath } from './artifact-path.mjs';
 import { ownerParts, readCurrentBytes, hashBytes } from './current-work-request.mjs';
-import { createScopedReferenceResolver, parseScopedTargetRef } from './scoped-work-refs.mjs';
+import { createCanonicalScopedReferenceResolver as createScopedReferenceResolver, parseScopedTargetRef } from './scoped-work-refs.mjs';
 import { parseUncertaintyWorkScopes } from './scoped-work-declarations.mjs';
 import { resolveScopedApplicabilityProjection } from './scoped-work-applicability.mjs';
 import { scopedUncertaintyResolved } from './scoped-work-uncertainty.mjs';

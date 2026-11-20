@@ -4,7 +4,7 @@ import { parseTargetRef } from './reconciliation-items.mjs';
 import { ownerParts } from './current-work-request.mjs';
 import { resolveEffectiveSourceRef, inspectFigmaSourcePrecision, isRfc3339 } from './provenance.mjs';
 import { workText, workSet, ScopedWorkContractError } from './scoped-work-request.mjs';
-import { createScopedReferenceResolver } from './scoped-work-refs.mjs';
+import { createCanonicalScopedReferenceResolver as createScopedReferenceResolver } from './scoped-work-refs.mjs';
 import { createScopedSourceResolver } from './scoped-work-sources.mjs';
 
 const fail = (message) => { throw new ScopedWorkContractError(`SW-MAPPING: ${message}`); };

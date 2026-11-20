@@ -44,6 +44,17 @@ export function withScopedDocumentSyntax(body, run) {
   });
 }
 
+// Internal evaluation pins canonical syntax without constructing, replacing or
+// repairing a caller's public authored view. The legacy scope above continues
+// to pin public mutable interpretations for explicit public-parser consumers.
+export function withCanonicalScopedDocumentSyntax(body, run) {
+  return withReconciliationSyntax(body, () => {
+    const raw = sharedReconciliationReferenceView(body);
+    canonicalAuthoredView(body, raw);
+    return run(raw);
+  });
+}
+
 export function scopedAuthoredCacheStats() {
   return views.stats();
 }
@@ -181,11 +192,19 @@ export function scopedAuthoredSections(body, name, raw = null) {
   return scopedAuthoredView(body, raw).byName.get(name) || [];
 }
 
-// Internal API candidate lookup shares one immutable physical section/index
-// per native tree. Explicit custom raw interpretations keep the public path.
+// Internal evaluators share immutable physical sections/indexes per native
+// tree. Do not consult or replace the public mutable authored cache. Explicit
+// custom raw interpretations keep their existing public path.
 export function sharedScopedAuthoredSections(body, name, raw = null) {
   if (raw !== null && !isSharedReconciliationReferenceView(body, raw)) return scopedAuthoredSections(body, name, raw);
   return canonicalAuthoredView(body, raw).byName.get(name) || [];
+}
+
+// Expose the immutable ordered homes needed by internal uniqueness/fallback
+// checks without exposing the canonical view's private Map containers.
+export function sharedScopedAuthoredOccurrences(body, raw = null) {
+  if (raw !== null && !isSharedReconciliationReferenceView(body, raw)) return scopedAuthoredView(body, raw).sections;
+  return canonicalAuthoredView(body, raw).sections;
 }
 
 // H3 is a section-only fallback, never a canonical table home. Keep its index
@@ -195,7 +214,16 @@ const canonicalHomes = new Set(['open-decisions', 'unknowns', 'conflicts', 'gaps
   'api-candidates', 'component-mapping', 'mapping-provenance']);
 export function scopedAuthoredSubsections(body, slug, raw = null) {
   if (canonicalHomes.has(slug)) return [];
-  const view = scopedAuthoredView(body, raw);
+  return authoredSubsections(body, slug, scopedAuthoredView(body, raw), false);
+}
+
+export function sharedScopedAuthoredSubsections(body, slug, raw = null) {
+  if (raw !== null && !isSharedReconciliationReferenceView(body, raw)) return scopedAuthoredSubsections(body, slug, raw);
+  if (canonicalHomes.has(slug)) return [];
+  return authoredSubsections(body, slug, canonicalAuthoredView(body, raw), true);
+}
+
+function authoredSubsections(body, slug, view, canonical) {
   if (!subsectionViews.has(view)) {
     const authored = stripGeneratedBlocks(body, { preserveOffsets: true });
     const bySlug = new Map();
@@ -203,6 +231,7 @@ export function scopedAuthoredSubsections(body, slug, raw = null) {
     const flush = (end) => {
       if (!current) return;
       current.text = body.slice(current.start, end);
+      if (canonical) { Object.freeze(current.nodes); Object.freeze(current); }
       if (!bySlug.has(current.slug)) bySlug.set(current.slug, []);
       bySlug.get(current.slug).push(current);
     };
@@ -219,6 +248,7 @@ export function scopedAuthoredSubsections(body, slug, raw = null) {
       } else if (current) current.nodes.push(node);
     }
     flush(body.length);
+    if (canonical) for (const sections of bySlug.values()) Object.freeze(sections);
     subsectionViews.set(view, bySlug);
   }
   return subsectionViews.get(view).get(slug) || [];

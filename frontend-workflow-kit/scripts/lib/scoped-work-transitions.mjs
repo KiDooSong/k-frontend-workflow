@@ -7,7 +7,7 @@ import { col, hasHeader } from './spec.mjs';
 import { canonicalRepositoryPath } from './artifact-path.mjs';
 import { ownerParts, readCurrentBytes, hashBytes } from './current-work-request.mjs';
 import { REQUIRED_OPEN_DECISION_COLUMNS, openDecisionRowIsMalformed } from './open-decisions.mjs';
-import { createScopedReferenceResolver, parseScopedTargetRef } from './scoped-work-refs.mjs';
+import { createCanonicalScopedReferenceResolver as createScopedReferenceResolver, parseScopedTargetRef } from './scoped-work-refs.mjs';
 import { parseDecisionWorkScopes } from './scoped-work-declarations.mjs';
 import { resolveScopedApplicabilityProjection } from './scoped-work-applicability.mjs';
 import { inspectScopedDecisionBindings } from './scoped-work-bindings.mjs';

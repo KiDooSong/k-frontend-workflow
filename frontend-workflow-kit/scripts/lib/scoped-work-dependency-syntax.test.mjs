@@ -24,8 +24,8 @@ insert('computeUncertaintyProjection(options, base));', 'computeUncertaintyProje
 insert('function computeUncertaintyProjection(options, base) {', 'function computeUncertaintyProjection(options, base, probe) {');
 insert('    const graph = resolveScopedContractGraph({ contracts: [token],',
   '    const graphBefore = probe.parsed();\n    const graph = resolveScopedContractGraph({ contracts: [token],');
-insert('    for (const file of graph.read_set) read(file.file, file.sha256);',
-  '    probe.graph(probe.parsed() - graphBefore);\n    for (const file of graph.read_set) read(file.file, file.sha256);');
+insert('    const evidence = mergeScopedGraphContexts([graph],',
+  '    probe.graph(probe.parsed() - graphBefore);\n    const evidence = mergeScopedGraphContexts([graph],');
 insert('    candidates.set(physical, { record, entry, evidence, affected: affectedOwners(affected) });',
   '    probe.candidate(evidence.nodes);\n    candidates.set(physical, { record, entry, evidence, affected: affectedOwners(affected) });');
 insert('    if (!spans.has(node.selection)) {',
