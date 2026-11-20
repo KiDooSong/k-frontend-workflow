@@ -14,13 +14,13 @@ import { parseReconciliationMarkdown, parseReconciliationReferenceView, sharedRe
   reconciliationTreeNodeCount } from './reconciliation-markdown-ast.mjs';
 import { createSyntaxCache } from './syntax-cache.mjs';
 import { createScopedReferenceResolver, scopedRawTable, parseScopedTargetRef, scopedRowAlias } from './scoped-work-refs.mjs';
-import { resolveScopedContractGraph, scopedGraphSelectionSpans, scopedGraphMetadataRefs, scopedGraphBodyRefs,
+import { resolveScopedContractGraph, createScopedGraphSelectionSpanResolver, scopedGraphMetadataRefs, scopedGraphBodyRefs,
   mergeScopedGraphContexts } from './scoped-work-graph.mjs';
 import { scopedProjectionNode } from './scoped-work-projection.mjs';
 import { resolveScopedDecisionProjection, createScopedSnapshotDecisionResolver } from './scoped-work-decisions.mjs';
 import { ScopedWorkContractError, workText } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
-import { scopedAuthoredSections, scopedSelectionNodes, rememberScopedSelection, copyScopedNodeContexts,
+import { scopedAuthoredSections, scopedSelectionUnknownAuthored, rememberScopedSelection, copyScopedNodeContexts,
   withScopedDocumentSyntax } from './scoped-work-authored.mjs';
 import { scopedProjectionProgress } from './workflow-progress.mjs';
 
@@ -54,15 +54,7 @@ export function scopedUnknownHomes(body, view = parseReconciliationReferenceView
 // "has authored Unknowns" flag. Compare source offsets so parser cache eviction
 // cannot change the answer for an existing selection sidecar.
 export function scopedUnknownAuthored(body, selection, view = null) {
-  const nodes = scopedSelectionNodes(body, selection);
-  if (selection.type !== 'row' || nodes?.length !== 1) return false;
-  const [row] = nodes;
-  // Only offsets are compared below. Reuse the existing exact-body authored
-  // view when no current raw view was supplied; rebuilding every table/cell for
-  // each row and unit makes the applicability fixed point grow quadratically.
-  return scopedAuthoredSections(body, 'unknowns', view).some((home) => home.tableNodes.some((table, index) =>
-    signatures.unknown.every((header) => hasHeader(home.tables[index].headers, header)) &&
-    table.position.start.offset <= row.position.start.offset && row.position.end.offset <= table.position.end.offset));
+  return scopedSelectionUnknownAuthored(body, selection, view);
 }
 
 const nodeSet = (values) => copyScopedNodeContexts(values, scopeSet(values));
@@ -106,6 +98,7 @@ function uncertaintyProjection(options, base) {
   const candidates = new Map();
   const subjects = new Map();
   const spans = new WeakMap();
+  const selectionSpans = createScopedGraphSelectionSpanResolver();
 
   function read(relative, expectedHash) {
     const options = { required: true, type: 'file', label: 'scoped uncertainty' };
@@ -131,7 +124,7 @@ function uncertaintyProjection(options, base) {
       source = { text, body: parsed.body };
     }
     const materialize = (view) => {
-      const doc = source.view === view ? source : { ...source, view };
+      const doc = source.view === view ? source : { ...source, file: relative, view };
       documents.set(relative, doc, { sourceChars: relative.length + doc.text.length,
         nodes: reconciliationTreeNodeCount(view.tree) });
       return visit ? visit(doc) : doc;
@@ -179,13 +172,14 @@ function uncertaintyProjection(options, base) {
     return rows;
   }
 
-  function addCandidate(entry, token, status, affected, authored, source = null) {
+  function addCandidate(entry, token, status, affected, authored, source = null, doc = null) {
     const selected = authored ? refs.authoredContract(token) : refs.contract(token);
     const record = { ...scopedProjectionNode(selected), status };
-    if (source && (source.file !== record.file || scopeJson(ranges(source)) !== scopeJson(ranges(record)))) {
+    const current = doc?.file === record.file ? doc : null;
+    if (source && (source.file !== record.file || scopeJson(ranges(source, current)) !== scopeJson(ranges(record, current)))) {
       fail(`ambiguous canonical Unknown source: ${token}`);
     }
-    const physical = scopeJson([token, ranges(record)]);
+    const physical = scopeJson([token, ranges(record, current)]);
     if (candidates.has(physical)) return;
     const graph = resolveScopedContractGraph({ contracts: [token], targetIndex, projectRoot, inputArtifacts,
       authoredRefs: authored ? [token] : [] });
@@ -195,7 +189,7 @@ function uncertaintyProjection(options, base) {
     // Later relation merging only needs these immutable physical spans. Compute
     // them while this document's syntax is active, rather than reparsing its
     // oversized body for each duplicate root after the row batch has finished.
-    for (const node of evidence.nodes) if (node.file === record.file) ranges(node);
+    for (const node of evidence.nodes) if (node.file === record.file) ranges(node, current);
     candidates.set(physical, { record, entry, evidence, affected: affectedOwners(affected) });
     scopedProjectionProgress('candidate-rows');
   }
@@ -241,7 +235,7 @@ function uncertaintyProjection(options, base) {
           }
           for (const [token, { status, affected }] of rows) {
             // Audit every inspected row; project only rows with a relation below.
-            addCandidate(entry, token, status, affected, authored);
+            addCandidate(entry, token, status, affected, authored, null, doc);
           }
         }
       }
@@ -254,8 +248,7 @@ function uncertaintyProjection(options, base) {
   // GENERATED H2s. Decode a table only when a selected range covers one of its
   // rows, so an unselected display table cannot introduce a new format error.
   const unknownTables = new Map();
-  function coveredUnknownRows(node) {
-    const doc = document(node.file);
+  function coveredUnknownRows(node, doc) {
     if (!unknownTables.has(node.file)) {
       const tables = new Map();
       const homes = [...doc.view.sections.filter((home) => home.slug === 'unknowns'),
@@ -272,7 +265,7 @@ function uncertaintyProjection(options, base) {
     }
     // Native leaf spans are disjoint. Search them separately, preserving holes
     // in the selection instead of treating its outer bounds as ownership.
-    const selected = [...ranges(node)].sort(([a, b], [c, d]) => a - c || b - d);
+    const selected = [...ranges(node, doc)].sort(([a, b], [c, d]) => a - c || b - d);
     const contains = ([start, end]) => {
       let low = 0, high = selected.length;
       while (low < high) {
@@ -284,7 +277,7 @@ function uncertaintyProjection(options, base) {
     };
     const covered = [];
     for (const table of unknownTables.get(node.file)) table.rows.forEach((source, index) => {
-      const spans = ranges(source);
+      const spans = ranges(source, doc);
       if (!spans.length || !spans.every(contains)) return;
       table.raw ??= scopedRawTable(table.table);
       if (!signatures.unknown.every((header) => hasHeader(table.raw.headers, header))) return;
@@ -299,23 +292,22 @@ function uncertaintyProjection(options, base) {
   // beside an authored table. Exact rows and rows fully covered by a selected
   // section/body are evidence: re-resolve each alias to the same original row.
   // Keep the exact-row path independent of the document-wide row index.
-  function addSelectedUnknown(node) {
+  function addSelectedUnknown(node, doc) {
     const selection = node.selection;
     const row = Object.fromEntries(selection.headers.map((header, index) => [header, selection.cells[index]]));
     const token = node.kind === 'unknown' ? node.ref : scopedRowAlias(node);
     if (!token) fail(`noncanonical uncertainty ID ${JSON.stringify(col(row, 'ID'))}`);
     workText(col(row, 'Question'), 'Unknown Question');
-    const doc = document(node.file);
     const authored = scopedUnknownAuthored(doc.body, selection, doc.view);
-    addCandidate(targetIndex.artifacts.get(node.artifact_id), token, col(row, 'Status') || null, undefined, authored, node);
+    addCandidate(targetIndex.artifacts.get(node.artifact_id), token, col(row, 'Status') || null, undefined, authored, node, doc);
   }
   let selectedBatch = [];
   const visitSelectedBatch = () => {
     if (!selectedBatch.length) return;
-    document(selectedBatch[0].file, () => {
+    document(selectedBatch[0].file, (doc) => {
       for (const node of selectedBatch) {
-        if (node.selection.type === 'row') addSelectedUnknown(node);
-        else for (const source of coveredUnknownRows(node)) addSelectedUnknown(source);
+        if (node.selection.type === 'row') addSelectedUnknown(node, doc);
+        else for (const source of coveredUnknownRows(node, doc)) addSelectedUnknown(source, doc);
       }
     });
     selectedBatch = [];
@@ -408,10 +400,10 @@ function uncertaintyProjection(options, base) {
     }
     value.derived = derived;
   }
-  function ranges(node) {
+  function ranges(node, current = null) {
     if (!spans.has(node.selection)) {
-      const doc = document(node.file);
-      spans.set(node.selection, scopedGraphSelectionSpans(doc.body, doc.view, node.selection, node.kind === 'input-evidence'));
+      const doc = current?.file === node.file ? current : document(node.file);
+      spans.set(node.selection, selectionSpans(doc.body, doc.view, node.selection, node.kind === 'input-evidence'));
     }
     return spans.get(node.selection);
   }

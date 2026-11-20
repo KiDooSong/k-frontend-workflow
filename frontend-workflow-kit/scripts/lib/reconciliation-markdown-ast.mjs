@@ -2,6 +2,7 @@
 // heading, table, reference definition, visible prose가 모두 같은 tree를 사용해야 container 순서에
 // 따라 서로 다른 구조를 추론하는 fail-open/fail-closed가 생기지 않는다.
 import { fromMarkdown } from 'mdast-util-from-markdown';
+import { types } from 'node:util';
 import { gfmFromMarkdown } from 'mdast-util-gfm';
 import { gfm } from 'micromark-extension-gfm';
 import { createSyntaxCache } from './syntax-cache.mjs';
@@ -805,12 +806,26 @@ export function parseReconciliationReferenceView(text) {
 // add no source-text cache or lifetime beyond existing owners of that tree;
 // the public parser above keeps its fresh, mutable derived containers.
 const referenceViews = new WeakMap();
+const referenceSources = new WeakMap();
 export function sharedReconciliationReferenceView(text) {
   const source = String(text || '');
   const tree = sharedTree(source);
   if (!referenceViews.has(tree)) {
-    referenceViews.set(tree, freezeTree({ tree, sections: sectionOccurrences(source, tree, null, { includeNodes: true }) }));
+    const view = freezeTree({ tree, sections: sectionOccurrences(source, tree, null, { includeNodes: true }) });
+    referenceViews.set(tree, view);
+    referenceSources.set(view.sections, { source, tree });
   }
   return referenceViews.get(tree);
+}
+
+// Recognize only internally produced immutable raw sections, including the
+// plain wrappers used by scoped resolvers. A caller's frozen/custom view is not
+// provenance, and the mutable public parser remains outside this registry.
+export function isSharedReconciliationReferenceView(text, view) {
+  if (!view || typeof view !== 'object' || types.isProxy(view)) return false;
+  const tree = Object.getOwnPropertyDescriptor(view, 'tree'), sections = Object.getOwnPropertyDescriptor(view, 'sections');
+  if (!tree || !sections || !Object.hasOwn(tree, 'value') || !Object.hasOwn(sections, 'value')) return false;
+  const source = referenceSources.get(sections.value);
+  return source?.source === String(text || '') && source.tree === tree.value;
 }
 export { normalizeReferenceLabel as reconciliationReferenceLabel, headingText as reconciliationHeadingText };

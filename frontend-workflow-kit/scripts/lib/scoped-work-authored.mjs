@@ -3,9 +3,9 @@
 // GENERATED tables cannot supply API/Unknown authoring evidence. The raw parser
 // and its ordinary fully qualified reference contract remain unchanged.
 import { parseReconciliationReferenceView, reconciliationHeadingText, slugifySectionTitle,
-  reconciliationTreeNodeCount, sharedReconciliationReferenceView,
+  reconciliationTreeNodeCount, sharedReconciliationReferenceView, isSharedReconciliationReferenceView,
   withReconciliationSyntax } from './reconciliation-markdown-ast.mjs';
-import { specSectionName, stripGeneratedBlocks } from './spec.mjs';
+import { hasHeader, specSectionName, stripGeneratedBlocks } from './spec.mjs';
 import { ScopedWorkContractError } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
 import { createSyntaxCache } from './syntax-cache.mjs';
@@ -13,17 +13,25 @@ import { createSyntaxCache } from './syntax-cache.mjs';
 // This cache also owns the raw tree through the authored view, so it must obey
 // the same structural budgets even after the parser has evicted that tree.
 const views = createSyntaxCache();
+const viewSections = new WeakMap(), canonicalViews = new WeakSet();
+// These weak row facts retain no tree/view or table-sized range array. Physical
+// selections may outlive an oversized document's active syntax batch.
+const unknownRows = new WeakMap();
 const source = (body, node) => body.slice(node.position.start.offset, node.position.end.offset);
 let activeDocument = null;
 
 // The active document owns raw and authored views only while its synchronous
 // row batch runs. Other dependency documents still use the bounded caches.
-// Build both views internally; no caller-provided syntax can replace validation.
+// Raw syntax and canonical row facts come from internal parsing; legacy
+// authoring prewarms do not replace file validation.
 export function withScopedDocumentSyntax(body, run) {
   return withReconciliationSyntax(body, () => {
     const raw = sharedReconciliationReferenceView(body);
     const view = scopedAuthoredView(body, raw), previous = activeDocument;
-    activeDocument = { body, raw, view, previous };
+    // Public authoring resolvers retain the legacy same-tree mutable prewarm.
+    // Canonical row facts use a separate internal interpretation when needed.
+    const canonicalView = canonicalViews.has(view) ? view : authoredView(body, raw, true);
+    activeDocument = { body, raw, view, canonicalView, previous };
     try {
       return run(raw);
     } finally {
@@ -37,18 +45,23 @@ export function scopedAuthoredCacheStats() {
 }
 
 export function scopedAuthoredView(body, raw = null) {
+  return authoredView(body, raw, raw === null || isSharedReconciliationReferenceView(body, raw), { allowPrewarmed: true });
+}
+
+function authoredView(body, raw, canonical, { allowPrewarmed = false } = {}) {
   for (let active = activeDocument; active; active = active.previous) {
     // Resolvers may wrap the shared view, retaining the exact frozen sections.
     // A detached/custom raw wrapper must still build its own derived contents,
     // even when its native tree happens to be the active tree.
     if (active.body === body && (!raw || (raw.tree === active.raw.tree && raw.sections === active.raw.sections))) {
-      return active.view;
+      return canonical && !allowPrewarmed ? active.canonicalView : active.view;
     }
   }
   const cached = views.get(body);
   // The raw parser has its own bounded cache. If its tree was evicted and
   // reparsed, rebuild our node/cell index against that exact current tree.
-  if (cached && (!raw || cached.tree === raw.tree)) return cached;
+  if (cached && (allowPrewarmed || !canonical || canonicalViews.has(cached)) &&
+      (!raw || (cached.tree === raw.tree && (canonical || viewSections.get(cached) === raw.sections)))) return cached;
   raw ??= parseReconciliationReferenceView(body);
   const authored = stripGeneratedBlocks(body, { preserveOffsets: true });
   const retained = (node) => source(authored, node) === source(body, node);
@@ -121,7 +134,21 @@ export function scopedAuthoredView(body, raw = null) {
       : slugs.flatMap((slug) => bySlug.get(slug)).sort((a, b) => a.start - b.start));
   }
   const view = { tree: raw.tree, sections, tableSections, byName };
-  views.set(body, view, { nodes: reconciliationTreeNodeCount(raw.tree) });
+  viewSections.set(view, raw.sections);
+  if (canonical) {
+    canonicalViews.add(view);
+    const authoredTables = new Set((byName.get('unknowns') || []).flatMap((home) => home.tableNodes.filter((_, index) =>
+      ['ID', 'Question'].every((header) => hasHeader(home.tables[index].headers, header)))));
+    for (const table of nativeTables.keys()) for (const row of table.children) {
+      unknownRows.set(row, { body, start: row.position.start.offset, end: row.position.end.offset,
+        authored: authoredTables.has(table) });
+    }
+  }
+  // A private canonical lookup must not replace a public mutable prewarm. Its
+  // compact row facts survive without storing this temporary whole view.
+  if (allowPrewarmed || !cached || canonicalViews.has(cached)) {
+    views.set(body, view, { nodes: reconciliationTreeNodeCount(raw.tree) });
+  }
   return view;
 }
 
@@ -182,6 +209,23 @@ export function scopedSelectionNodes(body, selection) {
   if (!context) return null;
   if (context.body !== body) throw new ScopedWorkContractError('SW-REF-SNAPSHOT: selection body changed');
   return context.nodes;
+}
+
+// Preserve the exact physical row through copied projections. Explicit raw
+// views keep their own interpretation and cannot replace canonical row facts.
+export function scopedSelectionUnknownAuthored(body, selection, raw = null) {
+  const nodes = scopedSelectionNodes(body, selection);
+  if (selection.type !== 'row' || nodes?.length !== 1) return false;
+  const [row] = nodes, start = row.position.start.offset, end = row.position.end.offset;
+  const known = raw === null ? unknownRows.get(row) : null;
+  if (known && known.body === body && known.start === start && known.end === end) return known.authored;
+  const homes = raw === null ? authoredView(body, null, true).byName.get('unknowns') || []
+    : scopedAuthoredSections(body, 'unknowns', raw);
+  const authored = homes.some((home) => home.tableNodes.some((table, index) =>
+    ['ID', 'Question'].every((header) => hasHeader(home.tables[index].headers, header)) &&
+    table.position.start.offset <= start && end <= table.position.end.offset));
+  if (raw === null) unknownRows.set(row, { body, start, end, authored });
+  return authored;
 }
 
 // Physical table rows, not rendered cells or an H3's slug, establish containment

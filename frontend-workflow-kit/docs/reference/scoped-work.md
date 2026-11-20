@@ -291,11 +291,22 @@ between relation passes. It re-reads the canonical binding homes and verifies
 these observations and the complete file read set before returning the owner's
 report. No projection is shared across owners or calls. The standalone inspectors
 for mutable files keep their independent resolution and change checks.
-Unknown-row authoring checks reuse the existing bounded exact-body authored view
-instead of reconstructing every table and cell for each row/unit application.
-The selection's original source offsets still distinguish authored rows from
-identical GENERATED rows; an explicitly supplied raw view retains its own tree
-identity checks. This does not cache file observations, row states or digests.
+Unknown-row authoring checks prepare a compact fact for each physical row while
+building the canonical exact-body authored view. A weak association with that
+native row lets later row/unit applications reuse its authored/GENERATED
+classification even after an oversized document's active batch ends. Each lookup
+checks the selection's current physical node, exact body and source offsets;
+copied contexts retain that identity, while a JSON-only selection cannot supply
+it. A row from another parser generation uses the canonical offset check once.
+An explicitly supplied raw view retains its own interpretation and cannot
+replace those canonical facts. Only internally produced immutable raw sections
+with the matching body and tree can prepare canonical facts through a raw-view
+wrapper. These facts hold no tree or authored view and cache no file
+observations, row states or digests.
+The public authored view preserves its existing same-tree mutable prewarming,
+including inside an active document scope. If that cached interpretation is
+custom, canonical row checks prepare their own temporary view without replacing
+it; later authored reference resolvers still observe edits to the custom table.
 
 For adopted owners, the report also prepares a detached immutable copy of each
 eligible input's plain metadata once inside its owned snapshot. Source resolvers
@@ -409,6 +420,18 @@ documents still use the bounded caches. Nested scopes restore their predecessor
 on return or error, and a later call or asynchronous continuation cannot inherit
 a completed scope. These scopes do not collect every oversized document for
 the owner.
+
+The selected-row helpers receive that batch's already read document rather than
+reading, hashing and splitting its frontmatter again. Within one uncertainty
+evaluation, candidate graphs selecting the same immutable native nodes also
+share their leaf-span arrays. This sharing checks the exact body, physical node
+identities and input-bullet nesting mode; equal refs or row contents do not merge
+different physical selections. Mutable nodes, accessors and proxies keep the
+fresh-computation path. The internal arrays are immutable, the public span helper
+still returns independent mutable values, and a later evaluation gets its own
+span store. These arrays and the compact row facts above follow existing node
+owners rather than extending an oversized tree's active scope; they do not add a
+source-keyed cache or change the retention budgets.
 
 Eviction drops syntax only. The uncertainty evaluation retains every observed
 file hash, rereads current bytes on a document-cache miss, rejects mismatches
