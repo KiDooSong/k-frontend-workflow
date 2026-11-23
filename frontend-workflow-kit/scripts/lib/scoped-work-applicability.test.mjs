@@ -76,6 +76,58 @@ const relations = (out) => out.projection.decision_relations;
 const ids = (out) => relations(out).records.map((entry) => entry.decision_id).sort();
 const unknownRelations = (out) => out.projection.uncertainty_relations;
 const apps = (out, id) => relations(out).applications.filter((entry) => entry.decision === `decision:${id}@open-decision-register`);
+
+// Count real Tracking-index misses and row visits in an in-memory copy. The
+// public applicability resolver and all file-backed relation stages still run;
+// no supplied projection or file-validity answer replaces their work.
+async function trackingIndexProbe() {
+  const graphUrl = new URL('./scoped-work-graph.mjs', import.meta.url);
+  let graph = fs.readFileSync(graphUrl, 'utf8');
+  const insert = (marker, replacement) => {
+    assert.equal(graph.split(marker).length, 2, `one Tracking observation point: ${marker}`);
+    graph = graph.replace(marker, replacement);
+  };
+  insert('const apiTrackingCells = new WeakMap();',
+    'const apiTrackingCells = new WeakMap();\nconst observedTracking = new Map();');
+  const hit = '  if (canonical && apiTrackingCells.has(view.tree)) return apiTrackingCells.get(view.tree);';
+  insert(hit, `${hit}\n  if (!observedTracking.has(body)) observedTracking.set(body, { builds: 0, rows: 0 });\n` +
+    '  const observation = observedTracking.get(body); observation.builds += 1;');
+  insert('  for (const row of table.children.slice(1)) {',
+    '  for (const row of table.children.slice(1)) {\n    observation.rows += 1;');
+  graph += '\nexport const observedTrackingStats = (body) => ({ ...(observedTracking.get(body) || { builds: 0, rows: 0 }) });\n';
+  graph = graph.replace(/from '(\.\/[^']+)'/g,
+    (_, relative) => `from ${JSON.stringify(new URL(relative, graphUrl).href)}`);
+  const graphData = `data:text/javascript;base64,${Buffer.from(graph).toString('base64')}`;
+  const applicationUrl = new URL('./scoped-work-applicability.mjs', import.meta.url);
+  const application = fs.readFileSync(applicationUrl, 'utf8').replace(/from '(\.\/[^']+)'/g,
+    (_, relative) => `from ${JSON.stringify(relative === './scoped-work-graph.mjs'
+      ? graphData : new URL(relative, applicationUrl).href)}`);
+  const [{ resolveScopedApplicabilityProjection: resolve }, { observedTrackingStats: stats }] = await Promise.all([
+    import(`data:text/javascript;base64,${Buffer.from(application).toString('base64')}`), import(graphData),
+  ]);
+  return { resolve, stats };
+}
+
+test('#354 applicability: untyped Decision rows share one canonical API Tracking index', async (t) => {
+  const probe = await trackingIndexProbe(), apiCount = 24, observed = [];
+  for (const count of [1, 120]) {
+    const f = fixture(t);
+    f.write('unselected.md', { artifact_id: 'UNSELECTED', artifact_type: 'screen-spec', screen_id: 'OTHER-001',
+      domain: 'foreign', status: 'draft', screen_entry: 'src/features/foreign/screens/OTHER-001.tsx' },
+    `## API Candidates\n\n${table(['Method', 'Path', 'Confidence', 'Gate', 'Tracking', 'Slice Paths'],
+      Array.from({ length: apiCount }, (_, index) => ['GET', `/other-${index}`, 'confirmed', 'active', '-', `src/api/other-${index}/**`]))}\n\n` +
+      decisions(Array.from({ length: count }, (_, index) => decisionRow(`Review ${index + 1}`, 'Unrelated review.'))));
+    const options = f.options(), body = options.targetIndex.artifacts.get('UNSELECTED').body;
+    const expected = JSON.stringify(resolveScopedApplicabilityProjection(options)), before = probe.stats(body);
+    const actual = probe.resolve(options), after = probe.stats(body);
+    assert.equal(JSON.stringify(actual), expected, 'complete public projection and read-set bytes remain unchanged');
+    assert.deepEqual(actual.projection.unapplied_relations.records, [], 'unrelated untyped rows remain unapplied');
+    observed.push({ decisions: count, builds: after.builds - before.builds, rows: after.rows - before.rows });
+  }
+  assert.deepEqual(observed, [{ decisions: 1, builds: 1, rows: apiCount },
+    { decisions: 120, builds: 1, rows: apiCount }], 'Decision count must not multiply a canonical document\'s Tracking index');
+});
+
 function surface(f, legacy = false) {
   const second = screen('RESULT-002');
   if (legacy) delete second.work_execution;

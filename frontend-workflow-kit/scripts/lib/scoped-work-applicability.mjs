@@ -177,7 +177,9 @@ function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] 
       else {
         const key = `untyped:${artifactId}#${slug}/${id}`;
         untyped.set(key, { artifactId, slug, id });
-        if (!view) { view = parseReconciliationReferenceView(entry.body); readSet.push(indexedFile(projectRoot, entry, canonicalPath)); }
+        // Internal row discovery uses the canonical view so its Tracking index
+        // can be reused across untyped Decisions in this same document.
+        if (!view) { view = sharedReconciliationReferenceView(entry.body); readSet.push(indexedFile(projectRoot, entry, canonicalPath)); }
         const selection = { type: 'row', section: slug, headers, cells };
         // A typed row's node leads to its document's decision_refs; an untyped row starts from them too.
         add({ key, id, artifactId, token: null, roots: [...new Set([...scopedGraphSelectionRefs(entry.body, entry.fm, selection, view),

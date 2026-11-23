@@ -1,5 +1,8 @@
 # Current Roadmap
 
+> 2026-11-23 #354 리뷰 보완: 미적용 untyped Decision의 내부 참조 검사에도 canonical shared view를 전달해 API Tracking 색인을 문서 내에서 재사용한다. Decision 120행·API 600행의 공개 resolver 재현에서 색인 120→1회, API 순회 72,000→600행과 전체 결과 bytes 일치를 확인했다. 외부 custom raw view의 편집·캐시 격리는 유지한다.
+> 재현: [applicability Tracking benchmark](benchmarks/scoped-applicability-tracking.mjs), [리뷰 보완 검증 기록](temp/runs/scoped-evaluation-boundaries-350-353.md).
+
 > 2026-11-20 #350–#353: Unknown의 정본 해석을 분류부터 실제 계약 해석·적용까지 이어 가고, 공개 작성 뷰·명시적 custom raw 해석은 분리해 보존한다. 후보 graph의 필수 파일 감사 bytes를 같은 파일의 모든 Evidence span에 재사용하며, 행 배치가 끝나면 참조 resolver의 전체 AST 보관도 끝낸다. 배열 iterator의 상속된 `next` 변경은 span 공유에서 제외한다.
 > 공개 실제 호출 재현에서 입력 읽기 81→21회와 전체 결과 JSON 일치, 완료된 대형 문서 resolver view 3→0개, Unknown 퇴출 전후 동일 적용, 현재 iterator span을 확인한다. 이전 #344–#348 재현과 현재 bytes·최종 read-set 감사·생성 영역 물리 선택·공개 반환값 가변성도 검증한다.
 > 정본: [구문 보관 계약](../frontend-workflow-kit/docs/reference/scoped-work.md#bounded-syntax-retention). 재현: [평가 경계 benchmark](benchmarks/scoped-evaluation-boundaries.mjs), [검증 기록](temp/runs/scoped-evaluation-boundaries-350-353.md).

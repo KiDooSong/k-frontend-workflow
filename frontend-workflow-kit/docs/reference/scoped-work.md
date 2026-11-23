@@ -407,6 +407,9 @@ classification. Their document scopes pin private canonical syntax without
 constructing or replacing a caller's public authored cache. Public authored
 views and the public reference resolver keep their mutable/custom interpretation;
 explicit custom raw views cannot populate the canonical API Tracking cache.
+Internal discovery of untyped Decision rows also keeps a shared canonical view
+for the document, so those rows reuse one native-tree Tracking index rather than
+rebuilding it per row. Explicit custom views still observe their own edits.
 Equal-cell authored and GENERATED rows still retain distinct physical sources.
 Default Unknown-home lookups copy their mutable derived containers without
 changing the caller's authored prewarm or cloning immutable native nodes.

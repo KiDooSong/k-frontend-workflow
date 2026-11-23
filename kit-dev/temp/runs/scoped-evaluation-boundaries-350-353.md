@@ -226,3 +226,74 @@ node "$PROBES/scoped-owner-memory.mjs" "$KIT_BEFORE" "$KIT_AFTER" \
 이번 회귀는 공개 원본 재현과 실제 call chain의 결과·read-set을 기준으로 작성했다. Reviewer가
 구현과 별도로 public/custom 경계, 실제 감사 시점, 완료 batch 수명, import 이전 traversal을 확인했다.
 재현이 실패하던 경계에 committed test를 추가하고 기존 packed/CI 경로에 연결했다.
+
+## 2026-11-23 PR #354 리뷰 보완 — applicability Tracking index
+
+### 원인과 수정
+
+`b16430e`에서 외부 custom raw view의 Tracking cache 격리를 강화했지만,
+`unappliedRows()`의 untyped Decision 검사에 쓰는 내부 view는 여전히 public raw parser로 만들었다.
+같은 screen-spec의 `Review 1`처럼 typed ref가 될 수 없는 미선택 Decision 행을 확인할 때마다,
+그 view가 canonical로 인정되지 않아 API 표의 Tracking index를 다시 만들었다.
+모든 API가 confirmed/active이고 Tracking이 `-`여도 발생했다.
+
+해당 내부 view 생성 한 곳을 `sharedReconciliationReferenceView(entry.body)`로 바꿨다.
+현재 파일 검증과 read-set 기록은 같은 위치에서 계속 실행하며,
+`localApiTrackingCells()`의 custom raw cache 격리 조건은 바꾸지 않았다.
+같은 native tree의 private index를 재사용하고 명시적인 외부 custom view는 자신의 편집을 계속 관찰한다.
+
+### 독립 공개 resolver 재현
+
+[새 benchmark](../../benchmarks/scoped-applicability-tracking.mjs)는 실제 파일과 target index를 만들고
+공개 `resolveScopedApplicabilityProjection()`을 호출한다. 선택한 owner는 한 unit으로 RULES를 소비하며,
+다른 screen-spec 하나에 미선택 Open Decisions와 active API Candidates를 함께 둔다.
+리뷰와 같은 120×600 조건을 별도 fixture로 구성하고 정규화 없이 전체 결과 bytes를 비교했다.
+
+| 버전 | Decision 행 | API 행 | 실제 Tracking index 생성 | 실제 API 행 방문 |
+|---|---:|---:|---:|---:|
+| PR 이전 `e162490` | 120 | 600 | 1 | 600 |
+| 리뷰 대상 `b16430e` | 120 | 600 | 120 | 72,000 |
+| 리뷰 보완 후 | 120 | 600 | 1 | 600 |
+
+세 결과 JSON은 모두 **5,195 bytes**이며 SHA-256도 동일하다:
+`e276fb7c77e02e15b822fa52bfba20d2ed8a5265f2a258f28b66af751ec2b79f`.
+수정본의 비계측 호출 결과도 같은 bytes다. 계측은 실제 helper의 cache-hit 반환 이후 Map 생성과
+API 행 loop를 메모리에서만 관찰하며 runtime 파일과 반환 결과를 수정하지 않는다.
+
+Node `24.22.3`에서 Decision 1,000행·API 2,000행을 각 버전의 새 process로 세 번씩 실행했다.
+버전 실행 순서를 순환시켰으며, `time` 모드는 hook을 설치하지 않는다.
+모듈 import·fixture/index 준비·JSON 직렬화는 제외하고 공개 resolver 호출만 측정했다.
+
+| 버전 | 1회 (ms) | 2회 (ms) | 3회 (ms) | 중앙값 (ms) |
+|---|---:|---:|---:|---:|
+| `e162490` | 275.006 | 252.546 | 243.345 | 252.546 |
+| `b16430e` | 1,962.432 | 1,960.841 | 1,953.335 | 1,960.841 |
+| 리뷰 보완 후 | 222.198 | 290.711 | 216.395 | 222.198 |
+
+9개 전체 결과는 모두 5,195 bytes이며 SHA-256은
+`25f10cf0c77fa1312a20286cf1e58ba4968bda5584dce3e4c056bc3201ef84cc`로 같았다.
+이 합성 측정은 해당 반복 순회 회귀의 복구를 보여 주며 consumer CLI 전체 시간의 예측값은 아니다.
+
+### 회귀와 배포 검증
+
+- 기존 applicability suite에 실제 public resolver 회귀 **1개**를 추가했다. API 24행에서 Decision을
+  1→120행으로 늘려도 index 1회·API 행 방문 24회를 유지하는지 검사한다. `b16430e`에서는
+  120회·2,880행으로 실패했고 수정 후 통과했다. 계측된 호출과 일반 public 호출의 전체 JSON도 비교한다.
+- Applicability·graph-cache·selected-unknown·authored-isolation·generated의 **115/115**가
+  Node `20.20.2`와 `24.22.3`에서 각각 통과했다. 실패·취소·skip·todo는 0이다.
+- 실제 kit payload를 pack한 뒤 applicability와 custom Tracking cache test driver만 추가해
+  **Node 20·24 각각 41/41**을 실행했다. Runtime은 payload 원본을 사용했고 manifest의 모든 파일 hash는
+  실행 전후 같았다. Test driver가 원래 payload에 포함되지 않았음도 확인했다.
+- 새 회귀는 기존 applicability 파일에 있으므로 기존 packed/CI inventory에 자동 포함된다.
+  CI·timeout·package/lockfile·배포 제외 정책은 바꾸지 않았다.
+- #350–#353의 원본 네 probe를 수정 후 다시 실행해 앞 절의 정상 결과 bytes와 일치함을 확인했다.
+- 내부 Tracking 소비자를 독립 검토했다. Strict/candidate graph, API row context, uncertainty 경로는
+  shared provenance를 유지하며, 같은 N×M 회귀가 생기는 추가 호출부는 찾지 못했다.
+
+```bash
+# Node 24, 각 버전을 별도의 process로 실행한다. 결과 경로는 새 파일이어야 한다.
+node kit-dev/benchmarks/scoped-applicability-tracking.mjs \
+  /path/to/frontend-workflow-kit counts 120 600 /tmp/new-count-result.json
+node kit-dev/benchmarks/scoped-applicability-tracking.mjs \
+  /path/to/frontend-workflow-kit time 1000 2000 /tmp/new-time-result.json
+```
