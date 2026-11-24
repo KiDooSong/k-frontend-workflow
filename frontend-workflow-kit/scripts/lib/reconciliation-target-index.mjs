@@ -7,7 +7,7 @@ import {
   describeHeaderMismatch,
   normalizedTableHeaders,
   parseReconciliationMarkdown,
-  parseReconciliationReferenceView,
+  sharedReconciliationReferenceView,
   parseStrictTables,
   slugifySectionTitle,
   splitSectionOccurrences,
@@ -17,7 +17,7 @@ import {
   tableHeadersAreUnique,
   toProseBody,
 } from './reconciliation-markdown-ast.mjs';
-import { scopedAuthoredSections, scopedAuthoredView } from './scoped-work-authored.mjs';
+import { sharedScopedAuthoredSections, sharedScopedAuthoredOccurrences } from './scoped-work-authored.mjs';
 
 export {
   describeHeaderMismatch,
@@ -174,7 +174,10 @@ const exactRowKeyIndexes = new WeakMap();
 export function sectionExactRowKeyCount(record, sectionSlug, rowKey) {
   if (!record || typeof record.body !== 'string') return 0;
   if (!exactRowKeyIndexes.has(record)) {
-    const markdown = parseReconciliationReferenceView(record.body), sections = new Map();
+    // Exact target preflight reads canonical source facts. A new mutable raw
+    // projection here would replace a caller's public authored prewarm even
+    // though this count never accepted a custom interpretation as input.
+    const markdown = sharedReconciliationReferenceView(record.body), sections = new Map();
     for (const occurrence of markdown.sections) {
       if (!sections.has(occurrence.slug)) sections.set(occurrence.slug, []);
       sections.get(occurrence.slug).push(occurrence);
@@ -187,15 +190,15 @@ export function sectionExactRowKeyCount(record, sectionSlug, rowKey) {
     cached.counts.set(sectionSlug, counts);
     let authored = [];
     if (sectionSlug === 'unknowns') {
-      authored = scopedAuthoredSections(record.body, 'unknowns', cached.markdown);
+      authored = sharedScopedAuthoredSections(record.body, 'unknowns', cached.markdown);
       if (!authored.some((home) => home.tables.some((table) =>
         ['ID', 'Question'].every((header) => hasHeader(table.headers, header))))) authored = [];
     } else if (sectionSlug === 'api-candidates' && ['screen-spec', 'shared-surface-spec'].includes(record.fm?.artifact_type)) {
-      authored = scopedAuthoredSections(record.body, 'api candidates', cached.markdown);
+      authored = sharedScopedAuthoredSections(record.body, 'api candidates', cached.markdown);
       if (!authored.some((home) => home.tables.length)) authored = [];
     }
     const raw = cached.sections.get(sectionSlug) || [];
-    if (authored.length ? authored.length !== 1 || scopedAuthoredView(record.body, cached.markdown).sections
+    if (authored.length ? authored.length !== 1 || sharedScopedAuthoredOccurrences(record.body, cached.markdown)
       .filter((home) => home.slug === sectionSlug).length !== 1 : raw.length !== 1) return 0;
     // Unknown/API authoring homes may cross GENERATED H2s. Preserve their raw
     // candidates too, deduplicating only the same physical table as scoped's

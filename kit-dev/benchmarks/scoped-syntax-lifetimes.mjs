@@ -112,7 +112,9 @@ async function dependency() {
   }
   const graphStart = '    const graph = resolveScopedContractGraph({ contracts: [token],';
   patch(graphStart, `    const graphBefore = probe.parsed();\n${graphStart}`);
-  const graphRead = '    for (const file of graph.read_set) read(file.file, file.sha256);';
+  const graphRead = source.includes('    for (const file of graph.read_set) read(file.file, file.sha256);')
+    ? '    for (const file of graph.read_set) read(file.file, file.sha256);'
+    : '    const evidence = mergeScopedGraphContexts([graph],';
   patch(graphRead, `    probe.graph(probe.parsed() - graphBefore);\n${graphRead}`);
   const candidate = '    candidates.set(physical, { record, entry, evidence, affected: affectedOwners(affected) });';
   patch(candidate, `    probe.candidate(evidence.nodes);\n${candidate}`);

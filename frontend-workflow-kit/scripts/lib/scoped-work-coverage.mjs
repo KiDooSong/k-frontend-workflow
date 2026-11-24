@@ -8,7 +8,7 @@ import { canonicalRepositoryPath } from './artifact-path.mjs';
 import { ownerParts, readCurrentBytes, hashBytes } from './current-work-request.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { parseScopedOwner, parseWorkCoverageReceipts } from './scoped-work-declarations.mjs';
-import { createScopedReferenceResolver } from './scoped-work-refs.mjs';
+import { createCanonicalScopedReferenceResolver as createScopedReferenceResolver } from './scoped-work-refs.mjs';
 import { createScopedSourceResolver } from './scoped-work-sources.mjs';
 import { resolveScopedContractGraph } from './scoped-work-graph.mjs';
 import { ScopedWorkContractError } from './scoped-work-request.mjs';

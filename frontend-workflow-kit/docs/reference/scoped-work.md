@@ -401,6 +401,21 @@ custom raw view retains its own interpretation. Its
 compact physical-row facts and private tree-keyed views add no separate
 source-text cache or retention threshold.
 
+Internal graph, source and relation evaluators use the canonical reference
+resolver through actual contract selection and application, not only row
+classification. Their document scopes pin private canonical syntax without
+constructing or replacing a caller's public authored cache. Public authored
+views and the public reference resolver keep their mutable/custom interpretation;
+explicit custom raw views cannot populate the canonical API Tracking cache.
+Internal discovery of untyped Decision rows also keeps a shared canonical view
+for the document, so those rows reuse one native-tree Tracking index rather than
+rebuilding it per row. Explicit custom views still observe their own edits.
+Equal-cell authored and GENERATED rows still retain distinct physical sources.
+Default Unknown-home lookups copy their mutable derived containers without
+changing the caller's authored prewarm or cloning immutable native nodes.
+Exact target row preflight also uses canonical source facts, so Reconciliation
+validation does not replace a public authored prewarm while counting rows.
+
 The digest covers the binding as committed: to add or change a
 binding, commit it with any well-formed digest (for example `sha256:` followed by
 64 zeros), review the scope, then record the computed digest with an
@@ -464,6 +479,11 @@ require repeated parsing. Nested scopes restore their predecessor
 on return or error, and a later call or asynchronous continuation cannot inherit
 a completed scope. These scopes do not collect every oversized document for
 the owner, and the single overflow slot is released on return or error.
+The reference resolver that enumerates an owner's rows has the same document
+batch lifetime. Returning or throwing releases that resolver and its full
+parsed views; completed batches cannot accumulate oversized owner trees in an
+evaluation-wide resolver. Required selected node fragments can still outlive
+their batch, and the separate single dependency overflow slot remains unchanged.
 
 Before retaining a candidate graph, the uncertainty evaluation prepares spans
 for all its selections, including external dependencies. Remembered native
@@ -475,6 +495,13 @@ The evaluation retains those fragments already needed by the results, rather
 than one full dependency tree per candidate. Selected fragments may themselves
 be large, and neither this sharing nor the one-tree slot is a total RSS bound.
 
+Selections in one candidate graph are grouped by source file. The mandatory
+current-byte/hash audit of that graph supplies the source body once for all of
+that file's Evidence spans. This reuse ends with the file's span preparation:
+another graph performs its own reads, and the final complete read-set audit is
+unchanged. A malformed document's relevance check also reads/materializes its
+body once within its own synchronous scope.
+
 The selected-row helpers receive that batch's already read document rather than
 reading, hashing and splitting its frontmatter again. Within one uncertainty
 evaluation, candidate graphs selecting the same immutable native nodes also
@@ -484,7 +511,11 @@ containing the same node sequence share the same internal result, including
 multi-paragraph input sections; equal refs or row contents do not merge
 different physical selections. Mutable nodes, accessors, proxies and custom
 array iteration keep the fresh-computation path. Indexed-child eligibility
-applies only to ordinary arrays with the unchanged inherited Array iterator;
+applies only to ordinary arrays with the native inherited Array iterator
+and a verified native own data `next` method on its iterator prototype. The
+methods must also be native when first observed: a custom method installed
+before module import cannot certify sharing. Eligibility rechecks descriptors
+without calling custom accessors or walking proxy ancestors;
 the actual native walk still honors custom traversal. The internal arrays are immutable, the public span helper
 still returns independent mutable values, and a later evaluation gets its own
 span store. These arrays and the compact row facts above follow existing node

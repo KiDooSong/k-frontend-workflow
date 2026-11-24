@@ -11,7 +11,7 @@ import { parseRegisterContract, parseReconciliationItems, validateReconciliation
 import { readCurrentBytes, canonicalJson, hashBytes, normalizeWorkOrigins } from './current-work-request.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { ScopedWorkContractError, workObject, workSet, workPath, workText } from './scoped-work-request.mjs';
-import { createScopedReferenceResolver, scopedRawTable } from './scoped-work-refs.mjs';
+import { createCanonicalScopedReferenceResolver as createScopedReferenceResolver, scopedRawTable } from './scoped-work-refs.mjs';
 import { rememberScopedSelection } from './scoped-work-authored.mjs';
 import { createScopedSourceInputs } from './scoped-work-source-inputs.mjs';
 

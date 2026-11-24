@@ -6,7 +6,7 @@ import { canonicalRepositoryPath, createCanonicalRepositoryPathResolver } from '
 import { splitFrontmatter } from './util.mjs';
 import { col, hasHeader } from './spec.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
-import { parseReconciliationMarkdown, parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
+import { parseReconciliationMarkdown, parseReconciliationReferenceView, sharedReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
 import { parseScopedTargetRef, isScopedRowId, scopedRawTable, scopedRowAlias, scopedRowSite, scopedAddRowSite, scopedCoveredRows } from './scoped-work-refs.mjs';
 import { resolveScopedContractGraph, resolveScopedCandidateGraph, scopedGraphSelectionRefs, scopedGraphMetadataRefs, scopedGraphBodyRefs,
   scopedGraphContexts, scopedGraphSelectionSpans, mergeScopedGraphContexts } from './scoped-work-graph.mjs';
@@ -177,7 +177,9 @@ function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] 
       else {
         const key = `untyped:${artifactId}#${slug}/${id}`;
         untyped.set(key, { artifactId, slug, id });
-        if (!view) { view = parseReconciliationReferenceView(entry.body); readSet.push(indexedFile(projectRoot, entry, canonicalPath)); }
+        // Internal row discovery uses the canonical view so its Tracking index
+        // can be reused across untyped Decisions in this same document.
+        if (!view) { view = sharedReconciliationReferenceView(entry.body); readSet.push(indexedFile(projectRoot, entry, canonicalPath)); }
         const selection = { type: 'row', section: slug, headers, cells };
         // A typed row's node leads to its document's decision_refs; an untyped row starts from them too.
         add({ key, id, artifactId, token: null, roots: [...new Set([...scopedGraphSelectionRefs(entry.body, entry.fm, selection, view),
@@ -186,7 +188,7 @@ function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] 
     }
     // The public target index stays raw. Derive the corrected authored Unknown
     // homes used by uncertainty instead of losing rows beyond GENERATED H2s.
-    for (const { location, authored } of scopedUnknownHomes(entry.body)) {
+    for (const { location, authored } of scopedUnknownHomes(entry.body, sharedReconciliationReferenceView(entry.body))) {
       if (skipped.has(scopeJson([file, location.slug]))) continue;
       const tables = location.tables.map(scopedRawTable).filter((table) =>
         ['ID', 'Question'].every((header) => hasHeader(table.headers, header)));

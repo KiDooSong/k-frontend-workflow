@@ -14,7 +14,7 @@ import { buildEndpointIndex, normEndpoint, isContractUnset, CONTRACT_KINDS,
 import { resolveScopedApplicabilityProjection, createScopedSnapshotApplicabilitySession } from './scoped-work-applicability.mjs';
 import { inspectScopedInputCoverage } from './scoped-work-input-coverage.mjs';
 import { createScopedApiResolver } from './scoped-work-api.mjs';
-import { createScopedReferenceResolver } from './scoped-work-refs.mjs';
+import { createCanonicalScopedReferenceResolver as createScopedReferenceResolver } from './scoped-work-refs.mjs';
 import { resolveScopedSourceRelations } from './scoped-work-source-relations.mjs';
 import { scopedUncertaintyScopes, scopedUncertaintyDenials } from './scoped-work-uncertainty-scopes.mjs';
 import { ScopedWorkContractError, workUnitId } from './scoped-work-request.mjs';
