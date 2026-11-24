@@ -1,5 +1,9 @@
 # Current Roadmap
 
+> 2026-11-24 #355–#357: 선택한 API 후보의 일반 참조를 해당 owner/unit의 Decision 탐색까지 전달한다. 직접 참조 단위와 API 참조 단위만 기본 차단하며, 무관한 단위·미선택 후보는 적용을 넓히지 않고 current binding의 명시 범위는 유지한다.
+> 불완전한 Decision 및 내부 span/복사 H3 검사는 정본 구문을 사용해 공개 작성 뷰의 편집을 보존한다. 명시적 가변 raw의 표 삭제·교체·추가는 파생 목록을 갱신하며, raw가 그대로인 공개 authored 편집과 불변 정본의 색인 재사용은 유지한다.
+> 정본: [Decision scope와 구문 경계](../frontend-workflow-kit/docs/reference/scoped-work.md). 재현: [공개 참조 경계 검사](benchmarks/scoped-reference-boundaries.mjs), [수정·배포본 검증 기록](temp/runs/scoped-reference-boundaries-355-357.md).
+
 > 2026-11-23 #354 리뷰 보완: 미적용 untyped Decision의 내부 참조 검사에도 canonical shared view를 전달해 API Tracking 색인을 문서 내에서 재사용한다. Decision 120행·API 600행의 공개 resolver 재현에서 색인 120→1회, API 순회 72,000→600행과 전체 결과 bytes 일치를 확인했다. 외부 custom raw view의 편집·캐시 격리는 유지한다.
 > 재현: [applicability Tracking benchmark](benchmarks/scoped-applicability-tracking.mjs), [리뷰 보완 검증 기록](temp/runs/scoped-evaluation-boundaries-350-353.md).
 

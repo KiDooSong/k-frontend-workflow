@@ -72,6 +72,15 @@ export function scopedUnitAbsentRegisters(result) {
   return [...(unitAbsenceObservations.get(result) || [])];
 }
 
+// API cell references are already checked while each unit selects its rows.
+// Preserve their unit association for the Decision composer without adding
+// duplicate reference fields to the public/basis projection. Both standalone
+// and snapshot composition retain this original result, never a supplied DTO.
+const unitApiReferences = new WeakMap();
+export function scopedUnitApiOrdinaryRefs(result, owner, unit) {
+  return [...(unitApiReferences.get(result)?.get(unitKey(owner, unit)) || [])];
+}
+
 export function resolveScopedUnitProjection(options = {}) {
   return withScopedProjectionStage('units', () => unitProjection(options));
 }
@@ -86,6 +95,7 @@ function unitProjection({ owner, policyFile, policyOverlayFile, targetIndex, inp
   const owners = new Map();
   const units = new Map();
   const fallbacks = new Map();
+  const apiOrdinaryRefs = new Map();
   const absentRegisters = new Set();
   const links = [];
   const roots = new Set();
@@ -209,15 +219,17 @@ function unitProjection({ owner, policyFile, policyOverlayFile, targetIndex, inp
     const api = apis.unit(data.record.artifact_id, ownerId, declared.id);
     const apiContext = api.candidates.length
       ? createScopedGraphApiRowContextResolver(targetIndex.artifacts.get(api.artifact_id).body) : null;
+    const unitApiRefs = new Set();
     const apiRows = api.candidates.map((candidate) => {
       const context = apiContext(candidate);
       for (const ref of context.refs) roots.add(ref);
       for (const ref of context.trackingRefs) trackingRefs.add(ref);
-      for (const ref of context.ordinaryRefs) ordinaryRefs.add(ref);
+      for (const ref of context.ordinaryRefs) { ordinaryRefs.add(ref); unitApiRefs.add(ref); }
       // Raw ordered cells retain every column, without analyzer line/row indexes.
       return { selection: candidate.selection, headers: candidate.headers, cells: candidate.cells,
         tracking: candidate.tracking?.ref ?? null };
     });
+    if (unitApiRefs.size) apiOrdinaryRefs.set(key, [...unitApiRefs]);
     if (data.parts.kind === 'surface') {
       const members = workSet(data.record.metadata.member_screens, (id) => {
         ownerParts(`screen:${id}`); return id;
@@ -322,6 +334,7 @@ function unitProjection({ owner, policyFile, policyOverlayFile, targetIndex, inp
   const result = { projection, read_set: scopeSet([...files.values()]),
     ...(fallbacks.size ? { target_fallbacks: scopeSet([...fallbacks.values()]) } : {}) };
   if (absentRegisters.size) unitAbsenceObservations.set(result, [...absentRegisters]);
+  if (apiOrdinaryRefs.size) unitApiReferences.set(result, apiOrdinaryRefs);
   return result;
 }
 

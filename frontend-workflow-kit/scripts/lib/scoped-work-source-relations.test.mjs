@@ -15,6 +15,7 @@ import { resolveScopedSourceRelations, resolveScopedSourceProjection } from './s
 import { resolveScopedUnitProjection } from './scoped-work-projection.mjs';
 import { scopeJson } from './scoped-work-normalize.mjs';
 import { hashBytes } from './current-work-request.mjs';
+import { scopedAuthoredView } from './scoped-work-authored.mjs';
 
 const OWNER = 'screen:RESULT-001', INPUT = 'IN-20260922-meeting-001';
 const REF = `input:${INPUT}#extracted-facts/01`;
@@ -462,6 +463,9 @@ test('#282 D source spans: an authored API section overlaps its exact row after 
     table(['ID', 'Question', 'Status'], [['U-LATER', 'Later API contract?', 'open']]));
   const item = effect(); item[5] = row;
   f.register([item]);
+  const body = f.options().targetIndex.artifacts.get('LATER').body;
+  const publicView = scopedAuthoredView(body);
+  publicView.byName.get('api candidates')[0].tables[0].headers[0] = 'Edited';
   const out = f.run();
   assert.deepEqual(out.sources[0]?.selection, select(), 'the only Item connects through section/row span intersection');
   assert.deepEqual(out.sources[0].issues, []);
@@ -470,6 +474,8 @@ test('#282 D source spans: an authored API section overlaps its exact row after 
   assert.deepEqual(out.pending_connections, []);
   assert.ok(out.contracts.nodes.some((node) => node.ref === tracking));
   assert.ok(scope(f).projection.evidence.nodes.some((node) => node.ref === row));
+  assert.equal(scopedAuthoredView(body), publicView, 'source and unit span inspection preserve the public view');
+  assert.equal(publicView.byName.get('api candidates')[0].tables[0].headers[0], 'Edited');
 });
 
 for (const proxyQuestion of [null, 'Authored API contract?', 'Generated proxy contract?']) {

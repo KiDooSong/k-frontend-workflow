@@ -10,12 +10,12 @@ import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { loadOpenDecisionRegister, resolveDecisionRefs, openDecisionRowIsMalformed,
   REQUIRED_OPEN_DECISION_COLUMNS } from './open-decisions.mjs';
 import { parseTargetRef } from './reconciliation-items.mjs';
-import { parseReconciliationMarkdown, parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
+import { parseReconciliationMarkdown, sharedReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
 import { createCanonicalScopedReferenceResolver as createScopedReferenceResolver, scopedRawTable, parseScopedTargetRef, isScopedRowId } from './scoped-work-refs.mjs';
 import { resolveScopedContractGraph, scopedGraphContexts, scopedGraphSelectionSpans,
   copyScopedGraphContexts, mergeScopedGraphContexts } from './scoped-work-graph.mjs';
 import { resolveScopedUnitProjection, scopedProjectionMetadata, scopedProjectionNode,
-  scopedUnitAbsentRegisters } from './scoped-work-projection.mjs';
+  scopedUnitAbsentRegisters, scopedUnitApiOrdinaryRefs } from './scoped-work-projection.mjs';
 import { observeScopedSourceInputReads } from './scoped-work-source-inputs.mjs';
 import { parseDecisionWorkScopes } from './scoped-work-declarations.mjs';
 import { ScopedWorkContractError, workText, workSet, workPath } from './scoped-work-request.mjs';
@@ -148,7 +148,7 @@ function decisionProjection(options, base, dependencyRoots, dependencyContext) {
       if (!same(previous, node)) fail(`inconsistent selected evidence: ${node.ref}`);
       if (node.artifact_id) {
         const entry = document(node.artifact_id);
-        if (!views.has(node.artifact_id)) views.set(node.artifact_id, parseReconciliationReferenceView(entry.body));
+        if (!views.has(node.artifact_id)) views.set(node.artifact_id, sharedReconciliationReferenceView(entry.body));
         const spans = (value) => scopedGraphSelectionSpans(entry.body, views.get(node.artifact_id), value.selection);
         if (!same(spans(previous), spans(node))) fail(`ambiguous selected evidence source: ${node.ref}`);
       }
@@ -287,7 +287,8 @@ function decisionProjection(options, base, dependencyRoots, dependencyContext) {
       seeds.push(...source.anchors.map((anchor) => anchor.ref));
       for (const group of source.groups) for (const effect of group.effects) seeds.push(effect.target, effect.evidence.ref);
     }
-    seeds.push(...unit.api_rows.map((row) => row.tracking).filter(Boolean));
+    seeds.push(...scopedUnitApiOrdinaryRefs(base, unit.owner, unit.declaration.id),
+      ...unit.api_rows.map((row) => row.tracking).filter(Boolean));
     for (const token of union(seeds.filter((token) => base.projection.evidence.nodes.some((node) => node.ref === token)))) enqueue(token, subject);
   }
   for (const link of base.projection.host_links) if (link.mapping) {

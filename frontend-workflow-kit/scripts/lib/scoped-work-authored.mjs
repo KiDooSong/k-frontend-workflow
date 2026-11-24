@@ -2,6 +2,7 @@
 // tree and byte ranges: GENERATED headings do not end an authored section, and
 // GENERATED tables cannot supply API/Unknown authoring evidence. The raw parser
 // and its ordinary fully qualified reference contract remain unchanged.
+import { types } from 'node:util';
 import { parseReconciliationReferenceView, reconciliationHeadingText, slugifySectionTitle,
   reconciliationTreeNodeCount, sharedReconciliationReferenceView, isSharedReconciliationReferenceView,
   withReconciliationSyntax } from './reconciliation-markdown-ast.mjs';
@@ -13,7 +14,77 @@ import { createSyntaxCache } from './syntax-cache.mjs';
 // This cache also owns the raw tree through the authored view, so it must obey
 // the same structural budgets even after the parser has evicted that tree.
 const views = createSyntaxCache();
-const viewSections = new WeakMap();
+// Mutable raw views can replace table membership without replacing their
+// sections array. Remember only the inputs copied into an authored home, not
+// its caller-editable derived arrays. Table objects remain shared: edits inside
+// one already flow through both views without invalidating public authored edits.
+const viewRawStructure = new WeakMap();
+const absent = Symbol('non-data-field');
+const data = (value, key) => {
+  const descriptor = Object.getOwnPropertyDescriptor(value, key);
+  return descriptor && Object.hasOwn(descriptor, 'value') ? descriptor.value : absent;
+};
+const plain = (value) => value !== null && typeof value === 'object' && !types.isProxy(value) &&
+  [Object.prototype, null].includes(Object.getPrototypeOf(value));
+// Indexed snapshots certify only ordinary traversal. Never run a caller's
+// iterator/getter to probe eligibility; its actual authored build still runs it.
+// As with graph spans, a changed/inherited iterator.next also forbids reuse.
+const functionSource = Function.prototype.toString;
+const nativeMethod = (value, name) => typeof value === 'function' && !types.isProxy(value) &&
+  Reflect.apply(functionSource, value, []) === `function ${name}() { [native code] }`;
+const arrayValues = data(Array.prototype, 'values'), arrayForEach = data(Array.prototype, 'forEach');
+const iteratorPrototype = (() => {
+  if (!nativeMethod(arrayValues, 'values')) return null;
+  try { return Object.getPrototypeOf(Reflect.apply(arrayValues, [], [])); }
+  catch { return null; }
+})();
+let iteratorNext = null;
+function ordinaryTraversal() {
+  if (!iteratorPrototype || data(Array.prototype, Symbol.iterator) !== arrayValues ||
+      !nativeMethod(arrayForEach, 'forEach') || data(Array.prototype, 'forEach') !== arrayForEach) return false;
+  const next = data(iteratorPrototype, 'next');
+  if (iteratorNext === null && nativeMethod(next, 'next')) iteratorNext = next;
+  return iteratorNext !== null && next === iteratorNext;
+}
+const ordinaryArray = (value) => Array.isArray(value) && !types.isProxy(value) &&
+  Object.getPrototypeOf(value) === Array.prototype && !Object.hasOwn(value, Symbol.iterator) && !Object.hasOwn(value, 'forEach');
+function copySequence(values) {
+  if (!ordinaryArray(values)) return null;
+  const copy = [];
+  for (let index = 0; index < values.length; index += 1) {
+    const value = data(values, index);
+    if (value === absent) return null;
+    copy.push(value);
+  }
+  return copy;
+}
+function rawStructure(raw) {
+  if (!plain(raw) || !ordinaryTraversal()) return null;
+  const tree = data(raw, 'tree'), sections = data(raw, 'sections');
+  if (tree === absent || !ordinaryArray(sections)) return null;
+  const entries = [];
+  for (let index = 0; index < sections.length; index += 1) {
+    const section = data(sections, index);
+    if (!plain(section)) return null;
+    const title = data(section, 'title'), slug = data(section, 'slug');
+    const tableNodes = copySequence(data(section, 'tableNodes')), tables = copySequence(data(section, 'tables'));
+    if (title === absent || slug === absent || !tableNodes || !tables) return null;
+    entries.push({ section, title, slug, tableNodes, tables });
+  }
+  return { tree, sections, entries };
+}
+const sameSequence = (left, right) => left.length === right.length && left.every((value, index) => value === right[index]);
+function rawStructureMatches(view, raw) {
+  const prior = viewRawStructure.get(view);
+  if (!prior) return false;
+  const current = rawStructure(raw);
+  return current !== null && prior.tree === current.tree && prior.sections === current.sections &&
+    prior.entries.length === current.entries.length && prior.entries.every((saved, index) => {
+    const section = current.entries[index];
+    return saved.section === section.section && saved.title === section.title && saved.slug === section.slug &&
+      sameSequence(saved.tableNodes, section.tableNodes) && sameSequence(saved.tables, section.tables);
+  });
+}
 // Public authored views remain mutable and may be prewarmed by callers. Keep
 // canonical interpretation beside the immutable raw tree, never in that cache.
 // Weak keys give this derived view no lifetime beyond existing tree owners.
@@ -76,7 +147,7 @@ function authoredView(body, raw) {
   const canonical = raw === null || isSharedReconciliationReferenceView(body, raw);
   // The raw parser has its own bounded cache. If its tree was evicted and
   // reparsed, rebuild our node/cell index against that exact current tree.
-  if (cached && (!raw || (cached.tree === raw.tree && (canonical || viewSections.get(cached) === raw.sections)))) return cached;
+  if (cached && (!raw || (canonical ? cached.tree === raw.tree : rawStructureMatches(cached, raw)))) return cached;
   raw ??= parseReconciliationReferenceView(body);
   const view = buildAuthoredView(body, raw, canonical);
   views.set(body, view, { nodes: reconciliationTreeNodeCount(raw.tree) });
@@ -171,7 +242,8 @@ function buildAuthoredView(body, raw, canonical) {
       : slugs.flatMap((slug) => bySlug.get(slug)).sort((a, b) => a.start - b.start));
   }
   const view = { tree: raw.tree, sections, tableSections, byName };
-  viewSections.set(view, raw.sections);
+  // Immutable internal views never take this scan or mutable-input snapshot.
+  if (!canonical) viewRawStructure.set(view, rawStructure(raw));
   if (canonical) {
     const authoredTables = new Set((byName.get('unknowns') || []).flatMap((home) => home.tableNodes.filter((_, index) =>
       ['ID', 'Question'].every((header) => hasHeader(home.tables[index].headers, header)))));
@@ -306,10 +378,10 @@ export function scopedSelectionUnknownAuthored(body, selection, raw = null) {
 export function scopedSelectionRowSpans(selection, { body = null, subsectionOnly = false } = {}) {
   let context = selections.get(selection);
   if (!context && body !== null && subsectionOnly && selection?.type === 'section') {
-    const raw = parseReconciliationReferenceView(body);
+    const raw = sharedReconciliationReferenceView(body);
     // A copied H2 keeps its existing coverage contract, even beside an H3.
     if (raw.sections.some((section) => section.slug === selection.section)) return null;
-    const homes = scopedAuthoredSubsections(body, selection.section, raw);
+    const homes = sharedScopedAuthoredSubsections(body, selection.section, raw);
     if (homes.length !== 1 || selection.content !== homes[0].text.replace(/\r\n|\r/g, '\n')) {
       throw new ScopedWorkContractError('SW-REF-SNAPSHOT: subsection differs from its native source');
     }
