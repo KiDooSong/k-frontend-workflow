@@ -15,7 +15,8 @@ import { createCanonicalScopedReferenceResolver as createScopedReferenceResolver
 import { resolveScopedContractGraph, scopedGraphContexts, scopedGraphSelectionSpans,
   copyScopedGraphContexts, mergeScopedGraphContexts } from './scoped-work-graph.mjs';
 import { resolveScopedUnitProjection, scopedProjectionMetadata, scopedProjectionNode,
-  scopedUnitAbsentRegisters, scopedUnitApiOrdinaryRefs } from './scoped-work-projection.mjs';
+  scopedUnitAbsentRegisters } from './scoped-work-projection.mjs';
+import { scopedUnitEvidenceSeeds } from './scoped-work-unit-seeds.mjs';
 import { observeScopedSourceInputReads } from './scoped-work-source-inputs.mjs';
 import { parseDecisionWorkScopes } from './scoped-work-declarations.mjs';
 import { ScopedWorkContractError, workText, workSet, workPath } from './scoped-work-request.mjs';
@@ -282,13 +283,7 @@ function decisionProjection(options, base, dependencyRoots, dependencyContext) {
   // every unit merely because the evidence graphs share a document/row ID.
   for (const unit of base.projection.units) {
     const subject = { owner: unit.owner, unit: unit.declaration.id };
-    const seeds = [...unit.declaration.contracts, ...(unit.declaration.isolation?.decisions || [])];
-    for (const source of unit.sources) {
-      seeds.push(...source.anchors.map((anchor) => anchor.ref));
-      for (const group of source.groups) for (const effect of group.effects) seeds.push(effect.target, effect.evidence.ref);
-    }
-    seeds.push(...scopedUnitApiOrdinaryRefs(base, unit.owner, unit.declaration.id),
-      ...unit.api_rows.map((row) => row.tracking).filter(Boolean));
+    const seeds = scopedUnitEvidenceSeeds(unit);
     for (const token of union(seeds.filter((token) => base.projection.evidence.nodes.some((node) => node.ref === token)))) enqueue(token, subject);
   }
   for (const link of base.projection.host_links) if (link.mapping) {

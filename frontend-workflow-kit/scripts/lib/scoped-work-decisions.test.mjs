@@ -9,7 +9,7 @@ import { buildReconciliationTargetIndex } from './reconciliation-target-index.mj
 import { resolveScopedDecisionProjection } from './scoped-work-decisions.mjs';
 import { resolveScopedApplicabilityProjection, resolveScopedSnapshotApplicabilityProjection } from './scoped-work-applicability.mjs';
 import { inspectScopedDecisionScopes, inspectScopedSnapshotDecisionScopes } from './scoped-work-decision-scopes.mjs';
-import { resolveScopedBindingBasis } from './scoped-work-basis.mjs';
+import { resolveScopedBindingBasis, scopedBindingBasis } from './scoped-work-basis.mjs';
 
 const OWNER = 'screen:RESULT-001';
 const layout = loadLayoutProfile({ kitRoot: KIT_ROOT });
@@ -112,7 +112,7 @@ function apiDecisionFixture(t, indirect = false) {
       f.change('decision.md', ({ fm }) => { fm.decision_work_scopes.bindings[0].basis_digest = basis_digest; });
     }
   };
-  return { options, bind };
+  return { options, bind, change: f.change, global: f.global };
 }
 const expectedApiDecisionApplications = () => ['api', 'explicit'].map((unit) => ({
   owner: OWNER, unit, decision: API_DECISION, referrer: API_DECISION, relation: 'selected-evidence',
@@ -153,6 +153,117 @@ test('#355 current Decision bindings still select their declared scope after API
     assert.equal(inspection.approval_verified, false);
     assert.equal(inspection.permission_evaluated, false);
     assert.deepEqual(inspectScopedSnapshotDecisionScopes(options), inspection);
+  }
+});
+
+const API_GLOBAL_DECISION = 'decision:D-GLOBAL@open-decision-register';
+const apiScope = (decision = API_DECISION) => ({ decision, owner: OWNER,
+  known_units: ['api', 'control', 'explicit'], blocks: ['explicit'] });
+const apiUnitChecks = (blocks) => ['api', 'control', 'explicit'].map((unit) =>
+  ({ unit, decisions_clear: !blocks.includes(unit) }));
+const applicationUnits = (applications, decision) => [...new Set(applications.filter((entry) =>
+  entry.decision === decision && entry.owner === OWNER).map((entry) => entry.unit))].sort();
+
+function apiMetadataDecisionFixture(t) {
+  const f = apiDecisionFixture(t);
+  f.change('screen.md', (doc) => {
+    doc.fm.work_execution.units[0].contracts = [API_GLOBAL_DECISION];
+    doc.body = doc.body.replace(`See \`${API_DECISION}\``, 'See `artifact:RULES#rules`')
+      .replace('See artifact:RULES#other', 'No dependency.');
+  });
+  f.change('rules.md', ({ fm }) => {
+    Object.assign(fm, { artifact_type: 'screen-spec', screen_id: 'OTHER-002', domain: 'foreign',
+      screen_entry: 'src/features/foreign/screens/OTHER-002.tsx' });
+  });
+  f.global([row('D-GLOBAL')]);
+  const bind = (basis_digest) => f.change('global/open-decisions.md', ({ fm }) => {
+    fm.decision_work_scopes = { version: 1, bindings: [{ decision_id: 'D-GLOBAL', owner: OWNER,
+      known_units: ['api', 'control', 'explicit'], blocks: ['explicit'], basis_digest,
+      approval_ref: 'review:fixture-only-unverified' }] };
+  });
+  bind(`sha256:${'0'.repeat(64)}`);
+  return { ...f, bind };
+}
+
+const apiInspectionModes = [
+  ['standalone', resolveScopedApplicabilityProjection, inspectScopedDecisionScopes],
+  ['snapshot', resolveScopedSnapshotApplicabilityProjection, inspectScopedSnapshotDecisionScopes],
+];
+for (const [mode, project, inspect] of apiInspectionModes) {
+  test(`#358 API metadata Decision applications change the recorded basis and stale scope (${mode})`, (t) => {
+    const f = apiMetadataDecisionFixture(t);
+    const before = resolveScopedBindingBasis({ ...f.options(), decisionRef: API_GLOBAL_DECISION });
+    f.bind(before.basis_digest);
+    const current = inspect(f.options());
+    assert.equal(current.checks[0].binding_state, 'current-unverified');
+    assert.deepEqual(current.blocking_units, ['explicit']);
+    assert.deepEqual(current.unit_checks, apiUnitChecks(['explicit']));
+    const rules = f.options().targetIndex.artifacts.get('RULES'), originalBody = rules.body;
+    // Only this external screen's metadata changes after recording a real digest.
+    // Keep the complete body bytes; the general fixture writer adds a separator.
+    const original = fs.readFileSync(rules.file, 'utf8'), prefix = `---\n${JSON.stringify(rules.fm)}\n---`;
+    assert.ok(original.startsWith(prefix));
+    fs.writeFileSync(rules.file, `---\n${JSON.stringify({ ...rules.fm, decision_refs: ['D-GLOBAL'] })}\n---${original.slice(prefix.length)}`);
+    const options = f.options(), out = project(options);
+    assert.equal(options.targetIndex.artifacts.get('RULES').body, originalBody);
+    const after = resolveScopedBindingBasis({ ...options, decisionRef: API_GLOBAL_DECISION });
+    const projected = scopedBindingBasis(out.projection, apiScope(API_GLOBAL_DECISION));
+    const stale = inspect(options);
+    assert.deepEqual({
+      applications: applicationUnits(relation(out).applications, API_GLOBAL_DECISION),
+      basisApplications: applicationUnits(after.basis.decision_relations.applications, API_GLOBAL_DECISION),
+      digestChanged: after.basis_digest !== before.basis_digest,
+      bindingState: stale.checks[0].binding_state, blockingUnits: stale.blocking_units,
+      unitChecks: stale.unit_checks,
+    }, { applications: ['api', 'explicit'], basisApplications: ['api', 'explicit'], digestChanged: true,
+      bindingState: 'stale-basis', blockingUnits: ['api', 'explicit'], unitChecks: apiUnitChecks(['api', 'explicit']) });
+    assert.deepEqual(projected.basis, after.basis, 'snapshot and standalone basis retain the same per-unit relation context');
+    assert.equal(projected.basis_digest, after.basis_digest);
+    assert.equal(stale.checks[0].computed_basis_digest, after.basis_digest);
+    assert.equal(stale.checks[0].scope_source, 'conservative-default');
+    assert.deepEqual(stale.checks[0].applications, relation(out).applications);
+    f.bind(after.basis_digest);
+    const refreshed = inspect(f.options());
+    assert.equal(refreshed.checks[0].binding_state, 'current-unverified');
+    assert.equal(refreshed.checks[0].scope_source, 'current-canonical-declaration');
+    assert.deepEqual(refreshed.blocking_units, ['explicit']);
+    assert.deepEqual(refreshed.unit_checks, apiUnitChecks(['explicit']));
+  });
+
+  test(`#358 pre-355 canonical API binding becomes stale on upgrade (${mode})`, (t) => {
+    const f = apiDecisionFixture(t); f.bind(['explicit'], false);
+    // Computed by the actual 8a66aa66c21d987202f27443ad10b2458cb5d992 payload,
+    // using exactly apiDecisionFixture(t, false) and blocks: ['explicit'].
+    // That runtime included only the explicit unit's application in this basis.
+    // This is a recorded historical value, never recomputed by the tested runtime.
+    const legacyDigest = 'sha256:d970ee6073cea81fb17baf0df221dadd774de74f22d973bd86a9963ef33df19b';
+    f.change('decision.md', ({ fm }) => { fm.decision_work_scopes.bindings[0].basis_digest = legacyDigest; });
+    const options = f.options(), out = project(options), inspection = inspect(options);
+    const current = resolveScopedBindingBasis({ ...options, decisionRef: API_DECISION });
+    assert.equal(current.recorded_binding.basis_digest, legacyDigest);
+    assert.equal(current.component_digests.units, 'sha256:637f448e1db3922b7c3ba34a715555e22caa063e2b914480acc1fead3bee315c',
+      'unit facts must match the historical fixture; restored API relations must cause the stale digest');
+    assert.deepEqual({ applications: relation(out).applications,
+      basisApplications: current.basis.decision_relations.applications,
+      digestChanged: current.basis_digest !== legacyDigest,
+      bindingState: inspection.checks[0].binding_state, blockingUnits: inspection.blocking_units,
+      unitChecks: inspection.unit_checks,
+    }, { applications: expectedApiDecisionApplications(), basisApplications: expectedApiDecisionApplications(),
+      digestChanged: true, bindingState: 'stale-basis', blockingUnits: ['api', 'explicit'],
+      unitChecks: apiUnitChecks(['api', 'explicit']) });
+    assert.equal(inspection.checks[0].scope_source, 'conservative-default');
+    assert.equal(inspection.checks[0].computed_basis_digest, current.basis_digest);
+    assert.deepEqual(scopedBindingBasis(out.projection, apiScope()).basis, current.basis);
+  });
+}
+
+test('#358 API unit provenance survives shallow projections and rejects detached JSON copies', (t) => {
+  const f = apiDecisionFixture(t); f.bind(['explicit'], false);
+  const { projection } = resolveScopedApplicabilityProjection(f.options());
+  const expected = scopedBindingBasis(projection, apiScope());
+  assert.deepEqual(scopedBindingBasis({ ...projection }, apiScope()), expected);
+  for (const detached of [structuredClone(projection), JSON.parse(JSON.stringify(projection))]) {
+    assert.throws(() => scopedBindingBasis(detached, apiScope()), /API rows.*resolved unit context/);
   }
 });
 

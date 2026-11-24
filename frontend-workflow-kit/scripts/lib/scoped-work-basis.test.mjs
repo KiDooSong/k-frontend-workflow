@@ -12,7 +12,8 @@ import { REQUIRED_REGISTER_COLS } from './reconciliation-register.mjs';
 import { COMPONENT_MAPPING_COLUMNS, MAPPING_PROVENANCE_COLUMNS } from './mapping-provenance.mjs';
 import { scopeJson } from './scoped-work-normalize.mjs';
 import { resolveScopedBindingBasis, scopedBindingBasis, scopedClosureStats } from './scoped-work-basis.mjs';
-import { resolveScopedApplicabilityProjection, scopedUnappliedSearchStats } from './scoped-work-applicability.mjs';
+import { resolveScopedApplicabilityProjection, resolveScopedSnapshotApplicabilityProjection,
+  scopedUnappliedSearchStats } from './scoped-work-applicability.mjs';
 import { resolveScopedUncertaintyBindingBasis } from './scoped-work-uncertainty-scopes.mjs';
 import { inspectScopedDecisionBindings } from './scoped-work-bindings.mjs';
 
@@ -1173,6 +1174,67 @@ test('D basis API references: canonical deferred Unknown Tracking and extra row 
   assert.ok(scopeJson(before.basis).includes('unknown:U-LATER@SCREEN-RESULT-001'));
   f.change('rules2.md', (doc) => { doc.body = doc.body.replace('Referenced API evidence.', 'Changed deferred evidence.'); });
   assert.notEqual(f.run().basis_digest, before.basis_digest);
+});
+
+test('#355 API ordinary references retain unit-specific inverse Unknown witnesses in projection and basis', (t) => {
+  const f = fixture(t), api = withApi(f), uncertaintyRef = 'unknown:U-API@API-UNKNOWN';
+  api.rows[0][6] = 'artifact:RULES#rules';
+  f.change('screen.md', (doc) => {
+    doc.fm.work_execution.units[0].contracts = ['artifact:RULES#other'];
+    doc.body = api.body(api.rows);
+  });
+  f.write('api-unknown.md', { artifact_id: 'API-UNKNOWN', artifact_type: 'domain-rules', domain: 'foreign', status: 'draft',
+    uncertainty_work_scopes: { version: 1, bindings: [{ unknown_id: 'U-API', owner: OWNER,
+      known_units: ['known', 'other'], blocks: ['known'], basis_digest: `sha256:${'0'.repeat(64)}`,
+      approval_ref: 'review:synthetic-unverified' }] } },
+  `## Unknowns\n${table(['ID', 'Question', 'Status'], [['U-API', 'Is artifact:RULES#rules settled?', 'open']])}`);
+  const expected = [{ owner: OWNER, unit: 'known', uncertainty: uncertaintyRef, relation: 'inverse-evidence',
+    witnesses: [{ dependency: 'artifact:RULES#rules', selected: 'artifact:RULES#rules' }] }];
+  const options = f.options(), standalone = resolveScopedApplicabilityProjection(options);
+  assert.deepEqual(standalone.projection.uncertainty_relations.applications, expected,
+    'the selected API row reaches the Unknown; a unit selecting another section does not');
+  const snapshot = resolveScopedSnapshotApplicabilityProjection(options);
+  assert.deepEqual(snapshot, standalone);
+  const before = resolveScopedUncertaintyBindingBasis({ ...options, uncertaintyRef });
+  assert.deepEqual(before.basis.uncertainty_relations.applications, expected);
+  assert.deepEqual(scopedBindingBasis(snapshot.projection, before.basis.binding), {
+    basis: before.basis, basis_digest: before.basis_digest, component_digests: before.component_digests,
+  }, 'snapshot composition carries the same API-to-unit seed into the basis closure');
+  f.change('api-unknown.md', (doc) => { doc.body = doc.body.replace('Is artifact:', 'Reconsider artifact:'); });
+  const after = resolveScopedUncertaintyBindingBasis({ ...f.options(), uncertaintyRef });
+  assert.deepEqual(after.basis.uncertainty_relations.applications, expected);
+  assert.notEqual(after.basis_digest, before.basis_digest, 'the API-selected Unknown remains scope evidence');
+});
+
+test('#358 basis: an API-selected section keeps its Decision application without widening an unrelated row route', (t) => {
+  const f = fixture(t), api = withApi(f), decisionRef = 'decision:D-TWO@open-decision-register';
+  const selected = 'artifact:SCREEN-RESULT-002#rules', unselected = 'artifact:SCREEN-RESULT-002#untouched';
+  f.write('second.md', { artifact_id: 'SCREEN-RESULT-002', artifact_type: 'screen-spec', screen_id: 'RESULT-002',
+    domain: 'result', status: 'draft', screen_entry: `${ROOT}/screens/RESULT-002.tsx`, decision_refs: ['D-TWO'] },
+  '## Rules\nSelected API contract.\n\n## Untouched\nUnselected sibling.');
+  api.rows[0][6] = selected; api.rows[1][6] = unselected;
+  f.change('screen.md', (doc) => { doc.body = api.body(api.rows); });
+  f.change('global/open-decisions.md', (doc) => {
+    doc.body = decisions([decisionRow(), decisionRow('D-UNUSED', 'Unrelated decision.'), decisionRow('D-TWO', 'API choice.')]);
+  });
+  f.bind(binding({ decision_id: 'D-TWO' }));
+  const run = () => f.run(OWNER, decisionRef), before = run();
+  const expected = [
+    { owner: OWNER, unit: 'known', decision: decisionRef, referrer: selected, relation: 'evidence-decision-ref' },
+    { owner: OWNER, unit: 'known', decision: decisionRef, referrer: decisionRef, relation: 'selected-evidence' },
+  ];
+  assert.deepEqual(before.basis.decision_relations.applications, expected);
+  f.change('screen.md', (doc) => { doc.body += `\n\n${decisions([decisionRow('D-LOCAL', `Choose after \`${unselected}\`.`)])}`; });
+  const projection = resolveScopedApplicabilityProjection(f.options(OWNER, decisionRef)).projection;
+  assert.ok(projection.decision_relations.applications.some((entry) =>
+    entry.decision === decisionRef && entry.referrer === unselected), 'the Decision pass has the unrelated route to prune');
+  const after = run();
+  assert.deepEqual(after.basis.decision_relations.applications, expected);
+  assert.equal(after.basis_digest, before.basis_digest, 'sharing a ScreenSpec does not keep the unrelated local row route');
+  f.change('second.md', (doc) => { doc.body = doc.body.replace('Unselected sibling.', 'Unselected sibling, revised.'); });
+  const edited = run();
+  assert.equal(edited.basis_digest, before.basis_digest, 'a sibling reached only by the unrelated row or unselected API row stays out');
+  assert.notDeepEqual(edited.read_set, before.read_set);
 });
 
 // A recorded digest in these fixtures stands in for a reviewed scope; it is not an approval.

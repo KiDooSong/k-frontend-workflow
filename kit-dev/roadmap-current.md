@@ -1,5 +1,9 @@
 # Current Roadmap
 
+> 2026-11-24 #358 리뷰 보완: API 일반 참조의 owner/unit 소속을 정규화된 unit에 연결하고 Decision·uncertainty·binding closure가 같은 시작점을 사용한다. `decision_refs`만 추가한 경우와 실제 `8a66aa6` 바인딩 업그레이드에서 이전 digest는 stale이 되고 관련 두 단위만 차단하며, 갱신한 current 바인딩은 명시 범위를 유지한다.
+> API로만 도달한 Unknown witness도 basis에 포함하며, 같은 문서의 무관한 행·미선택 API 경로는 제외한다. API 문맥을 잃은 중간 DTO는 불완전한 basis 대신 명시 오류를 낸다.
+> 재현: [API Decision basis 검사](benchmarks/scoped-api-decision-basis.mjs), [리뷰 보완 검증 기록](temp/runs/scoped-api-decision-basis-358.md).
+
 > 2026-11-24 #355–#357: 선택한 API 후보의 일반 참조를 해당 owner/unit의 Decision 탐색까지 전달한다. 직접 참조 단위와 API 참조 단위만 기본 차단하며, 무관한 단위·미선택 후보는 적용을 넓히지 않고 current binding의 명시 범위는 유지한다.
 > 불완전한 Decision 및 내부 span/복사 H3 검사는 정본 구문을 사용해 공개 작성 뷰의 편집을 보존한다. 명시적 가변 raw의 표 삭제·교체·추가는 파생 목록을 갱신하며, raw가 그대로인 공개 authored 편집과 불변 정본의 색인 재사용은 유지한다.
 > 정본: [Decision scope와 구문 경계](../frontend-workflow-kit/docs/reference/scoped-work.md). 재현: [공개 참조 경계 검사](benchmarks/scoped-reference-boundaries.mjs), [수정·배포본 검증 기록](temp/runs/scoped-reference-boundaries-355-357.md).

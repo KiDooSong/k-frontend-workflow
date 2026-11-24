@@ -5,6 +5,10 @@
 > [scoped-work.md](../../../frontend-workflow-kit/docs/reference/scoped-work.md)다.
 > 합성 문서와 실제 public API/배포 runtime을 사용했으며 consumer 원문은 포함하지 않는다.
 
+> **후속 리뷰 보완:** 이 최초 기록의 `f6c4fb0` 검증은 API Decision application이
+> binding basis에서 다시 누락되는 경로를 잡지 못했다. 이전 좁은 바인딩이 계속 current로
+> 남는 결함과 공통 unit seed 수정은 [#358 basis 검증 기록](scoped-api-decision-basis-358.md)에 기록한다.
+
 ## 범위와 기준
 
 기준은 PR #354가 머지된 `8a66aa66c21d987202f27443ad10b2458cb5d992`이다.

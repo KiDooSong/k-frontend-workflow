@@ -169,7 +169,17 @@ ceilings, deny paths, roots, units, bindings) before relying on it.
 ## Binding basis and status
 
 A binding's `basis_digest` is the sha256 of its scope basis, which the tool
-computes from the documents (`basis_version: 2`, #275). The basis holds:
+computes from the documents (`basis_version: 2`, #275).
+Decision applicability, Unknown/Conflict witness selection and binding-closure
+pruning use the same unit evidence seeds: contracts, isolation, source anchors
+and effects, selected API ordinary references and Tracking. The API references
+keep their original owner/unit association through standalone and snapshot
+composition. A newly reached Decision application within the bound row's
+relation closure changes the basis even when the only document edit is a
+referenced ScreenSpec's `decision_refs` list.
+Relations reached only through an unrelated row remain outside that closure.
+
+The basis holds:
 
 - the binding itself: the row, `owner`, `known_units` and `blocks` (not
   `basis_digest` or `approval_ref`);
@@ -398,6 +408,11 @@ each create one lazy resolver for their candidate batch and exact owner body.
 That resolver holds its view through the batch even if the body exceeds a cache
 budget; no candidates means no parse. Independently calling the scalar helper
 does not extend an oversized view's lifetime across calls.
+Resolved API reference context is attached to each normalized unit without a
+new serialized projection or basis field. The low-level `scopedBindingBasis`
+helper requires that live context for API-bearing units: a deep copy or JSON
+round trip that loses it is rejected instead of hashing a smaller closure.
+File-backed basis resolvers and inspectors prepare the context themselves.
 Public mutable authored views and explicitly
 supplied raw interpretations retain their own behavior. Canonical Unknown row
 classification also derives from private syntax, so editing a public header

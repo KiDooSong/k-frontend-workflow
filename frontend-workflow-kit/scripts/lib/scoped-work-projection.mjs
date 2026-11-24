@@ -17,6 +17,7 @@ import { createScopedApiResolver } from './scoped-work-api.mjs';
 import { resolveScopedMappingEvidence } from './scoped-work-mapping.mjs';
 import { resolveScopedContractGraph, createScopedGraphApiRowContextResolver, scopedGraphContexts, copyScopedGraphContexts } from './scoped-work-graph.mjs';
 import { copyScopedSelectionContext, copyScopedNodeContexts } from './scoped-work-authored.mjs';
+import { rememberScopedUnitApiOrdinaryRefs } from './scoped-work-unit-seeds.mjs';
 import { ScopedWorkContractError, workText, workSet } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet, scopeLf } from './scoped-work-normalize.mjs';
 import { WorkConfigError, parsePolicyOverlay } from './work-config.mjs';
@@ -70,15 +71,6 @@ const unitKey = (owner, id) => scopeJson([owner, id]);
 const unitAbsenceObservations = new WeakMap();
 export function scopedUnitAbsentRegisters(result) {
   return [...(unitAbsenceObservations.get(result) || [])];
-}
-
-// API cell references are already checked while each unit selects its rows.
-// Preserve their unit association for the Decision composer without adding
-// duplicate reference fields to the public/basis projection. Both standalone
-// and snapshot composition retain this original result, never a supplied DTO.
-const unitApiReferences = new WeakMap();
-export function scopedUnitApiOrdinaryRefs(result, owner, unit) {
-  return [...(unitApiReferences.get(result)?.get(unitKey(owner, unit)) || [])];
 }
 
 export function resolveScopedUnitProjection(options = {}) {
@@ -322,7 +314,9 @@ function unitProjection({ owner, policyFile, policyOverlayFile, targetIndex, inp
         private_paths: Object.fromEntries(Object.entries(data.declaration.private_paths).map(([role, paths]) => [role, scopeSet(paths)])),
         test_paths: scopeSet(data.declaration.test_paths),
       } : null }))),
-    units: scopeSet([...units.values()]), host_links: scopeSet(links), inputs: scopeSet(inputProjection),
+    units: scopeSet([...units.values()]).map((unit) => rememberScopedUnitApiOrdinaryRefs(unit,
+      apiOrdinaryRefs.get(unitKey(unit.owner, unit.declaration.id)) || [])),
+    host_links: scopeSet(links), inputs: scopeSet(inputProjection),
     evidence: copyScopedGraphContexts(graph,
       { roots: graph.roots, nodes: copyScopedNodeContexts(graph.nodes, scopeSet(graph.nodes.map(node))), edges: graph.edges }) };
   for (const entry of [...files.values()]) {
@@ -334,7 +328,6 @@ function unitProjection({ owner, policyFile, policyOverlayFile, targetIndex, inp
   const result = { projection, read_set: scopeSet([...files.values()]),
     ...(fallbacks.size ? { target_fallbacks: scopeSet([...fallbacks.values()]) } : {}) };
   if (absentRegisters.size) unitAbsenceObservations.set(result, [...absentRegisters]);
-  if (apiOrdinaryRefs.size) unitApiReferences.set(result, apiOrdinaryRefs);
   return result;
 }
 
