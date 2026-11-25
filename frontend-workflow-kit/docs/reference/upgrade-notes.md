@@ -17,6 +17,58 @@ or root config.
 
 ---
 
+## API relation changes within basis v2
+
+The selected API reference corrections in [PR #358](https://github.com/KiDooSong/k-frontend-workflow/pull/358)
+keep `basis_version: 2`. An existing binding can still become stale when an
+adopted owner's selected API candidate reaches a Decision or an Unknown/Conflict
+witness through ordinary references, and the previous payload omitted that
+owner/unit relation from the bound row's closure. This includes a Note cell's
+direct reference and dependencies reached through another document. The
+binding declaration and unit facts can remain unchanged while the corrected
+relation changes its computed digest.
+
+For an open Decision, a stale binding uses the conservative scope of its
+canonical applications. For example, a previous binding may have blocked only
+`explicit`; restoring a selected API reference can make both `api` and `explicit`
+block until the binding is reviewed again. A current binding still uses the
+reviewed declaration's explicit `blocks`.
+
+**Manual action — adopted owners with affected bindings:**
+
+1. Review the managed upgrade plan's **Consumer migrations**, apply the selected
+   payload, and commit the reviewed repository state before inspecting bindings.
+   The planner includes this note but its file-hash classifications do not
+   evaluate consumer bindings.
+2. From the consumer project root, check each affected owner against committed
+   `HEAD`. Replace the example owner with the adopted owner being reviewed:
+
+   ```bash
+   npm run -s workflow:binding-status -- --owner screen:COUPON-001 --json
+   ```
+
+   If the consumer has not registered this command, use the
+   [binding-status command entry](../../COMMANDS.md#scoped-work-d) and
+   [package-scripts.template.json](../../package-scripts.template.json). See
+   [binding basis and status](scoped-work.md#binding-basis-and-status)
+   for the report contract.
+3. For `state: "stale"` with `stale_reason: "basis"` (the library's
+   `stale-basis`), compare `recorded.basis_digest`, `computed_basis_digest` and
+   `components`. Inspect `applications` and their `referrer` or `witnesses`, then
+   check the selected API row and referenced documents to distinguish restored
+   applicability from other input changes. The recorded `blocks` alone does
+   not describe a stale binding's effective scope.
+4. Once the cause and intended scope have been reviewed, follow
+   [Reviewing and recording a binding](scoped-work.md#reviewing-and-recording-a-binding)
+   for the existing human review, fresh approval evidence and digest-recording
+   procedure. Commit that reviewed change and run the status command again.
+
+Review affected bindings individually. Bindings whose unit facts and bound-row
+relations are unchanged need no blanket refresh. Managed apply and
+`workflow:binding-status` do not approve or rebind them automatically.
+
+---
+
 ## Scoped owner memory diagnostics and syntax retention (#331)
 
 The Markdown AST, authored-view and uncertainty document caches now limit native
@@ -315,15 +367,16 @@ include these incoming migration notes in its plan.
   [binding basis and status](scoped-work.md#binding-basis-and-status).
 - Every digest recorded under version 1 reads stale after the upgrade, so each
   bound open row blocks again as it does without a binding until a person records
-  it once more: an open Decision blocks every unit of its owner, an open Unknown
-  or Conflict the units its relations reach (`blocking_units`).
+  it once more. The default scope follows the row's canonical applications; see
+  the current [Decision, Unknown and Conflict scope rules](scoped-work.md#adoption-is-an-explicit-human-checkpoint).
 - New read-only command `workflow:binding-status`: each binding's state
   (`current`, `stale`, `missing`, `unresolved`), the recorded binding, and the
   computed digest and component digests, on the committed `HEAD`. Add it to your
   `package.json` scripts from `package-scripts.template.json`.
 - Manual action (only for adopted owners with bindings): run
-  `npm run workflow:binding-status`, review each `stale` binding's scope, record
-  the computed digest with a new `approval_ref` for that review, and commit.
+  `npm run workflow:binding-status`, then follow
+  [Reviewing and recording a binding](scoped-work.md#reviewing-and-recording-a-binding)
+  for each affected binding.
 
 ## Scoped work can delete a file that a ready unit owns (#276)
 

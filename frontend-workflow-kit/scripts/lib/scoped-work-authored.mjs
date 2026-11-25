@@ -5,7 +5,7 @@
 import { types } from 'node:util';
 import { parseReconciliationReferenceView, reconciliationHeadingText, slugifySectionTitle,
   reconciliationTreeNodeCount, sharedReconciliationReferenceView, isSharedReconciliationReferenceView,
-  withReconciliationSyntax } from './reconciliation-markdown-ast.mjs';
+  reconciliationReferenceSectionHeading, withReconciliationSyntax } from './reconciliation-markdown-ast.mjs';
 import { hasHeader, specSectionName, stripGeneratedBlocks } from './spec.mjs';
 import { ScopedWorkContractError } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
@@ -46,7 +46,7 @@ function ordinaryTraversal() {
   if (iteratorNext === null && nativeMethod(next, 'next')) iteratorNext = next;
   return iteratorNext !== null && next === iteratorNext;
 }
-const ordinaryArray = (value) => Array.isArray(value) && !types.isProxy(value) &&
+const ordinaryArray = (value) => !types.isProxy(value) && Array.isArray(value) &&
   Object.getPrototypeOf(value) === Array.prototype && !Object.hasOwn(value, Symbol.iterator) && !Object.hasOwn(value, 'forEach');
 function copySequence(values) {
   if (!ordinaryArray(values)) return null;
@@ -66,10 +66,13 @@ function rawStructure(raw) {
   for (let index = 0; index < sections.length; index += 1) {
     const section = data(sections, index);
     if (!plain(section)) return null;
-    const title = data(section, 'title'), slug = data(section, 'slug');
+    const title = data(section, 'title'), slug = data(section, 'slug'), text = data(section, 'text');
+    if (text === absent && 'text' in section) return null;
+    const rawNodes = data(section, 'nodes'), nodes = copySequence(rawNodes);
+    const heading = reconciliationReferenceSectionHeading(rawNodes);
     const tableNodes = copySequence(data(section, 'tableNodes')), tables = copySequence(data(section, 'tables'));
-    if (title === absent || slug === absent || !tableNodes || !tables) return null;
-    entries.push({ section, title, slug, tableNodes, tables });
+    if (title === absent || slug === absent || !nodes || !tableNodes || !tables) return null;
+    entries.push({ section, title, slug, text, heading, nodes, tableNodes, tables });
   }
   return { tree, sections, entries };
 }
@@ -82,7 +85,8 @@ function rawStructureMatches(view, raw) {
     prior.entries.length === current.entries.length && prior.entries.every((saved, index) => {
     const section = current.entries[index];
     return saved.section === section.section && saved.title === section.title && saved.slug === section.slug &&
-      sameSequence(saved.tableNodes, section.tableNodes) && sameSequence(saved.tables, section.tables);
+      saved.text === section.text && saved.heading === section.heading &&
+      sameSequence(saved.nodes, section.nodes) && sameSequence(saved.tableNodes, section.tableNodes) && sameSequence(saved.tables, section.tables);
   });
 }
 // Public authored views remain mutable and may be prewarmed by callers. Keep
@@ -135,22 +139,23 @@ export function scopedAuthoredView(body, raw = null) {
 }
 
 function authoredView(body, raw) {
+  const canonical = raw === null || isSharedReconciliationReferenceView(body, raw);
   for (let active = activeDocument; active; active = active.previous) {
     // Resolvers may wrap the shared view, retaining the exact frozen sections.
     // A detached/custom raw wrapper must still build its own derived contents,
     // even when its native tree happens to be the active tree.
-    if (active.body === body && (!raw || (raw.tree === active.raw.tree && raw.sections === active.raw.sections))) {
+    if (active.body === body && (!raw || (canonical && raw.tree === active.raw.tree && raw.sections === active.raw.sections))) {
       return active.view;
     }
   }
   const cached = views.get(body);
-  const canonical = raw === null || isSharedReconciliationReferenceView(body, raw);
   // The raw parser has its own bounded cache. If its tree was evicted and
   // reparsed, rebuild our node/cell index against that exact current tree.
   if (cached && (!raw || (canonical ? cached.tree === raw.tree : rawStructureMatches(cached, raw)))) return cached;
   raw ??= parseReconciliationReferenceView(body);
   const view = buildAuthoredView(body, raw, canonical);
-  views.set(body, view, { nodes: reconciliationTreeNodeCount(raw.tree) });
+  if (!canonical) viewRawStructure.set(view, rawStructure(raw));
+  views.set(body, view, { nodes: reconciliationTreeNodeCount(view.tree) });
   return view;
 }
 
@@ -183,6 +188,7 @@ function buildAuthoredView(body, raw, canonical) {
     }
     offset += line.length + (authored.startsWith('\r\n', offset + line.length) ? 2 : 1);
   }
+  if (!canonical) return mutableAuthoredView(body, raw, retained, literalSections, last);
   // Reuse the raw parser's column-zero / explicit-block-boundary table decisions.
   const nativeTables = new Map();
   for (const section of raw.sections) section.tableNodes.forEach((node, i) => nativeTables.set(node, section.tables[i]));
@@ -222,6 +228,136 @@ function buildAuthoredView(body, raw, canonical) {
     }
   }
   flush(body.length);
+  const byName = authoredSectionIndex(sections);
+  const view = { tree: raw.tree, sections, tableSections, byName };
+  if (canonical) {
+    const authoredTables = new Set((byName.get('unknowns') || []).flatMap((home) => home.tableNodes.filter((_, index) =>
+      ['ID', 'Question'].every((header) => hasHeader(home.tables[index].headers, header)))));
+    for (const table of nativeTables.keys()) for (const row of table.children) {
+      unknownRows.set(row, { body, start: row.position.start.offset, end: row.position.end.offset,
+        authored: authoredTables.has(table) });
+    }
+    classifiedTrees.add(raw.tree);
+  }
+  return view;
+}
+
+// A custom raw list is the current interpretation, not an array of slots for
+// the original H2 ordinal. Native nodes locate each entry's physical home;
+// source headings only determine GENERATED and literal-table boundaries.
+function mutableAuthoredView(body, raw, retained, literalSections, last) {
+  const tree = raw.tree, physical = [], nativeHomes = new Map(), physicalHomes = new Map(), literals = new Map();
+  const position = (node) => `${node.type}:${node.position.start.offset}:${node.position.end.offset}`;
+  let current = { title: '', slug: '', name: null, start: 0, end: body.length,
+    rawEnd: body.length, nodePositions: [], preamble: true };
+  current.owner = current; physical.push(current);
+  let owner = current, literalIndex = -1;
+  for (const node of tree.children) {
+    while (literalSections[literalIndex + 1]?.start <= node.position.start.offset) literalIndex += 1;
+    literals.set(position(node), literalSections[literalIndex]);
+    if (node.type === 'heading' && node.depth === 2) {
+      current.rawEnd = node.position.start.offset;
+      const title = reconciliationHeadingText(node), generated = !retained(node);
+      const end = node.position.end.offset, newline = /\r\n?|\n/.exec(body.slice(end));
+      current = { title, slug: slugifySectionTitle(title), name: specSectionName(source(body, node)),
+        start: newline ? end + newline.index + newline[0].length : body.length,
+        end: body.length, rawEnd: body.length, nodePositions: [], heading: node, generated };
+      if (!generated) { owner.end = node.position.start.offset; owner = current; }
+      current.owner = owner; physical.push(current);
+    } else current.nodePositions.push(position(node));
+    nativeHomes.set(node, current);
+    physicalHomes.set(position(node), current);
+  }
+  const entries = [], generated = new Map();
+  for (const section of raw.sections) {
+    const title = section.title, slug = section.slug, rawNodes = section.nodes, nodes = [...rawNodes];
+    const heading = reconciliationReferenceSectionHeading(rawNodes);
+    let original = heading === null ? physical[0] : heading === undefined ? null
+      : nativeHomes.get(heading) || physicalHomes.get(position(heading));
+    // Replacement arrays with native/copied nodes still locate their source.
+    // An added empty custom home has no physical heading to infer from a label.
+    if (!original) for (const node of nodes) {
+      original = nativeHomes.get(node) || physicalHomes.get(position(node));
+      if (original) break;
+    }
+    // A deep copy loses the weak heading identity. Its raw text can still
+    // identify an empty source; labels alone cannot distinguish literal from
+    // formatted headings that have identical public title/slug/node values.
+    const text = original ? undefined : section.text;
+    const candidates = original || typeof text !== 'string' ? [] : physical.filter((home) =>
+      home.title === title && home.slug === slug && home.nodePositions.length === 0 &&
+      body.slice(home.start, home.rawEnd) === text);
+    if (candidates.length === 1) original = candidates[0];
+    const tables = new Map();
+    // Preserve actual custom forEach semantics, and do not read tables when
+    // no node consumes it (an unused accessor/revoked proxy is not evidence).
+    section.tableNodes.forEach((node, index) => tables.set(node, section.tables[index]));
+    const entry = { title, slug, text, nodes, tables, original, candidates };
+    entries.push(entry);
+  }
+  // An intact full clone can restore the original ordering after every entry
+  // has been checked against the source. A partial ambiguous list cannot use
+  // the original AST's ordinal as a substitute for its missing source identity.
+  const complete = entries.length === physical.length && entries.every((entry, index) => {
+    const home = physical[index];
+    return entry.title === home.title && entry.slug === home.slug &&
+      (entry.original === home || entry.candidates.includes(home)) &&
+      sameSequence(entry.nodes.map(position), home.nodePositions);
+  });
+  for (const [index, entry] of entries.entries()) {
+    if (!entry.original) {
+      // A new empty label is a custom home even when it carries the parser's
+      // normal empty text field. Existing source labels still need evidence
+      // that distinguishes literal, formatted and duplicate native headings.
+      const addedEmpty = entry.text === '' && entry.nodes.length === 0 && entry.tables.size === 0 &&
+        !physical.some((home) => home.title === entry.title || home.slug === entry.slug);
+      if (complete) entry.original = physical[index];
+      else if (typeof entry.text === 'string' && !addedEmpty) {
+        throw new ScopedWorkContractError('SW-REF-SNAPSHOT: empty custom section requires unambiguous native source context');
+      } else entry.original = { name: specSectionName(`## ${entry.title}`), start: body.length, end: body.length };
+    }
+    const original = entry.original;
+    if (original.generated) {
+      if (!generated.has(original.owner)) generated.set(original.owner, []);
+      generated.get(original.owner).push(entry);
+    }
+  }
+  const tableSections = new Map();
+  const authored = (entry) => {
+    const home = entry.original, nodes = [...entry.nodes], tables = new Map(entry.tables);
+    for (const extra of generated.get(home) || []) {
+      nodes.push(extra.original.heading, ...extra.nodes);
+      for (const [node, table] of extra.tables) tables.set(node, table);
+    }
+    nodes.sort((left, right) => left.position.start.offset - right.position.start.offset);
+    const out = { title: entry.title, slug: entry.slug, name: home.name, nodes,
+      tableNodes: [], tables: [], bulletNodes: [], start: home.start, text: body.slice(home.start, home.end) };
+    const bullets = (node) => {
+      if (node.type === 'listItem') out.bulletNodes.push(node);
+      for (const child of node.children || []) bullets(child);
+    };
+    for (const node of nodes) {
+      bullets(node);
+      const literal = literals.get(position(node));
+      if (tables.has(node) && retained(node) && home.name !== null &&
+          home.name === literal?.name && last.get(home.name) === literal) {
+        out.tableNodes.push(node); out.tables.push(tables.get(node));
+        tableSections.set(node, home.name);
+        for (const row of node.children.slice(1)) tableSections.set(row, home.name);
+      }
+    }
+    return out;
+  };
+  // The preamble remains the reserved first entry, even when callers omit it
+  // or move it within their current list. Named sections follow that list.
+  const preamble = entries.find((entry) => entry.original.preamble);
+  const sections = [preamble ? authored(preamble) : { title: '', slug: '', name: null, nodes: [],
+    tableNodes: [], tables: [], bulletNodes: [], start: 0, text: '' }];
+  for (const entry of entries) if (!entry.original.preamble && !entry.original.generated) sections.push(authored(entry));
+  return { tree, sections, tableSections, byName: authoredSectionIndex(sections) };
+}
+
+function authoredSectionIndex(sections) {
   // A literal authoring name owns its tables, but any other retained native H2
   // with the same slug (`## **Unknowns**`, a setext heading) is a real second
   // home (#285). List those beside it so every caller's uniqueness check still
@@ -241,19 +377,7 @@ function buildAuthoredView(body, raw, canonical) {
     byName.set(name, slugs.length === 1 ? bySlug.get(slugs[0])
       : slugs.flatMap((slug) => bySlug.get(slug)).sort((a, b) => a.start - b.start));
   }
-  const view = { tree: raw.tree, sections, tableSections, byName };
-  // Immutable internal views never take this scan or mutable-input snapshot.
-  if (!canonical) viewRawStructure.set(view, rawStructure(raw));
-  if (canonical) {
-    const authoredTables = new Set((byName.get('unknowns') || []).flatMap((home) => home.tableNodes.filter((_, index) =>
-      ['ID', 'Question'].every((header) => hasHeader(home.tables[index].headers, header)))));
-    for (const table of nativeTables.keys()) for (const row of table.children) {
-      unknownRows.set(row, { body, start: row.position.start.offset, end: row.position.end.offset,
-        authored: authoredTables.has(table) });
-    }
-    classifiedTrees.add(raw.tree);
-  }
-  return view;
+  return byName;
 }
 
 // Index authoring names once per body; many selected rows must not rescan every

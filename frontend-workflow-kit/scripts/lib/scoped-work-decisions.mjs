@@ -104,7 +104,7 @@ function decisionProjection(options, base, dependencyRoots, dependencyContext) {
   const graphEdges = new Map();
   const graphRoots = new Set();
   const queued = [];
-  const visited = new Set();
+  const batches = new Map();
   const nativeRoutes = new Map();
   const homes = new Map();
   const entries = [...targetIndex.artifacts.values()];
@@ -210,8 +210,15 @@ function decisionProjection(options, base, dependencyRoots, dependencyContext) {
   }
   function enqueue(token, subject, uncertainty = null) {
     graphRoots.add(token);
-    const key = scopeJson([subject.owner, subject.unit, token, uncertainty]);
-    if (!visited.has(key)) queued.push({ token, subject, uncertainty });
+    // All currently known roots for one applicability witness share a graph.
+    // Never merge subjects or uncertainty witnesses: a common dependency does
+    // not make another unit (or a different Unknown) use the same Decision.
+    const key = scopeJson([subject.owner, subject.unit, uncertainty]);
+    if (!batches.has(key)) batches.set(key, { subject, uncertainty, pending: new Set(), visited: new Set(), queued: false });
+    const batch = batches.get(key);
+    if (batch.visited.has(token)) return;
+    batch.pending.add(token);
+    if (!batch.queued) { batch.queued = true; queued.push(batch); }
   }
   function apply(token, subject, referrer, relation, native = false, uncertainty = null) {
     decision(token);
@@ -284,7 +291,7 @@ function decisionProjection(options, base, dependencyRoots, dependencyContext) {
   for (const unit of base.projection.units) {
     const subject = { owner: unit.owner, unit: unit.declaration.id };
     const seeds = scopedUnitEvidenceSeeds(unit);
-    for (const token of union(seeds.filter((token) => base.projection.evidence.nodes.some((node) => node.ref === token)))) enqueue(token, subject);
+    for (const token of union(seeds.filter((token) => selectedEvidence.has(token)))) enqueue(token, subject);
   }
   for (const link of base.projection.host_links) if (link.mapping) {
     for (const row of link.mapping.rows) for (const token of [
@@ -313,16 +320,21 @@ function decisionProjection(options, base, dependencyRoots, dependencyContext) {
     return parsed.raw;
   }, 'authored uncertainty roots')]);
   for (let index = 0; index < queued.length; index += 1) {
-    const { token, subject, uncertainty } = queued[index];
-    const key = scopeJson([subject.owner, subject.unit, token, uncertainty]);
-    if (visited.has(key)) continue;
-    const graph = resolveScopedContractGraph({ contracts: [token], targetIndex, inputArtifacts, projectRoot,
+    const batch = queued[index], { subject, uncertainty } = batch;
+    batch.queued = false;
+    const contracts = [...batch.pending].filter((token) => !batch.visited.has(token));
+    batch.pending.clear();
+    if (!contracts.length) continue;
+    const graph = resolveScopedContractGraph({ contracts, targetIndex, inputArtifacts, projectRoot,
       ...baseContext, authoredRefs });
     evidenceContexts.push(copyScopedGraphContexts(graph, {}));
     for (const file of graph.read_set) audit(file.file, file.sha256);
     for (const edge of graph.edges) graphEdges.set(scopeJson(edge), edge);
+    // Typed edges are already closed by this graph. Metadata decision_refs can
+    // introduce additional roots below; collect those in this witness's next
+    // frontier without rebuilding graphs for nodes just checked together.
+    for (const node of graph.nodes) batch.visited.add(node.ref);
     for (const node of graph.nodes) {
-      visited.add(scopeJson([subject.owner, subject.unit, node.ref, uncertainty]));
       addGraphNode(node);
       if (node.kind === 'decision') apply(node.ref, subject, node.ref,
         uncertainty === null ? 'selected-evidence' : 'uncertainty-evidence', false, uncertainty);

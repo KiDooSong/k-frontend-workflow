@@ -7,7 +7,7 @@ import { buildReconciliationTargetIndex } from './reconciliation-target-index.mj
 import { createScopedReferenceResolver } from './scoped-work-refs.mjs';
 import { parseReconciliationReferenceView, sharedReconciliationReferenceView,
   reconciliationSyntaxCacheStats } from './reconciliation-markdown-ast.mjs';
-import { copyScopedSelectionContext, scopedAuthoredView, sharedScopedAuthoredSections } from './scoped-work-authored.mjs';
+import { copyScopedSelectionContext, scopedAuthoredView, scopedAuthoredSections, sharedScopedAuthoredSections } from './scoped-work-authored.mjs';
 import { resolveScopedContractGraph, resolveScopedCandidateGraph, scopedGraphSelectionRefs,
   scopedGraphSelectionSpans } from './scoped-work-graph.mjs';
 
@@ -135,7 +135,7 @@ test('#350 graph cache: custom Tracking interpretations cannot populate or borro
   assert.equal(home.tableNodes.length, 0, 'internal canonical processing preserves the public custom edit');
 });
 
-for (const change of ['remove', 'replace', 'add', 'replace section']) {
+for (const change of ['remove', 'replace', 'add', 'replace section', 'remove section']) {
   test(`#357 graph cache: ${change} in the same mutable raw view refreshes current Tracking membership`, (t) => {
     const body = `${bodyFor()}\n\n<!-- mutable raw ${change} -->\n`, f = fixture(t, body);
     const selection = f.refs.contract(`${API}/chosen`).selection;
@@ -158,7 +158,8 @@ for (const change of ['remove', 'replace', 'add', 'replace section']) {
       } else if (change === 'replace') {
         const other = custom.sections.find((home) => home.slug === 'unknowns');
         rawHome.tableNodes[0] = other.tableNodes[0]; rawHome.tables[0] = other.tables[0];
-      } else custom.sections[apiIndex] = { ...rawHome, tableNodes: [], tables: [] };
+      } else if (change === 'remove section') custom.sections.splice(apiIndex, 1);
+      else custom.sections[apiIndex] = { ...rawHome, tableNodes: [], tables: [] };
       missing();
     }
     assert.deepEqual(read(canonical), [UNKNOWN], 'mutable raw edits cannot replace the canonical tree index');
@@ -214,3 +215,21 @@ for (const change of ['sections iterator', 'tableNodes forEach', 'tableNodes acc
     assert.deepEqual(read(canonical), [UNKNOWN], 'custom traversal cannot change the immutable Tracking index');
   });
 }
+
+test('#360 duplicate current raw homes do not collapse shared physical tables into valid Tracking', (t) => {
+  const body = `${bodyFor()}\n\n<!-- duplicated current raw home -->`, f = fixture(t, body);
+  const selection = f.refs.contract(`${API}/chosen`).selection;
+  const custom = parseReconciliationReferenceView(body), canonical = sharedReconciliationReferenceView(body);
+  const rawHome = custom.sections.find((home) => home.slug === 'api-candidates');
+  const original = sharedScopedAuthoredSections(body, 'api candidates', canonical);
+  assert.deepEqual(scopedGraphSelectionRefs(body, f.fm, selection, custom), [UNKNOWN]);
+  custom.sections.push({ ...rawHome, title: 'Second API home', slug: 'second-api-home',
+    tables: [{ ...rawHome.tables[0], headers: ['Edited', ...rawHome.tables[0].headers.slice(1)] }] });
+  const homes = scopedAuthoredSections(body, 'api candidates', custom);
+  assert.deepEqual(homes.map((home) => [home.title, home.slug, home.tables[0].headers[0]]),
+    [['API Candidates', 'api-candidates', 'ID'], ['Second API home', 'second-api-home', 'Edited']]);
+  assert.equal(homes[0].tableNodes[0], homes[1].tableNodes[0]);
+  assert.throws(() => scopedGraphSelectionRefs(body, f.fm, selection, custom), /unsupported or malformed typed reference/);
+  assert.deepEqual(scopedGraphSelectionRefs(body, f.fm, selection, canonical), [UNKNOWN]);
+  assert.equal(sharedScopedAuthoredSections(body, 'api candidates', canonical), original);
+});

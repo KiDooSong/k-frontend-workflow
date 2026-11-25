@@ -179,6 +179,14 @@ relation closure changes the basis even when the only document edit is a
 referenced ScreenSpec's `decision_refs` list.
 Relations reached only through an unrelated row remain outside that closure.
 
+Decision expansion resolves the currently pending seeds together for each exact
+owner, unit and uncertainty witness. Other units or witnesses keep their own
+traversals, and newly discovered metadata Decision roots form the next frontier.
+Independent API references therefore do not each rebuild the same graph context.
+When base and Decision evidence overlap, their physical selections share one
+checked source per file during that merge. These source bytes are released at
+the end of the file batch; current-file checks and the final read-set audit remain.
+
 The basis holds:
 
 - the binding itself: the row, `owner`, `known_units` and `blocks` (not
@@ -247,6 +255,9 @@ So adding or editing another row of the owner leaves the digest unchanged unless
 that row relates to the bound row; editing the bound row, a related row or any
 unit contract changes it. Version 1 hashed every row that applied to the owner;
 its digests read stale under version 2 ([upgrade notes](upgrade-notes.md)).
+Selected API relation corrections can also change a recorded digest within
+version 2; when upgrading an affected owner, follow the
+[API relation upgrade review](upgrade-notes.md#api-relation-changes-within-basis-v2).
 
 `npm run workflow:binding-status` lists, for every adopted owner (or `--owner
 <id>`), each row that applies to it with its status and binding state:
@@ -435,12 +446,24 @@ Malformed Decision relevance checks and internal selection-span or copied-H3
 coverage checks use the same private canonical syntax. These read-only checks
 preserve a caller's public authored view and its edits, including when no
 Decision row can be selected from the malformed section.
-An explicit mutable raw view's authored derivation also checks the current
-ordered section and table membership. Removing, replacing or adding a raw
-table rebuilds that derivation before the next lookup; a removed table cannot
-supply its previous Tracking home. When raw structure is unchanged, edits made
-directly to the public authored view remain visible. Custom traversal, accessors
-or proxies bypass derived-view reuse; eligibility checks do not execute them.
+An explicit mutable raw view's authored derivation uses its current ordered
+H2 section, node and table membership. Removing, replacing, adding or moving
+an H2 entry rebuilds its current homes; deleting an API home does not rename or
+remove surviving Unknowns and Notes. A removed section or table cannot supply
+its previous Tracking home. Original heading provenance and physical node
+positions keep literal/GENERATED filtering separate from that mutable list;
+duplicate current homes remain ambiguous even when they share a physical table.
+An intact deep copy can recover its native sources by matching the complete
+source structure. A partial copy of indistinguishable empty sections that loses
+that provenance is rejected instead of guessing a literal authoring home.
+Keep the original section node arrays when editing such a partial view.
+Native H3 fallback still follows the original tree, independently of the H2
+authoring-home list, as described under Artifact section references below.
+When raw structure is unchanged, edits made directly to the public authored
+view remain visible. Custom traversal, accessors or proxies bypass derived-view
+reuse, including inside an active public document scope. Eligibility checks do
+not execute them; only the actual build consumes needed values. An unused table
+container does not become a required read merely to decide cache eligibility.
 Immutable canonical views do not perform this mutable-input scan and keep their
 tree-keyed indexes.
 Equal-cell authored and GENERATED rows still retain distinct physical sources.
@@ -448,6 +471,8 @@ Default Unknown-home lookups copy their mutable derived containers without
 changing the caller's authored prewarm or cloning immutable native nodes.
 Exact target row preflight also uses canonical source facts, so Reconciliation
 validation does not replace a public authored prewarm while counting rows.
+
+### Reviewing and recording a binding
 
 The digest covers the binding as committed: to add or change a
 binding, commit it with any well-formed digest (for example `sha256:` followed by
@@ -477,7 +502,7 @@ selection, the text report also shows a `SW-SOURCE-TARGET-FALLBACK` warning. JSO
 reports include `owners[].target_fallbacks` only for affected owners. These
 diagnostics are separate from the binding basis and do not change its version.
 
-#### Bounded syntax retention
+### Bounded syntax retention
 
 Dense Markdown lists and tables can allocate many native AST nodes for a small
 source string. The shared AST cache, authored-view cache and each uncertainty

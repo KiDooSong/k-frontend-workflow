@@ -10,6 +10,8 @@ import { buildReconciliationTargetIndex } from './reconciliation-target-index.mj
 import { loadInputArtifact } from './input-artifact.mjs';
 import { scopedReferenceResolverView } from './scoped-work-refs.mjs';
 import { reconciliationSyntaxCacheStats } from './reconciliation-markdown-ast.mjs';
+import { resolveScopedContractGraph, copyScopedGraphContexts } from './scoped-work-graph.mjs';
+import { scopedProjectionNode } from './scoped-work-projection.mjs';
 
 const moduleUrl = new URL('./scoped-work-uncertainty.mjs', import.meta.url);
 let instrumented = fs.readFileSync(moduleUrl, 'utf8');
@@ -30,6 +32,8 @@ insert('    candidates.set(physical, { record, entry, evidence, affected: affect
 insert("    scopedProjectionProgress('candidate-documents');",
   "    probe.batch?.(relative, refs, documents.stats());\n    scopedProjectionProgress('candidate-documents');");
 insert('  const skipped = new Map();', '  probe.boundary?.(refs, documents.stats());\n  const skipped = new Map();');
+insert('  const consumedGraphs = [base.projection.evidence, base.projection.decision_relations.evidence];',
+  '  probe.merged?.(refs, documents.stats());\n  const consumedGraphs = [base.projection.evidence, base.projection.decision_relations.evidence];');
 insert('  for (const file of [...files.values()]) read(file.file, file.sha256);',
   '  probe.audit?.();\n  for (const file of [...files.values()]) read(file.file, file.sha256);');
 instrumented = instrumented.replace(/from '(\.\/[^']+)'/g,
@@ -163,4 +167,43 @@ test('#352 evaluation syntax: completed oversized row batches retain no referenc
   assert.deepEqual(result.unaudited.map(({ file }) => file), ['doc-4.md']);
   assert.equal(malformedReads, 3, 'one enumeration read, one bounded relevance check and one final audit');
   assert.deepEqual(result.read_set, docs.map(({ file }) => ({ file: path.basename(file), sha256: `sha256:${hash(fs.readFileSync(file))}` })));
+});
+
+test('#359 evaluation merge: many selected sections share one current oversized source per file without retaining a view', (t) => {
+  const { projectRoot, write } = fixture(t), budget = reconciliationSyntaxCacheStats().max_source_chars;
+  const filler = 'x'.repeat(budget), sections = Array.from({ length: 16 }, (_, index) => `section-${index}`);
+  const docs = ['FIRST', 'SECOND'].map((artifact_id) => write(`${artifact_id}.md`, {
+    artifact_id, artifact_type: 'domain-rules', domain: 'example', status: 'confirmed',
+  }, sections.map((slug) => `## ${slug}\n\nIndependent evidence.\n`).join('\n') + `\n## Background\n\n~~~\n${filler}\n~~~\n`));
+  const options = { projectRoot, targetIndex: buildReconciliationTargetIndex({ docs }) };
+  const contracts = docs.flatMap(({ fm }) => sections.map((slug) => `artifact:${fm.artifact_id}#${slug}`));
+  const base = baseFor();
+  const graph = () => resolveScopedContractGraph({ ...options, contracts, project: scopedProjectionNode });
+  const first = graph(), second = graph();
+  const evidenceOf = (value) => copyScopedGraphContexts(value, { roots: value.roots, nodes: value.nodes, edges: value.edges });
+  base.read_set = first.read_set;
+  base.projection.evidence = evidenceOf(first);
+  base.projection.decision_relations.evidence = evidenceOf(second);
+  const decoded = new Map();
+  let merged = false, boundary = false;
+  const result = uncertaintyProjection(options, base, {
+    source(file) { decoded.set(file, (decoded.get(file) || 0) + 1); },
+    merged(resolver, cache) {
+      merged = true;
+      assert.deepEqual([...decoded].sort(), [['FIRST.md', 1], ['SECOND.md', 1]],
+        'each merge batch shares its current bytes across both sets of sixteen selections');
+      assert.equal(resolver, null);
+      assert.equal(cache.entries, 0, 'native selected nodes do not require a whole oversized document view');
+    },
+    boundary(resolver, cache) {
+      boundary = true;
+      assert.equal(resolver, null);
+      assert.equal(cache.entries, 0, 'the later document scan also leaves oversized syntax outside the bounded cache');
+    },
+  });
+  assert.equal(merged, true);
+  assert.equal(boundary, true);
+  assert.deepEqual(result, { projection: { ...base.projection, uncertainty_relations: {
+    records: [], applications: [], scope_review_needed: [], relation_inputs: [], evidence: evidence(),
+  } }, read_set: first.read_set, unaudited: [] }, 'the complete graphs and final canonical read-set are preserved');
 });

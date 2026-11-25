@@ -175,16 +175,32 @@ function computeUncertaintyProjection(options, base) {
     return visit ? withScopedDocumentSyntax(source.body, materialize)
       : materialize(sharedReconciliationReferenceView(source.body));
   }
-  function addNode(node) {
+  function addNode(node, current = null) {
     if (nodes.has(node.ref)) {
       const previous = nodes.get(node.ref);
       if (scopeJson(previous) !== scopeJson(node)) fail('inconsistent selected evidence');
-      if (scopeJson(ranges(previous)) !== scopeJson(ranges(node))) fail('ambiguous selected evidence source');
+      if (scopeJson(ranges(previous, current)) !== scopeJson(ranges(node, current))) fail('ambiguous selected evidence source');
     }
     nodes.set(node.ref, node);
   }
   function addEvidence(evidence) {
-    for (const node of evidence.nodes) addNode(node);
+    // The base and Decision graphs often select many sections of one file.
+    // Their remembered native nodes need current source bytes, but no new view;
+    // that path deliberately does not populate the bounded syntax cache. Keep
+    // one checked source only for this file's merge instead of rereading it for
+    // every pair of selections, and release it before the next file batch.
+    const byFile = new Map();
+    for (const node of evidence.nodes) {
+      if (!byFile.has(node.file)) byFile.set(node.file, []);
+      byFile.get(node.file).push(node);
+    }
+    for (const batch of byFile.values()) {
+      let current = null;
+      for (const node of batch) {
+        if (nodes.has(node.ref)) current ??= documentSource(node.file);
+        addNode(node, current);
+      }
+    }
     for (const edge of evidence.edges) edges.set(scopeJson(edge), edge);
   }
   addEvidence(base.projection.evidence);

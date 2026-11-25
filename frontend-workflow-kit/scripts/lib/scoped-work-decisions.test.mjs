@@ -6,7 +6,7 @@ import path from 'node:path';
 import { KIT_ROOT, splitFrontmatter } from './util.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
 import { buildReconciliationTargetIndex } from './reconciliation-target-index.mjs';
-import { resolveScopedDecisionProjection } from './scoped-work-decisions.mjs';
+import { resolveScopedDecisionProjection, createScopedSnapshotDecisionResolver } from './scoped-work-decisions.mjs';
 import { resolveScopedApplicabilityProjection, resolveScopedSnapshotApplicabilityProjection } from './scoped-work-applicability.mjs';
 import { inspectScopedDecisionScopes, inspectScopedSnapshotDecisionScopes } from './scoped-work-decision-scopes.mjs';
 import { resolveScopedBindingBasis, scopedBindingBasis } from './scoped-work-basis.mjs';
@@ -265,6 +265,110 @@ test('#358 API unit provenance survives shallow projections and rejects detached
   for (const detached of [structuredClone(projection), JSON.parse(JSON.stringify(projection))]) {
     assert.throws(() => scopedBindingBasis(detached, apiScope()), /API rows.*resolved unit context/);
   }
+});
+
+function apiFanoutFixture(t, count) {
+  const f = apiDecisionFixture(t);
+  const refs = Array.from({ length: count }, (_, index) => `artifact:RULES#rule-${index}`);
+  f.change('screen.md', (doc) => {
+    const behavior = ['artifact:SCREEN-RESULT-001#behavior'];
+    doc.fm.work_execution.units = [
+      { ...unit('api', behavior), api_candidates: [{ method: 'GET', path: '/items' }] },
+      unit('control', behavior),
+    ];
+    doc.body = '## Behavior\n\nSelected behavior.\n\n## API Candidates\n\n' +
+      table(['Method', 'Path', 'Confidence', 'Gate', 'Tracking', 'Slice Paths', 'Note'], [
+        ['GET', '/items', 'confirmed', 'active', '-', 'src/api/items/example.ts', refs.map((ref) => `\`${ref}\``).join(' ')],
+      ]);
+  });
+  f.change('rules.md', (doc) => {
+    doc.body = refs.map((_, index) => `## rule-${index}\n\nIndependent rule.`).join('\n\n');
+  });
+  return f;
+}
+
+function countFileOpens(file, run) {
+  const original = fs.openSync;
+  let opens = 0;
+  fs.openSync = (name, ...args) => {
+    if (name === file) opens += 1;
+    return original(name, ...args);
+  };
+  try { return { value: run(), opens }; }
+  finally { fs.openSync = original; }
+}
+
+test('#359 independent API section seeds share file audits within each unit in standalone and snapshot inspection', (t) => {
+  const counts = [32, 64, 128, 256], opens = { standalone: [], snapshot: [] };
+  for (const count of counts) {
+    const f = apiFanoutFixture(t, count), options = f.options();
+    const rules = options.targetIndex.artifacts.get('RULES').file;
+    const expected = inspectScopedDecisionScopes(options);
+    assert.deepEqual(expected.blocking_units, []);
+    assert.deepEqual(expected.checks, []);
+    assert.deepEqual(expected.unit_checks, [{ unit: 'api', decisions_clear: true }, { unit: 'control', decisions_clear: true }]);
+    assert.ok(expected.read_set.some((entry) => entry.file === 'docs/rules.md'), 'selected sections remain in the canonical audit set');
+    for (const [mode, , inspect] of apiInspectionModes) {
+      const measured = countFileOpens(rules, () => inspect(options));
+      opens[mode].push(measured.opens);
+      assert.deepEqual(measured.value, expected, `${mode} preserves the complete public result and read-set for ${count} seeds`);
+    }
+  }
+  for (const [mode, values] of Object.entries(opens)) {
+    assert.ok(values[0] > 0, `${mode} still reads and audits the selected document`);
+    assert.deepEqual(values, counts.map(() => values[0]), `${mode} must not reopen the same file for every independent seed`);
+  }
+});
+
+test('#359 Decision batches keep unit and uncertainty witnesses separate through shared and newly discovered roots', (t) => {
+  const f = fixture(t);
+  f.change('screen.md', ({ fm }) => {
+    fm.work_execution.units = [unit('known'), unit('control')];
+  });
+  f.global([row('D-SHARED'), row('D-ONE'), row('D-TWO')]);
+  f.write('context.md', { artifact_id: 'CONTEXT', artifact_type: 'domain-rules', status: 'draft', domain: 'result' },
+    `## Unknowns\n${table(['ID', 'Question'], [
+      ['U-ONE', 'See artifact:FIRST#details and decision:D-SHARED@open-decision-register'],
+      ['U-TWO', 'See artifact:SECOND#details and decision:D-SHARED@open-decision-register'],
+    ])}`);
+  for (const [name, artifact, decision] of [['first.md', 'FIRST', 'D-ONE'], ['second.md', 'SECOND', 'D-TWO']]) {
+    f.write(name, { artifact_id: artifact, artifact_type: 'domain-rules', status: 'draft', domain: 'result', decision_refs: [decision] },
+      '## Details\nIndependent dependency.');
+  }
+  const roots = [['known', 'U-ONE'], ['known', 'U-TWO'], ['control', 'U-TWO']].map(([unit, id]) =>
+    ({ owner: OWNER, unit, ref: `unknown:${id}@CONTEXT` }));
+  const options = f.options(), out = resolveScopedDecisionProjection(options, roots);
+  const actual = relation(out).applications.filter((entry) => entry.relation === 'uncertainty-evidence')
+    .map(({ unit, uncertainty, decision }) => [unit, uncertainty, decision]).sort();
+  const expected = roots.flatMap(({ unit, ref }) => [
+    [unit, ref, 'decision:D-SHARED@open-decision-register'],
+    [unit, ref, `decision:${ref.includes('U-ONE') ? 'D-ONE' : 'D-TWO'}@open-decision-register`],
+  ]).sort();
+  assert.deepEqual(actual, expected);
+  assert.ok(relation(out).applications.every((entry) => roots.some((root) =>
+    entry.owner === root.owner && entry.unit === root.unit && entry.uncertainty === root.ref)),
+  'shared graph nodes never widen a witness to a different subject or ordinary seed');
+  const snapshot = createScopedSnapshotDecisionResolver(options);
+  assert.deepEqual(snapshot.decision(roots), out, 'snapshot retains the complete result and read-set across batches');
+  assert.deepEqual(snapshot.decision([...roots].reverse()), out, 'root encounter order does not alter the fixed point');
+});
+
+for (const [mode, , inspect] of apiInspectionModes) test(`#359 final ${mode} inspection audit detects a late change after a batched API read`, (t) => {
+  const f = apiFanoutFixture(t, 32), options = f.options();
+  const rules = options.targetIndex.artifacts.get('RULES').file;
+  const clean = countFileOpens(rules, () => inspect(options));
+  const original = fs.openSync;
+  let opens = 0, changed = false;
+  fs.openSync = (file, ...args) => {
+    if (file === rules && ++opens === clean.opens) {
+      changed = true;
+      fs.appendFileSync(rules, '\nLate evidence change.\n');
+    }
+    return original(file, ...args);
+  };
+  try { assert.throws(() => inspect(options), /changed|snapshot/); }
+  finally { fs.openSync = original; }
+  assert.equal(changed, true, 'the mutation is injected at the final observed read, after earlier successful file checks');
 });
 
 test('D decisions: actual local/global rows and every declared unit, without a digest or permit', (t) => {
