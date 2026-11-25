@@ -132,6 +132,12 @@ behavior.
    reach. A native owner relation (`local`, `decision-ref` or `surface-member`,
    with `unit: null`) blocks **every** scoped unit of that owner. An evidence
    relation belonging to one unit does not block the owner's other units.
+   A selected API candidate's ordinary typed references, including references
+   in a Note cell and their transitive dependencies, belong to the unit that
+   selected that candidate. They participate in Decision applications alongside
+   its declared contracts and API Tracking. Rows selected only by other units,
+   and unselected rows, do not widen that unit's applications. Tracking retains its own
+   validation and uncertainty policy.
    Missing and stale bindings use this same default; a current binding keeps
    its explicit `blocks`, including an empty list or another known unit.
    Only a person adopts, narrows or restores a binding; the tool computes and
@@ -163,7 +169,17 @@ ceilings, deny paths, roots, units, bindings) before relying on it.
 ## Binding basis and status
 
 A binding's `basis_digest` is the sha256 of its scope basis, which the tool
-computes from the documents (`basis_version: 2`, #275). The basis holds:
+computes from the documents (`basis_version: 2`, #275).
+Decision applicability, Unknown/Conflict witness selection and binding-closure
+pruning use the same unit evidence seeds: contracts, isolation, source anchors
+and effects, selected API ordinary references and Tracking. The API references
+keep their original owner/unit association through standalone and snapshot
+composition. A newly reached Decision application within the bound row's
+relation closure changes the basis even when the only document edit is a
+referenced ScreenSpec's `decision_refs` list.
+Relations reached only through an unrelated row remain outside that closure.
+
+The basis holds:
 
 - the binding itself: the row, `owner`, `known_units` and `blocks` (not
   `basis_digest` or `approval_ref`);
@@ -392,6 +408,11 @@ each create one lazy resolver for their candidate batch and exact owner body.
 That resolver holds its view through the batch even if the body exceeds a cache
 budget; no candidates means no parse. Independently calling the scalar helper
 does not extend an oversized view's lifetime across calls.
+Resolved API reference context is attached to each normalized unit without a
+new serialized projection or basis field. The low-level `scopedBindingBasis`
+helper requires that live context for API-bearing units: a deep copy or JSON
+round trip that loses it is rejected instead of hashing a smaller closure.
+File-backed basis resolvers and inspectors prepare the context themselves.
 Public mutable authored views and explicitly
 supplied raw interpretations retain their own behavior. Canonical Unknown row
 classification also derives from private syntax, so editing a public header
@@ -410,6 +431,18 @@ explicit custom raw views cannot populate the canonical API Tracking cache.
 Internal discovery of untyped Decision rows also keeps a shared canonical view
 for the document, so those rows reuse one native-tree Tracking index rather than
 rebuilding it per row. Explicit custom views still observe their own edits.
+Malformed Decision relevance checks and internal selection-span or copied-H3
+coverage checks use the same private canonical syntax. These read-only checks
+preserve a caller's public authored view and its edits, including when no
+Decision row can be selected from the malformed section.
+An explicit mutable raw view's authored derivation also checks the current
+ordered section and table membership. Removing, replacing or adding a raw
+table rebuilds that derivation before the next lookup; a removed table cannot
+supply its previous Tracking home. When raw structure is unchanged, edits made
+directly to the public authored view remain visible. Custom traversal, accessors
+or proxies bypass derived-view reuse; eligibility checks do not execute them.
+Immutable canonical views do not perform this mutable-input scan and keep their
+tree-keyed indexes.
 Equal-cell authored and GENERATED rows still retain distinct physical sources.
 Default Unknown-home lookups copy their mutable derived containers without
 changing the caller's authored prewarm or cloning immutable native nodes.

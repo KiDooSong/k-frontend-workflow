@@ -6,7 +6,7 @@ import { canonicalRepositoryPath, createCanonicalRepositoryPathResolver } from '
 import { splitFrontmatter } from './util.mjs';
 import { col, hasHeader } from './spec.mjs';
 import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
-import { parseReconciliationMarkdown, parseReconciliationReferenceView, sharedReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
+import { parseReconciliationMarkdown, sharedReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
 import { parseScopedTargetRef, isScopedRowId, scopedRawTable, scopedRowAlias, scopedRowSite, scopedAddRowSite, scopedCoveredRows } from './scoped-work-refs.mjs';
 import { resolveScopedContractGraph, resolveScopedCandidateGraph, scopedGraphSelectionRefs, scopedGraphMetadataRefs, scopedGraphBodyRefs,
   scopedGraphContexts, scopedGraphSelectionSpans, mergeScopedGraphContexts } from './scoped-work-graph.mjs';
@@ -136,7 +136,7 @@ function unappliedRows({ targetIndex, projectRoot, docsDir, inputArtifacts = [] 
           { required: true, type: 'file', label: 'scoped applicability evidence' });
         const body = indexed?.body ?? splitFrontmatter(decodeGitUtf8(readCurrentBytes(file.absolute,
           'scoped applicability evidence'), 'scoped applicability evidence')).body;
-        views.set(node.file, { body, view: parseReconciliationReferenceView(body) });
+        views.set(node.file, { body, view: sharedReconciliationReferenceView(body) });
       }
       const { body, view } = views.get(node.file);
       selectionSpans.set(node.selection, scopedGraphSelectionSpans(body, view, node.selection, node.kind === 'input-evidence'));
@@ -484,7 +484,7 @@ function decisionRows(entry) {
 function referencing(entry) {
   if (TYPED_SPELLING.test(entry.body) || TYPED_SPELLING.test(JSON.stringify(entry.fm))) return true;
   try {
-    return scopedGraphMetadataRefs(entry.fm).length > 0 || scopedGraphBodyRefs(entry.body, parseReconciliationReferenceView(entry.body), entry.fm).length > 0;
+    return scopedGraphMetadataRefs(entry.fm).length > 0 || scopedGraphBodyRefs(entry.body, sharedReconciliationReferenceView(entry.body), entry.fm).length > 0;
   } catch (error) {
     if (error instanceof CurrentWorkError) return true;
     throw error;

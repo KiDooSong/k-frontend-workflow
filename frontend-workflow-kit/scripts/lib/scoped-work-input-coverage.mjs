@@ -19,7 +19,7 @@ import { resolveScopedBoundaryProjection } from './scoped-work-boundaries.mjs';
 import { resolveScopedApplicabilityProjection } from './scoped-work-applicability.mjs';
 import { scopedUncertaintyScopes, scopedUncertaintyDenials } from './scoped-work-uncertainty-scopes.mjs';
 import { resolveScopedContractGraph, scopedGraphSelectionSpans } from './scoped-work-graph.mjs';
-import { parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
+import { sharedReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
 import { ScopedWorkContractError } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
 import { scopedSourceState } from './scoped-work-source-state.mjs';
@@ -67,7 +67,7 @@ export function inspectScopedInputCoverage({ origin_inputs, coverage_reports = [
     if (!documents.has(node.file)) {
       const parsed = splitFrontmatter(decodeGitUtf8(read(node.file), 'scoped coverage evidence'));
       if (!parsed.hasFrontmatter || parsed.parseError) fail('invalid evidence document');
-      documents.set(node.file, { ...parsed, view: parseReconciliationReferenceView(parsed.body) });
+      documents.set(node.file, { ...parsed, view: sharedReconciliationReferenceView(parsed.body) });
     }
     const doc = documents.get(node.file);
     if (!same(doc.data, node.metadata)) fail('evidence differs from current metadata');

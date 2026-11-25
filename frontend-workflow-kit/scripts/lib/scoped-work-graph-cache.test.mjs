@@ -7,7 +7,7 @@ import { buildReconciliationTargetIndex } from './reconciliation-target-index.mj
 import { createScopedReferenceResolver } from './scoped-work-refs.mjs';
 import { parseReconciliationReferenceView, sharedReconciliationReferenceView,
   reconciliationSyntaxCacheStats } from './reconciliation-markdown-ast.mjs';
-import { copyScopedSelectionContext, scopedAuthoredView } from './scoped-work-authored.mjs';
+import { copyScopedSelectionContext, scopedAuthoredView, sharedScopedAuthoredSections } from './scoped-work-authored.mjs';
 import { resolveScopedContractGraph, resolveScopedCandidateGraph, scopedGraphSelectionRefs,
   scopedGraphSelectionSpans } from './scoped-work-graph.mjs';
 
@@ -134,3 +134,83 @@ test('#350 graph cache: custom Tracking interpretations cannot populate or borro
   assert.deepEqual(read(canonical), [UNKNOWN]);
   assert.equal(home.tableNodes.length, 0, 'internal canonical processing preserves the public custom edit');
 });
+
+for (const change of ['remove', 'replace', 'add', 'replace section']) {
+  test(`#357 graph cache: ${change} in the same mutable raw view refreshes current Tracking membership`, (t) => {
+    const body = `${bodyFor()}\n\n<!-- mutable raw ${change} -->\n`, f = fixture(t, body);
+    const selection = f.refs.contract(`${API}/chosen`).selection;
+    const custom = parseReconciliationReferenceView(body), canonical = sharedReconciliationReferenceView(body);
+    const apiIndex = custom.sections.findIndex((home) => home.slug === 'api-candidates');
+    const rawHome = custom.sections[apiIndex], node = rawHome.tableNodes[0], encoded = rawHome.tables[0];
+    const original = sharedScopedAuthoredSections(body, 'api candidates', canonical);
+    const read = (view) => scopedGraphSelectionRefs(body, f.fm, selection, view);
+    const missing = () => assert.throws(() => read(custom), /unsupported or malformed typed reference: unknown:U-LATER/);
+    assert.deepEqual(read(canonical), [UNKNOWN]);
+    if (change === 'add') {
+      rawHome.tableNodes.length = 0; rawHome.tables.length = 0;
+      missing();
+      rawHome.tableNodes.push(node); rawHome.tables.push(encoded);
+      assert.deepEqual(read(custom), [UNKNOWN], 'new raw membership replaces the cached empty derived list');
+    } else {
+      assert.deepEqual(read(custom), [UNKNOWN]);
+      if (change === 'remove') {
+        rawHome.tableNodes.length = 0; rawHome.tables.length = 0;
+      } else if (change === 'replace') {
+        const other = custom.sections.find((home) => home.slug === 'unknowns');
+        rawHome.tableNodes[0] = other.tableNodes[0]; rawHome.tables[0] = other.tables[0];
+      } else custom.sections[apiIndex] = { ...rawHome, tableNodes: [], tables: [] };
+      missing();
+    }
+    assert.deepEqual(read(canonical), [UNKNOWN], 'mutable raw edits cannot replace the canonical tree index');
+    assert.equal(sharedScopedAuthoredSections(body, 'api candidates', canonical), original,
+      'the original immutable canonical home is still reused');
+  });
+}
+
+for (const change of ['sections iterator', 'tableNodes forEach', 'tableNodes accessor', 'tableNodes proxy', 'inherited iterator next']) {
+  test(`#357 graph cache: ${change} keeps custom traversal outside mutable raw cache reuse`, (t) => {
+    const body = `${bodyFor()}\n\n<!-- custom raw traversal ${change} -->\n`, f = fixture(t, body);
+    const selection = f.refs.contract(`${API}/chosen`).selection;
+    const custom = parseReconciliationReferenceView(body), canonical = sharedReconciliationReferenceView(body);
+    const rawHome = custom.sections.find((home) => home.slug === 'api-candidates');
+    const read = (view) => scopedGraphSelectionRefs(body, f.fm, selection, view);
+    assert.deepEqual(read(canonical), [UNKNOWN]);
+    assert.deepEqual(read(custom), [UNKNOWN]);
+    let traversals = 0, restore = () => {};
+    if (change === 'sections iterator') {
+      custom.sections[Symbol.iterator] = function* () {
+        traversals += 1;
+        for (const section of Array.prototype.values.call(this)) if (section !== rawHome) yield section;
+      };
+    } else if (change === 'tableNodes forEach') {
+      rawHome.tableNodes.forEach = () => { traversals += 1; };
+    } else if (change === 'tableNodes accessor') {
+      Object.defineProperty(rawHome, 'tableNodes', { get() { traversals += 1; return []; } });
+    } else if (change === 'tableNodes proxy') {
+      rawHome.tableNodes = new Proxy(rawHome.tableNodes, { get(target, key, receiver) {
+        if (key === 'forEach') return () => { traversals += 1; };
+        return Reflect.get(target, key, receiver);
+      } });
+    } else {
+      const iterator = Object.getPrototypeOf([][Symbol.iterator]()), parent = Object.getPrototypeOf(iterator);
+      const own = Object.getOwnPropertyDescriptor(iterator, 'next'), inherited = Object.getOwnPropertyDescriptor(parent, 'next');
+      Object.defineProperty(parent, 'next', { configurable: true, value: function (...args) {
+        let item = Reflect.apply(own.value, this, args);
+        if (item.value === rawHome) { traversals += 1; item = Reflect.apply(own.value, this, args); }
+        return item;
+      } });
+      delete iterator.next;
+      restore = () => {
+        Object.defineProperty(iterator, 'next', own);
+        if (inherited) Object.defineProperty(parent, 'next', inherited); else delete parent.next;
+      };
+    }
+    try {
+      for (let repeat = 0; repeat < 2; repeat += 1) {
+        assert.throws(() => read(custom), /unsupported or malformed typed reference: unknown:U-LATER/);
+      }
+    } finally { restore(); }
+    assert.equal(traversals, 2, 'only the actual authored build executes custom traversal');
+    assert.deepEqual(read(canonical), [UNKNOWN], 'custom traversal cannot change the immutable Tracking index');
+  });
+}

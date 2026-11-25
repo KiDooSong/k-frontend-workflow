@@ -8,6 +8,7 @@ import { decodeGitUtf8 } from './visual-refresh-git-objects.mjs';
 import { parseDecisionWorkScopes } from './scoped-work-declarations.mjs';
 import { parseScopedTargetRef, scopedRowAlias, scopedRowSite, scopedAddRowSite, scopedCoveredRows } from './scoped-work-refs.mjs';
 import { resolveScopedApplicabilityProjection } from './scoped-work-applicability.mjs';
+import { scopedUnitEvidenceSeeds } from './scoped-work-unit-seeds.mjs';
 import { ScopedWorkContractError, workText } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
 
@@ -176,13 +177,9 @@ function relationClosure(projection, target) {
   const seeds = new Map(), evidence = new Set(projection.evidence.nodes.map((node) => node.ref));
   const seed = (key, ref) => { if (!seeds.has(key)) seeds.set(key, new Set()); seeds.get(key).add(ref); };
   for (const unit of projection.units) {
-    const refs = [...unit.declaration.contracts, ...(unit.declaration.isolation?.decisions || [])];
-    for (const source of unit.sources) {
-      refs.push(...source.anchors.map((anchor) => anchor.ref));
-      for (const group of source.groups) for (const effect of group.effects) refs.push(effect.target, effect.evidence.ref);
+    for (const ref of scopedUnitEvidenceSeeds(unit)) if (evidence.has(ref)) {
+      seed(subject({ owner: unit.owner, unit: unit.declaration.id }), ref);
     }
-    refs.push(...unit.api_rows.map((row) => row.tracking).filter(Boolean));
-    for (const ref of refs) if (evidence.has(ref)) seed(subject({ owner: unit.owner, unit: unit.declaration.id }), ref);
   }
   for (const link of projection.host_links) if (link.mapping) {
     for (const row of link.mapping.rows) for (const ref of [`${link.mapping.ref}/${row.m_key}`,

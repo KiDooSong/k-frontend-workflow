@@ -17,6 +17,7 @@ import { createScopedApiResolver } from './scoped-work-api.mjs';
 import { resolveScopedMappingEvidence } from './scoped-work-mapping.mjs';
 import { resolveScopedContractGraph, createScopedGraphApiRowContextResolver, scopedGraphContexts, copyScopedGraphContexts } from './scoped-work-graph.mjs';
 import { copyScopedSelectionContext, copyScopedNodeContexts } from './scoped-work-authored.mjs';
+import { rememberScopedUnitApiOrdinaryRefs } from './scoped-work-unit-seeds.mjs';
 import { ScopedWorkContractError, workText, workSet } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet, scopeLf } from './scoped-work-normalize.mjs';
 import { WorkConfigError, parsePolicyOverlay } from './work-config.mjs';
@@ -86,6 +87,7 @@ function unitProjection({ owner, policyFile, policyOverlayFile, targetIndex, inp
   const owners = new Map();
   const units = new Map();
   const fallbacks = new Map();
+  const apiOrdinaryRefs = new Map();
   const absentRegisters = new Set();
   const links = [];
   const roots = new Set();
@@ -209,15 +211,17 @@ function unitProjection({ owner, policyFile, policyOverlayFile, targetIndex, inp
     const api = apis.unit(data.record.artifact_id, ownerId, declared.id);
     const apiContext = api.candidates.length
       ? createScopedGraphApiRowContextResolver(targetIndex.artifacts.get(api.artifact_id).body) : null;
+    const unitApiRefs = new Set();
     const apiRows = api.candidates.map((candidate) => {
       const context = apiContext(candidate);
       for (const ref of context.refs) roots.add(ref);
       for (const ref of context.trackingRefs) trackingRefs.add(ref);
-      for (const ref of context.ordinaryRefs) ordinaryRefs.add(ref);
+      for (const ref of context.ordinaryRefs) { ordinaryRefs.add(ref); unitApiRefs.add(ref); }
       // Raw ordered cells retain every column, without analyzer line/row indexes.
       return { selection: candidate.selection, headers: candidate.headers, cells: candidate.cells,
         tracking: candidate.tracking?.ref ?? null };
     });
+    if (unitApiRefs.size) apiOrdinaryRefs.set(key, [...unitApiRefs]);
     if (data.parts.kind === 'surface') {
       const members = workSet(data.record.metadata.member_screens, (id) => {
         ownerParts(`screen:${id}`); return id;
@@ -310,7 +314,9 @@ function unitProjection({ owner, policyFile, policyOverlayFile, targetIndex, inp
         private_paths: Object.fromEntries(Object.entries(data.declaration.private_paths).map(([role, paths]) => [role, scopeSet(paths)])),
         test_paths: scopeSet(data.declaration.test_paths),
       } : null }))),
-    units: scopeSet([...units.values()]), host_links: scopeSet(links), inputs: scopeSet(inputProjection),
+    units: scopeSet([...units.values()]).map((unit) => rememberScopedUnitApiOrdinaryRefs(unit,
+      apiOrdinaryRefs.get(unitKey(unit.owner, unit.declaration.id)) || [])),
+    host_links: scopeSet(links), inputs: scopeSet(inputProjection),
     evidence: copyScopedGraphContexts(graph,
       { roots: graph.roots, nodes: copyScopedNodeContexts(graph.nodes, scopeSet(graph.nodes.map(node))), edges: graph.edges }) };
   for (const entry of [...files.values()]) {

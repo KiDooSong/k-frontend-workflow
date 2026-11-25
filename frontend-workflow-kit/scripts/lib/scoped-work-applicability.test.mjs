@@ -13,6 +13,9 @@ import { resolveScopedBoundaryProjection } from './scoped-work-boundaries.mjs';
 import { resolveScopedApplicabilityProjection, resolveScopedSnapshotApplicabilityProjection,
   createScopedSnapshotApplicabilitySession } from './scoped-work-applicability.mjs';
 import { scopedBindingBasis } from './scoped-work-basis.mjs';
+import { parseReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
+import { scopedAuthoredView, sharedScopedAuthoredSections } from './scoped-work-authored.mjs';
+import { hashBytes } from './current-work-request.mjs';
 
 const OWNER = 'screen:RESULT-001';
 const SECOND = 'screen:RESULT-002';
@@ -249,6 +252,29 @@ test('D applicability: derived decisions still reject malformed rows and malform
   assert.throws(() => f.run(), /malformed|invalid/i);
   f.global(); f.change('global/open-decisions.md', ({ fm }) => { fm.decision_work_scopes = { version: 99, bindings: [] }; });
   assert.throws(() => f.run(), /version|unsupported/i);
+});
+
+for (const warm of [false, true]) test(`#356 applicability: malformed Decision audit preserves public authored edits (${warm ? 'warm' : 'cold'})`, (t) => {
+  const f = fixture(t);
+  f.change('screen.md', ({ fm }) => { fm.work_execution.units = [unit()]; });
+  const file = f.write('unselected.md', { artifact_id: 'UNSELECTED', artifact_type: 'screen-spec', screen_id: 'OTHER-001',
+    domain: 'foreign', status: 'draft', screen_entry: 'src/features/foreign/screens/OTHER-001.tsx' },
+  `${unknown('U-001', `Original ${warm ? 'warm' : 'cold'} question?`)}\n\n## Open Decisions\n\nIncomplete paragraph without a table.\n`);
+  const options = f.options(), body = options.targetIndex.artifacts.get('UNSELECTED').body;
+  const expected = warm ? JSON.stringify(resolveScopedApplicabilityProjection(options)) : null;
+  const view = scopedAuthoredView(body, parseReconciliationReferenceView(body));
+  view.byName.get('unknowns')[0].tables[0].headers[1] = 'Edited';
+  const actual = resolveScopedApplicabilityProjection(options);
+  assert.deepEqual(actual.projection.known_units, ['known']);
+  assert.deepEqual(unknownRelations(actual).records, []);
+  assert.deepEqual(actual.projection.unapplied_relations.records, []);
+  assert.equal(actual.read_set.find((entry) => entry.file === 'docs/unselected.md')?.sha256, hashBytes(fs.readFileSync(file)),
+    'the unrelated malformed document remains in the current-byte audit');
+  if (warm) assert.equal(JSON.stringify(actual), expected, 'public prewarming cannot change the complete projection or read set');
+  assert.equal(sharedScopedAuthoredSections(body, 'unknowns')[0].tables[0].headers[1], 'Question',
+    'internal Unknown interpretation remains canonical');
+  assert.equal(scopedAuthoredView(body).byName.get('unknowns')[0].tables[0].headers[1], 'Edited');
+  assert.equal(scopedAuthoredView(body), view, 'the reference audit must not replace the mutable public view');
 });
 
 test('D applicability: a missing native Decision ref on a newly related uncertainty is not omitted', (t) => {

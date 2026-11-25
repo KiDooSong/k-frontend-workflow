@@ -11,7 +11,7 @@ import { validateInputArtifacts } from './input-artifact.mjs';
 import { parseReconciliationRegister, REQUIRED_REGISTER_COLS } from './reconciliation-register.mjs';
 import { parseRegisterContract, parseReconciliationItems, parseTargetRef, validateReconciliationV2,
   RESULT_BY_STATUS } from './reconciliation-items.mjs';
-import { parseReconciliationMarkdown, parseReconciliationReferenceView, locateContentTables,
+import { parseReconciliationMarkdown, sharedReconciliationReferenceView, locateContentTables,
   describeHeaderMismatch } from './reconciliation-markdown-ast.mjs';
 import { parseTable } from './spec.mjs';
 import { parseScopedOwner } from './scoped-work-declarations.mjs';
@@ -276,7 +276,7 @@ function resolveSourceRelations({ owner, unit, targetIndex, inputArtifacts = [],
     if (!documents.has(record.file)) {
       const parsed = splitFrontmatter(decodeGitUtf8(read(record.file, undefined, true).bytes, 'scoped source relation'));
       if (!parsed.hasFrontmatter || parsed.parseError) fail('invalid canonical document');
-      documents.set(record.file, { ...parsed, view: parseReconciliationReferenceView(parsed.body) });
+      documents.set(record.file, { ...parsed, view: sharedReconciliationReferenceView(parsed.body) });
     }
     const doc = documents.get(record.file);
     if (!same(doc.data, record.metadata)) fail('canonical metadata differs from the index');

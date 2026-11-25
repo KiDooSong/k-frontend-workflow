@@ -8,7 +8,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { KIT_ROOT, DEFAULTS, splitFrontmatter } from './util.mjs';
 import { buildReconciliationTargetIndex } from './reconciliation-target-index.mjs';
 import { parseReconciliationReferenceView, sharedReconciliationReferenceView } from './reconciliation-markdown-ast.mjs';
-import { scopedAuthoredSubsections, scopedSelectionNodes, copyScopedSelectionContext } from './scoped-work-authored.mjs';
+import { scopedAuthoredView, scopedAuthoredSubsections, scopedSelectionNodes, copyScopedSelectionContext } from './scoped-work-authored.mjs';
 import { createScopedReferenceResolver, scopedRowSite, scopedAddRowSite, scopedCoveredRows } from './scoped-work-refs.mjs';
 import { scopedGraphSelectionRefs, scopedGraphSelectionSpans, resolveScopedContractGraph } from './scoped-work-graph.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
@@ -273,8 +273,13 @@ test('H3: canonical row coverage uses physical containment, including copied sec
       `## ${home}\n\n### Group\n\n${table(headers, [cells])}\n\n## Other\nOutside.`);
     const refs = f.refs(), row = refs.contract(`${kind}:${id}@ROWS`), section = refs.contract('artifact:ROWS#group');
     const sites = new Map(); scopedAddRowSite(sites, scopedRowSite(row));
+    const body = f.options().targetIndex.artifacts.get('ROWS').body;
+    const publicView = scopedAuthoredView(body, parseReconciliationReferenceView(body));
+    publicView.byName.get(home.toLowerCase())[0].tables[0].headers[0] = 'Edited';
     assert.deepEqual(scopedCoveredRows(section, sites), [row.ref]);
     assert.deepEqual(scopedCoveredRows(structuredClone(section), sites), [row.ref]);
+    assert.equal(scopedAuthoredView(body), publicView, 'copied H3 coverage preserves the public authored view');
+    assert.equal(scopedAuthoredView(body).byName.get(home.toLowerCase())[0].tables[0].headers[0], 'Edited');
     assert.deepEqual(scopedCoveredRows(refs.contract('artifact:ROWS#other'), sites), []);
     assert.throws(() => scopedCoveredRows({ ...section, selection: { ...section.selection, content: 'forged' } }, sites), /native source/);
     if (kind === 'unknown') {

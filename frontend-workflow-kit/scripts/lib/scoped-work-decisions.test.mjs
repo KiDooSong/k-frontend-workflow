@@ -7,6 +7,9 @@ import { KIT_ROOT, splitFrontmatter } from './util.mjs';
 import { loadLayoutProfile } from './layout-profile.mjs';
 import { buildReconciliationTargetIndex } from './reconciliation-target-index.mjs';
 import { resolveScopedDecisionProjection } from './scoped-work-decisions.mjs';
+import { resolveScopedApplicabilityProjection, resolveScopedSnapshotApplicabilityProjection } from './scoped-work-applicability.mjs';
+import { inspectScopedDecisionScopes, inspectScopedSnapshotDecisionScopes } from './scoped-work-decision-scopes.mjs';
+import { resolveScopedBindingBasis, scopedBindingBasis } from './scoped-work-basis.mjs';
 
 const OWNER = 'screen:RESULT-001';
 const layout = loadLayoutProfile({ kitRoot: KIT_ROOT });
@@ -67,6 +70,202 @@ function surface(f, { id = 'PANEL', refs = ['D-GLOBAL'], adopted = false } = {})
 }
 const relation = (out) => out.projection.decision_relations;
 const ids = (out) => relation(out).records.map((record) => record.decision_id).sort();
+
+const API_DECISION = 'decision:D-SHARED@OTHER-SPEC';
+function apiDecisionFixture(t, indirect = false) {
+  const f = fixture(t), kitRoot = path.join(f.root, '.kit');
+  fs.mkdirSync(kitRoot);
+  const layoutFile = path.join(kitRoot, 'layout.yaml'), manifestFile = path.join(kitRoot, 'manifest.yaml');
+  fs.writeFileSync(layoutFile, JSON.stringify({ roles: {
+    screen: ['src/features/{domain}/screens/**'], domain_component: ['src/features/{domain}/components/**'],
+    hook: ['src/features/{domain}/hooks/**'], api_client: ['src/api/**'],
+    test: ['src/features/{domain}/tests/**'], route: ['src/routes/**'],
+  } }));
+  fs.writeFileSync(manifestFile, JSON.stringify({ version: 1, artifacts: {} }));
+  f.change('screen.md', (doc) => {
+    const behavior = ['artifact:SCREEN-RESULT-001#behavior'];
+    doc.fm.work_execution.units = [unit('explicit', [API_DECISION]),
+      { ...unit('api', behavior), api_candidates: [{ method: 'GET', path: '/items' }] },
+      { ...unit('control', behavior), api_candidates: [{ method: 'GET', path: '/health' }] }];
+    doc.body = '## Behavior\n\nSelected behavior.\n\n## API Candidates\n\n' +
+      table(['Method', 'Path', 'Confidence', 'Gate', 'Tracking', 'Slice Paths', 'Note'], [
+        ['GET', '/items', 'confirmed', 'active', '-', 'src/api/items/example.ts',
+          `See \`${indirect ? 'artifact:RULES#rules' : API_DECISION}\``],
+        ['GET', '/health', 'confirmed', 'active', '-', 'src/api/health/example.ts', 'See artifact:RULES#other'],
+        ['GET', '/unselected', 'confirmed', 'active', '-', 'src/api/unselected/example.ts', 'See decision:D-UNSELECTED@OTHER-SPEC'],
+      ]);
+  });
+  if (indirect) f.change('rules.md', (doc) => { doc.body = doc.body.replace('Known behavior.', `See ${API_DECISION}`); });
+  f.write('decision.md', { artifact_id: 'OTHER-SPEC', artifact_type: 'screen-spec', screen_id: 'OTHER-001',
+    domain: 'foreign', status: 'draft', screen_entry: 'src/features/foreign/screens/OTHER-001.tsx' },
+  decisions([row('D-SHARED'), row('D-UNSELECTED')]));
+  const options = () => ({ ...f.options(), kitRoot, layoutFile, manifestFile });
+  // Synthetic declarations exercise mechanical freshness only. They do not
+  // authenticate approval or create any production binding.
+  const bind = (blocks, current) => {
+    f.change('decision.md', ({ fm }) => { fm.decision_work_scopes = { version: 1, bindings: [{
+      decision_id: 'D-SHARED', owner: OWNER, known_units: ['api', 'control', 'explicit'], blocks,
+      basis_digest: `sha256:${'0'.repeat(64)}`, approval_ref: 'review:fixture-only-unverified',
+    }] }; });
+    if (current) {
+      const { basis_digest } = resolveScopedBindingBasis({ ...options(), decisionRef: API_DECISION });
+      f.change('decision.md', ({ fm }) => { fm.decision_work_scopes.bindings[0].basis_digest = basis_digest; });
+    }
+  };
+  return { options, bind, change: f.change, global: f.global };
+}
+const expectedApiDecisionApplications = () => ['api', 'explicit'].map((unit) => ({
+  owner: OWNER, unit, decision: API_DECISION, referrer: API_DECISION, relation: 'selected-evidence',
+}));
+
+for (const indirect of [false, true]) test(`#355 API ${indirect ? 'transitive artifact' : 'direct'} Decision references keep unit applicability without a current binding`, (t) => {
+  for (const stale of [false, true]) {
+    const f = apiDecisionFixture(t, indirect);
+    if (stale) f.bind([], false);
+    const options = f.options(), out = resolveScopedApplicabilityProjection(options);
+    assert.deepEqual(relation(out).applications, expectedApiDecisionApplications(),
+      'only the explicit unit and the unit selecting the referring API row apply');
+    assert.deepEqual(ids(out), ['D-SHARED'], 'an unselected API candidate cannot seed another Decision');
+    const inspection = inspectScopedDecisionScopes(options);
+    assert.deepEqual(inspection.blocking_units, ['api', 'explicit']);
+    assert.deepEqual(inspection.unit_checks, [{ unit: 'api', decisions_clear: false },
+      { unit: 'control', decisions_clear: true }, { unit: 'explicit', decisions_clear: false }]);
+    assert.equal(inspection.checks[0].binding_state, stale ? 'stale-basis' : 'missing');
+    assert.deepEqual(inspection.checks[0].applications, expectedApiDecisionApplications());
+    assert.equal(inspection.checks[0].scope_source, 'conservative-default');
+    assert.deepEqual(resolveScopedSnapshotApplicabilityProjection(options), out,
+      'snapshot reuse retains the same API-to-unit association');
+    assert.deepEqual(inspectScopedSnapshotDecisionScopes(options), inspection);
+  }
+});
+
+test('#355 current Decision bindings still select their declared scope after API ordinary references apply', (t) => {
+  for (const blocks of [['api'], ['control'], []]) {
+    const f = apiDecisionFixture(t); f.bind(blocks, true);
+    const options = f.options(), inspection = inspectScopedDecisionScopes(options);
+    assert.deepEqual(inspection.checks[0].applications, expectedApiDecisionApplications());
+    assert.equal(inspection.checks[0].binding_state, 'current-unverified');
+    assert.equal(inspection.checks[0].scope_source, 'current-canonical-declaration');
+    assert.equal(inspection.checks[0].declaration_scope_used, true);
+    assert.deepEqual(inspection.blocking_units, blocks);
+    assert.deepEqual(inspection.unit_checks, ['api', 'control', 'explicit'].map((unit) =>
+      ({ unit, decisions_clear: !blocks.includes(unit) })));
+    assert.equal(inspection.approval_verified, false);
+    assert.equal(inspection.permission_evaluated, false);
+    assert.deepEqual(inspectScopedSnapshotDecisionScopes(options), inspection);
+  }
+});
+
+const API_GLOBAL_DECISION = 'decision:D-GLOBAL@open-decision-register';
+const apiScope = (decision = API_DECISION) => ({ decision, owner: OWNER,
+  known_units: ['api', 'control', 'explicit'], blocks: ['explicit'] });
+const apiUnitChecks = (blocks) => ['api', 'control', 'explicit'].map((unit) =>
+  ({ unit, decisions_clear: !blocks.includes(unit) }));
+const applicationUnits = (applications, decision) => [...new Set(applications.filter((entry) =>
+  entry.decision === decision && entry.owner === OWNER).map((entry) => entry.unit))].sort();
+
+function apiMetadataDecisionFixture(t) {
+  const f = apiDecisionFixture(t);
+  f.change('screen.md', (doc) => {
+    doc.fm.work_execution.units[0].contracts = [API_GLOBAL_DECISION];
+    doc.body = doc.body.replace(`See \`${API_DECISION}\``, 'See `artifact:RULES#rules`')
+      .replace('See artifact:RULES#other', 'No dependency.');
+  });
+  f.change('rules.md', ({ fm }) => {
+    Object.assign(fm, { artifact_type: 'screen-spec', screen_id: 'OTHER-002', domain: 'foreign',
+      screen_entry: 'src/features/foreign/screens/OTHER-002.tsx' });
+  });
+  f.global([row('D-GLOBAL')]);
+  const bind = (basis_digest) => f.change('global/open-decisions.md', ({ fm }) => {
+    fm.decision_work_scopes = { version: 1, bindings: [{ decision_id: 'D-GLOBAL', owner: OWNER,
+      known_units: ['api', 'control', 'explicit'], blocks: ['explicit'], basis_digest,
+      approval_ref: 'review:fixture-only-unverified' }] };
+  });
+  bind(`sha256:${'0'.repeat(64)}`);
+  return { ...f, bind };
+}
+
+const apiInspectionModes = [
+  ['standalone', resolveScopedApplicabilityProjection, inspectScopedDecisionScopes],
+  ['snapshot', resolveScopedSnapshotApplicabilityProjection, inspectScopedSnapshotDecisionScopes],
+];
+for (const [mode, project, inspect] of apiInspectionModes) {
+  test(`#358 API metadata Decision applications change the recorded basis and stale scope (${mode})`, (t) => {
+    const f = apiMetadataDecisionFixture(t);
+    const before = resolveScopedBindingBasis({ ...f.options(), decisionRef: API_GLOBAL_DECISION });
+    f.bind(before.basis_digest);
+    const current = inspect(f.options());
+    assert.equal(current.checks[0].binding_state, 'current-unverified');
+    assert.deepEqual(current.blocking_units, ['explicit']);
+    assert.deepEqual(current.unit_checks, apiUnitChecks(['explicit']));
+    const rules = f.options().targetIndex.artifacts.get('RULES'), originalBody = rules.body;
+    // Only this external screen's metadata changes after recording a real digest.
+    // Keep the complete body bytes; the general fixture writer adds a separator.
+    const original = fs.readFileSync(rules.file, 'utf8'), prefix = `---\n${JSON.stringify(rules.fm)}\n---`;
+    assert.ok(original.startsWith(prefix));
+    fs.writeFileSync(rules.file, `---\n${JSON.stringify({ ...rules.fm, decision_refs: ['D-GLOBAL'] })}\n---${original.slice(prefix.length)}`);
+    const options = f.options(), out = project(options);
+    assert.equal(options.targetIndex.artifacts.get('RULES').body, originalBody);
+    const after = resolveScopedBindingBasis({ ...options, decisionRef: API_GLOBAL_DECISION });
+    const projected = scopedBindingBasis(out.projection, apiScope(API_GLOBAL_DECISION));
+    const stale = inspect(options);
+    assert.deepEqual({
+      applications: applicationUnits(relation(out).applications, API_GLOBAL_DECISION),
+      basisApplications: applicationUnits(after.basis.decision_relations.applications, API_GLOBAL_DECISION),
+      digestChanged: after.basis_digest !== before.basis_digest,
+      bindingState: stale.checks[0].binding_state, blockingUnits: stale.blocking_units,
+      unitChecks: stale.unit_checks,
+    }, { applications: ['api', 'explicit'], basisApplications: ['api', 'explicit'], digestChanged: true,
+      bindingState: 'stale-basis', blockingUnits: ['api', 'explicit'], unitChecks: apiUnitChecks(['api', 'explicit']) });
+    assert.deepEqual(projected.basis, after.basis, 'snapshot and standalone basis retain the same per-unit relation context');
+    assert.equal(projected.basis_digest, after.basis_digest);
+    assert.equal(stale.checks[0].computed_basis_digest, after.basis_digest);
+    assert.equal(stale.checks[0].scope_source, 'conservative-default');
+    assert.deepEqual(stale.checks[0].applications, relation(out).applications);
+    f.bind(after.basis_digest);
+    const refreshed = inspect(f.options());
+    assert.equal(refreshed.checks[0].binding_state, 'current-unverified');
+    assert.equal(refreshed.checks[0].scope_source, 'current-canonical-declaration');
+    assert.deepEqual(refreshed.blocking_units, ['explicit']);
+    assert.deepEqual(refreshed.unit_checks, apiUnitChecks(['explicit']));
+  });
+
+  test(`#358 pre-355 canonical API binding becomes stale on upgrade (${mode})`, (t) => {
+    const f = apiDecisionFixture(t); f.bind(['explicit'], false);
+    // Computed by the actual 8a66aa66c21d987202f27443ad10b2458cb5d992 payload,
+    // using exactly apiDecisionFixture(t, false) and blocks: ['explicit'].
+    // That runtime included only the explicit unit's application in this basis.
+    // This is a recorded historical value, never recomputed by the tested runtime.
+    const legacyDigest = 'sha256:d970ee6073cea81fb17baf0df221dadd774de74f22d973bd86a9963ef33df19b';
+    f.change('decision.md', ({ fm }) => { fm.decision_work_scopes.bindings[0].basis_digest = legacyDigest; });
+    const options = f.options(), out = project(options), inspection = inspect(options);
+    const current = resolveScopedBindingBasis({ ...options, decisionRef: API_DECISION });
+    assert.equal(current.recorded_binding.basis_digest, legacyDigest);
+    assert.equal(current.component_digests.units, 'sha256:637f448e1db3922b7c3ba34a715555e22caa063e2b914480acc1fead3bee315c',
+      'unit facts must match the historical fixture; restored API relations must cause the stale digest');
+    assert.deepEqual({ applications: relation(out).applications,
+      basisApplications: current.basis.decision_relations.applications,
+      digestChanged: current.basis_digest !== legacyDigest,
+      bindingState: inspection.checks[0].binding_state, blockingUnits: inspection.blocking_units,
+      unitChecks: inspection.unit_checks,
+    }, { applications: expectedApiDecisionApplications(), basisApplications: expectedApiDecisionApplications(),
+      digestChanged: true, bindingState: 'stale-basis', blockingUnits: ['api', 'explicit'],
+      unitChecks: apiUnitChecks(['api', 'explicit']) });
+    assert.equal(inspection.checks[0].scope_source, 'conservative-default');
+    assert.equal(inspection.checks[0].computed_basis_digest, current.basis_digest);
+    assert.deepEqual(scopedBindingBasis(out.projection, apiScope()).basis, current.basis);
+  });
+}
+
+test('#358 API unit provenance survives shallow projections and rejects detached JSON copies', (t) => {
+  const f = apiDecisionFixture(t); f.bind(['explicit'], false);
+  const { projection } = resolveScopedApplicabilityProjection(f.options());
+  const expected = scopedBindingBasis(projection, apiScope());
+  assert.deepEqual(scopedBindingBasis({ ...projection }, apiScope()), expected);
+  for (const detached of [structuredClone(projection), JSON.parse(JSON.stringify(projection))]) {
+    assert.throws(() => scopedBindingBasis(detached, apiScope()), /API rows.*resolved unit context/);
+  }
+});
 
 test('D decisions: actual local/global rows and every declared unit, without a digest or permit', (t) => {
   const f = fixture(t); f.global();

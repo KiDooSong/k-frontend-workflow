@@ -18,6 +18,7 @@ import { createCanonicalScopedReferenceResolver as createScopedReferenceResolver
 import { resolveScopedContractGraph, createScopedGraphSelectionSpanResolver, scopedGraphMetadataRefs, scopedGraphBodyRefs,
   mergeScopedGraphContexts } from './scoped-work-graph.mjs';
 import { scopedProjectionNode } from './scoped-work-projection.mjs';
+import { scopedUnitEvidenceSeeds } from './scoped-work-unit-seeds.mjs';
 import { resolveScopedDecisionProjection, createScopedSnapshotDecisionResolver } from './scoped-work-decisions.mjs';
 import { ScopedWorkContractError, workText } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
@@ -395,13 +396,7 @@ function computeUncertaintyProjection(options, base) {
   for (const unit of base.projection.units) {
     const id = unit.declaration.id;
     subject(unit.owner, id);
-    const roots = [...unit.declaration.contracts, ...(unit.declaration.isolation?.decisions || [])];
-    for (const source of unit.sources) {
-      roots.push(...source.anchors.map((anchor) => anchor.ref));
-      for (const group of source.groups) for (const effect of group.effects) roots.push(effect.target, effect.evidence.ref);
-    }
-    roots.push(...unit.api_rows.map((row) => row.tracking).filter(Boolean));
-    for (const token of roots) seed(unit.owner, id, token);
+    for (const token of scopedUnitEvidenceSeeds(unit)) seed(unit.owner, id, token);
   }
   for (const owner of base.projection.owners) if (!owner.adopted) subject(owner.owner, null);
   function derivedSeed(owner, unit, via, token) {
