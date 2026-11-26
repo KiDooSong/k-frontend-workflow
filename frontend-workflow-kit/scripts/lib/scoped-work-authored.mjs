@@ -5,7 +5,7 @@
 import { types } from 'node:util';
 import { parseReconciliationReferenceView, reconciliationHeadingText, slugifySectionTitle,
   reconciliationTreeNodeCount, sharedReconciliationReferenceView, isSharedReconciliationReferenceView,
-  reconciliationReferenceSectionHeading, withReconciliationSyntax } from './reconciliation-markdown-ast.mjs';
+  reconciliationReferenceSectionHeading, isImmutableReconciliationNode, withReconciliationSyntax } from './reconciliation-markdown-ast.mjs';
 import { hasHeader, specSectionName, stripGeneratedBlocks } from './spec.mjs';
 import { ScopedWorkContractError } from './scoped-work-request.mjs';
 import { scopeJson, scopeSet } from './scoped-work-normalize.mjs';
@@ -33,6 +33,7 @@ const functionSource = Function.prototype.toString;
 const nativeMethod = (value, name) => typeof value === 'function' && !types.isProxy(value) &&
   Reflect.apply(functionSource, value, []) === `function ${name}() { [native code] }`;
 const arrayValues = data(Array.prototype, 'values'), arrayForEach = data(Array.prototype, 'forEach');
+const arrayMap = data(Array.prototype, 'map'), arraySlice = data(Array.prototype, 'slice');
 const iteratorPrototype = (() => {
   if (!nativeMethod(arrayValues, 'values')) return null;
   try { return Object.getPrototypeOf(Reflect.apply(arrayValues, [], [])); }
@@ -41,13 +42,16 @@ const iteratorPrototype = (() => {
 let iteratorNext = null;
 function ordinaryTraversal() {
   if (!iteratorPrototype || data(Array.prototype, Symbol.iterator) !== arrayValues ||
-      !nativeMethod(arrayForEach, 'forEach') || data(Array.prototype, 'forEach') !== arrayForEach) return false;
+      !nativeMethod(arrayForEach, 'forEach') || data(Array.prototype, 'forEach') !== arrayForEach ||
+      !nativeMethod(arrayMap, 'map') || data(Array.prototype, 'map') !== arrayMap ||
+      !nativeMethod(arraySlice, 'slice') || data(Array.prototype, 'slice') !== arraySlice) return false;
   const next = data(iteratorPrototype, 'next');
   if (iteratorNext === null && nativeMethod(next, 'next')) iteratorNext = next;
   return iteratorNext !== null && next === iteratorNext;
 }
 const ordinaryArray = (value) => !types.isProxy(value) && Array.isArray(value) &&
-  Object.getPrototypeOf(value) === Array.prototype && !Object.hasOwn(value, Symbol.iterator) && !Object.hasOwn(value, 'forEach');
+  Object.getPrototypeOf(value) === Array.prototype &&
+  ![Symbol.iterator, 'forEach', 'map', 'slice', 'constructor'].some((key) => Object.hasOwn(value, key));
 function copySequence(values) {
   if (!ordinaryArray(values)) return null;
   const copy = [];
@@ -57,6 +61,58 @@ function copySequence(values) {
     copy.push(value);
   }
   return copy;
+}
+const optionalData = (value, key) => {
+  const result = data(value, key);
+  return result === absent && !(key in value) ? undefined : result;
+};
+// Snapshot only syntax actually consumed by the authored builder. Descriptor
+// reads never invoke custom getters/traps; such inputs are interpreted afresh.
+// Native immutable subtrees need no walk. Plain mutable copies retain public
+// edits when these values match, including shared descendants visited once.
+function rawSyntaxSnapshot(tree, entries) {
+  const snapshot = [], pending = [tree], seen = new Set();
+  for (const entry of entries) {
+    for (const node of entry.nodes) pending.push(node);
+    for (const node of entry.tableNodes) pending.push(node);
+    if (entry.heading) pending.push(entry.heading);
+  }
+  const point = (value) => {
+    snapshot.push(value);
+    if (value === undefined || value === null) return true;
+    if (!plain(value)) return false;
+    const offset = optionalData(value, 'offset');
+    if (offset === absent || (offset !== undefined && typeof offset !== 'number')) return false;
+    snapshot.push(offset);
+    return true;
+  };
+  while (pending.length) {
+    const node = pending.pop();
+    if (isImmutableReconciliationNode(node)) continue;
+    if (!plain(node)) return null;
+    if (seen.has(node)) continue;
+    seen.add(node); snapshot.push(node);
+    for (const key of ['type', 'depth', 'value', 'alt']) {
+      const value = optionalData(node, key);
+      if (value === absent || (value !== null && ['object', 'function'].includes(typeof value))) return null;
+      snapshot.push(value);
+    }
+    const position = optionalData(node, 'position');
+    snapshot.push(position);
+    if (position === absent) return null;
+    if (position !== undefined && position !== null) {
+      if (!plain(position) || !point(optionalData(position, 'start')) || !point(optionalData(position, 'end'))) return null;
+    }
+    const children = optionalData(node, 'children');
+    snapshot.push(children);
+    if (children === absent) return null;
+    if (children === undefined || children === null) continue;
+    const members = copySequence(children);
+    if (!members) return null;
+    snapshot.push(members.length);
+    for (const child of members) { snapshot.push(child); pending.push(child); }
+  }
+  return snapshot;
 }
 function rawStructure(raw) {
   if (!plain(raw) || !ordinaryTraversal()) return null;
@@ -74,7 +130,8 @@ function rawStructure(raw) {
     if (title === absent || slug === absent || !nodes || !tableNodes || !tables) return null;
     entries.push({ section, title, slug, text, heading, nodes, tableNodes, tables });
   }
-  return { tree, sections, entries };
+  const syntax = rawSyntaxSnapshot(tree, entries);
+  return syntax === null ? null : { tree, sections, entries, syntax };
 }
 const sameSequence = (left, right) => left.length === right.length && left.every((value, index) => value === right[index]);
 function rawStructureMatches(view, raw) {
@@ -82,6 +139,7 @@ function rawStructureMatches(view, raw) {
   if (!prior) return false;
   const current = rawStructure(raw);
   return current !== null && prior.tree === current.tree && prior.sections === current.sections &&
+    sameSequence(prior.syntax, current.syntax) &&
     prior.entries.length === current.entries.length && prior.entries.every((saved, index) => {
     const section = current.entries[index];
     return saved.section === section.section && saved.title === section.title && saved.slug === section.slug &&
@@ -268,6 +326,21 @@ function mutableAuthoredView(body, raw, retained, literalSections, last) {
     nativeHomes.set(node, current);
     physicalHomes.set(position(node), current);
   }
+  // Empty clones have no native nodes to identify a source. Index the exact
+  // title/slug/text once and share each candidate set, including constant-time
+  // membership when validating a complete clone. Repeated empty H2s must not
+  // allocate or scan the same N-candidate list for each of their N entries.
+  const emptySources = new Map(), physicalTitles = new Set(), physicalSlugs = new Set();
+  for (const home of physical) {
+    physicalTitles.add(home.title); physicalSlugs.add(home.slug);
+    if (home.nodePositions.length) continue;
+    if (!emptySources.has(home.title)) emptySources.set(home.title, new Map());
+    const bySlug = emptySources.get(home.title);
+    if (!bySlug.has(home.slug)) bySlug.set(home.slug, new Map());
+    const byText = bySlug.get(home.slug), text = body.slice(home.start, home.rawEnd);
+    if (!byText.has(text)) byText.set(text, new Set());
+    byText.get(text).add(home);
+  }
   const entries = [], generated = new Map();
   for (const section of raw.sections) {
     const title = section.title, slug = section.slug, rawNodes = section.nodes, nodes = [...rawNodes];
@@ -284,10 +357,8 @@ function mutableAuthoredView(body, raw, retained, literalSections, last) {
     // identify an empty source; labels alone cannot distinguish literal from
     // formatted headings that have identical public title/slug/node values.
     const text = original ? undefined : section.text;
-    const candidates = original || typeof text !== 'string' ? [] : physical.filter((home) =>
-      home.title === title && home.slug === slug && home.nodePositions.length === 0 &&
-      body.slice(home.start, home.rawEnd) === text);
-    if (candidates.length === 1) original = candidates[0];
+    const candidates = original || typeof text !== 'string' ? null : emptySources.get(title)?.get(slug)?.get(text);
+    if (candidates?.size === 1) original = candidates.values().next().value;
     const tables = new Map();
     // Preserve actual custom forEach semantics, and do not read tables when
     // no node consumes it (an unused accessor/revoked proxy is not evidence).
@@ -301,7 +372,7 @@ function mutableAuthoredView(body, raw, retained, literalSections, last) {
   const complete = entries.length === physical.length && entries.every((entry, index) => {
     const home = physical[index];
     return entry.title === home.title && entry.slug === home.slug &&
-      (entry.original === home || entry.candidates.includes(home)) &&
+      (entry.original === home || entry.candidates?.has(home)) &&
       sameSequence(entry.nodes.map(position), home.nodePositions);
   });
   for (const [index, entry] of entries.entries()) {
@@ -310,7 +381,7 @@ function mutableAuthoredView(body, raw, retained, literalSections, last) {
       // normal empty text field. Existing source labels still need evidence
       // that distinguishes literal, formatted and duplicate native headings.
       const addedEmpty = entry.text === '' && entry.nodes.length === 0 && entry.tables.size === 0 &&
-        !physical.some((home) => home.title === entry.title || home.slug === entry.slug);
+        !physicalTitles.has(entry.title) && !physicalSlugs.has(entry.slug);
       if (complete) entry.original = physical[index];
       else if (typeof entry.text === 'string' && !addedEmpty) {
         throw new ScopedWorkContractError('SW-REF-SNAPSHOT: empty custom section requires unambiguous native source context');

@@ -136,10 +136,18 @@ export function reconciliationSyntaxCacheStats() {
   return trees.stats();
 }
 
+// Only the parser's own deep-freeze pass certifies a native node. A caller's
+// frozen wrapper may still contain mutable descendants or accessors.
+const immutableNativeNodes = new WeakSet();
+export function isImmutableReconciliationNode(value) {
+  return immutableNativeNodes.has(value);
+}
+
 function freezeTree(value) {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {
     Object.freeze(value);
     for (const child of Object.values(value)) freezeTree(child);
+    if (typeof value.type === 'string') immutableNativeNodes.add(value);
   }
   return value;
 }

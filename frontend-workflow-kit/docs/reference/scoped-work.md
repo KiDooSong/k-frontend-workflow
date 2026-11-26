@@ -454,7 +454,10 @@ its previous Tracking home. Original heading provenance and physical node
 positions keep literal/GENERATED filtering separate from that mutable list;
 duplicate current homes remain ambiguous even when they share a physical table.
 An intact deep copy can recover its native sources by matching the complete
-source structure. A partial copy of indistinguishable empty sections that loses
+source structure. Empty-source candidates are indexed once by their exact title,
+slug and raw text; matching entries share a candidate set, and complete-clone
+membership uses that set without rescanning it for each entry.
+A partial copy of indistinguishable empty sections that loses
 that provenance is rejected instead of guessing a literal authoring home.
 Keep the original section node arrays when editing such a partial view.
 Native H3 fallback still follows the original tree, independently of the H2
@@ -462,7 +465,12 @@ authoring-home list, as described under Artifact section references below.
 When raw structure is unchanged, edits made directly to the public authored
 view remain visible. Custom traversal, accessors or proxies bypass derived-view
 reuse, including inside an active public document scope. Eligibility checks do
-not execute them; only the actual build consumes needed values. An unused table
+not execute them; only the actual build consumes needed values. This also covers
+consumed AST descendants and their child arrays, heading text and physical
+positions. Ordinary mutable syntax is compared through data descriptors;
+only parser-owned deeply immutable native nodes skip that walk. A frozen custom
+wrapper alone does not certify its descendants. Shared table DTO edits remain
+visible without replacing a caller's authored edits. An unused table
 container does not become a required read merely to decide cache eligibility.
 Immutable canonical views do not perform this mutable-input scan and keep their
 tree-keyed indexes.

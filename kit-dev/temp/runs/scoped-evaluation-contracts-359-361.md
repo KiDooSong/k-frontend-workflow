@@ -5,6 +5,10 @@
 > [scoped-work.md](../../../frontend-workflow-kit/docs/reference/scoped-work.md)다.
 > 공개 합성 fixture와 실제 public API/배포 runtime을 사용했으며 consumer 원문은 포함하지 않는다.
 
+> **후속 보완:** 이 최초 기록의 `ea53a7b` 검증은 같은 이름의 빈 H2가 많은 전체 복사본의
+> 후보 보관량과 중첩 AST getter의 재조회 경로를 놓쳤다. #363·#364의 독립 재현과 보완은
+> [raw 계약 후속 검증 기록](scoped-raw-contracts-363-364.md)에 기록한다.
+
 ## 범위와 기준
 
 기준은 PR #358이 머지된 `92c401868763b8dc2fe0d7860efdfbb80c7750df`이다.
