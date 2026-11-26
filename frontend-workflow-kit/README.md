@@ -101,6 +101,8 @@ node /path/to/new/frontend-workflow-kit/scripts/upgrade-vendored-kit.mjs \
   --dry-run --plan kit-upgrade-plan.md
 ```
 
+plan의 **Consumer migrations**에는 새 payload의 업그레이드 안내가 포함된다. 선택한 API의 적용 관계가 복구되는 기존 adopted owner는 basis v2가 유지되어도 바인딩이 stale이 될 수 있으므로, [영향받는 owner의 binding-status 확인과 검토 절차](docs/reference/upgrade-notes.md#api-relation-changes-within-basis-v2)를 함께 검토한다.
+
 plan을 검토(필요하면 LLM에게 리뷰)한 뒤 안전한 파일만 적용한다.
 
 ```bash

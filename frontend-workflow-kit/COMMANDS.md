@@ -611,6 +611,11 @@ that cannot be expressed as a portable relative path is kept verbatim with a
 deterministic review note (never an absolute local path). The tool is advisory
 and is not a hard CI gate.
 
+For existing adopted owners whose selected API relations change in the new
+payload, follow the plan's [API relation review within basis v2](docs/reference/upgrade-notes.md#api-relation-changes-within-basis-v2).
+The same basis version can produce a stale binding; that note links the owner
+status command and the existing human review and digest-recording procedure.
+
 ## Adoption Probe
 
 ```bash

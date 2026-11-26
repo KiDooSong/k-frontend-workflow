@@ -136,10 +136,18 @@ export function reconciliationSyntaxCacheStats() {
   return trees.stats();
 }
 
+// Only the parser's own deep-freeze pass certifies a native node. A caller's
+// frozen wrapper may still contain mutable descendants or accessors.
+const immutableNativeNodes = new WeakSet();
+export function isImmutableReconciliationNode(value) {
+  return immutableNativeNodes.has(value);
+}
+
 function freezeTree(value) {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {
     Object.freeze(value);
     for (const child of Object.values(value)) freezeTree(child);
+    if (typeof value.type === 'string') immutableNativeNodes.add(value);
   }
   return value;
 }
@@ -506,6 +514,14 @@ function bulletSourceText(source, item) {
   return text + source.slice(cursor, last.end);
 }
 
+// A raw section's node array keeps only its original H2 (null for preamble),
+// not its tree or source body. Empty literal/formatted homes can otherwise be
+// indistinguishable after callers remove or reorder the mutable section list.
+const referenceSectionHeadings = new WeakMap();
+export function reconciliationReferenceSectionHeading(nodes) {
+  return referenceSectionHeadings.get(nodes);
+}
+
 function sectionOccurrences(source, tree, suppliedContext = null, { includeNodes = false, evidenceOnly = false } = {}) {
   const context = suppliedContext || { source, definitions: definitionLabels(tree) };
   const occurrences = [];
@@ -515,6 +531,7 @@ function sectionOccurrences(source, tree, suppliedContext = null, { includeNodes
     contentStart: 0,
     contentEnd: source.length,
     nodes: [],
+    heading: null,
   };
 
   const flush = (endOffset) => {
@@ -541,6 +558,8 @@ function sectionOccurrences(source, tree, suppliedContext = null, { includeNodes
     const tables = current.nodes
       .map(({ node, previousNode }) => ({ node, table: rootTable(source, node, previousNode) }))
       .filter(({ table }) => table !== null);
+    const nodes = includeNodes ? current.nodes.map(({ node }) => node) : null;
+    if (includeNodes) referenceSectionHeadings.set(nodes, current.heading);
     occurrences.push({
       title: current.title,
       slug: current.slug,
@@ -548,7 +567,7 @@ function sectionOccurrences(source, tree, suppliedContext = null, { includeNodes
       bulletCount: bulletTexts.length,
       bulletTexts,
       ...(includeNodes ? {
-        nodes: current.nodes.map(({ node }) => node),
+        nodes,
         bulletNodes,
         bulletSources: bulletNodes.map((node) => bulletSourceText(source, node)),
         tableNodes: tables.map(({ node }) => node),
@@ -570,6 +589,7 @@ function sectionOccurrences(source, tree, suppliedContext = null, { includeNodes
         contentStart: lineEndOffset(source, node.position?.end?.offset ?? headingStart),
         contentEnd: source.length,
         nodes: [],
+        heading: node,
       };
       continue;
     }

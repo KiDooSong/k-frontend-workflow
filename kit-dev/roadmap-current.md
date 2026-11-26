@@ -1,5 +1,14 @@
 # Current Roadmap
 
+> 2026-11-26 #363–#364: 같은 title/slug/text의 빈 H2 출처 후보를 한 번 색인해 공유하고 전체 복사본의 후보 소속도 상수 시간에 확인한다. 현재 섹션 순서·물리 출처·GENERATED 경계와 모호한 부분 복사본 거부는 유지한다.
+> custom raw의 실제 AST 자손·children·heading 값·위치도 descriptor 기반 캐시 비교에 포함한다. 중첩 getter/proxy는 적격성 검사에서 실행하지 않고 실제 구성 때 해석하며, 파서 소유의 깊은 불변 native node만 재탐색을 생략한다. 일반 raw/복사본의 공개 편집과 공유 표 DTO·정본 색인 identity를 유지한다.
+> 재현: [빈 H2 복사본 비용](benchmarks/scoped-raw-empty-clone.mjs), [중첩 raw getter](benchmarks/scoped-raw-nested.mjs), [배포본 검증 기록](temp/runs/scoped-raw-contracts-363-364.md).
+
+> 2026-11-25 #359–#361: Decision 탐색은 같은 owner/unit/uncertainty의 현재 시작점을 묶고, base/Decision evidence 합성은 같은 파일의 확인된 source를 묶음 안에서 재사용한다. 단위·witness 격리, 새 metadata frontier, 현재 bytes·최종 read-set 감사와 기존 basis/차단 계약은 유지한다.
+> 명시적 raw의 H2 작성 뷰는 현재 section/node/table 목록을 해석하며 원본 heading의 물리 출처는 별도로 보존한다. 섹션 삭제·이동·추가·복사 후 생존 home을 유지하고, 빈 복사본의 출처가 모호하면 추측하지 않는다. 정본 GENERATED/Tracking 색인과 공개 편집 보존, active scope의 accessor/proxy 재사용 제외를 함께 검증한다.
+> 같은 basis v2에서도 복구된 API 관계가 기존 바인딩을 stale로 만들 수 있는 조건과 owner별 확인·사람 검토 절차를 [업그레이드 안내](../frontend-workflow-kit/docs/reference/upgrade-notes.md#api-relation-changes-within-basis-v2)에 모아 managed dry-run에서 연결한다.
+> 재현: [API fan-out](benchmarks/scoped-api-fanout.mjs), [raw section 경계](benchmarks/scoped-raw-sections.mjs), [배포본·계약 검증 기록](temp/runs/scoped-evaluation-contracts-359-361.md).
+
 > 2026-11-24 #358 리뷰 보완: API 일반 참조의 owner/unit 소속을 정규화된 unit에 연결하고 Decision·uncertainty·binding closure가 같은 시작점을 사용한다. `decision_refs`만 추가한 경우와 실제 `8a66aa6` 바인딩 업그레이드에서 이전 digest는 stale이 되고 관련 두 단위만 차단하며, 갱신한 current 바인딩은 명시 범위를 유지한다.
 > API로만 도달한 Unknown witness도 basis에 포함하며, 같은 문서의 무관한 행·미선택 API 경로는 제외한다. API 문맥을 잃은 중간 DTO는 불완전한 basis 대신 명시 오류를 낸다.
 > 재현: [API Decision basis 검사](benchmarks/scoped-api-decision-basis.mjs), [리뷰 보완 검증 기록](temp/runs/scoped-api-decision-basis-358.md).

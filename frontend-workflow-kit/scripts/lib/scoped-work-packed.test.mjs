@@ -98,9 +98,9 @@ test('D packed: real reference, source, mapping, API, normalization, graph trave
       assert.match(lifetimes.stdout, new RegExp(`^# ${metric} 0\\r?$`, 'm'), lifetimes.stdout);
     }
   }
-  assert.equal(lifetimeCount, 61);
+  assert.equal(lifetimeCount, 62);
   for (const [name, value] of bytes) assert.deepEqual(fs.readFileSync(path.join(lib, name)), value, name);
-  t.diagnostic('packed syntax lifetime subprocess: all 61 oversized parsing, native selection, Unknown, iterator and evaluation boundary regressions passed');
+  t.diagnostic('packed syntax lifetime subprocess: all 62 oversized parsing, native selection, Unknown, iterator and evaluation boundary regressions passed');
   // These shared-helper tests already ship. Run the body/metadata boundary and
   // observed-read regressions from their payload files, without copying over them.
   const syntax = checkedNode(['--test', '--test-reporter=tap',
